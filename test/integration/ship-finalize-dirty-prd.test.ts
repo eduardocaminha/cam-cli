@@ -99,8 +99,8 @@ function makeTmpRepo(): string {
 const realSpawnFn: SpawnFn = (cmd, args, opts) =>
 	spawnSync(cmd, args, { encoding: opts.encoding, stdio: 'pipe' }) as SpawnSyncReturns<string>;
 
-// project.toml: 'none' backend
-const PROJECT_TOML = 'issue_system = "none"\nissue_prefix = "CAM"\n';
+// project.toml: 'local' backend
+const PROJECT_TOML = 'issue_system = "local"\nissue_prefix = "CAM"\n';
 
 // Baseline prd.json committed to the repo
 const PRD_JSON = JSON.stringify({ issueNumber: 27, branchName: 'cam/CAM-27-test' });

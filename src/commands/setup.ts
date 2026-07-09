@@ -36,6 +36,7 @@ import { createElement } from 'react';
 
 import { mergeIntoConfig } from '../config/toml.ts';
 import { DEFAULTS, type MergeMode, type PlanApproval } from '../config/models.ts';
+import type { IssueSystem } from '../config/issue-system.ts';
 import { printError, printHint, printSuccess, printWarning } from '../logging/color.ts';
 import { applyMergeMode } from './setup-merge-mode.ts';
 import type { SpawnFn as BpSpawnFn } from '../release/branch-protection.ts';
@@ -50,7 +51,7 @@ import { tmuxArgs } from '../tmux/session.ts';
 // ---------------------------------------------------------------------------
 
 export type ProjectMode = 'new' | 'existing';
-export type IssueSystem = 'linear' | 'github' | 'local';
+export type { IssueSystem } from '../config/issue-system.ts';
 
 export interface SetupOptions {
 	projectMode?: ProjectMode;

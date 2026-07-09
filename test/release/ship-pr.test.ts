@@ -18,7 +18,7 @@
 //       when present; not posted when absent; a comment failure is best-effort.
 //   8.  Merge-mode branching: ci-gated enriches merge-watch (exactly one
 //       write, preserving a stashed issueId); immediate closes the issue per
-//       backend (none/github/linear) and cleans up the watch file for none.
+//       backend (local/github/linear) and cleans up the watch file for local.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { runShipPrStep, type RunShipPrStepOptions, type ShipPrSpawnFn } from '../../src/release/ship-pr.ts';
@@ -99,7 +99,7 @@ function makeOpts(cfg: MakeOptsConfig = {}) {
 		branchName: 'cam/pr-149-ship-runner-deterministic',
 		prdSnapshot: PRD_SNAPSHOT,
 		issueId: cfg.issueId === undefined ? 'CAM-149' : cfg.issueId,
-		issueBackend: cfg.issueBackend ?? 'none',
+		issueBackend: cfg.issueBackend ?? 'local',
 		spawnFn,
 		writeTempFile: (content) => {
 			tempFiles.push(content);
@@ -333,7 +333,7 @@ describe('runShipPrStep', () => {
 		test('enriches the merge-watch state with prNumber + mergedBranch, preserving the stashed issueId', () => {
 			const { opts, writeMergeWatchCalls, removeMergeWatchCalls, closeIssueOnMainCalls } = makeOpts({
 				mergeMode: 'ci-gated',
-				issueBackend: 'none',
+				issueBackend: 'local',
 				issueId: 'CAM-149',
 				existingMergeWatchState: null,
 			});
@@ -352,7 +352,7 @@ describe('runShipPrStep', () => {
 		test('preserves an issueId already present on a full existing state (idempotent re-run)', () => {
 			const { opts, writeMergeWatchCalls } = makeOpts({
 				mergeMode: 'ci-gated',
-				issueBackend: 'none',
+				issueBackend: 'local',
 				issueId: 'CAM-149',
 				existingMergeWatchState: { prNumber: 0, mergedBranch: '', issueId: 'CAM-149', pollCount: 0 },
 			});
@@ -364,7 +364,7 @@ describe('runShipPrStep', () => {
 			expect(writeMergeWatchCalls[0]?.mergedBranch).toBe('cam/pr-149-ship-runner-deterministic');
 		});
 
-		test('does not carry an issueId when the backend is github (never stashed for non-none backends)', () => {
+		test('does not carry an issueId when the backend is github (never stashed for non-local backends)', () => {
 			const { opts, writeMergeWatchCalls } = makeOpts({
 				mergeMode: 'ci-gated',
 				issueBackend: 'github',
@@ -379,11 +379,11 @@ describe('runShipPrStep', () => {
 		});
 	});
 
-	describe('merge-mode branching: immediate, backend none', () => {
+	describe('merge-mode branching: immediate, backend local', () => {
 		test('closes the issue via closeIssueOnMainFn then removes the watch file', () => {
 			const { opts, closeIssueOnMainCalls, removeMergeWatchCalls, writeMergeWatchCalls } = makeOpts({
 				mergeMode: 'immediate',
-				issueBackend: 'none',
+				issueBackend: 'local',
 				issueId: 'CAM-149',
 			});
 			const result = runShipPrStep(opts);
@@ -397,7 +397,7 @@ describe('runShipPrStep', () => {
 		test('skips closeIssueOnMainFn when issueId is null, but still removes the watch file', () => {
 			const { opts, closeIssueOnMainCalls, removeMergeWatchCalls } = makeOpts({
 				mergeMode: 'immediate',
-				issueBackend: 'none',
+				issueBackend: 'local',
 				issueId: null,
 			});
 			runShipPrStep(opts);
@@ -409,7 +409,7 @@ describe('runShipPrStep', () => {
 		test('a close failure emits a warning but still returns ok:true', () => {
 			const { opts, warnings } = makeOpts({
 				mergeMode: 'immediate',
-				issueBackend: 'none',
+				issueBackend: 'local',
 				issueId: 'CAM-149',
 				closeIssueOutcome: { ok: false, reason: 'not-found' },
 			});

@@ -25,7 +25,7 @@ import type { SpawnSyncReturns } from 'node:child_process';
 // Helpers
 // ---------------------------------------------------------------------------
 
-const PROJECT_TOML_NONE = 'issue_system = "none"\nissue_prefix = "CAM"\n';
+const PROJECT_TOML_NONE = 'issue_system = "local"\nissue_prefix = "CAM"\n';
 const PROJECT_TOML_GITHUB = 'issue_system = "github"\nissue_prefix = "CAM"\n';
 
 /** prd.json referencing issue CAM-72 (numeric). */
@@ -82,7 +82,7 @@ function makeOptions(
 // ---------------------------------------------------------------------------
 
 describe('AC1 (US-004): no git add for any issues/ path in any backend', () => {
-	test('none backend: no git add for scripts/cam/issues/ path', () => {
+	test('local backend: no git add for scripts/cam/issues/ path', () => {
 		const { spawnFn, calls } = makeRecordingSpawn();
 
 		finalizeCycleClose(makeOptions({ spawnFn }));

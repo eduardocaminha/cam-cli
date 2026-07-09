@@ -21,6 +21,7 @@
 
 import type { SpawnSyncReturns } from 'node:child_process';
 import { parseToml } from '../config/toml.ts';
+import { readIssueSystem } from '../config/issue-system.ts';
 import { resolveIssueId } from '../issues/resolve-id.ts';
 import { printError } from '../logging/color.ts';
 import { emitOk } from '../logging/screen.ts';
@@ -67,7 +68,7 @@ export interface FinalizeCycleCloseOptions {
 	 * is removed, so the post-merge close path can close the issue without
 	 * re-reading prd.json.
 	 *
-	 * Called only when a valid issueId is resolved AND issueSystem === 'none'.
+	 * Called only when a valid issueId is resolved AND issueSystem === 'local'.
 	 * github/linear backends close their own issues via the external system;
 	 * stashing for them would cause a spurious closeIssueOnMain 'not-found' error.
 	 * Production: stashIssueIdInMergeWatch(join(cwd, '.claude', MERGE_WATCH_FILENAME), issueId).
@@ -93,7 +94,7 @@ export interface FinalizeCycleCloseResult {
  *   2a. Resolve issueId via resolveIssueId. Fail loud if issueNumber is
  *       non-null/undefined but unresolvable (never stashes a phantom '<prefix>-0').
  *   3. Call stashFn(issueId) when a valid issueId is available AND
- *       issueSystem === 'none', BEFORE the prd.json git rm, so the
+ *       issueSystem === 'local', BEFORE the prd.json git rm, so the
  *       post-merge close path can find it. github/linear skip this step.
  *   4. Remove scripts/cam/prd.json, scripts/cam/handoff.json, and
  *       scripts/cam/progress.txt via `git rm -f --ignore-unmatch`.
@@ -112,8 +113,7 @@ export function finalizeCycleClose(
 	// 1. Read issue_system and issue_prefix from project.toml
 	const tomlText = readProjectToml();
 	const config = parseToml(tomlText);
-	const issueSystem =
-		typeof config['issue_system'] === 'string' ? config['issue_system'] : 'none';
+	const issueSystem = readIssueSystem(config);
 	const issuePrefix =
 		typeof config['issue_prefix'] === 'string' ? config['issue_prefix'] : 'CAM';
 
@@ -150,12 +150,12 @@ export function finalizeCycleClose(
 	// 3. Stash the resolved issueId into .cam-merge-watch.json BEFORE git rm,
 	//    so the post-merge close path can close the issue without re-reading
 	//    prd.json (which will be gone after the rm).
-	//    ONLY for the 'none' backend: github and linear close their own issues
+	//    ONLY for the 'local' backend: github and linear close their own issues
 	//    via the external system, NOT via closeIssueOnMain on the local store.
-	//    Stashing for non-none backends would cause runPostMerge to call
-	//    closeIssueOnMain against the none-backend store, producing a spurious
+	//    Stashing for non-local backends would cause runPostMerge to call
+	//    closeIssueOnMain against the local-backend store, producing a spurious
 	//    'not-found' error (US-R1-001 fix).
-	if (issueId !== null && issueSystem === 'none') {
+	if (issueId !== null && issueSystem === 'local') {
 		stashFn(issueId);
 	}
 
@@ -195,7 +195,7 @@ export function finalizeCycleClose(
 	const shaResult = spawnFn('git', ['-C', cwd, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' });
 	const commitSha = (shaResult.stdout ?? '').trim() || 'unknown';
 	const removedNames = harnessPaths.map((p) => p.split('/').pop() ?? p);
-	const backendNote = issueSystem !== 'none' ? ` (issue-close: ${issueSystem})` : '';
+	const backendNote = issueSystem !== 'local' ? ` (issue-close: ${issueSystem})` : '';
 	emitOk(`closed ${labelId}${backendNote}: removed ${removedNames.join(', ')}`, `sha ${commitSha}`);
 
 	return {

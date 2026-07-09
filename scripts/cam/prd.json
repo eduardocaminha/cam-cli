@@ -41,7 +41,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New file: src/config/issue-system.ts exporting readIssueSystem(config: Record<string, unknown>): IssueSystem. Watch import direction: IssueSystem type currently lives in src/commands/setup.ts; consider defining the type (or a re-export) in the new config module to avoid commands<->config coupling, keeping setup.ts re-exporting for existing importers. Sites: src/commands/ship-finalize.ts (:70/:96/:153 doc comments, :116 read, :130/:183/:203 issueBackend passthrough, :158/:198 gates), src/release/ship-pr.ts (:64/:91/:93/:151 comments, :157/:201 branches). Migrate fixtures used by these tests in the same story: test/ship-finalize.test.ts:28 (PROJECT_TOML_NONE -> issue_system \"local\"), test/ship-finalize-hardening.test.ts:28, test/integration/ship-finalize-dirty-prd.test.ts:103. Gotcha (patterns.md finalizeCycleClose hardening bullet): the guard 'issue_system == none + issue file absent -> hard failure' now reads 'local'; keep the three idempotency guards intact."
     },

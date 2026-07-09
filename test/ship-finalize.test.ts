@@ -25,7 +25,7 @@ import type { SpawnSyncReturns } from 'node:child_process';
 // Helpers
 // ---------------------------------------------------------------------------
 
-const PROJECT_TOML_NONE = 'issue_system = "none"\nissue_prefix = "CAM"\n';
+const PROJECT_TOML_NONE = 'issue_system = "local"\nissue_prefix = "CAM"\n';
 const PROJECT_TOML_GITHUB = 'issue_system = "github"\nissue_prefix = "CAM"\n';
 const PROJECT_TOML_LINEAR = 'issue_system = "linear"\nissue_prefix = "CAM"\n';
 
@@ -90,7 +90,7 @@ function makeOptions(
 // ---------------------------------------------------------------------------
 
 describe('AC1 (US-004): finalizeCycleClose never reads or writes any issues/ file', () => {
-	test('none backend: stashFn called; no readIssues/writeIssues in options', () => {
+	test('local backend: stashFn called; no readIssues/writeIssues in options', () => {
 		// The interface no longer has readIssues / writeIssues fields.
 		// Verify stashFn IS called with the resolved id.
 		const stashedIds: string[] = [];
@@ -140,7 +140,7 @@ describe('AC1 (US-004): finalizeCycleClose never reads or writes any issues/ fil
 // AC2: git rm + commit still runs (unchanged)
 // ---------------------------------------------------------------------------
 
-describe('AC2 (US-004): git rm + commit unchanged for none backend', () => {
+describe('AC2 (US-004): git rm + commit unchanged for local backend', () => {
 	test('rms prd.json, handoff.json, progress.txt and commits', () => {
 		const { spawnFn, calls } = makeRecordingSpawn();
 
@@ -256,7 +256,7 @@ describe('AC3 (US-004): resolveIssueId + stash behavior', () => {
 // ---------------------------------------------------------------------------
 
 describe('AC4 (US-004): no git push to main', () => {
-	test('none backend: no spawn call is a git push to main', () => {
+	test('local backend: no spawn call is a git push to main', () => {
 		const { spawnFn, calls } = makeRecordingSpawn();
 
 		finalizeCycleClose(makeOptions({ spawnFn, readProjectToml: () => PROJECT_TOML_NONE }));
@@ -418,7 +418,7 @@ function stripAnsi(s: string): string {
 }
 
 describe('finalizeCycleClose — structured result line', () => {
-	test('happy path (none backend) emits line with issue-id, removed files, and sha', () => {
+	test('happy path (local backend) emits line with issue-id, removed files, and sha', () => {
 		const captured: string[] = [];
 		const origWrite = process.stdout.write.bind(process.stdout);
 		process.stdout.write = ((chunk: unknown) => {
