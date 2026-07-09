@@ -1,7 +1,7 @@
 {
   "id": "CAM-228",
   "title": "Auditor: checklist C.8 exige browser+E2E e contradiz F.19/F.20 (risco BLOCK espurio)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-08T23:05:48.551Z",
