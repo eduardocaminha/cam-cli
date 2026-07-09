@@ -6,6 +6,17 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.97.0] - 2026-07-09
+
+### Added
+
+- US-006 - ship-pr applies the type-derived GitHub label on PR creation
+- US-005 - composePrTitle emits <type>: <text> (CAM-<N>)
+- US-004 - Planner carries type from the issue into the PRD (both planner agent copies)
+- US-003 - Capture/confirm type in the /cam-spec grill (both command copies)
+- US-002 - Accept and persist type through cam spec --persist
+- US-001 - Add optional type field to the issue schema (both copies) and IssueEntry
+
 ## [0.96.0] - 2026-07-09
 
 ### Added
