@@ -23,7 +23,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/agents/subagent-planner.md (line 3 description, line 4 model, lines 79-84 Spec Sourcing), templates/agents/subagent-planner.md (same, but DO NOT touch its model line), plus regenerated src/templates/embedded.ts via `bun run embed-vendor`. GOTCHA (issue): the frontmatter model field is NOT dead config - src/templates/frontmatter.ts rewrites the `model:` line on `cam config` save, and vendor/check-agent-frontmatter.ts validates it; align the value only, never remove the line. The stale `claude-fable-5` value named in the issue no longer applies: project.toml [models] planner is now claude-opus-4-8, which already matches the frontmatter, so item (1) is likely a no-op verification - the real edits are the description and Spec Sourcing rewrites. Spec Sourcing rewrite must match buildPlannerTaskPrompt (src/supervisor/plan-runner.ts:67-73): the planner is named an issue, told not to re-select, told to write the PRD, and reads the issue file itself for the spec. Only .claude/ frontmatter model is cam-cli-specific; description + Spec Sourcing are cam-universal and go in both copies (embed reads templates/, not .claude/). Verify embedded generator embeds templates/ (scripts/generate-embedded-vendor.ts reads vendor/ + templates/)."
     },

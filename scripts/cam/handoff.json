@@ -1,0 +1,19 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Fix subagent-planner.md: model align, Step 7 description, dead Spec Sourcing"
+  },
+  "branchName": "cam/issue-230",
+  "timestamp": "2026-07-09T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    ".claude/agents/subagent-planner.md",
+    "templates/agents/subagent-planner.md",
+    "src/vendor/_generated.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 was a docs/prompt staleness fix on subagent-planner.md (both .claude/ and templates/ copies): (1) model line was already claude-opus-4-8 in both files and matched project.toml, so item 1 was a no-op verification as the issue predicted; (2) rewrote the frontmatter `description:` to say the agent is spawned by the deterministic plan runner (runPlanPhase, ADR-0006) instead of 'Invoked from /cam-plan Step 7'; (3) rewrote the Spec Sourcing section to drop the dead specSource/Spec/derivedFrom Task-prompt fields (buildPlannerTaskPrompt/buildReplanPlannerTaskPrompt in src/supervisor/plan-runner.ts only ever pass the issue id, never those fields) and instead instruct the planner to read scripts/cam/issues/<id>.json itself for the spec, and to read parent/ancestor issue files (if the issue metadata links to any) before generating stories. Ran embed-vendor to regenerate src/vendor/_generated.ts. US-002 (next) targets subagent-auditor.md Step 8 description with the same theme (deterministic plan runner) - the wording pattern used here ('Spawned by the deterministic plan runner (runPlanPhase, ADR-0006), not a /cam-plan step') is reusable there. US-003 targets cam-plan.md selection description (champion-vs-champion) - unrelated file, no shared edits.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
