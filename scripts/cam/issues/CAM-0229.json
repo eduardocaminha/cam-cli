@@ -1,7 +1,7 @@
 {
   "id": "CAM-229",
   "title": "Implementer Step 5.5: exemplo emite handoff schema-invalido (status ok + campo version)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-08T23:05:50.672Z",
