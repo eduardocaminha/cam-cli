@@ -1,20 +1,22 @@
 {
-  "lastCompletedStory": { "id": "US-004", "title": "Planner carries type from the issue into the PRD (both planner agent copies)" },
+  "lastCompletedStory": { "id": "US-005", "title": "composePrTitle emits <type>: <text> (CAM-<N>)" },
   "branchName": "cam/issue-235",
   "timestamp": "2026-07-09T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    ".claude/agents/subagent-planner.md",
-    "templates/agents/subagent-planner.md",
-    "src/vendor/_generated.ts"
+    "src/release/pr-body.ts",
+    "src/supervisor/ship-runner.ts",
+    "test/release/pr-body.test.ts",
+    "test/release/ship-pr.test.ts",
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-005 (composePrTitle emits <type>: <text> (CAM-<N>)) is next. The PRD now carries a top-level `type` field (defaults to 'feat', copied from the issue by the planner per US-004; the issue's own `type` is optional per US-001/US-002/US-003). Find composePrTitle (grep found it in src/release/pr-body.ts and used from src/release/ship-pr.ts / src/supervisor/ship-runner.ts) and change its title format to prefix with `<type>: ` derived from prdSnapshot.type (defaulting to 'feat' when the PRD lacks the field, for PRDs authored before this story). Do not touch the issue schema or planner again; this story is PRD-consumption only. After this, US-006 (ship-pr GitHub label) reads the same type value.",
+  "nextStoryContext": "US-006 (ship-pr applies the type-derived GitHub label on PR creation) is next. PrdSnapshot.type and ShipPrdRecord.type now flow through to runShipPrStep's prdSnapshot input (src/release/ship-pr.ts), same field composePrTitle already reads. Add a `--label <type>` (or equivalent gh pr create/edit label call) to the PR-create step in runShipPrStep, deriving the label text from prdSnapshot.type (default 'feat' when absent, matching composePrTitle's DEFAULT_TYPE constant in src/release/pr-body.ts). Check whether the target GitHub repo already has feat/fix/chore/docs labels or whether gh pr create --label silently fails on a missing label (may need --add-label after creation, or a defensive best-effort wrapper like the existing auto-merge-hint / reviewer-artifact-comment steps in runShipPrStep, which are already best-effort and non-aborting). Grep scripts/cam/patterns.md for 'ship-pr' / 'runShipPrStep' bullets before coding.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure Markdown edit to the two subagent-planner.md schema/instruction copies (added a top-level `type` field to the PRD output schema + copy-from-issue/default-feat instruction) and vendor re-embed; no external library API was exercised."
+      "summary": "Pure string-composition change to composePrTitle (src/release/pr-body.ts) plus a pass-through optional field on ShipPrdRecord/toPrdSnapshot (src/supervisor/ship-runner.ts); no external library API was exercised."
     }
   ]
 }
