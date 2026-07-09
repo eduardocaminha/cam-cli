@@ -1,0 +1,87 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-236",
+  "description": "Rename issue_system none->local as the canonical value: enum, prompts, init default, central readIssueSystem reader with noisy invalid-value error, migrated fixtures and docs; 'none' removed from every code path.",
+  "issueNumber": 236,
+  "type": "feat",
+  "relatedDocs": [
+    "docs/adr/0017-issue-system-local-substitui-none-sem-alias-de-compatibilidade.md"
+  ],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Rename IssueSystem enum and setup prompts none->local",
+      "description": "As an operator running cam init/setup, I need the issue-system choice to be 'local' (not 'none') in the type, validator array, readline prompt and Ink screen, so that the local issue backend is named for what it is and new projects default to local.",
+      "acceptanceCriteria": [
+        "The type IssueSystem (src/commands/setup.ts) is 'linear' | 'github' | 'local'; 'none' removed. [oracle: grep -q \"'linear' | 'github' | 'local'\" src/commands/setup.ts]",
+        "The ISSUE_SYSTEMS validator array is ['linear','github','local']. [oracle: grep -q \"'linear', 'github', 'local'\" src/commands/setup.ts]",
+        "The readline prompt offers ['linear','github','local'] with default 'local'; the Ink ISSUE_OPTIONS entry is value 'local' (label 'Local') and Select defaultValue is 'local'. [oracle: ! grep -n \"'none'\" src/commands/setup.ts src/ui/SetupScreen.tsx]",
+        "Verify the screen renders correctly (ink-testing-library; success/failure is the checkmark/cross glyph, never divider color). [oracle: bun test test/ui]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/setup.ts (type :53, readline choices+default :185-186, ISSUE_SYSTEMS :747, --issue-system arg parse nearby), src/ui/SetupScreen.tsx (ISSUE_OPTIONS :68-72, defaultValue :170). The enum change and BOTH prompts must land in this one story or typecheck breaks ('none' literals stop being assignable to IssueSystem). Update setup tests that pass issueSystem values (test/commands/setup-models-defaults.test.ts builds config via issue_system key; the test at :99-106 uses 'linear' and survives). Do NOT touch unrelated 'none' literals (BumpLevel in src/release/bump.ts, ObserveState kind, triage sha): surgical scope is issue_system only."
+    },
+    {
+      "id": "US-002",
+      "title": "Add central readIssueSystem reader and wire ship-finalize + ship-pr to 'local'",
+      "description": "As the cam ship pipeline, I need a single readIssueSystem(config) reader (absent key -> 'local', valid value -> returned, anything else -> noisy error) replacing the scattered ?? 'none' reads, with ship-finalize and ship-pr comparing === 'local', so that the local-backend close/stash gates stop depending on a misleading value and invalid configs fail loud instead of silently skipping.",
+      "acceptanceCriteria": [
+        "A central readIssueSystem(config) exists (new module under src/config/): returns 'local' when the key is absent, returns the value when it is in {linear,github,local}, and throws a noisy error (issue_system invalido: '<v>', esperado linear|github|local) for any other value including legacy 'none'. [oracle: bun test test/config/issue-system.test.ts]",
+        "ship-finalize.ts reads issue_system via readIssueSystem (the ?? 'none' inline read at :116 is gone) and its local-backend gates (:158, :198) compare === 'local'. [oracle: ! grep -n \"'none'\" src/commands/ship-finalize.ts]",
+        "ship-pr.ts issueBackend branches (:157, :201) compare === 'local'; doc comments referencing the 'none' backend updated to 'local'. [oracle: ! grep -n \"'none'\" src/release/ship-pr.ts]",
+        "Unit test covers the invalid-value throw path (e.g. legacy 'none' toml -> error, not silent skip). [oracle: bun test test/config/issue-system.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "New file: src/config/issue-system.ts exporting readIssueSystem(config: Record<string, unknown>): IssueSystem. Watch import direction: IssueSystem type currently lives in src/commands/setup.ts; consider defining the type (or a re-export) in the new config module to avoid commands<->config coupling, keeping setup.ts re-exporting for existing importers. Sites: src/commands/ship-finalize.ts (:70/:96/:153 doc comments, :116 read, :130/:183/:203 issueBackend passthrough, :158/:198 gates), src/release/ship-pr.ts (:64/:91/:93/:151 comments, :157/:201 branches). Migrate fixtures used by these tests in the same story: test/ship-finalize.test.ts:28 (PROJECT_TOML_NONE -> issue_system \"local\"), test/ship-finalize-hardening.test.ts:28, test/integration/ship-finalize-dirty-prd.test.ts:103. Gotcha (patterns.md finalizeCycleClose hardening bullet): the guard 'issue_system == none + issue file absent -> hard failure' now reads 'local'; keep the three idempotency guards intact."
+    },
+    {
+      "id": "US-003",
+      "title": "Wire issue-list to readIssueSystem and sweep remaining 'none' fixtures",
+      "description": "As cam issue list, I need to read the backend via readIssueSystem with an explicit === 'local' branch (no more fall-through else), and all remaining test fixtures using issue_system = \"none\" migrated to \"local\", so that no issue_system code path or fixture mentions 'none' anywhere.",
+      "acceptanceCriteria": [
+        "issue-list.ts reads via readIssueSystem (inline ?? 'none' read at :166 is gone); the local backend branch is an explicit === 'local' check instead of the else fall-through at :168; header comments and the native-UI hint doc updated. [oracle: ! grep -n \"'none'\" src/commands/issue-list.ts]",
+        "The string literal 'none' does not appear in any issue_system code path. [oracle: ! grep -rn \"'none'\" src/commands/setup.ts src/ui/SetupScreen.tsx src/commands/ship-finalize.ts src/release/ship-pr.ts src/commands/issue-list.ts src/config/issue-system.ts]",
+        "All remaining test fixtures using issue_system = \"none\" are migrated to \"local\" (issue-file, config/*, integration issue-dir + issue-file-on-main, issue-list). [oracle: ! grep -rln 'issue_system = \"none\"' test/]",
+        "The issue-list JSON contract tests still assert the local-only behavior (JSON contract applies only to the local backend; linear/github still print the native-UI hint and exit 0). [oracle: bun test test/issue-list.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/issue-list.ts (:6-17 header, :81 flag doc, :120 hint doc, :166 read, :168 branch), test/issue-list.test.ts (AC1 block :135-160, AC4 block :301-320, JSON-contract tests :445/:457), test/issue-file.test.ts (:44, :622, :634), test/config/meta-loop.test.ts:101, test/config/models.test.ts (:113/:196/:289), test/config/plan-approval.test.ts:88, test/config/worker-isolation.test.ts:84, test/integration/issue-dir-real-git.test.ts:92, test/integration/issue-file-on-main.test.ts:74. Depends on US-002 (readIssueSystem). Do not touch legitimate non-issue_system 'none' literals (bump/observe/triage). Add a test asserting missing project.toml / missing key defaults to 'local'."
+    },
+    {
+      "id": "US-004",
+      "title": "Migrate project.toml, docs, templates and CHANGELOG none->local",
+      "description": "As an operator and the downstream agents, I need scripts/cam/project.toml, the cam-issue command doc (template + installed copy + embedded copy), the orchestrator agent doc and the recovery runbook to say 'local', with the breaking rename noted in the CHANGELOG, so that documentation matches the canonical value and 'none' survives only as a CHANGELOG breaking note.",
+      "acceptanceCriteria": [
+        "scripts/cam/project.toml has issue_system = \"local\". [oracle: grep -q 'issue_system = \"local\"' scripts/cam/project.toml]",
+        "templates/commands/cam-issue.md and .claude/commands/cam-issue.md list linear | github | local (:24), default to local when the file is missing (:27), and the '### none' local-only section (~:102) is renamed to local. [oracle: ! grep -n '\"none\"\\|`none`' templates/commands/cam-issue.md .claude/commands/cam-issue.md]",
+        "templates/agents/subagent-orchestrator.md:60 and .claude/agents/subagent-orchestrator.md:60 say linear | github | local (leave the unrelated 'current cycle: none' placeholder at :102 untouched). [oracle: grep -q 'github.*local' templates/agents/subagent-orchestrator.md]",
+        "docs/recovery-runbook.md issue_system references (:334-:359) say 'local'. [oracle: ! grep -n \"issue_system == 'none'\" docs/recovery-runbook.md]",
+        "CHANGELOG notes the breaking rename (none removed, local canonical, legacy toml with none now fails loud); this is the only surviving mention of the old value. [oracle: grep -qi 'none' CHANGELOG.md]",
+        "Vendor drift check passes (bun run embed-vendor:check) after regenerating with bun run embed-vendor. [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "Dual-copy is per-file (memory: cam-dual-copy-is-per-file): edit templates/commands/cam-issue.md AND .claude/commands/cam-issue.md AND regen src/vendor/_generated.ts via bun run embed-vendor; same for templates/agents + .claude/agents subagent-orchestrator.md. Persisted .md style rule: no em dash, no decorative emoji in CHANGELOG/docs (agent .md files exempt). project.toml migration is deliberately in this last story to minimize the dogfood window. Ship gotcha to surface in handoff: the INSTALLED cam binary still compares === 'none', so during this PR's own ship --finalize it will read 'local' and skip the local issue-file close for CAM-236; the orchestrator/operator may need to close the issue file manually or rebuild+reinstall the binary first. Out of AC scope but worth a follow-up note: scripts/cam/patterns.md:46 hardening bullet still says issue_system == 'none' (knowledge doc, not a code path)."
+    }
+  ]
+}
