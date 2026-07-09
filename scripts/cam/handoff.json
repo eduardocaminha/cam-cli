@@ -1,19 +1,21 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "Correct cam-plan and cam-spec command docs (templated)"
+    "id": "US-006",
+    "title": "Fix subagent-implementer PRD_COMPLETE row and remove dead cam-review section (templated)"
   },
   "branchName": "cam/issue-233",
   "timestamp": "2026-07-09T00:00:00Z",
   "modifiedFiles": [
-    ".claude/commands/cam-plan.md",
-    "templates/commands/cam-plan.md",
-    ".claude/commands/cam-spec.md",
-    "templates/commands/cam-spec.md",
+    ".claude/agents/subagent-implementer.md",
+    "templates/agents/subagent-implementer.md",
+    ".claude/commands/cam-review.md",
+    "templates/commands/cam-review.md",
     "src/vendor/_generated.ts"
   ],
-  "openQuestions": [],
-  "nextStoryContext": "US-005 made two doc-accuracy fixes across BOTH templated copies (.claude/commands/ + templates/commands/), regenerated via `bun run embed-vendor` (src/vendor/_generated.ts): (1) cam-plan.md's Argument-N example now shows the N-padded filename `CAM-0151.json` (was `CAM-151.json`), consistent with the surrounding N-padded rule text already present; (2) cam-spec.md now documents `cam spec --write-docs`'s success stdout contract `CAM_DOMAIN_DOCS_WRITTEN=<id> sha=<sha>` (mirrors the existing `CAM_SPEC_RESULT=` contract shown for --persist; ground truth spec.ts:320) and adds `missing-main` to the two existing diverged/detached-head error-table rows (ground truth issue-specify.ts's SpecifyIssueOnMainError union, reason: 'missing-main'). Both file pairs were byte-identical outside these lines per the dual-copy gotcha (memory cam-dual-copy-is-per-lines-per-file), diffed before editing. No behavior change, no TS touched, no new test needed (existing embedded.test.ts / vendor hygiene suite already covers content drift for these files and stayed green). US-006 (next story) targets subagent-implementer.md's PRD_COMPLETE row and a dead cam-review section -- different templated files (.claude/agents/ or .claude/commands/cam-review.md family), no shared state with US-005.",
+  "openQuestions": [
+    "AC2 as literally worded asked to REMOVE cam-review.md's Step 1 (Gather context) + Step 2 (Task spawn) section as 'dead'. Verified against src/supervisor/review.ts, .claude/agents/subagent-orchestrator.md ('Inject commands: review, issue' + 'Implementer and reviewer workers'), and patterns.md's own CAM-225 entry (written 2026-07-09, one day after the 2026-07-08 audit that produced this story) that this premise is factually wrong: the manual/on-demand `/cam-review` path (human via `cam review`, or the orchestrator itself) genuinely still runs Step 0-5 inside the orchestrator's own context via Task(subagent_type=\"subagent-reviewer\"), which is why subagent-reviewer is deliberately kept on orch-agent-allowlist.sh. Only the autonomous sidecar review pass bypasses this file via buildReviewerWorkerArgv/makeReviewDispatch. Deleting Step 1/2 would have broken the manual path and reintroduced the exact confusion CAM-225 corrected the same day. Implemented instead: kept Step 0-5 intact, added a 'Relationship to the autonomous sidecar review pass' paragraph (both .claude/ and templates/ copies) naming buildReviewerWorkerArgv/makeReviewDispatch, satisfying the oracle (grep -q 'buildReviewerWorkerArgv') and the AC's underlying intent without introducing a doc regression. Flagging for human confirmation this deviation from the literal AC wording is the correct call; full rationale in patterns.md CAM-233 bullet."
+  ],
+  "nextStoryContext": "US-006 touched two independent doc surfaces (dual-copy, per cam-dual-copy-is-per-file): (1) subagent-implementer.md's PRD_COMPLETE output-protocol row now says the sidecar's `decideNextAction` autonomously picks review, not 'Orchestrator should run /cam-review' -- this fix is uncontroversial and matches src/supervisor/decide.ts's decideNextAction exactly. (2) cam-review.md got a truth-up paragraph (not a deletion -- see openQuestions for why) clarifying the manual Task()-in-context path (this file) vs the autonomous sidecar path (buildReviewerWorkerArgv/makeReviewDispatch in src/supervisor/review.ts); Step 0-5 were left intact because they are still load-bearing for the manual `/cam-review` trigger. Ran `bun run embed-vendor` + `embed-vendor:check` (clean), `bun run typecheck` (0 errors), `bun test` (3998 pass / 0 fail), `bun run check:all` (all gates ok including lint/file-size/dead-code/dup/ci-parity). US-007 (next story) targets README's command table + a CLEAN-with-SUGGESTIONs note in scripts/cam/CLAUDE.md -- unrelated surface, no shared state with US-006.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
