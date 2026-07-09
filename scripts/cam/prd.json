@@ -40,7 +40,7 @@
         "Full lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "The handoff is read at src/supervisor/loop.ts:1194 (_readHandoff()) and mapped by buildResultDetail in src/supervisor/events.ts:~525. Natural placement: a small exported validator in events.ts (near buildResultDetail / the officialDocsValidated mapper), invoked with the emit sink at the result-event site in loop.ts. Add a new WorkerEventKind (e.g. 'handoff-schema-warning') to the union at events.ts:91 and a matching detail type. GOTCHA (issue): current consumers (loop.ts:168, events.ts:478/530) read status?: string loosely and default to 'unknown' — that looseness is exactly why the invalid handoff wrote silently; the guard closes the gap by warning, not by tightening the default. GOTCHA: the guard must warn, not hard-fail — a hard failure on a minor deviation would halt an otherwise-healthy loop. Enum source of truth: scripts/cam/handoff.schema.json officialDocsValidated item (status enum + additionalProperties:false). Test under test/supervisor/ mirroring source. Independent of US-001."
     }

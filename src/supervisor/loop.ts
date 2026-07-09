@@ -43,7 +43,7 @@ import { ContainerConfigError } from './container-config.ts';
 import { ToolchainMismatchError } from './toolchain-assert.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 import { formatReviewVerdictLine, formatWorkerReportSummary, type WorkerReport } from './worker-report.ts';
-import { buildResultDetail } from './events.ts';
+import { buildResultDetail, validateOfficialDocsValidated } from './events.ts';
 import type { WorkerEventLogger, WorkerEventKind, WorkerEventDetail, TokensEventDetail, ReviewVerdictHandbackEventDetail, OutcomeSourceEventDetail, ContainerPreflightEventDetail } from './events.ts';
 import type { PreflightResult } from './preflight-container.ts';
 
@@ -1191,8 +1191,16 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 
 			// US-013: result + tokens, keyed to the ACTUAL completed story.
 			const actualStoryId = outcome.storyId ?? advisoryStoryId;
-			emit('result', actualStoryId, uuid, buildResultDetail(outcome, _readHandoff()));
+			const handoffForResult = _readHandoff();
+			emit('result', actualStoryId, uuid, buildResultDetail(outcome, handoffForResult));
 			emitTokens(actualStoryId, uuid);
+
+			// US-002: warn-level guard over handoff.officialDocsValidated. Never
+			// blocks the loop — a schema-invalid entry surfaces here, but the
+			// outcome above already landed regardless of this check's result.
+			for (const warning of validateOfficialDocsValidated(handoffForResult?.officialDocsValidated)) {
+				emit('handoff-schema-warning', actualStoryId, uuid, warning);
+			}
 
 			// US-005: emit outcome-fallback when readWorkerOutcome resolved via the
 			// worker-report fallback path OR via handoff bare-string coercion.
