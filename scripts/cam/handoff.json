@@ -1,21 +1,20 @@
 {
-  "lastCompletedStory": { "id": "US-002", "title": "Accept and persist type through cam spec --persist" },
+  "lastCompletedStory": { "id": "US-003", "title": "Capture/confirm type in the /cam-spec grill (both command copies)" },
   "branchName": "cam/issue-235",
   "timestamp": "2026-07-09T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/spec.ts",
-    "src/commands/issue-specify.ts",
-    "src/issues/spec.ts",
-    "test/issue-specify.test.ts"
+    ".claude/commands/cam-spec.md",
+    "templates/commands/cam-spec.md",
+    "src/vendor/_generated.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 (grill capture/confirm type, both /cam-spec command copies) should prompt the operator/orchestrator during the grill for one of feat|fix|chore|docs and include it as a top-level `type` key in the JSON payload piped to `cam spec --persist <id>` (alongside spec/wsjf/blockedBy). specifyIssueOnMain (src/commands/issue-specify.ts) and the SpecPersistPayload pass-through (src/commands/spec.ts) already accept and validate an optional `type` end-to-end (US-002, CAM-235): validateIssueType in src/issues/spec.ts rejects any value outside the 4-item enum with reason:'invalid-type', and a payload without type leaves the issue entry without a type key (no default is written -- 'feat' defaulting is deferred to US-004 planner / US-005 composePrTitle, not this story or US-002). US-003 only needs to change the two command-doc copies (.claude/commands/cam-spec.md + templates/commands/cam-spec.md, or wherever the grill's persist-payload construction is spec'd) to solicit and forward the type field; no further src/ validation work is needed on the persist path.",
+  "nextStoryContext": "US-004 (planner carries type from the issue into the PRD, both planner agent copies) is next. The issue's optional top-level `type` field (feat|fix|chore|docs, set via US-002's `specifyIssueOnMain` + US-003's grill capture) needs to flow into the generated PRD so US-005 (composePrTitle) and US-006 (ship-pr label) have something to read. Check the planner agent copies (.claude/agents/*planner*.md and templates/agents/*planner*.md, or wherever /cam-plan's PRD-authoring instructions live) for how they currently read the issue JSON and where the PRD schema/prd.json shape would carry a `type` value (likely a top-level `type` key on the PRD itself, defaulting to 'feat' when the issue has none — the deferred default from US-002/US-003). Both command copies of /cam-spec are byte-identical after this story (re-verify with diff before assuming a single edit suffices, per the cam-dual-copy-is-per-file pattern).",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure TypeScript validation (enum membership check) + conditional object-spread mutation; no external library API was exercised. Mirrors the existing validateSpecSource precedent already in src/issues/spec.ts."
+      "summary": "Pure Markdown documentation edit to the two /cam-spec command-doc copies (grill instructions + persist-payload example); no external library API was exercised."
     }
   ]
 }

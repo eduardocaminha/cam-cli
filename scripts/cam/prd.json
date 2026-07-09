@@ -65,7 +65,7 @@
         "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "AUDITOR FIX (finding 2): BOTH copies are now oracle-gated with their own grep (embed-vendor:check embeds templates/, not the .claude/ mirror, so the .claude copy needs its own file-assert). The two cam-spec.md copies are byte-identical today (verified via diff), so the same edit applies to both; still verify each independently. Files: .claude/commands/cam-spec.md, templates/commands/cam-spec.md. Touching templates/ requires bun run embed-vendor before commit. Depends on US-002 (the payload field must exist)."
     },
