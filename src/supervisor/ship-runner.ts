@@ -91,6 +91,7 @@ export interface ShipPrdRecord {
 	issueNumber?: number | string;
 	userStories: PrdSnapshotStory[];
 	notes?: string;
+	type?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -206,6 +207,7 @@ function toPrdSnapshot(prd: ShipPrdRecord): PrdSnapshot {
 		issueNumber: prd.issueNumber,
 		userStories: prd.userStories,
 		notes: prd.notes,
+		type: prd.type,
 	};
 }
 

@@ -65,6 +65,11 @@
       "type": "array",
       "items": { "type": "string" },
       "description": "Issue ids this issue was derived from. Required (minItems 1) when specSource is derived."
+    },
+    "type": {
+      "type": "string",
+      "enum": ["feat", "fix", "chore", "docs"],
+      "description": "Optional PR-title/label signal. Defaults to feat on read when absent."
     }
   },
   "allOf": [

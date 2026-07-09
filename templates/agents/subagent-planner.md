@@ -32,6 +32,7 @@ Output **only** valid JSON matching this schema (no markdown fences, no commenta
   "branchName": "cam/issue-<issueNumber>",
   "description": "<one-line summary>",
   "issueNumber": null,
+  "type": "feat",
   "relatedDocs": ["docs/<deep-dive>.md"],
   "officialDocsConsulted": [
     {
@@ -59,6 +60,8 @@ Output **only** valid JSON matching this schema (no markdown fences, no commenta
 ```
 
 `officialDocsConsulted`: populated in Step 5 of `/cam-plan`. Use `[]` when the issue touches no external library. Use `status: "fetch_failed"` for entries whose fetch failed.
+
+`type`: copy the top-level `type` value from the issue being planned (`feat | fix | chore | docs`) verbatim. When the issue has no `type` (it is optional), default the PRD's `type` to `"feat"`. Never leave it unset.
 
 `requires`: **never emit `requires: "operator"` stories. Do not emit any story with `requires: "operator"` set.** Ceremonies (real-user keypress, OS-level action, real network hit, human-curated artifact) must be planned as automated acceptance criteria that: (a) name the verification tool (agent-browser / playwright / tmux-pty) and the artifact it produces; (b) include a reviewer-behavioral oracle (e.g. `[oracle: file-assert grep -q 'artifact-of-record' path/to/artifact]`). The `requires` field defaults to `null`.
 

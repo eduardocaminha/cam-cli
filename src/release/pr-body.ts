@@ -33,28 +33,37 @@ export interface PrdSnapshot {
 	userStories?: PrdSnapshotStory[];
 	/** Optional PRD-level remarks. Absent on today's prd.json writer; forward-compatible. */
 	notes?: string;
+	/** Conventional-commit type carried from the issue (US-004). Defaults to 'feat' when absent. */
+	type?: string;
 }
 
 const NO_SUMMARY_TEXT = 'No summary provided.';
 const NO_STORIES_TEXT = 'No stories recorded.';
 const NO_NOTES_TEXT = 'None.';
 const TESTING_LINE = 'The deterministic gate spine (`bun run check:all`) ran green at ship time.';
+const DEFAULT_TYPE = 'feat';
 
 /**
  * Render the PR title from the PRD snapshot.
  *
- * Returns `prd.description` when present (trimmed, non-empty), falling back
- * to `prd.project`, falling back to a generic placeholder. Never returns an
- * empty string.
+ * Returns `'<type>: <descriptive text> (CAM-<issueNumber>)'`, where the
+ * descriptive text is `prd.description` when present (trimmed, non-empty),
+ * falling back to `prd.project`, falling back to a generic placeholder
+ * (never empty). `type` defaults to 'feat' when the snapshot lacks one
+ * (PRDs authored before US-004). The issue reference uses the textual
+ * 'CAM-<N>' form (never '#<N>', which would link to an unrelated GitHub
+ * entity) and is omitted entirely, with no trailing whitespace or
+ * parentheses, when issueNumber is null/absent.
  */
 export function composePrTitle(prd: PrdSnapshot): string {
+	const type = prd.type?.trim() || DEFAULT_TYPE;
+
 	const description = prd.description?.trim();
-	if (description) return description;
+	const text = description || prd.project?.trim() || 'Untitled PRD';
 
-	const project = prd.project?.trim();
-	if (project) return project;
+	const issueSuffix = prd.issueNumber != null && String(prd.issueNumber).trim() !== '' ? ` (CAM-${prd.issueNumber})` : '';
 
-	return 'Untitled PRD';
+	return `${type}: ${text}${issueSuffix}`;
 }
 
 /**

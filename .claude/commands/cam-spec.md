@@ -28,14 +28,15 @@ Key points:
 - Each stage probes a different dimension of the idea (problem, users, solution, constraints, success metrics, out-of-scope, risks).
 - At each stage you fetch relevant official documentation or prior art (the "with-docs" part) so the operator's answers are grounded in reality.
 - You build up the `spec` object incrementally across stages.
+- Capture or confirm the issue's `type` with the operator during the interview: one of `feat`, `fix`, `chore`, or `docs` (default `feat` when the operator has no preference). This is a deliberate choice, not a guess — ask explicitly rather than inferring it silently from the idea's wording.
 
 ## Final step: persist the spec
 
 After the grill-with-docs interview concludes and you have assembled the full
-`spec` object and `wsjf` scores (and, if applicable, a `blockedBy` list of
-issue ids), pipe the payload to `cam spec --persist <id>` via stdin, using a
-**safe quoting pattern** so shell interpolation cannot corrupt the JSON or
-execute arbitrary content (CAM-106 lesson):
+`spec` object, `wsjf` scores, and the confirmed `type` (and, if applicable, a
+`blockedBy` list of issue ids), pipe the payload to `cam spec --persist <id>`
+via stdin, using a **safe quoting pattern** so shell interpolation cannot
+corrupt the JSON or execute arbitrary content (CAM-106 lesson):
 
 ```bash
 cam spec --persist <id> <<'EOF'
@@ -47,11 +48,14 @@ cam spec --persist <id> <<'EOF'
     "domainTerms": ["..."]
   },
   "wsjf": { "value": 0, "timeCriticality": 0, "riskReduction": 0, "jobSize": 0 },
+  "type": "feat",
   "blockedBy": ["..."]
 }
 EOF
 ```
 
+Include `"type"` as one of `"feat"`, `"fix"`, `"chore"`, or `"docs"` — the
+value captured or confirmed with the operator earlier in the interview.
 Omit `blockedBy` entirely when the interview surfaced no blocking issues. A
 single-quoted heredoc (`<<'EOF'`, note the quotes around `EOF`) or a
 single-quoted `echo '<json>' | cam spec --persist <id>` are both safe: the

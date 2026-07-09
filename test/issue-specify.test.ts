@@ -1,8 +1,9 @@
 // test/issue-specify.test.ts
 //
-// Unit tests for closeIssueOnMain() in src/commands/issue-specify.ts.
+// Unit tests for closeIssueOnMain() and specifyIssueOnMain() in
+// src/commands/issue-specify.ts.
 //
-// Coverage (per US-003 acceptance criteria):
+// Coverage (per US-003 acceptance criteria, closeIssueOnMain):
 //   (a) sets stage:'shipped' on the target issue; commits only
 //       scripts/cam/issues/<id>.json to main via commitTreeToMain (tree derived
 //       from the main ref); then pushes main best-effort.
@@ -13,6 +14,13 @@
 //       without mutating anything on those failures.
 //   (d) closeIssueOnMain is exported from src/commands/issue-specify.ts.
 //
+// Coverage (per US-002 acceptance criteria, specifyIssueOnMain type persistence):
+//   (e) a present, valid type is persisted onto the mutated issue entry.
+//   (f) a payload without type leaves the issue entry without a type key
+//       (no default is written to disk).
+//   (g) a type value outside [feat, fix, chore, docs] fails validation with
+//       reason:'invalid-type' and never mutates (no update-ref call).
+//
 // All external I/O is faked via injectable SpawnFn; no real git binary or
 // filesystem is exercised (except the mkdtempSync inside commitTreeToMain).
 
@@ -20,11 +28,15 @@ import { describe, expect, test } from 'bun:test';
 import type { SpawnSyncReturns } from 'node:child_process';
 import {
 	closeIssueOnMain,
+	specifyIssueOnMain,
 	type CloseIssueOnMainOptions,
 	type CloseIssueOnMainOutcome,
 	type CloseIssueOnMainResult,
+	type SpecifyIssueOnMainOptions,
 	type SpawnFn,
 } from '../src/commands/issue-specify.ts';
+import type { Spec } from '../src/issues/spec.ts';
+import type { WsjfScore } from '../src/issues/types.ts';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -43,6 +55,31 @@ const EXISTING_ENTRY = {
 	createdAt: '2026-07-01T00:00:00Z',
 };
 const EXISTING_ENTRY_JSON = JSON.stringify(EXISTING_ENTRY, null, 2) + '\n';
+
+// stage:'idea', status:'open' issue -- the shape specifyIssueOnMain requires.
+const IDEA_ENTRY = {
+	id: 'CAM-10',
+	title: 'Unspecified idea',
+	stage: 'idea' as const,
+	status: 'open' as const,
+	blockedBy: [] as string[],
+	createdAt: '2026-07-01T00:00:00Z',
+};
+const IDEA_ENTRY_JSON = JSON.stringify(IDEA_ENTRY, null, 2) + '\n';
+
+const VALID_SPEC: Spec = {
+	acceptanceCriteria: ['It works'],
+	scope: 'Limited to the foo module',
+	gotchas: [],
+	domainTerms: [],
+};
+
+const VALID_WSJF: WsjfScore = {
+	value: 8,
+	timeCriticality: 5,
+	riskReduction: 3,
+	jobSize: 2,
+};
 
 // ls-tree output: one file for the existing issue.
 const LS_TREE_OUTPUT = 'scripts/cam/issues/CAM-0010.json\n';
@@ -210,6 +247,19 @@ function makeOptions(
 	return {
 		cwd: '/fake/project',
 		id: 'CAM-10',
+		clock,
+		...overrides,
+	};
+}
+
+function makeSpecifyOptions(
+	overrides: Partial<SpecifyIssueOnMainOptions> & { spawnFn: SpawnFn },
+): SpecifyIssueOnMainOptions {
+	return {
+		cwd: '/fake/project',
+		id: 'CAM-10',
+		spec: VALID_SPEC,
+		wsjf: VALID_WSJF,
 		clock,
 		...overrides,
 	};
@@ -464,5 +514,85 @@ describe('closeIssueOnMain — AC3: up-to-date guard returns without mutating', 
 describe('closeIssueOnMain — AC4: exported from issue-specify.ts', () => {
 	test('closeIssueOnMain is a function (export confirmed by import)', () => {
 		expect(typeof closeIssueOnMain).toBe('function');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// specifyIssueOnMain — US-002 (CAM-235): optional type persistence
+// ---------------------------------------------------------------------------
+
+describe('specifyIssueOnMain — type persistence', () => {
+	test('persists a valid type onto the mutated issue entry (hash-object stdin)', () => {
+		let capturedInput: string | undefined;
+		const { spawnFn: baseSpawn } = makeRecordingSpawn({
+			catFileOutput: frameBlobOutput(IDEA_ENTRY_JSON),
+		});
+		const capturingSpawn: SpawnFn = (cmd, args, options) => {
+			if (args.includes('hash-object')) {
+				capturedInput = options.input;
+			}
+			return baseSpawn(cmd, args, options);
+		};
+
+		const result = specifyIssueOnMain(
+			makeSpecifyOptions({ spawnFn: capturingSpawn, type: 'fix', eventSink: () => {} }),
+		);
+
+		if (!result.ok) {
+			throw new Error(`Expected ok:true but got: ${JSON.stringify(result)}`);
+		}
+		expect(capturedInput).toBeDefined();
+		const entry = JSON.parse(capturedInput!) as { type?: string };
+		expect(entry.type).toBe('fix');
+	});
+
+	test('a payload without type leaves the issue entry without a type key (no default written)', () => {
+		let capturedInput: string | undefined;
+		const { spawnFn: baseSpawn } = makeRecordingSpawn({
+			catFileOutput: frameBlobOutput(IDEA_ENTRY_JSON),
+		});
+		const capturingSpawn: SpawnFn = (cmd, args, options) => {
+			if (args.includes('hash-object')) {
+				capturedInput = options.input;
+			}
+			return baseSpawn(cmd, args, options);
+		};
+
+		const result = specifyIssueOnMain(
+			makeSpecifyOptions({ spawnFn: capturingSpawn, eventSink: () => {} }),
+		);
+
+		if (!result.ok) {
+			throw new Error(`Expected ok:true but got: ${JSON.stringify(result)}`);
+		}
+		expect(capturedInput).toBeDefined();
+		const entry = JSON.parse(capturedInput!) as Record<string, unknown>;
+		expect('type' in entry).toBe(false);
+	});
+
+	test('a type outside [feat, fix, chore, docs] fails with reason:invalid-type and never mutates', () => {
+		const { spawnFn, calls } = makeRecordingSpawn({
+			catFileOutput: frameBlobOutput(IDEA_ENTRY_JSON),
+		});
+
+		const result = specifyIssueOnMain(
+			makeSpecifyOptions({
+				spawnFn,
+				// biome-ignore lint/suspicious/noExplicitAny: deliberately invalid enum value under test
+				type: 'invalid-type-value' as any,
+			}),
+		);
+
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.reason).toBe('invalid-type');
+			expect('errors' in result && result.errors.length).toBeGreaterThan(0);
+		}
+		// No mutation: update-ref must not have been called.
+		expect(calls.find((c) => c.args.includes('update-ref'))).toBeUndefined();
+	});
+
+	test('specifyIssueOnMain is a function (export confirmed by import)', () => {
+		expect(typeof specifyIssueOnMain).toBe('function');
 	});
 });
