@@ -1,0 +1,80 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-225",
+  "description": "Truth-up the orchestrator prompt (both copies + re-embed) to match the real dispatch/sidecar/handoff system and switch boot journal-read from full-file to tail+grep.",
+  "issueNumber": 225,
+  "type": "fix",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Truth-up allowlist + reviewer-worker description",
+      "description": "As the orchestrator, I need my prompt to name the real PreToolUse allowlist and describe the reviewer as a Task-in-context worker whose summary the sidecar pushes, so I do not attempt spawns that will be denied or expect a self-pushing 3rd-pane TUI reviewer that does not exist.",
+      "acceptanceCriteria": [
+        "In both prompt copies, the Identity/allowlist reference lists the full set enforced by orch-agent-allowlist.sh: Explore, Plan, claude-code-guide, subagent-planner, subagent-auditor, subagent-reviewer (not the subset 'subagent-planner, subagent-auditor'). [oracle: for f in .claude/agents/subagent-orchestrator.md templates/agents/subagent-orchestrator.md; do grep -q 'claude-code-guide' \"$f\" && grep -q 'subagent-reviewer' \"$f\" && grep -q 'subagent-auditor' \"$f\" || exit 1; done]",
+        "In both prompt copies the reviewer is described as a Task-in-context worker spawned under the PreToolUse allowlist whose one-line summary is pushed by the sidecar (worker-report), NOT as a 3rd-pane interactive TUI worker that self-pushes via send-keys. [oracle: for f in .claude/agents/subagent-orchestrator.md templates/agents/subagent-orchestrator.md; do grep -q 'worker-report' \"$f\" || exit 1; done]",
+        "The reviewer/worker wording no longer claims workers self-send their summary line to the orchestrator pane (the sidecar is the single pusher). [oracle: reviewer-judgment]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Edit BOTH copies: .claude/agents/subagent-orchestrator.md and templates/agents/subagent-orchestrator.md, then `bun run embed-vendor` to regenerate src/vendor/_generated.ts. Real allowlist is in .claude/hooks/orch-agent-allowlist.sh:63 (Explore|Plan|claude-code-guide|subagent-planner|subagent-auditor|subagent-reviewer). Sidecar is the single pusher: worker-report.ts:12-15. Sections touched: '## Identity' (allowlist bullet ~L42), '### Implementer and reviewer workers', and the reviewer references in '## Sidecar model'. Gotcha: the two copies differ ONLY in frontmatter tools ordering (the `- Write` line position) and are otherwise byte-identical in the body (memory: cam-dual-copy-is-per-file); apply body edits identically to both. embed-vendor:check is a required gate (templates/ touched). Do NOT touch the Write/disallowedTools frontmatter contradiction (that is CAM-227). Prompt-only change; no src/ runtime behavior."
+    },
+    {
+      "id": "US-002",
+      "title": "Truth-up dispatch protocol + sidecar loop + issueNumber",
+      "description": "As the orchestrator, I need the dispatch protocol to reflect that plan/next/ship write a signal file (only review/issue inject a slash via send-keys), that cam next is one-shot (the sidecar loops), and that issueNumber is consumed at ship, so I stop looping /cam-next on a nonexistent sentinel and stop mis-describing how commands execute.",
+      "acceptanceCriteria": [
+        "Neither prompt copy references the CAM_LOOP_STATUS=COMPLETE sentinel, and the conversation-contract 'implementa/go' row no longer instructs looping /cam-next until that sentinel. [oracle: for f in .claude/agents/subagent-orchestrator.md templates/agents/subagent-orchestrator.md; do grep -q 'CAM_LOOP_STATUS=COMPLETE' \"$f\" && exit 1; done; true]",
+        "In both copies the dispatch protocol states that plan/next/ship write a signal to .claude/cam-loop.local.md (deterministic runners then execute) and that only review/issue inject a slash command into the pane via send-keys. [oracle: for f in .claude/agents/subagent-orchestrator.md templates/agents/subagent-orchestrator.md; do grep -q 'cam-loop.local.md' \"$f\" || exit 1; done]",
+        "Both copies no longer claim /cam-plan and /cam-ship run in the orchestrator's context and return a result line; they are described as writing a signal that a deterministic runner executes. [oracle: reviewer-judgment]",
+        "Both copies describe issueNumber accurately: it is consumed at ship time, not a supervisor gate (the pre-flight anchor-to-issue guidance may stay, but it must not claim the supervisor gates on issueNumber). [oracle: reviewer-judgment]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Edit BOTH prompt copies + `bun run embed-vendor`. Real behavior: plan.ts writes phase:planning to .claude/cam-loop.local.md (plan.ts:183/266); next.ts writes active:true (next.ts:61/334); the sidecar (runSupervisor) loops one-shot `cam next` dispatches. ship also writes a signal. Only review/issue inject a slash via send-keys. Sections touched: '## Conversation contract' table ('implementa'/'ship'/'planejar' rows), '## Dispatch protocol' (L165-174 signal-vs-inject, L224-227 run-in-context claim), and the pre-flight issueNumber bullet (L178-182). Keep both copies byte-identical in the body (memory: cam-dual-copy-is-per-file). Prompt-only; no src/ change. embed-vendor:check required gate."
+    },
+    {
+      "id": "US-003",
+      "title": "Truth-up boot section: rehydrate step-0, meta_loop=auto, SUGGESTIONs, journal tail",
+      "description": "As the orchestrator, I need my boot section to document the CAM_ORCH_REHYDRATE step-0, the meta_loop=auto sidecar auto-plan behavior, and CAM-189 auto-filed SUGGESTIONs, and to read only the journal tail with grep-on-demand, so boot is accurate and does not burn ~44k tokens reading the entire journal.",
+      "acceptanceCriteria": [
+        "In both copies the boot journal step reads only the tail (~10 most recent entries) with grep-on-demand for older cycles, and no longer instructs reading the entire journal.md / 'every entry'. [oracle: for f in .claude/agents/subagent-orchestrator.md templates/agents/subagent-orchestrator.md; do grep -qi 'tail' \"$f\" && grep -qi 'grep' \"$f\" || exit 1; done]",
+        "Both copies document CAM_ORCH_REHYDRATE as boot step 0 (rehydrate from the handoff path when the env var is set, else cold-boot). [oracle: for f in .claude/agents/subagent-orchestrator.md templates/agents/subagent-orchestrator.md; do grep -q 'CAM_ORCH_REHYDRATE' \"$f\" || exit 1; done]",
+        "Both copies document the meta_loop=auto sidecar auto-plan-of-next-issue behavior. [oracle: for f in .claude/agents/subagent-orchestrator.md templates/agents/subagent-orchestrator.md; do grep -q 'meta_loop' \"$f\" || exit 1; done]",
+        "Both copies note that CAM-189 auto-filed SUGGESTIONs can appear in the backlog (issues the orchestrator did not create). [oracle: for f in .claude/agents/subagent-orchestrator.md templates/agents/subagent-orchestrator.md; do grep -qi 'suggestion' \"$f\" || exit 1; done]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Edit BOTH prompt copies + `bun run embed-vendor`. Section touched: '## Boot context' (step 3 journal read currently says 'Read every entry'; change to tail+grep-on-demand). Rehydrate mechanism is in run.ts:170-174/270 (CAM_ORCH_REHYDRATE env delivered by the wrapper; empty => cold-boot). meta_loop=auto auto-dispatcher: sidecar.ts:196-208/1171/1251. CAM-189 auto-file of SUGGESTIONs adds backlog issues the orchestrator never created. Keep both copies byte-identical in the body (memory: cam-dual-copy-is-per-file). Prompt-only guidance the orchestrator follows at boot, not a code path. embed-vendor:check required gate."
+    },
+    {
+      "id": "US-004",
+      "title": "Truth-up handoff required fields + close-on-ship",
+      "description": "As the orchestrator, I need the self-handoff section to state the real required fields and HANDOFF_DUE trigger, and the issue-system section to state that ship auto-closes the issue (manual close being a fallback only), so I do not over-declare handoff requirements or double-close issues at ship.",
+      "acceptanceCriteria": [
+        "In both copies the self-handoff section states that only schemaVersion, writtenAt, and reason are required fields (matching handoff schema), documents projectContext as an optional field, and states HANDOFF_DUE is armed only by `cam journal append --cycle-close` (not by every successful append). [oracle: for f in .claude/agents/subagent-orchestrator.md templates/agents/subagent-orchestrator.md; do grep -q 'projectContext' \"$f\" && grep -q -- '--cycle-close' \"$f\" || exit 1; done]",
+        "In both copies the close-on-ship text states ship auto-closes the issue (ship-pr.ts) and that orchestrator manual close is a documented fallback only (used when the sidecar auto-close was skipped, e.g. a stale binary); the unconditional close-on-ship instruction is removed to prevent double-close. [oracle: reviewer-judgment]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "Edit BOTH prompt copies + `bun run embed-vendor`. Handoff schema truth: scripts/cam/orch-handoff.schema.json required=[schemaVersion, writtenAt, reason]; projectContext is optional and currently undocumented. handoff.ts:91-101 enforces only those three. HANDOFF_DUE (CAM_ORCH_HANDOFF_DUE) is armed only on the --cycle-close path (index.ts ~L1552 / journal.ts cycle-close), not on every append. Ship auto-closes the issue: ship-pr.ts:163-175. Sections touched: '## Self-handoff lifecycle' (required-fields list, HANDOFF_DUE trigger) and '## Issue system integration' + '## Journal management'/ship references (close-on-ship). Keep both copies byte-identical in the body (memory: cam-dual-copy-is-per-file). Prompt-only; no src/ change. embed-vendor:check required gate."
+    }
+  ]
+}
