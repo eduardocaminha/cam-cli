@@ -1,0 +1,9 @@
+{
+  "id": "CAM-234",
+  "title": "Nomeacao deterministica de branch: cam/issue-<N> derivado em codigo",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-09T02:34:24.084Z",
+  "description": "Tirar a nomeacao do branch do planner LLM e deriva-la deterministicamente no plan-runner como cam/issue-<prd.issueNumber> (sem slug). Raiz dos branches orfaos no remote: o LLM inventa slugs diferentes por tentativa de plan (CAM-66 gerou 3 nomes; so o mergeado foi deletado pelo delete_branch_on_merge, os outros 2 sobraram). Mantem o namespace cam/ (zero churn no prefix-matching de plan-preflight/prune). Toca: subagent-planner.md:32 (para de emitir cam/pr-<N>-<slug>), subagent-auditor.md:82 (regex de validacao), derivacao no plan-runner, re-embed vendor. Branch e string opaca em todo src/ (nada parseia slug/numero do branch), zero mudanca de logica/schema. Fallback sem issueNumber a decidir no spec."
+}
