@@ -1,9 +1,38 @@
 {
   "id": "CAM-240",
   "title": "Enforcar allowlist do orquestrador em runtime: spawnar o root-persona com --agent (frontmatter binding, nao advisory)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
-  "blockedBy": [],
+  "blockedBy": [
+    "CAM-227"
+  ],
   "createdAt": "2026-07-09T09:40:07.634Z",
-  "description": "Hoje run.ts:255 e setup.ts:443/520 spawnam o orquestrador SEM --agent, entao tools/disallowedTools do subagent-orchestrator.md sao so advisory (o hook PreToolUse cobre so spawn de subagente via Task/Agent, nao Edit/Write direto). Fazer o invariante 'orquestrador nunca edita codigo' virar real exige: (a) spawnar com --agent no caminho de spawn do root-persona, (b) garantir a lista de tools 100% completa antes de enforcar (senao brica self-handoff/dispatch), (c) validacao live. Separado de CAM-227 (que faz so o fix cirurgico de drift do frontmatter Write/disallowedTools). Origem: fork de enforcement destacado no grill de CAM-227, 2026-07-09."
+  "description": "Hoje run.ts:255 e setup.ts:443/520 spawnam o orquestrador SEM --agent, entao tools/disallowedTools do subagent-orchestrator.md sao so advisory (o hook PreToolUse cobre so spawn de subagente via Task/Agent, nao Edit/Write direto). Fazer o invariante 'orquestrador nunca edita codigo' virar real exige: (a) spawnar com --agent no caminho de spawn do root-persona, (b) garantir a lista de tools 100% completa antes de enforcar (senao brica self-handoff/dispatch), (c) validacao live. Separado de CAM-227 (que faz so o fix cirurgico de drift do frontmatter Write/disallowedTools). Origem: fork de enforcement destacado no grill de CAM-227, 2026-07-09.",
+  "spec": {
+    "scope": "Boot delivery overhaul for the orchestrator: make the frontmatter allowlist binding by launching under --agent, and (absorbing CAM-196) make the boot meta_loop-aware. Files: .claude/agents/subagent-orchestrator.md (reconcile frontmatter tools to real runtime usage; fold boot-imperatives into the Boot context body; meta_loop-aware greeting), templates/agents/subagent-orchestrator.md, re-embed src/vendor/_generated.ts via `bun run embed-vendor`; src/commands/run.ts (buildOrchestratorPaneCommand switch to --agent + boot nudge; buildOrchestratorBootPrompt reads meta_loop) + tests. Out of scope: changing the respawn wrapper's while-loop / rehydrate-env / uuid-lowercase / pid-marker logic (only the inner claude invocation changes); the meta-loop wedge/auto-resume defects (CAM-195).",
+    "acceptanceCriteria": [
+      "A runtime tool-usage audit enumerates every tool the orchestrator actually uses (Read, Glob, Grep, Bash, WebFetch, SlashCommand, Write, Skill, Task/Agent) and the subagent-orchestrator.md `tools:` list grants ALL of them; `disallowedTools:` retains Edit, NotebookEdit, AskUserQuestion. Applied to both copies + re-embed.",
+      "buildOrchestratorPaneCommand launches `claude --permission-mode bypassPermissions --session-id <sid> --model <model> --agent subagent-orchestrator` with a minimal boot-nudge message, instead of catting the prompt file as the first user message. The respawn wrapper (while-loop, CAM_ORCH_REHYDRATE export, uuidgen lowercasing, pid marker) is otherwise unchanged.",
+      "The boot-imperatives (create the .cam-orch-ready marker, read $CAM_ORCH_REHYDRATE for rehydrate-vs-cold-boot, boot context reads, greet) are present in the agent body Boot context section so they execute under --agent without the separate bootstrap prompt file.",
+      "meta_loop-aware boot (absorbs CAM-196): the boot reads [loop] meta_loop; under meta_loop=auto the boot announces autonomous mode and does NOT end with 'What would you like to do?'; under off (default) and observe it greets and asks (current behavior). Handled in buildOrchestratorBootPrompt and/or the agent body boot section consistently.",
+      "Enforcement is verified by a requires:operator live-validation story: the orchestrator boots under --agent, dispatches a subagent (Task/Agent works), invokes a slash command via Skill, completes a self-handoff/respawn, and a disallowed tool (Edit) is denied at runtime.",
+      "`bun run embed-vendor:check`, vendor/check-agent-frontmatter.ts, `bun run typecheck`, and `bun test` are green."
+    ],
+    "gotchas": [
+      "The orchestrator is currently spawned WITHOUT --agent (run.ts buildOrchestratorPaneCommand cats the prompt file as the first user message), so the frontmatter is never loaded and is advisory. This flips to --agent (frontmatter enforced). Getting the tools list 100% complete is load-bearing: a missing Skill or Task/Agent grant bricks all delegation.",
+      "Do NOT drop WebFetch (grill-with-docs uses it) or Write (self-handoff, per CAM-227). The frontmatter today lists Read/Glob/Grep/Bash/WebFetch/SlashCommand/Write but is MISSING Skill and Task/Agent, which the orchestrator uses at runtime — reconcile before enforcing.",
+      "Absorbs CAM-196 (now abandoned): meta_loop-aware boot lives here because both rewrite the same boot surfaces (run.ts boot prompt + agent body Boot context). Do not re-file it.",
+      "blockedBy CAM-227: the orchestrator frontmatter must be correct/complete (Write moved to tools, advisory note) before enforcement is turned on. CAM-227 is itself blockedBy CAM-225 (both edit the same file), so the orchestrator .md edit order is 225 -> 227 -> 240.",
+      "Live validation is mandatory: typecheck/tests cannot exercise the root interactive TUI session launching under --agent with the respawn wrapper (CAM-42 rule: the autonomous pipeline does not drive an authenticated claude), hence the requires:operator story.",
+      "meta_loop host mode disables auto-chaining (requires container); the meta_loop-aware boot must behave correctly for all three modes (off default, observe, auto)."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 3,
+    "riskReduction": 6,
+    "jobSize": 5
+  },
+  "type": "feat"
 }
