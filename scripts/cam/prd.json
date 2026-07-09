@@ -103,7 +103,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Templated files (BOTH copies): .claude/agents/subagent-implementer.md + templates/agents/subagent-implementer.md; .claude/commands/cam-review.md + templates/commands/cam-review.md. PRD_COMPLETE row is at subagent-implementer.md:192. cam-review.md dead section is ~2.6KB (Step 1 Gather context, git diff BASE logic, Task() spawn) that no longer runs (reviewer spawned by sidecar via buildReviewerWorkerArgv). After editing both copies run `bun run embed-vendor` then `embed-vendor:check`. Diff both copies first (cam-dual-copy-is-per-file)."
     },

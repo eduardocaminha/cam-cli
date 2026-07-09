@@ -189,7 +189,7 @@ When you finish, print **exactly one** of the following status lines as the **ve
 | Status line | Meaning |
 |---|---|
 | `CAM_IMPLEMENTER_STATUS=DONE story=US-XXX` | Story implemented, committed, handoff written, pushed. |
-| `CAM_IMPLEMENTER_STATUS=PRD_COMPLETE` | No non-operator stories had `passes: false`. Orchestrator should run `/cam-review`. |
+| `CAM_IMPLEMENTER_STATUS=PRD_COMPLETE` | No non-operator stories had `passes: false`. The sidecar's `decideNextAction` picks the next action (review dispatch) autonomously; the orchestrator does not need to run `/cam-review` itself. |
 | `CAM_IMPLEMENTER_STATUS=BLOCKED_QUALITY story=US-XXX reason=<short>` | Quality gate failed repeatedly; story still `passes: false`. |
 | `CAM_IMPLEMENTER_STATUS=BLOCKED_AMBIGUITY story=US-XXX question=<short>` | Story acceptance criteria are ambiguous. Document in `openQuestions` and exit without committing. |
 | `CAM_IMPLEMENTER_STATUS=BLOCKED_OPERATOR_REQUIRED story=US-XXX reason=<short>` | Story has `requires: "operator"`. Exit without touching files. |
