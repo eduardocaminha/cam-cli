@@ -1,7 +1,7 @@
 {
   "id": "CAM-232",
   "title": "Seeds de template capados: issues.schema.json sem specSource/derivedFrom + pointers errados",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [
     "CAM-231"
