@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.107.0] - 2026-07-09
+
+### Added
+
+- US-001 - Re-frame Cross-Repo PRD docs as agent-self-executed (unvalidated)
+
 ## [0.106.0] - 2026-07-09
 
 ### Added

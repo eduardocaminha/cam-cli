@@ -106,7 +106,7 @@ This convention applies to cam-cli itself and to any downstream cam project init
 - `scripts/cam/patterns.md`: durable codebase patterns, gotchas, and invariants (versioned on main, never truncated). Agents read this file at story start to absorb project conventions.
 - CAM-64 (Mulch knowledge central): future machine-readable knowledge graph fed by the grill layer. Terms and decisions written into CONTEXT.md and docs/adr/ during a grill session will eventually flow into this central store.
 
-## Cross-Repo PRDs (optional)
+## Cross-Repo PRDs (optional, agent-self-executed, unvalidated)
 
 Some PRDs span multiple repos. A PRD may declare a top-level `crossRepoLayout` block mapping logical repo names to absolute filesystem paths:
 
@@ -118,6 +118,8 @@ Some PRDs span multiple repos. A PRD may declare a top-level `crossRepoLayout` b
 ```
 
 Per-story routing is driven by the optional `repo` field on each `userStories[]` entry (default `"main-repo"`). When the implementer picks a story whose `repo` is not the default, it `cd`s into the corresponding path BEFORE reading the story's files or running `git` commands. The harness state files (`prd.json`, `handoff.json`) always live in the main repo; `patterns.md` is durable and versioned on main; the event log (`.claude/cam-worker-events.jsonl`) is per-project but supervisor-owned. Only the story's source edits move cwd.
+
+**This is agent-self-executed, not harness-driven.** The TS supervisor does NOT read the repo field or the `crossRepoLayout` block: it has zero code path that inspects either. There is no validation that a declared repo path exists, is a git repo, or is reachable; a bad path silently produces a wrong-cwd story with no supervisor-level error. The subagent-planner does NOT emit `crossRepoLayout` or `repo`: these fields only appear in hand-authored PRDs, and only the implementer agent (by reading its own instructions and doing the `cd` itself) makes cross-repo routing happen. Treat this whole section as a documented, fragile, unvalidated escape hatch for hand-authored PRDs, not a supported harness feature. Real harness support (supervisor repo-awareness, planner emission, gate-routing, layout validation) is tracked as a future epic, CAM-241 (related to CAM-147).
 
 ## Release Conventions
 
