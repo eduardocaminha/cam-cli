@@ -36,7 +36,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/version.ts (comment at lines 12-14), test/version.test.ts. This is the ONLY new-test item in the sweep and is audit-authorized (not speculative). Read package.json via Bun.file / import assertion the Bun way; existing test/version.test.ts imports CAM_VERSION from '../src/version.ts'. Non-templated, no re-embed."
     },
