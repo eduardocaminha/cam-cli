@@ -1,0 +1,9 @@
+{
+  "id": "CAM-248",
+  "title": "Consider adding a matching runtime enum/allowed-key source shared between hando…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-09T16:06:48.793Z",
+  "description": "Consider adding a matching runtime enum/allowed-key source shared between handoff.schema.json and OFFICIAL_DOCS_VALIDATED_STATUSES/ALLOWED_KEYS in events.ts to prevent future drift; today they are hand-synced in two places.\n\nSource: cam/issue-229\nReview round: 1\nLocation: scripts/cam/handoff.schema.json\n\nsuggestion-fingerprint: cf72f51d0714"
+}
