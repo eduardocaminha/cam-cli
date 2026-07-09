@@ -1,9 +1,39 @@
 {
   "id": "CAM-235",
   "title": "PR title + labels deterministicos amarrados ao issue (conventional-commit)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-09T02:34:38.547Z",
-  "description": "Titulo de PR deterministico no formato <type>: <issue-title> (CAM-<N>) e labels do GitHub aplicados na criacao. Depende de um sinal de tipo que hoje nao existe: adicionar campo type (feat/fix/chore/docs, default feat) ao issue schema, capturado no /cam-spec. Titulo e label derivam do type; mapa type->label usa os labels ja existentes no repo (feat->enhancement, fix->bug, docs->documentation). Melhora tambem o subject do squash-commit na main (alimenta classifyBump/versionamento). Toca: issues.schema.json (campo type), fluxo /cam-spec (captura), src/release/pr-body.ts (composePrTitle), src/release/ship-pr.ts (gh pr create --label). Sequencial apos CAM-234. delete_branch_on_merge ja esta ligado e o post-merge ls-remote check ja e idempotente: cleanup nao precisa de mudanca."
+  "description": "Titulo de PR deterministico no formato <type>: <issue-title> (CAM-<N>) e labels do GitHub aplicados na criacao. Depende de um sinal de tipo que hoje nao existe: adicionar campo type (feat/fix/chore/docs, default feat) ao issue schema, capturado no /cam-spec. Titulo e label derivam do type; mapa type->label usa os labels ja existentes no repo (feat->enhancement, fix->bug, docs->documentation). Melhora tambem o subject do squash-commit na main (alimenta classifyBump/versionamento). Toca: issues.schema.json (campo type), fluxo /cam-spec (captura), src/release/pr-body.ts (composePrTitle), src/release/ship-pr.ts (gh pr create --label). Sequencial apos CAM-234. delete_branch_on_merge ja esta ligado e o post-merge ls-remote check ja e idempotente: cleanup nao precisa de mudanca.",
+  "spec": {
+    "scope": "Titulo de PR e labels deterministicos amarrados ao issue. (1) Adicionar campo type (enum feat|fix|chore|docs, default feat aplicado na leitura) ao issue schema. (2) cam spec --persist passa a aceitar/persistir type e o /cam-spec captura/confirma o type no grill. (3) O PRD carrega type (planner copia do issue, default feat). (4) composePrTitle (src/release/pr-body.ts) emite <type>: <texto do PRD> (CAM-<N>), sem scope, com referencia textual CAM-<N> (nunca #N), sem truncar. (5) ship-pr.ts aplica gh pr create --label derivado do type: feat->enhancement, fix->bug, docs->documentation, chore->sem label; apenas o label de tipo. Fora de escopo: naming de branch (CAM-234) e rename issue_system (CAM-236). Cleanup nao muda (delete_branch_on_merge ligado, post-merge ls-remote ja idempotente).",
+    "acceptanceCriteria": [
+      "O issue schema (issues.schema.json em templates/ e scripts/) tem um campo type optional, enum [feat, fix, chore, docs], com default feat aplicado na leitura quando ausente.",
+      "cam spec --persist aceita type no payload e o persiste no arquivo do issue; o /cam-spec captura/confirma o type durante o grill.",
+      "O PRD carrega o type (planner copia do issue; default feat quando ausente), disponivel no prdSnapshot para composePrTitle.",
+      "composePrTitle (src/release/pr-body.ts) retorna a string <type>: <texto descritivo do PRD> (CAM-<issueNumber>), no lugar de prd.description cru, sem scope e sem truncar.",
+      "A referencia ao issue no titulo e textual no formato CAM-<N>, nunca #<N>.",
+      "ship-pr.ts passa gh pr create --label <label> derivado do type: feat->enhancement, fix->bug, docs->documentation; type=chore aplica nenhum label. Nenhum outro label e adicionado.",
+      "Quando issueNumber e null/ausente, o titulo omite o sufixo (CAM-<N>) de forma limpa sem quebrar (mas o fluxo normal sempre tem issueNumber).",
+      "Gates verdes: bun run typecheck, bun test, bun run check:all, bun run embed-vendor:check."
+    ],
+    "gotchas": [
+      "squashMergeCommitTitle do repo e COMMIT_OR_PR_TITLE: com multiplos commits (caso normal de um PRD) o squash usa o TITULO da PR como subject do commit na main, entao o prefixo conventional-commit propaga pro historico e alimenta o classifyBump. E bonus, nao o driver (o bump ja e computado na branch pelos commits feat: do implementer).",
+      "Referencia ao issue TEM que ser CAM-<N> textual: #<N> no corpo/titulo faria o GitHub linkar pra PR/issue #N DO GITHUB, que e outra entidade (nosso issue system e local).",
+      "gh pr create --label falha se o label nao existir no repo; enhancement, bug e documentation ja existem (verificado via gh label list). chore intencionalmente nao aplica label (nao ha label natural e a decisao foi usar so os labels existentes).",
+      "classifyBump reconhece feat (minor) e fix (patch); chore e docs sao none. O enum de type esta alinhado a isso de proposito.",
+      "composePrTitle deve permanecer self-contained usando prdSnapshot (nao ler o issue file): o type e o texto vem do PRD, que o planner ja deriva do issue."
+    ],
+    "domainTerms": [
+      "issue type",
+      "type-to-label map"
+    ]
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 4,
+    "riskReduction": 3,
+    "jobSize": 4
+  }
 }
