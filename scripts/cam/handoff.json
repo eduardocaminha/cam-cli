@@ -1,0 +1,31 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Derive branch name in code as cam/issue-<N> with checkout -B and missing-issueNumber gate"
+  },
+  "branchName": "cam/pr-234-deterministic-branch-naming",
+  "timestamp": "2026-07-09T00:00:00Z",
+  "createdFiles": [
+    "test/supervisor/plan/plan-runner-branch-derivation.test.ts"
+  ],
+  "modifiedFiles": [
+    "src/supervisor/plan-runner.ts",
+    "src/commands/sidecar.ts",
+    "scripts/file-size-budget.json",
+    "test/supervisor/plan/plan-runner-postaudit.test.ts",
+    "test/plan-runner-no-prd.test.ts",
+    "test/integration/plan-runner-no-prd.test.ts",
+    "test/plan-target-invalid-sidecar.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 done: deriveBranchName(issueNumber) in src/supervisor/plan-runner.ts returns 'cam/issue-<N>' (typeof number only, no slug, no fallback) and is the single source of truth for the feature-branch name; RunPostAuditOptions.branchName was REMOVED and replaced by issueNumber (unknown, read verbatim from prd.json) + writePrdBranchNameFn (optional, writes the derived name back into prd.json's branchName field BEFORE 'git add', called from executeGitProceedBranch). executeGitProceedBranch now spawns ['checkout', '-B', <derived>] (capital B, idempotent re-plan) instead of '-b'. The old empty-branchName guard was replaced by a missing-issueNumber gate (handleAuditApproved helper in plan-runner.ts): null/undefined/non-number issueNumber -> notifyFn + no-action, zero git calls. sidecar.ts's runPostPlanActions reads prd.json.issueNumber (not .branchName) and wires makeWritePrdBranchNameFn(cwd). test/plan-runner-empty-branch.test.ts (old contract) was deleted and superseded by test/supervisor/plan/plan-runner-branch-derivation.test.ts. US-002 (planner/auditor template updates to the cam/issue-<N> contract + re-embed vendor) is next: it will touch templates/ + vendor/, so remember to run 'bun run embed-vendor' then 'bun run embed-vendor:check' for that story. scripts/file-size-budget.json ceilings were raised for plan-runner.ts (1272->1362) and sidecar.ts (2438->2461) with a CAM-236 tracker ref in _ref; a subsequent story touching either file may need another raise.",
+  "officialDocsValidated": [
+    {
+      "lib": "git (checkout)",
+      "url": "https://git-scm.com/docs/git-checkout",
+      "fetchedAt": "2026-07-09T00:00:00Z",
+      "status": "aligned",
+      "summary": "Confirmed 'git checkout -B <branch>' creates the branch if absent and resets it to the current start point (HEAD) if it already exists, instead of failing like '-b'; matches executeGitProceedBranch's idempotent re-plan usage."
+    }
+  ]
+}
