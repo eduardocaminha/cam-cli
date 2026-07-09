@@ -6,6 +6,18 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.109.0] - 2026-07-09
+
+### Added
+
+- US-007 - Complete README command table and note CLEAN-with-SUGGESTIONs in scripts CLAUDE.md
+- US-006 - Fix subagent-implementer PRD_COMPLETE row and truth-up cam-review section
+- US-005 - Correct cam-plan and cam-spec command docs (templated)
+- US-004 - Add supersession banners to ADRs 0004, 0006, 0008
+- US-003 - Remove stale merge-watch comment and dead CAM_REVIEWER_STATUS branch
+- US-002 - Fix version.ts comment and add package.json parity assert
+- US-001 - Fix cam binary HELP for next and plan
+
 ## [0.108.0] - 2026-07-09
 
 ### Added

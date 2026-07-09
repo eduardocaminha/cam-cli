@@ -133,10 +133,17 @@ cam plan [<N>]              Open a planning pane in the project session (thin la
 cam next [options]          Trigger the sidecar loop (flips active:true, thin-proxy)
 cam issue "<text>"          Open an issue-creation pane in the project session (thin launcher)
 cam spec <id>               Deep-spec an idea issue into stage:specified via grill-with-docs (thin-proxy)
+cam review                  Dispatch /cam-review to the live orchestrator (or bootstrap first)
+cam ship                    Dispatch /cam-ship to the live orchestrator (or bootstrap first)
+cam tag                     Create and push the vX.Y.Z git tag for the current CAM_VERSION on main
+cam journal append          Append a structured cycle entry to scripts/cam/journal.md on main (reads JSON from stdin)
+cam journal archive         Move the oldest third of scripts/cam/journal.md entries to journal.archive.md once entries exceed the threshold
+cam patterns archive        Move resolved-marked bullets from scripts/cam/patterns.md to patterns.archive.md on main
 cam claude [args...]        Run claude with built-in auto-retry on rate limits
 cam dashboard               Navigable TUI: browse stories, dispatch /cam-* commands (pane 0.1; also standalone)
 cam status                  Show current loop state (idle / active / paused)
 cam stop                    Cancel a running loop
+cam drain [--stop|--clear]  Set or clear the inter-cycle drain kill-switch without killing the sidecar
 cam resume [options]        Reconcile loop state after interrupt
 cam version                 Print the installed cam-cli version
 cam help                    Show top-level help

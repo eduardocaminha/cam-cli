@@ -285,8 +285,9 @@ export function removeShipStalledMarker(filePath: string): void {
  * State persisted in .claude/.cam-merge-watch.json by the orchestrator
  * when it enters ci-gated mode after creating a PR.
  *
- * The file is written by the orchestrator (cam-ship.md Step 7 ci-gated branch)
- * and consumed + removed by the sidecar on each idle tick.
+ * The file is written by the orchestrator's ci-gated ship step (runShipPrStep,
+ * src/release/ship-pr.ts) and consumed + removed by the sidecar on each idle
+ * tick.
  *
  * pollCount and lastPolledAt are optional so that a legacy seed state of only
  * { prNumber, mergedBranch } is accepted and treated as fresh: pollCount starts

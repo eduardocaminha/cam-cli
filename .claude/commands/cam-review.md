@@ -6,6 +6,8 @@ The `subagent-reviewer` runs in a **separate context** with read-only access. It
 
 The review-fix cycle is **bounded**: at most `CAM_MAX_REVIEW_ROUNDS` rounds (default 3, env override). Each round either ends with `<review>CLEAN</review>` (loop terminates with `<promise>COMPLETE</promise>`) or with N findings that get turned into `US-RX-NNN` stories for the implementer to pick up next iteration. After max-rounds, ship with explicit debt rather than spinning forever.
 
+**Relationship to the autonomous sidecar review pass**: this document is the manual/on-demand path only. Steps 0-5 below run inside the orchestrator's own context, spawning `subagent-reviewer` via `Task()`, when a human (or the orchestrator itself) triggers `/cam-review`. The sidecar's autonomous per-story review pass (run between story batches in the titled 3rd worker pane) is a separate mechanism: `makeReviewDispatch` / `buildReviewerWorkerArgv` (`src/supervisor/review.ts`) respawn the reviewer directly and never read this file, even though both entry points drive the same `subagent-reviewer` agent and the same `prd.json.review` bookkeeping.
+
 ---
 
 ## Step 0: Read review state from PRD

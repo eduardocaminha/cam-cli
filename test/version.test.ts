@@ -30,6 +30,13 @@ describe('CAM_VERSION constant', () => {
 		expect(major).toBeGreaterThanOrEqual(0);
 		expect(minor).toBeGreaterThanOrEqual(1);
 	});
+
+	test('stays in parity with package.json (fails the suite on version drift)', async () => {
+		const pkg = (await Bun.file(new URL('../package.json', import.meta.url)).json()) as {
+			version: string;
+		};
+		expect(pkg.version).toBe(CAM_VERSION);
+	});
 });
 
 describe('`cam` dispatch — version variants', () => {

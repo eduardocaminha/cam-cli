@@ -9,11 +9,13 @@
 //      (per Bun's docs — autoloadPackageJson defaults to false in compiled
 //      executables); reading it at runtime would require an explicit
 //      `--compile-autoload-package-json` flag.
-//   2. Hard-coding the literal here is one of two places to bump on a
-//      release (this file + `package.json` if/when we add a `version` field
-//      there) — both are caught by `test/version.test.ts`.
+//   2. `package.json` already carries its own `version` field (needed for
+//      `bun install`/registry metadata). Hard-coding the literal here means
+//      this file and `package.json` are two places to bump on a release;
+//      `test/version.test.ts` asserts they stay equal so they cannot
+//      silently diverge.
 //
 // Bumping the version: edit CAM_VERSION here, run the build + tag flow in
 // `scripts/build-release.sh`, push the tag, then `gh release create`.
 
-export const CAM_VERSION = '0.108.0';
+export const CAM_VERSION = '0.109.0';

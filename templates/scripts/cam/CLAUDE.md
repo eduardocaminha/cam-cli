@@ -21,6 +21,8 @@ The cam-loop terminates when the orchestrator (`/cam-next`) detects that all non
 
 Stories with `requires: "operator"` are **out-of-scope** for autonomous implementation — they are operator ceremonies (TUI keypress, real-API hit, screencap, etc.). The loop falls through to the next implementable story; the operator hand-executes the ceremony and flips `passes: true` manually.
 
+Note: a `CLEAN` verdict is not the same as "no findings." The reviewer can return `CLEAN` while still recording non-blocking SUGGESTIONs; the supervisor's terminal-verdict hook (CAM-189, `src/supervisor/loop.ts`) auto-files those SUGGESTIONs as follow-up backlog issues rather than dropping them. A terminal `CLEAN` state may therefore still carry filed follow-up issues to review later.
+
 ## Quality Gates
 
 Run these before committing. Fix failures before proceeding:

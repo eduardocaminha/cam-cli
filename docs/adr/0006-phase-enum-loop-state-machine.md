@@ -3,6 +3,13 @@
 - **Status**: aceito (implementado em CAM-151)
 - **Data**: 2026-07-01
 
+> **Nota de atualizacao (2026-07-09)**: a secao "Re-plan automatico pendente" (Consequencias)
+> descreve que BLOCK do auditor nao disparava re-plan automatico; isso mudou. O auditor agora
+> re-plana automaticamente ate 2 rounds (`MAX_REPLAN_ROUNDS`) antes de escalar; ver ADR 0012
+> (nao-convergencia apos N=2 rounds e hard-stop, nunca proceed-with-debt). A fase `shipping`,
+> descrita aqui como reservada e ainda nao usada, esta agora em uso: ver ADR 0009 (ship phase
+> como runner deterministico) e ADR 0013 (local da escrita de `phase: shipping` no outer loop).
+
 ## Contexto
 
 Antes de CAM-151, o sidecar usava um campo booleano `active` como unica gate do loop: `active:true` despachava o implementer, `active:false` mantinha o loop em espera. Essa representacao nao distinguia fases dentro do loop (planejar vs implementar vs rever vs aguardar operador), o que tornava o roteamento implicito no codigo do sidecar. O planner e o auditor rodavam como Task subagents dentro do fluxo LLM do `/cam-plan` (descrito em ADR 0004), sem sinalizacao de estado legivel pelo sidecar.
