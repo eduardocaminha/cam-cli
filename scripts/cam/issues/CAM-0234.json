@@ -1,7 +1,7 @@
 {
   "id": "CAM-234",
   "title": "Nomeacao deterministica de branch: cam/issue-<N> derivado em codigo",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-09T02:34:24.084Z",
