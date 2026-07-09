@@ -1,0 +1,29 @@
+{
+  "id": "CAM-253",
+  "title": "Operator live-validation ceremony: verify orchestrator --agent enforcement (CAM-240 AC#5)",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [
+    "CAM-240"
+  ],
+  "createdAt": "2026-07-09T00:00:00.000Z",
+  "specSource": "operator",
+  "description": "Deferred operator ceremony split out of CAM-240 AC#5 because the autonomous pipeline cannot drive an authenticated interactive claude TUI (CAM-42 rule: typecheck/tests/CI cannot boot the root human-facing --agent session under the respawn wrapper). CAM-240 flips the orchestrator root persona to `claude --agent subagent-orchestrator`, which makes the frontmatter tools/disallowedTools allowlist RUNTIME-BINDING (previously advisory). A subtly wrong allowlist would brick the single human-facing orchestrator with no CI gate catching it, so this runtime behavior is UNVERIFIED-IN-CI until an operator hand-runs the ceremony. Steps: (1) rebuild+reinstall the binary at the CAM-240 merge; (2) `cam run` and confirm the orchestrator boots under --agent; (3) dispatch a subagent (e.g. `/cam-review` or a planner spawn) and confirm the Agent tool spawn succeeds (delegation not bricked); (4) invoke a slash command (`/cam-issue` or `/cam-review`) and confirm it runs; (5) trigger a self-handoff/respawn (token-budget or `cam journal append --cycle-close`) and confirm the fresh session rehydrates via CAM_ORCH_REHYDRATE; (6) attempt an Edit tool call and confirm it is DENIED at runtime (disallowedTools enforced under --agent). Record the outcome in scripts/cam/journal.md. Origin: auditor blocker on the CAM-240 re-plan, 2026-07-09.",
+  "spec": {
+    "scope": "Operator-only live validation of CAM-240 runtime enforcement. No code changes; a hand-run verification ceremony against a real authenticated claude session.",
+    "acceptanceCriteria": [
+      "Orchestrator boots under `claude --agent subagent-orchestrator` on a real `cam run`.",
+      "A subagent spawn (Agent tool, e.g. via /cam-review) succeeds: delegation is not bricked by the runtime-binding allowlist.",
+      "A slash command dispatch (/cam-issue or /cam-review) runs in the orchestrator context.",
+      "A self-handoff/respawn completes and the fresh session rehydrates from CAM_ORCH_REHYDRATE.",
+      "An Edit tool call is denied at runtime (disallowedTools enforced now that --agent binds the frontmatter).",
+      "Outcome recorded in scripts/cam/journal.md."
+    ],
+    "gotchas": [
+      "CAM-42: the autonomous pipeline does not drive an authenticated claude; this cannot be a gated CI story, hence operator-run.",
+      "Requires rebuild+reinstall of the binary at the CAM-240 merge (stale binary would still spawn without --agent)."
+    ],
+    "domainTerms": []
+  },
+  "type": "chore"
+}

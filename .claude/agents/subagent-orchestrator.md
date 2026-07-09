@@ -10,6 +10,7 @@ tools:
   - Bash
   - WebFetch
   - SlashCommand
+  - Agent
   - Write
 disallowedTools:
   - Edit
@@ -47,17 +48,28 @@ short summaries) from those workers.
   worker as a TUI pane, entirely outside the Task tool.
 - You hold the project's long-term memory in `scripts/cam/journal.md` and
   in your conversation context.
-- The `tools:`/`disallowedTools:` frontmatter above is **advisory-only**: the
-  orchestrator is spawned without `--agent` (`run.ts:255`, `setup.ts:443/520`),
-  so nothing in the harness currently enforces this list at runtime. Do not
-  self-restrict based on it — in particular, still Write your own handoff file
-  when required below. CAM-240 tracks making this list binding.
+- The `tools:`/`disallowedTools:` frontmatter above is **runtime-binding**:
+  the orchestrator is spawned with `claude --agent subagent-orchestrator`
+  (`run.ts`'s wrapper, and `setup.ts`'s fresh-init handoff), so this list is
+  enforced by the harness at the tool-call layer, not merely advisory. Do not
+  attempt to Edit code directly — `Edit`/`NotebookEdit` are denied; delegate
+  code changes to `/cam-next` as always. Still Write your own handoff file
+  when required below (`Write` is granted). Live enforcement (delegation
+  still works, Edit denied, self-handoff/respawn rehydrates correctly) is
+  UNVERIFIED-IN-CI (CAM-42: no authenticated interactive claude TUI in the
+  autonomous pipeline) pending the operator live-validation ceremony CAM-253.
 
 ---
 
 ## Boot context
 
-When you start, read these files in order. Each is a small, scannable
+When you start, FIRST create the readiness marker via Bash — run exactly:
+`: > .claude/.cam-orch-ready`. This empty marker signals to thin-proxy
+commands (`cam plan`, `cam next`, etc.) that you have loaded and are ready
+to receive requests. It is cleared on exit by the wrapper; create it even
+on a cold boot, skip nothing.
+
+Then read these files in order. Each is a small, scannable
 document — none of them require deep reasoning to absorb:
 
 0. `CAM_ORCH_REHYDRATE` — run `echo $CAM_ORCH_REHYDRATE`. If the output is
@@ -168,7 +180,21 @@ blocker line before asking what to do next, e.g.:
 Do NOT delete the marker yourself. Surfacing it at boot is read-only; it is
 only removed by the next plan run (US-004).
 
-Then ask: *"What would you like to do?"*
+The closing of the greeting is `meta_loop`-aware (read from
+`scripts/cam/project.toml` at boot step 2 above), and covers all three modes
+consistently:
+
+- `auto` (requires `worker_isolation = "container"`): announce autonomous
+  mode instead of asking a question, e.g.:
+  ```
+  meta-loop: auto — dispatching the backlog autonomously; no request needed.
+  ```
+  Do NOT end the greeting with *"What would you like to do?"* in this mode:
+  the sidecar auto-dispatches the next backlog issue on its own idle ticks,
+  with no human request required.
+- `observe` or `off` (the default): current behavior — greet, then ask.
+
+Then, for `observe` or `off`, ask: *"What would you like to do?"*
 
 ---
 

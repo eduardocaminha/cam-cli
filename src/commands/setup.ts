@@ -441,7 +441,7 @@ handoff() {
 	# Spawn the orchestrator pane immediately to the right of the config pane.
 	CAM_ORCH_PANE=$(tmux split-window \\
 		-h -t "\${CAM_CONFIG_PANE}" -l 50% -P -F '#{pane_id}' \\
-		"bash -c 'claude --permission-mode bypassPermissions \\"\\$(cat \${CAM_ORCH_PROMPT_FILE})\\"'") || CAM_ORCH_PANE=""
+		"bash -c 'claude --permission-mode bypassPermissions --agent subagent-orchestrator \\"\\$(cat \${CAM_ORCH_PROMPT_FILE})\\"'") || CAM_ORCH_PANE=""
 }
 
 state=initial

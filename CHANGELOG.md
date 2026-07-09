@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.110.0] - 2026-07-09
+
+### Added
+
+- US-002 - Spawn the orchestrator root persona under `claude --agent` with a meta_loop-aware boot nudge
+- US-001 - Reconcile orchestrator tools list to real runtime usage and fold boot-imperatives + meta_loop-aware boot into the agent body
+
 ## [0.109.0] - 2026-07-09
 
 ### Added

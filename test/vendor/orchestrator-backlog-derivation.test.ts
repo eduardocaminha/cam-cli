@@ -1,28 +1,18 @@
 import { describe, expect, test } from 'bun:test';
 
-import { buildOrchestratorBootPrompt } from '../../src/commands/run.ts';
 import { templatesContents } from '../../src/vendor/_generated.ts';
 
 // Doc-gate (CAM-61 style, modeled on test/vendor/cam-ship-hygiene.test.ts):
-// asserts over the embedded persona AND over buildOrchestratorBootPrompt()
-// that the backlog derivation invariant is present everywhere it must be.
-// CAM-190 US-004.
+// asserts over the embedded persona that the backlog derivation invariant is
+// present. CAM-190 US-004.
+//
+// CAM-240 US-002: buildOrchestratorBootPrompt() is now spawned under
+// `--agent subagent-orchestrator`, so the persona body IS the system prompt
+// and buildOrchestratorBootPrompt() shrank to a minimal meta_loop-aware
+// nudge; the backlog-derivation instruction lives ONLY in the embedded
+// persona now (asserted below), not in the boot-prompt string.
 
 const PERSONA_KEY = 'agents/subagent-orchestrator.md';
-
-describe('orchestrator boot prompt: cam issue list backlog derivation (US-004)', () => {
-	test('buildOrchestratorBootPrompt instructs deriving the backlog via cam issue list / --json', () => {
-		const prompt = buildOrchestratorBootPrompt();
-		expect(prompt).toContain('cam issue list');
-		expect(prompt).toContain('cam issue list --json');
-	});
-
-	test('buildOrchestratorBootPrompt prohibits raw scripts/cam/issues/*.json reads as a backlog-derivation fallback (US-004, CAM-222)', () => {
-		const prompt = buildOrchestratorBootPrompt();
-		expect(prompt).toContain('scripts/cam/issues/*.json');
-		expect(prompt.toLowerCase()).toContain('never grep or read');
-	});
-});
 
 describe('embedded orchestrator persona: cam issue list backlog derivation (US-004)', () => {
 	test('embedded persona instructs deriving the backlog via cam issue list / --json', () => {
