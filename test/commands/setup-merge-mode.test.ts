@@ -74,7 +74,7 @@ function protectionResponseChecks(): string {
 	return JSON.stringify({
 		required_status_checks: {
 			strict: true,
-			checks: [{ context: 'ci' }],
+			checks: [{ context: 'ci' }, { context: 'ci-container' }],
 			contexts: [],
 		},
 	});

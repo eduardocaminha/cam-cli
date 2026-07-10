@@ -1,14 +1,16 @@
 // src/release/branch-protection.ts
 //
 // configureBranchProtection() -- injectable gh-api helper that:
-//   1. PUTs branch protection on main requiring the 'ci' required check.
+//   1. PUTs branch protection on main requiring the 'ci' and 'ci-container'
+//      required checks.
 //   2. GETs the same endpoint to verify the rule applied.
 //   3. Degrades to a verify+warn path when the gh api call fails (no admin, no auth).
 //   4. Checks CAM-84 prerequisites (Allow auto-merge + Allow squash merging).
 //
 // DOC DEPRECATION: required_status_checks.contexts is the deprecated form;
-// checks:[{context}] is the current form. PUT uses checks:[{context:"ci"}],
-// but GET verification accepts either form (GitHub mirrors them).
+// checks:[{context}] is the current form. PUT uses
+// checks:[{context:"ci"},{context:"ci-container"}], but GET verification
+// accepts either form (GitHub mirrors them) and requires BOTH contexts.
 //
 // ALL FOUR TOP-LEVEL PUT FIELDS ARE REQUIRED -- omitting any yields a 422:
 //   required_status_checks, enforce_admins, required_pull_request_reviews,
@@ -51,7 +53,8 @@ export type SpawnFn = (
 /**
  * Discriminated outcome for configureBranchProtection.
  *
- * - 'configured-and-verified': PUT applied and GET confirmed the 'ci' check.
+ * - 'configured-and-verified': PUT applied and GET confirmed both 'ci' and
+ *   'ci-container' checks.
  * - 'fallback-warned': gh api failed or verification inconclusive; operator
  *   hint was emitted; the function did NOT throw.
  */
@@ -93,14 +96,19 @@ export interface ConfigureBranchProtectionOptions {
 // ---------------------------------------------------------------------------
 
 const ACCEPT_HEADER = 'Accept: application/vnd.github+json';
-const CI_CHECK_NAME = 'ci';
+/**
+ * Required status checks. Both must be present as required checks: 'ci'
+ * (US-101) and 'ci-container' (US-002, CAM-244) so Renovate's
+ * container-scoped automerge rules wait on container validation.
+ */
+const REQUIRED_CHECK_NAMES = ['ci', 'ci-container'] as const;
 
 /**
  * Manual branch-protection hint surfaced to the operator when the automated
  * configure step fails. Parallels AUTOMERGE_NOTICE from logging/notices.ts.
  */
 export const BRANCH_PROTECTION_FALLBACK_HINT =
-	"To enable manually: Settings > Branches > Add rule for 'main', check 'Require status checks to pass before merging', and add 'ci' as a required check.";
+	"To enable manually: Settings > Branches > Add rule for 'main', check 'Require status checks to pass before merging', and add 'ci' and 'ci-container' as required checks.";
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -118,23 +126,22 @@ interface RepoSettingsResponse {
 	allow_squash_merge?: boolean;
 }
 
-/** Return true when the 'ci' check appears in either the checks or contexts array. */
-function hasCiCheck(parsed: ProtectionGetResponse): boolean {
-	const rsc = parsed.required_status_checks;
+/** Return true when the given check name appears in either the checks or contexts array. */
+function hasCheck(rsc: ProtectionGetResponse['required_status_checks'], name: string): boolean {
 	if (!rsc) return false;
-	if (
-		Array.isArray(rsc.checks) &&
-		rsc.checks.some((c) => c.context === CI_CHECK_NAME)
-	) {
+	if (Array.isArray(rsc.checks) && rsc.checks.some((c) => c.context === name)) {
 		return true;
 	}
-	if (
-		Array.isArray(rsc.contexts) &&
-		rsc.contexts.includes(CI_CHECK_NAME)
-	) {
+	if (Array.isArray(rsc.contexts) && rsc.contexts.includes(name)) {
 		return true;
 	}
 	return false;
+}
+
+/** Return true when BOTH required checks appear in either the checks or contexts array. */
+function hasAllRequiredChecks(parsed: ProtectionGetResponse): boolean {
+	const rsc = parsed.required_status_checks;
+	return REQUIRED_CHECK_NAMES.every((name) => hasCheck(rsc, name));
 }
 
 /** Return true when the stdout/stderr text signals a permission or auth failure. */
@@ -154,7 +161,7 @@ function buildProtectionBody(): string {
 	return JSON.stringify({
 		required_status_checks: {
 			strict: true,
-			checks: [{ context: CI_CHECK_NAME }],
+			checks: REQUIRED_CHECK_NAMES.map((context) => ({ context })),
 		},
 		enforce_admins: false,
 		required_pull_request_reviews: null,
@@ -220,12 +227,14 @@ function verifyProtectionGet(
 	let verified = false;
 	try {
 		const parsed = JSON.parse(getResult.stdout) as ProtectionGetResponse;
-		verified = hasCiCheck(parsed);
+		verified = hasAllRequiredChecks(parsed);
 	} catch {
 		verified = false;
 	}
 	if (!verified) {
-		emitWarning('branch-protection applied but ci check not found in verification response');
+		emitWarning(
+			'branch-protection applied but ci/ci-container checks not found in verification response',
+		);
 		emitHint(BRANCH_PROTECTION_FALLBACK_HINT);
 		return { outcome: 'fallback-warned', hint: BRANCH_PROTECTION_FALLBACK_HINT, verified: false };
 	}
@@ -260,11 +269,12 @@ function checkAutoMergePrereqs(
 // ---------------------------------------------------------------------------
 
 /**
- * Configure branch protection on main requiring the 'ci' status check.
+ * Configure branch protection on main requiring the 'ci' and 'ci-container'
+ * status checks.
  *
  * Steps:
  *   1. PUT branch protection rule via gh api (all four required top-level fields).
- *   2. GET the same endpoint to verify the ci check was applied.
+ *   2. GET the same endpoint to verify both checks were applied.
  *   3. GET the repo settings to surface CAM-84 prereq hints (best-effort).
  *
  * Never throws. On gh api failure or verification failure, degrades to
