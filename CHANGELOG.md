@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.119.0] - 2026-07-10
+
+### Added
+
+- US-001 - Add count-agnostic real-file smoke test for the patterns.md parser
+
 ## [0.118.0] - 2026-07-10
 
 ### Added
