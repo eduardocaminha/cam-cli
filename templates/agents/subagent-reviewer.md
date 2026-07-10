@@ -84,6 +84,7 @@ The artifact-of-record is the reviewer's Layer B evidence, never the implementer
 - [ ] Code follows the project's established conventions (naming, structure, error patterns).
 - [ ] No new raw strings in UI components if the project uses i18n.
 - [ ] New API routes have validation schemas in the appropriate location.
+- [ ] **Every file-size-budget ceiling raise present in the diff is justified.** If the diff touches `scripts/file-size-budget.json`, check each raised ceiling against the files it actually grew: the diff (commit message, handoff, or PR description) must argue the growth is legitimate (a cohesive feature added to an already-appropriately-scoped file), not a symptom of a file that should have been split instead. An unjustified raise (a ceiling bumped with no stated reason, or bumped to paper over a file that is sprawling/doing too much) is a CRITICAL finding and blocks APPROVE (REQUEST CHANGES).
 
 ### External Library Compliance
 - [ ] For each external library touched by the diff, make **≥1 targeted call to the official docs** (via WebFetch / WebSearch) and cite the URL in the DOCS CONSULTED section.
@@ -111,7 +112,7 @@ You are **Layer B** in the two-layer verification system. After completing the r
 | 2 | **tests-with-meaningful-assert** | Each new/changed test has at least one assertion that would fail if the feature were absent or broken |
 | 3 | **strict-types** | No unsafe `any` introduced without justification; index-access guards respected |
 | 4 | **error-handling** | Errors produce a clear message and non-zero exit; no swallowed errors |
-| 5 | **project-conventions** | Naming, file structure, and coding style follow the project's established patterns |
+| 5 | **project-conventions** | Naming, file structure, and coding style follow the project's established patterns; every `scripts/file-size-budget.json` ceiling raise in the diff is justified (legitimate growth, not a file that should have been split) |
 | 6 | **security** | No hardcoded secrets; no shell-string interpolation of untrusted input; no path traversal |
 | 7 | **deps** | No new dependency added without justification; existing deps used as documented |
 | 8 | **perf** | No blocking operation in hot paths; no unnecessary re-renders; no orphaned background processes |

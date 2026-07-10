@@ -94,7 +94,7 @@ When a story's `acceptanceCriteria` include a tmux-drivable oracle directive (`[
 ## What you do for the story
 
 1. Implement the chosen story and only that story.
-2. Run quality gates: typecheck, lint, tests. Fix until green. Use the project's configured commands.
+2. Run quality gates: typecheck, lint, tests. Fix until green. Use the project's configured commands. Also run `bun scripts/check-file-sizes.ts` (the file-size ratchet gate) after coding — a scoped exception (this one extra gate only), NOT a switch to running the full `bun run check:all` in-story. If it fails because a file this story legitimately grew now exceeds its ceiling, raise ONLY that file's ceiling in `scripts/file-size-budget.json` to the gate's reported actual line count (measured as `content.split('\n').length`, explicitly NOT `wc -l`, which under-counts a trailing-newline file by one), prepend a dated note naming this story and the CAM tracker id to the top-level `_ref` field, and stage `scripts/file-size-budget.json` so the tracker-ref check (which reads only the staged diff) passes before re-running the gate. Raise only the ceiling(s) of the file(s) this story itself grew; never blanket-raise ceilings for unrelated budgeted files.
 3. Commit with message `feat: [Story ID] - [Story Title]`.
 4. Flip `passes: true` for the completed story in `prd.json`.
 5. If you discovered a reusable pattern (a project convention, a library quirk, a gotcha), append a bullet to `scripts/cam/patterns.md`. The per-story factual record (outcome, files, gates) is written by the harness to `.claude/cam-worker-events.jsonl`; you do not write a prose entry.
