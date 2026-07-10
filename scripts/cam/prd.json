@@ -1,0 +1,39 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-245",
+  "description": "Decouple the two 'reads the real repo-root' toolchain tests from the concrete pinned version so Renovate bumps stop turning PR CI red.",
+  "issueNumber": 245,
+  "type": "fix",
+  "relatedDocs": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "bun:test",
+      "url": "https://bun.sh/docs/test/writing",
+      "version": "current",
+      "fetchedAt": "2026-07-10T00:00:00Z",
+      "summary": "Confirmed the .toMatch() matcher (regex against strings) is fully supported in bun:test's Jest-compatible expect API. No breaking changes affecting toMatch; switching the real-file assertions from toBe(literal) to toMatch(regex) is a supported, stable pattern.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Assert semver format (not literal pin) in the two real-file toolchain tests",
+      "description": "As a maintainer, I need the two 'reads the real repo-root' toolchain tests to assert an exact-semver format instead of the concrete pinned version, so that a Renovate bump of .bun-version or .tool-versions no longer turns PR CI red and toolchain-pin automerge (CAM-201) works in practice.",
+      "acceptanceCriteria": [
+        "The 'reads the real repo-root .bun-version file with default args' test block converts its assertion from the literal toBe('1.3.13') to a toMatch on the exact-semver regex; within that specific block a toMatch is present and the literal toBe('1.3.13') is gone. [oracle: grep -A3 'reads the real repo-root .bun-version file' test/config/toolchain.test.ts | grep -q 'toMatch' && ! grep -A3 'reads the real repo-root .bun-version file' test/config/toolchain.test.ts | grep -q \"toBe('1.3.13')\"]",
+        "The 'reads the real repo-root .tool-versions file with default args' node test block converts its assertion from the literal toBe('22.23.1') to a toMatch on the exact-semver regex; within that specific block a toMatch is present and the literal toBe('22.23.1') is gone. [oracle: grep -A3 'reads the real repo-root .tool-versions file' test/config/toolchain.test.ts | grep -q 'toMatch' && ! grep -A3 'reads the real repo-root .tool-versions file' test/config/toolchain.test.ts | grep -q \"toBe('22.23.1')\"]",
+        "Both converted real-file tests use the exact-semver regex /^\\d+\\.\\d+\\.\\d+$/, matching the function's own contract (readPinnedBunVersion/readPinnedNodeVersion already reject ranges/prefixes/'latest'). The literal regex string appears exactly twice in the file (once per real-file test). [oracle: test $(grep -cF 'toMatch(/^\\d+\\.\\d+\\.\\d+$/)' test/config/toolchain.test.ts) -eq 2]",
+        "All fake-injected tests (readPinnedBunVersion/readPinnedNodeVersion called with an explicit path + reader fn) are left UNCHANGED and keep asserting exact values: toBe('1.3.13') still appears exactly twice (the two bun fake tests) and toBe('22.23.1') still appears exactly three times (the three node fake tests). [oracle: test $(grep -c \"toBe('1.3.13')\" test/config/toolchain.test.ts) -eq 2 && test $(grep -c \"toBe('22.23.1')\" test/config/toolchain.test.ts) -eq 3]",
+        "The change is scoped to the test file only: no file under src/ is modified relative to main, and test/config/toolchain.test.ts is the edited source file. [oracle: test -z \"$(git diff --name-only main -- src/)\" && git diff --name-only main -- test/config/toolchain.test.ts | grep -q toolchain]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Edit only test/config/toolchain.test.ts. Two blocks change: the bun real-file test at ~line 51-54 and the node real-file test at ~line 107-110. Replace expect(result).toBe('1.3.13'|'22.23.1') with expect(result).toMatch(/^\\d+\\.\\d+\\.\\d+$/) (regex already implies non-null, since toMatch on null fails). Leave every fake-injected test (bun ~lines 14-49, node ~lines 62-105) exactly as-is: those pass an explicit fake path/reader so their literal never changes on a Renovate bump. Do NOT run a global negative grep for the literals over the whole file: the literals must survive in the fake tests (AC4). Gotcha (finding 2): scripts/cam/prd.json and handoff.json are untracked-but-not-gitignored and get committed on the branch during the cam loop, so a total git-diff file-count against main is NOT a valid scope oracle; scope is checked by 'no src/ change' + 'test file present' instead. Reproduced live on PR #173 (bun 1.3.13 -> 1.3.14). No src change; casa com CAM-201/CAM-244."
+    }
+  ]
+}
