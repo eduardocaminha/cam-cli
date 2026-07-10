@@ -130,3 +130,6 @@ The reviewer's duty to judge whether a gate loosening (a raised ceiling, lowered
 
 **in-story gate run**:
 Running a quality gate during the implementer's single-story iteration (self-correction, Layer A) so failures surface and are resolved inline in the same commit, rather than deferring the whole check:all spine to ship/CI.
+
+**derivedFrom**:
+Structured issue-schema field (string[] of issue ids) recording which issue(s) an issue was derived from. Populated on manually-linked follow-ups and, per CAM-263, on auto-filed SUGGESTION follow-ups pointing back to the parent issue whose review produced the suggestion.
