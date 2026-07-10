@@ -1,9 +1,40 @@
 {
   "id": "CAM-248",
   "title": "Consider adding a matching runtime enum/allowed-key source shared between hando…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-09T16:06:48.793Z",
-  "description": "Consider adding a matching runtime enum/allowed-key source shared between handoff.schema.json and OFFICIAL_DOCS_VALIDATED_STATUSES/ALLOWED_KEYS in events.ts to prevent future drift; today they are hand-synced in two places.\n\nSource: cam/issue-229\nReview round: 1\nLocation: scripts/cam/handoff.schema.json\n\nsuggestion-fingerprint: cf72f51d0714"
+  "description": "Consider adding a matching runtime enum/allowed-key source shared between handoff.schema.json and OFFICIAL_DOCS_VALIDATED_STATUSES/ALLOWED_KEYS in events.ts to prevent future drift; today they are hand-synced in two places.\n\nSource: cam/issue-229\nReview round: 1\nLocation: scripts/cam/handoff.schema.json\n\nsuggestion-fingerprint: cf72f51d0714",
+  "spec": {
+    "acceptanceCriteria": [
+      "src/supervisor/events.ts imports scripts/cam/handoff.schema.json and derives OFFICIAL_DOCS_VALIDATED_STATUSES from the schema's officialDocsValidated items status.enum, and OFFICIAL_DOCS_VALIDATED_ALLOWED_KEYS from Object.keys of that item's properties. The hand-maintained literal arrays are removed.",
+      "handoff.schema.json is the single source of truth: changing the status enum or the item's property set in the schema alone updates the runtime validator with no second edit.",
+      "'resolveJsonModule': true is added to tsconfig.json compilerOptions so tsc --noEmit accepts the JSON import.",
+      "OFFICIAL_DOCS_VALIDATED_STATUSES is still usable as a readonly string[] at the .includes(status) call site (line ~613); no consumer relies on a literal-union type (verified: the only use casts to readonly string[]).",
+      "validateOfficialDocsValidated behavior is unchanged: same statuses accepted, same allowed keys, warn-only, one-entry-one-warning contract preserved.",
+      "The 'Source of truth: ... handoff.schema.json' comments are updated to reflect that the values are now derived from the schema, not hand-copied.",
+      "typecheck and the full test suite pass green; the cam binary still builds (bun build --compile inlines the JSON import)."
+    ],
+    "scope": "Remove the hand-synced duplication of the officialDocsValidated status enum and allowed-key set between scripts/cam/handoff.schema.json and src/supervisor/events.ts by making the schema the single source: events.ts imports and derives both. Touch src/supervisor/events.ts and tsconfig.json (resolveJsonModule). No behavior change.",
+    "gotchas": [
+      "handoff.schema.json is NOT read at runtime today (no ajv, no schema parse); events.ts validates with hand-coded consts. This change makes the schema authoritative by importing it. Do not confuse it with src/orchestrator/handoff.ts, which is the DIFFERENT orch-handoff schema.",
+      "tsconfig has module:Preserve + moduleResolution:bundler but no resolveJsonModule; add resolveJsonModule:true or tsc --noEmit will error on the JSON import.",
+      "The import path from src/supervisor/events.ts is ../../scripts/cam/handoff.schema.json (a committed contract artifact under the data dir); bun build --compile inlines it, so there is no runtime file dependency.",
+      "Deriving ALLOWED_KEYS via Object.keys(items.properties) matches the additionalProperties:false intent and auto-tracks any property added to the schema — this is the drift-prevention the SUGGESTION asked for; no separate drift test is needed because there is now only one source."
+    ],
+    "domainTerms": [
+      "officialDocsValidated",
+      "OFFICIAL_DOCS_VALIDATED_STATUSES",
+      "single source of truth",
+      "resolveJsonModule"
+    ]
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 1,
+    "riskReduction": 2,
+    "jobSize": 2
+  },
+  "type": "chore"
 }
