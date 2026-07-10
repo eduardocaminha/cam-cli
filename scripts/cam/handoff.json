@@ -1,13 +1,14 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Correct the stale tools enumeration in ADR 0020" },
+  "lastCompletedStory": { "id": "US-R1-001", "title": "Review round 1 fix 001: address reviewer finding" },
   "branchName": "cam/issue-256",
-  "timestamp": "2026-07-10T04:43:11Z",
+  "timestamp": "2026-07-10T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "docs/adr/0020-orchestrator-runs-as-an-enforced-agent-agent-not-a-catted-prompt.md"
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "PRD CAM-256 contains only US-001, a single-line docs fix removing the stale 'SlashCommand' token from ADR 0020's runtime-tools enumeration. No further stories remain in this PRD.",
+  "nextStoryContext": "PRD CAM-256's US-001 AC4 oracle was scoped to exclude scripts/cam/ so it no longer overcounts the harness's own prd.json/handoff.json commits as story-scope violations. US-001 remains passes:true (its underlying ADR edit was always correct; only the oracle text was unsatisfiable). No further stories remain in this PRD; if only review-round-fix stories and US-001 are present and both pass, the PRD is complete.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
