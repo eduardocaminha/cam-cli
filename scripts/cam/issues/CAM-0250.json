@@ -1,9 +1,38 @@
 {
   "id": "CAM-250",
   "title": "US-004 AC5 is satisfied by equivalence (synthetic fixtures use the exact `[reso…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-09T17:44:55.748Z",
-  "description": "US-004 AC5 is satisfied by equivalence (synthetic fixtures use the exact `[resolved YYYY-MM]` format the retrofit uses, and RESOLVED_MARKER_RE matches 2026-06), but no test applies the parser to the real scripts/cam/patterns.md to prove the 5 retrofitted bullets are the ones selected. A single assertion loading the real file through parsePatternsBullets/isResolved would close the gap directly.\n\nSource: cam/issue-226\nReview round: 1\nLocation: test/commands/patterns-archive.test.ts:158\n\nsuggestion-fingerprint: 46b62a89e616"
+  "description": "US-004 AC5 is satisfied by equivalence (synthetic fixtures use the exact `[resolved YYYY-MM]` format the retrofit uses, and RESOLVED_MARKER_RE matches 2026-06), but no test applies the parser to the real scripts/cam/patterns.md to prove the 5 retrofitted bullets are the ones selected. A single assertion loading the real file through parsePatternsBullets/isResolved would close the gap directly.\n\nSource: cam/issue-226\nReview round: 1\nLocation: test/commands/patterns-archive.test.ts:158\n\nsuggestion-fingerprint: 46b62a89e616",
+  "spec": {
+    "acceptanceCriteria": [
+      "A new test in test/commands/patterns-archive.test.ts loads the real scripts/cam/patterns.md from disk (not a synthetic fixture) and runs it through parsePatternsBullets.",
+      "The test asserts parsePatternsBullets returns a non-empty list of bullets for the real file (proving it actually parsed real content, not an empty read).",
+      "The test asserts count-equivalence between the parser's segmentation and an independent raw scan: the number of bullets for which isResolved returns true equals the number of [resolved YYYY-MM] marker occurrences found by an independent regex scan over the raw file text. This holds for any count (0, 5, or 50) and is not coupled to the current content.",
+      "The test does NOT assert a hardcoded count of resolved bullets (avoiding the CAM-245 brittleness class); it asserts the equivalence relation only.",
+      "typecheck and the full test suite pass green (the assertion currently holds at 0 resolved bullets in patterns.md, since the retrofit's 5 bullets were archived to patterns.archive.md in commit 015dbc3e)."
+    ],
+    "scope": "Close the CAM-250 review gap durably: add one count-agnostic real-file smoke that runs parsePatternsBullets over the actual scripts/cam/patterns.md and cross-checks isResolved-selected bullets against an independent raw marker scan, proving the parser segments real content correctly. Touch only test/commands/patterns-archive.test.ts. No src change.",
+    "gotchas": [
+      "The SUGGESTION's original framing ('prove the 5 retrofitted bullets are selected') is stale: those 5 resolved bullets were already archived to patterns.archive.md (commit 015dbc3e), so patterns.md now has 0 resolved markers. Do NOT assert 5 (or any fixed count) resolved bullets in patterns.md — it would fail.",
+      "isResolved(block) is literally RESOLVED_MARKER_RE.test(block) (patterns-archive.ts:156), so comparing isResolved to the same regex ON THE SAME BLOCK is tautological. The real value is testing parsePatternsBullets SEGMENTATION on real content: compare the parser's resolved-bullet count to an INDEPENDENT raw scan of the whole file text for marker occurrences.",
+      "The equivalence assertion must be count-agnostic so it stays green whether patterns.md currently has 0 resolved bullets or many; the point is the parser maps each real marker to exactly one parsed resolved bullet.",
+      "The production archive run itself (5 entries moved, commit 015dbc3e) already proved the parser works on real data; this test is ongoing regression protection against future format drift, not a re-proof of the retrofit."
+    ],
+    "domainTerms": [
+      "parsePatternsBullets",
+      "isResolved",
+      "RESOLVED_MARKER_RE",
+      "patterns.md archive"
+    ]
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 1,
+    "riskReduction": 2,
+    "jobSize": 1
+  },
+  "type": "chore"
 }
