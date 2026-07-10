@@ -34,7 +34,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .github/workflows/ci.yml (add second job), test/ci-workflow.test.ts (assert new job). GOTCHA (from issue + GitHub docs): a required check skipped by a workflow-level 'paths:' filter stays Pending and blocks the PR forever; use the always-run job + conditional heavy-steps pattern, NEVER a job-level paths filter. GOTCHA: scripts/test-in-container.ts does NOT run 'docker build' itself; it calls the production ensure-container path which builds the cam-worker image on cache-miss (multi-minute) and runs bun test via docker exec. It needs a Docker daemon, present on ubuntu-latest, absent on macos-latest (the CAM-178 trap) which is why the ci job stays macOS and this is a separate ubuntu job. GOTCHA: check-ci-parity (scripts/check-ci-parity.ts) scans every job for 'bun run <script>'; 'bun scripts/test-in-container.ts' and 'bun test' are not 'bun run' invocations so they pass, but 'bun run test:container' (the package.json alias) would need adding to BUN_RUN_ALLOWLIST. Keep the ci job macos-latest (host parity, tmux). .bun-version is deliberately NOT in the container-scoped path set (bun is validated on host CI). Do NOT edit renovate.json.",
       "notesRef": null

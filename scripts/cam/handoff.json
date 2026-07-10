@@ -1,0 +1,21 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Add always-run, path-filtered ci-container ubuntu job to ci.yml" },
+  "branchName": "cam/issue-244",
+  "timestamp": "2026-07-10T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    ".github/workflows/ci.yml",
+    "test/ci-workflow.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "ci-container job added to .github/workflows/ci.yml: runs-on ubuntu-latest, always runs (no workflow/job-level paths: filter), first real step 'Detect container-scoped changes' computes container_changed via 'git diff --name-only' against .devcontainer and .tool-versions vs the PR base SHA (or push 'before' SHA, falling back to changed=true on missing/zero SHA for new-branch safety). Heavy steps (setup-bun, bun install, 'bun scripts/test-in-container.ts') are gated on steps.changes.outputs.container_changed == 'true'; a neutral-pass echo step runs otherwise. check:ci-parity stays green because 'bun scripts/test-in-container.ts' is a direct script invocation, not 'bun run <script>', so it needs no BUN_RUN_ALLOWLIST entry. test/ci-workflow.test.ts has a new describe block asserting job name, ubuntu-latest, absence of any 'paths:' filter, the git diff detection, the changed-paths gate condition, and the direct script invocation. If a future story adds a 'ci' required-check enforcement (branch protection naming), it must reference the job id 'ci-container', not a step name.",
+  "officialDocsValidated": [
+    {
+      "lib": "GitHub Actions workflow syntax",
+      "url": "https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#onpushpull_requestpaths",
+      "fetchedAt": "2026-07-10T00:00:00Z",
+      "status": "aligned",
+      "summary": "Confirmed: a workflow/job skipped by a 'paths:' filter leaves its required check permanently Pending, blocking PR merge. Implementation deliberately avoids any 'paths:' filter, using an always-run job with step-level 'if:' gating instead, per this documented gotcha."
+    }
+  ]
+}
