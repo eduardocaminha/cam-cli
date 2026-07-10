@@ -1,9 +1,30 @@
 {
   "id": "CAM-264",
   "title": "parseToml(readProjectToml()) and resolveIssueId run once per filing batch even …",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-10T22:05:18.414Z",
-  "description": "parseToml(readProjectToml()) and resolveIssueId run once per filing batch even when candidates is empty (no suggestions to file). Negligible cost, but the two lines could sit inside the candidates.length > 0 guard to avoid a project.toml read on empty batches.\n\nSource: cam/issue-263\nReview round: 1\nLocation: src/commands/sidecar.ts:2246\n\nsuggestion-fingerprint: ac708b73294a"
+  "description": "parseToml(readProjectToml()) and resolveIssueId run once per filing batch even when candidates is empty (no suggestions to file). Negligible cost, but the two lines could sit inside the candidates.length > 0 guard to avoid a project.toml read on empty batches.\n\nSource: cam/issue-263\nReview round: 1\nLocation: src/commands/sidecar.ts:2246\n\nsuggestion-fingerprint: ac708b73294a",
+  "spec": {
+    "acceptanceCriteria": [
+      "When candidates is empty (candidates.length === 0), readProjectToml/parseToml is not called.",
+      "All-duplicates path (candidates empty, dupSkipped > 0) still emits the suggestion-filed logEvent with { filedIds: [], dupSkipped: N, failedCount: 0 }.",
+      "Non-empty candidates: behavior is unchanged: each candidate is filed with derivedFrom: [parentIssueId] when parentIssueId resolves.",
+      "bun run check:all is green."
+    ],
+    "scope": "In makeProductionFileSuggestionsFn (src/commands/sidecar.ts), wrap the config/prefix/parentIssueId resolution and the candidate-filing for-loop inside a candidates.length > 0 guard, so an empty batch (no suggestions to file) skips the project.toml read. The post-loop suggestion-filed logEvent block stays outside the guard: it fires on dupSkipped > 0, which is independent of candidates.",
+    "gotchas": [
+      "The guard must wrap ONLY the toml read + for-loop, never the logEvent block: otherwise the all-duplicates path (candidates empty but dupSkipped > 0) stops emitting its event.",
+      "src-only change: no edit under templates/ or agents/, so no bun run embed-vendor / embedded byte-parity concern."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 1,
+    "timeCriticality": 1,
+    "riskReduction": 1,
+    "jobSize": 1
+  },
+  "type": "chore"
 }
