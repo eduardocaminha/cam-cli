@@ -1,0 +1,28 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-256",
+  "description": "Remove the stale 'SlashCommand' token from the ADR 0020 runtime-tools enumeration",
+  "issueNumber": 256,
+  "type": "docs",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Correct the stale tools enumeration in ADR 0020",
+      "description": "As a future frontmatter auditor, I need ADR 0020's runtime-tools list to no longer claim 'SlashCommand' is a real tool so that the stale factual claim (disproved by CAM-254) does not seed the same mistake again.",
+      "acceptanceCriteria": [
+        "docs/adr/0020-orchestrator-runs-as-an-enforced-agent-agent-not-a-catted-prompt.md line 9 no longer contains the token 'SlashCommand'. [oracle: file-assert ! grep -q 'SlashCommand' docs/adr/0020-orchestrator-runs-as-an-enforced-agent-agent-not-a-catted-prompt.md]",
+        "The runtime-usage tools list in that ADR line reads 'Read, Glob, Grep, Bash, WebFetch, Write, Skill, Task/Agent'. [oracle: file-assert grep -q 'Read, Glob, Grep, Bash, WebFetch, Write, Skill, Task/Agent' docs/adr/0020-orchestrator-runs-as-an-enforced-agent-agent-not-a-catted-prompt.md]",
+        "'Skill' remains listed in the ADR tools list (valid granted tool since CAM-255). [oracle: file-assert grep -q 'Skill' docs/adr/0020-orchestrator-runs-as-an-enforced-agent-agent-not-a-catted-prompt.md]",
+        "No file other than the ADR is modified; orchestrator frontmatter and code are unchanged. [oracle: file-assert git diff --name-only main | grep -qx 'docs/adr/0020-orchestrator-runs-as-an-enforced-agent-agent-not-a-catted-prompt.md' && [ $(git diff --name-only main | wc -l) -eq 1 ]]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Single edit at docs/adr/0020-orchestrator-runs-as-an-enforced-agent-agent-not-a-catted-prompt.md:9. Remove only 'SlashCommand, ' from the parenthetical enumeration in the Decision section; leave the Context/Decision/Consequences narrative otherwise intact (ADRs are point-in-time records: correct the stale claim in-place, do not rewrite the decision). GOTCHA: the issue description text 'Skill is never a valid tools: entry' is outdated (written pre-CAM-255) - Skill IS valid and must stay; only 'SlashCommand' is removed. GOTCHA: keep the prose form 'Task/Agent' as-is (the live frontmatter grants Agent; 'Task/Agent' is the accurate prose since the PreToolUse hook gates Task|Agent spawns). Do not touch .claude/agents/subagent-orchestrator.md or any code."
+    }
+  ]
+}
