@@ -10,6 +10,10 @@ The review-fix cycle is **bounded**: at most `CAM_MAX_REVIEW_ROUNDS` rounds (def
 
 ---
 
+## Manual /cam-review flow (Steps 0-5)
+
+Everything below is the manual/on-demand path only; the sidecar's autonomous per-story review pass never reads this file.
+
 ## Step 0: Read review state from PRD
 
 Before gathering context, read `scripts/cam/prd.json` and check the optional `review` block:
