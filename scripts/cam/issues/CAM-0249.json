@@ -1,7 +1,7 @@
 {
   "id": "CAM-249",
   "title": "The agent SYSTEM PROMPT still instructs the worker to read prd.json and pick th…",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-09T16:37:05.469Z",
