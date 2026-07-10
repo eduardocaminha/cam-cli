@@ -32,6 +32,8 @@ import { ContainerConfigError } from '../supervisor/container-config.ts';
 import { ToolchainMismatchError } from '../supervisor/toolchain-assert.ts';
 import { buildSupervisorOptions, makeNotifyOrchestrator, makeReadReviewReport } from '../supervisor/host.ts';
 import { extractSuggestions, dedupSuggestions, buildFollowUpIssue } from '../supervisor/suggestion-followups.ts';
+import type { FollowUpProvenance } from '../supervisor/suggestion-followups.ts';
+import type { ReviewFinding } from '../supervisor/review-report.ts';
 import { readBacklogFromMain, type BacklogSpawnFn } from '../issues/backlog.ts';
 import { createLocalIssueOnMain, type SpawnFn as IssueFileSpawnFn } from './issue-file.ts';
 import { resolveIssueId } from '../issues/resolve-id.ts';
@@ -2209,6 +2211,49 @@ function toBacklogSpawn(spawnFn: IssueFileSpawnFn): BacklogSpawnFn {
 }
 
 /**
+ * Resolves the project.toml-derived issue prefix + parentIssue id and files
+ * each candidate finding via createLocalIssueOnMain. Extracted from
+ * makeProductionFileSuggestionsFn's closure (US-001, CAM-264) so the
+ * candidates.length > 0 guard doesn't push the closure over Biome's
+ * cognitive-complexity ceiling.
+ */
+function fileCandidates(
+	candidates: ReviewFinding[],
+	provenance: FollowUpProvenance,
+	deps: {
+		cwd: string;
+		spawnFn: IssueFileSpawnFn;
+		clock: () => string;
+		readProjectToml: () => string;
+	},
+): { filedIds: string[]; failedCount: number } {
+	const { cwd, spawnFn, clock, readProjectToml } = deps;
+	const config = parseToml(readProjectToml());
+	const prefix = typeof config['issue_prefix'] === 'string' ? config['issue_prefix'] : 'CAM';
+	const parentIssueId = resolveIssueId(provenance.parentIssue, prefix);
+	const filedIds: string[] = [];
+	let failedCount = 0;
+	for (const finding of candidates) {
+		const { title, description } = buildFollowUpIssue(finding, provenance);
+		const outcome = createLocalIssueOnMain({
+			cwd,
+			title,
+			description,
+			spawnFn,
+			clock,
+			readProjectToml,
+			...(parentIssueId !== null ? { derivedFrom: [parentIssueId] } : {}),
+		});
+		if (outcome.ok) {
+			filedIds.push(outcome.id);
+		} else {
+			failedCount++;
+		}
+	}
+	return { filedIds, failedCount };
+}
+
+/**
  * Build the production fileSuggestionsFn (US-003, CAM-189).
  *
  * Reads the current open backlog via readBacklogFromMain, dedups the
@@ -2243,28 +2288,10 @@ export function makeProductionFileSuggestionsFn(
 		const backlog = readBacklogFromMain(cwd, toBacklogSpawn(spawnFn));
 		const candidates = dedupSuggestions(backlog, report);
 		const dupSkipped = extractSuggestions(report).length - candidates.length;
-		const config = parseToml(readProjectToml());
-		const prefix = typeof config['issue_prefix'] === 'string' ? config['issue_prefix'] : 'CAM';
-		const parentIssueId = resolveIssueId(provenance.parentIssue, prefix);
-		const filedIds: string[] = [];
-		let failedCount = 0;
-		for (const finding of candidates) {
-			const { title, description } = buildFollowUpIssue(finding, provenance);
-			const outcome = createLocalIssueOnMain({
-				cwd,
-				title,
-				description,
-				spawnFn,
-				clock,
-				readProjectToml,
-				...(parentIssueId !== null ? { derivedFrom: [parentIssueId] } : {}),
-			});
-			if (outcome.ok) {
-				filedIds.push(outcome.id);
-			} else {
-				failedCount++;
-			}
-		}
+		const { filedIds, failedCount } =
+			candidates.length > 0
+				? fileCandidates(candidates, provenance, { cwd, spawnFn, clock, readProjectToml })
+				: { filedIds: [] as string[], failedCount: 0 };
 		if (filedIds.length > 0 || dupSkipped > 0 || failedCount > 0) {
 			logEvent({
 				ts: clock(),
