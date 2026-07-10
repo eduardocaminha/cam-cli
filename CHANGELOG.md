@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.111.0] - 2026-07-10
+
+### Added
+
+- US-001 - Drop SlashCommand from the orchestrator tools list and reconcile the mirror + embed
+
 ## [0.110.0] - 2026-07-09
 
 ### Added
