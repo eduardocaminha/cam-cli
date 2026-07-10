@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.117.0] - 2026-07-10
+
+### Added
+
+- US-001 - Derive officialDocsValidated status enum and allowed keys from handoff.schema.json
+
 ## [0.116.0] - 2026-07-10
 
 ### Added
