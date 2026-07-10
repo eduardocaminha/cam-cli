@@ -1,0 +1,54 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-261",
+  "description": "Generalize the CAM-260 in-story ratchet-raise pattern from file-size to the full check:all quality spine (coverage/debt/dead-code/dup), with the worker running check:all in-story and the reviewer backstopping every loosening.",
+  "issueNumber": 261,
+  "type": "chore",
+  "relatedDocs": [
+    "docs/adr/0023-implementer-runs-full-check-all-in-story-reverses-cam-260-scoped-gate-decision.md",
+    "docs/adr/0022-file-size-ceiling-raise-happens-in-the-implementer-story-not-at-ship-time.md"
+  ],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Implementer runs full check:all in-story with a per-gate resolution rubric",
+      "description": "As the autonomous worker, I need to run the full `bun run check:all` spine in-story after coding (not just typecheck+test+file-size) and resolve each sibling ratchet (coverage, debt-markers, dead-code, dup) inline per a per-gate rubric, so a legitimate change that trips a ratchet is caught and justified during the story run rather than surfacing late at ship/CI as a manual raise.",
+      "acceptanceCriteria": [
+        "subagent-implementer.md (both .claude/agents/ and templates/agents/ copies) replaces the CAM-260 file-size-only scoped exception (currently ~line 100/97, the sentence 'This is a scoped exception ... NOT a switch to running the full bun run check:all in-story') with an instruction that the worker runs the full `bun run check:all` spine in-story after coding, so coverage/debt-markers/dead-code/dup fire during the story run. [oracle: file-assert bash -c 'grep -q \"full .bun run check:all. spine in-story\" .claude/agents/subagent-implementer.md && grep -q \"full .bun run check:all. spine in-story\" templates/agents/subagent-implementer.md']",
+        "The stale scoped-exception wording is gone from both implementer copies (no remaining sentence asserting file-size is a scoped exception and NOT a switch to running the full check:all). [oracle: file-assert bash -c '! grep -q \"NOT a switch to running the full\" .claude/agents/subagent-implementer.md && ! grep -q \"NOT a switch to running the full\" templates/agents/subagent-implementer.md']",
+        "Both implementer copies document the per-gate inline-resolution rubric: coverage = lower the global floor in scripts/coverage-budget.json with a CAM tracker-ref in the top-level _ref in the same staged commit; debt-markers = cite the TODO/FIXME with an inline tracker ref on the same line; dead-code (knip) = remove the dead code OR add a justified ignore/exclude entry to knip.json; dup (jscpd) = deduplicate OR bump threshold/ignore in .jscpd.json with justification. [oracle: file-assert bash -c 'for f in .claude/agents/subagent-implementer.md templates/agents/subagent-implementer.md; do grep -q \"coverage-budget.json\" $f && grep -q \"knip.json\" $f && grep -q \".jscpd.json\" $f || exit 1; done']",
+        "The rubric preserves the CAM-260 file-size raise mechanics (raise only ceilings of files this story grew, _ref staged in the same commit) and notes that coverage carries the _ref/tracker channel (two global floors: functions, lines) while knip and jscpd have NO _ref channel (their suppressions rely on the reviewer backstop, not a staged tracker-ref). [oracle: file-assert bash -c 'grep -qi \"no _ref\\|no .ref. channel\\|reviewer backstop\" .claude/agents/subagent-implementer.md']",
+        "An ADR under docs/adr/ documents the reversal of the CAM-260 scoping decision (worker now runs full check:all in-story), records the trade-off (slower per-story loop vs early-catch of the whole ratchet class) and the rejected alternatives (coverage-only; per-unit budget files + _ref gates for knip/jscpd). [oracle: file-assert bash -c 'grep -qi \"reverses CAM-260\\|reverses cam-260\" docs/adr/0023-implementer-runs-full-check-all-in-story-reverses-cam-260-scoped-gate-decision.md && grep -qi \"rejected\" docs/adr/0023-implementer-runs-full-check-all-in-story-reverses-cam-260-scoped-gate-decision.md']",
+        "The embedded copy is regenerated via `bun run embed-vendor` and the drift check is clean. [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Edit both dual-copies of the implementer instruction file: .claude/agents/subagent-implementer.md (cam-cli-specific voice, uses `bun run ...` command names) and templates/agents/subagent-implementer.md (downstream generic template; already carries the file-size-budget specifics per CAM-260 precedent, so carry the new per-gate details there too, matching how CAM-260 put cam-specific budget details into both copies). GOTCHA: the two copies are NOT byte-identical by design (.claude/ is cam-specific, templates/ is generic) - preserve each file's existing register, do not force them byte-identical. Editing templates/agents/ REQUIRES `bun run embed-vendor` to regenerate src/vendor/_generated.ts or the byte-parity test (test/embedded.test.ts) fails and the plan preflight aborts (the exact CAM-260 preflight-abort failure mode). Gate wiring reference: scripts/check-all.ts GATES manifest (coverage=check-coverage.ts over scripts/coverage-budget.json floors; dead-code=knip@6.24.0 with knip.json ignore/exclude; dup=jscpd@5 with .jscpd.json threshold/ignore). Config files this story does NOT modify (they are referenced by the rubric only): scripts/coverage-budget.json, knip.json, .jscpd.json, scripts/check-coverage.ts. coverage has FLOOR_TOLERANCE_PP=0.5 slack (a floor lower within tolerance is not a real regression). The current implementer scoped-exception text is at .claude/agents/subagent-implementer.md line ~100 (step 2 of 'What you do for the story'). ADR 0023 already exists (written at spec time by the domain-docs step, commit cb8427b1); verify its content matches the reversal decision rather than recreating it. This story touches .claude/agents/** which the implementer normally must not touch - it is explicitly required here. Re-check docs/adr/0023 and docs/adr/0022 before editing."
+    },
+    {
+      "id": "US-002",
+      "title": "Reviewer backstops raises/suppressions across all four sibling ratchets",
+      "description": "As the reviewer, I need my file-size-budget backstop extended to cover coverage-floor lowering, dead-code (knip) suppressions, and dup (jscpd) loosenings, so that for each of the four sibling gates I confirm the change was legitimate rather than the gate being loosened to pass - the only guard for knip/jscpd, which have no staged tracker-ref channel.",
+      "acceptanceCriteria": [
+        "subagent-reviewer.md (both .claude/agents/ and templates/agents/ copies) extends the existing file-size-budget backstop (currently the checklist item at ~line 86) so the reviewer explicitly backstops loosenings across all four sibling gates: a coverage-floor lowering in scripts/coverage-budget.json, a dead-code suppression (knip.json ignore/exclude), and a dup loosening (.jscpd.json threshold/ignore), in addition to file-size ceiling raises. [oracle: file-assert bash -c 'for f in .claude/agents/subagent-reviewer.md templates/agents/subagent-reviewer.md; do grep -q \"coverage-budget.json\" $f && grep -q \"knip.json\" $f && grep -q \".jscpd.json\" $f || exit 1; done']",
+        "The reviewer instruction states that for coverage a staged _ref tracker-ref can be checked, but knip and jscpd have NO _ref channel, so the reviewer backstop is the only guard for those two loosenings (do not require a fabricated _ref for them). [oracle: file-assert bash -c 'grep -qi \"only guard\\|no _ref\\|no .ref. channel\" .claude/agents/subagent-reviewer.md']",
+        "The project-conventions row (criterion #5 in the Layer B rubric table, ~line 116) references that every raise/suppression across the four sibling gates in the diff is justified, extending the existing file-size-budget clause. [oracle: file-assert bash -c 'grep -qi \"coverage\\|knip\\|jscpd\\|sibling\" .claude/agents/subagent-reviewer.md | head -1 >/dev/null && grep -n \"project-conventions\" .claude/agents/subagent-reviewer.md']",
+        "An unjustified raise/suppression on any of the four gates is documented as a CRITICAL / REQUEST CHANGES finding (same disposition as the existing file-size clause). [oracle: file-assert bash -c 'grep -qi \"REQUEST CHANGES\\|CRITICAL\" .claude/agents/subagent-reviewer.md']",
+        "The embedded copy is regenerated via `bun run embed-vendor` and the drift check is clean. [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "The full quality spine is green. [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "Edit both dual-copies of the reviewer instruction file: .claude/agents/subagent-reviewer.md and templates/agents/subagent-reviewer.md. GOTCHA: like the implementer file, the two reviewer copies are NOT byte-identical by design (.claude/ has the cam-specific Security/Ink/Conventions checklist; templates/ has a generic web-app checklist) - preserve each file's register; apply the equivalent four-gate backstop change to each, do not force byte-parity. The existing file-size backstop lives at .claude/agents/subagent-reviewer.md line ~86 (### Conventions checklist) and is echoed in the Layer B rubric table criterion #5 at line ~116; extend both places. Editing templates/agents/ REQUIRES `bun run embed-vendor` to regenerate src/vendor/_generated.ts or test/embedded.test.ts fails (CAM-260 preflight-abort mode). KEY constraint from the issue gotchas: knip.json and .jscpd.json have NO _ref/tracker channel, so the reviewer backstop is the ONLY guard for dead-code and dup suppressions - do not fabricate a _ref requirement for them (that would be the rejected option C). coverage does carry _ref (scripts/coverage-budget.json, two global floors functions+lines) and a FLOOR_TOLERANCE_PP=0.5 slack. This story touches .claude/agents/** which is explicitly required here. requires US-001 because both stories regenerate src/vendor/_generated.ts and the ADR reversal decision established in US-001 frames this reviewer change."
+    }
+  ]
+}
