@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.118.0] - 2026-07-10
+
+### Added
+
+- US-002 - Update the stale quoted implementer task-prompt in cam-next.md
+- US-001 - Reconcile implementer agent SYSTEM PROMPT to the injected-story model
+
 ## [0.117.0] - 2026-07-10
 
 ### Added

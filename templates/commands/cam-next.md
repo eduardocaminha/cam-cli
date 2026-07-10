@@ -61,13 +61,24 @@ claude \
 
 There is no `/cam-implement` slash command. The implementer and reviewer are agents (`subagent-implementer`, `subagent-reviewer`) defined in `.claude/agents/`. `--output-format text` and `; tmux wait-for -S <channel>` are NOT used: the session is interactive TUI, and completion is detected via the pushed report file (`scripts/cam/worker-report.json`).
 
-The task prompt for the implementer is:
+The task prompt for the implementer embeds a single, supervisor-selected story (`buildImplementerTaskPrompt`, `src/supervisor/task-prompt.ts`), not a generic self-selection instruction:
 
 ```
-Implement the next user story from scripts/cam/prd.json per your AGENT.md.
+Implement user story <id> from scripts/cam/prd.json per your AGENT.md.
+This exact story has already been selected by the supervisor; do not self-select a different story.
+
+Story ID: <id>
+Title: <title>
+Description: <description>
+Priority: <priority>
+Requires: <requires>
 Branch: <current-branch>
-Return with one of the CAM_IMPLEMENTER_STATUS= lines on your last line.
+Acceptance Criteria:
+  1. <criterion>
+  ...
 ```
+
+Return with one of the CAM_IMPLEMENTER_STATUS= lines on your last line.
 
 ---
 
