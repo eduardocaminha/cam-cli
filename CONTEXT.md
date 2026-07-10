@@ -109,3 +109,12 @@ A required status check whose job always runs (so its context always reports and
 
 **container-scoped managers**:
 The Renovate managers whose bumps change only the container image and are not exercised by the macOS CI: 'dockerfile' (.devcontainer base image) and 'asdf' (.tool-versions nodejs). Contrast with CI-exercised managers (bun-version, github-actions) whose bumps the macOS 'ci' job actually validates.
+
+**file-size ratchet**:
+The check:file-size gate (scripts/check-file-sizes.ts, part of the check:all spine) that fails when a budgeted source file exceeds its per-file line-count ceiling recorded in scripts/file-size-budget.json.
+
+**ceiling raise**:
+Bumping a file's line-count ceiling in scripts/file-size-budget.json; the raise is only accepted if the staged diff also carries a tracker-ref (CAM-NNN, #N, or a URL) in the top-level _ref key.
+
+**_ref tracker-ref**:
+The top-level prose key in scripts/file-size-budget.json that must contain an issue/PR reference for any staged ceiling raise; checkDiffTrackerRef reads only the staged diff, so it must be committed alongside the raise.
