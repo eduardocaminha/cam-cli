@@ -1,0 +1,33 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-263",
+  "description": "Auto-filed SUGGESTION follow-ups populate the structured derivedFrom field with the parent issue id carried explicitly from plan-time.",
+  "issueNumber": 263,
+  "type": "fix",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Set derivedFrom on auto-filed SUGGESTION follow-ups from the parent issue id",
+      "description": "As the cam supervisor, I need auto-filed SUGGESTION follow-up issues to carry a structured derivedFrom link to the parent issue whose review produced the SUGGESTION, so provenance is queryable structurally (not just greppable in the description prose).",
+      "acceptanceCriteria": [
+        "PrdSnapshot (src/supervisor/decide.ts) carries the parent issue number as a new explicit field (issueNumber), read verbatim from prd.json by readPrd; the field is NOT derived by parsing the cam/issue-<n> branchName string. [oracle: grep -q 'issueNumber' src/supervisor/decide.ts]",
+        "FollowUpProvenance (src/supervisor/suggestion-followups.ts) carries the parent issue number, and the loop.ts terminal-verdict hook populates it from the prd snapshot's issueNumber alongside the existing source/round fields. [oracle: grep -nE 'parentIssue|issueNumber' src/supervisor/suggestion-followups.ts src/supervisor/loop.ts]",
+        "makeProductionFileSuggestionsFn (src/commands/sidecar.ts) formats the parent id via resolveIssueId(issueNumber, issue_prefix-from-project.toml) and passes it as derivedFrom:[<parentIssueId>] into createLocalIssueOnMain; no new writer or schema field is added (createLocalIssueOnMain already accepts derivedFrom). [oracle: grep -nE 'derivedFrom|resolveIssueId' src/commands/sidecar.ts]",
+        "specSource is NOT set on the auto-filed issue, so the follow-up stays stage:idea and still requires an operator /cam-spec before it is plannable. [oracle: reviewer-judgment]",
+        "When the parent issue number is genuinely unavailable (undefined/null/<=0, e.g. a hand-authored PRD with no backing issue), derivedFrom is omitted rather than filed with a malformed value; resolveIssueId returns null and the writer's existing spread-when-non-empty guard drops it. [oracle: reviewer-judgment]",
+        "makeProductionFileSuggestionsFn (test/supervisor/suggestion-filing-production.test.ts) asserts derivedFrom is threaded through to createLocalIssueOnMain when a parent issue number is present, and is omitted when it is absent. [oracle: bun test test/supervisor/suggestion-filing-production.test.ts]",
+        "The loop-level terminal-hook test (test/supervisor/suggestion-filing-hook.test.ts) asserts the parent issue number reaches FollowUpProvenance from the prd snapshot. [oracle: bun test test/supervisor/suggestion-filing-hook.test.ts]",
+        "The existing provenance text lines (Source: / suggestion-fingerprint:) are unchanged; derivedFrom is additive structured metadata, not a replacement for the dedup fingerprint. [oracle: grep -q 'suggestion-fingerprint:' src/supervisor/suggestion-followups.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Vertical slice through 4 source files + 2 tests, all small edits. (1) src/supervisor/decide.ts PrdSnapshot (~line 20-48): add `issueNumber?: number` (prd.json already carries it; readPrd JSON.parses so no plan-runner code change needed once the interface surfaces it). (2) src/supervisor/suggestion-followups.ts FollowUpProvenance: add parent-issue-number field (numeric); do NOT touch buildFollowUpIssue's description/title (derivedFrom is not prose). (3) src/supervisor/loop.ts terminal hook (~line 2016-2025): set the new provenance field from prdForSuggestions.issueNumber. (4) src/commands/sidecar.ts makeProductionFileSuggestionsFn (~line 2237-2270): it already has readProjectToml; parse issue_prefix exactly like src/commands/issue-file.ts:294-298 (config['issue_prefix'] ?? 'CAM'), call resolveIssueId(provenance.<parentField>, prefix) from src/issues/resolve-id.ts, and pass `derivedFrom` into createLocalIssueOnMain only when non-null. GOTCHAS (from issue spec): the writer AND issues.schema.json ALREADY support derivedFrom end-to-end (CreateLocalIssueOnMainOptions.derivedFrom, WriteIssueFileOptions.derivedFrom at alloc.ts:69, written in buildIssueEntry at alloc.ts:117 only when non-empty) -- do NOT add a new writer field or edit the schema. Do NOT set specSource: the schema allOf couples specSource:'derived' -> stage:specified + derivedFrom required + fast-track guardrails (issue-file.ts:286); passing derivedFrom alone (no specSource) is schema-valid and keeps stage:idea. Do NOT parse the parent id out of branchName (fragile-branch-string-parse class, CAM-237) -- carry issueNumber explicitly. Out of scope: setting specSource, backfilling already-filed issues (e.g. CAM-262). resolveIssueId already guards <=0/null/undefined and returns null, matching the omit-when-unavailable AC."
+    }
+  ]
+}
