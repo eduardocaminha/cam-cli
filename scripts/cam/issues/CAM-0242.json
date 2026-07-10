@@ -1,7 +1,7 @@
 {
   "id": "CAM-242",
   "title": "Worker herda CLAUDE_CODE_OAUTH_TOKEN do OS env do tmux server em host mode -> pina worker na conta do token (bypassa login Team do config dir)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-09T13:15:48.476Z",
