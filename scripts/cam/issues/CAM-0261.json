@@ -1,0 +1,9 @@
+{
+  "id": "CAM-261",
+  "title": "Generalize the in-story ratchet-raise pattern to coverage/debt/dead-code/dup gates",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-10T19:00:44.551Z",
+  "description": "Follow-up to CAM-260. CAM-260 moves only the file-size ceiling raise left into the implementer story. The sibling check:all ratchets (coverage, debt, dead-code, dup) share the exact same late-catch gap: the worker runs only typecheck+test, so a legitimate change trips those ratchets late at ship/CI (gates-failed) and gets a manual raise. Generalize the in-story raise+reviewer-backstop pattern from CAM-260 to these gates. Each gate needs its own justification rubric (a coverage or dead-code raise is a different judgement than a file-size raise, so this is deliberately separate from CAM-260 to keep each PRD small)."
+}
