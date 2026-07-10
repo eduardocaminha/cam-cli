@@ -489,3 +489,15 @@ Each entry follows this template:
 - **Decisions**: Ran CAM-255 with its own defined spec; did NOT silently fold in CAM-256 (ADR 0020 tools-list truth-up) despite the overlapping theme. No plan_approval=operator set (operator participation is spec-only). Kept scope minimal: frontmatter + templates mirror + two body dispatch references.
 - **Blockers encountered**: None. PR #187 shipped ci-gated, merged on CI green, post-merge clean (pull + close CAM-255 + tag v0.112.0), no pull-failed. No git-fetch poll ran during the merge window (CAM-228 lesson held).
 - **Follow-ups**: CAM-256 (idea) remains open: ADR 0020 still lists the orchestrator frontmatter tools as complete-against-real-runtime including the removed SlashCommand; overlaps CAM-255's tools-list-truth theme but lives in the ADR. Decide with operator whether to spec it standalone or drop. No specified work remains queued after this cycle.
+
+## CAM-256 — Remove stale SlashCommand token from ADR 0020 runtime-tools enumeration
+
+- **Started**: 2026-07-10T04:41:50Z
+- **Closed**: 2026-07-10T05:05:00Z
+- **Branch**: cam/issue-256
+- **Issue**: CAM-256
+- **Outcome**: shipped
+- **Summary**: Single-story docs fix. Removed the stale 'SlashCommand' token from ADR 0020 line 9's runtime-tools enumeration; the list now reads Read, Glob, Grep, Bash, WebFetch, Write, Skill, Task/Agent. Kept 'Skill' because CAM-255 proved it is a real granted tool, contrary to the issue's own stale text which claimed Skill was never valid (written from the pre-CAM-255 vantage). Operator ran /cam-spec CAM-256 this session; loop then ran plan->implement->review->ship autonomously (spec-only participation). Gates green throughout (typecheck ok, 3997 pass / 0 fail). Shipped ci-gated as PR #188, tag v0.113.0. Closes the tools-list-truth thread across frontmatter (CAM-254), agent body (CAM-255), and the ADR (CAM-256).
+- **Decisions**: During the spec grill, caught that the issue's premise was stale ('Skill is never a valid tools: entry') and confirmed with the operator that the fix is remove-SlashCommand-ONLY, not remove-both. Scoped as type:docs, single-line ADR edit, no code/frontmatter change. Grill surfaced no new terms and no ADR-worthy decisions, so the domain-docs write was the sanctioned empty noOp.
+- **Blockers encountered**: Review round 1 returned one CRITICAL, but it was a bad-acceptance-criterion finding, not a defect in the ADR fix: AC4's oracle (git diff --name-only main must equal 1 file) is structurally unsatisfiable because the cam workflow itself commits prd.json and handoff.json to the branch (3 files). The reviewer confirmed the intent (frontmatter + code untouched) was satisfied. Round-1 fix scoped the oracle with ':(exclude)scripts/cam/'; round 2 CLEAN. PR #188 merged ci-gated on CI green; post-merge clean (close CAM-256 + tag v0.113.0), no git-fetch poll during the merge window (CAM-228 held).
+- **Follow-ups**: None. No specified or planned work remains queued; backlog is entirely idea-stage and needs an operator /cam-spec step to become dispatchable.
