@@ -368,7 +368,7 @@ export function commitSubjectMatchesStory(subject: string, storyId: string): boo
 // ---------------------------------------------------------------------------
 
 /** Which sentinel source was matched when polling the pane. */
-export type AnySentinelSource = 'implementer' | 'reviewer' | 'review-tag';
+export type AnySentinelSource = 'implementer' | 'review-tag';
 
 /** Result of parseAnySentinel. */
 export interface AnySentinelMatch {
