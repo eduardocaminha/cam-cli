@@ -1,0 +1,29 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-264",
+  "description": "Skip project.toml read in makeProductionFileSuggestionsFn when the suggestion batch is empty.",
+  "issueNumber": 264,
+  "type": "chore",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Guard toml read behind non-empty candidates",
+      "description": "As a cam maintainer, I need the suggestion-filing hook to skip the project.toml read and prefix/parent resolution when there are no candidates to file, so that empty batches avoid an unnecessary filesystem read while all-duplicate batches still emit their audit event.",
+      "acceptanceCriteria": [
+        "In makeProductionFileSuggestionsFn (src/commands/sidecar.ts), the parseToml(readProjectToml()) call, the issue_prefix resolution, the resolveIssueId(parentIssue) call, and the candidate-filing for-loop are all wrapped inside a candidates.length > 0 guard. [oracle: reviewer-judgment]",
+        "When candidates is empty (candidates.length === 0), readProjectToml/parseToml is not called (verified by a test that injects a spawnFn/dedup path yielding zero candidates and asserts the toml reader is never invoked). [oracle: bun test]",
+        "The all-duplicates path (candidates empty, dupSkipped > 0) still emits the suggestion-filed logEvent with { filedIds: [], dupSkipped: N, failedCount: 0 }; the logEvent block remains OUTSIDE the guard. [oracle: bun test]",
+        "Non-empty candidates path is behaviorally unchanged: each candidate is filed with derivedFrom: [parentIssueId] when parentIssueId resolves. [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint/static spine is green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Single file: src/commands/sidecar.ts, function makeProductionFileSuggestionsFn (~line 2242-2279). Wrap ONLY the toml read (config/prefix/parentIssueId) + the candidate for-loop inside `if (candidates.length > 0) { ... }`; declare filedIds/failedCount before the guard so the post-loop logEvent block (fires on filedIds.length>0 || dupSkipped>0 || failedCount>0) stays outside it. GOTCHA (from issue spec): never wrap the logEvent block, or the all-duplicates path stops emitting its event. GOTCHA: src-only change, no edit under templates/ or agents/, so no embed-vendor/byte-parity concern. Tests mirror source under test/; look for existing makeProductionFileSuggestionsFn coverage to extend."
+    }
+  ]
+}
