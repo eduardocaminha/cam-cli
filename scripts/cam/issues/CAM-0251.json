@@ -1,9 +1,35 @@
 {
   "id": "CAM-251",
   "title": "After US-003 removed the only producer of the 'reviewer' sentinel, the 'reviewe…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-09T19:29:24.368Z",
-  "description": "After US-003 removed the only producer of the 'reviewer' sentinel, the 'reviewer' member of the AnySentinelSource union is now unreachable (parseAnySentinel only returns 'implementer' or 'review-tag'). Pruning it is out of this story's AC scope; consider a follow-up cleanup.\n\nSource: cam/issue-233\nReview round: 1\nLocation: src/supervisor/result.ts:372\n\nsuggestion-fingerprint: 057005e3aa27"
+  "description": "After US-003 removed the only producer of the 'reviewer' sentinel, the 'reviewer' member of the AnySentinelSource union is now unreachable (parseAnySentinel only returns 'implementer' or 'review-tag'). Pruning it is out of this story's AC scope; consider a follow-up cleanup.\n\nSource: cam/issue-233\nReview round: 1\nLocation: src/supervisor/result.ts:372\n\nsuggestion-fingerprint: 057005e3aa27",
+  "spec": {
+    "acceptanceCriteria": [
+      "The 'reviewer' member is removed from the AnySentinelSource union type in src/supervisor/result.ts (line ~371), leaving 'implementer' | 'review-tag'.",
+      "No producer or consumer of AnySentinelSource references the removed member (verified: parseAnySentinel returns only 'implementer' or 'review-tag'; no .source === 'reviewer' branch exists anywhere).",
+      "The unrelated 'reviewer' usages are NOT touched: the per-phase model/config name ('reviewer' in src/config/models.ts, src/commands/config.ts, src/ui/ConfigScreen.tsx) and the tmux @cam_label pane label ('reviewer' in src/tmux/session.ts, src/supervisor/loop.ts) are different concepts and remain.",
+      "typecheck and the full test suite pass green."
+    ],
+    "scope": "Prune the unreachable 'reviewer' member of the AnySentinelSource union in src/supervisor/result.ts, left dead after US-003 (cam/issue-233) removed its only producer. One-line type change plus any comment touch-up. No behavior change.",
+    "gotchas": [
+      "'reviewer' is heavily overloaded in the codebase: it is a per-phase model-config name AND a tmux pane @cam_label, both unrelated to the AnySentinelSource sentinel source. Only the AnySentinelSource union member is dead; do NOT remove the phase name or the pane label.",
+      "parseAnySentinel (result.ts:391) only ever returns source 'implementer' or 'review-tag'; its docstring already lists just those two detections, so the 'reviewer' union member has been unreachable since US-003.",
+      "There is no exhaustiveness switch on AnySentinelSource that would need a 'reviewer' case removed (no consumer branches on .source === 'reviewer')."
+    ],
+    "domainTerms": [
+      "AnySentinelSource",
+      "parseAnySentinel",
+      "sentinel source"
+    ]
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 1,
+    "riskReduction": 1,
+    "jobSize": 1
+  },
+  "type": "chore"
 }
