@@ -1,0 +1,17 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Implementer runs full check:all in-story with a per-gate resolution rubric" },
+  "branchName": "cam/issue-261",
+  "timestamp": "2026-07-10T12:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    ".claude/agents/subagent-implementer.md",
+    "templates/agents/subagent-implementer.md",
+    "src/vendor/_generated.ts",
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 reverses the CAM-260 file-size-only scoped exception in both subagent-implementer.md copies: the implementer now runs the full `bun run check:all` spine in-story (not just typecheck+test+file-size) and resolves each sibling ratchet inline per a per-gate rubric (file-size: raise ceiling + _ref, same CAM-260 mechanics; coverage: lower the global floor in scripts/coverage-budget.json + _ref, over 2 global floors (functions, lines), not per-file; debt-markers: inline tracker ref on the TODO/FIXME line, no _ref file; dead-code/knip: remove or justified ignore/exclude in knip.json, NO _ref channel; dup/jscpd: dedupe or bump threshold/ignore in .jscpd.json, NO _ref channel -- knip and jscpd suppressions rely on the reviewer backstop, not a staged tracker-ref). ADR 0023 already existed (written at spec time) documenting the reversal + rejected alternatives (coverage-only; new per-unit budget files for knip/jscpd) -- this story did not need to create it, only verify it matched. Ran `bun run check:all` end-to-end for this story itself (dogfooding the new instruction): all gates green (4020 tests pass, coverage/debt-markers/dead-code/dup/file-size/lint/ci-parity all ok) -- no ratchet needed loosening. Future stories should expect the per-story loop to now always run the full spine, not just the 3-gate subset from before.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
