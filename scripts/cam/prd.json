@@ -32,7 +32,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/agents/subagent-orchestrator.md (frontmatter tools: list + body: 'Dispatch protocol' > 'Inject commands: review, issue' section, and the Conversation contract table 'review'/'cria um issue' rows), templates/agents/subagent-orchestrator.md (per-file dual-copy: diff first per CAM-123; the two were byte-identical at plan time so a re-embed IS forced here), src/vendor/_generated.ts (generated, do not hand-edit; run `bun run embed-vendor`). Grounding: CAM-254 (shipped, PR #186) already removed the dead SlashCommand entry from the same frontmatter tools: region, so this story only ADDS `Skill` and edits body prose. `Skill` is a real grantable tool per code.claude.com/docs/en/tools.md ('Executes a skill within the main conversation'); commands and skills share one registry so .claude/commands/*.md are Skill-invokable as-is with no reauthoring, and skills run inline in the caller's context by default (fork is opt-in), so /cam-review runs in the orchestrator's own context. Gotchas: keep scope minimal (issue gotcha #3), do NOT add Skill(...) argument restrictions unless needed, do NOT touch the send-keys inject path (CAM-200, out of scope per issue gotcha #4). AskUserQuestion/ExitPlanMode/ScheduleWakeup/WaitForMcpServers are unavailable to agents but no /cam-* command depends on them. Live runtime self-invocation under --agent has no interactive-TUI CI harness (CAM-42), so it is verified by the frontmatter grant + body instruction as file-asserts, not an operator ceremony."
     }
