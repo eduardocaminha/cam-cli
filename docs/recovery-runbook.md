@@ -1643,15 +1643,17 @@ warning similar to:
 ```
 Warning: could not configure branch protection via API (403 -- admin required).
 Hint: go to Settings > Branches > Add rule, set branch 'main', and require
-the 'ci' status check before merging.
+the 'ci' and 'ci-container' status checks before merging.
 ```
 
 Recovery (manual branch-protection setup):
 
 1. Open the repository on GitHub: Settings > Branches > Add rule.
 2. Set the "Branch name pattern" to `main`.
-3. Under "Require status checks to pass before merging", add the `ci` check
-   (this is the check name emitted by `.github/workflows/ci.yml`).
+3. Under "Require status checks to pass before merging", add BOTH the `ci`
+   check (emitted by `.github/workflows/ci.yml`'s `ci` job) and the
+   `ci-container` check (emitted by the same workflow's `ci-container` job,
+   CAM-244) as required checks.
 4. Save the rule.
 5. Verify the rule is active:
 
@@ -1659,6 +1661,7 @@ Recovery (manual branch-protection setup):
    gh api repos/{owner}/{repo}/branches/main/protection \
      --jq '.required_status_checks.checks[].context'
    # should print: ci
+   # ci-container
    ```
 
 6. Re-run the ci-gated flow:
@@ -1667,8 +1670,8 @@ Recovery (manual branch-protection setup):
    cam config
    ```
 
-   The setup step will GET the branch-protection rule, confirm `ci` is present,
-   and proceed without a warning.
+   The setup step will GET the branch-protection rule, confirm both `ci` and
+   `ci-container` are present, and proceed without a warning.
 
 Cross-reference: `src/release/merge-watch.ts` (runMergeWatch, poll loop,
 terminal states), `src/release/branch-protection.ts` (configureBranchProtection,

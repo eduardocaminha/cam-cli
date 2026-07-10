@@ -6,14 +6,17 @@
 // touched. Each test exercises a single behavior slice.
 //
 // AC-1: pure function with injectable SpawnFn, returns discriminated result.
-// AC-2: PUT body contains all four required top-level fields.
+// AC-2: PUT body contains all four required top-level fields, requiring
+//       BOTH 'ci' and 'ci-container' checks.
 // AC-3: PUT request sets Accept header to application/vnd.github+json.
-// AC-4: GET verification accepts 'ci' in checks[] OR contexts[] (legacy).
+// AC-4: GET verification accepts 'ci'/'ci-container' in checks[] OR
+//       contexts[] (legacy), and requires BOTH to be present.
 // AC-5: fallback-warned on non-zero exit / 403 / no-admin / no-auth error.
 // AC-6: CAM-84 prereqs checked; hint emitted when allow_auto_merge or
 //        allow_squash_merge is off.
 //
-// US-002 (CAM-101).
+// US-002 (CAM-101); required-check set widened to 'ci' + 'ci-container' in
+// US-002 (CAM-244).
 
 import { describe, expect, test } from 'bun:test';
 import type { SpawnSyncReturns } from 'node:child_process';
@@ -59,34 +62,45 @@ function fail(
 	};
 }
 
-/** Minimal GET protection response with ci in the checks array. */
+/** Minimal GET protection response with ci AND ci-container in the checks array. */
 function protectionResponseChecks(): string {
 	return JSON.stringify({
 		required_status_checks: {
 			strict: true,
-			checks: [{ context: 'ci' }],
+			checks: [{ context: 'ci' }, { context: 'ci-container' }],
 			contexts: [],
 		},
 	});
 }
 
-/** Minimal GET protection response with ci in the legacy contexts array. */
+/** Minimal GET protection response with ci AND ci-container in the legacy contexts array. */
 function protectionResponseContexts(): string {
 	return JSON.stringify({
 		required_status_checks: {
 			strict: true,
 			checks: [],
-			contexts: ['ci'],
+			contexts: ['ci', 'ci-container'],
 		},
 	});
 }
 
-/** GET protection response without the ci check. */
+/** GET protection response without either required check. */
 function protectionResponseNoCi(): string {
 	return JSON.stringify({
 		required_status_checks: {
 			strict: true,
 			checks: [{ context: 'other-check' }],
+			contexts: [],
+		},
+	});
+}
+
+/** GET protection response with 'ci' present but 'ci-container' absent (partial). */
+function protectionResponseMissingContainer(): string {
+	return JSON.stringify({
+		required_status_checks: {
+			strict: true,
+			checks: [{ context: 'ci' }],
 			contexts: [],
 		},
 	});
@@ -195,7 +209,7 @@ describe('AC-1: pure function with injectable SpawnFn and discriminated result',
 // ---------------------------------------------------------------------------
 
 describe('AC-2: PUT body has all four required top-level fields', () => {
-	test('body includes required_status_checks with strict:true and checks:[{context:"ci"}]', () => {
+	test('body includes required_status_checks with strict:true and checks:[{context:"ci"},{context:"ci-container"}]', () => {
 		const { spawnFn, calls } = makeSeqSpawnFn([
 			ok('{}'),
 			ok(protectionResponseChecks()),
@@ -210,7 +224,7 @@ describe('AC-2: PUT body has all four required top-level fields', () => {
 		const body = JSON.parse(putCall?.input ?? '{}');
 		expect(body.required_status_checks).toEqual({
 			strict: true,
-			checks: [{ context: 'ci' }],
+			checks: [{ context: 'ci' }, { context: 'ci-container' }],
 		});
 	});
 
@@ -299,8 +313,8 @@ describe('AC-3: PUT request sets Accept header to application/vnd.github+json', 
 // AC-4: GET verification checks array AND deprecated contexts array
 // ---------------------------------------------------------------------------
 
-describe('AC-4: GET verification accepts ci in checks[] or contexts[]', () => {
-	test('configured-and-verified when ci is in checks array', () => {
+describe('AC-4: GET verification accepts ci/ci-container in checks[] or contexts[]', () => {
+	test('configured-and-verified when both ci and ci-container are in checks array', () => {
 		const { spawnFn } = makeSeqSpawnFn([
 			ok('{}'),
 			ok(protectionResponseChecks()),
@@ -319,7 +333,7 @@ describe('AC-4: GET verification accepts ci in checks[] or contexts[]', () => {
 		expect(result.verified).toBe(true);
 	});
 
-	test('configured-and-verified when ci is in deprecated contexts array', () => {
+	test('configured-and-verified when both ci and ci-container are in deprecated contexts array', () => {
 		const { spawnFn } = makeSeqSpawnFn([
 			ok('{}'),
 			ok(protectionResponseContexts()),
@@ -338,10 +352,29 @@ describe('AC-4: GET verification accepts ci in checks[] or contexts[]', () => {
 		expect(result.verified).toBe(true);
 	});
 
-	test('fallback-warned when ci is absent from both checks and contexts', () => {
+	test('fallback-warned when both ci and ci-container are absent from checks and contexts', () => {
 		const { spawnFn } = makeSeqSpawnFn([
 			ok('{}'),
 			ok(protectionResponseNoCi()),
+		]);
+		const { emitHint, emitWarning } = makeCaptures();
+
+		const result = configureBranchProtection({
+			ownerRepo: OWNER_REPO,
+			spawnFn,
+			emitHint,
+			emitWarning,
+		});
+
+		expect(result.outcome).toBe('fallback-warned');
+		expect(result.verified).toBe(false);
+		expect(result.hint).toBe(BRANCH_PROTECTION_FALLBACK_HINT);
+	});
+
+	test('fallback-warned when ci is present but ci-container is absent (partial required-check set)', () => {
+		const { spawnFn } = makeSeqSpawnFn([
+			ok('{}'),
+			ok(protectionResponseMissingContainer()),
 		]);
 		const { emitHint, emitWarning } = makeCaptures();
 

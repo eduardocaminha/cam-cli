@@ -52,7 +52,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Files: src/release/branch-protection.ts (CI_CHECK_NAME is a single const 'ci'; generalize to a two-context set, update buildProtectionBody + hasCiCheck to require both), test/release/branch-protection.test.ts (fixtures at top: ciInChecks/ciInContexts/ciAbsent responses need a ci-container variant), docs/recovery-runbook.md (branch-protection verify+warn fallback section ~L1630-1665: the manual steps and the --jq contexts query). GOTCHA: Renovate automerge already stays gated on the required CI status check (renovate.json descriptions, ADR 0010); making ci-container a required check is what makes the container-scoped rules wait on it, so renovate.json needs no edit. GOTCHA: the PUT body must keep all four top-level fields (required_status_checks, enforce_admins:false, required_pull_request_reviews:null, restrictions:null) or gh api returns 422. Depends on US-001 (the ci-container job must exist before it is required, else PRs would wedge waiting on a non-existent check).",
       "notesRef": null
