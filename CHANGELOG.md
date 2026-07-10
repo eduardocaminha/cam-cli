@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.120.0] - 2026-07-10
+
+### Added
+
+- US-001 - Remove dead 'reviewer' member from AnySentinelSource union
+
 ## [0.119.0] - 2026-07-10
 
 ### Added
