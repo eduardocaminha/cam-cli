@@ -1,0 +1,18 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Reconcile implementer agent SYSTEM PROMPT to the injected-story model"
+  },
+  "branchName": "cam/issue-249",
+  "timestamp": "2026-07-10T00:00:00Z",
+  "modifiedFiles": [
+    ".claude/agents/subagent-implementer.md",
+    "templates/agents/subagent-implementer.md",
+    "src/vendor/_generated.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 reconciled the subagent-implementer.md SYSTEM PROMPT (both .claude and templates copies) to the injected-story model already shipped in decide.ts/task-prompt.ts (CAM-224, US-001): the frontmatter description, the 'Inputs you will read' point 1, the 'Inputs read order' jq self-selection block, and the Operator-required-stories 'Selection logic' sentence now all state that the story is provided in the spawn prompt (id/title/description/priority/requires/acceptanceCriteria/branchName) and that the worker still reads prd.json only to fetch the story's notes field and to flip passes:true. Per-copy divergences noted in prior story notes (handoff.json Read-tool mandatory note, quality-gate step detail, vendor-drift output line) were left untouched since they are out of this story's scope. Remember to run `bun run embed-vendor` after any further templates/ edit before `embed-vendor:check` will pass.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}

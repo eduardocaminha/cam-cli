@@ -23,7 +23,7 @@
         "Vendor drift check passes after regenerating the embedded copy (bun run embed-vendor then bun run embed-vendor:check). [oracle: bun run embed-vendor:check]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/agents/subagent-implementer.md, templates/agents/subagent-implementer.md, src/vendor/_generated.ts (regen only). Docs-only, no TS logic changes: decide.ts (decideNextAction, authoritative selector) and task-prompt.ts (injects the story + 'do not self-select' directive) are already correct and must NOT change. GOTCHA (memory: cam dual-copy is per-file): the two md copies are NOT byte-identical everywhere (they diff at the handoff-read and quality-gate lines), but the self-selection sections (lines 3/35/48-55/69) ARE identical, so apply the identical edit to both. GOTCHA (embed-vendor): templates/ is embedded into src/vendor/_generated.ts; editing templates/agents/subagent-implementer.md requires 'bun run embed-vendor' before 'bun run embed-vendor:check' passes. Mirror the wording in scripts/cam/CLAUDE.md:5 verbatim in spirit. test/embedded.test.ts (US-003 gate-discipline + CAM-58 lastCompletedStory assertions) reads templatesContents['agents/subagent-implementer.md'] and must stay green: keep 'PROHIBITED', 'named-command + exitCode 0', success/partial/failure labels, and the '\"lastCompletedStory\": {' object form intact."
     },
