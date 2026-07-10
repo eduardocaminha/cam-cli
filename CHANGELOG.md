@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.116.0] - 2026-07-10
+
+### Added
+
+- US-001 - Strip CLAUDE_CODE_OAUTH_TOKEN from host workers only
+
 ## [0.115.0] - 2026-07-10
 
 ### Added
