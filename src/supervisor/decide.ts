@@ -24,6 +24,14 @@ export interface PrdSnapshot {
 	 * `source` provenance field when filing SUGGESTION follow-up issues.
 	 */
 	branchName?: string;
+	/**
+	 * Parent issue number backing this PRD cycle, read verbatim from prd.json
+	 * (never derived by parsing the `cam/issue-<n>` branchName string). Used
+	 * by the US-003 (CAM-189) terminal-verdict hook as the `parentIssue` field
+	 * on FollowUpProvenance when auto-filing SUGGESTION follow-up issues, so
+	 * their `derivedFrom` link is structural rather than prose-only.
+	 */
+	issueNumber?: number;
 	userStories?: Array<{
 		id?: string;
 		title?: string;

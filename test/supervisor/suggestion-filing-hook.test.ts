@@ -104,9 +104,10 @@ function makeDummySupervisorOpts(overrides: Partial<RunSupervisorOptions> = {}):
 	};
 }
 
-function makePrd(verdict: string | null): PrdSnapshot {
+function makePrd(verdict: string | null, issueNumber?: number): PrdSnapshot {
 	return {
 		branchName: 'cam/pr-189-suggestion-followups',
+		issueNumber,
 		userStories: [{ id: 'US-001', priority: 1, passes: true, requires: null }],
 		review: verdict === null ? undefined : { roundsCompleted: 2, lastVerdict: verdict },
 	};
@@ -346,6 +347,40 @@ describe('AC6: exactly one pane summary line, only when something was filed', ()
 			fileSuggestionsFn: () => ({ filedIds: [], dupSkipped: 0 }),
 		});
 		expect(notified).toHaveLength(0);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// AC7 (US-001, CAM-263): parentIssue reaches FollowUpProvenance from the prd snapshot
+// ---------------------------------------------------------------------------
+
+describe('AC7 (US-001, CAM-263): prd.issueNumber reaches FollowUpProvenance.parentIssue', () => {
+	test('provenance.parentIssue equals the prd snapshot issueNumber', async () => {
+		let capturedProvenance: FollowUpProvenance | undefined;
+		await driveOneTick({
+			result: statusResult('complete'),
+			buildOpts: () => makeDummySupervisorOpts({ readPrd: () => makePrd('CLEAN', 263) }),
+			readReviewReportFn: () => REPORT_WITH_SUGGESTIONS,
+			fileSuggestionsFn: (_report, provenance) => {
+				capturedProvenance = provenance;
+				return { filedIds: [], dupSkipped: 0 };
+			},
+		});
+		expect(capturedProvenance?.parentIssue).toBe(263);
+	});
+
+	test('prd snapshot with no issueNumber -> provenance.parentIssue is undefined', async () => {
+		let capturedProvenance: FollowUpProvenance | undefined;
+		await driveOneTick({
+			result: statusResult('complete'),
+			buildOpts: () => makeDummySupervisorOpts({ readPrd: () => makePrd('CLEAN') }),
+			readReviewReportFn: () => REPORT_WITH_SUGGESTIONS,
+			fileSuggestionsFn: (_report, provenance) => {
+				capturedProvenance = provenance;
+				return { filedIds: [], dupSkipped: 0 };
+			},
+		});
+		expect(capturedProvenance?.parentIssue).toBeUndefined();
 	});
 });
 

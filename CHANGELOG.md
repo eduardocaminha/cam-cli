@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.125.0] - 2026-07-10
+
+### Added
+
+- US-001 - Set derivedFrom on auto-filed SUGGESTION follow-ups from the parent issue id
+
 ## [0.124.0] - 2026-07-10
 
 ### Added

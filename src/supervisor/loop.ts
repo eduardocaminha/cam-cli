@@ -2021,6 +2021,7 @@ export async function runSidecarLoop(opts: RunSidecarLoopOptions): Promise<void>
 						const provenance: FollowUpProvenance = {
 							source: prdForSuggestions.branchName ?? '',
 							round: prdForSuggestions.review?.roundsCompleted,
+							parentIssue: prdForSuggestions.issueNumber,
 						};
 						const { filedIds, dupSkipped } = opts.fileSuggestionsFn(report, provenance);
 						if (filedIds.length > 0) {
