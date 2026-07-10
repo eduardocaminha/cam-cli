@@ -113,6 +113,17 @@ function makeTempProjectDir(): { cwd: string; cleanup: () => void } {
 	return { cwd, cleanup: () => rmSync(cwd, { recursive: true, force: true }) };
 }
 
+/**
+ * Temp dir with NO scripts/cam/project.toml at all. Used to prove the toml
+ * reader is never invoked on the candidates.length === 0 path (US-001,
+ * CAM-264): if the guard regresses and the read is attempted, readFileSync
+ * throws ENOENT and the test fails.
+ */
+function makeTempProjectDirNoToml(): { cwd: string; cleanup: () => void } {
+	const cwd = mkdtempSync(join(tmpdir(), 'cam-suggestion-filing-prod-notoml-'));
+	return { cwd, cleanup: () => rmSync(cwd, { recursive: true, force: true }) };
+}
+
 // ---------------------------------------------------------------------------
 // AC4: filed via createLocalIssueOnMain, default filing (stage 'idea')
 // ---------------------------------------------------------------------------
@@ -359,6 +370,73 @@ describe('AC7: makeProductionFileSuggestionsFn -- createLocalIssueOnMain ok:fals
 			expect(events[0]?.kind).toBe('suggestion-filed');
 			const detail = events[0]?.detail as { failedCount: number };
 			expect(detail.failedCount).toBe(2);
+		} finally {
+			cleanup();
+		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-001 (CAM-264): toml read guarded behind candidates.length > 0
+// ---------------------------------------------------------------------------
+
+describe('US-001: makeProductionFileSuggestionsFn -- toml read guarded behind candidates.length > 0', () => {
+	test('zero SUGGESTIONs -> toml is never read (no project.toml present, no throw)', () => {
+		const { cwd, cleanup } = makeTempProjectDirNoToml();
+		try {
+			const { spawnFn } = makeRecordingSpawn();
+			const { logger, events } = makeInMemoryEventLogger();
+			const fileSuggestionsFn = makeProductionFileSuggestionsFn(cwd, spawnFn, logger);
+
+			const { filedIds, dupSkipped } = fileSuggestionsFn(makeReport([]), PROVENANCE);
+
+			expect(filedIds).toEqual([]);
+			expect(dupSkipped).toBe(0);
+			expect(events).toHaveLength(0);
+		} finally {
+			cleanup();
+		}
+	});
+
+	test('all-duplicates path (candidates empty, dupSkipped > 0) -> toml never read, event still emitted', () => {
+		const { cwd, cleanup } = makeTempProjectDirNoToml();
+		try {
+			const filedA = buildFollowUpIssue(FINDING_A, PROVENANCE);
+			const filedB = buildFollowUpIssue(FINDING_B, PROVENANCE);
+			const entries = [
+				{ id: 'CAM-50', title: filedA.title, stage: 'idea', status: 'open', blockedBy: [] as string[], createdAt: '2026-07-08T00:00:00Z', description: filedA.description },
+				{ id: 'CAM-51', title: filedB.title, stage: 'idea', status: 'open', blockedBy: [] as string[], createdAt: '2026-07-08T00:00:00Z', description: filedB.description },
+			];
+			const entryAJson = `${JSON.stringify(entries[0], null, 2)}\n`;
+			const entryBJson = `${JSON.stringify(entries[1], null, 2)}\n`;
+			const catFileOutput = frameBlobOutput(entryAJson) + frameBlobOutput(entryBJson);
+
+			const { spawnFn, calls } = makeRecordingSpawn({
+				lsTreeOutput: 'scripts/cam/issues/CAM-0050.json\nscripts/cam/issues/CAM-0051.json\n',
+				catFileOutput,
+			});
+			const { logger, events } = makeInMemoryEventLogger();
+			const fileSuggestionsFn = makeProductionFileSuggestionsFn(cwd, spawnFn, logger);
+
+			let caught: unknown;
+			let result: { filedIds: string[]; dupSkipped: number } | undefined;
+			try {
+				result = fileSuggestionsFn(makeReport([FINDING_A, FINDING_B]), PROVENANCE);
+			} catch (e) {
+				caught = e;
+			}
+
+			expect(caught).toBeUndefined();
+			expect(result?.filedIds).toEqual([]);
+			expect(result?.dupSkipped).toBe(2);
+			expect(calls.find((c) => c.args.includes('hash-object'))).toBeUndefined();
+
+			expect(events).toHaveLength(1);
+			expect(events[0]?.kind).toBe('suggestion-filed');
+			const detail = events[0]?.detail as { filedIds: string[]; dupSkipped: number; failedCount: number };
+			expect(detail.filedIds).toEqual([]);
+			expect(detail.dupSkipped).toBe(2);
+			expect(detail.failedCount).toBe(0);
 		} finally {
 			cleanup();
 		}
