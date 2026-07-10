@@ -595,3 +595,15 @@ Each entry follows this template:
 - **Decisions**: Confirmed live again: a single cam plan 251 signal auto-cascaded plan->PRD+audit->implement->review->ship->merge->post-merge with no further orchestrator signals (sidecar auto-set active:true and phase:shipping itself). No plan_approval=operator (participation spec-only). Merge polled via gh pr view only, never git fetch, during the merge window (CAM-228 held).
 - **Blockers encountered**: None. PR #195 was MERGEABLE/BLOCKED on required ci at ship time; merge-watch merged on CI green. Post-merge clean (close CAM-251 + tag v0.120.0), no pull-failed and no git-fetch poll during the merge window.
 - **Follow-ups**: Autonomous batch drain continues: 2 stage:specified remain after this cycle (CAM-252 docs/chore, then CAM-244 LAST because it adds a path-filtered ci-container REQUIRED status check that then gates every subsequent batch PR; derive live via cam issue list, never a snapshot). One PR per session, recycling with the drain directive carried forward until zero specified remain; the final session drops the directive. Stash entries orch-boot cosmetic color diff on subagent-orchestrator.md and old CAM-109 WIP still await operator disposition.
+
+## CAM-252 — CAM-252 — Umbrella manual-path scoping header before Step 0 in cam-review.md
+
+- **Started**: 2026-07-10T22:50:00Z
+- **Closed**: 2026-07-10T15:53:43Z
+- **Branch**: cam/issue-252
+- **Issue**: CAM-252
+- **Outcome**: shipped
+- **Summary**: Single-story docs/chore PRD (US-001). Added an umbrella manual-path scoping header before Step 0 in cam-review.md (both .claude/ and templates/ copies) so the manual /cam-review path scope is unmistakable at the section level, not just the intro paragraph. No src change. Gates green throughout (typecheck ok, 4014 pass / 0 fail). Review CLEAN round 1. Shipped ci-gated as PR #196, tag v0.121.0. 8th issue drained from the specified batch 242-252 (after 245, 247, 242, 248, 249, 250, 251).
+- **Decisions**: Confirmed live again: a single cam plan 252 signal auto-cascaded plan->PRD+audit->implement->review->ship->merge->post-merge with no further orchestrator signals (sidecar auto-set active:true and phase:shipping itself). No plan_approval=operator (participation spec-only). Merge polled via gh pr view only, never git fetch, during the merge window (CAM-228 held).
+- **Blockers encountered**: None. PR #196 was MERGEABLE/BLOCKED on required ci at ship time; merge-watch merged on CI green. Post-merge clean (close CAM-252 + tag v0.121.0), no pull-failed and no git-fetch poll during the merge window.
+- **Follow-ups**: Autonomous batch drain NEARLY DONE: exactly 1 stage:specified remains, CAM-244 (the LAST). Next session ships CAM-244 and DROPS the drain directive once cam issue list --json shows zero specified. CAM-244 adds a path-filtered ci-container REQUIRED status check; its own merge may wait on that new check landing. Stash entries orch-boot cosmetic color diff on subagent-orchestrator.md and old CAM-109 WIP still await operator disposition. Auto-filed SUGGESTION follow-ups CAM-257/258/259 (idea) each need an operator /cam-spec to become dispatchable.
