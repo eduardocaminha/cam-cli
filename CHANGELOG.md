@@ -6,6 +6,14 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.123.0] - 2026-07-10
+
+### Added
+
+- US-003 - Fix stale cam-ship Step 3 pointer in patterns.md
+- US-002 - Reviewer backstops every file-size-budget ceiling raise
+- US-001 - Implementer runs file-size gate and raises its own ceilings in-story
+
 ## [0.122.0] - 2026-07-10
 
 ### Added
