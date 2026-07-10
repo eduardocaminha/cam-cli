@@ -39,7 +39,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edit BOTH .claude/agents/subagent-reviewer.md and templates/agents/subagent-reviewer.md identically for this change (dual-copied; templates/ embedded via bun run embed-vendor). Natural home: the '### Documentation & Config Sync' or '### Conventions' checklist items (~line 82-105) and/or the Layer B 8-criterion rubric (project-conventions row, ~line 111). Since templates/ changes, run bun run embed-vendor then embed-vendor:check. This backstop complements US-001 (which moves the raise into the story); keep the ratchet a hard gate, only the actor/point of the raise shifts left."
     },
