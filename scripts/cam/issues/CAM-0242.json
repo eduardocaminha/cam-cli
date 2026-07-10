@@ -1,9 +1,44 @@
 {
   "id": "CAM-242",
   "title": "Worker herda CLAUDE_CODE_OAUTH_TOKEN do OS env do tmux server em host mode -> pina worker na conta do token (bypassa login Team do config dir)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-09T13:15:48.476Z",
-  "description": "Em host mode, todo worker (planner/auditor/implementer/reviewer) e filho direto do processo do tmux server. O tmux server e iniciado por cam run com o .env carregado pelo Bun, entao CLAUDE_CODE_OAUTH_TOKEN fica no OS env do processo do server e TODO pane spawnado o herda (respawn-pane inherita o OS env do server, nao a tabela do set-environment). Efeito: o worker autentica na conta do token em vez do login interativo do config dir (~/.claude-pessoal); se a conta do token esta capada (monthly spend limit) todo worker bate no limite e pede /rate-limit-options por-pane. `tmux set-environment -g -u` NAO resolve (nao muda env de processo vivo); limpar o .env so vale pra um server novo (exige restart do cam run). Fix duravel: adicionar CLAUDE_CODE_OAUTH_TOKEN ao WORKER_ENV_UNSET (src/supervisor/worker-argv.ts) para o prefixo `env -u ...` strippar o token no spawn do worker host, forcando o worker a usar o login do config dir. Avaliar: o path de container (worker-container.ts, CAM-150) INTENCIONALMENTE passa -e CLAUDE_CODE_OAUTH_TOKEN (container nao tem config dir logado), entao o strip deve valer so pro host worker, nao quebrar o container. Origem: debug de spend-limit 2026-07-09 (host mode)."
+  "description": "Em host mode, todo worker (planner/auditor/implementer/reviewer) e filho direto do processo do tmux server. O tmux server e iniciado por cam run com o .env carregado pelo Bun, entao CLAUDE_CODE_OAUTH_TOKEN fica no OS env do processo do server e TODO pane spawnado o herda (respawn-pane inherita o OS env do server, nao a tabela do set-environment). Efeito: o worker autentica na conta do token em vez do login interativo do config dir (~/.claude-pessoal); se a conta do token esta capada (monthly spend limit) todo worker bate no limite e pede /rate-limit-options por-pane. `tmux set-environment -g -u` NAO resolve (nao muda env de processo vivo); limpar o .env so vale pra um server novo (exige restart do cam run). Fix duravel: adicionar CLAUDE_CODE_OAUTH_TOKEN ao WORKER_ENV_UNSET (src/supervisor/worker-argv.ts) para o prefixo `env -u ...` strippar o token no spawn do worker host, forcando o worker a usar o login do config dir. Avaliar: o path de container (worker-container.ts, CAM-150) INTENCIONALMENTE passa -e CLAUDE_CODE_OAUTH_TOKEN (container nao tem config dir logado), entao o strip deve valer so pro host worker, nao quebrar o container. Origem: debug de spend-limit 2026-07-09 (host mode).",
+  "spec": {
+    "acceptanceCriteria": [
+      "A new constant HOST_ONLY_ENV_UNSET = ['CLAUDE_CODE_OAUTH_TOKEN'] exists in src/supervisor/worker-argv.ts, separate from WORKER_ENV_UNSET.",
+      "workerEnvPrefix() accepts an isolation argument; when isolation is 'host' the returned prefix includes '-u CLAUDE_CODE_OAUTH_TOKEN', and when isolation is 'container' it does NOT.",
+      "The isolation value is threaded through all three worker argv builders (implementer in worker-argv.ts, reviewer in review.ts, planner/auditor in plan-argv.ts) so the host-only strip applies to all four worker roles.",
+      "On host isolation, the assembled worker command string contains '-u CLAUDE_CODE_OAUTH_TOKEN' ahead of the 'claude' invocation.",
+      "On container isolation, the inner shell string wrapped by docker exec does NOT contain '-u CLAUDE_CODE_OAUTH_TOKEN', and buildDockerRunArgv in worker-container.ts still passes '-e CLAUDE_CODE_OAUTH_TOKEN' (worker-container.ts remains unchanged).",
+      "The container parity tests are updated to assert host-only strip (host prefix diverges from the container inner string by exactly the '-u CLAUDE_CODE_OAUTH_TOKEN' token) rather than requiring byte-for-byte equality of the env -u prefix.",
+      "CLAUDE_CONFIG_DIR and PATH remain unstripped on both host and container paths (existing invariant preserved).",
+      "typecheck and the full test suite pass green."
+    ],
+    "scope": "Make the worker OAuth-token env-strip host-only so host workers fall back to the config-dir login while container workers keep the injected token. Touch src/supervisor/worker-argv.ts (new HOST_ONLY_ENV_UNSET + isolation-aware workerEnvPrefix), src/supervisor/review.ts and src/supervisor/plan-argv.ts (thread isolation), and the affected argv/parity tests. Do NOT touch worker-container.ts, the tmux server bootstrap, or the .env loading.",
+    "gotchas": [
+      "The env -u prefix is NOT host-only today: workerEnvPrefix() is shared by all 4 worker builders and dockerExecWrap (loop.ts:1014) preserves the inner shell string byte-for-byte, so 'env -u ...' runs INSIDE the container too. A plain addition to the single WORKER_ENV_UNSET list would strip the token in the container as well, breaking the container worker (which has no logged-in config dir).",
+      "The container path passes the token name-only via '-e CLAUDE_CODE_OAUTH_TOKEN' (worker-container.ts:303), inheriting the value from the sidecar process.env; this must remain intact.",
+      "'tmux set-environment -g -u' does NOT mutate a live process's env, and clearing .env only affects a freshly-started tmux server; neither is the fix (this is why the strip must happen at worker spawn).",
+      "argv-shape tests prove the command FORM (host has the -u, container does not), not that claude actually fell back to the config-dir login at runtime; real auth validation is manual/operator-level (CAM-55 lesson: argv-shape tests do not capture tmux/runtime semantics).",
+      "workerEnvPrefix() is consumed by 3 builders covering 4 roles (implementer, reviewer, planner, auditor); the isolation must be threaded to all of them or the planner/reviewer on host will not get the strip."
+    ],
+    "domainTerms": [
+      "WORKER_ENV_UNSET",
+      "HOST_ONLY_ENV_UNSET",
+      "workerEnvPrefix",
+      "dockerExecWrap",
+      "host mode",
+      "container mode"
+    ]
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 3,
+    "riskReduction": 3,
+    "jobSize": 2
+  },
+  "type": "fix"
 }
