@@ -404,6 +404,27 @@ describe('plan-runner container: AC5 - host mode is byte-for-byte unchanged', ()
 		expect(result.kind).not.toBe('container-preflight-failed');
 	});
 
+	test('US-001 (CAM-242): host prefix diverges from the container inner string by exactly the -u CLAUDE_CODE_OAUTH_TOKEN token', () => {
+		const hostSpawnCalls: string[][] = [];
+		const hostOpts = makeOpts({ workerIsolation: 'host' }, hostSpawnCalls);
+		runPlanPhase(hostOpts);
+		const hostCmd = respawnCalls(hostSpawnCalls)[0]?.slice(-1)[0] ?? '';
+
+		const containerSpawnCalls: string[][] = [];
+		const containerOpts = makeOpts(
+			{ workerIsolation: 'container', preflightContainerFn: () => ({ ready: true }) },
+			containerSpawnCalls,
+		);
+		runPlanPhase(containerOpts);
+		const containerFullCmd = respawnCalls(containerSpawnCalls)[0]?.slice(-1)[0] ?? '';
+		const containerInner = containerFullCmd.replace(/^docker exec -it cam-worker /, '');
+
+		expect(hostCmd).toContain('-u CLAUDE_CODE_OAUTH_TOKEN');
+		expect(containerInner).not.toContain('-u CLAUDE_CODE_OAUTH_TOKEN');
+		expect(hostCmd).not.toEqual(containerInner);
+		expect(hostCmd.replace('-u CLAUDE_CODE_OAUTH_TOKEN ', '')).toEqual(containerInner);
+	});
+
 	test('absent preflightContainerFn in container mode -> no block (backward compat)', () => {
 		// Without preflightContainerFn, even container mode does not block.
 		// The dockerExecWrap IS applied (workerIsolation=container), but no preflight blocks.

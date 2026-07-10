@@ -466,7 +466,7 @@ function resolveAndSpawnPlanner(
 	const model = readPhaseModel('planner');
 	const backend = readBackend();
 	emitSpawnResolution({ phase: 'planner', model, backend, writeEvent: makeEventWriter(logEvent, uuid) });
-	const shell = buildPlannerWorkerArgv({ uuid, taskPrompt, permissionMode, model });
+	const shell = buildPlannerWorkerArgv({ uuid, taskPrompt, permissionMode, model, isolation: workerIsolation });
 	// US-006 / CAM-152: wrap via dockerExecWrap in container mode.
 	const dispatchCmd = workerIsolation === 'container' ? dockerExecWrap(shell) : shell;
 	spawnFn('tmux', ['-L', 'cam', 'set-option', '-p', '-t', plannerPaneId, '@cam_label', 'planner']);
@@ -503,7 +503,7 @@ function resolveAndSpawnAuditor(
 	const model = readPhaseModel('auditor');
 	const backend = readBackend();
 	emitSpawnResolution({ phase: 'auditor', model, backend, writeEvent: makeEventWriter(logEvent, uuid) });
-	const shell = buildAuditorWorkerArgv({ uuid, taskPrompt, permissionMode, model });
+	const shell = buildAuditorWorkerArgv({ uuid, taskPrompt, permissionMode, model, isolation: workerIsolation });
 	// US-006 / CAM-152: wrap via dockerExecWrap in container mode.
 	const dispatchCmd = workerIsolation === 'container' ? dockerExecWrap(shell) : shell;
 	spawnFn('tmux', ['-L', 'cam', 'set-option', '-p', '-t', plannerPaneId, '@cam_label', 'auditor']);

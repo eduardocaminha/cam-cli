@@ -55,7 +55,7 @@ describe('dockerExecWrap', () => {
 		const wrapped = dockerExecWrap(workerArgv);
 
 		// Must begin with the docker exec -it cam-worker prefix
-		const expectedPrefix = `docker exec -it cam-worker ${workerEnvPrefix()}`;
+		const expectedPrefix = `docker exec -it cam-worker ${workerEnvPrefix('host')}`;
 		expect(wrapped).toStartWith(expectedPrefix);
 
 		// Must still contain ' claude ' after the env -u prefix

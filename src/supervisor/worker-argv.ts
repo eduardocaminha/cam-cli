@@ -30,6 +30,7 @@
 //     forwarded programmatically to the spawned claude process only.
 
 import { DEFAULTS } from '../config/models.ts';
+import type { WorkerIsolation } from '../config/models.ts';
 
 /** Arguments for buildImplementerWorkerArgv. */
 export interface ImplementerWorkerArgvOptions {
@@ -50,6 +51,15 @@ export interface ImplementerWorkerArgvOptions {
 	 * passes readPhaseModel('implementer') so the project config is respected.
 	 */
 	model?: string;
+	/**
+	 * Worker isolation mode (US-001, CAM-242). On 'host', CLAUDE_CODE_OAUTH_TOKEN
+	 * is additionally stripped (HOST_ONLY_ENV_UNSET) so the worker falls back to
+	 * the interactive config-dir login instead of a possibly rate-limited token
+	 * account. On 'container', the token is left intact: worker-container.ts
+	 * injects it via `-e CLAUDE_CODE_OAUTH_TOKEN` and there is no logged-in
+	 * config dir inside the container. Defaults to 'host'.
+	 */
+	isolation?: WorkerIsolation;
 }
 
 /** Default agent name; matches .claude/agents/subagent-implementer.md. */
@@ -79,14 +89,33 @@ export const WORKER_ENV_UNSET: readonly string[] = [
 ];
 
 /**
- * Render the `env -u VAR1 -u VAR2 ... ` prefix (with a trailing space) that
- * strips WORKER_ENV_UNSET from a spawned worker. Prepended to every worker
- * shell string so the worker does not inherit nesting-detection env vars from
- * the tmux server (CAM-43). The var names are fixed identifiers, so no escaping
- * is needed.
+ * Env vars stripped ONLY from host-isolation workers (US-001, CAM-242). The
+ * tmux `-L cam` server is bootstrapped by `cam run` with `.env` loaded, so
+ * CLAUDE_CODE_OAUTH_TOKEN lives in the server process's OS env and every
+ * respawn-pane worker inherits it, overriding the interactive config-dir
+ * login (~/.claude-pessoal). Stripping it forces the worker to authenticate
+ * via the config-dir login instead of pinning to a possibly rate-limited
+ * token account. NOT stripped in container mode: container workers have no
+ * logged-in config dir and rely on worker-container.ts injecting this exact
+ * var via `-e CLAUDE_CODE_OAUTH_TOKEN` (see buildDockerRunArgv).
  */
-export function workerEnvPrefix(): string {
-	return `env ${WORKER_ENV_UNSET.map((v) => `-u ${v}`).join(' ')} `;
+export const HOST_ONLY_ENV_UNSET: readonly string[] = ['CLAUDE_CODE_OAUTH_TOKEN'];
+
+/**
+ * Render the `env -u VAR1 -u VAR2 ... ` prefix (with a trailing space) that
+ * strips WORKER_ENV_UNSET (always) and, on 'host' isolation, HOST_ONLY_ENV_UNSET
+ * (US-001, CAM-242) from a spawned worker. Prepended to every worker shell
+ * string so the worker does not inherit nesting-detection env vars from the
+ * tmux server (CAM-43), and, on host, so it does not inherit a possibly
+ * rate-limited CLAUDE_CODE_OAUTH_TOKEN from the server's OS env. The `isolation`
+ * argument is required (not defaulted) so every call site is explicit about
+ * which mode it is building for; container callers must not silently strip the
+ * token their worker actually needs. The var names are fixed identifiers, so
+ * no escaping is needed.
+ */
+export function workerEnvPrefix(isolation: WorkerIsolation): string {
+	const vars = isolation === 'host' ? [...WORKER_ENV_UNSET, ...HOST_ONLY_ENV_UNSET] : WORKER_ENV_UNSET;
+	return `env ${vars.map((v) => `-u ${v}`).join(' ')} `;
 }
 
 /**
@@ -125,9 +154,10 @@ function shellEscape(s: string): string {
 export function buildImplementerWorkerArgv(opts: ImplementerWorkerArgvOptions): string {
 	const agentName = opts.agentName ?? DEFAULT_IMPLEMENTER_AGENT;
 	const model = opts.model ?? DEFAULTS.implementer;
+	const isolation = opts.isolation ?? 'host';
 	const escapedPrompt = shellEscape(opts.taskPrompt);
 	return (
-		workerEnvPrefix() +
+		workerEnvPrefix(isolation) +
 		`claude` +
 		` --permission-mode ${opts.permissionMode}` +
 		` --session-id ${opts.uuid}` +

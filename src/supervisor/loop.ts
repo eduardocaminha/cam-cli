@@ -909,6 +909,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				taskPrompt: dispatchTaskPrompt,
 				permissionMode,
 				model: implModel,
+				isolation: workerIsolation,
 			});
 
 			// CAM-57: ensure a live worker pane exists before dispatching. When

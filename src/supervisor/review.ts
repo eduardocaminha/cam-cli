@@ -72,6 +72,11 @@ export interface ReviewerWorkerArgvOptions {
 	 * passes readPhaseModel('reviewer') so the project config is respected.
 	 */
 	model?: string;
+	/**
+	 * Worker isolation mode (US-001, CAM-242). Threaded into workerEnvPrefix so
+	 * CLAUDE_CODE_OAUTH_TOKEN is stripped on 'host' only. Defaults to 'host'.
+	 */
+	isolation?: WorkerIsolation;
 }
 
 /** Default agent name; matches .claude/agents/subagent-reviewer.md. */
@@ -115,10 +120,11 @@ function shellEscape(s: string): string {
 export function buildReviewerWorkerArgv(opts: ReviewerWorkerArgvOptions): string {
 	const agentName = opts.agentName ?? DEFAULT_REVIEWER_AGENT;
 	const model = opts.model ?? DEFAULTS.reviewer;
+	const isolation = opts.isolation ?? 'host';
 	const escapedPrompt = shellEscape(opts.taskPrompt ?? REVIEWER_TASK_PROMPT);
 	const permissionMode = opts.permissionMode ?? 'bypassPermissions';
 	return (
-		workerEnvPrefix() +
+		workerEnvPrefix(isolation) +
 		`claude` +
 		` --permission-mode ${permissionMode}` +
 		` --session-id ${opts.uuid}` +
@@ -368,6 +374,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 			taskPrompt,
 			permissionMode,
 			model: reviewModel,
+			isolation: workerIsolation,
 		});
 
 		// US-R1-001: erase any stale review-report.json from a previous round before

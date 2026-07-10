@@ -149,6 +149,28 @@ describe('buildReviewerWorkerArgv', () => {
 		const result = buildReviewerWorkerArgv({ uuid: SAMPLE_UUID });
 		expect(result).not.toContain('tee');
 	});
+
+	// -------------------------------------------------------------------------
+	// US-001 (CAM-242): host-only CLAUDE_CODE_OAUTH_TOKEN strip.
+	// -------------------------------------------------------------------------
+
+	test('on host isolation, contains -u CLAUDE_CODE_OAUTH_TOKEN ahead of claude', () => {
+		const result = buildReviewerWorkerArgv({ uuid: SAMPLE_UUID, isolation: 'host' });
+		const tokenIdx = result.indexOf('-u CLAUDE_CODE_OAUTH_TOKEN');
+		const claudeIdx = result.indexOf('claude --permission-mode');
+		expect(tokenIdx).toBeGreaterThan(-1);
+		expect(tokenIdx).toBeLessThan(claudeIdx);
+	});
+
+	test('on container isolation, does NOT contain -u CLAUDE_CODE_OAUTH_TOKEN', () => {
+		const result = buildReviewerWorkerArgv({ uuid: SAMPLE_UUID, isolation: 'container' });
+		expect(result).not.toContain('-u CLAUDE_CODE_OAUTH_TOKEN');
+	});
+
+	test('isolation defaults to host when omitted', () => {
+		const result = buildReviewerWorkerArgv({ uuid: SAMPLE_UUID });
+		expect(result).toContain('-u CLAUDE_CODE_OAUTH_TOKEN');
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -1509,6 +1531,9 @@ describe('makeReviewDispatch: US-005 container mode dispatch', () => {
 		expect(shellCmd).toContain('env -u CLAUDECODE');
 		expect(shellCmd).toContain('claude');
 		expect(shellCmd).toContain(`--session-id ${SAMPLE_UUID}`);
+		// US-001 (CAM-242): container workers keep CLAUDE_CODE_OAUTH_TOKEN (injected
+		// by worker-container.ts via -e); the host-only strip must NOT apply here.
+		expect(shellCmd).not.toContain('-u CLAUDE_CODE_OAUTH_TOKEN');
 	});
 
 	test('AC2: container mode + preflight not-ready -> status=error, container-not-ready detail, no wrapped respawn', () => {
@@ -1590,6 +1615,48 @@ describe('makeReviewDispatch: US-005 container mode dispatch', () => {
 		const shellCmd = firstCall[firstCall.length - 1] ?? '';
 		expect(shellCmd).not.toMatch(/^docker exec/);
 		expect(shellCmd).toContain('claude');
+		// US-001 (CAM-242): host isolation strips CLAUDE_CODE_OAUTH_TOKEN so the
+		// worker falls back to the interactive config-dir login.
+		expect(shellCmd).toContain('-u CLAUDE_CODE_OAUTH_TOKEN');
+	});
+
+	test('US-001 (CAM-242): host prefix diverges from the container inner string by exactly the -u CLAUDE_CODE_OAUTH_TOKEN token', () => {
+		const hostSpawnArgs: string[][] = [];
+		const hostOpts = makeDispatchOpts({
+			paneText: '<review>CLEAN</review>',
+			prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
+			spawn: (_cmd, args) => {
+				hostSpawnArgs.push(args);
+				return { stdout: '', exitCode: 0 };
+			},
+			workerIsolation: 'host',
+		});
+		makeReviewDispatch(hostOpts)(SAMPLE_UUID);
+		const hostCmd = (hostSpawnArgs[0] ?? [])[((hostSpawnArgs[0] ?? []).length) - 1] ?? '';
+
+		const containerSpawnArgs: string[][] = [];
+		const containerOpts = makeDispatchOpts({
+			paneText: '<review>CLEAN</review>',
+			prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
+			spawn: (_cmd, args) => {
+				containerSpawnArgs.push(args);
+				return { stdout: '', exitCode: 0 };
+			},
+			workerIsolation: 'container',
+			preflightContainerFn: () => ({ ready: true }),
+		});
+		makeReviewDispatch(containerOpts)(SAMPLE_UUID);
+		const containerFullCmd = (containerSpawnArgs[0] ?? [])[
+			((containerSpawnArgs[0] ?? []).length) - 1
+		] ?? '';
+		// Strip the dockerExecWrap prefix to isolate the inner shell string.
+		const containerInner = containerFullCmd.replace(/^docker exec -it cam-worker /, '');
+
+		// The two inner strings must be identical except the host one carries the
+		// extra `-u CLAUDE_CODE_OAUTH_TOKEN ` token (host-only strip), NOT a
+		// byte-for-byte equal env prefix.
+		expect(hostCmd).not.toEqual(containerInner);
+		expect(hostCmd.replace('-u CLAUDE_CODE_OAUTH_TOKEN ', '')).toEqual(containerInner);
 	});
 
 	test('AC5: escalateFn called fire-and-forget when preflight fails in container mode', async () => {
