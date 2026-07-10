@@ -1,9 +1,39 @@
 {
   "id": "CAM-261",
   "title": "Generalize the in-story ratchet-raise pattern to coverage/debt/dead-code/dup gates",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-10T19:00:44.551Z",
-  "description": "Follow-up to CAM-260. CAM-260 moves only the file-size ceiling raise left into the implementer story. The sibling check:all ratchets (coverage, debt, dead-code, dup) share the exact same late-catch gap: the worker runs only typecheck+test, so a legitimate change trips those ratchets late at ship/CI (gates-failed) and gets a manual raise. Generalize the in-story raise+reviewer-backstop pattern from CAM-260 to these gates. Each gate needs its own justification rubric (a coverage or dead-code raise is a different judgement than a file-size raise, so this is deliberately separate from CAM-260 to keep each PRD small)."
+  "description": "Follow-up to CAM-260. CAM-260 moves only the file-size ceiling raise left into the implementer story. The sibling check:all ratchets (coverage, debt, dead-code, dup) share the exact same late-catch gap: the worker runs only typecheck+test, so a legitimate change trips those ratchets late at ship/CI (gates-failed) and gets a manual raise. Generalize the in-story raise+reviewer-backstop pattern from CAM-260 to these gates. Each gate needs its own justification rubric (a coverage or dead-code raise is a different judgement than a file-size raise, so this is deliberately separate from CAM-260 to keep each PRD small).",
+  "spec": {
+    "acceptanceCriteria": [
+      "subagent-implementer.md instructs the worker to run the full `bun run check:all` in-story after coding, replacing the CAM-260 file-size-only scoped exception (currently line ~100), so coverage/debt/dead-code/dup fire during the story run rather than only at ship/CI.",
+      "subagent-implementer.md documents a per-gate inline-resolution rubric: coverage = lower the global floor in coverage-budget.json with a tracker-ref in `_ref` in the same commit; debt-markers = cite the TODO/FIXME with an inline tracker ref on the same line; dead-code (knip) = remove the dead code, or add a justified `ignore`/`exclude` entry to knip.json; dup (jscpd) = deduplicate, or bump `threshold`/`ignore` in .jscpd.json with justification.",
+      "subagent-reviewer.md instructs the reviewer to backstop raises/suppressions for coverage, dead-code, and dup (legitimate change vs the gate should not have been loosened), extending the existing file-size backstop to all four sibling gates.",
+      "An ADR is written under docs/adr/ documenting the reversal of the CAM-260 scoping decision: the worker now runs full check:all in-story; records the trade-off (slower per-story loop vs early-catch of the whole ratchet class) and the rejected alternatives (coverage-only; add per-unit budget files + _ref gates for knip/jscpd).",
+      "Both dual-copies (.claude/agents/ and templates/agents/) are updated identically and the embed is regenerated via `bun run embed-vendor`; `bun run check:all` is green (embed-vendor:check passes)."
+    ],
+    "scope": "Agent-instruction and reviewer-instruction change plus one ADR. Reverses the CAM-260 decision that kept the implementer on typecheck+test+file-size only: the worker now runs the full check:all quality spine in-story and resolves each of the four sibling ratchets (coverage, debt-markers, dead-code/knip, dup/jscpd) inline per a per-gate rubric, with the reviewer backstopping loosenings. No change to the gate scripts themselves (check-coverage.ts, check-debt-markers.ts, knip.json, .jscpd.json). Out of scope: introducing new per-unit budget files or _ref gates for knip/jscpd (rejected option C).",
+    "gotchas": [
+      "Editing any file under templates/agents/ requires `bun run embed-vendor` to regenerate src/vendor/_generated.ts, or the codegen byte-parity test (test/embedded.test.ts) fails and the plan preflight aborts (the exact CAM-260 preflight-abort failure mode).",
+      "Only coverage shares the CAM-260 raise machinery (ratchet-diff.ts + `_ref` + TRACKER_REF_RE, direction-locked), and even then the unit is 2 GLOBAL floors (functions, lines), not a per-file ceiling: there is no per-file coverage ceiling for a worker to raise.",
+      "knip.json and .jscpd.json have NO `_ref`/tracker channel: a dead-code or dup suppression cannot be gated by a staged tracker-ref, so the reviewer backstop is the only guard for those two. Do not fabricate a _ref requirement for them without introducing budget files (that is the rejected option C).",
+      "coverage has a FLOOR_TOLERANCE_PP = 0.5 slack (check-coverage.ts) that absorbs CI jitter; a floor lower within tolerance is not a real regression.",
+      "Running check:all in-story adds `bun test --coverage` + knip + jscpd to every story iteration, so the per-story worker loop gets measurably slower: this is the accepted cost of early-catch."
+    ],
+    "domainTerms": [
+      "sibling ratchets",
+      "late-catch gap",
+      "reviewer backstop",
+      "in-story gate run"
+    ]
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 2,
+    "riskReduction": 5,
+    "jobSize": 3
+  },
+  "type": "chore"
 }
