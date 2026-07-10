@@ -1,0 +1,9 @@
+{
+  "id": "CAM-263",
+  "title": "Auto-filed SUGGESTION follow-ups should populate the structured derivedFrom field",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-10T20:42:54.296Z",
+  "description": "The CAM-189 terminal-verdict hook (src/supervisor/suggestion-followups.ts, buildFollowUpIssue) records provenance only as description prose (Source: <branch>, review round, suggestion-fingerprint line) and leaves the structured derivedFrom array empty. The issue schema (scripts/cam/issues.schema.json) already supports derivedFrom (populated on CAM-149/154/155/168), so auto-filed follow-ups like CAM-262 lose their machine-readable link back to the parent issue (e.g. CAM-260). Set derivedFrom to the parent issue id on the auto-filed issue so provenance is queryable structurally, not just greppable in text. Source parent: CAM-260/CAM-262."
+}
