@@ -1,7 +1,7 @@
 {
   "id": "CAM-263",
   "title": "Auto-filed SUGGESTION follow-ups should populate the structured derivedFrom field",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-10T20:42:54.296Z",
