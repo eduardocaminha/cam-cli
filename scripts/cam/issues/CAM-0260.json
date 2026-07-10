@@ -1,9 +1,38 @@
 {
   "id": "CAM-260",
   "title": "Raise file-size ceiling in the implementer story, not at ship time",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-10T18:32:19.726Z",
-  "description": "Workers run only typecheck+test per story, so a legitimate file growth trips the file-size ratchet late (ship/CI gates-failed) and gets a manual ceiling raise by the orchestrator. Fix: have the implementer run check:file-size after coding and, for its own legitimate growth, raise scripts/file-size-budget.json to the measured actual with the tracker-ref in _ref in the SAME story commit; the reviewer backstops that each raise is justified vs splitting the file (preserving the ratchet's friction). Also fix the stale patterns.md:116 pointer that references the removed cam-ship.md Step 3 (ship is now ship-runner.ts). Both agent files are dual-copied (.claude/ + templates/)."
+  "description": "Workers run only typecheck+test per story, so a legitimate file growth trips the file-size ratchet late (ship/CI gates-failed) and gets a manual ceiling raise by the orchestrator. Fix: have the implementer run check:file-size after coding and, for its own legitimate growth, raise scripts/file-size-budget.json to the measured actual with the tracker-ref in _ref in the SAME story commit; the reviewer backstops that each raise is justified vs splitting the file (preserving the ratchet's friction). Also fix the stale patterns.md:116 pointer that references the removed cam-ship.md Step 3 (ship is now ship-runner.ts). Both agent files are dual-copied (.claude/ + templates/).",
+  "spec": {
+    "acceptanceCriteria": [
+      "subagent-implementer.md (both .claude/agents/ and templates/agents/ copies) instructs the worker to run the file-size gate (bun scripts/check-file-sizes.ts) after coding, in addition to the existing typecheck + bun test gates.",
+      "When that gate fails because a file the story legitimately grew exceeds its ceiling, the implementer raises that file's ceiling in scripts/file-size-budget.json to the gate's reported actual line count (content.split('\\n').length, NOT wc -l) and sets/updates the top-level _ref with the CAM tracker id, committing the budget change in the SAME story commit.",
+      "The implementer raises only the ceiling(s) of the file(s) its own story grew; it never blanket-raises unrelated budgeted files.",
+      "subagent-reviewer.md (both .claude/agents/ and templates/agents/ copies) has an explicit instruction: every file-size-budget ceiling raise present in the diff must be justified (legitimate growth vs the file should have been split); an unjustified raise is a REQUEST CHANGES finding.",
+      "The stale pointer in scripts/cam/patterns.md (~line 116) that references the removed '.claude/commands/cam-ship.md Step 3' is corrected to reflect reality: the deterministic ship (ship-runner.ts) does not auto-raise, the raise now happens in-story via the implementer, and recovery-runbook.md (j.1) remains the recovery-time fallback. The embedded/template copy of patterns.md is updated in lockstep if one exists.",
+      "The gate mechanism itself is unchanged: check-file-sizes.ts and the check:all wiring are not modified; the ratchet stays a hard gate and only the actor/point of the raise shifts left into the story."
+    ],
+    "scope": "IN: implementer + reviewer agent instruction files (dual-copy .claude/ + templates/), and the scripts/cam/patterns.md stale-pointer fix (+ embedded twin if present). OUT: the other check:all ratchet gates (coverage, debt, dead-code, dup) which share the same late-catch gap but are tracked in a separate follow-up issue; retiring or softening the file-size gate; any change to check-file-sizes.ts or the check:all spine.",
+    "gotchas": [
+      "The gate measures LOC as content.split('\\n').length, which is wc -l + 1 for a file with a trailing newline; the worker must set the ceiling to the gate's reported actual, not wc -l.",
+      "checkDiffTrackerRef reads only the STAGED diff, so the _ref bump must be staged in the same commit, not merely present in the working tree.",
+      "Both agent files AND patterns.md are dual-copied (.claude/ + templates/); the reviewer doc-gate covers dev+embedded, so each pair must stay byte-consistent.",
+      "The worker deliberately runs only typecheck+test per story for speed; adding check:file-size is a scoped, deliberate exception, NOT a switch to running the full check:all in the worker."
+    ],
+    "domainTerms": [
+      "file-size ratchet",
+      "ceiling raise",
+      "_ref tracker-ref"
+    ]
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 4,
+    "riskReduction": 5,
+    "jobSize": 3
+  },
+  "type": "chore"
 }
