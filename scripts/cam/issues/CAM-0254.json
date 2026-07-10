@@ -1,7 +1,7 @@
 {
   "id": "CAM-254",
   "title": "Orchestrator tools: lists SlashCommand but it is unavailable at runtime under --agent",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-10T00:23:45.272Z",
