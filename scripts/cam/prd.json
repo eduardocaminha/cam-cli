@@ -55,7 +55,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Only scripts/cam/patterns.md is affected: the templates/scripts/cam/patterns.md copy is an 8-line seed stub that does NOT contain the cam-ship Step 3 bullet, so there is NO lockstep edit and NO embed-vendor needed for this story (patterns.md under scripts/ is not embedded; only templates/ and vendor/ are). Verified: grep -c 'cam-ship' templates/scripts/cam/patterns.md == 0. The stale bullet is 'cam-ship Step 3 ratchet raise-and-retry (US-003, CAM-79, 2026-06-25)' at line 116. Recovery fallback doc is docs/recovery-runbook.md (referenced as j.1 in the issue; the bullet currently cites j.4)."
     }

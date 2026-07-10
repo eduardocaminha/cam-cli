@@ -1,17 +1,15 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Reviewer backstops every file-size-budget ceiling raise"
+    "id": "US-003",
+    "title": "Fix stale cam-ship Step 3 pointer in patterns.md"
   },
   "branchName": "cam/issue-260",
   "timestamp": "2026-07-10T00:00:00Z",
   "modifiedFiles": [
-    ".claude/agents/subagent-reviewer.md",
-    "templates/agents/subagent-reviewer.md",
-    "src/vendor/_generated.ts"
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 added a file-size-budget ceiling-raise justification check to both copies of the reviewer instruction file: a new '### Conventions' checklist bullet (each raised ceiling in scripts/file-size-budget.json must be argued as legitimate growth, not a symptom of a file that should have been split; an unjustified raise is CRITICAL/REQUEST CHANGES) plus an extension of the Layer B rubric's criterion-5 (project-conventions) PASS-when text to name the same check, so it is applied on every review via the existing rubric, not left as prose-only. The two copies were edited in their own existing style (dual-copy convention; .claude/ copy is cam-cli-specific, templates/ copy is the generic project template mirroring the file-size ratchet language already present in templates/agents/subagent-implementer.md), not verbatim-mirrored. embed-vendor was re-run and embed-vendor:check is clean.",
+  "nextStoryContext": "US-003 rewrote the stale patterns.md bullet at ~line 116 (formerly 'cam-ship Step 3 ratchet raise-and-retry'). It no longer points at the removed `.claude/commands/cam-ship.md` Step 3; it now states the deterministic ship runner (`src/supervisor/ship-runner.ts`) does not auto-raise a ratchet ceiling, that the raise-and-retry (edit budget file + staged `_ref` + re-run gate) is the implementer's in-story responsibility before the ship phase runs, and that `docs/recovery-runbook.md` (j.1) remains the recovery-time fallback. Only `scripts/cam/patterns.md` changed (confirmed via prior story's notes: the `templates/scripts/cam/patterns.md` seed stub does not contain this bullet, so no lockstep edit or embed-vendor was needed). `scripts/check-file-sizes.ts` and `scripts/check-all.ts` were untouched (verified via `git diff --name-only origin/main`).",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
