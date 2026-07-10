@@ -16,7 +16,7 @@ disallowedTools:
   - Edit
   - NotebookEdit
   - AskUserQuestion
-color: blue
+color: black
 ---
 
 # Cam Orchestrator
