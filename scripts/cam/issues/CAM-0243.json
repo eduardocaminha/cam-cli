@@ -1,7 +1,7 @@
 {
   "id": "CAM-243",
   "title": "Spike: avaliar se vale pinar/blindar o gate dup (jscpd@5 virou binario Rust nativo)",
-  "stage": "idea",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-09T13:34:50.765Z",
