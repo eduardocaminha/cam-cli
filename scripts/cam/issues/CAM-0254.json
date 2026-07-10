@@ -1,9 +1,33 @@
 {
   "id": "CAM-254",
   "title": "Orchestrator tools: lists SlashCommand but it is unavailable at runtime under --agent",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-10T00:23:45.272Z",
-  "description": "CAM-240 (PR #185, v0.110.0) made the subagent-orchestrator frontmatter allowlist runtime-binding by spawning the root persona under `claude --agent subagent-orchestrator`, and US-001 reconciled the tools: list to real runtime usage. But subagent-orchestrator.md line 12 still declares SlashCommand, and the CAM-253 live-validation ceremony (2026-07-10) confirmed that under --agent the SlashCommand tool returns No such tool available at runtime. Impact is non-blocking for slash-command dispatch: the CLI thin-proxy send-keys inject path is the sanctioned route (AC#3 proven live). BUT a second gap surfaced while filing this very issue: when the orchestrator is live, `cam issue` injects /cam-issue into the orchestrator pane %0, and under --agent the injected text lands in the composer without submitting (CAM-200) AND cannot be run via the SlashCommand tool, so the orchestrator-side /cam-issue and /cam-review inject path is effectively broken under --agent (worked around here by executing the skill deterministic step `cam issue --file-local` directly). Fix options: (a) drop SlashCommand from the tools: list in .claude/agents/subagent-orchestrator.md + templates/ mirror + re-embed, matching CAM-240 principle that the list must reflect real runtime usage; or (b) wire SlashCommand so it is actually granted under --agent (also repairs the orchestrator-side inject path for /cam-issue and /cam-review). Recommendation: option (b) is the more launch-ready fix because it restores the documented inject-command dispatch path end-to-end, not just tidies the list; if (b) is out of scope, at minimum do (a) so the frontmatter stops advertising a capability the runtime denies. Notes: .claude/agents vs templates/ dual-copy is per-file (diff before assuming re-embed); re-run embed-vendor:check if templates/ changes. Related: CAM-200 (send-keys lands in composer without submit), CAM-240 US-001."
+  "description": "CAM-240 (PR #185, v0.110.0) made the subagent-orchestrator frontmatter allowlist runtime-binding by spawning the root persona under `claude --agent subagent-orchestrator`, and US-001 reconciled the tools: list to real runtime usage. But subagent-orchestrator.md line 12 still declares SlashCommand, and the CAM-253 live-validation ceremony (2026-07-10) confirmed that under --agent the SlashCommand tool returns No such tool available at runtime. Impact is non-blocking for slash-command dispatch: the CLI thin-proxy send-keys inject path is the sanctioned route (AC#3 proven live). BUT a second gap surfaced while filing this very issue: when the orchestrator is live, `cam issue` injects /cam-issue into the orchestrator pane %0, and under --agent the injected text lands in the composer without submitting (CAM-200) AND cannot be run via the SlashCommand tool, so the orchestrator-side /cam-issue and /cam-review inject path is effectively broken under --agent (worked around here by executing the skill deterministic step `cam issue --file-local` directly). Fix options: (a) drop SlashCommand from the tools: list in .claude/agents/subagent-orchestrator.md + templates/ mirror + re-embed, matching CAM-240 principle that the list must reflect real runtime usage; or (b) wire SlashCommand so it is actually granted under --agent (also repairs the orchestrator-side inject path for /cam-issue and /cam-review). Recommendation: option (b) is the more launch-ready fix because it restores the documented inject-command dispatch path end-to-end, not just tidies the list; if (b) is out of scope, at minimum do (a) so the frontmatter stops advertising a capability the runtime denies. Notes: .claude/agents vs templates/ dual-copy is per-file (diff before assuming re-embed); re-run embed-vendor:check if templates/ changes. Related: CAM-200 (send-keys lands in composer without submit), CAM-240 US-001.",
+  "spec": {
+    "acceptanceCriteria": [
+      "SlashCommand is removed from the tools: list in .claude/agents/subagent-orchestrator.md",
+      "The templates/ mirror of the orchestrator agent is reconciled to match (diff first; the .claude/agents vs templates/ dual-copy is per-file, not assumed identical)",
+      "bun run embed-vendor:check is green (re-run bun run embed-vendor if templates/ changed)",
+      "bun run typecheck and bun test are green",
+      "No other tool in the orchestrator tools: list is unavailable at runtime under --agent (the list reflects only real runtime-granted tools, per CAM-240's principle)"
+    ],
+    "scope": "Drop the non-existent SlashCommand entry from the subagent-orchestrator frontmatter tools: list (and its templates/ mirror), so the list stops advertising a capability the runtime denies. CAM-253 proved SlashCommand returns 'No such tool available' under --agent; claude-code-guide confirmed SlashCommand is not a grantable tool at all (slash commands are an interactive message-parsing construct, not a callable tool: https://code.claude.com/docs/en/tools.md has no SlashCommand entry). This is a no-behavior-change accuracy fix aligning the list with real runtime usage, closing the miss from CAM-240 US-001. Re-embed if templates/ changes; keep embed-vendor:check green.",
+    "gotchas": [
+      "SlashCommand is NOT a real tool; wiring it is infeasible (do not attempt to make it work)",
+      ".claude/agents vs templates/ is per-file dual-copy: diff before assuming a re-embed is forced (CAM-123 lesson)",
+      "Run embed-vendor:check only when templates/ changed; regenerate with embed-vendor",
+      "Do not touch the composer-no-submit inject breakage (CAM-200) or the Skill-tool programmatic-dispatch alternative here: both are out of scope"
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 1,
+    "riskReduction": 2,
+    "jobSize": 1
+  },
+  "type": "fix"
 }
