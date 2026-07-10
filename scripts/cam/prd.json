@@ -46,7 +46,7 @@
         "The full quality spine is green. [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Edit both dual-copies of the reviewer instruction file: .claude/agents/subagent-reviewer.md and templates/agents/subagent-reviewer.md. GOTCHA: like the implementer file, the two reviewer copies are NOT byte-identical by design (.claude/ has the cam-specific Security/Ink/Conventions checklist; templates/ has a generic web-app checklist) - preserve each file's register; apply the equivalent four-gate backstop change to each, do not force byte-parity. The existing file-size backstop lives at .claude/agents/subagent-reviewer.md line ~86 (### Conventions checklist) and is echoed in the Layer B rubric table criterion #5 at line ~116; extend both places. Editing templates/agents/ REQUIRES `bun run embed-vendor` to regenerate src/vendor/_generated.ts or test/embedded.test.ts fails (CAM-260 preflight-abort mode). KEY constraint from the issue gotchas: knip.json and .jscpd.json have NO _ref/tracker channel, so the reviewer backstop is the ONLY guard for dead-code and dup suppressions - do not fabricate a _ref requirement for them (that would be the rejected option C). coverage does carry _ref (scripts/coverage-budget.json, two global floors functions+lines) and a FLOOR_TOLERANCE_PP=0.5 slack. This story touches .claude/agents/** which is explicitly required here. requires US-001 because both stories regenerate src/vendor/_generated.ts and the ADR reversal decision established in US-001 frames this reviewer change."
     }
