@@ -1,9 +1,36 @@
 {
   "id": "CAM-263",
   "title": "Auto-filed SUGGESTION follow-ups should populate the structured derivedFrom field",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-10T20:42:54.296Z",
-  "description": "The CAM-189 terminal-verdict hook (src/supervisor/suggestion-followups.ts, buildFollowUpIssue) records provenance only as description prose (Source: <branch>, review round, suggestion-fingerprint line) and leaves the structured derivedFrom array empty. The issue schema (scripts/cam/issues.schema.json) already supports derivedFrom (populated on CAM-149/154/155/168), so auto-filed follow-ups like CAM-262 lose their machine-readable link back to the parent issue (e.g. CAM-260). Set derivedFrom to the parent issue id on the auto-filed issue so provenance is queryable structurally, not just greppable in text. Source parent: CAM-260/CAM-262."
+  "description": "The CAM-189 terminal-verdict hook (src/supervisor/suggestion-followups.ts, buildFollowUpIssue) records provenance only as description prose (Source: <branch>, review round, suggestion-fingerprint line) and leaves the structured derivedFrom array empty. The issue schema (scripts/cam/issues.schema.json) already supports derivedFrom (populated on CAM-149/154/155/168), so auto-filed follow-ups like CAM-262 lose their machine-readable link back to the parent issue (e.g. CAM-260). Set derivedFrom to the parent issue id on the auto-filed issue so provenance is queryable structurally, not just greppable in text. Source parent: CAM-260/CAM-262.",
+  "spec": {
+    "acceptanceCriteria": [
+      "The auto-filed SUGGESTION follow-up issue (CAM-189 terminal-verdict hook) is written with a structured `derivedFrom: [<parentIssueId>]` field naming the parent issue whose review produced the SUGGESTION (e.g. CAM-260).",
+      "The parent issue id is carried EXPLICITLY from plan-time (a new field on the PRD snapshot / provenance populated by the plan-runner), NOT parsed out of the `cam/issue-<n>` branch-name string.",
+      "The follow-up remains stage:idea: `specSource` is NOT set, so the auto-filed issue still requires an operator /cam-spec before it is plannable.",
+      "When the parent id is genuinely unavailable (e.g. a hand-authored PRD with no backing issue), `derivedFrom` is omitted rather than filed with a malformed value (the writer already spreads it only when non-empty).",
+      "Tests updated: makeProductionFileSuggestionsFn (test/supervisor/suggestion-filing-production.test.ts) asserts `derivedFrom` is passed through to createLocalIssueOnMain, and the loop-level terminal-hook test (test/supervisor/suggestion-filing-hook.test.ts) covers the parent-id wiring; `bun run check:all` green."
+    ],
+    "scope": "Wire the parent issue id from plan-time through to the suggestion-filing call site (src/commands/sidecar.ts:2248, makeProductionFileSuggestionsFn) so the auto-filed follow-up sets the EXISTING `derivedFrom` field. Add an explicit parent-id field to the PRD snapshot (src/supervisor/decide.ts PrdSnapshot) populated by the plan-runner, and thread it to the filing call. No writer or schema change (createLocalIssueOnMain / writeIssueFile / buildIssueEntry and issues.schema.json already support derivedFrom). No stage promotion. Out of scope: setting specSource, and backfilling already-filed issues such as CAM-262.",
+    "gotchas": [
+      "The writer and schema ALREADY support derivedFrom end-to-end: CreateLocalIssueOnMainOptions.derivedFrom (issue-file.ts:62), WriteIssueFileOptions.derivedFrom (alloc.ts:69), written in buildIssueEntry (alloc.ts:117) only when non-empty, and issues.schema.json defines it as string[]. Do NOT add a new writer field.",
+      "Do NOT set specSource. The schema allOf couples specSource:'derived' -> stage:specified + derivedFrom required + applyFastTrackGuardrails (issue-file.ts:286). Setting it would skip the operator /cam-spec and flip stage to specified. Passing derivedFrom alone (no specSource) is schema-valid and keeps stage:idea.",
+      "PrdSnapshot (decide.ts:20-48) has NO numeric parent id today: only branchName and story ids (US-xxx). Parsing cam/issue-<n> back out of branchName is the fragile-branch-string-parse class (CAM-237); carry the id explicitly from plan-time instead.",
+      "The provenance text lines (Source: / suggestion-fingerprint:) stay as-is: derivedFrom is additive structured metadata, not a replacement for the dedup fingerprint."
+    ],
+    "domainTerms": [
+      "derivedFrom",
+      "suggestion follow-up"
+    ]
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 1,
+    "riskReduction": 2,
+    "jobSize": 2
+  },
+  "type": "fix"
 }
