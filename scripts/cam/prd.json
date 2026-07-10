@@ -1,0 +1,63 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-260",
+  "description": "Shift the file-size ceiling raise left from ship time into the implementer story, with the reviewer backstopping each raise, and fix the stale patterns.md ship pointer.",
+  "issueNumber": 260,
+  "type": "chore",
+  "relatedDocs": [
+    "docs/recovery-runbook.md"
+  ],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Implementer runs file-size gate and raises its own ceilings in-story",
+      "description": "As the cam implementer agent, I need my instruction file to run the file-size gate after coding and raise only my own story's grown-file ceilings in the same commit, so a legitimate file growth stops tripping the ratchet late at ship/CI instead of being caught in-story.",
+      "acceptanceCriteria": [
+        "Both copies of the implementer instruction file (.claude/agents/subagent-implementer.md and templates/agents/subagent-implementer.md) instruct the worker to run the file-size gate `bun scripts/check-file-sizes.ts` after coding, in addition to the existing `bun run typecheck` and `bun test` gates. [oracle: file-assert grep -q 'check-file-sizes.ts' .claude/agents/subagent-implementer.md && grep -q 'check-file-sizes.ts' templates/agents/subagent-implementer.md]",
+        "Both copies instruct that when the gate fails because a file the story legitimately grew exceeds its ceiling, the implementer raises that file's ceiling in scripts/file-size-budget.json to the gate's reported actual line count (measured as content.split('\\n').length, explicitly NOT wc -l), sets/updates the top-level _ref with the CAM tracker id, and stages the budget change in the SAME story commit. [oracle: file-assert grep -q 'file-size-budget.json' .claude/agents/subagent-implementer.md]",
+        "Both copies state the implementer raises only the ceiling(s) of the file(s) its own story grew and never blanket-raises unrelated budgeted files, and that adding this gate is a scoped exception, NOT a switch to running the full check:all in the worker. [oracle: reviewer-judgment]",
+        "The gate mechanism itself is untouched: scripts/check-file-sizes.ts and scripts/check-all.ts are not modified by this story. [oracle: file-assert test -z \"$(git diff --name-only origin/main -- scripts/check-file-sizes.ts scripts/check-all.ts)\"]",
+        "Vendor drift check passes after regenerating the embedded templates (bun run embed-vendor). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Edit BOTH .claude/agents/subagent-implementer.md and templates/agents/subagent-implementer.md with the same instruction change (they are dual-copied; templates/ is embedded into src/templates/embedded.ts via bun run embed-vendor). Best insertion point: the '## What you do for the story' quality-gates list (~line 97-101) and/or the '## Gate discipline' section (~line 65-76). Gotcha (from issue): the gate measures LOC as content.split('\\n').length = wc -l + 1 for a trailing-newline file; instruct setting the ceiling to the gate's reported actual, not wc -l. Gotcha: checkDiffTrackerRef reads only the STAGED diff, so the _ref bump must be staged in the same commit. Budget file scripts/file-size-budget.json has a top-level _ref string and per-path ceiling entries. Since templates/ changes, run bun run embed-vendor then embed-vendor:check. Curated invariant: run typecheck + test + check:all before commit."
+    },
+    {
+      "id": "US-002",
+      "title": "Reviewer backstops every file-size-budget ceiling raise",
+      "description": "As the cam reviewer agent, I need my instruction file to flag every file-size-budget ceiling raise in the diff for justification, so the ratchet's friction is preserved (legitimate growth vs a file that should have been split) even though the raise now happens in-story.",
+      "acceptanceCriteria": [
+        "Both copies of the reviewer instruction file (.claude/agents/subagent-reviewer.md and templates/agents/subagent-reviewer.md) contain an explicit instruction that every file-size-budget ceiling raise present in the diff must be justified (legitimate growth vs the file should have been split), and that an unjustified raise is a REQUEST CHANGES / CRITICAL finding. [oracle: file-assert grep -q 'file-size-budget' .claude/agents/subagent-reviewer.md && grep -q 'file-size-budget' templates/agents/subagent-reviewer.md]",
+        "The instruction is wired into the review checklist / verdict rubric so it is applied on every review, not left as prose only. [oracle: reviewer-judgment]",
+        "Vendor drift check passes after regenerating the embedded templates (bun run embed-vendor). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Edit BOTH .claude/agents/subagent-reviewer.md and templates/agents/subagent-reviewer.md identically for this change (dual-copied; templates/ embedded via bun run embed-vendor). Natural home: the '### Documentation & Config Sync' or '### Conventions' checklist items (~line 82-105) and/or the Layer B 8-criterion rubric (project-conventions row, ~line 111). Since templates/ changes, run bun run embed-vendor then embed-vendor:check. This backstop complements US-001 (which moves the raise into the story); keep the ratchet a hard gate, only the actor/point of the raise shifts left."
+    },
+    {
+      "id": "US-003",
+      "title": "Fix stale cam-ship Step 3 pointer in patterns.md",
+      "description": "As a cam agent reading patterns.md, I need the ratchet raise-and-retry bullet to reflect reality, so I do not follow a pointer to the removed cam-ship.md Step 3 and instead understand the raise now happens in-story with recovery-runbook.md as the recovery-time fallback.",
+      "acceptanceCriteria": [
+        "The stale bullet in scripts/cam/patterns.md (~line 116) no longer references the removed '.claude/commands/cam-ship.md Step 3'. [oracle: file-assert ! grep -q 'cam-ship.md.*Step 3' scripts/cam/patterns.md]",
+        "The corrected bullet states that the deterministic ship (ship-runner.ts) does not auto-raise, that the raise now happens in-story via the implementer, and that recovery-runbook.md (j.1) remains the recovery-time fallback. [oracle: file-assert grep -q 'ship-runner.ts' scripts/cam/patterns.md]",
+        "The gate mechanism is unchanged: scripts/check-file-sizes.ts and the check:all spine are not modified by this story. [oracle: file-assert test -z \"$(git diff --name-only origin/main -- scripts/check-file-sizes.ts scripts/check-all.ts)\"]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Only scripts/cam/patterns.md is affected: the templates/scripts/cam/patterns.md copy is an 8-line seed stub that does NOT contain the cam-ship Step 3 bullet, so there is NO lockstep edit and NO embed-vendor needed for this story (patterns.md under scripts/ is not embedded; only templates/ and vendor/ are). Verified: grep -c 'cam-ship' templates/scripts/cam/patterns.md == 0. The stale bullet is 'cam-ship Step 3 ratchet raise-and-retry (US-003, CAM-79, 2026-06-25)' at line 116. Recovery fallback doc is docs/recovery-runbook.md (referenced as j.1 in the issue; the bullet currently cites j.4)."
+    }
+  ]
+}
