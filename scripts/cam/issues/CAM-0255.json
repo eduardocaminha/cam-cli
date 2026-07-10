@@ -1,7 +1,7 @@
 {
   "id": "CAM-255",
   "title": "Restore programmatic slash-command dispatch under --agent via the Skill tool",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [
     "CAM-254"
