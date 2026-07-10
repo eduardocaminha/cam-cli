@@ -1,0 +1,26 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Grant the Skill tool to the orchestrator and repoint dispatch references from SlashCommand to Skill"
+  },
+  "branchName": "cam/issue-255",
+  "timestamp": "2026-07-10T01:00:33Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    ".claude/agents/subagent-orchestrator.md",
+    "templates/agents/subagent-orchestrator.md",
+    "src/vendor/_generated.ts",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "This PRD (cam/issue-255) contained only US-001, now passes:true. This story is followed by CAM-256 (already filed on main, not yet planned into a PRD): re-verify the CAM-254 fix in light of this story's correction -- CAM-254 deleted `SlashCommand` from tools:/prose (correctly, it was never a real tool), but reasoned its way there partly via CAM-240's now-corrected claim that `Skill` was invalid in tools:. This story (CAM-255) fixed both: added `Skill` back to tools: and repointed the 'Inject commands: review, issue' body + the Conversation contract table's 'review' row to say 'self-invoke via the Skill tool' instead of the dead SlashCommand wording. Also corrected the stale CAM-240 patterns.md bullet (line ~606) that had misread the sub-agents doc as 'Skill is never a valid tools: entry' -- re-fetched both /en/tools-reference and /en/sub-agents live during this story and confirmed Skill IS a real, grantable/denyable tools: entry (distinct from the plural `skills:` field, which preloads full skill content at startup). Runtime self-invocation of /cam-review via the Skill tool under `claude --agent subagent-orchestrator` is still UNVERIFIED-IN-CI (CAM-42: no authenticated interactive TUI harness) -- same caveat as the pre-existing Agent-tool grant note in the Identity section, pending the CAM-253 operator live-validation ceremony.",
+  "officialDocsValidated": [
+    {
+      "lib": "claude-code-docs",
+      "url": "https://code.claude.com/docs/en/tools.md",
+      "fetchedAt": "2026-07-10T01:00:33Z",
+      "status": "corrected",
+      "summary": "Confirmed Skill is a real built-in tool ('Executes a skill within the main conversation') in the tools reference table, and /en/sub-agents confirms Skill is a valid, grantable/denyable tools: entry distinct from the skills: preload field -- this overturns a prior (CAM-240) patterns.md claim that Skill was never valid there, which this story corrected in scripts/cam/patterns.md."
+    }
+  ]
+}
