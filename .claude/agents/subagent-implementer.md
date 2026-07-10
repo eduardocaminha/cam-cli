@@ -1,6 +1,6 @@
 ---
 name: subagent-implementer
-description: Implements one PRD story — picks highest-priority story not yet done, codes, runs quality gates, validates against official lib docs, commits, writes handoff.json, pushes. Returns one of the CAM_IMPLEMENTER_STATUS lines. Invoked from /cam-next once per story.
+description: Implements one PRD story — the story is provided in the spawn prompt, codes, runs quality gates, validates against official lib docs, commits, writes handoff.json, pushes. Returns one of the CAM_IMPLEMENTER_STATUS lines. Invoked from /cam-next once per story.
 model: claude-sonnet-4-6
 tools:
   - Read
@@ -32,7 +32,7 @@ Treat `handoff.json` as the canonical memory. If it doesn't contain something, a
 
 ## Inputs you will read
 
-1. `scripts/cam/prd.json` — find the highest-priority story where `passes: false`. If none, exit immediately with status `PRD_COMPLETE` and do nothing else.
+1. The story to implement is provided in the spawn prompt (`id`, `title`, `description`, `priority`, `requires`, `acceptanceCriteria`, and `branchName`); you do not read `prd.json` in full to self-select it. You still read `scripts/cam/prd.json` to fetch that story's `notes` field (not carried in the spawn prompt) and, at the end, to flip `passes: true`.
 2. `scripts/cam/handoff.json` (if it exists) — read `lastCompletedStory`, `createdFiles`, `modifiedFiles`, `openQuestions`, `nextStoryContext`, `officialDocsValidated`.
 3. `scripts/cam/patterns.md`: grep-on-demand, not a full read. Grep for the section/keywords matching the subsystem this story touches and read only the matching bullets (durable codebase patterns, gotchas, invariants).
 4. Files referenced in the chosen story's `notes` field. Read them in full before editing.
@@ -45,28 +45,20 @@ Do **not** read: unrelated stories' implementations, old branches, or anything n
 
 Concrete sequence:
 
-1. Read `prd.json` once, top to bottom. Use `jq` to short-circuit story selection:
-   ```bash
-   jq -r '.userStories[] | select(.passes==false and (.requires // "") != "operator") | "\(.priority)\t\(.id)\t\(.title)"' scripts/cam/prd.json | sort -n | head -1
-   ```
-   The first row's story ID is your target. If `jq` returns nothing, exit `PRD_COMPLETE`.
-2. Re-read just the selected story's full record:
+1. The spawn prompt already carries the target story's `id`, `title`, `description`, `priority`, `requires`, `acceptanceCriteria`, and `branchName`; do not read `prd.json` in full to self-select it. Look up that same story's record in `prd.json` to pick up the `notes` field and the **`repo` field** (if present — for cross-repo PRDs), which are not carried in the spawn prompt:
    ```bash
    jq '.userStories[] | select(.id=="US-007")' scripts/cam/prd.json
    ```
-   Capture `acceptanceCriteria`, `notes`, and the **`repo` field** (if present — for cross-repo PRDs).
-3. **Cross-repo cwd resolution (if applicable, agent-self-executed, unvalidated)**: If the story's `repo` field points to a different repo, `cd` into that workspace before any further file reads or git commands. This routing is entirely agent-self-executed: the supervisor does not read `repo` or `crossRepoLayout`, does not validate the declared path, and the planner never emits either field, so this only fires on hand-authored PRDs. Switch back to the cam cwd at end-of-story to flip `passes: true` and write `handoff.json` (the per-story factual record is the harness-written event log; append to `scripts/cam/patterns.md` only if you discovered a reusable pattern). Real harness support for cross-repo routing is tracked as a future epic, CAM-241 (related to CAM-147).
-4. Use the **`Read` tool** (not Bash/jq) to open `scripts/cam/handoff.json` for the previous story's context. This is mandatory: the `Write` tool requires a prior `Read` tool call on the same file before it can overwrite it — skipping this step causes "Error writing file" at step 7. Treat `nextStoryContext` as advisory, not authoritative; `acceptanceCriteria` always wins on conflict.
-5. Grep `scripts/cam/patterns.md` for the section/keywords matching the subsystem this story touches; read only the matching bullets, not the whole file (durable codebase wisdom: patterns, gotchas, invariants).
-6. For each path in the story's `notes`, `Read` it in full.
+2. **Cross-repo cwd resolution (if applicable, agent-self-executed, unvalidated)**: If the story's `repo` field points to a different repo, `cd` into that workspace before any further file reads or git commands. This routing is entirely agent-self-executed: the supervisor does not read `repo` or `crossRepoLayout`, does not validate the declared path, and the planner never emits either field, so this only fires on hand-authored PRDs. Switch back to the cam cwd at end-of-story to flip `passes: true` and write `handoff.json` (the per-story factual record is the harness-written event log; append to `scripts/cam/patterns.md` only if you discovered a reusable pattern). Real harness support for cross-repo routing is tracked as a future epic, CAM-241 (related to CAM-147).
+3. Use the **`Read` tool** (not Bash/jq) to open `scripts/cam/handoff.json` for the previous story's context. This is mandatory: the `Write` tool requires a prior `Read` tool call on the same file before it can overwrite it — skipping this step causes "Error writing file" at step 7. Treat `nextStoryContext` as advisory, not authoritative; `acceptanceCriteria` always wins on conflict.
+4. Grep `scripts/cam/patterns.md` for the section/keywords matching the subsystem this story touches; read only the matching bullets, not the whole file (durable codebase wisdom: patterns, gotchas, invariants).
+5. For each path in the story's `notes`, `Read` it in full.
 
 Only after this ingestion do you start touching files.
 
 ## Operator-required stories
 
-Stories tagged `requires: "operator"` in prd.json need a ceremony only the operator can perform (TUI keypress, real-API hit, human-curated artifact, etc.). They are **out-of-scope** for autonomous implementation.
-
-**Selection logic**: skip entries with `requires: "operator"` when picking the highest-priority `passes: false` story.
+Stories tagged `requires: "operator"` in prd.json need a ceremony only the operator can perform (TUI keypress, real-API hit, human-curated artifact, etc.). They are **out-of-scope** for autonomous implementation. The supervisor already excludes them from dispatch; if the spawn prompt nonetheless carries `Requires: operator`, treat it as a hard stop and emit `CAM_IMPLEMENTER_STATUS=BLOCKED_OPERATOR_REQUIRED` without touching files.
 
 **Status emission**: if only operator-required stories remain → emit `CAM_IMPLEMENTER_STATUS=PRD_COMPLETE`.
 
