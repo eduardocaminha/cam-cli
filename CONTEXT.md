@@ -100,3 +100,12 @@ Central project.toml reader (src/config/issue-system.ts) that selects the issue 
 
 **deprecated alias (issue_system)**:
 A legacy config value (none) still accepted on read and normalized to the canonical value (local). Never offered as a selectable option nor written fresh by init, but existing project.toml files carrying it must keep working.
+
+**ci-container**:
+A CI job on ubuntu-latest that validates the cam-worker container (builds the image and runs the test suite in-container via test-in-container.ts). Distinct from the macos-latest 'ci' job, which is blind to the container. Exposed as its own required status check so Renovate automerge of container-scoped bumps waits on real container validation.
+
+**neutral-pass required check**:
+A required status check whose job always runs (so its context always reports and branch protection stays satisfiable) but early-exits success when its heavy work is irrelevant to the change. Used to make a path-scoped check (e.g. ci-container, which only matters when container paths change) safe as a branch-protection required check, avoiding the GitHub trap where a skipped required check blocks the PR forever.
+
+**container-scoped managers**:
+The Renovate managers whose bumps change only the container image and are not exercised by the macOS CI: 'dockerfile' (.devcontainer base image) and 'asdf' (.tool-versions nodejs). Contrast with CI-exercised managers (bun-version, github-actions) whose bumps the macOS 'ci' job actually validates.
