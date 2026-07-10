@@ -24,7 +24,7 @@
         "Tests pass (bun test), including any doc-gate / check-count / validate-agents-md assertions over the auditor md. [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edit ONLY .claude/agents/subagent-auditor.md item C.8 at line ~66. GOTCHA (from issue): the .claude copy and templates/agents/subagent-auditor.md are intentionally NOT identical — templates/ is the generic scaffold whose item 8 keeps browser+E2E for web apps; leave it untouched. .claude/agents/ is the LIVE runtime agent definition, not embedded via templates/, so NO embed-vendor regeneration is needed (do not run embed-vendor). Before finishing, confirm no test asserts C.8 as a single inline block: test/embedded.test.ts targets the templates/ copy and item 9's oracle text, not C.8; test/commands/config-frontmatter.test.ts checks only paths/frontmatter. Keep the full suite green."
     }
