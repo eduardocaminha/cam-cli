@@ -41,7 +41,7 @@
         "Vendor drift check passes after regenerating the embedded copy (bun run embed-vendor then bun run embed-vendor:check). [oracle: bun run embed-vendor:check]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/commands/cam-next.md, templates/commands/cam-next.md, src/vendor/_generated.ts (regen only). GOTCHA (memory: cam dual-copy is per-file): the two cam-next.md copies are byte-identical today (diff -q returns clean), so apply the identical edit to both. GOTCHA (embed-vendor): templates/commands/cam-next.md is embedded into src/vendor/_generated.ts; run 'bun run embed-vendor' before 'bun run embed-vendor:check'. Reference: task-prompt.ts buildImplementerTaskPrompt already emits 'This exact story has already been selected by the supervisor; do not self-select a different story.' plus the story id/title/description/priority/requires/branchName fields, use that as the source-of-truth wording. Do NOT change any TS."
     }
