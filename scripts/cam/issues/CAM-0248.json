@@ -1,7 +1,7 @@
 {
   "id": "CAM-248",
   "title": "Consider adding a matching runtime enum/allowed-key source shared between hando…",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-09T16:06:48.793Z",
