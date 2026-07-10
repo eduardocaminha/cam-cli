@@ -6,7 +6,7 @@ The orchestrator was launched by catting a bootstrap prompt as the first user me
 
 ## Decision
 
-Launch the orchestrator with --agent subagent-orchestrator (plus a minimal boot nudge), making the frontmatter binding: tools/disallowedTools are enforced at runtime. This requires the frontmatter tools list to be complete against real runtime usage (Read, Glob, Grep, Bash, WebFetch, SlashCommand, Write, Skill, Task/Agent) and the boot-imperatives folded into the agent body Boot context so they run under --agent without the separate bootstrap prompt file.
+Launch the orchestrator with --agent subagent-orchestrator (plus a minimal boot nudge), making the frontmatter binding: tools/disallowedTools are enforced at runtime. This requires the frontmatter tools list to be complete against real runtime usage (Read, Glob, Grep, Bash, WebFetch, Write, Skill, Task/Agent) and the boot-imperatives folded into the agent body Boot context so they run under --agent without the separate bootstrap prompt file.
 
 ## Consequences
 
