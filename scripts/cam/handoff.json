@@ -1,0 +1,18 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Set derivedFrom on auto-filed SUGGESTION follow-ups from the parent issue id" },
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/supervisor/decide.ts",
+    "src/supervisor/suggestion-followups.ts",
+    "src/supervisor/loop.ts",
+    "src/commands/sidecar.ts",
+    "test/supervisor/suggestion-filing-production.test.ts",
+    "test/supervisor/suggestion-filing-hook.test.ts",
+    "scripts/file-size-budget.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 (CAM-263) threaded PrdSnapshot.issueNumber -> FollowUpProvenance.parentIssue -> makeProductionFileSuggestionsFn's derivedFrom on auto-filed SUGGESTION follow-ups. No new writer/schema field was needed (createLocalIssueOnMain/writeIssueFile already accepted derivedFrom from the CAM-144 fast-track work). specSource is deliberately NOT set, so filed follow-ups stay stage:idea. Out of scope (left alone): setting specSource on auto-filed issues, backfilling already-filed issues (e.g. CAM-262) with derivedFrom.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
