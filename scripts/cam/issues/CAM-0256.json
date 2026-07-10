@@ -1,0 +1,9 @@
+{
+  "id": "CAM-256",
+  "title": "ADR 0020 still lists the frontmatter tools as complete against 'real runtime us…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-10T00:45:16.937Z",
+  "description": "ADR 0020 still lists the frontmatter tools as complete against 'real runtime usage (Read, Glob, Grep, Bash, WebFetch, SlashCommand, Write, Skill, Task/Agent)'. CAM-254 proves SlashCommand is not a real tool and Skill is never a valid tools: entry. Out of this story's scope (orchestrator persona file only) and ADRs are point-in-time records, so non-blocking, but the ADR's factual claim is now stale and could seed the same mistake again in a future frontmatter audit.\n\nSource: cam/issue-254\nReview round: 1\nLocation: docs/adr/0020-orchestrator-runs-as-an-enforced-agent-agent-not-a-catted-prompt.md:9\n\nsuggestion-fingerprint: 872a1b622040"
+}
