@@ -1,0 +1,40 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-255",
+  "description": "Restore orchestrator-side programmatic /cam-* dispatch under --agent by granting the Skill tool and swapping the dead SlashCommand references to it.",
+  "issueNumber": 255,
+  "type": "fix",
+  "relatedDocs": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "Claude Code",
+      "url": "https://code.claude.com/docs/en/tools.md",
+      "version": "current",
+      "fetchedAt": "2026-07-09T00:00:00Z",
+      "summary": "Confirmed the tools reference lists a grantable `Skill` tool ('Executes a skill within the main conversation') whose exact string is usable in subagent tool lists, and that there is no `SlashCommand` entry. Skills run through the existing Skill tool rather than adding a new tool entry, so existing .claude/commands/*.md are Skill-invokable as-is.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Grant the Skill tool to the orchestrator and repoint dispatch references from SlashCommand to Skill",
+      "description": "As the cam orchestrator running under `claude --agent subagent-orchestrator`, I need the Skill tool granted and the agent-body dispatch instructions to reference it (not the dead SlashCommand path) so I can self-invoke /cam-review and /cam-issue programmatically in my own context.",
+      "acceptanceCriteria": [
+        "`Skill` is added to the `tools:` allowlist in the frontmatter of `.claude/agents/subagent-orchestrator.md`. [oracle: file-assert awk '/^tools:/{f=1;next}/^[a-zA-Z]/{f=0}f' .claude/agents/subagent-orchestrator.md | grep -q '\\- Skill']",
+        "The `templates/agents/subagent-orchestrator.md` mirror is reconciled to match (the two copies were byte-identical before this change; diff first). [oracle: named-command diff .claude/agents/subagent-orchestrator.md templates/agents/subagent-orchestrator.md]",
+        "The dispatch instructions in the orchestrator agent body (the 'Inject commands: review, issue' section and the 'review' row of the Conversation contract table) reference the Skill tool as the sanctioned self-invoke path for /cam-review and /cam-issue under --agent, replacing the bare 'invoke the slash command' wording. [oracle: file-assert grep -q 'Skill tool' .claude/agents/subagent-orchestrator.md]",
+        "The embedded copy `src/vendor/_generated.ts` is regenerated so it carries the Skill grant (re-run `bun run embed-vendor`). [oracle: file-assert grep -q 'Skill' src/vendor/_generated.ts]",
+        "No behavior change beyond restoring the Skill-tool dispatch path: the CLI thin-proxy send-keys inject path and CAM-200 composer-no-submit are NOT touched, and no broad 'one canonical dispatch path per command' reconciliation is attempted. [oracle: reviewer-judgment]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: .claude/agents/subagent-orchestrator.md (frontmatter tools: list + body: 'Dispatch protocol' > 'Inject commands: review, issue' section, and the Conversation contract table 'review'/'cria um issue' rows), templates/agents/subagent-orchestrator.md (per-file dual-copy: diff first per CAM-123; the two were byte-identical at plan time so a re-embed IS forced here), src/vendor/_generated.ts (generated, do not hand-edit; run `bun run embed-vendor`). Grounding: CAM-254 (shipped, PR #186) already removed the dead SlashCommand entry from the same frontmatter tools: region, so this story only ADDS `Skill` and edits body prose. `Skill` is a real grantable tool per code.claude.com/docs/en/tools.md ('Executes a skill within the main conversation'); commands and skills share one registry so .claude/commands/*.md are Skill-invokable as-is with no reauthoring, and skills run inline in the caller's context by default (fork is opt-in), so /cam-review runs in the orchestrator's own context. Gotchas: keep scope minimal (issue gotcha #3), do NOT add Skill(...) argument restrictions unless needed, do NOT touch the send-keys inject path (CAM-200, out of scope per issue gotcha #4). AskUserQuestion/ExitPlanMode/ScheduleWakeup/WaitForMcpServers are unavailable to agents but no /cam-* command depends on them. Live runtime self-invocation under --agent has no interactive-TUI CI harness (CAM-42), so it is verified by the frontmatter grant + body instruction as file-asserts, not an operator ceremony."
+    }
+  ]
+}
