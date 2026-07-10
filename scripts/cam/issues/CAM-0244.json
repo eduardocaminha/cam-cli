@@ -1,9 +1,46 @@
 {
   "id": "CAM-244",
   "title": "Renovate automerge de managers so-container (major) mergeia num CI macOS cego ao container",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-09T13:45:45.597Z",
-  "description": "As regras de automerge do renovate.json casam matchUpdateTypes incl. 'major' para os managers dockerfile e asdf, mas o CI e macos-latest sem nenhum passo de container/docker (so checkout + gates via bun). Consequencia: um bump so-container (oven/bun docker tag; nodejs em .tool-versions/Dockerfile) auto-mergeia assim que a PR fica verde no CI macOS, que nunca buildou nem rodou a imagem do worker (trap do CAM-178) - ou seja, mudanca de container nao-testada entra na main. Decidir: (a) excluir 'major' (ou o manager inteiro) do automerge para os managers de escopo-container, deixando essas PRs para merge manual apos validacao; ou (b) gatear o automerge desses no harness in-container (CAM-186, scripts/test-in-container.ts) em vez de so no check ci. Os managers exercitados de verdade pelo CI (bun-version, github-actions, e o proprio bun) podem manter automerge. Casa com CAM-201 (toolchain-parity), CAM-178 (CI cego ao container) e CAM-243 (pins do gate)."
+  "description": "As regras de automerge do renovate.json casam matchUpdateTypes incl. 'major' para os managers dockerfile e asdf, mas o CI e macos-latest sem nenhum passo de container/docker (so checkout + gates via bun). Consequencia: um bump so-container (oven/bun docker tag; nodejs em .tool-versions/Dockerfile) auto-mergeia assim que a PR fica verde no CI macOS, que nunca buildou nem rodou a imagem do worker (trap do CAM-178) - ou seja, mudanca de container nao-testada entra na main. Decidir: (a) excluir 'major' (ou o manager inteiro) do automerge para os managers de escopo-container, deixando essas PRs para merge manual apos validacao; ou (b) gatear o automerge desses no harness in-container (CAM-186, scripts/test-in-container.ts) em vez de so no check ci. Os managers exercitados de verdade pelo CI (bun-version, github-actions, e o proprio bun) podem manter automerge. Casa com CAM-201 (toolchain-parity), CAM-178 (CI cego ao container) e CAM-243 (pins do gate).",
+  "spec": {
+    "acceptanceCriteria": [
+      "A second CI job named 'ci-container' is added to .github/workflows/ci.yml, runs-on ubuntu-latest, triggered on the same pull_request + push-to-main events as the existing 'ci' job.",
+      "The ci-container job ALWAYS runs (so its status context always reports and branch protection stays satisfiable), but its first step detects whether any container-scoped path changed vs the base ref using a pin-free bash step (git diff --name-only): the container-scoped paths are '.devcontainer/**' and '.tool-versions'.",
+      "When no container-scoped path changed, the ci-container job neutral-passes fast (exits 0) without building the image or running the container suite.",
+      "When a container-scoped path changed, the job builds the worker image and runs 'bun scripts/test-in-container.ts' (which ensure-ups the cam-worker image and runs bun test via docker exec), failing the job iff the in-container suite has failures.",
+      "configureBranchProtection (the CAM-101 branch-protection code path) is updated so the required status checks on main are BOTH 'ci' and 'ci-container'.",
+      "docs/recovery-runbook.md required-status-checks oracle is updated: the gh api branches/main/protection contexts query documents 'ci' and 'ci-container' (was only 'ci').",
+      "renovate.json is NOT changed: the asdf and dockerfile automerge rules stay automerge:true and are now correctly gated because 'ci-container' is a required check that actually validates container-scoped bumps; bun-version and github-actions keep automerging gated on 'ci' alone.",
+      "Any test asserting the CI workflow structure and/or the branch-protection required-check set is updated to cover the new 'ci-container' job/context.",
+      "typecheck and the full test suite pass green."
+    ],
+    "scope": "Close the CAM-178 trap for Renovate automerge: container-scoped dependency bumps (asdf/.tool-versions nodejs, dockerfile/.devcontainer base) must not auto-merge on a macOS CI that never built or ran the worker container. Add a path-filtered, always-run 'ci-container' ubuntu job that validates the container only when container paths change, and make it a required status check so Renovate's existing automerge gating waits on it. Touch .github/workflows/ci.yml, the configureBranchProtection code, docs/recovery-runbook.md, and CI/branch-protection tests. Do NOT change renovate.json, and do NOT add an always-on container gate for every PR (continuous host/container parity is a broader, separate concern).",
+    "gotchas": [
+      "GitHub required status checks + a path filter is a known trap: a required check whose job never runs blocks the PR forever. The fix is the always-run + neutral-pass pattern (job always runs; heavy steps are conditional on changed paths), NOT a workflow-level 'paths:' filter that skips the job entirely.",
+      "scripts/test-in-container.ts does NOT run 'docker build' itself; it calls the production ensure-container path which builds the image if absent, so the ci-container job needs a Docker daemon (present on ubuntu-latest, absent on macos-latest) and will pay a multi-minute image build on cache-miss.",
+      "The existing 'ci' job stays macos-latest (host parity, tmux); do not move it to Linux. The container validation is a separate ubuntu job by nature.",
+      ".bun-version is deliberately NOT in the container-scoped path set: a bun bump still changes the container image (BUN_VERSION build-arg) without container validation, but the issue accepted this because bun is validated on the host CI and bun-version keeps automerging on 'ci'.",
+      "Renovate automerge already 'stays gated on the required CI status check' (renovate.json descriptions, ADR 0010); making ci-container a required check is what makes the container-scoped rules wait on it, so renovate.json itself needs no edit.",
+      "CAM-178/186/201 are all shipped but none added a gating container CI job; CAM-186 deliberately left container regression protection on-demand-only because macOS CI has no Docker. This issue is the first to wire a container check into the merge gate."
+    ],
+    "domainTerms": [
+      "ci-container",
+      "neutral-pass required check",
+      "container-scoped managers",
+      "configureBranchProtection",
+      "test-in-container",
+      "CAM-178 trap"
+    ]
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 2,
+    "riskReduction": 5,
+    "jobSize": 5
+  },
+  "type": "chore"
 }
