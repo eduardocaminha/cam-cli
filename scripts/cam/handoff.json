@@ -1,0 +1,14 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Correct the stale tools enumeration in ADR 0020" },
+  "branchName": "cam/issue-256",
+  "timestamp": "2026-07-10T04:43:11Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "docs/adr/0020-orchestrator-runs-as-an-enforced-agent-agent-not-a-catted-prompt.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "PRD CAM-256 contains only US-001, a single-line docs fix removing the stale 'SlashCommand' token from ADR 0020's runtime-tools enumeration. No further stories remain in this PRD.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}

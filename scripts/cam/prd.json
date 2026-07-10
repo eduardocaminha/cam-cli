@@ -20,7 +20,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Single edit at docs/adr/0020-orchestrator-runs-as-an-enforced-agent-agent-not-a-catted-prompt.md:9. Remove only 'SlashCommand, ' from the parenthetical enumeration in the Decision section; leave the Context/Decision/Consequences narrative otherwise intact (ADRs are point-in-time records: correct the stale claim in-place, do not rewrite the decision). GOTCHA: the issue description text 'Skill is never a valid tools: entry' is outdated (written pre-CAM-255) - Skill IS valid and must stay; only 'SlashCommand' is removed. GOTCHA: keep the prose form 'Task/Agent' as-is (the live frontmatter grants Agent; 'Task/Agent' is the accurate prose since the PreToolUse hook gates Task|Agent spawns). Do not touch .claude/agents/subagent-orchestrator.md or any code."
     }
