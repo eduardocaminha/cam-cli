@@ -1,7 +1,7 @@
 {
   "id": "CAM-244",
   "title": "Renovate automerge de managers so-container (major) mergeia num CI macOS cego ao container",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-09T13:45:45.597Z",
