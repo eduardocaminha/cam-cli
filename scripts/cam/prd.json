@@ -23,7 +23,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/commands/cam-review.md and templates/commands/cam-review.md (byte-identical today, verified; both MUST get the same edit or a doc-gate/diff drifts). Insert a single '## Manual /cam-review flow (Steps 0-5)' H2 header + one-line reminder immediately before the existing '## Step 0: Read review state from PRD' heading (currently at line 13). templates/commands/ IS embedded via the vendor blob (scripts/generate-embedded-vendor.ts -> src/templates/embedded.ts), so run bun run embed-vendor after editing templates/ or embed-vendor:check fails. GOTCHAS (from issue spec): (1) do NOT frame the flow as deprecated -- it is live per src/commands/review.ts; goal is scoping clarity only. (2) Reject per-step 'manual path' reminders (repetitive) and a full H2->H3 reflow of every step (heavier than asked); a single umbrella header is the right-sized change. The existing intro paragraph at line 9 already states the manual/sidecar relationship -- keep it; the header just surfaces that scoping at section level."
     }

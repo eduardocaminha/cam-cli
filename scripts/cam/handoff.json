@@ -1,0 +1,16 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Add umbrella manual-path scoping header before Step 0" },
+  "branchName": "cam/issue-252",
+  "timestamp": "2026-07-10T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    ".claude/commands/cam-review.md",
+    "templates/commands/cam-review.md",
+    "src/vendor/_generated.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 added a single '## Manual /cam-review flow (Steps 0-5)' H2 header + one-line reminder immediately before '## Step 0' in both .claude/commands/cam-review.md and templates/commands/cam-review.md (kept byte-identical). Ran bun run embed-vendor to regenerate src/vendor/_generated.ts since templates/ changed; embed-vendor:check is clean. No step content, prompt contract, or verdict/triage logic touched. All quality gates green (typecheck, bun test 4014 pass, check:all).",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
