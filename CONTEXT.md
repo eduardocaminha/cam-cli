@@ -118,3 +118,15 @@ Bumping a file's line-count ceiling in scripts/file-size-budget.json; the raise 
 
 **_ref tracker-ref**:
 The top-level prose key in scripts/file-size-budget.json that must contain an issue/PR reference for any staged ceiling raise; checkDiffTrackerRef reads only the staged diff, so it must be committed alongside the raise.
+
+**sibling ratchets**:
+The four quality gates inside check:all that share the file-size gate's late-catch shape: coverage (check-coverage.ts), debt-markers (check-debt-markers.ts), dead-code (knip), and dup (jscpd).
+
+**late-catch gap**:
+The window in which a legitimate change trips a quality gate only at ship/CI (Layer B) rather than during the implementer's story run, because the worker runs only typecheck+test (plus the file-size gate) and not the full check:all spine.
+
+**reviewer backstop**:
+The reviewer's duty to judge whether a gate loosening (a raised ceiling, lowered floor, added ignore/exclude, or bumped threshold) reflects legitimate change or masks a defect that should have been fixed instead: REQUEST CHANGES when the loosening is unjustified.
+
+**in-story gate run**:
+Running a quality gate during the implementer's single-story iteration (self-correction, Layer A) so failures surface and are resolved inline in the same commit, rather than deferring the whole check:all spine to ship/CI.
