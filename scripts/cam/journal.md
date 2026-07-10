@@ -452,3 +452,15 @@ Each entry follows this template:
 - **Decisions**: Nothing contentious: CAM-263 was already fully specified (grill-with-docs, locked). Dispatched as-spec and let the sidecar cascade plan->implement->review->ship fully autonomously; participation was spec-only (did not set plan_approval=operator).
 - **Blockers encountered**: None. PR #200 merged BEHIND: merge-watch ran gh pr update-branch (attempt 1/2) then merged on CI green. Post-merge clean (close CAM-263 + tag v0.125.0), polled via gh pr view only.
 - **Follow-ups**: Batch drain COMPLETE: CAM-261 then CAM-263 both shipped; 0 stage:specified remain (idea 47, planned 0). The terminal-verdict hook auto-filed CAM-264 (idea) from the reviewer SUGGESTION; CAM-264 has NO derivedFrom because the running sidecar binary predated this very fix (loop/binary coherence, expected). No standing directive next session: greet and wait for an operator /cam-spec, do not plan idea-stage issues directly. Stash git stash@{0} (old CAM-109 WIP) still awaits disposition.
+
+## CAM-264 — Skip project.toml read on empty suggestion batch
+
+- **Started**: 2026-07-10T22:55:00Z
+- **Closed**: 2026-07-10T23:15:00Z
+- **Branch**: cam/issue-264
+- **Issue**: CAM-264
+- **Outcome**: shipped
+- **Summary**: Single-story chore PRD (PR #201, v0.126.0): in makeProductionFileSuggestionsFn (src/commands/sidecar.ts) wrap the config/prefix/parentIssueId resolution and the candidate-filing for-loop behind a candidates.length > 0 guard, so an empty suggestion batch (nothing to file) skips the project.toml read. The post-loop suggestion-filed logEvent stays outside the guard (it fires on dupSkipped > 0, independent of candidates). US-001 DONE round 1 (typecheck ok, 4029 pass / 0 fail, +4 tests). Review CLEAN round 1.
+- **Decisions**: Reviewer SUGGESTION-level nit (negligible cost per the reviewer). Flagged the triviality to the operator up front, ran a single confirmation grill round (change was crystal-clear), and verified before speccing that nothing after the loop consumes config/prefix/parentIssueId (the logEvent depends only on filedIds/dupSkipped/failedCount), so the all-duplicates path (candidates empty, dupSkipped > 0) still emits its event. Participation was spec-only: did not set plan_approval=operator; let the sidecar cascade plan->implement->review autonomously and fired cam ship after review CLEAN.
+- **Blockers encountered**: None. PR #201 was BLOCKED on required ci at ship time; merge-watch merged on CI green. Post-merge clean (close CAM-264 + tag v0.126.0). Merge polled via gh pr view only, never git fetch, during the merge window.
+- **Follow-ups**: Backlog after close: idea 46, specified 0, planned 0 (nothing plannable). CAM-264's own derivedFrom stays None because it was filed by the pre-fix stale binary (loop/binary coherence, expected, not a bug). No standing directive next session: greet, announce autonomous mode without dispatching (host isolation blocks meta_loop=auto), and wait for an operator /cam-spec or new directive. Stash git stash@{0} (old CAM-109 WIP) still awaits disposition.
