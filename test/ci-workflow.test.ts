@@ -72,3 +72,32 @@ describe('ci.yml structural assertions', () => {
 		expect(ciContent).toContain('cancel-in-progress: true');
 	});
 });
+
+// ---------------------------------------------------------------------------
+// Structural assertions: ci-container job (US-001, CAM-244)
+// ---------------------------------------------------------------------------
+
+describe('ci-container job structural assertions', () => {
+	test('declares a ci-container job on ubuntu-latest', () => {
+		expect(ciContent).toContain('ci-container:');
+		expect(ciContent).toContain('runs-on: ubuntu-latest');
+	});
+
+	test('has no workflow-level or job-level paths: filter that would skip the job', () => {
+		expect(ciContent).not.toMatch(/^\s*paths:/m);
+	});
+
+	test('computes container-scoped path changes via a pin-free git diff step', () => {
+		expect(ciContent).toContain('git diff --name-only');
+		expect(ciContent).toContain('.devcontainer');
+		expect(ciContent).toContain('.tool-versions');
+	});
+
+	test('gates the in-container suite on the changed-paths output', () => {
+		expect(ciContent).toContain("steps.changes.outputs.container_changed == 'true'");
+	});
+
+	test('invokes bun scripts/test-in-container.ts directly (not via bun run)', () => {
+		expect(ciContent).toContain('bun scripts/test-in-container.ts');
+	});
+});

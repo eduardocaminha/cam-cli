@@ -31,3 +31,51 @@ jobs:
           echo "| Gate | Status | Duration |" >> $GITHUB_STEP_SUMMARY
           echo "|------|--------|----------|" >> $GITHUB_STEP_SUMMARY
           jq -r '.[] | "| \(.name) | \(.status) | \(.durationMs)ms |"' gate-results.json >> $GITHUB_STEP_SUMMARY
+
+  # ci-container: always-run, path-filtered Docker-daemon job (US-001, CAM-244
+  # PRD). No workflow-level 'paths:' filter is used here on purpose -- a
+  # required check skipped by a job/workflow-level 'paths:' filter stays
+  # Pending forever and wedges the PR. Instead the job always runs, and its
+  # first real step computes whether any container-scoped path
+  # ('.devcontainer/**', '.tool-versions') changed vs the base ref; the heavy
+  # build/test steps are individually gated on that result via 'if:'.
+  ci-container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Detect container-scoped changes
+        id: changes
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE_SHA="${{ github.event.before }}"
+          fi
+          if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BASE_SHA" 2>/dev/null; then
+            echo "no usable base SHA (new branch/history); treating as changed" >&2
+            echo "container_changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          CHANGED=$(git diff --name-only "$BASE_SHA" "${{ github.sha }}" -- .devcontainer .tool-versions)
+          if [ -n "$CHANGED" ]; then
+            echo "$CHANGED" >&2
+            echo "container_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "container_changed=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Neutral-pass (no container-scoped changes)
+        if: steps.changes.outputs.container_changed != 'true'
+        run: echo "no .devcontainer/** or .tool-versions changes; skipping container suite"
+      - uses: oven-sh/setup-bun@v2
+        if: steps.changes.outputs.container_changed == 'true'
+        with:
+          bun-version-file: .bun-version
+      - name: Install deps
+        if: steps.changes.outputs.container_changed == 'true'
+        run: bun install --frozen-lockfile
+      - name: Run in-container test suite
+        if: steps.changes.outputs.container_changed == 'true'
+        run: bun scripts/test-in-container.ts
