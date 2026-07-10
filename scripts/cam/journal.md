@@ -572,3 +572,14 @@ Each entry follows this template:
 - **Decisions**: Confirmed live again: a single cam plan 249 signal auto-cascaded plan->PRD+audit->implement(US-001+US-002)->review->ship->merge->post-merge with no further orchestrator signals (sidecar auto-set active:true and phase:shipping itself). Two-story PRD: the DONE push arrived once per story, review ran after the last. No plan_approval=operator (participation spec-only). Merge polled via gh pr view only, never git fetch, during the merge window (CAM-228 held).
 - **Blockers encountered**: None. Merged ci-gated on CI green (was IN_PROGRESS at ship time). Post-merge clean (close CAM-249 + tag v0.118.0), no pull-failed and no git-fetch poll during the merge window.
 - **Follow-ups**: Autonomous batch drain continues: 4 stage:specified remain after this cycle (CAM-244, 250, 251, 252; derive live via cam issue list, never a snapshot). Sequence docs/chore issues next; CAM-244 LAST because it adds a path-filtered ci-container REQUIRED status check that then gates every subsequent batch PR. One PR per session, recycling with the drain directive carried forward until zero specified remain; the final session drops the directive. Stash entries orch-boot cosmetic color diff on subagent-orchestrator.md and old CAM-109 WIP still await operator disposition.
+
+## CAM-250 — Add count-agnostic real-file smoke test for the patterns.md parser
+
+- **Started**: 2026-07-10T21:50:00Z
+- **Closed**: 2026-07-10T22:05:00Z
+- **Branch**: cam/issue-250
+- **Issue**: CAM-250
+- **Outcome**: shipped
+- **Summary**: Single-story PRD (US-001). Added a count-agnostic real-file smoke test for the patterns.md parser, satisfying US-004 AC5 by equivalence (synthetic fixtures use the exact reserved-key set). No src behavior change. Gates green throughout (typecheck ok, 4014 pass / 0 fail). Auditor implied-APPROVE (loop autonomous, participation spec-only), review CLEAN round 1. Shipped ci-gated as PR #194, tag v0.119.0. 6th issue drained from the specified batch 242-252 (after 245, 247, 242, 248, 249).
+- **Decisions**: Confirmed live again: a single cam plan 250 signal auto-cascaded plan->PRD+audit->implement->review->ship->merge->post-merge with no further orchestrator signals (sidecar auto-set active:true and phase:shipping itself). No plan_approval=operator (participation spec-only). Merge polled via gh pr view only, never git fetch, during the merge window (CAM-228 held).
+- **Blockers encountered**: None. Branch was BEHIND at merge time; merge-watch ran gh pr update-branch once (1/2) and merged on CI green. Post-merge clean (close CAM-250 + tag v0.119.0), no pull-failed and no git-fetch poll during the merge window.
