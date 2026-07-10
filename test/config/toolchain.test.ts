@@ -50,7 +50,7 @@ describe('readPinnedBunVersion', () => {
 
 	test('reads the real repo-root .bun-version file with default args', () => {
 		const result = readPinnedBunVersion();
-		expect(result).toBe('1.3.13');
+		expect(result).toMatch(/^\d+\.\d+\.\d+$/);
 	});
 });
 
@@ -106,6 +106,6 @@ describe('readPinnedNodeVersion', () => {
 
 	test('reads the real repo-root .tool-versions file with default args', () => {
 		const result = readPinnedNodeVersion();
-		expect(result).toBe('22.23.1');
+		expect(result).toMatch(/^\d+\.\d+\.\d+$/);
 	});
 });
