@@ -583,3 +583,15 @@ Each entry follows this template:
 - **Summary**: Single-story PRD (US-001). Added a count-agnostic real-file smoke test for the patterns.md parser, satisfying US-004 AC5 by equivalence (synthetic fixtures use the exact reserved-key set). No src behavior change. Gates green throughout (typecheck ok, 4014 pass / 0 fail). Auditor implied-APPROVE (loop autonomous, participation spec-only), review CLEAN round 1. Shipped ci-gated as PR #194, tag v0.119.0. 6th issue drained from the specified batch 242-252 (after 245, 247, 242, 248, 249).
 - **Decisions**: Confirmed live again: a single cam plan 250 signal auto-cascaded plan->PRD+audit->implement->review->ship->merge->post-merge with no further orchestrator signals (sidecar auto-set active:true and phase:shipping itself). No plan_approval=operator (participation spec-only). Merge polled via gh pr view only, never git fetch, during the merge window (CAM-228 held).
 - **Blockers encountered**: None. Branch was BEHIND at merge time; merge-watch ran gh pr update-branch once (1/2) and merged on CI green. Post-merge clean (close CAM-250 + tag v0.119.0), no pull-failed and no git-fetch poll during the merge window.
+
+## CAM-251 — Remove dead 'reviewer' member from AnySentinelSource union
+
+- **Started**: 2026-07-10T22:30:00Z
+- **Closed**: 2026-07-10T15:38:17Z
+- **Branch**: cam/issue-251
+- **Issue**: CAM-251
+- **Outcome**: shipped
+- **Summary**: Single-story chore PRD (US-001). Removed the dead 'reviewer' member from the AnySentinelSource union, dead after US-003 removed its only producer. No behavior change. Gates green throughout (typecheck ok, 4014 pass / 0 fail). Review CLEAN round 1. Shipped ci-gated as PR #195, tag v0.120.0. 7th issue drained from the specified batch 242-252 (after 245, 247, 242, 248, 249, 250).
+- **Decisions**: Confirmed live again: a single cam plan 251 signal auto-cascaded plan->PRD+audit->implement->review->ship->merge->post-merge with no further orchestrator signals (sidecar auto-set active:true and phase:shipping itself). No plan_approval=operator (participation spec-only). Merge polled via gh pr view only, never git fetch, during the merge window (CAM-228 held).
+- **Blockers encountered**: None. PR #195 was MERGEABLE/BLOCKED on required ci at ship time; merge-watch merged on CI green. Post-merge clean (close CAM-251 + tag v0.120.0), no pull-failed and no git-fetch poll during the merge window.
+- **Follow-ups**: Autonomous batch drain continues: 2 stage:specified remain after this cycle (CAM-252 docs/chore, then CAM-244 LAST because it adds a path-filtered ci-container REQUIRED status check that then gates every subsequent batch PR; derive live via cam issue list, never a snapshot). One PR per session, recycling with the drain directive carried forward until zero specified remain; the final session drops the directive. Stash entries orch-boot cosmetic color diff on subagent-orchestrator.md and old CAM-109 WIP still await operator disposition.
