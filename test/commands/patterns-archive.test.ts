@@ -11,6 +11,8 @@ import { test, expect, describe } from 'bun:test';
 import type { SpawnSyncReturns } from 'node:child_process';
 import {
 	archivePatternsOnMain,
+	parsePatternsBullets,
+	isResolved,
 	type SpawnFn,
 	type ArchivePatternsOnMainSuccess,
 	type ArchivePatternsOnMainResult,
@@ -384,5 +386,37 @@ describe('archivePatternsOnMain — shared guard passthrough', () => {
 		expect(result.ok).toBe(false);
 		if (!result.ok) expect(result.reason).toBe('patterns-missing');
 		expect(calls.find((c) => c.args.includes('commit-tree'))).toBeUndefined();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-001: count-agnostic real-file smoke test
+//
+// Runs the real scripts/cam/patterns.md through parsePatternsBullets/isResolved
+// and cross-checks the resolved-bullet segmentation against an independent
+// raw marker scan, so future format drift in the real file is caught
+// mechanically instead of relying only on synthetic fixtures. The resolved
+// count is NOT asserted as a hardcoded literal: only the equivalence
+// relation between the parser's segmentation and an independent raw-text
+// regex scan is asserted, so this stays green regardless of how many
+// bullets carry the marker at any point in time.
+// ---------------------------------------------------------------------------
+
+describe('parsePatternsBullets/isResolved — real scripts/cam/patterns.md smoke test', () => {
+	test('parses non-empty bullets from the real file and matches an independent marker scan', async () => {
+		const realContent = await Bun.file('scripts/cam/patterns.md').text();
+
+		const parsed = parsePatternsBullets(realContent);
+		expect(parsed.blocks.length).toBeGreaterThan(0);
+
+		const resolvedByParser = parsed.blocks.filter(isResolved).length;
+
+		// Independent raw-text scan: a fresh global regex over the whole file,
+		// not reusing RESOLVED_MARKER_RE or isResolved, so this is a genuine
+		// cross-check of the parser's block segmentation rather than a
+		// tautological re-application of the same predicate.
+		const rawMarkerMatches = realContent.match(/\[resolved \d{4}-\d{2}\]/g) ?? [];
+
+		expect(resolvedByParser).toBe(rawMarkerMatches.length);
 	});
 });

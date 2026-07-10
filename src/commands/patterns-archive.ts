@@ -105,7 +105,7 @@ function readArchiveFromMain(cwd: string, spawnFn: SpawnFn): string | null {
 // Bullet-relative parsing
 // ---------------------------------------------------------------------------
 
-interface ParsedPatterns {
+export interface ParsedPatterns {
 	/** patterns.md lines before the first top-level `- ` bullet (intro preamble, always retained). */
 	preambleLines: string[];
 	/** One entry per top-level `- ` bullet, in original order. */
@@ -127,7 +127,7 @@ function trimTrailingBlankLines(lines: string[]): string[] {
  * (but not including) the next such line, so a bullet that wraps across
  * multiple lines is captured whole.
  */
-function parsePatternsBullets(content: string): ParsedPatterns {
+export function parsePatternsBullets(content: string): ParsedPatterns {
 	const allLines = content.split('\n');
 
 	const bulletIdxs: number[] = [];
@@ -152,7 +152,7 @@ function parsePatternsBullets(content: string): ParsedPatterns {
 }
 
 /** True when a bullet block carries the resolved marker anywhere in its text. */
-function isResolved(block: string): boolean {
+export function isResolved(block: string): boolean {
 	return RESOLVED_MARKER_RE.test(block);
 }
 
