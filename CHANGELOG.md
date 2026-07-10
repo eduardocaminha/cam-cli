@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.122.0] - 2026-07-10
+
+### Added
+
+- US-002 - Require ci-container in branch protection and update the runbook oracle
+- US-001 - Add always-run, path-filtered ci-container ubuntu job to ci.yml
+
 ## [0.121.0] - 2026-07-10
 
 ### Added
