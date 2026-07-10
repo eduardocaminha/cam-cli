@@ -1,7 +1,7 @@
 {
   "id": "CAM-261",
   "title": "Generalize the in-story ratchet-raise pattern to coverage/debt/dead-code/dup gates",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-10T19:00:44.551Z",
