@@ -23,7 +23,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edit BOTH .claude/agents/subagent-implementer.md and templates/agents/subagent-implementer.md with the same instruction change (they are dual-copied; templates/ is embedded into src/templates/embedded.ts via bun run embed-vendor). Best insertion point: the '## What you do for the story' quality-gates list (~line 97-101) and/or the '## Gate discipline' section (~line 65-76). Gotcha (from issue): the gate measures LOC as content.split('\\n').length = wc -l + 1 for a trailing-newline file; instruct setting the ceiling to the gate's reported actual, not wc -l. Gotcha: checkDiffTrackerRef reads only the STAGED diff, so the _ref bump must be staged in the same commit. Budget file scripts/file-size-budget.json has a top-level _ref string and per-path ceiling entries. Since templates/ changes, run bun run embed-vendor then embed-vendor:check. Curated invariant: run typecheck + test + check:all before commit."
     },
