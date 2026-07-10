@@ -1,7 +1,7 @@
 {
   "id": "CAM-245",
   "title": "Testes 'reads the real repo-root' de toolchain assertam pin literal e quebram todo bump do Renovate",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-09T13:52:07.755Z",
