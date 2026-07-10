@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.114.0] - 2026-07-10
+
+### Added
+
+- US-001 - Assert semver format (not literal pin) in the two real-file toolchain tests
+
 ## [0.113.0] - 2026-07-10
 
 ### Added
