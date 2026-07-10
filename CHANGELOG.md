@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.112.0] - 2026-07-10
+
+### Added
+
+- US-001 - Grant the Skill tool to the orchestrator and repoint dispatch references from SlashCommand to Skill
+
 ## [0.111.0] - 2026-07-10
 
 ### Added
