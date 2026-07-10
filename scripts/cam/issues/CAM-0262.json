@@ -1,0 +1,9 @@
+{
+  "id": "CAM-262",
+  "title": "The new file-size gate paragraph is a single long sentence-run appended to the …",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-10T19:48:08.543Z",
+  "description": "The new file-size gate paragraph is a single long sentence-run appended to the quality-gate bullet. Consider a sub-bullet for readability, though this is cosmetic and matches the agent-file (LLM-consumed) convention.\n\nSource: cam/issue-260\nReview round: 1\nLocation: .claude/agents/subagent-implementer.md:100\n\nsuggestion-fingerprint: 6343ed72f478"
+}
