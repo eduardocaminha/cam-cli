@@ -21,7 +21,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Single-file change: src/supervisor/result.ts line 371. Delete the '| reviewer' segment of the AnySentinelSource union so it reads `'implementer' | 'review-tag'`. parseAnySentinel (result.ts:391) already returns only 'implementer' or 'review-tag' since CAM-233/US-003 removed the reviewer producer; its docstring already lists just those two, so no docstring change is required but a light comment touch-up is fine. GOTCHA: 'reviewer' is overloaded, it is ALSO a per-phase model-config name (src/config/models.ts, src/commands/config.ts, src/ui/ConfigScreen.tsx) and a tmux @cam_label pane label (src/tmux/session.ts, src/supervisor/loop.ts:1427, src/supervisor/review.ts:418) -- those are different concepts, do NOT touch them. There is no exhaustiveness switch on AnySentinelSource anywhere, so no consumer case needs removing."
     }
