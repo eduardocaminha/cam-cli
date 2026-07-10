@@ -524,3 +524,15 @@ Each entry follows this template:
 - **Decisions**: Observed live: under this running sidecar a single cam plan signal auto-cascaded plan->PRD+audit->implement->review->ship-signal with no further signals from the orchestrator (the sidecar auto-set active:true and phase:shipping itself). No plan_approval=operator set (participation spec-only). Merge polled via gh pr view only, never git fetch, during the merge window (CAM-228 held). Stashed a stray non-mine cosmetic diff on subagent-orchestrator.md at boot to clear the plan preflight dirty-tree guard.
 - **Blockers encountered**: None. PR #189 merged ci-gated on CI green; post-merge clean (close CAM-245 + tag v0.114.0), no pull-failed and no git-fetch poll during the merge window.
 - **Follow-ups**: Autonomous batch drain continues: 8 stage:specified issues remain after this cycle (derive live via cam issue list, never from a snapshot). Sequence docs/chore issues next; CAM-244 (adds a path-filtered ci-container REQUIRED status check) LAST because it then gates every subsequent batch PR. One PR per session, recycling with the drain directive carried forward until zero specified remain; the final session drops the directive. Stash entry orch-boot: stray cosmetic color diff on subagent-orchestrator.md awaits operator pop-or-drop.
+
+## CAM-247 — CAM-247 — Split auditor item C.8 into a scannable lead line + sub-bullets
+
+- **Started**: 2026-07-10T13:05:00Z
+- **Closed**: 2026-07-10T13:01:41Z
+- **Branch**: cam/issue-247
+- **Issue**: CAM-247
+- **Outcome**: shipped
+- **Summary**: Docs-only single-story PRD (US-001). The long single-paragraph item C.8 in .claude/agents/subagent-auditor.md was split into a lead line plus one sub-bullet per concern (ink-testing-library requirement and the others) for scanability. No src change. Gates green throughout (typecheck ok, 3997 pass / 0 fail). Review CLEAN round 1. Shipped ci-gated as PR #190, tag v0.115.0. Second issue drained from the specified batch 242-252.
+- **Decisions**: Confirmed live again: a single cam plan signal auto-cascaded plan->PRD+audit->implement->review->ship->merge->post-merge with no further orchestrator signals. Participation spec-only (no plan_approval=operator). Merge polled via gh pr view only, never git fetch, during the merge window (CAM-228 held).
+- **Blockers encountered**: None. PR #190 merged ci-gated on CI green; post-merge clean (close CAM-247 + tag v0.115.0), no git-fetch poll during the merge window.
+- **Follow-ups**: Autonomous batch drain continues: 7 stage:specified remain after this cycle (CAM-242, 244, 248, 249, 250, 251, 252; derive live via cam issue list, never a snapshot). Sequence docs/chore next; CAM-244 LAST because it adds a path-filtered ci-container REQUIRED status check that then gates every subsequent batch PR. One PR per session, recycling with the drain directive carried forward until zero specified remain; the final session drops the directive. Stash entry orch-boot: stray cosmetic color diff on subagent-orchestrator.md still awaits operator pop-or-drop.
