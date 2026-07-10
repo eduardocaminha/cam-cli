@@ -29,6 +29,7 @@ import { dirname } from 'node:path';
 import { parseTranscriptUsage, transcriptPathForSession } from '../transcript/usage.ts';
 import type { WorkerOutcome, WorkerOutcomeKind } from './result.ts';
 import type { SpawnResolutionEvent } from '../logging/spawn-resolution.ts';
+import handoffSchema from '../../scripts/cam/handoff.schema.json';
 
 // ---------------------------------------------------------------------------
 // Event types
@@ -565,22 +566,22 @@ export function buildResultDetail(
 }
 
 /**
- * Valid `status` values for a handoff.officialDocsValidated entry. Source of
- * truth: the `status` enum in scripts/cam/handoff.schema.json.
+ * Valid `status` values for a handoff.officialDocsValidated entry. Derived at
+ * runtime from the `status` enum in scripts/cam/handoff.schema.json (imported
+ * as a JSON module) rather than hand-copied, so the schema is the single
+ * source of truth and this array cannot drift from it.
  */
-export const OFFICIAL_DOCS_VALIDATED_STATUSES = [
-	'aligned',
-	'corrected',
-	'no_external_lib_touched',
-	'fetch_failed',
-] as const;
+export const OFFICIAL_DOCS_VALIDATED_STATUSES = handoffSchema.properties.officialDocsValidated.items.properties.status.enum;
 
 /**
- * Keys allowed on a handoff.officialDocsValidated entry. Source of truth: the
- * item schema's properties in scripts/cam/handoff.schema.json, which sets
- * `additionalProperties: false`.
+ * Keys allowed on a handoff.officialDocsValidated entry. Derived at runtime
+ * from Object.keys of the item schema's properties in
+ * scripts/cam/handoff.schema.json (imported as a JSON module) rather than
+ * hand-copied; that item schema sets `additionalProperties: false`.
  */
-const OFFICIAL_DOCS_VALIDATED_ALLOWED_KEYS = new Set(['lib', 'status', 'url', 'fetchedAt', 'summary']);
+const OFFICIAL_DOCS_VALIDATED_ALLOWED_KEYS = new Set(
+	Object.keys(handoffSchema.properties.officialDocsValidated.items.properties),
+);
 
 /**
  * Targeted, hand-rolled schema guard for handoff.officialDocsValidated

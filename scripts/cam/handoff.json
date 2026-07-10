@@ -1,0 +1,25 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Derive officialDocsValidated status enum and allowed keys from handoff.schema.json"
+  },
+  "branchName": "cam/issue-248",
+  "timestamp": "2026-07-10T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "tsconfig.json",
+    "src/supervisor/events.ts",
+    "scripts/file-size-budget.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "resolveJsonModule is now enabled in tsconfig.json and src/supervisor/events.ts imports scripts/cam/handoff.schema.json as a static JSON module. OFFICIAL_DOCS_VALIDATED_STATUSES and OFFICIAL_DOCS_VALIDATED_ALLOWED_KEYS are now derived at runtime from that import (handoffSchema.properties.officialDocsValidated.items.properties.status.enum and Object.keys(...properties)) instead of hand-copied literals. Editing the status enum or the item's property set in handoff.schema.json alone now updates the runtime validator with no second edit in events.ts. bun build --compile inlines the JSON import fine (verified via bun run build:release). The file-size-budget.json ceiling for src/supervisor/events.ts was raised 662->663 with a tracker ref in _ref.",
+  "officialDocsValidated": [
+    {
+      "lib": "typescript",
+      "url": "https://www.typescriptlang.org/tsconfig/#resolveJsonModule",
+      "fetchedAt": "2026-07-10T00:00:00Z",
+      "status": "aligned",
+      "summary": "resolveJsonModule needs no companion flag and infers literal types per-property from the JSON's static shape; matches the property-path access used in events.ts and the clean bun run typecheck result."
+    }
+  ]
+}

@@ -35,7 +35,7 @@
         "The cam binary still builds and bun build --compile inlines the JSON import (bun run build:release). [oracle: bun run build:release]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/events.ts (lines ~567-626: the two exported/module consts and validateOfficialDocsValidated), tsconfig.json (compilerOptions). GOTCHA: handoff.schema.json is NOT read at runtime today (no ajv); this change makes it authoritative via a static JSON import that bun build --compile inlines (no runtime file dependency). Do NOT confuse scripts/cam/handoff.schema.json with src/orchestrator/handoff.ts, which is the DIFFERENT orch-handoff schema. tsconfig has module:Preserve + moduleResolution:bundler; only resolveJsonModule is missing (per consulted TS docs it needs nothing else). Derive STATUSES from schema.properties.officialDocsValidated.items.properties.status.enum and ALLOWED_KEYS from Object.keys(schema.properties.officialDocsValidated.items.properties); this matches additionalProperties:false and auto-tracks new properties, which is the drift-prevention asked for, so no separate drift test is needed. Keep the `as readonly string[]` cast at the .includes call site. Under noUncheckedIndexedAccess, guard any nested access when walking the imported schema object."
     }
