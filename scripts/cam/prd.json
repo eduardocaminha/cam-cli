@@ -1,0 +1,43 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-248",
+  "description": "Make handoff.schema.json the single source for the officialDocsValidated status enum and allowed-key set, derived at runtime in events.ts to prevent hand-sync drift.",
+  "issueNumber": 248,
+  "type": "chore",
+  "relatedDocs": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "TypeScript",
+      "url": "https://www.typescriptlang.org/tsconfig/#resolveJsonModule",
+      "version": "current",
+      "fetchedAt": "2026-07-10T00:00:00Z",
+      "summary": "resolveJsonModule enables importing .json files with types inferred from the static JSON structure; it does NOT require esModuleInterop or a specific module/moduleResolution setting, so adding it alone to compilerOptions is sufficient for the JSON import to typecheck under the existing bundler moduleResolution.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Derive officialDocsValidated status enum and allowed keys from handoff.schema.json",
+      "description": "As a cam maintainer, I need the officialDocsValidated status enum and allowed-key set in events.ts to be derived from handoff.schema.json instead of hand-copied, so the schema is the single source of truth and the two places cannot drift.",
+      "acceptanceCriteria": [
+        "tsconfig.json compilerOptions contains 'resolveJsonModule': true. [oracle: grep -q '\"resolveJsonModule\": true' tsconfig.json]",
+        "src/supervisor/events.ts imports scripts/cam/handoff.schema.json via the relative path ../../scripts/cam/handoff.schema.json. [oracle: grep -q '../../scripts/cam/handoff.schema.json' src/supervisor/events.ts]",
+        "OFFICIAL_DOCS_VALIDATED_STATUSES is derived from the schema's officialDocsValidated items status.enum (not a hand-written literal array); the literal array of status strings is removed from events.ts. [oracle: reviewer-judgment]",
+        "OFFICIAL_DOCS_VALIDATED_ALLOWED_KEYS is derived from Object.keys of that item's properties (not a hand-written literal set); the literal Set constructor argument listing 'lib','status','url','fetchedAt','summary' is removed from events.ts. [oracle: reviewer-judgment]",
+        "OFFICIAL_DOCS_VALIDATED_STATUSES remains usable as a readonly string[] at the .includes(status) call site (~line 613) with no consumer relying on a literal-union type. [oracle: bun run typecheck]",
+        "validateOfficialDocsValidated behavior is unchanged: same statuses accepted (aligned, corrected, no_external_lib_touched, fetch_failed), same allowed keys, warn-only, one-entry-one-warning contract preserved. [oracle: bun test]",
+        "The 'Source of truth: ... handoff.schema.json' comments on the two constants are updated to state the values are now derived from the schema at runtime, not hand-copied. [oracle: reviewer-judgment]",
+        "Changing the status enum or the item's property set in handoff.schema.json alone updates the runtime validator with no second edit in events.ts. [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "The cam binary still builds and bun build --compile inlines the JSON import (bun run build:release). [oracle: bun run build:release]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/supervisor/events.ts (lines ~567-626: the two exported/module consts and validateOfficialDocsValidated), tsconfig.json (compilerOptions). GOTCHA: handoff.schema.json is NOT read at runtime today (no ajv); this change makes it authoritative via a static JSON import that bun build --compile inlines (no runtime file dependency). Do NOT confuse scripts/cam/handoff.schema.json with src/orchestrator/handoff.ts, which is the DIFFERENT orch-handoff schema. tsconfig has module:Preserve + moduleResolution:bundler; only resolveJsonModule is missing (per consulted TS docs it needs nothing else). Derive STATUSES from schema.properties.officialDocsValidated.items.properties.status.enum and ALLOWED_KEYS from Object.keys(schema.properties.officialDocsValidated.items.properties); this matches additionalProperties:false and auto-tracks new properties, which is the drift-prevention asked for, so no separate drift test is needed. Keep the `as readonly string[]` cast at the .includes call site. Under noUncheckedIndexedAccess, guard any nested access when walking the imported schema object."
+    }
+  ]
+}
