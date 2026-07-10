@@ -1,9 +1,37 @@
 {
   "id": "CAM-255",
   "title": "Restore programmatic slash-command dispatch under --agent via the Skill tool",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
-  "blockedBy": [],
+  "blockedBy": [
+    "CAM-254"
+  ],
   "createdAt": "2026-07-10T00:28:44.894Z",
-  "description": "Split out of CAM-254. Since CAM-240 spawns the orchestrator under `claude --agent subagent-orchestrator`, the SlashCommand path is gone: SlashCommand is not a grantable tool at all (claude-code-guide confirmed against https://code.claude.com/docs/en/tools.md, which has no SlashCommand entry; slash commands are an interactive message-parsing construct, not a callable tool). Consequence proven live during CAM-253/CAM-254: the orchestrator-side inject path for /cam-issue and /cam-review is effectively broken under --agent. When the orchestrator session is live, `cam issue`/`cam review`/`cam spec` inject the slash-command text into the orchestrator pane %0, but under --agent (a) it cannot be run via a tool (no SlashCommand tool) and (b) the injected text lands in the composer without submitting (CAM-200). We currently work around it by executing the skill deterministic step directly (e.g. `cam issue --file-local`, `cam spec --persist`), which is fine for issue/spec but leaves /cam-review with no orchestrator-side programmatic path. claude-code-guide points to the `Skill` tool as the grantable mechanism that executes a skill in the main conversation: if the cam /cam-* commands are exposed as skills (or a parallel skill entrypoint is added), the orchestrator could dispatch them programmatically via the Skill tool instead of the dead SlashCommand path. Scope to investigate: (1) whether the cam commands in .claude/commands/ can be exposed/duplicated as .claude/skills/ entries invokable via the Skill tool; (2) add Skill to the orchestrator tools: allowlist if adopted; (3) reconcile with the CLI thin-proxy design (send-keys inject) so there is exactly one sanctioned dispatch path per command, not two half-working ones; (4) decide per-command whether the deterministic CLI channel (cam issue --file-local, cam spec --persist) is the canonical path and the Skill/inject path is only for interview-style commands (/cam-review, /cam-spec grill). Related: CAM-254 (drop the dead SlashCommand entry), CAM-200 (send-keys composer no-submit), CAM-240 (spawn under --agent). This is a design/architecture investigation; likely needs a /cam-spec grill before it is plannable."
+  "description": "Split out of CAM-254. Since CAM-240 spawns the orchestrator under `claude --agent subagent-orchestrator`, the SlashCommand path is gone: SlashCommand is not a grantable tool at all (claude-code-guide confirmed against https://code.claude.com/docs/en/tools.md, which has no SlashCommand entry; slash commands are an interactive message-parsing construct, not a callable tool). Consequence proven live during CAM-253/CAM-254: the orchestrator-side inject path for /cam-issue and /cam-review is effectively broken under --agent. When the orchestrator session is live, `cam issue`/`cam review`/`cam spec` inject the slash-command text into the orchestrator pane %0, but under --agent (a) it cannot be run via a tool (no SlashCommand tool) and (b) the injected text lands in the composer without submitting (CAM-200). We currently work around it by executing the skill deterministic step directly (e.g. `cam issue --file-local`, `cam spec --persist`), which is fine for issue/spec but leaves /cam-review with no orchestrator-side programmatic path. claude-code-guide points to the `Skill` tool as the grantable mechanism that executes a skill in the main conversation: if the cam /cam-* commands are exposed as skills (or a parallel skill entrypoint is added), the orchestrator could dispatch them programmatically via the Skill tool instead of the dead SlashCommand path. Scope to investigate: (1) whether the cam commands in .claude/commands/ can be exposed/duplicated as .claude/skills/ entries invokable via the Skill tool; (2) add Skill to the orchestrator tools: allowlist if adopted; (3) reconcile with the CLI thin-proxy design (send-keys inject) so there is exactly one sanctioned dispatch path per command, not two half-working ones; (4) decide per-command whether the deterministic CLI channel (cam issue --file-local, cam spec --persist) is the canonical path and the Skill/inject path is only for interview-style commands (/cam-review, /cam-spec grill). Related: CAM-254 (drop the dead SlashCommand entry), CAM-200 (send-keys composer no-submit), CAM-240 (spawn under --agent). This is a design/architecture investigation; likely needs a /cam-spec grill before it is plannable.",
+  "spec": {
+    "acceptanceCriteria": [
+      "Skill is added to the tools: allowlist in .claude/agents/subagent-orchestrator.md",
+      "The templates/ mirror of the orchestrator agent is reconciled to match (diff first; the .claude/agents vs templates/ dual-copy is per-file)",
+      "The dispatch instructions in the orchestrator agent body that reference 'use the SlashCommand tool when available' are updated to reference the Skill tool for /cam-review and /cam-issue",
+      "Under --agent, the orchestrator can invoke /cam-review via the Skill tool inline in its own context (commands and skills are the same registry; .claude/commands/*.md are Skill-tool-invokable as-is)",
+      "bun run embed-vendor:check is green (re-run bun run embed-vendor if templates/ changed)",
+      "bun run typecheck and bun test are green"
+    ],
+    "scope": "Restore orchestrator-side programmatic slash-command dispatch under --agent by adding the Skill tool to the orchestrator tools: allowlist (SlashCommand, removed by CAM-254, is not a real tool; the Skill tool IS grantable to an --agent persona and works at runtime). Grounded via claude-code-guide against skills.md / sub-agents.md: (1) the Skill tool works under --agent (built-in /review is exposed via it); (2) commands and skills are the SAME registry ('Custom commands have been merged into skills'), so existing .claude/commands/*.md are Skill-tool-invokable as-is with no reauthoring; (3) skills run inline in the calling agent's own context by default (fork is opt-in via context: fork), so /cam-review runs in the orchestrator's context as required. Minimal change: add Skill to tools: (+ templates mirror + re-embed) and swap the two SlashCommand dispatch references in the agent body to the Skill tool.",
+    "gotchas": [
+      "This issue depends on CAM-254 having shipped: CAM-254 drops SlashCommand from the same frontmatter tools: region; running before CAM-254 ships risks a same-file conflict (blockedBy enforces the order)",
+      ".claude/agents vs templates/ is per-file dual-copy: diff before assuming a re-embed is forced (CAM-123 lesson); run embed-vendor:check only when templates/ changed",
+      "Keep scope minimal: do NOT do the broad 'exactly one canonical dispatch path per command' reconciliation across all commands (larger design, blows up review)",
+      "Out of scope: the CLI thin-proxy send-keys inject path landing in the composer without submitting (CAM-200); this issue lets the orchestrator self-invoke via Skill, which sidesteps the inject for operator-in-chat requests",
+      "Skill-tool caveat: AskUserQuestion / ExitPlanMode / ScheduleWakeup / WaitForMcpServers are not available to agents, but no cam /cam-* command depends on them"
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 1,
+    "riskReduction": 2,
+    "jobSize": 2
+  },
+  "type": "fix"
 }
