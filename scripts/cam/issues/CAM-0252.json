@@ -1,9 +1,37 @@
 {
   "id": "CAM-252",
   "title": "US-006b's AC narrative asked to remove the Step 1 Gather-context + Task() secti…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-09T19:29:26.723Z",
-  "description": "US-006b's AC narrative asked to remove the Step 1 Gather-context + Task() section, but the implementer correctly reframed it (the manual /cam-review path is live, not dead, per src/commands/review.ts). The doc still contains both a 'manual/on-demand only' framing paragraph and the full Step 0-5 flow; a future pass could tighten wording so the 'manual path' scoping is unmistakable at the section headers, not just the intro paragraph.\n\nSource: cam/issue-233\nReview round: 1\nLocation: .claude/commands/cam-review.md\n\nsuggestion-fingerprint: 9dda4cdf6e79"
+  "description": "US-006b's AC narrative asked to remove the Step 1 Gather-context + Task() section, but the implementer correctly reframed it (the manual /cam-review path is live, not dead, per src/commands/review.ts). The doc still contains both a 'manual/on-demand only' framing paragraph and the full Step 0-5 flow; a future pass could tighten wording so the 'manual path' scoping is unmistakable at the section headers, not just the intro paragraph.\n\nSource: cam/issue-233\nReview round: 1\nLocation: .claude/commands/cam-review.md\n\nsuggestion-fingerprint: 9dda4cdf6e79",
+  "spec": {
+    "acceptanceCriteria": [
+      "An umbrella scoping header is added to .claude/commands/cam-review.md immediately before 'Step 0', making the manual/on-demand scope of the Steps 0-5 flow unmistakable at the section level (e.g. a '## Manual /cam-review flow (Steps 0-5)' header plus a one-line reminder that everything below is the manual path and the sidecar's autonomous per-story pass does not read this file).",
+      "A reader landing on any of Steps 0-5 can see the manual-path scoping from the nearby section structure, not only from the intro paragraph at line 9.",
+      "No step content, prompt contract, or verdict/triage logic is changed; the edit is scoping/wording only.",
+      "templates/commands/cam-review.md receives the identical change (the two copies are byte-identical today and must stay in sync).",
+      "typecheck and the full test suite pass green, including any embedded-vendor / doc-gate assertions over cam-review.md; run embed-vendor regeneration if the templates/ change requires it."
+    ],
+    "scope": "Cosmetic clarity: make the 'manual /cam-review path only' scoping unmistakable at the section-header level in cam-review.md (both copies), so it is not carried solely by the intro paragraph. Add an umbrella scoping header before Step 0. Docs-only; no code, no step-flow change.",
+    "gotchas": [
+      "The manual /cam-review path is LIVE, not dead (src/commands/review.ts); the doc correctly describes the orchestrator-context Task() spawn of subagent-reviewer. Do NOT frame the flow as deprecated — the goal is only to make the manual-vs-sidecar scoping clearer.",
+      ".claude/commands/cam-review.md and templates/commands/cam-review.md are byte-identical; both must get the same edit or a doc-gate/diff drifts.",
+      "Reject per-step 'manual path' reminders (repetitive) and a full H2->H3 reflow of every step (heavier than the SUGGESTION asks); a single umbrella header before Step 0 is the right-sized change.",
+      "If templates/commands/cam-review.md is embedded via the vendor blob, regenerate it (bun run embed-vendor) or the embed-vendor:check gate fails."
+    ],
+    "domainTerms": [
+      "manual /cam-review path",
+      "autonomous sidecar review pass",
+      "subagent-reviewer"
+    ]
+  },
+  "wsjf": {
+    "value": 1,
+    "timeCriticality": 1,
+    "riskReduction": 1,
+    "jobSize": 1
+  },
+  "type": "docs"
 }
