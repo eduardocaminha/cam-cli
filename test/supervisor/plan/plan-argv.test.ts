@@ -157,6 +157,33 @@ describe('buildPlannerWorkerArgv', () => {
 		});
 		expect(result).toContain(SAMPLE_PROMPT);
 	});
+
+	// -------------------------------------------------------------------------
+	// US-001 (CAM-242): host-only CLAUDE_CODE_OAUTH_TOKEN strip.
+	// -------------------------------------------------------------------------
+
+	test('on host isolation, contains -u CLAUDE_CODE_OAUTH_TOKEN ahead of claude', () => {
+		const result = buildPlannerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			isolation: 'host',
+		});
+		const tokenIdx = result.indexOf('-u CLAUDE_CODE_OAUTH_TOKEN');
+		const claudeIdx = result.indexOf('claude --permission-mode');
+		expect(tokenIdx).toBeGreaterThan(-1);
+		expect(tokenIdx).toBeLessThan(claudeIdx);
+	});
+
+	test('on container isolation, does NOT contain -u CLAUDE_CODE_OAUTH_TOKEN', () => {
+		const result = buildPlannerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			isolation: 'container',
+		});
+		expect(result).not.toContain('-u CLAUDE_CODE_OAUTH_TOKEN');
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -291,5 +318,32 @@ describe('buildAuditorWorkerArgv', () => {
 			permissionMode: SAMPLE_MODE,
 		});
 		expect(result).toContain(SAMPLE_PROMPT);
+	});
+
+	// -------------------------------------------------------------------------
+	// US-001 (CAM-242): host-only CLAUDE_CODE_OAUTH_TOKEN strip.
+	// -------------------------------------------------------------------------
+
+	test('on host isolation, contains -u CLAUDE_CODE_OAUTH_TOKEN ahead of claude', () => {
+		const result = buildAuditorWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			isolation: 'host',
+		});
+		const tokenIdx = result.indexOf('-u CLAUDE_CODE_OAUTH_TOKEN');
+		const claudeIdx = result.indexOf('claude --permission-mode');
+		expect(tokenIdx).toBeGreaterThan(-1);
+		expect(tokenIdx).toBeLessThan(claudeIdx);
+	});
+
+	test('on container isolation, does NOT contain -u CLAUDE_CODE_OAUTH_TOKEN', () => {
+		const result = buildAuditorWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			isolation: 'container',
+		});
+		expect(result).not.toContain('-u CLAUDE_CODE_OAUTH_TOKEN');
 	});
 });

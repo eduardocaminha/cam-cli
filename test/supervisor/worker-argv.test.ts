@@ -12,6 +12,7 @@ import { describe, expect, test } from 'bun:test';
 import {
 	buildImplementerWorkerArgv,
 	DEFAULT_IMPLEMENTER_AGENT,
+	HOST_ONLY_ENV_UNSET,
 	WORKER_ENV_UNSET,
 	workerEnvPrefix,
 } from '../../src/supervisor/worker-argv.ts';
@@ -111,7 +112,7 @@ describe('buildImplementerWorkerArgv', () => {
 	});
 
 	test('workerEnvPrefix renders "env -u ... " with a trailing space', () => {
-		const prefix = workerEnvPrefix();
+		const prefix = workerEnvPrefix('host');
 		expect(prefix.startsWith('env -u CLAUDECODE')).toBe(true);
 		expect(prefix.endsWith(' ')).toBe(true);
 		expect(prefix).toContain('-u CLAUDE_CODE_SESSION_ID');
@@ -179,5 +180,77 @@ describe('buildImplementerWorkerArgv', () => {
 		expect(result).toContain(`--session-id ${SAMPLE_UUID}`);
 		expect(result).toContain(`--agent ${DEFAULT_IMPLEMENTER_AGENT}`);
 		expect(result).toContain(SAMPLE_PROMPT);
+	});
+
+	// -------------------------------------------------------------------------
+	// US-001 (CAM-242): host-only CLAUDE_CODE_OAUTH_TOKEN strip.
+	// -------------------------------------------------------------------------
+
+	test('HOST_ONLY_ENV_UNSET is separate from WORKER_ENV_UNSET and contains only the oauth token var', () => {
+		expect(HOST_ONLY_ENV_UNSET).toEqual(['CLAUDE_CODE_OAUTH_TOKEN']);
+		expect(WORKER_ENV_UNSET).not.toContain('CLAUDE_CODE_OAUTH_TOKEN');
+	});
+
+	test('workerEnvPrefix("host") includes -u CLAUDE_CODE_OAUTH_TOKEN', () => {
+		const prefix = workerEnvPrefix('host');
+		expect(prefix).toContain('-u CLAUDE_CODE_OAUTH_TOKEN');
+	});
+
+	test('workerEnvPrefix("container") does NOT include -u CLAUDE_CODE_OAUTH_TOKEN', () => {
+		const prefix = workerEnvPrefix('container');
+		expect(prefix).not.toContain('-u CLAUDE_CODE_OAUTH_TOKEN');
+		// The nesting-detection strip is still applied on container isolation.
+		expect(prefix).toContain('-u CLAUDECODE');
+	});
+
+	test('on host isolation (default), the assembled command contains -u CLAUDE_CODE_OAUTH_TOKEN ahead of claude', () => {
+		const result = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			isolation: 'host',
+		});
+		const tokenIdx = result.indexOf('-u CLAUDE_CODE_OAUTH_TOKEN');
+		const claudeIdx = result.indexOf('claude --permission-mode');
+		expect(tokenIdx).toBeGreaterThan(-1);
+		expect(tokenIdx).toBeLessThan(claudeIdx);
+	});
+
+	test('on container isolation, the assembled command does NOT contain -u CLAUDE_CODE_OAUTH_TOKEN', () => {
+		const result = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			isolation: 'container',
+		});
+		expect(result).not.toContain('-u CLAUDE_CODE_OAUTH_TOKEN');
+	});
+
+	test('CLAUDE_CONFIG_DIR and PATH remain unstripped on both host and container isolation', () => {
+		const hostResult = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			isolation: 'host',
+		});
+		const containerResult = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+			isolation: 'container',
+		});
+		expect(hostResult).not.toContain('-u CLAUDE_CONFIG_DIR');
+		expect(hostResult).not.toContain('-u PATH');
+		expect(containerResult).not.toContain('-u CLAUDE_CONFIG_DIR');
+		expect(containerResult).not.toContain('-u PATH');
+	});
+
+	test('isolation defaults to host when omitted', () => {
+		const result = buildImplementerWorkerArgv({
+			uuid: SAMPLE_UUID,
+			taskPrompt: SAMPLE_PROMPT,
+			permissionMode: SAMPLE_MODE,
+		});
+		expect(result).toContain('-u CLAUDE_CODE_OAUTH_TOKEN');
 	});
 });

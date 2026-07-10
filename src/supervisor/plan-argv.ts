@@ -20,6 +20,7 @@
 //         --session-id <uuid> --model '<model>' --agent <agent> '<prompt>'
 
 import { DEFAULTS } from '../config/models.ts';
+import type { WorkerIsolation } from '../config/models.ts';
 import { workerEnvPrefix } from './worker-argv.ts';
 
 /** Default planner agent name; matches .claude/agents/subagent-planner.md. */
@@ -62,6 +63,11 @@ export interface PlannerWorkerArgvOptions {
 	 * readPhaseModel('planner') so the project config is respected.
 	 */
 	model?: string;
+	/**
+	 * Worker isolation mode (US-001, CAM-242). Threaded into workerEnvPrefix so
+	 * CLAUDE_CODE_OAUTH_TOKEN is stripped on 'host' only. Defaults to 'host'.
+	 */
+	isolation?: WorkerIsolation;
 }
 
 /**
@@ -79,9 +85,10 @@ export interface PlannerWorkerArgvOptions {
 export function buildPlannerWorkerArgv(opts: PlannerWorkerArgvOptions): string {
 	const agentName = opts.agentName ?? DEFAULT_PLANNER_AGENT;
 	const model = opts.model ?? DEFAULTS.planner;
+	const isolation = opts.isolation ?? 'host';
 	const escapedPrompt = shellEscape(opts.taskPrompt);
 	return (
-		workerEnvPrefix() +
+		workerEnvPrefix(isolation) +
 		`claude` +
 		` --permission-mode ${opts.permissionMode}` +
 		` --session-id ${opts.uuid}` +
@@ -117,6 +124,11 @@ export interface AuditorWorkerArgvOptions {
 	 * readPhaseModel('auditor') so the project config is respected.
 	 */
 	model?: string;
+	/**
+	 * Worker isolation mode (US-001, CAM-242). Threaded into workerEnvPrefix so
+	 * CLAUDE_CODE_OAUTH_TOKEN is stripped on 'host' only. Defaults to 'host'.
+	 */
+	isolation?: WorkerIsolation;
 }
 
 /**
@@ -134,9 +146,10 @@ export interface AuditorWorkerArgvOptions {
 export function buildAuditorWorkerArgv(opts: AuditorWorkerArgvOptions): string {
 	const agentName = opts.agentName ?? DEFAULT_AUDITOR_AGENT;
 	const model = opts.model ?? DEFAULTS.auditor;
+	const isolation = opts.isolation ?? 'host';
 	const escapedPrompt = shellEscape(opts.taskPrompt);
 	return (
-		workerEnvPrefix() +
+		workerEnvPrefix(isolation) +
 		`claude` +
 		` --permission-mode ${opts.permissionMode}` +
 		` --session-id ${opts.uuid}` +
