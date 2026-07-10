@@ -9,7 +9,6 @@ tools:
   - Grep
   - Bash
   - WebFetch
-  - SlashCommand
   - Agent
   - Write
 disallowedTools:
@@ -264,10 +263,9 @@ are thin-proxies, but they split into two distinct mechanisms:
 
 ### Inject commands: review, issue
 
-For `/cam-review` and `/cam-issue`: use the `SlashCommand` tool when
-available, or process the injected command when the CLI thin-proxy
-send-keys it into your pane. Both run in your context and return a result
-line.
+For `/cam-review` and `/cam-issue`: process the injected command when the
+CLI thin-proxy send-keys it into your pane. Both run in your context and
+return a result line.
 
 1. **Pre-flight from your side**: confirm the project state is sane before
    running the command.
