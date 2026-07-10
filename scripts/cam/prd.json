@@ -21,7 +21,7 @@
         "Lint/static spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Single file: src/commands/sidecar.ts, function makeProductionFileSuggestionsFn (~line 2242-2279). Wrap ONLY the toml read (config/prefix/parentIssueId) + the candidate for-loop inside `if (candidates.length > 0) { ... }`; declare filedIds/failedCount before the guard so the post-loop logEvent block (fires on filedIds.length>0 || dupSkipped>0 || failedCount>0) stays outside it. GOTCHA (from issue spec): never wrap the logEvent block, or the all-duplicates path stops emitting its event. GOTCHA: src-only change, no edit under templates/ or agents/, so no embed-vendor/byte-parity concern. Tests mirror source under test/; look for existing makeProductionFileSuggestionsFn coverage to extend."
     }
