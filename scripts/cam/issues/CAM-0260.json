@@ -1,7 +1,7 @@
 {
   "id": "CAM-260",
   "title": "Raise file-size ceiling in the implementer story, not at ship time",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-10T18:32:19.726Z",
