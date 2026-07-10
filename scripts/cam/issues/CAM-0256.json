@@ -1,9 +1,31 @@
 {
   "id": "CAM-256",
   "title": "ADR 0020 still lists the frontmatter tools as complete against 'real runtime us…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-10T00:45:16.937Z",
-  "description": "ADR 0020 still lists the frontmatter tools as complete against 'real runtime usage (Read, Glob, Grep, Bash, WebFetch, SlashCommand, Write, Skill, Task/Agent)'. CAM-254 proves SlashCommand is not a real tool and Skill is never a valid tools: entry. Out of this story's scope (orchestrator persona file only) and ADRs are point-in-time records, so non-blocking, but the ADR's factual claim is now stale and could seed the same mistake again in a future frontmatter audit.\n\nSource: cam/issue-254\nReview round: 1\nLocation: docs/adr/0020-orchestrator-runs-as-an-enforced-agent-agent-not-a-catted-prompt.md:9\n\nsuggestion-fingerprint: 872a1b622040"
+  "description": "ADR 0020 still lists the frontmatter tools as complete against 'real runtime usage (Read, Glob, Grep, Bash, WebFetch, SlashCommand, Write, Skill, Task/Agent)'. CAM-254 proves SlashCommand is not a real tool and Skill is never a valid tools: entry. Out of this story's scope (orchestrator persona file only) and ADRs are point-in-time records, so non-blocking, but the ADR's factual claim is now stale and could seed the same mistake again in a future frontmatter audit.\n\nSource: cam/issue-254\nReview round: 1\nLocation: docs/adr/0020-orchestrator-runs-as-an-enforced-agent-agent-not-a-catted-prompt.md:9\n\nsuggestion-fingerprint: 872a1b622040",
+  "spec": {
+    "acceptanceCriteria": [
+      "docs/adr/0020-orchestrator-runs-as-an-enforced-agent-agent-not-a-catted-prompt.md line 9 no longer contains the token 'SlashCommand'",
+      "The runtime-usage tools list in that ADR line reads 'Read, Glob, Grep, Bash, WebFetch, Write, Skill, Task/Agent', matching the live granted frontmatter tools plus the Task/Agent gating note",
+      "'Skill' remains listed in the ADR tools list (it is a valid granted tool since CAM-255)",
+      "No file other than the ADR is modified; the orchestrator frontmatter and code are unchanged"
+    ],
+    "scope": "Fix a single stale factual claim in ADR 0020. Line 9 lists the orchestrator runtime tools as complete against real usage but still includes 'SlashCommand', which CAM-254 proved is not a real tool. Remove only 'SlashCommand' from the parenthetical, leaving 'Skill' (validated as a real granted tool in CAM-255). Point-in-time ADR: correct the stale claim in-place, do not rewrite the decision narrative. Docs-only, no code or frontmatter change.",
+    "gotchas": [
+      "The issue description claims 'Skill is never a valid tools: entry' — this is outdated (written pre-CAM-255). Skill IS valid and must stay; only SlashCommand is removed.",
+      "ADRs are point-in-time records; do not rewrite the Context/Decision/Consequences narrative, only correct the stale tools enumeration.",
+      "The live frontmatter grants Agent (not literally 'Task/Agent'); 'Task/Agent' is the accurate prose form since the PreToolUse hook gates Task|Agent spawns."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 1,
+    "riskReduction": 3,
+    "jobSize": 1
+  },
+  "type": "docs"
 }
