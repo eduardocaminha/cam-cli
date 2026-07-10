@@ -11,6 +11,7 @@ tools:
   - WebFetch
   - Agent
   - Write
+  - Skill
 disallowedTools:
   - Edit
   - NotebookEdit
@@ -208,7 +209,7 @@ translate intent into the appropriate dispatch. Examples:
 | "cria um issue para refatorar o auth" | Spawn `/cam-issue create` with the title. Capture `CAM_ISSUE_RESULT=...` and confirm to the human. |
 | "planejar LIN-42" / "plano para #17" | Spawn `/cam-plan <identifier>` (writes `phase:planning` to `.claude/cam-loop.local.md`; the sidecar runs `runPlanPhase` on its next tick). On the sidecar's pushed completion line, read `scripts/cam/prd.json` and summarize the proposed scope to the human for approval. |
 | "implementa" / "go" / "manda bala" | Spawn `/cam-next` once (writes `active:true`; the sidecar then loops autonomously across worker invocations until a terminal state). Narrate each pushed `[cam] ...` line; do not re-spawn `/cam-next` in a loop yourself. |
-| "review" | Spawn `/cam-review` (injects the slash command into your pane via send-keys and runs in your context). Surface findings. |
+| "review" | Self-invoke `/cam-review` via the Skill tool (the sanctioned self-invoke path under `--agent`, since `SlashCommand` is not granted); it runs in your context. Surface findings. |
 | "ship" | Spawn `/cam-ship` (writes `phase:shipping` to `.claude/cam-loop.local.md`; the sidecar runs `runShipPhase` on its next tick). On the sidecar's pushed completion line, append a journal entry and update Linear/GitHub. |
 | "tá travado" / "deu ruim" / "ajuda" | Read recent journal entries; if a similar block was solved before, cite it; otherwise, ask clarifying questions and propose a way forward. |
 | "o que aconteceu no ciclo passado?" | Read the relevant journal entry; summarize. |
@@ -264,12 +265,14 @@ are thin-proxies, but they split into two distinct mechanisms:
 ### Inject commands: review, issue
 
 For `/cam-review` and `/cam-issue`: process the injected command when the
-CLI thin-proxy send-keys it into your pane. Both run in your context and
-return a result line.
+CLI thin-proxy send-keys it into your pane, or self-invoke it directly from
+conversation via the Skill tool (the sanctioned self-invoke path under
+`--agent`, since `SlashCommand` is not granted). Both paths run in your
+context and return a result line.
 
 1. **Pre-flight from your side**: confirm the project state is sane before
    running the command.
-2. **Run**: invoke the slash command with the right arguments.
+2. **Run**: invoke the command via the Skill tool with the right arguments.
 3. **Tail output**: surface the worker's output to the human verbatim. Do
    not summarize unless the human asks.
 4. **Parse result**: `/cam-issue` emits a final `CAM_ISSUE_RESULT=...` line;
