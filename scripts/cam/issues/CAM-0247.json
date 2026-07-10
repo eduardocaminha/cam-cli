@@ -1,9 +1,36 @@
 {
   "id": "CAM-247",
   "title": "C.8 is now a long single paragraph mixing the ink-testing-library requirement, …",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-09T14:35:27.441Z",
-  "description": "C.8 is now a long single paragraph mixing the ink-testing-library requirement, the no-browser/no-E2E rule, and the requires:operator carve-out; consider splitting into sub-bullets for scanability. Cosmetic only.\n\nSource: cam/issue-228\nReview round: 1\nLocation: .claude/agents/subagent-auditor.md:66\n\nsuggestion-fingerprint: 5e581e08ad7c"
+  "description": "C.8 is now a long single paragraph mixing the ink-testing-library requirement, the no-browser/no-E2E rule, and the requires:operator carve-out; consider splitting into sub-bullets for scanability. Cosmetic only.\n\nSource: cam/issue-228\nReview round: 1\nLocation: .claude/agents/subagent-auditor.md:66\n\nsuggestion-fingerprint: 5e581e08ad7c",
+  "spec": {
+    "acceptanceCriteria": [
+      "Item 8 of section 'C. Acceptance criteria health' in .claude/agents/subagent-auditor.md is reformatted from a single long paragraph into a short lead line followed by sub-bullets, one per concern: (1) UI/Ink stories verified via ink-testing-library (render + assert on actual screen output/glyph); (2) cam-cli has no browser/server/database, so end-to-end tests and any browser-opening check are never applicable and must be flagged; (3) a genuinely interactive ceremony (real TUI keypress only a human can drive) is not solved by that requirement and must be tagged requires: \"operator\".",
+      "No semantic content is added or removed: all three concerns present in the original paragraph survive verbatim in meaning; the change is formatting/scanability only.",
+      "templates/agents/subagent-auditor.md is NOT changed (its generic item 8 stays generic).",
+      "typecheck and the full test suite pass green, including any doc-gate / check-count / validate-agents-md assertions over the auditor md.",
+      "No other item in the auditor md is renumbered or altered."
+    ],
+    "scope": "Cosmetic scanability fix: split the long single-paragraph item C.8 in .claude/agents/subagent-auditor.md into a lead line plus one sub-bullet per concern. Touch only .claude/agents/subagent-auditor.md. Do NOT touch the generic templates/ copy.",
+    "gotchas": [
+      "The two copies are intentionally NOT identical: .claude/agents/subagent-auditor.md is the cam-cli-customized auditor, templates/agents/subagent-auditor.md is the generic scaffold (its item 8 keeps browser+E2E because a generic project may be a web app). Only the .claude copy is in scope.",
+      "Verify no check-count / doc-gate / validate-agents-md test asserts C.8 as a single item or matches an inline substring that spans the reformatted text; the sub-bullet split must keep any such assertion green (AC requires the full suite green).",
+      ".claude/agents/ is the live runtime agent definition (not embedded via templates/), so this edit needs no embed-vendor regeneration."
+    ],
+    "domainTerms": [
+      "ink-testing-library",
+      "requires: operator",
+      "acceptance criteria oracle"
+    ]
+  },
+  "wsjf": {
+    "value": 1,
+    "timeCriticality": 1,
+    "riskReduction": 1,
+    "jobSize": 1
+  },
+  "type": "docs"
 }
