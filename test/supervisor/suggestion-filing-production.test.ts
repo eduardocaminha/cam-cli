@@ -275,6 +275,63 @@ describe('AC5: makeProductionFileSuggestionsFn -- dedup end-to-end via readBackl
 });
 
 // ---------------------------------------------------------------------------
+// AC6 (US-001, CAM-263): derivedFrom threaded from provenance.parentIssue
+// ---------------------------------------------------------------------------
+
+describe('AC6: makeProductionFileSuggestionsFn -- derivedFrom threaded from provenance.parentIssue', () => {
+	test('parentIssue present -> derivedFrom:[<prefix>-<n>] passed into createLocalIssueOnMain', () => {
+		const { cwd, cleanup } = makeTempProjectDir();
+		try {
+			const { spawnFn, calls } = makeRecordingSpawn();
+			const fileSuggestionsFn = makeProductionFileSuggestionsFn(cwd, spawnFn, () => {});
+
+			fileSuggestionsFn(makeReport([FINDING_A]), { ...PROVENANCE, parentIssue: 263 });
+
+			const hashCalls = calls.filter((c) => c.args.includes('hash-object'));
+			expect(hashCalls).toHaveLength(1);
+			const entry = JSON.parse(hashCalls[0]?.input ?? '{}') as { derivedFrom?: string[]; specSource?: string };
+			expect(entry.derivedFrom).toEqual(['CAM-263']);
+			expect(entry.specSource).toBeUndefined();
+		} finally {
+			cleanup();
+		}
+	});
+
+	test('parentIssue absent -> derivedFrom omitted (not a malformed value)', () => {
+		const { cwd, cleanup } = makeTempProjectDir();
+		try {
+			const { spawnFn, calls } = makeRecordingSpawn();
+			const fileSuggestionsFn = makeProductionFileSuggestionsFn(cwd, spawnFn, () => {});
+
+			fileSuggestionsFn(makeReport([FINDING_A]), PROVENANCE);
+
+			const hashCalls = calls.filter((c) => c.args.includes('hash-object'));
+			expect(hashCalls).toHaveLength(1);
+			const entry = JSON.parse(hashCalls[0]?.input ?? '{}') as { derivedFrom?: string[] };
+			expect(entry.derivedFrom).toBeUndefined();
+		} finally {
+			cleanup();
+		}
+	});
+
+	test('parentIssue <= 0 -> derivedFrom omitted (resolveIssueId guards malformed values)', () => {
+		const { cwd, cleanup } = makeTempProjectDir();
+		try {
+			const { spawnFn, calls } = makeRecordingSpawn();
+			const fileSuggestionsFn = makeProductionFileSuggestionsFn(cwd, spawnFn, () => {});
+
+			fileSuggestionsFn(makeReport([FINDING_A]), { ...PROVENANCE, parentIssue: 0 });
+
+			const hashCalls = calls.filter((c) => c.args.includes('hash-object'));
+			const entry = JSON.parse(hashCalls[0]?.input ?? '{}') as { derivedFrom?: string[] };
+			expect(entry.derivedFrom).toBeUndefined();
+		} finally {
+			cleanup();
+		}
+	});
+});
+
+// ---------------------------------------------------------------------------
 // AC7 (closure-level): createLocalIssueOnMain ok:false -> skip-and-warn
 // ---------------------------------------------------------------------------
 

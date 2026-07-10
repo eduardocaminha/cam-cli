@@ -34,6 +34,8 @@ import { buildSupervisorOptions, makeNotifyOrchestrator, makeReadReviewReport } 
 import { extractSuggestions, dedupSuggestions, buildFollowUpIssue } from '../supervisor/suggestion-followups.ts';
 import { readBacklogFromMain, type BacklogSpawnFn } from '../issues/backlog.ts';
 import { createLocalIssueOnMain, type SpawnFn as IssueFileSpawnFn } from './issue-file.ts';
+import { resolveIssueId } from '../issues/resolve-id.ts';
+import { parseToml } from '../config/toml.ts';
 import { makeFileEventLogger, type WorkerEventLogger } from '../supervisor/events.ts';
 import { parseStateFile, type LoopPhase } from './status.ts';
 import { renderStateFile, writeStateFile } from './next.ts';
@@ -2241,6 +2243,9 @@ export function makeProductionFileSuggestionsFn(
 		const backlog = readBacklogFromMain(cwd, toBacklogSpawn(spawnFn));
 		const candidates = dedupSuggestions(backlog, report);
 		const dupSkipped = extractSuggestions(report).length - candidates.length;
+		const config = parseToml(readProjectToml());
+		const prefix = typeof config['issue_prefix'] === 'string' ? config['issue_prefix'] : 'CAM';
+		const parentIssueId = resolveIssueId(provenance.parentIssue, prefix);
 		const filedIds: string[] = [];
 		let failedCount = 0;
 		for (const finding of candidates) {
@@ -2252,6 +2257,7 @@ export function makeProductionFileSuggestionsFn(
 				spawnFn,
 				clock,
 				readProjectToml,
+				...(parentIssueId !== null ? { derivedFrom: [parentIssueId] } : {}),
 			});
 			if (outcome.ok) {
 				filedIds.push(outcome.id);

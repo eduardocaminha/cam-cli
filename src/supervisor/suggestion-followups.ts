@@ -66,6 +66,16 @@ export interface FollowUpProvenance {
 	source: string;
 	/** Completed review round number, when available. */
 	round?: number;
+	/**
+	 * Parent issue number backing the PRD cycle whose review produced this
+	 * SUGGESTION (PrdSnapshot.issueNumber, US-001 CAM-263). Undefined when the
+	 * parent issue is genuinely unavailable (e.g. a hand-authored PRD with no
+	 * backing issue); the filing path (makeProductionFileSuggestionsFn) is
+	 * responsible for resolving this into a `derivedFrom` link, never this
+	 * module (buildFollowUpIssue's title/description stay unchanged by this
+	 * field -- derivedFrom is additive structured metadata, not prose).
+	 */
+	parentIssue?: number;
 }
 
 /** Title + description for a filed follow-up idea issue. */
