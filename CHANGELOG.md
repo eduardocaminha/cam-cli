@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.124.0] - 2026-07-10
+
+### Added
+
+- US-002 - Reviewer backstops raises/suppressions across all four sibling ratchets
+- US-001 - Implementer runs full check:all in-story with a per-gate resolution rubric
+
 ## [0.123.0] - 2026-07-10
 
 ### Added
