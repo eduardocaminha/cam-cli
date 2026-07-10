@@ -1,9 +1,40 @@
 {
   "id": "CAM-249",
   "title": "The agent SYSTEM PROMPT still instructs the worker to read prd.json and pick th…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-09T16:37:05.469Z",
-  "description": "The agent SYSTEM PROMPT still instructs the worker to read prd.json and pick the highest-priority passes:false story (lines 3, 35, 69), which now contradicts the injected spawn prompt's 'do not self-select' directive. This is explicitly out of scope for this PR (PRD notes assign it to CAM-229) and is therefore non-blocking, but the context-diet is only fully realized once CAM-229 lands.\n\nSource: cam/issue-224\nReview round: 1\nLocation: .claude/agents/subagent-implementer.md:35\n\nsuggestion-fingerprint: 0e9df68b6f24"
+  "description": "The agent SYSTEM PROMPT still instructs the worker to read prd.json and pick the highest-priority passes:false story (lines 3, 35, 69), which now contradicts the injected spawn prompt's 'do not self-select' directive. This is explicitly out of scope for this PR (PRD notes assign it to CAM-229) and is therefore non-blocking, but the context-diet is only fully realized once CAM-229 lands.\n\nSource: cam/issue-224\nReview round: 1\nLocation: .claude/agents/subagent-implementer.md:35\n\nsuggestion-fingerprint: 0e9df68b6f24",
+  "spec": {
+    "acceptanceCriteria": [
+      "In .claude/agents/subagent-implementer.md, the self-selection instructions are reconciled to the injected-story model: the frontmatter description (line ~3) no longer says the worker 'picks highest-priority story'; the 'find the highest-priority story where passes:false / exit PRD_COMPLETE' instruction (line ~35), the jq self-selection block (lines ~48-55), and the 'skip requires:operator when picking' selection-logic line (line ~69) are removed or rewritten to state that the story to implement is provided in the spawn prompt (id, title, description, priority, requires, acceptanceCriteria, branchName).",
+      "The wording mirrors the already-reconciled scripts/cam/CLAUDE.md ('The story to implement is provided in the spawn prompt ...; you do not read prd.json in full to self-select it').",
+      "templates/agents/subagent-implementer.md receives the identical reconciliation (the self-select instructions are byte-identical to the .claude copy today, so both must be updated).",
+      "The stale quoted implementer task-prompt block in .claude/commands/cam-next.md (lines ~66-70, still showing the generic 'Implement the next user story' form) is updated to reflect that the sidecar injects a specific pre-selected story.",
+      "The worker's write of prd.json to flip passes:true for the completed story (line ~111) and any read of prd.json for context are PRESERVED — only the SELECTION instructions are reconciled, not all prd.json access.",
+      "typecheck and the full test suite pass green, including any embedded-vendor / doc-gate / check-count assertions over the implementer md and cam-next.md; run embed-vendor regeneration if templates/ change requires it."
+    ],
+    "scope": "Reconcile the implementer agent SYSTEM PROMPT (both .claude and templates copies) and the stale cam-next.md quoted prompt with the actual dispatch contract: the sidecar's decideNextAction (decide.ts) authoritatively selects the story and task-prompt.ts injects it with an explicit 'do not self-select' directive. Remove the dead jq self-selection logic from the implementer md; do NOT change any TS (decide.ts / task-prompt.ts / loop.ts are already correct). Docs-only.",
+    "gotchas": [
+      "The sidecar already injects the exact story and forbids re-selection (task-prompt.ts:31); decideNextAction (decide.ts:83) is the authoritative selector (passes!=true && requires!=operator, sort priority then id). The agent md's jq (lines 48-55) duplicates this predicate but is dead at runtime. This is docs drift, not a code bug.",
+      "The same reconciliation was ALREADY applied to scripts/cam/CLAUDE.md (templates + vendored _generated.ts) but not to the agent md or cam-next.md — mirror that existing wording rather than inventing new phrasing.",
+      "Preserve the worker's prd.json WRITE (flip passes:true, line ~111) and any context reads; the fix is only about removing self-SELECTION, not all prd.json interaction.",
+      "The requires:operator concept explanation (agent md line ~67) can stay as context; only the selection-logic sentence (line ~69) that says the worker skips them 'when picking' is dead.",
+      "If templates/agents/subagent-implementer.md changes, regenerate the embedded vendor copy (bun run embed-vendor) or the embed-vendor:check gate will fail."
+    ],
+    "domainTerms": [
+      "decideNextAction",
+      "task-prompt injection",
+      "self-select",
+      "PRD_COMPLETE"
+    ]
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 1,
+    "riskReduction": 2,
+    "jobSize": 2
+  },
+  "type": "docs"
 }
