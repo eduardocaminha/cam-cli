@@ -195,8 +195,9 @@ export interface OrchestratorPaneCommandOptions {
 	sessionIdMarker: string;
 	/** Path to .cam-orch-handoff.json; its presence on claude exit triggers a respawn. */
 	handoffMarker: string;
-	/** Path to the loop state file (.claude/cam-loop.local.md); removed on teardown so an
-	 * `/exit` leaves no stale state (matches `cam stop`, which `kill-session` alone did not). */
+	/** Path to the loop state file (.claude/cam-loop.local.md). Never removed by this wrapper:
+	 * an orchestrator recycle/teardown under a running sidecar must not erase the in-flight
+	 * cycle signal (Defect 3). `cam stop` remains the single deliberate remover. */
 	stateFile: string;
 	/** Path to .claude/.cam-orch-ready; removed when the orchestrator tears down (US-006). */
 	readyMarker: string;
@@ -267,9 +268,10 @@ export function buildOrchestratorPaneCommand(opts: OrchestratorPaneCommandOption
 		`if [ "$reason" = 'cycle-close' ]; then n=0; else n=$((n + 1)); fi; ` +
 		`else ` +
 		`if [ "$n" -ge "$max" ]; then echo "cam: orchestrator respawn cap ($max) reached, tearing down"; fi; ` +
-		// Clear the loop state file before kill-session so a clean `/exit` leaves no
-		// stale `cam-loop.local.md` (kill-session alone left it; `cam stop` removes it).
-		`rm -f ${q(opts.stateFile)}; ` +
+		// Deliberately do NOT rm the loop state file here: an orchestrator
+		// recycle under a running sidecar must never erase the in-flight cycle
+		// signal (Defect 3, the wedge trigger). `cam stop` remains the single
+		// deliberate remover of `cam-loop.local.md`.
 		// Clear the ready marker so stale markers don't deceive thin-proxy commands
 		// after the orchestrator has exited (US-006).
 		`rm -f ${q(opts.readyMarker)}; ` +

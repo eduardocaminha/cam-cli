@@ -36,7 +36,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: src/commands/run.ts ~line 270-283 (the `rm -f ${q(opts.stateFile)}` in the exit wrapper chained before tmux kill-session). Remove ONLY the state-file rm; keep the readyMarker and pidMarker rm lines. `cam stop` remains the single deliberate remover of the file. Second half of Defect 3 root."
     },
