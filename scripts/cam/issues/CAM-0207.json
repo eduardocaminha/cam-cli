@@ -1,7 +1,7 @@
 {
   "id": "CAM-207",
   "title": "Container sidecar dies silently on firewall-init failure (dnsmasq port 53): no surfacing, no respawn",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-07T00:26:54.367Z",
