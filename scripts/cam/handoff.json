@@ -1,21 +1,18 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Make renderStateFile/clearActive preserve the loop phase" },
+  "lastCompletedStory": { "id": "US-002", "title": "Stop the orchestrator-exit wrapper deleting the live state file" },
   "branchName": "cam/issue-195",
-  "timestamp": "2026-07-11T00:00:00Z",
+  "timestamp": "2026-07-11T00:30:00Z",
   "createdFiles": [
-    "test/commands/sidecar-clear-active.test.ts"
+    "test/integration/orch-exit-preserves-state.test.ts"
   ],
   "modifiedFiles": [
-    "src/commands/next.ts",
-    "src/commands/sidecar.ts",
-    "src/supervisor/loop.ts",
-    "test/next.test.ts",
-    "scripts/file-size-budget.json",
-    "scripts/cam/patterns.md",
-    "docs/adr/0013-auto-ship-escreve-phase-shipping-no-outer-loop-do-sidecar-como-a-ultima-escrita-de-estado-no-caminho-terminal-complete.md"
+    "src/commands/run.ts",
+    "test/run.test.ts",
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "renderStateFile now accepts an opt-in `cwd` field: when `phase` is absent AND `cwd` is given, it read-modify-writes the phase from the CURRENT on-disk state file (readCurrentPhase helper, next.ts) instead of deriving from the legacy `active` flag; a nonexistent/unparseable/phase-less file still defaults to `idle`. `cwd` is opt-in on purpose -- every pre-existing caller that omits both `phase` and `cwd` (runNext's two branches, makeOnProgress in host.ts) is UNCHANGED and still uses the legacy active-derived fallback. makeClearActive (sidecar.ts) is the only production writer updated to pass `cwd`, which is the actual Defect 3 fix: it no longer collapses phase to idle. The CAM-191 auto-ship reorder workaround in loop.ts (auto-ship positioned AFTER clearActive) was retired as a consequence: auto-ship now runs BEFORE clearActive again (its natural position), since clearActive no longer clobbers phase regardless of order. ADR 0013 was annotated (not rewritten) as partially superseded; the CAM-191 patterns.md bullet was marked [resolved 2026-07] and a new durable bullet documents the RMW-over-a-boolean-flag pattern. If a future story wants makeOnProgress (host.ts) or runNext to also stop force-deriving phase from `active`, that is a SEPARATE change (out of scope here per this story's notes, which named only next.ts + sidecar.ts) -- audit call sites carefully before adding `cwd` elsewhere, since e.g. runNext's active:true branches intentionally want to flip to 'implementing' regardless of prior on-disk phase (that IS cam next's job), so blindly adding cwd there would break the trigger.",
+  "nextStoryContext": "buildOrchestratorPaneCommand's teardown (\"else\", clean-/exit or respawn-cap) branch no longer does `rm -f ${q(opts.stateFile)}`; only readyMarker and pidMarker are still removed there, in the same order as before. `OrchestratorPaneCommandOptions.stateFile` remains a required field on the interface (other call sites still build/pass it) even though the wrapper body no longer reads `opts.stateFile` anywhere -- this is intentional retained shape, not dead code, so do not delete the field or its callers' `stateFile:` properties as a followup cleanup. `cam stop` (performStop, stop.ts) is now the ONLY code path that ever removes cam-loop.local.md; this asymmetry (recycle/exit preserves, explicit stop removes) is the fix, not a bug to unify further. Existing run.test.ts assertions were updated: the old 'removes the loop state file on teardown' test now asserts NOT-containing that rm, and the pidMarker-ordering test was rebased to assert ordering relative to the readyMarker rm instead of the now-removed stateFile rm. A new integration test (test/integration/orch-exit-preserves-state.test.ts) proves this end-to-end via a real bash -c run of the wrapper string with a fake `claude` on PATH that exits 0 with no handoff file (forces the teardown branch on the first loop iteration, no tmux session or polling needed); reuse this fake-claude-exits-immediately pattern for any future test that needs to drive the wrapper's teardown branch deterministically without tmux. US-001 (previous story, same PRD/CAM-195) fixed the FIRST half of Defect 3 (renderStateFile/clearActive phase-collapse); this story (US-002) fixed the SECOND half (the exit wrapper's direct rm). Both halves of Defect 3 are now closed as of this story; if any further story in this PRD references 'Defect 3' it should be treated as fully resolved rather than partially resolved.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
