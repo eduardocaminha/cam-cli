@@ -1,25 +1,23 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Extend blocked-marker schema with dedup-key + consecutive-count logic" },
+  "lastCompletedStory": { "id": "US-002", "title": "Wire the counter + PRD content-hash into the marker writer" },
   "branchName": "cam/issue-214",
-  "timestamp": "2026-07-11T12:00:00Z",
+  "timestamp": "2026-07-11T13:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/implement-blocked-marker.ts",
-    "src/supervisor/loop.ts",
     "src/supervisor/host.ts",
-    "test/supervisor/implement-blocked-marker.test.ts",
-    "test/commands/sidecar-rearm.test.ts",
-    "scripts/file-size-budget.json"
+    "test/supervisor/implement-blocked-marker-wiring.test.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 wires advanceBlockedMarker into host.ts's writeImplementBlockedMarkerFn: read the existing marker via readImplementBlockedMarker(join(claudeDir, IMPLEMENT_BLOCKED_FILENAME)), compute prdHash as sha256 over prdPath's file bytes (Bun.CryptoHasher('sha256'), degrade gracefully to a stable reset-key value on an unreadable/absent prd.json, never throw), then call advanceBlockedMarker(prev, { issueId, story, reason, writtenAt }, prdHash) and persist the result. Delete the two US-001 placeholder lines in host.ts (consecutiveCount: 1, keyHash: '' -- both are explicitly commented as 'replaced by US-002'). AdvanceBlockedMarkerParams requires writtenAt (the caller stamps it, e.g. new Date().toISOString()); the same value is reused for haltedAt when escalation trips, so pass it once and let advanceBlockedMarker use it for both. Threshold defaults to 3 and does not need to be passed explicitly unless a story wants a different value.",
+  "nextStoryContext": "US-003 gates the auto-chain re-dispatch on the marker US-002 now writes with real consecutiveCount/keyHash/escalated. Gate site is runSidecarLoop's flipActiveFn auto-chain block in src/supervisor/loop.ts (grep 'US-005: Auto-chain in auto mode' / 'opts.flipActiveFn !== undefined && opts.hasPendingStories'). Inject a readImplementBlockedMarkerFn?: () => ImplementBlockedMarker | null seam defaulting to a no-op returning null (existing callers/tests stay byte-for-byte unchanged); when the read marker has escalated:true, skip the flipActiveFn call and leave the loop active:false. Production wiring goes in src/commands/sidecar.ts, which already imports readImplementBlockedMarker + IMPLEMENT_BLOCKED_FILENAME (sidecar.ts:49) -- reuse readImplementBlockedMarker(join(claudeDir, IMPLEMENT_BLOCKED_FILENAME)) directly, do not reimplement the read. Record the halt via the existing emit/logEvent path (reuse an existing WorkerEventKind such as 'sidecar-exit' or the meta-loop-dispatch skip-reason enum); the story's AC4 explicitly forbids inventing a new WorkerEventKind. Recovery path already exists: clearImplementBlockedMarkerForCurrentIssue (sidecar.ts, wired into makeProductionRearmImplementingFn) removes the marker on a DONE outcome for the matching issueId, and US-002's advanceBlockedMarker resets consecutiveCount/escalated to a fresh state on any prd.json content change -- US-003 only needs to READ the marker at the gate point, not touch either clear/reset path.",
   "officialDocsValidated": [
     {
       "lib": "bun",
       "url": "https://bun.com/docs/api/hashing",
-      "fetchedAt": "2026-07-11T12:00:00Z",
+      "fetchedAt": "2026-07-11T13:00:00Z",
       "status": "aligned",
-      "summary": "Bun.CryptoHasher('sha256') constructor, .update(string), .digest('hex') synchronous hex-string API confirmed current; matches the existing suggestion-followups.ts usage this story mirrors."
+      "summary": "Bun.CryptoHasher('sha256').update() accepts Buffer/Uint8Array/ArrayBuffer/string; .digest('hex') returns a hex string. Confirmed the host.ts computePrdHashForBlockedMarker implementation (readFileSync(prdPath) Buffer fed directly into .update()) matches the current public API."
     }
   ]
 }
