@@ -1,17 +1,24 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Add durable post-merge-stalled marker module" },
+  "lastCompletedStory": { "id": "US-002", "title": "Recover post-merge via git pull --rebase, never reset --hard" },
   "branchName": "cam/issue-174",
   "timestamp": "2026-07-11T00:00:00Z",
-  "createdFiles": [
-    "src/supervisor/post-merge-stalled-marker.ts",
-    "test/supervisor/post-merge-stalled-marker.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
-    ".gitignore"
+    "src/release/post-merge.ts",
+    "test/release/post-merge.test.ts",
+    "test/release/merge-watch.test.ts",
+    "test/supervisor/sidecar-loop.test.ts",
+    "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "post-merge-stalled-marker.ts is I/O-only (POST_MERGE_STALLED_FILENAME, PostMergeStalledMarker { prNumber, issueId, completedSteps, remainingSteps, reason, writtenAt }, read/write/remove, mirrors implement-blocked-marker.ts verbatim: never-throw read with full shape guard, best-effort write, silent-noop remove). It is NOT wired into the sidecar's post-merge sequence or merge-watch state yet -- that wiring (writing the marker when a post-merge step fails/stalls, removing it once the sequence completes, and any recycle-recovery read) is left to a future story. .gitignore already carries the .cam-post-merge-stalled.json entry (added this story, next to the sibling markers at line ~91-92); templates/.gitignore was deliberately left untouched since neither .cam-ship-stalled.json nor .cam-plan-preflight-failed.json (the two closest precedents) has an entry there either.",
+  "nextStoryContext": "runPostMerge's Step 1 is now `git pull --rebase origin main` (never --reapply-cherry-picks, never reset --hard). PostMergeOutcome's ok:false branch is now `{ ok:false; reason:string; completedSteps:string[]; remainingSteps:string[] }`, built by a private `failAt(step, reason)` helper over `const ALL_STEPS = ['checkout','pull-rebase','tag','prune','close']` (completedSteps = steps strictly before the failing step; remainingSteps = the failing step + everything after). Every failure reason populates these fields consistently: checkout-main-failed, rebase-failed (renamed from pull-failed), version-file-read-failed, version-parse-failed, tag-create-failed, tag-push-failed. prune/close never appear as a failing step (both best-effort/non-fatal, can't produce ok:false). US-003 (next) wires post-merge-stalled-marker.ts (US-001) into the sidecar: write the marker using these exact completedSteps/remainingSteps + reason fields when a post-merge run fails/stalls, remove it once a subsequent run completes cleanly (ok:true), and read it for the boot-read/recycle-recovery blocker line in templates/agents/subagent-orchestrator.md (that template edit + embed-vendor is US-003's own scope, not started here). runPostMerge itself still does not write the marker (no claudeDir in scope) -- the sidecar caller does that in US-003. src/release/merge-watch.ts's handleMergedStatus only reads `result.reason` on failure today; it does not yet read completedSteps/remainingSteps -- that consumption is exactly what US-003 adds.",
   "officialDocsValidated": [
-    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure node:fs (existsSync/readFileSync/writeFileSync/unlinkSync) mirroring the already-established implement-blocked-marker.ts precedent verbatim; no new external library surface introduced." }
+    {
+      "lib": "git",
+      "url": "https://git-scm.com/docs/git-rebase",
+      "fetchedAt": "2026-07-11T00:00:00Z",
+      "status": "aligned",
+      "summary": "Confirmed git rebase (and therefore `git pull --rebase`) drops clean cherry-picks of already-upstream commits by DEFAULT via patch-id comparison (git log --cherry-mark), which is exactly the subsumed-local-commit drop this story relies on. --reapply-cherry-picks forces reapplying those commits instead of dropping them, confirming the notes' instruction to never pass it. No reset --hard used anywhere in the implementation."
+    }
   ]
 }
