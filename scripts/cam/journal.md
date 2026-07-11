@@ -512,3 +512,15 @@ Each entry follows this template:
 - **Decisions**: One coherent 3-story PRD (not split): schema (event kind) -> shared verify+retry helper -> wire the pusher, where a partial ship leaves the push still unverified. Shared sendKeysVerified used by BOTH pushers rather than duplicating verify logic. Spec-only participation: did NOT set plan_approval=operator; let the sidecar cascade plan->implement->review autonomously and fired cam ship after review CLEAN. Trusted the deterministic reviewer CLEAN, did not override by reading code.
 - **Blockers encountered**: None functional. PR #205 merged BEHIND: merge-watch ran gh pr update-branch (attempt 1/2) then merged on CI green. Post-merge clean (pull + close CAM-200 + tag v0.130.0), polled via gh pr view only, never git fetch during the merge window (CAM-228 held).
 - **Follow-ups**: Item #4 of the operator-requested merit-ranked batch (CAM-195 #1, CAM-214 #2, CAM-174 #3 shipped prior). Remaining plannable batch items (re-derive live): CAM-167 (next in merit order), CAM-207 (4 stories), CAM-194, CAM-156, CAM-199, one-per-session via cam plan <bare-number>. CAM-206 (re-spec path) still stage:idea, needs /cam-spec before plannable. Terminal-verdict hook auto-filed CAM-269 (SUGGESTION, stage:idea, untriaged, expected).
+
+## CAM-167 — CAM-167 — Plan-runner tears down its planner/auditor pane on every terminal (lingering-pane mutex gap)
+
+- **Started**: 2026-07-11T07:45:00Z
+- **Closed**: 2026-07-11T08:05:00Z
+- **Branch**: cam/issue-167
+- **Issue**: CAM-167
+- **Outcome**: shipped
+- **Summary**: Single-story fix PRD (PR #206, v0.131.0, ci-gated). US-001: runPlanPhaseWithReplan now tears down its planner/auditor pane at a single unconditional exit covering every terminal (incl. the non-audit post-spawn path), closing the residual mutex-busy lingering-pane gap where a reviewer/planner/auditor TUI stayed alive-idle at cycle end and forced a manual kill. passes:true, review round 1 CLEAN, 4155 tests / 0 fail; check:all spine green (file-size ceiling raised 1362->1381 with tracker-ref).
+- **Decisions**: Single coherent story (not split): one unconditional teardown site is the correct shape rather than per-branch cleanup. Spec-only participation: did NOT set plan_approval=operator; let the sidecar cascade plan->implement->review autonomously and fired cam ship after review CLEAN. Trusted the deterministic reviewer CLEAN, did not override by reading code.
+- **Blockers encountered**: None functional. PR #206 merged BEHIND: merge-watch ran gh pr update-branch (attempt 1/2) then merged on CI green. Post-merge clean (pull + close CAM-167 + tag v0.131.0), polled via gh pr view only, never git fetch during the merge window (CAM-228 held).
+- **Follow-ups**: Item #5 of the operator-requested merit-ranked batch (CAM-195/214/174/200 shipped prior). Remaining plannable batch items (re-derive live): CAM-207 (next, 4 stories, container firewall-init), CAM-194, CAM-156, CAM-199, one-per-session via cam plan <bare-number>. CAM-206 (re-spec path) still stage:idea, needs /cam-spec before plannable. Terminal-verdict hook auto-filed CAM-270 (SUGGESTION, stage:idea, untriaged, expected).
