@@ -1,18 +1,23 @@
 {
-  "lastCompletedStory": { "id": "US-004", "title": "Emit a structured event on every supervisor terminal" },
+  "lastCompletedStory": { "id": "US-005", "title": "Write and consume a durable implement-blocked marker" },
   "branchName": "cam/issue-195",
-  "timestamp": "2026-07-11T02:00:00Z",
-  "createdFiles": [],
+  "timestamp": "2026-07-11T03:00:00Z",
+  "createdFiles": [
+    "src/supervisor/implement-blocked-marker.ts",
+    "test/supervisor/implement-blocked-marker.test.ts",
+    "test/supervisor/implement-blocked-marker-wiring.test.ts"
+  ],
   "modifiedFiles": [
     "src/supervisor/loop.ts",
-    "test/supervisor/loop.test.ts",
-    "test/supervisor/events.test.ts",
+    "src/supervisor/host.ts",
+    "src/commands/sidecar.ts",
+    "test/commands/sidecar-rearm.test.ts",
     "scripts/file-size-budget.json",
     "scripts/cam/patterns.md",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "finishTerminal (runSupervisor, src/supervisor/loop.ts, defined once BEFORE the `outer: while` loop, not per-iteration) now unconditionally emits a `logEvent({ kind: 'sidecar-exit', storyId: lastIterProgress.currentStoryId, uuid: 'supervisor', detail: { reason: TERMINAL_REASON[status] } })` call ahead of teardownWorkerPaneFn, for every terminal (blocked/complete/awaiting-operator/max-iterations), guarded no-op when logEvent is absent (same pattern as the pre-existing emit()/emitTokens() helpers). uuid is a FIXED literal 'supervisor' (never a real worker session uuid) because finishTerminal has no per-story uuid in scope at its definition site; storyId is undefined on the complete/awaiting-operator terminals (action.kind isn't 'implement' there) -- both are intentional, not gaps, and are documented in the patterns.md bullet for this story. TERMINAL_REASON is a literal Record<SupervisorStatus,string> lookup (currently reason===status for all 4 members) rather than a status passthrough, per the story notes' explicit-mapping requirement; a future story that wants a differently-worded reason string only needs to edit this one lookup, not any call site. This story reused the existing 'sidecar-exit' WorkerEventKind (per the prior story's notes suggestion) rather than adding a new kind -- if a downstream story (e.g. a dashboard/event-log consumer) needs to distinguish a loop-level 'sidecar-exit'-from-finishTerminal event from the outer runSidecarLoop's plan/ship-crash or session-absent 'sidecar-exit' events, the discriminator today is uuid==='supervisor' (loop-level) vs uuid==='sidecar' (outer-loop self-exit) -- there is no separate kind or field yet. test/supervisor/events.test.ts's full-lifecycle sequence assertion (kinds array + uuid Set) now has an extra trailing 'sidecar-exit' entry and 'supervisor' uuid on every runSupervisor-driving test that reaches a terminal with logEvent wired -- any NEW full-sequence assertion test added in a future story must account for this trailing entry from the start, not discover it via a failing gate. This PRD's remaining scope (per prior handoffs) is US-005/US-006 (durable implement-blocked-marker half of the CAM-195 fix, independent of this story and of US-003/US-007).",
+  "nextStoryContext": "src/supervisor/implement-blocked-marker.ts (IMPLEMENT_BLOCKED_FILENAME = '.cam-implement-blocked.json') mirrors the ship-stalled/plan-escalated marker precedent verbatim: read/write/remove, never throw, ImplementBlockedMarker { issueId: string; story: string | null; reason: string; writtenAt: string }. WRITE seam: finishTerminal (runSupervisor, loop.ts) calls opts.writeImplementBlockedMarkerFn ONLY when status === 'blocked' AND a mutable lastIssueNumber (set right after every successful readPrd(), since finishTerminal is declared before the per-iteration prd read) is defined -- issueId is String(prd.issueNumber), NOT a backlog issue-id string like the ship-stalled marker's issueId. story is lastIterProgress.currentStoryId ?? null; reason falls back to lastOutcome?.detail ?? TERMINAL_REASON.blocked when no worker outcome was ever set (prd-unreadable, blocked-no-implementable). host.ts's buildSupervisorOptions wires the production writeImplementBlockedMarkerFn (stamps writtenAt, persists via writeImplementBlockedMarker). CONSUME seam: sidecar.ts's makeProductionRearmImplementingFn calls the new exported clearImplementBlockedMarkerForCurrentIssue(markerPath, prdPath) right after a successful rearm (setPhase('implementing')) -- re-arming IS 'the next implement dispatch for that issue' per this story's AC2. That helper reads the marker, reads the CURRENT prd.json's issueNumber, and removes the marker ONLY when it matches (stringified) or when the current prd is unreadable (best-effort, nothing to compare); a marker for a DIFFERENT issueId is left untouched. US-006 (next, unblocked, priority 6) is templates-only: add a .cam-implement-blocked.json boot-read entry to templates/agents/subagent-orchestrator.md's numbered marker list (~121-136, mirroring the ship-stalled/plan-escalated/plan-preflight entries already there) plus an opening-blocker snippet near ~153, then bun run embed-vendor + embed-vendor:check in the SAME commit (byte-parity gate). This story (US-005) deliberately did NOT touch templates/ (explicitly out of scope per its own notes) -- US-006 owns that half entirely. US-007 (priority 7, requires US-003 only, independent of US-005/US-006) remains the other open story in this PRD.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
