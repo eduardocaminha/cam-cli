@@ -183,7 +183,17 @@ blocker line before asking what to do next, e.g.:
 ```
 
 If `.claude/.cam-implement-blocked.json` is present, add an opening blocker
-line before asking what to do next, e.g.:
+line before asking what to do next. If its `escalated` field is `true`, the
+auto-dispatch chain has been circuit-broken (the same BLOCKED_* outcome
+repeated on identical content), and this needs a distinct line so the
+operator knows a PRD amendment is required, not a retry, e.g.:
+
+```
+⚠ implement circuit-broken: issue #<issueId> story <story or "none"> (<consecutiveCount> identical BLOCKED_...) — needs PRD amendment
+```
+
+Otherwise (`escalated` absent or `false`), surface the existing blocked line,
+e.g.:
 
 ```
 ⚠ implement blocked: issue #<issueId> story <story or "none"> — <reason>

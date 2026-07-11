@@ -66,7 +66,7 @@
       "title": "Surface the circuit-broken blocker in the orchestrator boot-read",
       "description": "As the operator, I need a distinct circuit-broken blocker line at orchestrator boot so that a halted auto-chain is visible and I know a PRD amendment (not a retry) is required.",
       "acceptanceCriteria": [
-        "The orchestrator boot-read (templates/agents/subagent-orchestrator.md) adds an escalated:true branch surfacing a distinct circuit-broken line, e.g. '⚠ implement circuit-broken: issue #<issueId> story <id> (<N> identical BLOCKED_...) — needs PRD amendment', keeping the existing non-escalated 'implement blocked' line for the escalated:false case. [oracle: grep -q 'circuit-broken' templates/agents/subagent-orchestrator.md]",
+        "The orchestrator boot-read (templates/agents/subagent-orchestrator.md) adds an escalated:true branch surfacing a distinct circuit-broken line, e.g. '\u26a0 implement circuit-broken: issue #<issueId> story <id> (<N> identical BLOCKED_...) \u2014 needs PRD amendment', keeping the existing non-escalated 'implement blocked' line for the escalated:false case. [oracle: grep -q 'circuit-broken' templates/agents/subagent-orchestrator.md]",
         "The surfacing is read-only: the doc still instructs the orchestrator to never delete the marker itself. [oracle: grep -q 'Do NOT delete the marker' templates/agents/subagent-orchestrator.md]",
         "The .claude/agents/subagent-orchestrator.md runtime mirror carries the identical circuit-broken text (self-hosting convention). [oracle: grep -q 'circuit-broken' .claude/agents/subagent-orchestrator.md]",
         "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
@@ -75,7 +75,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": "US-003",
       "notes": "Edit BOTH templates/agents/subagent-orchestrator.md (existing implement-blocked block ~line 137/185) AND the .claude/agents/subagent-orchestrator.md runtime mirror, then run bun run embed-vendor and verify bun run embed-vendor:check (byte-parity gate; see scripts/cam/patterns.md 'Agent-prompt self-hosting pattern'). This only ADDS the escalated:true branch to the boot-read CAM-195 introduced; do not restructure the surrounding prose. A doc-gate test asserting the string on the embedded templatesContents['agents/subagent-orchestrator.md'] copy is the right home for the persona-side assertion (CAM-190 pattern). No em-dash rule for agent .md files (LLM-consumed)."
     }

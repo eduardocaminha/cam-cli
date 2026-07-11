@@ -176,6 +176,14 @@ describe('templatesContents — merit-over-cost clause in surviving copies (CAM-
 	});
 });
 
+describe('templatesContents — circuit-broken blocker line (CAM-214 US-004)', () => {
+	test('agents/subagent-orchestrator.md embedded copy surfaces the circuit-broken line', () => {
+		const content = templatesContents['agents/subagent-orchestrator.md'] ?? '';
+		expect(content).toContain('circuit-broken');
+		expect(content).toContain('Do NOT delete the marker');
+	});
+});
+
 describe('materializeTemplates — .gitignore is merged, never clobbered', () => {
 	// CAM-55 round-2 review: `templates/.gitignore` lands at the project root.
 	// A blind overwrite would destroy a downstream project's existing
