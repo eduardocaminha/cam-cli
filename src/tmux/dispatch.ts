@@ -12,8 +12,20 @@
 // Fallback on timeout: log the condition and still send (fire-and-forget). The
 // check is best-effort by design: capture-pane lags by one tmux refresh cycle
 // and we never want to block the caller indefinitely.
+//
+// sendKeysVerified (US-002, CAM-200) extends this with post-send delivery
+// verification: a busy TUI can still drop the trailing Enter even after the
+// pane looked idle at check time (capture-pane lags by one refresh cycle), so
+// the pushed line silently never submits. sendKeysVerified re-checks the pane
+// after each send for a composer-emptied STATE signal (did the pushed text
+// leave the composer), and retries with bounded backoff up to N attempts,
+// emitting a 'push-undelivered' event on exhaustion instead of blocking or
+// throwing. sendKeysWhenIdle now delegates to it so every existing thin-proxy
+// caller (review.ts, issue.ts, spec.ts) gets verify+retry for free.
 
 import { tmuxArgs, type SpawnFn as TmuxSpawnFn } from './session.ts';
+import { computeBackoffMs, JITTER_FRACTION } from '../supervisor/loop.ts';
+import type { WorkerEventKind, WorkerEventDetail } from '../supervisor/events.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -67,6 +79,40 @@ export interface SendKeysWhenIdleOptions {
 	sleepFn?: (ms: number) => void;
 }
 
+/**
+ * Options for `sendKeysVerified` (US-002, CAM-200). A superset of
+ * `SendKeysWhenIdleOptions`: every field there means the same thing here, plus
+ * the retry/verify knobs below. `sendKeysWhenIdle` delegates straight through
+ * to this function, so its callers keep working unchanged with the defaults.
+ */
+export interface SendKeysVerifiedOptions extends SendKeysWhenIdleOptions {
+	/**
+	 * Maximum number of send attempts (the initial send plus retries) before
+	 * giving up and emitting 'push-undelivered'. Default: 3.
+	 */
+	maxAttempts?: number;
+	/**
+	 * Base backoff (ms) between a failed verify and the next send attempt,
+	 * fed to `computeBackoffMs` (src/supervisor/loop.ts:606). Default: 300.
+	 */
+	retryBaseMs?: number;
+	/** Backoff cap (ms) fed to `computeBackoffMs`. Default: 2_000. */
+	retryMaxMs?: number;
+	/** Jitter fraction fed to `computeBackoffMs`. Default: JITTER_FRACTION (0.2). */
+	jitterFraction?: number;
+	/** Random source fed to `computeBackoffMs`. Default: `Math.random`. */
+	randomFn?: () => number;
+	/**
+	 * Injected event sink, called with `('push-undelivered', detail)` once all
+	 * attempts are exhausted without a composer-emptied verify. Optional and
+	 * side-effect-free by default: omitting it emits no event (mirrors the
+	 * sub-state-machine logEvent seam pattern used by merge-watch). The caller
+	 * wraps this into a full WorkerEvent (ts/storyId/uuid) if it wants the
+	 * event durably recorded.
+	 */
+	logEvent?: (kind: WorkerEventKind, detail: WorkerEventDetail) => void;
+}
+
 // ---------------------------------------------------------------------------
 // Idle detection
 // ---------------------------------------------------------------------------
@@ -118,6 +164,26 @@ export function isOrchPaneIdle(content: string): boolean {
 	return tail.some((l) => IDLE_PROMPT.test(l.trim()));
 }
 
+/**
+ * Return true if `text` (the line we just pushed) is no longer present in the
+ * tail of the captured pane content, i.e. it left the composer (US-002,
+ * CAM-200).
+ *
+ * This is a STATE check only: it looks for the pushed line's own text, never
+ * for report content or any parsed structure in the rendered scrollback
+ * (capture-pane is rendered markdown and lossy for that purpose; see the
+ * CAM-75/77/78 structured-handback decision). A busy TUI that drops the
+ * trailing Enter leaves the composer still holding `text`, which this
+ * detects so the caller can retry.
+ *
+ * Exported for direct unit testing.
+ */
+export function isComposerEmptied(content: string, text: string): boolean {
+	const lines = content.split('\n').map((l) => l.trimEnd());
+	const tail = lines.slice(-5);
+	return !tail.some((l) => l.includes(text));
+}
+
 // ---------------------------------------------------------------------------
 // Default capture-pane reader
 // ---------------------------------------------------------------------------
@@ -131,29 +197,64 @@ function defaultCapturePaneFn(paneId: string, spawnFn: TmuxSpawnFn): string {
 	return typeof r.stdout === 'string' ? r.stdout : (r.stdout?.toString() ?? '');
 }
 
+/**
+ * Poll `capture` at `pollIntervalMs` intervals until `isOrchPaneIdle` returns
+ * true or `idleTimeoutMs` is exhausted. Returns whether the wait timed out
+ * (fallback: caller still sends, but logs a warning first).
+ */
+function waitForIdlePane(args: {
+	paneId: string;
+	capture: CapturePaneFn;
+	pollIntervalMs: number;
+	idleTimeoutMs: number;
+	sleepFn: (ms: number) => void;
+}): boolean {
+	const { paneId, capture, pollIntervalMs, idleTimeoutMs, sleepFn } = args;
+	const deadline = Date.now() + idleTimeoutMs;
+
+	while (true) {
+		const content = capture(paneId);
+		if (isOrchPaneIdle(content)) return false;
+		const remaining = deadline - Date.now();
+		if (remaining <= 0) return true;
+		sleepFn(Math.min(pollIntervalMs, remaining));
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 /**
- * Wait until the orchestrator pane is idle, then issue an atomic send-keys.
+ * Wait until the orchestrator pane is idle, then issue an atomic send-keys,
+ * verifying delivery and retrying with bounded backoff on failure (US-002,
+ * CAM-200).
  *
- * Polls `capture-pane` at `pollIntervalMs` intervals (default 200 ms) until
- * `isOrchPaneIdle` returns true or the `idleTimeoutMs` budget is exhausted
- * (default 5 000 ms).
+ * Flow:
+ *   1. Idle-gate: poll `capture-pane` at `pollIntervalMs` intervals (default
+ *      200 ms) until `isOrchPaneIdle` returns true or `idleTimeoutMs` is
+ *      exhausted (default 5 000 ms). **Timeout fallback**: if the budget
+ *      expires before the pane goes idle, a warning is printed to stderr and
+ *      send-keys fires anyway. The caller is never blocked indefinitely.
+ *   2. Send: text and 'Enter' are passed as discrete argv elements in a
+ *      single `send-keys` invocation, WITHOUT `-l`. With `-l` every arg is
+ *      literal, so 'Enter' would be typed as the text "Enter" and never
+ *      submit (sendkeys-literal-enter-gotcha, CAM-55). The text is a single
+ *      non-key-name arg, so tmux already sends its characters literally; only
+ *      'Enter' must stay a recognised key.
+ *   3. Verify: re-capture the pane and check `isComposerEmptied` (the pushed
+ *      line left the composer). This is a pane-STATE check only; it never
+ *      parses rendered scrollback for report content.
+ *   4. Retry: if not delivered, sleep `computeBackoffMs(attempt, ...)`
+ *      (src/supervisor/loop.ts:606) and resend, up to `maxAttempts` (default
+ *      3) total attempts.
  *
- * **Timeout fallback**: if the budget expires before the pane goes idle, a
- * warning is printed to stderr and send-keys fires anyway. The caller is never
- * blocked indefinitely.
- *
- * The send-keys call is atomic: text and 'Enter' are passed as discrete argv
- * elements in a single `send-keys` invocation, WITHOUT `-l`. With `-l` every
- * arg is literal, so 'Enter' would be typed as the text "Enter" and never
- * submit (sendkeys-literal-enter-gotcha). The text is a single non-key-name
- * arg, so tmux already sends its characters literally; only 'Enter' must stay
- * a recognised key.
+ * On exhaustion (still not delivered after `maxAttempts`), emits
+ * `'push-undelivered'` via the injected `logEvent` (default: no-op, so
+ * callers that don't care about durable events see zero side effects). Never
+ * throws and never blocks indefinitely.
  */
-export function sendKeysWhenIdle(opts: SendKeysWhenIdleOptions): void {
+export function sendKeysVerified(opts: SendKeysVerifiedOptions): void {
 	const {
 		paneId,
 		text,
@@ -164,26 +265,19 @@ export function sendKeysWhenIdle(opts: SendKeysWhenIdleOptions): void {
 		sleepFn = (ms: number) => {
 			Bun.sleepSync(ms);
 		},
+		maxAttempts = 3,
+		retryBaseMs = 300,
+		retryMaxMs = 2_000,
+		jitterFraction = JITTER_FRACTION,
+		randomFn = Math.random,
+		logEvent,
 	} = opts;
 
 	const capture = capturePaneFn
 		? capturePaneFn
 		: (id: string) => defaultCapturePaneFn(id, tmuxSpawnFn);
 
-	const deadline = Date.now() + idleTimeoutMs;
-	let timedOut = false;
-
-	while (true) {
-		const content = capture(paneId);
-		if (isOrchPaneIdle(content)) break;
-		const remaining = deadline - Date.now();
-		if (remaining <= 0) {
-			timedOut = true;
-			break;
-		}
-		sleepFn(Math.min(pollIntervalMs, remaining));
-	}
-
+	const timedOut = waitForIdlePane({ paneId, capture, pollIntervalMs, idleTimeoutMs, sleepFn });
 	if (timedOut) {
 		// Fallback: log + still send. Never block indefinitely.
 		process.stderr.write(
@@ -191,14 +285,44 @@ export function sendKeysWhenIdle(opts: SendKeysWhenIdleOptions): void {
 		);
 	}
 
-	// Atomic send-keys: text + Enter in ONE call, WITHOUT -l. A `-l` flag makes
-	// EVERY argument literal, so "Enter" would be TYPED as the text "Enter" rather
-	// than submitting the command (empirically verified, CAM-55). `text` is a single
-	// non-key-name argv element, so tmux already sends its characters literally;
-	// only "Enter" must remain a recognised key so the command actually submits.
-	tmuxSpawnFn(
-		'tmux',
-		tmuxArgs(['send-keys', '-t', paneId, text, 'Enter']),
-		{ stdio: 'ignore' },
-	);
+	let delivered = false;
+	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+		// Atomic send-keys: text + Enter in ONE call, WITHOUT -l (see flow
+		// step 2 above; CAM-55 regression guard).
+		tmuxSpawnFn(
+			'tmux',
+			tmuxArgs(['send-keys', '-t', paneId, text, 'Enter']),
+			{ stdio: 'ignore' },
+		);
+
+		if (isComposerEmptied(capture(paneId), text)) {
+			delivered = true;
+			break;
+		}
+
+		if (attempt < maxAttempts) {
+			const backoffMs = computeBackoffMs(attempt, {
+				base: retryBaseMs,
+				max: retryMaxMs,
+				jitterFraction,
+				random: randomFn,
+			});
+			sleepFn(backoffMs);
+		}
+	}
+
+	if (!delivered) {
+		logEvent?.('push-undelivered', { paneId, retriesExhausted: maxAttempts });
+	}
+}
+
+/**
+ * Thin-proxy call sites (review.ts, issue.ts, spec.ts, meta-loop dispatch)
+ * call this with `SendKeysWhenIdleOptions` only; delegating to
+ * `sendKeysVerified` with its retry/verify defaults gives them
+ * verify-then-retry-then-push-undelivered for free with no signature-shape
+ * change at the call site (US-002, CAM-200).
+ */
+export function sendKeysWhenIdle(opts: SendKeysWhenIdleOptions): void {
+	sendKeysVerified(opts);
 }
