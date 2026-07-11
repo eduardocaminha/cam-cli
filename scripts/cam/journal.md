@@ -535,3 +535,14 @@ Each entry follows this template:
 - **Summary**: 4-story fix PRD (PR #207, v0.132.0, ci-gated) closing the compounding gaps that let the container-mode sidecar die silently on firewall-init (dnsmasq port 53) failure. US-001: durable .cam-sidecar-stalled.json marker written on FirewallError + surfaced at orchestrator boot. US-002: liveness watcher with bounded respawn. US-003: sidecarAlive gates guarding plan/meta-loop signal writes. US-004: port-53 root-cause teardown (docker rm -f, best-effort, tolerates absent container). All 4 passes:true, review round 1 CLEAN, 4214 tests / 0 fail. worker_isolation=HOST so the fix ships/tests on host; container behavior is covered by tests, not a live container run.
 - **Decisions**: One coherent 4-story PRD (not split): the stories form a single mechanism (marker module -> liveness+respawn -> sidecarAlive gates -> port-53 teardown) where a partial ship leaves the resilience non-functional. Reused the CAM-195 durable-marker pattern rather than inventing new machinery. Spec-only participation: did NOT set plan_approval=operator; let the sidecar cascade plan->implement->review autonomously and fired cam ship after review CLEAN. Trusted the deterministic reviewer CLEAN, did not override by reading code.
 - **Blockers encountered**: None functional. PR #207 merged BEHIND: merge-watch ran gh pr update-branch (attempt 1/2) then merged on CI green. Post-merge clean (pull + close CAM-207 + tag v0.132.0), polled via gh pr view only, never git fetch during the merge window (CAM-228 held).
+
+## CAM-194 — commit-existence gate accepts any conventional-commit type prefix
+
+- **Started**: 2026-07-11T09:50:00Z
+- **Closed**: 2026-07-11T10:15:00Z
+- **Branch**: cam/issue-194
+- **Issue**: CAM-194
+- **Outcome**: shipped
+- **Summary**: Single-story fix PRD (PR #208, v0.133.0, ci-gated). US-001: commitSubjectMatchesStory now accepts ANY conventional-commit type prefix before the story id (not only feat:), closing a live implement-loop false-BLOCK where the commit-existence gate false-negatived stories committed with fix/chore/etc. US-001 passes:true, review round 1 CLEAN, 4227 tests / 0 fail.
+- **Decisions**: Single coherent story (not split): the gate anchor is one predicate, so widening the accepted prefix set is the correct shape rather than per-type branches. Spec-only participation: did NOT set plan_approval=operator; let the sidecar cascade plan->implement->review autonomously and fired cam ship after review CLEAN. Trusted the deterministic reviewer CLEAN, did not override by reading code.
+- **Blockers encountered**: None functional. PR #208 merged BEHIND: merge-watch ran gh pr update-branch (attempt 1/2) then merged on CI green. Post-merge clean (pull + close CAM-194 + tag v0.133.0), polled via gh pr view only, never git fetch during the merge window (CAM-228 held).
