@@ -38,7 +38,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Writer factory: src/supervisor/host.ts:480 writeImplementBlockedMarkerFn (closes over claudeDir; prdPath is available in the same buildSupervisorOptions scope, host.ts:68). The pure loop.ts seam (loop.ts:762/814) passes ImplementBlockedWriterParams {issueId, story, reason} unchanged; the counter+hash work belongs in the host.ts writer, keeping loop.ts clock-free/hash-free. Read prd.json bytes with Bun.file / readFileSync try/catch (no throw). Tests in test/supervisor/implement-blocked-marker-wiring.test.ts. Do NOT change loop.ts finishTerminal semantics (it already calls the writer on status==='blocked' with a known issueId)."
     },
