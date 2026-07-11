@@ -172,3 +172,15 @@ The state where local main and origin/main share history but each has commits th
 
 **post-merge sequence**:
 The ordered git steps runPostMerge performs after a PR merges: checkout main, pull origin main, read version, tag and push, prune local and remote branch, close the issue. A failure at the pull step currently aborts the rest; recovery must either continue these steps or record which remain.
+
+**wake-up push**:
+The one-line send-keys message the sidecar pushes to the orchestrator pane to signal that a report is ready. Per CAM-75/77/78 it carries no durable content: it is only a signal to wake the orchestrator, which then reads the durable truth from files (worker-report.json, cam-worker-events.jsonl) and markers. If the wake-up is lost, the truth is not.
+
+**delivery verification**:
+Confirming a send-keys push actually submitted, rather than fire-and-forget. Done by idle-gating before the send and checking the composer emptied after it, with bounded-backoff retry on failure. It is a pane-state check, never a parse of rendered scrollback content.
+
+**composer-emptied state check**:
+The post-send verification that the pushed line left the orchestrator TUI composer (composer is empty), proving the trailing Enter submitted. The sanctioned verification signal, distinct from and never conflated with parsing the rendered pane for the message content (the lossy capture-pane trap).
+
+**push-undelivered**:
+A flight-recorder event emitted when a verified send-keys push exhausts its retries without confirming submission. It records a lost wake-up for observability; it does not itself carry recovery state, because terminals that matter already write durable markers the orchestrator surfaces at its next boot.
