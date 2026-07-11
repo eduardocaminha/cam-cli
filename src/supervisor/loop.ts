@@ -58,9 +58,16 @@ import type { ImplementBlockedMarker } from './implement-blocked-marker.ts';
  * Params for the injectable implement-blocked marker writer (US-005, CAM-195,
  * Defect 2). Omits `writtenAt`: the pure seam here stays clock-free, matching
  * the PlanEscalationWriterParams precedent (the sidecar.ts production factory
- * stamps `writtenAt`, not this module).
+ * stamps `writtenAt`, not this module). Also omits `consecutiveCount` /
+ * `keyHash` / `escalated` / `haltedAt` (US-001, CAM-214): this loop.ts seam
+ * only knows issueId/story/reason at write time; the dedup-key + counter
+ * logic (`advanceBlockedMarker`) is wired into the host.ts writer in US-002,
+ * keeping this seam clock-free AND hash-free.
  */
-export type ImplementBlockedWriterParams = Omit<ImplementBlockedMarker, 'writtenAt'>;
+export type ImplementBlockedWriterParams = Omit<
+	ImplementBlockedMarker,
+	'writtenAt' | 'consecutiveCount' | 'keyHash' | 'escalated' | 'haltedAt'
+>;
 
 // ---------------------------------------------------------------------------
 // Injected dependency types

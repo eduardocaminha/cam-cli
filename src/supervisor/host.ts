@@ -477,10 +477,21 @@ export function buildSupervisorOptions(
 	// Stamps `writtenAt` (the one field the pure loop.ts seam does NOT add,
 	// keeping loop.ts clock-free) and persists via writeImplementBlockedMarker
 	// (never throws). Mirrors makeWriteEscalationMarkerFn (src/commands/sidecar.ts).
+	//
+	// US-001 (CAM-214): `consecutiveCount`/`keyHash` are placeholder-stamped
+	// here (fresh/first-block values) because this story only extends the
+	// marker schema + the pure `advanceBlockedMarker` transition function.
+	// Feeding the prior marker + the live prd.json sha256 through
+	// `advanceBlockedMarker` on every blocked terminal is US-002.
 	const writeImplementBlockedMarkerFn: RunSupervisorOptions['writeImplementBlockedMarkerFn'] = (
 		params: ImplementBlockedWriterParams,
 	) => {
-		const marker: ImplementBlockedMarker = { ...params, writtenAt: new Date().toISOString() };
+		const marker: ImplementBlockedMarker = {
+			...params,
+			writtenAt: new Date().toISOString(),
+			consecutiveCount: 1,
+			keyHash: '',
+		};
 		writeImplementBlockedMarker(join(claudeDir, IMPLEMENT_BLOCKED_FILENAME), marker);
 	};
 
