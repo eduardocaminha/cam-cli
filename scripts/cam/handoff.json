@@ -1,15 +1,20 @@
 {
-  "lastCompletedStory": { "id": "US-003", "title": "Write post-merge-stalled marker on merged-but-failed post-merge" },
+  "lastCompletedStory": { "id": "US-004", "title": "Surface post-merge-stalled at boot + document operator recovery" },
   "branchName": "cam/issue-174",
   "timestamp": "2026-07-11T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/sidecar.ts",
-    "test/release/merge-watch.test.ts",
-    "scripts/file-size-budget.json"
+    "templates/agents/subagent-orchestrator.md",
+    ".claude/agents/subagent-orchestrator.md",
+    "src/vendor/_generated.ts",
+    "docs/recovery-runbook.md",
+    "scripts/cam/prd.json"
   ],
-  "openQuestions": [],
-  "nextStoryContext": "US-003 wired src/supervisor/post-merge-stalled-marker.ts (US-001) into the sidecar's merge-watch terminal branch. New exported helper `updatePostMergeStalledMarker(markerPath, outcome, state)` lives in src/commands/sidecar.ts right next to updateShipStalledMarker (same file, same terminal-branch call site in makeProductionMergeWatchFn: `removeMergeWatchState(watchFilePath); updateShipStalledMarker(...); updatePostMergeStalledMarker(join(claudeDir, POST_MERGE_STALLED_FILENAME), result.outcome, state);`). Behavior: a no-op unless outcome.kind==='merged' && outcome.postMerge.ok===false; on that exact branch it writes { prNumber: state.prNumber, issueId: state.issueId ?? null, completedSteps, remainingSteps, reason } (the last three lifted verbatim off outcome.postMerge, which US-002 already shapes this way) plus a fresh writtenAt ISO timestamp. Deliberately does NOT remove/clear the marker on a merged+ok:true outcome (scoped out by this story's notes: 'Only act when outcome.kind===\"merged\" && !outcome.postMerge.ok') and does NOT touch the ship-stalled marker or the merged classification at all -- updateShipStalledMarker is unchanged and still owns every non-merged terminal exclusively. US-004 (next, 'Surface post-merge-stalled at boot + document operator recovery') is the story that (a) reads this marker at orchestrator boot / recycle-recovery time, (b) adds the blocker line to templates/agents/subagent-orchestrator.md (+ .claude/agents/ dual-copy + embed-vendor regen), and (c) documents the operator recovery runbook -- none of that reading/surfacing/doc wiring exists yet after US-003, only the write side.",
+  "openQuestions": [
+    "Pre-existing (not introduced by this story): templates/agents/subagent-orchestrator.md carries an orphaned duplicate 'Do NOT delete the marker yourself... only removed by the next plan run (US-004).' paragraph right after the implement-blocked marker's correct closer ('...only removed by the next re-armed implement dispatch for that issue.'). The wording is stale/wrong for the implement-blocked marker (which is cleared by a re-armed implement dispatch, not a plan run) and predates this story; left untouched per surgical-changes scope. Worth a follow-up cleanup story.",
+    "templates/.gitignore does not list .cam-ship-stalled.json, .cam-plan-escalated.json, .cam-plan-preflight-failed.json, .cam-implement-blocked.json, or .cam-post-merge-stalled.json (only the repo-root .gitignore has these entries). Pre-existing gap noted in scripts/cam/patterns.md; out of scope for this story (no AC required it), flagging again in case a follow-up wants to close it."
+  ],
+  "nextStoryContext": "US-004 was the last story in this PRD (CAM-174, branch cam/issue-174): all 4 stories (US-001..US-004) now have passes:true. This story added: (1) templates/agents/subagent-orchestrator.md boot-read item #11 for `.claude/.cam-post-merge-stalled.json` (fields: prNumber, completedSteps, remainingSteps, reason) plus a distinct opening-blocker paragraph (`⚠ post-merge stalled: PR #<prNumber> (merged, tag/prune/close pending) — <reason>`), explicitly read-only/never-delete, mirroring the ship-stalled prose; (2) synced the .claude/agents/ dual copy (verified byte-identical to templates/ both before and after this edit -- no drift this time) and regenerated src/vendor/_generated.ts via `bun run embed-vendor` (embed-vendor:check clean); (3) docs/recovery-runbook.md new section (y) 'CAM-174: post-merge-stalled -- diverged local main after a squash-merge', documenting the git-reset--hard-origin/main-ONLY-when-subsumed recovery followed by manual tag/prune/close completion and marker removal, cross-referencing ADR 0025 and src/release/post-merge.ts's step vocabulary. No src/ behavior changed (docs/template-only story); typecheck, bun test (4142 pass), and the full check:all spine (coverage/debt-markers/dead-code/dup/ci-parity) all green with zero budget/ceiling changes needed. Next agent: with the PRD complete, expect a PRD_COMPLETE dispatch or a review cycle; there is no further story in this PRD to self-select.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
