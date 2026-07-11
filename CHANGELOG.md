@@ -6,6 +6,15 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.136.0] - 2026-07-11
+
+### Added
+
+- US-002 - Tighten @biomejs/biome from caret to exact pin
+- US-002 - Tighten @biomejs/biome from caret to exact pin
+- US-001 - Pin knip and jscpd as exact devDependencies and de-tokenize the gate invocations
+- US-001 - Pin knip and jscpd as exact devDependencies and de-tokenize the gate invocations
+
 ## [0.135.0] - 2026-07-11
 
 ### Added
