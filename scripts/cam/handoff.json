@@ -1,15 +1,14 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Embed the resolved issue record + derived branch into the auditor spawn payload" },
-  "createdFiles": [
-    "test/supervisor/plan/plan-runner-auditor-payload.test.ts"
-  ],
+  "lastCompletedStory": { "id": "US-002", "title": "Auditor audits the provided record only; identity/collision checks use git refs, prior-art is git-log and non-blocking" },
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/plan-runner.ts",
-    "scripts/file-size-budget.json",
+    ".claude/agents/subagent-auditor.md",
+    "templates/agents/subagent-auditor.md",
+    "src/vendor/_generated.ts",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 (CAM-273) shipped: src/supervisor/plan-runner.ts now exports buildAuditorTaskPrompt(issue, branchName) and deriveBranchNameFromIssueId(issueId), and runPlanWorkerSequence defaults auditorTaskPrompt to the record-bearing prompt built from the selected IssueEntry + its code-derived branch (never the removed static DEFAULT_AUDITOR_TASK_PROMPT). Re-plan rounds in runPlanPhaseWithReplan inherit this for free since runPlanPhase re-resolves `issue` every call. The subagent-auditor.md agent prompt file itself was intentionally NOT touched by this story (out of scope per notes/AC); if a follow-up story wants the auditor's own instructions updated to explicitly trust the embedded record over its own gh resolution steps, that is a separate change. file-size-budget.json ceiling for plan-runner.ts raised 1381->1444 with a dated _ref entry (CAM-273).",
+  "nextStoryContext": "US-002 (CAM-273) shipped: both subagent-auditor.md copies (templates/ source-of-truth + .claude/ runtime mirror) now instruct the auditor to trust the spawn-prompt-embedded issue record (Issue ID/Title/Description/Branch/Acceptance Criteria from US-001's buildAuditorTaskPrompt) verbatim and to never re-resolve issueNumber/branchName via gh. Section E (Repo invariants) gained two new checklist items (17: branch-collision via git refs only - git rev-parse --verify refs/heads/<branch> + git ls-remote origin <branch>, never a same-numbered GitHub PR, nonexistent branch is never a collision; 18: prior-art/duplication signals sourced from git log, always severity:suggestion, never critical/important). The project-specific F section was renumbered up by 2 in both files (.claude: 19-25 was 17-23; templates: 19 was 17) to keep the checklist's global numbering sequential - purely cosmetic, no test parses these numbers. src/vendor/_generated.ts was regenerated via bun run embed-vendor to stay in sync (embed-vendor:check is clean). No external library was touched by this story (pure agent-instruction/documentation edit) so Step 5.5 recorded lib:none. Full check:all spine (test/embed-vendor/lint/file-size/debt-markers/version-skips/coverage/dead-code/dup/ci-parity) is green with no budget changes needed.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]

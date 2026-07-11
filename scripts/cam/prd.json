@@ -42,7 +42,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Files: .claude/agents/subagent-auditor.md, templates/agents/subagent-auditor.md, then `bun run embed-vendor` to sync src/vendor/_generated.ts. patterns.md:46 (agent-prompt self-hosting): edit BOTH copies + embed-vendor; call it out in the commit as intentional self-hosting so a later auditor does not flag harness drift (F.23 already whitelists declared self-hosting edits). Lesson 'cam dual-copy is per-file': the two auditor files are NOT byte-identical (.claude is cam-cli-customized, templates is the generic scaffold) - add the identity/collision/prior-art guardrail to the equivalent sections of each (Inputs, checklist A.completeness, E.invariants) without clobbering their existing divergent wording. Revise the current 'Read those files yourself. Do not trust summaries in the invocation prompt.' line: for the ISSUE RECORD the auditor must now TRUST the deterministic-code-resolved payload (ADR-0027 / CAM-197), it still reads prd.json (the PRD under audit) itself. templatesContents byte-parity test in test/embedded.test.ts catches embed drift."
     }
