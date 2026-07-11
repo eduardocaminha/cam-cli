@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.135.0] - 2026-07-11
+
+### Added
+
+- US-001 - Rewrite ensurePushed to compare-first (read-only ls-remote) before pushing
+
 ## [0.134.0] - 2026-07-11
 
 ### Added
