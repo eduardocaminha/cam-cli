@@ -524,3 +524,14 @@ Each entry follows this template:
 - **Decisions**: Single coherent story (not split): one unconditional teardown site is the correct shape rather than per-branch cleanup. Spec-only participation: did NOT set plan_approval=operator; let the sidecar cascade plan->implement->review autonomously and fired cam ship after review CLEAN. Trusted the deterministic reviewer CLEAN, did not override by reading code.
 - **Blockers encountered**: None functional. PR #206 merged BEHIND: merge-watch ran gh pr update-branch (attempt 1/2) then merged on CI green. Post-merge clean (pull + close CAM-167 + tag v0.131.0), polled via gh pr view only, never git fetch during the merge window (CAM-228 held).
 - **Follow-ups**: Item #5 of the operator-requested merit-ranked batch (CAM-195/214/174/200 shipped prior). Remaining plannable batch items (re-derive live): CAM-207 (next, 4 stories, container firewall-init), CAM-194, CAM-156, CAM-199, one-per-session via cam plan <bare-number>. CAM-206 (re-spec path) still stage:idea, needs /cam-spec before plannable. Terminal-verdict hook auto-filed CAM-270 (SUGGESTION, stage:idea, untriaged, expected).
+
+## CAM-207 — CAM-207 — Container sidecar silent-death on firewall-init hardened
+
+- **Started**: 2026-07-11T08:30:00Z
+- **Closed**: 2026-07-11T09:30:00Z
+- **Branch**: cam/issue-207
+- **Issue**: CAM-207
+- **Outcome**: shipped
+- **Summary**: 4-story fix PRD (PR #207, v0.132.0, ci-gated) closing the compounding gaps that let the container-mode sidecar die silently on firewall-init (dnsmasq port 53) failure. US-001: durable .cam-sidecar-stalled.json marker written on FirewallError + surfaced at orchestrator boot. US-002: liveness watcher with bounded respawn. US-003: sidecarAlive gates guarding plan/meta-loop signal writes. US-004: port-53 root-cause teardown (docker rm -f, best-effort, tolerates absent container). All 4 passes:true, review round 1 CLEAN, 4214 tests / 0 fail. worker_isolation=HOST so the fix ships/tests on host; container behavior is covered by tests, not a live container run.
+- **Decisions**: One coherent 4-story PRD (not split): the stories form a single mechanism (marker module -> liveness+respawn -> sidecarAlive gates -> port-53 teardown) where a partial ship leaves the resilience non-functional. Reused the CAM-195 durable-marker pattern rather than inventing new machinery. Spec-only participation: did NOT set plan_approval=operator; let the sidecar cascade plan->implement->review autonomously and fired cam ship after review CLEAN. Trusted the deterministic reviewer CLEAN, did not override by reading code.
+- **Blockers encountered**: None functional. PR #207 merged BEHIND: merge-watch ran gh pr update-branch (attempt 1/2) then merged on CI green. Post-merge clean (pull + close CAM-207 + tag v0.132.0), polled via gh pr view only, never git fetch during the merge window (CAM-228 held).
