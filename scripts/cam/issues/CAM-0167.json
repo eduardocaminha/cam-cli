@@ -1,9 +1,32 @@
 {
   "id": "CAM-167",
   "title": "worker pane nunca fechado no fim do ciclo: reviewer/planner/auditor TUI fica vivo-idle, trava o mutex, forca kill manual",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-03T02:13:13.216Z",
-  "description": "DEFEITO recorrente (toil a sessao inteira: matei ~6 panes na mao, %28-%33). Worker claude sessions sao TUI interativos (CAM-42) que NAO saem sozinhos quando a tarefa termina. Confirmado: NAO existe teardown de worker pane em lugar nenhum do supervisor/plan-runner (grep kill-pane em src/ so acha setup.ts pro config pane). O worker pane so e 'reusado' via respawn-pane no PROXIMO dispatch; quando o ciclo/loop termina sem proximo dispatch, o pane fica com um claude vivo-idle indefinidamente. EFEITO: (1) paneCountMutex (src/tmux/session.ts:273) conta 3 panes = busy -> proximo cam plan/next/ship e RECUSADO ate matar o pane na mao; (2) processos claude orfaos vivos consumindo recurso. Pior no plan-runner: cada tentativa de cam plan spawna pane NOVO (nao reusa) -> %29/%30/%31/%32 acumularam nos 4 plan attempts do CAM-162. MESMA CLASSE do CAM-162 (TUI interativo nao auto-sai -> mecanismo deterministico tem que terminar; hooks/in-session nao encerram). FIX: (a) o supervisor/sidecar mata o worker pane (tmux kill-pane) quando o loop atinge estado terminal (complete/awaiting-operator/blocked) ou volta a idle; (b) o plan-runner (runPlanPhase) mata os panes planner+auditor quando a plan phase termina, nos DOIS caminhos (APPROVE->branch E BLOCK->idle). Determinístico no TS, nao manual. Verificar interacao com o design de reuse (worker-pane unico reusado entre stories) -- reuse DENTRO do ciclo fica, fecha no fim. Relaciona CAM-57 (self-heal stale worker pane) e CAM-58 (false-terminal). P2."
+  "description": "DEFEITO recorrente (toil a sessao inteira: matei ~6 panes na mao, %28-%33). Worker claude sessions sao TUI interativos (CAM-42) que NAO saem sozinhos quando a tarefa termina. Confirmado: NAO existe teardown de worker pane em lugar nenhum do supervisor/plan-runner (grep kill-pane em src/ so acha setup.ts pro config pane). O worker pane so e 'reusado' via respawn-pane no PROXIMO dispatch; quando o ciclo/loop termina sem proximo dispatch, o pane fica com um claude vivo-idle indefinidamente. EFEITO: (1) paneCountMutex (src/tmux/session.ts:273) conta 3 panes = busy -> proximo cam plan/next/ship e RECUSADO ate matar o pane na mao; (2) processos claude orfaos vivos consumindo recurso. Pior no plan-runner: cada tentativa de cam plan spawna pane NOVO (nao reusa) -> %29/%30/%31/%32 acumularam nos 4 plan attempts do CAM-162. MESMA CLASSE do CAM-162 (TUI interativo nao auto-sai -> mecanismo deterministico tem que terminar; hooks/in-session nao encerram). FIX: (a) o supervisor/sidecar mata o worker pane (tmux kill-pane) quando o loop atinge estado terminal (complete/awaiting-operator/blocked) ou volta a idle; (b) o plan-runner (runPlanPhase) mata os panes planner+auditor quando a plan phase termina, nos DOIS caminhos (APPROVE->branch E BLOCK->idle). Determinístico no TS, nao manual. Verificar interacao com o design de reuse (worker-pane unico reusado entre stories) -- reuse DENTRO do ciclo fica, fecha no fim. Relaciona CAM-57 (self-heal stale worker pane) e CAM-58 (false-terminal). P2.",
+  "spec": {
+    "acceptanceCriteria": [
+      "runPlanPhaseWithReplan (src/supervisor/plan-runner.ts) tears down the planner/auditor pane at a single unconditional exit point covering EVERY terminal return, including the non-audit post-spawn terminals currently missing a teardown (planner-timeout, auditor-timeout, planner-failed; plan-runner.ts:862-864 'no teardown call (AC5)'), reusing the existing teardownPlanPanesFn seam (sidecar.ts:1954).",
+      "Pre-spawn terminal kinds (preflight-failed, no-plannable-issue, plan-target-invalid, mutex-busy, container-preflight-failed) are a harmless no-op under the exit-teardown (kill-pane is best-effort when no plan pane exists).",
+      "The CAM-204 round-boundary teardown (kills interleaved between re-plan rounds) is preserved; the final exit-teardown does not kill a pane a subsequent re-plan round would reuse.",
+      "Test: a plan-runner that ends in planner-timeout (or auditor-timeout / planner-failed) leaves the tmux session at 2 panes, so paneCountMutex reads available and the next cam plan/next/ship is not refused as mutex-busy."
+    ],
+    "scope": "Close the residual pane-teardown gap that remains after CAM-188 (worker/reviewer pane teardown at every finishTerminal, shipped 2026-07-05) and CAM-204 (plan-runner planner/auditor teardown on APPROVE and plan-escalated, shipped). The original CAM-167 premise ('no worker-pane teardown exists anywhere') is stale; ~90% shipped via those two. The genuine residual: the plan-runner's non-audit post-spawn terminals (planner-timeout, auditor-timeout, planner-failed) return without tearing down the planner/auditor pane, leaving a live claude TUI that holds paneCountMutex busy (3 panes) and forces a manual kill. Fix by making the plan-runner tear down its plan panes unconditionally at a single exit point (drift-proof, mirroring the worker's finishTerminal-always-tears-down invariant) rather than enumerating post-spawn kinds. Surface ~1 file (plan-runner.ts + sidecar.ts wiring).",
+    "gotchas": [
+      "CAM-167 is largely already delivered: CAM-188 covers worker+reviewer teardown at all terminals (host.ts:465 teardownWorkerPaneFn, loop.ts:749 finishTerminal) and CAM-204 covers plan APPROVE/escalated; do not re-implement those, and do not regress them. This issue is only the residual non-audit post-spawn plan-runner gap.",
+      "Prefer an unconditional single-exit teardown over enumerating planner-timeout/auditor-timeout/planner-failed: enumeration is how this gap was born (AC5 left non-audit terminals uncovered), and a future post-spawn terminal kind would re-open it. kill-pane is a best-effort no-op when no pane exists, so covering pre-spawn terminals too is harmless.",
+      "Panes are reused via respawn-pane -k (planner and auditor share plannerPaneId), not spawned new per attempt (contradicting the original issue text); the exit-teardown must not kill a pane that the next re-plan round would reuse - the CAM-204 round-boundary kills already handle inter-round teardown, so the exit-teardown is the final terminal cleanup only.",
+      "paneCountMutex (session.ts:273) returns available only at exactly 2 panes; a lingering plan pane = 3 = busy and refuses dispatch (plan-runner.ts:789 mutex-busy)."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 4,
+    "riskReduction": 6,
+    "jobSize": 2
+  },
+  "type": "fix"
 }
