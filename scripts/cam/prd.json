@@ -86,7 +86,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": "US-004",
       "notes": "Mirror the ship-stalled marker precedent exactly: src/release/merge-watch.ts (ShipStalledMarker 208-278: SHIP_STALLED_FILENAME const + read/write/remove, JSON.parse guarded, never throws) and src/supervisor/plan-escalation.ts (a second marker precedent). New marker module (e.g. src/supervisor/implement-blocked-marker.ts) or add to an existing markers module. Write from the blocked terminal seam in src/supervisor/loop.ts (US-004); clear on the next implement dispatch for that issue in src/commands/sidecar.ts. Do NOT touch templates in this story (that is US-006)."
     },

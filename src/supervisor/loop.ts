@@ -52,6 +52,15 @@ import { formatReviewVerdictLine, formatWorkerReportSummary, type WorkerReport }
 import { buildResultDetail, validateOfficialDocsValidated } from './events.ts';
 import type { WorkerEventLogger, WorkerEventKind, WorkerEventDetail, TokensEventDetail, ReviewVerdictHandbackEventDetail, OutcomeSourceEventDetail, ContainerPreflightEventDetail } from './events.ts';
 import type { PreflightResult } from './preflight-container.ts';
+import type { ImplementBlockedMarker } from './implement-blocked-marker.ts';
+
+/**
+ * Params for the injectable implement-blocked marker writer (US-005, CAM-195,
+ * Defect 2). Omits `writtenAt`: the pure seam here stays clock-free, matching
+ * the PlanEscalationWriterParams precedent (the sidecar.ts production factory
+ * stamps `writtenAt`, not this module).
+ */
+export type ImplementBlockedWriterParams = Omit<ImplementBlockedMarker, 'writtenAt'>;
 
 // ---------------------------------------------------------------------------
 // Injected dependency types
@@ -387,6 +396,20 @@ export interface RunSupervisorOptions {
 	 * (default no-op). All existing tests that omit this dep pass unchanged.
 	 */
 	teardownWorkerPaneFn?: () => void;
+	/**
+	 * Write the durable implement-blocked marker (US-005, CAM-195, Defect 2).
+	 *
+	 * Called unconditionally inside finishTerminal whenever status === 'blocked'
+	 * AND the current PRD's issueNumber is known (writeImplementBlockedMarkerFn
+	 * is skipped when issueNumber was never read, e.g. prd.json was unreadable
+	 * on the very first iteration). Mirrors writeEscalationMarkerFn /
+	 * writePreflightFailedMarkerFn: the pure seam here stays clock-free, the
+	 * sidecar.ts production factory stamps `writtenAt` and persists via
+	 * writeImplementBlockedMarker (src/supervisor/implement-blocked-marker.ts).
+	 *
+	 * Optional: when absent (default no-op) the loop is byte-for-byte unchanged.
+	 */
+	writeImplementBlockedMarkerFn?: (params: ImplementBlockedWriterParams) => void;
 	/**
 	 * Container preflight seam (US-005 / B-1 observe-only; B-2 fail-closed).
 	 *
@@ -734,6 +757,19 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	// Default no-op so callers that omit the dep are byte-for-byte unchanged.
 	const teardownWorkerPaneFn = opts.teardownWorkerPaneFn ?? (() => {});
 
+	// US-005 (CAM-195, Defect 2): default no-op so callers that omit the dep
+	// are byte-for-byte unchanged.
+	const writeImplementBlockedMarkerFn = opts.writeImplementBlockedMarkerFn ?? ((): void => {});
+
+	// US-005 (CAM-195, Defect 2): tracks the current PRD's issueNumber so
+	// finishTerminal can stamp the durable implement-blocked marker even though
+	// it is defined before the per-iteration `const prd = readPrd()` read.
+	// Set right after every successful (non-null) prd read; retains the last
+	// known value across iterations, so a later unreadable-prd blocked terminal
+	// still carries the most recent issueId. undefined only when no prd has
+	// ever been read successfully (marker write is skipped in that case).
+	let lastIssueNumber: number | undefined;
+
 	// Emit a terminal-exit progress notification before every return path. No-op
 	// when onProgress is absent (backward compatible).
 	const notifyTerminal = (status: SupervisorStatus): void => {
@@ -769,6 +805,18 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 		emit('sidecar-exit', lastIterProgress.currentStoryId, 'supervisor', {
 			reason: TERMINAL_REASON[status],
 		});
+		// US-005 (CAM-195, Defect 2): durable implement-blocked marker, written
+		// only on the 'blocked' terminal and only once an issueId is known (see
+		// lastIssueNumber doc above). reason falls back to the generic
+		// TERMINAL_REASON lookup when no worker outcome ever carried a detail
+		// string (e.g. blocked-no-implementable, an unreadable prd.json).
+		if (status === 'blocked' && lastIssueNumber !== undefined) {
+			writeImplementBlockedMarkerFn({
+				issueId: String(lastIssueNumber),
+				story: lastIterProgress.currentStoryId ?? null,
+				reason: lastOutcome?.detail ?? TERMINAL_REASON.blocked,
+			});
+		}
 		teardownWorkerPaneFn();
 	};
 
@@ -820,6 +868,10 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			finishTerminal('blocked');
 			return { status: 'blocked', iterations, lastOutcome };
 		}
+
+		// US-005 (CAM-195, Defect 2): capture the current issueId for the durable
+		// implement-blocked marker (see lastIssueNumber doc above finishTerminal).
+		lastIssueNumber = prd.issueNumber;
 
 		// --- Decide next action ---
 		const action = decideNextAction(prd);

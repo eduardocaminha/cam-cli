@@ -32,9 +32,15 @@ import {
 	makeReadLoopPhase,
 	makeHasPendingStories,
 	makeSetPhaseFn,
+	clearImplementBlockedMarkerForCurrentIssue,
 } from '../../src/commands/sidecar.ts';
 import { parseStateFile } from '../../src/commands/status.ts';
 import { MERGE_WATCH_FILENAME } from '../../src/release/merge-watch.ts';
+import {
+	IMPLEMENT_BLOCKED_FILENAME,
+	writeImplementBlockedMarker,
+	readImplementBlockedMarker,
+} from '../../src/supervisor/implement-blocked-marker.ts';
 import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
 
 // ---------------------------------------------------------------------------
@@ -301,5 +307,124 @@ describe('runSidecarLoop wiring: rearmImplementingFn (AC3)', () => {
 		await runTicks(opts);
 
 		expect(rearmCalledOnFirstTick).toBe(true);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-005 (CAM-195, Defect 2): implement-blocked marker cleared on rearm
+// ---------------------------------------------------------------------------
+
+describe('US-005: durable implement-blocked marker cleared on rearm (CAM-195, Defect 2)', () => {
+	test('AC2: a rearm (AC1 scenario) clears a matching-issue implement-blocked marker', () => {
+		const { cwd, claudeDir } = makeTmpProject();
+		const prdPath = join(cwd, 'prd.json');
+		writePrd(prdPath, { ...IN_FLIGHT_PRD, issueNumber: 195 });
+		makeSetPhaseFn(claudeDir, cwd)('implementing');
+
+		const markerPath = join(claudeDir, IMPLEMENT_BLOCKED_FILENAME);
+		writeImplementBlockedMarker(markerPath, {
+			issueId: '195',
+			story: 'US-001',
+			reason: 'timeout',
+			writtenAt: '2026-07-11T00:00:00Z',
+		});
+
+		const rearm = makeProductionRearmImplementingFn(
+			claudeDir,
+			cwd,
+			makeHasPendingStories(prdPath),
+			makeReadLoopPhase(claudeDir),
+		);
+
+		expect(rearm()).toBe(true);
+		expect(existsSync(markerPath)).toBe(false);
+	});
+
+	test('a refused rearm (phase:idle) does NOT clear the marker', () => {
+		const { cwd, claudeDir } = makeTmpProject();
+		const prdPath = join(cwd, 'prd.json');
+		writePrd(prdPath, { ...IN_FLIGHT_PRD, issueNumber: 195 });
+		makeSetPhaseFn(claudeDir, cwd)('idle');
+
+		const markerPath = join(claudeDir, IMPLEMENT_BLOCKED_FILENAME);
+		writeImplementBlockedMarker(markerPath, {
+			issueId: '195',
+			story: 'US-001',
+			reason: 'timeout',
+			writtenAt: '2026-07-11T00:00:00Z',
+		});
+
+		const rearm = makeProductionRearmImplementingFn(
+			claudeDir,
+			cwd,
+			makeHasPendingStories(prdPath),
+			makeReadLoopPhase(claudeDir),
+		);
+
+		expect(rearm()).toBe(false);
+		expect(existsSync(markerPath)).toBe(true);
+	});
+});
+
+describe('clearImplementBlockedMarkerForCurrentIssue', () => {
+	test('removes the marker when its issueId matches the current prd.json issueNumber', () => {
+		const { cwd, claudeDir } = makeTmpProject();
+		const prdPath = join(cwd, 'prd.json');
+		writePrd(prdPath, { ...IN_FLIGHT_PRD, issueNumber: 195 });
+		const markerPath = join(claudeDir, IMPLEMENT_BLOCKED_FILENAME);
+		writeImplementBlockedMarker(markerPath, {
+			issueId: '195',
+			story: 'US-001',
+			reason: 'timeout',
+			writtenAt: '2026-07-11T00:00:00Z',
+		});
+
+		clearImplementBlockedMarkerForCurrentIssue(markerPath, prdPath);
+
+		expect(existsSync(markerPath)).toBe(false);
+	});
+
+	test('leaves a marker referencing a DIFFERENT issueId untouched', () => {
+		const { cwd, claudeDir } = makeTmpProject();
+		const prdPath = join(cwd, 'prd.json');
+		writePrd(prdPath, { ...IN_FLIGHT_PRD, issueNumber: 195 });
+		const markerPath = join(claudeDir, IMPLEMENT_BLOCKED_FILENAME);
+		const stale = {
+			issueId: '193',
+			story: 'US-002',
+			reason: 'timeout',
+			writtenAt: '2026-07-10T00:00:00Z',
+		};
+		writeImplementBlockedMarker(markerPath, stale);
+
+		clearImplementBlockedMarkerForCurrentIssue(markerPath, prdPath);
+
+		expect(readImplementBlockedMarker(markerPath)).toEqual(stale);
+	});
+
+	test('is a no-op when no marker is present', () => {
+		const { cwd, claudeDir } = makeTmpProject();
+		const prdPath = join(cwd, 'prd.json');
+		writePrd(prdPath, { ...IN_FLIGHT_PRD, issueNumber: 195 });
+		const markerPath = join(claudeDir, IMPLEMENT_BLOCKED_FILENAME);
+
+		expect(() => clearImplementBlockedMarkerForCurrentIssue(markerPath, prdPath)).not.toThrow();
+		expect(existsSync(markerPath)).toBe(false);
+	});
+
+	test('best-effort: clears unconditionally when prd.json is unreadable (nothing to compare against)', () => {
+		const { claudeDir } = makeTmpProject();
+		const prdPath = join(claudeDir, 'nonexistent-prd.json');
+		const markerPath = join(claudeDir, IMPLEMENT_BLOCKED_FILENAME);
+		writeImplementBlockedMarker(markerPath, {
+			issueId: '195',
+			story: 'US-001',
+			reason: 'timeout',
+			writtenAt: '2026-07-11T00:00:00Z',
+		});
+
+		clearImplementBlockedMarkerForCurrentIssue(markerPath, prdPath);
+
+		expect(existsSync(markerPath)).toBe(false);
 	});
 });

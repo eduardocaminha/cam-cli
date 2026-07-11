@@ -46,6 +46,7 @@ import { hasSession, projectSessionName, getOrchPaneId, paneCountMutex, readWork
 import { runPlanPhaseWithReplan, runPostAuditAction, type PlanPhaseResult, type PostAuditActionResult, type PlanEscalationWriterParams } from '../supervisor/plan-runner.ts';
 import { writePlanEscalatedMarker, removePlanEscalatedMarker, PLAN_ESCALATED_FILENAME, type PlanEscalatedMarker } from '../supervisor/plan-escalation.ts';
 import { writePlanPreflightFailedMarker, removePlanPreflightFailedMarker, PLAN_PREFLIGHT_FAILED_FILENAME, type PlanPreflightFailedMarker, type PlanPreflightFailedWriterParams } from '../supervisor/plan-preflight-marker.ts';
+import { readImplementBlockedMarker, removeImplementBlockedMarker, IMPLEMENT_BLOCKED_FILENAME } from '../supervisor/implement-blocked-marker.ts';
 import { makeReadPlanVerdict, PLAN_VERDICT_REPORT_FILENAME } from '../supervisor/plan-verdict-report.ts';
 import { runPlanPreflight, type PlanPreflightSpawnFn } from '../supervisor/plan-preflight.ts';
 import { readMergeMode, readMetaLoop, readPlanApproval, readResendConfig, readWorkerIsolation, type WorkerIsolation } from '../config/models.ts';
@@ -490,6 +491,11 @@ export function makeHasPendingStories(prdPath: string): () => boolean {
  *
  * Returns true when it re-armed this tick (the caller should skip the rest of
  * the idle branch and let the next tick pick up active:true), false otherwise.
+ *
+ * US-005 (CAM-195, Defect 2): re-arming IS "the next implement dispatch for
+ * that issue" (AC2) -- so a rearm also clears the durable implement-blocked
+ * marker via clearImplementBlockedMarkerForCurrentIssue, keyed on the
+ * CURRENT prd.json's issueNumber.
  */
 export function makeProductionRearmImplementingFn(
 	claudeDir: string,
@@ -498,6 +504,8 @@ export function makeProductionRearmImplementingFn(
 	readLoopPhaseFn: () => LoopPhase | undefined,
 ): () => boolean {
 	const setPhase = makeSetPhaseFn(claudeDir, cwd);
+	const markerPath = join(claudeDir, IMPLEMENT_BLOCKED_FILENAME);
+	const prdPath = join(cwd, 'scripts/cam/prd.json');
 	return (): boolean => {
 		const decision = evaluateRearmPreconditions({
 			phase: readLoopPhaseFn(),
@@ -506,8 +514,39 @@ export function makeProductionRearmImplementingFn(
 		});
 		if (!decision.rearm) return false;
 		setPhase('implementing');
+		clearImplementBlockedMarkerForCurrentIssue(markerPath, prdPath);
 		return true;
 	};
+}
+
+/**
+ * Clear the durable implement-blocked marker when it references the CURRENT
+ * PRD's issue (US-005, CAM-195, Defect 2).
+ *
+ * Removes the marker only when:
+ *   - it can be read (readImplementBlockedMarker returns non-null), AND
+ *   - either the current prd.json's issueNumber cannot be determined
+ *     (missing / unreadable prd.json: best-effort, nothing to compare
+ *     against), OR it matches the marker's issueId (stringified).
+ *
+ * A marker referencing a DIFFERENT issueId is left untouched (mirrors the
+ * "caller's responsibility to check issueId match first" contract documented
+ * on removeShipStalledMarker / removePlanEscalatedMarker). Never throws: the
+ * prd.json read is try/catch best-effort and removeImplementBlockedMarker
+ * itself never throws.
+ */
+export function clearImplementBlockedMarkerForCurrentIssue(markerPath: string, prdPath: string): void {
+	const marker = readImplementBlockedMarker(markerPath);
+	if (marker === null) return;
+	let issueNumber: unknown;
+	try {
+		const prdRaw = JSON.parse(readFileSync(prdPath, 'utf8')) as { issueNumber?: unknown };
+		issueNumber = prdRaw.issueNumber;
+	} catch {
+		// best-effort: prd.json unreadable, fall through and clear unconditionally
+	}
+	if (typeof issueNumber === 'number' && String(issueNumber) !== marker.issueId) return;
+	removeImplementBlockedMarker(markerPath);
 }
 
 // ---------------------------------------------------------------------------
