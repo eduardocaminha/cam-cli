@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.134.0] - 2026-07-11
+
+### Added
+
+- US-002 - Auditor audits the provided record only; identity/collision checks use git refs, prior-art is git-log and non-blocking
+- US-001 - Embed the resolved issue record + derived branch into the auditor spawn payload
+
 ## [0.133.0] - 2026-07-11
 
 ### Added

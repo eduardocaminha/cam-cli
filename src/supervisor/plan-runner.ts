@@ -128,9 +128,62 @@ export function buildReplanPlannerTaskPrompt(issueId: string, findings: PlanVerd
 	);
 }
 
-/** Default auditor task prompt (can be overridden via opts.auditorTaskPrompt). */
-export const DEFAULT_AUDITOR_TASK_PROMPT =
-	'Audit the generated plan per your AGENT.md. Write your verdict to scripts/cam/plan-verdict-report.json.';
+/**
+ * Parse the numeric suffix from an issue id like "CAM-156" -> 156. Mirrors
+ * numericSuffix in src/commands/plan.ts (kept local: a one-line parse does
+ * not warrant a cross-module import). Returns NaN when the id carries no
+ * numeric suffix.
+ */
+function issueIdNumericSuffix(issueId: string): number {
+	const part = issueId.split('-').at(-1);
+	if (part === undefined) return NaN;
+	const n = Number(part);
+	return Number.isFinite(n) ? n : NaN;
+}
+
+/**
+ * Derive the auditor-facing branch name from the resolved issue's id suffix
+ * (US-001, CAM-273, AC2), reusing deriveBranchName so the SAME cam/issue-<N>
+ * rule (ADR-0016) governs here as it does on the post-audit git-branch path.
+ * Never a planner-authored slug. Returns null when issue.id carries no
+ * numeric suffix.
+ */
+export function deriveBranchNameFromIssueId(issueId: string): string | null {
+	const suffix = issueIdNumericSuffix(issueId);
+	return deriveBranchName(Number.isFinite(suffix) ? suffix : null);
+}
+
+/**
+ * Build a record-bearing auditor task prompt that embeds the already-resolved
+ * issue record (id, title, description, spec.acceptanceCriteria) plus the
+ * code-derived branchName verbatim, so the auditor never has to re-resolve
+ * which issue/branch the PRD targets against any backend (US-001, CAM-273,
+ * ADR-0027: the CAM-156 false-BLOCK was caused by the auditor re-deriving
+ * identity and matching a coincident GitHub PR number).
+ *
+ * Pure helper exported for unit testing. issue.spec?.acceptanceCriteria is
+ * optional (guarded per noUncheckedIndexedAccess); an absent/empty spec
+ * renders '(none provided)' rather than the literal string 'undefined'.
+ */
+export function buildAuditorTaskPrompt(issue: IssueEntry, branchName: string): string {
+	const acceptanceCriteria = issue.spec?.acceptanceCriteria ?? [];
+	const acLines =
+		acceptanceCriteria.length > 0
+			? acceptanceCriteria.map((criterion, index) => `${index + 1}. ${criterion}`).join('\n')
+			: '(none provided)';
+	return (
+		'Audit the generated plan per your AGENT.md. ' +
+		'The issue this plan targets has already been resolved by deterministic code; ' +
+		'use this record verbatim and do NOT re-resolve issue/PR identity against any backend ' +
+		'(e.g. no gh issue/PR lookups):\n' +
+		`Issue ID: ${issue.id}\n` +
+		`Title: ${issue.title}\n` +
+		`Description: ${issue.description ?? '(none provided)'}\n` +
+		`Branch: ${branchName}\n` +
+		`Acceptance Criteria:\n${acLines}\n` +
+		'Write your verdict to scripts/cam/plan-verdict-report.json.'
+	);
+}
 
 /** Default polling interval between pane/file checks (ms). */
 export const DEFAULT_PLAN_POLL_INTERVAL_MS = 5_000;
@@ -333,7 +386,12 @@ export interface RunPlanPhaseOptions {
 	/** Task prompt sent to the planner. Defaults to DEFAULT_PLANNER_TASK_PROMPT. */
 	plannerTaskPrompt?: string;
 
-	/** Task prompt sent to the auditor. Defaults to DEFAULT_AUDITOR_TASK_PROMPT. */
+	/**
+	 * Task prompt sent to the auditor. Defaults to a record-bearing prompt
+	 * built via buildAuditorTaskPrompt(issue, branchName) from the selected
+	 * IssueEntry and its code-derived branch name (US-001, CAM-273, ADR-0027).
+	 * Overriding this is honored for backward compat with existing callers/tests.
+	 */
 	auditorTaskPrompt?: string;
 
 	/** Polling interval in ms. Default: DEFAULT_PLAN_POLL_INTERVAL_MS (5s). */
@@ -707,7 +765,12 @@ function runPlanWorkerSequence(
 		ensureWorkerPane, claudeDir, logEvent, readPlannerReportFn, readPlanVerdictFn,
 	} = opts;
 	const permissionMode = opts.permissionMode ?? 'bypassPermissions';
-	const auditorTaskPrompt = opts.auditorTaskPrompt ?? DEFAULT_AUDITOR_TASK_PROMPT;
+	// US-001, CAM-273 (ADR-0027): default to a record-bearing prompt built from
+	// the already-resolved issue + its code-derived branch name, rather than
+	// the static prior default. opts.auditorTaskPrompt override still wins.
+	const auditorTaskPrompt =
+		opts.auditorTaskPrompt ??
+		buildAuditorTaskPrompt(issue, deriveBranchNameFromIssueId(issue.id) ?? 'cam/issue-unknown');
 	const pollIntervalMs = opts.pollIntervalMs ?? DEFAULT_PLAN_POLL_INTERVAL_MS;
 	const plannerTimeoutMs = opts.plannerTimeoutMs ?? DEFAULT_PLAN_TIMEOUT_MS;
 	const auditorTimeoutMs = opts.auditorTimeoutMs ?? DEFAULT_PLAN_TIMEOUT_MS;

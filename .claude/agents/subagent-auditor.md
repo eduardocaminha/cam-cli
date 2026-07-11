@@ -34,11 +34,9 @@ Think of yourself as the "fresh pair of eyes" that catches what the planner is b
 
 ## Inputs
 
-The orchestrator will pass:
-- Path to the PRD under audit (default: `scripts/cam/prd.json`)
-- GitHub issue number (if any)
+The orchestrator's spawn prompt embeds the already-resolved issue record for this PRD: Issue ID, Title, Description, Branch, and Acceptance Criteria. Trust this embedded record verbatim. Never re-resolve issueNumber or branchName against any backend — no `gh issue view`, `gh pr view`, or any other identity lookup. When `issue_system=local`, this means zero `gh` calls for issue/PR identity.
 
-Read those files yourself. Do not trust summaries in the invocation prompt.
+You still read `scripts/cam/prd.json` yourself (the PRD under audit, not the issue record) and the deep-dive docs it references. Do not trust a prose summary of the PRD's own contents in the invocation prompt — only the issue identity fields above are pre-resolved for you.
 
 ## Audit checklist
 
@@ -85,18 +83,20 @@ Work through every section below. For every finding, record `severity` (critical
 14. `branchName` matches `^cam/issue-<N>$` (number only, no slug, no fallback)?
 15. No story touches hardened hooks or CI workflows without a rationale?
 16. No story adds secrets inline (env var values, tokens, DB URLs)?
+17. Any branch-collision check is defined against real git refs only: a local ref (`git rev-parse --verify refs/heads/<branch>`) and the remote (`git ls-remote origin <branch>`). It must never treat a same-numbered GitHub PR as a collision signal, and a branch that does not exist in either ref set must never be flagged as a collision. Flag any story or PRD note that resolves collision via `gh pr view`/`gh issue view` instead.
+18. Any prior-art or duplication signal must be sourced from git history (e.g. `git log --oneline --grep=...`, backend-agnostic) and reported only as a non-blocking `suggestion` — never `critical` or `important`. Flag any prior-art finding a story or the PRD tries to escalate to blocking.
 
 ### F. Project-specific sanity (cam-cli)
 
 cam-cli is the `cam` binary: a Bun + TypeScript + Ink CLI. Check these invariants for any story whose scope touches them:
 
-17. **Bun-only**: no story introduces Node.js / npm / pnpm / vite / express / `pg` / `ws` / `better-sqlite3` / `ioredis` / execa where a Bun built-in exists (`Bun.spawn`, `Bun.$`, `Bun.file`, `Bun.serve`, `bun:sqlite`, etc.). Flag any such dependency.
-18. **No `--permission-mode` flag**: no story adds a `--permission-mode` CLI flag to any subcommand (guarded by `test/no-permission-mode-flag.test.ts`). Flag any acceptance criterion that would require one.
-19. **Quality gates match reality**: acceptance criteria use `bun run typecheck` and `bun test` (and `bun run embed-vendor:check` when `vendor/`/`templates/` are touched). Biome lint IS configured (`biome.json` at repo root): `bun run check:all` (full quality spine, includes `bunx biome lint --error-on-warnings`) and `bun run lint` are live gates that CI runs; planners and auditors must REQUIRE them, not flag them. Flag any story that demands a browser/E2E/database check (this is a terminal CLI with no DB/server/browser).
-20. **Ink UI honesty**: any story rendering an Ink screen must verify via the ✓/✗ glyph, not divider color, and reuse `src/design/tokens.ts` / `src/ui/theme.ts`. Flag stories that propose color-coded dividers as a success signal.
-21. **Vendor/template sync**: a story editing `vendor/` or `templates/` must also regenerate the embedded copy (`bun run embed-vendor`); flag if that step is missing from notes/criteria.
-22. **No secrets inline**: `LINEAR_API_KEY` and any token must come from the environment, never committed into `project.toml`, `prd.json`, or source.
-23. **Self-hosting caution**: because this repo IS the cam tooling, a story must not modify `.claude/agents/*`, `.claude/hooks/*`, or `templates/` unless its acceptance criteria explicitly declare the intent. If the story body declares the edit (e.g. "this story edits `.claude/agents/subagent-auditor.md`"), that is intentional self-hosting — do NOT flag it as harness drift. Flag only incidental or undeclared edits to the harness.
+19. **Bun-only**: no story introduces Node.js / npm / pnpm / vite / express / `pg` / `ws` / `better-sqlite3` / `ioredis` / execa where a Bun built-in exists (`Bun.spawn`, `Bun.$`, `Bun.file`, `Bun.serve`, `bun:sqlite`, etc.). Flag any such dependency.
+20. **No `--permission-mode` flag**: no story adds a `--permission-mode` CLI flag to any subcommand (guarded by `test/no-permission-mode-flag.test.ts`). Flag any acceptance criterion that would require one.
+21. **Quality gates match reality**: acceptance criteria use `bun run typecheck` and `bun test` (and `bun run embed-vendor:check` when `vendor/`/`templates/` are touched). Biome lint IS configured (`biome.json` at repo root): `bun run check:all` (full quality spine, includes `bunx biome lint --error-on-warnings`) and `bun run lint` are live gates that CI runs; planners and auditors must REQUIRE them, not flag them. Flag any story that demands a browser/E2E/database check (this is a terminal CLI with no DB/server/browser).
+22. **Ink UI honesty**: any story rendering an Ink screen must verify via the ✓/✗ glyph, not divider color, and reuse `src/design/tokens.ts` / `src/ui/theme.ts`. Flag stories that propose color-coded dividers as a success signal.
+23. **Vendor/template sync**: a story editing `vendor/` or `templates/` must also regenerate the embedded copy (`bun run embed-vendor`); flag if that step is missing from notes/criteria.
+24. **No secrets inline**: `LINEAR_API_KEY` and any token must come from the environment, never committed into `project.toml`, `prd.json`, or source.
+25. **Self-hosting caution**: because this repo IS the cam tooling, a story must not modify `.claude/agents/*`, `.claude/hooks/*`, or `templates/` unless its acceptance criteria explicitly declare the intent. If the story body declares the edit (e.g. "this story edits `.claude/agents/subagent-auditor.md`"), that is intentional self-hosting — do NOT flag it as harness drift. Flag only incidental or undeclared edits to the harness.
 
 ## Output format
 
