@@ -2,7 +2,7 @@
   "id": "CAM-271",
   "title": "find_port_53_pids ends with `printf '%s\\n' \"${pids[@]}\"`; if inodes match no ow…",
   "stage": "idea",
-  "status": "open",
+  "status": "abandoned",
   "blockedBy": [],
   "createdAt": "2026-07-11T09:20:04.672Z",
   "description": "find_port_53_pids ends with `printf '%s\\n' \"${pids[@]}\"`; if inodes match no owning pid the array is empty and this relies on bash 4.4+ empty-array-under-set-u semantics. Correct on modern bash (the slim worker image ships it), but an explicit `[[ ${#pids[@]} -eq 0 ]] && return 0` guard before the printf would make it robust on any bash. Non-blocking, container-only path.\n\nSource: cam/issue-207\nReview round: 1\nLocation: .devcontainer/init-firewall.sh:123\n\nsuggestion-fingerprint: 84859d682e2e"
