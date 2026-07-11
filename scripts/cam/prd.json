@@ -53,7 +53,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Depends on US-001 (shared marker module src/supervisor/sidecar-stalled.ts). sidecarAlive() is NEW: .cam-sidecar.pid infra exists (SIDECAR_PID_FILE, readSidecarPid, sidecarPidAlive) but only watcherAlive() composite exists (sidecar-pid.ts:153-157) — add sidecarAlive() the same way. Model the watcher on src/commands/orch-recycle-watch.ts (injectable seams, while(true) poll, Bun.sleepSync, no top-level HELP entry). Spawn wiring: src/commands/run.ts spawnWatcherDefault (~559) / spawn block (~709-713) and writeWatcherPid pattern — use a distinct pid file for the liveness watcher. Cleanup: src/commands/stop.ts (~360-375 remover wiring). The respawn bound + surface-on-exhaustion is the hot-loop guard, mirroring the orchestrator wrapper's respawn cap (gotcha). Register the internal subcommand in index.ts dispatch. no-permission-mode-flag.test.ts scans src/commands/ — keep the file clean."
     },

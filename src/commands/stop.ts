@@ -35,6 +35,8 @@ import {
 	sidecarPidAlive,
 	readWatcherPid,
 	removeWatcherPid,
+	readSidecarLivenessWatcherPid,
+	removeSidecarLivenessWatcherPid,
 } from '../supervisor/sidecar-pid.ts';
 import { SUPERVISOR_LOCK_FILE } from '../supervisor/lock.ts';
 import { WORKER_REPORT_FILENAME } from '../supervisor/worker-report.ts';
@@ -151,6 +153,21 @@ export interface StopOptions {
 	 * When undefined, defaults to `removeWatcherPid` from sidecar-pid.ts.
 	 */
 	watcherPidRemover?: (claudeDir: string) => void;
+	/**
+	 * Override the sidecar-liveness watcher pid reader for tests.
+	 * When undefined, defaults to `readSidecarLivenessWatcherPid` from sidecar-pid.ts.
+	 */
+	sidecarLivenessWatcherPidReader?: (claudeDir: string) => number | null;
+	/**
+	 * Override the signal-0 liveness probe for the sidecar-liveness watcher pid.
+	 * When undefined, defaults to `sidecarPidAlive` (same probe, generic).
+	 */
+	sidecarLivenessWatcherPidAliveFn?: (pid: number) => boolean;
+	/**
+	 * Override the sidecar-liveness watcher pid-file remover for tests.
+	 * When undefined, defaults to `removeSidecarLivenessWatcherPid` from sidecar-pid.ts.
+	 */
+	sidecarLivenessWatcherPidRemover?: (claudeDir: string) => void;
 }
 
 export interface StopReport {
@@ -202,6 +219,14 @@ export interface StopReport {
 	 * regardless of liveness.
 	 */
 	watcherKilled: boolean;
+	/**
+	 * Was the sidecar-liveness watcher process (from
+	 * .claude/.cam-sidecar-liveness-watcher.pid) sent SIGTERM?
+	 * False when the pid file is absent, the pid is dead (signal-0 fails),
+	 * or the kill call threw. The pid file is always removed when present,
+	 * regardless of liveness.
+	 */
+	sidecarLivenessWatcherKilled: boolean;
 }
 
 // --- Helpers ---------------------------------------------------------------
@@ -365,6 +390,12 @@ export function performStop(options: StopOptions = {}): StopReport {
 	const watcherPidReaderImpl = options.watcherPidReader ?? readWatcherPid;
 	const watcherPidAliveImpl = options.watcherPidAliveFn ?? sidecarPidAlive;
 	const watcherPidRemoverImpl = options.watcherPidRemover ?? removeWatcherPid;
+	const sidecarLivenessWatcherPidReaderImpl =
+		options.sidecarLivenessWatcherPidReader ?? readSidecarLivenessWatcherPid;
+	const sidecarLivenessWatcherPidAliveImpl =
+		options.sidecarLivenessWatcherPidAliveFn ?? sidecarPidAlive;
+	const sidecarLivenessWatcherPidRemoverImpl =
+		options.sidecarLivenessWatcherPidRemover ?? removeSidecarLivenessWatcherPid;
 
 	const session = projectSessionName(cwd);
 	const claudeDir = join(cwd, '.claude');
@@ -380,6 +411,7 @@ export function performStop(options: StopOptions = {}): StopReport {
 		markersRemoved: [],
 		fallbackSidecarKilled: false,
 		watcherKilled: false,
+		sidecarLivenessWatcherKilled: false,
 	};
 
 	// 1. Kill the supervisor PID from the state file (before we remove it).
@@ -441,6 +473,26 @@ export function performStop(options: StopOptions = {}): StopReport {
 		}
 		// Always remove the pid file (idempotent whether alive or dead).
 		watcherPidRemoverImpl(claudeDir);
+	}
+
+	// 1e. Kill the sidecar-liveness watcher from
+	//     .claude/.cam-sidecar-liveness-watcher.pid (US-002, CAM-207).
+	//     Mirrors step 1d: probe liveness (signal-0), SIGTERM only when alive,
+	//     always remove the pid file (idempotent). A no-op in host-mode
+	//     projects (the pid file was never written by `cam run`).
+	const sidecarLivenessWatcherPid = sidecarLivenessWatcherPidReaderImpl(claudeDir);
+	if (sidecarLivenessWatcherPid !== null) {
+		const alive = sidecarLivenessWatcherPidAliveImpl(sidecarLivenessWatcherPid);
+		if (alive) {
+			try {
+				killFn(sidecarLivenessWatcherPid, 'SIGTERM');
+				report.sidecarLivenessWatcherKilled = true;
+			} catch {
+				// kill threw — pid may have died in the instant between probe and kill
+			}
+		}
+		// Always remove the pid file (idempotent whether alive or dead).
+		sidecarLivenessWatcherPidRemoverImpl(claudeDir);
 	}
 
 	// 2. Remove the loop state file.
@@ -546,6 +598,10 @@ export function runStop(options: StopOptions = {}): number {
 		emitOk('Sent SIGTERM to recycle watcher process');
 	}
 
+	if (report.sidecarLivenessWatcherKilled) {
+		emitOk('Sent SIGTERM to sidecar-liveness watcher process');
+	}
+
 	if (report.markersRemoved.length > 0) {
 		emitOk(`Removed ${report.markersRemoved.length} marker file(s): ${report.markersRemoved.join(', ')}`);
 	}
@@ -572,7 +628,7 @@ export function runStop(options: StopOptions = {}): number {
 	// success is signaled by the accent ✓ glyph on the content line (`emitOk`),
 	// matching how the Ink screens do it.
 	emitSectionHeading('Done');
-	if (report.stateFileRemoved || report.tmuxKilled || report.supervisorKilled || report.sidecarKilled || report.fallbackSidecarKilled || report.watcherKilled || report.markersRemoved.length > 0) {
+	if (report.stateFileRemoved || report.tmuxKilled || report.supervisorKilled || report.sidecarKilled || report.fallbackSidecarKilled || report.watcherKilled || report.sidecarLivenessWatcherKilled || report.markersRemoved.length > 0) {
 		emitOk('Loop stopped');
 	} else {
 		emitMutedHint('Nothing to clean — no active loop or stale state');

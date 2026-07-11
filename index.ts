@@ -74,6 +74,7 @@ import { runConfig } from './src/commands/config.ts';
 import { runRetryMonitor, parseRetryMonitorArgs, RETRY_MONITOR_HELP } from './src/commands/retry-monitor.ts';
 import { runSidecar } from './src/commands/sidecar.ts';
 import { runOrchRecycleWatch } from './src/commands/orch-recycle-watch.ts';
+import { runSidecarLivenessWatch } from './src/commands/sidecar-liveness-watch.ts';
 import { runTag } from './src/commands/tag.ts';
 import { ORCH_RECYCLE_MARKER } from './src/tmux/session.ts';
 import { watcherAlive } from './src/supervisor/sidecar-pid.ts';
@@ -2256,6 +2257,17 @@ async function main(argv: string[]): Promise<number> {
 		// Spawned as a detached background process by cam run alongside cam sidecar.
 		case 'orch-recycle-watch': {
 			await runOrchRecycleWatch();
+			return 0;
+		}
+		// Internal subcommand — not listed in top-level HELP.
+		// Polls sidecarAlive() to detect a dead container sidecar and either
+		// respawns it (bounded, with backoff) or, on respawn exhaustion, writes
+		// the shared .cam-sidecar-stalled.json marker (reason 'sidecar-died')
+		// and stops respawning (escalate, never hot-loop).
+		// Spawned as a background process by cam run, ONLY in container
+		// worker_isolation mode (no-op in host mode; see run.ts).
+		case 'sidecar-liveness-watch': {
+			await runSidecarLivenessWatch();
 			return 0;
 		}
 		// Internal subcommand — not listed in top-level HELP.

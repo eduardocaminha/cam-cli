@@ -1,27 +1,28 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Durable sidecar-stalled marker written on firewall-init failure and surfaced at orchestrator boot"
+    "id": "US-002",
+    "title": "Sidecar-liveness watcher with sidecarAlive() composite, bounded respawn, and escalate-on-exhaustion"
   },
   "branchName": "cam/issue-207",
-  "timestamp": "2026-07-11T08:35:00Z",
+  "timestamp": "2026-07-11T22:15:00Z",
   "createdFiles": [
-    "src/supervisor/sidecar-stalled.ts",
-    "test/supervisor/sidecar-stalled.test.ts"
+    "src/commands/sidecar-liveness-watch.ts",
+    "test/commands/sidecar-liveness-watch.test.ts",
+    "test/supervisor/sidecar-pid.test.ts",
+    "test/stop-sidecar-liveness-watcher-kill.test.ts"
   ],
   "modifiedFiles": [
-    "src/commands/sidecar.ts",
-    "templates/agents/subagent-orchestrator.md",
-    "templates/.gitignore",
-    ".gitignore",
-    "src/vendor/_generated.ts",
-    "test/commands/sidecar-firewall.test.ts",
+    "src/supervisor/sidecar-pid.ts",
+    "src/commands/run.ts",
+    "src/commands/stop.ts",
+    "index.ts",
+    "test/run.test.ts",
     "scripts/file-size-budget.json",
     "scripts/cam/patterns.md",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 shipped the shared .cam-sidecar-stalled.json marker module (src/supervisor/sidecar-stalled.ts: SIDECAR_STALLED_FILENAME, SidecarStalledMarker{reason,detail,writtenAt}, read/write/remove never-throw helpers) plus the firewall-init-failed producer wired into runContainerEnsureGuard (src/commands/sidecar.ts): write on FirewallError catch, remove on every healthy-boot return path (host-mode no-op AND container-mode ensure success), since the whole read+write+remove lifecycle lives inside that single boot-time-only guard function (see patterns.md 2026-07-11 bullet on this). US-002 (sidecar-died producer + liveness watcher) reuses this SAME marker file/module -- do NOT create a second marker file; just write with reason:'sidecar-died' from the new watcher. Orchestrator surfacing (boot-read item 12 + opening-blocker '⚠ sidecar stalled: <reason> — <detail>' line, read-only, not deleted by the orchestrator) is already done in templates/agents/subagent-orchestrator.md and embedded via bun run embed-vendor -- US-002 does not need to touch that doc again unless the surfaced fields change shape.",
+  "nextStoryContext": "US-002 added the second producer for the shared .cam-sidecar-stalled.json marker (US-001's module, src/supervisor/sidecar-stalled.ts, unchanged): a new internal subcommand `cam sidecar-liveness-watch` (src/commands/sidecar-liveness-watch.ts) polls the new sidecarAlive(claudeDir) composite (src/supervisor/sidecar-pid.ts, mirrors watcherAlive) and, on a dead sidecar, attempts a bounded respawn (default 3 attempts, 2s backoff) via a pure handleOneTick(deps, state) tick helper; on exhaustion it writes the marker with reason:'sidecar-died' and latches an 'exhausted' state that self-clears the instant the sidecar is observed alive again (no special-case recovery detection needed). Spawn wiring lives in src/commands/run.ts, gated by the new exported shouldSpawnSidecarLivenessWatch(configPath?) helper (reads worker_isolation via readWorkerIsolation; container-only, no-op in host mode -- this repo is host mode per scripts/cam/project.toml, so the live spawn path is never exercised in dogfood, only unit-tested). Pid persistence/cleanup follows the existing SIDECAR_PID_FILE/WATCHER_PID_FILE pattern: new SIDECAR_LIVENESS_WATCHER_PID_FILE ('.cam-sidecar-liveness-watcher.pid') with write/read/remove/removeIfExists helpers, wired into run.ts's spawn+cleanup block and stop.ts's kill leg (new StopReport.sidecarLivenessWatcherKilled field). The subcommand is registered in index.ts's dispatch switch (case 'sidecar-liveness-watch') and does NOT register --permission-mode (verified: test/no-permission-mode-flag.test.ts still passes; that file only scans index.ts + behaviorally probes the *Args parsers, it does not scan src/commands/ directory contents despite the story notes' mention -- worth confirming with a repo-wide grep if a future story relies on that scan existing). No downstream story dependency is known yet for this marker's consumer side (US-001's boot-time orchestrator surfacing in templates/agents/subagent-orchestrator.md already reads BOTH reason values generically, so no further template change is needed unless the surfaced field shape changes).",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
