@@ -2318,3 +2318,84 @@ Cross-reference: `.devcontainer/init-firewall.sh` (firewall script),
 `.devcontainer/devcontainer.json` (capability grants, non-root user config),
 `src/supervisor/preflight-container.ts` (preflight helper),
 `docs/adr/0003-worker-isolation-boundary-dev-container.md` (architectural rationale).
+
+## (y) CAM-174: post-merge-stalled -- diverged local main after a squash-merge
+
+**Symptom**: the orchestrator boot greeting shows an opening blocker line:
+
+```
+⚠ post-merge stalled: PR #<prNumber> (merged, tag/prune/close pending) — <reason>
+```
+
+`.claude/.cam-post-merge-stalled.json` is present. The PR really did merge (this
+is not a ship failure); only the tail of the post-merge sequence
+(checkout/rebase/tag/prune/close) did not finish. The marker's `completedSteps`
+and `remainingSteps` fields name exactly where the sequence stopped, and
+`reason` is a short description (e.g. `pull-rebase-failed`).
+
+**Root cause**: an unpushed commit sat on local `main` before the feature
+branch squash-merged. The squash recreates that content at a new SHA, so local
+`main` diverges from `origin/main`, and the sidecar's post-merge `git pull
+--rebase` refuses to proceed non-interactively.
+
+**Recovery**:
+
+1. Inspect the divergence before touching anything:
+
+   ```bash
+   git checkout main
+   git fetch origin
+   git log --oneline main..origin/main    # commits on remote not in local
+   git log --oneline origin/main..main    # commits in local not on remote
+   ```
+
+2. If the local-only commits are fully subsumed by `origin/main` (the squash
+   merge already carries their content, so `origin/main..main` is empty of any
+   commit that introduces genuinely new, un-squashed work), it is safe to
+   discard the local divergence:
+
+   ```bash
+   git reset --hard origin/main
+   ```
+
+   Only run `git reset --hard origin/main` when you have confirmed
+   subsumption in step 1. This command is never run automatically by the
+   sidecar (ADR 0025): an automatic reset has no way to prove subsumption and
+   could silently drop genuine un-squashed work, so it remains an
+   operator-only step for the confirmed-subsumed case.
+
+   If step 1 instead shows local commits that are NOT reflected in
+   `origin/main`, do not reset; rebase or cherry-pick that work onto
+   `origin/main` first, the same way as the "Recovery: divergent local main"
+   entry above.
+
+3. Complete the remaining post-merge steps by hand, per the marker's
+   `remainingSteps`:
+
+   ```bash
+   # tag (if "tag" is still remaining)
+   cam tag
+
+   # prune (if "prune" is still remaining)
+   git branch -d <mergedBranch>
+   git push origin --delete <mergedBranch>
+
+   # close (if "close" is still remaining)
+   cam issue close <issueId>
+   ```
+
+4. Remove the marker once the remaining steps are done:
+
+   ```bash
+   rm .claude/.cam-post-merge-stalled.json
+   ```
+
+   The marker is not removed automatically by this manual recovery path; only
+   a fresh post-merge run for the same PR (via `updatePostMergeStalledMarker`)
+   overwrites or clears it in the normal flow.
+
+Cross-reference: `docs/adr/0025-post-merge-divergence-recovers-via-git-pull-rebase-never-automatic-reset-hard-a-merged-but-incomplete-post-merge-is-a-durable-stalled-state.md`
+(architectural rationale), `src/release/post-merge.ts` (step vocabulary:
+checkout/pull-rebase/tag/prune/close), `src/supervisor/post-merge-stalled-marker.ts`
+(marker read/write/remove), `templates/agents/subagent-orchestrator.md` (boot-read
+surfacing prose).
