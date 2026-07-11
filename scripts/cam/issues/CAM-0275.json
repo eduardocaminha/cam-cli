@@ -1,0 +1,12 @@
+{
+  "id": "CAM-275",
+  "title": "resolveEnsurePushed uses node:child_process spawnSync rather than Bun.spawn. Th…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-11T12:50:26.341Z",
+  "description": "resolveEnsurePushed uses node:child_process spawnSync rather than Bun.spawn. This matches the established convention of host.ts (every I/O adapter in this file uses spawnSync), so it is consistent and not a regression; noted only for eventual whole-file Bun migration.\n\nSource: cam/issue-156\nReview round: 1\nLocation: src/supervisor/host.ts:850\n\nsuggestion-fingerprint: 41e44feca1f9",
+  "derivedFrom": [
+    "CAM-156"
+  ]
+}
