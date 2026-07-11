@@ -1,9 +1,40 @@
 {
   "id": "CAM-174",
   "title": "Post-merge resilience: diverged local main from unpushed pre-branch commit leaves cycle half-done",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-04T01:03:49.777Z",
-  "description": "When an unpushed commit sits on local main before a feature branch squash-merges, the squash recreates that content at a new SHA and local main diverges from origin/main; the sidecar post-merge git pull then refuses (pull-failed), leaving the cycle half-done (consumes merge-watch, needs manual reset+close+tag+prune). Seen in CAM-152 post-merge. Harden the merge-watch/ship path to detect a diverged local main and either auto-recover (reset --hard origin/main when content is subsumed) or fail loudly with the runbook step, instead of silently wedging the cycle."
+  "description": "When an unpushed commit sits on local main before a feature branch squash-merges, the squash recreates that content at a new SHA and local main diverges from origin/main; the sidecar post-merge git pull then refuses (pull-failed), leaving the cycle half-done (consumes merge-watch, needs manual reset+close+tag+prune). Seen in CAM-152 post-merge. Harden the merge-watch/ship path to detect a diverged local main and either auto-recover (reset --hard origin/main when content is subsumed) or fail loudly with the runbook step, instead of silently wedging the cycle.",
+  "spec": {
+    "acceptanceCriteria": [
+      "A merge-watch MERGED outcome whose inner post-merge failed (postMerge.ok===false, e.g. pull-failed) writes a durable .cam-post-merge-stalled.json marker ({ prNumber, issueId, completedSteps, remainingSteps, reason, writtenAt }) instead of leaving no durable marker. Today the merged terminal deletes the merge-watch marker (sidecar.ts:633) and updateShipStalledMarker's merged branch removes the ship-stalled marker (sidecar.ts:508-513), so a merged-but-pull-failed cycle is silently lost; this AC closes that gap.",
+      "The orchestrator boot-read surfaces the post-merge-stalled marker as a distinct opening blocker line (merged but tag/prune/close pending), read-only, never deleting it.",
+      "The post-merge pull step (src/release/post-merge.ts:379) uses git pull --rebase instead of a plain pull: a local unpushed commit whose content was recreated by the squash-merge is dropped non-destructively via patch-id; genuine un-squashed local work is replayed (preserved) or conflicts. No automatic git reset --hard origin/main anywhere in the code path.",
+      "On a clean rebase the post-merge sequence continues through tag, prune, and issue-close in the same run (the current early-return at post-merge.ts:380-384 that aborts those steps is removed for the recoverable case).",
+      "On a failed rebase (real conflict, genuine divergence, or lock contention) the path fails loud: it writes the .cam-post-merge-stalled.json marker recording completedSteps/remainingSteps and reason, and does not attempt any destructive recovery.",
+      "docs/recovery-runbook.md gains a dedicated entry for the post-merge-stalled / diverged-local-main case: the operator recovery (git reset --hard origin/main only when the local commit is subsumed, then complete the remaining tag/prune/close steps). Doc maintenance in the same PR as the behavior change."
+    ],
+    "scope": "Harden the merge-watch/post-merge path against a diverged local main leaving a cycle half-done. Root observation: a post-merge pull failure still returns a merged (terminal) outcome, so all durable markers are removed and the orchestrator never learns the cycle half-completed; and the recovery the issue floats (reset --hard) is unsafe because nothing proves the local commit is subsumed. Fix: (1) write a durable .cam-post-merge-stalled.json marker on merged-but-post-merge-failed and surface it at boot; (2) recover non-destructively via git pull --rebase (drops a subsumed commit via patch-id, preserves genuine un-squashed work) and continue tag/prune/close on success; (3) fail loud with the marker on rebase failure, never auto reset --hard; (4) document the operator reset-recovery in the runbook. Touches ~2-4 source files (post-merge.ts, sidecar.ts marker handling, optionally merge-watch.ts outcome typing) plus docs; reuses the existing divergence primitive checkMainUpToDate (on-main.ts:300).",
+    "gotchas": [
+      "The new .cam-post-merge-stalled.json marker is surfaced by the orchestrator boot-read, whose prose lives in templates/agents/subagent-orchestrator.md (and embedded copy); editing templates/ requires bun run embed-vendor + embed-vendor:check.",
+      "Lock contention (concurrent git fetch/pull from other callers: host.ts:718, plan-preflight.ts:81, on-main.ts pre-flight guards) is a DISTINCT root cause of pull-failed (the CAM-228 incident, journal:155) and is OUT OF SCOPE here; it is mitigated by the poll-via-gh-pr-view discipline. Do not try to serialize git callers in this issue.",
+      "git reset --hard origin/main must never be an automatic action: nothing in the codebase proves subsumption (checkMainUpToDate at on-main.ts:300 is a bare SHA-inequality, no merge-base/rev-list ancestry check), so an auto-reset could silently drop un-squashed local work. It stays an operator runbook step only.",
+      "A merged outcome carrying postMerge.ok===false must remain terminal for the merge-watch (the PR really did merge); only the durable-marker/skip-remaining-steps handling changes, not the merged classification.",
+      "Separate un-persisted-doc gap surfaced during grounding: the orch-no-gitfetch-poll-during-postmerge memory lives only in scripts/cam/journal.md, not in any agent/CLAUDE.md file. Worth a follow-up issue; not part of this fix's code scope."
+    ],
+    "domainTerms": [
+      "post-merge-stalled",
+      "subsumed commit",
+      "local-main divergence",
+      "post-merge sequence"
+    ]
+  },
+  "wsjf": {
+    "value": 7,
+    "timeCriticality": 6,
+    "riskReduction": 8,
+    "jobSize": 3
+  },
+  "type": "fix"
 }
