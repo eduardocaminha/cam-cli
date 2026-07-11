@@ -22,7 +22,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Single-file core-logic fix. Primary edit: src/supervisor/plan-runner.ts runPlanPhaseWithReplan (lines ~864-928). The teardown seam (teardownPlanPanesFn) and its real wiring (makeTeardownPlanPanesFn, src/commands/sidecar.ts:1969 + 2249) already exist from CAM-204; do NOT re-implement or re-wire them. Only close the residual gap: today teardown() runs on audit-approved (887) and plan-escalated (914) but the final non-audit fall-through return (927) skips it. Prefer restructuring to a single unconditional exit teardown (e.g. compute the terminal result then teardown once at the sole exit, or a try/finally whose finally calls teardown) so that a future post-spawn terminal kind cannot re-open the gap (enumeration is exactly how AC5 originally missed planner-timeout/auditor-timeout/planner-failed). Keep the in-loop round-boundary teardown at 878 as an explicit mid-function call (it is not an exit). kill-pane is idempotent/best-effort so a double-invoke on the audit paths is harmless, but avoid redundant enumerated calls once the single exit exists. Gotchas: paneCountMutex (src/tmux/session.ts:273) returns 'available' only at exactly 2 panes, so a lingering plan pane = 3 = busy. Do NOT regress CAM-188 (worker/reviewer teardown at finishTerminal) or CAM-204. Tests live in test/supervisor/plan/plan-runner-replan.test.ts (unit, seam-injected) and test/supervisor/plan/plan-sidecar-replan-wiring.test.ts (wiring). No vendor/templates or Ink touched."
     }
