@@ -1,7 +1,7 @@
 {
   "id": "CAM-273",
   "title": "Auditor traceability/collision check queries GitHub by bare number even when issue_system=local (false-critical BLOCK on numeric-id coincidence)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-11T10:57:00.610Z",
