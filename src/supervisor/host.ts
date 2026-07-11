@@ -48,7 +48,12 @@ import { REVIEW_REPORT_FILENAME } from './review-report.ts';
 import { preflightWorkerContainer } from './preflight-container.ts';
 import { makeProductionEnsureContainerFn } from './ensure-container.ts';
 import { readWorkerIsolation } from '../config/models.ts';
-import { writeImplementBlockedMarker, IMPLEMENT_BLOCKED_FILENAME, type ImplementBlockedMarker } from './implement-blocked-marker.ts';
+import {
+	writeImplementBlockedMarker,
+	readImplementBlockedMarker,
+	advanceBlockedMarker,
+	IMPLEMENT_BLOCKED_FILENAME,
+} from './implement-blocked-marker.ts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -68,6 +73,30 @@ export interface BuiltSupervisorOptions {
 	prdPath: string;
 	/** Absolute path to the handoff file. */
 	handoffPath: string;
+}
+
+// ---------------------------------------------------------------------------
+// implement-blocked marker: prd.json content-hash (US-002, CAM-214)
+// ---------------------------------------------------------------------------
+
+/** Stable reset-key value used when prd.json is unreadable/absent at write time (US-002, CAM-214). */
+const PRD_HASH_UNREADABLE = 'prd-unreadable';
+
+/**
+ * Compute the sha256 hex digest over prd.json's raw file bytes at write time
+ * (US-002, CAM-214). Degrades gracefully to a stable reset-key value
+ * (`PRD_HASH_UNREADABLE`) on any read error (absent file, permission error,
+ * etc.) -- never throws, so the marker writer always persists a marker.
+ */
+function computePrdHashForBlockedMarker(prdPath: string): string {
+	try {
+		const bytes = readFileSync(prdPath);
+		const hasher = new Bun.CryptoHasher('sha256');
+		hasher.update(bytes);
+		return hasher.digest('hex');
+	} catch {
+		return PRD_HASH_UNREADABLE;
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -478,21 +507,18 @@ export function buildSupervisorOptions(
 	// keeping loop.ts clock-free) and persists via writeImplementBlockedMarker
 	// (never throws). Mirrors makeWriteEscalationMarkerFn (src/commands/sidecar.ts).
 	//
-	// US-001 (CAM-214): `consecutiveCount`/`keyHash` are placeholder-stamped
-	// here (fresh/first-block values) because this story only extends the
-	// marker schema + the pure `advanceBlockedMarker` transition function.
-	// Feeding the prior marker + the live prd.json sha256 through
-	// `advanceBlockedMarker` on every blocked terminal is US-002.
+	// US-002 (CAM-214): reads the existing marker + the current sha256 of
+	// prd.json and feeds both through `advanceBlockedMarker` so the persisted
+	// `consecutiveCount`/`keyHash`/`escalated` reflect real cross-session
+	// repetition (rather than the US-001 placeholder fresh-block values).
+	const implementBlockedMarkerPath = join(claudeDir, IMPLEMENT_BLOCKED_FILENAME);
 	const writeImplementBlockedMarkerFn: RunSupervisorOptions['writeImplementBlockedMarkerFn'] = (
 		params: ImplementBlockedWriterParams,
 	) => {
-		const marker: ImplementBlockedMarker = {
-			...params,
-			writtenAt: new Date().toISOString(),
-			consecutiveCount: 1,
-			keyHash: '',
-		};
-		writeImplementBlockedMarker(join(claudeDir, IMPLEMENT_BLOCKED_FILENAME), marker);
+		const prev = readImplementBlockedMarker(implementBlockedMarkerPath);
+		const prdHash = computePrdHashForBlockedMarker(prdPath);
+		const marker = advanceBlockedMarker(prev, { ...params, writtenAt: new Date().toISOString() }, prdHash);
+		writeImplementBlockedMarker(implementBlockedMarkerPath, marker);
 	};
 
 	// US-002 / CAM-75: reviewer structured exit report reader.

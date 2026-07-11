@@ -5,7 +5,10 @@
 // remove, never throw) are covered separately in
 // test/supervisor/implement-blocked-marker.test.ts.
 
-import { describe, expect, test, beforeEach } from 'bun:test';
+import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { runSupervisor } from '../../src/supervisor/loop.ts';
 import type {
 	RunSupervisorOptions,
@@ -21,6 +24,8 @@ import type {
 	ImplementBlockedWriterParams,
 } from '../../src/supervisor/loop.ts';
 import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
+import { buildSupervisorOptions } from '../../src/supervisor/host.ts';
+import { IMPLEMENT_BLOCKED_FILENAME, readImplementBlockedMarker } from '../../src/supervisor/implement-blocked-marker.ts';
 
 /** Build a prd snapshot with N stories, optionally some already passing. */
 function makePrd(opts: {
@@ -179,5 +184,140 @@ describe('runSupervisor US-005: durable implement-blocked marker writer wiring (
 		const result = await runSupervisor(opts);
 
 		expect(result.status).toBe('blocked');
+	});
+});
+
+describe('host.ts writeImplementBlockedMarkerFn: counter + prd content-hash wiring (US-002, CAM-214)', () => {
+	let cwd: string;
+	let claudeDir: string;
+	let prdPath: string;
+	let markerPath: string;
+
+	beforeEach(() => {
+		cwd = mkdtempSync(join(tmpdir(), 'cam-implement-blocked-wiring-'));
+		claudeDir = join(cwd, '.claude');
+		const scriptsDir = join(cwd, 'scripts', 'cam');
+		mkdirSync(claudeDir, { recursive: true });
+		mkdirSync(scriptsDir, { recursive: true });
+		prdPath = join(scriptsDir, 'prd.json');
+		markerPath = join(claudeDir, IMPLEMENT_BLOCKED_FILENAME);
+		writeFileSync(prdPath, JSON.stringify({ userStories: [] }), 'utf8');
+	});
+
+	afterEach(() => {
+		rmSync(cwd, { recursive: true, force: true });
+	});
+
+	function writeParams(overrides: Partial<ImplementBlockedWriterParams> = {}): ImplementBlockedWriterParams {
+		return {
+			issueId: '214',
+			story: 'US-003',
+			reason: 'Worker reported BLOCKED_QUALITY story=US-003 reason=tests_failed',
+			...overrides,
+		};
+	}
+
+	test('grep oracle: host.ts references advanceBlockedMarker', () => {
+		// Covered structurally by AC1's grep oracle; this test just documents
+		// that the wiring under test is exercised via the real production writer.
+		const { opts } = buildSupervisorOptions(cwd);
+		expect(typeof opts.writeImplementBlockedMarkerFn).toBe('function');
+	});
+
+	test('repeated identical blocked terminals drive consecutiveCount 1 -> 2 -> 3 (same story, same token, unchanged prd.json)', () => {
+		const { opts } = buildSupervisorOptions(cwd);
+		const write = opts.writeImplementBlockedMarkerFn;
+		if (!write) throw new Error('writeImplementBlockedMarkerFn missing from buildSupervisorOptions');
+
+		write(writeParams());
+		const first = readImplementBlockedMarker(markerPath);
+		expect(first?.consecutiveCount).toBe(1);
+		expect(first?.escalated).toBeFalsy();
+
+		write(writeParams());
+		const second = readImplementBlockedMarker(markerPath);
+		expect(second?.consecutiveCount).toBe(2);
+		expect(second?.keyHash).toBe(first?.keyHash);
+		expect(second?.escalated).toBeFalsy();
+
+		write(writeParams());
+		const third = readImplementBlockedMarker(markerPath);
+		expect(third?.consecutiveCount).toBe(3);
+		expect(third?.keyHash).toBe(first?.keyHash);
+		expect(third?.escalated).toBe(true);
+		expect(third?.haltedAt).toBeTruthy();
+	});
+
+	test('changing prd.json content resets consecutiveCount to 1 and clears escalated', () => {
+		const { opts } = buildSupervisorOptions(cwd);
+		const write = opts.writeImplementBlockedMarkerFn;
+		if (!write) throw new Error('writeImplementBlockedMarkerFn missing from buildSupervisorOptions');
+
+		write(writeParams());
+		write(writeParams());
+		const beforeAmend = readImplementBlockedMarker(markerPath);
+		expect(beforeAmend?.consecutiveCount).toBe(2);
+
+		// Genuine PRD amendment: content (and therefore sha256) changes.
+		writeFileSync(prdPath, JSON.stringify({ userStories: [{ id: 'US-999' }] }), 'utf8');
+
+		write(writeParams());
+		const afterAmend = readImplementBlockedMarker(markerPath);
+		expect(afterAmend?.consecutiveCount).toBe(1);
+		expect(afterAmend?.escalated).toBeFalsy();
+		expect(afterAmend?.keyHash).not.toBe(beforeAmend?.keyHash);
+	});
+
+	test('sha256 is computed over prd.json bytes: two writers pointed at byte-identical prd.json content produce the same keyHash', () => {
+		const { opts } = buildSupervisorOptions(cwd);
+		const write = opts.writeImplementBlockedMarkerFn;
+		if (!write) throw new Error('writeImplementBlockedMarkerFn missing from buildSupervisorOptions');
+		write(writeParams());
+		const marker = readImplementBlockedMarker(markerPath);
+		expect(marker?.keyHash.length).toBeGreaterThan(0);
+
+		// A second cwd with byte-identical prd.json content (same story/token)
+		// must produce the identical keyHash, proving the hash is over content,
+		// not a path or a random/clock-derived value.
+		const cwd2 = mkdtempSync(join(tmpdir(), 'cam-implement-blocked-wiring-'));
+		try {
+			mkdirSync(join(cwd2, '.claude'), { recursive: true });
+			mkdirSync(join(cwd2, 'scripts', 'cam'), { recursive: true });
+			writeFileSync(join(cwd2, 'scripts', 'cam', 'prd.json'), JSON.stringify({ userStories: [] }), 'utf8');
+			const { opts: opts2 } = buildSupervisorOptions(cwd2);
+			const write2 = opts2.writeImplementBlockedMarkerFn;
+			if (!write2) throw new Error('writeImplementBlockedMarkerFn missing from buildSupervisorOptions');
+			write2(writeParams());
+			const marker2 = readImplementBlockedMarker(join(cwd2, '.claude', IMPLEMENT_BLOCKED_FILENAME));
+			expect(marker2?.keyHash).toBe(marker?.keyHash);
+		} finally {
+			rmSync(cwd2, { recursive: true, force: true });
+		}
+	});
+
+	test('absent prd.json degrades gracefully: marker still written (treated as a reset key), writer never throws', () => {
+		rmSync(prdPath, { force: true });
+		const { opts } = buildSupervisorOptions(cwd);
+		const write = opts.writeImplementBlockedMarkerFn;
+		if (!write) throw new Error('writeImplementBlockedMarkerFn missing from buildSupervisorOptions');
+
+		expect(() => write(writeParams())).not.toThrow();
+		const marker = readImplementBlockedMarker(markerPath);
+		expect(marker).not.toBeNull();
+		expect(marker?.consecutiveCount).toBe(1);
+		expect(existsSync(markerPath)).toBe(true);
+	});
+
+	test('unreadable prd.json (directory in place of the file) degrades gracefully: never throws, marker still written', () => {
+		rmSync(prdPath, { force: true });
+		mkdirSync(prdPath, { recursive: true });
+		const { opts } = buildSupervisorOptions(cwd);
+		const write = opts.writeImplementBlockedMarkerFn;
+		if (!write) throw new Error('writeImplementBlockedMarkerFn missing from buildSupervisorOptions');
+
+		expect(() => write(writeParams())).not.toThrow();
+		const marker = readImplementBlockedMarker(markerPath);
+		expect(marker).not.toBeNull();
+		expect(marker?.consecutiveCount).toBe(1);
 	});
 });
