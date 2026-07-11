@@ -2,7 +2,7 @@
   "id": "CAM-267",
   "title": "The example blocker line inside the code fence uses an em-dash (—). recovery-ru…",
   "stage": "idea",
-  "status": "open",
+  "status": "abandoned",
   "blockedBy": [],
   "createdAt": "2026-07-11T06:38:37.009Z",
   "description": "The example blocker line inside the code fence uses an em-dash (—). recovery-runbook.md is a human-readable persisted doc that previously had zero em-dashes; the project convention prefers no em-dash in persisted human .md. It mirrors the agent template's literal output (where em-dash is allowed), so it is defensible, but a colon or hyphen would keep the runbook em-dash-free. Non-blocking.\n\nSource: cam/issue-174\nReview round: 1\nLocation: docs/recovery-runbook.md:2323\n\nsuggestion-fingerprint: 9516eb3d578f"
