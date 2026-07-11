@@ -160,3 +160,15 @@ A sha256 digest of prd.json used as the amendment-detection component of the blo
 
 **consecutive identical blocked outcome**:
 A blocked terminal whose dedup key matches the immediately preceding blocked terminal's key. The count of these, persisted across fresh implementer sessions in the .cam-implement-blocked.json marker, is what the circuit breaker thresholds on (N=3).
+
+**post-merge-stalled**:
+A cam cycle whose PR squash-merged to origin/main but whose post-merge sequence (pull, tag, prune, close) did not complete, leaving the merge real but the cycle half-done. Recorded durably in .cam-post-merge-stalled.json with the completed and remaining steps, and surfaced at orchestrator boot. Distinct from ship-stalled (PR not merged).
+
+**subsumed commit**:
+A local unpushed commit on main whose content was recreated at a new SHA by a squash-merge into origin/main. Its patch is already present in origin/main, so git pull --rebase drops it via patch-id without loss. Contrast with genuine un-squashed local work, which a rebase replays or conflicts on rather than dropping.
+
+**local-main divergence**:
+The state where local main and origin/main share history but each has commits the other lacks (local has the unpushed commit, origin has the squash). A plain git pull refuses or merges awkwardly; the codebase detects only bare SHA-inequality (checkMainUpToDate), not subsumption.
+
+**post-merge sequence**:
+The ordered git steps runPostMerge performs after a PR merges: checkout main, pull origin main, read version, tag and push, prune local and remote branch, close the issue. A failure at the pull step currently aborts the rest; recovery must either continue these steps or record which remain.
