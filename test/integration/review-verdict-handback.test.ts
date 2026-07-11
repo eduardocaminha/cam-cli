@@ -35,6 +35,20 @@ function tmuxRaw(args: string[]): ReturnType<typeof spawnSync> {
 }
 
 /**
+ * Type a bare idle-prompt line into pane 0 so it ends with `>` (US-003,
+ * CAM-200): a raw `cat` fixture pane never renders a claude-style prompt on
+ * its own, and without one sendKeysVerified's PRE-send idle-gate polls the
+ * full 5s `idleTimeoutMs` budget before falling back to send-anyway, which
+ * risks the test exceeding bun's default per-test timeout. Cat's terminal
+ * echo (and its own stdout copy of the line) leaves "> " sitting in the
+ * pane tail, which `isOrchPaneIdle` recognises immediately.
+ */
+function primeIdlePrompt(): void {
+	tmuxRaw(["send-keys", "-t", `${SESSION}.0`, ">", "Enter"]);
+	Bun.sleepSync(100);
+}
+
+/**
  * SpawnFn passed to makeNotifyOrchestrator. Rewrites `-L cam` to the private
  * test socket so all production tmux calls hit the isolated test session.
  * Identical swap pattern to test/integration/tmux-introspect.test.ts.
@@ -60,12 +74,17 @@ test.skipIf(!tmuxAvailable)(
 	"makeNotifyOrchestrator: CLEAN verdict line lands in orchestrator pane capture-pane output",
 	() => {
 		// Boot an isolated tmux session with a cat pane (echoes key input back).
-		tmuxRaw(["new-session", "-d", "-s", SESSION, "-x", "80", "-y", "10", "cat"]);
+		tmuxRaw(["new-session", "-d", "-s", SESSION, "-x", "80", "-y", "5", "cat"]);
 		Bun.sleepSync(200);
 
 		// Label pane 0 as orchestrator (mirrors how cam run labels panes).
 		tmuxRaw(["set-option", "-p", "-t", `${SESSION}.0`, "@cam_label", "orchestrator"]);
 		Bun.sleepSync(100);
+
+		// Prime an idle prompt so sendKeysVerified's (US-003, CAM-200) PRE-send
+		// idle-gate resolves immediately instead of polling the full 5s timeout
+		// budget: a raw `cat` pane never renders a claude-style prompt on its own.
+		primeIdlePrompt();
 
 		// Build the production closure under test.
 		const notify = makeNotifyOrchestrator(SESSION, swapSocketSpawn);
@@ -88,11 +107,12 @@ test.skipIf(!tmuxAvailable)(
 test.skipIf(!tmuxAvailable)(
 	"makeNotifyOrchestrator: FIXES_PENDING:K verdict line lands in orchestrator pane",
 	() => {
-		tmuxRaw(["new-session", "-d", "-s", SESSION, "-x", "80", "-y", "10", "cat"]);
+		tmuxRaw(["new-session", "-d", "-s", SESSION, "-x", "80", "-y", "5", "cat"]);
 		Bun.sleepSync(200);
 
 		tmuxRaw(["set-option", "-p", "-t", `${SESSION}.0`, "@cam_label", "orchestrator"]);
 		Bun.sleepSync(100);
+		primeIdlePrompt();
 
 		const notify = makeNotifyOrchestrator(SESSION, swapSocketSpawn);
 		const verdictLine = formatReviewVerdictLine(2, "FIXES_PENDING:3");
@@ -108,11 +128,12 @@ test.skipIf(!tmuxAvailable)(
 test.skipIf(!tmuxAvailable)(
 	"makeNotifyOrchestrator: MAX_ROUNDS_DEBT verdict line lands in orchestrator pane",
 	() => {
-		tmuxRaw(["new-session", "-d", "-s", SESSION, "-x", "80", "-y", "10", "cat"]);
+		tmuxRaw(["new-session", "-d", "-s", SESSION, "-x", "80", "-y", "5", "cat"]);
 		Bun.sleepSync(200);
 
 		tmuxRaw(["set-option", "-p", "-t", `${SESSION}.0`, "@cam_label", "orchestrator"]);
 		Bun.sleepSync(100);
+		primeIdlePrompt();
 
 		const notify = makeNotifyOrchestrator(SESSION, swapSocketSpawn);
 		const verdictLine = formatReviewVerdictLine(4, "MAX_ROUNDS_DEBT");
