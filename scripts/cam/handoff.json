@@ -1,0 +1,28 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Durable sidecar-stalled marker written on firewall-init failure and surfaced at orchestrator boot"
+  },
+  "branchName": "cam/issue-207",
+  "timestamp": "2026-07-11T08:35:00Z",
+  "createdFiles": [
+    "src/supervisor/sidecar-stalled.ts",
+    "test/supervisor/sidecar-stalled.test.ts"
+  ],
+  "modifiedFiles": [
+    "src/commands/sidecar.ts",
+    "templates/agents/subagent-orchestrator.md",
+    "templates/.gitignore",
+    ".gitignore",
+    "src/vendor/_generated.ts",
+    "test/commands/sidecar-firewall.test.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/patterns.md",
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 shipped the shared .cam-sidecar-stalled.json marker module (src/supervisor/sidecar-stalled.ts: SIDECAR_STALLED_FILENAME, SidecarStalledMarker{reason,detail,writtenAt}, read/write/remove never-throw helpers) plus the firewall-init-failed producer wired into runContainerEnsureGuard (src/commands/sidecar.ts): write on FirewallError catch, remove on every healthy-boot return path (host-mode no-op AND container-mode ensure success), since the whole read+write+remove lifecycle lives inside that single boot-time-only guard function (see patterns.md 2026-07-11 bullet on this). US-002 (sidecar-died producer + liveness watcher) reuses this SAME marker file/module -- do NOT create a second marker file; just write with reason:'sidecar-died' from the new watcher. Orchestrator surfacing (boot-read item 12 + opening-blocker '⚠ sidecar stalled: <reason> — <detail>' line, read-only, not deleted by the orchestrator) is already done in templates/agents/subagent-orchestrator.md and embedded via bun run embed-vendor -- US-002 does not need to touch that doc again unless the surfaced fields change shape.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
