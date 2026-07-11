@@ -2,7 +2,7 @@
   "id": "CAM-268",
   "title": "The _ref tracker labels this branch's raises as 'CAM-241' while the branch/issu…",
   "stage": "idea",
-  "status": "open",
+  "status": "abandoned",
   "blockedBy": [],
   "createdAt": "2026-07-11T06:38:39.220Z",
   "description": "The _ref tracker labels this branch's raises as 'CAM-241' while the branch/issue is cam/issue-174 (issueNumber 174). Cosmetic label inconsistency in the justification prose; the raises themselves are legitimate and correctly sized.\n\nSource: cam/issue-174\nReview round: 1\nLocation: scripts/file-size-budget.json:2\n\nsuggestion-fingerprint: 0a6be06304db"
