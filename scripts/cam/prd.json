@@ -40,7 +40,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Files: src/tmux/dispatch.ts (+ test/dispatch.test.ts). Reuse: isOrchPaneIdle (dispatch.ts:111) for the PRE-send idle-gate; the POST-send verify is a DISTINCT composer-emptied check (line left the composer), not the same predicate. computeBackoffMs lives in src/supervisor/loop.ts:606 with NO_PROGRESS_BACKOFF_MS/MAX_BACKOFF_MS/JITTER_FRACTION constants; dispatch.ts does not currently import loop.ts and loop.ts does not import tmux/dispatch.ts, so importing computeBackoffMs is cycle-free (verified). Inject sleepFn (default Bun.sleepSync) and a randomFn/logEvent so tests stay deterministic and fast (existing dispatch tests already inject capturePaneFn + sleepFn). Gotchas: (a) atomic text+Enter WITHOUT -l (sendkeys-literal-enter-gotcha, CAM-55); (b) never parse rendered pane scrollback for content (lossy rendered-markdown capture-pane trap, CAM-75/77/78) - state check only. Design constraint from issue: the pane push is ONLY a wake-up; durable truth already lives in worker-report.json / cam-worker-events.jsonl."
     },
