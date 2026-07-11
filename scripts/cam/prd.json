@@ -90,7 +90,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Independent of US-001/002/003 (this fix alone prevents THIS specific wedge; 1/2/3 are defense-in-depth). Root cause: stop.ts today cleans only tmux/markers, never the container (~465-472); ensure-container.ts reuses a running cam-worker (~335-337), inheriting its stale dnsmasq. Tearing the container down at exit means the next session restarts fast (or rebuilds only if image-stale) via the existing absent->build path. DEFAULT_CONTAINER_NAME ('cam-worker') is exported from ensure-container's constants (src/supervisor/ensure-container.ts imports DEFAULT_CONTAINER_NAME ~line 25). init-firewall.sh port-53 block is at .devcontainer/init-firewall.sh ~34-72 (today only kills the pid in /var/run/dnsmasq-cam.pid, ~43-46; extend to detect+reap the actual port holder + one retry + fail-closed). init-firewall.sh is NOT embedded/vendored (no embed-vendor:check needed for this story). docker rm -f confirmed to SIGKILL+remove a running container in one call. Gate stop.ts teardown via readWorkerIsolation (src/config/models.ts:300-315, fail-closes to host)."
     }
