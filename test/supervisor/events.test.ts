@@ -291,11 +291,17 @@ describe('runSupervisor emits a full per-story lifecycle', () => {
 		const result = await runSupervisor(opts);
 		expect(result.status).toBe('complete');
 
-		expect(events.map((e) => e.kind)).toEqual(['spawn-resolution', 'worker-start', 'worker-end', 'result', 'tokens', 'outcome-source']);
-		// Every lifecycle event shares the single worker uuid.
-		expect(new Set(events.map((e) => e.uuid))).toEqual(new Set([FIXED_UUID]));
-		// storyId resolves to the actual completed story (spawn-resolution carries advisory storyId).
-		expect(events.filter((e) => e.kind !== 'spawn-resolution').every((e) => e.storyId === 'US-001')).toBe(true);
+		expect(events.map((e) => e.kind)).toEqual(['spawn-resolution', 'worker-start', 'worker-end', 'result', 'tokens', 'outcome-source', 'sidecar-exit']);
+		// Every per-worker lifecycle event shares the single worker uuid. The
+		// terminal 'sidecar-exit' (US-004 / CAM-195) is loop-level, not tied to a
+		// worker session, and carries its own fixed 'supervisor' uuid.
+		expect(new Set(events.map((e) => e.uuid))).toEqual(new Set([FIXED_UUID, 'supervisor']));
+		// storyId resolves to the actual completed story (spawn-resolution carries
+		// advisory storyId; the terminal sidecar-exit carries no story, since the
+		// 'complete' action kind has no associated story).
+		expect(
+			events.filter((e) => e.kind !== 'spawn-resolution' && e.kind !== 'sidecar-exit').every((e) => e.storyId === 'US-001'),
+		).toBe(true);
 
 		const resultEvent = events.find((e) => e.kind === 'result');
 		expect(resultEvent?.detail).toEqual({

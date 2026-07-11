@@ -70,7 +70,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: src/supervisor/loop.ts (finishTerminal 749-752; blockedResult 778-782; the terminal-return sites for complete/awaiting-operator/max-iterations). Thread logEvent (already available in the closure via `emit`/`logEvent`) through finishTerminal. Reuse an existing WorkerEventKind (e.g. sidecar-exit) or the emit() helper; keep the SupervisorStatus->reason mapping explicit. This story establishes the blocked-terminal seam that US-005 hangs the durable marker off."
     },

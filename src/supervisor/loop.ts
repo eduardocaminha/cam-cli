@@ -741,13 +741,34 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 		onProgress({ ...lastIterProgress, terminalStatus: status });
 	};
 
+	// US-004 (CAM-195, Defect 2): explicit SupervisorStatus -> flight-recorder
+	// reason mapping. A lookup (not a passthrough) so a future status can carry a
+	// differently-worded reason without touching every call site.
+	const TERMINAL_REASON: Record<SupervisorStatus, string> = {
+		complete: 'complete',
+		'awaiting-operator': 'awaiting-operator',
+		blocked: 'blocked',
+		'max-iterations': 'max-iterations',
+	};
+
 	// finishTerminal wraps notifyTerminal + teardownWorkerPaneFn so EVERY terminal
 	// return path calls teardown unconditionally, regardless of whether onProgress
 	// is injected (notifyTerminal has an `if (!onProgress) return` guard that would
 	// skip teardown if teardown were folded inside it). The single seam here ensures
 	// no terminal-return path can exit without teardown.
+	//
+	// US-004 (CAM-195): also emits a 'sidecar-exit' flight-recorder event carrying
+	// the terminal reason, via the existing no-op-when-absent `emit` helper, so
+	// every terminal (blocked, complete, awaiting-operator, max-iterations) leaves
+	// a trace in .claude/cam-worker-events.jsonl even when no worker ever ran
+	// (e.g. an unreadable PRD). `emit` is declared further down in this scope but
+	// is only invoked once finishTerminal is actually called (never at define
+	// time), so the forward reference is safe.
 	const finishTerminal = (status: SupervisorStatus): void => {
 		notifyTerminal(status);
+		emit('sidecar-exit', lastIterProgress.currentStoryId, 'supervisor', {
+			reason: TERMINAL_REASON[status],
+		});
 		teardownWorkerPaneFn();
 	};
 
