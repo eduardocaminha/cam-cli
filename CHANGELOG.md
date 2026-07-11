@@ -6,6 +6,18 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.127.0] - 2026-07-11
+
+### Added
+
+- US-007 - Event every dispatch refusal and add a per-issue pending-guard
+- US-006 - Surface the implement-blocked marker in the orchestrator boot-read
+- US-005 - Write and consume a durable implement-blocked marker
+- US-004 - Emit a structured event on every supervisor terminal
+- US-003 - Re-arm implementing at sidecar boot and idle-tick for in-flight PRDs
+- US-002 - Stop the orchestrator-exit wrapper deleting the live state file
+- US-001 - Make renderStateFile/clearActive preserve the loop phase
+
 ## [0.126.0] - 2026-07-10
 
 ### Added
