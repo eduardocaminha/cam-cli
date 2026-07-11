@@ -184,3 +184,15 @@ The post-send verification that the pushed line left the orchestrator TUI compos
 
 **push-undelivered**:
 A flight-recorder event emitted when a verified send-keys push exhausts its retries without confirming submission. It records a lost wake-up for observability; it does not itself carry recovery state, because terminals that matter already write durable markers the orchestrator surfaces at its next boot.
+
+**sidecar-liveness watcher**:
+A long-lived process spawned by cam run alongside orch-recycle-watch that polls sidecar liveness (via .cam-sidecar.pid and the sidecarAlive() composite) and, on a dead sidecar, attempts a bounded respawn before surfacing a durable marker. The counterpart to orch-recycle-watch, which watches only the orchestrator.
+
+**sidecar-stalled marker**:
+The durable .cam-sidecar-stalled.json file written when the sidecar dies in a way the orchestrator must learn about (a firewall-init failure or a watcher-exhausted respawn). Carries a structured reason; surfaced read-only at orchestrator boot and removed on the next healthy sidecar bring-up. One file, two producers.
+
+**port-53 collision**:
+The container-mode wedge where a stale cam-worker container from a prior session still holds dnsmasq on port 53, so the next session's firewall init fails to bind ('Address already in use') and the sidecar aborts. Rooted in the container being left running at session exit and reused on the next boot.
+
+**firewall-init failure**:
+A non-zero exit of the container firewall init (docker exec cam-worker init-firewall.sh, dnsmasq --port=53), which under set -euo pipefail aborts the sidecar boot before the loop starts, so no worker is dispatched. Container-mode only; a no-op in host mode.
