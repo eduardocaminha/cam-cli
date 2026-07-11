@@ -23,7 +23,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/plan-runner.ts (add buildAuditorTaskPrompt, wire it into runPlanWorkerSequence replacing the static DEFAULT_AUDITOR_TASK_PROMPT default; keep opts.auditorTaskPrompt override for backward compat), test/supervisor/plan/*.test.ts. The selected issue is already available as `issue: IssueEntry` inside runPlanWorkerSequence; derive the branch from its id suffix (reuse deriveBranchName, plan-runner.ts:87). IssueEntry.spec?.acceptanceCriteria may be undefined (guard per noUncheckedIndexedAccess). This realizes ADR-0027 + the CAM-197 principle: identity resolution is done by deterministic code and handed to the LLM as payload, never re-derived by the model. The regression test cannot run a real LLM; assert the deterministic contract (payload embeds the record; runner argv contains no `gh` identity call). Keep the module pure over injected deps."
     },
