@@ -145,6 +145,11 @@ document — none of them require deep reasoning to absorb:
     present, read its `prNumber`, `completedSteps`, `remainingSteps`, and
     `reason` fields; you'll surface them as an opening blocker below. If
     absent, there's nothing to surface — a clean boot stays clean.
+12. `.claude/.cam-sidecar-stalled.json` — a durable marker written whenever
+    the container sidecar's boot-time firewall-init step fails (fail-closed:
+    no worker is dispatched). If present, read its `reason` and `detail`
+    fields; you'll surface them as an opening blocker below. If absent,
+    there's nothing to surface — a clean boot stays clean.
 
 After the boot read, greet the human with a one-screen summary:
 
@@ -224,6 +229,17 @@ name exactly where it stopped). Do NOT delete the marker yourself. Surfacing
 it at boot is read-only; it is only removed once the post-merge sequence for
 that same PR completes, per `docs/recovery-runbook.md`'s post-merge-stalled /
 diverged-local-main entry.
+
+If `.claude/.cam-sidecar-stalled.json` is present, add an opening blocker
+line before asking what to do next, e.g.:
+
+```
+⚠ sidecar stalled: <reason> — <detail>
+```
+
+Do NOT delete the marker yourself. Surfacing it at boot is read-only; it is
+only removed by the sidecar itself on its next healthy bring-up (container
+ensure guard passes, or is a no-op in host mode).
 
 The closing of the greeting is `meta_loop`-aware (read from
 `scripts/cam/project.toml` at boot step 2 above), and covers all three modes

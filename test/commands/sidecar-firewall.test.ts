@@ -18,6 +18,11 @@ import { tmpdir } from 'node:os';
 import { runSidecar, type SidecarOptions } from '../../src/commands/sidecar.ts';
 import { FirewallError } from '../../src/supervisor/container-firewall.ts';
 import type { RunSidecarLoopOptions } from '../../src/supervisor/loop.ts';
+import {
+	SIDECAR_STALLED_FILENAME,
+	readSidecarStalledMarker,
+	writeSidecarStalledMarker,
+} from '../../src/supervisor/sidecar-stalled.ts';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -204,6 +209,71 @@ describe('runSidecar: host mode is a complete no-op for container/firewall (AC6)
 		// The ensureContainerFn was never called (host mode), so no throw.
 		// The loop runs normally.
 		expect(loopCallCount).toBe(1);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-001 (CAM-207): durable sidecar-stalled marker lifecycle
+// ---------------------------------------------------------------------------
+
+describe('runSidecar: sidecar-stalled marker lifecycle (US-001, CAM-207)', () => {
+	test('FirewallError writes the marker with reason firewall-init-failed and the stderrTail as detail', async () => {
+		const cwd = makeProjectDir('container');
+		const markerPath = join(cwd, '.claude', SIDECAR_STALLED_FILENAME);
+
+		await runSidecar({
+			...makeMinimalOptions(cwd),
+			ensureContainerFn: () => {
+				throw new FirewallError('iptables: Permission denied');
+			},
+			runSidecarLoopFn: async () => {},
+		});
+
+		const marker = readSidecarStalledMarker(markerPath);
+		expect(marker).not.toBeNull();
+		expect(marker?.reason).toBe('firewall-init-failed');
+		expect(marker?.detail).toBe('iptables: Permission denied');
+		expect(typeof marker?.writtenAt).toBe('string');
+	});
+
+	test('a stale marker is removed when ensureContainerFn succeeds (container mode)', async () => {
+		const cwd = makeProjectDir('container');
+		const markerPath = join(cwd, '.claude', SIDECAR_STALLED_FILENAME);
+		writeSidecarStalledMarker(markerPath, {
+			reason: 'firewall-init-failed',
+			detail: 'stale',
+			writtenAt: '2026-07-01T00:00:00Z',
+		});
+
+		await runSidecar({
+			...makeMinimalOptions(cwd),
+			ensureContainerFn: () => {
+				// success — no throw
+			},
+			runSidecarLoopFn: async () => {},
+		});
+
+		expect(readSidecarStalledMarker(markerPath)).toBeNull();
+	});
+
+	test('a stale marker is removed in host mode (guard is a no-op)', async () => {
+		const cwd = makeProjectDir('host');
+		const markerPath = join(cwd, '.claude', SIDECAR_STALLED_FILENAME);
+		writeSidecarStalledMarker(markerPath, {
+			reason: 'firewall-init-failed',
+			detail: 'stale',
+			writtenAt: '2026-07-01T00:00:00Z',
+		});
+
+		await runSidecar({
+			...makeMinimalOptions(cwd),
+			ensureContainerFn: () => {
+				throw new Error('should not be called in host mode');
+			},
+			runSidecarLoopFn: async () => {},
+		});
+
+		expect(readSidecarStalledMarker(markerPath)).toBeNull();
 	});
 });
 

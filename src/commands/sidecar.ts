@@ -54,6 +54,7 @@ import { writePlanEscalatedMarker, removePlanEscalatedMarker, PLAN_ESCALATED_FIL
 import { writePlanPreflightFailedMarker, removePlanPreflightFailedMarker, PLAN_PREFLIGHT_FAILED_FILENAME, type PlanPreflightFailedMarker, type PlanPreflightFailedWriterParams } from '../supervisor/plan-preflight-marker.ts';
 import { readImplementBlockedMarker, removeImplementBlockedMarker, IMPLEMENT_BLOCKED_FILENAME } from '../supervisor/implement-blocked-marker.ts';
 import { writePostMergeStalledMarker, POST_MERGE_STALLED_FILENAME } from '../supervisor/post-merge-stalled-marker.ts';
+import { writeSidecarStalledMarker, removeSidecarStalledMarker, SIDECAR_STALLED_FILENAME } from '../supervisor/sidecar-stalled.ts';
 import { makeReadPlanVerdict, PLAN_VERDICT_REPORT_FILENAME } from '../supervisor/plan-verdict-report.ts';
 import { runPlanPreflight, type PlanPreflightSpawnFn } from '../supervisor/plan-preflight.ts';
 import { readMergeMode, readMetaLoop, readPlanApproval, readResendConfig, readWorkerIsolation, type WorkerIsolation } from '../config/models.ts';
@@ -2742,19 +2743,35 @@ function buildSidecarLoopDeps(ctx: SidecarLoopDepsCtx, options: SidecarOptions):
  *
  * Extracted from `runSidecar` to keep that function under biome's
  * noExcessiveCognitiveComplexity(max=15) limit (CAM-60 factory/helper pattern).
+ *
+ * US-001 (CAM-207): also owns the durable sidecar-stalled marker lifecycle.
+ * A FirewallError writes the marker (reason 'firewall-init-failed') before
+ * returning abort=true; every other return path (host mode no-op, or a
+ * container-mode ensure that succeeds) removes any stale marker, since both
+ * represent a healthy bring-up.
  */
 function runContainerEnsureGuard(cwd: string, options: SidecarOptions): boolean {
+	const stalledMarkerPath = join(cwd, '.claude', SIDECAR_STALLED_FILENAME);
 	const isolation = readWorkerIsolation(join(cwd, 'scripts/cam/project.toml'));
-	if (isolation !== 'container') return false;
+	if (isolation !== 'container') {
+		removeSidecarStalledMarker(stalledMarkerPath);
+		return false;
+	}
 
 	try {
 		(options.ensureContainerFn ?? makeProductionEnsureContainerFn(cwd))();
+		removeSidecarStalledMarker(stalledMarkerPath);
 		return false;
 	} catch (e) {
 		if (e instanceof FirewallError) {
 			process.stderr.write(
 				`[cam] container firewall init failed — no worker will be dispatched.\n${e.stderrTail}\n`,
 			);
+			writeSidecarStalledMarker(stalledMarkerPath, {
+				reason: 'firewall-init-failed',
+				detail: e.stderrTail,
+				writtenAt: new Date().toISOString(),
+			});
 			return true;
 		}
 		if (e instanceof ContainerConfigError) {

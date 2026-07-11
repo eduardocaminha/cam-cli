@@ -33,7 +33,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New file src/supervisor/sidecar-stalled.ts is a near-verbatim structural copy of src/supervisor/plan-escalation.ts (filename const + interface + read/write/remove, never-throw). The single shared marker file has two producers (this story: firewall arm; US-002: watcher) distinguished by the `reason` field — do NOT create two separate marker files (gotcha). Firewall arm is at src/commands/sidecar.ts runContainerEnsureGuard (~2746-2775, FirewallError branch ~2754); remove-on-healthy goes in the boot path of runSidecar (~2786+) after the ensure guard returns false. Surfacing edits: templates/agents/subagent-orchestrator.md boot-read steps (~121-147) + opening-blocker section (~164-211), the embedded copy (regenerated via `bun run embed-vendor` into src/vendor/_generated.ts), and templates/.gitignore. This is the durable-marker precedent verbatim (ship-stalled: src/release/merge-watch.ts; plan-escalated: src/supervisor/plan-escalation.ts). grep scripts/cam/patterns.md for 'JSON reader shape guards' and 'durable marker' before coding. Container-gated producer is naturally host-inert (the firewall arm only runs in container mode); do not claim live validation."
     },
