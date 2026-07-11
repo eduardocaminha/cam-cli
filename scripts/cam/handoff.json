@@ -1,0 +1,16 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Embed the resolved issue record + derived branch into the auditor spawn payload" },
+  "createdFiles": [
+    "test/supervisor/plan/plan-runner-auditor-payload.test.ts"
+  ],
+  "modifiedFiles": [
+    "src/supervisor/plan-runner.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 (CAM-273) shipped: src/supervisor/plan-runner.ts now exports buildAuditorTaskPrompt(issue, branchName) and deriveBranchNameFromIssueId(issueId), and runPlanWorkerSequence defaults auditorTaskPrompt to the record-bearing prompt built from the selected IssueEntry + its code-derived branch (never the removed static DEFAULT_AUDITOR_TASK_PROMPT). Re-plan rounds in runPlanPhaseWithReplan inherit this for free since runPlanPhase re-resolves `issue` every call. The subagent-auditor.md agent prompt file itself was intentionally NOT touched by this story (out of scope per notes/AC); if a follow-up story wants the auditor's own instructions updated to explicitly trust the embedded record over its own gh resolution steps, that is a separate change. file-size-budget.json ceiling for plan-runner.ts raised 1381->1444 with a dated _ref entry (CAM-273).",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
