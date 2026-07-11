@@ -1,23 +1,17 @@
 {
-  "lastCompletedStory": { "id": "US-005", "title": "Write and consume a durable implement-blocked marker" },
+  "lastCompletedStory": { "id": "US-006", "title": "Surface the implement-blocked marker in the orchestrator boot-read" },
   "branchName": "cam/issue-195",
-  "timestamp": "2026-07-11T03:00:00Z",
-  "createdFiles": [
-    "src/supervisor/implement-blocked-marker.ts",
-    "test/supervisor/implement-blocked-marker.test.ts",
-    "test/supervisor/implement-blocked-marker-wiring.test.ts"
-  ],
+  "timestamp": "2026-07-11T04:00:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/loop.ts",
-    "src/supervisor/host.ts",
-    "src/commands/sidecar.ts",
-    "test/commands/sidecar-rearm.test.ts",
-    "scripts/file-size-budget.json",
-    "scripts/cam/patterns.md",
+    "templates/agents/subagent-orchestrator.md",
+    "src/vendor/_generated.ts",
     "scripts/cam/prd.json"
   ],
-  "openQuestions": [],
-  "nextStoryContext": "src/supervisor/implement-blocked-marker.ts (IMPLEMENT_BLOCKED_FILENAME = '.cam-implement-blocked.json') mirrors the ship-stalled/plan-escalated marker precedent verbatim: read/write/remove, never throw, ImplementBlockedMarker { issueId: string; story: string | null; reason: string; writtenAt: string }. WRITE seam: finishTerminal (runSupervisor, loop.ts) calls opts.writeImplementBlockedMarkerFn ONLY when status === 'blocked' AND a mutable lastIssueNumber (set right after every successful readPrd(), since finishTerminal is declared before the per-iteration prd read) is defined -- issueId is String(prd.issueNumber), NOT a backlog issue-id string like the ship-stalled marker's issueId. story is lastIterProgress.currentStoryId ?? null; reason falls back to lastOutcome?.detail ?? TERMINAL_REASON.blocked when no worker outcome was ever set (prd-unreadable, blocked-no-implementable). host.ts's buildSupervisorOptions wires the production writeImplementBlockedMarkerFn (stamps writtenAt, persists via writeImplementBlockedMarker). CONSUME seam: sidecar.ts's makeProductionRearmImplementingFn calls the new exported clearImplementBlockedMarkerForCurrentIssue(markerPath, prdPath) right after a successful rearm (setPhase('implementing')) -- re-arming IS 'the next implement dispatch for that issue' per this story's AC2. That helper reads the marker, reads the CURRENT prd.json's issueNumber, and removes the marker ONLY when it matches (stringified) or when the current prd is unreadable (best-effort, nothing to compare); a marker for a DIFFERENT issueId is left untouched. US-006 (next, unblocked, priority 6) is templates-only: add a .cam-implement-blocked.json boot-read entry to templates/agents/subagent-orchestrator.md's numbered marker list (~121-136, mirroring the ship-stalled/plan-escalated/plan-preflight entries already there) plus an opening-blocker snippet near ~153, then bun run embed-vendor + embed-vendor:check in the SAME commit (byte-parity gate). This story (US-005) deliberately did NOT touch templates/ (explicitly out of scope per its own notes) -- US-006 owns that half entirely. US-007 (priority 7, requires US-003 only, independent of US-005/US-006) remains the other open story in this PRD.",
+  "openQuestions": [
+    "Neither .gitignore nor templates/.gitignore has an entry for .claude/.cam-implement-blocked.json (US-005 wrote the marker module but did not add the gitignore entry, mirroring the same gap already documented for .cam-ship-stalled.json in patterns.md line ~438). Out of scope for US-006 (templates-doc-only story); a future story could add all three missing marker entries in one pass."
+  ],
+  "nextStoryContext": "US-006 added boot-read item #10 (.claude/.cam-implement-blocked.json: issueId/story/reason fields) to templates/agents/subagent-orchestrator.md's numbered marker list (after the plan-preflight entry, ~137-140) plus a matching opening-blocker snippet (after the plan-preflight snippet, ~180-187: '⚠ implement blocked: issue #<issueId> story <story or \"none\"> — <reason>'), mirroring the ship-stalled/plan-escalated/plan-preflight precedent exactly (read-only surfacing; marker only removed by the next re-armed implement dispatch for that issue, per US-005's clearImplementBlockedMarkerForCurrentIssue). Ran bun run embed-vendor + embed-vendor:check in the same commit (byte-parity gate on src/vendor/_generated.ts). This story was templates-only as anticipated by US-005's handoff notes; no src/ or test/ changes were needed since US-005 already did all the write/consume wiring. US-007 (priority 7, requires US-003 only, independent of US-005/US-006) remains the other open story in this PRD -- check prd.json for any remaining passes:false stories before assuming PRD completion.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
