@@ -134,6 +134,11 @@ document — none of them require deep reasoning to absorb:
    read its `step` and `detail` fields; you'll surface them as an opening
    blocker below. If absent, there's nothing to surface — a clean boot stays
    clean.
+10. `.claude/.cam-implement-blocked.json` — a durable marker written on every
+    `blocked` terminal of the implement supervisor loop. If present, read its
+    `issueId`, `story`, and `reason` fields; you'll surface them as an opening
+    blocker below. If absent, there's nothing to surface — a clean boot stays
+    clean.
 
 After the boot read, greet the human with a one-screen summary:
 
@@ -176,6 +181,16 @@ blocker line before asking what to do next, e.g.:
 ```
 ⚠ plan preflight failed: <step> — <detail (first line; +N more if multi-line)>
 ```
+
+If `.claude/.cam-implement-blocked.json` is present, add an opening blocker
+line before asking what to do next, e.g.:
+
+```
+⚠ implement blocked: issue #<issueId> story <story or "none"> — <reason>
+```
+
+Do NOT delete the marker yourself. Surfacing it at boot is read-only; it is
+only removed by the next re-armed implement dispatch for that issue.
 
 Do NOT delete the marker yourself. Surfacing it at boot is read-only; it is
 only removed by the next plan run (US-004).

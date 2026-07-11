@@ -102,7 +102,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": "US-005",
       "notes": "File: templates/agents/subagent-orchestrator.md (boot-read numbered list ~121-136 has the ship-stalled/plan-escalated/plan-preflight entries; add an implement-blocked entry in the same shape, and an opening-blocker snippet near ~153). Gotcha (issue): any edit under templates/ requires `bun run embed-vendor` then `bun run embed-vendor:check` or the byte-parity gate fails. Regenerate the embedded copy in the SAME commit."
     },
