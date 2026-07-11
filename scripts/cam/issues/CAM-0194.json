@@ -1,7 +1,7 @@
 {
   "id": "CAM-194",
   "title": "commit-existence gate anchors on feat: prefix, false-BLOCKs stories committed with fix or other conventional types",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-06T05:09:45.404Z",
