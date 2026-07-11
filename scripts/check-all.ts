@@ -86,8 +86,8 @@ export const GATES: Gate[] = [
 	g('version-skips', 'bun scripts/check-version-skips.ts'),
 	g('coverage', 'bun scripts/check-coverage.ts'),
 	// --bun: run knip on Bun's own runtime, not a delegated system `node` (avoids a <20 node:util gap).
-	g('dead-code', 'bunx --bun knip@6.24.0'),
-	g('dup', 'bunx jscpd@5 --config .jscpd.json src scripts'),
+	g('dead-code', 'bunx --bun knip'),
+	g('dup', 'bunx jscpd --config .jscpd.json src scripts'),
 	g('ci-parity', 'bun run check:ci-parity'),
 ];
 

@@ -482,7 +482,9 @@ just present in the working tree.
 
 ### (j.2) Raising the duplication threshold (dup gate)
 
-The `dup` gate runs `bunx jscpd@5 --config .jscpd.json src scripts`. The
+The `dup` gate runs `bunx jscpd --config .jscpd.json src scripts` (jscpd is
+pinned as an exact devDependency, so `bunx` resolves the locally installed
+version). The
 threshold lives in `.jscpd.json` as a numeric `threshold` key (currently 4,
 meaning 4% maximum duplication).
 
@@ -494,7 +496,7 @@ To raise the threshold:
 3. Re-run the gate to confirm the new threshold is not immediately exceeded:
 
    ```bash
-   bunx jscpd@5 --config .jscpd.json src scripts
+   bunx jscpd --config .jscpd.json src scripts
    ```
 
 Note: jscpd has no built-in tracker-ref enforcement; the reference requirement

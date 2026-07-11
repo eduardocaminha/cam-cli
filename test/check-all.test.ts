@@ -120,18 +120,18 @@ describe('GATES manifest', () => {
 		expect(gate?.args).toEqual(['scripts/check-coverage.ts']);
 	});
 
-	test('dead-code gate: bunx --bun knip@6.24.0', () => {
+	test('dead-code gate: bunx --bun knip', () => {
 		const gate = GATES[8];
 		expect(gate?.name).toBe('dead-code');
 		expect(gate?.cmd).toBe('bunx');
-		expect(gate?.args).toEqual(['--bun', 'knip@6.24.0']);
+		expect(gate?.args).toEqual(['--bun', 'knip']);
 	});
 
-	test('dup gate: bunx jscpd@5 --config .jscpd.json src scripts', () => {
+	test('dup gate: bunx jscpd --config .jscpd.json src scripts', () => {
 		const gate = GATES[9];
 		expect(gate?.name).toBe('dup');
 		expect(gate?.cmd).toBe('bunx');
-		expect(gate?.args).toEqual(['jscpd@5', '--config', '.jscpd.json', 'src', 'scripts']);
+		expect(gate?.args).toEqual(['jscpd', '--config', '.jscpd.json', 'src', 'scripts']);
 	});
 
 	test('ci-parity gate: bun run check:ci-parity', () => {

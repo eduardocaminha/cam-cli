@@ -1,6 +1,6 @@
 {
   "name": "cam-cli",
-  "version": "0.135.0",
+  "version": "0.136.0",
   "module": "index.ts",
   "type": "module",
   "private": true,
@@ -17,10 +17,12 @@
     "test:container": "bun scripts/test-in-container.ts"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.1",
+    "@biomejs/biome": "2.5.1",
     "@types/bun": "latest",
     "@types/react": "^19.2.14",
-    "ink-testing-library": "^4.0.0"
+    "ink-testing-library": "^4.0.0",
+    "jscpd": "5.0.12",
+    "knip": "6.24.0"
   },
   "peerDependencies": {
     "typescript": "^5"
