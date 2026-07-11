@@ -1,0 +1,9 @@
+{
+  "id": "CAM-274",
+  "title": "The 'cam/issue-unknown' fallback for a numeric-suffix-less issue.id is effectiv…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-11T11:36:40.906Z",
+  "description": "The 'cam/issue-unknown' fallback for a numeric-suffix-less issue.id is effectively unreachable in production (selected issues are always CAM-<N>) and is untested. Consider asserting the invariant loudly or covering the fallback branch with a test.\n\nSource: cam/issue-273\nReview round: 1\nLocation: src/supervisor/plan-runner.ts:773\n\nsuggestion-fingerprint: 0ef3bcb54212"
+}
