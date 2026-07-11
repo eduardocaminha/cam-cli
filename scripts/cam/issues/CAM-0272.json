@@ -1,0 +1,9 @@
+{
+  "id": "CAM-272",
+  "title": "The new CAM-194 bullet uses an em-dash (' — '). The project convention discoura…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-11T09:44:41.300Z",
+  "description": "The new CAM-194 bullet uses an em-dash (' — '). The project convention discourages em-dashes in .md; a colon or parentheses would comply. Non-blocking: the existing patterns.md bullets already use em-dashes, so this merely matches established file style.\n\nSource: cam/issue-194\nReview round: 1\nLocation: scripts/cam/patterns.md:659\n\nsuggestion-fingerprint: 4d1e673d6e0a"
+}
