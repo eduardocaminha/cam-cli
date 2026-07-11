@@ -133,3 +133,18 @@ Running a quality gate during the implementer's single-story iteration (self-cor
 
 **derivedFrom**:
 Structured issue-schema field (string[] of issue ids) recording which issue(s) an issue was derived from. Populated on manually-linked follow-ups and, per CAM-263, on auto-filed SUGGESTION follow-ups pointing back to the parent issue whose review produced the suggestion.
+
+**wedge (absorbing wedge state)**:
+A cam autonomous cycle stuck in a state with no self-recovery path: an in-flight PRD (stories still passes:false) sitting under phase:idle, where nothing re-arms and only an operator cam next recovers it. Named for the 2026-07-06 CAM-118 incident.
+
+**parked**:
+The deliberate at-rest state of the cam loop, signalled by phase:idle in cam-loop.local.md. Set by cam stop or by clearActive at end-of-cycle. A parked cycle is never auto-resumed by the sidecar; it is the discriminator that distinguishes an intentional pause from a wedge.
+
+**in-flight PRD**:
+A prd.json with at least one non-operator user story whose passes flag is still false: the cycle has started but not completed. Distinct from a completed PRD (all non-operator stories pass) and from no-PRD (backlog-only) state.
+
+**drain preconditions**:
+The set of gating conditions the sidecar checks before dispatching or re-arming a cycle: no blocked terminal marker, no pending merge-watch, and no plan/ship phase already in progress. Shared by both the meta-loop dispatch path and the in-flight re-arm path.
+
+**re-arm**:
+The sidecar action of flipping an in-flight-but-idle cycle back to active:true implementing, at boot or on an idle-tick, using cam next semantics. Triggered by an in-flight PRD with phase==implementing and an inactive loop; suppressed when parked (phase:idle).
