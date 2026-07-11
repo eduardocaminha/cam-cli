@@ -20,7 +20,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: src/supervisor/events.ts. WorkerEventKind union at line ~97; WorkerEventDetail union at line ~469; existing PushEventDetail at ~182. Gotcha (from issue): the git-origin 'pushed' kind (events.ts:102, PushEventDetail) is unrelated to send-keys delivery, do NOT overload it. Test mirror: test/supervisor/events.test.ts. Keep the detail metadata-only (pane id + retries), never report content, per the CAM-75/77/78 structured-handback decision (durable truth lives in files, the pane carries only the wake-up)."
     },

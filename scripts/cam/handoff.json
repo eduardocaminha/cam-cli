@@ -1,0 +1,12 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Add push-undelivered event kind to the flight recorder" },
+  "branchName": "cam/issue-200",
+  "timestamp": "2026-07-11T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": ["src/supervisor/events.ts", "scripts/file-size-budget.json"],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 added ONLY the flight-recorder shape: 'push-undelivered' WorkerEventKind member + PushUndeliveredEventDetail interface ({ paneId: string; retriesExhausted: number }) + WorkerEventDetail union entry, in src/supervisor/events.ts. Nothing emits this event yet: US-002 (extract sendKeysVerified with composer-emptied verify + bounded retry) is the story that will actually produce a 'push-undelivered' verdict, and US-003 (wire the sidecar report pusher to sendKeysVerified) is the story that will call logEvent with kind:'push-undelivered' + a PushUndeliveredEventDetail on exhausted-retry. Raised src/supervisor/events.ts's file-size-budget ceiling 674->696 (staged _ref note with CAM-200/US-001 already committed). No new external lib touched.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure TypeScript type/interface addition to the existing in-repo flight-recorder event module; no external library API surface exercised." }
+  ]
+}
