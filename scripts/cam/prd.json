@@ -1,0 +1,93 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-174",
+  "description": "Harden the post-merge path against a diverged local main: durable post-merge-stalled marker + non-destructive git pull --rebase recovery, never an automatic reset --hard.",
+  "issueNumber": 174,
+  "type": "fix",
+  "relatedDocs": [
+    "docs/adr/0025-post-merge-divergence-recovers-via-git-pull-rebase-never-automatic-reset-hard-a-merged-but-incomplete-post-merge-is-a-durable-stalled-state.md",
+    "docs/recovery-runbook.md"
+  ],
+  "officialDocsConsulted": [
+    {
+      "lib": "git",
+      "url": "https://git-scm.com/docs/git-rebase",
+      "version": "current",
+      "fetchedAt": "2026-07-11T00:00:00Z",
+      "summary": "Confirmed: git rebase (and git pull --rebase) detects clean cherry-picks via patch-id (git log --cherry-mark) and drops commits already present upstream as a preliminary step, unless --reapply-cherry-picks is passed. A local commit whose content was recreated by an upstream squash-merge is therefore dropped non-destructively; genuine un-squashed work is replayed or conflicts (fails loud). Do NOT pass --reapply-cherry-picks (that would re-preserve the subsumed commit).",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add durable post-merge-stalled marker module",
+      "description": "As the sidecar, I need a durable .cam-post-merge-stalled.json marker with read/write/remove helpers so that a merged-but-incomplete post-merge is recorded across an orchestrator recycle instead of being silently lost.",
+      "acceptanceCriteria": [
+        "A new module src/supervisor/post-merge-stalled-marker.ts exports POST_MERGE_STALLED_FILENAME === '.cam-post-merge-stalled.json' and a PostMergeStalledMarker interface with fields prNumber (number), issueId (string | null), completedSteps (string[]), remainingSteps (string[]), reason (string), writtenAt (string). [oracle: grep -q \"POST_MERGE_STALLED_FILENAME = '.cam-post-merge-stalled.json'\" src/supervisor/post-merge-stalled-marker.ts]",
+        "read/write/remove helpers mirror the implement-blocked-marker precedent: read returns null on absent/malformed/mistyped input and never throws; write is best-effort and never throws; remove is a silent no-op when the file is absent. [oracle: bun test]",
+        "The marker file is gitignored so it never trips the clean-tree plan preflight (mirrors .cam-ship-stalled.json). [oracle: grep -q 'cam-post-merge-stalled.json' .gitignore]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "New file src/supervisor/post-merge-stalled-marker.ts + test/supervisor/post-merge-stalled-marker.test.ts + .gitignore. Mirror src/supervisor/implement-blocked-marker.ts VERBATIM in shape (existsSync/readFileSync/writeFileSync/unlinkSync from node:fs is the established precedent in that module; keep the same try/catch never-throws contract). issueId is string|null because the merge-watch state.issueId is optional. Keep the module I/O-only (no wiring into sidecar here). gitignore precedent: lines 85-91 already list the sibling markers."
+    },
+    {
+      "id": "US-002",
+      "title": "Recover post-merge via git pull --rebase, never reset --hard",
+      "description": "As the post-merge primitive, I need to pull with --rebase and report completed/remaining steps on failure so that a subsumed local commit is dropped non-destructively and a genuine divergence fails loud instead of wedging the cycle.",
+      "acceptanceCriteria": [
+        "runPostMerge's pull step uses `git pull --rebase origin main` instead of a plain pull (drops a subsumed local commit via patch-id, replays or cleanly conflicts on genuine un-squashed work). [oracle: grep -q \"'pull', '--rebase'\" src/release/post-merge.ts]",
+        "No `git reset --hard` appears anywhere in the post-merge code path (auto-reset is never an action; subsumption is unproven). [oracle: file-assert: `grep -c 'reset.*--hard' src/release/post-merge.ts` returns 0]",
+        "On rebase failure the PostMergeOutcome failure variant returns ok:false with reason 'rebase-failed' and carries completedSteps + remainingSteps arrays reflecting where the sequence stopped. [oracle: bun test]",
+        "On a clean rebase (including the subsumed-commit case where the rebase drops the local commit and succeeds) the sequence continues through tag, prune, and issue-close in the same run; the early-return only fires on a genuine rebase failure. [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Edit src/release/post-merge.ts (pull step at ~line 379; PostMergeOutcome fail variant at ~line 110) + test/release/post-merge.test.ts. Do NOT pass --reapply-cherry-picks (per git docs: that would re-preserve the subsumed commit we want dropped). The clean-rebase continue-path already exists (tag/prune/close run after a successful pull); switching to --rebase is what makes the subsumed-commit case reach it. Extend the fail variant to `{ ok: false; reason: string; completedSteps: string[]; remainingSteps: string[] }` so US-003 can populate the marker; keep every other failure reason (checkout-main-failed, tag-*, version-*) populating these fields too for a consistent shape. Steps vocabulary: checkout, pull-rebase, tag, prune, close. runPostMerge stays a pure git primitive (injectable SpawnFn); it does NOT write the marker itself (no claudeDir here) — the sidecar caller does (US-003)."
+    },
+    {
+      "id": "US-003",
+      "title": "Write post-merge-stalled marker on merged-but-failed post-merge",
+      "description": "As the sidecar merge-watch terminal, I need to persist the post-merge-stalled marker when a merged PR's inner post-merge fails so that the orchestrator learns the cycle half-completed instead of losing every durable marker.",
+      "acceptanceCriteria": [
+        "On a merge-watch terminal whose outcome.kind==='merged' AND outcome.postMerge.ok===false, the sidecar writes .cam-post-merge-stalled.json with prNumber+issueId from the merge-watch state and completedSteps/remainingSteps/reason from the failed PostMergeOutcome. [oracle: bun test]",
+        "A merged outcome remains terminal for the merge-watch (the PR really merged); only the durable-marker handling changes, not the merged classification. [oracle: bun test]",
+        "The existing ship-stalled merged-branch reconciliation is unchanged, so a merged-but-post-merge-failed cycle is no longer left with zero durable markers. [oracle: bun test]",
+        "On a merged outcome whose post-merge succeeded (ok:true) no post-merge-stalled marker is written. [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": "US-002",
+      "notes": "Edit src/commands/sidecar.ts (terminal-outcome branch of makeProductionMergeWatchFn at ~line 748-755, alongside the existing updateShipStalledMarker call). Also needs the US-001 marker module. Add a small helper (e.g. updatePostMergeStalledMarker(markerPath, outcome, state)) next to updateShipStalledMarker, exported for unit tests (anti-shadow-mock: drive the real write against a temp file). Only act when outcome.kind==='merged' && !outcome.postMerge.ok; the non-merged terminals stay owned by updateShipStalledMarker. Do NOT change the merged classification or removeMergeWatchState call. state.issueId may be undefined -> store as null."
+    },
+    {
+      "id": "US-004",
+      "title": "Surface post-merge-stalled at boot + document operator recovery",
+      "description": "As the operator, I need the post-merge-stalled marker surfaced as a boot blocker and a runbook entry so that I can complete the tag/prune/close steps after a diverged-local-main stall.",
+      "acceptanceCriteria": [
+        "templates/agents/subagent-orchestrator.md boot-read lists .cam-post-merge-stalled.json as a distinct read-only opening blocker (merged but tag/prune/close pending), explicitly never deleting it (mirrors the .cam-ship-stalled.json surfacing prose). [oracle: grep -q 'cam-post-merge-stalled.json' templates/agents/subagent-orchestrator.md]",
+        "The embedded copy of the template is regenerated and vendor drift is clean. [oracle: bun run embed-vendor:check]",
+        "docs/recovery-runbook.md gains a dedicated post-merge-stalled / diverged-local-main entry: the operator recovery is `git reset --hard origin/main` ONLY when the local commit is subsumed, then completing the remaining tag/prune/close steps. [oracle: grep -q 'post-merge-stalled' docs/recovery-runbook.md]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": "US-003",
+      "notes": "Edit templates/agents/subagent-orchestrator.md (boot-read list items ~line 121-141 and the opening-blocker prose ~line 158-176; add an item #11 + a `⚠ post-merge stalled: PR #<n> (merged, tag/prune/close pending)` blocker line) then run `bun run embed-vendor` and confirm `bun run embed-vendor:check`. Editing templates/ REQUIRES the embed step (gotcha from the issue). Add the runbook section near the divergent-local-main content (existing section around line 941 'Recovery: divergent local main' in docs/recovery-runbook.md is the natural neighbor). Doc-maintenance lands in THIS PR per the issue. The ADR (0025) already exists; do not rewrite it."
+    }
+  ]
+}
