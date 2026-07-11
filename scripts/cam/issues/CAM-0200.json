@@ -1,7 +1,7 @@
 {
   "id": "CAM-200",
   "title": "orch push via send-keys lands in composer but does not submit; report loss is recurring",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-06T14:34:20.716Z",
