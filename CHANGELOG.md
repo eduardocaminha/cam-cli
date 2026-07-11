@@ -6,6 +6,15 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.132.0] - 2026-07-11
+
+### Added
+
+- US-004 - Root-cause port-53 fail-safe: container teardown at session exit + init-firewall reap-and-retry
+- US-003 - cam plan / next / ship refuse the signal-write when the sidecar is dead
+- US-002 - Sidecar-liveness watcher with sidecarAlive() composite, bounded respawn, and escalate-on-exhaustion
+- US-001 - Durable sidecar-stalled marker written on firewall-init failure and surfaced at orchestrator boot
+
 ## [0.131.0] - 2026-07-11
 
 ### Added
