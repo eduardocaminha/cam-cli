@@ -1,7 +1,7 @@
 {
   "id": "CAM-73",
   "title": "Habilitar branch protection (required status checks) na main agora que o repo e publico + CI existe; corrigir a premissa 'free private plan' em docs/agent-readiness.md",
-  "stage": "idea",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-23T21:08:52Z",
