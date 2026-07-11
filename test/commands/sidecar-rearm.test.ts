@@ -327,6 +327,8 @@ describe('US-005: durable implement-blocked marker cleared on rearm (CAM-195, De
 			story: 'US-001',
 			reason: 'timeout',
 			writtenAt: '2026-07-11T00:00:00Z',
+			consecutiveCount: 1,
+			keyHash: 'x',
 		});
 
 		const rearm = makeProductionRearmImplementingFn(
@@ -352,6 +354,8 @@ describe('US-005: durable implement-blocked marker cleared on rearm (CAM-195, De
 			story: 'US-001',
 			reason: 'timeout',
 			writtenAt: '2026-07-11T00:00:00Z',
+			consecutiveCount: 1,
+			keyHash: 'x',
 		});
 
 		const rearm = makeProductionRearmImplementingFn(
@@ -377,6 +381,8 @@ describe('clearImplementBlockedMarkerForCurrentIssue', () => {
 			story: 'US-001',
 			reason: 'timeout',
 			writtenAt: '2026-07-11T00:00:00Z',
+			consecutiveCount: 1,
+			keyHash: 'x',
 		});
 
 		clearImplementBlockedMarkerForCurrentIssue(markerPath, prdPath);
@@ -394,6 +400,8 @@ describe('clearImplementBlockedMarkerForCurrentIssue', () => {
 			story: 'US-002',
 			reason: 'timeout',
 			writtenAt: '2026-07-10T00:00:00Z',
+			consecutiveCount: 1,
+			keyHash: 'x',
 		};
 		writeImplementBlockedMarker(markerPath, stale);
 
@@ -421,6 +429,8 @@ describe('clearImplementBlockedMarkerForCurrentIssue', () => {
 			story: 'US-001',
 			reason: 'timeout',
 			writtenAt: '2026-07-11T00:00:00Z',
+			consecutiveCount: 1,
+			keyHash: 'x',
 		});
 
 		clearImplementBlockedMarkerForCurrentIssue(markerPath, prdPath);

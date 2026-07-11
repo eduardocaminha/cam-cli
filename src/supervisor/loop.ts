@@ -58,9 +58,16 @@ import type { ImplementBlockedMarker } from './implement-blocked-marker.ts';
  * Params for the injectable implement-blocked marker writer (US-005, CAM-195,
  * Defect 2). Omits `writtenAt`: the pure seam here stays clock-free, matching
  * the PlanEscalationWriterParams precedent (the sidecar.ts production factory
- * stamps `writtenAt`, not this module).
+ * stamps `writtenAt`, not this module). Also omits `consecutiveCount` /
+ * `keyHash` / `escalated` / `haltedAt` (US-001, CAM-214): this loop.ts seam
+ * only knows issueId/story/reason at write time; the dedup-key + counter
+ * logic (`advanceBlockedMarker`) is wired into the host.ts writer in US-002,
+ * keeping this seam clock-free AND hash-free.
  */
-export type ImplementBlockedWriterParams = Omit<ImplementBlockedMarker, 'writtenAt'>;
+export type ImplementBlockedWriterParams = Omit<
+	ImplementBlockedMarker,
+	'writtenAt' | 'consecutiveCount' | 'keyHash' | 'escalated' | 'haltedAt'
+>;
 
 // ---------------------------------------------------------------------------
 // Injected dependency types
@@ -1730,6 +1737,26 @@ export interface RunSidecarLoopOptions {
 	 */
 	flipActiveFn?: () => void;
 	/**
+	 * Read the durable implement-blocked marker (US-003, CAM-214).
+	 *
+	 * Consulted immediately before the flipActiveFn auto-chain call above: when
+	 * the marker is present AND `escalated === true`, the circuit breaker trips
+	 * -- flipActiveFn is skipped this tick and the loop stays active:false
+	 * (paused for a human `cam next`), instead of re-dispatching a story that
+	 * has already hit the escalation threshold (US-001's
+	 * `advanceBlockedMarker`). A 'sidecar-exit' event records the
+	 * circuit-broken halt via logEvent.
+	 *
+	 * Optional: when absent (default no-op returning null) the breaker never
+	 * trips, so every existing caller/test is byte-for-byte unchanged.
+	 * Production wiring (sidecar.ts): only built in auto mode
+	 * (plan_approval === 'auto'), closing over readImplementBlockedMarker +
+	 * IMPLEMENT_BLOCKED_FILENAME -- inert (undefined) in operator mode, mirroring
+	 * flipActiveFn's own auto-mode gate (AC3: the breaker is inert whenever
+	 * flipActiveFn itself is absent).
+	 */
+	readImplementBlockedMarkerFn?: () => ImplementBlockedMarker | null;
+	/**
 	 * Auto-ship callback for auto mode (US-005 / CAM-181; re-anchored to this
 	 * outer loop by CAM-191 / ADR 0013).
 	 *
@@ -2154,9 +2181,32 @@ export async function runSidecarLoop(opts: RunSidecarLoopOptions): Promise<void>
 		// (plan_approval === 'auto') and pending work remains, flip active:true
 		// immediately so the sidecar re-triggers without waiting for a human
 		// cam-next call. Skip the idle sleep on the auto-chain path.
+		//
+		// US-003 (CAM-214): circuit breaker. Gated INSIDE the flipActiveFn/
+		// hasPendingStories check above (not standalone) so the breaker stays
+		// fully inert when flipActiveFn is absent (operator/ci-gated mode, AC3):
+		// the marker is read only on the exact tick the auto-chain would
+		// otherwise re-dispatch. When the marker is escalated:true, skip the
+		// flipActiveFn call (loop stays active:false, paused for a human
+		// `cam next`) and record the halt via the existing logEvent emitter
+		// instead (AC4: no new WorkerEventKind, reuses 'sidecar-exit').
 		if (opts.flipActiveFn !== undefined && opts.hasPendingStories && opts.hasPendingStories()) {
-			opts.flipActiveFn();
-			continue; // head straight back to the active-flag poll
+			const blockedMarker = opts.readImplementBlockedMarkerFn ? opts.readImplementBlockedMarkerFn() : null;
+			if (blockedMarker !== null && blockedMarker.escalated === true) {
+				opts.logEvent?.({
+					ts: new Date().toISOString(),
+					storyId: blockedMarker.story ?? undefined,
+					uuid: 'sidecar',
+					kind: 'sidecar-exit',
+					detail: {
+						reason: 'circuit-broken',
+						consecutiveCount: blockedMarker.consecutiveCount,
+					},
+				});
+			} else {
+				opts.flipActiveFn();
+				continue; // head straight back to the active-flag poll
+			}
 		}
 
 		// Prevent busy-spin on rapid complete/blocked cycles (e.g. empty PRD).

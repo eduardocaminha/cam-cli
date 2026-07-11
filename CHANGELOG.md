@@ -6,6 +6,16 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.128.0] - 2026-07-11
+
+### Added
+
+- US-004 - Surface the circuit-broken blocker in the orchestrator boot-read
+- US-003 - Halt the auto-dispatch chain when the marker is escalated
+- US-002 - Wire the counter + PRD content-hash into the marker writer
+- US-002 - Wire the counter + PRD content-hash into the marker writer
+- US-001 - Extend blocked-marker schema with dedup-key + consecutive-count logic
+
 ## [0.127.0] - 2026-07-11
 
 ### Added

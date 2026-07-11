@@ -149,6 +149,18 @@ export interface SidecarOptions {
 	 */
 	flipActiveFn?: RunSidecarLoopOptions['flipActiveFn'];
 	/**
+	 * Override the readImplementBlockedMarkerFn (US-003, CAM-214).
+	 *
+	 * Production (auto mode): closure over
+	 * readImplementBlockedMarker(join(claudeDir, IMPLEMENT_BLOCKED_FILENAME)),
+	 * consulted by the loop.ts auto-chain immediately before flipActiveFn; when
+	 * the marker is escalated:true the circuit breaker skips the re-dispatch.
+	 * Production (operator mode): undefined (inert, zero behavior change,
+	 * mirrors flipActiveFn's own auto-mode gate).
+	 * Tests inject a fake to control the marker without touching disk.
+	 */
+	readImplementBlockedMarkerFn?: RunSidecarLoopOptions['readImplementBlockedMarkerFn'];
+	/**
 	 * Override the autoShipFn (US-005, deterministic since US-004 CAM-149).
 	 *
 	 * Production (auto mode): writes phase:shipping to .claude/cam-loop.local.md
@@ -812,6 +824,21 @@ function makeFlipActiveFn(claudeDir: string, cwd: string): () => void {
 }
 
 /**
+ * Build the production readImplementBlockedMarkerFn closure for auto mode
+ * (US-003, CAM-214).
+ *
+ * Delegates to readImplementBlockedMarker(join(claudeDir, IMPLEMENT_BLOCKED_FILENAME))
+ * -- reuses the same read helper clearImplementBlockedMarkerForCurrentIssue
+ * already calls, never reimplements the marker read. Consulted by the loop.ts
+ * auto-chain immediately before flipActiveFn; returns null when the marker is
+ * absent (the common case), leaving the breaker untripped.
+ */
+function makeReadImplementBlockedMarkerFn(claudeDir: string): () => ReturnType<typeof readImplementBlockedMarker> {
+	const markerPath = join(claudeDir, IMPLEMENT_BLOCKED_FILENAME);
+	return () => readImplementBlockedMarker(markerPath);
+}
+
+/**
  * Build the production autoShipFn closure for auto mode (US-005, CAM-149:
  * deterministic CLEAN trigger).
  *
@@ -1130,6 +1157,7 @@ interface SidecarLoopDepsResult {
 	buildOptsFn: NonNullable<RunSidecarLoopOptions['buildOpts']>;
 	runMergeWatchFn: RunSidecarLoopOptions['runMergeWatchFn'];
 	flipActiveFn: RunSidecarLoopOptions['flipActiveFn'];
+	readImplementBlockedMarkerFn: RunSidecarLoopOptions['readImplementBlockedMarkerFn'];
 	autoShipFn: RunSidecarLoopOptions['autoShipFn'];
 	readReviewReportFn: RunSidecarLoopOptions['readReviewReportFn'];
 	fileSuggestionsFn: RunSidecarLoopOptions['fileSuggestionsFn'];
@@ -2365,6 +2393,46 @@ function buildShipPhaseDeps(
 }
 
 /**
+ * Build the auto-chain deps: flipActiveFn, readImplementBlockedMarkerFn, and
+ * autoShipFn (US-005, extended by US-003/CAM-214).
+ *
+ * plan_approval drives all three: in auto mode they close over the real
+ * state-file/marker writes and reads; in operator mode all three stay
+ * undefined (zero behavior change). readImplementBlockedMarkerFn is the
+ * circuit-breaker read consulted by loop.ts immediately before flipActiveFn,
+ * so it is gated on the SAME auto-mode condition as flipActiveFn itself
+ * (AC3: the breaker is inert whenever flipActiveFn is absent).
+ *
+ * Extracted from buildSidecarLoopDeps to keep it under the biome
+ * noExcessiveCognitiveComplexity(max=15) limit (CAM-60 factory/helper
+ * pattern), mirroring buildPlanPhaseDeps/buildShipPhaseDeps.
+ */
+function buildAutoChainDeps(
+	ctx: SidecarLoopDepsCtx,
+	options: SidecarOptions,
+): Pick<SidecarLoopDepsResult, 'flipActiveFn' | 'readImplementBlockedMarkerFn' | 'autoShipFn'> {
+	const { cwd, claudeDir } = ctx;
+	const planApproval = readPlanApproval(join(cwd, 'scripts/cam/project.toml'));
+	const autoChainProduction = planApproval === 'auto'
+		? {
+				flipActiveFn: makeFlipActiveFn(claudeDir, cwd),
+				readImplementBlockedMarkerFn: makeReadImplementBlockedMarkerFn(claudeDir),
+				autoShipFn: makeAutoShipFn(claudeDir, cwd),
+			}
+		: {
+				flipActiveFn: undefined as RunSidecarLoopOptions['flipActiveFn'],
+				readImplementBlockedMarkerFn: undefined as RunSidecarLoopOptions['readImplementBlockedMarkerFn'],
+				autoShipFn: undefined as RunSidecarLoopOptions['autoShipFn'],
+			};
+	return {
+		flipActiveFn: options.flipActiveFn ?? autoChainProduction.flipActiveFn,
+		readImplementBlockedMarkerFn:
+			options.readImplementBlockedMarkerFn ?? autoChainProduction.readImplementBlockedMarkerFn,
+		autoShipFn: options.autoShipFn ?? autoChainProduction.autoShipFn,
+	};
+}
+
+/**
  * Build the implementing re-arm dep (US-003, CAM-195, Defect 1).
  *
  * Extracted from buildSidecarLoopDeps to keep it under the biome
@@ -2546,13 +2614,10 @@ function buildSidecarLoopDeps(ctx: SidecarLoopDepsCtx, options: SidecarOptions):
 			: undefined);
 
 	// US-005: plan_approval drives auto-chain wiring (flip + autoShip only in auto
-	// mode; undefined in operator mode = zero behavior change).
-	const planApproval = readPlanApproval(join(cwd, 'scripts/cam/project.toml'));
-	const autoChainProduction = planApproval === 'auto'
-		? { flipActiveFn: makeFlipActiveFn(claudeDir, cwd), autoShipFn: makeAutoShipFn(claudeDir, cwd) }
-		: { flipActiveFn: undefined as RunSidecarLoopOptions['flipActiveFn'], autoShipFn: undefined as RunSidecarLoopOptions['autoShipFn'] };
-	const flipActiveFn = options.flipActiveFn ?? autoChainProduction.flipActiveFn;
-	const autoShipFn = options.autoShipFn ?? autoChainProduction.autoShipFn;
+	// mode; undefined in operator mode = zero behavior change). Extracted to
+	// buildAutoChainDeps (US-003, CAM-214) to keep this function under the
+	// biome noExcessiveCognitiveComplexity(max=15) limit.
+	const { flipActiveFn, readImplementBlockedMarkerFn, autoShipFn } = buildAutoChainDeps(ctx, options);
 
 	// US-003 (CAM-189): SUGGESTION-follow-up-filing hook. Unlike the auto-chain
 	// pair above, this is wired unconditionally (both operator and auto
@@ -2590,7 +2655,7 @@ function buildSidecarLoopDeps(ctx: SidecarLoopDepsCtx, options: SidecarOptions):
 
 	return {
 		readActiveFn, clearActiveFn, hasPendingStoriesFn, sleepFn, hasSessionFn,
-		acquireLockFn, buildOptsFn, runMergeWatchFn, flipActiveFn, autoShipFn,
+		acquireLockFn, buildOptsFn, runMergeWatchFn, flipActiveFn, readImplementBlockedMarkerFn, autoShipFn,
 		readReviewReportFn, fileSuggestionsFn, escalateFn,
 		runMetaLoopObserveFn, ...planPhaseDeps, ...shipPhaseDeps, ...rearmDeps,
 	};
@@ -2697,6 +2762,7 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 		logEvent,
 		runMergeWatchFn: deps.runMergeWatchFn,
 		flipActiveFn: deps.flipActiveFn,
+		readImplementBlockedMarkerFn: deps.readImplementBlockedMarkerFn,
 		autoShipFn: deps.autoShipFn,
 		readReviewReportFn: deps.readReviewReportFn,
 		fileSuggestionsFn: deps.fileSuggestionsFn,
