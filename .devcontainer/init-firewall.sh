@@ -9,6 +9,13 @@
 # inserts the returned IPs into the allowed-domains ipset on every DNS answer.
 # This survives CDN IP rotation over the lifetime of a long-running container --
 # unlike a one-shot dig+ipset pass that would freeze IPs at startup.
+#
+# Port-53 fail-safe (US-004, CAM-207): a leftover container/process from a
+# prior session can leave a stale dnsmasq bound to port 53, hard-wedging the
+# next session's firewall init. On a bind collision, this script reaps the
+# process ACTUALLY holding port 53 (found via /proc, independent of whatever
+# pid -- if any -- is recorded in /var/run/dnsmasq-cam.pid), retries the bind
+# once, and fails closed (non-zero exit) if the port is still blocked.
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
@@ -63,22 +70,78 @@ ipset create allowed-domains hash:net
 # LFS note: objects.githubusercontent.com is the correct Git LFS object host
 # (the legacy bare subdomain of github.com is not a valid LFS host).
 # ---------------------------------------------------------------------------
-dnsmasq \
-  --listen-address=127.0.0.1 \
-  --port=53 \
-  --no-resolv \
-  --no-poll \
-  --server=8.8.8.8 \
-  --server=8.8.4.4 \
-  --ipset=/api.anthropic.com/allowed-domains \
-  --ipset=/claude.ai/allowed-domains \
-  --ipset=/platform.claude.com/allowed-domains \
-  --ipset=/github.com/allowed-domains \
-  --ipset=/registry.npmjs.org/allowed-domains \
-  --ipset=/raw.githubusercontent.com/allowed-domains \
-  --ipset=/objects.githubusercontent.com/allowed-domains \
-  --pid-file=/var/run/dnsmasq-cam.pid \
-  --log-facility=/dev/null
+start_dnsmasq() {
+  dnsmasq \
+    --listen-address=127.0.0.1 \
+    --port=53 \
+    --no-resolv \
+    --no-poll \
+    --server=8.8.8.8 \
+    --server=8.8.4.4 \
+    --ipset=/api.anthropic.com/allowed-domains \
+    --ipset=/claude.ai/allowed-domains \
+    --ipset=/platform.claude.com/allowed-domains \
+    --ipset=/github.com/allowed-domains \
+    --ipset=/registry.npmjs.org/allowed-domains \
+    --ipset=/raw.githubusercontent.com/allowed-domains \
+    --ipset=/objects.githubusercontent.com/allowed-domains \
+    --pid-file=/var/run/dnsmasq-cam.pid \
+    --log-facility=/dev/null
+}
+
+# Find every pid actually bound to local port 53 (tcp or udp), independent of
+# whatever pid (if any) is recorded in /var/run/dnsmasq-cam.pid -- a stale or
+# foreign process (e.g. a leftover dnsmasq from a container that was never
+# torn down) can hold the port without ever having been tracked by our own
+# pid file. Pure /proc parsing: no lsof/fuser/ss dependency, none of which
+# ship in the slim worker image.
+find_port_53_pids() {
+  local proto sl local_addr rem_addr st txrx trtm retr uid timeout inode extra
+  local fd_path target pid
+  local -a inodes=()
+  local -a pids=()
+  for proto in tcp udp; do
+    [[ -r /proc/net/$proto ]] || continue
+    while read -r sl local_addr rem_addr st txrx trtm retr uid timeout inode extra; do
+      [[ "$local_addr" == *:0035 ]] || continue
+      [[ -n "$inode" && "$inode" != "0" ]] && inodes+=("$inode")
+    done < <(tail -n +2 "/proc/net/$proto" 2>/dev/null || true)
+  done
+  [[ ${#inodes[@]} -eq 0 ]] && return 0
+  for fd_path in /proc/[0-9]*/fd/*; do
+    [[ -e "$fd_path" ]] || continue
+    target=$(readlink "$fd_path" 2>/dev/null || true)
+    [[ "$target" =~ ^socket:\[([0-9]+)\]$ ]] || continue
+    for inode in "${inodes[@]}"; do
+      if [[ "${BASH_REMATCH[1]}" == "$inode" ]]; then
+        pid="${fd_path#/proc/}"
+        pid="${pid%%/fd/*}"
+        pids+=("$pid")
+      fi
+    done
+  done
+  printf '%s\n' "${pids[@]}" | sort -u
+}
+
+if ! start_dnsmasq; then
+  echo "==> dnsmasq failed to bind port 53; looking for the process actually holding it..." >&2
+  mapfile -t stale_pids < <(find_port_53_pids)
+  if [[ ${#stale_pids[@]} -gt 0 ]]; then
+    echo "==> reaping stale process(es) holding port 53: ${stale_pids[*]}"
+    for pid in "${stale_pids[@]}"; do
+      kill -9 "$pid" 2>/dev/null || true
+    done
+    sleep 1
+  else
+    echo "==> no process found holding port 53 via /proc (holder may have already exited)"
+  fi
+  rm -f /var/run/dnsmasq-cam.pid
+  if ! start_dnsmasq; then
+    echo "ERROR: port 53 is still blocked after reap+retry -- failing closed" >&2
+    exit 1
+  fi
+  echo "==> dnsmasq bound port 53 successfully after reap+retry"
+fi
 
 # Point the container resolver at the local dnsmasq instance so every DNS
 # lookup flows through dnsmasq and triggers ipset insertion.

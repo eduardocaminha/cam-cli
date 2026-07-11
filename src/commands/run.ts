@@ -58,8 +58,10 @@ import {
 	removeSidecarPidIfExists,
 	writeWatcherPid,
 	removeWatcherPidIfExists,
+	writeSidecarLivenessWatcherPid,
+	removeSidecarLivenessWatcherPidIfExists,
 } from '../supervisor/sidecar-pid.ts';
-import { DEFAULTS, readMetaLoop, readPhaseModel, readBackend } from '../config/models.ts';
+import { DEFAULTS, readMetaLoop, readPhaseModel, readBackend, readWorkerIsolation } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 import { makeFileEventLogger } from '../supervisor/events.ts';
 import { checkClaudeAuth } from './run-auth-preflight.ts';
@@ -104,6 +106,16 @@ export type SpawnSidecarFn = (cwd: string, logPath: string) => SidecarProcess;
  */
 export type SpawnWatcherFn = (cwd: string, logPath: string) => SidecarProcess;
 
+/**
+ * Factory that spawns the sidecar-liveness watcher (US-002, CAM-207) as a
+ * background child process. Same interface and lifecycle contract as
+ * SpawnSidecarFn/SpawnWatcherFn.
+ * The real default redirects stdout+stderr to
+ * .claude/cam-sidecar-liveness-watcher.log. Tests inject a fake that records
+ * the invocation and returns a no-op handle.
+ */
+export type SpawnSidecarLivenessWatchFn = (cwd: string, logPath: string) => SidecarProcess;
+
 export interface RunOptions {
 	noAttach?: boolean;
 	cwd?: string;
@@ -126,6 +138,16 @@ export interface RunOptions {
 	 * the sidecar on SIGINT/SIGTERM.
 	 */
 	spawnWatcherFn?: SpawnWatcherFn;
+	/**
+	 * Injectable sidecar-liveness watcher spawn function for unit tests.
+	 * Default: spawn `cam sidecar-liveness-watch` as a background Bun child
+	 * process alongside the sidecar, with stdout+stderr redirected to
+	 * .claude/cam-sidecar-liveness-watcher.log. Killed in the same cleanup
+	 * handler as the sidecar/recycle-watcher on SIGINT/SIGTERM. Only spawned
+	 * when `shouldSpawnSidecarLivenessWatch()` is true (container
+	 * worker_isolation mode); a no-op in host mode.
+	 */
+	spawnSidecarLivenessWatchFn?: SpawnSidecarLivenessWatchFn;
 }
 
 export interface ParsedRunArgs {
@@ -575,6 +597,48 @@ function spawnWatcherDefault(cwd: string, logPath: string): SidecarProcess {
 }
 
 // ---------------------------------------------------------------------------
+// Sidecar-liveness watcher spawn (US-002, CAM-207)
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether the sidecar-liveness watcher should be spawned: only in container
+ * worker-isolation mode. Host mode has no container sidecar process to
+ * monitor, so the spawn there is a no-op.
+ *
+ * @param configPath  Forwarded to readWorkerIsolation(); overridable by tests.
+ */
+export function shouldSpawnSidecarLivenessWatch(configPath?: string): boolean {
+	return readWorkerIsolation(configPath) === 'container';
+}
+
+/**
+ * Real production implementation of SpawnSidecarLivenessWatchFn.
+ *
+ * Spawns `cam sidecar-liveness-watch` as a background Bun child process
+ * alongside the sidecar and recycle watcher, with stdout+stderr redirected to
+ * `logPath` (.claude/cam-sidecar-liveness-watcher.log). Same lifecycle
+ * contract as spawnSidecarDefault/spawnWatcherDefault: NOT detached, shares
+ * cam run's process group, killed in the SIGINT/SIGTERM cleanup handler.
+ */
+function spawnSidecarLivenessWatchDefault(cwd: string, logPath: string): SidecarProcess {
+	const logFd = openSync(logPath, 'a');
+	const proc = Bun.spawn(['cam', 'sidecar-liveness-watch'], {
+		cwd,
+		stdio: ['ignore', logFd, logFd],
+	});
+	return {
+		pid: proc.pid,
+		kill: () => {
+			try {
+				proc.kill();
+			} catch {
+				// best-effort
+			}
+		},
+	};
+}
+
+// ---------------------------------------------------------------------------
 // Claude auth preflight (re-export from sibling module)
 // ---------------------------------------------------------------------------
 
@@ -713,6 +777,23 @@ export function runRun(options: RunOptions = {}): number {
 		writeWatcherPid(join(cwd, '.claude'), watcherProc.pid);
 		emitMutedHint(`Recycle watcher started (log: .claude/cam-recycle-watcher.log)`);
 
+		// US-002 (CAM-207): spawn the sidecar-liveness watcher only in container
+		// worker-isolation mode. Host mode has no container sidecar process to
+		// monitor, so this is a no-op there (shouldSpawnSidecarLivenessWatch).
+		let livenessWatcherProc: SidecarProcess | null = null;
+		if (shouldSpawnSidecarLivenessWatch()) {
+			const livenessWatcherLogPath = join(cwd, '.claude', 'cam-sidecar-liveness-watcher.log');
+			const spawnSidecarLivenessWatchFn =
+				options.spawnSidecarLivenessWatchFn ?? spawnSidecarLivenessWatchDefault;
+			livenessWatcherProc = spawnSidecarLivenessWatchFn(cwd, livenessWatcherLogPath);
+			// Persist pid immediately after spawn so `cam stop` can SIGTERM the
+			// liveness watcher even when it is idle (mirrors the watcher pid pattern).
+			writeSidecarLivenessWatcherPid(join(cwd, '.claude'), livenessWatcherProc.pid);
+			emitMutedHint(
+				`Sidecar liveness watcher started (log: .claude/cam-sidecar-liveness-watcher.log)`,
+			);
+		}
+
 		let cleaned = false;
 		const cleanup = () => {
 			if (cleaned) return;
@@ -724,8 +805,10 @@ export function runRun(options: RunOptions = {}): number {
 			}
 			removeSidecarPidIfExists(join(cwd, '.claude'));
 			removeWatcherPidIfExists(join(cwd, '.claude'));
+			removeSidecarLivenessWatcherPidIfExists(join(cwd, '.claude'));
 			sidecarProc.kill();
 			watcherProc.kill();
+			livenessWatcherProc?.kill();
 		};
 		process.once('SIGINT', () => {
 			cleanup();

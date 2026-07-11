@@ -22,6 +22,7 @@ import {
 	buildOrchestratorPaneCommand,
 	buildOrchestratorBootPrompt,
 	DEFAULT_MAX_ORCH_RESPAWNS,
+	shouldSpawnSidecarLivenessWatch,
 	type SpawnSidecarFn,
 	type SpawnWatcherFn,
 } from '../src/commands/run.ts';
@@ -955,5 +956,78 @@ describe('runRun recycle watcher spawn (US-004)', () => {
 
 		expect(code).toBe(0);
 		expect(existsSync(join(cwd, '.claude', ORCH_RECYCLE_MARKER))).toBe(false);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Sidecar-liveness watcher spawn gating (US-002, CAM-207)
+// ---------------------------------------------------------------------------
+
+describe('shouldSpawnSidecarLivenessWatch (US-002, CAM-207)', () => {
+	function writeWorkerIsolationToml(dir: string, workerIsolation: string | undefined): string {
+		const dotCam = join(dir, 'scripts', 'cam');
+		mkdirSync(dotCam, { recursive: true });
+		const configPath = join(dotCam, 'project.toml');
+		writeFileSync(
+			configPath,
+			workerIsolation === undefined ? '' : `[loop]\nworker_isolation = "${workerIsolation}"\n`,
+			'utf8',
+		);
+		return configPath;
+	}
+
+	it('returns false (no-op) when worker_isolation is absent (host default)', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-run-isolation-'));
+		const configPath = writeWorkerIsolationToml(dir, undefined);
+		expect(shouldSpawnSidecarLivenessWatch(configPath)).toBe(false);
+	});
+
+	it('returns false (no-op) when worker_isolation = "host"', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-run-isolation-'));
+		const configPath = writeWorkerIsolationToml(dir, 'host');
+		expect(shouldSpawnSidecarLivenessWatch(configPath)).toBe(false);
+	});
+
+	it('returns true when worker_isolation = "container"', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-run-isolation-'));
+		const configPath = writeWorkerIsolationToml(dir, 'container');
+		expect(shouldSpawnSidecarLivenessWatch(configPath)).toBe(true);
+	});
+
+	it('returns false for a config file that does not exist', () => {
+		expect(shouldSpawnSidecarLivenessWatch('/nonexistent/project.toml')).toBe(false);
+	});
+});
+
+describe('runRun sidecar-liveness watcher spawn (US-002, CAM-207)', () => {
+	// This repo (and every runRun test cwd, absent an explicit [loop]
+	// worker_isolation = "container" override) resolves worker_isolation via
+	// the REAL scripts/cam/project.toml at the actual process.cwd() (mirrors
+	// the existing readMetaLoop/readPhaseModel/readBackend call convention in
+	// runRun — see shouldSpawnSidecarLivenessWatch's own describe block above
+	// for the isolated, configPath-injectable unit tests of the gate itself).
+	// This repo is configured `worker_isolation = "host"` (dogfood gotcha), so
+	// the spawn is a no-op here — validated by tests, not a live run (AC6).
+	it('does NOT spawn the sidecar-liveness watcher in this (host-mode) repo', () => {
+		const cwd = makeTmpProject();
+		const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionExists: false });
+
+		let livenessSpawnCalled = false;
+		const spawnSidecarLivenessWatchFn = () => {
+			livenessSpawnCalled = true;
+			return { pid: 0, kill: () => {} };
+		};
+
+		const code = runRun({
+			cwd,
+			noAttach: true,
+			spawnFn: spawn,
+			spawnSidecarFn: noopSidecar,
+			spawnWatcherFn: noopWatcher,
+			spawnSidecarLivenessWatchFn,
+		});
+
+		expect(code).toBe(0);
+		expect(livenessSpawnCalled).toBe(false);
 	});
 });

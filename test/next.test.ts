@@ -367,7 +367,7 @@ describe('runNext (thin-proxy, hit path)', () => {
 		try {
 			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%3' });
 
-			const code = await runNext({ cwd: dir, tmuxSpawnFn: spawnFn });
+			const code = await runNext({ cwd: dir, tmuxSpawnFn: spawnFn, sidecarAliveFn: () => true });
 
 			expect(code).toBe(0);
 			// send-keys is no longer called by cam next (sidecar handles dispatch)
@@ -407,6 +407,7 @@ describe('runNext (thin-proxy, hit path)', () => {
 				tmuxSpawnFn: spawnFn,
 				maxIterations: 10,
 				completionPromise: 'MY_PROMISE',
+				sidecarAliveFn: () => true,
 			});
 			expect(code).toBe(0);
 		} finally {
@@ -419,7 +420,7 @@ describe('runNext (thin-proxy, hit path)', () => {
 		try {
 			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
 
-			await runNext({ cwd: dir, tmuxSpawnFn: spawnFn });
+			await runNext({ cwd: dir, tmuxSpawnFn: spawnFn, sidecarAliveFn: () => true });
 
 			const stateContent = readFileSync(join(dir, '.claude', 'cam-loop.local.md'), 'utf8');
 			expect(stateContent).toContain('active: true');
@@ -517,6 +518,7 @@ describe('runNext (thin-proxy, miss path)', () => {
 				statFn: () => markerPresent,
 				sleepFn: () => {},
 				waitTimeoutMs: 5_000,
+				sidecarAliveFn: () => true,
 			});
 
 			// spawnFn always sees a live orch so it takes the hit path.
@@ -548,6 +550,7 @@ describe('runNext (write failure path)', () => {
 					cwd: dir,
 					tmuxSpawnFn: spawnFn,
 					writeFn: () => { throw new Error('EACCES: permission denied'); },
+					sidecarAliveFn: () => true,
 				});
 			} finally {
 				process.stderr.write = origStderrWrite;
@@ -579,6 +582,7 @@ describe('runNext (write failure path)', () => {
 					cwd: dir,
 					tmuxSpawnFn: spawnFn,
 					writeFn: () => { throw new Error('write failed'); },
+					sidecarAliveFn: () => true,
 				});
 			} finally {
 				process.stdout.write = origStdoutWrite;
@@ -630,6 +634,62 @@ describe('runNext (thin-proxy, pane not found)', () => {
 
 			const code = await runNext({ cwd: dir, tmuxSpawnFn: spawnFn });
 			expect(code).toBe(1);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+
+// --- runNext: sidecar liveness gate (US-003, CAM-207) -----------------------
+
+describe('runNext: sidecar liveness gate', () => {
+	test('refuses and does NOT write active:true when the sidecar is dead', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-sidecar-dead-'));
+		try {
+			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
+			let probedClaudeDir: string | undefined;
+
+			const code = await runNext({
+				cwd: dir,
+				tmuxSpawnFn: spawnFn,
+				sidecarAliveFn: (claudeDir) => {
+					probedClaudeDir = claudeDir;
+					return false;
+				},
+			});
+
+			expect(code).toBe(1);
+			expect(existsSync(join(dir, '.claude', 'cam-loop.local.md'))).toBe(false);
+			expect(probedClaudeDir).toBe(join(dir, '.claude'));
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('proceeds and writes active:true when the sidecar is alive', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-sidecar-alive-'));
+		try {
+			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
+
+			const code = await runNext({ cwd: dir, tmuxSpawnFn: spawnFn, sidecarAliveFn: () => true });
+
+			expect(code).toBe(0);
+			const stateContent = readFileSync(join(dir, '.claude', 'cam-loop.local.md'), 'utf8');
+			expect(stateContent).toContain('active: true');
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('AC4: the gate is mode-agnostic — a dead sidecar refuses regardless of worker_isolation', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-next-sidecar-mode-agnostic-'));
+		try {
+			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
+
+			const code = await runNext({ cwd: dir, tmuxSpawnFn: spawnFn, sidecarAliveFn: () => false });
+
+			expect(code).toBe(1);
+			expect(existsSync(join(dir, '.claude', 'cam-loop.local.md'))).toBe(false);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}

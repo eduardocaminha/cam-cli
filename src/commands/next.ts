@@ -42,6 +42,7 @@ import {
 } from '../tmux/session.ts';
 import { waitForOrchestrator } from '../tmux/bootstrap-wait.ts';
 import { parseStateFile } from './status.ts';
+import { sidecarLivenessGate } from './sidecar-gate.ts';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -234,6 +235,12 @@ export interface NextOptions {
 	 * exercise the write-failure error path.
 	 */
 	writeFn?: (cwd: string, body: string, opts: { force?: boolean }) => string;
+	/**
+	 * Injectable sidecar-liveness probe (US-003, CAM-207). Defaults to
+	 * `sidecarAlive` from `src/supervisor/sidecar-pid.ts`. Tests inject a fake
+	 * to exercise the dead/alive branches without touching real pids.
+	 */
+	sidecarAliveFn?: (claudeDir: string) => boolean;
 }
 
 // --- Internal helpers -------------------------------------------------------
@@ -330,6 +337,9 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 		emitTrailingBlank();
 		return 1;
 	}
+
+	// --- Sidecar liveness gate (US-003, CAM-207) ------------------------------
+	if (!sidecarLivenessGate(claudeDir, 'next', options.sidecarAliveFn)) return 1;
 
 	// --- Flip active:true to trigger the sidecar (US-FIX-002) ----------------
 	// The sidecar (spawned by cam run) polls .claude/cam-loop.local.md for the

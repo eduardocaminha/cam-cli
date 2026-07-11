@@ -35,11 +35,15 @@ import {
 	sidecarPidAlive,
 	readWatcherPid,
 	removeWatcherPid,
+	readSidecarLivenessWatcherPid,
+	removeSidecarLivenessWatcherPid,
 } from '../supervisor/sidecar-pid.ts';
 import { SUPERVISOR_LOCK_FILE } from '../supervisor/lock.ts';
 import { WORKER_REPORT_FILENAME } from '../supervisor/worker-report.ts';
 import { DRAIN_STOP_MARKER } from '../supervisor/drain-kill-switch.ts';
 import { ORCH_READY_MARKER } from '../tmux/bootstrap-wait.ts';
+import { DEFAULT_CONTAINER_NAME } from '../supervisor/worker-container.ts';
+import { readWorkerIsolation, type WorkerIsolation } from '../config/models.ts';
 
 import {
 	emitMutedHint,
@@ -151,6 +155,32 @@ export interface StopOptions {
 	 * When undefined, defaults to `removeWatcherPid` from sidecar-pid.ts.
 	 */
 	watcherPidRemover?: (claudeDir: string) => void;
+	/**
+	 * Override the sidecar-liveness watcher pid reader for tests.
+	 * When undefined, defaults to `readSidecarLivenessWatcherPid` from sidecar-pid.ts.
+	 */
+	sidecarLivenessWatcherPidReader?: (claudeDir: string) => number | null;
+	/**
+	 * Override the signal-0 liveness probe for the sidecar-liveness watcher pid.
+	 * When undefined, defaults to `sidecarPidAlive` (same probe, generic).
+	 */
+	sidecarLivenessWatcherPidAliveFn?: (pid: number) => boolean;
+	/**
+	 * Override the sidecar-liveness watcher pid-file remover for tests.
+	 * When undefined, defaults to `removeSidecarLivenessWatcherPid` from sidecar-pid.ts.
+	 */
+	sidecarLivenessWatcherPidRemover?: (claudeDir: string) => void;
+	/**
+	 * Override the worker-isolation reader for tests (US-004, CAM-207).
+	 * When undefined, defaults to `readWorkerIsolation` from `../config/models.ts`,
+	 * pointed at `<cwd>/scripts/cam/project.toml`.
+	 */
+	workerIsolationReader?: (configPath: string) => WorkerIsolation;
+	/**
+	 * Override the cam-worker container name for tests (US-004, CAM-207).
+	 * When undefined, defaults to `DEFAULT_CONTAINER_NAME` ('cam-worker').
+	 */
+	containerName?: string;
 }
 
 export interface StopReport {
@@ -202,6 +232,23 @@ export interface StopReport {
 	 * regardless of liveness.
 	 */
 	watcherKilled: boolean;
+	/**
+	 * Was the sidecar-liveness watcher process (from
+	 * .claude/.cam-sidecar-liveness-watcher.pid) sent SIGTERM?
+	 * False when the pid file is absent, the pid is dead (signal-0 fails),
+	 * or the kill call threw. The pid file is always removed when present,
+	 * regardless of liveness.
+	 */
+	sidecarLivenessWatcherKilled: boolean;
+	/**
+	 * Was the cam-worker container torn down via `docker rm -f` (US-004,
+	 * CAM-207)? Always `false` in host mode (`worker_isolation != 'container'`),
+	 * which is a no-op by design — this repo runs host mode. In container
+	 * mode, `false` also covers "container was already absent" (`docker rm -f`
+	 * exits non-zero against a missing container; that's tolerated as
+	 * best-effort, never thrown).
+	 */
+	containerTornDown: boolean;
 }
 
 // --- Helpers ---------------------------------------------------------------
@@ -365,6 +412,12 @@ export function performStop(options: StopOptions = {}): StopReport {
 	const watcherPidReaderImpl = options.watcherPidReader ?? readWatcherPid;
 	const watcherPidAliveImpl = options.watcherPidAliveFn ?? sidecarPidAlive;
 	const watcherPidRemoverImpl = options.watcherPidRemover ?? removeWatcherPid;
+	const sidecarLivenessWatcherPidReaderImpl =
+		options.sidecarLivenessWatcherPidReader ?? readSidecarLivenessWatcherPid;
+	const sidecarLivenessWatcherPidAliveImpl =
+		options.sidecarLivenessWatcherPidAliveFn ?? sidecarPidAlive;
+	const sidecarLivenessWatcherPidRemoverImpl =
+		options.sidecarLivenessWatcherPidRemover ?? removeSidecarLivenessWatcherPid;
 
 	const session = projectSessionName(cwd);
 	const claudeDir = join(cwd, '.claude');
@@ -380,6 +433,8 @@ export function performStop(options: StopOptions = {}): StopReport {
 		markersRemoved: [],
 		fallbackSidecarKilled: false,
 		watcherKilled: false,
+		sidecarLivenessWatcherKilled: false,
+		containerTornDown: false,
 	};
 
 	// 1. Kill the supervisor PID from the state file (before we remove it).
@@ -441,6 +496,46 @@ export function performStop(options: StopOptions = {}): StopReport {
 		}
 		// Always remove the pid file (idempotent whether alive or dead).
 		watcherPidRemoverImpl(claudeDir);
+	}
+
+	// 1e. Kill the sidecar-liveness watcher from
+	//     .claude/.cam-sidecar-liveness-watcher.pid (US-002, CAM-207).
+	//     Mirrors step 1d: probe liveness (signal-0), SIGTERM only when alive,
+	//     always remove the pid file (idempotent). A no-op in host-mode
+	//     projects (the pid file was never written by `cam run`).
+	const sidecarLivenessWatcherPid = sidecarLivenessWatcherPidReaderImpl(claudeDir);
+	if (sidecarLivenessWatcherPid !== null) {
+		const alive = sidecarLivenessWatcherPidAliveImpl(sidecarLivenessWatcherPid);
+		if (alive) {
+			try {
+				killFn(sidecarLivenessWatcherPid, 'SIGTERM');
+				report.sidecarLivenessWatcherKilled = true;
+			} catch {
+				// kill threw — pid may have died in the instant between probe and kill
+			}
+		}
+		// Always remove the pid file (idempotent whether alive or dead).
+		sidecarLivenessWatcherPidRemoverImpl(claudeDir);
+	}
+
+	// 1f. Tear down the cam-worker container at session exit (US-004, CAM-207).
+	//     Gated to container mode: a no-op in host mode (this repo, and most
+	//     projects, run host mode). Root cause this closes: a container left
+	//     running across `cam stop` keeps its stale dnsmasq bound to port 53,
+	//     which then hard-wedges the NEXT session's firewall init when it
+	//     tries to bind the same port. Best-effort: `docker rm -f` against an
+	//     absent container (or an absent `docker` binary) exits non-zero /
+	//     throws; both are tolerated and never propagate out of `cam stop`.
+	const workerIsolationReaderImpl = options.workerIsolationReader ?? readWorkerIsolation;
+	const isolation = workerIsolationReaderImpl(join(cwd, 'scripts/cam/project.toml'));
+	if (isolation === 'container') {
+		const containerNameImpl = options.containerName ?? DEFAULT_CONTAINER_NAME;
+		try {
+			const result = spawnFn('docker', ['rm', '-f', containerNameImpl], { encoding: 'utf8' });
+			report.containerTornDown = result.status === 0;
+		} catch {
+			// docker binary absent or the call threw — best-effort, never fails `cam stop`.
+		}
 	}
 
 	// 2. Remove the loop state file.
@@ -546,6 +641,14 @@ export function runStop(options: StopOptions = {}): number {
 		emitOk('Sent SIGTERM to recycle watcher process');
 	}
 
+	if (report.sidecarLivenessWatcherKilled) {
+		emitOk('Sent SIGTERM to sidecar-liveness watcher process');
+	}
+
+	if (report.containerTornDown) {
+		emitOk('Tore down cam-worker container');
+	}
+
 	if (report.markersRemoved.length > 0) {
 		emitOk(`Removed ${report.markersRemoved.length} marker file(s): ${report.markersRemoved.join(', ')}`);
 	}
@@ -572,7 +675,7 @@ export function runStop(options: StopOptions = {}): number {
 	// success is signaled by the accent ✓ glyph on the content line (`emitOk`),
 	// matching how the Ink screens do it.
 	emitSectionHeading('Done');
-	if (report.stateFileRemoved || report.tmuxKilled || report.supervisorKilled || report.sidecarKilled || report.fallbackSidecarKilled || report.watcherKilled || report.markersRemoved.length > 0) {
+	if (report.stateFileRemoved || report.tmuxKilled || report.supervisorKilled || report.sidecarKilled || report.fallbackSidecarKilled || report.watcherKilled || report.sidecarLivenessWatcherKilled || report.containerTornDown || report.markersRemoved.length > 0) {
 		emitOk('Loop stopped');
 	} else {
 		emitMutedHint('Nothing to clean — no active loop or stale state');

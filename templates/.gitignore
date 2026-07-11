@@ -12,6 +12,8 @@ scripts/cam/review-artifact.txt
 scripts/cam/plan-verdict-report.json
 # Durable plan-escalation marker written on plan non-convergence (US-002, CAM-204)
 .claude/.cam-plan-escalated.json
+# Durable sidecar-stalled marker written on firewall-init failure (US-001, CAM-207)
+.claude/.cam-sidecar-stalled.json
 
 # CAM-68: escaped harness runtime markers (orchestrator + setup + handoff + sidecar)
 .claude/.cam-orchestrator-prompt.txt
