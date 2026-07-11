@@ -32,7 +32,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New file src/supervisor/post-merge-stalled-marker.ts + test/supervisor/post-merge-stalled-marker.test.ts + .gitignore. Mirror src/supervisor/implement-blocked-marker.ts VERBATIM in shape (existsSync/readFileSync/writeFileSync/unlinkSync from node:fs is the established precedent in that module; keep the same try/catch never-throws contract). issueId is string|null because the merge-watch state.issueId is optional. Keep the module I/O-only (no wiring into sidecar here). gitignore precedent: lines 85-91 already list the sibling markers."
     },

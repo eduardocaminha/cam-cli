@@ -1,0 +1,17 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Add durable post-merge-stalled marker module" },
+  "branchName": "cam/issue-174",
+  "timestamp": "2026-07-11T00:00:00Z",
+  "createdFiles": [
+    "src/supervisor/post-merge-stalled-marker.ts",
+    "test/supervisor/post-merge-stalled-marker.test.ts"
+  ],
+  "modifiedFiles": [
+    ".gitignore"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "post-merge-stalled-marker.ts is I/O-only (POST_MERGE_STALLED_FILENAME, PostMergeStalledMarker { prNumber, issueId, completedSteps, remainingSteps, reason, writtenAt }, read/write/remove, mirrors implement-blocked-marker.ts verbatim: never-throw read with full shape guard, best-effort write, silent-noop remove). It is NOT wired into the sidecar's post-merge sequence or merge-watch state yet -- that wiring (writing the marker when a post-merge step fails/stalls, removing it once the sequence completes, and any recycle-recovery read) is left to a future story. .gitignore already carries the .cam-post-merge-stalled.json entry (added this story, next to the sibling markers at line ~91-92); templates/.gitignore was deliberately left untouched since neither .cam-ship-stalled.json nor .cam-plan-preflight-failed.json (the two closest precedents) has an entry there either.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure node:fs (existsSync/readFileSync/writeFileSync/unlinkSync) mirroring the already-established implement-blocked-marker.ts precedent verbatim; no new external library surface introduced." }
+  ]
+}
