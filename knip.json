@@ -21,6 +21,7 @@
     "claude-code-harness/**"
   ],
   "ignoreBinaries": ["cam", "claude", "tmux", "ps", "lsof", "gh", "pgrep"],
+  "ignoreDependencies": ["jscpd"],
   "ignoreExportsUsedInFile": true,
   "exclude": ["exports", "types", "duplicates"]
 }

@@ -82,7 +82,7 @@ after CAM-59. What was added:
 - `bunx knip` (dead-code gate): detects unused files using the knip config
   (entry points include tests and scripts; bulk export/type issues grandfathered
   to keep the gate green at adoption time).
-- `bunx jscpd@5 --config .jscpd.json src scripts` (dup gate): enforces a 4%
+- `bunx jscpd --config .jscpd.json src scripts` (dup gate): enforces a 4%
   duplication ceiling via `.jscpd.json` threshold reporter.
 - `bunx biome lint --error-on-warnings` (lint gate): style and complexity rules
   via biome 2.x with a lean `biome.json` (per-file grandfather overrides for
