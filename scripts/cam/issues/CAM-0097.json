@@ -2,7 +2,7 @@
   "id": "CAM-97",
   "title": "Capturar shape de payload PreToolUse real numa sessao cam-spawned (fixture S-4)",
   "stage": "idea",
-  "status": "open",
+  "status": "abandoned",
   "blockedBy": [],
   "createdAt": "2026-06-26T09:05:16.928Z",
   "description": "A regressao test/orch-agent-allowlist.test.ts usa um shape de payload ASSUMIDO (tool_input.subagent_type) como o empirically-observed production shape (S-4), nao uma captura ao vivo verificada. A leitura defensiva tri-campo falha safe (misread nega, nunca falsa-permite, ja que a identidade subagent-orchestrator nao esta na allowlist), entao e bounded. Uma captura unica ao vivo de uma sessao cam-spawned do orquestrador converteria a premissa em fato verificado e travaria o shape real no fixture. Origem: reviewer SUGGESTION no CAM-91 (PR #74)."
