@@ -1,7 +1,7 @@
 {
   "id": "CAM-167",
   "title": "worker pane nunca fechado no fim do ciclo: reviewer/planner/auditor TUI fica vivo-idle, trava o mutex, forca kill manual",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-03T02:13:13.216Z",
