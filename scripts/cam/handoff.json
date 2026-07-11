@@ -1,23 +1,19 @@
 {
-  "lastCompletedStory": { "id": "US-002", "title": "Wire the counter + PRD content-hash into the marker writer" },
+  "lastCompletedStory": { "id": "US-003", "title": "Halt the auto-dispatch chain when the marker is escalated" },
   "branchName": "cam/issue-214",
-  "timestamp": "2026-07-11T13:00:00Z",
+  "timestamp": "2026-07-11T14:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/host.ts",
-    "test/supervisor/implement-blocked-marker-wiring.test.ts",
+    "src/supervisor/loop.ts",
+    "src/commands/sidecar.ts",
+    "test/supervisor/sidecar-loop.test.ts",
     "scripts/file-size-budget.json",
-    "scripts/cam/prd.json"
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 gates the auto-chain re-dispatch on the marker US-002 now writes with real consecutiveCount/keyHash/escalated. Gate site is runSidecarLoop's flipActiveFn auto-chain block in src/supervisor/loop.ts (grep 'US-005: Auto-chain in auto mode' / 'opts.flipActiveFn !== undefined && opts.hasPendingStories'). Inject a readImplementBlockedMarkerFn?: () => ImplementBlockedMarker | null seam defaulting to a no-op returning null (existing callers/tests stay byte-for-byte unchanged); when the read marker has escalated:true, skip the flipActiveFn call and leave the loop active:false. Production wiring goes in src/commands/sidecar.ts, which already imports readImplementBlockedMarker + IMPLEMENT_BLOCKED_FILENAME (sidecar.ts:49) -- reuse readImplementBlockedMarker(join(claudeDir, IMPLEMENT_BLOCKED_FILENAME)) directly, do not reimplement the read. Record the halt via the existing emit/logEvent path (reuse an existing WorkerEventKind such as 'sidecar-exit' or the meta-loop-dispatch skip-reason enum); the story's AC4 explicitly forbids inventing a new WorkerEventKind. Recovery path already exists: clearImplementBlockedMarkerForCurrentIssue (sidecar.ts, wired into makeProductionRearmImplementingFn) removes the marker on a DONE outcome for the matching issueId, and US-002's advanceBlockedMarker resets consecutiveCount/escalated to a fresh state on any prd.json content change -- US-003 only needs to READ the marker at the gate point, not touch either clear/reset path.",
+  "nextStoryContext": "US-004 surfaces the circuit-broken state at orchestrator boot-read (a docs-only story, no runtime coupling to US-003's loop.ts/sidecar.ts change beyond reading the same marker file). Edit BOTH templates/agents/subagent-orchestrator.md (the existing implement-blocked block, around line 137/185) AND the .claude/agents/subagent-orchestrator.md runtime mirror with an identical escalated:true branch ('circuit-broken' text, e.g. an escalated-issue warning line), keeping the existing non-escalated 'implement blocked' line for escalated:false. Do not restructure the surrounding prose beyond adding this branch. After editing both copies, run bun run embed-vendor then bun run embed-vendor:check (byte-parity gate; see scripts/cam/patterns.md 'Agent-prompt self-hosting pattern'). A doc-gate test asserting the string on the embedded templatesContents['agents/subagent-orchestrator.md'] copy (CAM-190 pattern) is the right home for the persona-side assertion. The doc still instructs the orchestrator to NEVER delete the marker itself: this story is read-only surfacing, no marker-consuming code changes. No em-dash rule applies to agent .md files (LLM-consumed, not human-persisted prose).",
   "officialDocsValidated": [
-    {
-      "lib": "bun",
-      "url": "https://bun.com/docs/api/hashing",
-      "fetchedAt": "2026-07-11T13:00:00Z",
-      "status": "aligned",
-      "summary": "Bun.CryptoHasher('sha256').update() accepts Buffer/Uint8Array/ArrayBuffer/string; .digest('hex') returns a hex string. Confirmed the host.ts computePrdHashForBlockedMarker implementation (readFileSync(prdPath) Buffer fed directly into .update()) matches the current public API."
-    }
+    { "lib": "none", "status": "no_external_lib_touched" }
   ]
 }
