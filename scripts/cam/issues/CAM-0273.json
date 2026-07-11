@@ -1,9 +1,36 @@
 {
   "id": "CAM-273",
   "title": "Auditor traceability/collision check queries GitHub by bare number even when issue_system=local (false-critical BLOCK on numeric-id coincidence)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-11T10:57:00.610Z",
-  "description": "Planning CAM-156 (local backend) escalated after 2 BLOCK rounds: the auditor's F-01 critical resolved bare number 156 against GitHub, matched unrelated PR #156 (.dockerignore, merged 2026-07-07), and declared 100% scope-creep + a branch collision. All false (CAM-156 is a legit local issue; branch cam/issue-156 does not exist). Fix: when issue_system=local the auditor must resolve issue+branch identity against scripts/cam/issues (CAM-N) and git refs, never query gh by bare number. Acceptance: (1) local backend -> no gh query for issue/PR identity; (2) branch-collision flags only a branch that actually exists; (3) regression test reproduces local CAM-156 + coincident GitHub PR #156 and asserts no false-critical."
+  "description": "Planning CAM-156 (local backend) escalated after 2 BLOCK rounds: the auditor's F-01 critical resolved bare number 156 against GitHub, matched unrelated PR #156 (.dockerignore, merged 2026-07-07), and declared 100% scope-creep + a branch collision. All false (CAM-156 is a legit local issue; branch cam/issue-156 does not exist). Fix: when issue_system=local the auditor must resolve issue+branch identity against scripts/cam/issues (CAM-N) and git refs, never query gh by bare number. Acceptance: (1) local backend -> no gh query for issue/PR identity; (2) branch-collision flags only a branch that actually exists; (3) regression test reproduces local CAM-156 + coincident GitHub PR #156 and asserts no false-critical.",
+  "spec": {
+    "acceptanceCriteria": [
+      "The deterministic plan runner (runPlanPhase) resolves the target issue via the configured issue_system and passes the resolved issue record (id, title, description/acceptanceCriteria, and the resolved branchName) into the auditor spawn input alongside prd.json.",
+      "The auditor audits the PRD against the PROVIDED issue record only; it never re-resolves issueNumber/branchName against any backend for identity, and issues zero gh calls for issue/PR identity when issue_system=local.",
+      "Branch-collision is checked against real git refs (local ref plus git ls-remote origin), never against a same-numbered GitHub PR; a branch that does not exist is never flagged as a collision.",
+      "Any prior-art / duplication signal the auditor retains is sourced from git history (backend-agnostic) and emitted as non-blocking (WARNING/SUGGESTION), never a critical/BLOCK.",
+      "A regression test reproduces the CAM-156 scenario (local CAM-156 spec plus a coincident GitHub PR #156) and asserts the auditor emits no false-critical and makes no gh identity query."
+    ],
+    "scope": "Auditor spawn contract (runPlanPhase -> auditor payload) plus the auditor's identity/traceability and branch-collision logic. Out of scope: the planner and implementer. F-02 from the CAM-156 audit (inverted grep -qv 'events.ts' oracle in acceptance criterion #6) is a per-PRD fix folded into CAM-156's re-plan, not this issue.",
+    "gotchas": [
+      "issue_system=local resolves CAM-N from scripts/cam/issues/CAM-NNNN.json on main; GitHub PR numbers are a separate namespace whose values can coincide (CAM-156 vs PR #156).",
+      "The auditor is an LLM: identity resolution must be done by deterministic code upstream and handed in as payload, never re-derived by the model (CAM-197 principle).",
+      "Prior-art is legitimate audit value but must come from git log (commits + merged PRs are already there), not from the GitHub issue/PR API by number."
+    ],
+    "domainTerms": [
+      "issue identity resolution",
+      "branch-collision check",
+      "prior-art signal"
+    ]
+  },
+  "wsjf": {
+    "value": 8,
+    "timeCriticality": 6,
+    "riskReduction": 8,
+    "jobSize": 4
+  },
+  "type": "fix"
 }
