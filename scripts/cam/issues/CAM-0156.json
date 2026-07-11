@@ -1,9 +1,34 @@
 {
   "id": "CAM-156",
   "title": "push-verification reporta false BLOCKED por expected-ref stale (push ja aterrissou)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-02T05:03:33.772Z",
-  "description": "Descoberto no ciclo do CAM-155 (2026-07-02). A push-verification do supervisor (verificacao origin-synced pos-worker, linhagem CAM-33) reportou US-005 como BLOCKED com: `git push failed: [remote rejected] cam/CAM-155-plan-runner-hardening (cannot lock ref ...: is at c6e32f7 but expected 265ee2a)`. Mas o push do worker JA tinha aterrissado (origin == local == c6e32f7); o `expected 265ee2a` era o HEAD do US-004 (a ultima ref que o supervisor registrou como sincada), i.e. a verificacao usou um expected-ref STALE e tentou um push/lease contra ele, que o remote rejeitou porque ja estava em c6e32f7. Evidencia no event log: kind:pushed {sha:'', pushed:false, ok:false, detail:'...is at c6e32f7 but expected 265ee2a'}.\n\nIMPACTO: benigno neste ciclo (o loop prosseguiu pro review, que deu CLEAN, e o branch estava de fato sincado), mas um false BLOCKED pode halt um ciclo ou enganar a narracao em outro timing. A push-verification deve reconhecer 'remote ja == local HEAD' como sucesso (re-fetch + comparar HEAD vs origin) em vez de force-push/lease contra um expected-ref stale que nao foi atualizado apos o push do proprio worker.\n\nREPRO: story cujo push do worker aterrissa e a verificacao subsequente usa o HEAD da story ANTERIOR como expected. Fix: atualizar o expected-ref apos o push do worker, ou tratar origin==localHEAD como synced-ok. Investigar onde a push-verification computa o expected-ref (provavel em loop.ts/host.ts push-verify path). P2."
+  "description": "Descoberto no ciclo do CAM-155 (2026-07-02). A push-verification do supervisor (verificacao origin-synced pos-worker, linhagem CAM-33) reportou US-005 como BLOCKED com: `git push failed: [remote rejected] cam/CAM-155-plan-runner-hardening (cannot lock ref ...: is at c6e32f7 but expected 265ee2a)`. Mas o push do worker JA tinha aterrissado (origin == local == c6e32f7); o `expected 265ee2a` era o HEAD do US-004 (a ultima ref que o supervisor registrou como sincada), i.e. a verificacao usou um expected-ref STALE e tentou um push/lease contra ele, que o remote rejeitou porque ja estava em c6e32f7. Evidencia no event log: kind:pushed {sha:'', pushed:false, ok:false, detail:'...is at c6e32f7 but expected 265ee2a'}.\n\nIMPACTO: benigno neste ciclo (o loop prosseguiu pro review, que deu CLEAN, e o branch estava de fato sincado), mas um false BLOCKED pode halt um ciclo ou enganar a narracao em outro timing. A push-verification deve reconhecer 'remote ja == local HEAD' como sucesso (re-fetch + comparar HEAD vs origin) em vez de force-push/lease contra um expected-ref stale que nao foi atualizado apos o push do proprio worker.\n\nREPRO: story cujo push do worker aterrissa e a verificacao subsequente usa o HEAD da story ANTERIOR como expected. Fix: atualizar o expected-ref apos o push do worker, ou tratar origin==localHEAD como synced-ok. Investigar onde a push-verification computa o expected-ref (provavel em loop.ts/host.ts push-verify path). P2.",
+  "spec": {
+    "acceptanceCriteria": [
+      "ensurePushed (src/supervisor/host.ts:640-688) is inverted to compare-first: it obtains the authoritative remote sha via git ls-remote origin <branch> and compares it to local HEAD BEFORE attempting any git push (today the push at host.ts:651 runs first and the HEAD-vs-origin compare at :664-684 runs second).",
+      "When the remote sha equals local HEAD (the worker already pushed), ensurePushed returns synced-ok ({ ok:true, pushed:false }) with no git push; the false BLOCKED caused by a plain push sending a stale compare-and-swap old-oid from an un-refreshed origin tracking ref no longer occurs.",
+      "When the remote is behind or missing the branch (the worker genuinely did not push), ensurePushed runs git push origin <branch> and re-verifies (preserving the real push capability).",
+      "When git ls-remote fails (e.g. transient network error) the path falls back to the current push attempt, so the fix neither regresses the ability to push when needed nor turns a transient network failure into a false BLOCKED.",
+      "The ensurePushed return contract { ok, pushed, sha, detail } is unchanged, so loop.ts:1266-1284 and the pushed event (events.ts) need no change; tests in test/supervisor/loop.test.ts:1528+ are updated to cover synced-ok-without-push, genuine-behind-then-push, and ls-remote-failure fallback."
+    ],
+    "scope": "Fix the push-verification false BLOCKED (CAM-33 lineage). ensurePushed was implemented as a live git push followed by a HEAD-vs-origin compare, with no re-fetch of the origin tracking ref. Because the implementer worker already pushes its own final commit, by verify time origin is ahead of the supervisor host's stale origin/<branch> tracking ref; the redundant plain push at host.ts:651 sends the stale ref as git's compare-and-swap old-oid and the remote rejects it ('cannot lock ref: is at c6e32f7 but expected 265ee2a', the prior story's HEAD), yielding ok:false which halts the cycle as blocked. Fix by making verification read-only-first: fetch the authoritative remote sha (git ls-remote), compare to local HEAD, treat origin==localHEAD as synced-ok, and only push when genuinely behind. Surgical: src/supervisor/host.ts + tests; the return contract and downstream stay unchanged.",
+    "gotchas": [
+      "ok:false is a real cycle-halting blocked outcome (loop.ts:1276-1283 -> blockedResult), NOT advisory narration; pushed:false alone with ok:true is the normal already-synced noop. The false-positive severity comes from ok:false halting.",
+      "Root cause is two-fold: ensurePushed pushes before comparing (inverted ordering, host.ts:651 vs :664-684) and never re-fetches, so it compares against the cached, stale refs/remotes/origin/<branch>. Both must be addressed by the compare-first-with-fresh-remote-sha change.",
+      "The worker pushes as its own final step (templates/agents/subagent-implementer.md:106 step 8; scripts/cam/CLAUDE.md step 11), which is why origin is already synced at verify time; the supervisor push is redundant in the common case.",
+      "--force-with-lease appears nowhere in src/ today (only docs/recovery-runbook.md:929); do not introduce a lease-push - the fix is a read-only compare, not a lease rework.",
+      "Prefer git ls-remote (queries the remote without mutating local tracking refs or fetching objects) over git fetch for the comparison, to keep the check lightweight and avoid contending with other git callers."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 4,
+    "riskReduction": 6,
+    "jobSize": 2
+  },
+  "type": "fix"
 }
