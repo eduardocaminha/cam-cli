@@ -89,6 +89,8 @@ scripts/cam/plan-verdict-report.json
 .claude/.cam-ship-stalled.json
 # Durable plan-preflight-failed marker written on preflight halt (US-002, CAM-215)
 .claude/.cam-plan-preflight-failed.json
+# Durable post-merge-stalled marker written on incomplete post-merge (US-001, CAM-174)
+.claude/.cam-post-merge-stalled.json
 # Per-run gate timing output written by check-all.ts --json (US-004, CAM-59); read by CI step summary
 gate-results.json
 
