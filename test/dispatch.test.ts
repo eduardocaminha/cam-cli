@@ -16,13 +16,19 @@
 //     - timeout (always busy): fallback sends anyway, no indefinite block
 //     - send-keys does NOT use -l (would make Enter literal); Enter is a separate trailing key (atomic)
 //     - send-keys targets the correct pane ID
+//   sendKeysVerified (US-002, CAM-200):
+//     - composer emptied immediately: delivered on the first attempt, no retry, no push-undelivered
+//     - composer still holds the pushed line every time: retries up to maxAttempts, then emits
+//       exactly one push-undelivered event via the injected logEvent, using a no-op sleepFn
 
 import { describe, expect, test } from 'bun:test';
 import type { SpawnSyncReturns } from 'node:child_process';
 
 import {
 	isOrchPaneIdle,
+	isComposerEmptied,
 	sendKeysWhenIdle,
+	sendKeysVerified,
 	type CapturePaneFn,
 } from '../src/tmux/dispatch.ts';
 import type { SpawnFn as TmuxSpawnFn } from '../src/tmux/session.ts';
@@ -239,5 +245,100 @@ describe('sendKeysWhenIdle', () => {
 
 		const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
 		expect(sendKeys?.args).toContain('%7');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// isComposerEmptied
+// ---------------------------------------------------------------------------
+
+describe('isComposerEmptied', () => {
+	test('returns true when the pushed text is absent from the tail', () => {
+		expect(isComposerEmptied('> ', '/cam-review')).toBe(true);
+	});
+
+	test('returns false when the pushed text is still present in the tail', () => {
+		expect(isComposerEmptied('> /cam-review', '/cam-review')).toBe(false);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// sendKeysVerified
+// ---------------------------------------------------------------------------
+
+describe('sendKeysVerified', () => {
+	test('delivered on first attempt: one send-keys call, no retry, no push-undelivered', () => {
+		const spawnFn = makeSpawnFn();
+		const events: Array<{ kind: string; detail: unknown }> = [];
+
+		sendKeysVerified({
+			paneId: '%3',
+			text: '/cam-plan',
+			tmuxSpawnFn: spawnFn,
+			capturePaneFn: () => '> ', // idle pre-send, composer empty post-send
+			sleepFn: () => {},
+			idleTimeoutMs: 5,
+			logEvent: (kind, detail) => events.push({ kind, detail }),
+		});
+
+		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
+		expect(sendKeysCalls).toHaveLength(1);
+		expect(events).toHaveLength(0);
+	});
+
+	test('composer never empties: retries up to maxAttempts, then emits one push-undelivered event', () => {
+		const spawnFn = makeSpawnFn();
+		const events: Array<{ kind: string; detail: unknown }> = [];
+		let sleepCount = 0;
+		let captureCalls = 0;
+
+		// First capture (pre-send idle-gate) reports idle; every subsequent
+		// capture (post-send verify) reports the composer still holding the
+		// pushed line, simulating a dropped Enter that never submits.
+		const capturePaneFn: CapturePaneFn = () => {
+			captureCalls++;
+			return captureCalls === 1 ? '> ' : '> /cam-review';
+		};
+
+		sendKeysVerified({
+			paneId: '%9',
+			text: '/cam-review',
+			tmuxSpawnFn: spawnFn,
+			capturePaneFn,
+			sleepFn: () => {
+				sleepCount++;
+			}, // no-op: the test never actually waits
+			idleTimeoutMs: 5,
+			maxAttempts: 3,
+			logEvent: (kind, detail) => events.push({ kind, detail }),
+		});
+
+		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
+		expect(sendKeysCalls).toHaveLength(3);
+		// One backoff sleep between each of the 3 attempts (2 retries).
+		expect(sleepCount).toBeGreaterThanOrEqual(2);
+
+		expect(events).toHaveLength(1);
+		expect(events[0]?.kind).toBe('push-undelivered');
+		expect(events[0]?.detail).toEqual({ paneId: '%9', retriesExhausted: 3 });
+	});
+
+	test('logEvent is optional: omitting it emits no event and does not throw', () => {
+		const spawnFn = makeSpawnFn();
+
+		expect(() =>
+			sendKeysVerified({
+				paneId: '%2',
+				text: '/cam-ship',
+				tmuxSpawnFn: spawnFn,
+				capturePaneFn: () => '> /cam-ship', // composer never empties
+				sleepFn: () => {},
+				idleTimeoutMs: 5,
+				maxAttempts: 2,
+			}),
+		).not.toThrow();
+
+		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
+		expect(sendKeysCalls).toHaveLength(2);
 	});
 });

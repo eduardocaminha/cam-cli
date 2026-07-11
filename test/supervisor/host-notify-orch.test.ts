@@ -1,11 +1,14 @@
 // test/supervisor/host-notify-orch.test.ts
 //
-// Unit tests for makeNotifyOrchestrator (US-002, CAM-70).
+// Unit tests for makeNotifyOrchestrator (US-002, CAM-70; wired to
+// sendKeysVerified in US-003, CAM-200).
 //
 // Coverage:
 //   1. Valid orch pane: closure invokes send-keys with the argv shape produced
 //      by buildWorkerReportSendKeysArgv (no -l, Enter as separate key arg,
-//      both in one call).
+//      both in one call). An injected capturePaneFn reports an idle prompt
+//      that never contains the pushed text, so sendKeysVerified's idle-gate
+//      and composer-emptied verify both succeed on the first attempt.
 //   2. No orch pane (list-panes returns empty): no send-keys call (silent no-op).
 
 import { describe, expect, test } from 'bun:test';
@@ -59,6 +62,11 @@ function makeFakeSpawnFn(
 // Tests
 // ---------------------------------------------------------------------------
 
+// Fake capturePaneFn: always reports an idle prompt that never contains the
+// pushed text, so sendKeysVerified's PRE-send idle-gate and POST-send
+// composer-emptied verify both succeed immediately (no real polling/backoff).
+const idleNeverEchoesFn = (): string => '> ';
+
 describe('makeNotifyOrchestrator (US-002)', () => {
 	test('valid orch pane: invokes send-keys with buildWorkerReportSendKeysArgv shape', () => {
 		// list-panes output: two panes; pane index 0 has id %3.
@@ -66,7 +74,7 @@ describe('makeNotifyOrchestrator (US-002)', () => {
 		const calls: SpawnCall[] = [];
 		const spawnFn = makeFakeSpawnFn(listPanesOut, calls);
 
-		const notify = makeNotifyOrchestrator('cam-orch-test-abc123', spawnFn);
+		const notify = makeNotifyOrchestrator('cam-orch-test-abc123', spawnFn, idleNeverEchoesFn);
 		const line = '[cam] review round 1: CLEAN';
 		notify(line);
 

@@ -1,7 +1,8 @@
 // test/supervisor/notify-orchestrator.test.ts
 //
 // Unit tests for the notifyOrchestrator hook in the review branch of
-// runSupervisor (US-001, CAM-70).
+// runSupervisor (US-001, CAM-70), plus the sidecar-pusher wiring to
+// sendKeysVerified (US-003, CAM-200).
 //
 // Coverage:
 //   1. CLEAN verdict: notifyOrchestrator called with '[cam] review round 1: CLEAN'.
@@ -10,8 +11,15 @@
 //   4. notifyOrchestrator absent: loop runs without throwing (backward compat).
 //   5. reviewResult.status 'error': notifyOrchestrator IS called with '[cam] review BLOCKED:' (US-005).
 //   6. updatedPrd.review.lastVerdict null: notifyOrchestrator is NOT called.
+//   7. makeNotifyOrchestrator x sendKeysVerified (US-003): retry-then-delivered
+//      (2 send-keys attempts, no push-undelivered event).
+//   8. makeNotifyOrchestrator x sendKeysVerified (US-003): retry-exhausted
+//      (3 send-keys attempts, exactly one push-undelivered event).
+//   9. adaptLogEventForPush wraps push-undelivered into a full WorkerEvent
+//      (uuid 'sidecar', storyId undefined) for the durable file event logger.
 
 import { describe, expect, test } from 'bun:test';
+import type { SpawnSyncReturns } from 'node:child_process';
 import { runSupervisor } from '../../src/supervisor/loop.ts';
 import type {
 	RunSupervisorOptions,
@@ -27,6 +35,9 @@ import type {
 	IsPaneAlive,
 } from '../../src/supervisor/loop.ts';
 import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
+import { makeNotifyOrchestrator, adaptLogEventForPush } from '../../src/supervisor/host.ts';
+import type { SpawnFn as TmuxSpawnFn } from '../../src/tmux/session.ts';
+import type { WorkerEvent, WorkerEventKind, WorkerEventDetail, WorkerEventLogger } from '../../src/supervisor/events.ts';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -243,5 +254,120 @@ describe('notifyOrchestrator in review branch (US-001)', () => {
 		await runSupervisor(opts);
 
 		expect(notifiedLines).toEqual([]);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// makeNotifyOrchestrator x sendKeysVerified wiring (US-003, CAM-200)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a minimal SpawnSyncReturns<string> suitable for faking tmux calls.
+ * getOrchPaneId inspects `.status` and `.stdout`; everything else is unused.
+ */
+function fakeSpawnResult(stdout: string, status = 0): SpawnSyncReturns<string> {
+	return {
+		pid: 0,
+		output: [null, stdout, ''],
+		stdout,
+		stderr: '',
+		status,
+		signal: null,
+	};
+}
+
+describe('makeNotifyOrchestrator x sendKeysVerified (US-003, CAM-200)', () => {
+	test('retry then delivered: composer-emptied verify succeeds on the second attempt (2 send-keys calls, no push-undelivered)', () => {
+		const text = '[cam] US-003 DONE: typecheck ok, 5 pass / 0 fail';
+		const sendCalls: string[][] = [];
+		const spawnFn: TmuxSpawnFn = (_cmd, args, _opts) => {
+			if (args.includes('list-panes')) return fakeSpawnResult('0;%5\n1;%6\n');
+			sendCalls.push(args.slice());
+			return fakeSpawnResult('');
+		};
+
+		let captureCallCount = 0;
+		const capturePaneFn = (_paneId: string): string => {
+			captureCallCount++;
+			if (captureCallCount === 1) return '> '; // PRE-send idle-gate: idle, ready.
+			if (captureCallCount === 2) return `${text}\n> `; // post-attempt-1 verify: still in composer.
+			return '> '; // post-attempt-2 verify: composer emptied.
+		};
+
+		const events: Array<{ kind: WorkerEventKind; detail: WorkerEventDetail }> = [];
+		const logEvent = (kind: WorkerEventKind, detail: WorkerEventDetail): void => {
+			events.push({ kind, detail });
+		};
+
+		const notify = makeNotifyOrchestrator('cam-retry-test', spawnFn, capturePaneFn, logEvent);
+		notify(text);
+
+		expect(sendCalls.length).toBe(2);
+		expect(events).toEqual([]);
+	});
+
+	test('retry exhausted: composer never emptied triggers exactly one push-undelivered event after maxAttempts sends', () => {
+		const text = '[cam] review round 2: FIXES_PENDING:1';
+		const sendCalls: string[][] = [];
+		const spawnFn: TmuxSpawnFn = (_cmd, args, _opts) => {
+			if (args.includes('list-panes')) return fakeSpawnResult('0;%7\n');
+			sendCalls.push(args.slice());
+			return fakeSpawnResult('');
+		};
+
+		let captureCallCount = 0;
+		const capturePaneFn = (_paneId: string): string => {
+			captureCallCount++;
+			if (captureCallCount === 1) return '> '; // PRE-send idle-gate: idle, ready.
+			return `${text}\n> `; // every post-send verify: text never leaves the composer.
+		};
+
+		const events: Array<{ kind: WorkerEventKind; detail: WorkerEventDetail }> = [];
+		const logEvent = (kind: WorkerEventKind, detail: WorkerEventDetail): void => {
+			events.push({ kind, detail });
+		};
+
+		const notify = makeNotifyOrchestrator('cam-exhaust-test', spawnFn, capturePaneFn, logEvent);
+		notify(text);
+
+		// Default maxAttempts is 3 (src/tmux/dispatch.ts sendKeysVerified).
+		expect(sendCalls.length).toBe(3);
+		expect(events).toHaveLength(1);
+		expect(events[0]!.kind).toBe('push-undelivered');
+		expect(events[0]!.detail).toEqual({ paneId: '%7', retriesExhausted: 3 });
+	});
+
+	test('adaptLogEventForPush wraps push-undelivered into a full WorkerEvent with uuid "sidecar"', () => {
+		const text = '[cam] review round 5: MAX_ROUNDS_DEBT';
+		const spawnFn: TmuxSpawnFn = (_cmd, args, _opts) => {
+			if (args.includes('list-panes')) return fakeSpawnResult('0;%9\n');
+			return fakeSpawnResult('');
+		};
+
+		let captureCallCount = 0;
+		const capturePaneFn = (_paneId: string): string => {
+			captureCallCount++;
+			if (captureCallCount === 1) return '> ';
+			return `${text}\n> `; // never emptied: exhausts retries.
+		};
+
+		const recorded: WorkerEvent[] = [];
+		const fileLogger: WorkerEventLogger = (event) => {
+			recorded.push(event);
+		};
+
+		const notify = makeNotifyOrchestrator(
+			'cam-adapt-test',
+			spawnFn,
+			capturePaneFn,
+			adaptLogEventForPush(fileLogger),
+		);
+		notify(text);
+
+		expect(recorded).toHaveLength(1);
+		expect(recorded[0]!.kind).toBe('push-undelivered');
+		expect(recorded[0]!.uuid).toBe('sidecar');
+		expect(recorded[0]!.storyId).toBeUndefined();
+		expect(recorded[0]!.detail).toEqual({ paneId: '%9', retriesExhausted: 3 });
 	});
 });

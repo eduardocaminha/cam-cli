@@ -76,6 +76,13 @@ function makeFakeSpawn(orchPaneId: string, calls: SpawnCall[]): SpawnFn {
 	};
 }
 
+// Fake capturePaneFn: always reports an idle prompt that never contains the
+// pushed text, so sendKeysVerified's (US-003, CAM-200) idle-gate and
+// composer-emptied verify both succeed on the first attempt (no real
+// polling/backoff), preserving this file's "exactly one send-keys call"
+// assertions.
+const idleNeverEchoesFn = (): string => '> ';
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -86,7 +93,7 @@ describe('single-pusher guard: makeNotifyOrchestrator is the sole [cam] emitter'
 		const calls: SpawnCall[] = [];
 		const spawnFn = makeFakeSpawn(orchPaneId, calls);
 
-		const notify = makeNotifyOrchestrator('cam-test-session', spawnFn);
+		const notify = makeNotifyOrchestrator('cam-test-session', spawnFn, idleNeverEchoesFn);
 
 		// Construct a typical implementer report and format the summary line.
 		const report: WorkerReport = {
@@ -125,7 +132,7 @@ describe('single-pusher guard: makeNotifyOrchestrator is the sole [cam] emitter'
 		const calls: SpawnCall[] = [];
 		const spawnFn = makeFakeSpawn(orchPaneId, calls);
 
-		const notify = makeNotifyOrchestrator('cam-test-session', spawnFn);
+		const notify = makeNotifyOrchestrator('cam-test-session', spawnFn, idleNeverEchoesFn);
 
 		const line = formatReviewVerdictLine(1, 'CLEAN');
 		expect(line).toBe('[cam] review round 1: CLEAN');
@@ -150,7 +157,7 @@ describe('single-pusher guard: makeNotifyOrchestrator is the sole [cam] emitter'
 		const calls: SpawnCall[] = [];
 		const spawnFn = makeFakeSpawn(orchPaneId, calls);
 
-		const notify = makeNotifyOrchestrator('cam-test-session', spawnFn);
+		const notify = makeNotifyOrchestrator('cam-test-session', spawnFn, idleNeverEchoesFn);
 
 		const line = formatReviewVerdictLine(2, 'FIXES_PENDING:3');
 		expect(line).toBe('[cam] review round 2: FIXES_PENDING:3');

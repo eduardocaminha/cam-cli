@@ -13,7 +13,9 @@
 //   buildSupervisorOptions(cwd, options?) -> RunSupervisorOptions + ancillaries
 //   makeReadWorkerReport(cwd)             -> ReadWorkerReport
 //   makeClearWorkerReport(cwd)            -> ClearWorkerReport
-//   makeNotifyOrchestrator(sessionName, spawnFn) -> (line) => void
+//   makeNotifyOrchestrator(sessionName, spawnFn, capturePaneFn?, logEvent?) -> (line) => void
+//   makeCapturePaneFn(spawnFn) -> CapturePaneFn
+//   adaptLogEventForPush(logEvent) -> (kind, detail) => void
 
 import { existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -29,7 +31,13 @@ import {
 } from './loop.ts';
 import { makeReviewDispatch } from './review.ts';
 import { commitSubjectMatchesStory } from './result.ts';
-import { makeFileEventLogger, readWorkerTokens } from './events.ts';
+import {
+	makeFileEventLogger,
+	readWorkerTokens,
+	type WorkerEventKind,
+	type WorkerEventDetail,
+	type WorkerEventLogger,
+} from './events.ts';
 import { acquireSupervisorLock, SUPERVISOR_LOCK_FILE, type AcquireLockResult } from './lock.ts';
 import type { PrdSnapshot } from './decide.ts';
 import {
@@ -38,11 +46,13 @@ import {
 	writeWorkerPaneMarker,
 	projectSessionName,
 	getOrchPaneId,
+	tmuxArgs,
 	type SpawnFn as TmuxSpawnFn,
 } from '../tmux/session.ts';
+import { sendKeysVerified, type CapturePaneFn } from '../tmux/dispatch.ts';
 import { isPidAlive } from '../commands/resume.ts';
 import { renderStateFile, writeStateFile } from '../commands/next.ts';
-import { WORKER_REPORT_FILENAME, buildWorkerReportSendKeysArgv } from './worker-report.ts';
+import { WORKER_REPORT_FILENAME } from './worker-report.ts';
 import type { ReviewReport } from './review-report.ts';
 import { REVIEW_REPORT_FILENAME } from './review-report.ts';
 import { preflightWorkerContainer } from './preflight-container.ts';
@@ -211,9 +221,45 @@ export function makeClearReviewReport(cwd: string): () => void {
 // ---------------------------------------------------------------------------
 
 /**
+ * Build a CapturePaneFn (src/tmux/dispatch.ts) over the given TmuxSpawnFn, for
+ * callers that only have a bare spawnFn in scope and need the same
+ * capture-pane reader shape sendKeysVerified's composer-emptied verify step
+ * expects (US-003, CAM-200). Mirrors the raw `capture-pane -p -t <paneId>`
+ * shape dispatch.ts's own internal default reader builds, so behavior is
+ * unchanged whether a caller threads this explicitly or omits capturePaneFn
+ * and lets sendKeysVerified default it from the same spawnFn.
+ */
+export function makeCapturePaneFn(spawnFn: TmuxSpawnFn): CapturePaneFn {
+	return (paneId: string): string => {
+		const r = spawnFn('tmux', tmuxArgs(['capture-pane', '-p', '-t', paneId]), { stdio: 'pipe' });
+		return typeof r.stdout === 'string' ? r.stdout : (r.stdout?.toString() ?? '');
+	};
+}
+
+/**
+ * Adapt a full WorkerEventLogger (ts/storyId/uuid/kind/detail) down to the
+ * bare `(kind, detail) => void` seam sendKeysVerified's `logEvent` expects
+ * (US-003, CAM-200). `storyId` is always `undefined` and `uuid` is fixed to
+ * `'sidecar'`: a push-undelivered narration is not tied to a specific story
+ * or worker session, mirroring the same fixed-uuid convention already used
+ * for merge-watch/ship-phase sidecar-originated events.
+ */
+export function adaptLogEventForPush(
+	logEvent: WorkerEventLogger,
+): (kind: WorkerEventKind, detail: WorkerEventDetail) => void {
+	return (kind, detail) => {
+		logEvent({ ts: new Date().toISOString(), storyId: undefined, uuid: 'sidecar', kind, detail });
+	};
+}
+
+/**
  * Build a notifyOrchestrator closure that resolves the orchestrator pane via
- * getOrchPaneId and, if found, sends the verdict line via send-keys using
- * buildWorkerReportSendKeysArgv.
+ * getOrchPaneId and, if found, pushes the line via `sendKeysVerified` (US-003,
+ * CAM-200): idle-gate + composer-emptied delivery verify + bounded retry,
+ * emitting `'push-undelivered'` via the injected `logEvent` on retry
+ * exhaustion instead of writing any new durable marker (terminal states
+ * already write their own; a lost non-terminal narration is self-healing
+ * since the sidecar proceeds regardless).
  *
  * Best-effort: when getOrchPaneId returns null (orch pane closed or session
  * gone), the closure is a silent no-op. No throw, no error log.
@@ -221,21 +267,35 @@ export function makeClearReviewReport(cwd: string): () => void {
  * Invariants (sendkeys-literal-enter-gotcha, CAM-55):
  *   - send-keys text + Enter go in ONE tmux call (atomic).
  *   - NO -l flag (would make "Enter" literal text, not a key).
- *   buildWorkerReportSendKeysArgv enforces both.
+ *   `sendKeysVerified` enforces both (mirrors buildWorkerReportSendKeysArgv's
+ *   argv shape exactly).
  *
- * @param sessionName  The project's tmux session name.
- * @param spawnFn      Injectable SpawnFn (tmux-flavoured: returns SpawnSyncReturns).
+ * @param sessionName    The project's tmux session name.
+ * @param spawnFn        Injectable SpawnFn (tmux-flavoured: returns SpawnSyncReturns).
+ * @param capturePaneFn  Injectable capture-pane reader for the composer-emptied
+ *                       verify step. Omitting it falls back to sendKeysVerified's
+ *                       own spawnFn-derived default reader.
+ * @param logEvent       Bare `(kind, detail) => void` sink for `'push-undelivered'`
+ *                       on retry exhaustion. Omitting it is a zero-side-effect
+ *                       no-op (mirrors the sub-state-machine logEvent seam,
+ *                       US-002/CAM-200).
  */
 export function makeNotifyOrchestrator(
 	sessionName: string,
 	spawnFn: TmuxSpawnFn,
+	capturePaneFn?: CapturePaneFn,
+	logEvent?: (kind: WorkerEventKind, detail: WorkerEventDetail) => void,
 ): (line: string) => void {
 	return (line: string): void => {
 		const orchPane = getOrchPaneId(sessionName, spawnFn);
 		if (orchPane === null) return; // best-effort: silent no-op
-		const argv = buildWorkerReportSendKeysArgv(orchPane, line);
-		// argv is the full tmux argv after "tmux"; pass as args to 'tmux'.
-		spawnFn('tmux', argv, { stdio: 'ignore' });
+		sendKeysVerified({
+			paneId: orchPane,
+			text: line,
+			tmuxSpawnFn: spawnFn,
+			capturePaneFn,
+			logEvent,
+		});
 	};
 }
 
@@ -801,8 +861,8 @@ export function buildSupervisorOptions(
 	const clearWorkerReport = makeClearWorkerReport(cwd);
 
 	// US-002: build the notifyOrchestrator closure that resolves the orch pane
-	// and sends the verdict line via send-keys. Uses a spawnSync adapter that
-	// matches the TmuxSpawnFn signature (returns SpawnSyncReturns, not the
+	// and pushes the verdict line via sendKeysVerified. Uses a spawnSync adapter
+	// that matches the TmuxSpawnFn signature (returns SpawnSyncReturns, not the
 	// loop.ts SpawnFn shape). Best-effort: silent no-op when orch pane is gone.
 	const tmuxSpawnFn: TmuxSpawnFn = (cmd, args, spawnOpts) =>
 		spawnSync(cmd, args, {
@@ -810,7 +870,17 @@ export function buildSupervisorOptions(
 			encoding: 'utf8',
 		} as Parameters<typeof spawnSync>[2]);
 
-	const notifyOrchestrator = makeNotifyOrchestrator(sessionName, tmuxSpawnFn);
+	// US-003 (CAM-200): thread the capture-pane reader + logEvent deps
+	// sendKeysVerified needs for its idle-gate + composer-emptied verify +
+	// bounded-retry push. Reuses the SAME real capturePane closure (with -S -
+	// full scrollback) already wired above, and adapts the full logEvent
+	// WorkerEventLogger down to the bare (kind, detail) seam.
+	const notifyOrchestrator = makeNotifyOrchestrator(
+		sessionName,
+		tmuxSpawnFn,
+		capturePane,
+		adaptLogEventForPush(logEvent),
+	);
 
 	// onProgress: rewrite state file on each iteration and terminal exit.
 	// Built here so the sidecar can inject it when calling runSupervisor.

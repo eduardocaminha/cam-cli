@@ -93,6 +93,12 @@ import handoffSchema from '../../scripts/cam/handoff.schema.json';
  *     an invalid `status` (not one of the handoff.schema.json enum values) or
  *     an unknown object key. Warn-only, non-fatal: it NEVER halts the loop.
  *     See HandoffSchemaWarningEventDetail and validateOfficialDocsValidated.
+ *   - 'push-undelivered' (US-001, CAM-200): emitted when a wake-up push
+ *     (send-keys nudge to a worker/orchestrator pane) fails delivery
+ *     verification after bounded retry. Distinct from the unrelated 'pushed'
+ *     kind above (a git-origin push-verification record); this kind carries
+ *     only wake-up-delivery metadata (pane id, retries exhausted), never
+ *     report content. See PushUndeliveredEventDetail.
  */
 export type WorkerEventKind =
 	| 'worker-start'
@@ -128,7 +134,8 @@ export type WorkerEventKind =
 	| 'plan-target-invalid'
 	| 'merge-watch-poll-error'
 	| 'suggestion-filed'
-	| 'handoff-schema-warning';
+	| 'handoff-schema-warning'
+	| 'push-undelivered';
 
 /** Gate status recorded in a 'result' event. */
 export type GateStatus = 'pass' | 'fail' | 'unknown';
@@ -465,6 +472,20 @@ export interface HandoffSchemaWarningEventDetail {
 	issues: string[];
 }
 
+/**
+ * 'push-undelivered' event detail (US-001, CAM-200): recorded when a wake-up
+ * push to a pane fails delivery verification after bounded retry. Carries
+ * only wake-up-delivery metadata: no report content ever travels in this
+ * event, per the CAM-75/77/78 structured-handback decision (durable truth
+ * lives in files; the pane only carries the wake-up nudge).
+ *   - paneId: the tmux pane id the wake-up push targeted (e.g. '%3').
+ *   - retriesExhausted: the number of retry attempts made before giving up.
+ */
+export interface PushUndeliveredEventDetail {
+	paneId: string;
+	retriesExhausted: number;
+}
+
 /** Detail payload by event kind ('worker-start'/'worker-end' carry free-form maps). */
 export type WorkerEventDetail =
 	| ResultEventDetail
@@ -489,6 +510,7 @@ export type WorkerEventDetail =
 	| PlanTargetInvalidEventDetail
 	| SuggestionFiledEventDetail
 	| HandoffSchemaWarningEventDetail
+	| PushUndeliveredEventDetail
 	| Record<string, unknown>;
 
 /** A single structured worker lifecycle event. */

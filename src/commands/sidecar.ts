@@ -30,7 +30,13 @@ import { runSidecarLoop, type RunSidecarLoopOptions, type SpawnFn as LoopSpawnFn
 import { FirewallError } from '../supervisor/container-firewall.ts';
 import { ContainerConfigError } from '../supervisor/container-config.ts';
 import { ToolchainMismatchError } from '../supervisor/toolchain-assert.ts';
-import { buildSupervisorOptions, makeNotifyOrchestrator, makeReadReviewReport } from '../supervisor/host.ts';
+import {
+	buildSupervisorOptions,
+	makeNotifyOrchestrator,
+	makeReadReviewReport,
+	makeCapturePaneFn,
+	adaptLogEventForPush,
+} from '../supervisor/host.ts';
 import { extractSuggestions, dedupSuggestions, buildFollowUpIssue } from '../supervisor/suggestion-followups.ts';
 import type { FollowUpProvenance } from '../supervisor/suggestion-followups.ts';
 import type { ReviewFinding } from '../supervisor/review-report.ts';
@@ -756,7 +762,15 @@ function makeProductionMergeWatchFn(
 		const postMergeSpawnFn: PostMergeSpawnFn = (cmd, args, spawnOpts) =>
 			spawnSync(cmd, args, spawnOpts as Parameters<typeof spawnSync>[2]) as SpawnSyncReturns<string>;
 
-		const notify = makeNotifyOrchestrator(sessionName, realSpawnFn);
+		// US-003 (CAM-200): thread the capture-pane reader + logEvent deps
+		// sendKeysVerified needs (idle-gate + composer-emptied verify + bounded
+		// retry, 'push-undelivered' on exhaustion).
+		const notify = makeNotifyOrchestrator(
+			sessionName,
+			realSpawnFn,
+			makeCapturePaneFn(realSpawnFn),
+			adaptLogEventForPush(logEvent),
+		);
 
 		// Build step options (scheduling and persistence owned by this caller).
 		const stepOpts: StepMergeWatchOptions = {
@@ -1147,7 +1161,15 @@ function makeProductionShipPhaseFn(
 			});
 
 			handleShipPhaseResult(result, {
-				notify: makeNotifyOrchestrator(sessionName, realSpawnFn),
+				// US-003 (CAM-200): thread the capture-pane reader + logEvent deps
+				// sendKeysVerified needs (idle-gate + composer-emptied verify +
+				// bounded retry, 'push-undelivered' on exhaustion).
+				notify: makeNotifyOrchestrator(
+					sessionName,
+					realSpawnFn,
+					makeCapturePaneFn(realSpawnFn),
+					adaptLogEventForPush(logEvent),
+				),
 				escalateFn: buildShipEscalateFn(cwd),
 				logEvent,
 			});
@@ -2084,7 +2106,15 @@ function runPostPlanActions(o: PostPlanActionsOpts): void {
 		writePrdBranchNameFn: makeWritePrdBranchNameFn(o.cwd),
 		readPlanApprovalFn: () => readPlanApproval(join(o.cwd, 'scripts/cam/project.toml')),
 		escalateFn,
-		notifyFn: makeNotifyOrchestrator(o.sessionName, o.realSpawnFn),
+		// US-003 (CAM-200): thread the capture-pane reader + logEvent deps
+		// sendKeysVerified needs (idle-gate + composer-emptied verify + bounded
+		// retry, 'push-undelivered' on exhaustion).
+		notifyFn: makeNotifyOrchestrator(
+			o.sessionName,
+			o.realSpawnFn,
+			makeCapturePaneFn(o.realSpawnFn),
+			adaptLogEventForPush(o.logEvent),
+		),
 		// US-004 (CAM-204, AC4): a converging run (audit-approved -> branch-created)
 		// removes any pre-existing plan-escalation marker so a stale BLOCK
 		// escalation from an earlier round/issue never outlives convergence.
