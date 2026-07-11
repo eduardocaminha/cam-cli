@@ -1,7 +1,7 @@
 {
   "id": "CAM-74",
   "title": "cam issue list: comando de CLI deterministico que lista os issues locais no terminal (backend none); linear/github usam a UI nativa",
-  "stage": "idea",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-24T08:19:17Z",
