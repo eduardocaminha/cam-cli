@@ -1,9 +1,33 @@
 {
   "id": "CAM-199",
   "title": "quality-gate tools unpinned: bunx knip floats to latest, spine is nondeterministic",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-06T14:34:09.559Z",
-  "description": "The dead-code gate runs plain bunx knip (scripts/check-all.ts:87) with knip absent from package.json devDependencies, so every run downloads the latest knip release. On 2026-07-06 this broke the CAM-118 ship deterministically-unrelated to the diff: a fresh knip release started flagging Unlisted binaries (cam) for the pre-existing spawnSync('cam', ['run','--no-attach']) self-spawn in src/commands/spec.ts (present on main, which shipped green two days earlier with the same code), and the ship runner failed at gates (ship-phase-result kind gates-failed, 14:26 UTC) after review round 1 CLEAN. Same-day unblock commit on the CAM-118 branch pins knip in check-all.ts and adds ignoreBinaries [cam] to knip.json; this issue is the durable follow-through. Fix direction: every bunx-invoked gate tool pinned to an exact version: knip at an exact version (the unblock pin), jscpd is pinned only to major @5 (minor/patch still float, tighten to exact), biome rides devDependencies ^2.5.1 (caret range, consider exact pin since lint runs with --error-on-warnings and a new biome warning class can fail the spine, e.g. the DEPRECATED recommended-field diagnostic that appeared today without failing, this time). Acceptance shape: check:all behavior is reproducible across days with no code change; a version bump of any gate tool is an explicit reviewed diff, never ambient. Cross-refs: CAM-198 (the in-container Node 18 blind spot that let this violation reach ship instead of failing cheap intra-story), CAM-59 (green-local equals green-CI contract)."
+  "description": "The dead-code gate runs plain bunx knip (scripts/check-all.ts:87) with knip absent from package.json devDependencies, so every run downloads the latest knip release. On 2026-07-06 this broke the CAM-118 ship deterministically-unrelated to the diff: a fresh knip release started flagging Unlisted binaries (cam) for the pre-existing spawnSync('cam', ['run','--no-attach']) self-spawn in src/commands/spec.ts (present on main, which shipped green two days earlier with the same code), and the ship runner failed at gates (ship-phase-result kind gates-failed, 14:26 UTC) after review round 1 CLEAN. Same-day unblock commit on the CAM-118 branch pins knip in check-all.ts and adds ignoreBinaries [cam] to knip.json; this issue is the durable follow-through. Fix direction: every bunx-invoked gate tool pinned to an exact version: knip at an exact version (the unblock pin), jscpd is pinned only to major @5 (minor/patch still float, tighten to exact), biome rides devDependencies ^2.5.1 (caret range, consider exact pin since lint runs with --error-on-warnings and a new biome warning class can fail the spine, e.g. the DEPRECATED recommended-field diagnostic that appeared today without failing, this time). Acceptance shape: check:all behavior is reproducible across days with no code change; a version bump of any gate tool is an explicit reviewed diff, never ambient. Cross-refs: CAM-198 (the in-container Node 18 blind spot that let this violation reach ship instead of failing cheap intra-story), CAM-59 (green-local equals green-CI contract).",
+  "spec": {
+    "acceptanceCriteria": [
+      "knip (6.24.0) and jscpd (the exact resolved 5.x version) are added as exact devDependencies in package.json and pinned by bun.lock; the inline version tokens (knip@6.24.0, jscpd@5) are removed from scripts/check-all.ts so bunx resolves the locally installed exact version. The knip gate keeps its bunx --bun invocation (preserving the Bun-runtime forcing that dodges the in-container Node<20 node:util gap, CAM-198).",
+      "@biomejs/biome is tightened from the caret range ^2.5.1 to the exact 2.5.1 in package.json (the lockfile already resolves 2.5.1, but the caret would allow an ambient bump on a lockfile regen).",
+      "check:all is reproducible across days with no code change: no gate tool downloads a floating latest release. A version bump of any gate tool (knip, jscpd, biome, tsc) is an explicit reviewed package.json/bun.lock diff, never ambient.",
+      "The argv assertions in test/check-all.test.ts (the biome/knip/jscpd gate lines around 92/127/134 and the manifest-length test around 54) are updated to match the de-tokenized invocations."
+    ],
+    "scope": "Make the check:all quality spine deterministic by pinning every gate tool under a single mechanism: the bun.lock lockfile. Today knip is pinned exact via an inline token (bunx --bun knip@6.24.0, the CAM-118 unblock) and jscpd is pinned only to major (bunx jscpd@5, minor/patch float); neither is a devDependency, so they have zero lockfile entries and are the real float risk (biome and tsc are already lockfile-locked via devDep/peerDep). Add knip and jscpd as exact devDependencies (so the lockfile pins them and bunx resolves the local copy), drop the parallel inline @version tokens, and tighten biome's caret to exact. tsc stays as-is (already locked via the typescript peerDep + lockfile). Touches ~4 code/config files plus the regenerated lockfile; the gate-test argv assertions are the load-bearing edit.",
+    "gotchas": [
+      "Preserve the knip gate's --bun flag: it forces the Bun runtime to dodge the in-container Node 18 node:util gap (CAM-198/CAM-202, documented at patterns.md:436). The invocation stays bunx --bun knip; only the version source moves from the inline token to the devDep/lockfile.",
+      "jscpd@5 is a native per-arch prebuilt binary; exact-pinning fixes the VERSION (the arch-appropriate prebuilt of that same version resolves per-arch), so determinism is per-version not per-arch and exact-pinning is safe. This answers the adjacent open investigation CAM-243 (is an exact jscpd pin worth it? yes, for reproducibility) - CAM-243 is subsumed by this fix.",
+      "The check-all.test.ts argv assertions are hardcoded and load-bearing: any change to a version string or the bunx token shape breaks them (biome line ~92, knip line ~127, jscpd line ~134, plus the GATES manifest-length test). They must be updated in lockstep.",
+      "This is tooling/config only: no src/ product behavior changes, no templates/ or embed-vendor. Renovate rules (renovate.json) may need a bump entry for the newly exact-pinned devDeps.",
+      "Cross-ref CAM-59 (green-local == green-CI contract) is what this protects: the CAM-118 double-ship failure was an unpinned knip floating to a release that flagged the pre-existing cam self-spawn, failing the spine deterministically-unrelated to the diff."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 6,
+    "timeCriticality": 5,
+    "riskReduction": 7,
+    "jobSize": 2
+  },
+  "type": "chore"
 }
