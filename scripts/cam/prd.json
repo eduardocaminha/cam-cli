@@ -85,7 +85,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": "US-003",
       "notes": "Edit templates/agents/subagent-orchestrator.md (boot-read list items ~line 121-141 and the opening-blocker prose ~line 158-176; add an item #11 + a `⚠ post-merge stalled: PR #<n> (merged, tag/prune/close pending)` blocker line) then run `bun run embed-vendor` and confirm `bun run embed-vendor:check`. Editing templates/ REQUIRES the embed step (gotcha from the issue). Add the runbook section near the divergent-local-main content (existing section around line 941 'Recovery: divergent local main' in docs/recovery-runbook.md is the natural neighbor). Doc-maintenance lands in THIS PR per the issue. The ADR (0025) already exists; do not rewrite it."
     }
