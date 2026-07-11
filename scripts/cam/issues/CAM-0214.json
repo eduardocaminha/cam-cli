@@ -1,7 +1,7 @@
 {
   "id": "CAM-214",
   "title": "Harness circuit-breaker for repeated identical BLOCKED_AMBIGUITY on the same story ID",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [
     "CAM-195"
