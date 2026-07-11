@@ -1,0 +1,12 @@
+{
+  "id": "CAM-276",
+  "title": "The knip.json `ignoreDependencies: [\"jscpd\"]` suppression is legitimate and wel…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-11T13:27:33.363Z",
+  "description": "The knip.json `ignoreDependencies: [\"jscpd\"]` suppression is legitimate and well-justified in patterns.md (jscpd is a CLI-only tool invoked via a bunx shell-string that knip cannot detect statically; knip special-cases its own package name so no entry is needed for knip). Consider a one-line inline comment or JSON note near the entry so a future editor does not have to cross-reference patterns.md to understand why it is not dead-config.\n\nSource: cam/issue-199\nReview round: 1\nLocation: knip.json:24\n\nsuggestion-fingerprint: e4565f03c740",
+  "derivedFrom": [
+    "CAM-199"
+  ]
+}
