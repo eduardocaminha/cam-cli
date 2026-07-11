@@ -1,28 +1,27 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Sidecar-liveness watcher with sidecarAlive() composite, bounded respawn, and escalate-on-exhaustion"
+    "id": "US-003",
+    "title": "cam plan / next / ship refuse the signal-write when the sidecar is dead"
   },
   "branchName": "cam/issue-207",
-  "timestamp": "2026-07-11T22:15:00Z",
+  "timestamp": "2026-07-11T22:45:00Z",
   "createdFiles": [
-    "src/commands/sidecar-liveness-watch.ts",
-    "test/commands/sidecar-liveness-watch.test.ts",
-    "test/supervisor/sidecar-pid.test.ts",
-    "test/stop-sidecar-liveness-watcher-kill.test.ts"
+    "src/commands/sidecar-gate.ts"
   ],
   "modifiedFiles": [
-    "src/supervisor/sidecar-pid.ts",
-    "src/commands/run.ts",
-    "src/commands/stop.ts",
-    "index.ts",
-    "test/run.test.ts",
+    "src/commands/plan.ts",
+    "src/commands/next.ts",
+    "src/commands/ship.ts",
+    "test/plan.test.ts",
+    "test/next.test.ts",
+    "test/ship.test.ts",
+    "test/attach-hint.test.ts",
     "scripts/file-size-budget.json",
     "scripts/cam/patterns.md",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 added the second producer for the shared .cam-sidecar-stalled.json marker (US-001's module, src/supervisor/sidecar-stalled.ts, unchanged): a new internal subcommand `cam sidecar-liveness-watch` (src/commands/sidecar-liveness-watch.ts) polls the new sidecarAlive(claudeDir) composite (src/supervisor/sidecar-pid.ts, mirrors watcherAlive) and, on a dead sidecar, attempts a bounded respawn (default 3 attempts, 2s backoff) via a pure handleOneTick(deps, state) tick helper; on exhaustion it writes the marker with reason:'sidecar-died' and latches an 'exhausted' state that self-clears the instant the sidecar is observed alive again (no special-case recovery detection needed). Spawn wiring lives in src/commands/run.ts, gated by the new exported shouldSpawnSidecarLivenessWatch(configPath?) helper (reads worker_isolation via readWorkerIsolation; container-only, no-op in host mode -- this repo is host mode per scripts/cam/project.toml, so the live spawn path is never exercised in dogfood, only unit-tested). Pid persistence/cleanup follows the existing SIDECAR_PID_FILE/WATCHER_PID_FILE pattern: new SIDECAR_LIVENESS_WATCHER_PID_FILE ('.cam-sidecar-liveness-watcher.pid') with write/read/remove/removeIfExists helpers, wired into run.ts's spawn+cleanup block and stop.ts's kill leg (new StopReport.sidecarLivenessWatcherKilled field). The subcommand is registered in index.ts's dispatch switch (case 'sidecar-liveness-watch') and does NOT register --permission-mode (verified: test/no-permission-mode-flag.test.ts still passes; that file only scans index.ts + behaviorally probes the *Args parsers, it does not scan src/commands/ directory contents despite the story notes' mention -- worth confirming with a repo-wide grep if a future story relies on that scan existing). No downstream story dependency is known yet for this marker's consumer side (US-001's boot-time orchestrator surfacing in templates/agents/subagent-orchestrator.md already reads BOTH reason values generically, so no further template change is needed unless the surfaced field shape changes).",
+  "nextStoryContext": "US-003 added a shared `sidecarLivenessGate(claudeDir, cmdName, sidecarAliveFn?)` helper (new file src/commands/sidecar-gate.ts, defaulting sidecarAliveFn to sidecarAlive from src/supervisor/sidecar-pid.ts, US-002) and wired it into runPlan/runNext/runShip's existing liveness/mutex preamble, right after the paneCountMutex busy-check and BEFORE the phase:planning/active:true/phase:shipping state-file write. Each of PlanOptions/NextOptions/ShipOptions gained an injectable `sidecarAliveFn?: (claudeDir: string) => boolean` seam. The gate is mode-agnostic by construction (no worker_isolation branching in the gate itself), satisfying AC4 without any container-specific code path. Adding the gate call pushed runPlan's cognitive complexity over Biome's ceiling (17, then 16 after the shared-helper extraction); fixed with a SECOND, runPlan-specific extraction of the F-01 issue-resolution + state-file write into `resolveAndWritePlanningSignal(cwd, claudeDir, options)` (returns `string | null`). runNext/runShip did not need this second extraction (they had headroom). Every existing happy-path test in plan.test.ts/next.test.ts/ship.test.ts/attach-hint.test.ts that expects a successful write now injects `sidecarAliveFn: () => true` (the real default probes a real pid file at `<cwd>/.claude/.cam-sidecar.pid`, which is absent in every tmp-dir test fixture, so omitting the fake now makes the command refuse and return 1). Tests that already expected code 1 for an unrelated reason (mutex busy, bootstrap failure, marker timeout, missing pane) did NOT need updating, since they return 1 before ever reaching the new gate. New dedicated describe blocks ('runPlan: sidecar liveness gate', 'runNext: sidecar liveness gate', 'runShip: sidecar liveness gate') cover dead-refuses-no-write, alive-proceeds, and an AC4 mode-agnostic assertion (dead sidecar refuses regardless of any worker_isolation config, proven by the gate having zero config-read code path). File-size-budget.json raised 4 source ceilings + prd.json passes flip in the same commit; used a targeted single-story Edit for the prd.json passes flip (NOT python json.dump, which re-serializes the WHOLE file and mangles pre-existing non-ASCII characters like ⚠/— into \\uXXXX escapes — caught and reverted before committing, worth flagging for any future story that reaches for a full-file JSON rewrite tool on prd.json).",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
