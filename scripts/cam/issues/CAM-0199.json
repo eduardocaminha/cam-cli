@@ -1,7 +1,7 @@
 {
   "id": "CAM-199",
   "title": "quality-gate tools unpinned: bunx knip floats to latest, spine is nondeterministic",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-06T14:34:09.559Z",
