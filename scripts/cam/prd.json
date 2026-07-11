@@ -73,7 +73,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Files: package.json:20 (change \"@biomejs/biome\": \"^2.5.1\" to \"2.5.1\"), bun.lock (top-level range entry at line ~19 updates from ^2.5.1 to 2.5.1; the resolved 2.5.1 package entry is unchanged). The lint gate invocation in scripts/check-all.ts (`bunx biome lint --error-on-warnings`) is already de-tokenized and needs no change, so test/check-all.test.ts's lint assertion (~line 92) is unchanged. Sequenced after US-001 (requires) so the two lockfile edits land as separate reviewed diffs and do not race a shared bun.lock regen. Tooling/config only -- no embed-vendor drift check applies."
     }

@@ -1,30 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Pin knip and jscpd as exact devDependencies and de-tokenize the gate invocations"
+    "id": "US-002",
+    "title": "Tighten @biomejs/biome from caret to exact pin"
   },
   "branchName": "cam/issue-199",
   "timestamp": "2026-07-11T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
     "package.json",
-    "bun.lock",
-    "knip.json",
-    "scripts/check-all.ts",
-    "test/check-all.test.ts",
-    "docs/agent-readiness.md",
-    "docs/recovery-runbook.md",
-    "scripts/cam/patterns.md"
+    "bun.lock"
   ],
   "openQuestions": [],
-  "nextStoryContext": "knip@6.24.0 and jscpd@5.0.12 are now pinned exact devDependencies (bun.lock updated via `bun add -D` + `bun install`). scripts/check-all.ts's dead-code and dup gates now invoke bare `bunx --bun knip` / `bunx jscpd --config .jscpd.json src scripts` with no inline @version token; bunx resolves the locally installed exact-pinned version first (confirmed via Bun's official bunx docs). Gotcha: adding jscpd as a devDependency makes knip flag it as an 'Unused devDependency' (knip only detects static import/require usage, not CLI-string invocations); fixed with `ignoreDependencies: [\"jscpd\"]` in knip.json. knip itself is exempt from this check by knip's own special-casing of its own package name. Also updated docs/agent-readiness.md and docs/recovery-runbook.md (both quoted the old `jscpd@5 ...` command literally) to match the de-tokenized invocation, per Doc Maintenance.",
+  "nextStoryContext": "@biomejs/biome is now pinned exact (2.5.1, no caret) in both package.json devDependencies and bun.lock's workspace devDependencies range entry; the resolved packages entry (`@biomejs/biome@2.5.1` plus its per-platform optionalDependencies) was already exact and is unchanged. `bun install` after the edit reported 'no changes' (0 installs touched), confirming the tightening is caret-to-exact only with no resolution drift. scripts/check-all.ts's lint gate invocation (`bunx biome lint --error-on-warnings`) needed no change since it was already de-tokenized in US-001. Full `bun run check:all` spine is green (test/embed-vendor/lint/file-size/debt-markers/version-skips/coverage/dead-code/dup/ci-parity all ok); one pre-existing biome self-lint info-level notice (`recommended` deprecated in favor of `preset` in biome.json) surfaced but is informational only (not a warning/error) and out of scope for this story.",
   "officialDocsValidated": [
     {
-      "lib": "bun (bunx)",
-      "url": "https://bun.sh/docs/cli/bunx",
+      "lib": "@biomejs/biome",
+      "url": "https://registry.npmjs.org/@biomejs/biome/2.5.1",
       "fetchedAt": "2026-07-11T00:00:00Z",
       "status": "aligned",
-      "summary": "Confirmed bunx checks for a locally installed package first before falling back to a remote install, and --bun forces Bun's runtime over a Node shebang; matches the de-tokenized gate commands relying on the pinned devDependency being resolved locally."
+      "summary": "Confirmed 2.5.1 is a real published release on the npm registry (registry metadata returned matching name/version). No API/behavior surface was touched by this story (pure devDependency version-spec tightening), so registry existence is the relevant check rather than a docs/API comparison."
     }
   ]
 }
