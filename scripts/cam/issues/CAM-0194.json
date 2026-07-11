@@ -1,9 +1,31 @@
 {
   "id": "CAM-194",
   "title": "commit-existence gate anchors on feat: prefix, false-BLOCKs stories committed with fix or other conventional types",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-06T05:09:45.404Z",
-  "description": "commitSubjectMatchesStory (src/supervisor/result.ts:309) builds a regex requiring the feat: prefix before the bracketed or bare story id. A story committed as fix: [US-XXX] - ... (or refactor:/perf:/chore:/docs:/test:, all valid conventional-commit types) fails the match, so the commit-existence gate reports no-commit and emits a false BLOCKED even though a bracketed [US-XXX] commit exists. Observed on CAM-98 US-001 (a bugfix correctly committed as fix: [US-001] - ...): false BLOCKED, though it did not wedge the cycle since passes:true stayed. Fix: accept any conventional-commit type prefix (feat|fix|refactor|perf|chore|docs|test|build|ci|style) before the id, not only feat:."
+  "description": "commitSubjectMatchesStory (src/supervisor/result.ts:309) builds a regex requiring the feat: prefix before the bracketed or bare story id. A story committed as fix: [US-XXX] - ... (or refactor:/perf:/chore:/docs:/test:, all valid conventional-commit types) fails the match, so the commit-existence gate reports no-commit and emits a false BLOCKED even though a bracketed [US-XXX] commit exists. Observed on CAM-98 US-001 (a bugfix correctly committed as fix: [US-001] - ...): false BLOCKED, though it did not wedge the cycle since passes:true stayed. Fix: accept any conventional-commit type prefix (feat|fix|refactor|perf|chore|docs|test|build|ci|style) before the id, not only feat:.",
+  "spec": {
+    "acceptanceCriteria": [
+      "commitSubjectMatchesStory (src/supervisor/result.ts:360-364) accepts any conventional-commit type prefix before the story id: the ^feat: literal is replaced by an open ^[a-z]+(?:\\([^)]*\\))?!?: prefix (any lowercase type, optional scope, optional breaking !). The existing (?:\\[id\\]|id) bracketed-or-bare alternation and the trailing \\s*-\\s*\\S requirement are preserved.",
+      "A story committed as fix: [US-001] - ... (or refactor/perf/chore/docs/test/build/ci/style, with or without scope or !) passes the commit-existence gate and no longer produces a false no-commit outcome. This closes the mismatch where the implementer prompt itself instructs a fix: [Story ID] correction commit (Step 5.5) that the feat-only gate rejected.",
+      "Tests updated: test/supervisor/result.test.ts:1429-1431 (fix: US-001 - ... flips from false to true) plus added cases covering other conventional types, an optional scope (e.g. fix(scope):), and a breaking ! (e.g. feat!:)."
+    ],
+    "scope": "Fix the commit-existence gate false negative: commitSubjectMatchesStory hardcodes a ^feat: prefix, so a story whose only story-id-bearing commit uses any other conventional-commit type (fix/refactor/perf/chore/docs/test/build/ci/style) fails the match and the gate reports no-commit, refusing an already passes:true story as DONE. Observed on CAM-98 US-001 (a bugfix correctly committed as fix: [US-001] - ...). Replace the hardcoded feat: with an open conventional-type prefix pattern (matching the [a-z]+ idiom already used in src/release/bump.ts:24 and changelog.ts:66), since the gate's job is to confirm a story commit exists, not to police its type. Surgical: one regex in result.ts plus its tests.",
+    "gotchas": [
+      "result.ts:362 is the ONLY story/commit matcher anchored on feat:; the release-side siblings (bump.ts, changelog.ts, ship-pr.ts) already use generic [a-z]+ patterns for semver/changelog concerns and must not be touched by this fix.",
+      "A false negative here yields WorkerOutcomeKind 'no-commit' (result.ts:508, :596), which is distinct from 'blocked'; it refuses DONE-confirmation of a passes:true story rather than emitting a BLOCKED_* sentinel.",
+      "The implementer prompt (templates/agents/subagent-implementer.md, embedded in src/vendor/_generated.ts) instructs feat: [Story ID] as the primary commit but also a fix: [Story ID] correction commit in the Step 5.5 docs-validation path; the gate must recognize that fix: correction commit. This fix touches src/ only (result.ts + test), no template/embed change.",
+      "Keep the change surgical: inline the open [a-z]+(?:\\([^)]*\\))?!?: prefix in commitSubjectMatchesStory rather than building a new shared module; the reviewer may decide whether to export/share a const with the release-side patterns (currently unexported local consts)."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 4,
+    "timeCriticality": 3,
+    "riskReduction": 5,
+    "jobSize": 1
+  },
+  "type": "fix"
 }
