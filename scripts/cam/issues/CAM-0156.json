@@ -1,7 +1,7 @@
 {
   "id": "CAM-156",
   "title": "push-verification reporta false BLOCKED por expected-ref stale (push ja aterrissou)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-02T05:03:33.772Z",
