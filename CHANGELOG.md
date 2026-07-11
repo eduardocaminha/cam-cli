@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.131.0] - 2026-07-11
+
+### Added
+
+- US-001 - Tear down plan panes at a single unconditional exit in runPlanPhaseWithReplan
+
 ## [0.130.0] - 2026-07-11
 
 ### Added

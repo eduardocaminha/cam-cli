@@ -808,12 +808,17 @@ export type PlanEscalationWriterParams = Omit<PlanEscalatedMarker, 'writtenAt'>;
 /** Options for runPlanPhaseWithReplan: RunPlanPhaseOptions plus the two loop seams. */
 export interface RunPlanPhaseWithReplanOptions extends RunPlanPhaseOptions {
 	/**
-	 * Teardown seam for the planner/auditor pane. Invoked on every
-	 * terminal/boundary path (AC4, US-003):
+	 * Teardown seam for the planner/auditor pane. Invoked:
 	 *   - BEFORE each re-plan round's runPlanPhase call, so the pane-count
 	 *     mutex sees 'available' (the auditor TUI pane never self-exits).
-	 *   - After an audit-approved terminal.
-	 *   - On the plan-escalated terminal.
+	 *   - Unconditionally, exactly once, at the function's single exit point
+	 *     (US-001, CAM-269), covering EVERY terminal PlanPhaseResult kind:
+	 *     audit-approved, plan-escalated, the non-audit post-spawn kinds
+	 *     (planner-timeout, auditor-timeout, planner-failed), and the
+	 *     pre-spawn kinds (preflight-failed, no-plannable-issue,
+	 *     plan-target-invalid, mutex-busy, container-preflight-failed). On
+	 *     the pre-spawn/timeout kinds this is a harmless no-op: kill-pane is
+	 *     best-effort when no plan pane was ever spawned.
 	 * Optional: defaults to a no-op for backward compat. Production wiring
 	 * (US-004) mirrors host.ts teardownWorkerPaneFn (kill-pane, best-effort,
 	 * never-throwing).
@@ -852,79 +857,93 @@ export interface RunPlanPhaseWithReplanOptions extends RunPlanPhaseOptions {
  * plan-verdict-report.json (AC2).
  *
  * Terminal outcomes:
- *   - audit-approved: teardownPlanPanesFn() then returned as-is (proceeds to
- *     the caller's branch path).
+ *   - audit-approved: returned as-is (proceeds to the caller's branch path).
  *   - MAX_REPLAN_ROUNDS exhausted still audit-blocked: writeEscalationMarkerFn
- *     is invoked with the last round's findings, teardownPlanPanesFn() runs,
- *     and a terminal `plan-escalated` result is returned (never
- *     `audit-blocked`, never branch, AC3).
+ *     is invoked with the last round's findings, and a terminal
+ *     `plan-escalated` result is returned (never `audit-blocked`, never
+ *     branch, AC3).
  *   - Any other (non-audit) kind from round 1: returned as-is, no re-plan
- *     round is ever triggered, no teardown call (AC5).
+ *     round is ever triggered.
+ *
+ * Pane teardown (US-001, CAM-269): teardownPlanPanesFn() fires exactly once
+ * at a SINGLE unconditional exit point (a try/finally wrapping the whole
+ * function body), covering every terminal return path above, INCLUDING the
+ * non-audit post-spawn kinds (planner-timeout, auditor-timeout,
+ * planner-failed) and the pre-spawn kinds (preflight-failed,
+ * no-plannable-issue, plan-target-invalid, mutex-busy,
+ * container-preflight-failed) that previously fell through with no teardown
+ * call. This mirrors the finishTerminal-always-tears-down invariant
+ * (patterns.md, CAM-188): a single exit point is drift-proof against a
+ * future terminal kind silently reopening the gap, whereas enumerating kinds
+ * is exactly how the gap was introduced originally. The round-boundary
+ * teardown() call inside the while loop (CAM-204) is unchanged: it fires
+ * mid-function, before each re-plan round's spawn, and is unrelated to this
+ * exit teardown (the exit teardown never fires until the whole loop, and any
+ * re-plan round it drove, has completed).
  */
 export function runPlanPhaseWithReplan(opts: RunPlanPhaseWithReplanOptions): PlanPhaseResult {
 	const { teardownPlanPanesFn, writeEscalationMarkerFn, ...planOpts } = opts;
 	const teardown = teardownPlanPanesFn ?? ((): void => {});
 	const writeMarker = writeEscalationMarkerFn ?? ((): void => {});
 
-	let result = runPlanPhase(planOpts);
-	let roundsCompleted = 1;
+	try {
+		let result = runPlanPhase(planOpts);
+		let roundsCompleted = 1;
 
-	while (result.kind === 'audit-blocked' && roundsCompleted < MAX_REPLAN_ROUNDS) {
-		const blockedIssue = result.issue;
-		const blockedFindings = result.report.findings;
+		while (result.kind === 'audit-blocked' && roundsCompleted < MAX_REPLAN_ROUNDS) {
+			const blockedIssue = result.issue;
+			const blockedFindings = result.report.findings;
 
-		// Teardown BEFORE the next round's spawn: functionally required, or
-		// paneCountMutexFn returns 'busy' (the auditor TUI pane never self-exits).
-		teardown();
-		roundsCompleted += 1;
-		result = runPlanPhase({
-			...planOpts,
-			selectIssueFn: () => blockedIssue,
-			plannerTaskPrompt: buildReplanPlannerTaskPrompt(blockedIssue.id, blockedFindings),
-		});
-	}
+			// Teardown BEFORE the next round's spawn: functionally required, or
+			// paneCountMutexFn returns 'busy' (the auditor TUI pane never self-exits).
+			teardown();
+			roundsCompleted += 1;
+			result = runPlanPhase({
+				...planOpts,
+				selectIssueFn: () => blockedIssue,
+				plannerTaskPrompt: buildReplanPlannerTaskPrompt(blockedIssue.id, blockedFindings),
+			});
+		}
 
-	if (result.kind === 'audit-approved') {
-		teardown();
+		if (result.kind === 'audit-blocked') {
+			// MAX_REPLAN_ROUNDS exhausted without convergence (ADR-0012 hard stop).
+			writeMarker({
+				issueId: result.issue.id,
+				summary: result.report.summary,
+				findings: result.report.findings,
+				roundsCompleted,
+			});
+			// US-R1-001 (CAM-204 review fix): emit the structured 'plan-escalated'
+			// event UNCONDITIONALLY on this terminal (AC2). The durable marker above
+			// covers the US-005 boot-doc read path; this event is the flight-recorder
+			// counterpart (mirrors every other terminal that pairs a marker/state
+			// write with a logEvent call, e.g. 'plan-preflight-failed' in
+			// runPlanPhase). logEvent is optional (test callers omit it), so this is
+			// a no-op when absent.
+			planOpts.logEvent?.({
+				ts: new Date().toISOString(),
+				storyId: undefined,
+				uuid: 'plan-escalation',
+				kind: 'plan-escalated',
+				detail: { issueId: result.issue.id, roundsCompleted },
+			});
+			return {
+				kind: 'plan-escalated',
+				issue: result.issue,
+				report: result.report,
+				roundsCompleted,
+			};
+		}
+
+		// audit-approved, or any non-audit kind (preflight-failed,
+		// no-plannable-issue, plan-target-invalid, mutex-busy, planner-timeout,
+		// auditor-timeout, planner-failed, container-preflight-failed):
+		// returned as-is, no re-plan round. Every one of these still passes
+		// through the exit-teardown in `finally` below (AC1, AC2).
 		return result;
-	}
-
-	if (result.kind === 'audit-blocked') {
-		// MAX_REPLAN_ROUNDS exhausted without convergence (ADR-0012 hard stop).
-		writeMarker({
-			issueId: result.issue.id,
-			summary: result.report.summary,
-			findings: result.report.findings,
-			roundsCompleted,
-		});
-		// US-R1-001 (CAM-204 review fix): emit the structured 'plan-escalated'
-		// event UNCONDITIONALLY on this terminal (AC2). The durable marker above
-		// covers the US-005 boot-doc read path; this event is the flight-recorder
-		// counterpart (mirrors every other terminal that pairs a marker/state
-		// write with a logEvent call, e.g. 'plan-preflight-failed' in
-		// runPlanPhase). logEvent is optional (test callers omit it), so this is
-		// a no-op when absent.
-		planOpts.logEvent?.({
-			ts: new Date().toISOString(),
-			storyId: undefined,
-			uuid: 'plan-escalation',
-			kind: 'plan-escalated',
-			detail: { issueId: result.issue.id, roundsCompleted },
-		});
+	} finally {
 		teardown();
-		return {
-			kind: 'plan-escalated',
-			issue: result.issue,
-			report: result.report,
-			roundsCompleted,
-		};
 	}
-
-	// Non-audit kinds (preflight-failed, no-plannable-issue, plan-target-invalid,
-	// mutex-busy, planner-timeout, auditor-timeout, planner-failed,
-	// container-preflight-failed): returned as-is, no re-plan round, no
-	// teardown call (AC5).
-	return result;
 }
 
 // ---------------------------------------------------------------------------
