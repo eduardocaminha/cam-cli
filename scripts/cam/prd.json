@@ -1,0 +1,67 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-200",
+  "description": "Make the orchestrator wake-up push reliable: verify send-keys delivery (composer emptied) with bounded retry in a shared helper used by both pushers, and record push-undelivered on exhaustion.",
+  "issueNumber": 200,
+  "type": "fix",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add push-undelivered event kind to the flight recorder",
+      "description": "As the flight recorder, I need a distinct push-undelivered event kind so that a wake-up push that fails delivery verification after bounded retry is recorded in cam-worker-events.jsonl for observability.",
+      "acceptanceCriteria": [
+        "A new 'push-undelivered' member is added to the WorkerEventKind union in src/supervisor/events.ts, distinct from the existing unrelated 'pushed' git-origin kind. [oracle: grep -q \"'push-undelivered'\" src/supervisor/events.ts]",
+        "A PushUndeliveredEventDetail interface is added and included in the WorkerEventDetail union; it carries at minimum the pane id and the retry count exhausted (no report content travels in the event, only wake-up-delivery metadata). [oracle: grep -q 'PushUndeliveredEventDetail' src/supervisor/events.ts]",
+        "The existing 'pushed' / PushEventDetail kind is NOT overloaded or renamed; push-undelivered is a separate kind. [oracle: grep -q \"'pushed'\" src/supervisor/events.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "File: src/supervisor/events.ts. WorkerEventKind union at line ~97; WorkerEventDetail union at line ~469; existing PushEventDetail at ~182. Gotcha (from issue): the git-origin 'pushed' kind (events.ts:102, PushEventDetail) is unrelated to send-keys delivery, do NOT overload it. Test mirror: test/supervisor/events.test.ts. Keep the detail metadata-only (pane id + retries), never report content, per the CAM-75/77/78 structured-handback decision (durable truth lives in files, the pane carries only the wake-up)."
+    },
+    {
+      "id": "US-002",
+      "title": "Extract sendKeysVerified with composer-emptied verify + bounded retry",
+      "description": "As the single pane-push path, I need a shared sendKeysVerified helper (idle-gate before send, atomic text+Enter, post-send composer-emptied verification, bounded retry, push-undelivered on exhaustion) so that a busy TUI dropping the trailing Enter is detected and retried instead of silently losing the wake-up. The thin-proxy injector sendKeysWhenIdle delegates to it.",
+      "acceptanceCriteria": [
+        "A new exported sendKeysVerified helper is added to src/tmux/dispatch.ts that: (1) idle-gates before send by reusing isOrchPaneIdle; (2) sends the atomic text+Enter in ONE send-keys call WITHOUT -l; (3) after send, verifies via a capture-pane STATE check that the composer emptied (the pushed line left the composer); (4) retries with bounded backoff reusing computeBackoffMs (src/supervisor/loop.ts:606) up to N=3. [oracle: grep -q 'export function sendKeysVerified' src/tmux/dispatch.ts]",
+        "Delivery verification is a composer-emptied pane-STATE check only (did the line leave the composer); it never parses rendered pane scrollback for the report content. [oracle: reviewer-judgment]",
+        "On retry exhaustion (still not delivered after N attempts), sendKeysVerified emits a push-undelivered event via an injected logEvent dependency; it does NOT throw and does NOT block the caller indefinitely. [oracle: grep -q 'push-undelivered' src/tmux/dispatch.ts]",
+        "sendKeysWhenIdle (src/tmux/dispatch.ts:156) is refactored to delegate to sendKeysVerified, preserving the existing pre-send idle-gate behavior and the timeout fallback; its existing callers (review.ts, issue.ts, spec.ts, meta-loop dispatch) get verify+retry with no signature-shape regression at the thin-proxy call sites. [oracle: bun test test/dispatch.test.ts]",
+        "The CAM-55 atomic text+Enter WITHOUT -l is preserved (a literal Enter would be typed as text and never submit). [oracle: grep -q \"'Enter'\" src/tmux/dispatch.ts]",
+        "A test exercises the retry path: a fake capture-pane that reports the composer still holding the line triggers up to N retries and one push-undelivered emission via an injected logEvent, using a no-op sleepFn so the test never actually waits. [oracle: bun test test/dispatch.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "Files: src/tmux/dispatch.ts (+ test/dispatch.test.ts). Reuse: isOrchPaneIdle (dispatch.ts:111) for the PRE-send idle-gate; the POST-send verify is a DISTINCT composer-emptied check (line left the composer), not the same predicate. computeBackoffMs lives in src/supervisor/loop.ts:606 with NO_PROGRESS_BACKOFF_MS/MAX_BACKOFF_MS/JITTER_FRACTION constants; dispatch.ts does not currently import loop.ts and loop.ts does not import tmux/dispatch.ts, so importing computeBackoffMs is cycle-free (verified). Inject sleepFn (default Bun.sleepSync) and a randomFn/logEvent so tests stay deterministic and fast (existing dispatch tests already inject capturePaneFn + sleepFn). Gotchas: (a) atomic text+Enter WITHOUT -l (sendkeys-literal-enter-gotcha, CAM-55); (b) never parse rendered pane scrollback for content (lossy rendered-markdown capture-pane trap, CAM-75/77/78) - state check only. Design constraint from issue: the pane push is ONLY a wake-up; durable truth already lives in worker-report.json / cam-worker-events.jsonl."
+    },
+    {
+      "id": "US-003",
+      "title": "Wire the sidecar report pusher to sendKeysVerified",
+      "description": "As the sidecar (the single autonomous pusher named in the issue), I need makeNotifyOrchestrator to push through sendKeysVerified so that worker and sidecar completion reports get idle-gate + delivery verification + bounded retry, and a lost wake-up is recorded as push-undelivered instead of silently sitting un-submitted in the composer.",
+      "acceptanceCriteria": [
+        "makeNotifyOrchestrator (src/supervisor/host.ts:229) delivers via sendKeysVerified instead of the current fire-and-forget spawnFn('tmux', argv, { stdio: 'ignore' }) call. [oracle: grep -q 'sendKeysVerified' src/supervisor/host.ts]",
+        "The factory signature is threaded with the capture-pane reader and logEvent deps the verifier needs (currently (sessionName, spawnFn) only), and all its call-sites are updated to pass them: src/commands/sidecar.ts:759, :1150, :2087 and src/supervisor/host.ts:813. [oracle: reviewer-judgment]",
+        "Orchestrator pane resolution stays via getOrchPaneId (pane index 0, semicolon separator not tab) and liveness via @cam_label=='orchestrator'; when getOrchPaneId returns null the pusher remains a silent best-effort no-op (orch pane closed). [oracle: grep -q 'getOrchPaneId' src/supervisor/host.ts]",
+        "No new durable marker is added: on retry exhaustion only the push-undelivered event is emitted (terminal states already write their own durable markers, and a lost non-terminal narration is self-healing because the sidecar proceeds regardless). [oracle: reviewer-judgment]",
+        "A test covers the sidecar pusher delivering through sendKeysVerified (retry + push-undelivered emission) with injected fakes. [oracle: bun test test/supervisor/notify-orchestrator.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": "US-002",
+      "notes": "Files: src/supervisor/host.ts (makeNotifyOrchestrator:229, call-site at :813), src/commands/sidecar.ts (call-sites :759, :1150, :2087). Tests: test/supervisor/notify-orchestrator.test.ts, test/supervisor/host-notify-orch.test.ts. worker-report.ts argv builder (buildWorkerReportSendKeysArgv, worker-report.ts:85) stays unchanged. Thread a capturePane reader (from tmux/session capturePaneArgv/spawnFn) and the existing file event logger (makeFileEventLogger in events.ts, already wired in the sidecar) into the factory. Gotchas: getOrchPaneId semicolon-not-tab format (tmux-format-tab-mangle lesson); liveness by @cam_label=='orchestrator' not pane_current_command (bash-respawn-wrapper lesson); keep the null-pane silent no-op. Do not overload the git-origin 'pushed' event."
+    }
+  ]
+}
