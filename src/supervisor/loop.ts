@@ -835,12 +835,9 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					formatReviewVerdictLine(prd.review?.roundsCompleted ?? 0, 'MAX_ROUNDS_DEBT'),
 				);
 			}
-			// CAM-191 / ADR 0013: auto-ship dispatch no longer lives here. The
-			// decision (complete + CLEAN + marker absent) and the marker/phase
-			// writes now happen in runSidecarLoop, AFTER clearActive, so
-			// phase:shipping is the last state-file write on this terminal path
-			// (see the outer-loop auto-ship block next to the flipActive
-			// auto-chain block).
+			// Auto-ship dispatch lives in runSidecarLoop (the outer loop), not here
+			// — see the outer-loop auto-ship block next to the flipActive
+			// auto-chain block.
 			finishTerminal('complete');
 			return { status: 'complete', iterations, lastOutcome };
 		}
@@ -1957,18 +1954,12 @@ export async function runSidecarLoop(opts: RunSidecarLoopOptions): Promise<void>
 			lockResult.release();
 		}
 
-		// Terminal state reached: set active:false so cam status shows 'paused'.
-		// The onProgress callback inside buildOpts() may have already updated the
-		// state file; clearActive() is the safety net that ensures active:false
-		// even when onProgress was absent or failed.
-		opts.clearActive();
-
-		// CAM-191 / ADR 0013: auto-ship decision, moved here (AFTER clearActive)
-		// so phase:shipping is the LAST state-file write on the terminal complete
-		// path: it survives both the onProgress unlink-on-complete (which runs
-		// inside finishTerminal, before runSupervisorFn returns) and clearActive's
-		// implicit phase:idle rewrite above. Symmetric with the flipActive
-		// auto-chain block right below. Four gates, all observable at this
+		// Auto-ship dispatch: when result.status is 'complete', review is CLEAN,
+		// and the fire-once marker (prd.review.autoShipDispatchedAt) is absent,
+		// persist the marker to prd.json and flip phase:shipping. Runs BEFORE
+		// clearActive() below: clearActive is phase-preserving (US-001, CAM-195)
+		// so phase:shipping survives it regardless of call order — no special
+		// positioning is required. Four gates, all observable at this
 		// outer-loop level: (1) result.status === 'complete' (the only status
 		// this fires for -- await-operator and MAX_ROUNDS_DEBT never dispatch);
 		// (2) the auto-ship capability is wired (auto mode); (3)
@@ -1994,19 +1985,24 @@ export async function runSidecarLoop(opts: RunSidecarLoopOptions): Promise<void>
 			}
 		}
 
+		// Terminal state reached: clearActive() is the safety net that ensures
+		// the state file settles to a consistent phase even when onProgress was
+		// absent or failed. Phase-preserving (US-001, CAM-195): it never forces
+		// phase back to 'idle', so a phase set by the auto-ship block above (or
+		// by onProgress) survives this call unchanged.
+		opts.clearActive();
+
 		// US-003 (CAM-189): file SUGGESTION follow-ups at the terminal verdict.
-		// Runs AFTER clearActive (same ADR-0013 state-file-ordering rationale as
-		// the auto-ship block above) and BEFORE the flipActiveFn auto-chain
-		// continue, so the auto-chain never skips a tick that still needs
-		// filing. Fires on BOTH terminal statuses ('complete' AND
-		// 'awaiting-operator') -- unlike auto-ship, which fires on 'complete'
-		// only -- because a CLEAN review can hand off to the operator (pending
-		// ceremony stories) without the loop ever reaching 'complete', and that
-		// CLEAN+awaiting-operator terminal must not silently drop its
-		// SUGGESTION findings. No prd.json fire-once marker is written here:
-		// SUGGESTION fingerprint dedup (US-002) is the idempotency mechanism, so
-		// a later re-fire (e.g. 'complete' after an earlier 'awaiting-operator')
-		// safely files 0 and pushes nothing.
+		// Runs BEFORE the flipActiveFn auto-chain continue, so the auto-chain
+		// never skips a tick that still needs filing. Fires on BOTH terminal
+		// statuses ('complete' AND 'awaiting-operator') -- unlike auto-ship,
+		// which fires on 'complete' only -- because a CLEAN review can hand off
+		// to the operator (pending ceremony stories) without the loop ever
+		// reaching 'complete', and that CLEAN+awaiting-operator terminal must
+		// not silently drop its SUGGESTION findings. No prd.json fire-once
+		// marker is written here: SUGGESTION fingerprint dedup (US-002) is the
+		// idempotency mechanism, so a later re-fire (e.g. 'complete' after an
+		// earlier 'awaiting-operator') safely files 0 and pushes nothing.
 		if (
 			opts.readReviewReportFn !== undefined &&
 			opts.fileSuggestionsFn !== undefined &&

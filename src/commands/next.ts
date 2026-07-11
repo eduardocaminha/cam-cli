@@ -65,6 +65,24 @@ const STATE_FILE_PATH = '.claude/cam-loop.local.md';
 // ---------------------------------------------------------------------------
 
 /**
+ * Read the current `phase` from the on-disk state file under `cwd`. Used by
+ * `renderStateFile`'s read-modify-write phase preservation (US-001, CAM-195).
+ * Returns `undefined` when the file is absent, unreadable, unparseable, or
+ * has no `phase` field — all of which the caller treats as "no phase to
+ * preserve" and falls back to `idle`.
+ */
+function readCurrentPhase(cwd: string): LoopPhase | undefined {
+	const path = join(cwd, STATE_FILE_PATH);
+	if (!existsSync(path)) return undefined;
+	try {
+		const contents = readFileSync(path, 'utf8');
+		return parseStateFile(contents)?.phase;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
  * Render the supervisor state-file body from the vendored template.
  * Substitution is a dumb literal `{{KEY}} -> value` replace.
  *
@@ -73,9 +91,14 @@ const STATE_FILE_PATH = '.claude/cam-loop.local.md';
  *
  * `phase` is the single source of truth for the `active` field:
  *   - When `phase` is provided, `active` is derived as `phase === 'implementing'`.
- *   - When `phase` is absent, it is derived from the legacy `active` flag
- *     (`true` -> `implementing`, `false` -> `idle`), preserving backward compat
- *     for all existing callers that only pass `active`.
+ *   - When `phase` is absent AND `cwd` is provided, renderStateFile is
+ *     read-modify-write (US-001, CAM-195, Defect 3): it reads the CURRENT
+ *     on-disk phase at `cwd` and preserves it, rather than deriving from the
+ *     legacy `active` flag. A nonexistent/unparseable/phase-less file at
+ *     `cwd` defaults to `idle`.
+ *   - When `phase` and `cwd` are both absent, it is derived from the legacy
+ *     `active` flag (`true` -> `implementing`, `false` -> `idle`), preserving
+ *     backward compat for existing callers that only pass `active`.
  */
 export function renderStateFile(input: {
 	maxIterations: number;
@@ -84,7 +107,7 @@ export function renderStateFile(input: {
 	pid: number;
 	/** Loop lifecycle phase (US-001 CAM-151). When provided, `active` is derived from it. */
 	phase?: LoopPhase;
-	/** Legacy active flag — used only when `phase` is absent (back-compat). */
+	/** Legacy active flag — used only when `phase` and `cwd` are both absent (back-compat). */
 	active?: boolean;
 	iteration?: number;
 	currentStory?: string | null;
@@ -93,6 +116,11 @@ export function renderStateFile(input: {
 	lastActivity?: string;
 	/** Optional issue ref associated with an in-progress plan (e.g. "CAM-151"). */
 	plan_issue?: string | null;
+	/**
+	 * Working directory enabling read-modify-write phase preservation
+	 * (US-001, CAM-195) when `phase` is absent. See the function doc above.
+	 */
+	cwd?: string;
 }): string {
 	const tmpl = readEmbedded('cam-loop.local.md.tmpl');
 	const promiseYaml =
@@ -103,11 +131,20 @@ export function renderStateFile(input: {
 		input.currentStory != null && input.currentStory.length > 0
 			? `"${input.currentStory.replace(/"/g, '\\"')}"`
 			: 'null';
-	// Derive effective phase and active from the inputs (US-001 CAM-151).
-	// When `phase` is provided, it is the source of truth; `active` derives from it.
-	// When `phase` is absent, derive it from the legacy `active` flag for back-compat.
+	// Derive effective phase and active from the inputs (US-001 CAM-151, refined
+	// for read-modify-write by US-001 CAM-195).
+	//   1. Explicit `phase` always wins.
+	//   2. Absent `phase` + `cwd` given: read-modify-write — preserve the
+	//      CURRENT on-disk phase; a nonexistent/unparseable/phase-less file
+	//      defaults to 'idle'.
+	//   3. Absent `phase` + no `cwd`: legacy back-compat derivation from `active`.
 	const effectivePhase: LoopPhase =
-		input.phase ?? (input.active !== false ? 'implementing' : 'idle');
+		input.phase ??
+		(input.cwd !== undefined
+			? readCurrentPhase(input.cwd) ?? 'idle'
+			: input.active !== false
+				? 'implementing'
+				: 'idle');
 	const effectiveActive = effectivePhase === 'implementing';
 	const planIssueYaml =
 		input.plan_issue != null && input.plan_issue.length > 0

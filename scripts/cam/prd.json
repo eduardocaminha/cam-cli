@@ -20,7 +20,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/next.ts (renderStateFile ~line 80-130, effectivePhase derivation at 109-111 is the phase-drop when active:false + no phase), src/commands/sidecar.ts (makeClearActive ~305-395 renders with active:false and no phase). Cross-ref CAM-191 (shipped) only reordered phase:shipping to survive teardown and deliberately left this phase-drop in place; retiring the workaround is in scope. This is the root of the 3 coupled defects: phase:idle-as-parked is only trustworthy after this fix (gotcha in issue spec)."
     },

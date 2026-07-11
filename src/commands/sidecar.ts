@@ -340,23 +340,32 @@ export function makeReadPlanIssue(claudeDir: string): () => string | undefined {
 }
 
 /**
- * Set active:false in .claude/cam-loop.local.md by overwriting the frontmatter.
- * Reads the existing state to preserve other fields; falls back to a minimal
- * write if the file is absent or unparseable. Best-effort: a failure here is
- * non-fatal (the loop will just re-check on the next poll).
+ * Clear the loop's active trigger in .claude/cam-loop.local.md by overwriting
+ * the frontmatter. Reads the existing state to preserve other fields; falls
+ * back to a minimal write if the file is absent or unparseable. Best-effort:
+ * a failure here is non-fatal (the loop will just re-check on the next poll).
+ *
+ * Phase-preserving (US-001, CAM-195, Defect 3 fix): `phase` is deliberately
+ * left absent on every renderStateFile call below and `cwd` is passed instead,
+ * so renderStateFile's read-modify-write derives `phase` (and therefore
+ * `active`) from whatever is CURRENTLY on disk, rather than collapsing it to
+ * `idle`. This is what makes `phase:idle` a trustworthy "nothing is running"
+ * signal: a terminal tick that already wrote e.g. `phase:shipping` survives
+ * this call unchanged, while a genuinely idle/nonexistent/unparseable file
+ * still defaults to `idle` (same fallback renderStateFile always had).
  */
 export function makeClearActive(claudeDir: string, cwd: string): () => void {
 	const stateFilePath = join(claudeDir, 'cam-loop.local.md');
 	return () => {
 		try {
 			if (!existsSync(stateFilePath)) {
-				// Write a minimal state file with active:false so cam status shows 'paused'.
+				// No file to preserve a phase from: renders phase:idle (RMW default).
 				const body = renderStateFile({
 					maxIterations: 50,
 					completionPromise: 'COMPLETE',
 					startedAt: new Date().toISOString(),
 					pid: process.pid,
-					active: false,
+					cwd,
 				});
 				writeStateFile(cwd, body, { force: true });
 				return;
@@ -364,13 +373,13 @@ export function makeClearActive(claudeDir: string, cwd: string): () => void {
 			const contents = readFileSync(stateFilePath, 'utf8');
 			const parsed = parseStateFile(contents);
 			if (parsed === null) {
-				// Unparseable: write fresh minimal state with active:false.
+				// Unparseable: write fresh minimal state (RMW defaults to phase:idle).
 				const body = renderStateFile({
 					maxIterations: 50,
 					completionPromise: 'COMPLETE',
 					startedAt: new Date().toISOString(),
 					pid: process.pid,
-					active: false,
+					cwd,
 				});
 				writeFileSync(stateFilePath, body, 'utf8');
 				return;
@@ -380,12 +389,12 @@ export function makeClearActive(claudeDir: string, cwd: string): () => void {
 				completionPromise: parsed.completion_promise ?? 'COMPLETE',
 				startedAt: parsed.started_at ?? new Date().toISOString(),
 				pid: parsed.pid ?? process.pid,
-				active: false,
 				iteration: parsed.iteration,
 				currentStory: parsed.current_story,
 				storiesDone: parsed.stories_done,
 				storiesTotal: parsed.stories_total,
 				lastActivity: parsed.last_activity ?? new Date().toISOString(),
+				cwd,
 			});
 			writeFileSync(stateFilePath, body, 'utf8');
 		} catch {
