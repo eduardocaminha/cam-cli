@@ -1788,6 +1788,31 @@ export interface RunSidecarLoopOptions {
 	 * change for all existing tests that do not inject readLoopPhaseFn).
 	 */
 	runShipPhaseFn?: () => void | Promise<void>;
+	/**
+	 * Re-arm implementing for an in-flight PRD (US-003, CAM-195, Defect 1).
+	 *
+	 * Called on EVERY idle tick (active !== true), BEFORE runMergeWatchFn and
+	 * runMetaLoopObserveFn, so a resumable in-flight PRD is never shadowed by a
+	 * new meta-loop dispatch (AC3). This outer loop has no separate boot
+	 * preamble, so the FIRST idle tick after process start already covers "at
+	 * sidecar boot" (AC1); every subsequent tick covers "at the idle-tick".
+	 *
+	 * Production wiring (sidecar.ts): makeProductionRearmImplementingFn(...),
+	 * gated fail-closed via evaluateRearmPreconditions (rearm-preconditions.ts):
+	 * prd.json in-flight (already excludes the MAX_ROUNDS_DEBT blocked
+	 * terminal), phase==='implementing' (phase:idle never resumes -- AC2), and
+	 * no pending merge-watch marker (AC4). On a passing decision it writes
+	 * phase:implementing (deriving active:true) and returns true.
+	 *
+	 * Returns true when it re-armed this tick: the caller skips the rest of the
+	 * idle branch this tick so the freshly-written active:true is picked up
+	 * cleanly by the active branch on the NEXT tick, rather than racing a
+	 * runMetaLoopObserveFn dispatch write in the same tick.
+	 *
+	 * Optional: when absent, the idle branch is unchanged (zero behavior change
+	 * for all existing tests that do not inject it).
+	 */
+	rearmImplementingFn?: () => boolean;
 }
 
 /** Idle polling interval for the sidecar outer loop (2 seconds). */
@@ -1871,6 +1896,16 @@ export async function runSidecarLoop(opts: RunSidecarLoopOptions): Promise<void>
 		}
 
 		if (active !== true) {
+			// US-003 / CAM-195 (Defect 1): re-arm implementing BEFORE the
+			// merge-watch/meta-loop-observe checks below, so a resumable in-flight
+			// PRD (phase:implementing) is never shadowed by a new meta-loop
+			// dispatch (AC3). When it fires, skip the rest of this idle tick so
+			// the fresh active:true write is picked up cleanly on the next tick.
+			if (opts.rearmImplementingFn?.()) {
+				opts.sleep(idlePollMs);
+				continue;
+			}
+
 			// US-007: run the merge-watch when ci-gated mode is active and a watch
 			// file is present. The function is injected by sidecar.ts only when
 			// merge_mode == "ci-gated"; under "immediate" it is absent (inert).

@@ -54,7 +54,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "Depends on US-001 (phase preservation) AND US-002 (file survives) so phase==implementing is trustworthy. Files: src/commands/sidecar.ts (boot path ~runSidecar; makeReadLoopPhase 307-319, makeHasPendingStories 410+, drain preconditions via evaluateDrainPreconditions), src/supervisor/loop.ts (idle-tick outer loop, `active !== true` branch ~1876-1922, meta-loop observe hook 1887-1897). Re-use existing hasPendingStories + readPhase + preconditionFn seams rather than new readers. Gotcha (issue): on the idle-tick re-arm must run before dispatchOrDrain. Do NOT auto-resume phase:idle."
     },

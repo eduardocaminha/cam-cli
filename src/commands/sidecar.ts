@@ -75,6 +75,7 @@ import { observeDecide, type ObserveState } from '../supervisor/observe.ts';
 import { selectPlannableFromFile, selectPlanTargetFromFile } from '../issues/select.ts';
 import { isDrainStopSet } from '../supervisor/drain-kill-switch.ts';
 import { evaluateDrainPreconditions, type DrainPreconditionResult } from '../supervisor/drain-preconditions.ts';
+import { evaluateRearmPreconditions } from '../supervisor/rearm-preconditions.ts';
 import type { IssueEntry } from '../issues/types.ts';
 import { runShipPhase, type ShipPhaseResult, type ShipPrdRecord, type ShipGatesResult, DEFAULT_GATES_COMMAND } from '../supervisor/ship-runner.ts';
 import { runShipPrStep, type ShipPrSpawnFn, type RunShipPrStepOptions, type ShipPrStepInput } from '../release/ship-pr.ts';
@@ -237,6 +238,18 @@ export interface SidecarOptions {
 	 * spawning real git/gh processes.
 	 */
 	runShipPhaseFn?: RunSidecarLoopOptions['runShipPhaseFn'];
+	/**
+	 * Override the implementing re-arm function (US-003, CAM-195, Defect 1).
+	 *
+	 * Production: makeProductionRearmImplementingFn(claudeDir, cwd, ...) —
+	 * fail-closed via evaluateRearmPreconditions, gated on hasPendingStories()
+	 * (already excludes the MAX_ROUNDS_DEBT blocked terminal), phase==='implementing',
+	 * and no pending merge-watch marker. Wired UNCONDITIONALLY (regardless of
+	 * meta_loop/plan_approval config): resuming an ALREADY-in-flight PRD is a
+	 * resilience fix, not an autonomy escalation.
+	 * Tests: inject a spy to assert call count / return value without touching disk.
+	 */
+	rearmImplementingFn?: RunSidecarLoopOptions['rearmImplementingFn'];
 	/**
 	 * Override the ensure-container function (US-003, CAM-150).
 	 *
@@ -447,6 +460,53 @@ export function makeHasPendingStories(prdPath: string): () => boolean {
 		} catch {
 			return false;
 		}
+	};
+}
+
+/**
+ * Build the production rearmImplementingFn (US-003, CAM-195, Defect 1).
+ *
+ * Called on every idle tick (active !== true) BEFORE runMergeWatchFn /
+ * runMetaLoopObserveFn (see loop.ts's `active !== true` branch): this outer
+ * loop has no separate boot preamble, so the FIRST idle tick after process
+ * start already covers "at sidecar boot" (AC1); every subsequent tick covers
+ * "at the idle-tick".
+ *
+ * Evaluates evaluateRearmPreconditions fail-closed:
+ *   - prdInFlight: hasPendingStoriesFn() (already excludes the MAX_ROUNDS_DEBT
+ *     blocked terminal — see the CAM-109 guard above — so "no blocked
+ *     terminal" falls out of reusing this seam rather than a separate check).
+ *   - phase==='implementing': the parked discriminator; phase:idle (or any
+ *     other phase) never resumes (AC2). LoopPhase is a mutually-exclusive
+ *     enum, so this one check also covers "no plan/ship phase in progress".
+ *   - no pending merge-watch marker file.
+ *
+ * When the decision is `{ rearm: true }`, writes phase:implementing via
+ * makeSetPhaseFn -- the same write flipActiveFn uses for the auto-chain (it
+ * derives active:true, see renderStateFile) -- but wired UNCONDITIONALLY
+ * (regardless of meta_loop/plan_approval config): resuming an ALREADY-in-flight
+ * PRD is a general sidecar resilience fix, not an autonomy escalation gated to
+ * auto/container mode like evaluateDrainPreconditions (drain-preconditions.ts).
+ *
+ * Returns true when it re-armed this tick (the caller should skip the rest of
+ * the idle branch and let the next tick pick up active:true), false otherwise.
+ */
+export function makeProductionRearmImplementingFn(
+	claudeDir: string,
+	cwd: string,
+	hasPendingStoriesFn: () => boolean,
+	readLoopPhaseFn: () => LoopPhase | undefined,
+): () => boolean {
+	const setPhase = makeSetPhaseFn(claudeDir, cwd);
+	return (): boolean => {
+		const decision = evaluateRearmPreconditions({
+			phase: readLoopPhaseFn(),
+			prdInFlight: hasPendingStoriesFn(),
+			mergeWatchPresent: existsSync(join(claudeDir, MERGE_WATCH_FILENAME)),
+		});
+		if (!decision.rearm) return false;
+		setPhase('implementing');
+		return true;
 	};
 }
 
@@ -1039,6 +1099,7 @@ interface SidecarLoopDepsResult {
 	readLoopPhaseFn: RunSidecarLoopOptions['readLoopPhaseFn'];
 	runPlanPhaseFn: RunSidecarLoopOptions['runPlanPhaseFn'];
 	runShipPhaseFn: RunSidecarLoopOptions['runShipPhaseFn'];
+	rearmImplementingFn: RunSidecarLoopOptions['rearmImplementingFn'];
 }
 
 // ---------------------------------------------------------------------------
@@ -2190,6 +2251,32 @@ function buildShipPhaseDeps(
 	};
 }
 
+/**
+ * Build the implementing re-arm dep (US-003, CAM-195, Defect 1).
+ *
+ * Extracted from buildSidecarLoopDeps to keep it under the biome
+ * noExcessiveCognitiveComplexity(max=15) limit (CAM-60 factory/helper
+ * pattern), mirroring buildPlanPhaseDeps/buildShipPhaseDeps.
+ *
+ * hasPendingStoriesFn and readLoopPhaseFn are threaded in (rather than
+ * re-resolved from options here) so this dep reuses the SAME resolved
+ * closures the rest of buildSidecarLoopDeps already built, instead of a
+ * second independent instance.
+ */
+function buildRearmDeps(
+	ctx: SidecarLoopDepsCtx,
+	options: SidecarOptions,
+	hasPendingStoriesFn: () => boolean,
+	planReadLoopPhaseFn: RunSidecarLoopOptions['readLoopPhaseFn'],
+): Pick<SidecarLoopDepsResult, 'rearmImplementingFn'> {
+	const { cwd, claudeDir } = ctx;
+	const readLoopPhaseFn = planReadLoopPhaseFn ?? makeReadLoopPhase(claudeDir);
+	return {
+		rearmImplementingFn: options.rearmImplementingFn ??
+			makeProductionRearmImplementingFn(claudeDir, cwd, hasPendingStoriesFn, readLoopPhaseFn),
+	};
+}
+
 // ---------------------------------------------------------------------------
 // Suggestion-follow-up filing (US-003, CAM-189)
 // ---------------------------------------------------------------------------
@@ -2381,11 +2468,18 @@ function buildSidecarLoopDeps(ctx: SidecarLoopDepsCtx, options: SidecarOptions):
 	// US-004 / CAM-149: ship-phase dep extracted to a helper (biome complexity budget).
 	const shipPhaseDeps = buildShipPhaseDeps(ctx, options);
 
+	// US-003 (CAM-195, Defect 1): implementing re-arm, wired unconditionally
+	// (resuming an already-in-flight PRD is a resilience fix, not an autonomy
+	// escalation gated to meta_loop/plan_approval config like the pair above).
+	// Extracted to buildRearmDeps to keep this function under the biome
+	// noExcessiveCognitiveComplexity(max=15) limit.
+	const rearmDeps = buildRearmDeps(ctx, options, hasPendingStoriesFn, planPhaseDeps.readLoopPhaseFn);
+
 	return {
 		readActiveFn, clearActiveFn, hasPendingStoriesFn, sleepFn, hasSessionFn,
 		acquireLockFn, buildOptsFn, runMergeWatchFn, flipActiveFn, autoShipFn,
 		readReviewReportFn, fileSuggestionsFn, escalateFn,
-		runMetaLoopObserveFn, ...planPhaseDeps, ...shipPhaseDeps,
+		runMetaLoopObserveFn, ...planPhaseDeps, ...shipPhaseDeps, ...rearmDeps,
 	};
 }
 
@@ -2498,5 +2592,6 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 		readLoopPhaseFn: deps.readLoopPhaseFn,
 		runPlanPhaseFn: deps.runPlanPhaseFn,
 		runShipPhaseFn: deps.runShipPhaseFn,
+		rearmImplementingFn: deps.rearmImplementingFn,
 	});
 }
