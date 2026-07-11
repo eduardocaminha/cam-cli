@@ -1,0 +1,25 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Extend blocked-marker schema with dedup-key + consecutive-count logic" },
+  "branchName": "cam/issue-214",
+  "timestamp": "2026-07-11T12:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/supervisor/implement-blocked-marker.ts",
+    "src/supervisor/loop.ts",
+    "src/supervisor/host.ts",
+    "test/supervisor/implement-blocked-marker.test.ts",
+    "test/commands/sidecar-rearm.test.ts",
+    "scripts/file-size-budget.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-002 wires advanceBlockedMarker into host.ts's writeImplementBlockedMarkerFn: read the existing marker via readImplementBlockedMarker(join(claudeDir, IMPLEMENT_BLOCKED_FILENAME)), compute prdHash as sha256 over prdPath's file bytes (Bun.CryptoHasher('sha256'), degrade gracefully to a stable reset-key value on an unreadable/absent prd.json, never throw), then call advanceBlockedMarker(prev, { issueId, story, reason, writtenAt }, prdHash) and persist the result. Delete the two US-001 placeholder lines in host.ts (consecutiveCount: 1, keyHash: '' -- both are explicitly commented as 'replaced by US-002'). AdvanceBlockedMarkerParams requires writtenAt (the caller stamps it, e.g. new Date().toISOString()); the same value is reused for haltedAt when escalation trips, so pass it once and let advanceBlockedMarker use it for both. Threshold defaults to 3 and does not need to be passed explicitly unless a story wants a different value.",
+  "officialDocsValidated": [
+    {
+      "lib": "bun",
+      "url": "https://bun.com/docs/api/hashing",
+      "fetchedAt": "2026-07-11T12:00:00Z",
+      "status": "aligned",
+      "summary": "Bun.CryptoHasher('sha256') constructor, .update(string), .digest('hex') synchronous hex-string API confirmed current; matches the existing suggestion-followups.ts usage this story mirrors."
+    }
+  ]
+}

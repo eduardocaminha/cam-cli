@@ -21,7 +21,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Marker module: src/supervisor/implement-blocked-marker.ts; tests in test/supervisor/implement-blocked-marker.test.ts. Keep advanceBlockedMarker pure and clock-free (mirror the existing loop.ts/host.ts clock-free-seam split: haltedAt/writtenAt timestamps are stamped by the caller, not this pure fn). Reuse Bun.CryptoHasher('sha256') as in src/supervisor/suggestion-followups.ts rather than node:crypto. keyHash sources the token from the reason string, per gotcha: the specific BLOCKED_AMBIGUITY vs BLOCKED_QUALITY token only survives in outcome.detail/reason (result.ts:462 'Worker reported BLOCKED_... story=...'), never in the event-log WorkerOutcomeKind. Patterns: grep scripts/cam/patterns.md for 'Durable marker module template' (CAM-204) for the read-shape-guard/never-throws conventions this module already follows."
     },
