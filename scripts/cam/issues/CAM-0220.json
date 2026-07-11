@@ -2,7 +2,7 @@
   "id": "CAM-220",
   "title": "Doc-gate for reviewer CLEAN findings covers only dev+embedded copy, not the raw template copy",
   "stage": "idea",
-  "status": "open",
+  "status": "abandoned",
   "blockedBy": [],
   "createdAt": "2026-07-08T21:03:29.381Z",
   "description": "From the CAM-189 review (PR #166, round 1 SUGGESTION). test/templates/subagent-reviewer-clean-findings.test.ts:29: US-001 AC2 names three sources (raw dev copy, raw template copy, embedded copy) but the doc-gate describe.each asserts only the dev copy (readFileSync) and the embedded copy (templatesContents). The raw template copy templates/agents/subagent-reviewer.md is not read directly. Coverage is transitively equivalent because embed-vendor:check forces embedded==template byte-for-byte, so no regression escapes both. Fix: add a third describe.each row reading templates/agents/subagent-reviewer.md for literal AC completeness. Non-blocking."
