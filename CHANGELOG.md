@@ -6,6 +6,14 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.130.0] - 2026-07-11
+
+### Added
+
+- US-003 - Wire the sidecar report pusher to sendKeysVerified
+- US-002 - Extract sendKeysVerified with composer-emptied verify + bounded retry
+- US-001 - Add push-undelivered event kind to the flight recorder
+
 ## [0.129.0] - 2026-07-11
 
 ### Added
