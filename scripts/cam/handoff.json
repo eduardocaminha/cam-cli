@@ -1,18 +1,21 @@
 {
-  "lastCompletedStory": { "id": "US-002", "title": "Stop the orchestrator-exit wrapper deleting the live state file" },
+  "lastCompletedStory": { "id": "US-003", "title": "Re-arm implementing at sidecar boot and idle-tick for in-flight PRDs" },
   "branchName": "cam/issue-195",
-  "timestamp": "2026-07-11T00:30:00Z",
+  "timestamp": "2026-07-11T01:00:00Z",
   "createdFiles": [
-    "test/integration/orch-exit-preserves-state.test.ts"
+    "src/supervisor/rearm-preconditions.ts",
+    "test/supervisor/rearm-preconditions.test.ts",
+    "test/commands/sidecar-rearm.test.ts"
   ],
   "modifiedFiles": [
-    "src/commands/run.ts",
-    "test/run.test.ts",
-    "scripts/cam/prd.json",
-    "scripts/cam/patterns.md"
+    "src/commands/sidecar.ts",
+    "src/supervisor/loop.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/patterns.md",
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "buildOrchestratorPaneCommand's teardown (\"else\", clean-/exit or respawn-cap) branch no longer does `rm -f ${q(opts.stateFile)}`; only readyMarker and pidMarker are still removed there, in the same order as before. `OrchestratorPaneCommandOptions.stateFile` remains a required field on the interface (other call sites still build/pass it) even though the wrapper body no longer reads `opts.stateFile` anywhere -- this is intentional retained shape, not dead code, so do not delete the field or its callers' `stateFile:` properties as a followup cleanup. `cam stop` (performStop, stop.ts) is now the ONLY code path that ever removes cam-loop.local.md; this asymmetry (recycle/exit preserves, explicit stop removes) is the fix, not a bug to unify further. Existing run.test.ts assertions were updated: the old 'removes the loop state file on teardown' test now asserts NOT-containing that rm, and the pidMarker-ordering test was rebased to assert ordering relative to the readyMarker rm instead of the now-removed stateFile rm. A new integration test (test/integration/orch-exit-preserves-state.test.ts) proves this end-to-end via a real bash -c run of the wrapper string with a fake `claude` on PATH that exits 0 with no handoff file (forces the teardown branch on the first loop iteration, no tmux session or polling needed); reuse this fake-claude-exits-immediately pattern for any future test that needs to drive the wrapper's teardown branch deterministically without tmux. US-001 (previous story, same PRD/CAM-195) fixed the FIRST half of Defect 3 (renderStateFile/clearActive phase-collapse); this story (US-002) fixed the SECOND half (the exit wrapper's direct rm). Both halves of Defect 3 are now closed as of this story; if any further story in this PRD references 'Defect 3' it should be treated as fully resolved rather than partially resolved.",
+  "nextStoryContext": "The re-arm gate this story added is a NEW, separate seam from evaluateDrainPreconditions (drain-preconditions.ts) -- do not conflate the two if a future story touches either. `evaluateRearmPreconditions` (new file src/supervisor/rearm-preconditions.ts) checks exactly 3 things, matching the AC's own parenthetical definition literally (not the container/auto evaluateDrainPreconditions): (1) prdInFlight (pass makeHasPendingStories()'s result directly -- it ALREADY returns false at the MAX_ROUNDS_DEBT blocked terminal per the CAM-109 guard, so 'no blocked terminal' needed no separate verdict read), (2) phase==='implementing' EXACTLY (LoopPhase is a mutually-exclusive enum, so this one check also covers 'no plan/ship phase in progress' -- phase:idle/planning/shipping all fail it, satisfying AC2's 'phase:idle never resumes'), (3) no pending merge-watch marker (existsSync .claude/MERGE_WATCH_FILENAME). Wiring: a new `rearmImplementingFn?: () => boolean` option on RunSidecarLoopOptions (loop.ts), production factory `makeProductionRearmImplementingFn(claudeDir, cwd, hasPendingStoriesFn, readLoopPhaseFn)` (sidecar.ts, exported), wired unconditionally (NOT gated by meta_loop/plan_approval, unlike flipActiveFn/autoShipFn) via a new `buildRearmDeps` helper (extracted purely to stay under buildSidecarLoopDeps' biome cognitive-complexity(15) ceiling -- do not inline it back). loop.ts's idle branch (`active !== true`) now checks `opts.rearmImplementingFn?.()` as the VERY FIRST thing, before runMergeWatchFn/runMetaLoopObserveFn: when it returns true, the tick sleeps and continues immediately (skips merge-watch/observe THIS tick) so the freshly-written active:true is picked up cleanly on the next tick without racing a same-tick meta-loop dispatch write (AC3). There is no separate 'sidecar boot' code path in runSidecarLoop -- the FIRST iteration of its `while(true)` already IS the boot check, so AC1's 'at sidecar boot AND at the idle-tick' needed only ONE call site, not two. When re-arm fires it writes phase:implementing via the existing makeSetPhaseFn (same write flipActiveFn already used for the auto-chain elsewhere) which derives active:true through renderStateFile's effectivePhase==='implementing' rule (US-001/US-002 of this same PRD, already shipped, made phase:implementing on disk trustworthy across an orchestrator restart). No event is logged on rearm fire or refuse in this story (kept surgical to the AC's scope) -- eventing every dispatch refusal/terminal is explicitly US-007's job (requires: US-003), which should add symmetric logging here if/when it touches this new seam. US-004/US-005/US-006 (this PRD, independent of US-003/US-007) cover the structured-event + durable implement-blocked-marker half of the CAM-195 fix and do not depend on this story's rearm wiring.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
