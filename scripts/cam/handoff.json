@@ -1,17 +1,18 @@
 {
-  "lastCompletedStory": { "id": "US-006", "title": "Surface the implement-blocked marker in the orchestrator boot-read" },
+  "lastCompletedStory": { "id": "US-007", "title": "Event every dispatch refusal and add a per-issue pending-guard" },
   "branchName": "cam/issue-195",
-  "timestamp": "2026-07-11T04:00:00Z",
+  "timestamp": "2026-07-11T05:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "templates/agents/subagent-orchestrator.md",
-    "src/vendor/_generated.ts",
+    "src/commands/sidecar.ts",
+    "src/supervisor/events.ts",
+    "test/commands/sidecar-meta-loop.test.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/patterns.md",
     "scripts/cam/prd.json"
   ],
-  "openQuestions": [
-    "Neither .gitignore nor templates/.gitignore has an entry for .claude/.cam-implement-blocked.json (US-005 wrote the marker module but did not add the gitignore entry, mirroring the same gap already documented for .cam-ship-stalled.json in patterns.md line ~438). Out of scope for US-006 (templates-doc-only story); a future story could add all three missing marker entries in one pass."
-  ],
-  "nextStoryContext": "US-006 added boot-read item #10 (.claude/.cam-implement-blocked.json: issueId/story/reason fields) to templates/agents/subagent-orchestrator.md's numbered marker list (after the plan-preflight entry, ~137-140) plus a matching opening-blocker snippet (after the plan-preflight snippet, ~180-187: '⚠ implement blocked: issue #<issueId> story <story or \"none\"> — <reason>'), mirroring the ship-stalled/plan-escalated/plan-preflight precedent exactly (read-only surfacing; marker only removed by the next re-armed implement dispatch for that issue, per US-005's clearImplementBlockedMarkerForCurrentIssue). Ran bun run embed-vendor + embed-vendor:check in the same commit (byte-parity gate on src/vendor/_generated.ts). This story was templates-only as anticipated by US-005's handoff notes; no src/ or test/ changes were needed since US-005 already did all the write/consume wiring. US-007 (priority 7, requires US-003 only, independent of US-005/US-006) remains the other open story in this PRD -- check prd.json for any remaining passes:false stories before assuming PRD completion.",
+  "openQuestions": [],
+  "nextStoryContext": "US-007 was the last remaining story in this PRD (US-001..US-007, all now passes:true): extended MetaLoopDispatchEventDetail (src/supervisor/events.ts) with a { skipped: true; reason: MetaLoopDispatchSkipReason } variant (no new WorkerEventKind added, per AC2), and made the 3 previously-silent skip paths in sidecar.ts emit it: handleBlockedCycleBoundary's plain in-flight branch (reason 'cycle-in-flight'), makeProductionMetaLoopDispatchFn's mergeWatchPresentFn branch ('merge-watch-present'), and its phase!=idle branch ('phase-not-idle') -- all three fire every tick they're hit, deliberately un-deduped (the story only asked for visibility, not rate-limiting). Separately, added DispatchClosureState.pendingIssueId (compared by issue-id value, not a boolean) to dispatchOrDrain and handlePendingTarget: setPhaseFn is still called on every dispatch attempt (so a legitimate mutex-busy plan-phase retry of the same still-open issue keeps working), but 'dispatched:true' only fires once per pending issue id, which is what eliminates the ~4.7s CAM-98 storm (mutex-busy's exitPhaseAfterPlan resets phase to idle before any PRD exists, so the same issue was re-selected and re-emitted every tick). The guard self-clears the moment a DIFFERENT issue id is selected -- no explicit reset hook exists or is needed. Updated 3 existing tests that previously asserted zero meta-loop-dispatch events for these scenarios (now assert exactly one skip event with the correct reason) and added a new 'per-issue pending-guard' describe block (repeat-dispatch dedup + different-issue-clears-guard + oracle). Raised 3 file-size ceilings this story legitimately grew (src/commands/sidecar.ts, src/supervisor/events.ts, test/commands/sidecar-meta-loop.test.ts) with a dated _ref entry. PRD is now fully passes:true; the next cam-next invocation should run review to a terminal verdict (the supervisor decides PRD_COMPLETE / awaiting-operator autonomously, not this agent).",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
