@@ -1369,19 +1369,31 @@ export interface MetaLoopDispatchDeps {
  *
  *   1. Kill-switch engaged -> emit 'stopped' once (deduped), park.
  *   2. Preconditions not met -> emit 'refused' + warn, park.
- *   3. PRD cycle in flight (prd.json present) -> silent skip this tick.
- *   4. Merge-watch file present -> silent skip this tick.
- *   5. Phase not idle/absent -> silent skip this tick.
+ *   3. PRD cycle in flight (prd.json present) -> emit 'meta-loop-dispatch
+ *      {skipped:true, reason:'cycle-in-flight'}' this tick (US-007), park.
+ *   4. Merge-watch file present -> emit 'meta-loop-dispatch {skipped:true,
+ *      reason:'merge-watch-present'}' this tick (US-007), park.
+ *   5. Phase not idle/absent -> emit 'meta-loop-dispatch {skipped:true,
+ *      reason:'phase-not-idle'}' this tick (US-007), park.
  *   6. Backlog drained (selectFn returns null) -> emit 'meta-loop-observe {drained:true}'
  *      + drain-notify (once, deduped by observeDecide state), park.
  *   7. Issue found -> write phase:planning + plan_issue:<id> via setPhaseFn,
- *      emit 'meta-loop-dispatch {dispatched:true}'.
+ *      emit 'meta-loop-dispatch {dispatched:true}' (deduped per-issue, see
+ *      DispatchClosureState.pendingIssueId below).
  *
- * Dedup: same issue selected across ticks does NOT re-dispatch (the plan phase
- * runner picks up the phase and transitions it; on return the phase will be idle
- * again for the NEXT issue). Drain dedup mirrors the observe path (observeDecide
- * state in closure). Kill-switch dedup: stopped event is emitted exactly once per
- * engagement (boolean flag in closure).
+ * Dedup: a per-issue pending-guard (DispatchClosureState.pendingIssueId, US-007,
+ * CAM-98/CAM-195) suppresses the *event* on repeat dispatch attempts of the SAME
+ * issue id: setPhaseFn is still called every tick so a legitimate retry (e.g. the
+ * plan phase bouncing phase back to 'idle' on pane-count mutex-busy, exitPhaseAfterPlan
+ * in this file) keeps working, but 'dispatched:true' fires only on the FIRST attempt
+ * for that issue id. This is what eliminated the ~4.7s dispatched:true storm (CAM-98):
+ * without it, every idle tick during a mutex-busy retry loop re-selected the same
+ * still-open issue and re-emitted 'dispatched:true'. The guard self-clears the moment
+ * a DIFFERENT issue id is selected (no separate reset hook is needed: comparison is by
+ * identity, and a issue's cycle "reaching a terminal" is exactly what frees the backlog
+ * slot for a different pick). Drain dedup mirrors the observe path (observeDecide state
+ * in closure). Kill-switch dedup: stopped event is emitted exactly once per engagement
+ * (boolean flag in closure).
  *
  * Exported for direct testability (anti-shadow-mock): tests call this factory
  * with injected fakes and assert the returned closure's behavior without touching
@@ -1397,6 +1409,19 @@ interface DispatchClosureState {
 	 * Reset to false when prd.json is absent (block cleared by operator ship/abandon).
 	 */
 	blockedCycleEmitted: boolean;
+	/**
+	 * Per-issue pending-guard (US-007, CAM-98/CAM-195 rider): the issue id of the
+	 * most recent 'dispatched:true' emission. A repeat dispatch attempt for the
+	 * SAME id (selected.id === pendingIssueId) still calls setPhaseFn (retry is
+	 * preserved) but does NOT re-emit the event, which is what kills the ~4.7s
+	 * dispatched:true storm caused by the plan-phase mutex-busy path resetting
+	 * phase back to 'idle' before a PRD is ever created for that issue. Cleared
+	 * implicitly (not by an explicit reset) the moment a different issue id is
+	 * selected, since that only happens once the previous issue's cycle reaches
+	 * a terminal and vacates the top of the backlog. Undefined until the first
+	 * dispatch of this closure's lifetime.
+	 */
+	pendingIssueId: string | undefined;
 }
 
 /**
@@ -1464,7 +1489,16 @@ async function handleBlockedCycleBoundary(
 	}
 	const verdict = deps.readPrdVerdictFn?.() ?? null;
 	if (verdict !== 'MAX_ROUNDS_DEBT') {
-		return true; // plain in-flight cycle: silent skip
+		// US-007 (CAM-195, Defect 2 refusals): previously silent; now a
+		// structured event so the flight recorder shows every refused tick.
+		deps.logEvent({
+			ts: new Date().toISOString(),
+			storyId: undefined,
+			uuid: 'sidecar',
+			kind: 'meta-loop-dispatch',
+			detail: { skipped: true, reason: 'cycle-in-flight' },
+		});
+		return true; // plain in-flight cycle: skip (now observable)
 	}
 	// Blocked cycle: park + escalate exactly once (dedup via ctx.blockedCycleEmitted).
 	if (!ctx.blockedCycleEmitted) {
@@ -1513,8 +1547,14 @@ async function handleBlockedCycleBoundary(
  * A throw here is caught, logged via logEvent as a 'sidecar-exit' event, and
  * the tick is skipped WITHOUT dispatching or clearing plan_issue, so a
  * transient corrupted-backlog read never gets misread as "target not found".
+ *
+ * Per-issue pending-guard (US-007): mirrors dispatchOrDrain's top-of-queue
+ * dispatch -- setPhaseFn is always called on a plannable resolve (so a
+ * mutex-busy retry keeps working), but the 'dispatched:true' event is deduped
+ * via ctx.pendingIssueId so re-resolving the same target across ticks does not
+ * re-fire the event.
  */
-function handlePendingTarget(deps: MetaLoopDispatchDeps, targetId: string): void {
+function handlePendingTarget(deps: MetaLoopDispatchDeps, ctx: DispatchClosureState, targetId: string): void {
 	let resolved: IssueEntry | null;
 	try {
 		resolved = deps.selectTargetFn?.(targetId) ?? null;
@@ -1533,13 +1573,16 @@ function handlePendingTarget(deps: MetaLoopDispatchDeps, targetId: string): void
 	}
 	if (resolved !== null) {
 		deps.setPhaseFn('planning', resolved.id);
-		deps.logEvent({
-			ts: new Date().toISOString(),
-			storyId: undefined,
-			uuid: 'sidecar',
-			kind: 'meta-loop-dispatch',
-			detail: { dispatched: true, issueId: resolved.id, rank: resolved.rank ?? 0 },
-		});
+		if (ctx.pendingIssueId !== resolved.id) {
+			ctx.pendingIssueId = resolved.id;
+			deps.logEvent({
+				ts: new Date().toISOString(),
+				storyId: undefined,
+				uuid: 'sidecar',
+				kind: 'meta-loop-dispatch',
+				detail: { dispatched: true, issueId: resolved.id, rank: resolved.rank ?? 0 },
+			});
+		}
 		return;
 	}
 	deps.logEvent({
@@ -1572,7 +1615,7 @@ async function dispatchOrDrain(
 ): Promise<void> {
 	const pendingTarget = deps.readPlanIssueFn?.();
 	if (pendingTarget !== undefined && pendingTarget.length > 0) {
-		handlePendingTarget(deps, pendingTarget);
+		handlePendingTarget(deps, ctx, pendingTarget);
 		return;
 	}
 	let selected: IssueEntry | null;
@@ -1609,18 +1652,29 @@ async function dispatchOrDrain(
 		return;
 	}
 	// Issue found: write phase:planning + plan_issue so the plan runner picks it up.
+	// setPhaseFn always runs (a mutex-busy retry of the SAME issue must keep
+	// working); the event is deduped per-issue via ctx.pendingIssueId (US-007)
+	// so a retry storm of the same issue no longer re-emits 'dispatched:true'.
 	deps.setPhaseFn('planning', selected.id);
-	deps.logEvent({
-		ts: new Date().toISOString(),
-		storyId: undefined,
-		uuid: 'sidecar',
-		kind: 'meta-loop-dispatch',
-		detail: { dispatched: true, issueId: selected.id, rank: selected.rank ?? 0 },
-	});
+	if (ctx.pendingIssueId !== selected.id) {
+		ctx.pendingIssueId = selected.id;
+		deps.logEvent({
+			ts: new Date().toISOString(),
+			storyId: undefined,
+			uuid: 'sidecar',
+			kind: 'meta-loop-dispatch',
+			detail: { dispatched: true, issueId: selected.id, rank: selected.rank ?? 0 },
+		});
+	}
 }
 
 export function makeProductionMetaLoopDispatchFn(deps: MetaLoopDispatchDeps): () => Promise<void> {
-	const ctx: DispatchClosureState = { stoppedEmitted: false, observeState: { kind: 'none' }, blockedCycleEmitted: false };
+	const ctx: DispatchClosureState = {
+		stoppedEmitted: false,
+		observeState: { kind: 'none' },
+		blockedCycleEmitted: false,
+		pendingIssueId: undefined,
+	};
 
 	return async (): Promise<void> => {
 		if (handleKillSwitchBoundary(deps, ctx)) return;
@@ -1628,9 +1682,29 @@ export function makeProductionMetaLoopDispatchFn(deps: MetaLoopDispatchDeps): ()
 		// US-005: check for blocked cycle (MAX_ROUNDS_DEBT) before plain prd-present skip.
 		// Returns true (park) for both blocked and plain in-flight; false when prd absent.
 		if (await handleBlockedCycleBoundary(deps, ctx)) return;
-		if (deps.mergeWatchPresentFn()) return;
+		if (deps.mergeWatchPresentFn()) {
+			// US-007 (CAM-195, Defect 2 refusals): previously silent.
+			deps.logEvent({
+				ts: new Date().toISOString(),
+				storyId: undefined,
+				uuid: 'sidecar',
+				kind: 'meta-loop-dispatch',
+				detail: { skipped: true, reason: 'merge-watch-present' },
+			});
+			return;
+		}
 		const phase = deps.readPhaseFn();
-		if (phase !== undefined && phase !== 'idle') return;
+		if (phase !== undefined && phase !== 'idle') {
+			// US-007 (CAM-195, Defect 2 refusals): previously silent.
+			deps.logEvent({
+				ts: new Date().toISOString(),
+				storyId: undefined,
+				uuid: 'sidecar',
+				kind: 'meta-loop-dispatch',
+				detail: { skipped: true, reason: 'phase-not-idle' },
+			});
+			return;
+		}
 		await dispatchOrDrain(deps, ctx);
 	};
 }

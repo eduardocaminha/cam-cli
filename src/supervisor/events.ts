@@ -359,7 +359,7 @@ export type MetaLoopObserveEventDetail =
 
 /**
  * 'meta-loop-dispatch' event detail: emitted by the auto-dispatcher on each
- * idle tick at a safe cycle boundary. Discriminated union of four shapes:
+ * idle tick at a safe cycle boundary. Discriminated union of five shapes:
  *   - { dispatched, issueId, rank }: phase:planning was written for the selected
  *     issue; the plan runner will pick it up on the next sidecar tick.
  *   - { refused, reason }: preconditions not met; dispatch refused fail-closed.
@@ -375,13 +375,24 @@ export type MetaLoopObserveEventDetail =
  *     the dispatcher never substitutes a different issue on this tick and
  *     clears the stale plan_issue so the next tick resumes top-of-queue
  *     dispatch. (US-004, CAM-203)
+ *   - { skipped, reason }: a boundary check refused the tick silently before
+ *     this story (US-007, CAM-195 Defect 2 refusals): reason is
+ *     'cycle-in-flight' (prd.json present with a non-MAX_ROUNDS_DEBT verdict:
+ *     a plain in-flight cycle, distinct from the blockedCycle terminal above),
+ *     'merge-watch-present' (a merge-watch marker is pending), or
+ *     'phase-not-idle' (loop phase is neither undefined nor 'idle'). Emitted
+ *     every tick the boundary is hit (no dedup); this is a visibility fix,
+ *     not a rate-limited event.
  */
+export type MetaLoopDispatchSkipReason = 'cycle-in-flight' | 'merge-watch-present' | 'phase-not-idle';
+
 export type MetaLoopDispatchEventDetail =
 	| { dispatched: true; issueId: string; rank: number }
 	| { refused: true; reason: string }
 	| { stopped: true }
 	| { blockedCycle: true }
-	| { refusedTarget: true; targetId: string };
+	| { refusedTarget: true; targetId: string }
+	| { skipped: true; reason: MetaLoopDispatchSkipReason };
 
 /**
  * 'container-preflight' event detail: emitted once per implement dispatch

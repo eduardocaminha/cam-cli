@@ -119,7 +119,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": "US-003",
       "notes": "Files: src/commands/sidecar.ts (handleBlockedCycleBoundary 1348-1378 plain in-flight silent skip at 1357-1358; makeProductionMetaLoopDispatchFn 1513-1527 silent returns for mergeWatchPresentFn 1522 and phase!=idle 1523-1524; DispatchClosureState 1282-1291 add a per-issue pending dedup mirroring blockedCycleEmitted/stoppedEmitted), src/supervisor/events.ts (MetaLoopDispatchEventDetail union 379-384 + doc comment; extend reason variants, do NOT add a new WorkerEventKind). Rider context: ~20 dispatched:true events for CAM-98 on 2026-07-06 from mutex-busy resetting phase to idle."
     }

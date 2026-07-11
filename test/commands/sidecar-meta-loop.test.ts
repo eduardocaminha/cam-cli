@@ -747,7 +747,10 @@ describe('meta-loop-dispatch: dispatches when all gates pass (AC#2)', () => {
 
 		await dispatchFn();
 		expect(setPhaseCallCount).toBe(0);
-		expect(events.filter((ev) => ev.kind === 'meta-loop-dispatch').length).toBe(0);
+		// US-007: previously silent; now emits a structured skip event (AC1).
+		const skipEvents = events.filter((ev) => ev.kind === 'meta-loop-dispatch');
+		expect(skipEvents.length).toBe(1);
+		expect(skipEvents[0]?.detail).toEqual({ skipped: true, reason: 'phase-not-idle' });
 	});
 
 	test('does NOT dispatch when phase is implementing', async () => {
@@ -768,11 +771,14 @@ describe('meta-loop-dispatch: dispatches when all gates pass (AC#2)', () => {
 
 		await dispatchFn();
 		expect(setPhaseCallCount).toBe(0);
-		expect(events.filter((ev) => ev.kind === 'meta-loop-dispatch').length).toBe(0);
+		// US-007: previously silent; now emits a structured skip event (AC1).
+		const skipEvents = events.filter((ev) => ev.kind === 'meta-loop-dispatch');
+		expect(skipEvents.length).toBe(1);
+		expect(skipEvents[0]?.detail).toEqual({ skipped: true, reason: 'phase-not-idle' });
 	});
 
 	test('does NOT dispatch when prd.json in flight (prdPresentFn true)', async () => {
-		const { logger } = makeInMemoryEventLogger();
+		const { logger, events } = makeInMemoryEventLogger();
 		let setPhaseCallCount = 0;
 
 		const dispatchFn = makeProductionMetaLoopDispatchFn({
@@ -789,10 +795,14 @@ describe('meta-loop-dispatch: dispatches when all gates pass (AC#2)', () => {
 
 		await dispatchFn();
 		expect(setPhaseCallCount).toBe(0);
+		// US-007: previously silent; now emits a structured skip event (AC1).
+		const skipEvents = events.filter((ev) => ev.kind === 'meta-loop-dispatch');
+		expect(skipEvents.length).toBe(1);
+		expect(skipEvents[0]?.detail).toEqual({ skipped: true, reason: 'cycle-in-flight' });
 	});
 
 	test('does NOT dispatch when merge-watch present', async () => {
-		const { logger } = makeInMemoryEventLogger();
+		const { logger, events } = makeInMemoryEventLogger();
 		let setPhaseCallCount = 0;
 
 		const dispatchFn = makeProductionMetaLoopDispatchFn({
@@ -809,6 +819,10 @@ describe('meta-loop-dispatch: dispatches when all gates pass (AC#2)', () => {
 
 		await dispatchFn();
 		expect(setPhaseCallCount).toBe(0);
+		// US-007: previously silent; now emits a structured skip event (AC1).
+		const skipEvents = events.filter((ev) => ev.kind === 'meta-loop-dispatch');
+		expect(skipEvents.length).toBe(1);
+		expect(skipEvents[0]?.detail).toEqual({ skipped: true, reason: 'merge-watch-present' });
 	});
 });
 
@@ -1303,7 +1317,7 @@ describe('meta-loop-dispatch: blocked-cycle judgment point (US-005)', () => {
 	});
 
 	// Plain in-flight prd (non-MAX_ROUNDS_DEBT) -> silent skip, no event
-	test('plain in-flight prd (non-MAX_ROUNDS_DEBT verdict) -> silent skip, no blockedCycle event', async () => {
+	test('plain in-flight prd (non-MAX_ROUNDS_DEBT verdict) -> no dispatch, emits cycle-in-flight skip event (US-007)', async () => {
 		const { logger, events } = makeInMemoryEventLogger();
 		let setPhaseCallCount = 0;
 
@@ -1322,9 +1336,16 @@ describe('meta-loop-dispatch: blocked-cycle judgment point (US-005)', () => {
 
 		await dispatchFn();
 
-		// No dispatch, no blockedCycle event
+		// No dispatch, no blockedCycle event, but the previously-silent skip is
+		// now observable with a structured reason (US-007, AC1).
 		expect(setPhaseCallCount).toBe(0);
-		expect(events.filter((ev) => ev.kind === 'meta-loop-dispatch').length).toBe(0);
+		const blockedEvents = events.filter(
+			(ev) => ev.kind === 'meta-loop-dispatch' && (ev.detail as { blockedCycle?: boolean }).blockedCycle === true,
+		);
+		expect(blockedEvents.length).toBe(0);
+		const skipEvents = events.filter((ev) => ev.kind === 'meta-loop-dispatch');
+		expect(skipEvents.length).toBe(1);
+		expect(skipEvents[0]?.detail).toEqual({ skipped: true, reason: 'cycle-in-flight' });
 	});
 
 	// File-assert oracle: BLOCKED_CYCLE_ESCALATE_SUBJECT exported from sidecar.ts
@@ -1508,6 +1529,82 @@ describe('meta-loop-dispatch: pending explicit plan_issue wins (US-004, CAM-203)
 		expect(src).toContain('selectTargetFn');
 		expect(src).toContain('makeReadPlanIssue(claudeDir)');
 		expect(src).toContain('selectPlanTargetFromFile(cwd, targetId)');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-007 (CAM-195, Defect 2 refusals + CAM-98 rider): per-issue pending-guard.
+// Reproduces the ~4.7s dispatched:true storm: a mutex-busy plan-phase retry
+// resets phase back to 'idle' before a PRD ever exists for the issue, so the
+// SAME still-open issue is re-selected on every idle tick. The guard must
+// keep calling setPhaseFn (retry stays alive) but stop re-emitting the event.
+// ---------------------------------------------------------------------------
+
+describe('meta-loop-dispatch: per-issue pending-guard (US-007, CAM-98 storm)', () => {
+	test('repeat dispatch of the SAME issue across ticks calls setPhaseFn every time but emits dispatched:true only once', async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		let setPhaseCallCount = 0;
+		const fixture = makePlannableIssue('CAM-98');
+
+		const dispatchFn = makeProductionMetaLoopDispatchFn({
+			selectFn: () => fixture,
+			readPhaseFn: () => 'idle', // mutex-busy already bounced phase back to idle
+			prdPresentFn: () => false, // PRD never got created (mutex kept refusing)
+			mergeWatchPresentFn: () => false,
+			preconditionFn: () => ({ ok: true }),
+			killSwitchFn: () => false,
+			setPhaseFn: () => { setPhaseCallCount++; },
+			warnFn: () => {},
+			logEvent: logger,
+		});
+
+		// Simulate 5 idle ticks retrying the same still-open issue.
+		for (let i = 0; i < 5; i++) await dispatchFn();
+
+		// setPhaseFn keeps firing every tick: the retry mechanism is untouched.
+		expect(setPhaseCallCount).toBe(5);
+
+		// 'dispatched:true' only fires once: the storm is eliminated.
+		const dispatchedEvents = events.filter(
+			(ev) => ev.kind === 'meta-loop-dispatch' && (ev.detail as { dispatched?: boolean }).dispatched === true,
+		);
+		expect(dispatchedEvents.length).toBe(1);
+		expect((dispatchedEvents[0]?.detail as { issueId: string }).issueId).toBe('CAM-98');
+	});
+
+	test('a DIFFERENT issue selected after the pending one clears the guard and emits again', async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		let selected: IssueEntry = makePlannableIssue('CAM-98');
+
+		const dispatchFn = makeProductionMetaLoopDispatchFn({
+			selectFn: () => selected,
+			readPhaseFn: () => 'idle',
+			prdPresentFn: () => false,
+			mergeWatchPresentFn: () => false,
+			preconditionFn: () => ({ ok: true }),
+			killSwitchFn: () => false,
+			setPhaseFn: () => {},
+			warnFn: () => {},
+			logEvent: logger,
+		});
+
+		await dispatchFn(); // dispatches CAM-98
+		await dispatchFn(); // repeat: deduped, no new event
+		selected = makePlannableIssue('CAM-99'); // backlog moved on to a new issue
+		await dispatchFn(); // dispatches CAM-99: guard is keyed by identity, not a sticky lock
+
+		const dispatchedEvents = events.filter(
+			(ev) => ev.kind === 'meta-loop-dispatch' && (ev.detail as { dispatched?: boolean }).dispatched === true,
+		);
+		expect(dispatchedEvents.length).toBe(2);
+		expect((dispatchedEvents[0]?.detail as { issueId: string }).issueId).toBe('CAM-98');
+		expect((dispatchedEvents[1]?.detail as { issueId: string }).issueId).toBe('CAM-99');
+	});
+
+	// File-assert oracle: DispatchClosureState carries the pending-guard field.
+	test('sidecar.ts DispatchClosureState carries pendingIssueId (AC3 oracle)', () => {
+		const src = readFileSync(join(import.meta.dir, '../../src/commands/sidecar.ts'), 'utf8');
+		expect(src).toContain('pendingIssueId');
 	});
 });
 
