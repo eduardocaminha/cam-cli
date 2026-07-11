@@ -1,0 +1,9 @@
+{
+  "id": "CAM-265",
+  "title": "The new implement-blocked block ends with a 'Do NOT delete the marker yourself.…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-11T04:40:28.780Z",
+  "description": "The new implement-blocked block ends with a 'Do NOT delete the marker yourself...' paragraph immediately followed by the pre-existing near-identical paragraph for the plan-escalated marker. Two consecutive almost-identical warnings read awkwardly; consider consolidating into one shared note covering all boot-surfaced markers.\n\nSource: cam/issue-195\nReview round: 1\nLocation: templates/agents/subagent-orchestrator.md:191\n\nsuggestion-fingerprint: c50264980f90"
+}
