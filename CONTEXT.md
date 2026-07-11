@@ -196,3 +196,9 @@ The container-mode wedge where a stale cam-worker container from a prior session
 
 **firewall-init failure**:
 A non-zero exit of the container firewall init (docker exec cam-worker init-firewall.sh, dnsmasq --port=53), which under set -euo pipefail aborts the sidecar boot before the loop starts, so no worker is dispatched. Container-mode only; a no-op in host mode.
+
+**issue identity resolution**:
+Mapping an issue number/id to its canonical record and branch name via the configured issue_system (local -> scripts/cam/issues/CAM-NNNN.json; github -> gh). A deterministic-code responsibility performed once upstream, not re-derived by any LLM agent.
+
+**prior-art signal**:
+An auditor observation that a PRD may duplicate or contradict already-shipped work. Sourced from git history (commits + merged PRs), backend-agnostic, and emitted as a non-blocking WARNING/SUGGESTION, never a critical BLOCK.
