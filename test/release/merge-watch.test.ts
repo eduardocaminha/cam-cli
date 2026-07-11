@@ -113,7 +113,7 @@ const successPostMerge: PostMergeFn = ({ cwd: _cwd, mergedBranch: _b }) => ({
 });
 
 /** A post-merge fn that always fails. */
-const failPostMerge: PostMergeFn = () => ({ ok: false, reason: 'pull-failed' });
+const failPostMerge: PostMergeFn = () => ({ ok: false, reason: 'pull-failed', completedSteps: [], remainingSteps: [] });
 
 /** Build minimal MergeWatchOptions with overrides. */
 function makeOpts(
@@ -218,7 +218,7 @@ describe('runMergeWatch', () => {
 			pollFn: makeSeqPollFn([OPEN_CLEAN, OPEN_BLOCKED]),
 			postMergeFn: () => {
 				postMergeCalled = true;
-				return { ok: false, reason: 'pull-failed' };
+				return { ok: false, reason: 'pull-failed', completedSteps: [], remainingSteps: [] };
 			},
 			notifyOrchestrator: (line) => notifications.push(line),
 			sleepFn: () => {},
@@ -353,7 +353,7 @@ describe('runMergeWatch', () => {
 			pollFn: makeSeqPollFn([CLOSED]),
 			postMergeFn: () => {
 				postMergeCalled = true;
-				return { ok: false, reason: 'pull-failed' };
+				return { ok: false, reason: 'pull-failed', completedSteps: [], remainingSteps: [] };
 			},
 			notifyOrchestrator: (line) => notifications.push(line),
 			sleepFn: () => {},
@@ -384,7 +384,7 @@ describe('runMergeWatch', () => {
 			pollFn: () => ok(OPEN_CLEAN),
 			postMergeFn: () => {
 				postMergeCalled = true;
-				return { ok: false, reason: 'pull-failed' };
+				return { ok: false, reason: 'pull-failed', completedSteps: [], remainingSteps: [] };
 			},
 			notifyOrchestrator: (line) => notifications.push(line),
 			sleepFn: () => {},
@@ -749,7 +749,7 @@ describe('runMergeWatch structured events (US-008)', () => {
 			pollFn: makeSeqPollFn([OPEN_BLOCKED]),
 			postMergeFn: () => {
 				postMergeCalled = true;
-				return { ok: false, reason: 'should-not-run' };
+				return { ok: false, reason: 'should-not-run', completedSteps: [], remainingSteps: [] };
 			},
 			notifyOrchestrator: () => {},
 			sleepFn: () => {},
@@ -1701,7 +1701,7 @@ describe('file persistence: non-terminal tick leaves file present', () => {
 
 		const result = stepMergeWatch(state!, 0, pollFn, {
 			cwd: '/fake',
-			postMergeFn: () => ({ ok: false, reason: 'should not be called' }),
+			postMergeFn: () => ({ ok: false, reason: 'should not be called', completedSteps: [], remainingSteps: [] }),
 			notifyOrchestrator: () => {},
 		});
 
@@ -1827,7 +1827,7 @@ describe('MergeWatchState issueId round-trip (US-002)', () => {
 
 		const result = stepMergeWatch(state!, 0, pollFn, {
 			cwd: '/fake',
-			postMergeFn: () => ({ ok: false, reason: 'not called' }),
+			postMergeFn: () => ({ ok: false, reason: 'not called', completedSteps: [], remainingSteps: [] }),
 			notifyOrchestrator: () => {},
 		});
 

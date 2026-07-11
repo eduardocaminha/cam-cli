@@ -50,7 +50,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edit src/release/post-merge.ts (pull step at ~line 379; PostMergeOutcome fail variant at ~line 110) + test/release/post-merge.test.ts. Do NOT pass --reapply-cherry-picks (per git docs: that would re-preserve the subsumed commit we want dropped). The clean-rebase continue-path already exists (tag/prune/close run after a successful pull); switching to --rebase is what makes the subsumed-commit case reach it. Extend the fail variant to `{ ok: false; reason: string; completedSteps: string[]; remainingSteps: string[] }` so US-003 can populate the marker; keep every other failure reason (checkout-main-failed, tag-*, version-*) populating these fields too for a consistent shape. Steps vocabulary: checkout, pull-rebase, tag, prune, close. runPostMerge stays a pure git primitive (injectable SpawnFn); it does NOT write the marker itself (no claudeDir here) — the sidecar caller does (US-003)."
     },

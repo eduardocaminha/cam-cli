@@ -107,7 +107,38 @@ export type PostMergeOutcome =
 			 */
 			closeResult?: CloseIssueOnMainOutcome;
 	  }
-	| { ok: false; reason: string };
+	| { ok: false; reason: string; completedSteps: string[]; remainingSteps: string[] };
+
+// ---------------------------------------------------------------------------
+// Step vocabulary (US-002)
+// ---------------------------------------------------------------------------
+
+/**
+ * Ordered vocabulary of runPostMerge's steps. Used to derive completedSteps /
+ * remainingSteps on every failure path so a caller (e.g. the sidecar's
+ * post-merge-stalled marker, US-003) knows exactly where the sequence stopped.
+ *
+ * "tag" covers the version read + idempotent tag create/push (both are part
+ * of the same logical step in this vocabulary). "prune" and "close" are
+ * best-effort/non-fatal and never produce a failure outcome themselves.
+ */
+const ALL_STEPS = ['checkout', 'pull-rebase', 'tag', 'prune', 'close'] as const;
+type StepName = (typeof ALL_STEPS)[number];
+
+/**
+ * Build a failure outcome for a failure at `step`: everything strictly
+ * before `step` is completed, `step` itself (which did not finish) and
+ * everything after it are remaining.
+ */
+function failAt(step: StepName, reason: string): PostMergeOutcome & { ok: false } {
+	const idx = ALL_STEPS.indexOf(step);
+	return {
+		ok: false,
+		reason,
+		completedSteps: [...ALL_STEPS.slice(0, idx)],
+		remainingSteps: [...ALL_STEPS.slice(idx)],
+	};
+}
 
 // ---------------------------------------------------------------------------
 // Version-file parsing
@@ -123,7 +154,7 @@ function parseVersionFromContent(content: string): string | undefined {
 // Step helpers (extracted to keep runPostMerge under complexity/line limits)
 // ---------------------------------------------------------------------------
 
-type FailOutcome = { ok: false; reason: string };
+type FailOutcome = { ok: false; reason: string; completedSteps: string[]; remainingSteps: string[] };
 
 /**
  * Read and parse the version from src/version.ts.
@@ -141,12 +172,12 @@ function readVersionTag(
 		versionContent = reader(versionTsPath);
 	} catch {
 		printError('could not read src/version.ts after pull');
-		return { ok: false, reason: 'version-file-read-failed' };
+		return failAt('tag', 'version-file-read-failed');
 	}
 	const version = parseVersionFromContent(versionContent);
 	if (version === undefined) {
 		printError('could not parse CAM_VERSION from src/version.ts');
-		return { ok: false, reason: 'version-parse-failed' };
+		return failAt('tag', 'version-parse-failed');
 	}
 	return `v${version}`;
 }
@@ -172,7 +203,7 @@ function performTagStep(
 	if ((createResult.status ?? 1) !== 0) {
 		const stderr = (createResult.stderr ?? '').trim();
 		printError(`git tag ${tag} failed: ${stderr || '(no output)'}`);
-		return { ok: false, reason: 'tag-create-failed' };
+		return failAt('tag', 'tag-create-failed');
 	}
 
 	const pushTagResult = spawnFn('git', ['-C', cwd, 'push', 'origin', tag], { encoding: 'utf8' });
@@ -182,7 +213,7 @@ function performTagStep(
 			`git push origin ${tag} failed: ${stderr || '(no output)'}`,
 			'tag was created locally but not pushed',
 		);
-		return { ok: false, reason: 'tag-push-failed' };
+		return failAt('tag', 'tag-push-failed');
 	}
 
 	printSuccess(`tagged and pushed ${tag}`);
@@ -372,15 +403,21 @@ export function runPostMerge(opts: PostMergeOptions): PostMergeOutcome {
 	if ((checkoutResult.status ?? 1) !== 0) {
 		const stderr = (checkoutResult.stderr ?? '').trim();
 		printError(`git checkout main failed: ${stderr || '(no output)'}`);
-		return { ok: false, reason: 'checkout-main-failed' };
+		return failAt('checkout', 'checkout-main-failed');
 	}
 
-	// Step 1: git pull origin main
-	const pullResult = spawnFn('git', ['-C', cwd, 'pull', 'origin', 'main'], { encoding: 'utf8' });
+	// Step 1: git pull --rebase origin main.
+	// --rebase (not a plain pull, and never an auto-reset) drops a local commit
+	// that main's squash-merge already subsumed via patch-id comparison,
+	// replaying anything genuinely un-squashed on top; a real divergence fails
+	// the rebase loudly instead of silently discarding work.
+	const pullResult = spawnFn(
+		'git', ['-C', cwd, 'pull', '--rebase', 'origin', 'main'], { encoding: 'utf8' },
+	);
 	if ((pullResult.status ?? 1) !== 0) {
 		const stderr = (pullResult.stderr ?? '').trim();
-		printError(`git pull origin main failed: ${stderr || '(no output)'}`);
-		return { ok: false, reason: 'pull-failed' };
+		printError(`git pull --rebase origin main failed: ${stderr || '(no output)'}`);
+		return failAt('pull-rebase', 'rebase-failed');
 	}
 
 	// Get the HEAD sha after the pull.
