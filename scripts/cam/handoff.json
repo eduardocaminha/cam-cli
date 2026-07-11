@@ -1,18 +1,19 @@
 {
-  "lastCompletedStory": { "id": "US-003", "title": "Halt the auto-dispatch chain when the marker is escalated" },
+  "lastCompletedStory": { "id": "US-004", "title": "Surface the circuit-broken blocker in the orchestrator boot-read" },
   "branchName": "cam/issue-214",
-  "timestamp": "2026-07-11T14:00:00Z",
+  "timestamp": "2026-07-11T15:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/loop.ts",
-    "src/commands/sidecar.ts",
-    "test/supervisor/sidecar-loop.test.ts",
+    "templates/agents/subagent-orchestrator.md",
+    ".claude/agents/subagent-orchestrator.md",
+    "src/vendor/_generated.ts",
+    "test/embedded.test.ts",
     "scripts/file-size-budget.json",
     "scripts/cam/prd.json",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 surfaces the circuit-broken state at orchestrator boot-read (a docs-only story, no runtime coupling to US-003's loop.ts/sidecar.ts change beyond reading the same marker file). Edit BOTH templates/agents/subagent-orchestrator.md (the existing implement-blocked block, around line 137/185) AND the .claude/agents/subagent-orchestrator.md runtime mirror with an identical escalated:true branch ('circuit-broken' text, e.g. an escalated-issue warning line), keeping the existing non-escalated 'implement blocked' line for escalated:false. Do not restructure the surrounding prose beyond adding this branch. After editing both copies, run bun run embed-vendor then bun run embed-vendor:check (byte-parity gate; see scripts/cam/patterns.md 'Agent-prompt self-hosting pattern'). A doc-gate test asserting the string on the embedded templatesContents['agents/subagent-orchestrator.md'] copy (CAM-190 pattern) is the right home for the persona-side assertion. The doc still instructs the orchestrator to NEVER delete the marker itself: this story is read-only surfacing, no marker-consuming code changes. No em-dash rule applies to agent .md files (LLM-consumed, not human-persisted prose).",
+  "nextStoryContext": "US-004 (docs-only) added an escalated:true branch to the implement-blocked boot-read block in both templates/agents/subagent-orchestrator.md and .claude/agents/subagent-orchestrator.md, surfacing a distinct '⚠ implement circuit-broken: issue #<issueId> story <id> (<N> identical BLOCKED_...) — needs PRD amendment' line, keeping the existing non-escalated 'implement blocked' line unchanged. Discovered and fixed a pre-existing (not caused by this story) dual-copy drift: the whole CAM-195 implement-blocked boot-read section existed only in templates/, never synced to .claude/ -- restored it there to keep the mirror byte-identical (verified via plain diff) before running bun run embed-vendor. embed-vendor:check only diffs templates/ against src/vendor/_generated.ts, never templates/ against .claude/ directly, so this class of drift is NOT caught by the vendor-drift gate; a future story touching agent/command prompts should diff the two copies directly, not just trust embed-vendor:check. Added a doc-gate test in test/embedded.test.ts (CAM-190 pattern) asserting templatesContents['agents/subagent-orchestrator.md'] contains 'circuit-broken', which raised the file's line count over its file-size-budget ceiling (645->653); raised only that ceiling with a dated _ref note. No runtime/marker-consuming code touched: this story is read-only surfacing, per AC2 the doc still instructs never to delete the marker.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
