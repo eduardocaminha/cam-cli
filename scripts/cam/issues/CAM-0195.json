@@ -1,7 +1,7 @@
 {
   "id": "CAM-195",
   "title": "meta-loop wedge: auto-resume in-flight PRD, evented refusals, one state-file owner",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-06T13:45:41.573Z",
