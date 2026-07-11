@@ -1,7 +1,7 @@
 {
   "id": "CAM-174",
   "title": "Post-merge resilience: diverged local main from unpushed pre-branch commit leaves cycle half-done",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-04T01:03:49.777Z",
