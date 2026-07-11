@@ -1426,7 +1426,34 @@ describe('commitSubjectMatchesStory (US-001, CAM-187)', () => {
 		expect(commitSubjectMatchesStory('feat: US-002 - Fix reference to US-001', 'US-001')).toBe(false);
 	});
 
-	test('rejects a bare fix: prefix (not the feat: completion convention)', () => {
-		expect(commitSubjectMatchesStory('fix: US-001 - correct an edge case', 'US-001')).toBe(false);
+	test('accepts a bare fix: prefix (any conventional-commit type is a valid completion convention)', () => {
+		expect(commitSubjectMatchesStory('fix: US-001 - correct an edge case', 'US-001')).toBe(true);
+	});
+
+	test('accepts a bracketed fix: prefix', () => {
+		expect(commitSubjectMatchesStory('fix: [US-001] - correct an edge case', 'US-001')).toBe(true);
+	});
+
+	test.each(['refactor', 'perf', 'chore', 'docs', 'test', 'build', 'ci', 'style'])(
+		'accepts the %s: conventional-commit type',
+		(type) => {
+			expect(commitSubjectMatchesStory(`${type}: [US-001] - Title here`, 'US-001')).toBe(true);
+		},
+	);
+
+	test('accepts an optional scope in parens (fix(scope): ...)', () => {
+		expect(commitSubjectMatchesStory('fix(scope): [US-001] - correct an edge case', 'US-001')).toBe(true);
+	});
+
+	test('accepts an optional breaking-change marker (feat!: ...)', () => {
+		expect(commitSubjectMatchesStory('feat!: [US-001] - Title here', 'US-001')).toBe(true);
+	});
+
+	test('accepts scope and breaking marker combined (fix(scope)!: ...)', () => {
+		expect(commitSubjectMatchesStory('fix(scope)!: [US-001] - Title here', 'US-001')).toBe(true);
+	});
+
+	test('still rejects a prefix-collision longer id under a non-feat type (fix: US-0010 vs US-001)', () => {
+		expect(commitSubjectMatchesStory('fix: US-0010 - Title', 'US-001')).toBe(false);
 	});
 });
