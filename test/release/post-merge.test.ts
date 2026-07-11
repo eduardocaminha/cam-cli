@@ -5,7 +5,7 @@
 //
 // Coverage:
 //   (a) Happy path: pull succeeds, tag is new, branch pruned local+remote.
-//   (b) Pull failure: returns ok:false, reason:'pull-failed'.
+//   (b) Rebase failure: returns ok:false, reason:'rebase-failed'.
 //   (c) Version-file read failure: returns ok:false, reason:'version-file-read-failed'.
 //   (d) Version-parse failure: returns ok:false, reason:'version-parse-failed'.
 //   (e) Tag create failure: returns ok:false, reason:'tag-create-failed'.
@@ -341,22 +341,101 @@ describe('runPostMerge -- checkout-main failure', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Tests: pull failure
+// Tests: pull --rebase (US-002, CAM-241/174)
 // ---------------------------------------------------------------------------
 
-describe('runPostMerge -- pull failure', () => {
-	test('returns ok:false reason:pull-failed when pull exits non-zero', () => {
+describe('runPostMerge -- pull --rebase (US-002)', () => {
+	test('AC1: pull step uses --rebase, not a plain pull', () => {
+		const calls: SpawnCall[] = [];
+		runPostMerge(baseOpts({ spawnFn: happySpawn({}, calls) }));
+
+		const pullCall = calls.find((c) => c.args.includes('pull'));
+		expect(pullCall).toBeDefined();
+		expect(pullCall?.args).toContain('--rebase');
+		expect(pullCall?.args).toContain('origin');
+		expect(pullCall?.args).toContain('main');
+	});
+
+	test('AC2: no `git reset --hard` appears anywhere in the source (source oracle)', async () => {
+		const content = await Bun.file(
+			new URL('../../src/release/post-merge.ts', import.meta.url),
+		).text();
+		const matches = content.match(/reset.*--hard/g) ?? [];
+		expect(matches.length).toBe(0);
+	});
+
+	test('AC3: returns ok:false reason:rebase-failed when pull --rebase exits non-zero', () => {
 		const spawnFn: SpawnFn = (cmd, args, _o) => {
 			if (args.includes('pull')) {
-				return fakeSpawn({ status: 1, stderr: 'fatal: no remote configured\n' });
+				return fakeSpawn({ status: 1, stderr: 'CONFLICT (content): Merge conflict\n' });
 			}
 			return fakeSpawn();
 		};
 		const result = runPostMerge(baseOpts({ spawnFn }));
 		expect(result.ok).toBe(false);
 		if (!result.ok) {
-			expect(result.reason).toBe('pull-failed');
+			expect(result.reason).toBe('rebase-failed');
 		}
+	});
+
+	test('AC3: rebase failure carries completedSteps/remainingSteps reflecting where the sequence stopped', () => {
+		const spawnFn: SpawnFn = (cmd, args, _o) => {
+			if (args.includes('checkout') && args.includes('main')) return fakeSpawn({ status: 0 });
+			if (args.includes('pull')) return fakeSpawn({ status: 1, stderr: 'conflict\n' });
+			return fakeSpawn();
+		};
+		const result = runPostMerge(baseOpts({ spawnFn }));
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.completedSteps).toEqual(['checkout']);
+			expect(result.remainingSteps).toEqual(['pull-rebase', 'tag', 'prune', 'close']);
+		}
+	});
+
+	test('AC3: checkout-main-failed carries empty completedSteps and every remaining step', () => {
+		const result = runPostMerge(
+			baseOpts({ spawnFn: happySpawn({ checkoutStatus: 1 }) }),
+		);
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.completedSteps).toEqual([]);
+			expect(result.remainingSteps).toEqual(['checkout', 'pull-rebase', 'tag', 'prune', 'close']);
+		}
+	});
+
+	test('AC3: tag-create-failed carries completedSteps through pull-rebase', () => {
+		const result = runPostMerge(
+			baseOpts({ spawnFn: happySpawn({ tagCreateStatus: 128 }) }),
+		);
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.reason).toBe('tag-create-failed');
+			expect(result.completedSteps).toEqual(['checkout', 'pull-rebase']);
+			expect(result.remainingSteps).toEqual(['tag', 'prune', 'close']);
+		}
+	});
+
+	test('AC4: clean rebase (subsumed-commit case) still continues through tag, prune, and close in the same run', () => {
+		const calls: SpawnCall[] = [];
+		const closeIssueFn = (_cwd: string, id: string) =>
+			({ ok: true, id, committedTo: 'main', sha: 'sha', branchWasMain: true }) as const;
+		const result = runPostMerge(
+			baseOpts({
+				spawnFn: happySpawn({}, calls),
+				closeIssueId: 'CAM-174',
+				closeIssueFn,
+			}),
+		);
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		// Rebase succeeded (exit 0 from the fake, mirroring a dropped-subsumed-commit
+		// rebase): tag/prune/close all ran in the same call, proving the early-return
+		// only fires on a genuine rebase failure.
+		expect(result.tagCreated).toBe(true);
+		expect(result.branchPrunedLocal).toBe(true);
+		expect(result.branchPrunedRemote).toBe(true);
+		expect(result.closeResult?.ok).toBe(true);
 	});
 });
 
@@ -927,7 +1006,7 @@ describe('runPostMerge -- issue close path (US-005)', () => {
 
 		expect(result.ok).toBe(false);
 		if (!result.ok) {
-			expect(result.reason).toBe('pull-failed');
+			expect(result.reason).toBe('rebase-failed');
 		}
 		expect(calls.length).toBe(0);
 	});

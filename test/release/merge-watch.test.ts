@@ -22,7 +22,11 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { gcMergeWatchIfGarbage, updateShipStalledMarker } from '../../src/commands/sidecar.ts';
+import { gcMergeWatchIfGarbage, updateShipStalledMarker, updatePostMergeStalledMarker } from '../../src/commands/sidecar.ts';
+import {
+	readPostMergeStalledMarker,
+	POST_MERGE_STALLED_FILENAME,
+} from '../../src/supervisor/post-merge-stalled-marker.ts';
 import { beforeEach, afterEach, describe, test, expect } from 'bun:test';
 import {
 	readMergeWatchState,
@@ -113,7 +117,7 @@ const successPostMerge: PostMergeFn = ({ cwd: _cwd, mergedBranch: _b }) => ({
 });
 
 /** A post-merge fn that always fails. */
-const failPostMerge: PostMergeFn = () => ({ ok: false, reason: 'pull-failed' });
+const failPostMerge: PostMergeFn = () => ({ ok: false, reason: 'pull-failed', completedSteps: [], remainingSteps: [] });
 
 /** Build minimal MergeWatchOptions with overrides. */
 function makeOpts(
@@ -218,7 +222,7 @@ describe('runMergeWatch', () => {
 			pollFn: makeSeqPollFn([OPEN_CLEAN, OPEN_BLOCKED]),
 			postMergeFn: () => {
 				postMergeCalled = true;
-				return { ok: false, reason: 'pull-failed' };
+				return { ok: false, reason: 'pull-failed', completedSteps: [], remainingSteps: [] };
 			},
 			notifyOrchestrator: (line) => notifications.push(line),
 			sleepFn: () => {},
@@ -353,7 +357,7 @@ describe('runMergeWatch', () => {
 			pollFn: makeSeqPollFn([CLOSED]),
 			postMergeFn: () => {
 				postMergeCalled = true;
-				return { ok: false, reason: 'pull-failed' };
+				return { ok: false, reason: 'pull-failed', completedSteps: [], remainingSteps: [] };
 			},
 			notifyOrchestrator: (line) => notifications.push(line),
 			sleepFn: () => {},
@@ -384,7 +388,7 @@ describe('runMergeWatch', () => {
 			pollFn: () => ok(OPEN_CLEAN),
 			postMergeFn: () => {
 				postMergeCalled = true;
-				return { ok: false, reason: 'pull-failed' };
+				return { ok: false, reason: 'pull-failed', completedSteps: [], remainingSteps: [] };
 			},
 			notifyOrchestrator: (line) => notifications.push(line),
 			sleepFn: () => {},
@@ -749,7 +753,7 @@ describe('runMergeWatch structured events (US-008)', () => {
 			pollFn: makeSeqPollFn([OPEN_BLOCKED]),
 			postMergeFn: () => {
 				postMergeCalled = true;
-				return { ok: false, reason: 'should-not-run' };
+				return { ok: false, reason: 'should-not-run', completedSteps: [], remainingSteps: [] };
 			},
 			notifyOrchestrator: () => {},
 			sleepFn: () => {},
@@ -1701,7 +1705,7 @@ describe('file persistence: non-terminal tick leaves file present', () => {
 
 		const result = stepMergeWatch(state!, 0, pollFn, {
 			cwd: '/fake',
-			postMergeFn: () => ({ ok: false, reason: 'should not be called' }),
+			postMergeFn: () => ({ ok: false, reason: 'should not be called', completedSteps: [], remainingSteps: [] }),
 			notifyOrchestrator: () => {},
 		});
 
@@ -1827,7 +1831,7 @@ describe('MergeWatchState issueId round-trip (US-002)', () => {
 
 		const result = stepMergeWatch(state!, 0, pollFn, {
 			cwd: '/fake',
-			postMergeFn: () => ({ ok: false, reason: 'not called' }),
+			postMergeFn: () => ({ ok: false, reason: 'not called', completedSteps: [], remainingSteps: [] }),
 			notifyOrchestrator: () => {},
 		});
 
@@ -2885,5 +2889,129 @@ describe('updateShipStalledMarker: sidecar terminal-branch marker reconciliation
 		expect(markerPath).not.toBe(watchStatePath);
 		expect(existsSync(markerPath)).toBe(true);
 		expect(existsSync(watchStatePath)).toBe(true);
+	});
+});
+
+describe('updatePostMergeStalledMarker: durable marker on merged-but-post-merge-failed (US-003, CAM-174)', () => {
+	let tempDir: string;
+	let markerPath: string;
+
+	beforeEach(() => {
+		tempDir = mkdtempSync(join(tmpdir(), 'cam-post-merge-stalled-caller-'));
+		markerPath = join(tempDir, POST_MERGE_STALLED_FILENAME);
+	});
+
+	afterEach(() => {
+		rmSync(tempDir, { recursive: true, force: true });
+	});
+
+	test('AC1: merged + postMerge.ok:false writes prNumber/issueId/completedSteps/remainingSteps/reason', () => {
+		const state: MergeWatchState = { prNumber: 910, mergedBranch: 'cam/b', issueId: 'CAM-910' };
+		const outcome: MergeWatchOutcome = {
+			kind: 'merged',
+			postMerge: {
+				ok: false,
+				reason: 'rebase-failed',
+				completedSteps: ['checkout'],
+				remainingSteps: ['pull-rebase', 'tag', 'prune', 'close'],
+			},
+		};
+
+		updatePostMergeStalledMarker(markerPath, outcome, state);
+
+		const marker = readPostMergeStalledMarker(markerPath);
+		expect(marker).not.toBeNull();
+		if (marker) {
+			expect(marker.prNumber).toBe(910);
+			expect(marker.issueId).toBe('CAM-910');
+			expect(marker.completedSteps).toEqual(['checkout']);
+			expect(marker.remainingSteps).toEqual(['pull-rebase', 'tag', 'prune', 'close']);
+			expect(marker.reason).toBe('rebase-failed');
+			expect(typeof marker.writtenAt).toBe('string');
+		}
+	});
+
+	test('AC1: issueId is stored as null when the merge-watch state carried none', () => {
+		const state: MergeWatchState = { prNumber: 911, mergedBranch: 'cam/b' };
+		const outcome: MergeWatchOutcome = {
+			kind: 'merged',
+			postMerge: {
+				ok: false,
+				reason: 'tag-create-failed',
+				completedSteps: ['checkout', 'pull-rebase'],
+				remainingSteps: ['tag', 'prune', 'close'],
+			},
+		};
+
+		updatePostMergeStalledMarker(markerPath, outcome, state);
+
+		const marker = readPostMergeStalledMarker(markerPath);
+		expect(marker).not.toBeNull();
+		expect(marker?.issueId).toBeNull();
+	});
+
+	test('AC2: the merge-watch outcome stays kind==="merged" (only marker handling changes)', () => {
+		const state: MergeWatchState = { prNumber: 912, mergedBranch: 'cam/b' };
+		const outcome: MergeWatchOutcome = {
+			kind: 'merged',
+			postMerge: {
+				ok: false,
+				reason: 'checkout-main-failed',
+				completedSteps: [],
+				remainingSteps: ['checkout', 'pull-rebase', 'tag', 'prune', 'close'],
+			},
+		};
+
+		updatePostMergeStalledMarker(markerPath, outcome, state);
+
+		expect(outcome.kind).toBe('merged');
+	});
+
+	test('AC3: does not disturb a co-existing ship-stalled marker (separate files)', () => {
+		const shipStalledPath = join(tempDir, SHIP_STALLED_FILENAME);
+		const state: MergeWatchState = { prNumber: 913, mergedBranch: 'cam/b', issueId: 'CAM-913' };
+		const outcome: MergeWatchOutcome = {
+			kind: 'merged',
+			postMerge: {
+				ok: false,
+				reason: 'version-parse-failed',
+				completedSteps: ['checkout', 'pull-rebase'],
+				remainingSteps: ['tag', 'prune', 'close'],
+			},
+		};
+
+		// Reconciliation order mirrors sidecar.ts's terminal branch: ship-stalled
+		// marker first (removes any stale marker for this PR since kind==='merged'),
+		// then the post-merge-stalled marker.
+		updateShipStalledMarker(shipStalledPath, outcome, state);
+		updatePostMergeStalledMarker(markerPath, outcome, state);
+
+		expect(existsSync(shipStalledPath)).toBe(false);
+		expect(existsSync(markerPath)).toBe(true);
+		expect(readPostMergeStalledMarker(markerPath)?.prNumber).toBe(913);
+	});
+
+	test('AC4: merged + postMerge.ok:true writes no marker', () => {
+		const state: MergeWatchState = { prNumber: 914, mergedBranch: 'cam/b' };
+		const outcome: MergeWatchOutcome = {
+			kind: 'merged',
+			postMerge: {
+				ok: true, pulledSha: 'abc123', tag: 'v1.0.0', tagCreated: true,
+				branchPrunedLocal: true, branchPrunedRemote: true,
+			},
+		};
+
+		updatePostMergeStalledMarker(markerPath, outcome, state);
+
+		expect(existsSync(markerPath)).toBe(false);
+	});
+
+	test('non-merged terminals are a no-op (owned exclusively by updateShipStalledMarker)', () => {
+		const state: MergeWatchState = { prNumber: 915, mergedBranch: 'cam/b' };
+		const outcome: MergeWatchOutcome = { kind: 'ci-red', prNumber: 915 };
+
+		updatePostMergeStalledMarker(markerPath, outcome, state);
+
+		expect(existsSync(markerPath)).toBe(false);
 	});
 });

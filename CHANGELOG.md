@@ -6,6 +6,15 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.129.0] - 2026-07-11
+
+### Added
+
+- US-004 - Surface post-merge-stalled at boot + document operator recovery
+- US-003 - Write post-merge-stalled marker on merged-but-failed post-merge
+- US-002 - Recover post-merge via git pull --rebase, never reset --hard
+- US-001 - Add durable post-merge-stalled marker module
+
 ## [0.128.0] - 2026-07-11
 
 ### Added

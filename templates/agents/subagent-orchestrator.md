@@ -139,6 +139,12 @@ document — none of them require deep reasoning to absorb:
     `issueId`, `story`, and `reason` fields; you'll surface them as an opening
     blocker below. If absent, there's nothing to surface — a clean boot stays
     clean.
+11. `.claude/.cam-post-merge-stalled.json` — a durable marker written whenever
+    a merge-watch terminal classifies as merged but the inner post-merge
+    sequence (checkout/rebase/tag/prune/close) did not fully complete. If
+    present, read its `prNumber`, `completedSteps`, `remainingSteps`, and
+    `reason` fields; you'll surface them as an opening blocker below. If
+    absent, there's nothing to surface — a clean boot stays clean.
 
 After the boot read, greet the human with a one-screen summary:
 
@@ -204,6 +210,20 @@ only removed by the next re-armed implement dispatch for that issue.
 
 Do NOT delete the marker yourself. Surfacing it at boot is read-only; it is
 only removed by the next plan run (US-004).
+
+If `.claude/.cam-post-merge-stalled.json` is present, add a distinct opening
+blocker line before asking what to do next, e.g.:
+
+```
+⚠ post-merge stalled: PR #<prNumber> (merged, tag/prune/close pending) — <reason>
+```
+
+The PR itself already merged; only the tag/branch-prune/issue-close tail of
+the post-merge sequence is incomplete (`completedSteps` / `remainingSteps`
+name exactly where it stopped). Do NOT delete the marker yourself. Surfacing
+it at boot is read-only; it is only removed once the post-merge sequence for
+that same PR completes, per `docs/recovery-runbook.md`'s post-merge-stalled /
+diverged-local-main entry.
 
 The closing of the greeting is `meta_loop`-aware (read from
 `scripts/cam/project.toml` at boot step 2 above), and covers all three modes

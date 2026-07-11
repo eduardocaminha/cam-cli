@@ -480,7 +480,9 @@ describe('runSidecarLoop + merge-watch: one-step-per-tick (US-003)', () => {
 
 			const result = stepMergeWatch(state, Date.now(), countedPollFn, {
 				cwd: '/fake',
-				postMergeFn: () => ({ ok: false as const, reason: 'should-not-be-called' }),
+				postMergeFn: () => ({
+					ok: false as const, reason: 'should-not-be-called', completedSteps: [], remainingSteps: [],
+				}),
 				notifyOrchestrator: () => {},
 				pollIntervalMs: 0, // always poll (throttle disabled for test)
 			});

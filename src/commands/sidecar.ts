@@ -47,6 +47,7 @@ import { runPlanPhaseWithReplan, runPostAuditAction, type PlanPhaseResult, type 
 import { writePlanEscalatedMarker, removePlanEscalatedMarker, PLAN_ESCALATED_FILENAME, type PlanEscalatedMarker } from '../supervisor/plan-escalation.ts';
 import { writePlanPreflightFailedMarker, removePlanPreflightFailedMarker, PLAN_PREFLIGHT_FAILED_FILENAME, type PlanPreflightFailedMarker, type PlanPreflightFailedWriterParams } from '../supervisor/plan-preflight-marker.ts';
 import { readImplementBlockedMarker, removeImplementBlockedMarker, IMPLEMENT_BLOCKED_FILENAME } from '../supervisor/implement-blocked-marker.ts';
+import { writePostMergeStalledMarker, POST_MERGE_STALLED_FILENAME } from '../supervisor/post-merge-stalled-marker.ts';
 import { makeReadPlanVerdict, PLAN_VERDICT_REPORT_FILENAME } from '../supervisor/plan-verdict-report.ts';
 import { runPlanPreflight, type PlanPreflightSpawnFn } from '../supervisor/plan-preflight.ts';
 import { readMergeMode, readMetaLoop, readPlanApproval, readResendConfig, readWorkerIsolation, type WorkerIsolation } from '../config/models.ts';
@@ -642,6 +643,37 @@ export function updateShipStalledMarker(
 }
 
 /**
+ * Write the durable post-merge-stalled marker when a MERGED terminal's inner
+ * post-merge sequence failed (US-003, CAM-174).
+ *
+ * Only acts when outcome.kind === 'merged' AND outcome.postMerge.ok === false:
+ * the PR really did merge (the 'merged' classification is untouched), but the
+ * post-merge sequence (checkout/rebase/tag/prune/close) stalled partway
+ * through, so this persists exactly where it stopped
+ * (completedSteps/remainingSteps/reason from the failed PostMergeOutcome)
+ * plus prNumber/issueId from the merge-watch state.
+ *
+ * A no-op for every non-merged terminal (those stay owned exclusively by
+ * updateShipStalledMarker) and for a merged outcome whose post-merge
+ * succeeded (ok:true; nothing stalled, so no marker is written).
+ */
+export function updatePostMergeStalledMarker(
+	markerPath: string,
+	outcome: MergeWatchOutcome,
+	state: MergeWatchState,
+): void {
+	if (outcome.kind !== 'merged' || outcome.postMerge.ok) return;
+	writePostMergeStalledMarker(markerPath, {
+		prNumber: state.prNumber,
+		issueId: state.issueId ?? null,
+		completedSteps: outcome.postMerge.completedSteps,
+		remainingSteps: outcome.postMerge.remainingSteps,
+		reason: outcome.postMerge.reason,
+		writtenAt: new Date().toISOString(),
+	});
+}
+
+/**
  * Parse a `gh pr view` spawnSync result into a discriminated GhPollResult
  * (US-001, CAM-170): ok:true with the parsed PrStatus on a zero exit with
  * well-shaped JSON, ok:false carrying the gh stderr (or a synthesized message
@@ -752,6 +784,7 @@ function makeProductionMergeWatchFn(
 			// (US-002, CAM-182).
 			removeMergeWatchState(watchFilePath);
 			updateShipStalledMarker(join(claudeDir, SHIP_STALLED_FILENAME), result.outcome, state);
+			updatePostMergeStalledMarker(join(claudeDir, POST_MERGE_STALLED_FILENAME), result.outcome, state);
 		}
 	};
 }
