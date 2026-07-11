@@ -1,0 +1,9 @@
+{
+  "id": "CAM-273",
+  "title": "Auditor traceability/collision check queries GitHub by bare number even when issue_system=local (false-critical BLOCK on numeric-id coincidence)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-11T10:57:00.610Z",
+  "description": "Planning CAM-156 (local backend) escalated after 2 BLOCK rounds: the auditor's F-01 critical resolved bare number 156 against GitHub, matched unrelated PR #156 (.dockerignore, merged 2026-07-07), and declared 100% scope-creep + a branch collision. All false (CAM-156 is a legit local issue; branch cam/issue-156 does not exist). Fix: when issue_system=local the auditor must resolve issue+branch identity against scripts/cam/issues (CAM-N) and git refs, never query gh by bare number. Acceptance: (1) local backend -> no gh query for issue/PR identity; (2) branch-collision flags only a branch that actually exists; (3) regression test reproduces local CAM-156 + coincident GitHub PR #156 and asserts no false-critical."
+}
