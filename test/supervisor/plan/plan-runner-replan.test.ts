@@ -380,12 +380,79 @@ describe('runPlanPhaseWithReplan', () => {
 		expect(result.kind).toBe('mutex-busy');
 	});
 
-	test('non-audit result: teardownPlanPanesFn is NOT called', () => {
+	test('non-audit result (preflight-failed): teardownPlanPanesFn fires exactly once as a harmless no-op exit-teardown (AC2)', () => {
 		const { opts, teardownCallCount } = makeReplanOpts([APPROVE_REPORT], {
 			preflightFn: () => PREFLIGHT_FAIL,
 		});
 		runPlanPhaseWithReplan(opts);
-		expect(teardownCallCount()).toBe(0);
+		expect(teardownCallCount()).toBe(1);
+	});
+
+	test('non-audit result (no-plannable-issue): teardownPlanPanesFn fires exactly once (AC2)', () => {
+		const { opts, teardownCallCount } = makeReplanOpts([APPROVE_REPORT], {
+			selectIssueFn: () => null,
+		});
+		runPlanPhaseWithReplan(opts);
+		expect(teardownCallCount()).toBe(1);
+	});
+
+	test('non-audit result (mutex-busy): teardownPlanPanesFn fires exactly once (AC2)', () => {
+		const { opts, teardownCallCount } = makeReplanOpts([APPROVE_REPORT], {
+			paneCountMutexFn: () => 'busy',
+		});
+		runPlanPhaseWithReplan(opts);
+		expect(teardownCallCount()).toBe(1);
+	});
+
+	// -------------------------------------------------------------------------
+	// Non-audit POST-SPAWN terminals: exit-teardown fires exactly once (AC1, AC4)
+	// -------------------------------------------------------------------------
+	test('planner-timeout: teardownPlanPanesFn fires exactly once at the single unconditional exit (AC1, AC4)', () => {
+		const { opts, teardownCallCount } = makeReplanOpts([APPROVE_REPORT], {
+			// Planner pane never dies and never writes prd.json: forces the
+			// plannerTimeoutMs deadline to fire inside pollPlannerDeath.
+			isPaneAlive: () => true,
+			readPlannerReportFn: () => null,
+			plannerTimeoutMs: 1,
+			clock: (() => {
+				let t = 0;
+				return () => (t += 1000);
+			})(),
+		});
+		const result = runPlanPhaseWithReplan(opts);
+		expect(result.kind).toBe('planner-timeout');
+		expect(teardownCallCount()).toBe(1);
+	});
+
+	test('auditor-timeout: teardownPlanPanesFn fires exactly once at the single unconditional exit (AC1, AC4)', () => {
+		const { opts, teardownCallCount } = makeReplanOpts([APPROVE_REPORT], {
+			// readPlannerReportFn short-circuits pollPlannerDeath as "completed"
+			// on the first tick, so isPaneAlive is only ever consulted by the
+			// auditor poll below; keep it always-alive so the auditor never
+			// exits via the pane-death fallback, forcing the timeout branch.
+			isPaneAlive: () => true,
+			readPlannerReportFn: () => ({}),
+			readPlanVerdictFn: () => null,
+			auditorTimeoutMs: 1,
+			clock: (() => {
+				let t = 0;
+				return () => (t += 1000);
+			})(),
+		});
+		const result = runPlanPhaseWithReplan(opts);
+		expect(result.kind).toBe('auditor-timeout');
+		expect(teardownCallCount()).toBe(1);
+	});
+
+	test('planner-failed: teardownPlanPanesFn fires exactly once at the single unconditional exit (AC1, AC4)', () => {
+		const { opts, teardownCallCount } = makeReplanOpts([APPROVE_REPORT], {
+			// Planner pane dies naturally but never wrote prd.json.
+			isPaneAlive: () => false,
+			readPlannerReportFn: () => null,
+		});
+		const result = runPlanPhaseWithReplan(opts);
+		expect(result.kind).toBe('planner-failed');
+		expect(teardownCallCount()).toBe(1);
 	});
 
 	test('non-audit result: writeEscalationMarkerFn is NOT called', () => {

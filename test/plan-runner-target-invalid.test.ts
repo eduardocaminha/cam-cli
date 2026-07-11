@@ -17,8 +17,10 @@
 //   AC4: bare path unchanged -- with no planTargetId, a null selection still
 //        returns 'no-plannable-issue'.
 //   AC5: runPlanPhaseWithReplan passes 'plan-target-invalid' through as a
-//        non-audit kind: no re-plan round, no teardown call, no escalation
-//        marker write.
+//        non-audit kind: no re-plan round, no escalation marker write.
+//        teardownPlanPanesFn DOES fire once, as the single unconditional
+//        exit-teardown (US-001, CAM-269): harmless no-op since no plan pane
+//        was ever spawned.
 
 import { describe, expect, test } from 'bun:test';
 import type { SpawnSyncReturns } from 'node:child_process';
@@ -298,10 +300,10 @@ describe('runPlanPhaseWithReplan - plan-target-invalid passthrough (AC5)', () =>
 		}
 	});
 
-	test('teardownPlanPanesFn is NEVER called', () => {
+	test('teardownPlanPanesFn fires exactly once as a harmless no-op exit-teardown (US-001, CAM-269)', () => {
 		const { opts, teardownCalls } = makeReplanOpts();
 		runPlanPhaseWithReplan(opts);
-		expect(teardownCalls.n).toBe(0);
+		expect(teardownCalls.n).toBe(1);
 	});
 
 	test('writeEscalationMarkerFn is NEVER called', () => {
