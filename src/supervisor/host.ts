@@ -366,6 +366,106 @@ export function makeOnProgress(
 }
 
 // ---------------------------------------------------------------------------
+// ensurePushed compare-first push-verification (US-001, CAM-156)
+// ---------------------------------------------------------------------------
+
+/** Injectable subset of node:child_process spawnSync used by resolveEnsurePushed. */
+export type GitSpawnFn = (
+	cmd: string,
+	args: string[],
+	options: { encoding: 'utf8' },
+) => { stdout: string | null; stderr: string | null; status: number | null };
+
+/** Return contract for ensurePushed (unchanged by this story: see loop.ts + events.ts consumers). */
+export interface EnsurePushedResult {
+	ok: boolean;
+	pushed: boolean;
+	sha: string;
+	detail: string;
+}
+
+/**
+ * Fallback path: the ORIGINAL push-then-compare behavior, used when the
+ * remote is genuinely behind/missing the branch, or when `git ls-remote`
+ * itself failed (transient network error) and a compare-first decision
+ * cannot be made. No lease-style force flag is introduced here; a plain
+ * `git push origin <branch>` is git's own compare-and-swap against whatever
+ * the remote currently holds.
+ */
+function pushThenCompare(spawnFn: GitSpawnFn, cwd: string, branchName: string): EnsurePushedResult {
+	const pushProc = spawnFn('git', ['-C', cwd, 'push', 'origin', branchName], { encoding: 'utf8' });
+	const combined = (pushProc.stdout ?? '') + (pushProc.stderr ?? '');
+	const noop = combined.includes('Everything up-to-date');
+	if ((pushProc.status ?? 1) !== 0 && !noop) {
+		return { ok: false, pushed: false, sha: '', detail: `git push failed: ${combined.trim()}` };
+	}
+	const pushed = !noop;
+	const headProc = spawnFn('git', ['-C', cwd, 'rev-parse', 'HEAD'], { encoding: 'utf8' });
+	const localSha = (headProc.stdout ?? '').trim();
+	const originProc = spawnFn('git', ['-C', cwd, 'rev-parse', `origin/${branchName}`], { encoding: 'utf8' });
+	const originSha = (originProc.stdout ?? '').trim();
+	if (!localSha || !originSha || localSha !== originSha) {
+		return {
+			ok: false,
+			pushed,
+			sha: localSha,
+			detail: `HEAD (${localSha || 'unknown'}) != origin/${branchName} (${originSha || 'unknown'}) after push`,
+		};
+	}
+	return { ok: true, pushed, sha: localSha, detail: `HEAD == origin/${branchName} (${localSha})` };
+}
+
+/**
+ * Compare-first push-verification (US-001, CAM-156): read the authoritative
+ * remote sha via `git ls-remote origin <branch>` (read-only, no fetch, no
+ * mutation of local tracking refs) and compare it to local HEAD BEFORE
+ * attempting any `git push`.
+ *
+ *   - origin sha == local HEAD: the worker already pushed. Return
+ *     { ok:true, pushed:false } WITHOUT running `git push` at all, so a
+ *     stale compare-and-swap old-oid can never be sent for an already-landed
+ *     push (the false BLOCKED this story fixes).
+ *   - origin behind or missing the branch: genuinely unpushed. Fall through
+ *     to the push-then-compare path (which runs `git push` and re-verifies).
+ *   - `git ls-remote` itself fails (e.g. transient network error): fall
+ *     through to the same push-then-compare path so the fix never loses the
+ *     ability to push when needed.
+ *
+ * Return contract is unchanged: { ok, pushed, sha, detail }.
+ */
+export function resolveEnsurePushed(spawnFn: GitSpawnFn, cwd: string): EnsurePushedResult {
+	const branchProc = spawnFn('git', ['-C', cwd, 'branch', '--show-current'], { encoding: 'utf8' });
+	const branchName = (branchProc.stdout ?? '').trim();
+	if (!branchName) {
+		return { ok: false, pushed: false, sha: '', detail: 'could not determine current branch' };
+	}
+
+	const headProc = spawnFn('git', ['-C', cwd, 'rev-parse', 'HEAD'], { encoding: 'utf8' });
+	const localSha = (headProc.stdout ?? '').trim();
+	if (!localSha) {
+		return { ok: false, pushed: false, sha: '', detail: 'could not determine local HEAD' };
+	}
+
+	const lsRemote = spawnFn('git', ['-C', cwd, 'ls-remote', 'origin', branchName], { encoding: 'utf8' });
+	if ((lsRemote.status ?? 1) === 0) {
+		const remoteSha = (lsRemote.stdout ?? '').trim().split(/\s+/)[0] ?? '';
+		if (remoteSha && remoteSha === localSha) {
+			return {
+				ok: true,
+				pushed: false,
+				sha: localSha,
+				detail: `origin/${branchName} already at HEAD (${localSha}), no push needed`,
+			};
+		}
+		// Remote present but behind, or branch missing on remote (empty stdout):
+		// fall through to the genuine push-then-compare path below.
+	}
+	// ls-remote failed (network/auth error), or remote is behind/missing:
+	// fall back to the original push-then-compare behavior.
+	return pushThenCompare(spawnFn, cwd, branchName);
+}
+
+// ---------------------------------------------------------------------------
 // Main factory
 // ---------------------------------------------------------------------------
 
@@ -746,52 +846,11 @@ export function buildSupervisorOptions(
 		}
 	};
 
-	// ensurePushed for US-001.
+	// ensurePushed for US-001 (CAM-156: rewritten compare-first via resolveEnsurePushed).
+	const gitSpawnFn: GitSpawnFn = (cmd, args, opts) => spawnSync(cmd, args, opts);
 	const ensurePushed: RunSupervisorOptions['ensurePushed'] = () => {
 		try {
-			const branchProc = spawnSync('git', ['branch', '--show-current'], {
-				cwd,
-				stdio: 'pipe',
-				encoding: 'utf8',
-			} as Parameters<typeof spawnSync>[2]);
-			const branchName = (typeof branchProc.stdout === 'string' ? branchProc.stdout : '').trim();
-			if (!branchName) {
-				return { ok: false, pushed: false, sha: '', detail: 'could not determine current branch' };
-			}
-			const pushProc = spawnSync('git', ['push', 'origin', branchName], {
-				cwd,
-				stdio: 'pipe',
-				encoding: 'utf8',
-			} as Parameters<typeof spawnSync>[2]);
-			const pushStdout = typeof pushProc.stdout === 'string' ? pushProc.stdout : '';
-			const pushStderr = typeof pushProc.stderr === 'string' ? pushProc.stderr : '';
-			const combined = pushStdout + pushStderr;
-			const noop = combined.includes('Everything up-to-date');
-			if (pushProc.status !== 0 && !noop) {
-				return { ok: false, pushed: false, sha: '', detail: `git push failed: ${combined.trim()}` };
-			}
-			const pushed = !noop;
-			const headProc = spawnSync('git', ['rev-parse', 'HEAD'], {
-				cwd,
-				stdio: 'pipe',
-				encoding: 'utf8',
-			} as Parameters<typeof spawnSync>[2]);
-			const localSha = (typeof headProc.stdout === 'string' ? headProc.stdout : '').trim();
-			const originProc = spawnSync('git', ['rev-parse', `origin/${branchName}`], {
-				cwd,
-				stdio: 'pipe',
-				encoding: 'utf8',
-			} as Parameters<typeof spawnSync>[2]);
-			const originSha = (typeof originProc.stdout === 'string' ? originProc.stdout : '').trim();
-			if (!localSha || !originSha || localSha !== originSha) {
-				return {
-					ok: false,
-					pushed,
-					sha: localSha,
-					detail: `HEAD (${localSha || 'unknown'}) != origin/${branchName} (${originSha || 'unknown'}) after push`,
-				};
-			}
-			return { ok: true, pushed, sha: localSha, detail: `HEAD == origin/${branchName} (${localSha})` };
+			return resolveEnsurePushed(gitSpawnFn, cwd);
 		} catch (e) {
 			return { ok: false, pushed: false, sha: '', detail: e instanceof Error ? e.message : String(e) };
 		}
