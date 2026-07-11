@@ -1,0 +1,19 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Rewrite ensurePushed to compare-first (read-only ls-remote) before pushing" },
+  "branchName": "cam/issue-156",
+  "timestamp": "2026-07-11T00:00:00Z",
+  "createdFiles": [
+    "test/supervisor/host-ensure-pushed.test.ts"
+  ],
+  "modifiedFiles": [
+    "src/supervisor/host.ts",
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md",
+    "scripts/file-size-budget.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "This PRD (CAM-156) contained a single story, US-001, now passes:true. src/supervisor/host.ts:749-798 old push-then-compare ensurePushed was rewritten as two pure helpers (resolveEnsurePushed + pushThenCompare, exported via GitSpawnFn) placed just before buildSupervisorOptions; the production wiring inside buildSupervisorOptions now just calls resolveEnsurePushed(gitSpawnFn, cwd). Return contract { ok, pushed, sha, detail } is byte-identical to before, so loop.ts/events.ts consumers and the existing loop.test.ts US-001/US-002 fake-injection tests needed zero changes. host.ts grew past its file-size ceiling (959->1018); the budget was raised with a dated _ref note (no other files need action). No further stories pending in this PRD; review/ship is next.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure node:child_process/spawnSync git-plumbing change; git ls-remote output-format assumption (tab-separated <sha> <ref>, empty stdout + exit 0 for missing branch, non-zero exit on network/auth failure) cross-checked against git-scm.com/docs/git-ls-remote and confirmed aligned with the implementation." }
+  ]
+}
