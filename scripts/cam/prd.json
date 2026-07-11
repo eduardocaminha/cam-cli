@@ -24,7 +24,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Single-concern surgical fix. Files: src/supervisor/result.ts (commitSubjectMatchesStory, line 361-362) and test/supervisor/result.test.ts (existing case at 1429-1431 + new cases). Inline the open `[a-z]+(?:\\([^)]*\\))?!?:` prefix directly in the regex; do NOT build a new shared module (issue gotcha: reviewer may later decide whether to export/share a const with the release-side patterns, but not in this story). This touches src/ only: no template/vendor/embed change (the implementer prompt's Step 5.5 `fix: [Story ID]` correction commit is what the gate must now recognize, but the prompt template itself is not edited), so embed-vendor:check is NOT required. Gotcha: result.ts:362 is the ONLY story/commit matcher anchored on feat:; the [a-z]+ idiom already used in src/release/bump.ts:24 and changelog.ts:66 is the pattern to mirror. A false negative here yields WorkerOutcomeKind 'no-commit' (result.ts:508,:596), distinct from 'blocked'. noUncheckedIndexedAccess: guard any regex capture-group access."
     }
