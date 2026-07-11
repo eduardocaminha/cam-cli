@@ -59,7 +59,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "Files: src/supervisor/host.ts (makeNotifyOrchestrator:229, call-site at :813), src/commands/sidecar.ts (call-sites :759, :1150, :2087). Tests: test/supervisor/notify-orchestrator.test.ts, test/supervisor/host-notify-orch.test.ts. worker-report.ts argv builder (buildWorkerReportSendKeysArgv, worker-report.ts:85) stays unchanged. Thread a capturePane reader (from tmux/session capturePaneArgv/spawnFn) and the existing file event logger (makeFileEventLogger in events.ts, already wired in the sidecar) into the factory. Gotchas: getOrchPaneId semicolon-not-tab format (tmux-format-tab-mangle lesson); liveness by @cam_label=='orchestrator' not pane_current_command (bash-respawn-wrapper lesson); keep the null-pane silent no-op. Do not overload the git-origin 'pushed' event."
     }
