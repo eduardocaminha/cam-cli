@@ -148,3 +148,15 @@ The set of gating conditions the sidecar checks before dispatching or re-arming 
 
 **re-arm**:
 The sidecar action of flipping an in-flight-but-idle cycle back to active:true implementing, at boot or on an idle-tick, using cam next semantics. Triggered by an in-flight PRD with phase==implementing and an inactive loop; suppressed when parked (phase:idle).
+
+**circuit-breaker (implement)**:
+A harness safety mechanism that halts the sidecar auto-dispatch chain after N consecutive identical terminal-blocked outcomes on the same story, so a deterministic contradiction does not burn unbounded fresh implementer sessions. Mirrors the plan-escalation halt: stop re-dispatching, flag a durable marker, surface it read-only at orchestrator boot, and recover when the underlying PRD changes.
+
+**blocked-outcome dedup key**:
+The identity a blocked terminal is compared against to decide 'same problem again': the tuple (storyId, specific BLOCKED_* token, sha256 of prd.json). A match increments the consecutive counter; any difference (PRD amended, different story, different token) resets it.
+
+**PRD content hash**:
+A sha256 digest of prd.json used as the amendment-detection component of the blocked-outcome dedup key. A real operator/planner PRD amendment changes the hash and therefore resets the circuit-breaker counter; hashing the whole PRD (not just the touched story) is the conservative direction, resetting on unrelated edits rather than ever holding a stale count.
+
+**consecutive identical blocked outcome**:
+A blocked terminal whose dedup key matches the immediately preceding blocked terminal's key. The count of these, persisted across fresh implementer sessions in the .cam-implement-blocked.json marker, is what the circuit breaker thresholds on (N=3).
