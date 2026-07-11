@@ -1,28 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "cam plan / next / ship refuse the signal-write when the sidecar is dead"
+    "id": "US-004",
+    "title": "Root-cause port-53 fail-safe: container teardown at session exit + init-firewall reap-and-retry"
   },
   "branchName": "cam/issue-207",
-  "timestamp": "2026-07-11T22:45:00Z",
+  "timestamp": "2026-07-11T23:15:00Z",
   "createdFiles": [
-    "src/commands/sidecar-gate.ts"
+    "test/stop-container-teardown.test.ts"
   ],
   "modifiedFiles": [
-    "src/commands/plan.ts",
-    "src/commands/next.ts",
-    "src/commands/ship.ts",
-    "test/plan.test.ts",
-    "test/next.test.ts",
-    "test/ship.test.ts",
-    "test/attach-hint.test.ts",
+    "src/commands/stop.ts",
+    ".devcontainer/init-firewall.sh",
     "scripts/file-size-budget.json",
     "scripts/cam/patterns.md",
     "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 added a shared `sidecarLivenessGate(claudeDir, cmdName, sidecarAliveFn?)` helper (new file src/commands/sidecar-gate.ts, defaulting sidecarAliveFn to sidecarAlive from src/supervisor/sidecar-pid.ts, US-002) and wired it into runPlan/runNext/runShip's existing liveness/mutex preamble, right after the paneCountMutex busy-check and BEFORE the phase:planning/active:true/phase:shipping state-file write. Each of PlanOptions/NextOptions/ShipOptions gained an injectable `sidecarAliveFn?: (claudeDir: string) => boolean` seam. The gate is mode-agnostic by construction (no worker_isolation branching in the gate itself), satisfying AC4 without any container-specific code path. Adding the gate call pushed runPlan's cognitive complexity over Biome's ceiling (17, then 16 after the shared-helper extraction); fixed with a SECOND, runPlan-specific extraction of the F-01 issue-resolution + state-file write into `resolveAndWritePlanningSignal(cwd, claudeDir, options)` (returns `string | null`). runNext/runShip did not need this second extraction (they had headroom). Every existing happy-path test in plan.test.ts/next.test.ts/ship.test.ts/attach-hint.test.ts that expects a successful write now injects `sidecarAliveFn: () => true` (the real default probes a real pid file at `<cwd>/.claude/.cam-sidecar.pid`, which is absent in every tmp-dir test fixture, so omitting the fake now makes the command refuse and return 1). Tests that already expected code 1 for an unrelated reason (mutex busy, bootstrap failure, marker timeout, missing pane) did NOT need updating, since they return 1 before ever reaching the new gate. New dedicated describe blocks ('runPlan: sidecar liveness gate', 'runNext: sidecar liveness gate', 'runShip: sidecar liveness gate') cover dead-refuses-no-write, alive-proceeds, and an AC4 mode-agnostic assertion (dead sidecar refuses regardless of any worker_isolation config, proven by the gate having zero config-read code path). File-size-budget.json raised 4 source ceilings + prd.json passes flip in the same commit; used a targeted single-story Edit for the prd.json passes flip (NOT python json.dump, which re-serializes the WHOLE file and mangles pre-existing non-ASCII characters like ⚠/— into \\uXXXX escapes — caught and reverted before committing, worth flagging for any future story that reaches for a full-file JSON rewrite tool on prd.json).",
+  "nextStoryContext": "US-004 is the last story in this PRD's userStories[] array (priority 4, no requires); all four stories (US-001..US-004) now pass:true. This is likely the final implementer invocation for CAM-207 before the review cycle takes over. Two independent halves were built: (1) src/commands/stop.ts gained a new teardown leg (step 1f, right after the sidecar-liveness-watcher kill and before the state-file removal): gated on `readWorkerIsolation(join(cwd, 'scripts/cam/project.toml'))` (both `workerIsolationReader` and `containerName` are new injectable StopOptions, mirroring every other injectable-seam pattern already in this file), it calls `docker rm -f <DEFAULT_CONTAINER_NAME>` through the EXISTING `spawnFn` seam (no new spawn type needed) and records `report.containerTornDown` (new StopReport field), wrapped in try/catch so an absent `docker` binary or a non-zero exit (container already gone) never throws or blocks `cam stop`. Host mode (this repo's actual mode, and the fail-closed default when config is absent/malformed) makes this whole leg a no-op — verified in test/stop-container-teardown.test.ts's default-reader case (no injection, nonexistent cwd) confirms docker is never invoked. (2) .devcontainer/init-firewall.sh: the direct `dnsmasq ...` invocation was wrapped in a new `start_dnsmasq()` function; a companion `find_port_53_pids()` function parses `/proc/net/tcp` + `/proc/net/udp` (10th field = socket inode, port 53 = hex 0035) and cross-references `/proc/[0-9]*/fd/*` symlink targets (`socket:[<inode>]`) to recover the ACTUAL pid(s) holding port 53 — deliberately not relying on lsof/fuser/ss, none of which are installed in the slim worker image (see patterns.md bullet for why). On a bind failure, the script reaps every pid found this way (`kill -9`), sleeps 1s, retries `start_dnsmasq` once, and `exit 1`s (fail-closed) if the retry also fails. This part is NOT embedded/vendored and has no live-container gate in CI (per the existing devcontainer gotcha comment); AC3's oracle is explicitly `reviewer-judgment` (shell-logic inspection), not an executed test. file-size-budget.json: raised src/commands/stop.ts 640->687 only (the one file this story grew), with a dated _ref note prepended and staged before re-running check:all (the tracker-ref check reads the staged diff, not the working tree).",
   "officialDocsValidated": [
-    { "lib": "none", "status": "no_external_lib_touched" }
+    { "lib": "docker CLI (docker rm -f)", "url": "https://docs.docker.com/reference/cli/docker/container/rm/", "fetchedAt": "2026-07-11T23:10:00Z", "status": "aligned", "summary": "Confirmed docker rm -f force-removes a running container via SIGKILL then remove, matching the implementation's assumption (already noted in ensure-container.ts's existing comments) and the best-effort tolerate-non-zero-exit design for an absent container." }
   ]
 }
