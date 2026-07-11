@@ -1,24 +1,16 @@
 {
-  "lastCompletedStory": { "id": "US-002", "title": "Recover post-merge via git pull --rebase, never reset --hard" },
+  "lastCompletedStory": { "id": "US-003", "title": "Write post-merge-stalled marker on merged-but-failed post-merge" },
   "branchName": "cam/issue-174",
   "timestamp": "2026-07-11T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/release/post-merge.ts",
-    "test/release/post-merge.test.ts",
+    "src/commands/sidecar.ts",
     "test/release/merge-watch.test.ts",
-    "test/supervisor/sidecar-loop.test.ts",
     "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "runPostMerge's Step 1 is now `git pull --rebase origin main` (never --reapply-cherry-picks, never reset --hard). PostMergeOutcome's ok:false branch is now `{ ok:false; reason:string; completedSteps:string[]; remainingSteps:string[] }`, built by a private `failAt(step, reason)` helper over `const ALL_STEPS = ['checkout','pull-rebase','tag','prune','close']` (completedSteps = steps strictly before the failing step; remainingSteps = the failing step + everything after). Every failure reason populates these fields consistently: checkout-main-failed, rebase-failed (renamed from pull-failed), version-file-read-failed, version-parse-failed, tag-create-failed, tag-push-failed. prune/close never appear as a failing step (both best-effort/non-fatal, can't produce ok:false). US-003 (next) wires post-merge-stalled-marker.ts (US-001) into the sidecar: write the marker using these exact completedSteps/remainingSteps + reason fields when a post-merge run fails/stalls, remove it once a subsequent run completes cleanly (ok:true), and read it for the boot-read/recycle-recovery blocker line in templates/agents/subagent-orchestrator.md (that template edit + embed-vendor is US-003's own scope, not started here). runPostMerge itself still does not write the marker (no claudeDir in scope) -- the sidecar caller does that in US-003. src/release/merge-watch.ts's handleMergedStatus only reads `result.reason` on failure today; it does not yet read completedSteps/remainingSteps -- that consumption is exactly what US-003 adds.",
+  "nextStoryContext": "US-003 wired src/supervisor/post-merge-stalled-marker.ts (US-001) into the sidecar's merge-watch terminal branch. New exported helper `updatePostMergeStalledMarker(markerPath, outcome, state)` lives in src/commands/sidecar.ts right next to updateShipStalledMarker (same file, same terminal-branch call site in makeProductionMergeWatchFn: `removeMergeWatchState(watchFilePath); updateShipStalledMarker(...); updatePostMergeStalledMarker(join(claudeDir, POST_MERGE_STALLED_FILENAME), result.outcome, state);`). Behavior: a no-op unless outcome.kind==='merged' && outcome.postMerge.ok===false; on that exact branch it writes { prNumber: state.prNumber, issueId: state.issueId ?? null, completedSteps, remainingSteps, reason } (the last three lifted verbatim off outcome.postMerge, which US-002 already shapes this way) plus a fresh writtenAt ISO timestamp. Deliberately does NOT remove/clear the marker on a merged+ok:true outcome (scoped out by this story's notes: 'Only act when outcome.kind===\"merged\" && !outcome.postMerge.ok') and does NOT touch the ship-stalled marker or the merged classification at all -- updateShipStalledMarker is unchanged and still owns every non-merged terminal exclusively. US-004 (next, 'Surface post-merge-stalled at boot + document operator recovery') is the story that (a) reads this marker at orchestrator boot / recycle-recovery time, (b) adds the blocker line to templates/agents/subagent-orchestrator.md (+ .claude/agents/ dual-copy + embed-vendor regen), and (c) documents the operator recovery runbook -- none of that reading/surfacing/doc wiring exists yet after US-003, only the write side.",
   "officialDocsValidated": [
-    {
-      "lib": "git",
-      "url": "https://git-scm.com/docs/git-rebase",
-      "fetchedAt": "2026-07-11T00:00:00Z",
-      "status": "aligned",
-      "summary": "Confirmed git rebase (and therefore `git pull --rebase`) drops clean cherry-picks of already-upstream commits by DEFAULT via patch-id comparison (git log --cherry-mark), which is exactly the subsumed-local-commit drop this story relies on. --reapply-cherry-picks forces reapplying those commits instead of dropping them, confirming the notes' instruction to never pass it. No reset --hard used anywhere in the implementation."
-    }
+    { "lib": "none", "status": "no_external_lib_touched" }
   ]
 }

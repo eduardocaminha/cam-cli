@@ -68,7 +68,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "Edit src/commands/sidecar.ts (terminal-outcome branch of makeProductionMergeWatchFn at ~line 748-755, alongside the existing updateShipStalledMarker call). Also needs the US-001 marker module. Add a small helper (e.g. updatePostMergeStalledMarker(markerPath, outcome, state)) next to updateShipStalledMarker, exported for unit tests (anti-shadow-mock: drive the real write against a temp file). Only act when outcome.kind==='merged' && !outcome.postMerge.ok; the non-merged terminals stay owned by updateShipStalledMarker. Do NOT change the merged classification or removeMergeWatchState call. state.issueId may be undefined -> store as null."
     },
