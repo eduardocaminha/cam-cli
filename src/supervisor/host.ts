@@ -25,6 +25,7 @@ import {
 	DEFAULT_CONTAINER_WORKER_TIMEOUT_MS,
 	type RunSupervisorOptions,
 	type OnProgress,
+	type ImplementBlockedWriterParams,
 } from './loop.ts';
 import { makeReviewDispatch } from './review.ts';
 import { commitSubjectMatchesStory } from './result.ts';
@@ -47,6 +48,7 @@ import { REVIEW_REPORT_FILENAME } from './review-report.ts';
 import { preflightWorkerContainer } from './preflight-container.ts';
 import { makeProductionEnsureContainerFn } from './ensure-container.ts';
 import { readWorkerIsolation } from '../config/models.ts';
+import { writeImplementBlockedMarker, IMPLEMENT_BLOCKED_FILENAME, type ImplementBlockedMarker } from './implement-blocked-marker.ts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -471,6 +473,17 @@ export function buildSupervisorOptions(
 		}
 	};
 
+	// US-005 (CAM-195, Defect 2): durable implement-blocked marker writer.
+	// Stamps `writtenAt` (the one field the pure loop.ts seam does NOT add,
+	// keeping loop.ts clock-free) and persists via writeImplementBlockedMarker
+	// (never throws). Mirrors makeWriteEscalationMarkerFn (src/commands/sidecar.ts).
+	const writeImplementBlockedMarkerFn: RunSupervisorOptions['writeImplementBlockedMarkerFn'] = (
+		params: ImplementBlockedWriterParams,
+	) => {
+		const marker: ImplementBlockedMarker = { ...params, writtenAt: new Date().toISOString() };
+		writeImplementBlockedMarker(join(claudeDir, IMPLEMENT_BLOCKED_FILENAME), marker);
+	};
+
 	// US-002 / CAM-75: reviewer structured exit report reader.
 	const readReviewReport = makeReadReviewReport(cwd);
 
@@ -823,6 +836,8 @@ export function buildSupervisorOptions(
 		// CAM-188 / US-001: kill-pane on every terminal exit so the session returns
 		// to exactly 2 panes and paneCountMutex reports 'available'.
 		teardownWorkerPaneFn,
+		// US-005 (CAM-195, Defect 2): durable implement-blocked marker writer.
+		writeImplementBlockedMarkerFn,
 	};
 
 	return {

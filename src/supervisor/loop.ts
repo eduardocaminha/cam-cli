@@ -52,6 +52,15 @@ import { formatReviewVerdictLine, formatWorkerReportSummary, type WorkerReport }
 import { buildResultDetail, validateOfficialDocsValidated } from './events.ts';
 import type { WorkerEventLogger, WorkerEventKind, WorkerEventDetail, TokensEventDetail, ReviewVerdictHandbackEventDetail, OutcomeSourceEventDetail, ContainerPreflightEventDetail } from './events.ts';
 import type { PreflightResult } from './preflight-container.ts';
+import type { ImplementBlockedMarker } from './implement-blocked-marker.ts';
+
+/**
+ * Params for the injectable implement-blocked marker writer (US-005, CAM-195,
+ * Defect 2). Omits `writtenAt`: the pure seam here stays clock-free, matching
+ * the PlanEscalationWriterParams precedent (the sidecar.ts production factory
+ * stamps `writtenAt`, not this module).
+ */
+export type ImplementBlockedWriterParams = Omit<ImplementBlockedMarker, 'writtenAt'>;
 
 // ---------------------------------------------------------------------------
 // Injected dependency types
@@ -387,6 +396,20 @@ export interface RunSupervisorOptions {
 	 * (default no-op). All existing tests that omit this dep pass unchanged.
 	 */
 	teardownWorkerPaneFn?: () => void;
+	/**
+	 * Write the durable implement-blocked marker (US-005, CAM-195, Defect 2).
+	 *
+	 * Called unconditionally inside finishTerminal whenever status === 'blocked'
+	 * AND the current PRD's issueNumber is known (writeImplementBlockedMarkerFn
+	 * is skipped when issueNumber was never read, e.g. prd.json was unreadable
+	 * on the very first iteration). Mirrors writeEscalationMarkerFn /
+	 * writePreflightFailedMarkerFn: the pure seam here stays clock-free, the
+	 * sidecar.ts production factory stamps `writtenAt` and persists via
+	 * writeImplementBlockedMarker (src/supervisor/implement-blocked-marker.ts).
+	 *
+	 * Optional: when absent (default no-op) the loop is byte-for-byte unchanged.
+	 */
+	writeImplementBlockedMarkerFn?: (params: ImplementBlockedWriterParams) => void;
 	/**
 	 * Container preflight seam (US-005 / B-1 observe-only; B-2 fail-closed).
 	 *
@@ -734,6 +757,19 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	// Default no-op so callers that omit the dep are byte-for-byte unchanged.
 	const teardownWorkerPaneFn = opts.teardownWorkerPaneFn ?? (() => {});
 
+	// US-005 (CAM-195, Defect 2): default no-op so callers that omit the dep
+	// are byte-for-byte unchanged.
+	const writeImplementBlockedMarkerFn = opts.writeImplementBlockedMarkerFn ?? ((): void => {});
+
+	// US-005 (CAM-195, Defect 2): tracks the current PRD's issueNumber so
+	// finishTerminal can stamp the durable implement-blocked marker even though
+	// it is defined before the per-iteration `const prd = readPrd()` read.
+	// Set right after every successful (non-null) prd read; retains the last
+	// known value across iterations, so a later unreadable-prd blocked terminal
+	// still carries the most recent issueId. undefined only when no prd has
+	// ever been read successfully (marker write is skipped in that case).
+	let lastIssueNumber: number | undefined;
+
 	// Emit a terminal-exit progress notification before every return path. No-op
 	// when onProgress is absent (backward compatible).
 	const notifyTerminal = (status: SupervisorStatus): void => {
@@ -741,13 +777,46 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 		onProgress({ ...lastIterProgress, terminalStatus: status });
 	};
 
+	// US-004 (CAM-195, Defect 2): explicit SupervisorStatus -> flight-recorder
+	// reason mapping. A lookup (not a passthrough) so a future status can carry a
+	// differently-worded reason without touching every call site.
+	const TERMINAL_REASON: Record<SupervisorStatus, string> = {
+		complete: 'complete',
+		'awaiting-operator': 'awaiting-operator',
+		blocked: 'blocked',
+		'max-iterations': 'max-iterations',
+	};
+
 	// finishTerminal wraps notifyTerminal + teardownWorkerPaneFn so EVERY terminal
 	// return path calls teardown unconditionally, regardless of whether onProgress
 	// is injected (notifyTerminal has an `if (!onProgress) return` guard that would
 	// skip teardown if teardown were folded inside it). The single seam here ensures
 	// no terminal-return path can exit without teardown.
+	//
+	// US-004 (CAM-195): also emits a 'sidecar-exit' flight-recorder event carrying
+	// the terminal reason, via the existing no-op-when-absent `emit` helper, so
+	// every terminal (blocked, complete, awaiting-operator, max-iterations) leaves
+	// a trace in .claude/cam-worker-events.jsonl even when no worker ever ran
+	// (e.g. an unreadable PRD). `emit` is declared further down in this scope but
+	// is only invoked once finishTerminal is actually called (never at define
+	// time), so the forward reference is safe.
 	const finishTerminal = (status: SupervisorStatus): void => {
 		notifyTerminal(status);
+		emit('sidecar-exit', lastIterProgress.currentStoryId, 'supervisor', {
+			reason: TERMINAL_REASON[status],
+		});
+		// US-005 (CAM-195, Defect 2): durable implement-blocked marker, written
+		// only on the 'blocked' terminal and only once an issueId is known (see
+		// lastIssueNumber doc above). reason falls back to the generic
+		// TERMINAL_REASON lookup when no worker outcome ever carried a detail
+		// string (e.g. blocked-no-implementable, an unreadable prd.json).
+		if (status === 'blocked' && lastIssueNumber !== undefined) {
+			writeImplementBlockedMarkerFn({
+				issueId: String(lastIssueNumber),
+				story: lastIterProgress.currentStoryId ?? null,
+				reason: lastOutcome?.detail ?? TERMINAL_REASON.blocked,
+			});
+		}
 		teardownWorkerPaneFn();
 	};
 
@@ -800,6 +869,10 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			return { status: 'blocked', iterations, lastOutcome };
 		}
 
+		// US-005 (CAM-195, Defect 2): capture the current issueId for the durable
+		// implement-blocked marker (see lastIssueNumber doc above finishTerminal).
+		lastIssueNumber = prd.issueNumber;
+
 		// --- Decide next action ---
 		const action = decideNextAction(prd);
 
@@ -835,12 +908,9 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					formatReviewVerdictLine(prd.review?.roundsCompleted ?? 0, 'MAX_ROUNDS_DEBT'),
 				);
 			}
-			// CAM-191 / ADR 0013: auto-ship dispatch no longer lives here. The
-			// decision (complete + CLEAN + marker absent) and the marker/phase
-			// writes now happen in runSidecarLoop, AFTER clearActive, so
-			// phase:shipping is the last state-file write on this terminal path
-			// (see the outer-loop auto-ship block next to the flipActive
-			// auto-chain block).
+			// Auto-ship dispatch lives in runSidecarLoop (the outer loop), not here
+			// — see the outer-loop auto-ship block next to the flipActive
+			// auto-chain block.
 			finishTerminal('complete');
 			return { status: 'complete', iterations, lastOutcome };
 		}
@@ -1791,6 +1861,31 @@ export interface RunSidecarLoopOptions {
 	 * change for all existing tests that do not inject readLoopPhaseFn).
 	 */
 	runShipPhaseFn?: () => void | Promise<void>;
+	/**
+	 * Re-arm implementing for an in-flight PRD (US-003, CAM-195, Defect 1).
+	 *
+	 * Called on EVERY idle tick (active !== true), BEFORE runMergeWatchFn and
+	 * runMetaLoopObserveFn, so a resumable in-flight PRD is never shadowed by a
+	 * new meta-loop dispatch (AC3). This outer loop has no separate boot
+	 * preamble, so the FIRST idle tick after process start already covers "at
+	 * sidecar boot" (AC1); every subsequent tick covers "at the idle-tick".
+	 *
+	 * Production wiring (sidecar.ts): makeProductionRearmImplementingFn(...),
+	 * gated fail-closed via evaluateRearmPreconditions (rearm-preconditions.ts):
+	 * prd.json in-flight (already excludes the MAX_ROUNDS_DEBT blocked
+	 * terminal), phase==='implementing' (phase:idle never resumes -- AC2), and
+	 * no pending merge-watch marker (AC4). On a passing decision it writes
+	 * phase:implementing (deriving active:true) and returns true.
+	 *
+	 * Returns true when it re-armed this tick: the caller skips the rest of the
+	 * idle branch this tick so the freshly-written active:true is picked up
+	 * cleanly by the active branch on the NEXT tick, rather than racing a
+	 * runMetaLoopObserveFn dispatch write in the same tick.
+	 *
+	 * Optional: when absent, the idle branch is unchanged (zero behavior change
+	 * for all existing tests that do not inject it).
+	 */
+	rearmImplementingFn?: () => boolean;
 }
 
 /** Idle polling interval for the sidecar outer loop (2 seconds). */
@@ -1874,6 +1969,16 @@ export async function runSidecarLoop(opts: RunSidecarLoopOptions): Promise<void>
 		}
 
 		if (active !== true) {
+			// US-003 / CAM-195 (Defect 1): re-arm implementing BEFORE the
+			// merge-watch/meta-loop-observe checks below, so a resumable in-flight
+			// PRD (phase:implementing) is never shadowed by a new meta-loop
+			// dispatch (AC3). When it fires, skip the rest of this idle tick so
+			// the fresh active:true write is picked up cleanly on the next tick.
+			if (opts.rearmImplementingFn?.()) {
+				opts.sleep(idlePollMs);
+				continue;
+			}
+
 			// US-007: run the merge-watch when ci-gated mode is active and a watch
 			// file is present. The function is injected by sidecar.ts only when
 			// merge_mode == "ci-gated"; under "immediate" it is absent (inert).
@@ -1957,18 +2062,12 @@ export async function runSidecarLoop(opts: RunSidecarLoopOptions): Promise<void>
 			lockResult.release();
 		}
 
-		// Terminal state reached: set active:false so cam status shows 'paused'.
-		// The onProgress callback inside buildOpts() may have already updated the
-		// state file; clearActive() is the safety net that ensures active:false
-		// even when onProgress was absent or failed.
-		opts.clearActive();
-
-		// CAM-191 / ADR 0013: auto-ship decision, moved here (AFTER clearActive)
-		// so phase:shipping is the LAST state-file write on the terminal complete
-		// path: it survives both the onProgress unlink-on-complete (which runs
-		// inside finishTerminal, before runSupervisorFn returns) and clearActive's
-		// implicit phase:idle rewrite above. Symmetric with the flipActive
-		// auto-chain block right below. Four gates, all observable at this
+		// Auto-ship dispatch: when result.status is 'complete', review is CLEAN,
+		// and the fire-once marker (prd.review.autoShipDispatchedAt) is absent,
+		// persist the marker to prd.json and flip phase:shipping. Runs BEFORE
+		// clearActive() below: clearActive is phase-preserving (US-001, CAM-195)
+		// so phase:shipping survives it regardless of call order — no special
+		// positioning is required. Four gates, all observable at this
 		// outer-loop level: (1) result.status === 'complete' (the only status
 		// this fires for -- await-operator and MAX_ROUNDS_DEBT never dispatch);
 		// (2) the auto-ship capability is wired (auto mode); (3)
@@ -1994,19 +2093,24 @@ export async function runSidecarLoop(opts: RunSidecarLoopOptions): Promise<void>
 			}
 		}
 
+		// Terminal state reached: clearActive() is the safety net that ensures
+		// the state file settles to a consistent phase even when onProgress was
+		// absent or failed. Phase-preserving (US-001, CAM-195): it never forces
+		// phase back to 'idle', so a phase set by the auto-ship block above (or
+		// by onProgress) survives this call unchanged.
+		opts.clearActive();
+
 		// US-003 (CAM-189): file SUGGESTION follow-ups at the terminal verdict.
-		// Runs AFTER clearActive (same ADR-0013 state-file-ordering rationale as
-		// the auto-ship block above) and BEFORE the flipActiveFn auto-chain
-		// continue, so the auto-chain never skips a tick that still needs
-		// filing. Fires on BOTH terminal statuses ('complete' AND
-		// 'awaiting-operator') -- unlike auto-ship, which fires on 'complete'
-		// only -- because a CLEAN review can hand off to the operator (pending
-		// ceremony stories) without the loop ever reaching 'complete', and that
-		// CLEAN+awaiting-operator terminal must not silently drop its
-		// SUGGESTION findings. No prd.json fire-once marker is written here:
-		// SUGGESTION fingerprint dedup (US-002) is the idempotency mechanism, so
-		// a later re-fire (e.g. 'complete' after an earlier 'awaiting-operator')
-		// safely files 0 and pushes nothing.
+		// Runs BEFORE the flipActiveFn auto-chain continue, so the auto-chain
+		// never skips a tick that still needs filing. Fires on BOTH terminal
+		// statuses ('complete' AND 'awaiting-operator') -- unlike auto-ship,
+		// which fires on 'complete' only -- because a CLEAN review can hand off
+		// to the operator (pending ceremony stories) without the loop ever
+		// reaching 'complete', and that CLEAN+awaiting-operator terminal must
+		// not silently drop its SUGGESTION findings. No prd.json fire-once
+		// marker is written here: SUGGESTION fingerprint dedup (US-002) is the
+		// idempotency mechanism, so a later re-fire (e.g. 'complete' after an
+		// earlier 'awaiting-operator') safely files 0 and pushes nothing.
 		if (
 			opts.readReviewReportFn !== undefined &&
 			opts.fileSuggestionsFn !== undefined &&

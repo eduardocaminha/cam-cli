@@ -46,6 +46,7 @@ import { hasSession, projectSessionName, getOrchPaneId, paneCountMutex, readWork
 import { runPlanPhaseWithReplan, runPostAuditAction, type PlanPhaseResult, type PostAuditActionResult, type PlanEscalationWriterParams } from '../supervisor/plan-runner.ts';
 import { writePlanEscalatedMarker, removePlanEscalatedMarker, PLAN_ESCALATED_FILENAME, type PlanEscalatedMarker } from '../supervisor/plan-escalation.ts';
 import { writePlanPreflightFailedMarker, removePlanPreflightFailedMarker, PLAN_PREFLIGHT_FAILED_FILENAME, type PlanPreflightFailedMarker, type PlanPreflightFailedWriterParams } from '../supervisor/plan-preflight-marker.ts';
+import { readImplementBlockedMarker, removeImplementBlockedMarker, IMPLEMENT_BLOCKED_FILENAME } from '../supervisor/implement-blocked-marker.ts';
 import { makeReadPlanVerdict, PLAN_VERDICT_REPORT_FILENAME } from '../supervisor/plan-verdict-report.ts';
 import { runPlanPreflight, type PlanPreflightSpawnFn } from '../supervisor/plan-preflight.ts';
 import { readMergeMode, readMetaLoop, readPlanApproval, readResendConfig, readWorkerIsolation, type WorkerIsolation } from '../config/models.ts';
@@ -75,6 +76,7 @@ import { observeDecide, type ObserveState } from '../supervisor/observe.ts';
 import { selectPlannableFromFile, selectPlanTargetFromFile } from '../issues/select.ts';
 import { isDrainStopSet } from '../supervisor/drain-kill-switch.ts';
 import { evaluateDrainPreconditions, type DrainPreconditionResult } from '../supervisor/drain-preconditions.ts';
+import { evaluateRearmPreconditions } from '../supervisor/rearm-preconditions.ts';
 import type { IssueEntry } from '../issues/types.ts';
 import { runShipPhase, type ShipPhaseResult, type ShipPrdRecord, type ShipGatesResult, DEFAULT_GATES_COMMAND } from '../supervisor/ship-runner.ts';
 import { runShipPrStep, type ShipPrSpawnFn, type RunShipPrStepOptions, type ShipPrStepInput } from '../release/ship-pr.ts';
@@ -238,6 +240,18 @@ export interface SidecarOptions {
 	 */
 	runShipPhaseFn?: RunSidecarLoopOptions['runShipPhaseFn'];
 	/**
+	 * Override the implementing re-arm function (US-003, CAM-195, Defect 1).
+	 *
+	 * Production: makeProductionRearmImplementingFn(claudeDir, cwd, ...) —
+	 * fail-closed via evaluateRearmPreconditions, gated on hasPendingStories()
+	 * (already excludes the MAX_ROUNDS_DEBT blocked terminal), phase==='implementing',
+	 * and no pending merge-watch marker. Wired UNCONDITIONALLY (regardless of
+	 * meta_loop/plan_approval config): resuming an ALREADY-in-flight PRD is a
+	 * resilience fix, not an autonomy escalation.
+	 * Tests: inject a spy to assert call count / return value without touching disk.
+	 */
+	rearmImplementingFn?: RunSidecarLoopOptions['rearmImplementingFn'];
+	/**
 	 * Override the ensure-container function (US-003, CAM-150).
 	 *
 	 * Production (container mode): built via makeProductionEnsureContainerFn,
@@ -340,23 +354,32 @@ export function makeReadPlanIssue(claudeDir: string): () => string | undefined {
 }
 
 /**
- * Set active:false in .claude/cam-loop.local.md by overwriting the frontmatter.
- * Reads the existing state to preserve other fields; falls back to a minimal
- * write if the file is absent or unparseable. Best-effort: a failure here is
- * non-fatal (the loop will just re-check on the next poll).
+ * Clear the loop's active trigger in .claude/cam-loop.local.md by overwriting
+ * the frontmatter. Reads the existing state to preserve other fields; falls
+ * back to a minimal write if the file is absent or unparseable. Best-effort:
+ * a failure here is non-fatal (the loop will just re-check on the next poll).
+ *
+ * Phase-preserving (US-001, CAM-195, Defect 3 fix): `phase` is deliberately
+ * left absent on every renderStateFile call below and `cwd` is passed instead,
+ * so renderStateFile's read-modify-write derives `phase` (and therefore
+ * `active`) from whatever is CURRENTLY on disk, rather than collapsing it to
+ * `idle`. This is what makes `phase:idle` a trustworthy "nothing is running"
+ * signal: a terminal tick that already wrote e.g. `phase:shipping` survives
+ * this call unchanged, while a genuinely idle/nonexistent/unparseable file
+ * still defaults to `idle` (same fallback renderStateFile always had).
  */
 export function makeClearActive(claudeDir: string, cwd: string): () => void {
 	const stateFilePath = join(claudeDir, 'cam-loop.local.md');
 	return () => {
 		try {
 			if (!existsSync(stateFilePath)) {
-				// Write a minimal state file with active:false so cam status shows 'paused'.
+				// No file to preserve a phase from: renders phase:idle (RMW default).
 				const body = renderStateFile({
 					maxIterations: 50,
 					completionPromise: 'COMPLETE',
 					startedAt: new Date().toISOString(),
 					pid: process.pid,
-					active: false,
+					cwd,
 				});
 				writeStateFile(cwd, body, { force: true });
 				return;
@@ -364,13 +387,13 @@ export function makeClearActive(claudeDir: string, cwd: string): () => void {
 			const contents = readFileSync(stateFilePath, 'utf8');
 			const parsed = parseStateFile(contents);
 			if (parsed === null) {
-				// Unparseable: write fresh minimal state with active:false.
+				// Unparseable: write fresh minimal state (RMW defaults to phase:idle).
 				const body = renderStateFile({
 					maxIterations: 50,
 					completionPromise: 'COMPLETE',
 					startedAt: new Date().toISOString(),
 					pid: process.pid,
-					active: false,
+					cwd,
 				});
 				writeFileSync(stateFilePath, body, 'utf8');
 				return;
@@ -380,12 +403,12 @@ export function makeClearActive(claudeDir: string, cwd: string): () => void {
 				completionPromise: parsed.completion_promise ?? 'COMPLETE',
 				startedAt: parsed.started_at ?? new Date().toISOString(),
 				pid: parsed.pid ?? process.pid,
-				active: false,
 				iteration: parsed.iteration,
 				currentStory: parsed.current_story,
 				storiesDone: parsed.stories_done,
 				storiesTotal: parsed.stories_total,
 				lastActivity: parsed.last_activity ?? new Date().toISOString(),
+				cwd,
 			});
 			writeFileSync(stateFilePath, body, 'utf8');
 		} catch {
@@ -439,6 +462,91 @@ export function makeHasPendingStories(prdPath: string): () => boolean {
 			return false;
 		}
 	};
+}
+
+/**
+ * Build the production rearmImplementingFn (US-003, CAM-195, Defect 1).
+ *
+ * Called on every idle tick (active !== true) BEFORE runMergeWatchFn /
+ * runMetaLoopObserveFn (see loop.ts's `active !== true` branch): this outer
+ * loop has no separate boot preamble, so the FIRST idle tick after process
+ * start already covers "at sidecar boot" (AC1); every subsequent tick covers
+ * "at the idle-tick".
+ *
+ * Evaluates evaluateRearmPreconditions fail-closed:
+ *   - prdInFlight: hasPendingStoriesFn() (already excludes the MAX_ROUNDS_DEBT
+ *     blocked terminal — see the CAM-109 guard above — so "no blocked
+ *     terminal" falls out of reusing this seam rather than a separate check).
+ *   - phase==='implementing': the parked discriminator; phase:idle (or any
+ *     other phase) never resumes (AC2). LoopPhase is a mutually-exclusive
+ *     enum, so this one check also covers "no plan/ship phase in progress".
+ *   - no pending merge-watch marker file.
+ *
+ * When the decision is `{ rearm: true }`, writes phase:implementing via
+ * makeSetPhaseFn -- the same write flipActiveFn uses for the auto-chain (it
+ * derives active:true, see renderStateFile) -- but wired UNCONDITIONALLY
+ * (regardless of meta_loop/plan_approval config): resuming an ALREADY-in-flight
+ * PRD is a general sidecar resilience fix, not an autonomy escalation gated to
+ * auto/container mode like evaluateDrainPreconditions (drain-preconditions.ts).
+ *
+ * Returns true when it re-armed this tick (the caller should skip the rest of
+ * the idle branch and let the next tick pick up active:true), false otherwise.
+ *
+ * US-005 (CAM-195, Defect 2): re-arming IS "the next implement dispatch for
+ * that issue" (AC2) -- so a rearm also clears the durable implement-blocked
+ * marker via clearImplementBlockedMarkerForCurrentIssue, keyed on the
+ * CURRENT prd.json's issueNumber.
+ */
+export function makeProductionRearmImplementingFn(
+	claudeDir: string,
+	cwd: string,
+	hasPendingStoriesFn: () => boolean,
+	readLoopPhaseFn: () => LoopPhase | undefined,
+): () => boolean {
+	const setPhase = makeSetPhaseFn(claudeDir, cwd);
+	const markerPath = join(claudeDir, IMPLEMENT_BLOCKED_FILENAME);
+	const prdPath = join(cwd, 'scripts/cam/prd.json');
+	return (): boolean => {
+		const decision = evaluateRearmPreconditions({
+			phase: readLoopPhaseFn(),
+			prdInFlight: hasPendingStoriesFn(),
+			mergeWatchPresent: existsSync(join(claudeDir, MERGE_WATCH_FILENAME)),
+		});
+		if (!decision.rearm) return false;
+		setPhase('implementing');
+		clearImplementBlockedMarkerForCurrentIssue(markerPath, prdPath);
+		return true;
+	};
+}
+
+/**
+ * Clear the durable implement-blocked marker when it references the CURRENT
+ * PRD's issue (US-005, CAM-195, Defect 2).
+ *
+ * Removes the marker only when:
+ *   - it can be read (readImplementBlockedMarker returns non-null), AND
+ *   - either the current prd.json's issueNumber cannot be determined
+ *     (missing / unreadable prd.json: best-effort, nothing to compare
+ *     against), OR it matches the marker's issueId (stringified).
+ *
+ * A marker referencing a DIFFERENT issueId is left untouched (mirrors the
+ * "caller's responsibility to check issueId match first" contract documented
+ * on removeShipStalledMarker / removePlanEscalatedMarker). Never throws: the
+ * prd.json read is try/catch best-effort and removeImplementBlockedMarker
+ * itself never throws.
+ */
+export function clearImplementBlockedMarkerForCurrentIssue(markerPath: string, prdPath: string): void {
+	const marker = readImplementBlockedMarker(markerPath);
+	if (marker === null) return;
+	let issueNumber: unknown;
+	try {
+		const prdRaw = JSON.parse(readFileSync(prdPath, 'utf8')) as { issueNumber?: unknown };
+		issueNumber = prdRaw.issueNumber;
+	} catch {
+		// best-effort: prd.json unreadable, fall through and clear unconditionally
+	}
+	if (typeof issueNumber === 'number' && String(issueNumber) !== marker.issueId) return;
+	removeImplementBlockedMarker(markerPath);
 }
 
 // ---------------------------------------------------------------------------
@@ -1030,6 +1138,7 @@ interface SidecarLoopDepsResult {
 	readLoopPhaseFn: RunSidecarLoopOptions['readLoopPhaseFn'];
 	runPlanPhaseFn: RunSidecarLoopOptions['runPlanPhaseFn'];
 	runShipPhaseFn: RunSidecarLoopOptions['runShipPhaseFn'];
+	rearmImplementingFn: RunSidecarLoopOptions['rearmImplementingFn'];
 }
 
 // ---------------------------------------------------------------------------
@@ -1260,19 +1369,31 @@ export interface MetaLoopDispatchDeps {
  *
  *   1. Kill-switch engaged -> emit 'stopped' once (deduped), park.
  *   2. Preconditions not met -> emit 'refused' + warn, park.
- *   3. PRD cycle in flight (prd.json present) -> silent skip this tick.
- *   4. Merge-watch file present -> silent skip this tick.
- *   5. Phase not idle/absent -> silent skip this tick.
+ *   3. PRD cycle in flight (prd.json present) -> emit 'meta-loop-dispatch
+ *      {skipped:true, reason:'cycle-in-flight'}' this tick (US-007), park.
+ *   4. Merge-watch file present -> emit 'meta-loop-dispatch {skipped:true,
+ *      reason:'merge-watch-present'}' this tick (US-007), park.
+ *   5. Phase not idle/absent -> emit 'meta-loop-dispatch {skipped:true,
+ *      reason:'phase-not-idle'}' this tick (US-007), park.
  *   6. Backlog drained (selectFn returns null) -> emit 'meta-loop-observe {drained:true}'
  *      + drain-notify (once, deduped by observeDecide state), park.
  *   7. Issue found -> write phase:planning + plan_issue:<id> via setPhaseFn,
- *      emit 'meta-loop-dispatch {dispatched:true}'.
+ *      emit 'meta-loop-dispatch {dispatched:true}' (deduped per-issue, see
+ *      DispatchClosureState.pendingIssueId below).
  *
- * Dedup: same issue selected across ticks does NOT re-dispatch (the plan phase
- * runner picks up the phase and transitions it; on return the phase will be idle
- * again for the NEXT issue). Drain dedup mirrors the observe path (observeDecide
- * state in closure). Kill-switch dedup: stopped event is emitted exactly once per
- * engagement (boolean flag in closure).
+ * Dedup: a per-issue pending-guard (DispatchClosureState.pendingIssueId, US-007,
+ * CAM-98/CAM-195) suppresses the *event* on repeat dispatch attempts of the SAME
+ * issue id: setPhaseFn is still called every tick so a legitimate retry (e.g. the
+ * plan phase bouncing phase back to 'idle' on pane-count mutex-busy, exitPhaseAfterPlan
+ * in this file) keeps working, but 'dispatched:true' fires only on the FIRST attempt
+ * for that issue id. This is what eliminated the ~4.7s dispatched:true storm (CAM-98):
+ * without it, every idle tick during a mutex-busy retry loop re-selected the same
+ * still-open issue and re-emitted 'dispatched:true'. The guard self-clears the moment
+ * a DIFFERENT issue id is selected (no separate reset hook is needed: comparison is by
+ * identity, and a issue's cycle "reaching a terminal" is exactly what frees the backlog
+ * slot for a different pick). Drain dedup mirrors the observe path (observeDecide state
+ * in closure). Kill-switch dedup: stopped event is emitted exactly once per engagement
+ * (boolean flag in closure).
  *
  * Exported for direct testability (anti-shadow-mock): tests call this factory
  * with injected fakes and assert the returned closure's behavior without touching
@@ -1288,6 +1409,19 @@ interface DispatchClosureState {
 	 * Reset to false when prd.json is absent (block cleared by operator ship/abandon).
 	 */
 	blockedCycleEmitted: boolean;
+	/**
+	 * Per-issue pending-guard (US-007, CAM-98/CAM-195 rider): the issue id of the
+	 * most recent 'dispatched:true' emission. A repeat dispatch attempt for the
+	 * SAME id (selected.id === pendingIssueId) still calls setPhaseFn (retry is
+	 * preserved) but does NOT re-emit the event, which is what kills the ~4.7s
+	 * dispatched:true storm caused by the plan-phase mutex-busy path resetting
+	 * phase back to 'idle' before a PRD is ever created for that issue. Cleared
+	 * implicitly (not by an explicit reset) the moment a different issue id is
+	 * selected, since that only happens once the previous issue's cycle reaches
+	 * a terminal and vacates the top of the backlog. Undefined until the first
+	 * dispatch of this closure's lifetime.
+	 */
+	pendingIssueId: string | undefined;
 }
 
 /**
@@ -1355,7 +1489,16 @@ async function handleBlockedCycleBoundary(
 	}
 	const verdict = deps.readPrdVerdictFn?.() ?? null;
 	if (verdict !== 'MAX_ROUNDS_DEBT') {
-		return true; // plain in-flight cycle: silent skip
+		// US-007 (CAM-195, Defect 2 refusals): previously silent; now a
+		// structured event so the flight recorder shows every refused tick.
+		deps.logEvent({
+			ts: new Date().toISOString(),
+			storyId: undefined,
+			uuid: 'sidecar',
+			kind: 'meta-loop-dispatch',
+			detail: { skipped: true, reason: 'cycle-in-flight' },
+		});
+		return true; // plain in-flight cycle: skip (now observable)
 	}
 	// Blocked cycle: park + escalate exactly once (dedup via ctx.blockedCycleEmitted).
 	if (!ctx.blockedCycleEmitted) {
@@ -1404,8 +1547,14 @@ async function handleBlockedCycleBoundary(
  * A throw here is caught, logged via logEvent as a 'sidecar-exit' event, and
  * the tick is skipped WITHOUT dispatching or clearing plan_issue, so a
  * transient corrupted-backlog read never gets misread as "target not found".
+ *
+ * Per-issue pending-guard (US-007): mirrors dispatchOrDrain's top-of-queue
+ * dispatch -- setPhaseFn is always called on a plannable resolve (so a
+ * mutex-busy retry keeps working), but the 'dispatched:true' event is deduped
+ * via ctx.pendingIssueId so re-resolving the same target across ticks does not
+ * re-fire the event.
  */
-function handlePendingTarget(deps: MetaLoopDispatchDeps, targetId: string): void {
+function handlePendingTarget(deps: MetaLoopDispatchDeps, ctx: DispatchClosureState, targetId: string): void {
 	let resolved: IssueEntry | null;
 	try {
 		resolved = deps.selectTargetFn?.(targetId) ?? null;
@@ -1424,13 +1573,16 @@ function handlePendingTarget(deps: MetaLoopDispatchDeps, targetId: string): void
 	}
 	if (resolved !== null) {
 		deps.setPhaseFn('planning', resolved.id);
-		deps.logEvent({
-			ts: new Date().toISOString(),
-			storyId: undefined,
-			uuid: 'sidecar',
-			kind: 'meta-loop-dispatch',
-			detail: { dispatched: true, issueId: resolved.id, rank: resolved.rank ?? 0 },
-		});
+		if (ctx.pendingIssueId !== resolved.id) {
+			ctx.pendingIssueId = resolved.id;
+			deps.logEvent({
+				ts: new Date().toISOString(),
+				storyId: undefined,
+				uuid: 'sidecar',
+				kind: 'meta-loop-dispatch',
+				detail: { dispatched: true, issueId: resolved.id, rank: resolved.rank ?? 0 },
+			});
+		}
 		return;
 	}
 	deps.logEvent({
@@ -1463,7 +1615,7 @@ async function dispatchOrDrain(
 ): Promise<void> {
 	const pendingTarget = deps.readPlanIssueFn?.();
 	if (pendingTarget !== undefined && pendingTarget.length > 0) {
-		handlePendingTarget(deps, pendingTarget);
+		handlePendingTarget(deps, ctx, pendingTarget);
 		return;
 	}
 	let selected: IssueEntry | null;
@@ -1500,18 +1652,29 @@ async function dispatchOrDrain(
 		return;
 	}
 	// Issue found: write phase:planning + plan_issue so the plan runner picks it up.
+	// setPhaseFn always runs (a mutex-busy retry of the SAME issue must keep
+	// working); the event is deduped per-issue via ctx.pendingIssueId (US-007)
+	// so a retry storm of the same issue no longer re-emits 'dispatched:true'.
 	deps.setPhaseFn('planning', selected.id);
-	deps.logEvent({
-		ts: new Date().toISOString(),
-		storyId: undefined,
-		uuid: 'sidecar',
-		kind: 'meta-loop-dispatch',
-		detail: { dispatched: true, issueId: selected.id, rank: selected.rank ?? 0 },
-	});
+	if (ctx.pendingIssueId !== selected.id) {
+		ctx.pendingIssueId = selected.id;
+		deps.logEvent({
+			ts: new Date().toISOString(),
+			storyId: undefined,
+			uuid: 'sidecar',
+			kind: 'meta-loop-dispatch',
+			detail: { dispatched: true, issueId: selected.id, rank: selected.rank ?? 0 },
+		});
+	}
 }
 
 export function makeProductionMetaLoopDispatchFn(deps: MetaLoopDispatchDeps): () => Promise<void> {
-	const ctx: DispatchClosureState = { stoppedEmitted: false, observeState: { kind: 'none' }, blockedCycleEmitted: false };
+	const ctx: DispatchClosureState = {
+		stoppedEmitted: false,
+		observeState: { kind: 'none' },
+		blockedCycleEmitted: false,
+		pendingIssueId: undefined,
+	};
 
 	return async (): Promise<void> => {
 		if (handleKillSwitchBoundary(deps, ctx)) return;
@@ -1519,9 +1682,29 @@ export function makeProductionMetaLoopDispatchFn(deps: MetaLoopDispatchDeps): ()
 		// US-005: check for blocked cycle (MAX_ROUNDS_DEBT) before plain prd-present skip.
 		// Returns true (park) for both blocked and plain in-flight; false when prd absent.
 		if (await handleBlockedCycleBoundary(deps, ctx)) return;
-		if (deps.mergeWatchPresentFn()) return;
+		if (deps.mergeWatchPresentFn()) {
+			// US-007 (CAM-195, Defect 2 refusals): previously silent.
+			deps.logEvent({
+				ts: new Date().toISOString(),
+				storyId: undefined,
+				uuid: 'sidecar',
+				kind: 'meta-loop-dispatch',
+				detail: { skipped: true, reason: 'merge-watch-present' },
+			});
+			return;
+		}
 		const phase = deps.readPhaseFn();
-		if (phase !== undefined && phase !== 'idle') return;
+		if (phase !== undefined && phase !== 'idle') {
+			// US-007 (CAM-195, Defect 2 refusals): previously silent.
+			deps.logEvent({
+				ts: new Date().toISOString(),
+				storyId: undefined,
+				uuid: 'sidecar',
+				kind: 'meta-loop-dispatch',
+				detail: { skipped: true, reason: 'phase-not-idle' },
+			});
+			return;
+		}
 		await dispatchOrDrain(deps, ctx);
 	};
 }
@@ -2181,6 +2364,32 @@ function buildShipPhaseDeps(
 	};
 }
 
+/**
+ * Build the implementing re-arm dep (US-003, CAM-195, Defect 1).
+ *
+ * Extracted from buildSidecarLoopDeps to keep it under the biome
+ * noExcessiveCognitiveComplexity(max=15) limit (CAM-60 factory/helper
+ * pattern), mirroring buildPlanPhaseDeps/buildShipPhaseDeps.
+ *
+ * hasPendingStoriesFn and readLoopPhaseFn are threaded in (rather than
+ * re-resolved from options here) so this dep reuses the SAME resolved
+ * closures the rest of buildSidecarLoopDeps already built, instead of a
+ * second independent instance.
+ */
+function buildRearmDeps(
+	ctx: SidecarLoopDepsCtx,
+	options: SidecarOptions,
+	hasPendingStoriesFn: () => boolean,
+	planReadLoopPhaseFn: RunSidecarLoopOptions['readLoopPhaseFn'],
+): Pick<SidecarLoopDepsResult, 'rearmImplementingFn'> {
+	const { cwd, claudeDir } = ctx;
+	const readLoopPhaseFn = planReadLoopPhaseFn ?? makeReadLoopPhase(claudeDir);
+	return {
+		rearmImplementingFn: options.rearmImplementingFn ??
+			makeProductionRearmImplementingFn(claudeDir, cwd, hasPendingStoriesFn, readLoopPhaseFn),
+	};
+}
+
 // ---------------------------------------------------------------------------
 // Suggestion-follow-up filing (US-003, CAM-189)
 // ---------------------------------------------------------------------------
@@ -2372,11 +2581,18 @@ function buildSidecarLoopDeps(ctx: SidecarLoopDepsCtx, options: SidecarOptions):
 	// US-004 / CAM-149: ship-phase dep extracted to a helper (biome complexity budget).
 	const shipPhaseDeps = buildShipPhaseDeps(ctx, options);
 
+	// US-003 (CAM-195, Defect 1): implementing re-arm, wired unconditionally
+	// (resuming an already-in-flight PRD is a resilience fix, not an autonomy
+	// escalation gated to meta_loop/plan_approval config like the pair above).
+	// Extracted to buildRearmDeps to keep this function under the biome
+	// noExcessiveCognitiveComplexity(max=15) limit.
+	const rearmDeps = buildRearmDeps(ctx, options, hasPendingStoriesFn, planPhaseDeps.readLoopPhaseFn);
+
 	return {
 		readActiveFn, clearActiveFn, hasPendingStoriesFn, sleepFn, hasSessionFn,
 		acquireLockFn, buildOptsFn, runMergeWatchFn, flipActiveFn, autoShipFn,
 		readReviewReportFn, fileSuggestionsFn, escalateFn,
-		runMetaLoopObserveFn, ...planPhaseDeps, ...shipPhaseDeps,
+		runMetaLoopObserveFn, ...planPhaseDeps, ...shipPhaseDeps, ...rearmDeps,
 	};
 }
 
@@ -2489,5 +2705,6 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 		readLoopPhaseFn: deps.readLoopPhaseFn,
 		runPlanPhaseFn: deps.runPlanPhaseFn,
 		runShipPhaseFn: deps.runShipPhaseFn,
+		rearmImplementingFn: deps.rearmImplementingFn,
 	});
 }

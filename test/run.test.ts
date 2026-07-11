@@ -624,14 +624,11 @@ describe('buildOrchestratorPaneCommand (CAM-23 self-handoff wrapper)', () => {
 		);
 	});
 
-	it('removes the loop state file on teardown, before kill-session (clean /exit)', () => {
+	it('never removes the loop state file on teardown (Defect 3: recycle must not erase the live cycle signal)', () => {
 		const cmd = buildOrchestratorPaneCommand(base);
-		expect(cmd).toContain(`rm -f '${base.stateFile}'`);
-		// The rm must run BEFORE kill-session: once the session dies the wrapper
-		// stops, so a rm queued after kill-session would never execute.
-		expect(cmd.indexOf(`rm -f '${base.stateFile}'`)).toBeLessThan(
-			cmd.indexOf(`kill-session -t ${base.sessionName}`),
-		);
+		// An orchestrator recycle under a running sidecar must not delete
+		// cam-loop.local.md; `cam stop` remains the single deliberate remover.
+		expect(cmd).not.toContain(`rm -f '${base.stateFile}'`);
 	});
 
 	it('respects the maxRespawns cap and only increments inside the under-cap gate', () => {
@@ -698,9 +695,9 @@ describe('buildOrchestratorPaneCommand (CAM-23 self-handoff wrapper)', () => {
 	it('removes pidMarker in teardown branch, before kill-session (CAM-173 US-001)', () => {
 		const cmd = buildOrchestratorPaneCommand(base);
 		expect(cmd).toContain(`rm -f '${base.pidMarker}'`);
-		// Must be in the teardown branch: after the stateFile rm and before kill-session.
+		// Must be in the teardown branch: after the readyMarker rm and before kill-session.
 		expect(cmd.indexOf(`rm -f '${base.pidMarker}'`)).toBeGreaterThan(
-			cmd.indexOf(`rm -f '${base.stateFile}'`),
+			cmd.indexOf(`rm -f '${base.readyMarker}'`),
 		);
 		expect(cmd.indexOf(`rm -f '${base.pidMarker}'`)).toBeLessThan(
 			cmd.indexOf(`kill-session -t ${base.sessionName}`),

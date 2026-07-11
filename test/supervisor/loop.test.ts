@@ -3701,6 +3701,98 @@ describe('runSupervisor US-001: teardownWorkerPaneFn called on every terminal ex
 });
 
 // ---------------------------------------------------------------------------
+// Unit tests for finishTerminal structured event emission (US-004 / CAM-195)
+// ---------------------------------------------------------------------------
+
+describe('runSupervisor US-004: finishTerminal emits a structured sidecar-exit event', () => {
+	function cleanPrd(): PrdSnapshot {
+		return makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+	}
+
+	test('complete status: emits a sidecar-exit event carrying reason "complete"', async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		const opts = makeBaseOpts({
+			readPrd: () => cleanPrd(),
+			logEvent: logger,
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('complete');
+		const terminalEvents = events.filter((e) => e.kind === 'sidecar-exit');
+		expect(terminalEvents).toHaveLength(1);
+		expect(terminalEvents[0]?.detail).toEqual({ reason: 'complete' });
+	});
+
+	test('awaiting-operator status: emits a sidecar-exit event carrying reason "awaiting-operator"', async () => {
+		const prd = makePrd({
+			stories: [
+				{ id: 'US-001', priority: 1, passes: true },
+				{ id: 'US-002', priority: 2, passes: false, requires: 'operator' },
+			],
+			review: { roundsCompleted: 1, maxRounds: 3, lastVerdict: 'CLEAN' },
+		});
+		const { logger, events } = makeInMemoryEventLogger();
+		const opts = makeBaseOpts({
+			readPrd: () => prd,
+			logEvent: logger,
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('awaiting-operator');
+		const terminalEvents = events.filter((e) => e.kind === 'sidecar-exit');
+		expect(terminalEvents).toHaveLength(1);
+		expect(terminalEvents[0]?.detail).toEqual({ reason: 'awaiting-operator' });
+	});
+
+	test('blocked status (PRD unreadable): emits a sidecar-exit event carrying reason "blocked"', async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		const opts = makeBaseOpts({
+			readPrd: () => null,
+			logEvent: logger,
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('blocked');
+		const terminalEvents = events.filter((e) => e.kind === 'sidecar-exit');
+		expect(terminalEvents).toHaveLength(1);
+		expect(terminalEvents[0]?.detail).toEqual({ reason: 'blocked' });
+	});
+
+	test('max-iterations status: emits a sidecar-exit event carrying reason "max-iterations"', async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		const opts = makeBaseOpts({
+			readPrd: () => makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] }),
+			maxIterations: 0,
+			logEvent: logger,
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('max-iterations');
+		const terminalEvents = events.filter((e) => e.kind === 'sidecar-exit');
+		expect(terminalEvents).toHaveLength(1);
+		expect(terminalEvents[0]?.detail).toEqual({ reason: 'max-iterations' });
+	});
+
+	test('absent logEvent (omitted): loop behavior unchanged, no error, existing tests unaffected', async () => {
+		const opts = makeBaseOpts({
+			readPrd: () => cleanPrd(),
+			// logEvent deliberately omitted
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('complete');
+	});
+});
+
+// ---------------------------------------------------------------------------
 // US-002 (CAM-187): commit-existence gate wiring (commitExistsForStory)
 // ---------------------------------------------------------------------------
 

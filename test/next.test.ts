@@ -11,7 +11,7 @@
 //   - runNext: marker timeout returns 1.
 //   - runNext: missing pane returns 1.
 
-import { describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -244,6 +244,89 @@ describe('renderStateFile + parseStateFile round-trip: phase field', () => {
 		const parsed = parseStateFile(body);
 		expect(parsed?.phase).toBe('idle');
 		expect(parsed?.active).toBe(false); // derived from phase, not from raw active:true
+	});
+});
+
+// --- renderStateFile: read-modify-write phase preservation (US-001, CAM-195) --
+
+describe('renderStateFile: read-modify-write phase preservation (US-001, CAM-195)', () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), 'cam-render-rmw-'));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	test('absent phase + cwd over an existing phase:implementing file re-emits phase:implementing (not idle)', () => {
+		const seed = renderStateFile({
+			maxIterations: 30,
+			completionPromise: 'COMPLETE',
+			startedAt: '2026-07-01T00:00:00Z',
+			pid: 1,
+			phase: 'implementing',
+		});
+		writeStateFile(tmpDir, seed, { force: true });
+
+		const rendered = renderStateFile({
+			maxIterations: 30,
+			completionPromise: 'COMPLETE',
+			startedAt: '2026-07-01T00:00:00Z',
+			pid: 1,
+			cwd: tmpDir,
+		});
+		const parsed = parseStateFile(rendered);
+		expect(parsed?.phase).toBe('implementing');
+		expect(parsed?.active).toBe(true);
+	});
+
+	test('an explicit phase wins over the on-disk phase', () => {
+		const seed = renderStateFile({
+			maxIterations: 30,
+			completionPromise: 'COMPLETE',
+			startedAt: '2026-07-01T00:00:00Z',
+			pid: 1,
+			phase: 'implementing',
+		});
+		writeStateFile(tmpDir, seed, { force: true });
+
+		const rendered = renderStateFile({
+			maxIterations: 30,
+			completionPromise: 'COMPLETE',
+			startedAt: '2026-07-01T00:00:00Z',
+			pid: 1,
+			phase: 'shipping',
+			cwd: tmpDir,
+		});
+		const parsed = parseStateFile(rendered);
+		expect(parsed?.phase).toBe('shipping');
+	});
+
+	test('a nonexistent file at cwd defaults to phase:idle', () => {
+		const rendered = renderStateFile({
+			maxIterations: 30,
+			completionPromise: 'COMPLETE',
+			startedAt: '2026-07-01T00:00:00Z',
+			pid: 1,
+			cwd: tmpDir,
+		});
+		const parsed = parseStateFile(rendered);
+		expect(parsed?.phase).toBe('idle');
+		expect(parsed?.active).toBe(false);
+	});
+
+	test('absent phase + no cwd preserves legacy active-derived back-compat', () => {
+		const rendered = renderStateFile({
+			maxIterations: 30,
+			completionPromise: 'COMPLETE',
+			startedAt: '2026-07-01T00:00:00Z',
+			pid: 1,
+			active: true,
+		});
+		const parsed = parseStateFile(rendered);
+		expect(parsed?.phase).toBe('implementing');
 	});
 });
 
