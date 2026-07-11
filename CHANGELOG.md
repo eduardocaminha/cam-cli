@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.133.0] - 2026-07-11
+
+### Added
+
+- US-001 - Accept any conventional-commit type prefix in the commit-existence gate
+
 ## [0.132.0] - 2026-07-11
 
 ### Added
