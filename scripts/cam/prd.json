@@ -72,7 +72,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Depends on US-002 (consumes sidecarAlive() from src/supervisor/sidecar-pid.ts). Gate insertion points: plan.ts runPlan liveness/mutex preamble (~240-253, before buildPlanningBody write at ~262-265); next.ts preamble before the active:true write (~334-370, after the mutex check ~313-321); ship.ts liveness preamble (~137-160+, before the phase:shipping write). The refusal must occur BEFORE the state-file write so no orphaned signal is left. This gate is host-relevant — keep it mode-agnostic (do not wrap in a container check). Fixes the silent-hang half of the issue (cam plan liveness gate today checks only the orchestrator pane, exits 0 into a hang)."
     },

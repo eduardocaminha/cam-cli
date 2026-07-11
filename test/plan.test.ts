@@ -178,6 +178,7 @@ describe('runPlan (hit path, bare plan)', () => {
 			tmuxSpawnFn: spawnFn,
 			writeFn,
 			readBacklogFn: () => [makePlannable('CAM-7')],
+			sidecarAliveFn: () => true,
 		});
 
 		expect(code).toBe(0);
@@ -271,6 +272,7 @@ describe('runPlan (hit path, specific N)', () => {
 			writeFn,
 			issue: 42,
 			readBacklogFn: () => [makePlannable('CAM-42')],
+			sidecarAliveFn: () => true,
 		});
 
 		expect(code).toBe(0);
@@ -291,6 +293,7 @@ describe('runPlan (hit path, specific N)', () => {
 			writeFn,
 			issue: 151,
 			readBacklogFn: () => [makePlannable('CAM-151')],
+			sidecarAliveFn: () => true,
 		});
 
 		const body = writeCalls[0]?.body ?? '';
@@ -313,6 +316,7 @@ describe('runPlan (hit path, specific N)', () => {
 			writeFn,
 			issue: 5,
 			readBacklogFn: () => [makePlannable('CAM-5')],
+			sidecarAliveFn: () => true,
 		});
 
 		expect(code).toBe(0);
@@ -493,6 +497,7 @@ describe('runPlan (miss path)', () => {
 			waitTimeoutMs: 5_000,
 			writeFn,
 			readBacklogFn: () => [makePlannable('CAM-3')],
+			sidecarAliveFn: () => true,
 		});
 
 		expect(code).toBe(0);
@@ -554,5 +559,68 @@ describe('runPlan: session name', () => {
 
 		const callsWithSession = spawnFn.calls.filter((c) => c.args.includes(sessionName));
 		expect(callsWithSession.length).toBeGreaterThan(0);
+	});
+});
+
+// --- runPlan: sidecar liveness gate (US-003, CAM-207) -----------------------
+
+describe('runPlan: sidecar liveness gate', () => {
+	test('refuses and does NOT write phase:planning when the sidecar is dead', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-sidecar-dead-'));
+		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
+		const { calls: writeCalls, writeFn } = makeWriteCapture();
+		let probedClaudeDir: string | undefined;
+
+		const code = await runPlan({
+			cwd: tmpDir,
+			tmuxSpawnFn: spawnFn,
+			writeFn,
+			readBacklogFn: () => [makePlannable('CAM-7')],
+			sidecarAliveFn: (claudeDir) => {
+				probedClaudeDir = claudeDir;
+				return false;
+			},
+		});
+
+		expect(code).toBe(1);
+		expect(writeCalls).toHaveLength(0);
+		expect(probedClaudeDir).toBe(join(tmpDir, '.claude'));
+	});
+
+	test('proceeds and writes phase:planning when the sidecar is alive', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-sidecar-alive-'));
+		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
+		const { calls: writeCalls, writeFn } = makeWriteCapture();
+
+		const code = await runPlan({
+			cwd: tmpDir,
+			tmuxSpawnFn: spawnFn,
+			writeFn,
+			readBacklogFn: () => [makePlannable('CAM-7')],
+			sidecarAliveFn: () => true,
+		});
+
+		expect(code).toBe(0);
+		expect(writeCalls).toHaveLength(1);
+	});
+
+	test('AC4: the gate is mode-agnostic — a dead sidecar refuses regardless of worker_isolation', async () => {
+		// No worker_isolation branching exists in the gate itself; a fake that
+		// always reports dead proves the refusal fires unconditionally, whether
+		// the project is configured for host or container mode.
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-sidecar-mode-agnostic-'));
+		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
+		const { calls: writeCalls, writeFn } = makeWriteCapture();
+
+		const code = await runPlan({
+			cwd: tmpDir,
+			tmuxSpawnFn: spawnFn,
+			writeFn,
+			readBacklogFn: () => [makePlannable('CAM-7')],
+			sidecarAliveFn: () => false,
+		});
+
+		expect(code).toBe(1);
+		expect(writeCalls).toHaveLength(0);
 	});
 });

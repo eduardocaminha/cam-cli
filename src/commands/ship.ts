@@ -46,6 +46,7 @@ import {
 	DEFAULT_MAX_ITERATIONS,
 	DEFAULT_COMPLETION_PROMISE,
 } from './next.ts';
+import { sidecarLivenessGate } from './sidecar-gate.ts';
 
 // --- Types -----------------------------------------------------------------
 
@@ -82,6 +83,12 @@ export interface ShipOptions {
 	waitTimeoutMs?: number;
 	/** Injectable state-file writer for tests. Defaults to writeStateFile. */
 	writeFn?: (cwd: string, body: string, opts: { force?: boolean }) => string;
+	/**
+	 * Injectable sidecar-liveness probe (US-003, CAM-207). Defaults to
+	 * `sidecarAlive` from `src/supervisor/sidecar-pid.ts`. Tests inject a fake
+	 * to exercise the dead/alive branches without touching real pids.
+	 */
+	sidecarAliveFn?: (claudeDir: string) => boolean;
 }
 
 // --- Internal helpers -------------------------------------------------------
@@ -197,6 +204,9 @@ export async function runShip(options: ShipOptions = {}): Promise<number> {
 		emitTrailingBlank();
 		return 1;
 	}
+
+	// --- Sidecar liveness gate (US-003, CAM-207) ------------------------------
+	if (!sidecarLivenessGate(claudeDir, 'ship', options.sidecarAliveFn)) return 1;
 
 	// --- Write phase:shipping to state file (US-005) ---------------------------
 	// The sidecar's poll loop reads this phase and runs the deterministic ship

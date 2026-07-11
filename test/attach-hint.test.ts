@@ -149,6 +149,7 @@ describe('runPlan attach hint', () => {
 				env: {},
 				readBacklogFn,
 				writeFn,
+				sidecarAliveFn: () => true,
 			}),
 		);
 
@@ -173,6 +174,7 @@ describe('runPlan attach hint', () => {
 				env: { TMUX: '/tmp/tmux-1/default,1234,0', CAM_SESSION: sessionName },
 				readBacklogFn,
 				writeFn,
+				sidecarAliveFn: () => true,
 			}),
 		);
 
@@ -233,6 +235,7 @@ describe('runNext attach hint', () => {
 				cwd: tmpDir,
 				tmuxSpawnFn,
 				env: {},
+				sidecarAliveFn: () => true,
 			}),
 		);
 
@@ -250,6 +253,7 @@ describe('runNext attach hint', () => {
 				cwd: tmpDir,
 				tmuxSpawnFn,
 				env: { TMUX: '/tmp/tmux-1/default,1234,0', CAM_SESSION: sessionName },
+				sidecarAliveFn: () => true,
 			}),
 		);
 

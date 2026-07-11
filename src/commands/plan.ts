@@ -50,6 +50,7 @@ import { isBlocked } from '../issues/graph.ts';
 import { isPlannable } from '../issues/plannable.ts';
 import { selectPlannableIssue } from '../issues/select.ts';
 import type { IssueEntry } from '../issues/types.ts';
+import { sidecarLivenessGate } from './sidecar-gate.ts';
 
 // --- Types -----------------------------------------------------------------
 
@@ -77,6 +78,12 @@ export interface PlanOptions {
 	 * When provided, bypasses the real git reads from main.
 	 */
 	readBacklogFn?: () => IssueEntry[];
+	/**
+	 * Injectable sidecar-liveness probe (US-003, CAM-207). Defaults to
+	 * `sidecarAlive` from `src/supervisor/sidecar-pid.ts`. Tests inject a fake
+	 * to exercise the dead/alive branches without touching real pids.
+	 */
+	sidecarAliveFn?: (claudeDir: string) => boolean;
 }
 
 // --- Internal helpers -------------------------------------------------------
@@ -176,6 +183,39 @@ function resolveTopOfQueue(backlog: IssueEntry[]): { ok: true; id: string } | { 
 }
 
 /**
+ * Resolve the issue to plan (F-01) and write phase:planning + plan_issue to
+ * the state file. Returns the resolved issue id on success, or `null` after
+ * printing the appropriate error (F-01 validation failure or write failure).
+ * Extracted from `runPlan` to keep its cognitive complexity within budget.
+ */
+function resolveAndWritePlanningSignal(
+	cwd: string,
+	claudeDir: string,
+	options: Pick<PlanOptions, 'issue' | 'readBacklogFn' | 'writeFn'>,
+): string | null {
+	const backlog = options.readBacklogFn ? options.readBacklogFn() : readBacklogFromMain(cwd);
+	const resolved =
+		options.issue !== undefined
+			? resolveSpecificIssue(options.issue, backlog)
+			: resolveTopOfQueue(backlog);
+	if (!resolved.ok) return null;
+
+	try {
+		const body = buildPlanningBody(claudeDir, resolved.id);
+		(options.writeFn ?? writeStateFile)(cwd, body, { force: true });
+		emitMutedHint(`phase:planning + plan_issue:${resolved.id} written to .claude/cam-loop.local.md`);
+		return resolved.id;
+	} catch (err) {
+		printError(
+			'Failed to write phase:planning to .claude/cam-loop.local.md',
+			err instanceof Error ? err.message : String(err),
+		);
+		emitTrailingBlank();
+		return null;
+	}
+}
+
+/**
  * Build the state-file body for phase:planning + plan_issue.
  * Merges with existing state-file fields when the file is already present.
  */
@@ -251,29 +291,14 @@ export async function runPlan(options: PlanOptions = {}): Promise<number> {
 		return 1;
 	}
 
-	// --- Resolve issue to plan (F-01) -----------------------------------------
-	const backlog = options.readBacklogFn ? options.readBacklogFn() : readBacklogFromMain(cwd);
-	const resolved =
-		options.issue !== undefined
-			? resolveSpecificIssue(options.issue, backlog)
-			: resolveTopOfQueue(backlog);
-	if (!resolved.ok) return 1;
+	// --- Sidecar liveness gate (US-003, CAM-207) ------------------------------
+	if (!sidecarLivenessGate(claudeDir, 'plan', options.sidecarAliveFn)) return 1;
 
-	// --- Write phase:planning + plan_issue to state file ----------------------
-	try {
-		const body = buildPlanningBody(claudeDir, resolved.id);
-		(options.writeFn ?? writeStateFile)(cwd, body, { force: true });
-		emitMutedHint(`phase:planning + plan_issue:${resolved.id} written to .claude/cam-loop.local.md`);
-	} catch (err) {
-		printError(
-			'Failed to write phase:planning to .claude/cam-loop.local.md',
-			err instanceof Error ? err.message : String(err),
-		);
-		emitTrailingBlank();
-		return 1;
-	}
+	// --- Resolve issue to plan (F-01) + write phase:planning ------------------
+	const planIssueId = resolveAndWritePlanningSignal(cwd, claudeDir, options);
+	if (planIssueId === null) return 1;
 
-	emitOk(`Plan phase initiated: ${resolved.id} (phase:planning written)`);
+	emitOk(`Plan phase initiated: ${planIssueId} (phase:planning written)`);
 	emitAttachHint(sessionName, env);
 	emitTrailingBlank();
 	return 0;

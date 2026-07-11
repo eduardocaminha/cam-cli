@@ -155,6 +155,7 @@ describe('runShip (thin-proxy, hit path)', () => {
 			cwd: tmpDir,
 			tmuxSpawnFn: spawnFn,
 			writeFn,
+			sidecarAliveFn: () => true,
 		});
 
 		expect(code).toBe(0);
@@ -273,6 +274,7 @@ describe('runShip (thin-proxy, miss path)', () => {
 			sleepFn: () => {},
 			waitTimeoutMs: 5_000,
 			writeFn,
+			sidecarAliveFn: () => true,
 		});
 
 		expect(code).toBe(0);
@@ -328,5 +330,62 @@ describe('runShip: session name', () => {
 
 		const callsWithSession = spawnFn.calls.filter((c) => c.args.includes(sessionName));
 		expect(callsWithSession.length).toBeGreaterThan(0);
+	});
+});
+
+// --- runShip: sidecar liveness gate (US-003, CAM-207) -----------------------
+
+describe('runShip: sidecar liveness gate', () => {
+	test('refuses and does NOT write phase:shipping when the sidecar is dead', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-ship-sidecar-dead-'));
+		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
+		const { calls: writeCalls, writeFn } = makeWriteCapture();
+		let probedClaudeDir: string | undefined;
+
+		const code = await runShip({
+			cwd: tmpDir,
+			tmuxSpawnFn: spawnFn,
+			writeFn,
+			sidecarAliveFn: (claudeDir) => {
+				probedClaudeDir = claudeDir;
+				return false;
+			},
+		});
+
+		expect(code).toBe(1);
+		expect(writeCalls).toHaveLength(0);
+		expect(probedClaudeDir).toBe(join(tmpDir, '.claude'));
+	});
+
+	test('proceeds and writes phase:shipping when the sidecar is alive', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-ship-sidecar-alive-'));
+		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
+		const { calls: writeCalls, writeFn } = makeWriteCapture();
+
+		const code = await runShip({
+			cwd: tmpDir,
+			tmuxSpawnFn: spawnFn,
+			writeFn,
+			sidecarAliveFn: () => true,
+		});
+
+		expect(code).toBe(0);
+		expect(writeCalls).toHaveLength(1);
+	});
+
+	test('AC4: the gate is mode-agnostic — a dead sidecar refuses regardless of worker_isolation', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-ship-sidecar-mode-agnostic-'));
+		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
+		const { calls: writeCalls, writeFn } = makeWriteCapture();
+
+		const code = await runShip({
+			cwd: tmpDir,
+			tmuxSpawnFn: spawnFn,
+			writeFn,
+			sidecarAliveFn: () => false,
+		});
+
+		expect(code).toBe(1);
+		expect(writeCalls).toHaveLength(0);
 	});
 });
