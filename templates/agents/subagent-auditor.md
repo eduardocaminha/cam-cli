@@ -34,11 +34,9 @@ Think of yourself as the "fresh pair of eyes" that catches what the planner is b
 
 ## Inputs
 
-The orchestrator will pass:
-- Path to the PRD under audit (default: `scripts/cam/prd.json`)
-- GitHub issue number (if any)
+The orchestrator's spawn prompt embeds the already-resolved issue record for this PRD: Issue ID, Title, Description, Branch, and Acceptance Criteria. Trust this embedded record verbatim. Never re-resolve issueNumber or branchName against any backend — no `gh issue view`, `gh pr view`, or any other identity lookup. When `issue_system=local`, this means zero `gh` calls for issue/PR identity.
 
-Read those files yourself. Do not trust summaries in the invocation prompt.
+You still read `scripts/cam/prd.json` yourself (the PRD under audit, not the issue record) and the deep-dive docs it references. Do not trust a prose summary of the PRD's own contents in the invocation prompt — only the issue identity fields above are pre-resolved for you.
 
 ## Audit checklist
 
@@ -82,10 +80,12 @@ Work through every section below. For every finding, record `severity` (critical
 14. `branchName` matches `^cam/issue-<N>$` (number only, no slug, no fallback)?
 15. No story touches hardened hooks or CI workflows without a rationale?
 16. No story adds secrets inline (env var values, tokens, DB URLs)?
+17. Any branch-collision check is defined against real git refs only: a local ref (`git rev-parse --verify refs/heads/<branch>`) and the remote (`git ls-remote origin <branch>`). It must never treat a same-numbered GitHub PR as a collision signal, and a branch that does not exist in either ref set must never be flagged as a collision. Flag any story or PRD note that resolves collision via `gh pr view`/`gh issue view` instead.
+18. Any prior-art or duplication signal must be sourced from git history (e.g. `git log --oneline --grep=...`, backend-agnostic) and reported only as a non-blocking `suggestion` — never `critical` or `important`. Flag any prior-art finding a story or the PRD tries to escalate to blocking.
 
 ### F. Project-specific sanity (customize per project)
 
-17. Any project-specific invariants you can infer from reading `CLAUDE.md` or `AGENTS.md`? Check the most critical ones based on the PRD scope.
+19. Any project-specific invariants you can infer from reading `CLAUDE.md` or `AGENTS.md`? Check the most critical ones based on the PRD scope.
 
 ## Output format
 
