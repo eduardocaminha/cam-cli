@@ -31,6 +31,8 @@ import {
 	removeMergeWatchState,
 	type GhPollFn,
 } from '../../src/release/merge-watch.ts';
+import { makeInMemoryEventLogger } from '../../src/supervisor/events.ts';
+import type { ImplementBlockedMarker } from '../../src/supervisor/implement-blocked-marker.ts';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -981,5 +983,210 @@ describe('runSidecarLoop — plan-phase detection (US-002)', () => {
 			'utf8',
 		);
 		expect(src).toContain('runPlanPhase');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-003 (CAM-214): circuit breaker on the flipActiveFn auto-chain
+// ---------------------------------------------------------------------------
+
+describe('runSidecarLoop — circuit breaker on the auto-chain (US-003, CAM-214)', () => {
+	const AUTO_CHAIN_ESCAPE = Symbol('auto-chain-escape');
+
+	function escalatedMarker(overrides: Partial<ImplementBlockedMarker> = {}): ImplementBlockedMarker {
+		return {
+			issueId: '214',
+			story: 'US-003',
+			reason: 'Worker reported BLOCKED_QUALITY story=US-003 reason=tests_failed',
+			writtenAt: '2026-07-11T00:00:00Z',
+			consecutiveCount: 3,
+			keyHash: 'deadbeef',
+			escalated: true,
+			haltedAt: '2026-07-11T00:00:00Z',
+			...overrides,
+		};
+	}
+
+	/**
+	 * Drive one active tick of runSidecarLoop with a real COMPLETE
+	 * runSupervisorFn result, then escape on the first idle sleep. Mirrors
+	 * auto-chain.test.ts's driveOneTick, self-contained here per the story's
+	 * pinned oracle file.
+	 */
+	async function driveOneAutoChainTick(loopOptsPartial: Partial<RunSidecarLoopOptions>): Promise<void> {
+		const readActiveSeq: Array<boolean> = [true, false];
+		let readIdx = 0;
+
+		const loopOpts: RunSidecarLoopOptions = {
+			buildOpts: () => makeDummySupervisorOpts(),
+			readActive: () => readActiveSeq[readIdx++] ?? false,
+			clearActive: () => {},
+			sleep: () => {
+				throw AUTO_CHAIN_ESCAPE;
+			},
+			hasPendingStories: () => true,
+			acquireLock: () => ({ acquired: true, release: () => {} }),
+			runSupervisorFn: async () => COMPLETE_RESULT,
+			...loopOptsPartial,
+		};
+
+		try {
+			await runSidecarLoop(loopOpts);
+		} catch (e) {
+			if (e !== AUTO_CHAIN_ESCAPE) throw e;
+		}
+	}
+
+	test('AC1: escalated marker present -> flipActiveFn NOT called, loop stays idle', async () => {
+		let flipCalls = 0;
+		const { logger, events } = makeInMemoryEventLogger();
+
+		await driveOneAutoChainTick({
+			flipActiveFn: () => {
+				flipCalls++;
+			},
+			readImplementBlockedMarkerFn: () => escalatedMarker(),
+			logEvent: logger,
+		});
+
+		expect(flipCalls).toBe(0);
+		// AC4: the halt is recorded via the existing emitter, reusing an
+		// existing WorkerEventKind ('sidecar-exit'), never a new kind.
+		const circuitEvent = events.find(
+			(e) => e.kind === 'sidecar-exit' && (e.detail as Record<string, unknown>)['reason'] === 'circuit-broken',
+		);
+		expect(circuitEvent).toBeDefined();
+	});
+
+	test('AC2: marker absent -> flipActiveFn called exactly as before', async () => {
+		let flipCalls = 0;
+
+		await driveOneAutoChainTick({
+			flipActiveFn: () => {
+				flipCalls++;
+			},
+			readImplementBlockedMarkerFn: () => null,
+		});
+
+		expect(flipCalls).toBe(1);
+	});
+
+	test('AC2: marker present but escalated falsy -> flipActiveFn called exactly as before', async () => {
+		let flipCalls = 0;
+
+		await driveOneAutoChainTick({
+			flipActiveFn: () => {
+				flipCalls++;
+			},
+			readImplementBlockedMarkerFn: () => escalatedMarker({ escalated: false, consecutiveCount: 1 }),
+		});
+
+		expect(flipCalls).toBe(1);
+	});
+
+	test('AC2: readImplementBlockedMarkerFn absent -> flipActiveFn called exactly as before (default no-op)', async () => {
+		let flipCalls = 0;
+
+		await driveOneAutoChainTick({
+			flipActiveFn: () => {
+				flipCalls++;
+			},
+			// readImplementBlockedMarkerFn intentionally omitted.
+		});
+
+		expect(flipCalls).toBe(1);
+	});
+
+	test('AC3: flipActiveFn absent (operator mode) -> breaker inert, loop pauses as today', async () => {
+		let markerReadCalls = 0;
+		let sleepCalls = 0;
+
+		const readActiveSeq: Array<boolean> = [true, false];
+		let readIdx = 0;
+		const loopOpts: RunSidecarLoopOptions = {
+			buildOpts: () => makeDummySupervisorOpts(),
+			readActive: () => readActiveSeq[readIdx++] ?? false,
+			clearActive: () => {},
+			sleep: () => {
+				sleepCalls++;
+				throw AUTO_CHAIN_ESCAPE;
+			},
+			hasPendingStories: () => true,
+			acquireLock: () => ({ acquired: true, release: () => {} }),
+			runSupervisorFn: async () => COMPLETE_RESULT,
+			readImplementBlockedMarkerFn: () => {
+				markerReadCalls++;
+				return escalatedMarker();
+			},
+			// No flipActiveFn: operator mode.
+		};
+
+		try {
+			await runSidecarLoop(loopOpts);
+		} catch (e) {
+			if (e !== AUTO_CHAIN_ESCAPE) throw e;
+		}
+
+		// The breaker's marker read is gated inside the flipActiveFn-present
+		// check, so it never even fires in operator mode.
+		expect(markerReadCalls).toBe(0);
+		expect(sleepCalls).toBe(1);
+	});
+
+	test('AC5: recovery — once the marker clears, the auto-chain re-enables on the next cycle', async () => {
+		let flipCalls = 0;
+		let markerCallCount = 0;
+		let supervisorCalls = 0;
+		let sleepCalls = 0;
+
+		// Simulates the marker being consumed (clearImplementBlockedMarkerForCurrentIssue
+		// on a DONE outcome) or reset (US-002 advanceBlockedMarker on a PRD amendment)
+		// between the escalated cycle and the next one: first read is escalated,
+		// every subsequent read is null.
+		const readImplementBlockedMarkerFn = () => {
+			markerCallCount++;
+			return markerCallCount === 1 ? escalatedMarker() : null;
+		};
+
+		// Cycle 1 (active:true): breaker trips (marker escalated), falls through
+		// to the bottom-of-loop sleep (call #1, non-throwing) and loops back.
+		// Cycle 2 (active:true): marker now cleared, flipActiveFn fires and
+		// `continue`s straight back to the top, skipping that sleep entirely.
+		// Cycle 3 (active:false): idle branch's own sleep (call #2) escapes.
+		const readActiveSeq: Array<boolean> = [true, true, false];
+		let readIdx = 0;
+
+		const loopOpts: RunSidecarLoopOptions = {
+			buildOpts: () => makeDummySupervisorOpts(),
+			readActive: () => readActiveSeq[readIdx++] ?? false,
+			clearActive: () => {},
+			sleep: () => {
+				sleepCalls++;
+				if (sleepCalls >= 2) throw AUTO_CHAIN_ESCAPE;
+			},
+			hasPendingStories: () => true,
+			acquireLock: () => ({ acquired: true, release: () => {} }),
+			runSupervisorFn: async () => {
+				supervisorCalls++;
+				return COMPLETE_RESULT;
+			},
+			flipActiveFn: () => {
+				flipCalls++;
+			},
+			readImplementBlockedMarkerFn,
+		};
+
+		try {
+			await runSidecarLoop(loopOpts);
+		} catch (e) {
+			if (e !== AUTO_CHAIN_ESCAPE) throw e;
+		}
+
+		// The supervisor ran once per active cycle (both cycle 1 and cycle 2);
+		// the breaker read fresh on each tick (not cached) is what lets cycle 2
+		// observe the cleared marker and flip active:true again (AC5).
+		expect(supervisorCalls).toBe(2);
+		expect(markerCallCount).toBe(2);
+		expect(flipCalls).toBe(1);
 	});
 });

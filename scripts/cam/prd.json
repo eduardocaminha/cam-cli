@@ -57,7 +57,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "Gate site: runSidecarLoop in src/supervisor/loop.ts, the flipActiveFn auto-chain block (grep for 'US-005: Auto-chain in auto mode' / 'opts.flipActiveFn !== undefined && opts.hasPendingStories'). Inject a readImplementBlockedMarkerFn?: () => ImplementBlockedMarker | null seam (default no-op returning null so existing callers/tests are byte-for-byte unchanged), wired in src/commands/sidecar.ts (which already imports readImplementBlockedMarker + IMPLEMENT_BLOCKED_FILENAME at sidecar.ts:49). Emit through the existing emit/logEvent path (reuse 'sidecar-exit' or a 'meta-loop-dispatch' reason enum; do NOT add a WorkerEventKind). GOTCHA (issue): the auto-chain only fires when flipActiveFn is injected (auto mode); the breaker must be a no-op in default/ci-gated. Tests in test/supervisor/sidecar-loop.test.ts. Patterns: grep scripts/cam/patterns.md for 'finishTerminal wrapper' (CAM-188) and 'meta-loop' for the seam/no-op-default convention."
     },
