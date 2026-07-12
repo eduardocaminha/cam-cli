@@ -1,9 +1,38 @@
 {
   "id": "CAM-287",
   "title": "Adopt Claude Code CLI tier aliases (opus/sonnet/haiku/default/...) as first-class model options + free-text passthrough, so new Anthropic models are available automatically",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
-  "blockedBy": [],
+  "blockedBy": [
+    "CAM-286"
+  ],
   "createdAt": "2026-07-12T13:44:42.056Z",
-  "description": "Auto-detecting new models via GET /v1/models is infeasible for cam: that endpoint needs an Anthropic API key and cam is subscription-only via the claude CLI (no key); the CLI has no headless model-list under subscription auth (only the interactive /model picker + a hardcoded built-in list refreshed by claude update). The realistic, launch-ready mechanism is to use the CLI's TIER ALIASES: opus->latest Opus, sonnet->latest Sonnet, haiku, default (tier-aware), fable, opusplan, sonnet[1m], opus[1m]. Since cam only forwards --model to the CLI, an alias resolves to the current model automatically, so cam auto-tracks new launches with zero detection code and no stale list (today cam hardcodes dated ids like claude-opus-4-8/claude-sonnet-5 across 4 sites that go stale). Change: make MODEL_OPTIONS (src/ui/ConfigScreen.tsx:62-66) offer the aliases as first-class entries (with 'auto-latest of tier' descriptions); add a free-text passthrough so a user can pin a specific dated snapshot or enter an unreleased/preview id; ensure no cam-side validation rejects a value outside MODEL_OPTIONS (readPhaseModel returns the string verbatim, CLI validates at spawn); switch DEFAULTS (src/config/models.ts:50-58) to aliases so fresh projects auto-track; document the trade-off (alias=always-latest vs dated id=pinned/reproducible). Do NOT add an API-key path or a /v1/models poller. blockedBy CAM-286 (reconcile the static dated-id sites first). Refine via /cam-spec."
+  "description": "Auto-detecting new models via GET /v1/models is infeasible for cam: that endpoint needs an Anthropic API key and cam is subscription-only via the claude CLI (no key); the CLI has no headless model-list under subscription auth (only the interactive /model picker + a hardcoded built-in list refreshed by claude update). The realistic, launch-ready mechanism is to use the CLI's TIER ALIASES: opus->latest Opus, sonnet->latest Sonnet, haiku, default (tier-aware), fable, opusplan, sonnet[1m], opus[1m]. Since cam only forwards --model to the CLI, an alias resolves to the current model automatically, so cam auto-tracks new launches with zero detection code and no stale list (today cam hardcodes dated ids like claude-opus-4-8/claude-sonnet-5 across 4 sites that go stale). Change: make MODEL_OPTIONS (src/ui/ConfigScreen.tsx:62-66) offer the aliases as first-class entries (with 'auto-latest of tier' descriptions); add a free-text passthrough so a user can pin a specific dated snapshot or enter an unreleased/preview id; ensure no cam-side validation rejects a value outside MODEL_OPTIONS (readPhaseModel returns the string verbatim, CLI validates at spawn); switch DEFAULTS (src/config/models.ts:50-58) to aliases so fresh projects auto-track; document the trade-off (alias=always-latest vs dated id=pinned/reproducible). Do NOT add an API-key path or a /v1/models poller. blockedBy CAM-286 (reconcile the static dated-id sites first). Refine via /cam-spec.",
+  "spec": {
+    "scope": "Make cam select models by Claude Code CLI tier alias (opus/sonnet/haiku/default/fable/opusplan/sonnet[1m]/opus[1m]) as first-class options, plus a free-text passthrough for pinning a dated snapshot or entering an unreleased id. Because cam only forwards --model to the CLI (which resolves the alias), this auto-tracks new model launches with no detection code, no API key, and no stale list. Blocked by CAM-286 (reconcile the static dated-id sites first). No Anthropic API / GET /v1/models poller is introduced.",
+    "acceptanceCriteria": [
+      "MODEL_OPTIONS (src/ui/ConfigScreen.tsx:62-66) offers the CLI tier aliases as first-class selectable entries (at minimum opus, sonnet, haiku, default; plus fable, opusplan, sonnet[1m], opus[1m]), each with a description noting it auto-resolves to the current latest model of that tier. Kept in sync with the Claude Code model-config docs.",
+      "Free-text passthrough: the config picker provides a 'custom / enter id' path so a user can store an arbitrary model value (a pinned dated snapshot like claude-sonnet-4-5-20250929, or an unreleased/preview id) verbatim in project.toml [models].",
+      "No cam-side validation rejects a model value outside MODEL_OPTIONS: readPhaseModel (src/config/models.ts:81) returns the string verbatim and it is passed as --model; the CLI validates at spawn. A test asserts an alias (e.g. 'sonnet') and a custom id both flow through readPhaseModel -> --model unchanged and are not rejected.",
+      "DEFAULTS (src/config/models.ts:50-58) switch to tier aliases (e.g. orchestrator/planner/auditor/reviewer=opus, implementer/ship=sonnet) so a freshly-initialized project auto-tracks new models; a test asserts the defaults are aliases and resolve through the --model flow.",
+      "The alias-vs-dated trade-off is documented (config picker descriptions and/or cam config help): aliases auto-track the latest of a tier (recommended, always-current) vs a dated id pins a reproducible snapshot; 'default' is tier-aware (varies by subscription).",
+      "bun run typecheck, bun test, bun run check:all all green."
+    ],
+    "gotchas": [
+      "cam is subscription-only via the claude CLI: do NOT add an Anthropic API key path or a GET /v1/models poller. That endpoint needs an API key subscription users lack, and the CLI has no headless model-list. Aliases ARE the mechanism.",
+      "The CLI resolves aliases only on Anthropic/subscription auth; on third-party backends (Bedrock/GCP/Azure) it passes strings through without resolution. Keep cam a pure --model passthrough; do not assume alias resolution for non-Anthropic backends (readBackend).",
+      "blockedBy CAM-286: land CAM-286 first (reconcile the static dated-id sites + strip inert frontmatter + ship). This issue then converts MODEL_OPTIONS/DEFAULTS to aliases + free-text on the reconciled base, superseding CAM-286's dated-id lists; sequencing avoids a same-file rebase conflict on MODEL_OPTIONS/DEFAULTS.",
+      "Keep the alias set aligned with the CLI's documented aliases; these are far more stable than dated ids but still verify against the Claude Code model-config docs when adding new tiers."
+    ],
+    "domainTerms": [
+      "model tier alias"
+    ]
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 2,
+    "riskReduction": 2,
+    "jobSize": 2
+  },
+  "type": "feat"
 }
