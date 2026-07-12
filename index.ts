@@ -2362,14 +2362,65 @@ export function dispatchTriage(deps?: TriageDispatchDeps): number {
 }
 
 /**
+ * Single source of truth for the CLI's command set (US-001, CAM-278).
+ * Every command dispatched by `main()` — including the internal/hidden ones
+ * spawned by `cam run` (sidecar, orch-recycle-watch, sidecar-liveness-watch,
+ * retry-monitor) — MUST be listed here exactly once. `HELP_REGISTRY` and the
+ * dispatch `switch` below are both typed against `Command`, so adding a
+ * command to `COMMANDS` without a matching `HELP_REGISTRY` entry or switch
+ * case now fails `bun run typecheck` instead of silently re-opening the
+ * CAM-211 `--help` footgun.
+ */
+const COMMANDS = [
+	'init',
+	'setup',
+	'config',
+	'run',
+	'plan',
+	'spec',
+	'issue',
+	'next',
+	'review',
+	'ship',
+	'tag',
+	'dashboard',
+	'status',
+	'orch-budget',
+	'stop',
+	'drain',
+	'resume',
+	'claude',
+	'sidecar',
+	'orch-recycle-watch',
+	'sidecar-liveness-watch',
+	'retry-monitor',
+	'journal',
+	'patterns',
+	'triage',
+	'suggestions',
+] as const;
+
+type Command = (typeof COMMANDS)[number];
+
+/**
+ * Type guard narrowing a raw argv token to `Command`. Used in `main()` to
+ * narrow `argv[2]` BEFORE the dispatch switch, so the "unknown command"
+ * branch can live ahead of the switch instead of in its `default:` case.
+ */
+function isCommand(value: string): value is Command {
+	return (COMMANDS as readonly string[]).includes(value);
+}
+
+/**
  * Central --help/-h registry (US-001, CAM-211). Maps every registered
  * command name to its help text. This is the single source of truth the
  * dispatch guard below reads from: a command showing up in a `switch (command)`
  * case but missing here means `--help` falls through un-guarded for it, so
  * every case (including the internal ones spawned by `cam run`) MUST have an
- * entry.
+ * entry. Retyped to `Record<Command, string>` (US-001, CAM-278): a `Command`
+ * added to `COMMANDS` without an entry here now fails typecheck.
  */
-const HELP_REGISTRY: Record<string, string> = {
+const HELP_REGISTRY: Record<Command, string> = {
 	init: INIT_HELP,
 	setup: INIT_HELP,
 	config: CONFIG_HELP,
@@ -2431,6 +2482,15 @@ async function main(argv: string[]): Promise<number> {
 		// convention applies to human-facing screens, not to version probes.
 		process.stdout.write(`cam ${CAM_VERSION}\n`);
 		return 0;
+	}
+
+	// Narrow argv[2] to Command BEFORE the dispatch switch (US-001, CAM-278).
+	// This is where "unknown command" is now reported — moved ahead of the
+	// switch's `default:`, which is exhaustiveness-only from here on.
+	if (!isCommand(command)) {
+		printError(`unknown command: ${command}`);
+		printFatalHint('run `cam help` to see the available commands');
+		return 1;
 	}
 
 	// Central --help/-h short-circuit (US-001, CAM-211): runs BEFORE the
@@ -2780,10 +2840,16 @@ async function main(argv: string[]): Promise<number> {
 			}
 			return dispatchSuggestions(parsed);
 		}
-		default:
-			printError(`unknown command: ${command}`);
-			printFatalHint('run `cam help` to see the available commands');
-			return 1;
+		default: {
+			// Exhaustiveness check (US-001, CAM-278): `command` is `Command`
+			// here, narrowed by `isCommand` above. If every case above covers
+			// all of `COMMANDS`, TS narrows `command` to `never` in this
+			// branch. Adding a member to `COMMANDS` without a matching case
+			// widens `command` back to a non-`never` type here, so this
+			// assignment fails `bun run typecheck`. Unreachable at runtime.
+			const _never: never = command;
+			throw new Error(`unhandled command: ${String(_never)}`);
+		}
 	}
 }
 
@@ -2796,5 +2862,6 @@ if (import.meta.main) {
 	process.exit(exitCode);
 }
 
-export { main, HELP_REGISTRY };
+export { main, HELP_REGISTRY, COMMANDS };
+export type { Command };
 
