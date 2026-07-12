@@ -1,0 +1,21 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Central --help/-h short-circuit guard at the dispatch layer covering every command"
+  },
+  "branchName": "cam/issue-211",
+  "timestamp": "2026-07-12T06:26:20Z",
+  "createdFiles": [
+    "test/help-registry.test.ts"
+  ],
+  "modifiedFiles": [
+    "index.ts",
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 added `HELP_REGISTRY: Record<string,string>` and `isHelpRequested(command, tail)` (both exported from index.ts) right before `switch (command)` in main(). Any NEW command case added to the switch in a future story MUST also get a HELP_REGISTRY entry or --help will fall through un-guarded into its body for that command. isHelpRequested treats --help/-h as matching anywhere in tail for every command except 'claude' (leading-only, to preserve arg-forwarding). US-002 (next story, requires US-001) adds the top-level HELP 'Internal' section listing sidecar/orch-recycle-watch/sidecar-liveness-watch/orch-budget plus --file-local doc for ISSUE_HELP -- it does NOT need to touch the guard/registry mechanism itself, just the human-facing top-level HELP text and a couple of *_HELP bodies. The pre-existing per-command `if (parsed.help)` checks inside each switch case are now dead code for the --help path (guard already returned 0) but were deliberately left in place (Surgical Changes); do not treat their presence as a bug.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
