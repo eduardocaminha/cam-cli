@@ -750,6 +750,86 @@ const RESUME_HELP = renderHelp({
 	],
 });
 
+const CONFIG_HELP =
+	'Usage: cam config [--show]\n' +
+	'  Interactive wizard to set model per phase and backend\n' +
+	'  --show  Print current config without prompting (US-008)\n';
+
+const TRIAGE_HELP =
+	'Usage: cam triage\n' +
+	'  Rank {specified,open} issues from main using WSJF topo-sort.\n' +
+	'  Writes updated ranks to main (off-main commit-tree; no checkout).\n' +
+	'  No-op when ranks are unchanged (idempotent).\n';
+
+// Internal commands (US-001, CAM-211): not listed in top-level HELP, but each
+// needs a real help entry so the central --help/-h guard below can short-
+// circuit them without ever running their body (e.g. `cam sidecar --help`
+// must never boot the long-lived daemon).
+
+const SIDECAR_HELP = renderHelp({
+	title: 'cam sidecar',
+	tagline: 'Internal command — not for direct use',
+	usage: 'cam sidecar',
+	sections: [
+		{
+			heading: 'Behaviour',
+			body:
+				'Spawned as a detached background process by `cam run`. Polls the\n' +
+				'`active` flag in .claude/cam-loop.local.md and drives the supervisor\n' +
+				'loop (runSupervisor) when active. Loops until killed by `cam run`\'s\n' +
+				'cleanup. Not listed in top-level `cam help`.',
+		},
+	],
+});
+
+const ORCH_RECYCLE_WATCH_HELP = renderHelp({
+	title: 'cam orch-recycle-watch',
+	tagline: 'Internal command — not for direct use',
+	usage: 'cam orch-recycle-watch',
+	sections: [
+		{
+			heading: 'Behaviour',
+			body:
+				'Spawned as a detached background process by `cam run`. Polls for the\n' +
+				'orchestrator recycle marker and sends SIGTERM to the orchestrator\n' +
+				'claude PID when armed (consume-once). Not listed in top-level\n' +
+				'`cam help`.',
+		},
+	],
+});
+
+const SIDECAR_LIVENESS_WATCH_HELP = renderHelp({
+	title: 'cam sidecar-liveness-watch',
+	tagline: 'Internal command — not for direct use',
+	usage: 'cam sidecar-liveness-watch',
+	sections: [
+		{
+			heading: 'Behaviour',
+			body:
+				'Spawned by `cam run` only in container worker_isolation mode. Detects\n' +
+				'a dead container sidecar, attempts a bounded respawn, and escalates via\n' +
+				'the .cam-sidecar-stalled.json marker on exhaustion. Not listed in\n' +
+				'top-level `cam help`.',
+		},
+	],
+});
+
+const ORCH_BUDGET_HELP = renderHelp({
+	title: 'cam orch-budget',
+	tagline: 'Internal command — not for direct use',
+	usage: 'cam orch-budget',
+	sections: [
+		{
+			heading: 'Behaviour',
+			body:
+				'Read-only, no flags. Prints a single machine-parseable line\n' +
+				'(CAM_ORCH_BUDGET=<spend>/<threshold> over=<true|false>) and always\n' +
+				'exits 0. Invoked each cycle by the orchestrator agent. Not listed in\n' +
+				'top-level `cam help`.',
+		},
+	],
+});
+
 // --- Argv parsers ----------------------------------------------------------
 
 /**
@@ -1968,6 +2048,58 @@ export function dispatchTriage(deps?: TriageDispatchDeps): number {
 	return result.ok ? 0 : 1;
 }
 
+/**
+ * Central --help/-h registry (US-001, CAM-211). Maps every registered
+ * command name to its help text. This is the single source of truth the
+ * dispatch guard below reads from: a command showing up in a `switch (command)`
+ * case but missing here means `--help` falls through un-guarded for it, so
+ * every case (including the internal ones spawned by `cam run`) MUST have an
+ * entry.
+ */
+const HELP_REGISTRY: Record<string, string> = {
+	init: INIT_HELP,
+	setup: INIT_HELP,
+	config: CONFIG_HELP,
+	run: RUN_HELP,
+	plan: PLAN_HELP,
+	spec: SPEC_HELP,
+	issue: ISSUE_HELP,
+	next: NEXT_HELP,
+	review: REVIEW_HELP,
+	ship: SHIP_HELP,
+	tag: TAG_HELP,
+	dashboard: DASHBOARD_HELP,
+	status: STATUS_HELP,
+	'orch-budget': ORCH_BUDGET_HELP,
+	stop: STOP_HELP,
+	drain: DRAIN_HELP,
+	resume: RESUME_HELP,
+	claude: CLAUDE_HELP,
+	sidecar: SIDECAR_HELP,
+	'orch-recycle-watch': ORCH_RECYCLE_WATCH_HELP,
+	'sidecar-liveness-watch': SIDECAR_LIVENESS_WATCH_HELP,
+	'retry-monitor': RETRY_MONITOR_HELP,
+	journal: JOURNAL_HELP,
+	patterns: PATTERNS_HELP,
+	triage: TRIAGE_HELP,
+};
+
+/**
+ * Decide whether a `--help`/`-h` in `tail` (argv after the command name)
+ * short-circuits the given command. Every command matches anywhere-in-tail
+ * (mirrors the per-command parsers this guard supersedes), EXCEPT `claude`:
+ * `cam claude` forwards all args verbatim to the child claude process and
+ * only treats a LEADING --help/-h as its own (see parseClaudeArgs in
+ * src/commands/claude.ts) — a blanket anywhere-match here would over-capture
+ * a `--help` the operator meant to forward to claude itself (US-001 AC5).
+ */
+export function isHelpRequested(command: string, tail: string[]): boolean {
+	if (command === 'claude') {
+		return tail[0] === '--help' || tail[0] === '-h';
+	}
+	return tail.includes('--help') || tail.includes('-h');
+}
+
 async function main(argv: string[]): Promise<number> {
 	const command = argv[2];
 	if (!command || command === 'help' || command === '--help' || command === '-h') {
@@ -1985,6 +2117,19 @@ async function main(argv: string[]): Promise<number> {
 		// convention applies to human-facing screens, not to version probes.
 		process.stdout.write(`cam ${CAM_VERSION}\n`);
 		return 0;
+	}
+
+	// Central --help/-h short-circuit (US-001, CAM-211): runs BEFORE the
+	// command switch body, for every registered command. This is the fix for
+	// the CAM-211 footgun — `cam sidecar --help` (and the other internal
+	// commands) previously ran straight into their body with zero guard.
+	const dispatchTail = argv.slice(3);
+	if (isHelpRequested(command, dispatchTail)) {
+		const helpText = HELP_REGISTRY[command];
+		if (helpText !== undefined) {
+			process.stdout.write(helpText);
+			return 0;
+		}
 	}
 
 	switch (command) {
@@ -2032,11 +2177,7 @@ async function main(argv: string[]): Promise<number> {
 		case 'config': {
 			const tail = argv.slice(3);
 			if (tail.includes('--help') || tail.includes('-h')) {
-				process.stdout.write(
-					'Usage: cam config [--show]\n' +
-					'  Interactive wizard to set model per phase and backend\n' +
-					'  --show  Print current config without prompting (US-008)\n',
-				);
+				process.stdout.write(CONFIG_HELP);
 				return 0;
 			}
 			const showFlag = tail.includes('--show');
@@ -2306,12 +2447,7 @@ async function main(argv: string[]): Promise<number> {
 		case 'triage': {
 			const tail = argv.slice(3);
 			if (tail.includes('--help') || tail.includes('-h')) {
-				process.stdout.write(
-					'Usage: cam triage\n' +
-					'  Rank {specified,open} issues from main using WSJF topo-sort.\n' +
-					'  Writes updated ranks to main (off-main commit-tree; no checkout).\n' +
-					'  No-op when ranks are unchanged (idempotent).\n',
-				);
+				process.stdout.write(TRIAGE_HELP);
 				return 0;
 			}
 			if (tail.length > 0) {
@@ -2337,5 +2473,5 @@ if (import.meta.main) {
 	process.exit(exitCode);
 }
 
-export { main };
+export { main, HELP_REGISTRY };
 
