@@ -340,6 +340,28 @@ describe('runTriage: AC#1 gate-before-write ordering', () => {
 		expect(payload.rank).toBe(1);
 	});
 
+	test('(US-002 CAM-284) rank change bumps updatedAt via the injected clock, beyond original createdAt', () => {
+		const calls: SpawnCall[] = [];
+		const FIXED_TS = '2026-07-12T00:00:00.000Z';
+
+		runTriage({
+			cwd: '/fake/repo',
+			spawnFn: makeOffMainSpawnFn([ISSUE_CAM_1], calls),
+			writeFile: () => {},
+			writeStdout: () => {},
+			clock: () => FIXED_TS,
+		});
+
+		const hashObjectCall = calls.find((c) => c.args.join(' ').includes('hash-object'));
+		expect(hashObjectCall).toBeDefined();
+
+		const payload = JSON.parse(hashObjectCall!.options.input ?? '{}') as IssueEntry;
+		expect(payload.updatedAt).toBe(FIXED_TS);
+		expect(new Date(payload.updatedAt).getTime()).toBeGreaterThan(
+			new Date(ISSUE_CAM_1.createdAt).getTime(),
+		);
+	});
+
 	test('(US-004) no spawn call arg contains issues.local.json', () => {
 		const calls: SpawnCall[] = [];
 

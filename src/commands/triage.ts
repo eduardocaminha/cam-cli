@@ -68,8 +68,11 @@ export interface RunTriageOptions {
 	cwd: string;
 	/** Injectable spawnSync for all git subprocess calls. */
 	spawnFn: SpawnFn;
-	/** Injectable clock -- returns ISO 8601 timestamp.  Not read by runTriage today;
-	 *  optional so callers are not forced to inject dead wiring.
+	/**
+	 * Injectable clock -- returns ISO 8601 timestamp. Used to stamp updatedAt
+	 * on every issue whose rank changes. Optional so callers are not forced to
+	 * inject it; when absent, updatedAt is left unchanged on ranked entries.
+	 * The CLI boundary (dispatchTriage, index.ts) always supplies a real clock.
 	 */
 	clock?: ClockFn;
 	/** Injectable file writer (retained for interface compat; unused after commitTreeToMain cutover). */
@@ -202,6 +205,7 @@ function computeDiffTag(priorRank: number | undefined, newRank: number): DiffTag
 function computeRankDiff(
 	ranked: RankedEntry[],
 	issueByIdMap: Map<string, IssueEntry>,
+	clock: ClockFn | undefined,
 ): { changed: number; diffLines: string[]; changedFiles: FileWrite[] } {
 	let changed = 0;
 	const diffLines: string[] = [];
@@ -213,7 +217,11 @@ function computeRankDiff(
 		if (tag !== 'unchanged') {
 			changed++;
 			if (issue !== undefined) {
-				const updated: IssueEntry = { ...issue, rank: entry.rank };
+				const updated: IssueEntry = {
+					...issue,
+					rank: entry.rank,
+					...(clock !== undefined ? { updatedAt: clock() } : {}),
+				};
 				changedFiles.push({
 					path: issueFilePath(entry.id),
 					content: JSON.stringify(updated, null, 2) + '\n',
@@ -256,7 +264,7 @@ function printTriageOutput(
  * RunTriageOptions so unit tests never shell out to a real git binary.
  */
 export function runTriage(options: RunTriageOptions): TriageResult {
-	const { cwd, spawnFn } = options;
+	const { cwd, spawnFn, clock } = options;
 	const writeStdout = options.writeStdout ?? ((line: string) => { process.stdout.write(line); });
 
 	// Guard 0a-0c: abort before any mutation.
@@ -277,7 +285,7 @@ export function runTriage(options: RunTriageOptions): TriageResult {
 	// 3. Compute dense ranks and diff vs prior ranks.
 	const { ranked, warnings: rankWarnings } = rankIssues(allIssues);
 	const issueByIdMap = new Map<string, IssueEntry>(allIssues.map((e) => [e.id, e]));
-	const { changed, diffLines, changedFiles } = computeRankDiff(ranked, issueByIdMap);
+	const { changed, diffLines, changedFiles } = computeRankDiff(ranked, issueByIdMap, clock);
 
 	// Unified warnings list (gate warnings first, then rank warnings): both the
 	// no-op path and the commit path below print this SAME list, so neither

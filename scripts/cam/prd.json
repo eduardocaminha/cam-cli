@@ -43,7 +43,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Files: src/commands/issue-specify.ts (destructure `clock` in abandon/close/demote/merge which already declare it in options but only destructure { cwd, id, spawnFn } today; specify already uses clock for emitStagePromoted), src/commands/triage.ts (thread the optional clock into computeRankDiff; give it a default like () => new Date().toISOString() only at the CLI boundary, inject a deterministic clock in tests). Each mutated IssueEntry is built via { ...entry, <fields> }; add updatedAt: clock() to that spread so the stamp overrides the inherited (stale) value. mergeIssueOnMain builds files via buildMergeFiles(source, target, ...) -- stamp both mutatedSource and mutatedTarget. Tests: test/commands/issue-specify.test.ts, test/triage.test.ts (+ test/integration/triage-*.test.ts). Do NOT trust the writer list as exhaustive per the issue gotcha: grep for issueFilePath / JSON.stringify(mutated / { ...entry / { ...issue writes across src/ to confirm no other mutation path exists. patterns.md keywords: 'commitTreeToMain', 'triage'."
     },
