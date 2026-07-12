@@ -1,0 +1,27 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Reconcile DEFAULTS map and config-picker MODEL_OPTIONS to the effective model ids"
+  },
+  "branchName": "cam/issue-286",
+  "timestamp": "2026-07-12T00:00:00Z",
+  "createdFiles": [
+    "test/ui/config-screen.test.tsx"
+  ],
+  "modifiedFiles": [
+    "src/config/models.ts",
+    "src/ui/ConfigScreen.tsx",
+    "test/config/models.test.ts",
+    "test/supervisor/worker-argv-model.test.ts",
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 reconciled the two hardcoded model-id lists: DEFAULTS.implementer (src/config/models.ts) is now 'claude-sonnet-5' (matches project.toml), and MODEL_OPTIONS (src/ui/ConfigScreen.tsx) is now exported and includes a 'claude-sonnet-5' entry alongside the pre-existing 'claude-sonnet-4-6' entry (kept, since 'ship' still defaults to it). Added two drift-guard tests in test/config/models.test.ts: (1) every non-'backend' DEFAULTS value must be a member of MODEL_OPTIONS's value set, (2) for each Phase, readPhaseModel against the REAL scripts/cam/project.toml (via loadConfig, not a tmp fixture) must equal the configured/default value and be a known model. US-002/US-003 (remaining, per prd.json) deal with the frontmatter model: lines in agent files and the ship model source -- those are a THIRD and FOURTH hardcoded-model-adjacent site this story deliberately did not touch (scope was only DEFAULTS + MODEL_OPTIONS per the story's acceptance criteria); do not assume those sites were reconciled by this story. Gotcha carried forward: before declaring any future model-default change complete, grep -rn the exact old literal across test/ -- test/supervisor/worker-argv-model.test.ts had an unrelated hardcoded expect(DEFAULTS.implementer).toBe('claude-sonnet-4-6') that this story had to catch and fix separately from the two named files in the story's notes.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "This story reconciles cam-cli's own internal hardcoded model-id lists (DEFAULTS, MODEL_OPTIONS) against its own project.toml; no external library API surface was exercised beyond existing ink/ink-testing-library patterns already used elsewhere in the repo."
+    }
+  ]
+}
