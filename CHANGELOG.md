@@ -6,6 +6,14 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.150.0] - 2026-07-12
+
+### Added
+
+- US-003 - Expose updatedAt in cam issue list --json
+- US-002 - Stamp updatedAt on every issue-mutation writer
+- US-001 - Add required updatedAt field: schema + type + creation stamp + backfill
+
 ## [0.149.0] - 2026-07-12
 
 ### Added
