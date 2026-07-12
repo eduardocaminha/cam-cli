@@ -1,0 +1,12 @@
+{
+  "id": "CAM-277",
+  "title": "The new operator-facing [loop] orch_context_window key (default 200000) is docu…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-12T05:56:29.553Z",
+  "description": "The new operator-facing [loop] orch_context_window key (default 200000) is documented in ADR-0028 and the context-window.ts JSDoc but has no commented example line in project.toml alongside meta_loop/worker_isolation. Consider a commented sample to aid discoverability. Non-blocking: PRD explicitly makes setting it optional.\n\nSource: cam/issue-172\nReview round: 1\nLocation: scripts/cam/project.toml:18\n\nsuggestion-fingerprint: d54f68293715",
+  "derivedFrom": [
+    "CAM-172"
+  ]
+}
