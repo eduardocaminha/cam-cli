@@ -393,14 +393,32 @@ describe('runIssueList — --json machine mode', () => {
 		expect(parsed).toEqual({
 			counts: { idea: 1, specified: 1, planned: 0 },
 			plannable: [
-				{ id: 'CAM-1', title: 'Test issue', rank: null, createdAt: '2026-01-01T00:00:00Z' },
+				{
+					id: 'CAM-1',
+					title: 'Test issue',
+					rank: null,
+					createdAt: '2026-01-01T00:00:00Z',
+					updatedAt: '2026-01-01T00:00:00Z',
+				},
 			],
 			byStage: {
 				idea: [
-					{ id: 'CAM-2', title: 'Test issue', rank: null, createdAt: '2026-01-01T00:00:00Z' },
+					{
+						id: 'CAM-2',
+						title: 'Test issue',
+						rank: null,
+						createdAt: '2026-01-01T00:00:00Z',
+						updatedAt: '2026-01-01T00:00:00Z',
+					},
 				],
 				specified: [
-					{ id: 'CAM-1', title: 'Test issue', rank: null, createdAt: '2026-01-01T00:00:00Z' },
+					{
+						id: 'CAM-1',
+						title: 'Test issue',
+						rank: null,
+						createdAt: '2026-01-01T00:00:00Z',
+						updatedAt: '2026-01-01T00:00:00Z',
+					},
 				],
 				planned: [],
 			},
@@ -447,7 +465,13 @@ describe('runIssueList — --json machine mode', () => {
 		const parsed = JSON.parse(plain());
 		expect(parsed.counts.shipped).toBe(1);
 		expect(parsed.byStage.shipped).toEqual([
-			{ id: 'CAM-1', title: 'Test issue', rank: null, createdAt: '2026-01-01T00:00:00Z' },
+			{
+				id: 'CAM-1',
+				title: 'Test issue',
+				rank: null,
+				createdAt: '2026-01-01T00:00:00Z',
+				updatedAt: '2026-01-01T00:00:00Z',
+			},
 		]);
 	});
 

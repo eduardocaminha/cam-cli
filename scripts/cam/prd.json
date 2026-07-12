@@ -59,7 +59,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Files: src/issues/list.ts (BacklogJsonRow interface :158-164, toJsonRow :189-191 -- add updatedAt right beside createdAt which CAM-281 already added), test/issues/list.test.ts (makeIssue base + the exact-row literal near :349), test/issue-list.test.ts. Pure additive output; no writer or schema change here. Independent of US-002 but must follow US-001 (field must exist on IssueEntry). patterns.md keyword: 'list --json'."
     }
