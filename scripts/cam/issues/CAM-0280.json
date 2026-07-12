@@ -1,12 +1,36 @@
 {
   "id": "CAM-280",
   "title": "DemoteIssueOnMainOptions keeps the vestigial `writeFile?` field (copied from th…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-12T11:41:15.068Z",
   "description": "DemoteIssueOnMainOptions keeps the vestigial `writeFile?` field (copied from the close/abandon siblings) even though the commitTreeToMain ref-only path never invokes it. It is a harmless interface-compat carryover, consistent with its siblings, so no action required; a future cleanup could drop it across all four writers together.\n\nSource: cam/issue-206\nReview round: 1\nLocation: src/commands/issue-specify.ts:588\n\nsuggestion-fingerprint: 14dcde36bac0",
   "derivedFrom": [
     "CAM-206"
-  ]
+  ],
+  "spec": {
+    "scope": "Drop the vestigial writeFile? option field from all FIVE on-main issue-mutation writer Options interfaces in src/commands/issue-specify.ts (the suggestion undercounted as four; merge was missed), and remove the three now-obsolete test injections that only asserted it was never called. Dead-code cleanup (prod + test), no behavior change; all writers keep committing via the commitTreeToMain ref-only path.",
+    "acceptanceCriteria": [
+      "writeFile? is removed from all five Options interfaces in src/commands/issue-specify.ts: SpecifyIssueOnMainOptions (:93), AbandonIssueOnMainOptions (:201), MergeIssueOnMainOptions (:242), CloseIssueOnMainOptions (:518), DemoteIssueOnMainOptions (:587). No writer body referenced the field (it was already dead after the commitTreeToMain cutover).",
+      "The three obsolete tests in test/commands/issue-specify.test.ts that injected a writeFile recorder purely to assert writtenFiles has length 0 are removed/adjusted so the suite compiles against the narrowed types: the specify test (:439 injection, :448 assertion), the abandon test (:873, :879), and the demote test (:991, :997). Remove the injected recorder and its writtenFiles length assertion.",
+      "No production change beyond the interface lines: the production wrappers defaultCloseIssueFn/defaultAbandonIssueFn/defaultDemoteIssueFn (src/commands/post-merge.ts:365/383/402) already pass only cwd/id/spawnFn/clock and never supplied writeFile.",
+      "No behavior change: every writer still commits via commitTreeToMain ref-only; the remaining commit-to-main assertions in those tests still pass and continue to cover the ref-only invariant. No replacement ref-only test is added (the writeFile-never-called assertion was tautological).",
+      "bun run typecheck, bun test, bun run check:all all green."
+    ],
+    "gotchas": [
+      "Five independent copy-pasted declarations, no shared base (no `extends`): removal is FIVE separate edits, one per interface line, not one.",
+      "Removing the field narrows the types, so the three test call sites that pass writeFile WILL NOT COMPILE unless their injected recorder AND writtenFiles length-0 assertion are removed in the SAME change. Do both together.",
+      "Do NOT add a replacement ref-only/working-tree test: the removed assertions were tautological; the real invariant (writer commits to main, does not dirty the working tree) is already covered by the existing commit-to-main assertions in the same tests.",
+      "mergeIssueOnMain and closeIssueOnMain tests never passed writeFile, so only three test sites need touching; do not hunt for a fourth/fifth test injection."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 1,
+    "timeCriticality": 1,
+    "riskReduction": 1,
+    "jobSize": 1
+  },
+  "type": "chore"
 }
