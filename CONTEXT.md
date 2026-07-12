@@ -217,3 +217,12 @@ A machine-written handoff (schemaVersion 1, reason 'context-backstop') the watch
 
 **authored handoff**:
 A handoff written by the orchestrator agent itself (rich narrative context), as opposed to the deterministic minimal handoff written by the watcher as a fallback.
+
+**--help short-circuit guard**:
+A single check at the dispatch/arg-parse layer that, when --help or -h is present, prints the command's usage and exits 0 before any command body (including daemon starts or state mutations) executes.
+
+**internal command**:
+A cam subcommand not meant as a user-facing entry point (e.g. sidecar), invoked by the harness rather than typed by the operator. Listed under an Internal section in cam --help for discoverability, not hidden.
+
+**file-local filer**:
+cam issue --file-local: the deterministic commit-to-main issue filer the orchestrator uses to record backlog without touching the working branch.
