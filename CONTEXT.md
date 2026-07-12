@@ -250,3 +250,6 @@ The issues selectPlannableIssue will pick for /cam-plan (stage:specified, open).
 
 **boot-surfaced marker**:
 A durable .claude/.cam-*.json file (ship-stalled, plan-escalated, plan-preflight-failed, implement-blocked, post-merge-stalled, sidecar-stalled) that a deterministic recovery/terminal path writes to record a non-happy outcome. The orchestrator reads it at boot and surfaces it as an opening blocker line (read-only); it never deletes the marker itself. Each marker is cleared only by its own specific deterministic path (e.g. implement-blocked by the next re-armed implement dispatch for the same issue; plan-preflight-failed by the next non-preflight-failed plan run; plan-escalated by the next converging plan run).
+
+**suggestions pen**:
+An append-only, on-main-committed scripts/cam/suggestions.jsonl file where reviewer SUGGESTION findings accumulate (one JSONL line each, deduped by the suggestion-fingerprint) instead of being auto-filed as stage:idea issues. It is triaged in batch via the cam suggestions CLI (list/promote/dismiss); a suggestion becomes a real issue only when explicitly promoted.
