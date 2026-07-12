@@ -268,6 +268,15 @@ test('high-occupancy reader with NO handoff present: no marker armed, killFn not
 		contextWindow: CONTEXT_WINDOW,
 		backstopFraction: ORCH_CONTEXT_BACKSTOP_FRACTION,
 		handoffExistsFn: () => false,
+		// US-002/CAM-172: over-threshold-without-handoff now also signals the
+		// orchestrator pane. Explicitly stub every seam so this tick NEVER
+		// touches a real tmux socket (this file's header invariant) — without
+		// resolveOrchPaneIdFn/signalPaneFn overrides, the production default
+		// would resolve the REAL project session name and could reach a live
+		// `cam run` orchestrator pane if one happens to be open on this repo.
+		resolveOrchPaneIdFn: () => null,
+		signalPaneFn: () => {},
+		writeMinimalHandoffFn: () => {},
 	});
 
 	// Backstop must NOT have fired: no handoff present, even though over threshold.
