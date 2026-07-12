@@ -1,0 +1,9 @@
+{
+  "id": "CAM-282",
+  "title": "implement supervisor writes a false-positive .cam-implement-blocked.json on the worker-report-fallback SUCCESS path (orphans across cycles, wedges next plan preflight)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-12T12:18:14.394Z",
+  "description": "On the worker-report-fallback path the implement supervisor writes .cam-implement-blocked.json even when the outcome is SUCCESS: the marker's reason is a SUCCESS confirmation, not a real block. Two harms: (1) misleading — a 'blocked' marker carrying a SUCCESS reason; (2) it orphans across cycles — once the issue ships/closes, no re-armed implement dispatch ever clears it, so the stale marker dirties the clean tree and wedges the NEXT plan preflight (lived twice: CAM-211 wrote it benign, then it blocked CAM-206's first plan dispatch until manually removed). Fix direction: do not write the marker on a SUCCESS outcome; and/or an orphaned marker for a closed issue must not dirty clean-tree / block a preflight. Refine via /cam-spec. Distinct from CAM-265 (which is only cosmetic doc dedup of the marker warning paragraphs)."
+}
