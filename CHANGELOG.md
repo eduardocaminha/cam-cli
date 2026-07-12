@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.149.0] - 2026-07-12
+
+### Added
+
+- US-001 - Emit createdAt on cam issue list --json rows
+
 ## [0.148.0] - 2026-07-12
 
 ### Added
