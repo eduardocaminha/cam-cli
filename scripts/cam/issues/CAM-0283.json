@@ -1,9 +1,36 @@
 {
   "id": "CAM-283",
   "title": "cam init does not scaffold the [loop] section at all (meta_loop/worker_isolation/orch_context_window absent + undiscoverable)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-12T12:28:35.893Z",
-  "description": "cam init (setup.ts:661-673, mergeIntoConfig) emits no [loop] section whatsoever: an operator who runs cam init gets no meta_loop, worker_isolation, or orch_context_window in project.toml and no hint these keys exist. They are read-with-defaults at runtime only (models.ts readMetaLoop/readWorkerIsolation/readOrchContextWindow). The real discoverability gap is bigger than a comment. Architectural blocker: there is NO project.toml template file (generated programmatically) and the TOML serializer stringifyToml (toml.ts:68-96) cannot emit # comments. Fix direction (pick during spec): (i) add comment support to the serializer, (ii) migrate project.toml to a template file that carries commented examples, or (iii) post-write append a commented [loop] block. Should scaffold the [loop] keys (or commented examples) so operators discover meta_loop/worker_isolation/orch_context_window. Split off from CAM-277 (which only adds a commented example to cam-cli's own dogfood project.toml). Refine via /cam-spec."
+  "description": "cam init (setup.ts:661-673, mergeIntoConfig) emits no [loop] section whatsoever: an operator who runs cam init gets no meta_loop, worker_isolation, or orch_context_window in project.toml and no hint these keys exist. They are read-with-defaults at runtime only (models.ts readMetaLoop/readWorkerIsolation/readOrchContextWindow). The real discoverability gap is bigger than a comment. Architectural blocker: there is NO project.toml template file (generated programmatically) and the TOML serializer stringifyToml (toml.ts:68-96) cannot emit # comments. Fix direction (pick during spec): (i) add comment support to the serializer, (ii) migrate project.toml to a template file that carries commented examples, or (iii) post-write append a commented [loop] block. Should scaffold the [loop] keys (or commented examples) so operators discover meta_loop/worker_isolation/orch_context_window. Split off from CAM-277 (which only adds a commented example to cam-cli's own dogfood project.toml). Refine via /cam-spec.",
+  "spec": {
+    "scope": "Make cam init scaffold a discoverable [loop] section in project.toml via commented examples. Extend the TOML serializer (stringifyToml) to emit comments (backward-compatible), ensure the parser ignores comment lines, and have cam init emit a [loop] section with commented example lines for meta_loop, worker_isolation, and orch_context_window (accepted values + defaults), WITHOUT pinning active values so runtime read-with-default is unchanged. Scope is the cam init scaffold only; cam-cli's own project.toml is CAM-277.",
+    "acceptanceCriteria": [
+      "stringifyToml (src/config/toml.ts:68-96) gains comment-emission support (comment-only lines under a section header, and/or inline), fully backward-compatible: when no comments are supplied the output is byte-identical to today and existing serializer tests pass unchanged. Covered by a new serializer test.",
+      "The TOML parser (src/config/toml.ts parse path) ignores `#` comment lines: parsing a project.toml that contains commented [loop] examples yields the same config object as one without them. If the parser does not already skip comments, add that support. Covered by a test.",
+      "cam init (src/commands/setup.ts project.toml generation, ~661-673) emits a [loop] section containing COMMENTED example lines for meta_loop (accepted: auto | observe | off), worker_isolation (accepted: container | host), and orch_context_window (default 200000), consistent with readMetaLoop (src/config/models.ts:241), readWorkerIsolation (:306), and readOrchContextWindow (:343-357, default DEFAULT_ORCH_CONTEXT_WINDOW=200000 at :324).",
+      "The [loop] keys are COMMENTED examples, not active/pinned keys: a freshly-scaffolded project.toml still resolves meta_loop/worker_isolation/orch_context_window from their code defaults (the read-with-default path is unchanged). A test asserts a fresh scaffold parses and the three readers return their defaults.",
+      "Round-trip: parseToml(stringifyToml(config, comments)) equals the config object (comments are non-semantic). Covered by a test.",
+      "bun run typecheck, bun test, bun run check:all all green."
+    ],
+    "gotchas": [
+      "stringifyToml is used by mergeIntoConfig for ALL project.toml writes; the comment feature MUST be backward-compatible (no comment output unless requested) or every scaffolded file and existing test changes.",
+      "CRITICAL: the commented keys must NOT be active keys. Emitting `meta_loop = \"observe\"` uncommented would pin the value and defeat the read-with-default path; emit comment-only lines so src/config/models.ts still governs the effective value.",
+      "CRITICAL: a scaffolded file with comments must PARSE. Verify the TOML parser skips `#` lines; if it does not, making it comment-tolerant is part of this work (else cam init produces an unparseable project.toml).",
+      "Keep the accepted-value enums in the comments in sync with the readers (auto|observe|off; container|host); do not invent values.",
+      "Do NOT introduce a separate project.toml template file: the file is generated programmatically via mergeIntoConfig; extend the serializer per the chosen approach.",
+      "Related but not blocking: CAM-277 adds the same commented examples to cam-cli's OWN scripts/cam/project.toml (different file); this issue is the init scaffold for downstream projects."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 1,
+    "riskReduction": 1,
+    "jobSize": 3
+  },
+  "type": "feat"
 }
