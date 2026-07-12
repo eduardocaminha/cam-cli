@@ -1,18 +1,20 @@
 // src/supervisor/suggestion-followups.ts
 //
 // Pure helpers (US-002, CAM-189) for turning reviewer SUGGESTION findings
-// into deterministic, idempotent follow-up issues:
+// into deterministic, idempotent follow-ups:
 //   1. fingerprintFinding: stable short hash of a finding's normalized
 //      file/line/text, used as the dedup key.
-//   2. buildFollowUpIssue: title + description (with provenance and the
-//      embedded fingerprint line) for a filed idea issue.
+//   2. buildFollowUpIssue: title (+ a legacy provenance-embedded description,
+//      no longer written anywhere but kept for its title-truncation logic)
+//      for a SUGGESTION finding.
 //   3. extractSuggestions / dedupSuggestions: filter a ReviewReport down to
-//      the SUGGESTION findings that still need filing, given the currently
-//      open backlog.
+//      the SUGGESTION findings that still need appending to the pen, given
+//      the currently open backlog AND the pen's own existing fingerprints.
 //
 // This module is intentionally PURE: no git spawns, no fs reads. The US-003
-// terminal hook in runSidecarLoop supplies the backlog (via
-// readBacklogFromMain) and files the result via createLocalIssueOnMain.
+// (CAM-189) terminal hook in runSidecarLoop supplies the backlog (via
+// readBacklogFromMain) and the pen fingerprints (via readSuggestionsFromMain,
+// US-003 CAM-285), then appends each survivor via appendSuggestionOnMain.
 
 import type { ReviewFinding, ReviewReport } from './review-report.ts';
 import type { IssueEntry } from '../issues/types.ts';
@@ -46,8 +48,14 @@ export function fingerprintFinding(finding: ReviewFinding): string {
 // Issue builder
 // ---------------------------------------------------------------------------
 
-/** Marks the line in a filed issue's description that carries the dedup fingerprint. */
-const SUGGESTION_FINGERPRINT_PREFIX = 'suggestion-fingerprint:';
+/**
+ * Marks the line in a filed issue's description that carries the dedup
+ * fingerprint. Exported so `src/commands/suggestions.ts` (`promoteSuggestionOnMain`,
+ * US-005 CAM-285) can embed the SAME literal prefix when re-building this
+ * description format from an already-penned SuggestionEntry, instead of a
+ * second hardcoded copy of the string.
+ */
+export const SUGGESTION_FINGERPRINT_PREFIX = 'suggestion-fingerprint:';
 
 /** Matches a suggestion-fingerprint line inside an issue description. */
 const FINGERPRINT_LINE_RE = /suggestion-fingerprint:\s*([0-9a-f]+)/;
@@ -130,12 +138,24 @@ export function extractSuggestions(report: ReviewReport): ReviewFinding[] {
 /**
  * Given the currently open backlog entries and a terminal ReviewReport,
  * returns only the SUGGESTION findings that still need filing: their
- * fingerprint does not already appear in any open issue's description, and
- * duplicates within the same report batch are collapsed to the first
- * occurrence.
+ * fingerprint does not already appear in any open issue's description or in
+ * the suggestions pen, and duplicates within the same report batch are
+ * collapsed to the first occurrence.
+ *
+ * `penFingerprints` (US-003, CAM-285) is the UNION source added alongside the
+ * pre-existing open-backlog fingerprint scan: fingerprints already present in
+ * scripts/cam/suggestions.jsonl (read by the caller via
+ * readSuggestionsFromMain) must not be re-appended, exactly like an
+ * already-filed backlog SUGGESTION issue. Defaults to empty so existing
+ * backlog-only callers are unaffected. This function stays PURE (no fs/git):
+ * the caller resolves both fingerprint sources before calling in.
  */
-export function dedupSuggestions(backlog: IssueEntry[], report: ReviewReport): ReviewFinding[] {
-	const openFingerprints = new Set<string>();
+export function dedupSuggestions(
+	backlog: IssueEntry[],
+	report: ReviewReport,
+	penFingerprints: Iterable<string> = [],
+): ReviewFinding[] {
+	const openFingerprints = new Set<string>(penFingerprints);
 	for (const entry of backlog) {
 		if (entry.status !== 'open' || entry.description === undefined) continue;
 		const match = entry.description.match(FINGERPRINT_LINE_RE);

@@ -1,7 +1,8 @@
 // test/supervisor/suggestion-filing-hook.test.ts
 //
-// Unit + regression tests for the SUGGESTION follow-up-filing hook wired into
-// runSidecarLoop (US-003, CAM-189).
+// Unit + regression tests for the SUGGESTION follow-up hook wired into
+// runSidecarLoop (US-003, CAM-189; sink redirected to the suggestions pen in
+// US-003, CAM-285).
 //
 // Coverage (acceptance criteria):
 //   AC1: loop.ts source-text oracle -- the hook lives inside runSidecarLoop,
@@ -15,9 +16,10 @@
 //        review-report.json fixture (2 SUGGESTIONs) on disk, with injected
 //        spawn/filing fakes; both SUGGESTIONs reach fileSuggestionsFn and
 //        exactly one pane summary line is pushed.
-//   AC6: exactly one summary line is pushed when >=1 issue is filed (listing
-//        ids + dup-skipped count); nothing is pushed when the report is null,
-//        has no SUGGESTIONs, or the batch is fully deduped.
+//   AC6: exactly one summary line is pushed when >=1 SUGGESTION is penned
+//        (reporting pen-append counts, never filed issue ids); nothing is
+//        pushed when the report is null, has no SUGGESTIONs, or the batch is
+//        fully deduped.
 //   AC7 (outer crash-survival): a throwing fileSuggestionsFn never crashes
 //        the loop; a 'sidecar-exit' event is logged with a dedicated reason.
 
@@ -173,7 +175,7 @@ describe('AC2: suggestion-filing hook gate matrix', () => {
 				readCalls++;
 				return null;
 			},
-			fileSuggestionsFn: () => ({ filedIds: [], dupSkipped: 0 }),
+			fileSuggestionsFn: () => ({ penned: 0, dupSkipped: 0 }),
 		});
 		expect(readCalls).toBe(1);
 	});
@@ -187,7 +189,7 @@ describe('AC2: suggestion-filing hook gate matrix', () => {
 				readCalls++;
 				return null;
 			},
-			fileSuggestionsFn: () => ({ filedIds: [], dupSkipped: 0 }),
+			fileSuggestionsFn: () => ({ penned: 0, dupSkipped: 0 }),
 		});
 		expect(readCalls).toBe(1);
 	});
@@ -201,7 +203,7 @@ describe('AC2: suggestion-filing hook gate matrix', () => {
 				readCalls++;
 				return null;
 			},
-			fileSuggestionsFn: () => ({ filedIds: [], dupSkipped: 0 }),
+			fileSuggestionsFn: () => ({ penned: 0, dupSkipped: 0 }),
 		});
 		expect(readCalls).toBe(1);
 	});
@@ -215,7 +217,7 @@ describe('AC2: suggestion-filing hook gate matrix', () => {
 				readCalls++;
 				return null;
 			},
-			fileSuggestionsFn: () => ({ filedIds: [], dupSkipped: 0 }),
+			fileSuggestionsFn: () => ({ penned: 0, dupSkipped: 0 }),
 		});
 		expect(readCalls).toBe(0);
 	});
@@ -229,7 +231,7 @@ describe('AC2: suggestion-filing hook gate matrix', () => {
 				readCalls++;
 				return null;
 			},
-			fileSuggestionsFn: () => ({ filedIds: [], dupSkipped: 0 }),
+			fileSuggestionsFn: () => ({ penned: 0, dupSkipped: 0 }),
 		});
 		expect(readCalls).toBe(0);
 	});
@@ -243,7 +245,7 @@ describe('AC2: suggestion-filing hook gate matrix', () => {
 				readCalls++;
 				return null;
 			},
-			fileSuggestionsFn: () => ({ filedIds: [], dupSkipped: 0 }),
+			fileSuggestionsFn: () => ({ penned: 0, dupSkipped: 0 }),
 		});
 		expect(readCalls).toBe(0);
 	});
@@ -257,7 +259,7 @@ describe('AC2: suggestion-filing hook gate matrix', () => {
 				readCalls++;
 				return null;
 			},
-			fileSuggestionsFn: () => ({ filedIds: [], dupSkipped: 0 }),
+			fileSuggestionsFn: () => ({ penned: 0, dupSkipped: 0 }),
 		});
 		expect(readCalls).toBe(0);
 	});
@@ -280,8 +282,8 @@ describe('AC2: suggestion-filing hook gate matrix', () => {
 // AC6: notify summary rules
 // ---------------------------------------------------------------------------
 
-describe('AC6: exactly one pane summary line, only when something was filed', () => {
-	test('filedIds non-empty -> exactly one notify call listing ids and dup-skipped count', async () => {
+describe('AC6: exactly one pane summary line, only when something was penned', () => {
+	test('penned non-zero -> exactly one notify call reporting pen-append counts, not filed issue ids', async () => {
 		const notified: string[] = [];
 		await driveOneTick({
 			result: statusResult('complete'),
@@ -291,12 +293,12 @@ describe('AC6: exactly one pane summary line, only when something was filed', ()
 					notifyOrchestrator: (line) => notified.push(line),
 				}),
 			readReviewReportFn: () => REPORT_WITH_SUGGESTIONS,
-			fileSuggestionsFn: () => ({ filedIds: ['CAM-1', 'CAM-2'], dupSkipped: 1 }),
+			fileSuggestionsFn: () => ({ penned: 2, dupSkipped: 1 }),
 		});
 		expect(notified).toHaveLength(1);
-		expect(notified[0]).toContain('CAM-1');
-		expect(notified[0]).toContain('CAM-2');
-		expect(notified[0]).toContain('1');
+		expect(notified[0]).toContain('2');
+		expect(notified[0]).toContain('dup-skipped');
+		expect(notified[0]).not.toContain('CAM-');
 	});
 
 	test('readReviewReportFn returns null -> fileSuggestionsFn never called, nothing pushed', async () => {
@@ -312,14 +314,14 @@ describe('AC6: exactly one pane summary line, only when something was filed', ()
 			readReviewReportFn: () => null,
 			fileSuggestionsFn: () => {
 				fileCalls++;
-				return { filedIds: [], dupSkipped: 0 };
+				return { penned: 0, dupSkipped: 0 };
 			},
 		});
 		expect(fileCalls).toBe(0);
 		expect(notified).toHaveLength(0);
 	});
 
-	test('all-deduped batch (filedIds empty) -> nothing pushed', async () => {
+	test('all-deduped batch (penned 0) -> nothing pushed', async () => {
 		const notified: string[] = [];
 		await driveOneTick({
 			result: statusResult('complete'),
@@ -329,7 +331,7 @@ describe('AC6: exactly one pane summary line, only when something was filed', ()
 					notifyOrchestrator: (line) => notified.push(line),
 				}),
 			readReviewReportFn: () => REPORT_WITH_SUGGESTIONS,
-			fileSuggestionsFn: () => ({ filedIds: [], dupSkipped: 2 }),
+			fileSuggestionsFn: () => ({ penned: 0, dupSkipped: 2 }),
 		});
 		expect(notified).toHaveLength(0);
 	});
@@ -344,7 +346,7 @@ describe('AC6: exactly one pane summary line, only when something was filed', ()
 					notifyOrchestrator: (line) => notified.push(line),
 				}),
 			readReviewReportFn: () => ({ verdict: 'CLEAN', findings: [] }),
-			fileSuggestionsFn: () => ({ filedIds: [], dupSkipped: 0 }),
+			fileSuggestionsFn: () => ({ penned: 0, dupSkipped: 0 }),
 		});
 		expect(notified).toHaveLength(0);
 	});
@@ -363,7 +365,7 @@ describe('AC7 (US-001, CAM-263): prd.issueNumber reaches FollowUpProvenance.pare
 			readReviewReportFn: () => REPORT_WITH_SUGGESTIONS,
 			fileSuggestionsFn: (_report, provenance) => {
 				capturedProvenance = provenance;
-				return { filedIds: [], dupSkipped: 0 };
+				return { penned: 0, dupSkipped: 0 };
 			},
 		});
 		expect(capturedProvenance?.parentIssue).toBe(263);
@@ -377,7 +379,7 @@ describe('AC7 (US-001, CAM-263): prd.issueNumber reaches FollowUpProvenance.pare
 			readReviewReportFn: () => REPORT_WITH_SUGGESTIONS,
 			fileSuggestionsFn: (_report, provenance) => {
 				capturedProvenance = provenance;
-				return { filedIds: [], dupSkipped: 0 };
+				return { penned: 0, dupSkipped: 0 };
 			},
 		});
 		expect(capturedProvenance?.parentIssue).toBeUndefined();
@@ -388,8 +390,8 @@ describe('AC7 (US-001, CAM-263): prd.issueNumber reaches FollowUpProvenance.pare
 // AC5: idempotent re-fire across two terminal ticks
 // ---------------------------------------------------------------------------
 
-describe('AC5: idempotent re-fire -- a later complete terminal after an awaiting-operator terminal files 0 and pushes nothing', () => {
-	test('round 2 (complete) re-fires against the same report but files 0 and pushes no summary', async () => {
+describe('AC5: idempotent re-fire -- a later complete terminal after an awaiting-operator terminal appends 0 and pushes nothing', () => {
+	test('round 2 (complete) re-fires against the same report but appends 0 and pushes no summary', async () => {
 		const notified: string[] = [];
 		let fileCallCount = 0;
 		const readActiveSeq: Array<boolean> = [true, true, false];
@@ -421,8 +423,8 @@ describe('AC5: idempotent re-fire -- a later complete terminal after an awaiting
 			fileSuggestionsFn: () => {
 				fileCallCount++;
 				return fileCallCount === 1
-					? { filedIds: ['CAM-1', 'CAM-2'], dupSkipped: 0 }
-					: { filedIds: [], dupSkipped: 2 };
+					? { penned: 2, dupSkipped: 0 }
+					: { penned: 0, dupSkipped: 2 };
 			},
 		};
 
@@ -437,7 +439,7 @@ describe('AC5: idempotent re-fire -- a later complete terminal after an awaiting
 		expect(fileCallCount).toBe(2);
 		// Only round 1 (the first, non-deduped fire) pushes a summary line.
 		expect(notified).toHaveLength(1);
-		expect(notified[0]).toContain('CAM-1');
+		expect(notified[0]).toContain('2');
 	});
 });
 
@@ -588,7 +590,7 @@ describe('AC3: real-path regression -- real clearActive + real onProgress + real
 				readReviewReportFn: realReadReviewReportFn,
 				fileSuggestionsFn: (report, provenance) => {
 					filingCalls.push({ report, provenance });
-					return { filedIds: ['CAM-1', 'CAM-2'], dupSkipped: 0 };
+					return { penned: 2, dupSkipped: 0 };
 				},
 			};
 
@@ -616,8 +618,8 @@ describe('AC3: real-path regression -- real clearActive + real onProgress + real
 			expect(filingCalls[0]?.provenance.round).toBe(1);
 
 			expect(notified).toHaveLength(1);
-			expect(notified[0]).toContain('CAM-1');
-			expect(notified[0]).toContain('CAM-2');
+			expect(notified[0]).toContain('2');
+			expect(notified[0]).toContain('penned');
 		} finally {
 			rmSync(cwd, { recursive: true, force: true });
 		}

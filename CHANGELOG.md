@@ -6,6 +6,17 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.143.0] - 2026-07-12
+
+### Added
+
+- US-006 - Update orchestrator agent docs to describe the suggestions pen + triage
+- US-005 - Add cam suggestions promote + dismiss subcommands
+- US-004 - Add cam suggestions list CLI (parser + dispatch skeleton + help)
+- US-003 - Redirect the terminal-verdict hook sink from issue-filing to the pen
+- US-002 - Seed empty suggestions.jsonl in cam init + bootstrap this repo's main
+- US-001 - Add suggestions-pen data model + on-main JSONL append/read writer
+
 ## [0.142.0] - 2026-07-12
 
 ### Added

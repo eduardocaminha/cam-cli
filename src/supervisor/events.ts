@@ -440,16 +440,22 @@ export interface PlanTargetInvalidEventDetail {
  * production fileSuggestionsFn closure (sidecar.ts) each time it runs and has
  * something to report. Gives a per-tick audit trail of the review SUGGESTION
  * follow-up-filing hook independently of the single orchestrator-pane summary
- * line (which only fires when filedIds is non-empty).
- *   - filedIds: ids of issues actually filed this tick.
+ * line (which only fires when penned is non-zero).
+ *
+ * US-003 (CAM-285): the sink changed from filing idea-stage issues
+ * (createLocalIssueOnMain) to appending to the suggestions pen
+ * (appendSuggestionOnMain), so this detail reports pen-append COUNTS, never
+ * filed issue ids.
+ *   - penned: number of SUGGESTIONs actually appended to the pen this tick.
  *   - dupSkipped: SUGGESTIONs skipped because their fingerprint already
- *     existed in an open issue, or was a duplicate within the same batch.
- *   - failedCount: SUGGESTIONs whose createLocalIssueOnMain call returned
- *     ok:false (diverged main, detached head, missing main); skipped and
- *     warned, never thrown.
+ *     existed in the pen, an open backlog issue, or was a duplicate within
+ *     the same batch.
+ *   - failedCount: SUGGESTIONs whose appendSuggestionOnMain call returned
+ *     ok:false (diverged main, detached head, missing main, suggestions
+ *     pen missing); skipped and warned, never thrown.
  */
 export interface SuggestionFiledEventDetail {
-	filedIds: string[];
+	penned: number;
 	dupSkipped: number;
 	failedCount: number;
 }

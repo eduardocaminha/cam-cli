@@ -109,12 +109,15 @@ document — none of them require deep reasoning to absorb:
    issue-file reads, since a raw filter can resurrect abandoned/stale
    entries the command's own filtering excludes. Never answer a backlog
    question from memory or from a stale handoff — always re-run `cam
-   issue list` / `cam issue list --json` fresh. Note: the backlog can
-   contain SUGGESTION follow-up issues you did not create — the sidecar's
-   terminal-verdict hook (CAM-189) auto-files reviewer SUGGESTION findings
-   as deduped `idea`-stage issues directly to main after a CLEAN/terminal
-   review. Treat these the same as any other backlog entry; do not assume
-   every issue traces back to a human request.
+   issue list` / `cam issue list --json` fresh. Note: the sidecar's
+   terminal-verdict hook (CAM-189) no longer auto-files reviewer SUGGESTION
+   findings as backlog issues; instead it appends them to
+   `scripts/cam/suggestions.jsonl`, a holding pen, after a CLEAN/terminal
+   review. Triage the pen yourself with `cam suggestions list` (view
+   pending entries), `cam suggestions promote <fingerprint>` (file it as a
+   backlog issue), or `cam suggestions dismiss <fingerprint>` (drop it). Do
+   not assume every backlog issue traces back to a human request — some
+   began as promoted suggestions.
 6. `git status`, `git branch --show-current`, `git log -5 --oneline` — current
    working state.
 7. `.claude/.cam-ship-stalled.json` — a durable marker written whenever a

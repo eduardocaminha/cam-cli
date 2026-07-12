@@ -1794,31 +1794,34 @@ export interface RunSidecarLoopOptions {
 	 */
 	readReviewReportFn?: () => ReviewReport | null;
 	/**
-	 * File SUGGESTION follow-ups from a terminal ReviewReport as deduped idea
-	 * issues (US-003, CAM-189).
+	 * Append SUGGESTION follow-ups from a terminal ReviewReport to the
+	 * suggestions pen (US-003, CAM-189; sink redirected to the pen in
+	 * US-003 CAM-285).
 	 *
 	 * Given the report just read via readReviewReportFn and a provenance
 	 * record (source: prd.branchName; round: prd.review.roundsCompleted),
-	 * returns the ids of the issues actually filed plus a count of
-	 * SUGGESTIONs skipped because their fingerprint already existed in an
-	 * open issue (or was a duplicate within the same batch). Never throws: a
-	 * createLocalIssueOnMain failure for one finding (diverged main, detached
-	 * head, missing main) is skip-and-warned internally by the production
-	 * closure (logged, not re-thrown) and does not stop the remaining
-	 * findings in the batch from being attempted.
+	 * returns the count of SUGGESTIONs actually appended to the pen plus a
+	 * count of SUGGESTIONs skipped because their fingerprint already existed
+	 * in the pen or an open backlog issue (or was a duplicate within the same
+	 * batch). Never throws: an appendSuggestionOnMain failure for one finding
+	 * (diverged main, detached head, missing main) is skip-and-warned
+	 * internally by the production closure (logged, not re-thrown) and does
+	 * not stop the remaining findings in the batch from being attempted.
 	 *
 	 * Idempotency has no prd.json fire-once marker: SUGGESTION fingerprint
-	 * dedup (US-002, dedupSuggestions) IS the idempotency mechanism, so a
-	 * re-fire on a later terminal tick (e.g. a 'complete' status after an
-	 * earlier 'awaiting-operator' status already filed the same findings)
-	 * files 0 and the caller pushes no summary line.
+	 * dedup (US-002, dedupSuggestions; extended to union the pen in US-003
+	 * CAM-285) IS the idempotency mechanism, so a re-fire on a later terminal
+	 * tick (e.g. a 'complete' status after an earlier 'awaiting-operator'
+	 * status already penned the same findings) appends 0 and the caller
+	 * pushes no summary line.
 	 *
 	 * Production wiring (sidecar.ts): makeProductionFileSuggestionsFn(cwd,
-	 * logEvent), which reads the current backlog via readBacklogFromMain,
-	 * dedups via dedupSuggestions (US-002), and files each surviving finding
-	 * via createLocalIssueOnMain (default filing: no specSource, so stage
-	 * stays 'idea' and status 'open'). The working branch is never touched:
-	 * createLocalIssueOnMain always commits+pushes to main directly.
+	 * logEvent), which reads the current backlog via readBacklogFromMain and
+	 * the pen via readSuggestionsFromMain, dedups via dedupSuggestions
+	 * (US-002/US-003), and appends each surviving finding to
+	 * scripts/cam/suggestions.jsonl via appendSuggestionOnMain. The working
+	 * branch is never touched: appendSuggestionOnMain always commits+pushes
+	 * to main directly.
 	 *
 	 * Optional: when absent (paired with readReviewReportFn) the suggestion-
 	 * filing hook is fully inert (zero behavior change for all existing tests).
@@ -1826,7 +1829,7 @@ export interface RunSidecarLoopOptions {
 	fileSuggestionsFn?: (
 		report: ReviewReport,
 		provenance: FollowUpProvenance,
-	) => { filedIds: string[]; dupSkipped: number };
+	) => { penned: number; dupSkipped: number };
 	/**
 	 * Best-effort escalation callback (US-R1-001).
 	 *
@@ -2129,15 +2132,17 @@ export async function runSidecarLoop(opts: RunSidecarLoopOptions): Promise<void>
 
 		// US-003 (CAM-189): file SUGGESTION follow-ups at the terminal verdict.
 		// Runs BEFORE the flipActiveFn auto-chain continue, so the auto-chain
-		// never skips a tick that still needs filing. Fires on BOTH terminal
+		// never skips a tick that still needs appending. Fires on BOTH terminal
 		// statuses ('complete' AND 'awaiting-operator') -- unlike auto-ship,
 		// which fires on 'complete' only -- because a CLEAN review can hand off
 		// to the operator (pending ceremony stories) without the loop ever
 		// reaching 'complete', and that CLEAN+awaiting-operator terminal must
 		// not silently drop its SUGGESTION findings. No prd.json fire-once
-		// marker is written here: SUGGESTION fingerprint dedup (US-002) is the
-		// idempotency mechanism, so a later re-fire (e.g. 'complete' after an
-		// earlier 'awaiting-operator') safely files 0 and pushes nothing.
+		// marker is written here: SUGGESTION fingerprint dedup (US-002/US-003)
+		// is the idempotency mechanism, so a later re-fire (e.g. 'complete'
+		// after an earlier 'awaiting-operator') safely appends 0 and pushes
+		// nothing. US-003 (CAM-285): the sink is the suggestions pen
+		// (appendSuggestionOnMain), not filed idea-stage issues.
 		if (
 			opts.readReviewReportFn !== undefined &&
 			opts.fileSuggestionsFn !== undefined &&
@@ -2154,11 +2159,11 @@ export async function runSidecarLoop(opts: RunSidecarLoopOptions): Promise<void>
 							round: prdForSuggestions.review?.roundsCompleted,
 							parentIssue: prdForSuggestions.issueNumber,
 						};
-						const { filedIds, dupSkipped } = opts.fileSuggestionsFn(report, provenance);
-						if (filedIds.length > 0) {
-							const dupSuffix = dupSkipped > 0 ? ` (${dupSkipped} dup-skipped)` : '';
+						const { penned, dupSkipped } = opts.fileSuggestionsFn(report, provenance);
+						if (penned > 0) {
+							const dupSuffix = dupSkipped > 0 ? `, ${dupSkipped} dup-skipped` : '';
 							supervisorOpts.notifyOrchestrator?.(
-								`[cam] filed ${filedIds.length} SUGGESTION follow-up${filedIds.length === 1 ? '' : 's'}: ${filedIds.join(', ')}${dupSuffix}`,
+								`[cam] penned ${penned} SUGGESTION follow-up${penned === 1 ? '' : 's'}${dupSuffix}`,
 							);
 						}
 					}

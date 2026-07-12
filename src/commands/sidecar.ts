@@ -37,13 +37,12 @@ import {
 	makeCapturePaneFn,
 	adaptLogEventForPush,
 } from '../supervisor/host.ts';
-import { extractSuggestions, dedupSuggestions, buildFollowUpIssue } from '../supervisor/suggestion-followups.ts';
+import { extractSuggestions, dedupSuggestions, buildFollowUpIssue, fingerprintFinding } from '../supervisor/suggestion-followups.ts';
 import type { FollowUpProvenance } from '../supervisor/suggestion-followups.ts';
 import type { ReviewFinding } from '../supervisor/review-report.ts';
 import { readBacklogFromMain, numericIdSuffix, type BacklogSpawnFn } from '../issues/backlog.ts';
-import { createLocalIssueOnMain, type SpawnFn as IssueFileSpawnFn } from './issue-file.ts';
-import { resolveIssueId } from '../issues/resolve-id.ts';
-import { parseToml } from '../config/toml.ts';
+import { appendSuggestionOnMain, readSuggestionsFromMain, type SuggestionEntry } from './suggestions.ts';
+import type { SpawnFn as IssueFileSpawnFn } from './issue-file.ts';
 import { makeFileEventLogger, type WorkerEventLogger } from '../supervisor/events.ts';
 import { parseStateFile, type LoopPhase } from './status.ts';
 import { renderStateFile, writeStateFile } from './next.ts';
@@ -196,12 +195,15 @@ export interface SidecarOptions {
 	 */
 	readReviewReportFn?: RunSidecarLoopOptions['readReviewReportFn'];
 	/**
-	 * Override the fileSuggestionsFn (US-003, CAM-189).
+	 * Override the fileSuggestionsFn (US-003, CAM-189; sink redirected to the
+	 * suggestions pen in US-003 CAM-285).
 	 *
-	 * Production: makeProductionFileSuggestionsFn(cwd, logEvent) — dedups the
-	 * report's SUGGESTION findings against the open backlog (readBacklogFromMain
-	 * + dedupSuggestions) and files each survivor via createLocalIssueOnMain.
-	 * Tests: inject a spy to assert filing without spawning real git.
+	 * Production: makeProductionFileSuggestionsFn(cwd, spawnFn, logEvent) —
+	 * dedups the report's SUGGESTION findings against the open backlog
+	 * (readBacklogFromMain) UNIONED with the pen's existing fingerprints
+	 * (readSuggestionsFromMain + dedupSuggestions) and appends each survivor
+	 * to scripts/cam/suggestions.jsonl via appendSuggestionOnMain.
+	 * Tests: inject a spy to assert appends without spawning real git.
 	 */
 	fileSuggestionsFn?: RunSidecarLoopOptions['fileSuggestionsFn'];
 	/**
@@ -2578,15 +2580,17 @@ function buildRearmDeps(
 }
 
 // ---------------------------------------------------------------------------
-// Suggestion-follow-up filing (US-003, CAM-189)
+// Suggestion-follow-up pen appends (US-003, CAM-189; sink redirected to the
+// suggestions pen in US-003, CAM-285)
 // ---------------------------------------------------------------------------
 
 /**
  * spawnSync-backed IssueFileSpawnFn (issue-file.ts's SpawnFn contract: raw
  * SpawnSyncReturns, encoding/env/input passthrough). Mirrors index.ts's
  * `_buildCreateIssueOpts` spawnFn exactly -- the same production wiring
- * `cam issue --file-local` uses -- so createLocalIssueOnMain's GIT_INDEX_FILE
- * env plumbing and cat-file --batch stdin both work unchanged here.
+ * `cam issue --file-local` uses -- so appendSuggestionOnMain's on-main
+ * commit-tree plumbing (GIT_INDEX_FILE env, cat-file --batch stdin) works
+ * unchanged here.
  */
 function issueFileSpawnFn(
 	cmd: string,
@@ -2607,71 +2611,67 @@ function toBacklogSpawn(spawnFn: IssueFileSpawnFn): BacklogSpawnFn {
 }
 
 /**
- * Resolves the project.toml-derived issue prefix + parentIssue id and files
- * each candidate finding via createLocalIssueOnMain. Extracted from
- * makeProductionFileSuggestionsFn's closure (US-001, CAM-264) so the
+ * Appends each candidate finding to the suggestions pen via
+ * appendSuggestionOnMain. Extracted from makeProductionFileSuggestionsFn's
+ * closure (mirrors the US-001/CAM-264 extraction it replaces) so the
  * candidates.length > 0 guard doesn't push the closure over Biome's
  * cognitive-complexity ceiling.
  */
-function fileCandidates(
+function appendCandidates(
 	candidates: ReviewFinding[],
 	provenance: FollowUpProvenance,
-	deps: {
-		cwd: string;
-		spawnFn: IssueFileSpawnFn;
-		clock: () => string;
-		readProjectToml: () => string;
-	},
-): { filedIds: string[]; failedCount: number } {
-	const { cwd, spawnFn, clock, readProjectToml } = deps;
-	const config = parseToml(readProjectToml());
-	const prefix = typeof config['issue_prefix'] === 'string' ? config['issue_prefix'] : 'CAM';
-	const parentIssueId = resolveIssueId(provenance.parentIssue, prefix);
-	const filedIds: string[] = [];
+	deps: { cwd: string; spawnFn: IssueFileSpawnFn; clock: () => string },
+): { penned: number; failedCount: number } {
+	const { cwd, spawnFn, clock } = deps;
+	let penned = 0;
 	let failedCount = 0;
 	for (const finding of candidates) {
-		const { title, description } = buildFollowUpIssue(finding, provenance);
-		const outcome = createLocalIssueOnMain({
-			cwd,
+		const { title } = buildFollowUpIssue(finding, provenance);
+		const entry: SuggestionEntry = {
+			fingerprint: fingerprintFinding(finding),
 			title,
-			description,
-			spawnFn,
-			clock,
-			readProjectToml,
-			...(parentIssueId !== null ? { derivedFrom: [parentIssueId] } : {}),
-		});
+			body: finding.text,
+			sourceBranch: provenance.source,
+			...(provenance.round !== undefined ? { reviewRound: provenance.round } : {}),
+			...(provenance.parentIssue !== undefined ? { sourceIssue: provenance.parentIssue } : {}),
+			filedAt: clock(),
+		};
+		const outcome = appendSuggestionOnMain({ cwd, entry, spawnFn });
 		if (outcome.ok) {
-			filedIds.push(outcome.id);
+			if (!outcome.skipped) penned++;
 		} else {
 			failedCount++;
 		}
 	}
-	return { filedIds, failedCount };
+	return { penned, failedCount };
 }
 
 /**
  * Build the production fileSuggestionsFn (US-003, CAM-189).
  *
- * Reads the current open backlog via readBacklogFromMain, dedups the
- * report's SUGGESTION findings against it (US-002 dedupSuggestions), and
- * files each surviving finding via createLocalIssueOnMain (default filing:
- * no specSource, so stage stays 'idea' and status 'open'). The working
- * branch is never touched: createLocalIssueOnMain always commits+pushes to
- * main directly (issue-file.ts's on-main commit-tree path), regardless of
- * the cwd's current checked-out branch.
+ * Reads the current open backlog via readBacklogFromMain UNIONED with the
+ * pen's own existing fingerprints via readSuggestionsFromMain, dedups the
+ * report's SUGGESTION findings against both (US-002/US-003 dedupSuggestions),
+ * and appends each surviving finding to scripts/cam/suggestions.jsonl via
+ * appendSuggestionOnMain (US-001). The working branch is never touched:
+ * appendSuggestionOnMain always commits+pushes to main directly (the same
+ * on-main commit-tree path createLocalIssueOnMain uses), regardless of the
+ * cwd's current checked-out branch.
  *
- * A createLocalIssueOnMain failure (diverged main, detached head, missing
- * main) for one finding is skip-and-warned: the finding is simply excluded
- * from filedIds and counted in failedCount, never thrown, so the remaining
- * findings in the batch still get attempted. When there is anything to
- * report (a file, a dup-skip, or a failure), one 'suggestion-filed' event is
- * logged for the audit trail.
+ * An appendSuggestionOnMain failure (diverged main, detached head, missing
+ * main, suggestions pen missing) for one finding is skip-and-warned: the
+ * finding is simply excluded from the penned count and counted in
+ * failedCount, never thrown, so the remaining findings in the batch still
+ * get attempted. When there is anything to report (a pen-append, a
+ * dup-skip, or a failure), one 'suggestion-filed' event is logged for the
+ * audit trail.
  *
  * spawnFn is injected (production: issueFileSpawnFn, the real spawnSync
- * wrapper defined above) so tests can exercise the full dedup+file path with
- * a fake git plumbing recorder, exactly like createLocalIssueOnMain's own
- * unit tests, without spawning a real git binary. No 'claude' spawn is ever
- * issued: only git plumbing, via readBacklogFromMain/createLocalIssueOnMain.
+ * wrapper defined above) so tests can exercise the full dedup+append path
+ * with a fake git plumbing recorder, exactly like appendSuggestionOnMain's
+ * own unit tests, without spawning a real git binary. No 'claude' spawn is
+ * ever issued: only git plumbing, via
+ * readBacklogFromMain/readSuggestionsFromMain/appendSuggestionOnMain.
  */
 export function makeProductionFileSuggestionsFn(
 	cwd: string,
@@ -2679,25 +2679,25 @@ export function makeProductionFileSuggestionsFn(
 	logEvent: WorkerEventLogger,
 ): NonNullable<RunSidecarLoopOptions['fileSuggestionsFn']> {
 	const clock = () => new Date().toISOString();
-	const readProjectToml = () => readFileSync(join(cwd, 'scripts/cam/project.toml'), 'utf8');
 	return (report, provenance) => {
 		const backlog = readBacklogFromMain(cwd, toBacklogSpawn(spawnFn));
-		const candidates = dedupSuggestions(backlog, report);
+		const penFingerprints = readSuggestionsFromMain(cwd, spawnFn).map((entry) => entry.fingerprint);
+		const candidates = dedupSuggestions(backlog, report, penFingerprints);
 		const dupSkipped = extractSuggestions(report).length - candidates.length;
-		const { filedIds, failedCount } =
+		const { penned, failedCount } =
 			candidates.length > 0
-				? fileCandidates(candidates, provenance, { cwd, spawnFn, clock, readProjectToml })
-				: { filedIds: [] as string[], failedCount: 0 };
-		if (filedIds.length > 0 || dupSkipped > 0 || failedCount > 0) {
+				? appendCandidates(candidates, provenance, { cwd, spawnFn, clock })
+				: { penned: 0, failedCount: 0 };
+		if (penned > 0 || dupSkipped > 0 || failedCount > 0) {
 			logEvent({
 				ts: clock(),
 				storyId: undefined,
 				uuid: 'sidecar',
 				kind: 'suggestion-filed',
-				detail: { filedIds, dupSkipped, failedCount },
+				detail: { penned, dupSkipped, failedCount },
 			});
 		}
-		return { filedIds, dupSkipped };
+		return { penned, dupSkipped };
 	};
 }
 
