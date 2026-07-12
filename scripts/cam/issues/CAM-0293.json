@@ -1,0 +1,12 @@
+{
+  "id": "CAM-293",
+  "title": "The DEFAULTS doc comment (L30-42, edited by this diff) sits above the MergeMode…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-12T19:29:34.272Z",
+  "description": "The DEFAULTS doc comment (L30-42, edited by this diff) sits above the MergeMode/PlanApproval type declarations rather than immediately above the DEFAULTS const at L55, with a second /** block starting at L43. Pre-existing placement, not introduced here; consider moving it adjacent to DEFAULTS in a future cleanup so the description tracks the symbol it documents.\n\nSource: cam/issue-287\nReview round: 1\nLocation: src/config/models.ts:30\n\nsuggestion-fingerprint: 596e06fc3da8",
+  "derivedFrom": [
+    "CAM-287"
+  ]
+}

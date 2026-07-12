@@ -1,0 +1,12 @@
+{
+  "id": "CAM-294",
+  "title": "Help text for `cam claude` still shows a dated example `--model claude-opus-4-5…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-12T19:29:36.860Z",
+  "description": "Help text for `cam claude` still shows a dated example `--model claude-opus-4-5`. Out of scope for this PRD (US-001 scoped to DEFAULTS/MODEL_OPTIONS/project.toml), but a dated id in an example is exactly the drift ADR-0034 targets; consider aliasing it to `--model opus` in a follow-up.\n\nSource: cam/issue-287\nReview round: 1\nLocation: src/commands/claude.ts:40\n\nsuggestion-fingerprint: b7fd02799e58",
+  "derivedFrom": [
+    "CAM-287"
+  ]
+}
