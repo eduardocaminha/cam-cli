@@ -45,7 +45,7 @@ export type BacklogSpawnFn = (
  * Parses the numeric id suffix from "PREFIX-<N>" (e.g. "CAM-12" -> 12).
  * Returns Infinity for non-numeric or missing suffix, sorting those entries last.
  */
-function numericIdSuffix(id: string): number {
+export function numericIdSuffix(id: string): number {
 	const suffix = id.split('-').at(-1);
 	if (suffix === undefined) return Infinity;
 	const n = Number(suffix);

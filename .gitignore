@@ -93,6 +93,8 @@ scripts/cam/plan-verdict-report.json
 .claude/.cam-post-merge-stalled.json
 # Durable sidecar-stalled marker written on firewall-init failure (US-001, CAM-207)
 .claude/.cam-sidecar-stalled.json
+# Durable implement-blocked marker written on every 'blocked' terminal of runSupervisor (US-001, CAM-282)
+.claude/.cam-implement-blocked.json
 # Per-run gate timing output written by check-all.ts --json (US-004, CAM-59); read by CI step summary
 gate-results.json
 

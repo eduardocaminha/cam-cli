@@ -40,7 +40,7 @@ import {
 import { extractSuggestions, dedupSuggestions, buildFollowUpIssue } from '../supervisor/suggestion-followups.ts';
 import type { FollowUpProvenance } from '../supervisor/suggestion-followups.ts';
 import type { ReviewFinding } from '../supervisor/review-report.ts';
-import { readBacklogFromMain, type BacklogSpawnFn } from '../issues/backlog.ts';
+import { readBacklogFromMain, numericIdSuffix, type BacklogSpawnFn } from '../issues/backlog.ts';
 import { createLocalIssueOnMain, type SpawnFn as IssueFileSpawnFn } from './issue-file.ts';
 import { resolveIssueId } from '../issues/resolve-id.ts';
 import { parseToml } from '../config/toml.ts';
@@ -102,6 +102,13 @@ import { printHint, printWarning } from '../logging/color.ts';
 export interface SidecarOptions {
 	/** Working directory (defaults to process.cwd()). */
 	cwd?: string;
+	/**
+	 * Override the orphaned implement-blocked marker sweep (US-002, CAM-282).
+	 * Production: sweepOrphanedImplementBlockedMarker(markerPath, cwd) --
+	 * read-only on main, removes the marker only when its issueId is a
+	 * closed/shipped issue. Tests inject a no-op / spy to avoid real git calls.
+	 */
+	sweepOrphanedImplementBlockedMarkerFn?: () => void;
 	/**
 	 * Override the readActive implementation.
 	 * Reads the active flag from .claude/cam-loop.local.md.
@@ -567,6 +574,54 @@ export function clearImplementBlockedMarkerForCurrentIssue(markerPath: string, p
 	}
 	if (typeof issueNumber === 'number' && String(issueNumber) !== marker.issueId) return;
 	removeImplementBlockedMarker(markerPath);
+}
+
+/**
+ * Sweep an ORPHANED implement-blocked marker whose issueId is a
+ * closed/shipped issue (US-002, CAM-282).
+ *
+ * Complements clearImplementBlockedMarkerForCurrentIssue (which clears the
+ * marker only when it matches the CURRENT in-flight prd.json issue, on
+ * re-arm). This sweep instead answers "has the issue this marker references
+ * already shipped or been abandoned, regardless of what the current PRD is
+ * targeting" -- catching the case where the operator moved on to a new issue
+ * entirely (no re-arm of the SAME issue ever happens) and the stale marker
+ * would otherwise linger forever, misleading the boot-surface and the
+ * auto-chain circuit-breaker read (loop.ts:2194).
+ *
+ * Read-only on main: looks the marker's issueId up in readBacklogFromMain
+ * (git ls-tree/cat-file, never checks out, pulls, or stages anything) by
+ * matching marker.issueId (the stringified numeric issueNumber, no prefix)
+ * against each backlog entry's numericIdSuffix(entry.id).
+ *
+ * Removes the marker when a matching backlog entry is found AND it is
+ * closed/shipped (stage === 'shipped' OR status === 'abandoned'). Leaves the
+ * marker untouched when: no marker is present, no matching entry is found
+ * (best-effort -- can't determine, so don't guess), or the matching entry is
+ * still open/in-flight.
+ *
+ * Never throws: readImplementBlockedMarker / removeImplementBlockedMarker
+ * already never throw, and readBacklogFromMain's git calls are non-fatal by
+ * construction (empty results on failure).
+ */
+export function sweepOrphanedImplementBlockedMarker(
+	markerPath: string,
+	cwd: string,
+	spawn?: BacklogSpawnFn,
+): void {
+	const marker = readImplementBlockedMarker(markerPath);
+	if (marker === null) return;
+
+	const targetId = Number(marker.issueId);
+	if (Number.isNaN(targetId)) return;
+
+	const entries = spawn !== undefined ? readBacklogFromMain(cwd, spawn) : readBacklogFromMain(cwd);
+	const match = entries.find((entry) => numericIdSuffix(entry.id) === targetId);
+	if (match === undefined) return;
+
+	if (match.stage === 'shipped' || match.status === 'abandoned') {
+		removeImplementBlockedMarker(markerPath);
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -2817,6 +2872,14 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 	// reused for this.
 	(options.writeSessionStartFn ??
 		((dir: string) => writeSidecarSessionStart(dir, new Date().toISOString())))(claudeDir);
+
+	// US-002 (CAM-282): sweep an orphaned implement-blocked marker (issueId
+	// points to an already-shipped/abandoned issue) BEFORE anything else can
+	// read it -- the boot-surface, the auto-chain circuit-breaker read
+	// (loop.ts:2194), and the plan-preflight clean-tree gate all happen later
+	// in this process. Read-only on main; never touches the working tree.
+	(options.sweepOrphanedImplementBlockedMarkerFn ??
+		(() => sweepOrphanedImplementBlockedMarker(join(claudeDir, IMPLEMENT_BLOCKED_FILENAME), cwd)))();
 
 	// US-001 / CAM-176: ensure the worker container is running AND apply the
 	// egress firewall before dispatching (container mode only).

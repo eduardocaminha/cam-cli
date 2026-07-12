@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.141.0] - 2026-07-12
+
+### Added
+
+- US-002 - Sweep orphaned implement-blocked markers whose issueId is a closed/shipped issue
+- US-001 - Gitignore the implement-blocked marker so it stops tripping the clean-tree gate
+
 ## [0.140.0] - 2026-07-12
 
 ### Added
