@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.145.0] - 2026-07-12
+
+### Added
+
+- US-002 - Add a free-text 'custom / enter id' passthrough to the config model picker
+- US-001 - Adopt CLI tier aliases as the static model set (DEFAULTS + MODEL_OPTIONS + dogfood project.toml)
+
 ## [0.144.0] - 2026-07-12
 
 ### Added
