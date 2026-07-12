@@ -1,7 +1,7 @@
 {
   "id": "CAM-284",
   "title": "Add updatedAt (last-activity) timestamp to the issue model: schema field + stamp on every mutation writer + backfill + expose in list --json",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [
     "CAM-281"
