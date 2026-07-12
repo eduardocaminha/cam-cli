@@ -313,3 +313,45 @@ export function readWorkerIsolation(configPath?: string): WorkerIsolation {
 	}
 	return 'host';
 }
+
+/**
+ * Default orchestrator context window (in tokens), applied when
+ * `[loop] orch_context_window` is absent, malformed, non-integer, or <= 0.
+ *
+ * This is the real Claude Code flat-subscription standard window (200k), not
+ * the 1M window exposed only via API/Bedrock/Vertex credit-billed access.
+ */
+export const DEFAULT_ORCH_CONTEXT_WINDOW = 200_000;
+
+/**
+ * Read the orchestrator context window (in tokens) from the project config.
+ * Returns the configured `[loop] orch_context_window` value when it is a
+ * positive integer; returns `DEFAULT_ORCH_CONTEXT_WINDOW` (200000) in every
+ * other case (missing file, missing [loop] section, missing key, malformed
+ * TOML, non-integer, zero, or negative).
+ *
+ * The default is fail-safe: a misconfigured or absent value never inflates
+ * the window past the real subscription ceiling, which would silently defeat
+ * the 0.80 context backstop.
+ *
+ * @param configPath  Override the config file path (default:
+ *                    `scripts/cam/project.toml` resolved from `process.cwd()`).
+ *                    Used by tests to target a tmp fixture without modifying
+ *                    the real project config.
+ */
+export function readOrchContextWindow(configPath?: string): number {
+	const path = configPath ?? defaultProjectConfigPath();
+	try {
+		const config = loadConfig(path);
+		const loopSection = config['loop'];
+		if (loopSection !== undefined && loopSection !== null && typeof loopSection === 'object') {
+			const value = (loopSection as Record<string, unknown>)['orch_context_window'];
+			if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
+				return value;
+			}
+		}
+	} catch {
+		// Malformed TOML or fs read error: fall back to default.
+	}
+	return DEFAULT_ORCH_CONTEXT_WINDOW;
+}

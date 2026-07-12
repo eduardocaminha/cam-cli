@@ -1,13 +1,21 @@
 // test/config/models.test.ts
 //
-// Tests for src/config/models.ts: readPhaseModel, readBackend, and DEFAULTS.
+// Tests for src/config/models.ts: readPhaseModel, readBackend, readMergeMode,
+// readOrchContextWindow, and DEFAULTS.
 
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
-import { DEFAULTS, readBackend, readMergeMode, readPhaseModel } from '../../src/config/models.ts';
+import {
+	DEFAULTS,
+	DEFAULT_ORCH_CONTEXT_WINDOW,
+	readBackend,
+	readMergeMode,
+	readOrchContextWindow,
+	readPhaseModel,
+} from '../../src/config/models.ts';
 
 // ---------------------------------------------------------------------------
 // Fixtures helpers
@@ -354,5 +362,101 @@ describe('readMergeMode - configPath override', () => {
 merge_mode = "ci-gated"
 `);
 		expect(readMergeMode(path)).toBe('ci-gated');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// readOrchContextWindow
+// ---------------------------------------------------------------------------
+
+describe('readOrchContextWindow - happy path', () => {
+	test('returns the configured integer value', () => {
+		const path = writeTmpToml(`
+[loop]
+orch_context_window = 500000
+`);
+		expect(readOrchContextWindow(path)).toBe(500_000);
+	});
+});
+
+describe('readOrchContextWindow - fallback on missing file', () => {
+	test('returns the 200000 default when the file does not exist', () => {
+		const path = join(tmpDir, 'does-not-exist.toml');
+		expect(readOrchContextWindow(path)).toBe(DEFAULT_ORCH_CONTEXT_WINDOW);
+		expect(readOrchContextWindow(path)).toBe(200_000);
+	});
+});
+
+describe('readOrchContextWindow - fallback on missing [loop] section', () => {
+	test('returns the default when [loop] is absent', () => {
+		const path = writeTmpToml(`
+[models]
+orchestrator = "claude-opus-4-8"
+`);
+		expect(readOrchContextWindow(path)).toBe(DEFAULT_ORCH_CONTEXT_WINDOW);
+	});
+});
+
+describe('readOrchContextWindow - fallback on missing key', () => {
+	test('returns the default when orch_context_window is absent from [loop]', () => {
+		const path = writeTmpToml(`
+[loop]
+meta_loop = "off"
+`);
+		expect(readOrchContextWindow(path)).toBe(DEFAULT_ORCH_CONTEXT_WINDOW);
+	});
+});
+
+describe('readOrchContextWindow - fallback on malformed TOML', () => {
+	test('returns the default and never throws', () => {
+		const path = writeTmpToml('not valid toml !!!\n');
+		expect(() => readOrchContextWindow(path)).not.toThrow();
+		expect(readOrchContextWindow(path)).toBe(DEFAULT_ORCH_CONTEXT_WINDOW);
+	});
+});
+
+describe('readOrchContextWindow - fallback on non-integer value', () => {
+	test('returns the default for a string value', () => {
+		const path = writeTmpToml(`
+[loop]
+orch_context_window = "200000"
+`);
+		expect(readOrchContextWindow(path)).toBe(DEFAULT_ORCH_CONTEXT_WINDOW);
+	});
+
+	test('returns the default for a float value', () => {
+		const path = writeTmpToml(`
+[loop]
+orch_context_window = 200000.5
+`);
+		expect(readOrchContextWindow(path)).toBe(DEFAULT_ORCH_CONTEXT_WINDOW);
+	});
+});
+
+describe('readOrchContextWindow - fallback on <= 0 value', () => {
+	test('returns the default for zero', () => {
+		const path = writeTmpToml(`
+[loop]
+orch_context_window = 0
+`);
+		expect(readOrchContextWindow(path)).toBe(DEFAULT_ORCH_CONTEXT_WINDOW);
+	});
+
+	test('returns the default for a negative value', () => {
+		const path = writeTmpToml(`
+[loop]
+orch_context_window = -1
+`);
+		expect(readOrchContextWindow(path)).toBe(DEFAULT_ORCH_CONTEXT_WINDOW);
+	});
+});
+
+describe('readOrchContextWindow - configPath override', () => {
+	test('uses configPath arg instead of cwd default', () => {
+		const path = writeTmpToml(`
+[loop]
+orch_context_window = 300000
+`);
+		expect(readOrchContextWindow(path)).toBe(300_000);
 	});
 });

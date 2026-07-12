@@ -9,7 +9,6 @@ import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import {
-	OPUS_CONTEXT_WINDOW,
 	ORCH_CONTEXT_BACKSTOP_FRACTION,
 	orchestratorContextWindow,
 	isOverContextBackstop,
@@ -18,12 +17,6 @@ import {
 // ---------------------------------------------------------------------------
 // Constants sanity checks
 // ---------------------------------------------------------------------------
-
-describe('OPUS_CONTEXT_WINDOW', () => {
-	test('is 1_000_000 (Claude Opus 4.6+ context window per Anthropic docs 2026-07-03)', () => {
-		expect(OPUS_CONTEXT_WINDOW).toBe(1_000_000);
-	});
-});
 
 describe('ORCH_CONTEXT_BACKSTOP_FRACTION', () => {
 	test('is approximately 0.8', () => {
@@ -52,58 +45,40 @@ describe('orchestratorContextWindow', () => {
 		rmSync(tmpDir, { recursive: true, force: true });
 	});
 
-	test('returns 1_000_000 for default opus model (no config)', () => {
-		// No config file -> readPhaseModel falls back to DEFAULTS['orchestrator'] = 'claude-opus-4-8'
-		// claude-opus-4-8 has a 1M context window per Anthropic docs (2026-07-03)
+	test('returns 200_000 (the real subscription window) when no config is present', () => {
 		const result = orchestratorContextWindow(configPath);
-		expect(result).toBe(1_000_000);
+		expect(result).toBe(200_000);
 	});
 
-	test('returns 1_000_000 for claude-opus-4-8 explicitly', () => {
+	test('returns the configured [loop] orch_context_window value', () => {
+		writeFileSync(configPath, '[loop]\norch_context_window = 500000\n');
+		expect(orchestratorContextWindow(configPath)).toBe(500_000);
+	});
+
+	test('falls back to 200_000 when orch_context_window is zero', () => {
+		writeFileSync(configPath, '[loop]\norch_context_window = 0\n');
+		expect(orchestratorContextWindow(configPath)).toBe(200_000);
+	});
+
+	test('falls back to 200_000 when orch_context_window is negative', () => {
+		writeFileSync(configPath, '[loop]\norch_context_window = -1\n');
+		expect(orchestratorContextWindow(configPath)).toBe(200_000);
+	});
+
+	test('falls back to 200_000 when orch_context_window is non-integer', () => {
+		writeFileSync(configPath, '[loop]\norch_context_window = 1.5\n');
+		expect(orchestratorContextWindow(configPath)).toBe(200_000);
+	});
+
+	test('falls back to 200_000 when the [loop] section is absent', () => {
 		writeFileSync(configPath, '[models]\norchestrator = "claude-opus-4-8"\n');
-		expect(orchestratorContextWindow(configPath)).toBe(1_000_000);
-	});
-
-	test('returns 1_000_000 for claude-opus-4-6 (1M generation)', () => {
-		writeFileSync(configPath, '[models]\norchestrator = "claude-opus-4-6"\n');
-		expect(orchestratorContextWindow(configPath)).toBe(1_000_000);
-	});
-
-	test('returns 200_000 for claude-opus-4-5 (200k generation)', () => {
-		writeFileSync(configPath, '[models]\norchestrator = "claude-opus-4-5"\n');
 		expect(orchestratorContextWindow(configPath)).toBe(200_000);
 	});
 
-	test('returns 200_000 for claude-opus-4-1 (200k generation)', () => {
-		writeFileSync(configPath, '[models]\norchestrator = "claude-opus-4-1"\n');
-		expect(orchestratorContextWindow(configPath)).toBe(200_000);
-	});
-
-	test('returns 200_000 for claude-sonnet-4-5 (200k generation)', () => {
-		writeFileSync(configPath, '[models]\norchestrator = "claude-sonnet-4-5"\n');
-		expect(orchestratorContextWindow(configPath)).toBe(200_000);
-	});
-
-	test('returns 1_000_000 for claude-sonnet-4-6 (1M generation)', () => {
-		writeFileSync(configPath, '[models]\norchestrator = "claude-sonnet-4-6"\n');
-		expect(orchestratorContextWindow(configPath)).toBe(1_000_000);
-	});
-
-	test('returns 200_000 for claude-haiku-4-5 (200k model)', () => {
-		writeFileSync(configPath, '[models]\norchestrator = "claude-haiku-4-5"\n');
-		expect(orchestratorContextWindow(configPath)).toBe(200_000);
-	});
-
-	test('returns 1_000_000 (fallback) for an unknown model -- never throws', () => {
-		writeFileSync(configPath, '[models]\norchestrator = "some-future-model-9-0"\n');
-		expect(() => orchestratorContextWindow(configPath)).not.toThrow();
-		expect(orchestratorContextWindow(configPath)).toBe(1_000_000);
-	});
-
-	test('returns 1_000_000 when config is malformed TOML -- never throws', () => {
+	test('falls back to 200_000 when config is malformed TOML -- never throws', () => {
 		writeFileSync(configPath, 'not valid toml !!!\n');
 		expect(() => orchestratorContextWindow(configPath)).not.toThrow();
-		expect(orchestratorContextWindow(configPath)).toBe(1_000_000);
+		expect(orchestratorContextWindow(configPath)).toBe(200_000);
 	});
 });
 
