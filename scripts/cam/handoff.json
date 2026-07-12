@@ -1,16 +1,20 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Guard: checkBackstop never arms without a handoff on disk" },
+  "lastCompletedStory": { "id": "US-002", "title": "Backstop produces a handoff: signal the agent, then deterministic minimal fallback, then respawn" },
   "branchName": "cam/issue-172",
-  "timestamp": "2026-07-12T05:10:00Z",
-  "createdFiles": [],
+  "timestamp": "2026-07-12T05:40:00Z",
+  "createdFiles": [
+    "test/commands/run.test.ts"
+  ],
   "modifiedFiles": [
     "src/commands/orch-recycle-watch.ts",
+    "src/orchestrator/handoff.ts",
     "test/commands/orch-recycle-watch.test.ts",
-    "test/orch-recycle-watch.test.ts"
+    "test/orch-recycle-watch.test.ts",
+    "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "checkBackstop (src/commands/orch-recycle-watch.ts) now takes a required handoffExistsFn on BackstopDeps/OrchRecycleWatchOptions, defaulting to existsSync(join(claudeDir, ORCH_HANDOFF_FILENAME)) from src/orchestrator/handoff.ts. It guards armMarkerFn: over-threshold occupancy alone is now a no-op unless the handoff file already exists on disk. Both checkBackstop and BackstopDeps are now exported for direct unit testing (test/commands/orch-recycle-watch.test.ts). This guard is a pure consumer-side check: US-001 does NOT add a producer of the handoff file on the backstop path, so today the backstop is a safe no-op mid-cycle until a handoff writer exists. Per the story notes, US-003 (the window-fix story) should land AFTER this guard so a corrected window never starts triggering teardown-with-data-loss. Also fixed one pre-existing integration test (test/orch-recycle-watch.test.ts 'high-occupancy reader...') that previously asserted the marker arms on over-threshold occupancy alone; it now injects handoffExistsFn: () => true to preserve its original intent, and a new sibling test asserts the no-handoff no-op case.",
+  "nextStoryContext": "checkBackstop (src/commands/orch-recycle-watch.ts) now runs the full signal-then-fallback episode state machine on top of US-001's handoff-exists guard: over-threshold + no handoff yet + no signal outstanding signals the orchestrator pane once (BACKSTOP_SIGNAL_TEXT via sendKeysWhenIdle, atomic send-keys, no -l) and stamps episode.signaledAt (nowFn()); repeated polls within signalTimeoutMs (default 30s, DEFAULT_SIGNAL_TIMEOUT_MS) no-op; once the grace period elapses with still no handoff, writeMinimalHandoffFn() (production: makeWriteMinimalHandoffFn -> writeOrchHandoff + buildMinimalBackstopHandoff, first PRODUCTION caller of writeOrchHandoff from src/orchestrator/handoff.ts) writes a deterministic handoff (schemaVersion 1, reason 'context-backstop', pointers: prdPath, gitBranch, loopFile, journalTail) then arms the marker. All seams (tmuxSpawnFn, resolveOrchPaneIdFn, signalPaneFn, writeMinimalHandoffFn, nowFn, signalTimeoutMs) are injectable on OrchRecycleWatchOptions/BackstopDeps; BackstopEpisodeState.signaledAt is the sole mutable per-episode field, allocated once per watcher lifetime. AC6 (buildOrchestratorPaneCommand in src/commands/run.ts takes the respawn branch, never kill-session, for a context-backstop handoff) needed NO src/commands/run.ts code change: a new test/commands/run.test.ts proves the existing bash wrapper logic (handoff present + reason != cycle-close increments the respawn counter) already holds for reason 'context-backstop' by running the real assembled script with only the `claude` invocation stubbed out. file-size-budget.json _ref raised for src/orchestrator/handoff.ts (107->148, buildMinimalBackstopHandoff + MinimalBackstopHandoffPointers). No remaining stories reference CAM-172 in prd.json as of this write; check prd.json for what follows.",
   "officialDocsValidated": [
-    { "lib": "none", "status": "no_external_lib_touched" }
+    { "lib": "tmux", "url": "https://man7.org/linux/man-pages/man1/tmux.1.html", "fetchedAt": "2026-07-12T05:38:00Z", "status": "aligned", "summary": "Confirmed send-keys -l forces literal-character mode (so 'Enter' would be sent as 4 literal chars, never submitting); the implementation's atomic signalPaneFn/sendKeysWhenIdle call never passes -l, so 'Enter' resolves as the named key and the text+Enter submit in one call, matching the sendkeys-literal-enter-gotcha invariant." }
   ]
 }

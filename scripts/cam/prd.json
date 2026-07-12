@@ -50,7 +50,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Files: src/commands/orch-recycle-watch.ts (episode state machine in runOrchRecycleWatch + checkBackstop; add signal/timeout/now seams to OrchRecycleWatchOptions), src/orchestrator/handoff.ts (reuse writeOrchHandoff; optionally add a small buildMinimalBackstopHandoff helper for the pointers payload), test/commands/orch-recycle-watch.test.ts, test/commands/run.test.ts. Pane-signal + pane-id resolution: reuse getOrchPaneId / sendKeysWhenIdle from src/tmux/session.ts (see src/commands/issue.ts:171-192 for the exact atomic send-keys pattern). GOTCHA (memory sendkeys-literal-enter-gotcha): NEVER pass -l to send-keys; -l makes 'Enter' literal and never submits. GOTCHA (issue): the authored-handoff signal may land while the agent is mid-turn (context is full precisely because it is busy) - the 30s timeout + deterministic fallback exists so respawn never stalls. Episode dedupe: track a 'signaled-at' timestamp in the loop so the pane is not spammed every 2s poll. run.ts wrapper (buildOrchestratorPaneCommand ~252-308) already routes any handoff-present exit to respawn and increments n for non-cycle-close reasons; assert this holds for reason 'context-backstop' (likely no code change, test-only)."
     },
