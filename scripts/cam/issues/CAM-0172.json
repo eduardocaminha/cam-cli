@@ -1,7 +1,7 @@
 {
   "id": "CAM-172",
   "title": "Orchestrator context backstop: janela real 200k (configuravel) + handoff-before-arm no mid-cycle",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-03T14:05:49.360Z",
