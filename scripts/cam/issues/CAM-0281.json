@@ -1,0 +1,9 @@
+{
+  "id": "CAM-281",
+  "title": "Expose issue timestamps (createdAt) in cam issue list --json + list output",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-12T12:12:11.592Z",
+  "description": "cam issue list / --json carries no timestamp, so the orchestrator can only proxy recency by id number (fragile: hand-filed ids, demotes, cross-list). Surface a createdAt (ISO 8601, ideally also updatedAt) per issue in cam issue list --json (primary consumer = orchestrator), sourced from the issue file metadata; add+backfill the schema field if absent. Optional compact date column in the human-readable list. Additive field, must not break existing JSON consumers; covered by a test asserting the field is present and well-formed. Refine via /cam-spec before planning."
+}
