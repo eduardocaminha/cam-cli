@@ -21,7 +21,7 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { main, HELP_REGISTRY, isHelpRequested } from '../index.ts';
+import { main, HELP_REGISTRY, isHelpRequested, COMMANDS } from '../index.ts';
 import { parseClaudeArgs } from '../src/commands/claude.ts';
 
 function captureStdout(): { restore: () => void; written: () => string } {
@@ -74,6 +74,25 @@ describe('central --help/-h guard — table-driven over every registered command
 			}
 		});
 	}
+});
+
+describe('COMMANDS is the single typed source of truth (US-001, CAM-278)', () => {
+	test('COMMANDS matches HELP_REGISTRY keys exactly (no command dropped, no 4th copy)', () => {
+		const helpKeys = Object.keys(HELP_REGISTRY).sort();
+		const commandsSorted: string[] = [...COMMANDS].sort();
+		expect(commandsSorted).toEqual(helpKeys);
+	});
+
+	test('COMMANDS matches every `case \'<cmd>\':` label in the dispatch switch', async () => {
+		const source = await Bun.file(new URL('../index.ts', import.meta.url)).text();
+		const switchStart = source.indexOf('switch (command) {');
+		expect(switchStart).toBeGreaterThan(-1);
+		const switchBody = source.slice(switchStart);
+		const caseLabels = [...switchBody.matchAll(/case '([a-z0-9-]+)':/g)].map((m) => m[1]!);
+		expect(caseLabels.length).toBeGreaterThan(0);
+		const commandsSorted: string[] = [...COMMANDS].sort();
+		expect([...new Set(caseLabels)].sort()).toEqual(commandsSorted);
+	});
 });
 
 describe('`cam claude` arg-forwarding carve-out (US-001 AC5)', () => {
