@@ -69,7 +69,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "MANDATED ORDER: lands AFTER the US-001 guard + US-002 producer so switching to the real 200k window (which makes the backstop actually fire) never causes teardown-with-data-loss. Files: src/config/models.ts (add readOrchContextWindow), src/orchestrator/context-window.ts (orchestratorContextWindow reads config; remove/retire MODEL_CONTEXT_WINDOWS + OPUS_CONTEXT_WINDOW model-prefix path; keep ORCH_CONTEXT_BACKSTOP_FRACTION = 0.8), test/config/models.test.ts, test/orchestrator/context-window.test.ts. GOTCHA (issue): 1M is an API/Bedrock/GCP/Foundry feature (confirmed against Anthropic context-windows doc); the Claude Code flat subscription without API credit runs the 200k standard window and overflows with a hard 400 'prompt is too long'. GOTCHA (issue): threshold is 0.80 not 0.95 deliberately - the watcher polls every 2s and the final turn + the handoff write itself consume tokens; 0.95 (190k) risks crossing the hard 200k ceiling before the recycle fires. Adding [loop] orch_context_window to scripts/cam/project.toml is OPTIONAL (default 200k already matches the subscription reality); do not set it to 1M. Downstream: orchestratorContextWindow() is called once at watcher startup (src/commands/orch-recycle-watch.ts:413), not per-tick."
     }

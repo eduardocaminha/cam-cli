@@ -1,20 +1,17 @@
 {
-  "lastCompletedStory": { "id": "US-002", "title": "Backstop produces a handoff: signal the agent, then deterministic minimal fallback, then respawn" },
+  "lastCompletedStory": { "id": "US-003", "title": "Config-driven orchestrator window: default 200k, replace 1M model-prefix derivation" },
   "branchName": "cam/issue-172",
-  "timestamp": "2026-07-12T05:40:00Z",
-  "createdFiles": [
-    "test/commands/run.test.ts"
-  ],
+  "timestamp": "2026-07-12T05:55:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/orch-recycle-watch.ts",
-    "src/orchestrator/handoff.ts",
-    "test/commands/orch-recycle-watch.test.ts",
-    "test/orch-recycle-watch.test.ts",
-    "scripts/file-size-budget.json"
+    "src/config/models.ts",
+    "src/orchestrator/context-window.ts",
+    "test/config/models.test.ts",
+    "test/orchestrator/context-window.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "checkBackstop (src/commands/orch-recycle-watch.ts) now runs the full signal-then-fallback episode state machine on top of US-001's handoff-exists guard: over-threshold + no handoff yet + no signal outstanding signals the orchestrator pane once (BACKSTOP_SIGNAL_TEXT via sendKeysWhenIdle, atomic send-keys, no -l) and stamps episode.signaledAt (nowFn()); repeated polls within signalTimeoutMs (default 30s, DEFAULT_SIGNAL_TIMEOUT_MS) no-op; once the grace period elapses with still no handoff, writeMinimalHandoffFn() (production: makeWriteMinimalHandoffFn -> writeOrchHandoff + buildMinimalBackstopHandoff, first PRODUCTION caller of writeOrchHandoff from src/orchestrator/handoff.ts) writes a deterministic handoff (schemaVersion 1, reason 'context-backstop', pointers: prdPath, gitBranch, loopFile, journalTail) then arms the marker. All seams (tmuxSpawnFn, resolveOrchPaneIdFn, signalPaneFn, writeMinimalHandoffFn, nowFn, signalTimeoutMs) are injectable on OrchRecycleWatchOptions/BackstopDeps; BackstopEpisodeState.signaledAt is the sole mutable per-episode field, allocated once per watcher lifetime. AC6 (buildOrchestratorPaneCommand in src/commands/run.ts takes the respawn branch, never kill-session, for a context-backstop handoff) needed NO src/commands/run.ts code change: a new test/commands/run.test.ts proves the existing bash wrapper logic (handoff present + reason != cycle-close increments the respawn counter) already holds for reason 'context-backstop' by running the real assembled script with only the `claude` invocation stubbed out. file-size-budget.json _ref raised for src/orchestrator/handoff.ts (107->148, buildMinimalBackstopHandoff + MinimalBackstopHandoffPointers). No remaining stories reference CAM-172 in prd.json as of this write; check prd.json for what follows.",
+  "nextStoryContext": "orchestratorContextWindow() (src/orchestrator/context-window.ts) is now a thin pass-through to the new readOrchContextWindow (src/config/models.ts): reads [loop] orch_context_window from project.toml, defaulting fail-safe to 200000 (DEFAULT_ORCH_CONTEXT_WINDOW) on any missing/malformed/non-integer/<=0 value. The prior 1M-by-model-prefix derivation (MODEL_CONTEXT_WINDOWS, OPUS_CONTEXT_WINDOW, and the readPhaseModel('orchestrator') call inside context-window.ts) is fully removed -- grep confirms zero remaining references in src/ or test/. isOverContextBackstop's strict-greater boundary semantics (occupancy > window * fraction) are untouched; with the new 200000 default the 0.80 backstop now fires above 160000, which is reachable in a real session (unlike the old 800k threshold under a 1M assumption that a flat-subscription session never approaches). test/commands/orch-recycle-watch.test.ts's makeBackstopDeps test helper still hardcodes contextWindow: 1_000_000 as an explicit per-test fixture override (not derived from production defaults) -- this is intentional and unchanged, since every test in that file passes contextWindow explicitly and never relies on the orchestratorContextWindow() production default. scripts/cam/project.toml's [loop] section (meta_loop, worker_isolation) has NOT been given an orch_context_window key -- the notes on this story marked that optional since the 200000 default already matches the real subscription ceiling, and I left it unset. jq shows no remaining prd.json stories with passes:false as of this write; this was the last story in the CAM-172 PRD (US-001/002/003 all done) -- next agent should check prd.json fresh rather than assume more stories exist under this branch.",
   "officialDocsValidated": [
-    { "lib": "tmux", "url": "https://man7.org/linux/man-pages/man1/tmux.1.html", "fetchedAt": "2026-07-12T05:38:00Z", "status": "aligned", "summary": "Confirmed send-keys -l forces literal-character mode (so 'Enter' would be sent as 4 literal chars, never submitting); the implementation's atomic signalPaneFn/sendKeysWhenIdle call never passes -l, so 'Enter' resolves as the named key and the text+Enter submit in one call, matching the sendkeys-literal-enter-gotcha invariant." }
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "This story is a pure internal config-reader change (TOML section/key read via the existing loadConfig wrapper, already validated in prior stories); no new external library surface was exercised." }
   ]
 }
