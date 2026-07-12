@@ -1,22 +1,19 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "Add cam suggestions promote + dismiss subcommands"
+    "id": "US-006",
+    "title": "Update orchestrator agent docs to describe the suggestions pen + triage"
   },
   "branchName": "cam/issue-285",
-  "timestamp": "2026-07-12T02:00:00.000Z",
+  "timestamp": "2026-07-12T02:30:00.000Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "index.ts",
-    "src/commands/suggestions.ts",
-    "src/supervisor/suggestion-followups.ts",
-    "test/commands/suggestions-cli.test.ts",
-    "test/commands/suggestions.test.ts",
-    "scripts/cam/prd.json",
-    "scripts/cam/patterns.md"
+    "templates/agents/subagent-orchestrator.md",
+    ".claude/agents/subagent-orchestrator.md",
+    "src/vendor/_generated.ts",
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-005 is DONE: `cam suggestions` now has all 3 subcommands (list/promote/dismiss), so US-006 (update orchestrator agent docs to describe the pen + triage) is purely a docs story -- no more suggestions.ts/index.ts CLI surface work remains in this PRD. `src/commands/suggestions.ts` exports `promoteSuggestionOnMain`/`dismissSuggestionOnMain` (alongside the existing `appendSuggestionOnMain`/`readSuggestionsFromMain`, US-001/US-003): `dismissSuggestionOnMain({cwd, fingerprint, spawnFn})` just removes the matching JSONL line (checkMainUpToDate -> read pen -> removeSuggestionLine -> commitTreeToMain -> pushMainBestEffort); `promoteSuggestionOnMain({cwd, fingerprint, spawnFn, clock, readProjectToml})` looks up the entry FIRST (unknown fingerprint -> not-found, zero mutation), calls `createLocalIssueOnMain` (title=entry.title, description hand-built to match `buildFollowUpIssue`'s line format but reusing entry.fingerprint verbatim -- never recomputed, since the pen entry has no file/line to reconstruct a ReviewFinding from -- derivedFrom=[resolveIssueId(entry.sourceIssue, prefix)] when resolvable), then re-runs checkMainUpToDate + re-reads the pen a SECOND time (main advanced from the issue-file commit) before removing the line. `index.ts`'s `dispatchSuggestions` routes `promote`/`dismiss` via injectable `promoteFn`/`dismissFn` (mirroring `readFn`), printing `CAM_SUGGESTIONS_PROMOTED=<fp> issue=<id>` / `CAM_SUGGESTIONS_DISMISSED=<fp>` on success and nothing (just exit 1) on failure -- printError already fires inside suggestions.ts, dispatch does not double-print. For US-006: the orchestrator persona docs to update are `templates/.claude/agents/subagent-orchestrator.md` (source of truth) + its `.claude/` runtime mirror (self-hosting dual-copy pattern, patterns.md's `cam-dual-copy-is-per-file` bullet -- diff before assuming a change forces re-embed; this IS a template file so it likely needs `bun run embed-vendor` afterward, check file-size on `src/vendor/_generated.ts` too) -- describe the CAM-189 terminal-verdict hook filing to the pen (not directly as issues), and the `cam suggestions list/promote/dismiss` triage workflow now fully available. No new suggestions.ts/index.ts code should be touched by US-006.",
+  "nextStoryContext": "US-006 is DONE: both templates/agents/subagent-orchestrator.md and .claude/agents/subagent-orchestrator.md had the boot-step-5 backlog note (around line 112-117) rewritten in lockstep -- it now says the terminal-verdict hook (CAM-189) appends reviewer SUGGESTIONs to scripts/cam/suggestions.jsonl (a holding pen) instead of auto-filing idea-stage issues, and instructs the orchestrator to triage the pen with `cam suggestions list` / `promote <fingerprint>` / `dismiss <fingerprint>`. Ran `bun run embed-vendor` to regenerate src/vendor/_generated.ts (the template snapshot) and confirmed embed-vendor:check is clean. This closes out the CAM-189-era doc drift that US-001..US-005 code work (suggestions.jsonl append + list/promote/dismiss CLI) had left stale. No further suggestions.ts/index.ts/agent-doc work is known to remain in this PRD; check prd.json for any remaining passes:false stories.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
