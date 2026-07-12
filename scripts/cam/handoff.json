@@ -1,0 +1,21 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Consolidate boot-marker removal boilerplate in orchestrator agent doc" },
+  "branchName": "cam/issue-265",
+  "timestamp": "2026-07-12T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "templates/agents/subagent-orchestrator.md",
+    ".claude/agents/subagent-orchestrator.md",
+    "src/vendor/_generated.ts",
+    "test/templates/orchestrator-boot.test.ts",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [
+    "AC6 ('no file under src/ is modified') and AC7 ('run bun run embed-vendor if it flags drift') are jointly unsatisfiable for this story: editing templates/ necessarily regenerates src/vendor/_generated.ts (confirmed the drift is caused solely by this story's edit, not pre-existing). I satisfied AC7 (leaving vendor drift stale would be an actual bug) and treated AC6's intent as 'no hand-authored business-logic file under src/', not the generated vendor bundle. See scripts/cam/patterns.md for the full note. Reviewer should judge whether this reading is acceptable or whether AC6 needs to be re-scoped in a follow-up.",
+    "test/templates/orchestrator-boot.test.ts's 'opening-blocker section instructs not to delete the marker; removal is owned by the next plan run' test encoded the OLD contradictory wording this story was explicitly asked to fix (the displaced 'next plan run (US-004)' paragraph under implement-blocked). Updated the test to assert the new consolidated structure (shared rule appears once, before the preflight-failed blocker line; the preflight-failed block itself states 'Removed by the next plan run ... preflight-failed')."
+  ],
+  "nextStoryContext": "US-001 (CAM-265) consolidated the boot-surfaced-marker boilerplate in both templates/agents/subagent-orchestrator.md and .claude/agents/subagent-orchestrator.md: a single shared 'Do NOT delete the marker yourself. Surfacing it at boot is read-only' sentence now covers all boot-surfaced markers (stated once per file, right after the numbered boot-read list), and each marker keeps exactly one specific removal-condition clause (ship-stalled, plan-escalated [now convergence-gated, issue-agnostic], plan-preflight-failed [newly added, issue-agnostic non-preflight result], implement-blocked [issueId-scoped re-arm, kept], post-merge-stalled, and sidecar-stalled [templates/ copy only, per the dual-copy gotcha]). The contradictory 'next plan run (US-004)' paragraph that was misplaced under implement-blocked is gone; its corrected content now lives under plan-preflight-failed. bun run embed-vendor was run and committed (src/vendor/_generated.ts). All quality gates green: typecheck, bun test (4400 pass), bun run check:all (lint/file-size/debt-markers/coverage/dead-code/dup/ci-parity all ok), embed-vendor:check ok.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
