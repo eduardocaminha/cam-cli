@@ -1,9 +1,45 @@
 {
   "id": "CAM-172",
   "title": "Orchestrator context backstop: janela real 200k (configuravel) + handoff-before-arm no mid-cycle",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-03T14:05:49.360Z",
-  "description": "P1. Dois bugs compostos no backstop de contexto do orquestrador (recycle CAM-162/163), descobertos via Explore 2026-07-03. Juntos impedem o auto-handoff + respawn bem amarrado. derivedFrom CAM-163; relaciona CAM-162, CAM-168, CAM-165, CAM-164.\n\nBUG 1 (janela errada). orchestratorContextWindow() (src/orchestrator/context-window.ts) retorna 1M pra opus-4-8 por prefixo de modelo. Mas na subscription do Claude Code sem credito de API a sessao real cai pro fallback de 200k (comportamento da plataforma Anthropic; a doc de context-windows confirma que 1M e feature de API, nao coberta pela subscription flat). O backstop calcula 80% de 1M = 800k e NUNCA dispara antes do overflow real em ~200k.\n\nBUG 2 (teardown mid-cycle). checkBackstop (src/commands/orch-recycle-watch.ts:227-233) arma o marker INCONDICIONAL na ocupacao, SEM o guard handoff-exists que o caminho de cycle-close tem (index.ts:1181-1187, exit 3). O handoff .cam-orch-handoff.json so e escrito pelo AGENTE no cycle-close (src/orchestrator/handoff.ts nao tem caller de producao; writeOrchHandoff so tem teste). Backstop mid-cycle -> sem handoff no disco -> SIGTERM cai no else do wrapper (run.ts:263-273) -> tmux kill-session TEARDOWN. Orquestrador morre sem respawn e com perda de contexto (pior que o autocompact do Claude, que preserva resumo).\n\nCOMPOSICAO: os dois se mascaram. Bug 1 impede qualquer disparo, mascarando bug 2. Corrigir a janela pra 200k SEM corrigir o handoff-guard faz o teardown comecar a morder (dispara mid-cycle sem handoff). Consertar JUNTOS; handoff-guard primeiro.\n\nDESIGN (operador 2026-07-03):\n1. Janela do orquestrador configuravel via project.toml (ex: [loop] orch_context_window). Default 200k (realidade da subscription). Override pra 1M quando houver credito de API.\n2. Dois gatilhos de recycle: (a) cycle-close/PR resolvido = JA shipado (CAM-162/168), sem mudanca; (b) context backstop = auto-handoff + respawn ao cruzar o teto.\n3. O backstop DEVE garantir handoff antes de armar. Desenho recomendado: o watcher sinaliza o AGENTE pra escrever o handoff + armar (handoff autoral, preserva qualidade), com fallback deterministico minimo (reason context-backstop + state-files) se o agente nao responder em N s. Nunca armar/SIGTERM sem handoff. Espelhar o guard do cycle-close (index.ts:1181-1187) no checkBackstop.\n\nDECISAO ABERTA (grill): threshold. Operador propos 190k (0.95). Recomendacao de engenharia: 0.80-0.85 (160-170k) pra folga contra lag do poll (2s) + turno final grande + custo de escrever o handoff; 190k arrisca overflow duro (400 prompt-too-long) antes do recycle disparar.\n\nGates: bun run check:all, bun test."
+  "description": "P1. Dois bugs compostos no backstop de contexto do orquestrador (recycle CAM-162/163), descobertos via Explore 2026-07-03. Juntos impedem o auto-handoff + respawn bem amarrado. derivedFrom CAM-163; relaciona CAM-162, CAM-168, CAM-165, CAM-164.\n\nBUG 1 (janela errada). orchestratorContextWindow() (src/orchestrator/context-window.ts) retorna 1M pra opus-4-8 por prefixo de modelo. Mas na subscription do Claude Code sem credito de API a sessao real cai pro fallback de 200k (comportamento da plataforma Anthropic; a doc de context-windows confirma que 1M e feature de API, nao coberta pela subscription flat). O backstop calcula 80% de 1M = 800k e NUNCA dispara antes do overflow real em ~200k.\n\nBUG 2 (teardown mid-cycle). checkBackstop (src/commands/orch-recycle-watch.ts:227-233) arma o marker INCONDICIONAL na ocupacao, SEM o guard handoff-exists que o caminho de cycle-close tem (index.ts:1181-1187, exit 3). O handoff .cam-orch-handoff.json so e escrito pelo AGENTE no cycle-close (src/orchestrator/handoff.ts nao tem caller de producao; writeOrchHandoff so tem teste). Backstop mid-cycle -> sem handoff no disco -> SIGTERM cai no else do wrapper (run.ts:263-273) -> tmux kill-session TEARDOWN. Orquestrador morre sem respawn e com perda de contexto (pior que o autocompact do Claude, que preserva resumo).\n\nCOMPOSICAO: os dois se mascaram. Bug 1 impede qualquer disparo, mascarando bug 2. Corrigir a janela pra 200k SEM corrigir o handoff-guard faz o teardown comecar a morder (dispara mid-cycle sem handoff). Consertar JUNTOS; handoff-guard primeiro.\n\nDESIGN (operador 2026-07-03):\n1. Janela do orquestrador configuravel via project.toml (ex: [loop] orch_context_window). Default 200k (realidade da subscription). Override pra 1M quando houver credito de API.\n2. Dois gatilhos de recycle: (a) cycle-close/PR resolvido = JA shipado (CAM-162/168), sem mudanca; (b) context backstop = auto-handoff + respawn ao cruzar o teto.\n3. O backstop DEVE garantir handoff antes de armar. Desenho recomendado: o watcher sinaliza o AGENTE pra escrever o handoff + armar (handoff autoral, preserva qualidade), com fallback deterministico minimo (reason context-backstop + state-files) se o agente nao responder em N s. Nunca armar/SIGTERM sem handoff. Espelhar o guard do cycle-close (index.ts:1181-1187) no checkBackstop.\n\nDECISAO ABERTA (grill): threshold. Operador propos 190k (0.95). Recomendacao de engenharia: 0.80-0.85 (160-170k) pra folga contra lag do poll (2s) + turno final grande + custo de escrever o handoff; 190k arrisca overflow duro (400 prompt-too-long) antes do recycle disparar.\n\nGates: bun run check:all, bun test.",
+  "spec": {
+    "acceptanceCriteria": [
+      "project.toml supports a [loop] orch_context_window integer key (token count); when absent the orchestrator context window defaults to 200000, not a model-prefix-derived 1000000.",
+      "orchestratorContextWindow() (src/orchestrator/context-window.ts) returns the configured [loop] orch_context_window value (falling back to 200000), replacing the current 1M-by-model-prefix derivation.",
+      "checkBackstop (src/commands/orch-recycle-watch.ts) triggers at occupancy >= 0.80 of the configured window (160000 of the 200000 default).",
+      "checkBackstop never arms the recycle marker or issues SIGTERM without a handoff present on disk, mirroring the cycle-close handoff guard in index.ts (~1181-1187, exit 3).",
+      "On backstop the watcher first signals the orchestrator agent (pane inject) to write an authored handoff and arm; if no handoff file appears within 30 seconds the watcher writes a deterministic minimal handoff (schemaVersion 1, reason 'context-backstop', plus pointers to the durable state files: prd.json, current branch, loop file, journal tail) and arms the marker itself.",
+      "The backstop terminal always resolves to wrapper respawn + rehydrate via CAM_ORCH_REHYDRATE, never a tmux kill-session teardown (the current else-branch in run.ts ~263-273).",
+      "Implementation order: the handoff-before-arm guard lands before the context-window fix, so correcting the window does not start triggering teardown-with-data-loss.",
+      "bun run check:all passes and bun test is green."
+    ],
+    "scope": "IN: src/orchestrator/context-window.ts (config-driven window read); src/commands/orch-recycle-watch.ts checkBackstop (handoff-existence guard + agent-signal + deterministic-fallback handoff + arm); project.toml [loop] orch_context_window schema + parse; the respawn/rehydrate path for the backstop terminal in run.ts; a production caller for writeOrchHandoff (src/orchestrator/handoff.ts) which today has only test callers. OUT: the cycle-close recycle path (CAM-162/168, already shipped, unchanged); CAM-164 backstop live-validation; CAM-165; the inter-cycle drainer CAM-139.",
+    "gotchas": [
+      "The two bugs mask each other: bug1 (80% of a wrong 1M window never fires) hides bug2 (unconditional arm without handoff -> teardown). Fixing the window WITHOUT the handoff-guard makes teardown start biting. Land the handoff-guard first.",
+      "writeOrchHandoff (src/orchestrator/handoff.ts) has NO production caller today (only tests). The backstop path must create the first real production caller for the deterministic minimal handoff.",
+      "1M context is an API/Bedrock/GCP/Foundry feature (Anthropic docs: 1M is the default only on those channels); the Claude Code flat subscription without API credit runs the 200k standard window. Input overflow is a hard 400 'prompt is too long'.",
+      "Threshold is 0.80 not 0.95 deliberately: the recycle watcher polls every 2s and the final turn plus the handoff write itself consume tokens; 0.95 (190k) risks crossing the hard 200k ceiling before the recycle fires and the handoff is written.",
+      "The authored-handoff signal may arrive while the agent is mid-turn (context is full precisely because it is busy); the 30s timeout + deterministic fallback exists so respawn never stalls waiting on an agent that cannot respond.",
+      "Mirror the existing cycle-close guard shape (index.ts ~1181-1187 exit 3) rather than inventing a new one, so both recycle triggers share the same never-arm-without-handoff invariant."
+    ],
+    "domainTerms": [
+      "context backstop",
+      "orch_context_window",
+      "handoff-before-arm guard",
+      "deterministic minimal handoff",
+      "recycle marker",
+      "authored handoff"
+    ]
+  },
+  "wsjf": {
+    "value": 8,
+    "timeCriticality": 5,
+    "riskReduction": 8,
+    "jobSize": 5
+  },
+  "type": "fix"
 }
