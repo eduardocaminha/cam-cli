@@ -40,7 +40,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Add the orphan-clearing sweep near the existing clear helper in src/commands/sidecar.ts (alongside clearImplementBlockedMarkerForCurrentIssue). Reuse readImplementBlockedMarker / removeImplementBlockedMarker (src/supervisor/implement-blocked-marker.ts) and readBacklogFromMain (src/issues/backlog.ts) with an injectable spawn so the test never shells out to real git. The marker.issueId is the stringified numeric issueNumber (no prefix); match it against the backlog entry's numeric id suffix (numericIdSuffix helper in src/issues/backlog.ts). Closed/shipped = stage === 'shipped' OR status === 'abandoned'. Keep the read read-only on main (git ls-tree/cat-file via the existing reader), never touch the working tree (issue gotcha). Do NOT change the write-site (src/supervisor/loop.ts:820-826) or the outcome classification (out of scope, CAM-36/37/38 territory). Wire the sweep at preflight start (src/supervisor/plan-preflight.ts) and/or sidecar startup (src/commands/sidecar.ts runSidecar); prefer a placement that runs before the circuit-breaker read (loop.ts:2194) and before the plan-preflight clean-tree gate."
     }

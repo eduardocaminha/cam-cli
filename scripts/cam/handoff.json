@@ -1,15 +1,17 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Gitignore the implement-blocked marker so it stops tripping the clean-tree gate" },
+  "lastCompletedStory": { "id": "US-002", "title": "Sweep orphaned implement-blocked markers whose issueId is a closed/shipped issue" },
   "branchName": "cam/issue-282",
   "timestamp": "2026-07-12T00:00:00Z",
   "createdFiles": [
-    "test/integration/gitignore-implement-blocked-marker.test.ts"
+    "test/commands/sidecar-orphan-sweep.test.ts"
   ],
   "modifiedFiles": [
-    ".gitignore"
+    "src/commands/sidecar.ts",
+    "src/issues/backlog.ts",
+    "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 added a single explicit .gitignore entry for .claude/.cam-implement-blocked.json (near .gitignore:91, mirroring the .cam-plan-preflight-failed.json / .cam-post-merge-stalled.json siblings) plus a real-git regression test (test/integration/gitignore-implement-blocked-marker.test.ts) proving `git status --porcelain` stays clean with an orphaned marker on disk. Only root .gitignore was touched, per notes -- templates/.gitignore was deliberately left alone (it already lacks several sibling marker entries too, e.g. .cam-plan-preflight-failed.json/.cam-post-merge-stalled.json/.cam-ship-stalled.json, a pre-existing gap out of scope here). US-002 (issueId-based orphan sweep) can now build on IMPLEMENT_BLOCKED_FILENAME / readImplementBlockedMarker / removeImplementBlockedMarker (src/supervisor/implement-blocked-marker.ts) and readBacklogFromMain / numericIdSuffix (src/issues/backlog.ts) per its notes; the existing clearImplementBlockedMarkerForCurrentIssue in src/commands/sidecar.ts:558-569 must stay unchanged.",
+  "nextStoryContext": "US-002 added sweepOrphanedImplementBlockedMarker (src/commands/sidecar.ts, right after clearImplementBlockedMarkerForCurrentIssue): reads the .cam-implement-blocked.json marker, and when present, resolves its issueId (Number(marker.issueId), the stringified prd.issueNumber) against readBacklogFromMain(cwd, spawn) entries via numericIdSuffix(entry.id) (now exported from src/issues/backlog.ts, was module-private). Removes the marker only when a matching entry is found AND stage==='shipped' OR status==='abandoned'; leaves it untouched when no match is found (best-effort) or the match is still open. Wired at runSidecar startup (src/commands/sidecar.ts, right after writeSessionStartFn, before the container-ensure guard) via the new SidecarOptions.sweepOrphanedImplementBlockedMarkerFn (injectable, defaults to the real closure with real spawnSync) -- this placement runs strictly before buildSidecarLoopDeps/the poll loop, so it precedes both the auto-chain circuit-breaker read (loop.ts:2194) and any plan-preflight clean-tree check. clearImplementBlockedMarkerForCurrentIssue (the matching-current-issue clear on rearm) is unchanged. file-size-budget.json's src/commands/sidecar.ts ceiling was raised 2857->2920 (gate's split('\\n').length count, not wc -l) with a dated _ref note for CAM-282/US-002.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
