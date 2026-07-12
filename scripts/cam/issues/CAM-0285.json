@@ -1,7 +1,7 @@
 {
   "id": "CAM-285",
   "title": "Route reviewer SUGGESTIONs to an append-only suggestions.jsonl holding pen (+ cam suggestions list/promote/dismiss) instead of auto-filing idea-stage issues",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-12T13:13:01.751Z",
