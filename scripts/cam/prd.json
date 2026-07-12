@@ -23,7 +23,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Single file: scripts/cam/project.toml (the [loop] section at lines 18-20). DIRECT hand-edit only. GOTCHA: the TOML serializer stringifyToml (src/config/toml.ts:68-96) cannot emit # comments, so never route this through mergeIntoConfig/stringifyToml (it would drop the comments). Keep orch_context_window COMMENTED (uncommenting pins the value and defeats the read-with-default path). Keep enums in sync with the real readers in src/config/models.ts (meta_loop: auto|observe|off; worker_isolation: container|host); do not invent values. Comments are valid in TOML input (only serialization drops them), so loadConfig still parses the file. No vendor/ or templates/ change (embed-vendor check not required). scripts/cam/patterns.md: grep 'config' / 'toml' if a config-edit gotcha is needed."
     }

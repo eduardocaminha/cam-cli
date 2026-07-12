@@ -1,0 +1,10 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Document [loop] keys with commented examples in project.toml" },
+  "createdFiles": [],
+  "modifiedFiles": ["scripts/cam/project.toml"],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 added a commented `# orch_context_window = 200000` example and inline `# accepted values` comments above meta_loop and worker_isolation in scripts/cam/project.toml [loop] section. The TOML serializer (stringifyToml, src/config/toml.ts) still cannot emit comments, so any future story that routes this file through mergeIntoConfig/stringifyToml will silently drop these comments; hand-edit only. orch_context_window remains commented (not active) so readOrchContextWindow keeps returning the runtime default 200000. CAM-283 tracks the separate follow-up of surfacing this same discoverability in cam init scaffolding, which was explicitly out of scope for US-001.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
