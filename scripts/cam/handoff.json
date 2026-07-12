@@ -1,28 +1,21 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-001",
-    "title": "Review round 1 fix 001: address reviewer finding"
+    "id": "US-R2-001",
+    "title": "Review round 2 fix 001: address reviewer finding"
   },
   "branchName": "cam/issue-286",
   "timestamp": "2026-07-12T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "vendor/check-agent-frontmatter.ts",
-    "vendor/README.md",
-    "src/vendor/_generated.ts",
-    "test/vendor/check-agent-frontmatter-standalone.test.ts",
-    "scripts/cam/prd.json",
-    "scripts/cam/patterns.md"
+    "scripts/file-size-budget.json",
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "Closed the latent regression carried over from US-002/US-003's handoffs: vendor/check-agent-frontmatter.ts's REQUIRED_TOP_LEVEL_KEYS still required 'model' after US-002 stripped the model: frontmatter line from all 5 .claude/agents/*.md persona files, so `bun vendor/check-agent-frontmatter.ts` (and therefore cam init's runVendoredSmoke('check-agent-frontmatter.ts') step) reported 5 spurious violations. Resolved as a deliberate, documented LOCAL DIVERGENCE from the upstream 'reporter' vendored copy (not by waiting on an upstream fix in a repo this PRD has no access to): dropped 'model' from REQUIRED_TOP_LEVEL_KEYS (check #6, the shape-validate-when-present rule, is unchanged), documented the divergence in 3 places -- a header comment in vendor/check-agent-frontmatter.ts, a new 'Local divergences from upstream' section in vendor/README.md, and a locking regression test asserting the smoke exits 0 for a fixture with no model: key. Re-ran `bun run embed-vendor` to regenerate src/vendor/_generated.ts (the actually-consumed embedded copy) and confirmed `bun vendor/check-agent-frontmatter.ts` now exits 0 with '5 agent file(s) ok.' against the repo's own .claude/agents/*.md. Any FUTURE re-vendor of check-agent-frontmatter.ts from upstream reporter must re-apply this patch (or the divergence must be upstreamed to reporter first) before running embed-vendor:check -- the header comment and README section are the durable markers for that. Quality gates all green: typecheck 0 errors, bun test 4342 pass / 0 fail, check:all full spine (test/embed-vendor/lint/file-size/debt-markers/version-skips/coverage/dead-code/dup/ci-parity) clean.",
+  "nextStoryContext": "Fixed the Layer B reviewer finding on test/vendor/check-agent-frontmatter-standalone.test.ts's file-size ceiling: US-R1-001 grew the file to 84 lines (adding the CAM-286 'no model: key' regression case) but left its scripts/file-size-budget.json ceiling at the stale 58, so `bun run check:all` failed at the file-size step, which broke US-001/US-002/US-003's own 'Lint spine passes (bun run check:all)' acceptance criterion. Raised the ceiling to 84 (confirmed via the actual `content.split('\\n').length` count the gate reports, NOT `wc -l`, which under-reports by one for this trailing-newline file -- first attempt at 83 from `wc -l` still failed the gate by exactly one line) and prepended a dated _ref tracker note (cam/issue-286, US-R2-001, CAM-286) staged in the same commit as the ceiling bump, per the existing ratchet convention. No source/vendor logic changed; this is a pure gate-config fix. All quality gates green: typecheck 0 errors, bun test 4342 pass / 0 fail, full `bun run check:all` spine (test/embed-vendor/lint/file-size/debt-markers/version-skips/coverage/dead-code/dup/ci-parity) clean.",
   "officialDocsValidated": [
     {
-      "lib": "Claude Code sub-agents (frontmatter spec)",
-      "url": "https://code.claude.com/docs/en/sub-agents",
-      "fetchedAt": "2026-07-12T00:00:00Z",
-      "status": "aligned",
-      "summary": "Docs' 'Supported frontmatter fields' table confirms only `name` and `description` are required (Yes); `model` is listed as No (optional) and 'Defaults to inherit' when omitted. Confirms the vendored smoke's prior REQUIRED_TOP_LEVEL_KEYS (requiring model) was over-strict relative to the real Claude Code loader contract, and that this story's fix (dropping model from the required set) now matches upstream product behavior exactly."
+      "lib": "none",
+      "status": "no_external_lib_touched"
     }
   ]
 }
