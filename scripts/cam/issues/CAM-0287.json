@@ -1,7 +1,7 @@
 {
   "id": "CAM-287",
   "title": "Adopt Claude Code CLI tier aliases (opus/sonnet/haiku/default/...) as first-class model options + free-text passthrough, so new Anthropic models are available automatically",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [
     "CAM-286"
