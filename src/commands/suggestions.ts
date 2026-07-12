@@ -1,10 +1,10 @@
 // src/commands/suggestions.ts
 //
-// SuggestionEntry data model + on-main append-only JSONL writer/reader for
+// SuggestionEntry data model + on-main JSONL writers/reader for
 // scripts/cam/suggestions.jsonl -- the shared "suggestions pen" that the
-// terminal-verdict hook (CAM-189) and the `cam suggestions` CLI (later
-// stories in this PRD) both read from and write to, instead of each
-// reviewer SUGGESTION being auto-filed as its own idea-stage issue.
+// terminal-verdict hook (CAM-189) and the `cam suggestions` CLI both read
+// from and write to, instead of each reviewer SUGGESTION being auto-filed as
+// its own idea-stage issue.
 //
 // Design mirrors appendJournalEntryOnMain (src/commands/journal.ts:525-596):
 //   - Validate pure inputs before any git calls (fail-fast).
@@ -19,7 +19,19 @@
 //     copies -- the jscpd gate already flags verbatim duplication of this
 //     plumbing, patterns.md line 272).
 //
-// CAM-285 US-001.
+// US-005 (promoteSuggestionOnMain/dismissSuggestionOnMain) additions:
+//   - promote files a real issue via createLocalIssueOnMain (src/commands/
+//     issue-file.ts), preserving derivedFrom from the entry's sourceIssue
+//     (resolveIssueId + the issue_prefix read from project.toml, same
+//     lookup createLocalIssueOnMain itself performs), embeds the entry's
+//     OWN already-stored fingerprint in a `suggestion-fingerprint: <fp>`
+//     description line (buildFollowUpIssue's format, src/supervisor/
+//     suggestion-followups.ts), then removes that one line from the pen.
+//   - dismiss just removes the one matching-fingerprint line, no issue filed.
+//   - Both look up the entry BEFORE mutating anything: an unknown fingerprint
+//     is a structured `not-found` error, no commit, no issue filed.
+//
+// CAM-285 US-001, US-005.
 
 import {
 	checkMainUpToDate,
@@ -27,6 +39,14 @@ import {
 	pushMainBestEffort,
 	type SpawnFn,
 } from '../git/on-main.ts';
+import { parseToml } from '../config/toml.ts';
+import { resolveIssueId } from '../issues/resolve-id.ts';
+import {
+	createLocalIssueOnMain,
+	type ClockFn,
+	type CreateLocalIssueOnMainError,
+} from './issue-file.ts';
+import { SUGGESTION_FINGERPRINT_PREFIX } from '../supervisor/suggestion-followups.ts';
 import { printError } from '../logging/color.ts';
 
 // Re-export SpawnFn so callers do not need to reach into src/git/on-main.ts directly.
@@ -93,6 +113,66 @@ function parseSuggestionsJsonl(content: string): SuggestionEntry[] {
 		.map((line) => line.trim())
 		.filter((line) => line.length > 0)
 		.map((line) => JSON.parse(line) as SuggestionEntry);
+}
+
+/**
+ * Read raw suggestions.jsonl content from main via `git show`. Returns
+ * `{ ok: false }` (with printError already fired) when the pen is absent from
+ * main; callers surface this as a structured `suggestions-missing` reason.
+ * Shared by appendSuggestionOnMain, promoteSuggestionOnMain, and
+ * dismissSuggestionOnMain so a third/fourth writer does not each hand-roll
+ * its own `git show main:<path>` + missing-file guard (jscpd gate).
+ */
+function readPenContentFromMain(
+	cwd: string,
+	spawnFn: SpawnFn,
+): { ok: true; content: string } | { ok: false } {
+	const showResult = spawnFn(
+		'git',
+		['-C', cwd, 'show', `main:${SUGGESTIONS_JSONL_PATH}`],
+		{ encoding: 'utf8' },
+	);
+	// Non-zero exit means the file is absent from main. We do NOT bootstrap
+	// it here -- suggestions.jsonl is seeded by `cam init` (US-002).
+	if ((showResult.status ?? 1) !== 0) {
+		printError(
+			'suggestions.jsonl missing on main',
+			`${SUGGESTIONS_JSONL_PATH} must pre-exist on main (seeded by cam init); ` +
+				`run: git show main:${SUGGESTIONS_JSONL_PATH} to confirm`,
+		);
+		return { ok: false };
+	}
+	return { ok: true, content: showResult.stdout ?? '' };
+}
+
+/**
+ * Remove the one JSONL line whose `fingerprint` matches from `content`. All
+ * other lines -- including blank lines and the trailing-newline structure --
+ * are pushed back byte-for-byte (never re-serialized), so only the matching
+ * line is dropped. Returns `found: false` (content unchanged) when no line
+ * matches, so callers can refuse to commit anything.
+ */
+function removeSuggestionLine(
+	content: string,
+	fingerprint: string,
+): { updatedContent: string; found: boolean } {
+	const rawLines = content.split('\n');
+	let found = false;
+	const kept: string[] = [];
+	for (const rawLine of rawLines) {
+		const trimmed = rawLine.trim();
+		if (trimmed.length === 0) {
+			kept.push(rawLine);
+			continue;
+		}
+		const parsed = JSON.parse(trimmed) as SuggestionEntry;
+		if (!found && parsed.fingerprint === fingerprint) {
+			found = true;
+			continue;
+		}
+		kept.push(rawLine);
+	}
+	return { updatedContent: kept.join('\n'), found };
 }
 
 // ---------------------------------------------------------------------------
@@ -186,22 +266,11 @@ export function appendSuggestionOnMain(
 	const { localMainSha } = guard;
 
 	// Step 3: read suggestions.jsonl from main (NOT the working tree).
-	const showResult = spawnFn(
-		'git',
-		['-C', cwd, 'show', `main:${SUGGESTIONS_JSONL_PATH}`],
-		{ encoding: 'utf8' },
-	);
-	// Non-zero exit means the file is absent from main. We do NOT bootstrap
-	// it here -- suggestions.jsonl is seeded by `cam init` (US-002).
-	if ((showResult.status ?? 1) !== 0) {
-		printError(
-			'suggestions.jsonl missing on main',
-			`${SUGGESTIONS_JSONL_PATH} must pre-exist on main (seeded by cam init); ` +
-				`run: git show main:${SUGGESTIONS_JSONL_PATH} to confirm`,
-		);
+	const penRead = readPenContentFromMain(cwd, spawnFn);
+	if (!penRead.ok) {
 		return { ok: false, reason: 'suggestions-missing' };
 	}
-	const existingContent = showResult.stdout ?? '';
+	const existingContent = penRead.content;
 	const existingEntries = parseSuggestionsJsonl(existingContent);
 
 	// Step 4: dedup by fingerprint.
@@ -252,4 +321,226 @@ export function readSuggestionsFromMain(cwd: string, spawnFn: SpawnFn): Suggesti
 		return [];
 	}
 	return parseSuggestionsJsonl(showResult.stdout ?? '');
+}
+
+// ---------------------------------------------------------------------------
+// dismissSuggestionOnMain
+// ---------------------------------------------------------------------------
+
+export interface DismissSuggestionOnMainOptions {
+	/** Absolute path to the project root (git repo). */
+	cwd: string;
+	/** Fingerprint of the pen entry to drop. */
+	fingerprint: string;
+	/** Injectable spawnSync for all git subprocess calls. */
+	spawnFn: SpawnFn;
+}
+
+export interface DismissSuggestionOnMainSuccess {
+	ok: true;
+	fingerprint: string;
+	/** Short sha (7 chars) of the new commit on main. */
+	sha: string;
+}
+
+export interface DismissSuggestionOnMainError {
+	ok: false;
+	reason: 'not-found' | 'diverged' | 'detached-head' | 'missing-main' | 'suggestions-missing';
+}
+
+export type DismissSuggestionOnMainResult =
+	| DismissSuggestionOnMainSuccess
+	| DismissSuggestionOnMainError;
+
+/**
+ * Remove the pen entry matching `fingerprint` from scripts/cam/suggestions.jsonl
+ * on main, without filing anything. An unknown fingerprint is a structured
+ * `not-found` error (printed + returned) and does NOT mutate the pen.
+ */
+export function dismissSuggestionOnMain(
+	options: DismissSuggestionOnMainOptions,
+): DismissSuggestionOnMainResult {
+	const { cwd, fingerprint, spawnFn } = options;
+
+	const guard = checkMainUpToDate(cwd, spawnFn, 'dismiss suggestion');
+	if (!guard.ok) {
+		return guard;
+	}
+	const { localMainSha } = guard;
+
+	const penRead = readPenContentFromMain(cwd, spawnFn);
+	if (!penRead.ok) {
+		return { ok: false, reason: 'suggestions-missing' };
+	}
+
+	const { updatedContent, found } = removeSuggestionLine(penRead.content, fingerprint);
+	if (!found) {
+		printError(
+			'unknown fingerprint',
+			`no SUGGESTION in the pen matches fingerprint ${fingerprint}`,
+		);
+		return { ok: false, reason: 'not-found' };
+	}
+
+	const commitMsg = `chore(cam): suggestions dismiss ${fingerprint}`;
+	const sha = commitTreeToMain(
+		cwd,
+		[{ path: SUGGESTIONS_JSONL_PATH, content: updatedContent }],
+		commitMsg,
+		localMainSha,
+		spawnFn,
+		'cam-suggestions-',
+	);
+
+	pushMainBestEffort(cwd, spawnFn);
+
+	return { ok: true, fingerprint, sha };
+}
+
+// ---------------------------------------------------------------------------
+// promoteSuggestionOnMain
+// ---------------------------------------------------------------------------
+
+export interface PromoteSuggestionOnMainOptions {
+	/** Absolute path to the project root (git repo). */
+	cwd: string;
+	/** Fingerprint of the pen entry to file as a real issue. */
+	fingerprint: string;
+	/** Injectable spawnSync for all git subprocess calls. */
+	spawnFn: SpawnFn;
+	/** Injectable clock -- returns ISO 8601 timestamp (forwarded to createLocalIssueOnMain). */
+	clock: ClockFn;
+	/** Read scripts/cam/project.toml as raw text (forwarded to createLocalIssueOnMain). */
+	readProjectToml: () => string;
+}
+
+export interface PromoteSuggestionOnMainSuccess {
+	ok: true;
+	fingerprint: string;
+	/** Id of the newly filed issue, e.g. 'CAM-286'. */
+	issueId: string;
+	/** Short sha of the commit that filed the issue on main. */
+	issueSha: string;
+	/** Short sha of the commit that removed the line from the pen. */
+	penSha: string;
+}
+
+export interface PromoteSuggestionOnMainError {
+	ok: false;
+	reason: CreateLocalIssueOnMainError['reason'] | 'not-found' | 'suggestions-missing';
+}
+
+export type PromoteSuggestionOnMainResult =
+	| PromoteSuggestionOnMainSuccess
+	| PromoteSuggestionOnMainError;
+
+/**
+ * Build the description for a promoted pen entry's filed issue, mirroring
+ * buildFollowUpIssue's format (src/supervisor/suggestion-followups.ts) but
+ * reusing the entry's ALREADY-STORED fingerprint rather than recomputing one
+ * from a reconstructed ReviewFinding: the pen entry does not retain the
+ * original finding's file/line, so recomputing via fingerprintFinding could
+ * drift from the fingerprint the pen was keyed under. Reusing
+ * `entry.fingerprint` keeps the promoted issue's dedup line byte-identical to
+ * the pen's own dedup key, so future terminal reviews still recognize it.
+ */
+function buildPromotedDescription(entry: SuggestionEntry): string {
+	const provenanceLines = [`Source: ${entry.sourceBranch}`];
+	if (entry.reviewRound !== undefined) {
+		provenanceLines.push(`Review round: ${entry.reviewRound}`);
+	}
+	return [
+		entry.body,
+		'',
+		...provenanceLines,
+		'',
+		`${SUGGESTION_FINGERPRINT_PREFIX} ${entry.fingerprint}`,
+	].join('\n');
+}
+
+/**
+ * File the pen entry matching `fingerprint` as a real issue via
+ * createLocalIssueOnMain (preserving `derivedFrom` resolved from the entry's
+ * `sourceIssue`, and embedding the entry's fingerprint in the description),
+ * then remove that one line from scripts/cam/suggestions.jsonl on main.
+ *
+ * An unknown fingerprint is a structured `not-found` error (printed +
+ * returned): looked up BEFORE any mutation, so neither the issue nor the pen
+ * is touched. A createLocalIssueOnMain failure (diverged/detached-head/
+ * missing-main/guardrail-failed) also leaves the pen untouched -- the pen
+ * line is only removed after the issue has actually landed on main.
+ */
+export function promoteSuggestionOnMain(
+	options: PromoteSuggestionOnMainOptions,
+): PromoteSuggestionOnMainResult {
+	const { cwd, fingerprint, spawnFn, clock, readProjectToml } = options;
+
+	const guard = checkMainUpToDate(cwd, spawnFn, 'promote suggestion');
+	if (!guard.ok) {
+		return guard;
+	}
+
+	const penRead = readPenContentFromMain(cwd, spawnFn);
+	if (!penRead.ok) {
+		return { ok: false, reason: 'suggestions-missing' };
+	}
+	const entry = parseSuggestionsJsonl(penRead.content).find((e) => e.fingerprint === fingerprint);
+	if (entry === undefined) {
+		printError(
+			'unknown fingerprint',
+			`no SUGGESTION in the pen matches fingerprint ${fingerprint}`,
+		);
+		return { ok: false, reason: 'not-found' };
+	}
+
+	// Resolve derivedFrom from the entry's sourceIssue (the PRD-backing parent
+	// issue), the same issue_prefix lookup createLocalIssueOnMain itself uses.
+	const config = parseToml(readProjectToml());
+	const prefix = typeof config['issue_prefix'] === 'string' ? config['issue_prefix'] : 'CAM';
+	const parentId = resolveIssueId(entry.sourceIssue, prefix);
+
+	const issueResult = createLocalIssueOnMain({
+		cwd,
+		title: entry.title,
+		description: buildPromotedDescription(entry),
+		...(parentId !== null ? { derivedFrom: [parentId] } : {}),
+		spawnFn,
+		clock,
+		readProjectToml,
+	});
+	if (!issueResult.ok) {
+		return { ok: false, reason: issueResult.reason };
+	}
+
+	// createLocalIssueOnMain already advanced main with its own commit: re-guard
+	// and re-read the pen so the line removal is based on the up-to-date sha.
+	const postGuard = checkMainUpToDate(cwd, spawnFn, 'promote suggestion');
+	if (!postGuard.ok) {
+		return postGuard;
+	}
+	const postPenRead = readPenContentFromMain(cwd, spawnFn);
+	if (!postPenRead.ok) {
+		return { ok: false, reason: 'suggestions-missing' };
+	}
+	const { updatedContent } = removeSuggestionLine(postPenRead.content, fingerprint);
+
+	const commitMsg = `chore(cam): suggestions promote ${fingerprint} -> ${issueResult.id}`;
+	const penSha = commitTreeToMain(
+		cwd,
+		[{ path: SUGGESTIONS_JSONL_PATH, content: updatedContent }],
+		commitMsg,
+		postGuard.localMainSha,
+		spawnFn,
+		'cam-suggestions-',
+	);
+
+	pushMainBestEffort(cwd, spawnFn);
+
+	return {
+		ok: true,
+		fingerprint,
+		issueId: issueResult.id,
+		issueSha: issueResult.sha,
+		penSha,
+	};
 }

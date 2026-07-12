@@ -8,7 +8,11 @@
 // CAM-285 US-004 (cam suggestions list CLI: parser + dispatch skeleton + help).
 
 import { test, expect, describe } from 'bun:test';
-import type { SuggestionEntry } from '../../src/commands/suggestions.ts';
+import type {
+	SuggestionEntry,
+	PromoteSuggestionOnMainResult,
+	DismissSuggestionOnMainResult,
+} from '../../src/commands/suggestions.ts';
 import { dispatchSuggestions, parseSuggestionsArgs } from '../../index.ts';
 
 // ---------------------------------------------------------------------------
@@ -74,6 +78,42 @@ describe('parseSuggestionsArgs', () => {
 		process.stdout.write = (() => true) as typeof process.stdout.write;
 		try {
 			expect(parseSuggestionsArgs(['list', '--bogus'])).toBeNull();
+		} finally {
+			process.stdout.write = originalWrite;
+		}
+	});
+
+	test('promote <fingerprint> returns { mode: "promote", help: false, fingerprint }', () => {
+		expect(parseSuggestionsArgs(['promote', 'abc123def456'])).toEqual({
+			mode: 'promote',
+			help: false,
+			fingerprint: 'abc123def456',
+		});
+	});
+
+	test('dismiss <fingerprint> returns { mode: "dismiss", help: false, fingerprint }', () => {
+		expect(parseSuggestionsArgs(['dismiss', 'abc123def456'])).toEqual({
+			mode: 'dismiss',
+			help: false,
+			fingerprint: 'abc123def456',
+		});
+	});
+
+	test('promote with no fingerprint returns null', () => {
+		const originalWrite = process.stdout.write.bind(process.stdout);
+		process.stdout.write = (() => true) as typeof process.stdout.write;
+		try {
+			expect(parseSuggestionsArgs(['promote'])).toBeNull();
+		} finally {
+			process.stdout.write = originalWrite;
+		}
+	});
+
+	test('dismiss with a trailing extra arg returns null', () => {
+		const originalWrite = process.stdout.write.bind(process.stdout);
+		process.stdout.write = (() => true) as typeof process.stdout.write;
+		try {
+			expect(parseSuggestionsArgs(['dismiss', 'abc123def456', 'extra'])).toBeNull();
 		} finally {
 			process.stdout.write = originalWrite;
 		}
@@ -162,6 +202,82 @@ describe('dispatchSuggestions', () => {
 		});
 
 		expect(stdoutLines.join('')).not.toContain('round');
+	});
+
+	test('promote: success routes through promoteFn and prints CAM_SUGGESTIONS_PROMOTED', () => {
+		const stdoutLines: string[] = [];
+		const parsed = parseSuggestionsArgs(['promote', SAMPLE_ENTRY.fingerprint]);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		let receivedFingerprint: string | undefined;
+		const code = dispatchSuggestions(parsed, {
+			promoteFn: (fingerprint: string): PromoteSuggestionOnMainResult => {
+				receivedFingerprint = fingerprint;
+				return {
+					ok: true,
+					fingerprint,
+					issueId: 'CAM-286',
+					issueSha: 'abc1234',
+					penSha: 'def5678',
+				};
+			},
+			writeStdout: (line) => stdoutLines.push(line),
+		});
+
+		expect(code).toBe(0);
+		expect(receivedFingerprint).toBe(SAMPLE_ENTRY.fingerprint);
+		expect(stdoutLines.join('')).toContain('CAM_SUGGESTIONS_PROMOTED=abc123def456 issue=CAM-286');
+	});
+
+	test('promote: failure returns non-zero without printing a CAM_SUGGESTIONS_PROMOTED line', () => {
+		const stdoutLines: string[] = [];
+		const parsed = parseSuggestionsArgs(['promote', 'deadbeef0000']);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		const code = dispatchSuggestions(parsed, {
+			promoteFn: (): PromoteSuggestionOnMainResult => ({ ok: false, reason: 'not-found' }),
+			writeStdout: (line) => stdoutLines.push(line),
+		});
+
+		expect(code).toBe(1);
+		expect(stdoutLines.join('')).not.toContain('CAM_SUGGESTIONS_PROMOTED');
+	});
+
+	test('dismiss: success routes through dismissFn and prints CAM_SUGGESTIONS_DISMISSED', () => {
+		const stdoutLines: string[] = [];
+		const parsed = parseSuggestionsArgs(['dismiss', SAMPLE_ENTRY.fingerprint]);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		let receivedFingerprint: string | undefined;
+		const code = dispatchSuggestions(parsed, {
+			dismissFn: (fingerprint: string): DismissSuggestionOnMainResult => {
+				receivedFingerprint = fingerprint;
+				return { ok: true, fingerprint, sha: 'ghi9012' };
+			},
+			writeStdout: (line) => stdoutLines.push(line),
+		});
+
+		expect(code).toBe(0);
+		expect(receivedFingerprint).toBe(SAMPLE_ENTRY.fingerprint);
+		expect(stdoutLines.join('')).toContain('CAM_SUGGESTIONS_DISMISSED=abc123def456');
+	});
+
+	test('dismiss: failure returns non-zero without printing a CAM_SUGGESTIONS_DISMISSED line', () => {
+		const stdoutLines: string[] = [];
+		const parsed = parseSuggestionsArgs(['dismiss', 'deadbeef0000']);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		const code = dispatchSuggestions(parsed, {
+			dismissFn: (): DismissSuggestionOnMainResult => ({ ok: false, reason: 'not-found' }),
+			writeStdout: (line) => stdoutLines.push(line),
+		});
+
+		expect(code).toBe(1);
+		expect(stdoutLines.join('')).not.toContain('CAM_SUGGESTIONS_DISMISSED');
 	});
 });
 

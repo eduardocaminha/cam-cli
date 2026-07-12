@@ -84,7 +84,14 @@ import { runTag } from './src/commands/tag.ts';
 import { ORCH_RECYCLE_MARKER } from './src/tmux/session.ts';
 import { watcherAlive } from './src/supervisor/sidecar-pid.ts';
 import { runTriage, type TriageResult } from './src/commands/triage.ts';
-import { readSuggestionsFromMain, type SuggestionEntry } from './src/commands/suggestions.ts';
+import {
+	readSuggestionsFromMain,
+	promoteSuggestionOnMain,
+	dismissSuggestionOnMain,
+	type SuggestionEntry,
+	type PromoteSuggestionOnMainResult,
+	type DismissSuggestionOnMainResult,
+} from './src/commands/suggestions.ts';
 import type { WsjfScore } from './src/issues/types.ts';
 import { printError, printFatalHint, printHint, printWarning } from './src/logging/color.ts';
 import { renderHelp } from './src/logging/help.ts';
@@ -515,8 +522,8 @@ const PATTERNS_HELP = renderHelp({
 
 const SUGGESTIONS_HELP = renderHelp({
 	title: 'cam suggestions',
-	tagline: 'Render the pen of penned reviewer SUGGESTIONs (scripts/cam/suggestions.jsonl)',
-	usage: 'cam suggestions list',
+	tagline: 'Triage the pen of penned reviewer SUGGESTIONs (scripts/cam/suggestions.jsonl)',
+	usage: 'cam suggestions list|promote <fingerprint>|dismiss <fingerprint>',
 	sections: [
 		{
 			heading: 'Subcommands',
@@ -526,6 +533,15 @@ const SUGGESTIONS_HELP = renderHelp({
 					description:
 						'Read scripts/cam/suggestions.jsonl from main and print each pending SUGGESTION (fingerprint, title, source, round)',
 				},
+				{
+					name: 'promote <fingerprint>',
+					description:
+						'File the matching pen entry as a real issue (derivedFrom + suggestion-fingerprint line preserved), then remove it from the pen',
+				},
+				{
+					name: 'dismiss <fingerprint>',
+					description: 'Remove the matching pen entry without filing an issue',
+				},
 			],
 		},
 		{
@@ -533,16 +549,24 @@ const SUGGESTIONS_HELP = renderHelp({
 			body:
 				'1. Reads scripts/cam/suggestions.jsonl from main via `git show main:...`\n' +
 				'   (never from the working tree -- the commit-tree-to-main pattern).\n' +
-				'2. Renders each entry as fingerprint, title, source branch, and review\n' +
-				'   round (when recorded).\n' +
-				'3. An empty (or absent) pen prints a friendly empty-state hint, not an\n' +
-				'   error.',
+				'2. `list` renders each entry as fingerprint, title, source branch, and\n' +
+				'   review round (when recorded); an empty (or absent) pen prints a\n' +
+				'   friendly empty-state hint, not an error.\n' +
+				'3. `promote` files the entry via createLocalIssueOnMain (preserving\n' +
+				'   derivedFrom from the entry\'s sourceIssue and embedding a\n' +
+				'   `suggestion-fingerprint: <fp>` description line so future terminal\n' +
+				'   reviews still dedup against it), then removes the one matching line\n' +
+				'   from the pen.\n' +
+				'4. `dismiss` removes the one matching line from the pen; no issue is filed.\n' +
+				'5. Both mutations use the on-main commit-tree plumbing and rewrite only\n' +
+				'   the one matching-fingerprint line -- every other line is byte-preserved.\n' +
+				'6. An unknown fingerprint prints an error, exits non-zero, and mutates\n' +
+				'   nothing.',
 		},
 	],
 	footer:
 		'The pen is filled by the terminal-verdict hook (CAM-189) when a review\n' +
-		'ends CLEAN with non-blocking SUGGESTIONs; promote/dismiss triage\n' +
-		'subcommands land in a later story.',
+		'ends CLEAN with non-blocking SUGGESTIONs.',
 });
 
 const NEXT_HELP = renderHelp({
@@ -1898,32 +1922,45 @@ export function dispatchPatterns(
 /**
  * Discriminated union returned by parseSuggestionsArgs.
  * - mode === 'list': dispatch the suggestions list subcommand.
+ * - mode === 'promote'/'dismiss': dispatch the matching triage subcommand for
+ *   the given fingerprint (US-005, CAM-285).
  * - help === true: caller should print SUGGESTIONS_HELP and exit 0. This is
  *   the default for both `--help`/`-h` AND no subcommand at all (mirrors
- *   parsePatternsArgs: a single subcommand today, so a bare `cam suggestions`
- *   showing usage is more useful than an error).
+ *   parsePatternsArgs: showing usage is more useful than an error).
  */
 export type ParsedSuggestionsArgs =
 	| { mode: 'list'; help: false }
+	| { mode: 'promote'; help: false; fingerprint: string }
+	| { mode: 'dismiss'; help: false; fingerprint: string }
 	| { mode?: never; help: true };
 
-const SUGGESTIONS_USAGE = 'Usage: cam suggestions list';
+const SUGGESTIONS_USAGE =
+	'Usage: cam suggestions list|promote <fingerprint>|dismiss <fingerprint>';
 
 export function parseSuggestionsArgs(args: string[]): ParsedSuggestionsArgs | null {
 	if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
 		return { help: true };
 	}
 	const subCommand = args[0];
-	if (subCommand !== 'list') {
-		printFatalHint(SUGGESTIONS_USAGE);
-		return null;
+	if (subCommand === 'list') {
+		const rest = args.slice(1);
+		if (rest.length > 0) {
+			printFatalHint(SUGGESTIONS_USAGE);
+			return null;
+		}
+		return { mode: 'list', help: false };
 	}
-	const rest = args.slice(1);
-	if (rest.length > 0) {
-		printFatalHint(SUGGESTIONS_USAGE);
-		return null;
+	if (subCommand === 'promote' || subCommand === 'dismiss') {
+		const rest = args.slice(1);
+		const fingerprint = rest[0];
+		if (fingerprint === undefined || rest.length > 1) {
+			printFatalHint(SUGGESTIONS_USAGE);
+			return null;
+		}
+		return { mode: subCommand, help: false, fingerprint };
 	}
-	return { mode: 'list', help: false };
+	printFatalHint(SUGGESTIONS_USAGE);
+	return null;
 }
 
 /** Injectable deps for dispatchSuggestions -- all optional; production uses real impls. */
@@ -1933,6 +1970,17 @@ export interface SuggestionsDispatchDeps {
 	 * Default: calls the real impl with process.cwd() and a real spawnSync.
 	 */
 	readFn?: () => SuggestionEntry[];
+	/**
+	 * Injectable promoteSuggestionOnMain.
+	 * Default: calls the real impl with process.cwd(), a real spawnSync, a
+	 * real clock, and readProjectToml reading scripts/cam/project.toml.
+	 */
+	promoteFn?: (fingerprint: string) => PromoteSuggestionOnMainResult;
+	/**
+	 * Injectable dismissSuggestionOnMain.
+	 * Default: calls the real impl with process.cwd() and a real spawnSync.
+	 */
+	dismissFn?: (fingerprint: string) => DismissSuggestionOnMainResult;
 	/** Injectable stdout writer. Default: `process.stdout.write`. */
 	writeStdout?: (line: string) => void;
 }
@@ -1947,10 +1995,47 @@ function defaultReadSuggestionsFn(): SuggestionEntry[] {
 	);
 }
 
+/** Injectable-friendly wrapper for the real spawnSync, shared by promote/dismiss defaults. */
+function realSuggestionsSpawnFn(
+	cmd: string,
+	args: string[],
+	opts: { encoding: 'utf8'; env?: Record<string, string>; input?: string },
+): SpawnSyncReturns<string> {
+	return spawnSync(cmd, args, { ...opts, stdio: 'pipe' }) as SpawnSyncReturns<string>;
+}
+
+/**
+ * Default promoteFn: the real promoteSuggestionOnMain with process.cwd(), a
+ * real spawnSync, a real clock, and readProjectToml reading the project's
+ * scripts/cam/project.toml (same wiring `cam issue --file-local` uses).
+ */
+function defaultPromoteSuggestionFn(fingerprint: string): PromoteSuggestionOnMainResult {
+	const cwd = process.cwd();
+	return promoteSuggestionOnMain({
+		cwd,
+		fingerprint,
+		spawnFn: realSuggestionsSpawnFn,
+		clock: () => new Date().toISOString(),
+		readProjectToml: () => readFileSync(join(cwd, 'scripts/cam/project.toml'), 'utf8'),
+	});
+}
+
+/**
+ * Default dismissFn: the real dismissSuggestionOnMain with process.cwd() and
+ * a real spawnSync.
+ */
+function defaultDismissSuggestionFn(fingerprint: string): DismissSuggestionOnMainResult {
+	return dismissSuggestionOnMain({
+		cwd: process.cwd(),
+		fingerprint,
+		spawnFn: realSuggestionsSpawnFn,
+	});
+}
+
 /**
  * Route a parsed `cam suggestions` call. Exported so unit tests can inject
- * fakes for readFn and writeStdout to verify rendering and the empty-state
- * hint without touching real git or stdout.
+ * fakes for readFn/promoteFn/dismissFn and writeStdout to verify rendering,
+ * mutation outcomes, and exit codes without touching real git or stdout.
  */
 export function dispatchSuggestions(
 	parsed: ParsedSuggestionsArgs,
@@ -1962,6 +2047,33 @@ export function dispatchSuggestions(
 	}
 	const writeStdout =
 		deps?.writeStdout ?? ((line: string) => { process.stdout.write(line); });
+
+	if (parsed.mode === 'promote') {
+		const promoteFn = deps?.promoteFn ?? defaultPromoteSuggestionFn;
+		const result = promoteFn(parsed.fingerprint);
+		if (!result.ok) {
+			// printError already fired inside promoteSuggestionOnMain.
+			return 1;
+		}
+		printHint(
+			`promoted ${result.fingerprint} -> filed ${result.issueId} on main (${result.issueSha}); ` +
+				`removed from pen (${result.penSha})`,
+		);
+		writeStdout(`CAM_SUGGESTIONS_PROMOTED=${result.fingerprint} issue=${result.issueId}\n`);
+		return 0;
+	}
+
+	if (parsed.mode === 'dismiss') {
+		const dismissFn = deps?.dismissFn ?? defaultDismissSuggestionFn;
+		const result = dismissFn(parsed.fingerprint);
+		if (!result.ok) {
+			// printError already fired inside dismissSuggestionOnMain.
+			return 1;
+		}
+		printHint(`dismissed ${result.fingerprint} from the pen (${result.sha})`);
+		writeStdout(`CAM_SUGGESTIONS_DISMISSED=${result.fingerprint}\n`);
+		return 0;
+	}
 
 	const readFn = deps?.readFn ?? defaultReadSuggestionsFn;
 	const entries = readFn();

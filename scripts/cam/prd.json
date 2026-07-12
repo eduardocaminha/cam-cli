@@ -95,7 +95,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Extend src/commands/suggestions.ts with promoteSuggestionOnMain + dismissSuggestionOnMain (on-main line-removal writers) and extend dispatchSuggestions (US-004) to route promote/dismiss. promote calls createLocalIssueOnMain (src/commands/issue-file.ts:271) with title/description built to carry the fingerprint line and derivedFrom from the entry's sourceIssue (resolveIssueId prefix from project.toml). Gotcha (spec): the filed issue MUST keep the suggestion-fingerprint line so the transitional dedup (US-003) still recognizes it. Line removal must not disturb other JSONL lines."
     },

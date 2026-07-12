@@ -11,6 +11,8 @@ import type { SpawnSyncReturns } from 'node:child_process';
 import {
 	appendSuggestionOnMain,
 	readSuggestionsFromMain,
+	promoteSuggestionOnMain,
+	dismissSuggestionOnMain,
 	SUGGESTIONS_JSONL_PATH,
 	type SpawnFn,
 	type SuggestionEntry,
@@ -390,4 +392,353 @@ test('readSuggestionsFromMain: reads from main:scripts/cam/suggestions.jsonl (no
 		(c) => c.args.includes('show') && c.args.some((a) => a === `main:${SUGGESTIONS_JSONL_PATH}`),
 	);
 	expect(showCall).toBeDefined();
+});
+
+// ---------------------------------------------------------------------------
+// dismissSuggestionOnMain / promoteSuggestionOnMain (US-005, CAM-285)
+//
+// A richer fake spawnFn is needed here vs. makeFakeSpawnFn above: promote
+// additionally routes through createLocalIssueOnMain (its own guard,
+// allocateId's ls-tree/cat-file, and its own commit-tree CAS sequence), so
+// this fake mirrors test/issue-file.test.ts's makeRecordingSpawn layered on
+// top of the suggestions.jsonl `git show` handling above.
+// ---------------------------------------------------------------------------
+
+const PROJECT_TOML = 'issue_system = "local"\nissue_prefix = "CAM"\n';
+
+/** Minimal SpawnSyncReturns<string> for a successful git call. */
+function okResult(stdout = ''): SpawnSyncReturns<string> {
+	return { pid: 1, output: [null, stdout, ''], stdout, stderr: '', status: 0, signal: null };
+}
+
+interface FullFakeOpts {
+	branch?: string;
+	localMainSha?: string;
+	originMainUpToDate?: boolean;
+	suggestionsContent?: string;
+	suggestionsMissing?: boolean;
+	pushFails?: boolean;
+}
+
+/**
+ * Full fake spawnFn covering both the on-main pen guard/read/commit sequence
+ * AND createLocalIssueOnMain's own guard + allocateId (empty backlog, ls-tree
+ * returns '') + CAS commit-tree sequence. `commit-tree` is called twice by a
+ * successful promote (once inside createLocalIssueOnMain, once for the pen
+ * line removal); each call returns a DISTINCT sha so issueSha/penSha can be
+ * asserted independently.
+ */
+function makeFullFakeSpawnFn(opts: FullFakeOpts = {}): { spawnFn: SpawnFn; calls: CallRecord[] } {
+	const {
+		branch = 'cam/issue-285',
+		localMainSha = 'mainsha1234567890',
+		originMainUpToDate = true,
+		suggestionsContent = '',
+		suggestionsMissing = false,
+		pushFails = false,
+	} = opts;
+
+	const calls: CallRecord[] = [];
+	let commitTreeCallCount = 0;
+
+	const spawnFn: SpawnFn = (
+		cmd: string,
+		args: string[],
+		options: { encoding: 'utf8'; env?: Record<string, string>; input?: string },
+	): SpawnSyncReturns<string> => {
+		calls.push({ cmd, args, input: options.input });
+		const argsStr = args.join(' ');
+
+		if (argsStr.includes('rev-parse') && argsStr.includes('--abbrev-ref') && argsStr.includes('HEAD')) {
+			return okResult(`${branch}\n`);
+		}
+		if (argsStr.includes('rev-parse') && argsStr.includes('origin/main')) {
+			return originMainUpToDate
+				? okResult(`${localMainSha}\n`)
+				: okResult('divergedremoteSha1234567\n');
+		}
+		if (argsStr.includes('rev-parse') && argsStr.includes('main') && !argsStr.includes('origin/main')) {
+			return okResult(`${localMainSha}\n`);
+		}
+		if (argsStr.includes('fetch')) {
+			return okResult();
+		}
+		if (argsStr.includes('show') && argsStr.includes('suggestions.jsonl')) {
+			if (suggestionsMissing) return { ...okResult(''), status: 128 };
+			return okResult(suggestionsContent);
+		}
+		if (argsStr.includes('ls-tree')) {
+			return okResult(''); // empty backlog -> allocateId returns 1 (CAM-1)
+		}
+		if (argsStr.includes('cat-file')) {
+			return okResult('');
+		}
+		if (argsStr.includes('read-tree')) {
+			return okResult();
+		}
+		if (argsStr.includes('hash-object')) {
+			return okResult('blobsha1234567890\n');
+		}
+		if (argsStr.includes('update-index')) {
+			return okResult();
+		}
+		if (argsStr.includes('write-tree')) {
+			return okResult('treesha1234567890\n');
+		}
+		if (argsStr.includes('commit-tree')) {
+			commitTreeCallCount += 1;
+			// promoteSuggestionOnMain fires commit-tree twice on success (once
+			// inside createLocalIssueOnMain for the filed issue, once for the pen
+			// line removal); dismissSuggestionOnMain fires it once. Distinct shas
+			// let tests assert issueSha/penSha independently.
+			const sha = commitTreeCallCount === 1 ? 'firstcommitsha1234567' : 'secondcommitsha123456';
+			return okResult(`${sha}\n`);
+		}
+		if (argsStr.includes('update-ref')) {
+			return okResult();
+		}
+		if (argsStr.includes('push')) {
+			return pushFails ? { ...okResult(''), status: 1, stderr: 'Permission denied' } : okResult();
+		}
+		return okResult();
+	};
+
+	return { spawnFn, calls };
+}
+
+const FIXED_TS = '2026-07-12T02:00:00.000Z';
+const clock = () => FIXED_TS;
+
+// --- dismissSuggestionOnMain ---
+
+test('dismissSuggestionOnMain: removes the matching line, commits, pushes; other lines untouched', () => {
+	const existing = `${JSON.stringify(SAMPLE_ENTRY)}\n${JSON.stringify(OTHER_ENTRY)}\n`;
+	const { spawnFn, calls } = makeFullFakeSpawnFn({ suggestionsContent: existing });
+
+	const result = dismissSuggestionOnMain({
+		cwd: '/fake/project',
+		fingerprint: SAMPLE_ENTRY.fingerprint,
+		spawnFn,
+	});
+
+	expect(result.ok).toBe(true);
+	if (!result.ok) return;
+	expect(result.fingerprint).toBe(SAMPLE_ENTRY.fingerprint);
+	expect(result.sha).toBe('firstco'); // first (only) commit-tree call, 'firstcommitsha1234567'.slice(0,7)
+
+	const hashCall = calls.find((c) => c.args.includes('hash-object'));
+	const written = hashCall?.input ?? '';
+	expect(written).toContain(JSON.stringify(OTHER_ENTRY));
+	expect(written).not.toContain(SAMPLE_ENTRY.fingerprint);
+
+	const pushCall = calls.find((c) => c.args.includes('push'));
+	expect(pushCall).toBeDefined();
+});
+
+test('dismissSuggestionOnMain: byte-preserves all other lines verbatim', () => {
+	const existing = `${JSON.stringify(OTHER_ENTRY)}\n${JSON.stringify(SAMPLE_ENTRY)}\n`;
+	const { spawnFn, calls } = makeFullFakeSpawnFn({ suggestionsContent: existing });
+
+	dismissSuggestionOnMain({
+		cwd: '/fake/project',
+		fingerprint: SAMPLE_ENTRY.fingerprint,
+		spawnFn,
+	});
+
+	const hashCall = calls.find((c) => c.args.includes('hash-object'));
+	expect(hashCall?.input).toBe(`${JSON.stringify(OTHER_ENTRY)}\n`);
+});
+
+test('dismissSuggestionOnMain: unknown fingerprint -- error, no commit, pen untouched', () => {
+	const stderrLines: string[] = [];
+	const originalWrite = process.stderr.write.bind(process.stderr);
+	process.stderr.write = (chunk: string | Uint8Array): boolean => {
+		if (typeof chunk === 'string') stderrLines.push(chunk);
+		return true;
+	};
+
+	try {
+		const existing = `${JSON.stringify(OTHER_ENTRY)}\n`;
+		const { spawnFn, calls } = makeFullFakeSpawnFn({ suggestionsContent: existing });
+
+		const result = dismissSuggestionOnMain({
+			cwd: '/fake/project',
+			fingerprint: 'deadbeef0000',
+			spawnFn,
+		});
+
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		expect(result.reason).toBe('not-found');
+		expect(stderrLines.join('')).toMatch(/unknown fingerprint/i);
+
+		expect(calls.find((c) => c.args.includes('commit-tree'))).toBeUndefined();
+		expect(calls.find((c) => c.args.includes('update-ref'))).toBeUndefined();
+	} finally {
+		process.stderr.write = originalWrite;
+	}
+});
+
+test('dismissSuggestionOnMain: pen missing on main -- suggestions-missing, no commit', () => {
+	const { spawnFn, calls } = makeFullFakeSpawnFn({ suggestionsMissing: true });
+
+	const result = dismissSuggestionOnMain({
+		cwd: '/fake/project',
+		fingerprint: SAMPLE_ENTRY.fingerprint,
+		spawnFn,
+	});
+
+	expect(result.ok).toBe(false);
+	if (result.ok) return;
+	expect(result.reason).toBe('suggestions-missing');
+	expect(calls.find((c) => c.args.includes('commit-tree'))).toBeUndefined();
+});
+
+test('dismissSuggestionOnMain: diverged main -- error, no mutation', () => {
+	const { spawnFn, calls } = makeFullFakeSpawnFn({ originMainUpToDate: false });
+
+	const result = dismissSuggestionOnMain({
+		cwd: '/fake/project',
+		fingerprint: SAMPLE_ENTRY.fingerprint,
+		spawnFn,
+	});
+
+	expect(result.ok).toBe(false);
+	if (result.ok) return;
+	expect(result.reason).toBe('diverged');
+	expect(calls.find((c) => c.args.includes('commit-tree'))).toBeUndefined();
+});
+
+// --- promoteSuggestionOnMain ---
+
+test('promoteSuggestionOnMain: files a real issue via createLocalIssueOnMain, preserves derivedFrom, embeds fingerprint line, then removes the pen line', () => {
+	const existing = `${JSON.stringify(SAMPLE_ENTRY)}\n${JSON.stringify(OTHER_ENTRY)}\n`;
+	const { spawnFn, calls } = makeFullFakeSpawnFn({ suggestionsContent: existing });
+
+	const result = promoteSuggestionOnMain({
+		cwd: '/fake/project',
+		fingerprint: SAMPLE_ENTRY.fingerprint,
+		spawnFn,
+		clock,
+		readProjectToml: () => PROJECT_TOML,
+	});
+
+	expect(result.ok).toBe(true);
+	if (!result.ok) return;
+	expect(result.fingerprint).toBe(SAMPLE_ENTRY.fingerprint);
+	expect(result.issueId).toBe('CAM-1');
+	expect(result.issueSha).toBe('firstco'); // 1st commit-tree call: the filed issue
+	expect(result.penSha).toBe('secondc'); // 2nd commit-tree call: the pen line removal
+
+	// The filed issue's content (hash-object input) carries derivedFrom from
+	// sourceIssue (285 -> 'CAM-285') and the suggestion-fingerprint line.
+	const issueHashCall = calls.find(
+		(c) => c.args.includes('hash-object') && (c.input ?? '').includes('derivedFrom'),
+	);
+	expect(issueHashCall).toBeDefined();
+	const issueContent = issueHashCall?.input ?? '';
+	expect(issueContent).toContain('"derivedFrom"');
+	expect(issueContent).toContain('CAM-285');
+	expect(issueContent).toContain(`suggestion-fingerprint: ${SAMPLE_ENTRY.fingerprint}`);
+	expect(issueContent).toContain(SAMPLE_ENTRY.body);
+
+	// The pen removal (hash-object input for suggestions.jsonl) keeps the OTHER
+	// entry byte-identical and drops the promoted one.
+	const penHashCall = calls.find(
+		(c) => c.args.includes('hash-object') && (c.input ?? '') === `${JSON.stringify(OTHER_ENTRY)}\n`,
+	);
+	expect(penHashCall).toBeDefined();
+
+	const pushCalls = calls.filter((c) => c.args.includes('push'));
+	expect(pushCalls.length).toBeGreaterThanOrEqual(1);
+});
+
+test('promoteSuggestionOnMain: unknown fingerprint -- not-found, no issue filed, pen untouched', () => {
+	const stderrLines: string[] = [];
+	const originalWrite = process.stderr.write.bind(process.stderr);
+	process.stderr.write = (chunk: string | Uint8Array): boolean => {
+		if (typeof chunk === 'string') stderrLines.push(chunk);
+		return true;
+	};
+
+	try {
+		const existing = `${JSON.stringify(OTHER_ENTRY)}\n`;
+		const { spawnFn, calls } = makeFullFakeSpawnFn({ suggestionsContent: existing });
+
+		const result = promoteSuggestionOnMain({
+			cwd: '/fake/project',
+			fingerprint: 'deadbeef0000',
+			spawnFn,
+			clock,
+			readProjectToml: () => PROJECT_TOML,
+		});
+
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		expect(result.reason).toBe('not-found');
+		expect(stderrLines.join('')).toMatch(/unknown fingerprint/i);
+
+		expect(calls.find((c) => c.args.includes('ls-tree'))).toBeUndefined();
+		expect(calls.find((c) => c.args.includes('commit-tree'))).toBeUndefined();
+	} finally {
+		process.stderr.write = originalWrite;
+	}
+});
+
+test('promoteSuggestionOnMain: entry with no sourceIssue -- files without derivedFrom', () => {
+	const entryNoSourceIssue: SuggestionEntry = { ...OTHER_ENTRY };
+	const existing = `${JSON.stringify(entryNoSourceIssue)}\n`;
+	const { spawnFn, calls } = makeFullFakeSpawnFn({ suggestionsContent: existing });
+
+	const result = promoteSuggestionOnMain({
+		cwd: '/fake/project',
+		fingerprint: entryNoSourceIssue.fingerprint,
+		spawnFn,
+		clock,
+		readProjectToml: () => PROJECT_TOML,
+	});
+
+	expect(result.ok).toBe(true);
+	if (!result.ok) return;
+
+	const issueHashCall = calls.find(
+		(c) => c.args.includes('hash-object') && (c.input ?? '').includes('suggestion-fingerprint'),
+	);
+	expect(issueHashCall).toBeDefined();
+	expect(issueHashCall?.input ?? '').not.toContain('derivedFrom');
+});
+
+test('promoteSuggestionOnMain: pen missing on main -- suggestions-missing, no issue filed', () => {
+	const { spawnFn, calls } = makeFullFakeSpawnFn({ suggestionsMissing: true });
+
+	const result = promoteSuggestionOnMain({
+		cwd: '/fake/project',
+		fingerprint: SAMPLE_ENTRY.fingerprint,
+		spawnFn,
+		clock,
+		readProjectToml: () => PROJECT_TOML,
+	});
+
+	expect(result.ok).toBe(false);
+	if (result.ok) return;
+	expect(result.reason).toBe('suggestions-missing');
+	expect(calls.find((c) => c.args.includes('ls-tree'))).toBeUndefined();
+});
+
+test('promoteSuggestionOnMain: diverged main -- error before any lookup or mutation', () => {
+	const { spawnFn, calls } = makeFullFakeSpawnFn({ originMainUpToDate: false });
+
+	const result = promoteSuggestionOnMain({
+		cwd: '/fake/project',
+		fingerprint: SAMPLE_ENTRY.fingerprint,
+		spawnFn,
+		clock,
+		readProjectToml: () => PROJECT_TOML,
+	});
+
+	expect(result.ok).toBe(false);
+	if (result.ok) return;
+	expect(result.reason).toBe('diverged');
+	expect(calls.find((c) => c.args.includes('show'))).toBeUndefined();
+	expect(calls.find((c) => c.args.includes('commit-tree'))).toBeUndefined();
 });

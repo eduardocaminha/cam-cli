@@ -48,8 +48,14 @@ export function fingerprintFinding(finding: ReviewFinding): string {
 // Issue builder
 // ---------------------------------------------------------------------------
 
-/** Marks the line in a filed issue's description that carries the dedup fingerprint. */
-const SUGGESTION_FINGERPRINT_PREFIX = 'suggestion-fingerprint:';
+/**
+ * Marks the line in a filed issue's description that carries the dedup
+ * fingerprint. Exported so `src/commands/suggestions.ts` (`promoteSuggestionOnMain`,
+ * US-005 CAM-285) can embed the SAME literal prefix when re-building this
+ * description format from an already-penned SuggestionEntry, instead of a
+ * second hardcoded copy of the string.
+ */
+export const SUGGESTION_FINGERPRINT_PREFIX = 'suggestion-fingerprint:';
 
 /** Matches a suggestion-fingerprint line inside an issue description. */
 const FINGERPRINT_LINE_RE = /suggestion-fingerprint:\s*([0-9a-f]+)/;
