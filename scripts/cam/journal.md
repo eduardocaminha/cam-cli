@@ -525,3 +525,15 @@ Each entry follows this template:
 - **Decisions**: Merit-ranked the 4 plannable specified issues (correctness/loop-reliability first, cost separate) and dispatched CAM-279 as highest-merit: a correctness/loop-reliability follow-on to just-shipped CAM-278, newly unblocked. Spec-only participation held: no plan_approval=operator; trusted the deterministic auditor+reviewer CLEAN; auto-ship (CAM-191) fired on its own. Used cam plan 279 (bare number, real renderStateFile writer). Zero orchestrator intervention this cycle.
 - **Blockers encountered**: None. Review round 1 CLEAN. PR #223 merged ci-gated; post-merge clean, polled via gh pr view only (CAM-228 held), tag v0.148.0. Standing caveat unchanged: sidecar pid 32211 predates v0.144.0 suggestions-pen redirect (old terminal-verdict hook); this cycle's CLEAN review filed nothing new, idea count steady at 32.
 - **Follow-ups**: Rebuild + clean cam run restart to >= v0.144.0 to activate the suggestions pen (operator ceremony) and then triage accumulated auto-filed SUGGESTIONs (CAM-288..296). Remaining plannable specified: re-derive live; standing merit order after CAM-279 is CAM-281 (createdAt in list, unblocks CAM-284), then CAM-277 (orch_context_window doc), then CAM-280 (vestigial writeFile cleanup).
+
+## CAM-281 — Expose createdAt on cam issue list --json rows
+
+- **Started**: 2026-07-12T21:20:00Z
+- **Closed**: 2026-07-12T21:40:00Z
+- **Branch**: cam/issue-281
+- **Issue**: CAM-281
+- **Outcome**: shipped
+- **Summary**: 1-story PRD (PR #224, v0.149.0, ci-gated). cam issue list --json now emits a createdAt timestamp on each issue row, an observability feature that unblocks CAM-284 (updatedAt/last-activity). US-001 did the whole change. auditor APPROVE, review round 1 CLEAN, 4402 pass / 0 fail.
+- **Decisions**: Merit-ranked the 3 plannable specified issues (observability/correctness first, cost separate) and dispatched CAM-281 as highest-merit: it adds a new observability capability AND unblocks CAM-284, the most downstream leverage vs CAM-277 (doc) and CAM-280 (cleanup). Spec-only participation held: no plan_approval=operator; trusted the deterministic auditor+reviewer CLEAN; auto-ship (CAM-191) fired on its own. Used cam plan 281 (bare number, real renderStateFile writer), never a hand-written signal file (CAM-282 lesson). Zero orchestrator intervention this cycle.
+- **Blockers encountered**: None. Review round 1 CLEAN with zero findings. PR #224 merged ci-gated; post-merge clean, polled via gh pr view only (CAM-228 held), tag v0.149.0. Standing caveat unchanged: sidecar pid 32211 predates v0.144.0 suggestions-pen redirect (old terminal-verdict hook); this cycle's CLEAN review filed nothing new, idea count steady at 32.
+- **Follow-ups**: Rebuild + clean cam run restart to >= v0.144.0 to activate the suggestions pen (operator ceremony) and then triage accumulated auto-filed SUGGESTIONs (CAM-288..296). Remaining plannable specified: re-derive live; CAM-281 likely unblocked CAM-284 (updatedAt) -- check if now plannable and rank top; then CAM-277 (orch_context_window doc), then CAM-280 (vestigial writeFile cleanup).
