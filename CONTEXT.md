@@ -247,3 +247,6 @@ A stage:specified spec that is internally contradictory or that a planner keeps 
 
 **plannable set**:
 The issues selectPlannableIssue will pick for /cam-plan (stage:specified, open). Demoting to idea removes an issue from this set until it is re-specified.
+
+**boot-surfaced marker**:
+A durable .claude/.cam-*.json file (ship-stalled, plan-escalated, plan-preflight-failed, implement-blocked, post-merge-stalled, sidecar-stalled) that a deterministic recovery/terminal path writes to record a non-happy outcome. The orchestrator reads it at boot and surfaces it as an opening blocker line (read-only); it never deletes the marker itself. Each marker is cleared only by its own specific deterministic path (e.g. implement-blocked by the next re-armed implement dispatch for the same issue; plan-preflight-failed by the next non-preflight-failed plan run; plan-escalated by the next converging plan run).
