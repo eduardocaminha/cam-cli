@@ -1,7 +1,6 @@
 ---
 name: subagent-planner
 description: Converts an issue or description into a structured PRD (prd.json) with small, dependency-ordered user stories. Project context (CLAUDE.md) auto-loads via nested-CLAUDE.md; grep patterns.md for the rest before generating. Spawned by the deterministic plan runner (runPlanPhase, ADR-0006), not a /cam-plan step.
-model: claude-opus-4-8
 effort: xhigh
 tools:
   - Read

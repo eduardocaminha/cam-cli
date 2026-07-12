@@ -1,7 +1,6 @@
 ---
 name: subagent-reviewer
 description: Staff-level code review of all changes on the current branch vs main. Returns CRITICAL / WARNING / SUGGESTION findings + DOCS CONSULTED + APPROVE / REQUEST CHANGES + machine-parsed <review>CLEAN</review> or <review>FIXES_PENDING:N</review> tag. READ-ONLY — never modifies files. Invoked from /cam-review.
-model: claude-opus-4-8
 effort: xhigh
 tools:
   - Read

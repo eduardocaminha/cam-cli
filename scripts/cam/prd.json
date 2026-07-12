@@ -41,7 +41,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files (10 total, one trivial line-edit each): .claude/agents/subagent-{orchestrator,planner,auditor,reviewer,implementer}.md and templates/agents/subagent-{same}.md. This is a single mechanical concern (strip inert model: line) despite the file count, driven by the per-file dual-copy invariant. Do NOT touch cam-ship.md: ship keeps its frontmatter as its documented source (handled in US-003). Runtime precedence flag-over-frontmatter is documented at src/commands/run.ts:232-234 and src/supervisor/worker-argv.ts:49-51; do NOT try to make frontmatter authoritative. After editing templates/, embed-vendor:check will flag drift until bun run embed-vendor is run."
     },
