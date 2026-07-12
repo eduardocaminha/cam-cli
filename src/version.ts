@@ -18,4 +18,4 @@
 // Bumping the version: edit CAM_VERSION here, run the build + tag flow in
 // `scripts/build-release.sh`, push the tag, then `gh release create`.
 
-export const CAM_VERSION = '0.151.0';
+export const CAM_VERSION = '0.152.0';

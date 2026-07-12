@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.152.0] - 2026-07-12
+
+### Added
+
+- US-001 - Remove vestigial writeFile? field from on-main writer interfaces and obsolete tests
+
 ## [0.151.0] - 2026-07-12
 
 ### Added
