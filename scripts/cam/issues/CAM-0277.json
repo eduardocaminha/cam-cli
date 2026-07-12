@@ -1,12 +1,35 @@
 {
   "id": "CAM-277",
   "title": "The new operator-facing [loop] orch_context_window key (default 200000) is docu…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-12T05:56:29.553Z",
   "description": "The new operator-facing [loop] orch_context_window key (default 200000) is documented in ADR-0028 and the context-window.ts JSDoc but has no commented example line in project.toml alongside meta_loop/worker_isolation. Consider a commented sample to aid discoverability. Non-blocking: PRD explicitly makes setting it optional.\n\nSource: cam/issue-172\nReview round: 1\nLocation: scripts/cam/project.toml:18\n\nsuggestion-fingerprint: d54f68293715",
   "derivedFrom": [
     "CAM-172"
-  ]
+  ],
+  "spec": {
+    "scope": "Add commented example lines to cam-cli's own scripts/cam/project.toml [loop] section documenting orch_context_window (default 200000), and while editing the same block, comment meta_loop and worker_isolation with their accepted values. Config-file discoverability only, cam-cli dogfood file only. No code change. The cam init scaffold discoverability is explicitly out of scope (tracked separately in CAM-283).",
+    "acceptanceCriteria": [
+      "scripts/cam/project.toml [loop] section carries a commented example line for orch_context_window showing the default value 200000, consistent with DEFAULT_ORCH_CONTEXT_WINDOW at src/config/models.ts:324 and the reader readOrchContextWindow at src/config/models.ts:343-357.",
+      "meta_loop and worker_isolation get a short commented note of their accepted values (meta_loop: auto | observe | off; worker_isolation: container | host), consistent with readMetaLoop (src/config/models.ts:241) and readWorkerIsolation (src/config/models.ts:306).",
+      "orch_context_window remains a COMMENTED example (not an active uncommented key) so the runtime default (200000) continues to apply unchanged; meta_loop and worker_isolation keep their existing active values, only gaining a comment.",
+      "The file still parses and no effective config value changes: bun run typecheck, bun test, bun run check:all all green.",
+      "Scope is limited to scripts/cam/project.toml in cam-cli; no change to cam init scaffolding (out of scope, CAM-283)."
+    ],
+    "gotchas": [
+      "The TOML serializer stringifyToml (src/config/toml.ts:68-96) cannot emit # comments; this must be a direct hand-edit of scripts/cam/project.toml, NOT routed through mergeIntoConfig/stringifyToml (which would drop the comments).",
+      "Keep orch_context_window commented: uncommenting it would pin the value and defeat the read-with-default path; a commented example both documents and preserves default behavior.",
+      "Keep the accepted-value enums in the comments in sync with the actual readers in src/config/models.ts (auto|observe|off; container|host); do not invent values."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 1,
+    "timeCriticality": 1,
+    "riskReduction": 1,
+    "jobSize": 1
+  },
+  "type": "chore"
 }
