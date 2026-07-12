@@ -1,7 +1,7 @@
 {
   "id": "CAM-286",
   "title": "Make project.toml [models] the single source of truth for agent model selection (strip inert frontmatter model: lines, reconcile ship, fix implementer DEFAULTS drift)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-12T13:40:01.848Z",
