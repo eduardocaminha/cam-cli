@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.140.0] - 2026-07-12
+
+### Added
+
+- US-001 - Close the CREATE-on-main worktree-coherence invariant for absent paths
+
 ## [0.139.0] - 2026-07-12
 
 ### Added

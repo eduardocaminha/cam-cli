@@ -37,7 +37,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { commitTreeToMain, type SpawnFn } from '../../src/git/on-main.ts';
+import { commitTreeToMain, syncWorktreeIfOnMain, type SpawnFn } from '../../src/git/on-main.ts';
 
 // ---------------------------------------------------------------------------
 // Skip guard
@@ -227,6 +227,52 @@ test.skipIf(!gitAvailable)(
 		// (c) git status --porcelain is empty (load-bearing assertion)
 		const status = (run(['status', '--porcelain']).stdout as string).trim();
 		expect(status).toBe('');
+	},
+);
+
+// ---------------------------------------------------------------------------
+// DIRECT case (US-001, CAM-140): call syncWorktreeIfOnMain itself, not via
+// commitTreeToMain, against a path that is absent from the worktree (staged
+// deletion) to prove the helper MATERIALIZES an absent path, not merely
+// staged-restores a path already present. Also proves the off-main call is
+// inert on the same kind of staged-deletion setup.
+// ---------------------------------------------------------------------------
+
+test.skipIf(!gitAvailable)(
+	'DIRECT: syncWorktreeIfOnMain materializes an absent-from-worktree path on main, and leaves an off-main worktree untouched',
+	() => {
+		// --- Phase 1: on-main direct call materializes the absent path ---
+		const onMain = makeTmpRepo();
+
+		const branch = (onMain.run(['rev-parse', '--abbrev-ref', 'HEAD']).stdout as string).trim();
+		expect(branch).toBe('main');
+
+		// Remove seed.txt from index + worktree (staged deletion); HEAD still has it.
+		onMain.run(['rm', 'seed.txt']);
+		expect(existsSync(join(onMain.dir, 'seed.txt'))).toBe(false);
+		const stagedBefore = (onMain.run(['status', '--porcelain']).stdout as string).trim();
+		expect(stagedBefore).not.toBe('');
+
+		// Direct call -- NOT via commitTreeToMain.
+		syncWorktreeIfOnMain(onMain.dir, ['seed.txt'], realSpawnFn);
+
+		expect(existsSync(join(onMain.dir, 'seed.txt'))).toBe(true);
+		expect(readFileSync(join(onMain.dir, 'seed.txt'), 'utf8')).toBe('original\n');
+		const stagedAfter = (onMain.run(['status', '--porcelain']).stdout as string).trim();
+		expect(stagedAfter).toBe('');
+
+		// --- Phase 2: off-main direct call leaves the worktree untouched ---
+		const offMain = makeTmpRepo();
+		offMain.run(['checkout', '-b', 'feat/direct-offmain']);
+		offMain.run(['rm', 'seed.txt']);
+		expect(existsSync(join(offMain.dir, 'seed.txt'))).toBe(false);
+		const offMainStatusBefore = (offMain.run(['status', '--porcelain']).stdout as string).trim();
+
+		syncWorktreeIfOnMain(offMain.dir, ['seed.txt'], realSpawnFn);
+
+		expect(existsSync(join(offMain.dir, 'seed.txt'))).toBe(false);
+		const offMainStatusAfter = (offMain.run(['status', '--porcelain']).stdout as string).trim();
+		expect(offMainStatusAfter).toBe(offMainStatusBefore);
 	},
 );
 
