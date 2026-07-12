@@ -1,9 +1,42 @@
 {
   "id": "CAM-206",
   "title": "No re-spec path for a stage:specified issue with a defective spec (specifyIssueOnMain + /cam-spec guard idea-only)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-06T23:32:58.249Z",
-  "description": "When a stage:specified issue has a defective spec (internally contradictory ACs, or ACs a planner keeps mis-implementing), there is NO supported way to fix the spec. Both /cam-spec pre-flight and specifyIssueOnMain (src/commands/issue-specify.ts Guard 4: Target issue must be stage:idea) hard-refuse a non-idea issue with reason wrong-stage. The only workarounds are hand-editing the issue JSON to revert stage, or abandon+refile: both fragile and outside the sanctioned CLI. Discovered 2026-07-06 during CAM-203: a 2nd blind re-plan BLOCKed and re-spec was recommended, but /cam-spec refused (already specified). On inspection the CAM-203 issue spec was actually clean (the intransitive-comparator contradiction was planner-introduced in the PRD, not the spec), so re-spec was not needed there and CAM-203 shipped after a 3rd blind re-plan converged. But the GAP is real for the genuine case: a specified issue whose spec IS wrong has no fix path. Fix direction: add a supported re-spec path, e.g. cam spec --respec <id> or a stage-aware specifyIssueOnMain that allows overwriting a specified issue spec (idempotent, on-main via commit-tree, mirroring the existing writers), OR a cam issue --demote <id> moving specified->idea. Cross-ref: CAM-204 (plan BLOCK->re-plan loop) is the PRD-level analog; this is the SPEC-level analog for defective specs the auditor/planner cannot converge on."
+  "description": "When a stage:specified issue has a defective spec (internally contradictory ACs, or ACs a planner keeps mis-implementing), there is NO supported way to fix the spec. Both /cam-spec pre-flight and specifyIssueOnMain (src/commands/issue-specify.ts Guard 4: Target issue must be stage:idea) hard-refuse a non-idea issue with reason wrong-stage. The only workarounds are hand-editing the issue JSON to revert stage, or abandon+refile: both fragile and outside the sanctioned CLI. Discovered 2026-07-06 during CAM-203: a 2nd blind re-plan BLOCKed and re-spec was recommended, but /cam-spec refused (already specified). On inspection the CAM-203 issue spec was actually clean (the intransitive-comparator contradiction was planner-introduced in the PRD, not the spec), so re-spec was not needed there and CAM-203 shipped after a 3rd blind re-plan converged. But the GAP is real for the genuine case: a specified issue whose spec IS wrong has no fix path. Fix direction: add a supported re-spec path, e.g. cam spec --respec <id> or a stage-aware specifyIssueOnMain that allows overwriting a specified issue spec (idempotent, on-main via commit-tree, mirroring the existing writers), OR a cam issue --demote <id> moving specified->idea. Cross-ref: CAM-204 (plan BLOCK->re-plan loop) is the PRD-level analog; this is the SPEC-level analog for defective specs the auditor/planner cannot converge on.",
+  "spec": {
+    "acceptanceCriteria": [
+      "cam issue --demote <id> moves a stage:specified issue back to stage:idea deterministically on main via commit-tree (in-process, no tmux, no LLM), mirroring the close/abandon writers.",
+      "The demote guard allows only the specified->idea transition; it refuses an idea issue (nothing to do), a planned issue (a PRD is in flight and would be stranded), and a shipped issue, each with a clear reason.",
+      "After demote the issue is stage:idea and re-specable through the normal /cam-spec interview; specifyIssueOnMain's idea-only Guard 4 is unchanged (no new overwrite/respec path is introduced).",
+      "Demote only flips the stage: the existing (stale) spec content remains on the issue until overwritten by the next specify persist, so it is available as reference for the re-grill.",
+      "Demote leaves the worktree coherent with HEAD, the same on-main invariant as the other writers.",
+      "cam issue --demote emits a handback stdout line and exit code consistent with close/abandon (CAM_ISSUE_RESULT=<id> / CAM_ISSUE_RESULT=ERROR reason=<reason>).",
+      "bun run check:all passes and bun test is green."
+    ],
+    "scope": "IN: a cam issue --demote <id> subcommand that deterministically moves a specified issue to idea on main via commit-tree, plus its stage guard and usage text. OUT: any change to specifyIssueOnMain Guard 4 (stays idea-only, no overwrite path); a --respec/stage-aware-overwrite mechanism (rejected); demotion of planned or shipped issues; the PRD-level re-plan loop (CAM-204, a separate analog).",
+    "gotchas": [
+      "Discovered 2026-07-06 during CAM-203: a 2nd blind re-plan BLOCKed and re-spec was recommended, but /cam-spec refused (already specified). On inspection CAM-203's spec was actually clean (the intransitive-comparator contradiction was planner-introduced in the PRD, not the spec), so re-spec was not needed there and CAM-203 shipped after a 3rd re-plan converged. The gap is nonetheless real for a genuinely defective spec.",
+      "Both current workarounds are fragile and outside the sanctioned CLI: hand-editing the issue JSON to revert the stage, or abandon+refile.",
+      "CAM-204 (plan BLOCK->re-plan loop) is the PRD-level analog; CAM-206 is the spec-level analog. They are different fixes and must not be conflated.",
+      "Demote must never touch a planned issue: a PRD is already in flight and demoting would strand it. The guard refuses anything but specified->idea.",
+      "Choosing demote-then-reinterview over a stage-aware overwrite keeps a single spec-writing path (the /cam-spec interview) and a single stage-move primitive, rather than a second overwrite entry with partial-overwrite semantics."
+    ],
+    "domainTerms": [
+      "demote",
+      "re-spec",
+      "defective spec",
+      "plannable set",
+      "stage transition"
+    ]
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 3,
+    "riskReduction": 5,
+    "jobSize": 3
+  },
+  "type": "feat"
 }
