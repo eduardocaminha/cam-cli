@@ -84,6 +84,7 @@ import { runTag } from './src/commands/tag.ts';
 import { ORCH_RECYCLE_MARKER } from './src/tmux/session.ts';
 import { watcherAlive } from './src/supervisor/sidecar-pid.ts';
 import { runTriage, type TriageResult } from './src/commands/triage.ts';
+import { readSuggestionsFromMain, type SuggestionEntry } from './src/commands/suggestions.ts';
 import type { WsjfScore } from './src/issues/types.ts';
 import { printError, printFatalHint, printHint, printWarning } from './src/logging/color.ts';
 import { renderHelp } from './src/logging/help.ts';
@@ -510,6 +511,38 @@ const PATTERNS_HELP = renderHelp({
 	footer:
 		'To mark a bullet resolved, append `[resolved YYYY-MM]` anywhere in its\n' +
 		'text on main; `cam patterns archive` then relocates it verbatim.',
+});
+
+const SUGGESTIONS_HELP = renderHelp({
+	title: 'cam suggestions',
+	tagline: 'Render the pen of penned reviewer SUGGESTIONs (scripts/cam/suggestions.jsonl)',
+	usage: 'cam suggestions list',
+	sections: [
+		{
+			heading: 'Subcommands',
+			entries: [
+				{
+					name: 'list',
+					description:
+						'Read scripts/cam/suggestions.jsonl from main and print each pending SUGGESTION (fingerprint, title, source, round)',
+				},
+			],
+		},
+		{
+			heading: 'Behaviour',
+			body:
+				'1. Reads scripts/cam/suggestions.jsonl from main via `git show main:...`\n' +
+				'   (never from the working tree -- the commit-tree-to-main pattern).\n' +
+				'2. Renders each entry as fingerprint, title, source branch, and review\n' +
+				'   round (when recorded).\n' +
+				'3. An empty (or absent) pen prints a friendly empty-state hint, not an\n' +
+				'   error.',
+		},
+	],
+	footer:
+		'The pen is filled by the terminal-verdict hook (CAM-189) when a review\n' +
+		'ends CLEAN with non-blocking SUGGESTIONs; promote/dismiss triage\n' +
+		'subcommands land in a later story.',
 });
 
 const NEXT_HELP = renderHelp({
@@ -1859,6 +1892,94 @@ export function dispatchPatterns(
 }
 
 // ---------------------------------------------------------------------------
+// cam suggestions dispatch (exported for unit testing with injectable deps)
+// ---------------------------------------------------------------------------
+
+/**
+ * Discriminated union returned by parseSuggestionsArgs.
+ * - mode === 'list': dispatch the suggestions list subcommand.
+ * - help === true: caller should print SUGGESTIONS_HELP and exit 0. This is
+ *   the default for both `--help`/`-h` AND no subcommand at all (mirrors
+ *   parsePatternsArgs: a single subcommand today, so a bare `cam suggestions`
+ *   showing usage is more useful than an error).
+ */
+export type ParsedSuggestionsArgs =
+	| { mode: 'list'; help: false }
+	| { mode?: never; help: true };
+
+const SUGGESTIONS_USAGE = 'Usage: cam suggestions list';
+
+export function parseSuggestionsArgs(args: string[]): ParsedSuggestionsArgs | null {
+	if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
+		return { help: true };
+	}
+	const subCommand = args[0];
+	if (subCommand !== 'list') {
+		printFatalHint(SUGGESTIONS_USAGE);
+		return null;
+	}
+	const rest = args.slice(1);
+	if (rest.length > 0) {
+		printFatalHint(SUGGESTIONS_USAGE);
+		return null;
+	}
+	return { mode: 'list', help: false };
+}
+
+/** Injectable deps for dispatchSuggestions -- all optional; production uses real impls. */
+export interface SuggestionsDispatchDeps {
+	/**
+	 * Injectable readSuggestionsFromMain.
+	 * Default: calls the real impl with process.cwd() and a real spawnSync.
+	 */
+	readFn?: () => SuggestionEntry[];
+	/** Injectable stdout writer. Default: `process.stdout.write`. */
+	writeStdout?: (line: string) => void;
+}
+
+/**
+ * Default readFn: the real readSuggestionsFromMain with process.cwd() and a
+ * real spawnSync.
+ */
+function defaultReadSuggestionsFn(): SuggestionEntry[] {
+	return readSuggestionsFromMain(process.cwd(), (cmd, args, opts) =>
+		spawnSync(cmd, args, { ...opts, stdio: 'pipe' }) as SpawnSyncReturns<string>,
+	);
+}
+
+/**
+ * Route a parsed `cam suggestions` call. Exported so unit tests can inject
+ * fakes for readFn and writeStdout to verify rendering and the empty-state
+ * hint without touching real git or stdout.
+ */
+export function dispatchSuggestions(
+	parsed: ParsedSuggestionsArgs,
+	deps?: SuggestionsDispatchDeps,
+): number {
+	if (parsed.help) {
+		process.stdout.write(SUGGESTIONS_HELP);
+		return 0;
+	}
+	const writeStdout =
+		deps?.writeStdout ?? ((line: string) => { process.stdout.write(line); });
+
+	const readFn = deps?.readFn ?? defaultReadSuggestionsFn;
+	const entries = readFn();
+
+	writeStdout('cam suggestions list\n\n');
+	if (entries.length === 0) {
+		writeStdout('No pending SUGGESTIONs in the pen.\n\n');
+		return 0;
+	}
+	for (const entry of entries) {
+		const roundSuffix = entry.reviewRound !== undefined ? ` round ${entry.reviewRound}` : '';
+		writeStdout(`${entry.fingerprint}  ${entry.title}  (${entry.sourceBranch}${roundSuffix})\n`);
+	}
+	writeStdout('\n');
+	return 0;
+}
+
+// ---------------------------------------------------------------------------
 // cam issue dispatch (exported for unit testing with injectable deps)
 // ---------------------------------------------------------------------------
 
@@ -2162,6 +2283,7 @@ const HELP_REGISTRY: Record<string, string> = {
 	journal: JOURNAL_HELP,
 	patterns: PATTERNS_HELP,
 	triage: TRIAGE_HELP,
+	suggestions: SUGGESTIONS_HELP,
 };
 
 /**
@@ -2536,6 +2658,15 @@ async function main(argv: string[]): Promise<number> {
 				return 1;
 			}
 			return dispatchTriage();
+		}
+		case 'suggestions': {
+			const parsed = parseSuggestionsArgs(argv.slice(3));
+			if (parsed === null) return 1;
+			if (parsed.help) {
+				process.stdout.write(SUGGESTIONS_HELP);
+				return 0;
+			}
+			return dispatchSuggestions(parsed);
 		}
 		default:
 			printError(`unknown command: ${command}`);
