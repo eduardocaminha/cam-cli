@@ -41,7 +41,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "File: index.ts. Top-level HELP built via renderHelp at ~line 87-123 — add a second section (heading 'Internal') to the `sections` array listing sidecar (+ orch-recycle-watch/sidecar-liveness-watch/orch-budget as appropriate) with a one-line description; these are spawned by `cam run`, not user entry points. ISSUE_HELP is at ~line 307-358: close/abandon are already documented (Arguments section, lines 327-336) — VERIFY and leave intact; add a `--file-local` entry (the commit-to-main filer used by the orchestrator, see parseIssueArgs discriminated union at ~line 787). JOURNAL_HELP at ~line 360-435 already documents the stdin schema in the Behaviour body (step 1: cycleId, title, started, ...) — VERIFY it lists the JournalCycleEntry fields and leave intact. GOTCHA (CAM-217, patterns.md line 520 + CAM-231/CAM-220 history): when appending an entry to an existing *_HELP Options/Arguments array, keep HelpEntry.name < 24 chars or the description concatenates with no space; check the rendered `bun index.ts issue --help` output. Follow the 'extend, do not restructure' convention from the CAM-217 fix. This is doc-only text in help constants; do not change command behavior (issue scope: OUT = adding new deterministic flags — they already exist, only document them)."
     }
