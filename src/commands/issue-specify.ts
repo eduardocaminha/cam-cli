@@ -89,8 +89,6 @@ export interface SpecifyIssueOnMainOptions {
 	spawnFn: SpawnFn;
 	/** Injectable clock -- returns ISO 8601 timestamp. */
 	clock: ClockFn;
-	/** Injectable file writer (retained for interface compat; unused after commitTreeToMain cutover). */
-	writeFile?: (path: string, text: string) => void;
 	/**
 	 * Injectable event sink for the 'stage-promoted' observability event.
 	 * Defaults to makeFileEventLogger(<cwd>/.claude/cam-worker-events.jsonl),
@@ -197,8 +195,6 @@ export interface AbandonIssueOnMainOptions {
 	spawnFn: SpawnFn;
 	/** Injectable clock -- returns ISO 8601 timestamp. */
 	clock: ClockFn;
-	/** Injectable file writer (retained for interface compat; unused after commitTreeToMain cutover). */
-	writeFile?: (path: string, text: string) => void;
 }
 
 export interface AbandonIssueOnMainResult {
@@ -238,8 +234,6 @@ export interface MergeIssueOnMainOptions {
 	spawnFn: SpawnFn;
 	/** Injectable clock -- returns ISO 8601 timestamp. */
 	clock: ClockFn;
-	/** Injectable file writer (retained for interface compat; unused after commitTreeToMain cutover). */
-	writeFile?: (path: string, text: string) => void;
 }
 
 export interface MergeIssueOnMainResult {
@@ -515,8 +509,6 @@ export interface CloseIssueOnMainOptions {
 	spawnFn: SpawnFn;
 	/** Injectable clock -- returns ISO 8601 timestamp. */
 	clock: ClockFn;
-	/** Injectable file writer (retained for interface compat; unused after commitTreeToMain cutover). */
-	writeFile?: (path: string, text: string) => void;
 }
 
 export interface CloseIssueOnMainResult {
@@ -584,8 +576,6 @@ export interface DemoteIssueOnMainOptions {
 	spawnFn: SpawnFn;
 	/** Injectable clock -- returns ISO 8601 timestamp. */
 	clock: ClockFn;
-	/** Injectable file writer (retained for interface compat; unused after commitTreeToMain cutover). */
-	writeFile?: (path: string, text: string) => void;
 }
 
 export interface DemoteIssueOnMainResult {

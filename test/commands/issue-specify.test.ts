@@ -447,25 +447,17 @@ test('success path: updatedAt is bumped to clock() value beyond original created
 	expect(new Date(parsed.updatedAt).getTime()).toBeGreaterThan(new Date(entry.createdAt).getTime());
 });
 
-test('success path (on-main): ref-only commit via commitTreeToMain; writeFile never called', () => {
+test('success path (on-main): ref-only commit via commitTreeToMain', () => {
 	// CAM-133: even when branchWasMain===true, the commit path is now always
-	// commitTreeToMain (ref-only). writeFile must never be called.
+	// commitTreeToMain (ref-only).
 	const { spawnFn, calls } = makeFakeSpawnFn({ entries: [makeEntry()], branch: 'main' });
-	const writtenFiles: Array<{ path: string; content: string }> = [];
 
-	const result = specifyIssueOnMain(
-		makeOpts({
-			spawnFn,
-			writeFile: (path, content) => writtenFiles.push({ path, content }),
-		}),
-	);
+	const result = specifyIssueOnMain(makeOpts({ spawnFn }));
 
 	expect(result.ok).toBe(true);
 	if (result.ok) {
 		expect(result.branchWasMain).toBe(true);
 	}
-	// ref-only invariant: writeFile is never invoked (working tree untouched)
-	expect(writtenFiles).toHaveLength(0);
 	// commit-tree plumbing is always used (even on-main after the fix)
 	const commitTreeCall = calls.find((c) => c.join(' ').includes('commit-tree'));
 	expect(commitTreeCall).toBeDefined();
@@ -901,23 +893,15 @@ test('abandon: updatedAt is bumped to clock() value beyond original createdAt', 
 	expect(new Date(parsed.updatedAt).getTime()).toBeGreaterThan(new Date(entry.createdAt).getTime());
 });
 
-test('abandon: success path (on-main) ref-only commit; writeFile never called', () => {
+test('abandon: success path (on-main) ref-only commit', () => {
 	// CAM-133: even when branchWasMain===true, the commit path is now always
-	// commitTreeToMain (ref-only). writeFile must never be called.
+	// commitTreeToMain (ref-only).
 	const { spawnFn, calls } = makeFakeSpawnFn({ entries: [makeEntry()], branch: 'main' });
-	const writtenFiles: Array<{ path: string; content: string }> = [];
 
-	const result = abandonIssueOnMain(
-		makeAbandonOpts({
-			spawnFn,
-			writeFile: (path, content) => writtenFiles.push({ path, content }),
-		}),
-	);
+	const result = abandonIssueOnMain(makeAbandonOpts({ spawnFn }));
 
 	expect(result.ok).toBe(true);
 	if (result.ok) expect(result.branchWasMain).toBe(true);
-	// ref-only invariant: writeFile is never invoked (working tree untouched)
-	expect(writtenFiles).toHaveLength(0);
 	// commit-tree plumbing is always used (even on-main after the fix)
 	const commitTreeCall = calls.find((c) => c.join(' ').includes('commit-tree'));
 	expect(commitTreeCall).toBeDefined();
@@ -1037,23 +1021,16 @@ test('demote: updatedAt is bumped to clock() value beyond original createdAt', (
 	expect(new Date(parsed.updatedAt).getTime()).toBeGreaterThan(new Date(specifiedEntry.createdAt).getTime());
 });
 
-test('demote: on-main ref-only commit; writeFile never called', () => {
+test('demote: on-main ref-only commit', () => {
 	const { spawnFn } = makeFakeSpawnFn({
 		entries: [makeEntry({ stage: 'specified' })],
 		branch: 'main',
 	});
-	const writtenFiles: Array<{ path: string; content: string }> = [];
 
-	const result = demoteIssueOnMain(
-		makeDemoteOpts({
-			spawnFn,
-			writeFile: (path, content) => writtenFiles.push({ path, content }),
-		}),
-	);
+	const result = demoteIssueOnMain(makeDemoteOpts({ spawnFn }));
 
 	expect(result.ok).toBe(true);
 	if (result.ok) expect(result.branchWasMain).toBe(true);
-	expect(writtenFiles).toHaveLength(0);
 });
 
 test('demote: commit message is chore(cam): demote <id>', () => {
