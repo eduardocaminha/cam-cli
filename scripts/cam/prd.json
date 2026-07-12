@@ -41,7 +41,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Touches templates/ so re-embed is mandatory: bun run embed-vendor then bun run embed-vendor:check. Template copy path: materializeTemplates (src/templates/embedded.ts) -> copyTemplates (src/commands/setup.ts:320) copies the scripts/cam subtree; the codegen walkFiles (scripts/generate-embedded-vendor.ts:72) has no extension filter so an empty .jsonl is embedded. Gotcha (spec): the on-main append writers do NOT bootstrap a missing file, so BOTH the init seed AND this repo's main must carry the file, else the first appendSuggestionOnMain fails. Ordering prerequisite for US-003 (the hook writes to this file)."
     },

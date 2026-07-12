@@ -9,6 +9,12 @@
 // resulting binary, so reading from `templates/` at runtime works in dev
 // (`bun src/...`) but silently fails in the compiled binary. Embedding as
 // string constants is the only way to ship templates with a compiled CLI.
+//
+// `walkFiles` in `scripts/generate-embedded-vendor.ts` has no extension
+// filter, so any new file dropped under `templates/scripts/cam/` -- e.g.
+// `scripts/cam/suggestions.jsonl` (seeded empty by US-002, CAM-285) -- rides
+// the generic `writeFileSync` branch below with no code change required;
+// only `.gitignore` gets the merge special-case.
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
