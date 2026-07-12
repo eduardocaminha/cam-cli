@@ -48,7 +48,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Files: src/commands/setup.ts (~661-683 mergeIntoConfig block), test under test/ mirroring setup/toml. GOTCHA: cam init calls mergeIntoConfig multiple times (models/issue_system/ship/plan, then notify) and each call re-parses+re-serializes, which strips comments (comments are non-semantic). Emit the commented [loop] block on a write path that survives: e.g. append the [loop] comment block on a single dedicated/final write, and make it idempotent, so subsequent mergeIntoConfig calls don't duplicate or lose it. Do NOT emit uncommented keys like meta_loop = \"observe\" (that pins the value and defeats read-with-default in src/config/models.ts). Do NOT introduce a separate project.toml template file (issue gotcha). This is the cam init scaffold for downstream projects; cam-cli's own scripts/cam/project.toml is CAM-277 (out of scope)."
     }
