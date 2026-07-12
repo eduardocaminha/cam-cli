@@ -21,7 +21,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/git/on-main.ts (syncWorktreeIfOnMain, lines 243-269), src/issues/alloc.ts (writeIssueFile CREATE route, sync call at line 199), src/commands/issue-file.ts (createLocalIssueOnMain call-site, lines 271-318). PRIOR ART: CAM-142 (fix b2f59721, PR #106) already added `syncWorktreeIfOnMain(cwd, [filename], spawnFn)` inside writeIssueFile's `if (result.success)` block, and shipped the real-git regression at test/integration/write-issue-file-worktree-sync.test.ts (CREATE-on-main -> git status --porcelain empty). CAM-137 shipped test/integration/sync-worktree-on-main.test.ts covering ADD/MODIFY/DELETE via commitTreeToMain. The remaining open piece of CAM-140 is AC3 at the FUNCTION level: a DIRECT syncWorktreeIfOnMain absent-path regression (today the absent-path materialization is only proven transitively via commitTreeToMain's ADD case and via writeIssueFile). Add that direct case to sync-worktree-on-main.test.ts (or a sibling), do NOT re-open writeIssueFile's already-correct sync. GOTCHAS: syncWorktreeIfOnMain self-detects the branch via `git rev-parse --abbrev-ref HEAD`, so real-git test repos MUST run `git symbolic-ref HEAD refs/heads/main` (see makeTmpRepo helpers in the existing tests). `git restore --staged --worktree --source=HEAD -- <path>` handles absent paths (restores index+worktree from HEAD). Real-git tests use the gitAvailable + test.skipIf skip guard. Grep patterns.md for 'File-per-issue hygiene' and 'on-main' before coding. Do NOT hand-edit scripts/cam/issues/ during a live cam run session (concurrent writer)."
     }
