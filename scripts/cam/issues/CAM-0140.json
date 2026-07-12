@@ -1,7 +1,7 @@
 {
   "id": "CAM-140",
   "title": "createLocalIssueOnMain CREATE deixa arquivo novo como delecao-staged na worktree em main (gap do CAM-137 syncWorktreeIfOnMain pro caso CREATE)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-29T17:38:18.155Z",
