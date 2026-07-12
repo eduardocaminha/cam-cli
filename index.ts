@@ -115,6 +115,27 @@ const HELP = renderHelp({
 				{ name: 'help', description: 'Show this help' },
 			],
 		},
+		{
+			heading: 'Internal',
+			entries: [
+				{
+					name: 'sidecar',
+					description: 'Not a user entry point: the long-lived loop supervisor, spawned by `cam run` in the background',
+				},
+				{
+					name: 'orch-recycle-watch',
+					description: 'Not a user entry point: watches the recycle marker and kills the orchestrator pane, spawned by `cam run`',
+				},
+				{
+					name: 'sidecar-liveness-watch',
+					description: 'Not a user entry point: restarts a dead sidecar, spawned by `cam run`',
+				},
+				{
+					name: 'orch-budget',
+					description: 'Not a user entry point: prints/enforces the orchestrator token budget, spawned by `cam run`',
+				},
+			],
+		},
 	],
 	footer:
 		'Run `cam <command> --help` for command-specific options. Permission mode\n' +
@@ -316,6 +337,13 @@ const ISSUE_HELP = renderHelp({
 				{
 					name: '"<free text>"',
 					description: 'Free-text description; expanded to title + description by /cam-issue create',
+				},
+				{
+					name: '--file-local',
+					description:
+						'Deterministic in-process filer (no tmux, no LLM): reads a JSON payload from stdin and commits the issue ' +
+						'directly to main. Optional --fast-track (specSource: operator) or --derived-from <id[,id...]> ' +
+						'(specSource: derived) flags; mutually exclusive.',
 				},
 				{
 					name: 'list [--all] [--json]',
