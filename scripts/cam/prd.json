@@ -25,7 +25,7 @@
         "Vendor drift check passes (bun run embed-vendor:check)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: scripts/cam/issues.schema.json + templates/scripts/cam/issues.schema.json (add updatedAt to properties AND required in each, independently; do NOT diff the two copies, per patterns.md CAM-235 gotcha), src/issues/types.ts, src/issues/alloc.ts (buildIssueEntry, ~:114/:146/:180), src/commands/issue-file.ts (:306 createdAt: clock()), scripts/cam/migrate-issues-schema.ts (migrateEntry :99), the 283 scripts/cam/issues/CAM-*.json files (scripted backfill), and every test makeIssue/base-fixture builder (test/issues/list.test.ts, test/issue-list.test.ts, test/issue-specify.test.ts, test/triage.test.ts, test/suggestion-followups.test.ts, test/commands/issue-specify.test.ts, test/issues/*.test.ts, etc. -- grep 'createdAt:' under test/ to find all ~36 files) which must gain updatedAt so typecheck stays green. Making it REQUIRED in IssueEntry (not optional) is deliberate: it gives compile-time proof every constructor sets it (the field-lies-if-any-writer-misses-it concern in the issue). Templates copy is the embedded one (templates/ mirrors project tree -> key scripts/cam/issues.schema.json in src/vendor/_generated.ts), so editing it requires bun run embed-vendor. No ajv/runtime schema validator exists (Step 5.5 = no_external_lib_touched). Backfill lands on the branch; per the finalize-clobbers-stale-branch lesson, the ship step should merge origin/main before finalize so main-filed issues are not clobbered by the 283-file rewrite. patterns.md keywords to grep: 'issues.schema', 'migrate', 'embed-vendor'."
     },

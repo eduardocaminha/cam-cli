@@ -5,5 +5,6 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-05T16:24:46Z",
-  "description": ".claude/commands/cam-ship.md:31 e :33 ainda têm <project typecheck command> e <project test command>; o config agent do cam init (modo existing) adaptou os subagents + scripts/cam/CLAUDE.md mas não tocou nesse arquivo (não estava na lista do prompt de setup). Quando /cam-ship rodar os quality gates, vê o placeholder literal. Trocar por 'bun run typecheck' e 'bun test', alinhado ao scripts/cam/CLAUDE.md. Conferir também cam-next.md/cam-plan.md (listas de exemplo genéricas npm/bun). Bom candidato a primeira história de teste por ser pequeno e concreto."
+  "description": ".claude/commands/cam-ship.md:31 e :33 ainda têm <project typecheck command> e <project test command>; o config agent do cam init (modo existing) adaptou os subagents + scripts/cam/CLAUDE.md mas não tocou nesse arquivo (não estava na lista do prompt de setup). Quando /cam-ship rodar os quality gates, vê o placeholder literal. Trocar por 'bun run typecheck' e 'bun test', alinhado ao scripts/cam/CLAUDE.md. Conferir também cam-next.md/cam-plan.md (listas de exemplo genéricas npm/bun). Bom candidato a primeira história de teste por ser pequeno e concreto.",
+  "updatedAt": "2026-06-05T16:24:46Z"
 }

@@ -112,6 +112,7 @@ function buildIssueEntry(
 		status,
 		blockedBy,
 		createdAt,
+		updatedAt: createdAt,
 		...(description !== undefined ? { description } : {}),
 		...(specSource !== undefined ? { specSource } : {}),
 		...(derivedFrom !== undefined && derivedFrom.length > 0 ? { derivedFrom } : {}),

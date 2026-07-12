@@ -96,6 +96,7 @@ function makeEntry(overrides?: Partial<IssueEntry>): IssueEntry {
 		status: 'open',
 		blockedBy: [],
 		createdAt: '2026-01-01T00:00:00.000Z',
+		updatedAt: '2026-01-01T00:00:00.000Z',
 		...overrides,
 	};
 }
@@ -635,6 +636,7 @@ function makeTmpRepo(initialIssue?: Partial<IssueEntry>): RepoHandles {
 		status: 'open',
 		blockedBy: [],
 		createdAt: '2026-01-01T00:00:00.000Z',
+		updatedAt: '2026-01-01T00:00:00.000Z',
 		...initialIssue,
 	};
 	writeFileSync(join(issuesDir, 'CAM-0001.json'), toJson(entry));
@@ -1037,6 +1039,7 @@ function makeTwoEntries(
 			status: 'open',
 			blockedBy: [],
 			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
 			...overrides1,
 		},
 		{
@@ -1046,6 +1049,7 @@ function makeTwoEntries(
 			status: 'open',
 			blockedBy: [],
 			createdAt: '2026-01-02T00:00:00.000Z',
+			updatedAt: '2026-01-02T00:00:00.000Z',
 			...overrides2,
 		},
 	];
@@ -1149,6 +1153,7 @@ test('merge-into: foldBlockedBy folds source blockedBy into target', () => {
 			status: 'open',
 			blockedBy: ['CAM-3'],
 			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
 		},
 		{
 			id: 'CAM-2',
@@ -1157,6 +1162,7 @@ test('merge-into: foldBlockedBy folds source blockedBy into target', () => {
 			status: 'open',
 			blockedBy: [],
 			createdAt: '2026-01-02T00:00:00.000Z',
+			updatedAt: '2026-01-02T00:00:00.000Z',
 		},
 		{
 			id: 'CAM-3',
@@ -1165,6 +1171,7 @@ test('merge-into: foldBlockedBy folds source blockedBy into target', () => {
 			status: 'open',
 			blockedBy: [],
 			createdAt: '2026-01-03T00:00:00.000Z',
+			updatedAt: '2026-01-03T00:00:00.000Z',
 		},
 	];
 	const capturedJsons: string[] = [];
@@ -1193,6 +1200,7 @@ test('merge-into: foldBlockedBy does not fold when false (default)', () => {
 			status: 'open',
 			blockedBy: ['CAM-3'],
 			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
 		},
 		{
 			id: 'CAM-2',
@@ -1201,6 +1209,7 @@ test('merge-into: foldBlockedBy does not fold when false (default)', () => {
 			status: 'open',
 			blockedBy: [],
 			createdAt: '2026-01-02T00:00:00.000Z',
+			updatedAt: '2026-01-02T00:00:00.000Z',
 		},
 		{
 			id: 'CAM-3',
@@ -1209,6 +1218,7 @@ test('merge-into: foldBlockedBy does not fold when false (default)', () => {
 			status: 'open',
 			blockedBy: [],
 			createdAt: '2026-01-03T00:00:00.000Z',
+			updatedAt: '2026-01-03T00:00:00.000Z',
 		},
 	];
 	const capturedJsons: string[] = [];
@@ -1244,6 +1254,7 @@ test('merge-into: foldBlockedBy deduplicates existing entries', () => {
 			status: 'open',
 			blockedBy: ['CAM-3'],
 			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
 		},
 		{
 			id: 'CAM-2',
@@ -1252,6 +1263,7 @@ test('merge-into: foldBlockedBy deduplicates existing entries', () => {
 			status: 'open',
 			blockedBy: ['CAM-3'],
 			createdAt: '2026-01-02T00:00:00.000Z',
+			updatedAt: '2026-01-02T00:00:00.000Z',
 		},
 		{
 			id: 'CAM-3',
@@ -1260,6 +1272,7 @@ test('merge-into: foldBlockedBy deduplicates existing entries', () => {
 			status: 'open',
 			blockedBy: [],
 			createdAt: '2026-01-03T00:00:00.000Z',
+			updatedAt: '2026-01-03T00:00:00.000Z',
 		},
 	];
 	const capturedJsons: string[] = [];
@@ -1321,6 +1334,7 @@ function makeTmpRepoTwo(): RepoHandles {
 		status: 'open',
 		blockedBy: [],
 		createdAt: '2026-01-01T00:00:00.000Z',
+		updatedAt: '2026-01-01T00:00:00.000Z',
 	};
 	const e2: IssueEntry = {
 		id: 'CAM-2',
@@ -1329,6 +1343,7 @@ function makeTmpRepoTwo(): RepoHandles {
 		status: 'open',
 		blockedBy: [],
 		createdAt: '2026-01-02T00:00:00.000Z',
+		updatedAt: '2026-01-02T00:00:00.000Z',
 	};
 	writeFileSync(join(issuesDir, 'CAM-0001.json'), toJson(e1));
 	writeFileSync(join(issuesDir, 'CAM-0002.json'), toJson(e2));
@@ -1446,6 +1461,7 @@ test.skipIf(!gitAvailable)(
 			status: 'abandoned',
 			blockedBy: [],
 			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
 		};
 		writeFileSync(join(issuesDir, 'CAM-0001.json'), toJson(entry));
 		run(['add', '-A']);

@@ -5,5 +5,6 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-05T16:24:46Z",
-  "description": "Hoje, ao digitar exit no pane do orquestrador, o pane de menu permanece e é preciso ctrl+b d pra sair do tmux. Mudar: fechar a sessão do orquestrador (claude exit no pane 0) deve matar a sessão tmux inteira e devolver ao terminal automaticamente. Mecanismo provável: encadear o comando do pane 0 com tmux kill-session ao sair do claude (claude ...; tmux kill-session -t <sessão>), ou um hook pane-died/pane-exited. Jeito sintético de voltar pro shell, sem ctrl+b d. Pequeno."
+  "description": "Hoje, ao digitar exit no pane do orquestrador, o pane de menu permanece e é preciso ctrl+b d pra sair do tmux. Mudar: fechar a sessão do orquestrador (claude exit no pane 0) deve matar a sessão tmux inteira e devolver ao terminal automaticamente. Mecanismo provável: encadear o comando do pane 0 com tmux kill-session ao sair do claude (claude ...; tmux kill-session -t <sessão>), ou um hook pane-died/pane-exited. Jeito sintético de voltar pro shell, sem ctrl+b d. Pequeno.",
+  "updatedAt": "2026-06-05T16:24:46Z"
 }

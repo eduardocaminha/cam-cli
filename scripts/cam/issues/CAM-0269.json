@@ -5,5 +5,6 @@
   "status": "abandoned",
   "blockedBy": [],
   "createdAt": "2026-07-11T07:41:03.299Z",
-  "description": "makeCapturePaneFn (capture-pane -p -t) duplicates dispatch.ts's internal defaultCapturePaneFn almost verbatim; the production host.ts wiring passes its own -S - capturePane instead, so makeCapturePaneFn is used only by the sidecar call-sites. Consider exporting/reusing a single capture-pane reader to avoid three near-identical readers.\n\nSource: cam/issue-200\nReview round: 1\nLocation: src/supervisor/host.ts:227\n\nsuggestion-fingerprint: befba261a62e"
+  "description": "makeCapturePaneFn (capture-pane -p -t) duplicates dispatch.ts's internal defaultCapturePaneFn almost verbatim; the production host.ts wiring passes its own -S - capturePane instead, so makeCapturePaneFn is used only by the sidecar call-sites. Consider exporting/reusing a single capture-pane reader to avoid three near-identical readers.\n\nSource: cam/issue-200\nReview round: 1\nLocation: src/supervisor/host.ts:227\n\nsuggestion-fingerprint: befba261a62e",
+  "updatedAt": "2026-07-11T07:41:03.299Z"
 }

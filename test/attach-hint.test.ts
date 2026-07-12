@@ -138,7 +138,7 @@ describe('runPlan attach hint', () => {
 		// Without this, readBacklogFromMain hits git in a tmpdir (returns [])
 		// and runPlan exits with error before the hint is emitted.
 		const readBacklogFn = () => [
-			{ id: 'CAM-1', title: 'Test', stage: 'specified' as const, status: 'open' as const, blockedBy: [], createdAt: '2026-01-01T00:00:00Z' },
+			{ id: 'CAM-1', title: 'Test', stage: 'specified' as const, status: 'open' as const, blockedBy: [], createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' },
 		];
 		const writeFn = () => '';
 
@@ -163,7 +163,7 @@ describe('runPlan attach hint', () => {
 		const sessionName = projectSessionName(tmpDir);
 
 		const readBacklogFn = () => [
-			{ id: 'CAM-1', title: 'Test', stage: 'specified' as const, status: 'open' as const, blockedBy: [], createdAt: '2026-01-01T00:00:00Z' },
+			{ id: 'CAM-1', title: 'Test', stage: 'specified' as const, status: 'open' as const, blockedBy: [], createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' },
 		];
 		const writeFn = () => '';
 

@@ -139,6 +139,20 @@ describe("migrateBacklog — field cleanup", () => {
 		);
 		expect(result.issues[0]!.description).toBe("some desc");
 	});
+
+	test("updatedAt defaults to createdAt when absent", () => {
+		const result = migrateBacklog(makeFile([makeOldEntry({ state: "open" })]));
+		expect(result.issues[0]!.updatedAt).toBe(result.issues[0]!.createdAt);
+	});
+
+	test("updatedAt is copied through when already present on the raw entry", () => {
+		const result = migrateBacklog(
+			makeFile([
+				makeOldEntry({ state: "open", updatedAt: "2026-03-01T00:00:00Z" }),
+			]),
+		);
+		expect(result.issues[0]!.updatedAt).toBe("2026-03-01T00:00:00Z");
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -154,6 +168,7 @@ describe("migrateBacklog — idempotency", () => {
 			status: "open" as const,
 			blockedBy: [] as string[],
 			createdAt: "2026-01-01T00:00:00Z",
+			updatedAt: "2026-01-01T00:00:00Z",
 		};
 		const result = migrateBacklog(makeFile([alreadyMigrated]));
 		expect(result.issues[0]).toEqual(alreadyMigrated);
@@ -167,9 +182,37 @@ describe("migrateBacklog — idempotency", () => {
 			status: "abandoned" as const,
 			blockedBy: [] as string[],
 			createdAt: "2026-01-01T00:00:00Z",
+			updatedAt: "2026-01-01T00:00:00Z",
 		};
 		const result = migrateBacklog(makeFile([alreadyMigrated]));
 		expect(result.issues[0]).toEqual(alreadyMigrated);
+	});
+
+	test("already-migrated entry missing updatedAt is backfilled with createdAt", () => {
+		const alreadyMigratedNoUpdatedAt = {
+			id: "CAM-7",
+			title: "pre-updatedAt schema",
+			stage: "idea" as const,
+			status: "open" as const,
+			blockedBy: [] as string[],
+			createdAt: "2026-01-01T00:00:00Z",
+		};
+		const result = migrateBacklog(makeFile([alreadyMigratedNoUpdatedAt]));
+		expect(result.issues[0]!.updatedAt).toBe("2026-01-01T00:00:00Z");
+	});
+
+	test("entry with an existing updatedAt preserves it (not overwritten with createdAt)", () => {
+		const entryWithUpdatedAt = {
+			id: "CAM-8",
+			title: "already has updatedAt",
+			stage: "idea" as const,
+			status: "open" as const,
+			blockedBy: [] as string[],
+			createdAt: "2026-01-01T00:00:00Z",
+			updatedAt: "2026-02-01T00:00:00Z",
+		};
+		const result = migrateBacklog(makeFile([entryWithUpdatedAt]));
+		expect(result.issues[0]!.updatedAt).toBe("2026-02-01T00:00:00Z");
 	});
 
 	test("re-running migrateBacklog on its own output returns equivalent backlog", () => {

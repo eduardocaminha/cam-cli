@@ -73,6 +73,7 @@ const ISSUE_CAM_1: IssueEntry = {
 	status: 'open',
 	blockedBy: [],
 	createdAt: '2026-06-28T00:00:00Z',
+	updatedAt: '2026-06-28T00:00:00Z',
 	wsjf: { value: 3, timeCriticality: 2, riskReduction: 1, jobSize: 2 },
 	// rank: intentionally absent to test 'new' diff tag
 };
@@ -88,6 +89,7 @@ const ISSUE_CAM_2: IssueEntry = {
 	status: 'open',
 	blockedBy: ['CAM-3'],
 	createdAt: '2026-06-28T00:00:00Z',
+	updatedAt: '2026-06-28T00:00:00Z',
 	wsjf: { value: 1, timeCriticality: 1, riskReduction: 1, jobSize: 1 },
 };
 const ISSUE_CAM_3: IssueEntry = {
@@ -97,6 +99,7 @@ const ISSUE_CAM_3: IssueEntry = {
 	status: 'open',
 	blockedBy: ['CAM-2'],
 	createdAt: '2026-06-28T00:00:00Z',
+	updatedAt: '2026-06-28T00:00:00Z',
 	wsjf: { value: 1, timeCriticality: 1, riskReduction: 1, jobSize: 1 },
 };
 
@@ -108,6 +111,7 @@ const ISSUE_CAM_5: IssueEntry = {
 	status: 'open',
 	blockedBy: ['CAM-99'],
 	createdAt: '2026-06-28T00:00:00Z',
+	updatedAt: '2026-06-28T00:00:00Z',
 	wsjf: { value: 1, timeCriticality: 1, riskReduction: 1, jobSize: 1 },
 };
 
@@ -123,6 +127,7 @@ const ISSUE_CAM_30: IssueEntry = {
 	status: 'open',
 	blockedBy: ['CAM-31'],
 	createdAt: '2026-06-28T00:00:00Z',
+	updatedAt: '2026-06-28T00:00:00Z',
 	wsjf: { value: 3, timeCriticality: 2, riskReduction: 1, jobSize: 2 },
 };
 /** Same issue, already ranked=1 (matches computed rank; used for the no-op fixture). */
@@ -136,6 +141,7 @@ const ISSUE_CAM_31: IssueEntry = {
 	status: 'open',
 	blockedBy: [],
 	createdAt: '2026-06-28T00:00:00Z',
+	updatedAt: '2026-06-28T00:00:00Z',
 };
 
 /** Specified+open issue with no wsjf field -> triggers the rank (WSJF-computation) warning. */
@@ -146,6 +152,7 @@ const ISSUE_CAM_32: IssueEntry = {
 	status: 'open',
 	blockedBy: [],
 	createdAt: '2026-06-28T00:00:00Z',
+	updatedAt: '2026-06-28T00:00:00Z',
 };
 /** Same issue, already ranked=2 (matches computed rank; used for the no-op fixture). */
 const ISSUE_CAM_32_RANKED: IssueEntry = { ...ISSUE_CAM_32, rank: 2 };

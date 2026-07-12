@@ -5,5 +5,6 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-04T01:04:05.527Z",
-  "description": "Operator ceremony to validate the CAM-152 container-flip end to end (opt-in worker_isolation=container is shipped but unexercised). Prereq: 0.55.0 binary rebuilt+installed. Steps: set [loop] worker_isolation=container in project.toml, ensure the persistent cam-worker container is up, run one representative story to GREEN inside the container under the firewall, confirm claude auth works inside the container, and capture evidence. Ties CAM-116. Hard precondition for trusting CAM-139 (autonomous meta-loop requires container active)."
+  "description": "Operator ceremony to validate the CAM-152 container-flip end to end (opt-in worker_isolation=container is shipped but unexercised). Prereq: 0.55.0 binary rebuilt+installed. Steps: set [loop] worker_isolation=container in project.toml, ensure the persistent cam-worker container is up, run one representative story to GREEN inside the container under the firewall, confirm claude auth works inside the container, and capture evidence. Ties CAM-116. Hard precondition for trusting CAM-139 (autonomous meta-loop requires container active).",
+  "updatedAt": "2026-07-04T01:04:05.527Z"
 }

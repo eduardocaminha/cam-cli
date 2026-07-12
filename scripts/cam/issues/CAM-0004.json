@@ -5,5 +5,6 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-05T16:24:46Z",
-  "description": "Término do loop = regex perl no <promise> do último bloco assistant (com fallback no prd.json). cam plan = scan de bytes do PTY atrás de 'verdict'+'APPROVE' (src/commands/plan.ts isApproveLine). Retry de rate-limit = capture-pane do tmux. O harness oferece -p --output-format stream-json --include-hook-events (eventos Stop, PreToolUse, Notification). Nada disso é consumido (src/commands/claude.ts:107). Frágil a fraseado/markup (APPROVE num diff dispara o gate). Avaliar migrar os pontos críticos para eventos estruturados."
+  "description": "Término do loop = regex perl no <promise> do último bloco assistant (com fallback no prd.json). cam plan = scan de bytes do PTY atrás de 'verdict'+'APPROVE' (src/commands/plan.ts isApproveLine). Retry de rate-limit = capture-pane do tmux. O harness oferece -p --output-format stream-json --include-hook-events (eventos Stop, PreToolUse, Notification). Nada disso é consumido (src/commands/claude.ts:107). Frágil a fraseado/markup (APPROVE num diff dispara o gate). Avaliar migrar os pontos críticos para eventos estruturados.",
+  "updatedAt": "2026-06-05T16:24:46Z"
 }

@@ -42,6 +42,7 @@ export interface IssueEntry {
 	status: IssueStatus;
 	blockedBy: string[];
 	createdAt: string;
+	updatedAt: string;
 	description?: string;
 	wsjf?: WsjfScore;
 	rank?: number;

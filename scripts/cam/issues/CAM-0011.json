@@ -5,5 +5,6 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-05T16:24:46Z",
-  "description": "Novo subcomando do binário: cam issue \"<texto livre>\" (não existe hoje; issue creation só via slash /cam-issue dentro de sessão). Lê permission_mode do config, garante a sessão do projeto, e abre um pane com claude recebendo o texto livre, que expande pra título+descrição e roda /cam-issue create (none -> issues.local.json, linear/github -> API/gh). Não rouba o TTY; visível pelo cam run. Pedido original do usuário."
+  "description": "Novo subcomando do binário: cam issue \"<texto livre>\" (não existe hoje; issue creation só via slash /cam-issue dentro de sessão). Lê permission_mode do config, garante a sessão do projeto, e abre um pane com claude recebendo o texto livre, que expande pra título+descrição e roda /cam-issue create (none -> issues.local.json, linear/github -> API/gh). Não rouba o TTY; visível pelo cam run. Pedido original do usuário.",
+  "updatedAt": "2026-06-05T16:24:46Z"
 }

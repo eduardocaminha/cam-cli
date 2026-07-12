@@ -5,5 +5,6 @@
   "status": "abandoned",
   "blockedBy": [],
   "createdAt": "2026-07-09T04:30:32.169Z",
-  "description": "The two added prose lines introduce em-dash (—) characters into cam-spec.md (both copies). The project convention discourages em-dash in persisted .md; the exception named in CLAUDE.md is .claude/agents/*.md, and command docs are not listed. This is non-blocking: the file already carried 2 em-dashes on main so the addition follows the file's established style, it is an LLM-consumed slash-command prompt rather than human-facing doc, and no CI gate enforces it (check:all is green). Consider dashless punctuation (colon/comma/parens) to match the durable convention.\n\nSource: cam/issue-235\nReview round: 1\nLocation: .claude/commands/cam-spec.md:31\n\nsuggestion-fingerprint: 60c68a35acde"
+  "description": "The two added prose lines introduce em-dash (—) characters into cam-spec.md (both copies). The project convention discourages em-dash in persisted .md; the exception named in CLAUDE.md is .claude/agents/*.md, and command docs are not listed. This is non-blocking: the file already carried 2 em-dashes on main so the addition follows the file's established style, it is an LLM-consumed slash-command prompt rather than human-facing doc, and no CI gate enforces it (check:all is green). Consider dashless punctuation (colon/comma/parens) to match the durable convention.\n\nSource: cam/issue-235\nReview round: 1\nLocation: .claude/commands/cam-spec.md:31\n\nsuggestion-fingerprint: 60c68a35acde",
+  "updatedAt": "2026-07-09T04:30:32.169Z"
 }

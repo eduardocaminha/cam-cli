@@ -166,6 +166,7 @@ function makeIssueEntry(id: string): IssueEntry {
 		status: 'open',
 		blockedBy: [],
 		createdAt: FIXED_CLOCK,
+		updatedAt: FIXED_CLOCK,
 	};
 }
 
@@ -427,6 +428,7 @@ test.skipIf(!gitAvailable)(
 					status: 'open',
 					blockedBy: [],
 					createdAt: FIXED_CLOCK,
+					updatedAt: FIXED_CLOCK,
 				};
 				writeIssueFile({
 					cwd: dir,

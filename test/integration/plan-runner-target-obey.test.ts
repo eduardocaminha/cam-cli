@@ -112,6 +112,7 @@ const TARGET_ISSUE: IssueEntry = {
 	status: 'open',
 	blockedBy: [],
 	createdAt: '2026-07-02T00:00:00Z',
+	updatedAt: '2026-07-02T00:00:00Z',
 };
 
 /** Top-of-queue issue (must NOT appear in the prompt when CAM-157 is targeted). */
@@ -122,6 +123,7 @@ const TOP_ISSUE: IssueEntry = {
 	status: 'open',
 	blockedBy: [],
 	createdAt: '2026-07-01T00:00:00Z',
+	updatedAt: '2026-07-01T00:00:00Z',
 };
 void TOP_ISSUE; // referenced in comment only; selectIssueFn returns TARGET_ISSUE.
 

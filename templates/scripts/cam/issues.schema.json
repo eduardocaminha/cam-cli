@@ -3,7 +3,7 @@
   "title": "Cam Issue Entry",
   "description": "Schema for a single per-file issue managed by cam issue commands.",
   "type": "object",
-  "required": ["id", "title", "stage", "status", "blockedBy", "createdAt"],
+  "required": ["id", "title", "stage", "status", "blockedBy", "createdAt", "updatedAt"],
   "properties": {
     "id": {
       "type": "string",
@@ -32,6 +32,11 @@
       "type": "string",
       "format": "date-time",
       "description": "ISO 8601 creation timestamp."
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 last-activity timestamp. Equal to createdAt at creation time."
     },
     "description": {
       "type": "string",

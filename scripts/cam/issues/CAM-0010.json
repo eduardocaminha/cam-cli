@@ -5,5 +5,6 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-05T16:24:46Z",
-  "description": "Todo comando do loop, ao terminar, se o usuário NÃO estiver anexado à sessão do projeto (TMUX não corresponde), imprime uma dica curta de como anexar (cam run). Se já estiver dentro da sessão, não imprime."
+  "description": "Todo comando do loop, ao terminar, se o usuário NÃO estiver anexado à sessão do projeto (TMUX não corresponde), imprime uma dica curta de como anexar (cam run). Se já estiver dentro da sessão, não imprime.",
+  "updatedAt": "2026-06-05T16:24:46Z"
 }
