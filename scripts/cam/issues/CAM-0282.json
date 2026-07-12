@@ -1,9 +1,33 @@
 {
   "id": "CAM-282",
   "title": "implement supervisor writes a false-positive .cam-implement-blocked.json on the worker-report-fallback SUCCESS path (orphans across cycles, wedges next plan preflight)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-12T12:18:14.394Z",
-  "description": "On the worker-report-fallback path the implement supervisor writes .cam-implement-blocked.json even when the outcome is SUCCESS: the marker's reason is a SUCCESS confirmation, not a real block. Two harms: (1) misleading — a 'blocked' marker carrying a SUCCESS reason; (2) it orphans across cycles — once the issue ships/closes, no re-armed implement dispatch ever clears it, so the stale marker dirties the clean tree and wedges the NEXT plan preflight (lived twice: CAM-211 wrote it benign, then it blocked CAM-206's first plan dispatch until manually removed). Fix direction: do not write the marker on a SUCCESS outcome; and/or an orphaned marker for a closed issue must not dirty clean-tree / block a preflight. Refine via /cam-spec. Distinct from CAM-265 (which is only cosmetic doc dedup of the marker warning paragraphs)."
+  "description": "On the worker-report-fallback path the implement supervisor writes .cam-implement-blocked.json even when the outcome is SUCCESS: the marker's reason is a SUCCESS confirmation, not a real block. Two harms: (1) misleading — a 'blocked' marker carrying a SUCCESS reason; (2) it orphans across cycles — once the issue ships/closes, no re-armed implement dispatch ever clears it, so the stale marker dirties the clean tree and wedges the NEXT plan preflight (lived twice: CAM-211 wrote it benign, then it blocked CAM-206's first plan dispatch until manually removed). Fix direction: do not write the marker on a SUCCESS outcome; and/or an orphaned marker for a closed issue must not dirty clean-tree / block a preflight. Refine via /cam-spec. Distinct from CAM-265 (which is only cosmetic doc dedup of the marker warning paragraphs).",
+  "spec": {
+    "scope": "Stop an orphaned .claude/.cam-implement-blocked.json (a marker whose issueId points to an already closed/shipped issue) from causing harm. (B1) Add the missing .gitignore entry so the marker, like all its sibling durable markers, is not seen as untracked dirt by the plan-preflight clean-tree gate. (B2) Add orphan-clearing so a marker whose issueId is a closed/shipped issue is removed, so it can no longer mislead the boot-surface or the circuit-breaker read. Outcome classification (a fallback stale-absent outcome being written as blocked) is OUT of scope.",
+    "acceptanceCriteria": [
+      ".claude/.cam-implement-blocked.json is added to .gitignore alongside its siblings (near .gitignore:91, mirroring .cam-plan-preflight-failed.json etc.), so git status --porcelain no longer emits it and the plan-preflight clean-tree gate (src/supervisor/plan-preflight.ts:91-97) is not tripped by the marker's mere presence.",
+      "Regression test: with an orphaned .claude/.cam-implement-blocked.json present on disk, runPlanPreflight (src/supervisor/plan-preflight.ts:70) does NOT fail on step 'clean-tree' because of that file.",
+      "Orphan-clearing: a marker whose issueId points to a closed/shipped issue is removed by a deterministic sweep (at preflight start or at sidecar startup), so it no longer lingers to mislead the orchestrator boot-surface or the circuit-breaker read at src/supervisor/loop.ts:2194. The existing live-issue clear (issueId matches current prd.json, src/commands/sidecar.ts:558-569) is preserved for the in-flight case.",
+      "Test: a marker whose issueId is a CLOSED issue is cleared by the sweep; a marker whose issueId is the current/OPEN issue is NOT cleared.",
+      "bun run typecheck, bun test, bun run check:all all green."
+    ],
+    "gotchas": [
+      "Root cause of the wedge is a MISSED .gitignore line: implement-blocked is the ONLY durable marker not gitignored (siblings at .gitignore:85-95). Mirror the sibling entries exactly; do not add a broad .claude/ or .cam-* wildcard.",
+      "The marker is issue-scoped for clearing (src/commands/sidecar.ts:559 matches marker.issueId to the current prd.json issue). Orphan-clearing must check whether the marker's issueId corresponds to a CLOSED/shipped issue (read issue state on main, read-only), not merely a mismatch with the current issue.",
+      "Do NOT change the write-site (src/supervisor/loop.ts:820-826) or the outcome classification. A fallback stale-absent outcome being written as blocked is a separate concern (CAM-36/37/38 resilience area), deliberately not in this issue.",
+      "Keep any issue-state read on-main and read-only (e.g. git show main:scripts/cam/issues/<PREFIX>-NNNN.json or the existing issue loader); do not touch the working tree from the sweep."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 2,
+    "riskReduction": 4,
+    "jobSize": 2
+  },
+  "type": "fix"
 }
