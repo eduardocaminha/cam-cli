@@ -29,6 +29,20 @@ export type TomlSection = Record<string, TomlScalar>;
 export type TomlConfig = Record<string, TomlScalar | TomlSection>;
 
 /**
+ * Optional comment lines to render under a `[section]` header, keyed by
+ * section name. Each entry is rendered as its own `# <line>` line, placed
+ * immediately after the `[section]` header and before that section's active
+ * keys. A section can carry comments with zero active keys (pass `{}` as the
+ * section's value in `TomlConfig`) to scaffold a fully commented-out example
+ * block — the section header still emits, but no live keys follow.
+ *
+ * Comments are non-semantic: TOML strips `#` to end-of-line, so
+ * `parseToml(stringifyToml(config, comments))` deep-equals `config` — the
+ * comment text never appears as a key in the parsed result.
+ */
+export type TomlComments = Record<string, string[]>;
+
+/**
  * Stringify a TOML scalar value. Strings get double-quoted with `\` and `"`
  * escaped; booleans/numbers use their canonical representation.
  *
@@ -64,8 +78,15 @@ function stringifyScalar(value: TomlScalar): string {
  * Stability matters: round-tripping via parse → modify → serialize is part of
  * the test contract, and unstable key order would cause spurious diffs in any
  * future "is the config dirty?" check.
+ *
+ * `comments` is optional and fully backward-compatible: omitting it (or
+ * passing `undefined`) produces byte-identical output to calling
+ * `stringifyToml(config)` before this parameter existed. When supplied, it
+ * renders `# `-prefixed comment lines under the matching `[section]` header
+ * (see `TomlComments`) — useful for `cam init` to scaffold self-documenting
+ * example sections without adding live keys.
  */
-export function stringifyToml(config: TomlConfig): string {
+export function stringifyToml(config: TomlConfig, comments?: TomlComments): string {
 	const topLevel: Array<[string, TomlScalar]> = [];
 	const sections: Array<[string, TomlSection]> = [];
 
@@ -87,13 +108,22 @@ export function stringifyToml(config: TomlConfig): string {
 	}
 	for (const [name, section] of sections) {
 		if (lines.length > 0) lines.push('');
-		lines.push(`[${name}]`);
-		const entries = Object.entries(section).sort(([a], [b]) => a.localeCompare(b));
-		for (const [key, value] of entries) {
-			lines.push(`${key} = ${stringifyScalar(value)}`);
-		}
+		lines.push(...renderSectionLines(name, section, comments?.[name]));
 	}
 	return `${lines.join('\n')}\n`;
+}
+
+/** Render a single `[name]` section header plus its optional comment lines and sorted entries. */
+function renderSectionLines(name: string, section: TomlSection, commentLines?: string[]): string[] {
+	const lines: string[] = [`[${name}]`];
+	for (const commentLine of commentLines ?? []) {
+		lines.push(`# ${commentLine}`);
+	}
+	const entries = Object.entries(section).sort(([a], [b]) => a.localeCompare(b));
+	for (const [key, value] of entries) {
+		lines.push(`${key} = ${stringifyScalar(value)}`);
+	}
+	return lines;
 }
 
 /**
