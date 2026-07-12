@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.138.0] - 2026-07-12
+
+### Added
+
+- US-002 - List internal commands in cam --help and document the deterministic flags
+- US-001 - Central --help/-h short-circuit guard at the dispatch layer covering every command
+
 ## [0.137.0] - 2026-07-12
 
 ### Added
