@@ -1,0 +1,12 @@
+{
+  "id": "CAM-280",
+  "title": "DemoteIssueOnMainOptions keeps the vestigial `writeFile?` field (copied from th…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-12T11:41:15.068Z",
+  "description": "DemoteIssueOnMainOptions keeps the vestigial `writeFile?` field (copied from the close/abandon siblings) even though the commitTreeToMain ref-only path never invokes it. It is a harmless interface-compat carryover, consistent with its siblings, so no action required; a future cleanup could drop it across all four writers together.\n\nSource: cam/issue-206\nReview round: 1\nLocation: src/commands/issue-specify.ts:588\n\nsuggestion-fingerprint: 14dcde36bac0",
+  "derivedFrom": [
+    "CAM-206"
+  ]
+}
