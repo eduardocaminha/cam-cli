@@ -6,6 +6,16 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.142.0] - 2026-07-12
+
+### Added
+
+- [US-R2-001] - Review round 2 fix 001: address reviewer finding
+- [US-R1-001] - Review round 1 fix 001: address reviewer finding
+- [US-003] - Give ship a single documented model source and stop the dead planner/auditor frontmatter rewrite
+- [US-002] - Strip the inert frontmatter model: lines from the 5 pane/root agent files (dual-copy)
+- [US-001] - Reconcile DEFAULTS map and config-picker MODEL_OPTIONS to the effective model ids
+
 ## [0.141.0] - 2026-07-12
 
 ### Added
