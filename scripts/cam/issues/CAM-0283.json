@@ -1,0 +1,9 @@
+{
+  "id": "CAM-283",
+  "title": "cam init does not scaffold the [loop] section at all (meta_loop/worker_isolation/orch_context_window absent + undiscoverable)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-12T12:28:35.893Z",
+  "description": "cam init (setup.ts:661-673, mergeIntoConfig) emits no [loop] section whatsoever: an operator who runs cam init gets no meta_loop, worker_isolation, or orch_context_window in project.toml and no hint these keys exist. They are read-with-defaults at runtime only (models.ts readMetaLoop/readWorkerIsolation/readOrchContextWindow). The real discoverability gap is bigger than a comment. Architectural blocker: there is NO project.toml template file (generated programmatically) and the TOML serializer stringifyToml (toml.ts:68-96) cannot emit # comments. Fix direction (pick during spec): (i) add comment support to the serializer, (ii) migrate project.toml to a template file that carries commented examples, or (iii) post-write append a commented [loop] block. Should scaffold the [loop] keys (or commented examples) so operators discover meta_loop/worker_isolation/orch_context_window. Split off from CAM-277 (which only adds a commented example to cam-cli's own dogfood project.toml). Refine via /cam-spec."
+}
