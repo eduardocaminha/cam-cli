@@ -345,7 +345,9 @@ describe("deriveBacklogJson — plannable membership (isPlannable) + ordering", 
 			makeIssue({ id: "CAM-1", stage: "specified", title: "Fix the thing" }),
 		];
 		const json = deriveBacklogJson(backlog);
-		expect(json.plannable).toEqual([{ id: "CAM-1", title: "Fix the thing", rank: null }]);
+		expect(json.plannable).toEqual([
+			{ id: "CAM-1", title: "Fix the thing", rank: null, createdAt: "2026-01-01T00:00:00Z" },
+		]);
 	});
 
 	test("row shape carries the numeric rank when present", () => {
@@ -353,6 +355,8 @@ describe("deriveBacklogJson — plannable membership (isPlannable) + ordering", 
 			makeIssue({ id: "CAM-1", stage: "specified", rank: 3 }),
 		];
 		const json = deriveBacklogJson(backlog);
-		expect(json.plannable).toEqual([{ id: "CAM-1", title: "Test issue", rank: 3 }]);
+		expect(json.plannable).toEqual([
+			{ id: "CAM-1", title: "Test issue", rank: 3, createdAt: "2026-01-01T00:00:00Z" },
+		]);
 	});
 });
