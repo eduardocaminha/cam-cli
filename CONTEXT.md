@@ -226,3 +226,12 @@ A cam subcommand not meant as a user-facing entry point (e.g. sidecar), invoked 
 
 **file-local filer**:
 cam issue --file-local: the deterministic commit-to-main issue filer the orchestrator uses to record backlog without touching the working branch.
+
+**worktree-coherent-with-HEAD invariant**:
+After any on-main commit-tree writer returns, the working tree matches HEAD: no staged additions, no deletion-staged files. Established by CAM-137 for MODIFY; extended to CREATE by CAM-140.
+
+**deletion-staged**:
+A git index state where HEAD contains a file but the index and worktree do not, so git status shows 'D <path>'. The CREATE-on-main bug left newly-committed issue files in this state.
+
+**CREATE route**:
+The createLocalIssueOnMain path that commits a brand-new issue file on main (vs the MODIFY route that edits an existing one). Only CREATE was missing worktree materialization.
