@@ -1,0 +1,12 @@
+{
+  "id": "CAM-299",
+  "title": "AC3 oracle references src/commands/post-merge.ts, but the defaultCloseIssueFn/d…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-12T22:45:26.597Z",
+  "description": "AC3 oracle references src/commands/post-merge.ts, but the defaultCloseIssueFn/defaultAbandonIssueFn/defaultDemoteIssueFn actually live in src/release/post-merge.ts. The oracle passes trivially because a non-existent path also yields empty git-diff output; a future edit to the real file would not be caught. Point the oracle at the correct path. Verified independently that src/release/post-merge.ts is untouched on this branch.\n\nSource: cam/issue-280\nReview round: 1\nLocation: scripts/cam/prd.json:17\n\nsuggestion-fingerprint: 4c2332c82b9e",
+  "derivedFrom": [
+    "CAM-280"
+  ]
+}
