@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.151.0] - 2026-07-12
+
+### Added
+
+- US-001 - Document [loop] keys with commented examples in project.toml
+
 ## [0.150.0] - 2026-07-12
 
 ### Added

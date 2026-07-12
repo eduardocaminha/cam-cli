@@ -16,8 +16,11 @@ ship = "sonnet"
 merge_mode = "ci-gated"
 
 [loop]
+# accepted values: auto | observe | off
 meta_loop = "auto"
+# accepted values: container | host
 worker_isolation = "host"
+# orch_context_window = 200000
 
 [notify]
 resend_recipient = "caminhae@gmail.com"
