@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.146.0] - 2026-07-12
+
+### Added
+
+- US-R1-001 - Review round 1 fix 001: address reviewer finding
+- US-001 - Consolidate boot-marker removal boilerplate in orchestrator agent doc
+
 ## [0.145.0] - 2026-07-12
 
 ### Added

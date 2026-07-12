@@ -54,12 +54,19 @@ describe.each([
 		expect(content).toContain('+N more');
 	});
 
-	test('opening-blocker section instructs not to delete the marker; removal is owned by the next plan run', () => {
+	test('the shared do-not-delete rule covers this marker, and removal is owned by the next plan run', () => {
 		const content = getContent();
 		const blockerIndex = content.indexOf('plan preflight failed:');
 		expect(blockerIndex).toBeGreaterThan(-1);
+		// The shared "Do NOT delete the marker yourself" rule is stated once,
+		// before all per-marker blocker paragraphs (US-001, CAM-265): it
+		// covers this marker too, so it must appear before this blocker line,
+		// not repeated after it.
+		const sharedRuleIndex = content.indexOf('Do NOT delete the marker yourself');
+		expect(sharedRuleIndex).toBeGreaterThan(-1);
+		expect(sharedRuleIndex).toBeLessThan(blockerIndex);
 		const afterBlocker = content.slice(blockerIndex);
-		expect(afterBlocker).toContain('Do NOT delete the marker yourself');
-		expect(afterBlocker).toContain('only removed by the next plan run');
+		expect(afterBlocker).toContain('Removed by the next plan run');
+		expect(afterBlocker).toContain('preflight-failed');
 	});
 });
