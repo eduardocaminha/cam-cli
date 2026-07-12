@@ -1,0 +1,121 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-285",
+  "description": "Route reviewer SUGGESTIONs to an append-only scripts/cam/suggestions.jsonl holding pen (+ cam suggestions list/promote/dismiss) instead of auto-filing idea-stage issues.",
+  "issueNumber": 285,
+  "type": "feat",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add suggestions-pen data model + on-main JSONL append/read writer",
+      "description": "As the cam harness, I need a SuggestionEntry model and an on-main append-only writer/reader for scripts/cam/suggestions.jsonl so that the terminal-verdict hook and the CLI share one deduped, on-main-committed pen instead of filing idea issues.",
+      "acceptanceCriteria": [
+        "A new module src/commands/suggestions.ts exports a SuggestionEntry interface carrying exactly: fingerprint, title, body (finding text), sourceBranch, reviewRound, sourceIssue, filedAt. [oracle: grep -q 'interface SuggestionEntry' src/commands/suggestions.ts]",
+        "appendSuggestionOnMain reads scripts/cam/suggestions.jsonl from main via git show main:scripts/cam/suggestions.jsonl (NOT the working tree), appends the entry as exactly one JSON line, and commits it to main via commitTreeToMain + pushMainBestEffort, mirroring appendJournalEntryOnMain (src/commands/journal.ts:525-596) and reusing checkMainUpToDate/commitTreeToMain/pushMainBestEffort from src/git/on-main.ts. [oracle: grep -q 'commitTreeToMain' src/commands/suggestions.ts]",
+        "appendSuggestionOnMain does NOT bootstrap a missing file: if scripts/cam/suggestions.jsonl is absent on main the git show exits non-zero and the writer returns a structured error (no bootstrap), matching the journal writer's journal-missing behavior. [oracle: bun test]",
+        "appendSuggestionOnMain skips an entry whose fingerprint already appears as a JSONL line in suggestions.jsonl (per-line dedup on the fingerprint field). [oracle: bun test]",
+        "readSuggestionsFromMain reads suggestions.jsonl via git show main:scripts/cam/suggestions.jsonl and parses it into SuggestionEntry[], tolerating a trailing newline / blank lines and returning [] when the file is empty. [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "New file src/commands/suggestions.ts. Mirror the on-main writer pattern in src/commands/journal.ts:525-596 (appendJournalEntryOnMain): validate pure inputs, checkMainUpToDate, git show main:<path>, dedup, commitTreeToMain with a 'cam-suggestions-' mkdtemp prefix and a chore(cam) commit message, pushMainBestEffort. Reuse SpawnFn/FileWrite/commitTreeToMain/checkMainUpToDate/pushMainBestEffort from src/git/on-main.ts. Keep the writer pure/injectable (spawnFn param) so tests use a fake git recorder, no real git spawn. Gotcha (spec): on-main append writers do NOT bootstrap a missing file; the seed is US-002. Fingerprint field is the 12-hex-char hash from fingerprintFinding (src/supervisor/suggestion-followups.ts:35)."
+    },
+    {
+      "id": "US-002",
+      "title": "Seed empty suggestions.jsonl in cam init + bootstrap this repo's main",
+      "description": "As an operator running cam init, I need an empty scripts/cam/suggestions.jsonl seeded on main so that the on-main append writers (which never bootstrap a missing file) have a file to append to from the first terminal review.",
+      "acceptanceCriteria": [
+        "templates/scripts/cam/suggestions.jsonl exists as an empty file so materializeTemplates copies it into scripts/cam/ during cam init (walkFiles in scripts/generate-embedded-vendor.ts picks up any extension, no filter). [oracle: test -f templates/scripts/cam/suggestions.jsonl]",
+        "This repo's own scripts/cam/suggestions.jsonl exists and is committed (so it lands on main when this PRD's branch merges), satisfying the on-main pre-existence requirement for the hook. [oracle: test -f scripts/cam/suggestions.jsonl]",
+        "suggestions.jsonl is NOT gitignored (it is on-main-committed like journal.md/patterns.md, unlike the gitignored review-report.json). [oracle: sh -c '! git check-ignore -q scripts/cam/suggestions.jsonl']",
+        "The embedded template snapshot is regenerated so the new template file is present in the compiled binary. [oracle: grep -q 'suggestions.jsonl' src/templates/embedded.ts]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Touches templates/ so re-embed is mandatory: bun run embed-vendor then bun run embed-vendor:check. Template copy path: materializeTemplates (src/templates/embedded.ts) -> copyTemplates (src/commands/setup.ts:320) copies the scripts/cam subtree; the codegen walkFiles (scripts/generate-embedded-vendor.ts:72) has no extension filter so an empty .jsonl is embedded. Gotcha (spec): the on-main append writers do NOT bootstrap a missing file, so BOTH the init seed AND this repo's main must carry the file, else the first appendSuggestionOnMain fails. Ordering prerequisite for US-003 (the hook writes to this file)."
+    },
+    {
+      "id": "US-003",
+      "title": "Redirect the terminal-verdict hook sink from issue-filing to the pen",
+      "description": "As the cam harness, I need the CAM-189 terminal-verdict hook to append surviving reviewer SUGGESTIONs to the suggestions pen instead of filing idea-stage issues so that terminal-CLEAN follow-ups stop inflating the plannable backlog.",
+      "acceptanceCriteria": [
+        "makeProductionFileSuggestionsFn (src/commands/sidecar.ts:2676) appends each surviving SUGGESTION to scripts/cam/suggestions.jsonl via appendSuggestionOnMain (US-001) instead of filing issues via fileCandidates/createLocalIssueOnMain; each appended line carries fingerprint, title, body, sourceBranch (provenance.source), reviewRound (provenance.round), sourceIssue (provenance.parentIssue), filedAt. [oracle: grep -q 'appendSuggestionOnMain' src/commands/sidecar.ts]",
+        "Dedup unions BOTH sources: a SUGGESTION whose fingerprint already appears in suggestions.jsonl OR in any OPEN backlog issue description (fingerprintFinding + the FINGERPRINT_LINE_RE scan already in dedupSuggestions) is not re-appended, so the already-filed SUGGESTION issues (277-280) are not re-penned. [oracle: bun test]",
+        "The loop.ts trigger is unchanged: the hook still fires on status complete AND awaiting-operator with verdict in TERMINAL_VERDICTS, deduped by fingerprint only (no fire-once marker); only the sink changed. [oracle: bun test]",
+        "The orchestrator notification/event on a successful pen-append reports pen-append counts (e.g. penned N, dup-skipped M), not filed issue ids. [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Edit makeProductionFileSuggestionsFn (src/commands/sidecar.ts:2676-2702); the fileCandidates helper (2616-2650) and its createLocalIssueOnMain call are no longer used by the hook (leave createLocalIssueOnMain for US-005 promote). Keep the loop.ts call site (src/supervisor/loop.ts:2141-2178) contract-compatible (report, provenance) -> { filedIds/penned, dupSkipped }. Transitional dedup: extend/compose dedupSuggestions (src/supervisor/suggestion-followups.ts:137) so its fingerprint set is the UNION of open-backlog fingerprints AND the JSONL pen fingerprints (readSuggestionsFromMain). Keep the pure helper in suggestion-followups.ts. Gotcha (spec): without the union, 277-280 get re-penned as duplicates on the next terminal review. Watch Biome cognitive-complexity ceiling on the closure (that is why fileCandidates was extracted)."
+    },
+    {
+      "id": "US-004",
+      "title": "Add cam suggestions list CLI (parser + dispatch skeleton + help)",
+      "description": "As an operator, I need cam suggestions list to render the pen so that I can triage penned reviewer SUGGESTIONs without grepping the JSONL by hand.",
+      "acceptanceCriteria": [
+        "A parseSuggestionsArgs discriminated-union parser and a dispatchSuggestions router with injectable deps are added following the parseJournalArgs/dispatchJournal pattern, plus a SUGGESTIONS_HELP constant and a `case 'suggestions':` in the index.ts:2215 command switch alongside journal/patterns/triage. [oracle: grep -q \"case 'suggestions'\" index.ts]",
+        "cam suggestions --help prints SUGGESTIONS_HELP and exits 0; SUGGESTIONS_HELP is registered so the central --help short-circuit resolves it. [oracle: grep -q 'SUGGESTIONS_HELP' index.ts]",
+        "cam suggestions list reads the pen from main via readSuggestionsFromMain (git show main:scripts/cam/suggestions.jsonl) and renders each entry (fingerprint, title, source, round) via the print path; an empty pen prints a friendly empty-state line, not an error. [oracle: bun test]",
+        "An unknown suggestions subcommand or flag prints an error + usage hint and returns non-zero. [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "Mirror the journal CLI wiring already in index.ts: JOURNAL_HELP (index.ts:398 via renderHelp), parseJournalArgs (index.ts:1509), dispatchJournal (index.ts:1621), and the switch case (index.ts:2509). Add HELP_REGISTRY entry so isHelpRequested (index.ts:2207) resolves cam suggestions --help. Rendering uses the non-interactive print path (src/logging/*), NOT Ink. Read via readSuggestionsFromMain from US-001. dispatchSuggestions takes injectable deps (spawnFn/readFn) for tests, like dispatchJournal."
+    },
+    {
+      "id": "US-005",
+      "title": "Add cam suggestions promote + dismiss subcommands",
+      "description": "As an operator, I need cam suggestions promote <fingerprint> and dismiss <fingerprint> so that I can file a penned SUGGESTION as a real issue or drop it, keeping the pen as the single triage surface.",
+      "acceptanceCriteria": [
+        "cam suggestions promote <fingerprint> files a real issue via createLocalIssueOnMain (src/commands/issue-file.ts:271), preserving derivedFrom (from sourceIssue) and embedding the `suggestion-fingerprint: <fp>` line in the description (buildFollowUpIssue format, src/supervisor/suggestion-followups.ts:109-116) so it still dedups against future terminal reviews, then removes that line from suggestions.jsonl on main. [oracle: bun test]",
+        "cam suggestions dismiss <fingerprint> removes the matching line from suggestions.jsonl on main without filing an issue. [oracle: bun test]",
+        "Both mutations use the on-main plumbing (checkMainUpToDate/commitTreeToMain/pushMainBestEffort) and rewrite the JSONL by removing exactly the one matching-fingerprint line (all other lines byte-preserved). [oracle: bun test]",
+        "promote/dismiss on an unknown fingerprint prints an error + returns non-zero and does not mutate the pen. [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 5,
+      "passes": false,
+      "requires": null,
+      "notes": "Extend src/commands/suggestions.ts with promoteSuggestionOnMain + dismissSuggestionOnMain (on-main line-removal writers) and extend dispatchSuggestions (US-004) to route promote/dismiss. promote calls createLocalIssueOnMain (src/commands/issue-file.ts:271) with title/description built to carry the fingerprint line and derivedFrom from the entry's sourceIssue (resolveIssueId prefix from project.toml). Gotcha (spec): the filed issue MUST keep the suggestion-fingerprint line so the transitional dedup (US-003) still recognizes it. Line removal must not disturb other JSONL lines."
+    },
+    {
+      "id": "US-006",
+      "title": "Update orchestrator agent docs to describe the suggestions pen + triage",
+      "description": "As an orchestrator reading its boot instructions, I need the terminal-verdict-hook note to describe the suggestions pen and cam suggestions triage so that I stop expecting auto-filed idea issues and know where penned SUGGESTIONs live.",
+      "acceptanceCriteria": [
+        "Both templates/agents/subagent-orchestrator.md and .claude/agents/subagent-orchestrator.md (the boot-step note at ~line 113) are updated: the terminal-verdict hook now appends reviewer SUGGESTIONs to scripts/cam/suggestions.jsonl (a holding pen), triaged via cam suggestions list/promote/dismiss, instead of auto-filing idea-stage issues. [oracle: grep -q 'suggestions.jsonl' .claude/agents/subagent-orchestrator.md]",
+        "The template copy and the .claude copy carry the same updated note (dual-copy kept in sync). [oracle: grep -q 'suggestions.jsonl' templates/agents/subagent-orchestrator.md]",
+        "The embedded template snapshot is regenerated to reflect the doc edit. [oracle: bun run embed-vendor:check]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 6,
+      "passes": false,
+      "requires": null,
+      "notes": "Two files edited in lockstep (dual-copy pattern; per the cam-dual-copy-is-per-file lesson, edit both and re-embed). Then bun run embed-vendor + embed-vendor:check. The stale note is at .claude/agents/subagent-orchestrator.md:113-117 and templates/agents/subagent-orchestrator.md:113-117. Keep the surrounding boot-step-5 backlog-question guidance intact; only change the SUGGESTION-sink description."
+    }
+  ]
+}
