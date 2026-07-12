@@ -45,32 +45,73 @@ function writeTmpToml(content: string): string {
 // ---------------------------------------------------------------------------
 
 describe('DEFAULTS', () => {
-	test('orchestrator defaults to claude-opus-4-8', () => {
-		expect(DEFAULTS.orchestrator).toBe('claude-opus-4-8');
+	test('orchestrator defaults to the opus tier alias', () => {
+		expect(DEFAULTS.orchestrator).toBe('opus');
 	});
 
-	test('planner defaults to claude-opus-4-8', () => {
-		expect(DEFAULTS.planner).toBe('claude-opus-4-8');
+	test('planner defaults to the opus tier alias', () => {
+		expect(DEFAULTS.planner).toBe('opus');
 	});
 
-	test('auditor defaults to claude-opus-4-8', () => {
-		expect(DEFAULTS.auditor).toBe('claude-opus-4-8');
+	test('auditor defaults to the opus tier alias', () => {
+		expect(DEFAULTS.auditor).toBe('opus');
 	});
 
-	test('reviewer defaults to claude-opus-4-8', () => {
-		expect(DEFAULTS.reviewer).toBe('claude-opus-4-8');
+	test('reviewer defaults to the opus tier alias', () => {
+		expect(DEFAULTS.reviewer).toBe('opus');
 	});
 
-	test('implementer defaults to claude-sonnet-5', () => {
-		expect(DEFAULTS.implementer).toBe('claude-sonnet-5');
+	test('implementer defaults to the sonnet tier alias', () => {
+		expect(DEFAULTS.implementer).toBe('sonnet');
 	});
 
-	test('ship defaults to claude-sonnet-4-6', () => {
-		expect(DEFAULTS.ship).toBe('claude-sonnet-4-6');
+	test('ship defaults to the sonnet tier alias', () => {
+		expect(DEFAULTS.ship).toBe('sonnet');
 	});
 
 	test('backend defaults to claude', () => {
 		expect(DEFAULTS.backend).toBe('claude');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-001 (CAM-287): DEFAULTS are CLI tier aliases (ADR-0034), not dated ids,
+// and both a tier alias and a custom dated id flow through readPhaseModel
+// verbatim (no allowlist rejection) since the CLI validates at spawn.
+// ---------------------------------------------------------------------------
+
+describe('DEFAULTS are tier aliases, not dated ids (US-001)', () => {
+	test('every non-backend DEFAULTS value is a bare tier alias (no dated claude-* id)', () => {
+		const nonBackendEntries = Object.entries(DEFAULTS).filter(([key]) => key !== 'backend');
+		for (const [, model] of nonBackendEntries) {
+			expect(model.startsWith('claude-')).toBe(false);
+		}
+	});
+
+	test('the reconciled DEFAULTS resolve through readPhaseModel unchanged (no configured project.toml)', () => {
+		const nonExistentPath = join(tmpDir, 'nonexistent.toml');
+		const phases: readonly Phase[] = ['orchestrator', 'planner', 'auditor', 'implementer', 'reviewer', 'ship'];
+		for (const phase of phases) {
+			expect(readPhaseModel(phase, nonExistentPath)).toBe(DEFAULTS[phase]);
+		}
+	});
+});
+
+describe('readPhaseModel - verbatim passthrough, no allowlist rejection (US-001)', () => {
+	test('a tier alias (sonnet) flows through unchanged', () => {
+		const path = writeTmpToml(`
+[models]
+implementer = "sonnet"
+`);
+		expect(readPhaseModel('implementer', path)).toBe('sonnet');
+	});
+
+	test('a custom dated id flows through unchanged', () => {
+		const path = writeTmpToml(`
+[models]
+implementer = "claude-sonnet-4-5-20250929"
+`);
+		expect(readPhaseModel('implementer', path)).toBe('claude-sonnet-4-5-20250929');
 	});
 });
 
@@ -113,8 +154,8 @@ reviewer = "model-b"
 describe('readPhaseModel - fallback on missing file', () => {
 	test('returns default when file does not exist', () => {
 		const nonExistentPath = join(tmpDir, 'nonexistent.toml');
-		expect(readPhaseModel('orchestrator', nonExistentPath)).toBe('claude-opus-4-8');
-		expect(readPhaseModel('implementer', nonExistentPath)).toBe('claude-sonnet-5');
+		expect(readPhaseModel('orchestrator', nonExistentPath)).toBe('opus');
+		expect(readPhaseModel('implementer', nonExistentPath)).toBe('sonnet');
 	});
 });
 
@@ -124,7 +165,7 @@ describe('readPhaseModel - fallback on missing section', () => {
 issue_system = "local"
 backend = "claude"
 `);
-		expect(readPhaseModel('orchestrator', path)).toBe('claude-opus-4-8');
+		expect(readPhaseModel('orchestrator', path)).toBe('opus');
 	});
 });
 
@@ -135,7 +176,7 @@ describe('readPhaseModel - fallback on missing key', () => {
 orchestrator = "custom-model"
 `);
 		// 'planner' key is absent
-		expect(readPhaseModel('planner', path)).toBe('claude-opus-4-8');
+		expect(readPhaseModel('planner', path)).toBe('opus');
 	});
 });
 
@@ -145,7 +186,7 @@ describe('readPhaseModel - fallback on malformed TOML', () => {
 [models
 orchestrator = "custom-model"
 `);
-		expect(readPhaseModel('orchestrator', path)).toBe('claude-opus-4-8');
+		expect(readPhaseModel('orchestrator', path)).toBe('opus');
 	});
 });
 
@@ -155,7 +196,7 @@ describe('readPhaseModel - fallback on non-string value', () => {
 [models]
 orchestrator = 42
 `);
-		expect(readPhaseModel('orchestrator', path)).toBe('claude-opus-4-8');
+		expect(readPhaseModel('orchestrator', path)).toBe('opus');
 	});
 
 	test('returns default when model value is a boolean', () => {
@@ -163,7 +204,7 @@ orchestrator = 42
 [models]
 orchestrator = true
 `);
-		expect(readPhaseModel('orchestrator', path)).toBe('claude-opus-4-8');
+		expect(readPhaseModel('orchestrator', path)).toBe('opus');
 	});
 });
 

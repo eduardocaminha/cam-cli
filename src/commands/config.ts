@@ -184,8 +184,8 @@ const ORDERED_PHASES: readonly Phase[] = [
  * Output shape (7 data rows: 6 phases + 1 backend):
  *
  *   phase          model
- *   orchestrator   claude-opus-4-8
- *   planner        claude-opus-4-8
+ *   orchestrator   opus
+ *   planner        opus
  *   ...
  *   backend        claude
  */

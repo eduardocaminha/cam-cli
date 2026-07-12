@@ -37,7 +37,7 @@ describe('buildImplementerWorkerArgv --model wiring (US-002)', () => {
 	});
 
 	test('DEFAULTS.implementer is the expected default model', () => {
-		expect(DEFAULTS.implementer).toBe('claude-sonnet-5');
+		expect(DEFAULTS.implementer).toBe('sonnet');
 	});
 
 	test('never contains codex literal for any backend input (backend=claude only)', () => {

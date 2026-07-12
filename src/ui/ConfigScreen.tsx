@@ -16,7 +16,8 @@
 
 import { useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text, useInput } from 'ink';
+import TextInput from 'ink-text-input';
 
 import { colors } from './theme.ts';
 import { Section } from './Section.tsx';
@@ -59,12 +60,36 @@ const PHASE_LABELS: Record<Phase, string> = {
 	ship: 'Ship',
 };
 
+// CLI tier aliases (ADR-0034, code.claude.com/docs/en/model-config): each
+// alias auto-resolves to the current latest model of its tier at spawn time,
+// so this list never goes stale and needs no detection code. Trade-off: an
+// alias is recommended and always-current, but not reproducible; to pin a
+// reproducible snapshot instead, edit `[models]` in project.toml directly with
+// a dated id (e.g. `claude-opus-4-8`) rather than picking it here.
 export const MODEL_OPTIONS: readonly SelectOption<string>[] = [
-	{ value: 'claude-opus-4-8', label: 'claude-opus-4-8', description: 'Deep reasoning, highest quality' },
-	{ value: 'claude-sonnet-5', label: 'claude-sonnet-5', description: 'Balanced performance' },
-	{ value: 'claude-sonnet-4-6', label: 'claude-sonnet-4-6', description: 'Balanced performance (previous gen)' },
-	{ value: 'claude-haiku-3-5', label: 'claude-haiku-3-5', description: 'Fast and economical' },
+	{ value: 'opus', label: 'opus', description: 'Auto-tracks the latest Opus for complex reasoning (recommended, always-current)' },
+	{ value: 'sonnet', label: 'sonnet', description: 'Auto-tracks the latest Sonnet for daily coding tasks (recommended, always-current)' },
+	{ value: 'haiku', label: 'haiku', description: 'Auto-tracks the latest Haiku, fast and economical (recommended, always-current)' },
+	{ value: 'default', label: 'default', description: 'Tier-aware: resolves to the recommended model for your account/subscription (varies by plan)' },
+	{ value: 'fable', label: 'fable', description: 'Auto-tracks Fable, for the hardest and longest-running tasks' },
+	{ value: 'opusplan', label: 'opusplan', description: 'Hybrid: opus during plan mode, then switches to sonnet for execution' },
+	{ value: 'sonnet[1m]', label: 'sonnet[1m]', description: 'Sonnet with the 1M-token context window for long sessions' },
+	{ value: 'opus[1m]', label: 'opus[1m]', description: 'Opus with the 1M-token context window for long sessions' },
 ];
+
+// Sentinel picked by the operator to reveal a free-text input (below) instead
+// of picking a fixed alias. Never written to project.toml verbatim: the text
+// typed into the follow-up TextInput is what gets stored.
+const CUSTOM_MODEL_VALUE = '__custom__';
+
+const CUSTOM_MODEL_OPTION: SelectOption<string> = {
+	value: CUSTOM_MODEL_VALUE,
+	label: 'custom / enter id',
+	description: 'Type an arbitrary model id (e.g. a pinned dated snapshot, or an unreleased/preview id)',
+};
+
+// Per-phase picker options: every alias plus the free-text passthrough.
+const PHASE_MODEL_OPTIONS: readonly SelectOption<string>[] = [...MODEL_OPTIONS, CUSTOM_MODEL_OPTION];
 
 // AC4: backend options — codex carries the literal label 'wired in CAM-54'.
 const BACKEND_OPTIONS: readonly SelectOption<string>[] = [
@@ -91,12 +116,56 @@ interface ConfigScreenProps {
 	onCancel: () => void;
 }
 
+/**
+ * Encapsulates the 'custom / enter id' picker sentinel: which phase (if any)
+ * is currently showing the free-text input instead of the Select list, the
+ * in-progress draft, and the transitions in/out of that mode. `commit` is the
+ * caller's "store this phase's model + advance the wizard" callback, shared
+ * with the normal alias-select path so both paths land in the same place.
+ */
+function useCustomModelEntry(commit: (phase: Phase, value: string) => void) {
+	const [phase, setPhase] = useState<Phase | null>(null);
+	const [draft, setDraft] = useState('');
+
+	// Esc backs out to the Select list (TextInput itself only reports typing +
+	// Enter via onSubmit; mirrors SetupScreen's separate useInput for escape).
+	useInput(
+		(_input, key) => {
+			if (key.escape) setPhase(null);
+		},
+		{ isActive: phase !== null },
+	);
+
+	function select(p: Phase, value: string): boolean {
+		if (value !== CUSTOM_MODEL_VALUE) return false;
+		setDraft('');
+		setPhase(p);
+		return true;
+	}
+
+	function submit(p: Phase, value: string): void {
+		const trimmed = value.trim();
+		if (trimmed === '') return;
+		commit(p, trimmed);
+		setPhase(null);
+	}
+
+	return { phase, draft, setDraft, select, submit };
+}
+
 export function ConfigScreen({ onDone, onCancel }: ConfigScreenProps): ReactElement {
 	const [stepIdx, setStepIdx] = useState(0);
 	const [models, setModels] = useState<Partial<Record<Phase, string>>>({});
 	const [backend, setBackend] = useState<string | undefined>(undefined);
 	const [mergeMode, setMergeMode] = useState<MergeMode | undefined>(undefined);
 	const [planApproval, setPlanApproval] = useState<PlanApproval | undefined>(undefined);
+
+	function commitModel(phase: Phase, value: string): void {
+		setModels((m) => ({ ...m, [phase]: value }));
+		setStepIdx((i) => i + 1);
+	}
+
+	const customModel = useCustomModelEntry(commitModel);
 
 	const allSteps: readonly WizardStep[] = [...PHASE_STEPS, 'backend', 'merge-mode', 'plan-approval', 'done'];
 	const currentStep: WizardStep = allSteps[stepIdx] ?? 'done';
@@ -118,8 +187,8 @@ export function ConfigScreen({ onDone, onCancel }: ConfigScreenProps): ReactElem
 	}, [currentStep, models, backend, mergeMode, planApproval, onDone]);
 
 	function handlePhaseSelect(phase: Phase, value: string): void {
-		setModels((m) => ({ ...m, [phase]: value }));
-		setStepIdx((i) => i + 1);
+		if (customModel.select(phase, value)) return;
+		commitModel(phase, value);
 	}
 
 	function handleBackendSelect(value: string): void {
@@ -151,10 +220,16 @@ export function ConfigScreen({ onDone, onCancel }: ConfigScreenProps): ReactElem
 				if (!isActive && !isDone) return null;
 				return (
 					<Section key={phase} heading={PHASE_LABELS[phase]}>
-						{isActive ? (
+						{isActive && customModel.phase === phase ? (
+							<CustomModelInput
+								value={customModel.draft}
+								onChange={customModel.setDraft}
+								onSubmit={(v) => customModel.submit(phase, v)}
+							/>
+						) : isActive ? (
 							<Select
 								question={`Model for ${phase}:`}
-								options={MODEL_OPTIONS}
+								options={PHASE_MODEL_OPTIONS}
 								defaultValue={DEFAULTS[phase]}
 								onChange={(v) => handlePhaseSelect(phase, v)}
 								onCancel={onCancel}
@@ -253,6 +328,30 @@ function ConfirmedChoice({ label }: { label: string }): ReactElement {
 		<Box flexDirection="row">
 			<Text color={colors.accent}>✓ </Text>
 			<Text>{label}</Text>
+		</Box>
+	);
+}
+
+interface CustomModelInputProps {
+	value: string;
+	onChange: (v: string) => void;
+	onSubmit: (v: string) => void;
+}
+
+// Free-text passthrough for the 'custom / enter id' picker entry — mirrors
+// SetupScreen's description TextInput (ink-text-input). The typed value is
+// stored verbatim (trimmed) in ConfigChoices.models, with no allowlist check.
+function CustomModelInput({ value, onChange, onSubmit }: CustomModelInputProps): ReactElement {
+	return (
+		<Box flexDirection="column">
+			<Text color={undefined}>Enter a model id:</Text>
+			<Box marginTop={1} flexDirection="row">
+				<Text color={colors.accent}>› </Text>
+				<TextInput value={value} onChange={onChange} onSubmit={onSubmit} placeholder="e.g. claude-sonnet-4-5-20250929" />
+			</Box>
+			<Box marginTop={1} paddingLeft={2}>
+				<Text color={colors.muted}>enter confirm · esc back</Text>
+			</Box>
 		</Box>
 	);
 }

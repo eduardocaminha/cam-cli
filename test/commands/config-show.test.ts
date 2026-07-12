@@ -138,18 +138,19 @@ test('runConfig({ show: true }) returns 0 and prints the table without Ink (no T
 test('printConfigShow columns are aligned: phase column is padded to the same width', () => {
 	const configPath = join(tmpDir, 'missing.toml');
 	const output = captureShow(configPath);
+	const lines = output.split('\n').filter(Boolean);
 
-	// Parse data rows
-	const dataLines = output
-		.split('\n')
-		.filter(Boolean)
-		.filter((l) => !l.startsWith('phase') && !l.startsWith('-'));
+	// The header's "model" word marks the column offset every data row's model
+	// value must start at (independent of the model value's literal text,
+	// which is now a tier alias like "opus"/"sonnet", not always "claude-...").
+	const header = lines[0]!;
+	const modelColStart = header.indexOf('model');
+	expect(modelColStart).toBeGreaterThan(0);
 
-	// Every data row: the model starts at the same column offset
-	const modelOffsets = dataLines.map((l) => l.indexOf('claude'));
-	const first: number = modelOffsets[0] ?? -1;
-	expect(first).toBeGreaterThan(0);
-	for (const offset of modelOffsets) {
-		expect(offset).toBe(first);
+	const dataLines = lines.filter((l) => !l.startsWith('phase') && !l.startsWith('-'));
+	expect(dataLines.length).toBeGreaterThan(0);
+	for (const l of dataLines) {
+		expect(l[modelColStart]).not.toBe(' ');
+		expect(l[modelColStart]).not.toBeUndefined();
 	}
 });
