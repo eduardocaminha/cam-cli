@@ -1,0 +1,32 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Adopt CLI tier aliases as the static model set (DEFAULTS + MODEL_OPTIONS + dogfood project.toml)"
+  },
+  "branchName": "cam/issue-287",
+  "timestamp": "2026-07-12T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/config/models.ts",
+    "src/ui/ConfigScreen.tsx",
+    "src/commands/config.ts",
+    "scripts/cam/project.toml",
+    "test/config/models.test.ts",
+    "test/ui/config-screen.test.tsx",
+    "test/commands/config-show.test.ts",
+    "test/supervisor/plan/plan-argv.test.ts",
+    "test/supervisor/review-argv-model.test.ts",
+    "test/supervisor/worker-argv-model.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 replaced DEFAULTS + MODEL_OPTIONS with CLI tier aliases (opus/sonnet/haiku/default/fable/opusplan/sonnet[1m]/opus[1m]); dated ids were dropped from the picker entirely because Select.tsx (src/ui/Select.tsx) has NO free-text entry mode -- it is a pure useInput arrow-key list over a fixed `options` array (confirmed by reading the component). This is exactly what US-002 (free-text 'custom / enter id' passthrough) needs to add: a new picker mode/row that lets the operator type an arbitrary model string (e.g. a dated snapshot id) instead of only choosing from MODEL_OPTIONS. readPhaseModel (src/config/models.ts) already returns ANY configured string verbatim with no allowlist -- confirmed by the new US-001 tests -- so the passthrough only needs a UI affordance in ConfigScreen.tsx/Select.tsx, no change to the config-read path. ADR-0034 (docs/adr/0034-...) already documents the alias-vs-dated trade-off and explicitly calls out 'free-text passthrough' as the intended mechanism for pinning a dated snapshot; US-002 is what actually implements it in the UI (US-001 only documented the trade-off in picker descriptions, per its own AC3, without adding a picker row for it).",
+  "officialDocsValidated": [
+    {
+      "lib": "Claude Code CLI (model-config)",
+      "url": "https://code.claude.com/docs/en/model-config",
+      "fetchedAt": "2026-07-12T00:00:00Z",
+      "status": "aligned",
+      "summary": "Confirmed the exact CLI tier alias set and per-alias behavior table (default, best, fable, sonnet, opus, haiku, sonnet[1m], opus[1m], opusplan) used to build MODEL_OPTIONS; confirmed readPhaseModel's verbatim-passthrough design matches the CLI's own validation-at-spawn model (--model flag is not checked by Claude Code itself on non-Anthropic providers, and is only checked network-side on the Anthropic API)."
+    }
+  ]
+}
