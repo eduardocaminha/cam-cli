@@ -1,0 +1,12 @@
+{
+  "id": "CAM-288",
+  "title": "The orphan sweep is wired only at runSidecar startup, so a marker that becomes …",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-12T15:26:02.376Z",
+  "description": "The orphan sweep is wired only at runSidecar startup, so a marker that becomes orphaned mid-session (operator ships/abandons its issue without a fresh sidecar boot) is not swept until the next process start. This satisfies AC6's 'and/or' placement and covers the boot-surface scenario, so it is non-blocking; adding a preflight-start call site would close the mid-session window if desired later.\n\nSource: cam/issue-282\nReview round: 1\nLocation: src/commands/sidecar.ts:2881\n\nsuggestion-fingerprint: d03cc5efee80",
+  "derivedFrom": [
+    "CAM-282"
+  ]
+}
