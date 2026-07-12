@@ -1,7 +1,7 @@
 {
   "id": "CAM-282",
   "title": "implement supervisor writes a false-positive .cam-implement-blocked.json on the worker-report-fallback SUCCESS path (orphans across cycles, wedges next plan preflight)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-12T12:18:14.394Z",
