@@ -1,24 +1,20 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Redirect the terminal-verdict hook sink from issue-filing to the pen"
+    "id": "US-004",
+    "title": "Add cam suggestions list CLI (parser + dispatch skeleton + help)"
   },
   "branchName": "cam/issue-285",
   "timestamp": "2026-07-12T00:00:00.000Z",
-  "createdFiles": [],
+  "createdFiles": [
+    "test/commands/suggestions-cli.test.ts"
+  ],
   "modifiedFiles": [
-    "src/commands/sidecar.ts",
-    "src/supervisor/events.ts",
-    "src/supervisor/loop.ts",
-    "src/supervisor/suggestion-followups.ts",
-    "test/supervisor/suggestion-filing-hook.test.ts",
-    "test/supervisor/suggestion-filing-production.test.ts",
-    "scripts/file-size-budget.json",
+    "index.ts",
     "scripts/cam/prd.json",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "makeProductionFileSuggestionsFn (src/commands/sidecar.ts) now appends surviving reviewer SUGGESTIONs to scripts/cam/suggestions.jsonl via appendSuggestionOnMain (US-001) instead of filing idea-stage issues; the fileCandidates helper was renamed/rewritten to appendCandidates and no longer imports createLocalIssueOnMain/resolveIssueId/parseToml (the pen schema's sourceIssue is a raw provenance.parentIssue number, no issue-prefix resolution needed). dedupSuggestions (src/supervisor/suggestion-followups.ts) grew a third optional parameter penFingerprints: Iterable<string> = [] that unions into the SAME Set the open-backlog scan already builds, so callers passing only 2 args (existing test/suggestion-followups.test.ts) are unaffected; the sidecar closure resolves both sources via readBacklogFromMain + readSuggestionsFromMain(cwd, spawnFn).map(e => e.fingerprint) before calling in. fileSuggestionsFn's return shape changed from { filedIds: string[]; dupSkipped: number } to { penned: number; dupSkipped: number } -- this is a breaking type change threaded through RunSidecarLoopOptions['fileSuggestionsFn'] (src/supervisor/loop.ts), SuggestionFiledEventDetail (src/supervisor/events.ts, filedIds -> penned), and the orchestrator notify-line text ('[cam] penned N SUGGESTION follow-up(s)[, M dup-skipped]', no issue ids). loop.ts's trigger/gate-matrix (fires on complete+awaiting-operator when prd.review.lastVerdict is TERMINAL_VERDICTS, no fire-once marker, dedup by fingerprint only) is UNCHANGED -- only the sink changed, per this story's AC3. The next story in this PRD (per the branch's remaining backlog, likely a 'cam suggestions list/promote/dismiss' CLI, CAM-285) should build on readSuggestionsFromMain (already exported from src/commands/suggestions.ts, US-001) to render/triage the pen; issues 277-280 (already-filed SUGGESTION issues from before this cutover) are correctly excluded from re-penning by the backlog half of the dedup union, so they remain the only SUGGESTION-derived items in the issue backlog going forward -- new terminal reviews land in the pen instead.",
+  "nextStoryContext": "index.ts now has `parseSuggestionsArgs`/`dispatchSuggestions`/`SUGGESTIONS_HELP` (near `parsePatternsArgs`/`dispatchPatterns`/`PATTERNS_HELP`) and a `case 'suggestions':` in the command switch, registered in `HELP_REGISTRY` under the `suggestions` key. `parseSuggestionsArgs` mirrors `parsePatternsArgs` (bare `cam suggestions` and `--help`/`-h` both resolve to `{ help: true }`), but additionally rejects any trailing arg after `list` (`rest.length > 0` -> null) since this story's AC4 required 'unknown subcommand OR flag' to error -- `parsePatternsArgs`'s own `archive` branch does NOT enforce that (silently ignores extra args), so don't copy that laxity forward. `dispatchSuggestions(parsed, deps?)` takes `{ readFn?, writeStdout? }`; production `readFn` defaults to `readSuggestionsFromMain(process.cwd(), realSpawnFn)` (US-001, `src/commands/suggestions.ts`). Rendering is plain `writeStdout(...)` lines (fingerprint, title, `(sourceBranch[ round N])`), NOT the `src/logging/screen.ts` `emit*` helpers -- those write straight to `process.stdout` with no writer param, so they can't be driven through an injected fake without global monkey-patching; see patterns.md's newest bullet for the full rationale. Empty (or absent-from-main) pen prints 'No pending SUGGESTIONs in the pen.' and returns 0, never an error. The next stories in this PRD (per CAM-285's remaining backlog) are expected to add `cam suggestions promote <fingerprint>` and `cam suggestions dismiss <fingerprint>` subcommands: extend `ParsedSuggestionsArgs` as a 3-member discriminated union (`list` | `promote` | `dismiss`, each carrying a `fingerprint: string` field for the latter two) and extend `parseSuggestionsArgs`'s subCommand branch accordingly -- the `SUGGESTIONS_USAGE` string and `SUGGESTIONS_HELP`'s 'Subcommands' section will both need a matching update at that point, they currently only document `list`. `readSuggestionsFromMain`/`SuggestionEntry`/`SUGGESTIONS_JSONL_PATH` (US-001) are the only suggestions.ts exports currently consumed by index.ts; `appendSuggestionOnMain` is not yet wired into the CLI (only the sidecar hook, US-003, writes to the pen) -- promote/dismiss will need their OWN on-main writer (removing an entry or flipping a status field), which does not exist yet in suggestions.ts and is a new piece of plumbing, not a reuse of `appendSuggestionOnMain`.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
