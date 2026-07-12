@@ -11,7 +11,12 @@
 //   AC-CONSUME-ONCE     — Exactly one kill per marker arm; marker removed before next poll
 
 import { test, expect, describe } from 'bun:test';
-import { runOrchRecycleWatch, type OrchRecycleWatchOptions } from '../../src/commands/orch-recycle-watch.ts';
+import {
+	runOrchRecycleWatch,
+	checkBackstop,
+	type OrchRecycleWatchOptions,
+	type BackstopDeps,
+} from '../../src/commands/orch-recycle-watch.ts';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -185,5 +190,71 @@ describe('orch-recycle-watch', () => {
 		expect(killCalls[0]).toEqual({ pid: 9999, signal: 'SIGTERM' });
 		// Marker is consumed after the kill.
 		expect(removeCalls).toBe(1);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// checkBackstop (US-001/CAM-172: never arm without a handoff on disk)
+// ---------------------------------------------------------------------------
+
+describe('checkBackstop', () => {
+	test('over-threshold occupancy with NO handoff present: no-op, armMarkerFn not called', () => {
+		let armCalls = 0;
+		const deps: BackstopDeps = {
+			readOccupancyFn: () => 900_000,
+			armMarkerFn: () => { armCalls++; },
+			contextWindow: 1_000_000,
+			backstopFraction: 0.8,
+			handoffExistsFn: () => false,
+		};
+
+		checkBackstop(deps);
+
+		expect(armCalls).toBe(0);
+	});
+
+	test('over-threshold occupancy AND handoff present: arms as before', () => {
+		let armCalls = 0;
+		const deps: BackstopDeps = {
+			readOccupancyFn: () => 900_000,
+			armMarkerFn: () => { armCalls++; },
+			contextWindow: 1_000_000,
+			backstopFraction: 0.8,
+			handoffExistsFn: () => true,
+		};
+
+		checkBackstop(deps);
+
+		expect(armCalls).toBe(1);
+	});
+
+	test('under-threshold occupancy: no-op regardless of handoff presence', () => {
+		let armCalls = 0;
+		const deps: BackstopDeps = {
+			readOccupancyFn: () => 100,
+			armMarkerFn: () => { armCalls++; },
+			contextWindow: 1_000_000,
+			backstopFraction: 0.8,
+			handoffExistsFn: () => true,
+		};
+
+		checkBackstop(deps);
+
+		expect(armCalls).toBe(0);
+	});
+
+	test('null occupancy: no-op, handoffExistsFn not even required to matter', () => {
+		let armCalls = 0;
+		const deps: BackstopDeps = {
+			readOccupancyFn: () => null,
+			armMarkerFn: () => { armCalls++; },
+			contextWindow: 1_000_000,
+			backstopFraction: 0.8,
+			handoffExistsFn: () => true,
+		};
+
+		checkBackstop(deps);
+
+		expect(armCalls).toBe(0);
 	});
 });

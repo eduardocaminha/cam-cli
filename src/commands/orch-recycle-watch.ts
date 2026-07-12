@@ -38,6 +38,7 @@ import {
 	ORCH_CONTEXT_BACKSTOP_FRACTION,
 	isOverContextBackstop,
 } from '../orchestrator/context-window.ts';
+import { ORCH_HANDOFF_FILENAME } from '../orchestrator/handoff.ts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -127,6 +128,16 @@ export interface OrchRecycleWatchOptions {
 	 * Production: ORCH_CONTEXT_BACKSTOP_FRACTION (0.8).
 	 */
 	backstopFraction?: number;
+	/**
+	 * Returns true when the orchestrator handoff file
+	 * (.claude/.cam-orch-handoff.json) exists on disk.
+	 * Mirrors the --cycle-close handoff guard in index.ts's dispatchJournal
+	 * (~1559-1569, exit 3): checkBackstop must never arm the recycle marker
+	 * unless the handoff already exists, so a mid-cycle backstop can never
+	 * SIGTERM the orchestrator into the run.ts teardown branch and lose context.
+	 * Production: existsSync(join(claudeDir, ORCH_HANDOFF_FILENAME)).
+	 */
+	handoffExistsFn?: () => boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -301,35 +312,58 @@ function makeArmMarkerFn(claudeDir: string): () => void {
 	};
 }
 
+/**
+ * Checks whether the orchestrator handoff file exists on disk.
+ * Mirrors the --cycle-close handoff guard in index.ts's dispatchJournal
+ * (~1559-1569, exit 3), which reads the same path before arming the marker.
+ */
+function makeHandoffExistsFn(claudeDir: string): () => boolean {
+	const handoffFilePath = join(claudeDir, ORCH_HANDOFF_FILENAME);
+	return () => existsSync(handoffFilePath);
+}
+
 // ---------------------------------------------------------------------------
 // Poll tick helper (extracted to keep runOrchRecycleWatch under biome's
 // noExcessiveCognitiveComplexity limit of 15; CAM-60 factory/helper pattern)
 // ---------------------------------------------------------------------------
 
-interface BackstopDeps {
+export interface BackstopDeps {
 	readOccupancyFn: () => number | null;
 	armMarkerFn: () => void;
 	contextWindow: number;
 	backstopFraction: number;
+	/**
+	 * Returns true when the orchestrator handoff file already exists on disk.
+	 * checkBackstop refuses to call armMarkerFn unless this returns true, even
+	 * when occupancy is over the backstop threshold (US-001/CAM-172 guard).
+	 */
+	handoffExistsFn: () => boolean;
 }
 
 /**
  * Check the context backstop once per poll tick.
  *
  * If the orchestrator transcript reports an occupancy strictly above
- * `contextWindow * backstopFraction`, the recycle marker is armed via
- * `armMarkerFn`. The immediately following `handleOneTick` call then
- * sees the marker and fires SIGTERM via the existing consume-once path.
+ * `contextWindow * backstopFraction`, AND the orchestrator handoff file
+ * already exists on disk (handoffExistsFn), the recycle marker is armed via
+ * `armMarkerFn`. The immediately following `handleOneTick` call then sees the
+ * marker and fires SIGTERM via the existing consume-once path.
+ *
+ * The handoff-exists guard mirrors the --cycle-close guard in index.ts's
+ * dispatchJournal (~1559-1569, exit 3): the marker must never be armed before
+ * the handoff exists, so a mid-cycle backstop can never SIGTERM the
+ * orchestrator into the run.ts teardown branch and lose context. Without a
+ * handoff present, an over-threshold occupancy is a no-op.
  *
  * A null occupancy (absent/unreadable transcript) is always a no-op:
  * it never produces a false-positive recycle.
  */
-function checkBackstop(deps: BackstopDeps): void {
+export function checkBackstop(deps: BackstopDeps): void {
 	const occupancy = deps.readOccupancyFn();
 	if (occupancy === null) return;
-	if (isOverContextBackstop(occupancy, deps.contextWindow, deps.backstopFraction)) {
-		deps.armMarkerFn();
-	}
+	if (!isOverContextBackstop(occupancy, deps.contextWindow, deps.backstopFraction)) return;
+	if (!deps.handoffExistsFn()) return;
+	deps.armMarkerFn();
 }
 
 interface TickDeps {
@@ -412,6 +446,7 @@ export async function runOrchRecycleWatch(options: OrchRecycleWatchOptions = {})
 		armMarkerFn: options.armMarkerFn ?? makeArmMarkerFn(claudeDir),
 		contextWindow: options.contextWindow ?? orchestratorContextWindow(),
 		backstopFraction: options.backstopFraction ?? ORCH_CONTEXT_BACKSTOP_FRACTION,
+		handoffExistsFn: options.handoffExistsFn ?? makeHandoffExistsFn(claudeDir),
 	};
 	const sleepFn = options.sleepFn ?? ((ms: number) => Bun.sleepSync(ms));
 	const pollIntervalMs = options.pollIntervalMs ?? 2000;

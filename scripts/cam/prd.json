@@ -30,7 +30,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "MANDATED ORDER: this guard lands FIRST, before the window fix (US-003), so correcting the window never starts triggering teardown-with-data-loss (bug1 masks bug2). Files: src/commands/orch-recycle-watch.ts (checkBackstop + BackstopDeps, ~lines 309-333, 410-415), test/commands/orch-recycle-watch.test.ts. Mirror the guard SHAPE from index.ts dispatchJournal --cycle-close (~1558-1569) rather than inventing a new one, so both recycle triggers share the never-arm-without-handoff invariant. Handoff filename constant: ORCH_HANDOFF_FILENAME ('.cam-orch-handoff.json') in src/orchestrator/handoff.ts. This story alone makes the backstop a safe no-op mid-cycle (no producer of the handoff yet); US-002 adds the producer."
     },
