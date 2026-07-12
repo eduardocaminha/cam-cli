@@ -59,11 +59,21 @@ const PHASE_LABELS: Record<Phase, string> = {
 	ship: 'Ship',
 };
 
+// CLI tier aliases (ADR-0034, code.claude.com/docs/en/model-config): each
+// alias auto-resolves to the current latest model of its tier at spawn time,
+// so this list never goes stale and needs no detection code. Trade-off: an
+// alias is recommended and always-current, but not reproducible; to pin a
+// reproducible snapshot instead, edit `[models]` in project.toml directly with
+// a dated id (e.g. `claude-opus-4-8`) rather than picking it here.
 export const MODEL_OPTIONS: readonly SelectOption<string>[] = [
-	{ value: 'claude-opus-4-8', label: 'claude-opus-4-8', description: 'Deep reasoning, highest quality' },
-	{ value: 'claude-sonnet-5', label: 'claude-sonnet-5', description: 'Balanced performance' },
-	{ value: 'claude-sonnet-4-6', label: 'claude-sonnet-4-6', description: 'Balanced performance (previous gen)' },
-	{ value: 'claude-haiku-3-5', label: 'claude-haiku-3-5', description: 'Fast and economical' },
+	{ value: 'opus', label: 'opus', description: 'Auto-tracks the latest Opus for complex reasoning (recommended, always-current)' },
+	{ value: 'sonnet', label: 'sonnet', description: 'Auto-tracks the latest Sonnet for daily coding tasks (recommended, always-current)' },
+	{ value: 'haiku', label: 'haiku', description: 'Auto-tracks the latest Haiku, fast and economical (recommended, always-current)' },
+	{ value: 'default', label: 'default', description: 'Tier-aware: resolves to the recommended model for your account/subscription (varies by plan)' },
+	{ value: 'fable', label: 'fable', description: 'Auto-tracks Fable, for the hardest and longest-running tasks' },
+	{ value: 'opusplan', label: 'opusplan', description: 'Hybrid: opus during plan mode, then switches to sonnet for execution' },
+	{ value: 'sonnet[1m]', label: 'sonnet[1m]', description: 'Sonnet with the 1M-token context window for long sessions' },
+	{ value: 'opus[1m]', label: 'opus[1m]', description: 'Opus with the 1M-token context window for long sessions' },
 ];
 
 // AC4: backend options — codex carries the literal label 'wired in CAM-54'.

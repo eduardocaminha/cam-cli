@@ -35,7 +35,7 @@ describe('buildReviewerWorkerArgv --model wiring (US-002)', () => {
 	});
 
 	test('DEFAULTS.reviewer is the expected default model', () => {
-		expect(DEFAULTS.reviewer).toBe('claude-opus-4-8');
+		expect(DEFAULTS.reviewer).toBe('opus');
 	});
 
 	test('never contains codex literal for any backend input (backend=claude only)', () => {

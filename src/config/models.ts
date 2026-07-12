@@ -31,9 +31,13 @@ export type Phase =
  * Default model per phase and backend. Applied when the project config is
  * missing, malformed, or lacks the requested key.
  *
- * - orchestrator/planner/auditor/reviewer: claude-opus-4-8 (deep reasoning phases)
- * - implementer: claude-sonnet-5 (high-throughput execution phase)
- * - ship: claude-sonnet-4-6 (high-throughput execution phase)
+ * Values are Claude Code CLI tier aliases (ADR-0034), not dated snapshot ids:
+ * the CLI resolves each alias to the current latest model of that tier at
+ * spawn time, so cam auto-tracks new Anthropic releases with no detection
+ * code and no stale list to maintain.
+ *
+ * - orchestrator/planner/auditor/reviewer: opus (deep reasoning phases)
+ * - implementer/ship: sonnet (high-throughput execution phases)
  * - backend: claude (the default Claude Code backend)
  */
 /**
@@ -49,12 +53,12 @@ export type MergeMode = 'immediate' | 'ci-gated';
 export type PlanApproval = 'auto' | 'operator';
 
 export const DEFAULTS: Record<Phase | 'backend', string> = {
-	orchestrator: 'claude-opus-4-8',
-	planner: 'claude-opus-4-8',
-	auditor: 'claude-opus-4-8',
-	reviewer: 'claude-opus-4-8',
-	implementer: 'claude-sonnet-5',
-	ship: 'claude-sonnet-4-6',
+	orchestrator: 'opus',
+	planner: 'opus',
+	auditor: 'opus',
+	reviewer: 'opus',
+	implementer: 'sonnet',
+	ship: 'sonnet',
 	backend: 'claude',
 };
 

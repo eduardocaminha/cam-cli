@@ -1,10 +1,10 @@
 // test/ui/config-screen.test.tsx
 //
-// US-001 (CAM-286): ConfigScreen render assertions for the reconciled
-// MODEL_OPTIONS list. Guards that the picker still renders correctly (model
-// select step shows the new claude-sonnet-5 option, and success is still
-// signalled by the ✓ glyph, never divider color) after DEFAULTS and
-// MODEL_OPTIONS were reconciled.
+// US-001 (CAM-286, CAM-287): ConfigScreen render assertions for the
+// reconciled MODEL_OPTIONS list. Guards that the picker still renders
+// correctly (model select step shows the sonnet tier alias option, and
+// success is still signalled by the ✓ glyph, never divider color) after
+// DEFAULTS and MODEL_OPTIONS were reconciled to CLI tier aliases (ADR-0034).
 
 import { describe, expect, test } from 'bun:test';
 import { createElement } from 'react';
@@ -18,7 +18,7 @@ import { installTerminalSizeMock } from '../helpers/mock-terminal-size.ts';
 installTerminalSizeMock();
 
 describe('ConfigScreen — reconciled MODEL_OPTIONS', () => {
-	test('the first model-select step lists every MODEL_OPTIONS entry, including claude-sonnet-5', () => {
+	test('the first model-select step lists every MODEL_OPTIONS entry, including the sonnet tier alias', () => {
 		const { lastFrame, unmount } = render(
 			createElement(ConfigScreen, { onDone: () => {}, onCancel: () => {} }),
 		);
@@ -27,7 +27,7 @@ describe('ConfigScreen — reconciled MODEL_OPTIONS', () => {
 		for (const option of MODEL_OPTIONS) {
 			expect(frame).toContain(option.label);
 		}
-		expect(frame).toContain('claude-sonnet-5');
+		expect(frame).toContain('sonnet');
 
 		unmount();
 	});
@@ -44,7 +44,7 @@ describe('ConfigScreen — reconciled MODEL_OPTIONS', () => {
 		unmount();
 	});
 
-	test('completing the wizard writes the reconciled default implementer model (claude-sonnet-5)', async () => {
+	test('completing the wizard writes the reconciled default implementer model (sonnet)', async () => {
 		let choices: ConfigChoices | undefined;
 
 		const { lastFrame, stdin, unmount } = render(
@@ -69,7 +69,7 @@ describe('ConfigScreen — reconciled MODEL_OPTIONS', () => {
 		// onDone fires via a setTimeout(0) after the "done" step commits; give it
 		// a further tick to land before asserting on the captured choices.
 		await waitForFrame(() => (choices ? 'done' : ''), (f) => f === 'done');
-		expect(choices?.models.implementer).toBe('claude-sonnet-5');
+		expect(choices?.models.implementer).toBe('sonnet');
 
 		unmount();
 	});

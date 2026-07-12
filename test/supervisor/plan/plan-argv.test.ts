@@ -118,8 +118,8 @@ describe('buildPlannerWorkerArgv', () => {
 		expect(result).toContain("--model 'my-custom-model'");
 	});
 
-	test('DEFAULTS.planner is claude-opus-4-8', () => {
-		expect(DEFAULTS.planner).toBe('claude-opus-4-8');
+	test('DEFAULTS.planner is the opus tier alias', () => {
+		expect(DEFAULTS.planner).toBe('opus');
 	});
 
 	test('--model appears before --agent in the command string', () => {
@@ -280,8 +280,8 @@ describe('buildAuditorWorkerArgv', () => {
 		expect(result).toContain("--model 'my-custom-model'");
 	});
 
-	test('DEFAULTS.auditor is claude-opus-4-8', () => {
-		expect(DEFAULTS.auditor).toBe('claude-opus-4-8');
+	test('DEFAULTS.auditor is the opus tier alias', () => {
+		expect(DEFAULTS.auditor).toBe('opus');
 	});
 
 	test('--model appears before --agent in the command string', () => {
