@@ -148,6 +148,9 @@ document — none of them require deep reasoning to absorb:
     `reason` fields; you'll surface them as an opening blocker below. If
     absent, there's nothing to surface — a clean boot stays clean.
 
+**Shared rule for every boot-surfaced marker above (7-11):** Do NOT delete the marker yourself. Surfacing it at boot is read-only. Each marker's own
+specific removal condition is noted in its blocker-line paragraph below.
+
 After the boot read, greet the human with a one-screen summary:
 
 ```
@@ -170,8 +173,7 @@ before asking what to do next, e.g.:
 ⚠ stalled ship: PR #<prNumber> (<reason>) — <prUrl or "no PR url recorded">
 ```
 
-Do NOT delete the marker yourself. Surfacing it at boot is read-only; it is
-only removed by the merge-watch consume path once that same PR merges.
+Removed only by the merge-watch consume path once that same PR merges.
 
 If `.claude/.cam-plan-escalated.json` is present, add an opening blocker line
 before asking what to do next, e.g.:
@@ -180,8 +182,11 @@ before asking what to do next, e.g.:
 ⚠ plan escalated: <issueId> (<roundsCompleted> rounds) — <summary>
 ```
 
-Do NOT delete the marker yourself. Surfacing it at boot is read-only; it is
-only removed by the next converging plan run for that issue.
+Removed by any converging plan run: gated on convergence (audit-approved
+reaching a branch-created outcome), not on the original issueId — ANY
+converging run clears it, not only one for the issue that escalated it,
+per `src/supervisor/plan-runner.ts:1294-1297` (`removeEscalationMarkerFn`
+runs before every proceed-branch).
 
 If `.claude/.cam-plan-preflight-failed.json` is present, add an opening
 blocker line before asking what to do next, e.g.:
@@ -189,6 +194,12 @@ blocker line before asking what to do next, e.g.:
 ```
 ⚠ plan preflight failed: <step> — <detail (first line; +N more if multi-line)>
 ```
+
+Removed by the next plan run whose post-audit outcome is anything other
+than another preflight-failed result: issue-agnostic, not scoped to the
+issue that originally failed preflight, per
+`src/supervisor/plan-runner.ts:1313-1320,1382`
+(`removePreflightMarkerUnlessPreflightFailed`).
 
 If `.claude/.cam-implement-blocked.json` is present, add an opening blocker
 line before asking what to do next. If its `escalated` field is `true`, the
@@ -207,11 +218,8 @@ e.g.:
 ⚠ implement blocked: issue #<issueId> story <story or "none"> — <reason>
 ```
 
-Do NOT delete the marker yourself. Surfacing it at boot is read-only; it is
-only removed by the next re-armed implement dispatch for that issue.
-
-Do NOT delete the marker yourself. Surfacing it at boot is read-only; it is
-only removed by the next plan run (US-004).
+Removed only by the next re-armed implement dispatch for that same issue
+(issueId-matched).
 
 If `.claude/.cam-post-merge-stalled.json` is present, add a distinct opening
 blocker line before asking what to do next, e.g.:
@@ -222,10 +230,9 @@ blocker line before asking what to do next, e.g.:
 
 The PR itself already merged; only the tag/branch-prune/issue-close tail of
 the post-merge sequence is incomplete (`completedSteps` / `remainingSteps`
-name exactly where it stopped). Do NOT delete the marker yourself. Surfacing
-it at boot is read-only; it is only removed once the post-merge sequence for
-that same PR completes, per `docs/recovery-runbook.md`'s post-merge-stalled /
-diverged-local-main entry.
+name exactly where it stopped). Removed only once the post-merge sequence
+for that same PR completes, per `docs/recovery-runbook.md`'s
+post-merge-stalled / diverged-local-main entry.
 
 The closing of the greeting is `meta_loop`-aware (read from
 `scripts/cam/project.toml` at boot step 2 above), and covers all three modes

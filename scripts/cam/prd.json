@@ -24,7 +24,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edit templates/agents/subagent-orchestrator.md (~lines 170-245) AND .claude/agents/subagent-orchestrator.md. GOTCHA: dual-copy is PER-FILE, not byte-identical (memory cam-dual-copy-is-per-file): the templates/ copy has an extra sidecar-stalled marker (item 12 + block, lines 150-154/234-245) that the .claude/ copy lacks; apply the consolidation logic to whichever markers exist in each file, do NOT force the two files identical. GOTCHA: the 'next plan run (US-004)' paragraph currently under implement-blocked is the DISPLACED plan-preflight-failed note: relocate its corrected content to the plan-preflight-failed block, don't merely delete it. GOTCHA: templates/ is embedded into the compiled binary; if embed-vendor:check flags drift run bun run embed-vendor and commit the regenerated copy. Verify removal conditions against src/commands/sidecar.ts:537,558-569, src/supervisor/implement-blocked-marker.ts:169, src/supervisor/plan-runner.ts:1294-1297,1313-1320,1382 before wording each clause. This is an agent-instruction .md (LLM-consumed): em-dashes are allowed here, unlike human-readable persisted docs."
     }
