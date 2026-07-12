@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.144.0] - 2026-07-12
+
+### Added
+
+- US-002 - cam init scaffolds a commented [loop] section in project.toml
+- US-001 - Add comment emission to stringifyToml (parser stays comment-tolerant)
+
 ## [0.143.0] - 2026-07-12
 
 ### Added
