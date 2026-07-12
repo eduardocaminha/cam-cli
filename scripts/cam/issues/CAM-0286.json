@@ -1,0 +1,9 @@
+{
+  "id": "CAM-286",
+  "title": "Make project.toml [models] the single source of truth for agent model selection (strip inert frontmatter model: lines, reconcile ship, fix implementer DEFAULTS drift)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-12T13:40:01.848Z",
+  "description": "Investigation (Explore) found a three-way redundancy for agent model selection with real drift. Runtime authority is project.toml [models] via readPhaseModel (src/config/models.ts:81), passed as an explicit --model flag at every pane/root spawn (orchestrator run.ts:267, implementer worker-argv.ts:164, reviewer review.ts:131, planner plan-argv.ts:95, auditor plan-argv.ts:156). Flag-over-frontmatter means the frontmatter `model:` lines (all agent files *.md:4) for those 5 roles are INERT/misleading: editing them changes nothing. ship is the exception: its model comes from cam-ship.md frontmatter (rewritten by cam config), no --model flag. cam config also rewrites frontmatter for planner/auditor (FRONTMATTER_TARGET_PHASE_PATHS, src/templates/frontmatter.ts:22-26) which is dead effort since --model overrides. DEFAULTS map (src/config/models.ts:50-58) also drifted: implementer DEFAULT=claude-sonnet-4-6 while project.toml=claude-sonnet-5 (effective), so DEFAULTS + frontmatter both lie about the effective implementer model. Goal: one authoritative, documented model source per role; strip the inert frontmatter model: lines from the 5 pane/root agents; unify ship into the same project.toml mechanism (or, if ship's slash-command flow cannot take --model, make ship's frontmatter the SOLE documented source and stop rewriting planner/auditor frontmatter); reconcile the implementer DEFAULTS. Refine via /cam-spec."
+}
