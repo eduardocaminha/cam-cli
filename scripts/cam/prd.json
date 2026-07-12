@@ -41,7 +41,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: index.ts (four sibling sites per patterns.md 'Sibling axis-mutation CLI subcommand pattern' CAM-210, line ~148: ParsedIssueArgs union ~893-899, parseIssueArgs positional branch ~970-999, IssueDispatchDeps.demoteIssueOnMainFn + dispatchIssue branch ~1876-2027, ISSUE_HELP/usage ~332-365). Copy-paste the close/abandon shape 1:1; import defaultDemoteIssueFn from ./src/release/post-merge.ts (see line 53). Test: test/issue-dispatch.test.ts mirrors the existing close/abandon dispatch tests (inject demoteIssueOnMainFn, assert CAM_ISSUE_RESULT line + exit code). SPEC-vs-CONVENTION NOTE: the CAM-206 spec text writes `cam issue --demote <id>` (flag form), but close/abandon are POSITIONAL subcommands and patterns.md CAM-210 explicitly designs the next sibling as positional (`reopen <id>`). This story implements the positional `cam issue demote <id>` for 1:1 consistency with its siblings; the functional WHAT (specified->idea, guards, handback) is identical either way. Flag this in the handoff so the reviewer knows the surface-token choice was deliberate. Depends on US-001 (needs demoteIssueOnMain + defaultDemoteIssueFn)."
     }
