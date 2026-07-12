@@ -113,7 +113,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Two files edited in lockstep (dual-copy pattern; per the cam-dual-copy-is-per-file lesson, edit both and re-embed). Then bun run embed-vendor + embed-vendor:check. The stale note is at .claude/agents/subagent-orchestrator.md:113-117 and templates/agents/subagent-orchestrator.md:113-117. Keep the surrounding boot-step-5 backlog-question guidance intact; only change the SUGGESTION-sink description."
     }
