@@ -1,7 +1,7 @@
 {
   "id": "CAM-211",
   "title": "cam sidecar --help starts the daemon (no --help guard); undocumented deterministic flags across commands",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-07T14:24:58.134Z",
