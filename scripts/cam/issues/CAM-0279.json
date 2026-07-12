@@ -1,0 +1,12 @@
+{
+  "id": "CAM-279",
+  "title": "The per-command help guards inside the switch (claude's `if (parsed.help)`, plu…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-12T10:00:41.146Z",
+  "description": "The per-command help guards inside the switch (claude's `if (parsed.help)`, plus config/triage) are now unreachable-for-help dead code since the central guard returns first. Left in place deliberately per Surgical Changes; a future cleanup story could strip them.\n\nSource: cam/issue-211\nReview round: 1\nLocation: index.ts:2407\n\nsuggestion-fingerprint: fded210f82c6",
+  "derivedFrom": [
+    "CAM-211"
+  ]
+}

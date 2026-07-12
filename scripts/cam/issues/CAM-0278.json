@@ -1,0 +1,12 @@
+{
+  "id": "CAM-278",
+  "title": "HELP_REGISTRY completeness (an entry for every switch case) is enforced only by…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-12T10:00:38.824Z",
+  "description": "HELP_REGISTRY completeness (an entry for every switch case) is enforced only by a code comment. Consider a compile-time exhaustiveness check (e.g. keying the registry off a Command string-literal union used by the switch) so a future command that omits its entry fails typecheck instead of silently re-opening the --help footgun this story closed.\n\nSource: cam/issue-211\nReview round: 1\nLocation: index.ts:2083\n\nsuggestion-fingerprint: 327d3af82b10",
+  "derivedFrom": [
+    "CAM-211"
+  ]
+}
