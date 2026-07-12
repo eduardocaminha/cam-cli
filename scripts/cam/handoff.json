@@ -1,0 +1,16 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Gitignore the implement-blocked marker so it stops tripping the clean-tree gate" },
+  "branchName": "cam/issue-282",
+  "timestamp": "2026-07-12T00:00:00Z",
+  "createdFiles": [
+    "test/integration/gitignore-implement-blocked-marker.test.ts"
+  ],
+  "modifiedFiles": [
+    ".gitignore"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 added a single explicit .gitignore entry for .claude/.cam-implement-blocked.json (near .gitignore:91, mirroring the .cam-plan-preflight-failed.json / .cam-post-merge-stalled.json siblings) plus a real-git regression test (test/integration/gitignore-implement-blocked-marker.test.ts) proving `git status --porcelain` stays clean with an orphaned marker on disk. Only root .gitignore was touched, per notes -- templates/.gitignore was deliberately left alone (it already lacks several sibling marker entries too, e.g. .cam-plan-preflight-failed.json/.cam-post-merge-stalled.json/.cam-ship-stalled.json, a pre-existing gap out of scope here). US-002 (issueId-based orphan sweep) can now build on IMPLEMENT_BLOCKED_FILENAME / readImplementBlockedMarker / removeImplementBlockedMarker (src/supervisor/implement-blocked-marker.ts) and readBacklogFromMain / numericIdSuffix (src/issues/backlog.ts) per its notes; the existing clearImplementBlockedMarkerForCurrentIssue in src/commands/sidecar.ts:558-569 must stay unchanged.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
