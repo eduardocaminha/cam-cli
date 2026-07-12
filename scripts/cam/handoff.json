@@ -1,0 +1,21 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Add suggestions-pen data model + on-main JSONL append/read writer"
+  },
+  "branchName": "cam/issue-285",
+  "timestamp": "2026-07-12T00:00:00.000Z",
+  "createdFiles": [
+    "src/commands/suggestions.ts",
+    "test/commands/suggestions.test.ts"
+  ],
+  "modifiedFiles": [
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 delivered SuggestionEntry + appendSuggestionOnMain + readSuggestionsFromMain in src/commands/suggestions.ts, importing checkMainUpToDate/commitTreeToMain/pushMainBestEffort directly from src/git/on-main.ts (no private copy). appendSuggestionOnMain returns a discriminated union: { ok:true, skipped:false, sha } on append, { ok:true, skipped:true } on fingerprint dedup (no commit), { ok:false, reason:'suggestions-missing' } when scripts/cam/suggestions.jsonl is absent on main (it does NOT bootstrap the file), plus 'diverged'/'detached-head'/'missing-main' from the shared guard and a 'validation' + errors[] shape. readSuggestionsFromMain treats a missing-on-main file as [] (not an error) since its only planned consumer is a friendly-empty-state CLI listing. US-002 of this PRD (CAM-285) must seed templates/scripts/cam/suggestions.jsonl (empty file) plus commit this repo's own scripts/cam/suggestions.jsonl so the on-main pre-existence requirement is satisfied before the terminal-verdict hook (a later story) starts calling appendSuggestionOnMain for real. SUGGESTIONS_JSONL_PATH ('scripts/cam/suggestions.jsonl') is exported from src/commands/suggestions.ts for reuse.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}

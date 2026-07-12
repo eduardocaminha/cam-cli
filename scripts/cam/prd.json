@@ -22,7 +22,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New file src/commands/suggestions.ts. Mirror the on-main writer pattern in src/commands/journal.ts:525-596 (appendJournalEntryOnMain): validate pure inputs, checkMainUpToDate, git show main:<path>, dedup, commitTreeToMain with a 'cam-suggestions-' mkdtemp prefix and a chore(cam) commit message, pushMainBestEffort. Reuse SpawnFn/FileWrite/commitTreeToMain/checkMainUpToDate/pushMainBestEffort from src/git/on-main.ts. Keep the writer pure/injectable (spawnFn param) so tests use a fake git recorder, no real git spawn. Gotcha (spec): on-main append writers do NOT bootstrap a missing file; the seed is US-002. Fingerprint field is the 12-hex-char hash from fingerprintFinding (src/supervisor/suggestion-followups.ts:35)."
     },
