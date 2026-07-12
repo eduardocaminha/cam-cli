@@ -1,21 +1,17 @@
 {
-  "lastCompletedStory": { "id": "US-002", "title": "Stamp updatedAt on every issue-mutation writer" },
+  "lastCompletedStory": { "id": "US-003", "title": "Expose updatedAt in cam issue list --json" },
   "branchName": "cam/issue-284",
-  "timestamp": "2026-07-12T22:05:00Z",
+  "timestamp": "2026-07-12T22:20:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "index.ts",
-    "scripts/cam/patterns.md",
-    "scripts/cam/prd.json",
-    "src/commands/issue-specify.ts",
-    "src/commands/triage.ts",
-    "test/commands/issue-specify.test.ts",
-    "test/issue-specify.test.ts",
-    "test/triage.test.ts"
+    "src/issues/list.ts",
+    "test/issue-list.test.ts",
+    "test/issues/list.test.ts",
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 is done: every issue-mutation writer now overrides updatedAt to the injected clock() value on the mutated entry(ies), never touching createdAt. specifyIssueOnMain/abandonIssueOnMain/closeIssueOnMain/demoteIssueOnMain (all in src/commands/issue-specify.ts) destructure the clock already present on their (required) options and stamp it onto the mutated spread; mergeIssueOnMain stamps both the abandoned source (buildMergeFiles) and, when foldBlockedBy folds deps, the mutated target (withMergedBlockedBy). triage.ts's computeRankDiff now takes an optional `clock: ClockFn | undefined` threaded from RunTriageOptions.clock (still optional, still unforced) -- when present it stamps updatedAt on every rank-changed entry; when absent the entry's prior updatedAt is left untouched (no inline fallback). dispatchTriage (index.ts) is the sole production caller and now passes `clock: () => new Date().toISOString()` explicitly, since triage.ts itself must contain literally zero `new Date()`/`Date.now()` occurrences (this story's own AC#3 file-assert oracle greps for that pattern across issue-specify.ts + triage.ts with zero tolerance, including inside comments). Confirmed via grep that only these two files ever write an IssueEntry to disk (issueFilePath + `{ ...entry`/`{ ...issue`/`{ ...source`/`{ ...target` spreads) -- no other mutation path exists anywhere in src/. One incidental fix: specifyIssueOnMain's mutated-entry spread grew by one line and tripped Biome's noExcessiveLinesPerFunction (ceiling 80); fixed by collapsing its first guard to the one-line `if (!guard.ok) return guard;` style already used by its sibling functions in the same file (no biome.json override needed). Full quality spine (typecheck, bun test, bun run check:all) is green. Nothing else in the PRD is queued beyond US-002 as of this handoff -- check prd.json for the next story before assuming completion.",
+  "nextStoryContext": "US-003 is done: BacklogJsonRow (src/issues/list.ts:158-165) gained `updatedAt: string` right beside `createdAt`, and toJsonRow (:190) now passes `issue.updatedAt` through unmodified alongside `issue.createdAt` -- pure additive projection, no writer/schema change. All exact-shape row literals in test/issues/list.test.ts (2 literals) and test/issue-list.test.ts (4 literals across 2 tests) were expanded to include `updatedAt: '2026-01-01T00:00:00Z'` matching each test file's makeIssue base fixture (both already carried updatedAt on the base fixture since US-001/US-002; only the row-shape assertion literals were missing the field). Full quality spine green: typecheck 0 errors, bun test 4413 pass / 0 fail, bun run check:all fully green (lint, file-size, debt-markers, coverage, dead-code/knip, dup/jscpd, embed-vendor, ci-parity all ok). Nothing else queued in this PRD as of this handoff -- check prd.json for the next story (if any) before assuming completion.",
   "officialDocsValidated": [
-    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure in-repo TypeScript: threading an already-injected ClockFn through existing writer functions and one CLI dispatch call site. No new external library surface introduced or exercised." }
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure in-repo TypeScript: adding a string field to an existing interface and threading it through one small projection function, plus updating test fixture literals. No new external library surface introduced or exercised." }
   ]
 }
