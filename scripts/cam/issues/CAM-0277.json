@@ -1,7 +1,7 @@
 {
   "id": "CAM-277",
   "title": "The new operator-facing [loop] orch_context_window key (default 200000) is docu…",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-12T05:56:29.553Z",
