@@ -23,7 +23,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/issue-specify.ts (add DemoteIssueOnMainOptions/Result/Error/Outcome + demoteIssueOnMain, mirroring closeIssueOnMain at lines ~508-571), src/release/post-merge.ts (add defaultDemoteIssueFn next to defaultCloseIssueFn/defaultAbandonIssueFn at ~349-386), test/commands/issue-specify.test.ts, test/integration/issue-specify-ref-only.test.ts. Reuse checkMainUpToDate + pushMainBestEffort + commitTreeToMain('cam-specify-' tmp prefix) already in issue-specify.ts; do NOT copy git plumbing (jscpd threshold, see patterns.md 'Shared on-main commit-tree module' CAM-108/133 and 'New on-main caller' CAM-118). Guard-order + discriminated-union-errors convention: patterns.md 'Backlog mutation guard order' (CAM-107). Stages are the IssueStage union in src/issues/types.ts ('idea'|'specified'|'planned'|'shipped'). Worktree-coherence is automatic via commitTreeToMain -> syncWorktreeIfOnMain (patterns.md CAM-137/CAM-133): assert via `git show main:<path>`, not working-tree state. Distinct reason tokens suggested: already-idea (nothing to do), is-planned (PRD in flight, would strand), is-shipped. No stage-promoted-style event is required by the spec; only add an eventSink if you mirror one, otherwise keep it a plain writer."
     },

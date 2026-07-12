@@ -25,8 +25,10 @@ import { printError, printSuccess } from '../logging/color.ts';
 import {
 	closeIssueOnMain,
 	abandonIssueOnMain,
+	demoteIssueOnMain,
 	type CloseIssueOnMainOutcome,
 	type AbandonIssueOnMainOutcome,
+	type DemoteIssueOnMainOutcome,
 	type SpawnFn as CloseSpawnFn,
 } from '../commands/issue-specify.ts';
 
@@ -338,6 +340,20 @@ function performCloseStep(
 }
 
 /**
+ * Build a real-spawnSync-backed SpawnFn (forwards encoding/env/input).
+ * Shared by every defaultXIssueFn wrapper below so the real-spawnSync closure
+ * lives in exactly one place (jscpd gate) instead of being copy-pasted per verb.
+ */
+function makeRealIssueSpawnFn(): CloseSpawnFn {
+	return (cmd, args, opts) =>
+		spawnSync(cmd, args, {
+			encoding: opts.encoding,
+			...(opts.env !== undefined ? { env: opts.env } : {}),
+			...(opts.input !== undefined ? { input: opts.input } : {}),
+		}) as SpawnSyncReturns<string>;
+}
+
+/**
  * Production default CloseIssueFn: wraps closeIssueOnMain with a real spawnSync.
  * Used when closeIssueFn is absent but closeIssueId is present.
  * Tests always inject a stub so this path is never exercised in unit tests.
@@ -347,16 +363,10 @@ function performCloseStep(
  * exact same real-spawnSync wiring instead of duplicating it (jscpd gate).
  */
 export function defaultCloseIssueFn(closeCwd: string, id: string): CloseIssueOnMainOutcome {
-	const closeSpawnFn: CloseSpawnFn = (cmd, args, opts) =>
-		spawnSync(cmd, args, {
-			encoding: opts.encoding,
-			...(opts.env !== undefined ? { env: opts.env } : {}),
-			...(opts.input !== undefined ? { input: opts.input } : {}),
-		}) as SpawnSyncReturns<string>;
 	return closeIssueOnMain({
 		cwd: closeCwd,
 		id,
-		spawnFn: closeSpawnFn,
+		spawnFn: makeRealIssueSpawnFn(),
 		clock: () => new Date().toISOString(),
 	});
 }
@@ -371,16 +381,29 @@ export function defaultCloseIssueFn(closeCwd: string, id: string): CloseIssueOnM
  * (jscpd gate).
  */
 export function defaultAbandonIssueFn(abandonCwd: string, id: string): AbandonIssueOnMainOutcome {
-	const abandonSpawnFn: CloseSpawnFn = (cmd, args, opts) =>
-		spawnSync(cmd, args, {
-			encoding: opts.encoding,
-			...(opts.env !== undefined ? { env: opts.env } : {}),
-			...(opts.input !== undefined ? { input: opts.input } : {}),
-		}) as SpawnSyncReturns<string>;
 	return abandonIssueOnMain({
 		cwd: abandonCwd,
 		id,
-		spawnFn: abandonSpawnFn,
+		spawnFn: makeRealIssueSpawnFn(),
+		clock: () => new Date().toISOString(),
+	});
+}
+
+/**
+ * Production default DemoteIssueFn: wraps demoteIssueOnMain with a real spawnSync.
+ * Mirrors defaultCloseIssueFn/defaultAbandonIssueFn's wiring exactly (same
+ * real-spawnSync closure, shared via makeRealIssueSpawnFn).
+ *
+ * Exported so other production callers that need to demote a specified issue
+ * back to stage:'idea' on main (e.g. a future `cam issue demote <id>` subcommand)
+ * reuse this exact wiring instead of duplicating a spawnFn closure inline
+ * (jscpd gate).
+ */
+export function defaultDemoteIssueFn(demoteCwd: string, id: string): DemoteIssueOnMainOutcome {
+	return demoteIssueOnMain({
+		cwd: demoteCwd,
+		id,
+		spawnFn: makeRealIssueSpawnFn(),
 		clock: () => new Date().toISOString(),
 	});
 }

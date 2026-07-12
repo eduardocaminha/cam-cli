@@ -20,14 +20,18 @@
 //         (not 1). The test fails against the pre-fix code.
 
 import { test, expect, afterEach } from 'bun:test';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import type { SpawnSyncReturns } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { writeIssueFile } from '../../src/issues/alloc.ts';
-import { specifyIssueOnMain, type SpawnFn } from '../../src/commands/issue-specify.ts';
+import {
+	specifyIssueOnMain,
+	demoteIssueOnMain,
+	type SpawnFn,
+} from '../../src/commands/issue-specify.ts';
 import type { Spec } from '../../src/issues/spec.ts';
 import type { WsjfScore } from '../../src/issues/types.ts';
 
@@ -187,5 +191,68 @@ test.skipIf(!gitAvailable)(
 		const showResult = run(['show', 'main:scripts/cam/issues/CAM-0001.json']);
 		const specifiedEntry = JSON.parse(showResult.stdout as string) as { stage: string };
 		expect(specifiedEntry.stage).toBe('specified');
+	},
+);
+
+// ---------------------------------------------------------------------------
+// Regression test: demoteIssueOnMain leaves the worktree coherent with HEAD
+// ---------------------------------------------------------------------------
+
+test.skipIf(!gitAvailable)(
+	'demoteIssueOnMain (on-main): ref reflects stage:idea, worktree coherent with HEAD',
+	() => {
+		const { dir, run } = makeTmpRepo();
+
+		const r1 = writeIssueFile({
+			cwd: dir,
+			title: 'Idea to specify then demote',
+			spawnFn: realSpawnFn,
+		});
+		expect(r1.id).toBe('CAM-1');
+
+		const specResult = specifyIssueOnMain({
+			cwd: dir,
+			id: 'CAM-1',
+			spec: VALID_SPEC,
+			wsjf: VALID_WSJF,
+			spawnFn: realSpawnFn,
+			clock: () => '2026-07-12T00:00:00.000Z',
+			eventSink: () => {},
+		});
+		if (!specResult.ok) {
+			throw new Error(`Expected ok:true but got: ${JSON.stringify(specResult)}`);
+		}
+
+		// specifyIssueOnMain runs while checked out on main -> demote also runs on-main.
+		const demoteResult = demoteIssueOnMain({
+			cwd: dir,
+			id: 'CAM-1',
+			spawnFn: realSpawnFn,
+			clock: () => '2026-07-12T00:01:00.000Z',
+		});
+		if (!demoteResult.ok) {
+			throw new Error(`Expected ok:true but got: ${JSON.stringify(demoteResult)}`);
+		}
+		expect(demoteResult.branchWasMain).toBe(true);
+
+		// Oracle: main ref reflects stage:idea after demote.
+		const showResult = run(['show', 'main:scripts/cam/issues/CAM-0001.json']);
+		const demotedEntry = JSON.parse(showResult.stdout as string) as {
+			stage: string;
+			spec?: unknown;
+		};
+		expect(demotedEntry.stage).toBe('idea');
+		// The stale spec is preserved as reference for the re-grill.
+		expect(demotedEntry.spec).toBeDefined();
+
+		// Worktree coherence: commitTreeToMain's final syncWorktreeIfOnMain step
+		// must leave the working tree identical to HEAD (clean porcelain status),
+		// and the on-disk file content must match the ref.
+		const status = run(['status', '--porcelain']);
+		expect((status.stdout as string).trim()).toBe('');
+
+		const wtContent = readFileSync(join(dir, 'scripts', 'cam', 'issues', 'CAM-0001.json'), 'utf8');
+		const wtEntry = JSON.parse(wtContent) as { stage: string };
+		expect(wtEntry.stage).toBe('idea');
 	},
 );

@@ -22,10 +22,12 @@ import { join } from 'node:path';
 import {
 	specifyIssueOnMain,
 	abandonIssueOnMain,
+	demoteIssueOnMain,
 	mergeIssueOnMain,
 	type SpawnFn,
 	type SpecifyIssueOnMainOptions,
 	type AbandonIssueOnMainOptions,
+	type DemoteIssueOnMainOptions,
 	type MergeIssueOnMainOptions,
 } from '../../src/commands/issue-specify.ts';
 import type { Spec } from '../../src/issues/spec.ts';
@@ -891,6 +893,131 @@ test('abandon: commit message is chore(cam): abandon <id>', () => {
 test('abandon: never calls git checkout', () => {
 	const { spawnFn, calls } = makeFakeSpawnFn({ entries: [makeEntry()] });
 	abandonIssueOnMain(makeAbandonOpts({ spawnFn }));
+	expect(calls.some((c) => c.includes('checkout'))).toBe(false);
+});
+
+// ===========================================================================
+// 3.5. demoteIssueOnMain -- unit tests (US-001, CAM-206)
+// ===========================================================================
+
+function makeDemoteOpts(
+	overrides: Partial<DemoteIssueOnMainOptions> & { spawnFn: SpawnFn },
+): DemoteIssueOnMainOptions {
+	const { spawnFn, ...rest } = overrides;
+	return {
+		cwd: '/fake/cwd',
+		id: 'CAM-1',
+		clock: () => '2026-06-27T00:00:00.000Z',
+		...rest,
+		spawnFn,
+	};
+}
+
+test('demote: returns not-found when id absent', () => {
+	const { spawnFn } = makeFakeSpawnFn({ entries: [makeEntry({ stage: 'specified' })] });
+	const result = demoteIssueOnMain(makeDemoteOpts({ spawnFn, id: 'CAM-999' }));
+	expect(result.ok).toBe(false);
+	if (!result.ok) expect(result.reason).toBe('not-found');
+});
+
+test('demote: returns already-idea (distinct token) when stage is already idea', () => {
+	const { spawnFn, calls } = makeFakeSpawnFn({ entries: [makeEntry({ stage: 'idea' })] });
+	const result = demoteIssueOnMain(makeDemoteOpts({ spawnFn }));
+	expect(result.ok).toBe(false);
+	if (!result.ok) expect(result.reason).toBe('already-idea');
+	expect(calls.find((c) => c.join(' ').includes('update-ref'))).toBeUndefined();
+});
+
+test('demote: returns is-planned (distinct token, never a blanket wrong-stage) when stage is planned', () => {
+	const { spawnFn, calls } = makeFakeSpawnFn({ entries: [makeEntry({ stage: 'planned' })] });
+	const result = demoteIssueOnMain(makeDemoteOpts({ spawnFn }));
+	expect(result.ok).toBe(false);
+	if (!result.ok) expect(result.reason).toBe('is-planned');
+	expect(calls.find((c) => c.join(' ').includes('update-ref'))).toBeUndefined();
+});
+
+test('demote: returns is-shipped (distinct token) when stage is shipped', () => {
+	const { spawnFn, calls } = makeFakeSpawnFn({ entries: [makeEntry({ stage: 'shipped' })] });
+	const result = demoteIssueOnMain(makeDemoteOpts({ spawnFn }));
+	expect(result.ok).toBe(false);
+	if (!result.ok) expect(result.reason).toBe('is-shipped');
+	expect(calls.find((c) => c.join(' ').includes('update-ref'))).toBeUndefined();
+});
+
+test('demote: success path sets stage to idea and preserves spec/wsjf/blockedBy', () => {
+	const specifiedEntry = makeEntry({
+		stage: 'specified',
+		spec: VALID_SPEC,
+		wsjf: VALID_WSJF,
+		blockedBy: ['CAM-2'],
+	});
+	const { spawnFn } = makeFakeSpawnFn({
+		entries: [specifiedEntry, makeEntry({ id: 'CAM-2', stage: 'idea' })],
+	});
+	let capturedJson = '';
+
+	const recordingSpawnFn: SpawnFn = (cmd, args, opts) => {
+		if (args.join(' ').includes('hash-object') && opts.input !== undefined) {
+			capturedJson = opts.input;
+		}
+		return spawnFn(cmd, args, opts);
+	};
+
+	const result = demoteIssueOnMain(makeDemoteOpts({ spawnFn: recordingSpawnFn }));
+	expect(result.ok).toBe(true);
+	if (result.ok) {
+		expect(result.id).toBe('CAM-1');
+		expect(result.committedTo).toBe('main');
+	}
+
+	const parsed = JSON.parse(capturedJson) as IssueEntry;
+	expect(parsed.stage).toBe('idea');
+	// Only the stage axis flips: spec, wsjf, blockedBy (the stale reference data) survive.
+	expect(parsed.spec).toEqual(VALID_SPEC);
+	expect(parsed.wsjf).toEqual(VALID_WSJF);
+	expect(parsed.blockedBy).toEqual(['CAM-2']);
+});
+
+test('demote: on-main ref-only commit; writeFile never called', () => {
+	const { spawnFn } = makeFakeSpawnFn({
+		entries: [makeEntry({ stage: 'specified' })],
+		branch: 'main',
+	});
+	const writtenFiles: Array<{ path: string; content: string }> = [];
+
+	const result = demoteIssueOnMain(
+		makeDemoteOpts({
+			spawnFn,
+			writeFile: (path, content) => writtenFiles.push({ path, content }),
+		}),
+	);
+
+	expect(result.ok).toBe(true);
+	if (result.ok) expect(result.branchWasMain).toBe(true);
+	expect(writtenFiles).toHaveLength(0);
+});
+
+test('demote: commit message is chore(cam): demote <id>', () => {
+	const { spawnFn, calls } = makeFakeSpawnFn({ entries: [makeEntry({ stage: 'specified' })] });
+	demoteIssueOnMain(makeDemoteOpts({ spawnFn, id: 'CAM-1' }));
+	const commitTreeCall = calls.find((c) => c.join(' ').includes('commit-tree'));
+	expect(commitTreeCall?.join(' ')).toContain('chore(cam): demote CAM-1');
+});
+
+test('demote: up-to-date guard fires before any backlog read (detached-head)', () => {
+	const { spawnFn, calls } = makeFakeSpawnFn({
+		entries: [makeEntry({ stage: 'specified' })],
+		branch: 'HEAD',
+	});
+	const result = demoteIssueOnMain(makeDemoteOpts({ spawnFn }));
+	expect(result.ok).toBe(false);
+	if (!result.ok) expect(result.reason).toBe('detached-head');
+	expect(calls.find((c) => c.join(' ').includes('ls-tree'))).toBeUndefined();
+});
+
+test('demote: never calls git checkout', () => {
+	const { spawnFn, calls } = makeFakeSpawnFn({ entries: [makeEntry({ stage: 'specified' })] });
+	demoteIssueOnMain(makeDemoteOpts({ spawnFn }));
 	expect(calls.some((c) => c.includes('checkout'))).toBe(false);
 });
 
