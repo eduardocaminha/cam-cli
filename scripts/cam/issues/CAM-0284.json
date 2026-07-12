@@ -1,0 +1,9 @@
+{
+  "id": "CAM-284",
+  "title": "Add updatedAt (last-activity) timestamp to the issue model: schema field + stamp on every mutation writer + backfill + expose in list --json",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-12T13:08:00.241Z",
+  "description": "Split from CAM-281 (which only exposes the already-present createdAt). updatedAt does NOT exist anywhere today (not in scripts/cam/issues.schema.json, not in IssueEntry at src/issues/types.ts, no writer stamps it). Adding it is cross-cutting: (1) new required/optional schema field + IssueEntry field; (2) stamp updatedAt on EVERY issue-mutation path or the field lies: writeIssueFile/create (src/issues/alloc.ts), and the on-main writers specifyIssueOnMain/abandonIssueOnMain/mergeIssueOnMain/closeIssueOnMain/demoteIssueOnMain (src/commands/issue-specify.ts), plus any rank/reprioritize writer: the implementer must grep every issue-write site and cover all of them; (3) backfill decision for the 283 existing issues (default: set updatedAt = createdAt, meaning 'unmodified since creation'); (4) expose updatedAt in cam issue list --json alongside createdAt (BacklogJsonRow/toJsonRow). Distinct blast-radius from CAM-281 (multi-writer + schema + backfill vs pure additive output). Refine via /cam-spec."
+}
