@@ -23,7 +23,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/config/models.ts (DEFAULTS + docstring), src/ui/ConfigScreen.tsx (MODEL_OPTIONS), test/config/models.test.ts, test/commands/config-show.test.ts. project.toml effective values today: orchestrator/planner/auditor/reviewer=claude-opus-4-8, implementer=claude-sonnet-5, ship=claude-sonnet-4-6. MODEL_OPTIONS is currently a non-exported const in ConfigScreen.tsx; the consistency test needs it importable, so export MODEL_OPTIONS (or hoist it to a shared const in src/config/models.ts) rather than duplicating the list in the test. Do NOT add a fifth hardcoded site (gotcha: issue lists 4 sites; reduce/reconcile, never add). Ink rule: success/failure is the ✓/✗ glyph, never divider color. noUncheckedIndexedAccess: guard array/regex access."
     },
