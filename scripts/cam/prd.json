@@ -8,6 +8,13 @@
   "officialDocsConsulted": [],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "CRITICAL [.claude/agents/subagent-implementer.md:1]: US-002 strips the `model:` frontmatter line from all 5 agent files, but the vendored validator `vendor/check-agent-frontmatter.ts` (REQUIRED_TOP_LEVEL_KEYS includes 'model', line 207) still requires it. Running `bun vendor/check-agent-frontmatter.ts` now reports 5 violations ('missing required key model') and exits 1 against the repo's own agents. This validator is consumed by `cam init` (src/commands/init.ts:307 and :367), so `cam init` now reports a spurious `check-agent-frontmatter` failure and returns non-zero in cam-cli and any downstream project whose agents were materialized from these templates. Official Claude Code docs (https://code.claude.com/docs/en/sub-agents) confirm only `name` and `description` are required and `model` defaults to `inherit`, so the strip is correct and the vendored smoke's required-key list is over-strict. The change is incomplete: the smoke must be aligned (make `model` optional, then re-embed) so `cam init` passes, or the strip should have been sequenced with the upstream re-vendor. CI/`bun test` stay green only because no repo gate runs this smoke against real agent files; the regression manifests when `cam init` is run."
+    },
+    {
       "id": "US-001",
       "title": "Reconcile DEFAULTS map and config-picker MODEL_OPTIONS to the effective model ids",
       "description": "As a cam maintainer, I need the two hardcoded static model-id lists (DEFAULTS and MODEL_OPTIONS) to agree with the actually-used models so that no fallback or picker entry silently lies about the effective model, closing the implementer drift (project.toml uses claude-sonnet-5 while DEFAULTS+MODEL_OPTIONS say claude-sonnet-4-6 and omit claude-sonnet-5 entirely).",
@@ -22,7 +29,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "requires": null,
       "notes": "Files: src/config/models.ts (DEFAULTS + docstring), src/ui/ConfigScreen.tsx (MODEL_OPTIONS), test/config/models.test.ts, test/commands/config-show.test.ts. project.toml effective values today: orchestrator/planner/auditor/reviewer=claude-opus-4-8, implementer=claude-sonnet-5, ship=claude-sonnet-4-6. MODEL_OPTIONS is currently a non-exported const in ConfigScreen.tsx; the consistency test needs it importable, so export MODEL_OPTIONS (or hoist it to a shared const in src/config/models.ts) rather than duplicating the list in the test. Do NOT add a fifth hardcoded site (gotcha: issue lists 4 sites; reduce/reconcile, never add). Ink rule: success/failure is the ✓/✗ glyph, never divider color. noUncheckedIndexedAccess: guard array/regex access."
@@ -40,7 +47,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 2,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "Files (10 total, one trivial line-edit each): .claude/agents/subagent-{orchestrator,planner,auditor,reviewer,implementer}.md and templates/agents/subagent-{same}.md. This is a single mechanical concern (strip inert model: line) despite the file count, driven by the per-file dual-copy invariant. Do NOT touch cam-ship.md: ship keeps its frontmatter as its documented source (handled in US-003). Runtime precedence flag-over-frontmatter is documented at src/commands/run.ts:232-234 and src/supervisor/worker-argv.ts:49-51; do NOT try to make frontmatter authoritative. After editing templates/, embed-vendor:check will flag drift until bun run embed-vendor is run."
@@ -59,10 +66,23 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 3,
+      "priority": 4,
       "passes": true,
       "requires": "US-002",
       "notes": "Files: src/templates/frontmatter.ts (FRONTMATTER_TARGET_PHASE_PATHS + module comment), src/commands/config.ts:148-159 (rewrite loop iterates FRONTMATTER_TARGET_PHASE_PATHS; reducing the map is enough, but re-check the loop guards), test/commands/config-persist.test.ts (lines ~23-24 list planner/auditor; update expectations). Requires US-002 because once planner/auditor frontmatter is stripped, their rewrite is already a no-op; this story removes them from the target map so the config code matches reality. Confirmed: ship-runner.ts spawns zero LLM (comment src/supervisor/ship-runner.ts:36), so ship cannot take --model; cam-ship.md frontmatter is the correct single documented source. Do NOT edit cam-ship.md content here beyond an optional documenting comment (it is dual-copy .claude/ + templates/; touching it triggers embed-vendor:check)."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:1",
+    "findings": [
+      {
+        "severity": "CRITICAL",
+        "file": ".claude/agents/subagent-implementer.md",
+        "line": 1,
+        "text": "US-002 strips the `model:` frontmatter line from all 5 agent files, but the vendored validator `vendor/check-agent-frontmatter.ts` (REQUIRED_TOP_LEVEL_KEYS includes 'model', line 207) still requires it. Running `bun vendor/check-agent-frontmatter.ts` now reports 5 violations ('missing required key model') and exits 1 against the repo's own agents. This validator is consumed by `cam init` (src/commands/init.ts:307 and :367), so `cam init` now reports a spurious `check-agent-frontmatter` failure and returns non-zero in cam-cli and any downstream project whose agents were materialized from these templates. Official Claude Code docs (https://code.claude.com/docs/en/sub-agents) confirm only `name` and `description` are required and `model` defaults to `inherit`, so the strip is correct and the vendored smoke's required-key list is over-strict. The change is incomplete: the smoke must be aligned (make `model` optional, then re-embed) so `cam init` passes, or the strip should have been sequenced with the upstream re-vendor. CI/`bun test` stay green only because no repo gate runs this smoke against real agent files; the regression manifests when `cam init` is run."
+      }
+    ]
+  }
 }
