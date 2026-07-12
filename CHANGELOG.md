@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.148.0] - 2026-07-12
+
+### Added
+
+- US-001 - Remove dead-for-help guards in config, claude, and triage switch cases
+
 ## [0.147.0] - 2026-07-12
 
 ### Added
