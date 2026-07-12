@@ -27,7 +27,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Single-file cleanup in index.ts. CAM-278 (Command union + narrowing + exhaustive default switch restructure) is already merged to main (commit 8246531a), so base on current main; line numbers in the issue spec (2258/2458/2529) are pre-CAM-278 and have shifted — current locations are config 2553-2556, claude 2753-2756, triage 2823-2826. Central guard lives at index.ts:2501-2507 (isHelpRequested + HELP_REGISTRY lookup). GOTCHAS: (1) do NOT remove the `parseClaudeArgs(argv.slice(3))` line at 2752 — parsed.forwardedArgs is consumed by runClaude at 2757; only strip the `if (parsed.help){...}` block. (2) do NOT touch config's --show parsing / unknown-flag error or triage's tail-error + dispatchTriage(). (3) Verify each --help by actually running it (bun index.ts <cmd> --help), not by assuming — comments can be stale. Cleanup only, zero behavior change."
     }

@@ -2550,10 +2550,6 @@ async function main(argv: string[]): Promise<number> {
 		}
 		case 'config': {
 			const tail = argv.slice(3);
-			if (tail.includes('--help') || tail.includes('-h')) {
-				process.stdout.write(CONFIG_HELP);
-				return 0;
-			}
 			const showFlag = tail.includes('--show');
 			const unknownFlags = tail.filter((a) => a !== '--show');
 			if (unknownFlags.length > 0) {
@@ -2750,10 +2746,12 @@ async function main(argv: string[]): Promise<number> {
 		}
 		case 'claude': {
 			const parsed = parseClaudeArgs(argv.slice(3));
-			if (parsed.help) {
-				process.stdout.write(CLAUDE_HELP);
-				return 0;
-			}
+			// `parsed.help` is unreachable here: the central --help guard above
+			// already intercepted a leading --help/-h before this switch ran.
+			// This narrowing check only satisfies parseClaudeArgs's
+			// discriminated-union type (forwardedArgs is absent on the help
+			// branch) — it no longer writes the help text itself.
+			if (parsed.help) return 0;
 			return runClaude({ args: parsed.forwardedArgs });
 		}
 		// Internal subcommand — not listed in top-level HELP.
@@ -2820,10 +2818,6 @@ async function main(argv: string[]): Promise<number> {
 		}
 		case 'triage': {
 			const tail = argv.slice(3);
-			if (tail.includes('--help') || tail.includes('-h')) {
-				process.stdout.write(TRIAGE_HELP);
-				return 0;
-			}
 			if (tail.length > 0) {
 				printError(`unknown triage option: ${tail[0]}`);
 				printFatalHint('run `cam triage --help` for usage');
