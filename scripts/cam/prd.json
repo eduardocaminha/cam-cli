@@ -59,7 +59,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edit makeProductionFileSuggestionsFn (src/commands/sidecar.ts:2676-2702); the fileCandidates helper (2616-2650) and its createLocalIssueOnMain call are no longer used by the hook (leave createLocalIssueOnMain for US-005 promote). Keep the loop.ts call site (src/supervisor/loop.ts:2141-2178) contract-compatible (report, provenance) -> { filedIds/penned, dupSkipped }. Transitional dedup: extend/compose dedupSuggestions (src/supervisor/suggestion-followups.ts:137) so its fingerprint set is the UNION of open-backlog fingerprints AND the JSONL pen fingerprints (readSuggestionsFromMain). Keep the pure helper in suggestion-followups.ts. Gotcha (spec): without the union, 277-280 get re-penned as duplicates on the next terminal review. Watch Biome cognitive-complexity ceiling on the closure (that is why fileCandidates was extracted)."
     },
