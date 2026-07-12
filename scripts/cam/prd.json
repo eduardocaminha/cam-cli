@@ -23,7 +23,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Single-concern additive change. Files: src/issues/list.ts (BacklogJsonRow interface ~:158-163, toJsonRow ~:188-190); test updates in test/issues/list.test.ts and test/issue-list.test.ts. IssueEntry.createdAt is a required non-optional string (src/issues/types.ts:44), so a plain passthrough is correct: do NOT compute, default, or optional-guard it. Gotcha: toEqual row assertions and the top-level Object.keys(parsed).sort() shape assertion (test/issue-list.test.ts:391) WILL fail until updated in the same change. No non-test module consumes BacklogJsonRow, so the output-contract change is safe. Do NOT touch the human-readable renderer, the schema, or any issue file."
     }
