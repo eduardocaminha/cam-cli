@@ -391,10 +391,16 @@ describe('runIssueList — --json machine mode', () => {
 		expect(Object.keys(parsed).sort()).toEqual(['byStage', 'counts', 'plannable']);
 		expect(parsed).toEqual({
 			counts: { idea: 1, specified: 1, planned: 0 },
-			plannable: [{ id: 'CAM-1', title: 'Test issue', rank: null }],
+			plannable: [
+				{ id: 'CAM-1', title: 'Test issue', rank: null, createdAt: '2026-01-01T00:00:00Z' },
+			],
 			byStage: {
-				idea: [{ id: 'CAM-2', title: 'Test issue', rank: null }],
-				specified: [{ id: 'CAM-1', title: 'Test issue', rank: null }],
+				idea: [
+					{ id: 'CAM-2', title: 'Test issue', rank: null, createdAt: '2026-01-01T00:00:00Z' },
+				],
+				specified: [
+					{ id: 'CAM-1', title: 'Test issue', rank: null, createdAt: '2026-01-01T00:00:00Z' },
+				],
 				planned: [],
 			},
 		});
@@ -439,7 +445,9 @@ describe('runIssueList — --json machine mode', () => {
 
 		const parsed = JSON.parse(plain());
 		expect(parsed.counts.shipped).toBe(1);
-		expect(parsed.byStage.shipped).toEqual([{ id: 'CAM-1', title: 'Test issue', rank: null }]);
+		expect(parsed.byStage.shipped).toEqual([
+			{ id: 'CAM-1', title: 'Test issue', rank: null, createdAt: '2026-01-01T00:00:00Z' },
+		]);
 	});
 
 	test('--json with issue_system linear still prints the Linear hint (JSON contract is local-only), exits 0', () => {
