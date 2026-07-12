@@ -60,7 +60,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "Files: src/templates/frontmatter.ts (FRONTMATTER_TARGET_PHASE_PATHS + module comment), src/commands/config.ts:148-159 (rewrite loop iterates FRONTMATTER_TARGET_PHASE_PATHS; reducing the map is enough, but re-check the loop guards), test/commands/config-persist.test.ts (lines ~23-24 list planner/auditor; update expectations). Requires US-002 because once planner/auditor frontmatter is stripped, their rewrite is already a no-op; this story removes them from the target map so the config code matches reality. Confirmed: ship-runner.ts spawns zero LLM (comment src/supervisor/ship-runner.ts:36), so ship cannot take --model; cam-ship.md frontmatter is the correct single documented source. Do NOT edit cam-ship.md content here beyond an optional documenting comment (it is dual-copy .claude/ + templates/; touching it triggers embed-vendor:check)."
     }

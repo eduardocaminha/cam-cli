@@ -4,8 +4,8 @@
 // No Ink rendering — only mergeConfigChoices + the toml reader round-trip.
 
 import { test, expect, beforeEach, afterEach } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { mergeConfigChoices } from '../../src/commands/config.ts';
@@ -13,6 +13,7 @@ import type { ConfigChoices } from '../../src/commands/config.ts';
 import { loadConfig } from '../../src/config/toml.ts';
 import { readPhaseModel, readBackend, DEFAULTS } from '../../src/config/models.ts';
 import type { Phase } from '../../src/config/models.ts';
+import { FRONTMATTER_TARGET_PHASE_PATHS } from '../../src/templates/frontmatter.ts';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -140,4 +141,27 @@ test('mergeConfigChoices preserves per-phase defaults for missing phases', () =>
 		expect(readPhaseModel(phase, configPath)).toBe(DEFAULTS[phase]);
 	}
 	expect(readBackend(configPath)).toBe(DEFAULTS['backend']);
+});
+
+test('mergeConfigChoices rewrites only the ship frontmatter and leaves planner/auditor agent files unmodified', () => {
+	const configPath = join(tmpDir, 'project.toml');
+
+	const shipRelPath = FRONTMATTER_TARGET_PHASE_PATHS['ship']!;
+	const shipPath = join(tmpDir, shipRelPath);
+	mkdirSync(dirname(shipPath), { recursive: true });
+	writeFileSync(shipPath, '---\nmodel: claude-sonnet-4-6\n---\nShip steps.', 'utf8');
+
+	const plannerPath = join(tmpDir, '.claude', 'agents', 'subagent-planner.md');
+	const auditorPath = join(tmpDir, '.claude', 'agents', 'subagent-auditor.md');
+	mkdirSync(dirname(plannerPath), { recursive: true });
+	const plannerOriginal = '---\nname: subagent-planner\n---\nbody';
+	const auditorOriginal = '---\nname: subagent-auditor\n---\nbody';
+	writeFileSync(plannerPath, plannerOriginal, 'utf8');
+	writeFileSync(auditorPath, auditorOriginal, 'utf8');
+
+	mergeConfigChoices(configPath, makeChoices('claude-opus-4-8'), tmpDir);
+
+	expect(readFileSync(shipPath, 'utf8')).toContain('model: claude-opus-4-8');
+	expect(readFileSync(plannerPath, 'utf8')).toBe(plannerOriginal);
+	expect(readFileSync(auditorPath, 'utf8')).toBe(auditorOriginal);
 });

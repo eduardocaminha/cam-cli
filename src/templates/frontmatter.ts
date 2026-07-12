@@ -3,9 +3,9 @@
 // Pure helper for rewriting the `model:` line inside a YAML frontmatter block.
 // String-in / string-out: no filesystem access, fully unit-testable.
 //
-// Also exports the three project-local .claude/ runtime target paths whose
+// Also exports the single project-local .claude/ runtime target path whose
 // model: line is rewritten by `mergeConfigChoices` on each `cam config` save.
-// None of these paths is under templates/; templates/ holds the shipped defaults
+// This path is not under templates/; templates/ holds the shipped defaults
 // (owned by US-004) and is never touched by this module.
 
 import { join } from 'node:path';
@@ -14,14 +14,18 @@ import { join } from 'node:path';
  * Phase -> project-local runtime file path (relative to cwd) whose `model:`
  * frontmatter line is rewritten on `cam config` save.
  *
- * Only the three in-session phases that run as Task subagents or slash steps
- * are listed here: planner, auditor, ship. The implementer and reviewer run
- * as pane workers and receive --model from the supervisor argv, not via
- * frontmatter. The orchestrator is the root pane itself (no agent file).
+ * Only `ship` is listed here: ship-runner is deterministic (zero LLM calls,
+ * see src/supervisor/ship-runner.ts) so its model can never be passed via a
+ * `--model` CLI flag the way every other phase's is -- cam-ship.md's
+ * frontmatter is the sole documented source for the ship model. The other
+ * in-session roles were removed from this map (US-003, CAM-286): all of them
+ * actually run as pane workers spawned with `--model <readPhaseModel(phase)>`,
+ * so rewriting their frontmatter was dead effort even before their `model:`
+ * line was stripped entirely (US-002). Every non-ship role, including the
+ * pane/root roles, takes its model from project.toml via --model and has no
+ * frontmatter-sourced path at all.
  */
 export const FRONTMATTER_TARGET_PHASE_PATHS: Record<string, string> = {
-	planner: join('.claude', 'agents', 'subagent-planner.md'),
-	auditor: join('.claude', 'agents', 'subagent-auditor.md'),
 	ship: join('.claude', 'commands', 'cam-ship.md'),
 };
 
