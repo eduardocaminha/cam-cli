@@ -1,7 +1,8 @@
 // test/commands/config-frontmatter.test.ts
 //
 // Tests for the frontmatter model: rewriter and the cam config save integration
-// that applies it to the three project-local .claude/ runtime files.
+// that applies it to the single project-local .claude/ runtime file for ship
+// (the one role whose model is not passed via --model).
 //
 // The pure-helper tests (describe 'rewriteFrontmatterModel') inject string
 // in/out with no filesystem access (AC3). The integration tests use a tmpDir
@@ -100,26 +101,14 @@ describe('rewriteFrontmatterModel', () => {
 // ---------------------------------------------------------------------------
 
 describe('FRONTMATTER_TARGET_PHASE_PATHS', () => {
-	test('contains exactly planner, auditor, and ship entries', () => {
-		expect(Object.keys(FRONTMATTER_TARGET_PHASE_PATHS).sort()).toEqual([
-			'auditor',
-			'planner',
-			'ship',
-		]);
+	test('contains exactly the ship entry', () => {
+		expect(Object.keys(FRONTMATTER_TARGET_PHASE_PATHS).sort()).toEqual(['ship']);
 	});
 
 	test('no path is under templates/', () => {
 		for (const p of Object.values(FRONTMATTER_TARGET_PHASE_PATHS)) {
 			expect(p).not.toContain('templates/');
 		}
-	});
-
-	test('planner path targets .claude/agents/subagent-planner.md', () => {
-		expect(FRONTMATTER_TARGET_PHASE_PATHS['planner']).toContain('subagent-planner.md');
-	});
-
-	test('auditor path targets .claude/agents/subagent-auditor.md', () => {
-		expect(FRONTMATTER_TARGET_PHASE_PATHS['auditor']).toContain('subagent-auditor.md');
 	});
 
 	test('ship path targets .claude/commands/cam-ship.md', () => {
@@ -154,32 +143,18 @@ describe('mergeConfigChoices frontmatter rewrite', () => {
 		return readFileSync(join(tmpDir, relPath), 'utf8');
 	}
 
-	test('rewrites model: in subagent-planner.md for the planner phase', () => {
-		const plannerPath = FRONTMATTER_TARGET_PHASE_PATHS['planner']!;
-		seed(
-			plannerPath,
-			'---\nname: subagent-planner\nmodel: claude-opus-4-8\neffort: xhigh\n---\nbody',
-		);
+	test('leaves subagent-planner.md and subagent-auditor.md unmodified (no longer rewrite targets)', () => {
+		const plannerPath = join('.claude', 'agents', 'subagent-planner.md');
+		const auditorPath = join('.claude', 'agents', 'subagent-auditor.md');
+		const plannerOriginal = '---\nname: subagent-planner\n---\nbody';
+		const auditorOriginal = '---\nname: subagent-auditor\n---\nbody';
+		seed(plannerPath, plannerOriginal);
+		seed(auditorPath, auditorOriginal);
 
 		mergeConfigChoices(join(tmpDir, 'project.toml'), makeChoices('claude-sonnet-4-6'), tmpDir);
 
-		const updated = read(plannerPath);
-		expect(updated).toContain('model: claude-sonnet-4-6');
-		expect(updated).not.toContain('model: claude-opus-4-8');
-		// other keys preserved
-		expect(updated).toContain('name: subagent-planner');
-		expect(updated).toContain('effort: xhigh');
-	});
-
-	test('rewrites model: in subagent-auditor.md for the auditor phase', () => {
-		const auditorPath = FRONTMATTER_TARGET_PHASE_PATHS['auditor']!;
-		seed(auditorPath, '---\nname: subagent-auditor\nmodel: claude-opus-4-8\n---\nbody');
-
-		mergeConfigChoices(join(tmpDir, 'project.toml'), makeChoices('claude-haiku-3-5'), tmpDir);
-
-		const updated = read(auditorPath);
-		expect(updated).toContain('model: claude-haiku-3-5');
-		expect(updated).not.toContain('model: claude-opus-4-8');
+		expect(read(plannerPath)).toBe(plannerOriginal);
+		expect(read(auditorPath)).toBe(auditorOriginal);
 	});
 
 	test('rewrites model: in cam-ship.md for the ship phase', () => {
@@ -200,7 +175,7 @@ describe('mergeConfigChoices frontmatter rewrite', () => {
 		).not.toThrow();
 	});
 
-	test('rewrites all three target files in one save', () => {
+	test('rewrites the ship target file in one save', () => {
 		for (const [phase, relPath] of Object.entries(FRONTMATTER_TARGET_PHASE_PATHS)) {
 			seed(relPath, `---\nname: ${phase}\nmodel: claude-opus-4-8\n---\nbody`);
 		}

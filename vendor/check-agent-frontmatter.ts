@@ -16,11 +16,21 @@
 //   2. Frontmatter is delimited by `---` lines at top + closing.
 //   3. Frontmatter parses as a simple YAML mapping (hand-rolled zero-dep parser;
 //      see parseFrontmatter below -- no js-yaml, no bare-specifier imports).
-//   4. Required top-level keys: name, description, model, plus at least one of
-//      (tools, disallowedTools).
+//   4. Required top-level keys: name, description, plus at least one of
+//      (tools, disallowedTools). `model` is OPTIONAL (see CAM-286 divergence
+//      note below), not required.
 //   5. `name` value matches the filename slug (e.g. prd-implementer.md -> name: prd-implementer).
-//   6. `model` is a non-empty string.
+//   6. When present, `model` is a non-empty string.
 //   7. Body has at least one non-empty line after the closing `---`.
+//
+// CAM-286 local divergence from upstream `reporter`: cam-cli's own
+// .claude/agents/*.md no longer carry a `model:` frontmatter line (the
+// pane-worker spawn passes --model explicitly, so a persona-file model: line
+// was always dead weight -- see scripts/cam/patterns.md). This vendored copy
+// is intentionally patched to drop `model` from REQUIRED_TOP_LEVEL_KEYS so
+// `cam init`'s smoke doesn't fail against cam-cli's own materialized agent
+// files. Re-vendoring from upstream `reporter` must re-apply this patch
+// (or the divergence must be upstreamed first) -- see vendor/README.md.
 //
 // Exit codes:
 //   0 -- every file scanned passes
@@ -204,7 +214,9 @@ if (argFiles.length > 0) {
 
 // --- Required keys ---------------------------------------------------------
 
-const REQUIRED_TOP_LEVEL_KEYS = ['name', 'description', 'model'] as const;
+// CAM-286: 'model' intentionally dropped -- see divergence note in the header
+// comment above. Check #6 below still validates `model`'s shape when present.
+const REQUIRED_TOP_LEVEL_KEYS = ['name', 'description'] as const;
 const REQUIRED_AT_LEAST_ONE = ['tools', 'disallowedTools'] as const;
 
 // --- Per-file validator ----------------------------------------------------

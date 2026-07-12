@@ -59,9 +59,10 @@ const PHASE_LABELS: Record<Phase, string> = {
 	ship: 'Ship',
 };
 
-const MODEL_OPTIONS: readonly SelectOption<string>[] = [
+export const MODEL_OPTIONS: readonly SelectOption<string>[] = [
 	{ value: 'claude-opus-4-8', label: 'claude-opus-4-8', description: 'Deep reasoning, highest quality' },
-	{ value: 'claude-sonnet-4-6', label: 'claude-sonnet-4-6', description: 'Balanced performance' },
+	{ value: 'claude-sonnet-5', label: 'claude-sonnet-5', description: 'Balanced performance' },
+	{ value: 'claude-sonnet-4-6', label: 'claude-sonnet-4-6', description: 'Balanced performance (previous gen)' },
 	{ value: 'claude-haiku-3-5', label: 'claude-haiku-3-5', description: 'Fast and economical' },
 ];
 

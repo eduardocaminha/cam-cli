@@ -101,9 +101,10 @@ export interface MergeModeOpts {
  * the helper is NOT invoked.
  *
  * When `cwd` is provided, also rewrites the `model:` frontmatter line in the
- * three project-local .claude/ runtime files for planner, auditor, and ship
- * phases (resolved relative to `cwd`). Files that do not exist are silently
- * skipped (e.g. a project that has not run `cam init` yet).
+ * single project-local .claude/ runtime file for the ship phase (resolved
+ * relative to `cwd`) -- the one role whose model is not passed via --model.
+ * Files that do not exist are silently skipped (e.g. a project that has not
+ * run `cam init` yet).
  */
 export function mergeConfigChoices(
 	configPath: string,

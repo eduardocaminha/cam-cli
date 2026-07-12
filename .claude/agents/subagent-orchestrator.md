@@ -1,7 +1,6 @@
 ---
 name: subagent-orchestrator
 description: Long-lived project agent that is the single human-facing interface for cam. Holds persistent project context across cycles, dispatches /cam-* slash commands as fresh worker sessions, and integrates with the configured issue system (Linear, GitHub, or local). Loaded as the root persona by `cam run`; never invoked via Task().
-model: claude-opus-4-8
 effort: high
 tools:
   - Read

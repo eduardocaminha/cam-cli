@@ -32,7 +32,8 @@ export type Phase =
  * missing, malformed, or lacks the requested key.
  *
  * - orchestrator/planner/auditor/reviewer: claude-opus-4-8 (deep reasoning phases)
- * - implementer/ship: claude-sonnet-4-6 (high-throughput execution phases)
+ * - implementer: claude-sonnet-5 (high-throughput execution phase)
+ * - ship: claude-sonnet-4-6 (high-throughput execution phase)
  * - backend: claude (the default Claude Code backend)
  */
 /**
@@ -52,7 +53,7 @@ export const DEFAULTS: Record<Phase | 'backend', string> = {
 	planner: 'claude-opus-4-8',
 	auditor: 'claude-opus-4-8',
 	reviewer: 'claude-opus-4-8',
-	implementer: 'claude-sonnet-4-6',
+	implementer: 'claude-sonnet-5',
 	ship: 'claude-sonnet-4-6',
 	backend: 'claude',
 };

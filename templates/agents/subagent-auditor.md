@@ -1,7 +1,6 @@
 ---
 name: subagent-auditor
 description: Audits a freshly-generated PRD (scripts/cam/prd.json) against the issue, repo source, and deep-dive docs. Returns APPROVE / BLOCK with structured findings. READ-ONLY — never modifies files. Spawned by the deterministic plan runner (runPlanPhase, ADR-0006) between PRD generation and branch creation, not a /cam-plan step.
-model: claude-opus-4-8
 effort: xhigh
 tools:
   - Read

@@ -55,3 +55,29 @@ test(
     expect(result.stdout).toContain("agent file(s) ok");
   },
 );
+
+test(
+  "CAM-286: smoke exits 0 for an agent file with no 'model:' frontmatter key",
+  () => {
+    const noModelAgentMd = [
+      "---",
+      "name: example",
+      "description: An example agent for testing.",
+      "tools:",
+      "  - Read",
+      "  - Write",
+      "---",
+      "",
+      "Example agent body text.",
+      "",
+    ].join("\n");
+    writeFileSync(join(tmpDir, ".claude", "agents", "example.md"), noModelAgentMd);
+
+    const result = spawnSync('bun', [scriptPath], {
+      cwd: tmpDir,
+      encoding: "utf8",
+    });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("agent file(s) ok");
+  },
+);

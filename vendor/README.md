@@ -32,6 +32,10 @@ chmod +x $CAM/vendor/check-agent-frontmatter.sh
 cd $CAM && bun run embed-vendor && bun test test/embedded.test.ts   # re-embed + confirm parity
 ```
 
+## Local divergences from upstream
+
+- **CAM-286: `check-agent-frontmatter.ts` no longer requires `model`.** cam-cli's own `.claude/agents/*.md` persona files stopped carrying a `model:` frontmatter line (pane workers get `--model` on the spawn CLI instead), so `REQUIRED_TOP_LEVEL_KEYS` was patched locally to drop `'model'`; the shape check on `model` (when present) is unchanged. This is a deliberate, permanent divergence from the upstream `reporter` copy, not a drift bug — re-vendoring per the procedure below must re-apply the patch (or the divergence must be upstreamed to `reporter` first) before running `bun run embed-vendor:check`.
+
 ## Runtime behavior
 
 `cam init` invokes `check-agent-frontmatter.ts` directly via `bun` (not via the `.sh` wrapper) — Bun is a hard dependency of `cam` itself, so the runtime-detection ladder in the `.sh` is redundant. The `.sh` is vendored only for parity / drift detection.

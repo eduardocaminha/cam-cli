@@ -16,6 +16,9 @@ import {
 	readOrchContextWindow,
 	readPhaseModel,
 } from '../../src/config/models.ts';
+import type { Phase } from '../../src/config/models.ts';
+import { MODEL_OPTIONS } from '../../src/ui/ConfigScreen.tsx';
+import { loadConfig } from '../../src/config/toml.ts';
 
 // ---------------------------------------------------------------------------
 // Fixtures helpers
@@ -58,8 +61,8 @@ describe('DEFAULTS', () => {
 		expect(DEFAULTS.reviewer).toBe('claude-opus-4-8');
 	});
 
-	test('implementer defaults to claude-sonnet-4-6', () => {
-		expect(DEFAULTS.implementer).toBe('claude-sonnet-4-6');
+	test('implementer defaults to claude-sonnet-5', () => {
+		expect(DEFAULTS.implementer).toBe('claude-sonnet-5');
 	});
 
 	test('ship defaults to claude-sonnet-4-6', () => {
@@ -111,7 +114,7 @@ describe('readPhaseModel - fallback on missing file', () => {
 	test('returns default when file does not exist', () => {
 		const nonExistentPath = join(tmpDir, 'nonexistent.toml');
 		expect(readPhaseModel('orchestrator', nonExistentPath)).toBe('claude-opus-4-8');
-		expect(readPhaseModel('implementer', nonExistentPath)).toBe('claude-sonnet-4-6');
+		expect(readPhaseModel('implementer', nonExistentPath)).toBe('claude-sonnet-5');
 	});
 });
 
@@ -459,4 +462,52 @@ orch_context_window = 300000
 `);
 		expect(readOrchContextWindow(path)).toBe(300_000);
 	});
+});
+
+// ---------------------------------------------------------------------------
+// DEFAULTS vs MODEL_OPTIONS: drift guard (US-001, CAM-286)
+//
+// The picker (ConfigScreen.tsx MODEL_OPTIONS) and the fallback (models.ts
+// DEFAULTS) are two independently-maintained hardcoded lists. This guard
+// fails the moment either list drifts from the other for a non-backend phase.
+// ---------------------------------------------------------------------------
+
+describe('DEFAULTS vs MODEL_OPTIONS consistency', () => {
+	const optionValues = new Set(MODEL_OPTIONS.map((o) => o.value));
+
+	test('every non-backend DEFAULTS value is a selectable MODEL_OPTIONS value', () => {
+		const nonBackendEntries = Object.entries(DEFAULTS).filter(([key]) => key !== 'backend');
+		expect(nonBackendEntries.length).toBeGreaterThan(0);
+		for (const [phase, model] of nonBackendEntries) {
+			expect(optionValues.has(model)).toBe(true);
+		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// readPhaseModel vs the repo's own scripts/cam/project.toml (drift guard)
+//
+// For each Phase, the value cam actually spawns with (readPhaseModel against
+// the real repo config) must equal what's configured there, and must be a
+// known/selectable model id (or the DEFAULTS fallback when the key is
+// omitted from [models]).
+// ---------------------------------------------------------------------------
+
+describe('readPhaseModel vs repo project.toml (drift guard)', () => {
+	const repoConfigPath = join(process.cwd(), 'scripts', 'cam', 'project.toml');
+	const rawConfig = loadConfig(repoConfigPath);
+	const modelsSection = (rawConfig['models'] ?? {}) as Record<string, unknown>;
+	const optionValues = new Set(MODEL_OPTIONS.map((o) => o.value));
+
+	const phases: readonly Phase[] = ['orchestrator', 'planner', 'auditor', 'implementer', 'reviewer', 'ship'];
+
+	for (const phase of phases) {
+		test(`${phase}: readPhaseModel matches the configured value and is a known model`, () => {
+			const configured = modelsSection[phase];
+			const expected = typeof configured === 'string' && configured.length > 0 ? configured : DEFAULTS[phase];
+			const actual = readPhaseModel(phase, repoConfigPath);
+			expect(actual).toBe(expected);
+			expect(optionValues.has(actual) || actual === DEFAULTS[phase]).toBe(true);
+		});
+	}
 });
