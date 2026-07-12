@@ -1,0 +1,18 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Add demoteIssueOnMain core writer + default wiring" },
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/commands/issue-specify.ts",
+    "src/release/post-merge.ts",
+    "test/commands/issue-specify.test.ts",
+    "test/integration/issue-specify-ref-only.test.ts",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [
+    "No CLI subcommand (e.g. `cam issue demote <id>`) was wired in this story: only the core writer (demoteIssueOnMain) and the production default (defaultDemoteIssueFn) exist. If a later story in this PRD wants an operator-facing `cam issue demote <id>` verb, follow the 'Sibling axis-mutation CLI subcommand pattern' bullet in patterns.md (mirrors `cam issue close`/`cam issue abandon`)."
+  ],
+  "nextStoryContext": "US-001 (CAM-206) added demoteIssueOnMain in src/commands/issue-specify.ts: flips stage:'specified' -> stage:'idea', guards in order (0) checkMainUpToDate, (1) not-found, (2) stage-transition guard with 3 distinct reason tokens (already-idea, is-planned, is-shipped -- never a blanket wrong-stage). Only the stage axis flips; spec/wsjf/blockedBy/etc. are preserved untouched for the re-grill. Commit message: `chore(cam): demote <id>`, same commitTreeToMain('cam-specify-') plumbing as close/abandon/specify. defaultDemoteIssueFn was added to src/release/post-merge.ts next to defaultCloseIssueFn/defaultAbandonIssueFn; a shared makeRealIssueSpawnFn() factory was extracted there so the real-spawnSync closure isn't copy-pasted a 3rd time (jscpd gate -- see patterns.md bullet CAM-206). specifyIssueOnMain's Guard 4 (idea-only) was left untouched; no --respec path was introduced. Unit tests added in test/commands/issue-specify.test.ts (guard order incl. the 3 distinct stage-block reasons, field-preservation, on-main ref-only, commit message, checkout-never); a real-git integration test was added to the EXISTING test/integration/issue-specify-ref-only.test.ts file (not a new file) proving worktree coherence + `git show main:...` reflects stage:idea post-demote.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
