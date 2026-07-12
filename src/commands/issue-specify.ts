@@ -570,6 +570,89 @@ export function closeIssueOnMain(options: CloseIssueOnMainOptions): CloseIssueOn
 	return { ok: true, id, committedTo: 'main', sha, branchWasMain };
 }
 
+// ---------------------------------------------------------------------------
+// Demote mode types (specified -> idea)
+// ---------------------------------------------------------------------------
+
+export interface DemoteIssueOnMainOptions {
+	/** Absolute path to the project root (git repo). */
+	cwd: string;
+	/** Id of the issue to demote (must be stage:'specified'). */
+	id: string;
+	/** Injectable spawnSync for all git subprocess calls. */
+	spawnFn: SpawnFn;
+	/** Injectable clock -- returns ISO 8601 timestamp. */
+	clock: ClockFn;
+	/** Injectable file writer (retained for interface compat; unused after commitTreeToMain cutover). */
+	writeFile?: (path: string, text: string) => void;
+}
+
+export interface DemoteIssueOnMainResult {
+	ok: true;
+	id: string;
+	committedTo: 'main';
+	sha: string;
+	branchWasMain: boolean;
+}
+
+export type DemoteIssueOnMainError =
+	| { ok: false; reason: 'diverged' | 'detached-head' | 'missing-main' }
+	| { ok: false; reason: 'not-found' }
+	| { ok: false; reason: 'already-idea' }
+	| { ok: false; reason: 'is-planned' }
+	| { ok: false; reason: 'is-shipped' };
+
+export type DemoteIssueOnMainOutcome = DemoteIssueOnMainResult | DemoteIssueOnMainError;
+
+/**
+ * Demote an issue from stage:'specified' back to stage:'idea' so a defective
+ * spec can be re-grilled through specifyIssueOnMain instead of hand-editing
+ * JSON or abandon+refile.
+ *
+ * Guards (in order):
+ *   0. Up-to-date (detached-head, missing-main, diverged).
+ *   1. Target id exists -- not-found on failure (never a silent ok).
+ *   2. Stage transition guard: only stage:'specified' -> stage:'idea' is allowed.
+ *      - stage:'idea'    -> already-idea (nothing to do)
+ *      - stage:'planned' -> is-planned (a PRD is in flight; demoting would strand it)
+ *      - stage:'shipped' -> is-shipped
+ *
+ * Mutation flips only entry.stage to 'idea'; the existing (stale) spec, wsjf,
+ * blockedBy, and all other fields are preserved unchanged so they remain
+ * available as reference for the re-grill.
+ *
+ * Commit message: `chore(cam): demote <id>`.
+ */
+export function demoteIssueOnMain(options: DemoteIssueOnMainOptions): DemoteIssueOnMainOutcome {
+	const { cwd, id, spawnFn } = options;
+
+	const guard = checkMainUpToDate(cwd, spawnFn);
+	if (!guard.ok) return guard;
+	const { branchWasMain, localMainSha } = guard;
+
+	const allIssues = readBacklogFromMain(cwd, toBacklogSpawn(spawnFn));
+
+	const entryIndex = allIssues.findIndex((e: IssueEntry) => e.id === id);
+	if (entryIndex === -1) return { ok: false, reason: 'not-found' };
+	const entry = allIssues[entryIndex];
+	if (entry === undefined) return { ok: false, reason: 'not-found' };
+
+	if (entry.stage === 'idea') return { ok: false, reason: 'already-idea' };
+	if (entry.stage === 'planned') return { ok: false, reason: 'is-planned' };
+	if (entry.stage === 'shipped') return { ok: false, reason: 'is-shipped' };
+
+	const mutated: IssueEntry = { ...entry, stage: 'idea' };
+	const serialized = JSON.stringify(mutated, null, 2) + '\n';
+	const filePath = issueFilePath(id);
+	const files: FileWrite[] = [{ path: filePath, content: serialized }];
+
+	const commitMsg = `chore(cam): demote ${id}`;
+	const sha = commitTreeToMain(cwd, files, commitMsg, localMainSha, spawnFn, 'cam-specify-');
+
+	pushMainBestEffort(cwd, spawnFn);
+	return { ok: true, id, committedTo: 'main', sha, branchWasMain };
+}
+
 /**
  * Merge a source issue into a target: set source status:'abandoned', record
  * the merge target in source.description, and optionally fold source.blockedBy

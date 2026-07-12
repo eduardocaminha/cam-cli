@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.139.0] - 2026-07-12
+
+### Added
+
+- US-002 - Wire `cam issue demote <id>` CLI surface (parse + dispatch + help)
+- US-001 - Add demoteIssueOnMain core writer + default wiring
+
 ## [0.138.0] - 2026-07-12
 
 ### Added

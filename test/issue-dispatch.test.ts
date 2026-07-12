@@ -45,14 +45,26 @@
 //   (n) dispatchIssue's list branch is CAM_ISSUE_RESULT-free by design
 //       (US-002, CAM-212, regression lock): unlike close/abandon/file-local,
 //       list never writes a CAM_ISSUE_RESULT line on any code path.
+//   (o) parseIssueArgs recognizes `demote <id>` as { mode: 'demote', id },
+//       evaluated BEFORE the free-text fallthrough (US-002, CAM-206/CAM-210
+//       sibling). A missing id is a parse error, never a silent text-mode
+//       fallthrough.
+//   (p) dispatchIssue routes mode 'demote' to demoteIssueOnMainFn, prints
+//       the human printHint line plus the machine CAM_ISSUE_RESULT line,
+//       maps ok:true to exit 0 and any !ok reason (already-idea / is-planned /
+//       is-shipped / not-found) to exit 1 with CAM_ISSUE_RESULT=ERROR, and
+//       NEVER touches runIssueFn or fileLocalFn (no thin-proxy).
+//   (q) the central --help/-h short-circuit (CAM-211) still fires for
+//       `cam issue demote --help` before parseIssueArgs/dispatchIssue ever
+//       run, so it prints ISSUE_HELP and exits 0 with no demote side effect.
 //
 // All external I/O is faked via injectable deps (fileLocalFn, runIssueFn,
-// issueListFn, closeIssueOnMainFn, abandonIssueOnMainFn,
+// issueListFn, closeIssueOnMainFn, abandonIssueOnMainFn, demoteIssueOnMainFn,
 // createLocalIssueOnMainFn, readStdinFn). No real stdin, git, or tmux is
 // exercised.
 
 import { describe, expect, test } from 'bun:test';
-import { parseIssueArgs, dispatchIssue } from '../index.ts';
+import { parseIssueArgs, dispatchIssue, main } from '../index.ts';
 
 // Capture process.stdout.write calls without touching the real stream.
 async function withCapturedStdoutAsync(fn: () => Promise<void>): Promise<string[]> {
@@ -726,6 +738,177 @@ describe('dispatchIssue: abandon routing isolation', () => {
 			expect(code).toBe(1);
 		});
 		expect(lines.some((l) => l.includes('CAM_ISSUE_RESULT=ERROR') && l.includes('not-found'))).toBe(true);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// parseIssueArgs: `demote <id>` subcommand (US-002, CAM-206/CAM-210 sibling)
+// ---------------------------------------------------------------------------
+
+describe('parseIssueArgs: demote subcommand', () => {
+	test('cam issue demote CAM-42 returns { mode: demote, id: CAM-42, help: false }', () => {
+		const result = parseIssueArgs(['demote', 'CAM-42']);
+		expect(result?.mode).toBe('demote');
+		expect(result?.help).toBe(false);
+		if (result?.mode === 'demote') {
+			expect(result.id).toBe('CAM-42');
+		}
+	});
+
+	test('a bare "demote" positional is never misread as free-text issue creation', () => {
+		const result = withSilentStderr(() => parseIssueArgs(['demote']));
+		expect(result?.mode).not.toBe('text');
+	});
+
+	test('cam issue demote with no id returns null (parse error, never text-mode fallthrough)', () => {
+		const result = withSilentStderr(() => parseIssueArgs(['demote']));
+		expect(result).toBeNull();
+	});
+
+	test('cam issue demote CAM-42 extra returns null (unexpected argument)', () => {
+		const result = withSilentStderr(() => parseIssueArgs(['demote', 'CAM-42', 'extra']));
+		expect(result).toBeNull();
+	});
+
+	test('free text starting with "demote" as a full sentence is still mode:text (no regression)', () => {
+		// A single-token `args[0] === 'demote'` check only fires on the exact
+		// positional keyword; a free-text arg that merely CONTAINS "demote" is
+		// unaffected because it is still args[0] verbatim vs the literal 'demote'.
+		const result = parseIssueArgs(['demote the flaky ranking heuristic']);
+		// args[0] here is the whole string 'demote the flaky ranking heuristic',
+		// not the bare keyword 'demote', so this still falls through to text mode.
+		expect(result?.mode).toBe('text');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// dispatchIssue: `demote <id>` branch (US-002, CAM-206/CAM-210 sibling)
+// ---------------------------------------------------------------------------
+
+describe('dispatchIssue: demote routing isolation', () => {
+	test('demote calls demoteIssueOnMainFn and NOT runIssueFn/fileLocalFn', async () => {
+		let demoteCalled = false;
+		let runIssueCalled = false;
+		let fileLocalCalled = false;
+
+		const code = await dispatchIssue(
+			{ mode: 'demote', id: 'CAM-42', help: false },
+			{
+				demoteIssueOnMainFn: (id) => {
+					demoteCalled = true;
+					return { ok: true, id, committedTo: 'main', sha: 'deadbeef', branchWasMain: true };
+				},
+				runIssueFn: async () => {
+					runIssueCalled = true;
+					return 99;
+				},
+				fileLocalFn: async () => {
+					fileLocalCalled = true;
+					return 99;
+				},
+			},
+		);
+
+		expect(demoteCalled).toBe(true);
+		expect(runIssueCalled).toBe(false);
+		expect(fileLocalCalled).toBe(false);
+		expect(code).toBe(0);
+	});
+
+	test('demote passes the parsed id through to demoteIssueOnMainFn', async () => {
+		let receivedId: string | undefined;
+		await dispatchIssue(
+			{ mode: 'demote', id: 'CAM-99', help: false },
+			{
+				demoteIssueOnMainFn: (id) => {
+					receivedId = id;
+					return { ok: true, id, committedTo: 'main', sha: 'sha1', branchWasMain: true };
+				},
+			},
+		);
+		expect(receivedId).toBe('CAM-99');
+	});
+
+	test('demote on success prints CAM_ISSUE_RESULT=<id> and exits 0', async () => {
+		const lines = await withCapturedStdoutAsync(async () => {
+			const code = await dispatchIssue(
+				{ mode: 'demote', id: 'CAM-42', help: false },
+				{
+					demoteIssueOnMainFn: (id) => ({
+						ok: true,
+						id,
+						committedTo: 'main',
+						sha: 'deadbeef',
+						branchWasMain: true,
+					}),
+				},
+			);
+			expect(code).toBe(0);
+		});
+		expect(lines.some((l) => l.includes('CAM_ISSUE_RESULT=CAM-42'))).toBe(true);
+	});
+
+	test('demote on an already-idea issue prints CAM_ISSUE_RESULT=ERROR with reason and exits non-zero', async () => {
+		const lines = await withCapturedStdoutAsync(async () => {
+			const code = await withSilentStderrAsync(() =>
+				dispatchIssue(
+					{ mode: 'demote', id: 'CAM-42', help: false },
+					{
+						demoteIssueOnMainFn: () => ({ ok: false, reason: 'already-idea' }),
+					},
+				),
+			);
+			expect(code).toBe(1);
+		});
+		expect(lines.some((l) => l.includes('CAM_ISSUE_RESULT=ERROR') && l.includes('already-idea'))).toBe(
+			true,
+		);
+	});
+
+	test('demote on a planned issue prints CAM_ISSUE_RESULT=ERROR with reason and exits non-zero', async () => {
+		const lines = await withCapturedStdoutAsync(async () => {
+			const code = await withSilentStderrAsync(() =>
+				dispatchIssue(
+					{ mode: 'demote', id: 'CAM-42', help: false },
+					{
+						demoteIssueOnMainFn: () => ({ ok: false, reason: 'is-planned' }),
+					},
+				),
+			);
+			expect(code).toBe(1);
+		});
+		expect(lines.some((l) => l.includes('CAM_ISSUE_RESULT=ERROR') && l.includes('is-planned'))).toBe(true);
+	});
+
+	test('demote on a not-found id prints CAM_ISSUE_RESULT=ERROR and exits non-zero', async () => {
+		const lines = await withCapturedStdoutAsync(async () => {
+			const code = await withSilentStderrAsync(() =>
+				dispatchIssue(
+					{ mode: 'demote', id: 'CAM-999', help: false },
+					{
+						demoteIssueOnMainFn: () => ({ ok: false, reason: 'not-found' }),
+					},
+				),
+			);
+			expect(code).toBe(1);
+		});
+		expect(lines.some((l) => l.includes('CAM_ISSUE_RESULT=ERROR') && l.includes('not-found'))).toBe(true);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// central --help/-h short-circuit still fires for `cam issue demote --help`
+// (CAM-211, regression lock for the new demote subcommand)
+// ---------------------------------------------------------------------------
+
+describe('cam issue demote --help (CAM-211 short-circuit)', () => {
+	test('exits 0, prints ISSUE_HELP, and never reaches parseIssueArgs/dispatchIssue demote logic', async () => {
+		const lines = await withCapturedStdoutAsync(async () => {
+			const code = await main(['bun', 'index.ts', 'issue', 'demote', '--help']);
+			expect(code).toBe(0);
+		});
+		expect(lines.some((l) => l.includes('cam issue'))).toBe(true);
+		expect(lines.some((l) => l.includes('CAM_ISSUE_RESULT'))).toBe(false);
 	});
 });
 
