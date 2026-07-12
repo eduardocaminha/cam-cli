@@ -1,0 +1,68 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-286",
+  "description": "Make project.toml [models] the single documented model authority per role: strip inert frontmatter model: lines, reconcile DEFAULTS + MODEL_OPTIONS, and give ship one documented source.",
+  "issueNumber": 286,
+  "type": "chore",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Reconcile DEFAULTS map and config-picker MODEL_OPTIONS to the effective model ids",
+      "description": "As a cam maintainer, I need the two hardcoded static model-id lists (DEFAULTS and MODEL_OPTIONS) to agree with the actually-used models so that no fallback or picker entry silently lies about the effective model, closing the implementer drift (project.toml uses claude-sonnet-5 while DEFAULTS+MODEL_OPTIONS say claude-sonnet-4-6 and omit claude-sonnet-5 entirely).",
+      "acceptanceCriteria": [
+        "DEFAULTS.implementer (src/config/models.ts:50-58) equals the effective implementer id (claude-sonnet-5), so the fallback no longer disagrees with project.toml. [oracle: grep -q \"implementer: 'claude-sonnet-5'\" src/config/models.ts]",
+        "The DEFAULTS docstring (src/config/models.ts:30-37) is corrected so it no longer states the implementer default is claude-sonnet-4-6. [oracle: reviewer-judgment]",
+        "MODEL_OPTIONS (src/ui/ConfigScreen.tsx:62-66) contains an entry for claude-sonnet-5 so the effective implementer model is selectable in the picker. [oracle: grep -q 'claude-sonnet-5' src/ui/ConfigScreen.tsx]",
+        "A test asserts every non-backend value in DEFAULTS is present as a selectable value in MODEL_OPTIONS, and that MODEL_OPTIONS omits no model id used by DEFAULTS (guarding future drift). This requires MODEL_OPTIONS to be importable (export it or centralize it). [oracle: bun test test/config/models.test.ts]",
+        "A test asserts that for each Phase, readPhaseModel(phase) against the repo project.toml equals the configured value, and that value is a member of MODEL_OPTIONS (or DEFAULTS[phase] when the key is omitted). [oracle: bun test]",
+        "The ConfigScreen still renders correctly with the reconciled MODEL_OPTIONS list (model select step shows the new option, ✓/✗ glyph unaffected). [oracle: ink-testing-library render assertion in test/]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/config/models.ts (DEFAULTS + docstring), src/ui/ConfigScreen.tsx (MODEL_OPTIONS), test/config/models.test.ts, test/commands/config-show.test.ts. project.toml effective values today: orchestrator/planner/auditor/reviewer=claude-opus-4-8, implementer=claude-sonnet-5, ship=claude-sonnet-4-6. MODEL_OPTIONS is currently a non-exported const in ConfigScreen.tsx; the consistency test needs it importable, so export MODEL_OPTIONS (or hoist it to a shared const in src/config/models.ts) rather than duplicating the list in the test. Do NOT add a fifth hardcoded site (gotcha: issue lists 4 sites; reduce/reconcile, never add). Ink rule: success/failure is the ✓/✗ glyph, never divider color. noUncheckedIndexedAccess: guard array/regex access."
+    },
+    {
+      "id": "US-002",
+      "title": "Strip the inert frontmatter model: lines from the 5 pane/root agent files (dual-copy)",
+      "description": "As a cam maintainer, I need the misleading `model:` frontmatter lines removed from the orchestrator/planner/auditor/reviewer/implementer agent files so that editing them no longer appears to change the model, since runtime precedence is --model (from readPhaseModel/project.toml) over frontmatter for all five roles.",
+      "acceptanceCriteria": [
+        "The live `model:` YAML key is gone (removed, or replaced by a clearly-non-authoritative comment pointing to project.toml [models]) in all five .claude/agents/subagent-{orchestrator,planner,auditor,reviewer,implementer}.md files. [oracle: for f in orchestrator planner auditor reviewer implementer; do ! grep -q '^model:' .claude/agents/subagent-$f.md || exit 1; done]",
+        "The same stripping is applied to the templates/ tree for all five templates/agents/subagent-*.md files (dual-copy is per-file: both trees edited independently). [oracle: for f in orchestrator planner auditor reviewer implementer; do ! grep -q '^model:' templates/agents/subagent-$f.md || exit 1; done]",
+        "The agent YAML frontmatter remains otherwise valid (name/description/tools untouched, delimiters intact). [oracle: reviewer-judgment]",
+        "Vendor drift check passes (bun run embed-vendor:check); re-embed with bun run embed-vendor if it flags drift. [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files (10 total, one trivial line-edit each): .claude/agents/subagent-{orchestrator,planner,auditor,reviewer,implementer}.md and templates/agents/subagent-{same}.md. This is a single mechanical concern (strip inert model: line) despite the file count, driven by the per-file dual-copy invariant. Do NOT touch cam-ship.md: ship keeps its frontmatter as its documented source (handled in US-003). Runtime precedence flag-over-frontmatter is documented at src/commands/run.ts:232-234 and src/supervisor/worker-argv.ts:49-51; do NOT try to make frontmatter authoritative. After editing templates/, embed-vendor:check will flag drift until bun run embed-vendor is run."
+    },
+    {
+      "id": "US-003",
+      "title": "Give ship a single documented model source and stop the dead planner/auditor frontmatter rewrite",
+      "description": "As a cam maintainer, I need cam config to stop rewriting planner/auditor agent frontmatter (dead effort, overridden by --model and now stripped) and to keep cam-ship.md frontmatter as the SOLE documented ship model source, so that no role has a live source and a dead duplicate at the same time.",
+      "acceptanceCriteria": [
+        "FRONTMATTER_TARGET_PHASE_PATHS (src/templates/frontmatter.ts:22-26) no longer includes planner or auditor; it retains only ship (cam-ship.md), the one role whose model is not passed via --model. [oracle: grep -q 'ship' src/templates/frontmatter.ts && ! grep -Eq 'planner|auditor' src/templates/frontmatter.ts]",
+        "The frontmatter.ts module comment is updated to explain that ship is the only frontmatter-sourced role and the pane/root roles take --model from project.toml. [oracle: reviewer-judgment]",
+        "A test asserts mergeConfigChoices rewrites ONLY the ship frontmatter (cam-ship.md) and leaves the planner/auditor agent files unmodified. [oracle: bun test test/commands/config-persist.test.ts]",
+        "cam-ship.md frontmatter remains present and is documented (in-file comment or the module) as the single source for the ship model; ship-runner is deterministic (zero LLM) so no --model path is added for ship. [oracle: grep -q '^model:' templates/commands/cam-ship.md]",
+        "Existing config-persist / config tests are updated to match the reduced rewrite target and still pass. [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": "US-002",
+      "notes": "Files: src/templates/frontmatter.ts (FRONTMATTER_TARGET_PHASE_PATHS + module comment), src/commands/config.ts:148-159 (rewrite loop iterates FRONTMATTER_TARGET_PHASE_PATHS; reducing the map is enough, but re-check the loop guards), test/commands/config-persist.test.ts (lines ~23-24 list planner/auditor; update expectations). Requires US-002 because once planner/auditor frontmatter is stripped, their rewrite is already a no-op; this story removes them from the target map so the config code matches reality. Confirmed: ship-runner.ts spawns zero LLM (comment src/supervisor/ship-runner.ts:36), so ship cannot take --model; cam-ship.md frontmatter is the correct single documented source. Do NOT edit cam-ship.md content here beyond an optional documenting comment (it is dual-copy .claude/ + templates/; touching it triggers embed-vendor:check)."
+    }
+  ]
+}
