@@ -25,7 +25,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Single file: index.ts. Place `const COMMANDS = [...] as const` + `type Command` near HELP_REGISTRY (~index.ts:2372). Retype HELP_REGISTRY (~2372) to Record<Command,string>. In main() (~2417): after the help/version short-circuits, narrow `command` (argv[2]) to Command and handle the unknown-command branch (currently the switch `default:` at ~2783) BEFORE the switch; then add exhaustive `default: const _never: never = command;` inside the switch. Gotchas from the issue spec: command names are TRIPLICATED today (switch case labels, HELP_REGISTRY keys, and pre-switch `command === 'claude'` check at ~isHelpRequested/2411) — route all through COMMANDS, do not leave a 4th copy. Internal/hidden commands MUST stay in COMMANDS + HELP_REGISTRY (comment at ~2364-2371). KEYBAR_COMMANDS in src/ui/Dashboard.tsx is UNRELATED dashboard-keybar UI, do not conflate. Keep the existing *_HELP string constants as registry values; only the key type + source-of-truth array change. Consider exporting COMMANDS so test/help-registry.test.ts can assert parity. noUncheckedIndexedAccess: argv[2] is `string | undefined`, guard before narrowing (existing `if (!command ...)` already does)."
     }
