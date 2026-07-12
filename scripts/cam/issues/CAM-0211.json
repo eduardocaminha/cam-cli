@@ -1,9 +1,40 @@
 {
   "id": "CAM-211",
   "title": "cam sidecar --help starts the daemon (no --help guard); undocumented deterministic flags across commands",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-07T14:24:58.134Z",
-  "description": "Safety bug hit live 2026-07-07: cam sidecar --help does NOT print usage, it STARTS the long-lived sidecar daemon (the arg is ignored, the daemon boots) — a stray sidecar spawned and had to be killed by hand. cam sidecar is also absent from cam --help (internal command, undiscoverable). Separately, real deterministic flags are undocumented in their command --help: cam issue --file-local (the commit-to-main filer used by the orchestrator), the cam journal append stdin-JSON schema, and the cam issue close/abandon that CAM-210 will add. Fix: (1) add a --help/-h short-circuit guard to EVERY command incl. internal ones (print usage, exit 0, NEVER start a daemon or mutate on --help); (2) document the deterministic stdin-JSON / --file-local flags in each command --help; (3) list internal commands (sidecar) in cam --help or mark them explicitly internal. Concrete Layer-1 instance of CAM-197 (discoverable + safe deterministic CLI). Origin: operator noticed a --help that did not work + the stray-sidecar incident during CAM-201, 2026-07-07."
+  "description": "Safety bug hit live 2026-07-07: cam sidecar --help does NOT print usage, it STARTS the long-lived sidecar daemon (the arg is ignored, the daemon boots) — a stray sidecar spawned and had to be killed by hand. cam sidecar is also absent from cam --help (internal command, undiscoverable). Separately, real deterministic flags are undocumented in their command --help: cam issue --file-local (the commit-to-main filer used by the orchestrator), the cam journal append stdin-JSON schema, and the cam issue close/abandon that CAM-210 will add. Fix: (1) add a --help/-h short-circuit guard to EVERY command incl. internal ones (print usage, exit 0, NEVER start a daemon or mutate on --help); (2) document the deterministic stdin-JSON / --file-local flags in each command --help; (3) list internal commands (sidecar) in cam --help or mark them explicitly internal. Concrete Layer-1 instance of CAM-197 (discoverable + safe deterministic CLI). Origin: operator noticed a --help that did not work + the stray-sidecar incident during CAM-201, 2026-07-07.",
+  "spec": {
+    "acceptanceCriteria": [
+      "A central --help/-h short-circuit at the dispatch/arg-parse layer prints usage and exits 0 BEFORE any command side-effect runs, covering every registered command including internal ones.",
+      "cam sidecar --help prints usage and exits 0 WITHOUT starting the sidecar daemon.",
+      "--help/-h never starts a daemon and never mutates state, in any command.",
+      "A table-driven test iterates every registered command and asserts --help exits 0 with no side-effect (no daemon spawn, no filesystem/state mutation).",
+      "cam --help lists internal commands (sidecar) under an explicit Internal section, marked as internal rather than user-facing entry points.",
+      "Each relevant command --help documents its deterministic flags: cam issue --file-local, the cam journal append stdin-JSON schema, and cam issue close/abandon.",
+      "bun run check:all passes and bun test is green."
+    ],
+    "scope": "IN: the central --help/-h short-circuit guard at the dispatch layer; the Internal section in cam --help; per-command usage text documenting the deterministic flags (issue --file-local, journal append stdin JSON, issue close/abandon); a table-driven help-safety test across all registered commands. OUT: the broader CAM-197 epic (this is one concrete Layer-1 slice); any behavior change to the commands themselves beyond the help short-circuit; adding new deterministic flags (they already exist, this only documents them).",
+    "gotchas": [
+      "The live bug: cam sidecar ignores the unknown --help arg and boots the long-lived daemon (a stray sidecar had to be killed by hand). The guard MUST intercept before the command body runs, not inside each command body.",
+      "Internal commands (sidecar) are currently absent from cam --help and thus undiscoverable; the fix adds them under an Internal section without implying they are user-facing entry points.",
+      "The deterministic flags being documented (--file-local, journal append stdin JSON, close/abandon) already exist as behavior; this criterion documents them in --help, it does not add them.",
+      "A per-command guard is a band-aid that re-opens the footgun for every new command; the central dispatch-layer guard is the root-cause fix and is what the table-driven test protects."
+    ],
+    "domainTerms": [
+      "--help short-circuit guard",
+      "internal command",
+      "deterministic flag",
+      "file-local filer"
+    ]
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 3,
+    "riskReduction": 6,
+    "jobSize": 3
+  },
+  "type": "fix"
 }
