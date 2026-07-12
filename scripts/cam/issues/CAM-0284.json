@@ -1,9 +1,36 @@
 {
   "id": "CAM-284",
   "title": "Add updatedAt (last-activity) timestamp to the issue model: schema field + stamp on every mutation writer + backfill + expose in list --json",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
-  "blockedBy": [],
+  "blockedBy": [
+    "CAM-281"
+  ],
   "createdAt": "2026-07-12T13:08:00.241Z",
-  "description": "Split from CAM-281 (which only exposes the already-present createdAt). updatedAt does NOT exist anywhere today (not in scripts/cam/issues.schema.json, not in IssueEntry at src/issues/types.ts, no writer stamps it). Adding it is cross-cutting: (1) new required/optional schema field + IssueEntry field; (2) stamp updatedAt on EVERY issue-mutation path or the field lies: writeIssueFile/create (src/issues/alloc.ts), and the on-main writers specifyIssueOnMain/abandonIssueOnMain/mergeIssueOnMain/closeIssueOnMain/demoteIssueOnMain (src/commands/issue-specify.ts), plus any rank/reprioritize writer: the implementer must grep every issue-write site and cover all of them; (3) backfill decision for the 283 existing issues (default: set updatedAt = createdAt, meaning 'unmodified since creation'); (4) expose updatedAt in cam issue list --json alongside createdAt (BacklogJsonRow/toJsonRow). Distinct blast-radius from CAM-281 (multi-writer + schema + backfill vs pure additive output). Refine via /cam-spec."
+  "description": "Split from CAM-281 (which only exposes the already-present createdAt). updatedAt does NOT exist anywhere today (not in scripts/cam/issues.schema.json, not in IssueEntry at src/issues/types.ts, no writer stamps it). Adding it is cross-cutting: (1) new required/optional schema field + IssueEntry field; (2) stamp updatedAt on EVERY issue-mutation path or the field lies: writeIssueFile/create (src/issues/alloc.ts), and the on-main writers specifyIssueOnMain/abandonIssueOnMain/mergeIssueOnMain/closeIssueOnMain/demoteIssueOnMain (src/commands/issue-specify.ts), plus any rank/reprioritize writer: the implementer must grep every issue-write site and cover all of them; (3) backfill decision for the 283 existing issues (default: set updatedAt = createdAt, meaning 'unmodified since creation'); (4) expose updatedAt in cam issue list --json alongside createdAt (BacklogJsonRow/toJsonRow). Distinct blast-radius from CAM-281 (multi-writer + schema + backfill vs pure additive output). Refine via /cam-spec.",
+  "spec": {
+    "scope": "Introduce a last-activity updatedAt timestamp on the issue model: new schema field + IssueEntry field, stamped on EVERY issue-mutation writer, backfilled to createdAt for the 283 existing issues, and exposed in cam issue list --json alongside createdAt. Cross-cutting across all mutation paths; the field is only meaningful if every writer bumps it.",
+    "acceptanceCriteria": [
+      "updatedAt is added to scripts/cam/issues.schema.json (type string, format date-time) and to IssueEntry (src/issues/types.ts), as a required field kept uniform via the backfill below.",
+      "Every issue-mutation writer stamps updatedAt to the mutation time: creation (writeIssueFile, src/issues/alloc.ts), and the on-main writers specifyIssueOnMain / abandonIssueOnMain / mergeIssueOnMain / closeIssueOnMain / demoteIssueOnMain (src/commands/issue-specify.ts), plus any rank/reprioritize writer. The implementer MUST grep every issue-write site and cover all of them; a mutation path that does not bump updatedAt is a defect.",
+      "The 283 existing issue files are backfilled with updatedAt = createdAt (semantics: unmodified since creation) via a deterministic on-main migration mirroring scripts/cam/migrate-issues-schema.ts (which already copies createdAt at :99).",
+      "updatedAt is exposed in cam issue list --json (extend BacklogJsonRow src/issues/list.ts:158 and toJsonRow :188) alongside createdAt; the exact-shape tests (test/issues/list.test.ts, test/issue-list.test.ts) are updated.",
+      "Tests assert the invariant: a freshly-created issue has updatedAt == createdAt, and a mutation (e.g. demote or specify) advances updatedAt beyond the original createdAt.",
+      "bun run typecheck, bun test, bun run check:all all green."
+    ],
+    "gotchas": [
+      "The field only has meaning if EVERY mutation path stamps it. Do NOT trust the writer list above as exhaustive: grep all issue-write sites (writeIssueFile + every *IssueOnMain writer + any rank/reprioritize/topo-sort writer) and cover each.",
+      "Use the injected clock()/createdAt-style timestamp source (as creation does at src/commands/issue-file.ts:306 and src/issues/alloc.ts:180), not an inline new Date()/Date.now(), so the stamp is deterministic and testable.",
+      "Backfill is a one-time on-main migration; mirror scripts/cam/migrate-issues-schema.ts:99. Do not stamp updatedAt=now on backfill (that would falsely mark all 283 as just-modified); use createdAt.",
+      "This is blockedBy CAM-281: both add a field to the same BacklogJsonRow/toJsonRow (src/issues/list.ts). Land CAM-281 (createdAt) first, then add updatedAt on top to avoid a same-region rebase conflict and duplicated test churn."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 1,
+    "riskReduction": 1,
+    "jobSize": 3
+  },
+  "type": "feat"
 }
