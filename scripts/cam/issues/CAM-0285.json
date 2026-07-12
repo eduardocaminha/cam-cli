@@ -1,9 +1,39 @@
 {
   "id": "CAM-285",
   "title": "Route reviewer SUGGESTIONs to an append-only suggestions.jsonl holding pen (+ cam suggestions list/promote/dismiss) instead of auto-filing idea-stage issues",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-12T13:13:01.751Z",
-  "description": "The CAM-189 terminal-verdict hook (src/supervisor/loop.ts) auto-files every reviewer SUGGESTION as a stage:idea issue after a CLEAN/terminal review. This inflates the plannable-looking backlog with cosmetic follow-ups, each of which then demands a /cam-spec grill (277/278/279/280 this session were all this). Change: redirect the hook to APPEND the SUGGESTION to scripts/cam/suggestions.jsonl (on-main commit, mirroring patterns.md/journal.md writers), deduped on the existing suggestion-fingerprint, instead of filing an issue. One JSONL line per suggestion (fingerprint, title, body, sourceBranch, reviewRound, sourceIssue, filedAt). Add a minimal cam suggestions CLI: list (render the pen), promote <fingerprint> (file a real issue via the existing issue writer, remove from the pen), dismiss <fingerprint> (drop it). All reviewer SUGGESTIONs go to the pen (at terminal-CLEAN only SUGGESTIONs exist); real defects discovered elsewhere still become issues directly. Format decided: JSONL (not markdown), for dedup + promote tooling. Refine remaining details via /cam-spec."
+  "description": "The CAM-189 terminal-verdict hook (src/supervisor/loop.ts) auto-files every reviewer SUGGESTION as a stage:idea issue after a CLEAN/terminal review. This inflates the plannable-looking backlog with cosmetic follow-ups, each of which then demands a /cam-spec grill (277/278/279/280 this session were all this). Change: redirect the hook to APPEND the SUGGESTION to scripts/cam/suggestions.jsonl (on-main commit, mirroring patterns.md/journal.md writers), deduped on the existing suggestion-fingerprint, instead of filing an issue. One JSONL line per suggestion (fingerprint, title, body, sourceBranch, reviewRound, sourceIssue, filedAt). Add a minimal cam suggestions CLI: list (render the pen), promote <fingerprint> (file a real issue via the existing issue writer, remove from the pen), dismiss <fingerprint> (drop it). All reviewer SUGGESTIONs go to the pen (at terminal-CLEAN only SUGGESTIONs exist); real defects discovered elsewhere still become issues directly. Format decided: JSONL (not markdown), for dedup + promote tooling. Refine remaining details via /cam-spec.",
+  "spec": {
+    "scope": "Redirect the CAM-189 terminal-verdict hook to append reviewer SUGGESTIONs to an on-main append-only scripts/cam/suggestions.jsonl holding pen (deduped by the existing suggestion-fingerprint) instead of auto-filing them as stage:idea issues, and add a minimal `cam suggestions` CLI (list/promote/dismiss). Seed the file in cam init and update the orchestrator doc. The hook trigger is unchanged (only the sink changes); real defects discovered elsewhere still become issues directly.",
+    "acceptanceCriteria": [
+      "The terminal-verdict hook (src/supervisor/loop.ts:2130-2178) no longer files SUGGESTIONs as issues: makeProductionFileSuggestionsFn (src/commands/sidecar.ts:2621-2647) instead appends each surviving SUGGESTION as one JSONL line to scripts/cam/suggestions.jsonl on main via commitTreeToMain, mirroring appendJournalEntryOnMain (src/commands/journal.ts:525-594). Each line carries: fingerprint, title, body/text, sourceBranch, reviewRound, sourceIssue, filedAt.",
+      "Dedup: a SUGGESTION whose fingerprint (fingerprintFinding, src/supervisor/suggestion-followups.ts:35) already appears in suggestions.jsonl is not re-appended. Transitional: dedup ALSO unions fingerprints found in existing OPEN backlog issue descriptions, so a suggestion already living as an issue (277-280 etc.) is not re-penned.",
+      "cam suggestions list renders the pen (read from main via git show main:scripts/cam/suggestions.jsonl). cam suggestions promote <fingerprint> files a real issue via createLocalIssueOnMain (src/commands/issue-file.ts:271), preserving derivedFrom and the suggestion-fingerprint line, then removes that line from the pen. cam suggestions dismiss <fingerprint> removes the line without filing.",
+      "The CLI follows the existing command-module pattern: a parseSuggestionsArgs discriminated-union parser + dispatchSuggestions router with injectable deps, an on-main module src/commands/suggestions.ts (using checkMainUpToDate/commitTreeToMain/pushMainBestEffort from src/git/on-main.ts), a SUGGESTIONS_HELP constant, and a `case 'suggestions':` in the index.ts:2215 switch alongside journal/patterns/triage.",
+      "cam init seeds an empty scripts/cam/suggestions.jsonl committed on main (the on-main append writers do NOT bootstrap a missing file), and this repo is bootstrapped with the file present on main. suggestions.jsonl is committed on main (like journal.md/patterns.md) and is NOT gitignored.",
+      "Doc maintenance: BOTH templates/agents/subagent-orchestrator.md and .claude/agents/subagent-orchestrator.md (the boot-step-5 note about the terminal-verdict hook auto-filing SUGGESTIONs as idea issues) are updated to describe the suggestions pen + cam suggestions triage; re-embed templates if embed-vendor:check flags drift.",
+      "bun run typecheck, bun test, bun run check:all all green."
+    ],
+    "gotchas": [
+      "On-main append writers (journal/patterns) do NOT bootstrap a missing file (verified); suggestions.jsonl MUST be seeded by cam init and pre-exist on main or the first append fails. Add the seed AND bootstrap this repo's main with the file.",
+      "Preserve the fingerprint on promote: the filed issue must keep the `suggestion-fingerprint:` line (buildFollowUpIssue, src/supervisor/suggestion-followups.ts:109-116) so it still dedups against future runs.",
+      "Transitional dedup MUST union JSONL fingerprints AND open-backlog fingerprints; otherwise the already-filed SUGGESTION issues (277-280) get re-penned as duplicates on the next terminal review.",
+      "The hook fires on status complete AND awaiting-operator, verdict in TERMINAL_VERDICTS = {CLEAN, MAX_ROUNDS_DEBT} (src/supervisor/decide.ts:81), deduped by fingerprint only (no fire-once marker). Keep that trigger; change only the sink.",
+      "suggestions.jsonl is on-main-committed, NOT ephemeral like review-report.json (which is gitignored). Do not gitignore suggestions.jsonl.",
+      "Size risk: hook redirect + JSONL on-main writer + 3-subcommand CLI + init seed + doc update is a large PRD that may approach the review-convergence wall (>=8-9 stories, per prd-size lesson). Slice tightly, but keep the mechanism coherent in one PRD: a pen with no CLI rots, a redirect with no pen loses suggestions."
+    ],
+    "domainTerms": [
+      "suggestions pen"
+    ]
+  },
+  "wsjf": {
+    "value": 4,
+    "timeCriticality": 2,
+    "riskReduction": 2,
+    "jobSize": 5
+  },
+  "type": "feat"
 }
