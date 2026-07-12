@@ -561,3 +561,15 @@ Each entry follows this template:
 - **Decisions**: Merit-ranked the 2 plannable specified issues and dispatched CAM-277 top: operator-facing config-key doc accuracy outranks CAM-280 (internal vestigial-field dead-code cleanup); merit not effort. Spec-only participation held: no plan_approval=operator; trusted the deterministic auditor+reviewer CLEAN; auto-ship (CAM-191) fired on its own. Used cam plan 277 (bare number, real renderStateFile writer). Zero orchestrator intervention this cycle.
 - **Blockers encountered**: None. Review round 1 CLEAN with zero findings and zero SUGGESTIONs, so the old sidecar filed nothing new (idea count steady at 34). PR #226 merged ci-gated; post-merge clean, polled via gh pr view only (CAM-228 held), tag v0.151.0.
 - **Follow-ups**: Rebuild + clean cam run restart to >= v0.144.0 to activate the suggestions pen (operator ceremony), then triage accumulated auto-filed SUGGESTIONs (CAM-288..298). Remaining plannable specified: CAM-280 (vestigial writeFile cleanup) is the sole one left; dispatch next. After that the specified queue is empty and the 34 idea issues need spec/triage before they become plannable.
+
+## CAM-280 — CAM-280 — Drop vestigial writeFile? field from on-main issue-mutation writers
+
+- **Started**: 2026-07-12T22:45:00Z
+- **Closed**: 2026-07-12T23:05:00Z
+- **Branch**: cam/issue-280
+- **Issue**: CAM-280
+- **Outcome**: shipped
+- **Summary**: 1-story PRD (PR #227, v0.152.0, ci-gated). US-001 (type chore) dropped the vestigial writeFile? option field from all five on-main issue-mutation writer interfaces (incl DemoteIssueOnMainOptions) and removed three obsolete test injections. auditor APPROVE, review round 1 CLEAN, 4413 pass / 0 fail, check:all spine green. Zero orchestrator intervention.
+- **Decisions**: Dispatched CAM-280 as the sole plannable specified issue left (nothing to merit-rank against). Spec-only participation held: no plan_approval=operator; trusted the deterministic auditor+reviewer CLEAN; auto-ship (CAM-191) fired on its own. Used cam plan 280 (bare number, real renderStateFile writer, CAM-282 lesson). Closed after 1 PR per the one-PR-per-session invariant.
+- **Blockers encountered**: None. PR #227 landed BEHIND; merge-watch ran gh pr update-branch (1/2), merged ci-gated; post-merge clean, polled via gh pr view only (CAM-228 held), tag v0.152.0. Standing caveat unchanged: sidecar pid 32211 predates the v0.144.0 suggestions-pen redirect (old terminal-verdict hook); this cycle's CLEAN review carried 1 SUGGESTION auto-filed as CAM-299, idea count 34 -> 35.
+- **Follow-ups**: The specified queue is now EMPTY (specified 0, planned 0, plannable []) -- all 35 remaining are stage:idea and need /cam-spec or triage before they become plannable, so there is no auto-dispatch target next boot. Recommend to the operator: (1) rebuild + clean cam run restart to >= v0.144.0 to activate the suggestions pen and stop stage:idea pollution; (2) a /cam-spec pass to deep-spec a high-merit idea into stage:specified; (3) triage accumulated auto-filed SUGGESTIONs (CAM-288..299).
