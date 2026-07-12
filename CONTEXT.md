@@ -202,3 +202,18 @@ Mapping an issue number/id to its canonical record and branch name via the confi
 
 **prior-art signal**:
 An auditor observation that a PRD may duplicate or contradict already-shipped work. Sourced from git history (commits + merged PRs), backend-agnostic, and emitted as a non-blocking WARNING/SUGGESTION, never a critical BLOCK.
+
+**context backstop**:
+The orchestrator-side recycle trigger that fires when the session's token occupancy crosses a fraction (0.80) of the configured context window, forcing a handoff + respawn before a hard context overflow. Distinct from the cycle-close trigger, which fires when a PR/cycle is resolved.
+
+**orch_context_window**:
+A [loop] project.toml integer key giving the orchestrator's real usable context window in tokens. Default 200000 (the Claude Code flat-subscription reality); set to 1000000 only when running against API credit that unlocks the 1M window.
+
+**handoff-before-arm guard**:
+The invariant that the recycle marker is never armed (and SIGTERM never issued) unless a handoff file exists on disk. Shared by both recycle triggers; mirrors the cycle-close exit-3 guard in index.ts.
+
+**deterministic minimal handoff**:
+A machine-written handoff (schemaVersion 1, reason 'context-backstop') the watcher writes when the agent does not produce an authored handoff within 30s of the backstop signal. Carries only pointers to durable state (prd.json, branch, loop file, journal tail), enough for the fresh session to rehydrate.
+
+**authored handoff**:
+A handoff written by the orchestrator agent itself (rich narrative context), as opposed to the deterministic minimal handoff written by the watcher as a fallback.
