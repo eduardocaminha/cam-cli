@@ -1,7 +1,7 @@
 {
   "id": "CAM-280",
   "title": "DemoteIssueOnMainOptions keeps the vestigial `writeFile?` field (copied from th…",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-12T11:41:15.068Z",
