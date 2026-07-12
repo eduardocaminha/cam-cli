@@ -8,5 +8,6 @@
   "description": "AC1 prose says '25 current commands' but there are 26 (patterns.md correctly says 26). Spec-text typo only; the code enumerates all commands consistently.\n\nSource: cam/issue-278\nReview round: 1\nLocation: scripts/cam/prd.json:15\n\nsuggestion-fingerprint: f0304f7fc0b4",
   "derivedFrom": [
     "CAM-278"
-  ]
+  ],
+  "updatedAt": "2026-07-12T20:36:22.664Z"
 }

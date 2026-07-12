@@ -46,6 +46,7 @@ const MOCK_ISSUE: IssueEntry = {
 	status: 'open',
 	blockedBy: [],
 	createdAt: '2026-07-01T00:00:00Z',
+	updatedAt: '2026-07-01T00:00:00Z',
 };
 
 interface SpawnCall {
@@ -181,6 +182,7 @@ describe('runPlanPhase - explicit-target-wins regression (AC3)', () => {
 				status: 'open',
 				blockedBy: [],
 				createdAt: '2026-07-01T00:00:00Z',
+				updatedAt: '2026-07-01T00:00:00Z',
 				rank: 1,
 			},
 			{
@@ -190,6 +192,7 @@ describe('runPlanPhase - explicit-target-wins regression (AC3)', () => {
 				status: 'open',
 				blockedBy: [],
 				createdAt: '2026-07-02T00:00:00Z',
+				updatedAt: '2026-07-02T00:00:00Z',
 			},
 		];
 		const spawn = makeBacklogSpawnFn(entries);

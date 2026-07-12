@@ -5,5 +5,6 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-04T10:54:45.510Z",
-  "description": "After CAM-179 merges, rebuild the cam-worker image to bake the new claude-config.json, then run an interactive docker exec -it cam-worker ... claude --permission-mode bypassPermissions --agent <agent> with cwd /workspace and confirm zero blocking prompts (no first-run onboarding/theme picker and no /workspace trust-this-folder dialog). This is the live proof-of-fix for CAM-179 before re-running the full CAM-175 end-to-end ceremony."
+  "description": "After CAM-179 merges, rebuild the cam-worker image to bake the new claude-config.json, then run an interactive docker exec -it cam-worker ... claude --permission-mode bypassPermissions --agent <agent> with cwd /workspace and confirm zero blocking prompts (no first-run onboarding/theme picker and no /workspace trust-this-folder dialog). This is the live proof-of-fix for CAM-179 before re-running the full CAM-175 end-to-end ceremony.",
+  "updatedAt": "2026-07-04T10:54:45.510Z"
 }

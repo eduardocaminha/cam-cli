@@ -5,5 +5,6 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-05T16:24:46Z",
-  "description": "cam dashboard deixa de ser UX avulsa e passa a ser um pane fixo da sessão do cam run (o binário cam dashboard continua, mas roda dentro do pane). Layout do cam run: orquestrador à esquerda + dashboard (e o menu interativo do CAM-13) à direita. Definir o split do lado direito."
+  "description": "cam dashboard deixa de ser UX avulsa e passa a ser um pane fixo da sessão do cam run (o binário cam dashboard continua, mas roda dentro do pane). Layout do cam run: orquestrador à esquerda + dashboard (e o menu interativo do CAM-13) à direita. Definir o split do lado direito.",
+  "updatedAt": "2026-06-05T16:24:46Z"
 }

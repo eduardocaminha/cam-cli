@@ -331,9 +331,7 @@ export function specifyIssueOnMain(
 
 	// Guard 0: up-to-date check.
 	const guard = checkMainUpToDate(cwd, spawnFn);
-	if (!guard.ok) {
-		return guard;
-	}
+	if (!guard.ok) return guard;
 	const { branchWasMain, localMainSha } = guard;
 
 	// Guard 1: validate spec.
@@ -386,6 +384,7 @@ export function specifyIssueOnMain(
 		wsjf,
 		blockedBy,
 		stage: 'specified',
+		updatedAt: clock(),
 		...(type !== undefined ? { type } : {}),
 	};
 	allIssues[entryIndex] = mutated;
@@ -430,7 +429,7 @@ export function specifyIssueOnMain(
 export function abandonIssueOnMain(
 	options: AbandonIssueOnMainOptions,
 ): AbandonIssueOnMainOutcome {
-	const { cwd, id, spawnFn } = options;
+	const { cwd, id, spawnFn, clock } = options;
 
 	const guard = checkMainUpToDate(cwd, spawnFn);
 	if (!guard.ok) return guard;
@@ -444,7 +443,7 @@ export function abandonIssueOnMain(
 	if (entry === undefined) return { ok: false, reason: 'not-found' };
 	if (entry.status !== 'open') return { ok: false, reason: 'already-abandoned' };
 
-	const mutated: IssueEntry = { ...entry, status: 'abandoned' };
+	const mutated: IssueEntry = { ...entry, status: 'abandoned', updatedAt: clock() };
 	const serialized = JSON.stringify(mutated, null, 2) + '\n';
 	const filePath = issueFilePath(id);
 	const files: FileWrite[] = [{ path: filePath, content: serialized }];
@@ -460,7 +459,7 @@ export function abandonIssueOnMain(
  * Merge source.blockedBy into target.blockedBy, excluding self-refs to target.
  * Returns the mutated target IssueEntry (or the original when no deps to fold).
  */
-function withMergedBlockedBy(source: IssueEntry, target: IssueEntry): IssueEntry {
+function withMergedBlockedBy(source: IssueEntry, target: IssueEntry, clock: ClockFn): IssueEntry {
 	const seen = new Set(target.blockedBy);
 	const merged = [...target.blockedBy];
 	for (const depId of source.blockedBy) {
@@ -469,7 +468,7 @@ function withMergedBlockedBy(source: IssueEntry, target: IssueEntry): IssueEntry
 			seen.add(depId);
 		}
 	}
-	return { ...target, blockedBy: merged };
+	return { ...target, blockedBy: merged, updatedAt: clock() };
 }
 
 /**
@@ -482,17 +481,19 @@ function buildMergeFiles(
 	target: IssueEntry,
 	note: string,
 	foldBlockedBy: boolean,
+	clock: ClockFn,
 ): FileWrite[] {
 	const mutatedSource: IssueEntry = {
 		...source,
 		status: 'abandoned',
 		description: source.description ? `${source.description}\n\n${note}` : note,
+		updatedAt: clock(),
 	};
 	const files: FileWrite[] = [
 		{ path: issueFilePath(source.id), content: JSON.stringify(mutatedSource, null, 2) + '\n' },
 	];
 	if (foldBlockedBy && source.blockedBy.length > 0) {
-		const mutatedTarget = withMergedBlockedBy(source, target);
+		const mutatedTarget = withMergedBlockedBy(source, target, clock);
 		files.push({
 			path: issueFilePath(target.id),
 			content: JSON.stringify(mutatedTarget, null, 2) + '\n',
@@ -544,7 +545,7 @@ export type CloseIssueOnMainOutcome = CloseIssueOnMainResult | CloseIssueOnMainE
  * Commit message: `chore(cam): close <id> (shipped)`.
  */
 export function closeIssueOnMain(options: CloseIssueOnMainOptions): CloseIssueOnMainOutcome {
-	const { cwd, id, spawnFn } = options;
+	const { cwd, id, spawnFn, clock } = options;
 
 	const guard = checkMainUpToDate(cwd, spawnFn);
 	if (!guard.ok) return guard;
@@ -558,7 +559,7 @@ export function closeIssueOnMain(options: CloseIssueOnMainOptions): CloseIssueOn
 	if (entry === undefined) return { ok: false, reason: 'not-found' };
 	if (entry.stage === 'shipped') return { ok: false, reason: 'already-closed' };
 
-	const mutated: IssueEntry = { ...entry, stage: 'shipped' };
+	const mutated: IssueEntry = { ...entry, stage: 'shipped', updatedAt: clock() };
 	const serialized = JSON.stringify(mutated, null, 2) + '\n';
 	const filePath = issueFilePath(id);
 	const files: FileWrite[] = [{ path: filePath, content: serialized }];
@@ -624,7 +625,7 @@ export type DemoteIssueOnMainOutcome = DemoteIssueOnMainResult | DemoteIssueOnMa
  * Commit message: `chore(cam): demote <id>`.
  */
 export function demoteIssueOnMain(options: DemoteIssueOnMainOptions): DemoteIssueOnMainOutcome {
-	const { cwd, id, spawnFn } = options;
+	const { cwd, id, spawnFn, clock } = options;
 
 	const guard = checkMainUpToDate(cwd, spawnFn);
 	if (!guard.ok) return guard;
@@ -641,7 +642,7 @@ export function demoteIssueOnMain(options: DemoteIssueOnMainOptions): DemoteIssu
 	if (entry.stage === 'planned') return { ok: false, reason: 'is-planned' };
 	if (entry.stage === 'shipped') return { ok: false, reason: 'is-shipped' };
 
-	const mutated: IssueEntry = { ...entry, stage: 'idea' };
+	const mutated: IssueEntry = { ...entry, stage: 'idea', updatedAt: clock() };
 	const serialized = JSON.stringify(mutated, null, 2) + '\n';
 	const filePath = issueFilePath(id);
 	const files: FileWrite[] = [{ path: filePath, content: serialized }];
@@ -670,7 +671,7 @@ export function demoteIssueOnMain(options: DemoteIssueOnMainOptions): DemoteIssu
 export function mergeIssueOnMain(
 	options: MergeIssueOnMainOptions,
 ): MergeIssueOnMainOutcome {
-	const { cwd, id, intoId, spawnFn } = options;
+	const { cwd, id, intoId, spawnFn, clock } = options;
 	const foldBlockedBy = options.foldBlockedBy ?? false;
 
 	const guard = checkMainUpToDate(cwd, spawnFn);
@@ -694,7 +695,7 @@ export function mergeIssueOnMain(
 	if (source.status !== 'open') return { ok: false, reason: 'already-abandoned' };
 
 	const note = `Merged into ${intoId}.`;
-	const files = buildMergeFiles(source, target, note, foldBlockedBy);
+	const files = buildMergeFiles(source, target, note, foldBlockedBy, clock);
 
 	const commitMsg = `chore(cam): merge ${id} into ${intoId}`;
 	const sha = commitTreeToMain(cwd, files, commitMsg, localMainSha, spawnFn, 'cam-specify-');

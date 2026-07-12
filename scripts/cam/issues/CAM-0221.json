@@ -5,5 +5,6 @@
   "status": "abandoned",
   "blockedBy": [],
   "createdAt": "2026-07-08T21:03:37.593Z",
-  "description": "From the CAM-189 review (PR #166, round 1 SUGGESTION). src/supervisor/loop.ts:2008: the suggestion-filing crash path reuses event kind sidecar-exit with reason suggestion-filing-crash-outer, while the happy path has a dedicated suggestion-filed kind. Reusing sidecar-exit is consistent with the existing outer-loop error-boundary precedent (US-R1-001/CAM-115 selector boundary), so this is a cosmetic naming observation only. Consider a dedicated event kind for the crash path if event-kind granularity matters for observability."
+  "description": "From the CAM-189 review (PR #166, round 1 SUGGESTION). src/supervisor/loop.ts:2008: the suggestion-filing crash path reuses event kind sidecar-exit with reason suggestion-filing-crash-outer, while the happy path has a dedicated suggestion-filed kind. Reusing sidecar-exit is consistent with the existing outer-loop error-boundary precedent (US-R1-001/CAM-115 selector boundary), so this is a cosmetic naming observation only. Consider a dedicated event kind for the crash path if event-kind granularity matters for observability.",
+  "updatedAt": "2026-07-08T21:03:37.593Z"
 }

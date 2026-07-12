@@ -8,5 +8,6 @@
   "description": "promoteSuggestionOnMain does two independent on-main commits (issue file, then pen-line removal). If the process dies or the pen-removal commit is lost between the two, the fingerprint stays in the pen and a manual re-promote would file a duplicate issue (the embedded suggestion-fingerprint line prevents auto-review re-dedup, but not manual re-promote). Acceptable given pushMainBestEffort semantics; a note or a single-commit combine would be more robust.\n\nSource: cam/issue-285\nReview round: 1\nLocation: src/commands/suggestions.ts:502\n\nsuggestion-fingerprint: b241d5cbedc6",
   "derivedFrom": [
     "CAM-285"
-  ]
+  ],
+  "updatedAt": "2026-07-12T18:06:43.310Z"
 }

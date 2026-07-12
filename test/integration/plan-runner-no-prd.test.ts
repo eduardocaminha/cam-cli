@@ -91,6 +91,7 @@ const MOCK_ISSUE: IssueEntry = {
 	status: 'open',
 	blockedBy: [],
 	createdAt: '2026-07-02T00:00:00Z',
+	updatedAt: '2026-07-02T00:00:00Z',
 };
 
 test.skipIf(!tmuxAvailable)(

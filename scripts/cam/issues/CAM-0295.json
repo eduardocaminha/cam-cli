@@ -8,5 +8,6 @@
   "description": "The switch-case parity test slices index.ts source from `switch (command) {` to end-of-file. It is correct today (one dispatch switch, 26 clean labels), but would over-capture if a future string-keyed switch is added after main(). Consider bounding the slice to the matching closing brace to keep the assertion robust.\n\nSource: cam/issue-278\nReview round: 1\nLocation: test/help-registry.test.ts:90\n\nsuggestion-fingerprint: fbb06347e35e",
   "derivedFrom": [
     "CAM-278"
-  ]
+  ],
+  "updatedAt": "2026-07-12T20:36:20.465Z"
 }

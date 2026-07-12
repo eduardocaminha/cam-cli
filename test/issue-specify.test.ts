@@ -299,6 +299,26 @@ describe('closeIssueOnMain — AC1: sets stage:shipped and commits to main', () 
 		void calls;
 	});
 
+	test('hash-object stdin carries updatedAt bumped to clock() value beyond original createdAt', () => {
+		let capturedInput: string | undefined;
+		const { spawnFn: baseSpawn } = makeRecordingSpawn();
+		const capturingSpawn: SpawnFn = (cmd, args, options) => {
+			if (args.includes('hash-object')) {
+				capturedInput = options.input;
+			}
+			return baseSpawn(cmd, args, options);
+		};
+		const result = closeIssueOnMain(makeOptions({ spawnFn: capturingSpawn }));
+		assertOk(result);
+
+		expect(capturedInput).toBeDefined();
+		const entry = JSON.parse(capturedInput!) as { updatedAt: string };
+		expect(entry.updatedAt).toBe(FIXED_TS);
+		expect(new Date(entry.updatedAt).getTime()).toBeGreaterThan(
+			new Date(EXISTING_ENTRY.createdAt).getTime(),
+		);
+	});
+
 	test('commit message is chore(cam): close <id> (shipped)', () => {
 		const { spawnFn, calls } = makeRecordingSpawn();
 		closeIssueOnMain(makeOptions({ spawnFn }));

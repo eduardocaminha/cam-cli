@@ -422,6 +422,7 @@ describe('createLocalIssueOnMain — hash-object input shape', () => {
 			status: string;
 			blockedBy: string[];
 			createdAt: string;
+			updatedAt: string;
 		};
 		expect(parsed.id).toBe('CAM-89');
 		expect(parsed.title).toBe('My New Issue');
@@ -429,6 +430,7 @@ describe('createLocalIssueOnMain — hash-object input shape', () => {
 		expect(parsed.status).toBe('open');
 		expect(parsed.blockedBy).toEqual([]);
 		expect(parsed.createdAt).toBe(FIXED_TS);
+		expect(parsed.updatedAt).toBe(FIXED_TS);
 	});
 
 	test('hash-object input ends with a newline (trailing newline)', () => {

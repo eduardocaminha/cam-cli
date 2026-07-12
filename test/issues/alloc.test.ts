@@ -105,6 +105,7 @@ describe('writeIssueFile -- filename padding and id field', () => {
 			status: 'open' as const,
 			blockedBy: [],
 			createdAt: '2026-01-01T00:00:00Z',
+			updatedAt: '2026-01-01T00:00:00Z',
 		}));
 
 		let writtenContent = '';
@@ -170,6 +171,7 @@ describe('writeIssueFile -- filename padding and id field', () => {
 			status: 'open' as const,
 			blockedBy: [],
 			createdAt: '2026-01-01T00:00:00Z',
+			updatedAt: '2026-01-01T00:00:00Z',
 		}));
 
 		let writtenContent = '';
@@ -218,6 +220,39 @@ describe('writeIssueFile -- filename padding and id field', () => {
 		expect(result.id).toBe('CAM-1000');
 	});
 
+	test('freshly-created issue has updatedAt equal to createdAt (US-001, CAM-284)', () => {
+		const entries: IssueEntry[] = [];
+		let writtenContent = '';
+
+		const spy: SpawnFn = (_cmd, args, opts) => {
+			const gitSub = args[2];
+			if (gitSub === 'rev-parse') return ok('ccc000'.padEnd(40, '0') + '\n');
+			if (gitSub === 'ls-tree') return ok('');
+			if (gitSub === 'cat-file') return ok(entries.map(frameEntry).join(''));
+			if (gitSub === 'read-tree') return ok();
+			if (gitSub === 'hash-object') {
+				writtenContent = opts.input ?? '';
+				return ok('blob' + '0'.repeat(36) + '\n');
+			}
+			if (gitSub === 'update-index') return ok();
+			if (gitSub === 'write-tree') return ok('tree' + '0'.repeat(36) + '\n');
+			if (gitSub === 'commit-tree') return ok('commit' + '0'.repeat(34) + '\n');
+			if (gitSub === 'update-ref') return ok();
+			return ok();
+		};
+
+		writeIssueFile({
+			cwd: '/fake/cwd',
+			title: 'Fresh issue',
+			createdAt: '2026-07-12T00:00:00Z',
+			spawnFn: spy,
+		});
+
+		const parsed = JSON.parse(writtenContent) as IssueEntry;
+		expect(parsed.updatedAt).toBe(parsed.createdAt);
+		expect(parsed.updatedAt).toBe('2026-07-12T00:00:00Z');
+	});
+
 	test('id 90: roundtrip -- parsed id from written JSON is unpadded CAM-90', () => {
 		// Companion to the above: explicit roundtrip assertion.
 		const entries: IssueEntry[] = Array.from({ length: 89 }, (_, i) => ({
@@ -227,6 +262,7 @@ describe('writeIssueFile -- filename padding and id field', () => {
 			status: 'open' as const,
 			blockedBy: [],
 			createdAt: '2026-01-01T00:00:00Z',
+			updatedAt: '2026-01-01T00:00:00Z',
 		}));
 
 		let writtenContent = '';
@@ -260,6 +296,7 @@ describe('writeIssueFile -- filename padding and id field', () => {
 			status: 'open' as const,
 			blockedBy: [],
 			createdAt: '2026-01-01T00:00:00Z',
+			updatedAt: '2026-01-01T00:00:00Z',
 		}));
 
 		let writtenContent = '';
@@ -302,11 +339,12 @@ describe('writeIssueFile -- CAS failure re-reads and re-allocates', () => {
 			status: 'open' as const,
 			blockedBy: [],
 			createdAt: '2026-01-01T00:00:00Z',
+			updatedAt: '2026-01-01T00:00:00Z',
 		}));
 
 		const updatedEntries: IssueEntry[] = [
 			...initialEntries,
-			{ id: 'CAM-6', title: 'Concurrent issue', stage: 'idea', status: 'open', blockedBy: [], createdAt: '2026-01-01T00:00:00Z' },
+			{ id: 'CAM-6', title: 'Concurrent issue', stage: 'idea', status: 'open', blockedBy: [], createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' },
 		];
 
 		let updateRefCallCount = 0;
@@ -392,7 +430,7 @@ describe('writeIssueFile -- CAS failure re-reads and re-allocates', () => {
 
 describe('writeIssueFile -- result shape', () => {
 	test('returns { id, filename, sha } on success', () => {
-		const entries: IssueEntry[] = [{ id: 'CAM-1', title: 'First', stage: 'idea', status: 'open', blockedBy: [], createdAt: '2026-01-01T00:00:00Z' }];
+		const entries: IssueEntry[] = [{ id: 'CAM-1', title: 'First', stage: 'idea', status: 'open', blockedBy: [], createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' }];
 		const fakeCommitSha = 'abcdef1234567890'.padEnd(40, '0');
 
 		const spy: SpawnFn = (_cmd, args, _opts) => {

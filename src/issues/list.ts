@@ -161,6 +161,7 @@ export interface BacklogJsonRow {
 	/** null when the issue is unranked (JSON has no `undefined`; the key is always present). */
 	rank: number | null;
 	createdAt: string;
+	updatedAt: string;
 }
 
 /** Per-stage open-issue counts. `shipped` is present only when `includeShipped` is true. */
@@ -187,7 +188,13 @@ export interface BacklogJsonView {
 }
 
 function toJsonRow(issue: IssueEntry): BacklogJsonRow {
-	return { id: issue.id, title: issue.title, rank: issue.rank ?? null, createdAt: issue.createdAt };
+	return {
+		id: issue.id,
+		title: issue.title,
+		rank: issue.rank ?? null,
+		createdAt: issue.createdAt,
+		updatedAt: issue.updatedAt,
+	};
 }
 
 /**

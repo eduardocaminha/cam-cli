@@ -41,6 +41,7 @@ function makeIssueEntry(overrides: Partial<IssueEntry> = {}): IssueEntry {
 		status: 'open',
 		blockedBy: [],
 		createdAt: '2026-07-08T00:00:00Z',
+		updatedAt: '2026-07-08T00:00:00Z',
 		...overrides,
 	};
 }

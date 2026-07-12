@@ -10,12 +10,17 @@
  *   does NOT set wsjf/rank/spec
  *
  * Idempotency: entries that already have stage and no state/priority are
- * passed through unchanged.
+ * passed through unchanged, except updatedAt is backfilled (= createdAt)
+ * when absent (US-001, CAM-284).
  *
  * CLI usage: bun scripts/cam/migrate-issues-schema.ts <path-to-issues.local.json>
+ *            bun scripts/cam/migrate-issues-schema.ts --dir-migrate [cwd]
+ *            bun scripts/cam/migrate-issues-schema.ts --backfill-dir [issuesDir]
  */
 
 import { spawnSync } from "node:child_process";
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type {
 	IssueEntry,
 	IssueStage,
@@ -48,6 +53,7 @@ interface RawEntry {
 	status?: string;
 	blockedBy?: unknown;
 	createdAt: string;
+	updatedAt?: string;
 	priority?: unknown;
 	closedAt?: string;
 	wsjf?: unknown;
@@ -78,7 +84,13 @@ function migrateEntry(raw: RawEntry): IssueEntry {
 		!("state" in raw) &&
 		!("priority" in raw)
 	) {
-		return raw as unknown as IssueEntry;
+		// Still backfill updatedAt when absent (deterministic: defaults to
+		// createdAt, never now()) so already-migrated entries get the new
+		// required field without otherwise touching them.
+		if (typeof raw.updatedAt === "string") {
+			return raw as unknown as IssueEntry;
+		}
+		return { ...(raw as unknown as IssueEntry), updatedAt: raw.createdAt };
 	}
 
 	const stage: IssueStage =
@@ -97,6 +109,7 @@ function migrateEntry(raw: RawEntry): IssueEntry {
 		status,
 		blockedBy,
 		createdAt: raw.createdAt,
+		updatedAt: raw.updatedAt ?? raw.createdAt,
 	};
 
 	if (typeof raw.description === "string") {
@@ -207,6 +220,49 @@ export function migrateIssuesToDir(
 }
 
 // ---------------------------------------------------------------------------
+// backfillIssuesDir: stamp updatedAt onto every existing per-file issue
+// ---------------------------------------------------------------------------
+
+const DEFAULT_ISSUES_DIR = "scripts/cam/issues";
+
+export interface BackfillIssuesDirResult {
+	/** Total CAM-*.json files scanned. */
+	total: number;
+	/** Files that were rewritten (updatedAt was missing). */
+	updated: number;
+}
+
+/**
+ * Walk every CAM-*.json file under dirPath, run it through migrateEntry
+ * (which backfills updatedAt = createdAt when absent, deterministically),
+ * and rewrite the file only when its content actually changed.
+ *
+ * Operates directly on the working-tree files (not via git CAS): intended
+ * for a one-time scripted backfill run whose resulting file changes are
+ * committed normally by the caller (e.g. the implementer's story commit).
+ *
+ * @param dirPath Absolute or repo-relative path to the issues directory.
+ */
+export function backfillIssuesDir(
+	dirPath: string = DEFAULT_ISSUES_DIR,
+): BackfillIssuesDirResult {
+	const files = readdirSync(dirPath).filter((f) => f.endsWith(".json"));
+	let updated = 0;
+	for (const file of files) {
+		const fullPath = join(dirPath, file);
+		const original = readFileSync(fullPath, "utf8");
+		const raw = JSON.parse(original) as RawEntry;
+		const migrated = migrateEntry(raw);
+		const content = `${JSON.stringify(migrated, null, 2)}\n`;
+		if (content !== original) {
+			writeFileSync(fullPath, content);
+			updated++;
+		}
+	}
+	return { total: files.length, updated };
+}
+
+// ---------------------------------------------------------------------------
 // CLI entrypoint (only when run directly)
 // ---------------------------------------------------------------------------
 
@@ -224,6 +280,13 @@ if (import.meta.main) {
 				`Migrated ${result.issueCount} issues to per-file dir. Commit: ${result.sha}`,
 			);
 		}
+	} else if (args[0] === "--backfill-dir") {
+		// Backfill mode: stamp updatedAt onto every existing per-file issue.
+		const dirPath = args[1] ?? DEFAULT_ISSUES_DIR;
+		const result = backfillIssuesDir(dirPath);
+		console.log(
+			`Backfilled ${result.updated}/${result.total} issue files in ${dirPath}.`,
+		);
 	} else {
 		// Schema migration mode (original): rewrite entries to new schema.
 		const filePath = args[0];
@@ -233,6 +296,9 @@ if (import.meta.main) {
 			);
 			console.error(
 				"       bun scripts/cam/migrate-issues-schema.ts --dir-migrate [cwd]",
+			);
+			console.error(
+				"       bun scripts/cam/migrate-issues-schema.ts --backfill-dir [issuesDir]",
 			);
 			process.exit(1);
 		}

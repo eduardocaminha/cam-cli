@@ -15,6 +15,7 @@ function makeIssue(
 		status: "open",
 		blockedBy: [],
 		createdAt: "2026-01-01T00:00:00Z",
+		updatedAt: "2026-01-01T00:00:00Z",
 		...overrides,
 	};
 }
@@ -340,13 +341,19 @@ describe("deriveBacklogJson — plannable membership (isPlannable) + ordering", 
 		expect(json.plannable.map((r) => r.id)).toEqual(["CAM-1", "CAM-3", "CAM-5", "CAM-9"]);
 	});
 
-	test("row shape is exactly { id, title, rank }; rank is null when unranked", () => {
+	test("row shape is exactly { id, title, rank, createdAt, updatedAt }; rank is null when unranked", () => {
 		const backlog: IssueEntry[] = [
 			makeIssue({ id: "CAM-1", stage: "specified", title: "Fix the thing" }),
 		];
 		const json = deriveBacklogJson(backlog);
 		expect(json.plannable).toEqual([
-			{ id: "CAM-1", title: "Fix the thing", rank: null, createdAt: "2026-01-01T00:00:00Z" },
+			{
+					id: "CAM-1",
+					title: "Fix the thing",
+					rank: null,
+					createdAt: "2026-01-01T00:00:00Z",
+					updatedAt: "2026-01-01T00:00:00Z",
+				},
 		]);
 	});
 
@@ -356,7 +363,13 @@ describe("deriveBacklogJson — plannable membership (isPlannable) + ordering", 
 		];
 		const json = deriveBacklogJson(backlog);
 		expect(json.plannable).toEqual([
-			{ id: "CAM-1", title: "Test issue", rank: 3, createdAt: "2026-01-01T00:00:00Z" },
+			{
+					id: "CAM-1",
+					title: "Test issue",
+					rank: 3,
+					createdAt: "2026-01-01T00:00:00Z",
+					updatedAt: "2026-01-01T00:00:00Z",
+				},
 		]);
 	});
 });

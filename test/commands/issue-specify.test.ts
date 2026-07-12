@@ -96,6 +96,7 @@ function makeEntry(overrides?: Partial<IssueEntry>): IssueEntry {
 		status: 'open',
 		blockedBy: [],
 		createdAt: '2026-01-01T00:00:00.000Z',
+		updatedAt: '2026-01-01T00:00:00.000Z',
 		...overrides,
 	};
 }
@@ -427,6 +428,25 @@ test('success path: serialized JSON sets stage to specified and includes spec+ws
 	expect(parsed.blockedBy).toEqual([]);
 });
 
+test('success path: updatedAt is bumped to clock() value beyond original createdAt', () => {
+	const entry = makeEntry();
+	const { spawnFn } = makeFakeSpawnFn({ entries: [entry] });
+	let capturedJson = '';
+
+	const recordingSpawnFn: SpawnFn = (cmd, args, opts) => {
+		if (args.join(' ').includes('hash-object') && opts.input !== undefined) {
+			capturedJson = opts.input;
+		}
+		return spawnFn(cmd, args, opts);
+	};
+
+	specifyIssueOnMain(makeOpts({ spawnFn: recordingSpawnFn }));
+
+	const parsed = JSON.parse(capturedJson) as IssueEntry;
+	expect(parsed.updatedAt).toBe('2026-06-27T00:00:00.000Z');
+	expect(new Date(parsed.updatedAt).getTime()).toBeGreaterThan(new Date(entry.createdAt).getTime());
+});
+
 test('success path (on-main): ref-only commit via commitTreeToMain; writeFile never called', () => {
 	// CAM-133: even when branchWasMain===true, the commit path is now always
 	// commitTreeToMain (ref-only). writeFile must never be called.
@@ -635,6 +655,7 @@ function makeTmpRepo(initialIssue?: Partial<IssueEntry>): RepoHandles {
 		status: 'open',
 		blockedBy: [],
 		createdAt: '2026-01-01T00:00:00.000Z',
+		updatedAt: '2026-01-01T00:00:00.000Z',
 		...initialIssue,
 	};
 	writeFileSync(join(issuesDir, 'CAM-0001.json'), toJson(entry));
@@ -861,6 +882,25 @@ test('abandon: success path (off-main) sets status to abandoned', () => {
 	expect(parsed.stage).toBe('idea');
 });
 
+test('abandon: updatedAt is bumped to clock() value beyond original createdAt', () => {
+	const entry = makeEntry();
+	const { spawnFn } = makeFakeSpawnFn({ entries: [entry] });
+	let capturedJson = '';
+
+	const recordingSpawnFn: SpawnFn = (cmd, args, opts) => {
+		if (args.join(' ').includes('hash-object') && opts.input !== undefined) {
+			capturedJson = opts.input;
+		}
+		return spawnFn(cmd, args, opts);
+	};
+
+	abandonIssueOnMain(makeAbandonOpts({ spawnFn: recordingSpawnFn }));
+
+	const parsed = JSON.parse(capturedJson) as IssueEntry;
+	expect(parsed.updatedAt).toBe('2026-06-27T00:00:00.000Z');
+	expect(new Date(parsed.updatedAt).getTime()).toBeGreaterThan(new Date(entry.createdAt).getTime());
+});
+
 test('abandon: success path (on-main) ref-only commit; writeFile never called', () => {
 	// CAM-133: even when branchWasMain===true, the commit path is now always
 	// commitTreeToMain (ref-only). writeFile must never be called.
@@ -978,6 +1018,25 @@ test('demote: success path sets stage to idea and preserves spec/wsjf/blockedBy'
 	expect(parsed.blockedBy).toEqual(['CAM-2']);
 });
 
+test('demote: updatedAt is bumped to clock() value beyond original createdAt', () => {
+	const specifiedEntry = makeEntry({ stage: 'specified' });
+	const { spawnFn } = makeFakeSpawnFn({ entries: [specifiedEntry] });
+	let capturedJson = '';
+
+	const recordingSpawnFn: SpawnFn = (cmd, args, opts) => {
+		if (args.join(' ').includes('hash-object') && opts.input !== undefined) {
+			capturedJson = opts.input;
+		}
+		return spawnFn(cmd, args, opts);
+	};
+
+	demoteIssueOnMain(makeDemoteOpts({ spawnFn: recordingSpawnFn }));
+
+	const parsed = JSON.parse(capturedJson) as IssueEntry;
+	expect(parsed.updatedAt).toBe('2026-06-27T00:00:00.000Z');
+	expect(new Date(parsed.updatedAt).getTime()).toBeGreaterThan(new Date(specifiedEntry.createdAt).getTime());
+});
+
 test('demote: on-main ref-only commit; writeFile never called', () => {
 	const { spawnFn } = makeFakeSpawnFn({
 		entries: [makeEntry({ stage: 'specified' })],
@@ -1037,6 +1096,7 @@ function makeTwoEntries(
 			status: 'open',
 			blockedBy: [],
 			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
 			...overrides1,
 		},
 		{
@@ -1046,6 +1106,7 @@ function makeTwoEntries(
 			status: 'open',
 			blockedBy: [],
 			createdAt: '2026-01-02T00:00:00.000Z',
+			updatedAt: '2026-01-02T00:00:00.000Z',
 			...overrides2,
 		},
 	];
@@ -1119,6 +1180,30 @@ test('merge-into: success sets source status to abandoned and records target in 
 	expect(source?.description).toContain('Merged into CAM-2.');
 });
 
+test('merge-into: source updatedAt is bumped to clock() value beyond original createdAt', () => {
+	const entries = makeTwoEntries();
+	const source = entries[0];
+	if (source === undefined) throw new Error('expected source entry');
+	const { spawnFn } = makeFakeSpawnFn({ entries });
+	const capturedJsons: string[] = [];
+
+	const recordingSpawnFn: SpawnFn = (cmd, args, opts) => {
+		if (args.join(' ').includes('hash-object') && opts.input !== undefined) {
+			capturedJsons.push(opts.input);
+		}
+		return spawnFn(cmd, args, opts);
+	};
+
+	mergeIssueOnMain(makeMergeOpts({ spawnFn: recordingSpawnFn }));
+
+	const allParsed = capturedJsons.map((j) => JSON.parse(j) as IssueEntry);
+	const mutatedSource = allParsed.find((e) => e.id === 'CAM-1');
+	expect(mutatedSource?.updatedAt).toBe('2026-06-27T00:00:00.000Z');
+	expect(new Date(mutatedSource?.updatedAt ?? 0).getTime()).toBeGreaterThan(
+		new Date(source.createdAt).getTime(),
+	);
+});
+
 test('merge-into: appends to existing description', () => {
 	const { spawnFn } = makeFakeSpawnFn({
 		entries: makeTwoEntries({ description: 'Original desc' }),
@@ -1149,6 +1234,7 @@ test('merge-into: foldBlockedBy folds source blockedBy into target', () => {
 			status: 'open',
 			blockedBy: ['CAM-3'],
 			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
 		},
 		{
 			id: 'CAM-2',
@@ -1157,6 +1243,7 @@ test('merge-into: foldBlockedBy folds source blockedBy into target', () => {
 			status: 'open',
 			blockedBy: [],
 			createdAt: '2026-01-02T00:00:00.000Z',
+			updatedAt: '2026-01-02T00:00:00.000Z',
 		},
 		{
 			id: 'CAM-3',
@@ -1165,6 +1252,7 @@ test('merge-into: foldBlockedBy folds source blockedBy into target', () => {
 			status: 'open',
 			blockedBy: [],
 			createdAt: '2026-01-03T00:00:00.000Z',
+			updatedAt: '2026-01-03T00:00:00.000Z',
 		},
 	];
 	const capturedJsons: string[] = [];
@@ -1182,6 +1270,12 @@ test('merge-into: foldBlockedBy folds source blockedBy into target', () => {
 	const allParsed = capturedJsons.map((j) => JSON.parse(j) as IssueEntry);
 	const target = allParsed.find((e) => e.id === 'CAM-2');
 	expect(target?.blockedBy).toContain('CAM-3');
+	// mutated target (CAM-2) also gets its updatedAt bumped to the clock() value,
+	// beyond its original createdAt (2026-01-02).
+	expect(target?.updatedAt).toBe('2026-06-27T00:00:00.000Z');
+	expect(new Date(target?.updatedAt ?? 0).getTime()).toBeGreaterThan(
+		new Date('2026-01-02T00:00:00.000Z').getTime(),
+	);
 });
 
 test('merge-into: foldBlockedBy does not fold when false (default)', () => {
@@ -1193,6 +1287,7 @@ test('merge-into: foldBlockedBy does not fold when false (default)', () => {
 			status: 'open',
 			blockedBy: ['CAM-3'],
 			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
 		},
 		{
 			id: 'CAM-2',
@@ -1201,6 +1296,7 @@ test('merge-into: foldBlockedBy does not fold when false (default)', () => {
 			status: 'open',
 			blockedBy: [],
 			createdAt: '2026-01-02T00:00:00.000Z',
+			updatedAt: '2026-01-02T00:00:00.000Z',
 		},
 		{
 			id: 'CAM-3',
@@ -1209,6 +1305,7 @@ test('merge-into: foldBlockedBy does not fold when false (default)', () => {
 			status: 'open',
 			blockedBy: [],
 			createdAt: '2026-01-03T00:00:00.000Z',
+			updatedAt: '2026-01-03T00:00:00.000Z',
 		},
 	];
 	const capturedJsons: string[] = [];
@@ -1244,6 +1341,7 @@ test('merge-into: foldBlockedBy deduplicates existing entries', () => {
 			status: 'open',
 			blockedBy: ['CAM-3'],
 			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
 		},
 		{
 			id: 'CAM-2',
@@ -1252,6 +1350,7 @@ test('merge-into: foldBlockedBy deduplicates existing entries', () => {
 			status: 'open',
 			blockedBy: ['CAM-3'],
 			createdAt: '2026-01-02T00:00:00.000Z',
+			updatedAt: '2026-01-02T00:00:00.000Z',
 		},
 		{
 			id: 'CAM-3',
@@ -1260,6 +1359,7 @@ test('merge-into: foldBlockedBy deduplicates existing entries', () => {
 			status: 'open',
 			blockedBy: [],
 			createdAt: '2026-01-03T00:00:00.000Z',
+			updatedAt: '2026-01-03T00:00:00.000Z',
 		},
 	];
 	const capturedJsons: string[] = [];
@@ -1321,6 +1421,7 @@ function makeTmpRepoTwo(): RepoHandles {
 		status: 'open',
 		blockedBy: [],
 		createdAt: '2026-01-01T00:00:00.000Z',
+		updatedAt: '2026-01-01T00:00:00.000Z',
 	};
 	const e2: IssueEntry = {
 		id: 'CAM-2',
@@ -1329,6 +1430,7 @@ function makeTmpRepoTwo(): RepoHandles {
 		status: 'open',
 		blockedBy: [],
 		createdAt: '2026-01-02T00:00:00.000Z',
+		updatedAt: '2026-01-02T00:00:00.000Z',
 	};
 	writeFileSync(join(issuesDir, 'CAM-0001.json'), toJson(e1));
 	writeFileSync(join(issuesDir, 'CAM-0002.json'), toJson(e2));
@@ -1446,6 +1548,7 @@ test.skipIf(!gitAvailable)(
 			status: 'abandoned',
 			blockedBy: [],
 			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
 		};
 		writeFileSync(join(issuesDir, 'CAM-0001.json'), toJson(entry));
 		run(['add', '-A']);

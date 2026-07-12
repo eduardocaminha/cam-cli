@@ -5,5 +5,6 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-09T14:13:32.831Z",
-  "description": "The advisory note cites hard line numbers (run.ts:255, setup.ts:443/520). The actual orchestrator spawn is at run.ts ~258 and setup.ts:444/520; the citations are one line off and will drift over time. Consider citing the function/symbol (the claude --permission-mode bypassPermissions spawn in run.ts and buildSetupMenuScript/orchestrator-pane split in setup.ts) instead of raw line numbers. Non-blocking.\n\nSource: cam/issue-227\nReview round: 1\nLocation: templates/agents/subagent-orchestrator.md:52\n\nsuggestion-fingerprint: 36b487f7ccb2"
+  "description": "The advisory note cites hard line numbers (run.ts:255, setup.ts:443/520). The actual orchestrator spawn is at run.ts ~258 and setup.ts:444/520; the citations are one line off and will drift over time. Consider citing the function/symbol (the claude --permission-mode bypassPermissions spawn in run.ts and buildSetupMenuScript/orchestrator-pane split in setup.ts) instead of raw line numbers. Non-blocking.\n\nSource: cam/issue-227\nReview round: 1\nLocation: templates/agents/subagent-orchestrator.md:52\n\nsuggestion-fingerprint: 36b487f7ccb2",
+  "updatedAt": "2026-07-09T14:13:32.831Z"
 }

@@ -5,5 +5,6 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-11T05:50:05.114Z",
-  "description": "Pre-existing (on main, not introduced by this branch): a stale second 'Do NOT delete the marker yourself ... only removed by the next plan run (US-004)' paragraph sits immediately after the implement-blocked marker's own correct removal paragraph, giving two contradictory removal statements. Out of scope for CAM-214 but worth a follow-up cleanup.\n\nSource: cam/issue-214\nReview round: 1\nLocation: templates/agents/subagent-orchestrator.md:205\n\nsuggestion-fingerprint: ad3cd9d3eb32"
+  "description": "Pre-existing (on main, not introduced by this branch): a stale second 'Do NOT delete the marker yourself ... only removed by the next plan run (US-004)' paragraph sits immediately after the implement-blocked marker's own correct removal paragraph, giving two contradictory removal statements. Out of scope for CAM-214 but worth a follow-up cleanup.\n\nSource: cam/issue-214\nReview round: 1\nLocation: templates/agents/subagent-orchestrator.md:205\n\nsuggestion-fingerprint: ad3cd9d3eb32",
+  "updatedAt": "2026-07-11T05:50:05.114Z"
 }

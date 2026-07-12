@@ -75,6 +75,7 @@ const SEED_CAM_1: IssueEntry = {
 	status: 'open',
 	blockedBy: [],
 	createdAt: '2026-01-01T00:00:00.000Z',
+	updatedAt: '2026-01-01T00:00:00.000Z',
 	wsjf: { value: 8, timeCriticality: 5, riskReduction: 3, jobSize: 2 },
 };
 
@@ -85,6 +86,7 @@ const SEED_CAM_2: IssueEntry = {
 	status: 'open',
 	blockedBy: [],
 	createdAt: '2026-01-02T00:00:00.000Z',
+	updatedAt: '2026-01-02T00:00:00.000Z',
 	wsjf: { value: 4, timeCriticality: 2, riskReduction: 1, jobSize: 2 },
 };
 

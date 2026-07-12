@@ -49,6 +49,7 @@ const CAM_156_ISSUE: IssueEntry = {
 	status: 'open',
 	blockedBy: [],
 	createdAt: '2026-07-01T00:00:00Z',
+	updatedAt: '2026-07-01T00:00:00Z',
 	spec: {
 		acceptanceCriteria: [
 			'Push verification reads the CURRENT HEAD ref, not a stale cached one.',

@@ -120,6 +120,7 @@ function makeTmpRepo(seedId: number): RepoHandles {
 			status: 'open',
 			blockedBy: [],
 			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
 		};
 		const paddedName = `CAM-${String(seedId).padStart(4, '0')}.json`;
 		writeFileSync(join(issuesDir, paddedName), toJson(seedEntry));
