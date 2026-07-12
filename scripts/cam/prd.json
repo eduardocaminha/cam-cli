@@ -30,7 +30,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/config/toml.ts (stringifyToml + stringifyScalar region), test/toml.test.ts. The comment feature MUST be opt-in: default (no comments) output byte-identical, because stringifyToml backs mergeIntoConfig which handles ALL project.toml writes (gotcha from issue). A comment-only [loop] block cannot be represented as an active key in TomlConfig (Record<string, scalar>), so the comment API must let the caller attach comment-only lines to a section header without pinning any key. Verify Bun.TOML.parse already skips '#' per TOML v1.0.0 (the toml.ts header already cites https://bun.com/reference/bun/TOML/parse); pin it with a test regardless. noUncheckedIndexedAccess: guard any array/regex access. Do NOT add a template file (issue gotcha)."
     },

@@ -1,0 +1,23 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Add comment emission to stringifyToml (parser stays comment-tolerant)" },
+  "branchName": "cam/issue-283",
+  "timestamp": "2026-07-12T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/config/toml.ts",
+    "test/toml.test.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/prd.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "stringifyToml(config, comments?) now accepts an optional TomlComments = Record<string, string[]> mapping section name -> array of comment-line strings (no '#' prefix, added automatically). Comments only render under sections that already exist in `config` as an object value (including an empty section `{}` for a comment-only block with zero active keys) -- a comments entry for a section name absent from `config` is silently ignored (no phantom section header is emitted). This keeps every round-trip parseToml(stringifyToml(config, comments)) deep-equal to `config`, since TOML comments are stripped by the parser and an empty `{}` section round-trips to `{}`. saveConfig/mergeIntoConfig were NOT touched (out of scope for US-001) -- a future story wiring `cam init` to emit commented example sections will need to thread a TomlComments argument through saveConfig too if it wants to persist comments to disk. Extracted a renderSectionLines helper out of stringifyToml to stay under Biome's cognitive-complexity ceiling (16->15) after adding the comments param.",
+  "officialDocsValidated": [
+    {
+      "lib": "bun (Bun.TOML.parse)",
+      "url": "https://bun.com/reference/bun/TOML/parse",
+      "fetchedAt": "2026-07-12T00:00:00Z",
+      "status": "aligned",
+      "summary": "Signature parse(input: string): object confirmed unchanged. Docs don't explicitly state comment-stripping behavior, but TOML v1.0.0 spec mandates it and this story's new test (parser ignores '#' lines) passes empirically against the real Bun.TOML.parse, so the code's comment-tolerance claim is verified by test, not just docs."
+    }
+  ]
+}
