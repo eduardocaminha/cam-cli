@@ -225,6 +225,8 @@ test('high-occupancy reader: backstop arms marker and handleOneTick fires SIGTER
 		removeMarkerFn,
 		contextWindow: CONTEXT_WINDOW,
 		backstopFraction: ORCH_CONTEXT_BACKSTOP_FRACTION,
+		// US-001/CAM-172: checkBackstop only arms when the handoff already exists.
+		handoffExistsFn: () => true,
 	});
 
 	// Backstop must have armed the marker.
@@ -236,6 +238,50 @@ test('high-occupancy reader: backstop arms marker and handleOneTick fires SIGTER
 
 	// Consume-once: marker must have been removed after SIGTERM.
 	expect(markerRemoved).toBe(true);
+});
+
+test('high-occupancy reader with NO handoff present: no marker armed, killFn not called', async () => {
+	// US-001/CAM-172: over-threshold occupancy alone must never arm the marker;
+	// the handoff file must already exist on disk.
+	let markerArmed = false;
+	let killCalled = false;
+
+	const readOccupancyFn = (): number => 900_000; // over threshold
+
+	const armMarkerFn = (): void => {
+		markerArmed = true;
+	};
+
+	const readMarkerFn = (): boolean => markerArmed;
+
+	const killFn = (_pid: number, _signal: NodeJS.Signals): void => {
+		killCalled = true;
+	};
+
+	await runOneTick({
+		readOccupancyFn,
+		armMarkerFn,
+		readMarkerFn,
+		resolvePidFn: () => 42_000,
+		killFn,
+		removeMarkerFn: () => {},
+		contextWindow: CONTEXT_WINDOW,
+		backstopFraction: ORCH_CONTEXT_BACKSTOP_FRACTION,
+		handoffExistsFn: () => false,
+		// US-002/CAM-172: over-threshold-without-handoff now also signals the
+		// orchestrator pane. Explicitly stub every seam so this tick NEVER
+		// touches a real tmux socket (this file's header invariant) — without
+		// resolveOrchPaneIdFn/signalPaneFn overrides, the production default
+		// would resolve the REAL project session name and could reach a live
+		// `cam run` orchestrator pane if one happens to be open on this repo.
+		resolveOrchPaneIdFn: () => null,
+		signalPaneFn: () => {},
+		writeMinimalHandoffFn: () => {},
+	});
+
+	// Backstop must NOT have fired: no handoff present, even though over threshold.
+	expect(markerArmed).toBe(false);
+	expect(killCalled).toBe(false);
 });
 
 test('low-occupancy reader: no marker armed, killFn not called', async () => {

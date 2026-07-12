@@ -59,6 +59,47 @@ export function writeOrchHandoff(claudeDir: string, payload: OrchHandoffPayload)
 }
 
 /**
+ * Durable-state pointers bundled into the deterministic minimal backstop
+ * handoff (US-002/CAM-172). These are cheap, always-resolvable references the
+ * respawned orchestrator can follow to rebuild context itself, since the
+ * fallback path (unlike an agent-authored handoff) has no narrative content
+ * to hand off.
+ */
+export interface MinimalBackstopHandoffPointers {
+	/** Absolute path to the PRD driving the current cycle. */
+	prdPath: string;
+	/** Current git branch name (or 'unknown' if it could not be resolved). */
+	gitBranch: string;
+	/** Absolute path to the loop state file (.claude/cam-loop.local.md). */
+	loopFile: string;
+	/** Tail of scripts/cam/journal.md (empty string if unreadable/absent). */
+	journalTail: string;
+}
+
+/**
+ * Build the deterministic minimal handoff payload written by the recycle
+ * watcher itself when the orchestrator agent does not author its own handoff
+ * within the signal grace period (US-002/CAM-172). `reason` is always exactly
+ * `'context-backstop'` so the bash respawn-wrapper's cycle-close detection
+ * (`buildOrchestratorPaneCommand`) treats it like any other non-cycle-close
+ * respawn (increments the counter, never resets it).
+ */
+export function buildMinimalBackstopHandoff(
+	pointers: MinimalBackstopHandoffPointers,
+	writtenAt: string = new Date().toISOString(),
+): OrchHandoffPayload {
+	return {
+		schemaVersion: ORCH_HANDOFF_SCHEMA_VERSION,
+		writtenAt,
+		reason: 'context-backstop',
+		prdPath: pointers.prdPath,
+		gitBranch: pointers.gitBranch,
+		loopFile: pointers.loopFile,
+		journalTail: pointers.journalTail,
+	};
+}
+
+/**
  * Read the orchestrator handoff. Returns null when the file is absent (no
  * handoff pending). Throws a clear error when the file exists but is malformed
  * JSON, carries an unknown schemaVersion, or is missing a required field, so a

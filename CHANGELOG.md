@@ -6,6 +6,14 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.137.0] - 2026-07-12
+
+### Added
+
+- US-003 - Config-driven orchestrator window: default 200k, replace 1M model-prefix derivation
+- US-002 - Backstop produces a handoff: signal the agent, then deterministic minimal fallback, then respawn
+- US-001 - Guard: checkBackstop never arms without a handoff on disk
+
 ## [0.136.0] - 2026-07-11
 
 ### Added

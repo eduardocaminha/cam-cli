@@ -28,7 +28,14 @@ import { homedir } from 'node:os';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 
-import { ORCH_PID_MARKER, ORCH_RECYCLE_MARKER } from '../tmux/session.ts';
+import {
+	ORCH_PID_MARKER,
+	ORCH_RECYCLE_MARKER,
+	projectSessionName,
+	getOrchPaneId,
+	type SpawnFn as TmuxSpawnFn,
+} from '../tmux/session.ts';
+import { sendKeysWhenIdle } from '../tmux/dispatch.ts';
 import {
 	parseContextOccupancy,
 	orchestratorTranscriptPath,
@@ -38,6 +45,27 @@ import {
 	ORCH_CONTEXT_BACKSTOP_FRACTION,
 	isOverContextBackstop,
 } from '../orchestrator/context-window.ts';
+import {
+	ORCH_HANDOFF_FILENAME,
+	writeOrchHandoff,
+	buildMinimalBackstopHandoff,
+	type MinimalBackstopHandoffPointers,
+} from '../orchestrator/handoff.ts';
+
+/**
+ * Text sent to the orchestrator pane when the context backstop fires
+ * (US-002/CAM-172). Plain-English, not a slash command: there is no dedicated
+ * /cam-* command for an emergency mid-cycle handoff. Asks the agent to author
+ * a handoff and arm before the deterministic fallback takes over.
+ */
+export const BACKSTOP_SIGNAL_TEXT =
+	'cam: context ceiling reached. Please write .claude/.cam-orch-handoff.json now ' +
+	"(schemaVersion 1, reason \"context-backstop\", plus whatever cycle context you " +
+	'can summarize) so cam can safely recycle you. If nothing appears within 30s, ' +
+	'cam will write a minimal handoff itself and recycle anyway.';
+
+/** Default grace period (ms) to wait for an agent-authored handoff after signaling. */
+export const DEFAULT_SIGNAL_TIMEOUT_MS = 30_000;
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -127,6 +155,58 @@ export interface OrchRecycleWatchOptions {
 	 * Production: ORCH_CONTEXT_BACKSTOP_FRACTION (0.8).
 	 */
 	backstopFraction?: number;
+	/**
+	 * Returns true when the orchestrator handoff file
+	 * (.claude/.cam-orch-handoff.json) exists on disk.
+	 * Mirrors the --cycle-close handoff guard in index.ts's dispatchJournal
+	 * (~1559-1569, exit 3): checkBackstop must never arm the recycle marker
+	 * unless the handoff already exists, so a mid-cycle backstop can never
+	 * SIGTERM the orchestrator into the run.ts teardown branch and lose context.
+	 * Production: existsSync(join(claudeDir, ORCH_HANDOFF_FILENAME)).
+	 */
+	handoffExistsFn?: () => boolean;
+
+	// --- Authored-handoff signal seams (US-002 / CAM-172) ---
+
+	/**
+	 * Spawn function used by the pane-id resolution and pane-signal defaults.
+	 * Production: a thin `spawnSync` adapter (mirrors src/commands/issue.ts).
+	 * Tests inject a fake so no real tmux binary is invoked.
+	 */
+	tmuxSpawnFn?: TmuxSpawnFn;
+	/**
+	 * Resolves the orchestrator's tmux pane id for signaling.
+	 * Production: getOrchPaneId(projectSessionName(cwd), tmuxSpawnFn).
+	 * Tests inject a fake to avoid a real tmux session lookup. This is a
+	 * distinct seam from signalPaneFn so tests can exercise pane-not-found
+	 * (best-effort no-op) independently of the send-keys call itself.
+	 */
+	resolveOrchPaneIdFn?: () => string | null;
+	/**
+	 * Sends the authored-handoff request text to a resolved pane id via atomic
+	 * send-keys (text + Enter in one call, NO -l; sendkeys-literal-enter-gotcha).
+	 * Production: sendKeysWhenIdle({ paneId, text: BACKSTOP_SIGNAL_TEXT, tmuxSpawnFn }).
+	 * Tests inject a spy to assert it fires exactly once per unresolved episode.
+	 */
+	signalPaneFn?: (paneId: string) => void;
+	/**
+	 * Writes the deterministic minimal fallback handoff when no authored
+	 * handoff appears within signalTimeoutMs of the signal.
+	 * Production: writeOrchHandoff(claudeDir, buildMinimalBackstopHandoff(...))
+	 * with reason 'context-backstop' and pointers to prd.json, the current git
+	 * branch, the loop file, and a scripts/cam/journal.md tail.
+	 */
+	writeMinimalHandoffFn?: () => void;
+	/**
+	 * Current time source (ms epoch). Production: Date.now. Tests inject a
+	 * controlled clock so the 30s grace window never actually sleeps.
+	 */
+	nowFn?: () => number;
+	/**
+	 * Milliseconds to wait for an authored handoff after signaling before
+	 * writing the deterministic fallback. Default: DEFAULT_SIGNAL_TIMEOUT_MS (30 000).
+	 */
+	signalTimeoutMs?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -301,35 +381,192 @@ function makeArmMarkerFn(claudeDir: string): () => void {
 	};
 }
 
+/**
+ * Checks whether the orchestrator handoff file exists on disk.
+ * Mirrors the --cycle-close handoff guard in index.ts's dispatchJournal
+ * (~1559-1569, exit 3), which reads the same path before arming the marker.
+ */
+function makeHandoffExistsFn(claudeDir: string): () => boolean {
+	const handoffFilePath = join(claudeDir, ORCH_HANDOFF_FILENAME);
+	return () => existsSync(handoffFilePath);
+}
+
+/**
+ * Default tmuxSpawnFn: a thin spawnSync adapter mirroring src/commands/issue.ts.
+ * Reused by both the pane-id resolution and pane-signal production defaults.
+ */
+function makeDefaultTmuxSpawnFn(): TmuxSpawnFn {
+	return (cmd, args, opts) => spawnSync(cmd, args, { stdio: opts?.stdio ?? 'ignore' });
+}
+
+/**
+ * Resolves the orchestrator's tmux pane id via getOrchPaneId, scoped to the
+ * project session derived from cwd.
+ */
+function makeResolveOrchPaneIdFn(cwd: string, tmuxSpawnFn: TmuxSpawnFn): () => string | null {
+	const sessionName = projectSessionName(cwd);
+	return () => getOrchPaneId(sessionName, tmuxSpawnFn);
+}
+
+/**
+ * Sends the backstop signal text to a resolved pane id via sendKeysWhenIdle
+ * (idle-guarantee + atomic send-keys, no -l; US-008/sendkeys-literal-enter-gotcha).
+ */
+function makeSignalPaneFn(tmuxSpawnFn: TmuxSpawnFn): (paneId: string) => void {
+	return (paneId: string) => {
+		sendKeysWhenIdle({ paneId, text: BACKSTOP_SIGNAL_TEXT, tmuxSpawnFn });
+	};
+}
+
+/** Resolve the current git branch name, or 'unknown' when it cannot be read. */
+function readGitBranch(cwd: string): string {
+	try {
+		const r = spawnSync('git', ['-C', cwd, 'rev-parse', '--abbrev-ref', 'HEAD'], {
+			encoding: 'utf8',
+		});
+		if ((r.status ?? 1) !== 0) return 'unknown';
+		const branch = typeof r.stdout === 'string' ? r.stdout.trim() : '';
+		return branch || 'unknown';
+	} catch {
+		return 'unknown';
+	}
+}
+
+/** Read the tail of scripts/cam/journal.md; empty string when absent/unreadable. */
+function readJournalTail(cwd: string, tailLines = 40): string {
+	const journalPath = join(cwd, 'scripts', 'cam', 'journal.md');
+	try {
+		const raw = readFileSync(journalPath, 'utf8');
+		return raw.split('\n').slice(-tailLines).join('\n');
+	} catch {
+		return '';
+	}
+}
+
+/**
+ * Writes the deterministic minimal fallback handoff (US-002/CAM-172): the
+ * first PRODUCTION caller of writeOrchHandoff. Reason is always exactly
+ * 'context-backstop', with pointers to the durable state files a respawned
+ * orchestrator can follow to rebuild context (prd.json, current git branch,
+ * the loop file, and a journal.md tail).
+ */
+function makeWriteMinimalHandoffFn(cwd: string, claudeDir: string): () => void {
+	return () => {
+		const pointers: MinimalBackstopHandoffPointers = {
+			prdPath: join(cwd, 'scripts', 'cam', 'prd.json'),
+			gitBranch: readGitBranch(cwd),
+			loopFile: join(claudeDir, 'cam-loop.local.md'),
+			journalTail: readJournalTail(cwd),
+		};
+		writeOrchHandoff(claudeDir, buildMinimalBackstopHandoff(pointers));
+	};
+}
+
 // ---------------------------------------------------------------------------
 // Poll tick helper (extracted to keep runOrchRecycleWatch under biome's
 // noExcessiveCognitiveComplexity limit of 15; CAM-60 factory/helper pattern)
 // ---------------------------------------------------------------------------
 
-interface BackstopDeps {
+/**
+ * Mutable per-episode state tracked across poll ticks (US-002/CAM-172).
+ *
+ * Callers create exactly ONE instance per watcher lifetime (not per tick) so
+ * `signaledAt` persists across the `while(true)` poll loop; `checkBackstop`
+ * mutates it in place.
+ */
+export interface BackstopEpisodeState {
+	/**
+	 * Epoch ms when the orchestrator pane was last signaled for the CURRENT
+	 * unresolved over-threshold-without-handoff episode, or null when no
+	 * signal is outstanding (fresh episode, or the previous episode resolved
+	 * by either an authored handoff appearing or the fallback firing).
+	 */
+	signaledAt: number | null;
+}
+
+export interface BackstopDeps {
 	readOccupancyFn: () => number | null;
 	armMarkerFn: () => void;
 	contextWindow: number;
 	backstopFraction: number;
+	/**
+	 * Returns true when the orchestrator handoff file already exists on disk.
+	 * checkBackstop refuses to call armMarkerFn unless this returns true, even
+	 * when occupancy is over the backstop threshold (US-001/CAM-172 guard).
+	 */
+	handoffExistsFn: () => boolean;
+	/**
+	 * Signals the orchestrator pane exactly once per unresolved episode, asking
+	 * it to author a handoff and arm (US-002/CAM-172). Never re-invoked while
+	 * `episode.signaledAt` is already set and the grace period has not expired.
+	 */
+	signalPaneFn: () => void;
+	/**
+	 * Writes the deterministic minimal fallback handoff (reason
+	 * 'context-backstop' + durable-state pointers) when the agent does not
+	 * author its own handoff within `signalTimeoutMs` of the signal.
+	 */
+	writeMinimalHandoffFn: () => void;
+	/** Current time source (ms epoch). Production: Date.now. */
+	nowFn: () => number;
+	/** Milliseconds to wait for an authored handoff after signaling. */
+	signalTimeoutMs: number;
+	/** Mutable per-episode state; see {@link BackstopEpisodeState}. */
+	episode: BackstopEpisodeState;
 }
 
 /**
  * Check the context backstop once per poll tick.
  *
- * If the orchestrator transcript reports an occupancy strictly above
- * `contextWindow * backstopFraction`, the recycle marker is armed via
- * `armMarkerFn`. The immediately following `handleOneTick` call then
- * sees the marker and fires SIGTERM via the existing consume-once path.
+ * State machine (US-002/CAM-172):
+ *   1. Occupancy null, or not over the backstop fraction: no-op, and any
+ *      outstanding episode is cleared (the ceiling condition resolved itself).
+ *   2. Over threshold AND a handoff already exists on disk (authored by the
+ *      agent, or previously written by this same fallback): arm the marker via
+ *      the existing consume-once path (`armMarkerFn`; `handleOneTick` fires
+ *      SIGTERM next) and clear the episode. This is the US-001/CAM-172 guard,
+ *      unchanged: the marker is never armed before a handoff exists.
+ *   3. Over threshold, no handoff yet, no signal outstanding: signal the pane
+ *      once (`signalPaneFn`) and record `episode.signaledAt`. Does NOT arm yet.
+ *   4. Over threshold, no handoff yet, signal outstanding and still within
+ *      `signalTimeoutMs`: no-op (never re-injects the signal every poll while
+ *      the same episode is unresolved).
+ *   5. Over threshold, no handoff yet, signal outstanding and the grace period
+ *      has elapsed: write the deterministic minimal handoff (`writeMinimalHandoffFn`),
+ *      arm the marker, and clear the episode.
  *
- * A null occupancy (absent/unreadable transcript) is always a no-op:
- * it never produces a false-positive recycle.
+ * A null occupancy (absent/unreadable transcript) is always a no-op: it never
+ * produces a false-positive recycle.
  */
-function checkBackstop(deps: BackstopDeps): void {
+export function checkBackstop(deps: BackstopDeps): void {
 	const occupancy = deps.readOccupancyFn();
-	if (occupancy === null) return;
-	if (isOverContextBackstop(occupancy, deps.contextWindow, deps.backstopFraction)) {
-		deps.armMarkerFn();
+	if (occupancy === null) {
+		deps.episode.signaledAt = null;
+		return;
 	}
+	if (!isOverContextBackstop(occupancy, deps.contextWindow, deps.backstopFraction)) {
+		deps.episode.signaledAt = null;
+		return;
+	}
+	if (deps.handoffExistsFn()) {
+		// Authored handoff wins: arm via the existing consume-once path.
+		deps.episode.signaledAt = null;
+		deps.armMarkerFn();
+		return;
+	}
+	if (deps.episode.signaledAt === null) {
+		// First tick of this episode: signal once, never re-inject on later polls.
+		deps.signalPaneFn();
+		deps.episode.signaledAt = deps.nowFn();
+		return;
+	}
+	if (deps.nowFn() - deps.episode.signaledAt < deps.signalTimeoutMs) {
+		return; // still within the grace window: wait for the authored handoff
+	}
+	// Grace period expired with no authored handoff: deterministic fallback.
+	deps.writeMinimalHandoffFn();
+	deps.armMarkerFn();
+	deps.episode.signaledAt = null;
 }
 
 interface TickDeps {
@@ -377,6 +614,43 @@ function handleOneTick(deps: TickDeps): void {
 	deps.removeMarkerFn();
 }
 
+/**
+ * Assemble the BackstopDeps for a watcher run, wiring the US-002/CAM-172
+ * authored-handoff-signal seams (resolveOrchPaneIdFn + signalPaneFn compose
+ * into a single no-arg signalPaneFn; tmuxSpawnFn backs both defaults).
+ * Extracted to keep runOrchRecycleWatch under biome's
+ * noExcessiveCognitiveComplexity limit of 15.
+ */
+function buildBackstopDeps(
+	cwd: string,
+	claudeDir: string,
+	options: OrchRecycleWatchOptions,
+): BackstopDeps {
+	const tmuxSpawnFn: TmuxSpawnFn = options.tmuxSpawnFn ?? makeDefaultTmuxSpawnFn();
+	const resolveOrchPaneIdFn =
+		options.resolveOrchPaneIdFn ?? makeResolveOrchPaneIdFn(cwd, tmuxSpawnFn);
+	const signalPaneRawFn = options.signalPaneFn ?? makeSignalPaneFn(tmuxSpawnFn);
+	return {
+		readOccupancyFn: options.readOccupancyFn ?? makeReadOccupancyFn(cwd),
+		armMarkerFn: options.armMarkerFn ?? makeArmMarkerFn(claudeDir),
+		contextWindow: options.contextWindow ?? orchestratorContextWindow(),
+		backstopFraction: options.backstopFraction ?? ORCH_CONTEXT_BACKSTOP_FRACTION,
+		handoffExistsFn: options.handoffExistsFn ?? makeHandoffExistsFn(claudeDir),
+		// Composed no-arg signal: resolve the pane id fresh on every signal (it can
+		// change across respawns), then send if found. Best-effort: a not-found
+		// pane is a silent no-op here, safely covered by the 30s deterministic
+		// fallback (writeMinimalHandoffFn) regardless.
+		signalPaneFn: () => {
+			const paneId = resolveOrchPaneIdFn();
+			if (paneId) signalPaneRawFn(paneId);
+		},
+		writeMinimalHandoffFn: options.writeMinimalHandoffFn ?? makeWriteMinimalHandoffFn(cwd, claudeDir),
+		nowFn: options.nowFn ?? (() => Date.now()),
+		signalTimeoutMs: options.signalTimeoutMs ?? DEFAULT_SIGNAL_TIMEOUT_MS,
+		episode: { signaledAt: null },
+	};
+}
+
 // ---------------------------------------------------------------------------
 // Core poll loop
 // ---------------------------------------------------------------------------
@@ -407,12 +681,7 @@ export async function runOrchRecycleWatch(options: OrchRecycleWatchOptions = {})
 		removeMarkerFn: options.removeMarkerFn ?? makeRemoveMarkerFn(claudeDir),
 		emitEventFn: options.emitEventFn,
 	};
-	const backstopDeps: BackstopDeps = {
-		readOccupancyFn: options.readOccupancyFn ?? makeReadOccupancyFn(cwd),
-		armMarkerFn: options.armMarkerFn ?? makeArmMarkerFn(claudeDir),
-		contextWindow: options.contextWindow ?? orchestratorContextWindow(),
-		backstopFraction: options.backstopFraction ?? ORCH_CONTEXT_BACKSTOP_FRACTION,
-	};
+	const backstopDeps = buildBackstopDeps(cwd, claudeDir, options);
 	const sleepFn = options.sleepFn ?? ((ms: number) => Bun.sleepSync(ms));
 	const pollIntervalMs = options.pollIntervalMs ?? 2000;
 
