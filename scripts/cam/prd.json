@@ -1,0 +1,67 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-284",
+  "description": "Add a required updatedAt (last-activity) timestamp to the issue model: schema + type, stamped by every mutation writer, backfilled to createdAt, and exposed in cam issue list --json.",
+  "issueNumber": 284,
+  "type": "feat",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add required updatedAt field: schema + type + creation stamp + backfill",
+      "description": "As a backlog maintainer, I need an updatedAt timestamp to exist uniformly on every issue (schema, type, at creation, and backfilled onto the 283 existing files) so that last-activity is a first-class, always-present field before any writer or reader depends on it.",
+      "acceptanceCriteria": [
+        "updatedAt (type string, format date-time) is added to BOTH the properties AND the required array of scripts/cam/issues.schema.json (dogfood) and templates/scripts/cam/issues.schema.json (distributed); the two copies are edited independently and are NOT diffed against each other (they legitimately differ on specSource/allOf). [oracle: file-assert grep -q '\"updatedAt\"' scripts/cam/issues.schema.json && grep -q '\"updatedAt\"' templates/scripts/cam/issues.schema.json]",
+        "IssueEntry (src/issues/types.ts) gains updatedAt as a required (non-optional) string field. [oracle: file-assert grep -q 'updatedAt: string' src/issues/types.ts]",
+        "Every from-scratch IssueEntry constructor stamps updatedAt: creation writers (src/issues/alloc.ts buildIssueEntry, src/commands/issue-file.ts:306) set updatedAt equal to the same injected-clock createdAt value at creation time (not an inline new Date()/Date.now()). [oracle: bun test]",
+        "The migration entry transform (scripts/cam/migrate-issues-schema.ts migrateEntry, near :99) copies updatedAt through, defaulting to createdAt when absent (updatedAt = raw.updatedAt ?? raw.createdAt); backfill is deterministic and idempotent, never stamping now(). [oracle: bun test]",
+        "All 283 existing issue files are backfilled with updatedAt = createdAt via a scripted migration run (not hand-edits); every CAM-NNNN.json file carries updatedAt. [oracle: file-assert grep -L '\"updatedAt\"' scripts/cam/issues/CAM-*.json produces no output]",
+        "A test asserts a freshly-created issue has updatedAt == createdAt. [oracle: bun test]",
+        "Embedded vendor is regenerated (bun run embed-vendor) so the embedded templates schema is not stale. [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)",
+        "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Vendor drift check passes (bun run embed-vendor:check)"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: scripts/cam/issues.schema.json + templates/scripts/cam/issues.schema.json (add updatedAt to properties AND required in each, independently; do NOT diff the two copies, per patterns.md CAM-235 gotcha), src/issues/types.ts, src/issues/alloc.ts (buildIssueEntry, ~:114/:146/:180), src/commands/issue-file.ts (:306 createdAt: clock()), scripts/cam/migrate-issues-schema.ts (migrateEntry :99), the 283 scripts/cam/issues/CAM-*.json files (scripted backfill), and every test makeIssue/base-fixture builder (test/issues/list.test.ts, test/issue-list.test.ts, test/issue-specify.test.ts, test/triage.test.ts, test/suggestion-followups.test.ts, test/commands/issue-specify.test.ts, test/issues/*.test.ts, etc. -- grep 'createdAt:' under test/ to find all ~36 files) which must gain updatedAt so typecheck stays green. Making it REQUIRED in IssueEntry (not optional) is deliberate: it gives compile-time proof every constructor sets it (the field-lies-if-any-writer-misses-it concern in the issue). Templates copy is the embedded one (templates/ mirrors project tree -> key scripts/cam/issues.schema.json in src/vendor/_generated.ts), so editing it requires bun run embed-vendor. No ajv/runtime schema validator exists (Step 5.5 = no_external_lib_touched). Backfill lands on the branch; per the finalize-clobbers-stale-branch lesson, the ship step should merge origin/main before finalize so main-filed issues are not clobbered by the 283-file rewrite. patterns.md keywords to grep: 'issues.schema', 'migrate', 'embed-vendor'."
+    },
+    {
+      "id": "US-002",
+      "title": "Stamp updatedAt on every issue-mutation writer",
+      "description": "As a backlog maintainer, I need every mutation path (specify, abandon, merge, close, demote, and rank/reprioritize) to bump updatedAt to the mutation time so that the last-activity field reflects real activity instead of lying at the creation value.",
+      "acceptanceCriteria": [
+        "The implementer greps every issue-write site and confirms coverage; the five on-main writers in src/commands/issue-specify.ts (specifyIssueOnMain, abandonIssueOnMain, mergeIssueOnMain, closeIssueOnMain, demoteIssueOnMain) each override updatedAt on the mutated entry(ies) to the injected clock() value (mergeIssueOnMain bumps both the abandoned source and, when foldBlockedBy folds deps, the mutated target). [oracle: bun test]",
+        "The rank/reprioritize writer src/commands/triage.ts computeRankDiff (near :216, where changed entries are rebuilt as { ...issue, rank }) bumps updatedAt via the injected ClockFn threaded through runTriage (currently declared clock?: ClockFn but unread). [oracle: bun test]",
+        "Timestamps come from the injected clock()/ClockFn already present on each writer's options, never an inline new Date()/Date.now(). [oracle: file-assert: rg 'new Date\\(\\)|Date.now\\(\\)' src/commands/issue-specify.ts src/commands/triage.ts returns no mutation-path stamp]",
+        "A test asserts that a mutation (e.g. demote, specify, abandon, close, merge, and a rank change) advances updatedAt beyond the original createdAt, using a clock that returns a later timestamp. [oracle: bun test]",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)",
+        "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "Files: src/commands/issue-specify.ts (destructure `clock` in abandon/close/demote/merge which already declare it in options but only destructure { cwd, id, spawnFn } today; specify already uses clock for emitStagePromoted), src/commands/triage.ts (thread the optional clock into computeRankDiff; give it a default like () => new Date().toISOString() only at the CLI boundary, inject a deterministic clock in tests). Each mutated IssueEntry is built via { ...entry, <fields> }; add updatedAt: clock() to that spread so the stamp overrides the inherited (stale) value. mergeIssueOnMain builds files via buildMergeFiles(source, target, ...) -- stamp both mutatedSource and mutatedTarget. Tests: test/commands/issue-specify.test.ts, test/triage.test.ts (+ test/integration/triage-*.test.ts). Do NOT trust the writer list as exhaustive per the issue gotcha: grep for issueFilePath / JSON.stringify(mutated / { ...entry / { ...issue writes across src/ to confirm no other mutation path exists. patterns.md keywords: 'commitTreeToMain', 'triage'."
+    },
+    {
+      "id": "US-003",
+      "title": "Expose updatedAt in cam issue list --json",
+      "description": "As a tooling consumer, I need updatedAt in the cam issue list --json rows alongside createdAt so that machine consumers can sort/filter issues by last activity.",
+      "acceptanceCriteria": [
+        "BacklogJsonRow (src/issues/list.ts:158) gains updatedAt: string and toJsonRow (:190) passes issue.updatedAt through alongside the existing createdAt. [oracle: file-assert grep -q 'updatedAt' src/issues/list.ts]",
+        "The exact-shape tests are updated to expect updatedAt on every row (test/issues/list.test.ts and test/issue-list.test.ts). [oracle: bun test]",
+        "Typecheck passes (bun run typecheck)",
+        "Tests pass (bun test)",
+        "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "Files: src/issues/list.ts (BacklogJsonRow interface :158-164, toJsonRow :189-191 -- add updatedAt right beside createdAt which CAM-281 already added), test/issues/list.test.ts (makeIssue base + the exact-row literal near :349), test/issue-list.test.ts. Pure additive output; no writer or schema change here. Independent of US-002 but must follow US-001 (field must exist on IssueEntry). patterns.md keyword: 'list --json'."
+    }
+  ]
+}
