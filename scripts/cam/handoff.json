@@ -1,0 +1,16 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Remove vestigial writeFile? field from on-main writer interfaces and obsolete tests" },
+  "branchName": "cam/issue-280",
+  "timestamp": "2026-07-12T00:00:00.000Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/commands/issue-specify.ts",
+    "test/commands/issue-specify.test.ts",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 removed writeFile? from all five on-main writer Options interfaces in src/commands/issue-specify.ts (SpecifyIssueOnMainOptions/AbandonIssueOnMainOptions/MergeIssueOnMainOptions/CloseIssueOnMainOptions/DemoteIssueOnMainOptions) and deleted the injected writeFile recorder + writtenFiles-length-0 assertion from the specify/abandon/demote tests in test/commands/issue-specify.test.ts. mergeIssueOnMain and closeIssueOnMain tests never passed writeFile so were untouched. The pre-existing commit-tree assertions in those same tests were left in place and still cover the ref-only commitTreeToMain invariant; no replacement test was added. src/commands/post-merge.ts was not touched. All gates green: typecheck, bun test (4413 pass), bun run check:all (test/embed-vendor/lint/file-size/debt-markers/version-skips/coverage/dead-code/dup/ci-parity all ok).",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
