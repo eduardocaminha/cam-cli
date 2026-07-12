@@ -1,36 +1,28 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Strip the inert frontmatter model: lines from the 5 pane/root agent files (dual-copy)"
+    "id": "US-003",
+    "title": "Give ship a single documented model source and stop the dead planner/auditor frontmatter rewrite"
   },
   "branchName": "cam/issue-286",
   "timestamp": "2026-07-12T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    ".claude/agents/subagent-orchestrator.md",
-    ".claude/agents/subagent-planner.md",
-    ".claude/agents/subagent-auditor.md",
-    ".claude/agents/subagent-reviewer.md",
-    ".claude/agents/subagent-implementer.md",
-    "templates/agents/subagent-orchestrator.md",
-    "templates/agents/subagent-planner.md",
-    "templates/agents/subagent-auditor.md",
-    "templates/agents/subagent-reviewer.md",
-    "templates/agents/subagent-implementer.md",
-    "src/vendor/_generated.ts",
+    "src/templates/frontmatter.ts",
+    "src/commands/config.ts",
+    "test/commands/config-frontmatter.test.ts",
+    "test/commands/config-persist.test.ts",
     "scripts/cam/prd.json",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [
-    "vendor/check-agent-frontmatter.ts (vendored byte-for-byte from the upstream reporter monorepo per vendor/README.md) still lists 'model' in REQUIRED_TOP_LEVEL_KEYS. Now that all 5 templates/agents/subagent-*.md personas have no model: line, a downstream `cam init`'s runVendoredSmoke('check-agent-frontmatter.ts') step will fail this required-key check against the materialized copies. Not fixed in this story: editing the vendored file locally would violate its documented verbatim-vendoring contract (re-vendor procedure pins an upstream sha). No existing test in this repo exercises the smoke against real templates/ content, so bun test / check:all stay green despite this latent regression. Needs a follow-up: either fix upstream in reporter and re-vendor, or make a deliberate, documented local divergence dropping 'model' from REQUIRED_TOP_LEVEL_KEYS.",
-    "cam-ship.md (.claude/commands/cam-ship.md and templates/commands/cam-ship.md) still carries a model: frontmatter line and is deliberately untouched by this story per its notes field -- that file's frontmatter is documented as its own source (rewritten by mergeConfigChoices via FRONTMATTER_TARGET_PHASE_PATHS['ship']), out of scope here, presumably handled by US-003."
+    "Carried over from US-002, still unresolved (out of this story's AC scope): vendor/check-agent-frontmatter.ts's REQUIRED_TOP_LEVEL_KEYS still lists 'model' as required, so a downstream cam init's runVendoredSmoke('check-agent-frontmatter.ts') step will fail against the materialized templates/agents/subagent-*.md copies (which no longer carry a model: line since US-002). Not fixed here either: that file is documented in vendor/README.md as vendored byte-for-byte verbatim from the upstream reporter monorepo. Needs a follow-up: fix upstream in reporter and re-vendor, or make a deliberate, documented local divergence dropping 'model' from REQUIRED_TOP_LEVEL_KEYS."
   ],
-  "nextStoryContext": "US-002 removed the `model:` YAML frontmatter line entirely (not replaced with a comment) from all 5 dual-copy persona files: .claude/agents/subagent-{orchestrator,planner,auditor,reviewer,implementer}.md and templates/agents/subagent-{same}.md. Verified via source read (plan-runner.ts, plan-argv.ts, review.ts, worker-argv.ts, run.ts) that all five roles are actually spawned with `--model <readPhaseModel(phase)>` as a claude CLI flag -- the frontmatter model: line was confirmed dead for all five, not just implementer/reviewer as an older comment in src/templates/frontmatter.ts implies (that comment, describing planner/auditor as 'Task subagents' with no --model, is now stale: plan-argv.ts shows they run as pane workers with --model too, same as implementer/reviewer). Chose plain removal over a `#`-comment replacement because vendor/check-agent-frontmatter.ts's hand-rolled frontmatter parser has zero support for comment lines and would hard-error on one. `bun run embed-vendor` was re-run (src/vendor/_generated.ts regenerated) since templates/ changed; embed-vendor:check, typecheck, bun test (4343 pass), and check:all (test/embed-vendor/lint/file-size/debt-markers/version-skips/coverage/dead-code/dup/ci-parity) all passed clean. Left cam-ship.md's frontmatter untouched per this story's own notes (presumably US-003's scope). Two follow-ups recorded in openQuestions above: the vendor smoke's now-stale REQUIRED_TOP_LEVEL_KEYS mismatch (deliberately not patched -- verbatim-vendoring invariant), and the src/templates/frontmatter.ts docstring/FRONTMATTER_TARGET_PHASE_PATHS mechanism for planner/auditor being effectively as inert as the frontmatter it rewrites (since --model already wins for those two roles too) -- neither is required by this story's AC, so neither was touched.",
+  "nextStoryContext": "US-003 reduced FRONTMATTER_TARGET_PHASE_PATHS (src/templates/frontmatter.ts) from 3 entries (planner, auditor, ship) down to 1 (ship only). Rationale: US-002's handoff already established that planner and auditor are spawned as pane workers with --model <readPhaseModel(phase)> on the CLI (same mechanism as implementer/reviewer), so rewriting their frontmatter model: line was always dead effort -- doubly so after US-002 stripped that line from the persona files entirely. ship is the sole survivor because ship-runner.ts is deterministic (zero LLM calls, confirmed via its own comment at line 36), so it has no --model CLI path at all; cam-ship.md's frontmatter model: line remains the one live, documented model source for that phase. Updated: the module comment in frontmatter.ts (explains ship-only rationale without literally naming 'planner'/'auditor', since AC1's grep oracle checks the whole file including comments -- see the new patterns.md bullet on this gotcha), config.ts's mergeConfigChoices jsdoc (singular 'file' not 'three... files'), and both test files: test/commands/config-frontmatter.test.ts (removed the planner/auditor path-assertion and rewrite-integration tests, added a 'leaves ... unmodified' integration test, renamed the 'rewrites all three' loop test since it now iterates a 1-entry map) and test/commands/config-persist.test.ts (added one integration test asserting mergeConfigChoices with a cwd rewrites ONLY the seeded cam-ship.md fixture and leaves planner/auditor agent files byte-identical -- this satisfies AC3's oracle, which explicitly names this test file). cam-ship.md's own frontmatter content was deliberately left untouched (dual-copy .claude/+templates/, touching it would trigger embed-vendor:check for no AC-required reason). Quality gates all green: typecheck 0 errors, bun test 4341 pass / 0 fail, check:all full spine (test/embed-vendor/lint/file-size/debt-markers/version-skips/coverage/dead-code/dup/ci-parity) clean.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure internal markdown/YAML-frontmatter edit across agent persona files; no external library API surface was exercised."
+      "summary": "Pure internal refactor of a config-persistence map and its module/jsdoc comments plus matching test updates; no external library API surface was exercised."
     }
   ]
 }
