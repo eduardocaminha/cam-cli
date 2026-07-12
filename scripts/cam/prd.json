@@ -1,0 +1,32 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-265",
+  "description": "Consolidate duplicated 'Do NOT delete the marker yourself' boilerplate in the orchestrator agent doc into one shared read-only preamble, fixing the displaced implement-blocked duplicate and per-marker removal clauses.",
+  "issueNumber": 265,
+  "type": "chore",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Consolidate boot-marker removal boilerplate in orchestrator agent doc",
+      "description": "As the orchestrator agent, I need the boot-surfaced-marker section of my instructions to state the shared 'read-only, do not delete' rule once and give each marker exactly one correct removal clause, so that the doc is unambiguous and non-contradictory.",
+      "acceptanceCriteria": [
+        "In BOTH templates/agents/subagent-orchestrator.md and .claude/agents/subagent-orchestrator.md, the repeated boilerplate sentence 'Do NOT delete the marker yourself. Surfacing it at boot is read-only' appears once as a shared general rule covering all boot-surfaced markers, not repeated per marker. [oracle: file-assert test \"$(grep -c 'Do NOT delete the marker yourself' templates/agents/subagent-orchestrator.md)\" -eq 1 && test \"$(grep -c 'Do NOT delete the marker yourself' .claude/agents/subagent-orchestrator.md)\" -eq 1]",
+        "In BOTH files the implement-blocked block contains exactly ONE removal note stating the marker is cleared only by the next re-armed implement dispatch for that SAME issue (issueId-matched); the contradictory 'next plan run (US-004)' paragraph no longer appears under implement-blocked. [oracle: file-assert ! grep -q 'next plan run (US-004)' templates/agents/subagent-orchestrator.md && ! grep -q 'next plan run (US-004)' .claude/agents/subagent-orchestrator.md]",
+        "In BOTH files the plan-preflight-failed marker gains its removal-condition note (currently absent): cleared by the next plan run whose post-audit outcome is anything other than another preflight failure (issue-agnostic), per src/supervisor/plan-runner.ts:1313-1320,1382. [oracle: file-assert grep -qi 'preflight' templates/agents/subagent-orchestrator.md]",
+        "In BOTH files the plan-escalated removal clause states that ANY converging (audit-approved -> branch-created) plan run clears it, gated on convergence not on the original issueId (the too-narrow 'for that issue' wording is dropped), per src/supervisor/plan-runner.ts:1294-1297. [oracle: reviewer-judgment]",
+        "The per-marker specific removal clauses (ship-stalled=merge-watch consume on PR merge; plan-escalated=convergence-gated; plan-preflight-failed=issue-agnostic non-preflight result; implement-blocked=issueId-scoped re-arm; post-merge-stalled=post-merge sequence completes; sidecar-stalled=next healthy bring-up) are each preserved and NOT collapsed into a single generic clause. [oracle: reviewer-judgment]",
+        "Documentation-only change: no file under src/ is modified. [oracle: file-assert test -z \"$(git diff --name-only main -- src/)\"]",
+        "Vendor drift check passes (bun run embed-vendor:check); run bun run embed-vendor if it flags drift. [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Edit templates/agents/subagent-orchestrator.md (~lines 170-245) AND .claude/agents/subagent-orchestrator.md. GOTCHA: dual-copy is PER-FILE, not byte-identical (memory cam-dual-copy-is-per-file): the templates/ copy has an extra sidecar-stalled marker (item 12 + block, lines 150-154/234-245) that the .claude/ copy lacks; apply the consolidation logic to whichever markers exist in each file, do NOT force the two files identical. GOTCHA: the 'next plan run (US-004)' paragraph currently under implement-blocked is the DISPLACED plan-preflight-failed note: relocate its corrected content to the plan-preflight-failed block, don't merely delete it. GOTCHA: templates/ is embedded into the compiled binary; if embed-vendor:check flags drift run bun run embed-vendor and commit the regenerated copy. Verify removal conditions against src/commands/sidecar.ts:537,558-569, src/supervisor/implement-blocked-marker.ts:169, src/supervisor/plan-runner.ts:1294-1297,1313-1320,1382 before wording each clause. This is an agent-instruction .md (LLM-consumed): em-dashes are allowed here, unlike human-readable persisted docs."
+    }
+  ]
+}
