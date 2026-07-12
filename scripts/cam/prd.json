@@ -1,0 +1,48 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-282",
+  "description": "Stop an orphaned .cam-implement-blocked.json (marker for a closed/shipped issue) from dirtying the clean tree and wedging the next plan preflight.",
+  "issueNumber": 282,
+  "type": "fix",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Gitignore the implement-blocked marker so it stops tripping the clean-tree gate",
+      "description": "As the plan-preflight, I need .claude/.cam-implement-blocked.json to be gitignored like its sibling durable markers so that its mere presence on disk no longer registers as untracked dirt and trips the clean-tree gate that wedges the next plan dispatch.",
+      "acceptanceCriteria": [
+        ".claude/.cam-implement-blocked.json is added to .gitignore alongside its sibling durable markers (near .gitignore:91, mirroring the .cam-plan-preflight-failed.json / .cam-post-merge-stalled.json entries), added as a single explicit path with a descriptive comment, NOT as a broad .claude/ or .cam-* wildcard. [oracle: grep -q '.claude/.cam-implement-blocked.json' .gitignore]",
+        "No broad wildcard for .claude/ or .cam-* markers is introduced by this change. [oracle: reviewer-judgment]",
+        "A test proves that, with the .gitignore entry present, an orphaned .claude/.cam-implement-blocked.json on disk does NOT surface in `git status --porcelain` (real git in a temp repo), so the clean-tree step of runPlanPreflight (src/supervisor/plan-preflight.ts:91-97) is not tripped by the marker's mere presence. [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "This is the root-cause fix per the issue gotchas: implement-blocked is the ONLY durable marker not gitignored. Edit .gitignore only (siblings live at .gitignore:85-95). Do NOT touch the write-site (src/supervisor/loop.ts:820-826) or the outcome classification. The regression test should create a temp git repo, copy in the .gitignore entry, touch the marker, and assert `git status --porcelain` is empty; place it under test/ mirroring the preflight area. Do not attempt to unit-test this via an injected spawnFn fake (a fake would not exercise the real gitignore)."
+    },
+    {
+      "id": "US-002",
+      "title": "Sweep orphaned implement-blocked markers whose issueId is a closed/shipped issue",
+      "description": "As the orchestrator boot-surface and the auto-chain circuit breaker, I need a marker whose issueId points to an already closed/shipped issue to be deterministically removed so that a stale marker can no longer mislead the boot-surface or the circuit-breaker read once its issue has shipped.",
+      "acceptanceCriteria": [
+        "A deterministic sweep removes a .claude/.cam-implement-blocked.json whose issueId corresponds to a CLOSED/shipped issue (issue stage === 'shipped' OR status === 'abandoned'), determined by a read-only on-main read of the backlog (matching the marker's issueId numeric suffix against the on-main issue entry). [oracle: bun test]",
+        "The sweep leaves untouched a marker whose issueId is the current/OPEN issue (stage not shipped and status open). [oracle: bun test]",
+        "The sweep performs no working-tree mutation for its issue-state read: it reads issue state via the existing on-main reader (readBacklogFromMain in src/issues/backlog.ts) and does not check out, pull, or stage anything. [oracle: reviewer-judgment]",
+        "The existing live-issue clear (clearImplementBlockedMarkerForCurrentIssue, src/commands/sidecar.ts:558-569, keyed on the current prd.json issueNumber) is preserved unchanged for the in-flight case. [oracle: grep -q 'clearImplementBlockedMarkerForCurrentIssue' src/commands/sidecar.ts]",
+        "Test: a marker whose issueId is a CLOSED/shipped issue is cleared by the sweep; a marker whose issueId is the current/OPEN issue is NOT cleared. [oracle: bun test]",
+        "The sweep is wired to run before the marker can mislead a consumer (at plan-preflight start and/or sidecar startup) so the stale marker no longer lingers to affect the circuit-breaker read at src/supervisor/loop.ts:2194. [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "Add the orphan-clearing sweep near the existing clear helper in src/commands/sidecar.ts (alongside clearImplementBlockedMarkerForCurrentIssue). Reuse readImplementBlockedMarker / removeImplementBlockedMarker (src/supervisor/implement-blocked-marker.ts) and readBacklogFromMain (src/issues/backlog.ts) with an injectable spawn so the test never shells out to real git. The marker.issueId is the stringified numeric issueNumber (no prefix); match it against the backlog entry's numeric id suffix (numericIdSuffix helper in src/issues/backlog.ts). Closed/shipped = stage === 'shipped' OR status === 'abandoned'. Keep the read read-only on main (git ls-tree/cat-file via the existing reader), never touch the working tree (issue gotcha). Do NOT change the write-site (src/supervisor/loop.ts:820-826) or the outcome classification (out of scope, CAM-36/37/38 territory). Wire the sweep at preflight start (src/supervisor/plan-preflight.ts) and/or sidecar startup (src/commands/sidecar.ts runSidecar); prefer a placement that runs before the circuit-breaker read (loop.ts:2194) and before the plan-preflight clean-tree gate."
+    }
+  ]
+}
