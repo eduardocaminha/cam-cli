@@ -1,0 +1,12 @@
+{
+  "id": "CAM-297",
+  "title": "US-002 lists close among the e.g. mutations that should advance updatedAt. spec…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-12T22:12:38.054Z",
+  "description": "US-002 lists close among the e.g. mutations that should advance updatedAt. specify/abandon/demote/merge(source+target)/rank all have explicit updatedAt-bump tests; closeIssueOnMain stamps updatedAt (issue-specify.ts:562) but has no dedicated updatedAt-bump assertion. Non-blocking (illustrative e.g., writer is structurally identical and implemented).\n\nSource: cam/issue-284\nReview round: 1\nLocation: test/commands/issue-specify.test.ts\n\nsuggestion-fingerprint: 14225fe6ade9",
+  "derivedFrom": [
+    "CAM-284"
+  ]
+}
