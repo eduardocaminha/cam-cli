@@ -77,7 +77,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Mirror the journal CLI wiring already in index.ts: JOURNAL_HELP (index.ts:398 via renderHelp), parseJournalArgs (index.ts:1509), dispatchJournal (index.ts:1621), and the switch case (index.ts:2509). Add HELP_REGISTRY entry so isHelpRequested (index.ts:2207) resolves cam suggestions --help. Rendering uses the non-interactive print path (src/logging/*), NOT Ink. Read via readSuggestionsFromMain from US-001. dispatchSuggestions takes injectable deps (spawnFn/readFn) for tests, like dispatchJournal."
     },
