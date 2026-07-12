@@ -1,9 +1,33 @@
 {
   "id": "CAM-281",
   "title": "Expose issue timestamps (createdAt) in cam issue list --json + list output",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-12T12:12:11.592Z",
-  "description": "cam issue list / --json carries no timestamp, so the orchestrator can only proxy recency by id number (fragile: hand-filed ids, demotes, cross-list). Surface a createdAt (ISO 8601, ideally also updatedAt) per issue in cam issue list --json (primary consumer = orchestrator), sourced from the issue file metadata; add+backfill the schema field if absent. Optional compact date column in the human-readable list. Additive field, must not break existing JSON consumers; covered by a test asserting the field is present and well-formed. Refine via /cam-spec before planning."
+  "description": "cam issue list / --json carries no timestamp, so the orchestrator can only proxy recency by id number (fragile: hand-filed ids, demotes, cross-list). Surface a createdAt (ISO 8601, ideally also updatedAt) per issue in cam issue list --json (primary consumer = orchestrator), sourced from the issue file metadata; add+backfill the schema field if absent. Optional compact date column in the human-readable list. Additive field, must not break existing JSON consumers; covered by a test asserting the field is present and well-formed. Refine via /cam-spec before planning.",
+  "spec": {
+    "scope": "Expose the already-present, required createdAt of each issue in cam issue list --json output rows. Purely additive to the BacklogJsonRow output contract: no schema change and no backfill (createdAt is already required and present on all 283 issues). The human-readable list column and updatedAt are out of scope (separate issues).",
+    "acceptanceCriteria": [
+      "BacklogJsonRow (src/issues/list.ts:158-163) gains a createdAt: string field, and toJsonRow (src/issues/list.ts:188-190) emits issue.createdAt for every row.",
+      "createdAt (ISO 8601, sourced verbatim from IssueEntry.createdAt at src/issues/types.ts:44) appears on every row in the plannable and byStage arrays of cam issue list --json.",
+      "The exact-shape test assertions are updated to include createdAt: test/issues/list.test.ts:348 and :356; test/issue-list.test.ts row toEquals at :394,:396-397,:442,:494 (and the top-level Object.keys().sort() assertion at :391 if row-key-order coverage requires it).",
+      "No schema change and no backfill: createdAt is already required (scripts/cam/issues.schema.json) and present on 100% of issue files; the value is passed through, not synthesized at read time.",
+      "The human-readable cam issue list output is unchanged (date column is out of scope, tracked separately).",
+      "bun run typecheck, bun test, bun run check:all all green."
+    ],
+    "gotchas": [
+      "Tests assert row shape with toEqual and the top-level shape with Object.keys(parsed).sort() (test/issue-list.test.ts:391); the additive field WILL fail them until updated. Update them in the same change.",
+      "createdAt is a required non-optional field on IssueEntry (src/issues/types.ts:44); no optional-guarding needed, but keep it a plain passthrough (do not compute or default it).",
+      "Only the --json path (deriveBacklogJson/toJsonRow) changes; do NOT touch the human-readable renderer. No non-test module consumes BacklogJsonRow, so the output contract change is safe."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 1,
+    "riskReduction": 1,
+    "jobSize": 1
+  },
+  "type": "feat"
 }
