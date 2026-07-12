@@ -49,8 +49,13 @@ import { runIssueList } from './src/commands/issue-list.ts';
 import type {
 	CloseIssueOnMainOutcome,
 	AbandonIssueOnMainOutcome,
+	DemoteIssueOnMainOutcome,
 } from './src/commands/issue-specify.ts';
-import { defaultCloseIssueFn, defaultAbandonIssueFn } from './src/release/post-merge.ts';
+import {
+	defaultCloseIssueFn,
+	defaultAbandonIssueFn,
+	defaultDemoteIssueFn,
+} from './src/release/post-merge.ts';
 import { runNext } from './src/commands/next.ts';
 import { runSetup, parseSetupArgs } from './src/commands/setup.ts';
 import { runPlan } from './src/commands/plan.ts';
@@ -329,7 +334,7 @@ const ISSUE_HELP = renderHelp({
 	title: 'cam issue',
 	tagline: 'File an issue from free text, or list the actionable backlog',
 	usage:
-		'cam issue "<free text>" | cam issue list [--all] [--json] | cam issue close <id> | cam issue abandon <id>',
+		'cam issue "<free text>" | cam issue list [--all] [--json] | cam issue close <id> | cam issue abandon <id> | cam issue demote <id>',
 	sections: [
 		{
 			heading: 'Arguments',
@@ -361,6 +366,11 @@ const ISSUE_HELP = renderHelp({
 					name: 'abandon <id>',
 					description:
 						"Deterministically set status:abandoned on main for a won't-do issue (in-process, no tmux, no LLM). Stage is left untouched.",
+				},
+				{
+					name: 'demote <id>',
+					description:
+						'Deterministically set stage:idea on main for a defective specified issue, so it can be re-grilled (specified->idea for re-spec; in-process, no tmux, no LLM).',
 				},
 			],
 		},
@@ -888,6 +898,10 @@ const ORCH_BUDGET_HELP = renderHelp({
  * - mode === 'abandon': deterministic in-process status:abandoned mutation on
  *     main (US-003, CAM-210). id is the required positional issue id; stage
  *     is left untouched (only the status axis changes).
+ * - mode === 'demote': deterministic in-process stage:specified -> stage:idea
+ *     mutation on main (US-002, CAM-206/CAM-210 sibling). id is the required
+ *     positional issue id; only the stage axis flips (spec/wsjf/blockedBy
+ *     etc. are preserved) so the issue can be re-grilled.
  * - help === true: caller should print ISSUE_HELP and exit 0.
  */
 export type ParsedIssueArgs =
@@ -896,6 +910,7 @@ export type ParsedIssueArgs =
 	| { mode: 'list'; all: boolean; json: boolean; help: false }
 	| { mode: 'close'; id: string; help: false }
 	| { mode: 'abandon'; id: string; help: false }
+	| { mode: 'demote'; id: string; help: false }
 	| { mode?: never; help: true };
 
 /**
@@ -996,6 +1011,21 @@ export function parseIssueArgs(args: string[]): ParsedIssueArgs | null {
 			return null;
 		}
 		return { mode: 'abandon', id, help: false };
+	}
+	// The `demote <id>` subcommand is evaluated BEFORE the free-text fallthrough
+	// (alongside `list`/`close`/`abandon`) so a missing id is a parse error, never a
+	// silent text-mode fallthrough treating 'demote' as an issue title.
+	if (args[0] === 'demote') {
+		const id = args[1];
+		if (id === undefined) {
+			printError('cam issue demote requires an id (e.g. CAM-42)');
+			return null;
+		}
+		if (args.length > 2) {
+			printError(`unexpected argument: ${args[2]}`);
+			return null;
+		}
+		return { mode: 'demote', id, help: false };
 	}
 	if (args.includes('--file-local')) {
 		let fastTrack = false;
@@ -1882,6 +1912,15 @@ export interface IssueDispatchDeps {
 	 * run in dispatchIssue itself, regardless of injection (US-003).
 	 */
 	abandonIssueOnMainFn?: (id: string) => AbandonIssueOnMainOutcome;
+	/**
+	 * Inject a fake for the `demote <id>` branch's underlying demoteIssueOnMain
+	 * call. Default: `defaultDemoteIssueFn(process.cwd(), id)` (production
+	 * spawnFn+clock; mirrors closeIssueOnMainFn/abandonIssueOnMainFn's wiring).
+	 * The printing (printHint on success, the machine CAM_ISSUE_RESULT line)
+	 * and exit-code mapping always run in dispatchIssue itself, regardless of
+	 * injection (US-002, CAM-210).
+	 */
+	demoteIssueOnMainFn?: (id: string) => DemoteIssueOnMainOutcome;
 }
 
 /** Shape of the JSON payload `cam issue --file-local` reads from stdin. */
@@ -2022,6 +2061,19 @@ export async function dispatchIssue(
 			return 1;
 		}
 		printHint(`abandoned ${result.id} on main (${result.sha})`);
+		process.stdout.write(`CAM_ISSUE_RESULT=${result.id}\n`);
+		return 0;
+	}
+	if (parsed.mode === 'demote') {
+		const demoteIssueOnMainFn =
+			deps?.demoteIssueOnMainFn ?? ((id: string) => defaultDemoteIssueFn(process.cwd(), id));
+		const result = demoteIssueOnMainFn(parsed.id);
+		if (!result.ok) {
+			printError(`cam issue demote ${parsed.id} failed: ${result.reason}`);
+			process.stdout.write(`CAM_ISSUE_RESULT=ERROR reason=${result.reason}\n`);
+			return 1;
+		}
+		printHint(`demoted ${result.id} on main (${result.sha})`);
 		process.stdout.write(`CAM_ISSUE_RESULT=${result.id}\n`);
 		return 0;
 	}
