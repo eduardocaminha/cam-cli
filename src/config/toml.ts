@@ -165,13 +165,16 @@ export function loadConfig(path: string): TomlConfig {
  * The serialized output always ends in `\n` (trailing newline is part of
  * `stringifyToml`'s contract — matches the convention in the rest of the
  * repo and keeps `git diff` clean).
+ *
+ * `comments` is optional and forwarded verbatim to `stringifyToml` — see
+ * `TomlComments` for the section-comment contract.
  */
-export function saveConfig(path: string, config: TomlConfig): void {
+export function saveConfig(path: string, config: TomlConfig, comments?: TomlComments): void {
 	const dir = dirname(path);
 	if (!existsSync(dir)) {
 		mkdirSync(dir, { recursive: true });
 	}
-	writeFileSync(path, stringifyToml(config), 'utf8');
+	writeFileSync(path, stringifyToml(config, comments), 'utf8');
 }
 
 /**
