@@ -235,3 +235,15 @@ A git index state where HEAD contains a file but the index and worktree do not, 
 
 **CREATE route**:
 The createLocalIssueOnMain path that commits a brand-new issue file on main (vs the MODIFY route that edits an existing one). Only CREATE was missing worktree materialization.
+
+**demote**:
+cam issue --demote <id>: a deterministic on-main stage move from specified back to idea, so a defective spec can be re-specified through the normal /cam-spec interview. Only specified->idea is allowed.
+
+**re-spec**:
+Re-running the /cam-spec grill interview on an issue whose spec is defective. Reached by demoting the issue to idea first; there is no in-place overwrite of a specified spec.
+
+**defective spec**:
+A stage:specified spec that is internally contradictory or that a planner keeps mis-implementing, such that the cycle cannot converge without rebuilding the spec.
+
+**plannable set**:
+The issues selectPlannableIssue will pick for /cam-plan (stage:specified, open). Demoting to idea removes an issue from this set until it is re-specified.
