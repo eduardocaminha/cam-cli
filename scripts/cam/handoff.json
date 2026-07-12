@@ -1,0 +1,16 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Guard: checkBackstop never arms without a handoff on disk" },
+  "branchName": "cam/issue-172",
+  "timestamp": "2026-07-12T05:10:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/commands/orch-recycle-watch.ts",
+    "test/commands/orch-recycle-watch.test.ts",
+    "test/orch-recycle-watch.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "checkBackstop (src/commands/orch-recycle-watch.ts) now takes a required handoffExistsFn on BackstopDeps/OrchRecycleWatchOptions, defaulting to existsSync(join(claudeDir, ORCH_HANDOFF_FILENAME)) from src/orchestrator/handoff.ts. It guards armMarkerFn: over-threshold occupancy alone is now a no-op unless the handoff file already exists on disk. Both checkBackstop and BackstopDeps are now exported for direct unit testing (test/commands/orch-recycle-watch.test.ts). This guard is a pure consumer-side check: US-001 does NOT add a producer of the handoff file on the backstop path, so today the backstop is a safe no-op mid-cycle until a handoff writer exists. Per the story notes, US-003 (the window-fix story) should land AFTER this guard so a corrected window never starts triggering teardown-with-data-loss. Also fixed one pre-existing integration test (test/orch-recycle-watch.test.ts 'high-occupancy reader...') that previously asserted the marker arms on over-threshold occupancy alone; it now injects handoffExistsFn: () => true to preserve its original intent, and a new sibling test asserts the no-handoff no-op case.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
