@@ -1,9 +1,35 @@
 {
   "id": "CAM-286",
   "title": "Make project.toml [models] the single source of truth for agent model selection (strip inert frontmatter model: lines, reconcile ship, fix implementer DEFAULTS drift)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-12T13:40:01.848Z",
-  "description": "Investigation (Explore) found a three-way redundancy for agent model selection with real drift. Runtime authority is project.toml [models] via readPhaseModel (src/config/models.ts:81), passed as an explicit --model flag at every pane/root spawn (orchestrator run.ts:267, implementer worker-argv.ts:164, reviewer review.ts:131, planner plan-argv.ts:95, auditor plan-argv.ts:156). Flag-over-frontmatter means the frontmatter `model:` lines (all agent files *.md:4) for those 5 roles are INERT/misleading: editing them changes nothing. ship is the exception: its model comes from cam-ship.md frontmatter (rewritten by cam config), no --model flag. cam config also rewrites frontmatter for planner/auditor (FRONTMATTER_TARGET_PHASE_PATHS, src/templates/frontmatter.ts:22-26) which is dead effort since --model overrides. DEFAULTS map (src/config/models.ts:50-58) also drifted: implementer DEFAULT=claude-sonnet-4-6 while project.toml=claude-sonnet-5 (effective), so DEFAULTS + frontmatter both lie about the effective implementer model. Goal: one authoritative, documented model source per role; strip the inert frontmatter model: lines from the 5 pane/root agents; unify ship into the same project.toml mechanism (or, if ship's slash-command flow cannot take --model, make ship's frontmatter the SOLE documented source and stop rewriting planner/auditor frontmatter); reconcile the implementer DEFAULTS. Refine via /cam-spec."
+  "description": "Investigation (Explore) found a three-way redundancy for agent model selection with real drift. Runtime authority is project.toml [models] via readPhaseModel (src/config/models.ts:81), passed as an explicit --model flag at every pane/root spawn (orchestrator run.ts:267, implementer worker-argv.ts:164, reviewer review.ts:131, planner plan-argv.ts:95, auditor plan-argv.ts:156). Flag-over-frontmatter means the frontmatter `model:` lines (all agent files *.md:4) for those 5 roles are INERT/misleading: editing them changes nothing. ship is the exception: its model comes from cam-ship.md frontmatter (rewritten by cam config), no --model flag. cam config also rewrites frontmatter for planner/auditor (FRONTMATTER_TARGET_PHASE_PATHS, src/templates/frontmatter.ts:22-26) which is dead effort since --model overrides. DEFAULTS map (src/config/models.ts:50-58) also drifted: implementer DEFAULT=claude-sonnet-4-6 while project.toml=claude-sonnet-5 (effective), so DEFAULTS + frontmatter both lie about the effective implementer model. Goal: one authoritative, documented model source per role; strip the inert frontmatter model: lines from the 5 pane/root agents; unify ship into the same project.toml mechanism (or, if ship's slash-command flow cannot take --model, make ship's frontmatter the SOLE documented source and stop rewriting planner/auditor frontmatter); reconcile the implementer DEFAULTS. Refine via /cam-spec.",
+  "spec": {
+    "scope": "Reconcile agent model selection into a consistent, single-authority design. project.toml [models] is authoritative at runtime (passed as --model at spawn, overriding frontmatter). Strip the inert/misleading frontmatter model: lines from the pane/root agents, reconcile the DEFAULTS map and the config picker MODEL_OPTIONS so no hardcoded site drifts from the effective values, and fix the ship mechanism so each role has exactly one documented model source. Dynamic/remote model discovery (auto-detecting new Anthropic models) is OUT of scope (separate feature).",
+    "acceptanceCriteria": [
+      "project.toml [models] is confirmed and documented as the single runtime authority: readPhaseModel (src/config/models.ts:81) -> explicit --model at every spawn (orchestrator run.ts:267, implementer worker-argv.ts:164, reviewer review.ts:131, planner plan-argv.ts:95, auditor plan-argv.ts:156), overriding frontmatter.",
+      "The inert frontmatter `model:` lines on the pane/root agents are removed (or converted to a clearly-non-authoritative comment) in BOTH .claude/agents/subagent-*.md:4 and templates/agents/subagent-*.md:4 for orchestrator/planner/auditor/reviewer/implementer, so editing frontmatter no longer misleadingly appears to change the model. Dual-copy is per-file: edit both trees; re-embed templates if embed-vendor:check flags drift.",
+      "The DEFAULTS map (src/config/models.ts:50-58) and the config picker MODEL_OPTIONS (src/ui/ConfigScreen.tsx:62-66) are reconciled so they contain the actually-used model ids and do not drift: in particular the effective implementer model must be selectable and the DEFAULT must not disagree with it (today project.toml=claude-sonnet-5 but DEFAULTS+frontmatter+MODEL_OPTIONS=claude-sonnet-4-6, and claude-sonnet-5 is absent from MODEL_OPTIONS entirely).",
+      "ship: resolve the ship model to one documented source. Either route ship through the same readPhaseModel('ship')+--model mechanism as the other roles, or, if ship's slash-command flow cannot take --model, make cam-ship.md frontmatter the SOLE documented ship source and STOP cam config rewriting planner/auditor frontmatter (that rewrite is dead effort, overridden by --model). No role may have a live source AND a dead duplicate simultaneously.",
+      "A test asserts consistency: for each role the effective spawned model equals the project.toml value (or DEFAULT when omitted), and no reconciled static list (DEFAULTS, MODEL_OPTIONS) omits a model id used by DEFAULTS or shipped config.",
+      "bun run typecheck, bun test, bun run check:all all green."
+    ],
+    "gotchas": [
+      "Four+ hardcoded model-id sites exist and must not drift: MODEL_OPTIONS (src/ui/ConfigScreen.tsx:62-66), DEFAULTS (src/config/models.ts:50-58), template frontmatter (templates/agents/subagent-*.md:4 and templates/commands/cam-ship.md:2), and per-project project.toml [models]. Reducing the count / making them agree is the point; do not add a fifth.",
+      "Dual-copy is per-file: .claude/agents/*.md and templates/agents/*.md are edited independently; re-embed vendor if templates change (embed-vendor:check).",
+      "Runtime precedence is flag-over-frontmatter (documented at src/commands/run.ts:232-234 and src/supervisor/worker-argv.ts:49-51); do NOT try to make frontmatter authoritative for the pane/root roles - that fights the CLI. project.toml is the lever.",
+      "ship uses a different mechanism (cam-ship.md frontmatter rewritten by cam config, no pane --model). Whichever ship approach is chosen, keep it the single documented source; frontmatter.ts FRONTMATTER_TARGET_PHASE_PATHS (:22-26) currently also rewrites planner/auditor uselessly.",
+      "Dynamic model discovery (GET /v1/models / auto-detect new launches) is a separate feature; this issue only reconciles the STATIC sites."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 1,
+    "riskReduction": 3,
+    "jobSize": 2
+  },
+  "type": "chore"
 }
