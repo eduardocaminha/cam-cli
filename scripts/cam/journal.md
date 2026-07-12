@@ -549,3 +549,15 @@ Each entry follows this template:
 - **Decisions**: Merit-ranked the 3 plannable specified issues; dispatched CAM-284 as highest-merit (updatedAt pairs with just-shipped createdAt, higher leverage than CAM-277 doc and CAM-280 cleanup). Spec-only participation held: no plan_approval=operator; trusted the deterministic auditor+reviewer CLEAN; auto-ship (CAM-191) fired on its own. Used cam plan 284 (bare number, real renderStateFile writer). Zero orchestrator intervention this cycle.
 - **Blockers encountered**: None. Review round 1 CLEAN. PR #225 landed BEHIND; merge-watch ran gh pr update-branch (1/2), merged ci-gated; post-merge clean, polled via gh pr view only (CAM-228 held), tag v0.150.0. Standing caveat unchanged: sidecar pid 32211 predates v0.144.0 suggestions-pen redirect (old terminal-verdict hook); this cycle's CLEAN review carried 2 SUGGESTIONs auto-filed as CAM-297/CAM-298, idea count 32 -> 34.
 - **Follow-ups**: Rebuild + clean cam run restart to >= v0.144.0 to activate the suggestions pen (operator ceremony) and then triage accumulated auto-filed SUGGESTIONs (CAM-288..298). Remaining plannable specified: re-derive live; standing merit order after CAM-284 is CAM-277 (orch_context_window doc), then CAM-280 (vestigial writeFile cleanup).
+
+## CAM-277 — CAM-277 — Document [loop] keys in project.toml
+
+- **Started**: 2026-07-12T22:20:00Z
+- **Closed**: 2026-07-12T22:40:00Z
+- **Branch**: cam/issue-277
+- **Issue**: CAM-277
+- **Outcome**: shipped
+- **Summary**: 1-story PRD (PR #226, v0.151.0, ci-gated). US-001 added discoverability comments for orch_context_window, meta_loop, and worker_isolation in cam-cli's own scripts/cam/project.toml [loop] section: an operator-facing doc-accuracy fix. auditor APPROVE, review round 1 CLEAN with zero findings, 4413 pass / 0 fail.
+- **Decisions**: Merit-ranked the 2 plannable specified issues and dispatched CAM-277 top: operator-facing config-key doc accuracy outranks CAM-280 (internal vestigial-field dead-code cleanup); merit not effort. Spec-only participation held: no plan_approval=operator; trusted the deterministic auditor+reviewer CLEAN; auto-ship (CAM-191) fired on its own. Used cam plan 277 (bare number, real renderStateFile writer). Zero orchestrator intervention this cycle.
+- **Blockers encountered**: None. Review round 1 CLEAN with zero findings and zero SUGGESTIONs, so the old sidecar filed nothing new (idea count steady at 34). PR #226 merged ci-gated; post-merge clean, polled via gh pr view only (CAM-228 held), tag v0.151.0.
+- **Follow-ups**: Rebuild + clean cam run restart to >= v0.144.0 to activate the suggestions pen (operator ceremony), then triage accumulated auto-filed SUGGESTIONs (CAM-288..298). Remaining plannable specified: CAM-280 (vestigial writeFile cleanup) is the sole one left; dispatch next. After that the specified queue is empty and the 34 idea issues need spec/triage before they become plannable.
