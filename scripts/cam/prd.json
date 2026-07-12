@@ -1,0 +1,33 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-278",
+  "description": "Make HELP_REGISTRY completeness and dispatch-switch coverage compile-time enforced via a single COMMANDS source-of-truth and an exhaustive default: never.",
+  "issueNumber": 278,
+  "type": "chore",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Enforce command-set exhaustiveness at compile time",
+      "description": "As a cam-cli maintainer, I need the CLI command set to be a single typed source-of-truth so that a future command added without a --help entry or without a dispatch-switch case fails typecheck instead of silently re-opening the --help footgun CAM-211 closed.",
+      "acceptanceCriteria": [
+        "A single source of truth for command names exists in index.ts: `const COMMANDS = [...] as const` deriving `type Command = typeof COMMANDS[number]`, enumerating all 25 current commands INCLUDING the internal/hidden ones (sidecar, orch-recycle-watch, sidecar-liveness-watch, retry-monitor). [oracle: grep -q 'as const' index.ts && grep -q 'type Command' index.ts]",
+        "COMMANDS enumerates exactly the same set as today's HELP_REGISTRY keys and switch cases (no command dropped, no 4th independent copy introduced): every HELP_REGISTRY key and every `case '<cmd>':` label in the dispatch switch is a member of COMMANDS. [oracle: bun test test/help-registry.test.ts]",
+        "HELP_REGISTRY is retyped from Record<string,string> to Record<Command,string>; typecheck fails if any Command lacks an entry or an entry uses a non-Command key. [oracle: grep -q 'Record<Command, string>' index.ts]",
+        "argv[2] is narrowed to Command BEFORE the dispatch switch (via a COMMANDS.includes / `is Command` guard), and the unknown/invalid-command branch is moved AHEAD of the switch, preserving the current `unknown command: <cmd>` message and exit-1 behavior. [oracle: grep -q 'unknown command' index.ts]",
+        "The dispatch switch has an exhaustive `default:` with `const _never: never = command;` (or equivalent) so a Command added to COMMANDS without a switch case fails typecheck. [oracle: grep -q ': never = command' index.ts]",
+        "Pre-switch special-case handling is preserved: `command === 'claude'` carve-out in isHelpRequested and the version/help short-circuits still work; `cam claude --help` (leading) still prints CLAUDE_HELP, non-leading --help still forwards. [oracle: bun test test/help-registry.test.ts]",
+        "The enforcement is real, not cosmetic: a note in the story handoff records the observed `bun run typecheck` failure when a HELP_REGISTRY entry OR a switch case for an existing command is temporarily removed (deletion reverted before commit). [oracle: reviewer-judgment]",
+        "No behavior change for any valid command's --help output or dispatch; the full help-registry test suite stays green. [oracle: bun test test/help-registry.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Single file: index.ts. Place `const COMMANDS = [...] as const` + `type Command` near HELP_REGISTRY (~index.ts:2372). Retype HELP_REGISTRY (~2372) to Record<Command,string>. In main() (~2417): after the help/version short-circuits, narrow `command` (argv[2]) to Command and handle the unknown-command branch (currently the switch `default:` at ~2783) BEFORE the switch; then add exhaustive `default: const _never: never = command;` inside the switch. Gotchas from the issue spec: command names are TRIPLICATED today (switch case labels, HELP_REGISTRY keys, and pre-switch `command === 'claude'` check at ~isHelpRequested/2411) — route all through COMMANDS, do not leave a 4th copy. Internal/hidden commands MUST stay in COMMANDS + HELP_REGISTRY (comment at ~2364-2371). KEYBAR_COMMANDS in src/ui/Dashboard.tsx is UNRELATED dashboard-keybar UI, do not conflate. Keep the existing *_HELP string constants as registry values; only the key type + source-of-truth array change. Consider exporting COMMANDS so test/help-registry.test.ts can assert parity. noUncheckedIndexedAccess: argv[2] is `string | undefined`, guard before narrowing (existing `if (!command ...)` already does)."
+    }
+  ]
+}
