@@ -1,0 +1,9 @@
+{
+  "id": "CAM-285",
+  "title": "Route reviewer SUGGESTIONs to an append-only suggestions.jsonl holding pen (+ cam suggestions list/promote/dismiss) instead of auto-filing idea-stage issues",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-12T13:13:01.751Z",
+  "description": "The CAM-189 terminal-verdict hook (src/supervisor/loop.ts) auto-files every reviewer SUGGESTION as a stage:idea issue after a CLEAN/terminal review. This inflates the plannable-looking backlog with cosmetic follow-ups, each of which then demands a /cam-spec grill (277/278/279/280 this session were all this). Change: redirect the hook to APPEND the SUGGESTION to scripts/cam/suggestions.jsonl (on-main commit, mirroring patterns.md/journal.md writers), deduped on the existing suggestion-fingerprint, instead of filing an issue. One JSONL line per suggestion (fingerprint, title, body, sourceBranch, reviewRound, sourceIssue, filedAt). Add a minimal cam suggestions CLI: list (render the pen), promote <fingerprint> (file a real issue via the existing issue writer, remove from the pen), dismiss <fingerprint> (drop it). All reviewer SUGGESTIONs go to the pen (at terminal-CLEAN only SUGGESTIONs exist); real defects discovered elsewhere still become issues directly. Format decided: JSONL (not markdown), for dedup + promote tooling. Refine remaining details via /cam-spec."
+}
