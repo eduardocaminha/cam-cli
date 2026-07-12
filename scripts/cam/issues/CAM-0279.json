@@ -1,7 +1,7 @@
 {
   "id": "CAM-279",
   "title": "The per-command help guards inside the switch (claude's `if (parsed.help)`, plu…",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [
     "CAM-278"
