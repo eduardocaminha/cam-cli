@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.147.0] - 2026-07-12
+
+### Added
+
+- US-001 - Enforce command-set exhaustiveness at compile time
+
 ## [0.146.0] - 2026-07-12
 
 ### Added
