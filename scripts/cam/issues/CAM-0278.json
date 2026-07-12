@@ -1,12 +1,38 @@
 {
   "id": "CAM-278",
   "title": "HELP_REGISTRY completeness (an entry for every switch case) is enforced only by…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-12T10:00:38.824Z",
   "description": "HELP_REGISTRY completeness (an entry for every switch case) is enforced only by a code comment. Consider a compile-time exhaustiveness check (e.g. keying the registry off a Command string-literal union used by the switch) so a future command that omits its entry fails typecheck instead of silently re-opening the --help footgun this story closed.\n\nSource: cam/issue-211\nReview round: 1\nLocation: index.ts:2083\n\nsuggestion-fingerprint: 327d3af82b10",
   "derivedFrom": [
     "CAM-211"
-  ]
+  ],
+  "spec": {
+    "scope": "Compile-time exhaustiveness for the CLI command set. Introduce a single COMMANDS source-of-truth (const array as const -> Command string-literal union), retype HELP_REGISTRY from Record<string,string> to Record<Command,string>, narrow argv[2] to Command before the dispatch switch, and add an exhaustive default: never so a command added without a help entry OR without a switch case fails typecheck. No behavior change for valid commands; the unknown-command path and pre-switch special cases are preserved.",
+    "acceptanceCriteria": [
+      "A single source of truth for command names exists (e.g. `const COMMANDS = [...] as const` deriving `type Command = typeof COMMANDS[number]`) enumerating all 25 current commands, including the internal/hidden ones (sidecar, orch-recycle-watch, sidecar-liveness-watch, retry-monitor) that the comment at index.ts:2131-2138 requires.",
+      "HELP_REGISTRY is retyped from Record<string,string> to Record<Command,string> (index.ts:2139); typecheck fails if any Command lacks an entry or an entry uses a non-Command key.",
+      "The dispatch switch (index.ts:2215) narrows argv[2] to Command before switching and has an exhaustive `default: const _never: never = command;` so a Command added to COMMANDS without a switch case fails typecheck.",
+      "Unknown/invalid argv[2] (not in COMMANDS) is handled BEFORE the switch, preserving the current unknown-command message and exit behavior (previously index.ts:2540 default); the pre-switch special-case handling (e.g. command === 'claude' at index.ts:2178) keeps working.",
+      "The enforcement is real, not cosmetic: removing a HELP_REGISTRY entry OR a switch case for an existing command causes bun run typecheck to fail. Demonstrate this (temporary deletion reverted, or a comment noting the observed failure).",
+      "No behavior change for any valid command's --help output or dispatch. bun run typecheck, bun test, bun run check:all all green."
+    ],
+    "gotchas": [
+      "Command names are currently TRIPLICATED: switch case labels (index.ts:2216-2527), HELP_REGISTRY keys (index.ts:2140-2164), and pre-switch special-case checks (command === 'claude' at index.ts:2178, and similar). Route all of them through the single COMMANDS source; do not leave a 4th independent copy.",
+      "The switch keys on argv[2]: string today; the exhaustive `default: never` only type-checks after argv[2] is narrowed to Command. Narrowing (a COMMANDS.includes guard or `is Command`) must run before the switch, and the unknown-command branch must move ahead of the switch so genuinely-unknown input is still handled gracefully.",
+      "Internal/hidden commands (sidecar, orch-recycle-watch, sidecar-liveness-watch, retry-monitor) MUST remain in COMMANDS and HELP_REGISTRY by design (index.ts:2131-2138). Do not drop them to make the union smaller.",
+      "KEYBAR_COMMANDS in src/ui/Dashboard.tsx:103 is unrelated dashboard-keybar UI, not the CLI command set; do not conflate or reuse it.",
+      "Keep the existing *_HELP string constants as the registry values; only the registry key type and the source-of-truth array change."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 1,
+    "riskReduction": 4,
+    "jobSize": 2
+  },
+  "type": "chore"
 }
