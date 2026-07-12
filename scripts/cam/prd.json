@@ -1,0 +1,31 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-277",
+  "description": "Add discoverability comments for orch_context_window, meta_loop, and worker_isolation in cam-cli's own scripts/cam/project.toml [loop] section.",
+  "issueNumber": 277,
+  "type": "chore",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Document [loop] keys with commented examples in project.toml",
+      "description": "As an operator configuring cam-cli, I need the [loop] section of scripts/cam/project.toml to show the orch_context_window default and the accepted values for meta_loop and worker_isolation so that these knobs are discoverable from the config file without reading the source or ADRs.",
+      "acceptanceCriteria": [
+        "The [loop] section of scripts/cam/project.toml carries a COMMENTED example line for orch_context_window showing the default value 200000 (e.g. `# orch_context_window = 200000`), matching DEFAULT_ORCH_CONTEXT_WINDOW at src/config/models.ts:329. [oracle: grep -E '^# *orch_context_window = 200000' scripts/cam/project.toml]",
+        "orch_context_window stays a commented example and is NOT added as an active uncommented key, so readOrchContextWindow (src/config/models.ts:347-362) continues to return the runtime default 200000 unchanged. [oracle: file-assert: no active `orch_context_window` key present -> grep -c -E '^[^#]*orch_context_window' scripts/cam/project.toml returns 0]",
+        "meta_loop keeps its existing active value `meta_loop = \"auto\"` and gains a short comment listing its accepted values auto | observe | off, consistent with readMetaLoop (src/config/models.ts:240). [oracle: grep -E '^meta_loop = \"auto\"' scripts/cam/project.toml && grep -qE 'auto \\| observe \\| off' scripts/cam/project.toml]",
+        "worker_isolation keeps its existing active value `worker_isolation = \"host\"` and gains a short comment listing its accepted values container | host, consistent with readWorkerIsolation (src/config/models.ts:305). [oracle: grep -E '^worker_isolation = \"host\"' scripts/cam/project.toml && grep -qE 'container \\| host' scripts/cam/project.toml]",
+        "No change is made to cam init scaffolding or any file other than scripts/cam/project.toml (scaffold discoverability is out of scope, tracked in CAM-283). [oracle: file-assert: git diff --name-only lists only scripts/cam/project.toml plus scripts/cam/prd.json/handoff.json state files]",
+        "The file still parses and no effective config value changes. [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Single file: scripts/cam/project.toml (the [loop] section at lines 18-20). DIRECT hand-edit only. GOTCHA: the TOML serializer stringifyToml (src/config/toml.ts:68-96) cannot emit # comments, so never route this through mergeIntoConfig/stringifyToml (it would drop the comments). Keep orch_context_window COMMENTED (uncommenting pins the value and defeats the read-with-default path). Keep enums in sync with the real readers in src/config/models.ts (meta_loop: auto|observe|off; worker_isolation: container|host); do not invent values. Comments are valid in TOML input (only serialization drops them), so loadConfig still parses the file. No vendor/ or templates/ change (embed-vendor check not required). scripts/cam/patterns.md: grep 'config' / 'toml' if a config-edit gotcha is needed."
+    }
+  ]
+}
