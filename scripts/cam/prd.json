@@ -1,0 +1,35 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-279",
+  "description": "Strip the three dead-for-help per-command --help guards (config, claude, triage) left unreachable by the CAM-211 central guard.",
+  "issueNumber": 279,
+  "type": "chore",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Remove dead-for-help guards in config, claude, and triage switch cases",
+      "description": "As a cam-cli maintainer, I need the three unreachable-for-help --help guard blocks inside the command switch removed so that the dispatch code no longer carries dead code that the central --help guard already supersedes.",
+      "acceptanceCriteria": [
+        "config's dead block is removed: the `if (tail.includes('--help') || tail.includes('-h')) { process.stdout.write(CONFIG_HELP); return 0; }` inside `case 'config'` (index.ts ~2553-2556) no longer exists. [oracle: file-assert: `awk '/case .config.: \\{/{f=1} f&&/CONFIG_HELP/{print}' index.ts` prints nothing]",
+        "claude's dead block is removed: the `if (parsed.help) { process.stdout.write(CLAUDE_HELP); return 0; }` inside `case 'claude'` (index.ts ~2753-2756) no longer exists. [oracle: file-assert: `awk '/case .claude.: \\{/{f=1} f&&/case /&&!/case .claude./{f=0} f&&/CLAUDE_HELP/{print}' index.ts` prints nothing]",
+        "triage's dead block is removed: the `if (tail.includes('--help') || tail.includes('-h')) { process.stdout.write(TRIAGE_HELP); return 0; }` inside `case 'triage'` (index.ts ~2823-2826) no longer exists. [oracle: file-assert: `awk '/case .triage.: \\{/{f=1} f&&/TRIAGE_HELP/{print}' index.ts` prints nothing]",
+        "Surrounding non-help logic in config is preserved: the `--show` parsing, unknown-flag error, and `runConfig({ show: showFlag })` call remain. [oracle: grep -q 'runConfig({ show: showFlag })' index.ts]",
+        "Surrounding non-help logic in claude is preserved: the `parseClaudeArgs(argv.slice(3))` call and `runClaude({ args: parsed.forwardedArgs })` call remain (only the help conditional is stripped). [oracle: grep -q 'runClaude({ args: parsed.forwardedArgs })' index.ts]",
+        "Surrounding non-help logic in triage is preserved: the tail-length unknown-option error and `dispatchTriage()` call remain. [oracle: grep -q 'return dispatchTriage();' index.ts]",
+        "`cam config --help` still prints CONFIG_HELP via the central guard. [oracle: bun index.ts config --help | grep -qi 'usage']",
+        "`cam claude --help` and `cam claude -h` (leading) still print CLAUDE_HELP via the central guard. [oracle: bun index.ts claude --help | grep -qi 'usage' && bun index.ts claude -h | grep -qi 'usage']",
+        "`cam triage --help` still prints TRIAGE_HELP via the central guard. [oracle: bun index.ts triage --help | grep -qi 'usage']",
+        "A non-leading `--help` passed to claude is still forwarded to the child process, not intercepted (leading-only rule in isHelpRequested is unchanged). [oracle: reviewer-judgment: confirm isHelpRequested's claude branch still uses tail[0] leading-only match]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Single-file cleanup in index.ts. CAM-278 (Command union + narrowing + exhaustive default switch restructure) is already merged to main (commit 8246531a), so base on current main; line numbers in the issue spec (2258/2458/2529) are pre-CAM-278 and have shifted — current locations are config 2553-2556, claude 2753-2756, triage 2823-2826. Central guard lives at index.ts:2501-2507 (isHelpRequested + HELP_REGISTRY lookup). GOTCHAS: (1) do NOT remove the `parseClaudeArgs(argv.slice(3))` line at 2752 — parsed.forwardedArgs is consumed by runClaude at 2757; only strip the `if (parsed.help){...}` block. (2) do NOT touch config's --show parsing / unknown-flag error or triage's tail-error + dispatchTriage(). (3) Verify each --help by actually running it (bun index.ts <cmd> --help), not by assuming — comments can be stale. Cleanup only, zero behavior change."
+    }
+  ]
+}
