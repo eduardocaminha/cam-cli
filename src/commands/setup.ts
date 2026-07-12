@@ -34,7 +34,7 @@ import process from 'node:process';
 import { render } from 'ink';
 import { createElement } from 'react';
 
-import { mergeIntoConfig } from '../config/toml.ts';
+import { loadConfig, mergeIntoConfig, saveConfig } from '../config/toml.ts';
 import { DEFAULTS, type MergeMode, type PlanApproval } from '../config/models.ts';
 import type { IssueSystem } from '../config/issue-system.ts';
 import { printError, printHint, printSuccess, printWarning } from '../logging/color.ts';
@@ -133,6 +133,42 @@ export function isSetupInteractiveGate(
 	ci: string | undefined,
 ): boolean {
 	return stdoutIsTTY && stdinIsTTY && !ci;
+}
+
+// ---------------------------------------------------------------------------
+// [loop] section scaffold (documents, does not pin, meta_loop/worker_isolation/
+// orch_context_window — see src/config/models.ts for the readers)
+// ---------------------------------------------------------------------------
+
+/**
+ * Scaffold a commented `[loop]` example section in `project.toml` documenting
+ * `meta_loop`, `worker_isolation`, and `orch_context_window`. The three keys
+ * are emitted as COMMENTED examples only — never active/pinned values — so
+ * `readMetaLoop`/`readWorkerIsolation`/`readOrchContextWindow`
+ * (`src/config/models.ts`) keep returning their code defaults (`off` /
+ * `host` / `200000`) against a freshly scaffolded file.
+ *
+ * Must run AFTER every other `mergeIntoConfig` call against the same path:
+ * `mergeIntoConfig`'s `saveConfig` step re-parses+re-serializes the file,
+ * which silently drops comments (TOML comments are non-semantic — see the
+ * `stringifyToml` contract in `src/config/toml.ts`). This is the dedicated
+ * final write for `project.toml`.
+ *
+ * Idempotent: a no-op when `[loop]` already exists (a prior scaffold run, or
+ * an operator hand-added an active `[loop]` key) so re-running `cam init`
+ * never clobbers a hand-edited value.
+ */
+export function scaffoldLoopSection(projectToml: string): void {
+	const config = loadConfig(projectToml);
+	if (config['loop'] !== undefined) return;
+	config['loop'] = {};
+	saveConfig(projectToml, config, {
+		loop: [
+			'meta_loop = "auto"  # accepted: auto | observe | off (default: off)',
+			'worker_isolation = "container"  # accepted: container | host (default: host)',
+			'orch_context_window = 200000  # default: 200000',
+		],
+	});
 }
 
 function isInteractiveTTY(): boolean {
@@ -680,6 +716,10 @@ export async function runSetup(options: SetupOptions = {}): Promise<number> {
 				notify: { resend_recipient: resendRecipient },
 			});
 		}
+		// Must run LAST: mergeIntoConfig's saveConfig strips comments on every
+		// call, so scaffolding the [loop] section before any of the calls above
+		// would have its comments silently discarded by the next merge.
+		scaffoldLoopSection(projectToml);
 		printSuccess(`Wrote ${projectToml.replace(cwd + '/', '')}`);
 	} catch (err) {
 		printWarning(

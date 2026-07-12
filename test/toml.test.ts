@@ -14,6 +14,7 @@ import {
 	parseToml,
 	saveConfig,
 	stringifyToml,
+	type TomlComments,
 } from '../src/config/toml.ts';
 
 let workDir: string;
@@ -82,6 +83,58 @@ describe('stringifyToml + parseToml', () => {
 		// Bun.TOML.parse throws an Error-shaped value on syntax errors.
 		// Verified locally: `Bun.TOML.parse("invalid = [")` throws "Unexpected end of file".
 		expect(() => parseToml('invalid = [')).toThrow();
+		cleanup();
+	});
+});
+
+describe('stringifyToml comment emission (US-001)', () => {
+	test('omitting comments is byte-identical to the pre-existing no-comment output', () => {
+		const config = {
+			permission_mode: 'bypassPermissions',
+			plugin: { max_iterations: 30, completion_promise: 'COMPLETE' },
+		};
+		expect(stringifyToml(config)).toBe(
+			'permission_mode = "bypassPermissions"\n\n[plugin]\ncompletion_promise = "COMPLETE"\nmax_iterations = 30\n',
+		);
+		cleanup();
+	});
+
+	test('emits commented example lines under a section header with no active keys', () => {
+		const config = { permission_mode: 'bypassPermissions', loop: {} };
+		const comments: TomlComments = { loop: ['max_iterations = 30', 'auto_resume = true'] };
+		const text = stringifyToml(config, comments);
+		expect(text).toBe(
+			'permission_mode = "bypassPermissions"\n\n[loop]\n# max_iterations = 30\n# auto_resume = true\n',
+		);
+		cleanup();
+	});
+
+	test('parser ignores comment lines: a commented [loop] example parses the same as without it', () => {
+		const withComments = '[loop]\n# max_iterations = 30\nprompt = "/cam-next"\n';
+		const withoutComments = '[loop]\nprompt = "/cam-next"\n';
+		expect(parseToml(withComments)).toEqual(parseToml(withoutComments));
+		cleanup();
+	});
+
+	test('round-trip: parseToml(stringifyToml(config, comments)) deep-equals config (active keys)', () => {
+		const config = {
+			permission_mode: 'bypassPermissions',
+			loop: { max_iterations: 30 },
+		};
+		const comments: TomlComments = { loop: ['prompt = "/cam-next"'] };
+		const text = stringifyToml(config, comments);
+		expect(parseToml(text)).toEqual(config);
+		cleanup();
+	});
+
+	test('round-trip: comment-only section (no active keys) deep-equals config', () => {
+		const config = {
+			permission_mode: 'bypassPermissions',
+			loop: {},
+		};
+		const comments: TomlComments = { loop: ['max_iterations = 30', 'auto_resume = true'] };
+		const text = stringifyToml(config, comments);
+		expect(parseToml(text)).toEqual(config);
 		cleanup();
 	});
 });
