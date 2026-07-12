@@ -1,9 +1,36 @@
 {
   "id": "CAM-265",
   "title": "The new implement-blocked block ends with a 'Do NOT delete the marker yourself.…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-11T04:40:28.780Z",
-  "description": "The new implement-blocked block ends with a 'Do NOT delete the marker yourself...' paragraph immediately followed by the pre-existing near-identical paragraph for the plan-escalated marker. Two consecutive almost-identical warnings read awkwardly; consider consolidating into one shared note covering all boot-surfaced markers.\n\nSource: cam/issue-195\nReview round: 1\nLocation: templates/agents/subagent-orchestrator.md:191\n\nsuggestion-fingerprint: c50264980f90"
+  "description": "The new implement-blocked block ends with a 'Do NOT delete the marker yourself...' paragraph immediately followed by the pre-existing near-identical paragraph for the plan-escalated marker. Two consecutive almost-identical warnings read awkwardly; consider consolidating into one shared note covering all boot-surfaced markers.\n\nSource: cam/issue-195\nReview round: 1\nLocation: templates/agents/subagent-orchestrator.md:191\n\nsuggestion-fingerprint: c50264980f90",
+  "spec": {
+    "scope": "Documentation-only consolidation of the duplicated 'Do NOT delete the marker yourself...' boilerplate in the orchestrator agent doc. State the shared 'read-only, do not delete' preamble once as a general rule covering all boot-surfaced markers, while preserving each marker's own distinct removal clause. Fix the misplaced/contradictory implement-blocked duplicate, add the missing plan-preflight-failed removal note, and correct the over-narrow plan-escalated clause. Edit BOTH dual-copy locations. No code/behavior change.",
+    "acceptanceCriteria": [
+      "In BOTH templates/agents/subagent-orchestrator.md and .claude/agents/subagent-orchestrator.md, the implement-blocked block contains exactly ONE removal note, stating the correct condition: the marker is cleared only by the next re-armed implement dispatch for that SAME issue (issueId-matched), per src/commands/sidecar.ts:537,558-569 and src/supervisor/implement-blocked-marker.ts:169. The second, contradictory 'next plan run (US-004)' paragraph no longer appears under implement-blocked.",
+      "The repeated boilerplate sentence ('Do NOT delete the marker yourself. Surfacing it at boot is read-only') is stated once as a shared general rule covering all boot-surfaced markers; each marker (ship-stalled, plan-escalated, plan-preflight-failed, implement-blocked, post-merge-stalled, sidecar-stalled) retains only its own specific removal clause, with no per-marker removal specific lost.",
+      "The plan-preflight-failed marker gains its removal-condition note (currently absent): it is cleared by the next plan run whose post-audit outcome is anything other than another preflight failure (issue-agnostic), per src/supervisor/plan-runner.ts:1313-1320,1382.",
+      "The plan-escalated removal clause is corrected to state that ANY converging (audit-approved -> branch-created) plan run clears it, gated on convergence not on the original issueId, per src/supervisor/plan-runner.ts:1294-1297 (drop the too-narrow 'for that issue').",
+      "Documentation-only: no source/behavior change. The two dual-copy files stay consistent per the per-file dual-copy convention, and bun run embed-vendor:check passes (run bun run embed-vendor if it flags drift).",
+      "Quality gates green: bun run typecheck, bun test, bun run check:all."
+    ],
+    "gotchas": [
+      "Dual-copy is per-file (memory: cam-dual-copy-is-per-file): edit BOTH templates/agents/subagent-orchestrator.md AND .claude/agents/subagent-orchestrator.md; they are NOT auto-synced.",
+      "templates/ is embedded into the compiled binary; if embed-vendor:check flags drift, run bun run embed-vendor and commit the regenerated copy.",
+      "Do NOT collapse the per-marker removal clauses into one generic clause: the conditions genuinely differ (implement-blocked=issueId-scoped re-arm; plan-escalated=convergence-gated, not issue-scoped; plan-preflight-failed=issue-agnostic, cleared by any non-preflight-failed plan result; ship-stalled=merge-watch consume on PR merge; post-merge-stalled=post-merge sequence completes; sidecar-stalled=next healthy bring-up). Only the 'do not delete / read-only' preamble is shared.",
+      "The 'next plan run (US-004)' text currently under implement-blocked is the DISPLACED plan-preflight-failed note, not a true implement-blocked duplicate; relocate its (corrected) content to the plan-preflight-failed block rather than merely deleting it."
+    ],
+    "domainTerms": [
+      "boot-surfaced marker"
+    ]
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 1,
+    "riskReduction": 3,
+    "jobSize": 1
+  },
+  "type": "chore"
 }
