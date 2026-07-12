@@ -1,28 +1,28 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Give ship a single documented model source and stop the dead planner/auditor frontmatter rewrite"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
   "branchName": "cam/issue-286",
   "timestamp": "2026-07-12T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/templates/frontmatter.ts",
-    "src/commands/config.ts",
-    "test/commands/config-frontmatter.test.ts",
-    "test/commands/config-persist.test.ts",
+    "vendor/check-agent-frontmatter.ts",
+    "vendor/README.md",
+    "src/vendor/_generated.ts",
+    "test/vendor/check-agent-frontmatter-standalone.test.ts",
     "scripts/cam/prd.json",
     "scripts/cam/patterns.md"
   ],
-  "openQuestions": [
-    "Carried over from US-002, still unresolved (out of this story's AC scope): vendor/check-agent-frontmatter.ts's REQUIRED_TOP_LEVEL_KEYS still lists 'model' as required, so a downstream cam init's runVendoredSmoke('check-agent-frontmatter.ts') step will fail against the materialized templates/agents/subagent-*.md copies (which no longer carry a model: line since US-002). Not fixed here either: that file is documented in vendor/README.md as vendored byte-for-byte verbatim from the upstream reporter monorepo. Needs a follow-up: fix upstream in reporter and re-vendor, or make a deliberate, documented local divergence dropping 'model' from REQUIRED_TOP_LEVEL_KEYS."
-  ],
-  "nextStoryContext": "US-003 reduced FRONTMATTER_TARGET_PHASE_PATHS (src/templates/frontmatter.ts) from 3 entries (planner, auditor, ship) down to 1 (ship only). Rationale: US-002's handoff already established that planner and auditor are spawned as pane workers with --model <readPhaseModel(phase)> on the CLI (same mechanism as implementer/reviewer), so rewriting their frontmatter model: line was always dead effort -- doubly so after US-002 stripped that line from the persona files entirely. ship is the sole survivor because ship-runner.ts is deterministic (zero LLM calls, confirmed via its own comment at line 36), so it has no --model CLI path at all; cam-ship.md's frontmatter model: line remains the one live, documented model source for that phase. Updated: the module comment in frontmatter.ts (explains ship-only rationale without literally naming 'planner'/'auditor', since AC1's grep oracle checks the whole file including comments -- see the new patterns.md bullet on this gotcha), config.ts's mergeConfigChoices jsdoc (singular 'file' not 'three... files'), and both test files: test/commands/config-frontmatter.test.ts (removed the planner/auditor path-assertion and rewrite-integration tests, added a 'leaves ... unmodified' integration test, renamed the 'rewrites all three' loop test since it now iterates a 1-entry map) and test/commands/config-persist.test.ts (added one integration test asserting mergeConfigChoices with a cwd rewrites ONLY the seeded cam-ship.md fixture and leaves planner/auditor agent files byte-identical -- this satisfies AC3's oracle, which explicitly names this test file). cam-ship.md's own frontmatter content was deliberately left untouched (dual-copy .claude/+templates/, touching it would trigger embed-vendor:check for no AC-required reason). Quality gates all green: typecheck 0 errors, bun test 4341 pass / 0 fail, check:all full spine (test/embed-vendor/lint/file-size/debt-markers/version-skips/coverage/dead-code/dup/ci-parity) clean.",
+  "openQuestions": [],
+  "nextStoryContext": "Closed the latent regression carried over from US-002/US-003's handoffs: vendor/check-agent-frontmatter.ts's REQUIRED_TOP_LEVEL_KEYS still required 'model' after US-002 stripped the model: frontmatter line from all 5 .claude/agents/*.md persona files, so `bun vendor/check-agent-frontmatter.ts` (and therefore cam init's runVendoredSmoke('check-agent-frontmatter.ts') step) reported 5 spurious violations. Resolved as a deliberate, documented LOCAL DIVERGENCE from the upstream 'reporter' vendored copy (not by waiting on an upstream fix in a repo this PRD has no access to): dropped 'model' from REQUIRED_TOP_LEVEL_KEYS (check #6, the shape-validate-when-present rule, is unchanged), documented the divergence in 3 places -- a header comment in vendor/check-agent-frontmatter.ts, a new 'Local divergences from upstream' section in vendor/README.md, and a locking regression test asserting the smoke exits 0 for a fixture with no model: key. Re-ran `bun run embed-vendor` to regenerate src/vendor/_generated.ts (the actually-consumed embedded copy) and confirmed `bun vendor/check-agent-frontmatter.ts` now exits 0 with '5 agent file(s) ok.' against the repo's own .claude/agents/*.md. Any FUTURE re-vendor of check-agent-frontmatter.ts from upstream reporter must re-apply this patch (or the divergence must be upstreamed to reporter first) before running embed-vendor:check -- the header comment and README section are the durable markers for that. Quality gates all green: typecheck 0 errors, bun test 4342 pass / 0 fail, check:all full spine (test/embed-vendor/lint/file-size/debt-markers/version-skips/coverage/dead-code/dup/ci-parity) clean.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched",
-      "summary": "Pure internal refactor of a config-persistence map and its module/jsdoc comments plus matching test updates; no external library API surface was exercised."
+      "lib": "Claude Code sub-agents (frontmatter spec)",
+      "url": "https://code.claude.com/docs/en/sub-agents",
+      "fetchedAt": "2026-07-12T00:00:00Z",
+      "status": "aligned",
+      "summary": "Docs' 'Supported frontmatter fields' table confirms only `name` and `description` are required (Yes); `model` is listed as No (optional) and 'Defaults to inherit' when omitted. Confirms the vendored smoke's prior REQUIRED_TOP_LEVEL_KEYS (requiring model) was over-strict relative to the real Claude Code loader contract, and that this story's fix (dropping model from the required set) now matches upstream product behavior exactly."
     }
   ]
 }
