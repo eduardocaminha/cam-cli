@@ -1,0 +1,77 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-172",
+  "description": "Fix the orchestrator context backstop: use the real 200k window (config-driven) and guarantee a handoff exists before arming/SIGTERM so a mid-cycle backstop respawns+rehydrates instead of tearing down.",
+  "issueNumber": 172,
+  "type": "fix",
+  "relatedDocs": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "Anthropic context windows (Claude Code / API)",
+      "url": "https://platform.claude.com/docs/en/docs/build-with-claude/context-windows",
+      "version": "current",
+      "fetchedAt": "2026-07-12T00:00:00Z",
+      "summary": "Confirms the issue premise: the 1M-token window for Opus 4.6/4.7/4.8 + Sonnet 5/4.6 is the default only on the Claude API, Amazon Bedrock, Google Cloud, and Microsoft Foundry channels; other/flat-subscription usage runs the 200k standard window. Input overflow returns a hard 400 'prompt is too long' on every model. Justifies defaulting orch_context_window to 200000 and the 0.80 backstop margin.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Guard: checkBackstop never arms without a handoff on disk",
+      "description": "As the orchestrator recycle watcher, I need checkBackstop to refuse to arm the recycle marker unless the orchestrator handoff file already exists, so a mid-cycle backstop can never SIGTERM the orchestrator into the run.ts teardown branch and lose context.",
+      "acceptanceCriteria": [
+        "checkBackstop (src/commands/orch-recycle-watch.ts) never calls armMarkerFn unless the handoff file (.claude/.cam-orch-handoff.json) exists on disk, mirroring the cycle-close handoff guard in index.ts (~1559-1569, exit 3). [oracle: bun test test/commands/orch-recycle-watch.test.ts]",
+        "With over-threshold occupancy and NO handoff present, checkBackstop is a no-op: armMarkerFn is not called (verified via an injected spy). [oracle: bun test test/commands/orch-recycle-watch.test.ts]",
+        "With over-threshold occupancy AND a handoff present, checkBackstop still arms as before (existing behavior preserved). [oracle: bun test test/commands/orch-recycle-watch.test.ts]",
+        "Handoff-existence is an injectable seam (handoffExistsFn on BackstopDeps/options) defaulting to existsSync of .claude/.cam-orch-handoff.json, so tests exercise both branches without touching real disk. [oracle: grep -q 'handoffExistsFn' src/commands/orch-recycle-watch.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "MANDATED ORDER: this guard lands FIRST, before the window fix (US-003), so correcting the window never starts triggering teardown-with-data-loss (bug1 masks bug2). Files: src/commands/orch-recycle-watch.ts (checkBackstop + BackstopDeps, ~lines 309-333, 410-415), test/commands/orch-recycle-watch.test.ts. Mirror the guard SHAPE from index.ts dispatchJournal --cycle-close (~1558-1569) rather than inventing a new one, so both recycle triggers share the never-arm-without-handoff invariant. Handoff filename constant: ORCH_HANDOFF_FILENAME ('.cam-orch-handoff.json') in src/orchestrator/handoff.ts. This story alone makes the backstop a safe no-op mid-cycle (no producer of the handoff yet); US-002 adds the producer."
+    },
+    {
+      "id": "US-002",
+      "title": "Backstop produces a handoff: signal the agent, then deterministic minimal fallback, then respawn",
+      "description": "As the orchestrator recycle watcher, when I detect the context ceiling I need to first ask the orchestrator agent to author a handoff and arm, and if it does not respond in 30s write a deterministic minimal handoff myself before arming, so the backstop always terminates in a wrapper respawn+rehydrate and never stalls waiting on an agent that cannot answer.",
+      "acceptanceCriteria": [
+        "On backstop (over threshold, no handoff yet) the watcher signals the orchestrator pane once per episode via atomic send-keys (text + Enter in one call, NO -l) asking it to write an authored handoff and arm; it does NOT re-inject on every 2s poll while the same episode is unresolved. [oracle: bun test test/commands/orch-recycle-watch.test.ts]",
+        "If a handoff file appears within 30 seconds of the signal, the watcher arms the marker via the existing consume-once path and does NOT write its own handoff (the authored handoff wins). [oracle: bun test test/commands/orch-recycle-watch.test.ts]",
+        "If no handoff appears within 30 seconds, the watcher writes a deterministic minimal handoff via writeOrchHandoff (schemaVersion 1, reason exactly 'context-backstop', plus pointers to the durable state files: prd.json path, current git branch, loop file, journal tail) and then arms the marker itself. [oracle: bun test test/commands/orch-recycle-watch.test.ts]",
+        "This is the first PRODUCTION caller of writeOrchHandoff (src/orchestrator/handoff.ts), which previously had only test callers. [oracle: grep -q 'writeOrchHandoff' src/commands/orch-recycle-watch.ts]",
+        "The 30s timeout, the current time source, the pane-signal function, and pane-id resolution are all injectable seams so tests drive the episode state machine without real tmux, clock, or fs. [oracle: bun test test/commands/orch-recycle-watch.test.ts]",
+        "The backstop terminal resolves to wrapper respawn + rehydrate via CAM_ORCH_REHYDRATE, never a tmux kill-session teardown: buildOrchestratorPaneCommand (src/commands/run.ts) takes the respawn branch for a context-backstop handoff (handoff present, reason increments the respawn counter like any non-cycle-close reason). [oracle: bun test test/commands/run.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "Files: src/commands/orch-recycle-watch.ts (episode state machine in runOrchRecycleWatch + checkBackstop; add signal/timeout/now seams to OrchRecycleWatchOptions), src/orchestrator/handoff.ts (reuse writeOrchHandoff; optionally add a small buildMinimalBackstopHandoff helper for the pointers payload), test/commands/orch-recycle-watch.test.ts, test/commands/run.test.ts. Pane-signal + pane-id resolution: reuse getOrchPaneId / sendKeysWhenIdle from src/tmux/session.ts (see src/commands/issue.ts:171-192 for the exact atomic send-keys pattern). GOTCHA (memory sendkeys-literal-enter-gotcha): NEVER pass -l to send-keys; -l makes 'Enter' literal and never submits. GOTCHA (issue): the authored-handoff signal may land while the agent is mid-turn (context is full precisely because it is busy) - the 30s timeout + deterministic fallback exists so respawn never stalls. Episode dedupe: track a 'signaled-at' timestamp in the loop so the pane is not spammed every 2s poll. run.ts wrapper (buildOrchestratorPaneCommand ~252-308) already routes any handoff-present exit to respawn and increments n for non-cycle-close reasons; assert this holds for reason 'context-backstop' (likely no code change, test-only)."
+    },
+    {
+      "id": "US-003",
+      "title": "Config-driven orchestrator window: default 200k, replace 1M model-prefix derivation",
+      "description": "As the operator, I need the orchestrator context window to default to the real 200000-token subscription ceiling and be overridable via project.toml, so the 0.80 backstop fires at ~160k before the hard 400 overflow instead of computing 80% of a never-reached 1M.",
+      "acceptanceCriteria": [
+        "project.toml supports a [loop] orch_context_window integer key (token count); a new reader (readOrchContextWindow in src/config/models.ts, mirroring readMetaLoop) returns the configured value and defaults to 200000 when the file/section/key is absent, malformed, non-integer, or <= 0 (fail-safe). [oracle: bun test test/config/models.test.ts]",
+        "orchestratorContextWindow() (src/orchestrator/context-window.ts) returns the configured [loop] orch_context_window value (falling back to 200000), replacing the current 1M-by-model-prefix derivation (MODEL_CONTEXT_WINDOWS / OPUS_CONTEXT_WINDOW). [oracle: bun test test/orchestrator/context-window.test.ts]",
+        "orchestratorContextWindow() with no [loop] orch_context_window configured returns 200000, not 1000000. [oracle: bun test test/orchestrator/context-window.test.ts]",
+        "checkBackstop triggers at occupancy above the 0.80 threshold of the configured window (i.e. above 160000 with the 200000 default) via isOverContextBackstop, whose strict-greater boundary semantics are unchanged. [oracle: bun test test/commands/orch-recycle-watch.test.ts]",
+        "The existing test/orchestrator/context-window.test.ts is updated so it no longer asserts a 1M model-prefix default (any OPUS_CONTEXT_WINDOW-based assertions are removed or repointed to the config-driven default). [oracle: bun test test/orchestrator/context-window.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": "US-002",
+      "notes": "MANDATED ORDER: lands AFTER the US-001 guard + US-002 producer so switching to the real 200k window (which makes the backstop actually fire) never causes teardown-with-data-loss. Files: src/config/models.ts (add readOrchContextWindow), src/orchestrator/context-window.ts (orchestratorContextWindow reads config; remove/retire MODEL_CONTEXT_WINDOWS + OPUS_CONTEXT_WINDOW model-prefix path; keep ORCH_CONTEXT_BACKSTOP_FRACTION = 0.8), test/config/models.test.ts, test/orchestrator/context-window.test.ts. GOTCHA (issue): 1M is an API/Bedrock/GCP/Foundry feature (confirmed against Anthropic context-windows doc); the Claude Code flat subscription without API credit runs the 200k standard window and overflows with a hard 400 'prompt is too long'. GOTCHA (issue): threshold is 0.80 not 0.95 deliberately - the watcher polls every 2s and the final turn + the handoff write itself consume tokens; 0.95 (190k) risks crossing the hard 200k ceiling before the recycle fires. Adding [loop] orch_context_window to scripts/cam/project.toml is OPTIONAL (default 200k already matches the subscription reality); do not set it to 1M. Downstream: orchestratorContextWindow() is called once at watcher startup (src/commands/orch-recycle-watch.ts:413), not per-tick."
+    }
+  ]
+}
