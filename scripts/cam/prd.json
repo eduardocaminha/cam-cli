@@ -1,0 +1,29 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-297",
+  "description": "Add a dedicated updatedAt-bump test for closeIssueOnMain, mirroring the sibling per-mutation assertions.",
+  "issueNumber": 297,
+  "type": "chore",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Assert closeIssueOnMain bumps updatedAt on close",
+      "description": "As a maintainer, I need a dedicated test proving closeIssueOnMain advances the issue's updatedAt timestamp on close, so the close mutation has the same explicit updatedAt-bump coverage as specify/abandon/demote/merge/rank.",
+      "acceptanceCriteria": [
+        "A new test in test/commands/issue-specify.test.ts drives the real closeIssueOnMain writer (src/commands/issue-specify.ts) and asserts the persisted entry's updatedAt equals the injected clock() value ('2026-06-27T00:00:00.000Z') and is strictly greater than the original createdAt. [oracle: bun test test/commands/issue-specify.test.ts]",
+        "The test captures the writer's serialized output via a recording SpawnFn on the hash-object input (mirroring the abandon updatedAt-bump test at line 877), not by re-reading disk. [oracle: grep -q 'hash-object' test/commands/issue-specify.test.ts]",
+        "closeIssueOnMain and its options type are imported from src/commands/issue-specify.ts in the test file (they are not imported today). [oracle: grep -q 'closeIssueOnMain' test/commands/issue-specify.test.ts]",
+        "src/commands/issue-specify.ts is not modified (test-only change). [oracle: file-assert git diff --name-only shows only test/commands/issue-specify.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "File: test/commands/issue-specify.test.ts. Mirror the existing 'abandon: updatedAt is bumped to clock() value beyond original createdAt' test (~line 877): build a makeEntry() fixture, wrap makeFakeSpawnFn's spawnFn in a recordingSpawnFn that captures opts.input on 'hash-object' calls, invoke closeIssueOnMain, JSON.parse the captured input, assert updatedAt === '2026-06-27T00:00:00.000Z' and > createdAt. GOTCHA: closeIssueOnMain returns { ok:false, reason:'already-closed' } if entry.stage === 'shipped' (src/commands/issue-specify.ts:551), so the fixture entry must be a non-shipped stage (makeEntry() default 'idea' works). GOTCHA: closeIssueOnMain and CloseIssueOnMainOptions are NOT currently imported in the test file (the import block at line 22-32 only pulls specify/abandon/demote/merge); add them. No makeCloseOpts helper exists: build the options inline ({ cwd, id, spawnFn, clock: () => '2026-06-27T00:00:00.000Z' }) matching the sibling opts helpers. Behavior is already correct (issue is a coverage gap, not a bug): do NOT touch closeIssueOnMain. bun test builtin runner, no external lib."
+    }
+  ]
+}
