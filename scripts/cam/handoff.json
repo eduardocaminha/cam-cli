@@ -1,21 +1,18 @@
 {
-  "lastCompletedStory": { "id": "US-004", "title": "Add an empty-push (ahead_by>=1) gate on the worker pass path" },
+  "lastCompletedStory": { "id": "US-005", "title": "Remove the passes:true flip instruction from both implementer prompt copies" },
   "branchName": "cam/issue-63",
-  "timestamp": "2026-07-13T19:10:00Z",
+  "timestamp": "2026-07-13T20:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/host.ts",
-    "src/supervisor/loop.ts",
-    "src/supervisor/result.ts",
-    "test/supervisor/loop.test.ts",
-    "test/supervisor/result.test.ts",
+    ".claude/agents/subagent-implementer.md",
+    "templates/agents/subagent-implementer.md",
+    "src/vendor/_generated.ts",
     "scripts/cam/prd.json",
-    "scripts/cam/patterns.md",
-    "scripts/file-size-budget.json"
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 added a branch-level empty-push gate: readWorkerOutcome (src/supervisor/result.ts) now accepts an optional `aheadByForBranch?: () => number | null` option, consulted (confirmEmptyPushGate) right after confirmCommitGate passes in BOTH DONE branches (worker-report-primary and handoff-fallback). ahead_by===0 resolves to kind:'blocked' (NOT a new WorkerOutcomeKind -- deliberately reuses 'blocked' so loop.ts's existing outcome.kind==='blocked'->blockedResult terminal path handles it identically to a failed ensurePushed push-verification check, per the AC's own phrasing). requires:'operator' stories are exempt (isOperatorStory reused verbatim from confirmCommitGate). A null return (git rev-list could not be evaluated) is fail-open (ok:true), asymmetric with commitExistsForStory's fail-closed catch block -- this gate is a coarse belt-and-suspenders check layered on top of push-verification, not a replacement, so a git hiccup should never spuriously block a real pass. host.ts's aheadByForBranch adapter (git rev-list --count origin/main..HEAD, best-effort git fetch origin main first, falling back to local main..HEAD) is a direct sibling of commitExistsForStory's fetch+range-fallback logic immediately above it in the same file. loop.ts threads the new RunSupervisorOptions.aheadByForBranch field straight into every readWorkerOutcome call, same pattern as commitExistsForStory. Loop-level integration test gotcha: a gate that only fires on the DONE-outcome-resolution path needs the two-prd-snapshot array pattern (passes:false at the top of the iteration so decideNextAction dispatches 'implement', passes:true by outcome-resolution time) -- a single static passes:true snapshot never reaches worker-dispatch at all (decideNextAction picks review/complete instead) and the loop silently spins to max-iterations instead of blocking on iteration 1 (caught and fixed during this story; see patterns.md). No production caller currently sets a real ahead-by ceiling threshold beyond >=1 (i.e. no multi-commit-squash-detection use case yet); if a future story wants richer push-shape validation (e.g. detecting an oversized or unexpectedly-multi-commit push), it can build on aheadByForBranch's return value without touching the gate's exemption/fail-open semantics.",
+  "nextStoryContext": "US-005 was doc-only: reworded the three lines in both subagent-implementer.md copies that told the worker to 'flip passes: true' so they instead say the supervisor is the sole writer (matches ADR 0035 / US-003's finalizeStory). The file-assert oracle `grep -Eiq 'flip .?passes: ?true'` is verb-anchored, not a raw-count check on the literal string 'passes: true' -- see the new patterns.md bullet for the exact regex semantics (it matched 'flip `passes: true`' via the backtick as the optional single char, but does NOT match 'the supervisor flips `passes: true`' or a 'revert `passes: true`' line). Both files still legitimately retain non-imperative mentions of passes:true (schedule/stop-condition prose, the Step 5.5 revert-step wording, which was also reworded per the story's notes even though the oracle didn't strictly require it). Ran `bun run embed-vendor` after editing templates/ (the embed source of truth) since src/vendor/_generated.ts embeds both .claude/settings.json-adjacent agent files; embed-vendor:check is green. NOTE for US-006 (next, requires US-002): US-006 explicitly says to land LAST, after US-003 (done) and US-005 (this story, done) -- so US-006 is now unblocked and is the intended next dispatch. It extends orch-agent-allowlist.sh + settings.json PreToolUse matcher to actually DENY a worker-actor (CAM_WORKER marker) Write to scripts/cam/prd.json at the hook layer, while leaving the planner's (CAM_SESSION without CAM_WORKER) Write to prd.json allowed. This closes the loop: US-003 made the supervisor the sole writer in the production finalizeStory path, US-005 removed the instruction from the prompts, US-006 makes it mechanically enforced so a worker session literally cannot self-flip passes:true via Write/Edit/MultiEdit even if it ignored the (now-corrected) prompt.",
   "officialDocsValidated": [
-    { "lib": "git", "url": "https://git-scm.com/docs/git-rev-list", "fetchedAt": "2026-07-13T19:05:00Z", "status": "aligned", "summary": "Confirmed --count prints the commit count for the given range, and A..B range syntax (shorthand for ^A B) lists commits reachable from B but not A; a range with nothing ahead outputs 0 with --count. Matches the aheadByForBranch implementation (Number(\"0\") === 0 triggers the gate)." }
+    { "lib": "none", "url": "n/a", "fetchedAt": "2026-07-13T20:00:00Z", "status": "no_external_lib_touched", "summary": "Doc-only story editing two markdown agent-prompt files; no external library API surface was touched." }
   ]
 }

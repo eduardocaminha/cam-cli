@@ -90,7 +90,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/agents/subagent-implementer.md (lines ~34, ~108, ~132) and templates/agents/subagent-implementer.md (lines ~34, ~98, ~122); run bun run embed-vendor after editing templates/ so src/vendor/_generated.ts (key agents/subagent-implementer.md) is regenerated, then embed-vendor:check must be green. The embed source of truth is templates/; the .claude/ copy is the cam-cli repo's own live runtime copy: edit BOTH (dual-copy is per-file, diff before assuming identical). Keep the notes-read of prd.json (read-only is fine); only the flip verb must go. Reword the Step 5.5 revert step so it no longer implies the worker owns the flip."
     },
