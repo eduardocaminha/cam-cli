@@ -21,7 +21,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Single edit at src/commands/claude.ts:40 inside the CLAUDE_HELP Examples body: change 'cam claude --print --model claude-opus-4-5 /cam-next' to 'cam claude --print --model opus /cam-next'. Help-text-only; do NOT touch src/config/models.ts DEFAULTS or the MODEL_OPTIONS map in src/ui/ConfigScreen.tsx. Alias verified real: MODEL_OPTIONS includes value:'opus' (ConfigScreen.tsx:70). This is exactly the drift ADR-0034 targets (dated model ids in surfaced text). --model is forwarded verbatim to the child claude process, which resolves the tier alias."
     }
