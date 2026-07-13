@@ -102,10 +102,14 @@ export interface SidecarOptions {
 	/** Working directory (defaults to process.cwd()). */
 	cwd?: string;
 	/**
-	 * Override the orphaned implement-blocked marker sweep (US-002, CAM-282).
-	 * Production: sweepOrphanedImplementBlockedMarker(markerPath, cwd) --
-	 * read-only on main, removes the marker only when its issueId is a
-	 * closed/shipped issue. Tests inject a no-op / spy to avoid real git calls.
+	 * Override the orphaned implement-blocked marker sweep (US-002, CAM-282;
+	 * mid-session reuse added in US-001, CAM-288). Production:
+	 * sweepOrphanedImplementBlockedMarker(markerPath, cwd) -- read-only on
+	 * main, removes the marker only when its issueId is a closed/shipped
+	 * issue. Tests inject a no-op / spy to avoid real git calls. Shared by
+	 * both the runSidecar startup call site and the makeProductionPlanPhaseFn
+	 * dispatch closure (via buildPlanPhaseDeps), so the same override fires
+	 * at both sites.
 	 */
 	sweepOrphanedImplementBlockedMarkerFn?: () => void;
 	/**
@@ -2348,6 +2352,7 @@ function makeProductionPlanPhaseFn(
 	sessionName: string,
 	logEvent: WorkerEventLogger,
 	realSpawnFn: SpawnFn,
+	sweepOrphanedImplementBlockedMarkerFn: () => void,
 ): () => void {
 	// Build the plan_issue reader once (US-001, CAM-154); called fresh each invocation.
 	const readPlanIssueFn = makeReadPlanIssue(claudeDir);
@@ -2356,6 +2361,13 @@ function makeProductionPlanPhaseFn(
 		// runPostAuditAction is caught here, logged, and the phase is forced back to
 		// idle so the sidecar loop can continue. Never rethrows.
 		try {
+		// US-001 (CAM-288): sweep an orphaned implement-blocked marker at the
+		// start of every plan-phase dispatch (not just at process startup), so
+		// a marker orphaned mid-session (operator ships/abandons its issue
+		// without a fresh sidecar boot) is cleared before this dispatch's own
+		// runPlanPreflight read. Read-only on main; never touches the working
+		// tree. Mirrors the startup call site (runSidecar, ~line 2881).
+		sweepOrphanedImplementBlockedMarkerFn();
 		// Read the plannerPaneId fresh on each call (mirrors ensureWorkerPane pattern).
 		const plannerPaneId = readWorkerPaneMarker(claudeDir) ?? '%2';
 		// Read plan_issue fresh on each invocation (US-001, CAM-154).
@@ -2480,16 +2492,25 @@ export function buildMetaLoopFn(
  * noExcessiveCognitiveComplexity(max=15) limit. Each ?? adds +1 complexity;
  * two new plan-phase deps would push the parent function to 17. Extracted here,
  * they live in a separate function with its own complexity budget.
+ *
+ * Exported for the wiring test (US-001, CAM-288): makeProductionPlanPhaseFn's
+ * returned closure is not itself exported (mirrors buildMetaLoopFn's
+ * precedent, CAM-208), so driving buildPlanPhaseDeps directly with a spy
+ * sweepOrphanedImplementBlockedMarkerFn is the only way to assert the sweep
+ * fires when the plan-phase dispatch closure runs.
  */
-function buildPlanPhaseDeps(
+export function buildPlanPhaseDeps(
 	ctx: SidecarLoopDepsCtx,
 	options: SidecarOptions,
 ): Pick<SidecarLoopDepsResult, 'readLoopPhaseFn' | 'runPlanPhaseFn'> {
 	const { cwd, claudeDir, sessionName, logEvent, realSpawnFn } = ctx;
+	const sweepOrphanedImplementBlockedMarkerFn =
+		options.sweepOrphanedImplementBlockedMarkerFn ??
+		(() => sweepOrphanedImplementBlockedMarker(join(claudeDir, IMPLEMENT_BLOCKED_FILENAME), cwd));
 	return {
 		readLoopPhaseFn: options.readLoopPhaseFn ?? makeReadLoopPhase(claudeDir),
 		runPlanPhaseFn: options.runPlanPhaseFn ?? makeProductionPlanPhaseFn(
-			cwd, claudeDir, sessionName, logEvent, realSpawnFn,
+			cwd, claudeDir, sessionName, logEvent, realSpawnFn, sweepOrphanedImplementBlockedMarkerFn,
 		),
 	};
 }

@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.153.0] - 2026-07-13
+
+### Added
+
+- US-001 - Sweep orphaned implement-blocked marker at plan-phase dispatch
+
 ## [0.152.0] - 2026-07-12
 
 ### Added
