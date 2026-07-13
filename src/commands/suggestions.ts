@@ -20,18 +20,27 @@
 //     plumbing, patterns.md line 272).
 //
 // US-005 (promoteSuggestionOnMain/dismissSuggestionOnMain) additions:
-//   - promote files a real issue via createLocalIssueOnMain (src/commands/
-//     issue-file.ts), preserving derivedFrom from the entry's sourceIssue
-//     (resolveIssueId + the issue_prefix read from project.toml, same
-//     lookup createLocalIssueOnMain itself performs), embeds the entry's
-//     OWN already-stored fingerprint in a `suggestion-fingerprint: <fp>`
+//   - promote files a real issue via writeIssueFile (src/issues/alloc.ts),
+//     preserving derivedFrom from the entry's sourceIssue (resolveIssueId +
+//     the issue_prefix read from project.toml, same lookup
+//     createLocalIssueOnMain itself performs), embeds the entry's OWN
+//     already-stored fingerprint in a `suggestion-fingerprint: <fp>`
 //     description line (buildFollowUpIssue's format, src/supervisor/
 //     suggestion-followups.ts), then removes that one line from the pen.
 //   - dismiss just removes the one matching-fingerprint line, no issue filed.
 //   - Both look up the entry BEFORE mutating anything: an unknown fingerprint
 //     is a structured `not-found` error, no commit, no issue filed.
 //
-// CAM-285 US-001, US-005.
+// US-002 (CAM-290) additions:
+//   - promote no longer routes through createLocalIssueOnMain: it calls
+//     writeIssueFile directly, passing the rewritten pen content as
+//     `extraFiles` and a `commitMessage` override, so the filed issue JSON
+//     and the pen-line removal land in ONE atomic on-main commit (never an
+//     intermediate main state with the issue filed but the pen line still
+//     present). The id is re-derived inside writeIssueFile's own CAS retry
+//     loop; no id/path is pre-computed and threaded in.
+//
+// CAM-285 US-001, US-005. CAM-290 US-002.
 
 import {
 	checkMainUpToDate,
@@ -41,11 +50,8 @@ import {
 } from '../git/on-main.ts';
 import { parseToml } from '../config/toml.ts';
 import { resolveIssueId } from '../issues/resolve-id.ts';
-import {
-	createLocalIssueOnMain,
-	type ClockFn,
-	type CreateLocalIssueOnMainError,
-} from './issue-file.ts';
+import { writeIssueFile } from '../issues/alloc.ts';
+import type { ClockFn } from './issue-file.ts';
 import { SUGGESTION_FINGERPRINT_PREFIX } from '../supervisor/suggestion-followups.ts';
 import { printError } from '../logging/color.ts';
 
@@ -419,15 +425,16 @@ export interface PromoteSuggestionOnMainSuccess {
 	fingerprint: string;
 	/** Id of the newly filed issue, e.g. 'CAM-286'. */
 	issueId: string;
-	/** Short sha of the commit that filed the issue on main. */
-	issueSha: string;
-	/** Short sha of the commit that removed the line from the pen. */
-	penSha: string;
+	/**
+	 * Short sha of the SINGLE atomic commit that both files the issue JSON and
+	 * removes the promoted line from the pen (US-002, CAM-290).
+	 */
+	sha: string;
 }
 
 export interface PromoteSuggestionOnMainError {
 	ok: false;
-	reason: CreateLocalIssueOnMainError['reason'] | 'not-found' | 'suggestions-missing';
+	reason: 'diverged' | 'detached-head' | 'missing-main' | 'not-found' | 'suggestions-missing';
 }
 
 export type PromoteSuggestionOnMainResult =
@@ -459,16 +466,22 @@ function buildPromotedDescription(entry: SuggestionEntry): string {
 }
 
 /**
- * File the pen entry matching `fingerprint` as a real issue via
- * createLocalIssueOnMain (preserving `derivedFrom` resolved from the entry's
- * `sourceIssue`, and embedding the entry's fingerprint in the description),
- * then remove that one line from scripts/cam/suggestions.jsonl on main.
+ * File the pen entry matching `fingerprint` as a real issue AND remove that
+ * one line from scripts/cam/suggestions.jsonl in a SINGLE atomic on-main
+ * commit (US-002, CAM-290): the entry's `derivedFrom` is preserved (resolved
+ * from `sourceIssue`) and its fingerprint is embedded in the filed issue's
+ * description. There is no intermediate main state where the issue exists
+ * but the pen line remains -- a process death or lost push can never split
+ * the two.
+ *
+ * Bypasses createLocalIssueOnMain (which drops the co-commit ability) and
+ * calls writeIssueFile directly, passing the rewritten pen content as
+ * `extraFiles` and a `commitMessage` override; the id is re-derived inside
+ * writeIssueFile's own CAS retry loop, never pre-computed here.
  *
  * An unknown fingerprint is a structured `not-found` error (printed +
  * returned): looked up BEFORE any mutation, so neither the issue nor the pen
- * is touched. A createLocalIssueOnMain failure (diverged/detached-head/
- * missing-main/guardrail-failed) also leaves the pen untouched -- the pen
- * line is only removed after the issue has actually landed on main.
+ * is touched.
  */
 export function promoteSuggestionOnMain(
 	options: PromoteSuggestionOnMainOptions,
@@ -499,48 +512,29 @@ export function promoteSuggestionOnMain(
 	const prefix = typeof config['issue_prefix'] === 'string' ? config['issue_prefix'] : 'CAM';
 	const parentId = resolveIssueId(entry.sourceIssue, prefix);
 
-	const issueResult = createLocalIssueOnMain({
+	// The pen rewrite is id-independent -- fixed regardless of which id
+	// writeIssueFile's CAS loop ends up allocating, so it is computed once
+	// and passed as a companion extraFiles entry.
+	const { updatedContent } = removeSuggestionLine(penRead.content, fingerprint);
+
+	const result = writeIssueFile({
 		cwd,
 		title: entry.title,
 		description: buildPromotedDescription(entry),
+		prefix,
+		createdAt: clock(),
 		...(parentId !== null ? { derivedFrom: [parentId] } : {}),
+		extraFiles: [{ path: SUGGESTIONS_JSONL_PATH, content: updatedContent }],
+		commitMessage: (id) => `chore(cam): suggestions promote ${fingerprint} -> ${id}`,
 		spawnFn,
-		clock,
-		readProjectToml,
 	});
-	if (!issueResult.ok) {
-		return { ok: false, reason: issueResult.reason };
-	}
-
-	// createLocalIssueOnMain already advanced main with its own commit: re-guard
-	// and re-read the pen so the line removal is based on the up-to-date sha.
-	const postGuard = checkMainUpToDate(cwd, spawnFn, 'promote suggestion');
-	if (!postGuard.ok) {
-		return postGuard;
-	}
-	const postPenRead = readPenContentFromMain(cwd, spawnFn);
-	if (!postPenRead.ok) {
-		return { ok: false, reason: 'suggestions-missing' };
-	}
-	const { updatedContent } = removeSuggestionLine(postPenRead.content, fingerprint);
-
-	const commitMsg = `chore(cam): suggestions promote ${fingerprint} -> ${issueResult.id}`;
-	const penSha = commitTreeToMain(
-		cwd,
-		[{ path: SUGGESTIONS_JSONL_PATH, content: updatedContent }],
-		commitMsg,
-		postGuard.localMainSha,
-		spawnFn,
-		'cam-suggestions-',
-	);
 
 	pushMainBestEffort(cwd, spawnFn);
 
 	return {
 		ok: true,
 		fingerprint,
-		issueId: issueResult.id,
-		issueSha: issueResult.sha,
-		penSha,
+		issueId: result.id,
+		sha: result.sha,
 	};
 }

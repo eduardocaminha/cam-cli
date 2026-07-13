@@ -552,11 +552,10 @@ const SUGGESTIONS_HELP = renderHelp({
 				'2. `list` renders each entry as fingerprint, title, source branch, and\n' +
 				'   review round (when recorded); an empty (or absent) pen prints a\n' +
 				'   friendly empty-state hint, not an error.\n' +
-				'3. `promote` files the entry via createLocalIssueOnMain (preserving\n' +
-				'   derivedFrom from the entry\'s sourceIssue and embedding a\n' +
-				'   `suggestion-fingerprint: <fp>` description line so future terminal\n' +
-				'   reviews still dedup against it), then removes the one matching line\n' +
-				'   from the pen.\n' +
+				'3. `promote` files the entry and removes its pen line in ONE atomic\n' +
+				'   on-main commit (preserving derivedFrom from the entry\'s sourceIssue\n' +
+				'   and embedding a `suggestion-fingerprint: <fp>` description line so\n' +
+				'   future terminal reviews still dedup against it).\n' +
 				'4. `dismiss` removes the one matching line from the pen; no issue is filed.\n' +
 				'5. Both mutations use the on-main commit-tree plumbing and rewrite only\n' +
 				'   the one matching-fingerprint line -- every other line is byte-preserved.\n' +
@@ -2056,8 +2055,7 @@ export function dispatchSuggestions(
 			return 1;
 		}
 		printHint(
-			`promoted ${result.fingerprint} -> filed ${result.issueId} on main (${result.issueSha}); ` +
-				`removed from pen (${result.penSha})`,
+			`promoted ${result.fingerprint} -> filed ${result.issueId} on main (${result.sha})`,
 		);
 		writeStdout(`CAM_SUGGESTIONS_PROMOTED=${result.fingerprint} issue=${result.issueId}\n`);
 		return 0;

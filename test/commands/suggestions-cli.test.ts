@@ -218,8 +218,7 @@ describe('dispatchSuggestions', () => {
 					ok: true,
 					fingerprint,
 					issueId: 'CAM-286',
-					issueSha: 'abc1234',
-					penSha: 'def5678',
+					sha: 'abc1234',
 				};
 			},
 			writeStdout: (line) => stdoutLines.push(line),
