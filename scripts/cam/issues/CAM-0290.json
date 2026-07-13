@@ -1,7 +1,7 @@
 {
   "id": "CAM-290",
   "title": "promoteSuggestionOnMain does two independent on-main commits (issue file, then …",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-12T18:06:43.310Z",
@@ -9,5 +9,32 @@
   "derivedFrom": [
     "CAM-285"
   ],
-  "updatedAt": "2026-07-12T18:06:43.310Z"
+  "updatedAt": "2026-07-13T12:50:37.321Z",
+  "spec": {
+    "acceptanceCriteria": [
+      "promoteSuggestionOnMain files the new issue JSON and removes the promoted line from scripts/cam/suggestions.jsonl in a SINGLE atomic on-main commit; there is no intermediate main state where the issue exists but the pen line remains.",
+      "The single commit re-derives the allocated issue id inside the compare-and-swap loop on every attempt (collision-free under concurrent filers), preserving the current allocateId = max-id-on-main + 1 guarantee.",
+      "A process death or lost push after the (now single) commit cannot leave the fingerprint in the pen with a filed issue; either both land or neither does.",
+      "Existing suggestions.test.ts assertions are updated: the promote path now asserts ONE commit-tree call (was two: issueSha + penSha); all other promote/dismiss tests stay green.",
+      "The embedded suggestion-fingerprint line in the filed issue is preserved (auto-review re-dedup still works)."
+    ],
+    "scope": "Refactor promoteSuggestionOnMain (suggestions.ts:473-546) so the issue-file write and the pen-line removal land in one commit-tree commit. Thread the dynamically-allocated issue path/content into a single CAS loop that also applies the suggestions.jsonl rewrite: either generalize writeIssueFile (alloc.ts:139-214) to accept extra files/removals, or add a variant that re-derives the id + builds both FileWrite entries per CAS attempt and passes [issueFile, penFile] to commitTreeToMain (on-main.ts:404, already supports multiple files + removals in one commit). Do NOT change the dismiss path or the fingerprint-embedding behavior.",
+    "gotchas": [
+      "createLocalIssueOnMain (issue-file.ts:271-318) currently DROPS the filename returned by writeIssueFile; the combine needs the {path, content} of the issue file, so this seam must be widened or bypassed.",
+      "Id allocation MUST stay inside the CAS loop (alloc.ts:174-178): naively passing a pre-computed issue path into commitTreeToMain reintroduces id-collision risk, because commitTreeToMain re-reads the tree per attempt but does NOT re-derive an id.",
+      "commitTreeToMain already supports multiple files + removals atomically (proven by patterns-archive.ts:236); the atomic primitive exists, the work is threading id re-allocation through it.",
+      "Update the two-commit assertions in suggestions.test.ts:630-631 (issueSha=firstco / penSha=secondc) and the :490 comment that says promote fires commit-tree twice."
+    ],
+    "domainTerms": [
+      "suggestions pen",
+      "compare-and-swap commit loop"
+    ]
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 2,
+    "riskReduction": 5,
+    "jobSize": 8
+  },
+  "type": "fix"
 }
