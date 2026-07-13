@@ -1,7 +1,7 @@
 {
   "id": "CAM-288",
   "title": "The orphan sweep is wired only at runSidecar startup, so a marker that becomes …",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-12T15:26:02.376Z",
@@ -9,5 +9,30 @@
   "derivedFrom": [
     "CAM-282"
   ],
-  "updatedAt": "2026-07-12T15:26:02.376Z"
+  "updatedAt": "2026-07-13T12:50:11.207Z",
+  "spec": {
+    "acceptanceCriteria": [
+      "sweepOrphanedImplementBlockedMarker is invoked at the start of every plan-phase dispatch (mid-session), before runPlanPreflight, in addition to the existing runSidecar startup call site.",
+      "The mid-session sweep uses the existing injectable seam (sweepOrphanedImplementBlockedMarkerFn) and the same read-only-on-main path; it never touches the working tree.",
+      "A new wiring test asserts the sweep fires on plan-phase dispatch (the startup and preflight call sites currently have no wiring test).",
+      "The existing runSidecar startup call site and the pure-function tests in sidecar-orphan-sweep.test.ts remain unchanged and green."
+    ],
+    "scope": "Add a second call site for sweepOrphanedImplementBlockedMarker at plan-preflight start, inside the closure returned by makeProductionPlanPhaseFn (sidecar.ts:2345-2354), before runProductionPlanPhaseWithReplan / runPlanPreflight. Add a wiring test. Do NOT modify the pure sweep function and do NOT add an idle-tick call site.",
+    "gotchas": [
+      "cwd and claudeDir are already in scope at makeProductionPlanPhaseFn; call sweepOrphanedImplementBlockedMarker(join(claudeDir, IMPLEMENT_BLOCKED_FILENAME), cwd).",
+      "Preserve the read-only-on-main invariant: readBacklogFromMain uses git ls-tree/cat-file, never checkout/pull/stage.",
+      "Scope is preflight-start only; the per-tick circuit-breaker read at loop.ts:2198 is intentionally NOT a new sweep site."
+    ],
+    "domainTerms": [
+      "orphan sweep",
+      "implement-blocked marker"
+    ]
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 2,
+    "riskReduction": 6,
+    "jobSize": 2
+  },
+  "type": "fix"
 }
