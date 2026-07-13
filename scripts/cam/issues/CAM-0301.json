@@ -1,0 +1,10 @@
+{
+  "id": "CAM-301",
+  "title": "Shared schema/zod validator as single source of truth for worker-report.json + review-report.json",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-13T20:09:26.032Z",
+  "updatedAt": "2026-07-13T20:09:26.032Z",
+  "description": "Follow-up sequenced right after CAM-63 (item 1 contract test). worker-report.json and review-report.json have NO schema artifact; each consumer re-implements ad-hoc runtime shape checks (src/supervisor/result.ts:241-260 tryReadWorkerReport/extractRecordedTestsGate; src/supervisor/review.ts:478-491). Introduce ONE shared validator (zod or scripts/cam/*.schema.json, mirroring handoff.schema.json/orch-handoff.schema.json) as single source of truth that BOTH writer and supervisor consumer validate at runtime, replacing scattered ad-hoc checks. Blast radius: refactor result.ts + review.ts consumers; keep the CAM-63 contract test green against it. Type: chore/hardening. Source: CAM-63 grill 2026-07-13 item-1 scope split (schema split out on merit to keep the CAM-63 PRD from ballooning alongside the heavy actor-ACL item 2)."
+}
