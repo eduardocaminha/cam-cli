@@ -1,10 +1,42 @@
 {
   "id": "CAM-63",
   "title": "Harden supervisor<->worker boundary: orchestrator-surface contract test + actor-ACL + empty-push verification",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-16T22:30:00Z",
   "description": "Three boundary-hardening items, each mapping to a CAM-55/57-class bug. (1) Orchestrator-surface contract test (sapling orchestrator-surface.test.ts pattern): one test that pins the supervisor<->worker protocol shape (the send-keys submit form, the worker-report.json schema, the CAM_*_STATUS line, the @cam_label lifecycle) with a mock worker + real supervisor logic; would have caught the CAM-55 literal-Enter and CAM-57 dead-pane classes early. (2) Actor-ACL (plot src/acl.ts pattern): a worker actor must NOT be able to mutate its own acceptanceCriteria/goal or self-flip a story to passes:true; only the deterministic supervisor (after the reviewer verdict) or the operator can. A worker that disputes acceptance emits a blocker and halts. Hardens the two-layer against a worker gaming its own oracle. (3) Empty-push verification (warren ACCEPTANCE.md): branchPushed=true does not prove a commit (can fire on empty-push); gate on 'gh ... ahead_by >= 1' matching intent before treating a worker run as done. Source: sapling orchestrator-surface.test.ts; plot src/acl.ts; warren ACCEPTANCE.md / reap.empty_push.",
-  "updatedAt": "2026-06-16T22:30:00Z"
+  "updatedAt": "2026-07-13T20:12:13.956Z",
+  "spec": {
+    "acceptanceCriteria": [
+      "Contract test under test/supervisor/ pins the supervisor<->worker protocol shape using the existing in-memory fake pattern (no new mock-worker binary): send-keys submit form is text+Enter WITHOUT -l (CAM-55), worker-report.json field shape (outcome/story/gates{typecheck,tests}/notes), the CAM_*_STATUS sentinel regex, and the @cam_label pane lifecycle. [oracle: file-assert bun test test/supervisor/<file> passes green]",
+      "The allowlist hook (orch-agent-allowlist) denies a worker-actor Write to scripts/cam/prd.json when CAM_SESSION marks a worker session; interactive/non-worker sessions remain free. [oracle: hook test asserts Write to prd.json is denied under worker CAM_SESSION and allowed otherwise]",
+      "The supervisor is the sole writer of story passes:true: it flips passes only after its own runGates() (typecheck + bun test) is green, per story; a worker-report outcome=pass alone never flips passes. finalizeStory is generalized so the pass and incomplete paths both flip via the supervisor. [oracle: loop test asserts passes is set by the supervisor post-gate, and NOT set when the worker reports pass but supervisor gates are red]",
+      "Empty-push gate: on an outcome.kind==='pass' worker run, git rev-list --count origin/main..HEAD must be >=1; ahead_by==0 degrades the run to blocked (same path as !pushCheck.ok). Stories with requires:'operator' are exempt (parity with commitExistsForStory). [oracle: host/loop test asserts ahead_by==0 -> blocked for a worker story and exemption for a requires:operator story]",
+      "The subagent-implementer prompt no longer instructs the worker to flip passes:true in prd.json (both .claude/ and templates/ copies reconciled). [oracle: grep asserts absence of the passes-flip instruction in both implementer prompt copies]"
+    ],
+    "scope": "Three supervisor<->worker boundary hardenings in one PRD. (1) One contract test pinning the protocol shape via the existing in-memory fake (test/supervisor/loop.test.ts baseOptions style). (2) actor-ACL variant A-i: the deterministic supervisor becomes the sole writer of story passes:true and re-runs its own gates (typecheck + bun test) per story before flipping (generalize finalizeStory so pass and incomplete both flip supervisor-side); the worker loses prd.json write authority (the orch-agent-allowlist hook denies worker-actor Write to scripts/cam/prd.json) and the implementer prompt stops instructing the flip. (3) an ahead_by>=1 empty-push gate (git rev-list --count origin/main..HEAD) on the pass path, degrading to blocked when 0, exempting requires:'operator' stories. The single-source schema/zod validator for worker-report.json + review-report.json is OUT OF SCOPE here, split to CAM-301 to run next in sequence.",
+    "gotchas": [
+      "send-keys submit MUST stay text+Enter WITHOUT -l (CAM-55 literal-Enter gotcha); the contract test must assert this exact shape.",
+      "ahead_by uses origin/main..HEAD with a best-effort git fetch origin main, mirroring commitExistsForStory (host.ts:875).",
+      "Generalizing finalizeStory unifies the pass and incomplete paths: both flip passes supervisor-side after runGates(); the per-story supervisor gate run is the intended independent-oracle cost on the happy path.",
+      "CAM_SESSION is the hook's scope boundary: worker sessions are gated, interactive operator sessions stay free.",
+      "The empty-push gate slots as a sibling of commitExistsForStory in host.ts, not inside resolveEnsurePushed (which legitimately returns pushed:false when origin already at HEAD)."
+    ],
+    "domainTerms": [
+      "actor-ACL",
+      "empty-push",
+      "ahead_by",
+      "contract test",
+      "passes ownership",
+      "operator-story exemption"
+    ]
+  },
+  "wsjf": {
+    "value": 4,
+    "timeCriticality": 2,
+    "riskReduction": 8,
+    "jobSize": 5
+  },
+  "type": "fix"
 }
