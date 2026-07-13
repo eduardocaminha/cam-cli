@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.155.0] - 2026-07-13
+
+### Added
+
+- US-001 - Alias dated model id in cam claude help example
+
 ## [0.154.0] - 2026-07-13
 
 ### Added
