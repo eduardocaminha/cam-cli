@@ -621,3 +621,15 @@ Each entry follows this template:
 - **Decisions**: Third PR of the operator-directed batch drain of the KEEP suggestion-derived specified issues, one PR per session by WSJF rank. CAM-294 ranked 5 (after CAM-288 at 6.5 and CAM-297 at 6, both shipped prior sessions). Spec-only participation held: no plan_approval=operator; trusted deterministic auditor + reviewer CLEAN; auto-ship (CAM-191) fired on its own. Used cam plan 294 (bare number, real CLI writer, lesson CAM-282).
 - **Blockers encountered**: None. PR #231 armed ci-gated (auto-merge queued, PR stayed OPEN until CI went green), merged once ci passed; merge-watch ran post-merge, polled via gh pr view / gh api only (lesson CAM-228, no git-fetch-poll), tag v0.155.0 created, no post-merge-stalled marker.
 - **Follow-ups**: Batch nearly drained: specified queue now holds ONLY CAM-290 (WSJF 1.5, approach A atomic commit-tree combine, high jobSize). Fresh session continues one PR per session: dispatch cam plan 290. Once CAM-290 ships the specified queue is EMPTY -- then triage any penned SUGGESTIONs via cam suggestions list; the rest of the backlog is all stage:idea needing /cam-spec before it becomes plannable.
+
+## CAM-290 — promoteSuggestionOnMain atomic single on-main commit
+
+- **Started**: 2026-07-13T14:10:00Z
+- **Closed**: 2026-07-13T14:42:00Z
+- **Branch**: cam/issue-290
+- **Issue**: CAM-290
+- **Outcome**: shipped
+- **Summary**: 2-story PRD (PR #232, v0.156.0, ci-gated). Addressed CAM-290: promoteSuggestionOnMain did two independent on-main commits (issue file, then pen-line removal), leaving a window where a crash between them orphaned state. Approach (A): a single atomic commit-tree combining the issue-file write and the pen-line removal, refactoring id-allocation into one CAS loop. US-001/US-002 both DONE: typecheck ok, 4420 pass / 0 fail; auditor APPROVE; review round 1 CLEAN; check:all spine green.
+- **Decisions**: Fourth and final PR of the operator-directed WSJF batch drain of the KEEP suggestion-derived specified issues (CAM-288 6.5, CAM-297 6, CAM-294 5, CAM-290 1.5). Spec-only participation held: no plan_approval=operator; trusted deterministic auditor + reviewer CLEAN; auto-ship (CAM-191) fired on its own. Used cam plan 290 (bare number, real CLI writer, lesson CAM-282). End-of-batch pen triage on engineering merit: promoted edf746712550 -> CAM-300 (real latent CAS-retry clobber), dismissed 1fae2050cefc (test-only double-cast, backlog noise).
+- **Blockers encountered**: None. PR #232 landed BEHIND; merge-watch ran gh pr update-branch (attempt 1/2), merged once CI went green; post-merge clean (polled via gh pr view only, lesson CAM-228, no git-fetch-poll), tag v0.156.0 created, no post-merge-stalled marker.
+- **Follow-ups**: Batch fully drained: specified queue now EMPTY (specified=0, planned=0). Suggestions pen empty. Remaining backlog is all stage:idea (re-derive live), including the freshly-filed CAM-300. To reopen the autonomous loop a fresh session must /cam-spec a high-merit idea (idea -> specified) before any cam plan dispatch; host isolation means no auto-dispatch.
