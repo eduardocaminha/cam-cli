@@ -21,7 +21,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: test/commands/issue-specify.test.ts. Mirror the existing 'abandon: updatedAt is bumped to clock() value beyond original createdAt' test (~line 877): build a makeEntry() fixture, wrap makeFakeSpawnFn's spawnFn in a recordingSpawnFn that captures opts.input on 'hash-object' calls, invoke closeIssueOnMain, JSON.parse the captured input, assert updatedAt === '2026-06-27T00:00:00.000Z' and > createdAt. GOTCHA: closeIssueOnMain returns { ok:false, reason:'already-closed' } if entry.stage === 'shipped' (src/commands/issue-specify.ts:551), so the fixture entry must be a non-shipped stage (makeEntry() default 'idea' works). GOTCHA: closeIssueOnMain and CloseIssueOnMainOptions are NOT currently imported in the test file (the import block at line 22-32 only pulls specify/abandon/demote/merge); add them. No makeCloseOpts helper exists: build the options inline ({ cwd, id, spawnFn, clock: () => '2026-06-27T00:00:00.000Z' }) matching the sibling opts helpers. Behavior is already correct (issue is a coverage gap, not a bug): do NOT touch closeIssueOnMain. bun test builtin runner, no external lib."
     }
