@@ -24,11 +24,13 @@ import {
 	abandonIssueOnMain,
 	demoteIssueOnMain,
 	mergeIssueOnMain,
+	closeIssueOnMain,
 	type SpawnFn,
 	type SpecifyIssueOnMainOptions,
 	type AbandonIssueOnMainOptions,
 	type DemoteIssueOnMainOptions,
 	type MergeIssueOnMainOptions,
+	type CloseIssueOnMainOptions,
 } from '../../src/commands/issue-specify.ts';
 import type { Spec } from '../../src/issues/spec.ts';
 import type { IssueEntry, WsjfScore } from '../../src/issues/types.ts';
@@ -1055,6 +1057,31 @@ test('demote: never calls git checkout', () => {
 	const { spawnFn, calls } = makeFakeSpawnFn({ entries: [makeEntry({ stage: 'specified' })] });
 	demoteIssueOnMain(makeDemoteOpts({ spawnFn }));
 	expect(calls.some((c) => c.includes('checkout'))).toBe(false);
+});
+
+test('close: updatedAt is bumped to clock() value beyond original createdAt', () => {
+	const entry = makeEntry();
+	const { spawnFn } = makeFakeSpawnFn({ entries: [entry] });
+	let capturedJson = '';
+
+	const recordingSpawnFn: SpawnFn = (cmd, args, opts) => {
+		if (args.join(' ').includes('hash-object') && opts.input !== undefined) {
+			capturedJson = opts.input;
+		}
+		return spawnFn(cmd, args, opts);
+	};
+
+	const closeOpts: CloseIssueOnMainOptions = {
+		cwd: '/fake/cwd',
+		id: 'CAM-1',
+		spawnFn: recordingSpawnFn,
+		clock: () => '2026-06-27T00:00:00.000Z',
+	};
+	closeIssueOnMain(closeOpts);
+
+	const parsed = JSON.parse(capturedJson) as IssueEntry;
+	expect(parsed.updatedAt).toBe('2026-06-27T00:00:00.000Z');
+	expect(new Date(parsed.updatedAt).getTime()).toBeGreaterThan(new Date(entry.createdAt).getTime());
 });
 
 // ===========================================================================
