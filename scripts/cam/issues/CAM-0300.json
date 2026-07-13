@@ -1,0 +1,13 @@
+{
+  "id": "CAM-300",
+  "title": "The pen rewrite (updatedContent) is computed once from the pre-mutation read an…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-13T14:36:15.518Z",
+  "updatedAt": "2026-07-13T14:36:15.518Z",
+  "description": "The pen rewrite (updatedContent) is computed once from the pre-mutation read and reused verbatim across writeIssueFile's CAS retries, whereas the prior two-commit path re-read the pen fresh after the issue commit. On a CAS retry triggered by a concurrent main-advancing suggestion mutation, the stale updatedContent could clobber the concurrent change. This is an accepted trade-off per the spec (id-independent content, parity with the prior two-commit code) and promote is operator-single-threaded in practice, so the atomicity win dominates. Non-blocking; noted for awareness.\n\nSource: cam/issue-290\nReview round: 1\n\nsuggestion-fingerprint: edf746712550",
+  "derivedFrom": [
+    "CAM-290"
+  ]
+}
