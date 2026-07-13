@@ -1,12 +1,24 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Add orchestrator-surface contract test pinning the supervisor<->worker protocol shape" },
+  "lastCompletedStory": { "id": "US-002", "title": "Inject a worker-actor env marker into the spawned implementer worker (host + container)" },
   "branchName": "cam/issue-63",
   "timestamp": "2026-07-13T00:00:00Z",
-  "createdFiles": ["test/supervisor/orchestrator-surface.test.ts"],
-  "modifiedFiles": ["scripts/cam/prd.json"],
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/supervisor/worker-argv.ts",
+    "src/supervisor/worker-container.ts",
+    "test/supervisor/worker-argv.test.ts",
+    "test/supervisor/worker-container.test.ts",
+    "scripts/file-size-budget.json"
+  ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 pinned the current supervisor<->worker protocol shape (send-keys text+Enter without -l, worker-report.json outcome/story/gates{typecheck,tests}/notes, CAM_*_STATUS + <review> sentinel regex, @cam_label pane lifecycle) with pure in-memory fakes, no tmux/claude spawned. US-002 (next, priority 2, no deps) injects a worker-actor env marker into the spawned implementer worker for both host and container dispatch paths -- read src/supervisor/loop.ts respawn-pane dispatch sites and src/supervisor/worker-container.ts / docker-exec.ts for the container path before editing. US-006 depends on US-002 (extends the allowlist hook to deny worker-actor Write to prd.json using the marker US-002 introduces).",
+  "nextStoryContext": "US-002 added a worker-actor CAM_WORKER=1 marker, positive-SET (not an unset), on BOTH dispatch paths: buildImplementerWorkerArgv (src/supervisor/worker-argv.ts) appends `CAM_WORKER=1 ` after workerEnvPrefix(isolation) and before `claude` -- exported as WORKER_ACTOR_ENV, deliberately NOT folded into the shared workerEnvPrefix() (which review.ts and plan-argv.ts also call for the reviewer/planner workers, and those must never carry the marker); buildDockerRunArgv (src/supervisor/worker-container.ts) adds a literal `-e CAM_WORKER=1` pair alongside the existing containerEnv `-e` pairs (NOT the name-only credential form, since it is not a secret). The marker is inert: nothing reads it yet. US-006 (depends on US-002) is expected to extend the write-allowlist hook to deny a worker-actor Write to prd.json using this marker, distinguishing it from the planner/orchestrator session (which also runs under CAM_SESSION and legitimately writes prd.json, and is launched via a different path -- src/tmux/session.ts `new-session -e CAM_SESSION` -- never through buildImplementerWorkerArgv). Raised file-size ceilings for the 4 files this story grew (worker-argv.ts 169->193, worker-container.ts 350->357, worker-argv.test.ts 257->287, worker-container.test.ts 507->515) with a dated _ref note prepended.",
   "officialDocsValidated": [
-    { "lib": "none", "status": "no_external_lib_touched" }
+    {
+      "lib": "GNU coreutils env(1)",
+      "url": "https://www.gnu.org/software/coreutils/manual/html_node/env-invocation.html",
+      "fetchedAt": "2026-07-13T00:00:00Z",
+      "status": "aligned",
+      "summary": "Confirmed env(1) allows freely intermixing -u VAR (unset) options with NAME=VALUE (set) assignments before the command to invoke (e.g. `env -u EDITOR PATH=/energy -- prog`), matching the story notes' claim and this story's `env -u ... CAM_WORKER=1 claude ...` shape."
+    }
   ]
 }

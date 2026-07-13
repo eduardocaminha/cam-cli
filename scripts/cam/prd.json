@@ -44,7 +44,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/worker-argv.ts (workerEnvPrefix / buildImplementerWorkerArgv), src/supervisor/worker-container.ts (buildDockerRunArgv), plus their tests. The marker must be a positive SET (env ... CAM_WORKER=1 claude ...), not an unset; env supports mixing -u <var> with NAME=VALUE assignments. Do NOT add CAM_WORKER to the orchestrator/cam-run env path (src/tmux/session.ts new-session -e CAM_SESSION) so the planner subagent, which runs inside the orchestrator process, never inherits it. This marker is inert until US-006 consumes it. Container form uses name-only -e for credentials but CAM_WORKER is a plain literal, so -e CAM_WORKER=1 is fine."
     },
