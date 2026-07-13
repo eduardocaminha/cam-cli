@@ -1,18 +1,20 @@
 {
-  "lastCompletedStory": { "id": "US-005", "title": "Remove the passes:true flip instruction from both implementer prompt copies" },
+  "lastCompletedStory": { "id": "US-006", "title": "Extend the allowlist hook + settings matcher to deny worker-actor Write to prd.json" },
   "branchName": "cam/issue-63",
-  "timestamp": "2026-07-13T20:00:00Z",
+  "timestamp": "2026-07-13T21:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    ".claude/agents/subagent-implementer.md",
-    "templates/agents/subagent-implementer.md",
+    ".claude/hooks/orch-agent-allowlist.sh",
+    "templates/.claude/hooks/orch-agent-allowlist.sh",
+    ".claude/settings.json",
+    "templates/.claude/settings.json",
     "src/vendor/_generated.ts",
-    "scripts/cam/prd.json",
+    "test/orch-agent-allowlist.test.ts",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-005 was doc-only: reworded the three lines in both subagent-implementer.md copies that told the worker to 'flip passes: true' so they instead say the supervisor is the sole writer (matches ADR 0035 / US-003's finalizeStory). The file-assert oracle `grep -Eiq 'flip .?passes: ?true'` is verb-anchored, not a raw-count check on the literal string 'passes: true' -- see the new patterns.md bullet for the exact regex semantics (it matched 'flip `passes: true`' via the backtick as the optional single char, but does NOT match 'the supervisor flips `passes: true`' or a 'revert `passes: true`' line). Both files still legitimately retain non-imperative mentions of passes:true (schedule/stop-condition prose, the Step 5.5 revert-step wording, which was also reworded per the story's notes even though the oracle didn't strictly require it). Ran `bun run embed-vendor` after editing templates/ (the embed source of truth) since src/vendor/_generated.ts embeds both .claude/settings.json-adjacent agent files; embed-vendor:check is green. NOTE for US-006 (next, requires US-002): US-006 explicitly says to land LAST, after US-003 (done) and US-005 (this story, done) -- so US-006 is now unblocked and is the intended next dispatch. It extends orch-agent-allowlist.sh + settings.json PreToolUse matcher to actually DENY a worker-actor (CAM_WORKER marker) Write to scripts/cam/prd.json at the hook layer, while leaving the planner's (CAM_SESSION without CAM_WORKER) Write to prd.json allowed. This closes the loop: US-003 made the supervisor the sole writer in the production finalizeStory path, US-005 removed the instruction from the prompts, US-006 makes it mechanically enforced so a worker session literally cannot self-flip passes:true via Write/Edit/MultiEdit even if it ignored the (now-corrected) prompt.",
+  "nextStoryContext": "US-006 was the last story of CAM-63 (the ADR 0035 sole-writer epic: US-003 made the supervisor the sole writer in finalizeStory, US-005 removed the flip-instruction from the implementer prompts, US-006 mechanically enforces it at the hook layer). settings.json (both .claude/ and templates/.claude/ copies) now carries a SECOND PreToolUse matcher entry (\"Write|Edit|MultiEdit\") alongside the existing \"Task|Agent\" one, both routed to the same orch-agent-allowlist.sh script. The script now branches on .tool_name FIRST: for Write/Edit/MultiEdit it denies only when CAM_WORKER=1 (worker-actor marker, US-002) is set AND tool_input.file_path suffix-matches scripts/cam/prd.json; otherwise (including the planner, which runs under CAM_SESSION without CAM_WORKER) it allows. The pre-existing Task/Agent subagent-type capability policy is untouched, just relocated after the new tool_name case block. All 6 new test cases live in test/orch-agent-allowlist.test.ts (worker+prd.json deny x3 tool names, worker+non-prd allow, planner/no-marker+prd.json allow, unscoped+worker allow). Ran embed-vendor after editing templates/ (embed source of truth); embed-vendor:check, typecheck, bun test (4456 pass), and bun run check:all are all green. This closes out CAM-63's PRD -- check scripts/cam/prd.json for any remaining passes:false stories before assuming the whole PRD is done; if none remain (besides operator-tagged ones), the next dispatch should be a review cycle, not another implement story.",
   "officialDocsValidated": [
-    { "lib": "none", "url": "n/a", "fetchedAt": "2026-07-13T20:00:00Z", "status": "no_external_lib_touched", "summary": "Doc-only story editing two markdown agent-prompt files; no external library API surface was touched." }
+    { "lib": "Claude Code hooks (PreToolUse)", "url": "https://code.claude.com/docs/en/hooks", "fetchedAt": "2026-07-13T21:00:00Z", "status": "aligned", "summary": "Confirmed matcher exact-match pipe syntax (\"Edit|Write\"), the hookSpecificOutput/hookEventName/permissionDecision/permissionDecisionReason deny JSON shape, and that tool_name + tool_input.file_path are the correct payload fields for Write/Edit/MultiEdit calls -- implementation matches current docs exactly, no corrections needed." }
   ]
 }
