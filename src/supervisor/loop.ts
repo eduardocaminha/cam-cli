@@ -246,6 +246,18 @@ export interface RunSupervisorOptions {
 	 */
 	commitExistsForStory?: (storyId: string) => boolean;
 	/**
+	 * Optional empty-push gate (US-004), threaded straight into every
+	 * readWorkerOutcome call. Returns the count of commits ahead of
+	 * origin/main (git rev-list --count origin/main..HEAD, best-effort git
+	 * fetch first), or null when it could not be determined. When injected,
+	 * a passes:true story with ahead_by === 0 resolves to kind:'blocked'
+	 * instead of 'pass' (see result.ts confirmEmptyPushGate), UNLESS the
+	 * story is requires:'operator' (ceremony exemption). Optional: when
+	 * absent, no gate is applied and readWorkerOutcome behaves exactly as it
+	 * did before this option existed (backward compat, zero behavior change).
+	 */
+	aheadByForBranch?: () => number | null;
+	/**
 	 * Absolute path to scripts/cam/worker-report.json (for readWorkerOutcome
 	 * fallback when neither handoff nor DONE sentinel yield a story id).
 	 * When provided, the fileReader adapter serves it via readWorkerReport.
@@ -725,6 +737,8 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	const workerReportPath = opts.workerReportPath;
 	// US-002 (CAM-187): commit-existence gate, threaded straight into readWorkerOutcome.
 	const commitExistsForStory = opts.commitExistsForStory;
+	// US-004: empty-push gate, threaded straight into readWorkerOutcome.
+	const aheadByForBranch = opts.aheadByForBranch;
 	// US-005 / B-1 + B-2: container preflight seam. Observe-only in B-1; fail-closed in
 	// container mode (B-2 / CAM-152). See workerIsolation below.
 	const preflightContainerFn = opts.preflightContainerFn;
@@ -1285,6 +1299,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				capturedPaneText: paneText,
 				readFile: fileReader,
 				commitExistsForStory,
+				aheadByForBranch,
 			});
 
 			lastOutcome = outcome;

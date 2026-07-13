@@ -74,7 +74,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/host.ts (new aheadByForBranch/emptyPushGate sibling of commitExistsForStory, injected into RunSupervisorOptions), src/supervisor/result.ts (wire the gate into the pass branch of readWorkerOutcome next to confirmCommitGate), src/supervisor/loop.ts (RunSupervisorOptions type + pass-through). Use origin/main..HEAD with a best-effort git fetch origin main, falling back to main..HEAD like commitExistsForStory. Do NOT put this inside resolveEnsurePushed (which legitimately returns pushed:false when origin is already at HEAD) per the issue gotcha. Reuse the same spawnSync-git style as commitExistsForStory."
     },

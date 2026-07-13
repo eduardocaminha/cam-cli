@@ -1243,6 +1243,152 @@ describe('readWorkerOutcome: commit-existence gate (US-001, CAM-187)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// US-004: empty-push gate (ahead_by >= 1)
+// ---------------------------------------------------------------------------
+//
+// readWorkerOutcome accepts an optional aheadByForBranch() callback and
+// consults it (after confirmCommitGate passes) before confirming a
+// passes:true story as kind:'pass'. Covers both resolution paths (worker-
+// report primary and handoff/sentinel fallback).
+
+const EPG_REPORT_PATH = '/epg/worker-report.json';
+
+describe('readWorkerOutcome: empty-push gate (US-004)', () => {
+	test('AC1 (worker-report path): passes:true but aheadByForBranch()=0, requires=null -> blocked', () => {
+		const storyId = 'US-030';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: EPG_REPORT_PATH,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrdWithRequires(storyId, true, null),
+				[EPG_REPORT_PATH]: fakeWorkerReport('DONE', storyId),
+			}),
+			aheadByForBranch: () => 0,
+		});
+		expect(result.kind).toBe('blocked');
+		expect(result.storyId).toBe(storyId);
+	});
+
+	test('AC1 (fallback path): passes:true but aheadByForBranch()=0, requires=null -> blocked', () => {
+		const storyId = 'US-031';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			capturedPaneText: donePane(storyId),
+			readFile: makeReader({
+				[PRD_PATH]: fakePrdWithRequires(storyId, true, null),
+				[HANDOFF_PATH]: fakeHandoff(storyId),
+			}),
+			aheadByForBranch: () => 0,
+		});
+		expect(result.kind).toBe('blocked');
+		expect(result.storyId).toBe(storyId);
+	});
+
+	test('passes:true and aheadByForBranch()=1 -> pass', () => {
+		const storyId = 'US-032';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: EPG_REPORT_PATH,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrdWithRequires(storyId, true, null),
+				[EPG_REPORT_PATH]: fakeWorkerReport('DONE', storyId),
+			}),
+			aheadByForBranch: () => 1,
+		});
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBe(storyId);
+	});
+
+	test('AC2: requires:"operator" story resolves to pass even when aheadByForBranch()=0', () => {
+		const storyId = 'US-033';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			capturedPaneText: donePane(storyId),
+			readFile: makeReader({
+				[PRD_PATH]: fakePrdWithRequires(storyId, true, 'operator'),
+				[HANDOFF_PATH]: fakeHandoff(storyId),
+			}),
+			aheadByForBranch: () => 0,
+		});
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBe(storyId);
+	});
+
+	test('AC2 (worker-report path): requires:"operator" story resolves to pass even when aheadByForBranch()=0', () => {
+		const storyId = 'US-034';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: EPG_REPORT_PATH,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrdWithRequires(storyId, true, 'operator'),
+				[EPG_REPORT_PATH]: fakeWorkerReport('DONE', storyId),
+			}),
+			aheadByForBranch: () => 0,
+		});
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBe(storyId);
+	});
+
+	test('aheadByForBranch undefined -> no gate applied, behaves as before (worker-report path)', () => {
+		const storyId = 'US-035';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: EPG_REPORT_PATH,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrdWithRequires(storyId, true, null),
+				[EPG_REPORT_PATH]: fakeWorkerReport('DONE', storyId),
+			}),
+			// aheadByForBranch intentionally omitted
+		});
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBe(storyId);
+	});
+
+	test('aheadByForBranch undefined -> no gate applied, behaves as before (fallback path)', () => {
+		const storyId = 'US-036';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			capturedPaneText: donePane(storyId),
+			readFile: makeReader({
+				[PRD_PATH]: fakePrdWithRequires(storyId, true, null),
+				[HANDOFF_PATH]: fakeHandoff(storyId),
+			}),
+			// aheadByForBranch intentionally omitted
+		});
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBe(storyId);
+	});
+
+	test('aheadByForBranch returns null (undetermined) -> fail-open, behaves as pass', () => {
+		const storyId = 'US-037';
+		const result = readWorkerOutcome({
+			prdPath: PRD_PATH,
+			handoffPath: HANDOFF_PATH,
+			workerReportPath: EPG_REPORT_PATH,
+			capturedPaneText: '',
+			readFile: makeReader({
+				[PRD_PATH]: fakePrdWithRequires(storyId, true, null),
+				[EPG_REPORT_PATH]: fakeWorkerReport('DONE', storyId),
+			}),
+			aheadByForBranch: () => null,
+		});
+		expect(result.kind).toBe('pass');
+		expect(result.storyId).toBe(storyId);
+	});
+});
+
+// ---------------------------------------------------------------------------
 // US-001 (CAM-202, no-flaky-evasion): gateTestsIndicateFailure classifier
 // ---------------------------------------------------------------------------
 

@@ -924,6 +924,43 @@ export function buildSupervisorOptions(
 		}
 	};
 
+	// aheadByForBranch for US-004 (empty-push gate): counts commits ahead of
+	// origin/main, mirroring commitExistsForStory's best-effort fetch +
+	// origin/main..HEAD-with-local-fallback range resolution above. Read-only
+	// (no mutation), same spawnSync-git style as the other adapters here.
+	// Returns null (fail-open; see confirmEmptyPushGate) when the count could
+	// not be determined (e.g. git failures), rather than a sentinel number.
+	const aheadByForBranch: RunSupervisorOptions['aheadByForBranch'] = () => {
+		try {
+			// Best-effort: refresh origin/main so the range reflects the true
+			// upstream fork point. Ignore failures (offline, no remote, etc.).
+			spawnSync('git', ['fetch', 'origin', 'main'], {
+				cwd,
+				stdio: 'pipe',
+				encoding: 'utf8',
+			} as Parameters<typeof spawnSync>[2]);
+
+			const originMainProc = spawnSync('git', ['rev-parse', 'origin/main'], {
+				cwd,
+				stdio: 'pipe',
+				encoding: 'utf8',
+			} as Parameters<typeof spawnSync>[2]);
+			const range = originMainProc.status === 0 ? 'origin/main..HEAD' : 'main..HEAD';
+
+			const countProc = spawnSync('git', ['rev-list', '--count', range], {
+				cwd,
+				stdio: 'pipe',
+				encoding: 'utf8',
+			} as Parameters<typeof spawnSync>[2]);
+			if (countProc.status !== 0) return null;
+			const raw = (typeof countProc.stdout === 'string' ? countProc.stdout : '').trim();
+			const count = Number(raw);
+			return Number.isFinite(count) ? count : null;
+		} catch {
+			return null;
+		}
+	};
+
 	// US-013 token reader.
 	const transcriptClaudeDir = process.env['CLAUDE_CONFIG_DIR'] ?? join(homedir(), '.claude');
 	const readWorkerTokensAdapter: RunSupervisorOptions['readWorkerTokens'] = (uuid) =>
@@ -986,6 +1023,8 @@ export function buildSupervisorOptions(
 		handoffPath,
 		// US-002 (CAM-187): commit-existence gate, threaded into readWorkerOutcome.
 		commitExistsForStory,
+		// US-004: empty-push gate, threaded into readWorkerOutcome.
+		aheadByForBranch,
 		workerReportPath: join(cwd, WORKER_REPORT_FILENAME),
 		permissionMode,
 		taskPrompt,

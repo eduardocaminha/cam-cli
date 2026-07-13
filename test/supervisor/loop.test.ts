@@ -3958,6 +3958,73 @@ describe('runSupervisor US-002: commit-existence gate (CAM-187)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// US-004: empty-push gate wiring (aheadByForBranch)
+// ---------------------------------------------------------------------------
+
+describe('runSupervisor US-004: empty-push gate', () => {
+	test('AC1: ahead_by==0 degrades a worker pass to blocked, same path as a failed push check', async () => {
+		// Two-snapshot pattern (mirrors the US-002 no-commit gate test above):
+		// passes:false at the top of the iteration (so decideNextAction
+		// dispatches 'implement'); by outcome-resolution time prd.json shows
+		// passes:true (simulating the worker's own edit).
+		const prd_incomplete = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const prd_donePasses = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: true }] });
+
+		const prds: PrdSnapshot[] = [prd_incomplete, prd_donePasses];
+		let prdCallCount = 0;
+
+		const reviewCalls: string[] = [];
+
+		const opts = makeBaseOpts({
+			readPrd: () => prds[prdCallCount++] ?? prd_donePasses,
+			readHandoff: () => makeHandoff('US-001'),
+			capturePane: (_paneId) => donePane('US-001'),
+			maxIterations: 50,
+			aheadByForBranch: () => 0,
+			reviewDispatch: (uuid) => {
+				reviewCalls.push(uuid);
+				return { status: 'ok', detail: 'review ok' };
+			},
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('blocked');
+		expect(result.iterations).toBe(1); // blocks on first occurrence, never spins
+		expect(result.lastOutcome?.kind).toBe('blocked');
+		expect(result.lastOutcome?.storyId).toBe('US-001');
+		expect(result.lastOutcome?.detail).toContain('empty-push gate');
+		expect(reviewCalls).toHaveLength(0); // never advances to review
+	});
+
+	test('AC2: requires:"operator" story is exempt from the empty-push gate', async () => {
+		const prd = makePrd({
+			stories: [
+				{ id: 'US-001', priority: 1, passes: true, requires: 'operator' },
+				{ id: 'US-002', priority: 2, passes: false },
+			],
+		});
+
+		const opts = makeBaseOpts({
+			readPrd: () => prd,
+			readHandoff: () => makeHandoff('US-001'), // stale: reports the operator story
+			capturePane: (_paneId) => donePane('US-001'),
+			maxIterations: 50,
+			aheadByForBranch: () => 0, // hostile: 0 for every story
+		});
+
+		const result = await runSupervisor(opts);
+
+		// Falls into the pre-existing CAM-36 no-progress guard, NOT the new
+		// empty-push immediate-block (which would show kind:'blocked' with an
+		// empty-push detail on iteration 1 instead).
+		expect(result.status).toBe('blocked');
+		expect(result.iterations).toBe(MAX_NO_PROGRESS_RETRIES);
+		expect(result.lastOutcome?.detail).toContain('no-progress');
+	});
+});
+
+// ---------------------------------------------------------------------------
 // Unit tests for computeBackoffMs (CAM-85)
 // ---------------------------------------------------------------------------
 
