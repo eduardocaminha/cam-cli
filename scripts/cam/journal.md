@@ -597,3 +597,15 @@ Each entry follows this template:
 - **Decisions**: First PR of an operator-directed batch drain of the 4 KEEP suggestion-derived specified issues (CAM-288/297/294/290), one PR per session by WSJF rank. CAM-288 topped WSJF (6.5): small jobSize, high risk-reduction (a stale marker misleads both the boot-surface and the auto-chain circuit-breaker at loop.ts:2198). Scope held to preflight-start only (the exact orphaning trigger), NOT an idle-tick sweep. Spec-only participation: no plan_approval=operator; trusted deterministic auditor+reviewer CLEAN; auto-ship (CAM-191) fired on its own. Used cam plan 288 (real renderStateFile writer, lesson CAM-282). Worker raised sidecar.ts file-size ceiling 2920->2941 itself with dated _ref (expected ship-hygiene).
 - **Blockers encountered**: None. PR #229 landed BEHIND; merge-watch ran gh pr update-branch (1/2), merged ci-gated once ci went green; post-merge clean (polled via gh pr view only, lesson CAM-228), tag v0.153.0, no post-merge-stalled marker. Confirmed sidecar >= v0.144.0: the CLEAN review penned 1 non-blocking SUGGESTION into suggestions.jsonl rather than auto-filing it.
 - **Follow-ups**: Batch not yet drained: specified queue still has CAM-290/294/297 (re-derive live). Fresh session continues one PR per session by WSJF: next-ranked is CAM-297 (6) then CAM-294 (5) then CAM-290 (1.5, approach A atomic combine, high jobSize). At end of batch, triage the penned SUGGESTION via cam suggestions list.
+
+## CAM-297 — Guard close among the e.g. mutations in US-002 doc list
+
+- **Started**: 2026-07-13T13:20:00Z
+- **Closed**: 2026-07-13T13:40:00Z
+- **Branch**: cam/issue-297
+- **Issue**: CAM-297
+- **Outcome**: shipped
+- **Summary**: 1-story PRD (PR #230, v0.154.0, ci-gated). US-001 addressed CAM-297: the US-002 documentation list enumerated the e.g. mutations that should be guarded but omitted close, leaving the doc inconsistent with the actual guarded-mutation set. Fix aligned the listed mutations with the enforced set. auditor APPROVE, review round 1 CLEAN, typecheck ok, 4416 pass / 0 fail, check:all spine green.
+- **Decisions**: Second PR of the operator-directed batch drain of the KEEP suggestion-derived specified issues, one PR per session by WSJF rank. CAM-297 ranked 6 (after CAM-288 at 6.5, shipped last session). Spec-only participation held: no plan_approval=operator; trusted deterministic auditor + reviewer CLEAN; auto-ship (CAM-191) fired on its own. Used cam plan 297 (bare number, real CLI writer, lesson CAM-282).
+- **Blockers encountered**: None. PR #230 armed ci-gated (ci-container passed fast, ci pending), merged once ci went green; post-merge clean, polled via gh pr view / gh api only (lesson CAM-228, no git-fetch-poll), tag v0.154.0 created, no post-merge-stalled marker.
+- **Follow-ups**: Batch not yet drained: specified queue still holds CAM-294 (WSJF 5) then CAM-290 (WSJF 1.5, approach A atomic commit-tree combine, high jobSize) -- re-derive live. Fresh session continues one PR per session. At end of batch, triage any penned SUGGESTIONs via cam suggestions list.
