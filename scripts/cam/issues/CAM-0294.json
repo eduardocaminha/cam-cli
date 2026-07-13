@@ -1,7 +1,7 @@
 {
   "id": "CAM-294",
   "title": "Help text for `cam claude` still shows a dated example `--model claude-opus-4-5…",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-12T19:29:36.860Z",
@@ -9,7 +9,7 @@
   "derivedFrom": [
     "CAM-287"
   ],
-  "updatedAt": "2026-07-13T12:50:57.050Z",
+  "updatedAt": "2026-07-13T13:59:32.988Z",
   "spec": {
     "acceptanceCriteria": [
       "The `cam claude` help/usage text (claude.ts:40) no longer contains a dated concrete model id (e.g. claude-opus-4-5) in its example.",
