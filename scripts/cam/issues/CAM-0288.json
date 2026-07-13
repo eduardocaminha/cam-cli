@@ -1,7 +1,7 @@
 {
   "id": "CAM-288",
   "title": "The orphan sweep is wired only at runSidecar startup, so a marker that becomes …",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-12T15:26:02.376Z",
@@ -9,7 +9,7 @@
   "derivedFrom": [
     "CAM-282"
   ],
-  "updatedAt": "2026-07-13T12:50:11.207Z",
+  "updatedAt": "2026-07-13T13:22:07.761Z",
   "spec": {
     "acceptanceCriteria": [
       "sweepOrphanedImplementBlockedMarker is invoked at the start of every plan-phase dispatch (mid-session), before runPlanPreflight, in addition to the existing runSidecar startup call site.",
