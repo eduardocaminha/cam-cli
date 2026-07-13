@@ -1,7 +1,7 @@
 {
   "id": "CAM-290",
   "title": "promoteSuggestionOnMain does two independent on-main commits (issue file, then …",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-12T18:06:43.310Z",
@@ -9,7 +9,7 @@
   "derivedFrom": [
     "CAM-285"
   ],
-  "updatedAt": "2026-07-13T12:50:37.321Z",
+  "updatedAt": "2026-07-13T14:33:42.770Z",
   "spec": {
     "acceptanceCriteria": [
       "promoteSuggestionOnMain files the new issue JSON and removes the promoted line from scripts/cam/suggestions.jsonl in a SINGLE atomic on-main commit; there is no intermediate main state where the issue exists but the pen line remains.",
