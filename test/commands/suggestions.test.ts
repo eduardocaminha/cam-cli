@@ -395,13 +395,14 @@ test('readSuggestionsFromMain: reads from main:scripts/cam/suggestions.jsonl (no
 });
 
 // ---------------------------------------------------------------------------
-// dismissSuggestionOnMain / promoteSuggestionOnMain (US-005, CAM-285)
+// dismissSuggestionOnMain / promoteSuggestionOnMain (US-005, CAM-285; US-002,
+// CAM-290 for promote's single-atomic-commit rewrite)
 //
 // A richer fake spawnFn is needed here vs. makeFakeSpawnFn above: promote
-// additionally routes through createLocalIssueOnMain (its own guard,
-// allocateId's ls-tree/cat-file, and its own commit-tree CAS sequence), so
-// this fake mirrors test/issue-file.test.ts's makeRecordingSpawn layered on
-// top of the suggestions.jsonl `git show` handling above.
+// additionally routes through writeIssueFile (its own allocateId ls-tree/
+// cat-file lookup, plus the CAS commit-tree sequence), so this fake mirrors
+// test/issue-file.test.ts's makeRecordingSpawn layered on top of the
+// suggestions.jsonl `git show` handling above.
 // ---------------------------------------------------------------------------
 
 const PROJECT_TOML = 'issue_system = "local"\nissue_prefix = "CAM"\n';
@@ -422,11 +423,10 @@ interface FullFakeOpts {
 
 /**
  * Full fake spawnFn covering both the on-main pen guard/read/commit sequence
- * AND createLocalIssueOnMain's own guard + allocateId (empty backlog, ls-tree
- * returns '') + CAS commit-tree sequence. `commit-tree` is called twice by a
- * successful promote (once inside createLocalIssueOnMain, once for the pen
- * line removal); each call returns a DISTINCT sha so issueSha/penSha can be
- * asserted independently.
+ * AND writeIssueFile's own allocateId (empty backlog, ls-tree returns '') +
+ * CAS commit-tree sequence. `commit-tree` is called exactly ONCE by a
+ * successful promote (US-002, CAM-290): the filed issue JSON and the pen-line
+ * removal are co-committed atomically in the same commit-tree call.
  */
 function makeFullFakeSpawnFn(opts: FullFakeOpts = {}): { spawnFn: SpawnFn; calls: CallRecord[] } {
 	const {
@@ -487,10 +487,9 @@ function makeFullFakeSpawnFn(opts: FullFakeOpts = {}): { spawnFn: SpawnFn; calls
 		}
 		if (argsStr.includes('commit-tree')) {
 			commitTreeCallCount += 1;
-			// promoteSuggestionOnMain fires commit-tree twice on success (once
-			// inside createLocalIssueOnMain for the filed issue, once for the pen
-			// line removal); dismissSuggestionOnMain fires it once. Distinct shas
-			// let tests assert issueSha/penSha independently.
+			// promoteSuggestionOnMain fires commit-tree exactly once on success
+			// (US-002, CAM-290: the filed issue and the pen-line removal are
+			// co-committed atomically); dismissSuggestionOnMain also fires it once.
 			const sha = commitTreeCallCount === 1 ? 'firstcommitsha1234567' : 'secondcommitsha123456';
 			return okResult(`${sha}\n`);
 		}
@@ -611,7 +610,7 @@ test('dismissSuggestionOnMain: diverged main -- error, no mutation', () => {
 
 // --- promoteSuggestionOnMain ---
 
-test('promoteSuggestionOnMain: files a real issue via createLocalIssueOnMain, preserves derivedFrom, embeds fingerprint line, then removes the pen line', () => {
+test('promoteSuggestionOnMain: files a real issue via writeIssueFile, preserves derivedFrom, embeds fingerprint line, then removes the pen line -- all in ONE atomic commit', () => {
 	const existing = `${JSON.stringify(SAMPLE_ENTRY)}\n${JSON.stringify(OTHER_ENTRY)}\n`;
 	const { spawnFn, calls } = makeFullFakeSpawnFn({ suggestionsContent: existing });
 
@@ -627,8 +626,12 @@ test('promoteSuggestionOnMain: files a real issue via createLocalIssueOnMain, pr
 	if (!result.ok) return;
 	expect(result.fingerprint).toBe(SAMPLE_ENTRY.fingerprint);
 	expect(result.issueId).toBe('CAM-1');
-	expect(result.issueSha).toBe('firstco'); // 1st commit-tree call: the filed issue
-	expect(result.penSha).toBe('secondc'); // 2nd commit-tree call: the pen line removal
+	expect(result.sha).toBe('firstco'); // the ONE commit-tree call: issue + pen removal together
+
+	// Exactly one commit-tree call: the filed issue and the pen-line removal
+	// land in a single atomic on-main commit (US-002, CAM-290).
+	const commitTreeCalls = calls.filter((c) => c.args.includes('commit-tree'));
+	expect(commitTreeCalls.length).toBe(1);
 
 	// The filed issue's content (hash-object input) carries derivedFrom from
 	// sourceIssue (285 -> 'CAM-285') and the suggestion-fingerprint line.
