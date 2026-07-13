@@ -42,7 +42,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Files: src/commands/suggestions.ts (promoteSuggestionOnMain ~L473-546, PromoteSuggestionOnMainSuccess type ~L420-433, stale comment ~L490), index.ts (dispatchSuggestions promote branch ~L2051-2063), test/commands/suggestions.test.ts (promote assertions ~L614-660, esp. L630-631 issueSha/penSha). Design: keep promote's own guard (checkMainUpToDate), pen read, entry lookup, prefix + derivedFrom resolution, removeSuggestionLine, and pushMainBestEffort; replace the createLocalIssueOnMain call + the second commitTreeToMain + the post-guard/post-read block (L515-535) with ONE writeIssueFile call carrying extraFiles. Gotcha (spec): createLocalIssueOnMain DROPS the issue filename and cannot co-commit the pen rewrite, so bypass it (promote already does its own guard + derivedFrom resolution + push). Pass derivedFrom, NO specSource (matches current normal-filing behavior that skips fast-track guardrails). The pen rewrite content is id-independent so it is a fixed extraFiles entry (parity with the current two-commit code, which also computes updatedContent once). Do NOT reintroduce a pre-allocated id/path into the commit (patterns.md L278 collision risk)."
     }

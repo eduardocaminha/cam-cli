@@ -1,15 +1,17 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Extend writeIssueFile CAS primitive to co-commit extra files" },
+  "lastCompletedStory": { "id": "US-002", "title": "Make promoteSuggestionOnMain a single atomic on-main commit" },
   "branchName": "cam/issue-290",
   "timestamp": "2026-07-13T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/issues/alloc.ts",
-    "test/issues/alloc.test.ts",
+    "src/commands/suggestions.ts",
+    "index.ts",
+    "test/commands/suggestions.test.ts",
+    "test/commands/suggestions-cli.test.ts",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "writeIssueFile (src/issues/alloc.ts) now accepts optional extraFiles?: FileWrite[] and commitMessage?: (id: string) => string, both fully backward compatible. US-002 (promoteSuggestionOnMain single atomic on-main commit) is the intended consumer: pass the rewritten scripts/cam/suggestions.jsonl content as one entry in extraFiles, and use commitMessage to build 'chore(cam): suggestions promote <fp> -> <id>' from the freshly-allocated id. See the patterns.md bullet 'writeIssueFile now accepts extraFiles...' (US-001, CAM-290) for the exact call shape and re-hash-on-every-CAS-attempt guarantee.",
+  "nextStoryContext": "promoteSuggestionOnMain (src/commands/suggestions.ts) now bypasses createLocalIssueOnMain entirely and calls writeIssueFile (US-001, CAM-290) directly, passing the rewritten pen content as extraFiles and a commitMessage override; the filed issue JSON and the pen-line removal now land in ONE atomic on-main commit. PromoteSuggestionOnMainSuccess collapsed issueSha/penSha into a single sha field (index.ts's promote printer and every test fake constructing that literal were updated to match). dismissSuggestionOnMain and buildPromotedDescription are unchanged. See the patterns.md bullet 'Collapsing a two-writer on-main sequence into one atomic commit...' (US-002, CAM-290) for the exact refactor shape.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
