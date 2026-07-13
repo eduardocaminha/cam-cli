@@ -609,3 +609,15 @@ Each entry follows this template:
 - **Decisions**: Second PR of the operator-directed batch drain of the KEEP suggestion-derived specified issues, one PR per session by WSJF rank. CAM-297 ranked 6 (after CAM-288 at 6.5, shipped last session). Spec-only participation held: no plan_approval=operator; trusted deterministic auditor + reviewer CLEAN; auto-ship (CAM-191) fired on its own. Used cam plan 297 (bare number, real CLI writer, lesson CAM-282).
 - **Blockers encountered**: None. PR #230 armed ci-gated (ci-container passed fast, ci pending), merged once ci went green; post-merge clean, polled via gh pr view / gh api only (lesson CAM-228, no git-fetch-poll), tag v0.154.0 created, no post-merge-stalled marker.
 - **Follow-ups**: Batch not yet drained: specified queue still holds CAM-294 (WSJF 5) then CAM-290 (WSJF 1.5, approach A atomic commit-tree combine, high jobSize) -- re-derive live. Fresh session continues one PR per session. At end of batch, triage any penned SUGGESTIONs via cam suggestions list.
+
+## CAM-294 — CAM-294 — Alias dated model id in cam claude help example
+
+- **Started**: 2026-07-13T13:50:00Z
+- **Closed**: 2026-07-13T14:00:25Z
+- **Branch**: cam/issue-294
+- **Issue**: CAM-294
+- **Outcome**: shipped
+- **Summary**: 1-story PRD (PR #231, v0.155.0, ci-gated). US-001 addressed CAM-294: the cam claude help example still showed a dated model id (--model claude-opus-4-5...); the fix swapped it to the stable opus alias so the help text no longer bit-rots against model-id churn. auditor APPROVE, review round 1 CLEAN, typecheck ok, 4416 pass / 0 fail, check:all spine (lint/file-size/debt-markers/coverage/dead-code/dup/ci-parity) all green.
+- **Decisions**: Third PR of the operator-directed batch drain of the KEEP suggestion-derived specified issues, one PR per session by WSJF rank. CAM-294 ranked 5 (after CAM-288 at 6.5 and CAM-297 at 6, both shipped prior sessions). Spec-only participation held: no plan_approval=operator; trusted deterministic auditor + reviewer CLEAN; auto-ship (CAM-191) fired on its own. Used cam plan 294 (bare number, real CLI writer, lesson CAM-282).
+- **Blockers encountered**: None. PR #231 armed ci-gated (auto-merge queued, PR stayed OPEN until CI went green), merged once ci passed; merge-watch ran post-merge, polled via gh pr view / gh api only (lesson CAM-228, no git-fetch-poll), tag v0.155.0 created, no post-merge-stalled marker.
+- **Follow-ups**: Batch nearly drained: specified queue now holds ONLY CAM-290 (WSJF 1.5, approach A atomic commit-tree combine, high jobSize). Fresh session continues one PR per session: dispatch cam plan 290. Once CAM-290 ships the specified queue is EMPTY -- then triage any penned SUGGESTIONs via cam suggestions list; the rest of the backlog is all stage:idea needing /cam-spec before it becomes plannable.
