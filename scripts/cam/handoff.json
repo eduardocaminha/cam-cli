@@ -1,0 +1,16 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Extend writeIssueFile CAS primitive to co-commit extra files" },
+  "branchName": "cam/issue-290",
+  "timestamp": "2026-07-13T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/issues/alloc.ts",
+    "test/issues/alloc.test.ts",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "writeIssueFile (src/issues/alloc.ts) now accepts optional extraFiles?: FileWrite[] and commitMessage?: (id: string) => string, both fully backward compatible. US-002 (promoteSuggestionOnMain single atomic on-main commit) is the intended consumer: pass the rewritten scripts/cam/suggestions.jsonl content as one entry in extraFiles, and use commitMessage to build 'chore(cam): suggestions promote <fp> -> <id>' from the freshly-allocated id. See the patterns.md bullet 'writeIssueFile now accepts extraFiles...' (US-001, CAM-290) for the exact call shape and re-hash-on-every-CAS-attempt guarantee.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}

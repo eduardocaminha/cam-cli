@@ -22,7 +22,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/issues/alloc.ts (WriteIssueFileOptions ~L42, writeIssueFile ~L139-214), test/issues/alloc.test.ts. Reuse existing helpers already imported in alloc.ts (buildIndexEnv, hashAndIndexFiles, commitAndCasAttempt, CAS_MAX_ATTEMPTS) from src/git/on-main.ts; the extraFiles just extend the `[{path,content}]` list passed to hashAndIndexFiles inside the loop (currently line 194 hashes only the issue file). Keep FileWrite type imported from src/git/on-main.ts. Gotcha (patterns.md L278 'allocateId re-derive-inside-CAS'): allocateId MUST stay the first step of each attempt so a CAS loser gets a distinct id; do NOT hoist it out of the loop. Result shape {id, filename, sha} is unchanged. Do not touch commitTreeToMain (on-main.ts) - the extension lives only in writeIssueFile's own CAS loop."
     },
