@@ -1,24 +1,21 @@
 {
-  "lastCompletedStory": { "id": "US-002", "title": "Inject a worker-actor env marker into the spawned implementer worker (host + container)" },
+  "lastCompletedStory": { "id": "US-003", "title": "Make the supervisor the sole writer of story passes:true via a generalized finalizeStory" },
   "branchName": "cam/issue-63",
-  "timestamp": "2026-07-13T00:00:00Z",
-  "createdFiles": [],
+  "timestamp": "2026-07-13T18:35:00Z",
+  "createdFiles": [
+    "test/integration/finalize-story-real-git.test.ts"
+  ],
   "modifiedFiles": [
-    "src/supervisor/worker-argv.ts",
-    "src/supervisor/worker-container.ts",
-    "test/supervisor/worker-argv.test.ts",
-    "test/supervisor/worker-container.test.ts",
+    "src/supervisor/host.ts",
+    "src/supervisor/loop.ts",
+    "test/supervisor/loop.test.ts",
+    "scripts/cam/prd.json",
+    "scripts/cam/patterns.md",
     "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 added a worker-actor CAM_WORKER=1 marker, positive-SET (not an unset), on BOTH dispatch paths: buildImplementerWorkerArgv (src/supervisor/worker-argv.ts) appends `CAM_WORKER=1 ` after workerEnvPrefix(isolation) and before `claude` -- exported as WORKER_ACTOR_ENV, deliberately NOT folded into the shared workerEnvPrefix() (which review.ts and plan-argv.ts also call for the reviewer/planner workers, and those must never carry the marker); buildDockerRunArgv (src/supervisor/worker-container.ts) adds a literal `-e CAM_WORKER=1` pair alongside the existing containerEnv `-e` pairs (NOT the name-only credential form, since it is not a secret). The marker is inert: nothing reads it yet. US-006 (depends on US-002) is expected to extend the write-allowlist hook to deny a worker-actor Write to prd.json using this marker, distinguishing it from the planner/orchestrator session (which also runs under CAM_SESSION and legitimately writes prd.json, and is launched via a different path -- src/tmux/session.ts `new-session -e CAM_SESSION` -- never through buildImplementerWorkerArgv). Raised file-size ceilings for the 4 files this story grew (worker-argv.ts 169->193, worker-container.ts 350->357, worker-argv.test.ts 257->287, worker-container.test.ts 507->515) with a dated _ref note prepended.",
+  "nextStoryContext": "US-003 (ADR 0035, variant A-i) generalized loop.ts's finalize funnel: BOTH a worker 'incomplete' outcome AND a worker 'pass' outcome (worker already wrote+committed passes:true itself) now funnel through the SAME supervisor-side runGates()+finalizeStory() gate before the flip is trusted -- the pass/incomplete distinction collapses for the flip only. Excluded: a 'pass' outcome that merely RE-CONFIRMS a story already passes:true at the top of the SAME iteration (CAM-36 stale-no-op case), discriminated by the existing `alreadyPassingAtTop` check (computed once, reused by both the funnel gate and the no-progress streak counter). When the supervisor's own gate is RED on a 'pass' outcome, it actively REVERTS the worker's premature passes:true back to false via a fresh readPrd+mutate+writePrd (not the stale `prd` var from iteration top), so a false claim never carries forward -- run degrades to 'blocked', not silently trusted. host.ts's finalizeStory is now idempotent: since a 'pass' outcome can mean the worker already committed passes:true, `git add -A` may stage nothing and `git commit` on an empty stage would normally fail ('nothing to commit') -- guarded with `git diff --cached --quiet` (exit 0 = nothing staged) returning ok:true 'already finalized' instead of erroring; proven against a REAL git repo in test/integration/finalize-story-real-git.test.ts (not an injected fake), mirroring the commit-exists-real-git.test.ts precedent. result.ts's readWorkerOutcome was intentionally left untouched (DONE+passes:false already resolves 'incomplete'; the existing red-gate refusal CAM-202 and commit-existence gate remain intact) -- this story is loop.ts+host.ts wiring only. Discovered and worked around a genuine TS control-flow quirk while writing the new tests: a `let x: T | null = null` reassigned ONLY inside a closure passed as a callback narrows to `never` (not `T | null`) at the read site outside the closure -- reproduced directly against this repo's tsc, not project-specific config; fixed by capturing into a `const arr: T[] = []` + `.push()` pattern instead (see patterns.md). Per the story's own notes, land BEFORE US-006 (ACL Write-deny) so the supervisor already owns the flip before the worker loses prd.json write authority -- confirm US-006 has not already regressed this ordering assumption before implementing it.",
   "officialDocsValidated": [
-    {
-      "lib": "GNU coreutils env(1)",
-      "url": "https://www.gnu.org/software/coreutils/manual/html_node/env-invocation.html",
-      "fetchedAt": "2026-07-13T00:00:00Z",
-      "status": "aligned",
-      "summary": "Confirmed env(1) allows freely intermixing -u VAR (unset) options with NAME=VALUE (set) assignments before the command to invoke (e.g. `env -u EDITOR PATH=/energy -- prog`), matching the story notes' claim and this story's `env -u ... CAM_WORKER=1 claude ...` shape."
-    }
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure internal supervisor wiring (finalizeStory/loop.ts funnel generalization) and Bun/git/tsc behavior; no external library API surface exercised." }
   ]
 }
