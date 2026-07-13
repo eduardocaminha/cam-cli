@@ -29,7 +29,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: test/supervisor/orchestrator-surface.test.ts (new). Reuse the baseOptions/in-memory-fake seam from test/supervisor/loop.test.ts; do NOT spawn a real claude/tmux. Protocol sources: send-keys form in src/tmux (sendKeysVerified, no -l per CAM-55 gotcha), sentinel regex parseAnySentinel/parseSentinel in src/supervisor/result.ts, worker-report shape in src/supervisor/result.ts (makeReadWorkerReport) + handoff.schema.json, @cam_label lifecycle in src/tmux/session.ts. Grep scripts/cam/patterns.md for 'send-keys' and 'sentinel'. Independent of the other stories (pins current behavior)."
     },

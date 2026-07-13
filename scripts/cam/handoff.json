@@ -1,0 +1,12 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Add orchestrator-surface contract test pinning the supervisor<->worker protocol shape" },
+  "branchName": "cam/issue-63",
+  "timestamp": "2026-07-13T00:00:00Z",
+  "createdFiles": ["test/supervisor/orchestrator-surface.test.ts"],
+  "modifiedFiles": ["scripts/cam/prd.json"],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 pinned the current supervisor<->worker protocol shape (send-keys text+Enter without -l, worker-report.json outcome/story/gates{typecheck,tests}/notes, CAM_*_STATUS + <review> sentinel regex, @cam_label pane lifecycle) with pure in-memory fakes, no tmux/claude spawned. US-002 (next, priority 2, no deps) injects a worker-actor env marker into the spawned implementer worker for both host and container dispatch paths -- read src/supervisor/loop.ts respawn-pane dispatch sites and src/supervisor/worker-container.ts / docker-exec.ts for the container path before editing. US-006 depends on US-002 (extends the allowlist hook to deny worker-actor Write to prd.json using the marker US-002 introduces).",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
