@@ -108,7 +108,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "Files: .claude/hooks/orch-agent-allowlist.sh + templates/.claude/hooks/orch-agent-allowlist.sh (add a tool_name branch: read .tool_name and .tool_input.file_path via jq; keep the fail-closed-without-jq guard and the Task|Agent case exactly as-is), .claude/settings.json + templates/.claude/settings.json (add the Write|Edit|MultiEdit matcher entry), test/orch-agent-allowlist.test.ts (add Write-payload cases: worker-marker deny, no-marker allow, non-prd allow), then bun run embed-vendor (regenerates src/vendor/_generated.ts keys .claude/settings.json and .claude/hooks/orch-agent-allowlist.sh from templates/) and embed-vendor:check green. Actor distinction (finding #2): DENY only when CAM_WORKER is present; CAM_SESSION alone is NOT enough because the planner runs under CAM_SESSION too. file_path is absolute in the payload, so suffix-match on scripts/cam/prd.json. Land LAST (after US-003 supervisor-sole-writer and US-005 prompt removal) so the worker still has write authority until the supervisor is the flipper. Test env isolation: pass explicit env objects to Bun.spawn as the existing test does; keep the ANTI-SHADOW-MOCK real-script invocation."
     }
