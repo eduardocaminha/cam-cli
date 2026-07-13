@@ -1,0 +1,116 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-63",
+  "description": "Harden the supervisor<->worker boundary: orchestrator-surface contract test, supervisor-sole passes:true ownership, worker-actor ACL Write-deny, and an empty-push (ahead_by>=1) gate.",
+  "issueNumber": 63,
+  "type": "fix",
+  "relatedDocs": [
+    "docs/adr/0035-supervisor-is-the-sole-writer-of-story-passes-true-with-an-independent-per-story-gate-re-run.md"
+  ],
+  "officialDocsConsulted": [
+    {
+      "lib": "Claude Code (PreToolUse hooks)",
+      "url": "https://code.claude.com/docs/en/hooks",
+      "version": "current",
+      "fetchedAt": "2026-07-13T00:00:00Z",
+      "summary": "Confirmed a single PreToolUse matcher accepts alternation ('Write|Edit|MultiEdit' matches all three tools). Deny contract is exit 0 + JSON {hookSpecificOutput:{hookEventName:'PreToolUse',permissionDecision:'deny',permissionDecisionReason:...}}, matching the existing orch-agent-allowlist.sh. For Write/Edit the payload carries tool_name and tool_input.file_path (absolute path). No breaking changes to the PreToolUse contract in the current version.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add orchestrator-surface contract test pinning the supervisor<->worker protocol shape",
+      "description": "As the cam maintainer, I need one contract test that pins the supervisor<->worker protocol shape so that the CAM-55 literal-Enter and CAM-57 dead-pane regression classes are caught early by a fast deterministic test rather than by an operator smoke.",
+      "acceptanceCriteria": [
+        "A new test at test/supervisor/orchestrator-surface.test.ts pins the protocol shape using the existing in-memory fake pattern (test/supervisor/loop.test.ts baseOptions style; NO new mock-worker binary): it asserts (a) the tmux send-keys submit form is text+Enter WITHOUT the -l literal flag, (b) the worker-report.json field shape (outcome / story / gates{typecheck,tests} / notes), (c) the CAM_*_STATUS sentinel regex, and (d) the @cam_label pane lifecycle. [oracle: bun test test/supervisor/orchestrator-surface.test.ts]",
+        "The send-keys assertion fails (red) if any submit call is rebuilt with the -l literal flag, locking the CAM-55 regression. [oracle: bun test test/supervisor/orchestrator-surface.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: test/supervisor/orchestrator-surface.test.ts (new). Reuse the baseOptions/in-memory-fake seam from test/supervisor/loop.test.ts; do NOT spawn a real claude/tmux. Protocol sources: send-keys form in src/tmux (sendKeysVerified, no -l per CAM-55 gotcha), sentinel regex parseAnySentinel/parseSentinel in src/supervisor/result.ts, worker-report shape in src/supervisor/result.ts (makeReadWorkerReport) + handoff.schema.json, @cam_label lifecycle in src/tmux/session.ts. Grep scripts/cam/patterns.md for 'send-keys' and 'sentinel'. Independent of the other stories (pins current behavior)."
+    },
+    {
+      "id": "US-002",
+      "title": "Inject a worker-actor env marker into the spawned implementer worker (host + container)",
+      "description": "As the cam supervisor, I need the spawned implementer worker process to carry a distinct actor marker so that a later ACL hook can tell a worker-actor Write apart from a planner/orchestrator Write (the planner also runs under CAM_SESSION and legitimately writes prd.json).",
+      "acceptanceCriteria": [
+        "buildImplementerWorkerArgv (src/supervisor/worker-argv.ts) injects a worker-actor marker env assignment (CAM_WORKER) into the worker's env prefix so the spawned worker claude process carries it; the orchestrator/planner session, which is NOT launched through this builder, does not. [oracle: bun test test/supervisor/worker-argv.test.ts asserts the built argv string contains the CAM_WORKER marker assignment]",
+        "The container worker path (src/supervisor/worker-container.ts buildDockerRunArgv) injects the same CAM_WORKER marker (via an -e flag) so container-isolation workers carry it too. [oracle: bun test asserts the container run argv contains an -e CAM_WORKER flag]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/supervisor/worker-argv.ts (workerEnvPrefix / buildImplementerWorkerArgv), src/supervisor/worker-container.ts (buildDockerRunArgv), plus their tests. The marker must be a positive SET (env ... CAM_WORKER=1 claude ...), not an unset; env supports mixing -u <var> with NAME=VALUE assignments. Do NOT add CAM_WORKER to the orchestrator/cam-run env path (src/tmux/session.ts new-session -e CAM_SESSION) so the planner subagent, which runs inside the orchestrator process, never inherits it. This marker is inert until US-006 consumes it. Container form uses name-only -e for credentials but CAM_WORKER is a plain literal, so -e CAM_WORKER=1 is fine."
+    },
+    {
+      "id": "US-003",
+      "title": "Make the supervisor the sole writer of story passes:true via a generalized finalizeStory",
+      "description": "As the cam maintainer, I need the deterministic supervisor to be the only writer of passes:true, flipping it only after its own runGates() (typecheck + bun test) is green per story, so that a worker can never both produce and judge its own acceptance oracle (ADR 0035, variant A-i).",
+      "acceptanceCriteria": [
+        "finalizeStory (src/supervisor/host.ts + wiring in src/supervisor/loop.ts) is generalized so BOTH the incomplete and the pass paths flip passes:true supervisor-side, and only after runGates() returns ok; a worker-report outcome=DONE with prd.json passes:false is treated as the normal supervisor-finalize path, not an error. [oracle: bun test test/supervisor/loop.test.ts]",
+        "A loop/result test asserts passes is set by the supervisor after a green gate run, and is NOT set when the worker reports DONE/pass but the supervisor's runGates() is red (the story stays passes:false and the run degrades to blocked). [oracle: bun test test/supervisor/loop.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/supervisor/host.ts (finalizeStory, runGates), src/supervisor/loop.ts (the incomplete->finalize branch ~1388-1423 and the pass branch), src/supervisor/result.ts (readWorkerOutcome: DONE + passes:false already yields kind:'incomplete'; keep that as the primary path). Deep-dive: docs/adr/0035. Land this BEFORE US-006 (ACL Write-deny) so the supervisor already owns the flip before the worker loses prd.json write authority; otherwise the autonomous loop could reach a state where nothing flips passes. Keep the existing red-gate refusal (result.ts CAM-202) and commit-existence gate intact."
+    },
+    {
+      "id": "US-004",
+      "title": "Add an empty-push (ahead_by>=1) gate on the worker pass path",
+      "description": "As the cam supervisor, I need to verify an actual commit landed before treating a worker run as done, because branchPushed=true can fire on an empty push; a pass with zero commits ahead of origin/main must degrade to blocked.",
+      "acceptanceCriteria": [
+        "On an outcome.kind==='pass' worker run, a new empty-push gate requires git rev-list --count origin/main..HEAD >= 1 (best-effort git fetch origin main first, mirroring commitExistsForStory in src/supervisor/host.ts:875); ahead_by==0 degrades the run to blocked via the same path as a failed push check. [oracle: bun test test/supervisor/... asserts ahead_by==0 -> blocked for a worker story]",
+        "Stories with requires:'operator' are exempt from the empty-push gate (parity with isOperatorStory/confirmCommitGate in src/supervisor/result.ts). [oracle: bun test asserts a requires:'operator' story is NOT blocked when ahead_by==0]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/supervisor/host.ts (new aheadByForBranch/emptyPushGate sibling of commitExistsForStory, injected into RunSupervisorOptions), src/supervisor/result.ts (wire the gate into the pass branch of readWorkerOutcome next to confirmCommitGate), src/supervisor/loop.ts (RunSupervisorOptions type + pass-through). Use origin/main..HEAD with a best-effort git fetch origin main, falling back to main..HEAD like commitExistsForStory. Do NOT put this inside resolveEnsurePushed (which legitimately returns pushed:false when origin is already at HEAD) per the issue gotcha. Reuse the same spawnSync-git style as commitExistsForStory."
+    },
+    {
+      "id": "US-005",
+      "title": "Remove the passes:true flip instruction from both implementer prompt copies",
+      "description": "As the cam maintainer, I need the implementer prompt to stop instructing the worker to flip passes:true, so the prompt matches the new supervisor-sole-writer ownership and the worker only signals done via worker-report.json.",
+      "acceptanceCriteria": [
+        "Both implementer prompt copies (.claude/agents/subagent-implementer.md and templates/agents/subagent-implementer.md) no longer carry the imperative flip instruction; the lines that told the worker to flip are removed or reworded to reflect that the supervisor now owns the flip. [oracle: file-assert: ! grep -Eiq 'flip .?passes: ?true' .claude/agents/subagent-implementer.md templates/agents/subagent-implementer.md returns true (no flip-verb match in either file)]",
+        "Incidental non-imperative mentions of passes:true (the stop-condition/schedule prose and the reworded Step 5.5 revert step) may remain; the oracle targets only the flip-instruction phrasing, not a raw count of 'passes: true'. [oracle: reviewer-judgment]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 5,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: .claude/agents/subagent-implementer.md (lines ~34, ~108, ~132) and templates/agents/subagent-implementer.md (lines ~34, ~98, ~122); run bun run embed-vendor after editing templates/ so src/vendor/_generated.ts (key agents/subagent-implementer.md) is regenerated, then embed-vendor:check must be green. The embed source of truth is templates/; the .claude/ copy is the cam-cli repo's own live runtime copy: edit BOTH (dual-copy is per-file, diff before assuming identical). Keep the notes-read of prd.json (read-only is fine); only the flip verb must go. Reword the Step 5.5 revert step so it no longer implies the worker owns the flip."
+    },
+    {
+      "id": "US-006",
+      "title": "Extend the allowlist hook + settings matcher to deny worker-actor Write to prd.json",
+      "description": "As the cam maintainer, I need the orch-agent-allowlist hook to actually fire on Write/Edit/MultiEdit and deny a worker-actor Write to scripts/cam/prd.json, while leaving the planner's plan-phase Write to prd.json allowed, so the worker cannot self-flip passes and cam plan is not broken.",
+      "acceptanceCriteria": [
+        "The PreToolUse matcher in BOTH .claude/settings.json and templates/.claude/settings.json is extended so Write|Edit|MultiEdit tool calls are routed to orch-agent-allowlist.sh (a second matcher entry alongside the existing Task|Agent entry, or a broadened matcher); without this the hook never fires on Write in production. [oracle: file-assert grep -Eq 'Write\\|Edit\\|MultiEdit' .claude/settings.json templates/.claude/settings.json]",
+        "orch-agent-allowlist.sh (both .claude/ and templates/.claude/ copies) branches on tool_name: for Write/Edit/MultiEdit it DENIES when the worker-actor marker (CAM_WORKER, from US-002) is set under CAM_SESSION AND tool_input.file_path ends with scripts/cam/prd.json; the existing Task|Agent capability policy is unchanged. [oracle: bun test test/orch-agent-allowlist.test.ts asserts a Write payload to .../scripts/cam/prd.json with CAM_WORKER set under CAM_SESSION yields deny]",
+        "The planner/plan-phase Write to scripts/cam/prd.json remains ALLOWED under CAM_SESSION when the worker-actor marker is ABSENT (subagent-planner's whole job is to Write prd.json; cam plan must not break). [oracle: bun test test/orch-agent-allowlist.test.ts asserts a Write payload to .../scripts/cam/prd.json under CAM_SESSION WITHOUT CAM_WORKER yields allow]",
+        "An end-to-end assertion pipes an actual Write PreToolUse payload (tool_name=Write, tool_input.file_path=<abs>/scripts/cam/prd.json) to the real hook script (not a Task-shaped payload) and asserts deny fires under the worker marker; a worker-marker Write to a NON-prd path is allowed. Production routing itself is proven by the settings.json matcher assertion above (Claude Code cannot be driven from a unit test). [oracle: bun test test/orch-agent-allowlist.test.ts]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 6,
+      "passes": false,
+      "requires": "US-002",
+      "notes": "Files: .claude/hooks/orch-agent-allowlist.sh + templates/.claude/hooks/orch-agent-allowlist.sh (add a tool_name branch: read .tool_name and .tool_input.file_path via jq; keep the fail-closed-without-jq guard and the Task|Agent case exactly as-is), .claude/settings.json + templates/.claude/settings.json (add the Write|Edit|MultiEdit matcher entry), test/orch-agent-allowlist.test.ts (add Write-payload cases: worker-marker deny, no-marker allow, non-prd allow), then bun run embed-vendor (regenerates src/vendor/_generated.ts keys .claude/settings.json and .claude/hooks/orch-agent-allowlist.sh from templates/) and embed-vendor:check green. Actor distinction (finding #2): DENY only when CAM_WORKER is present; CAM_SESSION alone is NOT enough because the planner runs under CAM_SESSION too. file_path is absolute in the payload, so suffix-match on scripts/cam/prd.json. Land LAST (after US-003 supervisor-sole-writer and US-005 prompt removal) so the worker still has write authority until the supervisor is the flipper. Test env isolation: pass explicit env objects to Bun.spawn as the existing test does; keep the ANTI-SHADOW-MOCK real-script invocation."
+    }
+  ]
+}
