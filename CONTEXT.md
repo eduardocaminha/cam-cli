@@ -256,3 +256,21 @@ An append-only, on-main-committed scripts/cam/suggestions.jsonl file where revie
 
 **model tier alias**:
 A stable model selector (opus, sonnet, haiku, default, fable, opusplan, sonnet[1m], opus[1m]) that the Claude Code CLI resolves at spawn to the current latest model of that tier for the logged-in subscription. cam stores an alias in project.toml [models] and forwards it as --model, so it auto-tracks new model launches without hardcoding dated model ids. Trade-off: an alias is always-latest (not reproducible); a dated snapshot id pins a specific model.
+
+**actor-ACL**:
+An authority check keyed on which actor (worker vs deterministic supervisor vs operator) may mutate a field. In cam it governs story passes:true: only the supervisor (post-gate) or the operator may set it, never the worker.
+
+**empty-push**:
+A branch push (or origin-already-at-HEAD state) that carries zero commits ahead of main. branchPushed/pushed being true does not prove work landed; only ahead_by>=1 does.
+
+**ahead_by**:
+The count of commits the work branch is ahead of main, computed via git rev-list --count origin/main..HEAD. Used as the empty-push gate: a worker pass with ahead_by==0 is degraded to blocked.
+
+**contract test**:
+A single test that pins the supervisor<->worker protocol shape (send-keys submit form, worker-report.json shape, CAM_*_STATUS sentinel, @cam_label lifecycle) using an in-memory fake worker plus real supervisor logic, catching protocol drift in CI.
+
+**passes ownership**:
+Which actor writes story passes:true in prd.json. Under CAM-63 (variant A-i) ownership moves entirely to the deterministic supervisor after its own gate run; the worker only signals done via worker-report.json.
+
+**operator-story exemption**:
+Stories tagged requires:'operator' are ceremonies out of scope for autonomous implementation; they are exempt from commit-existence and empty-push gates and do not block the review cycle. The planner no longer emits them (US-003); they are hand-filed only.
