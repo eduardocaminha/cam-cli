@@ -679,6 +679,13 @@ describe('runSupervisor', () => {
 		// regular completed story. Sequence: 2 no-ops (streak 2), finalize
 		// (reset), 1 more no-op (streak 1, NOT 3/blocked), real completion,
 		// review CLEAN, complete. Without the reset the 4th iteration blocks.
+		//
+		// US-003 (ADR 0035): the pass/incomplete distinction collapses for the
+		// flip, so the iter-5 REAL US-003 completion (a genuine 'pass', not a
+		// stale reconfirmation) now ALSO funnels through runGates+finalizeStory,
+		// exactly like the iter-3 US-002 'incomplete' finalize. Only the stale
+		// no-op reconfirmations of an already-passing story (US-001 in iters
+		// 1-2, US-002 in iter 4) skip the gate re-run.
 		const prdA = makePrd({
 			stories: [
 				{ id: 'US-001', priority: 1, passes: true },
@@ -736,7 +743,7 @@ describe('runSupervisor', () => {
 		let paneIdx = 0;
 		let iter = 0;
 
-		let finalized = '';
+		const finalizedCalls: string[] = [];
 		const opts = makeBaseOpts({
 			readPrd: () => prds[prdCall++] ?? null,
 			readHandoff: () => makeHandoff(handoffByIter[iter - 1] ?? 'US-003'),
@@ -747,14 +754,16 @@ describe('runSupervisor', () => {
 			},
 			runGates: () => ({ ok: true, detail: 'gates ok' }),
 			finalizeStory: (storyId) => {
-				finalized = storyId;
+				finalizedCalls.push(storyId);
 				return { ok: true, detail: 'finalized' };
 			},
 		});
 
 		const result = await runSupervisor(opts);
 
-		expect(finalized).toBe('US-002');
+		// US-002 via the incomplete path (iter 3), US-003 via the generalized
+		// pass path (iter 5) -- both gated through the same finalizeStory flip.
+		expect(finalizedCalls).toEqual(['US-002', 'US-003']);
 		expect(result.status).toBe('complete');
 		expect(result.iterations).toBe(6); // 5 implement + 1 review, never blocked
 	});
@@ -888,6 +897,81 @@ describe('runSupervisor', () => {
 		expect(result.lastOutcome?.kind).toBe('pass');
 		expect(result.lastOutcome?.detail).toContain('supervisor-finalized');
 		expect(markerStory).toBe('US-001');
+	});
+
+	test('pass path: worker pre-flipped passes:true, supervisor re-verifies with green gates -> finalizes -> complete (US-003, ADR 0035)', async () => {
+		// The worker already wrote passes:true itself (readWorkerOutcome resolves
+		// kind='pass'), but per ADR 0035 the supervisor is now the sole writer of
+		// passes:true: it must independently re-run its own gates before treating
+		// even a 'pass' outcome as final, and only THEN finalize (generalized
+		// finalizeStory, same mechanism as the incomplete path above).
+		let markerStory: string | undefined;
+		const prdBefore = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const prdWorkerFlipped = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: true }] });
+		const prdAfterFinalizeClean = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+		const prds = [prdBefore, prdWorkerFlipped, prdAfterFinalizeClean];
+		let call = 0;
+		let finalizeCalls = 0;
+		const opts = makeBaseOpts({
+			readPrd: () => prds[Math.min(call++, prds.length - 1)] ?? null,
+			capturePane: (_paneId) => donePane('US-001'),
+			readHandoff: () => makeHandoff('US-001'),
+			runGates: () => ({ ok: true, detail: 'gates green' }),
+			finalizeStory: (storyId) => {
+				finalizeCalls += 1;
+				return { ok: true, detail: `flipped ${storyId}` };
+			},
+			writeSessionMarker: (storyId, _uuid) => {
+				markerStory = storyId;
+			},
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('complete');
+		expect(finalizeCalls).toBe(1);
+		expect(result.lastOutcome?.kind).toBe('pass');
+		expect(result.lastOutcome?.detail).toContain('supervisor-finalized');
+		expect(result.lastOutcome?.detail).toContain('independent gate re-run');
+		expect(markerStory).toBe('US-001');
+	});
+
+	test('pass path: worker pre-flipped passes:true, but supervisor gates are RED -> flip reverted to passes:false, degrades to blocked (US-003, ADR 0035, AC2)', async () => {
+		// Mirror of the test above with a red gate: the worker's premature
+		// passes:true flip must NOT stand. The supervisor never invokes
+		// finalizeStory, and it actively reverts the story back to passes:false
+		// so the false claim does not carry forward into the next iteration.
+		const prdBefore = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const prdWorkerFlipped = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: true }] });
+		const prds = [prdBefore, prdWorkerFlipped, prdWorkerFlipped];
+		let call = 0;
+		let finalizeCalled = false;
+		const revertedPrds: PrdSnapshot[] = [];
+		const opts = makeBaseOpts({
+			readPrd: () => prds[Math.min(call++, prds.length - 1)] ?? null,
+			capturePane: (_paneId) => donePane('US-001'),
+			readHandoff: () => makeHandoff('US-001'),
+			runGates: () => ({ ok: false, detail: 'tests failed' }),
+			finalizeStory: (_storyId) => {
+				finalizeCalled = true;
+				return { ok: true, detail: 'should not run' };
+			},
+			writePrd: (p) => {
+				revertedPrds.push(p);
+			},
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('blocked');
+		expect(result.lastOutcome?.kind).toBe('blocked');
+		expect(result.lastOutcome?.detail).toContain('gates failed');
+		expect(finalizeCalled).toBe(false);
+		const revertedStory = revertedPrds[0]?.userStories?.find((s) => s.id === 'US-001');
+		expect(revertedStory?.passes).toBe(false);
 	});
 
 	test('incomplete -> gates fail -> blocked (no finalize attempted)', async () => {

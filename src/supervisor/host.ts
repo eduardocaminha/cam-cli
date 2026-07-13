@@ -814,6 +814,16 @@ export function buildSupervisorOptions(
 		return { ok: true, detail: 'typecheck + tests passed' };
 	};
 
+	// US-003 (ADR 0035): finalizeStory is now the SOLE writer of passes:true,
+	// invoked by loop.ts on BOTH the incomplete path (worker truncated before
+	// flipping) and the pass path (worker already wrote passes:true itself) --
+	// the pass/incomplete distinction collapses for the flip. That means this
+	// idempotent write can land on a story that ALREADY has passes:true and an
+	// already-committed prd.json (the worker's own commit), leaving nothing
+	// staged after `git add -A`. `git commit` fails ("nothing to commit") in
+	// that case; treat it as an already-finalized no-op (ok:true), not an
+	// error -- the desired end state (a landed commit carrying passes:true)
+	// already holds, so there is nothing for the supervisor to add.
 	const finalizeStory: RunSupervisorOptions['finalizeStory'] = (storyId) => {
 		try {
 			const prd = readPrd();
@@ -826,6 +836,10 @@ export function buildSupervisorOptions(
 			writePrd(prd);
 			const add = spawnSync('git', ['add', '-A'], { cwd, stdio: 'ignore' });
 			if (add.status !== 0) return { ok: false, detail: 'git add failed' };
+			const diffCheck = spawnSync('git', ['diff', '--cached', '--quiet'], { cwd, stdio: 'ignore' });
+			if (diffCheck.status === 0) {
+				return { ok: true, detail: `${storyId} already finalized (no staged changes)` };
+			}
 			const commit = spawnSync(
 				'git',
 				['commit', '-m', `chore(cam): finalize ${storyId} (supervisor)`],

@@ -59,7 +59,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/host.ts (finalizeStory, runGates), src/supervisor/loop.ts (the incomplete->finalize branch ~1388-1423 and the pass branch), src/supervisor/result.ts (readWorkerOutcome: DONE + passes:false already yields kind:'incomplete'; keep that as the primary path). Deep-dive: docs/adr/0035. Land this BEFORE US-006 (ACL Write-deny) so the supervisor already owns the flip before the worker loses prd.json write authority; otherwise the autonomous loop could reach a state where nothing flips passes. Keep the existing red-gate refusal (result.ts CAM-202) and commit-existence gate intact."
     },
