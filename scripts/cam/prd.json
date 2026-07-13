@@ -22,7 +22,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Single-file source change: src/commands/sidecar.ts. (1) Add a sweep-fn parameter to makeProductionPlanPhaseFn (sidecar.ts:2345-2354) and invoke it as the very first statement inside the returned closure (line ~2354), inside the existing try so any error is swallowed by the outer safety net. (2) Thread the seam from options in buildPlanPhaseDeps (sidecar.ts:2491-2493): pass options.sweepOrphanedImplementBlockedMarkerFn ?? (() => sweepOrphanedImplementBlockedMarker(join(claudeDir, IMPLEMENT_BLOCKED_FILENAME), cwd)). cwd and claudeDir are already in scope there. Gotchas (from issue spec): do NOT modify the pure sweep function (sidecar.ts:609) nor its tests (test/commands/sidecar-orphan-sweep.test.ts); do NOT add an idle-tick / per-tick sweep site (the circuit-breaker read at src/supervisor/loop.ts:2194/2198 is intentionally NOT a sweep site); preserve the read-only-on-main invariant (readBacklogFromMain uses git ls-tree/cat-file only). Keep makeProductionPlanPhaseFn under biome's 80-line / cognitive-complexity limits (it is already at the limit and uses extracted helpers) so check:all stays green. Wiring test: mirror the injection style in test/supervisor/plan/plan-sidecar-replan-wiring.test.ts (inject runPlanPhaseFn or drive buildPlanPhaseDeps with a spy seam) and assert the spy is called when the plan-phase closure executes. Type is fix (copied from issue). Parent context CAM-282 shipped the .gitignore fix + startup+preflight sweep; this closes the mid-session window flagged in AC6 of CAM-282."
     }
