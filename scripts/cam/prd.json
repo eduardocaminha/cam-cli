@@ -1,0 +1,29 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-294",
+  "description": "Replace dated model id in `cam claude` help example with the stable `opus` alias",
+  "issueNumber": 294,
+  "type": "docs",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Alias dated model id in cam claude help example",
+      "description": "As an operator reading `cam claude --help`, I need the example to use a stable tier alias (--model opus) instead of a dated snapshot id (--model claude-opus-4-5) so that the surfaced help text does not drift out of date, per ADR-0034.",
+      "acceptanceCriteria": [
+        "The `cam claude` help/usage text no longer contains the dated concrete model id `claude-opus-4-5`. [oracle: grep -q 'claude-opus-4-5' src/commands/claude.ts; expect no match]",
+        "The Examples section of CLAUDE_HELP shows `--model opus` in the example line. [oracle: grep -q 'model opus' src/commands/claude.ts]",
+        "`opus` is a real accepted value for --model, present in the MODEL_OPTIONS alias map. [oracle: grep -q \"value: 'opus'\" src/ui/ConfigScreen.tsx]",
+        "No change to model resolution logic or DEFAULTS/MODEL_OPTIONS (src/config/models.ts unchanged). [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Single edit at src/commands/claude.ts:40 inside the CLAUDE_HELP Examples body: change 'cam claude --print --model claude-opus-4-5 /cam-next' to 'cam claude --print --model opus /cam-next'. Help-text-only; do NOT touch src/config/models.ts DEFAULTS or the MODEL_OPTIONS map in src/ui/ConfigScreen.tsx. Alias verified real: MODEL_OPTIONS includes value:'opus' (ConfigScreen.tsx:70). This is exactly the drift ADR-0034 targets (dated model ids in surfaced text). --model is forwarded verbatim to the child claude process, which resolves the tier alias."
+    }
+  ]
+}
