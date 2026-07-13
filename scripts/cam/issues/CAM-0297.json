@@ -1,12 +1,33 @@
 {
   "id": "CAM-297",
   "title": "US-002 lists close among the e.g. mutations that should advance updatedAt. spec…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-12T22:12:38.054Z",
   "description": "US-002 lists close among the e.g. mutations that should advance updatedAt. specify/abandon/demote/merge(source+target)/rank all have explicit updatedAt-bump tests; closeIssueOnMain stamps updatedAt (issue-specify.ts:562) but has no dedicated updatedAt-bump assertion. Non-blocking (illustrative e.g., writer is structurally identical and implemented).\n\nSource: cam/issue-284\nReview round: 1\nLocation: test/commands/issue-specify.test.ts\n\nsuggestion-fingerprint: 14225fe6ade9",
   "derivedFrom": [
     "CAM-284"
-  ]
+  ],
+  "spec": {
+    "acceptanceCriteria": [
+      "A dedicated test in test/commands/issue-specify.test.ts asserts that closeIssueOnMain bumps the issue's updatedAt timestamp on close.",
+      "The assertion mirrors the existing dedicated updatedAt-bump tests for specify/abandon/demote/merge(source+target)/rank.",
+      "The new test drives the real closeIssueOnMain writer (issue-specify.ts:562) and passes."
+    ],
+    "scope": "Add one dedicated updatedAt-bump test for closeIssueOnMain in test/commands/issue-specify.test.ts, mirroring the existing per-mutation updatedAt assertions. Test-only change; do not modify closeIssueOnMain (it already stamps updatedAt correctly).",
+    "gotchas": [
+      "closeIssueOnMain is structurally identical to the other mutation writers and already stamps updatedAt; this closes a test-coverage gap only, not a behavior bug.",
+      "Match the fixture/clock setup the sibling updatedAt-bump tests use so the assertion is deterministic."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 1,
+    "riskReduction": 3,
+    "jobSize": 1
+  },
+  "updatedAt": "2026-07-13T12:51:12.131Z",
+  "type": "chore"
 }
