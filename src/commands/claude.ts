@@ -37,7 +37,7 @@ export const CLAUDE_HELP = renderHelp({
 			heading: 'Examples',
 			body:
 				'cam claude -p "Hello world"\n' +
-				'cam claude --print --model claude-opus-4-5 /cam-next\n' +
+				'cam claude --print --model opus /cam-next\n' +
 				'cam claude --permission-mode bypassPermissions /cam-plan',
 		},
 		{
