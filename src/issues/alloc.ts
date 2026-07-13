@@ -32,6 +32,7 @@ import {
 	hashAndIndexFiles,
 	commitAndCasAttempt,
 	syncWorktreeIfOnMain,
+	type FileWrite,
 	type SpawnFn,
 } from '../git/on-main.ts';
 
@@ -69,6 +70,19 @@ export interface WriteIssueFileOptions {
 	derivedFrom?: string[];
 	/** WSJF scoring resolved at filing time. */
 	wsjf?: WsjfScore;
+	/**
+	 * Additional files to co-commit in the SAME atomic CAS commit as the
+	 * allocated issue JSON. Re-hashed and re-indexed on every CAS attempt
+	 * (same as the issue file itself), so callers can safely derive their
+	 * content from data that predates the id allocation.
+	 */
+	extraFiles?: FileWrite[];
+	/**
+	 * Optional commit-message override, given the freshly-allocated unpadded
+	 * id (e.g. `(id) => "chore(cam): suggestions promote <fp> -> <id>"`).
+	 * Defaults to `chore(cam): file <id>`.
+	 */
+	commitMessage?: (id: string) => string;
 	/** Injectable spawnSync for all git subprocess calls. */
 	spawnFn: SpawnFn;
 }
@@ -134,6 +148,12 @@ function buildIssueEntry(
  * before retrying, ensuring two concurrent writers always produce distinct
  * sequential ids rather than colliding.
  *
+ * `opts.extraFiles`, when present, are co-committed in the SAME atomic
+ * commit as the issue JSON: they are re-hashed and re-indexed on every CAS
+ * attempt (US-001, CAM-290), so a caller can land a companion file rewrite
+ * derived from the freshly-allocated id in the same commit (e.g. via
+ * `opts.commitMessage`, which overrides the default `chore(cam): file <id>`).
+ *
  * Returns the unpadded id, the filename, and the short sha of the new commit.
  */
 export function writeIssueFile(opts: WriteIssueFileOptions): WriteIssueFileResult {
@@ -149,6 +169,8 @@ export function writeIssueFile(opts: WriteIssueFileOptions): WriteIssueFileResul
 		specSource,
 		derivedFrom,
 		wsjf,
+		extraFiles = [],
+		commitMessage,
 		spawnFn,
 	} = opts;
 
@@ -191,13 +213,15 @@ export function writeIssueFile(opts: WriteIssueFileOptions): WriteIssueFileResul
 				encoding: 'utf8',
 				env: indexEnv,
 			});
-			hashAndIndexFiles(cwd, [{ path: filename, content }], spawnFn, indexEnv);
+			hashAndIndexFiles(cwd, [{ path: filename, content }, ...extraFiles], spawnFn, indexEnv);
 
 			// (d) CAS: write-tree + commit-tree + update-ref.
-			const commitMsg = `chore(cam): file ${idUnpadded}`;
+			const commitMsg = commitMessage
+				? commitMessage(idUnpadded)
+				: `chore(cam): file ${idUnpadded}`;
 			const result = commitAndCasAttempt(cwd, currentMainSha, commitMsg, spawnFn, indexEnv);
 			if (result.success) {
-				syncWorktreeIfOnMain(cwd, [filename], spawnFn);
+				syncWorktreeIfOnMain(cwd, [filename, ...extraFiles.map((f) => f.path)], spawnFn);
 				return { id: idUnpadded, filename, sha: result.shortSha };
 			}
 

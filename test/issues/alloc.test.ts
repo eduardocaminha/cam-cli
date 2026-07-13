@@ -614,6 +614,163 @@ describe('writeIssueFile -- specSource / derivedFrom / wsjf (US-002)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// US-001 (CAM-290): extraFiles co-commit + commitMessage override
+// ---------------------------------------------------------------------------
+
+describe('writeIssueFile -- extraFiles co-commit (US-001, CAM-290)', () => {
+	test('extraFiles are hashed+indexed into the same commit-tree as the issue file; exactly ONE commit-tree call on success', () => {
+		const { spy: baseSpy } = makeSpawnFn([]);
+		let commitTreeCallCount = 0;
+		const indexedPaths: string[] = [];
+
+		const spy: SpawnFn = (_cmd, args, opts) => {
+			const gitSub = args[2];
+			if (gitSub === 'commit-tree') commitTreeCallCount++;
+			if (gitSub === 'update-index') {
+				const cacheinfo = args.find((a) => a.startsWith('100644,'));
+				if (cacheinfo !== undefined) {
+					const parts = cacheinfo.split(',');
+					indexedPaths.push(parts[2] ?? '');
+				}
+			}
+			return baseSpy(_cmd, args, opts);
+		};
+
+		const result = writeIssueFile({
+			cwd: '/fake/cwd',
+			title: 'With companion file',
+			createdAt: '2026-07-13T00:00:00Z',
+			extraFiles: [{ path: 'scripts/cam/suggestions.md', content: 'updated pen\n' }],
+			spawnFn: spy,
+		});
+
+		// Exactly one commit-tree invocation on the (single, successful) attempt.
+		expect(commitTreeCallCount).toBe(1);
+
+		// The temp index received both the issue file and the extraFiles path.
+		expect(indexedPaths).toContain(result.filename);
+		expect(indexedPaths).toContain('scripts/cam/suggestions.md');
+	});
+
+	test('extraFiles content is re-indexed on every CAS attempt (re-hashed alongside the re-allocated id)', () => {
+		const initialEntries: IssueEntry[] = Array.from({ length: 5 }, (_, i) => ({
+			id: `CAM-${i + 1}`,
+			title: `Issue ${i + 1}`,
+			stage: 'idea' as const,
+			status: 'open' as const,
+			blockedBy: [],
+			createdAt: '2026-01-01T00:00:00Z',
+			updatedAt: '2026-01-01T00:00:00Z',
+		}));
+		const updatedEntries: IssueEntry[] = [
+			...initialEntries,
+			{ id: 'CAM-6', title: 'Concurrent issue', stage: 'idea', status: 'open', blockedBy: [], createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' },
+		];
+
+		let updateRefCallCount = 0;
+		let lsTreeCallCount = 0;
+		let extraFileIndexCount = 0;
+
+		const spy: SpawnFn = (_cmd, args, opts) => {
+			const gitSub = args[2];
+
+			if (gitSub === 'rev-parse') return ok('sha0' + '0'.repeat(36) + '\n');
+
+			if (gitSub === 'ls-tree') {
+				lsTreeCallCount++;
+				const entries = lsTreeCallCount <= 1 ? initialEntries : updatedEntries;
+				const paths = entries.map((e) =>
+					`scripts/cam/issues/CAM-${String(numericSuffix(e.id)).padStart(4, '0')}.json`
+				).join('\n');
+				return ok(paths + '\n');
+			}
+
+			if (gitSub === 'cat-file') {
+				const entries = lsTreeCallCount <= 1 ? initialEntries : updatedEntries;
+				return ok(entries.map(frameEntry).join(''));
+			}
+
+			if (gitSub === 'read-tree') return ok();
+
+			if (gitSub === 'hash-object') {
+				if ((opts.input ?? '').includes('companion content')) extraFileIndexCount++;
+				return ok('blob' + '0'.repeat(36) + '\n');
+			}
+
+			if (gitSub === 'update-index') return ok();
+			if (gitSub === 'write-tree') return ok('tree' + '0'.repeat(36) + '\n');
+			if (gitSub === 'commit-tree') return ok('sha1' + '0'.repeat(36) + '\n');
+
+			if (gitSub === 'update-ref') {
+				updateRefCallCount++;
+				if (updateRefCallCount === 1) return fail('ref conflict');
+				return ok();
+			}
+
+			return ok();
+		};
+
+		writeIssueFile({
+			cwd: '/fake/cwd',
+			title: 'Re-allocated issue with companion',
+			createdAt: '2026-06-28T00:00:00Z',
+			extraFiles: [{ path: 'scripts/cam/suggestions.md', content: 'companion content\n' }],
+			spawnFn: spy,
+		});
+
+		// Two CAS attempts occurred (one failure + one success); extraFiles content
+		// must have been re-hashed on both.
+		expect(updateRefCallCount).toBe(2);
+		expect(extraFileIndexCount).toBe(2);
+	});
+
+	test('commitMessage override receives the freshly-allocated id and is used for commit-tree', () => {
+		const { spy: baseSpy } = makeSpawnFn([]);
+		let capturedCommitMsg = '';
+
+		const spy: SpawnFn = (_cmd, args, opts) => {
+			if (args[2] === 'commit-tree') {
+				const msgIdx = args.indexOf('-m');
+				capturedCommitMsg = msgIdx >= 0 ? (args[msgIdx + 1] ?? '') : '';
+			}
+			return baseSpy(_cmd, args, opts);
+		};
+
+		const result = writeIssueFile({
+			cwd: '/fake/cwd',
+			title: 'Suggestion promotion',
+			createdAt: '2026-07-13T00:00:00Z',
+			commitMessage: (id) => `chore(cam): suggestions promote fp123 -> ${id}`,
+			spawnFn: spy,
+		});
+
+		expect(capturedCommitMsg).toBe(`chore(cam): suggestions promote fp123 -> ${result.id}`);
+	});
+
+	test('default commit message (no commitMessage override) stays chore(cam): file <id>', () => {
+		const { spy: baseSpy } = makeSpawnFn([]);
+		let capturedCommitMsg = '';
+
+		const spy: SpawnFn = (_cmd, args, opts) => {
+			if (args[2] === 'commit-tree') {
+				const msgIdx = args.indexOf('-m');
+				capturedCommitMsg = msgIdx >= 0 ? (args[msgIdx + 1] ?? '') : '';
+			}
+			return baseSpy(_cmd, args, opts);
+		};
+
+		const result = writeIssueFile({
+			cwd: '/fake/cwd',
+			title: 'Normal issue',
+			createdAt: '2026-07-13T00:00:00Z',
+			spawnFn: spy,
+		});
+
+		expect(capturedCommitMsg).toBe(`chore(cam): file ${result.id}`);
+	});
+});
+
+// ---------------------------------------------------------------------------
 // Internal helper
 // ---------------------------------------------------------------------------
 
