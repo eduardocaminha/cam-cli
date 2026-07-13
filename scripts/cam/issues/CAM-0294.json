@@ -1,7 +1,7 @@
 {
   "id": "CAM-294",
   "title": "Help text for `cam claude` still shows a dated example `--model claude-opus-4-5…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-12T19:29:36.860Z",
@@ -9,5 +9,25 @@
   "derivedFrom": [
     "CAM-287"
   ],
-  "updatedAt": "2026-07-12T19:29:36.860Z"
+  "updatedAt": "2026-07-13T12:50:57.050Z",
+  "spec": {
+    "acceptanceCriteria": [
+      "The `cam claude` help/usage text (claude.ts:40) no longer contains a dated concrete model id (e.g. claude-opus-4-5) in its example.",
+      "The example uses a stable alias (--model opus) that resolves via the existing MODEL_OPTIONS alias map.",
+      "The alias shown is verified to be a real accepted value for --model (not just cosmetic text)."
+    ],
+    "scope": "Edit the example in the cam claude help text (claude.ts:40) to use --model opus instead of the dated --model claude-opus-4-5. Help-text-only change; do not alter model resolution logic or DEFAULTS/MODEL_OPTIONS.",
+    "gotchas": [
+      "Confirm 'opus' is a valid alias in MODEL_OPTIONS before using it in the example; if the alias differs, use the actual stable alias.",
+      "This is the exact drift ADR-0034 targets (dated model ids in surfaced text)."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 1,
+    "riskReduction": 2,
+    "jobSize": 1
+  },
+  "type": "docs"
 }
