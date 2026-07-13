@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# PreToolUse hook: capability policy for Task/Agent spawns, gated by CAM_SESSION.
+# PreToolUse hook: capability policy for Task/Agent spawns, and a worker-actor
+# write-guard on scripts/cam/prd.json for Write/Edit/MultiEdit, gated by CAM_SESSION.
 #
 # Scope gate (CAM_SESSION):
 #   When CAM_SESSION is unset, this hook is inactive: exit 0 (allow) for any
@@ -7,7 +8,17 @@
 #   Only cam-managed sessions (where CAM_SESSION is set by the sidecar) enforce
 #   the capability policy below.
 #
-# Capability policy (applies only when CAM_SESSION is set):
+# Write/Edit/MultiEdit policy (US-006, applies only when CAM_SESSION is set):
+#   DENY only when BOTH are true: CAM_WORKER=1 is set (the worker-actor marker,
+#   US-002/CAM-63, set ONLY on the implementer worker path -- never on the
+#   planner, which also runs under CAM_SESSION and legitimately Writes
+#   prd.json) AND tool_input.file_path ends with scripts/cam/prd.json. This
+#   stops a worker session from self-flipping passes:true; the supervisor is
+#   the sole writer of that field (ADR 0035 / US-003 finalizeStory).
+#   ALLOW everything else (planner Writes to prd.json, any Write to a
+#   non-prd.json path, etc).
+#
+# Capability policy (Task/Agent spawns, applies only when CAM_SESSION is set):
 #   ALLOW: read-only / plan-time helpers that do not write code.
 #     {Explore, Plan, claude-code-guide, subagent-planner, subagent-auditor, subagent-reviewer}
 #   DENY: everything else, including code-writers and absent/unknown types.
@@ -49,6 +60,37 @@ if ! command -v jq >/dev/null 2>&1; then
   printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"jq is absent: all Task/Agent spawns are denied (fail-closed without jq)."}}'
   exit 0
 fi
+
+# Extract tool_name to branch between the Write/Edit/MultiEdit write-guard and
+# the Task/Agent capability policy below. Both matchers route to this same
+# script (settings.json has two PreToolUse entries), so the branch is required.
+tool_name="$(printf '%s' "$payload" | jq -r '(.tool_name // "")' 2>/dev/null || echo "")"
+
+case "$tool_name" in
+  Write|Edit|MultiEdit)
+    # Worker-actor write-guard: DENY only when CAM_WORKER=1 (worker-actor
+    # marker) is set AND the target file_path ends with scripts/cam/prd.json.
+    # file_path arrives absolute in production, so suffix-match it.
+    file_path="$(printf '%s' "$payload" | jq -r '(.tool_input.file_path // "")' 2>/dev/null || echo "")"
+    if [ -n "${CAM_WORKER:-}" ] && [[ "$file_path" == *scripts/cam/prd.json ]]; then
+      jq -n --arg fp "$file_path" \
+        '{
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            permissionDecision: "deny",
+            permissionDecisionReason: (
+              "Worker-actor sessions may not Write/Edit/MultiEdit \"" + $fp + "\"."
+              + " The supervisor is the sole writer of passes:true in scripts/cam/prd.json"
+              + " (ADR 0035 / US-003 finalizeStory)."
+            )
+          }
+        }'
+      exit 0
+    fi
+    # ALLOW: exit 0, no output.
+    exit 0
+    ;;
+esac
 
 # Extract the spawned subagent type using the defensive three-path read.
 # jq //  is the alternative operator: falls through on null or false.
