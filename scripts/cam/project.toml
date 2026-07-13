@@ -20,7 +20,7 @@ merge_mode = "ci-gated"
 meta_loop = "auto"
 # accepted values: container | host
 worker_isolation = "host"
-# orch_context_window = 200000
+orch_context_window = 500000
 
 [notify]
 resend_recipient = "caminhae@gmail.com"
