@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.156.0] - 2026-07-13
+
+### Added
+
+- US-002 - Make promoteSuggestionOnMain a single atomic on-main commit
+- US-001 - Extend writeIssueFile CAS primitive to co-commit extra files
+
 ## [0.155.0] - 2026-07-13
 
 ### Added
