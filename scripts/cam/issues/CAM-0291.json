@@ -2,12 +2,12 @@
   "id": "CAM-291",
   "title": "buildFollowUpIssue is now retained only for its title-truncation logic (its des…",
   "stage": "idea",
-  "status": "open",
+  "status": "abandoned",
   "blockedBy": [],
   "createdAt": "2026-07-12T18:06:45.555Z",
   "description": "buildFollowUpIssue is now retained only for its title-truncation logic (its description output is no longer written anywhere). Consider extracting a buildSuggestionTitle helper to make the dead description branch explicit for future readers.\n\nSource: cam/issue-285\nReview round: 1\n\nsuggestion-fingerprint: f2f849e3047f",
   "derivedFrom": [
     "CAM-285"
   ],
-  "updatedAt": "2026-07-12T18:06:45.555Z"
+  "updatedAt": "2026-07-13T11:33:06.640Z"
 }
