@@ -1,0 +1,15 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Assert closeIssueOnMain bumps updatedAt on close"
+  },
+  "branchName": "cam/issue-297",
+  "timestamp": "2026-07-13T00:00:00.000Z",
+  "createdFiles": [],
+  "modifiedFiles": ["test/commands/issue-specify.test.ts"],
+  "openQuestions": [],
+  "nextStoryContext": "Added a single unit test 'close: updatedAt is bumped to clock() value beyond original createdAt' just before the '4. mergeIssueOnMain' section header (after the demote block), mirroring the abandon/demote updatedAt-bump tests. Imported closeIssueOnMain and CloseIssueOnMainOptions into the test file's import block (previously only specify/abandon/demote/merge were imported). No makeCloseOpts helper was added since only one close test exists; options are built inline and typed as CloseIssueOnMainOptions to keep the type import used (avoids an unused-import lint/knip flag). src/commands/issue-specify.ts was not touched.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
