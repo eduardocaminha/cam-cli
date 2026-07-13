@@ -1,7 +1,7 @@
 {
   "id": "CAM-297",
   "title": "US-002 lists close among the e.g. mutations that should advance updatedAt. spec…",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-12T22:12:38.054Z",
@@ -28,6 +28,6 @@
     "riskReduction": 3,
     "jobSize": 1
   },
-  "updatedAt": "2026-07-13T12:51:12.131Z",
+  "updatedAt": "2026-07-13T13:40:25.010Z",
   "type": "chore"
 }
