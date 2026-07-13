@@ -119,6 +119,25 @@ export function workerEnvPrefix(isolation: WorkerIsolation): string {
 }
 
 /**
+ * Worker-actor env marker assignment (US-002, CAM-63): identifies a spawned
+ * implementer worker process so a later ACL hook (US-006) can distinguish a
+ * worker-actor Write from a planner/orchestrator Write. Both run under
+ * CAM_SESSION, so that var alone cannot disambiguate them; CAM_WORKER is the
+ * narrower, positive signal set ONLY on the implementer worker path.
+ *
+ * `env` supports mixing `-u <var>` (unset) with `NAME=VALUE` (set) assignments
+ * in the same invocation, so this is appended after the `-u` flags rendered by
+ * `workerEnvPrefix` and before the `claude` binary name.
+ *
+ * Deliberately NOT folded into `workerEnvPrefix`: that function is shared with
+ * the reviewer (review.ts) and planner (plan-argv.ts) worker builders, and the
+ * planner subagent must never inherit this marker (it legitimately writes
+ * prd.json). It is also never added to the orchestrator/cam-run env path
+ * (src/tmux/session.ts `new-session -e CAM_SESSION`).
+ */
+export const WORKER_ACTOR_ENV = 'CAM_WORKER=1';
+
+/**
  * Escape a string for safe embedding inside a POSIX single-quoted shell argument.
  *
  * Single-quoting is the safest general-purpose shell escape: no characters
@@ -138,8 +157,12 @@ function shellEscape(s: string): string {
  *
  * Returns:
  *
- *   env -u CLAUDECODE -u ... claude --permission-mode <mode> --session-id <uuid> \
- *     --agent <agentName> '<task>'
+ *   env -u CLAUDECODE -u ... CAM_WORKER=1 claude --permission-mode <mode> \
+ *     --session-id <uuid> --agent <agentName> '<task>'
+ *
+ * `CAM_WORKER=1` (WORKER_ACTOR_ENV, US-002/CAM-63) marks the spawned process as
+ * a worker actor so a later ACL hook can distinguish it from a planner/
+ * orchestrator Write.
  *
  * The `env -u ...` prefix strips nesting-detection env vars (CAM-43). -p and
  * --output-format are omitted so the process stays open for operator
@@ -158,6 +181,7 @@ export function buildImplementerWorkerArgv(opts: ImplementerWorkerArgvOptions): 
 	const escapedPrompt = shellEscape(opts.taskPrompt);
 	return (
 		workerEnvPrefix(isolation) +
+		`${WORKER_ACTOR_ENV} ` +
 		`claude` +
 		` --permission-mode ${opts.permissionMode}` +
 		` --session-id ${opts.uuid}` +

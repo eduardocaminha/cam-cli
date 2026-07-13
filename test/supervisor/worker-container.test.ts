@@ -291,6 +291,14 @@ describe('buildDockerRunArgv', () => {
 		expect(argv).toContain('cam-worker:v2');
 		expect(argv).not.toContain(DEFAULT_IMAGE_TAG);
 	});
+
+	// US-002 (CAM-63): worker-actor CAM_WORKER env marker.
+	test('includes -e CAM_WORKER=1 (worker-actor marker)', () => {
+		const argv = buildDockerRunArgv({ workspaceFolder: SAMPLE_WORKSPACE });
+		const valIdx = argv.indexOf('CAM_WORKER=1');
+		expect(valIdx).toBeGreaterThan(-1);
+		expect(argv[valIdx - 1]).toBe('-e');
+	});
 });
 
 // ---------------------------------------------------------------------------
