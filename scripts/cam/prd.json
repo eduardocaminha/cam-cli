@@ -22,7 +22,7 @@
       "id": "US-R1-001",
       "title": "Review round 1 fix 001: address reviewer finding",
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [scripts/cam/CLAUDE.md:12]: Doc-sync gap: step 8 of the worker task list still reads 'Update the PRD to set passes: true for the completed story.' This directly contradicts the sole-writer convention this PR introduces (US-003/US-005 reworded subagent-implementer.md to say the supervisor is the sole writer) and would be actively DENIED by the new US-006 hook if a worker followed it. The same stale step 8 also appears in templates/scripts/cam/CLAUDE.md:12. Reword both step 8 copies to state that the supervisor flips passes:true after reading worker-report.json; re-run embed-vendor if the template copy is embedded."
     },
     {
