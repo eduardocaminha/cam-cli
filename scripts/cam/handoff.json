@@ -1,17 +1,22 @@
 {
-  "lastCompletedStory": { "id": "US-002", "title": "Freeze COMMANDS array exact count and membership" },
+  "lastCompletedStory": { "id": "US-003", "title": "Wire validate-agents-md as check:all gate #12 and update gate-count freezes" },
   "branchName": "cam/issue-61",
-  "timestamp": "2026-07-14T00:10:00Z",
-  "createdFiles": [
-    "test/commands-freeze.test.ts"
+  "timestamp": "2026-07-14T00:40:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "scripts/check-all.ts",
+    "package.json",
+    "scripts/validate-agents-md.ts",
+    ".claude/agents/subagent-implementer.md",
+    "test/gates-manifest.test.ts",
+    "test/check-all.test.ts",
+    "scripts/file-size-budget.json"
   ],
-  "modifiedFiles": [],
   "openQuestions": [
-    "Carried from US-001, unreconciled: `bun scripts/validate-agents-md.ts` against the live repo still fails on bare-filename shorthand doc staleness (`prd.json`, `handoff.json`, `worker-report.json`, `review-report.json`, `patterns.md`, `journal.md`, `run.ts`, `setup.ts` referenced without directory prefix). US-003 (wire validate-agents-md as check:all gate) will need to fix these docs or extend KNOWN_MISSING before the gate goes green in CI.",
-    "Carried from US-001: .claude/agents/subagent-orchestrator.md has a pre-existing unmatched-backtick markdown bug near \"Keep entries concise -- `<200 words\". Not fixed (out of scope). Follow-up candidate.",
-    "Carried from US-001: .claude/agents/subagent-implementer.md references `.githooks/**` which does not exist in this repo (hooks live under `.claude/hooks/`). Possible doc staleness, follow-up candidate."
+    "Resolved from US-001/US-002 carry-over: the KNOWN_MISSING allowlist in scripts/validate-agents-md.ts now carries 18 new entries (bare-filename shorthand for scripts/cam/{prd,handoff,worker-report,review-report,handoff.schema}.json, journal.md, patterns.md, lessons.md, memory/, run.ts, setup.ts, orch-agent-allowlist.sh, .cam-orch-handoff{,.consumed}.json, scripts/cam/issues/CAM-XXXX.json, foo.json, postgres.js, frontend.tsx) so `bun run check:agents` / gate #12 is green against the live repo. Also fixed a genuine doc-staleness bug: removed the nonexistent `.githooks/**` token from subagent-implementer.md's Constraints list (redundant with the already-present `.claude/hooks/**`).",
+    "The 4 pre-existing KNOWN_MISSING 'matched nothing this run' warnings (.claude/.cam-orch-ready, scripts/cam/prd.json, scripts/cam/journal.archive.md, /exit) are non-fatal by design (dead-allowlist-entry guard, does not fail the gate) and predate this story (US-001). Not fixed; follow-up candidate if someone wants a zero-warning run."
   ],
-  "nextStoryContext": "US-002 is done: test/commands-freeze.test.ts hardcodes the 26-entry FROZEN_COMMANDS list (verified against the live index.ts COMMANDS array at commit time) and asserts both COMMANDS.length===26 and sorted-set equality against the frozen list. This is intentionally independent of test/help-registry.test.ts's existing relative parity checks (COMMANDS vs HELP_REGISTRY keys, COMMANDS vs switch-case labels), which would NOT catch a coordinated drop of an entry from COMMANDS+HELP_REGISTRY+switch together -- only a hardcoded frozen list does. US-003 (wire validate-agents-md as check:all gate #12) is unaffected by this story and can proceed independently.",
+  "nextStoryContext": "US-003 is done: check-all.ts's GATES manifest now has 12 entries ending in agents-md (bun scripts/validate-agents-md.ts), package.json has a check:agents alias, and both gate-count freezes (test/gates-manifest.test.ts, test/check-all.test.ts) assert 12. check:ci-parity stayed green with no BUN_RUN_ALLOWLIST change needed (check:agents is never invoked directly in ci.yml; check:all is the CI spine and covers it). scripts/file-size-budget.json ceilings raised for scripts/check-all.ts (173->174) and test/check-all.test.ts (383->391) with a dated _ref entry. Full bun run check:all is green end-to-end (all 12 gates, exit 0).",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
