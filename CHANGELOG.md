@@ -6,6 +6,26 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.157.0] - 2026-07-14
+
+### Added
+
+- US-R1-001 - append patterns.md bullet for next story
+- US-R1-001 - write handoff for next story
+- US-R1-001 - Review round 1 fix 001: address reviewer finding
+- US-006 - write handoff and patterns bullet for next story
+- US-006 - Extend the allowlist hook + settings matcher to deny worker-actor Write to prd.json
+- US-005 - flip passes:true, write handoff and patterns bullet for next story
+- US-005 - Remove the passes:true flip instruction from both implementer prompt copies
+- US-004 - write handoff and patterns bullet for next story
+- US-004 - Add an empty-push (ahead_by>=1) gate on the worker pass path
+- US-003 - write handoff for next story
+- US-003 - Make the supervisor the sole writer of story passes:true via a generalized finalizeStory
+- US-002 - flip passes:true, write handoff, record patterns bullet
+- US-002 - Inject a worker-actor env marker into the spawned implementer worker (host + container)
+- US-001 - flip passes:true and write handoff
+- US-001 - Add orchestrator-surface contract test pinning the supervisor<->worker protocol shape
+
 ## [0.156.0] - 2026-07-13
 
 ### Added
