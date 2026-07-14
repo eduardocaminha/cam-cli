@@ -28,7 +28,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/hooks/orch-agent-allowlist.sh + templates/.claude/hooks/orch-agent-allowlist.sh (dual-copy, per-file: CAM-123 lesson, both must carry identical deny logic), src/vendor/_generated.ts (do NOT hand-edit; regenerate with `bun run embed-vendor` after editing the hook), test/orch-agent-allowlist.test.ts. The write-guard lives in the `case \"$tool_name\" in Write|Edit|MultiEdit)` branch; today it does `if [ -n \"${CAM_WORKER:-}\" ] && [[ \"$file_path\" == *scripts/cam/prd.json ]]`. Convert to iterating a deny-set of two globs (*scripts/cam/prd.json and *scripts/cam/issues/*). Gotchas: deny keyed on CAM_WORKER=1 (implementer-only marker) PLUS CAM_SESSION, must not block planner (writes prd.json) nor orchestrator; file_path is absolute in production so suffix/glob-match; keep fail-closed-on-missing-jq (printf static deny) intact; whole issues/ directory must be blocked (the CAM-162 collision was the ADD of a new CAM-0164.json). Add new test cases mirroring the existing prd.json worker/planner/unscoped trio but for a scripts/cam/issues/CAM-XXXX.json path (spawn the real script via Bun.spawn, do not reimplement). Grounding: docs/adr/0036 decision (a). This story is the real mechanical enforcement (per issue gotchas)."
     },
