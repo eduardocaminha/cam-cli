@@ -39,7 +39,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New file: test/commands-freeze.test.ts. Import COMMANDS from index.ts (exported at index.ts:2858). Gotcha: COMMANDS is a runtime array (index.ts:2373); removing an entry does NOT break typecheck because HELP_REGISTRY still typechecks with fewer keys, which is exactly why this freeze is needed. Verify the live count before hard-coding it (currently 26). Independent of US-001/US-003."
     },
