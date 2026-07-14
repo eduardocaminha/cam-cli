@@ -64,6 +64,8 @@ Output **only** valid JSON matching this schema (no markdown fences, no commenta
 
 `requires`: **never emit `requires: "operator"` stories. Do not emit any story with `requires: "operator"` set.** Ceremonies (real-user keypress, OS-level action, real network hit, human-curated artifact) must be planned as automated acceptance criteria that: (a) name the verification tool (agent-browser / playwright / tmux-pty) and the artifact it produces; (b) include a reviewer-behavioral oracle (e.g. `[oracle: file-assert grep -q 'artifact-of-record' path/to/artifact]`). The `requires` field defaults to `null`.
 
+`hand-file issue via /cam-issue`: **never emit a worker story that hand-files an issue by writing an issue file on-branch.** A "hand-file issue via /cam-issue" requirement is a control-plane action performed on `main`, never an implementation task for a worker. Encode it instead as a file-assert oracle acceptance criterion that verifies the issue exists on main, e.g. `[oracle: file-assert git show main:scripts/cam/issues/CAM-XXXX.json]`, which the reviewer's existing Layer B behavioral gate re-runs independently. A worker story that instead creates the issue file on-branch causes an add/add collision when the branch reconciles with main.
+
 ## Target Issue Honoring
 
 When the task prompt names a specific target issue id, plan exactly that issue. Do not re-select from the backlog or reorder by priority. The target issue id in the prompt is authoritative.
