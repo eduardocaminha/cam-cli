@@ -283,3 +283,12 @@ The CAM_WORKER=1 environment variable set only on the implementer worker spawn p
 
 **hand-file oracle**:
 An acceptance criterion that verifies a required issue was hand-filed on main (e.g. `git show main:scripts/cam/issues/CAM-XXXX.json`), expressed as a file-assert oracle the reviewer's behavioral gate re-runs. It replaces the anti-pattern of asking an implementer worker to satisfy a hand-file requirement by writing the issue file on its feature branch.
+
+**doc-as-code gate**:
+A CI gate that treats the factual claims embedded in the repo's own documentation (cited command names, package.json script names, and file paths) as machine-checkable assertions against the live repository, failing when a cited reference no longer resolves. In cam it is scripts/validate-agents-md.ts, wired as a gate in the check:all manifest.
+
+**known-missing allowlist**:
+A structured inline set of { pattern, reason } entries (glob-capable) enumerating doc-cited paths that legitimately do NOT exist in a clean working tree because they are created only at runtime (e.g. .claude/.cam-orch-ready, scripts/cam/prd.json, worker-report.json, .cam-*.json markers). Entries are exempt from the doc-as-code gate; a required reason keeps the list auditable, and the gate warns on entries that matched nothing.
+
+**count-freeze**:
+A test that asserts the exact cardinality (and, where relevant, exact membership) of a load-bearing registry so that a silent shrinkage or addition fails a test rather than passing green. In cam, GATES.length and the COMMANDS array membership are count-frozen.
