@@ -1,0 +1,65 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-61",
+  "description": "Doc-as-code gate (validate-agents-md) wired as check:all gate #12, plus COMMANDS and gate-count freezes.",
+  "issueNumber": 61,
+  "type": "chore",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add validate-agents-md.ts doc-as-code checker with unit tests",
+      "description": "As a maintainer, I need a script that treats command/script/path claims in the repo's own docs as machine-checkable assertions, so stale references (the 2026-06-05 stale-comment lesson) fail a gate instead of silently rotting.",
+      "acceptanceCriteria": [
+        "scripts/validate-agents-md.ts exists and, when run, scans root CLAUDE.md, scripts/cam/CLAUDE.md, and .claude/agents/*.md only (no other surface). [oracle: file-assert test -f scripts/validate-agents-md.ts]",
+        "Every `cam <cmd>` reference in the scanned surface is validated against the COMMANDS array imported from index.ts; an unknown command name makes the script exit non-zero. [oracle: bun test test/validate-agents-md.test.ts]",
+        "Every `bun run <x>` reference is validated against package.json scripts keys; an unknown script name makes the script exit non-zero. [oracle: bun test test/validate-agents-md.test.ts]",
+        "Backtick path-claims are validated against the filesystem: a backtick span is treated as a path-claim only if it contains '/' or ends in .ts/.tsx/.js/.json/.sh/.md AND contains no spaces, no '$', and no regex/shell metachars; a trailing :NNN or :NNN-NNN line-ref is stripped before resolving; glob-ish spans (e.g. .claude/agents/*.md) resolve by >=1 filesystem match; a path-claim that neither resolves nor is allowlisted fails the gate; spans failing the heuristic are ignored. [oracle: bun test test/validate-agents-md.test.ts]",
+        "The script carries an inline KNOWN_MISSING allowlist of structured { pattern, reason } entries (glob-capable) exempting runtime-created artifacts (e.g. .claude/.cam-orch-ready, scripts/cam/prd.json, scripts/cam/worker-report.json, .claude/.cam-*.json markers, scripts/cam/journal.archive.md), and every entry has a non-empty reason. [oracle: file-assert grep -q 'KNOWN_MISSING' scripts/validate-agents-md.ts]",
+        "The script emits a non-fatal warning listing any KNOWN_MISSING entry that matched nothing during the run (guards against dead allowlist entries), without failing the run for that reason alone. [oracle: bun test test/validate-agents-md.test.ts]",
+        "templates/** is never scanned (its scripts/cam/... refs resolve against a materialized target project, not this repo). [oracle: bun test test/validate-agents-md.test.ts]",
+        "Unit tests cover: valid cam cmd, invalid cam cmd, valid+invalid bun run, resolvable path, unresolved (failing) path, allowlisted-missing path, :NNN and :NNN-NNN line-ref stripping, glob match, and the unused-allowlist-entry warning. [oracle: bun test test/validate-agents-md.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "New files: scripts/validate-agents-md.ts, test/validate-agents-md.test.ts. Import COMMANDS from index.ts (exported at index.ts:2858) for cam-cmd validation; read package.json scripts keys for bun-run validation. Bun-only: use Bun.file/Bun.Glob, never node:fs. noUncheckedIndexedAccess: guard all regex capture-group and array access. .claude/agents/subagent-orchestrator.md is the densest citer and will drive most KNOWN_MISSING entries (runtime artifacts). Line-ref stripping must handle both single-line (index.ts:2373) and range (src/foo.ts:10-20). Do NOT conflate with vendor/check-agent-frontmatter.ts (frontmatter-shape only, not run by check:all). Make the tests inject doc content / a temp surface so they do not depend on the live repo docs staying static."
+    },
+    {
+      "id": "US-002",
+      "title": "Freeze COMMANDS array exact count and membership",
+      "description": "As a maintainer, I need a test that freezes the COMMANDS array count and membership, so adding or removing a subcommand without updating the freeze fails a test (COMMANDS is a runtime array; removing an entry does not break typecheck).",
+      "acceptanceCriteria": [
+        "A test imports COMMANDS from index.ts and asserts its exact count (implementer verifies the live count, ~26 today) and its exact membership set. [oracle: bun test test/commands-freeze.test.ts]",
+        "Adding or removing a command from COMMANDS without updating the test makes the test fail (verified by the exact-count and exact-membership assertions). [oracle: bun test test/commands-freeze.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "New file: test/commands-freeze.test.ts. Import COMMANDS from index.ts (exported at index.ts:2858). Gotcha: COMMANDS is a runtime array (index.ts:2373); removing an entry does NOT break typecheck because HELP_REGISTRY still typechecks with fewer keys, which is exactly why this freeze is needed. Verify the live count before hard-coding it (currently 26). Independent of US-001/US-003."
+    },
+    {
+      "id": "US-003",
+      "title": "Wire validate-agents-md as check:all gate #12 and update gate-count freezes",
+      "description": "As a maintainer, I need the doc-as-code checker wired into the CI quality spine as gate #12 with a check:agents alias, and the existing gate-count freezes bumped 11->12, so the gate runs in CI and the manifest count stays frozen.",
+      "acceptanceCriteria": [
+        "A new gate #12 named for the doc-as-code check is appended to the GATES manifest in scripts/check-all.ts, spawning `bun scripts/validate-agents-md.ts` in the same shape as sibling gates. [oracle: file-assert grep -q 'validate-agents-md' scripts/check-all.ts]",
+        "A `check:agents` alias is added to package.json scripts. [oracle: file-assert grep -q 'check:agents' package.json]",
+        "check:ci-parity stays green; if it flags the new alias, check:agents is added to BUN_RUN_ALLOWLIST in scripts/check-ci-parity.ts in the same change. [oracle: bun run check:ci-parity]",
+        "The two existing gate-count freezes (test/gates-manifest.test.ts and test/check-all.test.ts) are updated from 11 to 12 and remain green, including per-index and per-name assertions for the new gate. [oracle: bun test test/gates-manifest.test.ts test/check-all.test.ts]",
+        "check:all is green with all 12 gates. [oracle: bun run check:all]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "Files: scripts/check-all.ts (GATES array ends at line 92, append via the g() helper), package.json (scripts block), scripts/check-ci-parity.ts (BUN_RUN_ALLOWLIST at ~line 29 currently holds only check:all, check:ci-parity), test/gates-manifest.test.ts (toHaveLength(11) at line 44, name list at 47-48), test/check-all.test.ts (toHaveLength(11) at 54, per-index name assertions 55-65, runner count at 312-320). Requires US-001 so the spawned script exists and check:all can pass. Pick a gate name consistent with the check:agents alias."
+    }
+  ]
+}
