@@ -1,13 +1,40 @@
 {
   "id": "CAM-300",
   "title": "The pen rewrite (updatedContent) is computed once from the pre-mutation read an…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-13T14:36:15.518Z",
-  "updatedAt": "2026-07-13T14:36:15.518Z",
+  "updatedAt": "2026-07-14T23:30:28.557Z",
   "description": "The pen rewrite (updatedContent) is computed once from the pre-mutation read and reused verbatim across writeIssueFile's CAS retries, whereas the prior two-commit path re-read the pen fresh after the issue commit. On a CAS retry triggered by a concurrent main-advancing suggestion mutation, the stale updatedContent could clobber the concurrent change. This is an accepted trade-off per the spec (id-independent content, parity with the prior two-commit code) and promote is operator-single-threaded in practice, so the atomicity win dominates. Non-blocking; noted for awareness.\n\nSource: cam/issue-290\nReview round: 1\n\nsuggestion-fingerprint: edf746712550",
   "derivedFrom": [
     "CAM-290"
-  ]
+  ],
+  "spec": {
+    "acceptanceCriteria": [
+      "The commit-tree CAS writers support per-attempt content recomputation: commitTreeToMain (src/git/on-main.ts) and writeIssueFile's extraFiles (src/issues/alloc.ts) accept a callback form that re-derives the file content from the freshly-read main sha on each CAS attempt, not only a static FileWrite[].",
+      "All three pen writers route through per-attempt recompute: appendSuggestionOnMain, dismissSuggestionOnMain, and promoteSuggestionOnMain (src/commands/suggestions.ts) re-read scripts/cam/suggestions.jsonl from the advanced main and re-derive their pen content INSIDE the CAS retry loop, so a suggestion line appended or removed concurrently between the initial read and the winning commit survives (is not clobbered).",
+      "A regression test per writer (append, dismiss, promote): inject a CAS retry (fail update-ref once), have the post-failure pen read return a concurrently-added line, and assert the winning commit's suggestions.jsonl still contains that concurrent line. Model: extend the existing retry harness at test/issues/alloc.test.ts:655 and add promote/append/dismiss cases in test/commands/suggestions.test.ts.",
+      "The no-contention (single-attempt) path is behaviour-unchanged: all existing suggestions/alloc tests stay green; recompute is pure/deterministic (removeSuggestionLine keyed by fingerprint; append re-runs its dedup check on the fresh content).",
+      "The design comments encoding the current static/re-hash-only assumption (src/issues/alloc.ts:73-79 and :151-156) are updated to reflect per-attempt recompute.",
+      "A patterns.md bullet is added capturing the invariant: a CAS commit-tree writer that overwrites a whole file must re-derive that file's content per-attempt from the advanced main, or a concurrent edit to the same file is clobbered.",
+      "bun run typecheck, bun test, and bun run check:all all pass green."
+    ],
+    "scope": "Fix a class-wide silent-data-loss bug: the three on-main suggestions-pen writers (append/dismiss/promote) compute the whole-file pen content once from a pre-mutation read and re-apply it verbatim across the CAS retries of the commit-tree writer, clobbering any concurrent pen edit that advanced main under them. Root cause is the static-content CAS primitive (commitTreeToMain + writeIssueFile.extraFiles). Fix scope B (whole class): add a per-attempt-recompute callback to the CAS writer(s) and route all three pen writers through it so content is re-derived from the freshly-read main each attempt. NOT in scope: changing the atomic single-commit design from CAM-290 (that stays; this only makes its content recompute per-attempt), the fingerprint format, or non-pen on-main writers.",
+    "gotchas": [
+      "The 'operator-single-threaded' assumption in the CAM-300 issue text is FALSE: the sidecar autonomously appends SUGGESTIONs to the pen via appendSuggestionOnMain (src/commands/sidecar.ts:2660, driven by the supervisor loop after review rounds, src/supervisor/loop.ts:1869), so a concurrent pen mutation racing an operator promote/dismiss is a live scenario, not hypothetical.",
+      "The bug mechanic: on a CAS retry, read-tree main loads the advanced tree (with the concurrent line) but hashAndIndexFiles then overwrites suggestions.jsonl with the caller's stale full-file content; because the pen is written as a whole-file overwrite (not a patch), the stale content wins.",
+      "Recompute inputs are pure functions of fresh main content and already exist: readPenContentFromMain (git show main:<path>), removeSuggestionLine (byte-for-byte fingerprint-keyed line filter, used by both dismiss and promote), and the append trailing-newline + dedup logic. Re-run the append dedup check on the fresh content too, not just the concatenation.",
+      "The existing retry test test/issues/alloc.test.ts:655 asserts extraFiles are re-indexed but returns the SAME bytes on both attempts, so it documents the current (buggy) behaviour as intended; the new regression test must return DIFFERENT (concurrently-mutated) pen content across attempts to actually catch the clobber.",
+      "This refines, does not revert, the CAM-290 atomic single-commit decision: keep one atomic commit; only the content handed to it becomes per-attempt-recomputed."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 4,
+    "timeCriticality": 3,
+    "riskReduction": 5,
+    "jobSize": 4
+  },
+  "type": "fix"
 }
