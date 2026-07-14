@@ -11,7 +11,7 @@
       "id": "US-R1-001",
       "title": "Review round 1 fix 001: address reviewer finding",
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "CRITICAL [scripts/validate-agents-md.ts:119]: Hard-constraint FAIL: `bun run check:all` (US-003.5 oracle) is RED at Layer B. The new agents-md gate fails because `scripts/cam/review-report.json` (referenced 3x by full path in .claude/agents/subagent-reviewer.md) does not resolve on disk and is not allowlisted. KNOWN_MISSING carries only a bare-filename entry 'review-report.json', which Bun.Glob matches only against the exact string, not against the directory-spanning full path (per bun.sh/docs/api/glob, '*' does not cross path separators). Its siblings scripts/cam/prd.json and scripts/cam/worker-report.json each have a full-path entry; review-report.json is missing one. scripts/cam/review-artifact.txt (gitignored, referenced by full path in the same doc) is the identical latent defect: it only passed this run because a stale ignored copy lingered in the working tree. On a clean CI checkout both fail, so check:all is red and US-003's own acceptance criterion is unmet. Fix: add full-path KNOWN_MISSING entries for both ephemeral artifacts (or, more robustly, resolve path-claims against the tracked tree so gitignored ephemerals never mask/trip the gate)."
     },
     {
