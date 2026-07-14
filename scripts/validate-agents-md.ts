@@ -84,6 +84,14 @@ export const KNOWN_MISSING: KnownMissingEntry[] = [
 		reason: 'ephemeral per-invocation file written by the implementer at exit; never committed',
 	},
 	{
+		pattern: 'scripts/cam/review-report.json',
+		reason: 'ephemeral per-invocation file written by the reviewer at exit; gitignored, never committed',
+	},
+	{
+		pattern: 'scripts/cam/review-artifact.txt',
+		reason: 'ephemeral Layer B behavioral-gate artifact-of-record written by the reviewer; gitignored, never committed',
+	},
+	{
 		pattern: '.claude/.cam-*.json',
 		reason: 'runtime marker files (handoff/escalation/stall flags) created only while the loop is live',
 	},
