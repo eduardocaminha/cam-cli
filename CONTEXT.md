@@ -274,3 +274,12 @@ Which actor writes story passes:true in prd.json. Under CAM-63 (variant A-i) own
 
 **operator-story exemption**:
 Stories tagged requires:'operator' are ceremonies out of scope for autonomous implementation; they are exempt from commit-existence and empty-push gates and do not block the review cycle. The planner no longer emits them (US-003); they are hand-filed only.
+
+**control-plane state**:
+The cam-owned coordination artifacts that drive the loop and issue tracker: scripts/cam/prd.json and the scripts/cam/issues/ directory. Mutated only by the orchestrator/supervisor (the orchestrator files issues on main via `cam issue`; the supervisor and planner own prd.json), never by an implementer worker on a feature branch.
+
+**worker-actor marker**:
+The CAM_WORKER=1 environment variable set only on the implementer worker spawn path (worker-argv.ts for host, worker-container.ts for container), deliberately outside the shared workerEnvPrefix so the reviewer and planner do not inherit it. It is the signal the orch-agent-allowlist hook uses (together with CAM_SESSION) to scope the Write-deny to the implementer actor alone.
+
+**hand-file oracle**:
+An acceptance criterion that verifies a required issue was hand-filed on main (e.g. `git show main:scripts/cam/issues/CAM-XXXX.json`), expressed as a file-assert oracle the reviewer's behavioral gate re-runs. It replaces the anti-pattern of asking an implementer worker to satisfy a hand-file requirement by writing the issue file on its feature branch.
