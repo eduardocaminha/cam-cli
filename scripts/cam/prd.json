@@ -18,7 +18,7 @@
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [.claude/agents/subagent-implementer.md:169]: The `.githooks/**` entry was silently dropped from the implementer's 'must not touch' guardrail list to appease the new doc-as-code gate (.githooks/ does not exist on disk, so the glob span failed to resolve). Removing a protective constraint is a behavioral change bundled into a gate-wiring story and not covered by any acceptance criterion. Prefer preserving intent (allowlist the path or keep the constraint) over deleting a guardrail to make a linter green."
     },
     {
