@@ -50,6 +50,7 @@ import {
 	type IsIgnoredFn,
 	type KnownMissingEntry,
 } from '../scripts/validate-agents-md.ts';
+import { COMMANDS as REAL_COMMANDS } from '../index.ts';
 
 const COMMANDS = ['run', 'next', 'plan', 'issue', 'review', 'ship'] as const;
 const BUN_SCRIPTS = ['typecheck', 'test', 'check:all', 'embed-vendor:check'] as const;
@@ -544,5 +545,67 @@ describe('regression: resolution follows the git-tracked tree, not the live work
 		);
 
 		expect(result.findings).toHaveLength(0);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Regression: the SHIPPED tree (post-ship-finalize) resolves clean
+// (US-R2-002, CAM-61). ship-finalize `git rm`s the per-branch harness state
+// files (src/commands/ship-finalize.ts harnessPaths) before CI ever checks
+// out the shipped/main tree; the existing "regression" block above only
+// snapshots the CURRENT tree (handoff.json still tracked), so it never
+// exercised the shipped-tree condition that motivated the AC1 full-path
+// KNOWN_MISSING entry for scripts/cam/handoff.json.
+// ---------------------------------------------------------------------------
+
+describe('regression: the shipped tree (harnessPaths removed) resolves clean', () => {
+	let shipped: string;
+
+	beforeEach(() => {
+		shipped = mkdtempSync(join(tmpdir(), 'cam-cli-shipped-tree-'));
+		// maxBuffer must be raised: the default (1MB) truncates this repo's
+		// multi-MB archive stdout, which silently corrupts the tar extraction.
+		const archive = spawnSync('git', ['archive', 'HEAD'], {
+			cwd: process.cwd(),
+			maxBuffer: 1024 * 1024 * 200,
+		});
+		spawnSync('tar', ['-x'], { cwd: shipped, input: archive.stdout });
+
+		// Simulate ship-finalize's `git rm -f --ignore-unmatch` of the
+		// per-branch harness state files (src/commands/ship-finalize.ts
+		// harnessPaths): these are absent on the shipped/main tree that CI
+		// actually checks out after a PR merges.
+		for (const p of ['scripts/cam/prd.json', 'scripts/cam/handoff.json', 'scripts/cam/progress.txt']) {
+			rmSync(join(shipped, p), { force: true });
+		}
+
+		spawnSync('git', ['init', '-q'], { cwd: shipped });
+		spawnSync('git', ['add', '-A'], { cwd: shipped });
+	});
+
+	afterEach(() => {
+		rmSync(shipped, { recursive: true, force: true });
+	});
+
+	test('validateDocs against the shipped-tree snapshot finds zero path-claim findings', async () => {
+		const targets = resolveScanTargets(shipped);
+		const docs = await Promise.all(
+			targets.map(async (path) => ({ path, text: await Bun.file(join(shipped, path)).text() })),
+		);
+		const pkgJson = JSON.parse(await Bun.file(join(shipped, 'package.json')).text()) as {
+			scripts?: Record<string, string>;
+		};
+
+		const result = validateDocs(docs, {
+			commands: REAL_COMMANDS,
+			bunScripts: Object.keys(pkgJson.scripts ?? {}),
+			knownMissing: KNOWN_MISSING,
+			cwd: shipped,
+			trackedFiles: makeGetTrackedFiles(shipped)(),
+			isIgnored: makeIsIgnored(shipped),
+		});
+
+		const pathFindings = result.findings.filter((finding) => finding.kind === 'path');
+		expect(pathFindings).toHaveLength(0);
 	});
 });
