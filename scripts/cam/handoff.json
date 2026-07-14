@@ -1,23 +1,20 @@
 {
-  "lastCompletedStory": { "id": "US-003", "title": "Wire validate-agents-md as check:all gate #12 and update gate-count freezes" },
+  "lastCompletedStory": { "id": "US-R1-001", "title": "Review round 1 fix 001: address reviewer finding" },
   "branchName": "cam/issue-61",
-  "timestamp": "2026-07-14T00:40:00Z",
+  "timestamp": "2026-07-14T01:10:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "scripts/check-all.ts",
-    "package.json",
-    "scripts/validate-agents-md.ts",
-    ".claude/agents/subagent-implementer.md",
-    "test/gates-manifest.test.ts",
-    "test/check-all.test.ts",
-    "scripts/file-size-budget.json"
+    "scripts/validate-agents-md.ts"
   ],
-  "openQuestions": [
-    "Resolved from US-001/US-002 carry-over: the KNOWN_MISSING allowlist in scripts/validate-agents-md.ts now carries 18 new entries (bare-filename shorthand for scripts/cam/{prd,handoff,worker-report,review-report,handoff.schema}.json, journal.md, patterns.md, lessons.md, memory/, run.ts, setup.ts, orch-agent-allowlist.sh, .cam-orch-handoff{,.consumed}.json, scripts/cam/issues/CAM-XXXX.json, foo.json, postgres.js, frontend.tsx) so `bun run check:agents` / gate #12 is green against the live repo. Also fixed a genuine doc-staleness bug: removed the nonexistent `.githooks/**` token from subagent-implementer.md's Constraints list (redundant with the already-present `.claude/hooks/**`).",
-    "The 4 pre-existing KNOWN_MISSING 'matched nothing this run' warnings (.claude/.cam-orch-ready, scripts/cam/prd.json, scripts/cam/journal.archive.md, /exit) are non-fatal by design (dead-allowlist-entry guard, does not fail the gate) and predate this story (US-001). Not fixed; follow-up candidate if someone wants a zero-warning run."
-  ],
-  "nextStoryContext": "US-003 is done: check-all.ts's GATES manifest now has 12 entries ending in agents-md (bun scripts/validate-agents-md.ts), package.json has a check:agents alias, and both gate-count freezes (test/gates-manifest.test.ts, test/check-all.test.ts) assert 12. check:ci-parity stayed green with no BUN_RUN_ALLOWLIST change needed (check:agents is never invoked directly in ci.yml; check:all is the CI spine and covers it). scripts/file-size-budget.json ceilings raised for scripts/check-all.ts (173->174) and test/check-all.test.ts (383->391) with a dated _ref entry. Full bun run check:all is green end-to-end (all 12 gates, exit 0).",
+  "openQuestions": [],
+  "nextStoryContext": "US-R1-001 fixed the reviewer's CRITICAL finding: KNOWN_MISSING in scripts/validate-agents-md.ts now carries full-path entries for scripts/cam/review-report.json and scripts/cam/review-artifact.txt (previously only bare-filename shorthand existed, which Bun.Glob never matches against a directory-spanning path -- confirmed against bun.sh/docs/api/glob: '*' does not cross '/'). Verified by temporarily moving the two gitignored stale copies out of scripts/cam/ and re-running `bun scripts/validate-agents-md.ts`: exit 0 both with and without the files present. Full `bun run check:all` (all 12 gates) and `bun test` (4509 pass / 0 fail) are green. The next queued story is US-R1-002 (WARNING, .claude/agents/subagent-implementer.md:169): the reviewer flagged that US-003 silently dropped the `.githooks/**` token from the implementer's 'must not touch' guardrail list to make the new agents-md gate green, and considers that a behavioral change bundled into a gate-wiring story, not covered by acceptance criteria. US-003's own handoff justified the removal as fixing a doc-staleness bug (`.githooks/` does not exist on disk; redundant with the already-present `.claude/hooks/**`). US-R1-002's implementer should read subagent-implementer.md's Constraints section and decide: either restore `.githooks/**` (if it's meant as a forward-looking guardrail even though the dir doesn't exist yet) and add a KNOWN_MISSING allowlist entry for it, or confirm the removal was correct and close the finding with rationale -- acceptanceCriteria (none listed on either R1 story) means the notes field is the source of truth here.",
   "officialDocsValidated": [
-    { "lib": "none", "status": "no_external_lib_touched" }
+    {
+      "lib": "bun (Glob API)",
+      "url": "https://bun.sh/docs/api/glob",
+      "fetchedAt": "2026-07-14T01:05:00Z",
+      "status": "aligned",
+      "summary": "Confirmed current Bun docs: '*' in a Glob pattern matches zero or more characters EXCEPT path separators ('/' or '\\'); only '**' crosses '/'. This validates the reviewer's finding and the fix: a bare-filename pattern like 'review-report.json' can never match the full path 'scripts/cam/review-report.json' via Glob#match, so a directory-qualified KNOWN_MISSING entry was required."
+    }
   ]
 }
