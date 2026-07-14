@@ -1,10 +1,38 @@
 {
   "id": "CAM-301",
   "title": "Shared schema/zod validator as single source of truth for worker-report.json + review-report.json",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-13T20:09:26.032Z",
-  "updatedAt": "2026-07-13T20:09:26.032Z",
-  "description": "Follow-up sequenced right after CAM-63 (item 1 contract test). worker-report.json and review-report.json have NO schema artifact; each consumer re-implements ad-hoc runtime shape checks (src/supervisor/result.ts:241-260 tryReadWorkerReport/extractRecordedTestsGate; src/supervisor/review.ts:478-491). Introduce ONE shared validator (zod or scripts/cam/*.schema.json, mirroring handoff.schema.json/orch-handoff.schema.json) as single source of truth that BOTH writer and supervisor consumer validate at runtime, replacing scattered ad-hoc checks. Blast radius: refactor result.ts + review.ts consumers; keep the CAM-63 contract test green against it. Type: chore/hardening. Source: CAM-63 grill 2026-07-13 item-1 scope split (schema split out on merit to keep the CAM-63 PRD from ballooning alongside the heavy actor-ACL item 2)."
+  "updatedAt": "2026-07-14T15:33:09.876Z",
+  "description": "Follow-up sequenced right after CAM-63 (item 1 contract test). worker-report.json and review-report.json have NO schema artifact; each consumer re-implements ad-hoc runtime shape checks (src/supervisor/result.ts:241-260 tryReadWorkerReport/extractRecordedTestsGate; src/supervisor/review.ts:478-491). Introduce ONE shared validator (zod or scripts/cam/*.schema.json, mirroring handoff.schema.json/orch-handoff.schema.json) as single source of truth that BOTH writer and supervisor consumer validate at runtime, replacing scattered ad-hoc checks. Blast radius: refactor result.ts + review.ts consumers; keep the CAM-63 contract test green against it. Type: chore/hardening. Source: CAM-63 grill 2026-07-13 item-1 scope split (schema split out on merit to keep the CAM-63 PRD from ballooning alongside the heavy actor-ACL item 2).",
+  "spec": {
+    "acceptanceCriteria": [
+      "A single shared parse module under src/supervisor/ exports parseWorkerReport() and parseReviewReport() returning the canonical WorkerReport / ReviewReport type or null (fail-closed).",
+      "All four existing ad-hoc guard sites route through the shared parser: src/supervisor/host.ts makeReadWorkerReport, src/supervisor/result.ts (tryReadWorkerReport + extractRecordedTestsGate + the inline re-check ~line 509), src/supervisor/loop.ts (~1156-1160), and src/supervisor/host.ts makeReadReviewReport / src/supervisor/review.ts. No inline re-declared shape check for these reports remains outside the shared module.",
+      "The divergent WorkerReportFallback type in result.ts is deleted; WorkerReport is the single canonical type, with gates and notes made optional at the type level.",
+      "Return contract is fail-closed T | null (never throws): a report missing or mistyping a required discriminator (outcome+story for worker, verdict for review) yields null; optional fields (gates{typecheck?,tests?}, notes, findings[], artifactOfRecord) are validated only when present and their absence does NOT reject the report (preserves result.ts partial-salvage behavior).",
+      "Parser validates nested shapes when present: gates.typecheck / gates.tests are strings; each findings[] entry has string severity + string text, optional file(string)/line(number).",
+      "The CAM-63 contract test (test/supervisor/orchestrator-surface.test.ts) stays green; the WorkerReport and ReviewReport/ReviewFinding types remain exported (re-exported if the module moves).",
+      "New unit tests for the shared parser cover: valid full report, valid partial (missing gates -> still parses with outcome+story), missing/mistyped discriminator -> null, malformed nested field -> handled per contract.",
+      "bun run typecheck, bun test, and bun run check:all all pass green."
+    ],
+    "scope": "Introduce ONE shared hand-rolled validation module in src/supervisor/ (parseWorkerReport / parseReviewReport) as the single runtime source of truth for worker-report.json and review-report.json, replacing the four scattered ad-hoc guard sites and the divergent WorkerReportFallback type. Fail-closed (T | null), required discriminators only, optional fields validated-if-present. NOT in scope: adopting zod or any validator library (rejected on merit, see ADR), building a *.schema.json runtime loader, changing the agent-authored writer side, or changing outcome/verdict token semantics (still validated as strings; token meaning lives in result.ts).",
+    "gotchas": [
+      "The writer side is a hand-authored JSON literal in the agent markdown prompts (subagent-implementer.md / subagent-reviewer.md, plus their templates/ copies); no validator can force the agent to emit correct JSON, so validation is consumer-side fail-closed only. Do not add a writer-side serializer as part of this issue.",
+      "Do NOT switch to throwing: the supervisor treats a null (missing/invalid) report as 'no report' and proceeds via the readWorkerOutcome fallback path; throwing changes control flow across host.ts/result.ts/loop.ts.",
+      "Making gates/notes optional on WorkerReport must stay backward-compatible with the full-literal constructions in the CAM-63 test and formatWorkerReportSummary (optional fields still accept full literals).",
+      "outcome and verdict are validated as strings only; do NOT tighten them to a known-token enum here (CAM_*_STATUS token semantics are mapped downstream in result.ts and pinned separately by the CAM-63 contract test).",
+      "There is no src/schema/ directory and no existing schema-file runtime loader; the *.schema.json files (handoff/orch-handoff/issues) are draft-07 documentation-only and are NOT the runtime idiom to mirror."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 4,
+    "timeCriticality": 2,
+    "riskReduction": 5,
+    "jobSize": 4
+  },
+  "type": "chore"
 }
