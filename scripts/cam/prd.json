@@ -46,7 +46,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Prompt-only guidance (no planner-output unit test: an LLM prompt assertion would be brittle, per issue gotchas; the US-001 hook is the real enforcement). Files: .claude/agents/subagent-planner.md (cam-cli self copy, used by THIS planning session) AND templates/agents/subagent-planner.md (downstream-shipped copy, embedded in src/vendor/_generated.ts). These two copies already diverge substantially (cam-specific vs generic; CAM-123 dual-copy-is-per-file), so word the rule appropriately in each but keep the on-main-oracle principle in both. Anchor the new rule immediately after the `requires` operator paragraph (around line 65 of the .claude copy). Optional single clarifying line in .claude/agents/subagent-reviewer.md + templates/agents/subagent-reviewer.md that on-main existence checks (git show main:...) are legitimate file-assert oracle targets. If any templates/agents/*.md is edited, run `bun run embed-vendor` to regenerate the embed, then confirm embed-vendor:check passes. Grounding: docs/adr/0036 decision (b), issue ACs 8-9."
     }
