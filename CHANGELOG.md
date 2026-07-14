@@ -6,6 +6,18 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.159.0] - 2026-07-14
+
+### Added
+
+- US-R2-002 - Close the shipped-tree gap: full-path KNOWN_MISSING for scripts/cam/handoff.json + shipped-tree regression test
+- US-R2-001 - Resolve doc path-claims against the git-tracked tree (deterministic gate) + tracked-tree regression test
+- US-R1-002 - address reviewer finding on dropped .githooks/** guardrail
+- US-R1-001 - address reviewer finding on review-report.json/review-artifact.txt allowlist gap
+- US-003 - Wire validate-agents-md as check:all gate #12 and update gate-count freezes
+- US-002 - Freeze COMMANDS array exact count and membership
+- US-001 - Add validate-agents-md.ts doc-as-code checker with unit tests
+
 ## [0.158.0] - 2026-07-14
 
 ### Added
