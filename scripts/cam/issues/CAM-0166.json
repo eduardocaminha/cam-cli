@@ -1,12 +1,12 @@
 {
   "id": "CAM-166",
   "title": "allowlist policy (CAM-102): AC de hand-file-via-/cam-issue deve ser reviewer-verified, nao worker-implemented",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-03T02:03:54.317Z",
   "description": "No CAM-162, o AC13 pedia que a cerimonia de operador fosse hand-filada via /cam-issue pelo ORQUESTRADOR antes do ship. O worker de US-004 satisfez o AC criando scripts/cam/issues/CAM-0164.json DIRETO no working tree -- o hook orch-agent-allowlist bloqueia spawn de Task/Agent mas NAO bloqueia Write de arquivo. Isso colidiu (add/add) com o CAM-0164 que eu filei via cam issue --file-local, forcando resolucao de conflito manual no ship. Correcao: (a) o hook/policy deveria impedir o worker de escrever em scripts/cam/issues/ (so o orquestrador filra, via cam issue), e/ou (b) ACs de tipo 'hand-file via /cam-issue' devem ser verificados pelo reviewer (checar que o issue existe no main), nunca implementados pelo worker escrevendo o arquivo. Vincula CAM-102 (refino do allowlist). P3.",
-  "updatedAt": "2026-07-14T02:13:32.985Z",
+  "updatedAt": "2026-07-14T02:42:02.144Z",
   "spec": {
     "acceptanceCriteria": [
       "The worker-actor Write-deny in orch-agent-allowlist.sh (gated on CAM_WORKER set AND CAM_SESSION set) DENIES Write/Edit/MultiEdit to any file path under scripts/cam/issues/ (the whole directory), in addition to the existing scripts/cam/prd.json deny.",
