@@ -1,27 +1,18 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Add validate-agents-md.ts doc-as-code checker with unit tests" },
+  "lastCompletedStory": { "id": "US-002", "title": "Freeze COMMANDS array exact count and membership" },
   "branchName": "cam/issue-61",
-  "timestamp": "2026-07-14T00:00:00Z",
+  "timestamp": "2026-07-14T00:10:00Z",
   "createdFiles": [
-    "scripts/validate-agents-md.ts",
-    "test/validate-agents-md.test.ts"
+    "test/commands-freeze.test.ts"
   ],
-  "modifiedFiles": [
-    "scripts/cam/patterns.md"
-  ],
+  "modifiedFiles": [],
   "openQuestions": [
-    "Running `bun scripts/validate-agents-md.ts` for real against the live repo currently fails: the corpus (root CLAUDE.md, scripts/cam/CLAUDE.md, .claude/agents/*.md) is heavy with bare-filename shorthand (`prd.json`, `handoff.json`, `worker-report.json`, `review-report.json`, `patterns.md`, `journal.md`, `run.ts`, `setup.ts` referenced without their real directory prefix) that does not resolve at repo root. US-001's oracles only cover injected-fixture unit tests, so this was left unreconciled. US-003 (wiring into check:all) will need to either fix these docs to use fully-qualified paths or extend KNOWN_MISSING before the gate can go green in CI.",
-    ".claude/agents/subagent-orchestrator.md has a real, pre-existing malformed-markdown bug: a stray unmatched single backtick near \"Keep entries concise -- `<200 words\" (missing its closing backtick), which desyncs backtick-span pairing for the rest of that file. Not fixed here (self-hosting file, out of this story's AC scope) -- flagging for a follow-up fix.",
-    ".claude/agents/subagent-implementer.md references `.githooks/**` in its self-hosting constraint list, but no `.githooks/` directory exists in this repo (hooks live under `.claude/hooks/`); may be genuine staleness worth a follow-up doc fix."
+    "Carried from US-001, unreconciled: `bun scripts/validate-agents-md.ts` against the live repo still fails on bare-filename shorthand doc staleness (`prd.json`, `handoff.json`, `worker-report.json`, `review-report.json`, `patterns.md`, `journal.md`, `run.ts`, `setup.ts` referenced without directory prefix). US-003 (wire validate-agents-md as check:all gate) will need to fix these docs or extend KNOWN_MISSING before the gate goes green in CI.",
+    "Carried from US-001: .claude/agents/subagent-orchestrator.md has a pre-existing unmatched-backtick markdown bug near \"Keep entries concise -- `<200 words\". Not fixed (out of scope). Follow-up candidate.",
+    "Carried from US-001: .claude/agents/subagent-implementer.md references `.githooks/**` which does not exist in this repo (hooks live under `.claude/hooks/`). Possible doc staleness, follow-up candidate."
   ],
-  "nextStoryContext": "US-002 (Freeze COMMANDS array exact count and membership) and US-003 (wire validate-agents-md as check:all gate #12) build on this. COMMANDS is exported from index.ts:2858 (const array, `as const`). validate-agents-md.ts's public API: resolveScanTargets(cwd), validateDocs(docs, options) -> {findings, unusedKnownMissing}, KNOWN_MISSING (glob-capable {pattern,reason}[]). The KNOWN_MISSING list currently only covers the AC5-named runtime artifacts plus two slash-command entries (/cam-*, /exit) discovered as false positives; it does NOT attempt to reconcile the pervasive bare-filename doc-staleness noted in openQuestions above.",
+  "nextStoryContext": "US-002 is done: test/commands-freeze.test.ts hardcodes the 26-entry FROZEN_COMMANDS list (verified against the live index.ts COMMANDS array at commit time) and asserts both COMMANDS.length===26 and sorted-set equality against the frozen list. This is intentionally independent of test/help-registry.test.ts's existing relative parity checks (COMMANDS vs HELP_REGISTRY keys, COMMANDS vs switch-case labels), which would NOT catch a coordinated drop of an entry from COMMANDS+HELP_REGISTRY+switch together -- only a hardcoded frozen list does. US-003 (wire validate-agents-md as check:all gate #12) is unaffected by this story and can proceed independently.",
   "officialDocsValidated": [
-    {
-      "lib": "bun (Glob API)",
-      "url": "https://bun.com/docs/api/glob",
-      "fetchedAt": "2026-07-14T00:00:00Z",
-      "status": "aligned",
-      "summary": "Confirmed scanSync({cwd, dot, onlyFiles}) semantics and Glob#match(str) dotfile behavior match the implementation (dot:true + onlyFiles:false needed for directory/dotfile resolution; match() treats an explicit dot-prefixed pattern segment as an intentional target)."
-    }
+    { "lib": "none", "status": "no_external_lib_touched" }
   ]
 }
