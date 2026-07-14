@@ -1,12 +1,12 @@
 {
   "id": "CAM-61",
   "title": "Doc-as-code gate (validate-agents-md) + check-count assertions + golden-fixtures for CAM_*_STATUS",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-16T22:30:00Z",
   "description": "Three parse/doc-safety items mapping to cam's own recurring lessons. (1) Doc-as-code gate (check:agents / validate-agents-md.ts): assert every 'cam <cmd>' / 'bun run <x>' and every backtick path cited in CLAUDE.md, scripts/cam/CLAUDE.md, and .claude/agents/* resolves to a real script/path, with a known-missing allowlist. Mechanically enforces the 2026-06-05 stale-comment lesson and the Doc-Maintenance rule. (2) check-count assertions: freeze the count of gates/oracles/health-checks so one silently disappearing fails a test, not just stays green (seeds doctor pass===12 pattern). (3) Golden-fixtures for the CAM_*_STATUS sentinel + handoff.json parsing: capture real worker-CLI output as test/.../__golden__/*.jsonl + a canonical form and diff in tests, so a silent upstream claude wire-shape change fails a test. Direct antidote to the recurring supervisor-sentinel-parse-fragility class (CAM-32/35). Source: seeds validate-agents-md.ts + doctor.test.ts; burrow src/runtime/parsers/__golden__/.",
-  "updatedAt": "2026-07-14T02:59:47.225Z",
+  "updatedAt": "2026-07-14T12:18:45.694Z",
   "spec": {
     "scope": "Add a doc-as-code CI gate that treats factual claims in the repo's own docs as machine-checkable assertions, plus one net-new registry count-freeze. Scanned surface: root CLAUDE.md, scripts/cam/CLAUDE.md, and .claude/agents/*.md (templates/** excluded: different resolution frame, already guarded by embed-vendor:check). Three reference classes are validated: cam <cmd> against the COMMANDS array (index.ts), bun run <x> against package.json scripts, and backtick path-claims against the filesystem. A structured inline known-missing allowlist exempts legitimately runtime-created artifacts. Wired as gate #12 in the check:all GATES manifest so it runs in CI. Item 2 (count-freeze) adds a COMMANDS count+membership freeze and updates the existing gate-count freeze 11->12. Golden-fixtures (original item 3) are split to a separate follow-up issue.",
     "acceptanceCriteria": [
