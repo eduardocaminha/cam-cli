@@ -263,12 +263,15 @@ export function buildDockerBuildArgv(opts?: DockerBuildArgvOptions): string[] {
  *   - `--user bun`                                  (from `remoteUser`)
  *   - `-e DISABLE_AUTOUPDATER=1`                   (from `containerEnv`)
  *   - `-e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` (from `containerEnv`)
+ *   - `-e CAM_WORKER=1`             (worker-actor marker, US-002/CAM-63)
  *   - `-e GITHUB_TOKEN`             (name-only: inherits from sidecar env)
  *   - `-e CLAUDE_CODE_OAUTH_TOKEN`  (name-only: inherits from sidecar env)
  *
  * The name-only `-e VAR` form (no `=` suffix) instructs Docker to read the
  * value from the host process environment at `docker run` time. Bun auto-loads
- * `.env`, so the sidecar env already contains these values.
+ * `.env`, so the sidecar env already contains these values. `CAM_WORKER` is a
+ * plain literal marker (not a credential), so it is passed with the `=1` form
+ * directly rather than name-only.
  */
 export function buildDockerRunArgv(opts: DockerRunArgvOptions): string[] {
 	const containerName = opts.containerName ?? DEFAULT_CONTAINER_NAME;
@@ -295,6 +298,10 @@ export function buildDockerRunArgv(opts: DockerRunArgvOptions): string[] {
 		'DISABLE_AUTOUPDATER=1',
 		'-e',
 		'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1',
+		// Worker-actor marker (US-002, CAM-63): a plain literal, not a credential,
+		// so it is set directly rather than via the name-only form below.
+		'-e',
+		'CAM_WORKER=1',
 		// Credential env vars: NAME-ONLY form so Docker inherits the value
 		// from the sidecar process.env. Never embed a literal token value.
 		'-e',

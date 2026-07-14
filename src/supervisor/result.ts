@@ -49,6 +49,14 @@ export type FileReader = (path: string) => string | null;
  * test (see gateTestsIndicateFailure). The supervisor loop already routes
  * 'fail' to the blocked terminal branch, so this reuses the existing kind
  * rather than introducing a new one.
+ *
+ * 'blocked' also covers the empty-push gate (US-004): a story is passes:true
+ * (and, when injected, confirmCommitGate already passed) but the injected
+ * aheadByForBranch callback reports 0 commits ahead of origin/main (and the
+ * story is not requires:'operator', which is exempt; see
+ * confirmEmptyPushGate). This reuses 'blocked' rather than a new kind because
+ * loop.ts already routes 'blocked' through the same terminal path a failed
+ * push-verification check uses.
  */
 export type WorkerOutcomeKind = 'pass' | 'incomplete' | 'fail' | 'blocked' | 'unknown' | 'no-commit';
 
@@ -112,6 +120,25 @@ export interface ReadWorkerOutcomeOptions {
 	 * subject line.
 	 */
 	commitExistsForStory?: (storyId: string) => boolean;
+	/**
+	 * Optional empty-push gate (US-004): called right after confirmCommitGate
+	 * passes for a passes:true story, to catch `ensurePushed`/`branchPushed`
+	 * reporting success on a push that landed zero new commits ahead of
+	 * origin/main. Returns the ahead-by count (`git rev-list --count
+	 * origin/main..HEAD`, best-effort `git fetch origin main` first, mirroring
+	 * commitExistsForStory's fetch+range-fallback in host.ts), or `null` when
+	 * the count could not be determined (fail-open: this gate is a coarse
+	 * branch-level sanity check layered on top of the existing push
+	 * verification, not a replacement for it).
+	 *
+	 * ahead_by === 0 degrades the outcome to kind:'blocked' (the same terminal
+	 * path a failed push-verification check already uses in loop.ts), UNLESS
+	 * the story is requires:'operator' (ceremony exemption, parity with
+	 * confirmCommitGate/isOperatorStory). When absent (undefined), no gate is
+	 * applied: readWorkerOutcome behaves exactly as it did before this option
+	 * existed.
+	 */
+	aheadByForBranch?: () => number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -331,6 +358,34 @@ function confirmCommitGate(
 }
 
 /**
+ * Empty-push gate (US-004): decide whether a passes:true story's push
+ * actually landed a commit ahead of origin/main, or is an empty push
+ * masquerading as a completed run (branchPushed=true can fire even when
+ * ahead_by==0).
+ *
+ * - No callback injected -> always ok (parity with confirmCommitGate AC5).
+ * - requires:'operator' story -> always ok (ceremony exemption, AC2).
+ * - aheadByForBranch() returns null (could not be determined) -> ok
+ *   (fail-open; a coarse sanity check layered on top of push-verification,
+ *   not a replacement for it).
+ * - Otherwise -> ok iff the returned ahead-by count is >= 1 (AC1).
+ */
+function confirmEmptyPushGate(
+	prd: PrdJson,
+	storyId: string,
+	aheadByForBranch: (() => number | null) | undefined,
+): { ok: true } | { ok: false; detail: string } {
+	if (aheadByForBranch === undefined) return { ok: true };
+	if (isOperatorStory(prd, storyId)) return { ok: true };
+	const aheadBy = aheadByForBranch();
+	if (aheadBy === null || aheadBy >= 1) return { ok: true };
+	return {
+		ok: false,
+		detail: `story=${storyId} is passes:true in prd.json but 0 commits ahead of origin/main (empty-push gate); not confirmed DONE.`,
+	};
+}
+
+/**
  * Pure matcher (US-001, CAM-187; bracketed convention fixed in US-R1-001;
  * open conventional-type prefix accepted per US-001, CAM-194): does a commit
  * subject line confirm completion of the given story, per the commit
@@ -505,17 +560,28 @@ export function readWorkerOutcome(opts: ReadWorkerOutcomeOptions): WorkerOutcome
 							};
 						}
 						const gate = confirmCommitGate(prd, reportStory, opts.commitExistsForStory);
-						if (gate.ok) {
+						if (!gate.ok) {
 							return {
-								kind: 'pass',
+								kind: 'no-commit',
 								storyId: reportStory,
-								detail: `story=${reportStory} confirmed: prd.json passes:true (worker-report-fallback).`,
+								detail: `${gate.detail} (worker-report-fallback)`,
+							};
+						}
+						// Empty-push gate (US-004): checked after the commit-existence
+						// gate passes, so its detail is the one surfaced when both
+						// would fail (the commit-existence detail is more specific).
+						const emptyPushGate = confirmEmptyPushGate(prd, reportStory, opts.aheadByForBranch);
+						if (!emptyPushGate.ok) {
+							return {
+								kind: 'blocked',
+								storyId: reportStory,
+								detail: `${emptyPushGate.detail} (worker-report-fallback)`,
 							};
 						}
 						return {
-							kind: 'no-commit',
+							kind: 'pass',
 							storyId: reportStory,
-							detail: `${gate.detail} (worker-report-fallback)`,
+							detail: `story=${reportStory} confirmed: prd.json passes:true (worker-report-fallback).`,
 						};
 					}
 					return {
@@ -604,6 +670,16 @@ export function readWorkerOutcome(opts: ReadWorkerOutcomeOptions): WorkerOutcome
 				kind: 'no-commit',
 				storyId: completedStory,
 				detail: gate.detail,
+			};
+		}
+		// Empty-push gate (US-004): same ordering rationale as the
+		// worker-report-fallback branch above.
+		const emptyPushGate = confirmEmptyPushGate(prd, completedStory, opts.aheadByForBranch);
+		if (!emptyPushGate.ok) {
+			return {
+				kind: 'blocked',
+				storyId: completedStory,
+				detail: emptyPushGate.detail,
 			};
 		}
 		const corroboration = sentinelDone

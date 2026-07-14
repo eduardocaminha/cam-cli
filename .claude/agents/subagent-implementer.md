@@ -31,7 +31,7 @@ Treat `handoff.json` as the canonical memory. If it doesn't contain something, a
 
 ## Inputs you will read
 
-1. The story to implement is provided in the spawn prompt (`id`, `title`, `description`, `priority`, `requires`, `acceptanceCriteria`, and `branchName`); you do not read `prd.json` in full to self-select it. You still read `scripts/cam/prd.json` to fetch that story's `notes` field (not carried in the spawn prompt) and, at the end, to flip `passes: true`.
+1. The story to implement is provided in the spawn prompt (`id`, `title`, `description`, `priority`, `requires`, `acceptanceCriteria`, and `branchName`); you do not read `prd.json` in full to self-select it. You still read `scripts/cam/prd.json` to fetch that story's `notes` field (not carried in the spawn prompt). The supervisor, not you, is the sole writer of `passes: true`, and it does so only after reading your `worker-report.json`.
 2. `scripts/cam/handoff.json` (if it exists) — read `lastCompletedStory`, `createdFiles`, `modifiedFiles`, `openQuestions`, `nextStoryContext`, `officialDocsValidated`.
 3. `scripts/cam/patterns.md`: grep-on-demand, not a full read. Grep for the section/keywords matching the subsystem this story touches and read only the matching bullets (durable codebase patterns, gotchas, invariants).
 4. Files referenced in the chosen story's `notes` field. Read them in full before editing.
@@ -48,7 +48,7 @@ Concrete sequence:
    ```bash
    jq '.userStories[] | select(.id=="US-007")' scripts/cam/prd.json
    ```
-2. **Cross-repo cwd resolution (if applicable, agent-self-executed, unvalidated)**: If the story's `repo` field points to a different repo, `cd` into that workspace before any further file reads or git commands. This routing is entirely agent-self-executed: the supervisor does not read `repo` or `crossRepoLayout`, does not validate the declared path, and the planner never emits either field, so this only fires on hand-authored PRDs. Switch back to the cam cwd at end-of-story to flip `passes: true` and write `handoff.json` (the per-story factual record is the harness-written event log; append to `scripts/cam/patterns.md` only if you discovered a reusable pattern). Real harness support for cross-repo routing is tracked as a future epic, CAM-241 (related to CAM-147).
+2. **Cross-repo cwd resolution (if applicable, agent-self-executed, unvalidated)**: If the story's `repo` field points to a different repo, `cd` into that workspace before any further file reads or git commands. This routing is entirely agent-self-executed: the supervisor does not read `repo` or `crossRepoLayout`, does not validate the declared path, and the planner never emits either field, so this only fires on hand-authored PRDs. Switch back to the cam cwd at end-of-story to write `handoff.json` and `worker-report.json` (the supervisor is the one that flips `passes: true`, from your `worker-report.json`; the per-story factual record is the harness-written event log; append to `scripts/cam/patterns.md` only if you discovered a reusable pattern). Real harness support for cross-repo routing is tracked as a future epic, CAM-241 (related to CAM-147).
 3. Use the **`Read` tool** (not Bash/jq) to open `scripts/cam/handoff.json` for the previous story's context. This is mandatory: the `Write` tool requires a prior `Read` tool call on the same file before it can overwrite it — skipping this step causes "Error writing file" at step 7. Treat `nextStoryContext` as advisory, not authoritative; `acceptanceCriteria` always wins on conflict.
 4. Grep `scripts/cam/patterns.md` for the section/keywords matching the subsystem this story touches; read only the matching bullets, not the whole file (durable codebase wisdom: patterns, gotchas, invariants).
 5. For each path in the story's `notes`, `Read` it in full.
@@ -105,7 +105,7 @@ When a story's `acceptanceCriteria` include a tmux-drivable oracle directive (`[
    - If the story touched `vendor/` or `templates/`: `bun run embed-vendor` to regenerate, then `bun run embed-vendor:check` must be clean (this is also part of `check:all`).
    - Biome lint IS configured (`biome.json` at repo root) and is already exercised by the `check:all` run above (`bunx biome lint --error-on-warnings`); `bun run lint` runs it standalone for a faster iteration loop before re-running the full spine.
 3. Commit with message `feat: [Story ID] - [Story Title]`.
-4. Flip `passes: true` for the completed story in `prd.json`.
+4. The supervisor flips `passes: true` for the completed story in `prd.json` once it reads your `worker-report.json`; you do not edit `prd.json`'s `passes` field yourself.
 5. If you discovered a reusable pattern (a project convention, a library quirk, a gotcha), append a bullet to `scripts/cam/patterns.md`. The per-story factual record (outcome, files, gates) is written by the harness to `.claude/cam-worker-events.jsonl`; you do not write a prose entry.
 6. **Step 5.5**: validate the code you just wrote against current docs of the primary external library the story touched (see worked example below). Capture the `officialDocsValidated[]` entry.
 7. Write `scripts/cam/handoff.json` per the schema (`handoff.schema.json`). Include the Step 5.5 entry. Commit handoff.json. Write `lastCompletedStory` as a JSON object with both fields:
@@ -129,7 +129,7 @@ For a story that touches an external library (e.g. `js-yaml`):
    ```json
    { "lib": "js-yaml", "url": "https://github.com/nodeca/js-yaml", "fetchedAt": "2026-04-27T22:00:00Z", "status": "aligned", "summary": "v4 API confirmed matches implementation." }
    ```
-5. If the fetch revealed a mismatch, revert `passes: true`, fix the code, re-run quality gates, commit a follow-up `fix: [Story ID] - correct <issue>`, and record `status: "corrected"`.
+5. If the fetch revealed a mismatch, fix the code, re-run quality gates, commit a follow-up `fix: [Story ID] - correct <issue>`, and record `status: "corrected"`; do not write a `DONE` `worker-report.json` until the correction is applied, since the supervisor only flips `passes: true` after reading a `DONE` report.
 
 For pure docs / refactor / harness-only stories where no external lib is exercised, record `{ "lib": "none", "status": "no_external_lib_touched" }`. For network failures, record `status: "fetch_failed"` and move on.
 

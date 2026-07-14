@@ -9,7 +9,7 @@
 5. Implement that single user story.
 6. Run quality checks (typecheck, lint, test).
 7. If checks pass, commit ALL changes with message: `feat: [Story ID] - [Story Title]`.
-8. Update the PRD to set `passes: true` for the completed story.
+8. Do not edit `prd.json`. The supervisor is the sole writer of `passes: true`, and it flips it only after reading your `worker-report.json`.
 9. Validate against official library docs (Step 5.5 in the agent SYSTEM PROMPT): one targeted fetch against the lib the story touched.
 10. Write `handoff.json` for the next iteration (schema: `handoff.schema.json`). Include the Step 5.5 validation entries in `officialDocsValidated`.
 11. Push: `git push origin $(git branch --show-current)`.

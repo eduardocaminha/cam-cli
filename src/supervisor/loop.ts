@@ -246,6 +246,18 @@ export interface RunSupervisorOptions {
 	 */
 	commitExistsForStory?: (storyId: string) => boolean;
 	/**
+	 * Optional empty-push gate (US-004), threaded straight into every
+	 * readWorkerOutcome call. Returns the count of commits ahead of
+	 * origin/main (git rev-list --count origin/main..HEAD, best-effort git
+	 * fetch first), or null when it could not be determined. When injected,
+	 * a passes:true story with ahead_by === 0 resolves to kind:'blocked'
+	 * instead of 'pass' (see result.ts confirmEmptyPushGate), UNLESS the
+	 * story is requires:'operator' (ceremony exemption). Optional: when
+	 * absent, no gate is applied and readWorkerOutcome behaves exactly as it
+	 * did before this option existed (backward compat, zero behavior change).
+	 */
+	aheadByForBranch?: () => number | null;
+	/**
 	 * Absolute path to scripts/cam/worker-report.json (for readWorkerOutcome
 	 * fallback when neither handoff nor DONE sentinel yield a story id).
 	 * When provided, the fileReader adapter serves it via readWorkerReport.
@@ -725,6 +737,8 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	const workerReportPath = opts.workerReportPath;
 	// US-002 (CAM-187): commit-existence gate, threaded straight into readWorkerOutcome.
 	const commitExistsForStory = opts.commitExistsForStory;
+	// US-004: empty-push gate, threaded straight into readWorkerOutcome.
+	const aheadByForBranch = opts.aheadByForBranch;
 	// US-005 / B-1 + B-2: container preflight seam. Observe-only in B-1; fail-closed in
 	// container mode (B-2 / CAM-152). See workerIsolation below.
 	const preflightContainerFn = opts.preflightContainerFn;
@@ -1285,6 +1299,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				capturedPaneText: paneText,
 				readFile: fileReader,
 				commitExistsForStory,
+				aheadByForBranch,
 			});
 
 			lastOutcome = outcome;
@@ -1385,14 +1400,43 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				return blockedResult(lastOutcome, advisoryStoryId);
 			}
 
-			if (
-				outcome.kind === 'incomplete' &&
+			// US-003 (ADR 0035, variant A-i): finalizeStory is generalized so BOTH
+			// the incomplete path (worker truncated before flipping passes:true)
+			// AND the pass path (worker already wrote passes:true itself) funnel
+			// through the SAME supervisor-gated flip -- the pass/incomplete
+			// distinction collapses for the flip. A worker can never both produce
+			// and judge its own acceptance oracle: even a 'pass' outcome (prd.json
+			// already shows passes:true) is re-verified against the supervisor's
+			// own runGates() before it is treated as final.
+			//
+			// Excluded from this re-verification: a 'pass' outcome that merely
+			// RE-CONFIRMS a story that was ALREADY passing at the top of THIS
+			// iteration (`prd`, read above) -- the CAM-36 stale-reconfirmation
+			// case (a no-op worker echoing a previously-finalized story), handled
+			// by the no-progress guard below. That story was already gated on a
+			// prior iteration; paying a redundant gate re-run for it every time a
+			// worker no-ops would be wasted work, not new verification.
+			const alreadyPassingAtTop =
 				outcome.storyId !== undefined &&
-				runGates &&
-				finalizeStory
-			) {
+				(prd.userStories ?? []).some((s) => s.id === outcome.storyId && s.passes === true);
+			const isGenuineDone =
+				outcome.kind === 'incomplete' || (outcome.kind === 'pass' && !alreadyPassingAtTop);
+
+			if (isGenuineDone && outcome.storyId !== undefined && runGates && finalizeStory) {
 				const gate = runGates();
 				if (!gate.ok) {
+					if (outcome.kind === 'pass') {
+						// The worker pre-emptively flipped passes:true itself, but the
+						// supervisor's own gate is the sole authority (ADR 0035) and it
+						// is red: revert the premature flip so prd.json does not carry
+						// a false pass forward into the next iteration.
+						const current = readPrd();
+						const staleStory = current?.userStories?.find((s) => s.id === outcome.storyId);
+						if (current && staleStory) {
+							staleStory.passes = false;
+							writePrd(current);
+						}
+					}
 					lastOutcome = {
 						kind: 'blocked',
 						storyId: outcome.storyId,
@@ -1412,7 +1456,10 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				lastOutcome = {
 					kind: 'pass',
 					storyId: outcome.storyId,
-					detail: `supervisor-finalized ${outcome.storyId} after worker truncation: ${fin.detail}`,
+					detail:
+						outcome.kind === 'incomplete'
+							? `supervisor-finalized ${outcome.storyId} after worker truncation: ${fin.detail}`
+							: `supervisor-finalized ${outcome.storyId} after independent gate re-run: ${fin.detail}`,
 				};
 				writeSessionMarker(outcome.storyId, uuid);
 				// CAM-36: a successful finalize is real progress; reset the no-op
@@ -1434,9 +1481,9 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// advanced nothing. Tolerate one transient, then block on the second in
 			// a row instead of spinning to MAX_ITERATIONS. No extra PRD read.
 			if (outcome.kind === 'pass' && outcome.storyId !== undefined) {
-				const completedAlreadyPassing = (prd.userStories ?? []).some(
-					(s) => s.id === outcome.storyId && s.passes === true,
-				);
+				// Reuse the flag computed above the funnel: identical predicate
+				// (already passing at the top of this iteration).
+				const completedAlreadyPassing = alreadyPassingAtTop;
 				if (completedAlreadyPassing) {
 					noProgressStreak += 1;
 					if (noProgressStreak >= MAX_NO_PROGRESS_RETRIES) {

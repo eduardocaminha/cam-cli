@@ -13,6 +13,7 @@ import {
 	buildImplementerWorkerArgv,
 	DEFAULT_IMPLEMENTER_AGENT,
 	HOST_ONLY_ENV_UNSET,
+	WORKER_ACTOR_ENV,
 	WORKER_ENV_UNSET,
 	workerEnvPrefix,
 } from '../../src/supervisor/worker-argv.ts';
@@ -252,5 +253,34 @@ describe('buildImplementerWorkerArgv', () => {
 			permissionMode: SAMPLE_MODE,
 		});
 		expect(result).toContain('-u CLAUDE_CODE_OAUTH_TOKEN');
+	});
+
+	// -------------------------------------------------------------------------
+	// US-002 (CAM-63): worker-actor CAM_WORKER env marker.
+	// -------------------------------------------------------------------------
+
+	test('WORKER_ACTOR_ENV is the CAM_WORKER=1 assignment', () => {
+		expect(WORKER_ACTOR_ENV).toBe('CAM_WORKER=1');
+	});
+
+	test('contains the CAM_WORKER marker assignment ahead of claude, on both isolation modes', () => {
+		for (const isolation of ['host', 'container'] as const) {
+			const result = buildImplementerWorkerArgv({
+				uuid: SAMPLE_UUID,
+				taskPrompt: SAMPLE_PROMPT,
+				permissionMode: SAMPLE_MODE,
+				isolation,
+			});
+			expect(result).toContain('CAM_WORKER=1');
+			const markerIdx = result.indexOf('CAM_WORKER=1');
+			const claudeIdx = result.indexOf('claude --permission-mode');
+			expect(markerIdx).toBeGreaterThan(-1);
+			expect(markerIdx).toBeLessThan(claudeIdx);
+		}
+	});
+
+	test('workerEnvPrefix itself never contains the CAM_WORKER marker (shared with reviewer/planner builders)', () => {
+		expect(workerEnvPrefix('host')).not.toContain('CAM_WORKER');
+		expect(workerEnvPrefix('container')).not.toContain('CAM_WORKER');
 	});
 });

@@ -814,6 +814,16 @@ export function buildSupervisorOptions(
 		return { ok: true, detail: 'typecheck + tests passed' };
 	};
 
+	// US-003 (ADR 0035): finalizeStory is now the SOLE writer of passes:true,
+	// invoked by loop.ts on BOTH the incomplete path (worker truncated before
+	// flipping) and the pass path (worker already wrote passes:true itself) --
+	// the pass/incomplete distinction collapses for the flip. That means this
+	// idempotent write can land on a story that ALREADY has passes:true and an
+	// already-committed prd.json (the worker's own commit), leaving nothing
+	// staged after `git add -A`. `git commit` fails ("nothing to commit") in
+	// that case; treat it as an already-finalized no-op (ok:true), not an
+	// error -- the desired end state (a landed commit carrying passes:true)
+	// already holds, so there is nothing for the supervisor to add.
 	const finalizeStory: RunSupervisorOptions['finalizeStory'] = (storyId) => {
 		try {
 			const prd = readPrd();
@@ -826,6 +836,10 @@ export function buildSupervisorOptions(
 			writePrd(prd);
 			const add = spawnSync('git', ['add', '-A'], { cwd, stdio: 'ignore' });
 			if (add.status !== 0) return { ok: false, detail: 'git add failed' };
+			const diffCheck = spawnSync('git', ['diff', '--cached', '--quiet'], { cwd, stdio: 'ignore' });
+			if (diffCheck.status === 0) {
+				return { ok: true, detail: `${storyId} already finalized (no staged changes)` };
+			}
 			const commit = spawnSync(
 				'git',
 				['commit', '-m', `chore(cam): finalize ${storyId} (supervisor)`],
@@ -910,6 +924,43 @@ export function buildSupervisorOptions(
 		}
 	};
 
+	// aheadByForBranch for US-004 (empty-push gate): counts commits ahead of
+	// origin/main, mirroring commitExistsForStory's best-effort fetch +
+	// origin/main..HEAD-with-local-fallback range resolution above. Read-only
+	// (no mutation), same spawnSync-git style as the other adapters here.
+	// Returns null (fail-open; see confirmEmptyPushGate) when the count could
+	// not be determined (e.g. git failures), rather than a sentinel number.
+	const aheadByForBranch: RunSupervisorOptions['aheadByForBranch'] = () => {
+		try {
+			// Best-effort: refresh origin/main so the range reflects the true
+			// upstream fork point. Ignore failures (offline, no remote, etc.).
+			spawnSync('git', ['fetch', 'origin', 'main'], {
+				cwd,
+				stdio: 'pipe',
+				encoding: 'utf8',
+			} as Parameters<typeof spawnSync>[2]);
+
+			const originMainProc = spawnSync('git', ['rev-parse', 'origin/main'], {
+				cwd,
+				stdio: 'pipe',
+				encoding: 'utf8',
+			} as Parameters<typeof spawnSync>[2]);
+			const range = originMainProc.status === 0 ? 'origin/main..HEAD' : 'main..HEAD';
+
+			const countProc = spawnSync('git', ['rev-list', '--count', range], {
+				cwd,
+				stdio: 'pipe',
+				encoding: 'utf8',
+			} as Parameters<typeof spawnSync>[2]);
+			if (countProc.status !== 0) return null;
+			const raw = (typeof countProc.stdout === 'string' ? countProc.stdout : '').trim();
+			const count = Number(raw);
+			return Number.isFinite(count) ? count : null;
+		} catch {
+			return null;
+		}
+	};
+
 	// US-013 token reader.
 	const transcriptClaudeDir = process.env['CLAUDE_CONFIG_DIR'] ?? join(homedir(), '.claude');
 	const readWorkerTokensAdapter: RunSupervisorOptions['readWorkerTokens'] = (uuid) =>
@@ -972,6 +1023,8 @@ export function buildSupervisorOptions(
 		handoffPath,
 		// US-002 (CAM-187): commit-existence gate, threaded into readWorkerOutcome.
 		commitExistsForStory,
+		// US-004: empty-push gate, threaded into readWorkerOutcome.
+		aheadByForBranch,
 		workerReportPath: join(cwd, WORKER_REPORT_FILENAME),
 		permissionMode,
 		taskPrompt,

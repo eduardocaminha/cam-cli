@@ -29,6 +29,10 @@ const BASE_PATH = process.env['PATH'] ?? '/usr/bin:/bin:/usr/local/bin';
 const SCOPED_ENV: Record<string, string> = { PATH: BASE_PATH, CAM_SESSION: 'test-session' };
 // Unscoped env: CAM_SESSION is absent — scope gate exits 0 (allow) for everything.
 const UNSCOPED_ENV: Record<string, string> = { PATH: BASE_PATH };
+// Worker-actor env (US-002/CAM-63): CAM_SESSION + CAM_WORKER=1 — the marker set
+// ONLY on the implementer worker path, never on the planner.
+const WORKER_ENV: Record<string, string> = { PATH: BASE_PATH, CAM_SESSION: 'test-session', CAM_WORKER: '1' };
+const PRD_ABS_PATH = '/Users/eduardo/Documents/Projects/cam-cli/scripts/cam/prd.json';
 
 // Helper: spawn the real hook script with a JSON payload on stdin and an explicit env.
 // The env arg controls whether CAM_SESSION is visible to the script (never inherited from
@@ -372,4 +376,75 @@ describe('orch-agent-allowlist.sh', () => {
 			rmSync(fakeBinDir, { recursive: true, force: true });
 		}
 	});
+
+	// --- Write/Edit/MultiEdit worker-actor write-guard on prd.json (US-006) ---
+
+	test.skipIf(!jqAvailable)(
+		'scoped + worker-actor: Write to prd.json yields deny',
+		async () => {
+			const result = await runHook(
+				{ tool_name: 'Write', tool_input: { file_path: PRD_ABS_PATH } },
+				WORKER_ENV,
+			);
+			assertDeny(result);
+		},
+	);
+
+	test.skipIf(!jqAvailable)(
+		'scoped + worker-actor: Edit to prd.json yields deny',
+		async () => {
+			const result = await runHook(
+				{ tool_name: 'Edit', tool_input: { file_path: PRD_ABS_PATH } },
+				WORKER_ENV,
+			);
+			assertDeny(result);
+		},
+	);
+
+	test.skipIf(!jqAvailable)(
+		'scoped + worker-actor: MultiEdit to prd.json yields deny',
+		async () => {
+			const result = await runHook(
+				{ tool_name: 'MultiEdit', tool_input: { file_path: PRD_ABS_PATH } },
+				WORKER_ENV,
+			);
+			assertDeny(result);
+		},
+	);
+
+	test.skipIf(!jqAvailable)(
+		'scoped + worker-actor: Write to a non-prd path yields allow',
+		async () => {
+			const result = await runHook(
+				{
+					tool_name: 'Write',
+					tool_input: { file_path: '/Users/eduardo/Documents/Projects/cam-cli/src/foo.ts' },
+				},
+				WORKER_ENV,
+			);
+			assertAllow(result);
+		},
+	);
+
+	test.skipIf(!jqAvailable)(
+		'scoped, planner (no CAM_WORKER): Write to prd.json yields allow',
+		async () => {
+			const result = await runHook(
+				{ tool_name: 'Write', tool_input: { file_path: PRD_ABS_PATH } },
+				SCOPED_ENV,
+			);
+			assertAllow(result);
+		},
+	);
+
+	test.skipIf(!jqAvailable)(
+		'unscoped (no CAM_SESSION): worker-actor Write to prd.json yields allow',
+		async () => {
+			const result = await runHook(
+				{ tool_name: 'Write', tool_input: { file_path: PRD_ABS_PATH } },
+				{ PATH: BASE_PATH, CAM_WORKER: '1' },
+			);
+			assertAllow(result);
+		},
+	);
 });
