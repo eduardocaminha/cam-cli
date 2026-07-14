@@ -19,7 +19,7 @@
         "check:all is green locally AND on a clean tracked-tree checkout with all 12 gates. [oracle: bun run check:all]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "passes": false,
+      "passes": true,
       "priority": 1
     },
     {
