@@ -8,15 +8,21 @@
 #   Only cam-managed sessions (where CAM_SESSION is set by the sidecar) enforce
 #   the capability policy below.
 #
-# Write/Edit/MultiEdit policy (US-006, applies only when CAM_SESSION is set):
+# Write/Edit/MultiEdit policy (US-006, extended US-001/CAM-166, applies only
+# when CAM_SESSION is set):
 #   DENY only when BOTH are true: CAM_WORKER=1 is set (the worker-actor marker,
 #   US-002/CAM-63, set ONLY on the implementer worker path -- never on the
 #   planner, which also runs under CAM_SESSION and legitimately Writes
-#   prd.json) AND tool_input.file_path ends with scripts/cam/prd.json. This
-#   stops a worker session from self-flipping passes:true; the supervisor is
-#   the sole writer of that field (ADR 0035 / US-003 finalizeStory).
-#   ALLOW everything else (planner Writes to prd.json, any Write to a
-#   non-prd.json path, etc).
+#   prd.json/issues/) AND tool_input.file_path matches one of the
+#   worker-protected cam control-plane state globs below:
+#     *scripts/cam/prd.json   -- stops a worker from self-flipping passes:true;
+#       the supervisor is the sole writer of that field (ADR 0035 / US-003
+#       finalizeStory).
+#     *scripts/cam/issues/*   -- stops a worker from adding/editing an issue
+#       file on-branch, which can add/add-collide with an orchestrator-filed
+#       on-main issue (the CAM-162 failure).
+#   ALLOW everything else (planner Writes to prd.json/issues/, any Write to a
+#   path outside cam control-plane state, etc).
 #
 # Capability policy (Task/Agent spawns, applies only when CAM_SESSION is set):
 #   ALLOW: read-only / plan-time helpers that do not write code.
@@ -69,23 +75,35 @@ tool_name="$(printf '%s' "$payload" | jq -r '(.tool_name // "")' 2>/dev/null || 
 case "$tool_name" in
   Write|Edit|MultiEdit)
     # Worker-actor write-guard: DENY only when CAM_WORKER=1 (worker-actor
-    # marker) is set AND the target file_path ends with scripts/cam/prd.json.
-    # file_path arrives absolute in production, so suffix-match it.
+    # marker) is set AND the target file_path matches one of the
+    # worker-protected cam control-plane state globs. file_path arrives
+    # absolute in production, so suffix/glob-match it against each entry in
+    # the deny-set.
     file_path="$(printf '%s' "$payload" | jq -r '(.tool_input.file_path // "")' 2>/dev/null || echo "")"
-    if [ -n "${CAM_WORKER:-}" ] && [[ "$file_path" == *scripts/cam/prd.json ]]; then
-      jq -n --arg fp "$file_path" \
-        '{
-          hookSpecificOutput: {
-            hookEventName: "PreToolUse",
-            permissionDecision: "deny",
-            permissionDecisionReason: (
-              "Worker-actor sessions may not Write/Edit/MultiEdit \"" + $fp + "\"."
-              + " The supervisor is the sole writer of passes:true in scripts/cam/prd.json"
-              + " (ADR 0035 / US-003 finalizeStory)."
-            )
-          }
-        }'
-      exit 0
+    if [ -n "${CAM_WORKER:-}" ]; then
+      # Worker-protected cam control-plane state: files a worker must never
+      # touch directly (the supervisor/orchestrator owns them).
+      for protected_glob in '*scripts/cam/prd.json' '*scripts/cam/issues/*'; do
+        # shellcheck disable=SC2053
+        if [[ "$file_path" == $protected_glob ]]; then
+          jq -n --arg fp "$file_path" \
+            '{
+              hookSpecificOutput: {
+                hookEventName: "PreToolUse",
+                permissionDecision: "deny",
+                permissionDecisionReason: (
+                  "Worker-actor sessions may not Write/Edit/MultiEdit \"" + $fp + "\"."
+                  + " This path is worker-protected cam control-plane state"
+                  + " (scripts/cam/prd.json / scripts/cam/issues/): the supervisor"
+                  + " is the sole writer of passes:true in prd.json (ADR 0035 /"
+                  + " US-003 finalizeStory), and only the orchestrator files"
+                  + " issues, to avoid an add/add collision (CAM-162)."
+                )
+              }
+            }'
+          exit 0
+        fi
+      done
     fi
     # ALLOW: exit 0, no output.
     exit 0
