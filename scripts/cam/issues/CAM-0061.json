@@ -1,10 +1,46 @@
 {
   "id": "CAM-61",
   "title": "Doc-as-code gate (validate-agents-md) + check-count assertions + golden-fixtures for CAM_*_STATUS",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-16T22:30:00Z",
   "description": "Three parse/doc-safety items mapping to cam's own recurring lessons. (1) Doc-as-code gate (check:agents / validate-agents-md.ts): assert every 'cam <cmd>' / 'bun run <x>' and every backtick path cited in CLAUDE.md, scripts/cam/CLAUDE.md, and .claude/agents/* resolves to a real script/path, with a known-missing allowlist. Mechanically enforces the 2026-06-05 stale-comment lesson and the Doc-Maintenance rule. (2) check-count assertions: freeze the count of gates/oracles/health-checks so one silently disappearing fails a test, not just stays green (seeds doctor pass===12 pattern). (3) Golden-fixtures for the CAM_*_STATUS sentinel + handoff.json parsing: capture real worker-CLI output as test/.../__golden__/*.jsonl + a canonical form and diff in tests, so a silent upstream claude wire-shape change fails a test. Direct antidote to the recurring supervisor-sentinel-parse-fragility class (CAM-32/35). Source: seeds validate-agents-md.ts + doctor.test.ts; burrow src/runtime/parsers/__golden__/.",
-  "updatedAt": "2026-06-16T22:30:00Z"
+  "updatedAt": "2026-07-14T02:59:47.225Z",
+  "spec": {
+    "scope": "Add a doc-as-code CI gate that treats factual claims in the repo's own docs as machine-checkable assertions, plus one net-new registry count-freeze. Scanned surface: root CLAUDE.md, scripts/cam/CLAUDE.md, and .claude/agents/*.md (templates/** excluded: different resolution frame, already guarded by embed-vendor:check). Three reference classes are validated: cam <cmd> against the COMMANDS array (index.ts), bun run <x> against package.json scripts, and backtick path-claims against the filesystem. A structured inline known-missing allowlist exempts legitimately runtime-created artifacts. Wired as gate #12 in the check:all GATES manifest so it runs in CI. Item 2 (count-freeze) adds a COMMANDS count+membership freeze and updates the existing gate-count freeze 11->12. Golden-fixtures (original item 3) are split to a separate follow-up issue.",
+    "acceptanceCriteria": [
+      "scripts/validate-agents-md.ts exists and, when run, validates every `cam <cmd>` reference found in root CLAUDE.md, scripts/cam/CLAUDE.md, and .claude/agents/*.md against the COMMANDS array in index.ts; an unknown command name fails the gate (non-zero exit).",
+      "The same script validates every `bun run <x>` reference against package.json scripts keys; an unknown script name fails the gate.",
+      "The same script validates backtick path-claims against the filesystem. A backtick span is treated as a path-claim only if it contains '/' or ends in a known source extension (.ts .tsx .js .json .sh .md) AND contains no spaces, no '$', and no regex/shell metachars. A trailing :NNN or :NNN-NNN line-ref is stripped before resolving. Glob-ish spans (e.g. .claude/agents/*.md) resolve by >=1 filesystem match. A path-claim that neither resolves nor appears in the allowlist fails the gate. Spans failing the path-claim heuristic are ignored.",
+      "The script carries an inline KNOWN_MISSING allowlist of structured { pattern, reason } entries (glob-capable) exempting runtime-created artifacts (e.g. .claude/.cam-orch-ready, scripts/cam/prd.json, scripts/cam/worker-report.json, .claude/.cam-*.json markers, scripts/cam/journal.archive.md). Every entry has a non-empty reason.",
+      "The gate emits a non-fatal warning listing any KNOWN_MISSING allowlist entry that matched nothing during the run (guards against dead allowlist entries).",
+      "templates/** is excluded from the scanned surface.",
+      "A new gate #12 is added to the GATES manifest in scripts/check-all.ts, defined to spawn `bun scripts/validate-agents-md.ts` directly (same shape as sibling gates). A `check:agents` alias is added to package.json scripts. If check:ci-parity flags the new alias, check:agents is added to BUN_RUN_ALLOWLIST in the same change so check:ci-parity stays green.",
+      "The two existing gate-count freezes (test/gates-manifest.test.ts and test/check-all.test.ts) are updated from 11 to 12 and remain green, including any per-index/per-name assertions.",
+      "A test freezes the COMMANDS array (index.ts) exact count and exact membership (implementer verifies the live count; ~26 today). Adding or removing a command without updating the test fails it.",
+      "Unit tests for validate-agents-md.ts cover: valid cam cmd, invalid cam cmd, valid+invalid bun run, resolvable path, unresolved (failing) path, allowlisted-missing path, :NNN and :NNN-NNN line-ref stripping, glob match, and the unused-allowlist-entry warning.",
+      "check:all is green with all 12 gates; typecheck passes and the full bun test suite passes."
+    ],
+    "gotchas": [
+      "COMMANDS is a runtime array (index.ts ~line 2373); removing an entry does NOT break typecheck (HELP_REGISTRY still typechecks with fewer keys), which is exactly why the count+membership freeze is needed. Verify the live count before hard-coding it.",
+      "check:ci-parity BUN_RUN_ALLOWLIST currently holds only { check:all, check:ci-parity } (scripts/check-ci-parity.ts ~line 29). Adding the check:agents package.json alias may require adding check:agents there to keep the gate green.",
+      "Do NOT scan templates/scripts/cam/CLAUDE.md or any templates/** doc: their scripts/cam/... references resolve relative to a materialized target project, not this repo, and would produce false failures; template fidelity is already covered by embed-vendor:check.",
+      ".claude/agents/subagent-orchestrator.md is by far the densest citer of paths/commands and will drive most real catches and most allowlist entries; expect a non-trivial KNOWN_MISSING population dominated by runtime artifacts it references.",
+      "Line-ref stripping must handle both single-line (index.ts:2373) and range (src/foo.ts:10-20) forms.",
+      "The existing closest analog, vendor/check-agent-frontmatter.ts, validates frontmatter shape only and is NOT run by check:all; do not conflate it with this gate."
+    ],
+    "domainTerms": [
+      "doc-as-code gate",
+      "known-missing allowlist",
+      "count-freeze"
+    ]
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 1,
+    "riskReduction": 4,
+    "jobSize": 3
+  },
+  "type": "chore"
 }
