@@ -8,16 +8,31 @@
   "officialDocsConsulted": [],
   "userStories": [
     {
+      "id": "US-R2-001",
+      "title": "Resolve doc path-claims against the git-tracked tree (deterministic gate) + tracked-tree regression test",
+      "acceptanceCriteria": [
+        "[scripts/validate-agents-md.ts:279] validate-agents-md resolves path-claims against the git-tracked tree (git ls-files), NOT the live working tree; a path-claim fails ONLY when it is untracked AND not git-ignored AND not in KNOWN_MISSING. Git-ignored paths are treated as declared ephemerals (auto-exempt). [oracle: bun test test/validate-agents-md.test.ts]",
+        "The agents-md gate (bun run check:all) is green on a CLEAN git-tracked checkout, verified by running the gate against a tracked-tree snapshot (e.g. `git archive HEAD | tar -x` in a temp dir), not only on the local working tree. [oracle: bun run check:all]",
+        "A regression test runs the gate against a tracked-tree snapshot (not injected temp dirs) so this determinism defect fails a test; the existing temp-dir unit tests are insufficient and stay green regardless of the defect. [oracle: bun test test/validate-agents-md.test.ts]",
+        "KNOWN_MISSING is pruned to only genuinely untracked-AND-unignored declared-missing entries; any entry now made redundant by git-ignore auto-exemption is removed. [oracle: bun test test/validate-agents-md.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "check:all is green locally AND on a clean tracked-tree checkout with all 12 gates. [oracle: bun run check:all]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "passes": false,
+      "priority": 1
+    },
+    {
       "id": "US-R1-001",
       "title": "Review round 1 fix 001: address reviewer finding",
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "notes": "CRITICAL [scripts/validate-agents-md.ts:119]: Hard-constraint FAIL: `bun run check:all` (US-003.5 oracle) is RED at Layer B. The new agents-md gate fails because `scripts/cam/review-report.json` (referenced 3x by full path in .claude/agents/subagent-reviewer.md) does not resolve on disk and is not allowlisted. KNOWN_MISSING carries only a bare-filename entry 'review-report.json', which Bun.Glob matches only against the exact string, not against the directory-spanning full path (per bun.sh/docs/api/glob, '*' does not cross path separators). Its siblings scripts/cam/prd.json and scripts/cam/worker-report.json each have a full-path entry; review-report.json is missing one. scripts/cam/review-artifact.txt (gitignored, referenced by full path in the same doc) is the identical latent defect: it only passed this run because a stale ignored copy lingered in the working tree. On a clean CI checkout both fail, so check:all is red and US-003's own acceptance criterion is unmet. Fix: add full-path KNOWN_MISSING entries for both ephemeral artifacts (or, more robustly, resolve path-claims against the tracked tree so gitignored ephemerals never mask/trip the gate)."
     },
     {
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
-      "priority": 2,
+      "priority": 3,
       "passes": true,
       "notes": "WARNING [.claude/agents/subagent-implementer.md:169]: The `.githooks/**` entry was silently dropped from the implementer's 'must not touch' guardrail list to appease the new doc-as-code gate (.githooks/ does not exist on disk, so the glob span failed to resolve). Removing a protective constraint is a behavioral change bundled into a gate-wiring story and not covered by any acceptance criterion. Prefer preserving intent (allowlist the path or keep the constraint) over deleting a guardrail to make a linter green."
     },
@@ -37,7 +52,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 3,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "New files: scripts/validate-agents-md.ts, test/validate-agents-md.test.ts. Import COMMANDS from index.ts (exported at index.ts:2858) for cam-cmd validation; read package.json scripts keys for bun-run validation. Bun-only: use Bun.file/Bun.Glob, never node:fs. noUncheckedIndexedAccess: guard all regex capture-group and array access. .claude/agents/subagent-orchestrator.md is the densest citer and will drive most KNOWN_MISSING entries (runtime artifacts). Line-ref stripping must handle both single-line (index.ts:2373) and range (src/foo.ts:10-20). Do NOT conflate with vendor/check-agent-frontmatter.ts (frontmatter-shape only, not run by check:all). Make the tests inject doc content / a temp surface so they do not depend on the live repo docs staying static."
@@ -52,7 +67,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 4,
+      "priority": 5,
       "passes": true,
       "requires": null,
       "notes": "New file: test/commands-freeze.test.ts. Import COMMANDS from index.ts (exported at index.ts:2858). Gotcha: COMMANDS is a runtime array (index.ts:2373); removing an entry does NOT break typecheck because HELP_REGISTRY still typechecks with fewer keys, which is exactly why this freeze is needed. Verify the live count before hard-coding it (currently 26). Independent of US-001/US-003."
@@ -70,29 +85,17 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 5,
+      "priority": 6,
       "passes": true,
       "requires": "US-001",
       "notes": "Files: scripts/check-all.ts (GATES array ends at line 92, append via the g() helper), package.json (scripts block), scripts/check-ci-parity.ts (BUN_RUN_ALLOWLIST at ~line 29 currently holds only check:all, check:ci-parity), test/gates-manifest.test.ts (toHaveLength(11) at line 44, name list at 47-48), test/check-all.test.ts (toHaveLength(11) at 54, per-index name assertions 55-65, runner count at 312-320). Requires US-001 so the spawned script exists and check:all can pass. Pick a gate name consistent with the check:agents alias."
     }
   ],
   "review": {
-    "roundsCompleted": 1,
+    "roundsCompleted": 2,
     "maxRounds": 3,
-    "lastVerdict": "FIXES_PENDING:2",
-    "findings": [
-      {
-        "severity": "CRITICAL",
-        "file": "scripts/validate-agents-md.ts",
-        "line": 119,
-        "text": "Hard-constraint FAIL: `bun run check:all` (US-003.5 oracle) is RED at Layer B. The new agents-md gate fails because `scripts/cam/review-report.json` (referenced 3x by full path in .claude/agents/subagent-reviewer.md) does not resolve on disk and is not allowlisted. KNOWN_MISSING carries only a bare-filename entry 'review-report.json', which Bun.Glob matches only against the exact string, not against the directory-spanning full path (per bun.sh/docs/api/glob, '*' does not cross path separators). Its siblings scripts/cam/prd.json and scripts/cam/worker-report.json each have a full-path entry; review-report.json is missing one. scripts/cam/review-artifact.txt (gitignored, referenced by full path in the same doc) is the identical latent defect: it only passed this run because a stale ignored copy lingered in the working tree. On a clean CI checkout both fail, so check:all is red and US-003's own acceptance criterion is unmet. Fix: add full-path KNOWN_MISSING entries for both ephemeral artifacts (or, more robustly, resolve path-claims against the tracked tree so gitignored ephemerals never mask/trip the gate)."
-      },
-      {
-        "severity": "WARNING",
-        "file": ".claude/agents/subagent-implementer.md",
-        "line": 169,
-        "text": "The `.githooks/**` entry was silently dropped from the implementer's 'must not touch' guardrail list to appease the new doc-as-code gate (.githooks/ does not exist on disk, so the glob span failed to resolve). Removing a protective constraint is a behavioral change bundled into a gate-wiring story and not covered by any acceptance criterion. Prefer preserving intent (allowlist the path or keep the constraint) over deleting a guardrail to make a linter green."
-      }
-    ]
+    "lastVerdict": "FIXES_PENDING",
+    "findings": [],
+    "lastReviewSha": "fccf5a7ca19b33471da738eda9cada6b833552c7"
   }
 }

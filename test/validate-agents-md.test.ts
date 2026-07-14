@@ -1,10 +1,15 @@
 // test/validate-agents-md.test.ts
 //
-// Unit tests for scripts/validate-agents-md.ts (US-001, CAM-61 PRD).
+// Unit tests for scripts/validate-agents-md.ts (US-001, CAM-61 PRD;
+// git-tracked-tree resolution added US-R2-001, CAM-61).
 //
-// Filesystem-touching cases (resolvable path, glob match, allowlisted-missing,
-// templates/** exclusion) use a temp directory seeded per-test so results
-// never depend on the live repo's docs staying static.
+// Path-claim resolution is tested via `trackedFiles` arrays / `isIgnored`
+// fakes injected directly into ValidationOptions (no real git calls, matching
+// the ratchet-diff.ts DI convention) for the fast unit-test surface. The
+// dedicated "regression" describe block below uses REAL git plumbing
+// (git init / git add / git check-ignore) against throwaway temp repos to
+// prove the tracked-tree-vs-working-tree determinism fix, since a plain
+// (non-git) injected temp dir cannot distinguish the two by construction.
 //
 // Coverage (AC8):
 //   - valid cam cmd
@@ -14,14 +19,15 @@
 //   - resolvable path
 //   - unresolved (failing) path
 //   - allowlisted-missing path
-//   - :NNN line-ref stripping
-//   - :NNN-NNN line-ref stripping
+//   - :NNN and :NNN-NNN line-ref stripping
 //   - glob match
 //   - unused-allowlist-entry warning
 // Plus: templates/** never scanned, fenced-code-block regression, heuristic
-// ignore cases (URLs, placeholders, spaces).
+// ignore cases (URLs, placeholders, spaces), and the tracked-tree regression
+// tests (US-R2-001).
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -33,17 +39,23 @@ import {
 	findKnownMissingMatch,
 	isPathClaimCandidate,
 	KNOWN_MISSING,
-	resolvesOnDisk,
+	makeGetTrackedFiles,
+	makeIsIgnored,
+	resolvesInTrackedTree,
 	resolveScanTargets,
 	SCAN_FILES,
 	stripFencedCodeBlocks,
 	stripLineRef,
 	validateDocs,
+	type IsIgnoredFn,
 	type KnownMissingEntry,
 } from '../scripts/validate-agents-md.ts';
 
 const COMMANDS = ['run', 'next', 'plan', 'issue', 'review', 'ship'] as const;
 const BUN_SCRIPTS = ['typecheck', 'test', 'check:all', 'embed-vendor:check'] as const;
+
+/** Fake IsIgnoredFn for tests that don't care about git-ignore exemption. */
+const NOT_IGNORED: IsIgnoredFn = () => false;
 
 let workDir: string;
 
@@ -103,7 +115,7 @@ describe('validateDocs — cam-cmd claims', () => {
 	test('valid cam cmd: no finding', () => {
 		const result = validateDocs(
 			[{ path: 'CLAUDE.md', text: 'Run `cam next` to continue.' }],
-			{ commands: COMMANDS, bunScripts: BUN_SCRIPTS, knownMissing: [], cwd: workDir },
+			{ commands: COMMANDS, bunScripts: BUN_SCRIPTS, knownMissing: [], cwd: workDir, trackedFiles: [], isIgnored: NOT_IGNORED },
 		);
 		expect(result.findings).toHaveLength(0);
 	});
@@ -111,7 +123,7 @@ describe('validateDocs — cam-cmd claims', () => {
 	test('invalid cam cmd: finding with kind cam-cmd', () => {
 		const result = validateDocs(
 			[{ path: 'CLAUDE.md', text: 'Run `cam frobnicate` to continue.' }],
-			{ commands: COMMANDS, bunScripts: BUN_SCRIPTS, knownMissing: [], cwd: workDir },
+			{ commands: COMMANDS, bunScripts: BUN_SCRIPTS, knownMissing: [], cwd: workDir, trackedFiles: [], isIgnored: NOT_IGNORED },
 		);
 		expect(result.findings).toHaveLength(1);
 		expect(result.findings[0]!.kind).toBe('cam-cmd');
@@ -127,7 +139,7 @@ describe('validateDocs — bun-run claims', () => {
 	test('valid bun run: no finding', () => {
 		const result = validateDocs(
 			[{ path: 'CLAUDE.md', text: 'Run `bun run typecheck` first.' }],
-			{ commands: COMMANDS, bunScripts: BUN_SCRIPTS, knownMissing: [], cwd: workDir },
+			{ commands: COMMANDS, bunScripts: BUN_SCRIPTS, knownMissing: [], cwd: workDir, trackedFiles: [], isIgnored: NOT_IGNORED },
 		);
 		expect(result.findings).toHaveLength(0);
 	});
@@ -135,7 +147,7 @@ describe('validateDocs — bun-run claims', () => {
 	test('invalid bun run: finding with kind bun-run', () => {
 		const result = validateDocs(
 			[{ path: 'CLAUDE.md', text: 'Run `bun run nonexistent-script` first.' }],
-			{ commands: COMMANDS, bunScripts: BUN_SCRIPTS, knownMissing: [], cwd: workDir },
+			{ commands: COMMANDS, bunScripts: BUN_SCRIPTS, knownMissing: [], cwd: workDir, trackedFiles: [], isIgnored: NOT_IGNORED },
 		);
 		expect(result.findings).toHaveLength(1);
 		expect(result.findings[0]!.kind).toBe('bun-run');
@@ -144,27 +156,35 @@ describe('validateDocs — bun-run claims', () => {
 });
 
 // ---------------------------------------------------------------------------
-// validateDocs: path-claim class — resolution against the filesystem
+// validateDocs: path-claim class — resolution against the git-tracked tree
 // ---------------------------------------------------------------------------
 
 describe('validateDocs — path claims', () => {
-	test('resolvable path: no finding', () => {
-		writeFileSync(join(workDir, 'real-file.ts'), 'export {};\n');
+	test('tracked path: no finding', () => {
 		const result = validateDocs(
 			[{ path: 'CLAUDE.md', text: 'See `real-file.ts` for details.' }],
-			{ commands: COMMANDS, bunScripts: BUN_SCRIPTS, knownMissing: [], cwd: workDir },
+			{ commands: COMMANDS, bunScripts: BUN_SCRIPTS, knownMissing: [], cwd: workDir, trackedFiles: ['real-file.ts'], isIgnored: NOT_IGNORED },
 		);
 		expect(result.findings).toHaveLength(0);
 	});
 
-	test('unresolved path: finding with kind path', () => {
+	test('untracked, unignored path: finding with kind path', () => {
 		const result = validateDocs(
 			[{ path: 'CLAUDE.md', text: 'See `does/not/exist.ts` for details.' }],
-			{ commands: COMMANDS, bunScripts: BUN_SCRIPTS, knownMissing: [], cwd: workDir },
+			{ commands: COMMANDS, bunScripts: BUN_SCRIPTS, knownMissing: [], cwd: workDir, trackedFiles: [], isIgnored: NOT_IGNORED },
 		);
 		expect(result.findings).toHaveLength(1);
 		expect(result.findings[0]!.kind).toBe('path');
 		expect(result.findings[0]!.reason).toContain('does/not/exist.ts');
+	});
+
+	test('git-ignored path: no finding, exempted even though untracked', () => {
+		const isIgnored: IsIgnoredFn = (path) => path === 'scripts/cam/worker-report.json';
+		const result = validateDocs(
+			[{ path: 'CLAUDE.md', text: 'See `scripts/cam/worker-report.json` for details.' }],
+			{ commands: COMMANDS, bunScripts: BUN_SCRIPTS, knownMissing: [], cwd: workDir, trackedFiles: [], isIgnored },
+		);
+		expect(result.findings).toHaveLength(0);
 	});
 
 	test('allowlisted-missing path: no finding, and the entry is marked used', () => {
@@ -173,44 +193,47 @@ describe('validateDocs — path claims', () => {
 		];
 		const result = validateDocs(
 			[{ path: 'CLAUDE.md', text: 'Read `scripts/cam/prd.json` for state.' }],
-			{ commands: COMMANDS, bunScripts: BUN_SCRIPTS, knownMissing, cwd: workDir },
+			{ commands: COMMANDS, bunScripts: BUN_SCRIPTS, knownMissing, cwd: workDir, trackedFiles: [], isIgnored: NOT_IGNORED },
 		);
 		expect(result.findings).toHaveLength(0);
 		expect(result.unusedKnownMissing).toHaveLength(0);
 	});
 
 	test(':NNN line-ref is stripped before resolving', () => {
-		writeFileSync(join(workDir, 'index.ts'), 'x'.repeat(3000) + '\n');
 		const result = validateDocs(
 			[{ path: 'CLAUDE.md', text: 'See `index.ts:2858` for the array.' }],
-			{ commands: COMMANDS, bunScripts: BUN_SCRIPTS, knownMissing: [], cwd: workDir },
+			{ commands: COMMANDS, bunScripts: BUN_SCRIPTS, knownMissing: [], cwd: workDir, trackedFiles: ['index.ts'], isIgnored: NOT_IGNORED },
 		);
 		expect(result.findings).toHaveLength(0);
 	});
 
 	test(':NNN-NNN line-ref range is stripped before resolving', () => {
-		writeFileSync(join(workDir, 'plan-runner.ts'), 'export {};\n');
 		const result = validateDocs(
 			[{ path: 'CLAUDE.md', text: 'See `plan-runner.ts:1313-1320` for the parser.' }],
-			{ commands: COMMANDS, bunScripts: BUN_SCRIPTS, knownMissing: [], cwd: workDir },
+			{ commands: COMMANDS, bunScripts: BUN_SCRIPTS, knownMissing: [], cwd: workDir, trackedFiles: ['plan-runner.ts'], isIgnored: NOT_IGNORED },
 		);
 		expect(result.findings).toHaveLength(0);
 	});
 
-	test('glob match: >=1 filesystem match resolves the claim', () => {
-		mkdirSync(join(workDir, '.claude/agents'), { recursive: true });
-		writeFileSync(join(workDir, '.claude/agents/subagent-foo.md'), '---\n---\nbody\n');
+	test('glob match: >=1 tracked-file match resolves the claim', () => {
 		const result = validateDocs(
 			[{ path: 'CLAUDE.md', text: 'Every persona lives at `.claude/agents/*.md`.' }],
-			{ commands: COMMANDS, bunScripts: BUN_SCRIPTS, knownMissing: [], cwd: workDir },
+			{
+				commands: COMMANDS,
+				bunScripts: BUN_SCRIPTS,
+				knownMissing: [],
+				cwd: workDir,
+				trackedFiles: ['.claude/agents/subagent-foo.md'],
+				isIgnored: NOT_IGNORED,
+			},
 		);
 		expect(result.findings).toHaveLength(0);
 	});
 
-	test('glob-ish path with zero filesystem matches still fails the gate', () => {
+	test('glob-ish path with zero tracked-file matches still fails the gate', () => {
 		const result = validateDocs(
 			[{ path: 'CLAUDE.md', text: 'See `.claude/nonexistent/*.md`.' }],
-			{ commands: COMMANDS, bunScripts: BUN_SCRIPTS, knownMissing: [], cwd: workDir },
+			{ commands: COMMANDS, bunScripts: BUN_SCRIPTS, knownMissing: [], cwd: workDir, trackedFiles: [], isIgnored: NOT_IGNORED },
 		);
 		expect(result.findings).toHaveLength(1);
 		expect(result.findings[0]!.kind).toBe('path');
@@ -229,7 +252,7 @@ describe('validateDocs — unused KNOWN_MISSING entries', () => {
 		];
 		const result = validateDocs(
 			[{ path: 'CLAUDE.md', text: 'Read `scripts/cam/prd.json` for state.' }],
-			{ commands: COMMANDS, bunScripts: BUN_SCRIPTS, knownMissing, cwd: workDir },
+			{ commands: COMMANDS, bunScripts: BUN_SCRIPTS, knownMissing, cwd: workDir, trackedFiles: [], isIgnored: NOT_IGNORED },
 		);
 		expect(result.findings).toHaveLength(0);
 		expect(result.unusedKnownMissing).toHaveLength(1);
@@ -249,6 +272,17 @@ describe('KNOWN_MISSING (the real exported allowlist)', () => {
 		for (const entry of KNOWN_MISSING) {
 			expect(entry.pattern.length).toBeGreaterThan(0);
 		}
+	});
+
+	test('entries redundant with git-ignore auto-exemption were pruned (US-R2-001)', () => {
+		const patterns = KNOWN_MISSING.map((entry) => entry.pattern);
+		// These full paths are all covered by .gitignore rules directly; an
+		// explicit KNOWN_MISSING entry for them would now be dead weight.
+		expect(patterns).not.toContain('.claude/.cam-orch-ready');
+		expect(patterns).not.toContain('scripts/cam/worker-report.json');
+		expect(patterns).not.toContain('scripts/cam/review-report.json');
+		expect(patterns).not.toContain('scripts/cam/review-artifact.txt');
+		expect(patterns).not.toContain('.claude/.cam-*.json');
 	});
 });
 
@@ -404,26 +438,111 @@ describe('resolveScanTargets', () => {
 });
 
 // ---------------------------------------------------------------------------
-// resolvesOnDisk: literal file, directory, and glob resolution share one path
+// resolvesInTrackedTree: literal file, directory-prefix, and glob resolution
+// share one path, all against the tracked-file LIST (not the filesystem)
 // ---------------------------------------------------------------------------
 
-describe('resolvesOnDisk', () => {
-	test('resolves a literal file', () => {
-		writeFileSync(join(workDir, 'a.ts'), 'export {};\n');
-		expect(resolvesOnDisk('a.ts', workDir)).toBe(true);
+describe('resolvesInTrackedTree', () => {
+	test('resolves a literal tracked file', () => {
+		expect(resolvesInTrackedTree('a.ts', ['a.ts'])).toBe(true);
 	});
 
-	test('resolves a directory', () => {
-		mkdirSync(join(workDir, 'vendor'));
-		expect(resolvesOnDisk('vendor', workDir)).toBe(true);
+	test('resolves a directory via a tracked file nested under it', () => {
+		expect(resolvesInTrackedTree('vendor', ['vendor/foo.ts'])).toBe(true);
 	});
 
-	test('does not resolve a missing path', () => {
-		expect(resolvesOnDisk('nope.ts', workDir)).toBe(false);
+	test('does not resolve a path with no matching tracked file', () => {
+		expect(resolvesInTrackedTree('nope.ts', ['a.ts', 'vendor/foo.ts'])).toBe(false);
 	});
 
-	test('resolves a dotfile directory (e.g. .claude/agents)', () => {
-		mkdirSync(join(workDir, '.claude/agents'), { recursive: true });
-		expect(resolvesOnDisk('.claude/agents', workDir)).toBe(true);
+	test('resolves a dotfile directory (e.g. .claude/agents) via a nested tracked file', () => {
+		expect(resolvesInTrackedTree('.claude/agents', ['.claude/agents/subagent-foo.md'])).toBe(true);
+	});
+
+	test('resolves a trailing-slash directory claim (e.g. claude-code-harness/)', () => {
+		expect(resolvesInTrackedTree('claude-code-harness/', ['claude-code-harness/README.md'])).toBe(true);
+	});
+
+	test('resolves a glob-ish claim against the tracked list', () => {
+		expect(resolvesInTrackedTree('.claude/agents/*.md', ['.claude/agents/subagent-foo.md'])).toBe(true);
+	});
+
+	test('an empty tracked-file list resolves nothing', () => {
+		expect(resolvesInTrackedTree('a.ts', [])).toBe(false);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Regression: git-tracked-tree resolution vs. the live working tree
+// (US-R2-001, CAM-61). Uses REAL git plumbing against throwaway temp repos --
+// a plain injected temp dir (no git) cannot exercise this distinction, which
+// is exactly why the pre-fix code's temp-dir unit tests stayed green despite
+// the CI-vs-local nondeterminism the reviewer caught.
+// ---------------------------------------------------------------------------
+
+describe('regression: resolution follows the git-tracked tree, not the live working tree', () => {
+	let repo: string;
+
+	beforeEach(() => {
+		repo = mkdtempSync(join(tmpdir(), 'cam-cli-tracked-snapshot-'));
+		spawnSync('git', ['init', '-q'], { cwd: repo });
+	});
+
+	afterEach(() => {
+		rmSync(repo, { recursive: true, force: true });
+	});
+
+	test('a git-ignored path-claim resolves even when absent from a clean tracked snapshot', () => {
+		// Simulates `git archive HEAD | tar -x`: the ephemeral file is never
+		// materialized, only the .gitignore rule that would exempt it.
+		writeFileSync(join(repo, '.gitignore'), 'ignored-artifact.json\n');
+		writeFileSync(join(repo, 'CLAUDE.md'), 'See `ignored-artifact.json` for state.\n');
+		spawnSync('git', ['add', '.gitignore', 'CLAUDE.md'], { cwd: repo });
+
+		const trackedFiles = makeGetTrackedFiles(repo)();
+		const isIgnored = makeIsIgnored(repo);
+
+		const result = validateDocs(
+			[{ path: 'CLAUDE.md', text: 'See `ignored-artifact.json` for state.' }],
+			{ commands: COMMANDS, bunScripts: BUN_SCRIPTS, knownMissing: [], cwd: repo, trackedFiles, isIgnored },
+		);
+
+		expect(result.findings).toHaveLength(0);
+	});
+
+	test('an untracked, unignored stray file on disk does NOT resolve the claim (the determinism defect)', () => {
+		writeFileSync(join(repo, 'CLAUDE.md'), 'See `stray.ts` for details.\n');
+		spawnSync('git', ['add', 'CLAUDE.md'], { cwd: repo });
+		// stray.ts sits on disk but was never `git add`ed. Under the old
+		// filesystem-glob resolution this would incorrectly resolve; under
+		// git-tracked-tree resolution it must not.
+		writeFileSync(join(repo, 'stray.ts'), 'export {};\n');
+
+		const trackedFiles = makeGetTrackedFiles(repo)();
+		const isIgnored = makeIsIgnored(repo);
+
+		const result = validateDocs(
+			[{ path: 'CLAUDE.md', text: 'See `stray.ts` for details.' }],
+			{ commands: COMMANDS, bunScripts: BUN_SCRIPTS, knownMissing: [], cwd: repo, trackedFiles, isIgnored },
+		);
+
+		expect(result.findings).toHaveLength(1);
+		expect(result.findings[0]!.kind).toBe('path');
+	});
+
+	test('a tracked (git add-ed) file resolves via makeGetTrackedFiles even before commit', () => {
+		writeFileSync(join(repo, 'CLAUDE.md'), 'See `tracked.ts` for details.\n');
+		writeFileSync(join(repo, 'tracked.ts'), 'export {};\n');
+		spawnSync('git', ['add', 'CLAUDE.md', 'tracked.ts'], { cwd: repo });
+
+		const trackedFiles = makeGetTrackedFiles(repo)();
+		const isIgnored = makeIsIgnored(repo);
+
+		const result = validateDocs(
+			[{ path: 'CLAUDE.md', text: 'See `tracked.ts` for details.' }],
+			{ commands: COMMANDS, bunScripts: BUN_SCRIPTS, knownMissing: [], cwd: repo, trackedFiles, isIgnored },
+		);
+
+		expect(result.findings).toHaveLength(0);
 	});
 });
