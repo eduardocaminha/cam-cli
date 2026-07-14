@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.158.0] - 2026-07-14
+
+### Added
+
+- US-002 - Planner rule: a hand-file-via-/cam-issue requirement is an on-main oracle, never a worker story
+- US-001 - Extend worker-actor Write-deny to scripts/cam/issues/ via a structured deny-set
+
 ## [0.157.0] - 2026-07-14
 
 ### Added
