@@ -1,10 +1,35 @@
 {
   "id": "CAM-135",
   "title": "Gate de dead-code para locals/params nao-usados (noUnusedLocals/noUnusedParameters ou biome noUnusedVariables)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-28T18:06:35.673Z",
   "description": "Classe F-05 exposta no CAM-133: tsconfig tem noUnusedLocals:false e noUnusedParameters:false, e knip.json exclui exports/types/duplicates, entao locals e params orfaos escapam de TODO gate estatico (typecheck, knip). No CAM-133 isso fez o cutover deixar dead code residual (const writeFile orfao, import writeFileSync morto, destructure branchWasMain nao-usado) que NENHUM gate pegou: o reviewer teve que caca-los manualmente em 3 rounds (round 1 e 2 ambos sobre dead code residual do cutover). Proposta: habilitar noUnusedLocals/noUnusedParameters:true no tsconfig OU adicionar a regra biome noUnusedVariables como error, pra dead code de local/param ser pego na Layer A (implementer) em vez de gastar rounds de review. Avaliar o blast radius (quantos locals/params orfaos pre-existentes precisariam ser limpos primeiro / grandfathered).",
-  "updatedAt": "2026-06-28T18:06:35.673Z"
+  "updatedAt": "2026-07-14T13:41:44.452Z",
+  "spec": {
+    "acceptanceCriteria": [
+      "tsconfig.json sets noUnusedLocals: true AND noUnusedParameters: true.",
+      "bunx tsc --noEmit exits 0 with the flags enabled (all 68 pre-existing violations cleaned: 31 unused locals + 27 unused params + 10 unused types).",
+      "The diff introduces NO new @ts-ignore or @ts-expect-error directives to suppress unused locals/params (cleanup is real, not blanket suppression).",
+      "bun run check:all passes green (full 12-gate spine; typecheck is gate #1).",
+      "Unused parameters that are part of a required signature (callback / interface impl / override) are underscore-prefixed, not deleted in a way that alters the signature; behaviour preserved (tests green)."
+    ],
+    "scope": "Enable noUnusedLocals and noUnusedParameters in the root tsconfig.json and clean the 68 resulting violations (~60 in test/**, only 5 in src/). Scope is strictly these two flags plus the cleanup. Do NOT touch noPropertyAccessFromIndexSignature (stays false), do NOT configure biome noUnusedVariables, do NOT touch knip.json. No new check:all gate is added: the stricter typecheck rides existing gate #1, so the gate-count freeze (12) and validate-agents-md are untouched.",
+    "gotchas": [
+      "Local flagged unused whose RHS has a side effect: drop only the dead binding, not the expression. E.g. `const x = await setup()` with x unread becomes `await setup()`, not deleted.",
+      "The leading-underscore escape suppresses only PARAMETERS in tsc, never LOCALS. A dead local must be genuinely removed; renaming it to _x does not satisfy noUnusedLocals.",
+      "Param in a required signature -> underscore-prefix; removable param -> remove. Deleting a required callback/override param does NOT fail tsc (fewer params stays assignable) but silently breaks the contract; the reviewer + tests guard this.",
+      "biome noUnusedVariables was rejected because biome.json excludes test/**, so it would miss ~88% of these violations; tsc is chosen precisely because typecheck already covers test/**.",
+      "noPropertyAccessFromIndexSignature sits next to the two target flags in tsconfig but is a different rigor class (index-signature access) and is explicitly out of scope."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 3,
+    "riskReduction": 6,
+    "jobSize": 5
+  },
+  "type": "chore"
 }
