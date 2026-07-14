@@ -56,6 +56,8 @@ You are **Layer B** in the two-layer verification system. When a story's `accept
 
 The artifact-of-record is the reviewer's Layer B evidence, never the implementer's Layer A capture. A failing oracle at Layer B is a CRITICAL finding.
 
+An on-main existence check (e.g. `[oracle: file-assert git show main:scripts/cam/issues/CAM-XXXX.json]`, verifying a hand-filed issue landed on `main` rather than being written by a worker on-branch) is a legitimate file-assert oracle target: re-run it the same way as any other file-assert directive.
+
 ## Review Checklist
 
 ### Security

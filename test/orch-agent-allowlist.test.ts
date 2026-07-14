@@ -33,6 +33,7 @@ const UNSCOPED_ENV: Record<string, string> = { PATH: BASE_PATH };
 // ONLY on the implementer worker path, never on the planner.
 const WORKER_ENV: Record<string, string> = { PATH: BASE_PATH, CAM_SESSION: 'test-session', CAM_WORKER: '1' };
 const PRD_ABS_PATH = '/Users/eduardo/Documents/Projects/cam-cli/scripts/cam/prd.json';
+const ISSUE_ABS_PATH = '/Users/eduardo/Documents/Projects/cam-cli/scripts/cam/issues/CAM-0164.json';
 
 // Helper: spawn the real hook script with a JSON payload on stdin and an explicit env.
 // The env arg controls whether CAM_SESSION is visible to the script (never inherited from
@@ -442,6 +443,41 @@ describe('orch-agent-allowlist.sh', () => {
 		async () => {
 			const result = await runHook(
 				{ tool_name: 'Write', tool_input: { file_path: PRD_ABS_PATH } },
+				{ PATH: BASE_PATH, CAM_WORKER: '1' },
+			);
+			assertAllow(result);
+		},
+	);
+
+	// --- Write/Edit/MultiEdit worker-actor write-guard on scripts/cam/issues/ (US-001/CAM-166) ---
+
+	test.skipIf(!jqAvailable)(
+		'scoped + worker-actor: Write to scripts/cam/issues/ yields deny',
+		async () => {
+			const result = await runHook(
+				{ tool_name: 'Write', tool_input: { file_path: ISSUE_ABS_PATH } },
+				WORKER_ENV,
+			);
+			assertDeny(result);
+		},
+	);
+
+	test.skipIf(!jqAvailable)(
+		'scoped, planner (no CAM_WORKER): Write to scripts/cam/issues/ yields allow',
+		async () => {
+			const result = await runHook(
+				{ tool_name: 'Write', tool_input: { file_path: ISSUE_ABS_PATH } },
+				SCOPED_ENV,
+			);
+			assertAllow(result);
+		},
+	);
+
+	test.skipIf(!jqAvailable)(
+		'unscoped (no CAM_SESSION): worker-actor Write to scripts/cam/issues/ yields allow',
+		async () => {
+			const result = await runHook(
+				{ tool_name: 'Write', tool_input: { file_path: ISSUE_ABS_PATH } },
 				{ PATH: BASE_PATH, CAM_WORKER: '1' },
 			);
 			assertAllow(result);
