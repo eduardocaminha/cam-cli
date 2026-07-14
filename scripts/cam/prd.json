@@ -24,7 +24,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New files: scripts/validate-agents-md.ts, test/validate-agents-md.test.ts. Import COMMANDS from index.ts (exported at index.ts:2858) for cam-cmd validation; read package.json scripts keys for bun-run validation. Bun-only: use Bun.file/Bun.Glob, never node:fs. noUncheckedIndexedAccess: guard all regex capture-group and array access. .claude/agents/subagent-orchestrator.md is the densest citer and will drive most KNOWN_MISSING entries (runtime artifacts). Line-ref stripping must handle both single-line (index.ts:2373) and range (src/foo.ts:10-20). Do NOT conflate with vendor/check-agent-frontmatter.ts (frontmatter-shape only, not run by check:all). Make the tests inject doc content / a temp surface so they do not depend on the live repo docs staying static."
     },
