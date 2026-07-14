@@ -179,6 +179,11 @@ export const KNOWN_MISSING: KnownMissingEntry[] = [
 		pattern: 'frontend.tsx',
 		reason: 'illustrative example filename in the Bun boilerplate CLAUDE.md frontend snippet, not a repo path',
 	},
+	{
+		pattern: '.githooks/**',
+		reason:
+			'forward-looking guardrail path in the implementer must-not-touch list; this repo uses .git/hooks (core.hooksPath default), so .githooks/ never exists on disk, but the constraint stays in case that convention is adopted later',
+	},
 ];
 
 // ---------------------------------------------------------------------------
