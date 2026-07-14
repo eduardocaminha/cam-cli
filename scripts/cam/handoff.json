@@ -1,0 +1,23 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Extend worker-actor Write-deny to scripts/cam/issues/ via a structured deny-set" },
+  "branchName": "cam/issue-166",
+  "timestamp": "2026-07-13T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    ".claude/hooks/orch-agent-allowlist.sh",
+    "templates/.claude/hooks/orch-agent-allowlist.sh",
+    "src/vendor/_generated.ts",
+    "test/orch-agent-allowlist.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "The worker-actor Write-deny in .claude/hooks/orch-agent-allowlist.sh (and its templates/ mirror + src/vendor/_generated.ts embed) now iterates a small deny-set of two globs (*scripts/cam/prd.json, *scripts/cam/issues/*) under the comment 'worker-protected cam control-plane state', instead of a single hard-coded prd.json conditional. Both bash copies are byte-identical (diff clean) and the vendor embed is regenerated (bun run embed-vendor + embed-vendor:check clean). test/orch-agent-allowlist.test.ts got 3 new cases (worker DENY / planner ALLOW / unscoped ALLOW) mirroring the existing prd.json trio but for a scripts/cam/issues/CAM-XXXX.json path, spawning the real script (no reimplementation, per the file's ANTI-SHADOW-MOCK convention). If a future story needs to add a third protected path, extend the same `for protected_glob in ...` loop in all three copies and re-run embed-vendor.",
+  "officialDocsValidated": [
+    {
+      "lib": "Claude Code hooks (PreToolUse spec)",
+      "url": "https://code.claude.com/docs/en/hooks",
+      "fetchedAt": "2026-07-13T00:00:00Z",
+      "status": "aligned",
+      "summary": "Confirmed current PreToolUse deny/allow JSON shape (hookSpecificOutput.permissionDecision: allow|deny|ask|defer) matches the hook's existing deny payload and silent-exit-0-means-no-decision allow path, which this story did not change (only the glob-matching conditions were restructured into a deny-set loop)."
+    }
+  ]
+}
