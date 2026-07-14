@@ -57,7 +57,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Files: scripts/check-all.ts (GATES array ends at line 92, append via the g() helper), package.json (scripts block), scripts/check-ci-parity.ts (BUN_RUN_ALLOWLIST at ~line 29 currently holds only check:all, check:ci-parity), test/gates-manifest.test.ts (toHaveLength(11) at line 44, name list at 47-48), test/check-all.test.ts (toHaveLength(11) at 54, per-index name assertions 55-65, runner count at 312-320). Requires US-001 so the spawned script exists and check:all can pass. Pick a gate name consistent with the check:agents alias."
     }
