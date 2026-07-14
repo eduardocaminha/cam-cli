@@ -1,12 +1,12 @@
 {
   "id": "CAM-63",
   "title": "Harden supervisor<->worker boundary: orchestrator-surface contract test + actor-ACL + empty-push verification",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-16T22:30:00Z",
   "description": "Three boundary-hardening items, each mapping to a CAM-55/57-class bug. (1) Orchestrator-surface contract test (sapling orchestrator-surface.test.ts pattern): one test that pins the supervisor<->worker protocol shape (the send-keys submit form, the worker-report.json schema, the CAM_*_STATUS line, the @cam_label lifecycle) with a mock worker + real supervisor logic; would have caught the CAM-55 literal-Enter and CAM-57 dead-pane classes early. (2) Actor-ACL (plot src/acl.ts pattern): a worker actor must NOT be able to mutate its own acceptanceCriteria/goal or self-flip a story to passes:true; only the deterministic supervisor (after the reviewer verdict) or the operator can. A worker that disputes acceptance emits a blocker and halts. Hardens the two-layer against a worker gaming its own oracle. (3) Empty-push verification (warren ACCEPTANCE.md): branchPushed=true does not prove a commit (can fire on empty-push); gate on 'gh ... ahead_by >= 1' matching intent before treating a worker run as done. Source: sapling orchestrator-surface.test.ts; plot src/acl.ts; warren ACCEPTANCE.md / reap.empty_push.",
-  "updatedAt": "2026-07-13T20:12:13.956Z",
+  "updatedAt": "2026-07-14T01:59:57.341Z",
   "spec": {
     "acceptanceCriteria": [
       "Contract test under test/supervisor/ pins the supervisor<->worker protocol shape using the existing in-memory fake pattern (no new mock-worker binary): send-keys submit form is text+Enter WITHOUT -l (CAM-55), worker-report.json field shape (outcome/story/gates{typecheck,tests}/notes), the CAM_*_STATUS sentinel regex, and the @cam_label pane lifecycle. [oracle: file-assert bun test test/supervisor/<file> passes green]",
