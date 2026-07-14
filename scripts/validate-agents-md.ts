@@ -99,6 +99,78 @@ export const KNOWN_MISSING: KnownMissingEntry[] = [
 		pattern: '/exit',
 		reason: 'built-in Claude Code slash command, not a filesystem path',
 	},
+	{
+		pattern: 'foo.json',
+		reason: 'illustrative placeholder filename in an oracle-kind example (subagent-auditor.md), not a real path',
+	},
+	{
+		pattern: 'prd.json',
+		reason: 'bare-filename shorthand for scripts/cam/prd.json used throughout agent docs for prose readability',
+	},
+	{
+		pattern: 'handoff.json',
+		reason: 'bare-filename shorthand for scripts/cam/handoff.json used throughout agent docs for prose readability',
+	},
+	{
+		pattern: 'worker-report.json',
+		reason: 'bare-filename shorthand for scripts/cam/worker-report.json used throughout agent docs for prose readability',
+	},
+	{
+		pattern: 'review-report.json',
+		reason: 'bare-filename shorthand for scripts/cam/review-report.json used throughout agent docs for prose readability',
+	},
+	{
+		pattern: 'handoff.schema.json',
+		reason: 'bare-filename shorthand for scripts/cam/handoff.schema.json used throughout agent docs for prose readability',
+	},
+	{
+		pattern: 'journal.md',
+		reason: 'bare-filename shorthand for scripts/cam/journal.md used throughout agent docs for prose readability',
+	},
+	{
+		pattern: 'patterns.md',
+		reason: 'bare-filename shorthand for scripts/cam/patterns.md used throughout agent docs for prose readability',
+	},
+	{
+		pattern: 'lessons.md',
+		reason: 'retired filename mentioned for historical context in scripts/cam/CLAUDE.md; replaced by lessons.archive.md',
+	},
+	{
+		pattern: 'memory/',
+		reason: 'created lazily per the Knowledge-Layer Routing table; absent until the first cross-cutting decision is filed',
+	},
+	{
+		pattern: 'run.ts',
+		reason: 'bare-filename shorthand for src/commands/run.ts used in subagent-orchestrator.md prose',
+	},
+	{
+		pattern: 'setup.ts',
+		reason: 'bare-filename shorthand for src/commands/setup.ts used in subagent-orchestrator.md prose',
+	},
+	{
+		pattern: 'orch-agent-allowlist.sh',
+		reason: 'bare-filename shorthand for .claude/hooks/orch-agent-allowlist.sh used in subagent-orchestrator.md prose',
+	},
+	{
+		pattern: '.cam-orch-handoff.json',
+		reason: 'bare-filename shorthand for .claude/.cam-orch-handoff.json, a runtime marker absent in a fresh checkout',
+	},
+	{
+		pattern: '.cam-orch-handoff.consumed.json',
+		reason: 'bare-filename shorthand for .claude/.cam-orch-handoff.consumed.json, a runtime marker absent in a fresh checkout',
+	},
+	{
+		pattern: 'scripts/cam/issues/CAM-XXXX.json',
+		reason: 'templated placeholder issue id in subagent-planner.md prose, not a real path',
+	},
+	{
+		pattern: 'postgres.js',
+		reason: 'npm package name mentioned in the Bun boilerplate CLAUDE.md (do not use pg or postgres.js), not a repo path',
+	},
+	{
+		pattern: 'frontend.tsx',
+		reason: 'illustrative example filename in the Bun boilerplate CLAUDE.md frontend snippet, not a repo path',
+	},
 ];
 
 // ---------------------------------------------------------------------------

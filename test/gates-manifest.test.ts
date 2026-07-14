@@ -7,6 +7,7 @@
 // The 6 CAM-60 static-layer gates: lint, file-size, debt-markers, coverage,
 //   dead-code, dup
 // The 1 CAM-201 gate: version-skips
+// The 1 CAM-61 gate: agents-md
 //
 // This file is intentionally separate from check-all.test.ts (which tests the
 // runGates runner and per-gate command shapes). Its sole job is to catch any
@@ -20,6 +21,7 @@ const GATE_NAMES: string[] = GATES.map((g) => g.name);
 const CAM59_GATES = ['typecheck', 'test', 'embed-vendor', 'ci-parity'] as const;
 const CAM60_GATES = ['lint', 'file-size', 'debt-markers', 'coverage', 'dead-code', 'dup'] as const;
 const CAM201_GATES = ['version-skips'] as const;
+const CAM61_GATES = ['agents-md'] as const;
 
 describe('GATES manifest completeness (US-007)', () => {
 	test('contains all 4 CAM-59 foundation gates by exact name', () => {
@@ -40,12 +42,18 @@ describe('GATES manifest completeness (US-007)', () => {
 		}
 	});
 
-	test('total gate count is 11 (4 CAM-59 + 6 CAM-60 + 1 CAM-201)', () => {
-		expect(GATES).toHaveLength(11);
+	test('contains the CAM-61 agents-md gate by exact name', () => {
+		for (const name of CAM61_GATES) {
+			expect(GATE_NAMES).toContain(name);
+		}
 	});
 
-	test('all 11 expected names are present in the manifest', () => {
-		const expected = [...CAM59_GATES, ...CAM60_GATES, ...CAM201_GATES];
+	test('total gate count is 12 (4 CAM-59 + 6 CAM-60 + 1 CAM-201 + 1 CAM-61)', () => {
+		expect(GATES).toHaveLength(12);
+	});
+
+	test('all 12 expected names are present in the manifest', () => {
+		const expected = [...CAM59_GATES, ...CAM60_GATES, ...CAM201_GATES, ...CAM61_GATES];
 		for (const name of expected) {
 			expect(GATE_NAMES).toContain(name);
 		}

@@ -12,6 +12,7 @@
     "typecheck": "bunx tsc --noEmit",
     "check:all": "bun scripts/check-all.ts",
     "check:ci-parity": "bun scripts/check-ci-parity.ts",
+    "check:agents": "bun scripts/validate-agents-md.ts",
     "lint": "bunx biome lint --error-on-warnings",
     "verify": "bun scripts/check-all.ts",
     "test:container": "bun scripts/test-in-container.ts"

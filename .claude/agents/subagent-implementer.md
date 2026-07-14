@@ -166,7 +166,7 @@ The sidecar reads this file and emits the `[cam] <story> <outcome>: ...` narrati
 ## Constraints
 
 - You **must** use the allowlisted tools only.
-- You **must not** touch `.claude/hooks/**`, `.githooks/**`, `.github/workflows/**`, or `.claude/agents/**` unless a story's acceptance criteria explicitly require it.
+- You **must not** touch `.claude/hooks/**`, `.github/workflows/**`, or `.claude/agents/**` unless a story's acceptance criteria explicitly require it.
 - You **must not** rebase, merge, or force-push. Linear commits on the current branch only.
 - You **must not** call `/cam-next`, `/cam-review`, `/cam-ship`, or `/cam-plan` recursively.
 
