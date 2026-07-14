@@ -1,0 +1,10 @@
+{
+  "id": "CAM-302",
+  "title": "Golden-fixtures for CAM_*_STATUS sentinel + handoff/worker-report parsing (split from CAM-61 item 3)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-14T03:00:35.590Z",
+  "updatedAt": "2026-07-14T03:00:35.590Z",
+  "description": "Split from CAM-61 (items 1+2 shipped: doc-as-code gate + count-freeze). Capture real worker-CLI wire output as golden fixtures (__golden__/*.jsonl + a canonical parsed form) and diff them in tests, so a silent upstream claude wire-shape change fails a test. Direct antidote to the supervisor-sentinel-parse-fragility class (CAM-32/35). Re-grounding discovered during CAM-61 spec: (1) only CAM_IMPLEMENTER_STATUS (parser src/supervisor/result.ts:172, loose detect :455) and CAM_SETUP_STATUS (src/commands/setup.ts:404/496) exist; CAM_REVIEW_STATUS does NOT exist (reviewer uses <review>CLEAN</review> / <review>FIXES_PENDING:N</review>, parseReviewVerdict src/supervisor/review.ts:172). (2) issue's suggested dir src/runtime/parsers/__golden__/ does not exist; parsers live in result.ts, review.ts, orchestrator/handoff.ts, host.ts. (3) two handoff files: orchestrator (.claude/.cam-orch-handoff.json, src/orchestrator/handoff.ts, schema orch-handoff.schema.json) and worker (scripts/cam/handoff.json, schema handoff.schema.json); worker-report.json shape guard src/supervisor/host.ts:121. (4) no __golden__ fixtures exist today. Key spec question: capture real claude wire output deterministically with no live claude in the test (recorded-fixture harness, not a live call). Part of the operator Tier 1 batch drain follow-ups."
+}
