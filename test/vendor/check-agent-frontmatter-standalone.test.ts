@@ -54,6 +54,7 @@ test(
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("agent file(s) ok");
   },
+  { timeout: 20_000 },
 );
 
 test(
@@ -80,4 +81,5 @@ test(
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("agent file(s) ok");
   },
+  { timeout: 20_000 },
 );

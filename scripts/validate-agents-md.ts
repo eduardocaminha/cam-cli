@@ -292,6 +292,11 @@ export type GetTrackedFilesFn = () => string[];
 export function makeGetTrackedFiles(cwd: string): GetTrackedFilesFn {
 	return () => {
 		const result = spawnSync('git', ['ls-files'], { encoding: 'utf8', cwd });
+		if (result.status !== 0) {
+			throw new Error(
+				`git ls-files failed in ${cwd} (status ${result.status}): not a git repository / git unavailable`,
+			);
+		}
 		return (result.stdout ?? '').split('\n').filter((line) => line.length > 0);
 	};
 }
@@ -303,11 +308,29 @@ export type IsIgnoredFn = (path: string) => boolean;
  * Build an IsIgnoredFn that spawns `git check-ignore -q <path>` in `cwd`.
  * Exit code 0 means ignored; a git-ignored path-claim is treated as a
  * declared ephemeral and auto-exempted (US-R2-001, CAM-61).
+ *
+ * `git check-ignore` also exits 128 for a fatal error caused by the `path`
+ * argument itself (e.g. a slash-command-shaped claim like `/cam-next` reads
+ * as an absolute path git considers "outside repository"), distinct from a
+ * genuinely non-repo `cwd` or a missing `git` binary. Only the latter is a
+ * cwd/tooling failure worth aborting the run over, so only a stderr fatal
+ * naming "not a git repository" throws; any other 128 falls through as
+ * not-ignored so the caller's KNOWN_MISSING allowlist can still exempt it.
  */
 export function makeIsIgnored(cwd: string): IsIgnoredFn {
 	return (path: string) => {
-		const result = spawnSync('git', ['check-ignore', '-q', path], { cwd });
-		return result.status === 0;
+		const result = spawnSync('git', ['check-ignore', '-q', path], { cwd, encoding: 'utf8' });
+		if (result.error !== undefined) {
+			throw new Error(`git check-ignore failed in ${cwd}: git unavailable (${result.error.message})`);
+		}
+		if (result.status === 0) return true;
+		if (result.status === 1) return false;
+		if ((result.stderr ?? '').includes('not a git repository')) {
+			throw new Error(
+				`git check-ignore failed in ${cwd} (status ${result.status}): not a git repository / git unavailable`,
+			);
+		}
+		return false;
 	};
 }
 
