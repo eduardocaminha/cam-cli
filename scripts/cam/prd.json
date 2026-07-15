@@ -1,0 +1,39 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-307",
+  "description": "Fix silent issue-blob truncation in readBacklogFromMain via ample maxBuffer + fail-closed spawn-error check.",
+  "issueNumber": 307,
+  "type": "feat",
+  "relatedDocs": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "node:child_process (spawnSync, via Bun)",
+      "url": "https://nodejs.org/api/child_process.html#child_processspawnsynccommand-args-options",
+      "version": "current",
+      "fetchedAt": "2026-07-15T00:00:00Z",
+      "summary": "Confirmed spawnSync default maxBuffer is 1024*1024 bytes; when stdout exceeds it the child is terminated and output is TRUNCATED (silent), with the failure surfaced on the returned object's `error` field (ENOBUFS). Fix must both raise maxBuffer and check `error`/non-zero `status` to fail closed.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Fail-closed maxBuffer fix for readBacklogFromMain batch read",
+      "description": "As a cam operator, I need readBacklogFromMain to read the entire issue backlog regardless of store size (and to halt loudly if it ever cannot), so that cam issue list, allocateId, and suggestions promote never silently drop the highest-id issues and re-mint colliding ids.",
+      "acceptanceCriteria": [
+        "The BacklogSpawnFn type (src/issues/backlog.ts) includes an optional maxBuffer option so the option is type-visible. [oracle: grep -q 'maxBuffer' src/issues/backlog.ts]",
+        "The `git cat-file --batch` spawn call in readBacklogFromMain passes an ample maxBuffer (256 MiB, i.e. 256 * 1024 * 1024) so a growing backlog blob is never truncated at the 1 MiB default. [oracle: grep -Eq 'maxBuffer:\\s*256' src/issues/backlog.ts]",
+        "After the cat-file --batch spawn, readBacklogFromMain checks catResult.error and a non-zero catResult.status and THROWS a clear error instead of parsing a truncated buffer (fail-closed; the truncation must never be swallowed). [oracle: grep -Eq 'catResult\\.error|throw' src/issues/backlog.ts]",
+        "A regression test constructs a real on-disk git tmpdir whose committed scripts/cam/issues/ set produces a `git cat-file --batch` stdout exceeding the old 1 MiB default, calls readBacklogFromMain with the default (real) spawn at the wire boundary, and asserts ALL entries are returned including the highest id (not a truncated prefix). [oracle: bun test test/issues/backlog.test.ts]",
+        "A test asserts that when the batch read reports an error (injected BacklogSpawnFn returning a populated `error`/non-zero status), readBacklogFromMain throws rather than returning a partial list. [oracle: bun test test/issues/backlog.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Single-file root-cause fix in src/issues/backlog.ts + tests in test/issues/backlog.test.ts. Edit points: BacklogSpawnFn type at backlog.ts:34-38 (add optional maxBuffer to the options object); cat-file --batch spawn at backlog.ts:136-140 (add maxBuffer: 256 * 1024 * 1024); add the error/status guard between backlog.ts:140 and the parseBatchOutput call at 145-146 (throw before parsing when catResult.error is set or catResult.status is non-zero). Do NOT swallow the error. Gotcha (curated invariant + CAM-90): git cat-file --batch <size> is in BYTES; parseBatchOutput already slices a Buffer byte-accurately. Gotcha (patterns.md, file-per-issue hygiene): allocateId derives max(ids on main)+1, so a truncated read is what caused the CAM-306 triple-collision; the fix must guarantee the full read. Test-quality invariant: the truncation regression test MUST hit the real spawnSync wire boundary in a real git tmpdir (existing test/issues/backlog.test.ts uses DI fakes for framing tests, but this case needs real subprocess to exercise the 1 MiB overflow) rather than a mock that just returns a large string; the fail-closed test may use an injected BacklogSpawnFn fake. Follow existing test helpers (makeEntry, makeBatchOutput) and Bun test conventions. noUncheckedIndexedAccess is on: guard any array/regex access."
+    }
+  ]
+}
