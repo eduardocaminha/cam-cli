@@ -129,7 +129,7 @@
         "The full quality spine passes green, including the newly wired gate (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": "US-006",
       "notes": "CORRECTION of prior-round defect (finding #1): the gate-count freeze lives in TWO files, not only test/check-all.test.ts. Both test/check-all.test.ts (:8 comment, :53-54 describe title + toHaveLength(12) + positional GATES[n], :332-339 onResults name-lists) AND test/gates-manifest.test.ts (:51-52 'total gate count is 12' + toHaveLength(12), :55 'all 12 expected names', :3-10 count-breakdown comment) freeze at 12. Bumping only check-all.test.ts leaves gates-manifest.test.ts red, making bun test and check:all unsatisfiable - so BOTH must be bumped to 13 with a CAM-305 gate-name group. Files: scripts/check-all.ts, test/check-all.test.ts, test/gates-manifest.test.ts. Dependency note (finding #3): the single requires:'US-006' field understates the real dependency - because check:all (AC8) and the scanner (AC5) scan ALL of test/, this story depends on EVERY migration story completing (US-002, US-003, US-004, US-005, and US-006), not only US-006. The sequential priority ordering (2..7) is the effective gate that guarantees this; requires points at US-006 as the last-in-order anchor. Gate name 'test-sleeps' chosen to mirror the debt-markers naming. validate-agents-md.ts has no gate-count assertion (issue gotcha), so it is intentionally untouched."
     }
