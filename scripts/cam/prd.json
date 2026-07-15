@@ -77,7 +77,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": "US-003",
       "notes": "Single-file config change: tsconfig.json lines 27-28 flip false->true; leave line 29 (noPropertyAccessFromIndexSignature) false. This is the gate-arming story and MUST land last: flipping earlier would leave typecheck red while cleanup stories are pending. Per issue scope: do NOT touch knip.json, do NOT configure biome noUnusedVariables (biome.json excludes test/** so it would miss ~88% of violations - tsc is chosen precisely because it covers test/**). No new check:all gate is added, so the gate-count freeze (12) and validate-agents-md are untouched. After this, bun run typecheck and bun run check:all must both be green."
     }
