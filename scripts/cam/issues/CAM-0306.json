@@ -1,13 +1,13 @@
 {
   "id": "CAM-306",
-  "title": "Helpers use node:child_process spawnSync rather than Bun.spawnSync. This is pre…",
+  "title": "PRD authoring nit (not a code defect): the US-003 AC1 oracle `grep -Lq 'WorkerR…",
   "stage": "idea",
   "status": "open",
   "blockedBy": [],
-  "createdAt": "2026-07-15T02:21:11.656Z",
-  "updatedAt": "2026-07-15T02:21:11.656Z",
-  "description": "Helpers use node:child_process spawnSync rather than Bun.spawnSync. This is pre-existing style throughout this synchronous gate script (not introduced by this diff), so keeping it is the correct surgical choice; noted only as a future Bun-first alignment opportunity for the whole file.\n\nSource: cam/issue-304\nReview round: 1\n\nsuggestion-fingerprint: 2197b006eae8",
+  "createdAt": "2026-07-15T10:49:03.210Z",
+  "updatedAt": "2026-07-15T10:49:03.210Z",
+  "description": "PRD authoring nit (not a code defect): the US-003 AC1 oracle `grep -Lq 'WorkerReportFallback' src/supervisor/result.ts` is self-contradictory (`-q` overrides `-L`), so it exits non-zero for any correct implementation. The criterion (interface deleted) is objectively satisfied. A future PRD should use `! grep -q 'WorkerReportFallback' file` for an absence assertion.\n\nSource: cam/issue-301\nReview round: 1\n\nsuggestion-fingerprint: f6a7e4ec50a3",
   "derivedFrom": [
-    "CAM-304"
+    "CAM-301"
   ]
 }
