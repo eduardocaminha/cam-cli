@@ -1,14 +1,14 @@
 {
-  "lastCompletedStory": { "id": "US-002", "title": "Add test-quality rubric guidance to the cam reviewer agent (.claude copy)" },
+  "lastCompletedStory": { "id": "US-003", "title": "Mirror the rubric guidance into the generic reviewer template and re-embed" },
   "branchName": "cam/issue-62",
   "timestamp": "2026-07-15T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    ".claude/agents/subagent-reviewer.md"
+    "templates/agents/subagent-reviewer.md",
+    "src/vendor/_generated.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "Added a 'Test-quality rubric: expanding criterion #2' subsection to .claude/agents/subagent-reviewer.md, inserted right after 'Green tests do not prove correctness' and before 'No-flaky-evasion hard stop'. Covers: (a) 3-clause anti-mock rule (bans tautological 'mock was called' assertions using the warren CONSTITUTION Art. IV aphorism verbatim: \"a test that asserts a mock was called is documentation, not verification\"; mandates real-I/O at each wire boundary git/tmux/gh/filesystem; explicitly allows behavioral DI-fakes per the CONTEXT.md glossary definition and ADR 0039), (b) adversarial-cases mandate (malformed input, boundary values, regression-of-a-past-bug), (c) per-test discipline checklist (behavior-named tests, one concept per test, success/error/edge triad, waitForCondition from test/helpers/wait-for-condition.ts instead of fixed setTimeout/Bun.sleepSync). Did NOT touch the '8 fixed criteria' count or any other criterion row. This story only edited the .claude/ runtime copy per its notes; templates/agents/subagent-reviewer.md (the generic/embedded copy) is explicitly out of scope here and is the next story's target (prd.json shows a follow-on story requiring the same aphorism/waitForCondition/adversarial phrases in templates/agents/subagent-reviewer.md) — read that story's own acceptanceCriteria before assuming this file's exact wording must be mirrored verbatim, since the generic copy may need de-specialization (e.g. no cam-specific paths)."
-  ,
+  "nextStoryContext": "Added a 'Test-quality rubric: expanding criterion #2' subsection to templates/agents/subagent-reviewer.md, inserted right after 'Green tests do not prove correctness' and before 'No-flaky-evasion hard stop' (same insertion point as US-002's .claude copy). Content was ADAPTED, not pasted verbatim: kept the anti-mock aphorism verbatim ('a test that asserts a mock was called is documentation, not verification') and the waitForCondition/adversarial-cases names per the acceptance criteria, but replaced cam-specific wire-boundary examples (git/tmux/gh) with generic ones (database/HTTP API/filesystem/queue), dropped the warren CONSTITUTION Art. IV citation and the CAM-55 fakes-lie backstory (not meaningful to a generic scaffolded project), and phrased the waitForCondition rule as 'a shared waitForCondition helper (or the project's equivalent)' since a downstream project won't have test/helpers/wait-for-condition.ts. Ran bun run embed-vendor to regenerate src/vendor/_generated.ts; embed-vendor:check, test/embedded.test.ts, typecheck, full bun test (4552 pass), and bun run check:all all green. No patterns.md bullet added: no new reusable insight beyond what 'cam dual-copy is per-file' already documents.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
