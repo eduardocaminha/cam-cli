@@ -1,10 +1,44 @@
 {
   "id": "CAM-310",
   "title": "Deterministic static PRD-oracle shell linter (sibling of CAM-309)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-15T20:37:34.726Z",
-  "updatedAt": "2026-07-15T20:37:34.726Z",
-  "description": "Add a deterministic static guard that inspects prd.json userStories[].acceptanceCriteria oracle strings for semantically-broken shell idioms BEFORE implement/review, without relying on the LLM auditor. Motivating case: the self-nullifying grep -q + -L/-l absence oracle (CAM-301/CAM-309) that runs verbatim in behavioral-gate.ts by exit-code and produces a false BLOCK. CAM-309 codifies the convention in the planner (emission) + auditor (agent-prose rejection); this is the stronger deterministic layer that fails closed at plan time. Open design question for spec time: placement (a check-*.ts gate vs a step in plan-runner.ts around the auditor subagent; PRDs are ephemeral generated artifacts so the natural point is the plan-runner audit path, not check:all) and detection breadth. type: feat."
+  "updatedAt": "2026-07-15T22:14:46.250Z",
+  "description": "Add a deterministic static guard that inspects prd.json userStories[].acceptanceCriteria oracle strings for semantically-broken shell idioms BEFORE implement/review, without relying on the LLM auditor. Motivating case: the self-nullifying grep -q + -L/-l absence oracle (CAM-301/CAM-309) that runs verbatim in behavioral-gate.ts by exit-code and produces a false BLOCK. CAM-309 codifies the convention in the planner (emission) + auditor (agent-prose rejection); this is the stronger deterministic layer that fails closed at plan time. Open design question for spec time: placement (a check-*.ts gate vs a step in plan-runner.ts around the auditor subagent; PRDs are ephemeral generated artifacts so the natural point is the plan-runner audit path, not check:all) and detection breadth. type: feat.",
+  "spec": {
+    "scope": "Add a DETERMINISTIC static PRD-oracle linter that runs in the plan-runner audit path (NOT check:all), inspecting the freshly-generated prd.json userStories[].acceptanceCriteria oracle shell strings for a known class of semantically-broken shell idioms BEFORE the LLM auditor spawns, failing closed at plan time. Placement is dictated by the fact that prd.json is an ephemeral in-process artifact (written by the planner, committed to the feature branch, git rm'd at ship): a check:all gate scans the committed working tree and would find no prd.json. This is the deterministic sibling of CAM-309 (which adds planner-emission + auditor-agent-prose rejection of the same class). Detection scope for THIS issue is exactly one rule (the grep -q + -L/-l self-nullifying absence oracle), implemented behind a named-rules list so a future rule is a one-liner. The em-dash literal-escape oracle class (journal.archive.md:173) is explicitly OUT OF SCOPE (file a follow-up if it recurs).",
+    "acceptanceCriteria": [
+      "A pure, exported scanner function detects the broken grep class: a grep invocation whose flags include the quiet flag -q AND include a list-files flag -L or -l, in ANY order, spacing, or bundling (-Lq, -qL, -lq, -ql, -L -q, -l -q, grep -q ... -L, etc.). It matches the GENERAL class, not the literal string '-Lq'. The correct absence idiom (! grep -q PATTERN file) does NOT trigger it. The scanner is structured as a named-rules list (array of { name, test(command): finding|null }) with this grep rule as the sole current member.",
+      "Oracle extraction reuses parseOracleDirectives (src/supervisor/behavioral-gate.ts:155): the linter walks each userStory's acceptanceCriteria[], extracts the [oracle: ...] .command shell string for named-command/file-assert directives, and applies the rules. Criteria with no oracle, reviewer-judgment, or tmux-pty directives are skipped (nothing to lint).",
+      "The linter runs in src/supervisor/plan-runner.ts runPlanWorkerSequence, AFTER the isPlannerNoPrd presence guard (~:792-794) and BEFORE the auditor subagent spawns (~:798 resolveAndSpawnAuditor). It reads and parses the prd.json content in-process (a new content-reading seam; today readPlannerReportFn only checks presence, not content, :318-322). Reuse the minimal PrdShape/PrdStory read-model shape (src/commands/status.ts:165-179) for the walk.",
+      "On a finding, the lint failure is folded into the EXISTING audit-BLOCK re-plan loop, not a bespoke terminal: it is treated as a deterministic BLOCK that enters the same re-plan round machinery the auditor's BLOCK uses, with the lint findings (story id + offending oracle string + rule name + why-broken) passed as the re-plan feedback so the next planner round fixes the exact oracle. Exhausting the re-plan rounds writes the same .cam-plan-escalated.json marker the auditor-BLOCK exhaustion path writes.",
+      "Flow ordering verified: plan -> lint -> (lint-fail => re-plan without spending the auditor) -> auditor -> (audit-block => re-plan). A clean PRD (no broken oracle) proceeds to the auditor unchanged; zero behavior change for PRDs whose oracles are all well-formed.",
+      "Unit tests (pure scanner, real strings, no I/O): the grep rule flags -Lq, -qL, -lq, -L -q, -l -q, and a bundled/reordered form; it does NOT flag ! grep -q, a plain grep -q (match assertion), grep -L alone, or grep -l alone; non-grep commands pass; criteria without an [oracle:] suffix are skipped.",
+      "Integration test (plan-runner path): a planner-produced prd.json containing a broken grep -q+-L oracle triggers the re-plan loop before the auditor is spawned; a clean prd.json proceeds to the auditor; round-exhaustion writes the plan-escalated marker.",
+      "Quality gates green: bun run typecheck, bun test, bun run check:all."
+    ],
+    "gotchas": [
+      "PLACEMENT IS LOAD-BEARING: this is NOT a check:all gate. prd.json is ephemeral and in-process only during the plan phase (planner writes it, executeGitProceedBranch commits it to the feature branch at plan-runner.ts:1178, cam ship --finalize git rm's it). check:all gates glob+readFileSync the committed working tree and would find no prd.json. The issue text itself says so (CAM-0310.json:9).",
+      "There is NO prd.schema.json and NO existing PRD content validator today: prd.json is parsed ad-hoc via untyped JSON.parse ... as <LocalShape> at ~6 sites, each with its own minimal interface. This linter is the FIRST structured PRD content validator; it establishes the pattern, does not extend one. Reuse status.ts PrdShape/PrdStory as the closest existing minimal read-model.",
+      "Extraction is already solved: parseOracleDirectives/parseOracleDirective (behavioral-gate.ts:137-169) turns a criterion string into a discriminated OracleDirective with a .command shell string for named-command/file-assert. Do NOT re-implement oracle parsing; consume .command. No full shell tokenizer is needed for the grep flag-class match (greenfield regex/flag matching, modeled on scripts/check-test-sleeps.ts pure-scanner shape).",
+      "Detection must be the GENERAL class (grep -q co-occurring with -L or -l in any arrangement), never the literal '-Lq' substring (would miss -qL). This mirrors CAM-309's explicit requirement (CAM-0309.json:21). The correct idiom ! grep -q must pass.",
+      "Independent of CAM-309 (no blockedBy): 309 is the agent-prose layer (planner Oracle Contract emission + auditor accept-criteria-health rejection), 310 is the deterministic gate. They are separate layers and can ship in any order; the only coupling is that the broken-class definition stays consistent between them. As of spec time CAM-309 is specified-but-unimplemented; do not assume its agent-prose changes are present.",
+      "readPlannerReportFn (plan-runner.ts:318-322) deliberately does NOT inspect prd.json content today (presence-only). Adding the content read is a new seam; keep it injected/testable in the plan-runner's existing dependency-injection style rather than a raw fs read inline.",
+      "Fail closed: a broken oracle must NEVER be allowed to proceed to branch creation. The whole point is deterministic rejection at plan time -- do NOT auto-repair the oracle string (rewriting a semantic shell bug is risky); route it to the planner via re-plan feedback instead."
+    ],
+    "domainTerms": [
+      "PRD-oracle linter",
+      "acceptanceCriteria oracle",
+      "absence oracle"
+    ]
+  },
+  "wsjf": {
+    "value": 4,
+    "timeCriticality": 1,
+    "riskReduction": 4,
+    "jobSize": 4
+  },
+  "type": "feat"
 }
