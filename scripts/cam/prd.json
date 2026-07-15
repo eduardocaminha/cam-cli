@@ -47,7 +47,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: test/integration/tmux-introspect.test.ts (12 sites), test/integration/stop-sidecar-real.test.ts (1 site). Use waitForCondition(predicate, { timeoutMs, intervalMs }) already on main (CAM-62). For tmux: poll capture-pane / list-panes for the pane/label to exist; for a killed process: poll until the pid/pane is gone; for a file artifact: poll until Bun.file(path).exists(). These are real-I/O integration tests: keep hitting the real tmux/git/fs boundary, just replace 'sleep then assume settled' with 'poll until the condition holds'. Migrations are independent of US-001 (the helper already exists); priority ordering places them after the scanner. patterns.md: grep 'tmux\\|integration\\|waitForCondition'."
     },
