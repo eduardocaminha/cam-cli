@@ -1,20 +1,44 @@
 {
   "id": "CAM-305",
   "title": "Deterministic check-test-sleeps gate: ban fixed setTimeout/Bun.sleepSync waits in tests",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
-  "blockedBy": [],
+  "blockedBy": [
+    "CAM-62"
+  ],
   "createdAt": "2026-07-15T01:29:42.535Z",
-  "updatedAt": "2026-07-15T01:35:44.866Z",
+  "updatedAt": "2026-07-15T01:36:15.601Z",
   "description": "Split from CAM-62 (which landed the reviewer-judgment rubric + the waitForCondition helper). Add a deterministic scripts/check-test-sleeps.ts check:all gate, modeled on scripts/check-debt-markers.ts, that fails when a test uses a fixed timed sleep for an async wait (bare Bun.sleepSync, or new Promise(r => setTimeout(r, ...))), pointing violators at the waitForCondition helper. This makes the setTimeout half of CAM-62 item 3 deterministic instead of reviewer-judgment. Considerations / blast radius: (1) it is a NEW check:all gate -> bump the CAM-61 gate-count freeze and the validate-agents-md gate-count accordingly; (2) needs a suppression/allowlist escape hatch for the legitimate injected fake-clock uses (test/dashboard.test.ts setTimeoutFn recorder; test/retry/launcher.test.ts globalThis.setTimeout monkeypatch to run synchronously) so it does not false-positive; (3) mini-CAM-135 flag-then-clean: the existing Bun.sleepSync waits in test/integration/ (tmux-introspect.test.ts, review-verdict-handback.test.ts, orch-recycle-watch.test.ts, plan-runner-target-obey.test.ts, ...) must be migrated to waitForCondition (or suppressed with justification) before the gate can go green. Source: CAM-62 grill 2026-07-14, split on merit to keep the CAM-62 PRD from ballooning past review-convergence.",
   "specSource": "derived",
   "derivedFrom": [
     "CAM-62"
   ],
   "wsjf": {
-    "value": 4,
-    "timeCriticality": 2,
-    "riskReduction": 5,
+    "value": 3,
+    "timeCriticality": 1,
+    "riskReduction": 4,
     "jobSize": 4
-  }
+  },
+  "spec": {
+    "acceptanceCriteria": [
+      "A new scripts/check-test-sleeps.ts gate is added, modeled on scripts/check-debt-markers.ts: a pure scan function over injected file contents plus a thin import.meta.main CLI (readFileSync only in the entrypoint), enumerating test/**/*.{ts,tsx} via Bun.Glob with EXCLUDED_DIRS filtered, printing file:line + message to stderr and exiting 1 on any violation, printing an ok line otherwise.",
+      "Detection matches only (i) Bun.sleepSync(<numeric literal>) as a call and (ii) new Promise(<id> => setTimeout(<id>, <numeric literal>)). It does NOT match injected/recorded clocks (sleepFn:, setTimeoutFn =, globalThis.setTimeout =, nowFn:), Bun.sleep( (async), bare callback schedulers setTimeout(cb, n), or variable-interval timers - verified against the known false-positive set.",
+      "Scope is test/ only (test/**/*.{ts,tsx}); src/ production sleeps (~12 Bun.sleepSync + ~16 setTimeout behind injection seams) are explicitly out of scope.",
+      "Suppression is a same-line tracker-ref (CAM-\\d+ | #\\d+ | https?://), mirroring check-debt-markers' CITED_RE; NO new inline // cam-ignore comment convention is introduced.",
+      "All 67 existing flaggable sites (54 Bun.sleepSync in test/integration/ + 13 promisified sleeps in unit tests) are migrated to the waitForCondition helper (from CAM-62): a fixed wait is replaced by polling the observable condition (pane exists / file written / process gone). Only a site with genuinely no pollable condition is suppressed with a same-line tracker-ref + reason.",
+      "The gate is appended as the 13th entry to the GATES array in scripts/check-all.ts, and the freeze in test/check-all.test.ts is bumped consistently: toHaveLength(12) -> 13, a positional index assertion for the new gate (name + cmd/args), the describe title and the length comment, and the onResults name-list.",
+      "The gate has its own unit tests: a flaggable fixture fails; injected-clock, suppressed-with-tracker-ref, Bun.sleep-async, and bare-scheduler fixtures all pass.",
+      "bun run typecheck, bun test, and bun run check:all all pass green."
+    ],
+    "scope": "Add a deterministic scripts/check-test-sleeps.ts check:all gate (#13) that bans fixed timed-sleep async waits in tests (Bun.sleepSync(<n>) and new Promise(id => setTimeout(id, <n>))), making the setTimeout half of CAM-62 item 3 deterministic rather than reviewer-judgment. Migrate all 67 existing sites to CAM-62's waitForCondition helper (no wholesale grandfathering), scope the scanner to test/ only, and bump the gate-count freeze. Suppression is the existing same-line tracker-ref convention. NOT in scope: src/ production sleeps, a new inline-comment ignore convention, matching Bun.sleep async or bare setTimeout schedulers, and the reviewer-rubric half (that shipped in CAM-62).",
+    "gotchas": [
+      "The legit injected clocks are textually distinct (they assign/record a fn: sleepFn:, setTimeoutFn = in test/dashboard.test.ts:879-896, globalThis.setTimeout = in test/retry/launcher.test.ts:158-201, nowFn:), so the precise two-form regex needs NO allowlist for them; keep the regex anchored and do NOT match bare setTimeout(cb, n) schedulers (test/dashboard.test.ts:755,789) or variable-interval timers (test/interactivity/interactivity.test.ts:129).",
+      "Target Bun.sleepSync (sync), NOT Bun.sleep( (async): this sidesteps the one ambiguous site, the template-literal Bun.sleep(60000) at test/integration/orch-recycle-pid-resolve.test.ts:138 which lives inside a spawned-script string, not a real test wait.",
+      "The gate-count freeze lives ONLY in test/check-all.test.ts (:54 toHaveLength(12), the positional GATES[n] assertions, the describe title, the length comment, and the onResults name-list); validate-agents-md.ts has NO gate-count assertion, so it is untouched.",
+      "Model on scripts/check-debt-markers.ts exactly: pure scanForSleeps(files:{path,text}[]) + thin CLI, readFileSync only in the import.meta.main entrypoint, so the scanner is unit-testable with injected content.",
+      "Migrating the 54 integration-tier sleeps to waitForCondition is strictly better (faster + less flaky): replace 'sleep then assume settled' with 'poll until the observable condition holds', not a blind fixed poll. This is why CAM-62 (the helper) is a hard blockedBy for a clean green landing."
+    ],
+    "domainTerms": []
+  },
+  "type": "chore"
 }
