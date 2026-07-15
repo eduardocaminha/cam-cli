@@ -21,7 +21,7 @@
         "Lint spine passes (bun run check:all), gate #12 self-check unaffected in the normal in-repo path. [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Single file of source + its mirror test. Source: scripts/validate-agents-md.ts makeGetTrackedFiles (lines ~292-297) and makeIsIgnored (lines ~307-312) - both already capture the spawnSync result but discard status; the fix inspects result.status. Tests: test/validate-agents-md.test.ts already has a real-git regression block (~line 489+) that spawns temp repos via spawnSync git init; add the non-repo-cwd throw cases there (a fresh temp dir with no git init makes git ls-files / git check-ignore exit 128). Gotchas: (1) legit-empty repo exits 0 with empty stdout while non-repo exits 128 - use `status !== 0` in makeGetTrackedFiles, do NOT reject empty stdout itself; (2) git check-ignore -q has 3 exit codes: 0=ignored, 1=NOT ignored (normal, must NOT throw), 128=error - only 128 throws; (3) functions are already exported and used by the real-git regression blocks, so no production wiring change needed to test. Out of scope: the identical smell in scripts/ratchet-diff.ts (separate gate, optional follow-up). This is defense-in-depth, not a live bug (only caller check:all always runs in-repo)."
     }
