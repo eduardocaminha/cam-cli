@@ -1,10 +1,47 @@
 {
   "id": "CAM-153",
   "title": "CAM-117 Half B/B-2: plan-runner gates cluster (generic operator-decision gate + cam resume + BLOCK re-plan loop + plan_approval=operator + in-progress-work conflict)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-01T18:50:22.193Z",
   "description": "Deferred second half of CAM-151 (CAM-117 Half B). CAM-151 B-1 ships the MAKE-LIVE core (phase enum single-source-of-truth in .claude/cam-loop.local.md with active derived from phase==='implementing'; wire runPlanPhase into the sidecar outer loop for the auto/happy path; `cam plan N` becomes a phase:planning signal-writer; cam-plan.md reduced to a thin phase-signal stub; keep Half A's escalate-to-operator on auditor BLOCK, NO auto re-plan yet).\n\nB-2 (this issue) adds the GATES cluster on top of the live plan-runner:\n\n1. Generic deterministic operator-decision gate primitive: phase:awaiting-operator + a pause object { gate, options[], context }; the sidecar notifies the orchestrator pane with context+options and waits (never auto-decides). Designed GENERIC (gate discriminator + options[] + context) because CAM-149 (ship-runner pauses) and CAM-139 (drainer kill-switch) reuse the exact same primitive.\n\n2. `cam resume <decision>` CLI thin-proxy: writes the decision to the loop file; the sidecar polls, validates the decision against the ACTIVE gate's options (rejecting invalid with a clear error), and resumes deterministically. Signal is source of truth; orchestrator only narrates.\n\n3. Deterministic BLOCK->re-plan loop: on auditor BLOCK, re-spawn the planner with the auditor findings (read from plan-verdict-report.json) injected into its prompt (CAM-37 mirror), capped at 2 rounds via a named constant; HALT to operator on non-convergence, NEVER auto-branch/flip an un-approved PRD (unlike review's MAX_ROUNDS_DEBT which promotes+continues).\n\n4. plan_approval=operator full-PRD gate: on auditor APPROVE in operator mode, pause via the generic gate with the FULL audited PRD summary as context (options approve/reject); approve->commit+branch+flip phase:implementing, reject->halt to phase:idle+notify. Deliberate behavior change: reviews the full audited PRD, not the pre-PRD sketch.\n\n5. in-progress-work conflict gate: detect deterministically at runPlanPhase start (prd.json with a passes:false non-operator story OR being on a cam/* branch); escalate via the generic gate with options continue/ship/abandon; continue->phase:implementing, abandon->deterministic clean (rm handoff.json + discard prd/branch state)+proceed, ship->delegate /cam-ship (becomes phase:shipping when CAM-149 lands).\n\nDepends on CAM-151 (B-1). Split rationale: jobSize-3+, would overflow the 3-round review cap (mirrors CAM-117/CAM-111 + prd-size-vs-review-convergence lesson). Full grilled design already lives in CAM-151's spec block. Specify via /cam-spec when reached.\n",
-  "updatedAt": "2026-07-01T18:50:22.193Z"
+  "updatedAt": "2026-07-15T22:43:09.760Z",
+  "spec": {
+    "scope": "Build the generic operator-decision gate primitive + its `cam decide` return-channel, and wire ONE consumer (in-progress-work conflict, original item 5). IN SCOPE: (1) a durable gate file .claude/.cam-gate.json = { gate, options[], context, decision? } with a JSON-schema + fail-closed validator, mirroring the existing durable-marker family; (2) sidecar writes the gate (phase:awaiting-operator + gate file) and pushes a notify line to the orchestrator pane with context+options, never auto-deciding; (3) `cam decide <decision>` CLI thin-proxy that validates the decision against the active gate's options[] and writes it into the SAME gate file; (4) sidecar polls the gate file, validates, executes the gate's resolution path, clears the file, flips phase; (5) in-progress-work conflict gate at runPlanPhase start (continue/ship/abandon). OUT OF SCOPE: item 3 (BLOCK->re-plan loop) is already shipped (v0.73.0) and must NOT be re-implemented; item 4 (plan_approval=operator full-PRD gate) is split to a separate blockedBy issue; no new config work (plan_approval already exists).",
+    "acceptanceCriteria": [
+      "A gate schema file (e.g. scripts/cam/cam-gate.schema.json) defines .claude/.cam-gate.json as { gate: string, options: string[], context: string, decision?: string }; a validator rejects a malformed/absent gate file fail-closed (throws / non-zero, never parses a partial).",
+      "When the sidecar reaches an operator-decision point it writes phase:awaiting-operator to the loop file AND writes .claude/.cam-gate.json with gate/options/context, and pushes a one-line notify to the orchestrator pane naming the gate + options + context; it never auto-selects an option.",
+      "`cam decide <decision>` reads the active gate file, validates <decision> is a member of options[], and writes decision into the same gate file; an invalid decision exits non-zero with a clear error listing the valid options; no active gate file exits non-zero with a clear 'no gate active' error.",
+      "The sidecar polls the gate file for a populated decision, re-validates it against options[], executes the corresponding resolution path, deletes the gate file, and flips phase accordingly; a decision failing validation is ignored (never executed).",
+      "A stale gate file left by a crashed prior run is cleared at gate-write time (mirror clearStalePlanArtifacts); the gate file is deleted on resolution (consumed-on-resolution).",
+      "In-progress-work conflict gate: at runPlanPhase start, deterministically detect (a) an existing prd.json carrying a passes:false non-operator story, OR (b) HEAD on a cam/* branch; on detection, write an in-progress-conflict gate with options exactly [continue, ship, abandon] and pause BEFORE selecting/dispatching an issue.",
+      "in-progress-conflict resolution: continue -> phase:implementing (resume the existing PRD); abandon -> deterministically rm handoff.json + discard prd/branch state, then proceed with the requested plan; ship -> phase:shipping (the pending plan request is dropped, operator re-issues cam plan after ship).",
+      "The orchestrator boot sequence surfaces an active .claude/.cam-gate.json as an opening blocker line (gate + options + context), consistent with the other durable markers; the orchestrator narrates but never writes the gate file directly.",
+      "Quality gates green: bun run typecheck (0 errors), bun test, bun run check:all; gate-file round-trip and sidecar poll/resolve are covered by behavioral tests hitting a real tmpdir gate file (no tautological mock-call-only assertions; async waits via waitForCondition, never fixed sleeps)."
+    ],
+    "gotchas": [
+      "Item 3 (BLOCK->re-plan loop + MAX_REPLAN_ROUNDS=2 + .cam-plan-escalated.json) is ALREADY SHIPPED (v0.73.0, src/supervisor/plan-runner.ts:947-1010 + plan-escalation.ts); it is OUT of scope. Do NOT re-implement it.",
+      "`cam resume` is ALREADY a command (4-mode interrupt-recovery: --mode reset-current-story|reset-prd|reset-branch, src/commands/resume.ts). Do NOT overload it. The new decision channel is a DISTINCT verb: `cam decide`.",
+      "The loop file .claude/cam-loop.local.md frontmatter is flat scalars only (active/phase/iteration/...); the gate object (array + free-text) does NOT belong there. It lives in a dedicated .claude/.cam-gate.json, mirroring the existing durable markers (.cam-plan-escalated.json / .cam-ship-stalled.json / .cam-implement-blocked.json).",
+      "Single source of truth: the decision is written back into the SAME gate file, the sidecar polls that file. Do NOT split the decision across the loop file and the gate file (avoids split-brain).",
+      "phase:awaiting-operator already exists in the LoopPhase enum (src/commands/status.ts:92-101) but is a PASSIVE dead-end today (active derives false, the sidecar idles; operator-mode plan-approval pauses there with no resume). This issue makes awaiting-operator an active, resumable state.",
+      "The gate shape is deliberately GENERIC (gate discriminator + options[] + context): CAM-149 (ship-runner pauses) and CAM-139 (drainer kill-switch) will reuse the exact same primitive + `cam decide`. Do NOT hard-code the shape to in-progress-conflict.",
+      "Item 4 (plan_approval=operator full-PRD gate) is split to a separate issue blockedBy CAM-153 and is NOT in this scope, even though its Half-A pause already exists partially.",
+      "plan_approval config key + readPlanApproval accessor already exist (default 'auto', src/config/models.ts:274-289) and are surfaced in Setup/Config TUIs; no new config work here.",
+      "This is jobSize-large; if the planner would exceed the 3-round review cap, it should split at plan time (prd-size-vs-review-convergence)."
+    ],
+    "domainTerms": [
+      "operator-decision gate",
+      "gate file (.claude/.cam-gate.json)",
+      "cam decide"
+    ]
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 2,
+    "riskReduction": 3,
+    "jobSize": 4
+  },
+  "type": "feat"
 }
