@@ -1,10 +1,36 @@
 {
   "id": "CAM-311",
   "title": "Fix maxBuffer drop in file-local + suggestions-promote backlog-read spawnFns (complete CAM-307)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-15T23:19:30.042Z",
-  "updatedAt": "2026-07-15T23:19:30.042Z",
-  "description": "P1 workflow/data-integrity bug: CAM-307 raised readBacklogFromMain's git cat-file --batch maxBuffer to 256 MiB and made it fail-closed, but three production SpawnFn wrappers rebuild the spawnSync options object with only encoding/env/input/stdio and SILENTLY DROP maxBuffer, so readBacklogFromMain's 256 MiB request never reaches spawnSync and it falls back to the node 1 MiB default -> ENOBUFS once the combined issue-blob stream exceeds 1 MiB (currently ~1.01 MiB across 272 issue files).\n\nAffected call-sites:\n- index.ts:2179-2185 (cam issue --file-local / id-allocator) -- BLOCKS all new-issue filing.\n- src/commands/sidecar.ts:2627 (used at ~:2714, the suggestions-promote / drain-gate backlog union) -- cam suggestions promote would ENOBUFS on the same blob.\n- index.ts:2350 (triage) -- latent, same drop.\nSafe (uses readBacklogFromMain's maxBuffer-forwarding default): selectPlannableFromFile / selectPlanTargetFromFile (sidecar :1399/:1912/:1917/:2294), so draining the specified queue is NOT affected; cam issue list is NOT affected.\n\nFix: forward maxBuffer at all three sites (spread { ...opts, stdio: 'pipe' } to match the working wrappers at index.ts:1667/1724/1881/1993/2003). The under-declared SpawnFn/BacklogSpawnFn options type is the CAM-307 root -- consider threading maxBuffer explicitly into the SpawnFn options type so a future explicit-field rebuild cannot silently drop it again.\n\nRegression test (the CAM-307/-302 golden-fixture spirit): a behavioral test that files an issue via the file-local path (and exercises suggestions-promote) against a real backlog blob exceeding 1 MiB, asserting no ENOBUFS and a correct allocated id -- pin BOTH call-sites above the 1 MiB default. Audit any remaining readBacklogFromMain consumers for the same drop.\n\nContext: root-caused 2026-07-15 while filing the CAM-153 split; a binary hand-fix bootstrapped filing (main intentionally left clean so this PR carries the real fix + test)."
+  "updatedAt": "2026-07-15T23:21:18.519Z",
+  "description": "P1 workflow/data-integrity bug: CAM-307 raised readBacklogFromMain's git cat-file --batch maxBuffer to 256 MiB and made it fail-closed, but three production SpawnFn wrappers rebuild the spawnSync options object with only encoding/env/input/stdio and SILENTLY DROP maxBuffer, so readBacklogFromMain's 256 MiB request never reaches spawnSync and it falls back to the node 1 MiB default -> ENOBUFS once the combined issue-blob stream exceeds 1 MiB (currently ~1.01 MiB across 272 issue files).\n\nAffected call-sites:\n- index.ts:2179-2185 (cam issue --file-local / id-allocator) -- BLOCKS all new-issue filing.\n- src/commands/sidecar.ts:2627 (used at ~:2714, the suggestions-promote / drain-gate backlog union) -- cam suggestions promote would ENOBUFS on the same blob.\n- index.ts:2350 (triage) -- latent, same drop.\nSafe (uses readBacklogFromMain's maxBuffer-forwarding default): selectPlannableFromFile / selectPlanTargetFromFile (sidecar :1399/:1912/:1917/:2294), so draining the specified queue is NOT affected; cam issue list is NOT affected.\n\nFix: forward maxBuffer at all three sites (spread { ...opts, stdio: 'pipe' } to match the working wrappers at index.ts:1667/1724/1881/1993/2003). The under-declared SpawnFn/BacklogSpawnFn options type is the CAM-307 root -- consider threading maxBuffer explicitly into the SpawnFn options type so a future explicit-field rebuild cannot silently drop it again.\n\nRegression test (the CAM-307/-302 golden-fixture spirit): a behavioral test that files an issue via the file-local path (and exercises suggestions-promote) against a real backlog blob exceeding 1 MiB, asserting no ENOBUFS and a correct allocated id -- pin BOTH call-sites above the 1 MiB default. Audit any remaining readBacklogFromMain consumers for the same drop.\n\nContext: root-caused 2026-07-15 while filing the CAM-153 split; a binary hand-fix bootstrapped filing (main intentionally left clean so this PR carries the real fix + test).",
+  "spec": {
+    "acceptanceCriteria": [
+      "All three SpawnFn wrappers that today rebuild spawnSync options field-by-field forward the full options object (spread { ...opts, stdio: 'pipe' }, matching the already-correct wrappers in index.ts), so readBacklogFromMain's 256 MiB maxBuffer reaches spawnSync at every call-site: the file-local / id-allocator wrapper, the suggestions-promote / drain-gate backlog-union wrapper in sidecar.ts, and the triage wrapper in index.ts.",
+      "A behavioral regression test constructs a real backlog blob exceeding the 1 MiB node default and exercises BOTH the file-local filing path AND the suggestions-promote path against it, asserting no ENOBUFS is thrown and a correct issue id is allocated/returned. The test fails on the pre-fix wrappers and passes after the spread fix.",
+      "The SpawnFn / BacklogSpawnFn options type is hardened so maxBuffer is part of the declared option surface: a future field-by-field rebuild that omits maxBuffer fails typecheck rather than silently regressing.",
+      "Every remaining readBacklogFromMain consumer is audited for the same drop; none remain."
+    ],
+    "scope": "Forward maxBuffer at the three field-rebuilding SpawnFn wrappers (index.ts file-local, index.ts triage, sidecar.ts suggestions-promote), harden the SpawnFn/BacklogSpawnFn options type so the option surface cannot be silently dropped, and add a >1 MiB behavioral regression test covering file-local and suggestions-promote. Out of scope: the safe selectPlannable/selectPlanTarget paths and cam issue list (already forward maxBuffer via readBacklogFromMain's default) and any change to CAM-307's 256 MiB ceiling.",
+    "gotchas": [
+      "index.ts file-local was hand-fixed in a throwaway local binary to bootstrap the filing of this issue; main source intentionally still carries the bug so this PR must re-apply that fix plus the other two sites plus the test. Do not assume file-local is already fixed on main.",
+      "The bug only manifests once the combined issue blob exceeds the node 1 MiB default (currently ~1.01 MiB / 272 files), so the regression fixture must genuinely exceed 1 MiB; a small fixture masks it (same class as the CAM-90 ASCII-fixture miss).",
+      "The under-declared options type is the CAM-307 root: a spread fix alone leaves the type hole open, so the type hardening is required to prevent recurrence."
+    ],
+    "domainTerms": [
+      "readBacklogFromMain: reads all issue files from main's tree via git cat-file --batch; sets maxBuffer to 256 MiB (CAM-307) and fails closed.",
+      "SpawnFn / BacklogSpawnFn: injectable spawnSync wrapper type passed through the on-main issue plumbing.",
+      "ENOBUFS: node spawnSync error thrown when child stdout exceeds maxBuffer (default 1 MiB)."
+    ]
+  },
+  "wsjf": {
+    "value": 4,
+    "timeCriticality": 4,
+    "riskReduction": 5,
+    "jobSize": 2
+  },
+  "type": "fix"
 }
