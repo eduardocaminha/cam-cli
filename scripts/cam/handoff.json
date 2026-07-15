@@ -1,0 +1,26 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Establish golden-fixture dir + sentinel/review-tag replay tests" },
+  "branchName": "cam/issue-302",
+  "timestamp": "2026-07-15T11:59:49Z",
+  "createdFiles": [
+    "test/fixtures/golden/sentinel-clean.txt",
+    "test/fixtures/golden/sentinel-codespan.txt",
+    "test/fixtures/golden/sentinel-bold.txt",
+    "test/fixtures/golden/sentinel-trailing-punct.txt",
+    "test/fixtures/golden/review-clean.txt",
+    "test/fixtures/golden/review-fixes-pending.txt",
+    "test/supervisor/golden-sentinel.test.ts"
+  ],
+  "modifiedFiles": [
+    "src/supervisor/result.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [
+    "AC4's literal oracle (`grep -Lq 'capture-pane\\|Bun.spawn\\|claude ' test/supervisor/golden-sentinel.test.ts`) is the broken idiom already documented in patterns.md (US-003, CAM-301): on this repo's BSD/macOS grep, -q nullifies -L's inversion so exit status always mirrors plain match-found, never absence-of-match. Verified independently (grep -c on the test file returns 0 occurrences of the three forbidden substrings) that the file genuinely satisfies the AC's intent; the literal oracle command itself cannot pass without reintroducing a forbidden string, which would defeat the AC's purpose. Treated as a known PRD-authoring defect, not a code defect, per the existing patterns.md guidance."
+  ],
+  "nextStoryContext": "US-001 exported a previously-private parseSentinel (+ new ParsedSentinel interface) from src/supervisor/result.ts so committed fixture strings could be replayed against it directly; parseAnySentinel and parseReviewVerdict were already exported and needed no change. test/fixtures/golden/ now holds 6 committed pane-text dumps (4 sentinel wrap variants + 2 review-tag variants) and test/supervisor/golden-sentinel.test.ts replays all of them with zero tmux/spawn/live-claude calls. US-002 (transcript-usage fixtures) and US-003 (self-authored-artifact-shape fixtures) should follow the same convention documented in the new patterns.md bullet: committed multi-line pane-text-shaped fixtures under test/fixtures/golden/, read via readFileSync(join(import.meta.dir, ...)), fed straight to the pure parser under test. US-004 (record-golden harness) is explicitly out of check:all and CI per its own AC (grep -Lq oracles again -- expect the same known-broken-oracle situation there; verify file content directly with grep -c rather than trusting the oracle's exit code literally).",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
