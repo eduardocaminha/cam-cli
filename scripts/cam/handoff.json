@@ -1,0 +1,24 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Throw on git spawn failure in makeGetTrackedFiles/makeIsIgnored" },
+  "branchName": "cam/issue-304",
+  "timestamp": "2026-07-15T02:10:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "scripts/validate-agents-md.ts",
+    "test/validate-agents-md.test.ts",
+    "test/vendor/check-agent-frontmatter-standalone.test.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 done: makeGetTrackedFiles now throws on any non-zero git ls-files exit; makeIsIgnored throws only when git check-ignore's stderr names 'not a git repository' (git-absent or non-repo cwd), and falls through as not-ignored for any OTHER 128 (e.g. a per-argument 'outside repository' fatal on a slash-command-shaped path claim like /cam-next) so the existing KNOWN_MISSING-allowlist fallback still works -- see the new patterns.md bullet before touching either function again. Unrelated pre-existing flake fixed in-story per no-flaky-evasion: test/vendor/check-agent-frontmatter-standalone.test.ts's two real-subprocess tests (spawnSync 'bun'/'git') had no per-test timeout override and intermittently exceeded bun's default 5000ms under full-suite CPU contention (same class as the CAM-201 patterns.md bullets); added { timeout: 20_000 } to both, and raised its file-size-budget.json ceiling 84->86 with a dated _ref note. Full bun test suite reran clean (4522 pass / 0 fail) twice after the timeout fix; bun run check:all is green end-to-end.",
+  "officialDocsValidated": [
+    {
+      "lib": "node:child_process",
+      "url": "https://nodejs.org/api/child_process.html#child_processspawnsynccommand-args-options",
+      "fetchedAt": "2026-07-15T02:05:00Z",
+      "status": "aligned",
+      "summary": "Confirmed spawnSync's documented shape: status is null (not 0) when the child never spawned (ENOENT sets result.error, status stays null), and stderr is a string only when encoding is set -- both assumptions the fix relies on (status!==0 catch-all in makeGetTrackedFiles; result.error check + encoding:'utf8' in makeIsIgnored) match current Node docs."
+    }
+  ]
+}
