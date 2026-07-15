@@ -1,13 +1,37 @@
 {
   "id": "CAM-304",
   "title": "makeGetTrackedFiles/makeIsIgnored do not distinguish a git failure (not a repo …",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-14T12:20:50.392Z",
-  "updatedAt": "2026-07-14T12:20:50.392Z",
+  "updatedAt": "2026-07-15T00:41:08.524Z",
   "description": "makeGetTrackedFiles/makeIsIgnored do not distinguish a git failure (not a repo / git absent) from an empty result; a non-repo cwd would silently yield zero tracked files and red the whole gate with false path findings. This is an impossible scenario for a check:all build gate (always run inside the repo), so per Simplicity-First no handling is warranted, but worth a comment if the script is ever reused out of context.\n\nSource: cam/issue-61\nReview round: 3\n\nsuggestion-fingerprint: 3a77c1c059a1",
   "derivedFrom": [
     "CAM-61"
-  ]
+  ],
+  "spec": {
+    "acceptanceCriteria": [
+      "makeGetTrackedFiles (scripts/validate-agents-md.ts) throws a clear Error (e.g. 'not a git repository / git unavailable') when the git ls-files spawn exits with a non-zero status, instead of returning an empty tracked-files set. A legitimately-empty git repo (exit 0, empty stdout) still returns an empty list without throwing.",
+      "makeIsIgnored (scripts/validate-agents-md.ts) throws a clear Error when git check-ignore exits 128, while preserving exit 0 -> ignored (true) and exit 1 -> not-ignored (false).",
+      "New tests in test/validate-agents-md.test.ts: makeGetTrackedFiles run against a non-repo cwd throws; makeIsIgnored against a non-repo cwd (exit 128) throws; the existing legit-empty and normal-path behaviours stay green.",
+      "The error messages match the existing plain `throw new Error(...)` convention used in scripts/generate-embedded-vendor.ts and scripts/preview-screens.ts (no custom error class).",
+      "bun run typecheck, bun test, and bun run check:all all pass green (gate #12 self-check unaffected in the normal in-repo path)."
+    ],
+    "scope": "Fail-loud hardening of the two git-plumbing helpers in scripts/validate-agents-md.ts (the CAM-61 doc-as-code gate #12) so a git failure (non-repo cwd / git absent) raises a clear error instead of silently yielding zero tracked files and reding the gate with false path-missing findings. The exit status is already captured in the spawnSync result and currently discarded; the fix inspects it. NOT a live bug: the only caller (check:all / the check:agents alias) always runs inside the repo, so this is defense-in-depth against manual runs or future callers. Out of scope: hardening the identical smell in scripts/ratchet-diff.ts:52-59 (a separate gate, no shared primitive; noted as an optional tiny follow-up, not included here).",
+    "gotchas": [
+      "A legitimately-empty git repo exits 0 with empty stdout, while a non-repo exits 128; a plain `status !== 0` check in makeGetTrackedFiles cleanly separates the error from a legit-empty tracked list (verified) - do NOT reject empty stdout itself.",
+      "git check-ignore -q has three exit codes: 0 = ignored, 1 = NOT ignored (normal), 128 = error/not-a-repo. Only 128 should throw; do not throw on 1.",
+      "makeIsIgnored's current exit-1/exit-128 conflation is harmless (both decline to exempt), so the false-findings damage comes solely from makeGetTrackedFiles returning empty; both are hardened for clarity but the tracked-files one is the load-bearing fix.",
+      "The functions are already exported and used by the real-git regression blocks in the test file, so the fail-loud cases need no production wiring change to test."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 1,
+    "riskReduction": 3,
+    "jobSize": 1
+  },
+  "type": "chore"
 }
