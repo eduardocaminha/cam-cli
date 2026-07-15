@@ -1,18 +1,17 @@
 {
-  "lastCompletedStory": { "id": "US-002", "title": "Route worker-report readers in host.ts and loop.ts through parseWorkerReport" },
+  "lastCompletedStory": { "id": "US-003", "title": "Route result.ts worker-report sites through parseWorkerReport and delete WorkerReportFallback" },
   "branchName": "cam/issue-301",
   "timestamp": "2026-07-15T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/host.ts",
-    "src/supervisor/loop.ts",
-    "test/supervisor/loop.test.ts",
-    "scripts/file-size-budget.json",
+    "src/supervisor/result.ts",
     "scripts/cam/patterns.md"
   ],
-  "openQuestions": [],
-  "nextStoryContext": "host.ts's makeReadWorkerReport now delegates directly to parseWorkerReport(raw) (raw file text in, typed WorkerReport|null out); loop.ts's poll-exit worker-report check round-trips the already-typed readWorkerReport() return value through parseWorkerReport(JSON.stringify(rawReport)) before applying the advisoryStoryId staleness comparison, since that call site's dep is statically typed WorkerReport but is not runtime-guaranteed to match (tests construct wrong-shape objects via `as WorkerReport`). result.ts's readWorkerOutcome (string-source consumer of report-parse.ts, per report-parse.ts's own module doc comment) still uses its own ad-hoc guards and was NOT touched by this story -- if the PRD calls for wiring result.ts onto parseWorkerReport/parseReviewReport next, that is a follow-up, not implied by US-002's acceptance criteria (which named only host.ts + loop.ts). One pre-existing test (test/supervisor/loop.test.ts's 'AC4: host.ts makeReadWorkerReport applies shape guard...' test) pinned the OLD inline-guard source text and was updated to assert 'parseWorkerReport' presence instead -- if a future story further changes host.ts's reader internals, that test will need another look.",
+  "openQuestions": [
+    "US-003's AC1 oracle ([oracle: file-assert grep -Lq 'WorkerReportFallback' src/supervisor/result.ts]) is expected to report FAIL when the reviewer (Layer B) re-runs it verbatim, even though WorkerReportFallback is genuinely deleted from result.ts (confirmed via grep -c and manual read, and via typecheck/bun test all green). Root cause: BSD/macOS grep's -q flag nullifies -L's exit-status inversion, so grep -Lq PATTERN FILE exits 1 whenever PATTERN is absent and 0 only when PATTERN is present -- the literal opposite of what a negative-existence file-assert oracle intends. Verified empirically via runBehavioralGate in a real tmux session, not just the interactive-shell grep wrapper. This is a PRD-authoring defect in the oracle's chosen grep flags (would need `! grep -q PATTERN FILE` instead to invert correctly on both GNU and BSD grep), not an implementation defect -- do not 'fix' it by reintroducing WorkerReportFallback. Documented in scripts/cam/patterns.md for the reviewer/planner."
+  ],
+  "nextStoryContext": "result.ts now delegates its worker-report read path entirely to the shared report-parse.ts parser: tryReadWorkerReport(reportPath, readFile) calls parseWorkerReport(text) and returns WorkerReport | null (the canonical type from worker-report.ts, imported via report-parse.ts's re-export). The old local WorkerReportFallback interface is gone. extractRecordedTestsGate(report: WorkerReport) is now a one-liner (report.gates?.tests) since parseWorkerReport already fail-closes a malformed gates field at parse time (a present-but-invalid gates rejects the WHOLE report to null before extractRecordedTestsGate ever sees it) -- there is no remaining need for the old isObject(gates) + typeof tests==='string' runtime guard inside extractRecordedTestsGate itself. The inline re-check `typeof report.outcome === 'string' && typeof report.story === 'string'` in the PRIMARY path of readWorkerOutcome was replaced by a plain `if (report)` truthiness check, since parseWorkerReport already guarantees both fields are strings when it returns non-null. No other call sites in the codebase referenced WorkerReportFallback (grep-verified). This completes the report-parse.ts wiring arc across all three consumers: host.ts + loop.ts (US-002) and result.ts (US-003, this story) all now share ONE parser contract -- if a future story adds a fourth worker-report reader, it should follow this same pattern (call parseWorkerReport(rawText) directly if the input is already raw text; round-trip via JSON.stringify per the US-002 patterns.md bullet if the input is already a statically-typed-but-not-runtime-guaranteed object).",
   "officialDocsValidated": [
-    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure internal refactor wiring two already-existing hand-rolled TS modules (host.ts, loop.ts) onto the shared report-parse.ts parser from US-001; no external library surface touched." }
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure internal refactor wiring result.ts onto the shared report-parse.ts parser (from US-001, already validated in that story); no external library surface touched." }
   ]
 }
