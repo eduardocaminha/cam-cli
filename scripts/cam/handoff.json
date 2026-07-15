@@ -1,0 +1,17 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Add per-attempt content recompute to the CAS commit-tree writers" },
+  "branchName": "cam/issue-300",
+  "timestamp": "2026-07-15T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/git/on-main.ts",
+    "src/issues/alloc.ts",
+    "test/issues/alloc.test.ts",
+    "test/on-main-multi.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "commitTreeToMain's `files` param and writeIssueFile's `extraFiles` option now accept EITHER a static FileWrite[] (unchanged) OR a FileWritesFn callback `(mainSha: string) => FileWrite[]`, invoked once per CAS attempt (after read-tree establishes that attempt's fresh main sha, exported from src/git/on-main.ts). writeIssueFile resolves it via the new private helper `resolveExtraFiles(extraFiles, currentMainSha)` in src/issues/alloc.ts. All existing callers (issue-specify.ts, journal.ts, triage.ts, suggestions.ts, domain-docs.ts, journal-archive.ts, patterns-archive.ts, createLocalIssueOnMain) pass a static FileWrite[]/array and are behaviour-unchanged (typeof check short-circuits to the array branch). This story only added the primitive; per the PRD note, US-002 is expected to route an actual pen/whole-file-overwrite writer (likely promoteSuggestionOnMain or similar) through the callback form to fix the real concurrent-clobber bug -- check prd.json for the exact US-002 scope before assuming which caller. Gotcha hit this story: biome's noExcessiveLinesPerFunction (max 80 lines/function, no per-file override exists for alloc.ts) tripped when the recompute logic was inlined into writeIssueFile; fixed by extracting the one-line typeof-branch into a private `resolveExtraFiles` helper -- if a future story adds more inline logic to writeIssueFile or commitTreeToMain, watch this ceiling before assuming a biome override is needed.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
