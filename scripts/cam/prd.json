@@ -39,7 +39,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edit only .claude/agents/subagent-reviewer.md (the cam-specialized runtime copy; it is NOT embedded, so no embed-vendor here). Anchor the guidance on criterion #2 in the 8-criteria block (~line 111-114) and/or the 'Green tests do not prove correctness' section (~line 121-124). GOTCHA (issue gotchas): a verbatim 'FAIL any new fake/mock/spy' rule is INCOHERENT for cam-cli (119/252 test files use blessed behavioral DI-fakes, 0 use module-mocking); the rule bans only tautological mock-call assertions and mandates real-I/O at boundaries. Do NOT add a 9th criterion or change the binary verdict count (issue scope). GOTCHA (orch-no-hardkill lesson): if the added prose pushes the file over its scripts/file-size-budget.json entry, raise that _ref budget in the SAME commit (check:all enforces it). The existing test/integration/*-real-* tier already institutionalizes the real-I/O half; you are codifying it, not building a new tier."
     },
