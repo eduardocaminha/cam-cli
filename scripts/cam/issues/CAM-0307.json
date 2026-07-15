@@ -1,0 +1,17 @@
+{
+  "id": "CAM-307",
+  "title": "Fix silent issue-blob truncation in readBacklogFromMain (spawnSync maxBuffer + fail-closed error check)",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-15T16:33:36.290Z",
+  "updatedAt": "2026-07-15T16:33:36.290Z",
+  "description": "Root-cause fix for a silent data-integrity bug in the local issue backend.\n\nPROBLEM: readBacklogFromMain (src/issues/backlog.ts:117-162) runs `git cat-file --batch` via the injected spawn (defaults to node child_process spawnSync, backlog.ts:119) passing only { encoding: utf8, input: refs } with NO maxBuffer (backlog.ts:136-140). Nodes spawnSync default maxBuffer is 1 MiB (1048576 bytes). Once the combined --batch stdout (issue blob content + per-object framing) exceeds 1 MiB, spawnSync returns error ENOBUFS with a TRUNCATED stdout. The code never checks catResult.error (backlog.ts:136-146); it parses whatever it got, so parseBatchOutput yields only the leading frames and silently drops the highest-id issues. This corrupts every consumer: cam issue list under-reports the backlog, allocateId (backlog.ts:206-219, max-on-main + 1) re-mints an already-used id and clobbers the existing file, and cam suggestions promote (shares writeIssueFile) collides identically. It is size-triggered and worsens as the store grows.\n\nFIX (both parts required, robust root-cause, not a band-aid):\n1. Pass an ample maxBuffer to the git cat-file --batch spawnSync call in readBacklogFromMain, and add maxBuffer to the BacklogSpawnFn type (backlog.ts:34-38) so the option is type-visible. A backlog blob can grow unbounded; size it generously (e.g. 256 MiB) rather than a tight guess.\n2. FAIL-CLOSED on the spawn error: after the spawn, check catResult.error (and non-zero status) and THROW a clear error instead of parsing a truncated buffer. Silent truncation is the actual defect; a future overflow must halt loudly, never drop issue data. Do not swallow it.\n\nACCEPTANCE:\n- A regression test that constructs an on-main (or fixture) issue set whose --batch stdout exceeds the old 1 MiB default and asserts readBacklogFromMain returns ALL entries (highest id included), not a truncated prefix. Prefer a real git tmpdir at the wire boundary over a mock.\n- A test asserting that when the batch read errors, readBacklogFromMain throws (fail-closed) rather than returning a partial list.\n- typecheck + bun test + check:all green.\n\nCONTEXT: discovered 2026-07-15 when three distinct new issues were all allocated CAM-306 (clobbering each other) and cam issue list dropped CAM-306. 38 abandoned issues were temporarily purged (commit f39c1f69) to shrink the blob below 1 MiB and unblock filing/planning this fix; once this ships the truncation is gone regardless of store size. Related prior lesson: git cat-file --batch size is in bytes (CAM-90).",
+  "specSource": "operator",
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 5,
+    "riskReduction": 5,
+    "jobSize": 2
+  }
+}
