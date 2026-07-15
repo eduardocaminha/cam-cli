@@ -1,34 +1,17 @@
 {
-  "lastCompletedStory": { "id": "US-006", "title": "Migrate unit-tier promisified setTimeout sleeps + suppress the flush-ink macrotask yield" },
+  "lastCompletedStory": { "id": "US-007", "title": "Wire check-test-sleeps as gate #13 and bump both gate-count freeze tests" },
   "branchName": "cam/issue-305",
-  "timestamp": "2026-07-15T16:10:00Z",
+  "timestamp": "2026-07-15T16:30:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "test/dashboard.test.ts",
-    "test/plan-runner-no-prd.test.ts",
-    "test/ui/init-setup-screen-keys.test.ts",
-    "test/supervisor/review.test.ts",
-    "test/supervisor/plan/plan-runner-branch-derivation.test.ts",
-    "test/supervisor/plan/plan-runner-container.test.ts",
-    "test/supervisor/plan/plan-runner-postaudit.test.ts",
-    "test/helpers/flush-ink.ts",
-    "test/check-test-sleeps.test.ts",
-    "scripts/file-size-budget.json",
-    "scripts/cam/patterns.md"
+    "scripts/check-all.ts",
+    "test/check-all.test.ts",
+    "test/gates-manifest.test.ts",
+    "scripts/file-size-budget.json"
   ],
-  "openQuestions": [
-    "check-test-sleeps.ts (US-001) is still NOT wired into check:all/GATES. It now reports zero un-suppressed violations repo-wide for the first time (this story closed the last ~17 non-integration-tier sites), so wiring it into check:all is now unblocked; a future story in this or a follow-up PRD should add that gate.",
-    "test/check-test-sleeps.test.ts's 3 fixture lines (Bun.sleepSync/setTimeout-promise/setTimeout(resolve,0) literal test fixtures) were NOT named in this story's AC1/AC2 (which listed exactly 13 pollable sites + 1 flush-ink suppression = 14), but AC3's literal oracle (`bun scripts/check-test-sleeps.ts` must exit 0) required them to be suppressed too, since the scanner's own repo-wide scan matches its own test file's fixture strings as false-positive sleeps. Fixed by appending a trailing `// CAM-305: scanner test fixture, not a real sleep` comment to the enclosing source line (outside the string literal), which does not change the in-memory fixture text the unit tests assert against. Flagging this in case the reviewer expects only the named 14 sites touched and treats this as scope creep; it was necessary to satisfy AC3's mechanical oracle, not a unilateral extra change.",
-    "test/integration/behavioral-gate.test.ts still carries the pre-existing UNCOMMITTED working-tree diff noted in the US-005 handoff (explicit { timeout } third args on 5 tests, unrelated to CAM-305). It remains untouched and uncommitted in the working tree; still needs the next session/operator to fold into a dedicated commit or discard."
-  ],
-  "nextStoryContext": "US-006 closes the CAM-305 sleep-migration PRD's full scope: all 14 named unit-tier sites (test/dashboard.test.ts's waitForAccentLine converted to reuse waitForFrame; test/ui/init-setup-screen-keys.test.ts x2 converted to waitForFrame polling 'All set'/'Failed' content; 9 escalateFn fire-and-forget assertions across test/supervisor/review.test.ts, plan-runner-branch-derivation.test.ts, plan-runner-container.test.ts, and plan-runner-postaudit.test.ts split into positive waitForCondition(() => escalateCalled(.n) > 0) polls and negative bounded-window .catch(() => {}) polls; test/plan-runner-no-prd.test.ts's unit-tier escalateFn-not-called site got the same negative bounded-window treatment) plus the flush-ink.ts:22 same-line CAM-305 suppression are done. check-test-sleeps.ts now reports ZERO violations anywhere under test/ for the first time in this PRD's arc (after also suppressing 3 incidental self-referential false-positive matches in check-test-sleeps.test.ts's own fixture strings, not originally named in this story's AC but required by AC3's literal oracle). Verified: bun run typecheck (0 errors), the 8 touched test files' full suites (318 tests) pass 318/318, full bun test (4591 tests, 0 fail), and bun run check:all (all 12 gates green after raising 2 file-size ceilings: plan-runner-container.test.ts 463->464, review.test.ts 1709->1710, both staged with a dated _ref note before the gate re-run). Whatever the next PRD story is, it is likely either (a) wiring check-test-sleeps.ts into check:all/GATES now that the repo is at zero violations, or (b) a new unrelated PRD entirely -- this sequential CAM-305 sleep-migration arc (US-001 through US-006) is now fully complete.",
+  "openQuestions": [],
+  "nextStoryContext": "US-007 closes the CAM-305 PRD: check-test-sleeps.ts is now wired as the 13th and final entry in scripts/check-all.ts's GATES array (g('test-sleeps', 'bun scripts/check-test-sleeps.ts')), appended after agents-md. Both frozen gate-count registries were bumped in lockstep: test/check-all.test.ts (toHaveLength(12)->13, new positional GATES[12] name/cmd/args test, both onResults name-list tests extended with 'test-sleeps') and test/gates-manifest.test.ts (toHaveLength(12)->13, new CAM305_GATES = ['test-sleeps'] as const group with its own membership test, combined expected-names list extended, header comment + describe/test titles updated to 13). Repo-wide grep confirmed these two files are the only toHaveLength(12) freeze points; scripts/validate-agents-md.ts was untouched (no gate-count assertion there, as flagged by the prior story's handoff). scripts/check-all.ts grew 174->175 lines and test/check-all.test.ts grew 391->399 lines, both exceeding their file-size-budget.json ceilings; raised both ceilings to the actual gate-measured counts (175, 399) with a dated US-007/CAM-305 _ref note prepended before the file-size gate, staged in the same commit. Verified: bun scripts/check-test-sleeps.ts (zero violations, unchanged from US-006's fully-migrated tree), bun run typecheck (0 errors), bun test (4593 tests, 0 fail), and bun run check:all (all 13 gates green, exit 0). This is the LAST story in the CAM-305 sleep-migration PRD arc (US-001 through US-007); whatever the next story is, it is either a new unrelated PRD or an operator-driven follow-up.",
   "officialDocsValidated": [
-    {
-      "lib": "bun",
-      "url": "https://bun.sh/docs/test/writing-tests",
-      "fetchedAt": "2026-07-15T16:05:00Z",
-      "status": "aligned",
-      "summary": "Confirmed bun:test natively supports async test() bodies (await inside a test callback, no done-callback needed) exactly as this story's migrated tests rely on (await waitForCondition(...)/await waitForFrame(...) inside test() and describe() blocks). No API mismatch found; default per-test timeout remains 5000ms, comfortably covering the new bounded waitForCondition/waitForFrame polls (all <=3000ms)."
-    }
+    { "lib": "none", "status": "no_external_lib_touched" }
   ]
 }
