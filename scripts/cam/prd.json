@@ -66,7 +66,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "New: test/fixtures/golden/{worker-report.json,handoff.json,orch-handoff.json,review-report.json} + test/supervisor/golden-artifacts.test.ts. Guards: parseWorkerReport/parseReviewReport take a raw STRING (feed fixture directly); readOrchHandoff(claudeDir) reads .claude/.cam-orch-handoff.json from disk, so write the fixture into a real tmpdir claudeDir (Bun tmpdir + real fs, per the wire-boundary test-quality invariant) then call it. orch-handoff required fields: schemaVersion=1 (ORCH_HANDOFF_SCHEMA_VERSION), writtenAt, reason. worker-report required discriminator: outcome+string, story+string (optional gates {typecheck,tests}, notes). review-report required: verdict; optional findings[]+artifactOfRecord. These are category-(a) self-authored formats: the fixture guards OUR parser against our own schema drift. Fixture filenames differ from the gitignored runtime paths (scripts/cam/worker-report.json etc.) so no gitignore collision. Grep patterns.md 'worker-report.json is the authoritative' and 'Single-source outcome contract' bullets before coding."
     },
