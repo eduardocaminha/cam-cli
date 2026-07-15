@@ -60,7 +60,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "~26 remaining violations across test/ top-level and small subdirs, e.g. test/triage.test.ts (4), test/on-main-multi.test.ts (3), test/retry/retry-pid.test.ts (2), test/issues/alloc.test.ts (2), test/config/models.test.ts (2), test/commands/journal-append.test.ts (2), plus setup.test.ts, plan-target-invalid-sidecar.test.ts, plan-runner-target-prompt.test.ts, notify/resend.test.ts, issue.test.ts, dashboard.test.ts, commands/spec.test.ts, commands/setup-merge-mode.test.ts, bootstrap-wait.test.ts, attach-hint.test.ts, and test/fixtures/version-skip-guard/renamed-derived-probe.ts. This story's exit-0 oracle depends on US-001 and US-002 being complete (transitively via requires: US-002). Includes the 10 unused-type violations noted in the issue. Same gotchas: locals must be removed, side-effect RHS keeps the expression, required-signature params get underscore-prefix. Flags stay OFF; the flip happens in US-004."
     },
