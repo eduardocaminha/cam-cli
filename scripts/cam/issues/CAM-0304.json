@@ -1,11 +1,11 @@
 {
   "id": "CAM-304",
   "title": "makeGetTrackedFiles/makeIsIgnored do not distinguish a git failure (not a repo …",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-14T12:20:50.392Z",
-  "updatedAt": "2026-07-15T00:41:08.524Z",
+  "updatedAt": "2026-07-15T02:19:19.015Z",
   "description": "makeGetTrackedFiles/makeIsIgnored do not distinguish a git failure (not a repo / git absent) from an empty result; a non-repo cwd would silently yield zero tracked files and red the whole gate with false path findings. This is an impossible scenario for a check:all build gate (always run inside the repo), so per Simplicity-First no handling is warranted, but worth a comment if the script is ever reused out of context.\n\nSource: cam/issue-61\nReview round: 3\n\nsuggestion-fingerprint: 3a77c1c059a1",
   "derivedFrom": [
     "CAM-61"
