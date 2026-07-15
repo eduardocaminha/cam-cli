@@ -32,7 +32,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New file scripts/check-test-sleeps.ts + test/check-test-sleeps.test.ts. Model EXACTLY on scripts/check-debt-markers.ts (pure scan fn + filterScannablePaths + thin CLI, readFileSync only in import.meta.main). Bun.Glob: new Glob('test/**/*.{ts,tsx}').scanSync({ cwd }) returns repo-relative paths (absolute defaults false) per officialDocsConsulted. noUncheckedIndexedAccess: guard every regex capture group (T | undefined). Anchor the two regex forms tightly so the injected clocks (setTimeoutFn =, globalThis.setTimeout =, sleepFn:, nowFn:) and bare setTimeout(cb, n) schedulers never match (see issue gotchas). Decision (finding #2): the scanner MATCHES the numeric literal 0 with no carve-out; the one real 0-literal yield (flush-ink.ts:22) is handled by tracker-ref suppression in US-006, keeping one uniform escape hatch. Does NOT wire the gate into GATES (that is US-007), so landing this story keeps bun test / check:all green. patterns.md: grep 'sleep\\|waitForCondition\\|gate' for prior conventions."
     },
