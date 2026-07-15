@@ -28,6 +28,14 @@
 //   - No external runtime dependencies (no jq, no child processes).
 //   - Regex over sentinel line only (CAM_IMPLEMENTER_STATUS=DONE story=US-XXX).
 //   - noUncheckedIndexedAccess: all regex group accesses are guarded.
+//
+// The worker-report.json read path (tryReadWorkerReport) delegates to the
+// shared fail-closed parser in report-parse.ts (US-003), so this module's own
+// notion of "a valid report" is exactly parseWorkerReport's contract: the
+// canonical WorkerReport type, never a divergent local shape.
+
+import { parseWorkerReport } from './report-parse.ts';
+import type { WorkerReport } from './worker-report.ts';
 
 /** File-reading callback injected by the caller. Returns null on missing/error. */
 export type FileReader = (path: string) => string | null;
@@ -247,43 +255,27 @@ function readHandoff(
 }
 
 /**
- * Minimal shape of worker-report.json consumed for the fallback path.
- * Only outcome, story, and gates.tests are needed; other fields are ignored.
- *
- * `gates` was added in US-001 (CAM-202, no-flaky-evasion) so the red-gate
- * guard can read the worker's recorded test-gate result. It is untrusted JSON
- * (worker-authored), so callers must runtime-check its shape before use; see
- * extractRecordedTestsGate.
+ * Read and parse worker-report.json via the shared fail-closed parser
+ * (report-parse.ts, US-001/US-002/US-003). Returns the canonical typed
+ * WorkerReport, or null when the file is missing or the report fails
+ * validation (missing/mistyped outcome+story discriminator, or a
+ * present-but-malformed optional field such as gates).
  */
-interface WorkerReportFallback {
-	outcome?: string;
-	story?: string;
-	gates?: {
-		tests?: string;
-		typecheck?: string;
-	};
-}
-
-/** Read and parse worker-report.json for the fallback branch. Returns null on any problem. */
-function tryReadWorkerReport(reportPath: string, readFile: FileReader): WorkerReportFallback | null {
+function tryReadWorkerReport(reportPath: string, readFile: FileReader): WorkerReport | null {
 	const text = readFile(reportPath);
 	if (text === null) return null;
-	const parsed = tryParseJson(text);
-	if (!isObject(parsed)) return null;
-	return parsed as WorkerReportFallback;
+	return parseWorkerReport(text);
 }
 
 /**
- * Safely extract report.gates.tests as a string, or undefined if the field is
- * absent or malformed (US-001, CAM-202). report.gates is untrusted worker-
- * authored JSON: runtime-check its shape rather than trusting the TypeScript
- * cast performed in tryReadWorkerReport.
+ * Safely extract report.gates.tests as a string, or undefined if gates is
+ * absent (US-001, CAM-202). parseWorkerReport already fail-closes a
+ * present-but-malformed gates field at parse time (the whole report is
+ * rejected to null before reaching here), so once a WorkerReport instance
+ * exists its gates.tests, when present, is already a validated string.
  */
-function extractRecordedTestsGate(report: WorkerReportFallback): string | undefined {
-	const gates = report.gates;
-	if (!isObject(gates)) return undefined;
-	const tests = (gates as Record<string, unknown>).tests;
-	return typeof tests === 'string' ? tests : undefined;
+function extractRecordedTestsGate(report: WorkerReport): string | undefined {
+	return report.gates?.tests;
 }
 
 /**
@@ -506,7 +498,7 @@ export function readWorkerOutcome(opts: ReadWorkerOutcomeOptions): WorkerOutcome
 	if (opts.workerReportPath) {
 		const report = tryReadWorkerReport(opts.workerReportPath, readFile);
 
-		if (report && typeof report.outcome === 'string' && typeof report.story === 'string') {
+		if (report) {
 			const reportStory = report.story;
 
 			// Staleness guard (US-004): reject any report that names a story
