@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.160.0] - 2026-07-15
+
+### Added
+
+- US-001 - Throw on git spawn failure in makeGetTrackedFiles/makeIsIgnored
+
 ## [0.159.0] - 2026-07-14
 
 ### Added
