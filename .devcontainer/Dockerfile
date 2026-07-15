@@ -40,10 +40,18 @@ RUN ARCH="$(dpkg --print-architecture)" \
         arm64) NODE_ARCH="arm64" ;; \
         *) echo "unsupported architecture: $ARCH" >&2; exit 1 ;; \
     esac \
-    && curl -fsSLo /tmp/node.tar.xz "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" \
+    && curl --fail --silent --show-error --location \
+        --retry 5 --retry-connrefused --retry-delay 2 \
+        -o "node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" \
+        "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" \
+    && curl --fail --silent --show-error --location \
+        --retry 5 --retry-connrefused --retry-delay 2 \
+        -o SHASUMS256.txt \
+        "https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt" \
+    && grep "node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz$" SHASUMS256.txt | sha256sum -c - \
     && mkdir -p /usr/local/lib/nodejs \
-    && tar -xJf /tmp/node.tar.xz -C /usr/local/lib/nodejs --strip-components=1 \
-    && rm /tmp/node.tar.xz \
+    && tar -xJf "node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" -C /usr/local/lib/nodejs --strip-components=1 \
+    && rm "node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" SHASUMS256.txt \
     && ln -s /usr/local/lib/nodejs/bin/node /usr/local/bin/node \
     && ln -s /usr/local/lib/nodejs/bin/npm /usr/local/bin/npm \
     && ln -s /usr/local/lib/nodejs/bin/npx /usr/local/bin/npx

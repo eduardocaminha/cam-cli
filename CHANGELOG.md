@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.161.0] - 2026-07-15
+
+### Added
+
+- US-001 - Verify Node tarball sha256 against SHASUMS256.txt with retrying curls
+
 ## [0.160.0] - 2026-07-15
 
 ### Added
