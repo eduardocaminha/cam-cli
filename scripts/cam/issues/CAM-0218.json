@@ -1,10 +1,44 @@
 {
   "id": "CAM-218",
   "title": "Support custom Resend sender (resend_from) + notify config in init/config UI",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-08T15:20:18.517Z",
   "description": "Wire a configurable sender address for escalation emails, and make the [notify] config settable through `cam init` and `cam config` (today it only works by hand-editing project.toml).\n\n## Problem\n1. `sendEscalation` accepts an optional `from`, but every call site omits it, so it always falls back to the hardcoded default `cam <onboarding@resend.dev>` (src/notify/resend.ts:74). `readResendConfig` (src/config/models.ts:185-205) only returns `{ apiKey, recipient }`. Adding `resend_from` to `[notify]` in project.toml is currently dead config — nothing reads it.\n2. There is no UI path for the [notify] config at all. Neither `src/ui/InitScreen.tsx` (cam init) nor `src/ui/ConfigScreen.tsx` (cam config) surfaces recipient/from — the operator must hand-edit project.toml.\n\n## Scope\n### A. resend_from plumbing\n- Add `from: string` to `ResendConfig` (empty string when unconfigured).\n- Read `resend_from` from `[notify]` in `readResendConfig` (non-secret, TOML is the source; mirror the `resend_recipient` pattern).\n- Plumb `from` through every `sendEscalation` call site in src/commands/sidecar.ts (~8: buildShipEscalateFn, buildToolchainEscalateFn, drain, plan-runner/loop production escalate fns, etc.). When `resend_from` is empty, keep the existing `onboarding@resend.dev` default (pass undefined so the resend.ts:74 fallback fires) — zero behavior change for projects that do not set it.\n\n### B. init / config UI\n- `cam init` (src/commands/init.ts + src/ui/InitScreen.tsx): allow setting `resend_recipient` and `resend_from` during setup; write them to the `[notify]` table in project.toml.\n- `cam config` (src/commands/config.ts + src/ui/ConfigScreen.tsx): surface the same `[notify]` fields for editing after init (fits the CAM-87 tabbed-UI direction — cross-reference, do not block on it).\n- HARD CONSTRAINT: the API key MUST NOT be written to project.toml. project.toml is git-tracked and the repo is public. The canonical source is the `RESEND_API_KEY` env var / `.env` (readResendConfig already prioritizes env over TOML, comment: \"canonical, not git-tracked\"). If init/config touches the key at all, it writes to `.env` (gitignored) or just shows configured/unconfigured status — never to project.toml.\n\n## Tests\n- readResendConfig returns configured `from`; empty/missing `resend_from` yields '' and the default sender is used.\n- init/config write path emits `resend_recipient`/`resend_from` into `[notify]` and never writes `resend_api_key` into project.toml.\n\n## Notes\n- Custom sender requires the domain to be verified in the Resend account. Operator (Eduardo) confirmed `radiologic.io` is verified; intended sender is `caminha@radiologic.io`. Recipient stays `caminhae@gmail.com`.\n- Deferred: operator asked to file this but leave Resend as-is for now (default sender stays live). Backlog, not this cycle.\n- Quality gates: `bun run typecheck`, `bun test`, `bun run check:all`.",
-  "updatedAt": "2026-07-08T15:20:18.517Z"
+  "updatedAt": "2026-07-15T22:02:17.693Z",
+  "spec": {
+    "scope": "Wire a configurable Resend sender address (resend_from) end-to-end, and surface the non-secret [notify] fields (resend_recipient, resend_from) for editing in the cam config flat wizard. Explicitly OUT OF SCOPE: cam init (it is a checklist runner with no text-input widget and writes the machine config ~/.config/cam/config.toml, not the project-level scripts/cam/project.toml where [notify] lives; init is the architecturally wrong home for a project setting). Also OUT OF SCOPE: any write path for the API key (status-only in the UI).",
+    "acceptanceCriteria": [
+      "ResendConfig (src/config/models.ts:169-174) gains a `from: string` field; readResendConfig reads `resend_from` from the [notify] TOML table, mirroring the non-secret resend_recipient pattern (models.ts:203). Missing/empty resend_from yields from === '' .",
+      "readResendConfig test (real-fs, test/config/models.test.ts): configured resend_from is returned; a project.toml with no resend_from yields from === '' .",
+      "All 7 sendEscalation call sites in src/commands/sidecar.ts (buildShipEscalateFn ~1058, buildToolchainEscalateFn ~1077, drain closure ~1330, makeProductionEscalateFn ~1356, blockedCycleEscalateFn ~1942, plan BLOCK/audit-rejected ~2164, plan-container-not-ready ~2248) pass the configured from when non-empty; when resend_from is empty they pass undefined so the existing resend.ts:74 `onboarding@resend.dev` fallback fires. Zero behavior change for projects that do not set resend_from.",
+      "sendEscalation from-plumbing test (test/notify/resend.test.ts, injected fake sendFn): a configured from is threaded to the send call; an empty/omitted resend_from uses the default sender. Extend the existing :94-116 cases rather than duplicating.",
+      "cam config (src/ui/ConfigScreen.tsx + src/commands/config.ts) gains flat-wizard steps for resend_recipient and resend_from, copying the PlanApprovalSection/CustomModelInput free-text pattern (ConfigScreen.tsx:284-357). ConfigChoices is extended and the values are persisted to the [notify] table in scripts/cam/project.toml via mergeIntoConfig (config.ts, mirroring the [models]/[backend]/[plan]/[ship] blocks).",
+      "The API key is NEVER written to project.toml and NEVER written to .env by this feature. The config UI shows RESEND_API_KEY as configured/unconfigured status only (read from the env var), with no input field for the key.",
+      "config write-path test asserts mergeConfigChoices emits resend_recipient/resend_from into the [notify] table and never writes resend_api_key anywhere.",
+      "ConfigScreen render test (test/ui/config-screen.test.tsx) covers the new notify steps.",
+      "Quality gates green: bun run typecheck, bun test, bun run check:all."
+    ],
+    "gotchas": [
+      "sendEscalation ALREADY has the optional `from` param + the `onboarding@resend.dev` fallback (src/notify/resend.ts:70,74). Do NOT re-add it; the feature only supplies from from config at the call sites.",
+      "The issue text says ~8 sendEscalation call sites; there are exactly 7 real ones, all in src/commands/sidecar.ts. The plan-runner.ts:1086 and loop.ts:394/1887 references are doc comments only (those modules take an injected escalateFn and never call sendEscalation directly). Do not chase phantom call sites.",
+      "cam init writes ~/.config/cam/config.toml (machine config), NOT scripts/cam/project.toml, and InitScreen is a check-runner with no input-field pattern. [notify] is a project setting; init is deliberately excluded from scope for both reasons.",
+      "HARD CONSTRAINT: scripts/cam/project.toml is git-tracked in a PUBLIC repo. The API key must never be written there. readResendConfig already prioritizes the RESEND_API_KEY env var (canonical, not git-tracked) over the TOML backward-compat key.",
+      "Custom sender requires a Resend-verified domain. Operator confirmed radiologic.io is verified; intended sender caminha@radiologic.io, recipient stays caminhae@gmail.com. This is a real deployment fact, not something the feature validates.",
+      "cam config is a FLAT wizard today (not tabbed). CAM-87 wants a tabbed refactor; this feature slots [notify] into the current flat UI and must NOT wait on or entangle with CAM-87 (cross-reference only)."
+    ],
+    "domainTerms": [
+      "resend_from",
+      "readResendConfig",
+      "sendEscalation"
+    ]
+  },
+  "wsjf": {
+    "value": 4,
+    "timeCriticality": 2,
+    "riskReduction": 2,
+    "jobSize": 3
+  },
+  "type": "feat"
 }
