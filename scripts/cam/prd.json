@@ -1,0 +1,54 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-300",
+  "description": "Make the on-main CAS commit-tree writers re-derive whole-file content per attempt so the three suggestions-pen writers (append/dismiss/promote) never clobber a concurrent pen edit that advanced main under them.",
+  "issueNumber": 300,
+  "type": "fix",
+  "relatedDocs": [
+    "scripts/cam/patterns.md"
+  ],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add per-attempt content recompute to the CAS commit-tree writers",
+      "description": "As a maintainer of the on-main mutation plumbing, I need commitTreeToMain and writeIssueFile's extraFiles to accept a callback that re-derives each file's content from the freshly-read main sha on every CAS attempt (not only a static FileWrite[]), so a whole-file overwrite committed via CAS can be rebased onto a concurrently-advanced main instead of clobbering it.",
+      "acceptanceCriteria": [
+        "commitTreeToMain (src/git/on-main.ts) accepts a callback form that is invoked once per CAS attempt, after read-tree/rev-parse establishes the fresh main sha for that attempt, to produce the FileWrite[] committed on that attempt; the existing static FileWrite[] call form remains supported and behaviour-unchanged. [oracle: bun run typecheck]",
+        "writeIssueFile (src/issues/alloc.ts) accepts a callback form for extraFiles that re-derives the companion file content on each CAS attempt from the freshly-read main, in addition to the existing static FileWrite[] extraFiles; the id-allocation-per-attempt behaviour is unchanged. [oracle: bun run typecheck]",
+        "The no-contention single-attempt path is behaviour-unchanged: content is produced exactly once and the git sequence (read-tree, hash-object, update-index, write-tree, commit-tree, update-ref) is identical to the pre-change single-attempt path. [oracle: bun test]",
+        "A regression test extends the existing retry harness at test/issues/alloc.test.ts:655 so the extraFiles recompute callback returns DIFFERENT (concurrently-mutated) content across the two attempts, and asserts the winning commit indexes the SECOND (recomputed) content, not the stale first content. [oracle: bun test]",
+        "The design comments encoding the current static/re-hash-only assumption are updated to describe per-attempt recompute. [oracle: grep -n 'per-attempt' src/issues/alloc.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/git/on-main.ts (commitTreeToMain, ~line 404; the per-attempt loop is already at lines 419-437 -- the callback must be invoked INSIDE that loop after `git read-tree main`, so it can re-read the advanced tree/refs), src/issues/alloc.ts (writeIssueFile ~line 159; extraFiles is spread into hashAndIndexFiles at line 216 -- move its derivation inside the attempt loop when the callback form is used), test/issues/alloc.test.ts (extend harness at :655 which currently returns the SAME bytes on both attempts and thus documents the buggy behaviour). Design comments to update: src/issues/alloc.ts:73-79 (extraFiles JSDoc) and :151-156 (writeIssueFile JSDoc). Keep both the static FileWrite[] and the callback form supported (backward-compat: createLocalIssueOnMain and all existing callers pass static content). grep scripts/cam/patterns.md lines 278-286, 302, 326, 722, 724 for the CAS/writeIssueFile/syncWorktreeIfOnMain invariants before touching the loop. Gotcha: syncWorktreeIfOnMain must run on the FINAL winning content's paths. noUncheckedIndexedAccess: guard array/regex access. Bun-only spawn. This story adds the primitive; US-002 routes the pen writers through it."
+    },
+    {
+      "id": "US-002",
+      "title": "Route append/dismiss/promote pen writers through per-attempt recompute",
+      "description": "As an operator or the autonomous sidecar mutating scripts/cam/suggestions.jsonl on main, I need appendSuggestionOnMain, dismissSuggestionOnMain, and promoteSuggestionOnMain to re-read the pen from the advanced main and re-derive their whole-file content inside the CAS retry loop, so a suggestion line concurrently appended or removed between the initial read and the winning commit survives instead of being clobbered.",
+      "acceptanceCriteria": [
+        "appendSuggestionOnMain, dismissSuggestionOnMain, and promoteSuggestionOnMain (src/commands/suggestions.ts) each pass a per-attempt recompute callback (from US-001) that re-reads scripts/cam/suggestions.jsonl from the advanced main via readPenContentFromMain and re-derives its pen content (append re-runs its dedup check on the fresh content; dismiss/promote re-run removeSuggestionLine keyed by fingerprint) rather than reusing content computed once from the pre-mutation read. [oracle: bun run typecheck]",
+        "A regression test for append: inject a CAS retry (fail update-ref once), have the post-failure pen read return a concurrently-added line, and assert the winning commit's suggestions.jsonl still contains that concurrent line. [oracle: bun test]",
+        "A regression test for dismiss: same CAS-retry injection, assert a concurrently-added unrelated line survives while the targeted fingerprint line is removed in the winning commit. [oracle: bun test]",
+        "A regression test for promote: same CAS-retry injection, assert a concurrently-added unrelated line survives in the winning commit alongside the filed issue JSON, and the promoted fingerprint line is removed. [oracle: bun test]",
+        "The atomic single-commit design from CAM-290 is preserved: promote still lands the issue JSON and the pen-line removal in exactly ONE commit-tree per successful attempt (the fingerprint format and non-pen on-main writers are unchanged). [oracle: bun test]",
+        "All pre-existing suggestions and alloc tests stay green (no-contention path behaviour-unchanged). [oracle: bun test]",
+        "A patterns.md bullet is added capturing the invariant: a CAS commit-tree writer that overwrites a whole file must re-derive that file's content per-attempt from the advanced main, or a concurrent edit to the same file is clobbered. [oracle: grep -n 'per-attempt' scripts/cam/patterns.md]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/suggestions.ts (appendSuggestionOnMain ~line 251 uses commitTreeToMain; dismissSuggestionOnMain ~line 366 uses commitTreeToMain; promoteSuggestionOnMain ~line 486 uses writeIssueFile.extraFiles at line 527 with the pen rewrite computed once at line 518), test/commands/suggestions.test.ts (add the three regression cases), scripts/cam/patterns.md (append one bullet). Recompute inputs are pure and already exist: readPenContentFromMain (git show main:<path>), removeSuggestionLine (byte-for-byte fingerprint-keyed filter, shared by dismiss and promote), and the append trailing-newline + dedup logic (lines 283-292). GOTCHA (issue text is WRONG): the 'operator-single-threaded' assumption is false -- the sidecar autonomously appends via appendSuggestionOnMain (src/commands/sidecar.ts:2660, driven by src/supervisor/loop.ts:1869), so a concurrent pen mutation racing an operator promote/dismiss is a LIVE scenario. The bug mechanic: on CAS retry, read-tree main loads the advanced tree (with the concurrent line) but hashAndIndexFiles overwrites suggestions.jsonl with the caller's stale full-file content; the whole-file overwrite makes the stale content win. Test harness gotcha: the fresh pen read on the retry attempt must return DIFFERENT (concurrently-mutated) bytes than the first read, else the test documents the buggy behaviour instead of catching it (mirror the alloc.test.ts:655 fix from US-001). This story depends on US-001's callback form. grep scripts/cam/patterns.md lines 690-724 for the promote/pen-writer/CAM-290 invariants before editing. Bun-only spawn; noUncheckedIndexedAccess guards.",
+      "requires_story": "US-001"
+    }
+  ]
+}
