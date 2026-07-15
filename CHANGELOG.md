@@ -6,6 +6,15 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.165.0] - 2026-07-15
+
+### Added
+
+- US-004 - Add durable test-quality convention to cam knowledge files
+- US-003 - Mirror the rubric guidance into the generic reviewer template and re-embed
+- US-002 - Add test-quality rubric guidance to the cam reviewer agent (.claude copy)
+- US-001 - Create waitForCondition poll-until-true test helper
+
 ## [0.164.0] - 2026-07-15
 
 ### Added
