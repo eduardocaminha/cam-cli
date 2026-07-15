@@ -1,13 +1,10 @@
 {
   "id": "CAM-306",
-  "title": "PRD authoring nit (not a code defect): the US-003 AC1 oracle `grep -Lq 'WorkerR…",
+  "title": "Dashboard: header Loop ghosts/repeats ~20x on tmux pane reflow (Ink repaint bug)",
   "stage": "idea",
   "status": "open",
   "blockedBy": [],
-  "createdAt": "2026-07-15T10:49:03.210Z",
-  "updatedAt": "2026-07-15T10:49:03.210Z",
-  "description": "PRD authoring nit (not a code defect): the US-003 AC1 oracle `grep -Lq 'WorkerReportFallback' src/supervisor/result.ts` is self-contradictory (`-q` overrides `-L`), so it exits non-zero for any correct implementation. The criterion (interface deleted) is objectively satisfied. A future PRD should use `! grep -q 'WorkerReportFallback' file` for an absence assertion.\n\nSource: cam/issue-301\nReview round: 1\n\nsuggestion-fingerprint: f6a7e4ec50a3",
-  "derivedFrom": [
-    "CAM-301"
-  ]
+  "createdAt": "2026-07-15T14:33:20.230Z",
+  "updatedAt": "2026-07-15T14:33:20.230Z",
+  "description": "COSMETIC-ONLY TUI bug (no loop-correctness impact). The dashboard summary section heading \"Loop\" (src/ui/Dashboard.tsx:381, heading=\"Loop\", gapTop=0 so it is the first line of the frame) ghosts and stacks ~20 orphaned copies above the live frame.\n\nROOT CAUSE (not a data/label bug; the event feed and Recent panel render correctly): Inks in-place repaint tracks the previous frames line count at the OLD terminal width. When cam-runs window-resized hook reflows the column (tmux pane resize / SIGWINCH bursts), that count is stale and the top line (the \"Loop\" header) is left ghosted. The code already documents this exact failure mode at src/commands/dashboard.ts:948-957 and 1030-1039.\n\nWHY THE CURRENT MITIGATION MISSES IT: makeResizeClearer (src/commands/dashboard.ts:970-1005) only writes a clear on the resize event. The poll-driven re-render (src/ui/Dashboard.tsx:144-149, fires every poll interval) repaints with NO clear at all. So a poll repaint at a stale height, or a tmux pane resize that never surfaces as a process.stdout resize event inside the pane, leaves the ghosts stacked.\n\nCANDIDATE FIX (spec later, do not implement from this issue): add a clear/repaint-reset to the poll-driven re-render path, or force a full-frame clear when the rendered height changes, not only on the resize event. Verify against a real tmux pane reflow, not a fake.\n\nEvidence: operator screenshot 2026-07-15 showing ~20 Loop rows above the state/story/progress block."
 }
