@@ -31,6 +31,7 @@ import {
 	writeWorkerPaneMarker,
 	type SpawnFn,
 } from '../../src/tmux/session.ts';
+import { waitForCondition } from '../helpers/wait-for-condition.ts';
 
 const TEST_SOCK = 'cam-it-plan-spawn';
 const SESSION = 'plan-spawn-test';
@@ -54,12 +55,12 @@ const swapSocketSpawn: SpawnFn = (cmd, args, opts) => {
 	return spawnSync(cmd, swapped, { stdio: opts?.stdio ?? 'pipe' }) as ReturnType<SpawnFn>;
 };
 
-beforeEach(() => {
+beforeEach(async () => {
 	if (!tmuxAvailable) return;
 	// Kill any leftover server from a previous test run, then create a fresh one.
 	tmuxRaw(['kill-server']);
 	tmuxRaw(['new-session', '-d', '-s', SESSION, '-x', '80', '-y', '10']);
-	Bun.sleepSync(200);
+	await waitForCondition(() => tmuxRaw(['has-session', '-t', SESSION]).status === 0);
 });
 
 afterEach(() => {
@@ -86,7 +87,7 @@ function isPaneAlive(paneId: string): boolean {
 
 test.skipIf(!tmuxAvailable)(
 	'ensureWorkerPane + planner respawn: dead pane -> new live pane created, marker updated, stand-in command executes in-pane',
-	() => {
+	async () => {
 		// -----------------------------------------------------------------------
 		// 1. Allocate an initial worker pane in the session (simulates cam plan's
 		//    initial openPaneInSession allocation).
@@ -98,7 +99,7 @@ test.skipIf(!tmuxAvailable)(
 				.split('\n')[0] ?? `${SESSION}:0`;
 
 		const initialId = openPaneInSession(SESSION, ['cat'], swapSocketSpawn, orchPaneId);
-		Bun.sleepSync(100);
+		await waitForCondition(() => isPaneAlive(initialId));
 		expect(initialId).toMatch(/^%\d+$/);
 
 		// -----------------------------------------------------------------------
@@ -112,7 +113,7 @@ test.skipIf(!tmuxAvailable)(
 		// 3. Kill the worker pane (simulates the 2nd-loop stale-pane scenario).
 		// -----------------------------------------------------------------------
 		tmuxRaw(['kill-pane', '-t', initialId]);
-		Bun.sleepSync(150);
+		await waitForCondition(() => !isPaneAlive(initialId));
 
 		// Verify it's actually dead before continuing.
 		expect(isPaneAlive(initialId)).toBe(false);
@@ -134,7 +135,7 @@ test.skipIf(!tmuxAvailable)(
 
 		const newId = openPaneInSession(SESSION, ['cat'], swapSocketSpawn, orchPaneCurrent);
 		writeWorkerPaneMarker(claudeDir, newId);
-		Bun.sleepSync(150);
+		await waitForCondition(() => isPaneAlive(newId));
 
 		// -----------------------------------------------------------------------
 		// AC assertions:
@@ -160,7 +161,7 @@ test.skipIf(!tmuxAvailable)(
 		// -----------------------------------------------------------------------
 		const sentinelPath = join(tmpdir(), `cam-plan-spawn-sentinel-${Date.now()}.txt`);
 		tmuxRaw(['respawn-pane', '-k', '-t', newId, `touch ${sentinelPath} && cat`]);
-		Bun.sleepSync(500); // allow the command to execute
+		await waitForCondition(() => existsSync(sentinelPath)); // allow the command to execute
 
 		// C. Sentinel file exists - the stand-in command ran in the live pane,
 		//    proving the respawn landed on a real pane (not a silent no-op against
@@ -174,7 +175,7 @@ test.skipIf(!tmuxAvailable)(
 
 test.skipIf(!tmuxAvailable)(
 	'ensureWorkerPane no-op: live pane -> same id returned, marker unchanged',
-	() => {
+	async () => {
 		// -----------------------------------------------------------------------
 		// 1. Allocate a worker pane and write the marker.
 		// -----------------------------------------------------------------------
@@ -185,7 +186,7 @@ test.skipIf(!tmuxAvailable)(
 				.split('\n')[0] ?? `${SESSION}:0`;
 
 		const paneId = openPaneInSession(SESSION, ['cat'], swapSocketSpawn, orchPaneId);
-		Bun.sleepSync(100);
+		await waitForCondition(() => isPaneAlive(paneId));
 		expect(paneId).toMatch(/^%\d+$/);
 
 		const claudeDir = mkdtempSync(join(tmpdir(), 'cam-plan-spawn-noop-'));

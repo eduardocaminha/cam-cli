@@ -49,6 +49,7 @@ import {
 	type SpawnWatcherFn,
 } from '../../src/commands/run.ts';
 import { ORCH_RECYCLE_MARKER, ORCH_SESSION_MARKER } from '../../src/tmux/session.ts';
+import { waitForCondition } from '../helpers/wait-for-condition.ts';
 
 // ---------------------------------------------------------------------------
 // Availability checks
@@ -181,7 +182,7 @@ test.skipIf(!shouldRun)(
 
 		// 5. Create a tmux session and run the bash wrapper in it.
 		tmuxRaw(['new-session', '-d', '-s', SESSION, '-x', '200', '-y', '50']);
-		Bun.sleepSync(200);
+		await waitForCondition(() => tmuxRaw(['has-session', '-t', SESSION]).status === 0);
 
 		const paneListOut = tmuxRaw(['list-panes', '-t', SESSION, '-F', '#{pane_id}'])
 			.stdout.toString()
@@ -191,16 +192,14 @@ test.skipIf(!shouldRun)(
 		tmuxRaw(['respawn-pane', '-k', '-t', orchPaneId, 'bash', '-c', fullCmd]);
 
 		// 6. Wait for fake-claude to appear in pgrep results.
-		const pgrepDeadline = Date.now() + 5_000;
-		let fakeclaudeRunning = false;
-		while (Date.now() < pgrepDeadline) {
-			Bun.sleepSync(200);
-			const r = spawnSync('pgrep', ['-f', initialUUID], { stdio: 'pipe', encoding: 'utf8' });
-			if (r.status === 0) {
-				fakeclaudeRunning = true;
-				break;
-			}
-		}
+		await waitForCondition(
+			() => spawnSync('pgrep', ['-f', initialUUID], { stdio: 'pipe', encoding: 'utf8' }).status === 0,
+			{ timeoutMs: 5_000, intervalMs: 200 },
+		);
+		const fakeclaudeRunning = spawnSync('pgrep', ['-f', initialUUID], {
+			stdio: 'pipe',
+			encoding: 'utf8',
+		}).status === 0;
 		expect(fakeclaudeRunning).toBe(true);
 
 		// 7. Spawn the recycle watcher as a subprocess using bun index.ts.
@@ -209,27 +208,33 @@ test.skipIf(!shouldRun)(
 			cwd: tmpCwd,
 			stdio: ['ignore', 'ignore', 'ignore'],
 		});
-		Bun.sleepSync(200);
+		// Confirm the watcher subprocess is actually scheduled (present in the
+		// process table) before arming the marker, rather than a blind settle wait.
+		await waitForCondition(
+			() => spawnSync('pgrep', ['-f', 'orch-recycle-watch'], { stdio: 'pipe' }).status === 0,
+		);
 
 		// 8. Arm the recycle marker.
 		writeFileSync(recyclePath, '', 'utf8');
 
 		// 9. Wait for ORCH_SESSION_MARKER to change (proves the bash wrapper
 		//    respawned with a new UUID after the SIGTERM-and-handoff cycle).
-		const respawnDeadline = Date.now() + 12_000; // up to 10 s watcher latency + overhead
 		let newUUID = initialUUID;
-		while (Date.now() < respawnDeadline) {
-			Bun.sleepSync(500);
-			try {
-				const content = readFileSync(sessionIdPath, 'utf8').trim();
-				if (content.length > 0 && content !== initialUUID) {
-					newUUID = content;
-					break;
+		await waitForCondition(
+			() => {
+				try {
+					const content = readFileSync(sessionIdPath, 'utf8').trim();
+					if (content.length > 0 && content !== initialUUID) {
+						newUUID = content;
+						return true;
+					}
+				} catch {
+					// file may be absent momentarily during mv
 				}
-			} catch {
-				// file may be absent momentarily during mv
-			}
-		}
+				return false;
+			},
+			{ timeoutMs: 12_000, intervalMs: 500 }, // up to 10 s watcher latency + overhead
+		);
 
 		// 10. Core assertions.
 
@@ -237,7 +242,9 @@ test.skipIf(!shouldRun)(
 		expect(newUUID).not.toBe(initialUUID);
 
 		// A process matching the NEW UUID must be running (fresh fake-claude is alive).
-		Bun.sleepSync(500); // brief settling time for the new fake-claude to start
+		await waitForCondition(
+			() => spawnSync('pgrep', ['-f', newUUID], { stdio: 'pipe', encoding: 'utf8' }).status === 0,
+		);
 		const pgrepNew = spawnSync('pgrep', ['-f', newUUID], {
 			stdio: 'pipe',
 			encoding: 'utf8',

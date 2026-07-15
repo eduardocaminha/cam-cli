@@ -32,6 +32,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { ORCH_PID_MARKER } from '../../src/tmux/session.ts';
+import { waitForCondition } from '../helpers/wait-for-condition.ts';
 
 // ---------------------------------------------------------------------------
 // Prerequisites
@@ -105,15 +106,22 @@ function findChildrenViaPs(wrapperPid: number): number[] {
  * timeoutMs. Returns the first child pid found or null on timeout.
  * Uses ps (not pgrep) because the child may rewrite its title.
  */
-function waitForChildViaPs(wrapperPid: number, timeoutMs = 5000): number | null {
-	const deadline = Date.now() + timeoutMs;
-	while (Date.now() < deadline) {
-		const children = findChildrenViaPs(wrapperPid);
-		const first = children[0];
-		if (first !== undefined) return first;
-		Bun.sleepSync(50);
+async function waitForChildViaPs(wrapperPid: number, timeoutMs = 5000): Promise<number | null> {
+	let found: number | null = null;
+	try {
+		await waitForCondition(
+			() => {
+				const first = findChildrenViaPs(wrapperPid)[0];
+				if (first === undefined) return false;
+				found = first;
+				return true;
+			},
+			{ timeoutMs, intervalMs: 50 },
+		);
+	} catch {
+		return null;
 	}
-	return null;
+	return found;
 }
 
 // ---------------------------------------------------------------------------
@@ -155,7 +163,7 @@ await Bun.sleep(60000);
 		writeFileSync(pidFilePath, String(wrapperPid), 'utf8');
 
 		// Wait for the bun stand-in to appear as a child of the wrapper (via ps).
-		const childPid = waitForChildViaPs(wrapperPid);
+		const childPid = await waitForChildViaPs(wrapperPid);
 		expect(childPid).not.toBeNull();
 		const resolvedChild = childPid as number;
 		cleanupPids.push(resolvedChild);
@@ -185,16 +193,22 @@ await Bun.sleep(60000);
 		process.kill(resolvedChild, 'SIGTERM');
 
 		// Wait for the child to exit (up to 2s).
-		const deadline = Date.now() + 2000;
 		let childExited = false;
-		while (Date.now() < deadline) {
-			try {
-				process.kill(resolvedChild, 0); // signal-0: alive check
-				Bun.sleepSync(50);
-			} catch {
-				childExited = true; // ESRCH: process is gone
-				break;
-			}
+		try {
+			await waitForCondition(
+				() => {
+					try {
+						process.kill(resolvedChild, 0); // signal-0: alive check
+						return false;
+					} catch {
+						return true; // ESRCH: process is gone
+					}
+				},
+				{ timeoutMs: 2000, intervalMs: 50 },
+			);
+			childExited = true;
+		} catch {
+			// leave childExited false; assertion below reports the timeout
 		}
 		expect(childExited).toBe(true);
 	},
