@@ -15,7 +15,6 @@
 //
 // Usage: bun scripts/ui-snapshot.tsx > img/ui-snapshot.txt
 
-import type { ReactElement } from 'react';
 import { Box } from 'ink';
 import { render } from 'ink-testing-library';
 

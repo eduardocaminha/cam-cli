@@ -438,7 +438,7 @@ export function ensureProjectSession(
  * the project session without re-creating the session layout.
  */
 export function openPaneInSession(
-	sessionName: string,
+	_sessionName: string,
 	cmdArgv: string[],
 	spawnFn: SpawnFn,
 	targetPaneId: string,

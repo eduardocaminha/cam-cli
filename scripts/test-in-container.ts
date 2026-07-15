@@ -100,7 +100,6 @@ export function parseBunOutput(output: string): BunTestSummary {
 	let pass = 0;
 	let fail = 0;
 	let skip = 0;
-	const failingTests: string[] = [];
 
 	// Use a Set to deduplicate in case the same test name appears more than
 	// once across multiple output blocks (defensive; typically each name

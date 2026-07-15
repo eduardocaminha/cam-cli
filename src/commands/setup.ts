@@ -25,7 +25,7 @@
 //   --description "<text>"     (new projects only)
 //   --no-tmux                  copy templates + print next steps, no tmux
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
