@@ -110,7 +110,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "CORRECTION of prior-round defect (finding #2): the unit-tier flaggable promisified count is 14, not 13 - flush-ink.ts:22 uses the numeric literal 0 (a scanner match), NOT a variable. The prior note that mislabeled flush-ink.ts as variable-only was wrong; line 22 is literal 0 (matched), only line 70 uses the variable intervalMs (not matched). Files touched: test/dashboard.test.ts, test/plan-runner-no-prd.test.ts (unit), test/ui/init-setup-screen-keys.test.ts, test/supervisor/review.test.ts, test/supervisor/plan/plan-runner-branch-derivation.test.ts, test/supervisor/plan/plan-runner-container.test.ts, test/supervisor/plan/plan-runner-postaudit.test.ts, test/helpers/flush-ink.ts (suppress only). For Ink stdin-driven frame waits (init-setup-screen-keys) prefer the existing waitForFrame(lastFrame, predicate) helper; for other async settles use waitForCondition. Decision (finding #2): flush-ink.ts:22 is suppressed with a same-line CAM-305 tracker-ref, chosen over a scanner 0-carve-out to keep one uniform escape hatch and a crisp scanner rule; it is the ONLY 0-literal site in the tree. Depends on US-001 (the scanner) for the AC3 zero-violations check; priority ordering places US-001 first."
     },
