@@ -1,10 +1,34 @@
 {
   "id": "CAM-309",
   "title": "PRD-authoring convention: replace self-contradictory grep -Lq absence oracle with ! grep -q",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-15T17:06:15.433Z",
-  "updatedAt": "2026-07-15T17:06:15.433Z",
-  "description": "[Restored after CAM-306 clobber, 2026-07-15; original fingerprint f6a7e4ec50a3.]\n\nPRD authoring nit (not a code defect): an AC oracle of the form `grep -Lq PATTERN file` is self-contradictory (`-q` overrides `-L`), so it exits non-zero for any correct implementation and produces a false BLOCK. Absence assertions in deterministic oracles must use `! grep -q PATTERN file` instead. Worth codifying in the PRD-authoring / oracle convention so planners never emit the broken form.\n\nSource: cam/issue-301 (review round 1). Original suggestion-fingerprint: f6a7e4ec50a3."
+  "updatedAt": "2026-07-15T18:44:08.686Z",
+  "description": "[Restored after CAM-306 clobber, 2026-07-15; original fingerprint f6a7e4ec50a3.]\n\nPRD authoring nit (not a code defect): an AC oracle of the form `grep -Lq PATTERN file` is self-contradictory (`-q` overrides `-L`), so it exits non-zero for any correct implementation and produces a false BLOCK. Absence assertions in deterministic oracles must use `! grep -q PATTERN file` instead. Worth codifying in the PRD-authoring / oracle convention so planners never emit the broken form.\n\nSource: cam/issue-301 (review round 1). Original suggestion-fingerprint: f6a7e4ec50a3.",
+  "spec": {
+    "scope": "Codify the absence-assertion oracle convention on two agent surfaces so the planner never emits, and the auditor rejects, the self-nullifying `grep -q` + `-L`/`-l` oracle form. Each surface has a cam-project copy and an embedded template copy: (1) the planner Oracle Contract section (.claude/agents/subagent-planner.md + templates/agents/subagent-planner.md), (2) the auditor acceptance-criteria-health check (.claude/agents/subagent-auditor.md + templates/agents/subagent-auditor.md); re-embed the templates. Out of scope: a static deterministic PRD-oracle shell linter (possible sibling issue) and patterns.md (the live scripts/cam/patterns.md line ~770 already carries the CAM-301 bullet; the template seed is marginal). Convention codification, not a product-runtime code change.",
+    "acceptanceCriteria": [
+      "The planner Oracle Contract section, in BOTH .claude/agents/subagent-planner.md and templates/agents/subagent-planner.md, states the absence/presence idiom: use `! grep -q PATTERN file` for an absence assertion and `grep -q PATTERN file` for a presence assertion, and never combine grep's quiet flag -q with a list-files flag -L or -l (self-nullifying).",
+      "The auditor acceptance-criteria-health check, in BOTH .claude/agents/subagent-auditor.md and templates/agents/subagent-auditor.md, instructs a CRITICAL finding / BLOCK when an oracle combines grep's -q with -L or -l in any order or spacing (-Lq, -qL, -L -q, -lq, ...), and notes the prescribed replacement `! grep -q`.",
+      "Both template edits are re-embedded (`bun run embed-vendor`) and `bun run embed-vendor:check` is green.",
+      "A test asserts the embedded planner and auditor copies carry the new convention text, so the rule cannot silently drift out of the embedded copy.",
+      "Verification: `bun run typecheck` and `bun run check:all` are green."
+    ],
+    "gotchas": [
+      "Each agent has TWO copies: the cam-project copy under .claude/agents/ and the template under templates/agents/. The template embeds into src/vendor/_generated.ts via `bun run embed-vendor`; both copies must change and be re-embedded or embed-vendor:check fails.",
+      "The defect class is grep's quiet flag -q combined with a list-files flag -L or -l in ANY order/spacing (-Lq, -qL, -L -q, -lq); the detection prose must be the general class, not the literal `-Lq` string (would miss -qL).",
+      "The correct absence idiom is `! grep -q PATTERN file` (shell negation), which inverts correctly on both GNU and BSD/macOS grep; `grep -Lq` does not (`-q` nullifies `-L` and exits 0 on first match).",
+      "The live scripts/cam/patterns.md (~line 770) already documents the CAM-301 grep -Lq bug; do not duplicate it there."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 2,
+    "riskReduction": 3,
+    "jobSize": 3
+  },
+  "type": "chore"
 }
