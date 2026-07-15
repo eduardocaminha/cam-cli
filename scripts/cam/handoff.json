@@ -1,0 +1,20 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Clean unused locals/params/imports in src/ and scripts/" },
+  "branchName": "cam/issue-135",
+  "timestamp": "2026-07-15T00:00:00Z",
+  "modifiedFiles": [
+    "scripts/preview-screens.ts",
+    "scripts/test-in-container.ts",
+    "scripts/ui-snapshot.tsx",
+    "src/commands/setup.ts",
+    "src/release/merge-watch.ts",
+    "src/supervisor/host.ts",
+    "src/supervisor/review.ts",
+    "src/tmux/session.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "All 8 known TS6133 (unused local/param/import) violations under src/ and scripts/ are removed. Two were required-signature params, underscore-prefixed rather than deleted: scripts/preview-screens.ts:314 'cmd' (arrow fn typed as TmuxSpawnFnType) and src/tmux/session.ts:441 'sessionName' (openPaneInSession, called positionally from src/commands/sidecar.ts and src/supervisor/host.ts — no call-site changes needed). The other 6 were genuine dead bindings/imports removed outright (no side-effecting RHS in any of them). Verified via the explicit flag-on probe (`bunx tsc --noEmit --noUnusedLocals --noUnusedParameters 2>&1 | grep -E '^(src/|scripts/)'`) which now produces zero output; plain `bun run typecheck` stays green since the flags are still OFF in tsconfig (they flip in US-004). Full check:all spine ran clean (test/embed-vendor/lint/file-size/debt-markers/version-skips/coverage/dead-code/dup/ci-parity/agents-md all ok).",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
