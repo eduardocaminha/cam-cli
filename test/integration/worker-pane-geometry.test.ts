@@ -34,6 +34,7 @@ import {
 	clampDashboardWidth,
 	type SpawnFn,
 } from '../../src/tmux/session.ts';
+import { waitForCondition } from '../helpers/wait-for-condition.ts';
 
 const TEST_SOCK = 'cam-it-worker-geo';
 const SESSION = 'worker-geo-test';
@@ -82,7 +83,30 @@ function getGeometry(
 	};
 }
 
-beforeEach(() => {
+/** Real list-panes read: every pane id currently alive in `session`. */
+function paneIds(session: string): string[] {
+	return tmuxRaw(['list-panes', '-t', session, '-F', '#{pane_id}'])
+		.stdout.toString()
+		.split('\n')
+		.map((l) => l.trim())
+		.filter((l) => l.length > 0);
+}
+
+/** Real list-panes read: the id of the currently ACTIVE pane in `session`. */
+function activePaneId(session: string): string {
+	const out = tmuxRaw(['list-panes', '-t', session, '-F', '#{pane_id};#{pane_active}'])
+		.stdout.toString()
+		.trim();
+	return (
+		out
+			.split('\n')
+			.find((l) => l.trim().endsWith(';1'))
+			?.split(';')[0]
+			?.trim() ?? ''
+	);
+}
+
+beforeEach(async () => {
 	if (!tmuxAvailable) return;
 	// Kill any leftover server, then create a fresh one with a known geometry.
 	tmuxRaw(['kill-server']);
@@ -96,7 +120,7 @@ beforeEach(() => {
 		'-y',
 		String(WINDOW_HEIGHT),
 	]);
-	Bun.sleepSync(200);
+	await waitForCondition(() => tmuxRaw(['has-session', '-t', SESSION]).status === 0);
 });
 
 afterEach(() => {
@@ -106,7 +130,7 @@ afterEach(() => {
 
 test.skipIf(!tmuxAvailable)(
 	'worker pane spans the orchestrator column (wide) even when the dashboard pane is active',
-	() => {
+	async () => {
 		// 1. Identify the orchestrator pane id (index 0, born with new-session).
 		//    Semicolon-separated format: TABs are mangled to `_` by tmux.
 		const listOut = tmuxRaw([
@@ -147,21 +171,21 @@ test.skipIf(!tmuxAvailable)(
 			.trim();
 		const dashPaneId = dashOut;
 		expect(dashPaneId).toMatch(/^%\d+$/);
-		Bun.sleepSync(150);
+		await waitForCondition(() => paneIds(SESSION).includes(dashPaneId));
 
 		// 3. Make the DASHBOARD pane the ACTIVE pane (the recreate scenario in
 		//    CAM-65/CAM-80: the worker is recreated while a non-orchestrator pane
 		//    is focused). Without the CAM-80 fix, a bare `split-window -t
 		//    <session>:0` would inherit the active pane's geometry (narrow).
 		tmuxRaw(['select-pane', '-t', dashPaneId]);
-		Bun.sleepSync(100);
+		await waitForCondition(() => activePaneId(SESSION) === dashPaneId);
 
 		// 4. Open the worker pane through the PRODUCTION openPaneInSession path,
 		//    passing orchPaneId as the explicit split target. This is the real
 		//    production helper (src/tmux/session.ts) -- not a reimplementation.
 		const workerPaneId = openPaneInSession(SESSION, ['cat'], swapSocketSpawn, orchPaneId);
 		expect(workerPaneId).toMatch(/^%\d+$/);
-		Bun.sleepSync(150);
+		await waitForCondition(() => paneIds(SESSION).includes(workerPaneId));
 
 		// 5. Measure pane geometries via real display-message round-trips.
 		const orchGeo = getGeometry(orchPaneId);
