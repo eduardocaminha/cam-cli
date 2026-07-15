@@ -89,6 +89,14 @@ test.skipIf(!tmuxAvailable)(
 		// The echo output must appear in the captured pane
 		expect(result.capturedPane).toContain('cam-gate-hello');
 	},
+	// Bun's default per-test timeout (5000ms) is tighter than this test's own
+	// pollForExitCode budget (timeoutMs: 10_000 above); under full-suite CPU
+	// contention from the other real-tmux integration tests, a trivial `echo`
+	// can legitimately take >5s to be captured even though it completes well
+	// inside the 10s budget (same class as the patterns.md:644 gotcha). Give
+	// the test runner headroom above the internal budget so it doesn't spuriously
+	// time out under load.
+	15_000,
 );
 
 // ---------------------------------------------------------------------------
@@ -105,6 +113,7 @@ test.skipIf(!tmuxAvailable)(
 		expect(result.passed).toBe(false);
 		expect(result.detail).toContain('exited 1');
 	},
+	15_000, // see satisfied-oracle test above for rationale
 );
 
 // ---------------------------------------------------------------------------
@@ -124,6 +133,7 @@ test.skipIf(!tmuxAvailable)(
 		expect(result.passed).toBe(true);
 		expect(result.capturedPane.length).toBeGreaterThan(0);
 	},
+	15_000, // see satisfied-oracle test above for rationale
 );
 
 test.skipIf(!tmuxAvailable)(
@@ -137,6 +147,7 @@ test.skipIf(!tmuxAvailable)(
 
 		expect(result.passed).toBe(false);
 	},
+	15_000, // see satisfied-oracle test above for rationale
 );
 
 // ---------------------------------------------------------------------------
@@ -154,4 +165,6 @@ test.skipIf(!tmuxAvailable)(
 		expect(typeof pass.capturedPane).toBe('string');
 		expect(typeof fail.capturedPane).toBe('string');
 	},
+	// This test runs runBehavioralGate twice; double the headroom accordingly.
+	20_000,
 );

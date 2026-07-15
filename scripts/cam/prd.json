@@ -93,7 +93,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: test/integration/ensure-worker-pane-selfheal.test.ts (5), test/integration/sendkeys-submit.test.ts (3), test/integration/plan-runner-target-obey.test.ts (3), test/integration/plan-runner-no-prd.test.ts (3). This is the INTEGRATION test/integration/plan-runner-no-prd.test.ts (distinct from the unit-tier test/plan-runner-no-prd.test.ts handled in US-006). 4 files but each is a small mechanical migration. Poll: pane exists after self-heal / send-keys landed in capture-pane / target file obeyed / graceful no-prd exit. Migrations independent of US-001; priority ordering only."
     },
