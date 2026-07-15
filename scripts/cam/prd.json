@@ -75,7 +75,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Edit scripts/cam/CLAUDE.md (curated invariants block under 'Codebase Patterns') and scripts/cam/patterns.md (append a bullet, never truncate). These are cam-cli's OWN live knowledge files; they are NOT under templates/ and NOT embedded, so no embed-vendor is needed (the templates/scripts/cam/* starter copies legitimately diverge and are out of scope). Keep the CLAUDE.md bullet short (it loads every story); put the longer detail in patterns.md per the invariant-vs-pattern routing rule. GOTCHA: patterns.md already documents the DI-fake pattern (patterns.md:20) and the fakes-lie lesson (patterns.md:52); cross-reference rather than contradict. If patterns.md crosses its file-size budget, raise the _ref entry in the same commit (orch-no-hardkill lesson)."
     }
