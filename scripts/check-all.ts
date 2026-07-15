@@ -90,6 +90,7 @@ export const GATES: Gate[] = [
 	g('dup', 'bunx jscpd --config .jscpd.json src scripts'),
 	g('ci-parity', 'bun run check:ci-parity'),
 	g('agents-md', 'bun scripts/validate-agents-md.ts'),
+	g('test-sleeps', 'bun scripts/check-test-sleeps.ts'),
 ];
 
 // ---------------------------------------------------------------------------
