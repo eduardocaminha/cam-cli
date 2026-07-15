@@ -1,0 +1,10 @@
+{
+  "id": "CAM-308",
+  "title": "Bun-first alignment: check-* gate helpers use node child_process spawnSync instead of Bun.spawnSync",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-15T17:06:12.830Z",
+  "updatedAt": "2026-07-15T17:06:12.830Z",
+  "description": "[Restored after CAM-306 clobber, 2026-07-15; original fingerprint 2197b006eae8.]\n\nHelpers use node:child_process spawnSync rather than Bun.spawnSync. This is pre-existing style throughout this synchronous gate script (not introduced by the originating diff), so keeping it was the correct surgical choice; noted only as a future Bun-first alignment opportunity for the whole file.\n\nSource: cam/issue-304 (review round 1). Original suggestion-fingerprint: 2197b006eae8."
+}
