@@ -292,3 +292,9 @@ A structured inline set of { pattern, reason } entries (glob-capable) enumeratin
 
 **count-freeze**:
 A test that asserts the exact cardinality (and, where relevant, exact membership) of a load-bearing registry so that a silent shrinkage or addition fails a test rather than passing green. In cam, GATES.length and the COMMANDS array membership are count-frozen.
+
+**wire boundary**:
+A seam where cam drives or parses the output of a real external tool (git, tmux, gh, or the filesystem). Code at a wire boundary must have at least one real-I/O integration test exercising the real dependency, because a fake can encode the output the buggy code expects and pass while the real tool behaves differently (the CAM-55 fakes-lie lesson).
+
+**behavioral DI-fake**:
+A dependency-injected fake that reproduces a real dependency's observable behavior (e.g. a fake spawn returning realistic git output keyed on argv) so the test asserts the code's real output. It is the blessed cam testing pattern and is explicitly distinct from, and permitted unlike, a tautological mock-call assertion that only checks 'the mock was called' (which is documentation, not verification).
