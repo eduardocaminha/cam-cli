@@ -607,8 +607,11 @@ export function clearImplementBlockedMarkerForCurrentIssue(markerPath: string, p
  * still open/in-flight.
  *
  * Never throws: readImplementBlockedMarker / removeImplementBlockedMarker
- * already never throw, and readBacklogFromMain's git calls are non-fatal by
- * construction (empty results on failure).
+ * already never throw. readBacklogFromMain itself is fail-closed (US-001,
+ * CAM-307: it throws on a truncated/errored `git cat-file --batch` read
+ * rather than silently returning a partial list), so this best-effort sweep
+ * catches that throw and leaves the marker untouched -- a transient git
+ * failure here must never crash the sidecar's unguarded startup call site.
  */
 export function sweepOrphanedImplementBlockedMarker(
 	markerPath: string,
@@ -621,7 +624,14 @@ export function sweepOrphanedImplementBlockedMarker(
 	const targetId = Number(marker.issueId);
 	if (Number.isNaN(targetId)) return;
 
-	const entries = spawn !== undefined ? readBacklogFromMain(cwd, spawn) : readBacklogFromMain(cwd);
+	let entries: IssueEntry[];
+	try {
+		entries = spawn !== undefined ? readBacklogFromMain(cwd, spawn) : readBacklogFromMain(cwd);
+	} catch {
+		// best-effort: a fail-closed read error is not this sweep's problem to
+		// solve; leave the marker untouched and let a later, healthy read sweep it.
+		return;
+	}
 	const match = entries.find((entry) => numericIdSuffix(entry.id) === targetId);
 	if (match === undefined) return;
 

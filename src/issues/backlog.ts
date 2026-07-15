@@ -10,6 +10,11 @@
 //     working tree, so a just-filed issue is visible from any branch.
 //   - Returns [] when the directory is absent or empty (cat-file not called).
 //   - Unparseable JSON entries are silently skipped.
+//   - Fail-closed on the cat-file --batch read itself (US-001, CAM-307): an
+//     ample 256 MiB maxBuffer prevents truncation at Node's 1 MiB spawnSync
+//     default, and a spawn error / non-zero exit status THROWS rather than
+//     parsing a truncated buffer, so the highest-id issues are never silently
+//     dropped and allocateId never re-mints a colliding id.
 //
 // GIT CONTRACT (cat-file --batch framing):
 //   Input (stdin): one object name per line (e.g. `main:scripts/cam/issues/CAM-001.json`).
@@ -34,7 +39,7 @@ import type { IssueEntry } from './types.ts';
 export type BacklogSpawnFn = (
 	cmd: string,
 	args: string[],
-	options: { encoding: 'utf8'; input?: string },
+	options: { encoding: 'utf8'; input?: string; maxBuffer?: number },
 ) => SpawnSyncReturns<string>;
 
 // ---------------------------------------------------------------------------
@@ -111,6 +116,11 @@ function parseBatchOutput(outputBytes: Buffer): string[] {
  * Always reads from the `main` ref (never the working tree), preserving the
  * read-from-main cross-branch invariant.
  *
+ * Fail-closed (US-001, CAM-307): throws if the `git cat-file --batch` spawn
+ * reports an error or a non-zero exit status, instead of silently parsing a
+ * truncated buffer. Callers that need this to be non-fatal (e.g. a
+ * best-effort sidecar sweep) must wrap the call in their own try/catch.
+ *
  * @param cwd   Absolute path to the git repo root.
  * @param spawn Injectable spawnSync (defaults to node:child_process.spawnSync).
  */
@@ -132,12 +142,28 @@ export function readBacklogFromMain(
 	if (paths.length === 0) return [];
 
 	// Step 2: read ALL blobs in a single cat-file --batch call.
+	// maxBuffer is set to an ample 256 MiB so a growing backlog blob is never
+	// silently truncated at Node's 1 MiB spawnSync default.
 	const refs = paths.map((p) => `main:${p}`).join('\n');
 	const catResult = spawn(
 		'git',
 		['-C', cwd, 'cat-file', '--batch'],
-		{ encoding: 'utf8', input: refs },
+		{ encoding: 'utf8', input: refs, maxBuffer: 256 * 1024 * 1024 },
 	);
+
+	// Fail-closed: a truncated/errored batch read must never be silently
+	// parsed as if it were complete (that would drop the highest-id issues
+	// and cause allocateId to re-mint colliding ids). Throw loudly instead.
+	if (catResult.error) {
+		throw new Error(
+			`readBacklogFromMain: git cat-file --batch failed: ${catResult.error.message}`,
+		);
+	}
+	if (catResult.status !== 0) {
+		throw new Error(
+			`readBacklogFromMain: git cat-file --batch exited with status ${String(catResult.status)}: ${catResult.stderr ?? ''}`,
+		);
+	}
 
 	// Convert the UTF-8-decoded string to a Buffer so that parseBatchOutput can
 	// slice by byte offset (matching the byte-length <size> reported by git).

@@ -10,8 +10,12 @@
 //   - Empty dir: returns [] without calling cat-file --batch.
 //   - Unparseable blobs are skipped silently.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test, afterEach } from 'bun:test';
+import { spawnSync } from 'node:child_process';
 import type { SpawnSyncReturns } from 'node:child_process';
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { IssueEntry } from '../../src/issues/types.ts';
 import {
 	readBacklogFromMain,
@@ -509,5 +513,162 @@ describe('allocateId', () => {
 			return { ...emptyReturn(), stdout: makeBatchOutput(entries) };
 		};
 		expect(allocateId('/fake/cwd', spy)).toBe(1001);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Fail-closed maxBuffer fix (US-001, CAM-307)
+// ---------------------------------------------------------------------------
+//
+// Regression coverage for the truncation bug that caused the CAM-306 triple
+// id collision: `git cat-file --batch` output was parsed even when spawnSync
+// silently truncated it at Node's default 1 MiB maxBuffer, so the
+// highest-id issues were dropped and allocateId re-minted colliding ids.
+
+const gitAvailable = spawnSync('git', ['--version'], { stdio: 'pipe' }).status === 0;
+
+const dirsToCleanup: string[] = [];
+
+afterEach(() => {
+	for (const d of dirsToCleanup) {
+		try {
+			rmSync(d, { recursive: true, force: true });
+		} catch {
+			// ignore cleanup errors
+		}
+	}
+	dirsToCleanup.length = 0;
+});
+
+/**
+ * Build a real on-disk git repo whose committed `scripts/cam/issues/` set
+ * produces a `git cat-file --batch` stdout larger than the old 1 MiB
+ * spawnSync default, by seeding entries with a large filler title.
+ */
+function makeLargeBacklogRepo(count: number, fillerBytes: number): { dir: string; ids: string[] } {
+	const dir = mkdtempSync(join(tmpdir(), 'cam-backlog-maxbuffer-'));
+	dirsToCleanup.push(dir);
+
+	const git = (args: string[]) =>
+		spawnSync('git', ['-C', dir, ...args], { stdio: 'pipe', encoding: 'utf8' });
+
+	git(['init']);
+	git(['symbolic-ref', 'HEAD', 'refs/heads/main']);
+	git(['config', 'user.email', 'test@example.com']);
+	git(['config', 'user.name', 'Test User']);
+
+	const issuesDir = join(dir, 'scripts', 'cam', 'issues');
+	mkdirSync(issuesDir, { recursive: true });
+
+	const filler = 'x'.repeat(fillerBytes);
+	const ids: string[] = [];
+	for (let i = 1; i <= count; i++) {
+		const id = `CAM-${i}`;
+		ids.push(id);
+		const entry = makeEntry({ id, title: `Issue ${i} ${filler}` });
+		writeFileSync(
+			join(issuesDir, `CAM-${String(i).padStart(4, '0')}.json`),
+			JSON.stringify(entry),
+		);
+	}
+
+	git(['add', '-A']);
+	git(['commit', '-m', 'chore: seed large backlog']);
+
+	return { dir, ids };
+}
+
+describe('readBacklogFromMain -- fail-closed maxBuffer (real git wire boundary)', () => {
+	test.skipIf(!gitAvailable)(
+		'reads ALL entries (including the highest id) when cat-file --batch stdout exceeds the old 1 MiB default',
+		() => {
+			// 30 entries * ~40 KB filler each comfortably exceeds 1 MiB (old default)
+			// while staying well under the new 256 MiB maxBuffer ceiling.
+			const count = 30;
+			const fillerBytes = 40 * 1024;
+			const { dir, ids } = makeLargeBacklogRepo(count, fillerBytes);
+
+			// Sanity check: the real cat-file --batch stdout for this repo is
+			// actually larger than the old 1 MiB default (otherwise this test
+			// would not exercise the bug it regresses).
+			const paths = ids.map((id) => {
+				const n = parseInt(id.split('-')[1] ?? '0', 10);
+				return `main:scripts/cam/issues/CAM-${String(n).padStart(4, '0')}.json`;
+			});
+			const rawCatFile = spawnSync(
+				'git',
+				['-C', dir, 'cat-file', '--batch'],
+				{ encoding: 'utf8', input: paths.join('\n'), maxBuffer: 256 * 1024 * 1024 },
+			);
+			expect(Buffer.byteLength(rawCatFile.stdout ?? '', 'utf8')).toBeGreaterThan(1024 * 1024);
+
+			// Call with the DEFAULT (real) spawn -- no injected fake -- to exercise
+			// the actual subprocess wire boundary.
+			const result = readBacklogFromMain(dir);
+
+			expect(result).toHaveLength(count);
+			const resultIds = result.map((e) => e.id);
+			for (const id of ids) {
+				expect(resultIds).toContain(id);
+			}
+			// Highest id must be present (this is exactly what truncation drops).
+			expect(resultIds).toContain(`CAM-${count}`);
+			expect(result.at(-1)?.id).toBe(`CAM-${count}`);
+		},
+	);
+});
+
+describe('readBacklogFromMain -- fail-closed on batch-read error', () => {
+	test('throws when the injected cat-file --batch spawn reports a populated error', () => {
+		const spy: BacklogSpawnFn = (_cmd, args) => {
+			if (args.includes('ls-tree')) {
+				return {
+					...emptyReturn(),
+					stdout: 'scripts/cam/issues/CAM-001.json\n',
+				};
+			}
+			return {
+				...emptyReturn(),
+				status: null,
+				error: new Error('ENOBUFS: batch output exceeded maxBuffer'),
+			};
+		};
+
+		expect(() => readBacklogFromMain('/fake/cwd', spy)).toThrow();
+	});
+
+	test('throws when the injected cat-file --batch spawn reports a non-zero status', () => {
+		const spy: BacklogSpawnFn = (_cmd, args) => {
+			if (args.includes('ls-tree')) {
+				return {
+					...emptyReturn(),
+					stdout: 'scripts/cam/issues/CAM-001.json\n',
+				};
+			}
+			return {
+				...emptyReturn(),
+				status: 128,
+				stderr: 'fatal: some git failure',
+			};
+		};
+
+		expect(() => readBacklogFromMain('/fake/cwd', spy)).toThrow();
+	});
+
+	test('does NOT throw and returns full parsed list on a clean (status 0, no error) batch read', () => {
+		const entries = [makeEntry({ id: 'CAM-1' }), makeEntry({ id: 'CAM-2' })];
+		const spy: BacklogSpawnFn = (_cmd, args) => {
+			if (args.includes('ls-tree')) {
+				return {
+					...emptyReturn(),
+					stdout:
+						'scripts/cam/issues/CAM-001.json\nscripts/cam/issues/CAM-002.json\n',
+				};
+			}
+			return { ...emptyReturn(), stdout: makeBatchOutput(entries) };
+		};
+
+		expect(() => readBacklogFromMain('/fake/cwd', spy)).not.toThrow();
+		expect(readBacklogFromMain('/fake/cwd', spy)).toHaveLength(2);
 	});
 });

@@ -1,0 +1,27 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Fail-closed maxBuffer fix for readBacklogFromMain batch read"
+  },
+  "branchName": "cam/issue-307",
+  "timestamp": "2026-07-15T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/issues/backlog.ts",
+    "test/issues/backlog.test.ts",
+    "src/commands/sidecar.ts",
+    "src/commands/issue-list.ts",
+    "scripts/file-size-budget.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "readBacklogFromMain (src/issues/backlog.ts) is now fail-closed: BacklogSpawnFn options carry an optional maxBuffer, the cat-file --batch spawn passes maxBuffer: 256*1024*1024, and a populated catResult.error or non-zero catResult.status throws instead of silently parsing a truncated buffer. This is a real behavior change for every caller of readBacklogFromMain/allocateId: CLI entry points (cam issue list, issue-specify, triage, plan, issue-file) now propagate a thrown error on a real git failure instead of silently getting an empty/partial backlog -- this is intentional (matches the story's fail-closed intent) but any NEW call site added inside a long-lived best-effort loop tick (like the sidecar) MUST wrap the call in its own try/catch, mirroring the fix already applied to sweepOrphanedImplementBlockedMarker in src/commands/sidecar.ts. Regression tests live in test/issues/backlog.test.ts: a real on-disk git tmpdir test (skipIf no git) proving a >1MiB cat-file --batch stdout is read in full including the highest id, plus injected-fake tests proving both error and non-zero-status batch reads throw. Had to raise the src/commands/sidecar.ts file-size ceiling 2941->2951 in scripts/file-size-budget.json (the try/catch guard + updated docstring added 10 lines); staged with the story diff and the _ref note is prepended.",
+  "officialDocsValidated": [
+    {
+      "lib": "node:child_process (spawnSync)",
+      "url": "https://nodejs.org/api/child_process.html#child_processspawnsynccommand-args-options",
+      "fetchedAt": "2026-07-15T00:00:00Z",
+      "status": "aligned",
+      "summary": "Confirmed spawnSync's maxBuffer option is byte-denominated with a 1 MiB (1024*1024) default; exceeding it truncates stdout, terminates the child, and sets a populated .error alongside .status. Our 256*1024*1024 override plus the catResult.error / non-zero catResult.status throw-guard matches this documented contract exactly."
+    }
+  ]
+}
