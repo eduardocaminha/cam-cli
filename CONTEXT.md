@@ -301,3 +301,9 @@ A dependency-injected fake that reproduces a real dependency's observable behavi
 
 **absence oracle**:
 An acceptance-criterion oracle that asserts the ABSENCE of a pattern rather than its presence. The correct, cross-platform (GNU and BSD/macOS) form is shell negation of a quiet match, `! grep -q PATTERN file`. The self-nullifying anti-pattern `grep -q` combined with `-L`/`-l` is broken: the quiet flag suppresses the list-files inversion so the exit status mirrors a plain match, producing a false gate result.
+
+**operator-decision gate**:
+A deterministic pause point where the sidecar cannot auto-decide and must wait for a human choice. Represented as the durable file .claude/.cam-gate.json = { gate, options[], context, decision? } together with phase:awaiting-operator as the coarse loop state, and answered via `cam decide <decision>`. The shape is generic across the plan, ship, and drainer phases (gate discriminator + options[] + context).
+
+**cam decide**:
+The CLI thin-proxy that answers an active operator-decision gate: it validates the given decision against the active gate's options[] and writes it into the gate file for the sidecar to consume, then resume. Distinct from `cam resume`, which is interrupt-recovery (resetting a wedged story/PRD/branch).
