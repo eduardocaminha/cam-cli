@@ -1,17 +1,19 @@
 {
-  "lastCompletedStory": { "id": "US-002", "title": "Transcript-usage golden fixture + replay against usage parsers" },
+  "lastCompletedStory": { "id": "US-003", "title": "Self-authored artifact shape-pin fixtures + replay against guards" },
   "branchName": "cam/issue-302",
-  "timestamp": "2026-07-15T12:30:00Z",
+  "timestamp": "2026-07-15T13:15:00Z",
   "createdFiles": [
-    "test/fixtures/golden/transcript-usage.jsonl"
+    "test/fixtures/golden/worker-report.json",
+    "test/fixtures/golden/review-report.json",
+    "test/fixtures/golden/orch-handoff.json",
+    "test/fixtures/golden/handoff.json",
+    "test/supervisor/golden-artifacts.test.ts"
   ],
   "modifiedFiles": [
-    "test/transcript/usage.test.ts",
-    "scripts/file-size-budget.json",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 added test/fixtures/golden/transcript-usage.jsonl: a committed, real-shaped 6-line transcript fragment (1 degenerate no-id/no-requestId line for the fallback-key branch, 3 content-block lines sharing one (message.id,requestId) pair, 2 content-block lines sharing a second later pair). No new test file was needed: the replay describe block lives inside the existing test/transcript/usage.test.ts (which already covers parseTranscriptUsage/parseContextOccupancy end-to-end), using a local readGoldenFixture helper mirroring US-001's convention. Consolidation: deleted the two hand-inlined tests whose sole purpose (multi-block-turn dedup demonstration for cumulative totals, and for last-request occupancy) is now covered by the golden-fixture replay; kept every other hand-inlined edge case (empty/malformed input, missing optional sub-fields, distinct-pair independence, fallback-key uniqueness, interspersed last-wins ordering, cumulative-vs-occupancy divergence) since the single fixture does not cover those. US-003 (self-authored-artifact-shape fixtures, likely worker-report.json / handoff.json shape replay) should follow the same convention: grep patterns.md for 'Golden-fixture' bullets before designing its own fixture, and prefer extending an existing test file's describe block over creating a new test file when the module under test already has one.",
+  "nextStoryContext": "US-003 added test/supervisor/golden-artifacts.test.ts (new file, not an extension of an existing describe block, since no single existing test file naturally covers all four self-authored artifacts). Committed fixtures: test/fixtures/golden/worker-report.json + review-report.json replay directly against parseWorkerReport/parseReviewReport (src/supervisor/report-parse.ts) fed the raw fixture string; orch-handoff.json is written via writeFileSync into a real mkdtempSync tmpdir under ORCH_HANDOFF_FILENAME then read back with readOrchHandoff (it reads from disk by contract, so it cannot be fed as a string); handoff.json (the worker-handoff contract, no dedicated runtime parser) is validated against scripts/cam/handoff.schema.json via a small hand-rolled recursive JSON-Schema-subset validator local to the test file (imports the schema as a JSON module, resolveJsonModule already true, precedented by src/supervisor/events.ts:32) rather than hardcoding today's required-field list, so a future schema change is what actually drives pass/fail. This closes CAM-302's shape-pin fixture set (US-001 sentinel/tag fixtures, US-002 transcript-usage fixture, US-003 the four self-authored-artifact fixtures); check whether any further stories remain in this PRD before assuming more shape-pin work is needed.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
