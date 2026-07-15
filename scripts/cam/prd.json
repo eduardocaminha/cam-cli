@@ -63,7 +63,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "File: src/supervisor/result.ts (WorkerReportFallback ~258-265, tryReadWorkerReport ~268-274, extractRecordedTestsGate ~282-287, inline re-check ~509). result.ts reads via the injected FileReader (returns string | null): call parseWorkerReport on the string when non-null. gateTestsIndicateFailure and commitSubjectMatchesStory stay in result.ts (token semantics live here, per issue gotcha). Do not switch to throwing: null == 'no report', preserving the readWorkerOutcome fallback control flow across host.ts/result.ts/loop.ts."
     },
