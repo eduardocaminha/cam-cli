@@ -62,7 +62,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: test/integration/review-verdict-handback.test.ts (10 sites), test/integration/worker-pane-geometry.test.ts (4 sites). Poll the observable artifact: handback/verdict JSON written to disk (Bun.file(path).exists() / parse), or pane geometry via tmux list-panes -F. Migrations independent of US-001; priority ordering only."
     },
