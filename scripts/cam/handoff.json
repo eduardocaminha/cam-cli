@@ -1,14 +1,14 @@
 {
-  "lastCompletedStory": { "id": "US-003", "title": "Mirror the rubric guidance into the generic reviewer template and re-embed" },
+  "lastCompletedStory": { "id": "US-004", "title": "Add durable test-quality convention to cam knowledge files" },
   "branchName": "cam/issue-62",
   "timestamp": "2026-07-15T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "templates/agents/subagent-reviewer.md",
-    "src/vendor/_generated.ts"
+    "scripts/cam/CLAUDE.md",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "Added a 'Test-quality rubric: expanding criterion #2' subsection to templates/agents/subagent-reviewer.md, inserted right after 'Green tests do not prove correctness' and before 'No-flaky-evasion hard stop' (same insertion point as US-002's .claude copy). Content was ADAPTED, not pasted verbatim: kept the anti-mock aphorism verbatim ('a test that asserts a mock was called is documentation, not verification') and the waitForCondition/adversarial-cases names per the acceptance criteria, but replaced cam-specific wire-boundary examples (git/tmux/gh) with generic ones (database/HTTP API/filesystem/queue), dropped the warren CONSTITUTION Art. IV citation and the CAM-55 fakes-lie backstory (not meaningful to a generic scaffolded project), and phrased the waitForCondition rule as 'a shared waitForCondition helper (or the project's equivalent)' since a downstream project won't have test/helpers/wait-for-condition.ts. Ran bun run embed-vendor to regenerate src/vendor/_generated.ts; embed-vendor:check, test/embedded.test.ts, typecheck, full bun test (4552 pass), and bun run check:all all green. No patterns.md bullet added: no new reusable insight beyond what 'cam dual-copy is per-file' already documents.",
+  "nextStoryContext": "Added a concise 'Test quality' bullet to the curated invariants block in scripts/cam/CLAUDE.md (right after the existing 'Quality gates' bullet), capturing: real I/O at wire boundaries, behavioral DI-fakes fine, no tautological mock-call assertions, document why if you must mock, waitForCondition not fixed setTimeout. Appended the matching grep-on-demand detail bullet to the end of scripts/cam/patterns.md, cross-referencing (not duplicating) the existing DI-fake pattern bullet (patterns.md:20), the anti-shadow-mock lesson (patterns.md:150, CAM-91), the FAKES-LIE HAZARD bullets (patterns.md:324/328/368/720), the tmux-introspection fakes-lie postmortem (patterns.md:52), the no-op-sleepFn CPU-spin gotcha (patterns.md:30), and the flushInk/waitForFrame poll-on-content precedent (patterns.md:454). Wording is deliberately consistent with templates/agents/subagent-reviewer.md's 'Test-quality rubric: expanding criterion #2' section (US-002/US-003 of this same CAM-62 PRD) so the same convention survives in the implementer's knowledge layer, not just the reviewer prompt. Neither scripts/cam/CLAUDE.md nor scripts/cam/patterns.md is under templates/ or tracked by the file-size-budget gate (only src/scripts/test *.ts/*.tsx files are globbed by check-file-sizes.ts), so no embed-vendor or budget-ceiling raise was needed. Docs-only story, no external library touched, no new tests needed (oracle criteria were file-assert greps only); full bun run check:all spine (test, embed-vendor, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md) ran green.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
