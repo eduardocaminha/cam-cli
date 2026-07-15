@@ -1,21 +1,22 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Add check-test-sleeps scanner core + unit tests" },
+  "lastCompletedStory": { "id": "US-002", "title": "Migrate integration sleeps to waitForCondition (group A: tmux-introspect, stop-sidecar-real)" },
   "branchName": "cam/issue-305",
-  "timestamp": "2026-07-15T13:13:57Z",
-  "createdFiles": [
-    "scripts/check-test-sleeps.ts",
-    "test/check-test-sleeps.test.ts"
+  "timestamp": "2026-07-15T14:05:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "test/integration/tmux-introspect.test.ts",
+    "test/integration/stop-sidecar-real.test.ts",
+    "scripts/file-size-budget.json"
   ],
-  "modifiedFiles": [],
   "openQuestions": [],
-  "nextStoryContext": "scripts/check-test-sleeps.ts exports scanForSleeps({path,text}[]) + filterScannablePaths(paths); CLI entrypoint enumerates test/**/*.{ts,tsx} via Bun.Glob (repo-relative paths, absolute:false confirmed against Bun docs) and exits 1 on any un-suppressed violation (stderr, points at test/helpers/wait-for-condition.ts), exit 0 otherwise. Two anchored forms only: Bun.sleepSync(<n>) and new Promise(<id> => setTimeout(<id>, <n>)) with <n> a numeric literal (0 included, no carve-out). Suppression reuses CITED_RE (CAM-NNN, #N, https://) same-line, same convention as check-debt-markers.ts. NOT wired into check:all yet (future story) -- running the CLI today against the real repo currently reports ~60+ real un-suppressed violations across test/integration/*.test.ts, test/dashboard.test.ts, test/ui/init-setup-screen-keys.test.ts, test/plan-runner-no-prd.test.ts, test/supervisor/**, and test/helpers/flush-ink.ts:22 (the documented sole real 0-literal site) -- a future story must either convert these to waitForCondition or add same-line tracker-ref suppressions before the gate is wired into check:all, otherwise wiring it will immediately fail CI.",
+  "nextStoryContext": "US-002 migrated all 13 Bun.sleepSync sites (12 in test/integration/tmux-introspect.test.ts, 1 in test/integration/stop-sidecar-real.test.ts) to waitForCondition (test/helpers/wait-for-condition.ts, already on main from CAM-62). Every site had a genuinely pollable real condition; zero bare-sleep tracker-ref suppressions were needed in this group. Two small local helpers were added directly in tmux-introspect.test.ts (not exported/shared, since stop-sidecar-real.test.ts only needed the pre-existing has-session check): `paneLabel(paneTarget)` runs `tmux display-message -p -t <paneTarget> '#{@cam_label}'` and returns the trimmed stdout (poll target for 'label is set to X'); `paneIds(sessionName)` runs `tmux list-panes -t <sessionName> -F '#{pane_id}'` and returns the trimmed non-empty lines as an array (poll target for 'pane count is N' or 'pane id X is present/absent'). Session/pane creation polls `has-session -t <name>` (exit 0) or `paneIds(...).length === N`; a kill-pane polls `!paneIds(...).includes(deadId)`. All `beforeEach`/test callbacks touching these sites became `async` (bun:test supports this natively) to `await waitForCondition(predicate)`. Verified real (not faked): `bun test test/integration/tmux-introspect.test.ts` -> 5 pass, `bun test test/integration/stop-sidecar-real.test.ts` -> 2 pass, full `bun test` -> 4591 pass / 0 fail, full `bun run check:all` -> exit 0 (all 11 gates ok). Two file-size ceilings were raised in scripts/file-size-budget.json to the gate's exact reported line counts (tmux-introspect.test.ts 185->209, stop-sidecar-real.test.ts 240->241) with a dated CAM-305 _ref note, staged in the same commit as the test changes. US-003 (group B: test/integration/review-verdict-handback.test.ts, test/integration/worker-pane-geometry.test.ts per the sequential PRD numbering) is the next story in this same migration series -- reuse the exact same helper shape (display-message for label polling, list-panes -F '#{pane_id}' for pane-existence/count polling) rather than re-deriving it; check each new file's own pane/label/file-artifact vocabulary since the exact tmux subcommands invoked may differ (e.g. review-verdict-handback likely also polls for a written review-report.json file via Bun.file(path).exists() per the PRD notes, not just tmux state).",
   "officialDocsValidated": [
     {
-      "lib": "Bun.Glob",
-      "url": "https://bun.com/docs/api/glob",
-      "fetchedAt": "2026-07-15T13:13:57Z",
+      "lib": "tmux",
+      "url": "https://man7.org/linux/man-pages/man1/tmux.1.html",
+      "fetchedAt": "2026-07-15T14:05:00Z",
       "status": "aligned",
-      "summary": "Glob.scanSync({cwd}) returns repo-relative paths by default (absolute option defaults to false); implementation relies on this, matching check-debt-markers.ts's existing convention."
+      "summary": "display-message -p writes to stdout instead of the status line; -t <target-pane> sources #{...} format variables (including custom @-prefixed user options like @cam_label) from that specific pane. Confirmed the new paneLabel() helper's argv shape (['display-message','-p','-t',paneTarget,'#{@cam_label}']) matches documented behavior; also verified empirically via the passing real-tmux test run (5/5 pass), not doc-only."
     }
   ]
 }
