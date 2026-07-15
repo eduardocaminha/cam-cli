@@ -1,29 +1,10 @@
 {
-  "lastCompletedStory": { "id": "US-003", "title": "Clean remaining unused locals/params/types in test/**" },
+  "lastCompletedStory": { "id": "US-004", "title": "Enable noUnusedLocals and noUnusedParameters in tsconfig.json" },
   "branchName": "cam/issue-135",
   "timestamp": "2026-07-15T00:00:00Z",
-  "modifiedFiles": [
-    "test/attach-hint.test.ts",
-    "test/bootstrap-wait.test.ts",
-    "test/commands/journal-append.test.ts",
-    "test/commands/setup-merge-mode.test.ts",
-    "test/commands/spec.test.ts",
-    "test/config/models.test.ts",
-    "test/dashboard.test.ts",
-    "test/fixtures/version-skip-guard/renamed-derived-probe.ts",
-    "test/issue.test.ts",
-    "test/issues/alloc.test.ts",
-    "test/notify/resend.test.ts",
-    "test/on-main-multi.test.ts",
-    "test/plan-runner-target-prompt.test.ts",
-    "test/plan-target-invalid-sidecar.test.ts",
-    "test/retry/retry-pid.test.ts",
-    "test/setup.test.ts",
-    "test/triage.test.ts",
-    "scripts/cam/patterns.md"
-  ],
+  "modifiedFiles": ["tsconfig.json"],
   "openQuestions": [],
-  "nextStoryContext": "The full flag-on probe (`bunx tsc --noEmit --noUnusedLocals --noUnusedParameters`) now reports ZERO violations project-wide (verified after this story's edits, exit 0, no output). This closes out the ~26 remaining test/** violations from US-003's notes: dead type-only imports removed (ApplyMergeModeOptions, WriteDomainDocsOnMainOutcome, GenUuid, RunTriageOptions), dead node:fs imports removed (mkdirSync in models.test.ts, existsSync in plan-target-invalid-sidecar.test.ts, mkdtempSync+tmpdir pair in retry-pid.test.ts), dead helpers removed (NOOP_SPAWN, failResult), write-only locals removed (bootstrapCalled in issue.test.ts, tick alias of flushInk in dashboard.test.ts detail-view describe block, sub local in alloc.test.ts), a for-of destructure slot dropped ([, model] instead of [phase, model]), a fixture destructure trimmed ([maj] instead of [maj, min] in renamed-derived-probe.ts, verified check-version-skips.test.ts assertions key off runtimeIsModern not min), and required-signature callback params underscore-prefixed (cmd/options/args across attach-hint, bootstrap-wait, journal-append, on-main-multi x3, setup.test.ts, triage.test.ts x2, alloc.test.ts's map callback). Zero new @ts-ignore/@ts-expect-error introduced (verified via git diff grep). Full check:all spine green (4529 pass / 0 fail, typecheck/lint/file-size/debt-markers/version-skips/coverage/dead-code/dup/ci-parity/agents-md all ok). Flags stay OFF in tsconfig.json for this story -- US-004 is the story that flips noUnusedLocals/noUnusedParameters to true in tsconfig.json now that the probe is clean project-wide. US-004 should start by re-running the exact probe command as a pre-flip sanity check before editing tsconfig.json, since time may have passed and new code could have landed.",
+  "nextStoryContext": "US-004 was the last story of this PRD (CAM-135). tsconfig.json noUnusedLocals and noUnusedParameters are now true, noPropertyAccessFromIndexSignature stays false (out of scope). Pre-flip sanity re-run of `bunx tsc --noEmit --noUnusedLocals --noUnusedParameters` was clean (exit 0, no output) immediately before the flip, confirming US-001/002/003's cleanup held. Post-flip: bun run typecheck ok, bun test 4529 pass / 0 fail, bun run check:all all 12 gates green (test, embed-vendor, lint, file-size, debt-markers, version-skips, coverage, dead-code/knip, dup/jscpd, ci-parity, agents-md). knip.json and biome.json untouched (git diff --exit-code clean) per scope -- no biome noUnusedVariables was added, tsc is the enforcement mechanism because biome.json excludes test/** and would have missed most violations. No new gate was added; typecheck rides existing gate #1. All userStories in prd.json now have passes reaching true after supervisor processes this story's worker-report -- this PRD (CAM-135) should be at or near completion.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
