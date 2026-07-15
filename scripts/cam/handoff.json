@@ -1,0 +1,20 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Add shared report parse module and relax WorkerReport optional fields" },
+  "branchName": "cam/issue-301",
+  "timestamp": "2026-07-15T00:00:00Z",
+  "createdFiles": [
+    "src/supervisor/report-parse.ts",
+    "test/supervisor/report-parse.test.ts"
+  ],
+  "modifiedFiles": [
+    "src/supervisor/worker-report.ts",
+    "test/supervisor/orchestrator-surface.test.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "report-parse.ts (parseWorkerReport/parseReviewReport) is tested but NOT yet wired into any consumer: host.ts's makeReadWorkerReport and result.ts's readWorkerOutcome still use their own ad-hoc isObject/typeof guards. A follow-up story should replace those duplicated guards with calls into report-parse.ts if/when the PRD calls for it -- this story's AC only required the shared module + the WorkerReport.gates/notes optionality, not consumer rewiring. WorkerReport.gates/notes are now optional at the type level; any new code reading report.gates.X must use optional chaining (report.gates?.X) or a truthiness guard.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure hand-rolled TypeScript type-narrowing (isObject/typeof guards), no external parsing library introduced (project convention forbids zod / *.schema.json runtime loaders here)." }
+  ]
+}
