@@ -53,7 +53,7 @@ import { sendKeysVerified, type CapturePaneFn } from '../tmux/dispatch.ts';
 import { isPidAlive } from '../commands/resume.ts';
 import { renderStateFile } from '../commands/next.ts';
 import { WORKER_REPORT_FILENAME } from './worker-report.ts';
-import { parseWorkerReport } from './report-parse.ts';
+import { parseReviewReport, parseWorkerReport } from './report-parse.ts';
 import type { ReviewReport } from './review-report.ts';
 import { REVIEW_REPORT_FILENAME } from './review-report.ts';
 import { preflightWorkerContainer } from './preflight-container.ts';
@@ -169,20 +169,13 @@ export function makeReadReviewReport(cwd: string): () => ReviewReport | null {
 	return () => {
 		try {
 			const raw = readFileSync(reportPath, 'utf8');
-			const parsed: unknown = JSON.parse(raw);
-			// Shape guard: must be a non-null, non-array object with a string `verdict`.
-			// A valid-JSON-but-wrong-shape file (missing `verdict`, top-level array,
-			// etc.) returns null so the dispatch falls back to the <review>-tag verdict
-			// instead of treating `undefined` as a verdict string (US-R2-001).
-			if (
-				parsed !== null &&
-				typeof parsed === 'object' &&
-				!Array.isArray(parsed) &&
-				typeof (parsed as Record<string, unknown>)['verdict'] === 'string'
-			) {
-				return parsed as ReviewReport;
-			}
-			return null;
+			// Shape guard (US-004, CAM-301): delegate discriminator/findings shape
+			// validation to the shared parser instead of re-declaring an inline
+			// typeof verdict check. A wrong-shape file (missing string verdict, or a
+			// malformed findings[] entry) yields null so the dispatch falls back to
+			// the <review>-tag verdict instead of treating undefined/unchecked
+			// fields as valid completion signals.
+			return parseReviewReport(raw);
 		} catch {
 			return null;
 		}
