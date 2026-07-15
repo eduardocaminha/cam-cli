@@ -298,3 +298,6 @@ A seam where cam drives or parses the output of a real external tool (git, tmux,
 
 **behavioral DI-fake**:
 A dependency-injected fake that reproduces a real dependency's observable behavior (e.g. a fake spawn returning realistic git output keyed on argv) so the test asserts the code's real output. It is the blessed cam testing pattern and is explicitly distinct from, and permitted unlike, a tautological mock-call assertion that only checks 'the mock was called' (which is documentation, not verification).
+
+**absence oracle**:
+An acceptance-criterion oracle that asserts the ABSENCE of a pattern rather than its presence. The correct, cross-platform (GNU and BSD/macOS) form is shell negation of a quiet match, `! grep -q PATTERN file`. The self-nullifying anti-pattern `grep -q` combined with `-L`/`-l` is broken: the quiet flag suppresses the list-files inversion so the exit status mirrors a plain match, producing a false gate result.
