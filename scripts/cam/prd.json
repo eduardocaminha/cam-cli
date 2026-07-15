@@ -81,7 +81,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Files: src/supervisor/host.ts (makeReadReviewReport ~175-198), src/supervisor/review.ts (fileBasedReport verdict/findings resolution ~477-504, readReviewReport option ~260). Keep the graceful-degradation contract (null -> fall back to parseReviewVerdict tag, emit the existing warn). ReviewReport/ReviewFinding types stay defined in review-report.ts and exported; the shared module re-exports them if it moves usage."
     }
