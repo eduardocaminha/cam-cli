@@ -48,7 +48,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "New: test/fixtures/golden/transcript-usage.jsonl; edit test/transcript/usage.test.ts (6 existing inline cache_read_input_tokens fixtures) to load from the golden file. Parsers: parseTranscriptUsage + parseContextOccupancy (src/transcript/usage.ts). Highest-risk category-(b) contract per issue gotcha: the transcript path encoding (usage.ts:232-233) and the message.usage field set. Fixture must reproduce the multi-block dedup shape (same message.id+requestId across content-block lines) so the dedup path is actually exercised, plus a degenerate no-id line for the fallback-key branch. Do NOT weaken the assertions to match a simplified fixture."
     },
