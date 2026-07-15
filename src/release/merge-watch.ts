@@ -942,7 +942,7 @@ export function stepMergeWatch(
  * never injects this function, so it is completely inert (zero behavior change).
  */
 export async function runMergeWatch(opts: MergeWatchOptions): Promise<MergeWatchOutcome> {
-	const { prNumber, logEvent } = opts;
+	const { prNumber } = opts;
 	const sleep = opts.sleepFn ?? ((ms: number) => Bun.sleepSync(ms));
 	const pollIntervalMs = opts.pollIntervalMs ?? DEFAULT_MERGE_WATCH_POLL_INTERVAL_MS;
 	const maxPolls = opts.maxPolls ?? DEFAULT_MERGE_WATCH_MAX_POLLS;

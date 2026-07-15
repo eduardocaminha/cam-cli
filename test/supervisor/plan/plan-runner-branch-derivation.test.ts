@@ -256,7 +256,7 @@ describe('writePrdBranchNameFn wiring (AC4)', () => {
 		const { opts } = makeOpts({
 			issueNumber: 236,
 			writePrdBranchNameFn: () => { order.push('write-branch-name'); },
-			spawnFn: (cmd, args) => {
+			spawnFn: (_cmd, args) => {
 				if (args[0] === 'add') order.push('git-add');
 				return { stdout: '', exitCode: 0 };
 			},
@@ -270,7 +270,7 @@ describe('writePrdBranchNameFn wiring (AC4)', () => {
 		const { opts } = makeOpts({
 			issueNumber: 236,
 			writePrdBranchNameFn: () => { order.push('write-branch-name'); },
-			spawnFn: (cmd, args) => {
+			spawnFn: (_cmd, args) => {
 				if (args[0] === 'checkout') order.push('git-checkout');
 				return { stdout: '', exitCode: 0 };
 			},

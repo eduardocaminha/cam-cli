@@ -20,7 +20,6 @@ import type {
 	WritePrd,
 	ReadHandoff,
 	ClockFn,
-	GenUuid,
 	ReviewDispatch,
 	WriteSessionMarker,
 	IsPaneAlive,

@@ -51,7 +51,7 @@ import {
 } from '../tmux/session.ts';
 import { sendKeysVerified, type CapturePaneFn } from '../tmux/dispatch.ts';
 import { isPidAlive } from '../commands/resume.ts';
-import { renderStateFile, writeStateFile } from '../commands/next.ts';
+import { renderStateFile } from '../commands/next.ts';
 import { WORKER_REPORT_FILENAME } from './worker-report.ts';
 import type { ReviewReport } from './review-report.ts';
 import { REVIEW_REPORT_FILENAME } from './review-report.ts';

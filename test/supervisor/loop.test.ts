@@ -34,7 +34,6 @@ import type {
 	WritePrd,
 	ReadHandoff,
 	ClockFn,
-	GenUuid,
 	ReviewDispatch,
 	WriteSessionMarker,
 	IsPaneAlive,
@@ -1099,7 +1098,7 @@ describe('runSupervisor', () => {
 			maxIterations: 1, // stop after first pass; we just want to check the marker
 		});
 
-		const result = await runSupervisor(opts);
+		await runSupervisor(opts);
 
 		// After 1 iteration the loop hits max-iterations (we set maxIterations=1).
 		// But the marker should have been called with US-002.

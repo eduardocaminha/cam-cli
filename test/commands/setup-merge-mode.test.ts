@@ -30,7 +30,6 @@ import type { SpawnSyncReturns } from 'node:child_process';
 
 import {
 	applyMergeMode,
-	type ApplyMergeModeOptions,
 	type ApplyMergeModeOutcome,
 } from '../../src/commands/setup-merge-mode.ts';
 import type { SpawnFn } from '../../src/release/branch-protection.ts';

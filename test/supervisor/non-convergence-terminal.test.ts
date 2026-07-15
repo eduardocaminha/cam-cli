@@ -28,7 +28,6 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
 	runSupervisor,
-	MAX_ITERATIONS,
 } from '../../src/supervisor/loop.ts';
 import { makeHasPendingStories } from '../../src/commands/sidecar.ts';
 import type {
@@ -39,7 +38,6 @@ import type {
 	WritePrd,
 	ReadHandoff,
 	ClockFn,
-	GenUuid,
 	ReviewDispatch,
 	WriteSessionMarker,
 	IsPaneAlive,

@@ -181,7 +181,7 @@ describe('resolveEnsurePushed (US-001, CAM-156)', () => {
 	// -------------------------------------------------------------------------
 
 	test('(e) genuine-behind, git push itself fails -> ok:false, pushed:false', () => {
-		const spawnFn: GitSpawnFn = (cmd, args, _opts) => {
+		const spawnFn: GitSpawnFn = (_cmd, args, _opts) => {
 			const subcommand = args[0] === '-C' ? args[2] : args[0];
 			if (subcommand === 'branch') return fakeResult(FAKE_BRANCH);
 			if (subcommand === 'ls-remote') return fakeResult('stale0001111\trefs/heads/' + FAKE_BRANCH);

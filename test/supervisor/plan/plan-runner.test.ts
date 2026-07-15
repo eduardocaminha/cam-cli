@@ -27,7 +27,6 @@ import {
 	runPlanPhase,
 	type RunPlanPhaseOptions,
 	type PlanPhaseResult,
-	type PlanMutexState,
 } from '../../../src/supervisor/plan-runner.ts';
 import { makeInMemoryEventLogger } from '../../../src/supervisor/events.ts';
 import type { SpawnFn } from '../../../src/supervisor/loop.ts';

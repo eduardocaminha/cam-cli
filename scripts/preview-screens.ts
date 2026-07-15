@@ -311,7 +311,7 @@ function previewRun(): void {
  * so the thin-proxy hit path fires (session exists, pane 0 = claude).
  */
 function makeOrchFakeTmux(orchAlive = true): TmuxSpawnFnType {
-	return ((cmd: string, args: string[]) => {
+	return ((_cmd: string, args: string[]) => {
 		const base = { status: 0, stdout: Buffer.from('') } as SpawnSyncReturns<Buffer>;
 		const subcommand = args[0] === '-L' ? args[2] : args[0];
 		if (subcommand === 'has-session') return base;

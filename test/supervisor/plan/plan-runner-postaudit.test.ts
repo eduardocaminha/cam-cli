@@ -605,7 +605,7 @@ describe('runPostAuditAction', () => {
 		const order: string[] = [];
 		const { opts } = makeOpts({
 			removeEscalationMarkerFn: () => { order.push('remove-marker'); },
-			spawnFn: (cmd, args) => {
+			spawnFn: (_cmd, args) => {
 				if (args[0] === 'checkout') order.push('git-checkout');
 				return { stdout: '', exitCode: 0 };
 			},

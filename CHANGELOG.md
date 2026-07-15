@@ -6,6 +6,15 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.163.0] - 2026-07-15
+
+### Added
+
+- US-004 - Enable noUnusedLocals and noUnusedParameters in tsconfig.json
+- US-003 - Clean remaining unused locals/params/types in test/**
+- US-002 - Clean unused locals/params in test/supervisor, test/release, test/integration
+- US-001 - Clean unused locals/params/imports in src/ and scripts/
+
 ## [0.162.0] - 2026-07-15
 
 ### Added

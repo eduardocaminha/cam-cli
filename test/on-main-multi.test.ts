@@ -521,7 +521,7 @@ describe('syncWorktreeIfOnMain', () => {
 	});
 
 	test('best-effort: does not throw on non-zero restore exit', () => {
-		const spawnFn: SpawnFn = (cmd, args, _options) => {
+		const spawnFn: SpawnFn = (_cmd, args, _options) => {
 			if (args.includes('--abbrev-ref')) return ok('main\n');
 			if (args.includes('restore')) return fail('restore error');
 			return ok();
@@ -586,7 +586,7 @@ describe('commitTreeToMain — AC#5 sync wired on success path', () => {
 	});
 
 	test('return value (short sha) is unchanged by the sync step', () => {
-		const spawnFn: SpawnFn = (cmd, args, _options) => {
+		const spawnFn: SpawnFn = (_cmd, args, _options) => {
 			if (args.includes('hash-object')) return ok(BLOB_SHA_1 + '\n');
 			if (args.includes('write-tree')) return ok(TREE_SHA + '\n');
 			if (args.includes('commit-tree')) return ok(COMMIT_SHA + '\n');
@@ -662,7 +662,7 @@ describe('commitTreeToMain — AC#5 sync wired on success path', () => {
  * as "main" (so syncWorktreeIfOnMain fires), then FAILS the git restore call.
  */
 function makeFailingSyncSpawn(): SpawnFn {
-	return (cmd, args, _options) => {
+	return (_cmd, args, _options) => {
 		if (args.includes('hash-object')) return ok(BLOB_SHA_1 + '\n');
 		if (args.includes('write-tree')) return ok(TREE_SHA + '\n');
 		if (args.includes('commit-tree')) return ok(COMMIT_SHA + '\n');

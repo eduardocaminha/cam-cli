@@ -34,7 +34,6 @@ import type { SpawnSyncReturns } from 'node:child_process';
 
 import { runSpec, runSpecWriteDocs, runSpecPersist } from '../../src/commands/spec.ts';
 import { parseSpecArgs, dispatchSpec } from '../../index.ts';
-import type { WriteDomainDocsOnMainOutcome } from '../../src/commands/domain-docs.ts';
 import type { SpecifyIssueOnMainOutcome } from '../../src/commands/issue-specify.ts';
 import {
 	projectSessionName,

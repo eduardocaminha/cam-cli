@@ -30,8 +30,6 @@ import type { IssueEntry } from '../src/issues/types.ts';
 // Helpers
 // ---------------------------------------------------------------------------
 
-const NOOP_SPAWN = (): { stdout: string; exitCode: number } => ({ stdout: '', exitCode: 0 });
-
 const MOCK_ISSUE: IssueEntry = {
 	id: 'CAM-157',
 	title: 'Plan runner authoritative target',

@@ -3,7 +3,7 @@
 // Tests for src/config/models.ts: readPhaseModel, readBackend, readMergeMode,
 // readOrchContextWindow, and DEFAULTS.
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
@@ -519,7 +519,7 @@ describe('DEFAULTS vs MODEL_OPTIONS consistency', () => {
 	test('every non-backend DEFAULTS value is a selectable MODEL_OPTIONS value', () => {
 		const nonBackendEntries = Object.entries(DEFAULTS).filter(([key]) => key !== 'backend');
 		expect(nonBackendEntries.length).toBeGreaterThan(0);
-		for (const [phase, model] of nonBackendEntries) {
+		for (const [, model] of nonBackendEntries) {
 			expect(optionValues.has(model)).toBe(true);
 		}
 	});

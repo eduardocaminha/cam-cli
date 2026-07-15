@@ -32,7 +32,6 @@
 
 import type { ReviewDispatch, ReviewDispatchResult, SpawnFn, CapturePane, ReadPrd, WritePrd, EnsureWorkerPane } from './loop.ts';
 import type { WorkerEventLogger } from './events.ts';
-import type { PrdSnapshot } from './decide.ts';
 import type { ReviewReport, ReviewFinding } from './review-report.ts';
 import type { PreflightResult } from './preflight-container.ts';
 import { workerEnvPrefix } from './worker-argv.ts';

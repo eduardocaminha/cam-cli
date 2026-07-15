@@ -29,7 +29,6 @@ import type { SpawnSyncReturns } from 'node:child_process';
 import {
 	existsSync,
 	mkdtempSync,
-	mkdirSync,
 	readFileSync,
 	rmSync,
 	writeFileSync,

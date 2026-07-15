@@ -63,14 +63,12 @@ function makeSpawnFn(entries: IssueEntry[], sha = 'aabbccd'): { spy: SpawnFn; ca
 
 	const spy: SpawnFn = (_cmd, args, _opts) => {
 		calls.push(args);
-		const sub = args[1]; // args[0] is '-C', args[1] is 'cwd', args[2] is subcommand -- wait
-		// Actually args are: ['-C', cwd, <subcommand>, ...rest]
-		// so args[2] is the git subcommand
+		// args are: ['-C', cwd, <subcommand>, ...rest], so args[2] is the git subcommand
 		const gitSub = args[2];
 
 		if (gitSub === 'rev-parse') return ok(fakeCommitSha);
 		if (gitSub === 'ls-tree') {
-			const paths = entries.map((e, i) =>
+			const paths = entries.map((_e, i) =>
 				`scripts/cam/issues/CAM-${String(i + 1).padStart(4, '0')}.json`
 			).join('\n');
 			return ok(paths + '\n');

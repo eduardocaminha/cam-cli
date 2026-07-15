@@ -25,7 +25,7 @@ describe('copyTemplates — install summary includes skills line', () => {
 		// Quiet mode must be OFF (default) so printSuccess is not suppressed.
 		originalWrite = process.stdout.write.bind(process.stdout);
 		// biome-ignore lint/suspicious/noExplicitAny: overriding built-in write signature
-		(process.stdout as any).write = (chunk: string | Uint8Array, ...args: unknown[]) => {
+		(process.stdout as any).write = (chunk: string | Uint8Array, ..._args: unknown[]) => {
 			if (typeof chunk === 'string') captured += chunk;
 			return true;
 		};
