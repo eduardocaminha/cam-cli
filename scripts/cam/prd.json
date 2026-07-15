@@ -77,7 +77,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: test/integration/plan-runner-pane-spawn.test.ts (6), test/integration/orch-recycle-watch.test.ts (5), test/integration/orch-recycle-pid-resolve.test.ts (2). NOTE: this issue targets Bun.sleepSync (sync) only, NOT the template-literal Bun.sleep(60000) inside the spawned-script string at orch-recycle-pid-resolve.test.ts:138 (that is async Bun.sleep living in a spawned-script literal, out of scope and not matched by the scanner). Poll pane list / watch-fired marker / pid gone. Migrations independent of US-001; priority ordering only."
     },
