@@ -38,6 +38,7 @@ import {
 import type { SpawnFn } from '../../../src/supervisor/loop.ts';
 import type { PlanVerdictReport } from '../../../src/supervisor/plan-verdict-report.ts';
 import type { IssueEntry } from '../../../src/issues/types.ts';
+import { waitForCondition } from '../../helpers/wait-for-condition.ts';
 import type { PlanApproval } from '../../../src/config/models.ts';
 import type { LoopPhase } from '../../../src/commands/status.ts';
 import { makeInMemoryEventLogger } from '../../../src/supervisor/events.ts';
@@ -276,8 +277,11 @@ describe('runPostAuditAction', () => {
 	test('proceed-branch: escalateFn NOT called on approve (AC1)', async () => {
 		const { opts, escalateCalled } = makeOpts();
 		runPostAuditAction(opts);
-		// Give the fire-and-forget microtask a tick to settle
-		await new Promise((r) => setTimeout(r, 5));
+		// escalateFn is never scheduled on approve; poll a bounded window to
+		// confirm it never fires rather than asserting immediately.
+		await waitForCondition(() => escalateCalled.n > 0, { timeoutMs: 5, intervalMs: 1 }).catch(
+			() => {},
+		);
 		expect(escalateCalled.n).toBe(0);
 	});
 
@@ -306,7 +310,11 @@ describe('runPostAuditAction', () => {
 	test('pause-operator: escalateFn NOT called (AC2)', async () => {
 		const { opts, escalateCalled } = makeOpts({ readPlanApprovalFn: () => 'operator' });
 		runPostAuditAction(opts);
-		await new Promise((r) => setTimeout(r, 5));
+		// escalateFn is never scheduled in pause-operator; poll a bounded window
+		// to confirm it never fires rather than asserting immediately.
+		await waitForCondition(() => escalateCalled.n > 0, { timeoutMs: 5, intervalMs: 1 }).catch(
+			() => {},
+		);
 		expect(escalateCalled.n).toBe(0);
 	});
 
@@ -323,8 +331,8 @@ describe('runPostAuditAction', () => {
 	test('audit-blocked: escalateFn is called (AC3)', async () => {
 		const { opts, escalateCalled } = makeOpts({ planResult: BLOCKED_RESULT });
 		runPostAuditAction(opts);
-		// Give the fire-and-forget microtask a tick to settle
-		await new Promise((r) => setTimeout(r, 5));
+		// escalateFn is fire-and-forget; poll until it actually fires.
+		await waitForCondition(() => escalateCalled.n > 0);
 		expect(escalateCalled.n).toBe(1);
 	});
 
@@ -471,7 +479,11 @@ describe('runPostAuditAction', () => {
 	test('plan-target-invalid: escalateFn is NEVER called (operator-input error, not an infra alert) (AC2)', async () => {
 		const { opts, escalateCalled } = makeOpts({ planResult: TARGET_INVALID_RESULT });
 		runPostAuditAction(opts);
-		await new Promise((r) => setTimeout(r, 5));
+		// escalateFn is never scheduled for plan-target-invalid; poll a bounded
+		// window to confirm it never fires rather than asserting immediately.
+		await waitForCondition(() => escalateCalled.n > 0, { timeoutMs: 5, intervalMs: 1 }).catch(
+			() => {},
+		);
 		expect(escalateCalled.n).toBe(0);
 	});
 
@@ -556,7 +568,8 @@ describe('runPostAuditAction', () => {
 	test('plan-escalated: escalateFn is called (US-004)', async () => {
 		const { opts, escalateCalled } = makeOpts({ planResult: ESCALATED_RESULT });
 		runPostAuditAction(opts);
-		await new Promise((r) => setTimeout(r, 5));
+		// escalateFn is fire-and-forget; poll until it actually fires.
+		await waitForCondition(() => escalateCalled.n > 0);
 		expect(escalateCalled.n).toBe(1);
 	});
 

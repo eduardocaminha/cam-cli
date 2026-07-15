@@ -40,6 +40,7 @@ import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
 import type { SpawnFn, CapturePane, ReadPrd, WritePrd } from '../../src/supervisor/loop.ts';
 import { makeReadReviewReport } from '../../src/supervisor/host.ts';
 import { REVIEW_REPORT_FILENAME } from '../../src/supervisor/review-report.ts';
+import { waitForCondition } from '../helpers/wait-for-condition.ts';
 
 // ---------------------------------------------------------------------------
 // buildReviewerWorkerArgv tests
@@ -1677,8 +1678,8 @@ describe('makeReviewDispatch: US-005 container mode dispatch', () => {
 		expect(result.status).toBe('error');
 		expect(result.detail).toContain('container-not-ready');
 
-		// escalateFn is fire-and-forget; allow the microtask to flush.
-		await new Promise((r) => setTimeout(r, 10));
+		// escalateFn is fire-and-forget; poll until it actually fires.
+		await waitForCondition(() => escalateCalled);
 		expect(escalateCalled).toBe(true);
 	});
 

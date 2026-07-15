@@ -24,6 +24,7 @@ import {
 import type { SpawnFn } from '../../../src/supervisor/loop.ts';
 import type { IssueEntry } from '../../../src/issues/types.ts';
 import type { PreflightResult } from '../../../src/supervisor/preflight-container.ts';
+import { waitForCondition } from '../../helpers/wait-for-condition.ts';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -256,7 +257,7 @@ describe('plan-runner container: AC3 - fail-closed on planner preflight failure'
 
 		runPlanPhase(opts);
 		// Allow the fire-and-forget promise to settle.
-		await new Promise((r) => setTimeout(r, 5));
+		await waitForCondition(() => escalateCalled > 0);
 
 		expect(escalateCalled).toBe(1);
 	});
@@ -322,7 +323,7 @@ describe('plan-runner container: AC6 - fail-closed on auditor preflight failure'
 		});
 
 		runPlanPhase(opts);
-		await new Promise((r) => setTimeout(r, 5));
+		await waitForCondition(() => escalateCalled > 0);
 
 		expect(escalateCalled).toBe(1);
 	});

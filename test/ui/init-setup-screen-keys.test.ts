@@ -99,10 +99,11 @@ describe('InitScreen — success path', () => {
 		const { lastFrame, unmount } = render(view);
 
 		// Wait for all async checks to complete (each has MIN_RUNNING_MS=140ms
-		// delay; add buffer for the setTimeout(onDone, 0) call).
-		await new Promise((r) => setTimeout(r, 600));
-
-		const frame = lastFrame() ?? '';
+		// delay, plus the setTimeout(onDone, 0) call) by polling for the
+		// terminal "All set" section rather than a fixed settle time.
+		const frame = await waitForFrame(lastFrame, (f) => f.includes('All set'), {
+			timeoutMs: 3000,
+		});
 
 		// "All set" section appears only on success.
 		expect(frame).toContain('All set');
@@ -144,9 +145,9 @@ describe('InitScreen — failure path', () => {
 			createElement(InitScreen, { checks, onDone: () => {} }),
 		);
 
-		await new Promise((r) => setTimeout(r, 400));
-
-		const frame = lastFrame() ?? '';
+		const frame = await waitForFrame(lastFrame, (f) => f.includes('Failed'), {
+			timeoutMs: 3000,
+		});
 
 		// Failure is signalled by the ✗ glyph; "Failed" section should appear.
 		expect(frame).toContain('✗');

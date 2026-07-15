@@ -21,6 +21,7 @@ import type { SpawnFn } from '../src/supervisor/loop.ts';
 import type { IssueEntry } from '../src/issues/types.ts';
 import type { LoopPhase } from '../src/commands/status.ts';
 import type { PlanApproval } from '../src/config/models.ts';
+import { waitForCondition } from './helpers/wait-for-condition.ts';
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -236,7 +237,12 @@ describe('runPostAuditAction - planner-failed handling (AC2)', () => {
 	test('escalateFn is NOT fired (AC2 - avoid email noise on transient no-op)', async () => {
 		const { opts, escalateCalled } = makePostAuditOpts();
 		runPostAuditAction(opts);
-		await new Promise((r) => setTimeout(r, 5));
+		// escalateFn is never scheduled for planner-failed (fully synchronous
+		// return); poll a bounded window to confirm it never fires rather than
+		// asserting immediately, so a future async regression would still be caught.
+		await waitForCondition(() => escalateCalled.n > 0, { timeoutMs: 5, intervalMs: 1 }).catch(
+			() => {},
+		);
 		expect(escalateCalled.n).toBe(0);
 	});
 

@@ -25,7 +25,7 @@ import { filterScannablePaths, scanForSleeps } from '../scripts/check-test-sleep
 describe('scanForSleeps — flaggable forms', () => {
 	test('Bun.sleepSync(<n>) fails: cited=false, names file:line, kind', () => {
 		const results = scanForSleeps([
-			{ path: 'test/foo.test.ts', text: 'Bun.sleepSync(100);\n' },
+			{ path: 'test/foo.test.ts', text: 'Bun.sleepSync(100);\n' }, // CAM-305: scanner test fixture, not a real sleep
 		]);
 		expect(results).toHaveLength(1);
 		expect(results[0]!.cited).toBe(false);
@@ -38,7 +38,7 @@ describe('scanForSleeps — flaggable forms', () => {
 		const results = scanForSleeps([
 			{
 				path: 'test/foo.test.ts',
-				text: 'await new Promise((resolve) => setTimeout(resolve, 50));\n',
+				text: 'await new Promise((resolve) => setTimeout(resolve, 50));\n', // CAM-305: scanner test fixture, not a real sleep
 			},
 		]);
 		expect(results).toHaveLength(1);
@@ -50,7 +50,7 @@ describe('scanForSleeps — flaggable forms', () => {
 		const results = scanForSleeps([
 			{
 				path: 'test/helpers/flush-ink.ts',
-				text: 'const oneTick = () => new Promise((resolve) => setTimeout(resolve, 0));\n',
+				text: 'const oneTick = () => new Promise((resolve) => setTimeout(resolve, 0));\n', // CAM-305: scanner test fixture, not a real sleep
 			},
 		]);
 		expect(results).toHaveLength(1);

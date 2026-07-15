@@ -28,6 +28,7 @@ import type { PlanApproval } from '../../../src/config/models.ts';
 import type { LoopPhase } from '../../../src/commands/status.ts';
 import type { IssueEntry } from '../../../src/issues/types.ts';
 import type { PlanVerdictReport } from '../../../src/supervisor/plan-verdict-report.ts';
+import { waitForCondition } from '../../helpers/wait-for-condition.ts';
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -217,7 +218,12 @@ describe('missing-issueNumber gate (AC3)', () => {
 	test('issueNumber missing: escalateFn NOT called (no email noise on missing PRD)', async () => {
 		const { opts, escalateCalled } = makeOpts({ issueNumber: undefined });
 		runPostAuditAction(opts);
-		await new Promise((r) => setTimeout(r, 5));
+		// escalateFn is never scheduled here (fully synchronous return); poll a
+		// bounded window to confirm it never fires rather than asserting
+		// immediately, so a future async regression would still be caught.
+		await waitForCondition(() => escalateCalled.n > 0, { timeoutMs: 5, intervalMs: 1 }).catch(
+			() => {},
+		);
 		expect(escalateCalled.n).toBe(0);
 	});
 
