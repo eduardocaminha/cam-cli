@@ -1,0 +1,21 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Add check-test-sleeps scanner core + unit tests" },
+  "branchName": "cam/issue-305",
+  "timestamp": "2026-07-15T13:13:57Z",
+  "createdFiles": [
+    "scripts/check-test-sleeps.ts",
+    "test/check-test-sleeps.test.ts"
+  ],
+  "modifiedFiles": [],
+  "openQuestions": [],
+  "nextStoryContext": "scripts/check-test-sleeps.ts exports scanForSleeps({path,text}[]) + filterScannablePaths(paths); CLI entrypoint enumerates test/**/*.{ts,tsx} via Bun.Glob (repo-relative paths, absolute:false confirmed against Bun docs) and exits 1 on any un-suppressed violation (stderr, points at test/helpers/wait-for-condition.ts), exit 0 otherwise. Two anchored forms only: Bun.sleepSync(<n>) and new Promise(<id> => setTimeout(<id>, <n>)) with <n> a numeric literal (0 included, no carve-out). Suppression reuses CITED_RE (CAM-NNN, #N, https://) same-line, same convention as check-debt-markers.ts. NOT wired into check:all yet (future story) -- running the CLI today against the real repo currently reports ~60+ real un-suppressed violations across test/integration/*.test.ts, test/dashboard.test.ts, test/ui/init-setup-screen-keys.test.ts, test/plan-runner-no-prd.test.ts, test/supervisor/**, and test/helpers/flush-ink.ts:22 (the documented sole real 0-literal site) -- a future story must either convert these to waitForCondition or add same-line tracker-ref suppressions before the gate is wired into check:all, otherwise wiring it will immediately fail CI.",
+  "officialDocsValidated": [
+    {
+      "lib": "Bun.Glob",
+      "url": "https://bun.com/docs/api/glob",
+      "fetchedAt": "2026-07-15T13:13:57Z",
+      "status": "aligned",
+      "summary": "Glob.scanSync({cwd}) returns repo-relative paths by default (absolute option defaults to false); implementation relies on this, matching check-debt-markers.ts's existing convention."
+    }
+  ]
+}
