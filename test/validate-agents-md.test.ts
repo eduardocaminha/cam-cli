@@ -548,6 +548,55 @@ describe('regression: resolution follows the git-tracked tree, not the live work
 	});
 });
 
+describe('makeGetTrackedFiles / makeIsIgnored throw on git spawn failure (US-001)', () => {
+	let nonRepoDir: string;
+
+	beforeEach(() => {
+		// A plain temp dir with no `git init` is not a git repository, so
+		// `git ls-files` / `git check-ignore` exit non-zero (128) here.
+		nonRepoDir = mkdtempSync(join(tmpdir(), 'cam-cli-non-repo-'));
+	});
+
+	afterEach(() => {
+		rmSync(nonRepoDir, { recursive: true, force: true });
+	});
+
+	test('makeGetTrackedFiles throws when run against a non-repo cwd', () => {
+		expect(() => makeGetTrackedFiles(nonRepoDir)()).toThrow();
+	});
+
+	test('makeIsIgnored throws when run against a non-repo cwd', () => {
+		const isIgnored = makeIsIgnored(nonRepoDir);
+		expect(() => isIgnored('some-file.ts')).toThrow();
+	});
+
+	test('makeGetTrackedFiles on a legitimately-empty git repo returns an empty list without throwing', () => {
+		const repo = mkdtempSync(join(tmpdir(), 'cam-cli-empty-repo-'));
+		try {
+			spawnSync('git', ['init', '-q'], { cwd: repo });
+			expect(makeGetTrackedFiles(repo)()).toEqual([]);
+		} finally {
+			rmSync(repo, { recursive: true, force: true });
+		}
+	});
+
+	test('makeIsIgnored on a real (initialized) repo still returns true/false for exit 0/1, not throwing', () => {
+		const repo = mkdtempSync(join(tmpdir(), 'cam-cli-real-repo-'));
+		try {
+			spawnSync('git', ['init', '-q'], { cwd: repo });
+			writeFileSync(join(repo, '.gitignore'), 'ignored.txt\n');
+			writeFileSync(join(repo, 'tracked.txt'), 'hi\n');
+			spawnSync('git', ['add', '.gitignore', 'tracked.txt'], { cwd: repo });
+
+			const isIgnored = makeIsIgnored(repo);
+			expect(isIgnored('ignored.txt')).toBe(true);
+			expect(isIgnored('tracked.txt')).toBe(false);
+		} finally {
+			rmSync(repo, { recursive: true, force: true });
+		}
+	});
+});
+
 // ---------------------------------------------------------------------------
 // Regression: the SHIPPED tree (post-ship-finalize) resolves clean
 // (US-R2-002, CAM-61). ship-finalize `git rm`s the per-branch harness state
