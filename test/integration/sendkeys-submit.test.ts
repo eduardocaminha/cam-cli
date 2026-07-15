@@ -11,6 +11,7 @@
 // round-trip can. Skips when tmux is unavailable (e.g. minimal CI).
 
 import { test, expect } from "bun:test";
+import { waitForCondition } from "../helpers/wait-for-condition.ts";
 
 const SOCK = "cam-it-sendkeys";
 const PAYLOAD = "[cam] US-001 DONE: typecheck ok, 5 pass / 0 fail";
@@ -29,23 +30,23 @@ function tmux(args: string[]): string {
 	return Bun.spawnSync(["tmux", "-L", SOCK, ...args]).stdout.toString();
 }
 
-function bootCatPane(): void {
+async function bootCatPane(): Promise<void> {
 	Bun.spawnSync(["tmux", "-L", SOCK, "kill-server"]);
 	tmux(["new-session", "-d", "-s", "t", "-x", "80", "-y", "10", "cat"]);
-	Bun.sleepSync(300);
+	await waitForCondition(() => Bun.spawnSync(["tmux", "-L", SOCK, "has-session", "-t", "t"]).exitCode === 0);
 }
 
 test.skipIf(!tmuxAvailable)(
 	"send-keys <text> Enter (no -l) SUBMITS — cat echoes the line back",
-	() => {
-		bootCatPane();
+	async () => {
+		await bootCatPane();
 		// The shape produced by dispatch.ts and buildWorkerReportSendKeysArgv: NO -l.
 		tmux(["send-keys", "-t", "t", PAYLOAD, "Enter"]);
-		Bun.sleepSync(300);
+		// A submitted line is echoed back by cat, so the payload appears twice
+		// (typed + echoed on the newline) once the pane has actually rendered it.
+		await waitForCondition(() => tmux(["capture-pane", "-t", "t", "-p"]).split(PAYLOAD).length - 1 >= 2);
 		const out = tmux(["capture-pane", "-t", "t", "-p"]);
 		Bun.spawnSync(["tmux", "-L", SOCK, "kill-server"]);
-		// A submitted line is echoed back by cat, so the payload appears twice
-		// (typed + echoed on the newline) and the literal "Enter" never appears.
 		const occurrences = out.split(PAYLOAD).length - 1;
 		expect(occurrences).toBeGreaterThanOrEqual(2);
 		expect(out).not.toContain(`${PAYLOAD}Enter`);
@@ -54,15 +55,17 @@ test.skipIf(!tmuxAvailable)(
 
 test.skipIf(!tmuxAvailable)(
 	"send-keys -l <text> Enter (the CAM-55 bug) does NOT submit — 'Enter' lands as literal text",
-	() => {
-		bootCatPane();
+	async () => {
+		await bootCatPane();
 		// The buggy shape: -l makes "Enter" literal.
 		tmux(["send-keys", "-t", "t", "-l", PAYLOAD, "Enter"]);
-		Bun.sleepSync(300);
+		// With -l the pane shows "<payload>Enter" verbatim and cat never gets a
+		// newline (no echoed-back line). Poll for that literal rendering rather
+		// than a fixed settle time.
+		await waitForCondition(() => tmux(["capture-pane", "-t", "t", "-p"]).includes(`${PAYLOAD}Enter`));
 		const out = tmux(["capture-pane", "-t", "t", "-p"]);
 		Bun.spawnSync(["tmux", "-L", SOCK, "kill-server"]);
-		// With -l the pane shows "<payload>Enter" verbatim and cat never gets a
-		// newline (no echoed-back line). This is what shipped and broke dispatch.
+		// This is what shipped and broke dispatch.
 		expect(out).toContain(`${PAYLOAD}Enter`);
 	},
 );

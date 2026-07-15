@@ -29,6 +29,7 @@ import {
 	writeWorkerPaneMarker,
 	type SpawnFn,
 } from '../../src/tmux/session.ts';
+import { waitForCondition } from '../helpers/wait-for-condition.ts';
 
 const TEST_SOCK = 'cam-it-selfheal';
 const SESSION = 'selfheal-test';
@@ -52,12 +53,23 @@ const swapSocketSpawn: SpawnFn = (cmd, args, opts) => {
 	return spawnSync(cmd, swapped, { stdio: opts?.stdio ?? 'pipe' }) as ReturnType<SpawnFn>;
 };
 
-beforeEach(() => {
+/**
+ * Probe whether a pane is alive using the same logic as isPaneAlive in
+ * host.ts: display-message returns '0' iff pane_dead==0 (alive).
+ */
+function isPaneAlive(paneId: string): boolean {
+	const r = swapSocketSpawn('tmux', ['-L', 'cam', 'display-message', '-p', '-t', paneId, '#{pane_dead}'], { stdio: 'pipe' });
+	if ((r.status ?? 1) !== 0) return false;
+	const out = typeof r.stdout === 'string' ? r.stdout.trim() : (r.stdout?.toString().trim() ?? '');
+	return out === '0';
+}
+
+beforeEach(async () => {
 	if (!tmuxAvailable) return;
 	// Kill any leftover server from a previous test run, then create a fresh one.
 	tmuxRaw(['kill-server']);
 	tmuxRaw(['new-session', '-d', '-s', SESSION, '-x', '80', '-y', '10']);
-	Bun.sleepSync(200);
+	await waitForCondition(() => tmuxRaw(['has-session', '-t', SESSION]).status === 0);
 });
 
 afterEach(() => {
@@ -67,14 +79,14 @@ afterEach(() => {
 
 test.skipIf(!tmuxAvailable)(
 	'ensureWorkerPane self-heal: dead pane -> openPaneInSession creates a live pane and marker is rewritten',
-	() => {
+	async () => {
 		// 1. Create a real pane in the session (simulates the initial worker-pane
 		//    allocation done by cam plan).
 		const initialId = tmuxRaw([
 			'split-window', '-t', SESSION, '-v', '-d', '-P', '-F', '#{pane_id}',
 		]).stdout.toString().trim();
-		Bun.sleepSync(100);
 		expect(initialId).toMatch(/^%\d+$/);
+		await waitForCondition(() => isPaneAlive(initialId));
 
 		// 2. Write the initial id to a temp .claude dir (simulates the marker written
 		//    by openPaneInSession / writeWorkerPaneMarker in the real cam flow).
@@ -85,12 +97,13 @@ test.skipIf(!tmuxAvailable)(
 		// 3. Kill the worker pane to simulate the "2nd loop" scenario where the
 		//    pane was closed between runs.
 		tmuxRaw(['kill-pane', '-t', initialId]);
-		Bun.sleepSync(150);
+		// After kill-pane the pane is removed from the session; display-message
+		// returns empty string (not '0'), so isPaneAlive returns false once the
+		// server has actually processed the kill.
+		await waitForCondition(() => !isPaneAlive(initialId));
 
 		// 4. Verify the pane is actually dead using the same logic as isPaneAlive
 		//    in host.ts: display-message returns '0' iff pane_dead==0 (alive).
-		//    After kill-pane the pane is removed from the session; display-message
-		//    returns empty string (not '0'), so isPaneAlive returns false.
 		const deadCheck = spawnSync(
 			'tmux', ['-L', TEST_SOCK, 'display-message', '-p', '-t', initialId, '#{pane_dead}'],
 			{ stdio: 'pipe' },
@@ -100,15 +113,9 @@ test.skipIf(!tmuxAvailable)(
 		const isPaneConsideredAlive = deadCheck.status === 0 && deadOut === '0';
 		expect(isPaneConsideredAlive).toBe(false);
 
-		// 5. Implement ensureWorkerPane logic inline, using the real helpers and
-		//    the private-socket spawn. This mirrors what host.ts:ensureWorkerPaneFn
-		//    does but routes to the private server via swapSocketSpawn.
-		const isPaneAlive = (paneId: string): boolean => {
-			const r = swapSocketSpawn('tmux', ['-L', 'cam', 'display-message', '-p', '-t', paneId, '#{pane_dead}'], { stdio: 'pipe' });
-			if ((r.status ?? 1) !== 0) return false;
-			const out = typeof r.stdout === 'string' ? r.stdout.trim() : (r.stdout?.toString().trim() ?? '');
-			return out === '0';
-		};
+		// 5. ensureWorkerPane logic below uses the real helpers and the
+		//    private-socket spawn (isPaneAlive above mirrors host.ts:ensureWorkerPaneFn
+		//    but routes to the private server via swapSocketSpawn).
 
 		// The pane is dead, so ensureWorkerPane must create a new one.
 		const currentId = readWorkerPaneMarker(claudeDir) ?? initialId;
@@ -119,7 +126,7 @@ test.skipIf(!tmuxAvailable)(
 		const orchPaneId = orchPaneOut.split('\n')[0] ?? `${SESSION}:0`;
 		const newId = openPaneInSession(SESSION, ['cat'], swapSocketSpawn, orchPaneId);
 		writeWorkerPaneMarker(claudeDir, newId);
-		Bun.sleepSync(150);
+		await waitForCondition(() => isPaneAlive(newId));
 
 		// 6. Assert: newId is different from initialId (fresh pane, not the dead one).
 		expect(newId).toMatch(/^%\d+$/);
@@ -138,26 +145,19 @@ test.skipIf(!tmuxAvailable)(
 
 test.skipIf(!tmuxAvailable)(
 	'ensureWorkerPane no-op: live pane -> returns same id and marker is unchanged',
-	() => {
+	async () => {
 		// 1. Allocate a real pane.
 		const initialId = tmuxRaw([
 			'split-window', '-t', SESSION, '-v', '-d', '-P', '-F', '#{pane_id}',
 		]).stdout.toString().trim();
-		Bun.sleepSync(100);
 		expect(initialId).toMatch(/^%\d+$/);
+		await waitForCondition(() => isPaneAlive(initialId));
 
 		// 2. Write the marker.
 		const claudeDir = mkdtempSync(join(tmpdir(), 'cam-selfheal-noop-'));
 		writeWorkerPaneMarker(claudeDir, initialId);
 
 		// 3. Verify the pane is alive.
-		const isPaneAlive = (paneId: string): boolean => {
-			const r = swapSocketSpawn('tmux', ['-L', 'cam', 'display-message', '-p', '-t', paneId, '#{pane_dead}'], { stdio: 'pipe' });
-			if ((r.status ?? 1) !== 0) return false;
-			const out = typeof r.stdout === 'string' ? r.stdout.trim() : (r.stdout?.toString().trim() ?? '');
-			return out === '0';
-		};
-
 		const currentId = readWorkerPaneMarker(claudeDir) ?? initialId;
 		expect(isPaneAlive(currentId)).toBe(true);
 

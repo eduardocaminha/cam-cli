@@ -47,6 +47,7 @@ import {
 	PLAN_VERDICT_REPORT_FILENAME,
 	makeReadPlanVerdict,
 } from '../../src/supervisor/plan-verdict-report.ts';
+import { waitForCondition } from '../helpers/wait-for-condition.ts';
 
 const TEST_SOCK = 'cam-it-target';
 const SESSION = 'target-test';
@@ -70,11 +71,11 @@ const swapSocketSpawn: SpawnFn = (cmd, args, opts) => {
 	return spawnSync(cmd, swapped, { stdio: opts?.stdio ?? 'pipe' }) as ReturnType<SpawnFn>;
 };
 
-beforeEach(() => {
+beforeEach(async () => {
 	if (!tmuxAvailable) return;
 	tmuxRaw(['kill-server']);
 	tmuxRaw(['new-session', '-d', '-s', SESSION, '-x', '80', '-y', '10']);
-	Bun.sleepSync(200);
+	await waitForCondition(() => tmuxRaw(['has-session', '-t', SESSION]).status === 0);
 });
 
 afterEach(() => {
@@ -133,7 +134,7 @@ void TOP_ISSUE; // referenced in comment only; selectIssueFn returns TARGET_ISSU
 
 test.skipIf(!tmuxAvailable)(
 	'E2E: runPlanPhase with CAM-157 target -> prd.json.issueNumber === 157, not top-of-queue id',
-	() => {
+	async () => {
 		// ------------------------------------------------------------------
 		// 1. Set up a cwd directory tree (mimics the repo root).
 		// ------------------------------------------------------------------
@@ -153,8 +154,8 @@ test.skipIf(!tmuxAvailable)(
 				.split('\n')[0] ?? `${SESSION}:0`;
 
 		const workerPaneId = openPaneInSession(SESSION, ['cat'], swapSocketSpawn, orchPaneId);
-		Bun.sleepSync(100);
 		expect(workerPaneId).toMatch(/^%\d+$/);
+		await waitForCondition(() => isPaneAlive(workerPaneId));
 
 		const claudeDir = mkdtempSync(join(tmpdir(), 'cam-it-target-claude-'));
 		writeWorkerPaneMarker(claudeDir, workerPaneId);
@@ -345,7 +346,7 @@ test.skipIf(!tmuxAvailable)(
 
 test.skipIf(!tmuxAvailable)(
 	'E2E bare-selection: selectIssueFn top-of-queue (CAM-99) -> prd.json.issueNumber === 99',
-	() => {
+	async () => {
 		const cwd = mkdtempSync(join(tmpdir(), 'cam-it-target-bare-'));
 		mkdirSync(join(cwd, 'scripts', 'cam'), { recursive: true });
 
@@ -359,7 +360,7 @@ test.skipIf(!tmuxAvailable)(
 				.split('\n')[0] ?? `${SESSION}:0`;
 
 		const workerPaneId = openPaneInSession(SESSION, ['cat'], swapSocketSpawn, orchPaneId);
-		Bun.sleepSync(100);
+		await waitForCondition(() => isPaneAlive(workerPaneId));
 
 		let plannerShellStr = '';
 		let plannerRespawnCount = 0;
