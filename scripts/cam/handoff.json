@@ -1,25 +1,17 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Establish golden-fixture dir + sentinel/review-tag replay tests" },
+  "lastCompletedStory": { "id": "US-002", "title": "Transcript-usage golden fixture + replay against usage parsers" },
   "branchName": "cam/issue-302",
-  "timestamp": "2026-07-15T11:59:49Z",
+  "timestamp": "2026-07-15T12:30:00Z",
   "createdFiles": [
-    "test/fixtures/golden/sentinel-clean.txt",
-    "test/fixtures/golden/sentinel-codespan.txt",
-    "test/fixtures/golden/sentinel-bold.txt",
-    "test/fixtures/golden/sentinel-trailing-punct.txt",
-    "test/fixtures/golden/review-clean.txt",
-    "test/fixtures/golden/review-fixes-pending.txt",
-    "test/supervisor/golden-sentinel.test.ts"
+    "test/fixtures/golden/transcript-usage.jsonl"
   ],
   "modifiedFiles": [
-    "src/supervisor/result.ts",
+    "test/transcript/usage.test.ts",
     "scripts/file-size-budget.json",
     "scripts/cam/patterns.md"
   ],
-  "openQuestions": [
-    "AC4's literal oracle (`grep -Lq 'capture-pane\\|Bun.spawn\\|claude ' test/supervisor/golden-sentinel.test.ts`) is the broken idiom already documented in patterns.md (US-003, CAM-301): on this repo's BSD/macOS grep, -q nullifies -L's inversion so exit status always mirrors plain match-found, never absence-of-match. Verified independently (grep -c on the test file returns 0 occurrences of the three forbidden substrings) that the file genuinely satisfies the AC's intent; the literal oracle command itself cannot pass without reintroducing a forbidden string, which would defeat the AC's purpose. Treated as a known PRD-authoring defect, not a code defect, per the existing patterns.md guidance."
-  ],
-  "nextStoryContext": "US-001 exported a previously-private parseSentinel (+ new ParsedSentinel interface) from src/supervisor/result.ts so committed fixture strings could be replayed against it directly; parseAnySentinel and parseReviewVerdict were already exported and needed no change. test/fixtures/golden/ now holds 6 committed pane-text dumps (4 sentinel wrap variants + 2 review-tag variants) and test/supervisor/golden-sentinel.test.ts replays all of them with zero tmux/spawn/live-claude calls. US-002 (transcript-usage fixtures) and US-003 (self-authored-artifact-shape fixtures) should follow the same convention documented in the new patterns.md bullet: committed multi-line pane-text-shaped fixtures under test/fixtures/golden/, read via readFileSync(join(import.meta.dir, ...)), fed straight to the pure parser under test. US-004 (record-golden harness) is explicitly out of check:all and CI per its own AC (grep -Lq oracles again -- expect the same known-broken-oracle situation there; verify file content directly with grep -c rather than trusting the oracle's exit code literally).",
+  "openQuestions": [],
+  "nextStoryContext": "US-002 added test/fixtures/golden/transcript-usage.jsonl: a committed, real-shaped 6-line transcript fragment (1 degenerate no-id/no-requestId line for the fallback-key branch, 3 content-block lines sharing one (message.id,requestId) pair, 2 content-block lines sharing a second later pair). No new test file was needed: the replay describe block lives inside the existing test/transcript/usage.test.ts (which already covers parseTranscriptUsage/parseContextOccupancy end-to-end), using a local readGoldenFixture helper mirroring US-001's convention. Consolidation: deleted the two hand-inlined tests whose sole purpose (multi-block-turn dedup demonstration for cumulative totals, and for last-request occupancy) is now covered by the golden-fixture replay; kept every other hand-inlined edge case (empty/malformed input, missing optional sub-fields, distinct-pair independence, fallback-key uniqueness, interspersed last-wins ordering, cumulative-vs-occupancy divergence) since the single fixture does not cover those. US-003 (self-authored-artifact-shape fixtures, likely worker-report.json / handoff.json shape replay) should follow the same convention: grep patterns.md for 'Golden-fixture' bullets before designing its own fixture, and prefer extending an existing test file's describe block over creating a new test file when the module under test already has one.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
