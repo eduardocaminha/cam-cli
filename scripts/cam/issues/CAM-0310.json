@@ -1,0 +1,10 @@
+{
+  "id": "CAM-310",
+  "title": "Deterministic static PRD-oracle shell linter (sibling of CAM-309)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-15T20:37:34.726Z",
+  "updatedAt": "2026-07-15T20:37:34.726Z",
+  "description": "Add a deterministic static guard that inspects prd.json userStories[].acceptanceCriteria oracle strings for semantically-broken shell idioms BEFORE implement/review, without relying on the LLM auditor. Motivating case: the self-nullifying grep -q + -L/-l absence oracle (CAM-301/CAM-309) that runs verbatim in behavioral-gate.ts by exit-code and produces a false BLOCK. CAM-309 codifies the convention in the planner (emission) + auditor (agent-prose rejection); this is the stronger deterministic layer that fails closed at plan time. Open design question for spec time: placement (a check-*.ts gate vs a step in plan-runner.ts around the auditor subagent; PRDs are ephemeral generated artifacts so the natural point is the plan-runner audit path, not check:all) and detection breadth. type: feat."
+}
