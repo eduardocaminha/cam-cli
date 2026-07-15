@@ -6,6 +6,18 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.167.0] - 2026-07-15
+
+### Added
+
+- US-007 - Wire check-test-sleeps as gate #13 and bump both gate-count freeze tests
+- US-006 - Migrate unit-tier promisified setTimeout sleeps + suppress the flush-ink macrotask yield
+- US-005 - Migrate integration sleeps to waitForCondition (group D: ensure-worker-pane-selfheal, sendkeys-submit, plan-runner-target-obey, plan-runner-no-prd)
+- US-004 - Migrate integration sleeps to waitForCondition (group C: plan-runner-pane-spawn, orch-recycle-watch, orch-recycle-pid-resolve)
+- US-003 - Migrate integration sleeps to waitForCondition (group B: review-verdict-handback, worker-pane-geometry)
+- US-002 - Migrate integration sleeps to waitForCondition (group A: tmux-introspect, stop-sidecar-real)
+- US-001 - Add check-test-sleeps scanner core + unit tests
+
 ## [0.166.0] - 2026-07-15
 
 ### Added
