@@ -4,7 +4,7 @@
 //
 // All tests drive runGates with a fake spawnFn; no real subprocess is invoked.
 // Coverage:
-//   GATES manifest: length (12), order, correct cmd/args per gate.
+//   GATES manifest: length (13), order, correct cmd/args per gate.
 //   runGates: all pass (exit 0), any fail (exit 1), bail stops early.
 //   --json mode: onResults callback receives correctly shaped GateResult[].
 
@@ -50,8 +50,8 @@ function makeRecordingSpawn(exitCodes: number[]): { calls: Call[]; fn: SpawnFn }
 // ---------------------------------------------------------------------------
 
 describe('GATES manifest', () => {
-	test('has 12 gates in order: typecheck, test, embed-vendor, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md', () => {
-		expect(GATES).toHaveLength(12);
+	test('has 13 gates in order: typecheck, test, embed-vendor, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps', () => {
+		expect(GATES).toHaveLength(13);
 		expect(GATES[0]?.name).toBe('typecheck');
 		expect(GATES[1]?.name).toBe('test');
 		expect(GATES[2]?.name).toBe('embed-vendor');
@@ -64,6 +64,7 @@ describe('GATES manifest', () => {
 		expect(GATES[9]?.name).toBe('dup');
 		expect(GATES[10]?.name).toBe('ci-parity');
 		expect(GATES[11]?.name).toBe('agents-md');
+		expect(GATES[12]?.name).toBe('test-sleeps');
 	});
 
 	test('typecheck gate: bunx tsc --noEmit', () => {
@@ -147,6 +148,13 @@ describe('GATES manifest', () => {
 		expect(gate?.name).toBe('agents-md');
 		expect(gate?.cmd).toBe('bun');
 		expect(gate?.args).toEqual(['scripts/validate-agents-md.ts']);
+	});
+
+	test('test-sleeps gate: bun scripts/check-test-sleeps.ts', () => {
+		const gate = GATES[12];
+		expect(gate?.name).toBe('test-sleeps');
+		expect(gate?.cmd).toBe('bun');
+		expect(gate?.args).toEqual(['scripts/check-test-sleeps.ts']);
 	});
 });
 
@@ -329,14 +337,14 @@ describe('--json mode (onResults)', () => {
 		}
 	});
 
-	test('onResults entry names match manifest gate names (typecheck, test, embed-vendor, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md)', () => {
-		const { fn } = makeRecordingSpawn([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+	test('onResults entry names match manifest gate names (typecheck, test, embed-vendor, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps)', () => {
+		const { fn } = makeRecordingSpawn([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
 		let captured: GateResult[] | null = null;
 		runGates({ spawnFn: fn, onResults: (r) => { captured = r; } });
 
 		const results = captured as unknown as GateResult[];
 		const names = results.map((r) => r.name);
-		expect(names).toEqual(['typecheck', 'test', 'embed-vendor', 'lint', 'file-size', 'debt-markers', 'version-skips', 'coverage', 'dead-code', 'dup', 'ci-parity', 'agents-md']);
+		expect(names).toEqual(['typecheck', 'test', 'embed-vendor', 'lint', 'file-size', 'debt-markers', 'version-skips', 'coverage', 'dead-code', 'dup', 'ci-parity', 'agents-md', 'test-sleeps']);
 	});
 
 	test('onResults receives durationMs as a non-negative number', () => {

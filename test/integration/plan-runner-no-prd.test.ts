@@ -32,6 +32,7 @@ import {
 import type { SpawnFn as LoopSpawnFn } from '../../src/supervisor/loop.ts';
 import type { IssueEntry } from '../../src/issues/types.ts';
 import type { PlanApproval } from '../../src/config/models.ts';
+import { waitForCondition } from '../helpers/wait-for-condition.ts';
 
 const TEST_SOCK = 'cam-it-noprd';
 const SESSION = 'noprd-test';
@@ -54,11 +55,11 @@ const swapSocketSpawn: SpawnFn = (cmd, args, opts) => {
 	return spawnSync(cmd, swapped, { stdio: opts?.stdio ?? 'pipe' }) as ReturnType<SpawnFn>;
 };
 
-beforeEach(() => {
+beforeEach(async () => {
 	if (!tmuxAvailable) return;
 	tmuxRaw(['kill-server']);
 	tmuxRaw(['new-session', '-d', '-s', SESSION, '-x', '80', '-y', '10']);
-	Bun.sleepSync(200);
+	await waitForCondition(() => tmuxRaw(['has-session', '-t', SESSION]).status === 0);
 });
 
 afterEach(() => {
@@ -96,7 +97,7 @@ const MOCK_ISSUE: IssueEntry = {
 
 test.skipIf(!tmuxAvailable)(
 	'(a)+(b)+(c): planner stand-in exits without prd.json -> auditor never spawned, phase flips to idle, no exception',
-	() => {
+	async () => {
 		// ------------------------------------------------------------------
 		// 1. Allocate a worker pane (used as the planner pane slot).
 		// ------------------------------------------------------------------
@@ -107,8 +108,8 @@ test.skipIf(!tmuxAvailable)(
 				.split('\n')[0] ?? `${SESSION}:0`;
 
 		const workerPaneId = openPaneInSession(SESSION, ['cat'], swapSocketSpawn, orchPaneId);
-		Bun.sleepSync(100);
 		expect(workerPaneId).toMatch(/^%\d+$/);
+		await waitForCondition(() => isPaneAlive(workerPaneId));
 
 		// Write the worker pane marker (mirrors production wiring).
 		const claudeDir = mkdtempSync(join(tmpdir(), 'cam-it-noprd-claude-'));
@@ -141,7 +142,7 @@ test.skipIf(!tmuxAvailable)(
 		// ------------------------------------------------------------------
 		tmuxRaw(['respawn-pane', '-k', '-t', workerPaneId, 'exit 0']);
 		// Wait for the stand-in to exit so isPaneAlive will return false.
-		Bun.sleepSync(400);
+		await waitForCondition(() => !isPaneAlive(workerPaneId));
 
 		// Verify the pane is actually dead before driving runPlanPhase.
 		expect(isPaneAlive(workerPaneId)).toBe(false);

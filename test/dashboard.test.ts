@@ -1531,14 +1531,12 @@ describe('DashboardApp Stories navigation (US-005)', () => {
 		expectedId: string,
 		timeoutMs = 3000,
 	): Promise<string | undefined> => {
-		const deadline = Date.now() + timeoutMs;
-		let accentLine: string | undefined;
-		do {
-			accentLine = (lastFrame() ?? '').split('\n').find((l) => l.includes(ACCENT_BG));
-			if (accentLine?.includes(expectedId)) return accentLine;
-			await new Promise((r) => setTimeout(r, 5));
-		} while (Date.now() < deadline);
-		return accentLine;
+		const frame = await waitForFrame(
+			lastFrame,
+			(f) => (f.split('\n').find((l) => l.includes(ACCENT_BG)) ?? '').includes(expectedId),
+			{ timeoutMs },
+		);
+		return frame.split('\n').find((l) => l.includes(ACCENT_BG));
 	};
 
 	it('initial render: first row (index 0) is selected with accent background', () => {

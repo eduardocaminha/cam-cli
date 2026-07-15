@@ -19,7 +19,8 @@
 // timeout, rather than assume readiness after N ticks.
 
 /** Wait one macrotask tick (a single `setTimeout(0)` turn of the event loop). */
-const oneTick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+const oneTick = (): Promise<void> =>
+	new Promise((resolve) => setTimeout(resolve, 0)); // CAM-305: intentional single-macrotask yield, no pollable condition
 
 /**
  * Flush ink-testing-library stdin-driven state updates a bounded amount
