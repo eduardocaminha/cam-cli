@@ -53,6 +53,7 @@ import { sendKeysVerified, type CapturePaneFn } from '../tmux/dispatch.ts';
 import { isPidAlive } from '../commands/resume.ts';
 import { renderStateFile } from '../commands/next.ts';
 import { WORKER_REPORT_FILENAME } from './worker-report.ts';
+import { parseWorkerReport } from './report-parse.ts';
 import type { ReviewReport } from './review-report.ts';
 import { REVIEW_REPORT_FILENAME } from './review-report.ts';
 import { preflightWorkerContainer } from './preflight-container.ts';
@@ -123,21 +124,12 @@ export function makeReadWorkerReport(cwd: string): RunSupervisorOptions['readWor
 	return () => {
 		try {
 			const raw = readFileSync(reportPath, 'utf8');
-			const parsed: unknown = JSON.parse(raw);
-			// Shape guard (US-006 / US-R2-001): validate discriminator fields before
-			// casting. A wrong-shape file (missing string outcome or story fields)
-			// returns null so the poll loop continues to the pane-died / timeout nets
+			// Shape guard (US-002, CAM-301): delegate discriminator/shape validation
+			// to the shared parser instead of re-declaring an inline typeof check.
+			// A wrong-shape file (missing string outcome or story fields) yields
+			// null so the poll loop continues to the pane-died / timeout nets
 			// instead of treating absent fields as valid completion signals.
-			if (
-				parsed !== null &&
-				typeof parsed === 'object' &&
-				!Array.isArray(parsed) &&
-				typeof (parsed as Record<string, unknown>)['outcome'] === 'string' &&
-				typeof (parsed as Record<string, unknown>)['story'] === 'string'
-			) {
-				return parsed as import('./worker-report.ts').WorkerReport;
-			}
-			return null;
+			return parseWorkerReport(raw);
 		} catch {
 			return null;
 		}
