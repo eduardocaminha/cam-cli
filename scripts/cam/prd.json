@@ -85,7 +85,7 @@
         "Full quality spine passes (bun run check:all), including the knip dead-code gate (scripts/**/*.ts is a knip entry, so the new script is not flagged). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": "US-003",
       "notes": "New: scripts/record-golden.ts; edit package.json (add record:golden alias next to test:container) and scripts/cam/patterns.md (append one bullet). Also depends on US-002 fixtures existing (requires field can only name one; priority ordering sequences it after both fixture stories). Follow the scripts/test-in-container.ts precedent EXACTLY: self-documented header, deliberately excluded from GATES (scripts/check-all.ts) and .github/workflows/ci.yml so it never gates a build or the autonomous loop (issue gotcha). knip config already lists scripts/**/*.ts as an entry, so the script won't trip the dead-code gate. Do NOT add record-golden to the GATES array. NOT in scope: a live-claude capture ceremony or wiring record-golden into CI (deferred canary-(A) upgrade, an operator run per the issue). Append the patterns.md bullet, never truncate the file."
     }
