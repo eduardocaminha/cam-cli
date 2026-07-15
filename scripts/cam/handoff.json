@@ -1,19 +1,27 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Clean unused locals/params/imports in src/ and scripts/" },
+  "lastCompletedStory": { "id": "US-002", "title": "Clean unused locals/params in test/supervisor, test/release, test/integration" },
   "branchName": "cam/issue-135",
   "timestamp": "2026-07-15T00:00:00Z",
   "modifiedFiles": [
-    "scripts/preview-screens.ts",
-    "scripts/test-in-container.ts",
-    "scripts/ui-snapshot.tsx",
-    "src/commands/setup.ts",
-    "src/release/merge-watch.ts",
-    "src/supervisor/host.ts",
-    "src/supervisor/review.ts",
-    "src/tmux/session.ts"
+    "test/integration/ensure-worker-pane-selfheal.test.ts",
+    "test/integration/sync-worktree-on-main.test.ts",
+    "test/release/merge-watch.test.ts",
+    "test/release/post-merge.test.ts",
+    "test/release/tag.test.ts",
+    "test/supervisor/container-firewall.test.ts",
+    "test/supervisor/ensure-worker-pane.test.ts",
+    "test/supervisor/host-ensure-pushed.test.ts",
+    "test/supervisor/loop.test.ts",
+    "test/supervisor/non-convergence-terminal.test.ts",
+    "test/supervisor/plan/plan-runner-branch-derivation.test.ts",
+    "test/supervisor/plan/plan-runner-postaudit.test.ts",
+    "test/supervisor/plan/plan-runner.test.ts",
+    "test/supervisor/sidecar-loop.test.ts",
+    "test/supervisor/suggestion-filing-production.test.ts",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "All 8 known TS6133 (unused local/param/import) violations under src/ and scripts/ are removed. Two were required-signature params, underscore-prefixed rather than deleted: scripts/preview-screens.ts:314 'cmd' (arrow fn typed as TmuxSpawnFnType) and src/tmux/session.ts:441 'sessionName' (openPaneInSession, called positionally from src/commands/sidecar.ts and src/supervisor/host.ts — no call-site changes needed). The other 6 were genuine dead bindings/imports removed outright (no side-effecting RHS in any of them). Verified via the explicit flag-on probe (`bunx tsc --noEmit --noUnusedLocals --noUnusedParameters 2>&1 | grep -E '^(src/|scripts/)'`) which now produces zero output; plain `bun run typecheck` stays green since the flags are still OFF in tsconfig (they flip in US-004). Full check:all spine ran clean (test/embed-vendor/lint/file-size/debt-markers/version-skips/coverage/dead-code/dup/ci-parity/agents-md all ok).",
+  "nextStoryContext": "All 34 TS6133/TS6196 violations under test/supervisor/, test/release/, test/integration/ are removed (verified via `bunx tsc --noEmit --noUnusedLocals --noUnusedParameters 2>&1 | grep -E '^test/(supervisor|release|integration)/'`, now zero output). Breakdown: 3 whole dead test-helper functions deleted outright (makeOpts in merge-watch.test.ts and sidecar-loop.test.ts, makeSpawnFn in post-merge.test.ts -- confirmed zero call sites via grep before deleting); several unused type-only imports trimmed (MergeWatchOptions, ReadPrd/WritePrd/ReadHandoff/ClockFn/IsPaneAlive/ReviewDispatch/WriteSessionMarker, GenUuid x2, PlanMutexState, MAX_ITERATIONS); a few unused node:fs imports trimmed (writeFileSync/readFileSync/existsSync, mkdirSync); the rest were required-signature callback params (SpawnFn/GitSpawnFn/IssueFileSpawnFn/PostMergeFn/CloseIssueOnMainFn 'cmd'/'opts'/'cwd' params) underscore-prefixed rather than deleted per the required-signature rule, plus one dead 'fn' local and one dead 'result' local (side-effect-free, dropped the assignment but kept the await/call). Zero new @ts-ignore/@ts-expect-error introduced (verified via git diff grep). Full check:all spine green (4529 pass / 0 fail, typecheck/lint/file-size/debt-markers/coverage/dead-code/dup/ci-parity/agents-md all ok). Flags stay OFF in tsconfig.json for this story (US-004 flips them). Remaining scope for US-003: ~26 TS6133/TS6196 violations still exist under other test/** paths NOT touched by this story (grep pattern: `bunx tsc --noEmit --noUnusedLocals --noUnusedParameters 2>&1 | grep -E '^test/' | grep -vE '^test/(supervisor|release|integration)/'`) -- get the current per-file list with that exact command at the start of US-003.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
