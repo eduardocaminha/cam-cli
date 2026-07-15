@@ -82,7 +82,7 @@ function makeRecordingSpawn(opts: RecordingSpawnOpts = {}): { spawnFn: IssueFile
 	const suggestionsContent = opts.suggestionsContent ?? '';
 	const suggestionsMissing = opts.suggestionsMissing ?? false;
 
-	const spawnFn: IssueFileSpawnFn = (cmd, args, options) => {
+	const spawnFn: IssueFileSpawnFn = (_cmd, args, options) => {
 		calls.push({ args, input: options.input });
 		const a = args.join(' ');
 

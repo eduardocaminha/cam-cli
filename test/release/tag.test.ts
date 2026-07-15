@@ -87,7 +87,7 @@ describe('runTag -- branch guard', () => {
 describe('runTag -- dirty-tree guard', () => {
 	test('refuses when working tree is dirty', () => {
 		const calls: SpawnCall[] = [];
-		const spawnFn: SpawnFn = (cmd, args, opts) => {
+		const spawnFn: SpawnFn = (cmd, args, _opts) => {
 			calls.push({ cmd, args: [...args] });
 			if (args[0] === 'rev-parse') return fakeSpawn({ stdout: 'main\n' });
 			if (args[0] === 'status') return fakeSpawn({ stdout: ' M src/version.ts\n' });
@@ -177,7 +177,7 @@ describe('runTag -- idempotency', () => {
 
 describe('runTag -- error paths', () => {
 	test('returns ok:false when git tag create fails', () => {
-		const spawnFn: SpawnFn = (cmd, args, _opts) => {
+		const spawnFn: SpawnFn = (_cmd, args, _opts) => {
 			if (args[0] === 'rev-parse') return fakeSpawn({ stdout: 'main\n' });
 			if (args[0] === 'status') return fakeSpawn({ stdout: '' });
 			if (args[0] === 'tag' && args[1] === '-l') return fakeSpawn({ stdout: '' });
@@ -193,7 +193,7 @@ describe('runTag -- error paths', () => {
 	});
 
 	test('returns ok:false when git push fails', () => {
-		const spawnFn: SpawnFn = (cmd, args, _opts) => {
+		const spawnFn: SpawnFn = (_cmd, args, _opts) => {
 			if (args[0] === 'rev-parse') return fakeSpawn({ stdout: 'main\n' });
 			if (args[0] === 'status') return fakeSpawn({ stdout: '' });
 			if (args[0] === 'tag' && args[1] === '-l') return fakeSpawn({ stdout: '' });

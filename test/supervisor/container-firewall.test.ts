@@ -156,9 +156,6 @@ describe('applyContainerFirewall: failure path (non-zero exit)', () => {
 	});
 
 	test('applyContainerFirewall never throws (failure is a return value)', () => {
-		const fn: FirewallSpawnFn = () => {
-			throw new Error('spawn crash');
-		};
 		// applyContainerFirewall itself should not swallow this (it propagates
 		// unexpected throws); verify it doesn't wrap the result in a try/catch
 		// by ensuring a well-behaved fn returns ok:false without throwing

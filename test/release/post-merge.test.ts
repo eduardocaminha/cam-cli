@@ -52,23 +52,6 @@ const FAKE_BRANCH = 'cam/test-feature-branch';
 const FAKE_CWD = '/tmp/testproject';
 
 /**
- * Build a SpawnFn that records every call and delegates to a per-subcommand map.
- * Anything not in the map returns fakeSpawn() (exit 0).
- */
-function makeSpawnFn(
-	responses: Record<string, SpawnSyncReturns<string>>,
-	calls?: SpawnCall[],
-): SpawnFn {
-	return (cmd, args, _opts) => {
-		if (calls) calls.push({ cmd, args: [...args] });
-		// Match by the subcommand (the arg after any -C flags)
-		const subcommand = args[0] === '-C' ? args[2] : args[0];
-		const key = `${cmd} ${args.join(' ')}`;
-		return responses[key] ?? responses[subcommand ?? ''] ?? fakeSpawn();
-	};
-}
-
-/**
  * Options for happySpawn.
  *
  * US-001 adds ls-remote modelling so the fakes genuinely represent the
@@ -365,7 +348,7 @@ describe('runPostMerge -- pull --rebase (US-002)', () => {
 	});
 
 	test('AC3: returns ok:false reason:rebase-failed when pull --rebase exits non-zero', () => {
-		const spawnFn: SpawnFn = (cmd, args, _o) => {
+		const spawnFn: SpawnFn = (_cmd, args, _o) => {
 			if (args.includes('pull')) {
 				return fakeSpawn({ status: 1, stderr: 'CONFLICT (content): Merge conflict\n' });
 			}
@@ -379,7 +362,7 @@ describe('runPostMerge -- pull --rebase (US-002)', () => {
 	});
 
 	test('AC3: rebase failure carries completedSteps/remainingSteps reflecting where the sequence stopped', () => {
-		const spawnFn: SpawnFn = (cmd, args, _o) => {
+		const spawnFn: SpawnFn = (_cmd, args, _o) => {
 			if (args.includes('checkout') && args.includes('main')) return fakeSpawn({ status: 0 });
 			if (args.includes('pull')) return fakeSpawn({ status: 1, stderr: 'conflict\n' });
 			return fakeSpawn();
@@ -899,7 +882,7 @@ describe('runPostMerge -- issue close path (US-005)', () => {
 
 	test('AC1: close is called AFTER tag and branch prune (ordering)', () => {
 		const callOrder: string[] = [];
-		const spawnFn: SpawnFn = (cmd, args, _o) => {
+		const spawnFn: SpawnFn = (_cmd, args, _o) => {
 			if (args.includes('checkout') && args.includes('main')) return fakeSpawn();
 			if (args.includes('pull')) return fakeSpawn();
 			if (args.includes('rev-parse') && args.includes('HEAD') && !args.includes('--verify')) {
@@ -916,7 +899,7 @@ describe('runPostMerge -- issue close path (US-005)', () => {
 			}
 			return fakeSpawn();
 		};
-		const closeIssueFn = (cwd: string, id: string): CloseIssueOnMainOutcome => {
+		const closeIssueFn = (_cwd: string, id: string): CloseIssueOnMainOutcome => {
 			callOrder.push('close');
 			return { ok: true, id, committedTo: 'main', sha: 'sha', branchWasMain: true };
 		};
@@ -997,7 +980,7 @@ describe('runPostMerge -- issue close path (US-005)', () => {
 			calls.push({ cwd, id });
 			return { ok: true, id, committedTo: 'main', sha: 'sha', branchWasMain: true };
 		};
-		const spawnFn: SpawnFn = (cmd, args, _o) => {
+		const spawnFn: SpawnFn = (_cmd, args, _o) => {
 			if (args.includes('pull')) return fakeSpawn({ status: 1 });
 			return fakeSpawn();
 		};

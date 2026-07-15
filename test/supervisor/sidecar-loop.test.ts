@@ -68,64 +68,6 @@ const COMPLETE_RESULT: SupervisorResult = {
 };
 
 /**
- * Build a RunSidecarLoopOptions that controls exactly N active:true cycles
- * then switches to idle forever. The loop terminates after maxCycles cycles
- * by resolving an external Promise (via an iteration counter and a done resolver).
- */
-function makeOpts(opts: {
-	activeCycles: number;
-	runSupervisorFn?: (o: RunSupervisorOptions) => Promise<SupervisorResult>;
-	hasPendingStories?: () => boolean;
-	lockBusy?: boolean;
-}): RunSidecarLoopOptions & {
-	clearActiveCalls: number;
-	supervisorCalls: number;
-	sleepCalls: number;
-} {
-	let cycle = 0;
-	const activeCycles = opts.activeCycles;
-	let clearActiveCalls = 0;
-	let supervisorCalls = 0;
-	let sleepCalls = 0;
-
-	const result = {
-		buildOpts: () => makeDummySupervisorOpts(),
-		readActive: (): boolean | undefined => {
-			if (cycle < activeCycles) return true;
-			return false;
-		},
-		clearActive: () => {
-			clearActiveCalls += 1;
-			cycle += 1; // advance past this active cycle
-		},
-		sleep: (_ms: number) => {
-			sleepCalls += 1;
-			cycle += 1; // advance cycle so we eventually exit
-		},
-		hasPendingStories: opts.hasPendingStories ?? (() => true),
-		acquireLock: opts.lockBusy
-			? () => ({ acquired: false as const, holderPid: 99 })
-			: () => ({ acquired: true as const, release: () => {} }),
-		runSupervisorFn:
-			opts.runSupervisorFn ??
-			((_o: RunSupervisorOptions): Promise<SupervisorResult> => {
-				supervisorCalls += 1;
-				return Promise.resolve(COMPLETE_RESULT);
-			}),
-		get clearActiveCalls() {
-			return clearActiveCalls;
-		},
-		get supervisorCalls() {
-			return supervisorCalls;
-		},
-		get sleepCalls() {
-			return sleepCalls;
-		},
-	};
-	return result;
-}
-
-/**
  * Run the sidecar loop for exactly `ticks` poll cycles, then abort.
  * We do this by making sleep() and clearActive() advance a counter that
  * eventually throws an escape sentinel.

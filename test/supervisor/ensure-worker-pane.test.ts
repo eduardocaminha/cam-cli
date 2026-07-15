@@ -21,13 +21,6 @@ import type {
 	RunSupervisorOptions,
 	SpawnFn,
 	CapturePane,
-	ReadPrd,
-	WritePrd,
-	ReadHandoff,
-	ClockFn,
-	IsPaneAlive,
-	ReviewDispatch,
-	WriteSessionMarker,
 } from '../../src/supervisor/loop.ts';
 import { makeReviewDispatch } from '../../src/supervisor/review.ts';
 import type { PrdSnapshot } from '../../src/supervisor/decide.ts';

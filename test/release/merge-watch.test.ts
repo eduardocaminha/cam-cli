@@ -41,7 +41,6 @@ import {
 	runMergeWatch,
 	stepMergeWatch,
 	POLL_ERROR_THRESHOLD,
-	type MergeWatchOptions,
 	type MergeWatchState,
 	type MergeWatchOutcome,
 	type StepMergeWatchOptions,
@@ -118,30 +117,6 @@ const successPostMerge: PostMergeFn = ({ cwd: _cwd, mergedBranch: _b }) => ({
 
 /** A post-merge fn that always fails. */
 const failPostMerge: PostMergeFn = () => ({ ok: false, reason: 'pull-failed', completedSteps: [], remainingSteps: [] });
-
-/** Build minimal MergeWatchOptions with overrides. */
-function makeOpts(
-	overrides: Partial<MergeWatchOptions> & { pollStatuses?: PrStatus[] },
-): MergeWatchOptions & { notifications: string[]; sleepCalls: number } {
-	const notifications: string[] = [];
-	let sleepCalls = 0;
-	const base: MergeWatchOptions = {
-		prNumber: 42,
-		mergedBranch: 'cam/CAM-101-test',
-		cwd: '/fake/cwd',
-		pollFn: overrides.pollFn ?? makeSeqPollFn(overrides.pollStatuses ?? [MERGED]),
-		postMergeFn: overrides.postMergeFn ?? successPostMerge,
-		notifyOrchestrator: overrides.notifyOrchestrator ?? ((line) => notifications.push(line)),
-		sleepFn:
-			overrides.sleepFn ??
-			((_ms) => {
-				sleepCalls++;
-			}),
-		pollIntervalMs: overrides.pollIntervalMs ?? 1,
-		maxPolls: overrides.maxPolls ?? 10,
-	};
-	return Object.assign(base, { notifications, sleepCalls: 0, get sleepCallsCount() { return sleepCalls; } });
-}
 
 /** Build a minimal RunSupervisorOptions that never actually does anything. */
 function makeDummySupervisorOpts(): RunSupervisorOptions {
@@ -254,7 +229,7 @@ describe('runMergeWatch', () => {
 			cwd: '/fake',
 			// First poll: BLOCKED+pending (CI still running). Second poll: MERGED.
 			pollFn: makeSeqPollFn([OPEN_BLOCKED_PENDING, MERGED]),
-			postMergeFn: (opts) => {
+			postMergeFn: (_opts) => {
 				postMergeCalled = true;
 				return {
 					ok: true,
