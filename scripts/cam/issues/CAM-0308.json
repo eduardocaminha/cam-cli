@@ -1,10 +1,37 @@
 {
   "id": "CAM-308",
   "title": "Bun-first alignment: check-* gate helpers use node child_process spawnSync instead of Bun.spawnSync",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-15T17:06:12.830Z",
-  "updatedAt": "2026-07-15T17:06:12.830Z",
-  "description": "[Restored after CAM-306 clobber, 2026-07-15; original fingerprint 2197b006eae8.]\n\nHelpers use node:child_process spawnSync rather than Bun.spawnSync. This is pre-existing style throughout this synchronous gate script (not introduced by the originating diff), so keeping it was the correct surgical choice; noted only as a future Bun-first alignment opportunity for the whole file.\n\nSource: cam/issue-304 (review round 1). Original suggestion-fingerprint: 2197b006eae8."
+  "updatedAt": "2026-07-15T17:43:10.145Z",
+  "description": "[Restored after CAM-306 clobber, 2026-07-15; original fingerprint 2197b006eae8.]\n\nHelpers use node:child_process spawnSync rather than Bun.spawnSync. This is pre-existing style throughout this synchronous gate script (not introduced by the originating diff), so keeping it was the correct surgical choice; noted only as a future Bun-first alignment opportunity for the whole file.\n\nSource: cam/issue-304 (review round 1). Original suggestion-fingerprint: 2197b006eae8.",
+  "spec": {
+    "scope": "Migrate the 4 node:child_process spawnSync call sites in the 3 check:all gate-helpers to Bun.spawnSync: check-all.ts:132 (gate-runner default spawnFn), check-coverage.ts:132 (bun test --coverage), validate-agents-md.ts:294 (git ls-files) and :322 (git check-ignore -q). In scope: only these 3 files. Out of scope: other scripts/ using node spawnSync (test-in-container.ts, ratchet-diff.ts, preview-screens.ts, cam/migrate-issues-schema.ts) -- a sibling issue if desired. Pure Bun-first convention alignment; no functional change intended.",
+    "acceptanceCriteria": [
+      "All 4 node:child_process spawnSync call sites in check-all.ts, check-coverage.ts, and validate-agents-md.ts are migrated to Bun.spawnSync; no `node:child_process` import remains in any of these 3 files.",
+      "check-all.ts injectable spawnFn seam is retyped to Bun's native SyncSubprocess return shape (not node's SpawnSyncReturns); the DI seam is preserved and all test fakes are updated to the Bun-native shape.",
+      "Gate pass/fail verdict is preserved exactly, including the non-zero exit and null-exit/signal-termination path (non-zero OR null/signal maps to fail).",
+      "Output is decoded explicitly Uint8Array->string wherever parsed: check-coverage.ts stdout and validate-agents-md.ts:294 git ls-files; the check-ignore -q path (validate-agents-md.ts:322) maps the exit code, not stdout.",
+      "Fail-closed behavior on spawn error (e.g. missing binary) is preserved: a spawn failure still fails the gate, matching prior node `.error` handling.",
+      "Verification: `bun run check:all` is green post-migration; gate-runner unit tests pass with the retyped fakes; a test proves a red (non-zero-exit) gate still reads as red."
+    ],
+    "gotchas": [
+      "Bun.spawnSync takes an argv array [cmd, ...args] and returns SyncSubprocess {exitCode, stdout, stderr, success, signalCode}, NOT node's {status, signal, stdout, stderr, error}. Map status->exitCode carefully.",
+      "node's stdio:'inherit' becomes {stdin:'inherit', stdout:'inherit', stderr:'inherit'} in Bun.spawnSync.",
+      "Bun.spawnSync stdout/stderr are Uint8Array even without an encoding option; node's encoding:'utf8' returned strings. Decode explicitly where output is parsed.",
+      "Bun.spawnSync signals spawn failure via success=false / may throw rather than node's returned .error field; preserve fail-closed semantics.",
+      "The SpawnFn / SpawnSyncReturns types in check-all.ts are imported from node:child_process; retyping the seam ripples into the injected test fakes -- update them in the same story.",
+      "Bun.spawnSync is a valid API in this Bun version (1.3.13) and is already used in src/ (retry/launcher.ts, retry/tmux.ts, commands/claude.ts)."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 1,
+    "riskReduction": 1,
+    "jobSize": 3
+  },
+  "type": "chore"
 }
