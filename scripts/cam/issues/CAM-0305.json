@@ -1,13 +1,13 @@
 {
   "id": "CAM-305",
   "title": "Deterministic check-test-sleeps gate: ban fixed setTimeout/Bun.sleepSync waits in tests",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [
     "CAM-62"
   ],
   "createdAt": "2026-07-15T01:29:42.535Z",
-  "updatedAt": "2026-07-15T01:36:15.601Z",
+  "updatedAt": "2026-07-15T15:19:50.733Z",
   "description": "Split from CAM-62 (which landed the reviewer-judgment rubric + the waitForCondition helper). Add a deterministic scripts/check-test-sleeps.ts check:all gate, modeled on scripts/check-debt-markers.ts, that fails when a test uses a fixed timed sleep for an async wait (bare Bun.sleepSync, or new Promise(r => setTimeout(r, ...))), pointing violators at the waitForCondition helper. This makes the setTimeout half of CAM-62 item 3 deterministic instead of reviewer-judgment. Considerations / blast radius: (1) it is a NEW check:all gate -> bump the CAM-61 gate-count freeze and the validate-agents-md gate-count accordingly; (2) needs a suppression/allowlist escape hatch for the legitimate injected fake-clock uses (test/dashboard.test.ts setTimeoutFn recorder; test/retry/launcher.test.ts globalThis.setTimeout monkeypatch to run synchronously) so it does not false-positive; (3) mini-CAM-135 flag-then-clean: the existing Bun.sleepSync waits in test/integration/ (tmux-introspect.test.ts, review-verdict-handback.test.ts, orch-recycle-watch.test.ts, plan-runner-target-obey.test.ts, ...) must be migrated to waitForCondition (or suppressed with justification) before the gate can go green. Source: CAM-62 grill 2026-07-14, split on merit to keep the CAM-62 PRD from ballooning past review-convergence.",
   "specSource": "derived",
   "derivedFrom": [
