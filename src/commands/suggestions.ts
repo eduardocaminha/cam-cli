@@ -40,7 +40,19 @@
 //     present). The id is re-derived inside writeIssueFile's own CAS retry
 //     loop; no id/path is pre-computed and threaded in.
 //
-// CAM-285 US-001, US-005. CAM-290 US-002.
+// US-002 (CAM-300) additions:
+//   - appendSuggestionOnMain, dismissSuggestionOnMain, and
+//     promoteSuggestionOnMain each pass a FileWritesFn/extraFiles callback
+//     (US-001, CAM-300) instead of a static whole-file FileWrite, so every
+//     CAS retry attempt re-reads suggestions.jsonl from the advanced main
+//     (readPenContentFromMain) and re-derives its content (append re-runs
+//     its dedup check; dismiss/promote re-run removeSuggestionLine keyed by
+//     fingerprint) against that fresh read, instead of reusing a whole-file
+//     rewrite computed once from the pre-mutation read. This is what makes a
+//     suggestion line concurrently appended or removed between the initial
+//     read and the winning commit survive instead of being clobbered.
+//
+// CAM-285 US-001, US-005. CAM-290 US-002. CAM-300 US-002.
 
 import {
 	checkMainUpToDate,
@@ -181,6 +193,25 @@ function removeSuggestionLine(
 	return { updatedContent: kept.join('\n'), found };
 }
 
+/**
+ * Append `entry` as one new JSON line to `content`, unless an entry with the
+ * same fingerprint is already present in `content` (returned unchanged in
+ * that case -- a concurrent writer may have already appended the same
+ * entry). Shared by appendSuggestionOnMain's up-front dedup computation and
+ * its per-attempt recompute callback (US-002, CAM-300) so both paths dedup
+ * identically against whatever content they are given.
+ */
+function buildAppendedContent(content: string, entry: SuggestionEntry): string {
+	const entries = parseSuggestionsJsonl(content);
+	if (entries.some((e) => e.fingerprint === entry.fingerprint)) {
+		return content;
+	}
+	const newLine = JSON.stringify(entry);
+	return content.endsWith('\n') || content === ''
+		? `${content}${newLine}\n`
+		: `${content}\n${newLine}\n`;
+}
+
 // ---------------------------------------------------------------------------
 // Public result types
 // ---------------------------------------------------------------------------
@@ -286,15 +317,20 @@ export function appendSuggestionOnMain(
 	}
 
 	// Step 5: append the new entry as exactly one JSON line, commit, push.
-	const newLine = JSON.stringify(entry);
-	const updatedContent = existingContent.endsWith('\n') || existingContent === ''
-		? `${existingContent}${newLine}\n`
-		: `${existingContent}\n${newLine}\n`;
-
+	// The per-attempt recompute callback (US-002, CAM-300) re-reads
+	// suggestions.jsonl from the advanced main on EVERY CAS attempt (not just
+	// the pre-mutation read above) and re-runs the dedup+append logic against
+	// that fresh content, so a line concurrently appended between this read
+	// and the winning commit survives instead of being clobbered by a stale
+	// whole-file overwrite.
 	const commitMsg = `chore(cam): suggestions append ${entry.fingerprint}`;
 	const sha = commitTreeToMain(
 		cwd,
-		[{ path: SUGGESTIONS_JSONL_PATH, content: updatedContent }],
+		(_mainSha) => {
+			const freshRead = readPenContentFromMain(cwd, spawnFn);
+			const freshContent = freshRead.ok ? freshRead.content : existingContent;
+			return [{ path: SUGGESTIONS_JSONL_PATH, content: buildAppendedContent(freshContent, entry) }];
+		},
 		commitMsg,
 		localMainSha,
 		spawnFn,
@@ -379,7 +415,7 @@ export function dismissSuggestionOnMain(
 		return { ok: false, reason: 'suggestions-missing' };
 	}
 
-	const { updatedContent, found } = removeSuggestionLine(penRead.content, fingerprint);
+	const { found } = removeSuggestionLine(penRead.content, fingerprint);
 	if (!found) {
 		printError(
 			'unknown fingerprint',
@@ -388,10 +424,21 @@ export function dismissSuggestionOnMain(
 		return { ok: false, reason: 'not-found' };
 	}
 
+	// The per-attempt recompute callback (US-002, CAM-300) re-reads
+	// suggestions.jsonl from the advanced main on EVERY CAS attempt and
+	// re-runs removeSuggestionLine keyed by fingerprint against that fresh
+	// content, so a line concurrently added by another writer between this
+	// not-found guard and the winning commit survives instead of being
+	// clobbered by a stale whole-file overwrite computed once, up front.
 	const commitMsg = `chore(cam): suggestions dismiss ${fingerprint}`;
 	const sha = commitTreeToMain(
 		cwd,
-		[{ path: SUGGESTIONS_JSONL_PATH, content: updatedContent }],
+		(_mainSha) => {
+			const freshRead = readPenContentFromMain(cwd, spawnFn);
+			const freshContent = freshRead.ok ? freshRead.content : penRead.content;
+			const { updatedContent } = removeSuggestionLine(freshContent, fingerprint);
+			return [{ path: SUGGESTIONS_JSONL_PATH, content: updatedContent }];
+		},
 		commitMsg,
 		localMainSha,
 		spawnFn,
@@ -512,11 +559,14 @@ export function promoteSuggestionOnMain(
 	const prefix = typeof config['issue_prefix'] === 'string' ? config['issue_prefix'] : 'CAM';
 	const parentId = resolveIssueId(entry.sourceIssue, prefix);
 
-	// The pen rewrite is id-independent -- fixed regardless of which id
-	// writeIssueFile's CAS loop ends up allocating, so it is computed once
-	// and passed as a companion extraFiles entry.
-	const { updatedContent } = removeSuggestionLine(penRead.content, fingerprint);
-
+	// The pen rewrite is passed as a per-attempt recompute callback (US-002,
+	// CAM-300): writeIssueFile's own CAS retry loop invokes it once per
+	// attempt, re-reading suggestions.jsonl from the advanced main
+	// (readPenContentFromMain) and re-running removeSuggestionLine keyed by
+	// fingerprint against that fresh content -- rather than a whole-file
+	// rewrite computed once, up front, that would clobber a line concurrently
+	// added or removed by another writer between the not-found guard above
+	// and the winning commit.
 	const result = writeIssueFile({
 		cwd,
 		title: entry.title,
@@ -524,7 +574,12 @@ export function promoteSuggestionOnMain(
 		prefix,
 		createdAt: clock(),
 		...(parentId !== null ? { derivedFrom: [parentId] } : {}),
-		extraFiles: [{ path: SUGGESTIONS_JSONL_PATH, content: updatedContent }],
+		extraFiles: (_mainSha) => {
+			const freshRead = readPenContentFromMain(cwd, spawnFn);
+			const freshContent = freshRead.ok ? freshRead.content : penRead.content;
+			const { updatedContent } = removeSuggestionLine(freshContent, fingerprint);
+			return [{ path: SUGGESTIONS_JSONL_PATH, content: updatedContent }];
+		},
 		commitMessage: (id) => `chore(cam): suggestions promote ${fingerprint} -> ${id}`,
 		spawnFn,
 	});
