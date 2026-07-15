@@ -1,12 +1,12 @@
 {
   "id": "CAM-62",
   "title": "Test-quality enforced in the reviewer (extends CAM-56 Layer B): anti-mock + per-test discipline + flaky",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-16T22:30:00Z",
   "description": "Extends the CAM-56 reviewer Layer B with codified test-quality rules cam learned empirically but never wrote down. (1) Anti-mock as a citable rubric line (warren CONSTITUTION Art. IV verbatim: 'a test that asserts a mock was called is documentation, not verification'); the reviewer FAILs a story that introduces new mock/fake/spy helpers or tests that skip real-dependency setup; codifies the CAM-55 fakes-lie lesson. (2) Adversarial-cases mandate: tests must cover malformed input, boundary values, and 'the case that broke last time', not happy-path only. (3) Per-test discipline checklist: behavior-named tests, one concept per test, async via a waitForCondition helper NOT a fixed setTimeout (anti-flake; this is the flaky_test_detection rubric gap and matches the reviewer suggestion about the hardcoded sleeps in tmux-introspect.test.ts), and a success/error/edge triad per feature. Written as reviewer-rubric items + a short AGENTS/CLAUDE convention ('real I/O, no mocks, mkdtemp, document why if you must mock'). Source: warren docs/CONSTITUTION.md Art. IV; kotadb testing_expert_review.md + testing_expert_plan.md; sapling/canopy/mulch/plot/seeds CONTRIBUTING 'no mocks' rule.",
-  "updatedAt": "2026-07-15T01:28:57.988Z",
+  "updatedAt": "2026-07-15T11:34:16.236Z",
   "spec": {
     "acceptanceCriteria": [
       "The reviewer agent (.claude/agents/subagent-reviewer.md) gains test-quality rubric guidance, anchored on / expanding binary criterion #2 (tests-with-meaningful-assert), covering three items: (a) the 3-clause anti-mock rule - ban tautological 'the mock was called' assertions (warren aphorism quotable verbatim), MANDATE a real-I/O test at each wire boundary (git/tmux/gh/filesystem), and explicitly ALLOW behavioral DI-fakes that reproduce a real dependency's observable output; (b) adversarial-cases mandate - tests must cover malformed input, boundary values, and regression-of-a-past-bug, not happy-path only; (c) per-test discipline - behavior-named tests, one concept per test, a success/error/edge triad per feature, and async waits via a waitForCondition helper NOT a fixed setTimeout/Bun.sleepSync.",
