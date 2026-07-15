@@ -2776,13 +2776,11 @@ describe('runSupervisor US-006: stale / absent / malformed report safety nets', 
 
 	// AC4: host.ts makeReadWorkerReport applies shape guards (no false-positive from wrong-shape JSON)
 	test('AC4: host.ts makeReadWorkerReport applies shape guard for story + outcome (US-R2-001)', async () => {
-		// Assert the production reader function (makeReadWorkerReport) includes the
-		// correct shape guard expression for both discriminator fields.
+		// US-002 (CAM-301): the inline typeof outcome/story shape guard was
+		// replaced by delegation to the shared parseWorkerReport parser
+		// (report-parse.ts), which enforces the same discriminator contract.
 		const hostSrc = await Bun.file('src/supervisor/host.ts').text();
-		// Shape guard: !Array.isArray + typeof outcome === 'string' + typeof story === 'string'
-		expect(hostSrc).toContain("!Array.isArray(parsed)");
-		expect(hostSrc).toContain("'outcome'] === 'string'");
-		expect(hostSrc).toContain("'story'] === 'string'");
+		expect(hostSrc).toContain('parseWorkerReport');
 	});
 });
 

@@ -14,21 +14,28 @@
 // pushes the one-line summary to the orchestrator pane (%0) via send-keys.
 // The worker does NOT self-push (US-003/CAM-78 removed that path).
 
-/** Structured report written by the implementer at /exit. */
+/**
+ * Structured report written by the implementer at /exit.
+ *
+ * `gates` and `notes` are optional at the type level (US-001, CAM-report-parse):
+ * the shared fail-closed parser (report-parse.ts) accepts a report carrying
+ * only the outcome+story discriminator, so callers must guard before reading
+ * either field (see formatWorkerReportSummary below).
+ */
 export interface WorkerReport {
 	/** Outcome token: mirrors CAM_IMPLEMENTER_STATUS values (DONE, BLOCKED_QUALITY, etc.). */
 	outcome: string;
 	/** Story ID that was implemented (e.g. "US-003"). */
 	story: string;
 	/** Quality-gate results. */
-	gates: {
+	gates?: {
 		/** "ok" or "fail: <detail>". */
 		typecheck: string;
 		/** "<N> pass / <M> fail" or "fail: <detail>". */
 		tests: string;
 	};
 	/** One-line human note: gotcha, "none", or error summary. */
-	notes: string;
+	notes?: string;
 }
 
 /**
@@ -42,9 +49,14 @@ export const WORKER_REPORT_FILENAME = 'scripts/cam/worker-report.json';
  * Used as the payload pushed to the orchestrator pane via send-keys.
  *
  * Example: "[cam] US-003 DONE: typecheck ok, 42 pass / 0 fail"
+ *
+ * `gates` is optional at the type level (US-001); a report without it renders
+ * "n/a" for both sub-fields rather than throwing.
  */
 export function formatWorkerReportSummary(report: WorkerReport): string {
-	return `[cam] ${report.story} ${report.outcome}: typecheck ${report.gates.typecheck}, ${report.gates.tests}`;
+	const typecheck = report.gates?.typecheck ?? 'n/a';
+	const tests = report.gates?.tests ?? 'n/a';
+	return `[cam] ${report.story} ${report.outcome}: typecheck ${typecheck}, ${tests}`;
 }
 
 /**

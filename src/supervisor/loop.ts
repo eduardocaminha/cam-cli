@@ -49,6 +49,7 @@ import { ContainerConfigError } from './container-config.ts';
 import { ToolchainMismatchError } from './toolchain-assert.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 import { formatReviewVerdictLine, formatWorkerReportSummary, type WorkerReport } from './worker-report.ts';
+import { parseWorkerReport } from './report-parse.ts';
 import { buildResultDetail, validateOfficialDocsValidated } from './events.ts';
 import type { WorkerEventLogger, WorkerEventKind, WorkerEventDetail, TokensEventDetail, ReviewVerdictHandbackEventDetail, OutcomeSourceEventDetail, ContainerPreflightEventDetail } from './events.ts';
 import type { PreflightResult } from './preflight-container.ts';
@@ -1144,21 +1145,22 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				// break the poll here. Falls back to capturePane + parseAnySentinel ONLY
 				// when readWorkerReport is absent (backward compat with legacy callers).
 				if (readWorkerReport !== undefined) {
-					// US-006: staleness + shape guard on the PRIMARY poll-exit check.
-					// A report whose story does not match the advisory story (stale
+					// US-002/US-006: staleness + shape guard on the PRIMARY poll-exit
+					// check, validated via the shared parseWorkerReport parser (report-
+					// parse.ts) rather than an inline typeof discriminator check. A
+					// report whose story does not match the advisory story (stale
 					// leftover from a previous run) is rejected here so the poll
 					// continues — letting the pane-died / timeout nets with CAM-44
 					// backoff remain the terminal signal. A malformed report (missing
-					// string story / outcome discriminators) is also rejected so it
-					// cannot cause a false poll-exit. When advisoryStoryId is absent,
-					// skip the staleness part (graceful degradation for callers that
-					// do not pass the dispatched story id).
-					const report = readWorkerReport();
+					// string story / outcome discriminators, or any other shape
+					// violation the parser rejects) is also rejected so it cannot cause
+					// a false poll-exit. When advisoryStoryId is absent, skip the
+					// staleness part (graceful degradation for callers that do not pass
+					// the dispatched story id).
+					const rawReport = readWorkerReport();
+					const report = rawReport === null ? null : parseWorkerReport(JSON.stringify(rawReport));
 					const isValidFreshReport =
-						report !== null &&
-						typeof report.story === 'string' &&
-						typeof report.outcome === 'string' &&
-						(advisoryStoryId === undefined || report.story === advisoryStoryId);
+						report !== null && (advisoryStoryId === undefined || report.story === advisoryStoryId);
 					if (isValidFreshReport) {
 						pollOutcome = 'sentinel';
 						break;
