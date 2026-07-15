@@ -153,10 +153,12 @@ function withWriter<T>(writer: ((s: string) => void) | undefined, fn: () => T): 
 // ---------------------------------------------------------------------------
 
 /**
- * Print the actionable backlog (`cam issue list`). Always returns 0: the
- * 'linear'/'github' branch is a hint, not an error, and the 'local' branch
- * has no failure path of its own (readBacklogFromMain returns [] on any read
- * error, rendering an empty backlog rather than throwing).
+ * Print the actionable backlog (`cam issue list`). The 'linear'/'github'
+ * branch is a hint, not an error, and always returns 0. The 'local' branch
+ * delegates to readBacklogFromMain, which is fail-closed (US-001, CAM-307):
+ * a truncated or errored `git cat-file --batch` read throws rather than
+ * silently rendering an empty/partial backlog, so a real read failure
+ * propagates to the caller instead of being swallowed.
  */
 export function runIssueList(options: RunIssueListOptions): number {
 	const { cwd } = options;
