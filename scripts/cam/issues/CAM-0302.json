@@ -1,10 +1,39 @@
 {
   "id": "CAM-302",
   "title": "Golden-fixtures for CAM_*_STATUS sentinel + handoff/worker-report parsing (split from CAM-61 item 3)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-14T03:00:35.590Z",
-  "updatedAt": "2026-07-14T03:00:35.590Z",
-  "description": "Split from CAM-61 (items 1+2 shipped: doc-as-code gate + count-freeze). Capture real worker-CLI wire output as golden fixtures (__golden__/*.jsonl + a canonical parsed form) and diff them in tests, so a silent upstream claude wire-shape change fails a test. Direct antidote to the supervisor-sentinel-parse-fragility class (CAM-32/35). Re-grounding discovered during CAM-61 spec: (1) only CAM_IMPLEMENTER_STATUS (parser src/supervisor/result.ts:172, loose detect :455) and CAM_SETUP_STATUS (src/commands/setup.ts:404/496) exist; CAM_REVIEW_STATUS does NOT exist (reviewer uses <review>CLEAN</review> / <review>FIXES_PENDING:N</review>, parseReviewVerdict src/supervisor/review.ts:172). (2) issue's suggested dir src/runtime/parsers/__golden__/ does not exist; parsers live in result.ts, review.ts, orchestrator/handoff.ts, host.ts. (3) two handoff files: orchestrator (.claude/.cam-orch-handoff.json, src/orchestrator/handoff.ts, schema orch-handoff.schema.json) and worker (scripts/cam/handoff.json, schema handoff.schema.json); worker-report.json shape guard src/supervisor/host.ts:121. (4) no __golden__ fixtures exist today. Key spec question: capture real claude wire output deterministically with no live claude in the test (recorded-fixture harness, not a live call). Part of the operator Tier 1 batch drain follow-ups."
+  "updatedAt": "2026-07-15T01:05:32.314Z",
+  "description": "Split from CAM-61 (items 1+2 shipped: doc-as-code gate + count-freeze). Capture real worker-CLI wire output as golden fixtures (__golden__/*.jsonl + a canonical parsed form) and diff them in tests, so a silent upstream claude wire-shape change fails a test. Direct antidote to the supervisor-sentinel-parse-fragility class (CAM-32/35). Re-grounding discovered during CAM-61 spec: (1) only CAM_IMPLEMENTER_STATUS (parser src/supervisor/result.ts:172, loose detect :455) and CAM_SETUP_STATUS (src/commands/setup.ts:404/496) exist; CAM_REVIEW_STATUS does NOT exist (reviewer uses <review>CLEAN</review> / <review>FIXES_PENDING:N</review>, parseReviewVerdict src/supervisor/review.ts:172). (2) issue's suggested dir src/runtime/parsers/__golden__/ does not exist; parsers live in result.ts, review.ts, orchestrator/handoff.ts, host.ts. (3) two handoff files: orchestrator (.claude/.cam-orch-handoff.json, src/orchestrator/handoff.ts, schema orch-handoff.schema.json) and worker (scripts/cam/handoff.json, schema handoff.schema.json); worker-report.json shape guard src/supervisor/host.ts:121. (4) no __golden__ fixtures exist today. Key spec question: capture real claude wire output deterministically with no live claude in the test (recorded-fixture harness, not a live call). Part of the operator Tier 1 batch drain follow-ups.",
+  "spec": {
+    "acceptanceCriteria": [
+      "A golden-fixture directory test/fixtures/golden/ holds committed fixtures for the parse targets, each paired with its expected canonical parsed form asserted by a replay test.",
+      "Sentinel wrap-class fixtures: tmux pane-capture dumps of CAM_IMPLEMENTER_STATUS in the decoration/wrap variants documented at src/supervisor/result.ts:158-171 (markdown code span, bold, trailing punctuation) plus a clean form, replay-tested against parseSentinel (result.ts:172) and parseAnySentinel (result.ts:455).",
+      "Review-tag fixtures: rendered <review>CLEAN</review> and <review>FIXES_PENDING:N</review> pane forms, replay-tested against parseReviewVerdict (src/supervisor/review.ts:172).",
+      "Transcript-usage fixture: a real-shaped claude session .jsonl fragment (message.usage.* fields, multi-line, dedup by message.id + requestId), replay-tested against parseTranscriptUsage / parseContextOccupancy (src/transcript/usage.ts); consolidates the currently-inline usage fixtures.",
+      "Self-authored artifact shape-pin fixtures: worker-report.json, worker handoff.json, orch-handoff.json, review-report.json, replay-tested against their real guards (src/supervisor/host.ts:121 and :175, src/supervisor/result.ts:227, src/orchestrator/handoff.ts:109).",
+      "All replay tests run inside the normal `bun test` run with NO live claude call (they parse committed fixtures only).",
+      "An on-demand harness scripts/record-golden.ts refreshes the fixtures from a live session; it is NOT a check:all gate (absent from the GATES manifest in scripts/check-all.ts) and NOT in .github/workflows/ci.yml, exposed via a `bun run record:golden` alias, with a header comment modelled on scripts/test-in-container.ts explaining it is on-demand.",
+      "A patterns.md bullet documents the golden-fixture record/replay convention (committed fixtures replayed in bun test; record-golden the on-demand refresh path).",
+      "bun run typecheck, bun test, and bun run check:all all pass green."
+    ],
+    "scope": "Establish a golden-fixture record/replay convention (test/fixtures/golden/) with committed fixtures + asserted canonical parsed forms for the fragile parse targets, as a regression guard for the supervisor-sentinel-parse-fragility class (CAM-32/35), plus an on-demand scripts/record-golden.ts harness (out of the gate/CI path) as the documented refresh trail. Split from CAM-61 item 3 (items 1+2 shipped). Scope B (autonomous): the committed fixtures are hand-authored from the DOCUMENTED real forms (result.ts:158-171 wrap variants; a real-shaped usage .jsonl), and the harness is built but its live-capture path is exercised only when an operator later runs it. NOT in scope: a live-claude capture ceremony or wiring record-golden into CI (that is the deferred canary-(A) upgrade, an operator run, optionally folded into CAM-175); adding CAM_REVIEW_STATUS (it does not exist - the review sentinel is the <review> tag with review-report.json as the primary signal).",
+    "gotchas": [
+      "The parse targets split into two categories: (a) self-authored formats we control via our own agent prompts/schemas (the sentinel token strings, worker-report.json, handoff.json, orch-handoff.json, review-report.json) - a fixture here guards OUR parser only; (b) claude-controlled surfaces - the tmux TUI RENDER of the sentinel line (wrap/markdown decoration, the CAM-35 hazard) and the claude session .jsonl envelope (consumed only by transcript/usage.ts). The category-(b) render/envelope is where a real upstream change would silently break extraction, so fixture fidelity to the RENDERED pane form (not the raw token) is the point.",
+      "No parser reads a file/pane itself: each takes a string from an injected reader (capturedPaneText from capture-pane -p -S -, or a JSON file read). Replay tests feed the fixture string directly to the exported parser - no tmux, no live process needed.",
+      "CAM_SETUP_STATUS (src/commands/setup.ts:496) is a fixed-string bash grep in a generated menu script, not a TS parser; it is rendering-robust and low-value to fixture - include only if trivial.",
+      "The transcript path encoding (usage.ts:232-233, cwd.replace(/[^a-zA-Z0-9]/g,'-') under <claudeDir>/projects/) and the message.usage field set are the highest-risk category-(b) contract; the usage fixture should mirror the real multi-block/dedup shape, not a single simplified line.",
+      "record-golden must follow the test-in-container.ts precedent exactly: on-demand, self-documented header, deliberately excluded from GATES and ci.yml, so it never gates a build or the autonomous loop."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 1,
+    "riskReduction": 4,
+    "jobSize": 4
+  },
+  "type": "chore"
 }
