@@ -1,20 +1,18 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Add shared report parse module and relax WorkerReport optional fields" },
+  "lastCompletedStory": { "id": "US-002", "title": "Route worker-report readers in host.ts and loop.ts through parseWorkerReport" },
   "branchName": "cam/issue-301",
   "timestamp": "2026-07-15T00:00:00Z",
-  "createdFiles": [
-    "src/supervisor/report-parse.ts",
-    "test/supervisor/report-parse.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/worker-report.ts",
-    "test/supervisor/orchestrator-surface.test.ts",
+    "src/supervisor/host.ts",
+    "src/supervisor/loop.ts",
+    "test/supervisor/loop.test.ts",
     "scripts/file-size-budget.json",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "report-parse.ts (parseWorkerReport/parseReviewReport) is tested but NOT yet wired into any consumer: host.ts's makeReadWorkerReport and result.ts's readWorkerOutcome still use their own ad-hoc isObject/typeof guards. A follow-up story should replace those duplicated guards with calls into report-parse.ts if/when the PRD calls for it -- this story's AC only required the shared module + the WorkerReport.gates/notes optionality, not consumer rewiring. WorkerReport.gates/notes are now optional at the type level; any new code reading report.gates.X must use optional chaining (report.gates?.X) or a truthiness guard.",
+  "nextStoryContext": "host.ts's makeReadWorkerReport now delegates directly to parseWorkerReport(raw) (raw file text in, typed WorkerReport|null out); loop.ts's poll-exit worker-report check round-trips the already-typed readWorkerReport() return value through parseWorkerReport(JSON.stringify(rawReport)) before applying the advisoryStoryId staleness comparison, since that call site's dep is statically typed WorkerReport but is not runtime-guaranteed to match (tests construct wrong-shape objects via `as WorkerReport`). result.ts's readWorkerOutcome (string-source consumer of report-parse.ts, per report-parse.ts's own module doc comment) still uses its own ad-hoc guards and was NOT touched by this story -- if the PRD calls for wiring result.ts onto parseWorkerReport/parseReviewReport next, that is a follow-up, not implied by US-002's acceptance criteria (which named only host.ts + loop.ts). One pre-existing test (test/supervisor/loop.test.ts's 'AC4: host.ts makeReadWorkerReport applies shape guard...' test) pinned the OLD inline-guard source text and was updated to assert 'parseWorkerReport' presence instead -- if a future story further changes host.ts's reader internals, that test will need another look.",
   "officialDocsValidated": [
-    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure hand-rolled TypeScript type-narrowing (isObject/typeof guards), no external parsing library introduced (project convention forbids zod / *.schema.json runtime loaders here)." }
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure internal refactor wiring two already-existing hand-rolled TS modules (host.ts, loop.ts) onto the shared report-parse.ts parser from US-001; no external library surface touched." }
   ]
 }
