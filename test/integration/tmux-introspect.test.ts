@@ -29,6 +29,7 @@ import {
 	openPaneInSession,
 	type SpawnFn,
 } from '../../src/tmux/session.ts';
+import { waitForCondition } from '../helpers/wait-for-condition.ts';
 
 const TEST_SOCK = 'cam-it-introspect';
 const SESSION = 'introspect';
@@ -56,13 +57,29 @@ function label(paneTarget: string, value: string): void {
 	tmuxRaw(['set-option', '-p', '-t', paneTarget, '@cam_label', value]);
 }
 
-beforeEach(() => {
+/** Real @cam_label currently set on a pane (session/index or pane-id target). */
+function paneLabel(paneTarget: string): string {
+	return tmuxRaw(['display-message', '-p', '-t', paneTarget, '#{@cam_label}'])
+		.stdout.toString()
+		.trim();
+}
+
+/** Live pane ids for a session, via a real list-panes round-trip. */
+function paneIds(sessionName: string): string[] {
+	return tmuxRaw(['list-panes', '-t', sessionName, '-F', '#{pane_id}'])
+		.stdout.toString()
+		.split('\n')
+		.map((l) => l.trim())
+		.filter((l) => l.length > 0);
+}
+
+beforeEach(async () => {
 	if (!tmuxAvailable) return;
 	tmuxRaw(['kill-server']);
 	// Default shell panes (NOT `cat`: isSessionStale treats a cat pane as a stale
 	// placeholder). A plain shell keeps pane_current_command as the shell name.
 	tmuxRaw(['new-session', '-d', '-s', SESSION, '-x', '80', '-y', '10']);
-	Bun.sleepSync(200);
+	await waitForCondition(() => tmuxRaw(['has-session', '-t', SESSION]).status === 0);
 });
 
 afterEach(() => {
@@ -72,9 +89,9 @@ afterEach(() => {
 
 test.skipIf(!tmuxAvailable)(
 	'orchestratorAlive is true for a real pane labeled orchestrator (command is the shell, not claude)',
-	() => {
+	async () => {
 		label(`${SESSION}.0`, 'orchestrator');
-		Bun.sleepSync(100);
+		await waitForCondition(() => paneLabel(`${SESSION}.0`) === 'orchestrator');
 		// The real pane_current_command here is a shell (sh/bash/zsh), never
 		// 'claude' — exactly the wrapper case. Label-keyed detection must pass.
 		expect(orchestratorAlive(SESSION, swapSocketSpawn)).toBe(true);
@@ -83,18 +100,18 @@ test.skipIf(!tmuxAvailable)(
 
 test.skipIf(!tmuxAvailable)(
 	'orchestratorAlive is false when no pane is labeled orchestrator',
-	() => {
+	async () => {
 		label(`${SESSION}.0`, 'dashboard');
-		Bun.sleepSync(100);
+		await waitForCondition(() => paneLabel(`${SESSION}.0`) === 'dashboard');
 		expect(orchestratorAlive(SESSION, swapSocketSpawn)).toBe(false);
 	},
 );
 
 test.skipIf(!tmuxAvailable)(
 	'getOrchPaneId returns the real pane id of index 0 (semicolon-separated parse)',
-	() => {
+	async () => {
 		label(`${SESSION}.0`, 'orchestrator');
-		Bun.sleepSync(100);
+		await waitForCondition(() => paneLabel(`${SESSION}.0`) === 'orchestrator');
 		const expectedId = tmuxRaw(['list-panes', '-t', SESSION, '-F', '#{pane_index};#{pane_id}'])
 			.stdout.toString()
 			.split('\n')
@@ -111,7 +128,7 @@ test.skipIf(!tmuxAvailable)(
 
 test.skipIf(!tmuxAvailable)(
 	'isSessionStale: 2 labeled panes -> alive; stray 3rd pane -> stale; labeled worker -> alive',
-	() => {
+	async () => {
 		// Label by pane_id (%N), NOT pane index: tmux inserts a new split adjacent
 		// to the active pane and renumbers indices, so an index target would hit
 		// the wrong pane. pane_ids are stable for the pane's lifetime.
@@ -119,28 +136,30 @@ test.skipIf(!tmuxAvailable)(
 			.stdout.toString().trim().split('\n')[0];
 		const p1 = tmuxRaw(['split-window', '-t', SESSION, '-d', '-P', '-F', '#{pane_id}'])
 			.stdout.toString().trim();
-		Bun.sleepSync(150);
+		await waitForCondition(() => paneIds(SESSION).length === 2);
 		label(p0!, 'orchestrator');
 		label(p1, 'dashboard');
-		Bun.sleepSync(100);
+		await waitForCondition(
+			() => paneLabel(p0!) === 'orchestrator' && paneLabel(p1) === 'dashboard',
+		);
 		expect(isSessionStale(SESSION, swapSocketSpawn)).toBe(false); // 2-pane: alive
 
 		// Add a stray, UNLABELED 3rd pane (e.g. a leftover shell).
 		const p2 = tmuxRaw(['split-window', '-t', SESSION, '-d', '-P', '-F', '#{pane_id}'])
 			.stdout.toString().trim();
-		Bun.sleepSync(150);
+		await waitForCondition(() => paneIds(SESSION).length === 3);
 		expect(isSessionStale(SESSION, swapSocketSpawn)).toBe(true); // stray 3rd: stale
 
 		// Label the 3rd pane as a legitimate worker.
 		label(p2, 'implementer');
-		Bun.sleepSync(100);
+		await waitForCondition(() => paneLabel(p2) === 'implementer');
 		expect(isSessionStale(SESSION, swapSocketSpawn)).toBe(false); // labeled worker: alive
 	},
 );
 
 test.skipIf(!tmuxAvailable)(
 	'teardownWorkerPaneFn kill-pane cycle: 3 panes -> 2 (available) -> 3 after recreate (CAM-188 anchor)',
-	() => {
+	async () => {
 		// Reproduces the lifecycle that the production teardownWorkerPaneFn enables:
 		// kill-pane reduces count to 2 -> paneCountMutex reports 'available'
 		// -> ensureWorkerPane / openPaneInSession brings it back to 3.
@@ -154,11 +173,16 @@ test.skipIf(!tmuxAvailable)(
 			.stdout.toString().trim();
 		const p2 = tmuxRaw(['split-window', '-t', SESSION, '-v', '-d', '-P', '-F', '#{pane_id}'])
 			.stdout.toString().trim();
-		Bun.sleepSync(150);
+		await waitForCondition(() => paneIds(SESSION).length === 3);
 		label(p0, 'orchestrator');
 		label(p1, 'dashboard');
 		label(p2, 'implementer');
-		Bun.sleepSync(100);
+		await waitForCondition(
+			() =>
+				paneLabel(p0) === 'orchestrator' &&
+				paneLabel(p1) === 'dashboard' &&
+				paneLabel(p2) === 'implementer',
+		);
 
 		// Verify we start with 3 panes -> mutex is 'busy'.
 		expect(paneCountMutex(SESSION, swapSocketSpawn)).toBe('busy');
@@ -168,14 +192,14 @@ test.skipIf(!tmuxAvailable)(
 		// Here we use the private test socket via swapSocketSpawn-style argv.
 		const killResult = spawnSync('tmux', ['-L', TEST_SOCK, 'kill-pane', '-t', p2], { stdio: 'pipe' });
 		expect(killResult.status).toBe(0); // kill-pane must succeed
-		Bun.sleepSync(150);
+		await waitForCondition(() => !paneIds(SESSION).includes(p2));
 
 		// 3. After teardown: count = 2, mutex = 'available'.
 		expect(paneCountMutex(SESSION, swapSocketSpawn)).toBe('available');
 
 		// 4. Recreate the worker pane via openPaneInSession (mirrors ensureWorkerPane).
 		const newWorkerId = openPaneInSession(SESSION, ['cat'], swapSocketSpawn, p0);
-		Bun.sleepSync(150);
+		await waitForCondition(() => paneIds(SESSION).includes(newWorkerId));
 		expect(newWorkerId).toMatch(/^%\d+$/);
 
 		// 5. After recreation: count = 3 again, mutex = 'busy'.

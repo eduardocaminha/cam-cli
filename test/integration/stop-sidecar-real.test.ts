@@ -37,6 +37,7 @@ import {
 } from '../../src/tmux/session.ts';
 import { WORKER_REPORT_FILENAME } from '../../src/supervisor/worker-report.ts';
 import { runSidecarLoop } from '../../src/supervisor/loop.ts';
+import { waitForCondition } from '../helpers/wait-for-condition.ts';
 
 // ---------------------------------------------------------------------------
 // Shared infrastructure
@@ -168,7 +169,7 @@ test.skipIf(!tmuxAvailable)(
 		//    ensures no leftover state from a previous run of this test.
 		tmuxRaw(['kill-server']);
 		tmuxRaw(['new-session', '-d', '-s', TEST_SESSION, '-x', '80', '-y', '10']);
-		Bun.sleepSync(200);
+		await waitForCondition(() => tmuxRaw(['has-session', '-t', TEST_SESSION]).status === 0);
 
 		// 2. Build a hasSessionFn that calls the REAL tmux has-session against the
 		//    private socket. The swapSocketSpawn adapter rewrites `-L cam` to the
