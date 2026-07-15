@@ -1,28 +1,34 @@
 {
-  "lastCompletedStory": { "id": "US-005", "title": "Migrate integration sleeps to waitForCondition (group D: ensure-worker-pane-selfheal, sendkeys-submit, plan-runner-target-obey, plan-runner-no-prd)" },
+  "lastCompletedStory": { "id": "US-006", "title": "Migrate unit-tier promisified setTimeout sleeps + suppress the flush-ink macrotask yield" },
   "branchName": "cam/issue-305",
-  "timestamp": "2026-07-15T15:35:00Z",
+  "timestamp": "2026-07-15T16:10:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "test/integration/ensure-worker-pane-selfheal.test.ts",
-    "test/integration/sendkeys-submit.test.ts",
-    "test/integration/plan-runner-target-obey.test.ts",
-    "test/integration/plan-runner-no-prd.test.ts",
+    "test/dashboard.test.ts",
+    "test/plan-runner-no-prd.test.ts",
+    "test/ui/init-setup-screen-keys.test.ts",
+    "test/supervisor/review.test.ts",
+    "test/supervisor/plan/plan-runner-branch-derivation.test.ts",
+    "test/supervisor/plan/plan-runner-container.test.ts",
+    "test/supervisor/plan/plan-runner-postaudit.test.ts",
+    "test/helpers/flush-ink.ts",
+    "test/check-test-sleeps.test.ts",
     "scripts/file-size-budget.json",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [
-    "test/integration/behavioral-gate.test.ts carries a pre-existing UNCOMMITTED working-tree diff (adds explicit { timeout: 15_000 / 20_000 } third args to 5 tests, with a comment citing CPU-contention flake risk) that predates this session and is unrelated to the Bun.sleepSync migration (US-005/CAM-305 scope). It was left as-is (not staged/committed) per surgical-change discipline since it isn't part of this story's acceptance criteria. It still sits in the working tree on cam/issue-305 for the next session/operator to either fold into a dedicated fix commit or discard.",
-    "check-test-sleeps.ts reports ~17 remaining un-suppressed violations OUTSIDE test/integration/ (test/dashboard.test.ts, test/check-test-sleeps.test.ts, test/plan-runner-no-prd.test.ts unit-tier, test/supervisor/review.test.ts, test/supervisor/plan/plan-runner-branch-derivation.test.ts, test/supervisor/plan/plan-runner-postaudit.test.ts, test/supervisor/plan/plan-runner-container.test.ts, test/helpers/flush-ink.ts:22, test/ui/init-setup-screen-keys.test.ts) -- none were named in this PRD's A/B/C/D groups (which were scoped to test/integration/ only per US-001-US-005 notes), so out of scope here. A follow-up PRD/issue is needed before check-test-sleeps.ts can be wired into check:all/GATES."
+    "check-test-sleeps.ts (US-001) is still NOT wired into check:all/GATES. It now reports zero un-suppressed violations repo-wide for the first time (this story closed the last ~17 non-integration-tier sites), so wiring it into check:all is now unblocked; a future story in this or a follow-up PRD should add that gate.",
+    "test/check-test-sleeps.test.ts's 3 fixture lines (Bun.sleepSync/setTimeout-promise/setTimeout(resolve,0) literal test fixtures) were NOT named in this story's AC1/AC2 (which listed exactly 13 pollable sites + 1 flush-ink suppression = 14), but AC3's literal oracle (`bun scripts/check-test-sleeps.ts` must exit 0) required them to be suppressed too, since the scanner's own repo-wide scan matches its own test file's fixture strings as false-positive sleeps. Fixed by appending a trailing `// CAM-305: scanner test fixture, not a real sleep` comment to the enclosing source line (outside the string literal), which does not change the in-memory fixture text the unit tests assert against. Flagging this in case the reviewer expects only the named 14 sites touched and treats this as scope creep; it was necessary to satisfy AC3's mechanical oracle, not a unilateral extra change.",
+    "test/integration/behavioral-gate.test.ts still carries the pre-existing UNCOMMITTED working-tree diff noted in the US-005 handoff (explicit { timeout } third args on 5 tests, unrelated to CAM-305). It remains untouched and uncommitted in the working tree; still needs the next session/operator to fold into a dedicated commit or discard."
   ],
-  "nextStoryContext": "US-005 (group D) closes the sequential A/B/C/D integration-tier Bun.sleepSync migration for this PRD (CAM-305): all 4 named files (ensure-worker-pane-selfheal.test.ts 5 sites, sendkeys-submit.test.ts 3 sites, plan-runner-target-obey.test.ts 3 sites, plan-runner-no-prd.test.ts [integration-tier] 3 sites) were found ALREADY migrated in the working tree at session start (uncommitted, from an apparently interrupted prior attempt at this exact story -- confirmed via the staged scripts/file-size-budget.json _ref, which already carried a 'US-005, CAM-305: raise test/integration/sendkeys-submit.test.ts 69->72' entry matching the exact diff present). This session verified the pre-existing diff was complete and correct rather than re-doing the work: all 14 sites use waitForCondition polling a genuine observable (isPaneAlive/has-session/capture-pane-content), zero bare-sleep tracker-ref suppressions needed, `grep -rn 'Bun.sleepSync(' test/integration/` returns 0 hits repo-wide. Ran the full verification chain fresh: bun run typecheck (0 errors), bun test test/integration/{4 files} (7 pass/0 fail), bun test full suite (4591 pass/0 fail), bun run check:all (all 12 gates ok, no new ratchet raise needed beyond the already-staged sendkeys-submit.test.ts file-size entry). Appended a 'Group D' bullet to patterns.md mirroring the A/B/C bullets' style, then committed exactly the 4 test files + file-size-budget.json + patterns.md (left the unrelated pre-existing behavioral-gate.test.ts working-tree diff untouched, see openQuestions). This PRD's named integration-tier sleep migration (54 sites across A+B+C+D) is now fully complete; whatever the next PRD story is, it is NOT part of this sequential arc unless it explicitly reopens the out-of-scope non-integration-tier sites listed in openQuestions.",
+  "nextStoryContext": "US-006 closes the CAM-305 sleep-migration PRD's full scope: all 14 named unit-tier sites (test/dashboard.test.ts's waitForAccentLine converted to reuse waitForFrame; test/ui/init-setup-screen-keys.test.ts x2 converted to waitForFrame polling 'All set'/'Failed' content; 9 escalateFn fire-and-forget assertions across test/supervisor/review.test.ts, plan-runner-branch-derivation.test.ts, plan-runner-container.test.ts, and plan-runner-postaudit.test.ts split into positive waitForCondition(() => escalateCalled(.n) > 0) polls and negative bounded-window .catch(() => {}) polls; test/plan-runner-no-prd.test.ts's unit-tier escalateFn-not-called site got the same negative bounded-window treatment) plus the flush-ink.ts:22 same-line CAM-305 suppression are done. check-test-sleeps.ts now reports ZERO violations anywhere under test/ for the first time in this PRD's arc (after also suppressing 3 incidental self-referential false-positive matches in check-test-sleeps.test.ts's own fixture strings, not originally named in this story's AC but required by AC3's literal oracle). Verified: bun run typecheck (0 errors), the 8 touched test files' full suites (318 tests) pass 318/318, full bun test (4591 tests, 0 fail), and bun run check:all (all 12 gates green after raising 2 file-size ceilings: plan-runner-container.test.ts 463->464, review.test.ts 1709->1710, both staged with a dated _ref note before the gate re-run). Whatever the next PRD story is, it is likely either (a) wiring check-test-sleeps.ts into check:all/GATES now that the repo is at zero violations, or (b) a new unrelated PRD entirely -- this sequential CAM-305 sleep-migration arc (US-001 through US-006) is now fully complete.",
   "officialDocsValidated": [
     {
       "lib": "bun",
-      "url": "https://bun.sh/docs/api/spawn",
-      "fetchedAt": "2026-07-15T15:35:00Z",
+      "url": "https://bun.sh/docs/test/writing-tests",
+      "fetchedAt": "2026-07-15T16:05:00Z",
       "status": "aligned",
-      "summary": "Confirmed Bun.spawnSync is the blocking/synchronous counterpart to Bun.spawn, spawning a fresh process per call and returning a SyncSubprocess snapshot (stdout/stderr as Buffer, exitCode, success). No restriction against calling it repeatedly in a loop. This validates the group D pattern of polling has-session/display-message/capture-pane via repeated Bun.spawnSync calls inside a waitForCondition predicate -- each poll tick is a fresh, correct synchronous subprocess call, not a stale/cached handle."
+      "summary": "Confirmed bun:test natively supports async test() bodies (await inside a test callback, no done-callback needed) exactly as this story's migrated tests rely on (await waitForCondition(...)/await waitForFrame(...) inside test() and describe() blocks). No API mismatch found; default per-test timeout remains 5000ms, comfortably covering the new bounded waitForCondition/waitForFrame polls (all <=3000ms)."
     }
   ]
 }
