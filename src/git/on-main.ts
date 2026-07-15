@@ -20,11 +20,19 @@
 //     list is the single-file case and produces the same git sequence.
 //     commitTreeToMain uses compare-and-swap (CAS) on update-ref and retries
 //     up to CAS_MAX_ATTEMPTS times on contention.
+//   - US-001 (CAM-300): commitTreeToMain's `files` parameter also accepts a
+//     FileWritesFn callback, invoked once PER-ATTEMPT (after read-tree has
+//     established that attempt's fresh main sha) instead of a static
+//     FileWrite[] computed once, up front. This lets a whole-file overwrite
+//     be rebased onto a concurrently-advanced main on retry instead of
+//     clobbering it. The static FileWrite[] form remains fully supported
+//     and behaviour-unchanged; the no-contention single-attempt path
+//     evaluates either form exactly once either way.
 //
 // DO NOT import this module from anywhere outside src/commands/ that
 // performs on-main mutations. Read-only callers do not need it.
 //
-// CAM-108 US-001 (closes CAM-124); CAM-90 US-001 (multi-file + CAS).
+// CAM-108 US-001 (closes CAM-124); CAM-90 US-001 (multi-file + CAS); CAM-300 US-001 (per-attempt recompute).
 
 import type { SpawnSyncReturns } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -67,6 +75,20 @@ export interface FileWrite {
 	path: string;
 	content: string;
 }
+
+/**
+ * Per-attempt content recompute callback (US-001, CAM-300).
+ *
+ * Invoked once per CAS attempt, AFTER `git read-tree main` has established
+ * the fresh main sha for that attempt, so the returned FileWrite[] can be
+ * derived from the tree that will actually be rebased onto -- instead of a
+ * FileWrite[] built once, up front, that would still be committed on a
+ * losing/retried attempt even though main has since advanced underneath it.
+ *
+ * @param mainSha The sha of refs/heads/main as of this attempt (the CAS
+ *   "old expected" value used by this same attempt's update-ref).
+ */
+export type FileWritesFn = (mainSha: string) => FileWrite[];
 
 // ---------------------------------------------------------------------------
 // CAS_MAX_ATTEMPTS: bounded retry limit for compare-and-swap update-ref
@@ -379,18 +401,29 @@ export function pushMainBestEffort(cwd: string, spawnFn: SpawnFn): void {
  * Sequence per attempt:
  *   1. git read-tree main          -- populate the temp index with main's tree.
  *   1b. removePathsFromIndex       -- apply optional deletions.
+ *   1c. resolve `files`            -- if `files` is a FileWritesFn callback,
+ *       invoke it now with this attempt's fresh main sha (US-001, CAM-300),
+ *       so per-attempt content recompute sees the tree just read in step 1;
+ *       a static FileWrite[] is used as-is (unchanged behaviour).
  *   2. hashAndIndexFiles           -- hash + index all files (throws on error).
  *   3. commitAndCasAttempt         -- write-tree + commit-tree + CAS update-ref.
  *      if CAS ok: sync worktree (on-main only), then return short sha.
- *      if CAS fail: update currentMainSha, retry.
+ *      if CAS fail: update currentMainSha, retry (re-invoking the callback,
+ *      if one was given, on the next attempt with the newly-advanced sha).
  *
  * For the 1-element list this produces the same sequence as the old
- * single-file implementation (parity guarantee).
+ * single-file implementation (parity guarantee). The no-contention
+ * single-attempt path is unaffected by the callback form: the callback (like
+ * a static list) is evaluated exactly once, on the sole attempt.
  *
  * Returns the 7-char short sha of the new commit.
  *
  * @param cwd           Absolute path to the project root (git repo).
- * @param files         List of {path, content} pairs to commit atomically.
+ * @param files         Either a static list of {path, content} pairs to commit
+ *                      atomically, or a FileWritesFn callback invoked once per
+ *                      CAS attempt with that attempt's fresh main sha, so a
+ *                      whole-file overwrite can be rebased onto a
+ *                      concurrently-advanced main instead of clobbering it.
  * @param commitMsg     Git commit message.
  * @param localMainSha  Current sha of refs/heads/main (from checkMainUpToDate).
  * @param spawnFn       Injectable spawnSync for all git subprocess calls.
@@ -403,7 +436,7 @@ export function pushMainBestEffort(cwd: string, spawnFn: SpawnFn): void {
  */
 export function commitTreeToMain(
 	cwd: string,
-	files: FileWrite[],
+	files: FileWrite[] | FileWritesFn,
 	commitMsg: string,
 	localMainSha: string,
 	spawnFn: SpawnFn,
@@ -425,11 +458,12 @@ export function commitTreeToMain(
 			});
 
 			removePathsFromIndex(cwd, removals ?? [], spawnFn, indexEnv);
-			hashAndIndexFiles(cwd, files, spawnFn, indexEnv);
+			const attemptFiles = typeof files === 'function' ? files(currentMainSha) : files;
+			hashAndIndexFiles(cwd, attemptFiles, spawnFn, indexEnv);
 			const result = commitAndCasAttempt(cwd, currentMainSha, commitMsg, spawnFn, indexEnv);
 
 			if (result.success) {
-				const allPaths = [...files.map((f) => f.path), ...(removals ?? [])];
+				const allPaths = [...attemptFiles.map((f) => f.path), ...(removals ?? [])];
 				syncWorktreeIfOnMain(cwd, allPaths, spawnFn);
 				return result.shortSha;
 			}
