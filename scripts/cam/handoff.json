@@ -1,16 +1,15 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Add per-attempt content recompute to the CAS commit-tree writers" },
+  "lastCompletedStory": { "id": "US-002", "title": "Route append/dismiss/promote pen writers through per-attempt recompute" },
   "branchName": "cam/issue-300",
   "timestamp": "2026-07-15T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/git/on-main.ts",
-    "src/issues/alloc.ts",
-    "test/issues/alloc.test.ts",
-    "test/on-main-multi.test.ts"
+    "src/commands/suggestions.ts",
+    "test/commands/suggestions.test.ts",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "commitTreeToMain's `files` param and writeIssueFile's `extraFiles` option now accept EITHER a static FileWrite[] (unchanged) OR a FileWritesFn callback `(mainSha: string) => FileWrite[]`, invoked once per CAS attempt (after read-tree establishes that attempt's fresh main sha, exported from src/git/on-main.ts). writeIssueFile resolves it via the new private helper `resolveExtraFiles(extraFiles, currentMainSha)` in src/issues/alloc.ts. All existing callers (issue-specify.ts, journal.ts, triage.ts, suggestions.ts, domain-docs.ts, journal-archive.ts, patterns-archive.ts, createLocalIssueOnMain) pass a static FileWrite[]/array and are behaviour-unchanged (typeof check short-circuits to the array branch). This story only added the primitive; per the PRD note, US-002 is expected to route an actual pen/whole-file-overwrite writer (likely promoteSuggestionOnMain or similar) through the callback form to fix the real concurrent-clobber bug -- check prd.json for the exact US-002 scope before assuming which caller. Gotcha hit this story: biome's noExcessiveLinesPerFunction (max 80 lines/function, no per-file override exists for alloc.ts) tripped when the recompute logic was inlined into writeIssueFile; fixed by extracting the one-line typeof-branch into a private `resolveExtraFiles` helper -- if a future story adds more inline logic to writeIssueFile or commitTreeToMain, watch this ceiling before assuming a biome override is needed.",
+  "nextStoryContext": "appendSuggestionOnMain/dismissSuggestionOnMain/promoteSuggestionOnMain (src/commands/suggestions.ts) now pass a FileWritesFn/extraFiles callback (US-001, CAM-300 primitive) instead of a whole-file FileWrite computed once from the pre-mutation read: each callback re-invokes readPenContentFromMain and re-runs the same pure dedup/removal logic (append's new buildAppendedContent helper; dismiss/promote's existing removeSuggestionLine keyed by fingerprint) against the fresh content on every CAS attempt. The up-front (pre-loop) pen read is intentionally KEPT for the early-exit paths that must fire with NO commit at all (append's already-present dedup skip, dismiss/promote's not-found guard) -- only the whole-file rewrite passed into the writer became per-attempt. promoteSuggestionOnMain's CAM-290 atomic single-commit design is unchanged (pen-removal callback + issue-JSON write still land in the SAME winning attempt's hashAndIndexFiles call). This was the LAST story in the CAM-300 PRD per prd.json (only US-001 + US-002 existed); if the PRD is otherwise complete, the next agent should check for PRD_COMPLETE rather than assuming a US-003 exists. Test pattern established for CAS-retry-with-content-drift regression tests: a fake SpawnFn that fails update-ref exactly once and returns DIFFERENT git show main:<path> content from the 3rd show-call onward (1st = up-front read, 2nd = losing attempt's per-attempt read, 3rd+ = winning attempt's per-attempt read), asserting the LAST hash-object input (not the 1st) carries the concurrently-added/removed line -- reusable for any future on-main whole-file writer needing the same regression coverage.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
