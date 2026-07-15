@@ -20,7 +20,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New files: test/helpers/wait-for-condition.ts (mirrors kebab-case of existing test/helpers/flush-ink.ts, mock-terminal-size.ts) + its unit test (e.g. test/wait-for-condition.test.ts, picked up by bun test via test/**). Keep the helper zero-dependency (string/promise-in, promise-out; no git/tmux/fs). This is intended for the real-I/O integration tier (test/integration/*-real-*) where a clock cannot be injected into a real subprocess; do NOT refactor existing legitimate fake-clock injections (test/dashboard.test.ts, test/retry/launcher.test.ts) to use it. GOTCHA (patterns.md:30): the unit test's own poll must use a tiny pollIntervalMs + short timeoutMs so it does not burn Bun's 5s per-test timeout; a mutable flag flipped after N polls proves the resolve path deterministically without real sleeping. Guard noUncheckedIndexedAccess. This story is scoped to the helper only; cleanup of existing Bun.sleepSync waits and any deterministic setTimeout check:all gate are explicitly split to the CAM-62 follow-up."
     },
