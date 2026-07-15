@@ -140,8 +140,8 @@ describe('protocol contract (b): worker-report.json field shape', () => {
 		const result = readWorkerReport?.();
 		expect(result?.outcome).toBe('DONE');
 		expect(result?.story).toBe('US-002');
-		expect(result?.gates.typecheck).toBe('ok');
-		expect(result?.gates.tests).toBe('10 pass / 0 fail');
+		expect(result?.gates?.typecheck).toBe('ok');
+		expect(result?.gates?.tests).toBe('10 pass / 0 fail');
 		expect(result?.notes).toBe('none');
 	});
 
