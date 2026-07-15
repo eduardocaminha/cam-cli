@@ -26,7 +26,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New module: src/supervisor/report-parse.ts. Imports WorkerReport from src/supervisor/worker-report.ts and ReviewReport/ReviewFinding from src/supervisor/review-report.ts. Recommend parse functions accept a raw JSON string (do JSON.parse internally, return null on parse error) so BOTH the string-source consumer (result.ts injected FileReader) and the readFileSync consumers (host.ts) share one contract. Making gates/notes optional forces a guard in formatWorkerReportSummary (worker-report.ts:46) where it accesses report.gates.typecheck/tests under noUncheckedIndexedAccess. Mirror the existing typeof-guard idiom (isObject) already used in result.ts / host.ts; do NOT add zod or a *.schema.json runtime loader (ADR 0038, issue gotcha). outcome/verdict validated as strings only, never tightened to a token enum (CAM_*_STATUS semantics live downstream in result.ts). Do not touch the writer side (subagent-implementer.md / subagent-reviewer.md and their templates/ copies)."
     },
