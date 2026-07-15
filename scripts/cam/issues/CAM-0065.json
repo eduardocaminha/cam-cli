@@ -1,10 +1,10 @@
 {
   "id": "CAM-65",
   "title": "Worker-pane closes on completion (kill-pane after report; CAM-57 recreates next dispatch)",
-  "stage": "idea",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-16T23:00:00Z",
   "description": "After an implementer/reviewer worker finishes and pushes its report, the worker pane lingers (the claude TUI stays idle at its prompt) until the next dispatch respawns it. Dogfood 2026-06-16: US-004 emitted CAM_IMPLEMENTER_STATUS=DONE and wrote worker-report.json, but the pane stayed open. Desired: the supervisor closes (kill-pane) the worker pane as soon as it reads the completion report; CAM-57's ensureWorkerPane recreates a dead/missing pane on the next dispatch, so close-then-recreate is safe now. Two benefits: (1) clean UX, the worker pane exists only while a worker is actually active; (2) mutex consistency, closing returns the session to the canonical 2-pane idle state, so the 2-pane dispatch mutex reads idle instead of treating a lingering 3rd pane as busy. NOT CAM-58 (that is the loop false-terminal logic; this is the pane lifecycle). Acceptance sketch: after the completion-report is read (loop.ts implement branch + review.ts), kill-pane the worker pane; assert a completed worker leaves the session at 2 panes and the next dispatch recreates a titled worker pane. Builds on CAM-57 self-heal + CAM-55 mutex. Source: dogfood observation.\n\nDEPENDENCIA (CAM-80, 2026-06-25): a frase \"CAM-57 recreates ... so close-then-recreate is safe now\" e incompleta GEOMETRICAMENTE. O recreate via openPaneInSession (session.ts:436) splita o pane ATIVO sem tamanho fixo (nao-deterministico, ver CAM-80), entao fechar o worker-pane a cada story faria o worker recriar em geometria aleatoria/pequena (49x24 inferior-direito) toda vez. CAM-80 (geometria deterministica do worker-pane) e PRE-REQUISITO deste: fazer CAM-80 antes ou junto, senao o CAM-65 piora a UX em vez de melhorar.",
-  "updatedAt": "2026-06-16T23:00:00Z"
+  "updatedAt": "2026-07-15T21:28:09.400Z"
 }
