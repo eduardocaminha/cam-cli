@@ -1,0 +1,13 @@
+{
+  "id": "CAM-306",
+  "title": "Helpers use node:child_process spawnSync rather than Bun.spawnSync. This is pre…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-15T02:21:11.656Z",
+  "updatedAt": "2026-07-15T02:21:11.656Z",
+  "description": "Helpers use node:child_process spawnSync rather than Bun.spawnSync. This is pre-existing style throughout this synchronous gate script (not introduced by this diff), so keeping it is the correct surgical choice; noted only as a future Bun-first alignment opportunity for the whole file.\n\nSource: cam/issue-304\nReview round: 1\n\nsuggestion-fingerprint: 2197b006eae8",
+  "derivedFrom": [
+    "CAM-304"
+  ]
+}
