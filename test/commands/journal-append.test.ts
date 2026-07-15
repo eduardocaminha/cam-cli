@@ -900,9 +900,9 @@ test('US-R2-002: git show non-zero exit -- returns journal-missing, no commit fi
 		// Build a spawnFn that returns exit code 128 for git show (file missing)
 		const calls: Array<{ args: string[] }> = [];
 		const spawnFn: SpawnFn = (
-			cmd,
+			_cmd,
 			args,
-			options,
+			_options,
 		): ReturnType<SpawnFn> => {
 			calls.push({ args });
 			// rev-parse --abbrev-ref HEAD -> current branch

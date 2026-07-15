@@ -18,7 +18,7 @@ import type { SpawnFn } from '../src/tmux/session.ts';
 
 /** Build a fake SpawnFn for orchestratorAlive. Returns true when orchAlive. */
 function makeOrchSpawnFn(orchAlive: boolean): SpawnFn {
-	return ((cmd: string, args: string[]) => {
+	return ((_cmd: string, args: string[]) => {
 		const subcommand = args[0] === '-L' ? args[2] : args[0];
 		const base: SpawnSyncReturns<Buffer> = {
 			pid: 1,

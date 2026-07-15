@@ -236,10 +236,8 @@ describe('runIssue (thin-proxy, miss path)', () => {
 		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-issue-miss-'));
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
 
-		let bootstrapCalled = false;
 		let markerPresent = false;
 		const bootstrapFn = async () => {
-			bootstrapCalled = true;
 			markerPresent = true;
 			return true;
 		};

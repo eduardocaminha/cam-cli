@@ -8,8 +8,7 @@
 // patching the module-level helper via the `retryPidPath` export.
 
 import { describe, expect, it, afterEach, beforeEach } from 'bun:test';
-import { mkdtempSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { rmSync } from 'node:fs';
 

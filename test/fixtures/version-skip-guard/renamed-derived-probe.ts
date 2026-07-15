@@ -3,7 +3,7 @@
 // variable derived from Bun.version must still be caught.
 import { expect, test } from 'bun:test';
 
-const [maj, min] = Bun.version.split('.');
+const [maj] = Bun.version.split('.');
 const runtimeIsModern = parseInt(maj ?? '0', 10) >= 2;
 
 test.skipIf(!runtimeIsModern)('modern-runtime-only behavior', () => {

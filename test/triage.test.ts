@@ -38,7 +38,6 @@ import type { SpawnSyncReturns } from 'node:child_process';
 import type { IssueEntry } from '../src/issues/types.ts';
 import {
 	runTriage,
-	type RunTriageOptions,
 	type TriageResult,
 	type SpawnFn,
 } from '../src/commands/triage.ts';
@@ -56,11 +55,6 @@ const COMMIT_SHA = 'commitsha123456';
 /** Minimal SpawnSyncReturns<string> for a successful git call. */
 function okResult(stdout = ''): SpawnSyncReturns<string> {
 	return { pid: 1, output: [null, stdout, ''], stdout, stderr: '', status: 0, signal: null };
-}
-
-/** Minimal SpawnSyncReturns<string> for a failing git call. */
-function failResult(stderr = ''): SpawnSyncReturns<string> {
-	return { pid: 1, output: [null, '', stderr], stdout: '', stderr, status: 1, signal: null };
 }
 
 // Individual IssueEntry fixtures (per-file format)
@@ -579,7 +573,7 @@ describe('runTriage: guard failures', () => {
 		try {
 			result = runTriage({
 				cwd: '/fake/repo',
-				spawnFn: (cmd, args) => {
+				spawnFn: (_cmd, args) => {
 					if (args.includes('--abbrev-ref')) return okResult('HEAD\n');
 					return okResult();
 				},
@@ -602,7 +596,7 @@ describe('runTriage: guard failures', () => {
 		try {
 			result = runTriage({
 				cwd: '/fake/repo',
-				spawnFn: (cmd, args) => {
+				spawnFn: (_cmd, args) => {
 					const argsStr = args.join(' ');
 					if (argsStr.includes('--abbrev-ref')) return okResult('feature\n');
 					if (argsStr.includes('origin/main')) return okResult('differentsha\n');

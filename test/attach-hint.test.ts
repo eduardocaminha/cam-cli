@@ -47,7 +47,7 @@ function captureStdout(fn: () => unknown): Promise<string> {
 // fires and attach-hint is emitted.
 
 function makeFakeTmuxSpawn(orchAlive = true): TmuxSpawnFn {
-	return ((cmd: string, args: string[]) => {
+	return ((_cmd: string, args: string[]) => {
 		const base: SpawnSyncReturns<Buffer> = {
 			pid: 1,
 			output: [null, Buffer.from(''), Buffer.from('')],

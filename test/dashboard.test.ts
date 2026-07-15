@@ -1743,9 +1743,6 @@ describe('DashboardApp detail view (US-006)', () => {
 		chalk.level = savedChalkLevel;
 	});
 
-	/** Flush ink-testing-library stdin-driven state updates (two macrotask ticks; CAM-201). */
-	const tick = flushInk;
-
 	function makeDetailData(): DashboardData {
 		return {
 			branchName: 'cam/test-detail',
