@@ -1,0 +1,12 @@
+{
+  "lastCompletedStory": { "id": "US-002", "title": "Transcript-usage golden fixture + replay against usage parsers" },
+  "branchName": "cam/issue-302",
+  "timestamp": "2026-07-15T12:30:00Z",
+  "createdFiles": ["test/fixtures/golden/transcript-usage.jsonl"],
+  "modifiedFiles": ["test/transcript/usage.test.ts", "scripts/file-size-budget.json"],
+  "openQuestions": [],
+  "nextStoryContext": "US-003 should follow the same golden-fixture convention for the self-authored artifact shapes.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}

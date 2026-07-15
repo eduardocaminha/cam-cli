@@ -1,0 +1,12 @@
+{
+  "verdict": "CLEAN",
+  "findings": [
+    {
+      "severity": "SUGGESTION",
+      "text": "Consider extracting the duplicated retry loop into a helper.",
+      "file": "src/supervisor/host.ts",
+      "line": 118
+    }
+  ],
+  "artifactOfRecord": "scripts/cam/review-artifact.txt"
+}
