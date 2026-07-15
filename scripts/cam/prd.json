@@ -28,7 +28,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "8 known violations (all TS6133): scripts/preview-screens.ts:314 'cmd' (local), scripts/test-in-container.ts:103 'failingTests' (local), scripts/ui-snapshot.tsx:18 'ReactElement' (unused import), src/commands/setup.ts:28 'existsSync' (unused import), src/release/merge-watch.ts:945 'logEvent' (local), src/supervisor/host.ts:54 'writeStateFile' (local), src/supervisor/review.ts:35 'PrdSnapshot' (unused import/type), src/tmux/session.ts:441 'sessionName' (param). GOTCHAS from issue spec: (1) if a local's RHS has a side effect, drop only the dead binding, not the expression (e.g. `const x = await setup()` -> `await setup()`); (2) locals must be genuinely removed, renaming to _x does NOT satisfy noUnusedLocals; (3) sessionName is a param at tmux/session.ts:441 - if it is part of a required signature underscore-prefix it (deleting a required param does not fail tsc but silently breaks the contract), otherwise remove. Flags stay OFF in this story (they flip in US-004); verify via the explicit flag-on probe command, not plain typecheck."
     },
