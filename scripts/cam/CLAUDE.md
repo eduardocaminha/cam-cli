@@ -66,6 +66,7 @@ The agent does NOT hand-write a prose progress record. The event log is supervis
 - **Ink success/failure**: signal via the glyph (accent/destructive), never via divider color.
 - **Never add a `--permission-mode` flag** to any subcommand; permission mode is fixed by the harness, not a CLI knob.
 - **Quality gates**: `bun run typecheck`, `bun test`, `bun run check:all` (lint spine) always; `bun run embed-vendor` + `embed-vendor:check` only when `vendor/`/`templates/` changed.
+- **Test quality**: hit real I/O at wire boundaries (real tmpdir/fs/subprocess); behavioral DI-fakes are fine, but a test asserting only "the mock was called" is documentation, not verification (no tautological mock-call assertions); if you must mock, document why; poll async waits with `waitForCondition`, never a fixed `setTimeout`. Detail in `scripts/cam/patterns.md`.
 
 **Invariant vs. pattern routing**: a new insight that is durable, project-wide, and worth loading every story goes into the curated block above. Everything else (a one-off gotcha, a library quirk, a narrower convention) is appended as a bullet to `scripts/cam/patterns.md` (durable, versioned on main, never truncated) instead of growing this block.
 
