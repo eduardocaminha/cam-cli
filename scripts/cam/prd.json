@@ -44,7 +44,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "~34 violations across these dirs, e.g. test/supervisor/ensure-worker-pane.test.ts (7), test/release/post-merge.test.ts (6), test/release/tag.test.ts (3), test/integration/ensure-worker-pane-selfheal.test.ts (3), plus loop.test.ts, non-convergence-terminal.test.ts, plan-runner*.test.ts, merge-watch.test.ts, host-ensure-pushed.test.ts, container-firewall.test.ts, sync-worktree-on-main.test.ts. Same gotchas as US-001: locals must be removed (underscore does NOT help locals), side-effect RHS keeps the expression, required-signature params get underscore-prefix. Get the current per-file list with: bunx tsc --noEmit --noUnusedLocals --noUnusedParameters 2>&1 | grep -E '^test/(supervisor|release|integration)/'. Flags stay OFF in this story."
     },
