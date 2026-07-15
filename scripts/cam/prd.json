@@ -44,7 +44,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Files: src/supervisor/host.ts (makeReadWorkerReport ~121-145), src/supervisor/loop.ts (poll-exit inline check ~1146-1165). Keep return contract identical (WorkerReport | null) so callers are unchanged. Preserve the advisoryStoryId staleness semantics currently in loop.ts (mismatch -> continue polling)."
     },
