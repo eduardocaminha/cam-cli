@@ -1,19 +1,17 @@
 {
-  "lastCompletedStory": { "id": "US-003", "title": "Self-authored artifact shape-pin fixtures + replay against guards" },
+  "lastCompletedStory": { "id": "US-004", "title": "On-demand record-golden harness + record:golden alias + patterns bullet" },
   "branchName": "cam/issue-302",
-  "timestamp": "2026-07-15T13:15:00Z",
+  "timestamp": "2026-07-15T13:45:00Z",
   "createdFiles": [
-    "test/fixtures/golden/worker-report.json",
-    "test/fixtures/golden/review-report.json",
-    "test/fixtures/golden/orch-handoff.json",
-    "test/fixtures/golden/handoff.json",
-    "test/supervisor/golden-artifacts.test.ts"
+    "scripts/record-golden.ts",
+    "test/record-golden.test.ts"
   ],
   "modifiedFiles": [
+    "package.json",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 added test/supervisor/golden-artifacts.test.ts (new file, not an extension of an existing describe block, since no single existing test file naturally covers all four self-authored artifacts). Committed fixtures: test/fixtures/golden/worker-report.json + review-report.json replay directly against parseWorkerReport/parseReviewReport (src/supervisor/report-parse.ts) fed the raw fixture string; orch-handoff.json is written via writeFileSync into a real mkdtempSync tmpdir under ORCH_HANDOFF_FILENAME then read back with readOrchHandoff (it reads from disk by contract, so it cannot be fed as a string); handoff.json (the worker-handoff contract, no dedicated runtime parser) is validated against scripts/cam/handoff.schema.json via a small hand-rolled recursive JSON-Schema-subset validator local to the test file (imports the schema as a JSON module, resolveJsonModule already true, precedented by src/supervisor/events.ts:32) rather than hardcoding today's required-field list, so a future schema change is what actually drives pass/fail. This closes CAM-302's shape-pin fixture set (US-001 sentinel/tag fixtures, US-002 transcript-usage fixture, US-003 the four self-authored-artifact fixtures); check whether any further stories remain in this PRD before assuming more shape-pin work is needed.",
+  "nextStoryContext": "US-004 added scripts/record-golden.ts (on-demand refresh harness for the golden fixtures written by US-001/US-002/US-003) plus a `bun run record:golden` alias and a patterns.md bullet. It refreshes only the four fixtures that mirror artifacts a live `cam run` session writes to disk (worker-report.json, review-report.json, orch-handoff.json, handoff.json) via a plain file-copy when the live source exists on disk, skipping (never erroring) when it does not; it deliberately does NOT touch the hand-crafted edge-case fixtures (sentinel-*.txt, review-clean.txt, review-fixes-pending.txt, transcript-usage.jsonl), which stay hand-curated. Followed the scripts/test-in-container.ts precedent exactly: self-documented on-demand header, absent from GATES in scripts/check-all.ts and from .github/workflows/ci.yml, verified by direct grep after writing. scripts/**/*.ts was already a knip entry so no ignore entry was needed. Check prd.json for any remaining stories in the CAM-302 PRD before assuming more work is needed; if none remain (all non-operator stories passing), the next dispatch is review, not another implement story.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
