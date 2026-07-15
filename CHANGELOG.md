@@ -6,6 +6,15 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.166.0] - 2026-07-15
+
+### Added
+
+- US-004 - On-demand record-golden harness + record:golden alias + patterns bullet
+- US-003 - Self-authored artifact shape-pin fixtures + replay against guards
+- US-002 - Transcript-usage golden fixture + replay against usage parsers
+- US-001 - Establish golden-fixture dir + sentinel/review-tag replay tests
+
 ## [0.165.0] - 2026-07-15
 
 ### Added

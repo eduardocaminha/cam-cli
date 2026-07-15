@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "writtenAt": "2026-07-10T12:00:00Z",
+  "reason": "token-budget-exceeded",
+  "projectContext": "cam-cli marathon: implementing the CAM-302 golden-fixture PRD story by story.",
+  "currentCycle": "CAM-302",
+  "keyDecisions": ["ship US-002 (transcript-usage golden fixture)"],
+  "openState": "US-003 (self-authored-artifact fixtures) in progress",
+  "openQuestions": [],
+  "nextActions": ["continue from US-003", "then dispatch review"]
+}

@@ -1,6 +1,6 @@
 {
   "name": "cam-cli",
-  "version": "0.165.0",
+  "version": "0.166.0",
   "module": "index.ts",
   "type": "module",
   "private": true,
@@ -15,7 +15,8 @@
     "check:agents": "bun scripts/validate-agents-md.ts",
     "lint": "bunx biome lint --error-on-warnings",
     "verify": "bun scripts/check-all.ts",
-    "test:container": "bun scripts/test-in-container.ts"
+    "test:container": "bun scripts/test-in-container.ts",
+    "record:golden": "bun scripts/record-golden.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.1",

@@ -1,0 +1,6 @@
+Implemented US-001 (Establish golden-fixture dir + sentinel/review-tag replay tests).
+Files changed: test/fixtures/golden/*, test/supervisor/golden-sentinel.test.ts (+180 lines).
+Quality gates: typecheck ok, tests 12 pass / 0 fail.
+Step 5.5: none, no_external_lib_touched.
+Notes: none.
+CAM_IMPLEMENTER_STATUS=DONE story=US-001

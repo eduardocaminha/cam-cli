@@ -1,0 +1,4 @@
+Reviewed the diff for this round against the PRD acceptance criteria and the
+Layer B rubric. No CRITICAL or WARNING findings. All gates re-run and green.
+
+<review>CLEAN</review>

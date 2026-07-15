@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -12,6 +12,12 @@ import {
 	transcriptPathForSession,
 	writeWorkerSessionMarker,
 } from "../../src/transcript/usage.ts";
+
+const GOLDEN_DIR = join(import.meta.dir, "..", "fixtures", "golden");
+
+function readGoldenFixture(name: string): string {
+	return readFileSync(join(GOLDEN_DIR, name), "utf8");
+}
 
 // ---------------------------------------------------------------------------
 // parseTranscriptUsage
@@ -102,35 +108,6 @@ describe("parseTranscriptUsage", () => {
 		expect(result.output).toBe(0);
 		expect(result.cacheRead).toBe(0);
 		expect(result.cacheCreation).toBe(0);
-	});
-
-	test("deduplicates lines sharing the same (message.id, requestId) — counts each request once not N times", () => {
-		// Simulate a real transcript: 3 content-block lines for one assistant turn,
-		// all carrying identical usage (the inflation pattern described in US-R2-001).
-		const sharedUsage = {
-			input_tokens: 1000,
-			output_tokens: 200,
-			cache_read_input_tokens: 500,
-			cache_creation_input_tokens: 100,
-		};
-		const duplicateLine = JSON.stringify({
-			type: "assistant",
-			requestId: "req_abc123",
-			message: {
-				id: "msg_xyz789",
-				usage: sharedUsage,
-			},
-		});
-		// Same (message.id, requestId) repeated 3 times (thinking, text, tool_use blocks).
-		const jsonl = [duplicateLine, duplicateLine, duplicateLine].join("\n");
-
-		const result = parseTranscriptUsage(jsonl);
-
-		// Must be counted ONCE, not 3x.
-		expect(result.input).toBe(1000);
-		expect(result.output).toBe(200);
-		expect(result.cacheRead).toBe(500);
-		expect(result.cacheCreation).toBe(100);
 	});
 
 	test("counts distinct (message.id, requestId) pairs independently", () => {
@@ -245,17 +222,6 @@ describe("parseContextOccupancy", () => {
 		expect(occupancy).toBeLessThan(cumulativeInput);
 	});
 
-	test("duplicate content-block lines for the last request are counted once (AC-3)", () => {
-		// Req1 appears once, req2 appears 3 times (content blocks: thinking, text, tool_use)
-		const req1 = makeRequest("req_1", "msg_1", 200, 50, 10, 40);
-		const req2Line = makeRequest("req_2", "msg_2", 500, 300, 100, 80);
-		const jsonl = [req1, req2Line, req2Line, req2Line].join("\n");
-
-		const occupancy = parseContextOccupancy(jsonl);
-		// Last request (req2) occupancy = 500 + 300 + 100 = 900 (counted once, not 3x)
-		expect(occupancy).toBe(900);
-	});
-
 	test("last request wins even when interspersed with earlier request lines", () => {
 		// req1 line, req2 line, req1 line again — last line is req1, so req1 is last
 		const req1 = makeRequest("req_1", "msg_1", 100, 10, 5, 20);
@@ -300,6 +266,42 @@ describe("parseContextOccupancy", () => {
 		expect(cumulativeInputVolume).toBe(25500);
 		expect(occupancy).toBeLessThan(cumulativeInputVolume);
 		expect(occupancy).not.toBe(cumulativeInputVolume);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Golden fixture replay (US-002, CAM-302)
+//
+// test/fixtures/golden/transcript-usage.jsonl is a committed, real-shaped
+// transcript fragment: 6 JSONL lines total — 1 degenerate line with no
+// message.id/requestId (fallback-key branch), 3 content-block lines
+// (thinking/text/tool_use) sharing one (message.id, requestId) pair, and
+// 2 content-block lines sharing a second, LATER (message.id, requestId)
+// pair. An upstream change to the message.usage envelope shape breaks this
+// replay without needing a live claude call.
+// ---------------------------------------------------------------------------
+
+describe("golden fixture replay: transcript-usage.jsonl (US-002)", () => {
+	const fixture = readGoldenFixture("transcript-usage.jsonl");
+
+	test("parseTranscriptUsage returns canonical deduped totals", () => {
+		// 3 distinct requests after dedup: fallback line (210/18/0/0),
+		// req_011CQhrqJ8VYqXKzJmN4Fpqr (15420/312/12000/3200) collapsed from
+		// 3 identical content-block lines, req_01Fh8QeYvZmR2GxK7NcLTdwq
+		// (18744/528/15420/3324) collapsed from 2 identical content-block lines.
+		const result = parseTranscriptUsage(fixture);
+		expect(result).toEqual({
+			input: 34374,
+			output: 858,
+			cacheRead: 27420,
+			cacheCreation: 6524,
+		});
+	});
+
+	test("parseContextOccupancy returns the last request's occupancy only", () => {
+		// Last distinct (message.id, requestId) in the fixture is
+		// req_01Fh8QeYvZmR2GxK7NcLTdwq: 18744 + 15420 + 3324 = 37488.
+		expect(parseContextOccupancy(fixture)).toBe(37488);
 	});
 });
 
