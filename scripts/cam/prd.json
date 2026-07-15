@@ -30,7 +30,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New: test/fixtures/golden/ (fixtures) + test/supervisor/golden-sentinel.test.ts. Parsers to replay: parseSentinel + parseAnySentinel (src/supervisor/result.ts), parseReviewVerdict (src/supervisor/review.ts) - all take a plain string, no reader injection needed. This story establishes the convention the later fixture stories reuse. Category-(b) fidelity is the point: the fixture must reproduce the RENDERED pane form (markdown decoration/wrap), not just the raw token, since that render is the claude-controlled surface that would silently break (CAM-35 hazard). Read fixtures with readFileSync(join(import.meta.dir, ...)) per the repo-root-markdown-hygiene test pattern in patterns.md line 168. Fixtures under test/fixtures/golden/ are NOT gitignored (only scripts/cam/*.json state files are). CAM_SETUP_STATUS (setup.ts:496) is a fixed-string bash grep, not a TS parser - out of scope per issue gotcha."
     },
