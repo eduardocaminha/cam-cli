@@ -1,14 +1,14 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Create waitForCondition poll-until-true test helper" },
+  "lastCompletedStory": { "id": "US-002", "title": "Add test-quality rubric guidance to the cam reviewer agent (.claude copy)" },
   "branchName": "cam/issue-62",
   "timestamp": "2026-07-15T00:00:00Z",
-  "createdFiles": [
-    "test/helpers/wait-for-condition.ts",
-    "test/wait-for-condition.test.ts"
+  "createdFiles": [],
+  "modifiedFiles": [
+    ".claude/agents/subagent-reviewer.md"
   ],
-  "modifiedFiles": [],
   "openQuestions": [],
-  "nextStoryContext": "waitForCondition(predicate, { timeoutMs = 5000, intervalMs = 20 }) is now available at test/helpers/wait-for-condition.ts: predicate may be sync or async, resolves on first truthy return, rejects with an Error once timeoutMs elapses. Zero-dependency (no git/tmux/fs), intended for the real-I/O integration tier (test/integration/*-real-*) where a fake clock cannot be injected into a real subprocess. This story deliberately did NOT touch any existing Bun.sleepSync waits or refactor fake-clock-injected tests (test/dashboard.test.ts, test/retry/launcher.test.ts) — that cleanup plus any deterministic check:all gate is scoped to the CAM-62 follow-up story.",
+  "nextStoryContext": "Added a 'Test-quality rubric: expanding criterion #2' subsection to .claude/agents/subagent-reviewer.md, inserted right after 'Green tests do not prove correctness' and before 'No-flaky-evasion hard stop'. Covers: (a) 3-clause anti-mock rule (bans tautological 'mock was called' assertions using the warren CONSTITUTION Art. IV aphorism verbatim: \"a test that asserts a mock was called is documentation, not verification\"; mandates real-I/O at each wire boundary git/tmux/gh/filesystem; explicitly allows behavioral DI-fakes per the CONTEXT.md glossary definition and ADR 0039), (b) adversarial-cases mandate (malformed input, boundary values, regression-of-a-past-bug), (c) per-test discipline checklist (behavior-named tests, one concept per test, success/error/edge triad, waitForCondition from test/helpers/wait-for-condition.ts instead of fixed setTimeout/Bun.sleepSync). Did NOT touch the '8 fixed criteria' count or any other criterion row. This story only edited the .claude/ runtime copy per its notes; templates/agents/subagent-reviewer.md (the generic/embedded copy) is explicitly out of scope here and is the next story's target (prd.json shows a follow-on story requiring the same aphorism/waitForCondition/adversarial phrases in templates/agents/subagent-reviewer.md) — read that story's own acceptanceCriteria before assuming this file's exact wording must be mirrored verbatim, since the generic copy may need de-specialization (e.g. no cam-specific paths)."
+  ,
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
