@@ -1,10 +1,34 @@
 {
   "id": "CAM-169",
   "title": "consolidate orch-recycle-watch tests into test/commands/ (mirror convention)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-03T05:59:05.290Z",
   "description": "CAM-163 US-003 landed its backstop tests in a NEW test/orch-recycle-watch.test.ts instead of extending the canonical test/commands/orch-recycle-watch.test.ts (CAM-162). Auditor F-01 predicted exactly this; review round 1 missed it. Both files test src/commands/orch-recycle-watch.ts. Fix: merge the backstop tests into the canonical file (adjust ../ imports to ../../), delete the off-convention file, keep all assertions green.",
-  "updatedAt": "2026-07-03T05:59:05.290Z"
+  "updatedAt": "2026-07-15T21:00:49.624Z",
+  "spec": {
+    "scope": "Consolidate the off-convention test/orch-recycle-watch.test.ts (11 top-level tests) into the canonical test/commands/orch-recycle-watch.test.ts (mirror convention), then delete the off-convention file. Faithful carry-over with zero coverage loss: no dedup of semantic overlaps, no forced unification of helpers or stop sentinels. Both files test src/commands/orch-recycle-watch.ts; CAM-163 US-003 landed backstop tests in the wrong location (auditor F-01 predicted it, review round 1 missed it).",
+    "acceptanceCriteria": [
+      "All 11 tests from test/orch-recycle-watch.test.ts are moved into test/commands/orch-recycle-watch.test.ts under their own describe block, with zero coverage loss -- including the emitEventFn/unresolved-pid cases and the ORCH_CONTEXT_BACKSTOP_FRACTION cases the canonical file does not currently cover.",
+      "All `../src/...` imports in the carried tests are retargeted to `../../src/...`: the module import, ORCH_CONTEXT_BACKSTOP_FRACTION from context-window.ts, and the inline require of ORCH_RECYCLE_MARKER from tmux/session.ts.",
+      "The off-convention file test/orch-recycle-watch.test.ts is deleted.",
+      "The carried tests keep their own runOneTick helper and its '__stop_loop__' sentinel; no forced unification with the canonical helpers or the canonical '__test_stop__' sentinel.",
+      "Verification: `bun test` green with the combined assertion count preserved (canonical 17 + carried 11); `bun run typecheck` and `bun run check:all` green."
+    ],
+    "gotchas": [
+      "Two distinct stop sentinels: '__stop_loop__' (off-convention runOneTick) vs '__test_stop__' (canonical). Do NOT mix them -- keep each helper with its own sentinel; mixing risks swallowing a real error or rethrowing a stop signal.",
+      "The off-convention tests import ORCH_CONTEXT_BACKSTOP_FRACTION and pass it as backstopFraction; the canonical file hardcodes 0.8. Carry the import over (retargeted), do not rewrite those tests to hardcode.",
+      "The off-convention file has 0 describe blocks (11 top-level tests); wrap them in a describe when merging into the canonical file.",
+      "No literal name/title collisions exist, but semantic overlaps do (marker->SIGTERM, marker-consumed, no-kill-when-pid-null); do NOT dedup them in this story -- faithful carry-over only."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 1,
+    "timeCriticality": 1,
+    "riskReduction": 2,
+    "jobSize": 3
+  },
+  "type": "chore"
 }
