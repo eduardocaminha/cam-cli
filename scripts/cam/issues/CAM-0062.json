@@ -1,10 +1,40 @@
 {
   "id": "CAM-62",
   "title": "Test-quality enforced in the reviewer (extends CAM-56 Layer B): anti-mock + per-test discipline + flaky",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-16T22:30:00Z",
   "description": "Extends the CAM-56 reviewer Layer B with codified test-quality rules cam learned empirically but never wrote down. (1) Anti-mock as a citable rubric line (warren CONSTITUTION Art. IV verbatim: 'a test that asserts a mock was called is documentation, not verification'); the reviewer FAILs a story that introduces new mock/fake/spy helpers or tests that skip real-dependency setup; codifies the CAM-55 fakes-lie lesson. (2) Adversarial-cases mandate: tests must cover malformed input, boundary values, and 'the case that broke last time', not happy-path only. (3) Per-test discipline checklist: behavior-named tests, one concept per test, async via a waitForCondition helper NOT a fixed setTimeout (anti-flake; this is the flaky_test_detection rubric gap and matches the reviewer suggestion about the hardcoded sleeps in tmux-introspect.test.ts), and a success/error/edge triad per feature. Written as reviewer-rubric items + a short AGENTS/CLAUDE convention ('real I/O, no mocks, mkdtemp, document why if you must mock'). Source: warren docs/CONSTITUTION.md Art. IV; kotadb testing_expert_review.md + testing_expert_plan.md; sapling/canopy/mulch/plot/seeds CONTRIBUTING 'no mocks' rule.",
-  "updatedAt": "2026-06-16T22:30:00Z"
+  "updatedAt": "2026-07-15T01:28:57.988Z",
+  "spec": {
+    "acceptanceCriteria": [
+      "The reviewer agent (.claude/agents/subagent-reviewer.md) gains test-quality rubric guidance, anchored on / expanding binary criterion #2 (tests-with-meaningful-assert), covering three items: (a) the 3-clause anti-mock rule - ban tautological 'the mock was called' assertions (warren aphorism quotable verbatim), MANDATE a real-I/O test at each wire boundary (git/tmux/gh/filesystem), and explicitly ALLOW behavioral DI-fakes that reproduce a real dependency's observable output; (b) adversarial-cases mandate - tests must cover malformed input, boundary values, and regression-of-a-past-bug, not happy-path only; (c) per-test discipline - behavior-named tests, one concept per test, a success/error/edge triad per feature, and async waits via a waitForCondition helper NOT a fixed setTimeout/Bun.sleepSync.",
+      "The same guidance is added to templates/agents/subagent-reviewer.md, ADAPTED to that copy's generic (non-cam-specific) framing rather than pasted verbatim (the two copies legitimately diverge ~67 lines), and bun run embed-vendor is regenerated so the byte-parity test test/embedded.test.ts passes.",
+      "A durable test-quality convention is added as an invariant bullet in scripts/cam/CLAUDE.md (Codebase Patterns) with grep-on-demand detail in scripts/cam/patterns.md: real I/O at wire boundaries, behavioral DI-fakes are fine, no tautological mock-call assertions, document why if you must mock, waitForCondition not fixed setTimeout.",
+      "A waitForCondition helper (poll-until-true with a timeout) is created under test/helpers/ with its own unit test (resolves when the condition becomes true; throws/rejects on timeout), intended for the real-I/O tier where a clock cannot be injected into a real tmux/git subprocess.",
+      "bun run typecheck, bun test, and bun run check:all all pass green.",
+      "NOT in scope (split to the CAM-62 follow-up): a deterministic scripts/check-test-sleeps.ts check:all gate and the cleanup of existing Bun.sleepSync waits in test/integration/."
+    ],
+    "scope": "Codify cam's empirically-learned test-quality rules into the reviewer Layer B (CAM-56) as reviewer-judgment rubric items plus a short durable convention, and create the waitForCondition helper the per-test rule points to. Three rubric items: nuanced anti-mock (3 clauses), adversarial-cases mandate, per-test discipline. Reviewer edits land in both the .claude/ (cam-specialized) and templates/ (generic) copies, adapted per context, with embed-vendor regenerated. NOT in scope: the deterministic setTimeout/sleep gate (split to a follow-up, because it is a mini-CAM-135 - new gate #13 with a gate-count-freeze bump, a false-positive allowlist for legit injected fake-clocks, and cleanup of existing integration-tier sleeps - and it is a check:all-gate concern distinct from the reviewer-rubric core); a verbatim import of warren's 'no mocks' rule (factually incoherent here); and any change to the 8-criterion binary verdict count.",
+    "gotchas": [
+      "A verbatim 'FAIL any new fake/mock/spy' rule is incoherent for cam-cli: 119 of 252 test files use behavioral DI-fakes (the blessed, documented pattern - patterns.md:20) and 0 use module-mocking. The rule bans ONLY tautological mock-call assertions and mandates real-I/O at boundaries; behavioral DI-fakes stay allowed.",
+      "templates/agents/subagent-reviewer.md is NOT a verbatim mirror of the .claude/ copy (they diverge ~67 lines: cam-specialized Bun/Ink/tmux vs a generic web-app template naming SQL injection/XSS/Zod). Adapt the guidance to each copy; do not paste. Byte-parity of the embedded templates is gated by test/embedded.test.ts:97-116, so editing templates/ requires bun run embed-vendor.",
+      "No test asserts .claude/agents == templates/agents (they legitimately differ); keeping them coherent is manual editorial discipline, not a gated invariant.",
+      "Unit tests already prefer injected clocks/sleepFn (nowMs/sleepFn seams); waitForCondition is mainly for the real-I/O integration tier (test/integration/*-real-*) where you cannot inject a clock into a real subprocess. Do not replace the legitimate fake-clock injections (e.g. test/dashboard.test.ts, test/retry/launcher.test.ts) with polling.",
+      "The reviewer is entirely LLM-prompt-driven; these items are applied by judgment (Layer B), not by a deterministic gate. The one item that COULD be deterministic (no fixed setTimeout in tests) is deliberately the split follow-up.",
+      "The existing test/integration/ real-I/O tier (29 files, *-real-git/tmux) already institutionalizes the 'mandate real-I/O at boundaries' half of the anti-mock rule (the CAM-55 fakes-lie lesson); the rubric codifies it, it is not a new tier."
+    ],
+    "domainTerms": [
+      "wire boundary",
+      "behavioral DI-fake"
+    ]
+  },
+  "wsjf": {
+    "value": 4,
+    "timeCriticality": 2,
+    "riskReduction": 5,
+    "jobSize": 4
+  },
+  "type": "chore"
 }
