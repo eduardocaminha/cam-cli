@@ -1,0 +1,83 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-62",
+  "description": "Codify empirically-learned test-quality rules into the reviewer Layer B rubric (nuanced anti-mock, adversarial-cases, per-test discipline) plus a durable convention and the waitForCondition helper it points to.",
+  "issueNumber": 62,
+  "type": "chore",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Create waitForCondition poll-until-true test helper",
+      "description": "As a test author writing real-I/O integration tests, I need a waitForCondition(predicate, timeout) helper so that async waits in the real-tmux/git tier use a bounded poll instead of a fixed setTimeout/Bun.sleepSync, which is the anti-flake target the new per-test rubric item will point at.",
+      "acceptanceCriteria": [
+        "test/helpers/wait-for-condition.ts exports a waitForCondition helper that repeatedly evaluates a predicate until it returns true (or truthy), then resolves. [oracle: file-assert grep -q 'export' test/helpers/wait-for-condition.ts && grep -q 'waitForCondition' test/helpers/wait-for-condition.ts]",
+        "The helper rejects (throws) when the predicate stays false past a configurable timeout, rather than hanging or resolving. [oracle: bun test]",
+        "A unit test proves both paths: it resolves once the condition becomes true, and it rejects/throws on timeout. [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "New files: test/helpers/wait-for-condition.ts (mirrors kebab-case of existing test/helpers/flush-ink.ts, mock-terminal-size.ts) + its unit test (e.g. test/wait-for-condition.test.ts, picked up by bun test via test/**). Keep the helper zero-dependency (string/promise-in, promise-out; no git/tmux/fs). This is intended for the real-I/O integration tier (test/integration/*-real-*) where a clock cannot be injected into a real subprocess; do NOT refactor existing legitimate fake-clock injections (test/dashboard.test.ts, test/retry/launcher.test.ts) to use it. GOTCHA (patterns.md:30): the unit test's own poll must use a tiny pollIntervalMs + short timeoutMs so it does not burn Bun's 5s per-test timeout; a mutable flag flipped after N polls proves the resolve path deterministically without real sleeping. Guard noUncheckedIndexedAccess. This story is scoped to the helper only; cleanup of existing Bun.sleepSync waits and any deterministic setTimeout check:all gate are explicitly split to the CAM-62 follow-up."
+    },
+    {
+      "id": "US-002",
+      "title": "Add test-quality rubric guidance to the cam reviewer agent (.claude copy)",
+      "description": "As the reviewer agent (Layer B), I need codified test-quality rubric guidance anchored on binary criterion #2 so that I FAIL tautological mock-call assertions, demand adversarial cases, and enforce per-test discipline instead of relying on undocumented judgment.",
+      "acceptanceCriteria": [
+        ".claude/agents/subagent-reviewer.md gains test-quality guidance anchored on / expanding binary criterion #2 (tests-with-meaningful-assert), covering three items: (a) a 3-clause anti-mock rule, (b) an adversarial-cases mandate, (c) a per-test discipline checklist. [oracle: reviewer-judgment]",
+        "The anti-mock rule bans tautological 'the mock was called' assertions using the warren aphorism verbatim, mandates a real-I/O test at each wire boundary (git/tmux/gh/filesystem), and explicitly ALLOWS behavioral DI-fakes that reproduce a real dependency's observable output. [oracle: file-assert grep -q 'documentation, not verification' .claude/agents/subagent-reviewer.md]",
+        "The adversarial-cases mandate requires tests to cover malformed input, boundary values, and regression-of-a-past-bug (not happy-path only). [oracle: file-assert grep -qi 'adversarial' .claude/agents/subagent-reviewer.md && grep -qi 'boundary' .claude/agents/subagent-reviewer.md]",
+        "The per-test discipline item requires behavior-named tests, one concept per test, a success/error/edge triad, and async waits via a waitForCondition helper NOT a fixed setTimeout/Bun.sleepSync. [oracle: file-assert grep -q 'waitForCondition' .claude/agents/subagent-reviewer.md]",
+        "The change does NOT alter the count of the binary verdict criteria: the prompt still states '8 fixed criteria'. [oracle: file-assert grep -q '8 fixed criteria' .claude/agents/subagent-reviewer.md]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Edit only .claude/agents/subagent-reviewer.md (the cam-specialized runtime copy; it is NOT embedded, so no embed-vendor here). Anchor the guidance on criterion #2 in the 8-criteria block (~line 111-114) and/or the 'Green tests do not prove correctness' section (~line 121-124). GOTCHA (issue gotchas): a verbatim 'FAIL any new fake/mock/spy' rule is INCOHERENT for cam-cli (119/252 test files use blessed behavioral DI-fakes, 0 use module-mocking); the rule bans only tautological mock-call assertions and mandates real-I/O at boundaries. Do NOT add a 9th criterion or change the binary verdict count (issue scope). GOTCHA (orch-no-hardkill lesson): if the added prose pushes the file over its scripts/file-size-budget.json entry, raise that _ref budget in the SAME commit (check:all enforces it). The existing test/integration/*-real-* tier already institutionalizes the real-I/O half; you are codifying it, not building a new tier."
+    },
+    {
+      "id": "US-003",
+      "title": "Mirror the rubric guidance into the generic reviewer template and re-embed",
+      "description": "As a downstream project scaffolded by cam init, I need the same test-quality rubric in the generic reviewer template so that the shipped agent prompt carries the discipline, with the embedded copy regenerated so byte-parity holds.",
+      "acceptanceCriteria": [
+        "templates/agents/subagent-reviewer.md gains the same three-item test-quality guidance ADAPTED to that copy's generic (non-cam-specific) framing, not pasted verbatim from the .claude copy. [oracle: reviewer-judgment]",
+        "The generic copy still quotes the anti-mock aphorism verbatim and names the waitForCondition-not-fixed-sleep rule and the adversarial-cases mandate. [oracle: file-assert grep -q 'documentation, not verification' templates/agents/subagent-reviewer.md && grep -q 'waitForCondition' templates/agents/subagent-reviewer.md && grep -qi 'adversarial' templates/agents/subagent-reviewer.md]",
+        "bun run embed-vendor is regenerated so the embedded templates map matches disk. [oracle: bun run embed-vendor:check]",
+        "The byte-parity smoke test test/embedded.test.ts passes. [oracle: bun test test/embedded.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": "US-002",
+      "notes": "Edit templates/agents/subagent-reviewer.md then run bun run embed-vendor to sync src/templates/embedded.ts (byte-parity gated at test/embedded.test.ts:97-116). GOTCHA (issue gotchas + memory 'cam dual-copy is per-file'): the templates copy is NOT a verbatim mirror of the .claude copy (they diverge ~67 lines: cam-specialized Bun/Ink/tmux vs generic web-app template naming SQL injection/XSS/Zod). ADAPT the guidance to the generic framing; do not paste the cam-specific wire boundaries (git/tmux/gh) as-is. No test asserts .claude == templates, so coherence is manual editorial discipline. GOTCHA: patterns.md:46 documents templates/ as source-of-truth for distributed prompts; still, this issue's guidance legitimately differs per copy. If the edit exceeds the file-size budget, raise the _ref entry in the same commit."
+    },
+    {
+      "id": "US-004",
+      "title": "Add durable test-quality convention to cam knowledge files",
+      "description": "As an implementer agent reading project conventions at story start, I need a durable test-quality convention recorded in the cam knowledge layer so that the anti-mock, real-I/O, DI-fake, and waitForCondition rules survive beyond the reviewer prompt.",
+      "acceptanceCriteria": [
+        "scripts/cam/CLAUDE.md (Codebase Patterns curated invariants block) gains a concise invariant bullet capturing: real I/O at wire boundaries, behavioral DI-fakes are fine, no tautological mock-call assertions, document why if you must mock, waitForCondition not fixed setTimeout. [oracle: file-assert grep -q 'waitForCondition' scripts/cam/CLAUDE.md]",
+        "scripts/cam/patterns.md gains the grep-on-demand detail bullet expanding the same convention. [oracle: file-assert grep -qi 'DI-fake' scripts/cam/patterns.md && grep -q 'waitForCondition' scripts/cam/patterns.md]",
+        "The convention text states the no-tautological-mock-call rule and that behavioral DI-fakes stay allowed. [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "Edit scripts/cam/CLAUDE.md (curated invariants block under 'Codebase Patterns') and scripts/cam/patterns.md (append a bullet, never truncate). These are cam-cli's OWN live knowledge files; they are NOT under templates/ and NOT embedded, so no embed-vendor is needed (the templates/scripts/cam/* starter copies legitimately diverge and are out of scope). Keep the CLAUDE.md bullet short (it loads every story); put the longer detail in patterns.md per the invariant-vs-pattern routing rule. GOTCHA: patterns.md already documents the DI-fake pattern (patterns.md:20) and the fakes-lie lesson (patterns.md:52); cross-reference rather than contradict. If patterns.md crosses its file-size budget, raise the _ref entry in the same commit (orch-no-hardkill lesson)."
+    }
+  ]
+}
