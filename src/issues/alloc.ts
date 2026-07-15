@@ -13,12 +13,19 @@
 //   2. Retry loop (up to CAS_MAX_ATTEMPTS):
 //      a. allocateId()   -- reads fresh from main each time.
 //      b. Build content.
+//      b2. Resolve `extraFiles` -- if a per-attempt recompute callback was
+//          given (US-001, CAM-300), invoke it now with this attempt's fresh
+//          main sha so a companion file's content can be re-derived from
+//          main's current state on every retry, instead of a static
+//          FileWrite[] built once, up front, that would go stale under
+//          concurrent writers; a static FileWrite[] is used as-is.
 //      c. git read-tree + hash-object + update-index + write-tree + commit-tree.
 //      d. git update-ref (CAS).
-//      e. On CAS failure: re-read main sha, loop.
+//      e. On CAS failure: re-read main sha, loop (re-invoking the extraFiles
+//         callback, if one was given, on the next attempt).
 //   3. Throw after CAS_MAX_ATTEMPTS consecutive failures.
 //
-// CAM-90 US-003.
+// CAM-90 US-003; CAM-300 US-001 (per-attempt extraFiles recompute).
 
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -33,6 +40,7 @@ import {
 	commitAndCasAttempt,
 	syncWorktreeIfOnMain,
 	type FileWrite,
+	type FileWritesFn,
 	type SpawnFn,
 } from '../git/on-main.ts';
 
@@ -75,8 +83,15 @@ export interface WriteIssueFileOptions {
 	 * allocated issue JSON. Re-hashed and re-indexed on every CAS attempt
 	 * (same as the issue file itself), so callers can safely derive their
 	 * content from data that predates the id allocation.
+	 *
+	 * Either a static FileWrite[] (computed once, up front -- the original
+	 * form) or a per-attempt recompute callback (US-001, CAM-300) invoked
+	 * once per CAS attempt with that attempt's freshly-read main sha, so the
+	 * companion file's content can be re-derived from main's current state
+	 * on every retry instead of clobbering a concurrent advance with stale
+	 * content computed before the CAS loop even started.
 	 */
-	extraFiles?: FileWrite[];
+	extraFiles?: FileWrite[] | FileWritesFn;
 	/**
 	 * Optional commit-message override, given the freshly-allocated unpadded
 	 * id (e.g. `(id) => "chore(cam): suggestions promote <fp> -> <id>"`).
@@ -134,6 +149,18 @@ function buildIssueEntry(
 	};
 }
 
+/**
+ * Resolve `extraFiles` for one CAS attempt: invoke a per-attempt recompute
+ * callback (US-001, CAM-300) with the attempt's fresh main sha, or pass a
+ * static FileWrite[] through unchanged.
+ */
+function resolveExtraFiles(
+	extraFiles: FileWrite[] | FileWritesFn,
+	mainSha: string,
+): FileWrite[] {
+	return typeof extraFiles === 'function' ? extraFiles(mainSha) : extraFiles;
+}
+
 // ---------------------------------------------------------------------------
 // Implementation
 // ---------------------------------------------------------------------------
@@ -153,6 +180,11 @@ function buildIssueEntry(
  * attempt (US-001, CAM-290), so a caller can land a companion file rewrite
  * derived from the freshly-allocated id in the same commit (e.g. via
  * `opts.commitMessage`, which overrides the default `chore(cam): file <id>`).
+ * When `opts.extraFiles` is a per-attempt recompute callback (US-001,
+ * CAM-300) rather than a static FileWrite[], it is invoked once per CAS
+ * attempt with that attempt's freshly-read main sha, so a whole-file
+ * overwrite can be rebased onto a concurrently-advanced main on retry
+ * instead of committing content that predates the advance.
  *
  * Returns the unpadded id, the filename, and the short sha of the new commit.
  */
@@ -174,18 +206,13 @@ export function writeIssueFile(opts: WriteIssueFileOptions): WriteIssueFileResul
 		spawnFn,
 	} = opts;
 
-
 	// Adapter: allows passing SpawnFn to allocateId (which expects BacklogSpawnFn).
 	// SpawnFn's options { encoding, env?, input? } is a strict superset of
 	// BacklogSpawnFn's options { encoding, input? } so this adapter is safe.
 	const readSpawn: BacklogSpawnFn = (cmd, args, o) => spawnFn(cmd, args, o);
 
 	// Read initial main sha for the CAS baseline.
-	const initRevParse = spawnFn(
-		'git',
-		['-C', cwd, 'rev-parse', 'main'],
-		{ encoding: 'utf8' },
-	);
+	const initRevParse = spawnFn('git', ['-C', cwd, 'rev-parse', 'main'], { encoding: 'utf8' });
 	let currentMainSha = (initRevParse.stdout ?? '').trim();
 
 	const tmpDir = mkdtempSync(join(tmpdir(), 'cam-issue-file-'));
@@ -207,13 +234,14 @@ export function writeIssueFile(opts: WriteIssueFileOptions): WriteIssueFileResul
 			);
 			const content = JSON.stringify(entry, null, 2) + '\n';
 
-			// (c) Populate the temp index, hash + index the blob, then CAS commit.
+			// (c) Populate the temp index, hash + index the blob(s), then CAS
+			//     commit. extraFiles is resolved per-attempt (US-001, CAM-300):
+			//     see resolveExtraFiles.
 			const indexEnv = buildIndexEnv(tempIndex);
-			spawnFn('git', ['-C', cwd, 'read-tree', 'main'], {
-				encoding: 'utf8',
-				env: indexEnv,
-			});
-			hashAndIndexFiles(cwd, [{ path: filename, content }, ...extraFiles], spawnFn, indexEnv);
+			spawnFn('git', ['-C', cwd, 'read-tree', 'main'], { encoding: 'utf8', env: indexEnv });
+			const resolvedExtraFiles = resolveExtraFiles(extraFiles, currentMainSha);
+			const attemptFiles = [{ path: filename, content }, ...resolvedExtraFiles];
+			hashAndIndexFiles(cwd, attemptFiles, spawnFn, indexEnv);
 
 			// (d) CAS: write-tree + commit-tree + update-ref.
 			const commitMsg = commitMessage
@@ -221,7 +249,7 @@ export function writeIssueFile(opts: WriteIssueFileOptions): WriteIssueFileResul
 				: `chore(cam): file ${idUnpadded}`;
 			const result = commitAndCasAttempt(cwd, currentMainSha, commitMsg, spawnFn, indexEnv);
 			if (result.success) {
-				syncWorktreeIfOnMain(cwd, [filename, ...extraFiles.map((f) => f.path)], spawnFn);
+				syncWorktreeIfOnMain(cwd, attemptFiles.map((f) => f.path), spawnFn);
 				return { id: idUnpadded, filename, sha: result.shortSha };
 			}
 

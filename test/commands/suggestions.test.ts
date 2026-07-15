@@ -745,3 +745,272 @@ test('promoteSuggestionOnMain: diverged main -- error before any lookup or mutat
 	expect(calls.find((c) => c.args.includes('show'))).toBeUndefined();
 	expect(calls.find((c) => c.args.includes('commit-tree'))).toBeUndefined();
 });
+
+// ---------------------------------------------------------------------------
+// CAS-retry per-attempt recompute regressions (US-002, CAM-300): a fake
+// update-ref rejects exactly once (a losing CAS attempt), and the pen's
+// `git show` returns DIFFERENT content on the winning (post-failure) read
+// than on the first read -- modeling a concurrent writer landing a commit
+// in between. Each on-main pen writer must re-derive its whole-file
+// suggestions.jsonl content from that fresh read on every attempt, not reuse
+// a rewrite computed once, up front, from the pre-mutation content.
+// ---------------------------------------------------------------------------
+
+const CONCURRENT_ENTRY: SuggestionEntry = {
+	fingerprint: 'concurrent0001',
+	title: 'Concurrently added suggestion',
+	body: 'Appended by a different writer mid-CAS-retry.',
+	sourceBranch: 'cam/issue-999',
+	filedAt: '2026-07-15T00:00:00.000Z',
+};
+
+/**
+ * Fake SpawnFn for appendSuggestionOnMain/dismissSuggestionOnMain: fails
+ * update-ref exactly once, and returns `initialContent` for the first TWO
+ * `git show` calls (the up-front pre-mutation read, then the first CAS
+ * attempt's per-attempt recompute read) and `concurrentContent` from the
+ * third call onward (the post-failure retry's per-attempt recompute read).
+ */
+function makeCasRetryFakeSpawnFn(opts: {
+	initialContent: string;
+	concurrentContent: string;
+}): { spawnFn: SpawnFn; calls: CallRecord[] } {
+	const { initialContent, concurrentContent } = opts;
+	const calls: CallRecord[] = [];
+	let showCallCount = 0;
+	let updateRefCallCount = 0;
+
+	const spawnFn: SpawnFn = (
+		cmd: string,
+		args: string[],
+		options: { encoding: 'utf8'; env?: Record<string, string>; input?: string },
+	): SpawnSyncReturns<string> => {
+		calls.push({ cmd, args, input: options.input });
+
+		if (args.includes('rev-parse') && args.includes('--abbrev-ref')) {
+			return { stdout: 'feat/test\n', stderr: '', status: 0, pid: 1, output: [], signal: null };
+		}
+		if (args.includes('rev-parse') && args.includes('origin/main')) {
+			return { stdout: '', stderr: 'unknown ref', status: 128, pid: 1, output: [], signal: null };
+		}
+		if (args.includes('rev-parse') && args[args.length - 1] === 'main') {
+			return { stdout: 'mainsha1234567890\n', stderr: '', status: 0, pid: 1, output: [], signal: null };
+		}
+		if (args.includes('fetch')) {
+			return { stdout: '', stderr: '', status: 0, pid: 1, output: [], signal: null };
+		}
+		if (args.includes('show') && args.some((a) => a.includes('suggestions.jsonl'))) {
+			showCallCount++;
+			return {
+				stdout: showCallCount <= 2 ? initialContent : concurrentContent,
+				stderr: '',
+				status: 0,
+				pid: 1,
+				output: [],
+				signal: null,
+			};
+		}
+		if (args.includes('read-tree')) {
+			return { stdout: '', stderr: '', status: 0, pid: 1, output: [], signal: null };
+		}
+		if (args.includes('hash-object')) {
+			return { stdout: 'fakeblobsha1234567890\n', stderr: '', status: 0, pid: 1, output: [], signal: null };
+		}
+		if (args.includes('update-index')) {
+			return { stdout: '', stderr: '', status: 0, pid: 1, output: [], signal: null };
+		}
+		if (args.includes('write-tree')) {
+			return { stdout: 'faketreesha1234567890\n', stderr: '', status: 0, pid: 1, output: [], signal: null };
+		}
+		if (args.includes('commit-tree')) {
+			return { stdout: 'winningcommitsha123456\n', stderr: '', status: 0, pid: 1, output: [], signal: null };
+		}
+		if (args.includes('update-ref')) {
+			updateRefCallCount++;
+			if (updateRefCallCount === 1) {
+				return { stdout: '', stderr: 'ref conflict', status: 1, pid: 1, output: [], signal: null };
+			}
+			return { stdout: '', stderr: '', status: 0, pid: 1, output: [], signal: null };
+		}
+		if (args.includes('push')) {
+			return { stdout: '', stderr: '', status: 0, pid: 1, output: [], signal: null };
+		}
+		return { stdout: '', stderr: '', status: 0, pid: 1, output: [], signal: null };
+	};
+
+	return { spawnFn, calls };
+}
+
+test('appendSuggestionOnMain: CAS retry -- per-attempt recompute survives a concurrently-added line (US-002, CAM-300)', () => {
+	const initialContent = `${JSON.stringify(OTHER_ENTRY)}\n`;
+	const concurrentContent = `${JSON.stringify(OTHER_ENTRY)}\n${JSON.stringify(CONCURRENT_ENTRY)}\n`;
+	const { spawnFn, calls } = makeCasRetryFakeSpawnFn({ initialContent, concurrentContent });
+
+	const result = appendSuggestionOnMain({
+		cwd: '/fake/cwd',
+		entry: SAMPLE_ENTRY,
+		spawnFn,
+	});
+
+	expect(result.ok).toBe(true);
+	if (!result.ok) return;
+	if (result.skipped) throw new Error('expected append, not skip');
+
+	// One losing attempt + one winning attempt.
+	const updateRefCalls = calls.filter((c) => c.args.includes('update-ref'));
+	expect(updateRefCalls.length).toBe(2);
+
+	// The winning (last) hash-object write must contain the concurrently
+	// added line AND the entry being appended, alongside the pre-existing
+	// one -- none of the three clobbered by the stale first read.
+	const hashCalls = calls.filter((c) => c.args.includes('hash-object'));
+	const winningContent = hashCalls[hashCalls.length - 1]?.input ?? '';
+	expect(winningContent).toContain(CONCURRENT_ENTRY.fingerprint);
+	expect(winningContent).toContain(SAMPLE_ENTRY.fingerprint);
+	expect(winningContent).toContain(OTHER_ENTRY.fingerprint);
+});
+
+test('dismissSuggestionOnMain: CAS retry -- per-attempt recompute survives a concurrently-added line while still removing the targeted fingerprint (US-002, CAM-300)', () => {
+	const initialContent = `${JSON.stringify(SAMPLE_ENTRY)}\n${JSON.stringify(OTHER_ENTRY)}\n`;
+	const concurrentContent =
+		`${JSON.stringify(SAMPLE_ENTRY)}\n${JSON.stringify(OTHER_ENTRY)}\n${JSON.stringify(CONCURRENT_ENTRY)}\n`;
+	const { spawnFn, calls } = makeCasRetryFakeSpawnFn({ initialContent, concurrentContent });
+
+	const result = dismissSuggestionOnMain({
+		cwd: '/fake/project',
+		fingerprint: SAMPLE_ENTRY.fingerprint,
+		spawnFn,
+	});
+
+	expect(result.ok).toBe(true);
+	if (!result.ok) return;
+
+	const updateRefCalls = calls.filter((c) => c.args.includes('update-ref'));
+	expect(updateRefCalls.length).toBe(2);
+
+	const hashCalls = calls.filter((c) => c.args.includes('hash-object'));
+	const winningContent = hashCalls[hashCalls.length - 1]?.input ?? '';
+	expect(winningContent).toContain(CONCURRENT_ENTRY.fingerprint);
+	expect(winningContent).toContain(OTHER_ENTRY.fingerprint);
+	expect(winningContent).not.toContain(SAMPLE_ENTRY.fingerprint);
+});
+
+/**
+ * Fake SpawnFn for promoteSuggestionOnMain's CAS-retry scenario: layers the
+ * same show-content-flip + one-time update-ref rejection on top of
+ * makeFullFakeSpawnFn's writeIssueFile plumbing (empty backlog -> CAM-1).
+ */
+function makeCasRetryFullFakeSpawnFn(opts: {
+	initialContent: string;
+	concurrentContent: string;
+}): { spawnFn: SpawnFn; calls: CallRecord[] } {
+	const { initialContent, concurrentContent } = opts;
+	const calls: CallRecord[] = [];
+	let showCallCount = 0;
+	let updateRefCallCount = 0;
+
+	const spawnFn: SpawnFn = (
+		cmd: string,
+		args: string[],
+		options: { encoding: 'utf8'; env?: Record<string, string>; input?: string },
+	): SpawnSyncReturns<string> => {
+		calls.push({ cmd, args, input: options.input });
+		const argsStr = args.join(' ');
+
+		if (argsStr.includes('rev-parse') && argsStr.includes('--abbrev-ref') && argsStr.includes('HEAD')) {
+			return okResult('cam/issue-285\n');
+		}
+		if (argsStr.includes('rev-parse') && argsStr.includes('origin/main')) {
+			return okResult('mainsha1234567890\n');
+		}
+		if (argsStr.includes('rev-parse') && argsStr.includes('main') && !argsStr.includes('origin/main')) {
+			return okResult('mainsha1234567890\n');
+		}
+		if (argsStr.includes('fetch')) {
+			return okResult();
+		}
+		if (argsStr.includes('show') && argsStr.includes('suggestions.jsonl')) {
+			showCallCount++;
+			return okResult(showCallCount <= 2 ? initialContent : concurrentContent);
+		}
+		if (argsStr.includes('ls-tree')) {
+			return okResult(''); // empty backlog -> allocateId returns 1 (CAM-1)
+		}
+		if (argsStr.includes('cat-file')) {
+			return okResult('');
+		}
+		if (argsStr.includes('read-tree')) {
+			return okResult();
+		}
+		if (argsStr.includes('hash-object')) {
+			return okResult('blobsha1234567890\n');
+		}
+		if (argsStr.includes('update-index')) {
+			return okResult();
+		}
+		if (argsStr.includes('write-tree')) {
+			return okResult('treesha1234567890\n');
+		}
+		if (argsStr.includes('commit-tree')) {
+			return okResult('winningcommitsha123456\n');
+		}
+		if (argsStr.includes('update-ref')) {
+			updateRefCallCount++;
+			if (updateRefCallCount === 1) {
+				return { ...okResult(''), status: 1, stderr: 'ref conflict' };
+			}
+			return okResult();
+		}
+		if (argsStr.includes('push')) {
+			return okResult();
+		}
+		return okResult();
+	};
+
+	return { spawnFn, calls };
+}
+
+test('promoteSuggestionOnMain: CAS retry -- per-attempt recompute survives a concurrently-added line alongside the filed issue, and still removes the promoted line (US-002, CAM-300)', () => {
+	const initialContent = `${JSON.stringify(SAMPLE_ENTRY)}\n${JSON.stringify(OTHER_ENTRY)}\n`;
+	const concurrentContent =
+		`${JSON.stringify(SAMPLE_ENTRY)}\n${JSON.stringify(OTHER_ENTRY)}\n${JSON.stringify(CONCURRENT_ENTRY)}\n`;
+	const { spawnFn, calls } = makeCasRetryFullFakeSpawnFn({ initialContent, concurrentContent });
+
+	const result = promoteSuggestionOnMain({
+		cwd: '/fake/project',
+		fingerprint: SAMPLE_ENTRY.fingerprint,
+		spawnFn,
+		clock,
+		readProjectToml: () => PROJECT_TOML,
+	});
+
+	expect(result.ok).toBe(true);
+	if (!result.ok) return;
+	expect(result.issueId).toBe('CAM-1');
+
+	// One losing attempt + one winning attempt (the atomic single-commit
+	// design from CAM-290 is preserved WITHIN the winning attempt: both the
+	// issue JSON and the pen removal are hashed+indexed before that attempt's
+	// single write-tree/commit-tree/update-ref call).
+	const updateRefCalls = calls.filter((c) => c.args.includes('update-ref'));
+	expect(updateRefCalls.length).toBe(2);
+
+	// The winning pen-file hash-object write (identified by the SuggestionEntry-
+	// only field `sourceBranch`) keeps the concurrently-added line and the
+	// untouched other entry, while dropping the promoted (SAMPLE_ENTRY) line.
+	const penHashCalls = calls.filter(
+		(c) => c.args.includes('hash-object') && (c.input ?? '').includes('sourceBranch'),
+	);
+	const winningPenContent = penHashCalls[penHashCalls.length - 1]?.input ?? '';
+	expect(winningPenContent).toContain(CONCURRENT_ENTRY.fingerprint);
+	expect(winningPenContent).toContain(OTHER_ENTRY.fingerprint);
+	expect(winningPenContent).not.toContain(SAMPLE_ENTRY.fingerprint);
+
+	// The filed issue JSON (co-committed in the SAME winning attempt) still
+	// carries the promoted fingerprint.
+	const issueHashCall = calls.find(
+		(c) => c.args.includes('hash-object') && (c.input ?? '').includes('suggestion-fingerprint'),
+	);
+	expect(issueHashCall).toBeDefined();
+	expect(issueHashCall?.input ?? '').toContain(`suggestion-fingerprint: ${SAMPLE_ENTRY.fingerprint}`);
+});

@@ -32,6 +32,7 @@ import {
 	syncWorktreeIfOnMain,
 	CAS_MAX_ATTEMPTS,
 	type FileWrite,
+	type FileWritesFn,
 	type SpawnFn,
 } from '../src/git/on-main.ts';
 
@@ -396,6 +397,86 @@ describe('commitTreeToMain — AC#3 parity: 1-element list = single-file sequenc
 		const result = commitTreeToMain(CWD, [FILE_A], COMMIT_MSG, MAIN_SHA, spawnFn, 'cam-test-');
 
 		expect(result).toBe(COMMIT_SHA.substring(0, 7));
+	});
+});
+
+// ---------------------------------------------------------------------------
+// AC#7 (US-001, CAM-300): per-attempt FileWritesFn recompute callback
+// ---------------------------------------------------------------------------
+
+describe('commitTreeToMain — AC#7 per-attempt FileWritesFn recompute callback', () => {
+	test('no-contention path: callback invoked exactly once, with localMainSha', () => {
+		const { spawnFn, calls } = makeHappySpawn();
+		let callCount = 0;
+		let receivedSha = '';
+
+		const filesFn: FileWritesFn = (mainSha) => {
+			callCount++;
+			receivedSha = mainSha;
+			return [FILE_A];
+		};
+
+		commitTreeToMain(CWD, filesFn, COMMIT_MSG, MAIN_SHA, spawnFn, 'cam-test-');
+
+		expect(callCount).toBe(1);
+		expect(receivedSha).toBe(MAIN_SHA);
+
+		const hashCalls = calls.filter((c) => c.args.includes('hash-object'));
+		expect(hashCalls.length).toBe(1);
+	});
+
+	test('retry path: callback re-invoked per attempt with each attempt\'s fresh main sha; winning attempt commits the recomputed content', () => {
+		const calls: Call[] = [];
+		let updateRefCallCount = 0;
+		const NEW_MAIN_SHA = 'advancedmainsha000';
+		const hashInputs: string[] = [];
+
+		const spawnFn: SpawnFn = (cmd, args, options) => {
+			calls.push({ cmd, args: [...args], input: options.input });
+
+			if (args.includes('hash-object')) {
+				hashInputs.push(options.input ?? '');
+				return ok(BLOB_SHA_1 + '\n');
+			}
+			if (args.includes('write-tree')) return ok(TREE_SHA + '\n');
+			if (args.includes('commit-tree')) return ok(COMMIT_SHA + '\n');
+			if (args.includes('update-ref')) {
+				updateRefCallCount++;
+				return updateRefCallCount === 1 ? fail('CAS rejected') : ok();
+			}
+			if (args.includes('rev-parse') && args.includes('main') && !args.includes('--abbrev-ref')) {
+				return ok(NEW_MAIN_SHA + '\n');
+			}
+			return ok();
+		};
+
+		const shasReceived: string[] = [];
+		const filesFn: FileWritesFn = (mainSha) => {
+			shasReceived.push(mainSha);
+			return [{ path: FILE_A.path, content: `content for ${mainSha}\n` }];
+		};
+
+		commitTreeToMain(CWD, filesFn, COMMIT_MSG, MAIN_SHA, spawnFn, 'cam-test-');
+
+		// Called once per CAS attempt (failure + success), each with the
+		// attempt's own fresh main sha (first the caller-supplied sha, then
+		// the re-read post-CAS-failure sha).
+		expect(shasReceived).toEqual([MAIN_SHA, NEW_MAIN_SHA]);
+
+		// hash-object fired once per attempt; the winning (2nd) attempt's
+		// content must reflect the 2nd (recomputed) sha, not the stale first.
+		expect(hashInputs.length).toBe(2);
+		expect(hashInputs[0]).toContain(MAIN_SHA);
+		expect(hashInputs[1]).toContain(NEW_MAIN_SHA);
+		expect(hashInputs[0]).not.toBe(hashInputs[1]);
+	});
+
+	test('static FileWrite[] form is unaffected (typeof check does not misclassify an array)', () => {
+		const { spawnFn, calls } = makeHappySpawn();
+
+		commitTreeToMain(CWD, [FILE_A, FILE_B], COMMIT_MSG, MAIN_SHA, spawnFn, 'cam-test-');
+
+		expect(calls.filter((c) => c.args.includes('hash-object')).length).toBe(2);
 	});
 });
 

@@ -724,6 +724,97 @@ describe('writeIssueFile -- extraFiles co-commit (US-001, CAM-290)', () => {
 		expect(extraFileIndexCount).toBe(2);
 	});
 
+	test('extraFiles recompute callback (US-001, CAM-300): returns DIFFERENT content per CAS attempt, and the winning commit indexes the SECOND (recomputed) content, not the stale first', () => {
+		const initialEntries: IssueEntry[] = Array.from({ length: 5 }, (_, i) => ({
+			id: `CAM-${i + 1}`,
+			title: `Issue ${i + 1}`,
+			stage: 'idea' as const,
+			status: 'open' as const,
+			blockedBy: [],
+			createdAt: '2026-01-01T00:00:00Z',
+			updatedAt: '2026-01-01T00:00:00Z',
+		}));
+		const updatedEntries: IssueEntry[] = [
+			...initialEntries,
+			{ id: 'CAM-6', title: 'Concurrent issue', stage: 'idea', status: 'open', blockedBy: [], createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z' },
+		];
+
+		let updateRefCallCount = 0;
+		let lsTreeCallCount = 0;
+		let extraFilesCallbackCallCount = 0;
+		const companionHashInputs: string[] = [];
+
+		const spy: SpawnFn = (_cmd, args, opts) => {
+			const gitSub = args[2];
+
+			if (gitSub === 'rev-parse') return ok('sha0' + '0'.repeat(36) + '\n');
+
+			if (gitSub === 'ls-tree') {
+				lsTreeCallCount++;
+				const entries = lsTreeCallCount <= 1 ? initialEntries : updatedEntries;
+				const paths = entries.map((e) =>
+					`scripts/cam/issues/CAM-${String(numericSuffix(e.id)).padStart(4, '0')}.json`
+				).join('\n');
+				return ok(paths + '\n');
+			}
+
+			if (gitSub === 'cat-file') {
+				const entries = lsTreeCallCount <= 1 ? initialEntries : updatedEntries;
+				return ok(entries.map(frameEntry).join(''));
+			}
+
+			if (gitSub === 'read-tree') return ok();
+
+			if (gitSub === 'hash-object') {
+				const input = opts.input ?? '';
+				if (input.includes('companion-recompute-marker')) companionHashInputs.push(input);
+				return ok('blob' + '0'.repeat(36) + '\n');
+			}
+
+			if (gitSub === 'update-index') return ok();
+			if (gitSub === 'write-tree') return ok('tree' + '0'.repeat(36) + '\n');
+			if (gitSub === 'commit-tree') return ok('sha1' + '0'.repeat(36) + '\n');
+
+			if (gitSub === 'update-ref') {
+				updateRefCallCount++;
+				if (updateRefCallCount === 1) return fail('ref conflict');
+				return ok();
+			}
+
+			return ok();
+		};
+
+		writeIssueFile({
+			cwd: '/fake/cwd',
+			title: 'Re-allocated issue with a concurrently-advancing companion file',
+			createdAt: '2026-06-28T00:00:00Z',
+			extraFiles: (mainSha) => {
+				extraFilesCallbackCallCount++;
+				return [
+					{
+						path: 'scripts/cam/suggestions.md',
+						content: `companion-recompute-marker attempt=${extraFilesCallbackCallCount} main=${mainSha}\n`,
+					},
+				];
+			},
+			spawnFn: spy,
+		});
+
+		// Two CAS attempts occurred (one failure + one success); the callback
+		// must have been invoked once per attempt, returning DIFFERENT content.
+		expect(updateRefCallCount).toBe(2);
+		expect(extraFilesCallbackCallCount).toBe(2);
+		expect(companionHashInputs.length).toBe(2);
+		expect(companionHashInputs[0]).not.toBe(companionHashInputs[1]);
+
+		// The winning commit is the SECOND attempt (the one whose write-tree /
+		// commit-tree / update-ref actually succeeded); it must index the
+		// SECOND (recomputed) content, not the stale first-attempt content.
+		const winningContent = companionHashInputs[companionHashInputs.length - 1];
+		expect(winningContent).toContain('attempt=2');
+		expect(winningContent).not.toBe(companionHashInputs[0]);
+	});
+
 	test('commitMessage override receives the freshly-allocated id and is used for commit-tree', () => {
 		const { spy: baseSpy } = makeSpawnFn([]);
 		let capturedCommitMsg = '';

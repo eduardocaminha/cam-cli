@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.162.0] - 2026-07-15
+
+### Added
+
+- US-002 - Route append/dismiss/promote pen writers through per-attempt recompute
+- US-001 - Add per-attempt content recompute to the CAS commit-tree writers
+
 ## [0.161.0] - 2026-07-15
 
 ### Added
