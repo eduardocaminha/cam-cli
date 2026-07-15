@@ -1,0 +1,5 @@
+Reviewed the diff for this round. Found 3 findings requiring follow-up
+stories before this can be considered CLEAN: 1 CRITICAL (missing guard on
+array access), 2 WARNING (tautological mock assertion, missing edge case).
+
+<review>FIXES_PENDING:3</review>

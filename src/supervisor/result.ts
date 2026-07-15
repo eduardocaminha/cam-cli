@@ -154,14 +154,23 @@ export interface ReadWorkerOutcomeOptions {
 // ---------------------------------------------------------------------------
 
 /**
- * Parse the CAM_IMPLEMENTER_STATUS sentinel from the captured pane text.
- * Returns the parsed sentinel info or null if no sentinel found.
+ * Parsed shape returned by parseSentinel.
+ *
+ * Exported (US-001, golden-fixture replay tests) so committed pane-text
+ * fixtures can be fed directly to the parser without going through the full
+ * readWorkerOutcome plumbing.
  */
-function parseSentinel(paneText: string): {
+export interface ParsedSentinel {
 	status: string;
 	storyId: string | undefined;
 	raw: string;
-} | null {
+}
+
+/**
+ * Parse the CAM_IMPLEMENTER_STATUS sentinel from the captured pane text.
+ * Returns the parsed sentinel info or null if no sentinel found.
+ */
+export function parseSentinel(paneText: string): ParsedSentinel | null {
 	// Match CAM_IMPLEMENTER_STATUS=<VALUE> optionally followed by story=<ID>.
 	// The sentinel may appear anywhere in the pane output.
 	//
