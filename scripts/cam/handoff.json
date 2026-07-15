@@ -1,0 +1,15 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Create waitForCondition poll-until-true test helper" },
+  "branchName": "cam/issue-62",
+  "timestamp": "2026-07-15T00:00:00Z",
+  "createdFiles": [
+    "test/helpers/wait-for-condition.ts",
+    "test/wait-for-condition.test.ts"
+  ],
+  "modifiedFiles": [],
+  "openQuestions": [],
+  "nextStoryContext": "waitForCondition(predicate, { timeoutMs = 5000, intervalMs = 20 }) is now available at test/helpers/wait-for-condition.ts: predicate may be sync or async, resolves on first truthy return, rejects with an Error once timeoutMs elapses. Zero-dependency (no git/tmux/fs), intended for the real-I/O integration tier (test/integration/*-real-*) where a fake clock cannot be injected into a real subprocess. This story deliberately did NOT touch any existing Bun.sleepSync waits or refactor fake-clock-injected tests (test/dashboard.test.ts, test/retry/launcher.test.ts) — that cleanup plus any deterministic check:all gate is scoped to the CAM-62 follow-up story.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
