@@ -58,7 +58,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "Edit templates/agents/subagent-reviewer.md then run bun run embed-vendor to sync src/templates/embedded.ts (byte-parity gated at test/embedded.test.ts:97-116). GOTCHA (issue gotchas + memory 'cam dual-copy is per-file'): the templates copy is NOT a verbatim mirror of the .claude copy (they diverge ~67 lines: cam-specialized Bun/Ink/tmux vs generic web-app template naming SQL injection/XSS/Zod). ADAPT the guidance to the generic framing; do not paste the cam-specific wire boundaries (git/tmux/gh) as-is. No test asserts .claude == templates, so coherence is manual editorial discipline. GOTCHA: patterns.md:46 documents templates/ as source-of-truth for distributed prompts; still, this issue's guidance legitimately differs per copy. If the edit exceeds the file-size budget, raise the _ref entry in the same commit."
     },
