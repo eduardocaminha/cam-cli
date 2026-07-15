@@ -24,7 +24,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/git/on-main.ts (commitTreeToMain, ~line 404; the per-attempt loop is already at lines 419-437 -- the callback must be invoked INSIDE that loop after `git read-tree main`, so it can re-read the advanced tree/refs), src/issues/alloc.ts (writeIssueFile ~line 159; extraFiles is spread into hashAndIndexFiles at line 216 -- move its derivation inside the attempt loop when the callback form is used), test/issues/alloc.test.ts (extend harness at :655 which currently returns the SAME bytes on both attempts and thus documents the buggy behaviour). Design comments to update: src/issues/alloc.ts:73-79 (extraFiles JSDoc) and :151-156 (writeIssueFile JSDoc). Keep both the static FileWrite[] and the callback form supported (backward-compat: createLocalIssueOnMain and all existing callers pass static content). grep scripts/cam/patterns.md lines 278-286, 302, 326, 722, 724 for the CAS/writeIssueFile/syncWorktreeIfOnMain invariants before touching the loop. Gotcha: syncWorktreeIfOnMain must run on the FINAL winning content's paths. noUncheckedIndexedAccess: guard array/regex access. Bun-only spawn. This story adds the primitive; US-002 routes the pen writers through it."
     },
