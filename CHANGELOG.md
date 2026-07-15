@@ -6,6 +6,15 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.164.0] - 2026-07-15
+
+### Added
+
+- US-004 - Route review-report readers in host.ts and review.ts through parseReviewReport
+- US-003 - Route result.ts worker-report sites through parseWorkerReport and delete WorkerReportFallback
+- US-002 - Route worker-report readers in host.ts and loop.ts through parseWorkerReport
+- US-001 - Add shared report parse module and relax WorkerReport optional fields
+
 ## [0.163.0] - 2026-07-15
 
 ### Added
