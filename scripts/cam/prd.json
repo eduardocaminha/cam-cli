@@ -20,7 +20,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Single file: src/templates/frontmatter.ts, rewriteFrontmatterEffort insert path (lines 83-87). Only the insert branch is affected; the existing-line branch (line 80) uses a static template literal `$1 ${newEffort}` where $1 is intentional and must stay. Replacement-function form: content.replace(/^---\\r?\\n[\\s\\S]*?\\r?\\n---/, () => updatedFence). A no-arg arrow is sufficient (return value is inserted verbatim, MDN: 'the string returned by the function is used as the replacement'). Test lives in test/commands/config-frontmatter.test.ts under the existing rewriteFrontmatterEffort describe block; input must have a frontmatter fence, NO existing effort: line, and a body/key value containing $& and $1 so the insert path runs. Gotcha (issue CAM-317): agent frontmatter is controlled content so live risk is nil; this is latent-footgun hardening. Source: cam/issue-87. noUncheckedIndexedAccess: fenceMatch[1] is already guarded via `?? ''`."
     }
