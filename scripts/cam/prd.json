@@ -47,7 +47,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Files: index.ts (:2179-2185 _buildCreateIssueOpts, :2349-2355 dispatchTriage), src/commands/sidecar.ts (:2626-2637 issueFileSpawnFn feeding suggestions-promote at :2714), + test. Gotcha (issue gotcha #1): index.ts file-local was hand-fixed only in a throwaway local binary to bootstrap filing this issue; main source still carries the bug, so re-apply here. Gotcha (issue gotcha #2 / CAM-90 ASCII-fixture miss): the fixture MUST exceed the real 1 MiB default (current live backlog is ~1.01 MiB / 272 files) or the bug is masked; hit real fs/git in a tmpdir, not a stubbed spawn. The already-correct wrappers to mirror are index.ts's `{ ...opts, stdio: 'pipe' }` sites and src/commands/spec.ts:282/391. patterns.md keyword: grep 'suggestions' / 'drain-gate' / 'file-local'."
     },
