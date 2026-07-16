@@ -72,7 +72,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New file: src/ui/TabBar.tsx. Reuse src/ui/theme.ts colors (accent/muted) and follow the Select.tsx keyboard-nav idiom (useInput with key.leftArrow/key.rightArrow). Ink 7 reports arrows as key.leftArrow/key.rightArrow. Test with ink-testing-library ^4 (render, lastFrame, stdin.write('\\u001B[C')/('\\u001B[D') for Right/Left). noUncheckedIndexedAccess: guard array indexing in tab navigation (tabs[activeIdx] is T | undefined). Design token source: src/design/tokens.ts and src/ui/theme.ts. Keep the component a pure controlled presentational primitive (active index + onChange in, chips out) so ConfigScreen owns the keypress lifecycle in US-004."
     },
