@@ -125,6 +125,8 @@ Append `[oracle: <kind-or-command>]` at the end of each criterion string. Exampl
 - `"The embedded file contains the keyword. [oracle: grep -q 'keyword' path/to/file]"`
 - `"The screen layout matches the spec. [oracle: reviewer-judgment]"`
 
+**Absence/presence idiom for `file-assert` grep oracles**: for a presence assertion, use `grep -q PATTERN file`; for an absence assertion, use `! grep -q PATTERN file` (shell negation on the quiet-mode exit code). Never combine grep's quiet flag `-q` with a list-files flag `-L` or `-l`: `-q` short-circuits on the first match, which makes `-L`/`-l` self-nullifying and produces a false BLOCK.
+
 ## Mandatory Acceptance Criteria
 
 Every story MUST include:

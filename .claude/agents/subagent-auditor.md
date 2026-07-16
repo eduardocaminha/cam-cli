@@ -69,6 +69,7 @@ Work through every section below. For every finding, record `severity` (critical
    - **file-assert**: a structural or content property of a named file (e.g. "file `foo.json` contains key `bar`", "embedded file includes phrase `has an oracle`").
    - **reviewer-judgment**: explicit tag `[oracle: reviewer-judgment]` meaning a human or LLM reviewer judges correctness (last resort — flag if overused).
    A criterion that pairs no oracle of any kind is a **critical** finding and the auditor MUST BLOCK (not a soft note). Vague verbs like "improve", "optimize", or "clean up" without a concrete pass/fail are automatically oracle-free.
+   A `file-assert` oracle whose grep invocation combines `-q` with `-L` or `-l` — in any order or spacing (e.g. `-Lq`, `-qL`, `-L -q`, `-l -q`, `-lq`) — is self-nullifying: `-q` silently overrides `-L`/`-l`'s absence-inversion, so the oracle's exit status always mirrors plain match-found rather than the intended absence check. This is a **critical** finding and the auditor MUST BLOCK, naming the prescribed replacement: `! grep -q PATTERN file` for an absence check, plain `grep -q PATTERN file` for a presence check.
 10. No TODO, TBD, `<placeholder>`, `XXX`, or `TKTK` strings anywhere in the PRD? Flag every one.
 
 ### D. Docs rigor
