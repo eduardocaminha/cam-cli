@@ -107,7 +107,7 @@ This convention applies to cam-cli itself and to any downstream cam project init
 
 **Self-improvement sources:** the domain model cross-references two knowledge layers:
 - `scripts/cam/patterns.md`: durable codebase patterns, gotchas, and invariants (versioned on main, never truncated). Agents read this file at story start to absorb project conventions.
-- CAM-64 (Mulch knowledge central): future machine-readable knowledge graph fed by the grill layer. Terms and decisions written into CONTEXT.md and docs/adr/ during a grill session will eventually flow into this central store.
+- CAM-64 (Mulch knowledge central): future machine-readable knowledge graph fed by the spec layer. Terms and decisions written into CONTEXT.md and docs/adr/ during a spec session will eventually flow into this central store.
 
 ## Cross-Repo PRDs (optional, agent-self-executed, unvalidated)
 
