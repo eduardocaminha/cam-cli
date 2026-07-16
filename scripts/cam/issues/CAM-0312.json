@@ -1,11 +1,11 @@
 {
   "id": "CAM-312",
   "title": "plan_approval=operator full-PRD approval gate (consumes the CAM-153 operator-decision gate primitive)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-15T23:19:37.004Z",
-  "updatedAt": "2026-07-15T23:19:37.004Z",
+  "updatedAt": "2026-07-16T17:33:42.911Z",
   "description": "Split from CAM-153 (CAM-117 Half B/B-2), item 4 of the original gates cluster. Consumes the generic operator-decision gate primitive + `cam decide` shipped by CAM-153. DEPENDS ON CAM-153 — set blockedBy:[CAM-153] at spec time.\n\nCurrent state (PARTIAL, 'Half A' scope): on auditor APPROVE in plan_approval=operator mode the plan-runner pauses via phase:awaiting-operator (src/supervisor/plan-runner.ts handleAuditApproved ~:1274, sidecar exitPhaseAfterPlan ~:1966) but it is a DEAD-END — no full-PRD presentation, no approve/reject options, no resume path. The plan_approval config key + readPlanApproval accessor already exist (default 'auto', src/config/models.ts:274-289) and are surfaced in the Setup/Config TUIs, so there is NO new config work.\n\nGrilled design to implement (2026-07-15, operator-approved full-cluster):\n- On auditor APPROVE + plan_approval=operator: write an operator-decision gate (gate='plan-approval', options=[approve, reject]) whose context is a summary of the generated prd.json (title + story list + acceptance-criteria counts). Pause.\n- `cam decide approve` -> run the existing runPostAuditAction path (commit PRD + create branch + flip phase:implementing).\n- `cam decide reject` -> discard the generated prd.json + phase:idle + notify.\n- Deliberate behavior change: the operator reviews the FULL audited PRD, not a pre-PRD sketch.\n\nBefore speccing, re-measure blast radius with an Explore fan-out — the primitive's final code shape will drift during CAM-153 implementation.",
   "specSource": "derived",
   "derivedFrom": [
