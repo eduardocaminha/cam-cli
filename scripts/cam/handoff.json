@@ -1,15 +1,19 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Read resend_from into ResendConfig" },
+  "lastCompletedStory": { "id": "US-002", "title": "Plumb configured from through sidecar escalation call sites" },
   "branchName": "cam/issue-218",
   "timestamp": "2026-07-16T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/config/models.ts",
-    "test/config/models.test.ts"
+    "src/commands/sidecar.ts",
+    "test/notify/resend.test.ts",
+    "test/commands/sidecar-meta-loop.test.ts",
+    "test/commands/journal-append.test.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "ResendConfig now has a `from: string` field (empty-string default) populated by readResendConfig from [notify] resend_from in project.toml, mirroring the non-secret resend_recipient pattern (no env-var override, unlike apiKey). Both return sites (happy-path and env-only fallback) in src/config/models.ts include it. Any downstream story that sends escalation emails via Resend (e.g. wiring the from address into the actual send call in src/commands/sidecar.ts) should read resendCfg.from and fall back to the existing hardcoded onboarding sender only when it is ''.",
+  "nextStoryContext": "All 7 sendEscalation call sites in src/commands/sidecar.ts (buildShipEscalateFn, buildToolchainEscalateFn, drain closure via makeProductionDrainNotifyFn, makeProductionEscalateFn, blockedCycleEscalateFn, plan BLOCK/audit-rejected in runPostPlanActions, plan-container-not-ready in buildPlanContainerOpts) now pass `from: resendCfg.from !== '' ? resendCfg.from : undefined`, so resend.ts:74's onboarding fallback fires exactly when resend_from is unset. Internal helpers widened to carry `from` alongside apiKey/recipient: makeProductionDrainNotifyFn(apiKey, recipient, from, sendFn?), makeProductionEscalateFn(apiKey, recipient, from), makeProductionMetaLoopObserveFn(cwd, logEvent, resendApiKey, resendRecipient, resendFrom, selectFn?) [note: resendFrom is now the 5th positional param, BEFORE selectFn -- two existing test call sites in test/commands/sidecar-meta-loop.test.ts were updated accordingly], and the resendConfig param object types at buildProductionDispatchFn/buildMetaLoopFn now include `from: string`. No behavior change for unconfigured projects (resend_from ''). While gating this story, discovered and root-cause-fixed a newly-surfaced instance of the CAM-201/CAM-226 real-subprocess-default-fn flake class in test/commands/journal-append.test.ts (two --cycle-close tests were missing a fake patternsArchiveFn, occasionally hitting bun's 5000ms default timeout under full-suite contention); fixed by injecting a fake, not a timeout bump. Any downstream story touching Resend further should keep threading `from` the same way.",
   "officialDocsValidated": [
-    { "lib": "none", "status": "no_external_lib_touched" }
+    { "lib": "resend", "url": "https://resend.com/docs/api-reference/emails/send-email", "fetchedAt": "2026-07-16T00:00:00Z", "status": "aligned", "summary": "Confirmed emails.send's `from` field accepts \"Name <email@example.com>\" format, matching the existing sendEscalation default sender string and the resendCfg.from value threaded through in this story; no SDK behavior change needed." }
   ]
 }
