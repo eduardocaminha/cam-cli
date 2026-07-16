@@ -1,22 +1,23 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Add shared spread-forwarding spawnSync helper and harden on-main SpawnFn option surface" },
+  "lastCompletedStory": { "id": "US-002", "title": "Route file-local, triage, and suggestions-promote wrappers through the shared helper with >1 MiB regression test" },
   "branchName": "cam/issue-311",
   "timestamp": "2026-07-15T00:00:00Z",
   "createdFiles": [
-    "test/git/on-main-spawn-forward.test.ts"
+    "test/issues/backlog-maxbuffer-regression.test.ts"
   ],
   "modifiedFiles": [
-    "src/git/on-main.ts"
+    "index.ts",
+    "src/commands/sidecar.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "realOnMainSpawnFn is now exported from src/git/on-main.ts (SpawnFn type widened with maxBuffer?: number). It is NOT yet wired into any real call-site: src/commands/spec.ts still has two inline duplicate closures (lines ~280-282, ~389-391) with the identical spread-forwarding body, and src/release/post-merge.ts's makeRealIssueSpawnFn (the actual CAM-307 bug site: field-by-field destructure of encoding/env/input, dropping maxBuffer, used by defaultCloseIssueFn/defaultAbandonIssueFn/defaultDemoteIssueFn which all flow through issue-specify.ts's readBacklogFromMain(cwd, toBacklogSpawn(spawnFn)) calls) is unchanged. US-002 covers file-local/triage/suggestions-promote wrappers; US-003 covers post-merge.ts's makeRealIssueSpawnFn plus a >1 MiB ship auto-close regression test and a full consumer audit. Do not re-litigate US-001's scope decision to leave call-sites untouched -- it was deliberate per notes and the US-002/US-003 split.",
+  "nextStoryContext": "index.ts's _buildCreateIssueOpts (file-local) and dispatchTriage now both set spawnFn: realOnMainSpawnFn (imported from src/git/on-main.ts), replacing the field-by-field rebuild. src/commands/sidecar.ts's issueFileSpawnFn is now `const issueFileSpawnFn: IssueFileSpawnFn = realOnMainSpawnFn;` (same import), still feeding makeProductionFileSuggestionsFn's readBacklogFromMain call (~line 2704, was 2714 pre-edit). index.ts's realSuggestionsSpawnFn (~line 1997, backing cam suggestions promote/dismiss) was ALREADY correct (inline `{ ...opts, stdio: 'pipe' }` spread) and was left untouched -- do not re-touch it. Remaining known field-by-field site per US-001's handoff: src/release/post-merge.ts's makeRealIssueSpawnFn (the actual original CAM-307 bug site, feeding defaultCloseIssueFn/defaultAbandonIssueFn/defaultDemoteIssueFn via issue-specify.ts's readBacklogFromMain calls) is UNCHANGED -- that is US-003's scope (plus a >1 MiB ship auto-close regression test and a full consumer audit), not touched by US-002. New test test/issues/backlog-maxbuffer-regression.test.ts builds a real tmpdir git repo with a 25-file backlog (each padded to 50KB description, ~1.25 MB combined, sanity-asserted via a direct `git cat-file --batch` call to exceed 1.1 MiB) and proves both createLocalIssueOnMain and makeProductionFileSuggestionsFn throw ENOBUFS with a locally-defined buggy field-by-field spawnFn fixture and succeed with realOnMainSpawnFn -- mirror this repo-factory pattern (not a small ASCII fixture) for US-003's ship auto-close regression test.",
   "officialDocsValidated": [
     {
       "lib": "node:child_process",
       "url": "https://nodejs.org/api/child_process.html#child_processspawnsynccommand-args-options",
       "fetchedAt": "2026-07-15T00:00:00Z",
       "status": "aligned",
-      "summary": "Confirmed spawnSync's documented default maxBuffer (1024*1024), truncation-on-exceed behavior, and that encoding/env/input/maxBuffer are all independent optional options fields forwarded as-is -- matches the { ...opts, stdio: 'pipe' } spread body and the empirical ENOBUFS observed in the new test."
+      "summary": "Re-confirmed spawnSync's documented default maxBuffer (1024*1024) and that exceeding it terminates the child and throws an Error carrying the truncated result -- matches the ENOBUFS thrown by readBacklogFromMain in the new regression test's buggy-spawnFn assertions, and the success path once realOnMainSpawnFn forwards maxBuffer through."
     }
   ]
 }
