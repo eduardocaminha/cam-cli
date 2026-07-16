@@ -310,3 +310,6 @@ The CLI thin-proxy that answers an active operator-decision gate: it validates t
 
 **phase effort**:
 The reasoning-effort level (one of low, medium, high, xhigh, max) configured per LLM phase, stored as the effort: frontmatter line in .claude/agents/subagent-<phase>.md and consumed directly by the Claude Code CLI at spawn time. Distinct from the phase model. The ship phase has none (deterministic, zero-LLM per ADR-0009).
+
+**plan-time split advisory**:
+A non-gating recommendation emitted by the plan runner after PRD generation when an issue's projected token spend (the historical mean of same-jobSize issues) exceeds a fixed multiple (~1.5x) of that jobSize bucket's median, signalling the issue may be oversized and worth splitting into multiple PRs. Advisory only: it never blocks or fails the plan/loop.
