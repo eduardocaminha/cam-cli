@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.180.0] - 2026-07-16
+
+### Added
+
+- US-001 - Clear frame on width-change in dashboard poll re-render path
+
 ## [0.179.0] - 2026-07-16
 
 ### Added
