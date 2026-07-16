@@ -84,5 +84,8 @@ export function rewriteFrontmatterEffort(content: string, newEffort: string): st
 	if (!fenceMatch) return content;
 	const frontmatterBody = fenceMatch[1] ?? '';
 	const updatedFence = `---\n${frontmatterBody}\neffort: ${newEffort}\n---`;
-	return content.replace(/^---\r?\n[\s\S]*?\r?\n---/, updatedFence);
+	// Replacer function (not a replacement string): frontmatterBody may contain
+	// literal `$`-sequences ($&, $1, $$) that String.prototype.replace would
+	// otherwise reinterpret as special patterns if passed as the 2nd arg string.
+	return content.replace(/^---\r?\n[\s\S]*?\r?\n---/, () => updatedFence);
 }

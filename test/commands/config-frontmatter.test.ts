@@ -175,6 +175,37 @@ describe('rewriteFrontmatterEffort', () => {
 		const input = 'no frontmatter here, just body text.';
 		expect(rewriteFrontmatterEffort(input, 'high')).toBe(input);
 	});
+
+	test('inserts a frontmatterBody containing $-sequences verbatim (no replace-pattern reinterpretation)', () => {
+		const input = ['---', 'name: subagent-implementer', 'note: "matched $& and group $1"', '---', '', 'Body text here.'].join(
+			'\n',
+		);
+		// Exact expected output pins the fence to appear exactly once with the
+		// effort: line inserted just before the closing ---. Against the
+		// pre-fix string-form `content.replace(fenceRegex, updatedFence)`, `$&`
+		// expands to the whole matched fence, duplicating it inside the note
+		// value and corrupting the output -- toBe() catches that, whereas the
+		// previous .toContain() assertions were satisfied by both the correct
+		// and the corrupted output.
+		const expected = [
+			'---',
+			'name: subagent-implementer',
+			'note: "matched $& and group $1"',
+			'effort: high',
+			'---',
+			'',
+			'Body text here.',
+		].join('\n');
+
+		const result = rewriteFrontmatterEffort(input, 'high');
+
+		expect(result).toBe(expected);
+		// Belt-and-suspenders: the note line and the closing fence must each
+		// appear exactly once (a fence-duplication regression would double one
+		// or both).
+		expect(result.split('note: "matched $& and group $1"')).toHaveLength(2);
+		expect(result.split('---')).toHaveLength(3);
+	});
 });
 
 // ---------------------------------------------------------------------------
