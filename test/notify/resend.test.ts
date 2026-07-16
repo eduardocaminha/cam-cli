@@ -115,6 +115,27 @@ describe('sendEscalation (AC1)', () => {
 		});
 		expect(captured[0]?.from).toBeTruthy();
 	});
+
+	test('uses default from address when from is undefined (call-site empty-resend_from threading, US-002)', async () => {
+		// Mirrors the sidecar.ts call-site pattern: `resendCfg.from !== '' ? resendCfg.from : undefined`.
+		// An unconfigured resend_from must be threaded as undefined (not ''), so this
+		// asserts the default-sender fallback fires the same way an omitted from does.
+		const captured: Parameters<ResendSendFn>[0][] = [];
+		const fakeSend: ResendSendFn = async (params) => {
+			captured.push(params);
+			return { data: { id: 'z' }, error: null };
+		};
+		const configuredFrom = '';
+		await sendEscalation({
+			apiKey: 'k',
+			recipient: 'r@example.com',
+			subject: 's',
+			html: '<p>h</p>',
+			from: configuredFrom !== '' ? configuredFrom : undefined,
+			sendFn: fakeSend,
+		});
+		expect(captured[0]?.from).toBe('cam <onboarding@resend.dev>');
+	});
 });
 
 // ---------------------------------------------------------------------------

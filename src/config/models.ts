@@ -171,6 +171,8 @@ export interface ResendConfig {
 	apiKey: string;
 	/** Recipient email. Empty string when unconfigured. */
 	recipient: string;
+	/** Sender email address. Empty string when unconfigured. */
+	from: string;
 }
 
 /**
@@ -181,8 +183,9 @@ export interface ResendConfig {
  *   2. `resend_api_key` in `[notify]` of project.toml (backward compat only).
  *
  * Recipient is always read from `[notify] resend_recipient` in project.toml.
+ * Sender address is always read from `[notify] resend_from` in project.toml.
  *
- * Returns `{ apiKey: '', recipient: '' }` when neither source is configured.
+ * Returns `{ apiKey: '', recipient: '', from: '' }` when neither source is configured.
  *
  * @param configPath  Override the config file path (default:
  *                    `scripts/cam/project.toml` resolved from `process.cwd()`).
@@ -201,12 +204,13 @@ export function readResendConfig(configPath?: string): ResendConfig {
 			const apiKey = envApiKey !== '' ? envApiKey :
 				(typeof section['resend_api_key'] === 'string' ? section['resend_api_key'] : '');
 			const recipient = typeof section['resend_recipient'] === 'string' ? section['resend_recipient'] : '';
-			return { apiKey, recipient };
+			const from = typeof section['resend_from'] === 'string' ? section['resend_from'] : '';
+			return { apiKey, recipient, from };
 		}
 	} catch {
 		// Malformed TOML or fs read error: fall back to env-only.
 	}
-	return { apiKey: envApiKey, recipient: '' };
+	return { apiKey: envApiKey, recipient: '', from: '' };
 }
 
 /**

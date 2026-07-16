@@ -165,3 +165,51 @@ test('mergeConfigChoices rewrites only the ship frontmatter and leaves planner/a
 	expect(readFileSync(plannerPath, 'utf8')).toBe(plannerOriginal);
 	expect(readFileSync(auditorPath, 'utf8')).toBe(auditorOriginal);
 });
+
+test('mergeConfigChoices writes [notify] section with resend_recipient/resend_from and never writes resend_api_key', () => {
+	const configPath = join(tmpDir, 'project.toml');
+	mergeConfigChoices(configPath, {
+		...makeChoices(),
+		resendRecipient: 'ops@example.com',
+		resendFrom: 'cam@example.com',
+	});
+
+	const config = loadConfig(configPath);
+	const notify = config['notify'] as Record<string, unknown>;
+	expect(notify['resend_recipient']).toBe('ops@example.com');
+	expect(notify['resend_from']).toBe('cam@example.com');
+
+	const raw = readFileSync(configPath, 'utf8');
+	expect(raw).not.toContain('resend_api_key');
+});
+
+test('mergeConfigChoices does not write [notify] when resendRecipient/resendFrom are empty or undefined', () => {
+	const configPath = join(tmpDir, 'project.toml');
+	mergeConfigChoices(configPath, {
+		...makeChoices(),
+		resendRecipient: '',
+		resendFrom: '',
+	});
+
+	const config = loadConfig(configPath);
+	expect(config['notify']).toBeUndefined();
+
+	mergeConfigChoices(configPath, makeChoices());
+	const config2 = loadConfig(configPath);
+	expect(config2['notify']).toBeUndefined();
+});
+
+test('mergeConfigChoices preserves pre-existing [notify] keys and updates additively', () => {
+	const configPath = join(tmpDir, 'project.toml');
+	writeFileSync(configPath, '[notify]\nresend_recipient = "old@example.com"\n', 'utf8');
+
+	mergeConfigChoices(configPath, {
+		...makeChoices(),
+		resendFrom: 'new-from@example.com',
+	});
+
+	const config = loadConfig(configPath);
+	const notify = config['notify'] as Record<string, unknown>;
+	expect(notify['resend_recipient']).toBe('old@example.com');
+	expect(notify['resend_from']).toBe('new-from@example.com');
+});

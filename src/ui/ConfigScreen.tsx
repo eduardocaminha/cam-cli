@@ -34,9 +34,20 @@ export type ConfigChoices = {
 	backend: string;
 	mergeMode?: MergeMode;
 	planApproval?: PlanApproval;
+	/** resend_recipient for [notify]. Empty string means "leave unset". */
+	resendRecipient?: string;
+	/** resend_from for [notify]. Empty string means "leave unset". */
+	resendFrom?: string;
 };
 
-type WizardStep = Phase | 'backend' | 'merge-mode' | 'plan-approval' | 'done';
+type WizardStep =
+	| Phase
+	| 'backend'
+	| 'merge-mode'
+	| 'plan-approval'
+	| 'notify-recipient'
+	| 'notify-from'
+	| 'done';
 
 // ---------------------------------------------------------------------------
 // Static data
@@ -159,6 +170,14 @@ export function ConfigScreen({ onDone, onCancel }: ConfigScreenProps): ReactElem
 	const [backend, setBackend] = useState<string | undefined>(undefined);
 	const [mergeMode, setMergeMode] = useState<MergeMode | undefined>(undefined);
 	const [planApproval, setPlanApproval] = useState<PlanApproval | undefined>(undefined);
+	const [resendRecipient, setResendRecipient] = useState<string | undefined>(undefined);
+	const [recipientDraft, setRecipientDraft] = useState('');
+	const [resendFrom, setResendFrom] = useState<string | undefined>(undefined);
+	const [fromDraft, setFromDraft] = useState('');
+
+	// RESEND_API_KEY is read-only status here: never a text input, never
+	// persisted from this screen (US-004 handles [notify] persistence).
+	const apiKeyConfigured = (process.env['RESEND_API_KEY'] ?? '') !== '';
 
 	function commitModel(phase: Phase, value: string): void {
 		setModels((m) => ({ ...m, [phase]: value }));
@@ -167,24 +186,18 @@ export function ConfigScreen({ onDone, onCancel }: ConfigScreenProps): ReactElem
 
 	const customModel = useCustomModelEntry(commitModel);
 
-	const allSteps: readonly WizardStep[] = [...PHASE_STEPS, 'backend', 'merge-mode', 'plan-approval', 'done'];
+	const allSteps: readonly WizardStep[] = [
+		...PHASE_STEPS,
+		'backend',
+		'merge-mode',
+		'plan-approval',
+		'notify-recipient',
+		'notify-from',
+		'done',
+	];
 	const currentStep: WizardStep = allSteps[stepIdx] ?? 'done';
 
-	// After every choice is made the currentStep becomes 'done'. Fire onDone
-	// after React commits the final summary so the operator sees the ✓ rows.
-	useEffect(() => {
-		if (currentStep !== 'done') return;
-		const allModels = Object.fromEntries(
-			PHASE_STEPS.map((p) => [p, models[p] ?? DEFAULTS[p]]),
-		) as Record<Phase, string>;
-		const chosenBackend = backend ?? DEFAULTS.backend;
-		const chosenMergeMode = mergeMode ?? 'immediate';
-		const chosenPlanApproval = planApproval ?? 'auto';
-		const id = setTimeout(() => {
-			onDone({ models: allModels, backend: chosenBackend, mergeMode: chosenMergeMode, planApproval: chosenPlanApproval });
-		}, 0);
-		return () => clearTimeout(id);
-	}, [currentStep, models, backend, mergeMode, planApproval, onDone]);
+	useFireOnDone(currentStep, models, backend, mergeMode, planApproval, resendRecipient, resendFrom, onDone);
 
 	function handlePhaseSelect(phase: Phase, value: string): void {
 		if (customModel.select(phase, value)) return;
@@ -206,6 +219,16 @@ export function ConfigScreen({ onDone, onCancel }: ConfigScreenProps): ReactElem
 		setStepIdx((i) => i + 1);
 	}
 
+	function handleNotifyRecipientSubmit(value: string): void {
+		setResendRecipient(value.trim());
+		setStepIdx((i) => i + 1);
+	}
+
+	function handleNotifyFromSubmit(value: string): void {
+		setResendFrom(value.trim());
+		setStepIdx((i) => i + 1);
+	}
+
 	return (
 		<Box flexDirection="column">
 			<Box marginTop={1}>
@@ -214,6 +237,96 @@ export function ConfigScreen({ onDone, onCancel }: ConfigScreenProps): ReactElem
 				</Text>
 			</Box>
 
+			<PhaseStepsSection stepIdx={stepIdx} models={models} customModel={customModel} onSelect={handlePhaseSelect} onCancel={onCancel} />
+
+			<BackendSection stepIdx={stepIdx} currentStep={currentStep} backend={backend} onChange={handleBackendSelect} onCancel={onCancel} />
+			<MergeModeSection stepIdx={stepIdx} currentStep={currentStep} mergeMode={mergeMode} onChange={handleMergeModeSelect} onCancel={onCancel} />
+			<PlanApprovalSection stepIdx={stepIdx} currentStep={currentStep} planApproval={planApproval} onChange={handlePlanApprovalSelect} onCancel={onCancel} />
+			<NotifyRecipientSection
+				stepIdx={stepIdx}
+				currentStep={currentStep}
+				resendRecipient={resendRecipient}
+				draft={recipientDraft}
+				onDraftChange={setRecipientDraft}
+				onSubmit={handleNotifyRecipientSubmit}
+				apiKeyConfigured={apiKeyConfigured}
+			/>
+			<NotifyFromSection
+				stepIdx={stepIdx}
+				currentStep={currentStep}
+				resendFrom={resendFrom}
+				draft={fromDraft}
+				onDraftChange={setFromDraft}
+				onSubmit={handleNotifyFromSubmit}
+			/>
+
+			{currentStep === 'done' ? (
+				<Section heading="Saved" tone="accent">
+					<Box flexDirection="row">
+						<Text color={colors.accent}>✓ </Text>
+						<Text>Configuration written to scripts/cam/project.toml</Text>
+					</Box>
+				</Section>
+			) : null}
+		</Box>
+	);
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Fires `onDone` once every step has been answered (currentStep === 'done'),
+ * applying phase/backend/merge-mode/plan-approval defaults and defaulting the
+ * notify fields to '' (unset). Extracted from ConfigScreen to keep the
+ * component body under the lint line-count budget.
+ */
+function useFireOnDone(
+	currentStep: WizardStep,
+	models: Partial<Record<Phase, string>>,
+	backend: string | undefined,
+	mergeMode: MergeMode | undefined,
+	planApproval: PlanApproval | undefined,
+	resendRecipient: string | undefined,
+	resendFrom: string | undefined,
+	onDone: (choices: ConfigChoices) => void,
+): void {
+	useEffect(() => {
+		if (currentStep !== 'done') return;
+		const allModels = Object.fromEntries(
+			PHASE_STEPS.map((p) => [p, models[p] ?? DEFAULTS[p]]),
+		) as Record<Phase, string>;
+		const chosenBackend = backend ?? DEFAULTS.backend;
+		const chosenMergeMode = mergeMode ?? 'immediate';
+		const chosenPlanApproval = planApproval ?? 'auto';
+		const id = setTimeout(() => {
+			onDone({
+				models: allModels,
+				backend: chosenBackend,
+				mergeMode: chosenMergeMode,
+				planApproval: chosenPlanApproval,
+				resendRecipient: resendRecipient ?? '',
+				resendFrom: resendFrom ?? '',
+			});
+		}, 0);
+		return () => clearTimeout(id);
+	}, [currentStep, models, backend, mergeMode, planApproval, resendRecipient, resendFrom, onDone]);
+}
+
+interface PhaseStepsSectionProps {
+	stepIdx: number;
+	models: Partial<Record<Phase, string>>;
+	customModel: ReturnType<typeof useCustomModelEntry>;
+	onSelect: (phase: Phase, value: string) => void;
+	onCancel: () => void;
+}
+
+// The per-phase model-select steps (orchestrator..ship), extracted from
+// ConfigScreen to keep the component body under the lint line-count budget.
+function PhaseStepsSection({ stepIdx, models, customModel, onSelect, onCancel }: PhaseStepsSectionProps): ReactElement {
+	return (
+		<>
 			{PHASE_STEPS.map((phase, phaseIdx) => {
 				const isActive = stepIdx === phaseIdx;
 				const isDone = stepIdx > phaseIdx;
@@ -231,7 +344,7 @@ export function ConfigScreen({ onDone, onCancel }: ConfigScreenProps): ReactElem
 								question={`Model for ${phase}:`}
 								options={PHASE_MODEL_OPTIONS}
 								defaultValue={DEFAULTS[phase]}
-								onChange={(v) => handlePhaseSelect(phase, v)}
+								onChange={(v) => onSelect(phase, v)}
 								onCancel={onCancel}
 							/>
 						) : null}
@@ -239,26 +352,9 @@ export function ConfigScreen({ onDone, onCancel }: ConfigScreenProps): ReactElem
 					</Section>
 				);
 			})}
-
-			<BackendSection stepIdx={stepIdx} currentStep={currentStep} backend={backend} onChange={handleBackendSelect} onCancel={onCancel} />
-			<MergeModeSection stepIdx={stepIdx} currentStep={currentStep} mergeMode={mergeMode} onChange={handleMergeModeSelect} onCancel={onCancel} />
-			<PlanApprovalSection stepIdx={stepIdx} currentStep={currentStep} planApproval={planApproval} onChange={handlePlanApprovalSelect} onCancel={onCancel} />
-
-			{currentStep === 'done' ? (
-				<Section heading="Saved" tone="accent">
-					<Box flexDirection="row">
-						<Text color={colors.accent}>✓ </Text>
-						<Text>Configuration written to scripts/cam/project.toml</Text>
-					</Box>
-				</Section>
-			) : null}
-		</Box>
+		</>
 	);
 }
-
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
 
 interface BackendSectionProps {
 	stepIdx: number;
@@ -323,6 +419,86 @@ function PlanApprovalSection({ stepIdx, currentStep, planApproval, onChange, onC
 	);
 }
 
+interface NotifyRecipientSectionProps {
+	stepIdx: number;
+	currentStep: WizardStep;
+	resendRecipient: string | undefined;
+	draft: string;
+	onDraftChange: (v: string) => void;
+	onSubmit: (v: string) => void;
+	apiKeyConfigured: boolean;
+}
+
+// First notify step: also renders the RESEND_API_KEY configured/unconfigured
+// status line (read-only, from process.env; never a text input, never
+// persisted from this screen -- see US-004 for [notify] persistence).
+function NotifyRecipientSection({
+	stepIdx,
+	currentStep,
+	resendRecipient,
+	draft,
+	onDraftChange,
+	onSubmit,
+	apiKeyConfigured,
+}: NotifyRecipientSectionProps): ReactElement | null {
+	if (stepIdx < PHASE_STEPS.length + 3) return null;
+	return (
+		<Section heading="Notify recipient">
+			<ApiKeyStatus configured={apiKeyConfigured} />
+			{currentStep === 'notify-recipient' ? (
+				<NotifyTextInput
+					value={draft}
+					onChange={onDraftChange}
+					onSubmit={onSubmit}
+					prompt="resend_recipient (email notified on escalation, blank to leave unset):"
+					placeholder="e.g. ops@example.com"
+				/>
+			) : resendRecipient !== undefined ? (
+				<ConfirmedChoice label={resendRecipient !== '' ? resendRecipient : '(not set)'} />
+			) : null}
+		</Section>
+	);
+}
+
+interface NotifyFromSectionProps {
+	stepIdx: number;
+	currentStep: WizardStep;
+	resendFrom: string | undefined;
+	draft: string;
+	onDraftChange: (v: string) => void;
+	onSubmit: (v: string) => void;
+}
+
+function NotifyFromSection({ stepIdx, currentStep, resendFrom, draft, onDraftChange, onSubmit }: NotifyFromSectionProps): ReactElement | null {
+	if (stepIdx < PHASE_STEPS.length + 4) return null;
+	return (
+		<Section heading="Notify sender">
+			{currentStep === 'notify-from' ? (
+				<NotifyTextInput
+					value={draft}
+					onChange={onDraftChange}
+					onSubmit={onSubmit}
+					prompt="resend_from (sender address, blank to leave unset):"
+					placeholder='e.g. "cam" <notify@example.com>'
+				/>
+			) : resendFrom !== undefined ? (
+				<ConfirmedChoice label={resendFrom !== '' ? resendFrom : '(not set)'} />
+			) : null}
+		</Section>
+	);
+}
+
+function ApiKeyStatus({ configured }: { configured: boolean }): ReactElement {
+	return (
+		<Box flexDirection="row" marginBottom={1}>
+			<Text color={configured ? colors.accent : colors.destructive}>{configured ? '✓ ' : '✗ '}</Text>
+			<Text color={colors.muted}>
+				RESEND_API_KEY {configured ? 'configured' : 'not configured'} (read from environment; never entered here)
+			</Text>
+		</Box>
+	);
+}
+
 function ConfirmedChoice({ label }: { label: string }): ReactElement {
 	return (
 		<Box flexDirection="row">
@@ -351,6 +527,32 @@ function CustomModelInput({ value, onChange, onSubmit }: CustomModelInputProps):
 			</Box>
 			<Box marginTop={1} paddingLeft={2}>
 				<Text color={colors.muted}>enter confirm · esc back</Text>
+			</Box>
+		</Box>
+	);
+}
+
+interface NotifyTextInputProps {
+	value: string;
+	onChange: (v: string) => void;
+	onSubmit: (v: string) => void;
+	prompt: string;
+	placeholder: string;
+}
+
+// Free-text step for notify_recipient / notify_from -- mirrors
+// CustomModelInput's ink-text-input pattern. Unlike CustomModelInput, a blank
+// submit is valid here: it means "leave this field unset".
+function NotifyTextInput({ value, onChange, onSubmit, prompt, placeholder }: NotifyTextInputProps): ReactElement {
+	return (
+		<Box flexDirection="column">
+			<Text color={undefined}>{prompt}</Text>
+			<Box marginTop={1} flexDirection="row">
+				<Text color={colors.accent}>› </Text>
+				<TextInput value={value} onChange={onChange} onSubmit={onSubmit} placeholder={placeholder} />
+			</Box>
+			<Box marginTop={1} paddingLeft={2}>
+				<Text color={colors.muted}>enter confirm (blank = leave unset)</Text>
 			</Box>
 		</Box>
 	);

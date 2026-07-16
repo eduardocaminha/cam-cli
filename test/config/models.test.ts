@@ -15,6 +15,7 @@ import {
 	readMergeMode,
 	readOrchContextWindow,
 	readPhaseModel,
+	readResendConfig,
 } from '../../src/config/models.ts';
 import type { Phase } from '../../src/config/models.ts';
 import { MODEL_OPTIONS } from '../../src/ui/ConfigScreen.tsx';
@@ -406,6 +407,28 @@ describe('readMergeMode - configPath override', () => {
 merge_mode = "ci-gated"
 `);
 		expect(readMergeMode(path)).toBe('ci-gated');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// readResendConfig - resend_from (US-001)
+// ---------------------------------------------------------------------------
+
+describe('readResendConfig - resend_from', () => {
+	test('returns the configured resend_from value', () => {
+		const path = writeTmpToml(`
+[notify]
+resend_from = "escalations@example.com"
+`);
+		expect(readResendConfig(path).from).toBe('escalations@example.com');
+	});
+
+	test('returns from === "" when resend_from is absent', () => {
+		const path = writeTmpToml(`
+[notify]
+resend_recipient = "ops@example.com"
+`);
+		expect(readResendConfig(path).from).toBe('');
 	});
 });
 

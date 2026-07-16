@@ -1059,6 +1059,7 @@ function buildShipEscalateFn(cwd: string): (() => Promise<void>) | undefined {
 		await sendEscalation({
 			apiKey: resendCfg.apiKey,
 			recipient: resendCfg.recipient,
+			from: resendCfg.from !== '' ? resendCfg.from : undefined,
 			subject: '[cam] Ship failed: deterministic ship phase did not complete',
 			html: '<p><strong>[cam]</strong> The deterministic ship phase failed. Manual intervention required.</p>',
 		});
@@ -1078,6 +1079,7 @@ function buildToolchainEscalateFn(cwd: string): (() => Promise<void>) | undefine
 		await sendEscalation({
 			apiKey: resendCfg.apiKey,
 			recipient: resendCfg.recipient,
+			from: resendCfg.from !== '' ? resendCfg.from : undefined,
 			subject: '[cam] Container toolchain mismatch: rebuild did not converge',
 			html: '<p><strong>[cam]</strong> The cam-worker container toolchain still mismatches the repo pins after an auto-rebuild attempt. No worker will be dispatched. Manual intervention required.</p>',
 		});
@@ -1324,6 +1326,7 @@ export const DRAIN_NOTIFY_SUBJECT = '[cam] Backlog drained: no plannable issues 
 function makeProductionDrainNotifyFn(
 	apiKey: string,
 	recipient: string,
+	from: string,
 	sendFn?: ResendSendFn,
 ): (() => Promise<void>) | undefined {
 	if (apiKey === '' || recipient === '') return undefined;
@@ -1331,6 +1334,7 @@ function makeProductionDrainNotifyFn(
 		await sendEscalation({
 			apiKey,
 			recipient,
+			from: from !== '' ? from : undefined,
 			subject: DRAIN_NOTIFY_SUBJECT,
 			html: '<p><strong>[cam]</strong> The meta-loop observer found no plannable issues in the backlog. The project backlog is drained.</p>',
 			sendFn,
@@ -1351,12 +1355,14 @@ function makeProductionDrainNotifyFn(
 function makeProductionEscalateFn(
 	apiKey: string,
 	recipient: string,
+	from: string,
 ): RunSidecarLoopOptions['escalateFn'] {
 	if (apiKey === '' || recipient === '') return undefined;
 	return async () => {
 		await sendEscalation({
 			apiKey,
 			recipient,
+			from: from !== '' ? from : undefined,
 			subject: '[cam] Non-convergence: max review rounds reached',
 			html: '<p><strong>[cam]</strong> The supervisor reached the maximum number of review rounds without a CLEAN verdict. Manual intervention is required.</p>',
 		});
@@ -1397,9 +1403,10 @@ export function makeProductionMetaLoopObserveFn(
 	logEvent: WorkerEventLogger,
 	resendApiKey: string,
 	resendRecipient: string,
+	resendFrom: string,
 	selectFn: () => IssueEntry | null = () => selectPlannableFromFile(cwd),
 ): () => Promise<void> {
-	const drainNotifyFn = makeProductionDrainNotifyFn(resendApiKey, resendRecipient);
+	const drainNotifyFn = makeProductionDrainNotifyFn(resendApiKey, resendRecipient, resendFrom);
 	let lastState: ObserveState = { kind: 'none' };
 	return async (): Promise<void> => {
 		let selected: IssueEntry | null;
@@ -1878,7 +1885,7 @@ export function makeProductionMetaLoopDispatchFn(deps: MetaLoopDispatchDeps): ()
 function buildProductionDispatchFn(
 	ctx: SidecarLoopDepsCtx,
 	logEvent: WorkerEventLogger,
-	resendConfig: { apiKey: string; recipient: string },
+	resendConfig: { apiKey: string; recipient: string; from: string },
 ): () => Promise<void> {
 	const { cwd, claudeDir } = ctx;
 	const configPath = join(cwd, 'scripts/cam/project.toml');
@@ -1926,7 +1933,7 @@ function buildProductionDispatchFn(
 			}),
 		killSwitchFn: () => isDrainStopSet(claudeDir),
 		setPhaseFn: makeSetPhaseFn(claudeDir, cwd),
-		drainNotifyFn: makeProductionDrainNotifyFn(resendConfig.apiKey, resendConfig.recipient),
+		drainNotifyFn: makeProductionDrainNotifyFn(resendConfig.apiKey, resendConfig.recipient, resendConfig.from),
 		logEvent,
 		// US-005: blocked-cycle judgment point deps.
 		readPrdVerdictFn: () => {
@@ -1943,6 +1950,7 @@ function buildProductionDispatchFn(
 				await sendEscalation({
 					apiKey: resendConfig.apiKey,
 					recipient: resendConfig.recipient,
+					from: resendConfig.from !== '' ? resendConfig.from : undefined,
 					subject: BLOCKED_CYCLE_ESCALATE_SUBJECT,
 					html: '<p><strong>[cam]</strong> The drain detected a blocked cycle. The review reached MAX_ROUNDS_DEBT without converging. Operator intervention is required.</p>',
 				});
@@ -2165,6 +2173,7 @@ function runPostPlanActions(o: PostPlanActionsOpts): void {
 			await sendEscalation({
 				apiKey: resendCfg.apiKey,
 				recipient: resendCfg.recipient,
+				from: resendCfg.from !== '' ? resendCfg.from : undefined,
 				subject: '[cam] Plan BLOCK: audit rejected the planning output',
 				html: '<p><strong>[cam]</strong> The plan auditor blocked the planning phase. Manual intervention required.</p>',
 			});
@@ -2249,6 +2258,7 @@ function buildPlanContainerOpts(cwd: string): PlanContainerOpts {
 				await sendEscalation({
 					apiKey: resendCfg.apiKey,
 					recipient: resendCfg.recipient,
+					from: resendCfg.from !== '' ? resendCfg.from : undefined,
 					subject: '[cam] Plan container not ready: preflight failed before worker spawn',
 					html: '<p><strong>[cam]</strong> The plan phase container preflight failed. The cam-worker container is not ready. Manual intervention required.</p>',
 				});
@@ -2471,7 +2481,7 @@ export function buildMetaLoopFn(
 	ctx: SidecarLoopDepsCtx,
 	options: SidecarOptions,
 	logEvent: WorkerEventLogger,
-	resendConfig: { apiKey: string; recipient: string },
+	resendConfig: { apiKey: string; recipient: string; from: string },
 ): RunSidecarLoopOptions['runMetaLoopObserveFn'] {
 	if (options.runMetaLoopObserveFn !== undefined) return options.runMetaLoopObserveFn;
 
@@ -2479,7 +2489,13 @@ export function buildMetaLoopFn(
 	const metaLoop = readMetaLoop(configPath);
 
 	if (metaLoop === 'observe') {
-		return makeProductionMetaLoopObserveFn(ctx.cwd, logEvent, resendConfig.apiKey, resendConfig.recipient);
+		return makeProductionMetaLoopObserveFn(
+			ctx.cwd,
+			logEvent,
+			resendConfig.apiKey,
+			resendConfig.recipient,
+			resendConfig.from,
+		);
 	}
 
 	if (metaLoop === 'auto') {
@@ -2773,7 +2789,7 @@ function buildSidecarLoopDeps(ctx: SidecarLoopDepsCtx, options: SidecarOptions):
 	// to keep buildSidecarLoopDeps under biome cognitive-complexity limit.
 	const resendConfig = readResendConfig(join(cwd, 'scripts/cam/project.toml'));
 	const escalateFn: RunSidecarLoopOptions['escalateFn'] =
-		options.escalateFn ?? makeProductionEscalateFn(resendConfig.apiKey, resendConfig.recipient);
+		options.escalateFn ?? makeProductionEscalateFn(resendConfig.apiKey, resendConfig.recipient, resendConfig.from);
 
 	// US-004 / CAM-139: meta-loop wiring (observe | auto | off).
 	// Extracted to buildMetaLoopFn to keep buildSidecarLoopDeps under the biome

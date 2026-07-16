@@ -29,6 +29,7 @@ import {
 } from '../../src/commands/journal.ts';
 import { DEFAULT_THRESHOLD as JOURNAL_ARCHIVE_DEFAULT_THRESHOLD } from '../../src/commands/journal-archive.ts';
 import type { ArchiveJournalOnMainResult } from '../../src/commands/journal-archive.ts';
+import type { ArchivePatternsOnMainResult } from '../../src/commands/patterns-archive.ts';
 import { dispatchJournal, parseJournalArgs, main } from '../../index.ts';
 
 // ---------------------------------------------------------------------------
@@ -609,6 +610,7 @@ describe('dispatchJournal', () => {
 			handoffExistsFn: () => true,
 			watcherAliveFn: () => true,
 			archiveFn: (): ArchiveJournalOnMainResult => ({ ok: true, archived: 0, entries: 0, sha: '' }), // no real git
+			patternsArchiveFn: (): ArchivePatternsOnMainResult => ({ ok: true, archived: 0, sha: '' }), // no real git
 			armRecycleMarkerFn: () => { markerArmed = true; },
 		});
 
@@ -713,6 +715,7 @@ describe('dispatchJournal', () => {
 			handoffExistsFn: () => true,
 			watcherAliveFn: () => true,
 			archiveFn: (): ArchiveJournalOnMainResult => ({ ok: true, archived: 0, entries: 0, sha: '' }), // no real git
+			patternsArchiveFn: (): ArchivePatternsOnMainResult => ({ ok: true, archived: 0, sha: '' }), // no real git
 			armRecycleMarkerFn: () => { markerArmed = true; },
 		});
 

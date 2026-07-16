@@ -76,6 +76,76 @@ export interface MergeModeOpts {
 }
 
 /**
+ * Build the [notify] section update from the wizard's resendRecipient/
+ * resendFrom choices. An empty string means "leave unset" (per the wizard
+ * contract in ConfigScreen.tsx) and is never written. resend_api_key is
+ * NEVER emitted here -- it stays sourced from the RESEND_API_KEY env var
+ * only (see readResendConfig).
+ *
+ * Returns an empty section (`{}`) when neither value is set, so callers can
+ * skip the mergeIntoConfig call entirely rather than writing an empty table.
+ */
+function buildNotifyUpdate(choices: ConfigChoices): TomlSection {
+	const notify: TomlSection = {};
+	if (choices.resendRecipient !== undefined && choices.resendRecipient !== '') {
+		notify['resend_recipient'] = choices.resendRecipient;
+	}
+	if (choices.resendFrom !== undefined && choices.resendFrom !== '') {
+		notify['resend_from'] = choices.resendFrom;
+	}
+	return notify;
+}
+
+/**
+ * Persist [ship] merge_mode and invoke the branch-protection helper for
+ * ci-gated (no-op for immediate). Extracted from mergeConfigChoices to keep
+ * its cognitive complexity under biome's ceiling.
+ */
+function persistMergeMode(
+	configPath: string,
+	choices: ConfigChoices,
+	mergeModeOpts?: MergeModeOpts,
+): void {
+	if (choices.mergeMode === undefined) return;
+
+	mergeIntoConfig(configPath, {
+		ship: { merge_mode: choices.mergeMode } as TomlSection,
+	});
+
+	const prodSpawnFn: SpawnFn = (cmd, args, opts) =>
+		spawnSync(cmd, args, { encoding: 'utf8', input: opts.input }) as SpawnSyncReturns<string>;
+
+	applyMergeMode({
+		mergeMode: choices.mergeMode,
+		spawnFn: mergeModeOpts?.spawnFn ?? prodSpawnFn,
+		ownerRepo: mergeModeOpts?.ownerRepo,
+		emitHint: mergeModeOpts?.emitHint,
+		emitWarning: mergeModeOpts?.emitWarning,
+		emitResult: mergeModeOpts?.emitResult,
+	});
+}
+
+/**
+ * Rewrite the `model:` frontmatter line in each project-local .claude/
+ * runtime file named in FRONTMATTER_TARGET_PHASE_PATHS, resolved relative to
+ * `cwd`. Files that do not exist are silently skipped. Extracted from
+ * mergeConfigChoices to keep its cognitive complexity under biome's ceiling.
+ */
+function rewriteFrontmatterModels(cwd: string, choices: ConfigChoices): void {
+	for (const [phase, relPath] of Object.entries(FRONTMATTER_TARGET_PHASE_PATHS)) {
+		const fullPath = join(cwd, relPath);
+		if (!existsSync(fullPath)) continue;
+		const model = choices.models[phase as keyof typeof choices.models];
+		if (model === undefined) continue;
+		const original = readFileSync(fullPath, 'utf8');
+		const updated = rewriteFrontmatterModel(original, model);
+		if (updated !== original) {
+			writeFileSync(fullPath, updated, 'utf8');
+		}
+	}
+}
+
+/**
  * Persist `choices` into `configPath` (scripts/cam/project.toml) additively
  * via mergeIntoConfig:
  *
@@ -92,6 +162,13 @@ export interface MergeModeOpts {
  *
  *   [plan]
  *   plan_approval = "auto"|"operator"     (when choices.planApproval is defined)
+ *
+ *   [notify]
+ *   resend_recipient = "<addr>"           (when choices.resendRecipient is non-empty)
+ *   resend_from      = "<addr>"           (when choices.resendFrom is non-empty)
+ *
+ * resend_api_key is NEVER written to project.toml by this helper: the API key
+ * is sourced exclusively from the RESEND_API_KEY environment variable.
  *
  * Pre-existing keys (issue_system, issue_prefix, etc.) are preserved.
  *
@@ -125,38 +202,17 @@ export function mergeConfigChoices(
 		});
 	}
 
-	// Persist [ship] merge_mode when the wizard collected it.
-	if (choices.mergeMode !== undefined) {
-		mergeIntoConfig(configPath, {
-			ship: { merge_mode: choices.mergeMode } as TomlSection,
-		});
-
-		// Invoke branch-protection helper for ci-gated; no-op for immediate.
-		const prodSpawnFn: SpawnFn = (cmd, args, opts) =>
-			spawnSync(cmd, args, { encoding: 'utf8', input: opts.input }) as SpawnSyncReturns<string>;
-
-		applyMergeMode({
-			mergeMode: choices.mergeMode,
-			spawnFn: mergeModeOpts?.spawnFn ?? prodSpawnFn,
-			ownerRepo: mergeModeOpts?.ownerRepo,
-			emitHint: mergeModeOpts?.emitHint,
-			emitWarning: mergeModeOpts?.emitWarning,
-			emitResult: mergeModeOpts?.emitResult,
-		});
+	// Persist [notify] resend_recipient/resend_from when the wizard collected
+	// non-empty values.
+	const notify = buildNotifyUpdate(choices);
+	if (Object.keys(notify).length > 0) {
+		mergeIntoConfig(configPath, { notify });
 	}
 
+	persistMergeMode(configPath, choices, mergeModeOpts);
+
 	if (cwd !== undefined) {
-		for (const [phase, relPath] of Object.entries(FRONTMATTER_TARGET_PHASE_PATHS)) {
-			const fullPath = join(cwd, relPath);
-			if (!existsSync(fullPath)) continue;
-			const model = choices.models[phase as keyof typeof choices.models];
-			if (model === undefined) continue;
-			const original = readFileSync(fullPath, 'utf8');
-			const updated = rewriteFrontmatterModel(original, model);
-			if (updated !== original) {
-				writeFileSync(fullPath, updated, 'utf8');
-			}
-		}
+		rewriteFrontmatterModels(cwd, choices);
 	}
 }
 
