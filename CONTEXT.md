@@ -307,3 +307,6 @@ A deterministic pause point where the sidecar cannot auto-decide and must wait f
 
 **cam decide**:
 The CLI thin-proxy that answers an active operator-decision gate: it validates the given decision against the active gate's options[] and writes it into the gate file for the sidecar to consume, then resume. Distinct from `cam resume`, which is interrupt-recovery (resetting a wedged story/PRD/branch).
+
+**phase effort**:
+The reasoning-effort level (one of low, medium, high, xhigh, max) configured per LLM phase, stored as the effort: frontmatter line in .claude/agents/subagent-<phase>.md and consumed directly by the Claude Code CLI at spawn time. Distinct from the phase model. The ship phase has none (deterministic, zero-LLM per ADR-0009).
