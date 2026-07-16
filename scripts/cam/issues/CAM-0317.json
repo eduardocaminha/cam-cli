@@ -1,0 +1,13 @@
+{
+  "id": "CAM-317",
+  "title": "rewriteFrontmatterEffort insert path interpolates frontmatterBody into the repl…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-16T15:36:24.400Z",
+  "updatedAt": "2026-07-16T15:36:24.400Z",
+  "description": "rewriteFrontmatterEffort insert path interpolates frontmatterBody into the replacement string passed to String.replace; a body containing $-sequences ($&, $1) would be reinterpreted. Agent frontmatter is controlled content so the risk is nil, but a replacer function would be more robust.\n\nSource: cam/issue-87\nReview round: 1\n\nsuggestion-fingerprint: e9c0c4c2586e",
+  "derivedFrom": [
+    "CAM-87"
+  ]
+}
