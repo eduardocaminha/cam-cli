@@ -1,290 +1,313 @@
 // test/ui/config-screen.test.tsx
 //
-// US-001 (CAM-286, CAM-287): ConfigScreen render assertions for the
-// reconciled MODEL_OPTIONS list. Guards that the picker still renders
-// correctly (model select step shows the sonnet tier alias option, and
-// success is still signalled by the ✓ glyph, never divider color) after
-// DEFAULTS and MODEL_OPTIONS were reconciled to CLI tier aliases (ADR-0034).
+// US-004 (CAM-241/153): ConfigScreen refactored to a TabBar-driven tabbed UI
+// (7 tabs: 6 phases + Global), replacing the sequential forward-only wizard.
+// Covers AC1-AC7 of the story.
 //
-// US-002 (CAM-287): the model-select step also offers a free-text
-// 'custom / enter id' passthrough (ink-text-input) for pinning an arbitrary
-// model value (e.g. a dated snapshot or an unreleased id) verbatim.
-//
-// US-003 (CAM-218): two flat-wizard free-text steps for resend_recipient and
-// resend_from, plus a read-only RESEND_API_KEY configured/unconfigured status
-// line (no input field for the key itself).
+// GOTCHA (discovered while writing these tests): a raw arrow-key CSI sequence
+// needs the leading ESC byte (`\x1b[C`) to be recognized by Ink's keypress
+// parser (`ink/build/parse-keypress.js`'s `fnKeyRe` requires `^\x1b+`); a
+// sequence missing the ESC prefix (e.g. `'[C'`) parses to an empty key name
+// and is a silent no-op. Assertions that only check a tab chip's label text
+// (e.g. `frame.includes('[ Planner ]')`) are also NOT a reliable signal that
+// the keypress worked, because TabBar always renders every chip's label
+// regardless of which tab is active (only the color differs). The
+// non-tautological way to assert "tab N is now active" is to check for
+// content that only renders when that tab's own Section is mounted (e.g. the
+// `Model for <phase>:` / `Effort for <phase>:` question text, which
+// disappears once a field is confirmed) -- content unique to the previous
+// tab's Section must also be asserted ABSENT, since only the active tab's
+// content is mounted at all.
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { createElement } from 'react';
 import { render } from 'ink-testing-library';
 
-import { ConfigScreen, MODEL_OPTIONS } from '../../src/ui/ConfigScreen.tsx';
+import { ConfigScreen, MODEL_OPTIONS, computeNextFocus, buildTabDefs } from '../../src/ui/ConfigScreen.tsx';
 import type { ConfigChoices } from '../../src/ui/ConfigScreen.tsx';
+import { EFFORT_DEFAULTS, DEFAULTS } from '../../src/config/models.ts';
 import { waitForFrame } from '../helpers/flush-ink.ts';
 import { installTerminalSizeMock } from '../helpers/mock-terminal-size.ts';
 
 installTerminalSizeMock();
 
-describe('ConfigScreen — reconciled MODEL_OPTIONS', () => {
-	test('the first model-select step lists every MODEL_OPTIONS entry, including the sonnet tier alias', () => {
-		const { lastFrame, unmount } = render(
-			createElement(ConfigScreen, { onDone: () => {}, onCancel: () => {} }),
-		);
+const RIGHT = '\x1b[C';
+const LEFT = '\x1b[D';
+const DOWN = '\x1b[B';
+const TAB = '\t';
+const ENTER = '\r';
 
+// Total (tab, field) positions across all 7 tabs: 5 LLM phases * 2 fields +
+// ship's 1 field + Global's 5 fields = 16. Advancing past the last one fires
+// onDone (see computeNextFocus).
+const TOTAL_FIELD_COUNT = 5 * 2 + 1 + 5;
+
+function renderConfig(onDone: (c: ConfigChoices) => void = () => {}) {
+	return render(createElement(ConfigScreen, { onDone, onCancel: () => {} }));
+}
+
+describe('ConfigScreen — 7-tab layout (AC1)', () => {
+	test('renders all 6 phase tabs plus the Global tab via TabBar', () => {
+		const { lastFrame, unmount } = renderConfig();
 		const frame = lastFrame() ?? '';
-		for (const option of MODEL_OPTIONS) {
-			expect(frame).toContain(option.label);
+		for (const label of ['Orchestrator', 'Planner', 'Auditor', 'Implementer', 'Reviewer', 'Ship', 'Global']) {
+			expect(frame).toContain(label);
 		}
-		expect(frame).toContain('sonnet');
-
 		unmount();
 	});
 
-	test('confirming a step signals success via the ✓ glyph, never divider color', async () => {
-		const { lastFrame, stdin, unmount } = render(
-			createElement(ConfigScreen, { onDone: () => {}, onCancel: () => {} }),
-		);
+	// Asserted directly against the TabDef[] (not a rendered Ink frame): at
+	// this screen's default 80-col mocked terminal width, 7 chips wrapped
+	// together can word-wrap a "Label: value" chip's label and value onto
+	// separate output lines, so substring-matching the rendered frame for
+	// "Label: value" is unreliable. buildTabDefs is exported for exactly this.
+	test('phase tab defs are confirmed with their current-or-default model; the Global tab has no value', () => {
+		const defs = buildTabDefs({});
+		expect(defs).toHaveLength(7);
+		expect(defs[0]).toEqual({ label: 'Orchestrator', confirmed: true, value: DEFAULTS.orchestrator });
+		expect(defs[5]).toEqual({ label: 'Ship', confirmed: true, value: DEFAULTS.ship });
+		expect(defs[6]).toEqual({ label: 'Global' });
+	});
 
-		stdin.write('\r'); // confirm orchestrator's default model
-		const frame = await waitForFrame(lastFrame, (f) => f.includes('✓'));
-		expect(frame).toContain('✓');
+	test('a chosen model overrides the default in its tab def', () => {
+		const defs = buildTabDefs({ orchestrator: 'claude-sonnet-4-5-20250929' });
+		expect(defs[0]).toEqual({ label: 'Orchestrator', confirmed: true, value: 'claude-sonnet-4-5-20250929' });
+	});
+});
 
+describe('ConfigScreen — LLM tab shows model + effort, Ship shows model only (AC2, AC7)', () => {
+	test('the initial Orchestrator tab renders the model Select active and the effort Select confirmed with its default', () => {
+		const { lastFrame, unmount } = renderConfig();
+		const frame = lastFrame() ?? '';
+		expect(frame).toContain('Model for orchestrator:');
+		expect(frame).not.toContain('Effort for orchestrator:');
+		expect(frame).toContain(`✓ ${EFFORT_DEFAULTS.orchestrator}`);
 		unmount();
 	});
 
-	test('completing the wizard writes the reconciled default implementer model (sonnet)', async () => {
-		let choices: ConfigChoices | undefined;
-
-		const { lastFrame, stdin, unmount } = render(
-			createElement(ConfigScreen, {
-				onDone: (c: ConfigChoices) => {
-					choices = c;
-				},
-				onCancel: () => {},
-			}),
-		);
-
-		// 6 phase steps + backend + merge-mode + plan-approval + notify-recipient
-		// + notify-from = 11 confirmations (the two notify steps accept a blank
-		// Enter, meaning "leave unset").
-		for (let i = 0; i < 11; i += 1) {
-			stdin.write('\r');
+	test('the Ship tab renders the model Select only -- no Effort block at all', async () => {
+		const { lastFrame, stdin, unmount } = renderConfig();
+		// Orchestrator -> ... -> Ship. TabBar's onChange computes the next
+		// index from the current `activeIndex` PROP (not a functional
+		// setState updater, unlike Select's internal idx); firing 5 Right
+		// presses without letting React commit between them would collapse
+		// into a single net step, so each write must be awaited individually.
+		for (let i = 0; i < 5; i += 1) {
+			stdin.write(RIGHT);
 			await waitForFrame(lastFrame, () => true, { timeoutMs: 200 });
 		}
+		const frame = await waitForFrame(lastFrame, (f) => f.includes('Model for ship:'));
+		expect(frame).toContain('Model for ship:');
+		expect(frame).not.toContain('Effort');
+		unmount();
+	});
+});
 
+describe('ConfigScreen — Global tab parity, no new fields (AC3)', () => {
+	test('Global tab preserves backend/merge-mode/plan-approval + notify recipient/from; no meta_loop/worker_isolation/orch_context_window', async () => {
+		const { lastFrame, stdin, unmount } = renderConfig();
+		stdin.write(LEFT); // wraps from Orchestrator (idx 0) to Global (last tab)
+		// Only the backend field (index 0) is interactive on landing; the rest
+		// render their confirmed/default summary line, so assert on the
+		// Section headings (always rendered) rather than each field's
+		// question text (only rendered while that one field is active).
+		const frame = await waitForFrame(lastFrame, (f) => f.includes('Backend:'));
+		expect(frame).toContain('Backend:'); // interactive (field 0)
+		expect(frame).toContain('Merge mode');
+		expect(frame).toContain('Plan approval');
+		expect(frame).toContain('Notify recipient');
+		expect(frame).toContain('Notify sender');
+		expect(frame).not.toContain('meta_loop');
+		expect(frame).not.toContain('worker_isolation');
+		expect(frame).not.toContain('orch_context_window');
+		unmount();
+	});
+});
+
+describe('ConfigScreen — effort Select options (AC4)', () => {
+	test('offers exactly low, medium, high, xhigh, max in that order', async () => {
+		const { lastFrame, stdin, unmount } = renderConfig();
+		stdin.write(ENTER); // confirm default model, advance focus to the effort field
+		const frame = await waitForFrame(lastFrame, (f) => f.includes('Effort for orchestrator:'));
+		const order = ['low', 'medium', 'high', 'xhigh', 'max'];
+		let lastIndex = -1;
+		for (const label of order) {
+			const idx = frame.indexOf(label);
+			expect(idx).toBeGreaterThan(lastIndex);
+			lastIndex = idx;
+		}
+		unmount();
+	});
+});
+
+describe('ConfigScreen — focus/navigation chain (AC5)', () => {
+	test('Up/Down navigates only the focused effort Select', async () => {
+		const { lastFrame, stdin, unmount } = renderConfig();
+		stdin.write(ENTER); // model -> effort
+		await waitForFrame(lastFrame, (f) => f.includes('Effort for orchestrator:'));
+		stdin.write(DOWN); // xhigh (idx 3) -> max (idx 4)
+		const frame = await waitForFrame(lastFrame, (f) => f.includes('❯ max'));
+		expect(frame).toContain('❯ max');
+		expect(frame).not.toContain('❯ xhigh');
+		unmount();
+	});
+
+	test('Tab advances focus without committing a value (the field stays untouched/default)', async () => {
+		let choices: ConfigChoices | undefined;
+		const { lastFrame, stdin, unmount } = renderConfig((c) => {
+			choices = c;
+		});
+		stdin.write(DOWN); // highlight 'sonnet' on the model list, but do not commit
+		await waitForFrame(lastFrame, (f) => f.includes('❯ sonnet'));
+		stdin.write(TAB); // advance to effort WITHOUT confirming 'sonnet'
+		const frame = await waitForFrame(lastFrame, (f) => f.includes('Effort for orchestrator:'));
+		expect(frame).toContain(`✓ ${DEFAULTS.orchestrator}`); // model field fell back to its default
+
+		for (let i = 0; i < TOTAL_FIELD_COUNT - 1; i += 1) {
+			stdin.write(TAB);
+			await waitForFrame(lastFrame, () => true, { timeoutMs: 200 });
+		}
+		await waitForFrame(() => (choices ? 'done' : ''), (f) => f === 'done');
+		expect(choices?.models.orchestrator).toBe(DEFAULTS.orchestrator);
+		unmount();
+	});
+
+	test('Enter commits the highlighted option and advances focus (model -> effort -> next tab)', async () => {
+		const { lastFrame, stdin, unmount } = renderConfig();
+		stdin.write(DOWN); // highlight 'sonnet'
+		await waitForFrame(lastFrame, (f) => f.includes('❯ sonnet'));
+		stdin.write(ENTER); // commit 'sonnet', advance to effort
+		let frame = await waitForFrame(lastFrame, (f) => f.includes('Effort for orchestrator:'));
+		expect(frame).toContain('✓ sonnet');
+
+		stdin.write(ENTER); // commit default effort (xhigh), advance to Planner's model field
+		frame = await waitForFrame(lastFrame, (f) => f.includes('Model for planner:'));
+		expect(frame).toContain('Model for planner:');
+		expect(frame).not.toContain('Model for orchestrator:'); // Orchestrator's Section is unmounted
+		unmount();
+	});
+
+	test('Left/Right always switches tabs, even while the notify-recipient text field is focused', async () => {
+		const { lastFrame, stdin, unmount } = renderConfig();
+		stdin.write(LEFT); // Orchestrator -> Global (wrap); lands on field 0 (backend)
+		await waitForFrame(lastFrame, (f) => f.includes('Backend:'));
+
+		// Tab forward to notify-recipient (field 3): backend -> merge-mode ->
+		// plan-approval -> notify-recipient. Each Tab awaited individually
+		// (see the Ship-tab test's comment on why).
+		for (let i = 0; i < 3; i += 1) {
+			stdin.write(TAB);
+			await waitForFrame(lastFrame, () => true, { timeoutMs: 200 });
+		}
+		await waitForFrame(lastFrame, (f) => f.includes('resend_recipient'));
+		stdin.write('partial-typed-text'); // focus is on notify-recipient (field 3), start typing
+		await waitForFrame(lastFrame, (f) => f.includes('partial-typed-text'));
+
+		stdin.write(RIGHT); // Global -> Orchestrator (wrap), mid-typing
+		const frame = await waitForFrame(lastFrame, (f) => f.includes('Model for orchestrator:'));
+		expect(frame).toContain('Model for orchestrator:');
+		expect(frame).not.toContain('resend_recipient');
+		unmount();
+	});
+});
+
+describe('ConfigScreen — computeNextFocus (AC5, pure helper)', () => {
+	test('advances model -> effort within an LLM tab', () => {
+		expect(computeNextFocus({ activeTab: 0, fieldFocus: 0 })).toEqual({ activeTab: 0, fieldFocus: 1 });
+	});
+
+	test('advances from the last field of a tab to the first field of the next tab', () => {
+		expect(computeNextFocus({ activeTab: 0, fieldFocus: 1 })).toEqual({ activeTab: 1, fieldFocus: 0 });
+	});
+
+	test('advances from Ship (1 field) straight to Global (tab index 6)', () => {
+		expect(computeNextFocus({ activeTab: 5, fieldFocus: 0 })).toEqual({ activeTab: 6, fieldFocus: 0 });
+	});
+
+	test('returns "done" past the last field (notify-from) of the last tab (Global)', () => {
+		expect(computeNextFocus({ activeTab: 6, fieldFocus: 4 })).toBe('done');
+	});
+});
+
+describe('ConfigScreen — onDone payload defaults (AC6)', () => {
+	test('efforts defaults from EFFORT_DEFAULTS, models default, and notify fields are "" when every field is skipped via Tab', async () => {
+		let choices: ConfigChoices | undefined;
+		const { lastFrame, stdin, unmount } = renderConfig((c) => {
+			choices = c;
+		});
+
+		for (let i = 0; i < TOTAL_FIELD_COUNT; i += 1) {
+			stdin.write(TAB);
+			await waitForFrame(lastFrame, () => true, { timeoutMs: 200 });
+		}
 		const frame = await waitForFrame(lastFrame, (f) => f.includes('Configuration written'));
 		expect(frame).toContain('Configuration written to scripts/cam/project.toml');
 		expect(frame).toContain('✓');
 
-		// onDone fires via a setTimeout(0) after the "done" step commits; give it
-		// a further tick to land before asserting on the captured choices.
 		await waitForFrame(() => (choices ? 'done' : ''), (f) => f === 'done');
-		expect(choices?.models.implementer).toBe('sonnet');
+		expect(choices?.efforts).toEqual(EFFORT_DEFAULTS);
+		for (const phase of ['orchestrator', 'planner', 'auditor', 'implementer', 'reviewer', 'ship'] as const) {
+			expect(choices?.models[phase]).toBe(DEFAULTS[phase]);
+		}
+		expect(choices?.backend).toBe(DEFAULTS.backend);
+		expect(choices?.mergeMode).toBe('immediate');
+		expect(choices?.planApproval).toBe('auto');
+		expect(choices?.resendRecipient).toBe('');
+		expect(choices?.resendFrom).toBe('');
+		unmount();
+	});
 
+	test('an explicitly chosen effort for one phase is preserved; untouched phases still default', async () => {
+		let choices: ConfigChoices | undefined;
+		const { lastFrame, stdin, unmount } = renderConfig((c) => {
+			choices = c;
+		});
+
+		stdin.write(ENTER); // confirm default orchestrator model, advance to effort
+		await waitForFrame(lastFrame, (f) => f.includes('Effort for orchestrator:'));
+		stdin.write(DOWN); // xhigh -> max
+		await waitForFrame(lastFrame, (f) => f.includes('❯ max'));
+		stdin.write(ENTER); // commit 'max', advance to Planner's model field
+		await waitForFrame(lastFrame, (f) => f.includes('Model for planner:'));
+
+		for (let i = 0; i < TOTAL_FIELD_COUNT - 2; i += 1) {
+			stdin.write(TAB);
+			await waitForFrame(lastFrame, () => true, { timeoutMs: 200 });
+		}
+		await waitForFrame(() => (choices ? 'done' : ''), (f) => f === 'done');
+		expect(choices?.efforts?.orchestrator).toBe('max');
+		expect(choices?.efforts?.planner).toBe(EFFORT_DEFAULTS.planner);
 		unmount();
 	});
 });
 
-describe('ConfigScreen — custom / enter id passthrough (US-002)', () => {
-	test('the model-select step offers a custom / enter id entry that reveals a free-text input', async () => {
-		const { lastFrame, stdin, unmount } = render(
-			createElement(ConfigScreen, { onDone: () => {}, onCancel: () => {} }),
-		);
-
-		let frame = lastFrame() ?? '';
-		expect(frame).toContain('custom / enter id');
-
-		// Down-arrow past all 8 MODEL_OPTIONS entries to reach the custom row
-		// (defaultValue 'opus' starts at idx 0).
-		for (let i = 0; i < MODEL_OPTIONS.length; i += 1) {
-			stdin.write('\x1b[B');
-		}
-		frame = await waitForFrame(lastFrame, (f) => f.includes('❯ custom / enter id'));
-		expect(frame).toContain('❯ custom / enter id');
-
-		stdin.write('\r'); // choose the custom entry
-		frame = await waitForFrame(lastFrame, (f) => f.includes('Enter a model id'));
-		expect(frame).toContain('Enter a model id');
-
-		unmount();
-	});
-
-	test('a typed dated-snapshot id is stored verbatim and shown in the confirmed summary', async () => {
+describe('ConfigScreen — custom / enter id passthrough still works within a tab (regression, US-002)', () => {
+	test('selecting the custom entry on the active model field reveals the free-text input, and the typed id is confirmed then advances to the effort field', async () => {
 		let choices: ConfigChoices | undefined;
-		const { lastFrame, stdin, unmount } = render(
-			createElement(ConfigScreen, {
-				onDone: (c: ConfigChoices) => {
-					choices = c;
-				},
-				onCancel: () => {},
-			}),
-		);
+		const { lastFrame, stdin, unmount } = renderConfig((c) => {
+			choices = c;
+		});
 
-		for (let i = 0; i < MODEL_OPTIONS.length; i += 1) {
-			stdin.write('\x1b[B');
-		}
+		for (let i = 0; i < MODEL_OPTIONS.length; i += 1) stdin.write(DOWN); // down past all aliases to the custom row
 		await waitForFrame(lastFrame, (f) => f.includes('❯ custom / enter id'));
-		stdin.write('\r'); // reveal the free-text input
+		stdin.write(ENTER); // reveal the free-text input
 		await waitForFrame(lastFrame, (f) => f.includes('Enter a model id'));
 
 		const pinnedId = 'claude-sonnet-4-5-20250929';
 		stdin.write(pinnedId);
-		await waitForFrame(lastFrame, (f) => f.includes(pinnedId)); // typed text lands in the TextInput
-		stdin.write('\r'); // confirm
+		await waitForFrame(lastFrame, (f) => f.includes(pinnedId));
+		stdin.write(ENTER); // submit
 
-		let frame = await waitForFrame(lastFrame, (f) => f.includes('✓'));
-		expect(frame).toContain('✓');
-		expect(frame).toContain(pinnedId);
+		const frame = await waitForFrame(lastFrame, (f) => f.includes('Effort for orchestrator:'));
+		expect(frame).toContain(`✓ ${pinnedId}`);
+		expect(frame).toContain('Effort for orchestrator:');
 
-		// Advance through the remaining 5 phase steps + backend + merge-mode +
-		// plan-approval + notify-recipient + notify-from (10 confirmations) with
-		// defaults/blanks to reach 'done'.
-		for (let i = 0; i < 10; i += 1) {
-			stdin.write('\r');
+		for (let i = 0; i < TOTAL_FIELD_COUNT - 1; i += 1) {
+			stdin.write(TAB);
 			await waitForFrame(lastFrame, () => true, { timeoutMs: 200 });
 		}
-		frame = await waitForFrame(lastFrame, (f) => f.includes('Configuration written'));
-		expect(frame).toContain('Configuration written to scripts/cam/project.toml');
-
 		await waitForFrame(() => (choices ? 'done' : ''), (f) => f === 'done');
 		expect(choices?.models.orchestrator).toBe(pinnedId);
-
-		unmount();
-	});
-
-	test('selecting a normal alias entry still advances the wizard as before (no custom-path regression)', async () => {
-		const { lastFrame, stdin, unmount } = render(
-			createElement(ConfigScreen, { onDone: () => {}, onCancel: () => {} }),
-		);
-
-		stdin.write('\x1b[B'); // move to 'sonnet' (idx 1), not the custom entry
-		let frame = await waitForFrame(lastFrame, (f) => f.includes('❯ sonnet'));
-		expect(frame).toContain('❯ sonnet');
-
-		stdin.write('\r'); // confirm the alias
-		frame = await waitForFrame(lastFrame, (f) => f.includes('✓ sonnet'));
-		expect(frame).toContain('✓ sonnet');
-		expect(frame).not.toContain('Enter a model id');
-
-		unmount();
-	});
-});
-
-describe('ConfigScreen — notify recipient/from + API key status (US-003, CAM-218)', () => {
-	const ORIGINAL_RESEND_API_KEY = process.env['RESEND_API_KEY'];
-
-	afterEach(() => {
-		if (ORIGINAL_RESEND_API_KEY === undefined) {
-			delete process.env['RESEND_API_KEY'];
-		} else {
-			process.env['RESEND_API_KEY'] = ORIGINAL_RESEND_API_KEY;
-		}
-	});
-
-	// 6 phase steps + backend + merge-mode + plan-approval = 9 confirmations
-	// to reach the first notify step (notify-recipient).
-	const CONFIRMS_TO_NOTIFY_RECIPIENT = 9;
-
-	test('shows RESEND_API_KEY unconfigured status, with no input field for the key, when the env var is unset', async () => {
-		delete process.env['RESEND_API_KEY'];
-		const { lastFrame, stdin, unmount } = render(
-			createElement(ConfigScreen, { onDone: () => {}, onCancel: () => {} }),
-		);
-
-		for (let i = 0; i < CONFIRMS_TO_NOTIFY_RECIPIENT; i += 1) {
-			stdin.write('\r');
-			await waitForFrame(lastFrame, () => true, { timeoutMs: 200 });
-		}
-
-		const frame = await waitForFrame(lastFrame, (f) => f.includes('RESEND_API_KEY'));
-		expect(frame).toContain('RESEND_API_KEY not configured');
-		expect(frame).not.toContain('RESEND_API_KEY configured');
-
-		unmount();
-	});
-
-	test('shows RESEND_API_KEY configured status when the env var is set', async () => {
-		process.env['RESEND_API_KEY'] = 're_test_123';
-		const { lastFrame, stdin, unmount } = render(
-			createElement(ConfigScreen, { onDone: () => {}, onCancel: () => {} }),
-		);
-
-		for (let i = 0; i < CONFIRMS_TO_NOTIFY_RECIPIENT; i += 1) {
-			stdin.write('\r');
-			await waitForFrame(lastFrame, () => true, { timeoutMs: 200 });
-		}
-
-		const frame = await waitForFrame(lastFrame, (f) => f.includes('RESEND_API_KEY'));
-		expect(frame).toContain('RESEND_API_KEY configured');
-		expect(frame).not.toContain('RESEND_API_KEY not configured');
-
-		unmount();
-	});
-
-	test('typed resend_recipient and resend_from are stored verbatim in ConfigChoices, and success is signalled by the glyph', async () => {
-		let choices: ConfigChoices | undefined;
-		const { lastFrame, stdin, unmount } = render(
-			createElement(ConfigScreen, {
-				onDone: (c: ConfigChoices) => {
-					choices = c;
-				},
-				onCancel: () => {},
-			}),
-		);
-
-		for (let i = 0; i < CONFIRMS_TO_NOTIFY_RECIPIENT; i += 1) {
-			stdin.write('\r');
-			await waitForFrame(lastFrame, () => true, { timeoutMs: 200 });
-		}
-
-		await waitForFrame(lastFrame, (f) => f.includes('resend_recipient'));
-		stdin.write('ops@example.com');
-		await waitForFrame(lastFrame, (f) => f.includes('ops@example.com'));
-		stdin.write('\r');
-
-		let frame = await waitForFrame(lastFrame, (f) => f.includes('✓ ops@example.com'));
-		expect(frame).toContain('✓ ops@example.com');
-
-		await waitForFrame(lastFrame, (f) => f.includes('resend_from'));
-		stdin.write('"cam" <notify@example.com>');
-		await waitForFrame(lastFrame, (f) => f.includes('notify@example.com'));
-		stdin.write('\r');
-
-		frame = await waitForFrame(lastFrame, (f) => f.includes('Configuration written'));
-		expect(frame).toContain('Configuration written to scripts/cam/project.toml');
-		expect(frame).toContain('✓');
-
-		await waitForFrame(() => (choices ? 'done' : ''), (f) => f === 'done');
-		expect(choices?.resendRecipient).toBe('ops@example.com');
-		expect(choices?.resendFrom).toBe('"cam" <notify@example.com>');
-
-		unmount();
-	});
-
-	test('a blank Enter on both notify steps leaves them unset (empty string, "leave unset")', async () => {
-		let choices: ConfigChoices | undefined;
-		const { lastFrame, stdin, unmount } = render(
-			createElement(ConfigScreen, {
-				onDone: (c: ConfigChoices) => {
-					choices = c;
-				},
-				onCancel: () => {},
-			}),
-		);
-
-		// 11 total confirmations (the 9 above, plus notify-recipient and
-		// notify-from), all with blank Enter/defaults, to reach 'done'.
-		for (let i = 0; i < 11; i += 1) {
-			stdin.write('\r');
-			await waitForFrame(lastFrame, () => true, { timeoutMs: 200 });
-		}
-
-		await waitForFrame(lastFrame, (f) => f.includes('Configuration written'));
-
-		await waitForFrame(() => (choices ? 'done' : ''), (f) => f === 'done');
-		expect(choices?.resendRecipient).toBe('');
-		expect(choices?.resendFrom).toBe('');
-
 		unmount();
 	});
 });
