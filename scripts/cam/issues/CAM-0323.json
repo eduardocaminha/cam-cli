@@ -1,0 +1,13 @@
+{
+  "id": "CAM-323",
+  "title": "The outer-timeout comment ('5s + 10s + 12s + 10s') omits the two additional 500…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-16T22:35:21.031Z",
+  "updatedAt": "2026-07-16T22:35:21.031Z",
+  "description": "The outer-timeout comment ('5s + 10s + 12s + 10s') omits the two additional 5000ms-default waitForCondition waits at lines 185 (has-session) and 197 (pgrep initialUUID). The true worst-case internal budget is ~42s vs the 45s outer timeout. Harmless in practice (each internal wait throws and aborts the test on its own timeout, and all resolve fast: 3.29s isolated), but the comment's arithmetic understates the sum.\n\nSource: cam/issue-313\nReview round: 1\n\nsuggestion-fingerprint: eb1724c19990",
+  "derivedFrom": [
+    "CAM-313"
+  ]
+}
