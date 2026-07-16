@@ -85,7 +85,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/config.ts (mergeConfigChoices ~109-161), test file for the write path (extend the existing config write-path suite, real tmpdir + mergeIntoConfig). Depends on US-003 (ConfigChoices.resendRecipient/resendFrom). Follow the existing conditional-block pattern: only add the [notify] update when the value is defined/non-empty, like the plan/ship blocks at :122-146. HARD CONSTRAINT (issue): scripts/cam/project.toml is git-tracked in a PUBLIC repo — the API key must never land there; readResendConfig already prioritizes the RESEND_API_KEY env var. Test must assert the negative (no resend_api_key substring in the written TOML)."
     }
