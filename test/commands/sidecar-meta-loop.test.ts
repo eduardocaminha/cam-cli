@@ -192,7 +192,7 @@ describe('sidecar-meta-loop: off path (no runMetaLoopObserveFn)', () => {
 describe('sidecar-meta-loop: observe-tick selector error boundary (US-001, CAM-115)', () => {
 	test('a throwing selectFn is caught + logged and does NOT emit a drained meta-loop-observe event', async () => {
 		const { logger, events } = makeInMemoryEventLogger();
-		const observeFn = makeProductionMetaLoopObserveFn('/repo', logger, '', '', () => {
+		const observeFn = makeProductionMetaLoopObserveFn('/repo', logger, '', '', '', () => {
 			throw new Error('corrupted backlog: unexpected token');
 		});
 
@@ -226,7 +226,7 @@ describe('sidecar-meta-loop: observe-tick selector error boundary (US-001, CAM-1
 	test('the sidecar outer loop survives a selector throw (does not crash on the tick)', async () => {
 		const { logger } = makeInMemoryEventLogger();
 		let callCount = 0;
-		const observeFn = makeProductionMetaLoopObserveFn('/repo', logger, '', '', () => {
+		const observeFn = makeProductionMetaLoopObserveFn('/repo', logger, '', '', '', () => {
 			callCount++;
 			throw new Error('boom');
 		});
@@ -1794,7 +1794,7 @@ describe('buildMetaLoopFn gate (US-001, CAM-208): meta_loop=auto requires worker
 			const ctx = makeGateCtx(tmpDir, logger);
 
 			const { result: fn, stderrLines } = withCapturedStderr(() =>
-				buildMetaLoopFn(ctx, {}, logger, { apiKey: '', recipient: '' }),
+				buildMetaLoopFn(ctx, {}, logger, { apiKey: '', recipient: '', from: '' }),
 			);
 
 			expect(fn).toBeUndefined();
@@ -1815,7 +1815,7 @@ describe('buildMetaLoopFn gate (US-001, CAM-208): meta_loop=auto requires worker
 			const ctx = makeGateCtx(tmpDir, logger);
 
 			const { result: fn, stderrLines } = withCapturedStderr(() =>
-				buildMetaLoopFn(ctx, {}, logger, { apiKey: '', recipient: '' }),
+				buildMetaLoopFn(ctx, {}, logger, { apiKey: '', recipient: '', from: '' }),
 			);
 
 			expect(fn).toBeUndefined();
@@ -1836,7 +1836,7 @@ describe('buildMetaLoopFn gate (US-001, CAM-208): meta_loop=auto requires worker
 			const ctx = makeGateCtx(tmpDir, logger);
 
 			const { result: fn, stderrLines } = withCapturedStderr(() =>
-				buildMetaLoopFn(ctx, {}, logger, { apiKey: '', recipient: '' }),
+				buildMetaLoopFn(ctx, {}, logger, { apiKey: '', recipient: '', from: '' }),
 			);
 
 			expect(typeof fn).toBe('function');
@@ -1857,7 +1857,7 @@ describe('buildMetaLoopFn gate (US-001, CAM-208): meta_loop=auto requires worker
 			const ctx = makeGateCtx(tmpDir, logger);
 
 			const { result: fn, stderrLines } = withCapturedStderr(() =>
-				buildMetaLoopFn(ctx, {}, logger, { apiKey: '', recipient: '' }),
+				buildMetaLoopFn(ctx, {}, logger, { apiKey: '', recipient: '', from: '' }),
 			);
 
 			expect(typeof fn).toBe('function');
@@ -1878,7 +1878,7 @@ describe('buildMetaLoopFn gate (US-001, CAM-208): meta_loop=auto requires worker
 			const ctx = makeGateCtx(tmpDir, logger);
 
 			const { result: fn, stderrLines } = withCapturedStderr(() =>
-				buildMetaLoopFn(ctx, {}, logger, { apiKey: '', recipient: '' }),
+				buildMetaLoopFn(ctx, {}, logger, { apiKey: '', recipient: '', from: '' }),
 			);
 
 			expect(fn).toBeUndefined();
@@ -1900,7 +1900,7 @@ describe('buildMetaLoopFn gate (US-001, CAM-208): meta_loop=auto requires worker
 			const overrideFn = async () => {};
 
 			const { result: fn, stderrLines } = withCapturedStderr(() =>
-				buildMetaLoopFn(ctx, { runMetaLoopObserveFn: overrideFn }, logger, { apiKey: '', recipient: '' }),
+				buildMetaLoopFn(ctx, { runMetaLoopObserveFn: overrideFn }, logger, { apiKey: '', recipient: '', from: '' }),
 			);
 
 			expect(fn).toBe(overrideFn);
@@ -1926,7 +1926,7 @@ describe('buildMetaLoopFn gate (US-001, CAM-208): meta_loop=auto requires worker
 
 			// (a) Boot-time resolution: runs once, mirroring buildSidecarLoopDeps.
 			const { result: runMetaLoopObserveFn, stderrLines } = withCapturedStderr(() =>
-				buildMetaLoopFn(ctx, {}, logger, { apiKey: '', recipient: '' }),
+				buildMetaLoopFn(ctx, {}, logger, { apiKey: '', recipient: '', from: '' }),
 			);
 			expect(runMetaLoopObserveFn).toBeUndefined();
 			expect(stderrLines.length).toBe(1);
@@ -1968,7 +1968,7 @@ describe('buildMetaLoopFn gate (US-001, CAM-208): meta_loop=auto requires worker
 			const ctx = makeGateCtx(tmpDir, logger);
 
 			const { result: fn } = withCapturedStderr(() =>
-				buildMetaLoopFn(ctx, {}, logger, { apiKey: '', recipient: '' }),
+				buildMetaLoopFn(ctx, {}, logger, { apiKey: '', recipient: '', from: '' }),
 			);
 
 			expect(fn).toBeDefined();
