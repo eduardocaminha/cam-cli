@@ -1,16 +1,19 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Add plan-approval gate module (identity, context builder, resolver)" },
+  "lastCompletedStory": { "id": "US-002", "title": "Wire the plan-approval gate write-side into the plan-runner pause-operator path" },
   "branchName": "cam/issue-312",
   "timestamp": "2026-07-16T00:00:00Z",
   "createdFiles": [
-    "src/supervisor/plan-approval-gate.ts",
-    "test/plan-approval-gate.test.ts"
+    "test/plan-runner-plan-approval.test.ts"
   ],
-  "modifiedFiles": [],
+  "modifiedFiles": [
+    "src/supervisor/plan-runner.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/patterns.md"
+  ],
   "openQuestions": [
-    "PrdSnapshot (decide.ts) has no top-level `title` field; buildPlanApprovalContext accepts a locally-extended `PlanApprovalPrd` type (PrdSnapshot & { title?: string; description?: string }) and prefers title, falling back to description, then '(untitled PRD)'. US-002/US-003 (the write-side/sidecar wiring) should pass whatever the real prd.json carries (currently `description`, no `title`) -- confirm this fallback order is what the operator-facing summary should show once the real call site lands."
+    "US-001's open question (PrdSnapshot has no top-level `title` field, buildPlanApprovalContext falls back to `description` then '(untitled PRD)') is still unresolved: US-003 (the sidecar production wiring, which builds the actual writePlanApprovalGateFn closure over writeGateAndNotify + buildPlanApprovalContext(prd)) should confirm this fallback order is what the operator-facing summary should show once the real prd.json (which currently carries `description`, no `title`) is read at the real call site."
   ],
-  "nextStoryContext": "US-001 shipped the pure gate module: PLAN_APPROVAL_GATE='plan-approval', PLAN_APPROVAL_OPTIONS=['approve','reject'], buildPlanApprovalContext(prd), and makePlanApprovalResolver(deps) (deps: proceedBranchFn, removePrdFn, notifyFn), mirroring src/supervisor/in-progress-conflict.ts's shape verbatim. gate.ts (the generic write+notify/poll+resolve+clear+flip primitive, CAM-153) was NOT modified, per the story notes. US-002 wires the write-side (writeGateAndNotify with PLAN_APPROVAL_GATE/PLAN_APPROVAL_OPTIONS/buildPlanApprovalContext) into the plan-runner's plan_approval='operator' pause path (currently a dead-end); US-003 registers makePlanApprovalResolver into the sidecar's GateResolutionRegistry (see makeProductionGatePhaseFn's registry pattern for 'in-progress-conflict' as the wiring precedent) and wires a real proceedBranchFn (resume the paused branch into implementing) + removePrdFn/notifyFn deps. reject discards the working-tree prd.json since at pause time (post-audit, pre-branch) the PRD still lives on main, mirroring in-progress-conflict's abandon path.",
+  "nextStoryContext": "US-002 wired the write-side SEAM only: `RunPostAuditOptions.writePlanApprovalGateFn?: () => void` is threaded through `runPostAuditAction` -> `handleAuditApproved`, called ONLY on the pause-operator branch (plan_approval='operator') immediately before returning `{ kind: 'awaiting-operator-approval' }`; the auto-mode proceed-branch path never calls it (verified in test/plan-runner-plan-approval.test.ts). The seam is deliberately a bare no-arg closure (NOT `(context: string) => void` like writeInProgressConflictGateFn, NOT writeGateAndNotify's own 4-arg signature) because plan-runner.ts does zero gate-construction work itself -- see the new patterns.md bullet for the reasoning. Doc comments on PostAuditActionResult/RunPostAuditOptions/runPostAuditAction were updated to state the pause now writes a resolvable gate, no longer a dead end. US-003 (not yet done) must: (1) build the production writePlanApprovalGateFn closure in sidecar.ts, capturing GATE_FILENAME path + { gate: PLAN_APPROVAL_GATE, options: PLAN_APPROVAL_OPTIONS, context: buildPlanApprovalContext(prd) } + makeSetPhaseFn + a real notifyFn, calling writeGateAndNotify(...) -- mirroring makeWriteInProgressConflictGateFn's factory shape in sidecar.ts (~line 2328); (2) wire that closure into the runPostAuditAction call site inside runPostPlanActions/makeProductionPlanPhaseFn; (3) register makePlanApprovalResolver (US-001) into makeProductionGatePhaseFn's GateResolutionRegistry, alongside 'in-progress-conflict', with a real proceedBranchFn (resume the paused audited PRD into the SAME branch-created git flow that executeGitProceedBranch already performs -- reuse it rather than re-implementing the git calls) and removePrdFn/notifyFn deps. exitPhaseAfterPlan already maps 'awaiting-operator-approval' -> 'awaiting-operator' and was intentionally left untouched this story (writeGateAndNotify's own setPhaseFn call already flips to the same phase, so the two writes are idempotent/consistent, not conflicting).",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
