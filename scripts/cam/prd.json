@@ -58,7 +58,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Files: src/commands/sidecar.ts (gate write + poll integrated into the outer loop's phase handling; see makeSetPhaseFn at sidecar.ts:893 and the phase:awaiting-operator branch), optionally a notify-line formatter in src/supervisor/gate.ts. GOTCHA (spec): the gate shape is deliberately GENERIC (gate discriminator + options[] + context) because CAM-149 (ship pauses) and CAM-139 (drain kill-switch) reuse the exact same primitive + `cam decide`; the resolution dispatch must be keyed by the gate discriminator with the in-progress-conflict handler registered by US-004, not inlined here. phase:awaiting-operator already exists in the LoopPhase enum (src/commands/status.ts:92) but is passive today; this story makes it active/resumable. Notify to orchestrator pane via the existing tmux send-keys path (src/tmux/dispatch.ts) atomic text+Enter. Sidecar is the sole writer of the gate on the machine side; the orchestrator only narrates."
     },
