@@ -84,6 +84,7 @@ import { runTag } from './src/commands/tag.ts';
 import { ORCH_RECYCLE_MARKER } from './src/tmux/session.ts';
 import { watcherAlive } from './src/supervisor/sidecar-pid.ts';
 import { runTriage, type TriageResult } from './src/commands/triage.ts';
+import { realOnMainSpawnFn } from './src/git/on-main.ts';
 import {
 	readSuggestionsFromMain,
 	promoteSuggestionOnMain,
@@ -2176,13 +2177,7 @@ function _buildCreateIssueOpts(
 		...(parsedStdin.wsjf !== undefined ? { wsjf: parsedStdin.wsjf } : {}),
 		...(flags?.specSource !== undefined ? { specSource: flags.specSource } : {}),
 		...(flags?.derivedFrom !== undefined && flags.derivedFrom.length > 0 ? { derivedFrom: flags.derivedFrom } : {}),
-		spawnFn: (cmd, args, opts) =>
-			spawnSync(cmd, args, {
-				encoding: opts.encoding,
-				...(opts.env !== undefined ? { env: opts.env } : {}),
-				...(opts.input !== undefined ? { input: opts.input } : {}),
-				stdio: 'pipe',
-			}) as SpawnSyncReturns<string>,
+		spawnFn: realOnMainSpawnFn,
 		clock: () => new Date().toISOString(),
 		readProjectToml: () => readFileSync(join(cwd, 'scripts/cam/project.toml'), 'utf8'),
 	};
@@ -2346,13 +2341,7 @@ export function dispatchTriage(deps?: TriageDispatchDeps): number {
 		(() =>
 			runTriage({
 				cwd: process.cwd(),
-				spawnFn: (cmd, args, opts) =>
-					spawnSync(cmd, args, {
-						encoding: opts.encoding,
-						...(opts.env !== undefined ? { env: opts.env } : {}),
-						...(opts.input !== undefined ? { input: opts.input } : {}),
-						stdio: 'pipe',
-					}) as SpawnSyncReturns<string>,
+				spawnFn: realOnMainSpawnFn,
 				clock: () => new Date().toISOString(),
 			}));
 

@@ -43,6 +43,7 @@ import type { ReviewFinding } from '../supervisor/review-report.ts';
 import { readBacklogFromMain, numericIdSuffix, type BacklogSpawnFn } from '../issues/backlog.ts';
 import { appendSuggestionOnMain, readSuggestionsFromMain, type SuggestionEntry } from './suggestions.ts';
 import type { SpawnFn as IssueFileSpawnFn } from './issue-file.ts';
+import { realOnMainSpawnFn } from '../git/on-main.ts';
 import { makeFileEventLogger, type WorkerEventLogger } from '../supervisor/events.ts';
 import { parseStateFile, type LoopPhase } from './status.ts';
 import { renderStateFile, writeStateFile } from './next.ts';
@@ -2623,18 +2624,7 @@ function buildRearmDeps(
  * commit-tree plumbing (GIT_INDEX_FILE env, cat-file --batch stdin) works
  * unchanged here.
  */
-function issueFileSpawnFn(
-	cmd: string,
-	args: string[],
-	opts: { encoding: 'utf8'; env?: Record<string, string>; input?: string },
-): SpawnSyncReturns<string> {
-	return spawnSync(cmd, args, {
-		encoding: opts.encoding,
-		...(opts.env !== undefined ? { env: opts.env } : {}),
-		...(opts.input !== undefined ? { input: opts.input } : {}),
-		stdio: 'pipe',
-	}) as SpawnSyncReturns<string>;
-}
+const issueFileSpawnFn: IssueFileSpawnFn = realOnMainSpawnFn;
 
 /** Adapts IssueFileSpawnFn (env optional) to BacklogSpawnFn (no env param). */
 function toBacklogSpawn(spawnFn: IssueFileSpawnFn): BacklogSpawnFn {

@@ -34,6 +34,7 @@
 //
 // CAM-108 US-001 (closes CAM-124); CAM-90 US-001 (multi-file + CAS); CAM-300 US-001 (per-attempt recompute).
 
+import { spawnSync } from 'node:child_process';
 import type { SpawnSyncReturns } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -52,14 +53,43 @@ import { printError, printWarning } from '../logging/color.ts';
  *   - `env`: carries GIT_INDEX_FILE pointing at the temp index used by
  *     read-tree, hash-object, update-index, and write-tree.
  *   - `input`: feeds the updated content to `git hash-object -w --stdin`.
+ *   - `maxBuffer` (US-001, CAM-311/CAM-307): acknowledges the option
+ *     `readBacklogFromMain`'s `BacklogSpawnFn` already declares, so it is
+ *     part of the option surface every SpawnFn consumer is assignable
+ *     against. TypeScript does not error on an omitted optional property, so
+ *     declaring the field alone does not make dropping it a compile error --
+ *     see `realOnMainSpawnFn` below for the actual anti-regression mechanism.
  *
- * Injectable so unit tests can verify both fields without shelling out.
+ * Injectable so unit tests can verify these fields without shelling out.
  */
 export type SpawnFn = (
 	cmd: string,
 	args: string[],
-	options: { encoding: 'utf8'; env?: Record<string, string>; input?: string },
+	options: {
+		encoding: 'utf8';
+		env?: Record<string, string>;
+		input?: string;
+		maxBuffer?: number;
+	},
 ) => SpawnSyncReturns<string>;
+
+/**
+ * The single shared production SpawnFn: forwards the FULL `opts` object to
+ * `spawnSync` via object spread, so any field present at runtime (encoding,
+ * env, input, and crucially maxBuffer) reaches the underlying call intact,
+ * regardless of which fields the caller's local type annotation happens to
+ * declare.
+ *
+ * This is the anti-regression guarantee for CAM-307 (readBacklogFromMain's
+ * 256 MiB maxBuffer request was silently dropped by a real-spawnSync wrapper
+ * that rebuilt its options object field-by-field instead of spreading).
+ * TypeScript cannot make an omitted optional property a compile error, so
+ * the guarantee is delivered by construction instead: every real on-main
+ * wrapper routes through this one spread-forwarding helper, so no call-site
+ * constructs a partial options literal that could drop a field silently.
+ */
+export const realOnMainSpawnFn: SpawnFn = (cmd, args, opts) =>
+	spawnSync(cmd, args, { ...opts, stdio: 'pipe' }) as SpawnSyncReturns<string>;
 
 // ---------------------------------------------------------------------------
 // FileWrite: a single file to write in an atomic multi-file commit
