@@ -6,6 +6,14 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.172.0] - 2026-07-16
+
+### Added
+
+- US-R1-001 - Review round 1 fix 001: address reviewer finding
+- US-R1-001 - Review round 1 fix 001: address reviewer finding
+- US-001 - Pass --plan-approval operator to the hermetic init smoke
+
 ## [0.171.0] - 2026-07-16
 
 ### Added
