@@ -99,6 +99,11 @@ import handoffSchema from '../../scripts/cam/handoff.schema.json';
  *     kind above (a git-origin push-verification record); this kind carries
  *     only wake-up-delivery metadata (pane id, retries exhausted), never
  *     report content. See PushUndeliveredEventDetail.
+ *   - 'plan-split-advisory' (US-003, CAM-241/136): emitted by the plan runner
+ *     (US-004) when computeSplitAdvisory (src/stats/split-advisory.ts) fires
+ *     for the just-planned issue's jobSize -- a non-gating signal that the
+ *     issue's WSJF jobSize has historically run hot enough to warrant
+ *     slicing. See PlanSplitAdvisoryEventDetail.
  */
 export type WorkerEventKind =
 	| 'worker-start'
@@ -135,7 +140,8 @@ export type WorkerEventKind =
 	| 'merge-watch-poll-error'
 	| 'suggestion-filed'
 	| 'handoff-schema-warning'
-	| 'push-undelivered';
+	| 'push-undelivered'
+	| 'plan-split-advisory';
 
 /** Gate status recorded in a 'result' event. */
 export type GateStatus = 'pass' | 'fail' | 'unknown';
@@ -492,6 +498,29 @@ export interface PushUndeliveredEventDetail {
 	retriesExhausted: number;
 }
 
+/**
+ * 'plan-split-advisory' event detail (US-003, CAM-241/136): recorded when the
+ * split-advisory heuristic (computeSplitAdvisory, src/stats/split-advisory.ts)
+ * fires for the issue the plan runner just generated stories for. Mirrors
+ * SplitAdvisoryResult plus the issue/jobSize identifying fields; this event is
+ * strictly advisory (never gates the plan phase, see US-004).
+ *   - issueId: the issue the advisory was computed for.
+ *   - jobSize: the issue's WSJF jobSize (src/issues/types.ts WsjfScore).
+ *   - storyCount: number of stories the plan just generated for this issue.
+ *   - projectedTokens: historical mean of the same-jobSize bucket.
+ *   - bucketMean / bucketMedian / bucketSize: the same-jobSize bucket stats
+ *     the projection and threshold check were computed from.
+ */
+export interface PlanSplitAdvisoryEventDetail {
+	issueId: string;
+	jobSize: number;
+	storyCount: number;
+	projectedTokens: number;
+	bucketMean: number;
+	bucketMedian: number;
+	bucketSize: number;
+}
+
 /** Detail payload by event kind ('worker-start'/'worker-end' carry free-form maps). */
 export type WorkerEventDetail =
 	| ResultEventDetail
@@ -517,6 +546,7 @@ export type WorkerEventDetail =
 	| SuggestionFiledEventDetail
 	| HandoffSchemaWarningEventDetail
 	| PushUndeliveredEventDetail
+	| PlanSplitAdvisoryEventDetail
 	| Record<string, unknown>;
 
 /** A single structured worker lifecycle event. */
