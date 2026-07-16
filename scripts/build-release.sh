@@ -111,7 +111,7 @@ SMOKE_DIR="$(mktemp -d)"
 # Clean up the tmpdir on any exit (success OR an earlier abort), so it never leaks.
 trap 'rm -rf "${SMOKE_DIR:-}"' EXIT
 BIN_ABS="${REPO_ROOT}/${BIN}"
-if (cd "${SMOKE_DIR}" && CAM_CONFIG_PATH="${SMOKE_DIR}/config.toml" "${BIN_ABS}" init --no-tmux --existing --issue-system none --merge-mode immediate </dev/null); then
+if (cd "${SMOKE_DIR}" && CAM_CONFIG_PATH="${SMOKE_DIR}/config.toml" "${BIN_ABS}" init --no-tmux --existing --issue-system none --merge-mode immediate --plan-approval operator </dev/null); then
 	echo "[build-release]   init: ok (hermetic tmpdir, no tmux)"
 else
 	rc=$?
