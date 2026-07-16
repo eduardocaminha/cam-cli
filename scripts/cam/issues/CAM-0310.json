@@ -1,11 +1,11 @@
 {
   "id": "CAM-310",
   "title": "Deterministic static PRD-oracle shell linter (sibling of CAM-309)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-15T20:37:34.726Z",
-  "updatedAt": "2026-07-15T22:14:46.250Z",
+  "updatedAt": "2026-07-16T12:52:41.219Z",
   "description": "Add a deterministic static guard that inspects prd.json userStories[].acceptanceCriteria oracle strings for semantically-broken shell idioms BEFORE implement/review, without relying on the LLM auditor. Motivating case: the self-nullifying grep -q + -L/-l absence oracle (CAM-301/CAM-309) that runs verbatim in behavioral-gate.ts by exit-code and produces a false BLOCK. CAM-309 codifies the convention in the planner (emission) + auditor (agent-prose rejection); this is the stronger deterministic layer that fails closed at plan time. Open design question for spec time: placement (a check-*.ts gate vs a step in plan-runner.ts around the auditor subagent; PRDs are ephemeral generated artifacts so the natural point is the plan-runner audit path, not check:all) and detection breadth. type: feat.",
   "spec": {
     "scope": "Add a DETERMINISTIC static PRD-oracle linter that runs in the plan-runner audit path (NOT check:all), inspecting the freshly-generated prd.json userStories[].acceptanceCriteria oracle shell strings for a known class of semantically-broken shell idioms BEFORE the LLM auditor spawns, failing closed at plan time. Placement is dictated by the fact that prd.json is an ephemeral in-process artifact (written by the planner, committed to the feature branch, git rm'd at ship): a check:all gate scans the committed working tree and would find no prd.json. This is the deterministic sibling of CAM-309 (which adds planner-emission + auditor-agent-prose rejection of the same class). Detection scope for THIS issue is exactly one rule (the grep -q + -L/-l self-nullifying absence oracle), implemented behind a named-rules list so a future rule is a one-liner. The em-dash literal-escape oracle class (journal.archive.md:173) is explicitly OUT OF SCOPE (file a follow-up if it recurs).",
