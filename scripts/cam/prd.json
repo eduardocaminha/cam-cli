@@ -1,0 +1,71 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-312",
+  "description": "Turn the plan_approval=operator dead-end into a full-audited-PRD approve/reject gate by wiring a new plan-approval discriminator + resolver onto the shipped CAM-153 operator-decision gate primitive.",
+  "issueNumber": 312,
+  "type": "feat",
+  "relatedDocs": [
+    "docs/adr/0004-plan-phase-deterministic-sidecar-runner.md",
+    "docs/adr/0006-phase-enum-loop-state-machine.md",
+    "docs/adr/0016-nomeacao-de-branch-derivada-em-codigo-no-formato-cam-issue-n.md"
+  ],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add plan-approval gate module (identity, context builder, resolver)",
+      "description": "As the plan-runner, I need a plan-approval gate discriminator with a PRD-summary context builder and an approve/reject resolver factory so the sidecar can pause on the FULL audited PRD and resume deterministically, mirroring the in-progress-conflict gate.",
+      "acceptanceCriteria": [
+        "A new module src/supervisor/plan-approval-gate.ts exports PLAN_APPROVAL_GATE = 'plan-approval' and the exact ordered options ['approve', 'reject']. [oracle: file-assert grep -q \"PLAN_APPROVAL_GATE = 'plan-approval'\" src/supervisor/plan-approval-gate.ts]",
+        "The options constant is exactly ['approve', 'reject'] in that order. [oracle: file-assert grep -Eq \"\\['approve', ?'reject'\\]\" src/supervisor/plan-approval-gate.ts]",
+        "buildPlanApprovalContext(prd) returns a free-text summary string containing the PRD title, the story count, and the per-story acceptance-criteria counts, so the operator reviews the full audited PRD (not a pre-PRD sketch); a null/empty prd yields a safe non-throwing fallback line. [oracle: bun test test/plan-approval-gate.test.ts]",
+        "makePlanApprovalResolver(deps) returns a GateResolutionHandler where decision 'approve' calls deps.proceedBranchFn() and returns 'implementing', and decision 'reject' calls deps.removePrdFn() then deps.notifyFn(...) and returns 'idle'. [oracle: bun test test/plan-approval-gate.test.ts]",
+        "The resolver never throws and fails safe to 'idle' on any unexpected/absent decision (mirrors makeInProgressConflictResolver's default arm and best-effort deps contract). [oracle: bun test test/plan-approval-gate.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "New file src/supervisor/plan-approval-gate.ts. Mirror src/supervisor/in-progress-conflict.ts verbatim in shape: gate identity constants + pure context builder + makeXResolver(deps) factory returning a GateResolutionHandler ((gate: CamGate) => LoopPhase). Import CamGate/GateResolutionHandler from ./gate.ts and LoopPhase from ../commands/status.ts. PrdSnapshot type lives in src/supervisor/decide.ts (reuse it for buildPlanApprovalContext). GOTCHA: pollAndResolveGate calls the handler with NO surrounding try/catch of its own, so the resolver + its injected deps must be best-effort/never-throw (see the InProgressConflictResolverDeps doc comment). Do NOT modify the generic primitive in gate.ts (shipped by CAM-153). Reject discards the working-tree prd.json (still on main; no branch/commit has happened yet at pause time). noUncheckedIndexedAccess: guard array/regex access. Tests hit behavior, not mock-call tautologies."
+    },
+    {
+      "id": "US-002",
+      "title": "Wire the plan-approval gate write-side into the plan-runner pause-operator path",
+      "description": "As the plan-runner, on auditor APPROVE with plan_approval=operator I need to WRITE the plan-approval gate (instead of dead-ending at awaiting-operator-approval with no options and no resume path) so `cam decide approve|reject` has an active gate to resolve.",
+      "acceptanceCriteria": [
+        "RunPostAuditOptions gains an optional writePlanApprovalGateFn seam (() => void) threaded into runPostAuditAction and handleAuditApproved. [oracle: file-assert grep -q 'writePlanApprovalGateFn' src/supervisor/plan-runner.ts]",
+        "handleAuditApproved's pause-operator branch calls writePlanApprovalGateFn (when provided) before returning { kind: 'awaiting-operator-approval' }; the auto/proceed-branch path never calls it. [oracle: bun test test/plan-runner-plan-approval.test.ts]",
+        "The auto-mode (plan_approval='auto') proceed-branch behavior is unchanged: branch created, prd.json committed, phase flipped to implementing, writePlanApprovalGateFn NOT called. [oracle: bun test test/plan-runner-plan-approval.test.ts]",
+        "The awaiting-operator-approval doc comment on runPostAuditAction/PostAuditActionResult is updated to state the pause now writes a resolvable gate (no longer a dead-end). [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "Edit src/supervisor/plan-runner.ts only. handleAuditApproved is at ~:1426; pause-operator returns { kind: 'awaiting-operator-approval' } at ~:1438 (this is the current DEAD-END). Add the seam to RunPostAuditOptions (~:1204) and thread it through runPostAuditAction (~:1526) -> handleAuditApproved. Keep the seam OPTIONAL (undefined in existing tests) so no test regresses. Do NOT build the context or write the file here: the seam is a no-arg closure supplied by the sidecar (US-003), mirroring how detectInProgressConflictFn/writeInProgressConflictGateFn seams are injected. exitPhaseAfterPlan (src/commands/sidecar.ts:2001) already maps awaiting-operator-approval -> awaiting-operator; leave it (writeGateAndNotify also flips to awaiting-operator, so the phase is consistent). biome noExcessiveLinesPerFunction(maxLines=80): keep handleAuditApproved under budget (factory/helper extraction pattern already in use)."
+    },
+    {
+      "id": "US-003",
+      "title": "Wire plan-approval gate production write seam + resolver into the sidecar",
+      "description": "As the sidecar, I need to build the plan-approval gate write seam (PRD-summary context + writeGateAndNotify) and register the plan-approval resolver in the gate registry with real git/rm/notify deps, so `cam decide approve` branches+commits+implements and `cam decide reject` discards the PRD and returns to idle.",
+      "acceptanceCriteria": [
+        "A makeWritePlanApprovalGateFn closure reads scripts/cam/prd.json, builds context via buildPlanApprovalContext, and calls writeGateAndNotify with gate=PLAN_APPROVAL_GATE, options=['approve','reject']; it is wired into the plan-phase runPostAuditAction path as writePlanApprovalGateFn. [oracle: file-assert grep -q 'writePlanApprovalGateFn' src/commands/sidecar.ts]",
+        "makeProductionGatePhaseFn's registry registers a PLAN_APPROVAL_GATE handler alongside IN_PROGRESS_CONFLICT_GATE, dispatched generically (no hard-coded single gate kind). [oracle: file-assert grep -q 'PLAN_APPROVAL_GATE' src/commands/sidecar.ts]",
+        "The approve resolver deps derive the branch name in code from prd.issueNumber (deriveBranchName, plan-runner.ts), run git checkout -B + git add scripts/cam/prd.json + git commit, and the handler returns 'implementing'; the reject deps rm scripts/cam/prd.json and push an orchestrator notify, and the handler returns 'idle'. Each dep is best-effort/never-throws. [oracle: bun test test/sidecar-gate-phase.test.ts]",
+        "End-to-end against a real tmpdir gate file: after writing a plan-approval gate, `cam decide approve` populates the decision, the sidecar gate-phase tick resolves it (branch/commit deps fire, phase flips to implementing, gate file consumed); `cam decide reject` resolves to prd.json removed + phase idle. Async waits via waitForCondition (no fixed sleeps); no tautological mock-call-only assertions. [oracle: bun test test/sidecar-gate-phase.test.ts]",
+        "On auditor APPROVE with plan_approval=operator, the written gate file has gate='plan-approval', options=['approve','reject'], and a context carrying the PRD summary; the sidecar never auto-selects an option. [oracle: bun test test/sidecar-gate-phase.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": "US-002",
+      "notes": "Edit src/commands/sidecar.ts (and reuse exports from plan-runner.ts). Mirror the in-progress-conflict wiring pair: makeWriteInProgressConflictGateFn (~:2334) is the template for makeWritePlanApprovalGateFn; makeInProgressConflictResolverDeps (~:2670) + makeProductionGatePhaseFn registry (~:2703-2708) is the template for the plan-approval resolver registration. Thread writePlanApprovalGateFn into runProductionPlanPhaseWithReplan (~:2384) -> runPostAuditAction (same seam plumbing as detectInProgressConflictFn/writeInProgressConflictGateFn at ~:2428-2429). For approve, reuse deriveBranchName (plan-runner.ts:88) from prd.issueNumber; you may export/reuse executeGitProceedBranch (plan-runner.ts:1324) but note it flips phase itself via its setPhaseFn arg - either pass a no-op setPhase (pollAndResolveGate flips to the handler's returned 'implementing' anyway) or replicate the checkout-B/add/commit sequence to avoid a double-flip. GOTCHA: `cam decide` (src/commands/decide.ts) is ALREADY generic - do NOT edit it. Orchestrator boot already surfaces ANY active gate generically (CAM-153 AC8) - no new boot work. plan_approval config + readPlanApproval already exist (src/config/models.ts:274-289) and are in the Setup/Config TUIs - NO new config work, no new Ink screen. Resolver deps must be best-effort/never-throw (pollAndResolveGate has no try/catch around the handler). biome 80-line/complexity limits: use the factory/helper extraction pattern already pervasive in this file."
+    }
+  ]
+}
