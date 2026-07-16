@@ -6,6 +6,15 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.176.0] - 2026-07-16
+
+### Added
+
+- US-004 - Emit the split advisory at plan-time (non-gating)
+- US-003 - Split-advisory heuristic + plan-split-advisory event kind
+- US-002 - cam stats tokens command + dispatch wiring
+- US-001 - Pure tokens-per-issue aggregation module
+
 ## [0.175.0] - 2026-07-16
 
 ### Added
