@@ -46,7 +46,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "FRONT A residual (auditor findings #2 and #3). Comment-only edits; comments are invisible to typecheck so each file gets its own absence-grep oracle. Files: src/config/models.ts:58, src/commands/issue-specify.ts (:29,:75,:82,:600,:613 -- the :600/:613 re-grill comments are folded HERE, not orphaned to a later story), src/commands/spec.ts:332, src/commands/domain-docs.ts:35, src/supervisor/events.ts:314+316, test/integration/issue-specify-ref-only.test.ts:245. Reword sensibly (grill -> spec/interview, re-grilled -> re-specified, re-grill -> re-spec, 'grill layer'/'grill spec layer' -> 'spec layer'); exact wording is reviewer-judgment but the absence oracle is the gate. These files carry NO vendored /grilling or /domain-modeling token (verified), so blanket absence oracles are safe. requires US-001 so the enum vocabulary is settled before comment vocabulary follows."
     },
