@@ -1,0 +1,13 @@
+{
+  "id": "CAM-319",
+  "title": "proceedBranchFn wraps checkout-B/write/add/commit in one swallow-all try/catch,…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-16T17:34:27.954Z",
+  "updatedAt": "2026-07-16T17:34:27.954Z",
+  "description": "proceedBranchFn wraps checkout-B/write/add/commit in one swallow-all try/catch, yet the resolver always returns 'implementing' regardless of git success. A failed branch/commit would leave the loop in 'implementing' with no cam/* branch. This matches the documented best-effort/never-throw contract (pollAndResolveGate has no try/catch), so it is intentional and non-blocking, but a future hardening could surface a failed branch creation instead of silently flipping phase.\n\nSource: cam/issue-312\nReview round: 1\n\nsuggestion-fingerprint: 713163004dde",
+  "derivedFrom": [
+    "CAM-312"
+  ]
+}
