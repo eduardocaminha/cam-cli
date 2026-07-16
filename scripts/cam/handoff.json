@@ -1,20 +1,22 @@
 {
-  "lastCompletedStory": { "id": "US-003", "title": "Sidecar generic gate lifecycle: write+notify, poll+resolve+clear+flip" },
+  "lastCompletedStory": { "id": "US-004", "title": "In-progress-work conflict gate at plan start" },
   "branchName": "cam/issue-153",
   "timestamp": "2026-07-16T00:00:00Z",
   "createdFiles": [
-    "test/sidecar-gate-phase.test.ts"
+    "src/supervisor/in-progress-conflict.ts",
+    "test/supervisor/in-progress-conflict.test.ts",
+    "test/plan-runner-in-progress-conflict.test.ts",
+    "test/plan-in-progress-conflict-sidecar.test.ts"
   ],
   "modifiedFiles": [
-    "src/supervisor/gate.ts",
-    "src/supervisor/loop.ts",
+    "src/supervisor/plan-runner.ts",
     "src/commands/sidecar.ts",
-    "test/supervisor/gate.test.ts",
-    "scripts/file-size-budget.json"
+    "scripts/file-size-budget.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 (in-progress-conflict gate) is the first CONCRETE consumer of the US-003 generic primitive shipped here. Two exported functions in src/supervisor/gate.ts do the heavy lifting: `writeGateAndNotify(filePath, {gate,options,context}, setPhaseFn, notifyFn)` (write side: clears a stale gate file first via removeGateFile, writes the fresh one with no `decision`, flips phase to 'awaiting-operator', pushes one notify line via formatGateNotifyLine) and `pollAndResolveGate(filePath, registry, setPhaseFn)` (poll side: reads leniently, RE-VALIDATES a populated `decision` against `gate.options` -- never trusts cam decide's own validation transitively -- looks up `registry[gate.gate]` (a `GateResolutionHandler = (gate: CamGate) => LoopPhase`), calls it, deletes the gate file, flips phase; an invalid decision or unregistered discriminator is left untouched for the next tick). US-004 must: (1) detect in-progress work when a plan is requested (per its AC1), (2) call writeGateAndNotify with gate:'in-progress-conflict', options: EXACTLY ['continue','ship','abandon'] (per its AC1 literal), before any issue selection/dispatch happens, and (3) register a handler for 'in-progress-conflict' into the SAME registry object that sidecar.ts's makeProductionGatePhaseFn (src/commands/sidecar.ts) builds -- that registry is currently `{}` (empty), built inline in makeProductionGatePhaseFn; US-004 will need to either thread handler-registration into that factory or extract the registry construction so both the plan-phase call site (write) and the gate-phase poll closure (resolve) share the identical object. The poll side is already fully wired into the sidecar's outer loop (loop.ts's runSidecarLoop gained a runGatePhaseFn option + an awaiting-operator branch, sibling of planning/shipping, positioned BEFORE the active!==true idle check for the same reason those two are). No production call site writes a gate yet (writeGateAndNotify is unused in sidecar.ts outside tests) -- that first call site is US-004's job.",
+  "nextStoryContext": "US-005 (orchestrator boot surfaces active gate as opening blocker line) is doc-only and does NOT depend on US-004's registered gate kind -- it just needs .claude/.cam-gate.json's SHAPE (gate/options/context/decision, src/supervisor/gate.ts's CamGate) to write the boot-read entry in templates/agents/subagent-orchestrator.md AND .claude/agents/subagent-orchestrator.md (GOTCHA already in its notes: cam-dual-copy-is-per-file, edit BOTH then embed-vendor + embed-vendor:check). Separately, for anyone touching the in-progress-conflict gate later: the detection lives in src/supervisor/in-progress-conflict.ts (detectInProgressConflict/hasIncompletePrd/isCamFeatureBranch/buildInProgressConflictContext/readHeadBranchName/makeInProgressConflictResolver), wired at the literal top of runPlanPhase (src/supervisor/plan-runner.ts) via two new optional RunPlanPhaseOptions seams: detectInProgressConflictFn (returns a context string or null) and writeInProgressConflictGateFn (called with that context, calls writeGateAndNotify). CRITICAL GOTCHA if you ever touch the BLOCK->re-plan loop (runPlanPhaseWithReplan, CAM-204): both new seams are explicitly set to `undefined` on every re-plan round (round >= 2) -- round 1's own freshly-planned, not-yet-approved prd.json is all passes:false by construction, so re-running the detection on round 2+ would misdetect that SAME cycle's in-flight draft as someone else's in-progress work and wrongly pause mid-replan. Do not remove that omission without re-deriving the guard some other way. runPostAuditAction/exitPhaseAfterPlan both special-case the 'in-progress-conflict' planResult/PostAuditActionResult kind as a pure no-op (mirrors 'branch-created'): the gate write already flipped phase to 'awaiting-operator' before runPlanPhase ever returned that kind, so touching phase again downstream would clobber it. The resolution handler (continue->implementing, ship->shipping, abandon->rm handoff.json+rm prd.json+git checkout main then planning) is registered into makeProductionGatePhaseFn's registry in sidecar.ts via a separate makeInProgressConflictResolverDeps factory (kept OUT of makeProductionGatePhaseFn's own body on purpose: test/sidecar-gate-phase.test.ts's US-003 source-text oracle only slices the first 800 chars after the function signature, and inlining the registry construction pushed the pollAndResolveGate(...) call outside that window during this story).",
   "officialDocsValidated": [
-    { "lib": "none", "status": "no_external_lib_touched", "summary": "node:fs/node:path builtins + internal modules only (gate.ts's existing fail-closed/lenient readers from US-001, LoopPhase from commands/status.ts); no new external dependency introduced." }
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure internal wiring: node:fs/node:child_process builtins, existing gate.ts primitive (US-003), decide.ts's PrdSnapshot partition, git symbolic-ref/checkout via the existing SpawnFn seam. No new external dependency introduced." }
   ]
 }
