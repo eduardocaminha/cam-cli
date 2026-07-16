@@ -93,7 +93,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": "US-003",
       "notes": "Files: src/ui/ConfigScreen.tsx (major refactor of the ~568-line wizard). Reuse the existing per-phase model Select and the custom-id passthrough (ConfigScreen.tsx:69-103, PHASE_MODEL_OPTIONS + useCustomModelEntry): do NOT rebuild the model picker. Net-new UI is the TabBar wiring (US-003) + the effort Select. GOTCHA (spec tension): issue AC(3) enumerates only backend/merge-mode/plan-approval for the Global tab, but the notify recipient/from steps were added to the wizard after this issue was filed (2026-06-25); preserve them under the Global tab to avoid regressing config capability while adding NO new global fields (meta_loop/worker_isolation/orch_context_window/notify-additions are OUT of scope). Depends on US-001 (ConfigChoices.efforts + EFFORT_DEFAULTS) and US-003 (TabBar). Keep the component body under biome's line-count budget by extracting per-tab sections as the current file already does. Ink success/failure = glyph, never divider color (curated invariant). Watch biome cognitive-complexity ceiling: extract the keypress focus-advance logic into a helper."
     }
