@@ -1,0 +1,23 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Migrate check-all.ts gate-runner spawn seam to Bun.spawnSync" },
+  "branchName": "cam/issue-308",
+  "timestamp": "2026-07-16T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "scripts/check-all.ts",
+    "test/check-all.test.ts",
+    "scripts/cam/patterns.md",
+    "scripts/file-size-budget.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 (this story) migrated ONLY scripts/check-all.ts's exported SpawnFn seam (return type from node's SpawnSyncReturns<string> to Bun's SyncSubprocess<'inherit','inherit'>, default impl now Bun.spawnSync([cmd, ...args], { cwd, stdin: 'inherit', stdout: 'inherit', stderr: 'inherit' }), verdict mapping now `result.success && result.exitCode === 0`). US-002 is a separate, non-exported-type migration for check-coverage.ts/validate-agents-md.ts's 3 internal spawn call sites -- different gotchas apply there (stdout/stderr are Buffer|undefined needing explicit decode, check-ignore maps EXIT CODE not stdout, no `.error` equivalent so fail-closed via throwing on !success). Do not conflate the two stories' spawn-seam shapes.",
+  "officialDocsValidated": [
+    {
+      "lib": "bun",
+      "url": "https://bun.com/docs/api/spawn",
+      "fetchedAt": "2026-07-16T00:00:00Z",
+      "status": "corrected",
+      "summary": "Docs state success=true iff exitCode===0 but don't clarify exitCode's runtime value on signal-termination; live-verified with a real SIGTERM child (Bun.spawnSync(['bash','-c','kill -TERM $$'])) that exitCode is actually null at runtime despite the .d.ts declaring `exitCode: number` -- verdict mapping written defensively as `result.success && result.exitCode === 0` rather than relying on the (misleadingly non-nullable) type alone."
+    }
+  ]
+}
