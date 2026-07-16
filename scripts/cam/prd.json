@@ -79,7 +79,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": "US-003",
       "notes": "Edit src/commands/sidecar.ts runPostPlanActions (~line 2186-2242): it already parses prd.json for issueNumber and has logEvent + a notify path (makeNotifyOrchestrator). Add the advisory AFTER runPostAuditAction/exitPhaseAfterPlan, wrapped so any read/parse error is swallowed (best-effort, never throws). Read the current issue file via issueFilePath(id) (src/issues/backlog.ts:205) for wsjf.jobSize; read story count from prd.json userStories.length. Build historical records: aggregate cycle-tokens by issueNumber (US-001) then look up each issue file's jobSize. Emit the US-003 'plan-split-advisory' event via o.logEvent and push the operator note. Cover: fires above threshold, silent below, no-data -> no advisory, and a throwing reader still returns normally. Do NOT gate the plan phase."
     }
