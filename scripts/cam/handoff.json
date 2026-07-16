@@ -1,23 +1,22 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Migrate check-all.ts gate-runner spawn seam to Bun.spawnSync" },
+  "lastCompletedStory": { "id": "US-002", "title": "Migrate check-coverage.ts and validate-agents-md.ts spawn call sites to Bun.spawnSync" },
   "branchName": "cam/issue-308",
   "timestamp": "2026-07-16T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "scripts/check-all.ts",
-    "test/check-all.test.ts",
-    "scripts/cam/patterns.md",
-    "scripts/file-size-budget.json"
+    "scripts/check-coverage.ts",
+    "scripts/validate-agents-md.ts",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 (this story) migrated ONLY scripts/check-all.ts's exported SpawnFn seam (return type from node's SpawnSyncReturns<string> to Bun's SyncSubprocess<'inherit','inherit'>, default impl now Bun.spawnSync([cmd, ...args], { cwd, stdin: 'inherit', stdout: 'inherit', stderr: 'inherit' }), verdict mapping now `result.success && result.exitCode === 0`). US-002 is a separate, non-exported-type migration for check-coverage.ts/validate-agents-md.ts's 3 internal spawn call sites -- different gotchas apply there (stdout/stderr are Buffer|undefined needing explicit decode, check-ignore maps EXIT CODE not stdout, no `.error` equivalent so fail-closed via throwing on !success). Do not conflate the two stories' spawn-seam shapes.",
+  "nextStoryContext": "US-002 (this story) migrated the 3 remaining internal git/bun-test spawn adapters (check-coverage.ts's makeDefaultGetCoverage, validate-agents-md.ts's makeGetTrackedFiles and makeIsIgnored) from node:child_process to Bun.spawnSync, with NO exported-type change (all three keep their existing public return signatures). Key finding: node's `.error !== undefined` (spawn failure, e.g. missing git binary) has NO Bun equivalent to port -- Bun.spawnSync throws synchronously (ENOENT) on a missing binary, so that fail-closed guard is now satisfied for free by letting the throw propagate uncaught; do not try to reintroduce an `.error` check. Default stdout/stderr (no stdio/encoding option) are typed Buffer unconditionally (never undefined); decode with `new TextDecoder().decode(result.stdout)`. makeIsIgnored's exit-code mapping (0/1/other-with-stderr-check) ported 1:1 from `.status` to `.exitCode`. This closes out the check-all.ts (US-001) + check-coverage/validate-agents-md (US-002) spawn migration set for the CAM-308 PRD; grep the repo for any remaining `node:child_process` import before assuming there are more in-scope call sites for a future story in this epic.",
   "officialDocsValidated": [
     {
       "lib": "bun",
       "url": "https://bun.com/docs/api/spawn",
       "fetchedAt": "2026-07-16T00:00:00Z",
-      "status": "corrected",
-      "summary": "Docs state success=true iff exitCode===0 but don't clarify exitCode's runtime value on signal-termination; live-verified with a real SIGTERM child (Bun.spawnSync(['bash','-c','kill -TERM $$'])) that exitCode is actually null at runtime despite the .d.ts declaring `exitCode: number` -- verdict mapping written defensively as `result.success && result.exitCode === 0` rather than relying on the (misleadingly non-nullable) type alone."
+      "status": "aligned",
+      "summary": "Docs confirm default stdout/stderr are Buffer instances (not string/undefined) when no encoding/stdio option is passed, and exitCode/success reflect exit status. Docs don't explicitly cover the missing-binary case; empirically verified (real Bun.spawnSync(['nonexistent-binary-xyz']) call) that it throws synchronously with an 'Executable not found in $PATH' Error rather than setting an .error field like node's spawnSync -- implementation relies on this throw for fail-closed semantics."
     }
   ]
 }
