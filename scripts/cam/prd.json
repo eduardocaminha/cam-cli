@@ -1,0 +1,59 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-308",
+  "description": "Bun-first alignment: migrate the 4 node:child_process spawnSync call sites in the 3 check:all gate-helpers to Bun.spawnSync, no functional change.",
+  "issueNumber": 308,
+  "type": "chore",
+  "relatedDocs": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "Bun",
+      "url": "https://bun.sh/docs/api/spawn",
+      "version": "1.3.13",
+      "fetchedAt": "2026-07-16T00:00:00.000Z",
+      "summary": "Bun.spawnSync(cmd[], opts) returns SyncSubprocess { exitCode:number, success:boolean, stdout:Buffer|undefined, stderr:Buffer|undefined, signalCode?:string, pid, resourceUsage } -- NOT node's { status, signal, stdout, stderr, error }. stdout/stderr are Buffer (Uint8Array), decode explicitly where parsed. stdio inherit is per-stream ({stdin/stdout/stderr:'inherit'}). success is true only on a zero exit code; there is no .error field, spawn failure surfaces via success=false / a throw. Confirmed API is valid on 1.3.13 and already used in src/retry/launcher.ts, src/retry/tmux.ts, src/commands/claude.ts.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Migrate check-all.ts gate-runner spawn seam to Bun.spawnSync",
+      "description": "As a maintainer, I need the check:all gate-runner's default spawn function and its injectable SpawnFn seam moved off node:child_process onto Bun.spawnSync, so that the gate spine follows the Bun-first convention without any change to gate pass/fail behavior.",
+      "acceptanceCriteria": [
+        "The default spawnFn at scripts/check-all.ts:132 calls Bun.spawnSync with an argv array ([cmd, ...args]) and per-stream inherit ({ stdin: 'inherit', stdout: 'inherit', stderr: 'inherit' }, plus cwd), replacing spawnSync from node:child_process. [oracle: grep -q 'Bun.spawnSync' scripts/check-all.ts]",
+        "No `node:child_process` import remains in scripts/check-all.ts. [oracle: ! grep -q 'node:child_process' scripts/check-all.ts]",
+        "The exported SpawnFn seam is retyped to Bun's native SyncSubprocess return shape (not node's SpawnSyncReturns); the DI seam is preserved so tests can still inject a fake spawnFn. [oracle: ! grep -q 'SpawnSyncReturns' scripts/check-all.ts]",
+        "Gate pass/fail verdict is preserved exactly: a zero exit maps to 'ok'; a non-zero exit OR a null/signal-terminated exit maps to 'fail' (map via Bun's success/exitCode, guarding the null-exit case). [oracle: bun test test/check-all.test.ts]",
+        "All test fakes in test/check-all.test.ts are updated to the Bun-native SyncSubprocess shape ({ exitCode, success, stdout, stderr, ... }) and the node SpawnSyncReturns import is removed from the test. [oracle: ! grep -q 'SpawnSyncReturns' test/check-all.test.ts]",
+        "A test proves a red (non-zero-exit) gate still reads as 'fail' (exit code 1 from runGates). [oracle: bun test test/check-all.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: scripts/check-all.ts (SpawnFn type at :33-37, default spawnFn at :132, verdict mapping at :141-142), test/check-all.test.ts (import type SpawnSyncReturns at :12, makeResult fake at :20-29). Retype SpawnFn to return Bun's SyncSubprocess (reference the type via `import type` from 'bun', or an inline structural type mirroring { exitCode: number; success: boolean; stdout?: ...; stderr?: ... }); do NOT keep the node SpawnSyncReturns import. Verdict mapping today is `const exitCode = result.status ?? 1; const passed = exitCode === 0;` -- Bun has no `.status`; prefer `result.success` (true only on zero exit, covers signal-termination) and/or guard `result.exitCode` for null. patterns.md line 144 (spawnSync exit-status guard) documents the node `.status ?? 1` idiom being replaced; patterns.md line 68 (gate-spine convention) and line 76 (oracle-friendly manifest) are the surrounding context. GATES manifest and the g() helper are untouched. This story owns the only exported-type ripple in the issue; the other two files (US-002) have no exported-type change."
+    },
+    {
+      "id": "US-002",
+      "title": "Migrate check-coverage.ts and validate-agents-md.ts spawn call sites to Bun.spawnSync",
+      "description": "As a maintainer, I need the three internal git/bun-test spawn adapters in check-coverage.ts and validate-agents-md.ts moved off node:child_process onto Bun.spawnSync, with output decoded explicitly and fail-closed semantics preserved, so the whole gate-helper set is Bun-first with no functional change.",
+      "acceptanceCriteria": [
+        "check-coverage.ts makeDefaultGetCoverage (scripts/check-coverage.ts:132) uses Bun.spawnSync(['bun', 'test', '--coverage'], { cwd }); both stdout and stderr Buffers are decoded Uint8Array->string before being concatenated and passed to parseCoverageOutput (coverage output lands on stderr, so both must be decoded). [oracle: grep -q 'Bun.spawnSync' scripts/check-coverage.ts]",
+        "No `node:child_process` import remains in scripts/check-coverage.ts. [oracle: ! grep -q 'node:child_process' scripts/check-coverage.ts]",
+        "validate-agents-md.ts makeGetTrackedFiles (scripts/validate-agents-md.ts:294) uses Bun.spawnSync(['git', 'ls-files'], { cwd }); stdout is decoded Uint8Array->string before splitting on newlines, and a non-zero/failed exit still throws the same 'not a git repository / git unavailable' error (fail-closed). [oracle: bun test test/validate-agents-md.test.ts]",
+        "validate-agents-md.ts makeIsIgnored (scripts/validate-agents-md.ts:322) uses Bun.spawnSync(['git', 'check-ignore', '-q', path], { cwd }) and maps the EXIT CODE (0 -> ignored/true, 1 -> not-ignored/false), not stdout; a spawn failure (missing binary) still fails closed by throwing, matching the prior node `.error` handling, and the 'not a git repository' fatal-128 path still throws. [oracle: bun test test/validate-agents-md.test.ts]",
+        "No `node:child_process` import remains in scripts/validate-agents-md.ts. [oracle: ! grep -q 'node:child_process' scripts/validate-agents-md.ts]",
+        "The full gate spine is green post-migration end-to-end. [oracle: bun run check:all]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: scripts/check-coverage.ts (import at :22, spawnSync at :132-138), scripts/validate-agents-md.ts (import at :43, git ls-files at :294-301, git check-ignore at :322-334). These are internal adapters with NO exported-type change (getCoverage returns CoverageReport; makeGetTrackedFiles returns string[]; makeIsIgnored returns boolean) -- their public signatures are unchanged, so the existing DI-injected test fakes in test/check-coverage.test.ts and validate-agents-md's validateDocs tests need no update. GOTCHA: node's `result.status !== 0` becomes a Bun `!result.success` / `result.exitCode !== 0` check; node's `.error !== undefined` (spawn failure) has no Bun equivalent -- Bun surfaces spawn failure via success=false or a throw, so preserve fail-closed by throwing on non-success. GOTCHA: Bun stdout/stderr are Buffer|undefined even without an encoding option (patterns.md line 288 documents the byte-vs-char decode trap); decode with `.toString('utf8')` / TextDecoder only where output is parsed (check-coverage stdout+stderr, ls-files stdout); the check-ignore path never reads stdout. Out of scope (do NOT touch): test/validate-agents-md.test.ts keeps its own node:child_process spawnSync for git-repo test setup (git init/add/archive) -- that is test-harness, not one of the 4 in-scope production call sites, and the issue scope is explicit that only the 3 scripts change. patterns.md line 78 documents the `All files` coverage-parse format; line 70 is the real-git integration-test pattern already covering makeGetTrackedFiles/makeIsIgnored."
+    }
+  ]
+}
