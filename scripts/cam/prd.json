@@ -64,7 +64,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "Files: src/release/post-merge.ts (:347-354 makeRealIssueSpawnFn), + test. This story corrects auditor finding #1: makeRealIssueSpawnFn IS a live readBacklogFromMain consumer via defaultCloseIssueFn (:365 -> closeIssueOnMain issue-specify.ts:546), defaultAbandonIssueFn (:383 -> abandonIssueOnMain :432) and the demote/reopen paths (:624/:673), each calling readBacklogFromMain(cwd, toBacklogSpawn(spawnFn)) which requests 256 MiB; the field-by-field rebuild dropped it to the 1 MiB default, so ship auto-close and `cam issue close/abandon` ENOBUFS on the same ~1.01 MiB backlog. makeRealIssueSpawnFn is shared by all three verbs (jscpd gate) so one edit fixes all. Keep the `as SpawnSyncReturns<string>` cast. Test hits real fs/git in a tmpdir with a >1 MiB fixture (issue gotcha #2). Confirms issue AC4 (none remain) truthfully across all four sites."
     }
