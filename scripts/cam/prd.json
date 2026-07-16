@@ -1,0 +1,29 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-219",
+  "description": "Pass --plan-approval operator to the hermetic init smoke in build-release.sh to suppress the false-positive Resend-not-configured warning on every build.",
+  "issueNumber": 219,
+  "type": "chore",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Pass --plan-approval operator to the hermetic init smoke",
+      "description": "As a cam-cli maintainer, I need the hermetic init smoke in build-release.sh to run with --plan-approval operator so that the false-positive 'plan_approval is auto but Resend is not configured' warning stops firing on every build, preserving the warning's signal without weakening the real product-side warning.",
+      "acceptanceCriteria": [
+        "The hermetic init smoke invocation in scripts/build-release.sh (~line 114) passes `--plan-approval operator` in addition to its existing --no-tmux --existing --issue-system none --merge-mode immediate flags. [oracle: grep -q -- '--plan-approval operator' scripts/build-release.sh]",
+        "The init smoke command line still retains all its existing isolation flags (--no-tmux, --existing, --issue-system none, --merge-mode immediate, </dev/null). [oracle: file-assert grep -Eq 'init .*--no-tmux .*--existing .*--issue-system none .*--merge-mode immediate' scripts/build-release.sh]",
+        "No product-side change is made to warnIfResendUnconfigured: it still warns when plan_approval is auto and Resend is unconfigured, so a real non-interactive auto init without Resend still warns. [oracle: file-assert grep -q \"planApproval === 'auto' && (resendApiKey === '' || resendRecipient === '')\" src/commands/setup.ts]",
+        "`bun run build:release --install` emits no `plan_approval is \"auto\" but Resend is not configured` warning during the init smoke, exits 0, and installs the binary. [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Single-file change: scripts/build-release.sh line ~114. Add `--plan-approval operator` to the `init` invocation, alongside the existing --no-tmux --existing --issue-system none --merge-mode immediate flags. The flag is parsed at src/commands/setup.ts:848 (accepts auto|operator). warnIfResendUnconfigured (src/commands/setup.ts:301) only fires when planApproval === 'auto', so the operator branch skips it. Do NOT touch src/commands/setup.ts (rejected option B: a real non-interactive auto init without Resend SHOULD still warn). The smoke tmpdir config is deleted on the EXIT trap, so recording operator instead of auto is inconsequential; the smoke asserts only on the init exit code, never on warning output, so no assertion breaks."
+    }
+  ]
+}
