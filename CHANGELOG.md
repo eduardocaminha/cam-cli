@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.185.0] - 2026-07-16
+
+### Added
+
+- US-001 - Trim vestigial node-era options param from the SpawnFn seam type
+
 ## [0.184.0] - 2026-07-16
 
 ### Added
