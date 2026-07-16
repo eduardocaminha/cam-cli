@@ -9,7 +9,7 @@
 //   --json mode: onResults callback receives correctly shaped GateResult[].
 
 import { describe, expect, test } from 'bun:test';
-import type { SpawnSyncReturns } from 'node:child_process';
+import type { ResourceUsage, SyncSubprocess } from 'bun';
 
 import { GATES, runGates, type Gate, type GateResult, type SpawnFn } from '../scripts/check-all.ts';
 
@@ -17,14 +17,28 @@ import { GATES, runGates, type Gate, type GateResult, type SpawnFn } from '../sc
 // Test helpers
 // ---------------------------------------------------------------------------
 
-function makeResult(exitCode: number): SpawnSyncReturns<string> {
+function makeResourceUsage(): ResourceUsage {
+	return {
+		contextSwitches: { voluntary: 0, involuntary: 0 },
+		cpuTime: { user: 0, system: 0, total: 0 },
+		maxRSS: 0,
+		messages: { sent: 0, received: 0 },
+		ops: { in: 0, out: 0 },
+		shmSize: 0,
+		signalCount: 0,
+		swapCount: 0,
+	};
+}
+
+function makeResult(exitCode: number): SyncSubprocess<'inherit', 'inherit'> {
 	return {
 		pid: 1,
-		output: [],
-		stdout: '',
-		stderr: exitCode !== 0 ? 'error' : '',
-		status: exitCode,
-		signal: null,
+		stdout: undefined,
+		stderr: undefined,
+		exitCode,
+		success: exitCode === 0,
+		resourceUsage: makeResourceUsage(),
+		signalCode: undefined,
 	};
 }
 
@@ -188,6 +202,21 @@ describe('runGates exit code', () => {
 			{ name: 'a', cmd: 'bun', args: ['a'] },
 			{ name: 'b', cmd: 'bun', args: ['b'] },
 		];
+		expect(runGates({ gates, spawnFn: fn })).toBe(1);
+	});
+
+	test('returns 1 when a gate is signal-terminated (null exitCode, success false)', () => {
+		const signalTerminated: SyncSubprocess<'inherit', 'inherit'> = {
+			pid: 1,
+			stdout: undefined,
+			stderr: undefined,
+			exitCode: null as unknown as number,
+			success: false,
+			resourceUsage: makeResourceUsage(),
+			signalCode: 'SIGTERM',
+		};
+		const fn: SpawnFn = () => signalTerminated;
+		const gates: Gate[] = [{ name: 'a', cmd: 'bun', args: ['a'] }];
 		expect(runGates({ gates, spawnFn: fn })).toBe(1);
 	});
 });

@@ -17,24 +17,25 @@
 //           Quiet per-gate lines are still printed to stdout.
 //           Exit code is still aggregate (nonzero if any gate fails).
 
-import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
+
+import type { SyncSubprocess } from 'bun';
 
 // ---------------------------------------------------------------------------
 // Injectable dependency type
 // ---------------------------------------------------------------------------
 
 /**
- * Subset of node:child_process spawnSync we need.
+ * Subset of Bun.spawnSync we need.
  * Injectable so unit tests never shell out to a real subprocess.
  */
 export type SpawnFn = (
 	cmd: string,
 	args: string[],
 	options: { encoding: 'utf8'; stdio?: 'inherit' | 'pipe' },
-) => SpawnSyncReturns<string>;
+) => SyncSubprocess<'inherit', 'inherit'>;
 
 // ---------------------------------------------------------------------------
 // GateResult type
@@ -129,7 +130,8 @@ export function runGates(options: RunGatesOptions = {}): number {
 	const gates = options.gates ?? GATES;
 	const bail = options.bail ?? false;
 	const cwd = options.cwd ?? process.cwd();
-	const spawnFn: SpawnFn = options.spawnFn ?? ((cmd, args, opts) => spawnSync(cmd, args, { ...opts, cwd, stdio: 'inherit' }));
+	const spawnFn: SpawnFn =
+		options.spawnFn ?? ((cmd, args) => Bun.spawnSync([cmd, ...args], { cwd, stdin: 'inherit', stdout: 'inherit', stderr: 'inherit' }));
 
 	let anyFailed = false;
 	const results: GateResult[] = [];
@@ -138,8 +140,7 @@ export function runGates(options: RunGatesOptions = {}): number {
 		const start = Date.now();
 		const result = spawnFn(gate.cmd, gate.args, { encoding: 'utf8' });
 		const durationMs = Date.now() - start;
-		const exitCode = result.status ?? 1;
-		const passed = exitCode === 0;
+		const passed = result.success && result.exitCode === 0;
 
 		if (!passed) anyFailed = true;
 		const status: 'ok' | 'fail' = passed ? 'ok' : 'fail';
