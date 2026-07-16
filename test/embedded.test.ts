@@ -134,6 +134,12 @@ describe('templatesContents — oracle contract in planner prompt (US-001)', () 
 		expect(planner).toContain('file-assert');
 		expect(planner).toContain('reviewer-judgment');
 	});
+
+	test('documents the absence/presence grep idiom (US-001)', () => {
+		expect(planner).toContain('! grep -q PATTERN file');
+		expect(planner).toContain('grep -q PATTERN file');
+		expect(planner).toContain('self-nullifying');
+	});
 });
 
 describe('templatesContents — oracle enforcement in auditor prompt (US-002)', () => {
