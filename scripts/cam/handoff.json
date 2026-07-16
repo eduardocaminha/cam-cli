@@ -1,24 +1,22 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Add effort config read/write plumbing (no UI)" },
+  "lastCompletedStory": { "id": "US-002", "title": "Add rewriteFrontmatterEffort + wire into save, sync agent files and re-embed" },
   "branchName": "cam/issue-87",
   "timestamp": "2026-07-16T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/config/models.ts",
-    "src/ui/ConfigScreen.tsx",
+    "src/templates/frontmatter.ts",
     "src/commands/config.ts",
-    "test/config/models.test.ts",
-    "test/commands/config-persist.test.ts"
+    "test/commands/config-frontmatter.test.ts",
+    ".claude/agents/subagent-implementer.md",
+    ".claude/agents/subagent-orchestrator.md",
+    "templates/agents/subagent-implementer.md",
+    "templates/agents/subagent-orchestrator.md",
+    "src/vendor/_generated.ts",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 landed the config plumbing only (no wizard UI step, no frontmatter writer): `LlmPhase` (= Exclude<Phase, 'ship'>) and `EFFORT_DEFAULTS`/`readPhaseEffort` live in src/config/models.ts, mirroring readPhaseModel's try/catch defaults exactly (missing file/section/key/malformed TOML/non-string all fall back to EFFORT_DEFAULTS). ConfigChoices (src/ui/ConfigScreen.tsx) gained an OPTIONAL `efforts?: Record<LlmPhase, string>` field -- the wizard itself does NOT yet collect it (no new WizardStep, no Select UI); a later UI story will need to add an effort-picking step per LLM phase and wire it into the onDone() choices object (currently only `models`/`backend` are always populated there, see ConfigScreen.tsx ~line 304). mergeConfigChoices (src/commands/config.ts) writes an [efforts] section via mergeIntoConfig ONLY when choices.efforts is defined, mirroring the [models] write, and only ever contains the 5 LLM-phase keys (never 'ship') since the type forbids it. Ship remains model-only (ADR-0009: deterministic/zero-LLM, no effort concept) -- do not add ship to EFFORT_DEFAULTS, LlmPhase, or any efforts record. A later frontmatter story will presumably need to plumb effort into the .claude/ runtime files the same way rewriteFrontmatterModels does for model (src/commands/config.ts ~line 134), but that is out of scope here and not implemented.",
+  "nextStoryContext": "US-002 landed the effort frontmatter writer end-to-end (helper + wiring + agent-file sync), but NOT the wizard UI step. `src/templates/frontmatter.ts` now exports `rewriteFrontmatterEffort(content, newEffort)` (rewrites an existing `effort:` line via the same scoped-regex approach as `rewriteFrontmatterModel`, and ALSO inserts the line just inside the closing `---` fence when absent -- string-in/string-out, no fs) plus its own `FRONTMATTER_TARGET_EFFORT_PATHS: Record<LlmPhase, string>` map pointing at `.claude/agents/subagent-<phase>.md` for the 5 LLM phases (orchestrator/planner/auditor/implementer/reviewer), deliberately distinct from `FRONTMATTER_TARGET_PHASE_PATHS` (ship-only, `.claude/commands/cam-ship.md`). `src/commands/config.ts` gained `rewriteFrontmatterEfforts(cwd, choices)`, wired into `mergeConfigChoices` right after `rewriteFrontmatterModels` when `cwd` is provided and `choices.efforts` is defined; it resolves each of the 5 paths relative to cwd and silently skips missing files, mirroring the model helper exactly. `.claude/agents/subagent-implementer.md` (+ its `templates/agents/` twin) gained `effort: high`; `.claude/agents/subagent-orchestrator.md` (+twin) was bumped `high` -> `xhigh`. `bun run embed-vendor` was re-run so `src/vendor/_generated.ts` reflects both templates/agents/ edits (embed-vendor:check is clean). REMAINING GAP (per US-001's handoff, still not closed): ConfigScreen.tsx's wizard still does NOT collect `choices.efforts` -- there is no per-LLM-phase effort-picking WizardStep, so in production `mergeConfigChoices` is always called with `choices.efforts === undefined` and neither the TOML `[efforts]` write (US-001) nor this story's frontmatter rewrite ever fires from the live `cam config` wizard today; both are fully unit-tested and wired, just unreachable from the interactive path until a future story adds the UI step and threads it into `onDone()`'s choices object (ConfigScreen.tsx ~line 304-330, see `PhaseStepsSection`/`useFireOnDone` for the existing per-phase-model precedent to mirror). Do not add `ship` to any effort map or `LlmPhase`-typed structure (ADR-0009: ship is deterministic, zero LLM calls, no effort concept).",
   "officialDocsValidated": [
-    {
-      "lib": "Bun.TOML",
-      "url": "https://bun.com/reference/bun/TOML/parse",
-      "fetchedAt": "2026-07-16T00:00:00Z",
-      "status": "aligned",
-      "summary": "Bun.TOML.parse(input: string): object confirmed; readPhaseEffort's try/catch around loadConfig (which wraps Bun.TOML.parse) correctly treats any parse throw as a fallback-to-default path, matching readPhaseModel's existing pattern."
-    }
+    { "lib": "none", "status": "no_external_lib_touched" }
   ]
 }
