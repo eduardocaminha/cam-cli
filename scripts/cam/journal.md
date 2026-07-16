@@ -479,3 +479,13 @@ Each entry follows this template:
 - **Decisions**: Proactive boot rebuild was vindicated: two top specified candidates (CAM-153, CAM-310) touch plan-runner mechanics, and WSJF picked CAM-310 whose US-002 wires the linter INTO the plan-runner audit path, so a coherent sidecar was required. Reusable refinement to the coherence rule: when the sidecar is >1 minor behind AND plan-runner-touching issues sit at the top of specified, rebuild proactively while idle (zero-risk) rather than reactively. Dismissed penned reviewer SUGGESTION 2c94d471ff9b (collectGrepFlagChars misses operand-trailing grep flags like grep 'X' -q -L file): the reviewer itself flagged it out-of-scope per US-001 enumerated forms + the deliberate 'no full shell tokenizer' note; the guarded domain (machine-authored PRD-oracle idioms) is always flags-first, so it is speculative gold-plating, dismissed on merits not effort.
 - **Blockers encountered**: None. The PR-BEHIND state self-healed via merge-watch update-branch; no preflight false-positive fired this cycle.
 - **Follow-ups**: Standing operator directive: drain all specified in WSJF order, one PR per session. Open: (1) meta-gate preference (full-auto vs meta_loop=observe for a real ship gate), left full-auto after six clean drains; (2) CAM-312 blockedBy still empty, should be [CAM-153]; (3) CAM-313 (harden 2 preflight-fragile e2e tests) is still IDEA-stage and must be /cam-spec'd before cam plan can self-select it. COHERENCE for next session: installed binary + running sidecar are v0.172.0 but main is v0.173.0 (= +CAM-310). Because CAM-310 is a plan-TIME linter, the v0.172.0 sidecar will not actually run it during next session's planning until rebuilt to v0.173.0 at boot; do the rebuild so the new PRD-oracle linter is active.
+
+## DRAIN-CAM153-2026-07-16 — Drain CAM-153 (generic operator-decision gate primitive); proactive v0.173.0 boot rebuild vindicated again
+
+- **Started**: 2026-07-16
+- **Closed**: 2026-07-16
+- **Branch**: cam/issue-153
+- **Issue**: CAM-153
+- **Outcome**: shipped
+- **Summary**: Drained CAM-153 (generic operator-decision gate primitive: .cam-gate.json + `cam decide`, wired to the in-progress-work conflict gate at plan start) end-to-end. 5-story PRD, auditor APPROVE, final typecheck ok + 4734 pass / 0 fail, review round 1 CLEAN. Shipped PR #250, v0.174.0.
+- **Decisions**: Proactive boot rebuild v0.172.0->v0.173.0 + sidecar relaunch before dispatch (coherence refinement); vindicated when WSJF self-selected CAM-153, a plan-runner/sidecar-gate issue. Promoted both penned SUGGESTIONs on merits (CAM-314 checkout observability, CAM-315 e2e sidecar wiring test) rather than dismissing.
