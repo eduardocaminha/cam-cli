@@ -1,0 +1,28 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-317",
+  "description": "Harden rewriteFrontmatterEffort insert path to insert frontmatterBody verbatim via a replacer function instead of a replacement string.",
+  "issueNumber": 317,
+  "type": "fix",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Insert frontmatterBody verbatim in rewriteFrontmatterEffort",
+      "description": "As a maintainer, I need rewriteFrontmatterEffort's insert path to insert the captured frontmatterBody literally so that any $-sequences ($&, $1, $$) in the body are never reinterpreted by the String.prototype.replace engine, closing a latent footgun.",
+      "acceptanceCriteria": [
+        "In rewriteFrontmatterEffort's insert path (src/templates/frontmatter.ts), the second argument to content.replace is a replacer function that returns the assembled fence string, NOT a replacement string, so `$`-sequences in frontmatterBody are inserted literally. [oracle: file-assert grep -Eq 'content\\.replace\\(/\\^---.*/, *\\(\\) *=>' src/templates/frontmatter.ts]",
+        "A test in test/commands/config-frontmatter.test.ts asserts that a frontmatterBody containing $-sequences (e.g. `$&`, `$1`) with no existing effort: line is inserted verbatim (the output still contains the literal `$&` / `$1` text and the new effort: line). [oracle: grep -Eq '[$]&|[$]1' test/commands/config-frontmatter.test.ts]",
+        "The three existing rewriteFrontmatterEffort behaviors (rewrite existing line, insert when absent, no-op without a fence) are otherwise unchanged. [oracle: bun test test/commands/config-frontmatter.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Single file: src/templates/frontmatter.ts, rewriteFrontmatterEffort insert path (lines 83-87). Only the insert branch is affected; the existing-line branch (line 80) uses a static template literal `$1 ${newEffort}` where $1 is intentional and must stay. Replacement-function form: content.replace(/^---\\r?\\n[\\s\\S]*?\\r?\\n---/, () => updatedFence). A no-arg arrow is sufficient (return value is inserted verbatim, MDN: 'the string returned by the function is used as the replacement'). Test lives in test/commands/config-frontmatter.test.ts under the existing rewriteFrontmatterEffort describe block; input must have a frontmatter fence, NO existing effort: line, and a body/key value containing $& and $1 so the insert path runs. Gotcha (issue CAM-317): agent frontmatter is controlled content so live risk is nil; this is latent-footgun hardening. Source: cam/issue-87. noUncheckedIndexedAccess: fenceMatch[1] is already guarded via `?? ''`."
+    }
+  ]
+}
