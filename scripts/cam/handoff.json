@@ -1,0 +1,15 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Build the pure PRD-oracle linter module (named-rules scanner + PRD walk)" },
+  "branchName": "cam/issue-310",
+  "timestamp": "2026-07-16T00:00:00Z",
+  "createdFiles": [
+    "src/supervisor/prd-oracle-lint.ts",
+    "test/supervisor/prd-oracle-lint.test.ts"
+  ],
+  "modifiedFiles": [],
+  "openQuestions": [],
+  "nextStoryContext": "prd-oracle-lint.ts exports RULES (named-rules list: { name, test(command): RuleFinding | null }) and lintPrd(prd: PrdShape): PrdOracleLintFinding[]. lintPrd is currently unwired -- nothing calls it yet (no CLI entrypoint, no plan-phase integration). A likely next story wires lintPrd into the plan phase (e.g. after the planner writes prd.json, or as a scripts/check-*.ts gate) and surfaces findings to the operator/auditor. Adding a second rule to RULES is a one-liner (push another OracleLintRule). The rule intentionally only recognizes short-option grep flags (-q/-L/-l, bundled or separate); long-form flags (--quiet, --files-without-match) are out of scope per the AC wording and were not implemented.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
