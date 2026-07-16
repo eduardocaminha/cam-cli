@@ -6,6 +6,14 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.169.0] - 2026-07-16
+
+### Added
+
+- US-003 - Route the post-merge makeRealIssueSpawnFn close/abandon/demote path through the shared helper, test the ship auto-close path, and audit all remaining consumers
+- US-002 - Route file-local, triage, and suggestions-promote wrappers through the shared helper with >1 MiB regression test
+- US-001 - Add shared spread-forwarding spawnSync helper and harden on-main SpawnFn option surface
+
 ## [0.168.0] - 2026-07-15
 
 ### Added
