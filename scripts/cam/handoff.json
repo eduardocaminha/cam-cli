@@ -1,0 +1,15 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Pure tokens-per-issue aggregation module" },
+  "branchName": "cam/issue-136",
+  "timestamp": "2026-07-16T00:00:00.000Z",
+  "createdFiles": [
+    "src/stats/tokens.ts",
+    "test/stats/tokens.test.ts"
+  ],
+  "modifiedFiles": [],
+  "openQuestions": [],
+  "nextStoryContext": "aggregateTokensPerIssue(eventLogJsonl: string | null) is exported from src/stats/tokens.ts and returns { perIssue: IssueTokenRollup[], meanTokensPerIssue, medianTokensPerIssue, unattributedTokens }. Attribution is keyed exclusively off 'cycle-tokens' events (detail.issueNumber); multiple cycle-tokens events for the same issueNumber are summed into one rollup (cycleCount tracks how many). unattributedTokens = sum(all raw 'tokens' event totals) - sum(all cycle-tokens.workerTokens), clamped at 0 -- this is a whole-log computation, not the per-cycle 'since last marker' slice used by recordCycleTokens in src/commands/journal.ts (that one only serves the NEXT emitted cycle-tokens event; this module reconciles the full historical log). Pure, no fs -- the report/advisory consumer is expected to read the event log file itself and pass the string content in. No dashboard/budget UI was touched (already shipped, CAM-131/US-014); this story only supplies the aggregation function.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
