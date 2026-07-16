@@ -6,6 +6,16 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.182.0] - 2026-07-16
+
+### Added
+
+- US-R1-001 - Review round 1 fix 001: address reviewer finding (handoff)
+- US-R1-001 - Review round 1 fix 001: address reviewer finding
+- US-001 - Insert frontmatterBody verbatim in rewriteFrontmatterEffort (patterns)
+- US-001 - Insert frontmatterBody verbatim in rewriteFrontmatterEffort (handoff)
+- US-001 - Insert frontmatterBody verbatim in rewriteFrontmatterEffort
+
 ## [0.181.0] - 2026-07-16
 
 ### Added
