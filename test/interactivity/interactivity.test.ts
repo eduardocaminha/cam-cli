@@ -515,7 +515,10 @@ describe('Test 5: Init and setup interactivity gate — non-interactive path whe
 			else process.env.CAM_CONFIG_PATH = prevConfigPath;
 			rmSync(tmpWorkDir, { recursive: true, force: true });
 		}
-	});
+		// Generous explicit per-test timeout (rather than Bun's default 5000ms):
+		// runInitLinear does real fs/config I/O that can lag under full-suite
+		// CPU contention, so the preflight cannot false-positive a timeout here.
+	}, 20_000);
 
 	test('setup gate=false routes to collectViaReadline: returns configured answers on EOF', async () => {
 		// When isSetupInteractiveGate returns false, collectSetupAnswers picks
