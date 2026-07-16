@@ -86,7 +86,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": "US-003",
       "notes": "FRONT C (index.ts surface). Single file: index.ts prose at :115 ('via grill-with-docs interview'), :283 ('via grill-with-docs'), :324 ('grill-with-docs interview runs inside the pane'), :386 ('re-grilled'), :1024 comment ('re-grilled'). Rename grill-with-docs -> spec-with-docs and re-grilled -> re-specified. The whole-file absence oracle `! grep -q grill index.ts` is valid here because US-001 (transitively required via the US-001<-US-002<-US-003<-US-004 chain) already removed the enum literals; index.ts has no vendored /grilling token. requires US-003 so the spec-with-docs skill name is settled before the CLI strings reference it."
     },
