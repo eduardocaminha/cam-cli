@@ -6,6 +6,16 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.174.0] - 2026-07-16
+
+### Added
+
+- US-005 - Orchestrator boot surfaces active gate as opening blocker line
+- US-004 - In-progress-work conflict gate at plan start
+- US-003 - Sidecar generic gate lifecycle: write+notify, poll+resolve+clear+flip
+- US-002 - `cam decide <decision>` CLI thin-proxy
+- US-001 - Gate file schema + fail-closed I/O module
+
 ## [0.173.0] - 2026-07-16
 
 ### Added
