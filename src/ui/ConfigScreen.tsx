@@ -23,7 +23,7 @@ import { colors } from './theme.ts';
 import { Section } from './Section.tsx';
 import { Select, type SelectOption } from './Select.tsx';
 import { DEFAULTS } from '../config/models.ts';
-import type { Phase, MergeMode, PlanApproval } from '../config/models.ts';
+import type { Phase, LlmPhase, MergeMode, PlanApproval } from '../config/models.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -38,6 +38,11 @@ export type ConfigChoices = {
 	resendRecipient?: string;
 	/** resend_from for [notify]. Empty string means "leave unset". */
 	resendFrom?: string;
+	/**
+	 * Per-LLM-phase effort level (`ship` omitted: it has no effort setting,
+	 * ADR-0009). Undefined means the wizard did not collect effort choices.
+	 */
+	efforts?: Record<LlmPhase, string>;
 };
 
 type WizardStep =

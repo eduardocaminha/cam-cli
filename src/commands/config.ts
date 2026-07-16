@@ -154,6 +154,11 @@ function rewriteFrontmatterModels(cwd: string, choices: ConfigChoices): void {
  *   planner      = "<model>"
  *   ...
  *
+ *   [efforts]
+ *   orchestrator = "<effort>"                (when choices.efforts is defined)
+ *   planner      = "<effort>"
+ *   ...                                      (5 LLM phases only, ship excluded)
+ *
  *   [backend]
  *   name = "<backend>"
  *
@@ -194,6 +199,14 @@ export function mergeConfigChoices(
 		backend: { name: choices.backend } as TomlSection,
 	};
 	mergeIntoConfig(configPath, updates);
+
+	// Persist [efforts] when the wizard collected per-LLM-phase effort choices
+	// (ship is never a key here: LlmPhase excludes it at the type level).
+	if (choices.efforts !== undefined) {
+		mergeIntoConfig(configPath, {
+			efforts: choices.efforts as TomlSection,
+		});
+	}
 
 	// Persist [plan] plan_approval when the wizard collected it.
 	if (choices.planApproval !== undefined) {

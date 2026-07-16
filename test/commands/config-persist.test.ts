@@ -11,8 +11,8 @@ import { tmpdir } from 'node:os';
 import { mergeConfigChoices } from '../../src/commands/config.ts';
 import type { ConfigChoices } from '../../src/commands/config.ts';
 import { loadConfig } from '../../src/config/toml.ts';
-import { readPhaseModel, readBackend, DEFAULTS } from '../../src/config/models.ts';
-import type { Phase } from '../../src/config/models.ts';
+import { readPhaseModel, readPhaseEffort, readBackend, DEFAULTS, EFFORT_DEFAULTS } from '../../src/config/models.ts';
+import type { Phase, LlmPhase } from '../../src/config/models.ts';
 import { FRONTMATTER_TARGET_PHASE_PATHS } from '../../src/templates/frontmatter.ts';
 
 // ---------------------------------------------------------------------------
@@ -26,6 +26,14 @@ const PHASES: readonly Phase[] = [
 	'implementer',
 	'reviewer',
 	'ship',
+];
+
+const LLM_PHASES: readonly LlmPhase[] = [
+	'orchestrator',
+	'planner',
+	'auditor',
+	'implementer',
+	'reviewer',
 ];
 
 function makeChoices(
@@ -212,4 +220,41 @@ test('mergeConfigChoices preserves pre-existing [notify] keys and updates additi
 	const notify = config['notify'] as Record<string, unknown>;
 	expect(notify['resend_recipient']).toBe('old@example.com');
 	expect(notify['resend_from']).toBe('new-from@example.com');
+});
+
+test('mergeConfigChoices writes [efforts] section and readPhaseEffort round-trips each written value, with missing-key fallback to EFFORT_DEFAULTS', () => {
+	const configPath = join(tmpDir, 'project.toml');
+	const efforts: Record<LlmPhase, string> = {
+		orchestrator: 'high',
+		planner: 'medium',
+		auditor: 'high',
+		implementer: 'medium',
+		reviewer: 'xhigh',
+	};
+
+	mergeConfigChoices(configPath, { ...makeChoices(), efforts });
+
+	const config = loadConfig(configPath);
+	const effortsSection = config['efforts'] as Record<string, unknown>;
+	expect(typeof effortsSection).toBe('object');
+	for (const phase of LLM_PHASES) {
+		expect(effortsSection[phase]).toBe(efforts[phase]);
+		expect(readPhaseEffort(phase, configPath)).toBe(efforts[phase]);
+	}
+
+	// Missing-key case: a config with no [efforts] section at all falls back
+	// to EFFORT_DEFAULTS for every LLM phase.
+	const bareConfigPath = join(tmpDir, 'bare-project.toml');
+	mergeConfigChoices(bareConfigPath, makeChoices());
+	for (const phase of LLM_PHASES) {
+		expect(readPhaseEffort(phase, bareConfigPath)).toBe(EFFORT_DEFAULTS[phase]);
+	}
+});
+
+test('mergeConfigChoices does not write [efforts] when choices.efforts is undefined', () => {
+	const configPath = join(tmpDir, 'project.toml');
+	mergeConfigChoices(configPath, makeChoices());
+
+	const config = loadConfig(configPath);
+	expect(config['efforts']).toBeUndefined();
 });

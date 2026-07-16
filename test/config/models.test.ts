@@ -11,13 +11,15 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
 	DEFAULTS,
 	DEFAULT_ORCH_CONTEXT_WINDOW,
+	EFFORT_DEFAULTS,
 	readBackend,
 	readMergeMode,
 	readOrchContextWindow,
+	readPhaseEffort,
 	readPhaseModel,
 	readResendConfig,
 } from '../../src/config/models.ts';
-import type { Phase } from '../../src/config/models.ts';
+import type { LlmPhase, Phase } from '../../src/config/models.ts';
 import { MODEL_OPTIONS } from '../../src/ui/ConfigScreen.tsx';
 import { loadConfig } from '../../src/config/toml.ts';
 
@@ -574,4 +576,157 @@ describe('readPhaseModel vs repo project.toml (drift guard)', () => {
 			expect(optionValues.has(actual) || actual === DEFAULTS[phase]).toBe(true);
 		});
 	}
+});
+
+// ---------------------------------------------------------------------------
+// EFFORT_DEFAULTS (US-001)
+// ---------------------------------------------------------------------------
+
+describe('EFFORT_DEFAULTS', () => {
+	test('has exactly the 5 LLM phases and no others (ship omitted)', () => {
+		expect(Object.keys(EFFORT_DEFAULTS).sort()).toEqual(
+			['auditor', 'implementer', 'orchestrator', 'planner', 'reviewer'].sort(),
+		);
+	});
+
+	test('orchestrator/planner/auditor/reviewer default to xhigh', () => {
+		expect(EFFORT_DEFAULTS.orchestrator).toBe('xhigh');
+		expect(EFFORT_DEFAULTS.planner).toBe('xhigh');
+		expect(EFFORT_DEFAULTS.auditor).toBe('xhigh');
+		expect(EFFORT_DEFAULTS.reviewer).toBe('xhigh');
+	});
+
+	test('implementer defaults to high', () => {
+		expect(EFFORT_DEFAULTS.implementer).toBe('high');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// readPhaseEffort: happy path
+// ---------------------------------------------------------------------------
+
+const LLM_PHASES: readonly LlmPhase[] = ['orchestrator', 'planner', 'auditor', 'implementer', 'reviewer'];
+
+describe('readPhaseEffort - happy path', () => {
+	test('reads a configured effort from [efforts] section', () => {
+		const path = writeTmpToml(`
+[efforts]
+orchestrator = "medium"
+`);
+		expect(readPhaseEffort('orchestrator', path)).toBe('medium');
+	});
+
+	test('reads multiple phases independently', () => {
+		const path = writeTmpToml(`
+[efforts]
+planner = "high"
+implementer = "low"
+`);
+		expect(readPhaseEffort('planner', path)).toBe('high');
+		expect(readPhaseEffort('implementer', path)).toBe('low');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// readPhaseEffort: fallback paths (mirrors readPhaseModel's 5 defensive paths)
+// ---------------------------------------------------------------------------
+
+describe('readPhaseEffort - fallback on missing file', () => {
+	test('returns EFFORT_DEFAULTS for every LLM phase when file does not exist', () => {
+		const nonExistentPath = join(tmpDir, 'nonexistent.toml');
+		for (const phase of LLM_PHASES) {
+			expect(readPhaseEffort(phase, nonExistentPath)).toBe(EFFORT_DEFAULTS[phase]);
+		}
+	});
+});
+
+describe('readPhaseEffort - fallback on missing section', () => {
+	test('returns the default when [efforts] section is absent', () => {
+		const path = writeTmpToml(`
+issue_system = "local"
+backend = "claude"
+`);
+		expect(readPhaseEffort('orchestrator', path)).toBe(EFFORT_DEFAULTS.orchestrator);
+	});
+});
+
+describe('readPhaseEffort - fallback on missing key', () => {
+	test('returns the default when phase key is absent from [efforts]', () => {
+		const path = writeTmpToml(`
+[efforts]
+orchestrator = "custom-effort"
+`);
+		// 'planner' key is absent
+		expect(readPhaseEffort('planner', path)).toBe(EFFORT_DEFAULTS.planner);
+	});
+});
+
+describe('readPhaseEffort - fallback on malformed TOML', () => {
+	test('returns the default when TOML is malformed', () => {
+		const path = writeTmpToml(`
+[efforts
+orchestrator = "custom-effort"
+`);
+		expect(readPhaseEffort('orchestrator', path)).toBe(EFFORT_DEFAULTS.orchestrator);
+	});
+});
+
+describe('readPhaseEffort - fallback on non-string value', () => {
+	test('returns the default when effort value is a number', () => {
+		const path = writeTmpToml(`
+[efforts]
+orchestrator = 42
+`);
+		expect(readPhaseEffort('orchestrator', path)).toBe(EFFORT_DEFAULTS.orchestrator);
+	});
+
+	test('returns the default when effort value is a boolean', () => {
+		const path = writeTmpToml(`
+[efforts]
+orchestrator = true
+`);
+		expect(readPhaseEffort('orchestrator', path)).toBe(EFFORT_DEFAULTS.orchestrator);
+	});
+
+	test('returns the default when effort value is an empty string', () => {
+		const path = writeTmpToml(`
+[efforts]
+orchestrator = ""
+`);
+		expect(readPhaseEffort('orchestrator', path)).toBe(EFFORT_DEFAULTS.orchestrator);
+	});
+});
+
+describe('readPhaseEffort - configPath override', () => {
+	test('uses configPath arg instead of cwd default', () => {
+		const path = writeTmpToml(`
+[efforts]
+orchestrator = "seam-effort"
+`);
+		expect(readPhaseEffort('orchestrator', path)).toBe('seam-effort');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// LlmPhase is ship-free at the type level (US-001, AC-3)
+//
+// This is a compile-time-only assertion: `bun run typecheck` must fail if the
+// `// @ts-expect-error` below stops being an error (e.g. if LlmPhase is
+// widened back to include 'ship'). No runtime assertion is meaningful here.
+// ---------------------------------------------------------------------------
+
+describe('LlmPhase excludes ship at the type level', () => {
+	test('an efforts record including ship is a type error (compile-time only)', () => {
+		const efforts: Record<LlmPhase, string> = {
+			orchestrator: 'xhigh',
+			planner: 'xhigh',
+			auditor: 'xhigh',
+			implementer: 'high',
+			reviewer: 'xhigh',
+			// @ts-expect-error: 'ship' is not a valid LlmPhase key; efforts records
+			// must be ship-free at the type level (ADR-0009: ship is deterministic).
+			ship: 'sonnet',
+		};
+		expect(Object.keys(efforts).length).toBe(6);
+	});
 });

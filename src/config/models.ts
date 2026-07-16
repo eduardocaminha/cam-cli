@@ -28,6 +28,13 @@ export type Phase =
 	| 'ship';
 
 /**
+ * The LLM-backed phases, i.e. every `Phase` except `ship`. `ship` is
+ * deterministic and zero-LLM (ADR-0009), so it has no configurable effort
+ * level: effort records are ship-free at the type level.
+ */
+export type LlmPhase = Exclude<Phase, 'ship'>;
+
+/**
  * Default model per phase and backend. Applied when the project config is
  * missing, malformed, or lacks the requested key.
  *
@@ -60,6 +67,23 @@ export const DEFAULTS: Record<Phase | 'backend', string> = {
 	implementer: 'sonnet',
 	ship: 'sonnet',
 	backend: 'claude',
+};
+
+/**
+ * Default effort level per LLM-backed phase. Applied when the project config
+ * is missing, malformed, or lacks the requested key. `ship` is intentionally
+ * omitted: it is deterministic/zero-LLM (ADR-0009) and has no effort setting.
+ *
+ * Values are Claude Code CLI effort tier aliases: `xhigh` for the deep
+ * reasoning phases (orchestrator/planner/auditor/reviewer), `high` for the
+ * high-throughput implementer phase.
+ */
+export const EFFORT_DEFAULTS: Record<LlmPhase, string> = {
+	orchestrator: 'xhigh',
+	planner: 'xhigh',
+	auditor: 'xhigh',
+	reviewer: 'xhigh',
+	implementer: 'high',
 };
 
 function defaultProjectConfigPath(): string {
@@ -98,6 +122,40 @@ export function readPhaseModel(phase: Phase, configPath?: string): string {
 		// Malformed TOML or fs read error: fall back to default.
 	}
 	return DEFAULTS[phase];
+}
+
+/**
+ * Read the effort level for `phase` from the project config. Returns the
+ * configured value when it is present and a non-empty string; otherwise
+ * returns `EFFORT_DEFAULTS[phase]`.
+ *
+ * The function is **defensive on every error path**, mirroring
+ * `readPhaseModel`: a missing file, a malformed TOML file, a missing
+ * `[efforts]` section, a missing key, or a non-string value all fall back to
+ * the default.
+ *
+ * @param phase    The LLM-backed cam phase to resolve an effort level for
+ *                 (`ship` is not a valid argument at the type level).
+ * @param configPath  Override the config file path (default:
+ *                    `scripts/cam/project.toml` resolved from `process.cwd()`).
+ *                    Used by tests to target a tmp fixture without modifying
+ *                    the real project config.
+ */
+export function readPhaseEffort(phase: LlmPhase, configPath?: string): string {
+	const path = configPath ?? defaultProjectConfigPath();
+	try {
+		const config = loadConfig(path);
+		const effortsSection = config['efforts'];
+		if (effortsSection !== undefined && effortsSection !== null && typeof effortsSection === 'object') {
+			const value = (effortsSection as Record<string, unknown>)[phase];
+			if (typeof value === 'string' && value.length > 0) {
+				return value;
+			}
+		}
+	} catch {
+		// Malformed TOML or fs read error: fall back to default.
+	}
+	return EFFORT_DEFAULTS[phase];
 }
 
 /**
