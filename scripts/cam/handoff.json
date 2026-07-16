@@ -1,0 +1,15 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Read resend_from into ResendConfig" },
+  "branchName": "cam/issue-218",
+  "timestamp": "2026-07-16T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/config/models.ts",
+    "test/config/models.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "ResendConfig now has a `from: string` field (empty-string default) populated by readResendConfig from [notify] resend_from in project.toml, mirroring the non-secret resend_recipient pattern (no env-var override, unlike apiKey). Both return sites (happy-path and env-only fallback) in src/config/models.ts include it. Any downstream story that sends escalation emails via Resend (e.g. wiring the from address into the actual send call in src/commands/sidecar.ts) should read resendCfg.from and fall back to the existing hardcoded onboarding sender only when it is ''.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
