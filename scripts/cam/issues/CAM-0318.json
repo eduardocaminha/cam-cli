@@ -1,13 +1,37 @@
 {
   "id": "CAM-318",
   "title": "The 'stats' switch case handles parsed.help by printing STATS_HELP, then delega…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-16T16:38:03.432Z",
-  "updatedAt": "2026-07-16T16:38:03.432Z",
+  "updatedAt": "2026-07-16T21:37:24.112Z",
   "description": "The 'stats' switch case handles parsed.help by printing STATS_HELP, then delegates to dispatchStats which handles help again (index.ts:2024). Harmless duplication; could delegate the help branch entirely to dispatchStats.\n\nSource: cam/issue-136\nReview round: 1\n\nsuggestion-fingerprint: 950af7f7ce89",
   "derivedFrom": [
     "CAM-136"
-  ]
+  ],
+  "spec": {
+    "scope": "In index.ts, remove the duplicated help handling in the 'stats' switch case (which prints STATS_HELP then delegates to dispatchStats, which handles help again at index.ts:2024). Delegate the help branch entirely to dispatchStats so help is printed exactly once.",
+    "acceptanceCriteria": [
+      "The 'stats' switch case no longer prints STATS_HELP itself; the help branch is handled solely by dispatchStats.",
+      "`cam stats --help` prints the stats help exactly once with unchanged content.",
+      "check:all is green."
+    ],
+    "gotchas": [
+      "The duplication is currently harmless; this is a clarity cleanup.",
+      "Source: cam/issue-136 (index.ts:2024)."
+    ],
+    "domainTerms": [
+      "dispatchStats",
+      "STATS_HELP",
+      "stats command"
+    ]
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 1,
+    "riskReduction": 1,
+    "jobSize": 1
+  },
+  "type": "chore"
 }
