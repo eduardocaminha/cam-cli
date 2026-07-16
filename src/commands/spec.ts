@@ -329,7 +329,7 @@ interface SpecPersistPayload {
 	wsjf: WsjfScore;
 	blockedBy?: string[];
 	/**
-	 * Optional issue type captured during the grill (US-002, CAM-235).
+	 * Optional issue type captured during the spec interview (US-002, CAM-235).
 	 * Forwarded as-is to specifyIssueOnMain, which validates it; a payload
 	 * without type leaves the issue entry without a type key.
 	 */

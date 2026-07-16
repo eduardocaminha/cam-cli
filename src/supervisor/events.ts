@@ -311,9 +311,9 @@ export interface MergeWatchPollErrorEventDetail {
 }
 
 /**
- * 'stage-promoted' event detail: emitted by specifyIssueOnMain (the grill spec
+ * 'stage-promoted' event detail: emitted by specifyIssueOnMain (the spec
  * writer) immediately after a successful commit. Carries the issue id and the
- * stage transition so a grill promotion is replayable from the event log.
+ * stage transition so a spec promotion is replayable from the event log.
  *   - id: the issue id that was promoted (e.g. 'CAM-42').
  *   - fromStage: the stage before promotion (always 'idea' for specifyIssueOnMain).
  *   - toStage: the stage after promotion (always 'specified' for specifyIssueOnMain).

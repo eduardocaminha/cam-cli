@@ -1,9 +1,9 @@
 import type { WsjfScore } from "./types.ts";
 
 /**
- * Structured deep-spec written by the grill (acceptanceCriteria + scope +
- * gotchas + domainTerms). Distinct from the free-text description captured
- * at stage:idea.
+ * Structured deep-spec written by the spec interview (acceptanceCriteria +
+ * scope + gotchas + domainTerms). Distinct from the free-text description
+ * captured at stage:idea.
  */
 export interface Spec {
 	acceptanceCriteria: string[];
@@ -53,7 +53,7 @@ export function validateSpec(x: unknown): ValidationResult {
 
 /** Returns true when v is one of the three valid specSource enum values. */
 function isValidSpecSourceEnum(v: unknown): boolean {
-	return v === "grill" || v === "derived" || v === "operator";
+	return v === "interview" || v === "derived" || v === "operator";
 }
 
 /** Returns true when v is a non-empty (non-blank) string. */
@@ -66,8 +66,8 @@ function isNonEmptyString(v: unknown): boolean {
  * Mirrors validateSpec/validateWsjf style: accepts unknown, returns {ok, errors}.
  *
  * Invariants enforced:
- *   1. specSource, when present, must be one of: grill, derived, operator.
- *   2. Absent specSource on a stage:specified issue is treated as "grill" (back-compat, passes).
+ *   1. specSource, when present, must be one of: interview, derived, operator.
+ *   2. Absent specSource on a stage:specified issue is treated as "interview" (back-compat, passes).
  *   3. derivedFrom must be a non-empty array when specSource === "derived".
  *   4. description must be a non-empty string when specSource is "derived" or "operator".
  */
@@ -86,11 +86,11 @@ export function validateSpecSource(x: unknown): ValidationResult {
 
 	// Invariant 1: specSource, when present, must be one of the 3 enum values.
 	if (specSource !== undefined && !isValidSpecSourceEnum(specSource)) {
-		errors.push('specSource must be one of: "grill", "derived", "operator"');
+		errors.push('specSource must be one of: "interview", "derived", "operator"');
 	}
 
-	// Absent specSource is treated as "grill" (back-compat). No error emitted for absence.
-	const effective = specSource === undefined ? "grill" : (specSource as string);
+	// Absent specSource is treated as "interview" (back-compat). No error emitted for absence.
+	const effective = specSource === undefined ? "interview" : (specSource as string);
 
 	// Invariant 2: derivedFrom must be a non-empty array when specSource === "derived".
 	if (effective === "derived") {

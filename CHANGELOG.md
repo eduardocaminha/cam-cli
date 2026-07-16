@@ -6,6 +6,17 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.178.0] - 2026-07-16
+
+### Added
+
+- US-006 - Rename grill vocabulary in CLAUDE.md, README.md, CONTEXT.md
+- US-005 - Rename grill vocabulary in recovery-runbook and patterns.md
+- US-004 - Rename grill vocabulary in index.ts CLI surface strings
+- US-003 - Rename skill dir grill-with-docs -> spec-with-docs (both copies) + cam-spec.md + embed + embedded.test.ts
+- US-002 - Rename residual grill code/test comments in otherwise-untouched files
+- US-001 - Rename specSource enum value grill -> interview across schema + code + tests
+
 ## [0.177.0] - 2026-07-16
 
 ### Added

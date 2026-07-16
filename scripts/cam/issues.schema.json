@@ -63,8 +63,8 @@
     },
     "specSource": {
       "type": "string",
-      "enum": ["grill", "derived", "operator"],
-      "description": "How the spec was produced: grill (interactive grill session), derived (consolidated from sibling issues), operator (hand-filed by operator without a grill)."
+      "enum": ["interview", "derived", "operator"],
+      "description": "How the spec was produced: interview (interactive spec interview session), derived (consolidated from sibling issues), operator (hand-filed by operator without a spec interview)."
     },
     "derivedFrom": {
       "type": "array",

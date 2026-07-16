@@ -132,7 +132,7 @@ cam run  [options]          Open or attach the single per-project session (2-pan
 cam plan [<N>]              Open a planning pane in the project session (thin launcher)
 cam next [options]          Trigger the sidecar loop (flips active:true, thin-proxy)
 cam issue "<text>"          Open an issue-creation pane in the project session (thin launcher)
-cam spec <id>               Deep-spec an idea issue into stage:specified via grill-with-docs (thin-proxy)
+cam spec <id>               Deep-spec an idea issue into stage:specified via spec-with-docs (thin-proxy)
 cam review                  Dispatch /cam-review to the live orchestrator (or bootstrap first)
 cam ship                    Dispatch /cam-ship to the live orchestrator (or bootstrap first)
 cam tag                     Create and push the vX.Y.Z git tag for the current CAM_VERSION on main

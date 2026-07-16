@@ -1,12 +1,12 @@
-Deep-spec an idea issue into `stage:specified` by running the grill-with-docs interview chain.
+Deep-spec an idea issue into `stage:specified` by running the spec-with-docs interview chain.
 
 **CLI thin-proxy invocation**: `cam spec <id>` (run from a terminal outside the session) is a thin-proxy. It detects the active cam session, waits for the orchestrator to be idle, then injects `/cam-spec <id>` into the orchestrator pane via atomic `send-keys`. The content below is what the orchestrator executes when it receives this slash command.
 
 ## Overview
 
-`/cam-spec <id>` takes a `stage:idea` issue (e.g. `CAM-42`) and transforms it into a `stage:specified` issue by running a structured operator interview (the **grill-with-docs** skill chain). At the end of the interview the orchestrator pipes the assembled spec into `cam spec --persist <id>` (the in-process CLI channel over the deterministic spec writer, `specifyIssueOnMain`): the issue transitions from `idea` to `specified` on `main` without touching the working branch.
+`/cam-spec <id>` takes a `stage:idea` issue (e.g. `CAM-42`) and transforms it into a `stage:specified` issue by running a structured operator interview (the **spec-with-docs** skill chain). At the end of the interview the orchestrator pipes the assembled spec into `cam spec --persist <id>` (the in-process CLI channel over the deterministic spec writer, `specifyIssueOnMain`): the issue transitions from `idea` to `specified` on `main` without touching the working branch.
 
-This command is an **interactive operator interview** (human-in-the-loop), not an autonomous worker. It requires the operator's participation at each grill stage.
+This command is an **interactive operator interview** (human-in-the-loop), not an autonomous worker. It requires the operator's participation at each interview stage.
 
 ## Pre-flight
 
@@ -19,9 +19,9 @@ This command is an **interactive operator interview** (human-in-the-loop), not a
 
 2. **Confirm you are NOT in the middle of an active autonomous loop** (`active:true` in `.claude/cam-loop.local.md`). A spec interview and an active loop both write to the issues dir via on-main commit-tree plumbing — running them concurrently risks a commit conflict. If the loop is active, ask the operator to pause it (`cam stop` or wait for the current story to finish) before proceeding.
 
-## Process: grill-with-docs skill chain
+## Process: spec-with-docs skill chain
 
-Run the **grill-with-docs** skill from `.claude/skills/grill-with-docs/SKILL.md`. Read that file now and follow its steps verbatim for the issue identified in the pre-flight.
+Run the **spec-with-docs** skill from `.claude/skills/spec-with-docs/SKILL.md`. Read that file now and follow its steps verbatim for the issue identified in the pre-flight.
 
 Key points:
 - The skill drives a structured multi-stage operator interview.
@@ -32,7 +32,7 @@ Key points:
 
 ## Final step: persist the spec
 
-After the grill-with-docs interview concludes and you have assembled the full
+After the spec-with-docs interview concludes and you have assembled the full
 `spec` object, `wsjf` scores, and the confirmed `type` (and, if applicable, a
 `blockedBy` list of issue ids), pipe the payload to `cam spec --persist <id>`
 via stdin, using a **safe quoting pattern** so shell interpolation cannot
@@ -92,9 +92,9 @@ On failure:
 
 After `specifyIssueOnMain` succeeds, assemble a `DomainDocsPayload` from the
 interview and persist it too. This is the missing output from the CAM-109
-dogfood: two ADR-worthy decisions were resolved during that grill but nothing
+dogfood: two ADR-worthy decisions were resolved during that interview but nothing
 was written, because there was no step wiring the interview output into
-`CONTEXT.md` / `docs/adr/`. Every grill must produce the durable domain model,
+`CONTEXT.md` / `docs/adr/`. Every interview must produce the durable domain model,
 not just the issue spec.
 
 Assemble the payload:

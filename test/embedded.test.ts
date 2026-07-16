@@ -178,8 +178,8 @@ describe('templatesContents — merit-over-cost clause in surviving copies (CAM-
 	// clause lived. The assertion for cam-plan.md is dropped; the other two surfaces
 	// still carry the clause and are checked here.
 
-	test('grill-with-docs/SKILL.md embedded copy contains the clause', () => {
-		const content = templatesContents['skills/grill-with-docs/SKILL.md'] ?? '';
+	test('spec-with-docs/SKILL.md embedded copy contains the clause', () => {
+		const content = templatesContents['skills/spec-with-docs/SKILL.md'] ?? '';
 		expect(content).toContain('engineering merit');
 	});
 
@@ -481,7 +481,7 @@ describe('materializeTemplates — skills/ subtree routing + count', () => {
 		expect(existsSync(join(cwd, '.claude', 'skills', 'domain-modeling', 'ADR-FORMAT.md'))).toBe(
 			true,
 		);
-		expect(existsSync(join(cwd, '.claude', 'skills', 'grill-with-docs', 'SKILL.md'))).toBe(true);
+		expect(existsSync(join(cwd, '.claude', 'skills', 'spec-with-docs', 'SKILL.md'))).toBe(true);
 		expect(existsSync(join(cwd, '.claude', 'skills', 'grilling', 'SKILL.md'))).toBe(true);
 	});
 
@@ -530,11 +530,11 @@ describe('materializeTemplates — patterns.md stub + orch-handoff.schema.json s
 	});
 });
 
-describe('CAM-119: cam init installs the grill-with-docs skill chain downstream', () => {
+describe('CAM-119: cam init installs the spec-with-docs skill chain downstream', () => {
 	// Regression guard: asserts that materializeTemplates (the install routine
-	// exercised by `cam init`) writes the grill-with-docs skill chain and every
+	// exercised by `cam init`) writes the spec-with-docs skill chain and every
 	// embedded skills/* file under .claude/skills/, and that the cam-spec
-	// command ships together with its grill-with-docs skill dependency. Prevents
+	// command ships together with its spec-with-docs skill dependency. Prevents
 	// the skill-not-found-downstream failure (cam-spec invokes a skill that was
 	// never installed) from silently reappearing.
 	let cwd: string;
@@ -547,13 +547,13 @@ describe('CAM-119: cam init installs the grill-with-docs skill chain downstream'
 		if (cwd && existsSync(cwd)) rmSync(cwd, { recursive: true, force: true });
 	});
 
-	test('grill-with-docs/SKILL.md is installed and matches embedded byte-for-byte', () => {
+	test('spec-with-docs/SKILL.md is installed and matches embedded byte-for-byte', () => {
 		materializeTemplates(cwd);
 		const installed = readFileSync(
-			join(cwd, '.claude', 'skills', 'grill-with-docs', 'SKILL.md'),
+			join(cwd, '.claude', 'skills', 'spec-with-docs', 'SKILL.md'),
 			'utf8',
 		);
-		const embedded = templatesContents['skills/grill-with-docs/SKILL.md'] ?? '';
+		const embedded = templatesContents['skills/spec-with-docs/SKILL.md'] ?? '';
 		expect(embedded).toBeTruthy();
 		expect(installed).toBe(embedded);
 	});
@@ -582,20 +582,20 @@ describe('CAM-119: cam init installs the grill-with-docs skill chain downstream'
 		expect(installed).toBe(embedded);
 	});
 
-	test('cam-spec.md references grill-with-docs AND the skill is co-installed', () => {
+	test('cam-spec.md references spec-with-docs AND the skill is co-installed', () => {
 		materializeTemplates(cwd);
 		// The embedded command template references the skill.
 		const camSpecEmbedded = templatesContents['commands/cam-spec.md'] ?? '';
-		expect(camSpecEmbedded).toContain('grill-with-docs');
+		expect(camSpecEmbedded).toContain('spec-with-docs');
 		// The materialized command under .claude/commands/ also references it.
 		const installedSpec = readFileSync(
 			join(cwd, '.claude', 'commands', 'cam-spec.md'),
 			'utf8',
 		);
-		expect(installedSpec).toContain('grill-with-docs');
+		expect(installedSpec).toContain('spec-with-docs');
 		// The skill dependency is co-installed under .claude/skills/.
 		expect(
-			existsSync(join(cwd, '.claude', 'skills', 'grill-with-docs', 'SKILL.md')),
+			existsSync(join(cwd, '.claude', 'skills', 'spec-with-docs', 'SKILL.md')),
 		).toBe(true);
 	});
 });

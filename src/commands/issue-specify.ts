@@ -26,7 +26,7 @@
 //
 // Commit msg style: `chore(cam): specify <id>`.
 //
-// CAM-107 (US-003 grill spec layer), CAM-90 US-004 (file-per-issue cutover).
+// CAM-107 (US-003 spec layer), CAM-90 US-004 (file-per-issue cutover).
 
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
@@ -72,14 +72,14 @@ export interface SpecifyIssueOnMainOptions {
 	cwd: string;
 	/** Id of the issue to specify (must exist with stage:'idea', status:'open'). */
 	id: string;
-	/** Structured spec produced by the grill. */
+	/** Structured spec produced by the spec interview. */
 	spec: Spec;
 	/** WSJF scoring fields. */
 	wsjf: WsjfScore;
 	/** Ids of issues this one is blocked by (default: []). */
 	blockedBy?: string[];
 	/**
-	 * Optional issue type, captured during the grill. When present, must be
+	 * Optional issue type, captured during the spec interview. When present, must be
 	 * one of "feat" | "fix" | "chore" | "docs". When absent, no type key is
 	 * written to the issue entry (no default is applied here -- defaulting
 	 * to "feat" is a consumer-side concern for the planner/composer).
@@ -597,7 +597,7 @@ export type DemoteIssueOnMainOutcome = DemoteIssueOnMainResult | DemoteIssueOnMa
 
 /**
  * Demote an issue from stage:'specified' back to stage:'idea' so a defective
- * spec can be re-grilled through specifyIssueOnMain instead of hand-editing
+ * spec can be re-specified through specifyIssueOnMain instead of hand-editing
  * JSON or abandon+refile.
  *
  * Guards (in order):
@@ -610,7 +610,7 @@ export type DemoteIssueOnMainOutcome = DemoteIssueOnMainResult | DemoteIssueOnMa
  *
  * Mutation flips only entry.stage to 'idea'; the existing (stale) spec, wsjf,
  * blockedBy, and all other fields are preserved unchanged so they remain
- * available as reference for the re-grill.
+ * available as reference for the re-spec.
  *
  * Commit message: `chore(cam): demote <id>`.
  */
