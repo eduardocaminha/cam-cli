@@ -37,7 +37,13 @@ import {
 	type DashboardReader,
 	type DashboardWriter,
 } from '../src/commands/dashboard.ts';
-import { DashboardApp, STORY_TOKENS_PLACEHOLDER, selectionReducer, type SelectionState } from '../src/ui/Dashboard.tsx';
+import {
+	DashboardApp,
+	STORY_TOKENS_PLACEHOLDER,
+	makePollWidthClearer,
+	selectionReducer,
+	type SelectionState,
+} from '../src/ui/Dashboard.tsx';
 import type { TranscriptUsage } from '../src/transcript/usage.ts';
 import { writeSidecarSessionStart } from '../src/supervisor/session-start.ts';
 import { flushInk, waitForFrame } from './helpers/flush-ink.ts';
@@ -985,6 +991,70 @@ describe('makeResizeClearer (US-002)', () => {
 
 		expect(() => clearer.onResize()).not.toThrow();
 		expect(() => clock.runAll()).not.toThrow();
+	});
+});
+
+// --- makePollWidthClearer (US-001, poll-path width-change clear) -----------
+//
+// Mirrors the `makeResizeClearer` fake-writeFn pattern above: a plain,
+// non-React factory driven directly with injected widths representing
+// successive poll ticks (no real tmux, no Ink render needed to exercise the
+// width-comparison logic itself).
+
+describe('makePollWidthClearer (US-001)', () => {
+	test('steady state (width unchanged across ticks) writes no clear', () => {
+		const writes: string[] = [];
+		const clearer = makePollWidthClearer({
+			writeFn: (data) => writes.push(data),
+			initialWidth: 80,
+		});
+
+		clearer.onPollTick(80);
+		clearer.onPollTick(80);
+		clearer.onPollTick(80);
+
+		expect(writes).toEqual([]);
+	});
+
+	test('a width change between ticks writes exactly one CURSOR.clear', () => {
+		const writes: string[] = [];
+		const clearer = makePollWidthClearer({
+			writeFn: (data) => writes.push(data),
+			initialWidth: 80,
+		});
+
+		clearer.onPollTick(80); // unchanged: no write
+		clearer.onPollTick(120); // changed: one clear
+		clearer.onPollTick(120); // unchanged at the new width: no write
+
+		expect(writes).toEqual([CURSOR.clear]);
+	});
+
+	test('repeated width changes each write their own clear', () => {
+		const writes: string[] = [];
+		const clearer = makePollWidthClearer({
+			writeFn: (data) => writes.push(data),
+			initialWidth: 80,
+		});
+
+		clearer.onPollTick(120);
+		clearer.onPollTick(80);
+		clearer.onPollTick(80);
+		clearer.onPollTick(60);
+
+		expect(writes).toEqual([CURSOR.clear, CURSOR.clear, CURSOR.clear]);
+	});
+
+	test('a failed write is swallowed, never thrown (transient ghost over a crashed poll interval)', () => {
+		const clearer = makePollWidthClearer({
+			writeFn: () => {
+				throw new Error('synthetic write failure');
+			},
+			initialWidth: 80,
+		});
+
+		clearer.onPollTick(80); // unchanged: writeFn never called, no throw
+		expect(() => clearer.onPollTick(120)).not.toThrow();
 	});
 });
 

@@ -29,7 +29,7 @@ import { spawnSync } from 'node:child_process';
 import { colors } from './theme.ts';
 import { layout } from '../design/tokens.ts';
 import { Section } from './Section.tsx';
-import type { DashboardData } from '../commands/dashboard.ts';
+import { CURSOR, type DashboardData } from '../commands/dashboard.ts';
 import type { PrdStory } from '../commands/status.ts';
 import { formatWallClock } from '../commands/status.ts';
 import { formatTokens, renderTokensLine, type TranscriptUsage } from '../transcript/usage.ts';
@@ -108,6 +108,50 @@ const KEYBAR_COMMANDS: readonly KeybarCommand[] = [
 	{ key: 'i', label: '/cam-issue', desc: 'create issue', slash: '/cam-issue' },
 ];
 
+export interface PollWidthClearerOptions {
+	/** Write sink for the clear escape sequence. Defaults to `process.stdout.write`. */
+	writeFn?: (data: string) => void;
+	/** Column width recorded at mount (the first paint); comparisons start from here. */
+	initialWidth: number;
+}
+
+export interface PollWidthClearer {
+	/**
+	 * Call on each poll tick with the freshly-read column width. Writes
+	 * `CURSOR.clear` before the caller's repaint iff `currentWidth` differs
+	 * from the width recorded at the previous call (steady state: no write).
+	 */
+	onPollTick: (currentWidth: number) => void;
+}
+
+/**
+ * Tracks the pane column width across the dashboard's poll-driven re-renders
+ * (US-001) and writes a full-frame `CURSOR.clear` ahead of the repaint
+ * whenever the width has changed since the last tick. This closes the gap
+ * left by `makeResizeClearer` (src/commands/dashboard.ts): that hardens the
+ * `resize` event listener, but the poll-driven `setData` re-render (the
+ * `setInterval` effect below) previously wrote no clear at all, so a
+ * SIGWINCH burst mid-poll could ghost/stack the "Loop" header. Kept as a
+ * plain, non-React factory (mirroring `makeResizeClearer`'s shape) so it is
+ * directly unit-testable without mounting the component.
+ */
+export function makePollWidthClearer(options: PollWidthClearerOptions): PollWidthClearer {
+	const writeFn = options.writeFn ?? ((data: string) => process.stdout.write(data));
+	let lastWidth = options.initialWidth;
+	const onPollTick = (currentWidth: number): void => {
+		if (currentWidth !== lastWidth) {
+			lastWidth = currentWidth;
+			try {
+				writeFn(CURSOR.clear);
+			} catch {
+				// A failed clear only risks a transient ghost, never a crash of the
+				// poll interval (matches makeResizeClearer's swallow-on-failure).
+			}
+		}
+	};
+	return { onPollTick };
+}
+
 export interface DashboardAppProps {
 	/** Called every `pollIntervalMs` to refresh the data snapshot. */
 	readSnapshot: () => DashboardData;
@@ -119,9 +163,21 @@ export interface DashboardAppProps {
 	orchPane?: string;
 	/** Injectable tmux runner for tests. Defaults to a real spawnSync. */
 	runTmux?: (args: string[]) => void;
+	/**
+	 * Injectable write sink for the poll-driven width-change clear (US-001).
+	 * Defaults to `process.stdout.write`; tests inject a fake to assert the
+	 * escape write deterministically.
+	 */
+	writeFn?: (data: string) => void;
 }
 
-export function DashboardApp({ readSnapshot, pollIntervalMs, orchPane, runTmux }: DashboardAppProps): ReactElement {
+export function DashboardApp({
+	readSnapshot,
+	pollIntervalMs,
+	orchPane,
+	runTmux,
+	writeFn,
+}: DashboardAppProps): ReactElement {
 	const [data, setData] = useState<DashboardData>(() => readSnapshot());
 	const { exit } = useApp();
 	const { stdout } = useStdout();
@@ -135,6 +191,12 @@ export function DashboardApp({ readSnapshot, pollIntervalMs, orchPane, runTmux }
 	// Progress bar shrinks to fit: leave room for the content indent, the
 	// `iter` key column, and the ` N/M` counter that follows the bar.
 	const barWidth = Math.max(6, Math.min(PROGRESS_BAR_WIDTH, cols - 22));
+	// US-001: tracks the width used at the last paint across poll ticks (see
+	// `makePollWidthClearer` above). Lazily created once via `useState`'s
+	// initializer so the closure's `lastWidth` state survives every re-render.
+	const [pollClearer] = useState<PollWidthClearer>(() =>
+		makePollWidthClearer({ writeFn, initialWidth: cols }),
+	);
 
 	// Resolve the tmux runner the same way Menu.tsx does: injectable for tests,
 	// real spawnSync as the default. The -L socket flag is applied by tmuxArgs().
@@ -143,10 +205,14 @@ export function DashboardApp({ readSnapshot, pollIntervalMs, orchPane, runTmux }
 
 	useEffect(() => {
 		const id = setInterval(() => {
+			// US-001: freshly read the live column width (not the render-scoped
+			// `cols` closure, which can be stale mid-interval) and clear the
+			// frame BEFORE the repaint when it has changed since the last tick.
+			pollClearer.onPollTick(stdout?.columns ?? 80);
 			setData(readSnapshot());
 		}, pollIntervalMs);
 		return () => clearInterval(id);
-	}, [pollIntervalMs, readSnapshot]);
+	}, [pollIntervalMs, readSnapshot, stdout, pollClearer]);
 
 	useInput((input, key) => {
 		if (input === 'q' || (key.ctrl && input === 'c')) {
