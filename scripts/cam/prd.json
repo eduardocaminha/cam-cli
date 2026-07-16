@@ -39,7 +39,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "New: src/commands/decide.ts; wire into index.ts (argv[2] dispatch + help spec, mirror the `cam resume`/`cam drain` command entries around index.ts:71-127,774-808). GOTCHA (spec): do NOT overload the existing `cam resume` (4-mode interrupt recovery, src/commands/resume.ts); the decision channel is the new verb `cam decide`. Decision is written back into the SAME gate file the sidecar polls (avoid split-brain). Reuse the fail-closed reader + CamGate type from src/supervisor/gate.ts (US-001)."
     },
