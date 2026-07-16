@@ -44,7 +44,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Edit src/supervisor/plan-runner.ts only. handleAuditApproved is at ~:1426; pause-operator returns { kind: 'awaiting-operator-approval' } at ~:1438 (this is the current DEAD-END). Add the seam to RunPostAuditOptions (~:1204) and thread it through runPostAuditAction (~:1526) -> handleAuditApproved. Keep the seam OPTIONAL (undefined in existing tests) so no test regresses. Do NOT build the context or write the file here: the seam is a no-arg closure supplied by the sidecar (US-003), mirroring how detectInProgressConflictFn/writeInProgressConflictGateFn seams are injected. exitPhaseAfterPlan (src/commands/sidecar.ts:2001) already maps awaiting-operator-approval -> awaiting-operator; leave it (writeGateAndNotify also flips to awaiting-operator, so the phase is consistent). biome noExcessiveLinesPerFunction(maxLines=80): keep handleAuditApproved under budget (factory/helper extraction pattern already in use)."
     },
