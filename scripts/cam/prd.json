@@ -20,7 +20,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Single file: src/issues/spec.ts. Two locations carry the 'back-compat' wording: the invariant-list docblock (line ~70: 'Absent specSource on a stage:specified issue is treated as \"interview\" (back-compat, passes).') and the inline comment (line ~92: 'Absent specSource is treated as \"interview\" (back-compat). No error emitted for absence.'). Replace 'back-compat' with wording that states this is the live common/default path (absent specSource is the default, not a legacy compatibility shim), per CAM-146 PRD notes. Comment-only change; do NOT touch logic (the specSource===undefined ? 'interview' resolution on line 93 stays byte-identical). Aligned with the comments-go-stale discipline (patterns.md / lessons.archive.md 2026-06-05). Source: cam/issue-146."
     }
