@@ -1,13 +1,38 @@
 {
   "id": "CAM-321",
   "title": "Width is read via stdout?.columns (Node TTY API), consistent with the pre-exist…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-16T20:21:54.927Z",
-  "updatedAt": "2026-07-16T20:21:54.927Z",
+  "updatedAt": "2026-07-16T21:37:30.946Z",
   "description": "Width is read via stdout?.columns (Node TTY API), consistent with the pre-existing line 189 usage. Ink 7 also exposes a useWindowSize() hook that returns { columns, rows }; a future refactor could unify width reads on it. Non-blocking and out of scope for this surgical cosmetic fix.\n\nSource: cam/issue-306\nReview round: 1\n\nsuggestion-fingerprint: 04bfca0b594e",
   "derivedFrom": [
     "CAM-306"
-  ]
+  ],
+  "spec": {
+    "scope": "Unify the Dashboard width reads (currently via stdout?.columns, the Node TTY API, at the CAM-306 width-change site and the pre-existing line-189 usage) onto Ink 7's useWindowSize() hook which returns { columns, rows }. Preserve the existing width-change frame-clear behavior and render output.",
+    "acceptanceCriteria": [
+      "Dashboard width is read via Ink 7's useWindowSize() hook instead of raw stdout?.columns at both the CAM-306 width-change site and the pre-existing usage.",
+      "The width-change frame-clear behavior (CAM-306) and overall render output are unchanged; existing dashboard tests pass.",
+      "check:all is green."
+    ],
+    "gotchas": [
+      "This is an idiomatic-consistency refactor of working code; keep the resize/clear semantics identical to CAM-306.",
+      "Source: cam/issue-306."
+    ],
+    "domainTerms": [
+      "useWindowSize",
+      "Ink 7",
+      "stdout.columns",
+      "Dashboard"
+    ]
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 1,
+    "riskReduction": 1,
+    "jobSize": 3
+  },
+  "type": "chore"
 }
