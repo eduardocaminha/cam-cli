@@ -51,7 +51,7 @@ interface Call {
 function makeRecordingSpawn(exitCodes: number[]): { calls: Call[]; fn: SpawnFn } {
 	const calls: Call[] = [];
 	let idx = 0;
-	const fn: SpawnFn = (cmd, args, _opts) => {
+	const fn: SpawnFn = (cmd, args) => {
 		calls.push({ cmd, args: [...args] });
 		const code = exitCodes[idx++] ?? 0;
 		return makeResult(code);

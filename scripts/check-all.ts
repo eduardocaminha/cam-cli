@@ -31,11 +31,7 @@ import type { SyncSubprocess } from 'bun';
  * Subset of Bun.spawnSync we need.
  * Injectable so unit tests never shell out to a real subprocess.
  */
-export type SpawnFn = (
-	cmd: string,
-	args: string[],
-	options: { encoding: 'utf8'; stdio?: 'inherit' | 'pipe' },
-) => SyncSubprocess<'inherit', 'inherit'>;
+export type SpawnFn = (cmd: string, args: string[]) => SyncSubprocess<'inherit', 'inherit'>;
 
 // ---------------------------------------------------------------------------
 // GateResult type
@@ -138,7 +134,7 @@ export function runGates(options: RunGatesOptions = {}): number {
 
 	for (const gate of gates) {
 		const start = Date.now();
-		const result = spawnFn(gate.cmd, gate.args, { encoding: 'utf8' });
+		const result = spawnFn(gate.cmd, gate.args);
 		const durationMs = Date.now() - start;
 		const passed = result.success && result.exitCode === 0;
 
