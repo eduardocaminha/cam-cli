@@ -2511,6 +2511,7 @@ async function main(argv: string[]): Promise<number> {
 				projectMode: setupArgs.projectMode,
 				issueSystem: setupArgs.issueSystem,
 				mergeMode: setupArgs.mergeMode,
+				planApproval: setupArgs.planApproval,
 				description: setupArgs.description,
 				noTmux: setupArgs.noTmux,
 			});
@@ -2532,6 +2533,7 @@ async function main(argv: string[]): Promise<number> {
 				projectMode: setupArgs.projectMode,
 				issueSystem: setupArgs.issueSystem,
 				mergeMode: setupArgs.mergeMode,
+				planApproval: setupArgs.planApproval,
 				description: setupArgs.description,
 				noTmux: setupArgs.noTmux,
 			});
