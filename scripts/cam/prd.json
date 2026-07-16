@@ -93,7 +93,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Files: templates/agents/subagent-orchestrator.md AND .claude/agents/subagent-orchestrator.md (add item 13 after the sidecar-stalled marker at line ~150, and a blocker-line paragraph mirroring the ship-stalled/plan-escalated paragraphs at ~174-192). GOTCHA (cam-dual-copy-is-per-file): .claude/ and templates/ are NOT guaranteed byte-identical; edit BOTH, then run bun run embed-vendor to regenerate src/vendor/_generated.ts and embed-vendor:check to confirm no drift. Agent-instruction .md files may keep the existing travessao/emoji style (LLM-consumed)."
     }
