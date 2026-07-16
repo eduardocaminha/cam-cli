@@ -67,7 +67,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/ui/ConfigScreen.tsx, test/ui/config-screen.test.tsx. Reuse CustomModelInput (ink-text-input free-text, :344-357) for both text steps; add 'notify-recipient' and 'notify-from' to the WizardStep union and allSteps array; mirror the PlanApprovalSection component/section pattern. API-key status: read process.env['RESEND_API_KEY'] and render a ✓ configured / ✗ unconfigured line — status only, no TextInput. HARD CONSTRAINT: never a key input field. Empty text input is valid (means 'leave unset'). Gotcha: Ink success/failure is the ✓/✗ glyph, never divider color."
     },
