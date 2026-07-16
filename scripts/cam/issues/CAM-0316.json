@@ -1,13 +1,40 @@
 {
   "id": "CAM-316",
   "title": "Left/Right always switches tabs even while a custom-model or notify text input …",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-16T15:36:22.106Z",
-  "updatedAt": "2026-07-16T15:36:22.106Z",
+  "updatedAt": "2026-07-16T21:37:19.578Z",
   "description": "Left/Right always switches tabs even while a custom-model or notify text input is focused (per AC5 and covered by a test), so arrow keys cannot move the text cursor within those fields. This is intended by the spec; consider suppressing TabBar navigation while a TextInput is active in a future iteration for smoother editing.\n\nSource: cam/issue-87\nReview round: 1\n\nsuggestion-fingerprint: 27d373b61e55",
   "derivedFrom": [
     "CAM-87"
-  ]
+  ],
+  "spec": {
+    "scope": "In the interactive config screen, suppress TabBar Left/Right navigation while a custom-model or notify TextInput is focused, so arrow keys move the text cursor within the field instead of switching tabs. Restore tab navigation when no TextInput is active.",
+    "acceptanceCriteria": [
+      "While a custom-model or notify TextInput is focused, Left/Right arrow keys move the text cursor within the field and do NOT switch tabs.",
+      "When no TextInput is focused, Left/Right continue to switch tabs as before.",
+      "The prior AC5 test (asserting tabs always switch) is updated to reflect the new focused-input behavior; a test covers both focused and unfocused cases.",
+      "check:all is green."
+    ],
+    "gotchas": [
+      "The current always-switch behavior was intentional per CAM-87 AC5 and covered by a test; this issue deliberately overrides that decision, so update the test rather than work around it.",
+      "Source: cam/issue-87."
+    ],
+    "domainTerms": [
+      "TabBar",
+      "TextInput",
+      "focus",
+      "custom-model input",
+      "notify input"
+    ]
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 2,
+    "riskReduction": 2,
+    "jobSize": 3
+  },
+  "type": "feat"
 }
