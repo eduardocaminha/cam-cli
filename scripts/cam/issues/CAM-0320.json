@@ -1,13 +1,36 @@
 {
   "id": "CAM-320",
   "title": "The absent-default comment still calls the specSource===undefined -> 'interview…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-16T19:24:19.255Z",
-  "updatedAt": "2026-07-16T19:24:19.255Z",
+  "updatedAt": "2026-07-16T21:37:28.662Z",
   "description": "The absent-default comment still calls the specSource===undefined -> 'interview' resolution 'back-compat', but per the PRD notes this is the live common path, not back-compat. The rename ACs did not require fixing this characterization; consider correcting the wording in a follow-up.\n\nSource: cam/issue-146\nReview round: 1\n\nsuggestion-fingerprint: ec6f66390639",
   "derivedFrom": [
     "CAM-146"
-  ]
+  ],
+  "spec": {
+    "scope": "Correct the misleading code comment that labels the `specSource === undefined -> 'interview'` resolution as 'back-compat'. Per the CAM-146 PRD notes this is the live common/default path, not back-compat. Comment-only change.",
+    "acceptanceCriteria": [
+      "The comment on the specSource===undefined -> 'interview' resolution no longer characterizes it as 'back-compat' and accurately describes it as the live common/default path.",
+      "No behavior change; only the comment text is modified. check:all is green."
+    ],
+    "gotchas": [
+      "Comment-accuracy fix aligned with the comments-go-stale discipline; do not touch any logic.",
+      "Source: cam/issue-146."
+    ],
+    "domainTerms": [
+      "specSource",
+      "interview",
+      "absent-default"
+    ]
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 1,
+    "riskReduction": 2,
+    "jobSize": 1
+  },
+  "type": "docs"
 }
