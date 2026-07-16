@@ -30,7 +30,7 @@
         "The full quality spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: scripts/check-all.ts (SpawnFn type at ~line 34-38; runGates default impl at ~line 133-134; call site `spawnFn(gate.cmd, gate.args, { encoding: 'utf8' })` at ~line 141), test/check-all.test.ts (SpawnFn fakes at ~line 51-54 `(cmd, args, _opts) => ...` and ~line 218 `() => signalTerminated`). Simplest correct trim: drop the third `options` param from the SpawnFn type entirely (the default impl at line 134 already ignores it and hardcodes cwd + per-stream inherit; the sole call site only passes it to satisfy the type). Then remove the `{ encoding: 'utf8' }` third argument at the runGates call site, and drop the now-unused `_opts` param from the test fake at line 54 so the 3-param fake matches the trimmed 2-param type (noUncheckedIndexedAccess strict: a 3-param impl is NOT assignable to a 2-param function type). Keep the return type `SyncSubprocess<'inherit','inherit'>` unchanged. This is pure dead-surface cleanup from the CAM-308 migration (Source: cam/issue-308); no functional change. scripts/ is not vendor/ or templates/, so no embed-vendor drift check applies. Verify the runGates default fallback still spawns with stdin/stdout/stderr 'inherit' after the edit."
     }
