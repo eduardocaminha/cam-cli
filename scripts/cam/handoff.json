@@ -1,22 +1,23 @@
 {
-  "lastCompletedStory": { "id": "US-002", "title": "Add rewriteFrontmatterEffort + wire into save, sync agent files and re-embed" },
+  "lastCompletedStory": { "id": "US-003", "title": "Add TabBar chip component" },
   "branchName": "cam/issue-87",
   "timestamp": "2026-07-16T00:00:00Z",
-  "createdFiles": [],
+  "createdFiles": [
+    "src/ui/TabBar.tsx",
+    "test/ui/tab-bar.test.tsx"
+  ],
   "modifiedFiles": [
-    "src/templates/frontmatter.ts",
-    "src/commands/config.ts",
-    "test/commands/config-frontmatter.test.ts",
-    ".claude/agents/subagent-implementer.md",
-    ".claude/agents/subagent-orchestrator.md",
-    "templates/agents/subagent-implementer.md",
-    "templates/agents/subagent-orchestrator.md",
-    "src/vendor/_generated.ts",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 landed the effort frontmatter writer end-to-end (helper + wiring + agent-file sync), but NOT the wizard UI step. `src/templates/frontmatter.ts` now exports `rewriteFrontmatterEffort(content, newEffort)` (rewrites an existing `effort:` line via the same scoped-regex approach as `rewriteFrontmatterModel`, and ALSO inserts the line just inside the closing `---` fence when absent -- string-in/string-out, no fs) plus its own `FRONTMATTER_TARGET_EFFORT_PATHS: Record<LlmPhase, string>` map pointing at `.claude/agents/subagent-<phase>.md` for the 5 LLM phases (orchestrator/planner/auditor/implementer/reviewer), deliberately distinct from `FRONTMATTER_TARGET_PHASE_PATHS` (ship-only, `.claude/commands/cam-ship.md`). `src/commands/config.ts` gained `rewriteFrontmatterEfforts(cwd, choices)`, wired into `mergeConfigChoices` right after `rewriteFrontmatterModels` when `cwd` is provided and `choices.efforts` is defined; it resolves each of the 5 paths relative to cwd and silently skips missing files, mirroring the model helper exactly. `.claude/agents/subagent-implementer.md` (+ its `templates/agents/` twin) gained `effort: high`; `.claude/agents/subagent-orchestrator.md` (+twin) was bumped `high` -> `xhigh`. `bun run embed-vendor` was re-run so `src/vendor/_generated.ts` reflects both templates/agents/ edits (embed-vendor:check is clean). REMAINING GAP (per US-001's handoff, still not closed): ConfigScreen.tsx's wizard still does NOT collect `choices.efforts` -- there is no per-LLM-phase effort-picking WizardStep, so in production `mergeConfigChoices` is always called with `choices.efforts === undefined` and neither the TOML `[efforts]` write (US-001) nor this story's frontmatter rewrite ever fires from the live `cam config` wizard today; both are fully unit-tested and wired, just unreachable from the interactive path until a future story adds the UI step and threads it into `onDone()`'s choices object (ConfigScreen.tsx ~line 304-330, see `PhaseStepsSection`/`useFireOnDone` for the existing per-phase-model precedent to mirror). Do not add `ship` to any effort map or `LlmPhase`-typed structure (ADR-0009: ship is deterministic, zero LLM calls, no effort concept).",
+  "nextStoryContext": "US-003 landed `src/ui/TabBar.tsx`: a pure controlled presentational primitive, `TabBar({ tabs, activeIndex, onChange })` where `tabs: TabDef[]` is `{ label, confirmed?, value? }`. It owns NO internal index state -- unlike `Select.tsx` (local `useState` idx, `onChange` fires only on Enter), TabBar's own `useInput` computes the next index from the `activeIndex` PROP on every Left/Right press (wrap-around at the bounds: idx 0 + Left -> last idx, last idx + Right -> idx 0) and calls `onChange(next)` immediately -- the caller must hold the actual state and re-render with the new `activeIndex`. Each chip renders `[ label ]` (muted) or `[ label ]` bold+accent when `i === activeIndex`; a confirmed tab (`confirmed: true` AND `value !== undefined`) renders `[ label: value ]` instead of `[ label ]`. Colors come from `src/ui/theme.ts` (`colors.accent`/`colors.muted`), which re-exports `src/design/tokens.ts`'s `palette` -- no new tokens were added. Per the story notes and prior US-002 handoff, US-004 (`src/ui/ConfigScreen.tsx` refactor, ~568 lines today) is next: it must (a) replace the sequential forward-only wizard with TabBar-driven navigation across 7 tabs (6 phase tabs: Orchestrator/Planner/Auditor/Implementer/Reviewer/Ship, plus one Global tab folding backend/merge-mode/plan-approval/notify-recipient/notify-from -- the notify steps were added after the ConfigScreen issue was filed and must be preserved, not dropped), (b) reuse the existing per-phase model Select + custom-id passthrough (ConfigScreen.tsx:69-103, `PHASE_MODEL_OPTIONS`/`useCustomModelEntry`) rather than rebuilding it, (c) add the net-new effort Select (depends on US-001's `ConfigChoices.efforts`/`EFFORT_DEFAULTS`, still unwired into the live wizard per the US-002 handoff gap), and (d) extract per-tab sections to stay under biome's cognitive-complexity ceiling and the file-size budget (watch the keypress focus-advance logic in particular, a good extraction candidate). Test pattern for consuming TabBar from a stateful parent: see `test/ui/tab-bar.test.tsx`'s local `ControlledTabBar` wrapper (owns `useState`, threads `onChange` back into the `activeIndex` prop) -- ConfigScreen's own tests can drive tab switches with the SAME `stdin.write('\\x1b[C')`/`stdin.write('\\x1b[D')` shape once TabBar is wired in.",
   "officialDocsValidated": [
-    { "lib": "none", "status": "no_external_lib_touched" }
+    {
+      "lib": "ink",
+      "url": "https://github.com/vadimdemedes/ink",
+      "fetchedAt": "2026-07-16T00:00:00Z",
+      "status": "aligned",
+      "summary": "Confirmed useInput's key object exposes boolean key.leftArrow/key.rightArrow (plus upArrow/downArrow/return/escape), matching the arrow-key branches implemented in TabBar.tsx."
+    }
   ]
 }
