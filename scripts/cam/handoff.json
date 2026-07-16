@@ -1,14 +1,17 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Pure tokens-per-issue aggregation module" },
+  "lastCompletedStory": { "id": "US-002", "title": "cam stats tokens command + dispatch wiring" },
   "branchName": "cam/issue-136",
   "timestamp": "2026-07-16T00:00:00.000Z",
   "createdFiles": [
-    "src/stats/tokens.ts",
-    "test/stats/tokens.test.ts"
+    "src/commands/stats.ts",
+    "test/commands/stats.test.ts"
   ],
-  "modifiedFiles": [],
+  "modifiedFiles": [
+    "index.ts",
+    "test/commands-freeze.test.ts"
+  ],
   "openQuestions": [],
-  "nextStoryContext": "aggregateTokensPerIssue(eventLogJsonl: string | null) is exported from src/stats/tokens.ts and returns { perIssue: IssueTokenRollup[], meanTokensPerIssue, medianTokensPerIssue, unattributedTokens }. Attribution is keyed exclusively off 'cycle-tokens' events (detail.issueNumber); multiple cycle-tokens events for the same issueNumber are summed into one rollup (cycleCount tracks how many). unattributedTokens = sum(all raw 'tokens' event totals) - sum(all cycle-tokens.workerTokens), clamped at 0 -- this is a whole-log computation, not the per-cycle 'since last marker' slice used by recordCycleTokens in src/commands/journal.ts (that one only serves the NEXT emitted cycle-tokens event; this module reconciles the full historical log). Pure, no fs -- the report/advisory consumer is expected to read the event log file itself and pass the string content in. No dashboard/budget UI was touched (already shipped, CAM-131/US-014); this story only supplies the aggregation function.",
+  "nextStoryContext": "`cam stats tokens` is wired end-to-end: COMMANDS/HELP_REGISTRY gained a 'stats' entry (index.ts, alphabetically slotted after 'status', before 'orch-budget' -- test/commands-freeze.test.ts FROZEN_COMMANDS/count was bumped to 28 in the same commit, this is the expected update path any future COMMANDS addition must repeat). index.ts wiring (parseStatsArgs/dispatchStats, mirroring the parsePatternsArgs/dispatchPatterns single-subcommand shape) is thin: all business logic (reading .claude/cam-worker-events.jsonl, calling aggregateTokensPerIssue from US-001's src/stats/tokens.ts, rendering the per-issue table, the unattributed-spend flag, the orch-vs-output-tokens formula-asymmetry note, and the CAM_STATS_TOKENS=issues=<N> mean=<M> median=<Md> unattributed=<U> sentinel line) lives in src/commands/stats.ts's runStatsTokens, mirroring orch-budget.ts's injectable cwd/readEventLog/write shape -- always exits 0. US-003/US-004 (split-advisory heuristic + plan-time emission) are a separate subsystem (plan-split-advisory event kind) and do not depend on the stats command; no direct coupling expected, but both read/write the same event log file so keep the JSONL line-shape conventions (kind/detail, tolerant-parse-skip-malformed) consistent if either touches src/commands/journal.ts or src/supervisor/events.ts.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]

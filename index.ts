@@ -73,6 +73,7 @@ import { runDecide, parseDecideArgs } from './src/commands/decide.ts';
 import { runRun, parseRunArgs } from './src/commands/run.ts';
 import { runStatus } from './src/commands/status.ts';
 import { runOrchBudget } from './src/commands/orch-budget.ts';
+import { runStatsTokens } from './src/commands/stats.ts';
 import { runStop } from './src/commands/stop.ts';
 import { runDrain, parseDrainArgs } from './src/commands/drain.ts';
 import { runClaude, parseClaudeArgs, CLAUDE_HELP } from './src/commands/claude.ts';
@@ -123,6 +124,7 @@ const HELP = renderHelp({
 				{ name: 'claude [args...]', description: 'Run claude in print mode with auto-retry on rate limits' },
 				{ name: 'dashboard', description: 'Standalone read-only TUI (alt-screen) for monitoring a loop' },
 				{ name: 'status', description: 'Show current loop state at a glance (idle / active / paused)' },
+				{ name: 'stats tokens', description: 'Print per-issue token spend (orch/worker/total) plus mean/median from the event log' },
 				{ name: 'stop', description: 'Cancel a running loop (clears state file + kills the per-project tmux session)' },
 				{ name: 'drain [--stop|--clear]', description: 'Set or clear the inter-cycle drain kill-switch without killing the sidecar' },
 				{ name: 'resume [options]', description: 'Reconcile loop state after interrupt; auto-detect or --mode <name>' },
@@ -952,6 +954,36 @@ const ORCH_BUDGET_HELP = renderHelp({
 				'(CAM_ORCH_BUDGET=<spend>/<threshold> over=<true|false>) and always\n' +
 				'exits 0. Invoked each cycle by the orchestrator agent. Not listed in\n' +
 				'top-level `cam help`.',
+		},
+	],
+});
+
+const STATS_HELP = renderHelp({
+	title: 'cam stats',
+	tagline: 'Per-issue token spend from the event log',
+	usage: 'cam stats tokens',
+	sections: [
+		{
+			heading: 'Subcommands',
+			entries: [
+				{
+					name: 'tokens',
+					description: 'Print per-issue orch/worker/total token spend plus global mean/median',
+				},
+			],
+		},
+		{
+			heading: 'Behaviour',
+			body:
+				'Reads .claude/cam-worker-events.jsonl and aggregates every \'cycle-tokens\'\n' +
+				"event by detail.issueNumber (aggregateTokensPerIssue, src/stats/tokens.ts).\n" +
+				'Raw \'tokens\' spend not covered by any \'cycle-tokens\' marker is reported\n' +
+				'separately as unattributed spend, never dropped or folded into a row.\n' +
+				'The orch component of a cycle-tokens total excludes output tokens (input +\n' +
+				'cacheCreation + cacheRead only); the worker component includes all four\n' +
+				'fields. Totals are used as recorded, not recomputed from transcripts.\n' +
+				'Always exits 0, including on a missing or empty event log (no data is not\n' +
+				'an error).',
 		},
 	],
 });
@@ -1947,6 +1979,57 @@ export function dispatchPatterns(
 }
 
 // ---------------------------------------------------------------------------
+// cam stats dispatch (exported for unit testing with injectable deps)
+// ---------------------------------------------------------------------------
+
+/**
+ * Discriminated union returned by parseStatsArgs.
+ * - mode === 'tokens': dispatch the stats tokens subcommand.
+ * - help === true: caller should print STATS_HELP and exit 0. This is the
+ *   default for both `--help`/`-h` AND no subcommand at all (mirrors
+ *   parsePatternsArgs: `stats` currently has a single subcommand, so a bare
+ *   `cam stats` showing usage is more useful than an error).
+ */
+export type ParsedStatsArgs =
+	| { mode: 'tokens'; help: false }
+	| { mode?: never; help: true };
+
+const STATS_USAGE = 'Usage: cam stats tokens';
+
+export function parseStatsArgs(args: string[]): ParsedStatsArgs | null {
+	if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
+		return { help: true };
+	}
+	const subCommand = args[0];
+	if (subCommand !== 'tokens') {
+		printFatalHint(STATS_USAGE);
+		return null;
+	}
+	return { mode: 'tokens', help: false };
+}
+
+/** Injectable deps for dispatchStats -- all optional; production uses the real runStatsTokens. */
+export interface StatsDispatchDeps {
+	/** Injectable runStatsTokens. Default: real impl with process.cwd(). */
+	statsTokensFn?: () => number;
+}
+
+/**
+ * Route a parsed `cam stats` call. Exported so unit tests can inject a fake
+ * statsTokensFn to verify wiring without touching the real event log or
+ * stdout (the report content itself is tested against runStatsTokens
+ * directly in test/commands/stats.test.ts).
+ */
+export function dispatchStats(parsed: ParsedStatsArgs, deps?: StatsDispatchDeps): number {
+	if (parsed.help) {
+		process.stdout.write(STATS_HELP);
+		return 0;
+	}
+	const statsTokensFn = deps?.statsTokensFn ?? (() => runStatsTokens({ cwd: process.cwd() }));
+	return statsTokensFn();
+}
+
+// ---------------------------------------------------------------------------
 // cam suggestions dispatch (exported for unit testing with injectable deps)
 // ---------------------------------------------------------------------------
 
@@ -2404,6 +2487,7 @@ const COMMANDS = [
 	'tag',
 	'dashboard',
 	'status',
+	'stats',
 	'orch-budget',
 	'stop',
 	'drain',
@@ -2454,6 +2538,7 @@ const HELP_REGISTRY: Record<Command, string> = {
 	tag: TAG_HELP,
 	dashboard: DASHBOARD_HELP,
 	status: STATUS_HELP,
+	stats: STATS_HELP,
 	'orch-budget': ORCH_BUDGET_HELP,
 	stop: STOP_HELP,
 	drain: DRAIN_HELP,
@@ -2719,6 +2804,15 @@ async function main(argv: string[]): Promise<number> {
 				return 1;
 			}
 			return runStatus();
+		}
+		case 'stats': {
+			const parsed = parseStatsArgs(argv.slice(3));
+			if (parsed === null) return 1;
+			if (parsed.help) {
+				process.stdout.write(STATS_HELP);
+				return 0;
+			}
+			return dispatchStats(parsed);
 		}
 		case 'orch-budget': {
 			// CAM-23 US-001: machine-parseable orchestrator token-budget line.
