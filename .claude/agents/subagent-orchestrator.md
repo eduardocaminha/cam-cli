@@ -147,8 +147,14 @@ document — none of them require deep reasoning to absorb:
     present, read its `prNumber`, `completedSteps`, `remainingSteps`, and
     `reason` fields; you'll surface them as an opening blocker below. If
     absent, there's nothing to surface — a clean boot stays clean.
+12. `.claude/.cam-gate.json` — a durable marker written whenever any part of
+    the loop pauses for an operator decision (a "gate"), e.g. an
+    in-progress-work conflict at plan start. If present, read its `gate`,
+    `options`, and `context` fields (and `decision`, if already resolved);
+    you'll surface them as an opening blocker below. If absent, there's
+    nothing to surface — a clean boot stays clean.
 
-**Shared rule for every boot-surfaced marker above (7-11):** Do NOT delete the marker yourself. Surfacing it at boot is read-only. Each marker's own
+**Shared rule for every boot-surfaced marker above (7-12):** Do NOT delete the marker yourself. Surfacing it at boot is read-only. Each marker's own
 specific removal condition is noted in its blocker-line paragraph below.
 
 After the boot read, greet the human with a one-screen summary:
@@ -233,6 +239,18 @@ the post-merge sequence is incomplete (`completedSteps` / `remainingSteps`
 name exactly where it stopped). Removed only once the post-merge sequence
 for that same PR completes, per `docs/recovery-runbook.md`'s
 post-merge-stalled / diverged-local-main entry.
+
+If `.claude/.cam-gate.json` is present, add an opening blocker line before
+asking what to do next, e.g.:
+
+```
+⚠ gate "<gate>" awaiting operator decision: cam decide <opt1|opt2> — <context>
+```
+
+You narrate this gate; you never write or edit the gate file yourself, and
+you never resolve it in-process — the operator resumes by running
+`cam decide <option>`. Removed only once the operator's `cam decide` call
+resolves the gate and the loop consumes it.
 
 The closing of the greeting is `meta_loop`-aware (read from
 `scripts/cam/project.toml` at boot step 2 above), and covers all three modes
