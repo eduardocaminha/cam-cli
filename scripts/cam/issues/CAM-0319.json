@@ -1,13 +1,39 @@
 {
   "id": "CAM-319",
   "title": "proceedBranchFn wraps checkout-B/write/add/commit in one swallow-all try/catch,…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-16T17:34:27.954Z",
-  "updatedAt": "2026-07-16T17:34:27.954Z",
+  "updatedAt": "2026-07-16T21:37:26.310Z",
   "description": "proceedBranchFn wraps checkout-B/write/add/commit in one swallow-all try/catch, yet the resolver always returns 'implementing' regardless of git success. A failed branch/commit would leave the loop in 'implementing' with no cam/* branch. This matches the documented best-effort/never-throw contract (pollAndResolveGate has no try/catch), so it is intentional and non-blocking, but a future hardening could surface a failed branch creation instead of silently flipping phase.\n\nSource: cam/issue-312\nReview round: 1\n\nsuggestion-fingerprint: 713163004dde",
   "derivedFrom": [
     "CAM-312"
-  ]
+  ],
+  "spec": {
+    "scope": "In proceedBranchFn, surface a failed branch creation (checkout-B/write/add/commit) to the operator instead of silently returning 'implementing' when git failed and no cam/* branch exists. Preserve the documented best-effort/never-throw contract (the resolver must not throw).",
+    "acceptanceCriteria": [
+      "When proceedBranchFn's git sequence fails and no cam/* branch was created, the failure is surfaced (durable marker/notification/log) rather than silently flipping the phase to 'implementing'.",
+      "The never-throw contract is preserved: the resolver still does not throw and the success-path behavior of pollAndResolveGate is unchanged.",
+      "A test covers the git-failure branch and asserts the surfacing plus that the phase does not silently advance to 'implementing' with no branch.",
+      "check:all is green."
+    ],
+    "gotchas": [
+      "Current behavior is intentional per the best-effort/never-throw contract and is non-blocking; add observability without breaking the contract.",
+      "Source: cam/issue-312."
+    ],
+    "domainTerms": [
+      "proceedBranchFn",
+      "pollAndResolveGate",
+      "gate resolver",
+      "cam/* branch"
+    ]
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 3,
+    "riskReduction": 5,
+    "jobSize": 3
+  },
+  "type": "fix"
 }
