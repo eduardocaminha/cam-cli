@@ -112,7 +112,7 @@ const HELP = renderHelp({
 				{ name: 'config [--show]', description: 'Interactive wizard to set model per phase and backend' },
 				{ name: 'run [options]', description: 'Open or attach the long-lived orchestrator (tmux session)' },
 				{ name: 'plan [<N>]', description: 'Spawn claude + dispatch /cam-plan; APPROVE happens inside the pane' },
-				{ name: 'spec <id>', description: 'Deep-spec an idea (stage:idea) into stage:specified via grill-with-docs interview' },
+				{ name: 'spec <id>', description: 'Deep-spec an idea (stage:idea) into stage:specified via spec-with-docs interview' },
 				{ name: 'next [options]', description: 'Trigger the sidecar loop (flips active:true, thin-proxy)' },
 				{ name: 'review', description: 'Dispatch /cam-review to the live orchestrator (or bootstrap first)' },
 				{ name: 'ship', description: 'Dispatch /cam-ship to the live orchestrator (or bootstrap first)' },
@@ -280,7 +280,7 @@ const PLAN_HELP = renderHelp({
 
 const SPEC_HELP = renderHelp({
 	title: 'cam spec',
-	tagline: 'Deep-spec an idea issue into stage:specified via grill-with-docs',
+	tagline: 'Deep-spec an idea issue into stage:specified via spec-with-docs',
 	usage:
 		'cam spec <id> | cam spec --write-docs <id> | cam spec --persist <id>  (reads JSON from stdin)',
 	sections: [
@@ -321,7 +321,7 @@ const SPEC_HELP = renderHelp({
 				'2. Ensures the project session exists (cam-orch-<basename>-<hash>);\n' +
 				'   creates it (with 2-pane layout: orchestrator + dashboard) if needed.\n' +
 				'3. Sends `/cam-spec <id>` to the orchestrator pane via atomic send-keys.\n' +
-				'4. Returns 0 immediately. The grill-with-docs interview runs inside the pane.\n' +
+				'4. Returns 0 immediately. The spec-with-docs interview runs inside the pane.\n' +
 				'5. At interview end the orchestrator (a read-only session: Edit/Write/\n' +
 				'   NotebookEdit are disallowed) pipes the assembled DomainDocsPayload JSON\n' +
 				'   into `cam spec --write-docs <id>`, which commits CONTEXT.md + any new\n' +
@@ -383,7 +383,7 @@ const ISSUE_HELP = renderHelp({
 				{
 					name: 'demote <id>',
 					description:
-						'Deterministically set stage:idea on main for a defective specified issue, so it can be re-grilled (specified->idea for re-spec; in-process, no tmux, no LLM).',
+						'Deterministically set stage:idea on main for a defective specified issue, so it can be re-specified (specified->idea for re-spec; in-process, no tmux, no LLM).',
 				},
 			],
 		},
@@ -1021,7 +1021,7 @@ const STATS_HELP = renderHelp({
  * - mode === 'demote': deterministic in-process stage:specified -> stage:idea
  *     mutation on main (US-002, CAM-206/CAM-210 sibling). id is the required
  *     positional issue id; only the stage axis flips (spec/wsjf/blockedBy
- *     etc. are preserved) so the issue can be re-grilled.
+ *     etc. are preserved) so the issue can be re-specified.
  * - help === true: caller should print ISSUE_HELP and exit 0.
  */
 export type ParsedIssueArgs =
