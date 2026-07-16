@@ -1172,7 +1172,14 @@ export function runPlanPhaseWithReplan(opts: RunPlanPhaseWithReplanOptions): Pla
  *
  * branch-created         - proceed-branch path: branch created, prd.json
  *                          committed, active:true flipped.
- * awaiting-operator-approval - pause-operator path: no branch/commit/flip.
+ * awaiting-operator-approval - pause-operator path (US-002, CAM-241/153/312):
+ *                          writePlanApprovalGateFn (when provided) writes the
+ *                          resolvable 'plan-approval' gate + flips phase to
+ *                          'awaiting-operator' + pushes the notify line
+ *                          BEFORE this result is returned. No branch/commit
+ *                          here (the gate's own resolver creates the branch
+ *                          on 'approve', US-003). This is no longer a dead
+ *                          end: `cam decide approve|reject` resolves it.
  * escalated              - audit-blocked OR plan-escalated (US-004, CAM-204)
  *                          path: escalateFn + notifyFn called, no
  *                          branch/commit/flip. The durable marker for
@@ -1301,6 +1308,19 @@ export interface RunPostAuditOptions {
 	 * sibling of removeEscalationMarkerFn's wiring.
 	 */
 	removePreflightFailedMarkerFn?: () => void;
+	/**
+	 * Write the resolvable 'plan-approval' gate (US-002, CAM-241/153/312).
+	 * Called ONLY on the pause-operator branch of handleAuditApproved, BEFORE
+	 * returning { kind: 'awaiting-operator-approval' }; the auto-mode
+	 * proceed-branch path never calls it. A no-arg closure: the gate file
+	 * path, context string (buildPlanApprovalContext), setPhaseFn, and
+	 * notifyFn are all captured by the sidecar's writer seam (US-003), which
+	 * mirrors how detectInProgressConflictFn/writeInProgressConflictGateFn are
+	 * injected. This function does not build the gate context or write the
+	 * file directly. Optional: absent means no gate is written (backward
+	 * compat with tests that do not inject it).
+	 */
+	writePlanApprovalGateFn?: () => void;
 }
 
 /**
@@ -1419,6 +1439,12 @@ function handlePreflightFailed(
  * CAM-236, ADR-0016: replaces the old empty-branchName guard), and on
  * convergence execute the git calls via executeGitProceedBranch.
  *
+ * On pause-operator (US-002, CAM-241/153/312), writePlanApprovalGateFn (when
+ * provided) is called BEFORE returning: it writes the resolvable
+ * 'plan-approval' gate so `cam decide approve|reject` has an active gate to
+ * resolve, rather than dead-ending with no options and no resume path. The
+ * proceed-branch path below never calls it.
+ *
  * Extracted from runPostAuditAction to keep that function under biome's
  * noExcessiveLinesPerFunction(maxLines=80) limit (CAM-60 factory/helper
  * extraction pattern), mirroring handlePlanTargetInvalid / handlePreflightFailed.
@@ -1431,10 +1457,12 @@ function handleAuditApproved(
 	readPlanApprovalFn: () => PlanApproval,
 	notifyFn: ((msg: string) => void) | undefined,
 	removeEscalationMarkerFn: (() => void) | undefined,
+	writePlanApprovalGateFn: (() => void) | undefined,
 ): PostAuditActionResult {
 	const action = decidePostAuditAction(readPlanApprovalFn());
 
 	if (action.kind === 'pause-operator') {
+		writePlanApprovalGateFn?.(); // US-002: write the resolvable gate, no longer a dead-end
 		return { kind: 'awaiting-operator-approval' }; // AC2
 	}
 
@@ -1497,8 +1525,12 @@ function removePreflightMarkerUnlessPreflightFailed(
  *   5. setPhaseFn('implementing')    (flip phase to implementing for sidecar loop)
  *   Returns { kind: 'branch-created', branchName }.
  *
- * On audit-approved + pause-operator (operator mode, Half A scope):
- *   Returns { kind: 'awaiting-operator-approval' }. No branch/commit/flip.
+ * On audit-approved + pause-operator (operator mode, US-002, CAM-241/153/312):
+ *   Calls writePlanApprovalGateFn() (best-effort seam; writes the resolvable
+ *   'plan-approval' gate + flips phase to 'awaiting-operator' + pushes the
+ *   notify line). Returns { kind: 'awaiting-operator-approval' }. No
+ *   branch/commit here: this is no longer a dead end, since `cam decide
+ *   approve|reject` now has an active gate to resolve.
  *
  * On audit-blocked OR plan-escalated (US-004, CAM-204):
  *   Calls notifyFn (pane push) then fires escalateFn (best-effort, not awaited).
@@ -1537,6 +1569,7 @@ export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionRe
 		logEvent,
 		writePreflightFailedMarkerFn,
 		removePreflightFailedMarkerFn,
+		writePlanApprovalGateFn,
 	} = opts;
 
 	// US-004 (CAM-215, Option B): see removePreflightMarkerUnlessPreflightFailed.
@@ -1611,5 +1644,6 @@ export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionRe
 		readPlanApprovalFn,
 		notifyFn,
 		removeEscalationMarkerFn,
+		writePlanApprovalGateFn,
 	);
 }

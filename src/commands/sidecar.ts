@@ -49,7 +49,7 @@ import { parseStateFile, readPrd, type LoopPhase } from './status.ts';
 import { renderStateFile, writeStateFile } from './next.ts';
 import { TERMINAL_VERDICTS, type PrdSnapshot } from '../supervisor/decide.ts';
 import { hasSession, projectSessionName, getOrchPaneId, paneCountMutex, readWorkerPaneMarker, openPaneInSession, writeWorkerPaneMarker, type SpawnFn } from '../tmux/session.ts';
-import { runPlanPhaseWithReplan, runPostAuditAction, type PlanPhaseResult, type PostAuditActionResult, type PlanEscalationWriterParams } from '../supervisor/plan-runner.ts';
+import { runPlanPhaseWithReplan, runPostAuditAction, deriveBranchName, type PlanPhaseResult, type PostAuditActionResult, type PlanEscalationWriterParams } from '../supervisor/plan-runner.ts';
 import { maybeEmitPlanSplitAdvisory } from '../supervisor/plan-split-advisory.ts';
 import { writePlanEscalatedMarker, removePlanEscalatedMarker, PLAN_ESCALATED_FILENAME, type PlanEscalatedMarker } from '../supervisor/plan-escalation.ts';
 import { writePlanPreflightFailedMarker, removePlanPreflightFailedMarker, PLAN_PREFLIGHT_FAILED_FILENAME, type PlanPreflightFailedMarker, type PlanPreflightFailedWriterParams } from '../supervisor/plan-preflight-marker.ts';
@@ -104,6 +104,13 @@ import {
 	makeInProgressConflictResolver,
 	type InProgressConflictResolverDeps,
 } from '../supervisor/in-progress-conflict.ts';
+import {
+	PLAN_APPROVAL_GATE,
+	PLAN_APPROVAL_OPTIONS,
+	buildPlanApprovalContext,
+	makePlanApprovalResolver,
+	type PlanApprovalResolverDeps,
+} from '../supervisor/plan-approval-gate.ts';
 import { printHint, printWarning } from '../logging/color.ts';
 
 // ---------------------------------------------------------------------------
@@ -2237,6 +2244,10 @@ function runPostPlanActions(o: PostPlanActionsOpts): void {
 		// removePlanPreflightFailedMarker never throws when the file is
 		// already absent (best-effort unlinkSync).
 		removePreflightFailedMarkerFn: () => removePlanPreflightFailedMarker(join(o.claudeDir, PLAN_PREFLIGHT_FAILED_FILENAME)),
+		// US-003 (CAM-241/153/312): write the resolvable 'plan-approval' gate on
+		// the pause-operator path (called from inside handleAuditApproved, never
+		// on the auto-mode proceed-branch path).
+		writePlanApprovalGateFn: makeWritePlanApprovalGateFn(o.cwd, o.claudeDir, o.sessionName, o.realSpawnFn, o.logEvent),
 	});
 	exitPhaseAfterPlan(postAuditResult, makeSetPhaseFn(o.claudeDir, o.cwd)); // US-R1-002
 
@@ -2350,6 +2361,48 @@ function makeWriteInProgressConflictGateFn(
 		writeGateAndNotify(
 			gateFilePath,
 			{ gate: IN_PROGRESS_CONFLICT_GATE, options: [...IN_PROGRESS_CONFLICT_OPTIONS], context },
+			setPhase,
+			notify,
+		);
+	};
+}
+
+/**
+ * Build the production writePlanApprovalGateFn for the plan phase (US-003,
+ * CAM-241/153/312). A bare no-arg closure (matches RunPostAuditOptions.
+ * writePlanApprovalGateFn?: () => void; there is no detected context to
+ * thread through the call site, unlike writeInProgressConflictGateFn above):
+ * reads scripts/cam/prd.json (readPrd, status.ts) fresh on each call, builds
+ * the operator-facing summary via buildPlanApprovalContext, and writes the
+ * durable gate file (gate: 'plan-approval', options: PLAN_APPROVAL_OPTIONS,
+ * context) via the same writeGateAndNotify primitive.
+ *
+ * Exported for direct behavioral testing (US-003, CAM-241/153/312, AC5):
+ * mirrors makeSetPhaseFn's export precedent -- the write-side closure has no
+ * production call site that is itself exported/mockable, so driving it
+ * directly against a real tmpdir is the only way to assert the written gate
+ * file's shape without spinning up the full (tmux-pane-dependent) plan phase.
+ */
+export function makeWritePlanApprovalGateFn(
+	cwd: string,
+	claudeDir: string,
+	sessionName: string,
+	realSpawnFn: SpawnFn,
+	logEvent: WorkerEventLogger,
+): () => void {
+	const gateFilePath = join(claudeDir, GATE_FILENAME);
+	const setPhase = makeSetPhaseFn(claudeDir, cwd);
+	const notify = makeNotifyOrchestrator(
+		sessionName,
+		realSpawnFn,
+		makeCapturePaneFn(realSpawnFn),
+		adaptLogEventForPush(logEvent),
+	);
+	return (): void => {
+		const context = buildPlanApprovalContext(readPrd(cwd));
+		writeGateAndNotify(
+			gateFilePath,
+			{ gate: PLAN_APPROVAL_GATE, options: [...PLAN_APPROVAL_OPTIONS], context },
 			setPhase,
 			notify,
 		);
@@ -2684,8 +2737,70 @@ function makeInProgressConflictResolverDeps(cwd: string): InProgressConflictReso
 }
 
 /**
+ * Build the plan-approval gate's resolver deps (US-003, CAM-241/153/312):
+ *   proceedBranchFn - reads scripts/cam/prd.json's issueNumber fresh, derives
+ *     the branch name in code via deriveBranchName (plan-runner.ts, never a
+ *     planner-authored slug), then replicates the checkout-B/write-branchName/
+ *     add/commit sequence directly against `cwd` (rather than reusing
+ *     executeGitProceedBranch, which both throws on a non-zero git exit AND
+ *     calls its own setPhaseFn -- pollAndResolveGate already flips the phase
+ *     to whatever the handler returns, so a second flip here would race it).
+ *     Each git call is best-effort: a missing/invalid issueNumber or any
+ *     non-zero git exit is swallowed, never thrown (pollAndResolveGate has no
+ *     surrounding try/catch of its own around the handler).
+ *   removePrdFn - rm scripts/cam/prd.json (best-effort).
+ *   notifyFn - push the one-line orchestrator notify (best-effort; a closed
+ *     orchestrator pane is a silent no-op via makeNotifyOrchestrator).
+ *
+ * Extracted so makeProductionGatePhaseFn's own body stays a thin
+ * pollAndResolveGate wrapper (factory/helper extraction pattern used
+ * throughout this module; also keeps the source-text oracle window in
+ * test/sidecar-gate-phase.test.ts intact), mirroring
+ * makeInProgressConflictResolverDeps.
+ */
+function makePlanApprovalResolverDeps(
+	cwd: string,
+	sessionName: string,
+	realSpawnFn: SpawnFn,
+	logEvent: WorkerEventLogger,
+): PlanApprovalResolverDeps {
+	const notify = makeNotifyOrchestrator(
+		sessionName,
+		realSpawnFn,
+		makeCapturePaneFn(realSpawnFn),
+		adaptLogEventForPush(logEvent),
+	);
+	return {
+		proceedBranchFn: () => {
+			try {
+				const prdPath = join(cwd, 'scripts/cam/prd.json');
+				const prdRaw = JSON.parse(readFileSync(prdPath, 'utf8')) as { issueNumber?: unknown };
+				const branchName = deriveBranchName(prdRaw.issueNumber);
+				if (branchName === null) return;
+				spawnSync('git', ['-C', cwd, 'checkout', '-B', branchName], { stdio: 'pipe' });
+				makeWritePrdBranchNameFn(cwd)(branchName);
+				spawnSync('git', ['-C', cwd, 'add', 'scripts/cam/prd.json'], { stdio: 'pipe' });
+				spawnSync(
+					'git',
+					['-C', cwd, 'commit', '-m', 'chore(cam): commit audited prd.json'],
+					{ stdio: 'pipe' },
+				);
+			} catch { /* best-effort */ }
+		},
+		removePrdFn: () => {
+			const p = join(cwd, 'scripts/cam/prd.json');
+			try { if (existsSync(p)) unlinkSync(p); } catch { /* best-effort */ }
+		},
+		notifyFn: (line: string) => {
+			try { notify(line); } catch { /* best-effort */ }
+		},
+	};
+}
+
+/**
  * Build the production gate-phase runner (US-003, CAM-241/153; first concrete
- * gate kind registered in US-004, CAM-241/153).
+ * gate kind registered in US-004, CAM-241/153; plan-approval registered in
+ * US-003, CAM-241/153/312).
  *
  * Called once per idle tick when phase==='awaiting-operator' (loop.ts branch,
  * sibling to the planning/shipping branches). Delegates all I/O to
@@ -2696,15 +2811,29 @@ function makeInProgressConflictResolverDeps(cwd: string): InProgressConflictReso
  *
  * Registers 'in-progress-conflict' (US-004): continue -> implementing,
  * ship -> shipping, abandon -> rm handoff.json + rm prd.json + git checkout
- * main, then planning (proceed with the requested plan fresh). Any OTHER gate
- * discriminator remains 'unknown-gate' (left in place, inert) until its own
- * concrete kind registers a handler here.
+ * main, then planning (proceed with the requested plan fresh).
+ *
+ * Registers 'plan-approval' (US-003, CAM-241/153/312): approve -> branch +
+ * commit the audited PRD (makePlanApprovalResolverDeps.proceedBranchFn),
+ * returns implementing; reject -> rm prd.json + notify, returns idle.
+ *
+ * Any OTHER gate discriminator remains 'unknown-gate' (left in place, inert)
+ * until its own concrete kind registers a handler here.
  */
-function makeProductionGatePhaseFn(claudeDir: string, cwd: string): () => void {
+function makeProductionGatePhaseFn(
+	claudeDir: string,
+	cwd: string,
+	sessionName: string,
+	realSpawnFn: SpawnFn,
+	logEvent: WorkerEventLogger,
+): () => void {
 	const filePath = join(claudeDir, GATE_FILENAME);
 	const setPhase = makeSetPhaseFn(claudeDir, cwd);
 	const registry: GateResolutionRegistry = {
 		[IN_PROGRESS_CONFLICT_GATE]: makeInProgressConflictResolver(makeInProgressConflictResolverDeps(cwd)),
+		[PLAN_APPROVAL_GATE]: makePlanApprovalResolver(
+			makePlanApprovalResolverDeps(cwd, sessionName, realSpawnFn, logEvent),
+		),
 	};
 	return (): void => {
 		pollAndResolveGate(filePath, registry, setPhase);
@@ -2712,19 +2841,27 @@ function makeProductionGatePhaseFn(claudeDir: string, cwd: string): () => void {
 }
 
 /**
- * Build the gate-phase injectable dep (US-003, CAM-241/153).
+ * Build the gate-phase injectable dep (US-003, CAM-241/153; extended to wire
+ * sessionName/realSpawnFn/logEvent in US-003, CAM-241/153/312 for the
+ * plan-approval resolver's notify + branch/commit deps).
  *
  * Extracted from buildSidecarLoopDeps to keep it under the biome
  * noExcessiveCognitiveComplexity(max=15) limit (CAM-60 factory/helper
  * pattern), mirroring buildShipPhaseDeps.
+ *
+ * Exported for the wiring test (US-003, CAM-241/153/312): driving this
+ * directly against a real tmpdir ctx (no runGatePhaseFn override) is the only
+ * way to exercise the production gate-phase closure end-to-end, mirroring
+ * buildPlanPhaseDeps's export precedent (US-001, CAM-288).
  */
-function buildGatePhaseDeps(
+export function buildGatePhaseDeps(
 	ctx: SidecarLoopDepsCtx,
 	options: SidecarOptions,
 ): Pick<SidecarLoopDepsResult, 'runGatePhaseFn'> {
-	const { cwd, claudeDir } = ctx;
+	const { cwd, claudeDir, sessionName, realSpawnFn, logEvent } = ctx;
 	return {
-		runGatePhaseFn: options.runGatePhaseFn ?? makeProductionGatePhaseFn(claudeDir, cwd),
+		runGatePhaseFn: options.runGatePhaseFn ??
+			makeProductionGatePhaseFn(claudeDir, cwd, sessionName, realSpawnFn, logEvent),
 	};
 }
 
