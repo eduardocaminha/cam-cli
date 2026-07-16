@@ -210,8 +210,12 @@ test.skipIf(!shouldRun)(
 		});
 		// Confirm the watcher subprocess is actually scheduled (present in the
 		// process table) before arming the marker, rather than a blind settle wait.
+		// Generous budget: under full-suite CPU contention, process-table
+		// visibility for a just-spawned subprocess can lag well past the
+		// helper's 5000ms default.
 		await waitForCondition(
 			() => spawnSync('pgrep', ['-f', 'orch-recycle-watch'], { stdio: 'pipe' }).status === 0,
+			{ timeoutMs: 10_000, intervalMs: 200 },
 		);
 
 		// 8. Arm the recycle marker.
@@ -242,8 +246,11 @@ test.skipIf(!shouldRun)(
 		expect(newUUID).not.toBe(initialUUID);
 
 		// A process matching the NEW UUID must be running (fresh fake-claude is alive).
+		// Generous budget: same full-suite-contention rationale as the
+		// pgrep-scheduled wait above.
 		await waitForCondition(
 			() => spawnSync('pgrep', ['-f', newUUID], { stdio: 'pipe', encoding: 'utf8' }).status === 0,
+			{ timeoutMs: 10_000, intervalMs: 200 },
 		);
 		const pgrepNew = spawnSync('pgrep', ['-f', newUUID], {
 			stdio: 'pipe',
@@ -251,7 +258,10 @@ test.skipIf(!shouldRun)(
 		});
 		expect(pgrepNew.status).toBe(0);
 	},
-	{ timeout: 20_000 },
+	// Generous outer per-test timeout: sum of the worst-case internal poll
+	// budgets above (5s + 10s + 12s + 10s) plus process-spawn/tmux overhead,
+	// so the preflight cannot false-positive under full-suite CPU contention.
+	{ timeout: 45_000 },
 );
 
 // ---------------------------------------------------------------------------
