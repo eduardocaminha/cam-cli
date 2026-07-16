@@ -1,0 +1,72 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-311",
+  "description": "Forward maxBuffer at all four field-by-field spawnSync wrappers that feed readBacklogFromMain (file-local, triage, suggestions-promote, and the missed post-merge close path) via a single shared spread-forwarding helper, plus >1 MiB behavioral regression tests.",
+  "issueNumber": 311,
+  "type": "fix",
+  "relatedDocs": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "node:child_process (Node.js API, consumed under Bun)",
+      "url": "https://nodejs.org/api/child_process.html#child_processspawnsynccommand-args-options",
+      "version": "current",
+      "fetchedAt": "2026-07-15T23:30:00Z",
+      "summary": "Confirmed spawnSync's maxBuffer default is 1024*1024 bytes (1 MiB) and that exceeding it terminates the child and truncates output (surfaced to the caller as an ENOBUFS error). maxBuffer is a valid spawnSync option measured in bytes, so a wrapper that omits it silently reverts readBacklogFromMain's 256 MiB request to the 1 MiB default. Confirms the spread-forwarding fix is correct and no API change is needed.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add shared spread-forwarding spawnSync helper and harden on-main SpawnFn option surface",
+      "description": "As a maintainer, I need a single shared production spawnSync helper that forwards the full options object (including maxBuffer) plus maxBuffer declared on the on-main SpawnFn option surface, so that on-main issue wrappers stop rebuilding the options object field-by-field and cannot silently drop readBacklogFromMain's 256 MiB request.",
+      "acceptanceCriteria": [
+        "src/git/on-main.ts exports a single shared real-spawnSync helper (e.g. realOnMainSpawnFn) whose body is `spawnSync(cmd, args, { ...opts, stdio: 'pipe' }) as SpawnSyncReturns<string>`, spreading the full opts object so any field present at runtime (encoding, env, input, and crucially maxBuffer) is forwarded to spawnSync. [oracle: grep -q '\\.\\.\\.opts' src/git/on-main.ts]",
+        "The on-main SpawnFn options type in src/git/on-main.ts declares `maxBuffer?: number` so maxBuffer is part of the acknowledged option surface (BacklogSpawnFn in src/issues/backlog.ts already declares it). [oracle: grep -q 'maxBuffer' src/git/on-main.ts]",
+        "A unit test invokes the shared helper with an options object carrying maxBuffer and asserts (via an injected/captured spawnSync seam or a real subprocess whose stdout exceeds 1 MiB) that the maxBuffer value reaches the underlying spawnSync call rather than being dropped. The assertion is behavioral (real forwarding), not a bare mock-call check. [oracle: bun test test/git/on-main-spawn-forward.test.ts]",
+        "The story does NOT claim the optional-field type surface alone makes omission a compile error (TypeScript does not error on a missing optional property); the anti-regression guarantee is delivered by construction: every real on-main wrapper routes through this one spread-forwarding helper, so no call-site constructs a partial options literal. This is stated in the helper's doc comment. [oracle: grep -q 'spread' src/git/on-main.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/git/on-main.ts (canonical SpawnFn type at :58-62, re-exported by issue-specify.ts and imported by post-merge.ts as CloseSpawnFn; add `maxBuffer?: number` to the options type and export the shared helper), src/issues/backlog.ts (BacklogSpawnFn options at :39-43 already carries maxBuffer?; no change needed, just confirm). Add `import { spawnSync } from 'node:child_process'` in on-main.ts (project prefers Bun.spawn, but the synchronous git plumbing already standardizes on node:child_process.spawnSync in backlog.ts/issue-file.ts; stay consistent, do not switch runtimes here). Helper param opts type must be the widened superset `{ encoding: 'utf8'; env?: Record<string,string>; input?: string; maxBuffer?: number }` so all four call-site SpawnFn aliases (on-main SpawnFn, issue-file SpawnFn, sidecar IssueFileSpawnFn) are assignable to it. Root cause per issue gotcha #3: the under-declared options type is the CAM-307 root; the shared helper + spread is the recurrence-proof fix. patterns.md keyword: grep 'spawnSync' / 'maxBuffer' / 'readBacklogFromMain'."
+    },
+    {
+      "id": "US-002",
+      "title": "Route file-local, triage, and suggestions-promote wrappers through the shared helper with >1 MiB regression test",
+      "description": "As an operator filing issues or promoting suggestions, I need the file-local id-allocator, triage, and suggestions-promote spawnSync wrappers to forward maxBuffer, so that filing a new issue and promoting suggestions do not ENOBUFS once the combined issue blob exceeds 1 MiB.",
+      "acceptanceCriteria": [
+        "index.ts:_buildCreateIssueOpts (file-local / id-allocator, ~:2179-2185) and dispatchTriage (triage, ~:2349-2355) both delegate to the US-001 shared helper (or inline `{ ...opts, stdio: 'pipe' }`), so no field-by-field rebuild remains at either site. [oracle: file-assert grep -c 'encoding: opts.encoding' index.ts returns 0]",
+        "src/commands/sidecar.ts:issueFileSpawnFn (~:2626-2637, used by the suggestions-promote / drain-gate backlog-union at ~:2714) delegates to the shared helper (or inline `{ ...opts, stdio: 'pipe' }`), so its field-by-field rebuild is gone. [oracle: file-assert grep -c 'encoding: opts.encoding' src/commands/sidecar.ts returns 0]",
+        "A behavioral regression test constructs a real backlog on main whose combined git cat-file --batch blob genuinely exceeds the 1 MiB node default (>= ~1.1 MiB across many issue files, not a small ASCII fixture), then exercises BOTH the file-local filing path AND the suggestions-promote path against it, asserting no ENOBUFS is thrown and a correct issue id is allocated/returned. The test fails against the pre-fix field-by-field wrappers and passes after the fix. [oracle: bun test test/issues/backlog-maxbuffer-regression.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "Files: index.ts (:2179-2185 _buildCreateIssueOpts, :2349-2355 dispatchTriage), src/commands/sidecar.ts (:2626-2637 issueFileSpawnFn feeding suggestions-promote at :2714), + test. Gotcha (issue gotcha #1): index.ts file-local was hand-fixed only in a throwaway local binary to bootstrap filing this issue; main source still carries the bug, so re-apply here. Gotcha (issue gotcha #2 / CAM-90 ASCII-fixture miss): the fixture MUST exceed the real 1 MiB default (current live backlog is ~1.01 MiB / 272 files) or the bug is masked; hit real fs/git in a tmpdir, not a stubbed spawn. The already-correct wrappers to mirror are index.ts's `{ ...opts, stdio: 'pipe' }` sites and src/commands/spec.ts:282/391. patterns.md keyword: grep 'suggestions' / 'drain-gate' / 'file-local'."
+    },
+    {
+      "id": "US-003",
+      "title": "Route the post-merge makeRealIssueSpawnFn close/abandon/demote path through the shared helper, test the ship auto-close path, and audit all remaining consumers",
+      "description": "As an operator shipping a PR (auto-close) or running `cam issue close/abandon`, I need post-merge.ts's makeRealIssueSpawnFn to forward maxBuffer, so that closing/abandoning/demoting an issue does not ENOBUFS against a >1 MiB backlog; and I need every remaining readBacklogFromMain consumer audited so none rebuild the options field-by-field.",
+      "acceptanceCriteria": [
+        "src/release/post-merge.ts:makeRealIssueSpawnFn (~:347-354) delegates to the US-001 shared helper (or inline `{ ...opts, stdio: 'pipe' }`), so the production spawnFn for defaultCloseIssueFn / defaultAbandonIssueFn / defaultDemoteIssueFn no longer drops maxBuffer. [oracle: file-assert grep -c 'encoding: opts.encoding' src/release/post-merge.ts returns 0]",
+        "A behavioral regression test exercises closeIssueOnMain via the post-merge close path (the ship auto-close path, whose spawnFn is makeRealIssueSpawnFn) against a real >1 MiB backlog blob and asserts no ENOBUFS is thrown; the same fixture confirms the pre-fix wrapper would ENOBUFS. [oracle: bun test test/release/post-merge-close-maxbuffer.test.ts]",
+        "Every remaining real spawnSync wrapper that can feed readBacklogFromMain is audited and confirmed to forward the full options object: the four field-rebuild sites (index.ts file-local, index.ts triage, sidecar.ts suggestions-promote, post-merge.ts makeRealIssueSpawnFn) are all fixed, and the passthrough adapters (toBacklogSpawn in issue-file.ts / issue-specify.ts / triage.ts / sidecar.ts, and the default spawnSync in readBacklogFromMain / select.ts / plan.ts) already forward unchanged. The audit note records that config.ts:136 rebuilds field-by-field but does NOT feed readBacklogFromMain (it feeds applyMergeMode / branch-protection), so it is out of scope. No field-by-field readBacklogFromMain consumer remains. [oracle: file-assert grep -rc 'encoding: opts.encoding' src/release/post-merge.ts src/commands/sidecar.ts index.ts sums to 0]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": "US-002",
+      "notes": "Files: src/release/post-merge.ts (:347-354 makeRealIssueSpawnFn), + test. This story corrects auditor finding #1: makeRealIssueSpawnFn IS a live readBacklogFromMain consumer via defaultCloseIssueFn (:365 -> closeIssueOnMain issue-specify.ts:546), defaultAbandonIssueFn (:383 -> abandonIssueOnMain :432) and the demote/reopen paths (:624/:673), each calling readBacklogFromMain(cwd, toBacklogSpawn(spawnFn)) which requests 256 MiB; the field-by-field rebuild dropped it to the 1 MiB default, so ship auto-close and `cam issue close/abandon` ENOBUFS on the same ~1.01 MiB backlog. makeRealIssueSpawnFn is shared by all three verbs (jscpd gate) so one edit fixes all. Keep the `as SpawnSyncReturns<string>` cast. Test hits real fs/git in a tmpdir with a >1 MiB fixture (issue gotcha #2). Confirms issue AC4 (none remain) truthfully across all four sites."
+    }
+  ]
+}
