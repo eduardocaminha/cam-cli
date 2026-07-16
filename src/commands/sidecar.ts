@@ -45,7 +45,7 @@ import { appendSuggestionOnMain, readSuggestionsFromMain, type SuggestionEntry }
 import type { SpawnFn as IssueFileSpawnFn } from './issue-file.ts';
 import { realOnMainSpawnFn } from '../git/on-main.ts';
 import { makeFileEventLogger, type WorkerEventLogger } from '../supervisor/events.ts';
-import { parseStateFile, type LoopPhase } from './status.ts';
+import { parseStateFile, readPrd, type LoopPhase } from './status.ts';
 import { renderStateFile, writeStateFile } from './next.ts';
 import { TERMINAL_VERDICTS, type PrdSnapshot } from '../supervisor/decide.ts';
 import { hasSession, projectSessionName, getOrchPaneId, paneCountMutex, readWorkerPaneMarker, openPaneInSession, writeWorkerPaneMarker, type SpawnFn } from '../tmux/session.ts';
@@ -2317,6 +2317,9 @@ function runProductionPlanPhaseWithReplan(deps: PlanWorkerRunDeps): PlanPhaseRes
 				return readFileSync(prdPath, 'utf8');
 			} catch { return null; }
 		},
+		// US-002 (CAM-310): parsed prd.json content for the deterministic oracle
+		// linter, distinct from readPlannerReportFn above (presence-only).
+		readPrdContentFn: () => readPrd(cwd),
 		preflightFn: () => runPlanPreflight({ cwd, spawnFn: preflightSpawnFn }),
 		clock: Date.now,
 		plannerPaneId,
