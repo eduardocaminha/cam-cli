@@ -1,17 +1,18 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Add absence/presence oracle idiom to the planner Oracle Contract" },
+  "lastCompletedStory": { "id": "US-002", "title": "Make the auditor BLOCK on the -q + -L/-l oracle antipattern" },
   "branchName": "cam/issue-309",
   "timestamp": "2026-07-16T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    ".claude/agents/subagent-planner.md",
-    "templates/agents/subagent-planner.md",
+    ".claude/agents/subagent-auditor.md",
+    "templates/agents/subagent-auditor.md",
     "src/vendor/_generated.ts",
     "test/embedded.test.ts",
-    "scripts/file-size-budget.json"
+    "scripts/file-size-budget.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 added a new paragraph to the Oracle Contract section in BOTH .claude/agents/subagent-planner.md and templates/agents/subagent-planner.md (right after the [oracle: ...] examples list, before '## Mandatory Acceptance Criteria'): the absence/presence idiom ('! grep -q PATTERN file' for absence, 'grep -q PATTERN file' for presence, never combine -q with -L/-l -- self-nullifying). Re-embedded via `bun run embed-vendor`; extended test/embedded.test.ts's 'templatesContents — oracle contract in planner prompt (US-001)' describe block with a new test asserting the idiom text. Raised test/embedded.test.ts's file-size-budget.json ceiling 653->659 (actual line count via content.split('\\n').length) with a dated _ref note citing CAM-309/US-001. US-002 (next, same PRD) targets the AUDITOR prompt instead (.claude/agents/subagent-auditor.md + templates/agents/subagent-auditor.md, section 'C. Acceptance criteria health' ~line 60-72): it must make the auditor BLOCK when it sees the -q+-L/-l antipattern in ANY order/spacing (-Lq, -qL, -L -q, -lq), not just the literal '-Lq' string. Both stories regenerate the same src/vendor/_generated.ts, so US-002 must re-run `bun run embed-vendor` again after its own edit (drift check is stateless, not cumulative across stories). Do not touch scripts/cam/patterns.md's existing CAM-301 bullet (~line 767) documenting the -Lq oracle bug: it already covers the root cause this PRD is hardening against.",
+  "nextStoryContext": "US-002 added a new sub-paragraph to section C item 9 (oracle health) in BOTH .claude/agents/subagent-auditor.md and templates/agents/subagent-auditor.md, right after the existing 'no oracle at all' critical-finding sentence: a `file-assert` oracle whose grep invocation combines `-q` with `-L`/`-l` in ANY order/spacing (-Lq, -qL, -L -q, -l -q, -lq) is self-nullifying and must be a critical BLOCK finding, naming the replacement `! grep -q PATTERN file` (absence) / `grep -q PATTERN file` (presence). Re-embedded via `bun run embed-vendor`; extended the existing 'templatesContents — oracle enforcement in auditor prompt (US-002)' describe block in test/embedded.test.ts (note: that describe-block name predates this PRD, from an earlier unrelated US-002 story, but the topic still matches so it was extended not renamed). Raised test/embedded.test.ts's file-size-budget.json ceiling 659->666 (actual line count via content.split('\\n').length) with a dated _ref note citing CAM-309/US-002. Both US-001 and US-002 of this PRD touched the same src/vendor/_generated.ts and the same _ref chain in file-size-budget.json; each story reran embed-vendor and appended its own _ref entry rather than reusing the prior one. No further known stories in this PRD as of this handoff — check prd.json for the next story id/priority.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
