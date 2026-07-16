@@ -1,0 +1,24 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Add effort config read/write plumbing (no UI)" },
+  "branchName": "cam/issue-87",
+  "timestamp": "2026-07-16T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/config/models.ts",
+    "src/ui/ConfigScreen.tsx",
+    "src/commands/config.ts",
+    "test/config/models.test.ts",
+    "test/commands/config-persist.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 landed the config plumbing only (no wizard UI step, no frontmatter writer): `LlmPhase` (= Exclude<Phase, 'ship'>) and `EFFORT_DEFAULTS`/`readPhaseEffort` live in src/config/models.ts, mirroring readPhaseModel's try/catch defaults exactly (missing file/section/key/malformed TOML/non-string all fall back to EFFORT_DEFAULTS). ConfigChoices (src/ui/ConfigScreen.tsx) gained an OPTIONAL `efforts?: Record<LlmPhase, string>` field -- the wizard itself does NOT yet collect it (no new WizardStep, no Select UI); a later UI story will need to add an effort-picking step per LLM phase and wire it into the onDone() choices object (currently only `models`/`backend` are always populated there, see ConfigScreen.tsx ~line 304). mergeConfigChoices (src/commands/config.ts) writes an [efforts] section via mergeIntoConfig ONLY when choices.efforts is defined, mirroring the [models] write, and only ever contains the 5 LLM-phase keys (never 'ship') since the type forbids it. Ship remains model-only (ADR-0009: deterministic/zero-LLM, no effort concept) -- do not add ship to EFFORT_DEFAULTS, LlmPhase, or any efforts record. A later frontmatter story will presumably need to plumb effort into the .claude/ runtime files the same way rewriteFrontmatterModels does for model (src/commands/config.ts ~line 134), but that is out of scope here and not implemented.",
+  "officialDocsValidated": [
+    {
+      "lib": "Bun.TOML",
+      "url": "https://bun.com/reference/bun/TOML/parse",
+      "fetchedAt": "2026-07-16T00:00:00Z",
+      "status": "aligned",
+      "summary": "Bun.TOML.parse(input: string): object confirmed; readPhaseEffort's try/catch around loadConfig (which wraps Bun.TOML.parse) correctly treats any parse throw as a fallback-to-default path, matching readPhaseModel's existing pattern."
+    }
+  ]
+}
