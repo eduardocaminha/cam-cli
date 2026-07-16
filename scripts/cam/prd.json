@@ -48,7 +48,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/sidecar.ts, test/notify/resend.test.ts. Depends on US-001 (ResendConfig.from). Gotcha (from issue spec): sendEscalation ALREADY has the optional `from` param + onboarding fallback (resend.ts:70,74) — do NOT re-add it; only supply from from config at the call sites. Gotcha: exactly 7 real call sites, all in sidecar.ts; plan-runner.ts:1086 and loop.ts:394/1887 are doc comments only (those modules take an injected escalateFn) — do not chase phantom sites. Pattern for empty->undefined: `from: resendCfg.from !== '' ? resendCfg.from : undefined`."
     },
