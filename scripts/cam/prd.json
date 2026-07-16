@@ -32,7 +32,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/config/models.ts (EFFORT_DEFAULTS + readPhaseEffort, mirror readPhaseModel:86-101), src/ui/ConfigScreen.tsx (ConfigChoices type only, ~line 32), src/commands/config.ts (mergeConfigChoices ~line 186, mirror the [models] mergeIntoConfig call). Ship has NO effort (deterministic/zero-LLM, ADR-0009) so the efforts record excludes ship at the type level. Do NOT touch models.ship. noUncheckedIndexedAccess: guard the section/key access in readPhaseEffort exactly as readPhaseModel does."
     },
