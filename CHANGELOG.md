@@ -6,6 +6,15 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.170.0] - 2026-07-16
+
+### Added
+
+- US-004 - Persist notify fields to [notify], never the API key
+- US-003 - Add notify recipient/from steps + API-key status to config wizard
+- US-002 - Plumb configured from through sidecar escalation call sites
+- US-001 - Read resend_from into ResendConfig
+
 ## [0.169.0] - 2026-07-16
 
 ### Added
