@@ -1,22 +1,19 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Rename specSource enum value grill -> interview across schema + code + tests" },
+  "lastCompletedStory": { "id": "US-002", "title": "Rename residual grill code/test comments in otherwise-untouched files" },
   "branchName": "cam/issue-146",
   "timestamp": "2026-07-16T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/issues/types.ts",
-    "src/issues/spec.ts",
-    "src/issues/alloc.ts",
-    "src/commands/issue-file.ts",
-    "index.ts",
-    "scripts/cam/issues.schema.json",
-    "templates/scripts/cam/issues.schema.json",
-    "src/vendor/_generated.ts",
-    "test/issues/spec.test.ts"
+    "src/config/models.ts",
+    "src/commands/issue-specify.ts",
+    "src/commands/spec.ts",
+    "src/commands/domain-docs.ts",
+    "src/supervisor/events.ts",
+    "test/integration/issue-specify-ref-only.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 (FRONT A) is done: the specSource enum value is 'grill' -> 'interview' everywhere it is DECLARED (TS union in types.ts, isValidSpecSourceEnum in spec.ts, the absent-default which is the live common path, the error string, alloc.ts + issue-file.ts + index.ts type literals, both issues.schema.json copies + regenerated vendor embed, and test/issues/spec.test.ts). NOT touched (deliberately out of scope, left for later stories per prd.json FRONT B/C): code comments mentioning 'grill' in src/commands/issue-specify.ts, src/commands/spec.ts:332, src/commands/domain-docs.ts:35, src/config/models.ts:51, src/supervisor/events.ts:308,310 (US-002); index.ts prose help strings still saying 'grill' (US-004); the grill-with-docs skill directory rename (FRONT B); living-docs sweep (.claude/commands/cam-plan.md, cam-spec.md, subagent-planner.md, subagent-orchestrator.md, scripts/cam/CLAUDE.md, patterns.md, docs/recovery-runbook.md) (FRONT C). HARD BOUNDARY still applies: .claude/skills/grilling/ and .claude/skills/domain-modeling/ (+ templates/ copies) are vendored upstream Matt Pocock content and must NEVER be renamed; any by-name /grilling or /domain-modeling invocation inside grill-with-docs (or its renamed successor) must survive verbatim. issues.schema.json's two on-disk copies are edited independently (not diffed against each other as a correctness check) per the pre-existing cam-dual-copy-is-per-file gotcha, though for this specific specSource enum block they happened to stay byte-identical.",
+  "nextStoryContext": "US-002 (FRONT A residual) is done: every remaining 'grill' comment token in src/config/models.ts, src/commands/issue-specify.ts (incl. the :600/:613 re-grilled/re-grill pair), src/commands/spec.ts, src/commands/domain-docs.ts, src/supervisor/events.ts, and test/integration/issue-specify-ref-only.test.ts is reworded (grill -> spec interview, re-grilled -> re-specified, re-grill -> re-spec, 'grill spec layer' -> 'spec layer', 'grill spec writer' -> 'spec writer', 'grill promotion' -> 'spec promotion'). Comment-only edits, all 6 absence-grep oracles verified green, plus full check:all/typecheck/test spine green. NOT touched (deliberately out of scope, left for later stories per prd.json FRONT B/C): index.ts prose help strings still saying 'grill' (US-004); the grill-with-docs skill directory rename (FRONT B); living-docs sweep (.claude/commands/cam-plan.md, cam-spec.md, subagent-planner.md, subagent-orchestrator.md, scripts/cam/CLAUDE.md, patterns.md, docs/recovery-runbook.md) (FRONT C). HARD BOUNDARY still applies: .claude/skills/grilling/ and .claude/skills/domain-modeling/ (+ templates/ copies) are vendored upstream Matt Pocock content and must NEVER be renamed; any by-name /grilling or /domain-modeling invocation inside grill-with-docs (or its renamed successor) must survive verbatim.",
   "officialDocsValidated": [
-    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure internal enum-value rename across TS types/validators/JSON schema/tests; no external library API surface touched (matches the precedent recorded in patterns.md for the sibling US-001/CAM-235 schema-enum story)." }
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure comment-only rewording across TS source and one test file; no external library API surface touched." }
   ]
 }
