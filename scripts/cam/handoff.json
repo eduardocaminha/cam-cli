@@ -1,0 +1,18 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Replace fixed timing budgets with generous waitForCondition/per-test timeouts in the two load-sensitive e2e tests" },
+  "branchName": "cam/issue-313",
+  "timestamp": "2026-07-16T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "test/integration/orch-recycle-watch.test.ts",
+    "test/interactivity/interactivity.test.ts",
+    "scripts/file-size-budget.json"
+  ],
+  "openQuestions": [
+    "AC5's literal oracle (`! git diff --name-only main | grep -qv '^test/'`) will report a non-test-only diff because scripts/file-size-budget.json had to be raised 541->544 to keep the mandatory `bun run check:all` file-size gate green after interactivity.test.ts grew by 3 lines (explicit 20_000ms per-test timeout), and scripts/cam/prd.json is already a pre-existing non-test diff vs main on this branch (unrelated to this story, present before any edit). No product src/ file was touched; the only test-file changes are the two named files. Reviewer should treat the file-size-budget.json bump as the documented, expected gate-discipline exception (per scripts/cam/CLAUDE.md 'Gate discipline'), not a scope violation."
+  ],
+  "nextStoryContext": "US-001 raised two waitForCondition budgets in orch-recycle-watch.test.ts (pgrep-scheduled and pgrep-new watches, both helper-default 5000ms -> {timeoutMs:10_000, intervalMs:200}) and the outer test() timeout (20_000 -> 45_000ms), plus added an explicit 20_000ms third-arg timeout to interactivity.test.ts's runInit linear-path test. Both files pass standalone and full bun test (4859 pass) + bun run check:all (all gates green) confirmed post-change. No assertions were weakened, only timing budgets widened.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
