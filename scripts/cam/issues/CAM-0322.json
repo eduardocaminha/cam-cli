@@ -1,13 +1,38 @@
 {
   "id": "CAM-322",
   "title": "The SpawnFn options param still declares `{ encoding: 'utf8'; stdio?: 'inherit'…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-16T21:03:19.050Z",
-  "updatedAt": "2026-07-16T21:03:19.050Z",
+  "updatedAt": "2026-07-16T21:37:33.446Z",
   "description": "The SpawnFn options param still declares `{ encoding: 'utf8'; stdio?: 'inherit' | 'pipe' }`, a node-era shape that Bun.spawnSync ignores (the default impl hardcodes per-stream inherit and never reads options). Vestigial but harmless; could be trimmed to just what the seam needs for clarity.\n\nSource: cam/issue-308\nReview round: 1\n\nsuggestion-fingerprint: 686169f87244",
   "derivedFrom": [
     "CAM-308"
-  ]
+  ],
+  "spec": {
+    "scope": "Trim the vestigial node-era `options` parameter shape (`{ encoding: 'utf8'; stdio?: 'inherit' | 'pipe' }`) from the SpawnFn seam type introduced by the CAM-308 migration. Bun.spawnSync ignores it (the default impl hardcodes per-stream inherit and never reads options). Reduce the type to only what the seam actually uses.",
+    "acceptanceCriteria": [
+      "The SpawnFn options parameter no longer declares the node-era `{ encoding; stdio }` shape; the type reflects only what the Bun.spawnSync-based seam actually consumes.",
+      "All call sites still typecheck and the default SpawnFn impl behavior is unchanged.",
+      "check:all is green."
+    ],
+    "gotchas": [
+      "Vestigial and harmless today; dead-surface cleanup directly caused by the CAM-308 node->Bun.spawnSync migration.",
+      "Source: cam/issue-308."
+    ],
+    "domainTerms": [
+      "SpawnFn",
+      "Bun.spawnSync",
+      "seam type",
+      "check:all gate helpers"
+    ]
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 1,
+    "riskReduction": 2,
+    "jobSize": 1
+  },
+  "type": "chore"
 }
