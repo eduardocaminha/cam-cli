@@ -16,10 +16,12 @@ import { tmpdir } from 'node:os';
 import {
 	rewriteFrontmatterModel,
 	FRONTMATTER_TARGET_PHASE_PATHS,
+	rewriteFrontmatterEffort,
+	FRONTMATTER_TARGET_EFFORT_PATHS,
 } from '../../src/templates/frontmatter.ts';
 import { mergeConfigChoices } from '../../src/commands/config.ts';
 import type { ConfigChoices } from '../../src/commands/config.ts';
-import type { Phase } from '../../src/config/models.ts';
+import type { Phase, LlmPhase } from '../../src/config/models.ts';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -38,6 +40,15 @@ function makeChoices(model: string, backend = 'claude'): ConfigChoices {
 	return {
 		models: Object.fromEntries(ALL_PHASES.map((p) => [p, model])) as Record<Phase, string>,
 		backend,
+	};
+}
+
+const ALL_LLM_PHASES: LlmPhase[] = ['orchestrator', 'planner', 'auditor', 'implementer', 'reviewer'];
+
+function makeChoicesWithEfforts(effort: string, model = 'claude-sonnet-4-6', backend = 'claude'): ConfigChoices {
+	return {
+		...makeChoices(model, backend),
+		efforts: Object.fromEntries(ALL_LLM_PHASES.map((p) => [p, effort])) as Record<LlmPhase, string>,
 	};
 }
 
@@ -117,6 +128,80 @@ describe('FRONTMATTER_TARGET_PHASE_PATHS', () => {
 });
 
 // ---------------------------------------------------------------------------
+// rewriteFrontmatterEffort (pure — no fs)
+// ---------------------------------------------------------------------------
+
+describe('rewriteFrontmatterEffort', () => {
+	test('rewrites an existing effort: line and preserves other keys and body', () => {
+		const input = [
+			'---',
+			'name: subagent-orchestrator',
+			'effort: high',
+			'---',
+			'',
+			'Body text here.',
+		].join('\n');
+
+		const result = rewriteFrontmatterEffort(input, 'xhigh');
+
+		expect(result).toContain('effort: xhigh');
+		expect(result).not.toContain('effort: high');
+		expect(result).toContain('name: subagent-orchestrator');
+		expect(result).toContain('Body text here.');
+	});
+
+	test('inserts an effort: line inside the frontmatter block when absent (implementer case)', () => {
+		const input = [
+			'---',
+			'name: subagent-implementer',
+			'tools:',
+			'  - Read',
+			'---',
+			'',
+			'Body text here.',
+		].join('\n');
+
+		const result = rewriteFrontmatterEffort(input, 'high');
+
+		expect(result).toContain('effort: high');
+		// The inserted line must land inside the --- fence, not appended to the body.
+		const fenceMatch = result.match(/^---\n([\s\S]*?)\n---/);
+		expect(fenceMatch).not.toBeNull();
+		expect(fenceMatch?.[1]).toContain('effort: high');
+		expect(result).toContain('Body text here.');
+	});
+
+	test('leaves content unchanged when there is no frontmatter fence at all', () => {
+		const input = 'no frontmatter here, just body text.';
+		expect(rewriteFrontmatterEffort(input, 'high')).toBe(input);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Target-path assertions (effort map)
+// ---------------------------------------------------------------------------
+
+describe('FRONTMATTER_TARGET_EFFORT_PATHS', () => {
+	test('contains exactly the 5 LLM phases (no ship entry)', () => {
+		expect(Object.keys(FRONTMATTER_TARGET_EFFORT_PATHS).sort()).toEqual(
+			['auditor', 'implementer', 'orchestrator', 'planner', 'reviewer'].sort(),
+		);
+	});
+
+	test('every path targets .claude/agents/subagent-<phase>.md', () => {
+		for (const [phase, p] of Object.entries(FRONTMATTER_TARGET_EFFORT_PATHS)) {
+			expect(p).toContain(join('.claude', 'agents', `subagent-${phase}.md`));
+		}
+	});
+
+	test('is distinct from FRONTMATTER_TARGET_PHASE_PATHS (no cam-ship.md target)', () => {
+		for (const p of Object.values(FRONTMATTER_TARGET_EFFORT_PATHS)) {
+			expect(p).not.toContain('cam-ship.md');
+		}
+	});
+});
+
+// ---------------------------------------------------------------------------
 // Integration: mergeConfigChoices rewrites .claude/ runtime files on save
 // ---------------------------------------------------------------------------
 
@@ -187,5 +272,79 @@ describe('mergeConfigChoices frontmatter rewrite', () => {
 			expect(updated).toContain('model: claude-sonnet-4-6');
 			expect(updated).not.toContain('model: claude-opus-4-8');
 		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Integration: mergeConfigChoices rewrites the 5 LLM-phase agent files' effort:
+// ---------------------------------------------------------------------------
+
+describe('mergeConfigChoices effort frontmatter rewrite', () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), 'cam-config-fm-effort-'));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	function seed(relPath: string, content: string): void {
+		const full = join(tmpDir, relPath);
+		mkdirSync(dirname(full), { recursive: true });
+		writeFileSync(full, content, 'utf8');
+	}
+
+	function read(relPath: string): string {
+		return readFileSync(join(tmpDir, relPath), 'utf8');
+	}
+
+	test('does not touch any agent file when choices.efforts is undefined', () => {
+		for (const [phase, relPath] of Object.entries(FRONTMATTER_TARGET_EFFORT_PATHS)) {
+			seed(relPath, `---\nname: subagent-${phase}\n---\nbody`);
+		}
+
+		mergeConfigChoices(join(tmpDir, 'project.toml'), makeChoices('claude-sonnet-4-6'), tmpDir);
+
+		for (const [phase, relPath] of Object.entries(FRONTMATTER_TARGET_EFFORT_PATHS)) {
+			expect(read(relPath)).toBe(`---\nname: subagent-${phase}\n---\nbody`);
+		}
+	});
+
+	test('rewrites an existing effort: line for all 5 LLM-phase agent files', () => {
+		for (const [phase, relPath] of Object.entries(FRONTMATTER_TARGET_EFFORT_PATHS)) {
+			seed(relPath, `---\nname: subagent-${phase}\neffort: medium\n---\nbody`);
+		}
+
+		mergeConfigChoices(join(tmpDir, 'project.toml'), makeChoicesWithEfforts('xhigh'), tmpDir);
+
+		for (const relPath of Object.values(FRONTMATTER_TARGET_EFFORT_PATHS)) {
+			const updated = read(relPath);
+			expect(updated).toContain('effort: xhigh');
+			expect(updated).not.toContain('effort: medium');
+		}
+	});
+
+	test('inserts the effort: line for the implementer file which has none', () => {
+		const implementerPath = FRONTMATTER_TARGET_EFFORT_PATHS['implementer'];
+		seed(implementerPath, '---\nname: subagent-implementer\ntools:\n  - Read\n---\nbody');
+
+		mergeConfigChoices(join(tmpDir, 'project.toml'), makeChoicesWithEfforts('high'), tmpDir);
+
+		const updated = read(implementerPath);
+		expect(updated).toContain('effort: high');
+		const fenceMatch = updated.match(/^---\n([\s\S]*?)\n---/);
+		expect(fenceMatch?.[1]).toContain('effort: high');
+	});
+
+	test('skips an effort target file that does not exist without throwing', () => {
+		expect(() =>
+			mergeConfigChoices(join(tmpDir, 'project.toml'), makeChoicesWithEfforts('high'), tmpDir),
+		).not.toThrow();
+	});
+
+	test('does not write a ship entry (efforts map has no ship key)', () => {
+		expect(Object.keys(makeChoicesWithEfforts('high').efforts ?? {})).not.toContain('ship');
 	});
 });

@@ -1,6 +1,7 @@
 ---
 name: subagent-implementer
 description: Implements one PRD story — the story is provided in the spawn prompt, codes, runs quality gates, validates against official lib docs, commits, writes handoff.json, pushes. Returns one of the CAM_IMPLEMENTER_STATUS lines. Invoked from /cam-next once per story.
+effort: high
 tools:
   - Read
   - Edit

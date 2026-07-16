@@ -10,6 +10,8 @@
 
 import { join } from 'node:path';
 
+import type { LlmPhase } from '../config/models.ts';
+
 /**
  * Phase -> project-local runtime file path (relative to cwd) whose `model:`
  * frontmatter line is rewritten on `cam config` save.
@@ -40,4 +42,47 @@ export const FRONTMATTER_TARGET_PHASE_PATHS: Record<string, string> = {
  */
 export function rewriteFrontmatterModel(content: string, newModel: string): string {
 	return content.replace(/^(model:)\s*.+$/m, `$1 ${newModel}`);
+}
+
+/**
+ * Phase -> project-local runtime file path (relative to cwd) whose `effort:`
+ * frontmatter line is rewritten on `cam config` save.
+ *
+ * Distinct from FRONTMATTER_TARGET_PHASE_PATHS: effort is a subagent-level
+ * concept, so the targets are the 5 LLM-phase agent personas under
+ * `.claude/agents/subagent-<phase>.md`, never `.claude/commands/cam-ship.md`.
+ * `ship` is deterministic (zero LLM calls, ADR-0009) and has no effort
+ * concept, so it is never a key here (mirrors LlmPhase = Exclude<Phase, 'ship'>).
+ */
+export const FRONTMATTER_TARGET_EFFORT_PATHS: Record<LlmPhase, string> = {
+	orchestrator: join('.claude', 'agents', 'subagent-orchestrator.md'),
+	planner: join('.claude', 'agents', 'subagent-planner.md'),
+	auditor: join('.claude', 'agents', 'subagent-auditor.md'),
+	implementer: join('.claude', 'agents', 'subagent-implementer.md'),
+	reviewer: join('.claude', 'agents', 'subagent-reviewer.md'),
+};
+
+/**
+ * Rewrites the `effort: <value>` line inside a YAML frontmatter block.
+ * All other frontmatter keys and the document body are preserved byte-for-byte.
+ *
+ * Unlike rewriteFrontmatterModel, this ALSO inserts the `effort:` line when
+ * absent (e.g. subagent-implementer.md ships with no effort: line today): the
+ * new line is appended inside the frontmatter fence, immediately before the
+ * closing `---`, never appended to the document body. If the content has no
+ * frontmatter fence at all, the original string is returned unchanged.
+ *
+ * Uses a scoped regex, same rationale as rewriteFrontmatterModel: does NOT
+ * parse YAML (js-yaml ESM-only v5 incompatibility, patterns.md: CAM-69 rule).
+ */
+export function rewriteFrontmatterEffort(content: string, newEffort: string): string {
+	if (/^effort:\s*.+$/m.test(content)) {
+		return content.replace(/^(effort:)\s*.+$/m, `$1 ${newEffort}`);
+	}
+
+	const fenceMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+	if (!fenceMatch) return content;
+	const frontmatterBody = fenceMatch[1] ?? '';
+	const updatedFence = `---\n${frontmatterBody}\neffort: ${newEffort}\n---`;
+	return content.replace(/^---\r?\n[\s\S]*?\r?\n---/, updatedFence);
 }

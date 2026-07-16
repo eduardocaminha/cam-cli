@@ -22,12 +22,14 @@ import { render } from 'ink';
 import { createElement } from 'react';
 
 import { readPhaseModel, readBackend } from '../config/models.ts';
-import type { Phase } from '../config/models.ts';
+import type { Phase, LlmPhase } from '../config/models.ts';
 import { mergeIntoConfig } from '../config/toml.ts';
 import type { TomlConfig, TomlSection } from '../config/toml.ts';
 import {
 	rewriteFrontmatterModel,
 	FRONTMATTER_TARGET_PHASE_PATHS,
+	rewriteFrontmatterEffort,
+	FRONTMATTER_TARGET_EFFORT_PATHS,
 } from '../templates/frontmatter.ts';
 import { printHint, printWarning } from '../logging/color.ts';
 import { AUTOMERGE_NOTICE } from '../logging/notices.ts';
@@ -146,6 +148,29 @@ function rewriteFrontmatterModels(cwd: string, choices: ConfigChoices): void {
 }
 
 /**
+ * Rewrite the `effort:` frontmatter line in each project-local .claude/agents/
+ * subagent-<phase>.md file named in FRONTMATTER_TARGET_EFFORT_PATHS, resolved
+ * relative to `cwd`. Files that do not exist are silently skipped, and the
+ * rewrite is skipped entirely when the wizard did not collect efforts
+ * (choices.efforts is undefined). Extracted from mergeConfigChoices to keep
+ * its cognitive complexity under biome's ceiling.
+ */
+function rewriteFrontmatterEfforts(cwd: string, choices: ConfigChoices): void {
+	if (choices.efforts === undefined) return;
+	for (const [phase, relPath] of Object.entries(FRONTMATTER_TARGET_EFFORT_PATHS)) {
+		const fullPath = join(cwd, relPath);
+		if (!existsSync(fullPath)) continue;
+		const effort = choices.efforts[phase as LlmPhase];
+		if (effort === undefined) continue;
+		const original = readFileSync(fullPath, 'utf8');
+		const updated = rewriteFrontmatterEffort(original, effort);
+		if (updated !== original) {
+			writeFileSync(fullPath, updated, 'utf8');
+		}
+	}
+}
+
+/**
  * Persist `choices` into `configPath` (scripts/cam/project.toml) additively
  * via mergeIntoConfig:
  *
@@ -184,9 +209,11 @@ function rewriteFrontmatterModels(cwd: string, choices: ConfigChoices): void {
  *
  * When `cwd` is provided, also rewrites the `model:` frontmatter line in the
  * single project-local .claude/ runtime file for the ship phase (resolved
- * relative to `cwd`) -- the one role whose model is not passed via --model.
- * Files that do not exist are silently skipped (e.g. a project that has not
- * run `cam init` yet).
+ * relative to `cwd`) -- the one role whose model is not passed via --model --
+ * and, when `choices.efforts` is defined, the `effort:` frontmatter line in
+ * each of the 5 LLM-phase `.claude/agents/subagent-<phase>.md` files (never
+ * ship, which has no effort concept). Files that do not exist are silently
+ * skipped (e.g. a project that has not run `cam init` yet).
  */
 export function mergeConfigChoices(
 	configPath: string,
@@ -226,6 +253,7 @@ export function mergeConfigChoices(
 
 	if (cwd !== undefined) {
 		rewriteFrontmatterModels(cwd, choices);
+		rewriteFrontmatterEfforts(cwd, choices);
 	}
 }
 
