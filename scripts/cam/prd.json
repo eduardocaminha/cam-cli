@@ -63,7 +63,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "Edit src/commands/sidecar.ts (and reuse exports from plan-runner.ts). Mirror the in-progress-conflict wiring pair: makeWriteInProgressConflictGateFn (~:2334) is the template for makeWritePlanApprovalGateFn; makeInProgressConflictResolverDeps (~:2670) + makeProductionGatePhaseFn registry (~:2703-2708) is the template for the plan-approval resolver registration. Thread writePlanApprovalGateFn into runProductionPlanPhaseWithReplan (~:2384) -> runPostAuditAction (same seam plumbing as detectInProgressConflictFn/writeInProgressConflictGateFn at ~:2428-2429). For approve, reuse deriveBranchName (plan-runner.ts:88) from prd.issueNumber; you may export/reuse executeGitProceedBranch (plan-runner.ts:1324) but note it flips phase itself via its setPhaseFn arg - either pass a no-op setPhase (pollAndResolveGate flips to the handler's returned 'implementing' anyway) or replicate the checkout-B/add/commit sequence to avoid a double-flip. GOTCHA: `cam decide` (src/commands/decide.ts) is ALREADY generic - do NOT edit it. Orchestrator boot already surfaces ANY active gate generically (CAM-153 AC8) - no new boot work. plan_approval config + readPlanApproval already exist (src/config/models.ts:274-289) and are in the Setup/Config TUIs - NO new config work, no new Ink screen. Resolver deps must be best-effort/never-throw (pollAndResolveGate has no try/catch around the handler). biome 80-line/complexity limits: use the factory/helper extraction pattern already pervasive in this file."
     }
