@@ -1,17 +1,17 @@
 {
-  "lastCompletedStory": { "id": "US-002", "title": "cam stats tokens command + dispatch wiring" },
+  "lastCompletedStory": { "id": "US-003", "title": "Split-advisory heuristic + plan-split-advisory event kind" },
   "branchName": "cam/issue-136",
   "timestamp": "2026-07-16T00:00:00.000Z",
   "createdFiles": [
-    "src/commands/stats.ts",
-    "test/commands/stats.test.ts"
+    "src/stats/split-advisory.ts",
+    "test/stats/split-advisory.test.ts"
   ],
   "modifiedFiles": [
-    "index.ts",
-    "test/commands-freeze.test.ts"
+    "src/supervisor/events.ts",
+    "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "`cam stats tokens` is wired end-to-end: COMMANDS/HELP_REGISTRY gained a 'stats' entry (index.ts, alphabetically slotted after 'status', before 'orch-budget' -- test/commands-freeze.test.ts FROZEN_COMMANDS/count was bumped to 28 in the same commit, this is the expected update path any future COMMANDS addition must repeat). index.ts wiring (parseStatsArgs/dispatchStats, mirroring the parsePatternsArgs/dispatchPatterns single-subcommand shape) is thin: all business logic (reading .claude/cam-worker-events.jsonl, calling aggregateTokensPerIssue from US-001's src/stats/tokens.ts, rendering the per-issue table, the unattributed-spend flag, the orch-vs-output-tokens formula-asymmetry note, and the CAM_STATS_TOKENS=issues=<N> mean=<M> median=<Md> unattributed=<U> sentinel line) lives in src/commands/stats.ts's runStatsTokens, mirroring orch-budget.ts's injectable cwd/readEventLog/write shape -- always exits 0. US-003/US-004 (split-advisory heuristic + plan-time emission) are a separate subsystem (plan-split-advisory event kind) and do not depend on the stats command; no direct coupling expected, but both read/write the same event log file so keep the JSONL line-shape conventions (kind/detail, tolerant-parse-skip-malformed) consistent if either touches src/commands/journal.ts or src/supervisor/events.ts.",
+  "nextStoryContext": "computeSplitAdvisory (src/stats/split-advisory.ts) is a pure function: (records: HistoricalJobSizeRecord[], input: { jobSize, storyCount }) -> SplitAdvisoryResult { advisory, storyCount, projectedTokens, bucketMean, bucketMedian, bucketSize }. projectedTokens = bucketMean of the exact-jobSize bucket; advisory fires only when projectedTokens > bucketMedian * SPLIT_ADVISORY_THRESHOLD_MULTIPLIER (code const 1.5, strictly greater-than -- exactly-1.5x does NOT fire, see the boundary test). Empty bucket (no history for that jobSize) always returns advisory:false with all-zero stats, never a spurious fire or a divide blowup; a bucketMedian of exactly 0 also never fires (guarded explicitly). Median helper is a local guarded copy (noUncheckedIndexedAccess-safe), intentionally NOT imported from src/stats/tokens.ts's private median (kept decoupled per the story notes -- reuse the SHAPE, not the module). events.ts gained the 'plan-split-advisory' WorkerEventKind + PlanSplitAdvisoryEventDetail { issueId, jobSize, storyCount, projectedTokens, bucketMean, bucketMedian, bucketSize } in the WorkerEventDetail union, but NOTHING calls o.logEvent with this kind yet -- there is no emission call site. US-004 is the wiring story: edit runPostPlanActions in src/commands/sidecar.ts (~line 2186-2242, already parses prd.json for issueNumber and has logEvent + makeNotifyOrchestrator) to (1) read the current issue's wsjf.jobSize via issueFilePath(id) (src/issues/backlog.ts:205), (2) read story count from prd.json userStories.length, (3) build the historical records array by joining aggregateTokensPerIssue's per-issue totals (US-001, src/stats/tokens.ts) with each issue file's jobSize, (4) call computeSplitAdvisory, and (5) when result.advisory is true, emit the 'plan-split-advisory' event AND push an operator note via the existing notify path -- wrapped so any read/parse/join error is swallowed (best-effort, never throws, never gates the plan phase). Raised src/supervisor/events.ts's file-size ceiling 702->732 for the new kind/interface/union-member/doc-bullet; _ref updated in scripts/file-size-budget.json.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
