@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.183.0] - 2026-07-16
+
+### Added
+
+- US-001 - Replace fixed timing budgets with generous waitForCondition/per-test timeouts in the two load-sensitive e2e tests
+
 ## [0.182.0] - 2026-07-16
 
 ### Added
