@@ -1,0 +1,13 @@
+{
+  "id": "CAM-321",
+  "title": "Width is read via stdout?.columns (Node TTY API), consistent with the pre-exist…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-16T20:21:54.927Z",
+  "updatedAt": "2026-07-16T20:21:54.927Z",
+  "description": "Width is read via stdout?.columns (Node TTY API), consistent with the pre-existing line 189 usage. Ink 7 also exposes a useWindowSize() hook that returns { columns, rows }; a future refactor could unify width reads on it. Non-blocking and out of scope for this surgical cosmetic fix.\n\nSource: cam/issue-306\nReview round: 1\n\nsuggestion-fingerprint: 04bfca0b594e",
+  "derivedFrom": [
+    "CAM-306"
+  ]
+}
