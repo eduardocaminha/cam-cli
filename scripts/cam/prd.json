@@ -103,7 +103,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": "US-004",
       "notes": "FRONT C (living docs, skill-referencing). Files: docs/recovery-runbook.md (heading :1684, prose :1686-1795, by-path refs :1688,:1833,:1839 to .claude/skills/grill-with-docs/SKILL.md -> spec-with-docs), scripts/cam/patterns.md:582 ('grill-with-docs' skill name -> spec-with-docs). NEITHER file is embedded: the embed maps to the templates/ stubs (templates/scripts/cam/patterns.md has 0 grill, verified), and recovery-runbook is under docs/ not templates/ -- so no embed regen and no dual-copy edit here. recovery-runbook references the vendored domain-modeling skill by path but has NO /grilling token (verified), so the absence oracle is safe. requires US-004 (linear chain; spec-with-docs skill name settled in US-003)."
     },
