@@ -1,0 +1,93 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-218",
+  "description": "Wire a configurable Resend sender (resend_from) end-to-end and surface the non-secret [notify] fields in the cam config wizard.",
+  "issueNumber": 218,
+  "type": "feat",
+  "relatedDocs": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "resend",
+      "url": "https://resend.com/docs/api-reference/emails/send-email",
+      "version": "^6.16.0",
+      "fetchedAt": "2026-07-16T00:00:00Z",
+      "summary": "The `from` field is a required string on emails.send, accepting either a plain address or `Name <email@example.com>`. Custom senders require a Resend-verified domain (a deployment fact confirmed for radiologic.io, not something this feature validates). sendEscalation already threads `from`; no SDK signature change is needed.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Read resend_from into ResendConfig",
+      "description": "As an operator, I need readResendConfig to expose a configurable sender address so that escalation emails can be sent from my own verified domain instead of the hardcoded onboarding sender.",
+      "acceptanceCriteria": [
+        "ResendConfig (src/config/models.ts:169-174) gains a `from: string` field, documented as empty-string when unconfigured. [oracle: grep -q 'from: string' src/config/models.ts]",
+        "readResendConfig reads `resend_from` from the [notify] TOML table, mirroring the non-secret resend_recipient pattern (models.ts:203); missing or non-string resend_from yields from === '' (including the malformed-TOML and no-[notify] fallback paths). [oracle: grep -q 'resend_from' src/config/models.ts]",
+        "A real-fs test in test/config/models.test.ts asserts: a project.toml with resend_from returns that value; a project.toml with no resend_from returns from === ''. [oracle: bun test test/config/models.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/config/models.ts (interface ResendConfig + readResendConfig, both return sites at ~204 and ~209), test/config/models.test.ts. resend_from is NON-SECRET: TOML is the source (mirror resend_recipient exactly), unlike apiKey which prioritizes the RESEND_API_KEY env var. Both the happy-path return (line 204) and the env-only fallback return (line 209) must include the new from field. Gotcha: noUncheckedIndexedAccess — guard the typeof-string check before assigning."
+    },
+    {
+      "id": "US-002",
+      "title": "Plumb configured from through sidecar escalation call sites",
+      "description": "As an operator, I need every escalation email path to use my configured resend_from so that all escalations (ship, toolchain, drain, production, blocked-cycle, plan-block, container-not-ready) come from my verified sender while unconfigured projects keep the default sender unchanged.",
+      "acceptanceCriteria": [
+        "All 7 sendEscalation call sites in src/commands/sidecar.ts (buildShipEscalateFn ~1058, buildToolchainEscalateFn ~1077, drain closure ~1330, makeProductionEscalateFn ~1356, blockedCycleEscalateFn ~1942, plan BLOCK/audit-rejected ~2164, plan-container-not-ready ~2248) pass the configured from when non-empty and pass undefined when resend_from is empty, so the existing resend.ts:74 `onboarding@resend.dev` fallback fires. [oracle: reviewer-judgment]",
+        "Any internal helper that forwards resend config (the `resendConfig: { apiKey, recipient }` param types at ~1881 and ~2474, and makeProductionEscalateFn/makeProductionDrainNotifyFn at ~1356/2776) carries `from` alongside apiKey/recipient so no call site loses the value. [oracle: bun run typecheck]",
+        "Empty resend_from is threaded as `undefined` (not '') to sendEscalation so the fallback branch fires; a configured non-empty from is passed verbatim. [oracle: reviewer-judgment]",
+        "The from-threading behavioral test in test/notify/resend.test.ts is extended (not duplicated) from the existing :94-116 cases: a configured from reaches the injected fake sendFn; an omitted/empty from uses the default sender. [oracle: bun test test/notify/resend.test.ts]",
+        "Zero behavior change for projects that do not set resend_from (default sender still used). [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/sidecar.ts, test/notify/resend.test.ts. Depends on US-001 (ResendConfig.from). Gotcha (from issue spec): sendEscalation ALREADY has the optional `from` param + onboarding fallback (resend.ts:70,74) — do NOT re-add it; only supply from from config at the call sites. Gotcha: exactly 7 real call sites, all in sidecar.ts; plan-runner.ts:1086 and loop.ts:394/1887 are doc comments only (those modules take an injected escalateFn) — do not chase phantom sites. Pattern for empty->undefined: `from: resendCfg.from !== '' ? resendCfg.from : undefined`."
+    },
+    {
+      "id": "US-003",
+      "title": "Add notify recipient/from steps + API-key status to config wizard",
+      "description": "As an operator, I need cam config to prompt for resend_recipient and resend_from and show whether the API key is configured so that I can set up escalation notifications without hand-editing project.toml or ever exposing the secret.",
+      "acceptanceCriteria": [
+        "ConfigChoices (src/ui/ConfigScreen.tsx) is extended with resendRecipient and resendFrom string fields. [oracle: grep -qE 'resendRecipient|resendFrom' src/ui/ConfigScreen.tsx]",
+        "ConfigScreen gains two flat-wizard free-text steps for resend_recipient and resend_from, copying the CustomModelInput/PlanApprovalSection free-text pattern (ConfigScreen.tsx:284-357); they slot into the existing flat wizard (append after plan-approval) and must NOT wait on or entangle with the CAM-87 tabbed refactor. [oracle: reviewer-judgment]",
+        "The wizard shows RESEND_API_KEY as configured/unconfigured status only (read from the env var); there is NO input field for the API key. [oracle: grep -q 'RESEND_API_KEY' src/ui/ConfigScreen.tsx]",
+        "ConfigScreen render test in test/ui/config-screen.test.tsx covers the new notify steps and the key-status line (via ink-testing-library). [oracle: bun test test/ui/config-screen.test.tsx]",
+        "Verify the screen renders correctly (ink-testing-library; success/failure signalled by the glyph, never divider color). [oracle: bun test test/ui/config-screen.test.tsx]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/ui/ConfigScreen.tsx, test/ui/config-screen.test.tsx. Reuse CustomModelInput (ink-text-input free-text, :344-357) for both text steps; add 'notify-recipient' and 'notify-from' to the WizardStep union and allSteps array; mirror the PlanApprovalSection component/section pattern. API-key status: read process.env['RESEND_API_KEY'] and render a ✓ configured / ✗ unconfigured line — status only, no TextInput. HARD CONSTRAINT: never a key input field. Empty text input is valid (means 'leave unset'). Gotcha: Ink success/failure is the ✓/✗ glyph, never divider color."
+    },
+    {
+      "id": "US-004",
+      "title": "Persist notify fields to [notify], never the API key",
+      "description": "As an operator, I need the config wizard to write resend_recipient and resend_from into the [notify] table of project.toml while guaranteeing the API key is never written there so that my public git-tracked config stays free of secrets.",
+      "acceptanceCriteria": [
+        "mergeConfigChoices (src/commands/config.ts) persists choices.resendRecipient/resendFrom into the [notify] table of scripts/cam/project.toml via mergeIntoConfig, mirroring the [models]/[backend]/[plan]/[ship] blocks; pre-existing [notify] keys (e.g. resend_recipient already present) are preserved/updated additively. [oracle: grep -q 'notify' src/commands/config.ts]",
+        "The API key is NEVER written to project.toml and NEVER written to .env by this feature (no resend_api_key key emitted anywhere in the write path). [oracle: reviewer-judgment]",
+        "A config write-path test asserts mergeConfigChoices emits resend_recipient/resend_from into [notify] on a real tmpdir project.toml and never writes resend_api_key anywhere. [oracle: bun test]",
+        "Empty resendRecipient/resendFrom are handled per the wizard contract (empty string means unset — not written, or written as empty consistent with US-003's collected values). [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/config.ts (mergeConfigChoices ~109-161), test file for the write path (extend the existing config write-path suite, real tmpdir + mergeIntoConfig). Depends on US-003 (ConfigChoices.resendRecipient/resendFrom). Follow the existing conditional-block pattern: only add the [notify] update when the value is defined/non-empty, like the plan/ship blocks at :122-146. HARD CONSTRAINT (issue): scripts/cam/project.toml is git-tracked in a PUBLIC repo — the API key must never land there; readResendConfig already prioritizes the RESEND_API_KEY env var. Test must assert the negative (no resend_api_key substring in the written TOML)."
+    }
+  ]
+}
