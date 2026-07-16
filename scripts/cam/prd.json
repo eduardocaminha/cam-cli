@@ -42,7 +42,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Touches src/supervisor/plan-runner.ts + test/supervisor/plan-runner.test.ts. PLACEMENT IS LOAD-BEARING: this is NOT a check:all gate (prd.json is ephemeral, in-process only during plan phase, committed at plan-runner.ts:1178, git rm'd at ship). Fail closed: do NOT auto-repair the oracle string; route it to the planner via re-plan feedback. Consume the synthetic-BLOCK path so the existing runPlanPhaseWithReplan while-loop (plan-runner.ts:956) and its writeEscalationMarkerFn seam handle re-plan + escalation with zero new terminal. PlanVerdictReport/PlanVerdictFinding shape lives in src/supervisor/plan-verdict-report.ts ({ verdict, summary, findings:[{ id, category, severity, storyId?, description, suggestion? }] }). buildReplanPlannerTaskPrompt(issueId, findings) already embeds priorFindings. Independent of CAM-309 (no blockedBy): keep the broken-class definition consistent but do NOT assume 309's agent-prose changes are present. Depends on US-001's exported linter. Grep patterns.md for 'plan-runner' / 're-plan' before coding."
     }
