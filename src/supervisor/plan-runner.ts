@@ -221,10 +221,22 @@ export const DEFAULT_PLAN_TIMEOUT_MS = 30 * 60 * 1_000;
  *                          APPROVE verdict. Terminal, never proceeds to branch (ADR-0012:
  *                          non-convergence is a hard stop, never proceed-with-debt).
  *                          runPlanPhase itself never returns this kind.
+ *   in-progress-conflict - detectInProgressConflictFn detected in-progress work at plan
+ *                          start (US-004, CAM-241/153, AC1): an existing prd.json carrying
+ *                          a passes:false non-operator story, or HEAD on a cam/* branch.
+ *                          The in-progress-conflict gate was written (writeInProgressConflictGateFn)
+ *                          and the phase already flipped to 'awaiting-operator' by that call.
+ *                          Terminal for this call: no clearStalePlanArtifactsFn, preflightFn,
+ *                          selectIssueFn, or worker spawn ever runs (AC1, AC2).
  */
 export type PlanPhaseResult =
 	| { kind: 'preflight-failed'; step: string; detail: string }
 	| { kind: 'no-plannable-issue' }
+	/**
+	 * In-progress-work conflict detected at plan start (US-004, CAM-241/153).
+	 * See the field doc above.
+	 */
+	| { kind: 'in-progress-conflict' }
 	/**
 	 * An explicit /cam-plan <id> target (opts.planTargetId) named a missing,
 	 * not-open, or not-plannable issue (US-002, CAM-203). Distinct from
@@ -438,6 +450,45 @@ export interface RunPlanPhaseOptions {
 	 * Optional for backward compat with tests that do not inject it.
 	 */
 	clearStalePlanArtifactsFn?: () => void;
+
+	/**
+	 * Detect in-progress work that conflicts with a fresh plan request (US-004,
+	 * CAM-241/153, AC1). Returns a free-text gate context string when EITHER:
+	 *   (a) an existing prd.json carries a passes:false non-operator story, OR
+	 *   (b) HEAD is on a cam/* branch;
+	 * returns null when neither applies (AC4: no conflict).
+	 *
+	 * Called as the FIRST thing inside runPlanPhase, strictly before
+	 * clearStalePlanArtifactsFn (which would otherwise destroy the very
+	 * prd.json state this detection needs to inspect) and before
+	 * preflightFn/selectIssueFn (AC1: no issue selection/dispatch happens on a
+	 * conflict tick).
+	 *
+	 * Optional: absent means no detection (backward compat; zero behavior
+	 * change for existing tests/callers that predate US-004).
+	 *
+	 * runPlanPhaseWithReplan (US-003, CAM-204) explicitly OMITS this dep (and
+	 * writeInProgressConflictGateFn below) on every re-plan round (round >= 2):
+	 * the check must fire at most ONCE per outer "requested plan" call, on
+	 * round 1 only -- a re-plan round's own just-written draft prd.json
+	 * (BLOCKed but not yet approved) must never be misdetected as someone
+	 * else's in-progress work by the SAME cycle's later round.
+	 */
+	detectInProgressConflictFn?: () => string | null;
+
+	/**
+	 * Write side of the in-progress-conflict gate (US-004, AC2). Called with
+	 * the detected context string, ONLY when detectInProgressConflictFn
+	 * returned non-null. Production wiring calls writeGateAndNotify
+	 * (supervisor/gate.ts) with gate: 'in-progress-conflict', options: EXACTLY
+	 * ['continue','ship','abandon'] (IN_PROGRESS_CONFLICT_OPTIONS,
+	 * in-progress-conflict.ts).
+	 *
+	 * Optional: absent means the short-circuit still happens (runPlanPhase
+	 * returns 'in-progress-conflict') but nothing is written/notified (for
+	 * tests that only assert the short-circuit itself).
+	 */
+	writeInProgressConflictGateFn?: (context: string) => void;
 
 	/**
 	 * Ensure a live worker pane exists before each spawn. Returns the live pane id.
@@ -902,7 +953,20 @@ function runPlanWorkerSequence(
  * this function under biome's line/complexity limits (US-006, CAM-152).
  */
 export function runPlanPhase(opts: RunPlanPhaseOptions): PlanPhaseResult {
-	const { preflightFn, selectIssueFn, paneCountMutexFn, clearStalePlanArtifactsFn, logEvent } = opts;
+	const {
+		preflightFn, selectIssueFn, paneCountMutexFn, clearStalePlanArtifactsFn, logEvent,
+		detectInProgressConflictFn, writeInProgressConflictGateFn,
+	} = opts;
+
+	// US-004 (CAM-241/153, AC1): in-progress-conflict gate. Runs BEFORE
+	// clearStalePlanArtifactsFn (which would otherwise destroy the very
+	// prd.json state this detection needs to inspect) and before ANY issue
+	// selection/dispatch (AC1, AC2). AC4: absent/null means proceed unchanged.
+	const conflictContext = detectInProgressConflictFn?.() ?? null;
+	if (conflictContext !== null) {
+		writeInProgressConflictGateFn?.(conflictContext);
+		return { kind: 'in-progress-conflict' };
+	}
 
 	// Clear stale artifacts from any previous plan run (AC1, US-002).
 	// Runs BEFORE preflight so a stale APPROVE verdict cannot contaminate the
@@ -1048,6 +1112,13 @@ export function runPlanPhaseWithReplan(opts: RunPlanPhaseWithReplanOptions): Pla
 				...planOpts,
 				selectIssueFn: () => blockedIssue,
 				plannerTaskPrompt: buildReplanPlannerTaskPrompt(blockedIssue.id, blockedFindings),
+				// US-004 (CAM-241/153): the in-progress-conflict check fires at most
+				// ONCE per outer call, on round 1 only (see the field doc on
+				// RunPlanPhaseOptions.detectInProgressConflictFn) -- a re-plan
+				// round's own just-written draft prd.json must never be
+				// misdetected as in-progress work by the SAME cycle's later round.
+				detectInProgressConflictFn: undefined,
+				writeInProgressConflictGateFn: undefined,
 			});
 		}
 
@@ -1112,6 +1183,12 @@ export function runPlanPhaseWithReplan(opts: RunPlanPhaseWithReplanOptions): Pla
  *                          was ever spawned (US-003, CAM-215): the durable
  *                          marker is written and notifyFn is called here, no
  *                          branch/commit/flip.
+ * in-progress-conflict   - planResult was 'in-progress-conflict' (US-004,
+ *                          CAM-241/153): the gate write already flipped the
+ *                          phase to 'awaiting-operator' (inside
+ *                          detectInProgressConflictFn's writer seam, BEFORE
+ *                          runPostAuditAction is ever called). No further
+ *                          notify/escalate/marker/phase-flip happens here.
  * no-action              - planResult was neither audit-approved,
  *                          audit-blocked, plan-escalated, nor preflight-failed
  *                          (e.g. timeout, mutex-busy).
@@ -1121,6 +1198,7 @@ export type PostAuditActionResult =
 	| { kind: 'awaiting-operator-approval' }
 	| { kind: 'escalated' }
 	| { kind: 'preflight-failed' }
+	| { kind: 'in-progress-conflict' }
 	| { kind: 'no-action' };
 
 /** Options for runPostAuditAction. All side effects are injected. */
@@ -1463,6 +1541,17 @@ export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionRe
 
 	// US-004 (CAM-215, Option B): see removePreflightMarkerUnlessPreflightFailed.
 	removePreflightMarkerUnlessPreflightFailed(planResult.kind, removePreflightFailedMarkerFn);
+
+	// in-progress-conflict (US-004, CAM-241/153): the gate write already
+	// flipped the phase to 'awaiting-operator' and pushed the one-line notify
+	// (writeGateAndNotify, called from detectInProgressConflictFn's writer
+	// seam BEFORE runPlanPhase ever returned this kind). Nothing further to do:
+	// no notify/escalate/marker/phase-flip here, and exitPhaseAfterPlan (US-R1-002,
+	// sidecar.ts) must leave the phase untouched for this kind (mirrors
+	// 'branch-created').
+	if (planResult.kind === 'in-progress-conflict') {
+		return { kind: 'in-progress-conflict' };
+	}
 
 	// planner-failed: planner produced no prd.json; notify best-effort, no escalate
 	// (US-003, CAM-155). Do NOT fire escalateFn: a transient planner no-op is not an
