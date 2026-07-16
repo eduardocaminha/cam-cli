@@ -32,7 +32,7 @@
 //
 // Commit message: `docs(cam): domain docs for <id>`.
 //
-// CAM-118 (US-002 grill domain-docs writer).
+// CAM-118 (US-002 spec-interview domain-docs writer).
 
 import { randomUUID } from 'node:crypto';
 import { basename, join } from 'node:path';

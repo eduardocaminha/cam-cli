@@ -242,7 +242,7 @@ test.skipIf(!gitAvailable)(
 			spec?: unknown;
 		};
 		expect(demotedEntry.stage).toBe('idea');
-		// The stale spec is preserved as reference for the re-grill.
+		// The stale spec is preserved as reference for the re-spec.
 		expect(demotedEntry.spec).toBeDefined();
 
 		// Worktree coherence: commitTreeToMain's final syncWorktreeIfOnMain step

@@ -55,7 +55,7 @@ export type MergeMode = 'immediate' | 'ci-gated';
 
 /**
  * The plan approval mode. `"auto"` lets the sidecar proceed automatically
- * after grill; `"operator"` requires a human gate before the loop advances.
+ * after the spec interview; `"operator"` requires a human gate before the loop advances.
  */
 export type PlanApproval = 'auto' | 'operator';
 
