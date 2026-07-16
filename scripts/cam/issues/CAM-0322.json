@@ -1,0 +1,13 @@
+{
+  "id": "CAM-322",
+  "title": "The SpawnFn options param still declares `{ encoding: 'utf8'; stdio?: 'inherit'…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-16T21:03:19.050Z",
+  "updatedAt": "2026-07-16T21:03:19.050Z",
+  "description": "The SpawnFn options param still declares `{ encoding: 'utf8'; stdio?: 'inherit' | 'pipe' }`, a node-era shape that Bun.spawnSync ignores (the default impl hardcodes per-stream inherit and never reads options). Vestigial but harmless; could be trimmed to just what the seam needs for clarity.\n\nSource: cam/issue-308\nReview round: 1\n\nsuggestion-fingerprint: 686169f87244",
+  "derivedFrom": [
+    "CAM-308"
+  ]
+}
