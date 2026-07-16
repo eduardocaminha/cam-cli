@@ -1,13 +1,38 @@
 {
   "id": "CAM-317",
   "title": "rewriteFrontmatterEffort insert path interpolates frontmatterBody into the repl…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-16T15:36:24.400Z",
-  "updatedAt": "2026-07-16T15:36:24.400Z",
+  "updatedAt": "2026-07-16T21:37:21.845Z",
   "description": "rewriteFrontmatterEffort insert path interpolates frontmatterBody into the replacement string passed to String.replace; a body containing $-sequences ($&, $1) would be reinterpreted. Agent frontmatter is controlled content so the risk is nil, but a replacer function would be more robust.\n\nSource: cam/issue-87\nReview round: 1\n\nsuggestion-fingerprint: e9c0c4c2586e",
   "derivedFrom": [
     "CAM-87"
-  ]
+  ],
+  "spec": {
+    "scope": "In rewriteFrontmatterEffort's insert path, replace the string-replacement interpolation of frontmatterBody (passed to String.prototype.replace) with a replacer function, so `$`-sequences ($&, $1, $$) in the body are inserted verbatim and not reinterpreted by the replace engine.",
+    "acceptanceCriteria": [
+      "rewriteFrontmatterEffort's insert path uses a replacer function (not a replacement string) so `$`-sequences in frontmatterBody are inserted literally.",
+      "A test asserts a frontmatterBody containing $-sequences (e.g. `$&`, `$1`) is inserted verbatim.",
+      "Existing rewriteFrontmatterEffort behavior is otherwise unchanged; check:all is green."
+    ],
+    "gotchas": [
+      "Agent frontmatter is currently controlled content so the live risk is nil; this is latent-footgun hardening.",
+      "Source: cam/issue-87."
+    ],
+    "domainTerms": [
+      "rewriteFrontmatterEffort",
+      "String.prototype.replace",
+      "replacer function",
+      "frontmatter"
+    ]
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 1,
+    "riskReduction": 5,
+    "jobSize": 1
+  },
+  "type": "fix"
 }
