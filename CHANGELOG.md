@@ -6,6 +6,15 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.175.0] - 2026-07-16
+
+### Added
+
+- US-004 - Refactor ConfigScreen to tabbed UI with per-tab model + effort selects
+- US-003 - Add TabBar chip component
+- US-002 - Add rewriteFrontmatterEffort + wire into save, sync agent files and re-embed
+- US-001 - Add effort config read/write plumbing (no UI)
+
 ## [0.174.0] - 2026-07-16
 
 ### Added

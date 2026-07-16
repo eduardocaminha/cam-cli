@@ -1,14 +1,24 @@
 // src/ui/ConfigScreen.tsx
 //
-// Multi-step wizard for cam model configuration.
+// Tabbed UI for cam model configuration (US-004, CAM-241/153).
 //
-// Steps: one per phase (orchestrator, planner, auditor, implementer, reviewer,
-// ship) followed by the backend step. After all steps, fires onDone with the
-// chosen ConfigChoices.
+// 7 tabs, navigable via TabBar (Left/Right always switches tabs): the 6
+// phases (orchestrator, planner, auditor, implementer, reviewer, ship) plus
+// one Global tab. Each of the 5 LLM-phase tabs renders a model Select AND a
+// NEW effort Select; the Ship tab renders the model Select only (ship is
+// deterministic/zero-LLM, ADR-0009, so it has no effort concept). The Global
+// tab folds backend/merge-mode/plan-approval plus the notify recipient/from
+// text inputs.
 //
-// Layout mirrors SetupScreen.tsx: each completed step collapses to a one-line
-// "✓ <chosen>" summary; the active step renders a Select with ❯ cursor nav.
-// Future steps are hidden until prior ones are answered.
+// Within a tab, Up/Down navigates the options of whichever field is
+// currently focused (only one Select/TextInput per tab is interactive at a
+// time; the rest render their current-or-default value as a static "✓ ..."
+// line via Select's own `confirmed`/`confirmedValue` props). Tab/Enter
+// advances focus model -> effort -> next tab (see `computeNextFocus`);
+// reaching past the last field of the last tab (Global's notify-from) fires
+// onDone. This replaces the old sequential forward-only wizard: every tab and
+// every field is reachable at any time via Left/Right, not gated on prior
+// steps being answered.
 //
 // Success/failure is always signalled by the glyph (✓/✗), never by divider
 // color (patterns.md: "Ink screens: success/failure is the glyph, not divider
@@ -22,8 +32,9 @@ import TextInput from 'ink-text-input';
 import { colors } from './theme.ts';
 import { Section } from './Section.tsx';
 import { Select, type SelectOption } from './Select.tsx';
-import { DEFAULTS } from '../config/models.ts';
-import type { Phase, MergeMode, PlanApproval } from '../config/models.ts';
+import { TabBar, type TabDef } from './TabBar.tsx';
+import { DEFAULTS, EFFORT_DEFAULTS } from '../config/models.ts';
+import type { Phase, LlmPhase, MergeMode, PlanApproval } from '../config/models.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -38,16 +49,15 @@ export type ConfigChoices = {
 	resendRecipient?: string;
 	/** resend_from for [notify]. Empty string means "leave unset". */
 	resendFrom?: string;
+	/**
+	 * Per-LLM-phase effort level (`ship` omitted: it has no effort setting,
+	 * ADR-0009). Undefined means the wizard did not collect effort choices.
+	 */
+	efforts?: Record<LlmPhase, string>;
 };
 
-type WizardStep =
-	| Phase
-	| 'backend'
-	| 'merge-mode'
-	| 'plan-approval'
-	| 'notify-recipient'
-	| 'notify-from'
-	| 'done';
+/** A tab is one of the 6 phases, or the Global tab. */
+type TabKind = Phase | 'global';
 
 // ---------------------------------------------------------------------------
 // Static data
@@ -62,6 +72,8 @@ const PHASE_STEPS: readonly Phase[] = [
 	'ship',
 ];
 
+const LLM_PHASES: readonly LlmPhase[] = ['orchestrator', 'planner', 'auditor', 'implementer', 'reviewer'];
+
 const PHASE_LABELS: Record<Phase, string> = {
 	orchestrator: 'Orchestrator',
 	planner: 'Planner',
@@ -70,6 +82,8 @@ const PHASE_LABELS: Record<Phase, string> = {
 	reviewer: 'Reviewer',
 	ship: 'Ship',
 };
+
+const TABS: readonly TabKind[] = [...PHASE_STEPS, 'global'];
 
 // CLI tier aliases (ADR-0034, code.claude.com/docs/en/model-config): each
 // alias auto-resolves to the current latest model of its tier at spawn time,
@@ -102,6 +116,15 @@ const CUSTOM_MODEL_OPTION: SelectOption<string> = {
 // Per-phase picker options: every alias plus the free-text passthrough.
 const PHASE_MODEL_OPTIONS: readonly SelectOption<string>[] = [...MODEL_OPTIONS, CUSTOM_MODEL_OPTION];
 
+// AC4: exactly 5 effort tiers, in order.
+const EFFORT_OPTIONS: readonly SelectOption<string>[] = [
+	{ value: 'low', label: 'low' },
+	{ value: 'medium', label: 'medium' },
+	{ value: 'high', label: 'high' },
+	{ value: 'xhigh', label: 'xhigh' },
+	{ value: 'max', label: 'max' },
+];
+
 // AC4: backend options — codex carries the literal label 'wired in CAM-54'.
 const BACKEND_OPTIONS: readonly SelectOption<string>[] = [
 	{ value: 'claude', label: 'claude', description: 'Default Claude Code backend' },
@@ -119,6 +142,54 @@ const PLAN_APPROVAL_OPTIONS: readonly SelectOption<PlanApproval>[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Focus-advance chain (AC5): a pure, unit-testable helper
+// ---------------------------------------------------------------------------
+
+interface FocusState {
+	activeTab: number;
+	fieldFocus: number;
+}
+
+/** Field count per tab kind: 2 for an LLM phase (model, effort), 1 for Ship
+ * (model only), 5 for Global (backend, merge-mode, plan-approval, notify
+ * recipient, notify from). */
+function fieldCountForTab(tab: TabKind): number {
+	if (tab === 'global') return 5;
+	if (tab === 'ship') return 1;
+	return 2;
+}
+
+/**
+ * Pure focus-advance step: model -> effort -> next tab (AC5). Returns 'done'
+ * when advancing past the last field of the last tab (Global's notify-from),
+ * which the caller treats as "submit". Extracted from the component so the
+ * Tab/Enter chain stays unit-testable without mounting Ink, and to keep
+ * ConfigScreen's cognitive complexity under budget.
+ */
+export function computeNextFocus(state: FocusState): FocusState | 'done' {
+	const tab = TABS[state.activeTab] ?? 'global';
+	const count = fieldCountForTab(tab);
+	if (state.fieldFocus + 1 < count) {
+		return { activeTab: state.activeTab, fieldFocus: state.fieldFocus + 1 };
+	}
+	if (state.activeTab + 1 >= TABS.length) {
+		return 'done';
+	}
+	return { activeTab: state.activeTab + 1, fieldFocus: 0 };
+}
+
+/** Exported for direct unit testing (avoids asserting on wrapped/wide Ink
+ * frames, where a chip's "Label: value" text can be split across a
+ * terminal-width line-wrap). */
+export function buildTabDefs(models: Partial<Record<Phase, string>>): TabDef[] {
+	return TABS.map((tab) =>
+		tab === 'global'
+			? { label: 'Global' }
+			: { label: PHASE_LABELS[tab], confirmed: true, value: models[tab] ?? DEFAULTS[tab] },
+	);
+}
+
+// ---------------------------------------------------------------------------
 // ConfigScreen component
 // ---------------------------------------------------------------------------
 
@@ -131,8 +202,8 @@ interface ConfigScreenProps {
  * Encapsulates the 'custom / enter id' picker sentinel: which phase (if any)
  * is currently showing the free-text input instead of the Select list, the
  * in-progress draft, and the transitions in/out of that mode. `commit` is the
- * caller's "store this phase's model + advance the wizard" callback, shared
- * with the normal alias-select path so both paths land in the same place.
+ * caller's "store this phase's model + advance focus" callback, shared with
+ * the normal alias-select path so both paths land in the same place.
  */
 function useCustomModelEntry(commit: (phase: Phase, value: string) => void) {
 	const [phase, setPhase] = useState<Phase | null>(null);
@@ -164,70 +235,110 @@ function useCustomModelEntry(commit: (phase: Phase, value: string) => void) {
 	return { phase, draft, setDraft, select, submit };
 }
 
-export function ConfigScreen({ onDone, onCancel }: ConfigScreenProps): ReactElement {
-	const [stepIdx, setStepIdx] = useState(0);
+/**
+ * All ConfigScreen state (7-tab focus position, per-field values, the custom-
+ * model-entry sub-state) plus the commit/advance handlers, bundled into one
+ * hook so the component body itself stays under the lint line-count budget.
+ */
+function useConfigScreenState(onDone: (choices: ConfigChoices) => void) {
+	const [activeTab, setActiveTab] = useState(0);
+	const [fieldFocus, setFieldFocus] = useState(0);
 	const [models, setModels] = useState<Partial<Record<Phase, string>>>({});
+	const [efforts, setEfforts] = useState<Partial<Record<LlmPhase, string>>>({});
 	const [backend, setBackend] = useState<string | undefined>(undefined);
 	const [mergeMode, setMergeMode] = useState<MergeMode | undefined>(undefined);
 	const [planApproval, setPlanApproval] = useState<PlanApproval | undefined>(undefined);
-	const [resendRecipient, setResendRecipient] = useState<string | undefined>(undefined);
-	const [recipientDraft, setRecipientDraft] = useState('');
-	const [resendFrom, setResendFrom] = useState<string | undefined>(undefined);
-	const [fromDraft, setFromDraft] = useState('');
+	const [resendRecipient, setResendRecipient] = useState('');
+	const [resendFrom, setResendFrom] = useState('');
+	const [done, setDone] = useState(false);
 
-	// RESEND_API_KEY is read-only status here: never a text input, never
-	// persisted from this screen (US-004 handles [notify] persistence).
-	const apiKeyConfigured = (process.env['RESEND_API_KEY'] ?? '') !== '';
+	function changeTab(next: number): void {
+		setActiveTab(next);
+		setFieldFocus(0);
+	}
+
+	function advance(): void {
+		const next = computeNextFocus({ activeTab, fieldFocus });
+		if (next === 'done') {
+			setDone(true);
+			return;
+		}
+		setActiveTab(next.activeTab);
+		setFieldFocus(next.fieldFocus);
+	}
 
 	function commitModel(phase: Phase, value: string): void {
 		setModels((m) => ({ ...m, [phase]: value }));
-		setStepIdx((i) => i + 1);
+		advance();
 	}
 
 	const customModel = useCustomModelEntry(commitModel);
 
-	const allSteps: readonly WizardStep[] = [
-		...PHASE_STEPS,
-		'backend',
-		'merge-mode',
-		'plan-approval',
-		'notify-recipient',
-		'notify-from',
-		'done',
-	];
-	const currentStep: WizardStep = allSteps[stepIdx] ?? 'done';
-
-	useFireOnDone(currentStep, models, backend, mergeMode, planApproval, resendRecipient, resendFrom, onDone);
+	// Tab key advances focus without committing a value (AC6: an untouched
+	// field defaults). Guarded off while the custom-model free-text input is
+	// open: ink-text-input itself ignores key.tab, so without this guard Tab
+	// would silently skip past an in-progress custom entry.
+	useInput((_input, key) => {
+		if (key.tab && customModel.phase === null) advance();
+	});
 
 	function handlePhaseSelect(phase: Phase, value: string): void {
 		if (customModel.select(phase, value)) return;
 		commitModel(phase, value);
 	}
 
+	function handleEffortSelect(phase: LlmPhase, value: string): void {
+		setEfforts((e) => ({ ...e, [phase]: value }));
+		advance();
+	}
+
 	function handleBackendSelect(value: string): void {
 		setBackend(value);
-		setStepIdx((i) => i + 1);
+		advance();
 	}
 
 	function handleMergeModeSelect(value: MergeMode): void {
 		setMergeMode(value);
-		setStepIdx((i) => i + 1);
+		advance();
 	}
 
 	function handlePlanApprovalSelect(value: PlanApproval): void {
 		setPlanApproval(value);
-		setStepIdx((i) => i + 1);
+		advance();
 	}
 
-	function handleNotifyRecipientSubmit(value: string): void {
-		setResendRecipient(value.trim());
-		setStepIdx((i) => i + 1);
-	}
+	useFireOnDone(done, models, efforts, backend, mergeMode, planApproval, resendRecipient, resendFrom, onDone);
 
-	function handleNotifyFromSubmit(value: string): void {
-		setResendFrom(value.trim());
-		setStepIdx((i) => i + 1);
-	}
+	return {
+		activeTab,
+		fieldFocus,
+		models,
+		efforts,
+		backend,
+		mergeMode,
+		planApproval,
+		resendRecipient,
+		setResendRecipient,
+		resendFrom,
+		setResendFrom,
+		done,
+		changeTab,
+		advance,
+		customModel,
+		handlePhaseSelect,
+		handleEffortSelect,
+		handleBackendSelect,
+		handleMergeModeSelect,
+		handlePlanApprovalSelect,
+	};
+}
+
+export function ConfigScreen({ onDone, onCancel }: ConfigScreenProps): ReactElement {
+	const s = useConfigScreenState(onDone);
+	// RESEND_API_KEY is read-only status here: never a text input, never
+	// persisted from this screen.
+	const apiKeyConfigured = (process.env['RESEND_API_KEY'] ?? '') !== '';
+	const currentTab: TabKind = TABS[s.activeTab] ?? 'global';
 
 	return (
 		<Box flexDirection="column">
@@ -237,30 +348,42 @@ export function ConfigScreen({ onDone, onCancel }: ConfigScreenProps): ReactElem
 				</Text>
 			</Box>
 
-			<PhaseStepsSection stepIdx={stepIdx} models={models} customModel={customModel} onSelect={handlePhaseSelect} onCancel={onCancel} />
+			<Box marginTop={1}>
+				<TabBar tabs={buildTabDefs(s.models)} activeIndex={s.activeTab} onChange={s.changeTab} />
+			</Box>
 
-			<BackendSection stepIdx={stepIdx} currentStep={currentStep} backend={backend} onChange={handleBackendSelect} onCancel={onCancel} />
-			<MergeModeSection stepIdx={stepIdx} currentStep={currentStep} mergeMode={mergeMode} onChange={handleMergeModeSelect} onCancel={onCancel} />
-			<PlanApprovalSection stepIdx={stepIdx} currentStep={currentStep} planApproval={planApproval} onChange={handlePlanApprovalSelect} onCancel={onCancel} />
-			<NotifyRecipientSection
-				stepIdx={stepIdx}
-				currentStep={currentStep}
-				resendRecipient={resendRecipient}
-				draft={recipientDraft}
-				onDraftChange={setRecipientDraft}
-				onSubmit={handleNotifyRecipientSubmit}
-				apiKeyConfigured={apiKeyConfigured}
-			/>
-			<NotifyFromSection
-				stepIdx={stepIdx}
-				currentStep={currentStep}
-				resendFrom={resendFrom}
-				draft={fromDraft}
-				onDraftChange={setFromDraft}
-				onSubmit={handleNotifyFromSubmit}
-			/>
+			{currentTab === 'global' ? (
+				<GlobalTabContent
+					fieldFocus={s.fieldFocus}
+					backend={s.backend}
+					onBackendChange={s.handleBackendSelect}
+					mergeMode={s.mergeMode}
+					onMergeModeChange={s.handleMergeModeSelect}
+					planApproval={s.planApproval}
+					onPlanApprovalChange={s.handlePlanApprovalSelect}
+					resendRecipient={s.resendRecipient}
+					onRecipientChange={s.setResendRecipient}
+					onRecipientSubmit={s.advance}
+					resendFrom={s.resendFrom}
+					onFromChange={s.setResendFrom}
+					onFromSubmit={s.advance}
+					apiKeyConfigured={apiKeyConfigured}
+					onCancel={onCancel}
+				/>
+			) : (
+				<PhaseTabContent
+					phase={currentTab}
+					fieldFocus={s.fieldFocus}
+					model={s.models[currentTab]}
+					efforts={s.efforts}
+					customModel={s.customModel}
+					onModelSelect={s.handlePhaseSelect}
+					onEffortSelect={s.handleEffortSelect}
+					onCancel={onCancel}
+				/>
+			)}
 
-			{currentStep === 'done' ? (
+			{s.done ? (
 				<Section heading="Saved" tone="accent">
 					<Box flexDirection="row">
 						<Text color={colors.accent}>✓ </Text>
@@ -277,214 +400,258 @@ export function ConfigScreen({ onDone, onCancel }: ConfigScreenProps): ReactElem
 // ---------------------------------------------------------------------------
 
 /**
- * Fires `onDone` once every step has been answered (currentStep === 'done'),
- * applying phase/backend/merge-mode/plan-approval defaults and defaulting the
- * notify fields to '' (unset). Extracted from ConfigScreen to keep the
- * component body under the lint line-count budget.
+ * Fires `onDone` once the operator has advanced past the last field of the
+ * last tab (`done` becomes true), applying phase/effort/backend/merge-mode/
+ * plan-approval defaults for every untouched field (AC6). Extracted from
+ * ConfigScreen to keep the component body under the lint line-count budget.
  */
 function useFireOnDone(
-	currentStep: WizardStep,
+	done: boolean,
 	models: Partial<Record<Phase, string>>,
+	efforts: Partial<Record<LlmPhase, string>>,
 	backend: string | undefined,
 	mergeMode: MergeMode | undefined,
 	planApproval: PlanApproval | undefined,
-	resendRecipient: string | undefined,
-	resendFrom: string | undefined,
+	resendRecipient: string,
+	resendFrom: string,
 	onDone: (choices: ConfigChoices) => void,
 ): void {
 	useEffect(() => {
-		if (currentStep !== 'done') return;
+		if (!done) return;
 		const allModels = Object.fromEntries(
 			PHASE_STEPS.map((p) => [p, models[p] ?? DEFAULTS[p]]),
 		) as Record<Phase, string>;
+		const allEfforts = Object.fromEntries(
+			LLM_PHASES.map((p) => [p, efforts[p] ?? EFFORT_DEFAULTS[p]]),
+		) as Record<LlmPhase, string>;
 		const chosenBackend = backend ?? DEFAULTS.backend;
 		const chosenMergeMode = mergeMode ?? 'immediate';
 		const chosenPlanApproval = planApproval ?? 'auto';
 		const id = setTimeout(() => {
 			onDone({
 				models: allModels,
+				efforts: allEfforts,
 				backend: chosenBackend,
 				mergeMode: chosenMergeMode,
 				planApproval: chosenPlanApproval,
-				resendRecipient: resendRecipient ?? '',
-				resendFrom: resendFrom ?? '',
+				resendRecipient,
+				resendFrom,
 			});
 		}, 0);
 		return () => clearTimeout(id);
-	}, [currentStep, models, backend, mergeMode, planApproval, resendRecipient, resendFrom, onDone]);
+	}, [done, models, efforts, backend, mergeMode, planApproval, resendRecipient, resendFrom, onDone]);
 }
 
-interface PhaseStepsSectionProps {
-	stepIdx: number;
-	models: Partial<Record<Phase, string>>;
+// ---------------------------------------------------------------------------
+// Phase tabs (Orchestrator..Ship): model Select + (LLM-only) effort Select
+// ---------------------------------------------------------------------------
+
+interface PhaseTabContentProps {
+	phase: Phase;
+	fieldFocus: number;
+	model: string | undefined;
+	efforts: Partial<Record<LlmPhase, string>>;
 	customModel: ReturnType<typeof useCustomModelEntry>;
-	onSelect: (phase: Phase, value: string) => void;
+	onModelSelect: (phase: Phase, value: string) => void;
+	onEffortSelect: (phase: LlmPhase, value: string) => void;
 	onCancel: () => void;
 }
 
-// The per-phase model-select steps (orchestrator..ship), extracted from
-// ConfigScreen to keep the component body under the lint line-count budget.
-function PhaseStepsSection({ stepIdx, models, customModel, onSelect, onCancel }: PhaseStepsSectionProps): ReactElement {
+// AC2: every LLM-phase tab renders model + effort; the Ship tab renders the
+// model Select only (ship has no effort concept, ADR-0009).
+function PhaseTabContent({
+	phase,
+	fieldFocus,
+	model,
+	efforts,
+	customModel,
+	onModelSelect,
+	onEffortSelect,
+	onCancel,
+}: PhaseTabContentProps): ReactElement {
 	return (
-		<>
-			{PHASE_STEPS.map((phase, phaseIdx) => {
-				const isActive = stepIdx === phaseIdx;
-				const isDone = stepIdx > phaseIdx;
-				if (!isActive && !isDone) return null;
-				return (
-					<Section key={phase} heading={PHASE_LABELS[phase]}>
-						{isActive && customModel.phase === phase ? (
-							<CustomModelInput
-								value={customModel.draft}
-								onChange={customModel.setDraft}
-								onSubmit={(v) => customModel.submit(phase, v)}
-							/>
-						) : isActive ? (
-							<Select
-								question={`Model for ${phase}:`}
-								options={PHASE_MODEL_OPTIONS}
-								defaultValue={DEFAULTS[phase]}
-								onChange={(v) => onSelect(phase, v)}
-								onCancel={onCancel}
-							/>
-						) : null}
-						{isDone ? <ConfirmedChoice label={models[phase] ?? DEFAULTS[phase]} /> : null}
-					</Section>
-				);
-			})}
-		</>
+		<Section heading={PHASE_LABELS[phase]}>
+			<ModelField
+				phase={phase}
+				value={model}
+				active={fieldFocus === 0}
+				customModel={customModel}
+				onChange={(v) => onModelSelect(phase, v)}
+				onCancel={onCancel}
+			/>
+			{phase === 'ship' ? null : (
+				<EffortField
+					phase={phase}
+					value={efforts[phase]}
+					active={fieldFocus === 1}
+					onChange={(v) => onEffortSelect(phase, v)}
+					onCancel={onCancel}
+				/>
+			)}
+		</Section>
 	);
 }
 
-interface BackendSectionProps {
-	stepIdx: number;
-	currentStep: WizardStep;
-	backend: string | undefined;
+interface ModelFieldProps {
+	phase: Phase;
+	value: string | undefined;
+	active: boolean;
+	customModel: ReturnType<typeof useCustomModelEntry>;
 	onChange: (v: string) => void;
 	onCancel: () => void;
 }
 
-function BackendSection({ stepIdx, currentStep, backend, onChange, onCancel }: BackendSectionProps): ReactElement | null {
-	if (stepIdx < PHASE_STEPS.length) return null;
+function ModelField({ phase, value, active, customModel, onChange, onCancel }: ModelFieldProps): ReactElement {
+	const showCustomInput = active && customModel.phase === phase;
+	// NOTE: unlike EffortField/BackendField/etc., the model field cannot use
+	// Select's own confirmed/confirmedValue props for its inactive summary
+	// line: a custom-entered model id (US-002) is, by definition, NOT one of
+	// PHASE_MODEL_OPTIONS' fixed values, so Select's confirmed-mode lookup
+	// (`options.find(o => o.value === confirmedValue)`) would miss it and fall
+	// back to whatever the list's internal cursor idx happens to be. The
+	// standalone ConfirmedChoice component (used here, and by the old wizard
+	// for the same reason) always renders the literal current value verbatim.
 	return (
-		<Section heading="Backend">
-			{currentStep === 'backend' ? (
-				<Select question="Backend:" options={BACKEND_OPTIONS} defaultValue={DEFAULTS.backend} onChange={onChange} onCancel={onCancel} />
-			) : backend !== undefined ? (
-				<ConfirmedChoice label={backend} />
-			) : null}
-		</Section>
+		<Box flexDirection="column">
+			<Text bold color={colors.muted}>
+				Model
+			</Text>
+			{showCustomInput ? (
+				<CustomModelInput
+					value={customModel.draft}
+					onChange={customModel.setDraft}
+					onSubmit={(v) => customModel.submit(phase, v)}
+				/>
+			) : active ? (
+				<Select
+					question={`Model for ${phase}:`}
+					options={PHASE_MODEL_OPTIONS}
+					defaultValue={value ?? DEFAULTS[phase]}
+					onChange={onChange}
+					onCancel={onCancel}
+				/>
+			) : (
+				<ConfirmedChoice label={value ?? DEFAULTS[phase]} />
+			)}
+		</Box>
 	);
 }
 
-interface MergeModeSectionProps {
-	stepIdx: number;
-	currentStep: WizardStep;
+interface EffortFieldProps {
+	phase: LlmPhase;
+	value: string | undefined;
+	active: boolean;
+	onChange: (v: string) => void;
+	onCancel: () => void;
+}
+
+function EffortField({ phase, value, active, onChange, onCancel }: EffortFieldProps): ReactElement {
+	return (
+		<Box flexDirection="column" marginTop={1}>
+			<Text bold color={colors.muted}>
+				Effort
+			</Text>
+			<Select
+				question={`Effort for ${phase}:`}
+				options={EFFORT_OPTIONS}
+				defaultValue={value ?? EFFORT_DEFAULTS[phase]}
+				confirmed={!active}
+				confirmedValue={value ?? EFFORT_DEFAULTS[phase]}
+				onChange={onChange}
+				onCancel={onCancel}
+			/>
+		</Box>
+	);
+}
+
+// ---------------------------------------------------------------------------
+// Global tab: backend, merge-mode, plan-approval, notify recipient/from
+// ---------------------------------------------------------------------------
+
+interface GlobalTabContentProps {
+	fieldFocus: number;
+	backend: string | undefined;
+	onBackendChange: (v: string) => void;
 	mergeMode: MergeMode | undefined;
-	onChange: (v: MergeMode) => void;
-	onCancel: () => void;
-}
-
-function MergeModeSection({ stepIdx, currentStep, mergeMode, onChange, onCancel }: MergeModeSectionProps): ReactElement | null {
-	if (stepIdx < PHASE_STEPS.length + 1) return null;
-	return (
-		<Section heading="Merge mode">
-			{currentStep === 'merge-mode' ? (
-				<Select question="How should cam ship merge pull requests?" options={MERGE_MODE_OPTIONS} defaultValue="immediate" onChange={onChange} onCancel={onCancel} />
-			) : mergeMode !== undefined ? (
-				<ConfirmedChoice label={mergeModeLabel(mergeMode)} />
-			) : null}
-		</Section>
-	);
-}
-
-interface PlanApprovalSectionProps {
-	stepIdx: number;
-	currentStep: WizardStep;
+	onMergeModeChange: (v: MergeMode) => void;
 	planApproval: PlanApproval | undefined;
-	onChange: (v: PlanApproval) => void;
+	onPlanApprovalChange: (v: PlanApproval) => void;
+	resendRecipient: string;
+	onRecipientChange: (v: string) => void;
+	onRecipientSubmit: () => void;
+	resendFrom: string;
+	onFromChange: (v: string) => void;
+	onFromSubmit: () => void;
+	apiKeyConfigured: boolean;
 	onCancel: () => void;
 }
 
-function PlanApprovalSection({ stepIdx, currentStep, planApproval, onChange, onCancel }: PlanApprovalSectionProps): ReactElement | null {
-	if (stepIdx < PHASE_STEPS.length + 2) return null;
+// AC3: parity with the old wizard's globals (backend/merge-mode/plan-approval
+// + notify recipient/from), no new global fields added.
+function GlobalTabContent(props: GlobalTabContentProps): ReactElement {
 	return (
-		<Section heading="Plan approval">
-			{currentStep === 'plan-approval' ? (
-				<Select question="How should cam advance after a plan audit?" options={PLAN_APPROVAL_OPTIONS} defaultValue="auto" onChange={onChange} onCancel={onCancel} />
-			) : planApproval !== undefined ? (
-				<ConfirmedChoice label={planApprovalLabel(planApproval)} />
-			) : null}
-		</Section>
-	);
-}
-
-interface NotifyRecipientSectionProps {
-	stepIdx: number;
-	currentStep: WizardStep;
-	resendRecipient: string | undefined;
-	draft: string;
-	onDraftChange: (v: string) => void;
-	onSubmit: (v: string) => void;
-	apiKeyConfigured: boolean;
-}
-
-// First notify step: also renders the RESEND_API_KEY configured/unconfigured
-// status line (read-only, from process.env; never a text input, never
-// persisted from this screen -- see US-004 for [notify] persistence).
-function NotifyRecipientSection({
-	stepIdx,
-	currentStep,
-	resendRecipient,
-	draft,
-	onDraftChange,
-	onSubmit,
-	apiKeyConfigured,
-}: NotifyRecipientSectionProps): ReactElement | null {
-	if (stepIdx < PHASE_STEPS.length + 3) return null;
-	return (
-		<Section heading="Notify recipient">
-			<ApiKeyStatus configured={apiKeyConfigured} />
-			{currentStep === 'notify-recipient' ? (
-				<NotifyTextInput
-					value={draft}
-					onChange={onDraftChange}
-					onSubmit={onSubmit}
-					prompt="resend_recipient (email notified on escalation, blank to leave unset):"
-					placeholder="e.g. ops@example.com"
+		<>
+			<Section heading="Backend">
+				<Select
+					question="Backend:"
+					options={BACKEND_OPTIONS}
+					defaultValue={props.backend ?? DEFAULTS.backend}
+					confirmed={props.fieldFocus !== 0}
+					confirmedValue={props.backend ?? DEFAULTS.backend}
+					onChange={props.onBackendChange}
+					onCancel={props.onCancel}
 				/>
-			) : resendRecipient !== undefined ? (
-				<ConfirmedChoice label={resendRecipient !== '' ? resendRecipient : '(not set)'} />
-			) : null}
-		</Section>
-	);
-}
-
-interface NotifyFromSectionProps {
-	stepIdx: number;
-	currentStep: WizardStep;
-	resendFrom: string | undefined;
-	draft: string;
-	onDraftChange: (v: string) => void;
-	onSubmit: (v: string) => void;
-}
-
-function NotifyFromSection({ stepIdx, currentStep, resendFrom, draft, onDraftChange, onSubmit }: NotifyFromSectionProps): ReactElement | null {
-	if (stepIdx < PHASE_STEPS.length + 4) return null;
-	return (
-		<Section heading="Notify sender">
-			{currentStep === 'notify-from' ? (
-				<NotifyTextInput
-					value={draft}
-					onChange={onDraftChange}
-					onSubmit={onSubmit}
-					prompt="resend_from (sender address, blank to leave unset):"
-					placeholder='e.g. "cam" <notify@example.com>'
+			</Section>
+			<Section heading="Merge mode">
+				<Select
+					question="How should cam ship merge pull requests?"
+					options={MERGE_MODE_OPTIONS}
+					defaultValue={props.mergeMode ?? 'immediate'}
+					confirmed={props.fieldFocus !== 1}
+					confirmedValue={props.mergeMode ?? 'immediate'}
+					onChange={props.onMergeModeChange}
+					onCancel={props.onCancel}
 				/>
-			) : resendFrom !== undefined ? (
-				<ConfirmedChoice label={resendFrom !== '' ? resendFrom : '(not set)'} />
-			) : null}
-		</Section>
+			</Section>
+			<Section heading="Plan approval">
+				<Select
+					question="How should cam advance after a plan audit?"
+					options={PLAN_APPROVAL_OPTIONS}
+					defaultValue={props.planApproval ?? 'auto'}
+					confirmed={props.fieldFocus !== 2}
+					confirmedValue={props.planApproval ?? 'auto'}
+					onChange={props.onPlanApprovalChange}
+					onCancel={props.onCancel}
+				/>
+			</Section>
+			<Section heading="Notify recipient">
+				<ApiKeyStatus configured={props.apiKeyConfigured} />
+				{props.fieldFocus === 3 ? (
+					<NotifyTextInput
+						value={props.resendRecipient}
+						onChange={props.onRecipientChange}
+						onSubmit={props.onRecipientSubmit}
+						prompt="resend_recipient (email notified on escalation, blank to leave unset):"
+						placeholder="e.g. ops@example.com"
+					/>
+				) : (
+					<ConfirmedChoice label={props.resendRecipient !== '' ? props.resendRecipient : '(not set)'} />
+				)}
+			</Section>
+			<Section heading="Notify sender">
+				{props.fieldFocus === 4 ? (
+					<NotifyTextInput
+						value={props.resendFrom}
+						onChange={props.onFromChange}
+						onSubmit={props.onFromSubmit}
+						prompt="resend_from (sender address, blank to leave unset):"
+						placeholder='e.g. "cam" <notify@example.com>'
+					/>
+				) : (
+					<ConfirmedChoice label={props.resendFrom !== '' ? props.resendFrom : '(not set)'} />
+				)}
+			</Section>
+		</>
 	);
 }
 
@@ -540,7 +707,7 @@ interface NotifyTextInputProps {
 	placeholder: string;
 }
 
-// Free-text step for notify_recipient / notify_from -- mirrors
+// Free-text field for notify_recipient / notify_from -- mirrors
 // CustomModelInput's ink-text-input pattern. Unlike CustomModelInput, a blank
 // submit is valid here: it means "leave this field unset".
 function NotifyTextInput({ value, onChange, onSubmit, prompt, placeholder }: NotifyTextInputProps): ReactElement {
@@ -552,16 +719,8 @@ function NotifyTextInput({ value, onChange, onSubmit, prompt, placeholder }: Not
 				<TextInput value={value} onChange={onChange} onSubmit={onSubmit} placeholder={placeholder} />
 			</Box>
 			<Box marginTop={1} paddingLeft={2}>
-				<Text color={colors.muted}>enter confirm (blank = leave unset)</Text>
+				<Text color={colors.muted}>enter confirm (blank = leave unset) · tab/enter next</Text>
 			</Box>
 		</Box>
 	);
-}
-
-function mergeModeLabel(mode: MergeMode): string {
-	return mode === 'ci-gated' ? 'CI-gated' : 'Immediate (default)';
-}
-
-function planApprovalLabel(mode: PlanApproval): string {
-	return mode === 'operator' ? 'Operator gate' : 'Auto (default)';
 }
