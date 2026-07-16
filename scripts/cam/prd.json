@@ -51,7 +51,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: scripts/check-coverage.ts (import at :22, spawnSync at :132-138), scripts/validate-agents-md.ts (import at :43, git ls-files at :294-301, git check-ignore at :322-334). These are internal adapters with NO exported-type change (getCoverage returns CoverageReport; makeGetTrackedFiles returns string[]; makeIsIgnored returns boolean) -- their public signatures are unchanged, so the existing DI-injected test fakes in test/check-coverage.test.ts and validate-agents-md's validateDocs tests need no update. GOTCHA: node's `result.status !== 0` becomes a Bun `!result.success` / `result.exitCode !== 0` check; node's `.error !== undefined` (spawn failure) has no Bun equivalent -- Bun surfaces spawn failure via success=false or a throw, so preserve fail-closed by throwing on non-success. GOTCHA: Bun stdout/stderr are Buffer|undefined even without an encoding option (patterns.md line 288 documents the byte-vs-char decode trap); decode with `.toString('utf8')` / TextDecoder only where output is parsed (check-coverage stdout+stderr, ls-files stdout); the check-ignore path never reads stdout. Out of scope (do NOT touch): test/validate-agents-md.test.ts keeps its own node:child_process spawnSync for git-repo test setup (git init/add/archive) -- that is test-harness, not one of the 4 in-scope production call sites, and the issue scope is explicit that only the 3 scripts change. patterns.md line 78 documents the `All files` coverage-parse format; line 70 is the real-git integration-test pattern already covering makeGetTrackedFiles/makeIsIgnored."
     }
