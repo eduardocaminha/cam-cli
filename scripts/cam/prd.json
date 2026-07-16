@@ -54,7 +54,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Files: src/templates/frontmatter.ts (rewriteFrontmatterEffort + agents-dir path map, mirror rewriteFrontmatterModel:41-43 and FRONTMATTER_TARGET_PHASE_PATHS:28-30), src/commands/config.ts (rewriteFrontmatterEfforts helper wired into mergeConfigChoices, mirror rewriteFrontmatterModels:134-146), .claude/agents/subagent-implementer.md + subagent-orchestrator.md and their templates/agents/ twins. GOTCHA: effort: frontmatter lives in .claude/agents/, NOT .claude/commands/ (the model rewrite targets commands/cam-ship.md); the effort map needs its own agents-dir target. GOTCHA: implementer has NO effort line today so insert-when-absent must place it inside the --- fenced frontmatter, not append to the body; do NOT parse YAML (js-yaml ESM-only quirk, patterns.md CAM-69), use a scoped regex like rewriteFrontmatterModel. GOTCHA: cam dual-copy is per-file (memory: cam-dual-copy-is-per-file) so .claude/agents and templates/agents are not guaranteed byte-identical: diff before editing and write both, then re-embed. GOTCHA: issue item (g) names src/vendor/_generated.ts as the embed target but the real gate is bun run embed-vendor / embed-vendor:check (which regenerates src/vendor/_generated.ts). Regenerate and let the templatesContents byte-parity test in test/embedded.test.ts confirm. noUncheckedIndexedAccess: guard regex capture-group access in the insert/parse."
     },
