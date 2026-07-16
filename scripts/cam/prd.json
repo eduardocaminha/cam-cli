@@ -32,7 +32,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: scripts/check-all.ts (SpawnFn type at :33-37, default spawnFn at :132, verdict mapping at :141-142), test/check-all.test.ts (import type SpawnSyncReturns at :12, makeResult fake at :20-29). Retype SpawnFn to return Bun's SyncSubprocess (reference the type via `import type` from 'bun', or an inline structural type mirroring { exitCode: number; success: boolean; stdout?: ...; stderr?: ... }); do NOT keep the node SpawnSyncReturns import. Verdict mapping today is `const exitCode = result.status ?? 1; const passed = exitCode === 0;` -- Bun has no `.status`; prefer `result.success` (true only on zero exit, covers signal-termination) and/or guard `result.exitCode` for null. patterns.md line 144 (spawnSync exit-status guard) documents the node `.status ?? 1` idiom being replaced; patterns.md line 68 (gate-spine convention) and line 76 (oracle-friendly manifest) are the surrounding context. GATES manifest and the g() helper are untouched. This story owns the only exported-type ripple in the issue; the other two files (US-002) have no exported-type change."
     },
