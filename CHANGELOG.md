@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.179.0] - 2026-07-16
+
+### Added
+
+- US-001 - Merge off-convention orch-recycle-watch tests into the canonical file and delete the original
+
 ## [0.178.0] - 2026-07-16
 
 ### Added
