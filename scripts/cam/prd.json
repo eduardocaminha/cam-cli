@@ -76,7 +76,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": "US-003",
       "notes": "Files: src/supervisor/plan-runner.ts (detection at the top of runPlanPhase, plan-runner.ts:904, BEFORE selectIssueFn; the detection must run before clearStalePlanArtifacts destroys state it inspects, or read prd/branch state independently), src/commands/sidecar.ts (register the in-progress-conflict resolution handler into US-003's generic dispatch). Branch check: git HEAD symbolic-ref matches cam/*. prd non-operator passes:false story: mirror decideNextAction's partition (src/supervisor/decide.ts). GOTCHA (spec): item 4 plan_approval=operator full-PRD gate is OUT of scope (split issue); item 3 BLOCK->re-plan loop is ALREADY SHIPPED (v0.73.0) - do NOT re-implement. abandon path is destructive (rm handoff.json + discard prd/branch): make it deterministic and test it against a real tmpdir."
     },
