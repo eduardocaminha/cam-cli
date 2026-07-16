@@ -23,7 +23,7 @@
         "Lint/static spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: test/integration/orch-recycle-watch.test.ts (~line 213-253; the newUUID-change waitForCondition already uses {timeoutMs:12_000,intervalMs:500} and outer test timeout {timeout:20_000}; the pgrep-scheduled and pgrep-new waitForCondition calls use the helper default timeoutMs=5000 which is too tight under contention) and test/interactivity/interactivity.test.ts (Test 5 at ~line 502, currently relies on Bun's default 5000ms per-test timeout). Helper: test/helpers/wait-for-condition.ts (default timeoutMs=5000, intervalMs=20). Fix: raise the internal waitForCondition budgets on the two default-timeout pgrep waits and the outer 20_000ms test timeout in orch-recycle-watch; add an explicit generous per-test timeout (third arg to test()) to interactivity Test 5. Project invariant (patterns.md 'poll with waitForCondition, never fixed setTimeout'): do not introduce a bare setTimeout budget as the gate. Gotcha: the tests are logically correct and pass in isolation; do NOT weaken any assertion, only the timing sensitivity. Test-only change: touch no src/ file."
     }
