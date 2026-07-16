@@ -30,7 +30,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/git/on-main.ts (canonical SpawnFn type at :58-62, re-exported by issue-specify.ts and imported by post-merge.ts as CloseSpawnFn; add `maxBuffer?: number` to the options type and export the shared helper), src/issues/backlog.ts (BacklogSpawnFn options at :39-43 already carries maxBuffer?; no change needed, just confirm). Add `import { spawnSync } from 'node:child_process'` in on-main.ts (project prefers Bun.spawn, but the synchronous git plumbing already standardizes on node:child_process.spawnSync in backlog.ts/issue-file.ts; stay consistent, do not switch runtimes here). Helper param opts type must be the widened superset `{ encoding: 'utf8'; env?: Record<string,string>; input?: string; maxBuffer?: number }` so all four call-site SpawnFn aliases (on-main SpawnFn, issue-file SpawnFn, sidecar IssueFileSpawnFn) are assignable to it. Root cause per issue gotcha #3: the under-declared options type is the CAM-307 root; the shared helper + spread is the recurrence-proof fix. patterns.md keyword: grep 'spawnSync' / 'maxBuffer' / 'readBacklogFromMain'."
     },
