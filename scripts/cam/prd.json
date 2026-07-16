@@ -21,7 +21,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New: src/supervisor/gate.ts, scripts/cam/cam-gate.schema.json. Mirror src/supervisor/plan-escalation.ts (read/write/remove + JSON reader shape guard: validate discriminator fields, not just typeof) and drain-kill-switch.ts (injectable fs seams). GOTCHA (spec): the gate object (array + free-text) does NOT belong in the flat-scalar cam-loop.local.md frontmatter; it lives in a dedicated .claude/.cam-gate.json alongside .cam-plan-escalated.json / .cam-ship-stalled.json / .cam-implement-blocked.json. Existing schemas live at scripts/cam/*.schema.json (handoff/issues/orch-handoff). Test-quality invariant: real tmpdir I/O, no tautological mock-call assertions."
     },
