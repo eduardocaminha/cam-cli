@@ -1,12 +1,12 @@
 {
   "id": "CAM-219",
   "title": "build-release smoke emits false-positive Resend-not-configured warning",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-08T17:02:34.739Z",
   "description": "`bun run build:release --install` runs the hermetic init soft-check (`cam init`) in a throwaway `mktemp -d` cwd (scripts/build-release.sh:110-114) with plan_approval defaulting to `auto` and no `resend_recipient` in the fresh temp project.toml. `warnIfResendUnconfigured` (src/commands/setup.ts:264, called unconditionally at setup.ts:648) then prints `plan_approval is auto but Resend is not configured: non-convergence failures will be SILENT` on EVERY build. False positive about the throwaway project: the real cam-cli project IS configured (RESEND_API_KEY in gitignored .env + resend_recipient in project.toml). Cost: erodes the warning's signal and would mask a legitimate warning in build output. FIX (chosen A): add `--plan-approval operator` to the hermetic init invocation at build-release.sh:114 (already passes --merge-mode immediate --issue-system none --existing --no-tmux); the operator branch never hits the auto+no-resend condition, so no warning, and the smoke still verifies the binary runs + soft-checks the validator. REJECTED (B): gating warnIfResendUnconfigured by interactivity/context — a real non-interactive `cam init` in auto mode without Resend SHOULD still warn, so product-side suppression risks hiding real misconfig. P3 (cosmetic; build passes, init exits 0). Defer to the product-release hardening pass. Acceptance: `bun run build:release --install` emits no Resend warning during the init smoke; the smoke still exits 0 and installs the binary.",
-  "updatedAt": "2026-07-15T20:41:44.046Z",
+  "updatedAt": "2026-07-16T12:07:45.008Z",
   "spec": {
     "scope": "Add `--plan-approval operator` to the single hermetic `cam init` smoke invocation in scripts/build-release.sh (~line 114), alongside the existing --no-tmux --existing --issue-system none --merge-mode immediate. This suppresses the false-positive Resend-not-configured warning that fires on every build because the throwaway init defaults plan_approval to auto with no resend_recipient. Out of scope: any product-side change to warnIfResendUnconfigured (rejected option B) -- a real non-interactive auto init without Resend SHOULD still warn, so product-side suppression would risk hiding real misconfig.",
     "acceptanceCriteria": [
