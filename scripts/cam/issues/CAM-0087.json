@@ -1,10 +1,49 @@
 {
   "id": "CAM-87",
   "title": "cam config: UI em abas (fase como tab) + seletor de effort por fase",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-25T15:30:00Z",
   "description": "Dois problemas no cam config atual. (1) WIZARD SEQUENCIAL: ConfigScreen.tsx (src/ui/ConfigScreen.tsx:81) apresenta as fases uma a uma em sequencia; o operador nao ve todas de uma vez nem consegue voltar pra uma fase anterior sem recomecar. Redesign: substituir pelo modelo de TABS — uma aba por fase (Orchestrator | Planner | Auditor | Implementer | Reviewer | Ship | Backend), navegaveis com <- -> ; a aba ativa exibe os seletores; as abas ja confirmadas mostram o valor escolhido. Inspiracao: o AskUserQuestion do Claude Code que renderiza opcoes como chips horizontais selecionaveis. (2) SEM EFFORT: o campo effort (low/medium/high/xhigh/max) existe no frontmatter dos agentes (ex: subagent-reviewer.md tem effort: xhigh) mas nao e configuravel via cam config. O operador nao tem como ajustar o nivel de raciocinio por fase sem editar o arquivo manualmente. Fix: dentro de cada aba, alem do seletor de modelo, adicionar um seletor de effort (5 opcoes: low, medium, high, xhigh, max). SCOPE COMPLETO: (a) novo componente TabBar em src/ui/TabBar.tsx (lista de abas, <- -> navegacao, aba ativa destacada); (b) refatorar ConfigScreen.tsx para usar TabBar + dois Select por aba (model + effort); (c) expandir ConfigChoices para incluir efforts: Record<Phase, string>; (d) adicionar EFFORT_DEFAULTS e readPhaseEffort em src/config/models.ts; (e) persistir secao [efforts] em project.toml via mergeConfigChoices; (f) adicionar rewriteFrontmatterEffort em src/templates/frontmatter.ts (espelha rewriteFrontmatterModel, reescreve a linha effort: no frontmatter dos arquivos .claude/agents/*.md); (g) regen src/vendor/_generated.ts apos mudancas em templates/; (h) testes para TabBar, effort read/write, e frontmatter rewrite. ONDE: src/ui/ConfigScreen.tsx, src/ui/Select.tsx (ou novo TabBar.tsx), src/config/models.ts, src/templates/frontmatter.ts, src/commands/config.ts, scripts/cam/project.toml schema. Prioridade P2: DX significativa — hoje o operador reconfigura modelos sem conseguir ajustar effort, o que afeta custo e qualidade das fases.",
-  "updatedAt": "2026-06-25T15:30:00Z"
+  "updatedAt": "2026-07-16T02:03:26.737Z",
+  "spec": {
+    "acceptanceCriteria": [
+      "New component src/ui/TabBar.tsx renders a horizontal chip-style tab bar (one tab per config section), highlights the active tab, moves the active tab with the Left/Right arrow keys, and shows the chosen value(s) on already-confirmed tabs.",
+      "src/ui/ConfigScreen.tsx is refactored to render via TabBar with 7 tabs: 6 phase tabs (Orchestrator, Planner, Auditor, Implementer, Reviewer, Ship) plus one Global tab; the sequential forward-only wizard is replaced.",
+      "Each of the 5 LLM-phase tabs (Orchestrator, Planner, Auditor, Implementer, Reviewer) shows the EXISTING model Select plus a NEW effort Select; the Ship tab shows the model Select ONLY (no effort Select); the Global tab shows backend, merge-mode, and plan-approval selects (parity with today's wizard, no new global fields added).",
+      "Within a tab, Up/Down navigates options of the focused Select and Tab/Enter advances focus model->effort->next tab; Left/Right always switches tabs.",
+      "The effort Select offers exactly 5 options in order: low, medium, high, xhigh, max.",
+      "src/config/models.ts gains EFFORT_DEFAULTS and readPhaseEffort(phase) mirroring the DEFAULTS/readPhaseModel defensive try/catch->default pattern; EFFORT_DEFAULTS = { orchestrator: xhigh, planner: xhigh, auditor: xhigh, reviewer: xhigh, implementer: high } (ship has no effort).",
+      "ConfigChoices is expanded with efforts: a per-LLM-phase record (ship omitted).",
+      "mergeConfigChoices persists an [efforts] section to project.toml, mirroring the [models] write.",
+      "src/templates/frontmatter.ts gains rewriteFrontmatterEffort, mirroring rewriteFrontmatterModel: it rewrites the effort: line in .claude/agents/subagent-<phase>.md for the 5 LLM phases, INSERTS the line when absent (implementer has none today), and uses its own phase->path target map pointing at the agents dir (NOT the commands dir the model rewrite uses).",
+      "The .claude/agents/ and templates/agents/ copies are kept in sync and the vendor embed is regenerated (bun run embed-vendor) so bun run embed-vendor:check passes.",
+      "Tests cover: TabBar (Left/Right nav, active highlight, confirmed-value render), readPhaseEffort + EFFORT_DEFAULTS, [efforts] persistence, rewriteFrontmatterEffort including the insert-when-absent path for implementer, and ConfigScreen rendering both selects on an LLM tab and model-only on the Ship tab.",
+      "Quality gates green: bun run typecheck, bun test, bun run check:all, and bun run embed-vendor:check."
+    ],
+    "scope": "IN: replace the flat forward-only ConfigScreen wizard with a tabbed UI (6 phase tabs + 1 Global tab) via a new TabBar component; add a per-phase effort selector for the 5 LLM phases; add effort config plumbing (EFFORT_DEFAULTS/readPhaseEffort, ConfigChoices.efforts, [efforts] toml write, rewriteFrontmatterEffort with insert-if-absent, dual-copy + re-embed); tests. OUT: ship effort (ship is deterministic/zero-LLM, ADR-0009); the vestigial models.ship cleanup (tracked as a separate follow-up); adding meta_loop/worker_isolation/orch_context_window/notify to the config UI; any dynamic coupling of the effort default to the chosen model (EFFORT_DEFAULTS is a static per-phase map).",
+    "gotchas": [
+      "The per-phase model selector ALREADY exists (src/ui/ConfigScreen.tsx:69-92, MODEL_OPTIONS + custom-id passthrough): reuse it inside each tab, do NOT rebuild it. The net-new UI work is TabBar + the effort Select.",
+      "Issue item (g) names src/vendor/_generated.ts: that path is STALE. The real embed target is src/templates/embedded.ts and the gate is bun run embed-vendor / bun run embed-vendor:check.",
+      "effort: frontmatter lives in .claude/agents/subagent-<phase>.md (mirrored in templates/agents/), NOT .claude/commands/. rewriteFrontmatterEffort needs its OWN phase->path map keyed to the agents dir, distinct from the model rewrite's FRONTMATTER_TARGET_PHASE_PATHS which targets .claude/commands/cam-ship.md.",
+      "subagent-implementer.md has NO effort: line today: rewriteFrontmatterEffort must INSERT the line when absent, not only rewrite an existing one.",
+      "Ship: no subagent file, deterministic, zero-LLM (ADR-0009), so NO effort selector and no effort frontmatter target. models.ship is itself vestigial (readPhaseModel('ship') is never called at runtime): leave it as-is here; its removal is the separate follow-up.",
+      "EFFORT_DEFAULTS for orchestrator is xhigh, which BUMPS the current subagent-orchestrator.md frontmatter value (high -> xhigh) to honor the opus->xhigh / sonnet->high seeding rule. This is intentional.",
+      "cam dual-copy is per-file: .claude/agents/ and templates/agents/ are not guaranteed byte-identical; rewriteFrontmatterEffort must write both copies and the embedded copy must be regenerated.",
+      "noUncheckedIndexedAccess: guard array indexing and regex capture-group access in TabBar navigation and in the frontmatter effort-line parse/insert.",
+      "Ink convention: signal success/failure via the glyph (accent/destructive), never via divider color."
+    ],
+    "domainTerms": [
+      "phase effort",
+      "config tab (TabBar)"
+    ]
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 1,
+    "riskReduction": 1,
+    "jobSize": 3
+  },
+  "type": "feat"
 }
