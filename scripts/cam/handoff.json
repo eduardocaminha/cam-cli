@@ -1,0 +1,21 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Insert frontmatterBody verbatim in rewriteFrontmatterEffort" },
+  "branchName": "cam/issue-317",
+  "timestamp": "2026-07-16T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/templates/frontmatter.ts",
+    "test/commands/config-frontmatter.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "rewriteFrontmatterEffort's insert path (src/templates/frontmatter.ts) now uses content.replace(/^---\\r?\\n[\\s\\S]*?\\r?\\n---/, () => updatedFence) -- a no-arg replacer function -- instead of passing updatedFence as a string replacement, so any $-sequences ($&, $1, $$) captured in frontmatterBody are inserted verbatim per MDN's documented replacer-function semantics. The existing-line rewrite branch (line ~80, `content.replace(/^(effort:)\\s*.+$/m, \\`$1 ${newEffort}\\`)`) intentionally keeps the string-replacement form since `$1` there refers to the regex's own capture group, not to arbitrary user content -- do not \"fix\" that branch too.",
+  "officialDocsValidated": [
+    {
+      "lib": "String.prototype.replace (MDN)",
+      "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/replace",
+      "fetchedAt": "2026-07-16T00:00:00Z",
+      "status": "aligned",
+      "summary": "Confirmed MDN: when replace()'s 2nd arg is a function, the returned string is used verbatim -- $-patterns are NOT reinterpreted, matching the fix applied."
+    }
+  ]
+}
