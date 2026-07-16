@@ -1,21 +1,14 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Insert frontmatterBody verbatim in rewriteFrontmatterEffort" },
+  "lastCompletedStory": { "id": "US-R1-001", "title": "Review round 1 fix 001: address reviewer finding" },
   "branchName": "cam/issue-317",
-  "timestamp": "2026-07-16T00:00:00Z",
+  "timestamp": "2026-07-16T00:10:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/templates/frontmatter.ts",
     "test/commands/config-frontmatter.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "rewriteFrontmatterEffort's insert path (src/templates/frontmatter.ts) now uses content.replace(/^---\\r?\\n[\\s\\S]*?\\r?\\n---/, () => updatedFence) -- a no-arg replacer function -- instead of passing updatedFence as a string replacement, so any $-sequences ($&, $1, $$) captured in frontmatterBody are inserted verbatim per MDN's documented replacer-function semantics. The existing-line rewrite branch (line ~80, `content.replace(/^(effort:)\\s*.+$/m, \\`$1 ${newEffort}\\`)`) intentionally keeps the string-replacement form since `$1` there refers to the regex's own capture group, not to arbitrary user content -- do not \"fix\" that branch too.",
+  "nextStoryContext": "Reviewer finding on the US-001 regression test (test/commands/config-frontmatter.test.ts, 'inserts a frontmatterBody containing $-sequences verbatim') has been addressed: the test's three .toContain() assertions did not actually discriminate the pre-fix buggy string-form replace() call, because against the buggy code $& expands to the whole matched fence (which itself contains the note text), and the corrupted, fence-duplicated output still satisfied all three .toContain() checks. Strengthened to expect(result).toBe(<full exact expected string>) plus two exactly-once assertions (result.split(noteSubstring).length === 2, result.split('---').length === 3). Empirically re-verified against a standalone repro of the old string-form replace(/fence/, updatedFence) call: the buggy output fails toBe (fence duplicated), fails the fence-count check (5 vs 3), and fails the note-occurrence check (2 vs 1) -- confirming the new test now genuinely discriminates the bug. No production code changed in this story (test-only fix).",
   "officialDocsValidated": [
-    {
-      "lib": "String.prototype.replace (MDN)",
-      "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/replace",
-      "fetchedAt": "2026-07-16T00:00:00Z",
-      "status": "aligned",
-      "summary": "Confirmed MDN: when replace()'s 2nd arg is a function, the returned string is used verbatim -- $-patterns are NOT reinterpreted, matching the fix applied."
-    }
+    { "lib": "none", "status": "no_external_lib_touched" }
   ]
 }
