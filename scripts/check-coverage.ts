@@ -19,7 +19,6 @@
 //
 // Usage: bun scripts/check-coverage.ts
 
-import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
@@ -129,11 +128,8 @@ export function findLoweredFloors(
 
 function makeDefaultGetCoverage(cwd: string): GetCoverageFn {
 	return () => {
-		const r = spawnSync('bun', ['test', '--coverage'], {
-			encoding: 'utf8',
-			cwd,
-		});
-		const output = (r.stdout ?? '') + (r.stderr ?? '');
+		const r = Bun.spawnSync(['bun', 'test', '--coverage'], { cwd });
+		const output = new TextDecoder().decode(r.stdout) + new TextDecoder().decode(r.stderr);
 		return parseCoverageOutput(output);
 	};
 }

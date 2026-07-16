@@ -40,7 +40,6 @@
 // Usage: bun scripts/validate-agents-md.ts
 
 import { Glob } from 'bun';
-import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import process from 'node:process';
 import { COMMANDS } from '../index.ts';
@@ -291,13 +290,13 @@ export type GetTrackedFilesFn = () => string[];
 /** Build a GetTrackedFilesFn that spawns `git ls-files` in `cwd`. */
 export function makeGetTrackedFiles(cwd: string): GetTrackedFilesFn {
 	return () => {
-		const result = spawnSync('git', ['ls-files'], { encoding: 'utf8', cwd });
-		if (result.status !== 0) {
+		const result = Bun.spawnSync(['git', 'ls-files'], { cwd });
+		if (!result.success || result.exitCode !== 0) {
 			throw new Error(
-				`git ls-files failed in ${cwd} (status ${result.status}): not a git repository / git unavailable`,
+				`git ls-files failed in ${cwd} (status ${result.exitCode}): not a git repository / git unavailable`,
 			);
 		}
-		return (result.stdout ?? '').split('\n').filter((line) => line.length > 0);
+		return new TextDecoder().decode(result.stdout).split('\n').filter((line) => line.length > 0);
 	};
 }
 
@@ -316,18 +315,17 @@ export type IsIgnoredFn = (path: string) => boolean;
  * cwd/tooling failure worth aborting the run over, so only a stderr fatal
  * naming "not a git repository" throws; any other 128 falls through as
  * not-ignored so the caller's KNOWN_MISSING allowlist can still exempt it.
+ * A missing `git` binary fails closed via Bun.spawnSync's own synchronous
+ * throw (ENOENT), matching the prior node `.error` handling.
  */
 export function makeIsIgnored(cwd: string): IsIgnoredFn {
 	return (path: string) => {
-		const result = spawnSync('git', ['check-ignore', '-q', path], { cwd, encoding: 'utf8' });
-		if (result.error !== undefined) {
-			throw new Error(`git check-ignore failed in ${cwd}: git unavailable (${result.error.message})`);
-		}
-		if (result.status === 0) return true;
-		if (result.status === 1) return false;
-		if ((result.stderr ?? '').includes('not a git repository')) {
+		const result = Bun.spawnSync(['git', 'check-ignore', '-q', path], { cwd });
+		if (result.exitCode === 0) return true;
+		if (result.exitCode === 1) return false;
+		if (new TextDecoder().decode(result.stderr).includes('not a git repository')) {
 			throw new Error(
-				`git check-ignore failed in ${cwd} (status ${result.status}): not a git repository / git unavailable`,
+				`git check-ignore failed in ${cwd} (status ${result.exitCode}): not a git repository / git unavailable`,
 			);
 		}
 		return false;

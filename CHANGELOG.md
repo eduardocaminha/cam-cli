@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.181.0] - 2026-07-16
+
+### Added
+
+- US-002 - Migrate check-coverage.ts and validate-agents-md.ts spawn call sites to Bun.spawnSync
+- US-001 - Migrate check-all.ts gate-runner spawn seam to Bun.spawnSync
+
 ## [0.180.0] - 2026-07-16
 
 ### Added
