@@ -6,6 +6,14 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.173.0] - 2026-07-16
+
+### Added
+
+- US-002 - Wire the linter into the plan-runner audit path, folding findings into the re-plan loop
+- US-001 - Build the pure PRD-oracle linter module (named-rules scanner + PRD walk)
+- US-001 - Build the pure PRD-oracle linter module (named-rules scanner + PRD walk)
+
 ## [0.172.0] - 2026-07-16
 
 ### Added
