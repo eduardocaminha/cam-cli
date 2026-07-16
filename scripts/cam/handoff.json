@@ -1,0 +1,16 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Gate file schema + fail-closed I/O module" },
+  "branchName": "cam/issue-153",
+  "timestamp": "2026-07-16T00:00:00Z",
+  "createdFiles": [
+    "src/supervisor/gate.ts",
+    "scripts/cam/cam-gate.schema.json",
+    "test/supervisor/gate.test.ts"
+  ],
+  "modifiedFiles": [],
+  "openQuestions": [],
+  "nextStoryContext": "US-002 (`cam decide <decision>` CLI thin-proxy) consumes src/supervisor/gate.ts directly: GATE_FILENAME, CamGate type, readGateFile (fail-closed, throws GateFileError -- use this to load the active gate and validate <decision> is a member of options[]), writeGateFile (to persist the SAME gate file with decision populated, no split-brain), and readGateFileLenient/removeGateFile if needed. gate.ts intentionally exports TWO readers: readGateFile (fail-closed, throws on absent/malformed/partial -- use this in cam decide since an invalid decision must be rejected against real options[], never against stale/corrupt data) and readGateFileLenient (returns null on any failure -- better fit for poll/boot-read surfaces in US-003/US-005). Wire cam decide into index.ts mirroring the existing cam resume/cam drain command entries (argv[2] dispatch + help spec, around index.ts:71-127,774-808); do not overload cam resume. No prd.json edits, no gate.ts wiring into the sidecar poll loop or the decide command itself happened in this story -- that is explicitly out of scope for US-001.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "node:fs (existsSync/readFileSync/writeFileSync/unlinkSync) is a Bun/Node builtin already used identically across the existing durable-marker family (plan-escalation.ts, implement-blocked-marker.ts); no new external dependency introduced." }
+  ]
+}
