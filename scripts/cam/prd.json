@@ -26,7 +26,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New file src/supervisor/plan-approval-gate.ts. Mirror src/supervisor/in-progress-conflict.ts verbatim in shape: gate identity constants + pure context builder + makeXResolver(deps) factory returning a GateResolutionHandler ((gate: CamGate) => LoopPhase). Import CamGate/GateResolutionHandler from ./gate.ts and LoopPhase from ../commands/status.ts. PrdSnapshot type lives in src/supervisor/decide.ts (reuse it for buildPlanApprovalContext). GOTCHA: pollAndResolveGate calls the handler with NO surrounding try/catch of its own, so the resolver + its injected deps must be best-effort/never-throw (see the InProgressConflictResolverDeps doc comment). Do NOT modify the generic primitive in gate.ts (shipped by CAM-153). Reject discards the working-tree prd.json (still on main; no branch/commit has happened yet at pause time). noUncheckedIndexedAccess: guard array/regex access. Tests hit behavior, not mock-call tautologies."
     },
