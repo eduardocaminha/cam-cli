@@ -22,7 +22,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: SOURCE test/orch-recycle-watch.test.ts (12KB, 11 top-level tests, 0 describe blocks, uses runOneTick helper with '__stop_loop__' sentinel); TARGET test/commands/orch-recycle-watch.test.ts (16KB, 4 describe blocks, canonical helpers with '__test_stop__' sentinel). Both test src/commands/orch-recycle-watch.ts. Faithful carry-over only: no dedup of semantic overlaps, no unification of helpers or sentinels. Retarget imports from ../ to ../../ : module (../../src/commands/orch-recycle-watch.ts), ORCH_CONTEXT_BACKSTOP_FRACTION (../../src/orchestrator/context-window.ts, NOT ../../src/context-window.ts), inline require ORCH_RECYCLE_MARKER (../../src/tmux/session.ts, line ~363 in source). GOTCHA: two distinct stop sentinels ('__stop_loop__' off-convention vs '__test_stop__' canonical) - keep each helper with its own; mixing risks swallowing a real error or rethrowing a stop signal. GOTCHA: off-convention tests import ORCH_CONTEXT_BACKSTOP_FRACTION and pass it as backstopFraction; canonical hardcodes 0.8 - carry the import over, do not rewrite to hardcode. No literal name/title collisions exist between the two files."
     }
