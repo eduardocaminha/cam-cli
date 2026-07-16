@@ -61,7 +61,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "New file src/stats/split-advisory.ts + test/stats/split-advisory.test.ts; edit src/supervisor/events.ts (kind list ~line 103-138, detail interfaces ~346, WorkerEventDetail union ~496-522). Keep the module pure (no fs/git). jobSize is the WSJF scale from IssueEntry.wsjf.jobSize (src/issues/types.ts:29). The heuristic connects to the lesson prd-size-vs-review-convergence (PRDs >=8-9 stories blow up review): a jobSize bucket whose mean >> median tends to spawn hot issues, so an issue of that jobSize is a split candidate. Include the current story count in the detail so the note can reference it. Reuse the median helper shape from US-001 if convenient (do not couple the modules)."
     },
