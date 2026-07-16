@@ -6,6 +6,14 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.177.0] - 2026-07-16
+
+### Added
+
+- US-003 - Wire plan-approval gate production write seam + resolver into the sidecar
+- US-002 - Wire the plan-approval gate write-side into the plan-runner pause-operator path
+- US-001 - Add plan-approval gate module (identity, context builder, resolver)
+
 ## [0.176.0] - 2026-07-16
 
 ### Added
