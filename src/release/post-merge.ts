@@ -19,7 +19,6 @@
 // US-006 (CAM-101).
 
 import { readFileSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
 import type { SpawnSyncReturns } from 'node:child_process';
 import { printError, printSuccess } from '../logging/color.ts';
 import {
@@ -31,6 +30,7 @@ import {
 	type DemoteIssueOnMainOutcome,
 	type SpawnFn as CloseSpawnFn,
 } from '../commands/issue-specify.ts';
+import { realOnMainSpawnFn } from '../git/on-main.ts';
 
 // ---------------------------------------------------------------------------
 // Injectable dependency types (same pattern as ship-finalize.ts / tag.ts)
@@ -340,17 +340,18 @@ function performCloseStep(
 }
 
 /**
- * Build a real-spawnSync-backed SpawnFn (forwards encoding/env/input).
+ * Build a real-spawnSync-backed SpawnFn (forwards the full options object,
+ * including maxBuffer -- US-003, CAM-311).
  * Shared by every defaultXIssueFn wrapper below so the real-spawnSync closure
  * lives in exactly one place (jscpd gate) instead of being copy-pasted per verb.
+ *
+ * Delegates to the shared realOnMainSpawnFn (src/git/on-main.ts, US-001) rather
+ * than rebuilding the options object field-by-field: a field-by-field rebuild
+ * silently drops any option the local type annotation doesn't happen to
+ * declare (e.g. maxBuffer), which was the root cause of CAM-307's ENOBUFS.
  */
 function makeRealIssueSpawnFn(): CloseSpawnFn {
-	return (cmd, args, opts) =>
-		spawnSync(cmd, args, {
-			encoding: opts.encoding,
-			...(opts.env !== undefined ? { env: opts.env } : {}),
-			...(opts.input !== undefined ? { input: opts.input } : {}),
-		}) as SpawnSyncReturns<string>;
+	return realOnMainSpawnFn;
 }
 
 /**
