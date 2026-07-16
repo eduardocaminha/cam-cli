@@ -9,8 +9,12 @@
 // US-002 (CAM-287): the model-select step also offers a free-text
 // 'custom / enter id' passthrough (ink-text-input) for pinning an arbitrary
 // model value (e.g. a dated snapshot or an unreleased id) verbatim.
+//
+// US-003 (CAM-218): two flat-wizard free-text steps for resend_recipient and
+// resend_from, plus a read-only RESEND_API_KEY configured/unconfigured status
+// line (no input field for the key itself).
 
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { createElement } from 'react';
 import { render } from 'ink-testing-library';
 
@@ -60,8 +64,10 @@ describe('ConfigScreen — reconciled MODEL_OPTIONS', () => {
 			}),
 		);
 
-		// 6 phase steps + backend + merge-mode + plan-approval = 9 confirmations.
-		for (let i = 0; i < 9; i += 1) {
+		// 6 phase steps + backend + merge-mode + plan-approval + notify-recipient
+		// + notify-from = 11 confirmations (the two notify steps accept a blank
+		// Enter, meaning "leave unset").
+		for (let i = 0; i < 11; i += 1) {
 			stdin.write('\r');
 			await waitForFrame(lastFrame, () => true, { timeoutMs: 200 });
 		}
@@ -131,8 +137,9 @@ describe('ConfigScreen — custom / enter id passthrough (US-002)', () => {
 		expect(frame).toContain(pinnedId);
 
 		// Advance through the remaining 5 phase steps + backend + merge-mode +
-		// plan-approval (8 confirmations) with defaults to reach 'done'.
-		for (let i = 0; i < 8; i += 1) {
+		// plan-approval + notify-recipient + notify-from (10 confirmations) with
+		// defaults/blanks to reach 'done'.
+		for (let i = 0; i < 10; i += 1) {
 			stdin.write('\r');
 			await waitForFrame(lastFrame, () => true, { timeoutMs: 200 });
 		}
@@ -158,6 +165,125 @@ describe('ConfigScreen — custom / enter id passthrough (US-002)', () => {
 		frame = await waitForFrame(lastFrame, (f) => f.includes('✓ sonnet'));
 		expect(frame).toContain('✓ sonnet');
 		expect(frame).not.toContain('Enter a model id');
+
+		unmount();
+	});
+});
+
+describe('ConfigScreen — notify recipient/from + API key status (US-003, CAM-218)', () => {
+	const ORIGINAL_RESEND_API_KEY = process.env['RESEND_API_KEY'];
+
+	afterEach(() => {
+		if (ORIGINAL_RESEND_API_KEY === undefined) {
+			delete process.env['RESEND_API_KEY'];
+		} else {
+			process.env['RESEND_API_KEY'] = ORIGINAL_RESEND_API_KEY;
+		}
+	});
+
+	// 6 phase steps + backend + merge-mode + plan-approval = 9 confirmations
+	// to reach the first notify step (notify-recipient).
+	const CONFIRMS_TO_NOTIFY_RECIPIENT = 9;
+
+	test('shows RESEND_API_KEY unconfigured status, with no input field for the key, when the env var is unset', async () => {
+		delete process.env['RESEND_API_KEY'];
+		const { lastFrame, stdin, unmount } = render(
+			createElement(ConfigScreen, { onDone: () => {}, onCancel: () => {} }),
+		);
+
+		for (let i = 0; i < CONFIRMS_TO_NOTIFY_RECIPIENT; i += 1) {
+			stdin.write('\r');
+			await waitForFrame(lastFrame, () => true, { timeoutMs: 200 });
+		}
+
+		const frame = await waitForFrame(lastFrame, (f) => f.includes('RESEND_API_KEY'));
+		expect(frame).toContain('RESEND_API_KEY not configured');
+		expect(frame).not.toContain('RESEND_API_KEY configured');
+
+		unmount();
+	});
+
+	test('shows RESEND_API_KEY configured status when the env var is set', async () => {
+		process.env['RESEND_API_KEY'] = 're_test_123';
+		const { lastFrame, stdin, unmount } = render(
+			createElement(ConfigScreen, { onDone: () => {}, onCancel: () => {} }),
+		);
+
+		for (let i = 0; i < CONFIRMS_TO_NOTIFY_RECIPIENT; i += 1) {
+			stdin.write('\r');
+			await waitForFrame(lastFrame, () => true, { timeoutMs: 200 });
+		}
+
+		const frame = await waitForFrame(lastFrame, (f) => f.includes('RESEND_API_KEY'));
+		expect(frame).toContain('RESEND_API_KEY configured');
+		expect(frame).not.toContain('RESEND_API_KEY not configured');
+
+		unmount();
+	});
+
+	test('typed resend_recipient and resend_from are stored verbatim in ConfigChoices, and success is signalled by the glyph', async () => {
+		let choices: ConfigChoices | undefined;
+		const { lastFrame, stdin, unmount } = render(
+			createElement(ConfigScreen, {
+				onDone: (c: ConfigChoices) => {
+					choices = c;
+				},
+				onCancel: () => {},
+			}),
+		);
+
+		for (let i = 0; i < CONFIRMS_TO_NOTIFY_RECIPIENT; i += 1) {
+			stdin.write('\r');
+			await waitForFrame(lastFrame, () => true, { timeoutMs: 200 });
+		}
+
+		await waitForFrame(lastFrame, (f) => f.includes('resend_recipient'));
+		stdin.write('ops@example.com');
+		await waitForFrame(lastFrame, (f) => f.includes('ops@example.com'));
+		stdin.write('\r');
+
+		let frame = await waitForFrame(lastFrame, (f) => f.includes('✓ ops@example.com'));
+		expect(frame).toContain('✓ ops@example.com');
+
+		await waitForFrame(lastFrame, (f) => f.includes('resend_from'));
+		stdin.write('"cam" <notify@example.com>');
+		await waitForFrame(lastFrame, (f) => f.includes('notify@example.com'));
+		stdin.write('\r');
+
+		frame = await waitForFrame(lastFrame, (f) => f.includes('Configuration written'));
+		expect(frame).toContain('Configuration written to scripts/cam/project.toml');
+		expect(frame).toContain('✓');
+
+		await waitForFrame(() => (choices ? 'done' : ''), (f) => f === 'done');
+		expect(choices?.resendRecipient).toBe('ops@example.com');
+		expect(choices?.resendFrom).toBe('"cam" <notify@example.com>');
+
+		unmount();
+	});
+
+	test('a blank Enter on both notify steps leaves them unset (empty string, "leave unset")', async () => {
+		let choices: ConfigChoices | undefined;
+		const { lastFrame, stdin, unmount } = render(
+			createElement(ConfigScreen, {
+				onDone: (c: ConfigChoices) => {
+					choices = c;
+				},
+				onCancel: () => {},
+			}),
+		);
+
+		// 11 total confirmations (the 9 above, plus notify-recipient and
+		// notify-from), all with blank Enter/defaults, to reach 'done'.
+		for (let i = 0; i < 11; i += 1) {
+			stdin.write('\r');
+			await waitForFrame(lastFrame, () => true, { timeoutMs: 200 });
+		}
+
+		await waitForFrame(lastFrame, (f) => f.includes('Configuration written'));
+
+		await waitForFrame(() => (choices ? 'done' : ''), (f) => f === 'done');
+		expect(choices?.resendRecipient).toBe('');
+		expect(choices?.resendFrom).toBe('');
 
 		unmount();
 	});
