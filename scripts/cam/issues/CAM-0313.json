@@ -1,0 +1,10 @@
+{
+  "id": "CAM-313",
+  "title": "Harden 2 timing-fragile e2e tests that false-positive the plan preflight under full-suite CPU load",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-16T09:53:39.272Z",
+  "updatedAt": "2026-07-16T09:53:39.272Z",
+  "description": "The plan-runner preflight runs the full `bun test` suite. Under heavy CPU load (e.g. a full-suite run inside a live `cam run` session, or a loaded dev machine) two timing-fragile e2e tests intermittently fail, wedging every plan preflight with a false-positive:\n\n1. test/integration/orch-recycle-watch.test.ts:223 — 'recycle watcher e2e: arming marker SIGTERMs fake-claude; bash wrapper respawns with new UUID' (respawn-timing assertion race).\n2. test/interactivity/interactivity.test.ts Test 5 — 'runInit ... does not throw and exits via the linear print path' (hard 5000ms timeout, exceeded under load).\n\nEvidence (2026-07-16): both pass in isolation (2.7s / 1.3s) and passed CI on the CAM-311 merge; a full-suite run under contention took 116s with these 2 failing, while a quiet-machine re-run took 54s with 4603 pass / 0 fail. So the tests are logically correct but load-sensitive. They violate the project's own async-wait invariant ('poll with waitForCondition, never fixed setTimeout').\n\nFix: replace the fixed timing budgets with waitForCondition polling and/or explicit generous per-test timeouts on these two subprocess-spawning e2e tests so the preflight cannot false-positive under load. Impact: preflight false-positives silently block the autonomous drain (observed this session; recovered by re-running when the machine was quiet)."
+}
