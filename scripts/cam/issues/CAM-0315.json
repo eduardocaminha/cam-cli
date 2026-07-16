@@ -1,0 +1,13 @@
+{
+  "id": "CAM-315",
+  "title": "Production sidecar wiring (makeProductionGatePhaseFn / makeDetectInProgressConf…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-16T14:21:52.131Z",
+  "updatedAt": "2026-07-16T14:21:52.131Z",
+  "description": "Production sidecar wiring (makeProductionGatePhaseFn / makeDetectInProgressConflictFn / makeWriteInProgressConflictGateFn) is verified only via source-text oracles. The wire boundaries (git via readHeadBranchName, fs via abandon path, real-tmpdir gate poll) are each covered by real-I/O behavioral tests, so composition risk is low; a future end-to-end sidecar integration test would strengthen the seam.\n\nSource: cam/issue-153\nReview round: 1\n\nsuggestion-fingerprint: ebf9dfb02c3f",
+  "derivedFrom": [
+    "CAM-153"
+  ]
+}
