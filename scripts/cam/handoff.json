@@ -1,22 +1,17 @@
 {
-  "lastCompletedStory": { "id": "US-004", "title": "In-progress-work conflict gate at plan start" },
+  "lastCompletedStory": { "id": "US-005", "title": "Orchestrator boot surfaces active gate as opening blocker line" },
   "branchName": "cam/issue-153",
   "timestamp": "2026-07-16T00:00:00Z",
-  "createdFiles": [
-    "src/supervisor/in-progress-conflict.ts",
-    "test/supervisor/in-progress-conflict.test.ts",
-    "test/plan-runner-in-progress-conflict.test.ts",
-    "test/plan-in-progress-conflict-sidecar.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/plan-runner.ts",
-    "src/commands/sidecar.ts",
-    "scripts/file-size-budget.json",
-    "scripts/cam/patterns.md"
+    "templates/agents/subagent-orchestrator.md",
+    ".claude/agents/subagent-orchestrator.md",
+    ".gitignore",
+    "src/vendor/_generated.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-005 (orchestrator boot surfaces active gate as opening blocker line) is doc-only and does NOT depend on US-004's registered gate kind -- it just needs .claude/.cam-gate.json's SHAPE (gate/options/context/decision, src/supervisor/gate.ts's CamGate) to write the boot-read entry in templates/agents/subagent-orchestrator.md AND .claude/agents/subagent-orchestrator.md (GOTCHA already in its notes: cam-dual-copy-is-per-file, edit BOTH then embed-vendor + embed-vendor:check). Separately, for anyone touching the in-progress-conflict gate later: the detection lives in src/supervisor/in-progress-conflict.ts (detectInProgressConflict/hasIncompletePrd/isCamFeatureBranch/buildInProgressConflictContext/readHeadBranchName/makeInProgressConflictResolver), wired at the literal top of runPlanPhase (src/supervisor/plan-runner.ts) via two new optional RunPlanPhaseOptions seams: detectInProgressConflictFn (returns a context string or null) and writeInProgressConflictGateFn (called with that context, calls writeGateAndNotify). CRITICAL GOTCHA if you ever touch the BLOCK->re-plan loop (runPlanPhaseWithReplan, CAM-204): both new seams are explicitly set to `undefined` on every re-plan round (round >= 2) -- round 1's own freshly-planned, not-yet-approved prd.json is all passes:false by construction, so re-running the detection on round 2+ would misdetect that SAME cycle's in-flight draft as someone else's in-progress work and wrongly pause mid-replan. Do not remove that omission without re-deriving the guard some other way. runPostAuditAction/exitPhaseAfterPlan both special-case the 'in-progress-conflict' planResult/PostAuditActionResult kind as a pure no-op (mirrors 'branch-created'): the gate write already flipped phase to 'awaiting-operator' before runPlanPhase ever returned that kind, so touching phase again downstream would clobber it. The resolution handler (continue->implementing, ship->shipping, abandon->rm handoff.json+rm prd.json+git checkout main then planning) is registered into makeProductionGatePhaseFn's registry in sidecar.ts via a separate makeInProgressConflictResolverDeps factory (kept OUT of makeProductionGatePhaseFn's own body on purpose: test/sidecar-gate-phase.test.ts's US-003 source-text oracle only slices the first 800 chars after the function signature, and inlining the registry construction pushed the pollAndResolveGate(...) call outside that window during this story).",
+  "nextStoryContext": "US-005 added boot-read item + opening-blocker-line paragraph for `.claude/.cam-gate.json` (the generic operator-decision gate from US-003/US-004, src/supervisor/gate.ts's CamGate: gate/options/context/decision) to BOTH templates/agents/subagent-orchestrator.md (numbered item 13, after the sidecar-stalled marker) and .claude/agents/subagent-orchestrator.md (numbered item 12 there -- that live copy was ALREADY missing item 12/sidecar-stalled relative to templates/ before this story; that pre-existing drift is untouched/out-of-scope per surgical-changes, do not silently 'fix' it in a future story without a story that asks for it). Ran `bun run embed-vendor` to regenerate src/vendor/_generated.ts (templates/ is embedded; .claude/agents/*.md is NOT, per scripts/generate-embedded-vendor.ts -- it only walks vendor/ and templates/). `.claude/.cam-gate.json` had to be added to .gitignore (it wasn't yet, even though src/supervisor/gate.ts's GATE_FILENAME + writeGateFile/readGateFile already existed from US-003/US-004): scripts/validate-agents-md.ts's path-claim checker (wired into check:all's agents-md gate) resolves untracked citations against `git check-ignore` and only allowlists via KNOWN_MISSING as a fallback -- a citation that is neither tracked, ignored, nor allowlisted fails the gate (see patterns.md's 'Per-file KNOWN_MISSING allowlisting' and 'git check-ignore exit 128' bullets for the mechanism). Nothing else in the gate-lifecycle plumbing (write/notify/poll/resolve/clear/flip, US-003; in-progress-conflict resolver wiring, US-004) was touched -- this story is pure orchestrator-prompt prose plus the one .gitignore line the prose now implies.",
   "officialDocsValidated": [
-    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure internal wiring: node:fs/node:child_process builtins, existing gate.ts primitive (US-003), decide.ts's PrdSnapshot partition, git symbolic-ref/checkout via the existing SpawnFn seam. No new external dependency introduced." }
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure markdown prompt-doc edit (both subagent-orchestrator.md copies) plus a .gitignore entry; no external library surface touched." }
   ]
 }
