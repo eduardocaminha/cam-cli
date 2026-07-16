@@ -73,7 +73,7 @@ export interface WriteIssueFileOptions {
 	 * 'derived' (fast-track via --derived-from flag). When present and equal to
 	 * 'operator' or 'derived', the filed issue is set to stage:'specified'.
 	 */
-	specSource?: 'grill' | 'derived' | 'operator';
+	specSource?: 'interview' | 'derived' | 'operator';
 	/** Parent issue ids (when specSource === 'derived'). */
 	derivedFrom?: string[];
 	/** WSJF scoring resolved at filing time. */
@@ -127,7 +127,7 @@ function buildIssueEntry(
 	blockedBy: string[],
 	createdAt: string,
 	description: string | undefined,
-	specSource: 'grill' | 'derived' | 'operator' | undefined,
+	specSource: 'interview' | 'derived' | 'operator' | undefined,
 	derivedFrom: string[] | undefined,
 	wsjf: WsjfScore | undefined,
 ): IssueEntry {

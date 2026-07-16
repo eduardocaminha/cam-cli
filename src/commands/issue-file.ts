@@ -57,7 +57,7 @@ export interface CreateLocalIssueOnMainOptions {
 	 * When present, guardrails are enforced and stage is set to 'specified'.
 	 * Absent on normal filing (no flags) -- stage stays 'idea'.
 	 */
-	specSource?: 'grill' | 'derived' | 'operator';
+	specSource?: 'interview' | 'derived' | 'operator';
 	/** Parent issue ids parsed from --derived-from (required when specSource === 'derived'). */
 	derivedFrom?: string[];
 	/**

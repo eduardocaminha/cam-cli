@@ -181,15 +181,22 @@ describe("validateSpecSource", () => {
 		expect(result.errors.some((e) => e.includes("specSource"))).toBe(true);
 	});
 
-	// --- Back-compat: absent specSource on stage:specified treated as grill ---
-	test("absent specSource on stage:specified treated as grill (passes)", () => {
+	// --- Legacy enum value 'grill' is no longer valid ---
+	test("legacy specSource=grill value now fails, with error listing the new triad", () => {
+		const result = validateSpecSource({ stage: "specified", specSource: "grill" });
+		expect(result.ok).toBe(false);
+		expect(result.errors).toContain('specSource must be one of: "interview", "derived", "operator"');
+	});
+
+	// --- Back-compat: absent specSource on stage:specified treated as interview ---
+	test("absent specSource on stage:specified treated as interview (passes)", () => {
 		const result = validateSpecSource({ stage: "specified" });
 		expect(result).toEqual({ ok: true, errors: [] });
 	});
 
 	// --- Valid combinations ---
-	test("valid specSource=grill passes", () => {
-		const result = validateSpecSource({ stage: "specified", specSource: "grill" });
+	test("valid specSource=interview passes", () => {
+		const result = validateSpecSource({ stage: "specified", specSource: "interview" });
 		expect(result).toEqual({ ok: true, errors: [] });
 	});
 
@@ -275,9 +282,9 @@ describe("validateSpecSource", () => {
 		expect(result.errors.some((e) => e.includes("description"))).toBe(true);
 	});
 
-	// --- specSource=grill does NOT require description ---
-	test("specSource=grill without description passes", () => {
-		const result = validateSpecSource({ stage: "specified", specSource: "grill" });
+	// --- specSource=interview does NOT require description ---
+	test("specSource=interview without description passes", () => {
+		const result = validateSpecSource({ stage: "specified", specSource: "interview" });
 		expect(result).toEqual({ ok: true, errors: [] });
 	});
 

@@ -2227,7 +2227,7 @@ export interface IssueDispatchDeps {
 	 */
 	createLocalIssueOnMainFn?: (
 		stdinData: FileLocalStdinPayload,
-		flags: { specSource?: 'grill' | 'derived' | 'operator'; derivedFrom?: string[] },
+		flags: { specSource?: 'interview' | 'derived' | 'operator'; derivedFrom?: string[] },
 	) => CreateLocalIssueOnMainOutcome;
 	/**
 	 * Inject a fake stdin-text reader for the --file-local branch. Only
@@ -2281,7 +2281,7 @@ type FileLocalStdinPayload = {
 function _buildCreateIssueOpts(
 	cwd: string,
 	parsedStdin: FileLocalStdinPayload,
-	flags?: { specSource?: 'grill' | 'derived' | 'operator'; derivedFrom?: string[] },
+	flags?: { specSource?: 'interview' | 'derived' | 'operator'; derivedFrom?: string[] },
 ): CreateLocalIssueOnMainOptions {
 	return {
 		cwd,
