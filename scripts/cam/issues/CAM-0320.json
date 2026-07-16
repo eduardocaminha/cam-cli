@@ -1,0 +1,13 @@
+{
+  "id": "CAM-320",
+  "title": "The absent-default comment still calls the specSource===undefined -> 'interview…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-16T19:24:19.255Z",
+  "updatedAt": "2026-07-16T19:24:19.255Z",
+  "description": "The absent-default comment still calls the specSource===undefined -> 'interview' resolution 'back-compat', but per the PRD notes this is the live common path, not back-compat. The rename ACs did not require fixing this characterization; consider correcting the wording in a follow-up.\n\nSource: cam/issue-146\nReview round: 1\n\nsuggestion-fingerprint: ec6f66390639",
+  "derivedFrom": [
+    "CAM-146"
+  ]
+}
