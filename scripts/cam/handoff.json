@@ -1,0 +1,10 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Pass --plan-approval operator to the hermetic init smoke" },
+  "createdFiles": [],
+  "modifiedFiles": ["scripts/build-release.sh"],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 was the only change: added `--plan-approval operator` to the hermetic init smoke invocation in scripts/build-release.sh (~line 114), alongside the existing --no-tmux --existing --issue-system none --merge-mode immediate </dev/null flags. src/commands/setup.ts was NOT touched (warnIfResendUnconfigured at line 295/301 still warns whenever planApproval === 'auto' and Resend is unconfigured -- untouched by design, per this story's own AC3). The flag `--plan-approval operator` was already accepted by parseSetupArgs (src/commands/setup.ts:848) before this story; this story only wired the build smoke to pass it. All quality gates (typecheck, bun test 4615 pass/0 fail, check:all full spine incl. lint/file-size/coverage/dead-code/dup/ci-parity/agents-md/test-sleeps) passed clean with no ratchet adjustments needed -- this is a single-line diff.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
