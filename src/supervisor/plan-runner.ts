@@ -36,7 +36,7 @@ import type { PlanVerdictReport, PlanVerdictFinding } from './plan-verdict-repor
 import type { IssueEntry } from '../issues/types.ts';
 import type { SpawnResolutionEvent } from '../logging/spawn-resolution.ts';
 import type { PlanApproval, WorkerIsolation } from '../config/models.ts';
-import type { LoopPhase } from '../commands/status.ts';
+import type { LoopPhase, PrdShape } from '../commands/status.ts';
 import type { PreflightResult } from './preflight-container.ts';
 import { truncatePreflightDetail, type PlanPreflightFailedWriterParams } from './plan-preflight-marker.ts';
 import { buildPlannerWorkerArgv, buildAuditorWorkerArgv } from './plan-argv.ts';
@@ -45,6 +45,7 @@ import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 import { decidePostAuditAction } from '../plan/plan-approval-decision.ts';
 import { dockerExecWrap } from './docker-exec.ts';
 import type { PlanEscalatedMarker } from './plan-escalation.ts';
+import { lintPrd, type PrdOracleLintFinding } from './prd-oracle-lint.ts';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -320,6 +321,23 @@ export interface RunPlanPhaseOptions {
 	 * Production callers MUST inject this so the happy path does not time out.
 	 */
 	readPlannerReportFn?: () => unknown | null;
+
+	/**
+	 * Read AND PARSE the prd.json content the planner just wrote, in-process
+	 * (US-002, CAM-310). Distinct from readPlannerReportFn, which stays
+	 * presence-only (an opaque non-null signal, currently the raw file text):
+	 * this seam returns the parsed PrdShape so runPlanWorkerSequence can run
+	 * the deterministic oracle linter (lintPrd) against it before the auditor
+	 * is ever spawned. Returns null on any read/parse error or when absent
+	 * (graceful degradation, mirrors readPlanVerdictFn/readPlannerReportFn).
+	 *
+	 * Optional for backward compat: when undefined, the lint check is skipped
+	 * entirely and behavior is unchanged from before US-002 (existing tests /
+	 * callers that only exercise the planner-presence + auditor-verdict path
+	 * are unaffected). Production wiring injects `() => readPrd(cwd)`
+	 * (src/commands/status.ts).
+	 */
+	readPrdContentFn?: () => PrdShape | null;
 
 	/**
 	 * Run the deterministic plan pre-flight checks. Returns PlanPreflightResult
@@ -615,6 +633,62 @@ function isPlannerNoPrd(readPlannerReportFn?: () => unknown | null): boolean {
 }
 
 /**
+ * Build a synthetic BLOCK PlanVerdictReport from the deterministic oracle
+ * linter's findings (US-002, CAM-310), folding lintPrd's output into the
+ * EXISTING audit-BLOCK machinery so runPlanPhaseWithReplan's while-loop
+ * re-plans the same issue via buildReplanPlannerTaskPrompt with no new
+ * terminal kind. Each PrdOracleLintFinding (story id + offending oracle
+ * command + rule name + why-broken) becomes one PlanVerdictFinding, with the
+ * rule name and offending command folded into `description` (PlanVerdictFinding
+ * has no dedicated command/rule fields) so no information is lost.
+ *
+ * Exported for unit testing.
+ */
+export function buildLintBlockReport(findings: PrdOracleLintFinding[]): PlanVerdictReport {
+	return {
+		verdict: 'BLOCK',
+		summary:
+			`Deterministic oracle lint found ${findings.length} broken oracle` +
+			`${findings.length === 1 ? '' : 's'} before the auditor was spawned.`,
+		findings: findings.map((finding, index) => ({
+			id: `oracle-lint-${index + 1}`,
+			category: finding.ruleName,
+			severity: 'critical',
+			storyId: finding.storyId,
+			description:
+				`Oracle lint rule '${finding.ruleName}' flagged story ${finding.storyId}'s oracle ` +
+				`command \`${finding.command}\`: ${finding.reason}`,
+		})),
+	};
+}
+
+/**
+ * Run the deterministic oracle linter (lintPrd) against the just-written
+ * prd.json content and, when it finds a broken oracle, return a synthetic
+ * audit-blocked result so the auditor is NEVER spawned for that round
+ * (US-002, CAM-310). Returns null (no block) when readPrdContentFn is absent
+ * (backward compat: lint is skipped entirely), the content is unreadable, or
+ * lintPrd finds nothing to flag -- the caller proceeds to the auditor
+ * unchanged in every one of those cases (AC5: zero behavior change on a
+ * clean PRD).
+ *
+ * Extracted to keep runPlanWorkerSequence under biome's line/complexity
+ * limits (patterns.md 'Biome cognitive complexity: use factory/helper
+ * extraction').
+ */
+function runOracleLintCheck(
+	readPrdContentFn: (() => PrdShape | null) | undefined,
+	issue: IssueEntry,
+): Extract<PlanPhaseResult, { kind: 'audit-blocked' }> | null {
+	if (readPrdContentFn === undefined) return null;
+	const prd = readPrdContentFn();
+	if (prd === null) return null;
+	const findings = lintPrd(prd);
+	if (findings.length === 0) return null;
+	return { kind: 'audit-blocked', issue, report: buildLintBlockReport(findings) };
+}
+
+/**
  * Resolve the live worker pane id.
  * Calls ensureWorkerPane() when available (self-heal, CAM-57); falls back to staticId.
  * Extracted to avoid code duplication for planner and auditor spawns.
@@ -763,6 +837,7 @@ function runPlanWorkerSequence(
 	const {
 		spawnFn, isPaneAlive, sleepFn, genUuid, clock, plannerPaneId,
 		ensureWorkerPane, claudeDir, logEvent, readPlannerReportFn, readPlanVerdictFn,
+		readPrdContentFn,
 	} = opts;
 	const permissionMode = opts.permissionMode ?? 'bypassPermissions';
 	// US-001, CAM-273 (ADR-0027): default to a record-bearing prompt built from
@@ -790,6 +865,14 @@ function runPlanWorkerSequence(
 
 	// US-003: Guard — re-check if prd.json was actually written (Bug 4-adjacent).
 	if (isPlannerNoPrd(readPlannerReportFn)) return { kind: 'planner-failed' };
+
+	// US-002 (CAM-310): deterministic oracle lint of the prd.json the planner
+	// just wrote. Runs AFTER the presence guard above but BEFORE the auditor is
+	// EVER spawned: a broken oracle becomes a synthetic audit-blocked result
+	// (folded into the existing re-plan loop) and the auditor is never spent
+	// on a round that is already deterministically broken.
+	const lintBlock = runOracleLintCheck(readPrdContentFn, issue);
+	if (lintBlock !== null) return lintBlock;
 
 	// Step 6: Container preflight (US-006) + auditor spawn.
 	const auditorBlock = runContainerPlanPreflight('auditor', workerIsolation, preflightContainerFn, escalateFn);

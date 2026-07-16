@@ -365,7 +365,7 @@ function readStateFile(cwd: string): LoopState | null {
  * A bad PRD is non-fatal for `cam status` — we still print the loop's
  * iteration counter, just without a story id.
  */
-function readPrd(cwd: string): PrdShape | null {
+export function readPrd(cwd: string): PrdShape | null {
 	const path = resolvePrdPath(cwd);
 	if (!existsSync(path)) return null;
 	try {
