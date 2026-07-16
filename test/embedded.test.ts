@@ -162,6 +162,13 @@ describe('templatesContents — oracle enforcement in auditor prompt (US-002)', 
 	test('contains the BLOCK verb for oracle-free criterion finding', () => {
 		expect(auditor).toContain('BLOCK');
 	});
+
+	test('BLOCKs on the grep -q + -L/-l self-nullifying oracle antipattern and names the ! grep -q replacement (US-002, CAM-309)', () => {
+		expect(auditor).toContain('self-nullifying');
+		expect(auditor).toContain('-Lq');
+		expect(auditor).toContain('-qL');
+		expect(auditor).toContain('! grep -q PATTERN file');
+	});
 });
 
 describe('templatesContents — merit-over-cost clause in surviving copies (CAM-145 US-002)', () => {
