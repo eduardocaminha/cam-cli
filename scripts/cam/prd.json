@@ -71,7 +71,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "FRONT B + cam-spec FRONT C, combined per auditor finding #1 to keep the bun-test gate green at the boundary. HARD BOUNDARY: .claude/skills/grilling/ and .claude/skills/domain-modeling/ (and templates twins) are VENDORED upstream (mattpocock/skills) and are NOT renamed; SKILL.md line 7 ('Run a /grilling session, using the /domain-modeling skill') is preserved verbatim. Files: git mv .claude/skills/grill-with-docs -> spec-with-docs (edit SKILL.md name: line 2), git mv templates/skills/grill-with-docs -> spec-with-docs, .claude/commands/cam-spec.md (by-path at :24 + prose at :1,:7,:9,:22,:35,:95,:97), templates/commands/cam-spec.md (identical), src/vendor/_generated.ts (regen), test/embedded.test.ts. GOTCHA cam-dual-copy-is-per-file: the two skill trees are currently byte-identical (verified) -- keep them identical. GOTCHA: embedded.test.ts :493-496 asserts skills count == 5 (domain-modeling 3 + grilling 1 + spec-with-docs 1); the count is UNCHANGED by a rename, do not touch it. embedded.test.ts :181-182 (CAM-145 merit-clause test) uses the templatesContents key 'skills/grill-with-docs/SKILL.md' -> update to spec-with-docs. Combining the skill rename with ALL cam-spec.md edits means the toContain('grill-with-docs') assertions flip to spec-with-docs in the same commit that removes the last grill-with-docs token from cam-spec, so no gate is red mid-story. requires US-002 (linear chain: enum + comments settled first)."
     },
