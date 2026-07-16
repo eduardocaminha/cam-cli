@@ -93,6 +93,16 @@ import { runShipBump } from '../release/ship-bump.ts';
 import { buildShipFinalizeOpts, buildShipBumpOpts } from './ship-deps.ts';
 import { REVIEW_ARTIFACT_FILENAME } from '../supervisor/review-report.ts';
 import { writeSidecarSessionStart } from '../supervisor/session-start.ts';
+import { GATE_FILENAME, pollAndResolveGate, writeGateAndNotify, type GateResolutionRegistry } from '../supervisor/gate.ts';
+import {
+	IN_PROGRESS_CONFLICT_GATE,
+	IN_PROGRESS_CONFLICT_OPTIONS,
+	detectInProgressConflict,
+	buildInProgressConflictContext,
+	readHeadBranchName,
+	makeInProgressConflictResolver,
+	type InProgressConflictResolverDeps,
+} from '../supervisor/in-progress-conflict.ts';
 import { printHint, printWarning } from '../logging/color.ts';
 
 // ---------------------------------------------------------------------------
@@ -273,6 +283,17 @@ export interface SidecarOptions {
 	 * spawning real git/gh processes.
 	 */
 	runShipPhaseFn?: RunSidecarLoopOptions['runShipPhaseFn'];
+	/**
+	 * Override the gate-phase runner (US-003, CAM-241/153).
+	 *
+	 * Production: makeProductionGatePhaseFn(claudeDir, cwd) -- polls the
+	 * durable operator-decision gate file (.claude/.cam-gate.json) via
+	 * pollAndResolveGate (supervisor/gate.ts) against an extension-point
+	 * registry (empty today; concrete gate kinds such as 'in-progress-conflict'
+	 * register their handler here as they land, US-004).
+	 * Tests inject a spy to assert call count without touching a real gate file.
+	 */
+	runGatePhaseFn?: RunSidecarLoopOptions['runGatePhaseFn'];
 	/**
 	 * Override the implementing re-arm function (US-003, CAM-195, Defect 1).
 	 *
@@ -1296,6 +1317,7 @@ interface SidecarLoopDepsResult {
 	readLoopPhaseFn: RunSidecarLoopOptions['readLoopPhaseFn'];
 	runPlanPhaseFn: RunSidecarLoopOptions['runPlanPhaseFn'];
 	runShipPhaseFn: RunSidecarLoopOptions['runShipPhaseFn'];
+	runGatePhaseFn: RunSidecarLoopOptions['runGatePhaseFn'];
 	rearmImplementingFn: RunSidecarLoopOptions['rearmImplementingFn'];
 }
 
@@ -1965,6 +1987,9 @@ function buildProductionDispatchFn(
  *
  * branch-created: setPhaseFn('implementing') was already called inside
  * runPostAuditAction; nothing to do here.
+ * in-progress-conflict (US-004, CAM-241/153): the gate write already flipped
+ * the phase to 'awaiting-operator'; nothing to do here (mirrors branch-created
+ * -- re-setting the phase here would clobber the gate's own transition).
  * awaiting-operator-approval: write 'awaiting-operator' so the operator can
  * trigger the next step manually.
  * escalated / no-action: write 'idle' to stop the re-entry loop.
@@ -1976,7 +2001,7 @@ function exitPhaseAfterPlan(
 	result: PostAuditActionResult,
 	setPhase: (phase: LoopPhase) => void,
 ): void {
-	if (result.kind === 'branch-created') return;
+	if (result.kind === 'branch-created' || result.kind === 'in-progress-conflict') return;
 	setPhase(result.kind === 'awaiting-operator-approval' ? 'awaiting-operator' : 'idle');
 }
 
@@ -2267,6 +2292,54 @@ function buildPlanContainerOpts(cwd: string): PlanContainerOpts {
 	return { workerIsolation, preflightContainerFn, escalateFn };
 }
 
+/**
+ * Build the production detectInProgressConflictFn for the plan phase (US-004,
+ * CAM-241/153, AC1). Reads scripts/cam/prd.json (readPrd, status.ts) and
+ * HEAD's branch name (readHeadBranchName, in-progress-conflict.ts) and
+ * delegates to the pure detectInProgressConflict/buildInProgressConflictContext
+ * helpers. Returns the gate context string on a conflict, null otherwise.
+ */
+function makeDetectInProgressConflictFn(cwd: string, loopSpawnFn: LoopSpawnFn): () => string | null {
+	return (): string | null => {
+		const prd = readPrd(cwd);
+		const headBranch = readHeadBranchName(loopSpawnFn, cwd);
+		if (!detectInProgressConflict(prd, headBranch)) return null;
+		return buildInProgressConflictContext(prd, headBranch);
+	};
+}
+
+/**
+ * Build the production writeInProgressConflictGateFn for the plan phase
+ * (US-004, CAM-241/153, AC2). Writes the durable gate file (gate:
+ * 'in-progress-conflict', options: IN_PROGRESS_CONFLICT_OPTIONS, context),
+ * flips the phase to 'awaiting-operator', and pushes the one-line notify --
+ * all via the US-003 generic writeGateAndNotify primitive (supervisor/gate.ts).
+ */
+function makeWriteInProgressConflictGateFn(
+	cwd: string,
+	claudeDir: string,
+	sessionName: string,
+	realSpawnFn: SpawnFn,
+	logEvent: WorkerEventLogger,
+): (context: string) => void {
+	const gateFilePath = join(claudeDir, GATE_FILENAME);
+	const setPhase = makeSetPhaseFn(claudeDir, cwd);
+	const notify = makeNotifyOrchestrator(
+		sessionName,
+		realSpawnFn,
+		makeCapturePaneFn(realSpawnFn),
+		adaptLogEventForPush(logEvent),
+	);
+	return (context: string): void => {
+		writeGateAndNotify(
+			gateFilePath,
+			{ gate: IN_PROGRESS_CONFLICT_GATE, options: [...IN_PROGRESS_CONFLICT_OPTIONS], context },
+			setPhase,
+			notify,
+		);
+	};
+}
+
 /** Grouped deps for runProductionPlanPhaseWithReplan (US-004, CAM-204). */
 interface PlanWorkerRunDeps {
 	cwd: string;
@@ -2334,6 +2407,10 @@ function runProductionPlanPhaseWithReplan(deps: PlanWorkerRunDeps): PlanPhaseRes
 		// US-004 (CAM-204): real kill-pane teardown + durable escalation marker.
 		teardownPlanPanesFn: makeTeardownPlanPanesFn(claudeDir),
 		writeEscalationMarkerFn: makeWriteEscalationMarkerFn(claudeDir),
+		// US-004 (CAM-241/153): in-progress-conflict gate (round 1 only; see the
+		// field doc on RunPlanPhaseOptions.detectInProgressConflictFn).
+		detectInProgressConflictFn: makeDetectInProgressConflictFn(cwd, loopSpawnFn),
+		writeInProgressConflictGateFn: makeWriteInProgressConflictGateFn(cwd, claudeDir, sessionName, realSpawnFn, logEvent),
 	});
 }
 
@@ -2561,6 +2638,77 @@ function buildShipPhaseDeps(
 		runShipPhaseFn: options.runShipPhaseFn ?? makeProductionShipPhaseFn(
 			cwd, claudeDir, sessionName, logEvent, realSpawnFn,
 		),
+	};
+}
+
+/**
+ * Build the in-progress-conflict gate's abandon-path deps (US-004, CAM-241/153,
+ * AC3): rm handoff.json, rm prd.json, git checkout main -- each best-effort,
+ * never throws (see InProgressConflictResolverDeps's contract).
+ *
+ * Extracted so makeProductionGatePhaseFn's own body stays a thin
+ * pollAndResolveGate wrapper (factory/helper extraction pattern used
+ * throughout this module; also keeps the source-text oracle window in
+ * test/sidecar-gate-phase.test.ts intact).
+ */
+function makeInProgressConflictResolverDeps(cwd: string): InProgressConflictResolverDeps {
+	return {
+		removeHandoffFn: () => {
+			const p = join(cwd, 'scripts/cam/handoff.json');
+			try { if (existsSync(p)) unlinkSync(p); } catch { /* best-effort */ }
+		},
+		removePrdFn: () => {
+			const p = join(cwd, 'scripts/cam/prd.json');
+			try { if (existsSync(p)) unlinkSync(p); } catch { /* best-effort */ }
+		},
+		checkoutMainFn: () => {
+			try { spawnSync('git', ['-C', cwd, 'checkout', 'main'], { stdio: 'pipe' }); } catch { /* best-effort */ }
+		},
+	};
+}
+
+/**
+ * Build the production gate-phase runner (US-003, CAM-241/153; first concrete
+ * gate kind registered in US-004, CAM-241/153).
+ *
+ * Called once per idle tick when phase==='awaiting-operator' (loop.ts branch,
+ * sibling to the planning/shipping branches). Delegates all I/O to
+ * pollAndResolveGate (supervisor/gate.ts): reads the durable gate file, and
+ * when a re-validated decision is present, dispatches the resolution
+ * generically by the gate's discriminator via `registry` -- NEVER hard-coded
+ * to a single gate kind (GOTCHA in prd.json notes).
+ *
+ * Registers 'in-progress-conflict' (US-004): continue -> implementing,
+ * ship -> shipping, abandon -> rm handoff.json + rm prd.json + git checkout
+ * main, then planning (proceed with the requested plan fresh). Any OTHER gate
+ * discriminator remains 'unknown-gate' (left in place, inert) until its own
+ * concrete kind registers a handler here.
+ */
+function makeProductionGatePhaseFn(claudeDir: string, cwd: string): () => void {
+	const filePath = join(claudeDir, GATE_FILENAME);
+	const setPhase = makeSetPhaseFn(claudeDir, cwd);
+	const registry: GateResolutionRegistry = {
+		[IN_PROGRESS_CONFLICT_GATE]: makeInProgressConflictResolver(makeInProgressConflictResolverDeps(cwd)),
+	};
+	return (): void => {
+		pollAndResolveGate(filePath, registry, setPhase);
+	};
+}
+
+/**
+ * Build the gate-phase injectable dep (US-003, CAM-241/153).
+ *
+ * Extracted from buildSidecarLoopDeps to keep it under the biome
+ * noExcessiveCognitiveComplexity(max=15) limit (CAM-60 factory/helper
+ * pattern), mirroring buildShipPhaseDeps.
+ */
+function buildGatePhaseDeps(
+	ctx: SidecarLoopDepsCtx,
+	options: SidecarOptions,
+): Pick<SidecarLoopDepsResult, 'runGatePhaseFn'> {
+	const { cwd, claudeDir } = ctx;
+	return {
+		runGatePhaseFn: options.runGatePhaseFn ?? makeProductionGatePhaseFn(claudeDir, cwd),
 	};
 }
 
@@ -2805,6 +2953,9 @@ function buildSidecarLoopDeps(ctx: SidecarLoopDepsCtx, options: SidecarOptions):
 	// US-004 / CAM-149: ship-phase dep extracted to a helper (biome complexity budget).
 	const shipPhaseDeps = buildShipPhaseDeps(ctx, options);
 
+	// US-003 (CAM-241/153): gate-phase dep extracted to a helper (biome complexity budget).
+	const gatePhaseDeps = buildGatePhaseDeps(ctx, options);
+
 	// US-003 (CAM-195, Defect 1): implementing re-arm, wired unconditionally
 	// (resuming an already-in-flight PRD is a resilience fix, not an autonomy
 	// escalation gated to meta_loop/plan_approval config like the pair above).
@@ -2816,7 +2967,7 @@ function buildSidecarLoopDeps(ctx: SidecarLoopDepsCtx, options: SidecarOptions):
 		readActiveFn, clearActiveFn, hasPendingStoriesFn, sleepFn, hasSessionFn,
 		acquireLockFn, buildOptsFn, runMergeWatchFn, flipActiveFn, readImplementBlockedMarkerFn, autoShipFn,
 		readReviewReportFn, fileSuggestionsFn, escalateFn,
-		runMetaLoopObserveFn, ...planPhaseDeps, ...shipPhaseDeps, ...rearmDeps,
+		runMetaLoopObserveFn, ...planPhaseDeps, ...shipPhaseDeps, ...gatePhaseDeps, ...rearmDeps,
 	};
 }
 
@@ -2954,6 +3105,7 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 		readLoopPhaseFn: deps.readLoopPhaseFn,
 		runPlanPhaseFn: deps.runPlanPhaseFn,
 		runShipPhaseFn: deps.runShipPhaseFn,
+		runGatePhaseFn: deps.runGatePhaseFn,
 		rearmImplementingFn: deps.rearmImplementingFn,
 	});
 }

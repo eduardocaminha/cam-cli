@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Cam Operator-Decision Gate",
+  "description": "Durable operator-decision gate marker written to .claude/.cam-gate.json (US-001, CAM-241/153). Persists an awaiting-operator pause across sidecar restarts: the sidecar writes gate/options/context when it needs an operator decision, the operator resolves it via `cam decide <decision>` which fills in `decision`, and the sidecar polls for a populated `decision` to resume deterministically.",
+  "type": "object",
+  "required": ["gate", "options", "context"],
+  "properties": {
+    "gate": {
+      "type": "string",
+      "description": "Discriminator naming which gate is active (e.g. 'in-progress-work-conflict'). Dispatched generically by consumers, never hard-coded to a single gate kind."
+    },
+    "options": {
+      "type": "array",
+      "description": "The valid decision strings the operator may choose between. `cam decide <decision>` validates its argument is a member of this array before writing `decision`.",
+      "items": { "type": "string" }
+    },
+    "context": {
+      "type": "string",
+      "description": "Free-text context explaining why the gate is open, surfaced to the operator (e.g. by the orchestrator boot-read or a sidecar notify line)."
+    },
+    "decision": {
+      "type": "string",
+      "description": "The operator's resolved choice, absent until `cam decide` writes it. Must be a member of `options` once populated."
+    }
+  },
+  "additionalProperties": false
+}

@@ -152,8 +152,14 @@ document — none of them require deep reasoning to absorb:
     no worker is dispatched). If present, read its `reason` and `detail`
     fields; you'll surface them as an opening blocker below. If absent,
     there's nothing to surface — a clean boot stays clean.
+13. `.claude/.cam-gate.json` — a durable marker written whenever any part of
+    the loop pauses for an operator decision (a "gate"), e.g. an
+    in-progress-work conflict at plan start. If present, read its `gate`,
+    `options`, and `context` fields (and `decision`, if already resolved);
+    you'll surface them as an opening blocker below. If absent, there's
+    nothing to surface — a clean boot stays clean.
 
-**Shared rule for every boot-surfaced marker above (7-12):** Do NOT delete the marker yourself. Surfacing it at boot is read-only. Each marker's own
+**Shared rule for every boot-surfaced marker above (7-13):** Do NOT delete the marker yourself. Surfacing it at boot is read-only. Each marker's own
 specific removal condition is noted in its blocker-line paragraph below.
 
 After the boot read, greet the human with a one-screen summary:
@@ -248,6 +254,18 @@ line before asking what to do next, e.g.:
 
 Removed only by the sidecar itself on its next healthy bring-up (container
 ensure guard passes, or is a no-op in host mode).
+
+If `.claude/.cam-gate.json` is present, add an opening blocker line before
+asking what to do next, e.g.:
+
+```
+⚠ gate "<gate>" awaiting operator decision: cam decide <opt1|opt2> — <context>
+```
+
+You narrate this gate; you never write or edit the gate file yourself, and
+you never resolve it in-process — the operator resumes by running
+`cam decide <option>`. Removed only once the operator's `cam decide` call
+resolves the gate and the loop consumes it.
 
 The closing of the greeting is `meta_loop`-aware (read from
 `scripts/cam/project.toml` at boot step 2 above), and covers all three modes

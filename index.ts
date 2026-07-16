@@ -69,6 +69,7 @@ import {
 import { buildShipFinalizeOpts, buildShipBumpOpts } from './src/commands/ship-deps.ts';
 import { runShipBump, type ShipBumpResult } from './src/release/ship-bump.ts';
 import { runResume, type ExplicitMode } from './src/commands/resume.ts';
+import { runDecide, parseDecideArgs } from './src/commands/decide.ts';
 import { runRun, parseRunArgs } from './src/commands/run.ts';
 import { runStatus } from './src/commands/status.ts';
 import { runOrchBudget } from './src/commands/orch-budget.ts';
@@ -125,6 +126,7 @@ const HELP = renderHelp({
 				{ name: 'stop', description: 'Cancel a running loop (clears state file + kills the per-project tmux session)' },
 				{ name: 'drain [--stop|--clear]', description: 'Set or clear the inter-cycle drain kill-switch without killing the sidecar' },
 				{ name: 'resume [options]', description: 'Reconcile loop state after interrupt; auto-detect or --mode <name>' },
+				{ name: 'decide <decision>', description: 'Record your choice into the active operator-decision gate so the sidecar resumes deterministically' },
 				{ name: 'version', description: 'Print the installed cam-cli version (also `--version` / `-v`)' },
 				{ name: 'help', description: 'Show this help' },
 			],
@@ -843,6 +845,35 @@ const RESUME_HELP = renderHelp({
 			],
 		},
 	],
+});
+
+const DECIDE_HELP = renderHelp({
+	title: 'cam decide',
+	tagline: 'Record your choice into the active operator-decision gate',
+	usage: 'cam decide <decision>',
+	sections: [
+		{
+			heading: 'Arguments',
+			entries: [
+				{
+					name: '<decision>',
+					description:
+						'Must be a member of the active gate\'s options[]. Validated and written into the SAME gate file (.claude/.cam-gate.json) the sidecar polls -- no split across the loop state file.',
+				},
+			],
+		},
+		{
+			heading: 'Behaviour',
+			body:
+				'1. Reads the active gate file (fail-closed -- absent/malformed exits non-zero).\n' +
+				'2. Validates <decision> is a member of the gate\'s options[]; an invalid\n' +
+				'   decision exits non-zero, lists the valid options, and leaves the gate\n' +
+				'   file unmodified.\n' +
+				'3. Writes decision back into the same gate file so the sidecar can resume\n' +
+				'   deterministically on its next poll.',
+		},
+	],
+	footer: 'Distinct from `cam resume` (4-mode interrupt recovery) -- this resolves a live operator-decision gate.',
 });
 
 const CONFIG_HELP =
@@ -2377,6 +2408,7 @@ const COMMANDS = [
 	'stop',
 	'drain',
 	'resume',
+	'decide',
 	'claude',
 	'sidecar',
 	'orch-recycle-watch',
@@ -2426,6 +2458,7 @@ const HELP_REGISTRY: Record<Command, string> = {
 	stop: STOP_HELP,
 	drain: DRAIN_HELP,
 	resume: RESUME_HELP,
+	decide: DECIDE_HELP,
 	claude: CLAUDE_HELP,
 	sidecar: SIDECAR_HELP,
 	'orch-recycle-watch': ORCH_RECYCLE_WATCH_HELP,
@@ -2733,6 +2766,19 @@ async function main(argv: string[]): Promise<number> {
 				dryRun: parsed.dryRun,
 				force: parsed.force,
 			});
+		}
+		case 'decide': {
+			const parsed = parseDecideArgs(argv.slice(3));
+			if (parsed === null) {
+				printError('cam decide requires exactly one <decision> argument');
+				printFatalHint('run `cam decide --help` for usage');
+				return 1;
+			}
+			if (parsed.help) {
+				process.stdout.write(DECIDE_HELP);
+				return 0;
+			}
+			return runDecide({ decision: parsed.decision });
 		}
 		case 'claude': {
 			const parsed = parseClaudeArgs(argv.slice(3));
