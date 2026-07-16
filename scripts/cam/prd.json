@@ -8,6 +8,13 @@
   "officialDocsConsulted": [],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "WARNING [test/commands/config-frontmatter.test.ts:179]: The new regression test does not actually discriminate the bug it targets. Against the pre-fix string-form code, `$&` expands to the whole matched fence (which itself contains `note: \"matched $& and group $1\"`), so the corrupted, fence-duplicated output STILL satisfies all three `.toContain()` assertions (verified empirically: OLD output = '...note: \"matched ---\\nname: subagent-implementer\\nnote: \"matched $& and group $1\"\\n--- and group $1\"...'). The test passes green even when the feature is broken, violating criterion #2 (tests-with-meaningful-assert). Strengthen it to fail against the buggy form, e.g. assert the full expected string with `toBe(...)`, assert the note substring occurs exactly once, or assert `not.toContain('matched ---')`."
+    },
+    {
       "id": "US-001",
       "title": "Insert frontmatterBody verbatim in rewriteFrontmatterEffort",
       "description": "As a maintainer, I need rewriteFrontmatterEffort's insert path to insert the captured frontmatterBody literally so that any $-sequences ($&, $1, $$) in the body are never reinterpreted by the String.prototype.replace engine, closing a latent footgun.",
@@ -19,10 +26,23 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "requires": null,
       "notes": "Single file: src/templates/frontmatter.ts, rewriteFrontmatterEffort insert path (lines 83-87). Only the insert branch is affected; the existing-line branch (line 80) uses a static template literal `$1 ${newEffort}` where $1 is intentional and must stay. Replacement-function form: content.replace(/^---\\r?\\n[\\s\\S]*?\\r?\\n---/, () => updatedFence). A no-arg arrow is sufficient (return value is inserted verbatim, MDN: 'the string returned by the function is used as the replacement'). Test lives in test/commands/config-frontmatter.test.ts under the existing rewriteFrontmatterEffort describe block; input must have a frontmatter fence, NO existing effort: line, and a body/key value containing $& and $1 so the insert path runs. Gotcha (issue CAM-317): agent frontmatter is controlled content so live risk is nil; this is latent-footgun hardening. Source: cam/issue-87. noUncheckedIndexedAccess: fenceMatch[1] is already guarded via `?? ''`."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:1",
+    "findings": [
+      {
+        "severity": "WARNING",
+        "file": "test/commands/config-frontmatter.test.ts",
+        "line": 179,
+        "text": "The new regression test does not actually discriminate the bug it targets. Against the pre-fix string-form code, `$&` expands to the whole matched fence (which itself contains `note: \"matched $& and group $1\"`), so the corrupted, fence-duplicated output STILL satisfies all three `.toContain()` assertions (verified empirically: OLD output = '...note: \"matched ---\\nname: subagent-implementer\\nnote: \"matched $& and group $1\"\\n--- and group $1\"...'). The test passes green even when the feature is broken, violating criterion #2 (tests-with-meaningful-assert). Strengthen it to fail against the buggy form, e.g. assert the full expected string with `toBe(...)`, assert the note substring occurs exactly once, or assert `not.toContain('matched ---')`."
+      }
+    ]
+  }
 }
