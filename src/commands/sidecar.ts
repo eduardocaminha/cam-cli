@@ -50,6 +50,7 @@ import { renderStateFile, writeStateFile } from './next.ts';
 import { TERMINAL_VERDICTS, type PrdSnapshot } from '../supervisor/decide.ts';
 import { hasSession, projectSessionName, getOrchPaneId, paneCountMutex, readWorkerPaneMarker, openPaneInSession, writeWorkerPaneMarker, type SpawnFn } from '../tmux/session.ts';
 import { runPlanPhaseWithReplan, runPostAuditAction, type PlanPhaseResult, type PostAuditActionResult, type PlanEscalationWriterParams } from '../supervisor/plan-runner.ts';
+import { maybeEmitPlanSplitAdvisory } from '../supervisor/plan-split-advisory.ts';
 import { writePlanEscalatedMarker, removePlanEscalatedMarker, PLAN_ESCALATED_FILENAME, type PlanEscalatedMarker } from '../supervisor/plan-escalation.ts';
 import { writePlanPreflightFailedMarker, removePlanPreflightFailedMarker, PLAN_PREFLIGHT_FAILED_FILENAME, type PlanPreflightFailedMarker, type PlanPreflightFailedWriterParams } from '../supervisor/plan-preflight-marker.ts';
 import { readImplementBlockedMarker, removeImplementBlockedMarker, IMPLEMENT_BLOCKED_FILENAME } from '../supervisor/implement-blocked-marker.ts';
@@ -2238,6 +2239,21 @@ function runPostPlanActions(o: PostPlanActionsOpts): void {
 		removePreflightFailedMarkerFn: () => removePlanPreflightFailedMarker(join(o.claudeDir, PLAN_PREFLIGHT_FAILED_FILENAME)),
 	});
 	exitPhaseAfterPlan(postAuditResult, makeSetPhaseFn(o.claudeDir, o.cwd)); // US-R1-002
+
+	// US-004 (CAM-241/136): best-effort, non-gating split advisory. Runs AFTER
+	// the post-audit outcome/phase transition above and can never affect them
+	// (maybeEmitPlanSplitAdvisory swallows all of its own failures).
+	maybeEmitPlanSplitAdvisory({
+		cwd: o.cwd,
+		issueNumber,
+		logEvent: o.logEvent,
+		notify: makeNotifyOrchestrator(
+			o.sessionName,
+			o.realSpawnFn,
+			makeCapturePaneFn(o.realSpawnFn),
+			adaptLogEventForPush(o.logEvent),
+		),
+	});
 }
 
 /** Grouped container-isolation deps for the plan phase (US-006, CAM-152). */
