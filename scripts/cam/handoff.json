@@ -1,0 +1,17 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Add plan-approval gate module (identity, context builder, resolver)" },
+  "branchName": "cam/issue-312",
+  "timestamp": "2026-07-16T00:00:00Z",
+  "createdFiles": [
+    "src/supervisor/plan-approval-gate.ts",
+    "test/plan-approval-gate.test.ts"
+  ],
+  "modifiedFiles": [],
+  "openQuestions": [
+    "PrdSnapshot (decide.ts) has no top-level `title` field; buildPlanApprovalContext accepts a locally-extended `PlanApprovalPrd` type (PrdSnapshot & { title?: string; description?: string }) and prefers title, falling back to description, then '(untitled PRD)'. US-002/US-003 (the write-side/sidecar wiring) should pass whatever the real prd.json carries (currently `description`, no `title`) -- confirm this fallback order is what the operator-facing summary should show once the real call site lands."
+  ],
+  "nextStoryContext": "US-001 shipped the pure gate module: PLAN_APPROVAL_GATE='plan-approval', PLAN_APPROVAL_OPTIONS=['approve','reject'], buildPlanApprovalContext(prd), and makePlanApprovalResolver(deps) (deps: proceedBranchFn, removePrdFn, notifyFn), mirroring src/supervisor/in-progress-conflict.ts's shape verbatim. gate.ts (the generic write+notify/poll+resolve+clear+flip primitive, CAM-153) was NOT modified, per the story notes. US-002 wires the write-side (writeGateAndNotify with PLAN_APPROVAL_GATE/PLAN_APPROVAL_OPTIONS/buildPlanApprovalContext) into the plan-runner's plan_approval='operator' pause path (currently a dead-end); US-003 registers makePlanApprovalResolver into the sidecar's GateResolutionRegistry (see makeProductionGatePhaseFn's registry pattern for 'in-progress-conflict' as the wiring precedent) and wires a real proceedBranchFn (resume the paused branch into implementing) + removePrdFn/notifyFn deps. reject discards the working-tree prd.json since at pause time (post-audit, pre-branch) the PRD still lives on main, mirroring in-progress-conflict's abandon path.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
