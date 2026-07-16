@@ -1,12 +1,12 @@
 {
   "id": "CAM-87",
   "title": "cam config: UI em abas (fase como tab) + seletor de effort por fase",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-25T15:30:00Z",
   "description": "Dois problemas no cam config atual. (1) WIZARD SEQUENCIAL: ConfigScreen.tsx (src/ui/ConfigScreen.tsx:81) apresenta as fases uma a uma em sequencia; o operador nao ve todas de uma vez nem consegue voltar pra uma fase anterior sem recomecar. Redesign: substituir pelo modelo de TABS — uma aba por fase (Orchestrator | Planner | Auditor | Implementer | Reviewer | Ship | Backend), navegaveis com <- -> ; a aba ativa exibe os seletores; as abas ja confirmadas mostram o valor escolhido. Inspiracao: o AskUserQuestion do Claude Code que renderiza opcoes como chips horizontais selecionaveis. (2) SEM EFFORT: o campo effort (low/medium/high/xhigh/max) existe no frontmatter dos agentes (ex: subagent-reviewer.md tem effort: xhigh) mas nao e configuravel via cam config. O operador nao tem como ajustar o nivel de raciocinio por fase sem editar o arquivo manualmente. Fix: dentro de cada aba, alem do seletor de modelo, adicionar um seletor de effort (5 opcoes: low, medium, high, xhigh, max). SCOPE COMPLETO: (a) novo componente TabBar em src/ui/TabBar.tsx (lista de abas, <- -> navegacao, aba ativa destacada); (b) refatorar ConfigScreen.tsx para usar TabBar + dois Select por aba (model + effort); (c) expandir ConfigChoices para incluir efforts: Record<Phase, string>; (d) adicionar EFFORT_DEFAULTS e readPhaseEffort em src/config/models.ts; (e) persistir secao [efforts] em project.toml via mergeConfigChoices; (f) adicionar rewriteFrontmatterEffort em src/templates/frontmatter.ts (espelha rewriteFrontmatterModel, reescreve a linha effort: no frontmatter dos arquivos .claude/agents/*.md); (g) regen src/vendor/_generated.ts apos mudancas em templates/; (h) testes para TabBar, effort read/write, e frontmatter rewrite. ONDE: src/ui/ConfigScreen.tsx, src/ui/Select.tsx (ou novo TabBar.tsx), src/config/models.ts, src/templates/frontmatter.ts, src/commands/config.ts, scripts/cam/project.toml schema. Prioridade P2: DX significativa — hoje o operador reconfigura modelos sem conseguir ajustar effort, o que afeta custo e qualidade das fases.",
-  "updatedAt": "2026-07-16T02:03:26.737Z",
+  "updatedAt": "2026-07-16T15:35:51.938Z",
   "spec": {
     "acceptanceCriteria": [
       "New component src/ui/TabBar.tsx renders a horizontal chip-style tab bar (one tab per config section), highlights the active tab, moves the active tab with the Left/Right arrow keys, and shows the chosen value(s) on already-confirmed tabs.",
