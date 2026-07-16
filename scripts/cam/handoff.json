@@ -1,0 +1,22 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Add shared spread-forwarding spawnSync helper and harden on-main SpawnFn option surface" },
+  "branchName": "cam/issue-311",
+  "timestamp": "2026-07-15T00:00:00Z",
+  "createdFiles": [
+    "test/git/on-main-spawn-forward.test.ts"
+  ],
+  "modifiedFiles": [
+    "src/git/on-main.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "realOnMainSpawnFn is now exported from src/git/on-main.ts (SpawnFn type widened with maxBuffer?: number). It is NOT yet wired into any real call-site: src/commands/spec.ts still has two inline duplicate closures (lines ~280-282, ~389-391) with the identical spread-forwarding body, and src/release/post-merge.ts's makeRealIssueSpawnFn (the actual CAM-307 bug site: field-by-field destructure of encoding/env/input, dropping maxBuffer, used by defaultCloseIssueFn/defaultAbandonIssueFn/defaultDemoteIssueFn which all flow through issue-specify.ts's readBacklogFromMain(cwd, toBacklogSpawn(spawnFn)) calls) is unchanged. US-002 covers file-local/triage/suggestions-promote wrappers; US-003 covers post-merge.ts's makeRealIssueSpawnFn plus a >1 MiB ship auto-close regression test and a full consumer audit. Do not re-litigate US-001's scope decision to leave call-sites untouched -- it was deliberate per notes and the US-002/US-003 split.",
+  "officialDocsValidated": [
+    {
+      "lib": "node:child_process",
+      "url": "https://nodejs.org/api/child_process.html#child_processspawnsynccommand-args-options",
+      "fetchedAt": "2026-07-15T00:00:00Z",
+      "status": "aligned",
+      "summary": "Confirmed spawnSync's documented default maxBuffer (1024*1024), truncation-on-exceed behavior, and that encoding/env/input/maxBuffer are all independent optional options fields forwarded as-is -- matches the { ...opts, stdio: 'pipe' } spread body and the empirical ENOBUFS observed in the new test."
+    }
+  ]
+}
