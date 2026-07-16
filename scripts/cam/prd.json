@@ -29,7 +29,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/config/models.ts (interface ResendConfig + readResendConfig, both return sites at ~204 and ~209), test/config/models.test.ts. resend_from is NON-SECRET: TOML is the source (mirror resend_recipient exactly), unlike apiKey which prioritizes the RESEND_API_KEY env var. Both the happy-path return (line 204) and the env-only fallback return (line 209) must include the new from field. Gotcha: noUncheckedIndexedAccess — guard the typeof-string check before assigning."
     },
