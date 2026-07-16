@@ -1,0 +1,101 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-87",
+  "description": "Redesign cam config into a tabbed UI (one tab per phase + Global) and add a per-phase effort selector with full read/write/frontmatter plumbing.",
+  "issueNumber": 87,
+  "type": "feat",
+  "relatedDocs": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "ink",
+      "url": "https://github.com/vadimdemedes/ink",
+      "version": "7.0.3",
+      "fetchedAt": "2026-07-16T00:00:00Z",
+      "summary": "Ink 7 is the installed major; useInput reports key.leftArrow/rightArrow/upArrow/downArrow, key.tab and key.return, matching the existing src/ui/Select.tsx usage. ink-testing-library ^4 is installed and exposes render()/lastFrame()/stdin.write() for keypress-driven assertions. No breaking API change affects this work; the README fetch was partial but the version and hook contract are confirmed by the installed lockfile and existing code.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add effort config read/write plumbing (no UI)",
+      "description": "As an operator, I need per-phase effort to be a first-class config value (defaults, reader, ConfigChoices field, and [efforts] persistence) so that later UI and frontmatter stories can consume it.",
+      "acceptanceCriteria": [
+        "src/config/models.ts exports EFFORT_DEFAULTS with exactly these entries and no others (ship omitted): orchestrator=xhigh, planner=xhigh, auditor=xhigh, reviewer=xhigh, implementer=high. [oracle: bun test]",
+        "src/config/models.ts exports readPhaseEffort(phase, configPath?) mirroring readPhaseModel's defensive try/catch pattern: it reads the [efforts] section and returns the configured non-empty string, falling back to EFFORT_DEFAULTS on a missing file, missing section, missing key, malformed TOML, or non-string value. [oracle: bun test]",
+        "A phase-effort key type (LLM phases only, ship excluded) is introduced so efforts records are ship-free at the type level, and typecheck rejects an efforts record that includes ship. [oracle: bun run typecheck]",
+        "ConfigChoices (src/ui/ConfigScreen.tsx) gains an efforts field typed as a per-LLM-phase record (ship omitted). [oracle: grep -q 'efforts' src/ui/ConfigScreen.tsx]",
+        "mergeConfigChoices (src/commands/config.ts) persists an [efforts] section into scripts/cam/project.toml via mergeIntoConfig, mirroring the [models] write, only for the 5 LLM phases. [oracle: bun test]",
+        "A test writes choices through mergeConfigChoices to a tmp project.toml and asserts readPhaseEffort resolves each written value round-trip, plus a missing-key case that falls back to EFFORT_DEFAULTS. [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/config/models.ts (EFFORT_DEFAULTS + readPhaseEffort, mirror readPhaseModel:86-101), src/ui/ConfigScreen.tsx (ConfigChoices type only, ~line 32), src/commands/config.ts (mergeConfigChoices ~line 186, mirror the [models] mergeIntoConfig call). Ship has NO effort (deterministic/zero-LLM, ADR-0009) so the efforts record excludes ship at the type level. Do NOT touch models.ship. noUncheckedIndexedAccess: guard the section/key access in readPhaseEffort exactly as readPhaseModel does."
+    },
+    {
+      "id": "US-002",
+      "title": "Add rewriteFrontmatterEffort + wire into save, sync agent files and re-embed",
+      "description": "As an operator, I need cam config to write the chosen effort into each LLM subagent's frontmatter (inserting the line when absent) so that the effort choice actually changes agent behavior without hand-editing files.",
+      "acceptanceCriteria": [
+        "src/templates/frontmatter.ts exports rewriteFrontmatterEffort(content, newEffort) mirroring rewriteFrontmatterModel: it rewrites an existing 'effort:' line AND inserts the line when absent (implementer has none today), returning updated content in both cases. [oracle: bun test]",
+        "src/templates/frontmatter.ts exports its OWN phase->path map for effort, keyed to .claude/agents/subagent-<phase>.md for the 5 LLM phases (orchestrator, planner, auditor, implementer, reviewer), distinct from FRONTMATTER_TARGET_PHASE_PATHS which points at .claude/commands/cam-ship.md. [oracle: grep -q 'subagent-' src/templates/frontmatter.ts]",
+        "The effort map contains no ship entry. [oracle: bun test]",
+        "src/commands/config.ts rewrites the effort frontmatter line for the 5 LLM phases on save (a rewriteFrontmatterEfforts helper wired into mergeConfigChoices alongside rewriteFrontmatterModels), resolving paths relative to cwd and silently skipping files that do not exist. [oracle: bun test]",
+        ".claude/agents/subagent-implementer.md gains an 'effort: high' frontmatter line and .claude/agents/subagent-orchestrator.md is bumped from 'effort: high' to 'effort: xhigh', with the templates/agents/ copies kept byte-in-sync. [oracle: grep -q '^effort: high' .claude/agents/subagent-implementer.md]",
+        "The orchestrator effort bump is present in both copies. [oracle: grep -q '^effort: xhigh' templates/agents/subagent-orchestrator.md]",
+        "A test drives rewriteFrontmatterEffort on both a with-line fixture and a no-line fixture (implementer insert path) and asserts the inserted line lands inside the frontmatter block. [oracle: bun test]",
+        "Vendor drift check passes (bun run embed-vendor:check) after running bun run embed-vendor. [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "Files: src/templates/frontmatter.ts (rewriteFrontmatterEffort + agents-dir path map, mirror rewriteFrontmatterModel:41-43 and FRONTMATTER_TARGET_PHASE_PATHS:28-30), src/commands/config.ts (rewriteFrontmatterEfforts helper wired into mergeConfigChoices, mirror rewriteFrontmatterModels:134-146), .claude/agents/subagent-implementer.md + subagent-orchestrator.md and their templates/agents/ twins. GOTCHA: effort: frontmatter lives in .claude/agents/, NOT .claude/commands/ (the model rewrite targets commands/cam-ship.md); the effort map needs its own agents-dir target. GOTCHA: implementer has NO effort line today so insert-when-absent must place it inside the --- fenced frontmatter, not append to the body; do NOT parse YAML (js-yaml ESM-only quirk, patterns.md CAM-69), use a scoped regex like rewriteFrontmatterModel. GOTCHA: cam dual-copy is per-file (memory: cam-dual-copy-is-per-file) so .claude/agents and templates/agents are not guaranteed byte-identical: diff before editing and write both, then re-embed. GOTCHA: issue item (g) names src/vendor/_generated.ts as the embed target but the real gate is bun run embed-vendor / embed-vendor:check (which regenerates src/vendor/_generated.ts). Regenerate and let the templatesContents byte-parity test in test/embedded.test.ts confirm. noUncheckedIndexedAccess: guard regex capture-group access in the insert/parse."
+    },
+    {
+      "id": "US-003",
+      "title": "Add TabBar chip component",
+      "description": "As an operator, I need a horizontal chip-style tab bar that highlights the active tab, moves with Left/Right arrows, and shows the chosen value on confirmed tabs so that the config screen can present phases as tabs instead of a linear wizard.",
+      "acceptanceCriteria": [
+        "New src/ui/TabBar.tsx renders a horizontal chip-style tab bar with one chip per provided tab label. [oracle: bun test]",
+        "The active tab index is visually highlighted (accent), and pressing Left/Right moves the active tab (with clamped or wrapped bounds) via an ink-testing-library stdin.write of the arrow escape sequences. [oracle: bun test]",
+        "Already-confirmed tabs render their chosen value alongside the label; unconfirmed tabs render the label only. [oracle: bun test]",
+        "Verify the screen renders correctly via ink-testing-library render()/lastFrame(); success/failure is signalled by the glyph (accent/destructive), never by divider color. [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "New file: src/ui/TabBar.tsx. Reuse src/ui/theme.ts colors (accent/muted) and follow the Select.tsx keyboard-nav idiom (useInput with key.leftArrow/key.rightArrow). Ink 7 reports arrows as key.leftArrow/key.rightArrow. Test with ink-testing-library ^4 (render, lastFrame, stdin.write('\\u001B[C')/('\\u001B[D') for Right/Left). noUncheckedIndexedAccess: guard array indexing in tab navigation (tabs[activeIdx] is T | undefined). Design token source: src/design/tokens.ts and src/ui/theme.ts. Keep the component a pure controlled presentational primitive (active index + onChange in, chips out) so ConfigScreen owns the keypress lifecycle in US-004."
+    },
+    {
+      "id": "US-004",
+      "title": "Refactor ConfigScreen to tabbed UI with per-tab model + effort selects",
+      "description": "As an operator, I need cam config to present every phase as a navigable tab with both a model and an effort selector (and a Global tab for backend/merge-mode/plan-approval), replacing the forward-only wizard, so that I can review and revisit any phase and adjust effort per phase.",
+      "acceptanceCriteria": [
+        "src/ui/ConfigScreen.tsx is refactored to render via TabBar with 7 tabs: 6 phase tabs (Orchestrator, Planner, Auditor, Implementer, Reviewer, Ship) plus one Global tab; the sequential forward-only wizard is removed. [oracle: bun test]",
+        "Each of the 5 LLM-phase tabs (Orchestrator, Planner, Auditor, Implementer, Reviewer) renders the EXISTING model Select plus a NEW effort Select; the Ship tab renders the model Select ONLY (no effort Select). [oracle: bun test]",
+        "The Global tab preserves parity with today's wizard globals: backend, merge-mode, and plan-approval selects plus the existing notify recipient/from text inputs, with no NEW global fields added (no meta_loop/worker_isolation/orch_context_window). [oracle: bun test]",
+        "The effort Select offers exactly 5 options in order: low, medium, high, xhigh, max. [oracle: bun test]",
+        "Within a tab, Up/Down navigates options of the focused Select and Tab/Enter advances focus model->effort->next tab; Left/Right always switches tabs (driven via ink-testing-library stdin.write). [oracle: bun test]",
+        "onDone emits a ConfigChoices whose efforts field carries the chosen effort for each of the 5 LLM phases (defaulting from EFFORT_DEFAULTS when untouched). [oracle: bun test]",
+        "Verify the screen renders correctly via ink-testing-library: an LLM tab shows both selects and the Ship tab shows the model select only; success/failure is signalled by the glyph, never by divider color. [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": "US-003",
+      "notes": "Files: src/ui/ConfigScreen.tsx (major refactor of the ~568-line wizard). Reuse the existing per-phase model Select and the custom-id passthrough (ConfigScreen.tsx:69-103, PHASE_MODEL_OPTIONS + useCustomModelEntry): do NOT rebuild the model picker. Net-new UI is the TabBar wiring (US-003) + the effort Select. GOTCHA (spec tension): issue AC(3) enumerates only backend/merge-mode/plan-approval for the Global tab, but the notify recipient/from steps were added to the wizard after this issue was filed (2026-06-25); preserve them under the Global tab to avoid regressing config capability while adding NO new global fields (meta_loop/worker_isolation/orch_context_window/notify-additions are OUT of scope). Depends on US-001 (ConfigChoices.efforts + EFFORT_DEFAULTS) and US-003 (TabBar). Keep the component body under biome's line-count budget by extracting per-tab sections as the current file already does. Ink success/failure = glyph, never divider color (curated invariant). Watch biome cognitive-complexity ceiling: extract the keypress focus-advance logic into a helper."
+    }
+  ]
+}
