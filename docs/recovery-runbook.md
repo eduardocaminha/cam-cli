@@ -1681,22 +1681,22 @@ verify+warn fallback), `src/config/models.ts` (readMergeMode),
 `scripts/cam/patterns.md` (merge-watch state machine pattern bullet,
 branch-protection helper bullet, [ship].merge_mode config surface bullet).
 
-## (u) CAM-107: grill / spec flow -- re-running or recovering from a failed promotion
+## (u) CAM-107: spec flow -- re-running or recovering from a failed promotion
 
-The grill/spec flow turns a `stage:idea` issue into a `stage:specified` issue via the
-`/cam-spec <id>` slash command. `/cam-spec` runs the **grill-with-docs** interview
-chain (`.claude/skills/grill-with-docs/SKILL.md`), then calls `specifyIssueOnMain`
+The spec flow turns a `stage:idea` issue into a `stage:specified` issue via the
+`/cam-spec <id>` slash command. `/cam-spec` runs the **spec-with-docs** interview
+chain (`.claude/skills/spec-with-docs/SKILL.md`), then calls `specifyIssueOnMain`
 (`src/commands/issue-specify.ts`) to commit the result directly on `main` without
 touching the working branch. The on-main commit uses the same commit-tree plumbing as
 the `/cam-issue --file-local` flow described in section (n).
 
-### (u.1) Re-running a grill (interview interrupted mid-session)
+### (u.1) Re-running a spec interview (interview interrupted mid-session)
 
 Symptom: a `/cam-spec <id>` session was interrupted (browser refresh, claude session
-timeout, `cam stop`, etc.) before the grill completed. The issue is still
+timeout, `cam stop`, etc.) before the spec interview completed. The issue is still
 `stage:idea` in `scripts/cam/issues/` on `main`; no spec was committed.
 
-Because the grill is a stateless conversational loop, recovery is simply re-running it:
+Because the spec interview is a stateless conversational loop, recovery is simply re-running it:
 
 1. Confirm the issue is still `stage:idea` and `status:open`:
 
@@ -1711,7 +1711,7 @@ Because the grill is a stateless conversational loop, recovery is simply re-runn
    /cam-spec <id>
    ```
 
-   The grill starts from the beginning. There is no partial state to clear.
+   The spec interview starts from the beginning. There is no partial state to clear.
 
 3. If the orchestrator session is absent:
 
@@ -1725,11 +1725,11 @@ Because the grill is a stateless conversational loop, recovery is simply re-runn
    cam spec <id>
    ```
 
-The grill has no on-disk draft state: a clean re-run is always safe.
+The spec interview has no on-disk draft state: a clean re-run is always safe.
 
 ### (u.2) Recovering a half-written spec (specifyIssueOnMain never ran)
 
-Symptom: the grill interview finished and the orchestrator assembled a spec object, but
+Symptom: the spec interview finished and the orchestrator assembled a spec object, but
 the `specifyIssueOnMain` call was not reached (the session was killed at the final step,
 or a validation error blocked the write). The issue is still `stage:idea` in
 `scripts/cam/issues/` on `main`.
@@ -1746,11 +1746,11 @@ git log --oneline -5 main -- scripts/cam/issues/<PREFIX>-NNNN.json
 # The most recent commit for this file should NOT be "chore(cam): specify <id>"
 ```
 
-Recovery: re-run the grill per (u.1). The spec assembled in the previous session exists
+Recovery: re-run the spec interview per (u.1). The spec assembled in the previous session exists
 only in that session's transcript; it is not persisted anywhere on disk.
 
 If you have saved answers from the previous session (e.g. in a text editor), re-entering
-them is faster: the grill stages are operator-driven and accept pasted answers. If
+them is faster: the spec interview stages are operator-driven and accept pasted answers. If
 `specifyIssueOnMain` returned a validation error (e.g. `invalid-spec` or `invalid-wsjf`),
 the error message lists the failing fields. Correct those in the next session.
 
@@ -1792,7 +1792,7 @@ git push origin main
 rm -rf "$TMPDIR"
 ```
 
-**Option B: re-run the grill from scratch.**
+**Option B: re-run the spec interview from scratch.**
 
 If the spec needs a full revision, first reset the issue back to `stage:idea` using
 Option A above (set `stage` to `"idea"` and remove the `spec`/`wsjf` keys in the JSON),
@@ -1830,13 +1830,13 @@ The domain model for any cam-managed project lives at two pinned paths:
   result of a real trade-off with genuine alternatives considered. Created lazily; do not
   pre-create empty stubs.
 
-The grill-with-docs skill (`.claude/skills/grill-with-docs/SKILL.md`) and the
+The spec-with-docs skill (`.claude/skills/spec-with-docs/SKILL.md`) and the
 domain-modeling skill (`.claude/skills/domain-modeling/SKILL.md`) are the two skills
 that most frequently produce new entries for these files.
 
 Cross-reference: `src/commands/issue-specify.ts` (specifyIssueOnMain, the deterministic
 spec writer), `templates/commands/cam-spec.md` (/cam-spec slash command),
-`.claude/skills/grill-with-docs/SKILL.md` (grill interview chain),
+`.claude/skills/spec-with-docs/SKILL.md` (spec interview chain),
 `src/issues/spec.ts` (validateSpec, validateWsjf),
 section (n) (commit-tree-to-main primitive reused by specifyIssueOnMain),
 `scripts/cam/CLAUDE.md` (Domain Model Convention section).
