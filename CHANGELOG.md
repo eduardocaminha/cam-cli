@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.171.0] - 2026-07-16
+
+### Added
+
+- US-002 - Make the auditor BLOCK on the -q + -L/-l oracle antipattern
+- US-001 - Add absence/presence oracle idiom to the planner Oracle Contract
+
 ## [0.170.0] - 2026-07-16
 
 ### Added
