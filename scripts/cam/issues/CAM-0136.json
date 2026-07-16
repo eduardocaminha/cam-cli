@@ -1,10 +1,46 @@
 {
   "id": "CAM-136",
   "title": "Analise de tokens-por-issue: media por issue + correlacao com tamanho pra guiar fatiamento de tarefas",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-28T22:46:05.741Z",
   "description": "Follow-up do CAM-131 (que persiste os tokens-por-ciclo de forma duravel no cycle-close). Objetivo: consumir os dados de tokens-por-ciclo/issue (orquestrador + workers, do event log) pra (1) calcular a media de tokens por issue, (2) correlacionar com o tamanho/escopo do issue (numero de stories no PRD, AC count, arquivos tocados, WSJF jobSize), e (3) usar isso pra guiar a decisao de fatiar tarefas em mais issues (issues que estouram a media viram candidatos a split, conectando com a licao prd-size-vs-review-convergence: PRDs >=8-9 stories estouram review). DEPENDE de CAM-131 (fonte dos dados). Possivel saida: um comando (ex: cam stats tokens) ou relatorio, e/ou um sinal no triage/plan sugerindo split quando tokens historicos + jobSize indicam issue grande demais. Pesquisa/feature; escopo a grillar. P3.",
-  "updatedAt": "2026-06-28T22:46:05.741Z"
+  "updatedAt": "2026-07-16T02:09:42.198Z",
+  "spec": {
+    "acceptanceCriteria": [
+      "New cam stats tokens subcommand wired into dispatch: COMMANDS entry, paired HELP_REGISTRY entry, and a switch case in index.ts; implementation in src/commands/stats.ts.",
+      "It reads .claude/cam-worker-events.jsonl and aggregates cycle-tokens events by issueNumber, producing per-issue orch/worker/total plus global mean and median tokens-per-issue.",
+      "Output is a human-readable table plus a single machine-parseable line CAM_STATS_TOKENS=... in the project idiom.",
+      "The report FLAGS unattributed spend (cycles that closed without a journal entry, i.e. no cycle-tokens marker) rather than silently dropping or misattributing raw tokens events.",
+      "Attribution uses the cycle-tokens event exclusively (detail.issueNumber); the raw tokens event schema is NOT modified.",
+      "The output states explicitly that the orch component of cycle-tokens.total excludes output tokens (the known orch-vs-worker formula asymmetry); totals are used as recorded, not recomputed from transcripts.",
+      "Plan-time split advisory: after PRD generation in the plan runner, compute expected tokens as the historical mean of same-jobSize issues and, if the projection exceeds ~1.5x the median of that jobSize bucket, emit a NON-GATING advisory (an event plus an operator-facing note). It never blocks or fails the plan/loop.",
+      "The 1.5x multiplier and the jobSize bucketing are code constants; no new project.toml config knob is added.",
+      "Tests cover: stats aggregation (per-issue rollup, mean/median, unattributed-flagging), the plan-time advisory heuristic (fires above threshold, silent below, no-data -> no advisory), and the machine-line format.",
+      "Quality gates green: bun run typecheck, bun test, bun run check:all."
+    ],
+    "scope": "IN: a cam stats tokens retrospective report (mean/median tokens-per-issue from the cycle-tokens stream) and a plan-time, non-gating split advisory keyed on WSJF jobSize. OUT: full statistical correlation (dropped on merit: cam's small issue history makes cross-issue correlation low-signal and misleading, replaced by the simple jobSize-bucket heuristic); modifying the tokens event schema to add an issue key; --csv/--json export flags; a triage-time signal (size data too poor there); new config knobs; any dashboard/budget changes (already shipped); reconstructing normalized totals from transcripts.",
+    "gotchas": [
+      "CAM-136 is ~40% OBE. Its stated dependency CAM-131 shipped: the cycle-tokens per-issue event { cycleId, issueNumber, orchTokens, workerTokens, total } already exists (events.ts:336-353, written at journal.ts:481-519, wired index.ts:1737-1747). Dashboard token surfaces (per-story column US-014 Dashboard.tsx:507-611, session total, loop row) and cam orch-budget / worker-token-ceiling all already shipped. Do NOT re-add any of these.",
+      "Raw tokens events (events.ts:162-173) carry NO issue key: only storyId + uuid. Per-issue attribution is ONLY possible via cycle-tokens (detail.issueNumber). Do not try to group raw tokens events by issue directly.",
+      "cycle-tokens is only written on cam journal append --cycle-close (index.ts:1737). Cycles that close without a journal entry leave their tokens events unattributed. The report must flag this, never misattribute.",
+      "Formula asymmetry: cycle-tokens.total's orch component uses input+cacheCreation+cacheRead (no output) while worker totals use all four fields (journal.ts:410 vs 494). Surface it; do not silently treat them as identical.",
+      "Reuse existing log readers: defaultReadEventLog / findLastCycleTokensIdx / extractTokensFromLine (journal.ts:371-434), sumSessionWorkerTokens (dashboard.ts:612-649), renderTokensLine / formatTokens (src/transcript/usage.ts). They already tolerate malformed lines.",
+      "Command wiring is typecheck-enforced: the COMMANDS + HELP_REGISTRY pairing (index.ts:2366-2418) plus a switch case (index.ts:2508+) must all be added together.",
+      "The advisory's jobSize comes from the issue spec wsjf.jobSize; story count from the generated PRD. It fires at plan-time AFTER PRD generation in the plan runner and is strictly advisory (an event + note), never gating.",
+      "noUncheckedIndexedAccess: guard array indexing and regex capture-group access in the JSONL parse and in the median computation."
+    ],
+    "domainTerms": [
+      "tokens-per-issue report",
+      "plan-time split advisory"
+    ]
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 1,
+    "riskReduction": 2,
+    "jobSize": 3
+  },
+  "type": "feat"
 }
