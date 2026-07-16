@@ -1,13 +1,39 @@
 {
   "id": "CAM-314",
   "title": "abandon path calls git checkout main best-effort; on a dirty worktree the check…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-16T14:21:49.904Z",
-  "updatedAt": "2026-07-16T14:21:49.904Z",
+  "updatedAt": "2026-07-16T21:37:17.342Z",
   "description": "abandon path calls git checkout main best-effort; on a dirty worktree the checkout can silently fail leaving HEAD on the cam/* branch. The failure mode is safe (the next plan tick re-detects the branch conflict and re-pauses rather than clobbering), but a follow-up could surface the failed checkout to the operator instead of silently re-pausing.\n\nSource: cam/issue-153\nReview round: 1\n\nsuggestion-fingerprint: 103b9d0057f6",
   "derivedFrom": [
     "CAM-153"
-  ]
+  ],
+  "spec": {
+    "scope": "In the abandon path, when the best-effort `git checkout main` fails (e.g. a dirty worktree leaves HEAD on the cam/* branch), surface the failed checkout to the operator instead of silently re-pausing. Preserve the existing safe fallback: never clobber the worktree, and the next plan tick still re-detects the branch conflict.",
+    "acceptanceCriteria": [
+      "When the abandon-path `git checkout main` fails, the failure is surfaced to the operator (durable marker or notification line naming the branch HEAD is stuck on), not silently swallowed.",
+      "The existing safe behavior is preserved: a dirty worktree is never clobbered and the next plan tick still re-detects the branch conflict.",
+      "A test covers the failed-checkout branch and asserts the operator-facing surfacing.",
+      "check:all is green."
+    ],
+    "gotchas": [
+      "The current failure mode is already SAFE (re-pauses); this change is observability only. Do not change the never-clobber guarantee.",
+      "Source: cam/issue-153."
+    ],
+    "domainTerms": [
+      "abandon path",
+      "git checkout main",
+      "dirty worktree",
+      "plan tick"
+    ]
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 2,
+    "riskReduction": 3,
+    "jobSize": 2
+  },
+  "type": "fix"
 }
