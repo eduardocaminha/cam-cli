@@ -1,16 +1,18 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Gate file schema + fail-closed I/O module" },
+  "lastCompletedStory": { "id": "US-002", "title": "`cam decide <decision>` CLI thin-proxy" },
   "branchName": "cam/issue-153",
   "timestamp": "2026-07-16T00:00:00Z",
   "createdFiles": [
-    "src/supervisor/gate.ts",
-    "scripts/cam/cam-gate.schema.json",
-    "test/supervisor/gate.test.ts"
+    "src/commands/decide.ts",
+    "test/commands/decide.test.ts"
   ],
-  "modifiedFiles": [],
+  "modifiedFiles": [
+    "index.ts",
+    "test/commands-freeze.test.ts"
+  ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 (`cam decide <decision>` CLI thin-proxy) consumes src/supervisor/gate.ts directly: GATE_FILENAME, CamGate type, readGateFile (fail-closed, throws GateFileError -- use this to load the active gate and validate <decision> is a member of options[]), writeGateFile (to persist the SAME gate file with decision populated, no split-brain), and readGateFileLenient/removeGateFile if needed. gate.ts intentionally exports TWO readers: readGateFile (fail-closed, throws on absent/malformed/partial -- use this in cam decide since an invalid decision must be rejected against real options[], never against stale/corrupt data) and readGateFileLenient (returns null on any failure -- better fit for poll/boot-read surfaces in US-003/US-005). Wire cam decide into index.ts mirroring the existing cam resume/cam drain command entries (argv[2] dispatch + help spec, around index.ts:71-127,774-808); do not overload cam resume. No prd.json edits, no gate.ts wiring into the sidecar poll loop or the decide command itself happened in this story -- that is explicitly out of scope for US-001.",
+  "nextStoryContext": "US-003 (sidecar generic gate lifecycle) wires src/supervisor/gate.ts + the new `cam decide` verb into the sidecar's outer loop (src/commands/sidecar.ts). `cam decide` (src/commands/decide.ts) is a pure CLI thin-proxy: it reads the gate file (fail-closed readGateFile), validates decision against options[], writes decision back into the SAME .claude/.cam-gate.json (join(cwd, '.claude', GATE_FILENAME)) via writeGateFile, and returns an exit code -- it does NOT poll, does NOT clear the gate file, and does NOT flip phase. US-003 is responsible for: writing the gate file when the sidecar reaches an operator-decision point (phase:awaiting-operator + gate file + orchestrator-pane notify), polling for a populated decision (re-validate against options[] again before acting -- cam decide's validation is not trusted transitively), dispatching resolution generically by gate discriminator, deleting the gate file on resolution (consumed-on-resolution, mirroring clearStalePlanArtifacts for stale gates from a crashed prior run), and flipping phase. index.ts changes: added 'decide' to COMMANDS array (now 27, alphabetically-independent order after 'resume'), DECIDE_HELP (renderHelp block), HELP_REGISTRY entry, top-level HELP command list entry, and a switch case mirroring the 'resume'/'drain' case shape (parseDecideArgs -> null/help/decision branches). test/commands-freeze.test.ts's FROZEN_COMMANDS + count assertion (26->27) had to be updated in the same commit -- it is an explicit intentional freeze list, not incidental breakage.",
   "officialDocsValidated": [
-    { "lib": "none", "status": "no_external_lib_touched", "summary": "node:fs (existsSync/readFileSync/writeFileSync/unlinkSync) is a Bun/Node builtin already used identically across the existing durable-marker family (plan-escalation.ts, implement-blocked-marker.ts); no new external dependency introduced." }
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "node:fs/node:path builtins only (join, readGateFile/writeGateFile already validated in US-001); no new external dependency introduced." }
   ]
 }
