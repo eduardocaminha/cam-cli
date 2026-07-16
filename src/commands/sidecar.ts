@@ -93,6 +93,7 @@ import { runShipBump } from '../release/ship-bump.ts';
 import { buildShipFinalizeOpts, buildShipBumpOpts } from './ship-deps.ts';
 import { REVIEW_ARTIFACT_FILENAME } from '../supervisor/review-report.ts';
 import { writeSidecarSessionStart } from '../supervisor/session-start.ts';
+import { GATE_FILENAME, pollAndResolveGate, type GateResolutionRegistry } from '../supervisor/gate.ts';
 import { printHint, printWarning } from '../logging/color.ts';
 
 // ---------------------------------------------------------------------------
@@ -273,6 +274,17 @@ export interface SidecarOptions {
 	 * spawning real git/gh processes.
 	 */
 	runShipPhaseFn?: RunSidecarLoopOptions['runShipPhaseFn'];
+	/**
+	 * Override the gate-phase runner (US-003, CAM-241/153).
+	 *
+	 * Production: makeProductionGatePhaseFn(claudeDir, cwd) -- polls the
+	 * durable operator-decision gate file (.claude/.cam-gate.json) via
+	 * pollAndResolveGate (supervisor/gate.ts) against an extension-point
+	 * registry (empty today; concrete gate kinds such as 'in-progress-conflict'
+	 * register their handler here as they land, US-004).
+	 * Tests inject a spy to assert call count without touching a real gate file.
+	 */
+	runGatePhaseFn?: RunSidecarLoopOptions['runGatePhaseFn'];
 	/**
 	 * Override the implementing re-arm function (US-003, CAM-195, Defect 1).
 	 *
@@ -1296,6 +1308,7 @@ interface SidecarLoopDepsResult {
 	readLoopPhaseFn: RunSidecarLoopOptions['readLoopPhaseFn'];
 	runPlanPhaseFn: RunSidecarLoopOptions['runPlanPhaseFn'];
 	runShipPhaseFn: RunSidecarLoopOptions['runShipPhaseFn'];
+	runGatePhaseFn: RunSidecarLoopOptions['runGatePhaseFn'];
 	rearmImplementingFn: RunSidecarLoopOptions['rearmImplementingFn'];
 }
 
@@ -2565,6 +2578,47 @@ function buildShipPhaseDeps(
 }
 
 /**
+ * Build the production gate-phase runner (US-003, CAM-241/153).
+ *
+ * Called once per idle tick when phase==='awaiting-operator' (loop.ts branch,
+ * sibling to the planning/shipping branches). Delegates all I/O to
+ * pollAndResolveGate (supervisor/gate.ts): reads the durable gate file, and
+ * when a re-validated decision is present, dispatches the resolution
+ * generically by the gate's discriminator via `registry` -- NEVER hard-coded
+ * to a single gate kind (GOTCHA in prd.json notes).
+ *
+ * The registry starts empty: this story ships the generic write+notify /
+ * poll+resolve+clear+flip primitive only. Concrete gate kinds (e.g.
+ * 'in-progress-conflict', US-004) register their handler here as they land;
+ * until then, any populated gate is 'unknown-gate' (left in place, inert).
+ */
+function makeProductionGatePhaseFn(claudeDir: string, cwd: string): () => void {
+	const filePath = join(claudeDir, GATE_FILENAME);
+	const setPhase = makeSetPhaseFn(claudeDir, cwd);
+	const registry: GateResolutionRegistry = {};
+	return (): void => {
+		pollAndResolveGate(filePath, registry, setPhase);
+	};
+}
+
+/**
+ * Build the gate-phase injectable dep (US-003, CAM-241/153).
+ *
+ * Extracted from buildSidecarLoopDeps to keep it under the biome
+ * noExcessiveCognitiveComplexity(max=15) limit (CAM-60 factory/helper
+ * pattern), mirroring buildShipPhaseDeps.
+ */
+function buildGatePhaseDeps(
+	ctx: SidecarLoopDepsCtx,
+	options: SidecarOptions,
+): Pick<SidecarLoopDepsResult, 'runGatePhaseFn'> {
+	const { cwd, claudeDir } = ctx;
+	return {
+		runGatePhaseFn: options.runGatePhaseFn ?? makeProductionGatePhaseFn(claudeDir, cwd),
+	};
+}
+
+/**
  * Build the auto-chain deps: flipActiveFn, readImplementBlockedMarkerFn, and
  * autoShipFn (US-005, extended by US-003/CAM-214).
  *
@@ -2805,6 +2859,9 @@ function buildSidecarLoopDeps(ctx: SidecarLoopDepsCtx, options: SidecarOptions):
 	// US-004 / CAM-149: ship-phase dep extracted to a helper (biome complexity budget).
 	const shipPhaseDeps = buildShipPhaseDeps(ctx, options);
 
+	// US-003 (CAM-241/153): gate-phase dep extracted to a helper (biome complexity budget).
+	const gatePhaseDeps = buildGatePhaseDeps(ctx, options);
+
 	// US-003 (CAM-195, Defect 1): implementing re-arm, wired unconditionally
 	// (resuming an already-in-flight PRD is a resilience fix, not an autonomy
 	// escalation gated to meta_loop/plan_approval config like the pair above).
@@ -2816,7 +2873,7 @@ function buildSidecarLoopDeps(ctx: SidecarLoopDepsCtx, options: SidecarOptions):
 		readActiveFn, clearActiveFn, hasPendingStoriesFn, sleepFn, hasSessionFn,
 		acquireLockFn, buildOptsFn, runMergeWatchFn, flipActiveFn, readImplementBlockedMarkerFn, autoShipFn,
 		readReviewReportFn, fileSuggestionsFn, escalateFn,
-		runMetaLoopObserveFn, ...planPhaseDeps, ...shipPhaseDeps, ...rearmDeps,
+		runMetaLoopObserveFn, ...planPhaseDeps, ...shipPhaseDeps, ...gatePhaseDeps, ...rearmDeps,
 	};
 }
 
@@ -2954,6 +3011,7 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 		readLoopPhaseFn: deps.readLoopPhaseFn,
 		runPlanPhaseFn: deps.runPlanPhaseFn,
 		runShipPhaseFn: deps.runShipPhaseFn,
+		runGatePhaseFn: deps.runGatePhaseFn,
 		rearmImplementingFn: deps.rearmImplementingFn,
 	});
 }

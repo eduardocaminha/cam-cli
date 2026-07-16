@@ -26,11 +26,17 @@
 //     sidecar's poll loop, a boot-read surface) where "no gate active" and
 //     "gate file unreadable" are both simply "nothing to act on yet".
 //
-// This module does NOT wire the gate into the sidecar poll loop or the
-// `cam decide` command itself (US-002/US-003 do that); it only provides the
-// filename constant, the type, and the I/O helpers.
+// US-003 (CAM-241/153) adds the write+notify / poll+resolve+clear+flip
+// lifecycle on top of the I/O helpers above: `writeGateAndNotify` (write side)
+// and `pollAndResolveGate` (poll side, dispatched generically by the gate's
+// `gate` discriminator via a caller-supplied registry -- NEVER hard-coded to
+// a single gate kind, since CAM-149/CAM-139 reuse this exact primitive with
+// their own discriminators). Concrete gate kinds (e.g. 'in-progress-conflict',
+// US-004) register their handler into that registry; this module only
+// supplies the generic dispatch plumbing.
 
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
+import type { LoopPhase } from '../commands/status.ts';
 
 /** Filename of the durable operator-decision gate (relative to the `.claude/` dir). */
 export const GATE_FILENAME = '.cam-gate.json';
@@ -156,4 +162,106 @@ export function removeGateFile(filePath: string): void {
 	} catch {
 		/* best-effort: file may already be absent */
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Gate lifecycle: write+notify, poll+resolve+clear+flip (US-003, CAM-241/153)
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolves ONE gate kind (the `gate` discriminator) into the loop phase the
+ * sidecar should flip to next. Handlers are looked up generically by
+ * discriminator in a `GateResolutionRegistry` -- `pollAndResolveGate` NEVER
+ * hard-codes a single gate kind. The handler is called only after the
+ * decision has already been re-validated against `gate.options`.
+ */
+export type GateResolutionHandler = (gate: CamGate) => LoopPhase;
+
+/**
+ * Maps a gate discriminator (`gate.gate`) to the handler that resolves it.
+ * Concrete gate kinds register themselves here (e.g. 'in-progress-conflict',
+ * US-004); this module ships no entries of its own.
+ */
+export type GateResolutionRegistry = Record<string, GateResolutionHandler>;
+
+/**
+ * Render the one-line orchestrator-pane notification for a freshly-written
+ * gate (AC1). Names the gate discriminator, the valid options, and the
+ * free-text context; never suggests or auto-selects an option.
+ */
+export function formatGateNotifyLine(gate: Pick<CamGate, 'gate' | 'options' | 'context'>): string {
+	return `[cam] gate "${gate.gate}" awaiting operator decision: cam decide <${gate.options.join('|')}> — ${gate.context}`;
+}
+
+/**
+ * Write side of the gate lifecycle (AC1, AC4).
+ *
+ * Called by the sidecar when it reaches an operator-decision point. Clears
+ * any stale gate file left by a crashed prior run FIRST (mirrors
+ * `clearStalePlanArtifacts`: an explicit remove-then-write, not an implicit
+ * overwrite), writes the fresh gate (discriminator + options + context, no
+ * `decision` -- the sidecar never auto-selects an option), flips the loop
+ * phase to `awaiting-operator` via `setPhaseFn`, and pushes a one-line
+ * notify to the orchestrator pane via `notifyFn`.
+ */
+export function writeGateAndNotify(
+	filePath: string,
+	gate: Pick<CamGate, 'gate' | 'options' | 'context'>,
+	setPhaseFn: (phase: LoopPhase) => void,
+	notifyFn: (line: string) => void,
+): void {
+	removeGateFile(filePath);
+	writeGateFile(filePath, { gate: gate.gate, options: gate.options, context: gate.context });
+	setPhaseFn('awaiting-operator');
+	notifyFn(formatGateNotifyLine(gate));
+}
+
+/**
+ * Outcome of a single `pollAndResolveGate` tick.
+ *   - 'no-gate': no gate file present (nothing to do).
+ *   - 'awaiting-decision': a gate is active but `decision` is not populated yet.
+ *   - 'invalid-decision': `decision` is populated but fails re-validation
+ *     against `options[]` (AC3) -- ignored, never executed; the gate file is
+ *     left in place and the sidecar keeps polling.
+ *   - 'unknown-gate': `decision` is valid but no handler is registered for
+ *     this discriminator -- left in place for a future tick / a handler that
+ *     has not landed yet (e.g. before US-004 registers 'in-progress-conflict').
+ *   - 'resolved': the handler ran, the gate file was deleted (consumed-on-
+ *     resolution, AC4), and the phase was flipped.
+ */
+export type GateTickResult = 'no-gate' | 'awaiting-decision' | 'invalid-decision' | 'unknown-gate' | 'resolved';
+
+/**
+ * Poll side of the gate lifecycle (AC2, AC3, AC4).
+ *
+ * Reads the gate file leniently. When a `decision` is populated, it is
+ * RE-VALIDATED against `gate.options` here -- `cam decide`'s own validation
+ * (src/commands/decide.ts) is not trusted transitively, since the gate file
+ * could have been hand-edited or left stale between the two processes. On a
+ * valid decision, the resolution is dispatched generically by `gate.gate`
+ * through `registry` (never hard-coded to a single gate kind), the gate file
+ * is deleted (consumed-on-resolution), and the phase is flipped to whatever
+ * the handler returns.
+ *
+ * Synchronous and side-effect-free beyond the gate file + `setPhaseFn`: safe
+ * to call once per sidecar tick (mirrors the plan/ship phase branches in
+ * supervisor/loop.ts).
+ */
+export function pollAndResolveGate(
+	filePath: string,
+	registry: GateResolutionRegistry,
+	setPhaseFn: (phase: LoopPhase) => void,
+): GateTickResult {
+	const gate = readGateFileLenient(filePath);
+	if (gate === null) return 'no-gate';
+	if (gate.decision === undefined) return 'awaiting-decision';
+	if (!gate.options.includes(gate.decision)) return 'invalid-decision';
+
+	const handler = registry[gate.gate];
+	if (handler === undefined) return 'unknown-gate';
+
+	const nextPhase = handler(gate);
+	removeGateFile(filePath);
+	setPhaseFn(nextPhase);
+	return 'resolved';
 }

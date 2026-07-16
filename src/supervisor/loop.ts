@@ -1941,6 +1941,28 @@ export interface RunSidecarLoopOptions {
 	 */
 	runShipPhaseFn?: () => void | Promise<void>;
 	/**
+	 * Poll + resolve the operator-decision gate (US-003, CAM-241/153).
+	 *
+	 * When injected AND readLoopPhaseFn() returns 'awaiting-operator', called
+	 * once per tick (sibling of the planning/shipping branches; phase:
+	 * awaiting-operator also derives active:false, so this guard MUST precede
+	 * the active!==true idle check for the same reason as those two). Wraps
+	 * `pollAndResolveGate` (src/supervisor/gate.ts): reads the gate file, and
+	 * when a re-validated decision is present, dispatches the resolution
+	 * generically by the gate's discriminator and flips the phase away from
+	 * 'awaiting-operator'. The closure is responsible for its own phase
+	 * transition on resolution; this option carries no separate callback.
+	 *
+	 * Production wiring (sidecar.ts): makeProductionGatePhaseFn(...).
+	 * Tests inject a spy to assert call count / crash-survival without a real
+	 * gate file.
+	 *
+	 * Optional: when absent, phase:awaiting-operator is silently ignored
+	 * (zero behavior change for all existing tests that do not inject
+	 * readLoopPhaseFn) -- the phase stays passive exactly as before US-003.
+	 */
+	runGatePhaseFn?: () => void | Promise<void>;
+	/**
 	 * Re-arm implementing for an in-flight PRD (US-003, CAM-195, Defect 1).
 	 *
 	 * Called on EVERY idle tick (active !== true), BEFORE runMergeWatchFn and
@@ -2041,6 +2063,28 @@ export async function runSidecarLoop(opts: RunSidecarLoopOptions): Promise<void>
 					uuid: 'sidecar',
 					kind: 'sidecar-exit',
 					detail: { reason: 'ship-phase-crash-outer', error: err instanceof Error ? err.message : String(err) },
+				});
+			}
+			opts.sleep(idlePollMs);
+			continue;
+		}
+
+		// US-003 (CAM-241/153): awaiting-operator gate branch (sibling of
+		// planning/shipping; phase:awaiting-operator derives active:false, so
+		// this guard MUST precede the active!==true idle check to avoid falling
+		// into the idle path on a gate tick). runGatePhaseFn is responsible for
+		// its own phase transition on resolution; this branch only catches +
+		// logs a crash, mirroring the shipping branch above.
+		if (loopPhase === 'awaiting-operator' && opts.runGatePhaseFn !== undefined) {
+			try {
+				await opts.runGatePhaseFn();
+			} catch (err: unknown) {
+				opts.logEvent?.({
+					ts: new Date().toISOString(),
+					storyId: undefined,
+					uuid: 'sidecar',
+					kind: 'sidecar-exit',
+					detail: { reason: 'gate-phase-crash-outer', error: err instanceof Error ? err.message : String(err) },
 				});
 			}
 			opts.sleep(idlePollMs);
