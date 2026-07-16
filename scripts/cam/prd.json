@@ -42,7 +42,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "New file src/commands/stats.ts + test/commands/stats.test.ts; edit index.ts. Command wiring is typecheck-enforced: COMMANDS + HELP_REGISTRY (index.ts:2432-2521) + switch case (index.ts:2531+) must all be added together or typecheck fails (CAM-278/CAM-211). Model the I/O-wiring + machine-line shape on src/commands/orch-budget.ts (injectable write, exit 0 on missing transcript). Inject the write fn and event-log reader for hermetic tests. Formula asymmetry (issue gotcha / journal.ts:410 vs 494): orch total = input+cacheCreation+cacheRead (no output), worker total = all four fields; surface it in prose, do not recompute."
     },
