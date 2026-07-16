@@ -175,6 +175,18 @@ describe('rewriteFrontmatterEffort', () => {
 		const input = 'no frontmatter here, just body text.';
 		expect(rewriteFrontmatterEffort(input, 'high')).toBe(input);
 	});
+
+	test('inserts a frontmatterBody containing $-sequences verbatim (no replace-pattern reinterpretation)', () => {
+		const input = ['---', 'name: subagent-implementer', 'note: "matched $& and group $1"', '---', '', 'Body text here.'].join(
+			'\n',
+		);
+
+		const result = rewriteFrontmatterEffort(input, 'high');
+
+		expect(result).toContain('note: "matched $& and group $1"');
+		expect(result).toContain('effort: high');
+		expect(result).toContain('Body text here.');
+	});
 });
 
 // ---------------------------------------------------------------------------
