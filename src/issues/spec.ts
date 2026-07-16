@@ -67,7 +67,7 @@ function isNonEmptyString(v: unknown): boolean {
  *
  * Invariants enforced:
  *   1. specSource, when present, must be one of: interview, derived, operator.
- *   2. Absent specSource on a stage:specified issue is treated as "interview" (back-compat, passes).
+ *   2. Absent specSource on a stage:specified issue is treated as "interview" (the live common/default path, passes).
  *   3. derivedFrom must be a non-empty array when specSource === "derived".
  *   4. description must be a non-empty string when specSource is "derived" or "operator".
  */
@@ -89,7 +89,7 @@ export function validateSpecSource(x: unknown): ValidationResult {
 		errors.push('specSource must be one of: "interview", "derived", "operator"');
 	}
 
-	// Absent specSource is treated as "interview" (back-compat). No error emitted for absence.
+	// Absent specSource is treated as "interview" (the live common/default path). No error emitted for absence.
 	const effective = specSource === undefined ? "interview" : (specSource as string);
 
 	// Invariant 2: derivedFrom must be a non-empty array when specSource === "derived".
