@@ -25,7 +25,7 @@
         "Lint spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New file src/patterns/record.ts (types + isPatternRecord guard + parsePatternRecordsJsonl + confirmationScore). Follow ADR-0038 (hand-rolled typeof guard, fail-closed T|null / skip). Optional draft-07 doc-only schema at scripts/cam/pattern-record.schema.json (documentation only, not runtime-loaded), mirroring existing scripts/cam/*.schema.json. Mind noUncheckedIndexedAccess (array/regex access is T|undefined). classification tier is orthogonal to outcome history (see domainTerms in the issue). Tests under test/patterns/record.test.ts."
     },
