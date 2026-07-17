@@ -94,6 +94,11 @@ export const KNOWN_MISSING: KnownMissingEntry[] = [
 		reason: 'created lazily by `cam journal archive`; absent until the journal is first archived',
 	},
 	{
+		pattern: 'scripts/cam/pattern-records.jsonl',
+		reason:
+			'on-main ref-only store with no seeding story (appendPatternRecordOnMain, US-002 CAM-64); absent on main until the first pattern record is appended',
+	},
+	{
 		pattern: '/cam-*',
 		reason: 'slash-command reference (.claude/commands/cam-*.md), not a filesystem path',
 	},

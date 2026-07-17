@@ -36,6 +36,14 @@ export interface WorkerReport {
 	};
 	/** One-line human note: gotcha, "none", or error summary. */
 	notes?: string;
+	/**
+	 * Fingerprint ids (fingerprintPatternRecord, src/commands/pattern-records.ts)
+	 * of the typed scripts/cam/pattern-records.jsonl records this story applied.
+	 * Optional (US-005, CAM-64): absent or empty when the story applied none, so
+	 * older reports without this field still parse. Consumed at cycle-close by
+	 * the supervisor to append a PatternOutcome per id (see US-006).
+	 */
+	appliedPatternIds?: string[];
 }
 
 /**

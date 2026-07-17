@@ -47,15 +47,22 @@ function isValidGates(gates: unknown): gates is { typecheck: string; tests: stri
 	return typeof gates.typecheck === 'string' && typeof gates.tests === 'string';
 }
 
+/** Runtime guard: is value an array of strings? */
+function isStringArray(value: unknown): value is string[] {
+	return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+}
+
 /**
  * Parse and validate a worker-report.json payload (raw file text).
  *
  * Required discriminator: outcome (string) + story (string). Missing or
  * mistyped -> null.
  *
- * Optional fields (gates, notes) are validated only when present:
+ * Optional fields (gates, notes, appliedPatternIds) are validated only when
+ * present:
  *   - gates: object with string typecheck + string tests, or absent.
  *   - notes: string, or absent.
+ *   - appliedPatternIds: array of strings, or absent (US-005, CAM-64).
  * A present-but-malformed optional field rejects the whole report (null).
  *
  * @param raw Raw JSON text (as read from scripts/cam/worker-report.json).
@@ -65,7 +72,7 @@ export function parseWorkerReport(raw: string): WorkerReport | null {
 	const parsed = tryParseJson(raw);
 	if (!isObject(parsed)) return null;
 
-	const { outcome, story, gates, notes } = parsed;
+	const { outcome, story, gates, notes, appliedPatternIds } = parsed;
 	if (typeof outcome !== 'string' || typeof story !== 'string') return null;
 
 	const report: WorkerReport = { outcome, story };
@@ -78,6 +85,11 @@ export function parseWorkerReport(raw: string): WorkerReport | null {
 	if (notes !== undefined) {
 		if (typeof notes !== 'string') return null;
 		report.notes = notes;
+	}
+
+	if (appliedPatternIds !== undefined) {
+		if (!isStringArray(appliedPatternIds)) return null;
+		report.appliedPatternIds = appliedPatternIds;
 	}
 
 	return report;

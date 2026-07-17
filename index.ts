@@ -44,6 +44,10 @@ import {
 	archivePatternsOnMain,
 	type ArchivePatternsOnMainResult,
 } from './src/commands/patterns-archive.ts';
+import {
+	prunePatternRecordsOnMain,
+	type PrunePatternRecordsOnMainResult,
+} from './src/commands/patterns-prune.ts';
 import { runIssue } from './src/commands/issue.ts';
 import { runIssueList } from './src/commands/issue-list.ts';
 import type {
@@ -120,7 +124,7 @@ const HELP = renderHelp({
 				{ name: 'issue "<text>"', description: 'File an issue from free text; opens /cam-issue create in a pane' },
 				{ name: 'journal append [--force]', description: 'Append a structured cycle entry to scripts/cam/journal.md on main (reads JSON from stdin)' },
 				{ name: 'journal archive [--threshold N]', description: 'Move the oldest third of scripts/cam/journal.md entries to journal.archive.md on main once entries exceed the threshold (default 50)' },
-				{ name: 'patterns archive', description: 'Move resolved-marked bullets (`[resolved YYYY-MM]`) from scripts/cam/patterns.md to patterns.archive.md on main' },
+				{ name: 'patterns archive|prune', description: 'archive: move resolved-marked bullets from patterns.md to patterns.archive.md on main. prune: demote/archive stale or unconfirmed scripts/cam/pattern-records.jsonl entries on main' },
 				{ name: 'claude [args...]', description: 'Run claude in print mode with auto-retry on rate limits' },
 				{ name: 'dashboard', description: 'Standalone read-only TUI (alt-screen) for monitoring a loop' },
 				{ name: 'status', description: 'Show current loop state at a glance (idle / active / paused)' },
@@ -487,8 +491,8 @@ const JOURNAL_HELP = renderHelp({
 
 const PATTERNS_HELP = renderHelp({
 	title: 'cam patterns',
-	tagline: 'Move resolved-marked bullets from scripts/cam/patterns.md to patterns.archive.md on main',
-	usage: 'cam patterns archive',
+	tagline: 'Move resolved-marked bullets to patterns.archive.md; demote/archive stale pattern-records.jsonl entries. Both on main.',
+	usage: 'cam patterns archive|prune',
 	sections: [
 		{
 			heading: 'Subcommands',
@@ -497,10 +501,14 @@ const PATTERNS_HELP = renderHelp({
 					name: 'archive',
 					description: 'Move bullets carrying `[resolved YYYY-MM]` from patterns.md to patterns.archive.md on main via commit-tree',
 				},
+				{
+					name: 'prune',
+					description: 'Demote/archive scripts/cam/pattern-records.jsonl entries on main by confirmationScore, shelf-life, or anchor-decay',
+				},
 			],
 		},
 		{
-			heading: 'Behaviour',
+			heading: 'archive behaviour',
 			body:
 				'1. Reads scripts/cam/patterns.md from main via `git show main:...`\n' +
 				'   (never from the working tree -- the commit-tree-to-main pattern).\n' +
@@ -518,6 +526,27 @@ const PATTERNS_HELP = renderHelp({
 				'   and exits 0.\n' +
 				'7. On failure (diverged, detached HEAD, missing main, patterns.md\n' +
 				'   missing on main): exits 1.',
+		},
+		{
+			heading: 'prune behaviour',
+			body:
+				'1. Reads scripts/cam/pattern-records.jsonl (and the companion\n' +
+				'   pattern-records.archive.jsonl) from main via `git show main:...`.\n' +
+				'2. Three independent triggers, at most one demotion per record per\n' +
+				'   run: (a) confirmationScore below threshold demotes one tier\n' +
+				'   (foundational -> tactical -> observational -> archived); (b) a\n' +
+				'   tactical/observational record stale past its shelf life (30d / 14d\n' +
+				'   from recorded_at or its last outcome) archives directly; (c) a\n' +
+				'   record whose dir_anchors ALL point at paths that no longer exist\n' +
+				'   demotes one tier (anchor-decay). No CLI flags: thresholds are fixed\n' +
+				'   constants in src/commands/patterns-prune.ts.\n' +
+				'3. Writes both files to main in one atomic commit-tree commit.\n' +
+				'4. Best-effort push to origin main (non-zero exit is logged, not fatal).\n' +
+				'5. On success with mutations: prints `CAM_PATTERNS_PRUNED=<k>\n' +
+				'   sha=<commit-sha>` and exits 0.\n' +
+				'6. On success with nothing to prune: prints `CAM_PATTERNS_PRUNED=noop`\n' +
+				'   and exits 0.\n' +
+				'7. On failure (diverged, detached HEAD, missing main): exits 1.',
 		},
 	],
 	footer:
@@ -1899,28 +1928,34 @@ export async function dispatchJournal(
 /**
  * Discriminated union returned by parsePatternsArgs.
  * - mode === 'archive': dispatch the patterns archive subcommand.
+ * - mode === 'prune': dispatch the patterns prune (decay/demotion) subcommand
+ *   (US-004, CAM-64) -- NOT `cam prune`, which is the unrelated branch-cleanup
+ *   command (.claude/commands/cam-prune.md); this is `cam patterns prune`.
  * - help === true: caller should print PATTERNS_HELP and exit 0. This is the
  *   default for both `--help`/`-h` AND no subcommand at all (unlike
- *   parseJournalArgs, which errors on a bare `cam journal`): patterns has a
- *   single subcommand, so a bare `cam patterns` showing usage is more useful
- *   than an error.
+ *   parseJournalArgs, which errors on a bare `cam journal`): a bare
+ *   `cam patterns` showing usage is more useful than an error.
  */
 export type ParsedPatternsArgs =
 	| { mode: 'archive'; help: false }
+	| { mode: 'prune'; help: false }
 	| { mode?: never; help: true };
 
-const PATTERNS_USAGE = 'Usage: cam patterns archive';
+const PATTERNS_USAGE = 'Usage: cam patterns archive|prune';
 
 export function parsePatternsArgs(args: string[]): ParsedPatternsArgs | null {
 	if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
 		return { help: true };
 	}
 	const subCommand = args[0];
-	if (subCommand !== 'archive') {
-		printFatalHint(PATTERNS_USAGE);
-		return null;
+	if (subCommand === 'archive') {
+		return { mode: 'archive', help: false };
 	}
-	return { mode: 'archive', help: false };
+	if (subCommand === 'prune') {
+		return { mode: 'prune', help: false };
+	}
+	printFatalHint(PATTERNS_USAGE);
+	return null;
 }
 
 /** Injectable deps for dispatchPatterns -- all optional; production uses real impls. */
@@ -1930,6 +1965,11 @@ export interface PatternsDispatchDeps {
 	 * Default: calls the real impl with process.cwd() and a real spawnSync.
 	 */
 	archiveFn?: () => ArchivePatternsOnMainResult;
+	/**
+	 * Injectable prunePatternRecordsOnMain (US-004).
+	 * Default: calls the real impl with process.cwd() and a real spawnSync.
+	 */
+	pruneFn?: () => PrunePatternRecordsOnMainResult;
 	/** Injectable stdout writer. Default: `process.stdout.write`. */
 	writeStdout?: (line: string) => void;
 }
@@ -1947,11 +1987,24 @@ function defaultPatternsArchiveFn(): ArchivePatternsOnMainResult {
 }
 
 /**
+ * Default pruneFn: the real prunePatternRecordsOnMain with process.cwd() and
+ * a real spawnSync.
+ */
+function defaultPatternsPruneFn(): PrunePatternRecordsOnMainResult {
+	return prunePatternRecordsOnMain({
+		cwd: process.cwd(),
+		spawnFn: (cmd, args, opts) =>
+			spawnSync(cmd, args, { ...opts, stdio: 'pipe' }) as SpawnSyncReturns<string>,
+	});
+}
+
+/**
  * Route a parsed `cam patterns` call. Exported so unit tests can inject fakes
- * for archiveFn and writeStdout to verify sentinel emission and exit codes
- * without touching real git or stdout. No --threshold arg: archival is
+ * for archiveFn/pruneFn and writeStdout to verify sentinel emission and exit
+ * codes without touching real git or stdout. No --threshold arg: archival is
  * marker-based (see RESOLVED_MARKER_RE in src/commands/patterns-archive.ts),
- * not count-based.
+ * not count-based; prune's thresholds (score/shelf-life/anchor-decay) are
+ * fixed constants in src/commands/patterns-prune.ts, also not CLI flags.
  */
 export function dispatchPatterns(
 	parsed: ParsedPatternsArgs,
@@ -1963,6 +2016,21 @@ export function dispatchPatterns(
 	}
 	const writeStdout =
 		deps?.writeStdout ?? ((line: string) => { process.stdout.write(line); });
+
+	if (parsed.mode === 'prune') {
+		const pruneFn = deps?.pruneFn ?? defaultPatternsPruneFn;
+		const pruneResult = pruneFn();
+		if (!pruneResult.ok) {
+			// printError already fired inside prunePatternRecordsOnMain (via checkMainUpToDate)
+			return 1;
+		}
+		if (pruneResult.pruned === 0) {
+			writeStdout('CAM_PATTERNS_PRUNED=noop\n');
+			return 0;
+		}
+		writeStdout(`CAM_PATTERNS_PRUNED=${pruneResult.pruned} sha=${pruneResult.sha}\n`);
+		return 0;
+	}
 
 	const archiveFn = deps?.archiveFn ?? defaultPatternsArchiveFn;
 	const result = archiveFn();

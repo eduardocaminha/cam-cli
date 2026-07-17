@@ -72,6 +72,36 @@ describe('parseWorkerReport', () => {
 		expect(parseWorkerReport(raw)).toBeNull();
 	});
 
+	test('parses a valid report with appliedPatternIds', () => {
+		const raw = JSON.stringify({
+			outcome: 'DONE',
+			story: 'US-005',
+			appliedPatternIds: ['abc123def456', 'deadbeef0001'],
+		});
+		expect(parseWorkerReport(raw)).toEqual({
+			outcome: 'DONE',
+			story: 'US-005',
+			appliedPatternIds: ['abc123def456', 'deadbeef0001'],
+		});
+	});
+
+	test('appliedPatternIds absent -> field omitted, still parses (backward compatible)', () => {
+		const raw = JSON.stringify({ outcome: 'DONE', story: 'US-003' });
+		const parsed = parseWorkerReport(raw);
+		expect(parsed).toEqual({ outcome: 'DONE', story: 'US-003' });
+		expect(parsed?.appliedPatternIds).toBeUndefined();
+	});
+
+	test('mistyped appliedPatternIds (not an array) -> null', () => {
+		const raw = JSON.stringify({ outcome: 'DONE', story: 'US-003', appliedPatternIds: 'abc123' });
+		expect(parseWorkerReport(raw)).toBeNull();
+	});
+
+	test('mistyped appliedPatternIds (array of non-strings) -> null', () => {
+		const raw = JSON.stringify({ outcome: 'DONE', story: 'US-003', appliedPatternIds: [1, 2] });
+		expect(parseWorkerReport(raw)).toBeNull();
+	});
+
 	test('invalid JSON text -> null, never throws', () => {
 		expect(() => parseWorkerReport('{not json')).not.toThrow();
 		expect(parseWorkerReport('{not json')).toBeNull();

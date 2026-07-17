@@ -6,6 +6,17 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.196.0] - 2026-07-17
+
+### Added
+
+- US-006 - Supervisor records pattern outcomes at cycle-close
+- US-005 - appliedPatternIds reporting field on worker-report and handoff
+- US-004 - cam patterns prune decay/demotion gate
+- US-003 - Outcome-append writer with WorkerOutcomeKind mapping
+- US-002 - On-main ref-only append-record writer + reader + dedup for the typed store
+- US-001 - Typed pattern-record schema, hand-rolled guard, and confirmation-scoring
+
 ## [0.195.0] - 2026-07-17
 
 ### Added

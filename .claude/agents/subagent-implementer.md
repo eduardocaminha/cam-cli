@@ -35,6 +35,7 @@ Treat `handoff.json` as the canonical memory. If it doesn't contain something, a
 1. The story to implement is provided in the spawn prompt (`id`, `title`, `description`, `priority`, `requires`, `acceptanceCriteria`, and `branchName`); you do not read `prd.json` in full to self-select it. You still read `scripts/cam/prd.json` to fetch that story's `notes` field (not carried in the spawn prompt). The supervisor, not you, is the sole writer of `passes: true`, and it does so only after reading your `worker-report.json`.
 2. `scripts/cam/handoff.json` (if it exists) — read `lastCompletedStory`, `createdFiles`, `modifiedFiles`, `openQuestions`, `nextStoryContext`, `officialDocsValidated`.
 3. `scripts/cam/patterns.md`: grep-on-demand, not a full read. Grep for the section/keywords matching the subsystem this story touches and read only the matching bullets (durable codebase patterns, gotchas, invariants).
+3b. `scripts/cam/pattern-records.jsonl`: the typed pattern-record store (US-001, CAM-64), grep-on-demand exactly like `patterns.md` — grep for keywords matching the subsystem this story touches, read only the matching lines. Any record you actually applied while implementing this story must be reported: see "Reporting applied patterns" below.
 4. Files referenced in the chosen story's `notes` field. Read them in full before editing.
 
 `scripts/cam/CLAUDE.md` auto-loads via Claude Code's nested-CLAUDE.md mechanism: it is already in context before you start, so do not re-read it (that would double-load content you already have).
@@ -109,7 +110,7 @@ When a story's `acceptanceCriteria` include a tmux-drivable oracle directive (`[
 4. The supervisor flips `passes: true` for the completed story in `prd.json` once it reads your `worker-report.json`; you do not edit `prd.json`'s `passes` field yourself.
 5. If you discovered a reusable pattern (a project convention, a library quirk, a gotcha), append a bullet to `scripts/cam/patterns.md`. The per-story factual record (outcome, files, gates) is written by the harness to `.claude/cam-worker-events.jsonl`; you do not write a prose entry.
 6. **Step 5.5**: validate the code you just wrote against current docs of the primary external library the story touched (see worked example below). Capture the `officialDocsValidated[]` entry.
-7. Write `scripts/cam/handoff.json` per the schema (`handoff.schema.json`). Include the Step 5.5 entry. Commit handoff.json. Write `lastCompletedStory` as a JSON object with both fields:
+7. Write `scripts/cam/handoff.json` per the schema (`handoff.schema.json`). Include the Step 5.5 entry and, per "Reporting applied patterns" above, the same `appliedPatternIds` you wrote to `worker-report.json`. Commit handoff.json. Write `lastCompletedStory` as a JSON object with both fields:
    ```json
    { "lastCompletedStory": { "id": "US-XXX", "title": "<story title>" } }
    ```
@@ -134,6 +135,10 @@ For a story that touches an external library (e.g. `js-yaml`):
 
 For pure docs / refactor / harness-only stories where no external lib is exercised, record `{ "lib": "none", "status": "no_external_lib_touched" }`. For network failures, record `status: "fetch_failed"` and move on.
 
+## Reporting applied patterns (US-005, CAM-64)
+
+If a record from `scripts/cam/pattern-records.jsonl` (grepped per "Inputs you will read" 3b) materially informed how you implemented this story, report its id in **both** `worker-report.json`'s and `handoff.json`'s optional `appliedPatternIds: string[]` field. An id is the record's fingerprint: `sha256(name.trim() + '::' + description.trim() + '::' + dir_anchors.map(a => a.trim()).join(','))` truncated to 12 hex chars (`fingerprintPatternRecord`, `src/commands/pattern-records.ts`) — compute it with `Bash` (e.g. `bun -e "const h=new Bun.CryptoHasher('sha256'); h.update('<name>::<description>::<dir_anchors joined by ,>'); console.log(h.digest('hex').slice(0,12))"` using the exact record fields, trimmed). This id is what the supervisor later feeds to `appendOutcomeOnMain` to score the record (US-006); an untracked/omitted id never gets its outcome scored, so report every record you actually relied on. Leave the field absent (or `[]`) when you applied none — both fields are optional and backward-compatible.
+
 ## Exit report protocol (US-003)
 
 Before printing the sentinel, always:
@@ -150,7 +155,8 @@ Use the `Write` tool to create `scripts/cam/worker-report.json` with this shape:
     "typecheck": "ok",
     "tests": "42 pass / 0 fail"
   },
-  "notes": "none"
+  "notes": "none",
+  "appliedPatternIds": []
 }
 ```
 
@@ -159,6 +165,7 @@ Use the `Write` tool to create `scripts/cam/worker-report.json` with this shape:
 - `gates.typecheck`: `"ok"` or `"fail: <detail>"`.
 - `gates.tests`: `"<N> pass / <M> fail"` or `"n/a"` when no tests were run.
 - `notes`: one-line human note, or `"none"`.
+- `appliedPatternIds`: optional; fingerprint ids of the `pattern-records.jsonl` records you applied (see "Reporting applied patterns" above), or omit/leave `[]` when none.
 
 Do NOT commit this file; it is ephemeral per-invocation state read by the supervisor.
 

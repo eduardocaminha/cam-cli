@@ -23,7 +23,11 @@
 //  17. US-003: notifies orchestrator exactly once on genuine implementer advance.
 //  18. US-003: does NOT notify on a no-progress re-confirmation retry.
 
-import { describe, expect, test, beforeEach } from 'bun:test';
+import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { runSupervisor, runSidecarLoop, MAX_ITERATIONS, MAX_NO_PROGRESS_RETRIES, NO_PROGRESS_BACKOFF_MS, MAX_BACKOFF_MS, JITTER_FRACTION, MAX_DEAD_WORKER_RETRIES, MAX_REVIEW_DISPATCH_ATTEMPTS, DEFAULT_PER_WORKER_TIMEOUT_MS, DEFAULT_CONTAINER_WORKER_TIMEOUT_MS, DEFAULT_POLL_INTERVAL_MS, computeBackoffMs } from '../../src/supervisor/loop.ts';
 import type {
 	RunSupervisorOptions,
@@ -39,6 +43,7 @@ import type {
 	IsPaneAlive,
 	ProgressPayload,
 	HandoffSnapshot,
+	SupervisorResult,
 } from '../../src/supervisor/loop.ts';
 import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
 import { formatWorkerReportSummary, type WorkerReport } from '../../src/supervisor/worker-report.ts';
@@ -46,6 +51,16 @@ import { makeInMemoryEventLogger } from '../../src/supervisor/events.ts';
 import { FirewallError } from '../../src/supervisor/container-firewall.ts';
 import { ContainerConfigError } from '../../src/supervisor/container-config.ts';
 import { ToolchainMismatchError } from '../../src/supervisor/toolchain-assert.ts';
+import type { WorkerOutcomeKind } from '../../src/supervisor/result.ts';
+import {
+	appendPatternRecordOnMain,
+	fingerprintPatternRecord,
+	mapWorkerOutcomeToStatus,
+	readPatternRecordsFromMain,
+} from '../../src/commands/pattern-records.ts';
+import { makeRecordPatternOutcomeFn } from '../../src/supervisor/host.ts';
+import { realOnMainSpawnFn } from '../../src/git/on-main.ts';
+import type { PatternRecord } from '../../src/patterns/record.ts';
 
 // ---------------------------------------------------------------------------
 // Fake builder helpers
@@ -4072,4 +4087,347 @@ describe('computeBackoffMs', () => {
 		// 60_000 * 2^2 = 240_000 < 300_000 (not capped yet at streak=3 with r=0.5)
 		expect(computeBackoffMs(3, { base: BASE, max: MAX, jitterFraction: JF, random: () => 0.5 })).toBe(240_000);
 	});
+});
+
+// ---------------------------------------------------------------------------
+// US-006 (CAM-64): recordPatternOutcomeFn hook at cycle-close, mirroring the
+// CAM-189 SUGGESTION-filing hook (test/supervisor/suggestion-filing-hook.test.ts
+// is the port precedent for the driveOneTick shape used below).
+// ---------------------------------------------------------------------------
+
+describe('runSidecarLoop US-006 (CAM-64): recordPatternOutcomeFn hook at cycle-close', () => {
+	const HOOK_ESCAPE = Symbol('hook-escape');
+
+	function cleanPrd(): PrdSnapshot {
+		return makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+	}
+
+	function statusResult(status: SupervisorResult['status'], kind?: WorkerOutcomeKind): SupervisorResult {
+		return {
+			status,
+			iterations: 1,
+			lastOutcome: kind === undefined ? null : { kind, storyId: 'US-001', detail: 'test' },
+		};
+	}
+
+	function reportWithIds(ids: string[]): WorkerReport {
+		return { outcome: 'DONE', story: 'US-001', appliedPatternIds: ids };
+	}
+
+	/** Drive one active tick of runSidecarLoop (mirrors suggestion-filing-hook.test.ts's driveOneTick). */
+	async function driveOneTick(
+		loopOptsPartial: Partial<RunSidecarLoopOptions> & { result: SupervisorResult },
+		supervisorOverrides: Partial<RunSupervisorOptions> = {},
+	): Promise<void> {
+		const { result, ...rest } = loopOptsPartial;
+		const readActiveSeq: Array<boolean> = [true, false];
+		let readIdx = 0;
+		let pendingCallCount = 0;
+
+		const loopOpts: RunSidecarLoopOptions = {
+			buildOpts: () => makeBaseOpts({ readPrd: () => cleanPrd(), ...supervisorOverrides }),
+			readActive: () => readActiveSeq[readIdx++] ?? false,
+			clearActive: () => {},
+			sleep: () => {
+				throw HOOK_ESCAPE;
+			},
+			hasPendingStories: () => {
+				pendingCallCount++;
+				return pendingCallCount <= 1;
+			},
+			acquireLock: () => ({ acquired: true, release: () => {} }),
+			runSupervisorFn: async () => result,
+			...rest,
+		};
+
+		try {
+			await runSidecarLoop(loopOpts);
+		} catch (e) {
+			if (e !== HOOK_ESCAPE) throw e;
+		}
+	}
+
+	// -----------------------------------------------------------------------
+	// AC2: injected as an optional dep; safe no-op when unset or ids is empty
+	// -----------------------------------------------------------------------
+
+	describe('AC2: optional dep, safe no-op when unset or appliedPatternIds is empty', () => {
+		test('recordPatternOutcomeFn absent -> no throw, loop reaches idle', async () => {
+			let caught: unknown;
+			try {
+				await driveOneTick({ result: statusResult('complete', 'pass') });
+			} catch (e) {
+				caught = e;
+			}
+			expect(caught).toBeUndefined();
+		});
+
+		test('readWorkerReport returns null -> recordPatternOutcomeFn not called', async () => {
+			let calls = 0;
+			await driveOneTick(
+				{
+					result: statusResult('complete', 'pass'),
+					recordPatternOutcomeFn: () => {
+						calls++;
+					},
+				},
+				{ readWorkerReport: () => null },
+			);
+			expect(calls).toBe(0);
+		});
+
+		test('appliedPatternIds: [] -> recordPatternOutcomeFn not called', async () => {
+			let calls = 0;
+			await driveOneTick(
+				{
+					result: statusResult('complete', 'pass'),
+					recordPatternOutcomeFn: () => {
+						calls++;
+					},
+				},
+				{ readWorkerReport: () => reportWithIds([]) },
+			);
+			expect(calls).toBe(0);
+		});
+
+		test('appliedPatternIds omitted (undefined field) -> recordPatternOutcomeFn not called', async () => {
+			let calls = 0;
+			await driveOneTick(
+				{
+					result: statusResult('complete', 'pass'),
+					recordPatternOutcomeFn: () => {
+						calls++;
+					},
+				},
+				{ readWorkerReport: () => ({ outcome: 'DONE', story: 'US-001' }) },
+			);
+			expect(calls).toBe(0);
+		});
+
+		test('lastOutcome null (no worker ran) -> recordPatternOutcomeFn not called even with ids present', async () => {
+			let calls = 0;
+			await driveOneTick(
+				{
+					result: statusResult('complete'),
+					recordPatternOutcomeFn: () => {
+						calls++;
+					},
+				},
+				{ readWorkerReport: () => reportWithIds(['abc123']) },
+			);
+			expect(calls).toBe(0);
+		});
+	});
+
+	// -----------------------------------------------------------------------
+	// Gate matrix: fires on complete/awaiting-operator, never on blocked/max-iterations
+	// -----------------------------------------------------------------------
+
+	describe('gate matrix: fires on complete/awaiting-operator, never on blocked/max-iterations', () => {
+		test('complete + pass -> fires once with the report ids and mapped status', async () => {
+			const calls: Array<{ ids: string[]; status: string }> = [];
+			await driveOneTick(
+				{
+					result: statusResult('complete', 'pass'),
+					recordPatternOutcomeFn: (ids, status) => {
+						calls.push({ ids, status });
+					},
+				},
+				{ readWorkerReport: () => reportWithIds(['fp-1', 'fp-2']) },
+			);
+			expect(calls).toEqual([{ ids: ['fp-1', 'fp-2'], status: 'success' }]);
+		});
+
+		test('awaiting-operator + pass -> fires', async () => {
+			const calls: Array<{ ids: string[]; status: string }> = [];
+			await driveOneTick(
+				{
+					result: statusResult('awaiting-operator', 'pass'),
+					recordPatternOutcomeFn: (ids, status) => {
+						calls.push({ ids, status });
+					},
+				},
+				{ readWorkerReport: () => reportWithIds(['fp-1']) },
+			);
+			expect(calls).toHaveLength(1);
+		});
+
+		test('blocked status -> never fires', async () => {
+			let calls = 0;
+			await driveOneTick(
+				{
+					result: statusResult('blocked', 'fail'),
+					recordPatternOutcomeFn: () => {
+						calls++;
+					},
+				},
+				{ readWorkerReport: () => reportWithIds(['fp-1']) },
+			);
+			expect(calls).toBe(0);
+		});
+
+		test('max-iterations status -> never fires', async () => {
+			let calls = 0;
+			await driveOneTick(
+				{
+					result: statusResult('max-iterations'),
+					recordPatternOutcomeFn: () => {
+						calls++;
+					},
+				},
+				{ readWorkerReport: () => reportWithIds(['fp-1']) },
+			);
+			expect(calls).toBe(0);
+		});
+	});
+
+	// -----------------------------------------------------------------------
+	// WorkerOutcomeKind -> PatternOutcomeStatus mapping reaches the hook
+	// unchanged, per mapWorkerOutcomeToStatus (src/commands/pattern-records.ts).
+	// -----------------------------------------------------------------------
+
+	describe('WorkerOutcomeKind -> PatternOutcomeStatus mapping reaches recordPatternOutcomeFn unchanged', () => {
+		const kinds: WorkerOutcomeKind[] = ['pass', 'incomplete', 'fail', 'blocked', 'unknown', 'no-commit'];
+
+		for (const kind of kinds) {
+			const expectedStatus = mapWorkerOutcomeToStatus(kind);
+			test(`kind '${kind}' -> ${expectedStatus === null ? 'no-op (null mapping)' : `status '${expectedStatus}'`}`, async () => {
+				const calls: Array<{ ids: string[]; status: string }> = [];
+				await driveOneTick(
+					{
+						result: statusResult('complete', kind),
+						recordPatternOutcomeFn: (ids, status) => {
+							calls.push({ ids, status });
+						},
+					},
+					{ readWorkerReport: () => reportWithIds(['fp-1']) },
+				);
+				if (expectedStatus === null) {
+					expect(calls).toHaveLength(0);
+				} else {
+					expect(calls).toEqual([{ ids: ['fp-1'], status: expectedStatus }]);
+				}
+			});
+		}
+	});
+
+	// -----------------------------------------------------------------------
+	// Crash-survival: a throwing recordPatternOutcomeFn never crashes the loop
+	// -----------------------------------------------------------------------
+
+	test('a throwing recordPatternOutcomeFn is caught and logged, never crashes the loop', async () => {
+		const { logger: logEvent, events } = makeInMemoryEventLogger();
+		await driveOneTick(
+			{
+				result: statusResult('complete', 'pass'),
+				recordPatternOutcomeFn: () => {
+					throw new Error('injected outcome-recording crash');
+				},
+				logEvent,
+			},
+			{ readWorkerReport: () => reportWithIds(['fp-1']) },
+		);
+		const crashEvents = events.filter((e) => e.kind === 'sidecar-exit');
+		expect(crashEvents.length).toBeGreaterThanOrEqual(1);
+		const detail = crashEvents[crashEvents.length - 1]?.detail as { reason?: string };
+		expect(detail.reason).toBe('pattern-outcome-crash-outer');
+	});
+
+	// -----------------------------------------------------------------------
+	// AC3: the supervisor remains the sole writer of pattern outcomes at
+	// cycle-close (ADR-0035) -- source-text guard: appendOutcomeOnMain has
+	// exactly one call site outside its own defining module
+	// (src/commands/pattern-records.ts), and that call site is host.ts's
+	// production factory (injected into the loop, never called from loop.ts
+	// or any worker/branch-side path directly).
+	// -----------------------------------------------------------------------
+
+	test('AC3: appendOutcomeOnMain is called from host.ts only, never from loop.ts', () => {
+		const loopSrc = readFileSync(resolve(import.meta.dir, '../../src/supervisor/loop.ts'), 'utf8');
+		const hostSrc = readFileSync(resolve(import.meta.dir, '../../src/supervisor/host.ts'), 'utf8');
+
+		// loop.ts references the injected dep (recordPatternOutcomeFn) and the
+		// pure mapper (mapWorkerOutcomeToStatus), but never calls
+		// appendOutcomeOnMain directly -- it is fully delegated to the injected
+		// closure.
+		expect(loopSrc).toContain('recordPatternOutcomeFn');
+		expect(loopSrc).not.toContain('appendOutcomeOnMain(');
+
+		// host.ts's makeRecordPatternOutcomeFn is the sole production call site.
+		expect(hostSrc).toContain('appendOutcomeOnMain(');
+	});
+
+	// -----------------------------------------------------------------------
+	// AC4: end-to-end -- applied ids -> mapped outcome -> appended to a REAL
+	// pattern-records.jsonl store, via makeRecordPatternOutcomeFn (host.ts)
+	// wired as recordPatternOutcomeFn against a real tmpdir git repo. Not a
+	// mock-call tautology: the assertion re-reads the record from `git show
+	// main:...` after the tick, the same read path appendOutcomeOnMain's own
+	// integration tests use (test/commands/pattern-records.test.ts).
+	// -----------------------------------------------------------------------
+
+	const gitAvailable = spawnSync('git', ['--version'], { stdio: 'pipe' }).status === 0;
+	const dirsToCleanup: string[] = [];
+
+	afterEach(() => {
+		for (const d of dirsToCleanup) {
+			try {
+				rmSync(d, { recursive: true, force: true });
+			} catch {
+				// ignore cleanup errors
+			}
+		}
+		dirsToCleanup.length = 0;
+	});
+
+	test.skipIf(!gitAvailable)(
+		'AC4: end-to-end -- applied ids reach makeRecordPatternOutcomeFn and land as a real PatternOutcome on main',
+		async () => {
+			const dir = mkdtempSync(join(tmpdir(), 'cam-pattern-outcome-hook-'));
+			dirsToCleanup.push(dir);
+			const run = (args: string[]) => spawnSync('git', ['-C', dir, ...args], { stdio: 'pipe', encoding: 'utf8' });
+			run(['init']);
+			run(['symbolic-ref', 'HEAD', 'refs/heads/main']);
+			run(['config', 'user.email', 'test@example.com']);
+			run(['config', 'user.name', 'Test User']);
+			run(['commit', '--allow-empty', '-m', 'chore: initial harness state']);
+
+			const record: PatternRecord = {
+				type: 'gotcha',
+				classification: 'tactical',
+				recorded_at: '2026-07-17T00:00:00.000Z',
+				name: 'US-006 end-to-end fixture record',
+				description: 'Seeded record for the pattern-outcome cycle-close hook test.',
+				evidence: 'test/supervisor/loop.test.ts',
+				dir_anchors: ['src/supervisor/'],
+				outcomes: [],
+			};
+			const seeded = appendPatternRecordOnMain({ cwd: dir, record, spawnFn: realOnMainSpawnFn });
+			expect(seeded.ok).toBe(true);
+			if (!seeded.ok) return;
+			const fingerprint = seeded.fingerprint;
+			expect(fingerprint).toBe(fingerprintPatternRecord(record));
+
+			const realRecordPatternOutcomeFn = makeRecordPatternOutcomeFn(dir);
+
+			await driveOneTick(
+				{
+					result: statusResult('complete', 'pass'),
+					recordPatternOutcomeFn: realRecordPatternOutcomeFn,
+				},
+				{ readWorkerReport: () => reportWithIds([fingerprint]) },
+			);
+
+			const stored = readPatternRecordsFromMain(dir, realOnMainSpawnFn);
+			expect(stored).toHaveLength(1);
+			const storedRecord = stored[0];
+			expect(storedRecord).toBeDefined();
+			if (!storedRecord) return;
+			expect(storedRecord.outcomes).toHaveLength(1);
+			expect(storedRecord.outcomes[0]?.status).toBe('success');
+		},
+	);
 });
