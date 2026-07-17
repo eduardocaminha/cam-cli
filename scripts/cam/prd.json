@@ -1,0 +1,124 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-64",
+  "description": "Typed, schema-validated pattern records with outcome-status, confirmation-scoring, and a decay/demotion gate (mulch model), as the going-forward write path replacing free-text patterns.md.",
+  "issueNumber": 64,
+  "type": "feat",
+  "relatedDocs": [
+    "docs/adr/0038-shared-hand-rolled-ts-guard-for-worker-review-reports-not-zod-or-a-json-schema-loader.md",
+    "docs/adr/0035-supervisor-is-the-sole-writer-of-story-passes-true-with-an-independent-per-story-gate-re-run.md"
+  ],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Typed pattern-record schema, hand-rolled guard, and confirmation-scoring",
+      "description": "As a cam maintainer, I need a schema-validated typed pattern-record type with a fail-closed parser and a confirmation-score function, so that structured patterns replace free-text bullets and unconfirmed patterns can be ranked and decayed.",
+      "acceptanceCriteria": [
+        "A PatternRecord TS interface exists with fields {type, classification (foundational|tactical|observational), recorded_at, name, description, evidence, dir_anchors: string[], outcomes: {status: success|failure|partial, recorded_at}[]}. [oracle: grep -q \"classification\" src/patterns/record.ts]",
+        "A hand-rolled typeof guard isPatternRecord (ADR-0038 style, no zod, no json-schema loader) rejects malformed input and returns false rather than throwing. [oracle: grep -q \"isPatternRecord\" src/patterns/record.ts]",
+        "A JSONL parser skips/fails-closed on unparseable lines (does not throw, drops the bad record). [oracle: bun test test/patterns/record.test.ts]",
+        "confirmationScore(record) returns successCount + 0.5*partialCount. [oracle: bun test test/patterns/record.test.ts]",
+        "No zod or ajv/json-schema-loader import is introduced by this story. [oracle: ! grep -rq \"from 'zod'\\|from \\\"zod\\\"\\|ajv\" src/patterns/]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine is green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "New file src/patterns/record.ts (types + isPatternRecord guard + parsePatternRecordsJsonl + confirmationScore). Follow ADR-0038 (hand-rolled typeof guard, fail-closed T|null / skip). Optional draft-07 doc-only schema at scripts/cam/pattern-record.schema.json (documentation only, not runtime-loaded), mirroring existing scripts/cam/*.schema.json. Mind noUncheckedIndexedAccess (array/regex access is T|undefined). classification tier is orthogonal to outcome history (see domainTerms in the issue). Tests under test/patterns/record.test.ts."
+    },
+    {
+      "id": "US-002",
+      "title": "On-main ref-only append-record writer + reader + dedup for the typed store",
+      "description": "As the cam knowledge layer, I need to append typed pattern records directly to main (ref-only, working-tree-untouched, multi-writer safe) and read them back, so new patterns are captured during a live cam run without branch-append collisions.",
+      "acceptanceCriteria": [
+        "appendPatternRecordOnMain writes a record as one JSON line to scripts/cam/pattern-records.jsonl via the shared commitTreeToMain + CAS path (src/git/on-main.ts), never touching the working tree. [oracle: grep -q \"commitTreeToMain\" src/commands/pattern-records.ts]",
+        "Appending dedups against existing lines (a duplicate record appends 0 lines and pushes nothing), mirroring appendSuggestionOnMain. [oracle: bun test test/commands/pattern-records.test.ts]",
+        "readPatternRecordsFromMain reads and parses the store from main via git show, skipping unparseable lines (fail-closed). [oracle: grep -q \"readPatternRecordsFromMain\" src/commands/pattern-records.ts]",
+        "The append + dedup are exercised against a real temp git repo (real spawnSync, not a tautological mock). [oracle: bun test test/commands/pattern-records.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine is green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "New file src/commands/pattern-records.ts. Mirror src/commands/suggestions.ts almost exactly (readPenContentFromMain / buildAppendedContent / per-attempt recompute callback for CAS). Reuse commitTreeToMain, checkMainUpToDate, SpawnFn from src/git/on-main.ts. Store path scripts/cam/pattern-records.jsonl (naming mirrors suggestions.jsonl). Dedup key: derive a stable fingerprint from name+description+dir_anchors (mirror fingerprintFinding). Test with real mkdtemp git repo per patterns.md test-quality rule (hit real I/O at wire boundaries)."
+    },
+    {
+      "id": "US-003",
+      "title": "Outcome-append writer with WorkerOutcomeKind mapping",
+      "description": "As the cam supervisor, I need to append an outcome-status to a specific record's outcomes[] on main, mapping the per-story WorkerOutcomeKind onto success|failure|partial, so applied patterns accumulate a confirmation score and unconfirmed ones sink.",
+      "acceptanceCriteria": [
+        "appendOutcomeOnMain(recordId, status) appends {status, recorded_at} to the matching record's outcomes[] via the on-main CAS writer (per-attempt recompute so a concurrent write is not clobbered). [oracle: grep -q \"appendOutcomeOnMain\" src/commands/pattern-records.ts]",
+        "A mapping function maps WorkerOutcomeKind (pass|incomplete|fail|blocked|unknown|no-commit) onto success|failure|partial (or a documented no-op for unknown/no-commit). [oracle: bun test test/commands/pattern-records.test.ts]",
+        "Appending an outcome raises the record's confirmationScore consistently with US-001 scoring, verified against a real temp git repo. [oracle: bun test test/commands/pattern-records.test.ts]",
+        "Appending to a non-existent recordId is a safe no-op (no throw, no bad commit). [oracle: bun test test/commands/pattern-records.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine is green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": "US-002",
+      "notes": "Add appendOutcomeOnMain + mapWorkerOutcomeToStatus to src/commands/pattern-records.ts. WorkerOutcomeKind is defined at src/supervisor/result.ts:69 (pass|incomplete|fail|blocked|unknown|no-commit). Map pass->success, fail/blocked/incomplete->failure or partial (document the exact mapping in the module), unknown/no-commit->no-op. Use the same per-attempt recompute CAS pattern as US-002 (read fresh main content, mutate the target line, re-commit)."
+    },
+    {
+      "id": "US-004",
+      "title": "cam patterns prune decay/demotion gate",
+      "description": "As a cam maintainer, I need a `cam patterns prune` subcommand that demotes low-confidence and stale records, so the typed store self-cleans instead of growing monotonically like patterns.md.",
+      "acceptanceCriteria": [
+        "`cam patterns prune` is a NEW subcommand under the existing cam patterns namespace (NOT `cam prune`, which is branch-cleanup); parsePatternsArgs and dispatchPatterns accept it and `cam patterns archive` still works. [oracle: bun test test/commands/patterns-dispatch.test.ts]",
+        "prune demotes records whose confirmationScore falls below a threshold one classification tier (foundational->tactical->observational->archived). [oracle: bun test test/commands/patterns-dispatch.test.ts]",
+        "prune archives stale tactical/observational records by shelf-life (tactical 30d, observational 14d) measured from recorded_at / last outcome. [oracle: bun test test/commands/patterns-dispatch.test.ts]",
+        "prune optionally demotes records whose dir_anchors all point at paths that no longer exist (anchor-decay). [oracle: bun test test/commands/patterns-dispatch.test.ts]",
+        "prune writes its mutations via the on-main ref-only writer (never a working-tree edit) and prints a deterministic sentinel line (e.g. CAM_PATTERNS_PRUNED=N / noop). [oracle: grep -q \"CAM_PATTERNS_PRUNED\\|prune\" index.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine is green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": "US-003",
+      "notes": "Extend parsePatternsArgs / ParsedPatternsArgs / dispatchPatterns / PATTERNS_USAGE / PATTERNS_HELP in index.ts (~line 1912-2010) to a two-subcommand namespace (archive | prune). New prune logic in src/commands/pattern-records.ts (or a sibling src/commands/patterns-prune.ts) computing demotions from confirmationScore + shelf-life + anchor existence, then committing the rewritten store via the on-main writer. GOTCHA (issue): `cam prune` already exists (.claude/commands/cam-prune.md, branch-cleanup) -- must stay `cam patterns prune`. Mirror the sentinel/exit-code style of dispatchPatterns' archive path. Anchor-existence check reads the working tree / main tree."
+    },
+    {
+      "id": "US-005",
+      "title": "appliedPatternIds reporting field on worker-report and handoff",
+      "description": "As the outcome-attribution pipeline, I need the implementer and planner to report which pattern-ids they applied via a structured worker-report/handoff field, so the supervisor can attribute cycle outcomes to the right records.",
+      "acceptanceCriteria": [
+        "worker-report.json and handoff schema gain an optional appliedPatternIds: string[] field, parsed by the shared ADR-0038 guard (report-parse.ts) and ignored/empty when absent (backward compatible). [oracle: grep -q \"appliedPatternIds\" src/supervisor/worker-report.ts]",
+        "handoff.schema.json documents appliedPatternIds. [oracle: grep -q \"appliedPatternIds\" scripts/cam/handoff.schema.json]",
+        "The implementer and planner agent instructions tell the agent to grep the typed pattern-record store (grep-on-demand, equivalent to today's patterns.md contract) and to report the applied pattern-ids in appliedPatternIds. [oracle: grep -q \"appliedPatternIds\" .claude/agents/subagent-implementer.md]",
+        "The .claude/ and templates/ copies of the edited agent files stay in sync. [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine is green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 5,
+      "passes": false,
+      "requires": "US-002",
+      "notes": "Touch src/supervisor/worker-report.ts (WorkerReport type + formatter), src/supervisor/report-parse.ts (parseWorkerReport guard, keep fail-closed), scripts/cam/handoff.schema.json, and BOTH copies of the agent instr files (.claude/agents/subagent-implementer.md + templates/agents/subagent-implementer.md; same for subagent-planner.md). Dual-copy is per-file (memory: cam-dual-copy-is-per-file) -> run embed-vendor:check. Field is optional -> existing reports without it must still parse. This is the going-forward read-contract for AC#3 of the issue (agents read the typed store equivalently to patterns.md)."
+    },
+    {
+      "id": "US-006",
+      "title": "Supervisor records pattern outcomes at cycle-close",
+      "description": "As the cam supervisor, I need to record an outcome for each applied pattern at the terminal verdict, mirroring the CAM-189 SUGGESTION hook, so confirmation-scoring is driven automatically by the real pass/fail signal the loop already produces.",
+      "acceptanceCriteria": [
+        "At cycle-close (terminal verdict, mirroring the CAM-189 hook at src/supervisor/loop.ts:2226), the supervisor reads appliedPatternIds from the worker report and calls appendOutcomeOnMain with the mapped WorkerOutcomeKind for each id. [oracle: grep -q \"appendOutcomeOnMain\\|recordPatternOutcome\" src/supervisor/loop.ts]",
+        "The outcome hook is injected as an optional dep (like fileSuggestionsFn/autoShipFn) and is a safe no-op when unset or when appliedPatternIds is empty. [oracle: bun test test/supervisor/loop.test.ts]",
+        "The supervisor remains the sole writer of outcomes at cycle-close (ADR-0035); no worker/branch path writes outcomes. [oracle: bun test test/supervisor/loop.test.ts]",
+        "The attribution path is verified end-to-end (applied ids -> mapped outcome -> appended to the record) with injected fakes plus a real-tmpdir store assertion. [oracle: bun test test/supervisor/loop.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine is green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 6,
+      "passes": false,
+      "requires": "US-005",
+      "notes": "Wire into src/supervisor/loop.ts terminal-verdict block (~2226, next to the CAM-189 fileSuggestionsFn hook and clearActive) and inject the dep in src/supervisor/host.ts (mirror makeReadWorkerReport / fileSuggestionsFn wiring). Fire on complete AND awaiting-operator like the CAM-189 hook. Reuse mapWorkerOutcomeToStatus + appendOutcomeOnMain from US-003. Keep it fail-safe (wrap in try/catch like the CAM-189 hook so a store write error never wedges the terminal path)."
+    }
+  ]
+}
