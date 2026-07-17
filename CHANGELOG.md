@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.199.0] - 2026-07-17
+
+### Added
+
+- US-002 - Migrate remaining sidecar.ts spawnSync sites and drop the node:child_process import
+- US-001 - Migrate checkoutMainFn + proceedBranchFn to Bun.spawnSync with real-git coverage
+
 ## [0.198.0] - 2026-07-17
 
 ### Added
