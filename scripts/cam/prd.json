@@ -32,7 +32,7 @@
         "Lint spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: src/commands/sidecar.ts. Factories: makeInProgressConflictResolverDeps(cwd,sessionName,realSpawnFn,logEvent) at :2761 (checkoutMainFn at :2782), makePlanApprovalResolverDeps(...) at :2845 (proceedBranchFn at :2869). These bodies call the raw `spawnSync` import directly (not the injected realSpawnFn), so they migrate independently of the SpawnFn seam. Reference pattern (CAM-308): check-all.ts:130 uses Bun.spawnSync([cmd,...args],{...}) gating on `result.success && result.exitCode===0`; check-coverage.ts:131-132 and validate-agents-md.ts:293-328 decode with new TextDecoder().decode() and read .exitCode/.success. API (Bun docs, confirmed): SyncSubprocess = { exitCode:number, success:boolean, stdout:Buffer|undefined, stderr:Buffer|undefined }; NO encoding option; node stdio:'pipe' -> Bun stdout/stderr:'pipe'. Guard: stdout is Buffer|undefined, so decode `result.stdout ?? new Uint8Array()` (noUncheckedIndexedAccess-adjacent nullability). Do NOT remove the node:child_process import in this story (still used by the ~15 other sites migrated in US-002). Existing tests injecting fakes: test/plan-approval-gate.test.ts:89,127 and test/supervisor/in-progress-conflict.test.ts:235,247,254 (these must keep passing). New real-git test should live under test/ mirroring source (e.g. test/sidecar-resolver-git.test.ts). Curated invariant: Bun-only spawn. patterns.md has no sidecar-specific spawn bullet; grep 'spawnSync' if needed."
     },
