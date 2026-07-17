@@ -1,9 +1,12 @@
-# cam-cli
+# CAM Runtime
 
-Autonomous Claude Code loop driver. `cam` wraps long-running Claude Code
-sessions, scaffolds a project for the cam autonomous loop, and runs a
-long-lived orchestrator agent that drives `/cam-plan`, `/cam-next`,
-`/cam-review`, `/cam-ship` cycles against Linear, GitHub, or local issues.
+CAM Runtime is a local software-delivery runtime for coding agents. It turns
+issues and goals into verifiable planning, implementation, review, and ship
+workflows, keeping state, coordinating specialized agents, and recovering
+interrupted runs. `cam` wraps long-running Claude Code sessions, scaffolds a
+project for the cam autonomous loop, and runs a long-lived orchestrator agent
+that drives `/cam-plan`, `/cam-next`, `/cam-review`, `/cam-ship` cycles
+against Linear, GitHub, or local issues.
 
 Built on Bun + TypeScript. Distributed as a single-file binary built from source.
 
@@ -145,7 +148,7 @@ cam status                  Show current loop state (idle / active / paused)
 cam stop                    Cancel a running loop
 cam drain [--stop|--clear]  Set or clear the inter-cycle drain kill-switch without killing the sidecar
 cam resume [options]        Reconcile loop state after interrupt
-cam version                 Print the installed cam-cli version
+cam version                 Print the installed CAM Runtime version
 cam help                    Show top-level help
 ```
 

@@ -1,5 +1,5 @@
 {
-  "name": "cam-cli",
+  "name": "cam-runtime",
   "version": "0.197.0",
   "module": "index.ts",
   "type": "module",

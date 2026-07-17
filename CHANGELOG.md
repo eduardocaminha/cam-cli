@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to cam-cli are documented here.
+All notable changes to CAM Runtime are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` heading at the top collects pending work.
 
