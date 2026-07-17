@@ -21,7 +21,7 @@
         "Lint/static spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Single file: index.ts. The duplicated help handling lives in the `case 'stats':` block (around index.ts:2808-2816): delete the `if (parsed.help) { process.stdout.write(STATS_HELP); return 0; }` guard (3 lines) so the block falls straight through to `return dispatchStats(parsed)`. dispatchStats (index.ts:2023) already handles `parsed.help` by writing STATS_HELP and returning 0, so runtime output is identical. Do NOT change dispatchStats or the STATS_HELP definition (index.ts:961). GOTCHA (auditor finding #1): STATS_HELP is built via renderHelp, which emits 'Usage' as a section heading with the value 'cam stats tokens' on a separate indented line, so the literal string 'Usage: cam stats' NEVER appears in the output (grep for it returns 0); use 'cam stats tokens' or the tagline for count/content oracles. GOTCHA (auditor finding #2): use the pattern-anchored `! sed ... | grep -q` absence idiom (not `grep -qv`, which is platform-dependent under -q, and not hardcoded line numbers, which shift when the 3-line guard is deleted). Existing stats dispatch tests live in test/commands/stats.test.ts; confirm they still pass."
     }
