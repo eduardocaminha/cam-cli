@@ -50,6 +50,8 @@ import { ToolchainMismatchError } from './toolchain-assert.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 import { formatReviewVerdictLine, formatWorkerReportSummary, type WorkerReport } from './worker-report.ts';
 import { parseWorkerReport } from './report-parse.ts';
+import { mapWorkerOutcomeToStatus } from '../commands/pattern-records.ts';
+import type { PatternOutcomeStatus } from '../patterns/record.ts';
 import { buildResultDetail, validateOfficialDocsValidated } from './events.ts';
 import type { WorkerEventLogger, WorkerEventKind, WorkerEventDetail, TokensEventDetail, ReviewVerdictHandbackEventDetail, OutcomeSourceEventDetail, ContainerPreflightEventDetail } from './events.ts';
 import type { PreflightResult } from './preflight-container.ts';
@@ -1880,6 +1882,40 @@ export interface RunSidecarLoopOptions {
 		provenance: FollowUpProvenance,
 	) => { penned: number; dupSkipped: number };
 	/**
+	 * Record pattern-record outcomes at cycle-close (US-006, CAM-64; mirrors
+	 * the CAM-189 SUGGESTION-filing hook immediately above/below it -- same
+	 * placement, same pair of terminal statuses).
+	 *
+	 * Called once per terminal tick (result.status 'complete' OR
+	 * 'awaiting-operator', for the same reason as the CAM-189 hook: a CLEAN
+	 * review can hand off to the operator on pending ceremony stories without
+	 * the loop ever reaching 'complete', and the just-finished worker's
+	 * applied patterns must not be silently dropped in that case).
+	 *
+	 * The ids come from the terminal worker-report.json's `appliedPatternIds`
+	 * (read via `supervisorOpts.readWorkerReport()`, the SAME reader
+	 * runSupervisor's own outcome-detection path already uses -- it is not
+	 * cleared until the NEXT worker dispatch, so it still reflects the
+	 * just-finished cycle at this point). The status is
+	 * `result.lastOutcome.kind` mapped through `mapWorkerOutcomeToStatus`
+	 * (src/commands/pattern-records.ts, US-003 CAM-64): a `null` mapping
+	 * (kind 'unknown' | 'no-commit' -- no reliable evidence the pattern was
+	 * even exercised) is a documented no-op, same as an empty/absent ids list.
+	 *
+	 * Production wiring (host.ts): makeRecordPatternOutcomeFn(cwd), which
+	 * loops the ids and calls appendOutcomeOnMain (src/commands/pattern-
+	 * records.ts) once per id. This is the supervisor's ONLY call site for
+	 * appendOutcomeOnMain: no worker/branch-side code path ever calls it,
+	 * mirroring ADR-0035's "supervisor is the sole writer" posture (there for
+	 * passes:true, here for pattern outcomes).
+	 *
+	 * Optional: when absent (paired with no readWorkerReport requirement of
+	 * its own -- it reuses supervisorOpts.readWorkerReport), this hook is
+	 * fully inert (zero behavior change for all existing tests that do not
+	 * inject it).
+	 */
+	recordPatternOutcomeFn?: (recordIds: string[], status: PatternOutcomeStatus) => void;
+	/**
 	 * Best-effort escalation callback (US-R1-001).
 	 *
 	 * Threaded into RunSupervisorOptions.escalateFn on each supervisor run so
@@ -2269,6 +2305,45 @@ export async function runSidecarLoop(opts: RunSidecarLoopOptions): Promise<void>
 					kind: 'sidecar-exit',
 					detail: {
 						reason: 'suggestion-filing-crash-outer',
+						error: err instanceof Error ? err.message : String(err),
+					},
+				});
+			}
+		}
+
+		// US-006 (CAM-64): record pattern-record outcomes at cycle-close,
+		// mirroring the CAM-189 SUGGESTION-filing hook immediately above (same
+		// placement, same pair of terminal statuses, same fail-safe try/catch
+		// posture). Reads the terminal worker-report.json via the SAME
+		// readWorkerReport reader runSupervisor's own outcome detection uses
+		// (not cleared yet -- clearWorkerReport only fires on the NEXT
+		// dispatch), maps result.lastOutcome.kind to a PatternOutcomeStatus via
+		// mapWorkerOutcomeToStatus, and calls the injected
+		// recordPatternOutcomeFn once with every applied id. appendOutcomeOnMain
+		// itself is never called from this file: it lives entirely inside the
+		// injected production closure (host.ts's makeRecordPatternOutcomeFn),
+		// keeping the supervisor the SOLE writer of pattern outcomes (mirrors
+		// ADR-0035's "supervisor is the sole writer" posture).
+		if (
+			opts.recordPatternOutcomeFn !== undefined &&
+			(result.status === 'complete' || result.status === 'awaiting-operator')
+		) {
+			try {
+				const report = supervisorOpts.readWorkerReport?.() ?? null;
+				const recordIds = report?.appliedPatternIds ?? [];
+				const kind = result.lastOutcome?.kind;
+				const status = kind === undefined ? null : mapWorkerOutcomeToStatus(kind);
+				if (recordIds.length > 0 && status !== null) {
+					opts.recordPatternOutcomeFn(recordIds, status);
+				}
+			} catch (err: unknown) {
+				opts.logEvent?.({
+					ts: new Date().toISOString(),
+					storyId: undefined,
+					uuid: 'sidecar',
+					kind: 'sidecar-exit',
+					detail: {
+						reason: 'pattern-outcome-crash-outer',
 						error: err instanceof Error ? err.message : String(err),
 					},
 				});

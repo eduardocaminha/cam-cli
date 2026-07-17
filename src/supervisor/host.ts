@@ -58,6 +58,9 @@ import type { ReviewReport } from './review-report.ts';
 import { REVIEW_REPORT_FILENAME } from './review-report.ts';
 import { preflightWorkerContainer } from './preflight-container.ts';
 import { makeProductionEnsureContainerFn } from './ensure-container.ts';
+import { appendOutcomeOnMain } from '../commands/pattern-records.ts';
+import type { PatternOutcomeStatus } from '../patterns/record.ts';
+import { realOnMainSpawnFn } from '../git/on-main.ts';
 import { readWorkerIsolation } from '../config/models.ts';
 import {
 	writeImplementBlockedMarker,
@@ -197,6 +200,37 @@ export function makeClearReviewReport(cwd: string): () => void {
 			}
 		} catch {
 			// best-effort: ignore failures
+		}
+	};
+}
+
+// ---------------------------------------------------------------------------
+// pattern-outcome recorder (US-006, CAM-64)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a recordPatternOutcomeFn for the given cwd (US-006, CAM-64).
+ *
+ * Loops `recordIds` and calls appendOutcomeOnMain (src/commands/pattern-
+ * records.ts) once per id with the same `status`, via realOnMainSpawnFn
+ * (src/git/on-main.ts) -- the same real spawnSync wrapper
+ * appendSuggestionOnMain's production wiring uses (sidecar.ts). A failed
+ * append for one id (diverged main, detached head, missing main, not-found)
+ * is skip-and-ignored: appendOutcomeOnMain never throws for those cases, and
+ * this factory does not re-throw, so the remaining ids in the batch still get
+ * attempted.
+ *
+ * This is the supervisor's ONLY call site for appendOutcomeOnMain: no
+ * worker/branch-side code path ever calls it (mirrors ADR-0035's "supervisor
+ * is the sole writer" posture, there for passes:true, here for pattern
+ * outcomes).
+ */
+export function makeRecordPatternOutcomeFn(
+	cwd: string,
+): (recordIds: string[], status: PatternOutcomeStatus) => void {
+	return (recordIds, status) => {
+		for (const recordId of recordIds) {
+			appendOutcomeOnMain({ cwd, recordId, status, spawnFn: realOnMainSpawnFn });
 		}
 	};
 }

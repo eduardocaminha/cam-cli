@@ -36,6 +36,7 @@ import {
 	makeReadReviewReport,
 	makeCapturePaneFn,
 	adaptLogEventForPush,
+	makeRecordPatternOutcomeFn,
 } from '../supervisor/host.ts';
 import { extractSuggestions, dedupSuggestions, buildFollowUpIssue, fingerprintFinding } from '../supervisor/suggestion-followups.ts';
 import type { FollowUpProvenance } from '../supervisor/suggestion-followups.ts';
@@ -231,6 +232,16 @@ export interface SidecarOptions {
 	 * Tests: inject a spy to assert appends without spawning real git.
 	 */
 	fileSuggestionsFn?: RunSidecarLoopOptions['fileSuggestionsFn'];
+	/**
+	 * Override the recordPatternOutcomeFn (US-006, CAM-64).
+	 *
+	 * Production: makeRecordPatternOutcomeFn(cwd) (host.ts) -- loops the
+	 * terminal worker report's `appliedPatternIds` and calls
+	 * appendOutcomeOnMain (src/commands/pattern-records.ts) once per id via
+	 * realOnMainSpawnFn.
+	 * Tests: inject a spy to assert (ids, status) without spawning real git.
+	 */
+	recordPatternOutcomeFn?: RunSidecarLoopOptions['recordPatternOutcomeFn'];
 	/**
 	 * Override the merge-watch function (US-007).
 	 *
@@ -1322,6 +1333,7 @@ interface SidecarLoopDepsResult {
 	autoShipFn: RunSidecarLoopOptions['autoShipFn'];
 	readReviewReportFn: RunSidecarLoopOptions['readReviewReportFn'];
 	fileSuggestionsFn: RunSidecarLoopOptions['fileSuggestionsFn'];
+	recordPatternOutcomeFn: RunSidecarLoopOptions['recordPatternOutcomeFn'];
 	escalateFn: RunSidecarLoopOptions['escalateFn'];
 	runMetaLoopObserveFn: RunSidecarLoopOptions['runMetaLoopObserveFn'];
 	readLoopPhaseFn: RunSidecarLoopOptions['readLoopPhaseFn'];
@@ -3192,6 +3204,13 @@ function buildSidecarLoopDeps(ctx: SidecarLoopDepsCtx, options: SidecarOptions):
 	const fileSuggestionsFn: RunSidecarLoopOptions['fileSuggestionsFn'] =
 		options.fileSuggestionsFn ?? makeProductionFileSuggestionsFn(cwd, issueFileSpawnFn, logEvent);
 
+	// US-006 (CAM-64): pattern-outcome-recording hook. Wired unconditionally
+	// (both operator and auto plan_approval mode), same posture as the
+	// SUGGESTION-filing pair above: recording a confirmation/failure signal for
+	// an already-applied pattern is not an autonomy escalation.
+	const recordPatternOutcomeFn: RunSidecarLoopOptions['recordPatternOutcomeFn'] =
+		options.recordPatternOutcomeFn ?? makeRecordPatternOutcomeFn(cwd);
+
 	// US-R1-001: escalateFn from Resend config; only wired when both apiKey and
 	// recipient are non-empty. Production logic extracted to makeProductionEscalateFn
 	// to keep buildSidecarLoopDeps under biome cognitive-complexity limit.
@@ -3223,7 +3242,7 @@ function buildSidecarLoopDeps(ctx: SidecarLoopDepsCtx, options: SidecarOptions):
 	return {
 		readActiveFn, clearActiveFn, hasPendingStoriesFn, sleepFn, hasSessionFn,
 		acquireLockFn, buildOptsFn, runMergeWatchFn, flipActiveFn, readImplementBlockedMarkerFn, autoShipFn,
-		readReviewReportFn, fileSuggestionsFn, escalateFn,
+		readReviewReportFn, fileSuggestionsFn, recordPatternOutcomeFn, escalateFn,
 		runMetaLoopObserveFn, ...planPhaseDeps, ...shipPhaseDeps, ...gatePhaseDeps, ...rearmDeps,
 	};
 }
@@ -3357,6 +3376,7 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 		autoShipFn: deps.autoShipFn,
 		readReviewReportFn: deps.readReviewReportFn,
 		fileSuggestionsFn: deps.fileSuggestionsFn,
+		recordPatternOutcomeFn: deps.recordPatternOutcomeFn,
 		escalateFn: deps.escalateFn,
 		runMetaLoopObserveFn: deps.runMetaLoopObserveFn,
 		readLoopPhaseFn: deps.readLoopPhaseFn,
