@@ -1,0 +1,18 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Read Dashboard width via Ink useWindowSize()" },
+  "branchName": "cam/issue-321",
+  "timestamp": "2026-07-16T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": ["src/ui/Dashboard.tsx", "scripts/file-size-budget.json", "scripts/cam/patterns.md"],
+  "openQuestions": [],
+  "nextStoryContext": "DashboardApp now reads width via Ink 7's useWindowSize() instead of useStdout().stdout.columns. `const { columns } = useWindowSize();` replaces the old `const { stdout } = useStdout();` + `stdout?.columns ?? 80` at the render-scope `cols` site and inside the setInterval poll-tick (pollClearer.onPollTick(columns)); the interval effect's dependency array now lists `columns` instead of `stdout` so the closure refreshes on resize (CAM-306 frame-clear behavior preserved, confirmed by existing dashboard tests passing unchanged). useWindowSize already applies the non-TTY/undefined fallback internally (see patterns.md bullet), so no `?? 80` guard remains anywhere in Dashboard.tsx. `useStdout` import was dropped entirely from Dashboard.tsx since nothing else in the component used it (writeFn plumbing for makePollWidthClearer is unrelated, injected via props/process.stdout.write directly). src/commands/dashboard.ts:251 (the non-interactive print path, `process.stdout.columns`) was intentionally left untouched (out of scope per this story's notes). Raised src/ui/Dashboard.tsx's file-size-budget ceiling 726->729 (comment growth from the migration).",
+  "officialDocsValidated": [
+    {
+      "lib": "ink",
+      "url": "https://raw.githubusercontent.com/vadimdemedes/ink/master/readme.md",
+      "fetchedAt": "2026-07-16T00:00:00Z",
+      "status": "aligned",
+      "summary": "useWindowSize() returns { columns: number; rows: number } (never optional) and re-renders on terminal resize; matches vendored ink/build/hooks/use-window-size.js and the implementation here."
+    }
+  ]
+}
