@@ -79,6 +79,24 @@ Pick the fetch channel for each external library the issue touches from this map
 
 `type`: copy the top-level `type` value from the issue being planned (`feat | fix | chore | docs`) verbatim. When the issue has no `type` (it is optional), default the PRD's `type` to `"feat"`. Never leave it unset.
 
+### Scope-Proposal Artifact
+
+At plan completion, immediately after writing `prd.json`, also write a fixed-shape scope-proposal artifact to `scripts/cam/scope-proposal.json` (ephemeral, gitignored, never committed) so the orchestrator narrates a consistent scope summary every cycle:
+
+```json
+{
+  "problem": "<one-sentence problem statement, from the issue body>",
+  "inScopeStories": ["US-001", "US-002"],
+  "outOfScope": ["<explicit thing deliberately excluded this cycle>"],
+  "framing": {
+    "mvp": "<what ships in THIS PRD to reach a minimal working slice>",
+    "launchReady": "<what remains before the feature is launch-ready, if anything>"
+  }
+}
+```
+
+`inScopeStories`: the `id` of every story in `userStories`, copied verbatim. `outOfScope`: at least one entry naming something deliberately deferred (a follow-up idea, a later PRD, an operator ceremony); use `["none"]` only when this PRD's scope covers the full issue with nothing deferred. `framing.launchReady`: use `"same as MVP"` when this PRD alone reaches launch-ready with no further work.
+
 `requires`: **never emit `requires: "operator"` stories. Do not emit any story with `requires: "operator"` set.** Ceremonies (real-user keypress, OS-level action, real network hit, human-curated artifact) must be planned as automated acceptance criteria that: (a) name the verification tool (agent-browser / playwright / tmux-pty) and the artifact it produces; (b) include a reviewer-behavioral oracle (e.g. `[oracle: file-assert grep -q 'artifact-of-record' path/to/artifact]`). The `requires` field defaults to `null`.
 
 `hand-file issue via /cam-issue`: **never emit a worker story that hand-files an issue by writing `scripts/cam/issues/CAM-XXXX.json` on-branch.** A "hand-file issue via /cam-issue" requirement is a control-plane action performed on `main` (by `/cam-issue` or the operator), never an implementation task for a worker. Encode it instead as a file-assert oracle acceptance criterion that verifies the issue exists on main, e.g. `[oracle: file-assert git show main:scripts/cam/issues/CAM-XXXX.json]`, which the reviewer's existing Layer B behavioral gate re-runs independently. A worker story that instead creates the issue file on-branch causes an add/add collision when the branch reconciles with main (the CAM-162 defect this rule prevents).

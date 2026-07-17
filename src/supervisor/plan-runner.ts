@@ -33,6 +33,7 @@ import type { SpawnFn, IsPaneAlive } from './loop.ts';
 import type { WorkerEventLogger } from './events.ts';
 import type { PlanPreflightResult } from './plan-preflight.ts';
 import type { PlanVerdictReport, PlanVerdictFinding } from './plan-verdict-report.ts';
+import type { ScopeProposal } from './scope-proposal.ts';
 import type { IssueEntry } from '../issues/types.ts';
 import type { SpawnResolutionEvent } from '../logging/spawn-resolution.ts';
 import type { PlanApproval, WorkerIsolation } from '../config/models.ts';
@@ -1321,6 +1322,70 @@ export interface RunPostAuditOptions {
 	 * compat with tests that do not inject it).
 	 */
 	writePlanApprovalGateFn?: () => void;
+	/**
+	 * Read the planner's deterministic scope-proposal artifact (US-002,
+	 * CAM-52). Production: makeReadScopeProposal(cwd) (scope-proposal.ts).
+	 * Called once, best-effort, for any planResult that carries a
+	 * PlanVerdictReport (audit-approved, audit-blocked, plan-escalated: the
+	 * only kinds reached after a full planner+auditor cycle). Absent or a
+	 * null read is a silent no-op (graceful degradation, ADR-0038 shape
+	 * guard) -- narration is best-effort, never gates the post-audit action.
+	 * Optional: absent means no narration (backward compat with tests that
+	 * do not inject it).
+	 */
+	readScopeProposalFn?: () => ScopeProposal | null;
+}
+
+/**
+ * Narrate the planner's scope-proposal artifact once per completed plan/audit
+ * cycle (US-002, CAM-52): only for a planResult kind carrying a
+ * PlanVerdictReport (audit-approved, audit-blocked, plan-escalated -- the
+ * only kinds reached after a full planner+auditor cycle). Best-effort:
+ * an absent readScopeProposalFn, a null proposal (absent, malformed, or
+ * wrong-shape file), or a missing notifyFn is a silent no-op.
+ *
+ * Extracted from runPostAuditAction to keep that function under biome's
+ * noExcessiveLinesPerFunction(maxLines=80) limit (CAM-60 factory/helper
+ * extraction pattern), mirroring handlePlanTargetInvalid / handlePreflightFailed.
+ */
+function narrateScopeProposalIfComplete(
+	planResult: PlanPhaseResult,
+	readScopeProposalFn: (() => ScopeProposal | null) | undefined,
+	notifyFn: ((msg: string) => void) | undefined,
+): void {
+	if (readScopeProposalFn === undefined || !('report' in planResult)) {
+		return;
+	}
+	const proposal = readScopeProposalFn();
+	if (proposal === null) {
+		return;
+	}
+	notifyFn?.(
+		`[cam] plan scope: ${proposal.problem} ` +
+		`(in-scope: ${proposal.inScopeStories.length}, out-of-scope: ${proposal.outOfScope.length}, ` +
+		`MVP: ${proposal.framing.mvp})`,
+	);
+}
+
+/**
+ * Shared handler for the audit-blocked and plan-escalated terminals (US-004,
+ * CAM-204): notify (pane push) then fire escalateFn (best-effort,
+ * fire-and-forget, never awaited by contract). No branch/commit/flip.
+ *
+ * Extracted from runPostAuditAction to keep that function under biome's
+ * noExcessiveLinesPerFunction(maxLines=80) limit (CAM-60 factory/helper
+ * extraction pattern).
+ */
+function handleBlockedOrEscalated(
+	message: string,
+	notifyFn: ((msg: string) => void) | undefined,
+	escalateFn: (() => Promise<void>) | undefined,
+): PostAuditActionResult {
+	notifyFn?.(message);
+	if (escalateFn !== undefined) {
+		void escalateFn(); // best-effort: fire-and-forget, never throws by contract
+	}
+	return { kind: 'escalated' };
 }
 
 /**
@@ -1570,10 +1635,14 @@ export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionRe
 		writePreflightFailedMarkerFn,
 		removePreflightFailedMarkerFn,
 		writePlanApprovalGateFn,
+		readScopeProposalFn,
 	} = opts;
 
 	// US-004 (CAM-215, Option B): see removePreflightMarkerUnlessPreflightFailed.
 	removePreflightMarkerUnlessPreflightFailed(planResult.kind, removePreflightFailedMarkerFn);
+
+	// US-002 (CAM-52): see narrateScopeProposalIfComplete.
+	narrateScopeProposalIfComplete(planResult, readScopeProposalFn, notifyFn);
 
 	// in-progress-conflict (US-004, CAM-241/153): the gate write already
 	// flipped the phase to 'awaiting-operator' and pushed the one-line notify
@@ -1599,13 +1668,10 @@ export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionRe
 		return handlePlanTargetInvalid(planResult.targetId, notifyFn, logEvent);
 	}
 
-	// audit-blocked: escalate and bail; no branch/commit/flip (AC3, AC4)
+	// audit-blocked: escalate and bail; no branch/commit/flip (AC3, AC4).
+	// See handleBlockedOrEscalated.
 	if (planResult.kind === 'audit-blocked') {
-		notifyFn?.(`[cam] plan BLOCK: ${planResult.report.summary}`);
-		if (escalateFn !== undefined) {
-			void escalateFn(); // best-effort: fire-and-forget, never throws by contract
-		}
-		return { kind: 'escalated' };
+		return handleBlockedOrEscalated(`[cam] plan BLOCK: ${planResult.report.summary}`, notifyFn, escalateFn);
 	}
 
 	// plan-escalated (US-004, CAM-204): the BLOCK->re-plan loop (US-003)
@@ -1613,16 +1679,11 @@ export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionRe
 	// ALREADY written unconditionally by runPlanPhaseWithReplan's
 	// writeEscalationMarkerFn seam BEFORE this function is ever invoked, so
 	// its persistence never depends on notifyFn/escalateFn presence or
-	// success (AC2). Here we only fire the best-effort pane push + email
-	// escalation and exit to idle: same shape as the audit-blocked branch,
-	// no branch/commit/flip, no further re-plan (that decision was already
-	// made by the loop, ADR-0012 hard stop).
+	// success (AC2). Same handler as audit-blocked: no branch/commit/flip, no
+	// further re-plan (that decision was already made by the loop, ADR-0012
+	// hard stop).
 	if (planResult.kind === 'plan-escalated') {
-		notifyFn?.(`[cam] plan escalated: ${planResult.report.summary}`);
-		if (escalateFn !== undefined) {
-			void escalateFn(); // best-effort: fire-and-forget, never throws by contract
-		}
-		return { kind: 'escalated' };
+		return handleBlockedOrEscalated(`[cam] plan escalated: ${planResult.report.summary}`, notifyFn, escalateFn);
 	}
 
 	// preflight-failed (US-003, CAM-215): see handlePreflightFailed.
