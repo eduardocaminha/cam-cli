@@ -148,7 +148,8 @@ export type WorkerEventKind =
 	| 'handoff-schema-warning'
 	| 'push-undelivered'
 	| 'plan-split-advisory'
-	| 'plan-approval-branch-failed';
+	| 'plan-approval-branch-failed'
+	| 'abandon-checkout-main-failed';
 
 /** Gate status recorded in a 'result' event. */
 export type GateStatus = 'pass' | 'fail' | 'unknown';
@@ -528,6 +529,18 @@ export interface PlanSplitAdvisoryEventDetail {
 	bucketSize: number;
 }
 
+/**
+ * 'abandon-checkout-main-failed' event detail (US-001, CAM-314): recorded when
+ * the in-progress-conflict gate's 'abandon' resolution best-effort `git
+ * checkout main` did not actually land on main (non-zero exit OR HEAD still
+ * resolves to a cam/* branch afterwards, e.g. a dirty worktree). Names the
+ * branch HEAD is stuck on so the operator can diagnose without pane
+ * scrollback.
+ */
+export interface AbandonCheckoutMainFailedEventDetail {
+	stuckBranch: string;
+}
+
 /** Detail payload by event kind ('worker-start'/'worker-end' carry free-form maps). */
 export type WorkerEventDetail =
 	| ResultEventDetail
@@ -554,6 +567,7 @@ export type WorkerEventDetail =
 	| HandoffSchemaWarningEventDetail
 	| PushUndeliveredEventDetail
 	| PlanSplitAdvisoryEventDetail
+	| AbandonCheckoutMainFailedEventDetail
 	| Record<string, unknown>;
 
 /** A single structured worker lifecycle event. */

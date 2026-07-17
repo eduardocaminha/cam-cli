@@ -101,6 +101,7 @@ import {
 	detectInProgressConflict,
 	buildInProgressConflictContext,
 	readHeadBranchName,
+	isCamFeatureBranch,
 	makeInProgressConflictResolver,
 	type InProgressConflictResolverDeps,
 } from '../supervisor/in-progress-conflict.ts';
@@ -2712,15 +2713,40 @@ function buildShipPhaseDeps(
 
 /**
  * Build the in-progress-conflict gate's abandon-path deps (US-004, CAM-241/153,
- * AC3): rm handoff.json, rm prd.json, git checkout main -- each best-effort,
- * never throws (see InProgressConflictResolverDeps's contract).
+ * AC3; checkoutMainFn hardened to surface a failed checkout in US-001,
+ * CAM-314): rm handoff.json, rm prd.json, git checkout main -- each
+ * best-effort, never throws (see InProgressConflictResolverDeps's contract).
+ *
+ * checkoutMainFn: attempts `git checkout main`, then re-checks HEAD via
+ * readHeadBranchName. Success is landing on 'main' with a zero exit; ANY
+ * other outcome (non-zero exit OR HEAD still a cam/* branch, e.g. a dirty
+ * worktree) is a failure. On failure only, logs a durable
+ * 'abandon-checkout-main-failed' event naming the branch HEAD is stuck on and
+ * pushes a one-line operator-facing notify via the existing
+ * makeNotifyOrchestrator seam (best-effort; a closed orchestrator pane is a
+ * silent no-op). The git call, the HEAD re-check, the durable log, and the
+ * notify are each wrapped so no partial failure escapes -- pollAndResolveGate
+ * calls the resolver with no surrounding try/catch of its own. Never adds a
+ * forced/destructive git call of any kind: a dirty worktree is never
+ * clobbered, so the next plan tick still re-detects the branch conflict.
  *
  * Extracted so makeProductionGatePhaseFn's own body stays a thin
  * pollAndResolveGate wrapper (factory/helper extraction pattern used
  * throughout this module; also keeps the source-text oracle window in
  * test/sidecar-gate-phase.test.ts intact).
  */
-function makeInProgressConflictResolverDeps(cwd: string): InProgressConflictResolverDeps {
+function makeInProgressConflictResolverDeps(
+	cwd: string,
+	sessionName: string,
+	realSpawnFn: SpawnFn,
+	logEvent: WorkerEventLogger,
+): InProgressConflictResolverDeps {
+	const notify = makeNotifyOrchestrator(
+		sessionName,
+		realSpawnFn,
+		makeCapturePaneFn(realSpawnFn),
+		adaptLogEventForPush(logEvent),
+	);
 	return {
 		removeHandoffFn: () => {
 			const p = join(cwd, 'scripts/cam/handoff.json');
@@ -2731,7 +2757,35 @@ function makeInProgressConflictResolverDeps(cwd: string): InProgressConflictReso
 			try { if (existsSync(p)) unlinkSync(p); } catch { /* best-effort */ }
 		},
 		checkoutMainFn: () => {
-			try { spawnSync('git', ['-C', cwd, 'checkout', 'main'], { stdio: 'pipe' }); } catch { /* best-effort */ }
+			let checkoutOk = false;
+			try {
+				const result = spawnSync('git', ['-C', cwd, 'checkout', 'main'], { stdio: 'pipe' });
+				checkoutOk = (result.status ?? 1) === 0;
+			} catch { /* best-effort */ }
+			let stuckBranch: string | null = null;
+			try {
+				const headBranch = readHeadBranchName(
+					(cmd, args) => {
+						const r = spawnSync(cmd, args, { stdio: 'pipe', encoding: 'utf8' });
+						return { stdout: typeof r.stdout === 'string' ? r.stdout : '', exitCode: r.status };
+					},
+					cwd,
+				);
+				if (!checkoutOk || isCamFeatureBranch(headBranch)) stuckBranch = headBranch ?? 'unknown';
+			} catch { stuckBranch = 'unknown'; }
+			if (stuckBranch === null) return;
+			try {
+				logEvent({
+					ts: new Date().toISOString(),
+					storyId: undefined,
+					uuid: 'sidecar',
+					kind: 'abandon-checkout-main-failed',
+					detail: { stuckBranch },
+				});
+			} catch { /* best-effort: logging itself must never escape the never-throw contract */ }
+			try {
+				notify(`[cam] abandon: git checkout main failed -- HEAD is stuck on "${stuckBranch}"`);
+			} catch { /* best-effort */ }
 		},
 	};
 }
@@ -2867,7 +2921,9 @@ function makeProductionGatePhaseFn(
 	const filePath = join(claudeDir, GATE_FILENAME);
 	const setPhase = makeSetPhaseFn(claudeDir, cwd);
 	const registry: GateResolutionRegistry = {
-		[IN_PROGRESS_CONFLICT_GATE]: makeInProgressConflictResolver(makeInProgressConflictResolverDeps(cwd)),
+		[IN_PROGRESS_CONFLICT_GATE]: makeInProgressConflictResolver(
+			makeInProgressConflictResolverDeps(cwd, sessionName, realSpawnFn, logEvent),
+		),
 		[PLAN_APPROVAL_GATE]: makePlanApprovalResolver(
 			makePlanApprovalResolverDeps(cwd, sessionName, realSpawnFn, logEvent),
 		),

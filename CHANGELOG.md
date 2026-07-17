@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.187.0] - 2026-07-17
+
+### Added
+
+- US-001 - Surface failed abandon-path checkout-main to the operator
+
 ## [0.186.0] - 2026-07-17
 
 ### Added
