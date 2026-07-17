@@ -388,3 +388,18 @@ The issue's mandated first deliverable: a design ADR resolving the claude/codex 
 
 **report/sentinel contract**:
 The backend-agnostic completion+result boundary (CAM_*_STATUS lines, <review> tags, worker-report.json/review-report.json) parsed by report-parse.ts (ADR-0038); the enabler of mixed-backend runs.
+
+**Fir Green**:
+#10C66F -- CAM Runtime brand PRIMARY ACCENT: subscribe button, links, nav, highlights, and the splash accent (CAM-329).
+
+**Forest Green**:
+#003333 -- deep green for text placed over green surfaces (e.g. calendar days).
+
+**Aero Green**:
+#CAFFE3 -- light green for the welcome-page background and light highlights.
+
+**brand neutrals (CAM Runtime)**:
+#1F1F1F ink (dark text/backgrounds, tiles, dark cards, banner), #6F6F6F secondary text, #9C9C9C secondary over dark, #EDECF0 surface (light cards), #E3E3E5 line (borders/dividers), #FFFFFF base white.
+
+**subagent colors**:
+Blue Lotus #426DFF, Lemon #AFE220, Sun Yellow #FFDF24, Salmon #FF6666 -- used ONLY to mark agents in figures; explicitly NOT part of the site or TUI chrome.
