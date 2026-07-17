@@ -1,19 +1,18 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Migrate checkoutMainFn + proceedBranchFn to Bun.spawnSync with real-git coverage"
+    "id": "US-002",
+    "title": "Migrate remaining sidecar.ts spawnSync sites and drop the node:child_process import"
   },
   "branchName": "cam/issue-324",
   "timestamp": "2026-07-17T00:00:00Z",
-  "createdFiles": [
-    "test/sidecar-resolver-git.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
     "src/commands/sidecar.ts",
+    "scripts/file-size-budget.json",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "checkoutMainFn (makeInProgressConflictResolverDeps) and proceedBranchFn (makePlanApprovalResolverDeps) in src/commands/sidecar.ts now call Bun.spawnSync(['git', ...args], { stdout: 'pipe', stderr: 'pipe' }) and read .exitCode / decode stdout via new TextDecoder().decode(result.stdout ?? new Uint8Array()). No `.status` remains in that region (sed -n '2761,2930p' src/commands/sidecar.ts). Both factory functions are now `export`ed (were module-private) so test/sidecar-resolver-git.test.ts can construct the production deps directly and exercise checkoutMainFn/proceedBranchFn against a real tmpdir git repo, without routing through buildGatePhaseDeps/the gate file. The node:child_process `spawnSync` import is still used at ~15 other call sites in sidecar.ts (out of scope for this story, per prior notes) -- do not remove the import. Existing DI-fake tests (test/plan-approval-gate.test.ts, test/supervisor/in-progress-conflict.test.ts) and the end-to-end gate-phase tests (test/sidecar-gate-phase.test.ts) all still pass unchanged.",
+  "nextStoryContext": "All ~14 remaining node:child_process spawnSync call sites in src/commands/sidecar.ts are now Bun.spawnSync (the 6 checkoutMainFn/proceedBranchFn sites were already migrated in US-001). The node:child_process spawnSync/SpawnSyncReturns import (was line 26) is fully removed. A new local helper `spawnSyncNodeShaped(cmd, args, opts?)` (defined just before parseGhPollResult) adapts Bun.spawnSync into the full legacy node SpawnSyncReturns shape (pid/output/stdout/stderr/status/signal) for the handful of call sites whose consumer type is owned by another file: `realSpawnFn` (tmux/session.ts's SpawnFn, used pervasively for hasSession/paneCountMutex/getOrchPaneId/openPaneInSession/notify/capture-pane), `postMergeSpawnFn` (release/post-merge.ts's SpawnFn), and the two closures inside makePlanPaneHelpers. All other sites (ghPollFn/updateBranchFn, makeProductionShipGatesFn, buildProductionShipPrStepDeps's ShipPrSpawnFn, the ship-phase/plan-phase loopSpawnFn x2, the two docker DockerProbe preflight probes, isPaneAlive, makeTeardownPlanPanesFn's kill-pane, preflightSpawnFn) use inline Bun.spawnSync + direct .success/.exitCode reads since their consumer types are simple same-file-adjacent shapes needing no node compatibility. src/commands/sidecar.ts's file-size-budget ceiling raised 3389->3411 (the shared adapter's net line cost) in the same commit, _ref updated. Full `bun run check:all` is green (5007 pass / 0 fail; typecheck/lint/file-size/coverage/dead-code/dup/ci-parity/agents-md/test-sleeps all ok).",
   "officialDocsValidated": [
     {
       "lib": "Bun.spawnSync",
@@ -21,7 +20,7 @@
       "url": "https://bun.com/docs/api/spawn",
       "fetchedAt": "2026-07-17T00:00:00Z",
       "status": "aligned",
-      "summary": "Confirmed SyncSubprocess shape: exitCode:number, success:boolean, stdout/stderr:Buffer|undefined when stdout/stderr:'pipe' is passed, no `encoding` option exists (unlike node's spawnSync) -- matches the implementation's new TextDecoder().decode(result.stdout ?? new Uint8Array()) pattern."
+      "summary": "Confirmed SyncSubprocess shape used throughout this story's migration: exitCode:number (non-nullable, no ?? fallback needed unlike node's status:number|null), success:boolean, signalCode?:string, pid:number, stdout/stderr:Buffer when stdout/stderr:'pipe', no `encoding` option exists -- matches spawnSyncNodeShaped and every inline call site's new TextDecoder().decode(x instanceof Buffer ? x : ...) pattern."
     }
   ]
 }
