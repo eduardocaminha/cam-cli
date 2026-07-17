@@ -2737,7 +2737,8 @@ function makeInProgressConflictResolverDeps(cwd: string): InProgressConflictReso
 }
 
 /**
- * Build the plan-approval gate's resolver deps (US-003, CAM-241/153/312):
+ * Build the plan-approval gate's resolver deps (US-003, CAM-241/153/312;
+ * proceedBranchFn hardened to report success/failure in US-001, CAM-319):
  *   proceedBranchFn - reads scripts/cam/prd.json's issueNumber fresh, derives
  *     the branch name in code via deriveBranchName (plan-runner.ts, never a
  *     planner-authored slug), then replicates the checkout-B/write-branchName/
@@ -2745,9 +2746,15 @@ function makeInProgressConflictResolverDeps(cwd: string): InProgressConflictReso
  *     executeGitProceedBranch, which both throws on a non-zero git exit AND
  *     calls its own setPhaseFn -- pollAndResolveGate already flips the phase
  *     to whatever the handler returns, so a second flip here would race it).
- *     Each git call is best-effort: a missing/invalid issueNumber or any
- *     non-zero git exit is swallowed, never thrown (pollAndResolveGate has no
- *     surrounding try/catch of its own around the handler).
+ *     Returns true ONLY when the sequence actually leaves the derived cam/*
+ *     branch as HEAD (verified via `git rev-parse --abbrev-ref HEAD`); false
+ *     on a null derived branch name or any git failure/mismatch, logging a
+ *     durable 'plan-approval-branch-failed' event on that failure path so the
+ *     resolver's fail-safe-to-idle outcome (plan-approval-gate.ts) is
+ *     diagnosable without pane scrollback. Never throws: every git call and
+ *     the logEvent call itself are wrapped so a partial failure is always
+ *     swallowed (pollAndResolveGate has no surrounding try/catch of its own
+ *     around the handler).
  *   removePrdFn - rm scripts/cam/prd.json (best-effort).
  *   notifyFn - push the one-line orchestrator notify (best-effort; a closed
  *     orchestrator pane is a silent no-op via makeNotifyOrchestrator).
@@ -2770,13 +2777,27 @@ function makePlanApprovalResolverDeps(
 		makeCapturePaneFn(realSpawnFn),
 		adaptLogEventForPush(logEvent),
 	);
+	const logBranchFailure = (detail: Record<string, unknown>): void => {
+		try {
+			logEvent({
+				ts: new Date().toISOString(),
+				storyId: undefined,
+				uuid: 'sidecar',
+				kind: 'plan-approval-branch-failed',
+				detail,
+			});
+		} catch { /* best-effort: logging itself must never escape the never-throw contract */ }
+	};
 	return {
-		proceedBranchFn: () => {
+		proceedBranchFn: (): boolean => {
 			try {
 				const prdPath = join(cwd, 'scripts/cam/prd.json');
 				const prdRaw = JSON.parse(readFileSync(prdPath, 'utf8')) as { issueNumber?: unknown };
 				const branchName = deriveBranchName(prdRaw.issueNumber);
-				if (branchName === null) return;
+				if (branchName === null) {
+					logBranchFailure({ reason: 'derive-branch-name-null', issueNumber: prdRaw.issueNumber });
+					return false;
+				}
 				spawnSync('git', ['-C', cwd, 'checkout', '-B', branchName], { stdio: 'pipe' });
 				makeWritePrdBranchNameFn(cwd)(branchName);
 				spawnSync('git', ['-C', cwd, 'add', 'scripts/cam/prd.json'], { stdio: 'pipe' });
@@ -2785,7 +2806,21 @@ function makePlanApprovalResolverDeps(
 					['-C', cwd, 'commit', '-m', 'chore(cam): commit audited prd.json'],
 					{ stdio: 'pipe' },
 				);
-			} catch { /* best-effort */ }
+				const headResult = spawnSync(
+					'git',
+					['-C', cwd, 'rev-parse', '--abbrev-ref', 'HEAD'],
+					{ stdio: 'pipe', encoding: 'utf8' },
+				);
+				const head = typeof headResult.stdout === 'string' ? headResult.stdout.trim() : '';
+				if (head !== branchName) {
+					logBranchFailure({ reason: 'head-mismatch', expected: branchName, actual: head });
+					return false;
+				}
+				return true;
+			} catch {
+				logBranchFailure({ reason: 'git-error' });
+				return false;
+			}
 		},
 		removePrdFn: () => {
 			const p = join(cwd, 'scripts/cam/prd.json');
@@ -2815,7 +2850,9 @@ function makePlanApprovalResolverDeps(
  *
  * Registers 'plan-approval' (US-003, CAM-241/153/312): approve -> branch +
  * commit the audited PRD (makePlanApprovalResolverDeps.proceedBranchFn),
- * returns implementing; reject -> rm prd.json + notify, returns idle.
+ * returns implementing ONLY when the branch was actually created (US-001,
+ * CAM-319), else notifies + returns idle; reject -> rm prd.json + notify,
+ * returns idle.
  *
  * Any OTHER gate discriminator remains 'unknown-gate' (left in place, inert)
  * until its own concrete kind registers a handler here.

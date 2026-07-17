@@ -86,17 +86,28 @@ export function buildPlanApprovalContext(prd: PlanApprovalPrd | null | undefined
  * (gate.ts) calls the handler with no surrounding try/catch of its own.
  */
 export interface PlanApprovalResolverDeps {
-	/** Proceed with the pending plan-approved branch/work. Called ONLY on 'approve'. Never throws. */
-	proceedBranchFn: () => void;
+	/**
+	 * Proceed with the pending plan-approved branch/work. Called ONLY on
+	 * 'approve'. Never throws. Returns true when the cam/* branch was actually
+	 * created (and the audited PRD committed on it); false on any failure
+	 * (US-001, CAM-319) so the resolver can fail safe instead of silently
+	 * flipping to 'implementing' with no branch to implement on.
+	 */
+	proceedBranchFn: () => boolean;
 	/** rm scripts/cam/prd.json (discard the working-tree PRD). Called ONLY on 'reject'. Never throws. */
 	removePrdFn: () => void;
-	/** Push a one-line notify to the orchestrator pane. Called ONLY on 'reject'. Never throws. */
+	/** Push a one-line notify to the orchestrator pane. Called ONLY on 'reject' or a failed 'approve'. Never throws. */
 	notifyFn: (line: string) => void;
 }
 
 /**
  * Build the GateResolutionHandler for the 'plan-approval' gate (AC4):
- *   approve -> deps.proceedBranchFn(), returns 'implementing'.
+ *   approve -> deps.proceedBranchFn(); returns 'implementing' ONLY when it
+ *              reports true (the cam/* branch was actually created). On
+ *              false, surfaces the failure via deps.notifyFn(...) and fails
+ *              safe to 'idle' instead (US-001, CAM-319: a botched
+ *              checkout-B/commit sequence must never silently strand the
+ *              loop in 'implementing' with no cam/* branch to work on).
  *   reject  -> deps.removePrdFn() then deps.notifyFn(...), returns 'idle'
  *              (the working-tree prd.json is discarded here: at pause time
  *              no branch/commit has happened yet, the PRD still lives on
@@ -112,9 +123,14 @@ export function makePlanApprovalResolver(deps: PlanApprovalResolverDeps): GateRe
 	return (gate: CamGate): LoopPhase => {
 		const decision = gate.decision as PlanApprovalDecision | undefined;
 		switch (decision) {
-			case 'approve':
-				deps.proceedBranchFn();
-				return 'implementing';
+			case 'approve': {
+				const branchCreated = deps.proceedBranchFn();
+				if (branchCreated) return 'implementing';
+				deps.notifyFn(
+					'[cam] plan-approval branch/commit sequence failed; no cam/* branch was created. Loop failed safe to idle.',
+				);
+				return 'idle';
+			}
 			case 'reject':
 				deps.removePrdFn();
 				deps.notifyFn('[cam] plan rejected by operator; PRD discarded.');

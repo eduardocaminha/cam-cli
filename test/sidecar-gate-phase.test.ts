@@ -399,6 +399,43 @@ describe('AC3/AC4: plan-approval gate end-to-end via cam decide + buildGatePhase
 		}
 	});
 
+	test(
+		'approve: missing/invalid issueNumber reports failure (US-001, CAM-319) -- phase fails safe to idle ' +
+			'(never implementing), no cam/* branch created, durable event logged',
+		async () => {
+			const { cwd, claudeDir } = setupTmpRepo();
+			try {
+				// No issueNumber field at all -> deriveBranchName returns null.
+				writeFileSync(join(cwd, 'scripts/cam/prd.json'), JSON.stringify({ description: 'Test' }), 'utf8');
+				writeGateFile(join(claudeDir, GATE_FILENAME), {
+					gate: 'plan-approval',
+					options: ['approve', 'reject'],
+					context: 'ctx',
+				});
+
+				expect(runDecide({ cwd, decision: 'approve' })).toBe(0);
+
+				const { logger: logEvent, events } = makeInMemoryEventLogger();
+				const { runGatePhaseFn } = buildGatePhaseDeps(
+					{ cwd, claudeDir, prdPath: join(cwd, 'scripts/cam/prd.json'), sessionName: 'test-session', logEvent, realSpawnFn: noSessionSpawnFn },
+					{},
+				);
+				await runGatePhaseFn?.();
+
+				const branchResult = spawnSync('git', ['-C', cwd, 'branch', '--show-current'], { encoding: 'utf8' });
+				expect(branchResult.stdout.trim()).not.toMatch(/^cam\//);
+
+				expect(existsSync(join(claudeDir, GATE_FILENAME))).toBe(false);
+				expect(makeReadLoopPhase(claudeDir)()).toBe('idle');
+
+				const failEvents = events.filter((e: WorkerEvent) => e.kind === 'plan-approval-branch-failed');
+				expect(failEvents.length).toBeGreaterThanOrEqual(1);
+			} finally {
+				rmSync(cwd, { recursive: true, force: true });
+			}
+		},
+	);
+
 	test('reject: prd.json removed, phase flips to idle, gate file consumed', async () => {
 		const { cwd, claudeDir } = setupTmpRepo();
 		try {
