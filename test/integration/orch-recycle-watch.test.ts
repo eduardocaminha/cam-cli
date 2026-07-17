@@ -259,8 +259,11 @@ test.skipIf(!shouldRun)(
 		expect(pgrepNew.status).toBe(0);
 	},
 	// Generous outer per-test timeout: sum of the worst-case internal poll
-	// budgets above (5s + 10s + 12s + 10s) plus process-spawn/tmux overhead,
-	// so the preflight cannot false-positive under full-suite CPU contention.
+	// budgets above, across all five waitForCondition waits: has-session
+	// (5s default) + pgrep-initialUUID (5s) + pgrep-orch-recycle-watch (10s)
+	// + session-marker change (12s) + pgrep-newUUID (10s) = ~42s, plus
+	// process-spawn/tmux overhead, so the preflight cannot false-positive
+	// under full-suite CPU contention.
 	{ timeout: 45_000 },
 );
 
