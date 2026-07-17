@@ -32,7 +32,7 @@
         "check:all is green. [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Single-file change: src/ui/Dashboard.tsx. Two current sites read raw TTY width: line ~189 (`const cols = stdout?.columns ?? 80`, feeds dividerWidth/barWidth/initial pollClearer width) and line ~211 inside the setInterval (`pollClearer.onPollTick(stdout?.columns ?? 80)`). Replace both with Ink 7 useWindowSize() -> { columns }. GOTCHA (freshness): the original poll-tick read stdout?.columns directly precisely BECAUSE the render-scoped `cols` could be stale mid-interval (the effect dep was `stdout`, a stable object). useWindowSize re-renders on SIGWINCH, so add the hook's `columns` value to the interval useEffect dependency array (currently [pollIntervalMs, readSnapshot, stdout, pollClearer]) so the closure captures the updated width and the CAM-306 frame-clear still fires on resize. Do NOT change makePollWidthClearer / PollWidthClearer contract. OUT OF SCOPE: src/commands/dashboard.ts:251 (`process.stdout.columns`) is the non-interactive print path, not the Ink component, and is not part of this refactor. Keep the useStdout()/writeFn plumbing that pollClearer needs for writes. Ink success/failure glyph invariant is not touched here. Confirm final `grep -c stdout?.columns src/ui/Dashboard.tsx` is 0."
     }
