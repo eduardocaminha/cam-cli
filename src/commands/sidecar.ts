@@ -2758,7 +2758,7 @@ function buildShipPhaseDeps(
  * throughout this module; also keeps the source-text oracle window in
  * test/sidecar-gate-phase.test.ts intact).
  */
-function makeInProgressConflictResolverDeps(
+export function makeInProgressConflictResolverDeps(
 	cwd: string,
 	sessionName: string,
 	realSpawnFn: SpawnFn,
@@ -2782,15 +2782,15 @@ function makeInProgressConflictResolverDeps(
 		checkoutMainFn: () => {
 			let checkoutOk = false;
 			try {
-				const result = spawnSync('git', ['-C', cwd, 'checkout', 'main'], { stdio: 'pipe' });
-				checkoutOk = (result.status ?? 1) === 0;
+				const result = Bun.spawnSync(['git', '-C', cwd, 'checkout', 'main'], { stdout: 'pipe', stderr: 'pipe' });
+				checkoutOk = result.exitCode === 0;
 			} catch { /* best-effort */ }
 			let stuckBranch: string | null = null;
 			try {
 				const headBranch = readHeadBranchName(
 					(cmd, args) => {
-						const r = spawnSync(cmd, args, { stdio: 'pipe', encoding: 'utf8' });
-						return { stdout: typeof r.stdout === 'string' ? r.stdout : '', exitCode: r.status };
+						const r = Bun.spawnSync([cmd, ...args], { stdout: 'pipe', stderr: 'pipe' });
+						return { stdout: new TextDecoder().decode(r.stdout ?? new Uint8Array()), exitCode: r.exitCode };
 					},
 					cwd,
 				);
@@ -2842,7 +2842,7 @@ function makeInProgressConflictResolverDeps(
  * test/sidecar-gate-phase.test.ts intact), mirroring
  * makeInProgressConflictResolverDeps.
  */
-function makePlanApprovalResolverDeps(
+export function makePlanApprovalResolverDeps(
 	cwd: string,
 	sessionName: string,
 	realSpawnFn: SpawnFn,
@@ -2875,20 +2875,18 @@ function makePlanApprovalResolverDeps(
 					logBranchFailure({ reason: 'derive-branch-name-null', issueNumber: prdRaw.issueNumber });
 					return false;
 				}
-				spawnSync('git', ['-C', cwd, 'checkout', '-B', branchName], { stdio: 'pipe' });
+				Bun.spawnSync(['git', '-C', cwd, 'checkout', '-B', branchName], { stdout: 'pipe', stderr: 'pipe' });
 				makeWritePrdBranchNameFn(cwd)(branchName);
-				spawnSync('git', ['-C', cwd, 'add', 'scripts/cam/prd.json'], { stdio: 'pipe' });
-				spawnSync(
-					'git',
-					['-C', cwd, 'commit', '-m', 'chore(cam): commit audited prd.json'],
-					{ stdio: 'pipe' },
+				Bun.spawnSync(['git', '-C', cwd, 'add', 'scripts/cam/prd.json'], { stdout: 'pipe', stderr: 'pipe' });
+				Bun.spawnSync(
+					['git', '-C', cwd, 'commit', '-m', 'chore(cam): commit audited prd.json'],
+					{ stdout: 'pipe', stderr: 'pipe' },
 				);
-				const headResult = spawnSync(
-					'git',
-					['-C', cwd, 'rev-parse', '--abbrev-ref', 'HEAD'],
-					{ stdio: 'pipe', encoding: 'utf8' },
+				const headResult = Bun.spawnSync(
+					['git', '-C', cwd, 'rev-parse', '--abbrev-ref', 'HEAD'],
+					{ stdout: 'pipe', stderr: 'pipe' },
 				);
-				const head = typeof headResult.stdout === 'string' ? headResult.stdout.trim() : '';
+				const head = new TextDecoder().decode(headResult.stdout ?? new Uint8Array()).trim();
 				if (head !== branchName) {
 					logBranchFailure({ reason: 'head-mismatch', expected: branchName, actual: head });
 					return false;
