@@ -1,11 +1,11 @@
 {
   "id": "CAM-318",
   "title": "The 'stats' switch case handles parsed.help by printing STATS_HELP, then delega…",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-16T16:38:03.432Z",
-  "updatedAt": "2026-07-16T21:37:24.112Z",
+  "updatedAt": "2026-07-17T01:26:35.660Z",
   "description": "The 'stats' switch case handles parsed.help by printing STATS_HELP, then delegates to dispatchStats which handles help again (index.ts:2024). Harmless duplication; could delegate the help branch entirely to dispatchStats.\n\nSource: cam/issue-136\nReview round: 1\n\nsuggestion-fingerprint: 950af7f7ce89",
   "derivedFrom": [
     "CAM-136"
