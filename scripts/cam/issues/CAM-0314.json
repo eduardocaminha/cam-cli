@@ -1,11 +1,11 @@
 {
   "id": "CAM-314",
   "title": "abandon path calls git checkout main best-effort; on a dirty worktree the check…",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-16T14:21:49.904Z",
-  "updatedAt": "2026-07-16T21:37:17.342Z",
+  "updatedAt": "2026-07-17T00:59:23.840Z",
   "description": "abandon path calls git checkout main best-effort; on a dirty worktree the checkout can silently fail leaving HEAD on the cam/* branch. The failure mode is safe (the next plan tick re-detects the branch conflict and re-pauses rather than clobbering), but a follow-up could surface the failed checkout to the operator instead of silently re-pausing.\n\nSource: cam/issue-153\nReview round: 1\n\nsuggestion-fingerprint: 103b9d0057f6",
   "derivedFrom": [
     "CAM-153"
