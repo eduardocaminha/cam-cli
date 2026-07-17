@@ -25,7 +25,7 @@
         "Lint spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: scripts/cam/handoff.schema.json (extend officialDocsValidated items, keep additionalProperties:false consistent), .claude/agents/subagent-planner.md + templates/agents/subagent-planner.md (dual-copy: edit BOTH). Gotcha (memory cam-dual-copy-is-per-file): .claude and templates are not uniformly byte-identical; edit both and re-embed. Reporter blueprint: ~/Documents/Projects/reporter/.claude/commands/ralph-plan.md Step 4.6 (docs-fetch :121-149). Do NOT add a parallel docs channel; extend the existing officialDocsConsulted (planner) / officialDocsValidated (handoff.schema.json) shapes only."
     },
