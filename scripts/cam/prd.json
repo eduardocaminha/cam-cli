@@ -32,7 +32,7 @@
         "Verify the TabBar screen renders correctly via ink-testing-library (chip frame assertions for both suspended states). [oracle: bun test test/ui/tab-bar.test.tsx]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: test/ui/tab-bar.test.tsx (append new test(s); do NOT touch src/ui/TabBar.tsx). Reuse the existing ControlledTabBar wrapper pattern but add a variant that threads the `suspended` prop through to TabBar. Arrow escape sequences: '[C' = Right, '[D' = Left (see existing tests at lines 71/81/95). Use waitForFrame from test/helpers/flush-ink.ts to poll frames, never a fixed setTimeout. For the suspended={true} assertion, after writing arrows, assert the active chip is unchanged (poll a short settle then assert the frame still shows the original active chip); onChange should not fire. TabBar suspends via Ink useInput { isActive: !suspended } (src/ui/TabBar.tsx:46-57). installTerminalSizeMock() is already called at module top. Ink success/failure is the glyph, not divider color: assert on chip bracket text. Curated invariant: no tautological mock-call-only assertions; assert observable frame/onChange behavior."
     }
