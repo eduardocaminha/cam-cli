@@ -69,3 +69,40 @@ export const layout = {
 
 /** Pre-built divisor string at the canonical width. */
 export const DIVIDER = '─'.repeat(layout.dividerWidth);
+
+/**
+ * CAM Runtime brand greens. This is the product/marketing identity (splash,
+ * README, external site) and is a SEPARATE concern from `palette` above,
+ * which carries the chrome's semantic status roles (success/warning/
+ * destructive/muted). Importing a brand token must never force-restyle a
+ * status surface, so the two exports are kept independent: nothing here is
+ * aliased to or from `palette`.
+ *
+ * Subagent-marking colors (used only to color-code agents in figures) are
+ * deliberately NOT included in this module: they are figure-only, not chrome,
+ * and their canonical definition lives in the CONTEXT.md brand terms.
+ */
+export const brandGreens = {
+	/** Primary accent: subscribe button, links, nav, highlights, splash accent. */
+	firGreen: '#10C66F',
+	/** Deep green: text placed over green surfaces (e.g. calendar days). */
+	forestGreen: '#003333',
+	/** Light green: welcome-page background, light highlights. */
+	aeroGreen: '#CAFFE3',
+	/** Base white. */
+	white: '#FFFFFF',
+} as const;
+
+/** CAM Runtime brand neutrals, paired with `brandGreens` for the same identity. */
+export const brandNeutrals = {
+	/** Ink: dark text/backgrounds, tiles, dark cards, banner. */
+	ink: '#1F1F1F',
+	/** Secondary text. */
+	secondaryText: '#6F6F6F',
+	/** Secondary text over dark surfaces. */
+	secondaryTextOnDark: '#9C9C9C',
+	/** Surface: light cards/surfaces. */
+	surface: '#EDECF0',
+	/** Line: borders/dividers. */
+	line: '#E3E3E5',
+} as const;
