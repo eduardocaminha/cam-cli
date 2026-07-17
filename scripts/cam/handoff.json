@@ -1,0 +1,20 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Codify the CAM Runtime brand palette as named design tokens" },
+  "branchName": "cam/issue-332",
+  "timestamp": "2026-07-17T00:00:00Z",
+  "createdFiles": ["test/design/tokens.test.ts"],
+  "modifiedFiles": ["src/design/tokens.ts", "scripts/file-size-budget.json"],
+  "openQuestions": [],
+  "nextStoryContext": "src/design/tokens.ts now exports `brandGreens` (firGreen #10C66F, forestGreen #003333, aeroGreen #CAFFE3, white #FFFFFF) and `brandNeutrals` (ink #1F1F1F, secondaryText #6F6F6F, secondaryTextOnDark #9C9C9C, surface #EDECF0, line #E3E3E5), kept fully separate from the existing chrome `palette` export (accent/warning/destructive/muted unchanged, #4EBE7D still the chrome accent). Subagent figure-only colors (Blue Lotus/Lemon/Sun Yellow/Salmon) are intentionally absent from this module by name-only comment; do not add their hex values here — CONTEXT.md brand terms are their canonical home. src/ui/Splash.tsx was NOT touched (CAM-329 owns wiring the Fir Green splash accent and the uppercase wordmark rewrite; it should import `brandGreens.firGreen` from src/design/tokens.ts rather than inlining the hex). The README brand work (CAM-331) should likewise import from `brandGreens`/`brandNeutrals` instead of inlining hexes. src/design/tokens.ts's file-size budget ceiling was raised 72->109 in scripts/file-size-budget.json (_ref updated) to cover the new exports; a future story adding more tokens to this file should raise the ceiling again rather than reuse headroom that doesn't exist.",
+  "appliedPatternIds": [],
+  "officialDocsValidated": [
+    {
+      "lib": "ink",
+      "channel": "WebFetch",
+      "url": "https://github.com/vadimdemedes/ink#colors",
+      "fetchedAt": "2026-07-17T00:00:00Z",
+      "status": "aligned",
+      "summary": "Confirmed Ink's <Text color> accepts raw hex strings directly via chalk under the hood; tokens.ts keeps raw hex string values, as const, no ink/chalk import, matching the existing palette shape."
+    }
+  ]
+}
