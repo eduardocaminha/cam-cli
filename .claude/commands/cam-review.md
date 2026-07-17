@@ -142,7 +142,12 @@ Print the triage:
 - If APPROVE and empty triage: "Ready for /cam-ship"
 ```
 
-**Bias toward `skip`.** 0–2 items under "New cam issue" is normal. 3+ issues from a single review is a smell.
+**Rubric guardrails** (apply before routing):
+- Don't blindly follow every SUGGESTION — validate it against project reality. If a suggestion assumes a primitive/file/library that isn't actually in the repo, or the PRD explicitly forbids it, route it to **skip** and say why.
+- If a CRITICAL item's fix needs a product decision (not just a mechanical edit), demote it to "New cam issue" — CRITICAL severity doesn't override the need for proper scoping.
+- Never promote a SUGGESTION to "Fix in this branch" just because it's cheap — cheap + out-of-scope still inflates the branch.
+
+**Bias toward `skip`.** 0–2 items under "New cam issue" is normal. 3+ issues from a single review is a smell — reconsider the rubric against each item and demote the weakest ones.
 
 ---
 
