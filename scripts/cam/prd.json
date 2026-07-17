@@ -84,7 +84,7 @@
         "Lint spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/commands/cam-review.md (Step 4 triage :116-145) + templates/commands/cam-review.md (dual-copy). Reporter blueprint: ralph-review.md Step 4 (:137-174). Gotcha: CAM-75 already shipped the triage table, '3+ = smell', and the structured reviewer exit report; this is parity/hardening ONLY, do NOT duplicate or add a new mechanism."
     },
