@@ -1,16 +1,17 @@
 {
   "id": "CAM-329",
   "title": "Rebrand cam-cli to CAM Runtime (product name + uppercase splash)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-17T09:18:01.738Z",
-  "updatedAt": "2026-07-17T09:51:33.740Z",
+  "updatedAt": "2026-07-17T09:52:02.117Z",
   "description": "The product is renamed from cam-cli to CAM Runtime. Scope to nail down during spec: (a) product display name becomes CAM Runtime; (b) the splash screen currently renders lowercase and must render uppercase (CAM Runtime / CAM); (c) decide the blast radius: package.json name, README/docs/CHANGELOG, in-app strings, repo/dir name - and explicitly whether the cam command/binary name stays cam (likely yes, only the product display name changes). Two operator requests bundled: the rename and the splash lowercase->uppercase.",
   "spec": {
-    "scope": "Rebrand the product DISPLAY name from cam-cli to CAM Runtime; the command/binary stays cam. Two parts. (A) Uppercase splash: author a NEW uppercase CAM ASCII block wordmark in src/ui/Splash.tsx (replacing the lowercase 'cam' WORDMARK_ROWS:27-33) plus a styled 'Runtime' text line below it. (B) Product display strings + package name + docs read 'CAM Runtime': help tagline (index.ts:105), tmux status-right (run.ts:518, fits the 24-char status-right-length), version-command description (index.ts:132), retry config file header (config.ts:30-31), and package.json name (cam-cli -> cam-runtime; private/unpublished). README.md and CHANGELOG.md title/product lines say CAM Runtime and README carries the new positioning as the product description (history not rewritten). Taglines stay English (parity with the current 'Autonomous Claude Code loop driver'), distilled from the positioning. POSITIONING (product description source of truth): 'CAM Runtime is a local software-delivery runtime for coding agents. It turns issues and goals into verifiable planning, implementation, review, and ship workflows, keeping state, coordinating specialized agents, and recovering interrupted runs.' OUT OF SCOPE: the GitHub repo / local directory rename (separate operator step), so the splash repo url ('eduardocaminha/cam-cli', Splash.tsx:101) and the pr-body/changelog project-name fixtures stay as-is; and ALL behavior-affecting names stay unchanged (cam command, ~/.cam, ~/.config/cam, CAM_* env vars, tmux socket 'cam'/@cam_label/cam-orch session prefix, .cam-* markers, chore(cam): git trailers).",
+    "scope": "Rebrand the product DISPLAY name from cam-cli to CAM Runtime; the command/binary stays cam. Two parts. (A) Uppercase splash: author a NEW uppercase CAM ASCII block wordmark in src/ui/Splash.tsx (replacing the lowercase 'cam' WORDMARK_ROWS:27-33) plus a styled 'Runtime' text line below it, AND adopt Fir Green #10C66F (the CAM Runtime brand primary accent, per CAM-332) as the splash accent color (wordmark/divider/highlight). (B) Product display strings + package name + docs read 'CAM Runtime': help tagline (index.ts:105), tmux status-right (run.ts:518, fits the 24-char status-right-length), version-command description (index.ts:132), retry config file header (config.ts:30-31), and package.json name (cam-cli -> cam-runtime; private/unpublished). README.md and CHANGELOG.md title/product lines say CAM Runtime and README carries the new positioning as the product description (history not rewritten). Taglines stay English (parity with the current 'Autonomous Claude Code loop driver'), distilled from the positioning. POSITIONING (product description source of truth): 'CAM Runtime is a local software-delivery runtime for coding agents. It turns issues and goals into verifiable planning, implementation, review, and ship workflows, keeping state, coordinating specialized agents, and recovering interrupted runs.' OUT OF SCOPE: the GitHub repo / local directory rename (separate operator step), so the splash repo url ('eduardocaminha/cam-cli', Splash.tsx:101) and the pr-body/changelog project-name fixtures stay as-is; and ALL behavior-affecting names stay unchanged (cam command, ~/.cam, ~/.config/cam, CAM_* env vars, tmux socket 'cam'/@cam_label/cam-orch session prefix, .cam-* markers, chore(cam): git trailers).",
     "acceptanceCriteria": [
       "src/ui/Splash.tsx renders a NEW uppercase CAM ASCII block wordmark (replacing the lowercase 'cam' WORDMARK_ROWS) with a styled 'Runtime' line, and still renders correctly from cam init.",
+      "The splash accent color is Fir Green #10C66F (CAM Runtime brand primary accent, CAM-332), applied to the wordmark/divider/highlight (via the Ink color / design tokens path, e.g. src/design/tokens.ts).",
       "All user-facing product-name strings read 'CAM Runtime' (not cam-cli): help tagline (index.ts:105), tmux status-right (run.ts:518, within the 24-char status-right-length), version-command description (index.ts:132), and the retry config file header (config.ts:30-31).",
       "package.json name is 'cam-runtime'; the version-parity test (test/version.test.ts) still passes.",
       "README.md and CHANGELOG.md product-name/title lines say 'CAM Runtime', and README carries the positioning statement as the product description; CHANGELOG history is not rewritten.",
@@ -20,6 +21,7 @@
     ],
     "gotchas": [
       "The splash wordmark currently spells lowercase 'cam' (NOT 'cam-cli'), hand-authored as ASCII block glyphs in WORDMARK_ROWS (src/ui/Splash.tsx:27-33); uppercasing means AUTHORING NEW ASCII rows for 'CAM', not upcasing existing letters.",
+      "The Fir Green accent is #10C66F from the CAM-332 brand palette; the splash is Ink/React (Text color props) so the accent applies via Ink color / src/design/tokens.ts, not CSS.",
       "The splash renders ONLY from cam init (src/commands/init.ts:341); cam run does not render it and bare cam shows help -- so the rebrand's other visible surface at runtime is the tmux status-right label (run.ts:518).",
       "tmux status-right-length is 24 (run.ts:519); 'CAM Runtime' fits.",
       "OUT OF SCOPE behavior-affecting names (renaming breaks state/compat): the cam command (no bin field; build-release.sh installs ~/.local/bin/cam), ~/.cam/ (retry logs/pid), ~/.config/cam/config.toml, CAM_CONFIG_PATH/CAM_SESSION/CAM_VERSION, tmux socket CAM_TMUX_SOCKET='cam', @cam_label, the cam-orch-<project> session prefix, .cam-* markers, and chore(cam):/chore(release): git trailers.",
@@ -29,7 +31,8 @@
     ],
     "domainTerms": [
       "CAM Runtime: the product's new display name -- a local software-delivery runtime for coding agents that turns issues and goals into verifiable planning/implementation/review/ship workflows, keeping state, coordinating specialized agents, and recovering interrupted runs.",
-      "wordmark: the hand-authored ASCII block logo rendered on the splash (src/ui/Splash.tsx), distinct from the tagline."
+      "wordmark: the hand-authored ASCII block logo rendered on the splash (src/ui/Splash.tsx), distinct from the tagline.",
+      "Fir Green: #10C66F, the CAM Runtime brand primary accent (CAM-332), used as the splash accent."
     ]
   },
   "wsjf": {
