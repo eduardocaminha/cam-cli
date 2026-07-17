@@ -1,0 +1,40 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-326",
+  "description": "Add a direct TabBar unit test pinning the `suspended` prop's Left/Right navigation contract independently of its ConfigScreen caller.",
+  "issueNumber": 326,
+  "type": "chore",
+  "relatedDocs": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "ink-testing-library",
+      "url": "https://github.com/vadimdemedes/ink-testing-library",
+      "version": "4.0.0",
+      "fetchedAt": "2026-07-16T00:00:00Z",
+      "summary": "render() returns { lastFrame, stdin, unmount, rerender }; stdin.write() feeds raw input to the component's useInput handler. Arrow keys are written as their raw escape sequences ('[C' Right, '[D' Left), matching the pattern already used in test/ui/tab-bar.test.tsx and test/ui/config-screen.test.tsx. No API changes vs the established suite usage.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add direct TabBar unit test for the `suspended` prop contract",
+      "description": "As a maintainer, I need a direct TabBar unit test that pins the `suspended` prop's Left/Right navigation contract so that the presentational behavior is verified independently of its single ConfigScreen caller and cannot silently regress.",
+      "acceptanceCriteria": [
+        "A new test in test/ui/tab-bar.test.tsx renders TabBar directly (not via ConfigScreen) with suspended={false} and asserts a Left or Right arrow key event fires tab navigation (the active chip changes / onChange is invoked). [oracle: bun test test/ui/tab-bar.test.tsx]",
+        "The same test file asserts that with suspended={true}, Left and Right arrow key events are suppressed and do NOT change the active tab / do NOT invoke navigation. [oracle: bun test test/ui/tab-bar.test.tsx]",
+        "The new test(s) reference the `suspended` prop by name so the presentational contract is explicitly pinned. [oracle: grep -q 'suspended' test/ui/tab-bar.test.tsx]",
+        "The test follows the established ink-testing-library render() + stdin.write style already used in the suite; no new test harness is introduced. [oracle: reviewer-judgment]",
+        "TabBar source is unchanged unless a genuine test-seam gap forces it (test-only change). [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Verify the TabBar screen renders correctly via ink-testing-library (chip frame assertions for both suspended states). [oracle: bun test test/ui/tab-bar.test.tsx]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "File: test/ui/tab-bar.test.tsx (append new test(s); do NOT touch src/ui/TabBar.tsx). Reuse the existing ControlledTabBar wrapper pattern but add a variant that threads the `suspended` prop through to TabBar. Arrow escape sequences: '[C' = Right, '[D' = Left (see existing tests at lines 71/81/95). Use waitForFrame from test/helpers/flush-ink.ts to poll frames, never a fixed setTimeout. For the suspended={true} assertion, after writing arrows, assert the active chip is unchanged (poll a short settle then assert the frame still shows the original active chip); onChange should not fire. TabBar suspends via Ink useInput { isActive: !suspended } (src/ui/TabBar.tsx:46-57). installTerminalSizeMock() is already called at module top. Ink success/failure is the glyph, not divider color: assert on chip bracket text. Curated invariant: no tautological mock-call-only assertions; assert observable frame/onChange behavior."
+    }
+  ]
+}
