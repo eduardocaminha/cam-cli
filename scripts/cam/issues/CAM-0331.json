@@ -1,10 +1,42 @@
 {
   "id": "CAM-331",
   "title": "Ultra-professional public README for CAM Runtime (with cam-dss visual assets)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
-  "blockedBy": [],
+  "blockedBy": [
+    "CAM-329",
+    "CAM-54"
+  ],
   "createdAt": "2026-07-17T09:40:45.610Z",
-  "updatedAt": "2026-07-17T09:40:45.610Z",
-  "description": "Author an ultra-professional external-facing README for the public launch of CAM Runtime. Sequenced AFTER CAM-329 (rebrand: product must read CAM Runtime) and CAM-54 (Codex backend: README documents the claude-OR-codex backend story). Visual assets already produced live in /Users/eduardo/Documents/Projects/cam-dss/output/ (header-logo.png, social-preview.png, logo-avatar.png, figura-1-harness-do-harness.png, figura-2-primeira-semana.png, figura-3-ciclo-orquestrador.png, figura-4-onde-nasceu.png, email-banner*.png, substack-audit/); the issue must vendor the chosen subset into the cam repo (e.g. docs/assets or .github) rather than reference an external path. Scope to nail during spec: (a) README language -- KEY OPEN DECISION: the figuras are PT-titled but the product taglines are English (global vs Brazilian-dev audience); (b) which assets belong in the README (logo/social-preview for header + og, which architecture figuras); (c) structure of an ultra-professional README (hero/logo, positioning, quickstart/install, how-it-works with figuras, backend selection claude/codex, docs links, license, social-preview as og:image); (d) reconcile with CAM-330 (public launch readiness analysis) which owns the broader distribution/onboarding audit. This issue is the README build; CAM-330 is the analysis. Depends on CAM-329 and CAM-54."
+  "updatedAt": "2026-07-17T09:54:06.010Z",
+  "description": "Author an ultra-professional external-facing README for the public launch of CAM Runtime. Sequenced AFTER CAM-329 (rebrand: product must read CAM Runtime) and CAM-54 (Codex backend: README documents the claude-OR-codex backend story). Visual assets already produced live in /Users/eduardo/Documents/Projects/cam-dss/output/ (header-logo.png, social-preview.png, logo-avatar.png, figura-1-harness-do-harness.png, figura-2-primeira-semana.png, figura-3-ciclo-orquestrador.png, figura-4-onde-nasceu.png, email-banner*.png, substack-audit/); the issue must vendor the chosen subset into the cam repo (e.g. docs/assets or .github) rather than reference an external path. Scope to nail during spec: (a) README language -- KEY OPEN DECISION: the figuras are PT-titled but the product taglines are English (global vs Brazilian-dev audience); (b) which assets belong in the README (logo/social-preview for header + og, which architecture figuras); (c) structure of an ultra-professional README (hero/logo, positioning, quickstart/install, how-it-works with figuras, backend selection claude/codex, docs links, license, social-preview as og:image); (d) reconcile with CAM-330 (public launch readiness analysis) which owns the broader distribution/onboarding audit. This issue is the README build; CAM-330 is the analysis. Depends on CAM-329 and CAM-54.",
+  "spec": {
+    "scope": "Author the ultra-professional external-facing README (in ENGLISH) for the public launch of CAM Runtime. Sequenced AFTER CAM-329 (rebrand: name must read CAM Runtime) and CAM-54 (Codex backend: README documents the claude-OR-codex per-subagent story). Vendor the chosen visual assets from /Users/eduardo/Documents/Projects/cam-dss/output/ INTO the repo (docs/assets or .github), referenced by repo-relative paths -- NOT external absolute paths. Assets: header-logo.png, social-preview.png, logo-avatar.png, and the four architecture figures (figura-1-harness-do-harness, figura-2-primeira-semana, figura-3-ciclo-orquestrador, figura-4-onde-nasceu). Because the README is ENGLISH, ENGLISH versions of the PT-titled figures are required (produced in cam-dss) before vendoring. Structure: hero (header-logo + positioning), quickstart/install, how-it-works (architecture figures), backend-selection (claude/codex, per-subagent mixing), docs links, license; social-preview.png wired as the og/social preview image. Use the CAM-332 brand palette. Reconcile with CAM-330 (public launch readiness analysis owns the broader distribution/onboarding audit; THIS issue is the README build, not the analysis). POSITIONING (README product description): 'CAM Runtime is a local software-delivery runtime for coding agents. It turns issues and goals into verifiable planning, implementation, review, and ship workflows, keeping state, coordinating specialized agents, and recovering interrupted runs.'",
+    "acceptanceCriteria": [
+      "README.md is rewritten as an ultra-professional ENGLISH external README for CAM Runtime (external-user framing, not the internal-contributor doc), with hero/logo, the positioning statement, quickstart/install, how-it-works (architecture figures), a backend-selection section (claude/codex, per-subagent mixing), docs links, and license.",
+      "The chosen visual assets (header-logo, social-preview, logo-avatar, and the four architecture figures) are vendored INTO the repo (docs/assets or .github) and referenced by repo-relative paths, not external absolute paths; ENGLISH versions of the PT-titled figures are used.",
+      "social-preview.png is wired as the repository/og social preview image.",
+      "The README reflects the shipped CAM Runtime name (CAM-329) and the claude/codex per-subagent backend story (CAM-54), and applies the CAM-332 brand palette.",
+      "The README is consistent with the CAM-330 readiness analysis (no contradiction on install/distribution/onboarding).",
+      "Markdown renders correctly on GitHub with no broken asset links; typecheck + check:all green."
+    ],
+    "gotchas": [
+      "README language is ENGLISH (operator decision); the cam-dss figures are PT-titled, so ENGLISH figure versions must be produced in cam-dss BEFORE this issue can vendor them -- a cross-repo prerequisite outside cam-cli.",
+      "Assets currently live in /Users/eduardo/Documents/Projects/cam-dss/output/ (external repo); they must be COPIED into the cam repo and referenced repo-relative -- never reference the external absolute path.",
+      "Depends on CAM-329 (name) and CAM-54 (backend story); speccing now is fine but implementation waits for those to ship so the README reflects the final state.",
+      "CAM-330 owns the broader launch readiness ANALYSIS (distribution/onboarding/security/license); this issue is the README BUILD -- do not duplicate the analysis, consume its conclusions.",
+      "The current README is an internal-contributor doc; this is a from-scratch external rewrite, not an edit-in-place.",
+      "Use the CAM-332 brand palette (Fir Green #10C66F accent etc.); subagent colors are figure-only."
+    ],
+    "domainTerms": [
+      "external README: the public-launch, English, ultra-professional README for CAM Runtime, distinct from the internal-contributor documentation."
+    ]
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 2,
+    "riskReduction": 1,
+    "jobSize": 3
+  },
+  "type": "docs"
 }
