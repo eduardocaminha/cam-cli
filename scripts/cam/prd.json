@@ -21,7 +21,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Test-only change; do NOT modify production code (src/ui/ConfigScreen.tsx, src/ui/TabBar.tsx). Edit only test/ui/config-screen.test.tsx. Model the new test on the existing 'notify-recipient text field is focused (suppressed navigation)' test at test/ui/config-screen.test.tsx:190-213, but tab forward 4 times (one more than the recipient test's 3) to reach fieldFocus===4. Gotchas: notify-recipient is fieldFocus===3, notify-sender is fieldFocus===4; suppression is gated at ConfigScreen.tsx:350 on (currentTab==='global' && (fieldFocus===3 || fieldFocus===4)). The notify-sender NotifyTextInput prompt is 'resend_from (sender address, blank to leave unset):' (ConfigScreen.tsx:656), so waitForFrame on the substring 'resend_from'. Each TAB/RIGHT/LEFT stdin.write must be awaited individually via waitForFrame, else un-awaited writes collapse in ink-testing-library (see the recipient/Ship-tab tests' comments)."
     }
