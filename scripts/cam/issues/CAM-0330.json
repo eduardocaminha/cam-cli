@@ -1,0 +1,10 @@
+{
+  "id": "CAM-330",
+  "title": "Public launch readiness analysis for CAM Runtime (distribution, docs, onboarding, security, licensing)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-17T09:38:47.644Z",
+  "updatedAt": "2026-07-17T09:38:47.644Z",
+  "description": "Sequenced AFTER CAM-54 (Codex backend) ships. Run a complete readiness analysis to make CAM Runtime publicly usable and ready to publicize/divulge. This is an analysis/audit deliverable that will likely spawn follow-up issues. Scope to nail down during spec: (a) packaged distribution + install for external users without a dev setup (the product is currently a private, unpublished bun-compiled binary installed via build-release.sh); (b) first-run onboarding + cam init UX for a stranger; (c) external-facing docs/README (vs the current internal-contributor docs); (d) secrets/credentials handling + security posture (API keys, keyring, firewall/container mode); (e) license + repo visibility; (f) telemetry/privacy stance; (g) versioning/release + update path; (h) support channels; (i) a triage of known gaps blocking a public v1. Depends on CAM-54."
+}
