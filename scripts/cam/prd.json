@@ -98,7 +98,7 @@
         "Lint spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "Touch src/supervisor/worker-report.ts (WorkerReport type + formatter), src/supervisor/report-parse.ts (parseWorkerReport guard, keep fail-closed), scripts/cam/handoff.schema.json, and BOTH copies of the agent instr files (.claude/agents/subagent-implementer.md + templates/agents/subagent-implementer.md; same for subagent-planner.md). Dual-copy is per-file (memory: cam-dual-copy-is-per-file) -> run embed-vendor:check. Field is optional -> existing reports without it must still parse. This is the going-forward read-contract for AC#3 of the issue (agents read the typed store equivalently to patterns.md)."
     },
