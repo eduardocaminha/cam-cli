@@ -21,7 +21,7 @@
         "Lint/static spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Write-side. Files: src/supervisor/events.ts (add orchTokensMode?: 'delta' to CycleTokensEventDetail + update its doc comment at events.ts:~350-367 which currently documents orchTokens as cumulative); src/commands/journal.ts recordCycleTokens (~481-519, cumulative computed from transcript at ~493-494). Delta = current cumulative (parseTranscriptUsage: input+cacheCreation+cacheRead) minus the prior same-session cumulative. The prior cumulative must be recovered from the existing log (e.g. sum of prior delta-mode orchTokens for the same orchestrator session/transcript, floored at 0 on a session boundary where the transcript resets) - pick the simplest correct recovery via readEventLog (already injected). Do NOT rewrite the append-only .jsonl log. Keep readOrchTranscript/readEventLog/logEvent injection for hermetic tests. Tests: test/commands/journal-record-cycle-tokens.test.ts. Gotcha: cycle-tokens events carry cycleId + issueNumber + recordedAt but no explicit orchestrator session id; if you need a session boundary signal, derive it from the transcript resolution, not from a new event field unless necessary."
     },
