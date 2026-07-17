@@ -16,6 +16,14 @@
 // malformed/partial JSONL lines are skipped rather than throwing.
 //
 // CAM-241/136 (US-001): per-issue token stats for the report + advisory.
+//
+// CAM-328 (US-002): orchTokens aggregation is marker-aware
+// (CycleTokensEventDetail.orchTokensMode, src/supervisor/events.ts). Delta-mode
+// events are summed directly; legacy (marker-absent) cumulative-snapshot
+// events are collapsed per issue via max, not summed -- see
+// applyCycleTokensDetail/IssueAccumulator below. Every rollup's `total` is
+// always recomputed from the collapsed/summed orchTokens plus summed
+// workerTokens, never by summing the stored per-cycle `total` field.
 
 /** Coerce an unknown JSON value to a number (0 if not a number). */
 function toN(v: unknown): number {
@@ -97,10 +105,25 @@ function median(values: number[]): number {
 	return (lo + hi) / 2;
 }
 
+/**
+ * In-progress per-issue accumulator. `orchTokens` is split into a delta sum
+ * (marker-mode 'delta' events, summed directly) and a legacy max (marker-absent
+ * cumulative-snapshot events, collapsed via max rather than summed -- see
+ * applyCycleTokensDetail). `total` is never accumulated from the stored
+ * per-cycle field; it is recomputed once at collection time.
+ */
+interface IssueAccumulator {
+	issueNumber: string;
+	orchTokensDeltaSum: number;
+	orchTokensLegacyMax: number;
+	workerTokens: number;
+	cycleCount: number;
+}
+
 /** Mutable in-progress state threaded through one aggregation pass. */
 interface AggregationState {
 	order: string[];
-	byIssue: Map<string, IssueTokenRollup>;
+	byIssue: Map<string, IssueAccumulator>;
 	totalRawTokens: number;
 	attributedWorkerTokens: number;
 }
@@ -110,26 +133,44 @@ function applyTokensDetail(state: AggregationState, detail: Record<string, unkno
 	state.totalRawTokens += rawTokensTotal(detail);
 }
 
-/** Fold one 'cycle-tokens' event detail into its issue's rollup (creating it on first sight). */
+/**
+ * Fold one 'cycle-tokens' event detail into its issue's accumulator (creating
+ * it on first sight). Branches on `orchTokensMode` (CycleTokensEventDetail,
+ * src/supervisor/events.ts): a 'delta' marker means `orchTokens` is a
+ * per-cycle delta and is summed directly; an absent marker means a legacy
+ * (pre-US-001) cumulative snapshot, which is collapsed per issue via max
+ * (the best-effort monotonic final cumulative -- there is no
+ * orchestrator-session id on the event to group by more precisely).
+ * `workerTokens` always sums per-cycle regardless of mode.
+ */
 function applyCycleTokensDetail(state: AggregationState, detail: Record<string, unknown>): void {
 	const issueNumber = detail['issueNumber'];
 	if (typeof issueNumber !== 'string' || issueNumber === '') return;
 
 	const orchTokens = toN(detail['orchTokens']);
 	const workerTokens = toN(detail['workerTokens']);
-	const total = toN(detail['total']);
+	const isDelta = detail['orchTokensMode'] === 'delta';
 
 	state.attributedWorkerTokens += workerTokens;
 
 	const existing = state.byIssue.get(issueNumber);
 	if (existing === undefined) {
 		state.order.push(issueNumber);
-		state.byIssue.set(issueNumber, { issueNumber, orchTokens, workerTokens, total, cycleCount: 1 });
+		state.byIssue.set(issueNumber, {
+			issueNumber,
+			orchTokensDeltaSum: isDelta ? orchTokens : 0,
+			orchTokensLegacyMax: isDelta ? 0 : orchTokens,
+			workerTokens,
+			cycleCount: 1,
+		});
 		return;
 	}
-	existing.orchTokens += orchTokens;
+	if (isDelta) {
+		existing.orchTokensDeltaSum += orchTokens;
+	} else {
+		existing.orchTokensLegacyMax = Math.max(existing.orchTokensLegacyMax, orchTokens);
+	}
 	existing.workerTokens += workerTokens;
-	existing.total += total;
 	existing.cycleCount += 1;
 }
 
@@ -147,12 +188,20 @@ function applyLine(state: AggregationState, raw: string): void {
 	}
 }
 
-/** Project the accumulated map into an ordered array, first-seen order. */
+/**
+ * Project the accumulated map into an ordered array, first-seen order.
+ * `orchTokens` is recomputed here (legacy max + delta sum) and `total` is
+ * recomputed from that plus `workerTokens` -- never by summing the stored
+ * per-cycle `total` field.
+ */
 function collectPerIssue(state: AggregationState): IssueTokenRollup[] {
 	const perIssue: IssueTokenRollup[] = [];
 	for (const issueNumber of state.order) {
-		const rollup = state.byIssue.get(issueNumber);
-		if (rollup !== undefined) perIssue.push(rollup);
+		const acc = state.byIssue.get(issueNumber);
+		if (acc === undefined) continue;
+		const orchTokens = acc.orchTokensLegacyMax + acc.orchTokensDeltaSum;
+		const total = orchTokens + acc.workerTokens;
+		perIssue.push({ issueNumber, orchTokens, workerTokens: acc.workerTokens, total, cycleCount: acc.cycleCount });
 	}
 	return perIssue;
 }

@@ -22,6 +22,8 @@ import { join, resolve } from 'node:path';
 
 import { maybeEmitPlanSplitAdvisory } from '../../src/supervisor/plan-split-advisory.ts';
 import { makeInMemoryEventLogger, type WorkerEvent } from '../../src/supervisor/events.ts';
+import { aggregateTokensPerIssue } from '../../src/stats/tokens.ts';
+import { computeSplitAdvisory } from '../../src/stats/split-advisory.ts';
 
 // ---------------------------------------------------------------------------
 // Fixture helpers
@@ -279,6 +281,46 @@ describe('maybeEmitPlanSplitAdvisory', () => {
 			}),
 		).not.toThrow();
 	});
+});
+
+// ---------------------------------------------------------------------------
+// AC4 (US-002, CAM-328): marker-aware orchTokens aggregation feeding this
+// module's records array -- a jobSize=1 bucket built from realistic per-cycle
+// spend no longer projects tens of millions of tokens.
+// ---------------------------------------------------------------------------
+
+test('AC4 (US-002): a jobSize=1 bucket built from realistic per-cycle spend no longer projects tens of millions of tokens', () => {
+	// Single long-running jobSize=1 issue: 40 legacy (marker-absent)
+	// cycle-tokens events, orchTokens growing by a realistic 50k/cycle
+	// (cumulative orchestrator spend read fresh from the transcript every
+	// cycle -- see the CAM-131 pattern). Pre-fix (naive summation across all
+	// 40 legacy snapshots) would have projected ~41,000,000 tokens
+	// (50_000 * (1+2+...+40)); the fix collapses via max instead.
+	const CYCLES = 40;
+	const lines: string[] = [];
+	for (let i = 1; i <= CYCLES; i++) {
+		const detail = {
+			cycleId: `cycle-${i}`,
+			issueNumber: 'CAM-500',
+			orchTokens: i * 50_000,
+			workerTokens: 500,
+			total: i * 50_000 + 500,
+			recordedAt: '2026-07-01T00:00:00Z',
+		};
+		lines.push(
+			JSON.stringify({ ts: '2026-07-01T00:00:00Z', storyId: undefined, uuid: 'cycle-close', kind: 'cycle-tokens', detail }),
+		);
+	}
+	const summary = aggregateTokensPerIssue(lines.join('\n'));
+	expect(summary.perIssue).toHaveLength(1);
+
+	const rollup = summary.perIssue[0];
+	expect(rollup?.orchTokens).toBe(CYCLES * 50_000); // collapsed via max: 2,000,000
+	expect(rollup?.total).toBeLessThan(10_000_000);
+
+	const records = [{ jobSize: 1, total: rollup?.total ?? 0 }];
+	const result = computeSplitAdvisory(records, { jobSize: 1, storyCount: 1 });
+	expect(result.projectedTokens).toBeLessThan(10_000_000);
 });
 
 // ---------------------------------------------------------------------------
