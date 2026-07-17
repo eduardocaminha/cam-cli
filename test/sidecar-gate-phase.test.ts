@@ -40,6 +40,7 @@ import { makeInMemoryEventLogger, type WorkerEvent } from '../src/supervisor/eve
 import { buildGatePhaseDeps, makeWritePlanApprovalGateFn, makeReadLoopPhase } from '../src/commands/sidecar.ts';
 import { runDecide } from '../src/commands/decide.ts';
 import { GATE_FILENAME, writeGateFile } from '../src/supervisor/gate.ts';
+import { IN_PROGRESS_CONFLICT_GATE, IN_PROGRESS_CONFLICT_OPTIONS } from '../src/supervisor/in-progress-conflict.ts';
 import type { SpawnFn } from '../src/tmux/session.ts';
 
 // ---------------------------------------------------------------------------
@@ -462,4 +463,76 @@ describe('AC3/AC4: plan-approval gate end-to-end via cam decide + buildGatePhase
 			rmSync(cwd, { recursive: true, force: true });
 		}
 	});
+});
+
+// ---------------------------------------------------------------------------
+// AC1/AC2/AC3/AC4/AC5 (US-001, CAM-314): a failed abandon-path `git checkout
+// main` (dirty worktree) is surfaced via a durable event, never clobbered.
+// ---------------------------------------------------------------------------
+
+/** A cam/* branch with an uncommitted, tracked-file modification that would
+ * be overwritten by `git checkout main` -- git refuses the checkout with a
+ * non-zero exit, leaving HEAD stuck on the cam/* branch. */
+function setupDirtyAbandonRepo(): { cwd: string; claudeDir: string } {
+	const cwd = mkdtempSync(join(tmpdir(), 'cam-gate-phase-abandon-'));
+	mkdirSync(join(cwd, 'scripts/cam'), { recursive: true });
+	mkdirSync(join(cwd, '.claude'), { recursive: true });
+	const run = (args: string[]) => spawnSync('git', ['-C', cwd, ...args], { stdio: 'pipe' });
+	run(['init']);
+	run(['config', 'user.email', 'test@test.com']);
+	run(['config', 'user.name', 'Test']);
+	writeFileSync(join(cwd, 'conflict.txt'), 'main content\n', 'utf8');
+	run(['add', '.']);
+	run(['commit', '-m', 'init']);
+	run(['branch', '-M', 'main']);
+	run(['checkout', '-b', 'cam/issue-314']);
+	writeFileSync(join(cwd, 'conflict.txt'), 'branch content\n', 'utf8');
+	run(['add', '.']);
+	run(['commit', '-m', 'branch change']);
+	// Dirty, uncommitted edit that `git checkout main` would overwrite.
+	writeFileSync(join(cwd, 'conflict.txt'), 'dirty uncommitted content\n', 'utf8');
+	return { cwd, claudeDir: join(cwd, '.claude') };
+}
+
+describe('AC1/AC3/AC5: abandon-path checkout-main failure surfaced to the operator (US-001, CAM-314)', () => {
+	test(
+		'dirty worktree forces git checkout main to fail: durable event names the stuck branch, ' +
+			'HEAD is left on the cam/* branch (never clobbered)',
+		async () => {
+			const { cwd, claudeDir } = setupDirtyAbandonRepo();
+			try {
+				writeFileSync(join(cwd, 'scripts/cam/prd.json'), JSON.stringify({ issueNumber: 314 }), 'utf8');
+				writeFileSync(join(cwd, 'scripts/cam/handoff.json'), '{}', 'utf8');
+				writeGateFile(join(claudeDir, GATE_FILENAME), {
+					gate: IN_PROGRESS_CONFLICT_GATE,
+					options: [...IN_PROGRESS_CONFLICT_OPTIONS],
+					context: 'ctx',
+					decision: 'abandon',
+				});
+
+				const { logger: logEvent, events } = makeInMemoryEventLogger();
+				const { runGatePhaseFn } = buildGatePhaseDeps(
+					{ cwd, claudeDir, prdPath: join(cwd, 'scripts/cam/prd.json'), sessionName: 'test-session', logEvent, realSpawnFn: noSessionSpawnFn },
+					{},
+				);
+				await runGatePhaseFn?.();
+
+				// HEAD is still the cam/* branch: the abandon path never clobbered
+				// the dirty worktree with a force checkout/reset/stash/clean.
+				const branchResult = spawnSync('git', ['-C', cwd, 'branch', '--show-current'], { encoding: 'utf8' });
+				expect(branchResult.stdout.trim()).toBe('cam/issue-314');
+				expect(readFileSync(join(cwd, 'conflict.txt'), 'utf8')).toBe('dirty uncommitted content\n');
+
+				const failEvents = events.filter((e: WorkerEvent) => e.kind === 'abandon-checkout-main-failed');
+				expect(failEvents.length).toBeGreaterThanOrEqual(1);
+				expect(JSON.stringify(failEvents[0]?.detail ?? {})).toContain('cam/issue-314');
+
+				// Gate file consumed, phase flipped (abandon always resolves to planning).
+				expect(existsSync(join(claudeDir, GATE_FILENAME))).toBe(false);
+				expect(makeReadLoopPhase(claudeDir)()).toBe('planning');
+			} finally {
+				rmSync(cwd, { recursive: true, force: true });
+			}
+		},
+	);
 });
