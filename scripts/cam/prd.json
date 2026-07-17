@@ -1,0 +1,29 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-323",
+  "description": "Correct the outer-timeout explanatory comment in orch-recycle-watch.test.ts to include the two omitted 5s waits (true worst-case ~42s).",
+  "issueNumber": 323,
+  "type": "chore",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Correct outer-timeout comment arithmetic in orch-recycle-watch test",
+      "description": "As a maintainer, I need the outer-timeout explanatory comment in test/integration/orch-recycle-watch.test.ts to account for every internal waitForCondition wait so that the stated worst-case internal budget matches reality and does not mislead a future reader debugging a timeout.",
+      "acceptanceCriteria": [
+        "The outer-timeout comment (near line 261) enumerates all five internal waitForCondition waits, including the two previously omitted 5000ms-default waits (has-session near line 185 and pgrep-initialUUID near line 195), and states the corrected worst-case sum of ~42s against the existing 45s outer timeout. [oracle: file-assert grep -q '42s' test/integration/orch-recycle-watch.test.ts]",
+        "The stale arithmetic string '5s + 10s + 12s + 10s' no longer appears in the file. [oracle: file-assert ! grep -q '5s + 10s + 12s + 10s' test/integration/orch-recycle-watch.test.ts]",
+        "The 45s outer timeout value is unchanged. [oracle: file-assert grep -q 'timeout: 45_000' test/integration/orch-recycle-watch.test.ts]",
+        "Only the explanatory comment text is edited: no test logic, assertions, internal timeout values, or control flow are changed (the diff touches only comment lines). [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Tests pass with the test count steady, no tests added or removed (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Single file: test/integration/orch-recycle-watch.test.ts, comment block at lines 261-263. The five internal waits are: has-session (line 185, waitForCondition default 5000ms), pgrep initialUUID (lines 195-197, timeoutMs 5000), pgrep orch-recycle-watch (lines 216-218, 10000), session-marker change (lines 227-240, 12000), pgrep newUUID (lines 251-253, 10000). Corrected sum = 5 + 5 + 10 + 12 + 10 = 42s vs the 45s outer timeout. Comment-accuracy fix only: do NOT change the 45s outer timeout or any internal waitForCondition timeout value. The two omitted waits each use/pin the 5000ms default and contribute 5s each."
+    }
+  ]
+}
