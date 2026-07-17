@@ -80,7 +80,7 @@
         "Lint spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": "US-003",
       "notes": "Extend parsePatternsArgs / ParsedPatternsArgs / dispatchPatterns / PATTERNS_USAGE / PATTERNS_HELP in index.ts (~line 1912-2010) to a two-subcommand namespace (archive | prune). New prune logic in src/commands/pattern-records.ts (or a sibling src/commands/patterns-prune.ts) computing demotions from confirmationScore + shelf-life + anchor existence, then committing the rewritten store via the on-main writer. GOTCHA (issue): `cam prune` already exists (.claude/commands/cam-prune.md, branch-cleanup) -- must stay `cam patterns prune`. Mirror the sentinel/exit-code style of dispatchPatterns' archive path. Anchor-existence check reads the working tree / main tree."
     },
