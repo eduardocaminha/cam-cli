@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.192.0] - 2026-07-17
+
+### Added
+
+- US-R1-001 - Review round 1 fix 001: address reviewer finding
+- US-001 - Add direct TabBar unit test for the suspended prop contract
+
 ## [0.191.0] - 2026-07-17
 
 ### Added
