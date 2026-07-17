@@ -8,6 +8,8 @@ The review-fix cycle is **bounded**: at most `CAM_MAX_REVIEW_ROUNDS` rounds (def
 
 **Relationship to the autonomous sidecar review pass**: this document is the manual/on-demand path only. Steps 0-5 below run inside the orchestrator's own context, spawning `subagent-reviewer` via `Task()`, when a human (or the orchestrator itself) triggers `/cam-review`. The sidecar's autonomous per-story review pass (run between story batches in the titled 3rd worker pane) is a separate mechanism: `makeReviewDispatch` / `buildReviewerWorkerArgv` (`src/supervisor/review.ts`) respawn the reviewer directly and never read this file, even though both entry points drive the same `subagent-reviewer` agent and the same `prd.json.review` bookkeeping.
 
+**Operator-decision routing (ADR-0041, ADR-0043)**: three moments across the plan/implement/review cycle require an operator decision -- scope approval (the plan runner pauses on the full audited PRD when `plan_approval: operator`, `makePlanApprovalResolver` in `src/supervisor/plan-approval-gate.ts`), an ambiguity/blocker surfaced mid-cycle (an implementer `BLOCKED_AMBIGUITY`/`BLOCKED_QUALITY` exit, or planner non-convergence), and a review finding that needs a product decision rather than a mechanical fix (Step 4 below). All three route to the EXISTING file-based gate primitive (`.claude/.cam-gate.json` validated against `cam-gate.schema.json`, resolved by the operator via `cam decide <option>`, ADR-0041) -- never to AskUserQuestion, which stays disallowed for every cam subagent (ADR-0043). This is documentation of already-shipped routing, not a new mechanism.
+
 ---
 
 ## Manual /cam-review flow (Steps 0-5)
@@ -144,7 +146,7 @@ Print the triage:
 
 **Rubric guardrails** (apply before routing):
 - Don't blindly follow every SUGGESTION — validate it against project reality. If a suggestion assumes a primitive/file/library that isn't actually in the repo, or the PRD explicitly forbids it, route it to **skip** and say why.
-- If a CRITICAL item's fix needs a product decision (not just a mechanical edit), demote it to "New cam issue" — CRITICAL severity doesn't override the need for proper scoping.
+- If a CRITICAL item's fix needs a product decision (not just a mechanical edit), demote it to "New cam issue" — CRITICAL severity doesn't override the need for proper scoping. The escalation channel for that product decision is the file-based gate (`cam decide`, ADR-0041), never AskUserQuestion (disallowed, ADR-0043) and never an ad-hoc pause.
 - Never promote a SUGGESTION to "Fix in this branch" just because it's cheap — cheap + out-of-scope still inflates the branch.
 
 **Bias toward `skip`.** 0–2 items under "New cam issue" is normal. 3+ issues from a single review is a smell — reconsider the rubric against each item and demote the weakest ones.
