@@ -187,7 +187,7 @@ describe('ConfigScreen — focus/navigation chain (AC5)', () => {
 		unmount();
 	});
 
-	test('Left/Right always switches tabs, even while the notify-recipient text field is focused', async () => {
+	test('Left/Right does NOT switch tabs while the notify-recipient text field is focused (suppressed navigation)', async () => {
 		const { lastFrame, stdin, unmount } = renderConfig();
 		stdin.write(LEFT); // Orchestrator -> Global (wrap); lands on field 0 (backend)
 		await waitForFrame(lastFrame, (f) => f.includes('Backend:'));
@@ -203,10 +203,45 @@ describe('ConfigScreen — focus/navigation chain (AC5)', () => {
 		stdin.write('partial-typed-text'); // focus is on notify-recipient (field 3), start typing
 		await waitForFrame(lastFrame, (f) => f.includes('partial-typed-text'));
 
-		stdin.write(RIGHT); // Global -> Orchestrator (wrap), mid-typing
+		stdin.write(RIGHT); // suppressed: stays on Global's notify-recipient field
+		stdin.write(LEFT); // suppressed too
+		const frame = await waitForFrame(lastFrame, (f) => f.includes('partial-typed-text'), { timeoutMs: 200 });
+		expect(frame).toContain('resend_recipient');
+		expect(frame).toContain('partial-typed-text'); // typed draft untouched, cursor stayed in the field
+		expect(frame).not.toContain('Model for orchestrator:'); // did NOT switch tabs
+		unmount();
+	});
+
+	test('Left/Right still switches tabs when no TextInput is focused (a Select field is active)', async () => {
+		const { lastFrame, stdin, unmount } = renderConfig();
+		stdin.write(LEFT); // Orchestrator -> Global (wrap); lands on field 0 (backend, a Select)
+		await waitForFrame(lastFrame, (f) => f.includes('Backend:'));
+
+		stdin.write(RIGHT); // Global -> Orchestrator (wrap)
 		const frame = await waitForFrame(lastFrame, (f) => f.includes('Model for orchestrator:'));
 		expect(frame).toContain('Model for orchestrator:');
-		expect(frame).not.toContain('resend_recipient');
+		expect(frame).not.toContain('Backend:');
+		unmount();
+	});
+
+	test('Left/Right does NOT switch tabs while the custom-model free-text entry is open', async () => {
+		const { lastFrame, stdin, unmount } = renderConfig();
+		// Orchestrator's model Select defaults to opus (idx 0); DOWN 8 times
+		// reaches the last option, 'custom / enter id' (PHASE_MODEL_OPTIONS =
+		// 8 aliases + the custom sentinel). Each press awaited individually
+		// (see the Ship-tab test's comment on why un-awaited writes collapse).
+		for (let i = 0; i < 8; i += 1) {
+			stdin.write(DOWN);
+			await waitForFrame(lastFrame, () => true, { timeoutMs: 200 });
+		}
+		await waitForFrame(lastFrame, (f) => f.includes('❯ custom / enter id'));
+		stdin.write(ENTER); // opens the free-text CustomModelInput (customModel.phase = 'orchestrator')
+		await waitForFrame(lastFrame, (f) => f.includes('Enter a model id:'));
+
+		stdin.write(RIGHT); // suppressed: customModel.phase !== null
+		const frame = await waitForFrame(lastFrame, (f) => f.includes('Enter a model id:'), { timeoutMs: 200 });
+		expect(frame).toContain('Enter a model id:'); // stayed on the custom-entry field
+		expect(frame).not.toContain('Model for planner:'); // did NOT switch tabs
 		unmount();
 	});
 });
