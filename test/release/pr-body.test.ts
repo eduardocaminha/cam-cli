@@ -128,3 +128,47 @@ describe('composePrBody', () => {
 		expect(body).not.toContain('—');
 	});
 });
+
+describe('composePrBody Setup checklist', () => {
+	test('renders a fifth "## Setup checklist" section after Notes', () => {
+		const body = composePrBody(BASE_PRD);
+		const notesIdx = body.indexOf('## Notes');
+		const setupIdx = body.indexOf('## Setup checklist');
+		expect(setupIdx).toBeGreaterThan(notesIdx);
+	});
+
+	test('renders a clear empty-state line when no setup cues are detected', () => {
+		const body = composePrBody(BASE_PRD);
+		expect(body).toContain('No manual setup actions detected.');
+		expect(body).not.toContain('| # | Item | Where | How | Status |');
+	});
+
+	test('renders a "| # | Item | Where | How | Status |" table when an env-var cue is detected in the description', () => {
+		const body = composePrBody({
+			...BASE_PRD,
+			description: 'Adds a new .env variable for the payment webhook.',
+		});
+		expect(body).toContain('| # | Item | Where | How | Status |');
+		expect(body).toContain('| --- | --- | --- | --- | --- |');
+		expect(body).toContain('New environment variable(s)');
+		expect(body).toContain('Webhook registration');
+		expect(body).not.toContain('No manual setup actions detected.');
+	});
+
+	test('detects a config/install/migration cue from a story title alone', () => {
+		const body = composePrBody({
+			project: 'cam-cli',
+			userStories: [{ id: 'US-001', title: 'Run the new database migration on deploy', passes: false }],
+		});
+		expect(body).toContain('Database migration');
+	});
+
+	test('numbers detected rows sequentially starting at 1', () => {
+		const body = composePrBody({
+			...BASE_PRD,
+			description: 'Requires a new API key and a new .env variable.',
+		});
+		expect(body).toContain('| 1 |');
+		expect(body).toContain('| 2 |');
+	});
+});
