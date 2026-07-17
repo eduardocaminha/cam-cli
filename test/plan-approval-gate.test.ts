@@ -9,6 +9,8 @@
 //        per-story acceptance-criteria counts; null/empty prd is safe.
 //   AC4: makePlanApprovalResolver's approve/reject behavior.
 //   AC5: the resolver fails safe to 'idle' on an unexpected/absent decision.
+//   US-001 (CAM-319): approve fails safe to 'idle' (never 'implementing')
+//        and surfaces via notifyFn when proceedBranchFn reports failure.
 
 import { test, expect } from 'bun:test';
 
@@ -84,7 +86,7 @@ function makeDeps(overrides: Partial<PlanApprovalResolverDeps> = {}): {
 } {
 	const calls: string[] = [];
 	const deps: PlanApprovalResolverDeps = {
-		proceedBranchFn: () => calls.push('proceedBranch'),
+		proceedBranchFn: () => { calls.push('proceedBranch'); return true; },
 		removePrdFn: () => calls.push('removePrd'),
 		notifyFn: (line: string) => calls.push(`notify:${line}`),
 		...overrides,
@@ -115,6 +117,23 @@ test("resolver: 'reject' calls removePrdFn then notifyFn, and returns 'idle'", (
 	expect(calls[0]).toBe('removePrd');
 	expect(calls[1]?.startsWith('notify:')).toBe(true);
 });
+
+test(
+	"resolver: 'approve' with proceedBranchFn reporting failure surfaces via notifyFn and fails safe to 'idle' (US-001, CAM-319)",
+	() => {
+		const { deps, calls } = makeDeps();
+		const failingDeps: PlanApprovalResolverDeps = {
+			...deps,
+			proceedBranchFn: () => { calls.push('proceedBranch'); return false; },
+		};
+		const resolver = makePlanApprovalResolver(failingDeps);
+		const phase = resolver(gateWithDecision('approve'));
+		expect(phase).not.toBe('implementing');
+		expect(phase).toBe('idle');
+		expect(calls).toContain('proceedBranch');
+		expect(calls.some((c) => c.startsWith('notify:'))).toBe(true);
+	},
+);
 
 test("resolver: 'approve' never calls removePrdFn or notifyFn", () => {
 	const { deps, calls } = makeDeps();

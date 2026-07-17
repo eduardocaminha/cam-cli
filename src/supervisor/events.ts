@@ -104,6 +104,12 @@ import handoffSchema from '../../scripts/cam/handoff.schema.json';
  *     for the just-planned issue's jobSize -- a non-gating signal that the
  *     issue's WSJF jobSize has historically run hot enough to warrant
  *     slicing. See PlanSplitAdvisoryEventDetail.
+ *   - 'plan-approval-branch-failed' (US-001, CAM-319): emitted by
+ *     makePlanApprovalResolverDeps.proceedBranchFn (sidecar.ts) when the
+ *     approved-plan checkout-B/commit sequence fails to leave a cam/* branch
+ *     as HEAD (missing/invalid issueNumber, or a git error), so the resolver's
+ *     fail-safe-to-idle path is diagnosable from
+ *     .claude/cam-worker-events.jsonl without reading pane scrollback.
  */
 export type WorkerEventKind =
 	| 'worker-start'
@@ -141,7 +147,8 @@ export type WorkerEventKind =
 	| 'suggestion-filed'
 	| 'handoff-schema-warning'
 	| 'push-undelivered'
-	| 'plan-split-advisory';
+	| 'plan-split-advisory'
+	| 'plan-approval-branch-failed';
 
 /** Gate status recorded in a 'result' event. */
 export type GateStatus = 'pass' | 'fail' | 'unknown';
