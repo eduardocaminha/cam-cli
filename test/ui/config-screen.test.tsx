@@ -212,6 +212,31 @@ describe('ConfigScreen — focus/navigation chain (AC5)', () => {
 		unmount();
 	});
 
+	test('Left/Right does NOT switch tabs while the notify-sender text field is focused (suppressed navigation)', async () => {
+		const { lastFrame, stdin, unmount } = renderConfig();
+		stdin.write(LEFT); // Orchestrator -> Global (wrap); lands on field 0 (backend)
+		await waitForFrame(lastFrame, (f) => f.includes('Backend:'));
+
+		// Tab forward to notify-sender (field 4): backend -> merge-mode ->
+		// plan-approval -> notify-recipient -> notify-sender. Each Tab awaited
+		// individually (see the Ship-tab test's comment on why).
+		for (let i = 0; i < 4; i += 1) {
+			stdin.write(TAB);
+			await waitForFrame(lastFrame, () => true, { timeoutMs: 200 });
+		}
+		await waitForFrame(lastFrame, (f) => f.includes('resend_from'));
+		stdin.write('partial-typed-sender'); // focus is on notify-sender (field 4), start typing
+		await waitForFrame(lastFrame, (f) => f.includes('partial-typed-sender'));
+
+		stdin.write(RIGHT); // suppressed: stays on Global's notify-sender field
+		stdin.write(LEFT); // suppressed too
+		const frame = await waitForFrame(lastFrame, (f) => f.includes('partial-typed-sender'), { timeoutMs: 200 });
+		expect(frame).toContain('resend_from');
+		expect(frame).toContain('partial-typed-sender'); // typed draft untouched, cursor stayed in the field
+		expect(frame).not.toContain('Model for orchestrator:'); // did NOT switch tabs
+		unmount();
+	});
+
 	test('Left/Right still switches tabs when no TextInput is focused (a Select field is active)', async () => {
 		const { lastFrame, stdin, unmount } = renderConfig();
 		stdin.write(LEFT); // Orchestrator -> Global (wrap); lands on field 0 (backend, a Select)
