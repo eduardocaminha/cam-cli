@@ -1,0 +1,10 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Correct outer-timeout comment arithmetic in orch-recycle-watch test" },
+  "createdFiles": [],
+  "modifiedFiles": ["test/integration/orch-recycle-watch.test.ts"],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 was a comment-only fix: corrected the outer-timeout explanatory comment near line 261-267 of test/integration/orch-recycle-watch.test.ts to enumerate all five internal waitForCondition waits (has-session 5s, pgrep-initialUUID 5s, pgrep-orch-recycle-watch 10s, session-marker 12s, pgrep-newUUID 10s = ~42s) against the unchanged 45s outer timeout. No test logic, assertions, or timeout values changed. All quality gates (typecheck, bun test, check:all) passed clean.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
