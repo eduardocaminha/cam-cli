@@ -1,0 +1,112 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-52",
+  "description": "Port remaining reporter output-consistency features to cam's deterministic artifact layer (docs-fetch shapes, plan scope-proposal, ship setup-checklist, review triage parity, file-based gate wiring)",
+  "issueNumber": 52,
+  "type": "feat",
+  "relatedDocs": [
+    "docs/adr/0038-shared-hand-rolled-ts-guard-for-worker-review-reports-not-zod-or-a-json-schema-loader.md",
+    "docs/adr/0041-operator-decision-gates-use-a-generic-file-based-pause-primitive-not-phase-embedded-state.md"
+  ],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Extend docs-fetch shapes with channel table, anti-over-fetch guard, conflict detection",
+      "description": "As a plan-phase agent, I need the docs-fetch step to carry a lib->fetch-channel mapping, a one-fetch-per-lib guard, and local-convention-conflict capture, so planning validation against official docs is structured and non-redundant.",
+      "acceptanceCriteria": [
+        "handoff.schema.json officialDocsValidated items gain optional `channel` and `localConventionConflict` fields, extending the existing shape (no parallel mechanism). [oracle: file-assert grep -q 'localConventionConflict' scripts/cam/handoff.schema.json]",
+        "subagent-planner.md documents a lib->fetch-channel table covering cam's actual libs (ink, bun, js-yaml, chalk), an anti-over-fetch guard capping fetches to one targeted fetch per lib, and local-convention-conflict detection, extending the existing officialDocsConsulted schema. [oracle: file-assert grep -qi 'anti-over-fetch' .claude/agents/subagent-planner.md]",
+        "The lib->channel table lists ink, bun, js-yaml, and chalk. [oracle: file-assert grep -q 'js-yaml' .claude/agents/subagent-planner.md]",
+        "The templates/ mirror is byte-identical to the .claude/ copy for the edited planner doc. [oracle: named-command diff .claude/agents/subagent-planner.md templates/agents/subagent-planner.md]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine is green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: scripts/cam/handoff.schema.json (extend officialDocsValidated items, keep additionalProperties:false consistent), .claude/agents/subagent-planner.md + templates/agents/subagent-planner.md (dual-copy: edit BOTH). Gotcha (memory cam-dual-copy-is-per-file): .claude and templates are not uniformly byte-identical; edit both and re-embed. Reporter blueprint: ~/Documents/Projects/reporter/.claude/commands/ralph-plan.md Step 4.6 (docs-fetch :121-149). Do NOT add a parallel docs channel; extend the existing officialDocsConsulted (planner) / officialDocsValidated (handoff.schema.json) shapes only."
+    },
+    {
+      "id": "US-002",
+      "title": "Deterministic plan scope-proposal artifact (hand-rolled TS guard) emitted by planner and narrated",
+      "description": "As the orchestrator, I need the plan phase to emit a fixed-shape scope-proposal artifact (problem, in-scope stories, explicit out-of-scope, MVP-vs-launch-ready framing) so plan completion is narrated consistently across cycles.",
+      "acceptanceCriteria": [
+        "A new src/supervisor/scope-proposal.ts exports a ScopeProposal type with a fixed shape (problem, inScopeStories, outOfScope, framing covering MVP-vs-launch-ready) and a hand-rolled guard reader (makeReadScopeProposal / SCOPE_PROPOSAL_FILENAME), consistent with ADR-0038 and mirroring plan-verdict-report.ts; no zod/json-schema loader is introduced. [oracle: file-assert grep -q 'makeReadScopeProposal' src/supervisor/scope-proposal.ts]",
+        "The reader returns null on absent, malformed, or wrong-shape input (graceful degradation) and returns the parsed object on a valid file. [oracle: named-command bun test test/supervisor/scope-proposal.test.ts]",
+        "subagent-planner.md instructs the planner to write the scope-proposal artifact at plan completion. [oracle: file-assert grep -qi 'scope-proposal' .claude/agents/subagent-planner.md]",
+        "plan-runner.ts reads the scope-proposal via the new reader and surfaces it at plan completion. [oracle: file-assert grep -q 'ScopeProposal\\|scope-proposal' src/supervisor/plan-runner.ts]",
+        "The templates/ mirror of the edited planner doc matches .claude/. [oracle: named-command diff .claude/agents/subagent-planner.md templates/agents/subagent-planner.md]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test), including a new test covering the ScopeProposal reader shape guard. [oracle: bun test]",
+        "Lint spine is green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: NEW src/supervisor/scope-proposal.ts (model on src/supervisor/plan-verdict-report.ts: exported const FILENAME under scripts/cam/, makeRead* factory, JSON reader shape guard from patterns.md 'JSON reader shape guards'), src/supervisor/plan-runner.ts (read+narrate, mirror makeReadPlanVerdict usage), .claude/agents/subagent-planner.md + templates/agents/subagent-planner.md (dual-copy). Reporter blueprint: ralph-plan.md Step 4.7 scope (:151-208). Gotcha: hand-rolled TS guard only (ADR-0038, patterns.md:104), NOT zod. Ephemeral artifact under scripts/cam/, gitignore-consistent with plan-verdict-report.json."
+    },
+    {
+      "id": "US-003",
+      "title": "Add setup-checklist section to composePrBody",
+      "description": "As a PR reviewer, I need the ship-time PR body to include a standardized setup-checklist table of manual user actions (config/install/env) so required manual steps are never lost.",
+      "acceptanceCriteria": [
+        "composePrBody (src/release/pr-body.ts) renders a setup-checklist section as a `| # | Item | Where | How | Status |` table, added alongside the existing fixed sections (Summary, Stories completed, Testing, Notes). [oracle: named-command bun test test/release/pr-body.test.ts]",
+        "The table is populated by detection heuristics over the PRD snapshot (e.g. config/env/install cues in story notes/titles); when nothing is detected a clear empty-state row/line is rendered instead of an empty table. [oracle: named-command bun test test/release/pr-body.test.ts]",
+        "composePrBody stays a pure function (no filesystem/git/network I/O). [oracle: reviewer-judgment]",
+        "templates/commands/cam-ship.md documents the new setup-checklist section in the PR body template. [oracle: file-assert grep -qi 'setup' templates/commands/cam-ship.md]",
+        "The templates/ mirror of cam-ship.md matches .claude/. [oracle: named-command diff .claude/commands/cam-ship.md templates/commands/cam-ship.md]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test), including a new test covering the setup-checklist table shape and the empty state. [oracle: bun test]",
+        "Lint spine is green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/release/pr-body.ts (add renderSetupChecklist + wire into composePrBody's section list; keep it pure), test/release/pr-body.test.ts, .claude/commands/cam-ship.md + templates/commands/cam-ship.md (dual-copy). Reporter blueprint: ralph-ship.md Step 14 (:73-105). Gotcha: PrdSnapshot only carries project/description/issueNumber/userStories(id,title,passes,requires)/notes/type; heuristics must work from those fields only. Deterministic artifact layer, not markdown command prose."
+    },
+    {
+      "id": "US-004",
+      "title": "Bring cam-review triage guardrails to reporter parity (hardening)",
+      "description": "As a reviewer, I need the triage step to match reporter parity (routing table, validate-suggestion-vs-project-reality, demote product-decision CRITICALs, 3+ = smell) so review findings are routed consistently without a new mechanism.",
+      "acceptanceCriteria": [
+        "cam-review.md triage retains/hardens: an explicit destination routing table, a validate-suggestion-vs-project-reality step, a rule to demote a CRITICAL that needs a product decision to a new issue, and the '3+ issues from one review is a smell' heuristic. [oracle: file-assert grep -qi 'smell' .claude/commands/cam-review.md]",
+        "The validate-suggestion-vs-project-reality guardrail is present. [oracle: file-assert grep -qi 'project reality\\|project-reality\\|vs the reality\\|against the project' .claude/commands/cam-review.md]",
+        "No new triage mechanism is introduced and the shipped CAM-75 triage/structured exit report is not duplicated (parity/hardening only). [oracle: reviewer-judgment]",
+        "The templates/ mirror of cam-review.md matches .claude/. [oracle: named-command diff .claude/commands/cam-review.md templates/commands/cam-review.md]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine is green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: .claude/commands/cam-review.md (Step 4 triage :116-145) + templates/commands/cam-review.md (dual-copy). Reporter blueprint: ralph-review.md Step 4 (:137-174). Gotcha: CAM-75 already shipped the triage table, '3+ = smell', and the structured reviewer exit report; this is parity/hardening ONLY, do NOT duplicate or add a new mechanism."
+    },
+    {
+      "id": "US-005",
+      "title": "Wire operator-decision moments to the file-based gate; keep AskUserQuestion disallowed",
+      "description": "As the operator, I need the three decision moments (scope approval, ambiguity/blocker, review product-decision triage) routed to the existing file-based gate primitive so cam never re-introduces AskUserQuestion.",
+      "acceptanceCriteria": [
+        "The three operator-decision moments (scope approval, ambiguity/blocker, review product-decision triage) are documented to route to the EXISTING file-based gate primitive (cam-gate.schema.json / `cam decide`, ADR-0041), not to AskUserQuestion. [oracle: file-assert grep -qi 'cam decide\\|cam-gate' .claude/commands/cam-review.md]",
+        "The review product-decision demotion path names the file-based gate as the escalation channel for a CRITICAL that needs a product decision. [oracle: file-assert grep -qi 'gate' .claude/commands/cam-review.md]",
+        "AskUserQuestion remains listed under disallowedTools in the planner, reviewer, and orchestrator agent frontmatter (not re-enabled). [oracle: file-assert grep -q 'AskUserQuestion' .claude/agents/subagent-reviewer.md]",
+        "AskUserQuestion is not added to any subagent `tools:` allowlist. [oracle: reviewer-judgment]",
+        "The templates/ mirrors of any edited doc match their .claude/ copies. [oracle: named-command diff -rq .claude/commands templates/commands]",
+        "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine is green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 5,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: .claude/commands/cam-review.md + templates mirror; .claude/agents/subagent-planner.md + templates mirror (ambiguity/blocker + scope approval reference the gate). Gotcha (spec + memory feedback-operator-participation-spec-only): AskUserQuestion is disallowed for EVERY cam subagent and cam deliberately chose file-based operator gates (ADR-0041); do NOT re-enable it and do NOT set plan_approval=operator. The gate primitive (src/supervisor/gate.ts writeGateAndNotify/pollAndResolveGate, cam-gate.schema.json) already exists; this story is documentation/wiring of the moments to it, not a new mechanism."
+    }
+  ]
+}
