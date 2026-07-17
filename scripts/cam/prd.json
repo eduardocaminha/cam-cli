@@ -50,7 +50,7 @@
         "Lint spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: index.ts (help tagline at ~line 109 'Autonomous Claude Code loop driver'; version-command description at ~line 136 'Print the installed cam-cli version'), src/commands/run.ts (status-right at run.ts:518 '#[fg=${ACCENT} bold] cam-cli #[default]', status-right-length 24 at :519), src/retry/config.ts (DEFAULT_TOML header at :30 '# cam-cli retry configuration'; leave the github.com/eduardocaminha/cam-cli url on :31 unchanged, repo rename is OUT of scope). Taglines stay English, distilled from the positioning: 'CAM Runtime is a local software-delivery runtime for coding agents...'. Do NOT touch the cam command name or any CAM_*/tmux-socket/marker/git-trailer name. No test asserts these strings today (test-safe)."
     },
