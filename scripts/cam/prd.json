@@ -69,7 +69,7 @@
         "Lint spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: package.json (name 'cam-cli' -> 'cam-runtime', :2), README.md (title '# cam-cli' :1 + product description lines; positioning source of truth: 'CAM Runtime is a local software-delivery runtime for coding agents. It turns issues and goals into verifiable planning, implementation, review, and ship workflows, keeping state, coordinating specialized agents, and recovering interrupted runs.'), CHANGELOG.md (title/product line, do NOT rewrite history). README has ~7 and CHANGELOG ~2 'cam-cli' occurrences: change only the product-NAME references, keep the `cam` command name and the github repo url as-is (repo rename OUT of scope). test/version.test.ts parity test uses package.json.version vs CAM_VERSION (not the name), so the rename is safe; test/release/version.test.ts uses name:'cam-cli' only as a local rewriter fixture (do not touch); test/release/pr-body.test.ts derives project name from the directory (leave). No em-dash in persisted .md (project rule)."
     }
