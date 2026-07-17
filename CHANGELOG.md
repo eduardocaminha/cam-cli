@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.194.0] - 2026-07-17
+
+### Added
+
+- US-002 - Make per-issue token aggregation marker-aware (delta sum vs legacy collapse)
+- US-001 - Emit cycle-tokens orchTokens as per-cycle delta with a mode marker
+
 ## [0.193.0] - 2026-07-17
 
 ### Added
