@@ -1,0 +1,13 @@
+{
+  "id": "CAM-336",
+  "title": "makeRecordPatternOutcomeFn discards appendOutcomeOnMain's structured result, so…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-17T14:01:39.901Z",
+  "updatedAt": "2026-07-17T14:01:39.901Z",
+  "description": "makeRecordPatternOutcomeFn discards appendOutcomeOnMain's structured result, so a per-id failure (diverged, detached-head, missing-main, not-found) is skip-and-ignored with no logEvent. This is documented as deliberate best-effort, and it is not a silently swallowed error in practice (checkMainUpToDate and the not-found path both printError to the operator, as visible in the test-suite stderr). Consider folding a durable logEvent on a non-ok result so a persistently diverged main shows up in cam-worker-events.jsonl rather than only in transient stderr.\n\nSource: cam/issue-64\nReview round: 1\n\nsuggestion-fingerprint: ba27d72f2613",
+  "derivedFrom": [
+    "CAM-64"
+  ]
+}
