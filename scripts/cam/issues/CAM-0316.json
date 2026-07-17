@@ -1,11 +1,11 @@
 {
   "id": "CAM-316",
   "title": "Left/Right always switches tabs even while a custom-model or notify text input …",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-16T15:36:22.106Z",
-  "updatedAt": "2026-07-16T21:37:19.578Z",
+  "updatedAt": "2026-07-17T01:50:40.385Z",
   "description": "Left/Right always switches tabs even while a custom-model or notify text input is focused (per AC5 and covered by a test), so arrow keys cannot move the text cursor within those fields. This is intended by the spec; consider suppressing TabBar navigation while a TextInput is active in a future iteration for smoother editing.\n\nSource: cam/issue-87\nReview round: 1\n\nsuggestion-fingerprint: 27d373b61e55",
   "derivedFrom": [
     "CAM-87"
