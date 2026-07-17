@@ -106,7 +106,7 @@ import { CAM_VERSION } from './src/version.ts';
 
 const HELP = renderHelp({
 	title: 'cam',
-	tagline: 'Autonomous Claude Code loop driver',
+	tagline: 'CAM Runtime: a local software-delivery runtime for coding agents',
 	usage: 'cam <command> [options]',
 	sections: [
 		{
@@ -133,7 +133,7 @@ const HELP = renderHelp({
 				{ name: 'drain [--stop|--clear]', description: 'Set or clear the inter-cycle drain kill-switch without killing the sidecar' },
 				{ name: 'resume [options]', description: 'Reconcile loop state after interrupt; auto-detect or --mode <name>' },
 				{ name: 'decide <decision>', description: 'Record your choice into the active operator-decision gate so the sidecar resumes deterministically' },
-				{ name: 'version', description: 'Print the installed cam-cli version (also `--version` / `-v`)' },
+				{ name: 'version', description: 'Print the installed CAM Runtime version (also `--version` / `-v`)' },
 				{ name: 'help', description: 'Show this help' },
 			],
 		},

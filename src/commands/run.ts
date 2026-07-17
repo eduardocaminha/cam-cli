@@ -512,10 +512,10 @@ function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
 	// active-pane name changes length (orchestrator vs menu).
 	opt('status-justify', 'absolute-centre');
 	opt('status-style', `bg=default fg=${MUTED}`);
-	// Left: active-pane green pill. Right: cam-cli.
+	// Left: active-pane green pill. Right: CAM Runtime.
 	opt('status-left', `#[fg=${MUTED}]active: #[bg=${ACCENT} fg=${DARK} bold] #{@cam_label} #[default]`);
 	opt('status-left-length', '40');
-	opt('status-right', `#[fg=${ACCENT} bold] cam-cli #[default]`);
+	opt('status-right', `#[fg=${ACCENT} bold] CAM Runtime #[default]`);
 	opt('status-right-length', '24');
 	winOpt('window-status-format', navHint);
 	winOpt('window-status-current-format', navHint);

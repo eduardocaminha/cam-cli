@@ -1,10 +1,18 @@
 # Changelog
 
-All notable changes to cam-cli are documented here.
+All notable changes to CAM Runtime are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` heading at the top collects pending work.
 
 ## [Unreleased]
+
+## [0.198.0] - 2026-07-17
+
+### Added
+
+- US-003 - Rebrand package name, README, and CHANGELOG to CAM Runtime
+- US-002 - Rebrand in-app product display strings to CAM Runtime
+- US-001 - Uppercase CAM wordmark + Runtime line + Fir Green accent in the splash
 
 ## [0.197.0] - 2026-07-17
 
