@@ -1,10 +1,48 @@
 {
   "id": "CAM-64",
   "title": "Typed pattern records + outcome-status + decay (mulch model), replacing free-text patterns.md",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-16T22:30:00Z",
   "description": "cam's scripts/cam/patterns.md is free-text bullets with no structure, no outcome tracking, and no decay: a pattern that later proves wrong is never detected or demoted, and the file grows monotonically. Adopt the mulch expertise-record model: (1) typed records (schema-validated: type, classification tier foundational/tactical/observational, recorded_at, name/description, evidence, dir_anchors = the paths the pattern is about, outcomes[]); (2) outcome-status: append {status: success|failure|partial, recorded_at} whenever a pattern is applied (cam's supervisor/reviewer already produce pass/fail signals to wire in) + confirmation-scoring (successCount + 0.5*partialCount) so unconfirmed patterns sink; (3) decay/demotion as a gate: a cam prune that demotes superseded patterns one tier, archives stale tactical/observational by shelf-life (14d/30d), and (optionally) demotes patterns whose dir_anchors point at files that no longer exist (anchor-decay). This is real 'learning-capture as a gate'. Source: mulch src/schemas/record.ts, src/commands/prune.ts, src/utils/scoring.ts.",
-  "updatedAt": "2026-06-16T22:30:00Z"
+  "updatedAt": "2026-07-17T09:26:47.855Z",
+  "spec": {
+    "scope": "Replace free-text patterns.md AS THE WRITE MECHANISM with schema-validated typed pattern records (mulch model), going-forward -- NOT a big-bang migration of the existing 833-line / 538KB patterns.md (those bullets stay grep-readable during the transition, archivable via the existing cam patterns archive). Typed record fields: {type, classification tier, recorded_at, evidence, dir_anchors, outcomes[]}. Append an outcome-status on each application with confirmation-scoring, and add a decay/demotion gate as a NEW subcommand under the existing cam patterns namespace: cam patterns prune (NOT cam prune -- that name is already the branch-cleanup command). Validation follows ADR-0038 (hand-rolled TS interface + typeof guard, optional draft-07 doc-only schema; no zod, no json-schema loader). The store is written on-main ref-only (commitTreeToMain + dedup, mirroring suggestions.jsonl / cam patterns archive), NOT via a working-tree/branch append. Outcome attribution: the implementer/planner reports the applied pattern-ids (new worker-report/handoff field) and the supervisor records the outcome at cycle-close, mirroring the CAM-189 terminal-verdict hook (loop.ts:2226). The full mulch model (records + outcome-scoring + decay) is in scope but is a STRONG split candidate -- expect the planner to slice into multiple stories.",
+    "acceptanceCriteria": [
+      "A typed pattern-record store exists with schema-validated records ({type, classification tier, recorded_at, evidence, dir_anchors, outcomes[]}), validated by a hand-rolled TS interface + typeof guard per ADR-0038 (optional draft-07 doc-only schema); unparseable records fail closed / are skipped.",
+      "New patterns are written as typed records via an on-main ref-only writer (commitTreeToMain + dedup, mirroring suggestions.jsonl and cam patterns archive), never via a working-tree/branch append.",
+      "The implementer and planner read the typed records via grep-on-demand / keyword filtering equivalently to today's patterns.md contract; the existing free-text patterns.md stays readable during the transition and is NOT bulk-migrated.",
+      "On applying a pattern, an outcome-status (success|failure|partial, mapped from WorkerOutcomeKind in src/supervisor/result.ts) is appended to that record's outcomes[] with confirmation-scoring; the implementer/planner reports the applied pattern-ids via a new worker-report/handoff field and the supervisor records the outcome at cycle-close, mirroring the CAM-189 hook (loop.ts:2226).",
+      "A decay/demotion gate is exposed as `cam patterns prune` (a NEW subcommand under the existing cam patterns namespace, NOT cam prune which is branch-cleanup) that demotes/decays records whose confirmation-score falls below a threshold.",
+      "typecheck passes, check:all is green, and new tests cover record validation, the on-main writer + dedup, the outcome-append, and the decay gate."
+    ],
+    "gotchas": [
+      "cam prune is ALREADY the branch-cleanup command (/cam-prune, .claude/commands/cam-prune.md); the new decay command MUST be named differently -- use the cam patterns namespace (cam patterns prune / decay) alongside the existing cam patterns archive.",
+      "Validation convention is a hand-rolled TS interface + typeof guard, optional draft-07 doc-only schema (ADR-0038); do NOT use zod or a json-schema loader.",
+      "Outcome-appends fire at cycle-close/review while a cam run session is live -> MUST use the on-main ref-only writer (commitTreeToMain + dedup, src/git/on-main.ts, like src/commands/suggestions.ts), NOT the branch-append path that new bullets use today (subagent-implementer.md:110).",
+      "The CAM-189 terminal-verdict hook (src/supervisor/loop.ts:2226, appends SUGGESTIONs to suggestions.jsonl after clearActive) is the exact 'on cycle-close append typed records on-main' precedent to mirror; the supervisor is sole writer of passes:true (ADR-0035).",
+      "WorkerOutcomeKind (src/supervisor/result.ts:69: pass|incomplete|fail|blocked|unknown|no-commit) is the per-story outcome signal to map onto success|failure|partial.",
+      "Do NOT bulk-migrate the existing 833-line / 538KB patterns.md; the typed store is the going-forward write path and existing bullets stay grep-readable / archivable.",
+      "IssueEntry (src/issues/types.ts:11-30) is the closest structural precedent (orthogonal lifecycle stage + status axes, ADR-0015); the append-only suggestions.jsonl (src/commands/suggestions.ts:84) is the closest behavioral precedent for append semantics.",
+      "The mulch model source-of-truth is the external mulch repo (src/schemas/record.ts, src/commands/prune.ts, src/utils/scoring.ts named in the issue), not this codebase -- nothing about mulch is documented here yet.",
+      "Strong split candidate: records + outcome-scoring + decay is a large multi-story effort; expect the planner/auditor to slice it."
+    ],
+    "domainTerms": [
+      "typed pattern record: a schema-validated record replacing a free-text patterns.md bullet, with {type, classification tier, recorded_at, evidence, dir_anchors, outcomes[]}.",
+      "classification tier: the record's confidence/authority level (mulch model), distinct from its outcome history.",
+      "dir_anchors: the directories/paths a pattern record is scoped to, so grep-on-demand can filter by subsystem.",
+      "outcome-status / confirmation-scoring: the success|failure|partial result appended to a record each time it is applied, accumulating a confirmation score.",
+      "decay/demotion gate: cam patterns prune -- demotes or decays records whose confirmation-score falls below threshold.",
+      "mulch model: the external mulch project's typed expertise-record + scoring + decay design (record.ts / scoring.ts / prune.ts) this issue ports.",
+      "on-main ref-only writer: the commitTreeToMain + dedup write path (src/git/on-main.ts) that commits directly to main without touching the working tree, multi-writer safe."
+    ]
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 1,
+    "riskReduction": 2,
+    "jobSize": 8
+  },
+  "type": "feat"
 }
