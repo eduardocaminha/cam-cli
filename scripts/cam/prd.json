@@ -65,7 +65,7 @@
         "Lint spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/release/pr-body.ts (add renderSetupChecklist + wire into composePrBody's section list; keep it pure), test/release/pr-body.test.ts, .claude/commands/cam-ship.md + templates/commands/cam-ship.md (dual-copy). Reporter blueprint: ralph-ship.md Step 14 (:73-105). Gotcha: PrdSnapshot only carries project/description/issueNumber/userStories(id,title,passes,requires)/notes/type; heuristics must work from those fields only. Deterministic artifact layer, not markdown command prose."
     },
