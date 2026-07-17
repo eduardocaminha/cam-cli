@@ -112,8 +112,11 @@ export function fingerprintPatternRecord(
  * file on main (non-zero exit -- no seeding story exists for this store) is
  * treated as an empty store rather than a structured error, so the first
  * successful append bootstraps the file.
+ *
+ * Exported (US-004, CAM-64) so src/commands/patterns-prune.ts can re-read the
+ * same store on every CAS attempt without duplicating this `git show` wrapper.
  */
-function readPatternRecordsContentFromMain(cwd: string, spawnFn: SpawnFn): string {
+export function readPatternRecordsContentFromMain(cwd: string, spawnFn: SpawnFn): string {
 	const showResult = spawnFn(
 		'git',
 		['-C', cwd, 'show', `main:${PATTERN_RECORDS_JSONL_PATH}`],
