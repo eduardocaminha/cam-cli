@@ -23,7 +23,7 @@
 
 import { useEffect, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
-import { Box, Text, useApp, useInput, useStdout } from 'ink';
+import { Box, Text, useApp, useInput, useWindowSize } from 'ink';
 import { spawnSync } from 'node:child_process';
 
 import { colors } from './theme.ts';
@@ -180,13 +180,14 @@ export function DashboardApp({
 }: DashboardAppProps): ReactElement {
 	const [data, setData] = useState<DashboardData>(() => readSnapshot());
 	const { exit } = useApp();
-	const { stdout } = useStdout();
+	const { columns } = useWindowSize();
 	const stories = data.stories ?? [];
 	const [sel, setSel] = useState<SelectionState>({ selected: 0, mode: 'list' });
 	// Fit the section rule to the host pane: full width minus a symmetric margin
 	// (the heading indent on each side), so the rule spans the pane instead of
-	// stopping at a fixed 50-col cap. Recomputed on SIGWINCH (Ink re-renders).
-	const cols = stdout?.columns ?? 80;
+	// stopping at a fixed 50-col cap. Recomputed on SIGWINCH (Ink 7's
+	// useWindowSize re-renders on resize).
+	const cols = columns;
 	const dividerWidth = Math.max(12, cols - layout.headingIndent * 2);
 	// Progress bar shrinks to fit: leave room for the content indent, the
 	// `iter` key column, and the ` N/M` counter that follows the bar.
@@ -205,14 +206,16 @@ export function DashboardApp({
 
 	useEffect(() => {
 		const id = setInterval(() => {
-			// US-001: freshly read the live column width (not the render-scoped
-			// `cols` closure, which can be stale mid-interval) and clear the
-			// frame BEFORE the repaint when it has changed since the last tick.
-			pollClearer.onPollTick(stdout?.columns ?? 80);
+			// US-001: use the current `columns` from useWindowSize (not a raw TTY
+			// read) to clear the frame BEFORE the repaint when it has changed
+			// since the last tick. `columns` is in this effect's dependency
+			// array so the closure is refreshed on resize (SIGWINCH), keeping
+			// the CAM-306 frame-clear behavior identical.
+			pollClearer.onPollTick(columns);
 			setData(readSnapshot());
 		}, pollIntervalMs);
 		return () => clearInterval(id);
-	}, [pollIntervalMs, readSnapshot, stdout, pollClearer]);
+	}, [pollIntervalMs, readSnapshot, columns, pollClearer]);
 
 	useInput((input, key) => {
 		if (input === 'q' || (key.ctrl && input === 'c')) {
