@@ -1,11 +1,11 @@
 {
   "id": "CAM-324",
   "title": "The new proceedBranchFn git calls use spawnSync from node:child_process, consis…",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-17T00:21:58.185Z",
-  "updatedAt": "2026-07-17T09:31:39.717Z",
+  "updatedAt": "2026-07-17T22:14:39.859Z",
   "description": "The new proceedBranchFn git calls use spawnSync from node:child_process, consistent with this file's existing file-wide pattern (surgical). A separate migration to Bun.spawnSync (as begun in CAM-308 for check-all.ts) would align sidecar.ts with the Bun-first invariant; out of scope for this fix.\n\nSource: cam/issue-319\nReview round: 1\n\nsuggestion-fingerprint: b4681b1ed422",
   "derivedFrom": [
     "CAM-319"
