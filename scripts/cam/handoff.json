@@ -1,18 +1,19 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Rebrand in-app product display strings to CAM Runtime"
+    "id": "US-003",
+    "title": "Rebrand package name, README, and CHANGELOG to CAM Runtime"
   },
   "branchName": "cam/issue-329",
   "timestamp": "2026-07-17T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "index.ts",
-    "src/commands/run.ts",
-    "src/retry/config.ts"
+    "package.json",
+    "bun.lock",
+    "README.md",
+    "CHANGELOG.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "index.ts: HELP.tagline now reads 'CAM Runtime: a local software-delivery runtime for coding agents' (was 'Autonomous Claude Code loop driver'), and the 'version' command's HelpEntry.description now reads 'Print the installed CAM Runtime version (also `--version` / `-v`)'. src/commands/run.ts: tmux status-right (line ~518) now reads ' CAM Runtime ' (was ' cam-cli '), still under status-right-length 24; the neighboring comment ('Right: CAM Runtime.') was updated to match but the older comment at line ~478 ('active pane | dim nav hint | cam-cli') was left untouched since it's not one of the 4 display strings the story named and is not behavior-affecting. src/retry/config.ts: DEFAULT_TOML header comment now reads '# CAM Runtime retry configuration'; the github.com/eduardocaminha/cam-cli url on the next line was deliberately left unchanged (repo rename is out of scope). No behavior-affecting name (cam command, ~/.cam, ~/.config/cam, CAM_* env vars, tmux socket 'cam'/@cam_label/cam-orch session prefix, .cam-* markers, chore(cam): trailers) was touched -- verified by grep that none of those tokens appear in the diff. No test asserted the old strings, so no test changes were needed.",
+  "nextStoryContext": "package.json 'name' is now 'cam-runtime' (still private/unpublished); bun.lock's workspace name field was hand-edited to match (single-line change, no dependency versions touched -- verified with `bun install --frozen-lockfile` producing only that 1-line diff). README.md: title is now '# CAM Runtime' and the opening paragraph carries the positioning statement verbatim ('CAM Runtime is a local software-delivery runtime for coding agents. It turns issues and goals into verifiable planning, implementation, review, and ship workflows, keeping state, coordinating specialized agents, and recovering interrupted runs.'); the `cam version` help-table line was also updated from 'Print the installed cam-cli version' to 'Print the installed CAM Runtime version' to match the actual index.ts HELP output from US-002 (was already stale before this story). All `github.com/eduardocaminha/cam-cli` repo urls and `cam-cli` directory-name references (git clone/cd instructions) were left untouched -- repo/dir rename is explicitly out of scope. CHANGELOG.md: only the top descriptive line ('All notable changes to CAM Runtime are documented here.') changed; no release-history entries were rewritten. test/release/pr-body.test.ts and test/release/version.test.ts still assert literal 'cam-cli' as directory-derived/local fixture data -- confirmed unchanged and passing (these are fixtures, not the package.json name). test/version.test.ts (version-parity) passes unchanged since it only compares package.json.version to CAM_VERSION.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
