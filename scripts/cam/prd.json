@@ -61,7 +61,7 @@
         "Lint spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "Add appendOutcomeOnMain + mapWorkerOutcomeToStatus to src/commands/pattern-records.ts. WorkerOutcomeKind is defined at src/supervisor/result.ts:69 (pass|incomplete|fail|blocked|unknown|no-commit). Map pass->success, fail/blocked/incomplete->failure or partial (document the exact mapping in the module), unknown/no-commit->no-op. Use the same per-attempt recompute CAS pattern as US-002 (read fresh main content, mutate the target line, re-commit)."
     },
