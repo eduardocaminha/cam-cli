@@ -20,7 +20,7 @@
       "id": "US-R1-001",
       "title": "Review round 1 fix 001: address reviewer finding",
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [test/ui/tab-bar.test.tsx:185]: The suspended={true} negative test asserts the frame is unchanged after writing Right/Left WITHOUT any event-loop settle. `waitForFrame(lastFrame, () => true, { timeoutMs: 200 })` short-circuits: with an always-true predicate the poll loop never runs and it returns synchronously (0 macrotask ticks). Per test/helpers/flush-ink.ts, an ink-testing-library stdin.write state update needs a variable number of macrotask ticks to land in lastFrame() (the reason the suspended={false} test polls). So if suspension regressed (isActive stopped honoring the prop and navigation fired), the onChange state update would not have flushed by assertion time and the test would still show the original active chip and PASS — the negative assertion does not reliably catch the regression it is meant to pin (AC2). Fix: give the update a real chance to flush before asserting unchanged (e.g. a predicate that stays false to consume the bounded window, or await flushInk() from the same helper), then assert content-persistence."
     },
     {
