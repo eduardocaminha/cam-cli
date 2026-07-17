@@ -32,7 +32,7 @@
         "check:all is green (lint spine + typecheck + tests). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/ui/TabBar.tsx (add e.g. a `suspended`/`isActive` prop, pass to useInput's second arg `{ isActive: !suspended }`; TabBar.tsx:36-43 is the Left/Right handler), src/ui/ConfigScreen.tsx (compute textInputFocused in useConfigScreenState / the ConfigScreen body and thread it into <TabBar ...> at ConfigScreen.tsx:352). TextInput-focused conditions: customModel.phase !== null (ConfigScreen.tsx:275,505), and Global tab (currentTab==='global') with fieldFocus 3 (notify recipient, ConfigScreen.tsx:629) or 4 (notify sender, ConfigScreen.tsx:642). Tests: test/ui/config-screen.test.tsx (replace the 'Left/Right always switches tabs...' test at line 190; add focused-suppressed + unfocused-switches cases) and consider a TabBar unit case in test/ui/tab-bar.test.tsx for the new prop. GOTCHA (from issue): the always-switch behavior was intentional per CAM-87 AC5 and covered by a test; this issue deliberately overrides it, so UPDATE the test, do not work around it. GOTCHA (Ink): success/failure is the glyph, never divider color. Ink useInput isActive option confirmed in node_modules/ink/build/hooks/use-input.d.ts:100-106. Do NOT touch vendor/ or templates/. Single vertical slice: presentational prop + wiring + test in one story."
     }
