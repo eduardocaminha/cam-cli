@@ -10,7 +10,10 @@
 // (wrap-around at the bounds, mirroring the Select.tsx up/down idiom) by
 // calling `onChange` with the next index; the caller re-renders with the new
 // `activeIndex`. This keeps TabBar itself state-free so ConfigScreen (US-004)
-// owns the keypress lifecycle end to end.
+// owns the keypress lifecycle end to end. The `suspended` prop (US-001,
+// CAM-241/316) stands the Left/Right handler down while the caller has a
+// TextInput focused, so those keys move the cursor in the field instead of
+// switching tabs.
 
 import type { ReactElement } from 'react';
 import { Box, Text, useInput } from 'ink';
@@ -30,17 +33,28 @@ interface TabBarProps {
 	tabs: readonly TabDef[];
 	activeIndex: number;
 	onChange: (index: number) => void;
+	/**
+	 * True while the caller owns a focused TextInput (e.g. a custom-model
+	 * entry or a notify recipient/from field) that Left/Right should feed
+	 * cursor movement to instead of switching tabs. Implemented via Ink's
+	 * `useInput` `isActive` option (US-001, CAM-241/316) rather than deleting
+	 * the handler, so re-activating it is just flipping this prop back.
+	 */
+	suspended?: boolean;
 }
 
-export function TabBar({ tabs, activeIndex, onChange }: TabBarProps): ReactElement {
-	useInput((_input, key) => {
-		if (tabs.length === 0) return;
-		if (key.leftArrow) {
-			onChange(activeIndex === 0 ? tabs.length - 1 : activeIndex - 1);
-		} else if (key.rightArrow) {
-			onChange(activeIndex === tabs.length - 1 ? 0 : activeIndex + 1);
-		}
-	});
+export function TabBar({ tabs, activeIndex, onChange, suspended = false }: TabBarProps): ReactElement {
+	useInput(
+		(_input, key) => {
+			if (tabs.length === 0) return;
+			if (key.leftArrow) {
+				onChange(activeIndex === 0 ? tabs.length - 1 : activeIndex - 1);
+			} else if (key.rightArrow) {
+				onChange(activeIndex === tabs.length - 1 ? 0 : activeIndex + 1);
+			}
+		},
+		{ isActive: !suspended },
+	);
 
 	return (
 		<Box flexDirection="row">

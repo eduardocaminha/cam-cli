@@ -2,10 +2,13 @@
 //
 // Tabbed UI for cam model configuration (US-004, CAM-241/153).
 //
-// 7 tabs, navigable via TabBar (Left/Right always switches tabs): the 6
-// phases (orchestrator, planner, auditor, implementer, reviewer, ship) plus
-// one Global tab. Each of the 5 LLM-phase tabs renders a model Select AND a
-// NEW effort Select; the Ship tab renders the model Select only (ship is
+// 7 tabs, navigable via TabBar (Left/Right switches tabs, EXCEPT while a
+// TextInput -- custom-model entry or the Global tab's notify recipient/from
+// field -- is focused, US-001 CAM-241/316: Left/Right then moves the cursor
+// in the field instead, via TabBar's `suspended` prop): the 6 phases
+// (orchestrator, planner, auditor, implementer, reviewer, ship) plus one
+// Global tab. Each of the 5 LLM-phase tabs renders a model Select AND a NEW
+// effort Select; the Ship tab renders the model Select only (ship is
 // deterministic/zero-LLM, ADR-0009, so it has no effort concept). The Global
 // tab folds backend/merge-mode/plan-approval plus the notify recipient/from
 // text inputs.
@@ -339,6 +342,12 @@ export function ConfigScreen({ onDone, onCancel }: ConfigScreenProps): ReactElem
 	// persisted from this screen.
 	const apiKeyConfigured = (process.env['RESEND_API_KEY'] ?? '') !== '';
 	const currentTab: TabKind = TABS[s.activeTab] ?? 'global';
+	// US-001 (CAM-241/316): a TextInput (not a Select) owns input in exactly
+	// these 3 states, so TabBar's Left/Right must stand down and let the field
+	// handle cursor movement instead of switching tabs.
+	const textInputFocused =
+		s.customModel.phase !== null ||
+		(currentTab === 'global' && (s.fieldFocus === 3 || s.fieldFocus === 4));
 
 	return (
 		<Box flexDirection="column">
@@ -349,7 +358,12 @@ export function ConfigScreen({ onDone, onCancel }: ConfigScreenProps): ReactElem
 			</Box>
 
 			<Box marginTop={1}>
-				<TabBar tabs={buildTabDefs(s.models)} activeIndex={s.activeTab} onChange={s.changeTab} />
+				<TabBar
+					tabs={buildTabDefs(s.models)}
+					activeIndex={s.activeTab}
+					onChange={s.changeTab}
+					suspended={textInputFocused}
+				/>
 			</Box>
 
 			{currentTab === 'global' ? (

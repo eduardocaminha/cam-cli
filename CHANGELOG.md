@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.189.0] - 2026-07-17
+
+### Added
+
+- US-001 - Suppress TabBar Left/Right while a ConfigScreen TextInput is focused
+
 ## [0.188.0] - 2026-07-17
 
 ### Added
