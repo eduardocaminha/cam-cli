@@ -23,7 +23,6 @@ import { existsSync, mkdtempSync, readFileSync, unlinkSync, writeFileSync } from
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import process from 'node:process';
-import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 
 import { runSidecarLoop, type RunSidecarLoopOptions, type SpawnFn as LoopSpawnFn, type IsPaneAlive } from '../supervisor/loop.ts';
@@ -795,6 +794,41 @@ export function updatePostMergeStalledMarker(
 }
 
 /**
+ * Adapt Bun.spawnSync into the legacy node-`spawnSync`-shaped result (pid,
+ * output, stdout, stderr, status, signal) that a handful of call sites in
+ * this file still need to return, because their consumer type
+ * (tmux/session.ts's `SpawnFn`, release/post-merge.ts's `SpawnFn`) is defined
+ * in another file and is out of scope for this story (US-002, CAM-324).
+ * Internally this always shells out via Bun.spawnSync + .success/.exitCode +
+ * TextDecoder, never node's spawnSync.
+ */
+function spawnSyncNodeShaped(
+	cmd: string,
+	args: string[],
+	opts?: { stdio?: 'pipe' | 'ignore' | 'inherit' },
+): {
+	pid: number;
+	output: Array<string | null>;
+	stdout: string;
+	stderr: string;
+	status: number | null;
+	signal: NodeJS.Signals | null;
+} {
+	const stdio = opts?.stdio ?? 'pipe';
+	const raw = Bun.spawnSync([cmd, ...args], { stdout: stdio, stderr: stdio });
+	const stdout = raw.stdout instanceof Buffer ? new TextDecoder().decode(raw.stdout) : '';
+	const stderr = raw.stderr instanceof Buffer ? new TextDecoder().decode(raw.stderr) : '';
+	return {
+		pid: raw.pid,
+		output: [null, stdout, stderr],
+		stdout,
+		stderr,
+		status: raw.success ? 0 : (raw.exitCode ?? 1),
+		signal: (raw.signalCode ?? null) as NodeJS.Signals | null,
+	};
+}
+
+/**
  * Parse a `gh pr view` spawnSync result into a discriminated GhPollResult
  * (US-001, CAM-170): ok:true with the parsed PrStatus on a zero exit with
  * well-shaped JSON, ok:false carrying the gh stderr (or a synthesized message
@@ -803,11 +837,11 @@ export function updatePostMergeStalledMarker(
  * Extracted from ghPollFn to keep it under the biome complexity/line limits
  * (CAM-60 factory/helper pattern).
  */
-function parseGhPollResult(result: SpawnSyncReturns<string>): GhPollResult {
-	if ((result.status ?? 1) !== 0) {
-		const stderr = result.stderr && result.stderr.trim().length > 0
+function parseGhPollResult(result: { success: boolean; exitCode: number; stdout: string; stderr: string }): GhPollResult {
+	if (!result.success) {
+		const stderr = result.stderr.trim().length > 0
 			? result.stderr.trim()
-			: `gh pr view exited with status ${result.status ?? 'unknown'}`;
+			: `gh pr view exited with status ${result.exitCode}`;
 		return { ok: false, stderr };
 	}
 	try {
@@ -817,7 +851,7 @@ function parseGhPollResult(result: SpawnSyncReturns<string>): GhPollResult {
 		}
 		return { ok: false, stderr: 'gh pr view returned unexpected JSON shape' };
 	} catch {
-		const stderr = result.stderr && result.stderr.trim().length > 0
+		const stderr = result.stderr.trim().length > 0
 			? result.stderr.trim()
 			: 'gh pr view returned malformed JSON';
 		return { ok: false, stderr };
@@ -854,11 +888,16 @@ function makeProductionMergeWatchFn(
 
 		const ghPollFn: GhPollFn = (prNumber): GhPollResult => {
 			// Read-only poll: keeps the ambient GITHUB_TOKEN (no env stripping).
-			const result = spawnSync(
-				'gh',
-				['pr', 'view', String(prNumber), '--json', 'state,mergeStateStatus,statusCheckRollup,autoMergeRequest,url'],
-				{ encoding: 'utf8' },
+			const raw = Bun.spawnSync(
+				['gh', 'pr', 'view', String(prNumber), '--json', 'state,mergeStateStatus,statusCheckRollup,autoMergeRequest,url'],
+				{ stdout: 'pipe', stderr: 'pipe' },
 			);
+			const result = {
+				success: raw.success,
+				exitCode: raw.exitCode,
+				stdout: raw.stdout instanceof Buffer ? new TextDecoder().decode(raw.stdout) : '',
+				stderr: raw.stderr instanceof Buffer ? new TextDecoder().decode(raw.stderr) : '',
+			};
 			return parseGhPollResult(result);
 		};
 
@@ -871,11 +910,10 @@ function makeProductionMergeWatchFn(
 			for (const [k, v] of Object.entries(process.env)) {
 				if (v !== undefined && k !== 'GITHUB_TOKEN') env[k] = v;
 			}
-			spawnSync('gh', ['pr', 'update-branch', String(prNumber)], { encoding: 'utf8', env });
+			Bun.spawnSync(['gh', 'pr', 'update-branch', String(prNumber)], { stdout: 'pipe', stderr: 'pipe', env });
 		};
 
-		const postMergeSpawnFn: PostMergeSpawnFn = (cmd, args, spawnOpts) =>
-			spawnSync(cmd, args, spawnOpts as Parameters<typeof spawnSync>[2]) as SpawnSyncReturns<string>;
+		const postMergeSpawnFn: PostMergeSpawnFn = (cmd, args) => spawnSyncNodeShaped(cmd, args);
 
 		// US-003 (CAM-200): thread the capture-pane reader + logEvent deps
 		// sendKeysVerified needs (idle-gate + composer-emptied verify + bounded
@@ -1034,9 +1072,11 @@ const GATES_OUTPUT_TAIL_LINES = 60;
 function makeProductionShipGatesFn(cwd: string): () => ShipGatesResult {
 	const [bin, ...rest] = DEFAULT_GATES_COMMAND.split(' ');
 	return (): ShipGatesResult => {
-		const result = spawnSync(bin ?? 'bun', rest, { cwd, encoding: 'utf8' });
-		if ((result.status ?? 1) === 0) return { ok: true, outputTail: '' };
-		const combined = `${result.stdout ?? ''}${result.stderr ?? ''}`;
+		const result = Bun.spawnSync([bin ?? 'bun', ...rest], { cwd, stdout: 'pipe', stderr: 'pipe' });
+		if (result.success) return { ok: true, outputTail: '' };
+		const stdout = result.stdout instanceof Buffer ? new TextDecoder().decode(result.stdout) : '';
+		const stderr = result.stderr instanceof Buffer ? new TextDecoder().decode(result.stderr) : '';
+		const combined = `${stdout}${stderr}`;
 		return { ok: false, outputTail: combined.split('\n').slice(-GATES_OUTPUT_TAIL_LINES).join('\n') };
 	};
 }
@@ -1059,8 +1099,18 @@ function buildProductionShipPrStepDeps(
 	claudeDir: string,
 ): Omit<RunShipPrStepOptions, keyof ShipPrStepInput> {
 	const watchFilePath = join(claudeDir, MERGE_WATCH_FILENAME);
-	const spawnFn: ShipPrSpawnFn = (cmd, args, options) =>
-		spawnSync(cmd, args, options as Parameters<typeof spawnSync>[2]) as SpawnSyncReturns<string>;
+	const spawnFn: ShipPrSpawnFn = (cmd, args, options) => {
+		const raw = Bun.spawnSync([cmd, ...args], {
+			stdout: 'pipe',
+			stderr: 'pipe',
+			...(options.env !== undefined ? { env: options.env } : {}),
+		});
+		return {
+			status: raw.success ? 0 : (raw.exitCode ?? 1),
+			stdout: raw.stdout instanceof Buffer ? new TextDecoder().decode(raw.stdout) : '',
+			stderr: raw.stderr instanceof Buffer ? new TextDecoder().decode(raw.stderr) : '',
+		};
+	};
 	return {
 		spawnFn,
 		writeTempFile: (content: string): string => {
@@ -1253,14 +1303,11 @@ function makeProductionShipPhaseFn(
 		const setPhase = makeSetPhaseFn(claudeDir, cwd);
 		try {
 			const loopSpawnFn: LoopSpawnFn = (cmd, args, spawnOpts) => {
-				const result = spawnSync(cmd, args, {
-					cwd,
-					stdio: spawnOpts?.stdio ?? 'pipe',
-					encoding: 'utf8',
-				} as Parameters<typeof spawnSync>[2]);
+				const stdio = spawnOpts?.stdio ?? 'pipe';
+				const result = Bun.spawnSync([cmd, ...args], { cwd, stdout: stdio, stderr: stdio });
 				return {
-					stdout: typeof result.stdout === 'string' ? result.stdout : '',
-					exitCode: result.status ?? null,
+					stdout: result.stdout instanceof Buffer ? new TextDecoder().decode(result.stdout) : '',
+					exitCode: result.exitCode,
 				};
 			};
 
@@ -1945,13 +1992,10 @@ function buildProductionDispatchFn(
 			? (): import('../supervisor/preflight-container.ts').PreflightResult =>
 				preflightWorkerContainer({
 					probe: (args) => {
-						const r = spawnSync('docker', args, {
-							stdio: 'pipe',
-							encoding: 'utf8',
-						} as Parameters<typeof spawnSync>[2]);
+						const r = Bun.spawnSync(['docker', ...args], { stdout: 'pipe', stderr: 'pipe' });
 						return {
-							stdout: typeof r.stdout === 'string' ? r.stdout : '',
-							exitCode: r.status ?? 1,
+							stdout: r.stdout instanceof Buffer ? new TextDecoder().decode(r.stdout) : '',
+							exitCode: r.exitCode,
 						};
 					},
 				})
@@ -2045,32 +2089,23 @@ function makePlanPaneHelpers(
 	sessionName: string,
 ): { isPaneAlive: IsPaneAlive; ensureWorkerPane: () => string } {
 	const isPaneAlive: IsPaneAlive = (paneId) => {
-		const r = spawnSync(
-			'tmux',
-			['-L', 'cam', 'display-message', '-p', '-t', paneId, '#{pane_dead}'],
-			{ stdio: 'pipe', encoding: 'utf8' } as Parameters<typeof spawnSync>[2],
+		const r = Bun.spawnSync(
+			['tmux', '-L', 'cam', 'display-message', '-p', '-t', paneId, '#{pane_dead}'],
+			{ stdout: 'pipe', stderr: 'pipe' },
 		);
-		if (r.status !== 0) return false;
-		return (typeof r.stdout === 'string' ? r.stdout.trim() : '') === '0';
+		if (!r.success) return false;
+		const stdout = r.stdout instanceof Buffer ? new TextDecoder().decode(r.stdout) : '';
+		return stdout.trim() === '0';
 	};
 	const ensureWorkerPane = (): string => {
 		const currentId = readWorkerPaneMarker(claudeDir) ?? '%2';
 		if (isPaneAlive(currentId)) return currentId;
-		const orchPaneId = getOrchPaneId(sessionName, (cmd, args, opts) =>
-			spawnSync(cmd, args, {
-				stdio: opts?.stdio ?? 'pipe',
-				encoding: 'utf8',
-			} as Parameters<typeof spawnSync>[2]),
-		);
+		const orchPaneId = getOrchPaneId(sessionName, (cmd, args, opts) => spawnSyncNodeShaped(cmd, args, opts));
 		const targetPaneId = orchPaneId ?? `${sessionName}:0`;
 		const newId = openPaneInSession(
 			sessionName,
 			['cat'],
-			(cmd, args, opts) =>
-				spawnSync(cmd, args, {
-					stdio: opts?.stdio ?? 'pipe',
-					encoding: 'utf8',
-				} as Parameters<typeof spawnSync>[2]),
+			(cmd, args, opts) => spawnSyncNodeShaped(cmd, args, opts),
 			targetPaneId,
 		);
 		writeWorkerPaneMarker(claudeDir, newId);
@@ -2098,7 +2133,7 @@ function makeTeardownPlanPanesFn(claudeDir: string): () => void {
 	return () => {
 		const id = readWorkerPaneMarker(claudeDir) ?? '%2';
 		try {
-			spawnSync('tmux', ['-L', 'cam', 'kill-pane', '-t', id], { stdio: 'pipe' });
+			Bun.spawnSync(['tmux', '-L', 'cam', 'kill-pane', '-t', id], { stdout: 'pipe', stderr: 'pipe' });
 		} catch {
 			// best-effort: silent no-op
 		}
@@ -2316,13 +2351,10 @@ function buildPlanContainerOpts(cwd: string): PlanContainerOpts {
 		workerIsolation === 'container'
 			? (): PreflightResult => preflightWorkerContainer({
 				probe: (args) => {
-					const r = spawnSync('docker', args, {
-						stdio: 'pipe',
-						encoding: 'utf8',
-					} as Parameters<typeof spawnSync>[2]);
+					const r = Bun.spawnSync(['docker', ...args], { stdout: 'pipe', stderr: 'pipe' });
 					return {
-						stdout: typeof r.stdout === 'string' ? r.stdout : '',
-						exitCode: r.status ?? 1,
+						stdout: r.stdout instanceof Buffer ? new TextDecoder().decode(r.stdout) : '',
+						exitCode: r.exitCode,
 					};
 				},
 			})
@@ -2567,29 +2599,22 @@ function makeProductionPlanPhaseFn(
 		// Read plan_issue fresh on each invocation (US-001, CAM-154).
 		const planIssue = readPlanIssueFn();
 
-		// Build a loop.ts-compatible SpawnFn wrapping spawnSync with cwd.
+		// Build a loop.ts-compatible SpawnFn wrapping Bun.spawnSync with cwd.
 		const loopSpawnFn: LoopSpawnFn = (cmd, args, spawnOpts) => {
-			const result = spawnSync(cmd, args, {
-				cwd,
-				stdio: spawnOpts?.stdio ?? 'pipe',
-				encoding: 'utf8',
-			} as Parameters<typeof spawnSync>[2]);
+			const stdio = spawnOpts?.stdio ?? 'pipe';
+			const result = Bun.spawnSync([cmd, ...args], { cwd, stdout: stdio, stderr: stdio });
 			return {
-				stdout: typeof result.stdout === 'string' ? result.stdout : '',
-				exitCode: result.status ?? null,
+				stdout: result.stdout instanceof Buffer ? new TextDecoder().decode(result.stdout) : '',
+				exitCode: result.exitCode,
 			};
 		};
 
 		// Build the preflight spawnFn (PlanPreflightSpawnFn shape: no stdio opt).
 		const preflightSpawnFn: PlanPreflightSpawnFn = (bin, args) => {
-			const r = spawnSync(bin, args, {
-				cwd,
-				stdio: 'pipe',
-				encoding: 'utf8',
-			} as Parameters<typeof spawnSync>[2]);
+			const r = Bun.spawnSync([bin, ...args], { cwd, stdout: 'pipe', stderr: 'pipe' });
 			return {
-				stdout: typeof r.stdout === 'string' ? r.stdout : '',
-				exitCode: r.status ?? 1,
+				stdout: r.stdout instanceof Buffer ? new TextDecoder().decode(r.stdout) : '',
+				exitCode: r.exitCode,
 			};
 		};
 
@@ -3325,8 +3350,7 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 	const claudeDir = join(cwd, '.claude');
 	const prdPath = join(cwd, 'scripts/cam/prd.json');
 
-	const realSpawnFn: SpawnFn = (cmd, args, spawnOpts) =>
-		spawnSync(cmd, args, spawnOpts as Parameters<typeof spawnSync>[2]);
+	const realSpawnFn: SpawnFn = (cmd, args, spawnOpts) => spawnSyncNodeShaped(cmd, args, spawnOpts);
 	const sessionName = projectSessionName(cwd);
 	const logEvent =
 		options.logEventFn ?? makeFileEventLogger(join(claudeDir, 'cam-worker-events.jsonl'));
