@@ -403,3 +403,6 @@ The backend-agnostic completion+result boundary (CAM_*_STATUS lines, <review> ta
 
 **subagent colors**:
 Blue Lotus #426DFF, Lemon #AFE220, Sun Yellow #FFDF24, Salmon #FF6666 -- used ONLY to mark agents in figures; explicitly NOT part of the site or TUI chrome.
+
+**external README**:
+The public-launch, English, ultra-professional README for CAM Runtime (with vendored cam-dss visual assets), distinct from the internal-contributor documentation. Build owned by CAM-331; informed by the CAM-330 readiness analysis and the CAM-332 brand palette.
