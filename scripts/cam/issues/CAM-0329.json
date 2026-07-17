@@ -1,11 +1,11 @@
 {
   "id": "CAM-329",
   "title": "Rebrand cam-cli to CAM Runtime (product name + uppercase splash)",
-  "stage": "specified",
+  "stage": "idea",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-17T09:18:01.738Z",
-  "updatedAt": "2026-07-17T09:37:25.293Z",
+  "updatedAt": "2026-07-17T09:51:33.740Z",
   "description": "The product is renamed from cam-cli to CAM Runtime. Scope to nail down during spec: (a) product display name becomes CAM Runtime; (b) the splash screen currently renders lowercase and must render uppercase (CAM Runtime / CAM); (c) decide the blast radius: package.json name, README/docs/CHANGELOG, in-app strings, repo/dir name - and explicitly whether the cam command/binary name stays cam (likely yes, only the product display name changes). Two operator requests bundled: the rename and the splash lowercase->uppercase.",
   "spec": {
     "scope": "Rebrand the product DISPLAY name from cam-cli to CAM Runtime; the command/binary stays cam. Two parts. (A) Uppercase splash: author a NEW uppercase CAM ASCII block wordmark in src/ui/Splash.tsx (replacing the lowercase 'cam' WORDMARK_ROWS:27-33) plus a styled 'Runtime' text line below it. (B) Product display strings + package name + docs read 'CAM Runtime': help tagline (index.ts:105), tmux status-right (run.ts:518, fits the 24-char status-right-length), version-command description (index.ts:132), retry config file header (config.ts:30-31), and package.json name (cam-cli -> cam-runtime; private/unpublished). README.md and CHANGELOG.md title/product lines say CAM Runtime and README carries the new positioning as the product description (history not rewritten). Taglines stay English (parity with the current 'Autonomous Claude Code loop driver'), distilled from the positioning. POSITIONING (product description source of truth): 'CAM Runtime is a local software-delivery runtime for coding agents. It turns issues and goals into verifiable planning, implementation, review, and ship workflows, keeping state, coordinating specialized agents, and recovering interrupted runs.' OUT OF SCOPE: the GitHub repo / local directory rename (separate operator step), so the splash repo url ('eduardocaminha/cam-cli', Splash.tsx:101) and the pr-body/changelog project-name fixtures stay as-is; and ALL behavior-affecting names stay unchanged (cam command, ~/.cam, ~/.config/cam, CAM_* env vars, tmux socket 'cam'/@cam_label/cam-orch session prefix, .cam-* markers, chore(cam): git trailers).",
