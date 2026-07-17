@@ -406,3 +406,9 @@ Blue Lotus #426DFF, Lemon #AFE220, Sun Yellow #FFDF24, Salmon #FF6666 -- used ON
 
 **external README**:
 The public-launch, English, ultra-professional README for CAM Runtime (with vendored cam-dss visual assets), distinct from the internal-contributor documentation. Build owned by CAM-331; informed by the CAM-330 readiness analysis and the CAM-332 brand palette.
+
+**launch-readiness report**:
+The written audit (e.g. docs/launch-readiness.md) of CAM Runtime's fitness for public release across distribution/install, onboarding, external docs, security/secrets, license/repo-visibility, telemetry/privacy, versioning/release/update, support channels, and a prioritized gap triage.
+
+**public v1 go/no-go**:
+The explicit release recommendation the readiness analysis (CAM-330) produces, naming the must-fix blocking set for a public v1.
