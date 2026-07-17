@@ -1,0 +1,24 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Extend docs-fetch shapes with channel table, anti-over-fetch guard, conflict detection" },
+  "branchName": "cam/issue-52",
+  "timestamp": "2026-07-17T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "scripts/cam/handoff.schema.json",
+    ".claude/agents/subagent-planner.md",
+    "templates/agents/subagent-planner.md",
+    "src/vendor/_generated.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 extended two paired shapes, not one: handoff.schema.json's officialDocsValidated items gained optional `channel` + `localConventionConflict` (additionalProperties still false); subagent-planner.md's officialDocsConsulted example JSON + prose gained the same two fields plus a new '### Docs-Fetch Channel Table' section (lib->channel table for ink/bun/js-yaml/chalk, an anti-over-fetch guard capping fetches to one per lib per issue, and local-convention-conflict detection guidance). This story required templates/agents/subagent-planner.md to become BYTE-IDENTICAL to .claude/agents/subagent-planner.md (AC4, verified via `diff`, then `bun run embed-vendor`) -- this is a deliberate exception to the general 'dual-copy is per-file, not always identical' gotcha (see patterns.md), driven by this story's own literal AC wording, not a new blanket rule for every agent-doc pair. If a later story in this PRD wires the planner's actual runtime behavior (e.g. reading/validating officialDocsConsulted programmatically) it should keep both fields optional and additionalProperties:false in the JSON Schema.",
+  "officialDocsValidated": [
+    {
+      "lib": "js-yaml",
+      "channel": "WebFetch",
+      "url": "https://github.com/nodeca/js-yaml",
+      "fetchedAt": "2026-07-17T00:00:00Z",
+      "status": "aligned",
+      "summary": "Confirmed the js-yaml GitHub repo (cited in the new lib->channel table) is the current, active, non-archived canonical doc source; no correction needed."
+    }
+  ]
+}
