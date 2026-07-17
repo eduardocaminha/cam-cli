@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.186.0] - 2026-07-17
+
+### Added
+
+- US-001 - Surface failed plan-approval branch creation instead of silently entering 'implementing'
+
 ## [0.185.0] - 2026-07-16
 
 ### Added
