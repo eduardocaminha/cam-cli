@@ -367,3 +367,9 @@ The external mulch project's typed expertise-record + scoring + decay design (re
 
 **on-main ref-only writer**:
 The commitTreeToMain + dedup write path (src/git/on-main.ts) that commits directly to main without touching the working tree; multi-writer safe while a cam run session is live.
+
+**CAM Runtime**:
+The product's display name (formerly cam-cli): a local software-delivery runtime for coding agents that turns issues and goals into verifiable planning, implementation, review, and ship workflows, keeping state, coordinating specialized agents, and recovering interrupted runs. The invoked command stays cam.
+
+**wordmark**:
+The hand-authored uppercase CAM ASCII block logo rendered on the splash screen (src/ui/Splash.tsx), distinct from the tagline text line.
