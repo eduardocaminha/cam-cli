@@ -104,7 +104,7 @@
         "Lint spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/commands/cam-review.md + templates mirror; .claude/agents/subagent-planner.md + templates mirror (ambiguity/blocker + scope approval reference the gate). Gotcha (spec + memory feedback-operator-participation-spec-only): AskUserQuestion is disallowed for EVERY cam subagent and cam deliberately chose file-based operator gates (ADR-0041); do NOT re-enable it and do NOT set plan_approval=operator. The gate primitive (src/supervisor/gate.ts writeGateAndNotify/pollAndResolveGate, cam-gate.schema.json) already exists; this story is documentation/wiring of the moments to it, not a new mechanism."
     }
