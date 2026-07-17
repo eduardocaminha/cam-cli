@@ -1,0 +1,20 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Add direct TabBar unit test for the `suspended` prop contract" },
+  "branchName": "cam/issue-326",
+  "timestamp": "2026-07-17T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": ["test/ui/tab-bar.test.tsx"],
+  "openQuestions": [
+    "Pre-existing US-003 TabBar arrow tests ('Right arrow moves the active tab forward', etc.) assert plain chip text ('[ Planner ]') which is present in the frame regardless of active index, because ink-testing-library's fake stdout runs chalk with color support disabled (no TTY) -- the active chip's only visible marker is bold+accent color, stripped in that mode. Those pre-existing assertions are effectively vacuous (would pass even if onChange/navigation were broken) but are out of scope for US-001 (no touching pre-existing passing tests without a story mandate). The two new US-001 tests use the chalk.level=3 forcing technique (established in test/ui/dashboard-story-row.test.tsx) to assert against the real accent+bold ANSI-wrapped chip text instead, so they do meaningfully verify navigation/suspension. Flagging so a future hygiene story can decide whether to retrofit the US-003 tests with the same technique."
+  ],
+  "nextStoryContext": "US-001 was test-only: added a `ControlledTabBarWithSuspend` wrapper (threads `suspended` through to TabBar) and a new `describe('TabBar suspended prop (US-001, CAM-241/316)')` block in test/ui/tab-bar.test.tsx. src/ui/TabBar.tsx was NOT touched (test-seam gap did not require a source change). Key finding: ink-testing-library's lastFrame() renders through chalk with color support OFF (no TTY) by default, so active-vs-inactive chip styling (bold+accent color) is invisible in plain frame text; use `chalk.level = 3` in beforeAll/afterAll (save+restore) to get real ANSI output for assertions when a component's only differentiator is styling, not text content. Build the expected active-chip substring with `chalk.bold(chalk.hex(colors.accent)(text))` (theme.ts's `colors.accent`) to match Ink's Text rendering exactly, rather than hand-assembling escape codes.",
+  "officialDocsValidated": [
+    {
+      "lib": "ink",
+      "url": "https://github.com/vadimdemedes/ink",
+      "fetchedAt": "2026-07-17T00:00:00Z",
+      "status": "aligned",
+      "summary": "useInput's options.isActive is boolean, default true, disables/enables input capturing (documented use case: avoid double-handling across multiple useInput consumers). Matches TabBar.tsx's existing `{ isActive: !suspended }` usage and the local .d.ts. No code changes needed; this story only added tests."
+    }
+  ]
+}
