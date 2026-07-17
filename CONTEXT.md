@@ -346,3 +346,24 @@ cam's shipped operator-decision primitive (cam-gate.schema.json + the cam decide
 
 **reporter port**:
 A feature ported from the sibling reporter project's .claude/commands/ralph-*.md blueprints into cam's deterministic artifact layer.
+
+**typed pattern record**:
+A schema-validated record replacing a free-text patterns.md bullet, with fields {type, classification tier, recorded_at, evidence, dir_anchors, outcomes[]}, validated by a hand-rolled TS typeof guard (ADR-0038).
+
+**classification tier**:
+A pattern record's confidence/authority level in the mulch model, distinct from its accumulated outcome history.
+
+**dir_anchors**:
+The directories/paths a pattern record is scoped to, letting grep-on-demand filter records by the subsystem a story touches.
+
+**outcome-status / confirmation-scoring**:
+The success|failure|partial result appended to a record's outcomes[] each time the pattern is applied, accumulating a confirmation score used by the decay gate.
+
+**decay/demotion gate**:
+cam patterns prune -- a subcommand that demotes or decays pattern records whose confirmation score falls below a threshold.
+
+**mulch model**:
+The external mulch project's typed expertise-record + scoring + decay design (record.ts / scoring.ts / prune.ts) that CAM-64 ports into cam.
+
+**on-main ref-only writer**:
+The commitTreeToMain + dedup write path (src/git/on-main.ts) that commits directly to main without touching the working tree; multi-writer safe while a cam run session is live.
