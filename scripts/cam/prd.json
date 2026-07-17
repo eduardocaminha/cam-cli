@@ -45,7 +45,7 @@
         "Lint spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: NEW src/supervisor/scope-proposal.ts (model on src/supervisor/plan-verdict-report.ts: exported const FILENAME under scripts/cam/, makeRead* factory, JSON reader shape guard from patterns.md 'JSON reader shape guards'), src/supervisor/plan-runner.ts (read+narrate, mirror makeReadPlanVerdict usage), .claude/agents/subagent-planner.md + templates/agents/subagent-planner.md (dual-copy). Reporter blueprint: ralph-plan.md Step 4.7 scope (:151-208). Gotcha: hand-rolled TS guard only (ADR-0038, patterns.md:104), NOT zod. Ephemeral artifact under scripts/cam/, gitignore-consistent with plan-verdict-report.json."
     },
