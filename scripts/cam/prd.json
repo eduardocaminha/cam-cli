@@ -40,7 +40,7 @@
         "Lint/static spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Read-side, the actual defect fix. File: src/stats/tokens.ts applyCycleTokensDetail (~114-134); existing.total += total and existing.orchTokens += orchTokens are the quadratic bug (tokens.ts:130-132). Parse detail['orchTokensMode'] from the raw record (already a Record<string, unknown>). Delta-mode: sum orchTokens. Legacy (absent marker, monotonic cumulative): collapse per issue-run via max (gotcha 5 of the issue: no session id on the event, so max == final session total is the best-effort fallback). Mixed stream: legacy-final (max) + subsequent deltas. Recompute IssueTokenRollup.total = orchTokens + workerTokens rather than summing the stored total. Do NOT touch src/stats/split-advisory.ts (split-advisory.ts:98-100 mean + 1.5x are correct). The consumer chain is src/supervisor/plan-split-advisory.ts:78-86 (perIssue[].total -> records -> computeSplitAdvisory). Tests: test/stats/tokens.test.ts; verify realistic bucket via test/supervisor/plan-split-advisory.test.ts."
     }
