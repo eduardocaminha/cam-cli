@@ -116,7 +116,7 @@
         "Lint spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": "US-005",
       "notes": "Wire into src/supervisor/loop.ts terminal-verdict block (~2226, next to the CAM-189 fileSuggestionsFn hook and clearActive) and inject the dep in src/supervisor/host.ts (mirror makeReadWorkerReport / fileSuggestionsFn wiring). Fire on complete AND awaiting-operator like the CAM-189 hook. Reuse mapWorkerOutcomeToStatus + appendOutcomeOnMain from US-003. Keep it fail-safe (wrap in try/catch like the CAM-189 hook so a store write error never wedges the terminal path)."
     }
