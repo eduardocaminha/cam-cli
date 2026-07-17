@@ -1,0 +1,10 @@
+{
+  "id": "CAM-332",
+  "title": "CAM Runtime brand color identity (palette + usage rules)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-17T09:48:43.580Z",
+  "updatedAt": "2026-07-17T09:48:43.580Z",
+  "description": "Canonical brand color palette for CAM Runtime, for the site + arts (and consumed by the README, CAM-331). GREENS: Fir Green #10C66F (primary accent: subscribe button, links, nav, highlights); Forest Green #003333 (deep green: text over green, e.g. calendar days); Aero Green #CAFFE3 (light green: welcome-page background, light highlight); White #FFFFFF (base). NEUTRALS: #1F1F1F (ink: dark text/backgrounds, tiles, dark cards, banner); #6F6F6F (secondary text); #9C9C9C (secondary over dark); #EDECF0 (surface: light cards/surfaces); #E3E3E5 (line: borders/dividers). SUBAGENT COLORS (ONLY to mark agents in figures, do NOT enter site chrome): Blue Lotus #426DFF, Lemon #AFE220, Sun Yellow #FFDF24, Salmon #FF6666. Canonical home is the cam-dss design system; within cam-cli this feeds the README brand (CAM-331) and optionally the splash accent (Fir Green). Usage rules above are normative."
+}
