@@ -1,0 +1,12 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Cover notify-sender (fieldFocus===4) TabBar suppression with a dedicated test" },
+  "branchName": "cam/issue-325",
+  "timestamp": "2026-07-17T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": ["test/ui/config-screen.test.tsx"],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 added a test-only mirror of the notify-recipient suppression test at test/ui/config-screen.test.tsx, but tabbing forward 4 fields (not 3) to land on notify-sender (fieldFocus===4). No production code touched. Suite count went from 20 to 21 passing tests in this file, 4865 total repo-wide.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "Test-only change exercising bun:test + ink-testing-library, both already in use unchanged in this file; no new external API surface introduced." }
+  ]
+}
