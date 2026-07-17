@@ -1,0 +1,29 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-325",
+  "description": "Add a dedicated test for the notify-sender (fieldFocus===4) TabBar Left/Right suppression sub-branch in ConfigScreen.",
+  "issueNumber": 325,
+  "type": "chore",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Cover notify-sender (fieldFocus===4) TabBar suppression with a dedicated test",
+      "description": "As a maintainer, I need a dedicated test for the notify-sender field's Left/Right tab-suppression branch so that the fieldFocus===4 sub-condition is directly exercised instead of relying on symmetry with the notify-recipient branch.",
+      "acceptanceCriteria": [
+        "A new test in test/ui/config-screen.test.tsx focuses the Global tab's notify-sender field (fieldFocus===4) by wrapping LEFT to Global then tabbing forward 4 fields (backend -> merge-mode -> plan-approval -> notify-recipient -> notify-sender), awaiting each Tab individually, and waiting for the frame to contain 'resend_from'. [oracle: file-assert grep -q 'resend_from' test/ui/config-screen.test.tsx]",
+        "With the notify-sender NotifyTextInput focused, typing draft text then pressing RIGHT and LEFT does NOT switch tabs: the assertion confirms the frame still contains 'resend_from' and the typed draft, and does NOT contain 'Model for orchestrator:'. [oracle: bun test test/ui/config-screen.test.tsx]",
+        "The test mirrors the existing 'notify-recipient text field is focused (suppressed navigation)' test structurally (LEFT-to-Global wrap, per-Tab awaits, RIGHT/LEFT suppression checks). [oracle: reviewer-judgment]",
+        "bun test test/ui/config-screen.test.tsx passes and the suite baseline is unchanged except +1 passing test. [oracle: bun test test/ui/config-screen.test.tsx]",
+        "The Ink screen renders correctly under ink-testing-library (the new test drives ConfigScreen via renderConfig and asserts on lastFrame). [oracle: bun test test/ui/config-screen.test.tsx]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Test-only change; do NOT modify production code (src/ui/ConfigScreen.tsx, src/ui/TabBar.tsx). Edit only test/ui/config-screen.test.tsx. Model the new test on the existing 'notify-recipient text field is focused (suppressed navigation)' test at test/ui/config-screen.test.tsx:190-213, but tab forward 4 times (one more than the recipient test's 3) to reach fieldFocus===4. Gotchas: notify-recipient is fieldFocus===3, notify-sender is fieldFocus===4; suppression is gated at ConfigScreen.tsx:350 on (currentTab==='global' && (fieldFocus===3 || fieldFocus===4)). The notify-sender NotifyTextInput prompt is 'resend_from (sender address, blank to leave unset):' (ConfigScreen.tsx:656), so waitForFrame on the substring 'resend_from'. Each TAB/RIGHT/LEFT stdin.write must be awaited individually via waitForFrame, else un-awaited writes collapse in ink-testing-library (see the recipient/Ship-tab tests' comments)."
+    }
+  ]
+}
