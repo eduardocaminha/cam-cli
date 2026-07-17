@@ -1,13 +1,40 @@
 {
   "id": "CAM-324",
   "title": "The new proceedBranchFn git calls use spawnSync from node:child_process, consis…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-17T00:21:58.185Z",
-  "updatedAt": "2026-07-17T00:21:58.185Z",
+  "updatedAt": "2026-07-17T09:31:39.717Z",
   "description": "The new proceedBranchFn git calls use spawnSync from node:child_process, consistent with this file's existing file-wide pattern (surgical). A separate migration to Bun.spawnSync (as begun in CAM-308 for check-all.ts) would align sidecar.ts with the Bun-first invariant; out of scope for this fix.\n\nSource: cam/issue-319\nReview round: 1\n\nsuggestion-fingerprint: b4681b1ed422",
   "derivedFrom": [
     "CAM-319"
-  ]
+  ],
+  "spec": {
+    "scope": "Migrate ALL runtime spawnSync invocations in src/commands/sidecar.ts (~21 sites plus the import at :26) from node:child_process spawnSync to Bun.spawnSync, aligning the whole file with the Bun-first invariant (as CAM-308 did for the check-*.ts gate helpers). No functional change: preserve exit-code semantics, stdout/stderr decoding, and fail-closed fidelity at every site. Explicitly includes checkoutMainFn (2 sites, sidecar.ts:2759) and proceedBranchFn (4 sites, sidecar.ts:2846), whose real bodies are currently untested. Add real-git test coverage for the migrated checkoutMainFn/proceedBranchFn bodies (or their return-shape adapters) so a .status->.exitCode / Buffer-stdout regression cannot slip through. Out of scope: the container seams in OTHER files (container-config.ts, ensure-container.ts) that also read r.status -- this issue is sidecar.ts only.",
+    "acceptanceCriteria": [
+      "src/commands/sidecar.ts no longer imports spawnSync from node:child_process; every runtime subprocess call uses Bun.spawnSync([cmd, ...args], opts), matching the CAM-308 pattern (check-all.ts:130).",
+      "Each migrated site preserves exit-code semantics via .success/.exitCode (replacing .status ?? 1) and decodes .stdout/.stderr via new TextDecoder().decode() (replacing encoding:'utf8' string reads), with fail-closed behavior unchanged.",
+      "checkoutMainFn and proceedBranchFn are migrated and gain real-git test coverage that exercises their real bodies (not injected fakes) and asserts the return-shape adapters (exitCode + decoded stdout) behave correctly.",
+      "No functional/behavioral change: existing sidecar / plan-approval-gate / in-progress-conflict tests still pass.",
+      "typecheck passes and check:all is green."
+    ],
+    "gotchas": [
+      "grep -c spawnSync reports 38 but that includes the import, JSDoc, and Parameters<typeof spawnSync>[2] type-casts; ~21 are runtime invocations (sites: 845,862,866,1025,1051,1244,1935,2035,2047,2057,2088,2296,2549,2562,2762,2769,2855,2857,2858,2863,3301).",
+      "API diffs to handle at every site: node .status (number|null) -> Bun .exitCode (number) + .success (boolean); node decoded-string stdout (encoding:'utf8') -> Bun Uint8Array stdout with NO encoding option (decode via new TextDecoder().decode()); node spawnSync(cmd,args,opts) -> Bun.spawnSync([cmd,...args],opts); node stdio string -> Bun separate stdin/stdout/stderr fields. env is supported by Bun.spawnSync.",
+      "No input/shell/maxBuffer options are used in sidecar.ts, so nothing blocks a 1:1 swap; encoding is the only non-trivial translation and is mechanical.",
+      "CAM-308 is the reference pattern: check-all.ts:130 (Bun.spawnSync([cmd,...args],{stdin/stdout/stderr:'inherit'}), gate .success && .exitCode===0), check-coverage.ts:131-132 and validate-agents-md.ts:293-328 (TextDecoder decode, read .success/.exitCode).",
+      "TEST GAP: checkoutMainFn (sidecar.ts:2759) and proceedBranchFn (sidecar.ts:2846) real bodies are NOT tested -- test/plan-approval-gate.test.ts:89,127 and test/supervisor/in-progress-conflict.test.ts:235,247,254 inject fakes; a return-shape regression slips through today, which is why AC3 requires real coverage.",
+      "The return-shape adapter seams that normalize spawnSync into {stdout:string,exitCode} (e.g. sidecar.ts:2770) are the .status->.exitCode surface to update carefully.",
+      "No ADR/CONTEXT entry exists; the precedent is scripts/cam/CLAUDE.md Bun-only invariant + journal.md CAM-308 (:171,180,181,362,369-371) + the CAM-324 promotion (:429,441 -- checkoutMainFn was explicitly folded into this issue's scope)."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 1,
+    "timeCriticality": 1,
+    "riskReduction": 2,
+    "jobSize": 3
+  },
+  "type": "chore"
 }
