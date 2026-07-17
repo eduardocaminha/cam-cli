@@ -1,13 +1,43 @@
 {
   "id": "CAM-325",
   "title": "textInputFocused suppresses for both notify-recipient (fieldFocus===3) and noti…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-17T01:51:32.994Z",
-  "updatedAt": "2026-07-17T01:51:32.994Z",
+  "updatedAt": "2026-07-17T02:31:49.883Z",
   "description": "textInputFocused suppresses for both notify-recipient (fieldFocus===3) and notify-sender (fieldFocus===4), but only the recipient branch is exercised by a test; the sender branch relies on symmetry. A dedicated fieldFocus===4 case would close the last uncovered sub-condition.\n\nSource: cam/issue-316\nReview round: 1\n\nsuggestion-fingerprint: 7868b92c0930",
   "derivedFrom": [
     "CAM-316"
-  ]
+  ],
+  "spec": {
+    "scope": "Add one dedicated test to test/ui/config-screen.test.tsx covering the fieldFocus===4 (notify-sender) TabBar Left/Right suppression sub-branch, which is currently only exercised for fieldFocus===3 (notify-recipient) and otherwise relies on symmetry. Test-only change: no production code (src/ui/ConfigScreen.tsx, src/ui/TabBar.tsx) is modified.",
+    "acceptanceCriteria": [
+      "A new test in test/ui/config-screen.test.tsx focuses the Global tab's notify-sender field (fieldFocus===4) by tabbing forward 4 fields (backend -> merge-mode -> plan-approval -> notify-recipient -> notify-sender), awaiting each Tab individually, and waiting for the frame to contain 'resend_from'.",
+      "With the notify-sender NotifyTextInput focused, typing draft text then pressing RIGHT and LEFT does NOT switch tabs: the assertion confirms the frame still contains 'resend_from' and the typed draft, and does NOT contain 'Model for orchestrator:'.",
+      "The test mirrors the existing 'notify-recipient text field is focused (suppressed navigation)' test structurally (same LEFT-to-Global wrap, per-Tab awaits, RIGHT/LEFT suppression checks).",
+      "bun test test/ui/config-screen.test.tsx passes; the full suite baseline is unchanged except +1 passing test; typecheck is clean."
+    ],
+    "gotchas": [
+      "notify-recipient is fieldFocus===3, notify-sender is fieldFocus===4; ConfigScreen.tsx:350 gates suppression on (currentTab==='global' && (fieldFocus===3 || fieldFocus===4)).",
+      "The notify-sender field renders NotifyTextInput with prompt 'resend_from (sender address, blank to leave unset):' (ConfigScreen.tsx:656); waitForFrame on the substring 'resend_from'.",
+      "Un-awaited stdin.write collapse in ink-testing-library: each TAB/RIGHT/LEFT write must be awaited individually via waitForFrame (see the existing recipient/Ship-tab tests' comments).",
+      "Reaching notify-sender needs 4 forward Tabs from field 0 after the LEFT wrap to Global, one more than the recipient test's 3."
+    ],
+    "domainTerms": [
+      "fieldFocus",
+      "notify-sender",
+      "resend_from",
+      "TabBar suppression",
+      "ink-testing-library",
+      "NotifyTextInput"
+    ]
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 1,
+    "riskReduction": 2,
+    "jobSize": 1
+  },
+  "type": "chore"
 }
