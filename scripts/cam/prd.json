@@ -23,7 +23,7 @@
         "Lint/static spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/plan-approval-gate.ts (PlanApprovalResolverDeps.proceedBranchFn return type + makePlanApprovalResolver approve arm), src/commands/sidecar.ts (makePlanApprovalResolverDeps.proceedBranchFn: verify branch via e.g. `git -C cwd rev-parse --abbrev-ref HEAD` === derived branchName, log durable event on failure), test/plan-approval-gate.test.ts, test/sidecar-gate-phase.test.ts. This is an atomic type/contract change spanning the resolver module (producer of the interface) and its sole production consumer in sidecar.ts, so it stays one story to keep typecheck green (changing proceedBranchFn's signature ripples across both files + both tests simultaneously). deriveBranchName lives in src/supervisor/plan-runner.ts; notifyFn is makeNotifyOrchestrator (already best-effort, silent no-op on a closed pane); logEvent is the WorkerEventLogger from src/supervisor/events.ts already threaded into makePlanApprovalResolverDeps. GOTCHA (issue CAM-319 + code comment sidecar.ts:2744-2750): the never-throw contract is intentional and non-blocking; ADD observability (surface failure) WITHOUT reintroducing a throw and WITHOUT a second setPhase flip (pollAndResolveGate already flips phase to whatever the handler returns). noUncheckedIndexedAccess: guard any rev-parse output parse. Do not reuse executeGitProceedBranch (it throws on non-zero git exit and calls its own setPhaseFn). Source: cam/issue-312, review round 1."
     }
