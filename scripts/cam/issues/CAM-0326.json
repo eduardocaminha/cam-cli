@@ -1,13 +1,41 @@
 {
   "id": "CAM-326",
   "title": "The new `suspended` prop is covered only at the ConfigScreen integration level.…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-17T01:51:35.364Z",
-  "updatedAt": "2026-07-17T01:51:35.364Z",
+  "updatedAt": "2026-07-17T02:51:32.593Z",
   "description": "The new `suspended` prop is covered only at the ConfigScreen integration level. Consider a direct TabBar unit test asserting Left/Right fires when suspended=false and stands down when suspended=true, to pin the presentational contract independently of its one caller.\n\nSource: cam/issue-316\nReview round: 1\n\nsuggestion-fingerprint: ef4fb66752be",
   "derivedFrom": [
     "CAM-316"
-  ]
+  ],
+  "spec": {
+    "scope": "Add a direct TabBar unit test that pins the `suspended` prop's Left/Right navigation contract independently of its single ConfigScreen caller. Currently the `suspended` behavior is only exercised transitively at the ConfigScreen integration level (the fieldFocus===3/4 notify sub-branches). This story adds a focused unit test rendering TabBar directly.",
+    "acceptanceCriteria": [
+      "A new test renders TabBar directly (not via ConfigScreen) with suspended={false} and asserts Left and Right key events fire tab navigation (the active index changes / onChange is invoked).",
+      "The same test file asserts that with suspended={true}, Left and Right key events are suppressed and do NOT change the active tab / do NOT invoke navigation.",
+      "The test lives alongside the existing UI tests and follows the established ink-testing-library render() style already used in the suite.",
+      "typecheck passes and the full test suite is green with the new test added (net new passing test, zero failures)."
+    ],
+    "gotchas": [
+      "The `suspended` prop was introduced for CAM-316 and is presently covered only at the ConfigScreen integration level; the point of this story is a direct presentational unit test, so drive TabBar in isolation.",
+      "Use ink-testing-library render() + stdin.write for Left/Right arrow escape sequences, mirroring the existing config-screen test patterns; do not add a new test harness.",
+      "Test-only change: do not modify TabBar source unless a genuine test-seam gap forces it (surface rather than refactor)."
+    ],
+    "domainTerms": [
+      "TabBar",
+      "suspended prop",
+      "ink-testing-library",
+      "ConfigScreen",
+      "fieldFocus"
+    ]
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 1,
+    "riskReduction": 2,
+    "jobSize": 1
+  },
+  "type": "chore"
 }
