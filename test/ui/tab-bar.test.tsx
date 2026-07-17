@@ -178,11 +178,17 @@ describe('TabBar suspended prop (US-001, CAM-241/316)', () => {
 		stdin.write('[C'); // Right, should be suppressed (isActive: false via suspended)
 		stdin.write('[D'); // Left, should also be suppressed
 		// No state-changing side effect is expected, so there is no predicate
-		// frame to poll for; settle a short bounded window then assert the
-		// frame is unchanged (content-persistence, per the curated no-
-		// tautological-mock-assertion invariant: we assert the observable
-		// rendered frame, not a mock call count).
-		await waitForFrame(lastFrame, () => true, { timeoutMs: 200 });
+		// to poll FOR (nothing is expected to become true). But the window
+		// still has to be genuinely consumed by polling, not short-
+		// circuited: an always-true predicate returns on the very first
+		// check (0 macrotask ticks), which would let a suspension
+		// regression's not-yet-flushed state update slip past the
+		// assertion undetected. Use an always-false predicate instead, so
+		// `waitForFrame` polls for the full `timeoutMs` window (real
+		// event-loop turns), then assert content-persistence (per the
+		// curated no-tautological-mock-assertion invariant: we assert the
+		// observable rendered frame, not a mock call count).
+		await waitForFrame(lastFrame, () => false, { timeoutMs: 200 });
 		const settledFrame = lastFrame() ?? '';
 		expect(settledFrame).toContain(activeChip('[ Orchestrator: opus ]'));
 		expect(settledFrame).not.toContain(activeChip('[ Planner ]'));
