@@ -43,7 +43,7 @@
         "Lint spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "New file src/commands/pattern-records.ts. Mirror src/commands/suggestions.ts almost exactly (readPenContentFromMain / buildAppendedContent / per-attempt recompute callback for CAS). Reuse commitTreeToMain, checkMainUpToDate, SpawnFn from src/git/on-main.ts. Store path scripts/cam/pattern-records.jsonl (naming mirrors suggestions.jsonl). Dedup key: derive a stable fingerprint from name+description+dir_anchors (mirror fingerprintFinding). Test with real mkdtemp git repo per patterns.md test-quality rule (hit real I/O at wire boundaries)."
     },
