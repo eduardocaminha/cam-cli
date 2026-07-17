@@ -2808,10 +2808,6 @@ async function main(argv: string[]): Promise<number> {
 		case 'stats': {
 			const parsed = parseStatsArgs(argv.slice(3));
 			if (parsed === null) return 1;
-			if (parsed.help) {
-				process.stdout.write(STATS_HELP);
-				return 0;
-			}
 			return dispatchStats(parsed);
 		}
 		case 'orch-budget': {
