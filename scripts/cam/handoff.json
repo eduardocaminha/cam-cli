@@ -1,0 +1,20 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Emit cycle-tokens orchTokens as per-cycle delta with a mode marker" },
+  "branchName": "cam/issue-328",
+  "timestamp": "2026-07-17T10:20:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/supervisor/events.ts",
+    "src/commands/journal.ts",
+    "test/commands/journal-record-cycle-tokens.test.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [
+    "Downstream aggregation (src/stats/tokens.ts's existing.orchTokens += orchTokens) needs no code change to sum deltas correctly going forward, but a real event log will contain a mix of legacy (unmarked, cumulative) and new delta-mode cycle-tokens events across the migration boundary; naive summation over that mixed history will still double-count the legacy portion. This story's notes scoped it write-side only -- a follow-up story should decide whether the aggregator needs to branch on orchTokensMode to skip/reset at legacy events, or whether that's accepted as one-time noise."
+  ],
+  "nextStoryContext": "recordCycleTokens (src/commands/journal.ts) now emits orchTokens as a per-cycle delta (current cumulative from the orchestrator transcript minus a prior-cumulative baseline reconstructed by replaying all past 'cycle-tokens' events in the event log) and always sets orchTokensMode:'delta' on newly emitted events. CycleTokensEventDetail (src/supervisor/events.ts) gained the optional orchTokensMode?:'delta' field; absence of the marker is the defined signal for a legacy (pre-US-001) cumulative-snapshot event, useful for any future story that needs to distinguish old vs new rows in a real mixed log. The reconstruction helper is reconstructPriorOrchCumulative (journal.ts), reusing the same readEventLog() injectable already used for the workerTokens per-cycle slice -- no new injectable seam was added. See the CAM-328 patterns.md bullet for the full telescoping-sum rationale and the explicit call-out that src/stats/tokens.ts needs no change to consume the new delta semantics for events emitted after this story.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
