@@ -433,6 +433,45 @@ function sumWorkerTokensSinceLastCycleClose(logJsonl: string | null): number {
 	return total;
 }
 
+/**
+ * Reconstruct the prior orchestrator cumulative spend (the baseline the next
+ * delta is computed against) by replaying every past 'cycle-tokens' event in
+ * the log, in order:
+ *   - a legacy event (no orchTokensMode marker) already stores the raw
+ *     cumulative at that point, so it resets the baseline to its own
+ *     orchTokens value;
+ *   - a delta-mode event stores a per-cycle increment, so it adds onto the
+ *     running baseline (telescoping sum: sum(delta_1..delta_n) === cumulative_n
+ *     when the baseline started at 0 and spend only increased).
+ *
+ * Returns 0 when the log is absent or contains no prior 'cycle-tokens' event
+ * (first cycle: nothing to subtract, the whole cumulative becomes the delta).
+ */
+function reconstructPriorOrchCumulative(logJsonl: string | null): number {
+	if (logJsonl === null) return 0;
+	let baseline = 0;
+	for (const raw0 of logJsonl.split('\n')) {
+		const raw = raw0.trim();
+		if (!raw) continue;
+		let parsed: { kind?: unknown; detail?: unknown };
+		try {
+			parsed = JSON.parse(raw) as { kind?: unknown; detail?: unknown };
+		} catch {
+			continue;
+		}
+		if (parsed.kind !== 'cycle-tokens') continue;
+		const rawDetail = parsed.detail;
+		if (typeof rawDetail !== 'object' || rawDetail === null || Array.isArray(rawDetail)) continue;
+		const detail = rawDetail as Record<string, unknown>;
+		if (detail['orchTokensMode'] === 'delta') {
+			baseline += toN(detail['orchTokens']);
+		} else {
+			baseline = toN(detail['orchTokens']);
+		}
+	}
+	return baseline;
+}
+
 /** Options for recordCycleTokens. All filesystem reads and the event logger are injectable for unit tests. */
 export interface RecordCycleTokensOptions {
 	/** Machine identifier for the cycle (e.g. 'cam/CAM-131-handoff-por-ciclo'). */
@@ -466,14 +505,17 @@ export interface RecordCycleTokensOptions {
  * Emit a durable 'cycle-tokens' WorkerEvent to the event log at cycle-close time.
  *
  * Computes:
- *   - orchTokens: cumulative orchestrator session spend (input + cacheCreation + cacheRead)
- *     from the transcript resolved by orchestratorTranscriptPath.
+ *   - orchTokens: the per-cycle DELTA of orchestrator session spend (current
+ *     cumulative input + cacheCreation + cacheRead from the transcript resolved
+ *     by orchestratorTranscriptPath, minus the prior same-session cumulative
+ *     reconstructed from past 'cycle-tokens' events in the log, floored at 0).
+ *     orchTokensMode is set to 'delta' to mark this.
  *   - workerTokens: sum of all worker 'tokens' events in the per-cycle slice (events
  *     appended to the event log after the previous 'cycle-tokens' marker).
- *   - total: orchTokens + workerTokens.
+ *   - total: orchTokens (delta) + workerTokens.
  *
- * When the orchestrator transcript is absent or unreadable, orchTokens is 0 and
- * the event is still emitted (graceful degradation, not an error).
+ * When the orchestrator transcript is absent or unreadable, the current cumulative
+ * is 0 and the event is still emitted (graceful degradation, not an error).
  *
  * All reads (transcript, event log) and the event logger are injectable for
  * hermetic unit tests that do not touch the real filesystem.
@@ -486,17 +528,23 @@ export function recordCycleTokens(opts: RecordCycleTokensOptions): void {
 	const readEventLog = opts.readEventLog ?? (() => defaultReadEventLog(cwd));
 	const logEvent = opts.logEvent ?? makeFileEventLogger(eventLogPath);
 
-	// Compute orchTokens: cumulative orchestrator session spend (input-side only).
-	let orchTokens = 0;
+	// Compute the current cumulative orchestrator session spend (input-side only).
+	let cumulativeOrchTokens = 0;
 	const orchJsonl = readOrchTranscript();
 	if (orchJsonl !== null) {
 		const usage = parseTranscriptUsage(orchJsonl);
-		orchTokens = usage.input + usage.cacheCreation + usage.cacheRead;
+		cumulativeOrchTokens = usage.input + usage.cacheCreation + usage.cacheRead;
 	}
 
-	// Compute workerTokens: per-cycle slice from the event log.
+	// Compute workerTokens (per-cycle slice) and the prior orchestrator cumulative
+	// baseline from the same event log read.
 	const logJsonl = readEventLog();
 	const workerTokens = sumWorkerTokensSinceLastCycleClose(logJsonl);
+	const priorOrchCumulative = reconstructPriorOrchCumulative(logJsonl);
+
+	// orchTokens is now the per-cycle delta, floored at 0 (a session boundary
+	// where the transcript resets would otherwise yield a negative delta).
+	const orchTokens = Math.max(0, cumulativeOrchTokens - priorOrchCumulative);
 
 	// Emit the 'cycle-tokens' event.
 	const recordedAt = new Date().toISOString();
@@ -504,6 +552,7 @@ export function recordCycleTokens(opts: RecordCycleTokensOptions): void {
 		cycleId,
 		issueNumber,
 		orchTokens,
+		orchTokensMode: 'delta',
 		workerTokens,
 		total: orchTokens + workerTokens,
 		recordedAt,

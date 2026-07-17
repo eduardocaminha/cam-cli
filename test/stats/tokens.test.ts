@@ -23,12 +23,17 @@ function makeTokensLine(
 	});
 }
 
-/** Build a 'cycle-tokens' marker JSONL line, attributed to issueNumber. */
+/**
+ * Build a 'cycle-tokens' marker JSONL line, attributed to issueNumber.
+ * `orchTokensMode` defaults to omitted (legacy, marker-absent cumulative
+ * snapshot); pass 'delta' to build a post-US-001 delta-mode event.
+ */
 function makeCycleTokensLine(
 	issueNumber: string,
 	orchTokens: number,
 	workerTokens: number,
 	total: number,
+	orchTokensMode?: 'delta',
 ): string {
 	return JSON.stringify({
 		ts: '2026-01-01T01:00:00.000Z',
@@ -38,6 +43,7 @@ function makeCycleTokensLine(
 			cycleId: `cam/${issueNumber}-cycle`,
 			issueNumber,
 			orchTokens,
+			...(orchTokensMode === undefined ? {} : { orchTokensMode }),
 			workerTokens,
 			total,
 			recordedAt: '2026-01-01T01:00:00.000Z',
@@ -90,10 +96,48 @@ test('multiple issues: rollups kept separate, in first-seen order', () => {
 	expect(result.perIssue[1]?.total).toBe(3000);
 });
 
-test('two cycle-tokens events for the SAME issue are summed into one rollup', () => {
+test('workerTokens for the SAME issue across two cycle-tokens events are always summed', () => {
 	const log = [
 		makeCycleTokensLine('CAM-100', 1000, 500, 1500),
 		makeCycleTokensLine('CAM-100', 300, 200, 500),
+	].join('\n');
+	const result = aggregateTokensPerIssue(log);
+
+	expect(result.perIssue).toHaveLength(1);
+	expect(result.perIssue[0]?.workerTokens).toBe(700);
+	expect(result.perIssue[0]?.cycleCount).toBe(2);
+});
+
+// ---------------------------------------------------------------------------
+// US-002 (CAM-328): marker-aware orchTokens aggregation -- delta sum vs
+// legacy (marker-absent) cumulative-snapshot collapse via max.
+// ---------------------------------------------------------------------------
+
+test('legacy cumulative-only stream: orchTokens collapses via max (not summed), total recomputed', () => {
+	// Legacy events store the full cumulative orchestrator spend at each
+	// cycle close; naively summing these (the pre-fix bug) would massively
+	// over-count. Max is the best-effort monotonic final cumulative.
+	const log = [
+		makeCycleTokensLine('CAM-100', 500_000, 100, 500_100),
+		makeCycleTokensLine('CAM-100', 550_000, 100, 550_100),
+		makeCycleTokensLine('CAM-100', 600_000, 100, 600_100),
+	].join('\n');
+	const result = aggregateTokensPerIssue(log);
+
+	expect(result.perIssue).toHaveLength(1);
+	expect(result.perIssue[0]).toEqual({
+		issueNumber: 'CAM-100',
+		orchTokens: 600_000,
+		workerTokens: 300,
+		total: 600_300,
+		cycleCount: 3,
+	});
+});
+
+test('delta-only stream: orchTokens sums directly, total recomputed (not the stored total field)', () => {
+	const log = [
+		makeCycleTokensLine('CAM-100', 1000, 500, 999_999, 'delta'),
+		makeCycleTokensLine('CAM-100', 300, 200, 999_999, 'delta'),
 	].join('\n');
 	const result = aggregateTokensPerIssue(log);
 
@@ -107,11 +151,32 @@ test('two cycle-tokens events for the SAME issue are summed into one rollup', ()
 	});
 });
 
+test('mixed legacy+delta stream: legacy final (max) plus subsequent delta sum', () => {
+	// Migration-boundary shape: two legacy cumulative snapshots (final is the
+	// max, 550_000) followed by two post-migration deltas (1000 + 300).
+	const log = [
+		makeCycleTokensLine('CAM-100', 500_000, 100, 500_100),
+		makeCycleTokensLine('CAM-100', 550_000, 100, 550_100),
+		makeCycleTokensLine('CAM-100', 1000, 100, 999_999, 'delta'),
+		makeCycleTokensLine('CAM-100', 300, 100, 999_999, 'delta'),
+	].join('\n');
+	const result = aggregateTokensPerIssue(log);
+
+	expect(result.perIssue).toHaveLength(1);
+	expect(result.perIssue[0]).toEqual({
+		issueNumber: 'CAM-100',
+		orchTokens: 551_300,
+		workerTokens: 400,
+		total: 551_700,
+		cycleCount: 4,
+	});
+});
+
 test('global mean and median are computed over per-issue totals', () => {
 	const log = [
-		makeCycleTokensLine('CAM-100', 0, 0, 100),
-		makeCycleTokensLine('CAM-200', 0, 0, 200),
-		makeCycleTokensLine('CAM-300', 0, 0, 300),
+		makeCycleTokensLine('CAM-100', 0, 100, 100),
+		makeCycleTokensLine('CAM-200', 0, 200, 200),
+		makeCycleTokensLine('CAM-300', 0, 300, 300),
 	].join('\n');
 	const result = aggregateTokensPerIssue(log);
 
@@ -121,8 +186,8 @@ test('global mean and median are computed over per-issue totals', () => {
 
 test('median averages the two middle values for an even count of issues', () => {
 	const log = [
-		makeCycleTokensLine('CAM-100', 0, 0, 100),
-		makeCycleTokensLine('CAM-200', 0, 0, 300),
+		makeCycleTokensLine('CAM-100', 0, 100, 100),
+		makeCycleTokensLine('CAM-200', 0, 300, 300),
 	].join('\n');
 	const result = aggregateTokensPerIssue(log);
 

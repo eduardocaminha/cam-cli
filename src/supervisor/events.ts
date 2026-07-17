@@ -352,7 +352,14 @@ export interface DomainDocsWrittenEventDetail {
  * in that cycle. Used by CAM-136 for per-issue token analysis.
  *   - cycleId: machine identifier for the cycle (e.g. 'cam/CAM-131-handoff-por-ciclo').
  *   - issueNumber: issue reference (e.g. 'CAM-131').
- *   - orchTokens: cumulative orchestrator session spend (input + cacheCreation + cacheRead).
+ *   - orchTokens: per-cycle orchestrator spend when orchTokensMode is 'delta'
+ *     (current cumulative orchestrator session spend minus the prior same-session
+ *     cumulative, floored at 0); cumulative orchestrator session spend (input +
+ *     cacheCreation + cacheRead) for legacy events that carry no orchTokensMode
+ *     marker.
+ *   - orchTokensMode: optional marker. `'delta'` means orchTokens is a per-cycle
+ *     increment (US-001, CAM-328). An event with no marker is legacy: orchTokens
+ *     is the raw cumulative snapshot from before this change.
  *   - workerTokens: sum of all worker 'tokens' events in this cycle (per-cycle slice).
  *   - total: orchTokens + workerTokens.
  *   - recordedAt: ISO 8601 timestamp when the event was emitted.
@@ -361,6 +368,7 @@ export interface CycleTokensEventDetail {
 	cycleId: string;
 	issueNumber: string;
 	orchTokens: number;
+	orchTokensMode?: 'delta';
 	workerTokens: number;
 	total: number;
 	recordedAt: string;

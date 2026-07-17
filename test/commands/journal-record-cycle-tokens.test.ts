@@ -404,6 +404,186 @@ test('emitted event has uuid=cycle-close and storyId=undefined', () => {
 });
 
 // ---------------------------------------------------------------------------
+// 9. orchTokensMode:'delta' + per-cycle delta computation (US-001, CAM-328)
+// ---------------------------------------------------------------------------
+
+test('emitted event sets orchTokensMode to delta', () => {
+	const { logger, events } = makeInMemoryEventLogger();
+
+	recordCycleTokens(makeBaseOpts({ logEvent: logger }));
+
+	const detail = (events[0] as WorkerEvent).detail as { orchTokensMode?: string };
+	expect(detail.orchTokensMode).toBe('delta');
+});
+
+test('first cycle (no prior cycle-tokens event): orchTokens delta equals the full cumulative', () => {
+	const { logger, events } = makeInMemoryEventLogger();
+
+	const transcriptLine = makeTranscriptLine('msg-1', 1000, 500, 200, 300); // cumulative=1500
+
+	recordCycleTokens(
+		makeBaseOpts({
+			readOrchTranscript: () => transcriptLine,
+			readEventLog: () => null,
+			logEvent: logger,
+		}),
+	);
+
+	const detail = (events[0] as WorkerEvent).detail as { orchTokens: number; orchTokensMode?: string };
+	expect(detail.orchTokens).toBe(1500);
+	expect(detail.orchTokensMode).toBe('delta');
+});
+
+test('second cycle: orchTokens delta is current cumulative minus prior delta-mode cumulative', () => {
+	const { logger, events } = makeInMemoryEventLogger();
+
+	// Prior cycle emitted a delta-mode event recording cumulative=1500 at that point.
+	const priorMarker = JSON.stringify({
+		ts: '2026-01-01T01:00:00.000Z',
+		uuid: 'cycle-close',
+		kind: 'cycle-tokens',
+		detail: {
+			cycleId: 'cam/CAM-130-prev',
+			issueNumber: 'CAM-130',
+			orchTokens: 1500,
+			orchTokensMode: 'delta',
+			workerTokens: 0,
+			total: 1500,
+			recordedAt: '2026-01-01T01:00:00.000Z',
+		},
+	});
+
+	// Current transcript cumulative grew to 2200 (input=1200, cacheCreation=500, cacheRead=500).
+	const transcriptLine = makeTranscriptLine('msg-2', 1200, 999, 500, 500);
+
+	recordCycleTokens(
+		makeBaseOpts({
+			readOrchTranscript: () => transcriptLine,
+			readEventLog: () => priorMarker,
+			logEvent: logger,
+		}),
+	);
+
+	const detail = (events[0] as WorkerEvent).detail as { orchTokens: number; orchTokensMode?: string };
+	// delta = 2200 - 1500 = 700
+	expect(detail.orchTokens).toBe(700);
+	expect(detail.orchTokensMode).toBe('delta');
+});
+
+test('delta is floored at 0 when cumulative decreases (session boundary / transcript reset)', () => {
+	const { logger, events } = makeInMemoryEventLogger();
+
+	const priorMarker = JSON.stringify({
+		ts: '2026-01-01T01:00:00.000Z',
+		uuid: 'cycle-close',
+		kind: 'cycle-tokens',
+		detail: {
+			cycleId: 'cam/CAM-130-prev',
+			issueNumber: 'CAM-130',
+			orchTokens: 5000,
+			orchTokensMode: 'delta',
+			workerTokens: 0,
+			total: 5000,
+			recordedAt: '2026-01-01T01:00:00.000Z',
+		},
+	});
+
+	// New (reset) transcript cumulative is smaller than the prior baseline.
+	const transcriptLine = makeTranscriptLine('msg-new', 100, 0, 0, 0); // cumulative=100
+
+	recordCycleTokens(
+		makeBaseOpts({
+			readOrchTranscript: () => transcriptLine,
+			readEventLog: () => priorMarker,
+			logEvent: logger,
+		}),
+	);
+
+	const detail = (events[0] as WorkerEvent).detail as { orchTokens: number };
+	expect(detail.orchTokens).toBe(0);
+});
+
+test('across consecutive cycles with monotonically increasing cumulative, deltas sum to the final cumulative', () => {
+	// Simulate 4 cycles by chaining recordCycleTokens calls against a growing
+	// in-memory event log, reusing the real log-replay logic (no re-snapshotting).
+	const log: string[] = [];
+	const readEventLog = () => (log.length === 0 ? null : log.join('\n'));
+	const logEvent = (ev: WorkerEvent) => log.push(JSON.stringify(ev));
+
+	const cumulativeSequence = [1000, 2500, 2500, 4200]; // monotonically non-decreasing
+	const deltas: number[] = [];
+
+	for (let i = 0; i < cumulativeSequence.length; i++) {
+		const cumulative = cumulativeSequence[i] as number;
+		const transcriptLine = makeTranscriptLine(`msg-${i}`, cumulative, 0, 0, 0);
+
+		let capturedDetail: { orchTokens: number } | null = null;
+		const captureLogger = (ev: WorkerEvent) => {
+			capturedDetail = ev.detail as { orchTokens: number };
+			logEvent(ev);
+		};
+
+		recordCycleTokens(
+			makeBaseOpts({
+				readOrchTranscript: () => transcriptLine,
+				readEventLog,
+				logEvent: captureLogger,
+			}),
+		);
+
+		expect(capturedDetail).not.toBeNull();
+		deltas.push((capturedDetail as unknown as { orchTokens: number }).orchTokens);
+	}
+
+	const finalCumulative = cumulativeSequence[cumulativeSequence.length - 1] as number;
+	const summedDeltas = deltas.reduce((acc, d) => acc + d, 0);
+	expect(summedDeltas).toBe(finalCumulative);
+	// No quadratic re-snapshotting: each individual delta matches its own increment.
+	expect(deltas).toEqual([1000, 1500, 0, 1700]);
+});
+
+test('total === delta-orchTokens + workerTokens across a second cycle', () => {
+	const { logger, events } = makeInMemoryEventLogger();
+
+	const priorMarker = JSON.stringify({
+		ts: '2026-01-01T01:00:00.000Z',
+		uuid: 'cycle-close',
+		kind: 'cycle-tokens',
+		detail: {
+			cycleId: 'cam/CAM-130-prev',
+			issueNumber: 'CAM-130',
+			orchTokens: 1000,
+			orchTokensMode: 'delta',
+			workerTokens: 0,
+			total: 1000,
+			recordedAt: '2026-01-01T01:00:00.000Z',
+		},
+	});
+	const newWorkerTokens = makeTokensLine(100, 50, 200, 25); // total=375
+	const eventLog = [priorMarker, newWorkerTokens].join('\n');
+
+	const transcriptLine = makeTranscriptLine('msg-x', 1600, 0, 0, 0); // cumulative=1600
+
+	recordCycleTokens(
+		makeBaseOpts({
+			readOrchTranscript: () => transcriptLine,
+			readEventLog: () => eventLog,
+			logEvent: logger,
+		}),
+	);
+
+	const detail = (events[0] as WorkerEvent).detail as {
+		orchTokens: number;
+		workerTokens: number;
+		total: number;
+	};
+	// delta = 1600 - 1000 = 600; workerTokens = 375; total = 975
+	expect(detail.orchTokens).toBe(600);
+	expect(detail.workerTokens).toBe(375);
+	expect(detail.total).toBe(975);
+});
+
+// ---------------------------------------------------------------------------
 // Oracle AC tests: source text guards
 // ---------------------------------------------------------------------------
 
