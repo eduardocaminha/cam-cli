@@ -27,7 +27,7 @@ export const DEFAULT_CONFIG: RetryConfig = {
   customPatterns: [],
 };
 
-const DEFAULT_TOML = `# cam-cli retry configuration
+const DEFAULT_TOML = `# CAM Runtime retry configuration
 # See https://github.com/eduardocaminha/cam-cli for docs
 
 maxRetries = 5
