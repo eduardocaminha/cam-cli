@@ -1,11 +1,11 @@
 {
   "id": "CAM-325",
   "title": "textInputFocused suppresses for both notify-recipient (fieldFocus===3) and noti…",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-17T01:51:32.994Z",
-  "updatedAt": "2026-07-17T02:31:49.883Z",
+  "updatedAt": "2026-07-17T02:46:21.600Z",
   "description": "textInputFocused suppresses for both notify-recipient (fieldFocus===3) and notify-sender (fieldFocus===4), but only the recipient branch is exercised by a test; the sender branch relies on symmetry. A dedicated fieldFocus===4 case would close the last uncovered sub-condition.\n\nSource: cam/issue-316\nReview round: 1\n\nsuggestion-fingerprint: 7868b92c0930",
   "derivedFrom": [
     "CAM-316"
