@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.191.0] - 2026-07-17
+
+### Added
+
+- US-001 - Cover notify-sender (fieldFocus===4) TabBar suppression with a dedicated test
+
 ## [0.190.0] - 2026-07-17
 
 ### Added
