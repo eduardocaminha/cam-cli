@@ -1,0 +1,27 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Migrate checkoutMainFn + proceedBranchFn to Bun.spawnSync with real-git coverage"
+  },
+  "branchName": "cam/issue-324",
+  "timestamp": "2026-07-17T00:00:00Z",
+  "createdFiles": [
+    "test/sidecar-resolver-git.test.ts"
+  ],
+  "modifiedFiles": [
+    "src/commands/sidecar.ts",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "checkoutMainFn (makeInProgressConflictResolverDeps) and proceedBranchFn (makePlanApprovalResolverDeps) in src/commands/sidecar.ts now call Bun.spawnSync(['git', ...args], { stdout: 'pipe', stderr: 'pipe' }) and read .exitCode / decode stdout via new TextDecoder().decode(result.stdout ?? new Uint8Array()). No `.status` remains in that region (sed -n '2761,2930p' src/commands/sidecar.ts). Both factory functions are now `export`ed (were module-private) so test/sidecar-resolver-git.test.ts can construct the production deps directly and exercise checkoutMainFn/proceedBranchFn against a real tmpdir git repo, without routing through buildGatePhaseDeps/the gate file. The node:child_process `spawnSync` import is still used at ~15 other call sites in sidecar.ts (out of scope for this story, per prior notes) -- do not remove the import. Existing DI-fake tests (test/plan-approval-gate.test.ts, test/supervisor/in-progress-conflict.test.ts) and the end-to-end gate-phase tests (test/sidecar-gate-phase.test.ts) all still pass unchanged.",
+  "officialDocsValidated": [
+    {
+      "lib": "Bun.spawnSync",
+      "channel": "WebFetch",
+      "url": "https://bun.com/docs/api/spawn",
+      "fetchedAt": "2026-07-17T00:00:00Z",
+      "status": "aligned",
+      "summary": "Confirmed SyncSubprocess shape: exitCode:number, success:boolean, stdout/stderr:Buffer|undefined when stdout/stderr:'pipe' is passed, no `encoding` option exists (unlike node's spawnSync) -- matches the implementation's new TextDecoder().decode(result.stdout ?? new Uint8Array()) pattern."
+    }
+  ]
+}
