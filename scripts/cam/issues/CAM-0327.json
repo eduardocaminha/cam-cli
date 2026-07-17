@@ -2,10 +2,10 @@
   "id": "CAM-327",
   "title": "Pure API-swap refactor with no new/changed test. The makePollWidthClearer facto…",
   "stage": "idea",
-  "status": "open",
+  "status": "abandoned",
   "blockedBy": [],
   "createdAt": "2026-07-17T02:24:38.996Z",
-  "updatedAt": "2026-07-17T02:24:38.996Z",
+  "updatedAt": "2026-07-17T09:13:56.331Z",
   "description": "Pure API-swap refactor with no new/changed test. The makePollWidthClearer factory contract is fully covered by existing unit tests and is untouched, and ink-testing-library cannot vary columns between ticks (documented in patterns.md), so a component-level SIGWINCH width-change regression is infeasible with the current harness. A future story could add a real ink render() with a hand-built mutable-columns stdout to assert the dep-array freshness end-to-end. Non-blocking.\n\nSource: cam/issue-321\nReview round: 1\n\nsuggestion-fingerprint: 54baf82f4d6b",
   "derivedFrom": [
     "CAM-321"
