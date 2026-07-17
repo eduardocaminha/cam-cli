@@ -1,12 +1,12 @@
 {
   "id": "CAM-64",
   "title": "Typed pattern records + outcome-status + decay (mulch model), replacing free-text patterns.md",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-16T22:30:00Z",
   "description": "cam's scripts/cam/patterns.md is free-text bullets with no structure, no outcome tracking, and no decay: a pattern that later proves wrong is never detected or demoted, and the file grows monotonically. Adopt the mulch expertise-record model: (1) typed records (schema-validated: type, classification tier foundational/tactical/observational, recorded_at, name/description, evidence, dir_anchors = the paths the pattern is about, outcomes[]); (2) outcome-status: append {status: success|failure|partial, recorded_at} whenever a pattern is applied (cam's supervisor/reviewer already produce pass/fail signals to wire in) + confirmation-scoring (successCount + 0.5*partialCount) so unconfirmed patterns sink; (3) decay/demotion as a gate: a cam prune that demotes superseded patterns one tier, archives stale tactical/observational by shelf-life (14d/30d), and (optionally) demotes patterns whose dir_anchors point at files that no longer exist (anchor-decay). This is real 'learning-capture as a gate'. Source: mulch src/schemas/record.ts, src/commands/prune.ts, src/utils/scoring.ts.",
-  "updatedAt": "2026-07-17T09:26:47.855Z",
+  "updatedAt": "2026-07-17T14:00:39.562Z",
   "spec": {
     "scope": "Replace free-text patterns.md AS THE WRITE MECHANISM with schema-validated typed pattern records (mulch model), going-forward -- NOT a big-bang migration of the existing 833-line / 538KB patterns.md (those bullets stay grep-readable during the transition, archivable via the existing cam patterns archive). Typed record fields: {type, classification tier, recorded_at, evidence, dir_anchors, outcomes[]}. Append an outcome-status on each application with confirmation-scoring, and add a decay/demotion gate as a NEW subcommand under the existing cam patterns namespace: cam patterns prune (NOT cam prune -- that name is already the branch-cleanup command). Validation follows ADR-0038 (hand-rolled TS interface + typeof guard, optional draft-07 doc-only schema; no zod, no json-schema loader). The store is written on-main ref-only (commitTreeToMain + dedup, mirroring suggestions.jsonl / cam patterns archive), NOT via a working-tree/branch append. Outcome attribution: the implementer/planner reports the applied pattern-ids (new worker-report/handoff field) and the supervisor records the outcome at cycle-close, mirroring the CAM-189 terminal-verdict hook (loop.ts:2226). The full mulch model (records + outcome-scoring + decay) is in scope but is a STRONG split candidate -- expect the planner to slice into multiple stories.",
     "acceptanceCriteria": [
