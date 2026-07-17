@@ -1,13 +1,37 @@
 {
   "id": "CAM-323",
   "title": "The outer-timeout comment ('5s + 10s + 12s + 10s') omits the two additional 500…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-16T22:35:21.031Z",
-  "updatedAt": "2026-07-16T22:35:21.031Z",
+  "updatedAt": "2026-07-17T03:29:27.302Z",
   "description": "The outer-timeout comment ('5s + 10s + 12s + 10s') omits the two additional 5000ms-default waitForCondition waits at lines 185 (has-session) and 197 (pgrep initialUUID). The true worst-case internal budget is ~42s vs the 45s outer timeout. Harmless in practice (each internal wait throws and aborts the test on its own timeout, and all resolve fast: 3.29s isolated), but the comment's arithmetic understates the sum.\n\nSource: cam/issue-313\nReview round: 1\n\nsuggestion-fingerprint: eb1724c19990",
   "derivedFrom": [
     "CAM-313"
-  ]
+  ],
+  "spec": {
+    "scope": "Correct the inaccurate outer-timeout explanatory comment in test/integration/orch-recycle-watch.test.ts. The comment currently reads '5s + 10s + 12s + 10s' but omits the two additional 5000ms-default waitForCondition waits (the has-session wait near line 185 and the pgrep initialUUID wait near line 197). Update the comment so its arithmetic includes all internal waits and sums to the true worst-case internal budget (~42s) against the existing 45s outer timeout. Comment text only.",
+    "acceptanceCriteria": [
+      "The outer-timeout comment in test/integration/orch-recycle-watch.test.ts accounts for every internal waitForCondition wait, including the two 5000ms-default has-session and pgrep-initialUUID waits, and states the corrected worst-case sum (~42s) against the 45s outer timeout.",
+      "No test logic, assertions, timeout values, or control flow are changed; only the explanatory comment text is edited.",
+      "The full bun test suite passes with the test count steady (no tests added or removed)."
+    ],
+    "gotchas": [
+      "This is a comment-accuracy fix only: do not change the 45s outer timeout or any internal waitForCondition timeout value.",
+      "The two omitted waits use the 5000ms waitForCondition default, so each contributes 5s to the corrected sum."
+    ],
+    "domainTerms": [
+      "waitForCondition",
+      "outer timeout",
+      "orch-recycle-watch"
+    ]
+  },
+  "wsjf": {
+    "value": 1,
+    "timeCriticality": 1,
+    "riskReduction": 1,
+    "jobSize": 1
+  },
+  "type": "chore"
 }
