@@ -1,0 +1,69 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Cam Pattern Record",
+  "description": "Documentation-only schema for a single typed pattern record (src/patterns/record.ts). Not runtime-loaded: validation at runtime is the hand-rolled isPatternRecord guard (ADR-0038), not this file.",
+  "type": "object",
+  "required": [
+    "type",
+    "classification",
+    "recorded_at",
+    "name",
+    "description",
+    "evidence",
+    "dir_anchors",
+    "outcomes"
+  ],
+  "properties": {
+    "type": {
+      "type": "string",
+      "description": "Free-text pattern category, e.g. 'gotcha', 'convention', 'invariant'."
+    },
+    "classification": {
+      "type": "string",
+      "enum": ["foundational", "tactical", "observational"],
+      "description": "Confidence/authority tier, orthogonal to the record's accumulated outcome history."
+    },
+    "recorded_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of when the record was first written."
+    },
+    "name": {
+      "type": "string",
+      "description": "Short identifying name for the pattern."
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable description of the pattern."
+    },
+    "evidence": {
+      "type": "string",
+      "description": "Where/how the pattern was observed."
+    },
+    "dir_anchors": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Directories/paths this record is scoped to, letting grep-on-demand filter records by subsystem."
+    },
+    "outcomes": {
+      "type": "array",
+      "description": "History of outcomes recorded each time the pattern is applied. Feeds confirmationScore and the decay/demotion gate (cam patterns prune).",
+      "items": {
+        "type": "object",
+        "required": ["status", "recorded_at"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["success", "failure", "partial"]
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
