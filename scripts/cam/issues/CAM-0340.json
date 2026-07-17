@@ -1,0 +1,13 @@
+{
+  "id": "CAM-340",
+  "title": "The new test uses node:child_process spawnSync + node:fs for its own setup/asse…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-17T22:15:12.623Z",
+  "updatedAt": "2026-07-17T22:15:12.623Z",
+  "description": "The new test uses node:child_process spawnSync + node:fs for its own setup/assertions. Consistent with the rest of the test suite (test-side node fs/proc is conventional here), so not a blocker, but a Bun.spawnSync/Bun.file setup would align the test harness with the very invariant this PR enforces in production.\n\nSource: cam/issue-324\nReview round: 1\n\nsuggestion-fingerprint: c8b7075f9c7d",
+  "derivedFrom": [
+    "CAM-324"
+  ]
+}
