@@ -328,3 +328,21 @@ An event-log record in .claude/cam-worker-events.jsonl capturing a cycle's token
 
 **orchTokensMode marker**:
 Per-event flag on cycle-tokens events distinguishing delta-mode (new, per-cycle delta) from legacy cumulative orchTokens; absent marker means legacy cumulative.
+
+**scope-proposal artifact**:
+A fixed-shape deterministic summary emitted at plan completion (problem, in-scope stories, explicit out-of-scope, MVP-vs-launch-ready framing) that the orchestrator narrates to the operator.
+
+**docs-fetch channel table**:
+The lib->official-docs-channel mapping the planner consults, capturing {lib,url,version,fetchedAt,summary,status} with one targeted fetch per lib.
+
+**anti-over-fetch guard**:
+The planner rule capping documentation fetches to one per lib to prevent redundant retrieval and context bloat.
+
+**setup-checklist (ship)**:
+The ship-time table (| # | Item | Where | How | Status |) of manual setup steps a change requires, added to the PR body by composePrBody.
+
+**file-based operator gate**:
+cam's shipped operator-decision primitive (cam-gate.schema.json + the cam decide return channel, ADR-0041), used instead of the AskUserQuestion tool.
+
+**reporter port**:
+A feature ported from the sibling reporter project's .claude/commands/ralph-*.md blueprints into cam's deterministic artifact layer.
