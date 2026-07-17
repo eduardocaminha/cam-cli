@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.188.0] - 2026-07-17
+
+### Added
+
+- US-001 - Delegate stats --help to dispatchStats
+
 ## [0.187.0] - 2026-07-17
 
 ### Added
