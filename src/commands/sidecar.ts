@@ -57,6 +57,7 @@ import { readImplementBlockedMarker, removeImplementBlockedMarker, IMPLEMENT_BLO
 import { writePostMergeStalledMarker, POST_MERGE_STALLED_FILENAME } from '../supervisor/post-merge-stalled-marker.ts';
 import { writeSidecarStalledMarker, removeSidecarStalledMarker, SIDECAR_STALLED_FILENAME } from '../supervisor/sidecar-stalled.ts';
 import { makeReadPlanVerdict, PLAN_VERDICT_REPORT_FILENAME } from '../supervisor/plan-verdict-report.ts';
+import { makeReadScopeProposal, SCOPE_PROPOSAL_FILENAME } from '../supervisor/scope-proposal.ts';
 import { runPlanPreflight, type PlanPreflightSpawnFn } from '../supervisor/plan-preflight.ts';
 import { readMergeMode, readMetaLoop, readPlanApproval, readResendConfig, readWorkerIsolation, type WorkerIsolation } from '../config/models.ts';
 import { makeProductionEnsureContainerFn } from '../supervisor/ensure-container.ts';
@@ -2131,9 +2132,12 @@ function makeWritePreflightFailedMarkerFn(claudeDir: string): (params: PlanPrefl
 /**
  * Build a clearStalePlanArtifacts function for the given cwd (US-002, CAM-155).
  *
- * Removes both:
+ * Removes all of:
  *   - `<cwd>/scripts/cam/plan-verdict-report.json` (stale auditor verdict)
  *   - `<cwd>/scripts/cam/prd.json` (stale planner output)
+ *   - `<cwd>/scripts/cam/scope-proposal.json` (stale scope-proposal artifact,
+ *     US-002, CAM-52: never let a prior cycle's narration survive a fresh
+ *     plan attempt)
  *
  * Best-effort: no-op on missing files, never throws.
  * Mirrors makeClearReviewReport in host.ts (patterns.md 'Review-report.json
@@ -2142,12 +2146,16 @@ function makeWritePreflightFailedMarkerFn(claudeDir: string): (params: PlanPrefl
 function makeClearStalePlanArtifacts(cwd: string): () => void {
 	const verdictPath = join(cwd, PLAN_VERDICT_REPORT_FILENAME);
 	const prdPath = join(cwd, 'scripts/cam/prd.json');
+	const scopeProposalPath = join(cwd, SCOPE_PROPOSAL_FILENAME);
 	return () => {
 		try {
 			if (existsSync(verdictPath)) unlinkSync(verdictPath);
 		} catch { /* best-effort */ }
 		try {
 			if (existsSync(prdPath)) unlinkSync(prdPath);
+		} catch { /* best-effort */ }
+		try {
+			if (existsSync(scopeProposalPath)) unlinkSync(scopeProposalPath);
 		} catch { /* best-effort */ }
 	};
 }
@@ -2249,6 +2257,9 @@ function runPostPlanActions(o: PostPlanActionsOpts): void {
 		// the pause-operator path (called from inside handleAuditApproved, never
 		// on the auto-mode proceed-branch path).
 		writePlanApprovalGateFn: makeWritePlanApprovalGateFn(o.cwd, o.claudeDir, o.sessionName, o.realSpawnFn, o.logEvent),
+		// US-002 (CAM-52): narrate the planner's deterministic scope-proposal
+		// artifact at plan completion (best-effort; null on absent/malformed).
+		readScopeProposalFn: makeReadScopeProposal(o.cwd),
 	});
 	exitPhaseAfterPlan(postAuditResult, makeSetPhaseFn(o.claudeDir, o.cwd)); // US-R1-002
 

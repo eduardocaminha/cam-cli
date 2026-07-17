@@ -8,10 +8,10 @@
 // string, with no filesystem, git, or network I/O. The snapshot must be
 // captured by the caller BEFORE `cam ship --finalize` removes prd.json.
 //
-// Mirrors the four-section PR body template hand-authored in
-// templates/commands/cam-ship.md (Summary, Stories completed, Testing, Notes).
+// Mirrors the PR body template hand-authored in templates/commands/cam-ship.md
+// (Summary, Stories completed, Testing, Notes, Setup checklist).
 //
-// CAM-149 US-001.
+// CAM-149 US-001. Setup checklist added CAM-52 US-003.
 
 /** Minimal structural story shape the composer needs from prd.json. */
 export interface PrdSnapshotStory {
@@ -40,8 +40,62 @@ export interface PrdSnapshot {
 const NO_SUMMARY_TEXT = 'No summary provided.';
 const NO_STORIES_TEXT = 'No stories recorded.';
 const NO_NOTES_TEXT = 'None.';
+const NO_SETUP_CHECKLIST_TEXT = 'No manual setup actions detected.';
 const TESTING_LINE = 'The deterministic gate spine (`bun run check:all`) ran green at ship time.';
 const DEFAULT_TYPE = 'feat';
+
+/** One detection heuristic: a cue regex plus the row it renders when matched. */
+interface SetupChecklistCue {
+	pattern: RegExp;
+	item: string;
+	where: string;
+	how: string;
+}
+
+/**
+ * Non-exhaustive cues for manual user setup actions (config/env/install),
+ * mirrored from the reporter project's ralph-ship.md Step 14 checklist
+ * heuristics, narrowed to what PrdSnapshot actually carries: prd.description,
+ * prd.notes, and every story's title (PrdSnapshotStory has no notes field).
+ */
+const SETUP_CHECKLIST_CUES: SetupChecklistCue[] = [
+	{
+		pattern: /\.env\b|\benv(?:ironment)?\s*var/i,
+		item: 'New environment variable(s)',
+		where: '.env / deploy config',
+		how: 'Review the diff for new env vars and set them in your environment.',
+	},
+	{
+		pattern: /\bmigration\b/i,
+		item: 'Database migration',
+		where: 'database',
+		how: 'Apply the migration manually if it was not run automatically.',
+	},
+	{
+		pattern: /\binstall\b|\bdependency\b/i,
+		item: 'New dependency / install step',
+		where: 'package manager',
+		how: 'Install the new dependency in your environment.',
+	},
+	{
+		pattern: /\bapi key\b|\btoken\b|\bcredential\b|\bsecret\b|\boauth\b/i,
+		item: 'Credential / API key setup',
+		where: 'vendor dashboard',
+		how: 'Create or rotate the credential and store it securely.',
+	},
+	{
+		pattern: /\bwebhook\b/i,
+		item: 'Webhook registration',
+		where: 'vendor dashboard',
+		how: 'Register the webhook URL with the vendor.',
+	},
+	{
+		pattern: /\bconfig(?:uration)?\b/i,
+		item: 'Configuration change',
+		where: 'project config',
+		how: 'Review the updated configuration and apply any required settings.',
+	},
+];
 
 /**
  * Render the PR title from the PRD snapshot.
@@ -79,14 +133,32 @@ function renderStoriesTable(stories: PrdSnapshotStory[]): string {
 }
 
 /**
+ * Render the "Setup checklist" table: manual user actions (config/env/install)
+ * detected by scanning prd.description, prd.notes, and every story title for
+ * cue keywords (see SETUP_CHECKLIST_CUES). Renders a clear empty-state line,
+ * never an empty table, when no cue matches.
+ */
+function renderSetupChecklist(prd: PrdSnapshot): string {
+	const haystack = [prd.description ?? '', prd.notes ?? '', ...(prd.userStories ?? []).map((story) => story.title)].join('\n');
+
+	const matched = SETUP_CHECKLIST_CUES.filter((cue) => cue.pattern.test(haystack));
+	if (matched.length === 0) return NO_SETUP_CHECKLIST_TEXT;
+
+	const header = '| # | Item | Where | How | Status |\n| --- | --- | --- | --- | --- |';
+	const rows = matched.map((cue, index) => `| ${index + 1} | ${cue.item} | ${cue.where} | ${cue.how} | pending |`);
+	return [header, ...rows].join('\n');
+}
+
+/**
  * Render the full PR body from the PRD snapshot: Summary, Stories completed,
- * Testing, Notes (the four sections of templates/commands/cam-ship.md's PR
- * body template).
+ * Testing, Notes, Setup checklist (the sections of
+ * templates/commands/cam-ship.md's PR body template).
  */
 export function composePrBody(prd: PrdSnapshot): string {
 	const summary = prd.description?.trim() || NO_SUMMARY_TEXT;
 	const storiesTable = renderStoriesTable(prd.userStories ?? []);
 	const notes = prd.notes?.trim() || NO_NOTES_TEXT;
+	const setupChecklist = renderSetupChecklist(prd);
 
 	return [
 		'## Summary',
@@ -104,6 +176,10 @@ export function composePrBody(prd: PrdSnapshot): string {
 		'## Notes',
 		'',
 		notes,
+		'',
+		'## Setup checklist',
+		'',
+		setupChecklist,
 		'',
 	].join('\n');
 }

@@ -81,6 +81,8 @@ scripts/cam/review-report.json
 scripts/cam/review-artifact.txt
 # Ephemeral per-plan-audit verdict report (US-001, CAM-117; read by plan-runner, never committed)
 scripts/cam/plan-verdict-report.json
+# Ephemeral deterministic plan scope-proposal artifact (US-002, CAM-52; read by plan-runner, never committed)
+scripts/cam/scope-proposal.json
 # Durable plan-escalation marker written on plan non-convergence (US-002, CAM-204)
 .claude/.cam-plan-escalated.json
 # Runtime sidecar session marker written by session-start.ts (CAM-215)

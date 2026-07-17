@@ -36,10 +36,12 @@ Output **only** valid JSON matching this schema (no markdown fences, no commenta
   "officialDocsConsulted": [
     {
       "lib": "<library name>",
+      "channel": "<fetch channel from the Docs-Fetch Channel Table below, e.g. 'WebFetch'>",
       "url": "<canonical doc URL consulted>",
       "version": "<library version or 'current'>",
       "fetchedAt": "<ISO 8601 timestamp>",
       "summary": "<1-3 sentences: breaking changes, deprecations, or confirmation>",
+      "localConventionConflict": "<omit, or 1 sentence describing a conflict with an existing local convention>",
       "status": "ok | fetch_failed"
     }
   ],
@@ -58,9 +60,42 @@ Output **only** valid JSON matching this schema (no markdown fences, no commenta
 }
 ```
 
-`officialDocsConsulted`: populated in Step 5 of `/cam-plan`. Use `[]` when the issue touches no external library. Use `status: "fetch_failed"` for entries whose fetch failed.
+`officialDocsConsulted`: populated in Step 5 of `/cam-plan`. Use `[]` when the issue touches no external library. Use `status: "fetch_failed"` for entries whose fetch failed. `channel` records which fetch mechanism produced the entry (see the Docs-Fetch Channel Table below). `localConventionConflict` captures any clash between the fetched official guidance and an existing local convention; omit the field entirely when there is no conflict.
+
+### Docs-Fetch Channel Table
+
+Pick the fetch channel for each external library the issue touches from this mapping (extend the table itself on a future planner edit if a new library enters the stack):
+
+| Library | Fetch channel | Canonical source |
+|---|---|---|
+| Ink | `WebFetch` | https://github.com/vadimdemedes/ink |
+| Bun | `WebFetch` | https://bun.sh/docs |
+| js-yaml | `WebFetch` | https://github.com/nodeca/js-yaml |
+| chalk | `WebFetch` | https://github.com/chalk/chalk |
+
+**Anti-over-fetch guard**: at most **one targeted fetch per library per issue** — aim at the specific API/guide page relevant to the scope, never the doc root or a full index. Do not re-fetch a library already covered by an earlier `officialDocsConsulted` entry in the same PRD.
+
+**Local-convention-conflict detection**: if the fetched official approach conflicts with an existing local convention already used elsewhere in the repo (per `scripts/cam/CLAUDE.md` / `scripts/cam/patterns.md`), record the conflict in the entry's `localConventionConflict` field (1 sentence) instead of silently picking one side; the implementer story inherits the note via PRD `notes` and resolves it during its own Step 5.5 doc-validation.
 
 `type`: copy the top-level `type` value from the issue being planned (`feat | fix | chore | docs`) verbatim. When the issue has no `type` (it is optional), default the PRD's `type` to `"feat"`. Never leave it unset.
+
+### Scope-Proposal Artifact
+
+At plan completion, immediately after writing `prd.json`, also write a fixed-shape scope-proposal artifact to `scripts/cam/scope-proposal.json` (ephemeral, gitignored, never committed) so the orchestrator narrates a consistent scope summary every cycle:
+
+```json
+{
+  "problem": "<one-sentence problem statement, from the issue body>",
+  "inScopeStories": ["US-001", "US-002"],
+  "outOfScope": ["<explicit thing deliberately excluded this cycle>"],
+  "framing": {
+    "mvp": "<what ships in THIS PRD to reach a minimal working slice>",
+    "launchReady": "<what remains before the feature is launch-ready, if anything>"
+  }
+}
+```
+
+`inScopeStories`: the `id` of every story in `userStories`, copied verbatim. `outOfScope`: at least one entry naming something deliberately deferred (a follow-up idea, a later PRD, an operator ceremony); use `["none"]` only when this PRD's scope covers the full issue with nothing deferred. `framing.launchReady`: use `"same as MVP"` when this PRD alone reaches launch-ready with no further work.
 
 `requires`: **never emit `requires: "operator"` stories. Do not emit any story with `requires: "operator"` set.** Ceremonies (real-user keypress, OS-level action, real network hit, human-curated artifact) must be planned as automated acceptance criteria that: (a) name the verification tool (agent-browser / playwright / tmux-pty) and the artifact it produces; (b) include a reviewer-behavioral oracle (e.g. `[oracle: file-assert grep -q 'artifact-of-record' path/to/artifact]`). The `requires` field defaults to `null`.
 

@@ -53,6 +53,10 @@
             "type": "string",
             "description": "Library / service name. Use literal 'none' when status='no_external_lib_touched'."
           },
+          "channel": {
+            "type": "string",
+            "description": "Optional. The fetch mechanism used to consult the docs (e.g. 'WebFetch'). Mirrors the lib->fetch-channel table in subagent-planner.md. Omit when status='no_external_lib_touched'."
+          },
           "url": {
             "type": "string",
             "description": "Exact docs URL that was fetched. Omit when status='no_external_lib_touched'."
@@ -70,6 +74,10 @@
           "summary": {
             "type": "string",
             "description": "Optional one-line note about what was checked/aligned/corrected."
+          },
+          "localConventionConflict": {
+            "type": "string",
+            "description": "Optional. One sentence describing a conflict between the fetched official guidance and an existing local convention (repo pattern, CLAUDE.md rule). Omit when there is no conflict."
           }
         },
         "additionalProperties": false

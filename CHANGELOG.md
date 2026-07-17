@@ -6,6 +6,16 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.195.0] - 2026-07-17
+
+### Added
+
+- US-005 - Wire operator-decision moments to the file-based gate; keep AskUserQuestion disallowed
+- US-004 - Bring cam-review triage guardrails to reporter parity (hardening)
+- US-003 - Add setup-checklist section to composePrBody
+- US-002 - Deterministic plan scope-proposal artifact (hand-rolled TS guard) emitted by planner and narrated
+- US-001 - Extend docs-fetch shapes with channel table, anti-over-fetch guard, conflict detection
+
 ## [0.194.0] - 2026-07-17
 
 ### Added
