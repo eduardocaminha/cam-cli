@@ -1,0 +1,59 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-324",
+  "description": "Migrate all runtime spawnSync calls in src/commands/sidecar.ts from node:child_process to Bun.spawnSync, with real-git coverage for the untested checkoutMainFn/proceedBranchFn bodies.",
+  "issueNumber": 324,
+  "type": "chore",
+  "relatedDocs": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "Bun",
+      "channel": "WebFetch",
+      "url": "https://bun.sh/docs/api/spawn",
+      "version": "current",
+      "fetchedAt": "2026-07-17T00:00:00Z",
+      "summary": "Confirmed Bun.spawnSync(command: string[], options) returns SyncSubprocess with { exitCode: number, success: boolean, stdout: Buffer|undefined, stderr: Buffer|undefined }. There is NO encoding option: stdout/stderr are Buffers, decode via new TextDecoder().decode(). Node's stdio:'pipe' string maps to Bun's separate stdout/stderr fields (Bun stdio is a [Writable,Readable,Readable] tuple, not a string); cwd and env are supported.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Migrate checkoutMainFn + proceedBranchFn to Bun.spawnSync with real-git coverage",
+      "description": "As a maintainer, I need the two currently-untested git-invoking resolver bodies (checkoutMainFn, proceedBranchFn) migrated to Bun.spawnSync AND covered by real-git tests, so that a .status->.exitCode / Buffer-stdout return-shape regression cannot slip through silently (issue AC3, the risk-reduction core of CAM-324).",
+      "acceptanceCriteria": [
+        "checkoutMainFn (src/commands/sidecar.ts:2782 body, 2 spawnSync sites ~2762/2769) and proceedBranchFn (src/commands/sidecar.ts:2869 body, 4 spawnSync sites ~2855/2857/2858/2863) call Bun.spawnSync(['git', ...args], opts) with node stdio:'pipe' translated to Bun stdout/stderr:'pipe'. [oracle: reviewer-judgment]",
+        "Exit-code checks in these two bodies read .exitCode / .success (no `.status ?? 1` remains inside makeInProgressConflictResolverDeps or makePlanApprovalResolverDeps). [oracle: file-assert bash -c '! sed -n \"2761,2930p\" src/commands/sidecar.ts | grep -q \".status\"']",
+        "Any string read of the subprocess output in these two bodies decodes via new TextDecoder().decode(...) instead of an encoding:'utf8' option, and the {stdout:string,exitCode} return-shape adapter (~sidecar.ts:2770) is preserved. [oracle: reviewer-judgment]",
+        "A real-git test (real tmpdir + git init, no injected spawn fake) constructs the production deps via makeInProgressConflictResolverDeps / makePlanApprovalResolverDeps and exercises the real checkoutMainFn and proceedBranchFn bodies, asserting the return-shape adapters (exitCode + decoded stdout / boolean success) behave correctly. [oracle: file-assert bash -c 'grep -rEq \"checkoutMainFn|proceedBranchFn\" test/ && grep -rEq \"git.*init|mkdtemp|makeTempDir\" test/']",
+        "The new real-git test passes and existing plan-approval-gate / in-progress-conflict tests still pass. [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine is green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "File: src/commands/sidecar.ts. Factories: makeInProgressConflictResolverDeps(cwd,sessionName,realSpawnFn,logEvent) at :2761 (checkoutMainFn at :2782), makePlanApprovalResolverDeps(...) at :2845 (proceedBranchFn at :2869). These bodies call the raw `spawnSync` import directly (not the injected realSpawnFn), so they migrate independently of the SpawnFn seam. Reference pattern (CAM-308): check-all.ts:130 uses Bun.spawnSync([cmd,...args],{...}) gating on `result.success && result.exitCode===0`; check-coverage.ts:131-132 and validate-agents-md.ts:293-328 decode with new TextDecoder().decode() and read .exitCode/.success. API (Bun docs, confirmed): SyncSubprocess = { exitCode:number, success:boolean, stdout:Buffer|undefined, stderr:Buffer|undefined }; NO encoding option; node stdio:'pipe' -> Bun stdout/stderr:'pipe'. Guard: stdout is Buffer|undefined, so decode `result.stdout ?? new Uint8Array()` (noUncheckedIndexedAccess-adjacent nullability). Do NOT remove the node:child_process import in this story (still used by the ~15 other sites migrated in US-002). Existing tests injecting fakes: test/plan-approval-gate.test.ts:89,127 and test/supervisor/in-progress-conflict.test.ts:235,247,254 (these must keep passing). New real-git test should live under test/ mirroring source (e.g. test/sidecar-resolver-git.test.ts). Curated invariant: Bun-only spawn. patterns.md has no sidecar-specific spawn bullet; grep 'spawnSync' if needed."
+    },
+    {
+      "id": "US-002",
+      "title": "Migrate remaining sidecar.ts spawnSync sites and drop the node:child_process import",
+      "description": "As a maintainer, I need the remaining ~15 runtime spawnSync invocations in sidecar.ts migrated to Bun.spawnSync and the node:child_process import fully removed, so the whole file aligns with the Bun-first invariant with no behavioral change (issue AC1/AC2).",
+      "acceptanceCriteria": [
+        "Every remaining runtime spawnSync site (approx sidecar.ts:845,862,866,1025,1051,1244,1935,2035,2047,2057,2088,2296,2549,2562,3301) calls Bun.spawnSync(['cmd', ...args], opts), preserving exit-code semantics via .success/.exitCode (replacing `.status ?? 1`) and decoding .stdout/.stderr via new TextDecoder().decode() (replacing encoding:'utf8'), with fail-closed behavior unchanged. [oracle: reviewer-judgment]",
+        "src/commands/sidecar.ts no longer imports spawnSync (or SpawnSyncReturns) from node:child_process, and no `Parameters<typeof spawnSync>` or JSDoc reference to the node import remains. [oracle: file-assert bash -c '! grep -q \"node:child_process\" src/commands/sidecar.ts']",
+        "No literal `spawnSync(` node-style call (comma-separated cmd,args) remains; all calls are `Bun.spawnSync([`. [oracle: file-assert bash -c '! grep -qE \"[^.]spawnSync\\\\(.\" src/commands/sidecar.ts']",
+        "No `.status` read of a spawn result remains anywhere in the file. [oracle: file-assert bash -c '! grep -q \"result.status\" src/commands/sidecar.ts']",
+        "No functional/behavioral change: existing sidecar / plan-approval-gate / in-progress-conflict tests still pass. [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine is green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "File: src/commands/sidecar.ts. Import to remove at :26 `import { spawnSync, type SpawnSyncReturns } from 'node:child_process'`. Total grep -c spawnSync = 38 (import + JSDoc + `Parameters<typeof spawnSync>[2]` type-casts + ~21 runtime). US-001 already migrated the 6 checkoutMainFn/proceedBranchFn sites; this story finishes the remaining ~15 runtime sites and the type-level references so the import can be deleted last. SpawnSyncReturns type usage must be replaced (Bun's return type is Bun.SyncSubprocess; options type is Parameters<typeof Bun.spawnSync>[1] or SpawnOptions). API diffs per site (Bun docs, confirmed): node spawnSync(cmd,args,opts) -> Bun.spawnSync([cmd,...args],opts); node .status(number|null) -> Bun .exitCode(number)+.success(boolean); node encoding:'utf8' string stdout -> Bun Buffer stdout (decode via new TextDecoder().decode(result.stdout ?? new Uint8Array())); node stdio string -> Bun separate stdin/stdout/stderr. No input/shell/maxBuffer options are used, so 1:1 swaps; env is supported by Bun.spawnSync. Reference: CAM-308 check-all.ts:130 / check-coverage.ts:131-132 / validate-agents-md.ts:293-328. Grep-oracle idiom: the `[^.]spawnSync(.` absence check must remain false after replacing every bare call with `Bun.spawnSync([`. Curated invariant: Bun-only spawn (patterns.md top bullet)."
+    }
+  ]
+}
