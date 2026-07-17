@@ -1,10 +1,50 @@
 {
   "id": "CAM-54",
   "title": "Codex CLI da OpenAI como backend alternativo completo ao Claude (selecionavel no cam config)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-06-15T14:00:00Z",
   "description": "OBJETIVO: o Codex CLI da OpenAI (comando `codex`) como alternativa COMPLETA ao `claude`: o harness inteiro roda em OU claude (+ seus modelos) OU codex (+ seus modelos), escolhido no menu de config. DEPENDE de CAM-53 (o seletor de backend + os modelos vivem la); planejar/implementar CAM-53 antes. Exige abstrair o backend atras de uma interface cobrindo: (a) invocacao do worker (claude --agent X --session-id <uuid> '<prompt>' vs a invocacao do codex); (b) deteccao de conclusao (o polling do sentinel CAM_*_STATUS / <review> no capture-pane vs o equivalente no codex); (c) modelo de sessao/agente (o codex tem seu proprio modelo de agent-definition e de resume de sessao, diferente do --agent + --session-id do claude); (d) launch da persona do orquestrador (wrapper bash do bounded-respawn). SPIKE DE DESIGN PRIMEIRO (antes de codar): mapear a CLI do codex (invocacao, sessao, output/sentinel, config de modelo/agent), identificar o que NAO mapeia pro modelo do cam, e decidir a fronteira da abstracao (uma interface BackendAdapter com claude e codex como implementacoes). ESCOPO: abstracao BackendAdapter no worker-spawn + supervisor + run.ts; adapter do codex; wiring de config (de CAM-53); os prompts dos agentes (subagent-*.md) podem precisar de forma codex-compativel; os modelos do codex sao configuraveis no menu. RELACIONA: CAM-53 (pre-req), CAM-42 (modelo de worker TUI + sentinel que precisa ser re-implementado pro codex), regra no-claude-p (revisitar o equivalente no codex). ACEITE: com backend=codex no config, `cam run`/plan/next/review/ship funcionam ponta-a-ponta no codex; backend=claude inalterado; spike de design documentado antes da implementacao; typecheck; tests.",
-  "updatedAt": "2026-06-15T14:00:00Z"
+  "updatedAt": "2026-07-17T09:45:31.888Z",
+  "spec": {
+    "scope": "Wire the OpenAI Codex CLI (the codex command) as a selectable LLM backend, a complete alternative to claude for the WORKER actors. DESIGN SPIKE FIRST (the issue demands it): the first deliverable is a design spike producing an ADR that (i) defines a BackendAdapter abstraction seam fronting the currently-claude-hardcoded spawn paths and (ii) resolves the six claude/codex mismatches; codex dispatch code lands only after the spike ADR. CAM-53 already shipped the config plumbing (backend string, default claude, ConfigScreen option labeled 'wired in CAM-54') and the runtime guard (spawn-resolution.ts:60 CODEX_GUARD_NOTICE); this issue replaces the guard's not-yet-wired behavior with real dispatch. Abstraction boundary = the report/sentinel/JSON contract (CAM_*_STATUS lines, <review> tags, worker-report.json/review-report.json), whose parsing is already backend-agnostic (report-parse.ts, ADR-0038); the BackendAdapter encapsulates spawn argv, completion detection, session/transcript model, agent-prompt injection, permission/sandbox+env, and model-id namespace. Codex runs as a TUI pane (operator steer) mirroring the claude worker model, reusing the sentinel/report contract as the completion boundary. IN SCOPE: spike ADR + BackendAdapter seam + codex wired end-to-end for the worker actors (implementer, planner, auditor, reviewer). FOLLOW-UPS (out, separate issues): orchestrator-persona (run.ts bounded-respawn wrapper), retry launcher, auth-preflight codex parity. OUT OF SCOPE entirely: ship (deterministic zero-LLM, ship-runner.ts:36). Epic-scale: expect the planner to slice heavily.",
+    "acceptanceCriteria": [
+      "A design-spike ADR is written FIRST, defining the BackendAdapter abstraction seam and resolving the six claude/codex mismatches (seam; session/transcript + budget-recycle; completion-detection; agent-prompt injection; permission/sandbox+env; model-id namespace); it lands before any codex dispatch code.",
+      "A BackendAdapter abstraction fronts the worker spawn-argv builders (worker-argv.ts, plan-argv.ts, review.ts) and their loop.ts/review.ts call sites; claude is refactored into an adapter with NO behavior change (existing claude path + tests stay green).",
+      "codex is wired as a real backend for the worker actors (implementer, planner, auditor, reviewer) running as TUI panes and emitting the same CAM_*_STATUS / <review> / worker-report.json / review-report.json contract the supervisor parses; selecting backend=codex dispatches codex and the spawn-resolution guard's not-yet-wired notice is replaced by real dispatch.",
+      "The context-budget/recycle backstop behaves correctly under backend=codex per the spike's decision (a codex transcript equivalent OR a documented graceful degradation), never silently broken.",
+      "codex model ids populate the per-phase model config when backend=codex (backend-conditional ConfigScreen + models.ts) without breaking the claude tier-alias path.",
+      "Orchestrator-persona, retry launcher, and auth-preflight codex parity are OUT of scope (tracked as follow-ups); ship stays zero-LLM and unaffected.",
+      "typecheck passes, check:all is green, the claude backend path is unchanged (all existing tests pass), and new tests cover the BackendAdapter seam plus the codex argv/adapter."
+    ],
+    "gotchas": [
+      "'backend' is overloaded: the issue_system backend (local/github/linear, src/config/issue-system.ts) is a DIFFERENT concept; CAM-53/54 mean the LLM backend (claude/codex) in src/config/models.ts + src/ui/ConfigScreen.tsx.",
+      "CAM-53 shipped only config plumbing + a guard, NO abstraction: readBackend (models.ts:171-191), DEFAULTS backend:'claude' (:62-70), ConfigScreen BACKEND_OPTIONS codex labeled 'wired in CAM-54' (:131-135), CODEX_GUARD_NOTICE (spawn-resolution.ts:60, informational, still spawns claude).",
+      "Every spawn path hardcodes claude: worker-argv.ts:177-192 (implementer), plan-argv.ts:85-99 (planner) + :146-160 (auditor), review.ts:119-133 (reviewer), run.ts:252-308/:267 (orchestrator persona), claude.ts (cam claude wrapper), run-auth-preflight.ts:81, retry/launcher.ts:81-86.",
+      "ship is deterministic zero-LLM (ship-runner.ts:36, ADR-0009) -- no codex adapter needed there.",
+      "The report/sentinel/JSON contract is the portable boundary: parsing is backend-agnostic (report-parse.ts, ADR-0038); codex agents must be prompted to emit the same CAM_*_STATUS lines / <review> tags / JSON reports.",
+      "RISKIEST sub-area: the context-budget/recycle backstop hard-couples to claude's transcript (transcript/usage.ts:232-234, orch-budget.ts, orch-recycle-watch.ts) and the --session-id lowercase-uuid uuidgen respawn dance (run.ts:281-285); codex's session/transcript model differs -- the spike must decide a codex equivalent or graceful degradation.",
+      "--agent <name> -> .claude/agents/*.md (ADR-0020; the agent body IS the system prompt) has no codex analog; the spike defines codex's prompt-injection path and whether codex-shaped agent files are needed.",
+      "--permission-mode bypassPermissions must NEVER be a cam CLI flag (test/no-permission-mode-flag.test.ts); codex has its own sandbox/approval model + different nesting/auth env vars vs the CLAUDE* env-strip (worker-argv.ts:82-102).",
+      "No MCP surface exists (grep clean) and no trust-prompt handling exists (sidestepped by bypassPermissions) -- nothing to port there.",
+      "CAM-42's no-claude-p rule (subscription; TUI panes + sentinel polling, not headless -p) needs a codex equivalent decision in the spike.",
+      "Model tier aliases are claude-only (ADR-0034, models.ts DEFAULTS); codex ids are a different namespace populating the same per-phase slots when backend=codex.",
+      "No ADR/CONTEXT entry for codex or the backend-split exists yet; the spike creates the first."
+    ],
+    "domainTerms": [
+      "LLM backend: the claude-vs-codex choice (src/config/models.ts backend key), distinct from the issue_system backend (local/github/linear).",
+      "BackendAdapter: the abstraction seam this issue introduces fronting spawn argv, completion detection, session/transcript model, agent-prompt injection, permission/sandbox+env, and model-id namespace for a given LLM backend.",
+      "design spike: the issue's mandated first deliverable -- a design ADR resolving the claude/codex mismatches before any codex dispatch code.",
+      "report/sentinel contract: the backend-agnostic completion+result boundary (CAM_*_STATUS lines, <review> tags, worker-report.json/review-report.json) parsed by report-parse.ts (ADR-0038).",
+      "context-budget/recycle backstop: the claude-transcript-driven subsystem (orch-budget.ts, orch-recycle-watch.ts) that recycles the orchestrator near context exhaustion; claude-shaped today."
+    ]
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 1,
+    "riskReduction": 1,
+    "jobSize": 8
+  },
+  "type": "feat"
 }
