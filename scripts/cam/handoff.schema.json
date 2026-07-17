@@ -42,6 +42,11 @@
       "type": "string",
       "description": "Free-text context the next story iteration should know about — gotchas, dependencies, or setup needed"
     },
+    "appliedPatternIds": {
+      "type": "array",
+      "description": "Fingerprint ids (fingerprintPatternRecord, src/commands/pattern-records.ts) of the typed scripts/cam/pattern-records.jsonl records this story applied. Optional (US-005, CAM-64) — absent or empty when the story applied none; existing handoffs without it remain valid.",
+      "items": { "type": "string" }
+    },
     "officialDocsValidated": {
       "type": "array",
       "description": "Result of Step 5.5 (see .claude/commands/cam-next.md) — one entry per external library cross-checked against its current official docs.",

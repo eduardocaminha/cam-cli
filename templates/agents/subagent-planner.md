@@ -184,6 +184,8 @@ The `notes` field should include:
 - **Gotchas** specific to this project (grep `scripts/cam/patterns.md` for these; `scripts/cam/CLAUDE.md` auto-loads and is already in context).
 - **Doc section references** from `relatedDocs` that the implementer must re-check before coding.
 
+Also grep `scripts/cam/pattern-records.jsonl` (the typed pattern-record store, US-001 CAM-64) — the same grep-on-demand contract as `patterns.md`, keyword-filtered to the subsystem each story touches. If a specific record materially informed a story's design, cite that record's fingerprint id (`fingerprintPatternRecord`, `src/commands/pattern-records.ts`: `sha256(name.trim() + '::' + description.trim() + '::' + dir_anchors.map(a => a.trim()).join(','))`, first 12 hex chars) inline in that story's `notes`, so the implementer who later picks up the story can report it via `appliedPatternIds` in `worker-report.json`/`handoff.json` (US-005). The planner itself never writes `appliedPatternIds`: it has no worker-report/handoff of its own — only the implementer's exit artifacts carry that field.
+
 ## Project Context
 
 This is **cam-cli**: the `cam` binary itself, an autonomous Claude Code loop driver. Stack: **Bun >= 1.2 + TypeScript (strict, `noUncheckedIndexedAccess`) + React 19 rendered via Ink 7** for terminal UIs. No database, no HTTP server, no browser. Config is TOML (`src/config/toml.ts`); state is JSON (`prd.json`, `handoff.json`). It shells out to `claude`, `tmux`, `git`, and optionally `gh` / the Linear GraphQL API. Distributed as a single-file binary (`bun build --compile`) with `vendor/` + `claude-code-harness/` embedded at build time.
