@@ -1,0 +1,10 @@
+{
+  "id": "CAM-329",
+  "title": "Rebrand cam-cli to CAM Runtime (product name + uppercase splash)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-17T09:18:01.738Z",
+  "updatedAt": "2026-07-17T09:18:01.738Z",
+  "description": "The product is renamed from cam-cli to CAM Runtime. Scope to nail down during spec: (a) product display name becomes CAM Runtime; (b) the splash screen currently renders lowercase and must render uppercase (CAM Runtime / CAM); (c) decide the blast radius: package.json name, README/docs/CHANGELOG, in-app strings, repo/dir name - and explicitly whether the cam command/binary name stays cam (likely yes, only the product display name changes). Two operator requests bundled: the rename and the splash lowercase->uppercase."
+}
