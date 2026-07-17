@@ -1,10 +1,41 @@
 {
   "id": "CAM-330",
   "title": "Public launch readiness analysis for CAM Runtime (distribution, docs, onboarding, security, licensing)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
-  "blockedBy": [],
+  "blockedBy": [
+    "CAM-54"
+  ],
   "createdAt": "2026-07-17T09:38:47.644Z",
-  "updatedAt": "2026-07-17T09:38:47.644Z",
-  "description": "Sequenced AFTER CAM-54 (Codex backend) ships. Run a complete readiness analysis to make CAM Runtime publicly usable and ready to publicize/divulge. This is an analysis/audit deliverable that will likely spawn follow-up issues. Scope to nail down during spec: (a) packaged distribution + install for external users without a dev setup (the product is currently a private, unpublished bun-compiled binary installed via build-release.sh); (b) first-run onboarding + cam init UX for a stranger; (c) external-facing docs/README (vs the current internal-contributor docs); (d) secrets/credentials handling + security posture (API keys, keyring, firewall/container mode); (e) license + repo visibility; (f) telemetry/privacy stance; (g) versioning/release + update path; (h) support channels; (i) a triage of known gaps blocking a public v1. Depends on CAM-54."
+  "updatedAt": "2026-07-17T09:54:57.472Z",
+  "description": "Sequenced AFTER CAM-54 (Codex backend) ships. Run a complete readiness analysis to make CAM Runtime publicly usable and ready to publicize/divulge. This is an analysis/audit deliverable that will likely spawn follow-up issues. Scope to nail down during spec: (a) packaged distribution + install for external users without a dev setup (the product is currently a private, unpublished bun-compiled binary installed via build-release.sh); (b) first-run onboarding + cam init UX for a stranger; (c) external-facing docs/README (vs the current internal-contributor docs); (d) secrets/credentials handling + security posture (API keys, keyring, firewall/container mode); (e) license + repo visibility; (f) telemetry/privacy stance; (g) versioning/release + update path; (h) support channels; (i) a triage of known gaps blocking a public v1. Depends on CAM-54.",
+  "spec": {
+    "scope": "Produce a complete PUBLIC-LAUNCH readiness analysis for CAM Runtime, sequenced AFTER CAM-54 (Codex backend) ships so the analysis reflects the full claude/codex product. Deliverable: a written readiness report (e.g. docs/launch-readiness.md) that audits each launch dimension, plus a triage that FILES follow-up issues for the blocking gaps and states a go/no-go for a public v1. This is an ANALYSIS/AUDIT deliverable, not a broad feature build -- its value is the findings + the filed follow-ups, and it consumes/coordinates rather than duplicates CAM-331 (README build). Dimensions to audit: (a) packaged distribution + install for external users WITHOUT a dev setup (today the product is a private, unpublished bun-compiled binary installed via build-release.sh to ~/.local/bin/cam); (b) first-run onboarding + cam init UX for a stranger; (c) external-facing docs (coordinate with CAM-331, do not rebuild the README here); (d) secrets/credentials handling + security posture (API keys, keyring, firewall/container mode); (e) license + repo visibility (repo is currently private/unpublished; the GitHub repo rename cam-cli->cam-runtime is a known separate step); (f) telemetry/privacy stance; (g) versioning/release + update path; (h) support channels; (i) a prioritized triage of known gaps blocking a public v1.",
+    "acceptanceCriteria": [
+      "A written launch-readiness report is produced (e.g. docs/launch-readiness.md) covering all nine dimensions (distribution/install, onboarding, external docs, security/secrets, license/repo-visibility, telemetry/privacy, versioning/release/update, support channels, gap triage).",
+      "Each dimension gets an explicit verdict (ready / gap) plus a concrete gap list where not ready.",
+      "Blocking gaps are filed as follow-up issues (via cam issue), and the report links them; non-blocking observations are noted but not filed as blockers.",
+      "The report states an explicit go / no-go recommendation for a public v1, with the must-fix set called out.",
+      "The analysis reflects the post-CAM-54 product (claude/codex per-subagent) and coordinates with CAM-331 (README) and CAM-332 (brand) without duplicating them.",
+      "typecheck + check:all green (the change is documentation + filed issues; no product-code behavior change)."
+    ],
+    "gotchas": [
+      "Sequenced AFTER CAM-54: the analysis must reflect the codex backend, so speccing now is fine but running it before CAM-54 ships would audit a stale product.",
+      "This is analysis, not build: it FILES follow-up issues rather than fixing gaps inline; CAM-331 (README) and any distribution/install fixes are separate deliverables.",
+      "Distribution reality today: private, unpublished bun-compiled binary, macOS-arm64, installed via scripts/build-release.sh to ~/.local/bin/cam; no npm bin field, no public distribution channel -- a likely top blocker for public use.",
+      "The GitHub repo/dir rename (cam-cli -> cam-runtime) is a known separate operator step (see CAM-329); factor it into the license/repo-visibility dimension but do not perform it here.",
+      "macOS bun-compile binaries need ad-hoc re-signing off dev machines (a documented project lesson); the distribution dimension must account for code-signing/notarization for public install."
+    ],
+    "domainTerms": [
+      "launch-readiness report: the written audit (docs/launch-readiness.md) of CAM Runtime's fitness for public release across distribution, onboarding, docs, security, license, telemetry, release, support, and a gap triage.",
+      "public v1 go/no-go: the explicit release recommendation the readiness analysis produces, with the must-fix blocking set."
+    ]
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 2,
+    "riskReduction": 2,
+    "jobSize": 3
+  },
+  "type": "chore"
 }
