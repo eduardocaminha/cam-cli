@@ -1,0 +1,40 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-316",
+  "description": "Suppress ConfigScreen TabBar Left/Right navigation while a custom-model or notify TextInput is focused so arrow keys move the text cursor instead of switching tabs.",
+  "issueNumber": 316,
+  "type": "feat",
+  "relatedDocs": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "ink",
+      "url": "https://github.com/vadimdemedes/ink#useinputinputhandler-options",
+      "version": "7.0.3",
+      "fetchedAt": "2026-07-16T00:00:00Z",
+      "summary": "useInput accepts a second options arg { isActive?: boolean } (default true) that enables/disables input capture; the idiomatic way to have one useInput hook stand down while another (ink-text-input) owns arrow keys. Confirmed against the installed type defs (node_modules/ink/build/hooks/use-input.d.ts:100-106).",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Suppress TabBar Left/Right while a ConfigScreen TextInput is focused",
+      "description": "As an operator editing a custom-model id or notify recipient/from field in `cam config`, I need Left/Right arrow keys to move the text cursor within the focused field instead of switching tabs, so I can edit free-text values smoothly; when no TextInput is focused, Left/Right must still switch tabs as before.",
+      "acceptanceCriteria": [
+        "TabBar's Left/Right useInput handler stands down when a caller-supplied suspend/isActive prop indicates a TextInput owns input (implemented via Ink's useInput isActive option, not by deleting the handler). [oracle: grep -q 'isActive' src/ui/TabBar.tsx]",
+        "ConfigScreen computes whether a TextInput is focused (custom-model entry open: customModel.phase !== null; OR Global tab notify-recipient fieldFocus===3; OR Global tab notify-sender fieldFocus===4) and passes it to TabBar so navigation is suspended only in those states. [oracle: bun test test/ui/config-screen.test.tsx]",
+        "While a custom-model or notify TextInput is focused, Left/Right do NOT switch tabs (the current tab and its focused field stay put and typed characters/cursor movement remain in the field). [oracle: bun test test/ui/config-screen.test.tsx]",
+        "When no TextInput is focused (a Select field or a non-Global tab is active), Left/Right continue to switch tabs with wrap-around exactly as before. [oracle: bun test test/ui/config-screen.test.tsx]",
+        "The prior AC5 test asserting tabs always switch while the notify-recipient field is focused is replaced (not worked around) to assert the new suppressed-navigation behavior; a test covers both the focused (suppressed) and unfocused (switches) cases. [oracle: file-assert ! grep -q 'always switches tabs, even while the notify-recipient' test/ui/config-screen.test.tsx]",
+        "Verify the screen renders correctly: the ConfigScreen frames asserted via ink-testing-library show the focused TextInput retaining focus after Left/Right (success/failure judged by rendered field content, never divider color). [oracle: bun test test/ui/config-screen.test.tsx]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "check:all is green (lint spine + typecheck + tests). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/ui/TabBar.tsx (add e.g. a `suspended`/`isActive` prop, pass to useInput's second arg `{ isActive: !suspended }`; TabBar.tsx:36-43 is the Left/Right handler), src/ui/ConfigScreen.tsx (compute textInputFocused in useConfigScreenState / the ConfigScreen body and thread it into <TabBar ...> at ConfigScreen.tsx:352). TextInput-focused conditions: customModel.phase !== null (ConfigScreen.tsx:275,505), and Global tab (currentTab==='global') with fieldFocus 3 (notify recipient, ConfigScreen.tsx:629) or 4 (notify sender, ConfigScreen.tsx:642). Tests: test/ui/config-screen.test.tsx (replace the 'Left/Right always switches tabs...' test at line 190; add focused-suppressed + unfocused-switches cases) and consider a TabBar unit case in test/ui/tab-bar.test.tsx for the new prop. GOTCHA (from issue): the always-switch behavior was intentional per CAM-87 AC5 and covered by a test; this issue deliberately overrides it, so UPDATE the test, do not work around it. GOTCHA (Ink): success/failure is the glyph, never divider color. Ink useInput isActive option confirmed in node_modules/ink/build/hooks/use-input.d.ts:100-106. Do NOT touch vendor/ or templates/. Single vertical slice: presentational prop + wiring + test in one story."
+    }
+  ]
+}
