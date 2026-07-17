@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.197.0] - 2026-07-17
+
+### Added
+
+- US-001 - Codify the CAM Runtime brand palette as named design tokens
+
 ## [0.196.0] - 2026-07-17
 
 ### Added
