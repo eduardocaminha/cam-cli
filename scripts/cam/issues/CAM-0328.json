@@ -1,0 +1,10 @@
+{
+  "id": "CAM-328",
+  "title": "Split advisory projects absurd ~30M-token estimate for jobSize=1 single-story buckets",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-17T09:04:23.864Z",
+  "updatedAt": "2026-07-17T09:04:23.864Z",
+  "description": "The split advisory's historical-bucket token projection is miscalibrated for the smallest jobSize bucket. Reproduced across 3 consecutive cycles for jobSize=1 single-story PRDs: CAM-323 ~30.1M, CAM-326 ~30.8M, CAM-325 ~31.6M tokens projected for a bucket whose real cycles consumed a tiny fraction of that. Non-blocking (all 3 cycles completed normally; the advisory does not gate) but the projection math is clearly wrong. Investigate the bucket-projection arithmetic in the split-advisory estimator; a single-story chore should not project tens of millions of tokens."
+}
