@@ -1,0 +1,30 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-314",
+  "description": "Surface a failed abandon-path `git checkout main` to the operator instead of silently re-pausing, preserving the never-clobber guarantee.",
+  "issueNumber": 314,
+  "type": "fix",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Surface failed abandon-path checkout-main to the operator",
+      "description": "As an operator resolving an in-progress-conflict gate with 'abandon', I need a failed best-effort `git checkout main` (e.g. a dirty worktree that leaves HEAD stuck on the cam/* branch) surfaced to me via a durable event and a notify line, so that I learn HEAD did not return to main instead of only seeing the next plan tick silently re-pause.",
+      "acceptanceCriteria": [
+        "The abandon-path checkout-main dep detects when `git checkout main` did not land on main (non-zero exit OR HEAD still resolves to a cam/* branch after the attempt) and, on that failure only, logs a durable worker event whose kind names an abandon checkout-main failure and whose detail names the branch HEAD is stuck on. [oracle: grep -qE 'abandon-checkout-main-failed|checkout-main-failed' src/commands/sidecar.ts]",
+        "On the same failure path, a one-line operator-facing notify is pushed via the existing orchestrator-notify seam, best-effort (a closed orchestrator pane is a silent no-op). [oracle: reviewer-judgment]",
+        "The dep remains never-throw: the git call, the HEAD re-check, the durable log, and the notify are each wrapped so no partial failure escapes (pollAndResolveGate calls the resolver with no surrounding try/catch). [oracle: grep -q 'best-effort' src/commands/sidecar.ts]",
+        "The never-clobber guarantee is unchanged: no `git checkout -f`, `git reset --hard`, `git stash`, or `git clean` is introduced on the abandon path, so a dirty worktree is never clobbered and the next plan tick still re-detects the branch conflict. [oracle: file-assert ! grep -nE 'checkout .*-f|reset --hard|git stash|git clean' src/commands/sidecar.ts]",
+        "A test drives the production gate-phase abandon resolution (via buildGatePhaseDeps / the exported dep builder) against a real git tmpdir on a cam/* branch with a dirty worktree that forces `git checkout main` to fail, and asserts the operator-facing surfacing (durable event logged naming the stuck branch) while asserting HEAD is left on the cam/* branch (not clobbered). [oracle: bun test test/sidecar-gate-phase.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint/static spine is green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Edit `makeInProgressConflictResolverDeps` in src/commands/sidecar.ts (~L2723): its `checkoutMainFn` currently swallows the outcome of `spawnSync('git', ['-C', cwd, 'checkout', 'main'])`. Extend the builder's signature to also take sessionName/realSpawnFn/logEvent (mirror the sibling `makePlanApprovalResolverDeps` at ~L2768, which already logs a durable `plan-approval-branch-failed` event via `logEvent`/`logBranchFailure` and pushes a notify via `makeNotifyOrchestrator`). Reuse that exact pattern: after the checkout attempt, verify success (non-zero exit OR `git rev-parse --abbrev-ref HEAD` still starts with `cam/`); on failure log a durable event (e.g. kind 'abandon-checkout-main-failed', detail includes the stuck branch name) and call notify with a one-line message naming the branch. Update the call site at ~L2870 in `makeProductionGatePhaseFn` to pass the new args (sessionName/realSpawnFn/logEvent are already in that closure). The pure resolver in src/supervisor/in-progress-conflict.ts stays void/best-effort; only its production dep changes, so the `InProgressConflictResolverDeps.checkoutMainFn` contract (never-throw) is preserved. Test: add a case to test/sidecar-gate-phase.test.ts following the existing `buildGatePhaseDeps` + real-tmpdir + real-git precedent (~L365); create a dirty tracked file whose content conflicts with main so `git checkout main` fails, seed a passes:false PRD + cam/* HEAD, write an in-progress-conflict gate file with decision 'abandon', run runGatePhaseFn, then read `.claude/cam-worker-events.jsonl` and assert the abandon-checkout-main-failed event exists and HEAD is still the cam/* branch. GOTCHA (from the issue): this is observability-only; do NOT add any force/hard-reset/stash/clean that would clobber the dirty worktree. GOTCHA: `noUncheckedIndexedAccess` -- guard the rev-parse stdout and any split results. Bun-only (spawnSync here is the module's existing `spawnSync` import; keep consistent with surrounding calls)."
+    }
+  ]
+}
