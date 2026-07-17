@@ -1,0 +1,16 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Typed pattern-record schema, hand-rolled guard, and confirmation-scoring" },
+  "branchName": "cam/issue-64",
+  "timestamp": "2026-07-17T00:00:00.000Z",
+  "createdFiles": [
+    "src/patterns/record.ts",
+    "test/patterns/record.test.ts",
+    "scripts/cam/pattern-record.schema.json"
+  ],
+  "modifiedFiles": [],
+  "openQuestions": [],
+  "nextStoryContext": "US-002 (\"On-main ref-only append-record writer + reader + dedup for the typed store\") builds directly on this story's PatternRecord type, isPatternRecord guard, and parsePatternRecordsJsonl in src/patterns/record.ts. Reuse those exports (do not redefine the shape). Follow the on-main ref-only write pattern already used for suggestions/issues (see src/git/on-main.ts, commitTreeToMain + dedup) rather than working-tree writes, since a live cam run session may be a concurrent writer. The optional doc-only schema at scripts/cam/pattern-record.schema.json mirrors the runtime type (draft-07, additionalProperties:false) -- keep it in sync if the shape changes. confirmationScore(record) is exported and ready for US-004's decay/demotion gate. Gotcha for any future AC with a negative-substring grep oracle (e.g. '! grep ... \"ajv\"'): explanatory ADR-0038-style comments that name the forbidden library by its literal token will trip the oracle even with no import present -- always run the exact oracle command, not just bun test.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
