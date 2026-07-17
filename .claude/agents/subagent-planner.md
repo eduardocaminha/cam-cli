@@ -36,10 +36,12 @@ Output **only** valid JSON matching this schema (no markdown fences, no commenta
   "officialDocsConsulted": [
     {
       "lib": "<library name>",
+      "channel": "<fetch channel from the Docs-Fetch Channel Table below, e.g. 'WebFetch'>",
       "url": "<canonical doc URL consulted>",
       "version": "<library version or 'current'>",
       "fetchedAt": "<ISO 8601 timestamp>",
       "summary": "<1-3 sentences: breaking changes, deprecations, or confirmation>",
+      "localConventionConflict": "<omit, or 1 sentence describing a conflict with an existing local convention>",
       "status": "ok | fetch_failed"
     }
   ],
@@ -58,7 +60,22 @@ Output **only** valid JSON matching this schema (no markdown fences, no commenta
 }
 ```
 
-`officialDocsConsulted`: populated in Step 5 of `/cam-plan`. Use `[]` when the issue touches no external library. Use `status: "fetch_failed"` for entries whose fetch failed.
+`officialDocsConsulted`: populated in Step 5 of `/cam-plan`. Use `[]` when the issue touches no external library. Use `status: "fetch_failed"` for entries whose fetch failed. `channel` records which fetch mechanism produced the entry (see the Docs-Fetch Channel Table below). `localConventionConflict` captures any clash between the fetched official guidance and an existing local convention; omit the field entirely when there is no conflict.
+
+### Docs-Fetch Channel Table
+
+Pick the fetch channel for each external library the issue touches from this mapping (extend the table itself on a future planner edit if a new library enters the stack):
+
+| Library | Fetch channel | Canonical source |
+|---|---|---|
+| Ink | `WebFetch` | https://github.com/vadimdemedes/ink |
+| Bun | `WebFetch` | https://bun.sh/docs |
+| js-yaml | `WebFetch` | https://github.com/nodeca/js-yaml |
+| chalk | `WebFetch` | https://github.com/chalk/chalk |
+
+**Anti-over-fetch guard**: at most **one targeted fetch per library per issue** — aim at the specific API/guide page relevant to the scope, never the doc root or a full index. Do not re-fetch a library already covered by an earlier `officialDocsConsulted` entry in the same PRD.
+
+**Local-convention-conflict detection**: if the fetched official approach conflicts with an existing local convention already used elsewhere in the repo (per `scripts/cam/CLAUDE.md` / `scripts/cam/patterns.md`), record the conflict in the entry's `localConventionConflict` field (1 sentence) instead of silently picking one side; the implementer story inherits the note via PRD `notes` and resolves it during its own Step 5.5 doc-validation.
 
 `type`: copy the top-level `type` value from the issue being planned (`feat | fix | chore | docs`) verbatim. When the issue has no `type` (it is optional), default the PRD's `type` to `"feat"`. Never leave it unset.
 
