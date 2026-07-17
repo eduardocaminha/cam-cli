@@ -1,0 +1,13 @@
+{
+  "id": "CAM-334",
+  "title": "The config cue regex /\\bconfig(?:uration)?\\b/i is broad and will match nearly a…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-17T11:47:12.814Z",
+  "updatedAt": "2026-07-17T11:47:12.814Z",
+  "description": "The config cue regex /\\bconfig(?:uration)?\\b/i is broad and will match nearly any PRD that mentions 'config'/'configuration', which may add a low-signal 'Configuration change' row to the setup checklist for most PRs. Consider narrowing it or ordering it last. Non-blocking.\n\nSource: cam/issue-52\nReview round: 1\n\nsuggestion-fingerprint: 02c8b87e4b5e",
+  "derivedFrom": [
+    "CAM-52"
+  ]
+}
