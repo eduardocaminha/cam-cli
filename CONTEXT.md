@@ -313,3 +313,18 @@ The reasoning-effort level (one of low, medium, high, xhigh, max) configured per
 
 **plan-time split advisory**:
 A non-gating recommendation emitted by the plan runner after PRD generation when an issue's projected token spend (the historical mean of same-jobSize issues) exceeds a fixed multiple (~1.5x) of that jobSize bucket's median, signalling the issue may be oversized and worth splitting into multiple PRs. Advisory only: it never blocks or fails the plan/loop.
+
+**split advisory**:
+Plan-time non-gating heuristic (src/stats/split-advisory.ts) that projects per-jobSize-bucket token spend and advises slicing a PRD when the projection exceeds 1.5x the bucket median.
+
+**jobSize bucket**:
+The set of historical per-issue token totals grouped by exact wsjf.jobSize match with the issue being planned.
+
+**orchTokens (cumulative)**:
+Orchestrator session token spend: monotonic across a session and re-snapshotted into every cycle-tokens event, hence NOT summable across cycles of the same session.
+
+**cycle-tokens event**:
+An event-log record in .claude/cam-worker-events.jsonl capturing a cycle's token usage as orchTokens + workerTokens.
+
+**orchTokensMode marker**:
+Per-event flag on cycle-tokens events distinguishing delta-mode (new, per-cycle delta) from legacy cumulative orchTokens; absent marker means legacy cumulative.
