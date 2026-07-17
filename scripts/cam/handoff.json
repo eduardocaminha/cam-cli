@@ -1,28 +1,20 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Uppercase CAM wordmark + Runtime line + Fir Green accent in the splash"
+    "id": "US-002",
+    "title": "Rebrand in-app product display strings to CAM Runtime"
   },
   "branchName": "cam/issue-329",
   "timestamp": "2026-07-17T00:00:00Z",
-  "createdFiles": [
-    "test/ui/splash.test.tsx"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/ui/Splash.tsx",
-    "scripts/cam/patterns.md"
+    "index.ts",
+    "src/commands/run.ts",
+    "src/retry/config.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "Splash.tsx now composes WORDMARK_ROWS programmatically from per-letter 5x5 glyph grids (LETTER_C/LETTER_A/LETTER_M), colored via brandGreens.firGreen (src/design/tokens.ts), not colors.accent/palette.accent. The panel border also now uses brandGreens.firGreen (was colors.muted) to satisfy the 'panel divider/highlight' clause of AC2. A bold 'Runtime' line in firGreen renders directly below the wordmark and above the existing tagline block. PANEL_WIDTH (53) was left untouched (tagline is the widest content, wordmark is narrower and just centers inside it) -- no downstream story needs to touch this unless a future story wants to visually rebalance the panel. New dedicated test/ui/splash.test.tsx covers the bordered panel, wordmark presence, Runtime line, tagline, and version/url line via a real ink-testing-library render; the WordmarkRow segment-parsing helper was simplified to only 'block'/'space' kinds (the old 'shade' kind and its duplicate-colored branch were removed since the new letterforms don't use a distinct shadow character).",
+  "nextStoryContext": "index.ts: HELP.tagline now reads 'CAM Runtime: a local software-delivery runtime for coding agents' (was 'Autonomous Claude Code loop driver'), and the 'version' command's HelpEntry.description now reads 'Print the installed CAM Runtime version (also `--version` / `-v`)'. src/commands/run.ts: tmux status-right (line ~518) now reads ' CAM Runtime ' (was ' cam-cli '), still under status-right-length 24; the neighboring comment ('Right: CAM Runtime.') was updated to match but the older comment at line ~478 ('active pane | dim nav hint | cam-cli') was left untouched since it's not one of the 4 display strings the story named and is not behavior-affecting. src/retry/config.ts: DEFAULT_TOML header comment now reads '# CAM Runtime retry configuration'; the github.com/eduardocaminha/cam-cli url on the next line was deliberately left unchanged (repo rename is out of scope). No behavior-affecting name (cam command, ~/.cam, ~/.config/cam, CAM_* env vars, tmux socket 'cam'/@cam_label/cam-orch session prefix, .cam-* markers, chore(cam): trailers) was touched -- verified by grep that none of those tokens appear in the diff. No test asserted the old strings, so no test changes were needed.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
-    {
-      "lib": "ink",
-      "channel": "WebFetch",
-      "url": "https://github.com/vadimdemedes/ink#text",
-      "fetchedAt": "2026-07-17T00:00:00Z",
-      "status": "aligned",
-      "summary": "Confirmed <Text color> accepts raw hex strings (e.g. '#10C66F') via chalk under the hood; Splash.tsx's brandGreens.firGreen usage matches this documented behavior."
-    }
+    { "lib": "none", "status": "no_external_lib_touched" }
   ]
 }
