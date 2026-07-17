@@ -31,7 +31,7 @@
         "Lint spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/ui/Splash.tsx (WORDMARK_ROWS:27-33 hand-authored ASCII, WordmarkRow, Splash). Import the accent from src/design/tokens.ts brandGreens.firGreen (#10C66F, CAM-332 brand primary) rather than a new literal; the current splash colors block/shade via colors.accent (theme.ts -> palette.accent #4EBE7D). Ink <Text color> accepts hex (confirmed via Ink docs, officialDocsConsulted). The lowercase wordmark spells 'cam' (NOT 'cam-cli'): uppercasing means authoring brand-new block rows for C/A/M, keeping every row the same width so panel centering stays even. Splash renders ONLY from cam init (src/commands/init.ts:341). No test asserts the wordmark today, so it is test-safe. Ink invariant: success/failure is the ✓/✗ glyph, never divider color; render the real component and look at output (patterns.md, lessons.archive 2026-06-05). Splash is under src/ui, not templates/vendor: no embed-vendor needed."
     },
