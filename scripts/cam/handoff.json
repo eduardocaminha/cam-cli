@@ -1,24 +1,28 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Extend docs-fetch shapes with channel table, anti-over-fetch guard, conflict detection" },
+  "lastCompletedStory": { "id": "US-002", "title": "Deterministic plan scope-proposal artifact (hand-rolled TS guard) emitted by planner and narrated" },
   "branchName": "cam/issue-52",
   "timestamp": "2026-07-17T00:00:00Z",
-  "createdFiles": [],
+  "createdFiles": [
+    "src/supervisor/scope-proposal.ts",
+    "test/supervisor/scope-proposal.test.ts"
+  ],
   "modifiedFiles": [
-    "scripts/cam/handoff.schema.json",
     ".claude/agents/subagent-planner.md",
     "templates/agents/subagent-planner.md",
-    "src/vendor/_generated.ts"
+    "src/supervisor/plan-runner.ts",
+    "src/commands/sidecar.ts",
+    "src/vendor/_generated.ts",
+    ".gitignore",
+    "templates/.gitignore",
+    "scripts/file-size-budget.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 extended two paired shapes, not one: handoff.schema.json's officialDocsValidated items gained optional `channel` + `localConventionConflict` (additionalProperties still false); subagent-planner.md's officialDocsConsulted example JSON + prose gained the same two fields plus a new '### Docs-Fetch Channel Table' section (lib->channel table for ink/bun/js-yaml/chalk, an anti-over-fetch guard capping fetches to one per lib per issue, and local-convention-conflict detection guidance). This story required templates/agents/subagent-planner.md to become BYTE-IDENTICAL to .claude/agents/subagent-planner.md (AC4, verified via `diff`, then `bun run embed-vendor`) -- this is a deliberate exception to the general 'dual-copy is per-file, not always identical' gotcha (see patterns.md), driven by this story's own literal AC wording, not a new blanket rule for every agent-doc pair. If a later story in this PRD wires the planner's actual runtime behavior (e.g. reading/validating officialDocsConsulted programmatically) it should keep both fields optional and additionalProperties:false in the JSON Schema.",
+  "nextStoryContext": "US-002 mirrors plan-verdict-report.ts exactly: src/supervisor/scope-proposal.ts exports ScopeProposal { problem, inScopeStories: string[], outOfScope: string[], framing: { mvp, launchReady } }, SCOPE_PROPOSAL_FILENAME = 'scripts/cam/scope-proposal.json' (ephemeral, gitignored, mirrors plan-verdict-report.json's own gitignore lines in both .gitignore and templates/.gitignore), and makeReadScopeProposal(cwd) (hand-rolled shape guard per ADR-0038, no zod). subagent-planner.md gained a '### Scope-Proposal Artifact' section (after the `type` field doc, before 'Target Issue Honoring') instructing the planner to write the artifact right after prd.json at plan completion; templates/agents/subagent-planner.md was cp'd byte-identical again (AC5 pattern precedent from US-001 continues here, though this story's AC5 only requires diff-equality for THIS specific pair, not a new blanket rule). plan-runner.ts wiring: RunPostAuditOptions gained an optional readScopeProposalFn dep; a new narrateScopeProposalIfComplete(planResult, readScopeProposalFn, notifyFn) helper folds BOTH the dep-presence guard and the `'report' in planResult` discriminator inside itself (runPostAuditAction was already at the biome 80-line ceiling, see the new patterns.md bullet on folding guards into extracted helpers) and is called unconditionally near the top of runPostAuditAction, narrating `[cam] plan scope: <problem> (in-scope: N, out-of-scope: N, MVP: <mvp>)` for any planResult carrying a PlanVerdictReport (audit-approved/audit-blocked/plan-escalated). Also extracted handleBlockedOrEscalated (shared audit-blocked/plan-escalated terminal body) to make room under the line ceiling. sidecar.ts wires makeReadScopeProposal(cwd) into runPostPlanActions's readScopeProposalFn, and makeClearStalePlanArtifacts now also removes a stale scope-proposal.json alongside plan-verdict-report.json/prd.json (functional completeness beyond the bare AC wording: a stale artifact from a prior cycle would otherwise re-narrate on an unrelated later planResult). Two file-size ceiling raises were needed (plan-runner.ts 1650->1711, sidecar.ts 3358->3369), both staged with a dated _ref note in scripts/file-size-budget.json before the gate re-run, per the story-owns-its-ceiling-raise convention (ADR-0022). No test file exists yet asserting sidecar.ts's readScopeProposalFn wiring or the notify narration string end-to-end (only plan-runner.ts's own unit-level behavior is exercised via the new scope-proposal.test.ts, which covers the reader in isolation); a future story wanting narration-string regression coverage would add a source-text wiring-oracle test on runPostPlanActions, mirroring the existing plan-target-invalid-sidecar.test.ts pattern noted in patterns.md.",
   "officialDocsValidated": [
     {
-      "lib": "js-yaml",
-      "channel": "WebFetch",
-      "url": "https://github.com/nodeca/js-yaml",
-      "fetchedAt": "2026-07-17T00:00:00Z",
-      "status": "aligned",
-      "summary": "Confirmed the js-yaml GitHub repo (cited in the new lib->channel table) is the current, active, non-archived canonical doc source; no correction needed."
+      "lib": "none",
+      "status": "no_external_lib_touched"
     }
   ]
 }
