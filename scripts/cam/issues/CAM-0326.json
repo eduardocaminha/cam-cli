@@ -1,11 +1,11 @@
 {
   "id": "CAM-326",
   "title": "The new `suspended` prop is covered only at the ConfigScreen integration level.…",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-17T01:51:35.364Z",
-  "updatedAt": "2026-07-17T02:51:32.593Z",
+  "updatedAt": "2026-07-17T03:24:36.589Z",
   "description": "The new `suspended` prop is covered only at the ConfigScreen integration level. Consider a direct TabBar unit test asserting Left/Right fires when suspended=false and stands down when suspended=true, to pin the presentational contract independently of its one caller.\n\nSource: cam/issue-316\nReview round: 1\n\nsuggestion-fingerprint: ef4fb66752be",
   "derivedFrom": [
     "CAM-316"
