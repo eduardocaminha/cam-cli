@@ -373,3 +373,18 @@ The product's display name (formerly cam-cli): a local software-delivery runtime
 
 **wordmark**:
 The hand-authored uppercase CAM ASCII block logo rendered on the splash screen (src/ui/Splash.tsx), distinct from the tagline text line.
+
+**LLM backend**:
+The claude-vs-codex choice made per worker phase (src/config/models.ts), distinct from the issue_system backend (local/github/linear).
+
+**per-subagent backend wiring**:
+The config that assigns each worker phase (implementer/planner/auditor/reviewer) its own LLM backend (claude|codex), mixable in a single run, mirroring the per-phase model config.
+
+**BackendAdapter**:
+The per-actor abstraction seam fronting spawn argv, completion detection, session/transcript model, agent-prompt injection, permission/sandbox+env, and model-id namespace for a given LLM backend.
+
+**design spike (CAM-54)**:
+The issue's mandated first deliverable: a design ADR resolving the claude/codex mismatches before any codex dispatch code is written.
+
+**report/sentinel contract**:
+The backend-agnostic completion+result boundary (CAM_*_STATUS lines, <review> tags, worker-report.json/review-report.json) parsed by report-parse.ts (ADR-0038); the enabler of mixed-backend runs.
