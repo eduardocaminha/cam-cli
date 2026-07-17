@@ -1,10 +1,42 @@
 {
   "id": "CAM-328",
   "title": "Split advisory projects absurd ~30M-token estimate for jobSize=1 single-story buckets",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-17T09:04:23.864Z",
-  "updatedAt": "2026-07-17T09:04:23.864Z",
-  "description": "The split advisory's historical-bucket token projection is miscalibrated for the smallest jobSize bucket. Reproduced across 3 consecutive cycles for jobSize=1 single-story PRDs: CAM-323 ~30.1M, CAM-326 ~30.8M, CAM-325 ~31.6M tokens projected for a bucket whose real cycles consumed a tiny fraction of that. Non-blocking (all 3 cycles completed normally; the advisory does not gate) but the projection math is clearly wrong. Investigate the bucket-projection arithmetic in the split-advisory estimator; a single-story chore should not project tens of millions of tokens."
+  "updatedAt": "2026-07-17T09:11:06.365Z",
+  "description": "The split advisory's historical-bucket token projection is miscalibrated for the smallest jobSize bucket. Reproduced across 3 consecutive cycles for jobSize=1 single-story PRDs: CAM-323 ~30.1M, CAM-326 ~30.8M, CAM-325 ~31.6M tokens projected for a bucket whose real cycles consumed a tiny fraction of that. Non-blocking (all 3 cycles completed normally; the advisory does not gate) but the projection math is clearly wrong. Investigate the bucket-projection arithmetic in the split-advisory estimator; a single-story chore should not project tens of millions of tokens.",
+  "spec": {
+    "scope": "Fix the inflated per-issue token totals that feed the split advisory. Root cause: recordCycleTokens (src/commands/journal.ts:~494) writes orchTokens as the CUMULATIVE orchestrator session spend (monotonic, re-snapshotted every cycle-tokens event) and aggregateTokensPerIssue (src/stats/tokens.ts:132) SUMS those per-cycle totals, so an issue that ran N cycles sums N growing cumulative snapshots (~quadratic) -> ~30M for a jobSize=1 bucket. Do BOTH: (write-side) emit orchTokens as a per-cycle DELTA tagged with an explicit event mode marker (orchTokensMode:'delta' or a cycle-tokens event schemaVersion bump), absent-marker == legacy cumulative; (read-side) branch aggregation on the marker: sum delta-mode events directly, collapse legacy cumulative events per orchestrator session, worker tokens keep summing per-cycle. Do NOT rewrite the append-only .jsonl event log. Do NOT touch the split-advisory heuristic math (src/stats/split-advisory.ts:98-100 bucket mean + 1.5x threshold are correct).",
+    "acceptanceCriteria": [
+      "recordCycleTokens writes new cycle-tokens events with orchTokens as a per-cycle delta and an explicit mode marker (orchTokensMode or bumped event schemaVersion); absent marker is treated as legacy cumulative.",
+      "aggregateTokensPerIssue no longer blindly sums orchTokens: delta-mode events are summed directly; legacy cumulative events are collapsed per orchestrator session (not summed); workerTokens continue summing per-cycle.",
+      "A mixed legacy-cumulative + new-delta event stream for one issue aggregates to the correct per-issue total.",
+      "New tests in test/stats cover three cases: (a) legacy cumulative-only stream, (b) delta-only stream, (c) mixed legacy+delta stream, each asserting the corrected per-issue total.",
+      "The split-advisory heuristic (bucket mean, 1.5x fire threshold) is unchanged; a jobSize=1 bucket built from realistic per-cycle spend no longer projects tens of millions of tokens.",
+      "typecheck passes, check:all is green, and all pre-existing token/journal/split-advisory tests still pass."
+    ],
+    "gotchas": [
+      "orchTokens in recordCycleTokens (journal.ts:~494) is documented as cumulative orchestrator session spend and is re-snapshotted every cycle; workerTokens (journal.ts:~499) is already a true per-cycle slice, so ONLY the orch component double-counts.",
+      "events.ts:~355 documents orchTokens as cumulative; keep back-compat: a cycle-tokens event with no mode marker MUST be read as legacy cumulative.",
+      "The split-advisory math (split-advisory.ts:98-100) is a plain mean and is CORRECT; the defect is upstream at tokens.ts:132 (existing.total += total). Do not change the heuristic.",
+      "The .claude/cam-worker-events.jsonl log is append-only historical audit; the one-shot rewrite-legacy-to-delta option was considered and REJECTED. Aggregation must handle a mixed-shape log.",
+      "The per-session collapse of legacy cumulative events needs a grouping key: confirm the cycle-tokens event carries a session/orchestrator identifier; if legacy events lack one, collapse legacy cumulative per issue-run via max (monotonic => max == final session total) as the best-effort legacy fallback."
+    ],
+    "domainTerms": [
+      "split advisory: plan-time non-gating heuristic that projects per-jobSize-bucket token spend and advises slicing a PRD when the projection exceeds 1.5x the bucket median.",
+      "jobSize bucket: the set of historical per-issue token totals grouped by exact wsjf.jobSize match with the issue being planned.",
+      "orchTokens (cumulative): orchestrator session token spend, monotonic across a session, re-snapshotted into every cycle-tokens event.",
+      "cycle-tokens event: an event-log record (.claude/cam-worker-events.jsonl) capturing a cycle's token usage as orchTokens + workerTokens.",
+      "orchTokensMode marker: the new per-event flag distinguishing delta-mode (new) from legacy cumulative orchTokens."
+    ]
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 2,
+    "riskReduction": 3,
+    "jobSize": 3
+  },
+  "type": "fix"
 }
