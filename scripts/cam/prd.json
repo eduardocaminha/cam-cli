@@ -51,7 +51,7 @@
         "Lint spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "File: src/commands/sidecar.ts. Import to remove at :26 `import { spawnSync, type SpawnSyncReturns } from 'node:child_process'`. Total grep -c spawnSync = 38 (import + JSDoc + `Parameters<typeof spawnSync>[2]` type-casts + ~21 runtime). US-001 already migrated the 6 checkoutMainFn/proceedBranchFn sites; this story finishes the remaining ~15 runtime sites and the type-level references so the import can be deleted last. SpawnSyncReturns type usage must be replaced (Bun's return type is Bun.SyncSubprocess; options type is Parameters<typeof Bun.spawnSync>[1] or SpawnOptions). API diffs per site (Bun docs, confirmed): node spawnSync(cmd,args,opts) -> Bun.spawnSync([cmd,...args],opts); node .status(number|null) -> Bun .exitCode(number)+.success(boolean); node encoding:'utf8' string stdout -> Bun Buffer stdout (decode via new TextDecoder().decode(result.stdout ?? new Uint8Array())); node stdio string -> Bun separate stdin/stdout/stderr. No input/shell/maxBuffer options are used, so 1:1 swaps; env is supported by Bun.spawnSync. Reference: CAM-308 check-all.ts:130 / check-coverage.ts:131-132 / validate-agents-md.ts:293-328. Grep-oracle idiom: the `[^.]spawnSync(.` absence check must remain false after replacing every bare call with `Bun.spawnSync([`. Curated invariant: Bun-only spawn (patterns.md top bullet)."
     }
