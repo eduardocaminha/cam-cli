@@ -17,14 +17,16 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+	appendOutcomeOnMain,
 	appendPatternRecordOnMain,
 	fingerprintPatternRecord,
+	mapWorkerOutcomeToStatus,
 	readPatternRecordsFromMain,
 	PATTERN_RECORDS_JSONL_PATH,
 	type AppendPatternRecordOnMainValidationError,
 } from '../../src/commands/pattern-records.ts';
 import { realOnMainSpawnFn, type SpawnFn } from '../../src/git/on-main.ts';
-import type { PatternRecord } from '../../src/patterns/record.ts';
+import { confirmationScore, type PatternRecord } from '../../src/patterns/record.ts';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -278,5 +280,146 @@ test.skipIf(!gitAvailable)(
 		const records = readPatternRecordsFromMain(dir, realOnMainSpawnFn);
 
 		expect(records).toEqual([]);
+	},
+);
+
+// ---------------------------------------------------------------------------
+// mapWorkerOutcomeToStatus (pure, no git)
+// ---------------------------------------------------------------------------
+
+test('mapWorkerOutcomeToStatus: maps each WorkerOutcomeKind per the documented rule', () => {
+	expect(mapWorkerOutcomeToStatus('pass')).toBe('success');
+	expect(mapWorkerOutcomeToStatus('incomplete')).toBe('partial');
+	expect(mapWorkerOutcomeToStatus('fail')).toBe('failure');
+	expect(mapWorkerOutcomeToStatus('blocked')).toBe('failure');
+	expect(mapWorkerOutcomeToStatus('unknown')).toBeNull();
+	expect(mapWorkerOutcomeToStatus('no-commit')).toBeNull();
+});
+
+// ---------------------------------------------------------------------------
+// appendOutcomeOnMain (US-003)
+// ---------------------------------------------------------------------------
+
+test.skipIf(!gitAvailable)(
+	'Real git: appendOutcomeOnMain appends {status, recorded_at} to the matching record and raises confirmationScore',
+	() => {
+		const { dir, run } = makeTmpRepo();
+
+		const seeded = appendPatternRecordOnMain({
+			cwd: dir,
+			record: SAMPLE_RECORD,
+			spawnFn: realOnMainSpawnFn,
+		});
+		expect(seeded.ok).toBe(true);
+		if (!seeded.ok) return;
+
+		expect(confirmationScore(SAMPLE_RECORD)).toBe(0);
+
+		const result = appendOutcomeOnMain({
+			cwd: dir,
+			recordId: seeded.fingerprint,
+			status: 'success',
+			spawnFn: realOnMainSpawnFn,
+			clockFn: () => '2026-07-17T02:00:00.000Z',
+		});
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.recordId).toBe(seeded.fingerprint);
+		expect(result.status).toBe('success');
+
+		const stored = readPatternRecordsFromMain(dir, realOnMainSpawnFn);
+		expect(stored).toHaveLength(1);
+		const record = stored[0];
+		expect(record).toBeDefined();
+		if (!record) return;
+		expect(record.outcomes).toEqual([{ status: 'success', recorded_at: '2026-07-17T02:00:00.000Z' }]);
+		expect(confirmationScore(record)).toBe(1);
+
+		// A second, partial outcome accumulates alongside the first.
+		const second = appendOutcomeOnMain({
+			cwd: dir,
+			recordId: seeded.fingerprint,
+			status: 'partial',
+			spawnFn: realOnMainSpawnFn,
+			clockFn: () => '2026-07-17T03:00:00.000Z',
+		});
+		expect(second.ok).toBe(true);
+
+		const storedAfterSecond = readPatternRecordsFromMain(dir, realOnMainSpawnFn);
+		const recordAfterSecond = storedAfterSecond[0];
+		expect(recordAfterSecond).toBeDefined();
+		if (!recordAfterSecond) return;
+		expect(recordAfterSecond.outcomes).toHaveLength(2);
+		expect(confirmationScore(recordAfterSecond)).toBe(1.5);
+
+		// Feature-branch working tree stays untouched by the on-main commits.
+		expect(run(['status', '--porcelain']).stdout.trim()).toBe('');
+	},
+);
+
+test.skipIf(!gitAvailable)(
+	'Real git: appendOutcomeOnMain leaves other records untouched',
+	() => {
+		const { dir } = makeTmpRepo();
+
+		appendPatternRecordOnMain({ cwd: dir, record: OTHER_RECORD, spawnFn: realOnMainSpawnFn });
+		const seeded = appendPatternRecordOnMain({
+			cwd: dir,
+			record: SAMPLE_RECORD,
+			spawnFn: realOnMainSpawnFn,
+		});
+		expect(seeded.ok).toBe(true);
+		if (!seeded.ok) return;
+
+		const result = appendOutcomeOnMain({
+			cwd: dir,
+			recordId: seeded.fingerprint,
+			status: 'failure',
+			spawnFn: realOnMainSpawnFn,
+		});
+		expect(result.ok).toBe(true);
+
+		const stored = readPatternRecordsFromMain(dir, realOnMainSpawnFn);
+		expect(stored).toHaveLength(2);
+		const other = stored.find((r) => fingerprintPatternRecord(r) === fingerprintPatternRecord(OTHER_RECORD));
+		expect(other).toEqual(OTHER_RECORD);
+		expect(other?.outcomes).toEqual([]);
+	},
+);
+
+test.skipIf(!gitAvailable)(
+	'Real git: appendOutcomeOnMain on a non-existent recordId is a safe no-op -- no throw, no commit',
+	() => {
+		const { dir, run } = makeTmpRepo();
+
+		appendPatternRecordOnMain({ cwd: dir, record: SAMPLE_RECORD, spawnFn: realOnMainSpawnFn });
+		const mainShaBefore = run(['rev-parse', 'main']).stdout.trim();
+
+		const stderrLines: string[] = [];
+		const originalWrite = process.stderr.write.bind(process.stderr);
+		process.stderr.write = (chunk: string | Uint8Array): boolean => {
+			if (typeof chunk === 'string') stderrLines.push(chunk);
+			return true;
+		};
+
+		let result: ReturnType<typeof appendOutcomeOnMain>;
+		try {
+			result = appendOutcomeOnMain({
+				cwd: dir,
+				recordId: 'deadbeef0000',
+				status: 'success',
+				spawnFn: realOnMainSpawnFn,
+			});
+		} finally {
+			process.stderr.write = originalWrite;
+		}
+
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		expect(result.reason).toBe('not-found');
+		expect(stderrLines.join('')).toMatch(/unknown pattern record/i);
+
+		expect(run(['rev-parse', 'main']).stdout.trim()).toBe(mainShaBefore);
 	},
 );
