@@ -1,0 +1,17 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Reconcile Recent feed 'incomplete' against live prd.json passes" },
+  "branchName": "cam/issue-346",
+  "timestamp": "2026-07-18T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/commands/dashboard.ts",
+    "test/dashboard.test.ts",
+    "scripts/cam/patterns.md",
+    "scripts/file-size-budget.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "readRecentProgress(cwd, userStories?: readonly PrdStory[]) and parseRecentProgress(jsonl, passingStoryIds?: ReadonlySet<string>) now reconcile a frozen 'incomplete' result event to 'done' when the same-story prd.json passes:true (live state threaded from readSnapshot's prd?.userStories, same source Dashboard.tsx:445 reads). Only 'incomplete' is reconciled; all other outcomes pass through verbatim. The event log itself is never rewritten -- reconciliation happens only in the read/summary layer. No src/supervisor/{events,result,loop}.ts edits were needed or made. Raised scripts/file-size-budget.json ceilings for src/commands/dashboard.ts (1084->1104) and test/dashboard.test.ts (1901->1953) with a dated _ref note (CAM-346).",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
