@@ -18,6 +18,13 @@
   ],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": false,
+      "notes": "CRITICAL [src/ui/Dashboard.tsx:636]: Off-by-one at the STORIES_COMPACT_THRESHOLD boundary reintroduces the CAM-345 keybar-clip the story fixes. computeStoriesLayout admits the chrome path at budget>=4 and sets windowSize=Math.max(1, budget - SECTION_CHROME_HEIGHT - 1); at budget==4 the Math.max clamps 0 back up to 1, reclaiming the line the documented '-1 overflow-hint reservation' was meant to hold. With a truncated story list, chrome(3)+row(1)+overflowHint(1)=5 > budget(4), so the composed frame is rows+1 lines and Ink's <Box height={rows}> hard-clips the Keybar's final 'q  close pane' row below the fold. Verified by independent render: recent=[] + 8 stories at rows=26 drops 'close pane' (rows 25/27/28 render it). Violates AC #2 ('the Keybar q close pane hint row renders and is not clipped'). Fix: raise STORIES_COMPACT_THRESHOLD to reserve the overflow-hint line (e.g. SECTION_CHROME_HEIGHT + 2) or fall back to the compact/chromeless path whenever the honored window would truncate the list; add a regression test at the budget==4 boundary."
+    },
+    {
       "id": "US-001",
       "title": "Reserve keybar rows; derive StoriesSection window from pane height",
       "description": "As a dashboard user in a short tmux pane, I need the Keybar's 'd  focus orchestrator' / 'q  close pane' hint rows to stay visible so that keybinding discoverability is preserved, instead of the keybar being the element clipped below the CAM-345 height={rows} fold.",
@@ -34,10 +41,23 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "requires": null,
       "notes": "Single-file core fix: src/ui/Dashboard.tsx plus its test test/dashboard.test.ts. Thread `rows` (Dashboard.tsx:183 useWindowSize) into the list-mode composition and into StoriesSection so computeWindow (Dashboard.tsx:699-708) receives a rows-derived size instead of STORIES_WINDOW=8 (Dashboard.tsx:43). GOTCHAS (from issue spec): (1) all list-mode children are flexShrink={0} (Dashboard.tsx:277/:279/:291) so the outer height={rows} alone will NOT reclaim space via flexbox shrink; the fix MUST reduce Stories' content (window row count), not rely on shrink. (2) SummaryPanel/Loop has optional tokens/cost rows so reserve conservatively using its MAXIMUM height so the keybar is never clipped when those rows are present. (3) RecentSection is already capped to RECENT_ENTRIES_COUNT=5 upstream (src/commands/dashboard.ts:700); do NOT re-window it. (4) Do NOT window the Keybar itself (Dashboard.tsx:307-331) and do NOT reorder sections. (5) Do NOT re-introduce the CAM-345 'Loop' header ghost: frame must stay bounded to rows (provenance CAM-306/CAM-321 width-gate, CAM-345 height-bound). Ink invariant: success/failure via glyph, never divider color. Ink test gotchas grep-verified in scripts/cam/patterns.md: ink-testing-library's fake Stdout has NO `rows` getter (only columns=100) so `stdout.rows` is falsy and Ink falls through to `terminal-size`/tput — use test/helpers/mock-terminal-size.ts installTerminalSizeMock() (CAM-201) and drive height via the render seam, and prefer waitForFrame content-polling over fixed ticks (test/helpers/flush-ink.ts). See patterns.md CAM-201/CAM-306/CAM-66 bullets for the Dashboard-render test technique."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:1",
+    "findings": [
+      {
+        "severity": "CRITICAL",
+        "file": "src/ui/Dashboard.tsx",
+        "line": 636,
+        "text": "Off-by-one at the STORIES_COMPACT_THRESHOLD boundary reintroduces the CAM-345 keybar-clip the story fixes. computeStoriesLayout admits the chrome path at budget>=4 and sets windowSize=Math.max(1, budget - SECTION_CHROME_HEIGHT - 1); at budget==4 the Math.max clamps 0 back up to 1, reclaiming the line the documented '-1 overflow-hint reservation' was meant to hold. With a truncated story list, chrome(3)+row(1)+overflowHint(1)=5 > budget(4), so the composed frame is rows+1 lines and Ink's <Box height={rows}> hard-clips the Keybar's final 'q  close pane' row below the fold. Verified by independent render: recent=[] + 8 stories at rows=26 drops 'close pane' (rows 25/27/28 render it). Violates AC #2 ('the Keybar q close pane hint row renders and is not clipped'). Fix: raise STORIES_COMPACT_THRESHOLD to reserve the overflow-hint line (e.g. SECTION_CHROME_HEIGHT + 2) or fall back to the compact/chromeless path whenever the honored window would truncate the list; add a regression test at the budget==4 boundary."
+      }
+    ]
+  }
 }

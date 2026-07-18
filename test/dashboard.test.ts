@@ -2017,6 +2017,29 @@ describe('DashboardApp Stories window derivation (US-001, CAM-348)', () => {
 		unmount();
 	});
 
+	it('the budget==4 chrome/compact boundary never clips the keybar (US-R1-001 regression, CAM-348)', () => {
+		// recent=[] + 8 stories at rows=26 lands the Stories budget at exactly
+		// SECTION_CHROME_HEIGHT + 1 (4): the old STORIES_COMPACT_THRESHOLD
+		// admitted the chrome branch here, whose windowSize floor
+		// (Math.max(1, budget - SECTION_CHROME_HEIGHT - 1) === Math.max(1, 0))
+		// reclaimed the line reserved for the '...N more' overflow hint,
+		// composing chrome(3) + row(1) + hint(1) = 5 lines into a 4-line
+		// budget and clipping 'close pane' below the rows=26 fold.
+		mock.module('terminal-size', () => ({ default: () => ({ columns: 80, rows: 26 }) }));
+		const { lastFrame, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeManyStoriesData(8),
+				pollIntervalMs: 100_000,
+				runTmux: () => undefined,
+			}),
+		);
+		const frame = lastFrame() ?? '';
+		expect(frame).toContain('focus orchestrator');
+		expect(frame).toContain('close pane');
+		expect(frame.split('\n').length).toBeLessThanOrEqual(26);
+		unmount();
+	});
+
 	it('a tall pane shows every story with chrome and no overflow hint (AC8: tall pane)', () => {
 		mock.module('terminal-size', () => ({ default: () => ({ columns: 80, rows: 60 }) }));
 		const { lastFrame, unmount } = render(

@@ -119,12 +119,23 @@ const KEYBAR_COMMANDS: readonly KeybarCommand[] = [
 const KEYBAR_HEIGHT = SECTION_CHROME_HEIGHT + KEYBAR_COMMANDS.length + 2;
 
 /**
- * Minimum Stories-section budget (chrome + at least 1 content row) below
- * which the section drops its own heading/divider/gap entirely, reclaiming
- * those lines for the Keybar (US-001, CAM-348) rather than showing an
- * empty or clipped section header.
+ * Minimum Stories-section budget below which the section drops its own
+ * heading/divider/gap entirely, reclaiming those lines for the Keybar
+ * (US-001, CAM-348) rather than showing an empty or clipped section header.
+ *
+ * Must reserve chrome + 1 content row + 1 overflow-hint row (US-R1-001,
+ * CAM-348 review round 1): `computeStoriesLayout`'s chrome branch always
+ * reserves one line out of the window budget for the '...N more' hint via
+ * `budget - SECTION_CHROME_HEIGHT - 1`. At the old threshold
+ * (SECTION_CHROME_HEIGHT + 1 = 4) that subtraction lands on exactly 0, and
+ * the `Math.max(1, ...)` floor silently reclaims the line the hint
+ * reservation was meant to hold, so a truncated list composes to
+ * budget+1 lines and clips the Keybar's 'q  close pane' row below the
+ * fold. Reserving one extra line here means the chrome branch is only
+ * entered once `budget - SECTION_CHROME_HEIGHT - 1` is already >= 1 on its
+ * own, so the floor never overrides a real (smaller) computed value.
  */
-const STORIES_COMPACT_THRESHOLD = SECTION_CHROME_HEIGHT + 1;
+const STORIES_COMPACT_THRESHOLD = SECTION_CHROME_HEIGHT + 2;
 
 export interface PollWidthClearerOptions {
 	/** Write sink for the clear escape sequence. Defaults to `process.stdout.write`. */
