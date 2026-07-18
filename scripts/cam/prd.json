@@ -24,7 +24,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "DOCS-ONLY. Do NOT touch any src/ file; do NOT migrate the journal.ts readers (defaultReadOrchTranscript/defaultReadEventLog/defaultReadOrchSessionId), the stats.ts defaultReadEventLog duplicate, src/config/toml.ts, or src/supervisor/events.ts to Bun.file. Files to edit: scripts/cam/CLAUDE.md (amend the 'Bun-only' bullet at ~line 64, Codebase Patterns > Curated invariants) and scripts/cam/patterns.md (append one bullet at end). Precedent rationale already inline: src/config/toml.ts loadConfig (readFileSync, lines ~146-156) and src/supervisor/events.ts default logger (appendFileSync, header comment lines ~16-19). KEY VERIFICATION (memory: cam-dual-copy-is-per-file; patterns.md line ~738): the live scripts/cam/CLAUDE.md is NOT embedded verbatim; only the GENERIC placeholder skeleton templates/scripts/cam/CLAUDE.md is swept into src/vendor/_generated.ts, and that skeleton has NO 'Bun-only' bullet (uses '<project runtime>' placeholders), so editing the live 'Bun-only' bullet requires no templates edit and no re-embed. patterns.md is not embedded at all. embed-vendor:check is still run as a cheap confirm-no-drift oracle. Do NOT prefix the durable 'Bun-only' invariant with a [resolved YYYY-MM] marker."
     }
