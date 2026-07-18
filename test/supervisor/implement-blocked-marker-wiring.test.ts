@@ -187,6 +187,84 @@ describe('runSupervisor US-005: durable implement-blocked marker writer wiring (
 	});
 });
 
+describe('runSupervisor US-001 (CAM-347): durable implement-blocked marker clear on the complete terminal', () => {
+	test('complete terminal with a known issueId: removeImplementBlockedMarkerFn called once', async () => {
+		const prd = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+			issueNumber: 347,
+		});
+		let calls = 0;
+		const opts = makeBaseOpts({
+			readPrd: () => prd,
+			removeImplementBlockedMarkerFn: () => {
+				calls++;
+			},
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('complete');
+		expect(calls).toBe(1);
+	});
+
+	test('complete terminal without an issueNumber (lastIssueNumber stays undefined): removeImplementBlockedMarkerFn NOT called', async () => {
+		const prd = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+			// No issueNumber -> prd.issueNumber is undefined -> lastIssueNumber stays undefined.
+		});
+		let calls = 0;
+		const opts = makeBaseOpts({
+			readPrd: () => prd,
+			removeImplementBlockedMarkerFn: () => {
+				calls++;
+			},
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('complete');
+		expect(calls).toBe(0);
+	});
+
+	test('plain blocked terminal: removeImplementBlockedMarkerFn NOT called, marker preserved', async () => {
+		const prd = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: false }],
+			issueNumber: 347,
+		});
+		let removeCalls = 0;
+		const opts = makeBaseOpts({
+			readPrd: () => prd,
+			capturePane: (_paneId) => blockedPane('US-001'),
+			writeImplementBlockedMarkerFn: (_params) => {},
+			removeImplementBlockedMarkerFn: () => {
+				removeCalls++;
+			},
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('blocked');
+		expect(removeCalls).toBe(0);
+	});
+
+	test('absent removeImplementBlockedMarkerFn: backward compatible, no crash on a complete terminal', async () => {
+		const prd = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+			issueNumber: 347,
+		});
+		const opts = makeBaseOpts({
+			readPrd: () => prd,
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(result.status).toBe('complete');
+	});
+});
+
 describe('host.ts writeImplementBlockedMarkerFn: counter + prd content-hash wiring (US-002, CAM-214)', () => {
 	let cwd: string;
 	let claudeDir: string;
@@ -319,5 +397,55 @@ describe('host.ts writeImplementBlockedMarkerFn: counter + prd content-hash wiri
 		const marker = readImplementBlockedMarker(markerPath);
 		expect(marker).not.toBeNull();
 		expect(marker?.consecutiveCount).toBe(1);
+	});
+});
+
+describe('host.ts removeImplementBlockedMarkerFn (US-001, CAM-347): real writer round trip', () => {
+	let cwd: string;
+	let claudeDir: string;
+	let prdPath: string;
+	let markerPath: string;
+
+	beforeEach(() => {
+		cwd = mkdtempSync(join(tmpdir(), 'cam-implement-blocked-remove-'));
+		claudeDir = join(cwd, '.claude');
+		const scriptsDir = join(cwd, 'scripts', 'cam');
+		mkdirSync(claudeDir, { recursive: true });
+		mkdirSync(scriptsDir, { recursive: true });
+		prdPath = join(scriptsDir, 'prd.json');
+		markerPath = join(claudeDir, IMPLEMENT_BLOCKED_FILENAME);
+		writeFileSync(prdPath, JSON.stringify({ userStories: [] }), 'utf8');
+	});
+
+	afterEach(() => {
+		rmSync(cwd, { recursive: true, force: true });
+	});
+
+	test('grep oracle: buildSupervisorOptions wires removeImplementBlockedMarkerFn to the same path the writer uses', () => {
+		const { opts } = buildSupervisorOptions(cwd);
+		expect(typeof opts.removeImplementBlockedMarkerFn).toBe('function');
+	});
+
+	test('remove deletes a marker previously written to implementBlockedMarkerPath', () => {
+		const { opts } = buildSupervisorOptions(cwd);
+		const write = opts.writeImplementBlockedMarkerFn;
+		const remove = opts.removeImplementBlockedMarkerFn;
+		if (!write) throw new Error('writeImplementBlockedMarkerFn missing from buildSupervisorOptions');
+		if (!remove) throw new Error('removeImplementBlockedMarkerFn missing from buildSupervisorOptions');
+
+		write({ issueId: '347', story: 'US-001', reason: 'Worker reported BLOCKED_QUALITY story=US-001 reason=tests_failed' });
+		expect(existsSync(markerPath)).toBe(true);
+
+		remove();
+		expect(existsSync(markerPath)).toBe(false);
+	});
+
+	test('remove on an already-absent marker is a silent no-op (never throws)', () => {
+		const { opts } = buildSupervisorOptions(cwd);
+		const remove = opts.removeImplementBlockedMarkerFn;
+		if (!remove) throw new Error('removeImplementBlockedMarkerFn missing from buildSupervisorOptions');
+
+		expect(existsSync(markerPath)).toBe(false);
+		expect(() => remove()).not.toThrow();
 	});
 });

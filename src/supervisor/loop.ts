@@ -433,6 +433,22 @@ export interface RunSupervisorOptions {
 	 */
 	writeImplementBlockedMarkerFn?: (params: ImplementBlockedWriterParams) => void;
 	/**
+	 * Remove the durable implement-blocked marker (US-001, CAM-347).
+	 *
+	 * Called unconditionally inside finishTerminal whenever status === 'complete'
+	 * AND the current PRD's issueNumber is known (same lastIssueNumber !==
+	 * undefined guard as writeImplementBlockedMarkerFn above), so an in-cycle
+	 * recovery (blocked -> retry -> DONE) does not leave an orphaned marker that
+	 * false-alarms as an 'implement blocked' boot blocker. Never fires on
+	 * 'blocked' / 'awaiting-operator' / 'max-iterations'. Takes no params: the
+	 * marker is a single file (no issueId to pass), mirroring
+	 * teardownWorkerPaneFn's no-arg shape; production wiring (host.ts) closes
+	 * over the fixed marker path, the same path the writer uses.
+	 *
+	 * Optional: when absent (default no-op) the loop is byte-for-byte unchanged.
+	 */
+	removeImplementBlockedMarkerFn?: () => void;
+	/**
 	 * Container preflight seam (US-005 / B-1 observe-only; B-2 fail-closed).
 	 *
 	 * When injected, called once per implement dispatch immediately before the
@@ -785,6 +801,10 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	// are byte-for-byte unchanged.
 	const writeImplementBlockedMarkerFn = opts.writeImplementBlockedMarkerFn ?? ((): void => {});
 
+	// US-001 (CAM-347): default no-op so callers that omit the dep are
+	// byte-for-byte unchanged.
+	const removeImplementBlockedMarkerFn = opts.removeImplementBlockedMarkerFn ?? ((): void => {});
+
 	// US-005 (CAM-195, Defect 2): tracks the current PRD's issueNumber so
 	// finishTerminal can stamp the durable implement-blocked marker even though
 	// it is defined before the per-iteration `const prd = readPrd()` read.
@@ -840,6 +860,14 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				story: lastIterProgress.currentStoryId ?? null,
 				reason: lastOutcome?.detail ?? TERMINAL_REASON.blocked,
 			});
+		}
+		// US-001 (CAM-347): clear the durable implement-blocked marker on a
+		// successful 'complete' terminal so an in-cycle recovery (blocked -> retry
+		// -> DONE) does not leave an orphaned marker that false-alarms as an
+		// 'implement blocked' boot blocker on the next cold boot. Fires ONLY on
+		// 'complete' (never 'blocked' / 'awaiting-operator' / 'max-iterations').
+		if (status === 'complete' && lastIssueNumber !== undefined) {
+			removeImplementBlockedMarkerFn();
 		}
 		teardownWorkerPaneFn();
 	};
