@@ -23,7 +23,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/loop.ts (finishTerminal at ~line 827; the 'complete' path calls finishTerminal('complete') at ~line 938; writeImplementBlockedMarkerFn default at ~786, lastIssueNumber at ~795 set at ~898), src/supervisor/host.ts (writer wiring at ~704-718, removeImplementBlockedMarker already importable from src/supervisor/implement-blocked-marker.ts export at line 167, implementBlockedMarkerPath at ~711, opts passed at ~1096). removeImplementBlockedMarker(filePath) takes only the path and silently no-ops when the file is absent; the issueId guard is the CALLER's responsibility here it is lastIssueNumber !== undefined (the marker written on this cycle's blocked terminal is by-construction this issue's). Mirror the finishTerminal wrapper pattern (patterns.md line ~400, CAM-188): the new fn goes inside finishTerminal alongside the existing writeImplementBlockedMarkerFn stamp, gated on status === 'complete'. Do NOT reset the escalated circuit-breaker. Ordering: autoShipFn fires BEFORE finishTerminal('complete') already; leave that ordering intact. Test-quality invariant: exercise the real finishTerminal seam via injected fns and assert the injected remove fn is/ isn't called per terminal kind (not a tautological mock-only assertion; pair with a real behavioral outcome where feasible)."
     },
