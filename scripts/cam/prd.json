@@ -21,7 +21,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: src/ui/Splash.tsx line 3 only. Pure comment edit, zero runtime/render effect. GOTCHA: line ~100 `url = 'eduardocaminha/cam-cli'` is the real GitHub repo slug rendered at runtime as `v{version} · {url}` and MUST NOT be touched; do NOT run a blind global s/cam-cli/CAM Runtime/ over the file. The Splash panel already renders the 'CAM Runtime' identity in JSX; do not alter any rendered output. No external library touched, so no Step 5.5 doc fetch is required."
     }
