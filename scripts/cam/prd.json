@@ -1,0 +1,32 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-344",
+  "description": "Docs-only: codify the synchronous-point-read carve-out to the Bun-first invariant so reviewers stop re-flagging deliberate node:fs sync reads.",
+  "issueNumber": 344,
+  "type": "docs",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Document the sync-read carve-out to the Bun-first invariant",
+      "description": "As a reviewer, I need the Bun-first curated invariant to explicitly permit synchronous point-reads on node:fs so that deliberate readFileSync/existsSync/appendFileSync usage is not re-filed as an invariant violation (repeat SUGGESTIONs CAM-340, CAM-342).",
+      "acceptanceCriteria": [
+        "The 'Bun-only' bullet in the Codebase Patterns (curated invariants) section of scripts/cam/CLAUDE.md is amended in place to state that Bun.spawn/Bun.$/Bun.file remain the rule for spawn and async/streaming I/O, but synchronous point-reads deliberately stay on node:fs (readFileSync / existsSync / appendFileSync) to avoid forcing callers and in-memory synchronous test collectors async. [oracle: file-assert grep -q 'synchronous point-reads' scripts/cam/CLAUDE.md]",
+        "The amended 'Bun-only' bullet is NOT prefixed with a [resolved YYYY-MM] marker (forbidden for durable invariants per the Knowledge-Layer Routing section). [oracle: file-assert ! grep -q 'resolved.*Bun-only\\|\\[resolved.*\\*\\*Bun-only' scripts/cam/CLAUDE.md]",
+        "A new bullet is appended to scripts/cam/patterns.md documenting the sync-read carve-out and cross-referencing both existing precedents: src/config/toml.ts loadConfig (test-tmpdir rationale) and src/supervisor/events.ts default logger (all-synchronous-injected-I/O rationale). [oracle: file-assert grep -q 'src/config/toml.ts' scripts/cam/patterns.md && grep -q 'src/supervisor/events.ts' scripts/cam/patterns.md]",
+        "The new patterns.md bullet is appended without restructuring or reflowing existing bullets (patterns.md is grep-on-demand and never truncated). [oracle: file-assert git diff --stat scripts/cam/patterns.md shows only additions]",
+        "No file under src/ is modified and no reader is migrated to Bun.file; the diff is limited to scripts/cam/CLAUDE.md and scripts/cam/patterns.md (plus an embedded mirror only if diff proves one is stale). [oracle: file-assert git diff --name-only | ! grep -q '^src/']",
+        "The embedded/dual-copied status of scripts/cam/CLAUDE.md is verified by diff before assuming a re-embed: the templates/scripts/cam/CLAUDE.md copy is a generic placeholder skeleton that does NOT contain the 'Bun-only' bullet, so this edit requires no templates change and no re-embed. [oracle: file-assert ! grep -q 'Bun-only' templates/scripts/cam/CLAUDE.md]",
+        "Vendor/template embed drift check passes, confirming no embedded copy went stale. [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "DOCS-ONLY. Do NOT touch any src/ file; do NOT migrate the journal.ts readers (defaultReadOrchTranscript/defaultReadEventLog/defaultReadOrchSessionId), the stats.ts defaultReadEventLog duplicate, src/config/toml.ts, or src/supervisor/events.ts to Bun.file. Files to edit: scripts/cam/CLAUDE.md (amend the 'Bun-only' bullet at ~line 64, Codebase Patterns > Curated invariants) and scripts/cam/patterns.md (append one bullet at end). Precedent rationale already inline: src/config/toml.ts loadConfig (readFileSync, lines ~146-156) and src/supervisor/events.ts default logger (appendFileSync, header comment lines ~16-19). KEY VERIFICATION (memory: cam-dual-copy-is-per-file; patterns.md line ~738): the live scripts/cam/CLAUDE.md is NOT embedded verbatim; only the GENERIC placeholder skeleton templates/scripts/cam/CLAUDE.md is swept into src/vendor/_generated.ts, and that skeleton has NO 'Bun-only' bullet (uses '<project runtime>' placeholders), so editing the live 'Bun-only' bullet requires no templates edit and no re-embed. patterns.md is not embedded at all. embed-vendor:check is still run as a cheap confirm-no-drift oracle. Do NOT prefix the durable 'Bun-only' invariant with a [resolved YYYY-MM] marker."
+    }
+  ]
+}
