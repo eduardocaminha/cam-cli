@@ -23,7 +23,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Seam: src/commands/dashboard.ts parseRecentProgress (~656-681) currently emits `${when} ${story} ${outcome}` with outcome raw from detail.outcome; readRecentProgress (~566) reads the event-log body and delegates to it. Thread a live pass-lookup (e.g. Set<string> of storyIds with passes===true, or a storyId->passes map) as an optional second arg into parseRecentProgress, populated by readRecentProgress from prd.json. readSnapshot (~396-398) already reads `prd` before `recent = readRecentProgress(cwd)`, so pass prd?.userStories through (readRecentProgress signature currently only takes cwd; extend it). Only reconcile outcome==='incomplete' -> render done when that story passes:true; leave all other outcomes untouched. Keep parseRecentProgress a pure function (tests call it directly with jsonl + pass-lookup). Do NOT touch the legacy composeDashboard text path or makePollWidthClearer (CAM-345 scope). Gotcha (issue): the event log is factually correct for its instant; reconcile in the reader only, never rewrite/supersede the event (that is sidecar-executed source-layer code needing a coherence rebuild). noUncheckedIndexedAccess: guard regex-group / lookup access. Ink RecentSection (src/ui/Dashboard.tsx:710) renders strings only; no glyph/divider-color change needed."
     }
