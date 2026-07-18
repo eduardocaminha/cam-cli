@@ -90,7 +90,12 @@ const SETUP_CHECKLIST_CUES: SetupChecklistCue[] = [
 		how: 'Register the webhook URL with the vendor.',
 	},
 	{
-		pattern: /\bconfig(?:uration)?\b/i,
+		// Requires config/configuration to co-occur with a change/setup signal
+		// (an action verb, or a config-artifact token) rather than matching a
+		// bare standalone word -- 'the configuration option is already
+		// documented' should NOT fire this cue (US-001, CAM-334).
+		pattern:
+			/\bconfig(?:uration)?\b[\s\S]*?\b(?:new|update|change|edit|add|set)\b|\b(?:new|update|change|edit|add|set)\b[\s\S]*?\bconfig(?:uration)?\b|\bproject\.toml\b|\bconfig(?:uration)?\s+file\b/i,
 		item: 'Configuration change',
 		where: 'project config',
 		how: 'Review the updated configuration and apply any required settings.',

@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.203.0] - 2026-07-18
+
+### Added
+
+- US-001 - Require a change/setup context for the Configuration change cue
+- US-001 - Require a change/setup context for the Configuration change cue
+
 ## [0.202.0] - 2026-07-18
 
 ### Added
