@@ -1,0 +1,31 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-343",
+  "description": "Bound the verb/config setup-checklist cue to a single haystack field so a verb and a standalone config word in different fields no longer co-trigger",
+  "issueNumber": 343,
+  "type": "fix",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Bound verb/config co-occurrence cue to a single field",
+      "description": "As a PR-body author, I need the 'Configuration change' setup-checklist cue's verb/config co-occurrence to require both tokens within the same haystack field so that a change verb in one field and an unrelated standalone config word in another field no longer render a spurious setup row.",
+      "acceptanceCriteria": [
+        "In src/release/pr-body.ts, both order-alternatives of the config cue's inter-token gap use a newline-bounded gap (`[^\\n]*?`) instead of `[\\s\\S]*?`, so verb-then-config and config-then-verb each require the two tokens in one line/field. [oracle: file-assert ! grep -q '\\[\\\\s\\\\S\\]\\*?' src/release/pr-body.ts]",
+        "The cross-field case does NOT fire: a PRD whose description contains a change/setup verb (e.g. 'add a webhook') and whose UNRELATED story title contains a standalone config word (e.g. 'configuration') renders no 'Configuration change' row. [oracle: bun test test/release/pr-body.test.ts]",
+        "Existing genuine same-field positives still fire: 'add a new key to project.toml' and 'update the configuration value in project.toml' still render the 'Configuration change' row. [oracle: bun test test/release/pr-body.test.ts]",
+        "Existing incidental-prose negatives still do NOT fire: 'the configuration option is already documented' and 'no configuration changes are required' render no 'Configuration change' row. [oracle: bun test test/release/pr-body.test.ts]",
+        "The cue's other two alternatives are unchanged: a bare `project.toml` token and a 'config(uration) file' phrase still fire the row; the `/i` flag is kept and no haystack normalization is added. [oracle: file-assert grep -q 'config(?:uration)?\\\\s+file' src/release/pr-body.ts]",
+        "A new test in test/release/pr-body.test.ts under describe('composePrBody Setup checklist') covers the cross-field case (verb in one field, standalone config word in another -> not detected) and confirms a same-field verb+config case is still detected, driving composePrBody with a minimal snapshot and asserting via toContain/not.toContain, mirroring the existing loop-over-cases style; the private cue array stays un-exported. [oracle: bun test test/release/pr-body.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Single-file fix. src/release/pr-body.ts lines ~92-102 (SETUP_CHECKLIST_CUES config entry): replace BOTH `[\\s\\S]*?` gaps with `[^\\n]*?` and leave the other two alternatives (`\\bproject\\.toml\\b`, `\\bconfig(?:uration)?\\s+file\\b`) untouched. renderSetupChecklist (~146-155) joins [prd.description, prd.notes, ...story.title] with '\\n' into ONE haystack and runs `cue.pattern.test(haystack)` with no per-field iteration, so `[^\\n]*?` is the only way to bound to a field. Keep the `/i` flag; add no lowercasing/normalization. Tests: test/release/pr-body.test.ts, describe('composePrBody Setup checklist'), drive public composePrBody with `{ project, description }` or a story title, assert with toContain/not.toContain. No vendor/ or templates/ touched, so no embed-vendor check needed."
+    }
+  ]
+}
