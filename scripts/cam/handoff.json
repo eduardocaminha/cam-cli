@@ -1,0 +1,12 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Pin hardcoded full-string argv goldens in backend-adapter.test.ts" },
+  "branchName": "cam/issue-341",
+  "timestamp": "2026-07-18T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": ["test/supervisor/backend-adapter.test.ts"],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 rewrote every golden test in test/supervisor/backend-adapter.test.ts to assert ClaudeAdapter.buildSpawnArgv(actor, opts) toBe a hardcoded literal argv string, captured by actually running the adapter (scratch `bun -e`/tmp script) rather than invented. The four builder-wrapper imports (buildImplementerWorkerArgv/buildPlannerWorkerArgv/buildAuditorWorkerArgv/buildReviewerWorkerArgv) and their call sites on the expected-side were removed entirely; only ClaudeAdapter is imported now. The two adapter-level guard tests (throw when taskPrompt/permissionMode missing) were left verbatim. Gotcha (already documented in patterns.md around CAM-339/341): a file-assert oracle grepping for builder names/paths matches doc-comment PROSE too, not just import/code lines -- had to rephrase the header comment to describe the four wrapper functions without naming them literally, since AC1's oracle is `! grep -Eq 'buildImplementerWorkerArgv|buildPlannerWorkerArgv|buildAuditorWorkerArgv|buildReviewerWorkerArgv' test/supervisor/backend-adapter.test.ts`. No src/ file touched. All quality gates (typecheck, bun test x5029, check:all spine incl. lint/file-size/debt-markers/coverage/dead-code/dup/ci-parity/agents-md) passed clean, no budget raises needed.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
