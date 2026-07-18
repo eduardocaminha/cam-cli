@@ -24,7 +24,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New file docs/adr/0047-*.md (next number after 0046). ADR-0046 is the spec-session summary; this is the fuller design spike that itemizes the six-mismatch resolution and the adapter methods-vs-inputs-vs-shared-contract split. The codex-direction annotations come from the CAM-54 spec (issue CAM-0054.json gotchas), not from new external research: no codex dispatch code lands in this slice and no external library doc is fetched. Three ADR gates (hard-to-reverse, surprising, genuine trade-off) all pass for the seam boundary per the Domain Model Convention. Grep scripts/cam/patterns.md for 'ADR' / 'claude -p' before writing. Do NOT touch run.ts:267 orchestrator persona."
     },
