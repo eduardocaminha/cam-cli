@@ -24,7 +24,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Scope per CAM-336 spec (already decided, do not re-litigate). Files: src/supervisor/events.ts (add WorkerEventKind at the union ~line 114-152, add a detail interface near SuggestionFiledEventDetail ~line 479, add it to WorkerEventDetail union ~line 553); src/supervisor/host.ts (makeRecordPatternOutcomeFn at lines 228-236 -- add a WorkerEventLogger param additively and emit on the non-ok branch of appendOutcomeOnMain); src/commands/sidecar.ts:3235 (pass logEvent, already in scope and used one line up at :3228). appendOutcomeOnMain returns AppendOutcomeOnMainResult (src/commands/pattern-records.ts:397) whose ok:false shape is { ok:false, reason }; capture recordId from the loop variable in host.ts, not from the result (the error variant carries no recordId). Emit shape mirrors makeProductionFileSuggestionsFn (sidecar.ts:3172-3178): { ts: clock(), storyId: undefined, uuid: 'sidecar', kind, detail }. Gotchas: the returned fn's (recordIds, status) => void signature is pinned by a source-text guard test (loop.test.ts:4348-4361) -- change the FACTORY signature, never the returned closure's; crash-survival (loop.test.ts:4321-4339) must stay green (a thrown/failed append never breaks the loop). Do NOT create a second file writer -- reuse the logEvent built at host.ts:602 threaded through sidecar. Grep scripts/cam/patterns.md and scripts/cam/pattern-records.jsonl for 'event'/'supervisor'/'logEvent' before coding."
     }
