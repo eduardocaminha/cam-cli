@@ -22,11 +22,22 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { gcMergeWatchIfGarbage, updateShipStalledMarker, updatePostMergeStalledMarker } from '../../src/commands/sidecar.ts';
+import {
+	gcMergeWatchIfGarbage,
+	updateShipStalledMarker,
+	updatePostMergeStalledMarker,
+	clearImplementBlockedMarkerOnMerge,
+} from '../../src/commands/sidecar.ts';
 import {
 	readPostMergeStalledMarker,
 	POST_MERGE_STALLED_FILENAME,
 } from '../../src/supervisor/post-merge-stalled-marker.ts';
+import {
+	readImplementBlockedMarker,
+	writeImplementBlockedMarker,
+	IMPLEMENT_BLOCKED_FILENAME,
+	type ImplementBlockedMarker,
+} from '../../src/supervisor/implement-blocked-marker.ts';
 import { beforeEach, afterEach, describe, test, expect } from 'bun:test';
 import {
 	readMergeWatchState,
@@ -2988,5 +2999,73 @@ describe('updatePostMergeStalledMarker: durable marker on merged-but-post-merge-
 		updatePostMergeStalledMarker(markerPath, outcome, state);
 
 		expect(existsSync(markerPath)).toBe(false);
+	});
+});
+
+describe('clearImplementBlockedMarkerOnMerge: merged-terminal implement-blocked cleanup (US-002, CAM-347)', () => {
+	let tempDir: string;
+	let markerPath: string;
+
+	const makeMarker = (issueId: string): ImplementBlockedMarker => ({
+		issueId,
+		story: 'US-003',
+		reason: 'Worker reported BLOCKED_QUALITY story=US-003 reason=tests_failed',
+		writtenAt: '2026-07-18T00:00:00Z',
+		consecutiveCount: 1,
+		keyHash: 'deadbeef',
+	});
+
+	const mergedOutcome: MergeWatchOutcome = {
+		kind: 'merged',
+		postMerge: {
+			ok: true, pulledSha: 'abc123', tag: 'v1.0.0', tagCreated: true,
+			branchPrunedLocal: true, branchPrunedRemote: true,
+		},
+	};
+
+	beforeEach(() => {
+		tempDir = mkdtempSync(join(tmpdir(), 'cam-implement-blocked-merge-'));
+		markerPath = join(tempDir, IMPLEMENT_BLOCKED_FILENAME);
+	});
+
+	afterEach(() => {
+		rmSync(tempDir, { recursive: true, force: true });
+	});
+
+	test('MERGED terminal with matching issueId clears the marker', () => {
+		writeImplementBlockedMarker(markerPath, makeMarker('347'));
+		const state: MergeWatchState = { prNumber: 920, mergedBranch: 'cam/issue-347', issueId: '347' };
+
+		clearImplementBlockedMarkerOnMerge(markerPath, mergedOutcome, state);
+
+		expect(readImplementBlockedMarker(markerPath)).toBeNull();
+	});
+
+	test('MERGED terminal with a DIFFERENT issueId leaves the marker intact', () => {
+		writeImplementBlockedMarker(markerPath, makeMarker('999'));
+		const state: MergeWatchState = { prNumber: 921, mergedBranch: 'cam/issue-347', issueId: '347' };
+
+		clearImplementBlockedMarkerOnMerge(markerPath, mergedOutcome, state);
+
+		const marker = readImplementBlockedMarker(markerPath);
+		expect(marker).not.toBeNull();
+		expect(marker?.issueId).toBe('999');
+	});
+
+	test('absent marker: no-op, does not throw', () => {
+		const state: MergeWatchState = { prNumber: 922, mergedBranch: 'cam/issue-347', issueId: '347' };
+
+		expect(() => clearImplementBlockedMarkerOnMerge(markerPath, mergedOutcome, state)).not.toThrow();
+		expect(readImplementBlockedMarker(markerPath)).toBeNull();
+	});
+
+	test('non-merged terminal is a no-op even when issueId matches', () => {
+		writeImplementBlockedMarker(markerPath, makeMarker('347'));
+		const state: MergeWatchState = { prNumber: 923, mergedBranch: 'cam/issue-347', issueId: '347' };
+		const outcome: MergeWatchOutcome = { kind: 'ci-red', prNumber: 923 };
+
+		clearImplementBlockedMarkerOnMerge(markerPath, outcome, state);
+
+		expect(readImplementBlockedMarker(markerPath)).not.toBeNull();
 	});
 });

@@ -65,6 +65,7 @@ import { readWorkerIsolation } from '../config/models.ts';
 import {
 	writeImplementBlockedMarker,
 	readImplementBlockedMarker,
+	removeImplementBlockedMarker,
 	advanceBlockedMarker,
 	IMPLEMENT_BLOCKED_FILENAME,
 } from './implement-blocked-marker.ts';
@@ -718,6 +719,14 @@ export function buildSupervisorOptions(
 		writeImplementBlockedMarker(implementBlockedMarkerPath, marker);
 	};
 
+	// US-001 (CAM-347): durable implement-blocked marker remover, wired to the
+	// same path the writer above uses. Fired by loop.ts's finishTerminal only on
+	// a successful 'complete' terminal (never throws; removeImplementBlockedMarker
+	// is a silent no-op when the marker is already absent).
+	const removeImplementBlockedMarkerFn: RunSupervisorOptions['removeImplementBlockedMarkerFn'] = () => {
+		removeImplementBlockedMarker(implementBlockedMarkerPath);
+	};
+
 	// US-002 / CAM-75: reviewer structured exit report reader.
 	const readReviewReport = makeReadReviewReport(cwd);
 
@@ -1094,6 +1103,8 @@ export function buildSupervisorOptions(
 		teardownWorkerPaneFn,
 		// US-005 (CAM-195, Defect 2): durable implement-blocked marker writer.
 		writeImplementBlockedMarkerFn,
+		// US-001 (CAM-347): durable implement-blocked marker remover (complete terminal only).
+		removeImplementBlockedMarkerFn,
 	};
 
 	return {

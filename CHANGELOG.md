@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.208.0] - 2026-07-18
+
+### Added
+
+- US-002 - Clear implement-blocked marker on the ship merge terminal (sidecar.ts)
+- US-001 - Clear implement-blocked marker on the complete terminal (loop.ts + host.ts)
+
 ## [0.207.0] - 2026-07-18
 
 ### Added
