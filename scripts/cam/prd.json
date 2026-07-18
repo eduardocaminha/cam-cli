@@ -73,7 +73,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Files: src/ui/ConfigScreen.tsx, src/commands/config.ts. Reuse the existing per-phase model machinery: PHASE_STEPS (:69), models: Record<Phase,string> state, PhaseTabContent (:476) which already renders a per-phase model Select via PHASE_MODEL_OPTIONS. Add an analogous backend Select per tab driven by BACKEND_OPTIONS (:132). Widen useState backend (:251), useFireOnDone (:426/:441), GlobalTab props (:587/:612) so the backend field moves off the Global tab. fieldCountForTab (:159) currently returns 5 for global and 2 for LLM phase / 1 for ship: adding a per-phase backend field changes those counts, keep the Tab/Enter focus chain (computeNextFocus, :172) consistent. mergeConfigChoices (config.ts:218-226) currently writes `backend: { name: choices.backend }`: change to write one [backend] key per phase from the Record. Print table (config.ts:294-295) currently emits a single 'backend' row: emit per-phase rows via readPhaseBackend. This is the largest slice: ConfigChoices.backend type change ripples through every consumer, so update all consumers in this one story to keep typecheck green. Ink success/failure is the ✓/✗ glyph, never divider color (curated invariant)."
     }
