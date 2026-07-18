@@ -1,13 +1,41 @@
 {
   "id": "CAM-336",
   "title": "makeRecordPatternOutcomeFn discards appendOutcomeOnMain's structured result, so…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-17T14:01:39.901Z",
-  "updatedAt": "2026-07-17T14:01:39.901Z",
+  "updatedAt": "2026-07-18T10:17:24.886Z",
   "description": "makeRecordPatternOutcomeFn discards appendOutcomeOnMain's structured result, so a per-id failure (diverged, detached-head, missing-main, not-found) is skip-and-ignored with no logEvent. This is documented as deliberate best-effort, and it is not a silently swallowed error in practice (checkMainUpToDate and the not-found path both printError to the operator, as visible in the test-suite stderr). Consider folding a durable logEvent on a non-ok result so a persistently diverged main shows up in cam-worker-events.jsonl rather than only in transient stderr.\n\nSource: cam/issue-64\nReview round: 1\n\nsuggestion-fingerprint: ba27d72f2613",
   "derivedFrom": [
     "CAM-64"
-  ]
+  ],
+  "spec": {
+    "acceptanceCriteria": [
+      "When appendOutcomeOnMain returns a non-ok result (ok:false, reason in {not-found, diverged, detached-head, missing-main}) within the recordPatternOutcome path, a durable WorkerEvent is appended to .claude/cam-worker-events.jsonl capturing at least the recordId and the reason.",
+      "An ok result (ok:true) produces NO failure event (no false positives).",
+      "The returned recordPatternOutcome function keeps its (recordIds, status) => void signature and still never throws on a failed append: the existing source-text guard (test/supervisor/loop.test.ts:4348-4361) and crash-survival test (4321-4339) stay green.",
+      "A new test injects an in-memory logEvent plus a cwd/spawnFn that yields a non-ok appendOutcomeOnMain result and asserts exactly one failure event with the correct recordId and reason is logged; and asserts an ok result logs none.",
+      "typecheck and the full test suite are green."
+    ],
+    "scope": "Modify makeRecordPatternOutcomeFn (src/supervisor/host.ts:228-236) so a non-ok appendOutcomeOnMain result is recorded as a durable WorkerEvent instead of being silently discarded. Thread the existing WorkerEventLogger (src/supervisor/events.ts:596) into the factory additively and reuse the file logger already built at host.ts:602. Add one dedicated WorkerEventKind (e.g. pattern-outcome-append-failed) with a typed detail { recordId, reason } to the events.ts union. Do NOT change appendOutcomeOnMain itself, and do NOT change the returned function's (recordIds, status) => void signature.",
+    "gotchas": [
+      "makeRecordPatternOutcomeFn(cwd) currently takes only cwd and has no logEvent in scope; thread the existing WorkerEventLogger in additively rather than changing the returned fn's (recordIds, status) => void signature, which a source-text guard test (loop.test.ts:4348-4361) pins.",
+      "Reuse the file logger already created at host.ts:602 (makeFileEventLogger against .claude/cam-worker-events.jsonl); do not create a second writer.",
+      "No pattern-outcome WorkerEventKind exists yet (events.ts:114-152); add one with a typed detail rather than overloading sidecar-exit, mirroring the SuggestionFiled precedent (events.ts:479-483) that counts appendSuggestionOnMain ok:false results.",
+      "appendOutcomeOnMain already printErrors on not-found (pattern-records.ts:433-436); the new event is additive durability, not a replacement, so keep the printError.",
+      "Preserve crash-survival: a thrown or failed append must never break the supervisor loop (loop.test.ts:4321-4339)."
+    ],
+    "domainTerms": [
+      "pattern-outcome append: the on-main commit that records a pattern record's execution outcome (success/failure/partial) via appendOutcomeOnMain",
+      "WorkerEvent: a structured JSONL event in .claude/cam-worker-events.jsonl, the durable observability log distinct from transient stderr"
+    ]
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 1,
+    "riskReduction": 4,
+    "jobSize": 2
+  },
+  "type": "fix"
 }
