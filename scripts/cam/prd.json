@@ -1,0 +1,31 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-346",
+  "description": "Reconcile the Dashboard TUI Recent feed so a story finalized DONE (prd.json passes:true) no longer shows the frozen 'incomplete' outcome from its worker-finish result event.",
+  "issueNumber": 346,
+  "type": "fix",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Reconcile Recent feed 'incomplete' against live prd.json passes",
+      "description": "As a cam operator watching the Dashboard TUI, I need the Recent feed to stop labeling a finalized-DONE story 'incomplete' so that it agrees with the Stories panel checkmark instead of showing two panels with contradictory states.",
+      "acceptanceCriteria": [
+        "parseRecentProgress reconciles outcome against terminal story state: when a 'result' event carries outcome 'incomplete' but the passed-in live story-pass state shows that storyId passes:true, the emitted Recent line renders as done/complete (not the raw 'incomplete'). [oracle: bun test]",
+        "Negative case preserved: a story whose result outcome is 'incomplete' AND whose prd.json passes is false or absent still renders as 'incomplete' (no false 'done'). [oracle: bun test]",
+        "Other outcomes (e.g. 'blocked', 'pass') pass through verbatim; only the finalized-DONE-vs-'incomplete' divergence is reconciled. [oracle: bun test]",
+        "The live pass-state is sourced from prd.json userStories passes (the same source the Stories panel reads at src/ui/Dashboard.tsx:445), threaded from readSnapshot's already-read prd through readRecentProgress into parseRecentProgress; no new state source is invented. [oracle: file-assert grep -q 'passes' src/commands/dashboard.ts]",
+        "The change touches ONLY the dashboard presentation/read layer (src/commands/dashboard.ts and/or src/ui/Dashboard.tsx). No edit to src/supervisor/events.ts, src/supervisor/result.ts, src/supervisor/loop.ts, or the shape/content written to .claude/cam-worker-events.jsonl. [oracle: file-assert git diff --name-only main | grep -vqE 'supervisor/(events|result|loop)']",
+        "New tests in test/dashboard.test.ts parseRecentProgress suite (~219-269) assert both the reconciliation (frozen 'incomplete' + passes:true renders done) and the negative case (passes:false stays 'incomplete'). [oracle: file-assert grep -q 'incomplete' test/dashboard.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Seam: src/commands/dashboard.ts parseRecentProgress (~656-681) currently emits `${when} ${story} ${outcome}` with outcome raw from detail.outcome; readRecentProgress (~566) reads the event-log body and delegates to it. Thread a live pass-lookup (e.g. Set<string> of storyIds with passes===true, or a storyId->passes map) as an optional second arg into parseRecentProgress, populated by readRecentProgress from prd.json. readSnapshot (~396-398) already reads `prd` before `recent = readRecentProgress(cwd)`, so pass prd?.userStories through (readRecentProgress signature currently only takes cwd; extend it). Only reconcile outcome==='incomplete' -> render done when that story passes:true; leave all other outcomes untouched. Keep parseRecentProgress a pure function (tests call it directly with jsonl + pass-lookup). Do NOT touch the legacy composeDashboard text path or makePollWidthClearer (CAM-345 scope). Gotcha (issue): the event log is factually correct for its instant; reconcile in the reader only, never rewrite/supersede the event (that is sidecar-executed source-layer code needing a coherence rebuild). noUncheckedIndexedAccess: guard regex-group / lookup access. Ink RecentSection (src/ui/Dashboard.tsx:710) renders strings only; no glyph/divider-color change needed."
+    }
+  ]
+}
