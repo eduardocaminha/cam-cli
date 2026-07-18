@@ -794,6 +794,31 @@ export function updatePostMergeStalledMarker(
 }
 
 /**
+ * Clear the durable implement-blocked marker at a MERGED merge-watch terminal
+ * when it belongs to the just-shipped issue (US-002, CAM-347).
+ *
+ * A no-op for every non-merged terminal (owned exclusively by
+ * updateShipStalledMarker / updatePostMergeStalledMarker). For a merged
+ * terminal, mirrors updateShipStalledMarker's consume-on-merge
+ * read-then-compare-then-remove pattern: reads the marker, and removes it
+ * ONLY when marker.issueId === state.issueId. A marker for a different
+ * issueId, or an absent marker (read returns null), is left untouched.
+ * Never throws: readImplementBlockedMarker / removeImplementBlockedMarker
+ * already never throw.
+ */
+export function clearImplementBlockedMarkerOnMerge(
+	markerPath: string,
+	outcome: MergeWatchOutcome,
+	state: MergeWatchState,
+): void {
+	if (outcome.kind !== 'merged') return;
+	const marker = readImplementBlockedMarker(markerPath);
+	if (marker !== null && marker.issueId === state.issueId) {
+		removeImplementBlockedMarker(markerPath);
+	}
+}
+
+/**
  * Adapt Bun.spawnSync into the legacy node-`spawnSync`-shaped result (pid,
  * output, stdout, stderr, status, signal) that a handful of call sites in
  * this file still need to return, because their consumer type
@@ -952,6 +977,7 @@ function makeProductionMergeWatchFn(
 			removeMergeWatchState(watchFilePath);
 			updateShipStalledMarker(join(claudeDir, SHIP_STALLED_FILENAME), result.outcome, state);
 			updatePostMergeStalledMarker(join(claudeDir, POST_MERGE_STALLED_FILENAME), result.outcome, state);
+			clearImplementBlockedMarkerOnMerge(join(claudeDir, IMPLEMENT_BLOCKED_FILENAME), result.outcome, state);
 		}
 	};
 }
