@@ -10,6 +10,13 @@
   "officialDocsConsulted": [],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "WARNING [docs/adr/0047-backendadapter-seam-methods-vs-inputs-vs-shared-contract-and-the-six-mismatch-resolution.md:14]: ADR-0047 introduces 7 em-dash (U+2014) characters (lines 14, 34, 38, 40, 47, 51, 55). Persisted human-readable .md must not use em-dash (project convention, rubric criterion #5); sibling ADRs 0044 and 0046 both have zero em-dashes, confirming the convention is followed in docs/adr/. Mechanical single-file fix: replace each em-dash with a colon, comma, parentheses, or period."
+    },
+    {
       "id": "US-001",
       "title": "Write the design-spike ADR for the BackendAdapter seam",
       "description": "As the cam maintainer, I need a design-spike ADR that lands BEFORE any adapter code so the BackendAdapter abstraction boundary and the six claude/codex mismatch resolutions are recorded and reviewable, per CAM-54's spike-first mandate.",
@@ -23,7 +30,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "requires": null,
       "notes": "New file docs/adr/0047-*.md (next number after 0046). ADR-0046 is the spec-session summary; this is the fuller design spike that itemizes the six-mismatch resolution and the adapter methods-vs-inputs-vs-shared-contract split. The codex-direction annotations come from the CAM-54 spec (issue CAM-0054.json gotchas), not from new external research: no codex dispatch code lands in this slice and no external library doc is fetched. Three ADR gates (hard-to-reverse, surprising, genuine trade-off) all pass for the seam boundary per the Domain Model Convention. Grep scripts/cam/patterns.md for 'ADR' / 'claude -p' before writing. Do NOT touch run.ts:267 orchestrator persona."
@@ -41,7 +48,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint/static spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 2,
+      "priority": 3,
       "passes": true,
       "requires": "US-001",
       "notes": "New module src/supervisor/backend-adapter.ts + test/supervisor/backend-adapter.test.ts. The four actors differ ONLY in: implementer prepends CAM_WORKER=1 (WORKER_ACTOR_ENV, worker-argv.ts:138) and the others do NOT; reviewer defaults permissionMode='bypassPermissions' and has a default REVIEWER_TASK_PROMPT (review.ts). Reuse workerEnvPrefix(isolation) from worker-argv.ts; do not re-implement the env-strip list. Golden strings must be derived from the real builders (worker-argv.ts:177, plan-argv.ts:85 and :146, review.ts:119), matching the existing golden pattern in test/supervisor/worker-argv.test.ts and review-argv-model.test.ts. Keep backend claude-only: do NOT touch readBackend (models.ts:171) and do NOT wire ConfigScreen. Curated invariant: no tautological mock-call assertions, hit real builder output."
@@ -61,10 +68,29 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint/static spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 3,
+      "priority": 4,
       "passes": true,
       "requires": "US-002",
       "notes": "Edit worker-argv.ts, plan-argv.ts, review.ts (builders) to delegate to ClaudeAdapter; the call sites are loop.ts:1001, plan-runner.ts:597 and :634, review.ts:370 (leave call-site signatures intact if builders delegate internally). GOTCHA (hard constraint): characterize FIRST, then refactor, assert identical output; do not normalize spacing/flag order. The env-unset prefix and CAM_WORKER=1 marker are claude-inputs, not folded into a shared method incorrectly (planner/auditor/reviewer must NEVER get CAM_WORKER=1: worker-argv.ts:132-136). Keep ported src/retry/* MIT headers intact and do not touch retry/launcher.ts (findClaudeBinary dedup is out of scope). emitSpawnResolution (spawn-resolution.ts) behavior stays as-is. Grep scripts/cam/patterns.md for 'argv' / 'claude -p' / 'shellEscape' before editing."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:1",
+    "findings": [
+      {
+        "severity": "WARNING",
+        "file": "docs/adr/0047-backendadapter-seam-methods-vs-inputs-vs-shared-contract-and-the-six-mismatch-resolution.md",
+        "line": 14,
+        "text": "ADR-0047 introduces 7 em-dash (U+2014) characters (lines 14, 34, 38, 40, 47, 51, 55). Persisted human-readable .md must not use em-dash (project convention, rubric criterion #5); sibling ADRs 0044 and 0046 both have zero em-dashes, confirming the convention is followed in docs/adr/. Mechanical single-file fix: replace each em-dash with a colon, comma, parentheses, or period."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "test/supervisor/backend-adapter.test.ts",
+        "line": 20,
+        "text": "After US-003 rerouted the four builders to delegate to ClaudeAdapter, the golden comparisons (adapter.buildSpawnArgv vs buildImplementerWorkerArgv etc.) became self-referential: the builder now IS a thin wrapper over the same adapter call, so the byte-for-byte assertions are trivially true. The genuine behavior lock still lives in the unchanged sibling tests (worker-argv.test.ts / plan-argv.test.ts / review.test.ts) which hardcode literal argv substrings, so coverage is not lost. Consider pinning a hardcoded golden string in backend-adapter.test.ts to keep it a real characterization independent of the builder wrappers."
+      }
+    ]
+  }
 }
