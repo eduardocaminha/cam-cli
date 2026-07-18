@@ -6,6 +6,15 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.200.0] - 2026-07-18
+
+### Added
+
+- US-R1-001 - Review round 1 fix 001: address reviewer finding
+- US-003 - Route the four worker builders through ClaudeAdapter and de-dup shellEscape, zero behavior change
+- US-002 - Introduce BackendAdapter interface + ClaudeAdapter with per-actor golden characterization tests
+- US-001 - Write the design-spike ADR for the BackendAdapter seam
+
 ## [0.199.0] - 2026-07-17
 
 ### Added
