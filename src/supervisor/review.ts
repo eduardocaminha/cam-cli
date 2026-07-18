@@ -34,11 +34,13 @@ import type { ReviewDispatch, ReviewDispatchResult, SpawnFn, CapturePane, ReadPr
 import type { WorkerEventLogger } from './events.ts';
 import type { ReviewReport, ReviewFinding } from './review-report.ts';
 import type { PreflightResult } from './preflight-container.ts';
-import { workerEnvPrefix } from './worker-argv.ts';
-import { DEFAULTS, readPhaseModel, readBackend } from '../config/models.ts';
+import { ClaudeAdapter, DEFAULT_REVIEWER_AGENT, REVIEWER_TASK_PROMPT } from './backend-adapter.ts';
+import { readPhaseModel, readBackend } from '../config/models.ts';
 import type { WorkerIsolation } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 import { dockerExecWrap } from './docker-exec.ts';
+
+export { DEFAULT_REVIEWER_AGENT, REVIEWER_TASK_PROMPT };
 
 // ---------------------------------------------------------------------------
 // buildReviewerWorkerArgv
@@ -78,25 +80,6 @@ export interface ReviewerWorkerArgvOptions {
 	isolation?: WorkerIsolation;
 }
 
-/** Default agent name; matches .claude/agents/subagent-reviewer.md. */
-export const DEFAULT_REVIEWER_AGENT = 'subagent-reviewer';
-
-/**
- * Default task prompt for the interactive reviewer session (CAM-42 US-003).
- * The <review> tag on the very last line is the completion sentinel the
- * supervisor polls for.
- */
-export const REVIEWER_TASK_PROMPT =
-	'Review all changes on the current branch vs main per your AGENT.md. Run the project quality gates. End your output with the <review> verdict tag on the very last line.';
-
-/**
- * Escape a string for safe embedding inside a POSIX single-quoted shell argument.
- * Handles embedded single quotes via the '\'' technique.
- */
-function shellEscape(s: string): string {
-	return `'${s.replace(/'/g, "'\\''")}'`;
-}
-
 /**
  * Build the shell string passed to `respawn-pane` to launch an interactive
  * TUI reviewer worker.
@@ -106,31 +89,20 @@ function shellEscape(s: string): string {
  *   env -u CLAUDECODE -u ... claude --permission-mode <mode> --session-id <uuid> \
  *     --agent <agentName> '<taskPrompt>'
  *
- * The `env -u ...` prefix (shared with the implementer via workerEnvPrefix)
- * strips nesting-detection env vars so the reviewer boots from a tmux server
- * bootstrapped inside a claude session (CAM-43). -p and --output-format are
- * omitted so the process stays open for interaction. The tmux wait-for chain
- * is also omitted; the supervisor detects completion by polling capture-pane
- * for the <review> verdict tag.
+ * The `env -u ...` prefix strips nesting-detection env vars so the reviewer
+ * boots from a tmux server bootstrapped inside a claude session (CAM-43). -p
+ * and --output-format are omitted so the process stays open for interaction.
+ * The tmux wait-for chain is also omitted; the supervisor detects completion
+ * by polling capture-pane for the <review> verdict tag.
  *
  * The task prompt is the initial-prompt argument (CAM-41: a promptless reviewer
  * dies instantly) and --permission-mode lets quality gates run unprompted.
+ *
+ * US-003 (CAM-339): thin wrapper resolving the 'reviewer' actor and delegating
+ * to ClaudeAdapter.buildSpawnArgv (backend-adapter.ts) for the actual assembly.
  */
 export function buildReviewerWorkerArgv(opts: ReviewerWorkerArgvOptions): string {
-	const agentName = opts.agentName ?? DEFAULT_REVIEWER_AGENT;
-	const model = opts.model ?? DEFAULTS.reviewer;
-	const isolation = opts.isolation ?? 'host';
-	const escapedPrompt = shellEscape(opts.taskPrompt ?? REVIEWER_TASK_PROMPT);
-	const permissionMode = opts.permissionMode ?? 'bypassPermissions';
-	return (
-		workerEnvPrefix(isolation) +
-		`claude` +
-		` --permission-mode ${permissionMode}` +
-		` --session-id ${opts.uuid}` +
-		` --model ${shellEscape(model)}` +
-		` --agent ${agentName}` +
-		` ${escapedPrompt}`
-	);
+	return new ClaudeAdapter().buildSpawnArgv('reviewer', opts);
 }
 
 // ---------------------------------------------------------------------------

@@ -8,9 +8,6 @@
 // env-strip + shell-escape pattern (CAM-43 + CAM-42).
 //
 // Design decisions:
-//   - workerEnvPrefix() is shared from worker-argv.ts (DO NOT re-implement the
-//     env-strip list). Both builders strip the same WORKER_ENV_UNSET vars so
-//     a pane spawned from inside a claude session still boots.
 //   - No -p, no --output-format: subscription rule (CAM-42).
 //   - Default agent names match .claude/agents/ frontmatter `name` fields.
 //   - Models default to DEFAULTS.planner / DEFAULTS.auditor; the CALLER
@@ -18,24 +15,17 @@
 //   - The shell string format:
 //       env -u CLAUDECODE -u ... claude --permission-mode <mode>
 //         --session-id <uuid> --model '<model>' --agent <agent> '<prompt>'
+//   - US-003 (CAM-339): buildPlannerWorkerArgv / buildAuditorWorkerArgv are
+//     now thin wrappers over ClaudeAdapter.buildSpawnArgv (backend-adapter.ts),
+//     which resolves the adapter per-actor and holds the actual assembly
+//     (env-strip prefix, shell-escape, agent/model defaults). DEFAULT_PLANNER_AGENT
+//     and DEFAULT_AUDITOR_AGENT are re-exported from there for existing
+//     callers/tests that import them from this file.
 
-import { DEFAULTS } from '../config/models.ts';
 import type { WorkerIsolation } from '../config/models.ts';
-import { workerEnvPrefix } from './worker-argv.ts';
+import { ClaudeAdapter } from './backend-adapter.ts';
 
-/** Default planner agent name; matches .claude/agents/subagent-planner.md. */
-export const DEFAULT_PLANNER_AGENT = 'subagent-planner';
-
-/** Default auditor agent name; matches .claude/agents/subagent-auditor.md. */
-export const DEFAULT_AUDITOR_AGENT = 'subagent-auditor';
-
-/**
- * Escape a string for safe embedding inside a POSIX single-quoted shell argument.
- * Handles embedded single quotes via the '\'' technique.
- */
-function shellEscape(s: string): string {
-	return `'${s.replace(/'/g, "'\\''")}'`;
-}
+export { DEFAULT_PLANNER_AGENT, DEFAULT_AUDITOR_AGENT } from './backend-adapter.ts';
 
 // ---------------------------------------------------------------------------
 // buildPlannerWorkerArgv
@@ -81,21 +71,12 @@ export interface PlannerWorkerArgvOptions {
  *
  * The `env -u ...` prefix strips nesting-detection env vars (CAM-43).
  * -p and --output-format are omitted (CAM-42: subscription rule, interactive TUI only).
+ *
+ * US-003 (CAM-339): thin wrapper resolving the 'planner' actor and delegating
+ * to ClaudeAdapter.buildSpawnArgv for the actual assembly.
  */
 export function buildPlannerWorkerArgv(opts: PlannerWorkerArgvOptions): string {
-	const agentName = opts.agentName ?? DEFAULT_PLANNER_AGENT;
-	const model = opts.model ?? DEFAULTS.planner;
-	const isolation = opts.isolation ?? 'host';
-	const escapedPrompt = shellEscape(opts.taskPrompt);
-	return (
-		workerEnvPrefix(isolation) +
-		`claude` +
-		` --permission-mode ${opts.permissionMode}` +
-		` --session-id ${opts.uuid}` +
-		` --model ${shellEscape(model)}` +
-		` --agent ${agentName}` +
-		` ${escapedPrompt}`
-	);
+	return new ClaudeAdapter().buildSpawnArgv('planner', opts);
 }
 
 // ---------------------------------------------------------------------------
@@ -142,19 +123,10 @@ export interface AuditorWorkerArgvOptions {
  *
  * The `env -u ...` prefix strips nesting-detection env vars (CAM-43).
  * -p and --output-format are omitted (CAM-42: subscription rule, interactive TUI only).
+ *
+ * US-003 (CAM-339): thin wrapper resolving the 'auditor' actor and delegating
+ * to ClaudeAdapter.buildSpawnArgv for the actual assembly.
  */
 export function buildAuditorWorkerArgv(opts: AuditorWorkerArgvOptions): string {
-	const agentName = opts.agentName ?? DEFAULT_AUDITOR_AGENT;
-	const model = opts.model ?? DEFAULTS.auditor;
-	const isolation = opts.isolation ?? 'host';
-	const escapedPrompt = shellEscape(opts.taskPrompt);
-	return (
-		workerEnvPrefix(isolation) +
-		`claude` +
-		` --permission-mode ${opts.permissionMode}` +
-		` --session-id ${opts.uuid}` +
-		` --model ${shellEscape(model)}` +
-		` --agent ${agentName}` +
-		` ${escapedPrompt}`
-	);
+	return new ClaudeAdapter().buildSpawnArgv('auditor', opts);
 }
