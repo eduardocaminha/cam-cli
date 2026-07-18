@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.202.0] - 2026-07-18
+
+### Added
+
+- US-001 - Stamp orchestrator session id on cycle-tokens events and reset the baseline at session boundaries
+
 ## [0.201.0] - 2026-07-18
 
 ### Added
