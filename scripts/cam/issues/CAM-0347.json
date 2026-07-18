@@ -1,10 +1,41 @@
 {
   "id": "CAM-347",
   "title": "Orphaned .cam-implement-blocked marker survives in-cycle recovery + ship (false boot blocker)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-18T15:19:10.945Z",
-  "updatedAt": "2026-07-18T15:19:10.945Z",
-  "description": "The durable .cam-implement-blocked marker (src/supervisor/implement-blocked-marker.ts) is written on every 'blocked' terminal of runSupervisor but removed ONLY by removeImplementBlockedMarker on the next re-armed implement dispatch for the SAME issue (sidecar.ts, issueId-matched). When a blocked terminal is followed by in-cycle recovery (the worker retries -> DONE) and the issue then ships, no re-armed dispatch ever occurs, so the marker is never cleared: it orphans permanently and false-alarms as an '⚠ implement blocked: issue #<id>' opening blocker at EVERY future orchestrator boot, degrading the boot-blocker signal (cry-wolf). Observed live 2026-07-18: CAM-346's US-001 hit a transient 'finalize aborted, gates failed: tests failed' terminal (marker written, consecutiveCount 1), the retry recovered to DONE, review CLEAN, PR #283 merged and shipped v0.207.0 -- yet .claude/.cam-implement-blocked.json (issueId 346) remained on disk. Fix: also remove the marker on any successful terminal for the issue (complete/DONE terminal in loop.ts, and/or the ship/close-on-main path), not only on re-arm; mirror how the ship-stalled marker is consumed once the PR merges. Same file also has the ship-stalled and plan-escalation marker precedents to mirror. Grounded 2026-07-18."
+  "updatedAt": "2026-07-18T15:29:07.246Z",
+  "description": "The durable .cam-implement-blocked marker (src/supervisor/implement-blocked-marker.ts) is written on every 'blocked' terminal of runSupervisor but removed ONLY by removeImplementBlockedMarker on the next re-armed implement dispatch for the SAME issue (sidecar.ts, issueId-matched). When a blocked terminal is followed by in-cycle recovery (the worker retries -> DONE) and the issue then ships, no re-armed dispatch ever occurs, so the marker is never cleared: it orphans permanently and false-alarms as an '⚠ implement blocked: issue #<id>' opening blocker at EVERY future orchestrator boot, degrading the boot-blocker signal (cry-wolf). Observed live 2026-07-18: CAM-346's US-001 hit a transient 'finalize aborted, gates failed: tests failed' terminal (marker written, consecutiveCount 1), the retry recovered to DONE, review CLEAN, PR #283 merged and shipped v0.207.0 -- yet .claude/.cam-implement-blocked.json (issueId 346) remained on disk. Fix: also remove the marker on any successful terminal for the issue (complete/DONE terminal in loop.ts, and/or the ship/close-on-main path), not only on re-arm; mirror how the ship-stalled marker is consumed once the PR merges. Same file also has the ship-stalled and plan-escalation marker precedents to mirror. Grounded 2026-07-18.",
+  "spec": {
+    "scope": "Add two eager, issueId-matched clears of the durable .cam-implement-blocked marker so it no longer orphans after in-cycle recovery followed by ship (which false-alarms as an 'implement blocked' opening boot blocker, cry-wolf). (a) In src/supervisor/loop.ts finishTerminal, on the successful 'complete' terminal, remove the marker via a newly injected removeImplementBlockedMarkerFn, guarded by lastIssueNumber, mirroring the existing writeImplementBlockedMarkerFn injection; loop.ts stays clock-free and filesystem/path-free, so wire the real production fn in src/supervisor/host.ts alongside the existing writer (removeImplementBlockedMarker at the same implementBlockedMarkerPath). (b) In src/commands/sidecar.ts at the merge-watch 'merged' terminal (alongside updateShipStalledMarker / updatePostMergeStalledMarker), read the marker and remove it only when marker.issueId === state.issueId, mirroring updateShipStalledMarker's consume-on-merge pattern. This change is purely additive: do NOT alter or refactor the existing sweepOrphanedImplementBlockedMarker, the re-arm clear (clearImplementBlockedMarkerForCurrentIssue), the marker schema, advanceBlockedMarker, or the escalated circuit-breaker semantics.",
+    "acceptanceCriteria": [
+      "loop.ts finishTerminal('complete') removes the implement-blocked marker for the current issue, guarded by lastIssueNumber, through a newly injected removeImplementBlockedMarkerFn whose default is a no-op so loop.ts stays filesystem/path-free.",
+      "src/supervisor/host.ts wires the production removeImplementBlockedMarkerFn to removeImplementBlockedMarker(implementBlockedMarkerPath), the same path used by the existing writer.",
+      "sidecar.ts merge-watch 'merged' terminal removes the marker only when the read marker's issueId equals state.issueId, mirroring updateShipStalledMarker; no removal occurs when issueId differs or the marker is absent.",
+      "A blocked terminal that does NOT recover (loop ends 'blocked') still writes and preserves the marker, and the escalated circuit-breaker read path (loop.ts opening-blocker gate) is unchanged.",
+      "advanceBlockedMarker, the marker schema (consecutiveCount/keyHash/escalated/haltedAt), sweepOrphanedImplementBlockedMarker, and the re-arm clear are all left unchanged.",
+      "New unit/wiring tests cover: complete-terminal clear (issueId match plus mismatch guard), merged-terminal clear (match, mismatch, and absent-marker cases), and that a plain 'blocked' terminal still preserves the marker. All existing marker tests still pass.",
+      "typecheck is clean and the full test suite is green."
+    ],
+    "gotchas": [
+      "loop.ts is deliberately clock-free and filesystem/path-free: do NOT import fs or construct paths there. Inject removeImplementBlockedMarkerFn exactly like the existing writeImplementBlockedMarkerFn (default no-op) and wire the real fn in host.ts.",
+      "An orphan sweep already exists (sweepOrphanedImplementBlockedMarker, sidecar.ts) covering backlog stage:shipped / status:abandoned reactively at plan-phase dispatch; this change is ADDITIVE eager clearing, not a replacement. Do not remove or refactor the sweep.",
+      "The clear must be issueId-matched (loop.ts via lastIssueNumber; sidecar.ts via state.issueId === marker.issueId) so a marker belonging to a DIFFERENT in-flight issue is never wrongly cleared.",
+      "Do NOT clear on a 'blocked' terminal and do NOT reset the escalated circuit-breaker: a genuine unresolved block must persist the marker until re-arm/resolution. Only the successful 'complete' terminal and the ship 'merged' terminal clear.",
+      "removeImplementBlockedMarker takes only the path and silently no-ops when the file is absent; the issueId guard is the caller's responsibility. Do the read + issueId compare BEFORE calling remove, exactly as updateShipStalledMarker does."
+    ],
+    "domainTerms": [
+      ".cam-implement-blocked marker: durable file .claude/.cam-implement-blocked.json written on a blocked implement terminal; surfaced as an 'implement blocked' opening boot blocker; escalated=true trips a circuit-breaker that pauses auto-dispatch until a human intervenes.",
+      "consume-on-merge: the ship-stalled precedent (updateShipStalledMarker) where a durable marker is removed at its success terminal after an identity match (prNumber for ship-stalled, issueId here).",
+      "finishTerminal: the single seam in loop.ts through which every terminal (complete / blocked / awaiting-operator) passes."
+    ]
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 4,
+    "riskReduction": 6,
+    "jobSize": 2
+  },
+  "type": "fix"
 }
