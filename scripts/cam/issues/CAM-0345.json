@@ -1,0 +1,10 @@
+{
+  "id": "CAM-345",
+  "title": "Dashboard TUI: 'Loop' header stacks once per tick (ghosting)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-18T14:34:38.354Z",
+  "updatedAt": "2026-07-18T14:34:38.354Z",
+  "description": "Split from CAM-335 (Defect 1 of 2; independent root from the Recent-feed mislabel). SummaryPanel renders a static Section heading=\"Loop\" (src/ui/Dashboard.tsx:450). On steady same-width poll ticks no frame-clear is emitted (makePollWidthClearer only clears on a width change, src/ui/Dashboard.tsx:142), so when the composed frame is taller than the tmux pane Ink cannot reconcile in place and re-emits the frame, stacking the 'Loop' header once per tick. Display-only, no loop effect. Fork to weigh at spec time: clear-every-tick vs restructure the frame so Ink reconciles in place (clearing every tick risks flicker/scrollback churn: the width-gated clear is deliberate). Grounded via Explore 2026-07-18. Existing test: test/dashboard.test.ts:997-1057 (makePollWidthClearer, asserts clear-only-on-width-change)."
+}
