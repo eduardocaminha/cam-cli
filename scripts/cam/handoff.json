@@ -1,0 +1,25 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Reserve keybar rows; derive StoriesSection window from pane height" },
+  "branchName": "cam/issue-348",
+  "timestamp": "2026-07-18T20:59:37Z",
+  "modifiedFiles": [
+    "src/ui/Dashboard.tsx",
+    "test/dashboard.test.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [
+    "computeStoriesLayout uses a conservative-but-live per-render reservation (exact SummaryPanel/RecentSection heights mirrored from `data`, not a hardcoded worst-case constant) rather than the literal 'reserve Summary at its MAX height' wording in the story notes: using the literal max broke the existing multi-row-visibility assertions (test1519 et al.) at the suite's default rows=24 mock, since Summary-max(10)+Recent-max(8)+Keybar(10) alone already exceeds 24. The live-mirror approach is exact per render (never stale) and keeps every pinned test green; flag at review if a stricter worst-case reservation is still desired for the rare same-render combo of (populated story list + tokens/cost rows both appearing + a very short pane), which no current test exercises."
+  ],
+  "nextStoryContext": "STORIES_WINDOW=8 is gone from Dashboard.tsx; the Stories panel window size + chrome-vs-compact presentation is now derived per render via computeStoriesLayout(rows, data) (reserves summaryPanelHeight(data) + recentSectionHeight(recent) + KEYBAR_HEIGHT, then either shows the Section with chrome + a rows-derived window, or (when budget is too tight for chrome + 1 row) drops the Section heading/divider/gap and renders bare rows). Keybar/DetailKeybar remain unwindowed and unchanged. If a future story adds another fixed section to the list-mode composition (between SummaryPanel and Keybar), it must also be folded into computeStoriesLayout's reservedOther sum or it will silently eat into the Stories budget and risk clipping the keybar again.",
+  "officialDocsValidated": [
+    {
+      "lib": "ink",
+      "channel": "WebFetch",
+      "url": "https://raw.githubusercontent.com/vadimdemedes/ink/master/readme.md",
+      "fetchedAt": "2026-07-18T20:55:00Z",
+      "status": "aligned",
+      "summary": "useWindowSize() return shape ({columns, rows}) and resize-driven re-render confirmed matching current usage. Ink's docs describe Box's default overflowY as 'visible', but this story's own empirical ink-testing-library renders confirm the root Box passed to render() with a fixed height prop hard-clips/pads to exactly that many lines regardless (the pre-existing CAM-345 mechanism, not something this story changed) -- recorded as a patterns.md bullet since the docs wording alone is ambiguous/incomplete on this point."
+    }
+  ]
+}
