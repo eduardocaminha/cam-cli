@@ -1,9 +1,9 @@
 // test/commands/journal-record-cycle-tokens.test.ts
 //
-// Unit tests for recordCycleTokens (US-001 of CAM-131).
+// Unit tests for recordCycleTokens (US-001 of CAM-131; extended by US-001 of CAM-333).
 //
-// All filesystem reads (orch transcript, event log) and the event logger are
-// injected so no real ~/.claude or disk I/O occurs.
+// All filesystem reads (orch transcript, event log, session id) and the event
+// logger are injected so no real ~/.claude or disk I/O occurs.
 //
 // Covered scenarios:
 //   1. Emits one 'cycle-tokens' event with correct detail shape.
@@ -14,6 +14,8 @@
 //   6. Per-cycle slice: tokens BEFORE the last 'cycle-tokens' marker are excluded.
 //   7. Absent event log -> workerTokens=0, event still emitted.
 //   8. Multiple worker 'tokens' events are all summed.
+//   9. orchTokensMode:'delta' + per-cycle delta computation (CAM-328).
+//   10. orchSessionId stamping + orchestrator-session-boundary reset (CAM-333).
 
 import { test, expect } from 'bun:test';
 import { recordCycleTokens, type RecordCycleTokensOptions } from '../../src/commands/journal.ts';
@@ -581,6 +583,155 @@ test('total === delta-orchTokens + workerTokens across a second cycle', () => {
 	expect(detail.orchTokens).toBe(600);
 	expect(detail.workerTokens).toBe(375);
 	expect(detail.total).toBe(975);
+});
+
+// ---------------------------------------------------------------------------
+// 10. orchSessionId stamping + session-boundary reset (US-001, CAM-333)
+// ---------------------------------------------------------------------------
+
+/** Build a 'cycle-tokens' marker JSONL line carrying an explicit orchSessionId. */
+function makeSessionCycleTokensLine(orchSessionId: string, orchTokens: number): string {
+	return JSON.stringify({
+		ts: '2026-01-01T01:00:00.000Z',
+		uuid: 'cycle-close',
+		kind: 'cycle-tokens',
+		detail: {
+			cycleId: 'cam/CAM-330-prev',
+			issueNumber: 'CAM-330',
+			orchTokens,
+			orchTokensMode: 'delta',
+			workerTokens: 0,
+			total: orchTokens,
+			recordedAt: '2026-01-01T01:00:00.000Z',
+			orchSessionId,
+		},
+	});
+}
+
+test('emitted event stamps orchSessionId when readOrchSessionId resolves it', () => {
+	const { logger, events } = makeInMemoryEventLogger();
+
+	recordCycleTokens(makeBaseOpts({ readOrchSessionId: () => 'session-xyz', logEvent: logger }));
+
+	const detail = (events[0] as WorkerEvent).detail as { orchSessionId?: string };
+	expect(detail.orchSessionId).toBe('session-xyz');
+});
+
+test('emitted event omits orchSessionId when readOrchSessionId resolves null', () => {
+	const { logger, events } = makeInMemoryEventLogger();
+
+	recordCycleTokens(makeBaseOpts({ readOrchSessionId: () => null, logEvent: logger }));
+
+	const detail = (events[0] as WorkerEvent).detail as { orchSessionId?: string };
+	expect(detail.orchSessionId).toBeUndefined();
+});
+
+test('record-time boundary: current session differs from trailing event session -> priorOrchCumulative treated as 0', () => {
+	const { logger, events } = makeInMemoryEventLogger();
+
+	// Trailing event belongs to an old session with a large accumulated baseline.
+	const priorMarker = makeSessionCycleTokensLine('session-old', 5000);
+	// New session's transcript cumulative is small (would floor to 0 without the fix).
+	const transcriptLine = makeTranscriptLine('msg-new-session', 200, 0, 0, 0);
+
+	recordCycleTokens(
+		makeBaseOpts({
+			readOrchTranscript: () => transcriptLine,
+			readEventLog: () => priorMarker,
+			readOrchSessionId: () => 'session-new',
+			logEvent: logger,
+		}),
+	);
+
+	const detail = (events[0] as WorkerEvent).detail as { orchTokens: number; orchSessionId?: string };
+	expect(detail.orchTokens).toBe(200);
+	expect(detail.orchSessionId).toBe('session-new');
+});
+
+test('record-time boundary does not engage when readOrchSessionId resolves null (backward compat)', () => {
+	const { logger, events } = makeInMemoryEventLogger();
+
+	const priorMarker = makeSessionCycleTokensLine('session-old', 5000);
+	const transcriptLine = makeTranscriptLine('msg-no-session', 200, 0, 0, 0);
+
+	recordCycleTokens(
+		makeBaseOpts({
+			readOrchTranscript: () => transcriptLine,
+			readEventLog: () => priorMarker,
+			readOrchSessionId: () => null,
+			logEvent: logger,
+		}),
+	);
+
+	// No current session id to compare against: priorOrchCumulative is reconstructed
+	// normally (5000), so the delta floors at 0 exactly like the pre-US-001 behavior.
+	const detail = (events[0] as WorkerEvent).detail as { orchTokens: number; orchSessionId?: string };
+	expect(detail.orchTokens).toBe(0);
+	expect(detail.orchSessionId).toBeUndefined();
+});
+
+test('replay-time boundary: consecutive same-session events telescope normally after a reset', () => {
+	// Seed a log: old-session baseline (5000), then a new-session event (200, delta mode).
+	// reconstructPriorOrchCumulative must reset at the session boundary and NOT add
+	// the old session's 5000 onto the new session's running baseline.
+	const log = [makeSessionCycleTokensLine('session-old', 5000), makeSessionCycleTokensLine('session-new', 200)].join(
+		'\n',
+	);
+
+	const { logger, events } = makeInMemoryEventLogger();
+	const transcriptLine = makeTranscriptLine('msg-third-cycle', 500, 0, 0, 0); // cumulative=500
+
+	recordCycleTokens(
+		makeBaseOpts({
+			readOrchTranscript: () => transcriptLine,
+			readEventLog: () => log,
+			readOrchSessionId: () => 'session-new',
+			logEvent: logger,
+		}),
+	);
+
+	// Reconstructed baseline resets at the boundary to 0, then folds in the
+	// new-session delta-mode event (200) -> prior = 200. delta = 500 - 200 = 300.
+	const detail = (events[0] as WorkerEvent).detail as { orchTokens: number };
+	expect(detail.orchTokens).toBe(300);
+});
+
+test('CAM-333 repro: multi-cycle under-count after a session respawn is fixed (3 post-reset cycles record positive deltas)', () => {
+	// Prior (old) session left a large accumulated baseline.
+	const log: string[] = [makeSessionCycleTokensLine('session-old', 5000)];
+	const readEventLog = () => log.join('\n');
+	const logEvent = (ev: WorkerEvent) => log.push(JSON.stringify(ev));
+
+	// New session's transcript cumulative starts small and grows across 3 cycles.
+	const cumulativeSequence = [200, 500, 900];
+	const deltas: number[] = [];
+
+	for (let i = 0; i < cumulativeSequence.length; i++) {
+		const cumulative = cumulativeSequence[i] as number;
+		const transcriptLine = makeTranscriptLine(`msg-new-${i}`, cumulative, 0, 0, 0);
+
+		let capturedDetail: { orchTokens: number } | null = null;
+		const captureLogger = (ev: WorkerEvent) => {
+			capturedDetail = ev.detail as { orchTokens: number };
+			logEvent(ev);
+		};
+
+		recordCycleTokens(
+			makeBaseOpts({
+				readOrchTranscript: () => transcriptLine,
+				readEventLog,
+				readOrchSessionId: () => 'session-new',
+				logEvent: captureLogger,
+			}),
+		);
+
+		expect(capturedDetail).not.toBeNull();
+		deltas.push((capturedDetail as unknown as { orchTokens: number }).orchTokens);
+	}
+
+	// Each post-reset cycle records its real positive delta, never floored to 0.
+	expect(deltas).toEqual([200, 300, 400]);
+	deltas.forEach((d) => expect(d).toBeGreaterThan(0));
 });
 
 // ---------------------------------------------------------------------------
