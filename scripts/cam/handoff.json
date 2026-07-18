@@ -1,16 +1,15 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Clear implement-blocked marker on the complete terminal (loop.ts + host.ts)" },
+  "lastCompletedStory": { "id": "US-002", "title": "Clear implement-blocked marker on the ship merge terminal (sidecar.ts)" },
   "branchName": "cam/issue-347",
-  "timestamp": "2026-07-18T15:42:47Z",
+  "timestamp": "2026-07-18T15:55:46Z",
   "modifiedFiles": [
-    "src/supervisor/loop.ts",
-    "src/supervisor/host.ts",
-    "test/supervisor/implement-blocked-marker-wiring.test.ts",
+    "src/commands/sidecar.ts",
+    "test/release/merge-watch.test.ts",
     "scripts/cam/patterns.md",
     "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "Added removeImplementBlockedMarkerFn (loop.ts + host.ts), gated on status === 'complete' && lastIssueNumber !== undefined, inside the existing finishTerminal seam right after the existing writeImplementBlockedMarkerFn 'blocked' block. loop.ts stays filesystem/path-free (no fs/path import added); host.ts wires it to removeImplementBlockedMarker(implementBlockedMarkerPath), the same path the writer uses. advanceBlockedMarker, the marker schema, sweepOrphanedImplementBlockedMarker, and clearImplementBlockedMarkerForCurrentIssue were NOT touched, per AC5. file-size-budget.json ceilings for src/supervisor/loop.ts (2391->2419) and src/supervisor/host.ts (1108->1119) were raised with a dated _ref note for this story.",
+  "nextStoryContext": "Added clearImplementBlockedMarkerOnMerge (src/commands/sidecar.ts, right after updatePostMergeStalledMarker) and wired it as a fourth statement (after updateShipStalledMarker/updatePostMergeStalledMarker) in makeProductionMergeWatchFn's terminal branch. Shape mirrors updateShipStalledMarker exactly: no-op unless outcome.kind === 'merged', then read the marker via readImplementBlockedMarker(markerPath) and remove it only when marker.issueId === state.issueId (MergeWatchState.issueId is string|undefined, no null-coercion needed since marker.issueId is always a plain string). updateShipStalledMarker, updatePostMergeStalledMarker, sweepOrphanedImplementBlockedMarker, and clearImplementBlockedMarkerForCurrentIssue were NOT touched (additive only), per AC4. New tests live in test/release/merge-watch.test.ts (new describe block 'clearImplementBlockedMarkerOnMerge...') covering match-clears, mismatch-leaves-intact, absent-marker-no-throw, and non-merged-terminal-is-a-no-op-even-on-match. file-size-budget.json ceiling for src/commands/sidecar.ts raised 3411->3437 with a dated _ref note for this story; test/release/merge-watch.test.ts is untracked in the budget (no ceiling entry) so no raise was needed there. Independent of US-001 (loop.ts/host.ts complete-terminal seam); both stories are now done, remaining PRD stories (if any) should be checked via prd.json.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
