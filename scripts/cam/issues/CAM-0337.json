@@ -1,13 +1,36 @@
 {
   "id": "CAM-337",
   "title": "Header comment still reads 'Entry / identity panel for cam-cli.'; cosmetic stal…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-17T15:55:35.785Z",
-  "updatedAt": "2026-07-17T15:55:35.785Z",
+  "updatedAt": "2026-07-18T21:44:32.115Z",
   "description": "Header comment still reads 'Entry / identity panel for cam-cli.'; cosmetic staleness now that the product is CAM Runtime. Non-blocking.\n\nSource: cam/issue-329\nReview round: 1\n\nsuggestion-fingerprint: 5715672af9db",
   "derivedFrom": [
     "CAM-329"
-  ]
+  ],
+  "spec": {
+    "scope": "Update the single stale product-name token in the file-header comment of src/ui/Splash.tsx line 3: replace 'Entry / identity panel for cam-cli.' with 'Entry / identity panel for CAM Runtime.' The product display-name is now CAM Runtime; the phrase 'Entry / identity panel' is already accurate and stays. This is a comment-only change with zero runtime/render effect.",
+    "acceptanceCriteria": [
+      "src/ui/Splash.tsx line 3 header comment reads 'Entry / identity panel for CAM Runtime.' and the stale 'cam-cli' product reference is gone.",
+      "No other line in src/ui/Splash.tsx is changed; in particular the url default 'eduardocaminha/cam-cli' (~line 100) is left byte-for-byte unchanged because it is the real GitHub repo slug, not a product display-name.",
+      "bun run typecheck passes with zero errors and the full bun test suite passes (behavior is unchanged; no test asserts on the comment text).",
+      "bun run check:all (lint spine) passes."
+    ],
+    "gotchas": [
+      "Line 100 `url = 'eduardocaminha/cam-cli'` is a real repo slug rendered at runtime as `v{version} · {url}`; MUST NOT be touched. A blind global s/cam-cli/CAM Runtime/ over the file would corrupt the runtime-rendered repo URL. Scope the edit strictly to the line-3 header comment.",
+      "This is a pure source-comment change with no JSX/rendered-output effect: the Splash panel already renders the 'CAM Runtime' identity (block wordmark + 'Runtime' line). Do not alter any rendered output or JSX."
+    ],
+    "domainTerms": [
+      "CAM Runtime: the human-facing product display-name. The `cam` command name and internal identifiers (GitHub repo slug eduardocaminha/cam-cli, package name) stay unchanged; only human-facing prose adopts CAM Runtime."
+    ]
+  },
+  "wsjf": {
+    "value": 1,
+    "timeCriticality": 1,
+    "riskReduction": 1,
+    "jobSize": 1
+  },
+  "type": "chore"
 }
