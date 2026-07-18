@@ -1,18 +1,19 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Add readPhaseBackend per-phase accessor in models.ts"
+    "id": "US-002",
+    "title": "Repoint worker call sites to per-phase backend"
   },
   "branchName": "cam/issue-349",
-  "timestamp": "2026-07-18T23:21:54Z",
+  "timestamp": "2026-07-18T23:45:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/config/models.ts",
-    "test/config/models.test.ts",
+    "src/supervisor/loop.ts",
+    "src/supervisor/review.ts",
+    "src/supervisor/plan-runner.ts",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 (Repoint worker call sites to per-phase backend) should repoint the worker spawn call sites from readBackend() to readPhaseBackend(phase) one actor at a time. readPhaseBackend(phase, configPath?) is now exported from src/config/models.ts with the fallback chain: per-phase [backend].<phase> key -> existing global form (top-level backend scalar OR [backend].name) -> DEFAULTS.backend. readBackend() itself was left untouched (still used by run.ts's orchestrator logging call site) -- it is not being replaced, readPhaseBackend is additive. src/supervisor/backend-adapter.ts (BackendAdapter interface, ClaudeAdapter.buildSpawnArgv) was NOT modified by US-001 per its own AC4; US-002 is presumably where that seam gets touched to actually consume the per-phase value.",
+  "nextStoryContext": "US-002 repointed the implementer (loop.ts:1014), reviewer (review.ts:338), planner (plan-runner.ts:595) and auditor (plan-runner.ts:632) call sites from readBackend() to readPhaseBackend('<phase>'), each a one-line swap reusing the Phase literal already passed to the adjacent readPhaseModel call. run.ts's orchestrator call site (run.ts:425) was deliberately left on readBackend() per this story's own AC4 -- the orchestrator's backend is not phase-scoped this slice. src/logging/spawn-resolution.ts (CODEX_GUARD_NOTICE) needed no change: it already took whatever backend string its caller resolved, so it now fires per-phase automatically. src/supervisor/backend-adapter.ts (BackendAdapter/ClaudeAdapter.buildSpawnArgv) is still untouched by both US-001 and US-002 -- if a future story in this PRD wires actual per-backend spawn-argv behavior (e.g. codex support), that seam is where it lands.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ],
