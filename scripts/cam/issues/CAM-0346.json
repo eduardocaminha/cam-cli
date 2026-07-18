@@ -1,11 +1,11 @@
 {
   "id": "CAM-346",
   "title": "Dashboard TUI Recent feed labels DONE stories 'incomplete' (stale outcome vs live passes)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-18T14:34:40.583Z",
-  "updatedAt": "2026-07-18T14:35:08.706Z",
+  "updatedAt": "2026-07-18T15:14:50.056Z",
   "description": "Split from CAM-335 (Defect 2 of 2; independent root from the 'Loop' header ghosting). The Recent section prints detail.outcome verbatim (src/commands/dashboard.ts parseRecentProgress ~656-681), written as outcome.kind='incomplete' at worker-finish BEFORE the supervisor flipped passes:true (src/supervisor/events.ts:691 <- result.ts:588). That historical 'result' event is never superseded, so Recent shows a frozen 'incomplete' while the Stories panel reads LIVE prd.json passes and shows the same story checked/DONE. Two panels, two sources, they disagree. Display-only. Fix in the PRESENTATION layer (dashboard reader reconciles the frozen outcome against terminal state), NOT at source (do not change supervisor event-writing / event-log semantics: the event is factually correct for its instant, and a source change would touch sidecar-executed code + need a coherence rebuild). Grounded via Explore 2026-07-18.",
   "spec": {
     "scope": "Fix the cam Dashboard TUI 'Recent' feed so a story finalized DONE (prd.json passes:true) is no longer shown with the frozen 'incomplete' outcome recorded at worker-finish before finalize. The fix lives entirely in the dashboard PRESENTATION/read layer (src/commands/dashboard.ts Recent-feed builder and/or src/ui/Dashboard.tsx RecentSection). Do NOT change supervisor event-writing, event-log semantics, or any sidecar-executed code.",
