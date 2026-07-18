@@ -1,0 +1,14 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Bound verb/config co-occurrence cue to a single field"
+  },
+  "branchName": "cam/issue-343",
+  "timestamp": "2026-07-18T00:00:00Z",
+  "modifiedFiles": ["src/release/pr-body.ts", "test/release/pr-body.test.ts"],
+  "openQuestions": [],
+  "nextStoryContext": "SETUP_CHECKLIST_CUES config cue in src/release/pr-body.ts now uses a newline-bounded gap ([^\\n]*?) for both verb/config order-alternatives, so the co-occurrence check is scoped to one haystack field (description, notes, or a single story title). The other two alternatives (bare project.toml, config(uration) file phrase) are untouched. renderSetupChecklist still joins fields with '\\n' into one haystack; no per-field iteration or normalization was added.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
