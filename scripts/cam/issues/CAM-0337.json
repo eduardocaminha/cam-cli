@@ -1,11 +1,11 @@
 {
   "id": "CAM-337",
   "title": "Header comment still reads 'Entry / identity panel for cam-cli.'; cosmetic stal…",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-17T15:55:35.785Z",
-  "updatedAt": "2026-07-18T21:44:32.115Z",
+  "updatedAt": "2026-07-18T22:00:44.823Z",
   "description": "Header comment still reads 'Entry / identity panel for cam-cli.'; cosmetic staleness now that the product is CAM Runtime. Non-blocking.\n\nSource: cam/issue-329\nReview round: 1\n\nsuggestion-fingerprint: 5715672af9db",
   "derivedFrom": [
     "CAM-329"
