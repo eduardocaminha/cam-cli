@@ -1,20 +1,16 @@
 {
-  "lastCompletedStory": { "id": "US-003", "title": "Route the four worker builders through ClaudeAdapter and de-dup shellEscape, zero behavior change" },
+  "lastCompletedStory": { "id": "US-R1-001", "title": "Review round 1 fix 001: address reviewer finding" },
   "branchName": "cam/issue-339",
-  "timestamp": "2026-07-18T00:30:00Z",
+  "timestamp": "2026-07-18T00:45:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/backend-adapter.ts",
-    "src/supervisor/worker-argv.ts",
-    "src/supervisor/plan-argv.ts",
-    "src/supervisor/review.ts",
-    "scripts/cam/patterns.md"
+    "docs/adr/0047-backendadapter-seam-methods-vs-inputs-vs-shared-contract-and-the-six-mismatch-resolution.md"
   ],
   "openQuestions": [
     "The follow-up codex-adapter implementation issue still needs to pick between the two ADR-0047-recorded directions for the claude-transcript-coupled token-ceiling backstop (loop.ts:1189): a codex transcript equivalent for readWorkerTokens, or documented graceful degradation.",
     "readBackend's upgrade from a single top-level key to a per-phase accessor (mirroring readPhaseModel) is decided in ADR-0047 but not implemented; the implementation issue must also decide the backward-compat shape for existing single-key project.toml files."
   ],
-  "nextStoryContext": "US-003 rerouted all four worker builders through ClaudeAdapter, inverting the US-002 direction: buildImplementerWorkerArgv (worker-argv.ts), buildPlannerWorkerArgv/buildAuditorWorkerArgv (plan-argv.ts), and buildReviewerWorkerArgv (review.ts) are now one-line thin wrappers around `new ClaudeAdapter().buildSpawnArgv(actor, opts)`; ClaudeAdapter (src/supervisor/backend-adapter.ts) now owns the real per-actor argv assembly (env-strip prefix, CAM_WORKER=1 marker, agent/model defaults, the ONE surviving shellEscape). Call sites (loop.ts:1001, plan-runner.ts:597/634, review.ts's own makeReviewDispatch dispatch call) were left untouched per the story's notes (builders delegate internally). To avoid an import cycle (backend-adapter.ts would need workerEnvPrefix/DEFAULT_*_AGENT/REVIEWER_TASK_PROMPT from the three builder files, which now need ClaudeAdapter from backend-adapter.ts), the shared primitives (WORKER_ENV_UNSET, HOST_ONLY_ENV_UNSET, workerEnvPrefix, WORKER_ACTOR_ENV, DEFAULT_IMPLEMENTER_AGENT/DEFAULT_PLANNER_AGENT/DEFAULT_AUDITOR_AGENT/DEFAULT_REVIEWER_AGENT, REVIEWER_TASK_PROMPT) physically moved INTO backend-adapter.ts, with worker-argv.ts/plan-argv.ts/review.ts each re-exporting the ones their own external test imports still need (`export { X } from './backend-adapter.ts'`, plus a real `import` too wherever the file's own code -- not just re-exporting callers -- still references the name, e.g. review.ts's makeReviewDispatch). backend-adapter.ts is now a pure sink (imports nothing from the three builder files); they are pure sources from it. All 4 target test files (worker-argv.test.ts, plan-argv.test.ts, review.test.ts, backend-adapter.test.ts) pass UNMODIFIED -- review.test.ts's source-text assertion (`reviewSrc.toContain('workerEnvPrefix')`) happened to survive because a pre-existing JSDoc line still contains the bare word even though review.ts no longer calls the function. Full details + the cycle-avoidance mechanic in patterns.md (search 'Inverting a just-built delegate-TO-the-builders seam'). Likely next story per ADR-0047's scope: either the readBackend per-phase-accessor upgrade, or a codex-adapter follow-up (see openQuestions above).",
+  "nextStoryContext": "US-R1-001 was a mechanical review-round-1 fix: ADR-0047 had 8 em-dash (U+2014) characters (lines 14, 34, 38, 40, 47, 51, 55; line 38 carried two) violating the no-em-dash-in-persisted-.md project convention (patterns.md line 24). Replaced each with a colon, comma, semicolon, or plain period per surrounding sentence structure; no content/meaning changed, purely punctuation. Verified via `grep -n $'\\xe2\\x80\\x94' <file>` returning zero matches post-fix. No code touched, no adapter/backend logic changed. Full quality spine (`bun run check:all`) green: 5017 tests pass, typecheck clean, lint/coverage/dead-code/dup/file-size/debt-markers/ci-parity/agents-md/test-sleeps all ok.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
