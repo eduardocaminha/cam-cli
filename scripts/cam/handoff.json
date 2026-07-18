@@ -1,20 +1,20 @@
 {
-  "lastCompletedStory": { "id": "US-002", "title": "Introduce BackendAdapter interface + ClaudeAdapter with per-actor golden characterization tests" },
+  "lastCompletedStory": { "id": "US-003", "title": "Route the four worker builders through ClaudeAdapter and de-dup shellEscape, zero behavior change" },
   "branchName": "cam/issue-339",
-  "timestamp": "2026-07-18T00:00:00Z",
-  "createdFiles": [
-    "src/supervisor/backend-adapter.ts",
-    "test/supervisor/backend-adapter.test.ts"
-  ],
+  "timestamp": "2026-07-18T00:30:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
+    "src/supervisor/backend-adapter.ts",
+    "src/supervisor/worker-argv.ts",
+    "src/supervisor/plan-argv.ts",
+    "src/supervisor/review.ts",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [
     "The follow-up codex-adapter implementation issue still needs to pick between the two ADR-0047-recorded directions for the claude-transcript-coupled token-ceiling backstop (loop.ts:1189): a codex transcript equivalent for readWorkerTokens, or documented graceful degradation.",
-    "readBackend's upgrade from a single top-level key to a per-phase accessor (mirroring readPhaseModel) is decided in ADR-0047 but not implemented; the implementation issue must also decide the backward-compat shape for existing single-key project.toml files.",
-    "The four existing builders (buildImplementerWorkerArgv, buildPlannerWorkerArgv, buildAuditorWorkerArgv, buildReviewerWorkerArgv) and their real call sites (loop.ts, plan-runner.ts, review.ts's makeReviewDispatch) are still unrerouted per this story's AC3; a follow-up story must decide whether/how to reroute call sites through ClaudeAdapter.buildSpawnArgv now that the seam exists, or whether the seam stays adapter-only until a codex adapter actually needs dispatch to branch on backend."
+    "readBackend's upgrade from a single top-level key to a per-phase accessor (mirroring readPhaseModel) is decided in ADR-0047 but not implemented; the implementation issue must also decide the backward-compat shape for existing single-key project.toml files."
   ],
-  "nextStoryContext": "US-002 delivered src/supervisor/backend-adapter.ts: BackendAdapter interface + ClaudeAdapter, with buildSpawnArgv(actor, opts) as the ONE concrete method (model/agentName/permissionMode/isolation/taskPrompt are INPUTS on SpawnArgvOptions, not separate methods), per ADR-0047. ClaudeAdapter internally DELEGATES to the four existing pure builders (buildImplementerWorkerArgv/buildPlannerWorkerArgv/buildAuditorWorkerArgv/buildReviewerWorkerArgv) rather than reimplementing them, so byte-for-byte parity with today's behavior is structural, not just tested -- proven by 8 golden tests in test/supervisor/backend-adapter.test.ts (2 per actor: defaults + all-optionals-set) plus 2 adapter-contract guard tests (throws when implementer/planner/auditor are missing required taskPrompt/permissionMode). No call site was rerouted (loop.ts, plan-runner.ts, review.ts's makeReviewDispatch still call the four builders directly) and no completion-detection/report-parsing logic was added to the adapter (verified by the AC4 file-assert oracle). Gotcha for the NEXT story: a grep-based file-assert oracle scans doc-comment prose too, not just code -- see the patterns.md bullet on this. The likely next story per ADR-0047's scope is either (a) rerouting the four call sites through ClaudeAdapter.buildSpawnArgv with zero behavior change, or (b) starting the readBackend per-phase-accessor upgrade; read ADR-0047 in full before choosing either.",
+  "nextStoryContext": "US-003 rerouted all four worker builders through ClaudeAdapter, inverting the US-002 direction: buildImplementerWorkerArgv (worker-argv.ts), buildPlannerWorkerArgv/buildAuditorWorkerArgv (plan-argv.ts), and buildReviewerWorkerArgv (review.ts) are now one-line thin wrappers around `new ClaudeAdapter().buildSpawnArgv(actor, opts)`; ClaudeAdapter (src/supervisor/backend-adapter.ts) now owns the real per-actor argv assembly (env-strip prefix, CAM_WORKER=1 marker, agent/model defaults, the ONE surviving shellEscape). Call sites (loop.ts:1001, plan-runner.ts:597/634, review.ts's own makeReviewDispatch dispatch call) were left untouched per the story's notes (builders delegate internally). To avoid an import cycle (backend-adapter.ts would need workerEnvPrefix/DEFAULT_*_AGENT/REVIEWER_TASK_PROMPT from the three builder files, which now need ClaudeAdapter from backend-adapter.ts), the shared primitives (WORKER_ENV_UNSET, HOST_ONLY_ENV_UNSET, workerEnvPrefix, WORKER_ACTOR_ENV, DEFAULT_IMPLEMENTER_AGENT/DEFAULT_PLANNER_AGENT/DEFAULT_AUDITOR_AGENT/DEFAULT_REVIEWER_AGENT, REVIEWER_TASK_PROMPT) physically moved INTO backend-adapter.ts, with worker-argv.ts/plan-argv.ts/review.ts each re-exporting the ones their own external test imports still need (`export { X } from './backend-adapter.ts'`, plus a real `import` too wherever the file's own code -- not just re-exporting callers -- still references the name, e.g. review.ts's makeReviewDispatch). backend-adapter.ts is now a pure sink (imports nothing from the three builder files); they are pure sources from it. All 4 target test files (worker-argv.test.ts, plan-argv.test.ts, review.test.ts, backend-adapter.test.ts) pass UNMODIFIED -- review.test.ts's source-text assertion (`reviewSrc.toContain('workerEnvPrefix')`) happened to survive because a pre-existing JSDoc line still contains the bare word even though review.ts no longer calls the function. Full details + the cycle-avoidance mechanic in patterns.md (search 'Inverting a just-built delegate-TO-the-builders seam'). Likely next story per ADR-0047's scope: either the readBackend per-phase-accessor upgrade, or a codex-adapter follow-up (see openQuestions above).",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
