@@ -1,10 +1,39 @@
 {
   "id": "CAM-345",
   "title": "Dashboard TUI: 'Loop' header stacks once per tick (ghosting)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-18T14:34:38.354Z",
-  "updatedAt": "2026-07-18T14:34:38.354Z",
-  "description": "Split from CAM-335 (Defect 1 of 2; independent root from the Recent-feed mislabel). SummaryPanel renders a static Section heading=\"Loop\" (src/ui/Dashboard.tsx:450). On steady same-width poll ticks no frame-clear is emitted (makePollWidthClearer only clears on a width change, src/ui/Dashboard.tsx:142), so when the composed frame is taller than the tmux pane Ink cannot reconcile in place and re-emits the frame, stacking the 'Loop' header once per tick. Display-only, no loop effect. Fork to weigh at spec time: clear-every-tick vs restructure the frame so Ink reconciles in place (clearing every tick risks flicker/scrollback churn: the width-gated clear is deliberate). Grounded via Explore 2026-07-18. Existing test: test/dashboard.test.ts:997-1057 (makePollWidthClearer, asserts clear-only-on-width-change)."
+  "updatedAt": "2026-07-18T17:18:00.936Z",
+  "description": "Split from CAM-335 (Defect 1 of 2; independent root from the Recent-feed mislabel). SummaryPanel renders a static Section heading=\"Loop\" (src/ui/Dashboard.tsx:450). On steady same-width poll ticks no frame-clear is emitted (makePollWidthClearer only clears on a width change, src/ui/Dashboard.tsx:142), so when the composed frame is taller than the tmux pane Ink cannot reconcile in place and re-emits the frame, stacking the 'Loop' header once per tick. Display-only, no loop effect. Fork to weigh at spec time: clear-every-tick vs restructure the frame so Ink reconciles in place (clearing every tick risks flicker/scrollback churn: the width-gated clear is deliberate). Grounded via Explore 2026-07-18. Existing test: test/dashboard.test.ts:997-1057 (makePollWidthClearer, asserts clear-only-on-width-change).",
+  "spec": {
+    "scope": "Fix the Dashboard TUI 'Loop' header ghost-stacking (CAM-345, split from CAM-335) by bounding the outer composed frame height to the terminal pane rows so Ink reconciles in place instead of re-emitting the frame when it is taller than the pane. Arm (b) of the fork, chosen on merit over arm (a) clear-every-tick. Presentation-only, confined to src/ui (Dashboard.tsx, possibly Section.tsx). No sidecar/loop-executed code.",
+    "acceptanceCriteria": [
+      "Read rows from useWindowSize (today only columns is destructured at src/ui/Dashboard.tsx:183) and wrap the top-level Box (src/ui/Dashboard.tsx:276) in a fixed height={rows} so Ink's composed frame line count is stable and never exceeds the pane.",
+      "The width-gated makePollWidthClearer clear-on-width-change behavior is left UNCHANGED; the US-001 tests at test/dashboard.test.ts:1056-1111 continue to pass without modification.",
+      "On steady same-width poll ticks with a frame taller than the pane, the 'Loop' header no longer stacks/ghosts because Ink reconciles in place.",
+      "The change is confined to src/ui (Dashboard.tsx, possibly Section.tsx); no sidecar, supervisor, or loop-executed code is touched.",
+      "typecheck passes and the full test suite is green; any ink-testing-library toContain content assertions affected by the height bound are re-verified against the new geometry, never deleted or weakened to pass."
+    ],
+    "gotchas": [
+      "Do NOT implement arm (a) clear-every-tick. Dropping the width guard so CURSOR.clear fires every tick re-opens two regressions the width-gate deliberately fixed (CAM-306 commit ac673e2d, refined CAM-321 083058f1): full-viewport flicker every poll interval and Warp's block-per-clear scrollback churn, and it breaks 3 of 4 US-001 tests. The width-gated clear is deliberate; leave makePollWidthClearer intact.",
+      "Root cause is that the composed frame is taller than the tmux pane on a same-width tick, so Ink's cursor-home overwrite corrupts and re-emits the top rows. The fix must give Ink stable line geometry (bound height), not add a manual per-tick clear.",
+      "Comment does not prove behavior (universal lesson): render/exercise the dashboard and confirm the ghost is actually gone, do not trust the header comment or a passing snapshot alone.",
+      "StoriesSection is already windowed (computeWindow/STORIES_WINDOW, Dashboard.tsx:601/699-708) and RecentSection is bounded (RECENT_ENTRIES_COUNT=5); the variable-height culprit is SummaryPanel's conditional tokens/cost rows (Dashboard.tsx:477-493).",
+      "Coherence: this is binary-executed TUI output. The fix is inert in a running dashboard until the cam binary is rebuilt+reinstalled; the orchestrator will rebuild+relaunch the sidecar after ship."
+    ],
+    "domainTerms": [
+      "Ink reconcile-in-place: Ink diffs the previous frame and overwrites via cursor-home; when the composed frame exceeds the pane height the terminal scrolls and the overwrite corrupts, ghosting the top rows.",
+      "makePollWidthClearer: helper (src/ui/Dashboard.tsx:142) that emits a full-frame CURSOR.clear ahead of a poll-driven repaint only when terminal width changed; deliberately a no-op on steady same-width ticks.",
+      "useWindowSize: hook returning terminal {columns, rows}; Dashboard currently destructures only columns (src/ui/Dashboard.tsx:183)."
+    ]
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 2,
+    "riskReduction": 2,
+    "jobSize": 3
+  },
+  "type": "fix"
 }
