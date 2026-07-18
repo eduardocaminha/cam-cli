@@ -1,13 +1,45 @@
 {
   "id": "CAM-348",
   "title": "The height={rows} bound clips the bottom of the composed frame in a pane shorte…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-18T18:26:09.336Z",
-  "updatedAt": "2026-07-18T18:26:09.336Z",
+  "updatedAt": "2026-07-18T18:32:46.325Z",
   "description": "The height={rows} bound clips the bottom of the composed frame in a pane shorter than the natural content, and the Keybar (the 'd focus orchestrator' / 'q close pane' hint rows) is what falls below the fold. This is the accepted trade-off per the PRD (far better than the prior 'Loop' header ghosting, and the keys still work), but a follow-up could window/reserve space so the fixed-height keybar is never the clipped element (mirroring how StoriesSection is windowed via computeWindow and RecentSection via RECENT_ENTRIES_COUNT), preserving keybinding discoverability in short panes.\n\nSource: cam/issue-345\nReview round: 1\n\nsuggestion-fingerprint: 25a156705a6d",
   "derivedFrom": [
     "CAM-345"
-  ]
+  ],
+  "spec": {
+    "scope": "In src/ui/Dashboard.tsx, make the fixed-height Keybar (and DetailKeybar in detail mode) never the element clipped by the CAM-345 `height={rows}` outer-Box bound (Dashboard.tsx:276) in panes shorter than the natural composed content. Reserve rows for the fixed-height sections (SummaryPanel/Loop, RecentSection, Keybar/DetailKeybar, and inter-section gaps) and derive StoriesSection's visible window size from the remaining rows instead of the hardcoded STORIES_WINDOW=8, threading `rows` (from useWindowSize at Dashboard.tsx:183) into the list-mode composition and into computeWindow's size argument (currently passed at Dashboard.tsx:601). StoriesSection already implements windowing (computeWindow, Dashboard.tsx:699-708) and already renders a '…N more' overflow affordance, so it is the correct section to absorb clipping. Keep the composed frame height <= rows. Do NOT window the Keybar's own content and do NOT reorder sections.",
+    "acceptanceCriteria": [
+      "In a pane shorter than the natural composed content (e.g. a short tmux pane), the Keybar's 'd  focus orchestrator' and 'q  close pane' hint rows render and are no longer clipped below the fold.",
+      "The composed frame height never exceeds `rows` in any mode (the CAM-345 bound is preserved): rendered frame line count <= rows.",
+      "StoriesSection's visible window shrinks to fit the rows remaining after reserving the fixed-section heights, and its existing '…N more' overflow hint reflects the reduced window.",
+      "The two now-obsolete negative assertions in test/dashboard.test.ts (~:1163 asserting the frame does NOT match /focus orchestrator/, ~:1947 asserting not toContain('close pane')) are inverted to positively assert the keybar hint rows are present; the surviving <=rows line-bound assertions and the positive key/label/'Commands' heading assertions still pass.",
+      "Detail mode (StoryDetailView + DetailKeybar) keeps its fixed keybar visible under the same rows bound.",
+      "typecheck passes and the full test suite passes."
+    ],
+    "gotchas": [
+      "All list-mode children are wrapped in flexShrink={0} (Dashboard.tsx:277/:279/:291), so setting the outer height alone will NOT reclaim space from StoriesSection via flexbox shrink; the fix MUST reduce Stories' content (the window row count) rather than rely on flexbox shrink.",
+      "STORIES_WINDOW is a hardcoded 8 at Dashboard.tsx:43 and computeWindow's size arg is passed at Dashboard.tsx:601; the fix derives the window from `rows` minus the reserved fixed-section heights, it does not merely tweak the constant.",
+      "rows currently drives only height={rows} at Dashboard.tsx:276; no section reads rows today. Adding a rows-derived window is the new read of `rows`.",
+      "RecentSection is already capped to RECENT_ENTRIES_COUNT=5 upstream in parseRecentProgress (src/commands/dashboard.ts:700), so its height is bounded; do not re-window it.",
+      "Do NOT window the Keybar itself and do NOT reorder sections (the footer hint must stay bottom-most); windowing/hiding the Keybar keys defeats the discoverability the issue is fixing.",
+      "SummaryPanel/Loop has optional tokens/cost rows so its height is not perfectly static; reserve conservatively (use its maximum height) so the Keybar is never clipped when those optional rows are present.",
+      "Do NOT re-introduce the CAM-345 'Loop' header ghost: the frame must stay bounded to rows (never taller than the pane) so Ink reconciles in place; provenance CAM-306/CAM-321 width-gate and CAM-345 height-bound."
+    ],
+    "domainTerms": [
+      "Keybar: the fixed-height 'Commands' Section at the bottom of the Dashboard (Dashboard.tsx:307-331) listing slash-command keys plus the 'd  focus orchestrator' / 'q  close pane' hint rows; DetailKeybar is its detail-mode counterpart (Dashboard.tsx:334-347).",
+      "computeWindow: StoriesSection's existing windowing helper (Dashboard.tsx:699-708) that slices the ordered story list to a bounded visible window and drives the '…N more' overflow hint; window size constant STORIES_WINDOW=8 at Dashboard.tsx:43.",
+      "height={rows} bound: the CAM-345 outer-Box fix (Dashboard.tsx:276) that clips the composed frame to the pane height (rows from useWindowSize) so Ink reconciles in place instead of ghost-stacking the 'Loop' header."
+    ]
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 2,
+    "riskReduction": 2,
+    "jobSize": 3
+  },
+  "type": "fix"
 }
