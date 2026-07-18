@@ -62,7 +62,7 @@
         "Lint/static spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "Edit worker-argv.ts, plan-argv.ts, review.ts (builders) to delegate to ClaudeAdapter; the call sites are loop.ts:1001, plan-runner.ts:597 and :634, review.ts:370 (leave call-site signatures intact if builders delegate internally). GOTCHA (hard constraint): characterize FIRST, then refactor, assert identical output; do not normalize spacing/flag order. The env-unset prefix and CAM_WORKER=1 marker are claude-inputs, not folded into a shared method incorrectly (planner/auditor/reviewer must NEVER get CAM_WORKER=1: worker-argv.ts:132-136). Keep ported src/retry/* MIT headers intact and do not touch retry/launcher.ts (findClaudeBinary dedup is out of scope). emitSpawnResolution (spawn-resolution.ts) behavior stays as-is. Grep scripts/cam/patterns.md for 'argv' / 'claude -p' / 'shellEscape' before editing."
     }
