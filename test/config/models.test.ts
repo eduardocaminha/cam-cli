@@ -15,6 +15,7 @@ import {
 	readBackend,
 	readMergeMode,
 	readOrchContextWindow,
+	readPhaseBackend,
 	readPhaseEffort,
 	readPhaseModel,
 	readResendConfig,
@@ -291,6 +292,110 @@ orchestrator = "seam-model"
 	test('readBackend uses configPath arg instead of cwd default', () => {
 		const path = writeTmpToml(`backend = "seam-backend"`);
 		expect(readBackend(path)).toBe('seam-backend');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// readPhaseBackend (US-001, CAM-349): per-phase backend accessor, mirrors
+// readPhaseModel with a 3-link fallback chain (per-phase -> global -> DEFAULTS).
+// ---------------------------------------------------------------------------
+
+describe('readPhaseBackend - per-phase key wins', () => {
+	test('resolves the per-phase key under [backend] when present', () => {
+		const path = writeTmpToml(`
+[backend]
+implementer = "codex"
+`);
+		expect(readPhaseBackend('implementer', path)).toBe('codex');
+	});
+
+	test('different phases can resolve to different per-phase backends', () => {
+		const path = writeTmpToml(`
+[backend]
+implementer = "codex"
+reviewer = "claude"
+`);
+		expect(readPhaseBackend('implementer', path)).toBe('codex');
+		expect(readPhaseBackend('reviewer', path)).toBe('claude');
+	});
+});
+
+describe('readPhaseBackend - falls back to the existing global form', () => {
+	test('falls back to the top-level scalar form when no per-phase key is set', () => {
+		const path = writeTmpToml(`backend = "anthropic"`);
+		expect(readPhaseBackend('implementer', path)).toBe('anthropic');
+	});
+
+	test('falls back to [backend].name when no per-phase key is set', () => {
+		const path = writeTmpToml(`
+[backend]
+name = "anthropic"
+`);
+		expect(readPhaseBackend('implementer', path)).toBe('anthropic');
+	});
+
+	test('per-phase key wins over [backend].name for that phase, [backend].name still serves other phases', () => {
+		const path = writeTmpToml(`
+[backend]
+name = "claude"
+implementer = "codex"
+`);
+		expect(readPhaseBackend('implementer', path)).toBe('codex');
+		expect(readPhaseBackend('reviewer', path)).toBe('claude');
+	});
+});
+
+describe('readPhaseBackend - fallback to DEFAULTS.backend', () => {
+	test('returns default when file does not exist', () => {
+		const nonExistentPath = join(tmpDir, 'nonexistent.toml');
+		expect(readPhaseBackend('implementer', nonExistentPath)).toBe('claude');
+	});
+
+	test('returns default when [backend] section is absent', () => {
+		const path = writeTmpToml(`issue_system = "local"`);
+		expect(readPhaseBackend('implementer', path)).toBe('claude');
+	});
+
+	test('returns default when TOML is malformed', () => {
+		const path = writeTmpToml(`backend = `);
+		expect(readPhaseBackend('implementer', path)).toBe('claude');
+	});
+
+	test('returns default when the per-phase and name values are non-string', () => {
+		const path = writeTmpToml(`
+[backend]
+implementer = 99
+name = false
+`);
+		expect(readPhaseBackend('implementer', path)).toBe('claude');
+	});
+
+	test('returns default when the scalar backend value is a number', () => {
+		const path = writeTmpToml(`backend = 99`);
+		expect(readPhaseBackend('implementer', path)).toBe('claude');
+	});
+});
+
+describe('readPhaseBackend - back-compat with an existing [backend] name-only project.toml', () => {
+	test('a project.toml carrying only [backend] name = "claude" resolves to "claude" for every phase', () => {
+		const path = writeTmpToml(`
+[backend]
+name = "claude"
+`);
+		const phases: readonly Phase[] = ['orchestrator', 'planner', 'auditor', 'implementer', 'reviewer', 'ship'];
+		for (const phase of phases) {
+			expect(readPhaseBackend(phase, path)).toBe('claude');
+		}
+	});
+});
+
+describe('readPhaseBackend - configPath seam', () => {
+	test('uses configPath arg instead of cwd default', () => {
+		const path = writeTmpToml(`
+[backend]
+implementer = "seam-backend"
+`);
+		expect(readPhaseBackend('implementer', path)).toBe('seam-backend');
 	});
 });
 

@@ -52,7 +52,9 @@ function makeChoices(mergeMode?: 'immediate' | 'ci-gated'): ConfigChoices {
 		models: Object.fromEntries(
 			PHASES.map((p) => [p, 'claude-sonnet-4-6']),
 		) as Record<Phase, string>,
-		backend: 'claude',
+		backend: Object.fromEntries(
+			PHASES.map((p) => [p, 'claude']),
+		) as Record<Phase, string>,
 		...(mergeMode !== undefined ? { mergeMode } : {}),
 	};
 }

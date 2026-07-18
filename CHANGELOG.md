@@ -6,6 +6,14 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.212.0] - 2026-07-18
+
+### Added
+
+- US-003 - Render per-phase backend in ConfigScreen and persist per-phase keys
+- US-002 - Repoint worker call sites to per-phase backend
+- US-001 - Add readPhaseBackend per-phase accessor in models.ts
+
 ## [0.211.0] - 2026-07-18
 
 ### Added

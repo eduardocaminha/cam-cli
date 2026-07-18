@@ -7,11 +7,12 @@
 // field -- is focused, US-001 CAM-241/316: Left/Right then moves the cursor
 // in the field instead, via TabBar's `suspended` prop): the 6 phases
 // (orchestrator, planner, auditor, implementer, reviewer, ship) plus one
-// Global tab. Each of the 5 LLM-phase tabs renders a model Select AND a NEW
-// effort Select; the Ship tab renders the model Select only (ship is
+// Global tab. Each of the 5 LLM-phase tabs renders a model Select, an effort
+// Select, AND a per-phase backend Select (US-003, CAM-349, ADR-0046); the
+// Ship tab renders the model Select and the backend Select only (ship is
 // deterministic/zero-LLM, ADR-0009, so it has no effort concept). The Global
-// tab folds backend/merge-mode/plan-approval plus the notify recipient/from
-// text inputs.
+// tab folds merge-mode/plan-approval plus the notify recipient/from text
+// inputs -- backend is per-phase only, no global-only backend field remains.
 //
 // Within a tab, Up/Down navigates the options of whichever field is
 // currently focused (only one Select/TextInput per tab is interactive at a
@@ -45,7 +46,7 @@ import type { Phase, LlmPhase, MergeMode, PlanApproval } from '../config/models.
 
 export type ConfigChoices = {
 	models: Record<Phase, string>;
-	backend: string;
+	backend: Record<Phase, string>;
 	mergeMode?: MergeMode;
 	planApproval?: PlanApproval;
 	/** resend_recipient for [notify]. Empty string means "leave unset". */
@@ -153,13 +154,20 @@ interface FocusState {
 	fieldFocus: number;
 }
 
-/** Field count per tab kind: 2 for an LLM phase (model, effort), 1 for Ship
- * (model only), 5 for Global (backend, merge-mode, plan-approval, notify
+/** Field count per tab kind: 3 for an LLM phase (model, effort, backend), 2
+ * for Ship (model, backend), 4 for Global (merge-mode, plan-approval, notify
  * recipient, notify from). */
 function fieldCountForTab(tab: TabKind): number {
-	if (tab === 'global') return 5;
-	if (tab === 'ship') return 1;
-	return 2;
+	if (tab === 'global') return 4;
+	if (tab === 'ship') return 2;
+	return 3;
+}
+
+/** Index of the backend field within a phase tab: right after model+effort
+ * for an LLM phase, or right after model for Ship (which has no effort
+ * field). Shared by PhaseTabContent and the focus-suspension check. */
+function backendFieldIndex(phase: Phase): number {
+	return phase === 'ship' ? 1 : 2;
 }
 
 /**
@@ -248,7 +256,7 @@ function useConfigScreenState(onDone: (choices: ConfigChoices) => void) {
 	const [fieldFocus, setFieldFocus] = useState(0);
 	const [models, setModels] = useState<Partial<Record<Phase, string>>>({});
 	const [efforts, setEfforts] = useState<Partial<Record<LlmPhase, string>>>({});
-	const [backend, setBackend] = useState<string | undefined>(undefined);
+	const [backend, setBackend] = useState<Partial<Record<Phase, string>>>({});
 	const [mergeMode, setMergeMode] = useState<MergeMode | undefined>(undefined);
 	const [planApproval, setPlanApproval] = useState<PlanApproval | undefined>(undefined);
 	const [resendRecipient, setResendRecipient] = useState('');
@@ -295,8 +303,8 @@ function useConfigScreenState(onDone: (choices: ConfigChoices) => void) {
 		advance();
 	}
 
-	function handleBackendSelect(value: string): void {
-		setBackend(value);
+	function handleBackendSelect(phase: Phase, value: string): void {
+		setBackend((b) => ({ ...b, [phase]: value }));
 		advance();
 	}
 
@@ -347,7 +355,7 @@ export function ConfigScreen({ onDone, onCancel }: ConfigScreenProps): ReactElem
 	// handle cursor movement instead of switching tabs.
 	const textInputFocused =
 		s.customModel.phase !== null ||
-		(currentTab === 'global' && (s.fieldFocus === 3 || s.fieldFocus === 4));
+		(currentTab === 'global' && (s.fieldFocus === 2 || s.fieldFocus === 3));
 
 	return (
 		<Box flexDirection="column">
@@ -369,8 +377,6 @@ export function ConfigScreen({ onDone, onCancel }: ConfigScreenProps): ReactElem
 			{currentTab === 'global' ? (
 				<GlobalTabContent
 					fieldFocus={s.fieldFocus}
-					backend={s.backend}
-					onBackendChange={s.handleBackendSelect}
 					mergeMode={s.mergeMode}
 					onMergeModeChange={s.handleMergeModeSelect}
 					planApproval={s.planApproval}
@@ -390,9 +396,11 @@ export function ConfigScreen({ onDone, onCancel }: ConfigScreenProps): ReactElem
 					fieldFocus={s.fieldFocus}
 					model={s.models[currentTab]}
 					efforts={s.efforts}
+					backend={s.backend[currentTab]}
 					customModel={s.customModel}
 					onModelSelect={s.handlePhaseSelect}
 					onEffortSelect={s.handleEffortSelect}
+					onBackendSelect={s.handleBackendSelect}
 					onCancel={onCancel}
 				/>
 			)}
@@ -423,7 +431,7 @@ function useFireOnDone(
 	done: boolean,
 	models: Partial<Record<Phase, string>>,
 	efforts: Partial<Record<LlmPhase, string>>,
-	backend: string | undefined,
+	backend: Partial<Record<Phase, string>>,
 	mergeMode: MergeMode | undefined,
 	planApproval: PlanApproval | undefined,
 	resendRecipient: string,
@@ -438,7 +446,9 @@ function useFireOnDone(
 		const allEfforts = Object.fromEntries(
 			LLM_PHASES.map((p) => [p, efforts[p] ?? EFFORT_DEFAULTS[p]]),
 		) as Record<LlmPhase, string>;
-		const chosenBackend = backend ?? DEFAULTS.backend;
+		const chosenBackend = Object.fromEntries(
+			PHASE_STEPS.map((p) => [p, backend[p] ?? DEFAULTS.backend]),
+		) as Record<Phase, string>;
 		const chosenMergeMode = mergeMode ?? 'immediate';
 		const chosenPlanApproval = planApproval ?? 'auto';
 		const id = setTimeout(() => {
@@ -457,7 +467,8 @@ function useFireOnDone(
 }
 
 // ---------------------------------------------------------------------------
-// Phase tabs (Orchestrator..Ship): model Select + (LLM-only) effort Select
+// Phase tabs (Orchestrator..Ship): model Select + (LLM-only) effort Select +
+// per-phase backend Select (US-003, CAM-349, ADR-0046)
 // ---------------------------------------------------------------------------
 
 interface PhaseTabContentProps {
@@ -465,22 +476,27 @@ interface PhaseTabContentProps {
 	fieldFocus: number;
 	model: string | undefined;
 	efforts: Partial<Record<LlmPhase, string>>;
+	backend: string | undefined;
 	customModel: ReturnType<typeof useCustomModelEntry>;
 	onModelSelect: (phase: Phase, value: string) => void;
 	onEffortSelect: (phase: LlmPhase, value: string) => void;
+	onBackendSelect: (phase: Phase, value: string) => void;
 	onCancel: () => void;
 }
 
-// AC2: every LLM-phase tab renders model + effort; the Ship tab renders the
-// model Select only (ship has no effort concept, ADR-0009).
+// AC2: every LLM-phase tab renders model + effort + backend; the Ship tab
+// renders model + backend only (ship has no effort concept, ADR-0009). No
+// global-only backend field remains on the Global tab (see GlobalTabContent).
 function PhaseTabContent({
 	phase,
 	fieldFocus,
 	model,
 	efforts,
+	backend,
 	customModel,
 	onModelSelect,
 	onEffortSelect,
+	onBackendSelect,
 	onCancel,
 }: PhaseTabContentProps): ReactElement {
 	return (
@@ -502,6 +518,13 @@ function PhaseTabContent({
 					onCancel={onCancel}
 				/>
 			)}
+			<BackendField
+				phase={phase}
+				value={backend}
+				active={fieldFocus === backendFieldIndex(phase)}
+				onChange={(v) => onBackendSelect(phase, v)}
+				onCancel={onCancel}
+			/>
 		</Section>
 	);
 }
@@ -578,14 +601,44 @@ function EffortField({ phase, value, active, onChange, onCancel }: EffortFieldPr
 	);
 }
 
+interface BackendFieldProps {
+	phase: Phase;
+	value: string | undefined;
+	active: boolean;
+	onChange: (v: string) => void;
+	onCancel: () => void;
+}
+
+// AC1/AC2: per-phase backend Select, reusing EffortField's confirmed/
+// confirmedValue rendering pattern (every possible value is a member of the
+// fixed BACKEND_OPTIONS list, so unlike ModelField this needs no standalone
+// value-echoing component).
+function BackendField({ phase, value, active, onChange, onCancel }: BackendFieldProps): ReactElement {
+	return (
+		<Box flexDirection="column" marginTop={1}>
+			<Text bold color={colors.muted}>
+				Backend
+			</Text>
+			<Select
+				question={`Backend for ${phase}:`}
+				options={BACKEND_OPTIONS}
+				defaultValue={value ?? DEFAULTS.backend}
+				confirmed={!active}
+				confirmedValue={value ?? DEFAULTS.backend}
+				onChange={onChange}
+				onCancel={onCancel}
+			/>
+		</Box>
+	);
+}
+
 // ---------------------------------------------------------------------------
-// Global tab: backend, merge-mode, plan-approval, notify recipient/from
+// Global tab: merge-mode, plan-approval, notify recipient/from (backend
+// moved to a per-phase field on each phase tab, US-003 CAM-349)
 // ---------------------------------------------------------------------------
 
 interface GlobalTabContentProps {
 	fieldFocus: number;
-	backend: string | undefined;
-	onBackendChange: (v: string) => void;
 	mergeMode: MergeMode | undefined;
 	onMergeModeChange: (v: MergeMode) => void;
 	planApproval: PlanApproval | undefined;
@@ -600,28 +653,18 @@ interface GlobalTabContentProps {
 	onCancel: () => void;
 }
 
-// AC3: parity with the old wizard's globals (backend/merge-mode/plan-approval
-// + notify recipient/from), no new global fields added.
+// AC3: parity with the old wizard's globals (merge-mode/plan-approval +
+// notify recipient/from); backend is per-phase only (US-003), no global-only
+// backend field remains here.
 function GlobalTabContent(props: GlobalTabContentProps): ReactElement {
 	return (
 		<>
-			<Section heading="Backend">
-				<Select
-					question="Backend:"
-					options={BACKEND_OPTIONS}
-					defaultValue={props.backend ?? DEFAULTS.backend}
-					confirmed={props.fieldFocus !== 0}
-					confirmedValue={props.backend ?? DEFAULTS.backend}
-					onChange={props.onBackendChange}
-					onCancel={props.onCancel}
-				/>
-			</Section>
 			<Section heading="Merge mode">
 				<Select
 					question="How should cam ship merge pull requests?"
 					options={MERGE_MODE_OPTIONS}
 					defaultValue={props.mergeMode ?? 'immediate'}
-					confirmed={props.fieldFocus !== 1}
+					confirmed={props.fieldFocus !== 0}
 					confirmedValue={props.mergeMode ?? 'immediate'}
 					onChange={props.onMergeModeChange}
 					onCancel={props.onCancel}
@@ -632,7 +675,7 @@ function GlobalTabContent(props: GlobalTabContentProps): ReactElement {
 					question="How should cam advance after a plan audit?"
 					options={PLAN_APPROVAL_OPTIONS}
 					defaultValue={props.planApproval ?? 'auto'}
-					confirmed={props.fieldFocus !== 2}
+					confirmed={props.fieldFocus !== 1}
 					confirmedValue={props.planApproval ?? 'auto'}
 					onChange={props.onPlanApprovalChange}
 					onCancel={props.onCancel}
@@ -640,7 +683,7 @@ function GlobalTabContent(props: GlobalTabContentProps): ReactElement {
 			</Section>
 			<Section heading="Notify recipient">
 				<ApiKeyStatus configured={props.apiKeyConfigured} />
-				{props.fieldFocus === 3 ? (
+				{props.fieldFocus === 2 ? (
 					<NotifyTextInput
 						value={props.resendRecipient}
 						onChange={props.onRecipientChange}
@@ -653,7 +696,7 @@ function GlobalTabContent(props: GlobalTabContentProps): ReactElement {
 				)}
 			</Section>
 			<Section heading="Notify sender">
-				{props.fieldFocus === 4 ? (
+				{props.fieldFocus === 3 ? (
 					<NotifyTextInput
 						value={props.resendFrom}
 						onChange={props.onFromChange}

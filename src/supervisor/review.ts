@@ -35,7 +35,7 @@ import type { WorkerEventLogger } from './events.ts';
 import type { ReviewReport, ReviewFinding } from './review-report.ts';
 import type { PreflightResult } from './preflight-container.ts';
 import { ClaudeAdapter, DEFAULT_REVIEWER_AGENT, REVIEWER_TASK_PROMPT } from './backend-adapter.ts';
-import { readPhaseModel, readBackend } from '../config/models.ts';
+import { readPhaseModel, readPhaseBackend } from '../config/models.ts';
 import type { WorkerIsolation } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 import { dockerExecWrap } from './docker-exec.ts';
@@ -335,7 +335,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 		// Resolve model/backend once so argv and the spawn-resolution event
 		// report the identical resolved values (reviewer finding: double-read).
 		const reviewModel = readPhaseModel('reviewer');
-		const reviewBackend = readBackend();
+		const reviewBackend = readPhaseBackend('reviewer');
 
 		// Build and respawn the interactive reviewer (CAM-41: the prompt is
 		// mandatory; a promptless claude dies instantly).

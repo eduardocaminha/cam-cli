@@ -1,10 +1,12 @@
 // test/commands/config-show.test.ts
 //
-// Tests for `cam config --show` (US-008).
+// Tests for `cam config --show` (US-008; backend column updated in US-003,
+// CAM-349).
 //
 // Verifies that printConfigShow / runConfig({ show: true }) prints a
-// plain-text table of 6 phase rows + 1 backend row without entering the Ink
-// render path (no raw-mode, no TTY requirement).
+// plain-text table of 6 phase rows (model + backend columns, both resolved
+// via readPhaseModel/readPhaseBackend) without entering the Ink render path
+// (no raw-mode, no TTY requirement).
 
 import { test, expect, beforeEach, afterEach } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -42,29 +44,26 @@ function captureShow(configPath: string): string {
 // Tests
 // ---------------------------------------------------------------------------
 
-test('printConfigShow prints 6 phase rows + 1 backend row with defaults when config is absent', () => {
+test('printConfigShow prints 6 phase rows (model + backend columns) with defaults when config is absent', () => {
 	const configPath = join(tmpDir, 'missing.toml');
 	const output = captureShow(configPath);
 	const lines = output.split('\n').filter(Boolean);
 
-	// 1 header + 1 divider + 6 phases + 1 backend = 9 lines
-	expect(lines.length).toBe(9);
+	// 1 header + 1 divider + 6 phases = 8 lines
+	expect(lines.length).toBe(8);
 
 	// Header row
-	expect(lines[0]).toMatch(/^phase\s+model/);
+	expect(lines[0]).toMatch(/^phase\s+model\s+backend/);
 
 	// Divider row
 	expect(lines[1]).toMatch(/^-+$/);
 
-	// All 6 phases appear
+	// All 6 phases appear, each with the default backend
 	for (const phase of ['orchestrator', 'planner', 'auditor', 'implementer', 'reviewer', 'ship']) {
-		const found = lines.some((l) => l.startsWith(phase));
-		expect(found).toBe(true);
+		const line = lines.find((l) => l.startsWith(phase));
+		expect(line).toBeDefined();
+		expect(line).toContain(DEFAULTS['backend']);
 	}
-
-	// Backend row appears
-	const backendLine = lines.find((l) => l.startsWith('backend'));
-	expect(backendLine).toBeDefined();
 });
 
 test('printConfigShow shows default models when config is absent', () => {
@@ -76,7 +75,7 @@ test('printConfigShow shows default models when config is absent', () => {
 	expect(output).toContain(DEFAULTS['backend']);
 });
 
-test('printConfigShow shows configured models when config is present', () => {
+test('printConfigShow shows configured models and per-phase backends when config is present', () => {
 	const configPath = join(tmpDir, 'project.toml');
 	writeFileSync(
 		configPath,
@@ -90,24 +89,26 @@ test('printConfigShow shows configured models when config is present', () => {
 			'ship = "claude-haiku-3-5"',
 			'',
 			'[backend]',
-			'name = "codex"',
+			'orchestrator = "codex"',
+			'planner = "codex"',
+			'auditor = "codex"',
+			'implementer = "codex"',
+			'reviewer = "codex"',
+			'ship = "codex"',
 		].join('\n'),
 		'utf8',
 	);
 
 	const output = captureShow(configPath);
 
-	// All phase rows use the configured model
+	// All phase rows use the configured model and backend
 	for (const phase of ['orchestrator', 'planner', 'auditor', 'implementer', 'reviewer', 'ship']) {
-		const re = new RegExp(`^${phase}\\s+claude-haiku-3-5`, 'm');
+		const re = new RegExp(`^${phase}\\s+claude-haiku-3-5\\s+codex`, 'm');
 		expect(re.test(output)).toBe(true);
 	}
-
-	// Backend row shows codex
-	expect(/^backend\s+codex/m.test(output)).toBe(true);
 });
 
-test('printConfigShow produces exactly 7 data rows (6 phases + 1 backend)', () => {
+test('printConfigShow produces exactly 6 data rows (one per phase)', () => {
 	const configPath = join(tmpDir, 'missing.toml');
 	const output = captureShow(configPath);
 	// Data rows = all non-header, non-divider lines
@@ -115,7 +116,7 @@ test('printConfigShow produces exactly 7 data rows (6 phases + 1 backend)', () =
 		.split('\n')
 		.filter(Boolean)
 		.filter((l) => !l.startsWith('phase') && !l.startsWith('-'));
-	expect(dataLines.length).toBe(7);
+	expect(dataLines.length).toBe(6);
 });
 
 test('runConfig({ show: true }) returns 0 and prints the table without Ink (no TTY required)', async () => {

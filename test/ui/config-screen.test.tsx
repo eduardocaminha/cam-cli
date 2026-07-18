@@ -2,7 +2,11 @@
 //
 // US-004 (CAM-241/153): ConfigScreen refactored to a TabBar-driven tabbed UI
 // (7 tabs: 6 phases + Global), replacing the sequential forward-only wizard.
-// Covers AC1-AC7 of the story.
+// Covers AC1-AC7 of that story.
+//
+// US-003 (CAM-349, ADR-0046): backend widened from a single Global-tab field
+// to a per-phase Select (mirroring the model/effort Selects), rendered on
+// each of the 6 phase tabs. The Global tab no longer has a Backend section.
 //
 // GOTCHA (discovered while writing these tests): a raw arrow-key CSI sequence
 // needs the leading ESC byte (`\x1b[C`) to be recognized by Ink's keypress
@@ -14,10 +18,10 @@
 // regardless of which tab is active (only the color differs). The
 // non-tautological way to assert "tab N is now active" is to check for
 // content that only renders when that tab's own Section is mounted (e.g. the
-// `Model for <phase>:` / `Effort for <phase>:` question text, which
-// disappears once a field is confirmed) -- content unique to the previous
-// tab's Section must also be asserted ABSENT, since only the active tab's
-// content is mounted at all.
+// `Model for <phase>:` / `Effort for <phase>:` / `Backend for <phase>:`
+// question text, which disappears once a field is confirmed) -- content
+// unique to the previous tab's Section must also be asserted ABSENT, since
+// only the active tab's content is mounted at all.
 
 import { describe, expect, test } from 'bun:test';
 import { createElement } from 'react';
@@ -26,6 +30,7 @@ import { render } from 'ink-testing-library';
 import { ConfigScreen, MODEL_OPTIONS, computeNextFocus, buildTabDefs } from '../../src/ui/ConfigScreen.tsx';
 import type { ConfigChoices } from '../../src/ui/ConfigScreen.tsx';
 import { EFFORT_DEFAULTS, DEFAULTS } from '../../src/config/models.ts';
+import type { Phase } from '../../src/config/models.ts';
 import { waitForFrame } from '../helpers/flush-ink.ts';
 import { installTerminalSizeMock } from '../helpers/mock-terminal-size.ts';
 
@@ -37,10 +42,13 @@ const DOWN = '\x1b[B';
 const TAB = '\t';
 const ENTER = '\r';
 
-// Total (tab, field) positions across all 7 tabs: 5 LLM phases * 2 fields +
-// ship's 1 field + Global's 5 fields = 16. Advancing past the last one fires
-// onDone (see computeNextFocus).
-const TOTAL_FIELD_COUNT = 5 * 2 + 1 + 5;
+const ALL_PHASES: readonly Phase[] = ['orchestrator', 'planner', 'auditor', 'implementer', 'reviewer', 'ship'];
+
+// Total (tab, field) positions across all 7 tabs: 5 LLM phases * 3 fields
+// (model, effort, backend) + ship's 2 fields (model, backend) + Global's 4
+// fields (merge-mode, plan-approval, notify recipient, notify from) = 21.
+// Advancing past the last one fires onDone (see computeNextFocus).
+const TOTAL_FIELD_COUNT = 5 * 3 + 2 + 4;
 
 function renderConfig(onDone: (c: ConfigChoices) => void = () => {}) {
 	return render(createElement(ConfigScreen, { onDone, onCancel: () => {} }));
@@ -75,17 +83,19 @@ describe('ConfigScreen — 7-tab layout (AC1)', () => {
 	});
 });
 
-describe('ConfigScreen — LLM tab shows model + effort, Ship shows model only (AC2, AC7)', () => {
-	test('the initial Orchestrator tab renders the model Select active and the effort Select confirmed with its default', () => {
+describe('ConfigScreen — LLM tab shows model + effort + backend, Ship shows model + backend (AC2, AC7)', () => {
+	test('the initial Orchestrator tab renders the model Select active, effort confirmed with its default, and backend confirmed with its default', () => {
 		const { lastFrame, unmount } = renderConfig();
 		const frame = lastFrame() ?? '';
 		expect(frame).toContain('Model for orchestrator:');
 		expect(frame).not.toContain('Effort for orchestrator:');
+		expect(frame).not.toContain('Backend for orchestrator:');
 		expect(frame).toContain(`✓ ${EFFORT_DEFAULTS.orchestrator}`);
+		expect(frame).toContain(`✓ ${DEFAULTS.backend}`);
 		unmount();
 	});
 
-	test('the Ship tab renders the model Select only -- no Effort block at all', async () => {
+	test('the Ship tab renders the model Select active and the backend Select confirmed -- no Effort block at all', async () => {
 		const { lastFrame, stdin, unmount } = renderConfig();
 		// Orchestrator -> ... -> Ship. TabBar's onChange computes the next
 		// index from the current `activeIndex` PROP (not a functional
@@ -99,24 +109,26 @@ describe('ConfigScreen — LLM tab shows model + effort, Ship shows model only (
 		const frame = await waitForFrame(lastFrame, (f) => f.includes('Model for ship:'));
 		expect(frame).toContain('Model for ship:');
 		expect(frame).not.toContain('Effort');
+		expect(frame).not.toContain('Backend for ship:'); // backend confirmed, not active
+		expect(frame).toContain(`✓ ${DEFAULTS.backend}`);
 		unmount();
 	});
 });
 
-describe('ConfigScreen — Global tab parity, no new fields (AC3)', () => {
-	test('Global tab preserves backend/merge-mode/plan-approval + notify recipient/from; no meta_loop/worker_isolation/orch_context_window', async () => {
+describe('ConfigScreen — Global tab parity, backend moved to per-phase tabs, no new fields (AC3)', () => {
+	test('Global tab preserves merge-mode/plan-approval + notify recipient/from; no Backend section, no meta_loop/worker_isolation/orch_context_window', async () => {
 		const { lastFrame, stdin, unmount } = renderConfig();
 		stdin.write(LEFT); // wraps from Orchestrator (idx 0) to Global (last tab)
-		// Only the backend field (index 0) is interactive on landing; the rest
-		// render their confirmed/default summary line, so assert on the
+		// Only the merge-mode field (index 0) is interactive on landing; the
+		// rest render their confirmed/default summary line, so assert on the
 		// Section headings (always rendered) rather than each field's
 		// question text (only rendered while that one field is active).
-		const frame = await waitForFrame(lastFrame, (f) => f.includes('Backend:'));
-		expect(frame).toContain('Backend:'); // interactive (field 0)
-		expect(frame).toContain('Merge mode');
+		const frame = await waitForFrame(lastFrame, (f) => f.includes('How should cam ship merge pull requests?'));
+		expect(frame).toContain('Merge mode'); // interactive (field 0)
 		expect(frame).toContain('Plan approval');
 		expect(frame).toContain('Notify recipient');
 		expect(frame).toContain('Notify sender');
+		expect(frame).not.toContain('Backend'); // AC2: no global-only backend field remains
 		expect(frame).not.toContain('meta_loop');
 		expect(frame).not.toContain('worker_isolation');
 		expect(frame).not.toContain('orch_context_window');
@@ -135,6 +147,60 @@ describe('ConfigScreen — effort Select options (AC4)', () => {
 			const idx = frame.indexOf(label);
 			expect(idx).toBeGreaterThan(lastIndex);
 			lastIndex = idx;
+		}
+		unmount();
+	});
+});
+
+describe('ConfigScreen — per-phase backend Select (US-003, CAM-349, AC1/AC2/AC5)', () => {
+	test('LLM-phase tab: after model + effort are confirmed, the Backend Select becomes active and offers claude/codex', async () => {
+		const { lastFrame, stdin, unmount } = renderConfig();
+		stdin.write(ENTER); // confirm default model, advance to effort
+		await waitForFrame(lastFrame, (f) => f.includes('Effort for orchestrator:'));
+		stdin.write(ENTER); // confirm default effort, advance to backend
+		const frame = await waitForFrame(lastFrame, (f) => f.includes('Backend for orchestrator:'));
+		expect(frame).toContain('Backend for orchestrator:');
+		expect(frame).toContain('claude');
+		expect(frame).toContain('codex');
+		unmount();
+	});
+
+	test('Ship tab: after model is confirmed, the Backend Select becomes active directly (no effort field)', async () => {
+		const { lastFrame, stdin, unmount } = renderConfig();
+		for (let i = 0; i < 5; i += 1) {
+			stdin.write(RIGHT);
+			await waitForFrame(lastFrame, () => true, { timeoutMs: 200 });
+		}
+		await waitForFrame(lastFrame, (f) => f.includes('Model for ship:'));
+		stdin.write(ENTER); // confirm default model, advance to backend (fieldFocus 0 -> 1)
+		const frame = await waitForFrame(lastFrame, (f) => f.includes('Backend for ship:'));
+		expect(frame).toContain('Backend for ship:');
+		unmount();
+	});
+
+	test('choosing codex for one phase persists only that phase in the onDone payload; every other phase still defaults to claude', async () => {
+		let choices: ConfigChoices | undefined;
+		const { lastFrame, stdin, unmount } = renderConfig((c) => {
+			choices = c;
+		});
+		stdin.write(ENTER); // confirm default model, advance to effort
+		await waitForFrame(lastFrame, (f) => f.includes('Effort for orchestrator:'));
+		stdin.write(ENTER); // confirm default effort, advance to backend
+		await waitForFrame(lastFrame, (f) => f.includes('Backend for orchestrator:'));
+		stdin.write(DOWN); // claude (idx 0) -> codex (idx 1)
+		await waitForFrame(lastFrame, (f) => f.includes('❯ codex'));
+		stdin.write(ENTER); // commit codex, advance to Planner's model field
+		await waitForFrame(lastFrame, (f) => f.includes('Model for planner:'));
+
+		for (let i = 0; i < TOTAL_FIELD_COUNT - 3; i += 1) {
+			stdin.write(TAB);
+			await waitForFrame(lastFrame, () => true, { timeoutMs: 200 });
+		}
+		await waitForFrame(() => (choices ? 'done' : ''), (f) => f === 'done');
+		expect(choices?.backend.orchestrator).toBe('codex');
+		for (const phase of ALL_PHASES) {
+			if (phase === 'orchestrator') continue;
+			expect(choices?.backend[phase]).toBe(DEFAULTS.backend);
 		}
 		unmount();
 	});
@@ -172,7 +238,7 @@ describe('ConfigScreen — focus/navigation chain (AC5)', () => {
 		unmount();
 	});
 
-	test('Enter commits the highlighted option and advances focus (model -> effort -> next tab)', async () => {
+	test('Enter commits the highlighted option and advances focus (model -> effort -> backend -> next tab)', async () => {
 		const { lastFrame, stdin, unmount } = renderConfig();
 		stdin.write(DOWN); // highlight 'sonnet'
 		await waitForFrame(lastFrame, (f) => f.includes('❯ sonnet'));
@@ -180,7 +246,11 @@ describe('ConfigScreen — focus/navigation chain (AC5)', () => {
 		let frame = await waitForFrame(lastFrame, (f) => f.includes('Effort for orchestrator:'));
 		expect(frame).toContain('✓ sonnet');
 
-		stdin.write(ENTER); // commit default effort (xhigh), advance to Planner's model field
+		stdin.write(ENTER); // commit default effort (xhigh), advance to backend
+		frame = await waitForFrame(lastFrame, (f) => f.includes('Backend for orchestrator:'));
+		expect(frame).toContain('✓ xhigh');
+
+		stdin.write(ENTER); // commit default backend (claude), advance to Planner's model field
 		frame = await waitForFrame(lastFrame, (f) => f.includes('Model for planner:'));
 		expect(frame).toContain('Model for planner:');
 		expect(frame).not.toContain('Model for orchestrator:'); // Orchestrator's Section is unmounted
@@ -189,18 +259,18 @@ describe('ConfigScreen — focus/navigation chain (AC5)', () => {
 
 	test('Left/Right does NOT switch tabs while the notify-recipient text field is focused (suppressed navigation)', async () => {
 		const { lastFrame, stdin, unmount } = renderConfig();
-		stdin.write(LEFT); // Orchestrator -> Global (wrap); lands on field 0 (backend)
-		await waitForFrame(lastFrame, (f) => f.includes('Backend:'));
+		stdin.write(LEFT); // Orchestrator -> Global (wrap); lands on field 0 (merge-mode)
+		await waitForFrame(lastFrame, (f) => f.includes('How should cam ship merge pull requests?'));
 
-		// Tab forward to notify-recipient (field 3): backend -> merge-mode ->
-		// plan-approval -> notify-recipient. Each Tab awaited individually
-		// (see the Ship-tab test's comment on why).
-		for (let i = 0; i < 3; i += 1) {
+		// Tab forward to notify-recipient (field 2): merge-mode -> plan-approval
+		// -> notify-recipient. Each Tab awaited individually (see the
+		// Ship-tab test's comment on why).
+		for (let i = 0; i < 2; i += 1) {
 			stdin.write(TAB);
 			await waitForFrame(lastFrame, () => true, { timeoutMs: 200 });
 		}
 		await waitForFrame(lastFrame, (f) => f.includes('resend_recipient'));
-		stdin.write('partial-typed-text'); // focus is on notify-recipient (field 3), start typing
+		stdin.write('partial-typed-text'); // focus is on notify-recipient (field 2), start typing
 		await waitForFrame(lastFrame, (f) => f.includes('partial-typed-text'));
 
 		stdin.write(RIGHT); // suppressed: stays on Global's notify-recipient field
@@ -214,18 +284,18 @@ describe('ConfigScreen — focus/navigation chain (AC5)', () => {
 
 	test('Left/Right does NOT switch tabs while the notify-sender text field is focused (suppressed navigation)', async () => {
 		const { lastFrame, stdin, unmount } = renderConfig();
-		stdin.write(LEFT); // Orchestrator -> Global (wrap); lands on field 0 (backend)
-		await waitForFrame(lastFrame, (f) => f.includes('Backend:'));
+		stdin.write(LEFT); // Orchestrator -> Global (wrap); lands on field 0 (merge-mode)
+		await waitForFrame(lastFrame, (f) => f.includes('How should cam ship merge pull requests?'));
 
-		// Tab forward to notify-sender (field 4): backend -> merge-mode ->
-		// plan-approval -> notify-recipient -> notify-sender. Each Tab awaited
-		// individually (see the Ship-tab test's comment on why).
-		for (let i = 0; i < 4; i += 1) {
+		// Tab forward to notify-sender (field 3): merge-mode -> plan-approval ->
+		// notify-recipient -> notify-sender. Each Tab awaited individually (see
+		// the Ship-tab test's comment on why).
+		for (let i = 0; i < 3; i += 1) {
 			stdin.write(TAB);
 			await waitForFrame(lastFrame, () => true, { timeoutMs: 200 });
 		}
 		await waitForFrame(lastFrame, (f) => f.includes('resend_from'));
-		stdin.write('partial-typed-sender'); // focus is on notify-sender (field 4), start typing
+		stdin.write('partial-typed-sender'); // focus is on notify-sender (field 3), start typing
 		await waitForFrame(lastFrame, (f) => f.includes('partial-typed-sender'));
 
 		stdin.write(RIGHT); // suppressed: stays on Global's notify-sender field
@@ -239,13 +309,13 @@ describe('ConfigScreen — focus/navigation chain (AC5)', () => {
 
 	test('Left/Right still switches tabs when no TextInput is focused (a Select field is active)', async () => {
 		const { lastFrame, stdin, unmount } = renderConfig();
-		stdin.write(LEFT); // Orchestrator -> Global (wrap); lands on field 0 (backend, a Select)
-		await waitForFrame(lastFrame, (f) => f.includes('Backend:'));
+		stdin.write(LEFT); // Orchestrator -> Global (wrap); lands on field 0 (merge-mode, a Select)
+		await waitForFrame(lastFrame, (f) => f.includes('How should cam ship merge pull requests?'));
 
 		stdin.write(RIGHT); // Global -> Orchestrator (wrap)
 		const frame = await waitForFrame(lastFrame, (f) => f.includes('Model for orchestrator:'));
 		expect(frame).toContain('Model for orchestrator:');
-		expect(frame).not.toContain('Backend:');
+		expect(frame).not.toContain('How should cam ship merge pull requests?');
 		unmount();
 	});
 
@@ -276,21 +346,25 @@ describe('ConfigScreen — computeNextFocus (AC5, pure helper)', () => {
 		expect(computeNextFocus({ activeTab: 0, fieldFocus: 0 })).toEqual({ activeTab: 0, fieldFocus: 1 });
 	});
 
-	test('advances from the last field of a tab to the first field of the next tab', () => {
-		expect(computeNextFocus({ activeTab: 0, fieldFocus: 1 })).toEqual({ activeTab: 1, fieldFocus: 0 });
+	test('advances effort -> backend within an LLM tab', () => {
+		expect(computeNextFocus({ activeTab: 0, fieldFocus: 1 })).toEqual({ activeTab: 0, fieldFocus: 2 });
 	});
 
-	test('advances from Ship (1 field) straight to Global (tab index 6)', () => {
-		expect(computeNextFocus({ activeTab: 5, fieldFocus: 0 })).toEqual({ activeTab: 6, fieldFocus: 0 });
+	test('advances from the last field (backend) of a tab to the first field of the next tab', () => {
+		expect(computeNextFocus({ activeTab: 0, fieldFocus: 2 })).toEqual({ activeTab: 1, fieldFocus: 0 });
+	});
+
+	test('advances from Ship (model, backend) straight to Global (tab index 6)', () => {
+		expect(computeNextFocus({ activeTab: 5, fieldFocus: 1 })).toEqual({ activeTab: 6, fieldFocus: 0 });
 	});
 
 	test('returns "done" past the last field (notify-from) of the last tab (Global)', () => {
-		expect(computeNextFocus({ activeTab: 6, fieldFocus: 4 })).toBe('done');
+		expect(computeNextFocus({ activeTab: 6, fieldFocus: 3 })).toBe('done');
 	});
 });
 
 describe('ConfigScreen — onDone payload defaults (AC6)', () => {
-	test('efforts defaults from EFFORT_DEFAULTS, models default, and notify fields are "" when every field is skipped via Tab', async () => {
+	test('efforts defaults from EFFORT_DEFAULTS, models default, backend defaults to claude for every phase, and notify fields are "" when every field is skipped via Tab', async () => {
 		let choices: ConfigChoices | undefined;
 		const { lastFrame, stdin, unmount } = renderConfig((c) => {
 			choices = c;
@@ -306,10 +380,10 @@ describe('ConfigScreen — onDone payload defaults (AC6)', () => {
 
 		await waitForFrame(() => (choices ? 'done' : ''), (f) => f === 'done');
 		expect(choices?.efforts).toEqual(EFFORT_DEFAULTS);
-		for (const phase of ['orchestrator', 'planner', 'auditor', 'implementer', 'reviewer', 'ship'] as const) {
+		for (const phase of ALL_PHASES) {
 			expect(choices?.models[phase]).toBe(DEFAULTS[phase]);
+			expect(choices?.backend[phase]).toBe(DEFAULTS.backend);
 		}
-		expect(choices?.backend).toBe(DEFAULTS.backend);
 		expect(choices?.mergeMode).toBe('immediate');
 		expect(choices?.planApproval).toBe('auto');
 		expect(choices?.resendRecipient).toBe('');
@@ -327,10 +401,12 @@ describe('ConfigScreen — onDone payload defaults (AC6)', () => {
 		await waitForFrame(lastFrame, (f) => f.includes('Effort for orchestrator:'));
 		stdin.write(DOWN); // xhigh -> max
 		await waitForFrame(lastFrame, (f) => f.includes('❯ max'));
-		stdin.write(ENTER); // commit 'max', advance to Planner's model field
+		stdin.write(ENTER); // commit 'max', advance to orchestrator's backend field
+		await waitForFrame(lastFrame, (f) => f.includes('Backend for orchestrator:'));
+		stdin.write(ENTER); // confirm default backend (claude), advance to Planner's model field
 		await waitForFrame(lastFrame, (f) => f.includes('Model for planner:'));
 
-		for (let i = 0; i < TOTAL_FIELD_COUNT - 2; i += 1) {
+		for (let i = 0; i < TOTAL_FIELD_COUNT - 3; i += 1) {
 			stdin.write(TAB);
 			await waitForFrame(lastFrame, () => true, { timeoutMs: 200 });
 		}

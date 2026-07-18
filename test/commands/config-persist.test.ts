@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { mergeConfigChoices } from '../../src/commands/config.ts';
 import type { ConfigChoices } from '../../src/commands/config.ts';
 import { loadConfig } from '../../src/config/toml.ts';
-import { readPhaseModel, readPhaseEffort, readBackend, DEFAULTS, EFFORT_DEFAULTS } from '../../src/config/models.ts';
+import { readPhaseModel, readPhaseEffort, readPhaseBackend, DEFAULTS, EFFORT_DEFAULTS } from '../../src/config/models.ts';
 import type { Phase, LlmPhase } from '../../src/config/models.ts';
 import { FRONTMATTER_TARGET_PHASE_PATHS } from '../../src/templates/frontmatter.ts';
 
@@ -44,7 +44,9 @@ function makeChoices(
 		models: Object.fromEntries(
 			PHASES.map((p) => [p, modelOverride]),
 		) as Record<Phase, string>,
-		backend,
+		backend: Object.fromEntries(
+			PHASES.map((p) => [p, backend]),
+		) as Record<Phase, string>,
 	};
 }
 
@@ -78,14 +80,16 @@ test('mergeConfigChoices writes [models] section with all phases', () => {
 	}
 });
 
-test('mergeConfigChoices writes [backend] section with name key', () => {
+test('mergeConfigChoices writes [backend] section with one key per phase', () => {
 	const configPath = join(tmpDir, 'project.toml');
 	mergeConfigChoices(configPath, makeChoices('claude-sonnet-4-6', 'claude'));
 
 	const config = loadConfig(configPath);
 	const backend = config['backend'] as Record<string, unknown>;
 	expect(typeof backend).toBe('object');
-	expect(backend['name']).toBe('claude');
+	for (const phase of PHASES) {
+		expect(backend[phase]).toBe('claude');
+	}
 });
 
 test('mergeConfigChoices does not clobber issue_system or issue_prefix', () => {
@@ -99,11 +103,13 @@ test('mergeConfigChoices does not clobber issue_system or issue_prefix', () => {
 	expect(config['issue_prefix']).toBe('CAM');
 });
 
-test('readBackend reads from [backend] section written by mergeConfigChoices', () => {
+test('readPhaseBackend reads from [backend] section written by mergeConfigChoices', () => {
 	const configPath = join(tmpDir, 'project.toml');
 	mergeConfigChoices(configPath, makeChoices('claude-opus-4-8', 'codex'));
 
-	expect(readBackend(configPath)).toBe('codex');
+	for (const phase of PHASES) {
+		expect(readPhaseBackend(phase, configPath)).toBe('codex');
+	}
 });
 
 test('readPhaseModel reads from [models] section written by mergeConfigChoices', () => {
@@ -126,7 +132,9 @@ test('second mergeConfigChoices call overwrites prior model choices', () => {
 		expect(models[phase]).toBe('claude-sonnet-4-6');
 	}
 	const backend = config['backend'] as Record<string, unknown>;
-	expect(backend['name']).toBe('codex');
+	for (const phase of PHASES) {
+		expect(backend[phase]).toBe('codex');
+	}
 });
 
 test('mergeConfigChoices preserves per-phase defaults for missing phases', () => {
@@ -141,14 +149,21 @@ test('mergeConfigChoices preserves per-phase defaults for missing phases', () =>
 			reviewer: DEFAULTS['reviewer'],
 			ship: DEFAULTS['ship'],
 		},
-		backend: DEFAULTS['backend'],
+		backend: {
+			orchestrator: DEFAULTS['backend'],
+			planner: DEFAULTS['backend'],
+			auditor: DEFAULTS['backend'],
+			implementer: DEFAULTS['backend'],
+			reviewer: DEFAULTS['backend'],
+			ship: DEFAULTS['backend'],
+		},
 	};
 	mergeConfigChoices(configPath, choices);
 
 	for (const phase of PHASES) {
 		expect(readPhaseModel(phase, configPath)).toBe(DEFAULTS[phase]);
+		expect(readPhaseBackend(phase, configPath)).toBe(DEFAULTS['backend']);
 	}
-	expect(readBackend(configPath)).toBe(DEFAULTS['backend']);
 });
 
 test('mergeConfigChoices rewrites only the ship frontmatter and leaves planner/auditor agent files unmodified', () => {

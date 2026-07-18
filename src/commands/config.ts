@@ -21,7 +21,7 @@ import type { SpawnSyncReturns } from 'node:child_process';
 import { render } from 'ink';
 import { createElement } from 'react';
 
-import { readPhaseModel, readBackend } from '../config/models.ts';
+import { readPhaseModel, readPhaseBackend } from '../config/models.ts';
 import type { Phase, LlmPhase } from '../config/models.ts';
 import { mergeIntoConfig } from '../config/toml.ts';
 import type { TomlConfig, TomlSection } from '../config/toml.ts';
@@ -185,7 +185,9 @@ function rewriteFrontmatterEfforts(cwd: string, choices: ConfigChoices): void {
  *   ...                                      (5 LLM phases only, ship excluded)
  *
  *   [backend]
- *   name = "<backend>"
+ *   orchestrator = "<backend>"
+ *   planner      = "<backend>"
+ *   ...                                      (one key per phase, all 6 phases)
  *
  *   [ship]
  *   merge_mode = "immediate"|"ci-gated"   (when choices.mergeMode is defined)
@@ -223,7 +225,7 @@ export function mergeConfigChoices(
 ): void {
 	const updates: TomlConfig = {
 		models: choices.models as TomlSection,
-		backend: { name: choices.backend } as TomlSection,
+		backend: choices.backend as TomlSection,
 	};
 	mergeIntoConfig(configPath, updates);
 
@@ -278,31 +280,32 @@ const ORDERED_PHASES: readonly Phase[] = [
  * path. Exported so tests can capture output without intercepting
  * `process.stdout`.
  *
- * Output shape (7 data rows: 6 phases + 1 backend):
+ * Output shape (6 data rows, one per phase, each with its own resolved
+ * model + backend column via readPhaseModel/readPhaseBackend):
  *
- *   phase          model
- *   orchestrator   opus
- *   planner        opus
+ *   phase          model   backend
+ *   orchestrator   opus    claude
+ *   planner        opus    claude
  *   ...
- *   backend        claude
  */
 export function printConfigShow(
 	configPath: string,
 	writer: (s: string) => void = (s) => process.stdout.write(s),
 ): void {
-	const rows: Array<[string, string]> = [
-		...ORDERED_PHASES.map((phase) => [phase, readPhaseModel(phase, configPath)] as [string, string]),
-		['backend', readBackend(configPath)],
-	];
+	const rows: Array<[string, string, string]> = ORDERED_PHASES.map(
+		(phase) =>
+			[phase, readPhaseModel(phase, configPath), readPhaseBackend(phase, configPath)] as [string, string, string],
+	);
 
 	const phaseWidth = Math.max(...rows.map(([p]) => p.length));
-	const header = `${'phase'.padEnd(phaseWidth)}  model`;
+	const modelWidth = Math.max('model'.length, ...rows.map(([, model]) => model.length));
+	const header = `${'phase'.padEnd(phaseWidth)}  ${'model'.padEnd(modelWidth)}  backend`;
 	const divider = '-'.repeat(header.length);
 
 	writer(header + '\n');
 	writer(divider + '\n');
-	for (const [phase, model] of rows) {
-		writer(`${phase.padEnd(phaseWidth)}  ${model}\n`);
+	for (const [phase, model, backend] of rows) {
+		writer(`${phase.padEnd(phaseWidth)}  ${model.padEnd(modelWidth)}  ${backend}\n`);
 	}
 }
 
