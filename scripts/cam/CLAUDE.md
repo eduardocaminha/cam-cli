@@ -61,7 +61,7 @@ The agent does NOT hand-write a prose progress record. The event log is supervis
 
 **Curated invariants** (small, durable, always in context; read in full every story):
 
-- **Bun-only**: `Bun.spawn` / `Bun.$` / `Bun.file`, never `node:child_process` / `node:fs` / npm / pnpm / vite.
+- **Bun-only**: `Bun.spawn` / `Bun.$` / `Bun.file` remain the rule for spawn and async/streaming I/O, never `node:child_process` / npm / pnpm / vite; deliberate synchronous point-reads stay on `node:fs` (`readFileSync` / `existsSync` / `appendFileSync`): forcing those call sites onto an async `Bun.file()` API would force their callers async too, and would force in-memory synchronous test collectors async along with them. See `scripts/cam/patterns.md` for the precedent write-ups.
 - **`noUncheckedIndexedAccess`**: array indexing and regex capture groups are `T | undefined`; always guard.
 - **Ink success/failure**: signal via the glyph (accent/destructive), never via divider color.
 - **Never add a `--permission-mode` flag** to any subcommand; permission mode is fixed by the harness, not a CLI knob.
