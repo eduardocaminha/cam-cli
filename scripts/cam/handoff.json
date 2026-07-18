@@ -1,0 +1,17 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Write the design-spike ADR for the BackendAdapter seam" },
+  "branchName": "cam/issue-339",
+  "timestamp": "2026-07-18T00:00:00Z",
+  "createdFiles": [
+    "docs/adr/0047-backendadapter-seam-methods-vs-inputs-vs-shared-contract-and-the-six-mismatch-resolution.md"
+  ],
+  "modifiedFiles": [],
+  "openQuestions": [
+    "The follow-up codex-adapter implementation issue still needs to pick between the two ADR-0047-recorded directions for the claude-transcript-coupled token-ceiling backstop (loop.ts:1189): a codex transcript equivalent for readWorkerTokens, or documented graceful degradation.",
+    "readBackend's upgrade from a single top-level key to a per-phase accessor (mirroring readPhaseModel) is decided in ADR-0047 but not implemented; the implementation issue must also decide the backward-compat shape for existing single-key project.toml files."
+  ],
+  "nextStoryContext": "ADR-0047 (docs/adr/0047-backendadapter-seam-methods-vs-inputs-vs-shared-contract-and-the-six-mismatch-resolution.md) is the design spike CAM-54 mandates before any codex dispatch code. It fixes buildSpawnArgv(actor, opts) as the ONE adapter method (model/agentName/permissionMode/env-unset-prefix are INPUTS to it, not separate methods), fixes completion-detection (report/sentinel/JSON contract, report-parse.ts, ADR-0038) as a SHARED CONTRACT living outside the adapter, and records DIRECTION-only for codex env/sandbox and the loop.ts:1189 token-ceiling backstop (transcript equivalent OR graceful degradation) with zero codex code written. Scope stays the four worker actors; orchestrator-persona (run.ts buildOrchestratorPaneCommand), retry launcher, and auth-preflight codex parity remain deferred follow-ups, and ship stays zero-LLM. The NEXT story in this PRD is expected to be the actual BackendAdapter seam implementation (consolidating worker-argv.ts/plan-argv.ts/review.ts's four builder functions behind buildSpawnArgv with NO behavior change to the existing claude path) -- read ADR-0047 in full before touching those files.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
