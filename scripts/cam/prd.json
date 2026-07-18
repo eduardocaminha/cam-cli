@@ -23,7 +23,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Single-file fix. src/release/pr-body.ts lines ~92-102 (SETUP_CHECKLIST_CUES config entry): replace BOTH `[\\s\\S]*?` gaps with `[^\\n]*?` and leave the other two alternatives (`\\bproject\\.toml\\b`, `\\bconfig(?:uration)?\\s+file\\b`) untouched. renderSetupChecklist (~146-155) joins [prd.description, prd.notes, ...story.title] with '\\n' into ONE haystack and runs `cue.pattern.test(haystack)` with no per-field iteration, so `[^\\n]*?` is the only way to bound to a field. Keep the `/i` flag; add no lowercasing/normalization. Tests: test/release/pr-body.test.ts, describe('composePrBody Setup checklist'), drive public composePrBody with `{ project, description }` or a story title, assert with toContain/not.toContain. No vendor/ or templates/ touched, so no embed-vendor check needed."
     }
