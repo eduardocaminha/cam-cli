@@ -2,9 +2,9 @@
   "id": "CAM-335",
   "title": "Dashboard TUI cosmetic defects: header spams bare \"Loop\" per tick + Recent labels DONE stories \"incomplete\"",
   "stage": "idea",
-  "status": "open",
+  "status": "abandoned",
   "blockedBy": [],
   "createdAt": "2026-07-17T13:35:52.160Z",
-  "updatedAt": "2026-07-17T13:35:52.160Z",
+  "updatedAt": "2026-07-18T14:35:12.143Z",
   "description": "Two cosmetic defects in the cam dashboard TUI render layer, observed live during the CAM-64 implement loop (branch cam/issue-64, 2026-07-17). (1) Header/output pane spam: the top output pane renders the bare word \"Loop\" repeated once per tick, filling dozens of lines with zero signal; expected a meaningful per-tick line or no repeated Loop noise. (2) Recent event feed mislabels completed stories as \"incomplete\": the Recent section shows US-005/US-004/US-003 incomplete etc. for stories the Stories panel simultaneously shows checked (DONE); the outcome->label mapping in the dashboard event log is wrong for the story-completion event. Both are display-only (no effect on the loop, which drove all 6 CAM-64 stories green). Likely same render layer / possibly one root cause; spec may split if roots diverge."
 }
