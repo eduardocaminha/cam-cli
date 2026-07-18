@@ -1,10 +1,35 @@
 {
   "id": "CAM-346",
   "title": "Dashboard TUI Recent feed labels DONE stories 'incomplete' (stale outcome vs live passes)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-18T14:34:40.583Z",
-  "updatedAt": "2026-07-18T14:34:40.583Z",
-  "description": "Split from CAM-335 (Defect 2 of 2; independent root from the 'Loop' header ghosting). The Recent section prints detail.outcome verbatim (src/commands/dashboard.ts parseRecentProgress ~656-681), written as outcome.kind='incomplete' at worker-finish BEFORE the supervisor flipped passes:true (src/supervisor/events.ts:691 <- result.ts:588). That historical 'result' event is never superseded, so Recent shows a frozen 'incomplete' while the Stories panel reads LIVE prd.json passes and shows the same story checked/DONE. Two panels, two sources, they disagree. Display-only. Fix in the PRESENTATION layer (dashboard reader reconciles the frozen outcome against terminal state), NOT at source (do not change supervisor event-writing / event-log semantics: the event is factually correct for its instant, and a source change would touch sidecar-executed code + need a coherence rebuild). Grounded via Explore 2026-07-18."
+  "updatedAt": "2026-07-18T14:35:08.706Z",
+  "description": "Split from CAM-335 (Defect 2 of 2; independent root from the 'Loop' header ghosting). The Recent section prints detail.outcome verbatim (src/commands/dashboard.ts parseRecentProgress ~656-681), written as outcome.kind='incomplete' at worker-finish BEFORE the supervisor flipped passes:true (src/supervisor/events.ts:691 <- result.ts:588). That historical 'result' event is never superseded, so Recent shows a frozen 'incomplete' while the Stories panel reads LIVE prd.json passes and shows the same story checked/DONE. Two panels, two sources, they disagree. Display-only. Fix in the PRESENTATION layer (dashboard reader reconciles the frozen outcome against terminal state), NOT at source (do not change supervisor event-writing / event-log semantics: the event is factually correct for its instant, and a source change would touch sidecar-executed code + need a coherence rebuild). Grounded via Explore 2026-07-18.",
+  "spec": {
+    "scope": "Fix the cam Dashboard TUI 'Recent' feed so a story finalized DONE (prd.json passes:true) is no longer shown with the frozen 'incomplete' outcome recorded at worker-finish before finalize. The fix lives entirely in the dashboard PRESENTATION/read layer (src/commands/dashboard.ts Recent-feed builder and/or src/ui/Dashboard.tsx RecentSection). Do NOT change supervisor event-writing, event-log semantics, or any sidecar-executed code.",
+    "acceptanceCriteria": [
+      "When a story's most recent .claude/cam-worker-events.jsonl 'result' event carries outcome 'incomplete' BUT the live prd.json shows that story passes:true, the Recent feed displays it as done/complete, consistent with the Stories panel checkmark, not 'incomplete'.",
+      "A story that is genuinely still incomplete (result outcome 'incomplete' AND prd.json passes false/absent) STILL displays as 'incomplete': no false 'done'.",
+      "Other outcomes (e.g. 'blocked') continue to pass through verbatim; only the finalized-DONE-vs-incomplete divergence is reconciled.",
+      "The fix touches ONLY the dashboard presentation/read layer (src/commands/dashboard.ts and/or src/ui/Dashboard.tsx). No change to src/supervisor/events.ts, result.ts, loop.ts, or the shape/content of what is written to cam-worker-events.jsonl.",
+      "A new test asserts the reconciliation: a frozen 'incomplete' result event + prd.json passes:true renders as done; and the negative case (passes:false stays 'incomplete'). Extend test/dashboard.test.ts (parseRecentProgress suite ~219-269).",
+      "Quality gates green: bun run typecheck, bun test, bun run check:all."
+    ],
+    "gotchas": [
+      "The event log is factually correct: 'incomplete' recorded that at worker-finish prd.json had not yet flipped passes:true (supervisor finalize required). Do NOT 'fix' this by rewriting/superseding the event: that is a source-layer change to sidecar-executed code and would need a coherence rebuild. Reconcile in the reader only.",
+      "The Stories panel already reads live prd.json passes (src/ui/Dashboard.tsx:445); mirror that source for the Recent reconciliation rather than inventing a new state source.",
+      "Recent is fed by readRecentProgress -> parseRecentProgress (src/commands/dashboard.ts ~398 and ~656-681), which currently emits `${when} ${story} ${outcome}` with outcome raw from detail.outcome. That is the seam to reconcile.",
+      "Do not regress the legacy composeDashboard text path or the makePollWidthClearer behavior: those belong to the OTHER split-off defect (CAM-345) and are out of scope here."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 2,
+    "riskReduction": 2,
+    "jobSize": 2
+  },
+  "type": "fix"
 }
