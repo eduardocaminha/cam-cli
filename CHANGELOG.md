@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.211.0] - 2026-07-18
+
+### Added
+
+- US-001 - Refresh stale product name in Splash header comment
+
 ## [0.210.0] - 2026-07-18
 
 ### Added

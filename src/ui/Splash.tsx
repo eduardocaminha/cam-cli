@@ -1,6 +1,6 @@
 // src/ui/Splash.tsx
 //
-// Entry / identity panel for cam-cli. Inside a rounded border:
+// Entry / identity panel for CAM Runtime. Inside a rounded border:
 //   1. Uppercase "CAM" block wordmark, letter-by-letter (C / A / M), rendered
 //      in the CAM Runtime brand primary (Fir Green, `brandGreens.firGreen` in
 //      `src/design/tokens.ts`) rather than the chrome `palette.accent`. The
