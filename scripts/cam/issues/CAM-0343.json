@@ -1,13 +1,41 @@
 {
   "id": "CAM-343",
   "title": "The verb/config co-occurrence uses `[\\s\\S]*?` across the newline-joined haystac…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-18T11:54:48.037Z",
-  "updatedAt": "2026-07-18T11:54:48.037Z",
+  "updatedAt": "2026-07-18T12:01:44.283Z",
   "description": "The verb/config co-occurrence uses `[\\s\\S]*?` across the newline-joined haystack, so a verb in one field (e.g. prd.description 'add a webhook') and a standalone 'configuration' in an unrelated story title can co-trigger the cue. This matches the spec's stated 'co-occur anywhere in the haystack' intent, so it is intended, not a defect; noting only that a same-clause proximity bound would be higher-signal if false positives resurface.\n\nSource: cam/issue-334\nReview round: 1\n\nsuggestion-fingerprint: a0a08a42b744",
   "derivedFrom": [
     "CAM-334"
-  ]
+  ],
+  "spec": {
+    "scope": "Narrow the 'Configuration change' setup-checklist cue in src/release/pr-body.ts (the SETUP_CHECKLIST_CUES entry, currently lines 92-102) so the verb-config co-occurrence match is bounded to a single haystack field/line instead of spanning newlines. The cue's two order-alternatives currently bridge verb and config word with `[\\s\\S]*?`, which matches across newlines; because renderSetupChecklist tests each pattern against the single `\\n`-joined haystack `[prd.description, prd.notes, ...story.title].join('\\n')`, a verb in one field and a standalone config word in a DIFFERENT field co-trigger the row (the CAM-343 cross-field false positive left by CAM-334). Replace the newline-crossing gap with a same-line/same-field bound so the two tokens must co-occur within one field. No other cue, no other behavior, and no other alternative of this cue changes.",
+    "acceptanceCriteria": [
+      "The verb-config co-occurrence no longer matches across a newline: a PRD whose description contains a change/setup verb (e.g. 'add a webhook') AND whose UNRELATED story title contains a standalone config word (e.g. 'configuration') must NOT render the 'Configuration change' row.",
+      "Both order directions are bounded: config-then-verb and verb-then-config must each require the two tokens within the same field/line; neither may bridge a newline.",
+      "The existing genuine same-field positive cases still fire: 'add a new key to project.toml' and 'update the configuration value in project.toml' still render the 'Configuration change' row.",
+      "The existing incidental-prose negatives still do NOT fire: 'the configuration option is already documented' and 'no configuration changes are required' still render no 'Configuration change' row.",
+      "The cue's other alternatives are unchanged in behavior: a bare `project.toml` token and a 'config(uration) file' phrase still fire the row.",
+      "A new test in test/release/pr-body.test.ts under describe('composePrBody Setup checklist') covers the cross-field case (verb in one field, standalone config word in another field -> not detected) and confirms a same-field verb+config case is still detected, mirroring the existing loop-over-cases + composePrBody + toContain/not.toContain style.",
+      "typecheck passes and the full test suite passes (bun test)."
+    ],
+    "gotchas": [
+      "renderSetupChecklist (pr-body.ts ~146-155) assembles a SINGLE joined string: `[prd.description ?? '', prd.notes ?? '', ...(prd.userStories ?? []).map(s => s.title)].join('\\n')`, then Array.filter runs `cue.pattern.test(haystack)` on the whole blob. There is NO per-field iteration, so the ONLY way to bound to a field is to stop the gap at the newline (use `[^\\n]*?` rather than `[\\s\\S]*?`).",
+      "The `[\\s\\S]*?` gap appears in BOTH order-alternatives of the config pattern (config-then-verb AND verb-then-config); both must be bounded, not just one.",
+      "Do NOT touch the other two alternatives of the config cue: `\\bproject\\.toml\\b` and `\\bconfig(?:uration)?\\s+file\\b` are legitimate single-token / adjacent-phrase matches and must keep working.",
+      "The config cue is the ONLY cue in SETUP_CHECKLIST_CUES that uses inter-token gap matching; there is no existing `[^\\n]` / `m`-flag / anchor precedent elsewhere in the file to mirror, so `[^\\n]*?` is the natural minimal construct.",
+      "Patterns rely on the `/i` flag with NO lowercasing/normalization of the haystack; keep the flag and do not add normalization.",
+      "Tests drive the public composePrBody(...) with a minimal `{ project, description }` (or a story title) snapshot and assert via `expect(body).toContain('Configuration change')` / `.not.toContain(...)`; keep the private cue array un-exported."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 1,
+    "riskReduction": 2,
+    "jobSize": 1
+  },
+  "type": "fix"
 }
