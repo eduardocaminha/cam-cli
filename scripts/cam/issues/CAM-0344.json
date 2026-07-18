@@ -1,11 +1,11 @@
 {
   "id": "CAM-344",
   "title": "Codify the sync-read carve-out to the Bun-first invariant (docs-only)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-18T13:36:21.937Z",
-  "updatedAt": "2026-07-18T13:37:45.588Z",
+  "updatedAt": "2026-07-18T13:37:47.842Z",
   "description": "The Bun-first curated invariant (scripts/cam/CLAUDE.md 'Bun-only' bullet + patterns.md) reads as an absolute 'never node:fs', but the codebase deliberately keeps SYNCHRONOUS point-reads on node:fs (readFileSync/existsSync/appendFileSync) rather than Bun.file().text()/.writer(): migrating a sync reader to Bun.file (Promise) forces its callers async and breaks the in-memory synchronous test collectors. The carve-out is already reasoned inline in two places (src/config/toml.ts loadConfig test-tmpdir rationale; src/supervisor/events.ts default logger all-synchronous-injected-I/O rationale), but patterns.md has no bullet documenting it, so reviewers keep re-filing deliberate sync node:fs reads as violations (2nd+ such SUGGESTION: CAM-340, CAM-342). Fix (docs-only, no runtime change): amend the 'Bun-only' invariant wording in scripts/cam/CLAUDE.md to note that synchronous point-reads deliberately stay on node:fs (Bun.spawn/Bun.$/Bun.file remain the rule for spawn + async/streaming I/O), and add a grep-discoverable patterns.md bullet cross-referencing the toml.ts + events.ts precedents. Supersedes CAM-340 and CAM-342 (to be abandoned once this lands). Note: scripts/cam/CLAUDE.md is dual-copied/embedded, so an embed-vendor regen + embed-vendor:check may be required.",
   "specSource": "derived",
   "derivedFrom": [
@@ -16,5 +16,25 @@
     "timeCriticality": 2,
     "riskReduction": 3,
     "jobSize": 2
-  }
+  },
+  "spec": {
+    "scope": "Docs-only amendment codifying the sync-read carve-out to the Bun-first curated invariant. Amend the 'Bun-only' bullet in scripts/cam/CLAUDE.md (Codebase Patterns section) and add a grep-discoverable bullet to scripts/cam/patterns.md, so that reviewers stop re-flagging deliberate synchronous node:fs point-reads as invariant violations. NO runtime/src change: the three journal.ts readers, the stats.ts duplicate, toml.ts, and events.ts stay exactly as they are. This documents an existing, already-reasoned convention; it does not alter behavior.",
+    "acceptanceCriteria": [
+      "The 'Bun-only' bullet in the Codebase Patterns section of scripts/cam/CLAUDE.md is amended to state that Bun.spawn/Bun.$/Bun.file remain the rule for spawn and async/streaming I/O, but synchronous point-reads deliberately stay on node:fs (readFileSync / existsSync / appendFileSync) to avoid forcing callers and in-memory synchronous test collectors async.",
+      "A new bullet is appended to scripts/cam/patterns.md documenting the sync-read carve-out and cross-referencing the two existing precedents: src/config/toml.ts loadConfig (test-tmpdir rationale) and src/supervisor/events.ts default logger (all-synchronous-injected-I/O rationale).",
+      "No file under src/ is modified; no reader is migrated to Bun.file. The diff is limited to knowledge/docs files (scripts/cam/CLAUDE.md, scripts/cam/patterns.md) plus any embedded/dual-copied mirror of scripts/cam/CLAUDE.md that must stay in sync.",
+      "If scripts/cam/CLAUDE.md has an embedded/dual-copied mirror, it is regenerated so bun run embed-vendor:check passes; if it is not embedded, no embed step is performed (verify by diff, do not assume).",
+      "Quality gates pass: bun run typecheck, bun test, bun run check:all (plus bun run embed-vendor:check only if templates/ or vendor/ were touched)."
+    ],
+    "gotchas": [
+      "This issue's entire point is that sync reads STAY on node:fs. Do NOT migrate the three journal.ts readers (defaultReadOrchTranscript/defaultReadEventLog/defaultReadOrchSessionId), the stats.ts defaultReadEventLog duplicate, toml.ts, or events.ts to Bun.file. The change is documentation only.",
+      "The 'Bun-only' bullet is a durable curated invariant: amend its wording in place; do NOT prefix it with a [resolved YYYY-MM] marker (that marker is forbidden for durable invariants per the Knowledge-Layer Routing section).",
+      "scripts/cam/CLAUDE.md is dual-copied/embedded and the copies are NOT uniformly byte-identical: diff the embedded copy before assuming an edit forces a re-embed, and run bun run embed-vendor + embed-vendor:check only if the file is actually embedded.",
+      "scripts/cam/patterns.md is grep-on-demand and never truncated: append a bullet, do not restructure or reflow existing bullets."
+    ],
+    "domainTerms": [
+      "sync-read carve-out: the documented exception to the Bun-first invariant whereby synchronous point-reads use node:fs readFileSync/existsSync/appendFileSync (not Bun.file) to avoid forcing callers and in-memory test collectors async."
+    ]
+  },
+  "type": "docs"
 }
