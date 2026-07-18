@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.207.0] - 2026-07-18
+
+### Added
+
+- US-001 - Reconcile Recent feed 'incomplete' against live prd.json passes
+
 ## [0.206.0] - 2026-07-18
 
 ### Added
