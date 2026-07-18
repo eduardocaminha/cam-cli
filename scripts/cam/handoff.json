@@ -1,16 +1,20 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Write the design-spike ADR for the BackendAdapter seam" },
+  "lastCompletedStory": { "id": "US-002", "title": "Introduce BackendAdapter interface + ClaudeAdapter with per-actor golden characterization tests" },
   "branchName": "cam/issue-339",
   "timestamp": "2026-07-18T00:00:00Z",
   "createdFiles": [
-    "docs/adr/0047-backendadapter-seam-methods-vs-inputs-vs-shared-contract-and-the-six-mismatch-resolution.md"
+    "src/supervisor/backend-adapter.ts",
+    "test/supervisor/backend-adapter.test.ts"
   ],
-  "modifiedFiles": [],
+  "modifiedFiles": [
+    "scripts/cam/patterns.md"
+  ],
   "openQuestions": [
     "The follow-up codex-adapter implementation issue still needs to pick between the two ADR-0047-recorded directions for the claude-transcript-coupled token-ceiling backstop (loop.ts:1189): a codex transcript equivalent for readWorkerTokens, or documented graceful degradation.",
-    "readBackend's upgrade from a single top-level key to a per-phase accessor (mirroring readPhaseModel) is decided in ADR-0047 but not implemented; the implementation issue must also decide the backward-compat shape for existing single-key project.toml files."
+    "readBackend's upgrade from a single top-level key to a per-phase accessor (mirroring readPhaseModel) is decided in ADR-0047 but not implemented; the implementation issue must also decide the backward-compat shape for existing single-key project.toml files.",
+    "The four existing builders (buildImplementerWorkerArgv, buildPlannerWorkerArgv, buildAuditorWorkerArgv, buildReviewerWorkerArgv) and their real call sites (loop.ts, plan-runner.ts, review.ts's makeReviewDispatch) are still unrerouted per this story's AC3; a follow-up story must decide whether/how to reroute call sites through ClaudeAdapter.buildSpawnArgv now that the seam exists, or whether the seam stays adapter-only until a codex adapter actually needs dispatch to branch on backend."
   ],
-  "nextStoryContext": "ADR-0047 (docs/adr/0047-backendadapter-seam-methods-vs-inputs-vs-shared-contract-and-the-six-mismatch-resolution.md) is the design spike CAM-54 mandates before any codex dispatch code. It fixes buildSpawnArgv(actor, opts) as the ONE adapter method (model/agentName/permissionMode/env-unset-prefix are INPUTS to it, not separate methods), fixes completion-detection (report/sentinel/JSON contract, report-parse.ts, ADR-0038) as a SHARED CONTRACT living outside the adapter, and records DIRECTION-only for codex env/sandbox and the loop.ts:1189 token-ceiling backstop (transcript equivalent OR graceful degradation) with zero codex code written. Scope stays the four worker actors; orchestrator-persona (run.ts buildOrchestratorPaneCommand), retry launcher, and auth-preflight codex parity remain deferred follow-ups, and ship stays zero-LLM. The NEXT story in this PRD is expected to be the actual BackendAdapter seam implementation (consolidating worker-argv.ts/plan-argv.ts/review.ts's four builder functions behind buildSpawnArgv with NO behavior change to the existing claude path) -- read ADR-0047 in full before touching those files.",
+  "nextStoryContext": "US-002 delivered src/supervisor/backend-adapter.ts: BackendAdapter interface + ClaudeAdapter, with buildSpawnArgv(actor, opts) as the ONE concrete method (model/agentName/permissionMode/isolation/taskPrompt are INPUTS on SpawnArgvOptions, not separate methods), per ADR-0047. ClaudeAdapter internally DELEGATES to the four existing pure builders (buildImplementerWorkerArgv/buildPlannerWorkerArgv/buildAuditorWorkerArgv/buildReviewerWorkerArgv) rather than reimplementing them, so byte-for-byte parity with today's behavior is structural, not just tested -- proven by 8 golden tests in test/supervisor/backend-adapter.test.ts (2 per actor: defaults + all-optionals-set) plus 2 adapter-contract guard tests (throws when implementer/planner/auditor are missing required taskPrompt/permissionMode). No call site was rerouted (loop.ts, plan-runner.ts, review.ts's makeReviewDispatch still call the four builders directly) and no completion-detection/report-parsing logic was added to the adapter (verified by the AC4 file-assert oracle). Gotcha for the NEXT story: a grep-based file-assert oracle scans doc-comment prose too, not just code -- see the patterns.md bullet on this. The likely next story per ADR-0047's scope is either (a) rerouting the four call sites through ClaudeAdapter.buildSpawnArgv with zero behavior change, or (b) starting the readBackend per-phase-accessor upgrade; read ADR-0047 in full before choosing either.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
