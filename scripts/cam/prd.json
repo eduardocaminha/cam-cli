@@ -1,0 +1,70 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-339",
+  "description": "CAM-54 slice 1: design-spike ADR + a BackendAdapter/ClaudeAdapter seam fronting the four worker spawn-argv builders, zero behavior change.",
+  "issueNumber": 339,
+  "type": "feat",
+  "relatedDocs": [
+    "docs/adr/0046-codex-backend-spike-first-per-subagent-via-a-backendadapter-at-the-report-sentinel-boundary.md"
+  ],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Write the design-spike ADR for the BackendAdapter seam",
+      "description": "As the cam maintainer, I need a design-spike ADR that lands BEFORE any adapter code so the BackendAdapter abstraction boundary and the six claude/codex mismatch resolutions are recorded and reviewable, per CAM-54's spike-first mandate.",
+      "acceptanceCriteria": [
+        "A new ADR is written as the next docs/adr/ entry (0047-*.md); it is a design spike, not incidental doc maintenance. [oracle: file-assert ls docs/adr/ | grep -q '^0047-']",
+        "The ADR records the resolution of all six claude/codex mismatches: (a) spawn-argv/seam, (b) session/transcript + budget-recycle backstop, (c) completion-detection, (d) agent-prompt injection, (e) permission/sandbox+env, (f) model-id namespace. [oracle: reviewer-judgment]",
+        "The ADR states explicitly which concerns are adapter METHODS vs adapter INPUTS vs SHARED contract, fixing buildSpawnArgv(actor, opts) as the single concrete adapter method with model, agentName, permissionMode and the env-unset prefix as INPUTS (not separate methods). [oracle: grep -q 'buildSpawnArgv' docs/adr/0047-*.md]",
+        "The ADR records that completion-detection stays OUTSIDE the adapter as the shared backend-agnostic report/sentinel contract, citing report-parse.ts / ADR-0038, and frames it as the enabler of future mixed-backend runs. [oracle: grep -q 'ADR-0038' docs/adr/0047-*.md]",
+        "For codex-specific concerns (env/sandbox model and the claude-transcript-coupled token-ceiling at loop.ts:1189), the ADR records the DIRECTION only (transcript equivalent OR documented graceful degradation) without implementing any codex code. [oracle: grep -qi 'graceful degradation' docs/adr/0047-*.md]",
+        "The ADR scopes this slice to the four worker actors and defers orchestrator-persona (run.ts:267), retry launcher, and auth-preflight codex parity to follow-ups; ship stays zero-LLM. [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "New file docs/adr/0047-*.md (next number after 0046). ADR-0046 is the spec-session summary; this is the fuller design spike that itemizes the six-mismatch resolution and the adapter methods-vs-inputs-vs-shared-contract split. The codex-direction annotations come from the CAM-54 spec (issue CAM-0054.json gotchas), not from new external research: no codex dispatch code lands in this slice and no external library doc is fetched. Three ADR gates (hard-to-reverse, surprising, genuine trade-off) all pass for the seam boundary per the Domain Model Convention. Grep scripts/cam/patterns.md for 'ADR' / 'claude -p' before writing. Do NOT touch run.ts:267 orchestrator persona."
+    },
+    {
+      "id": "US-002",
+      "title": "Introduce BackendAdapter interface + ClaudeAdapter with per-actor golden characterization tests",
+      "description": "As the cam supervisor, I need a BackendAdapter interface and a ClaudeAdapter implementation whose buildSpawnArgv(actor, opts) reproduces today's worker spawn argv byte-for-byte, proven by a golden test per actor, so the seam exists and is locked to current behavior before any call site is rerouted.",
+      "acceptanceCriteria": [
+        "A new backend-adapter module (e.g. src/supervisor/backend-adapter.ts) defines the BackendAdapter interface and a ClaudeAdapter implementation; its single concrete responsibility is buildSpawnArgv(actor, opts) producing the worker spawn shell string, with model, agentName, permissionMode and the env-unset prefix as inputs to that method, not separate methods. [oracle: grep -q 'buildSpawnArgv' src/supervisor/backend-adapter.ts]",
+        "A characterization/golden test per actor (implementer, planner, auditor, reviewer) asserts ClaudeAdapter.buildSpawnArgv reproduces the EXACT current argv string produced by the corresponding existing builder for that actor, comparing against real builder output (import buildImplementerWorkerArgv / buildPlannerWorkerArgv / buildAuditorWorkerArgv / buildReviewerWorkerArgv), not a tautological mock-call assertion. [oracle: bun test test/supervisor/backend-adapter.test.ts]",
+        "The four existing builders and their call sites are NOT yet rerouted in this story; existing worker-argv / plan-argv / review tests stay green unchanged. [oracle: bun test]",
+        "Completion-detection is NOT added to the adapter (no report/sentinel parsing inside ClaudeAdapter). [oracle: file-assert ! grep -qi 'report-parse\\|CAM_.*_STATUS' src/supervisor/backend-adapter.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint/static spine is green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "New module src/supervisor/backend-adapter.ts + test/supervisor/backend-adapter.test.ts. The four actors differ ONLY in: implementer prepends CAM_WORKER=1 (WORKER_ACTOR_ENV, worker-argv.ts:138) and the others do NOT; reviewer defaults permissionMode='bypassPermissions' and has a default REVIEWER_TASK_PROMPT (review.ts). Reuse workerEnvPrefix(isolation) from worker-argv.ts; do not re-implement the env-strip list. Golden strings must be derived from the real builders (worker-argv.ts:177, plan-argv.ts:85 and :146, review.ts:119), matching the existing golden pattern in test/supervisor/worker-argv.test.ts and review-argv-model.test.ts. Keep backend claude-only: do NOT touch readBackend (models.ts:171) and do NOT wire ConfigScreen. Curated invariant: no tautological mock-call assertions, hit real builder output."
+    },
+    {
+      "id": "US-003",
+      "title": "Route the four worker builders through ClaudeAdapter and de-dup shellEscape, zero behavior change",
+      "description": "As the cam supervisor, I need the four worker builders to assemble their claude argv via ClaudeAdapter (resolved per-actor) so the seam is the single source of spawn-argv, with byte-identical output for every actor and shellEscape de-duplicated.",
+      "acceptanceCriteria": [
+        "buildImplementerWorkerArgv (worker-argv.ts:177), buildPlannerWorkerArgv (plan-argv.ts:85), buildAuditorWorkerArgv (plan-argv.ts:146) and buildReviewerWorkerArgv (review.ts:119) assemble their claude argv through ClaudeAdapter, with the adapter resolved PER-ACTOR (backend is claude-only this slice). [oracle: reviewer-judgment]",
+        "The emitted argv is byte-identical to today for every actor: implementer keeps CAM_WORKER=1 and the WORKER_ENV_UNSET/HOST_ONLY_ENV_UNSET prefix; planner, auditor and reviewer keep their exact current shapes (no spacing or flag-order normalization). [oracle: bun test test/supervisor/worker-argv.test.ts test/supervisor/plan/plan-argv.test.ts test/supervisor/review.test.ts test/supervisor/backend-adapter.test.ts]",
+        "shellEscape is de-duplicated into the adapter module: the three copied definitions (worker-argv.ts:150, plan-argv.ts:36, review.ts:96) are removed and behavior preserved. [oracle: file-assert ! grep -q 'function shellEscape' src/supervisor/plan-argv.ts && ! grep -q 'function shellEscape' src/supervisor/review.ts]",
+        "ZERO behavior change beyond the four worker builders: the orchestrator persona builder (run.ts:267), retry launcher (retry/launcher.ts), cam claude, cam setup, and the token-ceiling/budget subsystem (loop.ts:1189, usage.ts) are untouched. [oracle: reviewer-judgment]",
+        "No --permission-mode CLI flag is introduced; permissionMode stays an internal input to buildSpawnArgv. [oracle: bun test test/no-permission-mode-flag.test.ts]",
+        "readBackend stays single-key claude-only and ConfigScreen is not wired (per-phase backend accessor is a later CAM-54 slice). [oracle: file-assert ! grep -q 'readBackend' src/ui/ConfigScreen.tsx]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint/static spine is green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": "US-002",
+      "notes": "Edit worker-argv.ts, plan-argv.ts, review.ts (builders) to delegate to ClaudeAdapter; the call sites are loop.ts:1001, plan-runner.ts:597 and :634, review.ts:370 (leave call-site signatures intact if builders delegate internally). GOTCHA (hard constraint): characterize FIRST, then refactor, assert identical output; do not normalize spacing/flag order. The env-unset prefix and CAM_WORKER=1 marker are claude-inputs, not folded into a shared method incorrectly (planner/auditor/reviewer must NEVER get CAM_WORKER=1: worker-argv.ts:132-136). Keep ported src/retry/* MIT headers intact and do not touch retry/launcher.ts (findClaudeBinary dedup is out of scope). emitSpawnResolution (spawn-resolution.ts) behavior stays as-is. Grep scripts/cam/patterns.md for 'argv' / 'claude -p' / 'shellEscape' before editing."
+    }
+  ]
+}
