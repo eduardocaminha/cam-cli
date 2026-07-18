@@ -395,7 +395,7 @@ export function readSnapshot(options: { cwd: string; nowMs: number; claudeDir?: 
 
 	const prd = readPrd(cwd);
 	const state = readState(cwd);
-	const recent = readRecentProgress(cwd);
+	const recent = readRecentProgress(cwd, prd?.userStories);
 	const orchPath = orchestratorTranscriptPath(cwd, claudeDir);
 	const tokenUsage = orchPath !== null ? readTranscriptTokens(orchPath) : null;
 	const storyTokens = readStoryTokens(cwd, claudeDir, prd?.userStories ?? []);
@@ -562,8 +562,14 @@ function readStoryTokens(
  * via parseRecentProgress (CAM-31). One JSON object per line; a missing file
  * yields []. Each bullet is a fixed `MM-DD HH:MM US-XXX outcome` string, which
  * keeps the panel width-stable.
+ *
+ * `userStories` (US-001, CAM-346) is the same live prd.json array the Stories
+ * panel reads (Dashboard.tsx:445 filters `s.passes === true`). It is reduced to
+ * a storyId->passes:true Set and threaded into parseRecentProgress so a frozen
+ * 'incomplete' event for a story that has since been finalized-DONE renders in
+ * agreement with the Stories panel, instead of contradicting it.
  */
-export function readRecentProgress(cwd: string): string[] {
+export function readRecentProgress(cwd: string, userStories?: readonly PrdStory[]): string[] {
 	const path = join(cwd, EVENT_LOG_PATH);
 	if (!existsSync(path)) return [];
 	let body: string;
@@ -572,7 +578,10 @@ export function readRecentProgress(cwd: string): string[] {
 	} catch {
 		return [];
 	}
-	return parseRecentProgress(body);
+	const passingStoryIds = new Set(
+		(userStories ?? []).filter((s) => s.passes === true).map((s) => s.id),
+	);
+	return parseRecentProgress(body, passingStoryIds);
 }
 
 /**
@@ -652,8 +661,17 @@ export function sumSessionWorkerTokens(jsonl: string | null, sessionStartIso: st
  * a 'result' event carries `detail.outcome`. Malformed lines are skipped, not
  * fatal. Format: `<MM-DD HH:MM> US-XXX <outcome>` (the structured event log
  * replaces the old progress.txt markdown scrape).
+ *
+ * `passingStoryIds` (US-001, CAM-346) is an optional live-state reconciliation
+ * lookup: the event log is factually correct for the instant it was written
+ * (a 'result' event can legitimately record 'incomplete' when prd.json hadn't
+ * flipped `passes:true` yet), but a story that has since been finalized-DONE
+ * should no longer show as 'incomplete' next to the Stories panel's checkmark.
+ * Only the 'incomplete' outcome is reconciled to 'done'; every other outcome
+ * (pass, blocked, fail, unknown, no-commit, ...) passes through verbatim. The
+ * event itself is never rewritten, only its rendered summary.
  */
-export function parseRecentProgress(jsonl: string): string[] {
+export function parseRecentProgress(jsonl: string, passingStoryIds?: ReadonlySet<string>): string[] {
 	const summaries: string[] = [];
 	for (const line of jsonl.split("\n")) {
 		const trimmed = line.trim();
@@ -668,11 +686,13 @@ export function parseRecentProgress(jsonl: string): string[] {
 		const e = event as { ts?: unknown; storyId?: unknown; kind?: unknown; detail?: unknown };
 		if (e.kind !== "result") continue;
 		const story = typeof e.storyId === "string" && e.storyId.length > 0 ? e.storyId : "?";
-		const outcome =
+		const rawOutcome =
 			typeof e.detail === "object" && e.detail !== null &&
 			typeof (e.detail as { outcome?: unknown }).outcome === "string"
 				? (e.detail as { outcome: string }).outcome
 				: "?";
+		const outcome =
+			rawOutcome === "incomplete" && (passingStoryIds?.has(story) ?? false) ? "done" : rawOutcome;
 		const when = typeof e.ts === "string" ? shortTimestamp(e.ts) : "";
 		summaries.push(`${when ? when + " " : ""}${story} ${outcome}`);
 	}

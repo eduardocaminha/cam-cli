@@ -266,6 +266,37 @@ describe('parseRecentProgress (event log)', () => {
 	test('returns [] on an empty body', () => {
 		expect(parseRecentProgress('')).toEqual([]);
 	});
+
+	// --- US-001 (CAM-346): reconcile 'incomplete' against live prd.json passes ---
+
+	test('reconciles a frozen "incomplete" result to "done" when the story now passes', () => {
+		const jsonl = resultLine('2026-04-28T10:05:00Z', 'US-001', 'incomplete');
+		const passing = new Set(['US-001']);
+		expect(parseRecentProgress(jsonl, passing)).toEqual(['04-28 10:05 US-001 done']);
+	});
+
+	test('negative case: "incomplete" stays "incomplete" when the story does not pass', () => {
+		const jsonl = resultLine('2026-04-28T10:05:00Z', 'US-002', 'incomplete');
+		const passing = new Set(['US-001']); // US-002 is absent from the passing set
+		expect(parseRecentProgress(jsonl, passing)).toEqual(['04-28 10:05 US-002 incomplete']);
+	});
+
+	test('negative case: "incomplete" stays "incomplete" when no pass-lookup is supplied', () => {
+		const jsonl = resultLine('2026-04-28T10:05:00Z', 'US-001', 'incomplete');
+		expect(parseRecentProgress(jsonl)).toEqual(['04-28 10:05 US-001 incomplete']);
+	});
+
+	test('other outcomes pass through verbatim even when the story passes', () => {
+		const jsonl = [
+			resultLine('2026-04-28T10:05:00Z', 'US-001', 'blocked'),
+			resultLine('2026-04-28T10:06:00Z', 'US-002', 'pass'),
+		].join('\n');
+		const passing = new Set(['US-001', 'US-002']);
+		expect(parseRecentProgress(jsonl, passing)).toEqual([
+			'04-28 10:06 US-002 pass',
+			'04-28 10:05 US-001 blocked',
+		]);
+	});
 });
 
 // --- sumSessionWorkerTokens (US-002, PR-83) ---------------------------------
@@ -362,6 +393,27 @@ describe('readRecentProgress (IO)', () => {
 			);
 			const out = readRecentProgress(dir);
 			expect(out).toEqual(['04-28 11:00 US-Z pass']);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	// US-001 (CAM-346): userStories passes:true threads through to reconcile 'incomplete'.
+	test('reconciles "incomplete" to "done" when userStories reports the story passes', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-dash-events-reconcile-'));
+		try {
+			mkdirSync(join(dir, '.claude'), { recursive: true });
+			writeFileSync(
+				join(dir, '.claude', 'cam-worker-events.jsonl'),
+				JSON.stringify({
+					ts: '2026-04-28T11:00:00Z',
+					storyId: 'US-Z',
+					kind: 'result',
+					detail: { outcome: 'incomplete' },
+				}) + '\n',
+			);
+			const out = readRecentProgress(dir, [{ id: 'US-Z', title: 'Z', passes: true }]);
+			expect(out).toEqual(['04-28 11:00 US-Z done']);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
