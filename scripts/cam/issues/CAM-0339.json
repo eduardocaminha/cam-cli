@@ -1,11 +1,11 @@
 {
   "id": "CAM-339",
   "title": "CAM-54 slice 1: design-spike ADR + BackendAdapter seam (claude refactored into an adapter, zero behavior change)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-17T21:17:39.482Z",
-  "updatedAt": "2026-07-18T09:08:21.844Z",
+  "updatedAt": "2026-07-18T09:08:24.124Z",
   "description": "First slice of the CAM-54 epic (Codex CLI as an alternative LLM backend). Scoped to be one self-contained PR that lands BEFORE any codex dispatch code, exactly as CAM-54's spec mandates ('A design-spike ADR is written FIRST ... it lands before any codex dispatch code').\n\nIN SCOPE (this slice only):\n1. Write the design-spike ADR defining the BackendAdapter abstraction seam and resolving the six claude/codex mismatches enumerated in CAM-54's spec: (a) spawn-argv/seam, (b) session/transcript + budget-recycle backstop, (c) completion-detection, (d) agent-prompt injection, (e) permission/sandbox+env, (f) model-id namespace.\n2. Introduce the BackendAdapter abstraction fronting the worker spawn-argv builders (worker-argv.ts, plan-argv.ts, review.ts) and their loop.ts/review.ts call sites, resolved PER-ACTOR.\n3. Refactor the existing claude path INTO an adapter with NO behavior change: the claude spawn path and all existing tests stay green.\n\nOUT OF SCOPE (later CAM-54 slices, file as follow-ups): per-phase backend config accessor + ConfigScreen wiring; real codex dispatch/adapter; mixed-backend run; codex model-id population; orchestrator-persona / retry-launcher / auth-preflight codex parity. ship stays zero-LLM and untouched.\n\nWHY SLICED: CAM-54 is jobSize 8 and its own spec says 'Epic-scale: expect heavy slicing'; planning it whole blows review. This slice is the claude-only refactor + design decision, the natural first PR. See CAM-54 spec (gotchas + acceptanceCriteria) for the full seam inventory and hardcoded-claude spawn-site list.\n\nNEEDS /cam-spec (operator participation) before planning: the ADR content and adapter-seam boundary are genuine design decisions.",
   "specSource": "derived",
   "derivedFrom": [
@@ -14,7 +14,35 @@
   "wsjf": {
     "value": 3,
     "timeCriticality": 1,
-    "riskReduction": 1,
-    "jobSize": 8
+    "riskReduction": 2,
+    "jobSize": 3
+  },
+  "spec": {
+    "scope": "First slice of the CAM-54 epic (Codex CLI as an alternative LLM backend). ONE self-contained PR that lands BEFORE any codex dispatch code, per CAM-54's design-spike-first mandate. Two deliverables: (1) a design-spike ADR defining the BackendAdapter abstraction seam and resolving the six claude/codex mismatches; (2) a BackendAdapter interface plus a ClaudeAdapter implementation fronting the four WORKER spawn-argv builders, with ZERO behavior change. Grounded in the current inventory: five core builders hand-assemble the literal 'claude --permission-mode <mode> --session-id <uuid> --model <m> --agent <name> <prompt>' shell string handed to tmux respawn-pane, with NO shared argv factory today (shellEscape is copy-pasted in worker-argv.ts:150, plan-argv.ts:36, review.ts:96). Design settled with the operator: the adapter's ONE concrete responsibility is buildSpawnArgv(actor, opts), folding model / agentName / permissionMode / envPrefix as INPUTS (not separate methods); completion-detection stays the shared backend-agnostic report/sentinel contract (report-parse.ts, ADR-0038), deliberately OUTSIDE the adapter; the worker token-ceiling transcript read (loop.ts:1189) stays claude-shaped and the ADR annotates the codex direction. IN SCOPE: the ADR plus the BackendAdapter/ClaudeAdapter seam over the four worker builders (implementer worker-argv.ts:177, planner plan-argv.ts:85, auditor plan-argv.ts:146, reviewer review.ts:119) and their loop.ts / plan-runner.ts / review.ts call sites, resolved PER-ACTOR. OUT OF SCOPE (later CAM-54 slices, file as follow-ups): orchestrator-persona builder (run.ts:267) and its budget-recycle backstop; per-phase backend config accessor + ConfigScreen wiring; real codex dispatch/adapter; mixed-backend run; codex model-id population; retry launcher (launcher.ts), cam claude passthrough, cam setup strings; auth-preflight. ship stays zero-LLM, untouched (ship-runner.ts:36, ADR-0009).",
+    "acceptanceCriteria": [
+      "A design-spike ADR is written FIRST (docs/adr/) defining the BackendAdapter abstraction seam and recording the resolution of all six claude/codex mismatches: (a) spawn-argv, (b) session/transcript + budget-recycle backstop, (c) completion-detection, (d) agent-prompt injection, (e) permission/sandbox+env, (f) model-id namespace. The ADR states explicitly which concerns are adapter methods vs adapter inputs vs shared contract, and for codex-specific concerns records the direction (transcript equivalent or documented graceful degradation) without implementing codex.",
+      "A BackendAdapter interface plus a ClaudeAdapter implementation is introduced. Its concrete responsibility is buildSpawnArgv(actor, opts) producing the worker spawn shell string; model, agentName, permissionMode, and the env-unset prefix are inputs to that method, not separate methods.",
+      "The four worker builders (buildImplementerWorkerArgv worker-argv.ts:177, buildPlannerWorkerArgv plan-argv.ts:85, buildAuditorWorkerArgv plan-argv.ts:146, buildReviewerWorkerArgv review.ts:119) route their claude-argv assembly through ClaudeAdapter, resolved PER-ACTOR at each call site (loop.ts, plan-runner.ts:597 and :634, review.ts:370). The emitted argv is byte-identical to today for every actor: implementer keeps CAM_WORKER=1 / WORKER_ACTOR_ENV; planner, auditor and reviewer keep their exact current shapes.",
+      "Completion-detection is NOT moved into the adapter: it stays the shared backend-agnostic report/sentinel contract (report-parse.ts, ADR-0038). The ADR documents this as a deliberate boundary that enables future mixed-backend runs.",
+      "ZERO behavior change to the claude path: the orchestrator persona builder (run.ts:267), retry launcher, cam claude, cam setup, and the token-ceiling / budget subsystem are untouched by this slice. All existing tests stay green.",
+      "New tests cover the BackendAdapter seam: a characterization/golden test per actor asserting ClaudeAdapter.buildSpawnArgv reproduces the exact prior argv string for each of the four actors, hitting real builder output rather than a tautological mock-call assertion.",
+      "Quality gates: bun run typecheck (zero errors), bun test (all pass), bun run check:all green. If shellEscape is de-duplicated into the adapter module, the three prior copies are removed with behavior preserved."
+    ],
+    "gotchas": [
+      "ZERO behavior change is the hard constraint: characterize the current argv output of all four builders FIRST (golden strings), then refactor to route through ClaudeAdapter and assert identical output. The implementer keeps CAM_WORKER=1 (WORKER_ACTOR_ENV, worker-argv.ts:138); planner/auditor/reviewer do NOT prepend it. Do not normalize spacing or flag order.",
+      "The adapter fronts ONLY the four worker builders. run.ts:267 (orchestrator persona, wrapped in a bash while-true bounded-respawn loop) is explicitly a CAM-54 follow-up (orchestrator-persona), NOT this slice. Leave it alone.",
+      "Do NOT add a --permission-mode CLI flag (test/no-permission-mode-flag.test.ts enforces this). permissionMode is read by readPermissionMode (permission-mode.ts) and passed as an input to buildSpawnArgv; it stays an internal value, never a cam flag.",
+      "The env-unset prefix (workerEnvPrefix, worker-argv.ts:116, strips CLAUDECODE et al.) is claude-nesting-specific. For this slice it is an input to the claude adapter's argv; the ADR notes codex has a different env/sandbox model (its own approval model, different nesting/auth vars) to be handled in the codex slice.",
+      "completion-detection (worker-report.json presence + CAM_*_STATUS sentinel + pane liveness) is already backend-agnostic (report-parse.ts, result.ts, ADR-0038). Resist pulling it into the adapter: it is the portable contract that makes a future mixed run work. The ADR records this decision.",
+      "The worker token-ceiling (loop.ts:1189, readWorkerTokens keyed on the claude transcript uuid path, usage.ts:232) is claude-transcript-coupled. It is NOT refactored in this slice; the ADR annotates the codex direction (transcript equivalent or graceful degradation). The orchestrator budget-recycle backstop (budget.ts, orch-recycle-watch.ts) is orchestrator-persona, fully out of scope.",
+      "shellEscape is copy-pasted in worker-argv.ts:150, plan-argv.ts:36, review.ts:96; findClaudeBinary is duplicated in launcher.ts:80 and claude.ts:185. De-duping shellEscape into the adapter module is in-scope-adjacent and welcome IF behavior is preserved; findClaudeBinary belongs to the peripheral launcher/claude paths, out of this slice.",
+      "Backend config stays single-key + claude-only for this slice: do NOT turn readBackend (models.ts:171) into a per-phase accessor and do NOT wire ConfigScreen. The per-phase backend accessor is a later CAM-54 slice. emitSpawnResolution (spawn-resolution.ts) already logs {phase, model, backend}; leave its behavior as-is.",
+      "ADR gating: the three ADR gates (hard-to-reverse, surprising, genuine trade-off) all pass for the seam boundary, so an ADR is warranted per the Domain Model Convention. Number it as the next docs/adr/ entry."
+    ],
+    "domainTerms": [
+      "BackendAdapter: the per-actor abstraction seam fronting worker spawn-argv assembly for a given LLM backend; slice-1's concrete surface is buildSpawnArgv(actor, opts).",
+      "ClaudeAdapter: the claude implementation of BackendAdapter introduced in slice-1, reproducing the existing claude spawn argv byte-for-byte.",
+      "spawn-argv seam: the centralization of the four near-duplicate worker builders' claude-flag assembly behind the adapter."
+    ]
   }
 }
