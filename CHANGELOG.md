@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.204.0] - 2026-07-18
+
+### Added
+
+- US-001 - Bound verb/config co-occurrence cue to a single field
+
 ## [0.203.0] - 2026-07-18
 
 ### Added

@@ -93,9 +93,14 @@ const SETUP_CHECKLIST_CUES: SetupChecklistCue[] = [
 		// Requires config/configuration to co-occur with a change/setup signal
 		// (an action verb, or a config-artifact token) rather than matching a
 		// bare standalone word -- 'the configuration option is already
-		// documented' should NOT fire this cue (US-001, CAM-334).
+		// documented' should NOT fire this cue (US-001, CAM-334). The gap is
+		// newline-bounded (excludes newline characters, not the previous
+		// any-character gap) so the two tokens must co-occur within the same
+		// haystack field (description, notes, or a single story title): a verb
+		// in one field and an unrelated standalone config word in another field
+		// must NOT co-fire (US-001, CAM-343).
 		pattern:
-			/\bconfig(?:uration)?\b[\s\S]*?\b(?:new|update|change|edit|add|set)\b|\b(?:new|update|change|edit|add|set)\b[\s\S]*?\bconfig(?:uration)?\b|\bproject\.toml\b|\bconfig(?:uration)?\s+file\b/i,
+			/\bconfig(?:uration)?\b[^\n]*?\b(?:new|update|change|edit|add|set)\b|\b(?:new|update|change|edit|add|set)\b[^\n]*?\bconfig(?:uration)?\b|\bproject\.toml\b|\bconfig(?:uration)?\s+file\b/i,
 		item: 'Configuration change',
 		where: 'project config',
 		how: 'Review the updated configuration and apply any required settings.',

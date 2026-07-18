@@ -187,4 +187,21 @@ describe('composePrBody Setup checklist', () => {
 			expect(body).toContain('Configuration change');
 		}
 	});
+
+	test('does NOT detect the Configuration change cue when the change verb and the config word are in different fields', () => {
+		const body = composePrBody({
+			project: 'cam-cli',
+			description: 'add a webhook',
+			userStories: [{ id: 'US-001', title: 'Unrelated story about configuration', passes: false }],
+		});
+		expect(body).not.toContain('Configuration change');
+	});
+
+	test('detects the Configuration change cue when the change verb and the config word are in the same field', () => {
+		const body = composePrBody({
+			project: 'cam-cli',
+			description: 'add a new configuration value',
+		});
+		expect(body).toContain('Configuration change');
+	});
 });
