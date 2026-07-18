@@ -1,13 +1,43 @@
 {
   "id": "CAM-341",
   "title": "After US-003 inverted the seam (the four builders now delegate to ClaudeAdapter…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-18T10:09:42.534Z",
-  "updatedAt": "2026-07-18T10:09:42.534Z",
+  "updatedAt": "2026-07-18T12:28:13.068Z",
   "description": "After US-003 inverted the seam (the four builders now delegate to ClaudeAdapter.buildSpawnArgv), the golden comparisons adapter.buildSpawnArgv(actor, opts) vs buildXWorkerArgv(opts) are self-referential: the builder is a thin wrapper over the same adapter call, so byte-for-byte equality is trivially true. Genuine behavior lock still lives in the unchanged sibling tests (worker-argv.test.ts / plan-argv.test.ts / review.test.ts) which assert literal argv substrings (env -u CLAUDECODE, CAM_WORKER=1, --agent, --permission-mode), so coverage is not lost. Consider pinning a hardcoded golden string in backend-adapter.test.ts to keep it a real characterization independent of the wrappers. Non-blocking; carried over from review round 1.\n\nSource: cam/issue-339\nReview round: 2\n\nsuggestion-fingerprint: 28f36bb72618",
   "derivedFrom": [
     "CAM-339"
-  ]
+  ],
+  "spec": {
+    "scope": "Replace the self-referential golden comparisons in test/supervisor/backend-adapter.test.ts (adapter.buildSpawnArgv(actor,opts) vs buildXWorkerArgv(opts)) with hardcoded full-string argv goldens, restoring a real characterization test independent of the four builder wrappers. Post-CAM-339/US-003 the four builders (buildImplementerWorkerArgv/buildPlannerWorkerArgv/buildAuditorWorkerArgv/buildReviewerWorkerArgv) are one-line delegations to `new ClaudeAdapter().buildSpawnArgv(actor,opts)`, so comparing adapter output to builder output executes the identical code path and can never catch a regression. Touch only the test file; production argv assembly in src/supervisor/backend-adapter.ts stays unchanged.",
+    "acceptanceCriteria": [
+      "Each golden test in test/supervisor/backend-adapter.test.ts that currently asserts adapter.buildSpawnArgv(actor,opts) toBe buildXWorkerArgv(opts) is replaced by an assertion against a hardcoded literal expected argv string (byte-for-byte), so the expected side no longer references the builder wrappers.",
+      "The pinned goldens cover the actor paths currently exercised: implementer (defaults + agentName/model/container-isolation variant), planner (defaults + host-isolation/agentName/model variant), auditor (defaults + container-isolation/agentName/model variant), reviewer (all-defaults + all-fields variant).",
+      "Each golden reflects the real per-actor differences: only implementer emits CAM_WORKER=1; default agents are subagent-implementer/planner/auditor/reviewer; host isolation includes `-u CLAUDE_CODE_OAUTH_TOKEN` and container drops it; model is shell-quoted; reviewer defaults taskPrompt to REVIEWER_TASK_PROMPT and permissionMode to bypassPermissions.",
+      "The adapter-level guard tests (throws when taskPrompt/permissionMode missing for non-reviewer actors) are preserved unchanged.",
+      "The full `bun test` suite passes and typecheck is clean.",
+      "No src/ file is modified; git diff touches only test/supervisor/backend-adapter.test.ts."
+    ],
+    "gotchas": [
+      "The builders are thin wrappers (worker-argv.ts:104, plan-argv.ts:78 and :130, review.ts:104), each `return new ClaudeAdapter().buildSpawnArgv(actor, opts)`; that is exactly why the current expected side is tautological. Do NOT keep any builder call on the expected side.",
+      "Sibling tests (worker-argv.test.ts / plan-argv.test.ts / review.test.ts) assert literal substrings via toContain/startsWith; mirror that literal style but pin the FULL argv string here. No full-string byte-for-byte golden exists anywhere yet, so derive each expected string from the real adapter output, do not invent one.",
+      "The implementer branch is the ONLY actor emitting CAM_WORKER=1; planner/auditor/reviewer omit it. A wrong golden here would either mask or invent that difference.",
+      "Env-unset order is WORKER_ENV_UNSET (6 vars: CLAUDECODE, CLAUDE_CODE_ENTRYPOINT, CLAUDE_CODE_SESSION_ID, CLAUDE_CODE_SSE_PORT, CLAUDE_CODE_EXECPATH, CLAUDE_AGENT_SDK_VERSION) then `-u CLAUDE_CODE_OAUTH_TOKEN` for host isolation only. Argv order: env prefix, [CAM_WORKER=1], claude, --permission-mode, --session-id, --model (shell-quoted), --agent, then shell-quoted taskPrompt.",
+      "Test-only change: src/supervisor/backend-adapter.ts is sidecar-executed worker-argv code but it is NOT modified here, so no coherence rebuild is required after ship."
+    ],
+    "domainTerms": [
+      "golden test: a characterization test pinning the exact expected output (here the full argv string) as a literal, so any behavior change fails it",
+      "seam inversion (CAM-339/US-003): the four per-actor argv builders were refactored to delegate to ClaudeAdapter.buildSpawnArgv, making the former builder-vs-adapter comparison self-referential",
+      "WorkerActor: the union 'implementer' | 'planner' | 'auditor' | 'reviewer' selecting the per-actor argv template"
+    ]
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 2,
+    "riskReduction": 5,
+    "jobSize": 2
+  },
+  "type": "chore"
 }
