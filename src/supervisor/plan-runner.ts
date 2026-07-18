@@ -41,7 +41,7 @@ import type { LoopPhase, PrdShape } from '../commands/status.ts';
 import type { PreflightResult } from './preflight-container.ts';
 import { truncatePreflightDetail, type PlanPreflightFailedWriterParams } from './plan-preflight-marker.ts';
 import { buildPlannerWorkerArgv, buildAuditorWorkerArgv } from './plan-argv.ts';
-import { readPhaseModel, readBackend } from '../config/models.ts';
+import { readPhaseModel, readPhaseBackend } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 import { decidePostAuditAction } from '../plan/plan-approval-decision.ts';
 import { dockerExecWrap } from './docker-exec.ts';
@@ -592,7 +592,7 @@ function resolveAndSpawnPlanner(
 ): string {
 	const uuid = genUuid().toLowerCase();
 	const model = readPhaseModel('planner');
-	const backend = readBackend();
+	const backend = readPhaseBackend('planner');
 	emitSpawnResolution({ phase: 'planner', model, backend, writeEvent: makeEventWriter(logEvent, uuid) });
 	const shell = buildPlannerWorkerArgv({ uuid, taskPrompt, permissionMode, model, isolation: workerIsolation });
 	// US-006 / CAM-152: wrap via dockerExecWrap in container mode.
@@ -629,7 +629,7 @@ function resolveAndSpawnAuditor(
 ): string {
 	const uuid = genUuid().toLowerCase();
 	const model = readPhaseModel('auditor');
-	const backend = readBackend();
+	const backend = readPhaseBackend('auditor');
 	emitSpawnResolution({ phase: 'auditor', model, backend, writeEvent: makeEventWriter(logEvent, uuid) });
 	const shell = buildAuditorWorkerArgv({ uuid, taskPrompt, permissionMode, model, isolation: workerIsolation });
 	// US-006 / CAM-152: wrap via dockerExecWrap in container mode.

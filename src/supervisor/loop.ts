@@ -41,7 +41,7 @@ import { readWorkerOutcome, parseAnySentinel } from './result.ts';
 import type { WorkerOutcome } from './result.ts';
 import { buildImplementerWorkerArgv } from './worker-argv.ts';
 import { buildImplementerTaskPrompt } from './task-prompt.ts';
-import { readPhaseModel, readBackend } from '../config/models.ts';
+import { readPhaseModel, readPhaseBackend } from '../config/models.ts';
 import type { WorkerIsolation } from '../config/models.ts';
 import { dockerExecWrap } from './docker-exec.ts';
 import { FirewallError } from './container-firewall.ts';
@@ -1011,7 +1011,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// Resolve model/backend once so argv and the spawn-resolution event
 			// report the identical resolved values (reviewer finding: double-read).
 			const implModel = readPhaseModel('implementer');
-			const implBackend = readBackend();
+			const implBackend = readPhaseBackend('implementer');
 
 			// US-001 (CAM-224): build the per-story task prompt from the exact
 			// story record decideNextAction selected, matched against the prd
