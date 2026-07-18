@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.205.0] - 2026-07-18
+
+### Added
+
+- US-001 - Pin hardcoded full-string argv goldens in backend-adapter.test.ts
+
 ## [0.204.0] - 2026-07-18
 
 ### Added
