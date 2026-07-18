@@ -1,11 +1,11 @@
 {
   "id": "CAM-333",
   "title": "reconstructPriorOrchCumulative replays the whole event log (all issues, all pas…",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-17T10:40:15.806Z",
-  "updatedAt": "2026-07-18T10:52:20.271Z",
+  "updatedAt": "2026-07-18T11:22:37.123Z",
   "description": "reconstructPriorOrchCumulative replays the whole event log (all issues, all past orchestrator sessions) to derive the prior cumulative. On a real orchestrator-session boundary (transcript reset -> smaller cumulative than the accumulated baseline), Math.max(0, ...) correctly floors the delta at 0, but the baseline is NOT reset, so the first several post-reset cycles under-count (floor to 0) until the new cumulative exceeds the old accumulated baseline. This is within the story's explicitly-sanctioned best-effort recovery (no session-id on the event) and prevents the quadratic inflation being fixed, so it is non-blocking; the patterns.md bullet's phrasing 'count the whole new cumulative as this cycle's delta' is slightly optimistic for this multi-cycle post-reset case. Consider a session-boundary reset of the baseline if per-cycle accuracy after orchestrator restarts becomes important.\n\nSource: cam/issue-328\nReview round: 1\n\nsuggestion-fingerprint: 158189dacbfb",
   "derivedFrom": [
     "CAM-328"
