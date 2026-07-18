@@ -42,7 +42,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/sidecar.ts (merge-watch 'merged' terminal at ~948-954 where updateShipStalledMarker / updatePostMergeStalledMarker already fire; readImplementBlockedMarker + removeImplementBlockedMarker + IMPLEMENT_BLOCKED_FILENAME already imported at line 56). Build the marker path as join(claudeDir, IMPLEMENT_BLOCKED_FILENAME) like the read fn factory at ~1030. state.issueId is a string|null (see updateShipStalledMarker at ~759 issueId: state.issueId ?? null); marker.issueId is a string. Guard: only when both present AND equal. Mirror updateShipStalledMarker (src/release/merge-watch.ts precedent, patterns.md line ~438/510 consume-on-merge) exactly: read, compare identity, then remove; never-throws. Do NOT touch the non-merged terminals (owned by updateShipStalledMarker) or the post-merge marker. Independent of US-001 (different seam) but ordered second; can be picked in either order."
     }
