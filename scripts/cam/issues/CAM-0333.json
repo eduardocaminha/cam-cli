@@ -1,13 +1,42 @@
 {
   "id": "CAM-333",
   "title": "reconstructPriorOrchCumulative replays the whole event log (all issues, all pas…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-17T10:40:15.806Z",
-  "updatedAt": "2026-07-17T10:40:15.806Z",
+  "updatedAt": "2026-07-18T10:52:20.271Z",
   "description": "reconstructPriorOrchCumulative replays the whole event log (all issues, all past orchestrator sessions) to derive the prior cumulative. On a real orchestrator-session boundary (transcript reset -> smaller cumulative than the accumulated baseline), Math.max(0, ...) correctly floors the delta at 0, but the baseline is NOT reset, so the first several post-reset cycles under-count (floor to 0) until the new cumulative exceeds the old accumulated baseline. This is within the story's explicitly-sanctioned best-effort recovery (no session-id on the event) and prevents the quadratic inflation being fixed, so it is non-blocking; the patterns.md bullet's phrasing 'count the whole new cumulative as this cycle's delta' is slightly optimistic for this multi-cycle post-reset case. Consider a session-boundary reset of the baseline if per-cycle accuracy after orchestrator restarts becomes important.\n\nSource: cam/issue-328\nReview round: 1\n\nsuggestion-fingerprint: 158189dacbfb",
   "derivedFrom": [
     "CAM-328"
-  ]
+  ],
+  "spec": {
+    "scope": "Fix reconstructPriorOrchCumulative (src/commands/journal.ts:450-473) under-counting orchestrator token spend for the first several cycles after an orchestrator-session boundary. Today the reconstruction replays EVERY cycle-tokens event in the whole log into one global telescoping baseline; at a real session boundary (orchestrator respawn -> transcript reset -> the new session's transcript cumulative is SMALLER than the accumulated baseline) the Math.max(0, cumulative - prior) floor at journal.ts:547 correctly avoids a negative delta but the baseline is never reset, so post-reset cycles record orchTokens=0 until the new cumulative finally exceeds the old baseline. Make the reconstruction session-aware by stamping the orchestrator session uuid (ALREADY on disk at .claude/.cam-orch-session, ALREADY read every cycle by recordCycleTokens via orchestratorTranscriptPath) onto each emitted cycle-tokens event and resetting the accumulated baseline at a session boundary. Backward-compatible: legacy events with no session id keep today's exact best-effort telescoping, mirroring the existing orchTokensMode legacy-vs-delta pattern (CAM-328). Files: src/supervisor/events.ts (CycleTokensEventDetail 375-383), src/commands/journal.ts (recordCycleTokens 523-568 + reconstructPriorOrchCumulative 450-473), test/commands/journal-record-cycle-tokens.test.ts. Reversible, no genuine design alternative -> no ADR.",
+    "acceptanceCriteria": [
+      "CycleTokensEventDetail (src/supervisor/events.ts:375-383) gains an optional orchSessionId?: string field; recordCycleTokens stamps the current orchestrator session uuid onto every emitted cycle-tokens event, read via an injectable reader that resolves .claude/.cam-orch-session (ORCH_SESSION_MARKER) from cwd, mirroring the defaultReadOrchTranscript / defaultReadEventLog DI pattern in journal.ts:357-378 (do NOT re-derive the path; the marker is already read indirectly by orchestratorTranscriptPath).",
+      "reconstructPriorOrchCumulative is session-aware during replay: when two consecutive cycle-tokens events carry different orchSessionId values (a session boundary), the accumulated baseline resets to a fresh telescoping sum for the new session rather than continuing to add old-session deltas across the boundary.",
+      "At record time, when the current orchestrator session uuid differs from the trailing (most recent) cycle-tokens event's orchSessionId, priorOrchCumulative is treated as 0 so the FIRST cycle of a fresh orchestrator session records its full current transcript cumulative as the delta instead of flooring to 0. (Replay alone cannot detect this boundary because the new session has no event in the log yet on its first cycle.)",
+      "Backward compatibility: cycle-tokens events with no orchSessionId (and legacy events with orchTokensMode absent) retain today's exact behavior byte-for-byte; the session-boundary reset engages only once events carry the id. Mirrors the orchTokensMode legacy-vs-delta split.",
+      "A new test reproduces the CAM-333 multi-cycle under-count: prior session baseline large (e.g. 5000), new session cumulative starts small and grows across at least 3 cycles; asserts each post-reset cycle records the correct positive delta (NOT floored to 0). The existing single-cycle floor test (journal-record-cycle-tokens.test.ts:473-504) and the monotonic-chain test (506-543) remain green.",
+      "Quality gates green: bun run typecheck (zero errors), bun test (all pass), bun run check:all (lint spine)."
+    ],
+    "gotchas": [
+      "The session uuid is ALREADY on disk (.claude/.cam-orch-session, ORCH_SESSION_MARKER at src/tmux/session.ts:508) and ALREADY read every cycle by recordCycleTokens indirectly via defaultReadOrchTranscript -> orchestratorTranscriptPath (src/transcript/usage.ts:249-261). Surface it via an injectable reader; do NOT re-derive the path or add a new disk-read convention.",
+      "WorkerEvent.uuid is the literal string 'cycle-close' for cycle-tokens events (emit at journal.ts:564), NOT the session uuid. Do NOT repurpose WorkerEvent.uuid; add orchSessionId to the detail (CycleTokensEventDetail), not to the envelope.",
+      "The marker is rewritten with a fresh lowercased uuid on every orchestrator respawn (run.ts:285-286) -- that respawn IS the transcript-reset / session-boundary event the fix keys on.",
+      "TWO reset triggers are required, not one: (a) during replay, id-change between consecutive events; (b) at record time, current-session-id != trailing-event-id. Only implementing (a) leaves the first post-reset cycle still under-counting.",
+      "delta mode: cycle-tokens detail.orchTokens is the per-cycle DELTA (orchTokensMode='delta'); the reconstructed baseline is the telescoping SUM of deltas, so a boundary reset means starting a fresh telescoping sum for the new session, not zeroing a stored cumulative.",
+      "Downstream consumers (src/stats/tokens.ts:186 foldCycleTokens, src/commands/dashboard.ts:604, src/stats/split-advisory.ts) treat recorded orchTokens as authoritative and never recompute from transcripts -- the fix must be correct at record time, not just at read time.",
+      "The record path is cam journal --cycle-close (dispatchJournal, index.ts:1830-1839); it already passes cwd + claudeDir but no session id -- the injectable reader resolves the marker from cwd/.claude.",
+      "No ADR: reversible, mirrors the CAM-328 orchTokensMode legacy/delta precedent, no genuine alternative with a real trade-off."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 1,
+    "riskReduction": 2,
+    "jobSize": 2
+  },
+  "type": "fix"
 }
