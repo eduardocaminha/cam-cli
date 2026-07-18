@@ -371,6 +371,12 @@ export interface DomainDocsWrittenEventDetail {
  *   - workerTokens: sum of all worker 'tokens' events in this cycle (per-cycle slice).
  *   - total: orchTokens + workerTokens.
  *   - recordedAt: ISO 8601 timestamp when the event was emitted.
+ *   - orchSessionId: optional orchestrator session uuid the event was recorded
+ *     under (US-001, CAM-333), read from the `.cam-orch-session` marker file.
+ *     Used to detect orchestrator-session boundaries when reconstructing the
+ *     telescoping `orchTokens` baseline across cycles, so a respawn does not
+ *     keep adding deltas onto a prior session's cumulative. Legacy events
+ *     (recorded before this field existed) omit it.
  */
 export interface CycleTokensEventDetail {
 	cycleId: string;
@@ -380,6 +386,7 @@ export interface CycleTokensEventDetail {
 	workerTokens: number;
 	total: number;
 	recordedAt: string;
+	orchSessionId?: string;
 }
 
 /**

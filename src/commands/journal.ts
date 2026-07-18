@@ -23,6 +23,7 @@ import { commitTreeToMain } from '../git/on-main.ts';
 import type { SpawnFn } from '../git/on-main.ts';
 import { printError } from '../logging/color.ts';
 import { orchestratorTranscriptPath, parseTranscriptUsage } from '../transcript/usage.ts';
+import { ORCH_SESSION_MARKER } from '../tmux/session.ts';
 import {
 	makeFileEventLogger,
 	type CycleTokensEventDetail,
@@ -378,6 +379,23 @@ function defaultReadEventLog(cwd: string): string | null {
 }
 
 /**
+ * Default: read the orchestrator session uuid from disk (US-001, CAM-333).
+ * Reuses ORCH_SESSION_MARKER (src/tmux/session.ts) rather than re-deriving
+ * the marker filename by hand, mirroring the same marker file
+ * orchestratorTranscriptPath resolves the transcript path from.
+ * Returns null when the marker file is absent, unreadable, or empty.
+ */
+function defaultReadOrchSessionId(cwd: string): string | null {
+	const path = join(cwd, '.claude', ORCH_SESSION_MARKER);
+	try {
+		const raw = readFileSync(path, 'utf8').trim();
+		return raw === '' ? null : raw;
+	} catch {
+		return null;
+	}
+}
+
+/**
  * Scan log lines for the index of the last 'cycle-tokens' event.
  * Returns -1 when no such event exists (first cycle).
  */
@@ -433,6 +451,29 @@ function sumWorkerTokensSinceLastCycleClose(logJsonl: string | null): number {
 	return total;
 }
 
+/** Extract the `orchSessionId` field from a parsed 'cycle-tokens' detail, or undefined when absent/not a string. */
+function extractOrchSessionId(detail: Record<string, unknown>): string | undefined {
+	return typeof detail['orchSessionId'] === 'string' ? detail['orchSessionId'] : undefined;
+}
+
+/**
+ * Parse one JSONL line into its 'cycle-tokens' event detail object.
+ * Returns null when the line is malformed JSON, not a 'cycle-tokens' event,
+ * or its detail is not a plain object.
+ */
+function parseCycleTokensDetail(raw: string): Record<string, unknown> | null {
+	let parsed: { kind?: unknown; detail?: unknown };
+	try {
+		parsed = JSON.parse(raw) as { kind?: unknown; detail?: unknown };
+	} catch {
+		return null;
+	}
+	if (parsed.kind !== 'cycle-tokens') return null;
+	const rawDetail = parsed.detail;
+	if (typeof rawDetail !== 'object' || rawDetail === null || Array.isArray(rawDetail)) return null;
+	return rawDetail as Record<string, unknown>;
+}
+
 /**
  * Reconstruct the prior orchestrator cumulative spend (the baseline the next
  * delta is computed against) by replaying every past 'cycle-tokens' event in
@@ -444,32 +485,51 @@ function sumWorkerTokensSinceLastCycleClose(logJsonl: string | null): number {
  *     running baseline (telescoping sum: sum(delta_1..delta_n) === cumulative_n
  *     when the baseline started at 0 and spend only increased).
  *
+ * Session-aware (US-001, CAM-333): when two consecutive 'cycle-tokens' events
+ * both carry a (defined) `orchSessionId` and those ids differ -- an
+ * orchestrator-session boundary -- the baseline resets to 0 before folding in
+ * that event, starting a fresh telescoping sum for the new session instead of
+ * continuing to add old-session deltas across the boundary. Events with no
+ * `orchSessionId` (legacy, or the split is not yet engaged) never trigger a
+ * reset, mirroring the orchTokensMode legacy-vs-delta compat split.
+ *
  * Returns 0 when the log is absent or contains no prior 'cycle-tokens' event
  * (first cycle: nothing to subtract, the whole cumulative becomes the delta).
  */
 function reconstructPriorOrchCumulative(logJsonl: string | null): number {
 	if (logJsonl === null) return 0;
 	let baseline = 0;
+	let prevSessionId: string | undefined;
 	for (const raw0 of logJsonl.split('\n')) {
 		const raw = raw0.trim();
 		if (!raw) continue;
-		let parsed: { kind?: unknown; detail?: unknown };
-		try {
-			parsed = JSON.parse(raw) as { kind?: unknown; detail?: unknown };
-		} catch {
-			continue;
+		const detail = parseCycleTokensDetail(raw);
+		if (detail === null) continue;
+		const eventSessionId = extractOrchSessionId(detail);
+		if (prevSessionId !== undefined && eventSessionId !== undefined && eventSessionId !== prevSessionId) {
+			baseline = 0;
 		}
-		if (parsed.kind !== 'cycle-tokens') continue;
-		const rawDetail = parsed.detail;
-		if (typeof rawDetail !== 'object' || rawDetail === null || Array.isArray(rawDetail)) continue;
-		const detail = rawDetail as Record<string, unknown>;
-		if (detail['orchTokensMode'] === 'delta') {
-			baseline += toN(detail['orchTokens']);
-		} else {
-			baseline = toN(detail['orchTokens']);
-		}
+		baseline = detail['orchTokensMode'] === 'delta' ? baseline + toN(detail['orchTokens']) : toN(detail['orchTokens']);
+		prevSessionId = eventSessionId;
 	}
 	return baseline;
+}
+
+/**
+ * Extract the `orchSessionId` of the trailing (most recent) 'cycle-tokens'
+ * event in the log (US-001, CAM-333). Returns undefined when the log is
+ * absent, contains no prior 'cycle-tokens' event, or that event predates this
+ * field (legacy, no `orchSessionId`).
+ */
+function findTrailingOrchSessionId(logJsonl: string | null): string | undefined {
+	if (logJsonl === null) return undefined;
+	const lines = logJsonl.split('\n');
+	const lastIdx = findLastCycleTokensIdx(lines);
+	if (lastIdx === -1) return undefined;
+	const raw = lines[lastIdx]?.trim();
+	if (!raw) return undefined;
+	const detail = parseCycleTokensDetail(raw);
+	return detail === null ? undefined : extractOrchSessionId(detail);
 }
 
 /** Options for recordCycleTokens. All filesystem reads and the event logger are injectable for unit tests. */
@@ -495,6 +555,14 @@ export interface RecordCycleTokensOptions {
 	 */
 	readEventLog?: () => string | null;
 	/**
+	 * Injectable: read the current orchestrator session uuid (US-001, CAM-333).
+	 * Default: resolves join(cwd, '.claude', ORCH_SESSION_MARKER) via readFileSync,
+	 * trimmed. Returns null when absent, unreadable, or empty. Stamped onto the
+	 * emitted event's `orchSessionId` and used to detect an orchestrator-session
+	 * boundary at record time (see recordCycleTokens doc comment).
+	 */
+	readOrchSessionId?: () => string | null;
+	/**
 	 * Injectable event logger. Emits the 'cycle-tokens' WorkerEvent.
 	 * Default: makeFileEventLogger for join(cwd, '.claude', 'cam-worker-events.jsonl').
 	 */
@@ -513,12 +581,32 @@ export interface RecordCycleTokensOptions {
  *   - workerTokens: sum of all worker 'tokens' events in the per-cycle slice (events
  *     appended to the event log after the previous 'cycle-tokens' marker).
  *   - total: orchTokens (delta) + workerTokens.
+ *   - orchSessionId: the current orchestrator session uuid, resolved via
+ *     readOrchSessionId and stamped onto the event (US-001, CAM-333). Omitted
+ *     when unresolvable (marker absent/empty), matching legacy events.
+ *
+ * Orchestrator-session boundary handling (US-001, CAM-333): a session
+ * respawn starts a fresh transcript, so its cumulative token count starts
+ * small again relative to the old session's accumulated baseline. Two
+ * mechanisms detect this and prevent the delta from flooring to 0 across the
+ * boundary:
+ *   (a) replay-time (reconstructPriorOrchCumulative): once two consecutive
+ *       'cycle-tokens' events carry different (defined) orchSessionId values,
+ *       the reconstructed baseline resets to a fresh telescoping sum starting
+ *       at that event.
+ *   (b) record-time (here): the very first cycle of a fresh session has no
+ *       same-session event in the log yet for (a) to key off, so when the
+ *       current orchSessionId differs from the trailing (most recent)
+ *       'cycle-tokens' event's orchSessionId, priorOrchCumulative is
+ *       overridden to 0 -- the whole current cumulative becomes this cycle's
+ *       delta. This override only engages when the current session id is
+ *       resolvable; when it is not, behavior is unchanged (legacy/no-op).
  *
  * When the orchestrator transcript is absent or unreadable, the current cumulative
  * is 0 and the event is still emitted (graceful degradation, not an error).
  *
- * All reads (transcript, event log) and the event logger are injectable for
- * hermetic unit tests that do not touch the real filesystem.
+ * All reads (transcript, event log, session id) and the event logger are
+ * injectable for hermetic unit tests that do not touch the real filesystem.
  */
 export function recordCycleTokens(opts: RecordCycleTokensOptions): void {
 	const { cycleId, issueNumber, cwd, claudeDir } = opts;
@@ -526,6 +614,7 @@ export function recordCycleTokens(opts: RecordCycleTokensOptions): void {
 
 	const readOrchTranscript = opts.readOrchTranscript ?? (() => defaultReadOrchTranscript(cwd, claudeDir));
 	const readEventLog = opts.readEventLog ?? (() => defaultReadEventLog(cwd));
+	const readOrchSessionId = opts.readOrchSessionId ?? (() => defaultReadOrchSessionId(cwd));
 	const logEvent = opts.logEvent ?? makeFileEventLogger(eventLogPath);
 
 	// Compute the current cumulative orchestrator session spend (input-side only).
@@ -540,7 +629,16 @@ export function recordCycleTokens(opts: RecordCycleTokensOptions): void {
 	// baseline from the same event log read.
 	const logJsonl = readEventLog();
 	const workerTokens = sumWorkerTokensSinceLastCycleClose(logJsonl);
-	const priorOrchCumulative = reconstructPriorOrchCumulative(logJsonl);
+	let priorOrchCumulative = reconstructPriorOrchCumulative(logJsonl);
+
+	// Record-time session-boundary override (US-001, CAM-333, mechanism (b)
+	// above): the first cycle of a fresh orchestrator session has no
+	// same-session event yet for replay to key off, so detect the boundary
+	// directly against the trailing event's orchSessionId.
+	const currentOrchSessionId = readOrchSessionId();
+	if (currentOrchSessionId !== null && findTrailingOrchSessionId(logJsonl) !== currentOrchSessionId) {
+		priorOrchCumulative = 0;
+	}
 
 	// orchTokens is now the per-cycle delta, floored at 0 (a session boundary
 	// where the transcript resets would otherwise yield a negative delta).
@@ -556,6 +654,7 @@ export function recordCycleTokens(opts: RecordCycleTokensOptions): void {
 		workerTokens,
 		total: orchTokens + workerTokens,
 		recordedAt,
+		...(currentOrchSessionId !== null ? { orchSessionId: currentOrchSessionId } : {}),
 	};
 
 	logEvent({
