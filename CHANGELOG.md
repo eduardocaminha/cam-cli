@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.209.0] - 2026-07-18
+
+### Added
+
+- US-001 - Bound Dashboard composed frame height to pane rows to stop 'Loop' header ghosting
+
 ## [0.208.0] - 2026-07-18
 
 ### Added

@@ -180,7 +180,7 @@ export function DashboardApp({
 }: DashboardAppProps): ReactElement {
 	const [data, setData] = useState<DashboardData>(() => readSnapshot());
 	const { exit } = useApp();
-	const { columns } = useWindowSize();
+	const { columns, rows } = useWindowSize();
 	const stories = data.stories ?? [];
 	const [sel, setSel] = useState<SelectionState>({ selected: 0, mode: 'list' });
 	// Fit the section rule to the host pane: full width minus a symmetric margin
@@ -273,10 +273,10 @@ export function DashboardApp({
 	const selectedStory: PrdStory | undefined = orderedForDetail[sel.selected];
 
 	return (
-		<Box flexDirection="column">
-			<SummaryPanel data={data} dividerWidth={dividerWidth} barWidth={barWidth} />
+		<Box flexDirection="column" height={rows}>
+			<Box flexShrink={0}><SummaryPanel data={data} dividerWidth={dividerWidth} barWidth={barWidth} /></Box>
 			{sel.mode === 'list' ? (
-				<>
+				<Box flexDirection="column" flexShrink={0}>
 					<StoriesSection
 						stories={stories}
 						currentId={data.currentStoryId}
@@ -286,9 +286,9 @@ export function DashboardApp({
 					/>
 					<RecentSection recent={data.recent} dividerWidth={dividerWidth} />
 					<Keybar dividerWidth={dividerWidth} />
-				</>
+				</Box>
 			) : (
-				<>
+				<Box flexDirection="column" flexShrink={0}>
 					<StoryDetailView
 						story={selectedStory}
 						currentId={data.currentStoryId}
@@ -296,7 +296,7 @@ export function DashboardApp({
 						dividerWidth={dividerWidth}
 					/>
 					<DetailKeybar />
-				</>
+				</Box>
 			)}
 		</Box>
 	);

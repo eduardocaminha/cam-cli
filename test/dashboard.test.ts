@@ -1135,7 +1135,7 @@ describe('DashboardApp keybar (US-003)', () => {
 		};
 	}
 
-	it('keybar renders slash-command keys and d/q labels', () => {
+	it('keybar renders slash-command keys and labels within the pane-bounded frame (US-001)', () => {
 		const { lastFrame, unmount } = render(
 			React.createElement(DashboardApp, {
 				readSnapshot: () => makeData(),
@@ -1159,9 +1159,8 @@ describe('DashboardApp keybar (US-003)', () => {
 		expect(frame).toContain('/cam-issue');
 		// The keybar is a "Commands" section now (heading + divider), matching Loop/Stories/Recent.
 		expect(frame).toContain('Commands');
-		// d and q navigation rows.
-		expect(frame).toContain('focus orchestrator');
-		expect(frame).toContain('close pane');
+		expect(frame.split('\n').length).toBeLessThanOrEqual(24); // US-001: bounded pane
+		expect(frame).not.toMatch(/paneestrator|focus orchestrator|close pane/); // d/q scroll past it, never overlap-corrupt
 		unmount();
 	});
 
@@ -1176,7 +1175,7 @@ describe('DashboardApp keybar (US-003)', () => {
 		);
 		const frame = lastFrame() ?? '';
 		expect(frame).toContain('/cam-next');
-		expect(frame).toContain('focus orchestrator');
+		expect(frame.split('\n').length).toBeLessThanOrEqual(24); // US-001: bounded; 'd' row scrolls past it.
 		unmount();
 	});
 
@@ -1944,7 +1943,8 @@ describe('DashboardApp detail view (US-006)', () => {
 		const frame = await waitForFrame(lastFrame, (f) => f.includes('/cam-next'));
 		// List-mode keybar is back
 		expect(frame).toContain('/cam-next');
-		expect(frame).toContain('close pane');
+		expect(frame.split('\n').length).toBeLessThanOrEqual(24); // US-001: bounded; 'close pane' scrolls past it.
+		expect(frame).not.toContain('close pane');
 		// Detail keybar is gone
 		expect(frame).not.toContain('back to list');
 		unmount();
