@@ -39,8 +39,9 @@ import { tmuxArgs } from '../tmux/session.ts';
  *  panes; this is the cap for a wide standalone terminal. */
 const PROGRESS_BAR_WIDTH = 22;
 
-/** How many stories the panel shows around the current one. */
-const STORIES_WINDOW = 8;
+/** Fixed chrome overhead of a `Section` wrapper: gapTop (1, the default) +
+ *  heading (1) + divider (1). */
+const SECTION_CHROME_HEIGHT = 3;
 
 /** View mode for the Stories panel: list cursor or story detail. */
 export type SelectionMode = 'list' | 'detail';
@@ -107,6 +108,23 @@ const KEYBAR_COMMANDS: readonly KeybarCommand[] = [
 	{ key: 'p', label: '/cam-plan', desc: 'plan an issue', slash: '/cam-plan' },
 	{ key: 'i', label: '/cam-issue', desc: 'create issue', slash: '/cam-issue' },
 ];
+
+/**
+ * Height (composed-frame lines) of the Commands/Keybar section (US-001,
+ * CAM-348): chrome + one row per `KEYBAR_COMMANDS` entry + the 2 hint rows
+ * ('d  focus orchestrator', 'q  close pane'). This section is NEVER
+ * windowed/shrunk; it is the fixed cost the Stories panel's window size
+ * must reserve room for.
+ */
+const KEYBAR_HEIGHT = SECTION_CHROME_HEIGHT + KEYBAR_COMMANDS.length + 2;
+
+/**
+ * Minimum Stories-section budget (chrome + at least 1 content row) below
+ * which the section drops its own heading/divider/gap entirely, reclaiming
+ * those lines for the Keybar (US-001, CAM-348) rather than showing an
+ * empty or clipped section header.
+ */
+const STORIES_COMPACT_THRESHOLD = SECTION_CHROME_HEIGHT + 1;
 
 export interface PollWidthClearerOptions {
 	/** Write sink for the clear escape sequence. Defaults to `process.stdout.write`. */
@@ -271,6 +289,10 @@ export function DashboardApp({
 					return pa - pb;
 				});
 	const selectedStory: PrdStory | undefined = orderedForDetail[sel.selected];
+	// US-001 (CAM-348): derive the Stories window from the pane height instead
+	// of the old hardcoded STORIES_WINDOW=8, so the Keybar's hint rows below
+	// never fall under the CAM-345 height={rows} fold.
+	const storiesLayout = computeStoriesLayout(rows, data);
 
 	return (
 		<Box flexDirection="column" height={rows}>
@@ -283,6 +305,8 @@ export function DashboardApp({
 						selectedIdx={sel.selected}
 						dividerWidth={dividerWidth}
 						storyTokens={data.storyTokens ?? {}}
+						chrome={storiesLayout.chrome}
+						windowSize={storiesLayout.windowSize}
 					/>
 					<RecentSection recent={data.recent} dividerWidth={dividerWidth} />
 					<Keybar dividerWidth={dividerWidth} />
@@ -568,24 +592,86 @@ function StatusIndicator({
 	);
 }
 
+/**
+ * Height (composed-frame lines) of the Loop/SummaryPanel section for a given
+ * snapshot: its own chrome (gapTop 0 + heading + divider = 2) plus its 6
+ * fixed rows (state/story/progress/since/session/branch) plus the tokens and
+ * cost rows when present (US-014, PR-83). Computed fresh from `data` on
+ * every call rather than a hardcoded worst-case constant, so the Stories
+ * budget below always matches what `SummaryPanel` actually renders this
+ * frame — never a stale guess.
+ */
+function summaryPanelHeight(data: DashboardData): number {
+	let rows = 6;
+	if (data.tokensInput !== undefined) rows += 1;
+	if (data.sessionWorkerTokens !== undefined) rows += 1;
+	return 2 + rows;
+}
+
+/**
+ * Height of the RecentSection for a given entry count: chrome plus either
+ * the "(no activity yet)" placeholder (1 row) or one row per entry (already
+ * capped upstream to RECENT_ENTRIES_COUNT, src/commands/dashboard.ts — this
+ * story does not re-window it, only mirrors its already-bounded length).
+ */
+function recentSectionHeight(recent: readonly string[]): number {
+	return SECTION_CHROME_HEIGHT + Math.max(1, recent.length);
+}
+
+/**
+ * Derives how the Stories panel presents itself for the current pane height
+ * (US-001, CAM-348): replaces the hardcoded STORIES_WINDOW=8 with a value
+ * that reserves room for the Loop, Recent, and Commands sections first, so
+ * the Keybar's 'd  focus orchestrator' / 'q  close pane' hint rows (never
+ * windowed — see KEYBAR_HEIGHT) never fall below the CAM-345
+ * `height={rows}` fold. When the remaining budget can't even afford the
+ * Stories section's own chrome (heading + divider + gap) plus one content
+ * row, the section drops its chrome entirely and shows bare rows instead
+ * (still bounded by the same budget) rather than clipping the keybar.
+ * With chrome, one extra line is reserved out of the window budget for the
+ * '...N more' overflow hint (only rendered when the list is actually
+ * truncated), so a truncated frame still lands exactly at `rows`, never
+ * one line past it.
+ */
+function computeStoriesLayout(rows: number, data: DashboardData): { chrome: boolean; windowSize: number } {
+	const reservedOther = summaryPanelHeight(data) + recentSectionHeight(data.recent) + KEYBAR_HEIGHT;
+	const budget = rows - reservedOther;
+	if (budget >= STORIES_COMPACT_THRESHOLD) {
+		return { chrome: true, windowSize: Math.max(1, budget - SECTION_CHROME_HEIGHT - 1) };
+	}
+	return { chrome: false, windowSize: Math.max(0, budget) };
+}
+
 function StoriesSection({
 	stories,
 	currentId,
 	selectedIdx,
 	dividerWidth,
 	storyTokens,
+	chrome,
+	windowSize,
 }: {
 	stories: readonly PrdStory[];
 	currentId: string;
 	selectedIdx: number;
 	dividerWidth: number;
 	storyTokens: Record<string, TranscriptUsage>;
+	/** Whether there's room for the section's own heading/divider/gap
+	 *  (US-001, CAM-348); false in a pane too short to afford both chrome
+	 *  and content without pushing the Keybar below the fold. */
+	chrome: boolean;
+	/** Rows-derived window size (US-001, CAM-348), fed to `computeWindow`
+	 *  in place of the old hardcoded STORIES_WINDOW=8. */
+	windowSize: number;
 }): ReactElement {
+	const placeholder = <Text color={colors.muted}>(no prd.json found)</Text>;
 	if (stories.length === 0) {
-		return (
+		return chrome ? (
 			<Section heading="Stories" dividerWidth={dividerWidth}>
-				<Text color={colors.muted}>(no prd.json found)</Text>
+				{placeholder}
 			</Section>
+		) : (
+			<Box paddingLeft={layout.contentIndent}>{placeholder}</Box>
 		);
 	}
 
@@ -598,19 +684,30 @@ function StoriesSection({
 
 	// Window follows the selection cursor so the highlighted row is always
 	// visible even when the PRD has 30+ stories.
-	const window = computeWindow(ordered.length, selectedIdx, STORIES_WINDOW);
+	const window = computeWindow(ordered.length, selectedIdx, windowSize);
+	const rows = ordered.slice(window.start, window.end).map((s, i) => (
+		<StoryRow
+			key={s.id}
+			story={s}
+			isCurrent={s.id === currentId}
+			tokens={storyTokens[s.id]}
+			isSelected={window.start + i === selectedIdx}
+		/>
+	));
 
+	if (!chrome) {
+		// Compact fallback (US-001, CAM-348): no room for chrome AND the
+		// '...N more' hint without clipping the Keybar, so both are dropped —
+		// bare rows only, still indented to match the Section content column.
+		return (
+			<Box flexDirection="column" paddingLeft={layout.contentIndent}>
+				{rows}
+			</Box>
+		);
+	}
 	return (
 		<Section heading="Stories" dividerWidth={dividerWidth}>
-			{ordered.slice(window.start, window.end).map((s, i) => (
-				<StoryRow
-					key={s.id}
-					story={s}
-					isCurrent={s.id === currentId}
-					tokens={storyTokens[s.id]}
-					isSelected={window.start + i === selectedIdx}
-				/>
-			))}
+			{rows}
 			{window.end < ordered.length ? (
 				<Text color={colors.muted}>
 					{'  '}…{ordered.length - window.end} more

@@ -14,7 +14,7 @@
 // The runtime loop polls every `pollIntervalMs`; we set it to 1 ms in
 // tests so a `maxTicks: 2` run completes in a couple of milliseconds.
 
-import { afterAll, beforeAll, describe, expect, it, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, it, mock, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -1160,7 +1160,10 @@ describe('DashboardApp keybar (US-003)', () => {
 		// The keybar is a "Commands" section now (heading + divider), matching Loop/Stories/Recent.
 		expect(frame).toContain('Commands');
 		expect(frame.split('\n').length).toBeLessThanOrEqual(24); // US-001: bounded pane
-		expect(frame).not.toMatch(/paneestrator|focus orchestrator|close pane/); // d/q scroll past it, never overlap-corrupt
+		// US-001 (CAM-348): the Stories window is derived from the pane height
+		// so the keybar's own hint rows are reserved and never clipped.
+		expect(frame).toMatch(/focus orchestrator/);
+		expect(frame).toContain('close pane');
 		unmount();
 	});
 
@@ -1943,10 +1946,129 @@ describe('DashboardApp detail view (US-006)', () => {
 		const frame = await waitForFrame(lastFrame, (f) => f.includes('/cam-next'));
 		// List-mode keybar is back
 		expect(frame).toContain('/cam-next');
-		expect(frame.split('\n').length).toBeLessThanOrEqual(24); // US-001: bounded; 'close pane' scrolls past it.
-		expect(frame).not.toContain('close pane');
+		expect(frame.split('\n').length).toBeLessThanOrEqual(24); // US-001: bounded pane
+		// US-001 (CAM-348): the Stories window is derived from the pane height
+		// so the keybar's own hint rows are reserved and never clipped.
+		expect(frame).toContain('close pane');
 		// Detail keybar is gone
 		expect(frame).not.toContain('back to list');
+		unmount();
+	});
+});
+
+// --- StoriesSection window derivation from pane height (US-001, CAM-348) --
+//
+// The Stories window is now derived from `rows` instead of a hardcoded
+// STORIES_WINDOW=8. These tests drive a non-default pane height by
+// re-mocking `terminal-size` (idempotent-install guard bypassed by calling
+// `mock.module` directly, mirroring the CAM-201 root-cause fix); each test
+// restores the suite-wide default (rows: 24) afterward.
+
+describe('DashboardApp Stories window derivation (US-001, CAM-348)', () => {
+	afterEach(() => {
+		mock.module('terminal-size', () => ({ default: () => ({ columns: 80, rows: 24 }) }));
+	});
+
+	function makeManyStoriesData(count: number): DashboardData {
+		return {
+			branchName: 'cam/test',
+			currentStoryId: 'US-001',
+			currentStoryTitle: 'story 1',
+			iteration: 0,
+			maxIterations: 30,
+			startedAtMs: 0,
+			nowMs: 0,
+			paused: false,
+			idle: false,
+			recent: [],
+			stories: Array.from({ length: count }, (_, i) => ({
+				id: `US-00${i + 1}`,
+				title: `story ${i + 1}`,
+				priority: i + 1,
+				passes: false,
+			})),
+			storyTokens: {},
+		};
+	}
+
+	it('a moderately short pane shrinks the window and the "...N more" hint reflects it (AC4)', () => {
+		mock.module('terminal-size', () => ({ default: () => ({ columns: 80, rows: 29 }) }));
+		const { lastFrame, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeManyStoriesData(8),
+				pollIntervalMs: 100_000,
+				runTmux: () => undefined,
+			}),
+		);
+		const frame = lastFrame() ?? '';
+		// Chrome still present (there's room for it at this height).
+		expect(frame).toContain('Stories');
+		// Only the first 3 rows fit the derived window; the rest are hidden
+		// behind the overflow hint, not the fixed old STORIES_WINDOW=8.
+		expect(frame).toContain('story 3');
+		expect(frame).not.toContain('story 4');
+		expect(frame).toContain('…5 more');
+		// The Keybar (never windowed) still renders in full.
+		expect(frame).toContain('focus orchestrator');
+		expect(frame).toContain('close pane');
+		// AC3: the composed frame (chrome + window + overflow hint + the
+		// always-visible sections) never exceeds the pane height.
+		expect(frame.split('\n').length).toBeLessThanOrEqual(29);
+		unmount();
+	});
+
+	it('a tall pane shows every story with chrome and no overflow hint (AC8: tall pane)', () => {
+		mock.module('terminal-size', () => ({ default: () => ({ columns: 80, rows: 60 }) }));
+		const { lastFrame, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeManyStoriesData(3),
+				pollIntervalMs: 100_000,
+				runTmux: () => undefined,
+			}),
+		);
+		const frame = lastFrame() ?? '';
+		expect(frame).toContain('Stories');
+		expect(frame).toContain('story 1');
+		expect(frame).toContain('story 2');
+		expect(frame).toContain('story 3');
+		expect(frame).not.toContain('more');
+		expect(frame).toContain('focus orchestrator');
+		expect(frame).toContain('close pane');
+		unmount();
+	});
+
+	it('a short pane (AC8) still bounds the frame to rows and keeps the keybar visible', () => {
+		const { lastFrame, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => makeManyStoriesData(8),
+				pollIntervalMs: 100_000,
+				runTmux: () => undefined,
+			}),
+		);
+		const frame = lastFrame() ?? '';
+		expect(frame.split('\n').length).toBeLessThanOrEqual(24);
+		expect(frame).toContain('focus orchestrator');
+		expect(frame).toContain('close pane');
+		unmount();
+	});
+
+	it('detail mode keeps its fixed keybar visible under the same short-pane rows bound (AC6)', async () => {
+		const detailData: DashboardData = {
+			...makeManyStoriesData(2),
+			reviewLastVerdict: 'CLEAN',
+		};
+		const { lastFrame, stdin, unmount } = render(
+			React.createElement(DashboardApp, {
+				readSnapshot: () => detailData,
+				pollIntervalMs: 100_000,
+				runTmux: () => undefined,
+			}),
+		);
+		stdin.write('\r'); // Enter detail
+		const frame = await waitForFrame(lastFrame, (f) => f.includes('back to list'));
+		expect(frame).toContain('back to list');
+		expect(frame).toContain('close pane');
+		expect(frame.split('\n').length).toBeLessThanOrEqual(24);
 		unmount();
 	});
 });
