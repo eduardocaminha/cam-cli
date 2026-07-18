@@ -34,7 +34,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Mirror readPhaseModel (src/config/models.ts:110-125) structure; the extra layer vs readPhaseModel is the global fallback that readBackend (models.ts:171-190) already implements (top-level scalar form AND [backend].name section form). Order: per-phase [backend].<phase> -> readBackend-style global form -> DEFAULTS.backend. Keep readBackend() intact for the run.ts orchestrator logging call site. New tests live under test/config/ mirroring existing readPhaseModel tests. Do NOT touch backend-adapter.ts (the seam is untouched, per gotcha)."
     },
