@@ -42,7 +42,7 @@
         "Lint/static spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "New module src/supervisor/backend-adapter.ts + test/supervisor/backend-adapter.test.ts. The four actors differ ONLY in: implementer prepends CAM_WORKER=1 (WORKER_ACTOR_ENV, worker-argv.ts:138) and the others do NOT; reviewer defaults permissionMode='bypassPermissions' and has a default REVIEWER_TASK_PROMPT (review.ts). Reuse workerEnvPrefix(isolation) from worker-argv.ts; do not re-implement the env-strip list. Golden strings must be derived from the real builders (worker-argv.ts:177, plan-argv.ts:85 and :146, review.ts:119), matching the existing golden pattern in test/supervisor/worker-argv.test.ts and review-argv-model.test.ts. Keep backend claude-only: do NOT touch readBackend (models.ts:171) and do NOT wire ConfigScreen. Curated invariant: no tautological mock-call assertions, hit real builder output."
     },
