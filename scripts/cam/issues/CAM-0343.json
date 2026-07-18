@@ -1,0 +1,13 @@
+{
+  "id": "CAM-343",
+  "title": "The verb/config co-occurrence uses `[\\s\\S]*?` across the newline-joined haystac…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-18T11:54:48.037Z",
+  "updatedAt": "2026-07-18T11:54:48.037Z",
+  "description": "The verb/config co-occurrence uses `[\\s\\S]*?` across the newline-joined haystack, so a verb in one field (e.g. prd.description 'add a webhook') and a standalone 'configuration' in an unrelated story title can co-trigger the cue. This matches the spec's stated 'co-occur anywhere in the haystack' intent, so it is intended, not a defect; noting only that a same-clause proximity bound would be higher-signal if false positives resurface.\n\nSource: cam/issue-334\nReview round: 1\n\nsuggestion-fingerprint: a0a08a42b744",
+  "derivedFrom": [
+    "CAM-334"
+  ]
+}
