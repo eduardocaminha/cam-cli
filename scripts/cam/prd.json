@@ -21,7 +21,7 @@
       "id": "US-R1-001",
       "title": "Review round 1 fix 001: address reviewer finding",
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "CRITICAL [src/ui/Dashboard.tsx:636]: Off-by-one at the STORIES_COMPACT_THRESHOLD boundary reintroduces the CAM-345 keybar-clip the story fixes. computeStoriesLayout admits the chrome path at budget>=4 and sets windowSize=Math.max(1, budget - SECTION_CHROME_HEIGHT - 1); at budget==4 the Math.max clamps 0 back up to 1, reclaiming the line the documented '-1 overflow-hint reservation' was meant to hold. With a truncated story list, chrome(3)+row(1)+overflowHint(1)=5 > budget(4), so the composed frame is rows+1 lines and Ink's <Box height={rows}> hard-clips the Keybar's final 'q  close pane' row below the fold. Verified by independent render: recent=[] + 8 stories at rows=26 drops 'close pane' (rows 25/27/28 render it). Violates AC #2 ('the Keybar q close pane hint row renders and is not clipped'). Fix: raise STORIES_COMPACT_THRESHOLD to reserve the overflow-hint line (e.g. SECTION_CHROME_HEIGHT + 2) or fall back to the compact/chromeless path whenever the honored window would truncate the list; add a regression test at the budget==4 boundary."
     },
     {
