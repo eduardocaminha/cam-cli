@@ -1,0 +1,20 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Add readPhaseBackend per-phase accessor in models.ts"
+  },
+  "branchName": "cam/issue-349",
+  "timestamp": "2026-07-18T23:21:54Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/config/models.ts",
+    "test/config/models.test.ts",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-002 (Repoint worker call sites to per-phase backend) should repoint the worker spawn call sites from readBackend() to readPhaseBackend(phase) one actor at a time. readPhaseBackend(phase, configPath?) is now exported from src/config/models.ts with the fallback chain: per-phase [backend].<phase> key -> existing global form (top-level backend scalar OR [backend].name) -> DEFAULTS.backend. readBackend() itself was left untouched (still used by run.ts's orchestrator logging call site) -- it is not being replaced, readPhaseBackend is additive. src/supervisor/backend-adapter.ts (BackendAdapter interface, ClaudeAdapter.buildSpawnArgv) was NOT modified by US-001 per its own AC4; US-002 is presumably where that seam gets touched to actually consume the per-phase value.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ],
+  "appliedPatternIds": []
+}
