@@ -171,4 +171,20 @@ describe('composePrBody Setup checklist', () => {
 		expect(body).toContain('| 1 |');
 		expect(body).toContain('| 2 |');
 	});
+
+	test('does NOT detect the Configuration change cue for an incidental mention of "config(uration)"', () => {
+		const incidentalMentions = ['the configuration option is already documented', 'no configuration changes are required'];
+		for (const description of incidentalMentions) {
+			const body = composePrBody({ project: 'cam-cli', description });
+			expect(body).not.toContain('Configuration change');
+		}
+	});
+
+	test('detects the Configuration change cue when config/configuration co-occurs with a change/setup signal', () => {
+		const genuineChanges = ['add a new key to project.toml', 'update the configuration value in project.toml'];
+		for (const description of genuineChanges) {
+			const body = composePrBody({ project: 'cam-cli', description });
+			expect(body).toContain('Configuration change');
+		}
+	});
 });
