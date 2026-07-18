@@ -1,13 +1,38 @@
 {
   "id": "CAM-334",
   "title": "The config cue regex /\\bconfig(?:uration)?\\b/i is broad and will match nearly a…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-17T11:47:12.814Z",
-  "updatedAt": "2026-07-17T11:47:12.814Z",
+  "updatedAt": "2026-07-18T11:29:23.001Z",
   "description": "The config cue regex /\\bconfig(?:uration)?\\b/i is broad and will match nearly any PRD that mentions 'config'/'configuration', which may add a low-signal 'Configuration change' row to the setup checklist for most PRs. Consider narrowing it or ordering it last. Non-blocking.\n\nSource: cam/issue-52\nReview round: 1\n\nsuggestion-fingerprint: 02c8b87e4b5e",
   "derivedFrom": [
     "CAM-52"
-  ]
+  ],
+  "spec": {
+    "scope": "Narrow the 'Configuration change' setup-checklist cue in src/release/pr-body.ts so it stops firing on incidental prose mentions of 'config'/'configuration' while still detecting genuine configuration-change/setup actions. The current cue /\\bconfig(?:uration)?\\b/i (SETUP_CHECKLIST_CUES, the last/6th entry) matches any standalone 'config'/'configuration' word in the newline-joined haystack of prd.description + prd.notes + story titles, adding a low-signal 'Configuration change' row to nearly any PR that mentions config in passing. The cue is ALREADY ordered last, so ordering is not the fix: narrowing the pattern is. Replace the bare-word match with a context-requiring pattern (config/configuration co-occurring with a change/setup signal, e.g. an action verb like new/update/change/edit/add/set or a config-artifact token such as project.toml or a config file), keeping the cue as the last array entry and preserving the existing { pattern, item, where, how } row shape and the .filter every-match semantics. No other cue is modified.",
+    "acceptanceCriteria": [
+      "The 'Configuration change' row is NOT emitted when the PRD mentions config/configuration only incidentally (e.g. description 'the configuration option is already documented' / 'no configuration changes are required'), verified by a NEW negative test in test/release/pr-body.test.ts asserting the rendered PR body does NOT contain 'Configuration change' for such input.",
+      "The 'Configuration change' row IS still emitted when the PRD describes a genuine configuration change requiring operator setup (e.g. 'add a new key to project.toml' or 'update the configuration value in project.toml'), verified by a NEW positive test asserting the rendered PR body contains 'Configuration change'.",
+      "The config cue remains the LAST entry in SETUP_CHECKLIST_CUES with item 'Configuration change' and its { pattern, item, where, how } row shape unchanged; no other cue's pattern or behavior is modified and all existing pr-body tests still pass.",
+      "bun run typecheck, bun test, and bun run check:all all pass with zero errors."
+    ],
+    "gotchas": [
+      "SETUP_CHECKLIST_CUES selection is Array.filter (EVERY matching cue adds its own row), not first-match-wins; the config cue is already the LAST array entry, so 'ordering it last' from the issue text is already done and a no-op: narrowing the pattern is the substantive fix.",
+      "The haystack is [prd.description ?? '', prd.notes ?? '', ...story.title].join('\\n') in renderSetupChecklist (pr-body.ts ~line 142); story descriptions/bodies are NOT scanned. Put test cue text in description/notes or a story title accordingly.",
+      "There is currently NO test exercising the config cue specifically; the existing 'detects a config/install/migration cue from a story title alone' test input only triggers the migration cue and asserts 'Database migration'. Add dedicated positive + negative config-cue tests.",
+      "Existing tests assert via body.toContain(...) substring on the rendered markdown, not exact row-label equality.",
+      "'configurable' and 'reconfigure' already do NOT match the current word-boundary pattern, so the false-positive class is genuine STANDALONE 'config'/'configuration' prose words; the narrowing must target those, not derived words.",
+      "noUncheckedIndexedAccess: guard any regex capture-group access. Bun-only invariants apply; keep this file and test Bun-first."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 2,
+    "timeCriticality": 1,
+    "riskReduction": 1,
+    "jobSize": 1
+  },
+  "type": "fix"
 }
