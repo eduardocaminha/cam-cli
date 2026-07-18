@@ -1,11 +1,11 @@
 {
   "id": "CAM-344",
   "title": "Codify the sync-read carve-out to the Bun-first invariant (docs-only)",
-  "stage": "specified",
+  "stage": "idea",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-18T13:36:21.937Z",
-  "updatedAt": "2026-07-18T13:36:21.937Z",
+  "updatedAt": "2026-07-18T13:37:45.588Z",
   "description": "The Bun-first curated invariant (scripts/cam/CLAUDE.md 'Bun-only' bullet + patterns.md) reads as an absolute 'never node:fs', but the codebase deliberately keeps SYNCHRONOUS point-reads on node:fs (readFileSync/existsSync/appendFileSync) rather than Bun.file().text()/.writer(): migrating a sync reader to Bun.file (Promise) forces its callers async and breaks the in-memory synchronous test collectors. The carve-out is already reasoned inline in two places (src/config/toml.ts loadConfig test-tmpdir rationale; src/supervisor/events.ts default logger all-synchronous-injected-I/O rationale), but patterns.md has no bullet documenting it, so reviewers keep re-filing deliberate sync node:fs reads as violations (2nd+ such SUGGESTION: CAM-340, CAM-342). Fix (docs-only, no runtime change): amend the 'Bun-only' invariant wording in scripts/cam/CLAUDE.md to note that synchronous point-reads deliberately stay on node:fs (Bun.spawn/Bun.$/Bun.file remain the rule for spawn + async/streaming I/O), and add a grep-discoverable patterns.md bullet cross-referencing the toml.ts + events.ts precedents. Supersedes CAM-340 and CAM-342 (to be abandoned once this lands). Note: scripts/cam/CLAUDE.md is dual-copied/embedded, so an embed-vendor regen + embed-vendor:check may be required.",
   "specSource": "derived",
   "derivedFrom": [
