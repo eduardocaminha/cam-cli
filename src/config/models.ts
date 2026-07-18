@@ -191,6 +191,52 @@ export function readBackend(configPath?: string): string {
 }
 
 /**
+ * Read the backend for `phase` from the project config. Resolves in order:
+ *
+ *   1. A per-phase key under `[backend]` (e.g. `[backend].implementer`) wins.
+ *   2. Otherwise, the existing global form resolves: a top-level `backend`
+ *      scalar (`backend = "claude"`) OR the `[backend].name` section form.
+ *   3. Otherwise, `DEFAULTS.backend`.
+ *
+ * The function is **defensive on every error path**, mirroring
+ * `readPhaseModel`: a missing file, a malformed TOML file, a missing
+ * `[backend]` section, a missing key, or a non-string value all fall back
+ * down the chain (never throw).
+ *
+ * @param phase    The cam phase to resolve a backend for.
+ * @param configPath  Override the config file path (default:
+ *                    `scripts/cam/project.toml` resolved from `process.cwd()`).
+ *                    Used by tests to target a tmp fixture without modifying
+ *                    the real project config.
+ */
+export function readPhaseBackend(phase: Phase, configPath?: string): string {
+	const path = configPath ?? defaultProjectConfigPath();
+	try {
+		const config = loadConfig(path);
+		const value = config['backend'];
+		// Section form: [backend]\n<phase> = "<backend>"  or  name = "<backend>"
+		if (value !== null && value !== undefined && typeof value === 'object') {
+			const section = value as Record<string, unknown>;
+			const perPhase = section[phase];
+			if (typeof perPhase === 'string' && perPhase.length > 0) {
+				return perPhase;
+			}
+			const name = section['name'];
+			if (typeof name === 'string' && name.length > 0) {
+				return name;
+			}
+		}
+		// Scalar form: backend = "claude"
+		if (typeof value === 'string' && value.length > 0) {
+			return value;
+		}
+	} catch {
+		// Malformed TOML or fs read error: fall back to default.
+	}
+	return DEFAULTS.backend;
+}
+
+/**
  * Read the merge mode for `cam ship` from the project config. Returns
  * `"ci-gated"` only when `[ship] merge_mode = "ci-gated"` is set exactly;
  * returns `"immediate"` in every other case (missing file, missing section,
