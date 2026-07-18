@@ -1,0 +1,11 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Refresh stale product name in Splash header comment" },
+  "branchName": "cam/issue-337",
+  "timestamp": "2026-07-18T00:00:00Z",
+  "modifiedFiles": ["src/ui/Splash.tsx"],
+  "openQuestions": [],
+  "nextStoryContext": "Pure comment-only fix: src/ui/Splash.tsx line 3 header comment now reads 'Entry / identity panel for CAM Runtime.' instead of the stale 'cam-cli'. The runtime repo slug default url = 'eduardocaminha/cam-cli' (~line 100) was left byte-for-byte unchanged; it is the real GitHub repo slug rendered at runtime, not a product-name reference, and must never be touched. No rendered JSX/output changed.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
