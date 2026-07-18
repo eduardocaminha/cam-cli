@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.210.0] - 2026-07-18
+
+### Added
+
+- US-R1-001 - Review round 1 fix 001: address reviewer finding
+- US-001 - Reserve keybar rows; derive StoriesSection window from pane height
+
 ## [0.209.0] - 2026-07-18
 
 ### Added
