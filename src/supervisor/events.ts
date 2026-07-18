@@ -110,6 +110,13 @@ import handoffSchema from '../../scripts/cam/handoff.schema.json';
  *     as HEAD (missing/invalid issueNumber, or a git error), so the resolver's
  *     fail-safe-to-idle path is diagnosable from
  *     .claude/cam-worker-events.jsonl without reading pane scrollback.
+ *   - 'pattern-outcome-append-failed' (US-001, CAM-336): emitted by
+ *     makeRecordPatternOutcomeFn (host.ts) when appendOutcomeOnMain
+ *     (src/commands/pattern-records.ts) returns a non-ok result (diverged
+ *     main, detached head, missing main, or an unknown recordId) for one
+ *     recordId in the batch, so the failure is diagnosable from
+ *     .claude/cam-worker-events.jsonl without reading transient stderr. See
+ *     PatternOutcomeAppendFailedEventDetail.
  */
 export type WorkerEventKind =
 	| 'worker-start'
@@ -149,7 +156,8 @@ export type WorkerEventKind =
 	| 'push-undelivered'
 	| 'plan-split-advisory'
 	| 'plan-approval-branch-failed'
-	| 'abandon-checkout-main-failed';
+	| 'abandon-checkout-main-failed'
+	| 'pattern-outcome-append-failed';
 
 /** Gate status recorded in a 'result' event. */
 export type GateStatus = 'pass' | 'fail' | 'unknown';
@@ -549,6 +557,22 @@ export interface AbandonCheckoutMainFailedEventDetail {
 	stuckBranch: string;
 }
 
+/**
+ * 'pattern-outcome-append-failed' event detail (US-001, CAM-336): recorded
+ * when appendOutcomeOnMain (src/commands/pattern-records.ts) returns a
+ * non-ok result for one recordId in makeRecordPatternOutcomeFn's batch
+ * (host.ts). Mirrors SuggestionFiledEventDetail's failedCount precedent, but
+ * per-record rather than per-batch since each recordId is an independent
+ * appendOutcomeOnMain call.
+ *   - recordId: the pattern-records.jsonl fingerprint the append targeted.
+ *   - reason: the AppendOutcomeOnMainError reason ('not-found' | 'diverged' |
+ *     'detached-head' | 'missing-main').
+ */
+export interface PatternOutcomeAppendFailedEventDetail {
+	recordId: string;
+	reason: 'not-found' | 'diverged' | 'detached-head' | 'missing-main';
+}
+
 /** Detail payload by event kind ('worker-start'/'worker-end' carry free-form maps). */
 export type WorkerEventDetail =
 	| ResultEventDetail
@@ -576,6 +600,7 @@ export type WorkerEventDetail =
 	| PushUndeliveredEventDetail
 	| PlanSplitAdvisoryEventDetail
 	| AbandonCheckoutMainFailedEventDetail
+	| PatternOutcomeAppendFailedEventDetail
 	| Record<string, unknown>;
 
 /** A single structured worker lifecycle event. */
