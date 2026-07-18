@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.206.0] - 2026-07-18
+
+### Added
+
+- US-001 - Document the sync-read carve-out to the Bun-first invariant
+
 ## [0.205.0] - 2026-07-18
 
 ### Added
