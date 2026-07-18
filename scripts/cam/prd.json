@@ -53,7 +53,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Files: src/supervisor/loop.ts (implModel neighbor at :1013), src/supervisor/review.ts (reviewModel neighbor at :337), src/supervisor/plan-runner.ts (:594-595 planner, :631-632 auditor). Each is a one-line swap readBackend() -> readPhaseBackend('<phase>'), reusing the Phase already used by the adjacent readPhaseModel call. Do NOT wire run.ts orchestrator (run.ts:424-425) to per-phase: gotcha says orchestrator hardcodes claude and its readBackend() there is only for spawn-resolution logging. Update the import lines in each file to add readPhaseBackend."
     },
