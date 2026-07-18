@@ -1,11 +1,11 @@
 {
   "id": "CAM-339",
   "title": "CAM-54 slice 1: design-spike ADR + BackendAdapter seam (claude refactored into an adapter, zero behavior change)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-17T21:17:39.482Z",
-  "updatedAt": "2026-07-18T09:08:24.124Z",
+  "updatedAt": "2026-07-18T10:07:47.406Z",
   "description": "First slice of the CAM-54 epic (Codex CLI as an alternative LLM backend). Scoped to be one self-contained PR that lands BEFORE any codex dispatch code, exactly as CAM-54's spec mandates ('A design-spike ADR is written FIRST ... it lands before any codex dispatch code').\n\nIN SCOPE (this slice only):\n1. Write the design-spike ADR defining the BackendAdapter abstraction seam and resolving the six claude/codex mismatches enumerated in CAM-54's spec: (a) spawn-argv/seam, (b) session/transcript + budget-recycle backstop, (c) completion-detection, (d) agent-prompt injection, (e) permission/sandbox+env, (f) model-id namespace.\n2. Introduce the BackendAdapter abstraction fronting the worker spawn-argv builders (worker-argv.ts, plan-argv.ts, review.ts) and their loop.ts/review.ts call sites, resolved PER-ACTOR.\n3. Refactor the existing claude path INTO an adapter with NO behavior change: the claude spawn path and all existing tests stay green.\n\nOUT OF SCOPE (later CAM-54 slices, file as follow-ups): per-phase backend config accessor + ConfigScreen wiring; real codex dispatch/adapter; mixed-backend run; codex model-id population; orchestrator-persona / retry-launcher / auth-preflight codex parity. ship stays zero-LLM and untouched.\n\nWHY SLICED: CAM-54 is jobSize 8 and its own spec says 'Epic-scale: expect heavy slicing'; planning it whole blows review. This slice is the claude-only refactor + design decision, the natural first PR. See CAM-54 spec (gotchas + acceptanceCriteria) for the full seam inventory and hardcoded-claude spawn-site list.\n\nNEEDS /cam-spec (operator participation) before planning: the ADR content and adapter-seam boundary are genuine design decisions.",
   "specSource": "derived",
   "derivedFrom": [
