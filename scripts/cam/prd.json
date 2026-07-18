@@ -1,0 +1,43 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-348",
+  "description": "Reserve rows for the fixed-height Keybar so it is never the element clipped by the CAM-345 height={rows} bound; shrink StoriesSection's window instead.",
+  "issueNumber": 348,
+  "type": "fix",
+  "relatedDocs": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "Ink",
+      "channel": "WebFetch",
+      "url": "https://github.com/vadimdemedes/ink",
+      "version": "7 (current)",
+      "fetchedAt": "2026-07-18T00:00:00.000Z",
+      "summary": "Box `height` sets the element height in lines and `flexShrink` is the standard Yoga flexbox shrink factor; the docs do not spell out overflow-clipping, so the CAM-345 empirical behavior (a fixed height={rows} clips overflowing children, and flexShrink=0 children do not shrink to reclaim space) governs the fix. No breaking change or deprecation affecting Box layout props.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Reserve keybar rows; derive StoriesSection window from pane height",
+      "description": "As a dashboard user in a short tmux pane, I need the Keybar's 'd  focus orchestrator' / 'q  close pane' hint rows to stay visible so that keybinding discoverability is preserved, instead of the keybar being the element clipped below the CAM-345 height={rows} fold.",
+      "acceptanceCriteria": [
+        "The StoriesSection visible window size is derived from `rows` (useWindowSize, Dashboard.tsx:183) minus the reserved fixed-section heights (SummaryPanel/Loop at its maximum height including optional tokens/cost rows, RecentSection, Keybar, and inter-section gaps), threaded into computeWindow's size argument (Dashboard.tsx:601) instead of the hardcoded STORIES_WINDOW=8. [oracle: reviewer-judgment]",
+        "In a pane shorter than the natural composed content, the Keybar's 'd  focus orchestrator' and 'q  close pane' hint rows render and are not clipped: a rendered frame under a small `rows` positively contains both hint rows. [oracle: named-command bun test]",
+        "The composed frame line count never exceeds `rows` in list mode or detail mode (the CAM-345 bound is preserved); the surviving <=rows line-bound assertions in test/dashboard.test.ts still pass. [oracle: named-command bun test]",
+        "StoriesSection's existing '…N more' overflow hint reflects the reduced window size when the window shrinks to fit the remaining rows. [oracle: named-command bun test]",
+        "The two now-obsolete negative assertions in test/dashboard.test.ts (~:1163 asserting the frame does NOT match /focus orchestrator/, ~:1947 asserting not toContain('close pane')) are inverted to positively assert the keybar hint rows are present. [oracle: file-assert ! grep -nE \"not\\.(toMatch|toContain).*(focus orchestrator|close pane)\" test/dashboard.test.ts]",
+        "Detail mode (StoryDetailView + DetailKeybar) keeps its fixed keybar visible under the same rows bound. [oracle: named-command bun test]",
+        "The Keybar's own content is NOT windowed and sections are NOT reordered (footer stays bottom-most): STORIES_WINDOW is no longer the sole window source but the Keybar still renders all KEYBAR_COMMANDS rows plus both hint rows. [oracle: reviewer-judgment]",
+        "Verify the screen renders correctly (via ink-testing-library) in both a short pane and a tall pane. [oracle: named-command bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Single-file core fix: src/ui/Dashboard.tsx plus its test test/dashboard.test.ts. Thread `rows` (Dashboard.tsx:183 useWindowSize) into the list-mode composition and into StoriesSection so computeWindow (Dashboard.tsx:699-708) receives a rows-derived size instead of STORIES_WINDOW=8 (Dashboard.tsx:43). GOTCHAS (from issue spec): (1) all list-mode children are flexShrink={0} (Dashboard.tsx:277/:279/:291) so the outer height={rows} alone will NOT reclaim space via flexbox shrink; the fix MUST reduce Stories' content (window row count), not rely on shrink. (2) SummaryPanel/Loop has optional tokens/cost rows so reserve conservatively using its MAXIMUM height so the keybar is never clipped when those rows are present. (3) RecentSection is already capped to RECENT_ENTRIES_COUNT=5 upstream (src/commands/dashboard.ts:700); do NOT re-window it. (4) Do NOT window the Keybar itself (Dashboard.tsx:307-331) and do NOT reorder sections. (5) Do NOT re-introduce the CAM-345 'Loop' header ghost: frame must stay bounded to rows (provenance CAM-306/CAM-321 width-gate, CAM-345 height-bound). Ink invariant: success/failure via glyph, never divider color. Ink test gotchas grep-verified in scripts/cam/patterns.md: ink-testing-library's fake Stdout has NO `rows` getter (only columns=100) so `stdout.rows` is falsy and Ink falls through to `terminal-size`/tput — use test/helpers/mock-terminal-size.ts installTerminalSizeMock() (CAM-201) and drive height via the render seam, and prefer waitForFrame content-polling over fixed ticks (test/helpers/flush-ink.ts). See patterns.md CAM-201/CAM-306/CAM-66 bullets for the Dashboard-render test technique."
+    }
+  ]
+}
