@@ -21,7 +21,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Single file: src/release/pr-body.ts (SETUP_CHECKLIST_CUES ~line 61-98, config cue at line 93) + test/release/pr-body.test.ts. renderSetupChecklist (~line 141-144) uses SETUP_CHECKLIST_CUES.filter(cue => cue.pattern.test(haystack)) where haystack = [prd.description ?? '', prd.notes ?? '', ...story.title].join('\\n'); story descriptions/bodies are NOT scanned, so put test cue text in description/notes/title. Gotchas from the issue spec: (a) .filter is every-match (not first-match-wins), so narrowing must not accidentally match another cue's row; (b) 'configurable'/'reconfigure' already don't match the current \\bconfig(?:uration)?\\b boundary, so the false-positive class is genuine STANDALONE config/configuration prose words; (c) existing tests assert via body.toContain(...) substring, not exact row-label equality, and there is currently NO test exercising the config cue specifically ('detects a config/install/migration cue from a story title alone' actually asserts 'Database migration' via the migration cue). Curated invariant: noUncheckedIndexedAccess makes regex capture-group access T|undefined, guard any capture-group read with ?? fallback. Keep the file Bun-first."
     }
