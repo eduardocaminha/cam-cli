@@ -39,7 +39,7 @@ const ALL_PHASES: Phase[] = [
 function makeChoices(model: string, backend = 'claude'): ConfigChoices {
 	return {
 		models: Object.fromEntries(ALL_PHASES.map((p) => [p, model])) as Record<Phase, string>,
-		backend,
+		backend: Object.fromEntries(ALL_PHASES.map((p) => [p, backend])) as Record<Phase, string>,
 	};
 }
 
