@@ -1,11 +1,11 @@
 {
   "id": "CAM-341",
   "title": "After US-003 inverted the seam (the four builders now delegate to ClaudeAdapter…",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-18T10:09:42.534Z",
-  "updatedAt": "2026-07-18T12:28:13.068Z",
+  "updatedAt": "2026-07-18T12:55:09.102Z",
   "description": "After US-003 inverted the seam (the four builders now delegate to ClaudeAdapter.buildSpawnArgv), the golden comparisons adapter.buildSpawnArgv(actor, opts) vs buildXWorkerArgv(opts) are self-referential: the builder is a thin wrapper over the same adapter call, so byte-for-byte equality is trivially true. Genuine behavior lock still lives in the unchanged sibling tests (worker-argv.test.ts / plan-argv.test.ts / review.test.ts) which assert literal argv substrings (env -u CLAUDECODE, CAM_WORKER=1, --agent, --permission-mode), so coverage is not lost. Consider pinning a hardcoded golden string in backend-adapter.test.ts to keep it a real characterization independent of the wrappers. Non-blocking; carried over from review round 1.\n\nSource: cam/issue-339\nReview round: 2\n\nsuggestion-fingerprint: 28f36bb72618",
   "derivedFrom": [
     "CAM-339"
