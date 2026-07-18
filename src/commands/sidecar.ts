@@ -3232,7 +3232,7 @@ function buildSidecarLoopDeps(ctx: SidecarLoopDepsCtx, options: SidecarOptions):
 	// SUGGESTION-filing pair above: recording a confirmation/failure signal for
 	// an already-applied pattern is not an autonomy escalation.
 	const recordPatternOutcomeFn: RunSidecarLoopOptions['recordPatternOutcomeFn'] =
-		options.recordPatternOutcomeFn ?? makeRecordPatternOutcomeFn(cwd);
+		options.recordPatternOutcomeFn ?? makeRecordPatternOutcomeFn(cwd, logEvent);
 
 	// US-R1-001: escalateFn from Resend config; only wired when both apiKey and
 	// recipient are non-empty. Production logic extracted to makeProductionEscalateFn

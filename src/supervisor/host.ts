@@ -224,13 +224,31 @@ export function makeClearReviewReport(cwd: string): () => void {
  * worker/branch-side code path ever calls it (mirrors ADR-0035's "supervisor
  * is the sole writer" posture, there for passes:true, here for pattern
  * outcomes).
+ *
+ * US-001 (CAM-336): `logEvent` is threaded in additively (optional, backward
+ * compatible with the pre-existing `makeRecordPatternOutcomeFn(cwd)` call
+ * shape). When appendOutcomeOnMain returns a non-ok result for a recordId,
+ * exactly one 'pattern-outcome-append-failed' WorkerEvent is appended
+ * carrying that recordId and the failure reason, so a persistently
+ * diverged/detached/missing main is diagnosable from
+ * .claude/cam-worker-events.jsonl instead of only transient stderr.
  */
 export function makeRecordPatternOutcomeFn(
 	cwd: string,
+	logEvent?: WorkerEventLogger,
 ): (recordIds: string[], status: PatternOutcomeStatus) => void {
 	return (recordIds, status) => {
 		for (const recordId of recordIds) {
-			appendOutcomeOnMain({ cwd, recordId, status, spawnFn: realOnMainSpawnFn });
+			const result = appendOutcomeOnMain({ cwd, recordId, status, spawnFn: realOnMainSpawnFn });
+			if (!result.ok) {
+				logEvent?.({
+					ts: new Date().toISOString(),
+					storyId: undefined,
+					uuid: 'sidecar',
+					kind: 'pattern-outcome-append-failed',
+					detail: { recordId, reason: result.reason },
+				});
+			}
 		}
 	};
 }

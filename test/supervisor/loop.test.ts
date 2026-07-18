@@ -4430,4 +4430,70 @@ describe('runSidecarLoop US-006 (CAM-64): recordPatternOutcomeFn hook at cycle-c
 			expect(storedRecord.outcomes[0]?.status).toBe('success');
 		},
 	);
+
+	// -----------------------------------------------------------------------
+	// US-001 (CAM-336): a non-ok appendOutcomeOnMain result (e.g. not-found)
+	// logs exactly one 'pattern-outcome-append-failed' WorkerEvent carrying
+	// the recordId and reason; an ok:true result logs none (no false
+	// positives). Real tmpdir git repo, same fixture shape as AC4 above.
+	// -----------------------------------------------------------------------
+
+	test.skipIf(!gitAvailable)(
+		'US-001: non-ok appendOutcomeOnMain result logs exactly one pattern-outcome-append-failed event',
+		() => {
+			const dir = mkdtempSync(join(tmpdir(), 'cam-pattern-outcome-event-'));
+			dirsToCleanup.push(dir);
+			const run = (args: string[]) => spawnSync('git', ['-C', dir, ...args], { stdio: 'pipe', encoding: 'utf8' });
+			run(['init']);
+			run(['symbolic-ref', 'HEAD', 'refs/heads/main']);
+			run(['config', 'user.email', 'test@example.com']);
+			run(['config', 'user.name', 'Test User']);
+			run(['commit', '--allow-empty', '-m', 'chore: initial harness state']);
+
+			const { logger, events } = makeInMemoryEventLogger();
+			const recordFn = makeRecordPatternOutcomeFn(dir, logger);
+			recordFn(['unknown-fingerprint'], 'success');
+
+			const failedEvents = events.filter((e) => e.kind === 'pattern-outcome-append-failed');
+			expect(failedEvents).toHaveLength(1);
+			const detail = failedEvents[0]?.detail as { recordId?: string; reason?: string };
+			expect(detail.recordId).toBe('unknown-fingerprint');
+			expect(detail.reason).toBe('not-found');
+		},
+	);
+
+	test.skipIf(!gitAvailable)(
+		'US-001: an ok:true appendOutcomeOnMain result logs no pattern-outcome-append-failed event',
+		() => {
+			const dir = mkdtempSync(join(tmpdir(), 'cam-pattern-outcome-event-ok-'));
+			dirsToCleanup.push(dir);
+			const run = (args: string[]) => spawnSync('git', ['-C', dir, ...args], { stdio: 'pipe', encoding: 'utf8' });
+			run(['init']);
+			run(['symbolic-ref', 'HEAD', 'refs/heads/main']);
+			run(['config', 'user.email', 'test@example.com']);
+			run(['config', 'user.name', 'Test User']);
+			run(['commit', '--allow-empty', '-m', 'chore: initial harness state']);
+
+			const record: PatternRecord = {
+				type: 'gotcha',
+				classification: 'tactical',
+				recorded_at: '2026-07-18T00:00:00.000Z',
+				name: 'US-001 (CAM-336) ok-path fixture record',
+				description: 'Seeded record for the pattern-outcome-append-failed event no-false-positive test.',
+				evidence: 'test/supervisor/loop.test.ts',
+				dir_anchors: ['src/supervisor/'],
+				outcomes: [],
+			};
+			const seeded = appendPatternRecordOnMain({ cwd: dir, record, spawnFn: realOnMainSpawnFn });
+			expect(seeded.ok).toBe(true);
+			if (!seeded.ok) return;
+
+			const { logger, events } = makeInMemoryEventLogger();
+			const recordFn = makeRecordPatternOutcomeFn(dir, logger);
+			recordFn([seeded.fingerprint], 'success');
+
+			const failedEvents = events.filter((e) => e.kind === 'pattern-outcome-append-failed');
+			expect(failedEvents).toHaveLength(0);
+		},
+	);
 });
