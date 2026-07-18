@@ -1,0 +1,81 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-349",
+  "description": "CAM-54 slice 2: add per-phase backend accessor readPhaseBackend mirroring readPhaseModel, repoint worker call sites, and render per-phase backend selection in ConfigScreen (strictly additive, zero behavior change).",
+  "issueNumber": 349,
+  "type": "feat",
+  "relatedDocs": [
+    "docs/adr/0046-codex-backend.md",
+    "docs/adr/0047-backend-adapter-seam.md"
+  ],
+  "officialDocsConsulted": [
+    {
+      "lib": "Ink",
+      "channel": "WebFetch",
+      "url": "https://github.com/vadimdemedes/ink",
+      "version": "7",
+      "fetchedAt": "2026-07-18T23:30:00.000Z",
+      "summary": "Ink is a React renderer; conditional/per-state rendering of multiple Select/input children via useState is idiomatic with no Ink-7 breaking change. Confirms the per-phase backend Select can reuse the existing per-phase model Select pattern verbatim.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add readPhaseBackend per-phase accessor in models.ts",
+      "description": "As the cam config layer, I need a per-phase backend accessor readPhaseBackend(phase, configPath?) that mirrors readPhaseModel exactly, so that each worker phase can resolve its own backend while every existing project.toml keeps resolving unchanged.",
+      "acceptanceCriteria": [
+        "readPhaseBackend(phase, configPath?) is exported from src/config/models.ts, takes the same Phase type readPhaseModel uses, and has the same defensive try/catch structure (missing file, malformed TOML, missing section, missing key, non-string value all fall back). [oracle: grep -q 'export function readPhaseBackend(phase: Phase' src/config/models.ts]",
+        "Fallback chain resolves in order: a per-phase key under [backend] (e.g. [backend].implementer) wins; if absent, the existing global form resolves (top-level backend scalar OR [backend].name); if absent, DEFAULTS.backend. Each branch is covered by a test against a tmp fixture. [oracle: bun test]",
+        "Back-compat: a project.toml carrying only [backend] name=\"claude\" resolves to \"claude\" for EVERY phase, verified by a test. [oracle: bun test]",
+        "The BackendAdapter interface and ClaudeAdapter.buildSpawnArgv in src/supervisor/backend-adapter.ts are not modified by this story. [oracle: file-assert git diff --quiet -- src/supervisor/backend-adapter.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Mirror readPhaseModel (src/config/models.ts:110-125) structure; the extra layer vs readPhaseModel is the global fallback that readBackend (models.ts:171-190) already implements (top-level scalar form AND [backend].name section form). Order: per-phase [backend].<phase> -> readBackend-style global form -> DEFAULTS.backend. Keep readBackend() intact for the run.ts orchestrator logging call site. New tests live under test/config/ mirroring existing readPhaseModel tests. Do NOT touch backend-adapter.ts (the seam is untouched, per gotcha)."
+    },
+    {
+      "id": "US-002",
+      "title": "Repoint worker call sites to per-phase backend",
+      "description": "As the supervisor spawn path, I need the implementer, reviewer, planner, and auditor call sites to resolve backend via readPhaseBackend for their own phase, so that per-phase backend selection actually reaches spawn while the orchestrator stays on the deliberately-global path.",
+      "acceptanceCriteria": [
+        "loop.ts implementer call site (loop.ts:1014) resolves backend via readPhaseBackend('implementer') instead of readBackend(). [oracle: grep -q \"readPhaseBackend('implementer')\" src/supervisor/loop.ts]",
+        "review.ts reviewer call site (review.ts:338) resolves backend via readPhaseBackend('reviewer'). [oracle: grep -q \"readPhaseBackend('reviewer')\" src/supervisor/review.ts]",
+        "plan-runner.ts planner and auditor call sites (plan-runner.ts:595, :632) resolve backend via readPhaseBackend('planner') and readPhaseBackend('auditor'). [oracle: grep -q \"readPhaseBackend('auditor')\" src/supervisor/plan-runner.ts]",
+        "The run.ts orchestrator call site (run.ts:425) is unchanged and still uses readBackend() (orchestrator is deliberately global this slice, per gotcha). [oracle: grep -q 'readBackend()' src/commands/run.ts]",
+        "CODEX_GUARD_NOTICE in src/logging/spawn-resolution.ts is unchanged (it now fires per-phase, not globally). [oracle: file-assert git diff --quiet -- src/logging/spawn-resolution.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "Files: src/supervisor/loop.ts (implModel neighbor at :1013), src/supervisor/review.ts (reviewModel neighbor at :337), src/supervisor/plan-runner.ts (:594-595 planner, :631-632 auditor). Each is a one-line swap readBackend() -> readPhaseBackend('<phase>'), reusing the Phase already used by the adjacent readPhaseModel call. Do NOT wire run.ts orchestrator (run.ts:424-425) to per-phase: gotcha says orchestrator hardcodes claude and its readBackend() there is only for spawn-resolution logging. Update the import lines in each file to add readPhaseBackend."
+    },
+    {
+      "id": "US-003",
+      "title": "Render per-phase backend in ConfigScreen and persist per-phase keys",
+      "description": "As an operator configuring cam, I need the config wizard to let me pick a backend per phase (mirroring the per-phase model Selects) and persist per-phase [backend] keys, so that I can run mixed per-actor backends as ADR-0046 requires, while an unset config still writes/reads all-claude.",
+      "acceptanceCriteria": [
+        "ConfigChoices.backend is widened from string to Record<Phase,string> in src/ui/ConfigScreen.tsx, mirroring ConfigChoices.models. [oracle: grep -q 'backend: Record<Phase, string>' src/ui/ConfigScreen.tsx]",
+        "ConfigScreen renders a per-phase backend Select on each phase tab (reusing the per-phase model Select rendering pattern), and no global-only backend field remains on the Global tab. [oracle: reviewer-judgment]",
+        "mergeConfigChoices (src/commands/config.ts) persists per-phase keys under [backend] (one key per phase) instead of a single [backend].name scalar, and the round-trip resolves via readPhaseBackend from US-001. [oracle: bun test]",
+        "The config print table (src/commands/config.ts) shows the resolved backend per phase via readPhaseBackend rather than a single global backend row. [oracle: bun test]",
+        "Verify the ConfigScreen backend rendering via ink-testing-library (success/failure shown by the ✓/✗ glyph, never divider color). [oracle: bun test]",
+        "Zero behavior change when no per-phase backend is set: the wizard defaults every phase to DEFAULTS.backend (claude) and an unchanged config still resolves claude everywhere. [oracle: bun test]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "Files: src/ui/ConfigScreen.tsx, src/commands/config.ts. Reuse the existing per-phase model machinery: PHASE_STEPS (:69), models: Record<Phase,string> state, PhaseTabContent (:476) which already renders a per-phase model Select via PHASE_MODEL_OPTIONS. Add an analogous backend Select per tab driven by BACKEND_OPTIONS (:132). Widen useState backend (:251), useFireOnDone (:426/:441), GlobalTab props (:587/:612) so the backend field moves off the Global tab. fieldCountForTab (:159) currently returns 5 for global and 2 for LLM phase / 1 for ship: adding a per-phase backend field changes those counts, keep the Tab/Enter focus chain (computeNextFocus, :172) consistent. mergeConfigChoices (config.ts:218-226) currently writes `backend: { name: choices.backend }`: change to write one [backend] key per phase from the Record. Print table (config.ts:294-295) currently emits a single 'backend' row: emit per-phase rows via readPhaseBackend. This is the largest slice: ConfigChoices.backend type change ripples through every consumer, so update all consumers in this one story to keep typecheck green. Ink success/failure is the ✓/✗ glyph, never divider color (curated invariant)."
+    }
+  ]
+}
