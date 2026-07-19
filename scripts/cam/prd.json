@@ -37,7 +37,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Core adapter logic. Edit src/supervisor/backend-adapter.ts (add CodexAdapter class implementing the existing BackendAdapter interface + a codex-specific env-unset constant, e.g. CODEX_WORKER_ENV_UNSET, possibly empty). Reuse the module's existing shellEscape for the prompt. New test file test/supervisor/codex-adapter.test.ts mirroring test/supervisor/backend-adapter.test.ts golden style (pin literal argv strings per actor). Frontmatter strip: reuse/extend src/templates/frontmatter.ts (rewriteFrontmatterModel already isolates the `---...---` block via regex; add a stripFrontmatter that returns the body only) rather than parsing YAML (pattern-records: js-yaml v5 ESM-only breaks vendored scripts, and the CAM-53 rewriter-regex pattern). Temp file: write via node:fs writeFileSync to /tmp (deliberate sync point-read/write is allowed per Bun-only invariant; issue gotcha: never under .claude/). Sandbox/approval derivation maps permissionMode ('bypassPermissions' etc.) + isolation to codex flags per issue spec F5: --sandbox {read-only|workspace-write|danger-full-access}, --ask-for-approval never, or --dangerously-bypass-approvals-and-sandbox; codex auth is OPENAI_API_KEY/CODEX_API_KEY, and codex has NO CLAUDECODE nesting guard so no recursion strip. ADR-0047 F2/F4/F5/F6 are the authoritative mismatch resolutions; re-read relatedDocs before coding. Keep the adapter output host/container agnostic (dockerExecWrap wraps at the call site, outside buildSpawnArgv). No live codex run."
     },
