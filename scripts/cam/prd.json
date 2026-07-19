@@ -26,7 +26,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New module recommended: src/supervisor/codex-auth.ts (sibling to backend-adapter.ts) holding both the injectable codexAuthCheck (fs point-read of ~/.codex/auth.json via readFileSync/existsSync, a deliberate synchronous point-read carved out of the Bun-only rule) and the pure codexAuthPreflight({backend, model, authCheck}) decision fn. Edit src/logging/spawn-resolution.ts to remove CODEX_GUARD_NOTICE and the informational codex branch (emitSpawnResolution stays a pure emitter with a void return, so no call site breaks: keep this change additive/backward-compatible). Existing tests to update: test/logging/spawn-resolution.test.ts and test/logging/codex-guard.test.ts (they assert the old notice). Default model names are bare 'opus'/'sonnet' (src/config/models.ts DEFAULTS), which is why the claude-alias guard matters. Gotcha (from issue): `codex login status` reports 'Logged in' even with an EXPIRED token because it only checks auth.json presence, so auth.json-presence is a weak-but-cheap check equivalent to login-status; do not claim it catches expiry. Codex auth is ChatGPT-login via ~/.codex/auth.json, never env vars. Write any temp payloads to /tmp, never under .claude/. See patterns.md 'Spawn-resolution emitter pattern' and ADR-0047. Grep scripts/cam/pattern-records.jsonl for 'codex'/'preflight' before coding."
     },
