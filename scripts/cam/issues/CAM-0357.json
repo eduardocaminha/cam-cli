@@ -1,13 +1,45 @@
 {
   "id": "CAM-357",
   "title": "The drift guard resolves `actual = readPhaseModel(phase, repoConfigPath)` witho…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-19T17:37:16.424Z",
-  "updatedAt": "2026-07-19T17:37:16.424Z",
+  "updatedAt": "2026-07-19T17:43:43.839Z",
   "description": "The drift guard resolves `actual = readPhaseModel(phase, repoConfigPath)` without threading the resolved backend, then for a non-claude phase asserts isClaudeAliasModel(actual) is false. Since the committed config is all-claude this is correct today, but if a future codex phase set only a nested [models.codex] key (no flat fallback), the un-threaded read would return the claude DEFAULT (opus) and the guard would falsely redden. Consider threading `backend` into the readPhaseModel call so the drift guard validates the spawn-accurate model. Non-blocking; matches the AC as written.\n\nSource: cam/issue-356\nReview round: 1\n\nsuggestion-fingerprint: 66d2e2a5927d",
   "derivedFrom": [
     "CAM-356"
-  ]
+  ],
+  "spec": {
+    "scope": "Thread the resolved backend into the drift-guard test so it validates the spawn-accurate model instead of the flat/DEFAULT fallback. In test/config/models.test.ts, the drift-guard describe block ('readPhaseModel vs repo project.toml (drift guard)', ~lines 750-773) currently calls readPhaseModel(phase, repoConfigPath) with no backend argument, then resolves readPhaseBackend one line later. Resolve readPhaseBackend(phase, repoConfigPath) BEFORE the readPhaseModel call and pass it as the third positional argument: readPhaseModel(phase, repoConfigPath, backend). Also make the `expected` value that is compared against `actual` use the same backend-aware resolution order that readPhaseModel uses (nested [models.<backend>].<phase>, then flat [models].<phase>, then DEFAULTS[phase]) so the equality assertion holds for both claude and a future codex phase. Confined to the test file; no production source change (readPhaseModel already accepts the backend param).",
+    "acceptanceCriteria": [
+      "The drift-guard test resolves readPhaseBackend(phase, repoConfigPath) and passes that backend as the third argument to readPhaseModel(phase, repoConfigPath, backend).",
+      "The `expected` value compared against `actual` in the equality assertion is derived with the same backend-aware resolution order as readPhaseModel (nested [models.<backend>].<phase>, then flat [models].<phase>, then DEFAULTS[phase]), so the equality assertion holds for both a claude phase and a hypothetical [models.<backend>]-only codex phase.",
+      "bun test test/config/models.test.ts passes: every per-phase drift-guard case is green against the committed all-claude scripts/cam/project.toml.",
+      "No production source file is modified; the change is confined to test/config/models.test.ts (readPhaseModel already accepts the optional backend param).",
+      "bun run typecheck passes and the full bun test suite stays green."
+    ],
+    "gotchas": [
+      "readPhaseModel already has signature (phase, configPath?, backend?); do NOT add a new parameter or change any source file. Other call sites (plan-runner.ts, loop.ts, review.ts, run.ts, config.ts) already thread backend the same way.",
+      "readNestedBackendModel returns undefined when backend is omitted OR equals 'claude', falling through to the flat lookup. For the committed all-claude config, threading backend is a no-op and the suite stays green today.",
+      "Threading backend into `actual` WITHOUT also making `expected` backend-aware would merely relocate the latent false-redden from the isClaudeAliasModel assertion (line 769) to the equality assertion (lines 762-763) in a future [models.<backend>]-only config. Update both.",
+      "The drift guard reads the REAL repo config (scripts/cam/project.toml via process.cwd()), not a tmp fixture. Keep it reading the real config; do not introduce a tmp fixture."
+    ],
+    "domainTerms": [
+      "drift guard",
+      "readPhaseModel",
+      "readPhaseBackend",
+      "readNestedBackendModel",
+      "isClaudeAliasModel",
+      "[models.<backend>] nested sub-table",
+      "spawn-accurate model"
+    ]
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 5,
+    "riskReduction": 6,
+    "jobSize": 2
+  },
+  "type": "chore"
 }
