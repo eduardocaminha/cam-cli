@@ -1,26 +1,23 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Fail-closed codex auth preflight core (check + decision fn, retire stale notice)" },
+  "lastCompletedStory": { "id": "US-002", "title": "Wire fail-closed preflight at the 3 supervisor worker-dispatch sites" },
   "branchName": "cam/issue-352",
   "timestamp": "2026-07-19T00:00:00Z",
   "createdFiles": [
-    "src/supervisor/codex-auth.ts",
-    "test/supervisor/codex-auth.test.ts"
+    "test/supervisor/plan/plan-runner-codex-auth.test.ts"
   ],
   "modifiedFiles": [
-    "src/logging/spawn-resolution.ts",
-    "test/logging/spawn-resolution.test.ts",
+    "src/supervisor/loop.ts",
+    "src/supervisor/review.ts",
+    "src/supervisor/plan-runner.ts",
+    "test/supervisor/loop.test.ts",
+    "test/supervisor/review.test.ts",
+    "scripts/file-size-budget.json",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "codexAuthPreflight({backend, model, authCheck?}) and codexAuthCheck() now live in src/supervisor/codex-auth.ts, unwired (US-002/US-003 wire it into the 3 supervisor worker-dispatch call sites in loop.ts/review.ts/plan-runner.ts and the run.ts orchestrator dispatch site respectively). Decision order inside codexAuthPreflight: backend!=='codex' short-circuits proceed (authCheck never invoked) -> claude-alias model check (/\\b(opus|sonnet|haiku)\\b/i) fires before authCheck -> authCheck() invoked last, aborting with a 'codex login' message when unauthenticated. Call sites should call codexAuthPreflight AFTER resolving {backend, model} via readPhaseBackend/readPhaseModel (same locals already threaded into emitSpawnResolution) and BEFORE building argv via selectAdapter(...).buildSpawnArgv(...); on abort, skip the spawn and surface result.message to the operator/event log instead. The old CODEX_GUARD_NOTICE informational guard and its emitNotice/NoticeEmitter seam were deleted wholesale from spawn-resolution.ts (zero remaining production call sites); emitSpawnResolution now only carries {phase, model, backend, writeEvent?}. test/logging/codex-guard.test.ts was deleted (it only tested the retired notice).",
+  "nextStoryContext": "codexAuthPreflight (US-001, src/supervisor/codex-auth.ts) is now wired into all 3 supervisor worker-dispatch sites: loop.ts (implementer, immediately before its respawn-pane call, ~line 1180), review.ts (reviewer, immediately before its respawn-pane call, ~line 402), and plan-runner.ts (planner + auditor, inside the new resolveAndSpawnPlanner/resolveAndSpawnAuditor helpers, immediately before their respawn-pane calls). Each site got an optional codexAuthCheckFn?: CodexAuthCheck DI seam on its options interface (RunSupervisorOptions, MakeReviewDispatchOptions, RunPlanPhaseOptions), destructured once and passed as authCheck into codexAuthPreflight({backend, model, authCheck: codexAuthCheckFn}) using the SAME already-resolved backend/model locals the argv builder and emitSpawnResolution use (never re-read). When absent (the default in every production wiring -- host.ts/sidecar.ts do NOT explicitly wire it), codexAuthPreflight falls back to its own default (real codexAuthCheck, ~/.codex/auth.json presence). On abort: loop.ts returns {status:'blocked', lastOutcome:{kind:'blocked', detail: 'codex-auth-failed: ...'}} (mirrors the B-2 container-not-ready block, fires escalateFn fire-and-forget with try/catch, calls finishTerminal('blocked')); review.ts returns {status:'error', detail: 'codex-auth-failed: ...'} (mirrors its own container-not-ready block); plan-runner.ts adds a new PlanPhaseResult union member {kind:'codex-auth-failed', phase:'planner'|'auditor', reason} (mirrors container-preflight-failed one-for-one, falls through runPostAuditAction's if-chain to the generic no-action bucket with zero special-casing, exactly like container-preflight-failed already does) and fires escalateFn fire-and-forget from inside resolveAndSpawnPlanner/Auditor. plan-runner.ts's runPlanWorkerSequence was refactored to extract two new helpers, runPlannerSpawnStep/runAuditorSpawnStep (each returning PlanPhaseResult | string, a block result or the live pane id), to keep it under biome's noExcessiveCognitiveComplexity(max=15) after adding the 2 new abort branches (pattern documented in patterns.md). US-003 (the 4th and final dispatch site, run.ts orchestrator) should mirror this exact shape -- see the new patterns.md bullet 'Wiring codexAuthPreflight into a worker-dispatch site' for the full recipe, including the test-authoring gotcha (a codex-backend test needs BOTH [backend] and a non-claude-alias [models] entry in its scratch project.toml, or codexAuthPreflight's claude-alias-model check aborts before authCheck is ever invoked) and the async-helper footgun (withCodexBackendCwd must be `async` and `return await fn()` inside try, never a bare `return fn()`, or the finally's cwd-restore/rmSync races the awaited test body). File-size ceilings were raised for loop.ts/plan-runner.ts/review.ts/loop.test.ts/review.test.ts (all at or near their prior ceilings already) -- see scripts/file-size-budget.json's _ref for the exact before/after line counts.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
-    {
-      "lib": "codex-cli",
-      "url": "https://github.com/openai/codex/blob/main/docs/authentication.md",
-      "fetchedAt": "2026-07-19T00:00:00Z",
-      "status": "aligned",
-      "summary": "Confirmed $CODEX_HOME/auth.json defaults to ~/.codex/auth.json on macOS/Linux (CODEX_HOME override and keyring storage mode exist but are out of scope for this story's presence check), matching the codexAuthCheck implementation."
-    }
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure internal wiring of the already-built (US-001) codexAuthPreflight decision fn into 3 existing dispatch call sites; no new external API surface touched." }
   ]
 }

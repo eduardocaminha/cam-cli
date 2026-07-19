@@ -318,6 +318,8 @@ function makeDispatchOpts(
 		workerIsolation: overrides.workerIsolation,
 		preflightContainerFn: overrides.preflightContainerFn,
 		escalateFn: overrides.escalateFn,
+		// US-002 (CAM-352): codex auth-check DI seam passthrough.
+		codexAuthCheckFn: overrides.codexAuthCheckFn,
 		capturedWrittenPrd,
 		capturedSpawnArgs,
 	};
@@ -1705,5 +1707,144 @@ describe('makeReviewDispatch: US-005 container mode dispatch', () => {
 		// wrapped via dockerExecWrap since workerIsolation === 'container'.
 		// The key is: no error is returned even though no preflight ran.
 		expect(result.status).toBe('ok');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-002 (CAM-352): fail-closed codex auth preflight at the reviewer dispatch site
+// ---------------------------------------------------------------------------
+
+describe('makeReviewDispatch: US-002 codex auth preflight (CAM-352)', () => {
+	const SAMPLE_UUID = 'cafebabe-dead-beef-0000-111122223333';
+
+	/**
+	 * Stage a temp cwd with a project.toml resolving the reviewer backend to
+	 * 'codex' with a non-claude-alias model (readPhaseBackend/readPhaseModel
+	 * are not injectable through MakeReviewDispatchOptions; they always read
+	 * scripts/cam/project.toml relative to process.cwd()). Also stages a stub
+	 * .claude/agents/subagent-reviewer.md so CodexAdapter.buildSpawnArgv can
+	 * read it on the authenticated (proceed) path.
+	 */
+	async function withCodexBackendCwd<T>(fn: () => T | Promise<T>): Promise<T> {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-codex-auth-'));
+		const camDir = join(tmpDir, 'scripts', 'cam');
+		mkdirSync(camDir, { recursive: true });
+		writeFileSync(join(camDir, 'project.toml'), '[backend]\nreviewer = "codex"\n\n[models]\nreviewer = "gpt-5-codex"\n');
+		const agentsDir = join(tmpDir, '.claude', 'agents');
+		mkdirSync(agentsDir, { recursive: true });
+		writeFileSync(join(agentsDir, 'subagent-reviewer.md'), '# stub\n');
+		const prevCwd = process.cwd();
+		process.chdir(tmpDir);
+		try {
+			return await fn();
+		} finally {
+			process.chdir(prevCwd);
+			rmSync(tmpDir, { recursive: true, force: true });
+		}
+	}
+
+	test('AC2: codex backend + unauthenticated -> status=error, actionable codex login reason, respawn-pane never called', async () => {
+		await withCodexBackendCwd(() => {
+			const capturedSpawnArgs: string[][] = [];
+			let authCheckCalled = false;
+			const opts = makeDispatchOpts({
+				paneText: '<review>CLEAN</review>',
+				prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
+				spawn: (_cmd, args) => {
+					capturedSpawnArgs.push(args);
+					return { stdout: '', exitCode: 0 };
+				},
+				codexAuthCheckFn: () => {
+					authCheckCalled = true;
+					return { authenticated: false };
+				},
+			});
+
+			const dispatch = makeReviewDispatch(opts);
+			const result = dispatch(SAMPLE_UUID);
+
+			expect(authCheckCalled).toBe(true);
+			expect(result.status).toBe('error');
+			expect(result.detail).toContain('codex-auth-failed');
+			expect(result.detail).toContain('codex login');
+
+			const anyReviewerRespawn = capturedSpawnArgs.some((args) => args.includes('respawn-pane'));
+			expect(anyReviewerRespawn).toBe(false);
+		});
+	});
+
+	test('AC2: escalateFn called fire-and-forget when codex auth preflight fails', async () => {
+		await withCodexBackendCwd(async () => {
+			let escalateCalled = false;
+			const opts = makeDispatchOpts({
+				paneText: '<review>CLEAN</review>',
+				prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
+				codexAuthCheckFn: () => ({ authenticated: false }),
+				escalateFn: async () => {
+					escalateCalled = true;
+				},
+			});
+
+			const dispatch = makeReviewDispatch(opts);
+			const result = dispatch(SAMPLE_UUID);
+
+			expect(result.status).toBe('error');
+			await waitForCondition(() => escalateCalled);
+			expect(escalateCalled).toBe(true);
+		});
+	});
+
+	test('AC3: codex backend + authenticated -> dispatch proceeds unchanged (respawn-pane called)', async () => {
+		await withCodexBackendCwd(() => {
+			const capturedSpawnArgs: string[][] = [];
+			let authCheckCalled = false;
+			const opts = makeDispatchOpts({
+				paneText: '<review>CLEAN</review>',
+				prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
+				spawn: (_cmd, args) => {
+					capturedSpawnArgs.push(args);
+					return { stdout: '', exitCode: 0 };
+				},
+				codexAuthCheckFn: () => {
+					authCheckCalled = true;
+					return { authenticated: true };
+				},
+			});
+
+			const dispatch = makeReviewDispatch(opts);
+			const result = dispatch(SAMPLE_UUID);
+
+			expect(authCheckCalled).toBe(true);
+			expect(result.status).toBe('ok');
+			const reviewerRespawn = capturedSpawnArgs.find((args) => args.includes('respawn-pane'));
+			expect(reviewerRespawn).toBeDefined();
+		});
+	});
+
+	test('AC4: claude backend (default) -> codexAuthCheckFn never invoked, dispatch unchanged', () => {
+		// No withCodexBackendCwd: the repo's own scripts/cam/project.toml resolves
+		// the reviewer backend to 'claude' by default.
+		const capturedSpawnArgs: string[][] = [];
+		let authCheckCalled = false;
+		const opts = makeDispatchOpts({
+			paneText: '<review>CLEAN</review>',
+			prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
+			spawn: (_cmd, args) => {
+				capturedSpawnArgs.push(args);
+				return { stdout: '', exitCode: 0 };
+			},
+			codexAuthCheckFn: () => {
+				authCheckCalled = true;
+				return { authenticated: false };
+			},
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(authCheckCalled).toBe(false);
+		expect(result.status).toBe('ok');
+		const reviewerRespawn = capturedSpawnArgs.find((args) => args.includes('respawn-pane'));
+		expect(reviewerRespawn).toBeDefined();
 	});
 });
