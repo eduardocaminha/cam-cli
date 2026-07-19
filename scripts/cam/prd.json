@@ -50,7 +50,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Files: src/supervisor/review.ts, src/supervisor/loop.ts, src/supervisor/plan-runner.ts, src/commands/run.ts, src/commands/config.ts. Mechanical single-concern spread: each site already resolves the backend right beside the model (readPhaseBackend beside readPhaseModel, e.g. review.ts reviewBackend, loop.ts implBackend) for selectAdapter; this story only threads that same backend var into the readPhaseModel call. Passes only the backend the site already resolved: no new backend read. Confirm the committed config keeps all phases claude, so this is behavior-preserving for the committed toml (the tolerance only manifests under a codex fixture, proved in US-004). Pattern context: spawn-resolution emitter (patterns.md, CAM-53 US-007) reports the resolved model+backend; keep the two reads consistent (the reviewer double-read finding)."
     },
