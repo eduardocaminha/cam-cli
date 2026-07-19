@@ -1,0 +1,10 @@
+{
+  "id": "CAM-352",
+  "title": "CAM-54 slice-4: fail-closed codex auth preflight + retire stale guard notice (enable live codex dispatch)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-19T12:00:26.711Z",
+  "updatedAt": "2026-07-19T12:00:26.711Z",
+  "description": "Slice-4 of the Codex-backend epic (CAM-54). Slice-3 shipped the CodexAdapter argv; live grounding (codex 0.144.6, ChatGPT-login auth) confirmed the argv works: `-c model_instructions_file` is honored and codex echoes the literal sentinel line to the pane (so the uniform backend-agnostic completion contract holds for codex). This slice makes a real codex dispatch fail EARLY and ACTIONABLY instead of drowning in 401/400 noise, and retires the now-false guard.\n\nScope: (1) Replace the informational-only codex guard in emitSpawnResolution (src/logging/spawn-resolution.ts, CODEX_GUARD_NOTICE = 'codex backend not yet wired (CAM-54)') with a FAIL-CLOSED codex auth preflight: before any codex dispatch (all 5 emitSpawnResolution sites), verify codex is authenticated and ABORT the dispatch with an actionable message (name `codex login`) when it is not. (2) Retire the stale 'not yet wired (CAM-54)' text entirely. (3) Keep the claude backend path byte-identical (no preflight overhead when backend=claude).\n\nOut of scope (deferred to slice-5): per-backend model-id decoupling (the model config currently shares claude names across backends). A LIGHT fail-closed check that rejects obviously-claude model aliases (opus/sonnet/haiku) when backend=codex MAY be folded in as it prevents the exact 400 observed live, but the positive codex-model-id matrix is slice-5.\n\nLive end-to-end validation (dispatch a real codex reviewer, confirm <review>...</review> + review-report.json fire and the loop terminates CLEAN) is an OPERATOR CEREMONY run post-merge against the coherent rebuilt binary, not an autonomous PRD story (the planner does not emit operator stories)."
+}
