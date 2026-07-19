@@ -213,6 +213,84 @@ orchestrator = true
 });
 
 // ---------------------------------------------------------------------------
+// readPhaseModel: backend-aware resolution (US-001, CAM-356)
+// ---------------------------------------------------------------------------
+
+describe('readPhaseModel - backend-aware resolution (US-001)', () => {
+	test('a codex-backed phase resolves the codex slug from a nested [models.codex] sub-table', () => {
+		const path = writeTmpToml(`
+[models]
+implementer = "sonnet"
+
+[models.codex]
+implementer = "gpt-5-codex"
+`);
+		expect(readPhaseModel('implementer', path, 'codex')).toBe('gpt-5-codex');
+	});
+
+	test('a claude-backed phase ignores a present [models.codex] sub-table and resolves the flat value', () => {
+		const path = writeTmpToml(`
+[models]
+implementer = "sonnet"
+
+[models.codex]
+implementer = "gpt-5-codex"
+`);
+		expect(readPhaseModel('implementer', path, 'claude')).toBe('sonnet');
+	});
+
+	test('backend omitted resolves the flat value unchanged (pre-existing 2-arg call shape)', () => {
+		const path = writeTmpToml(`
+[models]
+implementer = "sonnet"
+
+[models.codex]
+implementer = "gpt-5-codex"
+`);
+		expect(readPhaseModel('implementer', path)).toBe('sonnet');
+	});
+
+	test('non-claude backend with no matching nested key falls back to the flat [models].<phase> value', () => {
+		const path = writeTmpToml(`
+[models]
+orchestrator = "custom-model"
+
+[models.codex]
+implementer = "gpt-5-codex"
+`);
+		expect(readPhaseModel('orchestrator', path, 'codex')).toBe('custom-model');
+	});
+
+	test('non-claude backend with no nested [models.<backend>] table at all falls back to the flat value', () => {
+		const path = writeTmpToml(`
+[models]
+implementer = "sonnet"
+`);
+		expect(readPhaseModel('implementer', path, 'codex')).toBe('sonnet');
+	});
+
+	test('non-claude backend with neither nested nor flat value falls back to DEFAULTS[phase]', () => {
+		const path = writeTmpToml(`
+[models]
+orchestrator = "custom-model"
+`);
+		expect(readPhaseModel('implementer', path, 'codex')).toBe('sonnet');
+	});
+
+	test('a [models.codex] sub-table present but the requested phase is claude-backed: flat lookup skips the nested object and falls through to DEFAULTS', () => {
+		const path = writeTmpToml(`
+[models.codex]
+implementer = "gpt-5-codex"
+`);
+		// 'implementer' has no flat [models].implementer entry; only the nested
+		// [models.codex].implementer entry exists. A claude-backed request must
+		// NOT pick up the nested table nor treat [models] itself (which is now
+		// the object { codex: { implementer: ... } }) as a model string.
+		expect(readPhaseModel('implementer', path, 'claude')).toBe('sonnet');
+	});
+});
+
+// ---------------------------------------------------------------------------
 // readBackend: happy path
 // ---------------------------------------------------------------------------
 
