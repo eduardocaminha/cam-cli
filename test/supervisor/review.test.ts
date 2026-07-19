@@ -325,6 +325,50 @@ function makeDispatchOpts(
 	};
 }
 
+/**
+ * Stage a temp cwd with a project.toml resolving the reviewer backend and
+ * phase model (readPhaseBackend/readPhaseModel are not injectable through
+ * MakeReviewDispatchOptions; they always read scripts/cam/project.toml
+ * relative to process.cwd()), plus a stub .claude/agents/subagent-reviewer.md
+ * so CodexAdapter.buildSpawnArgv can read it on the authenticated (proceed)
+ * path.
+ *
+ * Generalized (US-004, CAM-356) from the codex-only withCodexBackendCwd so
+ * the real-config-dependent dispatch-shape tests below stop reading the
+ * committed scripts/cam/project.toml and instead build their own fixture.
+ *
+ * `[backend].reviewer` is always written as a per-phase key. `model` is
+ * written under the flat `[models].reviewer` for the 'claude' backend (the
+ * shape readPhaseModel's flat lookup expects), or under a nested
+ * `[models.<backend>].reviewer` sub-table for any other backend (the shape
+ * readPhaseModel's nested lookup expects, since a claude tier alias is never
+ * a valid model slug for another backend).
+ */
+async function withReviewerBackendCwd<T>(
+	backend: string,
+	model: string,
+	fn: () => T | Promise<T>,
+): Promise<T> {
+	const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-backend-'));
+	const camDir = join(tmpDir, 'scripts', 'cam');
+	mkdirSync(camDir, { recursive: true });
+	const modelsToml = backend === 'claude'
+		? `[models]\nreviewer = "${model}"\n`
+		: `[models.${backend}]\nreviewer = "${model}"\n`;
+	writeFileSync(join(camDir, 'project.toml'), `[backend]\nreviewer = "${backend}"\n\n${modelsToml}`);
+	const agentsDir = join(tmpDir, '.claude', 'agents');
+	mkdirSync(agentsDir, { recursive: true });
+	writeFileSync(join(agentsDir, 'subagent-reviewer.md'), '# stub\n');
+	const prevCwd = process.cwd();
+	process.chdir(tmpDir);
+	try {
+		return await fn();
+	} finally {
+		process.chdir(prevCwd);
+		rmSync(tmpDir, { recursive: true, force: true });
+	}
+}
+
 describe('makeReviewDispatch', () => {
 	const SAMPLE_UUID = '11111111-2222-3333-4444-555555555555';
 
@@ -529,35 +573,37 @@ describe('makeReviewDispatch', () => {
 		expect(result.detail).toContain('prd.json');
 	});
 
-	test('spawns an interactive reviewer with prompt and permission mode (CAM-42)', () => {
-		const capturedSpawnArgs: string[][] = [];
+	test('spawns an interactive reviewer with prompt and permission mode (CAM-42)', async () => {
+		await withReviewerBackendCwd('claude', 'opus', () => {
+			const capturedSpawnArgs: string[][] = [];
 
-		const opts = makeDispatchOpts({
-			paneText: '<review>CLEAN</review>',
-			spawn: (_cmd, args) => {
-				capturedSpawnArgs.push(args);
-				return { stdout: '', exitCode: 0 };
-			},
+			const opts = makeDispatchOpts({
+				paneText: '<review>CLEAN</review>',
+				spawn: (_cmd, args) => {
+					capturedSpawnArgs.push(args);
+					return { stdout: '', exitCode: 0 };
+				},
+			});
+
+			const dispatch = makeReviewDispatch(opts);
+			dispatch(SAMPLE_UUID);
+
+			// spawn called with respawn-pane arguments.
+			expect(capturedSpawnArgs.length).toBeGreaterThan(0);
+			const firstSpawnCall = capturedSpawnArgs[0] ?? [];
+			expect(firstSpawnCall).toContain('respawn-pane');
+
+			// The reviewer shell command is interactive: prompt + permission mode,
+			// no headless -p, no wait-for chain.
+			const shellCmd = firstSpawnCall[firstSpawnCall.length - 1] ?? '';
+			expect(shellCmd).toContain(`--session-id ${SAMPLE_UUID}`);
+			expect(shellCmd).toContain('--permission-mode bypassPermissions');
+			expect(shellCmd).toContain(`--agent ${DEFAULT_REVIEWER_AGENT}`);
+			expect(shellCmd).toContain('Review all changes on the current branch vs main');
+			expect(shellCmd).not.toContain('claude -p');
+			expect(shellCmd).not.toMatch(/\s-p(\s|$)/);
+			expect(shellCmd).not.toContain('wait-for');
 		});
-
-		const dispatch = makeReviewDispatch(opts);
-		dispatch(SAMPLE_UUID);
-
-		// spawn called with respawn-pane arguments.
-		expect(capturedSpawnArgs.length).toBeGreaterThan(0);
-		const firstSpawnCall = capturedSpawnArgs[0] ?? [];
-		expect(firstSpawnCall).toContain('respawn-pane');
-
-		// The reviewer shell command is interactive: prompt + permission mode,
-		// no headless -p, no wait-for chain.
-		const shellCmd = firstSpawnCall[firstSpawnCall.length - 1] ?? '';
-		expect(shellCmd).toContain(`--session-id ${SAMPLE_UUID}`);
-		expect(shellCmd).toContain('--permission-mode bypassPermissions');
-		expect(shellCmd).toContain(`--agent ${DEFAULT_REVIEWER_AGENT}`);
-		expect(shellCmd).toContain('Review all changes on the current branch vs main');
-		expect(shellCmd).not.toContain('claude -p');
-		expect(shellCmd).not.toMatch(/\s-p(\s|$)/);
-		expect(shellCmd).not.toContain('wait-for');
 	});
 
 	test('FIXES_PENDING stories are prepended before existing stories', () => {
@@ -1507,36 +1553,38 @@ describe('makeReviewDispatch: behavioral gate FAIL as hard-constraint (US-005)',
 describe('makeReviewDispatch: US-005 container mode dispatch', () => {
 	const SAMPLE_UUID = 'cafebabe-dead-beef-0000-111122223333';
 
-	test('AC1: container mode wraps shellCmd with docker exec argv-shape', () => {
-		const capturedSpawnArgs: string[][] = [];
-		const opts = makeDispatchOpts({
-			paneText: '<review>CLEAN</review>',
-			prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
-			spawn: (_cmd, args) => {
-				capturedSpawnArgs.push(args);
-				return { stdout: '', exitCode: 0 };
-			},
-			workerIsolation: 'container',
-			preflightContainerFn: () => ({ ready: true }),
+	test('AC1: container mode wraps shellCmd with docker exec argv-shape', async () => {
+		await withReviewerBackendCwd('claude', 'opus', () => {
+			const capturedSpawnArgs: string[][] = [];
+			const opts = makeDispatchOpts({
+				paneText: '<review>CLEAN</review>',
+				prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
+				spawn: (_cmd, args) => {
+					capturedSpawnArgs.push(args);
+					return { stdout: '', exitCode: 0 };
+				},
+				workerIsolation: 'container',
+				preflightContainerFn: () => ({ ready: true }),
+			});
+
+			const dispatch = makeReviewDispatch(opts);
+			dispatch(SAMPLE_UUID);
+
+			// First spawn call is the respawn-pane dispatch.
+			const firstCall = capturedSpawnArgs[0] ?? [];
+			expect(firstCall).toContain('respawn-pane');
+			const shellCmd = firstCall[firstCall.length - 1] ?? '';
+
+			// Must start with 'docker exec -it cam-worker' (dockerExecWrap prefix).
+			expect(shellCmd).toMatch(/^docker exec -it cam-worker /);
+			// Inner command must still contain the claude argv.
+			expect(shellCmd).toContain('env -u CLAUDECODE');
+			expect(shellCmd).toContain('claude');
+			expect(shellCmd).toContain(`--session-id ${SAMPLE_UUID}`);
+			// US-001 (CAM-242): container workers keep CLAUDE_CODE_OAUTH_TOKEN (injected
+			// by worker-container.ts via -e); the host-only strip must NOT apply here.
+			expect(shellCmd).not.toContain('-u CLAUDE_CODE_OAUTH_TOKEN');
 		});
-
-		const dispatch = makeReviewDispatch(opts);
-		dispatch(SAMPLE_UUID);
-
-		// First spawn call is the respawn-pane dispatch.
-		const firstCall = capturedSpawnArgs[0] ?? [];
-		expect(firstCall).toContain('respawn-pane');
-		const shellCmd = firstCall[firstCall.length - 1] ?? '';
-
-		// Must start with 'docker exec -it cam-worker' (dockerExecWrap prefix).
-		expect(shellCmd).toMatch(/^docker exec -it cam-worker /);
-		// Inner command must still contain the claude argv.
-		expect(shellCmd).toContain('env -u CLAUDECODE');
-		expect(shellCmd).toContain('claude');
-		expect(shellCmd).toContain(`--session-id ${SAMPLE_UUID}`);
-		// US-001 (CAM-242): container workers keep CLAUDE_CODE_OAUTH_TOKEN (injected
-		// by worker-container.ts via -e); the host-only strip must NOT apply here.
-		expect(shellCmd).not.toContain('-u CLAUDE_CODE_OAUTH_TOKEN');
 	});
 
 	test('AC2: container mode + preflight not-ready -> status=error, container-not-ready detail, no wrapped respawn', () => {
@@ -1569,97 +1617,103 @@ describe('makeReviewDispatch: US-005 container mode dispatch', () => {
 		expect(anyReviewerRespawn).toBe(false);
 	});
 
-	test('AC3: container mode + preflight ready -> respawn-pane called with dockerExecWrap-wrapped cmd', () => {
-		const capturedSpawnArgs: string[][] = [];
-		const opts = makeDispatchOpts({
-			paneText: '<review>CLEAN</review>',
-			prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
-			spawn: (_cmd, args) => {
-				capturedSpawnArgs.push(args);
-				return { stdout: '', exitCode: 0 };
-			},
-			workerIsolation: 'container',
-			preflightContainerFn: () => ({ ready: true }),
+	test('AC3: container mode + preflight ready -> respawn-pane called with dockerExecWrap-wrapped cmd', async () => {
+		await withReviewerBackendCwd('claude', 'opus', () => {
+			const capturedSpawnArgs: string[][] = [];
+			const opts = makeDispatchOpts({
+				paneText: '<review>CLEAN</review>',
+				prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
+				spawn: (_cmd, args) => {
+					capturedSpawnArgs.push(args);
+					return { stdout: '', exitCode: 0 };
+				},
+				workerIsolation: 'container',
+				preflightContainerFn: () => ({ ready: true }),
+			});
+
+			const dispatch = makeReviewDispatch(opts);
+			const result = dispatch(SAMPLE_UUID);
+
+			expect(result.status).toBe('ok');
+
+			// A respawn-pane call with a docker exec prefix must have been issued.
+			const reviewerRespawn = capturedSpawnArgs.find(
+				(args) => args.includes('respawn-pane') && (args[args.length - 1] ?? '').startsWith('docker exec -it'),
+			);
+			expect(reviewerRespawn).toBeDefined();
 		});
-
-		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
-
-		expect(result.status).toBe('ok');
-
-		// A respawn-pane call with a docker exec prefix must have been issued.
-		const reviewerRespawn = capturedSpawnArgs.find(
-			(args) => args.includes('respawn-pane') && (args[args.length - 1] ?? '').startsWith('docker exec -it'),
-		);
-		expect(reviewerRespawn).toBeDefined();
 	});
 
-	test('AC4: host mode (default/no workerIsolation) -> shellCmd unchanged, behavior identical to existing tests', () => {
-		const capturedSpawnArgs: string[][] = [];
-		const opts = makeDispatchOpts({
-			paneText: '<review>CLEAN</review>',
-			prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
-			spawn: (_cmd, args) => {
-				capturedSpawnArgs.push(args);
-				return { stdout: '', exitCode: 0 };
-			},
-			// workerIsolation intentionally absent -> defaults to 'host'.
-			preflightContainerFn: () => ({ ready: false, reason: 'daemon-unreachable' }),
+	test('AC4: host mode (default/no workerIsolation) -> shellCmd unchanged, behavior identical to existing tests', async () => {
+		await withReviewerBackendCwd('claude', 'opus', () => {
+			const capturedSpawnArgs: string[][] = [];
+			const opts = makeDispatchOpts({
+				paneText: '<review>CLEAN</review>',
+				prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
+				spawn: (_cmd, args) => {
+					capturedSpawnArgs.push(args);
+					return { stdout: '', exitCode: 0 };
+				},
+				// workerIsolation intentionally absent -> defaults to 'host'.
+				preflightContainerFn: () => ({ ready: false, reason: 'daemon-unreachable' }),
+			});
+
+			const dispatch = makeReviewDispatch(opts);
+			const result = dispatch(SAMPLE_UUID);
+
+			// In host mode, preflight result is ignored (observe-only) and dispatch proceeds.
+			expect(result.status).toBe('ok');
+
+			// The respawn-pane shellCmd must NOT be wrapped with docker exec.
+			const firstCall = capturedSpawnArgs[0] ?? [];
+			const shellCmd = firstCall[firstCall.length - 1] ?? '';
+			expect(shellCmd).not.toMatch(/^docker exec/);
+			expect(shellCmd).toContain('claude');
+			// US-001 (CAM-242): host isolation strips CLAUDE_CODE_OAUTH_TOKEN so the
+			// worker falls back to the interactive config-dir login.
+			expect(shellCmd).toContain('-u CLAUDE_CODE_OAUTH_TOKEN');
 		});
-
-		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
-
-		// In host mode, preflight result is ignored (observe-only) and dispatch proceeds.
-		expect(result.status).toBe('ok');
-
-		// The respawn-pane shellCmd must NOT be wrapped with docker exec.
-		const firstCall = capturedSpawnArgs[0] ?? [];
-		const shellCmd = firstCall[firstCall.length - 1] ?? '';
-		expect(shellCmd).not.toMatch(/^docker exec/);
-		expect(shellCmd).toContain('claude');
-		// US-001 (CAM-242): host isolation strips CLAUDE_CODE_OAUTH_TOKEN so the
-		// worker falls back to the interactive config-dir login.
-		expect(shellCmd).toContain('-u CLAUDE_CODE_OAUTH_TOKEN');
 	});
 
-	test('US-001 (CAM-242): host prefix diverges from the container inner string by exactly the -u CLAUDE_CODE_OAUTH_TOKEN token', () => {
-		const hostSpawnArgs: string[][] = [];
-		const hostOpts = makeDispatchOpts({
-			paneText: '<review>CLEAN</review>',
-			prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
-			spawn: (_cmd, args) => {
-				hostSpawnArgs.push(args);
-				return { stdout: '', exitCode: 0 };
-			},
-			workerIsolation: 'host',
-		});
-		makeReviewDispatch(hostOpts)(SAMPLE_UUID);
-		const hostCmd = (hostSpawnArgs[0] ?? [])[((hostSpawnArgs[0] ?? []).length) - 1] ?? '';
+	test('US-001 (CAM-242): host prefix diverges from the container inner string by exactly the -u CLAUDE_CODE_OAUTH_TOKEN token', async () => {
+		await withReviewerBackendCwd('claude', 'opus', () => {
+			const hostSpawnArgs: string[][] = [];
+			const hostOpts = makeDispatchOpts({
+				paneText: '<review>CLEAN</review>',
+				prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
+				spawn: (_cmd, args) => {
+					hostSpawnArgs.push(args);
+					return { stdout: '', exitCode: 0 };
+				},
+				workerIsolation: 'host',
+			});
+			makeReviewDispatch(hostOpts)(SAMPLE_UUID);
+			const hostCmd = (hostSpawnArgs[0] ?? [])[((hostSpawnArgs[0] ?? []).length) - 1] ?? '';
 
-		const containerSpawnArgs: string[][] = [];
-		const containerOpts = makeDispatchOpts({
-			paneText: '<review>CLEAN</review>',
-			prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
-			spawn: (_cmd, args) => {
-				containerSpawnArgs.push(args);
-				return { stdout: '', exitCode: 0 };
-			},
-			workerIsolation: 'container',
-			preflightContainerFn: () => ({ ready: true }),
-		});
-		makeReviewDispatch(containerOpts)(SAMPLE_UUID);
-		const containerFullCmd = (containerSpawnArgs[0] ?? [])[
-			((containerSpawnArgs[0] ?? []).length) - 1
-		] ?? '';
-		// Strip the dockerExecWrap prefix to isolate the inner shell string.
-		const containerInner = containerFullCmd.replace(/^docker exec -it cam-worker /, '');
+			const containerSpawnArgs: string[][] = [];
+			const containerOpts = makeDispatchOpts({
+				paneText: '<review>CLEAN</review>',
+				prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
+				spawn: (_cmd, args) => {
+					containerSpawnArgs.push(args);
+					return { stdout: '', exitCode: 0 };
+				},
+				workerIsolation: 'container',
+				preflightContainerFn: () => ({ ready: true }),
+			});
+			makeReviewDispatch(containerOpts)(SAMPLE_UUID);
+			const containerFullCmd = (containerSpawnArgs[0] ?? [])[
+				((containerSpawnArgs[0] ?? []).length) - 1
+			] ?? '';
+			// Strip the dockerExecWrap prefix to isolate the inner shell string.
+			const containerInner = containerFullCmd.replace(/^docker exec -it cam-worker /, '');
 
-		// The two inner strings must be identical except the host one carries the
-		// extra `-u CLAUDE_CODE_OAUTH_TOKEN ` token (host-only strip), NOT a
-		// byte-for-byte equal env prefix.
-		expect(hostCmd).not.toEqual(containerInner);
-		expect(hostCmd.replace('-u CLAUDE_CODE_OAUTH_TOKEN ', '')).toEqual(containerInner);
+			// The two inner strings must be identical except the host one carries the
+			// extra `-u CLAUDE_CODE_OAUTH_TOKEN ` token (host-only strip), NOT a
+			// byte-for-byte equal env prefix.
+			expect(hostCmd).not.toEqual(containerInner);
+			expect(hostCmd.replace('-u CLAUDE_CODE_OAUTH_TOKEN ', '')).toEqual(containerInner);
+		});
 	});
 
 	test('AC5: escalateFn called fire-and-forget when preflight fails in container mode', async () => {
@@ -1717,34 +1771,8 @@ describe('makeReviewDispatch: US-005 container mode dispatch', () => {
 describe('makeReviewDispatch: US-002 codex auth preflight (CAM-352)', () => {
 	const SAMPLE_UUID = 'cafebabe-dead-beef-0000-111122223333';
 
-	/**
-	 * Stage a temp cwd with a project.toml resolving the reviewer backend to
-	 * 'codex' with a non-claude-alias model (readPhaseBackend/readPhaseModel
-	 * are not injectable through MakeReviewDispatchOptions; they always read
-	 * scripts/cam/project.toml relative to process.cwd()). Also stages a stub
-	 * .claude/agents/subagent-reviewer.md so CodexAdapter.buildSpawnArgv can
-	 * read it on the authenticated (proceed) path.
-	 */
-	async function withCodexBackendCwd<T>(fn: () => T | Promise<T>): Promise<T> {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-codex-auth-'));
-		const camDir = join(tmpDir, 'scripts', 'cam');
-		mkdirSync(camDir, { recursive: true });
-		writeFileSync(join(camDir, 'project.toml'), '[backend]\nreviewer = "codex"\n\n[models]\nreviewer = "gpt-5-codex"\n');
-		const agentsDir = join(tmpDir, '.claude', 'agents');
-		mkdirSync(agentsDir, { recursive: true });
-		writeFileSync(join(agentsDir, 'subagent-reviewer.md'), '# stub\n');
-		const prevCwd = process.cwd();
-		process.chdir(tmpDir);
-		try {
-			return await fn();
-		} finally {
-			process.chdir(prevCwd);
-			rmSync(tmpDir, { recursive: true, force: true });
-		}
-	}
-
 	test('AC2: codex backend + unauthenticated -> status=error, actionable codex login reason, respawn-pane never called', async () => {
-		await withCodexBackendCwd(() => {
+		await withReviewerBackendCwd('codex', 'gpt-5-codex', () => {
 			const capturedSpawnArgs: string[][] = [];
 			let authCheckCalled = false;
 			const opts = makeDispatchOpts({
@@ -1774,7 +1802,7 @@ describe('makeReviewDispatch: US-002 codex auth preflight (CAM-352)', () => {
 	});
 
 	test('AC2: escalateFn called fire-and-forget when codex auth preflight fails', async () => {
-		await withCodexBackendCwd(async () => {
+		await withReviewerBackendCwd('codex', 'gpt-5-codex', async () => {
 			let escalateCalled = false;
 			const opts = makeDispatchOpts({
 				paneText: '<review>CLEAN</review>',
@@ -1795,7 +1823,7 @@ describe('makeReviewDispatch: US-002 codex auth preflight (CAM-352)', () => {
 	});
 
 	test('AC3: codex backend + authenticated -> dispatch proceeds unchanged (respawn-pane called)', async () => {
-		await withCodexBackendCwd(() => {
+		await withReviewerBackendCwd('codex', 'gpt-5-codex', () => {
 			const capturedSpawnArgs: string[][] = [];
 			let authCheckCalled = false;
 			const opts = makeDispatchOpts({
@@ -1821,30 +1849,66 @@ describe('makeReviewDispatch: US-002 codex auth preflight (CAM-352)', () => {
 		});
 	});
 
-	test('AC4: claude backend (default) -> codexAuthCheckFn never invoked, dispatch unchanged', () => {
-		// No withCodexBackendCwd: the repo's own scripts/cam/project.toml resolves
-		// the reviewer backend to 'claude' by default.
-		const capturedSpawnArgs: string[][] = [];
-		let authCheckCalled = false;
-		const opts = makeDispatchOpts({
-			paneText: '<review>CLEAN</review>',
-			prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
-			spawn: (_cmd, args) => {
-				capturedSpawnArgs.push(args);
-				return { stdout: '', exitCode: 0 };
-			},
-			codexAuthCheckFn: () => {
-				authCheckCalled = true;
-				return { authenticated: false };
-			},
+	test('AC4: claude backend (default) -> codexAuthCheckFn never invoked, dispatch unchanged', async () => {
+		// Explicit claude fixture (US-004, CAM-356): no longer relies on the
+		// repo's own scripts/cam/project.toml to resolve 'claude'.
+		await withReviewerBackendCwd('claude', 'opus', () => {
+			const capturedSpawnArgs: string[][] = [];
+			let authCheckCalled = false;
+			const opts = makeDispatchOpts({
+				paneText: '<review>CLEAN</review>',
+				prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
+				spawn: (_cmd, args) => {
+					capturedSpawnArgs.push(args);
+					return { stdout: '', exitCode: 0 };
+				},
+				codexAuthCheckFn: () => {
+					authCheckCalled = true;
+					return { authenticated: false };
+				},
+			});
+
+			const dispatch = makeReviewDispatch(opts);
+			const result = dispatch(SAMPLE_UUID);
+
+			expect(authCheckCalled).toBe(false);
+			expect(result.status).toBe('ok');
+			const reviewerRespawn = capturedSpawnArgs.find((args) => args.includes('respawn-pane'));
+			expect(reviewerRespawn).toBeDefined();
 		});
+	});
 
-		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+	test('US-004 (CAM-356): codex reviewer fixture resolves gpt-5.5 (not opus), auth preflight does not abort on the claude-alias check', async () => {
+		await withReviewerBackendCwd('codex', 'gpt-5.5', () => {
+			const capturedSpawnArgs: string[][] = [];
+			let authCheckCalled = false;
+			const opts = makeDispatchOpts({
+				paneText: '<review>CLEAN</review>',
+				prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
+				spawn: (_cmd, args) => {
+					capturedSpawnArgs.push(args);
+					return { stdout: '', exitCode: 0 };
+				},
+				codexAuthCheckFn: () => {
+					// If this fires, isClaudeAliasModel('gpt-5.5') correctly returned
+					// false and codexAuthPreflight did NOT short-circuit on the
+					// claude-alias guard before reaching the auth check.
+					authCheckCalled = true;
+					return { authenticated: true };
+				},
+			});
 
-		expect(authCheckCalled).toBe(false);
-		expect(result.status).toBe('ok');
-		const reviewerRespawn = capturedSpawnArgs.find((args) => args.includes('respawn-pane'));
-		expect(reviewerRespawn).toBeDefined();
+			const dispatch = makeReviewDispatch(opts);
+			const result = dispatch(SAMPLE_UUID);
+
+			expect(authCheckCalled).toBe(true);
+			expect(result.status).toBe('ok');
+
+			const reviewerRespawn = capturedSpawnArgs.find((args) => args.includes('respawn-pane'));
+			expect(reviewerRespawn).toBeDefined();
+			const shellCmd = (reviewerRespawn ?? [])[(reviewerRespawn ?? []).length - 1] ?? '';
+			expect(shellCmd).toContain('gpt-5.5');
+			expect(shellCmd).not.toMatch(/\b(opus|sonnet|haiku)\b/);
+		});
 	});
 });
