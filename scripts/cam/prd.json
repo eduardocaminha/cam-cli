@@ -1,0 +1,30 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-357",
+  "description": "Thread the resolved backend into the drift-guard test so it validates the spawn-accurate model instead of the flat/DEFAULT fallback.",
+  "issueNumber": 357,
+  "type": "chore",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Thread backend into the readPhaseModel drift-guard test",
+      "description": "As a cam maintainer, I need the per-phase drift-guard test to resolve the phase backend first and pass it to readPhaseModel, with a backend-aware `expected` value, so that the guard validates the spawn-accurate model and does not falsely redden for a future [models.<backend>]-only codex phase.",
+      "acceptanceCriteria": [
+        "In the 'readPhaseModel vs repo project.toml (drift guard)' describe block of test/config/models.test.ts, readPhaseBackend(phase, repoConfigPath) is resolved BEFORE the readPhaseModel call and passed as the third positional argument: readPhaseModel(phase, repoConfigPath, backend). [oracle: file-assert grep -n 'readPhaseModel(phase, repoConfigPath, backend)' test/config/models.test.ts]",
+        "The `expected` value compared against `actual` in the equality assertion is derived with the same backend-aware resolution order as readPhaseModel: nested [models.<backend>].<phase> (only when backend !== 'claude' and the value is a non-empty string), then flat [models].<phase>, then DEFAULTS[phase]; so the equality assertion holds for both a claude phase and a hypothetical [models.<backend>]-only codex phase. [oracle: reviewer-judgment]",
+        "The drift guard still reads the REAL repo config (scripts/cam/project.toml via process.cwd()); no tmp fixture is introduced. [oracle: file-assert grep -q \"join(process.cwd(), 'scripts', 'cam', 'project.toml')\" test/config/models.test.ts]",
+        "No production source file is modified; the change is confined to test/config/models.test.ts (readPhaseModel already accepts the optional backend param). [oracle: file-assert git diff --name-only main -- src | grep -qv . || ! git diff --name-only main | grep -q '^src/']",
+        "Every per-phase drift-guard case is green against the committed all-claude scripts/cam/project.toml. [oracle: bun test test/config/models.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Single-file test change. Target: test/config/models.test.ts, describe block 'readPhaseModel vs repo project.toml (drift guard)' (~lines 750-773). readPhaseModel signature is (phase, configPath?, backend?) in src/config/models.ts:158 - do NOT add a param or touch any source file. Resolution order to mirror in `expected`: readNestedBackendModel returns undefined when backend omitted OR === 'claude' (falls through to flat [models].<phase> string lookup, then DEFAULTS[phase]) - see src/config/models.ts:120-177. Gotcha: threading backend into `actual` WITHOUT also making `expected` backend-aware merely relocates the latent false-redden from the isClaudeAliasModel assertion (line ~769) to the equality assertion (lines ~762-763); update both. For the committed all-claude config this is a no-op today and the suite stays green. Keep reading the real repo config, not a tmp fixture."
+    }
+  ]
+}
