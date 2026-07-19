@@ -11,7 +11,7 @@
 // makes this a real behavior lock instead.
 
 import { describe, expect, test } from 'bun:test';
-import { ClaudeAdapter } from '../../src/supervisor/backend-adapter.ts';
+import { ClaudeAdapter, CodexAdapter, selectAdapter } from '../../src/supervisor/backend-adapter.ts';
 
 const SAMPLE_UUID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
 const SAMPLE_PROMPT = "Implement it's US-002; use $HOME and `backtick`.";
@@ -134,5 +134,36 @@ describe('ClaudeAdapter.buildSpawnArgv golden characterization (US-001)', () => 
 		for (const actor of ['implementer', 'planner', 'auditor'] as const) {
 			expect(() => adapter.buildSpawnArgv(actor, { uuid: SAMPLE_UUID, taskPrompt: SAMPLE_PROMPT })).toThrow();
 		}
+	});
+});
+
+// -----------------------------------------------------------------------------
+// selectAdapter (US-002, CAM-350): the factory that maps a resolved
+// readPhaseBackend(phase) value to a concrete BackendAdapter.
+// -----------------------------------------------------------------------------
+
+describe("selectAdapter(backend) factory (US-002)", () => {
+	test("'claude' returns a ClaudeAdapter", () => {
+		expect(selectAdapter('claude')).toBeInstanceOf(ClaudeAdapter);
+	});
+
+	test("'codex' returns a CodexAdapter", () => {
+		expect(selectAdapter('codex')).toBeInstanceOf(CodexAdapter);
+	});
+
+	test('an unknown/unrecognized value defaults to ClaudeAdapter', () => {
+		expect(selectAdapter('not-a-real-backend')).toBeInstanceOf(ClaudeAdapter);
+		expect(selectAdapter('')).toBeInstanceOf(ClaudeAdapter);
+	});
+
+	test("back-compat: selectAdapter('claude').buildSpawnArgv is byte-identical to the pre-change ClaudeAdapter argv, for all four actors", () => {
+		for (const actor of ['implementer', 'planner', 'auditor'] as const) {
+			const opts = { uuid: SAMPLE_UUID, taskPrompt: SAMPLE_PROMPT, permissionMode: SAMPLE_MODE };
+			expect(selectAdapter('claude').buildSpawnArgv(actor, opts)).toBe(new ClaudeAdapter().buildSpawnArgv(actor, opts));
+		}
+		const reviewerOpts = { uuid: SAMPLE_UUID };
+		expect(selectAdapter('claude').buildSpawnArgv('reviewer', reviewerOpts)).toBe(
+			new ClaudeAdapter().buildSpawnArgv('reviewer', reviewerOpts),
+		);
 	});
 });

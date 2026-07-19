@@ -39,7 +39,7 @@ import type { ReviewReport } from './review-report.ts';
 import type { FollowUpProvenance } from './suggestion-followups.ts';
 import { readWorkerOutcome, parseAnySentinel } from './result.ts';
 import type { WorkerOutcome } from './result.ts';
-import { buildImplementerWorkerArgv } from './worker-argv.ts';
+import { selectAdapter } from './backend-adapter.ts';
 import { buildImplementerTaskPrompt } from './task-prompt.ts';
 import { readPhaseModel, readPhaseBackend } from '../config/models.ts';
 import type { WorkerIsolation } from '../config/models.ts';
@@ -1026,7 +1026,10 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					: taskPrompt;
 
 			// Build the shell command for the worker (always interactive TUI session).
-			const shellCmd = buildImplementerWorkerArgv({
+			// US-002 (CAM-350): route through selectAdapter(implBackend) so a
+			// per-phase 'codex' backend actually reaches spawn instead of always
+			// hardcoding ClaudeAdapter.
+			const shellCmd = selectAdapter(implBackend).buildSpawnArgv('implementer', {
 				uuid,
 				taskPrompt: dispatchTaskPrompt,
 				permissionMode,

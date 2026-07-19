@@ -455,3 +455,21 @@ export class CodexAdapter implements BackendAdapter {
 		);
 	}
 }
+
+// ---------------------------------------------------------------------------
+// selectAdapter (US-002, CAM-350, ADR-0047 follow-up).
+// ---------------------------------------------------------------------------
+
+/**
+ * Map a resolved `readPhaseBackend(phase)` value to a concrete BackendAdapter.
+ * This is the single choice-point that wires the previously-inert per-phase
+ * backend resolution (US-001, CAM-349) into actual adapter dispatch: 'codex'
+ * returns CodexAdapter, everything else (including 'claude' and any
+ * unknown/future value) returns ClaudeAdapter. Defaulting unknown values to
+ * ClaudeAdapter keeps every existing project.toml (no `[backend]` section, or
+ * one with a typo'd/legacy value) behaving exactly as before this story.
+ */
+export function selectAdapter(backend: string): BackendAdapter {
+	if (backend === 'codex') return new CodexAdapter();
+	return new ClaudeAdapter();
+}
