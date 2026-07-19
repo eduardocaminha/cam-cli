@@ -1,27 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Add selectAdapter(backend) factory and wire the four dispatch call sites"
+    "id": "US-003",
+    "title": "Graceful token-ceiling degradation for the codex backend"
   },
   "branchName": "cam/issue-350",
   "timestamp": "2026-07-18T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/backend-adapter.ts",
     "src/supervisor/loop.ts",
-    "src/supervisor/review.ts",
-    "src/supervisor/plan-runner.ts",
-    "test/supervisor/backend-adapter.test.ts",
+    "src/supervisor/events.ts",
+    "test/supervisor/loop.test.ts",
     "scripts/cam/patterns.md",
     "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "selectAdapter(backend: string): BackendAdapter now lives in src/supervisor/backend-adapter.ts ('codex' -> CodexAdapter, everything else including unknown values -> ClaudeAdapter). All four dispatch call sites now actually route through it: loop.ts's implement branch (selectAdapter(implBackend).buildSpawnArgv('implementer', {...}), replacing the buildImplementerWorkerArgv(...) call and its now-removed import), review.ts's reviewDispatch (selectAdapter(reviewBackend).buildSpawnArgv('reviewer', {...})), and plan-runner.ts's resolveAndSpawnPlanner/resolveAndSpawnAuditor (selectAdapter(backend).buildSpawnArgv('planner'|'auditor', {...}), replacing the buildPlannerWorkerArgv/buildAuditorWorkerArgv import from plan-argv.ts). The four thin per-actor wrapper functions (buildImplementerWorkerArgv, buildReviewerWorkerArgv, buildPlannerWorkerArgv, buildAuditorWorkerArgv) are UNCHANGED and still exported (still hardcode `new ClaudeAdapter()` internally) -- they are only still consumed directly by their own dedicated golden/model test files now, no production call site imports them anymore. Back-compat is exact: readPhaseBackend defaults to 'claude' everywhere no [backend] config exists (DEFAULTS.backend = 'claude' in config/models.ts), so every existing test asserting a specific claude argv golden (loop.test.ts, review.test.ts, plan tests) passed unmodified through the new selectAdapter indirection -- this IS the AC3 byte-identical back-compat proof, reinforced by an explicit selectAdapter('claude') === new ClaudeAdapter() equality test added to backend-adapter.test.ts. Two file-size ceilings were raised (loop.ts 2419->2422, plan-runner.ts 1711->1717) in scripts/file-size-budget.json for the added selectAdapter call sites + comments; _ref updated accordingly. Remaining gap for a future story: src/commands/run.ts's orchestrator backend (orchBackend, line ~425) is still deliberately on the old readBackend() global read (documented, not this story's scope) -- and there is still no per-actor completion-detection story for codex (readWorkerTokens / worker-report sentinel parsing has no codex-shaped equivalent yet), so flipping any [backend].<phase> = \"codex\" in project.toml today will spawn codex correctly but the supervisor's own outcome-detection path is unvalidated against a real codex run.",
+  "nextStoryContext": "The CAM-5 per-worker token-ceiling backstop in loop.ts is now backend-aware. New pure predicate shouldApplyTokenCeiling(backend: string, maxWorkerTokens: number, hasReader: boolean): boolean (exported from src/supervisor/loop.ts, placed right before MAX_DEAD_WORKER_RETRIES) returns `backend !== 'codex' && maxWorkerTokens > 0 && hasReader`: everything that is not literally 'codex' (including unknown/future backend strings) still enforces the ceiling, matching selectAdapter's own defensive-default posture (US-002). The poll loop's condition changed from `if (maxWorkerTokens > 0 && readWorkerTokens)` to `if (applyTokenCeiling && readWorkerTokens)` (the local is computed once per dispatch, right before the `while (true)` poll loop, from `implBackend` which was already being read at that point). When applyTokenCeiling is false SPECIFICALLY because the backend is 'codex' (i.e. a ceiling WAS configured and a reader WAS wired, but codex can't use it), a new one-time event kind 'worker-token-ceiling-unavailable' fires (once per dispatch, before the poll loop starts, not per poll tick) via the existing `emit(...)` helper, carrying `{ backend, ceiling }` in its detail (new WorkerTokenCeilingUnavailableEventDetail interface, src/supervisor/events.ts, added to the WorkerEventKind union and the WorkerEventDetail union). This never throws and never silently drops the gap: codex workers with maxWorkerTokens=0 (ceiling not configured at all) emit nothing (correctly, since there is no gap to report), matching the same 'disabled ceiling' semantics claude already had. The claude path (and any non-codex backend) is byte-identical: same condition truth table, same event, same kill behavior -- verified by the two pre-existing CAM-5 tests (kill-on-breach, disabled-when-0) passing unmodified. Testing gotcha for the NEXT story that needs to drive readPhaseBackend('implementer') to a specific value inside a runSupervisor(...) test: there is NO configPath seam threaded through RunSupervisorOptions for this call site (unlike readPhaseModel/readPhaseBackend themselves, which do accept a configPath arg) -- the working pattern (see the new loop.test.ts codex-ceiling test) is mkdtempSync a scratch dir, write scripts/cam/project.toml with the desired [backend] section under it, process.chdir() into it for the duration of the test (restore cwd in finally), and if the codex path is exercised, also stage a stub .claude/agents/subagent-<actor>.md at that cwd (CodexAdapter.buildSpawnArgv reads it via writeCodexInstructionsFile and throws ENOENT otherwise). Remaining gap, called out in ADR-0047 and unchanged by this story: there is still no real codex usage/transcript parser (F3, future slice) -- this story only closes the 'never crashes / never silently drops' half of the risk ADR-0047's Consequences section flagged, not the 'codex ceiling actually enforced' half.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure internal wiring: selectAdapter(backend) dispatches between two already-implemented (and already docs-validated in US-001) adapters. No new external library surface touched."
+      "summary": "Pure internal supervisor-loop wiring: a pure predicate function plus a new structured event kind. No new external library surface touched (readWorkerTokens/transcript parsing itself was untouched -- only its call-site gating changed)."
     }
   ]
 }
