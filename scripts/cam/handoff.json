@@ -1,0 +1,28 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Implement CodexAdapter.buildSpawnArgv for all four worker actors"
+  },
+  "branchName": "cam/issue-350",
+  "timestamp": "2026-07-18T00:00:00Z",
+  "createdFiles": [
+    "test/supervisor/codex-adapter.test.ts"
+  ],
+  "modifiedFiles": [
+    "src/supervisor/backend-adapter.ts",
+    "src/templates/frontmatter.ts",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "CodexAdapter (src/supervisor/backend-adapter.ts) now renders real `codex exec` argv for all four worker actors (implementer/planner/auditor/reviewer), per ADR-0047: sandbox/approval via codexSandboxArgs (bypassPermissions -> --dangerously-bypass-approvals-and-sandbox, else --sandbox workspace-write --ask-for-approval never), agent-prompt injection via writeCodexInstructionsFile (.claude/agents/<name>.md frontmatter-stripped body written to /tmp, passed as -c model_instructions_file=<path>), model via -m <model>, and its own (currently empty) env-unset lists (CODEX_WORKER_ENV_UNSET/CODEX_HOST_ONLY_ENV_UNSET) -- no --session-id, no CLAUDECODE strip. ClaudeAdapter is completely untouched (byte-identical, golden tests still pin its exact output). This story does NOT wire CodexAdapter into any call site: loop.ts/plan-runner.ts/review.ts still hardcode `new ClaudeAdapter()` (or the equivalent claude-only builder wrappers) regardless of readPhaseBackend(phase)'s resolved value -- that dispatch wiring (choosing ClaudeAdapter vs CodexAdapter per readPhaseBackend(phase)) is the natural next story. Also out of scope here (per ADR-0047, deferred): the claude-transcript-shaped token-ceiling backstop (readWorkerTokens) has no codex equivalent yet -- a future codex dispatch story must either add one or document graceful degradation before enabling codex for real. New src/templates/frontmatter.ts export: stripFrontmatter(content) -- reuse it rather than re-deriving a frontmatter-fence regex.",
+  "officialDocsValidated": [
+    {
+      "lib": "codex-cli",
+      "channel": "WebFetch",
+      "url": "https://learn.chatgpt.com/docs/developer-commands?surface=cli",
+      "fetchedAt": "2026-07-18T00:00:00Z",
+      "status": "aligned",
+      "summary": "Confirmed codex exec flags: --sandbox/-s (read-only|workspace-write|danger-full-access), --ask-for-approval/-a (untrusted|on-request|never), --dangerously-bypass-approvals-and-sandbox/--yolo (mutually exclusive with the two above), --model/-m, and -c/--config key=value for inline overrides including model_instructions_file=<path>. Implementation matches this shape exactly."
+    }
+  ]
+}
