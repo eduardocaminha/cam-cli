@@ -23,6 +23,7 @@ import {
 import type { LlmPhase, Phase } from '../../src/config/models.ts';
 import { MODEL_OPTIONS } from '../../src/ui/ConfigScreen.tsx';
 import { loadConfig } from '../../src/config/toml.ts';
+import { isClaudeAliasModel } from '../../src/supervisor/codex-auth.ts';
 
 // ---------------------------------------------------------------------------
 // Fixtures helpers
@@ -737,9 +738,13 @@ describe('DEFAULTS vs MODEL_OPTIONS consistency', () => {
 // readPhaseModel vs the repo's own scripts/cam/project.toml (drift guard)
 //
 // For each Phase, the value cam actually spawns with (readPhaseModel against
-// the real repo config) must equal what's configured there, and must be a
-// known/selectable model id (or the DEFAULTS fallback when the key is
-// omitted from [models]).
+// the real repo config) must equal what's configured there. The "known
+// model" check is backend-conditional (US-003, CAM-356): a claude-backed
+// phase is still checked against MODEL_OPTIONS/DEFAULTS, but a codex-backed
+// phase only needs to NOT be a claude tier alias -- asserting a positive
+// codex-slug allowlist would drift with the account's available models
+// (gpt-5.5/gpt-5.6-sol valid, all *-codex rejected on this login) and falsely
+// redden the suite the moment the codex model lineup changes.
 // ---------------------------------------------------------------------------
 
 describe('readPhaseModel vs repo project.toml (drift guard)', () => {
@@ -756,7 +761,13 @@ describe('readPhaseModel vs repo project.toml (drift guard)', () => {
 			const expected = typeof configured === 'string' && configured.length > 0 ? configured : DEFAULTS[phase];
 			const actual = readPhaseModel(phase, repoConfigPath);
 			expect(actual).toBe(expected);
-			expect(optionValues.has(actual) || actual === DEFAULTS[phase]).toBe(true);
+
+			const backend = readPhaseBackend(phase, repoConfigPath);
+			if (backend === 'claude') {
+				expect(optionValues.has(actual) || actual === DEFAULTS[phase]).toBe(true);
+			} else {
+				expect(isClaudeAliasModel(actual)).toBe(false);
+			}
 		});
 	}
 });
