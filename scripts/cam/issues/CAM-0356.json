@@ -1,0 +1,10 @@
+{
+  "id": "CAM-356",
+  "title": "CAM-54 slice-5: per-backend model-id resolution + config-tolerant drift/review guards",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-19T16:36:35.082Z",
+  "updatedAt": "2026-07-19T16:36:35.082Z",
+  "description": "Enable committing [backend].<phase> = \"codex\" without reddening bun test. Two parts: (a) make model resolution backend-aware so a codex phase resolves a codex-valid slug from a nested [models.codex] sub-table, falling back to the flat [models].<phase> / DEFAULTS for claude; (b) make the drift guard (test/config/models.test.ts:667-684) backend-conditional so codex phases are validated as non-claude-alias (via isClaudeAliasModel) rather than against the claude MODEL_OPTIONS list, and generalize the review.test.ts config-fixture helper (withCodexBackendCwd) so the ~5 dispatch-shape tests stop pinning the committed scripts/cam/project.toml. Committed project.toml stays claude for all phases (no reviewer=codex flip in this slice; that is the ceremony's temporary operator action). Structural unblocker for the CAM-54 live-validation ceremony and for CAM-330/331 public launch. Grounded via Explore 2026-07-19: readPhaseModel src/config/models.ts:110-125 (flat, backend never consulted); readPhaseBackend src/config/models.ts:212-237; dispatch sites review.ts:351-366 + loop.ts:1051-1070 resolve model+backend separately; codexAuthPreflight src/supervisor/codex-auth.ts:127-153 rejects claude aliases; MODEL_OPTIONS src/ui/ConfigScreen.tsx:98-107; withCodexBackendCwd review.test.ts:1728-1744."
+}
