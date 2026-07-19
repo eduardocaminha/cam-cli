@@ -54,7 +54,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Depends on US-001. Add selectAdapter(backend: string): BackendAdapter to src/supervisor/backend-adapter.ts. Wire call sites: loop.ts (~line 1014-1029, implBackend already read via readPhaseBackend('implementer'); replace buildImplementerWorkerArgv(...) with selectAdapter(implBackend).buildSpawnArgv('implementer', opts)); review.ts (~line 338-349, reviewBackend already resolved); plan-runner.ts (~line 595-597 planner and ~632-634 auditor, backend already read via readPhaseBackend). The thin wrappers buildImplementerWorkerArgv/buildReviewerWorkerArgv/buildPlannerWorkerArgv/buildAuditorWorkerArgv may stay as claude-only convenience but the call sites must route through selectAdapter so codex is reachable. Keep dockerExecWrap wrapping OUTSIDE the adapter (unchanged). Do NOT re-read readPhaseBackend at the call site if already resolved (loop/review/plan-runner already avoid double-read for the spawn-resolution event). Back-compat test: assert selectAdapter('claude').buildSpawnArgv(actor, opts) equals the existing goldens per actor."
     },
