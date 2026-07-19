@@ -348,8 +348,11 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 
 		// Resolve model/backend once so argv and the spawn-resolution event
 		// report the identical resolved values (reviewer finding: double-read).
-		const reviewModel = readPhaseModel('reviewer');
+		// US-002 (CAM-356): resolve reviewBackend first and thread it into
+		// readPhaseModel so a codex-backed reviewer phase resolves its slug from
+		// [models.codex] instead of a backend-blind [models] read.
 		const reviewBackend = readPhaseBackend('reviewer');
+		const reviewModel = readPhaseModel('reviewer', undefined, reviewBackend);
 
 		// Build and respawn the interactive reviewer (CAM-41: the prompt is
 		// mandatory; a promptless claude dies instantly).

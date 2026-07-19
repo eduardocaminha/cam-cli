@@ -23,6 +23,7 @@ import {
 import type { LlmPhase, Phase } from '../../src/config/models.ts';
 import { MODEL_OPTIONS } from '../../src/ui/ConfigScreen.tsx';
 import { loadConfig } from '../../src/config/toml.ts';
+import { isClaudeAliasModel } from '../../src/supervisor/codex-auth.ts';
 
 // ---------------------------------------------------------------------------
 // Fixtures helpers
@@ -209,6 +210,84 @@ orchestrator = 42
 orchestrator = true
 `);
 		expect(readPhaseModel('orchestrator', path)).toBe('opus');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// readPhaseModel: backend-aware resolution (US-001, CAM-356)
+// ---------------------------------------------------------------------------
+
+describe('readPhaseModel - backend-aware resolution (US-001)', () => {
+	test('a codex-backed phase resolves the codex slug from a nested [models.codex] sub-table', () => {
+		const path = writeTmpToml(`
+[models]
+implementer = "sonnet"
+
+[models.codex]
+implementer = "gpt-5-codex"
+`);
+		expect(readPhaseModel('implementer', path, 'codex')).toBe('gpt-5-codex');
+	});
+
+	test('a claude-backed phase ignores a present [models.codex] sub-table and resolves the flat value', () => {
+		const path = writeTmpToml(`
+[models]
+implementer = "sonnet"
+
+[models.codex]
+implementer = "gpt-5-codex"
+`);
+		expect(readPhaseModel('implementer', path, 'claude')).toBe('sonnet');
+	});
+
+	test('backend omitted resolves the flat value unchanged (pre-existing 2-arg call shape)', () => {
+		const path = writeTmpToml(`
+[models]
+implementer = "sonnet"
+
+[models.codex]
+implementer = "gpt-5-codex"
+`);
+		expect(readPhaseModel('implementer', path)).toBe('sonnet');
+	});
+
+	test('non-claude backend with no matching nested key falls back to the flat [models].<phase> value', () => {
+		const path = writeTmpToml(`
+[models]
+orchestrator = "custom-model"
+
+[models.codex]
+implementer = "gpt-5-codex"
+`);
+		expect(readPhaseModel('orchestrator', path, 'codex')).toBe('custom-model');
+	});
+
+	test('non-claude backend with no nested [models.<backend>] table at all falls back to the flat value', () => {
+		const path = writeTmpToml(`
+[models]
+implementer = "sonnet"
+`);
+		expect(readPhaseModel('implementer', path, 'codex')).toBe('sonnet');
+	});
+
+	test('non-claude backend with neither nested nor flat value falls back to DEFAULTS[phase]', () => {
+		const path = writeTmpToml(`
+[models]
+orchestrator = "custom-model"
+`);
+		expect(readPhaseModel('implementer', path, 'codex')).toBe('sonnet');
+	});
+
+	test('a [models.codex] sub-table present but the requested phase is claude-backed: flat lookup skips the nested object and falls through to DEFAULTS', () => {
+		const path = writeTmpToml(`
+[models.codex]
+implementer = "gpt-5-codex"
+`);
+		// 'implementer' has no flat [models].implementer entry; only the nested
+		// [models.codex].implementer entry exists. A claude-backed request must
+		// NOT pick up the nested table nor treat [models] itself (which is now
+		// the object { codex: { implementer: ... } }) as a model string.
+		expect(readPhaseModel('implementer', path, 'claude')).toBe('sonnet');
 	});
 });
 
@@ -659,9 +738,13 @@ describe('DEFAULTS vs MODEL_OPTIONS consistency', () => {
 // readPhaseModel vs the repo's own scripts/cam/project.toml (drift guard)
 //
 // For each Phase, the value cam actually spawns with (readPhaseModel against
-// the real repo config) must equal what's configured there, and must be a
-// known/selectable model id (or the DEFAULTS fallback when the key is
-// omitted from [models]).
+// the real repo config) must equal what's configured there. The "known
+// model" check is backend-conditional (US-003, CAM-356): a claude-backed
+// phase is still checked against MODEL_OPTIONS/DEFAULTS, but a codex-backed
+// phase only needs to NOT be a claude tier alias -- asserting a positive
+// codex-slug allowlist would drift with the account's available models
+// (gpt-5.5/gpt-5.6-sol valid, all *-codex rejected on this login) and falsely
+// redden the suite the moment the codex model lineup changes.
 // ---------------------------------------------------------------------------
 
 describe('readPhaseModel vs repo project.toml (drift guard)', () => {
@@ -678,7 +761,13 @@ describe('readPhaseModel vs repo project.toml (drift guard)', () => {
 			const expected = typeof configured === 'string' && configured.length > 0 ? configured : DEFAULTS[phase];
 			const actual = readPhaseModel(phase, repoConfigPath);
 			expect(actual).toBe(expected);
-			expect(optionValues.has(actual) || actual === DEFAULTS[phase]).toBe(true);
+
+			const backend = readPhaseBackend(phase, repoConfigPath);
+			if (backend === 'claude') {
+				expect(optionValues.has(actual) || actual === DEFAULTS[phase]).toBe(true);
+			} else {
+				expect(isClaudeAliasModel(actual)).toBe(false);
+			}
 		});
 	}
 });

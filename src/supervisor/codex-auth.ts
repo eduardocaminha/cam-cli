@@ -77,7 +77,7 @@ export function codexAuthCheck(): CodexAuthCheckResult {
 const CLAUDE_ALIAS_MODEL_RE = /\b(opus|sonnet|haiku)\b/i;
 
 /** True when `model` is an obviously-claude tier alias, never a valid codex model id. */
-function isClaudeAliasModel(model: string): boolean {
+export function isClaudeAliasModel(model: string): boolean {
 	return CLAUDE_ALIAS_MODEL_RE.test(model);
 }
 

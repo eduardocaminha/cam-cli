@@ -450,8 +450,12 @@ function setupPanes(
 	// kill-sessions the whole tmux session (the pre-CAM-23 teardown).
 	// Resolve model/backend once so argv and the spawn-resolution event
 	// report the identical resolved values (reviewer finding: double-read).
-	const orchModel = readPhaseModel('orchestrator');
+	// US-002 (CAM-356): resolve orchBackend first and thread it into
+	// readPhaseModel; orchestrator backend itself stays on the global
+	// readBackend() reader (CAM-350: orchestrator backend is deliberately
+	// global, not per-phase).
 	const orchBackend = readBackend();
+	const orchModel = readPhaseModel('orchestrator', undefined, orchBackend);
 
 	const agentCmd = buildOrchestratorPaneCommand({
 		sessionName,

@@ -91,9 +91,54 @@ function defaultProjectConfigPath(): string {
 }
 
 /**
+ * Read a `typeof === 'string'`, non-empty value for `key` out of `section`,
+ * or `undefined` otherwise. Shared by the flat and nested-backend lookups in
+ * `readPhaseModel` so a sub-table (`typeof === 'object'`) is never mistaken
+ * for a model string.
+ */
+function readStringKey(section: Record<string, unknown>, key: string): string | undefined {
+	const value = section[key];
+	return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+/**
+ * Read `[models.<backend>].<phase>` out of `modelsRecord` (the already
+ * type-guarded, parsed `[models]` section). Returns `undefined` when
+ * `backend` is omitted/`"claude"`, when no `[models.<backend>]` sub-table is
+ * present, or when the sub-table has no matching `phase` string key. Split
+ * out of `readPhaseModel` to keep that function's cognitive complexity low.
+ */
+function readNestedBackendModel(
+	modelsRecord: Record<string, unknown>,
+	phase: Phase,
+	backend: string | undefined,
+): string | undefined {
+	if (backend === undefined || backend === 'claude') return undefined;
+	const backendSection = modelsRecord[backend];
+	if (backendSection === undefined || backendSection === null || typeof backendSection !== 'object') {
+		return undefined;
+	}
+	return readStringKey(backendSection as Record<string, unknown>, phase);
+}
+
+/**
  * Read the model for `phase` from the project config. Returns the configured
  * value when it is present and a non-empty string; otherwise returns
  * `DEFAULTS[phase]`.
+ *
+ * When `backend` is provided and is not `"claude"`, a nested
+ * `[models.<backend>].<phase>` key is consulted FIRST (e.g. `[models.codex]`
+ * for a codex-backed phase): backends other than claude resolve model slugs
+ * from their own backend-scoped sub-table, since a claude tier alias
+ * (`opus`/`sonnet`) is not a valid slug for another backend. When `backend`
+ * is omitted or `"claude"`, this nested lookup is skipped entirely and
+ * resolution is byte-for-byte identical to the pre-existing flat behavior.
+ *
+ * The flat `[models].<phase>` lookup (both the top-level fallback and the
+ * pre-existing claude-only path) only ever returns a `typeof === 'string'`
+ * value: a `[models.<backend>]` sub-table parses to `typeof === 'object'`
+ * and is skipped by that same string check, falling through to
+ * `DEFAULTS[phase]` rather than being returned as a model string.
  *
  * The function is **defensive on every error path**: a missing file, a
  * malformed TOML file, a missing `[models]` section, a missing key, or a
@@ -106,15 +151,23 @@ function defaultProjectConfigPath(): string {
  *                    `scripts/cam/project.toml` resolved from `process.cwd()`).
  *                    Used by tests to target a tmp fixture without modifying
  *                    the real project config.
+ * @param backend  The phase's already-resolved backend (e.g. from
+ *                 `readPhaseBackend`). Optional; omitted or `"claude"`
+ *                 preserves the pre-existing flat-only resolution.
  */
-export function readPhaseModel(phase: Phase, configPath?: string): string {
+export function readPhaseModel(phase: Phase, configPath?: string, backend?: string): string {
 	const path = configPath ?? defaultProjectConfigPath();
 	try {
 		const config = loadConfig(path);
 		const modelsSection = config['models'];
 		if (modelsSection !== undefined && modelsSection !== null && typeof modelsSection === 'object') {
-			const value = (modelsSection as Record<string, unknown>)[phase];
-			if (typeof value === 'string' && value.length > 0) {
+			const modelsRecord = modelsSection as Record<string, unknown>;
+			const nestedValue = readNestedBackendModel(modelsRecord, phase, backend);
+			if (nestedValue !== undefined) {
+				return nestedValue;
+			}
+			const value = readStringKey(modelsRecord, phase);
+			if (value !== undefined) {
 				return value;
 			}
 		}

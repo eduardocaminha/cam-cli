@@ -292,10 +292,13 @@ export function printConfigShow(
 	configPath: string,
 	writer: (s: string) => void = (s) => process.stdout.write(s),
 ): void {
-	const rows: Array<[string, string, string]> = ORDERED_PHASES.map(
-		(phase) =>
-			[phase, readPhaseModel(phase, configPath), readPhaseBackend(phase, configPath)] as [string, string, string],
-	);
+	// US-002 (CAM-356): resolve backend first per phase and thread it into
+	// readPhaseModel so the displayed model column matches what spawn would
+	// actually resolve for a codex-backed phase.
+	const rows: Array<[string, string, string]> = ORDERED_PHASES.map((phase) => {
+		const backend = readPhaseBackend(phase, configPath);
+		return [phase, readPhaseModel(phase, configPath, backend), backend] as [string, string, string];
+	});
 
 	const phaseWidth = Math.max(...rows.map(([p]) => p.length));
 	const modelWidth = Math.max('model'.length, ...rows.map(([, model]) => model.length));
