@@ -63,7 +63,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Site: src/commands/run.ts (~line 441, orchestrator dispatch; orchModel/orchBackend already resolved). The orchestrator respawn-pane -k is at ~line 458. Abort BEFORE that respawn: surface an actionable printError (naming `codex login`) and return a non-zero exit, mirroring how run.ts already fails bootstrap for other preconditions. Inject the auth-check for testability so tests never spawn real codex. Keep the emitSpawnResolution call as-is. Reuse the shared codexAuthPreflight from US-001."
     }
