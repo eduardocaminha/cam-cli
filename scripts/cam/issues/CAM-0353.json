@@ -1,0 +1,13 @@
+{
+  "id": "CAM-353",
+  "title": "The default production codexAuthCheck fn's own two branches (auth.json present …",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-19T13:21:07.231Z",
+  "updatedAt": "2026-07-19T13:21:07.231Z",
+  "description": "The default production codexAuthCheck fn's own two branches (auth.json present vs absent under a controlled HOME) are not directly asserted: the tmpdir test exercises the existsSync primitive, and the codexAuthCheck test only asserts result shape (cannot safely mutate HOME in a parallel runner). Reasonable documented compromise; the decision fn is thoroughly covered via injected checks. Consider a HOME-injectable seam for the default check if fuller coverage is wanted.\n\nSource: cam/issue-352\nReview round: 1\n\nsuggestion-fingerprint: aa0a5e99b9c1",
+  "derivedFrom": [
+    "CAM-352"
+  ]
+}
