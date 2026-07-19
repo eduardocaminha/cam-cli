@@ -1,10 +1,52 @@
 {
   "id": "CAM-356",
   "title": "CAM-54 slice-5: per-backend model-id resolution + config-tolerant drift/review guards",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-19T16:36:35.082Z",
-  "updatedAt": "2026-07-19T16:36:35.082Z",
-  "description": "Enable committing [backend].<phase> = \"codex\" without reddening bun test. Two parts: (a) make model resolution backend-aware so a codex phase resolves a codex-valid slug from a nested [models.codex] sub-table, falling back to the flat [models].<phase> / DEFAULTS for claude; (b) make the drift guard (test/config/models.test.ts:667-684) backend-conditional so codex phases are validated as non-claude-alias (via isClaudeAliasModel) rather than against the claude MODEL_OPTIONS list, and generalize the review.test.ts config-fixture helper (withCodexBackendCwd) so the ~5 dispatch-shape tests stop pinning the committed scripts/cam/project.toml. Committed project.toml stays claude for all phases (no reviewer=codex flip in this slice; that is the ceremony's temporary operator action). Structural unblocker for the CAM-54 live-validation ceremony and for CAM-330/331 public launch. Grounded via Explore 2026-07-19: readPhaseModel src/config/models.ts:110-125 (flat, backend never consulted); readPhaseBackend src/config/models.ts:212-237; dispatch sites review.ts:351-366 + loop.ts:1051-1070 resolve model+backend separately; codexAuthPreflight src/supervisor/codex-auth.ts:127-153 rejects claude aliases; MODEL_OPTIONS src/ui/ConfigScreen.tsx:98-107; withCodexBackendCwd review.test.ts:1728-1744."
+  "updatedAt": "2026-07-19T16:37:08.718Z",
+  "description": "Enable committing [backend].<phase> = \"codex\" without reddening bun test. Two parts: (a) make model resolution backend-aware so a codex phase resolves a codex-valid slug from a nested [models.codex] sub-table, falling back to the flat [models].<phase> / DEFAULTS for claude; (b) make the drift guard (test/config/models.test.ts:667-684) backend-conditional so codex phases are validated as non-claude-alias (via isClaudeAliasModel) rather than against the claude MODEL_OPTIONS list, and generalize the review.test.ts config-fixture helper (withCodexBackendCwd) so the ~5 dispatch-shape tests stop pinning the committed scripts/cam/project.toml. Committed project.toml stays claude for all phases (no reviewer=codex flip in this slice; that is the ceremony's temporary operator action). Structural unblocker for the CAM-54 live-validation ceremony and for CAM-330/331 public launch. Grounded via Explore 2026-07-19: readPhaseModel src/config/models.ts:110-125 (flat, backend never consulted); readPhaseBackend src/config/models.ts:212-237; dispatch sites review.ts:351-366 + loop.ts:1051-1070 resolve model+backend separately; codexAuthPreflight src/supervisor/codex-auth.ts:127-153 rejects claude aliases; MODEL_OPTIONS src/ui/ConfigScreen.tsx:98-107; withCodexBackendCwd review.test.ts:1728-1744.",
+  "spec": {
+    "scope": "Make model resolution backend-aware and make the drift/review test guards config-tolerant so that a codex-backed phase can be committed without reddening the suite. IN SCOPE: (1) backend-aware model resolution in src/config/models.ts (readPhaseModel resolves models[backend]?.[phase] BEFORE the flat models[phase]/DEFAULTS fallback, guarded for the schema-less TOML layer); (2) thread the already-resolved backend into readPhaseModel at the dispatch sites (review.ts, loop.ts, plan-argv/run.ts/commands/config.ts) so a codex phase never receives a claude alias; (3) backend-conditional drift guard in test/config/models.test.ts (codex phase -> assert model is NOT a claude alias via isClaudeAliasModel; claude phase -> unchanged MODEL_OPTIONS/DEFAULTS check); (4) generalize review.test.ts withCodexBackendCwd into a withReviewerBackendCwd(backend, model) fixture and wrap the ~5 real-config-dependent dispatch tests so they stop reading committed project.toml; (5) a new test proving a codex reviewer fixture ([backend].reviewer=codex + [models.codex].reviewer=gpt-5.5) resolves gpt-5.5 (not opus) and passes codexAuthPreflight. OUT OF SCOPE: flipping committed scripts/cam/project.toml to any codex backend (stays claude); adding [models.codex] to committed config; adding codex slugs to the claude MODEL_OPTIONS picker; the live ceremony itself; sentinel-to-pane fidelity; review-timeout tuning.",
+    "acceptanceCriteria": [
+      "readPhaseModel resolves the nested [models.<backend>].<phase> value when the phase's backend is non-claude and that key is present; falls back to the flat [models].<phase> then DEFAULTS[phase] otherwise; a unit test proves codex-phase resolution returns the codex slug and claude-phase resolution is unchanged.",
+      "The flat models[phase] lookup ignores a nested [models.codex] object (typeof object) rather than returning it as a model string; the backend-aware lookup is type-guarded against the schema-less TOML layer.",
+      "Every dispatch site that resolves model+backend passes the backend-resolved model so a codex phase never receives a claude alias slug (review.ts:351-366, loop.ts:1051-1070, and the plan/run/config call sites).",
+      "The drift guard in test/config/models.test.ts is backend-conditional: a codex-backed phase's model is accepted when isClaudeAliasModel(model) is false; a claude-backed phase is still required to be in MODEL_OPTIONS or equal DEFAULTS[phase].",
+      "The ~5 review.test.ts dispatch-shape tests (around lines 532, 1510, 1572, 1597, 1626, 1824) build their own config fixture via a generalized withReviewerBackendCwd(backend, model) helper instead of reading committed scripts/cam/project.toml; the 'claude backend -> codexAuthCheck never invoked' assertion is preserved under an explicit claude fixture.",
+      "A new test proves: with a fixture [backend].reviewer=codex + [models.codex].reviewer=gpt-5.5, the reviewer dispatch resolves model gpt-5.5 (not opus) and codexAuthPreflight does NOT abort on a claude-alias.",
+      "Committed scripts/cam/project.toml is byte-unchanged (all phases stay claude; no [models.codex] table added to committed config).",
+      "src/ui/ConfigScreen.tsx MODEL_OPTIONS contains no codex slugs.",
+      "Quality gates green: bun run typecheck (0 errors), bun test (0 fail), bun run check:all (lint spine)."
+    ],
+    "gotchas": [
+      "FORK A resolved: use a nested [models.<backend>] sub-table (e.g. [models.codex]), NOT a flat parallel key. Backend is already resolved right next to the model at every dispatch site (readPhaseBackend beside readPhaseModel), so threading it is low-friction. Additive + unused in committed config, so forward-compatible.",
+      "FORK B resolved: drift guard is backend-conditional; for codex phases assert NOT isClaudeAliasModel (reuse src/supervisor/codex-auth.ts:77-81) rather than a positive codex-slug allowlist. OpenAI slugs are account-specific and drift (gpt-5.5/gpt-5.6-sol/gpt-5.4 valid on this ChatGPT login; gpt-5.3-codex and all *-codex rejected), so a static positive list would rot.",
+      "readPhaseModel (src/config/models.ts:110-125) does config['models'][phase] and requires typeof string; the backend-aware path must look up models[backend]?.[phase] BEFORE the flat lookup, and the flat lookup must skip a nested object value (fall through to DEFAULTS) rather than mis-return it.",
+      "The TOML layer is schema-less (src/config/toml.ts:135-157, Bun.TOML.parse, no validation) — type-guard the nested lookup; do not assume shape.",
+      "Do NOT flip committed project.toml to reviewer=codex: pre-slice-5 that turns bun test red (drift guard + review dispatch tests) and blocks plan preflight; it is the ceremony's temporary operator action, not this slice's.",
+      "Existing fixture pattern to generalize: withCodexBackendCwd (review.test.ts:1728-1744) mkdtempSyncs a cwd, writes scripts/cam/project.toml + a stub .claude/agents/subagent-reviewer.md, process.chdir + restore in finally. readPhaseModel/readPhaseBackend are NOT injectable via MakeReviewDispatchOptions (review.test.ts:1722-1724) — cwd-staging is the established pattern.",
+      "The adjacent 'DEFAULTS vs MODEL_OPTIONS consistency' guard (models.test.ts:646-656) does not read project.toml and is unaffected unless DEFAULTS itself changes — do not change DEFAULTS.",
+      "codexAuthPreflight (codex-auth.ts:127-153) needs no change: it already rejects claude aliases on the codex path, and a real codex slug passes it."
+    ],
+    "domainTerms": [
+      "readPhaseModel",
+      "readPhaseBackend",
+      "drift guard",
+      "MODEL_OPTIONS",
+      "isClaudeAliasModel",
+      "codexAuthPreflight",
+      "BackendAdapter",
+      "buildSpawnArgv",
+      "withCodexBackendCwd"
+    ]
+  },
+  "wsjf": {
+    "value": 8,
+    "timeCriticality": 6,
+    "riskReduction": 7,
+    "jobSize": 5
+  },
+  "type": "feat"
 }
