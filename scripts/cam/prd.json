@@ -88,7 +88,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "File: test/supervisor/review.test.ts. Existing helper to generalize: withCodexBackendCwd (lines 1728-1744) mkdtempSyncs a cwd, writes scripts/cam/project.toml + stub .claude/agents/subagent-reviewer.md, process.chdir + restore in finally. readPhaseModel/readPhaseBackend are NOT injectable via MakeReviewDispatchOptions (lines 1722-1724): cwd-staging is the established pattern. gpt-5.5 is a valid non-claude-alias slug (isClaudeAliasModel('gpt-5.5') === false); codexAuthPreflight (codex-auth.ts:127-153) already passes a real codex slug and needs no change. Scope: only the review.test.ts copy of the helper; the independent copies in run-codex-auth.test.ts and loop.test.ts are out of scope. Depends on US-001 (nested resolution) and US-002 (reviewer site threads reviewBackend) for the new test to resolve gpt-5.5 instead of opus."
     }
