@@ -31,7 +31,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/config/models.ts (readPhaseModel, lines 110-125), test/config/models.test.ts. Signature guidance: current readPhaseModel(phase, configPath?) has ~17 callers passing configPath (mostly tests); add the resolved backend as a NEW optional 3rd param (readPhaseModel(phase, configPath?, backend?)) so no existing (phase, configPath) caller breaks. When backend is omitted or 'claude', behavior must be identical to today. Nested lookup: config['models'][backend]?.[phase], type-guarded (typeof object on models, typeof string on the value), BEFORE the flat models[phase] lookup; the flat lookup must reject a typeof-object value (the sub-table) and fall through to DEFAULTS. TOML layer is schema-less (src/config/toml.ts:135-157, Bun.TOML.parse, no validation): do not assume shape. Pattern context: [models]/[backend] config surface + read-at-spawn invariant (patterns.md, CAM-53 US-008). Do NOT change DEFAULTS or MODEL_OPTIONS."
     },
