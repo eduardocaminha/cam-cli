@@ -1048,8 +1048,11 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 
 			// Resolve model/backend once so argv and the spawn-resolution event
 			// report the identical resolved values (reviewer finding: double-read).
-			const implModel = readPhaseModel('implementer');
+			// US-002 (CAM-356): resolve implBackend first and thread it into
+			// readPhaseModel so a codex-backed implementer phase resolves its
+			// slug from [models.codex] instead of a backend-blind [models] read.
 			const implBackend = readPhaseBackend('implementer');
+			const implModel = readPhaseModel('implementer', undefined, implBackend);
 
 			// US-001 (CAM-224): build the per-story task prompt from the exact
 			// story record decideNextAction selected, matched against the prd

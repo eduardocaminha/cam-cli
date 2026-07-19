@@ -623,8 +623,10 @@ function resolveAndSpawnPlanner(
 	claudeDir?: string,
 ): ResolveAndSpawnResult {
 	const uuid = genUuid().toLowerCase();
-	const model = readPhaseModel('planner');
+	// US-002 (CAM-356): resolve backend first and thread it into readPhaseModel
+	// so a codex-backed planner phase resolves its slug from [models.codex].
 	const backend = readPhaseBackend('planner');
+	const model = readPhaseModel('planner', undefined, backend);
 	emitSpawnResolution({ phase: 'planner', model, backend, writeEvent: makeEventWriter(logEvent, uuid) });
 	// US-002 (CAM-352): fail-closed codex auth preflight, immediately before
 	// respawn-pane.
@@ -678,8 +680,10 @@ function resolveAndSpawnAuditor(
 	claudeDir?: string,
 ): ResolveAndSpawnResult {
 	const uuid = genUuid().toLowerCase();
-	const model = readPhaseModel('auditor');
+	// US-002 (CAM-356): resolve backend first and thread it into readPhaseModel
+	// so a codex-backed auditor phase resolves its slug from [models.codex].
 	const backend = readPhaseBackend('auditor');
+	const model = readPhaseModel('auditor', undefined, backend);
 	emitSpawnResolution({ phase: 'auditor', model, backend, writeEvent: makeEventWriter(logEvent, uuid) });
 	// US-002 (CAM-352): fail-closed codex auth preflight, immediately before
 	// respawn-pane.
