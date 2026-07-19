@@ -1,0 +1,13 @@
+{
+  "id": "CAM-355",
+  "title": "The injected diff is wrapped in a ```diff markdown fence; a diff of a file that…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-19T16:20:21.075Z",
+  "updatedAt": "2026-07-19T16:20:21.075Z",
+  "description": "The injected diff is wrapped in a ```diff markdown fence; a diff of a file that itself contains a triple-backtick sequence could break out of the fence. Non-blocking (codex still receives the full content), but a fence-safe delimiter or a note would harden the block.\n\nSource: cam/issue-354\nReview round: 1\n\nsuggestion-fingerprint: 19a488281f2a",
+  "derivedFrom": [
+    "CAM-354"
+  ]
+}
