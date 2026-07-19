@@ -7,7 +7,6 @@
 import { test, expect, describe } from 'bun:test';
 import {
 	emitSpawnResolution,
-	CODEX_GUARD_NOTICE,
 	type SpawnResolutionEvent,
 } from '../../src/logging/spawn-resolution.ts';
 import { runSupervisor } from '../../src/supervisor/loop.ts';
@@ -75,18 +74,6 @@ describe('emitSpawnResolution - event shape', () => {
 		});
 	});
 
-	test('emits no notice for non-codex backend', () => {
-		const notices: string[] = [];
-		emitSpawnResolution({
-			phase: 'implementer',
-			model: 'claude-sonnet-4-6',
-			backend: 'claude',
-			writeEvent: () => {},
-			emitNotice: (msg) => notices.push(msg),
-		});
-		expect(notices).toHaveLength(0);
-	});
-
 	test('does not throw when writeEvent is absent', () => {
 		expect(() =>
 			emitSpawnResolution({
@@ -109,10 +96,6 @@ describe('emitSpawnResolution - event shape', () => {
 		expect(event).not.toBeNull();
 		expect(event).not.toBeUndefined();
 		expect(Object.keys(event!)).toEqual(['phase', 'model', 'backend']);
-	});
-
-	test('CODEX_GUARD_NOTICE constant matches the required exact text', () => {
-		expect(CODEX_GUARD_NOTICE).toBe('codex backend not yet wired (CAM-54)');
 	});
 });
 

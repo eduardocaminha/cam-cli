@@ -1,0 +1,26 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Fail-closed codex auth preflight core (check + decision fn, retire stale notice)" },
+  "branchName": "cam/issue-352",
+  "timestamp": "2026-07-19T00:00:00Z",
+  "createdFiles": [
+    "src/supervisor/codex-auth.ts",
+    "test/supervisor/codex-auth.test.ts"
+  ],
+  "modifiedFiles": [
+    "src/logging/spawn-resolution.ts",
+    "test/logging/spawn-resolution.test.ts",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "codexAuthPreflight({backend, model, authCheck?}) and codexAuthCheck() now live in src/supervisor/codex-auth.ts, unwired (US-002/US-003 wire it into the 3 supervisor worker-dispatch call sites in loop.ts/review.ts/plan-runner.ts and the run.ts orchestrator dispatch site respectively). Decision order inside codexAuthPreflight: backend!=='codex' short-circuits proceed (authCheck never invoked) -> claude-alias model check (/\\b(opus|sonnet|haiku)\\b/i) fires before authCheck -> authCheck() invoked last, aborting with a 'codex login' message when unauthenticated. Call sites should call codexAuthPreflight AFTER resolving {backend, model} via readPhaseBackend/readPhaseModel (same locals already threaded into emitSpawnResolution) and BEFORE building argv via selectAdapter(...).buildSpawnArgv(...); on abort, skip the spawn and surface result.message to the operator/event log instead. The old CODEX_GUARD_NOTICE informational guard and its emitNotice/NoticeEmitter seam were deleted wholesale from spawn-resolution.ts (zero remaining production call sites); emitSpawnResolution now only carries {phase, model, backend, writeEvent?}. test/logging/codex-guard.test.ts was deleted (it only tested the retired notice).",
+  "appliedPatternIds": [],
+  "officialDocsValidated": [
+    {
+      "lib": "codex-cli",
+      "url": "https://github.com/openai/codex/blob/main/docs/authentication.md",
+      "fetchedAt": "2026-07-19T00:00:00Z",
+      "status": "aligned",
+      "summary": "Confirmed $CODEX_HOME/auth.json defaults to ~/.codex/auth.json on macOS/Linux (CODEX_HOME override and keyring storage mode exist but are out of scope for this story's presence check), matching the codexAuthCheck implementation."
+    }
+  ]
+}
