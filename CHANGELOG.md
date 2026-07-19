@@ -6,6 +6,15 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.216.0] - 2026-07-19
+
+### Added
+
+- US-004 - Generalize the review-fixture helper and prove codex reviewer resolution
+- US-003 - Make the drift guard backend-conditional and config-tolerant
+- US-002 - Thread resolved backend into readPhaseModel at every dispatch site
+- US-001 - Make readPhaseModel backend-aware
+
 ## [0.215.0] - 2026-07-19
 
 ### Added
