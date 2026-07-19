@@ -1,23 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Make the drift guard backend-conditional and config-tolerant"
+    "id": "US-004",
+    "title": "Generalize the review-fixture helper and prove codex reviewer resolution"
   },
   "branchName": "cam/issue-356",
-  "timestamp": "2026-07-19T01:00:00Z",
+  "timestamp": "2026-07-19T02:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/codex-auth.ts",
-    "test/config/models.test.ts"
+    "test/supervisor/review.test.ts",
+    "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "isClaudeAliasModel is now exported from src/supervisor/codex-auth.ts (was module-private). The 'readPhaseModel vs repo project.toml (drift guard)' test in test/config/models.test.ts (around line 745 now) is backend-conditional: it still asserts readPhaseModel matches the configured/DEFAULTS value for every phase, but the 'known model' check now branches on readPhaseBackend(phase, repoConfigPath) -- claude-backed phases keep the MODEL_OPTIONS/DEFAULTS membership check, non-claude-backed phases only assert !isClaudeAliasModel(actual) (deliberately no positive codex-slug allowlist, since OpenAI slugs are account-specific and drift). The adjacent 'DEFAULTS vs MODEL_OPTIONS consistency' test block was untouched. scripts/cam/project.toml remains byte-unchanged (all phases still claude today, confirmed via git diff --exit-code), so the drift guard currently exercises only the claude branch in practice; the codex branch is live code but not yet hit by the repo's own config. This closes the CAM-356 epic (US-001 backend-aware readPhaseModel/readPhaseBackend, US-002 wired every dispatch site, US-003 made the drift guard tolerant of a future codex flip). A follow-up story would only be needed if project.toml is ever flipped to codex for a real phase (to confirm the non-claude branch fires as designed) or if a 7th dispatch site is added.",
+  "nextStoryContext": "test/supervisor/review.test.ts's withCodexBackendCwd is now withReviewerBackendCwd(backend, model, fn) (module-level, defined right after makeDispatchOpts, before the first describe block) so it's usable by every describe in the file. It stages a temp cwd's scripts/cam/project.toml with `[backend]\\nreviewer = \"<backend>\"` plus either a flat `[models]\\nreviewer = \"<model>\"` (backend === 'claude') or a nested `[models.<backend>]\\nreviewer = \"<model>\"` sub-table (any other backend), plus a stub .claude/agents/subagent-reviewer.md, with process.chdir restore in finally. The 6 previously real-config-dependent dispatch-shape tests (the CAM-42 interactive-spawn test, the 4 US-005 container-mode dispatch-shape tests AC1/AC3/AC4/CAM-242-diff, and the US-002 'claude backend (default)' assertion) now build their own withReviewerBackendCwd('claude', 'opus', ...) fixture instead of implicitly reading the committed scripts/cam/project.toml (which still resolves 'claude' today, so behavior is unchanged, but the tests no longer silently depend on that fact). A new test ('US-004 (CAM-356): codex reviewer fixture resolves gpt-5.5...') proves withReviewerBackendCwd('codex', 'gpt-5.5', ...) resolves model 'gpt-5.5' (not opus) at the reviewer dispatch site and that codexAuthPreflight's claude-alias guard does NOT abort (authCheckFn is actually invoked, since isClaudeAliasModel('gpt-5.5') === false), then proceeds to respawn-pane once the injected codexAuthCheckFn reports authenticated:true. scripts/cam/project.toml remains byte-unchanged. This closes the CAM-356 epic's test-hygiene follow-up (US-001 backend-aware readPhaseModel/readPhaseBackend, US-002 wired every dispatch site, US-003 made the drift guard tolerant, US-004 decoupled the dispatch-shape tests from the committed config and added positive codex-resolution proof). Raised test/supervisor/review.test.ts's file-size-budget.json ceiling 1851->1915 (measured via content.split('\\n').length, not wc -l) with a dated _ref note; only that file's ceiling was touched.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure internal test-guard + export-visibility change (isClaudeAliasModel export, drift-guard backend branching); no external library API surface was exercised."
+      "summary": "Pure test-fixture refactor (bun:test + node:fs mkdtempSync/writeFileSync/process.chdir, all already-established patterns from the prior CAM-352 story); no new external library API surface was exercised."
     }
   ]
 }
