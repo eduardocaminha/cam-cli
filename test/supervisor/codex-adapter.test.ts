@@ -8,8 +8,11 @@
 // fixed structural pieces by substring/regex, extract the tmpfile path, and
 // verify its on-disk contents independently.
 
-import { readFileSync } from 'node:fs';
-import { describe, expect, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { CodexAdapter } from '../../src/supervisor/backend-adapter.ts';
 
 const SAMPLE_UUID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
@@ -96,7 +99,14 @@ describe('CodexAdapter.buildSpawnArgv (US-001)', () => {
 			const raw = readFileSync(`.claude/agents/${agentFileMap[actor]}.md`, 'utf8');
 			const expectedBody = raw.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '');
 
-			expect(written).toBe(expectedBody);
+			// US-001 (CAM-354): the reviewer instructions file now carries an
+			// appended diff-injection block after the agent body, so its content
+			// is a PREFIX match, not byte-identical, for that actor only.
+			if (actor === 'reviewer') {
+				expect(written.startsWith(expectedBody)).toBe(true);
+			} else {
+				expect(written).toBe(expectedBody);
+			}
 			expect(written.startsWith('---')).toBe(false);
 		});
 	}
@@ -152,5 +162,168 @@ describe('CodexAdapter.buildSpawnArgv (US-001)', () => {
 		for (const actor of ['implementer', 'planner', 'auditor'] as const) {
 			expect(() => adapter.buildSpawnArgv(actor, { uuid: SAMPLE_UUID, taskPrompt: SAMPLE_PROMPT })).toThrow();
 		}
+	});
+
+	// -------------------------------------------------------------------------
+	// Reviewer-only scoping (US-001, CAM-354, AC6): the diff block never
+	// appears for implementer/planner/auditor, which read process.cwd() (this
+	// repo) by default and have real diffs vs main available, yet must not
+	// carry the injection.
+	// -------------------------------------------------------------------------
+
+	test('implementer/planner/auditor instructions files never carry the reviewer diff-injection block', () => {
+		const adapter = new CodexAdapter();
+		for (const actor of ['implementer', 'planner', 'auditor'] as const) {
+			const actual = adapter.buildSpawnArgv(actor, {
+				uuid: SAMPLE_UUID,
+				taskPrompt: SAMPLE_PROMPT,
+				permissionMode: SAMPLE_MODE,
+			});
+			const written = readFileSync(extractInstructionsFile(actual), 'utf8');
+			expect(written).not.toContain('Injected branch diff');
+		}
+	});
+});
+
+// -----------------------------------------------------------------------------
+// Reviewer diff injection against a REAL fixture git repo (US-001, CAM-354,
+// AC1/AC2/AC3/AC4/AC5/AC8). Unit fakes can't prove the real `git diff
+// main...HEAD` subprocess boundary behaves correctly; only a real tmpdir git
+// repo does. Mirrors test/integration/triage-real-git.test.ts's fixture
+// pattern: mkdtempSync, `git init` + `symbolic-ref HEAD refs/heads/main` (so
+// the base ref is deterministically named 'main' regardless of the host's
+// init.defaultBranch), seed commit, then a feature branch with a known change.
+// -----------------------------------------------------------------------------
+
+const gitAvailable = spawnSync('git', ['--version'], { stdio: 'pipe' }).status === 0;
+
+const dirsToCleanup: string[] = [];
+
+afterEach(() => {
+	for (const d of dirsToCleanup) {
+		try {
+			rmSync(d, { recursive: true, force: true });
+		} catch {
+			// ignore cleanup errors
+		}
+	}
+	dirsToCleanup.length = 0;
+});
+
+function makeTmpRepo(prefix: string): { dir: string; run: (args: string[]) => { stdout: string; status: number | null } } {
+	const dir = mkdtempSync(join(tmpdir(), prefix));
+	dirsToCleanup.push(dir);
+
+	const run = (args: string[]) => {
+		const r = spawnSync('git', ['-C', dir, ...args], { stdio: 'pipe', encoding: 'utf8' });
+		return { stdout: (r.stdout as string) ?? '', status: r.status };
+	};
+
+	run(['init']);
+	run(['symbolic-ref', 'HEAD', 'refs/heads/main']);
+	run(['config', 'user.email', 'test@example.com']);
+	run(['config', 'user.name', 'Test User']);
+
+	return { dir, run };
+}
+
+describe('CodexAdapter reviewer diff injection against a real git fixture repo (US-001)', () => {
+	test.skipIf(!gitAvailable)(
+		'injects the real `git diff main...HEAD` content plus changed-file names into the reviewer instructions file (AC1, AC2, AC8)',
+		() => {
+			const { dir, run } = makeTmpRepo('cam-codex-diff-fixture-');
+
+			writeFileSync(join(dir, 'seed.txt'), 'seed content\n');
+			run(['add', '-A']);
+			run(['commit', '-m', 'chore: seed main']);
+
+			run(['checkout', '-b', 'feature/known-change']);
+			writeFileSync(join(dir, 'feature.txt'), 'KNOWN_CHANGE_MARKER_CAM_354\n');
+			run(['add', '-A']);
+			run(['commit', '-m', 'feat: known change']);
+
+			const adapter = new CodexAdapter();
+			const actual = adapter.buildSpawnArgv('reviewer', { uuid: SAMPLE_UUID, cwd: dir });
+			const written = readFileSync(extractInstructionsFile(actual), 'utf8');
+
+			expect(written).toContain('Injected branch diff');
+			expect(written).toContain('Review ONLY the diff below');
+			expect(written).toContain('feature.txt');
+			expect(written).toContain('KNOWN_CHANGE_MARKER_CAM_354');
+		},
+	);
+
+	test.skipIf(!gitAvailable)('a branch with no diff vs main renders a well-formed no-changes marker, never a crash (AC4)', () => {
+		const { dir } = makeTmpRepo('cam-codex-diff-nochange-');
+
+		// No commits at all yet: `main` doesn't resolve to any commit, so this
+		// also exercises the same no-crash path as a missing ref (AC3/AC4).
+		const adapter = new CodexAdapter();
+		const actual = adapter.buildSpawnArgv('reviewer', { uuid: SAMPLE_UUID, cwd: dir });
+		const written = readFileSync(extractInstructionsFile(actual), 'utf8');
+
+		expect(written).toContain('Injected branch diff');
+		expect(written).not.toBe('');
+		const hasNoChangesOrError = written.includes('[no-changes:') || written.includes('[diff-unavailable:');
+		expect(hasNoChangesOrError).toBe(true);
+	});
+
+	test.skipIf(!gitAvailable)(
+		'HEAD identical to main (no commits since) renders the explicit no-changes marker (AC4)',
+		() => {
+			const { dir, run } = makeTmpRepo('cam-codex-diff-identical-');
+			writeFileSync(join(dir, 'seed.txt'), 'seed content\n');
+			run(['add', '-A']);
+			run(['commit', '-m', 'chore: seed main']);
+
+			const adapter = new CodexAdapter();
+			const actual = adapter.buildSpawnArgv('reviewer', { uuid: SAMPLE_UUID, cwd: dir });
+			const written = readFileSync(extractInstructionsFile(actual), 'utf8');
+
+			expect(written).toContain('[no-changes: the current branch has no diff vs main]');
+		},
+	);
+
+	test.skipIf(!gitAvailable)('a missing main ref degrades to a visible error marker instead of crashing (AC3)', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-codex-diff-noref-'));
+		dirsToCleanup.push(dir);
+		const run = (args: string[]) => spawnSync('git', ['-C', dir, ...args], { stdio: 'pipe', encoding: 'utf8' });
+
+		run(['init']);
+		run(['symbolic-ref', 'HEAD', 'refs/heads/trunk']);
+		run(['config', 'user.email', 'test@example.com']);
+		run(['config', 'user.name', 'Test User']);
+		writeFileSync(join(dir, 'seed.txt'), 'seed content\n');
+		run(['add', '-A']);
+		run(['commit', '-m', 'chore: seed trunk']);
+
+		expect(() => {
+			const adapter = new CodexAdapter();
+			const actual = adapter.buildSpawnArgv('reviewer', { uuid: SAMPLE_UUID, cwd: dir });
+			const written = readFileSync(extractInstructionsFile(actual), 'utf8');
+			expect(written).toContain('[diff-unavailable:');
+		}).not.toThrow();
+	});
+
+	test.skipIf(!gitAvailable)('a diff larger than the cap is truncated with a visible marker, never a silent cut (AC5)', () => {
+		const { dir, run } = makeTmpRepo('cam-codex-diff-truncate-');
+
+		writeFileSync(join(dir, 'seed.txt'), 'seed content\n');
+		run(['add', '-A']);
+		run(['commit', '-m', 'chore: seed main']);
+
+		run(['checkout', '-b', 'feature/huge-change']);
+		// Comfortably over the 200_000-char cap once diffed.
+		const hugeContent = `${'x'.repeat(250_000)}\n`;
+		writeFileSync(join(dir, 'huge.txt'), hugeContent);
+		run(['add', '-A']);
+		run(['commit', '-m', 'feat: huge change']);
+
+		const adapter = new CodexAdapter();
+		const actual = adapter.buildSpawnArgv('reviewer', { uuid: SAMPLE_UUID, cwd: dir });
+		const written = readFileSync(extractInstructionsFile(actual), 'utf8');
+
+		expect(written).toContain('[diff truncated at');
+		expect(written).toContain('huge.txt');
 	});
 });

@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.215.0] - 2026-07-19
+
+### Added
+
+- US-001 - Inject git diff main...HEAD into the codex reviewer instructions
+
 ## [0.214.0] - 2026-07-19
 
 ### Added

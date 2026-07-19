@@ -24,6 +24,7 @@
 // / review.ts (those three import FROM here instead) so the dependency graph
 // stays a one-way fan-out with no import cycle.
 
+import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -66,6 +67,16 @@ export interface SpawnArgvOptions {
 	 * prefix so CLAUDE_CODE_OAUTH_TOKEN is stripped on 'host' only.
 	 */
 	isolation?: WorkerIsolation;
+	/**
+	 * Repo working directory to compute the reviewer branch diff from
+	 * (US-001, CAM-354). Only consumed by CodexAdapter's 'reviewer' branch
+	 * (see renderReviewerDiffBlock); every other actor/adapter ignores it, so
+	 * threading it through the shared options shape is a no-op everywhere
+	 * else -- ClaudeAdapter's rendered argv is unaffected. Defaults to
+	 * `process.cwd()`. Exposed as an input (not a default baked into the
+	 * adapter) purely so a test can point it at a throwaway fixture repo.
+	 */
+	cwd?: string;
 }
 
 /**
@@ -364,16 +375,128 @@ function codexSandboxArgs(permissionMode: string): string {
  * guard, ADR-0014, never sees it). Returns the tmpfile's absolute path, to be
  * passed as `-c model_instructions_file=<path>`.
  *
+ * `appendedBlock` (US-001, CAM-354), when given, is appended after the agent
+ * body with a single blank-line separator; used to inject the reviewer's
+ * branch diff into the instructions-file BODY rather than the shell-escaped
+ * argv prompt (ARG_MAX safety on large diffs).
+ *
  * Synchronous node:fs read/write is a deliberate point-read/write (curated
  * invariant: Bun-only rule carves out readFileSync/writeFileSync for this).
  */
-function writeCodexInstructionsFile(agentName: string): string {
+function writeCodexInstructionsFile(agentName: string, appendedBlock?: string): string {
 	const agentPath = join('.claude', 'agents', `${agentName}.md`);
 	const raw = readFileSync(agentPath, 'utf8');
 	const body = stripFrontmatter(raw);
+	const fullBody = appendedBlock !== undefined ? `${body}\n${appendedBlock}` : body;
 	const tmpPath = join('/tmp', `cam-codex-${agentName}-${randomUUID()}.md`);
-	writeFileSync(tmpPath, body, 'utf8');
+	writeFileSync(tmpPath, fullBody, 'utf8');
 	return tmpPath;
+}
+
+// ---------------------------------------------------------------------------
+// Reviewer diff injection (US-001, CAM-354).
+//
+// codex, unlike the claude reviewer, has no --agent harness step that forces
+// it to ground itself in `git diff` before judging a branch (ADR-0047
+// mismatch d). Left alone, codex pattern-matches repo context and can
+// confabulate a confident CLEAN verdict about a changeset it never looked
+// at. This block computes the real `git diff main...HEAD` at dispatch time
+// and appends it to the codex reviewer's instructions-file body, with an
+// explicit directive to review ONLY that diff.
+// ---------------------------------------------------------------------------
+
+/** Cap on injected diff size (chars); large diffs are truncated, never silently cut. */
+const REVIEWER_DIFF_MAX_CHARS = 200_000;
+
+/** Result of computing the reviewer branch diff against a resolved base ref. */
+interface ReviewerDiffResult {
+	status: 'ok' | 'no-changes' | 'error';
+	diff: string;
+	changedFiles: string[];
+	truncated: boolean;
+	/** Populated only on status === 'error'. */
+	detail?: string;
+}
+
+/**
+ * Runs `git diff main...HEAD` (three-dot: changes on the current branch
+ * since its merge-base with main) plus `git diff --name-only main...HEAD`
+ * in `cwd`. Never throws: a missing 'main' ref, a non-git cwd, or any other
+ * git failure is reported as `status: 'error'` with the captured stderr in
+ * `detail`, so a robustly-missing base ref degrades to a marker instead of
+ * crashing the whole dispatch (AC3). An empty diff (branch has no changes
+ * vs main) is reported as `status: 'no-changes'`, never an ambiguous empty
+ * string (AC4).
+ */
+function computeReviewerDiff(cwd: string): ReviewerDiffResult {
+	const diffResult = spawnSync('git', ['-C', cwd, 'diff', 'main...HEAD'], { encoding: 'utf8' });
+	if (diffResult.status !== 0) {
+		const detail = (diffResult.stderr ?? '').trim() || 'git diff main...HEAD failed (non-zero exit)';
+		return { status: 'error', diff: '', changedFiles: [], truncated: false, detail };
+	}
+
+	const rawDiff = diffResult.stdout ?? '';
+	if (rawDiff.trim().length === 0) {
+		return { status: 'no-changes', diff: '', changedFiles: [], truncated: false };
+	}
+
+	const namesResult = spawnSync('git', ['-C', cwd, 'diff', '--name-only', 'main...HEAD'], { encoding: 'utf8' });
+	const changedFiles =
+		namesResult.status === 0
+			? (namesResult.stdout ?? '')
+					.split('\n')
+					.map((line) => line.trim())
+					.filter((line) => line.length > 0)
+			: [];
+
+	const truncated = rawDiff.length > REVIEWER_DIFF_MAX_CHARS;
+	const diff = truncated ? rawDiff.slice(0, REVIEWER_DIFF_MAX_CHARS) : rawDiff;
+	return { status: 'ok', diff, changedFiles, truncated };
+}
+
+/**
+ * Renders the diff block appended to the codex reviewer's instructions-file
+ * body. Always well-formed (AC4): 'error' and 'no-changes' both render an
+ * explicit marker, never an empty string. A truncated diff carries a visible
+ * `[diff truncated ...]` marker (AC5), never a silent cut.
+ *
+ * Resolves `opts.cwd` (defaulting to `process.cwd()`) itself so the
+ * default-resolution operator lives here, not inline in
+ * CodexAdapter.buildSpawnArgv's switch (keeps that switch's cognitive
+ * complexity unchanged from before this story).
+ */
+function renderReviewerDiffBlock(opts: Pick<SpawnArgvOptions, 'cwd'>): string {
+	const cwd = opts.cwd === undefined ? process.cwd() : opts.cwd;
+	const result = computeReviewerDiff(cwd);
+	const header = '## Injected branch diff (git diff main...HEAD)';
+
+	if (result.status === 'error') {
+		return [header, '', `[diff-unavailable: ${result.detail}]`].join('\n');
+	}
+	if (result.status === 'no-changes') {
+		return [header, '', "[no-changes: the current branch has no diff vs main]"].join('\n');
+	}
+
+	const fileList =
+		result.changedFiles.length > 0 ? result.changedFiles.map((f) => `- ${f}`).join('\n') : '(no changed file names reported)';
+	const truncationMarker = result.truncated
+		? `\n\n[diff truncated at ${REVIEWER_DIFF_MAX_CHARS} chars; changed-file list above is complete even when the diff body is truncated]`
+		: '';
+
+	return [
+		header,
+		'',
+		"Review ONLY the diff below (this branch's changes vs main, per `git diff main...HEAD`). " +
+			'Do not review repo context, unrelated files, or history outside this diff.',
+		'',
+		'### Changed files',
+		fileList,
+		'',
+		'### Diff',
+		'```diff',
+		result.diff + truncationMarker,
+		'```',
+	].join('\n');
 }
 
 /**
@@ -430,7 +553,10 @@ export class CodexAdapter implements BackendAdapter {
 				const isolation = opts.isolation ?? 'host';
 				const taskPrompt = opts.taskPrompt ?? REVIEWER_TASK_PROMPT;
 				const permissionMode = opts.permissionMode ?? 'bypassPermissions';
-				return this.renderActor(agentName, model, taskPrompt, permissionMode, isolation);
+				// US-001 (CAM-354): reviewer-only diff injection. Never computed for
+				// implementer/planner/auditor (AC6).
+				const diffBlock = renderReviewerDiffBlock(opts);
+				return this.renderActor(agentName, model, taskPrompt, permissionMode, isolation, diffBlock);
 			}
 		}
 	}
@@ -442,8 +568,9 @@ export class CodexAdapter implements BackendAdapter {
 		taskPrompt: string,
 		permissionMode: string,
 		isolation: WorkerIsolation,
+		appendedInstructionsBlock?: string,
 	): string {
-		const instructionsFile = writeCodexInstructionsFile(agentName);
+		const instructionsFile = writeCodexInstructionsFile(agentName, appendedInstructionsBlock);
 		const escapedPrompt = shellEscape(taskPrompt);
 		return (
 			codexEnvPrefix(isolation) +
