@@ -1,0 +1,26 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Make readPhaseModel backend-aware"
+  },
+  "branchName": "cam/issue-356",
+  "timestamp": "2026-07-19T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/config/models.ts",
+    "test/config/models.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "readPhaseModel(phase, configPath?, backend?) now accepts an optional 3rd `backend` param: when backend is non-claude and a nested [models.<backend>].<phase> key is present it wins, otherwise the pre-existing flat [models].<phase> -> DEFAULTS[phase] chain applies unchanged. None of the ~13 existing call sites were touched (all still pass 1-2 args). A future story in this epic (CAM-356) will need to thread the phase's resolved backend (readPhaseBackend(phase)) into the new 3rd arg at the actual spawn call sites (run.ts/loop.ts/review.ts/plan-runner.ts) so a codex-backed phase actually resolves its codex slug from [models.codex] at spawn time -- that wiring was explicitly out of scope for US-001 (this story only made the reader capable, it did not wire any caller). See scripts/cam/patterns.md US-001/CAM-356 bullet for the readNestedBackendModel/readStringKey helper shapes.",
+  "appliedPatternIds": [],
+  "officialDocsValidated": [
+    {
+      "lib": "Bun.TOML",
+      "channel": "WebFetch",
+      "url": "https://bun.com/docs/runtime/toml",
+      "fetchedAt": "2026-07-19T00:00:00Z",
+      "status": "aligned",
+      "summary": "Confirmed Bun.TOML.parse nests tables into plain JS objects with no schema validation, matching the type-guard-only assumption in readNestedBackendModel/readStringKey (a [models.codex] sub-table is typeof object and is rejected by the string check, never assumed shape)."
+    }
+  ]
+}
