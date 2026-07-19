@@ -1,0 +1,96 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-356",
+  "description": "Backend-aware per-phase model resolution plus config-tolerant drift/review guards so a codex-backed phase can be committed without reddening bun test (CAM-54 slice-5).",
+  "issueNumber": 356,
+  "type": "feat",
+  "relatedDocs": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "Bun",
+      "channel": "WebFetch",
+      "url": "https://bun.com/docs/runtime/toml",
+      "version": "current",
+      "fetchedAt": "2026-07-19T00:00:00Z",
+      "summary": "Bun.TOML.parse is the canonical parser (confirmed via the Bun APIs index -> Parsing & Formatting -> Bun.TOML.parse at /runtime/toml). A TOML sub-table header like [models.codex] parses to a nested plain object under the parent key (standard TOML semantics), so the schema-less loadConfig layer returns models.codex as an object; the flat models[phase] lookup must type-guard and skip that object rather than mis-return it as a model string.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Make readPhaseModel backend-aware",
+      "description": "As the cam loop, I need per-phase model resolution to consult the phase's resolved backend so a codex phase resolves a codex-valid slug from a nested [models.<backend>] sub-table, while claude phases keep resolving the flat [models].<phase> / DEFAULTS value unchanged.",
+      "acceptanceCriteria": [
+        "readPhaseModel accepts the phase's already-resolved backend and, when that backend is non-claude and a nested [models.<backend>].<phase> key is present, returns it; otherwise it falls back to the flat [models].<phase> value then DEFAULTS[phase]. A unit test proves a codex-backed phase resolves the codex slug from a [models.codex] fixture and that claude-phase resolution (and every existing readPhaseModel call passing only phase/configPath) is byte-for-byte unchanged. [oracle: bun test test/config/models.test.ts]",
+        "The flat models[phase] lookup skips a nested object value (a [models.codex] sub-table parses to typeof 'object') and falls through to DEFAULTS instead of returning the object as a model string; the nested backend-aware lookup is type-guarded against the schema-less TOML layer (no assumption of shape). A unit test covers a config where [models.codex] is present but the requested phase is claude-backed. [oracle: bun test test/config/models.test.ts]",
+        "DEFAULTS is not modified. [oracle: file-assert git diff scripts/cam/project.toml is empty and DEFAULTS block unchanged: git diff --exit-code scripts/cam/project.toml]",
+        "Committed scripts/cam/project.toml is byte-unchanged (no [models.codex] table added). [oracle: file-assert git diff --exit-code scripts/cam/project.toml]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/config/models.ts (readPhaseModel, lines 110-125), test/config/models.test.ts. Signature guidance: current readPhaseModel(phase, configPath?) has ~17 callers passing configPath (mostly tests); add the resolved backend as a NEW optional 3rd param (readPhaseModel(phase, configPath?, backend?)) so no existing (phase, configPath) caller breaks. When backend is omitted or 'claude', behavior must be identical to today. Nested lookup: config['models'][backend]?.[phase], type-guarded (typeof object on models, typeof string on the value), BEFORE the flat models[phase] lookup; the flat lookup must reject a typeof-object value (the sub-table) and fall through to DEFAULTS. TOML layer is schema-less (src/config/toml.ts:135-157, Bun.TOML.parse, no validation): do not assume shape. Pattern context: [models]/[backend] config surface + read-at-spawn invariant (patterns.md, CAM-53 US-008). Do NOT change DEFAULTS or MODEL_OPTIONS."
+    },
+    {
+      "id": "US-002",
+      "title": "Thread resolved backend into readPhaseModel at every dispatch site",
+      "description": "As the cam loop, I need every spawn site that resolves both model and backend to pass the resolved backend into readPhaseModel, so a codex phase never receives a claude-alias model at spawn.",
+      "acceptanceCriteria": [
+        "Each dispatch site that resolves a phase's model and backend passes the resolved backend into readPhaseModel: reviewer (src/supervisor/review.ts:351-352), implementer (src/supervisor/loop.ts:1051-1052), planner and auditor (src/supervisor/plan-runner.ts:626-627 and 681-682), orchestrator (src/commands/run.ts:453), and the config display column (src/commands/config.ts:297). [oracle: reviewer-judgment]",
+        "The reviewer spawn resolves the reviewer model through the already-resolved reviewBackend rather than a backend-blind read. [oracle: file-assert grep -q 'reviewBackend' src/supervisor/review.ts]",
+        "The implementer spawn resolves the implementer model through the already-resolved implBackend rather than a backend-blind read. [oracle: file-assert grep -q 'implBackend' src/supervisor/loop.ts]",
+        "Existing dispatch-shape tests remain green (no regression in the claude path). [oracle: bun test]",
+        "Committed scripts/cam/project.toml is byte-unchanged (all phases stay claude). [oracle: file-assert git diff --exit-code scripts/cam/project.toml]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "Files: src/supervisor/review.ts, src/supervisor/loop.ts, src/supervisor/plan-runner.ts, src/commands/run.ts, src/commands/config.ts. Mechanical single-concern spread: each site already resolves the backend right beside the model (readPhaseBackend beside readPhaseModel, e.g. review.ts reviewBackend, loop.ts implBackend) for selectAdapter; this story only threads that same backend var into the readPhaseModel call. Passes only the backend the site already resolved: no new backend read. Confirm the committed config keeps all phases claude, so this is behavior-preserving for the committed toml (the tolerance only manifests under a codex fixture, proved in US-004). Pattern context: spawn-resolution emitter (patterns.md, CAM-53 US-007) reports the resolved model+backend; keep the two reads consistent (the reviewer double-read finding)."
+    },
+    {
+      "id": "US-003",
+      "title": "Make the drift guard backend-conditional and config-tolerant",
+      "description": "As the test suite, I need the readPhaseModel drift guard to validate a codex-backed phase as a non-claude-alias model (rather than against the claude MODEL_OPTIONS list) so a future codex flip does not falsely redden the suite, while claude phases keep their MODEL_OPTIONS/DEFAULTS check.",
+      "acceptanceCriteria": [
+        "isClaudeAliasModel is exported from src/supervisor/codex-auth.ts (previously module-private). [oracle: file-assert grep -q 'export function isClaudeAliasModel' src/supervisor/codex-auth.ts]",
+        "The drift guard in test/config/models.test.ts is backend-conditional: for a phase whose resolved backend (readPhaseBackend) is non-claude, the resolved model is accepted iff isClaudeAliasModel(model) is false; for a claude-backed phase the model is still required to be in MODEL_OPTIONS or equal DEFAULTS[phase]. [oracle: bun test test/config/models.test.ts]",
+        "The adjacent 'DEFAULTS vs MODEL_OPTIONS consistency' guard (models.test.ts:646-656) is unchanged and still passes. [oracle: bun test test/config/models.test.ts]",
+        "src/ui/ConfigScreen.tsx MODEL_OPTIONS contains no codex model slugs (no gpt- ids). [oracle: file-assert ! grep -qi 'gpt-' src/ui/ConfigScreen.tsx]",
+        "Committed scripts/cam/project.toml is byte-unchanged (drift guard still passes green against the committed all-claude config). [oracle: file-assert git diff --exit-code scripts/cam/project.toml]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "Files: src/supervisor/codex-auth.ts (export isClaudeAliasModel, lines 79-82: the CLAUDE_ALIAS_MODEL_RE guard), test/config/models.test.ts (drift guard, lines 667-684). Do NOT add a positive codex-slug allowlist: OpenAI slugs are account-specific and drift (gpt-5.5/gpt-5.6-sol valid, all *-codex rejected on this login), so assert NOT isClaudeAliasModel for codex phases (FORK B resolved in the issue gotchas). The drift guard reads readPhaseModel(phase, repoConfigPath); to be tolerant it must branch on readPhaseBackend(phase, repoConfigPath). Committed config stays all-claude so every phase still takes the claude branch today. Do not change DEFAULTS."
+    },
+    {
+      "id": "US-004",
+      "title": "Generalize the review-fixture helper and prove codex reviewer resolution",
+      "description": "As the review dispatch tests, I need a backend-parameterized cwd fixture so the dispatch-shape tests stop pinning the committed project.toml, plus a test proving a codex reviewer fixture resolves a codex slug and passes the codex auth preflight.",
+      "acceptanceCriteria": [
+        "withCodexBackendCwd (test/supervisor/review.test.ts:1728-1744) is generalized into withReviewerBackendCwd(backend, model) that stages a temp cwd writing [backend].reviewer=<backend> plus the phase model under [models] for claude or a nested [models.<backend>] sub-table for a non-claude backend, and the stub .claude/agents/subagent-reviewer.md, with process.chdir restore in finally. [oracle: bun test test/supervisor/review.test.ts]",
+        "The ~5 real-config-dependent dispatch-shape tests (around review.test.ts lines 532, 1510, 1572, 1597, 1626, 1824) build their own fixture via withReviewerBackendCwd instead of reading committed scripts/cam/project.toml. [oracle: bun test test/supervisor/review.test.ts]",
+        "The 'claude backend (default) -> codexAuthCheck never invoked' assertion is preserved under an explicit claude fixture (withReviewerBackendCwd('claude', ...)). [oracle: bun test test/supervisor/review.test.ts]",
+        "A new test proves: with a fixture [backend].reviewer=codex + [models.codex].reviewer=gpt-5.5, the reviewer dispatch resolves model gpt-5.5 (not opus) and codexAuthPreflight does NOT abort on a claude-alias. [oracle: bun test test/supervisor/review.test.ts]",
+        "Committed scripts/cam/project.toml is byte-unchanged. [oracle: file-assert git diff --exit-code scripts/cam/project.toml]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": "US-002",
+      "notes": "File: test/supervisor/review.test.ts. Existing helper to generalize: withCodexBackendCwd (lines 1728-1744) mkdtempSyncs a cwd, writes scripts/cam/project.toml + stub .claude/agents/subagent-reviewer.md, process.chdir + restore in finally. readPhaseModel/readPhaseBackend are NOT injectable via MakeReviewDispatchOptions (lines 1722-1724): cwd-staging is the established pattern. gpt-5.5 is a valid non-claude-alias slug (isClaudeAliasModel('gpt-5.5') === false); codexAuthPreflight (codex-auth.ts:127-153) already passes a real codex slug and needs no change. Scope: only the review.test.ts copy of the helper; the independent copies in run-codex-auth.test.ts and loop.test.ts are out of scope. Depends on US-001 (nested resolution) and US-002 (reviewer site threads reviewBackend) for the new test to resolve gpt-5.5 instead of opus."
+    }
+  ]
+}
