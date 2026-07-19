@@ -61,6 +61,7 @@ import {
 import { makeRecordPatternOutcomeFn } from '../../src/supervisor/host.ts';
 import { realOnMainSpawnFn } from '../../src/git/on-main.ts';
 import type { PatternRecord } from '../../src/patterns/record.ts';
+import { waitForCondition } from '../helpers/wait-for-condition.ts';
 
 // ---------------------------------------------------------------------------
 // Fake builder helpers
@@ -524,7 +525,7 @@ describe('runSupervisor', () => {
 		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-codex-ceiling-'));
 		const camDir = join(tmpDir, 'scripts', 'cam');
 		mkdirSync(camDir, { recursive: true });
-		writeFileSync(join(camDir, 'project.toml'), '[backend]\nimplementer = "codex"\n');
+		writeFileSync(join(camDir, 'project.toml'), '[backend]\nimplementer = "codex"\n\n[models]\nimplementer = "gpt-5-codex"\n');
 		const agentsDir = join(tmpDir, '.claude', 'agents');
 		mkdirSync(agentsDir, { recursive: true });
 		writeFileSync(join(agentsDir, 'subagent-implementer.md'), '# stub\n');
@@ -557,6 +558,9 @@ describe('runSupervisor', () => {
 					cacheCreationTokens: 0,
 				}),
 				logEvent: logger,
+				// US-002 (CAM-352): fake authenticated codex auth-check so this test's
+				// codex backend is never blocked by the fail-closed preflight.
+				codexAuthCheckFn: () => ({ authenticated: true }),
 			});
 
 			// AC3: never throws. An unhandled rejection/throw here fails the test.
@@ -4179,6 +4183,160 @@ describe('shouldApplyTokenCeiling (US-003, CAM-350)', () => {
 
 	test('no reader wired disables regardless of backend (codex)', () => {
 		expect(shouldApplyTokenCeiling('codex', 100_000, false)).toBe(false);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-002 (CAM-352): fail-closed codex auth preflight at the implementer
+// dispatch site.
+// ---------------------------------------------------------------------------
+
+describe('runSupervisor US-002 (CAM-352): codex auth preflight at implementer dispatch', () => {
+	/**
+	 * Shared helper: build a one-story PRD + matching report that drives
+	 * the loop to 'complete' in one iteration (mirrors the container-preflight
+	 * describe blocks above).
+	 */
+	function oneStoryBase(): Partial<RunSupervisorOptions> {
+		const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+		const prd_done = makePrd({
+			stories: [{ id: 'US-001', priority: 1, passes: true }],
+			review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+		});
+		const fakeReport: WorkerReport = {
+			outcome: 'DONE',
+			story: 'US-001',
+			gates: { typecheck: 'ok', tests: '1 pass / 0 fail' },
+			notes: 'none',
+		};
+		let prdCall = 0;
+		return {
+			readPrd: () => {
+				prdCall++;
+				return prdCall <= 1 ? prd_impl : prd_done;
+			},
+			readHandoff: () => makeHandoff('US-001'),
+			capturePane: (_paneId) => donePane('US-001'),
+			readWorkerReport: () => fakeReport,
+		};
+	}
+
+	/**
+	 * Stage a temp cwd with a project.toml resolving the implementer backend
+	 * to 'codex' with a non-claude-alias model (readPhaseBackend/readPhaseModel
+	 * are not injectable through RunSupervisorOptions; they always read
+	 * scripts/cam/project.toml relative to process.cwd()). Also stages a stub
+	 * .claude/agents/subagent-implementer.md so CodexAdapter.buildSpawnArgv
+	 * can read it on the authenticated (proceed) path.
+	 */
+	async function withCodexBackendCwd<T>(fn: () => T | Promise<T>): Promise<T> {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-loop-codex-auth-'));
+		const camDir = join(tmpDir, 'scripts', 'cam');
+		mkdirSync(camDir, { recursive: true });
+		writeFileSync(join(camDir, 'project.toml'), '[backend]\nimplementer = "codex"\n\n[models]\nimplementer = "gpt-5-codex"\n');
+		const agentsDir = join(tmpDir, '.claude', 'agents');
+		mkdirSync(agentsDir, { recursive: true });
+		writeFileSync(join(agentsDir, 'subagent-implementer.md'), '# stub\n');
+		const prevCwd = process.cwd();
+		process.chdir(tmpDir);
+		try {
+			return await fn();
+		} finally {
+			process.chdir(prevCwd);
+			rmSync(tmpDir, { recursive: true, force: true });
+		}
+	}
+
+	test('AC2: codex backend + unauthenticated -> blocked, actionable codex login reason, respawn-pane never called', async () => {
+		await withCodexBackendCwd(async () => {
+			let respawnCalled = false;
+			let authCheckCalled = false;
+			const opts = makeBaseOpts({
+				...oneStoryBase(),
+				spawn: (_cmd, args) => {
+					if (args.includes('respawn-pane')) respawnCalled = true;
+					return { stdout: '', exitCode: 0 };
+				},
+				codexAuthCheckFn: () => {
+					authCheckCalled = true;
+					return { authenticated: false };
+				},
+			});
+
+			const result = await runSupervisor(opts);
+
+			expect(authCheckCalled).toBe(true);
+			expect(result.status).toBe('blocked');
+			expect(result.lastOutcome?.detail).toContain('codex-auth-failed');
+			expect(result.lastOutcome?.detail).toContain('codex login');
+			expect(respawnCalled).toBe(false);
+		});
+	});
+
+	test('AC2: escalateFn called fire-and-forget when codex auth preflight fails', async () => {
+		await withCodexBackendCwd(async () => {
+			let escalateCalled = false;
+			const opts = makeBaseOpts({
+				...oneStoryBase(),
+				codexAuthCheckFn: () => ({ authenticated: false }),
+				escalateFn: async () => {
+					escalateCalled = true;
+				},
+			});
+
+			await runSupervisor(opts);
+
+			await waitForCondition(() => escalateCalled);
+			expect(escalateCalled).toBe(true);
+		});
+	});
+
+	test('AC3: codex backend + authenticated -> dispatch proceeds unchanged (completes)', async () => {
+		await withCodexBackendCwd(async () => {
+			let respawnCalled = false;
+			let authCheckCalled = false;
+			const opts = makeBaseOpts({
+				...oneStoryBase(),
+				spawn: (_cmd, args) => {
+					if (args.includes('respawn-pane')) respawnCalled = true;
+					return { stdout: '', exitCode: 0 };
+				},
+				codexAuthCheckFn: () => {
+					authCheckCalled = true;
+					return { authenticated: true };
+				},
+			});
+
+			const result = await runSupervisor(opts);
+
+			expect(authCheckCalled).toBe(true);
+			expect(result.status).toBe('complete');
+			expect(respawnCalled).toBe(true);
+		});
+	});
+
+	test('AC4: claude backend (default) -> codexAuthCheckFn never invoked, dispatch path unchanged', async () => {
+		// No withCodexBackendCwd: the repo's own scripts/cam/project.toml resolves
+		// the implementer backend to 'claude' by default.
+		let respawnCalled = false;
+		let authCheckCalled = false;
+		const opts = makeBaseOpts({
+			...oneStoryBase(),
+			spawn: (_cmd, args) => {
+				if (args.includes('respawn-pane')) respawnCalled = true;
+				return { stdout: '', exitCode: 0 };
+			},
+			codexAuthCheckFn: () => {
+				authCheckCalled = true;
+				return { authenticated: false };
+			},
+		});
+
+		const result = await runSupervisor(opts);
+
+		expect(authCheckCalled).toBe(false);
+		expect(result.status).toBe('complete');
+		expect(respawnCalled).toBe(true);
 	});
 });
 

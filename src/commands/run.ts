@@ -65,6 +65,7 @@ import { DEFAULTS, readMetaLoop, readPhaseModel, readBackend, readWorkerIsolatio
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 import { makeFileEventLogger } from '../supervisor/events.ts';
 import { checkClaudeAuth } from './run-auth-preflight.ts';
+import { codexAuthPreflight, type CodexAuthCheck } from '../supervisor/codex-auth.ts';
 
 // Re-export projectSessionName so existing callers (test/run.test.ts) continue
 // to import it from this module without breaking.
@@ -148,6 +149,13 @@ export interface RunOptions {
 	 * worker_isolation mode); a no-op in host mode.
 	 */
 	spawnSidecarLivenessWatchFn?: SpawnSidecarLivenessWatchFn;
+	/**
+	 * Injectable codex auth-check for unit tests (US-003, CAM-352). Forwarded to
+	 * codexAuthPreflight, which defaults to the real `~/.codex/auth.json`
+	 * presence check when omitted. Only consulted when the orchestrator backend
+	 * resolves to 'codex'.
+	 */
+	codexAuthCheckFn?: CodexAuthCheck;
 }
 
 export interface ParsedRunArgs {
@@ -332,6 +340,8 @@ interface SetupOpts {
 	sessionName: string;
 	spawnFn: SpawnFn;
 	genSessionId: () => string;
+	/** Injectable codex auth-check (US-003). See RunOptions.codexAuthCheckFn. */
+	codexAuthCheckFn?: CodexAuthCheck;
 }
 
 /**
@@ -342,11 +352,18 @@ interface SetupOpts {
  *
  * A healthy running session is NEVER reset (isSessionStale is conservative), so
  * `cam run` re-attach does not kill an active orchestrator/loop.
+ *
+ * `blocked` (US-003, CAM-352) carries an actionable message when the codex
+ * auth preflight aborted pane setup: the tmux session shell may already exist
+ * (silent `cat` placeholders), but the orchestrator/dashboard panes were never
+ * respawned. A subsequent `cam run` self-heals via the existing stale-session
+ * reconcile path above (isSessionStale detects the `cat` placeholders).
  */
 function setupOrchestratorSession(opts: SetupOpts): {
 	sessionName: string;
 	created: boolean;
 	reset: boolean;
+	blocked?: string;
 } {
 	const { sessionName, spawnFn } = opts;
 
@@ -368,12 +385,24 @@ function setupOrchestratorSession(opts: SetupOpts): {
 		reset = true;
 	}
 
-	setupPanes(opts, panes);
+	const panesResult = setupPanes(opts, panes);
+	if (panesResult.blocked) {
+		return { sessionName, created: true, reset, blocked: panesResult.message };
+	}
 	return { sessionName, created: true, reset };
 }
 
-/** Respawn the real commands into the 2 panes and apply the workspace chrome. */
-function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
+/**
+ * Respawn the real commands into the 2 panes and apply the workspace chrome.
+ *
+ * Returns `{ blocked: true, message }` (US-003, CAM-352) when the codex auth
+ * preflight aborts before either pane is respawned; the caller must halt
+ * bootstrap without spawning the orchestrator or dashboard pane.
+ */
+function setupPanes(
+	opts: SetupOpts,
+	panes: CreatedPaneIds,
+): { blocked: false } | { blocked: true; message: string } {
 	const { cwd, sessionName, spawnFn, genSessionId } = opts;
 	const { orchPaneId, dashboardPaneId } = panes;
 
@@ -452,6 +481,22 @@ function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
 			}),
 	});
 
+	// US-003 (CAM-352): fail-closed codex auth preflight, immediately before the
+	// orchestrator respawn-pane call, using the SAME already-resolved
+	// orchModel/orchBackend locals the argv builder and emitSpawnResolution just
+	// used (never re-read). Mirrors the shape wired into the 3 supervisor
+	// dispatch sites in US-002: backend !== 'codex' proceeds without ever
+	// invoking the auth-check; backend === 'codex' + unauthenticated aborts
+	// BEFORE either pane is respawned.
+	const authPreflight = codexAuthPreflight({
+		backend: orchBackend,
+		model: orchModel,
+		authCheck: opts.codexAuthCheckFn,
+	});
+	if (!authPreflight.proceed) {
+		return { blocked: true, message: authPreflight.message };
+	}
+
 	// respawn-pane -k runs the command DIRECTLY in the pane, replacing the silent
 	// `cat` placeholder. No interactive bash means no macOS zsh notice / prompt /
 	// command echo flashing before the real command paints (`bash -c` is
@@ -528,6 +573,7 @@ function setupPanes(opts: SetupOpts, panes: CreatedPaneIds): void {
 
 	// Make sure focus is on the orchestrator pane.
 	spawnFn('tmux', tmuxArgs(['select-pane', '-t', orchPaneId]), { stdio: 'ignore' });
+	return { blocked: false };
 }
 
 // ---------------------------------------------------------------------------
@@ -710,9 +756,20 @@ export function runRun(options: RunOptions = {}): number {
 		return 0;
 	}
 
-	let result: { sessionName: string; created: boolean; reset: boolean };
+	let result: { sessionName: string; created: boolean; reset: boolean; blocked?: string };
 	try {
-		result = setupOrchestratorSession({ cwd, sessionName, spawnFn, genSessionId });
+		result = setupOrchestratorSession({
+			cwd,
+			sessionName,
+			spawnFn,
+			genSessionId,
+			codexAuthCheckFn: options.codexAuthCheckFn,
+		});
+		if (result.blocked !== undefined) {
+			printError('codex auth preflight failed', result.blocked);
+			emitTrailingBlank();
+			return 1;
+		}
 		if (result.reset) {
 			emitOk(`stale tmux session "${sessionName}" detected, recreated clean`);
 		} else if (result.created) {

@@ -39,6 +39,8 @@ import { readPhaseModel, readPhaseBackend } from '../config/models.ts';
 import type { WorkerIsolation } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 import { dockerExecWrap } from './docker-exec.ts';
+import { codexAuthPreflight } from './codex-auth.ts';
+import type { CodexAuthCheck } from './codex-auth.ts';
 
 export { DEFAULT_REVIEWER_AGENT, REVIEWER_TASK_PROMPT };
 
@@ -267,6 +269,15 @@ export interface MakeReviewDispatchOptions {
 	 * When absent, the blocked return is silent (no escalation attempt).
 	 */
 	escalateFn?: () => Promise<void>;
+	/**
+	 * Codex auth-check DI seam (US-002, CAM-352). Mirrors codexAuthCheckFn in
+	 * RunSupervisorOptions: injectable override for the auth-check invoked by
+	 * codexAuthPreflight immediately before the reviewer respawn-pane call.
+	 * When absent, codexAuthPreflight falls back to its own default (the real
+	 * `~/.codex/auth.json` presence check). When reviewBackend !== 'codex'
+	 * this seam is never invoked.
+	 */
+	codexAuthCheckFn?: CodexAuthCheck;
 }
 
 /** Default max review rounds (mirrors decide.ts and cam-review.md). */
@@ -323,6 +334,9 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 	// US-005 / CAM-152: reviewer container isolation.
 	const workerIsolation = opts.workerIsolation ?? 'host';
 	const preflightContainerFn = opts.preflightContainerFn;
+	// US-002 (CAM-352): codex auth-check DI seam, threaded straight into
+	// codexAuthPreflight at the reviewer dispatch site.
+	const codexAuthCheckFn = opts.codexAuthCheckFn;
 
 	return function reviewDispatch(uuid: string): ReviewDispatchResult {
 		// CAM-57: ensure a live worker pane exists before the respawn. When
@@ -396,6 +410,26 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 				? (e) => logEvent({ ts: new Date().toISOString(), storyId: undefined, uuid, kind: 'spawn-resolution', detail: e })
 				: undefined,
 		});
+
+		// US-002 (CAM-352): fail-closed codex auth preflight, immediately before
+		// respawn-pane. Mirrors the container preflight fail-closed block above.
+		const codexPreflight = codexAuthPreflight({ backend: reviewBackend, model: reviewModel, authCheck: codexAuthCheckFn });
+		if (!codexPreflight.proceed) {
+			const codexReason = `codex-auth-failed: ${codexPreflight.message}`;
+			if (opts.escalateFn !== undefined) {
+				const ef = opts.escalateFn;
+				void (async () => {
+					try {
+						await ef();
+					} catch (e) {
+						process.stderr.write(
+							`[cam] escalateFn error (swallowed): ${e instanceof Error ? e.message : String(e)}\n`,
+						);
+					}
+				})();
+			}
+			return { status: 'error', detail: codexReason };
+		}
 
 		spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', liveWorkerPaneId, dispatchCmd]);
 

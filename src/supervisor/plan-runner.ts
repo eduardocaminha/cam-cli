@@ -47,6 +47,8 @@ import { decidePostAuditAction } from '../plan/plan-approval-decision.ts';
 import { dockerExecWrap } from './docker-exec.ts';
 import type { PlanEscalatedMarker } from './plan-escalation.ts';
 import { lintPrd, type PrdOracleLintFinding } from './prd-oracle-lint.ts';
+import { codexAuthPreflight } from './codex-auth.ts';
+import type { CodexAuthCheck } from './codex-auth.ts';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -256,6 +258,12 @@ export type PlanPhaseResult =
 	 * The corresponding worker was NEVER spawned on the host.
 	 */
 	| { kind: 'container-preflight-failed'; phase: 'planner' | 'auditor'; reason: string }
+	/**
+	 * Codex auth preflight blocked the spawn (US-002, CAM-352).
+	 * `phase` indicates which spawn was blocked ('planner' or 'auditor').
+	 * The corresponding worker was NEVER spawned.
+	 */
+	| { kind: 'codex-auth-failed'; phase: 'planner' | 'auditor'; reason: string }
 	| { kind: 'audit-approved'; issue: IssueEntry; report: PlanVerdictReport }
 	| { kind: 'audit-blocked'; issue: IssueEntry; report: PlanVerdictReport }
 	| { kind: 'plan-escalated'; issue: IssueEntry; report: PlanVerdictReport; roundsCompleted: number };
@@ -545,6 +553,21 @@ export interface RunPlanPhaseOptions {
 	 * Optional: absent means silent no-op on preflight failure.
 	 */
 	escalateFn?: () => Promise<void>;
+
+	// -------------------------------------------------------------------------
+	// Codex auth preflight (US-002, CAM-352)
+	// -------------------------------------------------------------------------
+
+	/**
+	 * Codex auth-check DI seam. Injectable override for the auth-check
+	 * invoked by codexAuthPreflight immediately before each of the planner
+	 * and auditor respawn-pane calls. When absent, codexAuthPreflight falls
+	 * back to its own default (the real `~/.codex/auth.json` presence
+	 * check). When the resolved backend for that phase is not 'codex' this
+	 * seam is never invoked. Mirrors codexAuthCheckFn in RunSupervisorOptions
+	 * and MakeReviewDispatchOptions.
+	 */
+	codexAuthCheckFn?: CodexAuthCheck;
 }
 
 // ---------------------------------------------------------------------------
@@ -570,15 +593,22 @@ function makeEventWriter(
 		});
 }
 
+/** Result of resolveAndSpawnPlanner / resolveAndSpawnAuditor (US-002, CAM-352). */
+type ResolveAndSpawnResult = { ok: true; uuid: string } | { ok: false; reason: string };
+
 /**
- * Resolve model/backend, emit spawn-resolution, build the argv shell string,
- * set @cam_label on the pane, spawn the planner worker via respawn-pane -k,
- * and pipe pane output to a per-worker out-log (AC4) when claudeDir is provided.
+ * Resolve model/backend, emit spawn-resolution, run the codex auth preflight,
+ * build the argv shell string, set @cam_label on the pane, spawn the planner
+ * worker via respawn-pane -k, and pipe pane output to a per-worker out-log
+ * (AC4) when claudeDir is provided.
  *
  * @cam_label is set BEFORE respawn-pane (AC5, patterns.md '@cam_label pane-labeling').
  * genUuid() output is lowercased (CAM-23: macOS uuidgen is uppercase).
  * US-006 / CAM-152: shell is wrapped via dockerExecWrap when workerIsolation === 'container'.
- * Returns the lowercased uuid (for the event log if needed).
+ * US-002 / CAM-352: codexAuthPreflight runs immediately before respawn-pane;
+ * a not-ready result aborts WITHOUT spawning the planner (ok:false, reason),
+ * firing escalateFn (when provided) fire-and-forget, mirroring
+ * runContainerPlanPreflight's escalation contract.
  */
 function resolveAndSpawnPlanner(
 	spawnFn: SpawnFn,
@@ -588,12 +618,23 @@ function resolveAndSpawnPlanner(
 	permissionMode: string,
 	logEvent: WorkerEventLogger | undefined,
 	workerIsolation: WorkerIsolation,
+	codexAuthCheckFn: CodexAuthCheck | undefined,
+	escalateFn: (() => Promise<void>) | undefined,
 	claudeDir?: string,
-): string {
+): ResolveAndSpawnResult {
 	const uuid = genUuid().toLowerCase();
 	const model = readPhaseModel('planner');
 	const backend = readPhaseBackend('planner');
 	emitSpawnResolution({ phase: 'planner', model, backend, writeEvent: makeEventWriter(logEvent, uuid) });
+	// US-002 (CAM-352): fail-closed codex auth preflight, immediately before
+	// respawn-pane.
+	const codexPreflight = codexAuthPreflight({ backend, model, authCheck: codexAuthCheckFn });
+	if (!codexPreflight.proceed) {
+		if (escalateFn !== undefined) {
+			void escalateFn(); // fire-and-forget: best-effort, never throws by contract
+		}
+		return { ok: false, reason: codexPreflight.message };
+	}
 	// US-002 (CAM-350): route through selectAdapter(backend) so a per-phase
 	// 'codex' backend actually reaches spawn instead of always hardcoding
 	// ClaudeAdapter.
@@ -607,18 +648,22 @@ function resolveAndSpawnPlanner(
 		const outLog = join(claudeDir, `cam-plan-out-planner-${uuid}.log`);
 		spawnFn('tmux', ['-L', 'cam', 'pipe-pane', '-t', plannerPaneId, `cat >> ${outLog}`]);
 	}
-	return uuid;
+	return { ok: true, uuid };
 }
 
 /**
- * Resolve model/backend, emit spawn-resolution, build the argv shell string,
- * set @cam_label on the pane, spawn the auditor worker via respawn-pane -k,
- * and pipe pane output to a per-worker out-log (AC4) when claudeDir is provided.
+ * Resolve model/backend, emit spawn-resolution, run the codex auth preflight,
+ * build the argv shell string, set @cam_label on the pane, spawn the auditor
+ * worker via respawn-pane -k, and pipe pane output to a per-worker out-log
+ * (AC4) when claudeDir is provided.
  *
  * @cam_label is set BEFORE respawn-pane (AC5, patterns.md '@cam_label pane-labeling').
  * genUuid() output is lowercased (CAM-23: macOS uuidgen is uppercase).
  * US-006 / CAM-152: shell is wrapped via dockerExecWrap when workerIsolation === 'container'.
- * Returns the lowercased uuid.
+ * US-002 / CAM-352: codexAuthPreflight runs immediately before respawn-pane;
+ * a not-ready result aborts WITHOUT spawning the auditor (ok:false, reason),
+ * firing escalateFn (when provided) fire-and-forget, mirroring
+ * runContainerPlanPreflight's escalation contract.
  */
 function resolveAndSpawnAuditor(
 	spawnFn: SpawnFn,
@@ -628,12 +673,23 @@ function resolveAndSpawnAuditor(
 	permissionMode: string,
 	logEvent: WorkerEventLogger | undefined,
 	workerIsolation: WorkerIsolation,
+	codexAuthCheckFn: CodexAuthCheck | undefined,
+	escalateFn: (() => Promise<void>) | undefined,
 	claudeDir?: string,
-): string {
+): ResolveAndSpawnResult {
 	const uuid = genUuid().toLowerCase();
 	const model = readPhaseModel('auditor');
 	const backend = readPhaseBackend('auditor');
 	emitSpawnResolution({ phase: 'auditor', model, backend, writeEvent: makeEventWriter(logEvent, uuid) });
+	// US-002 (CAM-352): fail-closed codex auth preflight, immediately before
+	// respawn-pane.
+	const codexPreflight = codexAuthPreflight({ backend, model, authCheck: codexAuthCheckFn });
+	if (!codexPreflight.proceed) {
+		if (escalateFn !== undefined) {
+			void escalateFn(); // fire-and-forget: best-effort, never throws by contract
+		}
+		return { ok: false, reason: codexPreflight.message };
+	}
 	// US-002 (CAM-350): route through selectAdapter(backend) so a per-phase
 	// 'codex' backend actually reaches spawn instead of always hardcoding
 	// ClaudeAdapter.
@@ -647,7 +703,7 @@ function resolveAndSpawnAuditor(
 		const outLog = join(claudeDir, `cam-plan-out-auditor-${uuid}.log`);
 		spawnFn('tmux', ['-L', 'cam', 'pipe-pane', '-t', plannerPaneId, `cat >> ${outLog}`]);
 	}
-	return uuid;
+	return { ok: true, uuid };
 }
 
 /**
@@ -887,15 +943,60 @@ function pollAuditorReport(
  * The caller (runPlanPhase) resolves plannerTaskPrompt and issue before calling;
  * both are unavailable until steps 1-3 complete.
  */
+/**
+ * Run Step 4 (container preflight + codex auth preflight + planner spawn).
+ * Returns the live planner pane id on success, or a terminal PlanPhaseResult
+ * ('container-preflight-failed' | 'codex-auth-failed') when either preflight
+ * blocked the spawn.
+ *
+ * Extracted from runPlanWorkerSequence to keep that function under biome's
+ * noExcessiveCognitiveComplexity(max=15) limit (patterns.md 'Biome cognitive
+ * complexity: use factory/helper extraction'; US-002, CAM-352).
+ */
+function runPlannerSpawnStep(
+	opts: RunPlanPhaseOptions,
+	plannerTaskPrompt: string,
+	permissionMode: string,
+	workerIsolation: WorkerIsolation,
+): PlanPhaseResult | string {
+	const { spawnFn, genUuid, plannerPaneId, ensureWorkerPane, claudeDir, logEvent, preflightContainerFn, escalateFn, codexAuthCheckFn } = opts;
+	const planBlock = runContainerPlanPreflight('planner', workerIsolation, preflightContainerFn, escalateFn);
+	if (planBlock !== null) return planBlock;
+	const plannerLivePaneId = resolveLivePaneId(ensureWorkerPane, plannerPaneId);
+	const plannerSpawn = resolveAndSpawnPlanner(spawnFn, plannerLivePaneId, genUuid, plannerTaskPrompt, permissionMode, logEvent, workerIsolation, codexAuthCheckFn, escalateFn, claudeDir);
+	if (!plannerSpawn.ok) return { kind: 'codex-auth-failed', phase: 'planner', reason: plannerSpawn.reason };
+	return plannerLivePaneId;
+}
+
+/**
+ * Run Step 6 (container preflight + codex auth preflight + auditor spawn).
+ * Returns the live auditor pane id on success, or a terminal PlanPhaseResult
+ * ('container-preflight-failed' | 'codex-auth-failed') when either preflight
+ * blocked the spawn. Mirrors runPlannerSpawnStep (US-002, CAM-352).
+ */
+function runAuditorSpawnStep(
+	opts: RunPlanPhaseOptions,
+	auditorTaskPrompt: string,
+	permissionMode: string,
+	workerIsolation: WorkerIsolation,
+): PlanPhaseResult | string {
+	const { spawnFn, genUuid, plannerPaneId, ensureWorkerPane, claudeDir, logEvent, preflightContainerFn, escalateFn, codexAuthCheckFn } = opts;
+	const auditorBlock = runContainerPlanPreflight('auditor', workerIsolation, preflightContainerFn, escalateFn);
+	if (auditorBlock !== null) return auditorBlock;
+	const auditorLivePaneId = resolveLivePaneId(ensureWorkerPane, plannerPaneId);
+	const auditorSpawn = resolveAndSpawnAuditor(spawnFn, auditorLivePaneId, genUuid, auditorTaskPrompt, permissionMode, logEvent, workerIsolation, codexAuthCheckFn, escalateFn, claudeDir);
+	if (!auditorSpawn.ok) return { kind: 'codex-auth-failed', phase: 'auditor', reason: auditorSpawn.reason };
+	return auditorLivePaneId;
+}
+
 function runPlanWorkerSequence(
 	opts: RunPlanPhaseOptions,
 	plannerTaskPrompt: string,
 	issue: IssueEntry,
 ): PlanPhaseResult {
 	const {
-		spawnFn, isPaneAlive, sleepFn, genUuid, clock, plannerPaneId,
-		ensureWorkerPane, claudeDir, logEvent, readPlannerReportFn, readPlanVerdictFn,
-		readPrdContentFn,
+		isPaneAlive, sleepFn, clock, spawnFn,
+		readPlannerReportFn, readPlanVerdictFn, readPrdContentFn,
 	} = opts;
 	const permissionMode = opts.permissionMode ?? 'bypassPermissions';
 	// US-001, CAM-273 (ADR-0027): default to a record-bearing prompt built from
@@ -909,13 +1010,12 @@ function runPlanWorkerSequence(
 	const auditorTimeoutMs = opts.auditorTimeoutMs ?? DEFAULT_PLAN_TIMEOUT_MS;
 	// US-006 / CAM-152: container isolation mode + preflight seam.
 	const workerIsolation: WorkerIsolation = opts.workerIsolation ?? 'host';
-	const { preflightContainerFn, escalateFn } = opts;
 
-	// Step 4: Container preflight (US-006) + planner spawn.
-	const planBlock = runContainerPlanPreflight('planner', workerIsolation, preflightContainerFn, escalateFn);
-	if (planBlock !== null) return planBlock;
-	const plannerLivePaneId = resolveLivePaneId(ensureWorkerPane, plannerPaneId);
-	resolveAndSpawnPlanner(spawnFn, plannerLivePaneId, genUuid, plannerTaskPrompt, permissionMode, logEvent, workerIsolation, claudeDir);
+	// Step 4: Container preflight (US-006) + codex auth preflight (US-002,
+	// CAM-352) + planner spawn.
+	const plannerStep = runPlannerSpawnStep(opts, plannerTaskPrompt, permissionMode, workerIsolation);
+	if (typeof plannerStep !== 'string') return plannerStep;
+	const plannerLivePaneId = plannerStep;
 
 	// Step 5: Poll planner — primary signal: prd.json written; fallback: pane dies.
 	const plannerDied = pollPlannerDeath(isPaneAlive, sleepFn, clock, spawnFn, plannerLivePaneId, pollIntervalMs, plannerTimeoutMs, readPlannerReportFn);
@@ -932,11 +1032,11 @@ function runPlanWorkerSequence(
 	const lintBlock = runOracleLintCheck(readPrdContentFn, issue);
 	if (lintBlock !== null) return lintBlock;
 
-	// Step 6: Container preflight (US-006) + auditor spawn.
-	const auditorBlock = runContainerPlanPreflight('auditor', workerIsolation, preflightContainerFn, escalateFn);
-	if (auditorBlock !== null) return auditorBlock;
-	const auditorLivePaneId = resolveLivePaneId(ensureWorkerPane, plannerPaneId);
-	resolveAndSpawnAuditor(spawnFn, auditorLivePaneId, genUuid, auditorTaskPrompt, permissionMode, logEvent, workerIsolation, claudeDir);
+	// Step 6: Container preflight (US-006) + codex auth preflight (US-002,
+	// CAM-352) + auditor spawn.
+	const auditorStep = runAuditorSpawnStep(opts, auditorTaskPrompt, permissionMode, workerIsolation);
+	if (typeof auditorStep !== 'string') return auditorStep;
+	const auditorLivePaneId = auditorStep;
 
 	// Step 7: Poll auditor — verdict from FILE ONLY, never from capture-pane.
 	const auditorResult = pollAuditorReport(isPaneAlive, sleepFn, clock, spawnFn, readPlanVerdictFn, auditorLivePaneId, pollIntervalMs, auditorTimeoutMs);

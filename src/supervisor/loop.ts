@@ -56,6 +56,8 @@ import { buildResultDetail, validateOfficialDocsValidated } from './events.ts';
 import type { WorkerEventLogger, WorkerEventKind, WorkerEventDetail, TokensEventDetail, ReviewVerdictHandbackEventDetail, OutcomeSourceEventDetail, ContainerPreflightEventDetail } from './events.ts';
 import type { PreflightResult } from './preflight-container.ts';
 import type { ImplementBlockedMarker } from './implement-blocked-marker.ts';
+import { codexAuthPreflight } from './codex-auth.ts';
+import type { CodexAuthCheck } from './codex-auth.ts';
 
 /**
  * Params for the injectable implement-blocked marker writer (US-005, CAM-195,
@@ -498,6 +500,16 @@ export interface RunSupervisorOptions {
 	 * byte-for-byte. Production wiring: host.ts reads readWorkerIsolation().
 	 */
 	workerIsolation?: WorkerIsolation;
+	/**
+	 * Codex auth-check DI seam (US-002, CAM-352). Injectable override for the
+	 * auth-check invoked by codexAuthPreflight immediately before the
+	 * implementer respawn-pane call. When absent, codexAuthPreflight falls
+	 * back to its own default (the real `~/.codex/auth.json` presence check,
+	 * codexAuthCheck). Tests inject a fake to drive the
+	 * authenticated/unauthenticated path without touching the real
+	 * filesystem. When implBackend !== 'codex' this seam is never invoked.
+	 */
+	codexAuthCheckFn?: CodexAuthCheck;
 }
 
 // ---------------------------------------------------------------------------
@@ -790,6 +802,9 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	// US-004 / B-2 (CAM-152): worker isolation mode. 'container' enables dockerExecWrap
 	// and fail-closed preflight. Default 'host' preserves all existing behavior byte-for-byte.
 	const workerIsolation = opts.workerIsolation ?? 'host';
+	// US-002 (CAM-352): codex auth-check DI seam, threaded straight into
+	// codexAuthPreflight at the implementer dispatch site.
+	const codexAuthCheckFn = opts.codexAuthCheckFn;
 
 	// US-001 (CAM-215): sole notifyOrchestrator narration sources.
 	const narrateReport = (): void => { const r = readWorkerReport?.(); r && opts.notifyOrchestrator?.(formatWorkerReportSummary(r)); };
@@ -1172,6 +1187,31 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					? (e) => logEvent({ ts: clock(), storyId: advisoryStoryId, uuid, kind: 'spawn-resolution', detail: e })
 					: undefined,
 			});
+
+			// US-002 (CAM-352): fail-closed codex auth preflight, immediately before
+			// respawn-pane. Mirrors the container-mode fail-closed early-return
+			// pattern above (B-2, US-004/US-005): backend !== 'codex' always
+			// proceeds without invoking codexAuthCheckFn.
+			const codexPreflight = codexAuthPreflight({ backend: implBackend, model: implModel, authCheck: codexAuthCheckFn });
+			if (!codexPreflight.proceed) {
+				const codexReason = `codex-auth-failed: ${codexPreflight.message} (advisory ${advisoryStoryId ?? 'unknown'})`;
+				lastOutcome = { kind: 'blocked', storyId: undefined, detail: codexReason };
+				iterations++;
+				if (opts.escalateFn !== undefined) {
+					const escalateFn = opts.escalateFn;
+					void (async () => {
+						try {
+							await escalateFn();
+						} catch (e) {
+							process.stderr.write(
+								`[cam] escalateFn error (swallowed): ${e instanceof Error ? e.message : String(e)}\n`,
+							);
+						}
+					})();
+				}
+				finishTerminal('blocked');
+				return { status: 'blocked', iterations, lastOutcome };
+			}
 
 			// Respawn the worker pane with the implementer command.
 			// respawn-pane -k reuses the existing pane (no new split-window spawned).
