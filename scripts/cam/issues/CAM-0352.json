@@ -1,10 +1,41 @@
 {
   "id": "CAM-352",
   "title": "CAM-54 slice-4: fail-closed codex auth preflight + retire stale guard notice (enable live codex dispatch)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-19T12:00:26.711Z",
-  "updatedAt": "2026-07-19T12:00:26.711Z",
-  "description": "Slice-4 of the Codex-backend epic (CAM-54). Slice-3 shipped the CodexAdapter argv; live grounding (codex 0.144.6, ChatGPT-login auth) confirmed the argv works: `-c model_instructions_file` is honored and codex echoes the literal sentinel line to the pane (so the uniform backend-agnostic completion contract holds for codex). This slice makes a real codex dispatch fail EARLY and ACTIONABLY instead of drowning in 401/400 noise, and retires the now-false guard.\n\nScope: (1) Replace the informational-only codex guard in emitSpawnResolution (src/logging/spawn-resolution.ts, CODEX_GUARD_NOTICE = 'codex backend not yet wired (CAM-54)') with a FAIL-CLOSED codex auth preflight: before any codex dispatch (all 5 emitSpawnResolution sites), verify codex is authenticated and ABORT the dispatch with an actionable message (name `codex login`) when it is not. (2) Retire the stale 'not yet wired (CAM-54)' text entirely. (3) Keep the claude backend path byte-identical (no preflight overhead when backend=claude).\n\nOut of scope (deferred to slice-5): per-backend model-id decoupling (the model config currently shares claude names across backends). A LIGHT fail-closed check that rejects obviously-claude model aliases (opus/sonnet/haiku) when backend=codex MAY be folded in as it prevents the exact 400 observed live, but the positive codex-model-id matrix is slice-5.\n\nLive end-to-end validation (dispatch a real codex reviewer, confirm <review>...</review> + review-report.json fire and the loop terminates CLEAN) is an OPERATOR CEREMONY run post-merge against the coherent rebuilt binary, not an autonomous PRD story (the planner does not emit operator stories)."
+  "updatedAt": "2026-07-19T12:01:01.017Z",
+  "description": "Slice-4 of the Codex-backend epic (CAM-54). Slice-3 shipped the CodexAdapter argv; live grounding (codex 0.144.6, ChatGPT-login auth) confirmed the argv works: `-c model_instructions_file` is honored and codex echoes the literal sentinel line to the pane (so the uniform backend-agnostic completion contract holds for codex). This slice makes a real codex dispatch fail EARLY and ACTIONABLY instead of drowning in 401/400 noise, and retires the now-false guard.\n\nScope: (1) Replace the informational-only codex guard in emitSpawnResolution (src/logging/spawn-resolution.ts, CODEX_GUARD_NOTICE = 'codex backend not yet wired (CAM-54)') with a FAIL-CLOSED codex auth preflight: before any codex dispatch (all 5 emitSpawnResolution sites), verify codex is authenticated and ABORT the dispatch with an actionable message (name `codex login`) when it is not. (2) Retire the stale 'not yet wired (CAM-54)' text entirely. (3) Keep the claude backend path byte-identical (no preflight overhead when backend=claude).\n\nOut of scope (deferred to slice-5): per-backend model-id decoupling (the model config currently shares claude names across backends). A LIGHT fail-closed check that rejects obviously-claude model aliases (opus/sonnet/haiku) when backend=codex MAY be folded in as it prevents the exact 400 observed live, but the positive codex-model-id matrix is slice-5.\n\nLive end-to-end validation (dispatch a real codex reviewer, confirm <review>...</review> + review-report.json fire and the loop terminates CLEAN) is an OPERATOR CEREMONY run post-merge against the coherent rebuilt binary, not an autonomous PRD story (the planner does not emit operator stories).",
+  "spec": {
+    "scope": "Make a live codex-backend dispatch fail early and actionably by replacing the informational-only codex guard in emitSpawnResolution (src/logging/spawn-resolution.ts) with a FAIL-CLOSED codex auth preflight, and retiring the stale 'codex backend not yet wired (CAM-54)' notice. The preflight runs on every codex dispatch (all emitSpawnResolution call sites: run.ts, loop.ts, review.ts, plan-runner.ts x2) BEFORE the respawn-pane tmux call: when backend=codex and codex is not authenticated, abort the dispatch with an actionable error naming `codex login`. The claude backend path stays byte-identical (no preflight work when backend=claude). Slice-3 already proved the codex argv works live (model_instructions_file honored, pane sentinel echoed), so no adapter/argv or completion-contract read-path changes are in scope here. Per-backend model-id decoupling is explicitly out of scope (slice-5); a light fail-closed rejection of obviously-claude model aliases (opus/sonnet/haiku) when backend=codex may be folded in since it prevents the exact 400 observed live, but the positive codex-model-id matrix is slice-5. The live end-to-end reviewer dispatch validation is an operator ceremony run post-merge, not an autonomous story.",
+    "acceptanceCriteria": [
+      "When backend=codex and the injected auth-check reports unauthenticated, the dispatch aborts BEFORE respawn-pane with an actionable error message that names `codex login`; covered by a test driving an injected/DI auth-check returning unauthenticated (no real codex subprocess).",
+      "When backend=codex and the injected auth-check reports authenticated, the dispatch proceeds unchanged (no abort, no residual notice); covered by a test with the auth-check returning OK.",
+      "The literal string 'codex backend not yet wired (CAM-54)' no longer appears in any source or dispatch path; grep-level assertion or removal is verifiable.",
+      "When backend=claude, no codex preflight runs and the dispatch path is unchanged; covered by a test asserting the claude path emits no codex preflight side effects.",
+      "The codex auth preflight is injectable (auth-check is a function parameter / DI seam) so tests never shell out to the real `codex` binary.",
+      "Quality gates green: bun run typecheck, bun test, bun run check:all."
+    ],
+    "gotchas": [
+      "`codex login status` prints 'Logged in using ChatGPT' even when the OAuth token is EXPIRED (it checks auth.json presence, not validity) - observed live. A naive login-status check catches the never-logged-in case but NOT expiry. Decide the preflight's robustness deliberately: login-status is a weak-but-cheap check; parsing auth.json token expiry is stronger; a real API call is authoritative but slow/costly per dispatch. Document the chosen check's limitation; do not claim it catches expiry if it does not.",
+      "emitSpawnResolution is invoked at 5 dispatch sites; the preflight must gate ALL codex dispatches consistently - centralize the check (in the emitter or a shared preflight fn) rather than duplicating at each site.",
+      "Today's guard is informational and NEVER aborts (emitSpawnResolution always returns normally). The new behavior is a real fail-closed abort/halt for the codex-unauthenticated case - a semantic change from notice to gate; make sure callers actually stop dispatching on failure.",
+      "Live-verified account facts (do not hardcode): valid codex model slugs on this ChatGPT account are gpt-5.5 / gpt-5.6-sol / gpt-5.4; the CLI default gpt-5.3-codex and all gpt-5*-codex names are REJECTED (400) on ChatGPT auth; claude aliases opus/sonnet/haiku are rejected too. This informs the optional claude-alias guard but the positive model matrix is slice-5.",
+      "Codex auth here is ChatGPT-login via ~/.codex/auth.json, NOT env vars (OPENAI_API_KEY/CODEX_API_KEY/CODEX_ACCESS_TOKEN are all unset yet codex works) - the preflight must not assume env-var auth.",
+      "Write any stdin/temp payloads to /tmp, never under .claude/ (an untracked temp under .claude/ trips the plan preflight clean-tree guard)."
+    ],
+    "domainTerms": [
+      "codex backend: the OpenAI Codex CLI used as an alternative worker LLM backend behind the BackendAdapter seam (CodexAdapter), selected per-phase via readPhaseBackend.",
+      "spawn-resolution guard: the emitSpawnResolution side-effect (src/logging/spawn-resolution.ts) run immediately before each respawn-pane dispatch; currently emits an informational codex notice, becomes the fail-closed codex auth preflight point.",
+      "codex auth preflight: a fail-closed check that codex is authenticated before a codex-backed worker is dispatched, aborting with an actionable message when it is not."
+    ]
+  },
+  "wsjf": {
+    "value": 6,
+    "timeCriticality": 5,
+    "riskReduction": 7,
+    "jobSize": 3
+  },
+  "type": "feat"
 }
