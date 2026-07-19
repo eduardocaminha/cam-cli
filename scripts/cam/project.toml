@@ -3,13 +3,14 @@ issue_system = "local"
 
 [backend]
 name = "claude"
+reviewer = "codex"
 
 [models]
 auditor = "opus"
 implementer = "sonnet"
 orchestrator = "opus"
 planner = "opus"
-reviewer = "opus"
+reviewer = "gpt-5.5"
 ship = "sonnet"
 
 [ship]
