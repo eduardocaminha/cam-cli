@@ -69,7 +69,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Files: src/supervisor/codex-auth.ts (export isClaudeAliasModel, lines 79-82: the CLAUDE_ALIAS_MODEL_RE guard), test/config/models.test.ts (drift guard, lines 667-684). Do NOT add a positive codex-slug allowlist: OpenAI slugs are account-specific and drift (gpt-5.5/gpt-5.6-sol valid, all *-codex rejected on this login), so assert NOT isClaudeAliasModel for codex phases (FORK B resolved in the issue gotchas). The drift guard reads readPhaseModel(phase, repoConfigPath); to be tolerant it must branch on readPhaseBackend(phase, repoConfigPath). Committed config stays all-claude so every phase still takes the claude branch today. Do not change DEFAULTS."
     },
