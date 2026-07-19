@@ -24,8 +24,13 @@
 // / review.ts (those three import FROM here instead) so the dependency graph
 // stays a one-way fan-out with no import cycle.
 
+import { randomUUID } from 'node:crypto';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { DEFAULTS } from '../config/models.ts';
 import type { WorkerIsolation } from '../config/models.ts';
+import { stripFrontmatter } from '../templates/frontmatter.ts';
 
 /** The four worker actors in scope for the seam (ADR-0046/0047). */
 export type WorkerActor = 'implementer' | 'planner' | 'auditor' | 'reviewer';
@@ -289,4 +294,182 @@ export class ClaudeAdapter implements BackendAdapter {
 			}
 		}
 	}
+}
+
+// ---------------------------------------------------------------------------
+// CodexAdapter (US-001, CAM-350, ADR-0047 follow-up implementation).
+// ---------------------------------------------------------------------------
+
+/**
+ * Env vars stripped from every codex worker, mirroring WORKER_ENV_UNSET's
+ * role but for codex's own process model. Empty today: codex has no
+ * documented nesting/identity-leak env var equivalent to claude's
+ * `CLAUDECODE` gate (ADR-0047: "codex's adapter renders an independent
+ * env-strip list; it does not attempt to reuse claude's literal var names").
+ * Kept as a named list (not inlined) so a future codex-specific var can be
+ * added here without touching buildSpawnArgv.
+ */
+export const CODEX_WORKER_ENV_UNSET: readonly string[] = [];
+
+/**
+ * Env vars stripped ONLY from host-isolation codex workers, mirroring
+ * HOST_ONLY_ENV_UNSET's role. Empty today (host isolation, for codex, has no
+ * known credential-leak equivalent to CLAUDE_CODE_OAUTH_TOKEN); kept as its
+ * own list for the same reason as CODEX_WORKER_ENV_UNSET above.
+ */
+export const CODEX_HOST_ONLY_ENV_UNSET: readonly string[] = [];
+
+/**
+ * Render the codex-specific `env -u ...` prefix (trailing space), or the
+ * empty string when the resolved unset list is empty (today, always). Mirrors
+ * workerEnvPrefix's isolation-conditional shape (ADR-0047 mismatch e) without
+ * sharing its var list: `CODEX_WORKER_ENV_UNSET` deliberately never includes
+ * `CLAUDECODE`, since claude's nesting guard has no codex analog.
+ */
+export function codexEnvPrefix(isolation: WorkerIsolation): string {
+	const vars = isolation === 'host' ? [...CODEX_WORKER_ENV_UNSET, ...CODEX_HOST_ONLY_ENV_UNSET] : CODEX_WORKER_ENV_UNSET;
+	if (vars.length === 0) return '';
+	return `env ${vars.map((v) => `-u ${v}`).join(' ')} `;
+}
+
+/**
+ * Render codex's sandbox + approval flags from the same `permissionMode`
+ * input claude's adapter reads (ADR-0047 mismatch e: METHOD-shaped behavior
+ * inside buildSpawnArgv, not a caller-visible method). `--sandbox` and
+ * `--ask-for-approval` are mutually exclusive with
+ * `--dangerously-bypass-approvals-and-sandbox` per the codex CLI reference,
+ * so exactly one branch is ever emitted:
+ *
+ * - `permissionMode === 'bypassPermissions'` (claude's full-trust mode, the
+ *   only permissionMode value any current call site actually passes) maps to
+ *   `--dangerously-bypass-approvals-and-sandbox`: codex's own full-trust
+ *   equivalent, matching claude's semantics one-for-one.
+ * - Any other permissionMode maps to `--sandbox workspace-write
+ *   --ask-for-approval never`: non-interactive (a spawned worker pane has no
+ *   human to approve a prompt) but confined to the workspace, the closest
+ *   codex sandbox mode to claude's non-bypass permission modes.
+ */
+function codexSandboxArgs(permissionMode: string): string {
+	if (permissionMode === 'bypassPermissions') {
+		return '--dangerously-bypass-approvals-and-sandbox';
+	}
+	return '--sandbox workspace-write --ask-for-approval never';
+}
+
+/**
+ * Reads `.claude/agents/<agentName>.md`, strips its YAML frontmatter
+ * (codex has no `--agent` analog, ADR-0047 mismatch d: the agent body itself
+ * becomes the codex system/developer prompt), and writes the body to a fresh
+ * file under `/tmp` (never under `.claude/`, so the plan preflight clean-tree
+ * guard, ADR-0014, never sees it). Returns the tmpfile's absolute path, to be
+ * passed as `-c model_instructions_file=<path>`.
+ *
+ * Synchronous node:fs read/write is a deliberate point-read/write (curated
+ * invariant: Bun-only rule carves out readFileSync/writeFileSync for this).
+ */
+function writeCodexInstructionsFile(agentName: string): string {
+	const agentPath = join('.claude', 'agents', `${agentName}.md`);
+	const raw = readFileSync(agentPath, 'utf8');
+	const body = stripFrontmatter(raw);
+	const tmpPath = join('/tmp', `cam-codex-${agentName}-${randomUUID()}.md`);
+	writeFileSync(tmpPath, body, 'utf8');
+	return tmpPath;
+}
+
+/**
+ * CodexAdapter: the codex-CLI implementation of BackendAdapter (US-001,
+ * CAM-350). Renders `codex exec` argv for the same four worker actors
+ * ClaudeAdapter serves, per ADR-0047's mismatch resolutions:
+ *
+ * - (a) spawn-argv/seam: same one-method shape as ClaudeAdapter.
+ * - (d) agent-prompt injection: `.claude/agents/<name>.md` body (frontmatter
+ *   stripped) written to a `/tmp` file and passed via
+ *   `-c model_instructions_file=<tmpfile>` (codex has no `--agent` flag).
+ * - (e) permission/sandbox+env: codex's own sandbox/approval flags
+ *   (codexSandboxArgs) and env-strip list (codexEnvPrefix), derived from the
+ *   same permissionMode/isolation inputs claude's adapter reads, never
+ *   claude's literal flag/var names.
+ * - (f) model-id namespace: `opts.model` is threaded through opaquely as
+ *   `-m <model>`, exactly like ClaudeAdapter's `--model`.
+ *
+ * Deliberately emits NO `--session-id` flag: `opts.uuid` is accepted (part of
+ * the shared SpawnArgvOptions contract) but never threaded into codex argv --
+ * codex has no claude-style resumable session-id concept in this slice, and
+ * completion detection stays the existing report/sentinel shared contract
+ * (ADR-0047), unaffected by this. `opts.taskPrompt` and `opts.permissionMode`
+ * are required for implementer/planner/auditor and defaulted for reviewer,
+ * mirroring ClaudeAdapter exactly (requireForNonReviewerActor is shared).
+ */
+export class CodexAdapter implements BackendAdapter {
+	buildSpawnArgv(actor: WorkerActor, opts: SpawnArgvOptions): string {
+		switch (actor) {
+			case 'implementer': {
+				const required = requireForNonReviewerActor('implementer', opts);
+				const agentName = opts.agentName ?? DEFAULT_IMPLEMENTER_AGENT;
+				const model = opts.model ?? DEFAULTS.implementer;
+				const isolation = opts.isolation ?? 'host';
+				return this.renderActor(agentName, model, required.taskPrompt, required.permissionMode, isolation);
+			}
+			case 'planner': {
+				const required = requireForNonReviewerActor('planner', opts);
+				const agentName = opts.agentName ?? DEFAULT_PLANNER_AGENT;
+				const model = opts.model ?? DEFAULTS.planner;
+				const isolation = opts.isolation ?? 'host';
+				return this.renderActor(agentName, model, required.taskPrompt, required.permissionMode, isolation);
+			}
+			case 'auditor': {
+				const required = requireForNonReviewerActor('auditor', opts);
+				const agentName = opts.agentName ?? DEFAULT_AUDITOR_AGENT;
+				const model = opts.model ?? DEFAULTS.auditor;
+				const isolation = opts.isolation ?? 'host';
+				return this.renderActor(agentName, model, required.taskPrompt, required.permissionMode, isolation);
+			}
+			case 'reviewer': {
+				const agentName = opts.agentName ?? DEFAULT_REVIEWER_AGENT;
+				const model = opts.model ?? DEFAULTS.reviewer;
+				const isolation = opts.isolation ?? 'host';
+				const taskPrompt = opts.taskPrompt ?? REVIEWER_TASK_PROMPT;
+				const permissionMode = opts.permissionMode ?? 'bypassPermissions';
+				return this.renderActor(agentName, model, taskPrompt, permissionMode, isolation);
+			}
+		}
+	}
+
+	/** Shared per-actor argv assembly: only the defaults differ per actor. */
+	private renderActor(
+		agentName: string,
+		model: string,
+		taskPrompt: string,
+		permissionMode: string,
+		isolation: WorkerIsolation,
+	): string {
+		const instructionsFile = writeCodexInstructionsFile(agentName);
+		const escapedPrompt = shellEscape(taskPrompt);
+		return (
+			codexEnvPrefix(isolation) +
+			`codex exec` +
+			` ${codexSandboxArgs(permissionMode)}` +
+			` -m ${shellEscape(model)}` +
+			` -c model_instructions_file=${instructionsFile}` +
+			` ${escapedPrompt}`
+		);
+	}
+}
+
+// ---------------------------------------------------------------------------
+// selectAdapter (US-002, CAM-350, ADR-0047 follow-up).
+// ---------------------------------------------------------------------------
+
+/**
+ * Map a resolved `readPhaseBackend(phase)` value to a concrete BackendAdapter.
+ * This is the single choice-point that wires the previously-inert per-phase
+ * backend resolution (US-001, CAM-349) into actual adapter dispatch: 'codex'
+ * returns CodexAdapter, everything else (including 'claude' and any
+ * unknown/future value) returns ClaudeAdapter. Defaulting unknown values to
+ * ClaudeAdapter keeps every existing project.toml (no `[backend]` section, or
+ * one with a typo'd/legacy value) behaving exactly as before this story.
+ */
+export function selectAdapter(backend: string): BackendAdapter {
+	if (backend === 'codex') return new CodexAdapter();
+	return new ClaudeAdapter();
 }

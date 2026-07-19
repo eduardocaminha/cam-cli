@@ -6,6 +6,14 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.213.0] - 2026-07-19
+
+### Added
+
+- US-003 - Graceful token-ceiling degradation for the codex backend
+- US-002 - Add selectAdapter(backend) factory and wire the four dispatch call sites
+- US-001 - Implement CodexAdapter.buildSpawnArgv for all four worker actors
+
 ## [0.212.0] - 2026-07-18
 
 ### Added

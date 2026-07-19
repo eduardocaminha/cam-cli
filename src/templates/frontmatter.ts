@@ -89,3 +89,21 @@ export function rewriteFrontmatterEffort(content: string, newEffort: string): st
 	// otherwise reinterpret as special patterns if passed as the 2nd arg string.
 	return content.replace(/^---\r?\n[\s\S]*?\r?\n---/, () => updatedFence);
 }
+
+/**
+ * Strips a leading YAML frontmatter fence (`---\n...\n---`), returning only
+ * the document body. Used by CodexAdapter (US-001, CAM-350) to turn a
+ * `.claude/agents/<name>.md` file into a codex `model_instructions_file`
+ * payload: codex has no `--agent` analog (ADR-0047 mismatch d), so the agent
+ * body itself is handed to codex as raw instructions text, with the
+ * claude-specific frontmatter (name/description/tools/effort/color) stripped.
+ *
+ * Uses the same scoped fence regex as rewriteFrontmatterEffort: does NOT
+ * parse YAML (js-yaml ESM-only v5 incompatibility, patterns.md: CAM-69 rule).
+ * If the content has no frontmatter fence at all, it is returned unchanged.
+ */
+export function stripFrontmatter(content: string): string {
+	const fenceMatch = content.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
+	if (!fenceMatch) return content;
+	return content.slice(fenceMatch[0].length);
+}

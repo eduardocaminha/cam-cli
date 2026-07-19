@@ -40,7 +40,7 @@ import type { PlanApproval, WorkerIsolation } from '../config/models.ts';
 import type { LoopPhase, PrdShape } from '../commands/status.ts';
 import type { PreflightResult } from './preflight-container.ts';
 import { truncatePreflightDetail, type PlanPreflightFailedWriterParams } from './plan-preflight-marker.ts';
-import { buildPlannerWorkerArgv, buildAuditorWorkerArgv } from './plan-argv.ts';
+import { selectAdapter } from './backend-adapter.ts';
 import { readPhaseModel, readPhaseBackend } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 import { decidePostAuditAction } from '../plan/plan-approval-decision.ts';
@@ -594,7 +594,10 @@ function resolveAndSpawnPlanner(
 	const model = readPhaseModel('planner');
 	const backend = readPhaseBackend('planner');
 	emitSpawnResolution({ phase: 'planner', model, backend, writeEvent: makeEventWriter(logEvent, uuid) });
-	const shell = buildPlannerWorkerArgv({ uuid, taskPrompt, permissionMode, model, isolation: workerIsolation });
+	// US-002 (CAM-350): route through selectAdapter(backend) so a per-phase
+	// 'codex' backend actually reaches spawn instead of always hardcoding
+	// ClaudeAdapter.
+	const shell = selectAdapter(backend).buildSpawnArgv('planner', { uuid, taskPrompt, permissionMode, model, isolation: workerIsolation });
 	// US-006 / CAM-152: wrap via dockerExecWrap in container mode.
 	const dispatchCmd = workerIsolation === 'container' ? dockerExecWrap(shell) : shell;
 	spawnFn('tmux', ['-L', 'cam', 'set-option', '-p', '-t', plannerPaneId, '@cam_label', 'planner']);
@@ -631,7 +634,10 @@ function resolveAndSpawnAuditor(
 	const model = readPhaseModel('auditor');
 	const backend = readPhaseBackend('auditor');
 	emitSpawnResolution({ phase: 'auditor', model, backend, writeEvent: makeEventWriter(logEvent, uuid) });
-	const shell = buildAuditorWorkerArgv({ uuid, taskPrompt, permissionMode, model, isolation: workerIsolation });
+	// US-002 (CAM-350): route through selectAdapter(backend) so a per-phase
+	// 'codex' backend actually reaches spawn instead of always hardcoding
+	// ClaudeAdapter.
+	const shell = selectAdapter(backend).buildSpawnArgv('auditor', { uuid, taskPrompt, permissionMode, model, isolation: workerIsolation });
 	// US-006 / CAM-152: wrap via dockerExecWrap in container mode.
 	const dispatchCmd = workerIsolation === 'container' ? dockerExecWrap(shell) : shell;
 	spawnFn('tmux', ['-L', 'cam', 'set-option', '-p', '-t', plannerPaneId, '@cam_label', 'auditor']);

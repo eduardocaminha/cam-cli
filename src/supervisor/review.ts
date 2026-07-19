@@ -34,7 +34,7 @@ import type { ReviewDispatch, ReviewDispatchResult, SpawnFn, CapturePane, ReadPr
 import type { WorkerEventLogger } from './events.ts';
 import type { ReviewReport, ReviewFinding } from './review-report.ts';
 import type { PreflightResult } from './preflight-container.ts';
-import { ClaudeAdapter, DEFAULT_REVIEWER_AGENT, REVIEWER_TASK_PROMPT } from './backend-adapter.ts';
+import { ClaudeAdapter, selectAdapter, DEFAULT_REVIEWER_AGENT, REVIEWER_TASK_PROMPT } from './backend-adapter.ts';
 import { readPhaseModel, readPhaseBackend } from '../config/models.ts';
 import type { WorkerIsolation } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
@@ -339,7 +339,10 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 
 		// Build and respawn the interactive reviewer (CAM-41: the prompt is
 		// mandatory; a promptless claude dies instantly).
-		const shellCmd = buildReviewerWorkerArgv({
+		// US-002 (CAM-350): route through selectAdapter(reviewBackend) so a
+		// per-phase 'codex' backend actually reaches spawn instead of always
+		// hardcoding ClaudeAdapter.
+		const shellCmd = selectAdapter(reviewBackend).buildSpawnArgv('reviewer', {
 			uuid,
 			agentName,
 			taskPrompt,
