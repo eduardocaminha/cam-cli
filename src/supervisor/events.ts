@@ -117,6 +117,14 @@ import handoffSchema from '../../scripts/cam/handoff.schema.json';
  *     recordId in the batch, so the failure is diagnosable from
  *     .claude/cam-worker-events.jsonl without reading transient stderr. See
  *     PatternOutcomeAppendFailedEventDetail.
+ *   - 'worker-token-ceiling-unavailable' (US-003, CAM-350): emitted once
+ *     per implementer dispatch when the resolved backend is 'codex' and a
+ *     per-worker token ceiling (maxWorkerTokens>0) is configured with a
+ *     reader wired -- the CAM-5 backstop reads a claude-shaped .jsonl
+ *     transcript via readWorkerTokens, which has no codex equivalent, so the
+ *     poll-loop check is skipped and this notice records the gap instead of
+ *     calling readWorkerTokens or silently dropping enforcement. See
+ *     WorkerTokenCeilingUnavailableEventDetail.
  */
 export type WorkerEventKind =
 	| 'worker-start'
@@ -157,7 +165,8 @@ export type WorkerEventKind =
 	| 'plan-split-advisory'
 	| 'plan-approval-branch-failed'
 	| 'abandon-checkout-main-failed'
-	| 'pattern-outcome-append-failed';
+	| 'pattern-outcome-append-failed'
+	| 'worker-token-ceiling-unavailable';
 
 /** Gate status recorded in a 'result' event. */
 export type GateStatus = 'pass' | 'fail' | 'unknown';
@@ -580,6 +589,19 @@ export interface PatternOutcomeAppendFailedEventDetail {
 	reason: 'not-found' | 'diverged' | 'detached-head' | 'missing-main';
 }
 
+/**
+ * 'worker-token-ceiling-unavailable' event detail (US-003, CAM-350): recorded
+ * once per implementer dispatch when the resolved backend is 'codex' and a
+ * per-worker token ceiling was configured (maxWorkerTokens>0, reader wired)
+ * but cannot be enforced -- see shouldApplyTokenCeiling (src/supervisor/loop.ts).
+ *   - backend: the resolved implementer backend that could not be enforced against ('codex').
+ *   - ceiling: the configured maxWorkerTokens value that is going unenforced.
+ */
+export interface WorkerTokenCeilingUnavailableEventDetail {
+	backend: string;
+	ceiling: number;
+}
+
 /** Detail payload by event kind ('worker-start'/'worker-end' carry free-form maps). */
 export type WorkerEventDetail =
 	| ResultEventDetail
@@ -608,6 +630,7 @@ export type WorkerEventDetail =
 	| PlanSplitAdvisoryEventDetail
 	| AbandonCheckoutMainFailedEventDetail
 	| PatternOutcomeAppendFailedEventDetail
+	| WorkerTokenCeilingUnavailableEventDetail
 	| Record<string, unknown>;
 
 /** A single structured worker lifecycle event. */

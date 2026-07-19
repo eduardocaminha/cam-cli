@@ -25,10 +25,10 @@
 
 import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { runSupervisor, runSidecarLoop, MAX_ITERATIONS, MAX_NO_PROGRESS_RETRIES, NO_PROGRESS_BACKOFF_MS, MAX_BACKOFF_MS, JITTER_FRACTION, MAX_DEAD_WORKER_RETRIES, MAX_REVIEW_DISPATCH_ATTEMPTS, DEFAULT_PER_WORKER_TIMEOUT_MS, DEFAULT_CONTAINER_WORKER_TIMEOUT_MS, DEFAULT_POLL_INTERVAL_MS, computeBackoffMs } from '../../src/supervisor/loop.ts';
+import { runSupervisor, runSidecarLoop, MAX_ITERATIONS, MAX_NO_PROGRESS_RETRIES, NO_PROGRESS_BACKOFF_MS, MAX_BACKOFF_MS, JITTER_FRACTION, MAX_DEAD_WORKER_RETRIES, MAX_REVIEW_DISPATCH_ATTEMPTS, DEFAULT_PER_WORKER_TIMEOUT_MS, DEFAULT_CONTAINER_WORKER_TIMEOUT_MS, DEFAULT_POLL_INTERVAL_MS, computeBackoffMs, shouldApplyTokenCeiling } from '../../src/supervisor/loop.ts';
 import type {
 	RunSupervisorOptions,
 	RunSidecarLoopOptions,
@@ -512,6 +512,69 @@ describe('runSupervisor', () => {
 		// loop must not consult it when the ceiling is disabled: a 999999 spend with
 		// a 0 ceiling never kills. The run completes normally.
 		expect(result.lastOutcome?.detail ?? '').not.toContain('worker-token-ceiling');
+	});
+
+	test('worker token ceiling on a codex implementer backend: skips the backstop, logs a notice, never crashes, still completes (US-003, CAM-350)', async () => {
+		// Resolve the implementer backend to 'codex' via a real project.toml in a
+		// temp cwd (readPhaseBackend is not injectable through RunSupervisorOptions;
+		// it always reads scripts/cam/project.toml relative to process.cwd()). The
+		// CodexAdapter's buildSpawnArgv also reads .claude/agents/subagent-implementer.md
+		// relative to cwd (mirrors run.test.ts's makeTmpProject stub precedent), so
+		// stage a stub agent file alongside the project.toml fixture.
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-codex-ceiling-'));
+		const camDir = join(tmpDir, 'scripts', 'cam');
+		mkdirSync(camDir, { recursive: true });
+		writeFileSync(join(camDir, 'project.toml'), '[backend]\nimplementer = "codex"\n');
+		const agentsDir = join(tmpDir, '.claude', 'agents');
+		mkdirSync(agentsDir, { recursive: true });
+		writeFileSync(join(agentsDir, 'subagent-implementer.md'), '# stub\n');
+		const prevCwd = process.cwd();
+		process.chdir(tmpDir);
+		try {
+			const prd_impl = makePrd({ stories: [{ id: 'US-001', priority: 1, passes: false }] });
+			const prd_done = makePrd({
+				stories: [{ id: 'US-001', priority: 1, passes: true }],
+				review: { roundsCompleted: 0, lastVerdict: null },
+			});
+			const prd_clean = makePrd({
+				stories: [{ id: 'US-001', priority: 1, passes: true }],
+				review: { roundsCompleted: 1, lastVerdict: 'CLEAN' },
+			});
+			// reads: iter1 top, iter1 outcome (US-001 now true -> pass), iter2 top (review),
+			// review re-read, iter3 top (complete).
+			const prds: PrdSnapshot[] = [prd_impl, prd_done, prd_done, prd_done, prd_clean];
+			let prdCall = 0;
+			const { logger, events } = makeInMemoryEventLogger();
+			const opts = makeBaseOpts({
+				readPrd: () => prds[prdCall++] ?? prd_clean,
+				readHandoff: () => makeHandoff('US-001'),
+				capturePane: (_paneId) => donePane('US-001'),
+				maxWorkerTokens: 100_000, // configured, but unenforceable against a codex worker
+				readWorkerTokens: (_uuid) => ({
+					inputTokens: 999_999,
+					outputTokens: 0,
+					cacheReadTokens: 0,
+					cacheCreationTokens: 0,
+				}),
+				logEvent: logger,
+			});
+
+			// AC3: never throws. An unhandled rejection/throw here fails the test.
+			const result = await runSupervisor(opts);
+
+			expect(result.status).toBe('complete');
+			// AC1/AC3: a one-time notice was logged instead of silently dropping the gap.
+			const unavailableEvents = events.filter((e) => e.kind === 'worker-token-ceiling-unavailable');
+			expect(unavailableEvents).toHaveLength(1);
+			expect(unavailableEvents[0]?.detail).toMatchObject({ backend: 'codex', ceiling: 100_000 });
+			// AC1: the codex worker was never killed by the claude-shaped backstop,
+			// even though readWorkerTokens reports a spend far past the ceiling.
+			const ceilingEvents = events.filter((e) => e.kind === 'worker-token-ceiling');
+			expect(ceilingEvents).toHaveLength(0);
+		} finally {
+			process.chdir(prevCwd);
+			rmSync(tmpDir, { recursive: true, force: true });
+		}
 	});
 
 	test('max-iterations cap with PRD_COMPLETE cycling', async () => {
@@ -4086,6 +4149,36 @@ describe('computeBackoffMs', () => {
 	test('streak=3 is bounded by max at default constants', () => {
 		// 60_000 * 2^2 = 240_000 < 300_000 (not capped yet at streak=3 with r=0.5)
 		expect(computeBackoffMs(3, { base: BASE, max: MAX, jitterFraction: JF, random: () => 0.5 })).toBe(240_000);
+	});
+});
+
+describe('shouldApplyTokenCeiling (US-003, CAM-350)', () => {
+	test("'claude' backend with a positive ceiling and a wired reader -> apply (AC2: unchanged)", () => {
+		expect(shouldApplyTokenCeiling('claude', 100_000, true)).toBe(true);
+	});
+
+	test("'codex' backend with a positive ceiling and a wired reader -> skip (AC1)", () => {
+		expect(shouldApplyTokenCeiling('codex', 100_000, true)).toBe(false);
+	});
+
+	test('an unrecognized/future backend string still applies (back-compat: only codex is excluded)', () => {
+		expect(shouldApplyTokenCeiling('some-future-backend', 100_000, true)).toBe(true);
+	});
+
+	test('maxWorkerTokens=0 disables regardless of backend (claude)', () => {
+		expect(shouldApplyTokenCeiling('claude', 0, true)).toBe(false);
+	});
+
+	test('maxWorkerTokens=0 disables regardless of backend (codex)', () => {
+		expect(shouldApplyTokenCeiling('codex', 0, true)).toBe(false);
+	});
+
+	test('no reader wired disables regardless of backend (claude)', () => {
+		expect(shouldApplyTokenCeiling('claude', 100_000, false)).toBe(false);
+	});
+
+	test('no reader wired disables regardless of backend (codex)', () => {
+		expect(shouldApplyTokenCeiling('codex', 100_000, false)).toBe(false);
 	});
 });
 

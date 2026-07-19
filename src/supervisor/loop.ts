@@ -649,6 +649,29 @@ export function computeBackoffMs(
 }
 
 /**
+ * Pure helper (US-003, CAM-350): decide whether the CAM-5 per-worker token
+ * ceiling backstop should be applied for this poll tick. The backstop reads
+ * a claude-shaped `.jsonl` transcript via `readWorkerTokens`; a codex worker
+ * has no such transcript, so applying it would either throw or silently
+ * never fire. Gate the whole check on the resolved implementer backend being
+ * 'claude' (or any non-'codex' value, preserving back-compat with unknown/
+ * future backend strings that still spawn a claude-shaped worker), in
+ * addition to the existing maxWorkerTokens>0 && reader-wired conditions.
+ *
+ * @param backend         The resolved implementer backend (readPhaseBackend('implementer')).
+ * @param maxWorkerTokens The configured ceiling; 0 disables the backstop entirely.
+ * @param hasReader       Whether a readWorkerTokens function is wired.
+ * @returns               true when the poll loop should consult readWorkerTokens.
+ */
+export function shouldApplyTokenCeiling(
+	backend: string,
+	maxWorkerTokens: number,
+	hasReader: boolean,
+): boolean {
+	return backend !== 'codex' && maxWorkerTokens > 0 && hasReader;
+}
+
+/**
  * Max consecutive dead-pane / timeout outcomes before the loop blocks (CAM-44).
  * A worker that dies pre-result (pane-died) or never emits a sentinel (timeout)
  * leaves the story still passes:false, so decideNextAction re-dispatches it. When
@@ -1163,6 +1186,23 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			const startMs = now();
 			let pollOutcome: 'sentinel' | 'pane-died' | 'timeout' | 'token-ceiling' = 'timeout';
 			let tokenSpendAtBreach = 0;
+			const applyTokenCeiling = shouldApplyTokenCeiling(
+				implBackend,
+				maxWorkerTokens,
+				readWorkerTokens !== undefined,
+			);
+
+			// US-003 (CAM-350): a codex worker has no claude-shaped .jsonl transcript
+			// for readWorkerTokens to parse, so the CAM-5 backstop is unusable for it.
+			// When a ceiling would otherwise have been enforced (maxWorkerTokens>0 and
+			// a reader is wired), emit a one-time notice instead of silently dropping
+			// the enforcement gap or attempting to read a transcript that cannot exist.
+			if (!applyTokenCeiling && implBackend === 'codex' && maxWorkerTokens > 0 && readWorkerTokens) {
+				emit('worker-token-ceiling-unavailable', advisoryStoryId, uuid, {
+					backend: implBackend,
+					ceiling: maxWorkerTokens,
+				});
+			}
 
 			while (true) {
 				sleepFn(pollIntervalMs);
@@ -1216,8 +1256,9 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				}
 				// CAM-5: opt-in per-worker token ceiling. Spend = input + cacheCreation
 				// + cacheRead (same as computeOrchBudget). Disabled when maxWorkerTokens
-				// is 0 or no token reader is wired.
-				if (maxWorkerTokens > 0 && readWorkerTokens) {
+				// is 0, no token reader is wired, or (US-003, CAM-350) the resolved
+				// backend is 'codex' -- see shouldApplyTokenCeiling above.
+				if (applyTokenCeiling && readWorkerTokens) {
 					const tk = readWorkerTokens(uuid);
 					if (tk) {
 						const spend = tk.inputTokens + tk.cacheCreationTokens + tk.cacheReadTokens;
