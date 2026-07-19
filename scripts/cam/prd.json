@@ -71,7 +71,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Depends on US-002. Edit src/supervisor/loop.ts token-ceiling block (~line 1216-1256): gate the `maxWorkerTokens > 0 && readWorkerTokens` backstop on the resolved implBackend being 'claude' (implBackend is already read at ~line 1014). For 'codex', emit a one-time token-ceiling-unavailable notice (reuse the existing event emitter `emit(...)` / logging path used around worker-token-ceiling) and skip the poll-loop token check. To keep this unit-testable, extract a tiny pure predicate (e.g. shouldApplyTokenCeiling(backend, maxWorkerTokens, hasReader): boolean) and unit-test it directly, then call it in loop.ts. ADR-0047 Consequences explicitly leaves the token-ceiling backstop as an open risk to resolve here via graceful degradation (a real codex usage parser is a separate future slice, F3). Do not attempt to parse codex usage."
     }
