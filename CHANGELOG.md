@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.217.0] - 2026-07-19
+
+### Added
+
+- US-001 - Thread backend into the readPhaseModel drift-guard test
+
 ## [0.216.0] - 2026-07-19
 
 ### Added
