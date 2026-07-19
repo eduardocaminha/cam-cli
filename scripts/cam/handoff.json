@@ -1,27 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Thread resolved backend into readPhaseModel at every dispatch site"
+    "id": "US-003",
+    "title": "Make the drift guard backend-conditional and config-tolerant"
   },
   "branchName": "cam/issue-356",
-  "timestamp": "2026-07-19T00:30:00Z",
+  "timestamp": "2026-07-19T01:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/review.ts",
-    "src/supervisor/loop.ts",
-    "src/supervisor/plan-runner.ts",
-    "src/commands/run.ts",
-    "src/commands/config.ts",
-    "scripts/file-size-budget.json"
+    "src/supervisor/codex-auth.ts",
+    "test/config/models.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "All 6 named dispatch sites now thread the already-resolved backend local into readPhaseModel(phase, configPath?, backend): review.ts (reviewBackend), loop.ts (implBackend), plan-runner.ts's resolveAndSpawnPlanner/resolveAndSpawnAuditor (backend), commands/config.ts's printConfigShow (per-phase backend inside the ORDERED_PHASES.map), and commands/run.ts's orchestrator site (orchBackend, still resolved via the global readBackend() per the CAM-350 US-003 decision, only the ORDER changed so it feeds readPhaseModel). No new backend reads were added; each site just reordered its 2 existing resolution lines (backend first, then model) and passed the local through. scripts/cam/project.toml is untouched (all phases stay claude), confirmed via git diff --exit-code. file-size-budget.json ceilings raised for the 4 files whose comment additions pushed them over budget (run.ts, loop.ts, plan-runner.ts, review.ts), each by exactly the same +3/+4 lines the new backend-first comment blocks added; config.ts and run.ts's second edit fit under existing ceilings. This closes out the CAM-356 epic's call-site wiring (US-001 made the reader capable, US-002 wired every caller) -- a future story would only be needed if a 7th dispatch site is added later, or if the orchestrator's backend ever needs to become per-phase (currently deliberately global, CAM-350).",
+  "nextStoryContext": "isClaudeAliasModel is now exported from src/supervisor/codex-auth.ts (was module-private). The 'readPhaseModel vs repo project.toml (drift guard)' test in test/config/models.test.ts (around line 745 now) is backend-conditional: it still asserts readPhaseModel matches the configured/DEFAULTS value for every phase, but the 'known model' check now branches on readPhaseBackend(phase, repoConfigPath) -- claude-backed phases keep the MODEL_OPTIONS/DEFAULTS membership check, non-claude-backed phases only assert !isClaudeAliasModel(actual) (deliberately no positive codex-slug allowlist, since OpenAI slugs are account-specific and drift). The adjacent 'DEFAULTS vs MODEL_OPTIONS consistency' test block was untouched. scripts/cam/project.toml remains byte-unchanged (all phases still claude today, confirmed via git diff --exit-code), so the drift guard currently exercises only the claude branch in practice; the codex branch is live code but not yet hit by the repo's own config. This closes the CAM-356 epic (US-001 backend-aware readPhaseModel/readPhaseBackend, US-002 wired every dispatch site, US-003 made the drift guard tolerant of a future codex flip). A follow-up story would only be needed if project.toml is ever flipped to codex for a real phase (to confirm the non-claude branch fires as designed) or if a 7th dispatch site is added.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure internal wiring of readPhaseModel/readPhaseBackend call-site ordering; no external library API surface was exercised (Bun.TOML behavior was already validated in the US-001 handoff for this same PRD)."
+      "summary": "Pure internal test-guard + export-visibility change (isClaudeAliasModel export, drift-guard backend branching); no external library API surface was exercised."
     }
   ]
 }
