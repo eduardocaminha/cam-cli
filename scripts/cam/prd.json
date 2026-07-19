@@ -45,7 +45,7 @@
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Sites: src/supervisor/loop.ts (~line 1167, implementer, implBackend/implModel already resolved), src/supervisor/review.ts (~line 391, reviewer, reviewBackend/reviewModel already resolved), src/supervisor/plan-runner.ts (~line 596 planner and ~line 636 auditor, backend/model already resolved). Model the abort on the existing container-mode fail-closed early-returns: loop.ts returns { status: 'blocked', ... } with a named reason without dispatching (see loop.ts finishTerminal + the container-reason blocked returns ~lines 459-483, 924); review.ts returns { status: 'error', detail } (~line 381). Inject the auth-check as a DI dependency (do NOT hardcode a real codex subprocess in these fns) so unit tests can drive authenticated/unauthenticated without spawning codex. Existing test files touching these: test/supervisor/events.test.ts, test/supervisor/plan/plan-runner.test.ts. Keep emitSpawnResolution calls as-is (they are separate from the preflight). Grep patterns.md for 'container' fail-closed precedent."
     },
