@@ -6,6 +6,14 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.214.0] - 2026-07-19
+
+### Added
+
+- US-003 - Wire fail-closed preflight at the run.ts orchestrator dispatch site
+- US-002 - Wire fail-closed preflight at the 3 supervisor worker-dispatch sites
+- US-001 - Fail-closed codex auth preflight core (check + decision fn, retire stale notice)
+
 ## [0.213.0] - 2026-07-19
 
 ### Added
