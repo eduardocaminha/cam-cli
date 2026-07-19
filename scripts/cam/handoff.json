@@ -1,28 +1,27 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Implement CodexAdapter.buildSpawnArgv for all four worker actors"
+    "id": "US-002",
+    "title": "Add selectAdapter(backend) factory and wire the four dispatch call sites"
   },
   "branchName": "cam/issue-350",
   "timestamp": "2026-07-18T00:00:00Z",
-  "createdFiles": [
-    "test/supervisor/codex-adapter.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
     "src/supervisor/backend-adapter.ts",
-    "src/templates/frontmatter.ts",
-    "scripts/cam/patterns.md"
+    "src/supervisor/loop.ts",
+    "src/supervisor/review.ts",
+    "src/supervisor/plan-runner.ts",
+    "test/supervisor/backend-adapter.test.ts",
+    "scripts/cam/patterns.md",
+    "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "CodexAdapter (src/supervisor/backend-adapter.ts) now renders real `codex exec` argv for all four worker actors (implementer/planner/auditor/reviewer), per ADR-0047: sandbox/approval via codexSandboxArgs (bypassPermissions -> --dangerously-bypass-approvals-and-sandbox, else --sandbox workspace-write --ask-for-approval never), agent-prompt injection via writeCodexInstructionsFile (.claude/agents/<name>.md frontmatter-stripped body written to /tmp, passed as -c model_instructions_file=<path>), model via -m <model>, and its own (currently empty) env-unset lists (CODEX_WORKER_ENV_UNSET/CODEX_HOST_ONLY_ENV_UNSET) -- no --session-id, no CLAUDECODE strip. ClaudeAdapter is completely untouched (byte-identical, golden tests still pin its exact output). This story does NOT wire CodexAdapter into any call site: loop.ts/plan-runner.ts/review.ts still hardcode `new ClaudeAdapter()` (or the equivalent claude-only builder wrappers) regardless of readPhaseBackend(phase)'s resolved value -- that dispatch wiring (choosing ClaudeAdapter vs CodexAdapter per readPhaseBackend(phase)) is the natural next story. Also out of scope here (per ADR-0047, deferred): the claude-transcript-shaped token-ceiling backstop (readWorkerTokens) has no codex equivalent yet -- a future codex dispatch story must either add one or document graceful degradation before enabling codex for real. New src/templates/frontmatter.ts export: stripFrontmatter(content) -- reuse it rather than re-deriving a frontmatter-fence regex.",
+  "nextStoryContext": "selectAdapter(backend: string): BackendAdapter now lives in src/supervisor/backend-adapter.ts ('codex' -> CodexAdapter, everything else including unknown values -> ClaudeAdapter). All four dispatch call sites now actually route through it: loop.ts's implement branch (selectAdapter(implBackend).buildSpawnArgv('implementer', {...}), replacing the buildImplementerWorkerArgv(...) call and its now-removed import), review.ts's reviewDispatch (selectAdapter(reviewBackend).buildSpawnArgv('reviewer', {...})), and plan-runner.ts's resolveAndSpawnPlanner/resolveAndSpawnAuditor (selectAdapter(backend).buildSpawnArgv('planner'|'auditor', {...}), replacing the buildPlannerWorkerArgv/buildAuditorWorkerArgv import from plan-argv.ts). The four thin per-actor wrapper functions (buildImplementerWorkerArgv, buildReviewerWorkerArgv, buildPlannerWorkerArgv, buildAuditorWorkerArgv) are UNCHANGED and still exported (still hardcode `new ClaudeAdapter()` internally) -- they are only still consumed directly by their own dedicated golden/model test files now, no production call site imports them anymore. Back-compat is exact: readPhaseBackend defaults to 'claude' everywhere no [backend] config exists (DEFAULTS.backend = 'claude' in config/models.ts), so every existing test asserting a specific claude argv golden (loop.test.ts, review.test.ts, plan tests) passed unmodified through the new selectAdapter indirection -- this IS the AC3 byte-identical back-compat proof, reinforced by an explicit selectAdapter('claude') === new ClaudeAdapter() equality test added to backend-adapter.test.ts. Two file-size ceilings were raised (loop.ts 2419->2422, plan-runner.ts 1711->1717) in scripts/file-size-budget.json for the added selectAdapter call sites + comments; _ref updated accordingly. Remaining gap for a future story: src/commands/run.ts's orchestrator backend (orchBackend, line ~425) is still deliberately on the old readBackend() global read (documented, not this story's scope) -- and there is still no per-actor completion-detection story for codex (readWorkerTokens / worker-report sentinel parsing has no codex-shaped equivalent yet), so flipping any [backend].<phase> = \"codex\" in project.toml today will spawn codex correctly but the supervisor's own outcome-detection path is unvalidated against a real codex run.",
   "officialDocsValidated": [
     {
-      "lib": "codex-cli",
-      "channel": "WebFetch",
-      "url": "https://learn.chatgpt.com/docs/developer-commands?surface=cli",
-      "fetchedAt": "2026-07-18T00:00:00Z",
-      "status": "aligned",
-      "summary": "Confirmed codex exec flags: --sandbox/-s (read-only|workspace-write|danger-full-access), --ask-for-approval/-a (untrusted|on-request|never), --dangerously-bypass-approvals-and-sandbox/--yolo (mutually exclusive with the two above), --model/-m, and -c/--config key=value for inline overrides including model_instructions_file=<path>. Implementation matches this shape exactly."
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Pure internal wiring: selectAdapter(backend) dispatches between two already-implemented (and already docs-validated in US-001) adapters. No new external library surface touched."
     }
   ]
 }
