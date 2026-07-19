@@ -22,7 +22,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Single-file test change. Target: test/config/models.test.ts, describe block 'readPhaseModel vs repo project.toml (drift guard)' (~lines 750-773). readPhaseModel signature is (phase, configPath?, backend?) in src/config/models.ts:158 - do NOT add a param or touch any source file. Resolution order to mirror in `expected`: readNestedBackendModel returns undefined when backend omitted OR === 'claude' (falls through to flat [models].<phase> string lookup, then DEFAULTS[phase]) - see src/config/models.ts:120-177. Gotcha: threading backend into `actual` WITHOUT also making `expected` backend-aware merely relocates the latent false-redden from the isClaudeAliasModel assertion (line ~769) to the equality assertion (lines ~762-763); update both. For the committed all-claude config this is a no-op today and the suite stays green. Keep reading the real repo config, not a tmp fixture."
     }
