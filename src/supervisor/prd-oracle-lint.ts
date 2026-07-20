@@ -3,7 +3,7 @@
 // Pure PRD-oracle linter (US-001, CAM-310 PRD).
 //
 // Scans a PRD's acceptanceCriteria oracle shell strings for known-broken
-// oracle idioms, deterministically, without an LLM auditor pass. Two rules:
+// oracle idioms, deterministically, without an LLM auditor pass. Three rules:
 //   - grep-q-plus-list-files: catches the self-nullifying `grep -q` + `-L`/`-l`
 //     idiom documented empirically in patterns.md (CAM-301/CAM-309): combining
 //     the quiet flag with a list-files flag silently negates the intended
@@ -11,6 +11,10 @@
 //   - frozen-comparand: catches an oracle comparing against a literal integer
 //     read off main with no live re-derivation token, enforcing the
 //     derive-don't-freeze rule (patterns.md:903), US-001 CAM-381.
+//   - rotating-artifact-target: catches an oracle asserting against a
+//     per-story ROTATING harness state file (scripts/cam/handoff.json or the
+//     reviewer's gitignored capture-pane artifact), enforcing the
+//     never-target-a-rotating-artifact rule (patterns.md:907), US-002 CAM-381.
 //
 // Design (mirrors scripts/check-test-sleeps.ts's pure-scanner shape):
 //   - Rules are a named-rules list: array of { name, test(command): finding | null }.
@@ -185,11 +189,66 @@ const FROZEN_COMPARAND_RULE: OracleLintRule = {
 	},
 };
 
+// ---------------------------------------------------------------------------
+// rotating-artifact-target rule
+// ---------------------------------------------------------------------------
+
+/**
+ * The fixed literal list of per-story ROTATING harness state files
+ * (patterns.md:907): each is overwritten every story/review cycle, so an
+ * oracle asserting against one passes or fails by coincidence of whichever
+ * story's rotation happens to be at HEAD, not by the story under review's
+ * actual correctness. `scripts/cam/handoff.json` is overwritten by every
+ * implementer story; `scripts/cam/review-artifact.txt` is the reviewer's
+ * gitignored Layer B capture-pane exit file (patterns.md:224), consumed-once
+ * per review round. Matches the literal path substring anywhere in the
+ * command (quoted, unquoted, or embedded in a larger shell pipeline) since
+ * the target set is a fixed literal list, not a general path pattern.
+ */
+const ROTATING_ARTIFACT_TARGET_RE = /scripts\/cam\/(?:handoff\.json|review-artifact\.txt)/;
+
+/**
+ * True when `command` asserts against one of the fixed rotating-artifact
+ * targets above.
+ */
+function targetsRotatingArtifact(command: string): boolean {
+	return ROTATING_ARTIFACT_TARGET_RE.test(command);
+}
+
+/**
+ * The rotating-artifact-target rule (US-002, CAM-381): flags an oracle
+ * asserting against a per-story rotating harness state file, enforcing the
+ * never-target-a-rotating-artifact rule (patterns.md:907). A criterion
+ * needing to attest that some text was produced must point at a durable
+ * surface instead: the edited file itself, or a fact recoverable from
+ * tracked source/test files.
+ */
+const ROTATING_ARTIFACT_RULE: OracleLintRule = {
+	name: 'rotating-artifact-target',
+	test(command: string): RuleFinding | null {
+		if (!targetsRotatingArtifact(command)) return null;
+		return {
+			reason:
+				'oracle asserts against a per-story ROTATING harness state file ' +
+				'(scripts/cam/handoff.json or scripts/cam/review-artifact.txt) -- both ' +
+				'are overwritten every story/review cycle, so a criterion pointing at ' +
+				"either one passes or fails by coincidence of whichever story's " +
+				"rotation happens to be at HEAD, not by the story's actual correctness; " +
+				'point the oracle at a durable tracked source/test file instead ' +
+				'(patterns.md:907)',
+		};
+	},
+};
+
 /**
  * The named-rules list (array of { name, test(command): finding | null }).
  * Adding a future rule is a one-liner: push another OracleLintRule here.
  */
-export const RULES: OracleLintRule[] = [GREP_Q_LIST_FILES_RULE, FROZEN_COMPARAND_RULE];
+export const RULES: OracleLintRule[] = [
+	GREP_Q_LIST_FILES_RULE,
+	FROZEN_COMPARAND_RULE,
+	ROTATING_ARTIFACT_RULE,
+];
 
 // ---------------------------------------------------------------------------
 // PRD walk

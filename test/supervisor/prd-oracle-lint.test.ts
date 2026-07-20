@@ -11,6 +11,8 @@
 //   grep-q-plus-list-files rule: four passing grep/non-grep cases
 //   frozen-comparand rule: flagged forms (US-001, CAM-381)
 //   frozen-comparand rule: passing cases (US-001, CAM-381)
+//   rotating-artifact-target rule: flagged forms (US-002, CAM-381)
+//   rotating-artifact-target rule: passing cases (US-002, CAM-381)
 //   lintPrd: walks stories, carries storyId/command/ruleName/reason
 //   lintPrd: criterion with no [oracle:] suffix yields no finding
 //   lintPrd: reviewer-judgment / tmux-pty / no-oracle directives are skipped
@@ -21,6 +23,7 @@ import type { PrdShape } from '../../src/commands/status.ts';
 
 const GREP_RULE_NAME = 'grep-q-plus-list-files';
 const FROZEN_COMPARAND_RULE_NAME = 'frozen-comparand';
+const ROTATING_ARTIFACT_RULE_NAME = 'rotating-artifact-target';
 
 function findGrepRule() {
 	const rule = RULES.find((r) => r.name === GREP_RULE_NAME);
@@ -34,14 +37,24 @@ function findFrozenComparandRule() {
 	return rule;
 }
 
+function findRotatingArtifactRule() {
+	const rule = RULES.find((r) => r.name === ROTATING_ARTIFACT_RULE_NAME);
+	if (!rule) throw new Error('rotating-artifact-target rule missing from RULES');
+	return rule;
+}
+
 // ---------------------------------------------------------------------------
 // RULES: named-rules list shape
 // ---------------------------------------------------------------------------
 
 describe('RULES: named-rules list shape', () => {
-	test('is an array of exactly two rules: grep-q-plus-list-files, frozen-comparand', () => {
-		expect(RULES).toHaveLength(2);
-		expect(RULES.map((r) => r.name)).toEqual([GREP_RULE_NAME, FROZEN_COMPARAND_RULE_NAME]);
+	test('is an array of exactly three rules: grep-q-plus-list-files, frozen-comparand, rotating-artifact-target', () => {
+		expect(RULES).toHaveLength(3);
+		expect(RULES.map((r) => r.name)).toEqual([
+			GREP_RULE_NAME,
+			FROZEN_COMPARAND_RULE_NAME,
+			ROTATING_ARTIFACT_RULE_NAME,
+		]);
 		for (const rule of RULES) {
 			expect(typeof rule.test).toBe('function');
 		}
@@ -218,6 +231,87 @@ describe('frozen-comparand rule: passing cases', () => {
 		const finding = rule.test(
 			'test $(git show main:file.ts | wc -l) -eq $(wc -l < file.ts)'
 		);
+		expect(finding).toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// rotating-artifact-target rule: flagged forms (US-002, CAM-381)
+// ---------------------------------------------------------------------------
+
+describe('rotating-artifact-target rule: flagged forms', () => {
+	const rule = findRotatingArtifactRule();
+
+	test('flags a plain grep -q against scripts/cam/handoff.json', () => {
+		const finding = rule.test("grep -q 'self-nullifying-oracle' scripts/cam/handoff.json");
+		expect(finding).not.toBeNull();
+		expect(finding!.reason).toContain('ROTATING');
+	});
+
+	test('flags a file-assert negated absence check against scripts/cam/handoff.json', () => {
+		const finding = rule.test("! grep -q 'stale-token' scripts/cam/handoff.json");
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags scripts/cam/handoff.json quoted inside a larger pipeline', () => {
+		const finding = rule.test('cat "scripts/cam/handoff.json" | grep -c retryBaseMs');
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags a grep against the reviewer capture-pane artifact scripts/cam/review-artifact.txt', () => {
+		const finding = rule.test("grep -q 'CLEAN' scripts/cam/review-artifact.txt");
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags scripts/cam/review-artifact.txt embedded in a named-command test check', () => {
+		const finding = rule.test(
+			"test -f scripts/cam/review-artifact.txt && grep -q 'verdict' scripts/cam/review-artifact.txt"
+		);
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags a wc -l comparison against scripts/cam/handoff.json', () => {
+		const finding = rule.test('test $(wc -l < scripts/cam/handoff.json) -ge 1');
+		expect(finding).not.toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// rotating-artifact-target rule: passing cases (US-002, CAM-381)
+// ---------------------------------------------------------------------------
+
+describe('rotating-artifact-target rule: passing cases', () => {
+	const rule = findRotatingArtifactRule();
+
+	test('does not flag an oracle targeting a durable tracked source file', () => {
+		const finding = rule.test("grep -q 'ROTATING_ARTIFACT_RULE' src/supervisor/prd-oracle-lint.ts");
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag an oracle targeting a durable tracked test file', () => {
+		const finding = rule.test(
+			"grep -q 'rotating-artifact-target' test/supervisor/prd-oracle-lint.test.ts"
+		);
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag an oracle targeting scripts/cam/patterns.md (durable, versioned)', () => {
+		const finding = rule.test("grep -q 'never target' scripts/cam/patterns.md");
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag a command with no file reference at all', () => {
+		const finding = rule.test('bun run typecheck');
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag scripts/cam/review-report.json, the structured (non-rotating-target) sibling file', () => {
+		const finding = rule.test("grep -q 'CLEAN' scripts/cam/review-report.json");
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag the string "handoff.json" without the scripts/cam/ prefix', () => {
+		const finding = rule.test("grep -q 'handoff.json' README.md");
 		expect(finding).toBeNull();
 	});
 });
