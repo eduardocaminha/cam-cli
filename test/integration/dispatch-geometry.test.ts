@@ -1,9 +1,11 @@
 // test/integration/dispatch-geometry.test.ts
 //
 // Integration test (REAL tmux): drives `sendKeysVerified`'s cursor-geometry
-// delivery oracle (US-002, CAM-359; content backstop US-R1-001) end to end
+// delivery oracle (US-002, CAM-359; prompt-row discriminator US-001,
+// CAM-364, replacing the tail-matching backstop from US-R1-001) end to end
 // against a real tmux pane, on both the UNDELIVERED and DELIVERED
-// direction, including an exact wrap-boundary-length payload.
+// direction, including both the char-wrap and word-wrap boundary-length
+// payloads.
 //
 // Argv-shape unit tests (test/dispatch.test.ts) inject a scripted
 // `sampleGeometryFn` and structurally cannot catch a defect in the geometry
@@ -12,7 +14,10 @@
 // probe, not a unit test. See test/fixtures/dispatch-geometry/raw-echo.ts
 // for the receiver fixture and its bottom-anchored, pinned-cursor_y model
 // (corrected in the review round 1 fix, US-R1-001, from an earlier version
-// that modeled an eager downward wrap not present in a real Ink composer).
+// that modeled an eager downward wrap not present in a real Ink composer;
+// corrected AGAIN in US-002, CAM-364, for the word-wrap trailing-space
+// collision shape that a real Ink TUI actually produces, which the fixture's
+// char-wrap-only model did not reproduce).
 //
 // Isolation: tests run on a PRIVATE socket (cam-it-dispatch-geometry), never
 // on `-L cam` (which may host a live `cam run` session). The server is torn
@@ -60,7 +65,7 @@ function makeSwapSocketSpawn(sendKeysCalls: string[][]): SpawnFn {
 }
 
 /** Boot a fresh session with the raw-echo fixture as the pane's command. */
-async function bootPane(mode: 'submit' | 'drop'): Promise<void> {
+async function bootPane(mode: 'submit' | 'drop', wrapMode: 'char' | 'word' = 'char'): Promise<void> {
 	tmuxRaw(['kill-server']);
 	tmuxRaw([
 		'new-session',
@@ -71,7 +76,7 @@ async function bootPane(mode: 'submit' | 'drop'): Promise<void> {
 		String(PANE_WIDTH),
 		'-y',
 		String(PANE_HEIGHT),
-		`bun ${FIXTURE_PATH} ${mode} ${PANE_WIDTH} ${PANE_HEIGHT}`,
+		`bun ${FIXTURE_PATH} ${mode} ${PANE_WIDTH} ${PANE_HEIGHT} ${wrapMode}`,
 	]);
 	await waitForCondition(() => tmuxRaw(['has-session', '-t', SESSION]).status === 0);
 }
@@ -249,6 +254,67 @@ test.skipIf(!tmuxAvailable)(
 		expect(sendKeysCalls).toHaveLength(3);
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
+	},
+	20_000,
+);
+
+// PROMPT is 2 chars in the fixture (matching production's glyph + NBSP);
+// word-wrap row capacity there is `paneWidth - 2*PROMPT.length` (US-002,
+// CAM-364). A filler payload that exactly fills that capacity followed by
+// one trailing space reproduces the REAL wrap-boundary collision: the
+// cursor row goes BLANK (not the old char-wrap model's 2-real-character
+// remnant), landing cursor_x back at the empty-composer baseline column.
+const WORD_WRAP_COLLISION_PAYLOAD = `${'x'.repeat(PANE_WIDTH - 2 * 2)} `;
+
+test.skipIf(!tmuxAvailable)(
+	'word-wrap collision payload (trailing space at the real wrap boundary): UNDELIVERED direction correctly retries and reports push-undelivered, never misread as delivered (US-002, CAM-364)',
+	async () => {
+		await bootPane('drop', 'word');
+		const id = paneId();
+		const sendKeysCalls: string[][] = [];
+		const spawnFn = makeSwapSocketSpawn(sendKeysCalls);
+		const events: Array<{ kind: WorkerEventKind; detail: WorkerEventDetail }> = [];
+
+		sendKeysVerified({
+			paneId: id,
+			text: WORD_WRAP_COLLISION_PAYLOAD,
+			tmuxSpawnFn: spawnFn,
+			idleTimeoutMs: 100,
+			maxAttempts: 3,
+			retryBaseMs: 20,
+			retryMaxMs: 50,
+			logEvent: (kind, detail) => events.push({ kind, detail }),
+		});
+
+		expect(sendKeysCalls).toHaveLength(3);
+		expect(events).toHaveLength(1);
+		expect(events[0]?.kind).toBe('push-undelivered');
+	},
+	20_000,
+);
+
+test.skipIf(!tmuxAvailable)(
+	'word-wrap collision payload (trailing space at the real wrap boundary): DELIVERED direction still resolves in ONE send (US-002, CAM-364)',
+	async () => {
+		await bootPane('submit', 'word');
+		const id = paneId();
+		const sendKeysCalls: string[][] = [];
+		const spawnFn = makeSwapSocketSpawn(sendKeysCalls);
+		const events: Array<{ kind: WorkerEventKind; detail: WorkerEventDetail }> = [];
+
+		sendKeysVerified({
+			paneId: id,
+			text: WORD_WRAP_COLLISION_PAYLOAD,
+			tmuxSpawnFn: spawnFn,
+			idleTimeoutMs: 100,
+			maxAttempts: 3,
+			retryBaseMs: 20,
+			retryMaxMs: 50,
+			logEvent: (kind, detail) => events.push({ kind, detail }),
+		});
+
+		expect(sendKeysCalls).toHaveLength(1);
+		expect(events).toHaveLength(0);
 	},
 	20_000,
 );
