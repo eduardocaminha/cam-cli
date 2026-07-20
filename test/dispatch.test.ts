@@ -724,6 +724,7 @@ describe('sendKeysVerified', () => {
 		// both the override and the AC2 assertion below instead of two
 		// independently-typed literals that could drift apart.
 		const POLL_INTERVAL_MS = 1_000;
+		const IDLE_TIMEOUT_MS = 5_000;
 
 		try {
 			sendKeysVerified({
@@ -740,7 +741,7 @@ describe('sendKeysVerified', () => {
 					fakeNow += ms;
 				},
 				pollIntervalMs: POLL_INTERVAL_MS,
-				idleTimeoutMs: 5_000,
+				idleTimeoutMs: IDLE_TIMEOUT_MS,
 				maxAttempts: 3,
 				logEvent: (kind, detail) => events.push({ kind, detail }),
 			});
@@ -757,15 +758,23 @@ describe('sendKeysVerified', () => {
 		// no greater than the pollIntervalMs override) was non-falsifiable: a
 		// leaked computeBackoffMs value (default base 300, well under that
 		// bound) would have slipped under it undetected. With
-		// idleTimeoutMs=5_000 and pollIntervalMs=POLL_INTERVAL_MS (1_000), the
-		// idle-gate's own poll loop produces exactly 5 sleeps, each EXACTLY
-		// POLL_INTERVAL_MS (5_000 / 1_000, evenly divisible: every `remaining`
-		// value the loop observes is itself a multiple of POLL_INTERVAL_MS, so
-		// `Math.min(pollIntervalMs, remaining)` is always POLL_INTERVAL_MS,
-		// never a smaller remainder). Strict equality means any sleep of a
-		// different shape (a leaked backoff value, a truncated final poll, or
-		// any other magnitude) makes this assertion fail. The geometry sampler
-		// is never consulted for a delivery verdict on this path.
+		// idleTimeoutMs=IDLE_TIMEOUT_MS (5_000) and pollIntervalMs=POLL_INTERVAL_MS
+		// (1_000), the idle-gate's own poll loop produces exactly 5 sleeps, each
+		// EXACTLY POLL_INTERVAL_MS (5_000 / 1_000, evenly divisible: every
+		// `remaining` value the loop observes is itself a multiple of
+		// POLL_INTERVAL_MS, so `Math.min(pollIntervalMs, remaining)` is always
+		// POLL_INTERVAL_MS, never a smaller remainder). Strict equality means
+		// any sleep of a different shape (a leaked backoff value, a truncated
+		// final poll, or any other magnitude) makes this assertion fail. The
+		// count assertion below (US-R1-002, CAM-376 review round 1) closes the
+		// vacuous-empty-array gap the `.every()` call alone left open: `[].every`
+		// is trivially true, so a regression that stops the idle-gate from
+		// sleeping at all (or returns before the poll loop) would have passed
+		// silently. The comparand is derived from the same constants fed to the
+		// call above, not a frozen literal, per the derive-don't-freeze rule
+		// (US-002, CAM-377). The geometry sampler is never consulted for a
+		// delivery verdict on this path.
+		expect(recordedSleeps).toHaveLength(IDLE_TIMEOUT_MS / POLL_INTERVAL_MS);
 		expect(recordedSleeps.every((ms) => ms === POLL_INTERVAL_MS)).toBe(true);
 		expect(geometrySamplerCalls).toBe(0);
 
