@@ -3,11 +3,14 @@
 // Pure PRD-oracle linter (US-001, CAM-310 PRD).
 //
 // Scans a PRD's acceptanceCriteria oracle shell strings for known-broken
-// oracle idioms, deterministically, without an LLM auditor pass. The first
-// (and currently only) rule catches the self-nullifying `grep -q` + `-L`/`-l`
-// idiom documented empirically in patterns.md (CAM-301/CAM-309): combining
-// the quiet flag with a list-files flag silently negates the intended
-// absence/presence assertion, regardless of flag order, spacing, or bundling.
+// oracle idioms, deterministically, without an LLM auditor pass. Two rules:
+//   - grep-q-plus-list-files: catches the self-nullifying `grep -q` + `-L`/`-l`
+//     idiom documented empirically in patterns.md (CAM-301/CAM-309): combining
+//     the quiet flag with a list-files flag silently negates the intended
+//     absence/presence assertion, regardless of flag order, spacing, or bundling.
+//   - frozen-comparand: catches an oracle comparing against a literal integer
+//     read off main with no live re-derivation token, enforcing the
+//     derive-don't-freeze rule (patterns.md:903), US-001 CAM-381.
 //
 // Design (mirrors scripts/check-test-sleeps.ts's pure-scanner shape):
 //   - Rules are a named-rules list: array of { name, test(command): finding | null }.
@@ -128,11 +131,65 @@ const GREP_Q_LIST_FILES_RULE: OracleLintRule = {
 	},
 };
 
+// ---------------------------------------------------------------------------
+// frozen-comparand rule
+// ---------------------------------------------------------------------------
+
+/**
+ * Matches a shell numeric-test operator (-eq/-ge/-le) or the `==` string-test
+ * operator immediately followed by a literal integer (a frozen comparand).
+ * A `wc -l` (or any other) pipeline compared this way is caught by the same
+ * pattern: the regex targets the operator+literal pair, not the left-hand
+ * side, so it doesn't matter what produced the left-hand value.
+ */
+const INTEGER_COMPARAND_RE = /(?:-eq|-ge|-le|==)\s*\d+\b/;
+
+/**
+ * A live re-derivation token: the comparand is (at least in part) recomputed
+ * against `main` at check time rather than frozen once during authoring.
+ * Matches `git show main:<path>`, `git diff main`, or any `git grep ...`
+ * invocation that also mentions `main`.
+ */
+const LIVE_DERIVATION_RE = /git\s+show\s+main:|git\s+diff\s+main\b|git\s+grep\b[^\n]*\bmain\b/;
+
+/**
+ * True when `command` compares against a literal integer via -eq/-ge/-le/==
+ * with no live `main`-re-derivation token present anywhere in the command.
+ */
+function hasFrozenIntegerComparand(command: string): boolean {
+	if (!INTEGER_COMPARAND_RE.test(command)) return false;
+	return !LIVE_DERIVATION_RE.test(command);
+}
+
+/**
+ * The frozen-comparand rule (US-001, CAM-381): flags an oracle comparing
+ * against a literal integer read off main with no live re-derivation token,
+ * enforcing the derive-don't-freeze rule (patterns.md:903). A comparand that
+ * carries a live `git show main:` / `git diff main` / `git grep ... main`
+ * derivation alongside an integer is never flagged: the presence of the live
+ * token is what proves the comparand is re-derived at check time, not frozen.
+ */
+const FROZEN_COMPARAND_RULE: OracleLintRule = {
+	name: 'frozen-comparand',
+	test(command: string): RuleFinding | null {
+		if (!hasFrozenIntegerComparand(command)) return null;
+		return {
+			reason:
+				'oracle compares against a literal integer (-eq/-ge/-le/== N, or a ' +
+				"'wc -l'-style pipeline compared the same way) with no live " +
+				"re-derivation token ('git show main:<path>', 'git diff main', or " +
+				"'git grep ... main') anywhere in the command -- a frozen literal " +
+				'rots silently the moment a later commit edits the compared file on ' +
+				'main; re-derive the comparand at check time instead (patterns.md:903)',
+		};
+	},
+};
+
 /**
  * The named-rules list (array of { name, test(command): finding | null }).
  * Adding a future rule is a one-liner: push another OracleLintRule here.
  */
-export const RULES: OracleLintRule[] = [GREP_Q_LIST_FILES_RULE];
+export const RULES: OracleLintRule[] = [GREP_Q_LIST_FILES_RULE, FROZEN_COMPARAND_RULE];
 
 // ---------------------------------------------------------------------------
 // PRD walk
