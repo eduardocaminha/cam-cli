@@ -20,7 +20,7 @@
       "id": "US-R2-002",
       "title": "Review round 2 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [src/supervisor/prd-oracle-lint.ts:292]: The hasFrozenIntegerComparand docstring claims 'a derivation token that legitimately lives inside quotes still excuses the comparand', and the patterns.md US-001 bullet gives that guarantee as the rationale for running both regexes against the same stripped string. Empirically false: a non-`-c` quoted span is replaced with a single space (line 279), so the derivation token is destroyed before LIVE_DERIVATION_RE runs (line 301). `test $(wc -l < \"$(git show main:f.ts)\") -eq 42` -> main=ok, branch=FLAG, a new false-positive regression in exactly the over-flagging class US-001 exists to close (command substitution inside double quotes is ordinary shell). Fix: evaluate LIVE_DERIVATION_RE against the original command (or a strip variant that preserves derivation tokens), and correct the docstring plus the patterns.md bullet so the comment matches runtime behavior."
     },
     {
