@@ -21,7 +21,7 @@
       "id": "US-R1-001",
       "title": "Review round 1 fix 001: address reviewer finding",
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [test/supervisor/plan/plan-preflight.test.ts:249]: AC7's stderr-first ordering invariant has no regression assertion. The two 'BOTH streams' tests (:249-250 typecheck, :303-304 bun-test) assert only detail.toContain(...) for each stream, which passes identically under [stderr, stdout] and [stdout, stderr]. Because truncatePreflightDetail (src/supervisor/plan-preflight-marker.ts:135-140) renders the FIRST LINE ONLY and collapses the rest to '(+N more)', reversing the order silently reintroduces the exact operator-facing bug this story fixes while the suite stays green. Reviewer-executed proof: stderr-first yields 'error TS2345: Argument type is not assignable (+1 more)'; stdout-first yields 'tsc version 5.x banner chatter (+1 more)'. Both satisfy every current assertion. Fix is mechanical and single-file: assert on the first line, e.g. expect(result.detail.split('\\n')[0]).toContain('TS2345'), or assert truncatePreflightDetail(result.detail) contains the verdict."
     },
     {
