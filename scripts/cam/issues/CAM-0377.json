@@ -1,11 +1,11 @@
 {
   "id": "CAM-377",
   "title": "Carried forward from review round 1 (not adopted, non-blocking): criterion 2 ha…",
-  "stage": "idea",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-20T15:57:40.969Z",
-  "updatedAt": "2026-07-20T15:57:40.969Z",
+  "updatedAt": "2026-07-20T18:28:24.867Z",
   "description": "Carried forward from review round 1 (not adopted, non-blocking): criterion 2 hardcodes the magic number 897 as main's patterns.md line count (`test ... -gt 897`). Verified still correct today (main's patterns.md is exactly 897 lines) and the oracle was confirmed red on main, so it is not a defect. It would silently become wrong if another PRD appends to patterns.md before this branch merges; deriving the baseline via `git show main:scripts/cam/patterns.md | wc -l` would keep the append-at-EOF intent load-bearing across rebases.\n\nSource: cam/issue-372\nReview round: 2\n\nsuggestion-fingerprint: cba706a5cb78",
   "derivedFrom": [
     "CAM-372"
