@@ -78,7 +78,7 @@
         "Lint spine green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: test/integration/dispatch-geometry.test.ts. Depends on US-002 (the behavior must exist). Reuse the file's existing scaffolding: bootPane, paneId(), makeSwapSocketSpawn(sendKeysCalls), the afterEach tmux kill-server, and the async body + `await waitForCondition` idiom (test/helpers/wait-for-condition.ts). waitForCondition is TEST-ONLY and rejects on timeout: never import it into src/. To make the pane genuinely non-idle, run a long-lived foreground command in it (rather than faking pane content) so isOrchPaneIdle observes real busy content. Per the project test-quality invariant, this must hit the real wire boundary; a mock-call-only assertion would be documentation, not verification. Do not run a full casual `bun test` sweep while the sidecar is live."
     }
