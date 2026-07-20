@@ -1,11 +1,11 @@
 {
   "id": "CAM-369",
   "title": "The production preflightSpawnFn closure has no test at any tier: the new `r.std…",
-  "stage": "idea",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-20T11:59:11.410Z",
-  "updatedAt": "2026-07-20T11:59:11.410Z",
+  "updatedAt": "2026-07-20T13:26:22.351Z",
   "description": "The production preflightSpawnFn closure has no test at any tier: the new `r.stderr instanceof Buffer` decode is proved only by a grep file-assert (AC2), and every unit test injects a fake spawn that returns plain strings, so no test would catch a wrong property name or a broken decode at the real Bun.spawnSync boundary. Risk is low here (it is a one-line mirror of the adjacent stdout guard at :2642, the required `stderr: string` return type is typecheck-enforced, and Bun docs confirm SyncSubprocess.stderr is `Buffer | undefined`), and the pre-existing stdout decode is equally untested, so this diff does not introduce the gap. Worth a follow-up integration test that really spawns a command writing to stderr and asserts the decoded string.\n\nSource: cam/issue-363\nReview round: 2\n\nsuggestion-fingerprint: 0e9eeb662740",
   "derivedFrom": [
     "CAM-363"
