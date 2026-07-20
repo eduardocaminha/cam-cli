@@ -17,15 +17,68 @@
 // verification: a busy TUI can still drop the trailing Enter even after the
 // pane looked idle at check time (capture-pane lags by one refresh cycle), so
 // the pushed line silently never submits. sendKeysVerified re-checks the pane
-// after each send for a composer-emptied STATE signal (did the pushed text
-// leave the composer), and retries with bounded backoff up to N attempts,
-// emitting a 'push-undelivered' event on exhaustion instead of blocking or
-// throwing. sendKeysWhenIdle now delegates to it so every existing thin-proxy
-// caller (review.ts, issue.ts, spec.ts) gets verify+retry for free.
+// after each send for delivery, and retries with bounded backoff up to N
+// attempts, emitting a 'push-undelivered' event on exhaustion instead of
+// blocking or throwing. sendKeysWhenIdle now delegates to it so every
+// existing thin-proxy caller (review.ts, issue.ts, spec.ts) gets
+// verify+retry for free.
+//
+// Delivery verdict (US-002, CAM-359): the verdict is derived primarily from
+// tmux CURSOR GEOMETRY, not from substring-matching the payload against
+// captured pane content. Captured pane text is renderable/forgeable (a
+// wrapped payload never appears whole on any single captured line, and
+// payload text like `->` can coincidentally match a soft-wrap anchor), so a
+// content-match oracle either always reports "delivered" for a wrapped
+// payload (masking a dropped Enter, CAM-358's original defect) or can be
+// spoofed by payload content. tmux's own `#{cursor_x}`/`#{cursor_y}` are
+// server-side state a payload cannot forge. A per-send baseline is sampled
+// immediately before each send-keys call; the verdict compares the FULL
+// (x, y) pair sampled after the settle window against that baseline.
+//
+// Corrected model (review round 1 fix, US-R1-001): measured against a real
+// claude TUI, an Ink composer grows UPWARD from the pane bottom, so
+// cursor_y is PINNED CONSTANT across every composer state (empty, wrapped,
+// short-filled all read the same cursor_y). cursor_y therefore contributes
+// ZERO discrimination in production; cursor_x (a value mod paneWidth) is the
+// only positional signal, and a modulo is inherently periodic: a payload
+// whose length lands the wrapped cursor back on the exact baseline column
+// collides on x too, so the (x, y) pair alone is PROVABLY insufficient for
+// that residue class, not merely a rare edge case. `composerLineRetainsPayloadTail`
+// closes that residual gap: when the geometry pair reads unchanged (the
+// ambiguous branch), it inspects the captured pane row AT the reported
+// cursor_y for the trailing suffix of the just-sent text. That suffix is
+// always contiguous on the row the cursor rests on, regardless of how many
+// rows the payload wrapped across before it — unlike a whole-payload
+// substring match, so it does not reopen the forgery/anchor-collision
+// concern above. The full-pair geometry comparison is still never reduced
+// to a single axis; the content backstop only ever narrows an "unchanged"
+// geometry verdict to "not delivered", never the reverse.
+//
+// Reader decoupling (review round 2 fix, US-R2-001, CAM-359): cursor_y above
+// indexes rows relative to the TOP OF THE VISIBLE PANE, which only holds for
+// a VISIBLE-SCREEN capture (`capture-pane -p -t <paneId>`). The production
+// sidecar wires `capturePaneFn` to a FULL-SCROLLBACK reader
+// (`capture-pane -p -S -`) for unrelated reasons (state reads elsewhere in
+// the supervisor), and that same reader used to be reused for the content
+// backstop too, which silently indexed an arbitrary history line instead of
+// the true cursor row. The backstop now samples pane content through a
+// dedicated `visibleCaptureFn`, always built fresh from `tmuxSpawnFn`
+// (`capture-pane -p -t <paneId>`, no `-S -`) unless a test overrides it.
+// `capturePaneFn` feeds ONLY the PRE-send idle-gate (`waitForIdlePane`) from
+// here on, which just scans the pane's last 5 lines and is insensitive to
+// scrollback vs visible-screen framing.
+
+import { join } from 'node:path';
 
 import { tmuxArgs, type SpawnFn as TmuxSpawnFn } from './session.ts';
+import { sampleCursorGeometry, type CursorGeometry } from './display-message.ts';
 import { computeBackoffMs, JITTER_FRACTION } from '../supervisor/loop.ts';
-import type { WorkerEventKind, WorkerEventDetail } from '../supervisor/events.ts';
+import {
+	makeFileEventLogger,
+	type WorkerEventKind,
+	type WorkerEventDetail,
+	type WorkerEventLogger,
+} from '../supervisor/events.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -53,6 +106,13 @@ export interface SendKeysWhenIdleOptions {
 	/**
 	 * Override the capture-pane reader for tests. Default: calls real tmux
 	 * `capture-pane -p -t <paneId>` via tmuxSpawnFn.
+	 *
+	 * Feeds ONLY the PRE-send idle-gate (`waitForIdlePane`, US-008) from the
+	 * review round 2 fix (US-R2-001, CAM-359) onward: it may be a
+	 * full-scrollback reader in production (the sidecar wires one for
+	 * unrelated state reads) without corrupting the content-backstop verdict,
+	 * since that backstop now reads through the separate `visibleCaptureFn`
+	 * (see `SendKeysVerifiedOptions`).
 	 */
 	capturePaneFn?: CapturePaneFn;
 	/**
@@ -77,6 +137,17 @@ export interface SendKeysWhenIdleOptions {
 	 * Tests inject a no-op to avoid real waits.
 	 */
 	sleepFn?: (ms: number) => void;
+	/**
+	 * Injected event sink, called with `('push-undelivered', detail)` once all
+	 * send attempts are exhausted without a geometry-verified delivery (US-003,
+	 * CAM-359). Optional and side-effect-free by default: omitting it emits no
+	 * event (mirrors the sub-state-machine logEvent seam pattern used by
+	 * merge-watch). The caller wraps this into a full WorkerEvent
+	 * (ts/storyId/uuid) if it wants the event durably recorded. Declared here
+	 * (rather than only on `SendKeysVerifiedOptions`) so every plain
+	 * `sendKeysWhenIdle` call site can thread it through too.
+	 */
+	logEvent?: (kind: WorkerEventKind, detail: WorkerEventDetail) => void;
 }
 
 /**
@@ -103,14 +174,29 @@ export interface SendKeysVerifiedOptions extends SendKeysWhenIdleOptions {
 	/** Random source fed to `computeBackoffMs`. Default: `Math.random`. */
 	randomFn?: () => number;
 	/**
-	 * Injected event sink, called with `('push-undelivered', detail)` once all
-	 * attempts are exhausted without a composer-emptied verify. Optional and
-	 * side-effect-free by default: omitting it emits no event (mirrors the
-	 * sub-state-machine logEvent seam pattern used by merge-watch). The caller
-	 * wraps this into a full WorkerEvent (ts/storyId/uuid) if it wants the
-	 * event durably recorded.
+	 * Injectable cursor-geometry sampler (US-002, CAM-359). Default: the real
+	 * `sampleCursorGeometry` (src/tmux/display-message.ts), which shells out to
+	 * `tmux display-message`. Tests inject a fake to avoid a real tmux server.
+	 * Sampled once per attempt immediately before send-keys (the per-send
+	 * baseline) and once again after the settle window (the post-send
+	 * reading); the delivery verdict compares the two.
 	 */
-	logEvent?: (kind: WorkerEventKind, detail: WorkerEventDetail) => void;
+	sampleGeometryFn?: (paneId: string, tmuxSpawnFn: TmuxSpawnFn) => CursorGeometry | null;
+	/**
+	 * Injectable VISIBLE-SCREEN capture-pane reader for the content backstop
+	 * (`composerLineRetainsPayloadTail`, US-R1-001; decoupled from
+	 * `capturePaneFn` in the review round 2 fix, US-R2-001, CAM-359).
+	 *
+	 * `cursorY` indexes rows relative to the TOP OF THE VISIBLE PANE, so this
+	 * reader must never be a full-scrollback capture (`capture-pane -p -S -`):
+	 * a scrollback reader indexes an arbitrary history line instead of the
+	 * true cursor row. Default: a fresh `capture-pane -p -t <paneId>` built
+	 * directly from `tmuxSpawnFn`, deliberately NOT derived from whatever
+	 * `capturePaneFn` the caller injected (whose scrollback semantics are
+	 * unspecified and, in production, full-history). Tests inject a fake to
+	 * simulate a specific row's content without a real tmux server.
+	 */
+	visibleCaptureFn?: CapturePaneFn;
 }
 
 // ---------------------------------------------------------------------------
@@ -119,15 +205,17 @@ export interface SendKeysVerifiedOptions extends SendKeysWhenIdleOptions {
 
 /**
  * Settle window (ms) between a send-keys spawn and the post-send
- * `isComposerEmptied` verification capture (US-001, CAM-358).
+ * cursor-geometry verification sample (US-001/US-002, CAM-358/CAM-359).
  *
- * `capture-pane` lags the tmux server's own render cycle: reading the pane
- * immediately after send-keys returns can still observe the PRE-send screen
- * (the pushed text still visibly sitting in the composer), which makes
- * `isComposerEmptied` misreport an undelivered payload as delivered on
- * attempt 1 and skip the retry loop entirely. Sleeping this window (via the
- * injected `sleepFn`, never a bare `Bun.sleepSync`) before every verify
- * capture gives the pane one refresh cycle to catch up.
+ * tmux's own render/cursor-tracking cycle lags a send-keys call: sampling
+ * the cursor position immediately after send-keys returns can still observe
+ * the PRE-send geometry (the pushed text not yet reflected in the pane),
+ * which would misreport an undelivered payload as delivered on attempt 1
+ * and skip the retry loop entirely. Sleeping this window (via the injected
+ * `sleepFn`, never a bare `Bun.sleepSync`) before every post-send geometry
+ * sample gives the pane one refresh cycle to catch up. Geometry sampling
+ * does not remove this requirement: an un-rendered pane reads the SAME
+ * baseline geometry a genuinely empty (delivered) composer would.
  */
 export const SEND_KEYS_SETTLE_MS = 50;
 
@@ -195,23 +283,78 @@ export function isOrchPaneIdle(content: string): boolean {
 }
 
 /**
- * Return true if `text` (the line we just pushed) is no longer present in the
- * tail of the captured pane content, i.e. it left the composer (US-002,
- * CAM-200).
+ * Return true if two sampled cursor geometries represent the SAME pane
+ * position (US-002, CAM-359).
  *
- * This is a STATE check only: it looks for the pushed line's own text, never
- * for report content or any parsed structure in the rendered scrollback
- * (capture-pane is rendered markdown and lossy for that purpose; see the
- * CAM-75/77/78 structured-handback decision). A busy TUI that drops the
- * trailing Enter leaves the composer still holding `text`, which this
- * detects so the caller can retry.
+ * Compares the full `(cursorX, cursorY)` pair. Never reduce this to a
+ * single-axis comparison. `paneWidth`/`paneHeight` are deliberately excluded
+ * from the comparison: they describe the pane's bounds, not the composer's
+ * delivery state, and a mid-attempt resize would otherwise falsely read as
+ * "undelivered".
  *
- * Exported for direct unit testing.
+ * A `true` result here is NOT a final delivered verdict by itself: in
+ * production `cursorY` is pinned constant (see module header), so this can
+ * coincidentally read `true` for an undelivered wrap-boundary-length
+ * payload too. Callers must run `composerLineRetainsPayloadTail` as a
+ * backstop before trusting a `true` result as "delivered".
  */
-export function isComposerEmptied(content: string, text: string): boolean {
-	const lines = content.split('\n').map((l) => l.trimEnd());
-	const tail = lines.slice(-5);
-	return !tail.some((l) => l.includes(text));
+function geometryUnchanged(before: CursorGeometry, after: CursorGeometry): boolean {
+	return before.cursorX === after.cursorX && before.cursorY === after.cursorY;
+}
+
+/**
+ * Shortest trailing-suffix length `composerLineRetainsPayloadTail` will
+ * still trust as a real remnant (below this, a coincidental match is too
+ * likely to be worth acting on).
+ */
+const MIN_PAYLOAD_TAIL_MATCH = 2;
+
+/**
+ * Backstop for `geometryUnchanged`'s residual ambiguity (review round 1 fix,
+ * US-R1-001, CAM-359): breaks the tie using pane CONTENT, narrowly.
+ *
+ * The trailing suffix of the just-sent `text` (the characters immediately
+ * before the cursor) is always CONTIGUOUS on the single row the cursor
+ * rests on, regardless of how many rows the payload wrapped across to get
+ * there. That is a fundamentally different check from a whole-payload
+ * substring match (rejected in the module header: a wrapped payload never
+ * appears whole on any one captured line, and short fragments can coincide
+ * with a soft-wrap anchor by chance) -- a trailing suffix anchored (via
+ * `endsWith`, not a bare substring search) at the reported cursor row is
+ * not subject to that ambiguity.
+ *
+ * The row's own remnant length is not known in advance (a residue-class
+ * collision can leave as few as `MIN_PAYLOAD_TAIL_MATCH` real characters on
+ * the row -- see the fixture header for why), so this tries suffix lengths
+ * from `min(text.length, 8)` down to `MIN_PAYLOAD_TAIL_MATCH`, longest
+ * first, and accepts the first that matches.
+ *
+ * Only meaningful when `geometryUnchanged` already read `true`: a geometry
+ * mismatch is already a sound "not delivered" verdict on its own.
+ *
+ * `noUncheckedIndexedAccess` guard: an out-of-range `cursorY` (a resize
+ * mid-attempt, or a fake/test geometry with an implausible row) yields
+ * `undefined` for `lines[cursorY]`, treated as "no remnant found" (fails
+ * open toward the geometry-only verdict, never fabricates a false remnant).
+ */
+export function composerLineRetainsPayloadTail(
+	capturedContent: string,
+	cursorY: number,
+	text: string,
+): boolean {
+	if (text.length === 0) return false;
+	const lines = capturedContent.split('\n');
+	const line = lines[cursorY];
+	if (line === undefined) return false;
+	// tmux may pad a short line with trailing whitespace; trim before
+	// anchoring the suffix match at the true end of the rendered content.
+	const trimmed = line.replace(/\s+$/, '');
+	if (trimmed.length === 0) return false;
+	const maxLen = Math.min(text.length, 8);
+	for (let len = maxLen; len >= MIN_PAYLOAD_TAIL_MATCH; len--) {
+		if (trimmed.endsWith(text.slice(-len))) return true;
+	}
+	return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -273,12 +416,24 @@ function waitForIdlePane(args: {
  *      submit (sendkeys-literal-enter-gotcha, CAM-55). The text is a single
  *      non-key-name arg, so tmux already sends its characters literally; only
  *      'Enter' must stay a recognised key.
- *   3. Settle + verify: sleep `SEND_KEYS_SETTLE_MS` (via the injected
- *      `sleepFn`, US-001, CAM-358) so the tmux server has one refresh cycle
- *      to render the post-send screen, then re-capture the pane and check
- *      `isComposerEmptied` (the pushed line left the composer). This is a
- *      pane-STATE check only; it never parses rendered scrollback for report
- *      content.
+ *   3. Baseline + settle + verify (US-002, CAM-359; content backstop review
+ *      round 1 fix US-R1-001): immediately BEFORE each send-keys call,
+ *      sample the pane's cursor geometry as that attempt's baseline via
+ *      `sampleGeometryFn` (default `sampleCursorGeometry`,
+ *      src/tmux/display-message.ts). After send-keys, sleep
+ *      `SEND_KEYS_SETTLE_MS` (via the injected `sleepFn`, US-001, CAM-358)
+ *      so tmux has one refresh cycle to catch up, then sample geometry
+ *      again. The full `(cursorX, cursorY)` pair must match, never a single
+ *      axis. A `null` sample (the geometry helper's fail-closed result, e.g.
+ *      a non-zero tmux exit) is treated as NOT delivered on that attempt,
+ *      never as delivered. If the pair reads unchanged, `composerLineRetainsPayloadTail`
+ *      inspects the row at the reported cursor_y, read via `visibleCaptureFn`
+ *      (review round 2 fix, US-R2-001, CAM-359: a DEDICATED visible-screen
+ *      reader, never `capturePaneFn`, whose scrollback semantics are
+ *      unspecified and would misindex the row), for a remnant of the sent
+ *      text before trusting the "delivered" verdict (module header: cursor_y
+ *      is pinned constant in production, so geometry alone cannot rule out a
+ *      wrap-boundary-length collision).
  *   4. Retry: if not delivered, sleep `computeBackoffMs(attempt, ...)`
  *      (src/supervisor/loop.ts:606) and resend, up to `maxAttempts` (default
  *      3) total attempts.
@@ -305,10 +460,21 @@ export function sendKeysVerified(opts: SendKeysVerifiedOptions): void {
 		jitterFraction = JITTER_FRACTION,
 		randomFn = Math.random,
 		logEvent,
+		sampleGeometryFn = sampleCursorGeometry,
+		visibleCaptureFn,
 	} = opts;
 
 	const capture = capturePaneFn
 		? capturePaneFn
+		: (id: string) => defaultCapturePaneFn(id, tmuxSpawnFn);
+
+	// Dedicated visible-screen reader for the content backstop (review round 2
+	// fix, US-R2-001, CAM-359): deliberately NOT derived from `capture` above,
+	// since `capturePaneFn` may be a full-scrollback reader in production and
+	// `composerLineRetainsPayloadTail` indexes rows relative to the top of the
+	// VISIBLE pane.
+	const visibleCapture = visibleCaptureFn
+		? visibleCaptureFn
 		: (id: string) => defaultCapturePaneFn(id, tmuxSpawnFn);
 
 	const timedOut = waitForIdlePane({ paneId, capture, pollIntervalMs, idleTimeoutMs, sleepFn });
@@ -321,6 +487,10 @@ export function sendKeysVerified(opts: SendKeysVerifiedOptions): void {
 
 	let delivered = false;
 	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+		// Per-send baseline: sampled immediately before send-keys (US-002,
+		// CAM-359). A null (unknown) sample fails closed below.
+		const baseline = sampleGeometryFn(paneId, tmuxSpawnFn);
+
 		// Atomic send-keys: text + Enter in ONE call, WITHOUT -l (see flow
 		// step 2 above; CAM-55 regression guard).
 		tmuxSpawnFn(
@@ -331,9 +501,18 @@ export function sendKeysVerified(opts: SendKeysVerifiedOptions): void {
 
 		sleepFn(SEND_KEYS_SETTLE_MS);
 
-		if (isComposerEmptied(capture(paneId), text)) {
-			delivered = true;
-			break;
+		const after = sampleGeometryFn(paneId, tmuxSpawnFn);
+
+		if (baseline !== null && after !== null && geometryUnchanged(baseline, after)) {
+			// Ambiguous branch (review round 1 fix, US-R1-001): the geometry pair
+			// alone cannot rule out a wrap-boundary-length collision (module
+			// header). Break the tie with the content backstop before trusting
+			// this as delivered.
+			const afterContent = visibleCapture(paneId);
+			if (!composerLineRetainsPayloadTail(afterContent, after.cursorY, text)) {
+				delivered = true;
+				break;
+			}
 		}
 
 		if (attempt < maxAttempts) {
@@ -361,4 +540,43 @@ export function sendKeysVerified(opts: SendKeysVerifiedOptions): void {
  */
 export function sendKeysWhenIdle(opts: SendKeysWhenIdleOptions): void {
 	sendKeysVerified(opts);
+}
+
+/**
+ * Adapt a full `WorkerEventLogger` (ts/storyId/uuid/kind/detail) down to the
+ * bare `(kind, detail) => void` seam `sendKeysVerified`'s `logEvent` expects
+ * (US-003, CAM-359).
+ *
+ * `storyId` is always `undefined`: a push-undelivered narration from one of
+ * these thin-proxy commands is never tied to a story. `uuid` is caller-supplied
+ * rather than a single hardcoded constant: `src/supervisor/host.ts` has its own
+ * `adaptLogEventForPush` fixed to `uuid: 'sidecar'` because every one of its
+ * callers genuinely IS the sidecar process, but a `cam issue`/`cam review`/
+ * `cam spec`/`cam orch-recycle-watch` invocation is a distinct CLI command, not
+ * the sidecar, so blindly reusing `'sidecar'` there would misattribute the
+ * event's origin. Each thin-proxy call site passes its own short, stable label
+ * (e.g. `'cli-issue'`).
+ */
+export function adaptLogEventForPush(
+	logEvent: WorkerEventLogger,
+	uuid: string,
+): (kind: WorkerEventKind, detail: WorkerEventDetail) => void {
+	return (kind, detail) => {
+		logEvent({ ts: new Date().toISOString(), storyId: undefined, uuid, kind, detail });
+	};
+}
+
+/**
+ * Build the production default `logEvent` for a thin-proxy command's
+ * `sendKeysWhenIdle` call (US-003, CAM-359): the real file event logger
+ * writing `.claude/cam-worker-events.jsonl`, adapted via
+ * `adaptLogEventForPush`. Factored out of each of the four call sites (they'd
+ * otherwise each repeat the same `makeFileEventLogger(join(...))` +
+ * `adaptLogEventForPush(...)` pair inline).
+ */
+export function makePushLogEvent(
+	cwd: string,
+	uuid: string,
+): (kind: WorkerEventKind, detail: WorkerEventDetail) => void {
+	return adaptLogEventForPush(makeFileEventLogger(join(cwd, '.claude', 'cam-worker-events.jsonl')), uuid);
 }

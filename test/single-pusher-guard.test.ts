@@ -70,17 +70,38 @@ function makeFakeSpawn(orchPaneId: string, calls: SpawnCall[]): SpawnFn {
 			return { ...base, stdout };
 		}
 
+		if (subcommand === 'display-message') {
+			// sendKeysVerified's delivery verdict (US-002, CAM-359) samples cursor
+			// geometry here, not via capturePaneFn. A fixed, always-identical
+			// reading means the per-send baseline always matches the post-send
+			// sample, so delivery succeeds on attempt 1 — this file's "exactly
+			// one send-keys call" assertions are about the single-pusher
+			// invariant, not the delivery oracle, and must not count these
+			// geometry-sample calls as pushes.
+			return { ...base, stdout: Buffer.from('2;26;80;30') };
+		}
+
+		if (subcommand === 'capture-pane') {
+			// The fixed display-message reading above makes attempt 1's geometry
+			// pair always read "unchanged", so sendKeysVerified's content backstop
+			// (dedicated visibleCaptureFn, review round 2 fix US-R2-001, CAM-359)
+			// always fires. An idle prompt holds no remnant of the pushed text, so
+			// the backstop confirms delivered without adding a phantom push.
+			return { ...base, stdout: Buffer.from('> ') };
+		}
+
 		// Record all other calls (i.e. send-keys calls).
 		calls.push({ cmd, args: [...args] });
 		return base;
 	};
 }
 
-// Fake capturePaneFn: always reports an idle prompt that never contains the
-// pushed text, so sendKeysVerified's (US-003, CAM-200) idle-gate and
-// composer-emptied verify both succeed on the first attempt (no real
-// polling/backoff), preserving this file's "exactly one send-keys call"
-// assertions.
+// Fake capturePaneFn: always reports an idle prompt, so sendKeysVerified's
+// (US-003, CAM-200) PRE-send idle-gate succeeds on the first attempt (no real
+// polling/backoff). The POST-send content backstop reads through its own
+// default visibleCaptureFn instead (review round 2 fix, US-R2-001, CAM-359;
+// see makeFakeSpawn's capture-pane branch), preserving this file's "exactly
+// one send-keys call" assertions.
 const idleNeverEchoesFn = (): string => '> ';
 
 // ---------------------------------------------------------------------------

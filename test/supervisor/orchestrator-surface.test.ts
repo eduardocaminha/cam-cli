@@ -42,15 +42,25 @@ interface TmuxCall {
 	args: string[];
 }
 
-/** Records every spawn call and returns a successful, idle-looking result. */
+/**
+ * Records every spawn call and returns a successful, idle-looking result.
+ *
+ * `sendKeysVerified`'s delivery verdict (US-002, CAM-359) samples cursor
+ * geometry via a `display-message` call routed through this same spawnFn.
+ * Answering it with a fixed, always-identical geometry line means the
+ * per-send baseline and post-send sample always match, so the verdict is
+ * "delivered on attempt 1" — which is what these argv-shape contract tests
+ * need (they assert on the send-keys call, not on the delivery oracle).
+ */
 function makeRecordingTmuxSpawn(): TmuxSpawnFn & { calls: TmuxCall[] } {
 	const calls: TmuxCall[] = [];
 	const fn = ((cmd: string, args: string[]) => {
 		calls.push({ cmd, args: [...args] });
+		const isDisplayMessage = args.includes('display-message');
 		const result: SpawnSyncReturns<Buffer> = {
 			pid: 1,
 			output: [null, Buffer.from(''), Buffer.from('')],
-			stdout: Buffer.from(''),
+			stdout: Buffer.from(isDisplayMessage ? '2;26;80;30' : ''),
 			stderr: Buffer.from(''),
 			status: 0,
 			signal: null,

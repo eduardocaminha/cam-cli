@@ -6,9 +6,11 @@
 // Coverage:
 //   1. Valid orch pane: closure invokes send-keys with the argv shape produced
 //      by buildWorkerReportSendKeysArgv (no -l, Enter as separate key arg,
-//      both in one call). An injected capturePaneFn reports an idle prompt
-//      that never contains the pushed text, so sendKeysVerified's idle-gate
-//      and composer-emptied verify both succeed on the first attempt.
+//      both in one call). An injected capturePaneFn reports an idle prompt so
+//      sendKeysVerified's idle-gate succeeds on the first attempt; the
+//      content-backstop verify (review round 2 fix, US-R2-001, CAM-359) reads
+//      through its own default visibleCaptureFn (built from the fake
+//      spawnFn's capture-pane branch), not from capturePaneFn.
 //   2. No orch pane (list-panes returns empty): no send-keys call (silent no-op).
 
 import { describe, expect, test } from 'bun:test';
@@ -42,6 +44,19 @@ function fakeResult(stdout: string, status = 0): SpawnSyncReturns<string> {
  * Build a fake TmuxSpawnFn.
  *
  * - When args include 'list-panes', return `listPanesOut` with status 0.
+ * - When args include 'display-message', return a fixed, always-identical
+ *   geometry line WITHOUT recording the call: `sendKeysVerified`'s delivery
+ *   verdict (US-002, CAM-359) samples cursor geometry through this same
+ *   spawnFn, and a fixed reading makes the per-send baseline and post-send
+ *   sample always match, so the verdict is "delivered on attempt 1" — the
+ *   send-keys-argv-shape assertions below don't exercise the delivery
+ *   oracle itself.
+ * - When args include 'capture-pane', return an idle prompt WITHOUT recording
+ *   the call: the fixed geometry reading above makes every attempt's pair
+ *   read "unchanged", so sendKeysVerified's content backstop (dedicated
+ *   `visibleCaptureFn`, review round 2 fix US-R2-001, CAM-359) always fires;
+ *   an idle prompt holds no remnant of the pushed text, so the backstop
+ *   confirms delivered on attempt 1 without adding a phantom "call".
  * - For all other calls (e.g. send-keys), return empty stdout with status 0
  *   and record the call.
  */
@@ -53,6 +68,12 @@ function makeFakeSpawnFn(
 		if (args.includes('list-panes')) {
 			return fakeResult(listPanesOut);
 		}
+		if (args.includes('display-message')) {
+			return fakeResult('2;26;80;30');
+		}
+		if (args.includes('capture-pane')) {
+			return fakeResult('> ');
+		}
 		calls.push({ cmd, args: args.slice() });
 		return fakeResult('');
 	};
@@ -62,9 +83,10 @@ function makeFakeSpawnFn(
 // Tests
 // ---------------------------------------------------------------------------
 
-// Fake capturePaneFn: always reports an idle prompt that never contains the
-// pushed text, so sendKeysVerified's PRE-send idle-gate and POST-send
-// composer-emptied verify both succeed immediately (no real polling/backoff).
+// Fake capturePaneFn: always reports an idle prompt, so sendKeysVerified's
+// PRE-send idle-gate succeeds immediately (no real polling/backoff). The
+// POST-send content backstop no longer reads through this reader (review
+// round 2 fix, US-R2-001, CAM-359): see makeFakeSpawnFn's capture-pane branch.
 const idleNeverEchoesFn = (): string => '> ';
 
 describe('makeNotifyOrchestrator (US-002)', () => {

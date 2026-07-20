@@ -36,7 +36,8 @@ import {
 	type SpawnFn as TmuxSpawnFn,
 } from '../tmux/session.ts';
 import { waitForOrchestrator } from '../tmux/bootstrap-wait.ts';
-import { sendKeysWhenIdle, type CapturePaneFn } from '../tmux/dispatch.ts';
+import { sendKeysWhenIdle, makePushLogEvent, type CapturePaneFn } from '../tmux/dispatch.ts';
+import type { WorkerEventKind, WorkerEventDetail } from '../supervisor/events.ts';
 
 // --- Types -----------------------------------------------------------------
 
@@ -82,6 +83,14 @@ export interface IssueOptions {
 	 * anyway (fallback: log + still send). Default: 5 000.
 	 */
 	idleTimeoutMs?: number;
+	/**
+	 * Injectable sink for events emitted by `sendKeysWhenIdle` (currently only
+	 * `'push-undelivered'`, on retry exhaustion). Default: the real event log
+	 * (`.claude/cam-worker-events.jsonl`), adapted via `adaptLogEventForPush`
+	 * (US-003, CAM-359). Tests inject `makeInMemoryEventLogger()` instead of
+	 * touching the real event log.
+	 */
+	logEvent?: (kind: WorkerEventKind, detail: WorkerEventDetail) => void;
 }
 
 // --- Internal helpers -------------------------------------------------------
@@ -178,10 +187,10 @@ export async function runIssue(options: IssueOptions): Promise<number> {
 		return 1;
 	}
 
-	// Wait for the orchestrator pane to be idle, then issue atomic send-keys.
-	// sendKeysWhenIdle polls capture-pane until the prompt is stable (no
-	// spinner / tool-call glyph), then sends text + Enter in one call WITHOUT -l
-	// (sendkeys-literal-enter-gotcha: -l would make "Enter" literal and never submit; US-008).
+	// sendKeysWhenIdle: idle-gate + atomic send-keys (no -l; US-008).
+	// logEvent (US-003, CAM-359) defaults via makePushLogEvent (wraps
+	// adaptLogEventForPush) so retry exhaustion traces instead of vanishing.
+	const logEvent = options.logEvent ?? makePushLogEvent(cwd, 'cli-issue');
 	sendKeysWhenIdle({
 		paneId: orchPaneId,
 		text: request,
@@ -189,6 +198,7 @@ export async function runIssue(options: IssueOptions): Promise<number> {
 		capturePaneFn: options.capturePaneFn,
 		sleepFn: options.sleepFn,
 		idleTimeoutMs: options.idleTimeoutMs,
+		logEvent,
 	});
 
 	emitOk(`Sent "/cam-issue create" to orchestrator pane ${orchPaneId}`);
