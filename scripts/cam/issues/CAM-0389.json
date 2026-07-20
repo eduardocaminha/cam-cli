@@ -1,0 +1,13 @@
+{
+  "id": "CAM-389",
+  "title": "Residual (non-regression) false positive: extractCommandSubstitutionSpans splic…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-20T23:04:24.482Z",
+  "updatedAt": "2026-07-20T23:04:24.482Z",
+  "description": "Residual (non-regression) false positive: extractCommandSubstitutionSpans splices a preserved $(...) span back verbatim without recursively stripping quotes inside it, so inert quoted data nested in a double-quoted command substitution is still scanned. Verified: echo \"$(grep -c 'x -eq 42' f)\" flags on the branch. main flags it too, so this is not a regression and is out of the PRD's stated scope, but it is the same false-positive class US-001 exists to close. Consider either recursing (stripQuotedSpans on the preserved span) or extending the accepted-blind-spot bullet in patterns.md to name this shape alongside the -e case.\n\nSource: cam/issue-388\nReview round: 3\n\nsuggestion-fingerprint: ce48f463a329",
+  "derivedFrom": [
+    "CAM-388"
+  ]
+}
