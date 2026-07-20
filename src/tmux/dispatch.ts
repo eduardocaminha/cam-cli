@@ -69,7 +69,7 @@ export interface SendKeysWhenIdleOptions {
 	 * This ensures the caller never blocks indefinitely even if the pane is
 	 * stuck in a busy state (e.g. a long-running tool call).
 	 *
-	 * Default: 5_000 (5 seconds).
+	 * Default: `IDLE_WAIT_DEADLINE_MS` (see below).
 	 */
 	idleTimeoutMs?: number;
 	/**
@@ -116,6 +116,36 @@ export interface SendKeysVerifiedOptions extends SendKeysWhenIdleOptions {
 // ---------------------------------------------------------------------------
 // Idle detection
 // ---------------------------------------------------------------------------
+
+/**
+ * Settle window (ms) between a send-keys spawn and the post-send
+ * `isComposerEmptied` verification capture (US-001, CAM-358).
+ *
+ * `capture-pane` lags the tmux server's own render cycle: reading the pane
+ * immediately after send-keys returns can still observe the PRE-send screen
+ * (the pushed text still visibly sitting in the composer), which makes
+ * `isComposerEmptied` misreport an undelivered payload as delivered on
+ * attempt 1 and skip the retry loop entirely. Sleeping this window (via the
+ * injected `sleepFn`, never a bare `Bun.sleepSync`) before every verify
+ * capture gives the pane one refresh cycle to catch up.
+ */
+export const SEND_KEYS_SETTLE_MS = 50;
+
+/**
+ * Default idle-wait deadline (ms) for `waitForIdlePane` before the
+ * send-anyway fallback fires (US-002, CAM-358).
+ *
+ * The previous inline default (5_000) made the fallback the COMMON case
+ * rather than the exception: an orchestrator running a routine long tool
+ * call (a full test run, a `git` operation, a slow lint pass) is routinely
+ * still mid-turn 5 seconds later, so the idle-gate timed out and sent blind
+ * on nearly every push (5 'did not go idle within 5000 ms; sending anyway'
+ * warnings logged in a single session, see journal DRAIN-CAM357-2026-07-19).
+ * Raised well above that so a routine long tool call is actually waited
+ * out; the send-anyway fallback (warn + send, never block indefinitely)
+ * still fires past this deadline unchanged.
+ */
+export const IDLE_WAIT_DEADLINE_MS = 30_000;
 
 /**
  * Glyphs that indicate the claude TUI is mid-turn (busy):
@@ -233,18 +263,22 @@ function waitForIdlePane(args: {
  * Flow:
  *   1. Idle-gate: poll `capture-pane` at `pollIntervalMs` intervals (default
  *      200 ms) until `isOrchPaneIdle` returns true or `idleTimeoutMs` is
- *      exhausted (default 5 000 ms). **Timeout fallback**: if the budget
- *      expires before the pane goes idle, a warning is printed to stderr and
- *      send-keys fires anyway. The caller is never blocked indefinitely.
+ *      exhausted (default `IDLE_WAIT_DEADLINE_MS`, 30 000 ms). **Timeout
+ *      fallback**: if the budget expires before the pane goes idle, a
+ *      warning is printed to stderr and send-keys fires anyway. The caller
+ *      is never blocked indefinitely.
  *   2. Send: text and 'Enter' are passed as discrete argv elements in a
  *      single `send-keys` invocation, WITHOUT `-l`. With `-l` every arg is
  *      literal, so 'Enter' would be typed as the text "Enter" and never
  *      submit (sendkeys-literal-enter-gotcha, CAM-55). The text is a single
  *      non-key-name arg, so tmux already sends its characters literally; only
  *      'Enter' must stay a recognised key.
- *   3. Verify: re-capture the pane and check `isComposerEmptied` (the pushed
- *      line left the composer). This is a pane-STATE check only; it never
- *      parses rendered scrollback for report content.
+ *   3. Settle + verify: sleep `SEND_KEYS_SETTLE_MS` (via the injected
+ *      `sleepFn`, US-001, CAM-358) so the tmux server has one refresh cycle
+ *      to render the post-send screen, then re-capture the pane and check
+ *      `isComposerEmptied` (the pushed line left the composer). This is a
+ *      pane-STATE check only; it never parses rendered scrollback for report
+ *      content.
  *   4. Retry: if not delivered, sleep `computeBackoffMs(attempt, ...)`
  *      (src/supervisor/loop.ts:606) and resend, up to `maxAttempts` (default
  *      3) total attempts.
@@ -261,7 +295,7 @@ export function sendKeysVerified(opts: SendKeysVerifiedOptions): void {
 		tmuxSpawnFn,
 		capturePaneFn,
 		pollIntervalMs = 200,
-		idleTimeoutMs = 5_000,
+		idleTimeoutMs = IDLE_WAIT_DEADLINE_MS,
 		sleepFn = (ms: number) => {
 			Bun.sleepSync(ms);
 		},
@@ -294,6 +328,8 @@ export function sendKeysVerified(opts: SendKeysVerifiedOptions): void {
 			tmuxArgs(['send-keys', '-t', paneId, text, 'Enter']),
 			{ stdio: 'ignore' },
 		);
+
+		sleepFn(SEND_KEYS_SETTLE_MS);
 
 		if (isComposerEmptied(capture(paneId), text)) {
 			delivered = true;

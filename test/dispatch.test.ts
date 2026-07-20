@@ -16,10 +16,17 @@
 //     - timeout (always busy): fallback sends anyway, no indefinite block
 //     - send-keys does NOT use -l (would make Enter literal); Enter is a separate trailing key (atomic)
 //     - send-keys targets the correct pane ID
+//     - omitting idleTimeoutMs uses the exported IDLE_WAIT_DEADLINE_MS default
+//       (US-002/CAM-358 regression: the review round 1 fix for US-R1-001 found
+//       nothing previously exercised the default-idleTimeoutMs wiring path)
+//     - IDLE_WAIT_DEADLINE_MS boundary: exceeds the old 5_000 ms default
 //   sendKeysVerified (US-002, CAM-200):
 //     - composer emptied immediately: delivered on the first attempt, no retry, no push-undelivered
 //     - composer still holds the pushed line every time: retries up to maxAttempts, then emits
 //       exactly one push-undelivered event via the injected logEvent, using a no-op sleepFn
+//     - settle window (US-001, CAM-358): a capturePaneFn that would report the stale PRE-send
+//       screen on the first post-send read, but the injected sleepFn advances a staged reader
+//       to the POST-send screen before that read happens, still yields delivered on attempt 1
 
 import { describe, expect, test } from 'bun:test';
 import type { SpawnSyncReturns } from 'node:child_process';
@@ -29,6 +36,8 @@ import {
 	isComposerEmptied,
 	sendKeysWhenIdle,
 	sendKeysVerified,
+	SEND_KEYS_SETTLE_MS,
+	IDLE_WAIT_DEADLINE_MS,
 	type CapturePaneFn,
 } from '../src/tmux/dispatch.ts';
 import type { SpawnFn as TmuxSpawnFn } from '../src/tmux/session.ts';
@@ -118,19 +127,21 @@ describe('isOrchPaneIdle', () => {
 describe('sendKeysWhenIdle', () => {
 	test('sends keys immediately when pane is idle on first check', () => {
 		const spawnFn = makeSpawnFn();
-		let sleepCount = 0;
+		const sleeps: number[] = [];
 
 		sendKeysWhenIdle({
 			paneId: '%3',
 			text: '/cam-plan',
 			tmuxSpawnFn: spawnFn,
-			capturePaneFn: () => '> ', // idle on first call
-			sleepFn: () => { sleepCount++; },
+			capturePaneFn: () => '> ', // idle on first call, composer empty post-send
+			sleepFn: (ms) => { sleeps.push(ms); },
 			idleTimeoutMs: 5,
 		});
 
-		// No sleep needed: idle on first check.
-		expect(sleepCount).toBe(0);
+		// No idle-gate poll sleep needed: idle on first check. The one recorded
+		// sleep is the unconditional post-send settle window (US-001, CAM-358),
+		// not an idle-gate poll.
+		expect(sleeps).toEqual([SEND_KEYS_SETTLE_MS]);
 
 		// send-keys was called.
 		const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
@@ -246,6 +257,63 @@ describe('sendKeysWhenIdle', () => {
 		const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
 		expect(sendKeys?.args).toContain('%7');
 	});
+
+	test('IDLE_WAIT_DEADLINE_MS exceeds the old 5_000 ms default (US-002, CAM-358)', () => {
+		// Boundary guard: if this constant were ever lowered back to (or below)
+		// the pre-US-002 5_000 ms default, CAM-358's stated fix ("a routine long
+		// tool call shouldn't blow the idle budget") would be silently lost.
+		expect(IDLE_WAIT_DEADLINE_MS).toBeGreaterThan(5_000);
+		expect(IDLE_WAIT_DEADLINE_MS).toBe(30_000);
+	});
+
+	test('omitting idleTimeoutMs falls back to IDLE_WAIT_DEADLINE_MS, not the old 5_000 ms default (US-002, CAM-358)', () => {
+		// Regression coverage for the review round 1 finding on US-R1-001: every
+		// other test in this file injects an explicit tiny idleTimeoutMs, so
+		// nothing previously exercised the default path at dispatch.ts's
+		// `idleTimeoutMs = IDLE_WAIT_DEADLINE_MS` wiring. This test omits the
+		// option entirely and proves the effective deadline via the send-anyway
+		// warning text, which embeds the deadline actually used.
+		const spawnFn = makeSpawnFn();
+
+		// Fake a monotonically-advancing clock driven only by the injected
+		// sleepFn, so the test doesn't burn real wall-clock time waiting out a
+		// 30s deadline. capturePaneFn always reports busy, so the idle-gate
+		// never resolves early and must run out the full budget.
+		const originalNow = Date.now;
+		const originalWrite = process.stderr.write;
+		let fakeNow = 0;
+		Date.now = () => fakeNow;
+		const captured: string[] = [];
+		process.stderr.write = ((chunk: string | Uint8Array) => {
+			captured.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk));
+			return true;
+		}) as typeof process.stderr.write;
+
+		try {
+			sendKeysWhenIdle({
+				paneId: '%1',
+				text: '/cam-plan',
+				tmuxSpawnFn: spawnFn,
+				capturePaneFn: () => '⠋ Busy forever\n', // never idle
+				sleepFn: (ms) => {
+					fakeNow += ms;
+				},
+				pollIntervalMs: 1_000,
+				// idleTimeoutMs intentionally omitted: exercises the default.
+			});
+		} finally {
+			Date.now = originalNow;
+			process.stderr.write = originalWrite;
+		}
+
+		// The warning text embeds the exact idleTimeoutMs the wiring used.
+		expect(captured.join('')).toContain(`did not go idle within ${IDLE_WAIT_DEADLINE_MS} ms`);
+		expect(captured.join('')).not.toContain('did not go idle within 5000 ms');
+
+		// Fallback still sends despite never observing idle.
+		const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
+		expect(sendKeys).toBeDefined();
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -283,6 +351,51 @@ describe('sendKeysVerified', () => {
 
 		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
 		expect(sendKeysCalls).toHaveLength(1);
+		expect(events).toHaveLength(0);
+	});
+
+	test('settle window honored: sleepFn advances the staged reader so the verify reads the post-send screen, not the stale pre-send one (US-001, CAM-358)', () => {
+		const spawnFn = makeSpawnFn();
+		const events: Array<{ kind: string; detail: unknown }> = [];
+
+		// The staged reader: before the settle sleep fires, a post-send capture
+		// would still observe the PRE-send screen (payload still visibly sitting
+		// in the composer, as a lagging real capture-pane would report
+		// immediately after send-keys returns). Only the injected sleepFn -
+		// when called with the settle window - flips `settled` and advances the
+		// staged reader to the POST-send screen (composer emptied).
+		let settled = false;
+		const sleepFn = (ms: number) => {
+			if (ms === SEND_KEYS_SETTLE_MS) settled = true;
+		};
+
+		const sendKeysCallCount = () =>
+			spawnFn.calls.filter((c) => c.args[2] === 'send-keys').length;
+
+		const capturePaneFn: CapturePaneFn = () => {
+			// Before any send-keys call, this is the PRE-send idle-gate capture.
+			if (sendKeysCallCount() === 0) return '> ';
+			// Post-send verify capture: PRE-send (stale) screen until the settle
+			// sleep has fired, POST-send (composer emptied) screen thereafter.
+			return settled ? '> ' : '> /cam-spec';
+		};
+
+		sendKeysVerified({
+			paneId: '%4',
+			text: '/cam-spec',
+			tmuxSpawnFn: spawnFn,
+			capturePaneFn,
+			sleepFn,
+			idleTimeoutMs: 5,
+			logEvent: (kind, detail) => events.push({ kind, detail }),
+		});
+
+		// Delivered verdict must reflect the settled (POST-send) screen: exactly
+		// one send-keys call, no retry, no push-undelivered. Without the settle
+		// sleep between the send-keys spawn and the verify capture, this same
+		// staged reader would report PRE-send on attempt 1's verify and force a
+		// retry (or exhaustion), misreporting delivery.
+		expect(sendKeysCallCount()).toBe(1);
 		expect(events).toHaveLength(0);
 	});
 
