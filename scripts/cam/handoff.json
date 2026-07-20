@@ -1,0 +1,15 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Add the frozen-comparand OracleLintRule" },
+  "branchName": "cam/issue-381",
+  "timestamp": "2026-07-20T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/supervisor/prd-oracle-lint.ts",
+    "test/supervisor/prd-oracle-lint.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "FROZEN_COMPARAND_RULE is now the second entry in RULES (src/supervisor/prd-oracle-lint.ts), name 'frozen-comparand'. It flags a command containing -eq/-ge/-le/== immediately followed by a literal integer (INTEGER_COMPARAND_RE) UNLESS the command also carries a live re-derivation token matched by LIVE_DERIVATION_RE ('git show main:<path>', 'git diff main', or any 'git grep ...' invocation that also mentions the word 'main'). Detection is purely lexical over the oracle command string (same signature as the existing grep-q-plus-list-files rule: test(command: string)), no I/O, mirrors the module's existing pure-scanner shape. Test file's pre-existing 'RULES: named-rules list shape' block was updated from length-1 to length-2 (order-sensitive: [GREP_Q_LIST_FILES_RULE, FROZEN_COMPARAND_RULE]) -- any future rule addition must update that assertion too. Two new dedicated describe blocks were added with load-bearing exact names ('frozen-comparand rule: flagged forms' / 'frozen-comparand rule: passing cases') consumed verbatim by this story's own `bun test -t` oracles; keep that naming convention for any future rule's dedicated test blocks since the PRD authoring pattern reuses it. Full check:all spine (typecheck/test/lint/file-size/debt-markers/version-skips/coverage/dead-code/dup/ci-parity/agents-md/test-sleeps) is green.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
