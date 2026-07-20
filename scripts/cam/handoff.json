@@ -1,0 +1,14 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Extract combineStreams helper to give stderr-first ordering one definition point" },
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/supervisor/plan-preflight.ts",
+    "test/supervisor/plan/plan-preflight.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 extracted `export function combineStreams(stderr: string, stdout: string): string` into src/supervisor/plan-preflight.ts, replacing the four duplicated `[stderr, stdout].filter((s) => s.trim().length > 0).join('\\n').trim()` inline expressions at the git-checkout-main, git-pull, typecheck, and bun-test failure sites. Signature keeps stderr first to mirror the stderr-first ordering contract (detail reaches the operator via truncatePreflightDetail, which renders only the first line, so the diagnostic verdict must survive ahead of banner/progress chatter). The clean-tree step (stdout-only, `status.stdout.trim()`) was left byte-identical and out of scope, as required. Direct unit tests for the helper (ordering, stdout-only, stderr-only, both-empty) now live at the top of test/supervisor/plan/plan-preflight.test.ts; the pre-existing per-site integration tests (git-checkout-main/git-pull at :120/:154 previously used only toContain and would have passed under either ordering) were left as-is since the story only required adding a direct, ordering-sensitive test at the definition point, not retrofitting every call-site test. Mutation ceremony run locally (reversed operand order, confirmed RED, restored) before committing; not itself an acceptance criterion.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ],
+  "appliedPatternIds": []
+}
