@@ -1,0 +1,12 @@
+# The three verbatim oracle commands from the real CAM-382 false-positive
+# incident (2026-07-20): the deterministic oracle lint's frozen-comparand
+# rule wrongly flagged all three, blocking two re-plan rounds and escalating
+# the plan. Each one embeds an operator+integer byte pattern as QUOTED DATA
+# (a JS test-input array element, or a grep search pattern), not as a live
+# shell comparison. Recorded verbatim from the escalation marker as quoted in
+# scripts/cam/issues/CAM-0388.json (the marker itself is a gitignored,
+# per-plan-round rotating artifact and is gone by the time this fixture is
+# read -- never re-source it from an acceptance oracle, patterns.md:907).
+bun -e 'const {RULES}=await import("./src/supervisor/prd-oracle-lint.ts");const r=RULES.find(x=>x.name==="frozen-comparand");const cs=["test $X -eq 41","test $X -ge 41","test $X -le 41","test $X == 41"];let bad=0;for(const c of cs){if(r.test(c)===null){console.log("MISSED:",c);bad++}}process.exit(bad?1:0)'
+bun -e 'const {RULES}=await import("./src/supervisor/prd-oracle-lint.ts");const r=RULES.find(x=>x.name==="frozen-comparand");const cs=["cmd --ge 5","echo foo-eq 42"];let bad=0;for(const c of cs){if(r.test(c)!==null){console.log("FALSELY FLAGGED:",c);bad++}}process.exit(bad?1:0)'
+grep -qF 'test $(git grep -c PATTERN mainbranch:file.ts) -eq 1' test/supervisor/prd-oracle-lint.test.ts

@@ -10,7 +10,10 @@
 //     absence/presence assertion, regardless of flag order, spacing, or bundling.
 //   - frozen-comparand: catches an oracle comparing against a literal integer
 //     read off main with no live re-derivation token, enforcing the
-//     derive-don't-freeze rule (patterns.md:903), US-001 CAM-381.
+//     derive-don't-freeze rule (patterns.md:903), US-001 CAM-381. Quote-aware
+//     (US-001 CAM-388): a match sitting inside a quoted span (test-input
+//     data, a grep search pattern) is ignored, except inside a `-c
+//     '<payload>'` wrapper, whose payload is unwrapped and still scanned.
 //   - rotating-artifact-target: catches an oracle asserting against a
 //     per-story ROTATING harness state file (scripts/cam/handoff.json or the
 //     reviewer's gitignored capture-pane artifact), enforcing the
@@ -162,12 +165,64 @@ const INTEGER_COMPARAND_RE = /(?:-eq|-ge|-le|==)\s*\d+\b/;
 const LIVE_DERIVATION_RE = /git\s+show\s+main:|git\s+diff\s+main\b|git\s+grep\b[^\n]*\bmain\b/;
 
 /**
+ * True when the single/double quote starting at `quoteStart` in `command` is
+ * a `-c '<payload>'` wrapper argument (e.g. `sh -c '...'`, `bash -c "..."`):
+ * the text immediately preceding the quote, ignoring trailing whitespace, is
+ * the whole flag token `-c` with a word boundary before it. Such payloads
+ * must be UNWRAPPED (recursed into), never deleted, so a genuine live shell
+ * comparison inside the wrapper keeps being detected (CAM-388).
+ */
+function isDashCWrapper(command: string, quoteStart: number): boolean {
+	return /(?:^|\s)-c\s*$/.test(command.slice(0, quoteStart));
+}
+
+/**
+ * Strips single/double-quoted spans out of `command` before frozen-comparand
+ * scanning, so an operator+integer byte pattern that is merely quoted TEST
+ * DATA (a JS array literal element, a grep search pattern) is never mistaken
+ * for a live shell comparison (CAM-388, the self-referential oracle trap: a
+ * behavioral oracle about this very rule must embed comparison-shaped
+ * strings as data, which the unstripped flat regex could not tell apart from
+ * a real comparison). A `-c '<payload>'` wrapper argument is the one
+ * exception: its payload is UNWRAPPED (recursively stripped and spliced back
+ * unquoted) rather than deleted, so `sh -c 'test $(wc -l < f) -eq 3'` keeps
+ * flagging -- the quotes there wrap a real shell command, not inert data.
+ * Every other quoted span is replaced with a single space (never simple
+ * deletion) so tokens on either side of the span don't fuse into a new one.
+ */
+function stripQuotedSpans(command: string): string {
+	let out = '';
+	let i = 0;
+
+	while (i < command.length) {
+		const ch = command[i];
+		if (ch === "'" || ch === '"') {
+			const closeIdx = command.indexOf(ch, i + 1);
+			const end = closeIdx === -1 ? command.length : closeIdx;
+			const content = command.slice(i + 1, end);
+			out += isDashCWrapper(command, i) ? ` ${stripQuotedSpans(content)} ` : ' ';
+			i = end + 1;
+		} else {
+			out += ch;
+			i++;
+		}
+	}
+
+	return out;
+}
+
+/**
  * True when `command` compares against a literal integer via -eq/-ge/-le/==
  * with no live `main`-re-derivation token present anywhere in the command.
+ * Both regexes are run against the SAME quote-stripped text (see
+ * stripQuotedSpans), so a derivation token that legitimately lives inside
+ * quotes still excuses the comparand, and a comparand that is merely quoted
+ * test data never trips the rule in the first place.
  */
 function hasFrozenIntegerComparand(command: string): boolean {
-	if (!INTEGER_COMPARAND_RE.test(command)) return false;
-	return !LIVE_DERIVATION_RE.test(command);
+	const stripped = stripQuotedSpans(command);
+	if (!INTEGER_COMPARAND_RE.test(stripped)) return false;
+	return !LIVE_DERIVATION_RE.test(stripped);
 }
 
 /**
