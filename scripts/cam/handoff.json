@@ -1,17 +1,18 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-001",
-    "title": "Review round 1 fix 001: address reviewer finding"
+    "id": "US-R1-002",
+    "title": "Review round 1 fix 002: address reviewer finding"
   },
   "branchName": "cam/issue-358",
-  "timestamp": "2026-07-20T03:10:00Z",
+  "timestamp": "2026-07-20T04:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "test/dispatch.test.ts",
+    "scripts/cam/patterns.md",
+    "test/integration/review-verdict-handback.test.ts",
     "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "Addressed the round-1 reviewer WARNING on US-002 (test/dispatch.test.ts): nothing exercised the idleTimeoutMs = IDLE_WAIT_DEADLINE_MS default-wiring path in sendKeysVerified/sendKeysWhenIdle, since every existing test injects an explicit idleTimeoutMs (5 or 1_000). Added two tests in the sendKeysWhenIdle describe block: (1) a boundary assertion that IDLE_WAIT_DEADLINE_MS === 30_000 and > 5_000; (2) a wiring test that omits idleTimeoutMs entirely, uses a capturePaneFn that always reports busy (never idle), and mocks both Date.now and process.stderr.write (restored in a finally) so the idle-gate's real deadline math can be driven by the injected sleepFn (fakeNow += ms) instead of a real 30s wall-clock wait -- asserts the send-anyway warning text embeds `did not go idle within 30000 ms` (not the old 5000 ms). Runtime stayed ~200ms for the whole file (23 tests). No production code changed: src/tmux/dispatch.ts, IDLE_WAIT_DEADLINE_MS, and SEND_KEYS_SETTLE_MS are untouched, this was pure test-coverage. Raised test/dispatch.test.ts's file-size ceiling 396->458 (actual content.split('\\n').length) with a dated _ref entry naming US-R1-001/CAM-358. Full bun run check:all spine (typecheck, test [5148 pass], embed-vendor, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps) passed green after the ceiling raise. Note: US-R1-002 (also filed by the round-1 reviewer, priority 2 in prd.json) is a separate doc-maintenance finding about a stale '5s idleTimeoutMs' claim surviving in patterns.md:646 and test/integration/review-verdict-handback.test.ts:57/102 after the US-002 default was raised to 30s; it was NOT touched by this story (out of scope, this story only addressed the US-R1-001 test-coverage finding) and remains passes:false for the next implementer.",
+  "nextStoryContext": "Addressed the round-1 reviewer WARNING on US-002/US-003 (patterns.md Doc Maintenance gap): after US-002 raised the idle-gate's default idleTimeoutMs from an inline 5_000 ms to the exported IDLE_WAIT_DEADLINE_MS constant (30_000 ms), three prose spots still claimed the idle-gate 'polls the full 5s idleTimeoutMs budget' -- now false and actively misleading (an unprimed pane now blocks 30s, not 5s). Fixed all three in this commit: (1) scripts/cam/patterns.md:646 (the CAM-200 makeNotifyOrchestrator bullet's 'Real-tmux test fixture gotcha' paragraph) now names IDLE_WAIT_DEADLINE_MS (30 000 ms) instead of '5s idleTimeoutMs', and reworded the trailing 'still well under the 5s per-test timeout' clause (which was backwards post-raise) to correctly attribute the fast wall-clock to the priming fix rather than to the deadline being small; (2) test/integration/review-verdict-handback.test.ts:56-58 (primeIdlePrompt jsdoc) and :101-104 (test body comment) both updated from '5s idleTimeoutMs' to 'IDLE_WAIT_DEADLINE_MS (30 000 ms)'. Pure comment/doc changes, zero production or test-assertion code touched. Comment edits added one line to test/integration/review-verdict-handback.test.ts (171->173, gate's content.split('\\n').length measure), so raised its file-size ceiling with a dated _ref entry naming US-R1-002/CAM-358, staged before re-running the gate. Full bun run check:all spine (typecheck, test [5148 pass, 0 fail], embed-vendor n/a [no vendor/templates touched], lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps) passed green after the ceiling raise. No further round-1 reviewer findings remain outstanding in prd.json as of this handoff.",
   "officialDocsValidated": [
     {
       "lib": "none",
