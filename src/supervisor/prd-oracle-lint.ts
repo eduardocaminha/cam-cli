@@ -12,12 +12,14 @@
 //     read off main with no live re-derivation token, enforcing the
 //     derive-don't-freeze rule (patterns.md:903), US-001 CAM-381. Quote-aware
 //     (US-001 CAM-388): a match sitting inside a quoted span (test-input
-//     data, a grep search pattern) is ignored, except inside a `-c
-//     '<payload>'` wrapper, whose payload is unwrapped and still scanned. An
-//     unterminated quote is treated as literal text rather than swallowing
-//     the rest of the command, and the POSIX `'\''` single-quote escape
-//     idiom is recognized so it never fools the span-close search
-//     (US-R1-001 CAM-388).
+//     data, a grep search pattern) is ignored, except inside a shell
+//     interpreter's `-c '<payload>'` wrapper (sh/bash/zsh/dash), whose
+//     payload is unwrapped and still scanned; a non-interpreter command's
+//     bare `-c` flag (`grep -c`, `npx tool -c`) is never treated as a
+//     wrapper (US-R1-002 CAM-388). An unterminated quote is treated as
+//     literal text rather than swallowing the rest of the command, and the
+//     POSIX `'\''` single-quote escape idiom is recognized so it never fools
+//     the span-close search (US-R1-001 CAM-388).
 //   - rotating-artifact-target: catches an oracle asserting against a
 //     per-story ROTATING harness state file (scripts/cam/handoff.json or the
 //     reviewer's gitignored capture-pane artifact), enforcing the
@@ -169,15 +171,31 @@ const INTEGER_COMPARAND_RE = /(?:-eq|-ge|-le|==)\s*\d+\b/;
 const LIVE_DERIVATION_RE = /git\s+show\s+main:|git\s+diff\s+main\b|git\s+grep\b[^\n]*\bmain\b/;
 
 /**
+ * A shell-interpreter word (sh/bash/zsh/dash) immediately followed by a
+ * `-c` flag, at the very end of the text preceding a quote (optionally
+ * preceded by a path separator so `/bin/bash -c '...'` still matches).
+ * Scoping the wrapper check to an actual interpreter word (rather than any
+ * command's bare `-c` flag) is what CAM-388's US-R1-002 reviewer finding
+ * required: a non-interpreter `-c` payload such as `grep -c 'test $X -eq
+ * 41' file.ts` or `npx tool -c '...'` carries the same trailing-`-c'`
+ * shape but is NOT a shell wrapper -- its quoted payload is inert data
+ * (a grep search pattern), not a command to unwrap and re-scan.
+ */
+const SHELL_INTERPRETER_DASH_C_RE = /(?:^|[\s/])(?:sh|bash|zsh|dash)\s+-c\s*$/;
+
+/**
  * True when the single/double quote starting at `quoteStart` in `command` is
- * a `-c '<payload>'` wrapper argument (e.g. `sh -c '...'`, `bash -c "..."`):
- * the text immediately preceding the quote, ignoring trailing whitespace, is
- * the whole flag token `-c` with a word boundary before it. Such payloads
+ * a `-c '<payload>'` wrapper argument (e.g. `sh -c '...'`, `bash -c "..."`,
+ * `/bin/bash -c '...'`): the text immediately preceding the quote, ignoring
+ * trailing whitespace, ends in a recognized shell interpreter word followed
+ * by the `-c` flag (see SHELL_INTERPRETER_DASH_C_RE above). Such payloads
  * must be UNWRAPPED (recursed into), never deleted, so a genuine live shell
- * comparison inside the wrapper keeps being detected (CAM-388).
+ * comparison inside the wrapper keeps being detected (CAM-388). A `-c` flag
+ * belonging to a non-interpreter command (`grep -c`, `npx tool -c`) is NOT a
+ * wrapper and falls through to the ordinary quoted-span deletion path.
  */
 function isDashCWrapper(command: string, quoteStart: number): boolean {
-	return /(?:^|\s)-c\s*$/.test(command.slice(0, quoteStart));
+	return SHELL_INTERPRETER_DASH_C_RE.test(command.slice(0, quoteStart));
 }
 
 /**
@@ -226,10 +244,14 @@ function findClosingQuoteIndex(command: string, quoteChar: string, searchFrom: n
  * for a live shell comparison (CAM-388, the self-referential oracle trap: a
  * behavioral oracle about this very rule must embed comparison-shaped
  * strings as data, which the unstripped flat regex could not tell apart from
- * a real comparison). A `-c '<payload>'` wrapper argument is the one
- * exception: its payload is UNWRAPPED (recursively stripped and spliced back
- * unquoted) rather than deleted, so `sh -c 'test $(wc -l < f) -eq 3'` keeps
- * flagging -- the quotes there wrap a real shell command, not inert data.
+ * a real comparison). A shell interpreter's `-c '<payload>'` wrapper
+ * argument is the one exception: its payload is UNWRAPPED (recursively
+ * stripped and spliced back unquoted) rather than deleted, so `sh -c 'test
+ * $(wc -l < f) -eq 3'` keeps flagging -- the quotes there wrap a real shell
+ * command, not inert data. A non-interpreter command's bare `-c` flag
+ * (`grep -c 'test $X -eq 41' file.ts`, `npx tool -c '...'`) is NOT a wrapper
+ * (US-R1-002 CAM-388): its quoted payload is ordinary inert data and is
+ * deleted like any other quoted span, never unwrapped and rescanned.
  * Every other quoted span is replaced with a single space (never simple
  * deletion) so tokens on either side of the span don't fuse into a new one.
  *
