@@ -6,6 +6,14 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.222.0] - 2026-07-20
+
+### Added
+
+- US-003 - Pin the both-streams-empty contract through runPlanPreflight and real truncatePreflightDetail
+- US-002 - Extract the production preflight spawn closure into a real-boundary-tested sibling module
+- US-001 - Extract combineStreams helper to give stderr-first ordering one definition point
+
 ## [0.221.0] - 2026-07-20
 
 ### Added
