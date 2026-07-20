@@ -366,7 +366,7 @@ describe('makeNotifyOrchestrator x sendKeysVerified (US-003, CAM-200; geometry o
 		expect(sendCalls.length).toBe(3);
 		expect(events).toHaveLength(1);
 		expect(events[0]!.kind).toBe('push-undelivered');
-		expect(events[0]!.detail).toEqual({ paneId: '%7', retriesExhausted: 3 });
+		expect(events[0]!.detail).toEqual({ paneId: '%7', retriesExhausted: 3, reason: 'retries-exhausted' });
 	});
 
 	test('adaptLogEventForPush wraps push-undelivered into a full WorkerEvent with uuid "sidecar"', () => {
@@ -397,6 +397,6 @@ describe('makeNotifyOrchestrator x sendKeysVerified (US-003, CAM-200; geometry o
 		expect(recorded[0]!.kind).toBe('push-undelivered');
 		expect(recorded[0]!.uuid).toBe('sidecar');
 		expect(recorded[0]!.storyId).toBeUndefined();
-		expect(recorded[0]!.detail).toEqual({ paneId: '%9', retriesExhausted: 3 });
+		expect(recorded[0]!.detail).toEqual({ paneId: '%9', retriesExhausted: 3, reason: 'retries-exhausted' });
 	});
 });

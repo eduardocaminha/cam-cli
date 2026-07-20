@@ -6,6 +6,14 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.223.0] - 2026-07-20
+
+### Added
+
+- US-003 - Prove the pane-not-idle single-send against a real tmux pane
+- US-002 - Send exactly once and skip the verify/retry cycle when the idle gate times out
+- US-001 - Add required reason discriminator to PushUndeliveredEventDetail and wire the existing exhaustion site
+
 ## [0.222.0] - 2026-07-20
 
 ### Added

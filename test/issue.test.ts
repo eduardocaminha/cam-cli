@@ -391,7 +391,7 @@ describe('runIssue: push-undelivered observability', () => {
 		expect(code).toBe(0);
 		const undelivered = events.filter((e) => e.kind === 'push-undelivered');
 		expect(undelivered).toHaveLength(1);
-		expect(undelivered[0]?.detail).toMatchObject({ paneId: '%0', retriesExhausted: 3 });
+		expect(undelivered[0]?.detail).toMatchObject({ paneId: '%0', retriesExhausted: 3, reason: 'retries-exhausted' });
 	});
 });
 

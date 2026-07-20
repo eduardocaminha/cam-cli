@@ -125,7 +125,7 @@ test.skipIf(!tmuxAvailable)(
 		expect(sendKeysCalls).toHaveLength(3);
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
-		expect(events[0]?.detail).toEqual({ paneId: id, retriesExhausted: 3 });
+		expect(events[0]?.detail).toEqual({ paneId: id, retriesExhausted: 3, reason: 'retries-exhausted' });
 	},
 	20_000,
 );
@@ -315,6 +315,53 @@ test.skipIf(!tmuxAvailable)(
 
 		expect(sendKeysCalls).toHaveLength(1);
 		expect(events).toHaveLength(0);
+	},
+	20_000,
+);
+
+test.skipIf(!tmuxAvailable)(
+	'pane-not-idle timeout path (real tmux, non-idle pane): exactly ONE send-keys call, exactly one push-undelivered event with reason pane-not-idle and retriesExhausted === 1 (US-003, CAM-373)',
+	async () => {
+		// A real long-lived foreground command (never renders a `>`/`❯` idle
+		// prompt, nor exits) so `isOrchPaneIdle` genuinely reads false for the
+		// entire idle-gate poll window -- this drives the real
+		// `waitForIdlePane` timeout path, not a faked pane-content string.
+		tmuxRaw(['kill-server']);
+		tmuxRaw([
+			'new-session',
+			'-d',
+			'-s',
+			SESSION,
+			'-x',
+			String(PANE_WIDTH),
+			'-y',
+			String(PANE_HEIGHT),
+			"bash -c 'echo BUSY; sleep 100'",
+		]);
+		await waitForCondition(() => tmuxRaw(['has-session', '-t', SESSION]).status === 0);
+		const id = paneId();
+		const sendKeysCalls: string[][] = [];
+		const spawnFn = makeSwapSocketSpawn(sendKeysCalls);
+		const events: Array<{ kind: WorkerEventKind; detail: WorkerEventDetail }> = [];
+
+		sendKeysVerified({
+			paneId: id,
+			text: '[cam] US-003 DONE: pane-not-idle probe',
+			tmuxSpawnFn: spawnFn,
+			// Explicitly short override: never waits anywhere near the 30s
+			// production default (IDLE_WAIT_DEADLINE_MS).
+			idleTimeoutMs: 100,
+			pollIntervalMs: 20,
+			maxAttempts: 3,
+			retryBaseMs: 20,
+			retryMaxMs: 50,
+			logEvent: (kind, detail) => events.push({ kind, detail }),
+		});
+
+		expect(sendKeysCalls).toHaveLength(1);
+		expect(events).toHaveLength(1);
+		expect(events[0]?.kind).toBe('push-undelivered');
+		expect(events[0]?.detail).toEqual({ paneId: id, retriesExhausted: 1, reason: 'pane-not-idle' });
 	},
 	20_000,
 );
