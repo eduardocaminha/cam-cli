@@ -1,11 +1,11 @@
 {
   "id": "CAM-368",
   "title": "Carried over from round 1 and not addressed (non-blocking): the expression [a.s…",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-20T11:59:08.045Z",
-  "updatedAt": "2026-07-20T12:20:41.540Z",
+  "updatedAt": "2026-07-20T13:21:37.617Z",
   "description": "Carried over from round 1 and not addressed (non-blocking): the expression [a.stderr, a.stdout].filter((s) => s.trim().length > 0).join('\\n').trim() is repeated verbatim at :86, :94, :117 and :128. A small local helper (e.g. combineStreams(res)) would remove the four-way duplication and give the stderr-first ordering a single point of definition. The jscpd dup gate passes as-is, so this is style only.\n\nSource: cam/issue-363\nReview round: 2\n\nsuggestion-fingerprint: fc4a19317501",
   "derivedFrom": [
     "CAM-363"
