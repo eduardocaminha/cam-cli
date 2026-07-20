@@ -73,7 +73,7 @@
         "Full quality spine green. [oracle: named-command bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/prd-oracle-lint.ts, test/supervisor/prd-oracle-lint.test.ts. TEST NAMING IS LOAD-BEARING: `zero-match-vacuous rule: flagged forms` / `zero-match-vacuous rule: passing cases`, and the cumulative AC5 requires US-001 and US-002 to have used their own exact names too, so do not rename earlier blocks. COVERAGE-DELTA DERIVATION, measured decision: the issue's AC8 suggests deriving main's PASS count via a run against main state, but that was probed and is UNSOUND here: a detached `git worktree` at main with node_modules symlinked yields 5185 pass / 7 FAIL while the same commit in the real repo yields 5192 pass / 0 fail, because ~7 tests are cwd/environment-sensitive. Comparing an in-repo branch run to a worktree main run would compare apples to oranges and would spuriously FLATTER the branch by ~+7. The static declaration count above is environment-independent, derives both sides live via git refs, and was probed falsifiable (excluding one test file drops it 4906 -> 4886, exit 1). Do NOT reintroduce a worktree-run baseline, and do NOT write any baseline file into src/ (an earlier draft wrote src/supervisor/.main-baseline-lint.ts, which is not gitignored and would leak into `git add -A`; the git-ref derivation above needs no temp file at all). Source bullet: patterns.md:901."
     },
