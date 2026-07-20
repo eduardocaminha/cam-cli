@@ -1,0 +1,60 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-358",
+  "description": "Fix the inert post-send verification in sendKeysVerified: add a settle window before the verify capture and raise the idle deadline to a realistic named constant.",
+  "issueNumber": 358,
+  "type": "fix",
+  "relatedDocs": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "Bun",
+      "channel": "WebFetch",
+      "url": "https://bun.sh/docs/api/utils",
+      "version": "current",
+      "fetchedAt": "2026-07-20T00:00:00.000Z",
+      "summary": "Bun.sleepSync(ms: number) is current and non-deprecated: a blocking synchronous version of Bun.sleep. It remains the correct default for the injected sleepFn seam in sendKeysVerified, so the new settle window can reuse the existing sleepFn without any API change.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Wait a settle window before the delivery-verification capture",
+      "description": "As the sidecar pushing a [cam] line into the orchestrator pane, I need sendKeysVerified to pause a settle window between the send-keys spawn and the verification capture, so that the verify reads the post-send screen instead of the pre-send screen and the retry loop stops misreporting an undelivered payload as delivered on attempt 1.",
+      "acceptanceCriteria": [
+        "sendKeysVerified sleeps a settle window via the INJECTED sleepFn between the send-keys spawn and the verification capture on every attempt, never via a bare Bun.sleepSync call added at that site. [oracle: file-assert grep -nE 'sleepFn\\(' src/tmux/dispatch.ts shows a sleepFn call between the send-keys tmuxSpawnFn call and the isComposerEmptied capture inside the attempt loop]",
+        "The settle delay is an exported named constant (matching /export const [A-Z_]*SETTLE[A-Z_]*_MS/), not an inline numeric literal at the call site. [oracle: grep -qE 'export const [A-Z_]*SETTLE[A-Z_]*_MS' src/tmux/dispatch.ts]",
+        "isComposerEmptied is byte-identical to its state on main. [oracle: diff <(git show main:src/tmux/dispatch.ts | sed -n '/^export function isComposerEmptied/,/^}/p') <(sed -n '/^export function isComposerEmptied/,/^}/p' src/tmux/dispatch.ts)]",
+        "The send-keys argv shape is unchanged: text and 'Enter' as discrete args in ONE send-keys call, never with -l. [oracle: file-assert grep -q \"tmuxArgs(\\['send-keys', '-t', paneId, text, 'Enter'\\])\" src/tmux/dispatch.ts]",
+        "A test proves the settle window is honored: a capturePaneFn returning the PRE-send screen (payload still in the composer) on its first post-send read and the POST-send screen thereafter, driven with a sleepFn that advances the staged reader, yields the correct delivered verdict rather than the stale pre-send one. [oracle: bun test test/dispatch.test.ts]",
+        "When retries are exhausted the push-undelivered event still fires exactly once with paneId and retriesExhausted. [oracle: bun test test/dispatch.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes with no existing assertion weakened or skipped (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "File: src/tmux/dispatch.ts (sendKeysVerified, the attempt loop at ~lines 288-312: the verify capture at line 298 currently fires with zero delay after the send-keys spawn at 292-296). Test: test/dispatch.test.ts (existing describe('sendKeysVerified') block, ~line 269, already injects sleepFn/capturePaneFn/idleTimeoutMs). START CLEAN FROM MAIN: do NOT branch from or cherry-pick the parked origin branch cam/issue-358 (64e2a909), which holds an abandoned wrap/anchor attempt. HARD OUT OF SCOPE: any change to isComposerEmptied (src/tmux/dispatch.ts:181-185), including making it wrap-tolerant; every in-place attempt so far produced a review CRITICAL and its redesign around pane geometry is a separately tracked issue. Do not change the argv shape (CAM-55 sendkeys-literal-enter-gotcha: -l over the control token turns 'Enter' into literal text; a standalone Enter call becomes a newline instead of a submit). The settle must go through the injected sleepFn so tests stay deterministic and fast: never a bare sleep, and bare sleeps are banned under test/integration/ (use test/helpers/wait-for-condition.ts there). Note the sidecar wires a DIFFERENT capture reader than the unit tests (src/supervisor/host.ts:579-586 uses capture-pane -p -S - full scrollback; dispatch.ts:191-198 uses the visible-screen read); this scope does not require reconciling them, but introduce no new dependence on which reader is wired. Relevant patterns.md bullets: line 38 (idle-guarantee before send-keys, US-008) and line 330 (coalesce notifyOrchestrator: the orchestrator Ink prompt does not absorb back-to-back send-keys, which is the same re-render-lag physics this settle window addresses)."
+    },
+    {
+      "id": "US-002",
+      "title": "Raise the idle-wait deadline to a realistic named constant",
+      "description": "As the sidecar pushing a [cam] line, I need the idle-wait deadline to be a named constant well above 5000 ms, so that an orchestrator running a routine long tool call is actually waited out instead of making the blind send-anyway path the common case (5 send-anyway warnings were logged in a single session).",
+      "acceptanceCriteria": [
+        "The default idle-wait deadline is an exported named constant well above 5000 ms, with no remaining inline 5_000 default for idleTimeoutMs. [oracle: grep -qE 'export const [A-Z_]*IDLE[A-Z_]*_MS' src/tmux/dispatch.ts && ! grep -q 'idleTimeoutMs = 5_000' src/tmux/dispatch.ts]",
+        "The send-anyway fallback is preserved: on deadline expiry sendKeysVerified still writes its stderr warning naming the pane and the effective timeout, still sends, and still never blocks indefinitely. [oracle: bun test test/dispatch.test.ts]",
+        "The idleTimeoutMs option remains caller-overridable so existing tests can keep injecting a tiny budget. [oracle: file-assert grep -q 'idleTimeoutMs?:' src/tmux/dispatch.ts]",
+        "isComposerEmptied is still byte-identical to its state on main. [oracle: diff <(git show main:src/tmux/dispatch.ts | sed -n '/^export function isComposerEmptied/,/^}/p') <(sed -n '/^export function isComposerEmptied/,/^}/p' src/tmux/dispatch.ts)]",
+        "The stale 'Default idleTimeoutMs is 5 000 ms' claim in the knowledge layer is corrected to the new value. [oracle: ! grep -q 'Default `idleTimeoutMs` is 5 000 ms' scripts/cam/patterns.md]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes with no existing assertion weakened or skipped (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/tmux/dispatch.ts (the idleTimeoutMs = 5_000 destructuring default at line 264, its JSDoc at lines 65-74, the flow-doc mention of 'default 5 000 ms' at ~line 237, and the timedOut warning branch at 280-286) plus scripts/cam/patterns.md line 38, whose bullet asserts the 5 000 ms default and must be updated in the SAME commit (Doc Maintenance). Evidence driving this: cam-supervisor.log recorded 5 'did not go idle within 5000 ms; sending anyway' warnings while cam-worker-events.jsonl recorded ZERO push-undelivered events, i.e. the verify path never fired across 5 blind sends. Keep the fallback semantics exactly as they are (warn to stderr, then send anyway, never block): only the default value and its naming change. Existing tests inject idleTimeoutMs: 5 or 1_000 explicitly (test/dispatch.test.ts lines 129/158/181/198/220/243/280/311/336) and must keep passing unchanged: do not weaken or skip any of them. Depends on US-001 (same file, same function); rebase onto it rather than editing in parallel."
+    }
+  ]
+}
