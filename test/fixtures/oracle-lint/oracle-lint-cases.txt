@@ -1,10 +1,20 @@
 # Behavioral matrix for src/supervisor/prd-oracle-lint.ts's RULES.
 # Format: <ruleName> :: <ok|flag> :: <command>
-# '#' comments and blank lines are ignored. US-001 (CAM-388) seeds the
-# frozen-comparand and rotating-artifact-target rows this story's acceptance
-# criteria depend on; a future story broadens the matrix to the other rules.
+# '#' comments and blank lines are ignored. US-001 (CAM-388) seeded the
+# frozen-comparand and rotating-artifact-target rows; US-002 (CAM-388)
+# broadened the matrix to cover all four rules with both directions (ok and
+# flag), so this fixture cannot be narrowed back into vacuity without a
+# future story visibly deleting rows. Known accepted blind spot (recorded in
+# scripts/cam/patterns.md): frozen-comparand's quote-stripping intentionally
+# blinds it to a live comparison embedded in a non-`-c` interpreter payload
+# (e.g. `bun -e '...'`) -- `-c` is unwrapped but `-e` is not.
 frozen-comparand :: ok :: bun -e 'const cs=["test $X -eq 41","test $X -ge 41"];for(const c of cs){console.log(c)}'
 frozen-comparand :: ok :: grep -qF 'test $(git grep -c PATTERN mainbranch:file.ts) -eq 1' test/supervisor/prd-oracle-lint.test.ts
 frozen-comparand :: flag :: test $(wc -l < scripts/cam/patterns.md) -eq 42
 frozen-comparand :: flag :: sh -c 'test $(wc -l < scripts/cam/patterns.md) -eq 42'
+grep-q-plus-list-files :: ok :: grep -q 'PATTERN' file.ts
+grep-q-plus-list-files :: flag :: grep -Lq 'PATTERN' file.ts
+rotating-artifact-target :: ok :: grep -q 'ROTATING_ARTIFACT_RULE' src/supervisor/prd-oracle-lint.ts
 rotating-artifact-target :: flag :: cat 'scripts/cam/handoff.json' | grep -q retryBaseMs
+zero-match-vacuous :: ok :: L=$(grep -n PATTERN FILE | head -1 | cut -d: -f1); test -n "$L" && sed -n "${L}p" FILE | grep -q X
+zero-match-vacuous :: flag :: L=$(grep -n PATTERN FILE | head -1 | cut -d: -f1); sed -n "${L}p" FILE | grep -q SOMETHING

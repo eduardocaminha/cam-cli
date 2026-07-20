@@ -18,10 +18,13 @@
 //   lintPrd: walks stories, carries storyId/command/ruleName/reason
 //   lintPrd: criterion with no [oracle:] suffix yields no finding
 //   lintPrd: reviewer-judgment / tmux-pty / no-oracle directives are skipped
+//   oracle-lint-cases.txt fixture matrix: every row classifies as recorded (US-002, CAM-388)
 
 import { describe, expect, test } from 'bun:test';
 import { RULES, lintPrd } from '../../src/supervisor/prd-oracle-lint.ts';
 import type { PrdShape } from '../../src/commands/status.ts';
+
+const FIXTURE_PATH = 'test/fixtures/oracle-lint/oracle-lint-cases.txt';
 
 const GREP_RULE_NAME = 'grep-q-plus-list-files';
 const FROZEN_COMPARAND_RULE_NAME = 'frozen-comparand';
@@ -504,5 +507,37 @@ describe('lintPrd', () => {
 
 	test('empty PRD (no userStories) yields no findings', () => {
 		expect(lintPrd({})).toHaveLength(0);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// oracle-lint-cases.txt fixture matrix (US-002, CAM-388)
+// ---------------------------------------------------------------------------
+//
+// Drives every row of the tracked fixture through the matching named rule
+// and asserts it classifies as its recorded expectation, so a future story
+// that narrows the fixture matrix (or a regex change that misclassifies a
+// row) fails `bun test`, not just the review-time oracle re-run.
+
+describe('oracle-lint-cases.txt fixture matrix', () => {
+	test('every row classifies as its recorded ok/flag expectation', async () => {
+		const text = await Bun.file(FIXTURE_PATH).text();
+		const rows = text
+			.trim()
+			.split('\n')
+			.filter((line) => line.length > 0 && !line.startsWith('#'))
+			.map((line) => line.split(' :: '));
+
+		expect(rows.length).toBeGreaterThan(0);
+
+		for (const [ruleName, expected, command] of rows) {
+			expect(ruleName).toBeDefined();
+			expect(expected).toBeDefined();
+			expect(command).toBeDefined();
+			const rule = RULES.find((r) => r.name === ruleName);
+			expect(rule).toBeDefined();
+			const got = rule!.test(command!) ? 'flag' : 'ok';
+			expect({ ruleName, command, got }).toEqual({ ruleName, command, got: expected! });
+		}
 	});
 });
