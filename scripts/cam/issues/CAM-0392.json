@@ -1,0 +1,13 @@
+{
+  "id": "CAM-392",
+  "title": "Orphaned docstring placement: the JSDoc block describing extractCommandSubstitu…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-20T23:08:20.529Z",
+  "updatedAt": "2026-07-20T23:08:20.529Z",
+  "description": "Orphaned docstring placement: the JSDoc block describing extractCommandSubstitutionSpans (lines 266-280) sits immediately above findCommandSubstitutionEnd's own JSDoc block (281-288), so it visually documents the wrong function, and extractCommandSubstitutionSpans itself (line 300) has no adjacent doc comment. Move the first block down to sit directly above extractCommandSubstitutionSpans.\n\nSource: cam/issue-388\nReview round: 3\n\nsuggestion-fingerprint: d493c6095030",
+  "derivedFrom": [
+    "CAM-388"
+  ]
+}
