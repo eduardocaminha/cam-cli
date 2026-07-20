@@ -35,7 +35,8 @@ import {
 	getOrchPaneId,
 	type SpawnFn as TmuxSpawnFn,
 } from '../tmux/session.ts';
-import { sendKeysWhenIdle } from '../tmux/dispatch.ts';
+import { sendKeysWhenIdle, makePushLogEvent } from '../tmux/dispatch.ts';
+import type { WorkerEventKind, WorkerEventDetail } from '../supervisor/events.ts';
 import {
 	parseContextOccupancy,
 	orchestratorTranscriptPath,
@@ -207,6 +208,14 @@ export interface OrchRecycleWatchOptions {
 	 * writing the deterministic fallback. Default: DEFAULT_SIGNAL_TIMEOUT_MS (30 000).
 	 */
 	signalTimeoutMs?: number;
+	/**
+	 * Injectable sink for events emitted by `sendKeysWhenIdle` (currently only
+	 * `'push-undelivered'`, on retry exhaustion of the backstop signal push).
+	 * Default: the real event log (`.claude/cam-worker-events.jsonl`), adapted
+	 * via `adaptLogEventForPush` (US-003, CAM-359). Tests inject
+	 * `makeInMemoryEventLogger()` instead of touching the real event log.
+	 */
+	logEvent?: (kind: WorkerEventKind, detail: WorkerEventDetail) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -411,10 +420,15 @@ function makeResolveOrchPaneIdFn(cwd: string, tmuxSpawnFn: TmuxSpawnFn): () => s
 /**
  * Sends the backstop signal text to a resolved pane id via sendKeysWhenIdle
  * (idle-guarantee + atomic send-keys, no -l; US-008/sendkeys-literal-enter-gotcha).
+ * `logEvent` (US-003, CAM-359) threads through so retry exhaustion on this
+ * push emits `'push-undelivered'` instead of vanishing silently.
  */
-function makeSignalPaneFn(tmuxSpawnFn: TmuxSpawnFn): (paneId: string) => void {
+function makeSignalPaneFn(
+	tmuxSpawnFn: TmuxSpawnFn,
+	logEvent?: (kind: WorkerEventKind, detail: WorkerEventDetail) => void,
+): (paneId: string) => void {
 	return (paneId: string) => {
-		sendKeysWhenIdle({ paneId, text: BACKSTOP_SIGNAL_TEXT, tmuxSpawnFn });
+		sendKeysWhenIdle({ paneId, text: BACKSTOP_SIGNAL_TEXT, tmuxSpawnFn, logEvent });
 	};
 }
 
@@ -629,7 +643,8 @@ function buildBackstopDeps(
 	const tmuxSpawnFn: TmuxSpawnFn = options.tmuxSpawnFn ?? makeDefaultTmuxSpawnFn();
 	const resolveOrchPaneIdFn =
 		options.resolveOrchPaneIdFn ?? makeResolveOrchPaneIdFn(cwd, tmuxSpawnFn);
-	const signalPaneRawFn = options.signalPaneFn ?? makeSignalPaneFn(tmuxSpawnFn);
+	const logEvent = options.logEvent ?? makePushLogEvent(cwd, 'cli-orch-recycle-watch');
+	const signalPaneRawFn = options.signalPaneFn ?? makeSignalPaneFn(tmuxSpawnFn, logEvent);
 	return {
 		readOccupancyFn: options.readOccupancyFn ?? makeReadOccupancyFn(cwd),
 		armMarkerFn: options.armMarkerFn ?? makeArmMarkerFn(claudeDir),

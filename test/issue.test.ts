@@ -326,6 +326,75 @@ describe('runIssue: session name', () => {
 	});
 });
 
+// --- push-undelivered observability (US-003, CAM-359) -----------------------
+
+describe('runIssue: push-undelivered observability', () => {
+	test('retry exhaustion emits exactly one push-undelivered event to the injected sink', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-issue-undelivered-'));
+		let displayMessageCalls = 0;
+
+		const spawnFn = ((_cmd: string, args: string[]) => {
+			const base: SpawnSyncReturns<Buffer> = {
+				pid: 1,
+				output: [null, Buffer.from(''), Buffer.from('')],
+				stdout: Buffer.from(''),
+				stderr: Buffer.from(''),
+				status: 0,
+				signal: null,
+			};
+			const subcommand = args[0] === '-L' ? args[2] : args[0];
+
+			if (subcommand === 'has-session') return { ...base, status: 0 };
+
+			if (subcommand === 'list-panes') {
+				const fIdx = args.indexOf('-F');
+				const fmt = fIdx !== -1 ? (args[fIdx + 1] ?? '') : '';
+				if (fmt === '#{@cam_label}') {
+					return { ...base, stdout: Buffer.from('orchestrator\ndashboard\n') };
+				}
+				if (fmt === '#{pane_index};#{pane_id}') {
+					return { ...base, stdout: Buffer.from('0;%0\n') };
+				}
+				if (fmt === '#{pane_id}') {
+					return { ...base, stdout: Buffer.from('%0\n%1\n') };
+				}
+				return { ...base, stdout: Buffer.from('') };
+			}
+
+			if (subcommand === 'capture-pane') {
+				return { ...base, stdout: Buffer.from('> ') };
+			}
+
+			if (subcommand === 'display-message') {
+				// Ever-changing cursor geometry: the post-send sample never matches
+				// the per-send baseline, so every attempt reports as undelivered
+				// (US-002/CAM-359 delivery verdict), forcing retry exhaustion.
+				displayMessageCalls++;
+				return { ...base, stdout: Buffer.from(`0;${displayMessageCalls};80;30`) };
+			}
+
+			if (subcommand === 'send-keys') return base;
+
+			return base;
+		}) as TmuxSpawnFn;
+
+		const events: Array<{ kind: string; detail: unknown }> = [];
+
+		const code = await runIssue({
+			text: 'file a bug',
+			cwd: tmpDir,
+			tmuxSpawnFn: spawnFn,
+			sleepFn: () => {},
+			logEvent: (kind, detail) => { events.push({ kind, detail }); },
+		});
+
+		expect(code).toBe(0);
+		const undelivered = events.filter((e) => e.kind === 'push-undelivered');
+		expect(undelivered).toHaveLength(1);
+		expect(undelivered[0]?.detail).toMatchObject({ paneId: '%0', retriesExhausted: 3 });
+	});
+});
+
 // --- Help block existence ---------------------------------------------------
 
 describe('ISSUE_HELP block', () => {

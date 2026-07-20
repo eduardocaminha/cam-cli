@@ -41,10 +41,17 @@
 // equal the baseline cursor_x while cursor_y differs. Either axis alone can
 // collide; only the full pair is a sound discriminator.
 
+import { join } from 'node:path';
+
 import { tmuxArgs, type SpawnFn as TmuxSpawnFn } from './session.ts';
 import { sampleCursorGeometry, type CursorGeometry } from './display-message.ts';
 import { computeBackoffMs, JITTER_FRACTION } from '../supervisor/loop.ts';
-import type { WorkerEventKind, WorkerEventDetail } from '../supervisor/events.ts';
+import {
+	makeFileEventLogger,
+	type WorkerEventKind,
+	type WorkerEventDetail,
+	type WorkerEventLogger,
+} from '../supervisor/events.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -96,6 +103,17 @@ export interface SendKeysWhenIdleOptions {
 	 * Tests inject a no-op to avoid real waits.
 	 */
 	sleepFn?: (ms: number) => void;
+	/**
+	 * Injected event sink, called with `('push-undelivered', detail)` once all
+	 * send attempts are exhausted without a geometry-verified delivery (US-003,
+	 * CAM-359). Optional and side-effect-free by default: omitting it emits no
+	 * event (mirrors the sub-state-machine logEvent seam pattern used by
+	 * merge-watch). The caller wraps this into a full WorkerEvent
+	 * (ts/storyId/uuid) if it wants the event durably recorded. Declared here
+	 * (rather than only on `SendKeysVerifiedOptions`) so every plain
+	 * `sendKeysWhenIdle` call site can thread it through too.
+	 */
+	logEvent?: (kind: WorkerEventKind, detail: WorkerEventDetail) => void;
 }
 
 /**
@@ -130,15 +148,6 @@ export interface SendKeysVerifiedOptions extends SendKeysWhenIdleOptions {
 	 * reading); the delivery verdict compares the two.
 	 */
 	sampleGeometryFn?: (paneId: string, tmuxSpawnFn: TmuxSpawnFn) => CursorGeometry | null;
-	/**
-	 * Injected event sink, called with `('push-undelivered', detail)` once all
-	 * attempts are exhausted without a geometry-verified delivery. Optional and
-	 * side-effect-free by default: omitting it emits no event (mirrors the
-	 * sub-state-machine logEvent seam pattern used by merge-watch). The caller
-	 * wraps this into a full WorkerEvent (ts/storyId/uuid) if it wants the
-	 * event durably recorded.
-	 */
-	logEvent?: (kind: WorkerEventKind, detail: WorkerEventDetail) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -399,4 +408,43 @@ export function sendKeysVerified(opts: SendKeysVerifiedOptions): void {
  */
 export function sendKeysWhenIdle(opts: SendKeysWhenIdleOptions): void {
 	sendKeysVerified(opts);
+}
+
+/**
+ * Adapt a full `WorkerEventLogger` (ts/storyId/uuid/kind/detail) down to the
+ * bare `(kind, detail) => void` seam `sendKeysVerified`'s `logEvent` expects
+ * (US-003, CAM-359).
+ *
+ * `storyId` is always `undefined`: a push-undelivered narration from one of
+ * these thin-proxy commands is never tied to a story. `uuid` is caller-supplied
+ * rather than a single hardcoded constant: `src/supervisor/host.ts` has its own
+ * `adaptLogEventForPush` fixed to `uuid: 'sidecar'` because every one of its
+ * callers genuinely IS the sidecar process, but a `cam issue`/`cam review`/
+ * `cam spec`/`cam orch-recycle-watch` invocation is a distinct CLI command, not
+ * the sidecar, so blindly reusing `'sidecar'` there would misattribute the
+ * event's origin. Each thin-proxy call site passes its own short, stable label
+ * (e.g. `'cli-issue'`).
+ */
+export function adaptLogEventForPush(
+	logEvent: WorkerEventLogger,
+	uuid: string,
+): (kind: WorkerEventKind, detail: WorkerEventDetail) => void {
+	return (kind, detail) => {
+		logEvent({ ts: new Date().toISOString(), storyId: undefined, uuid, kind, detail });
+	};
+}
+
+/**
+ * Build the production default `logEvent` for a thin-proxy command's
+ * `sendKeysWhenIdle` call (US-003, CAM-359): the real file event logger
+ * writing `.claude/cam-worker-events.jsonl`, adapted via
+ * `adaptLogEventForPush`. Factored out of each of the four call sites (they'd
+ * otherwise each repeat the same `makeFileEventLogger(join(...))` +
+ * `adaptLogEventForPush(...)` pair inline).
+ */
+export function makePushLogEvent(
+	cwd: string,
+	uuid: string,
+): (kind: WorkerEventKind, detail: WorkerEventDetail) => void {
+	return adaptLogEventForPush(makeFileEventLogger(join(cwd, '.claude', 'cam-worker-events.jsonl')), uuid);
 }
