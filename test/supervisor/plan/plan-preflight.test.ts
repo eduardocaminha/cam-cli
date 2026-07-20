@@ -34,6 +34,7 @@ import {
 	runPlanPreflight,
 	type PlanPreflightSpawnFn,
 } from '../../../src/supervisor/plan-preflight.ts';
+import { truncatePreflightDetail } from '../../../src/supervisor/plan-preflight-marker.ts';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -248,6 +249,11 @@ describe('runPlanPreflight — typecheck failure', () => {
 		if (!result.ok) {
 			expect(result.detail).toContain('TS2345');
 			expect(result.detail).toContain('banner chatter');
+			// AC7: stderr must come FIRST -- truncatePreflightDetail renders only the
+			// first line, so the verdict (stderr) must survive truncation, not the
+			// stdout banner chatter.
+			expect(result.detail.split('\n')[0]).toContain('TS2345');
+			expect(truncatePreflightDetail(result.detail)).toContain('TS2345');
 		}
 	});
 });
@@ -302,6 +308,11 @@ describe('runPlanPreflight — bun-test failure', () => {
 		if (!result.ok) {
 			expect(result.detail).toContain('1 fail / 39 pass');
 			expect(result.detail).toContain('running 40 tests');
+			// AC7: stderr must come FIRST -- truncatePreflightDetail renders only the
+			// first line, so the verdict (stderr) must survive truncation, not the
+			// stdout progress banner.
+			expect(result.detail.split('\n')[0]).toContain('1 fail / 39 pass');
+			expect(truncatePreflightDetail(result.detail)).toContain('1 fail / 39 pass');
 		}
 	});
 });

@@ -18,6 +18,13 @@
   ],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": false,
+      "notes": "WARNING [test/supervisor/plan/plan-preflight.test.ts:249]: AC7's stderr-first ordering invariant has no regression assertion. The two 'BOTH streams' tests (:249-250 typecheck, :303-304 bun-test) assert only detail.toContain(...) for each stream, which passes identically under [stderr, stdout] and [stdout, stderr]. Because truncatePreflightDetail (src/supervisor/plan-preflight-marker.ts:135-140) renders the FIRST LINE ONLY and collapses the rest to '(+N more)', reversing the order silently reintroduces the exact operator-facing bug this story fixes while the suite stays green. Reviewer-executed proof: stderr-first yields 'error TS2345: Argument type is not assignable (+1 more)'; stdout-first yields 'tsc version 5.x banner chatter (+1 more)'. Both satisfy every current assertion. Fix is mechanical and single-file: assert on the first line, e.g. expect(result.detail.split('\\n')[0]).toContain('TS2345'), or assert truncatePreflightDetail(result.detail) contains the verdict."
+    },
+    {
       "id": "US-001",
       "title": "Capture stderr in plan-preflight failure detail",
       "description": "As an operator whose loop was halted by a plan-preflight gate, I need the failure marker's detail to carry the stderr output of the failing step so that I can actually diagnose why the gate fired, instead of reading 42KB of incidental stdout chatter with no verdict in it.",
@@ -40,10 +47,33 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "requires": null,
       "notes": "THREE coordinated edits, nothing more. (1) src/supervisor/plan-preflight.ts:31 - add REQUIRED `stderr: string` to PlanPreflightSpawnFn's return type. (2) src/commands/sidecar.ts:2639-2645 - the production preflightSpawnFn ALREADY passes `stderr: 'pipe'` to Bun.spawnSync; r.stderr is a populated Buffer that the closure simply never decodes. Do NOT rewrite the spawn call or change its options; only decode and return the already-captured value, mirroring the adjacent stdout guard. (3) src/supervisor/plan-preflight.ts - put a COMBINED stdout+stderr string into `detail` at the four failing-step return sites: :77 git-checkout-main, :83 git-pull, :102 typecheck, :108 bun-test. Do NOT change :96 clean-tree, which legitimately reports git porcelain stdout and has no stderr verdict.\n\nORDERING IS THE CRUX. readPlanPreflightFailedMarker has ZERO production callers: the real consumer of `detail` is a human-facing blocker line rendered through truncatePreflightDetail as first-line + ' (+N more)'. If stdout is incidental chatter (42KB of cam banners, the reported failure) and stderr holds the verdict, a naive stdout-then-stderr concatenation buries the verdict and the operator-facing first line stays useless. Choose the order so diagnostic value survives truncation to one line, and state the reasoning in a comment.\n\nConcatenation, not a preference chain: a bun-test failure can legitimately write to BOTH streams, so preferring one would drop the other; a preference chain is only right when one stream is expected empty. Follow the repo's existing inline convention, do NOT add a shared helper for four call sites. Closest precedents: src/release/ship-pr.ts:268 (preference-with-fallback) and src/commands/sidecar.ts:1102-1107 (concatenate).\n\nEXPECTED BREAKAGE: making stderr REQUIRED will break typecheck in test/supervisor/plan/plan-preflight.test.ts until the fake-spawn fixture arrays at :41 (makeFakeSpawn responses type) and :56 (allPassResponses) supply stderr on every entry. That breakage is the point: update the fixtures, do NOT weaken the type to optional. This repo has twice shipped bugs from fixtures encoding a wrong process model.\n\nDO NOT: add any field to the marker (PlanPreflightFailedMarker stays exactly { step, detail, writtenAt }); touch src/supervisor/plan-preflight-marker.ts; touch truncatePreflightDetail; touch orchestrator boot-contract templates or .claude/agents copies; change loopSpawnFn at sidecar.ts:2629-2635 (identical drop, separate code path, separate issue). The marker READER at plan-preflight-marker.ts:72-94 is whitelist-style and tolerates extra fields, so it would NOT catch an accidental new field: rely on the postaudit key-set test as the guard, and never 'fix' that test.\n\nDo NOT attempt to diagnose or fix the underlying one-off bun-test red that motivated this issue. This change is the PREREQUISITE for diagnosing it if it recurs; claiming otherwise is an overclaim.\n\nGates: bun run typecheck, bun test, bun run check:all. No vendor/templates change is expected, so embed-vendor should NOT be needed; if you find yourself needing it, you have touched a template and gone out of scope. Bun docs confirm SyncSubprocess.stderr is `Buffer | undefined` (see officialDocsConsulted)."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:1",
+    "findings": [
+      {
+        "severity": "WARNING",
+        "file": "test/supervisor/plan/plan-preflight.test.ts",
+        "line": 249,
+        "text": "AC7's stderr-first ordering invariant has no regression assertion. The two 'BOTH streams' tests (:249-250 typecheck, :303-304 bun-test) assert only detail.toContain(...) for each stream, which passes identically under [stderr, stdout] and [stdout, stderr]. Because truncatePreflightDetail (src/supervisor/plan-preflight-marker.ts:135-140) renders the FIRST LINE ONLY and collapses the rest to '(+N more)', reversing the order silently reintroduces the exact operator-facing bug this story fixes while the suite stays green. Reviewer-executed proof: stderr-first yields 'error TS2345: Argument type is not assignable (+1 more)'; stdout-first yields 'tsc version 5.x banner chatter (+1 more)'. Both satisfy every current assertion. Fix is mechanical and single-file: assert on the first line, e.g. expect(result.detail.split('\\n')[0]).toContain('TS2345'), or assert truncatePreflightDetail(result.detail) contains the verdict."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/supervisor/plan-preflight.ts",
+        "line": 86,
+        "text": "The expression [a.stderr, a.stdout].filter((s) => s.trim().length > 0).join('\\n').trim() is repeated verbatim at :86, :94, :117 and :128. A small local helper (e.g. combineStreams(res)) would remove the four-way duplication and give the stderr-first ordering a single point of definition, which would also make the invariant easier to test directly."
+      },
+      {
+        "severity": "SUGGESTION",
+        "text": "AC8's oracle form (`! grep -n 'stderr' src/supervisor/plan-preflight.ts | grep -q \"step: 'clean-tree'\"`) is near-tautological: the piped grep can essentially never match, so the assertion passes regardless of the code. It was verified by reading the source instead (clean-tree at plan-preflight.ts:106-109 is genuinely stdout-only). Future PRDs should avoid oracle shapes that cannot fail."
+      }
+    ]
+  }
 }
