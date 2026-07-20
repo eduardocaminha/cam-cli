@@ -11,7 +11,7 @@
       "id": "US-R1-001",
       "title": "Review round 1 fix 001: address reviewer finding",
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "CRITICAL [scripts/cam/prd.json:20]: Layer B behavioral gate FAIL. US-001 AC4 ([oracle: file-assert grep -q 'self-nullifying-oracle' scripts/cam/handoff.json]) exits 1 at branch HEAD (e531d263) on the reviewer's independent re-run. History trace shows it passed transiently at the US-001 feat commit (71dc1a89) and was cleared by the very next finalize-supervisor commit (0ad62b22); handoff.json is a per-story ROTATING artifact, so at the tip it carries only US-003 content. The criterion pins a durable evidence claim onto an ephemeral surface, which is precisely the antipattern US-001 exists to remove from patterns.md. Fix: retarget the evidence oracle at a durable surface that survives to main (the US-001 commit message body, or the patterns.md bullet itself), or scope the oracle to the story's own commit rather than HEAD. Full trace in scripts/cam/review-artifact.txt section 4."
     },
     {
