@@ -1,20 +1,16 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Add required reason discriminator to PushUndeliveredEventDetail and wire the existing exhaustion site"
+    "id": "US-002",
+    "title": "Send exactly once and skip the verify/retry cycle when the idle gate times out"
   },
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/events.ts",
     "src/tmux/dispatch.ts",
     "test/dispatch.test.ts",
-    "test/integration/dispatch-geometry.test.ts",
-    "test/issue.test.ts",
-    "test/supervisor/notify-orchestrator.test.ts",
     "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "PushUndeliveredEventDetail (src/supervisor/events.ts) now carries a REQUIRED `reason: 'retries-exhausted' | 'pane-not-idle'` field. Every existing constructor (the single emit site in src/tmux/dispatch.ts's sendKeysVerified, and every test literal/assertion across test/dispatch.test.ts, test/integration/dispatch-geometry.test.ts, test/issue.test.ts, test/supervisor/notify-orchestrator.test.ts) was swept to pass 'retries-exhausted'. Only that literal is emitted today; 'pane-not-idle' exists in the type but is unwired -- the next story is expected to add the pane-not-idle emit site (likely gating sendKeysVerified/sendKeysWhenIdle before the geometry retry loop even starts) and thread `reason: 'pane-not-idle'` through it, plus its own test coverage. src/supervisor/events.ts grew 816->828 lines; its file-size-budget.json ceiling was raised accordingly (staged in the same commit, _ref updated).",
+  "nextStoryContext": "sendKeysVerified's timed-out path (waitForIdlePane returns true) now short-circuits: it calls the new sendOnceUnverified helper (send-keys once, stderr warning preserved, emit exactly one 'push-undelivered' event with reason 'pane-not-idle' and retriesExhausted: 1) and returns immediately, never entering the geometry-verify/backoff/retry loop. maxAttempts/retryBaseMs/retryMaxMs/jitterFraction/randomFn/sampleGeometryFn/visibleCaptureFn are all unused on that path now. The non-timeout (idle-on-first-check or idle-after-poll) path is completely unchanged: it still runs the full verify/retry loop and emits 'push-undelivered' with reason 'retries-exhausted' on exhaustion. sendKeysVerified itself was refactored (extraction, not logic change) to stay under Biome's noExcessiveLinesPerFunction(max=80) ceiling after the new branch pushed it over. One pre-existing test (test/dispatch.test.ts, 'discriminator reads through visibleCaptureFn...') had to have its capturePaneFn fixture adjusted (append a trailing idle-prompt line) because its content never satisfied isOrchPaneIdle and it was inadvertently relying on the OLD (now-removed) behavior of still running verify/retry after a real-clock idle-gate timeout; its actual assertions (discriminator ignoring capturePaneFn, 2 sends via genuine retry) are unchanged. File-size ceilings for src/tmux/dispatch.ts (606->667) and test/dispatch.test.ts (747->823) were raised in the same commit.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ],
