@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.221.0] - 2026-07-20
+
+### Added
+
+- US-R1-001 - Review round 1 fix 001: address reviewer finding
+- US-001 - Capture stderr in plan-preflight failure detail
+
 ## [0.220.0] - 2026-07-20
 
 ### Added
