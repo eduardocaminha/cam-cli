@@ -27,7 +27,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/tmux/dispatch.ts (call site ~line 512, geometryUnchanged ~301, backstop ~305-358, module header ~38-69, JSDoc on visibleCaptureFn ~187 and on sendKeysVerified ~429), test/dispatch.test.ts (imports the removed symbol at line 51; suite at 667-712; header comment at line 41). MEASURED reproducer from the issue (real claude Ink TUI v2.1.215, 80x30 pane, 2026-07-20) is authoritative over intuition: empty composer cursor (2,26) with row[26] = '\\u276F\\u00A0Try \"how do I log an error?\"'; collision (77-char payload ending in a space) cursor (2,26) byte-identical, row[26] = '' blank, row[25] = '\\u276F\\u00A0word ... w'. Do NOT reuse IDLE_PROMPT (dispatch.ts:258, end-anchored, does not match the real empty row). Correct in BOTH directions: a duplicate resend trips the back-to-back send-keys race (see the 'Coalesce notifyOrchestrator' bullet in scripts/cam/patterns.md: the Ink prompt swallows the second of two back-to-back send-keys). Test-quality invariant: no tautological mock-call assertions; assert the verdict/retry behaviour, not that a fake was called. Do NOT overclaim in the corrected header: the glyph-forgery residue is narrower than the trailing-space class but is not zero, and the header being wrong about exactly this is why CAM-364 exists. src/tmux/dispatch.ts is executed by the sidecar, so the orchestrator must coherence-rebuild after ship."
     },
