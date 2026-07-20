@@ -6,6 +6,17 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.219.0] - 2026-07-20
+
+### Added
+
+- US-R2-001 - Review round 2 fix 001: address reviewer finding
+- US-R1-002 - Review round 1 fix 002: address reviewer finding
+- US-R1-001 - Review round 1 fix 001: address reviewer finding
+- US-003 - Thread logEvent into the four sendKeysWhenIdle call sites
+- US-002 - Replace the content-matching submission oracle with the geometry oracle
+- US-001 - Add a shared tmux display-message geometry-query helper
+
 ## [0.218.0] - 2026-07-20
 
 ### Added
