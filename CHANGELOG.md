@@ -6,6 +6,15 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.226.0] - 2026-07-20
+
+### Added
+
+- US-004 - Mirror the red-on-main falsifiability rule into both auditor copies
+- US-003 - Add the zero-match-vacuous OracleLintRule and assert the cumulative main-vs-branch deltas
+- US-002 - Add the rotating-artifact-target OracleLintRule
+- US-001 - Add the frozen-comparand OracleLintRule
+
 ## [0.225.0] - 2026-07-20
 
 ### Added
