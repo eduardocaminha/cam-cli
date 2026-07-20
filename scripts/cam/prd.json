@@ -19,6 +19,20 @@
   ],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "CRITICAL [src/tmux/dispatch.ts:40]: Wrap-boundary axis collision is unhandled under the production Ink composer geometry, so US-002 AC8 ('both directions hold' for an exact-wrap-boundary payload) is not actually demonstrated for production. The module header asserts 'at an exact wrap-boundary payload length the post-send cursor_x can coincidentally equal the baseline cursor_x while cursor_y differs' (dispatch.ts:40-41), and geometryUnchanged (dispatch.ts:247-249) relies on cursor_y to break that tie. But the PRD's own measurement of the real claude TUI records the opposite: 'the Ink composer grows UPWARD from the pane bottom, so a three-row wrapped composer's last row has the SAME cursor_y as an empty composer; measured on a real claude TUI, empty (2,26) vs wrapped (10,26) vs short-filled (33,26)' -- cursor_y is pinned at 26 in all three states, so in production only cursor_x discriminates. A payload whose length lands the composer cursor back on the baseline column therefore yields an identical (x,y) pair for an UNDELIVERED push, which the oracle reports as delivered on attempt 1: exactly the CAM-358 silent-loss defect this issue exists to kill, surviving for one payload-length residue class. The branch's own tests corroborate the contradiction rather than resolving it: the unit constants encode the production y-constant model (test/dispatch.test.ts:344 EMPTY_BASELINE cursorY 26, :347 FILLED_GEOMETRY cursorY 26 -- only x differs), while the integration fixture encodes the inverted y-varying model (test/fixtures/dispatch-geometry/raw-echo.ts:58-61 eager-wraps the cursor DOWN a row on row-fill, so the AC8 boundary test at test/integration/dispatch-geometry.test.ts:169 is discriminated by y, a mechanism that does not exist in the production composer). No test anywhere covers the production collision (baseline x equal AND y equal with text still in the composer). The AC8 integration test consequently passes for a reason that does not hold in production -- the 'fakes lie' class the PRD explicitly warned about ('TEST FIXTURE WARNING ... any threshold calibrated on it is suspect')."
+    },
+    {
+      "id": "US-R1-002",
+      "title": "Review round 1 fix 002: address reviewer finding",
+      "priority": 2,
+      "passes": false,
+      "notes": "WARNING [src/tmux/display-message.ts:13]: US-001 AC5's oracle fails at Layer B on my independent re-run: `! grep -q 'retry/tmux' src/tmux/display-message.ts` matches the header comment at line 13 ('This module deliberately does NOT import src/retry/tmux.ts'), so the mechanical gate reports FAIL. The substantive acceptance criterion holds -- the sole import is `./session.ts` at line 21 and nothing from the vendored module is referenced -- so this is an over-broad oracle rather than a code defect, and it is not treated as a hard-constraint failure. Still actionable and mechanical (single file): either scope the oracle to import lines (e.g. grep the `^import` lines only) or reword the comment so the gate is not self-tripping. Left as-is, any automated re-run of this AC reports a false red."
+    },
+    {
       "id": "US-001",
       "title": "Add a shared tmux display-message geometry-query helper",
       "description": "As the dispatch path, I need a synchronous, socket-aware helper that samples a pane's cursor geometry via tmux display-message, so that the submission oracle can key on a shape the payload cannot forge instead of on captured pane text.",
@@ -33,7 +47,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 1,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "NEW FILE src/tmux/display-message.ts; import tmuxArgs + TmuxSpawnFn from src/tmux/session.ts (tmuxArgs at session.ts:72, SpawnFn at session.ts:81). Model the synchronous spawn shape on defaultCapturePaneFn (src/tmux/dispatch.ts:221-229), which reads r.stdout with the `typeof r.stdout === 'string' ? ... : (r.stdout?.toString() ?? '')` guard. DO NOT reuse src/retry/tmux.ts:16 buildDisplayArgs: it is vendored, omits '-L cam', and its MIT header must stay untouched. Verified against real tmux 3.6a: `display-message -p -t <pane> '#{cursor_x};#{cursor_y};#{pane_width};#{pane_height}'` -> `0;0;80;24`. Fail-closed parsing is load-bearing, not defensive padding: the tmux wiki states an unknown/missing format variable expands to nothing, so a lenient parser would read '' as 0 and report every push delivered (fail-open = the exact silent-loss bug this issue exists to kill). noUncheckedIndexedAccess makes split(';')[n] a `string | undefined`, so the guards are required by the compiler anyway. Real-tmux harness pattern to copy: test/integration/tmux-introspect.test.ts (dedicated TEST_SOCK, swapSocketSpawn rewriting '-L cam' to the test socket, waitForCondition polling not fixed sleeps, kill-server in beforeEach/afterEach, test.skipIf(!tmuxAvailable))."
@@ -57,7 +71,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 2,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "Edit src/tmux/dispatch.ts (isComposerEmptied at :211-216, sendKeysVerified loop at :291-353, SEND_KEYS_SETTLE_MS at :132); update test/dispatch.test.ts (isComposerEmptied describe at :320-330, exported import at :36); NEW test/integration/dispatch-geometry.test.ts. THE LIVE DEFECT: isComposerEmptied evaluates lines.slice(-5).some(l => l.includes(text)); a wrapped payload never appears whole on any single line, so it ALWAYS reports delivered, breaks the retry loop on attempt 1, and emits no event. WHY GEOMETRY: cursor position is unforgeable by payload text (a '>' or '->' at column 0 of a soft-wrap boundary forges the old regex anchor, and '->' is realistic in [cam] status text) and is independent of which of the three production capture readers is wired (src/supervisor/host.ts:579 full scrollback, host.ts:270 visible screen, dispatch.ts:221 visible screen default). GOTCHA cursor_y alone is useless: the Ink composer grows UPWARD from the pane bottom, so a three-row wrapped composer's last row has the SAME cursor_y as an empty composer; measured on a real claude TUI, empty (2,26) vs wrapped (10,26) vs short-filled (33,26). cursor_x carries the discriminating signal: compare the PAIR. GOTCHA never hardcode a coordinate: /help relocated the cursor to (9,6) in the same pane whose empty baseline is (2,26), so only a per-send baseline comparison is sound. GOTCHA settle stays load-bearing: after a genuine submit the cursor reads the empty baseline at t+0, which is ALSO what an un-rendered pane reads before typed text appears, so geometry does not remove the settle requirement. GOTCHA exact-wrap-boundary collision: when the payload lands exactly on a wrap boundary the cursor can rest at the continuation row's start column, which may EQUAL the baseline x, which is why the wrap-boundary-sized payload is a required test case and not a nice-to-have. BOTH DIRECTIONS ARE HARD REQUIREMENTS: a delivered payload resent trips the back-to-back send-keys race (scripts/cam/patterns.md:330, 'the orchestrator Ink prompt does not absorb back-to-back send-keys calls'), and an undelivered payload reported delivered is the original CAM-358 silent loss. TEST FIXTURE WARNING: test/integration/sendkeys-submit.test.ts uses `cat`, which DOUBLE-echoes (kernel tty echo + cat echo-back) and does not model the production Ink TUI in raw mode; any threshold calibrated on it is suspect. Geometry is testable with a plain tty receiver precisely because it does not depend on the receiver's echo/render behaviour, but to drive the UNDELIVERED direction you need a receiver that swallows the trailing Enter (a small raw-stdin fixture script that echoes typed chars and ignores \\r), since `cat` always submits. Argv-shape tests with scripted capturePaneFn stubs structurally CANNOT catch this class of defect (they return exactly the string the code expects) - every regression in this issue's history was found by real-tmux probes, so the new coverage must drive a real tmux server. DO NOT resume, branch from, or cherry-pick the parked branch cam/abandoned/issue-358-oracle-attempt (origin 64e2a909): it holds the abandoned content-matching attempt and is reference material only. Reuse the US-001 helper; do not re-implement the format query inline."
@@ -79,10 +93,41 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 3,
+      "priority": 5,
       "passes": true,
       "requires": null,
       "notes": "Call sites: src/commands/issue.ts:185, src/commands/review.ts:183, src/commands/spec.ts:218, src/commands/orch-recycle-watch.ts:417 (inside makeSignalPaneFn). REUSE, do not rebuild: adaptLogEventForPush is already exported at src/supervisor/host.ts:285 and converts a WorkerEventLogger into the bare `(kind, detail) => void` seam sendKeysVerified's logEvent expects (see host.ts:289 for the ts/storyId/uuid wrapping, which uses uuid 'sidecar'; pick an equivalent per-command uuid rather than copying 'sidecar' blindly). makeFileEventLogger is at src/supervisor/events.ts:668; the established default-sink idiom is `options.logEvent ?? makeFileEventLogger(join(cwd, '.claude', 'cam-worker-events.jsonl'))`, already used at src/commands/journal.ts:618 and src/commands/issue-specify.ts:276 - follow it rather than inventing a new one. issue.ts/review.ts/spec.ts already thread optional capturePaneFn/sleepFn/idleTimeoutMs through their options objects, so logEvent is an additive optional field in the same shape. orch-recycle-watch.ts differs: makeSignalPaneFn closes over tmuxSpawnFn only, so the logEvent has to be threaded into that factory. makeInMemoryEventLogger (events.ts:679) returns { logger, events } for assertions. Per the test-quality invariant, assert on the captured event payload, not on the fact that a mock was called."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:2",
+    "findings": [
+      {
+        "severity": "CRITICAL",
+        "file": "src/tmux/dispatch.ts",
+        "line": 40,
+        "text": "Wrap-boundary axis collision is unhandled under the production Ink composer geometry, so US-002 AC8 ('both directions hold' for an exact-wrap-boundary payload) is not actually demonstrated for production. The module header asserts 'at an exact wrap-boundary payload length the post-send cursor_x can coincidentally equal the baseline cursor_x while cursor_y differs' (dispatch.ts:40-41), and geometryUnchanged (dispatch.ts:247-249) relies on cursor_y to break that tie. But the PRD's own measurement of the real claude TUI records the opposite: 'the Ink composer grows UPWARD from the pane bottom, so a three-row wrapped composer's last row has the SAME cursor_y as an empty composer; measured on a real claude TUI, empty (2,26) vs wrapped (10,26) vs short-filled (33,26)' -- cursor_y is pinned at 26 in all three states, so in production only cursor_x discriminates. A payload whose length lands the composer cursor back on the baseline column therefore yields an identical (x,y) pair for an UNDELIVERED push, which the oracle reports as delivered on attempt 1: exactly the CAM-358 silent-loss defect this issue exists to kill, surviving for one payload-length residue class. The branch's own tests corroborate the contradiction rather than resolving it: the unit constants encode the production y-constant model (test/dispatch.test.ts:344 EMPTY_BASELINE cursorY 26, :347 FILLED_GEOMETRY cursorY 26 -- only x differs), while the integration fixture encodes the inverted y-varying model (test/fixtures/dispatch-geometry/raw-echo.ts:58-61 eager-wraps the cursor DOWN a row on row-fill, so the AC8 boundary test at test/integration/dispatch-geometry.test.ts:169 is discriminated by y, a mechanism that does not exist in the production composer). No test anywhere covers the production collision (baseline x equal AND y equal with text still in the composer). The AC8 integration test consequently passes for a reason that does not hold in production -- the 'fakes lie' class the PRD explicitly warned about ('TEST FIXTURE WARNING ... any threshold calibrated on it is suspect')."
+      },
+      {
+        "severity": "WARNING",
+        "file": "src/tmux/display-message.ts",
+        "line": 13,
+        "text": "US-001 AC5's oracle fails at Layer B on my independent re-run: `! grep -q 'retry/tmux' src/tmux/display-message.ts` matches the header comment at line 13 ('This module deliberately does NOT import src/retry/tmux.ts'), so the mechanical gate reports FAIL. The substantive acceptance criterion holds -- the sole import is `./session.ts` at line 21 and nothing from the vendored module is referenced -- so this is an over-broad oracle rather than a code defect, and it is not treated as a hard-constraint failure. Still actionable and mechanical (single file): either scope the oracle to import lines (e.g. grep the `^import` lines only) or reword the comment so the gate is not self-tripping. Left as-is, any automated re-run of this AC reports a false red."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/commands/issue.ts",
+        "line": 83,
+        "text": "The `idleTimeoutMs` doc comment still reads 'Default: 5 000' in all three thin-proxy commands (issue.ts:83, review.ts:82, spec.ts:117), but the effective default has been IDLE_WAIT_DEADLINE_MS = 30_000 since CAM-358 (dispatch.ts:187, consumed at dispatch.ts:338). Pre-existing drift that this diff correctly did not touch under surgical-changes discipline; worth a one-line follow-up since the diff is already editing the adjacent JSDoc blocks."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/commands/issue.ts",
+        "line": 89,
+        "text": "US-003 AC5's oracle (`grep -q 'adaptLogEventForPush' src/commands/issue.ts`) passes only because the identifier appears in comment text at issue.ts:89 and :192; the actual call path is makePushLogEvent(cwd, 'cli-issue') at :194. The substance is fully satisfied (makePushLogEvent at dispatch.ts:445-450 wraps adaptLogEventForPush over makeFileEventLogger writing .claude/cam-worker-events.jsonl), and factoring the shared pair into makePushLogEvent is the better design than repeating it at four call sites. Noting only that the oracle is passing on comment text rather than on the code path it intends to check."
+      }
+    ]
+  }
 }
