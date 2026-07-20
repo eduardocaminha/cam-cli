@@ -3,7 +3,7 @@
 // Pure PRD-oracle linter (US-001, CAM-310 PRD).
 //
 // Scans a PRD's acceptanceCriteria oracle shell strings for known-broken
-// oracle idioms, deterministically, without an LLM auditor pass. Three rules:
+// oracle idioms, deterministically, without an LLM auditor pass. Four rules:
 //   - grep-q-plus-list-files: catches the self-nullifying `grep -q` + `-L`/`-l`
 //     idiom documented empirically in patterns.md (CAM-301/CAM-309): combining
 //     the quiet flag with a list-files flag silently negates the intended
@@ -15,6 +15,11 @@
 //     per-story ROTATING harness state file (scripts/cam/handoff.json or the
 //     reviewer's gitignored capture-pane artifact), enforcing the
 //     never-target-a-rotating-artifact rule (patterns.md:907), US-002 CAM-381.
+//   - zero-match-vacuous: catches an unguarded empty-$L sed line anchor or a
+//     grep-fed while-read loop, either of which silently degrades to a
+//     vacuous pass when the underlying grep search matches zero lines,
+//     enforcing the unguarded-empty-anchor rule (patterns.md:901), US-003
+//     CAM-381.
 //
 // Design (mirrors scripts/check-test-sleeps.ts's pure-scanner shape):
 //   - Rules are a named-rules list: array of { name, test(command): finding | null }.
@@ -240,6 +245,97 @@ const ROTATING_ARTIFACT_RULE: OracleLintRule = {
 	},
 };
 
+// ---------------------------------------------------------------------------
+// zero-match-vacuous rule
+// ---------------------------------------------------------------------------
+
+/**
+ * Matches the unguarded empty-$L sed anchor shape (patterns.md:901):
+ * `sed -n "${VAR}p" FILE` where VAR was derived from a grep/head/cut
+ * pipeline capturing a line number. `sed -n "p" FILE` (an empty range, i.e.
+ * VAR was empty) silently degrades to printing the WHOLE file instead of
+ * failing, so any keyword-presence probe piped after it can be satisfied by
+ * content anywhere in the file. Captures the variable name so the guard
+ * check below can look for a `test -n "$VAR"` / `[ -n "$VAR" ]` guard
+ * scoped to that exact same name, not just any -n guard in the command.
+ */
+const SED_LINE_ANCHOR_RE = /sed\s+-n\s+"\$\{([A-Za-z_][A-Za-z0-9_]*)\}p"/;
+
+/**
+ * True when `command` contains an unguarded empty-$L sed line anchor: the
+ * anchor shape is present, and no `test -n "$VAR"` / `[ -n "$VAR" ]` guard
+ * for that exact variable name precedes it anywhere in the command.
+ */
+function hasUnguardedSedLineAnchor(command: string): boolean {
+	const match = SED_LINE_ANCHOR_RE.exec(command);
+	if (match === null) return false;
+	const varName = match[1];
+	if (varName === undefined) return false;
+	const guardRe = new RegExp(`(?:test\\s+-n|\\[\\s+-n)\\s+"\\$${varName}"`);
+	return !guardRe.test(command);
+}
+
+/**
+ * Matches a grep-fed `while read` loop: `grep -n PATTERN FILE | while read
+ * ...`. Zero matches means zero loop iterations, so the pipeline silently
+ * exits 0 (vacuously "passing") instead of failing when the searched-for
+ * pattern is absent, unless the match count was verified first.
+ */
+const GREP_FED_WHILE_READ_RE = /grep\s+-n\b[^|]*\|\s*(?:[A-Za-z0-9_]+\s+)?while\s+read\b/;
+
+/**
+ * A count-check guard: an explicit `grep -c ... -ge N` (N >= 1) comparison
+ * anywhere in the command, proving the caller verified at least one match
+ * exists before trusting the while-read loop's silence as a pass.
+ */
+const GREP_COUNT_GUARD_RE = /grep\s+-c\b[^\n]*-ge\s*[1-9]/;
+
+/**
+ * True when `command` contains a grep-fed while-read loop with no
+ * accompanying grep -c match-count guard anywhere in the command.
+ */
+function hasUnguardedGrepFedWhileRead(command: string): boolean {
+	if (!GREP_FED_WHILE_READ_RE.test(command)) return false;
+	return !GREP_COUNT_GUARD_RE.test(command);
+}
+
+/**
+ * The zero-match-vacuous rule (US-003, CAM-381): flags an oracle whose
+ * apparent single-line assertion silently degrades to a vacuous pass when
+ * its underlying grep search matches zero lines, enforcing the
+ * unguarded-empty-anchor rule (patterns.md:901). Two shapes are covered:
+ * an unguarded `sed -n "${L}p"` anchor (empty range prints the whole file
+ * instead of failing) and a grep-fed `while read` loop (zero matches means
+ * zero iterations, so the loop's own failure checks never run).
+ */
+const ZERO_MATCH_VACUOUS_RULE: OracleLintRule = {
+	name: 'zero-match-vacuous',
+	test(command: string): RuleFinding | null {
+		if (hasUnguardedSedLineAnchor(command)) {
+			return {
+				reason:
+					'oracle derives a sed line anchor (sed -n "${VAR}p") from a grep/head/cut ' +
+					'pipeline with no test -n "$VAR" / [ -n "$VAR" ] guard for that exact ' +
+					'variable -- an empty VAR degrades sed -n "p" to printing the WHOLE file ' +
+					"instead of failing, so a keyword-presence probe piped after it can be " +
+					'satisfied by content anywhere in the file, returning GREEN exactly when ' +
+					'the targeted anchor is absent (patterns.md:901)',
+			};
+		}
+		if (hasUnguardedGrepFedWhileRead(command)) {
+			return {
+				reason:
+					'oracle pipes grep -n into a while read loop with no accompanying grep -c ' +
+					'match-count guard (-ge 1) -- zero matches means zero loop iterations, so ' +
+					'the pipeline exits 0 vacuously instead of failing when the searched-for ' +
+					'pattern is absent; check the match COUNT before trusting a while read ' +
+					"loop's silence as a pass (patterns.md:901)",
+			};
+		}
+		return null;
+	},
+};
+
 /**
  * The named-rules list (array of { name, test(command): finding | null }).
  * Adding a future rule is a one-liner: push another OracleLintRule here.
@@ -248,6 +344,7 @@ export const RULES: OracleLintRule[] = [
 	GREP_Q_LIST_FILES_RULE,
 	FROZEN_COMPARAND_RULE,
 	ROTATING_ARTIFACT_RULE,
+	ZERO_MATCH_VACUOUS_RULE,
 ];
 
 // ---------------------------------------------------------------------------
