@@ -32,6 +32,11 @@
 //       still yields delivered on attempt 1
 //     - a null (unknown/fail-closed) geometry sample, for either the baseline or the post-send
 //       read, is treated as NOT delivered and retried, never as delivered (US-002, CAM-359 AC5)
+//     - content backstop (review round 1 fix, US-R1-001): a geometry pair that reads unchanged
+//       at a wrap-boundary residue is overridden to NOT delivered when the captured cursor row
+//       still shows a remnant of the payload, and left as delivered when it does not
+//   composerLineRetainsPayloadTail (US-R1-001, CAM-359): remnant present/absent, minimum
+//     2-char match length, out-of-range cursorY, empty text, trailing-whitespace trim
 
 import { describe, expect, test } from 'bun:test';
 import type { SpawnSyncReturns } from 'node:child_process';
@@ -40,6 +45,7 @@ import {
 	isOrchPaneIdle,
 	sendKeysWhenIdle,
 	sendKeysVerified,
+	composerLineRetainsPayloadTail,
 	SEND_KEYS_SETTLE_MS,
 	IDLE_WAIT_DEADLINE_MS,
 	type CapturePaneFn,
@@ -566,5 +572,104 @@ describe('sendKeysVerified', () => {
 		expect(sendKeysCalls).toHaveLength(1);
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
+	});
+
+	test('geometry pair reads unchanged at a wrap-boundary residue AND the composer row still shows the payload tail: content backstop overrides to NOT delivered (review round 1 fix, US-R1-001)', () => {
+		const spawnFn = makeSpawnFn();
+		const events: Array<{ kind: string; detail: unknown }> = [];
+		const payload = 'y'.repeat(80); // an exact wrap-boundary-length payload
+
+		sendKeysVerified({
+			paneId: '%10',
+			text: payload,
+			tmuxSpawnFn: spawnFn,
+			// Geometry alone looks IDENTICAL to a genuinely delivered state on
+			// every sample -- the collision the module header documents:
+			// cursor_y is pinned in production, so it never discriminates, and
+			// this payload's length lands cursor_x back on the baseline column.
+			sampleGeometryFn: () => EMPTY_BASELINE,
+			// But the pane content at the reported cursor row still holds the
+			// just-typed text: the composer never actually cleared.
+			capturePaneFn: () => paneContentWithRow(EMPTY_BASELINE.cursorY, payload),
+			sleepFn: () => {},
+			idleTimeoutMs: 5,
+			maxAttempts: 2,
+			logEvent: (kind, detail) => events.push({ kind, detail }),
+		});
+
+		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
+		expect(sendKeysCalls).toHaveLength(2);
+		expect(events).toHaveLength(1);
+		expect(events[0]?.kind).toBe('push-undelivered');
+	});
+
+	test('geometry pair reads unchanged AND the composer row shows no remnant of the payload: delivered on attempt 1 (backstop does not misfire on a genuine delivery)', () => {
+		const spawnFn = makeSpawnFn();
+		const events: Array<{ kind: string; detail: unknown }> = [];
+
+		sendKeysVerified({
+			paneId: '%11',
+			text: 'y'.repeat(80),
+			tmuxSpawnFn: spawnFn,
+			sampleGeometryFn: () => EMPTY_BASELINE,
+			capturePaneFn: () => paneContentWithRow(EMPTY_BASELINE.cursorY, '> '),
+			sleepFn: () => {},
+			idleTimeoutMs: 5,
+			maxAttempts: 2,
+			logEvent: (kind, detail) => events.push({ kind, detail }),
+		});
+
+		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
+		expect(sendKeysCalls).toHaveLength(1);
+		expect(events).toHaveLength(0);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// composerLineRetainsPayloadTail (geometry backstop, review round 1 fix,
+// US-R1-001, CAM-359)
+// ---------------------------------------------------------------------------
+
+/** Build captured pane content whose only non-blank line is at `rowIndex`. */
+function paneContentWithRow(rowIndex: number, rowContent: string): string {
+	const lines = Array.from({ length: rowIndex + 1 }, () => '');
+	lines[rowIndex] = rowContent;
+	return lines.join('\n');
+}
+
+describe('composerLineRetainsPayloadTail', () => {
+	test('returns true when the row at cursorY ends with the tail of the sent text', () => {
+		const content = paneContentWithRow(3, 'some text /cam-review');
+		expect(composerLineRetainsPayloadTail(content, 3, '/cam-review')).toBe(true);
+	});
+
+	test('returns false when the row at cursorY shows the idle prompt (no remnant)', () => {
+		const content = paneContentWithRow(3, '> ');
+		expect(composerLineRetainsPayloadTail(content, 3, '/cam-review')).toBe(false);
+	});
+
+	test('a 2-char remnant (the minimum residue a wrap-boundary collision can leave) still matches', () => {
+		const content = paneContentWithRow(5, 'yy');
+		expect(composerLineRetainsPayloadTail(content, 5, 'y'.repeat(80))).toBe(true);
+	});
+
+	test('a 1-char remnant is below the minimum match length and does not trigger', () => {
+		const content = paneContentWithRow(5, 'y');
+		expect(composerLineRetainsPayloadTail(content, 5, 'y'.repeat(80))).toBe(false);
+	});
+
+	test('out-of-range cursorY (noUncheckedIndexedAccess guard) fails open to false', () => {
+		const content = paneContentWithRow(2, '/cam-plan');
+		expect(composerLineRetainsPayloadTail(content, 99, '/cam-plan')).toBe(false);
+	});
+
+	test('empty text returns false', () => {
+		const content = paneContentWithRow(2, 'anything');
+		expect(composerLineRetainsPayloadTail(content, 2, '')).toBe(false);
+	});
+
+	test('trailing whitespace padding on the captured row is trimmed before matching', () => {
+		const content = paneContentWithRow(4, '/cam-plan     ');
+		expect(composerLineRetainsPayloadTail(content, 4, '/cam-plan')).toBe(true);
 	});
 });

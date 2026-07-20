@@ -23,23 +23,36 @@
 // existing thin-proxy caller (review.ts, issue.ts, spec.ts) gets
 // verify+retry for free.
 //
-// Delivery verdict (US-002, CAM-359): the verdict is derived from tmux
-// CURSOR GEOMETRY, not from substring-matching the payload against captured
-// pane content. Captured pane text is renderable/forgeable (a wrapped
-// payload never appears whole on any single captured line, and payload text
-// like `->` can coincidentally match a soft-wrap anchor), so a content-match
-// oracle either always reports "delivered" for a wrapped payload (masking a
-// dropped Enter, CAM-358's original defect) or can be spoofed by payload
-// content. tmux's own `#{cursor_x}`/`#{cursor_y}` are server-side state a
-// payload cannot forge. A per-send baseline is sampled immediately before
-// each send-keys call; the verdict compares the FULL (x, y) pair sampled
-// after the settle window against that baseline. The pair must never be
-// reduced to a y-only (or x-only) comparison: measured against a real claude
-// TUI, an Ink composer grows UPWARD from the pane bottom, so cursor_y alone
-// is often identical between an empty and a wrapped composer, and at an
-// exact wrap-boundary payload length the post-send cursor_x can coincidentally
-// equal the baseline cursor_x while cursor_y differs. Either axis alone can
-// collide; only the full pair is a sound discriminator.
+// Delivery verdict (US-002, CAM-359): the verdict is derived primarily from
+// tmux CURSOR GEOMETRY, not from substring-matching the payload against
+// captured pane content. Captured pane text is renderable/forgeable (a
+// wrapped payload never appears whole on any single captured line, and
+// payload text like `->` can coincidentally match a soft-wrap anchor), so a
+// content-match oracle either always reports "delivered" for a wrapped
+// payload (masking a dropped Enter, CAM-358's original defect) or can be
+// spoofed by payload content. tmux's own `#{cursor_x}`/`#{cursor_y}` are
+// server-side state a payload cannot forge. A per-send baseline is sampled
+// immediately before each send-keys call; the verdict compares the FULL
+// (x, y) pair sampled after the settle window against that baseline.
+//
+// Corrected model (review round 1 fix, US-R1-001): measured against a real
+// claude TUI, an Ink composer grows UPWARD from the pane bottom, so
+// cursor_y is PINNED CONSTANT across every composer state (empty, wrapped,
+// short-filled all read the same cursor_y). cursor_y therefore contributes
+// ZERO discrimination in production; cursor_x (a value mod paneWidth) is the
+// only positional signal, and a modulo is inherently periodic: a payload
+// whose length lands the wrapped cursor back on the exact baseline column
+// collides on x too, so the (x, y) pair alone is PROVABLY insufficient for
+// that residue class, not merely a rare edge case. `composerLineRetainsPayloadTail`
+// closes that residual gap: when the geometry pair reads unchanged (the
+// ambiguous branch), it inspects the captured pane row AT the reported
+// cursor_y for the trailing suffix of the just-sent text. That suffix is
+// always contiguous on the row the cursor rests on, regardless of how many
+// rows the payload wrapped across before it — unlike a whole-payload
+// substring match, so it does not reopen the forgery/anchor-collision
+// concern above. The full-pair geometry comparison is still never reduced
+// to a single axis; the content backstop only ever narrows an "unchanged"
+// geometry verdict to "not delivered", never the reverse.
 
 import { join } from 'node:path';
 
@@ -238,14 +251,74 @@ export function isOrchPaneIdle(content: string): boolean {
  * position (US-002, CAM-359).
  *
  * Compares the full `(cursorX, cursorY)` pair. Never reduce this to a
- * single-axis comparison (see the module header for why either axis alone
- * can coincidentally collide between a delivered and an undelivered state).
- * `paneWidth`/`paneHeight` are deliberately excluded from the comparison:
- * they describe the pane's bounds, not the composer's delivery state, and a
- * mid-attempt resize would otherwise falsely read as "undelivered".
+ * single-axis comparison. `paneWidth`/`paneHeight` are deliberately excluded
+ * from the comparison: they describe the pane's bounds, not the composer's
+ * delivery state, and a mid-attempt resize would otherwise falsely read as
+ * "undelivered".
+ *
+ * A `true` result here is NOT a final delivered verdict by itself: in
+ * production `cursorY` is pinned constant (see module header), so this can
+ * coincidentally read `true` for an undelivered wrap-boundary-length
+ * payload too. Callers must run `composerLineRetainsPayloadTail` as a
+ * backstop before trusting a `true` result as "delivered".
  */
 function geometryUnchanged(before: CursorGeometry, after: CursorGeometry): boolean {
 	return before.cursorX === after.cursorX && before.cursorY === after.cursorY;
+}
+
+/**
+ * Shortest trailing-suffix length `composerLineRetainsPayloadTail` will
+ * still trust as a real remnant (below this, a coincidental match is too
+ * likely to be worth acting on).
+ */
+const MIN_PAYLOAD_TAIL_MATCH = 2;
+
+/**
+ * Backstop for `geometryUnchanged`'s residual ambiguity (review round 1 fix,
+ * US-R1-001, CAM-359): breaks the tie using pane CONTENT, narrowly.
+ *
+ * The trailing suffix of the just-sent `text` (the characters immediately
+ * before the cursor) is always CONTIGUOUS on the single row the cursor
+ * rests on, regardless of how many rows the payload wrapped across to get
+ * there. That is a fundamentally different check from a whole-payload
+ * substring match (rejected in the module header: a wrapped payload never
+ * appears whole on any one captured line, and short fragments can coincide
+ * with a soft-wrap anchor by chance) -- a trailing suffix anchored (via
+ * `endsWith`, not a bare substring search) at the reported cursor row is
+ * not subject to that ambiguity.
+ *
+ * The row's own remnant length is not known in advance (a residue-class
+ * collision can leave as few as `MIN_PAYLOAD_TAIL_MATCH` real characters on
+ * the row -- see the fixture header for why), so this tries suffix lengths
+ * from `min(text.length, 8)` down to `MIN_PAYLOAD_TAIL_MATCH`, longest
+ * first, and accepts the first that matches.
+ *
+ * Only meaningful when `geometryUnchanged` already read `true`: a geometry
+ * mismatch is already a sound "not delivered" verdict on its own.
+ *
+ * `noUncheckedIndexedAccess` guard: an out-of-range `cursorY` (a resize
+ * mid-attempt, or a fake/test geometry with an implausible row) yields
+ * `undefined` for `lines[cursorY]`, treated as "no remnant found" (fails
+ * open toward the geometry-only verdict, never fabricates a false remnant).
+ */
+export function composerLineRetainsPayloadTail(
+	capturedContent: string,
+	cursorY: number,
+	text: string,
+): boolean {
+	if (text.length === 0) return false;
+	const lines = capturedContent.split('\n');
+	const line = lines[cursorY];
+	if (line === undefined) return false;
+	// tmux may pad a short line with trailing whitespace; trim before
+	// anchoring the suffix match at the true end of the rendered content.
+	const trimmed = line.replace(/\s+$/, '');
+	if (trimmed.length === 0) return false;
+	const maxLen = Math.min(text.length, 8);
+	for (let len = maxLen; len >= MIN_PAYLOAD_TAIL_MATCH; len--) {
+		if (trimmed.endsWith(text.slice(-len))) return true;
+	}
+	return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -307,18 +380,21 @@ function waitForIdlePane(args: {
  *      submit (sendkeys-literal-enter-gotcha, CAM-55). The text is a single
  *      non-key-name arg, so tmux already sends its characters literally; only
  *      'Enter' must stay a recognised key.
- *   3. Baseline + settle + verify (US-002, CAM-359): immediately BEFORE each
- *      send-keys call, sample the pane's cursor geometry as that attempt's
- *      baseline via `sampleGeometryFn` (default `sampleCursorGeometry`,
+ *   3. Baseline + settle + verify (US-002, CAM-359; content backstop review
+ *      round 1 fix US-R1-001): immediately BEFORE each send-keys call,
+ *      sample the pane's cursor geometry as that attempt's baseline via
+ *      `sampleGeometryFn` (default `sampleCursorGeometry`,
  *      src/tmux/display-message.ts). After send-keys, sleep
  *      `SEND_KEYS_SETTLE_MS` (via the injected `sleepFn`, US-001, CAM-358)
  *      so tmux has one refresh cycle to catch up, then sample geometry
- *      again. The verdict is `geometryUnchanged(baseline, after)`: the full
- *      `(cursorX, cursorY)` pair must match, never a single axis. A `null`
- *      sample (the geometry helper's fail-closed result, e.g. a non-zero
- *      tmux exit) is treated as NOT delivered on that attempt, never as
- *      delivered. This never consumes captured pane content for the verdict
- *      (capture-pane is rendered/forgeable; see the module header).
+ *      again. The full `(cursorX, cursorY)` pair must match, never a single
+ *      axis. A `null` sample (the geometry helper's fail-closed result, e.g.
+ *      a non-zero tmux exit) is treated as NOT delivered on that attempt,
+ *      never as delivered. If the pair reads unchanged, `composerLineRetainsPayloadTail`
+ *      inspects the captured pane row at the reported cursor_y for a
+ *      remnant of the sent text before trusting the "delivered" verdict
+ *      (module header: cursor_y is pinned constant in production, so
+ *      geometry alone cannot rule out a wrap-boundary-length collision).
  *   4. Retry: if not delivered, sleep `computeBackoffMs(attempt, ...)`
  *      (src/supervisor/loop.ts:606) and resend, up to `maxAttempts` (default
  *      3) total attempts.
@@ -379,8 +455,15 @@ export function sendKeysVerified(opts: SendKeysVerifiedOptions): void {
 		const after = sampleGeometryFn(paneId, tmuxSpawnFn);
 
 		if (baseline !== null && after !== null && geometryUnchanged(baseline, after)) {
-			delivered = true;
-			break;
+			// Ambiguous branch (review round 1 fix, US-R1-001): the geometry pair
+			// alone cannot rule out a wrap-boundary-length collision (module
+			// header). Break the tie with the content backstop before trusting
+			// this as delivered.
+			const afterContent = capture(paneId);
+			if (!composerLineRetainsPayloadTail(afterContent, after.cursorY, text)) {
+				delivered = true;
+				break;
+			}
 		}
 
 		if (attempt < maxAttempts) {
