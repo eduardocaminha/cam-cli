@@ -80,7 +80,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Call sites: src/commands/issue.ts:185, src/commands/review.ts:183, src/commands/spec.ts:218, src/commands/orch-recycle-watch.ts:417 (inside makeSignalPaneFn). REUSE, do not rebuild: adaptLogEventForPush is already exported at src/supervisor/host.ts:285 and converts a WorkerEventLogger into the bare `(kind, detail) => void` seam sendKeysVerified's logEvent expects (see host.ts:289 for the ts/storyId/uuid wrapping, which uses uuid 'sidecar'; pick an equivalent per-command uuid rather than copying 'sidecar' blindly). makeFileEventLogger is at src/supervisor/events.ts:668; the established default-sink idiom is `options.logEvent ?? makeFileEventLogger(join(cwd, '.claude', 'cam-worker-events.jsonl'))`, already used at src/commands/journal.ts:618 and src/commands/issue-specify.ts:276 - follow it rather than inventing a new one. issue.ts/review.ts/spec.ts already thread optional capturePaneFn/sleepFn/idleTimeoutMs through their options objects, so logEvent is an additive optional field in the same shape. orch-recycle-watch.ts differs: makeSignalPaneFn closes over tmuxSpawnFn only, so the logEvent has to be threaded into that factory. makeInMemoryEventLogger (events.ts:679) returns { logger, events } for assertions. Per the test-quality invariant, assert on the captured event payload, not on the fact that a mock was called."
     }
