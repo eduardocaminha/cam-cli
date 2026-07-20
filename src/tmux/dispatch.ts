@@ -9,19 +9,27 @@
 // until the pane content shows a stable prompt (no busy glyph, no in-flight
 // tool call), then issues send-keys exactly once.
 //
-// Fallback on timeout: log the condition and still send (fire-and-forget). The
-// check is best-effort by design: capture-pane lags by one tmux refresh cycle
-// and we never want to block the caller indefinitely.
+// Fallback on timeout: log the condition and still send, EXACTLY ONCE, with
+// no verify/retry cycle (US-002, CAM-373). The check is best-effort by design:
+// capture-pane lags by one tmux refresh cycle and we never want to block the
+// caller indefinitely. Because the idle-gate already spent the full budget
+// failing to observe an idle pane, a post-send geometry read on this path
+// would be near-certain to read "not delivered" too (the pane is known-busy),
+// so running the verify/retry loop here would just resend the same payload
+// up to `maxAttempts` times for one narration line. `push-undelivered` is
+// still emitted here (reason 'pane-not-idle'), but it reports that delivery
+// is UNKNOWN, not that it was verified to have failed.
 //
-// sendKeysVerified (US-002, CAM-200) extends this with post-send delivery
-// verification: a busy TUI can still drop the trailing Enter even after the
-// pane looked idle at check time (capture-pane lags by one refresh cycle), so
-// the pushed line silently never submits. sendKeysVerified re-checks the pane
+// sendKeysVerified (US-002, CAM-200) extends the idle case (pane went idle
+// within budget) with post-send delivery verification: a busy TUI can still
+// drop the trailing Enter even after the pane looked idle at check time
+// (capture-pane lags by one refresh cycle), so the pushed line silently
+// never submits. On that path only, sendKeysVerified re-checks the pane
 // after each send for delivery, and retries with bounded backoff up to N
-// attempts, emitting a 'push-undelivered' event on exhaustion instead of
-// blocking or throwing. sendKeysWhenIdle now delegates to it so every
-// existing thin-proxy caller (review.ts, issue.ts, spec.ts) gets
-// verify+retry for free.
+// attempts, emitting a 'push-undelivered' event (reason 'retries-exhausted')
+// on exhaustion instead of blocking or throwing. sendKeysWhenIdle now
+// delegates to it so every existing thin-proxy caller (review.ts, issue.ts,
+// spec.ts) gets verify+retry for free on the idle path.
 //
 // Delivery verdict (US-002, CAM-359): the verdict is derived primarily from
 // tmux CURSOR GEOMETRY, not from substring-matching the payload against
@@ -157,14 +165,19 @@ export interface SendKeysWhenIdleOptions {
 	 */
 	sleepFn?: (ms: number) => void;
 	/**
-	 * Injected event sink, called with `('push-undelivered', detail)` once all
-	 * send attempts are exhausted without a geometry-verified delivery (US-003,
-	 * CAM-359). Optional and side-effect-free by default: omitting it emits no
-	 * event (mirrors the sub-state-machine logEvent seam pattern used by
-	 * merge-watch). The caller wraps this into a full WorkerEvent
-	 * (ts/storyId/uuid) if it wants the event durably recorded. Declared here
-	 * (rather than only on `SendKeysVerifiedOptions`) so every plain
-	 * `sendKeysWhenIdle` call site can thread it through too.
+	 * Injected event sink, called with `('push-undelivered', detail)` on TWO
+	 * distinct occasions that are NOT both an exhaustion signal (US-002,
+	 * CAM-373): (1) all verify/retry attempts are exhausted without a
+	 * geometry-verified delivery (`reason: 'retries-exhausted'`, US-003,
+	 * CAM-359), or (2) the idle-gate itself timed out, in which case exactly
+	 * one send fires with NO verify/retry cycle and delivery is genuinely
+	 * UNKNOWN, not confirmed failed (`reason: 'pane-not-idle'`). Optional and
+	 * side-effect-free by default: omitting it emits no event (mirrors the
+	 * sub-state-machine logEvent seam pattern used by merge-watch). The caller
+	 * wraps this into a full WorkerEvent (ts/storyId/uuid) if it wants the
+	 * event durably recorded. Declared here (rather than only on
+	 * `SendKeysVerifiedOptions`) so every plain `sendKeysWhenIdle` call site
+	 * can thread it through too.
 	 */
 	logEvent?: (kind: WorkerEventKind, detail: WorkerEventDetail) => void;
 }
@@ -178,7 +191,11 @@ export interface SendKeysWhenIdleOptions {
 export interface SendKeysVerifiedOptions extends SendKeysWhenIdleOptions {
 	/**
 	 * Maximum number of send attempts (the initial send plus retries) before
-	 * giving up and emitting 'push-undelivered'. Default: 3.
+	 * giving up and emitting 'push-undelivered' (`reason: 'retries-exhausted'`).
+	 * Default: 3. Only consulted on the idle path: when the idle-gate times
+	 * out (US-002, CAM-373), this knob is not read at all -- exactly one send
+	 * fires unconditionally and `push-undelivered` is emitted with
+	 * `reason: 'pane-not-idle'` and `retriesExhausted: 1` instead.
 	 */
 	maxAttempts?: number;
 	/**
@@ -416,6 +433,40 @@ function waitForIdlePane(args: {
 	}
 }
 
+/**
+ * Timed-out idle-gate fallback (US-002, CAM-373): send EXACTLY ONCE and skip
+ * the verify/retry loop entirely. The idle-gate already burned the full
+ * `idleTimeoutMs` budget failing to observe an idle pane; running the
+ * geometry-verify/backoff/retry machinery on top of that (as the
+ * pre-CAM-373 code did) meant the SAME payload could be sent up to
+ * `maxAttempts` times in a row, since a busy pane also fails every post-send
+ * geometry check. Never block indefinitely: still send.
+ *
+ * Delivery is genuinely UNKNOWN here, not confirmed: the geometry sampler is
+ * deliberately never consulted on this path (the pane was already
+ * known-busy, so a post-send read would be meaningless), so the emitted
+ * event does not mean "we verified it failed" the way the exhaustion-path
+ * event does.
+ */
+function sendOnceUnverified(args: {
+	paneId: string;
+	text: string;
+	tmuxSpawnFn: TmuxSpawnFn;
+	idleTimeoutMs: number;
+	logEvent?: (kind: WorkerEventKind, detail: WorkerEventDetail) => void;
+}): void {
+	const { paneId, text, tmuxSpawnFn, idleTimeoutMs, logEvent } = args;
+	process.stderr.write(
+		`[cam] warn: orchestrator pane ${paneId} did not go idle within ${idleTimeoutMs} ms; sending anyway\n`,
+	);
+	tmuxSpawnFn(
+		'tmux',
+		tmuxArgs(['send-keys', '-t', paneId, text, 'Enter']),
+		{ stdio: 'ignore' },
+	);
+	logEvent?.('push-undelivered', { paneId, retriesExhausted: 1, reason: 'pane-not-idle' });
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -429,16 +480,25 @@ function waitForIdlePane(args: {
  *   1. Idle-gate: poll `capture-pane` at `pollIntervalMs` intervals (default
  *      200 ms) until `isOrchPaneIdle` returns true or `idleTimeoutMs` is
  *      exhausted (default `IDLE_WAIT_DEADLINE_MS`, 30 000 ms). **Timeout
- *      fallback**: if the budget expires before the pane goes idle, a
- *      warning is printed to stderr and send-keys fires anyway. The caller
- *      is never blocked indefinitely.
- *   2. Send: text and 'Enter' are passed as discrete argv elements in a
+ *      fallback (US-002, CAM-373)**: if the budget expires before the pane
+ *      goes idle, a warning is printed to stderr and send-keys fires EXACTLY
+ *      ONCE, unconditionally, with NO verify/retry cycle: steps 3 and 4 below
+ *      do not run on this path, `maxAttempts`/backoff/the geometry sampler
+ *      are never consulted, and `push-undelivered` (`reason: 'pane-not-idle'`,
+ *      `retriesExhausted: 1`) is emitted immediately after that single send.
+ *      Delivery on this path is genuinely UNKNOWN, not verified to have
+ *      failed: the pane was already known-busy, so a post-send geometry read
+ *      would be near-certain to read "not delivered" regardless of whether
+ *      the payload actually landed, and retrying it would just resend the
+ *      same narration line up to `maxAttempts` times. The caller is never
+ *      blocked indefinitely either way.
+ *   2. Send (idle path only): text and 'Enter' are passed as discrete argv elements in a
  *      single `send-keys` invocation, WITHOUT `-l`. With `-l` every arg is
  *      literal, so 'Enter' would be typed as the text "Enter" and never
  *      submit (sendkeys-literal-enter-gotcha, CAM-55). The text is a single
  *      non-key-name arg, so tmux already sends its characters literally; only
  *      'Enter' must stay a recognised key.
- *   3. Baseline + settle + verify (US-002, CAM-359; content backstop review
+ *   3. Baseline + settle + verify (idle path only; US-002, CAM-359; content backstop review
  *      round 1 fix US-R1-001): immediately BEFORE each send-keys call,
  *      sample the pane's cursor geometry as that attempt's baseline via
  *      `sampleGeometryFn` (default `sampleCursorGeometry`,
@@ -457,14 +517,17 @@ function waitForIdlePane(args: {
  *      "delivered" verdict (module header: cursor_y is pinned constant in
  *      production, so geometry alone cannot rule out a wrap-boundary-length
  *      collision).
- *   4. Retry: if not delivered, sleep `computeBackoffMs(attempt, ...)`
+ *   4. Retry (idle path only): if not delivered, sleep `computeBackoffMs(attempt, ...)`
  *      (src/supervisor/loop.ts:606) and resend, up to `maxAttempts` (default
  *      3) total attempts.
  *
- * On exhaustion (still not delivered after `maxAttempts`), emits
- * `'push-undelivered'` via the injected `logEvent` (default: no-op, so
- * callers that don't care about durable events see zero side effects). Never
- * throws and never blocks indefinitely.
+ * `push-undelivered` (via the injected `logEvent`, default: no-op, so callers
+ * that don't care about durable events see zero side effects) is NOT
+ * exclusively an exhaustion signal: it fires on exhaustion of the idle path's
+ * verify/retry loop (still not delivered after `maxAttempts`, `reason:
+ * 'retries-exhausted'`) OR, separately, on the timed-out path's single
+ * unverified send (`reason: 'pane-not-idle'`, step 1 above). Never throws and
+ * never blocks indefinitely.
  */
 export function sendKeysVerified(opts: SendKeysVerifiedOptions): void {
 	const {
@@ -502,10 +565,8 @@ export function sendKeysVerified(opts: SendKeysVerifiedOptions): void {
 
 	const timedOut = waitForIdlePane({ paneId, capture, pollIntervalMs, idleTimeoutMs, sleepFn });
 	if (timedOut) {
-		// Fallback: log + still send. Never block indefinitely.
-		process.stderr.write(
-			`[cam] warn: orchestrator pane ${paneId} did not go idle within ${idleTimeoutMs} ms; sending anyway\n`,
-		);
+		sendOnceUnverified({ paneId, text, tmuxSpawnFn, idleTimeoutMs, logEvent });
+		return;
 	}
 
 	let delivered = false;

@@ -40,6 +40,10 @@
 //     - discriminator reads through the dedicated visibleCaptureFn, never capturePaneFn
 //       (review round 2 fix, US-R2-001, CAM-359): a scrollback-shaped capturePaneFn that would
 //       falsely flip the verdict does not affect a genuinely-settled read
+//     - idle-gate times out (US-002, CAM-373): sends EXACTLY ONCE with no verify/retry loop,
+//       zero backoff sleeps, the geometry sampler never consulted, and exactly one
+//       push-undelivered event with reason 'pane-not-idle' and retriesExhausted 1; the stderr
+//       warning is preserved
 //   cursorRowStartsWithPrompt (US-001, CAM-364): prompt-at-start present/absent, both glyphs
 //     (> and ❯), leading whitespace, mid-row glyph (not a match), out-of-range cursorY
 
@@ -669,8 +673,13 @@ describe('sendKeysVerified', () => {
 			// indexing scrollback content by a visible-screen row number). If the
 			// discriminator still consulted this reader, it would misreport
 			// delivered. The dedicated visibleCaptureFn reports the true,
-			// still-undelivered blank row (measured collision shape).
-			capturePaneFn: () => paneContentWithRow(EMPTY_BASELINE.cursorY, '❯ unrelated scrollback line'),
+			// still-undelivered blank row (measured collision shape). A trailing
+			// idle-prompt line is appended so the idle-gate (which DOES read
+			// through capturePaneFn, US-008) resolves idle on the first check
+			// rather than exercising the unrelated timed-out/send-once path
+			// (US-002, CAM-373): this test's subject is the discriminator, not
+			// the idle-gate.
+			capturePaneFn: () => `${paneContentWithRow(EMPTY_BASELINE.cursorY, '❯ unrelated scrollback line')}\n> `,
 			visibleCaptureFn: () =>
 				paneContentWithRows([
 					[EMPTY_BASELINE.cursorY - 1, `❯ ${payload}`],
@@ -686,6 +695,73 @@ describe('sendKeysVerified', () => {
 		expect(sendKeysCalls).toHaveLength(2);
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
+	});
+
+	test('idle-gate times out: sends EXACTLY ONCE with no verify/retry cycle, no backoff sleeps, the geometry sampler is never consulted, and emits exactly one push-undelivered event with reason pane-not-idle (US-002, CAM-373; red on main: main sends 3 times)', () => {
+		const spawnFn = makeSpawnFn();
+		const events: Array<{ kind: string; detail: unknown }> = [];
+		const originalWrite = process.stderr.write;
+		const stderrChunks: string[] = [];
+		process.stderr.write = ((chunk: string | Uint8Array) => {
+			stderrChunks.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk));
+			return true;
+		}) as typeof process.stderr.write;
+
+		// Fake-clock idiom (reused from the sendKeysWhenIdle default-deadline
+		// test above): a monotonically-advancing clock driven only by the
+		// injected sleepFn, and a capturePaneFn that never reports idle, so the
+		// idle-gate must run out its full budget rather than resolving early.
+		const originalNow = Date.now;
+		let fakeNow = 0;
+		Date.now = () => fakeNow;
+
+		const recordedSleeps: number[] = [];
+		let geometrySamplerCalls = 0;
+
+		try {
+			sendKeysVerified({
+				paneId: '%7',
+				text: '/cam-review',
+				tmuxSpawnFn: spawnFn,
+				capturePaneFn: () => '⠋ Busy forever\n', // never idle
+				sampleGeometryFn: () => {
+					geometrySamplerCalls++;
+					return EMPTY_BASELINE;
+				},
+				sleepFn: (ms) => {
+					recordedSleeps.push(ms);
+					fakeNow += ms;
+				},
+				pollIntervalMs: 1_000,
+				idleTimeoutMs: 5_000,
+				maxAttempts: 3,
+				logEvent: (kind, detail) => events.push({ kind, detail }),
+			});
+		} finally {
+			Date.now = originalNow;
+			process.stderr.write = originalWrite;
+		}
+
+		// AC1: exactly one send-keys invocation, no verify/retry loop.
+		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
+		expect(sendKeysCalls).toHaveLength(1);
+
+		// AC2: zero backoff sleeps (only the idle-gate's own poll-interval
+		// sleeps are recorded, never a computeBackoffMs-derived value: every
+		// idle-gate poll sleep here is capped at pollIntervalMs/remaining, both
+		// far below a plausible backoff value), and the geometry sampler is
+		// never consulted for a delivery verdict.
+		expect(recordedSleeps.every((ms) => ms <= 1_000)).toBe(true);
+		expect(geometrySamplerCalls).toBe(0);
+
+		// AC3: exactly one push-undelivered event, reason pane-not-idle,
+		// retriesExhausted === 1.
+		expect(events).toHaveLength(1);
+		expect(events[0]?.kind).toBe('push-undelivered');
+		expect(events[0]?.detail).toEqual({ paneId: '%7', retriesExhausted: 1, reason: 'pane-not-idle' });
+
+		// AC4: the existing stderr warning on the timed-out path is preserved.
+		expect(stderrChunks.join('')).toContain(`did not go idle within 5000 ms`);
 	});
 });
 
