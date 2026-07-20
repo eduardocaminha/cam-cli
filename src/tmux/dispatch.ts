@@ -118,6 +118,20 @@ export interface SendKeysVerifiedOptions extends SendKeysWhenIdleOptions {
 // ---------------------------------------------------------------------------
 
 /**
+ * Settle window (ms) between a send-keys spawn and the post-send
+ * `isComposerEmptied` verification capture (US-001, CAM-358).
+ *
+ * `capture-pane` lags the tmux server's own render cycle: reading the pane
+ * immediately after send-keys returns can still observe the PRE-send screen
+ * (the pushed text still visibly sitting in the composer), which makes
+ * `isComposerEmptied` misreport an undelivered payload as delivered on
+ * attempt 1 and skip the retry loop entirely. Sleeping this window (via the
+ * injected `sleepFn`, never a bare `Bun.sleepSync`) before every verify
+ * capture gives the pane one refresh cycle to catch up.
+ */
+export const SEND_KEYS_SETTLE_MS = 50;
+
+/**
  * Glyphs that indicate the claude TUI is mid-turn (busy):
  * - Full braille block U+2800-U+28FF (covers every glyph claude renders during
  *   a spinner half-cycle; previously only ~10 specific chars were listed, which
@@ -242,9 +256,12 @@ function waitForIdlePane(args: {
  *      submit (sendkeys-literal-enter-gotcha, CAM-55). The text is a single
  *      non-key-name arg, so tmux already sends its characters literally; only
  *      'Enter' must stay a recognised key.
- *   3. Verify: re-capture the pane and check `isComposerEmptied` (the pushed
- *      line left the composer). This is a pane-STATE check only; it never
- *      parses rendered scrollback for report content.
+ *   3. Settle + verify: sleep `SEND_KEYS_SETTLE_MS` (via the injected
+ *      `sleepFn`, US-001, CAM-358) so the tmux server has one refresh cycle
+ *      to render the post-send screen, then re-capture the pane and check
+ *      `isComposerEmptied` (the pushed line left the composer). This is a
+ *      pane-STATE check only; it never parses rendered scrollback for report
+ *      content.
  *   4. Retry: if not delivered, sleep `computeBackoffMs(attempt, ...)`
  *      (src/supervisor/loop.ts:606) and resend, up to `maxAttempts` (default
  *      3) total attempts.
@@ -294,6 +311,8 @@ export function sendKeysVerified(opts: SendKeysVerifiedOptions): void {
 			tmuxArgs(['send-keys', '-t', paneId, text, 'Enter']),
 			{ stdio: 'ignore' },
 		);
+
+		sleepFn(SEND_KEYS_SETTLE_MS);
 
 		if (isComposerEmptied(capture(paneId), text)) {
 			delivered = true;

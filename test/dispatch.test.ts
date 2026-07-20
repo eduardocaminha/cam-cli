@@ -20,6 +20,9 @@
 //     - composer emptied immediately: delivered on the first attempt, no retry, no push-undelivered
 //     - composer still holds the pushed line every time: retries up to maxAttempts, then emits
 //       exactly one push-undelivered event via the injected logEvent, using a no-op sleepFn
+//     - settle window (US-001, CAM-358): a capturePaneFn that would report the stale PRE-send
+//       screen on the first post-send read, but the injected sleepFn advances a staged reader
+//       to the POST-send screen before that read happens, still yields delivered on attempt 1
 
 import { describe, expect, test } from 'bun:test';
 import type { SpawnSyncReturns } from 'node:child_process';
@@ -29,6 +32,7 @@ import {
 	isComposerEmptied,
 	sendKeysWhenIdle,
 	sendKeysVerified,
+	SEND_KEYS_SETTLE_MS,
 	type CapturePaneFn,
 } from '../src/tmux/dispatch.ts';
 import type { SpawnFn as TmuxSpawnFn } from '../src/tmux/session.ts';
@@ -118,19 +122,21 @@ describe('isOrchPaneIdle', () => {
 describe('sendKeysWhenIdle', () => {
 	test('sends keys immediately when pane is idle on first check', () => {
 		const spawnFn = makeSpawnFn();
-		let sleepCount = 0;
+		const sleeps: number[] = [];
 
 		sendKeysWhenIdle({
 			paneId: '%3',
 			text: '/cam-plan',
 			tmuxSpawnFn: spawnFn,
-			capturePaneFn: () => '> ', // idle on first call
-			sleepFn: () => { sleepCount++; },
+			capturePaneFn: () => '> ', // idle on first call, composer empty post-send
+			sleepFn: (ms) => { sleeps.push(ms); },
 			idleTimeoutMs: 5,
 		});
 
-		// No sleep needed: idle on first check.
-		expect(sleepCount).toBe(0);
+		// No idle-gate poll sleep needed: idle on first check. The one recorded
+		// sleep is the unconditional post-send settle window (US-001, CAM-358),
+		// not an idle-gate poll.
+		expect(sleeps).toEqual([SEND_KEYS_SETTLE_MS]);
 
 		// send-keys was called.
 		const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
@@ -283,6 +289,51 @@ describe('sendKeysVerified', () => {
 
 		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
 		expect(sendKeysCalls).toHaveLength(1);
+		expect(events).toHaveLength(0);
+	});
+
+	test('settle window honored: sleepFn advances the staged reader so the verify reads the post-send screen, not the stale pre-send one (US-001, CAM-358)', () => {
+		const spawnFn = makeSpawnFn();
+		const events: Array<{ kind: string; detail: unknown }> = [];
+
+		// The staged reader: before the settle sleep fires, a post-send capture
+		// would still observe the PRE-send screen (payload still visibly sitting
+		// in the composer, as a lagging real capture-pane would report
+		// immediately after send-keys returns). Only the injected sleepFn -
+		// when called with the settle window - flips `settled` and advances the
+		// staged reader to the POST-send screen (composer emptied).
+		let settled = false;
+		const sleepFn = (ms: number) => {
+			if (ms === SEND_KEYS_SETTLE_MS) settled = true;
+		};
+
+		const sendKeysCallCount = () =>
+			spawnFn.calls.filter((c) => c.args[2] === 'send-keys').length;
+
+		const capturePaneFn: CapturePaneFn = () => {
+			// Before any send-keys call, this is the PRE-send idle-gate capture.
+			if (sendKeysCallCount() === 0) return '> ';
+			// Post-send verify capture: PRE-send (stale) screen until the settle
+			// sleep has fired, POST-send (composer emptied) screen thereafter.
+			return settled ? '> ' : '> /cam-spec';
+		};
+
+		sendKeysVerified({
+			paneId: '%4',
+			text: '/cam-spec',
+			tmuxSpawnFn: spawnFn,
+			capturePaneFn,
+			sleepFn,
+			idleTimeoutMs: 5,
+			logEvent: (kind, detail) => events.push({ kind, detail }),
+		});
+
+		// Delivered verdict must reflect the settled (POST-send) screen: exactly
+		// one send-keys call, no retry, no push-undelivered. Without the settle
+		// sleep between the send-keys spawn and the verify capture, this same
+		// staged reader would report PRE-send on attempt 1's verify and force a
+		// retry (or exhaustion), misreporting delivery.
+		expect(sendKeysCallCount()).toBe(1);
 		expect(events).toHaveLength(0);
 	});
 
