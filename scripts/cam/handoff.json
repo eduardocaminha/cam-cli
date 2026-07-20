@@ -1,0 +1,18 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Make frozen-comparand quote-aware with -c payload unwrapping" },
+  "branchName": "cam/issue-388",
+  "timestamp": "2026-07-20T21:21:51Z",
+  "createdFiles": [
+    "test/fixtures/oracle-lint/cam382-false-positives.txt",
+    "test/fixtures/oracle-lint/oracle-lint-cases.txt"
+  ],
+  "modifiedFiles": [
+    "src/supervisor/prd-oracle-lint.ts",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 (CAM-388) made hasFrozenIntegerComparand in src/supervisor/prd-oracle-lint.ts quote-aware: a new module-local stripQuotedSpans() strips single/double-quoted spans (replaced with a space, never bare deletion) before both INTEGER_COMPARAND_RE and LIVE_DERIVATION_RE run, and a new isDashCWrapper() detects a `-c '<payload>'` wrapper argument so its payload is recursively unwrapped rather than deleted, keeping `sh -c '<live comparison>'` flagged. Two new tracked fixtures under test/fixtures/oracle-lint/: cam382-false-positives.txt (the 3 verbatim CAM-382 incident commands, all reconstructed from scripts/cam/issues/CAM-0388.json since the source .claude/.cam-plan-escalated.json marker was already gone, rotating/gitignored/destroyed by the plan cycle that filed CAM-388) and oracle-lint-cases.txt (the `<rule> :: <ok|flag> :: <command>` matrix, currently seeded with only frozen-comparand + rotating-artifact-target rows per this story's notes -- broadening to the other two rules, grep-q-plus-list-files and zero-match-vacuous, is explicitly left to a future story per the issue's own SEED ROWS note). ROTATING_ARTIFACT_RULE was deliberately NOT routed through the new stripper: its quote-blindness is intentional (doc comment at prd-oracle-lint.ts:209-211, pinned by a fixture row + AC4/oracle in this story). NEXT IN SEQUENCE per journal.md DRAIN-CAM382 entry: CAM-382 (widen INTEGER_COMPARAND_RE's operator alternation to -gt/-lt/-ne/!= and add the missing left word boundary) can now proceed safely since the quote-blindness trap this fix closes would otherwise have made that widening worse. CAM-383 (over-excusing: any live-derivation token anywhere excuses every comparand) and CAM-386 (LIVE_DERIVATION_RE's \\bmain\\b matches 'main' inside filenames like main.ts) remain separately specified and untouched by this story. NEEDS REBUILD: prd-oracle-lint.ts is sidecar-executed at plan time, so this fix has no effect on live planning until the binary is rebuilt and the sidecar respawned.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
