@@ -67,6 +67,7 @@ Work through every section below. For every finding, record `severity` (critical
    - **reviewer-judgment**: explicit tag `[oracle: reviewer-judgment]` meaning a human or LLM reviewer judges correctness (last resort — flag if overused).
    A criterion that pairs no oracle of any kind is a **critical** finding and the auditor MUST BLOCK (not a soft note). Vague verbs like "improve", "optimize", or "clean up" without a concrete pass/fail are automatically oracle-free.
    A `file-assert` oracle whose grep invocation combines `-q` with `-L` or `-l` — in any order or spacing (e.g. `-Lq`, `-qL`, `-L -q`, `-l -q`, `-lq`) — is self-nullifying: `-q` silently overrides `-L`/`-l`'s absence-inversion, so the oracle's exit status always mirrors plain match-found rather than the intended absence check. This is a **critical** finding and the auditor MUST BLOCK, naming the prescribed replacement: `! grep -q PATTERN file` for an absence check, plain `grep -q PATTERN file` for a presence check.
+   A red-on-main annotation (e.g. "RED-ON-MAIN (swept)") is a claim to be measured, not assumed: the pure lint pipeline structurally cannot run a candidate oracle against unmodified `main` (that needs shell plus a worktree), so this prose check is the only enforcement surface for the falsifiability rule at `scripts/cam/patterns.md:899`. The auditor MUST treat an unverified, implausible, or missing red-on-main sweep as a **critical** finding and BLOCK.
 10. No TODO, TBD, `<placeholder>`, `XXX`, or `TKTK` strings anywhere in the PRD? Flag every one.
 
 ### D. Docs rigor
