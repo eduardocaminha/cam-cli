@@ -1,0 +1,13 @@
+{
+  "id": "CAM-383",
+  "title": "hasFrozenIntegerComparand excuses EVERY integer comparand in a command as soon …",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-20T19:46:14.054Z",
+  "updatedAt": "2026-07-20T19:46:14.054Z",
+  "description": "hasFrozenIntegerComparand excuses EVERY integer comparand in a command as soon as ANY live-derivation token appears anywhere in that command. A mixed oracle such as `test $(git show main:f | wc -l) -ge 1 && test $(wc -l < g) -eq 42` hides the frozen 42 behind the unrelated live token. Again this matches the PRD notes ('when NO live re-derivation token appears in the SAME criterion'), so it is spec-conformant; a per-comparand scoping would be strictly stronger and is worth a follow-up.\n\nSource: cam/issue-381\nReview round: 1\n\nsuggestion-fingerprint: b4a018bb13e0",
+  "derivedFrom": [
+    "CAM-381"
+  ]
+}
