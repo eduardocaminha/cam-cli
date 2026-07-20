@@ -264,6 +264,58 @@ function findClosingQuoteIndex(command: string, quoteChar: string, searchFrom: n
 }
 
 /**
+ * Finds every top-level `$(...)` command-substitution span inside `content`
+ * (balanced-paren tracking, so a nested `$(...)` inside the substitution
+ * doesn't truncate it early) and returns them concatenated with spaces,
+ * discarding everything else (replaced with a space, never bare deletion,
+ * same tokens-don't-fuse rule as stripQuotedSpans). Used by stripQuotedSpans
+ * to preserve a command substitution's content when it sits inside a
+ * DOUBLE-quoted span that is not a `-c` wrapper (US-R2-002, CAM-388): per
+ * POSIX Shell Command Language 2.2.3, `"$(cmd)"` still executes `cmd` and
+ * substitutes its output -- double quotes suppress word-splitting of the
+ * result, not the substitution itself -- so a `$(...)` inside double quotes
+ * is live shell syntax, never inert quoted data. Single quotes have no such
+ * exception (`'$(cmd)'` is 100% literal text, no substitution happens), so
+ * this helper is only ever applied to double-quoted span content.
+ */
+/**
+ * Given `content[dollarIndex] === '$'` and `content[dollarIndex + 1] === '('`,
+ * returns the index immediately past the `)` that balances the opening `(`
+ * (balanced-paren depth counting, so a nested `$(...)` doesn't close early).
+ * Falls off the end of `content` (returns `content.length`) for an
+ * unterminated substitution. Split out of extractCommandSubstitutionSpans to
+ * keep that function's cognitive complexity within the project's lint ceiling.
+ */
+function findCommandSubstitutionEnd(content: string, dollarIndex: number): number {
+	let depth = 1;
+	let j = dollarIndex + 2;
+	while (j < content.length && depth > 0) {
+		if (content[j] === '(') depth++;
+		else if (content[j] === ')') depth--;
+		j++;
+	}
+	return j;
+}
+
+function extractCommandSubstitutionSpans(content: string): string {
+	let out = '';
+	let i = 0;
+
+	while (i < content.length) {
+		if (content[i] === '$' && content[i + 1] === '(') {
+			const end = findCommandSubstitutionEnd(content, i);
+			out += ` ${content.slice(i, end)} `;
+			i = end;
+		} else {
+			out += ' ';
+			i++;
+		}
+	}
+
+	return out;
+}
+
+/**
  * Strips single/double-quoted spans out of `command` before frozen-comparand
  * scanning, so an operator+integer byte pattern that is merely quoted TEST
  * DATA (a JS array literal element, a grep search pattern) is never mistaken
@@ -279,7 +331,19 @@ function findClosingQuoteIndex(command: string, quoteChar: string, searchFrom: n
  * (US-R1-002 CAM-388): its quoted payload is ordinary inert data and is
  * deleted like any other quoted span, never unwrapped and rescanned.
  * Every other quoted span is replaced with a single space (never simple
- * deletion) so tokens on either side of the span don't fuse into a new one.
+ * deletion) so tokens on either side of the span don't fuse into a new one
+ * -- EXCEPT a non-wrapper DOUBLE-quoted span, whose `$(...)` command
+ * substitution(s), if any, are preserved verbatim via
+ * extractCommandSubstitutionSpans above rather than blanked (US-R2-002,
+ * CAM-388): `test $(wc -l < "$(git show main:f.ts)") -eq 42` is not a `-c`
+ * wrapper, but the `"$(git show main:f.ts)"` span still executes a live
+ * `git show main:` re-derivation regardless of the surrounding double
+ * quotes, so blanking it whole (the pre-US-R2-002 behavior) silently
+ * destroyed the derivation token LIVE_DERIVATION_RE depends on, turning a
+ * legitimately re-derived comparand into a false-positive frozen one. A
+ * SINGLE-quoted span never gets this treatment -- `'$(...)'` performs no
+ * substitution at all in POSIX shell, so its content is genuinely inert and
+ * stays fully blanked.
  *
  * Two edge cases fixed by US-R1-001 (CAM-388, reviewer finding at
  * prd-oracle-lint.ts:200): a quote with no matching close is treated as
@@ -308,7 +372,13 @@ function stripQuotedSpans(command: string): string {
 				continue;
 			}
 			const content = command.slice(i + 1, closeIdx);
-			out += isDashCWrapper(command, i) ? ` ${stripQuotedSpans(content)} ` : ' ';
+			if (isDashCWrapper(command, i)) {
+				out += ` ${stripQuotedSpans(content)} `;
+			} else if (ch === '"') {
+				out += extractCommandSubstitutionSpans(content);
+			} else {
+				out += ' ';
+			}
 			i = closeIdx + 1;
 		} else {
 			out += ch;
@@ -323,9 +393,15 @@ function stripQuotedSpans(command: string): string {
  * True when `command` compares against a literal integer via -eq/-ge/-le/==
  * with no live `main`-re-derivation token present anywhere in the command.
  * Both regexes are run against the SAME quote-stripped text (see
- * stripQuotedSpans), so a derivation token that legitimately lives inside
- * quotes still excuses the comparand, and a comparand that is merely quoted
- * test data never trips the rule in the first place.
+ * stripQuotedSpans). A derivation token that lives inside a `-c` wrapper
+ * payload, or inside a `$(...)` command substitution nested in a DOUBLE-quoted
+ * span, still excuses the comparand, because stripQuotedSpans preserves both
+ * (US-R2-002, CAM-388: a non-`-c` double-quoted `$(...)` still executes, so
+ * blanking it whole would silently discard a live derivation token). A
+ * derivation token that is merely quoted inert TEXT (single-quoted, or
+ * double-quoted with no `$(...)`) does not survive stripping and does not
+ * excuse the comparand -- exactly like a comparand that is merely quoted test
+ * data never trips the rule in the first place.
  */
 function hasFrozenIntegerComparand(command: string): boolean {
 	const stripped = stripQuotedSpans(command);

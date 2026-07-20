@@ -18,6 +18,7 @@ frozen-comparand :: ok :: grep -c 'test $X -eq 41' file.ts
 frozen-comparand :: ok :: npx tool -c 'threshold -eq 5'
 frozen-comparand :: flag :: bash -c "echo \"hi\"; test $(wc -l < f) -eq 3"
 frozen-comparand :: flag :: sh -c "test \"$X\" -eq 3"
+frozen-comparand :: ok :: test $(wc -l < "$(git show main:f.ts)") -eq 42
 grep-q-plus-list-files :: ok :: grep -q 'PATTERN' file.ts
 grep-q-plus-list-files :: flag :: grep -Lq 'PATTERN' file.ts
 rotating-artifact-target :: ok :: grep -q 'ROTATING_ARTIFACT_RULE' src/supervisor/prd-oracle-lint.ts
