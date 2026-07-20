@@ -1,11 +1,11 @@
 {
   "id": "CAM-370",
   "title": "Boundary case not asserted: when a failing step produces BOTH streams empty, th…",
-  "stage": "idea",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-20T11:59:13.748Z",
-  "updatedAt": "2026-07-20T11:59:13.748Z",
+  "updatedAt": "2026-07-20T13:26:24.963Z",
   "description": "Boundary case not asserted: when a failing step produces BOTH streams empty, the filter+join yields detail === ''. The test at :114-118 sets up exactly that input but asserts only calls.length, never the resulting detail. An explicit expect(result.detail).toBe('') would pin the empty-detail contract that truncatePreflightDetail then renders.\n\nSource: cam/issue-363\nReview round: 2\n\nsuggestion-fingerprint: 1c468d7c7115",
   "derivedFrom": [
     "CAM-363"
