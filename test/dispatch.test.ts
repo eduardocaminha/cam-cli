@@ -778,6 +778,24 @@ describe('sendKeysVerified', () => {
 		expect(recordedSleeps.every((ms) => ms === POLL_INTERVAL_MS)).toBe(true);
 		expect(geometrySamplerCalls).toBe(0);
 
+		// Falsifiability record, durable copy (US-R2-002, CAM-376 review round 2):
+		// scripts/cam/handoff.json is a per-story ROTATING artifact, so a mutation
+		// record written only there (as originally done for US-003) is gone by
+		// the very next story's finalize commit. This tracked-source copy is the
+		// durable one. Proof performed: a temporary `recordedSleeps.push(300)` (a
+		// computeBackoffMs-shaped value: default retryBaseMs base=300, streak=1,
+		// zero jitter, per src/tmux/dispatch.ts:544) was inserted immediately
+		// after the sendKeysVerified call above, then reverted before commit.
+		// Against the resulting array [1000,1000,1000,1000,1000,300], the OLD
+		// `every((ms) => ms <= 1_000)` bound evaluated true (vacuous pass); the
+		// NEW strict-equality assertion above evaluated false, and
+		// `bun test test/dispatch.test.ts` under the live mutation exited 1 (one
+		// failing assertion, at this line). retryBaseMs is never actually
+		// reached on this idle-gate-timeout path (sendOnceUnverified skips the
+		// retry/backoff loop entirely), which is why the mutation injects a
+		// retryBaseMs-SHAPED value directly into recordedSleeps rather than
+		// exercising the real option end to end.
+
 		// AC3: exactly one push-undelivered event, reason pane-not-idle,
 		// retriesExhausted === 1.
 		expect(events).toHaveLength(1);
