@@ -1,23 +1,14 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Capture stderr in plan-preflight failure detail" },
+  "lastCompletedStory": { "id": "US-R1-001", "title": "Review round 1 fix 001: address reviewer finding" },
   "branchName": "cam/issue-363",
-  "timestamp": "2026-07-20T12:00:00Z",
+  "timestamp": "2026-07-20T12:30:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/plan-preflight.ts",
-    "src/commands/sidecar.ts",
-    "test/supervisor/plan/plan-preflight.test.ts",
-    "scripts/file-size-budget.json"
+    "test/supervisor/plan/plan-preflight.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 (CAM-363) made PlanPreflightSpawnFn's stderr field REQUIRED and wired the production preflightSpawnFn (src/commands/sidecar.ts:~2639) to decode+return it. runPlanPreflight (src/supervisor/plan-preflight.ts) now builds `detail` for the four failing steps (git-checkout-main, git-pull, typecheck, bun-test) by concatenating [stderr, stdout] with stderr FIRST (newline-joined, empty streams filtered), so the diagnostic verdict survives truncatePreflightDetail's first-line rendering. clean-tree is untouched (stdout-only, no stderr concept for git status --porcelain). loopSpawnFn (sidecar.ts ~2629-2635) still drops stderr -- deliberately out of scope, tracked as a separate issue if it recurs. If a future story touches loopSpawnFn's stderr handling, mirror the same Buffer/TextDecoder guard pattern used here, not a new pattern. src/commands/sidecar.ts grew by one line (3437->3438), so its file-size-budget.json ceiling was raised inline with a dated tracker-ref note; if another story in this same PRD also grows sidecar.ts, its ceiling raise will stack on top of 3438, not require re-deriving from 3437.",
+  "nextStoryContext": "US-R1-001 (CAM-363 review round 1) addressed the WARNING finding: the two 'BOTH streams' tests in test/supervisor/plan/plan-preflight.test.ts (typecheck ~line 235, bun-test ~line 288) previously asserted only `detail.toContain(...)` per stream, which passes identically regardless of stream order. Added two extra assertions per test: `result.detail.split('\\n')[0]).toContain(<verdict>)` (first-line ordering check) and `truncatePreflightDetail(result.detail)).toContain(<verdict>)` (imported from src/supervisor/plan-preflight-marker.ts), which directly exercises the truncation path an operator actually sees. Verified the regression-catching property empirically: temporarily reversed [typecheck.stdout, typecheck.stderr] order in src/supervisor/plan-preflight.ts, confirmed the new assertion failed, then reverted (source untouched, only the test file changed -- git diff on plan-preflight.ts is empty). Two SUGGESTION-severity findings from the same review round were NOT addressed (out of scope for this fix, which targets the single WARNING only): (1) the four-way duplicated `[stderr, stdout].filter(...).join('\\n').trim()` expression at plan-preflight.ts:86/94/117/128 could be extracted to a `combineStreams()` helper; (2) AC8's oracle form for clean-tree (`! grep ... | grep -q ...`) is near-tautological and can't fail. If a future round re-raises either as a WARNING (not just a SUGGESTION), address it then.",
   "officialDocsValidated": [
-    {
-      "lib": "bun",
-      "url": "https://bun.com/docs/api/spawn",
-      "fetchedAt": "2026-07-20T00:00:00Z",
-      "status": "aligned",
-      "summary": "Confirmed Bun.spawnSync's SyncSubprocess.stdout/stderr are typed Buffer | undefined when { stdout: 'pipe', stderr: 'pipe' } is passed; implementation already guards both with `instanceof Buffer` before TextDecoder.decode, matching the existing adjacent stdout guard."
-    }
+    { "lib": "none", "status": "no_external_lib_touched" }
   ]
 }
