@@ -1,16 +1,14 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Send exactly once and skip the verify/retry cycle when the idle gate times out"
+    "id": "US-003",
+    "title": "Prove the pane-not-idle single-send against a real tmux pane"
   },
   "createdFiles": [],
   "modifiedFiles": [
-    "src/tmux/dispatch.ts",
-    "test/dispatch.test.ts",
-    "scripts/file-size-budget.json"
+    "test/integration/dispatch-geometry.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "sendKeysVerified's timed-out path (waitForIdlePane returns true) now short-circuits: it calls the new sendOnceUnverified helper (send-keys once, stderr warning preserved, emit exactly one 'push-undelivered' event with reason 'pane-not-idle' and retriesExhausted: 1) and returns immediately, never entering the geometry-verify/backoff/retry loop. maxAttempts/retryBaseMs/retryMaxMs/jitterFraction/randomFn/sampleGeometryFn/visibleCaptureFn are all unused on that path now. The non-timeout (idle-on-first-check or idle-after-poll) path is completely unchanged: it still runs the full verify/retry loop and emits 'push-undelivered' with reason 'retries-exhausted' on exhaustion. sendKeysVerified itself was refactored (extraction, not logic change) to stay under Biome's noExcessiveLinesPerFunction(max=80) ceiling after the new branch pushed it over. One pre-existing test (test/dispatch.test.ts, 'discriminator reads through visibleCaptureFn...') had to have its capturePaneFn fixture adjusted (append a trailing idle-prompt line) because its content never satisfied isOrchPaneIdle and it was inadvertently relying on the OLD (now-removed) behavior of still running verify/retry after a real-clock idle-gate timeout; its actual assertions (discriminator ignoring capturePaneFn, 2 sends via genuine retry) are unchanged. File-size ceilings for src/tmux/dispatch.ts (606->667) and test/dispatch.test.ts (747->823) were raised in the same commit.",
+  "nextStoryContext": "Added a ninth real-tmux test to test/integration/dispatch-geometry.test.ts covering the US-002/CAM-373 pane-not-idle timeout path: boots a real tmux pane running a genuinely long-lived foreground command (`bash -c 'echo BUSY; sleep 100'`, never a faked pane-content string) so isOrchPaneIdle stays false for the whole idle-gate poll window (no line ends in `>`/`❯`). Calls sendKeysVerified with an explicit short idleTimeoutMs (100ms) + pollIntervalMs (20ms) override -- never anywhere near the 30s IDLE_WAIT_DEADLINE_MS default -- and asserts exactly ONE send-keys call plus exactly one push-undelivered event with { reason: 'pane-not-idle', retriesExhausted: 1 }, matching sendOnceUnverified's contract in src/tmux/dispatch.ts. Reused the file's existing scaffolding unchanged (makeSwapSocketSpawn, paneId(), the private TEST_SOCK, tmuxRaw, waitForCondition, the shared afterEach kill-server, test.skipIf(!tmuxAvailable)); did not touch bootPane (which is specific to the raw-echo fixture's submit/drop modes and not needed here since this path never reaches the geometry-verify loop at all). All 8 pre-existing tests in the file still pass unchanged. No src/ changes were needed -- src/tmux/dispatch.ts's sendOnceUnverified behavior already existed from US-002; this story only adds the missing real-tmux proof for it.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ],
