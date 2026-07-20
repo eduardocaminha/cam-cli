@@ -1,0 +1,13 @@
+{
+  "id": "CAM-361",
+  "title": "Blocking-window consequence worth a follow-up issue, not a deviation from the P…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-20T06:20:13.920Z",
+  "updatedAt": "2026-07-20T06:20:13.920Z",
+  "description": "Blocking-window consequence worth a follow-up issue, not a deviation from the PRD (which mandated the raise): the default sleepFn is Bun.sleepSync, so 5s -> 30s makes every push against a busy orchestrator block the calling thread up to 30s. None of the 5 production call sites (src/commands/issue.ts:185, src/commands/review.ts:183, src/commands/spec.ts:218, src/commands/orch-recycle-watch.ts:417, src/supervisor/host.ts:330) passes an idleTimeoutMs override, so all inherit the 30s ceiling; host.ts:330 is reached from the sidecar merge-watch/narration path, so the sidecar outer loop can now stall 6x longer per narration. Same class as the known CAM-103 outer-loop-blocking concern. Consider an async settle/poll path or a shorter per-caller budget for best-effort narration pushes.\n\nSource: cam/issue-358\nReview round: 2\n\nsuggestion-fingerprint: ff94799a3c19",
+  "derivedFrom": [
+    "CAM-358"
+  ]
+}
