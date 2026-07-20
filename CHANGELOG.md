@@ -6,6 +6,17 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.227.0] - 2026-07-20
+
+### Added
+
+- US-R2-002 - Review round 2 fix 002: address reviewer finding
+- US-R2-001 - Review round 2 fix 001: address reviewer finding
+- US-R1-002 - Review round 1 fix 002: address reviewer finding
+- US-R1-001 - Review round 1 fix 001: address reviewer finding
+- US-002 - Broaden the fixture matrix and record the accepted detection trade-off
+- US-001 - Make frozen-comparand quote-aware with -c payload unwrapping
+
 ## [0.226.0] - 2026-07-20
 
 ### Added
