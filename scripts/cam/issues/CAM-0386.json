@@ -1,0 +1,10 @@
+{
+  "id": "CAM-386",
+  "title": "LIVE_DERIVATION_RE's \\bmain\\b matches the 'main' inside 'main.ts', so any `git grep PATTERN main.ts` falsely counts as a live-derivation token",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-20T19:52:27.729Z",
+  "updatedAt": "2026-07-20T19:52:27.729Z",
+  "description": "In src/supervisor/prd-oracle-lint.ts:162, LIVE_DERIVATION_RE is:\n\n    /git\\s+show\\s+main:|git\\s+diff\\s+main\\b|git\\s+grep\\b[^\\n]*\\bmain\\b/\n\nThe third alternative requires only a `git grep` plus the word `main` somewhere later on the same line. Because `.` is a non-word character, `\\bmain\\b` matches the `main` inside the FILENAME `main.ts`. So an oracle such as `test $(git grep -c PATTERN main.ts) -eq 3` is treated as live-derived against the main BRANCH when it is nothing of the sort, and every integer comparand in the command is excused. That is a false negative: the frozen 3 rots silently, which is precisely what the frozen-comparand rule exists to prevent.\n\nThe existing test at test/supervisor/prd-oracle-lint.test.ts:200-203 pins the adjacent case (`mainbranch:file.ts` correctly does NOT match, since `b` is a word character) while this closely-related case is broken. So the rule has a test asserting the boundary works, next to an untested input where it does not.\n\nDISTINCT FROM CAM-383. CAM-383 is about WHICH comparands a derivation token excuses (whole-command vs per-comparand scoping). This is about WHAT QUALIFIES as a derivation token in the first place. Fixing one does not fix the other: per-comparand scoping still excuses the comparand sitting in the same clause as a bogus `main.ts` token.\n\nLikely direction: require the `main` token to appear in a git-ref position (followed by `:` or a whitespace/end boundary that is not a filename extension), rather than as a bare word anywhere on the line. Needs a flagged-forms test per accepted ref shape and a passing-case test per rejected filename shape.\n\nNeeds rebuild: prd-oracle-lint.ts is sidecar-executed at plan time (plan-runner.ts:804)."
+}
