@@ -9,6 +9,12 @@
 //   RULES: named-rules list shape (name + test)
 //   grep-q-plus-list-files rule: six flagged grep forms
 //   grep-q-plus-list-files rule: four passing grep/non-grep cases
+//   frozen-comparand rule: flagged forms (US-001, CAM-381)
+//   frozen-comparand rule: passing cases (US-001, CAM-381)
+//   rotating-artifact-target rule: flagged forms (US-002, CAM-381)
+//   rotating-artifact-target rule: passing cases (US-002, CAM-381)
+//   zero-match-vacuous rule: flagged forms (US-003, CAM-381)
+//   zero-match-vacuous rule: passing cases (US-003, CAM-381)
 //   lintPrd: walks stories, carries storyId/command/ruleName/reason
 //   lintPrd: criterion with no [oracle:] suffix yields no finding
 //   lintPrd: reviewer-judgment / tmux-pty / no-oracle directives are skipped
@@ -18,10 +24,31 @@ import { RULES, lintPrd } from '../../src/supervisor/prd-oracle-lint.ts';
 import type { PrdShape } from '../../src/commands/status.ts';
 
 const GREP_RULE_NAME = 'grep-q-plus-list-files';
+const FROZEN_COMPARAND_RULE_NAME = 'frozen-comparand';
+const ROTATING_ARTIFACT_RULE_NAME = 'rotating-artifact-target';
+const ZERO_MATCH_VACUOUS_RULE_NAME = 'zero-match-vacuous';
 
 function findGrepRule() {
 	const rule = RULES.find((r) => r.name === GREP_RULE_NAME);
 	if (!rule) throw new Error('grep-q-plus-list-files rule missing from RULES');
+	return rule;
+}
+
+function findFrozenComparandRule() {
+	const rule = RULES.find((r) => r.name === FROZEN_COMPARAND_RULE_NAME);
+	if (!rule) throw new Error('frozen-comparand rule missing from RULES');
+	return rule;
+}
+
+function findRotatingArtifactRule() {
+	const rule = RULES.find((r) => r.name === ROTATING_ARTIFACT_RULE_NAME);
+	if (!rule) throw new Error('rotating-artifact-target rule missing from RULES');
+	return rule;
+}
+
+function findZeroMatchVacuousRule() {
+	const rule = RULES.find((r) => r.name === ZERO_MATCH_VACUOUS_RULE_NAME);
+	if (!rule) throw new Error('zero-match-vacuous rule missing from RULES');
 	return rule;
 }
 
@@ -30,10 +57,17 @@ function findGrepRule() {
 // ---------------------------------------------------------------------------
 
 describe('RULES: named-rules list shape', () => {
-	test('is an array of exactly one rule: grep-q-plus-list-files', () => {
-		expect(RULES).toHaveLength(1);
-		expect(RULES[0]!.name).toBe(GREP_RULE_NAME);
-		expect(typeof RULES[0]!.test).toBe('function');
+	test('is an array of exactly four rules: grep-q-plus-list-files, frozen-comparand, rotating-artifact-target, zero-match-vacuous', () => {
+		expect(RULES).toHaveLength(4);
+		expect(RULES.map((r) => r.name)).toEqual([
+			GREP_RULE_NAME,
+			FROZEN_COMPARAND_RULE_NAME,
+			ROTATING_ARTIFACT_RULE_NAME,
+			ZERO_MATCH_VACUOUS_RULE_NAME,
+		]);
+		for (const rule of RULES) {
+			expect(typeof rule.test).toBe('function');
+		}
 	});
 });
 
@@ -115,6 +149,265 @@ describe('grep-q-plus-list-files rule: passing cases', () => {
 	});
 
 	test('non-grep command passes', () => {
+		const finding = rule.test('bun run typecheck');
+		expect(finding).toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// frozen-comparand rule: flagged forms (US-001, CAM-381)
+// ---------------------------------------------------------------------------
+
+describe('frozen-comparand rule: flagged forms', () => {
+	const rule = findFrozenComparandRule();
+
+	test('flags -eq against a literal integer with no live derivation', () => {
+		const finding = rule.test('test $(wc -l < scripts/cam/patterns.md) -eq 42');
+		expect(finding).not.toBeNull();
+		expect(finding!.reason).toContain('literal integer');
+	});
+
+	test('flags -ge against a literal integer', () => {
+		const finding = rule.test("[ $(git grep -c 'TODO' src/foo.ts) -ge 5 ]");
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags -le against a literal integer', () => {
+		const finding = rule.test('[ $(cat file.ts | wc -l) -le 100 ]');
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags == against a literal integer', () => {
+		const finding = rule.test('[[ $(some_count) == 7 ]]');
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags a wc -l pipeline frozen against HEAD, not main (git show present but not main)', () => {
+		const finding = rule.test('test $(git show HEAD:file.ts | wc -l) -eq 88');
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags -eq even when git diff is present but not scoped to main', () => {
+		const finding = rule.test('test $(git diff --stat | wc -l) -eq 3');
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags -eq even when git grep is present but never mentions main', () => {
+		const finding = rule.test("test $(git grep -c 'PATTERN' -- file.ts) -eq 1");
+		expect(finding).not.toBeNull();
+	});
+
+	test('does not match main by literal substring -- mainbranch is not the main token', () => {
+		const finding = rule.test('test $(git grep -c PATTERN mainbranch:file.ts) -eq 1');
+		expect(finding).not.toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// frozen-comparand rule: passing cases (US-001, CAM-381)
+// ---------------------------------------------------------------------------
+
+describe('frozen-comparand rule: passing cases', () => {
+	const rule = findFrozenComparandRule();
+
+	test('does not flag when a live `git show main:` derivation accompanies an integer', () => {
+		const finding = rule.test(
+			"test $(git show main:file.ts | wc -l) -ge 1 && test $(wc -l < file.ts) -eq $(git show main:file.ts | wc -l)"
+		);
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag when `git diff main` accompanies an integer', () => {
+		const finding = rule.test("git diff main --quiet -- file.ts; test $? -eq 0");
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag when `git grep ... main` accompanies an integer', () => {
+		const finding = rule.test("test $(git grep -c 'PATTERN' main -- file.ts) -ge 1");
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag a command with no integer comparand at all', () => {
+		const finding = rule.test('bun run typecheck');
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag a plain grep -q command', () => {
+		const finding = rule.test("grep -q 'PATTERN' file.ts");
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag a fully live comparison of two `git show main:`-derived values', () => {
+		const finding = rule.test(
+			'test $(git show main:file.ts | wc -l) -eq $(wc -l < file.ts)'
+		);
+		expect(finding).toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// rotating-artifact-target rule: flagged forms (US-002, CAM-381)
+// ---------------------------------------------------------------------------
+
+describe('rotating-artifact-target rule: flagged forms', () => {
+	const rule = findRotatingArtifactRule();
+
+	test('flags a plain grep -q against scripts/cam/handoff.json', () => {
+		const finding = rule.test("grep -q 'self-nullifying-oracle' scripts/cam/handoff.json");
+		expect(finding).not.toBeNull();
+		expect(finding!.reason).toContain('ROTATING');
+	});
+
+	test('flags a file-assert negated absence check against scripts/cam/handoff.json', () => {
+		const finding = rule.test("! grep -q 'stale-token' scripts/cam/handoff.json");
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags scripts/cam/handoff.json quoted inside a larger pipeline', () => {
+		const finding = rule.test('cat "scripts/cam/handoff.json" | grep -c retryBaseMs');
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags a grep against the reviewer capture-pane artifact scripts/cam/review-artifact.txt', () => {
+		const finding = rule.test("grep -q 'CLEAN' scripts/cam/review-artifact.txt");
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags scripts/cam/review-artifact.txt embedded in a named-command test check', () => {
+		const finding = rule.test(
+			"test -f scripts/cam/review-artifact.txt && grep -q 'verdict' scripts/cam/review-artifact.txt"
+		);
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags a wc -l comparison against scripts/cam/handoff.json', () => {
+		const finding = rule.test('test $(wc -l < scripts/cam/handoff.json) -ge 1');
+		expect(finding).not.toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// rotating-artifact-target rule: passing cases (US-002, CAM-381)
+// ---------------------------------------------------------------------------
+
+describe('rotating-artifact-target rule: passing cases', () => {
+	const rule = findRotatingArtifactRule();
+
+	test('does not flag an oracle targeting a durable tracked source file', () => {
+		const finding = rule.test("grep -q 'ROTATING_ARTIFACT_RULE' src/supervisor/prd-oracle-lint.ts");
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag an oracle targeting a durable tracked test file', () => {
+		const finding = rule.test(
+			"grep -q 'rotating-artifact-target' test/supervisor/prd-oracle-lint.test.ts"
+		);
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag an oracle targeting scripts/cam/patterns.md (durable, versioned)', () => {
+		const finding = rule.test("grep -q 'never target' scripts/cam/patterns.md");
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag a command with no file reference at all', () => {
+		const finding = rule.test('bun run typecheck');
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag scripts/cam/review-report.json, the structured (non-rotating-target) sibling file', () => {
+		const finding = rule.test("grep -q 'CLEAN' scripts/cam/review-report.json");
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag the string "handoff.json" without the scripts/cam/ prefix', () => {
+		const finding = rule.test("grep -q 'handoff.json' README.md");
+		expect(finding).toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// zero-match-vacuous rule: flagged forms (US-003, CAM-381)
+// ---------------------------------------------------------------------------
+
+describe('zero-match-vacuous rule: flagged forms', () => {
+	const rule = findZeroMatchVacuousRule();
+
+	test('flags an unguarded sed -n "${L}p" anchor fed by grep -n | head -1 | cut', () => {
+		const finding = rule.test(
+			'L=$(grep -n PATTERN FILE | head -1 | cut -d: -f1); sed -n "${L}p" FILE | grep -q SOMETHING'
+		);
+		expect(finding).not.toBeNull();
+		expect(finding!.reason).toContain('sed');
+	});
+
+	test('flags an unguarded sed anchor with a different variable name (LINE)', () => {
+		const finding = rule.test(
+			'LINE=$(grep -n X F | head -1 | cut -d: -f1); sed -n "${LINE}p" F | grep -q Y'
+		);
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags a sed anchor guarded only by an -n check on a DIFFERENT variable', () => {
+		const finding = rule.test(
+			'L=$(grep -n PATTERN FILE | head -1 | cut -d: -f1); test -n "$OTHER"; sed -n "${L}p" FILE | grep -q X'
+		);
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags a grep-fed while read loop with no count guard', () => {
+		const finding = rule.test(
+			'grep -n PATTERN FILE | while read -r n; do check "$n" || exit 1; done'
+		);
+		expect(finding).not.toBeNull();
+		expect(finding!.reason).toContain('while read');
+	});
+
+	test('flags a grep-fed while read loop without -r and a different loop body', () => {
+		const finding = rule.test('grep -n PATTERN FILE | while read line; do echo "$line"; done');
+		expect(finding).not.toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// zero-match-vacuous rule: passing cases (US-003, CAM-381)
+// ---------------------------------------------------------------------------
+
+describe('zero-match-vacuous rule: passing cases', () => {
+	const rule = findZeroMatchVacuousRule();
+
+	test('does not flag a sed anchor guarded by test -n "$L" for the same variable', () => {
+		const finding = rule.test(
+			'L=$(grep -n PATTERN FILE | head -1 | cut -d: -f1); test -n "$L" && sed -n "${L}p" FILE | grep -q X'
+		);
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag a sed anchor guarded by [ -n "$L" ] bracket form', () => {
+		const finding = rule.test(
+			'L=$(grep -n PATTERN FILE | head -1 | cut -d: -f1); [ -n "$L" ] && sed -n "${L}p" FILE | grep -q X'
+		);
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag a grep-fed while read loop guarded by a grep -c ... -ge 1 count check', () => {
+		const finding = rule.test(
+			'test $(grep -c PATTERN FILE) -ge 1 && grep -n PATTERN FILE | while read -r n; do check "$n"; done'
+		);
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag a sed -n command with a literal line number, not an empty-anchor pattern', () => {
+		const finding = rule.test("sed -n '5p' FILE | grep -q X");
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag a while read loop fed by something other than grep -n', () => {
+		const finding = rule.test('cat FILE | while read -r line; do echo "$line"; done');
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag a command with neither shape at all', () => {
 		const finding = rule.test('bun run typecheck');
 		expect(finding).toBeNull();
 	});
