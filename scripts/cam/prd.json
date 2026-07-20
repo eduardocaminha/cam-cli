@@ -90,7 +90,7 @@
         "Full quality spine green. [oracle: named-command bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/agents/subagent-auditor.md (item 9 at ~:67-72), templates/agents/subagent-auditor.md (same item at ~:64-69, DIFFERENT line numbers: anchor by content, never by line). The two files DIFFER overall by three deliberate cam-cli specialization hunks (dependency-ordering tiers, Ink/terminal-only verification, invariants section): do NOT reconcile those. Only item 9 is in scope and only item 9 is byte-identical (verified: 6 lines each, cmp-clean today). templates/ is embedded into the binary via src/vendor/_generated.ts, so `bun run embed-vendor` is REQUIRED (AC3 fails otherwise); .claude/agents/*.md is read from disk at spawn and needs no rebuild. The rule is deliberately PROSE not a lint rule: executing a candidate oracle needs shell plus a worktree and would break prd-oracle-lint.ts's no-I/O contract (issue gotcha, an accepted structural limit, must not be 'fixed' by adding I/O to that module). CAM-379 (open) also edits both auditor copies in a DIFFERENT section: if it ships first, re-derive anchors before editing."
     }
