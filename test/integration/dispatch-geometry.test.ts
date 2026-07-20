@@ -125,7 +125,7 @@ test.skipIf(!tmuxAvailable)(
 		expect(sendKeysCalls).toHaveLength(3);
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
-		expect(events[0]?.detail).toEqual({ paneId: id, retriesExhausted: 3 });
+		expect(events[0]?.detail).toEqual({ paneId: id, retriesExhausted: 3, reason: 'retries-exhausted' });
 	},
 	20_000,
 );

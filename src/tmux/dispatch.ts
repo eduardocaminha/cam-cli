@@ -550,7 +550,7 @@ export function sendKeysVerified(opts: SendKeysVerifiedOptions): void {
 	}
 
 	if (!delivered) {
-		logEvent?.('push-undelivered', { paneId, retriesExhausted: maxAttempts });
+		logEvent?.('push-undelivered', { paneId, retriesExhausted: maxAttempts, reason: 'retries-exhausted' });
 	}
 }
 

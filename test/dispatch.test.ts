@@ -467,7 +467,7 @@ describe('sendKeysVerified', () => {
 
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
-		expect(events[0]?.detail).toEqual({ paneId: '%9', retriesExhausted: 3 });
+		expect(events[0]?.detail).toEqual({ paneId: '%9', retriesExhausted: 3, reason: 'retries-exhausted' });
 	});
 
 	test('logEvent is optional: omitting it emits no event and does not throw', () => {

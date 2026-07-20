@@ -525,17 +525,29 @@ export interface HandoffSchemaWarningEventDetail {
 }
 
 /**
- * 'push-undelivered' event detail (US-001, CAM-200): recorded when a wake-up
- * push to a pane fails delivery verification after bounded retry. Carries
- * only wake-up-delivery metadata: no report content ever travels in this
- * event, per the CAM-75/77/78 structured-handback decision (durable truth
- * lives in files; the pane only carries the wake-up nudge).
+ * 'push-undelivered' event detail (US-001, CAM-200; reason added US-001,
+ * CAM-373): recorded when a wake-up push to a pane fails delivery
+ * verification after bounded retry. Carries only wake-up-delivery metadata:
+ * no report content ever travels in this event, per the CAM-75/77/78
+ * structured-handback decision (durable truth lives in files; the pane only
+ * carries the wake-up nudge).
  *   - paneId: the tmux pane id the wake-up push targeted (e.g. '%3').
  *   - retriesExhausted: the number of retry attempts made before giving up.
+ *   - reason: which mode of non-delivery this is. Required so the two modes
+ *     are never conflated in the event log:
+ *       - 'retries-exhausted': the geometry-verified retry loop ran to
+ *         maxAttempts without the pane ever settling back to its baseline;
+ *         delivery is genuinely uncertain (the text may or may not have
+ *         landed, and Enter may or may not have submitted it).
+ *       - 'pane-not-idle' (wired by US-002): the pane never reached idle
+ *         before the push was attempted, so send-keys was never even
+ *         issued; delivery did not happen by construction, not by a failed
+ *         verification race.
  */
 export interface PushUndeliveredEventDetail {
 	paneId: string;
 	retriesExhausted: number;
+	reason: 'retries-exhausted' | 'pane-not-idle';
 }
 
 /**
