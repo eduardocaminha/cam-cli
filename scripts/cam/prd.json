@@ -18,6 +18,20 @@
   ],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "WARNING [test/dispatch.test.ts]: US-002's entire behavior change (the default idle-wait deadline moving from 5_000 to IDLE_WAIT_DEADLINE_MS = 30_000) has zero test coverage. `grep -rn IDLE_WAIT_DEADLINE_MS test/` returns no matches, and all 10 dispatch tests inject idleTimeoutMs explicitly (lines 133/164/187/204/226/249/286/327/362/387), so nothing exercises the default path. If the wiring at src/tmux/dispatch.ts:298 silently regressed to 5_000, or the constant were lowered back under 5s, every gate would still be green and CAM-358's stated purpose would be lost with no signal. Contrast US-001, which added a real regression test for its constant. Add a test that omits idleTimeoutMs and asserts the effective deadline is IDLE_WAIT_DEADLINE_MS (e.g. via the recorded sleepFn budget or the stderr warning text), plus a boundary assertion that the constant exceeds 5_000."
+    },
+    {
+      "id": "US-R1-002",
+      "title": "Review round 1 fix 002: address reviewer finding",
+      "priority": 2,
+      "passes": false,
+      "notes": "WARNING [scripts/cam/patterns.md:646]: Doc Maintenance incomplete: the US-002 oracle only checked one exact string ('Default `idleTimeoutMs` is 5 000 ms'), and patterns.md:38 was correctly updated, but the same now-false 5s claim survives in three other places and is actively misleading after the raise. patterns.md:646 states the idle-gate 'polls the full 5s `idleTimeoutMs` budget' and advises the real-tmux fixture wall-clock is 'still well under the 5s per-test timeout' -- with a 30s default an unprimed pane would now block 30s, so the stated mitigation reasoning is inverted, not just stale. Same claim at test/integration/review-verdict-handback.test.ts:57 and :102. Update all three to name IDLE_WAIT_DEADLINE_MS / 30 000 ms in this commit per CLAUDE.md section 7."
+    },
+    {
       "id": "US-001",
       "title": "Wait a settle window before the delivery-verification capture",
       "description": "As the sidecar pushing a [cam] line into the orchestrator pane, I need sendKeysVerified to pause a settle window between the send-keys spawn and the verification capture, so that the verify reads the post-send screen instead of the pre-send screen and the retry loop stops misreporting an undelivered payload as delivered on attempt 1.",
@@ -32,7 +46,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint spine passes with no existing assertion weakened or skipped (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 1,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "File: src/tmux/dispatch.ts (sendKeysVerified, the attempt loop at ~lines 288-312: the verify capture at line 298 currently fires with zero delay after the send-keys spawn at 292-296). Test: test/dispatch.test.ts (existing describe('sendKeysVerified') block, ~line 269, already injects sleepFn/capturePaneFn/idleTimeoutMs). START CLEAN FROM MAIN: do NOT branch from or cherry-pick the parked origin branch cam/issue-358 (64e2a909), which holds an abandoned wrap/anchor attempt. HARD OUT OF SCOPE: any change to isComposerEmptied (src/tmux/dispatch.ts:181-185), including making it wrap-tolerant; every in-place attempt so far produced a review CRITICAL and its redesign around pane geometry is a separately tracked issue. Do not change the argv shape (CAM-55 sendkeys-literal-enter-gotcha: -l over the control token turns 'Enter' into literal text; a standalone Enter call becomes a newline instead of a submit). The settle must go through the injected sleepFn so tests stay deterministic and fast: never a bare sleep, and bare sleeps are banned under test/integration/ (use test/helpers/wait-for-condition.ts there). Note the sidecar wires a DIFFERENT capture reader than the unit tests (src/supervisor/host.ts:579-586 uses capture-pane -p -S - full scrollback; dispatch.ts:191-198 uses the visible-screen read); this scope does not require reconciling them, but introduce no new dependence on which reader is wired. Relevant patterns.md bullets: line 38 (idle-guarantee before send-keys, US-008) and line 330 (coalesce notifyOrchestrator: the orchestrator Ink prompt does not absorb back-to-back send-keys, which is the same re-render-lag physics this settle window addresses)."
@@ -51,10 +65,46 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint spine passes with no existing assertion weakened or skipped (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 2,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "Files: src/tmux/dispatch.ts (the idleTimeoutMs = 5_000 destructuring default at line 264, its JSDoc at lines 65-74, the flow-doc mention of 'default 5 000 ms' at ~line 237, and the timedOut warning branch at 280-286) plus scripts/cam/patterns.md line 38, whose bullet asserts the 5 000 ms default and must be updated in the SAME commit (Doc Maintenance). Evidence driving this: cam-supervisor.log recorded 5 'did not go idle within 5000 ms; sending anyway' warnings while cam-worker-events.jsonl recorded ZERO push-undelivered events, i.e. the verify path never fired across 5 blind sends. Keep the fallback semantics exactly as they are (warn to stderr, then send anyway, never block): only the default value and its naming change. Existing tests inject idleTimeoutMs: 5 or 1_000 explicitly (test/dispatch.test.ts lines 129/158/181/198/220/243/280/311/336) and must keep passing unchanged: do not weaken or skip any of them. Depends on US-001 (same file, same function); rebase onto it rather than editing in parallel."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:2",
+    "findings": [
+      {
+        "severity": "WARNING",
+        "file": "test/dispatch.test.ts",
+        "text": "US-002's entire behavior change (the default idle-wait deadline moving from 5_000 to IDLE_WAIT_DEADLINE_MS = 30_000) has zero test coverage. `grep -rn IDLE_WAIT_DEADLINE_MS test/` returns no matches, and all 10 dispatch tests inject idleTimeoutMs explicitly (lines 133/164/187/204/226/249/286/327/362/387), so nothing exercises the default path. If the wiring at src/tmux/dispatch.ts:298 silently regressed to 5_000, or the constant were lowered back under 5s, every gate would still be green and CAM-358's stated purpose would be lost with no signal. Contrast US-001, which added a real regression test for its constant. Add a test that omits idleTimeoutMs and asserts the effective deadline is IDLE_WAIT_DEADLINE_MS (e.g. via the recorded sleepFn budget or the stderr warning text), plus a boundary assertion that the constant exceeds 5_000."
+      },
+      {
+        "severity": "WARNING",
+        "file": "scripts/cam/patterns.md",
+        "line": 646,
+        "text": "Doc Maintenance incomplete: the US-002 oracle only checked one exact string ('Default `idleTimeoutMs` is 5 000 ms'), and patterns.md:38 was correctly updated, but the same now-false 5s claim survives in three other places and is actively misleading after the raise. patterns.md:646 states the idle-gate 'polls the full 5s `idleTimeoutMs` budget' and advises the real-tmux fixture wall-clock is 'still well under the 5s per-test timeout' -- with a 30s default an unprimed pane would now block 30s, so the stated mitigation reasoning is inverted, not just stale. Same claim at test/integration/review-verdict-handback.test.ts:57 and :102. Update all three to name IDLE_WAIT_DEADLINE_MS / 30 000 ms in this commit per CLAUDE.md section 7."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/tmux/dispatch.ts",
+        "line": 298,
+        "text": "Blocking-window consequence worth a follow-up issue (not a deviation from the PRD, which mandated the raise): the default sleepFn is Bun.sleepSync, so raising the deadline 5s -> 30s makes every push against a busy orchestrator block the calling thread up to 30s instead of 5s. makeNotifyOrchestrator (src/supervisor/host.ts:321-338) is called from the sidecar's merge-watch/narration path (src/commands/sidecar.ts:248 and 7 other call sites) with no idleTimeoutMs override, so the sidecar's outer loop can now stall 6x longer per narration. This is the same class as the known CAM-103 outer-loop-blocking concern. Consider either an async settle/poll path or a shorter per-caller budget for best-effort narration pushes."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/commands/orch-recycle-watch.ts",
+        "line": 417,
+        "text": "sendKeysWhenIdle({ paneId, text: BACKSTOP_SIGNAL_TEXT, tmuxSpawnFn }) passes neither idleTimeoutMs nor capturePaneFn, so it now inherits the 30s default with a real capture-pane reader. Worth confirming the backstop watcher tolerates a 30s synchronous stall, or pinning an explicit budget at this call site."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/tmux/dispatch.ts",
+        "line": 132,
+        "text": "SEND_KEYS_SETTLE_MS = 50 is an unexplained magnitude: the JSDoc justifies why a settle window exists but not why 50ms is the right size for one tmux refresh cycle. A one-line note on how the value was chosen (measured, or a deliberate conservative floor) would make a future tuning change safe."
+      }
+    ]
+  }
 }
