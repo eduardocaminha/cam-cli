@@ -1,0 +1,70 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-376",
+  "description": "Make the patterns.md self-nullifying-oracle bullet cite a durable reference instead of the gitignored review-artifact.txt, append the derive-don't-freeze rule for main-derived comparands, and strengthen the non-falsifiable backoff-bound assertion in test/dispatch.test.ts",
+  "issueNumber": 376,
+  "type": "docs",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Replace the ephemeral review-artifact citation in the self-nullifying-oracle bullet with a durable pointer",
+      "description": "As a future reader of patterns.md on main, I need the self-nullifying-oracle bullet's evidence pointer to resolve from main alone, so that the durable knowledge surface never cites a gitignored per-round artifact that no longer exists.",
+      "acceptanceCriteria": [
+        "The self-nullifying-oracle bullet no longer cites the ephemeral artifact. RED-ON-MAIN: this oracle must be swept verbatim against a `git show main:` temp tree and confirmed to exit 1 there before it is trusted. [oracle: L=$(grep -n 'self-nullifying-oracle subspecies' scripts/cam/patterns.md | head -1 | cut -d: -f1); test -n \"$L\" && ! sed -n \"${L}p\" scripts/cam/patterns.md | grep -q 'review-artifact']",
+        "The total number of patterns.md lines mentioning review-artifact drops from main's 4 to exactly 3, proving the three legitimate mentions at :224/:742/:748 survive untouched and only the evidence-citation was removed. RED-ON-MAIN (main count is 4). [oracle: test \"$(grep -c 'review-artifact' scripts/cam/patterns.md)\" -eq 3]",
+        "The replacement pointer is durable: the edited bullet retains its inline measured-facts clause and points at the durable review round (CAM issue number plus round) instead of the artifact file, and contains no gitignored path token. Verify by extracting the bullet line and running `git check-ignore -q <token>` for every `scripts/cam/*` or `.claude/*` path token it contains; every such call must exit non-zero. [oracle: file-assert git check-ignore -q on each path token of the edited bullet exits non-zero]",
+        "The before/after text of the edited bullet is reported verbatim in handoff.json. [oracle: file-assert grep -q 'self-nullifying-oracle' scripts/cam/handoff.json]",
+        "PINNING (deliberately GREEN on main, labelled as such per the rule at patterns.md:899): the edit is confined to the final line, so lines 1 through 898 stay byte-identical to main. [oracle: diff <(git show main:scripts/cam/patterns.md | head -898) <(head -898 scripts/cam/patterns.md)]",
+        "PINNING (deliberately GREEN on main): patterns.md line 899, the oracle-falsifiability bullet, is unmodified. [oracle: diff <(git show main:scripts/cam/patterns.md | sed -n '899p') <(sed -n '899p' scripts/cam/patterns.md)]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test), with a pass count at or above main's 5192 baseline and 0 fail. A doc-only diff that removes no test must not lower the pass count. [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "File: scripts/cam/patterns.md line 901 ONLY (the file's final line, 901 lines on main). IN-PLACE edit: keep it a single physical line, every bullet in this file is one long physical line and splitting it would break the flat-bullet parse convention and shift line numbering that other bullets depend on. Do NOT touch the other three review-artifact mentions at :224, :742, :748 -- those name the path while discussing its ephemerality and gate-allowlisting mechanics, which is self-consistent and correct. Do NOT edit the bullet at :899. GOTCHA: patterns.md has NO SECTIONS, it is one `# Codebase Patterns` heading, a ~6-line preamble, then a FLAT blank-line-separated list of top-level `- ` bullets to EOF; scripts/cam/CLAUDE.md and .claude/agents/subagent-planner.md both say to grep it 'for the section', which is a fiction, discovery is pure keyword grep. GOTCHA: scripts/cam/review-artifact.txt DOES currently exist on disk as a stale local copy from the last review round, so any oracle that merely reads the path passes locally and fails on a clean checkout; judge trackedness via git, never via the filesystem. `git ls-files <path>` exits 0 even on no match so it is a useless discriminator, use `git ls-files --error-unmatch <path>` or `git show main:<path>` (exits 128 when untracked). GOTCHA: never prefix a living rule with `[resolved YYYY-MM]`, `cam patterns archive` sweeps any bullet carrying that marker into patterns.archive.md. NO REBUILD: the sidecar executes none of this, so the coherence-skip rule applies and the binary correctly stays behind main. No file-size budget covers .md (scripts/check-file-sizes.ts globs {src,scripts,test}/**/*.{ts,tsx} only)."
+    },
+    {
+      "id": "US-002",
+      "title": "Append the derive-don't-freeze rule for main-derived comparands as a new EOF bullet",
+      "description": "As a planner or implementer writing an acceptance criterion that pins a number read off main, I need a stated rule telling me to derive that comparand at check time rather than freeze a literal, so that criteria do not silently rot when main moves.",
+      "acceptanceCriteria": [
+        "A new top-level bullet exists stating the derive-don't-freeze rule for main-derived comparands in acceptance criteria, and it names the concrete idiom. RED-ON-MAIN: zero matches on main, sweep verbatim to confirm. [oracle: grep -qE 'git show main:[^ ]*\\|[[:space:]]*wc -l' scripts/cam/patterns.md]",
+        "The bullet carries the standard provenance suffix naming CAM-377 and today's date. [oracle: grep -q 'CAM-377' scripts/cam/patterns.md]",
+        "The bullet explicitly distinguishes itself from the falsifiability rule at patterns.md:899 (899 = prove the oracle can go red; this one = do not freeze the comparand it compares against). [oracle: reviewer-judgment]",
+        "PINNING (deliberately GREEN on main, labelled as such per the rule at patterns.md:899): the bullet is appended at EOF, so lines 1 through 898 remain byte-identical to main. This guards the append-at-EOF convention, since many bullets cross-reference each other by absolute line number and any mid-file insert silently rots them. [oracle: diff <(git show main:scripts/cam/patterns.md | head -898) <(head -898 scripts/cam/patterns.md)]",
+        "PINNING (deliberately GREEN on main): patterns.md line 899, excluded from the range above only because it is the boundary, is itself unmodified. [oracle: diff <(git show main:scripts/cam/patterns.md | sed -n '899p') <(sed -n '899p' scripts/cam/patterns.md)]",
+        "The new bullet does not reintroduce an ephemeral-artifact mention: the review-artifact line count established by US-001 still holds at exactly 3. [oracle: test \"$(grep -c 'review-artifact' scripts/cam/patterns.md)\" -eq 3]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test), with a pass count at or above main's 5192 baseline and 0 fail. [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "File: scripts/cam/patterns.md, APPEND AT EOF only. Depends on US-001 because both stories touch the same file and US-001's in-place edit of the final line must land first; appending after it keeps line numbering 1-901 stable. APPEND-AT-EOF IS MANDATORY: bullets cross-reference each other by absolute line number (patterns.md:899 alone cites :566, :570, :572, :772, :774, :776), so a mid-file insert silently rots every one of them. GOTCHA: patterns.md has NO SECTIONS, it is a FLAT blank-line-separated list of top-level `- ` bullets; a new bullet is findable ONLY by its own keywords, so choose keywords deliberately (the discovery path is pure keyword grep). Grounding for this story: no bullet anywhere in patterns.md currently states the rule (idiom grep returns 0 matches on main); line 899 covers proving an oracle goes red and says nothing about how the comparand is obtained, so the two ideas are adjacent but disjoint. The concrete instance that raised this (CAM-372's criterion 2 hardcoding 897) is moot, that PRD merged and will never run again, so ONLY the generalizable rule ships. Keep the bullet a single physical line. Never prefix a living rule with `[resolved YYYY-MM]`. NO REBUILD."
+    },
+    {
+      "id": "US-003",
+      "title": "Strengthen the non-falsifiable backoff-bound assertion in the idle-gate timeout test",
+      "description": "As a maintainer relying on the idle-gate timeout test, I need its 'zero backoff sleeps' assertion to actually be able to fail, so that the test enforces its stated intent instead of passing vacuously.",
+      "acceptanceCriteria": [
+        "The non-falsifiable bound is gone. RED-ON-MAIN: the string is present at test/dispatch.test.ts:754 on main, sweep verbatim to confirm. [oracle: ! grep -q 'ms <= 1_000' test/dispatch.test.ts]",
+        "The replacement assertion is provably falsifiable, MEASURED not argued: demonstrate redness by a temporary local mutation (pass `retryBaseMs` explicitly, or otherwise inject a single backoff-shaped sleep value into recordedSleeps) and confirm the NEW assertion FAILS where the old `<= 1_000` bound PASSED. Revert the mutation before committing. An assertion that cannot be shown to fail under this mutation does not satisfy this criterion. [oracle: bun test test/dispatch.test.ts under the temporary mutation exits non-zero, and exits 0 after revert]",
+        "The exact mutation used, the old-assertion result and the new-assertion result are recorded verbatim in handoff.json under officialDocsValidated or a sibling field. [oracle: file-assert grep -q 'retryBaseMs' scripts/cam/handoff.json]",
+        "PINNING (expected green): the enclosing test at test/dispatch.test.ts:700-765 still passes with unchanged behavior, and the airtight `expect(geometrySamplerCalls).toBe(0)` assertion at line 755 is retained, not deleted. [oracle: grep -q 'expect(geometrySamplerCalls).toBe(0)' test/dispatch.test.ts && bun test test/dispatch.test.ts]",
+        "src/tmux/dispatch.ts is unmodified: the retryBaseMs default of 300 is correct and this story changes test assertions only. [oracle: diff <(git show main:src/tmux/dispatch.ts) src/tmux/dispatch.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test), with a pass count at or above main's 5192 baseline and 0 fail. This change removes no test, so the pass count must not drop. [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "File: test/dispatch.test.ts ONLY (assertion at line 754, inside the test at 700-765). This is the worked example that the CAM-372 rule at patterns.md:899 cites by issue number, so fixing it closes the loop that rule opened. WHY IT IS NON-FALSIFIABLE: the test overrides pollIntervalMs to 1_000 but never passes retryBaseMs, so the un-overridden default of 300 (src/tmux/dispatch.ts:544) means a first-retry computeBackoffMs value of roughly 300-600 ms would slip under the 1000 ms bound and the assertion would still pass; its stated intent 'zero backoff sleeps' is therefore unenforced. This is a STRENGTHENING, not a bug fix: the adjacent geometrySamplerCalls === 0 assertion at line 755 is airtight and independently satisfies the original acceptance criterion, so the enclosing test's behavior must not change and it must still pass. GOTCHA: the literal 1_000 in the assertion is the same value as the `pollIntervalMs: 1_000` override on line 736; if the replacement assertion pins an exact poll-interval value, DERIVE it from the override rather than re-freezing the literal -- that is precisely the CAM-377 rule US-002 ships in this same PR, so practice what the bullet preaches. GOTCHA: retryBaseMs = 300 and retryMaxMs = 2_000 are destructuring defaults inside sendKeysVerified's options bag (src/tmux/dispatch.ts:544-545), NOT named exported constants, so they cannot be imported into the test; pollIntervalMs = 200 is likewise a destructuring default (src/tmux/dispatch.ts:538). GOTCHA: the test uses a fake clock, Date.now is monkeypatched and advanced only by the injected sleepFn and restored in a finally block -- do not disturb that idiom. test/dispatch.test.ts IS covered by the file-size budget (scripts/check-file-sizes.ts globs {src,scripts,test}/**/*.{ts,tsx}), but this change does not grow it materially. NO REBUILD."
+    }
+  ]
+}
