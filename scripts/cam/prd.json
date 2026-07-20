@@ -52,7 +52,7 @@
         "Lint spine passes with no existing assertion weakened or skipped (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/tmux/dispatch.ts (the idleTimeoutMs = 5_000 destructuring default at line 264, its JSDoc at lines 65-74, the flow-doc mention of 'default 5 000 ms' at ~line 237, and the timedOut warning branch at 280-286) plus scripts/cam/patterns.md line 38, whose bullet asserts the 5 000 ms default and must be updated in the SAME commit (Doc Maintenance). Evidence driving this: cam-supervisor.log recorded 5 'did not go idle within 5000 ms; sending anyway' warnings while cam-worker-events.jsonl recorded ZERO push-undelivered events, i.e. the verify path never fired across 5 blind sends. Keep the fallback semantics exactly as they are (warn to stderr, then send anyway, never block): only the default value and its naming change. Existing tests inject idleTimeoutMs: 5 or 1_000 explicitly (test/dispatch.test.ts lines 129/158/181/198/220/243/280/311/336) and must keep passing unchanged: do not weaken or skip any of them. Depends on US-001 (same file, same function); rebase onto it rather than editing in parallel."
     }
