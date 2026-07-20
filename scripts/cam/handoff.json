@@ -1,0 +1,22 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Add required reason discriminator to PushUndeliveredEventDetail and wire the existing exhaustion site"
+  },
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/supervisor/events.ts",
+    "src/tmux/dispatch.ts",
+    "test/dispatch.test.ts",
+    "test/integration/dispatch-geometry.test.ts",
+    "test/issue.test.ts",
+    "test/supervisor/notify-orchestrator.test.ts",
+    "scripts/file-size-budget.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "PushUndeliveredEventDetail (src/supervisor/events.ts) now carries a REQUIRED `reason: 'retries-exhausted' | 'pane-not-idle'` field. Every existing constructor (the single emit site in src/tmux/dispatch.ts's sendKeysVerified, and every test literal/assertion across test/dispatch.test.ts, test/integration/dispatch-geometry.test.ts, test/issue.test.ts, test/supervisor/notify-orchestrator.test.ts) was swept to pass 'retries-exhausted'. Only that literal is emitted today; 'pane-not-idle' exists in the type but is unwired -- the next story is expected to add the pane-not-idle emit site (likely gating sendKeysVerified/sendKeysWhenIdle before the geometry retry loop even starts) and thread `reason: 'pane-not-idle'` through it, plus its own test coverage. src/supervisor/events.ts grew 816->828 lines; its file-size-budget.json ceiling was raised accordingly (staged in the same commit, _ref updated).",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ],
+  "appliedPatternIds": []
+}
