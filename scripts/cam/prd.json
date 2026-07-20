@@ -18,7 +18,7 @@
       "id": "US-R2-002",
       "title": "Review round 2 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "CRITICAL [scripts/cam/prd.json:47]: Layer B behavioral gate FAIL. US-003 AC3 ([oracle: file-assert grep -q 'retryBaseMs' scripts/cam/handoff.json]) exits 1 at branch HEAD on the reviewer's independent re-run. handoff.json is a per-story ROTATING artifact and at the tip it carries the US-R1-002 rotation, so the US-003 mutation evidence this criterion demands is gone. This is the identical failure mode to the round-1 CRITICAL against US-001 AC4, and identical to the defect the new US-R1-001 bullet at scripts/cam/patterns.md:907 documents. US-R1-001 wrote the rule into patterns.md but did not retarget the criteria that violate it, so the PRD still carries handoff.json-targeted evidence oracles (US-001 AC4 and US-003 AC3). Note US-001 AC4 currently reads GREEN only transiently, because the present rotation happens to contain its token. Fix: retarget both criteria at a durable surface (the tracked test file, the commit message body, or a fact recoverable from tracked source) per the rule at patterns.md:907. Full trace in scripts/cam/review-artifact.txt section 3."
     },
     {
