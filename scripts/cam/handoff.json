@@ -1,0 +1,22 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Add a shared tmux display-message geometry-query helper" },
+  "branchName": "cam/issue-359",
+  "timestamp": "2026-07-20T00:00:00Z",
+  "createdFiles": [
+    "src/tmux/display-message.ts",
+    "test/tmux-display-message.test.ts",
+    "test/integration/tmux-display-geometry.test.ts"
+  ],
+  "modifiedFiles": [],
+  "openQuestions": [],
+  "nextStoryContext": "src/tmux/display-message.ts exports displayMessageArgv(paneId, format) and sampleCursorGeometry(paneId, spawnFn): CursorGeometry | null, where CursorGeometry = { cursorX, cursorY, paneWidth, paneHeight } (all numbers). It fails closed (null) on non-zero exit, empty stdout, or any non-base-10-integer field, using the same TmuxSpawnFn shape as src/tmux/session.ts SpawnFn (synchronous, r.status/r.stdout). CURSOR_GEOMETRY_FORMAT = '#{cursor_x};#{cursor_y};#{pane_width};#{pane_height}' (';'-separated, never TAB). US-002 (replace the content-matching submission oracle with the geometry oracle) should import sampleCursorGeometry from this module and key the oracle on a shape change (e.g. cursor position moving after a send) rather than grepping capture-pane text for the pushed payload, since capture-pane content is renderable/forgeable while cursor geometry is tmux server-side state. Locate the current content-matching oracle (isComposerEmptied in src/tmux/dispatch.ts) as the call site most likely needing replacement/augmentation -- read it in full before editing.",
+  "officialDocsValidated": [
+    {
+      "lib": "tmux",
+      "url": "https://github.com/tmux/tmux/wiki/Formats",
+      "fetchedAt": "2026-07-20T00:00:00Z",
+      "status": "aligned",
+      "summary": "Confirmed: 'an unknown or missing variable is replaced with nothing' (empty string), matching the fail-closed parse rationale in sampleCursorGeometry. cursor_x/cursor_y round-tripped successfully against real tmux in the integration test (test.skipIf(!tmuxAvailable))."
+    }
+  ]
+}
