@@ -1,0 +1,10 @@
+{
+  "id": "CAM-358",
+  "title": "Sidecar send-keys push occasionally delivers the [cam] line without submitting (missing Enter)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-20T02:14:04.579Z",
+  "updatedAt": "2026-07-20T02:14:04.579Z",
+  "description": "OBSERVED (operator, recurring across multiple sessions/contexts): sidecar push lines ([cam] ...) sometimes land in the orchestrator pane's input as TEXT but are not submitted -- the message is produced but the terminating Enter is missing, so the line sits in the input awaiting a manual keystroke. Confirmed live this session: the '[cam] merge-watch timeout: PR #293 not yet merged after 240 polls' line was stalled un-submitted in the operator's input.\n\nROOT-CAUSE CLASS (known): tmux send-keys must deliver text + Enter in a SINGLE call. Two prior failure modes are documented: (a) Enter sent as a SEPARATE send-keys call becomes a newline in this TUI build instead of submitting (see memory tmux-drive-orchestrator-atomic-enter); (b) `-l` (literal) applied over the control token turns the string 'Enter' into literal text rather than a keypress, so nothing submits (CAM-55, sendkeys-literal-enter-gotcha, dispatch.ts:191 regression that broke all thin-proxies). That the symptom reappears across sessions suggests a remaining non-atomic send-keys path in the sidecar's push (likely multi-line message splitting or a retry path).\n\nSCOPE: audit every send-keys call-site in the sidecar's push path (src/supervisor/*, dispatch) and guarantee atomic text+Enter delivery in one call -- never a standalone Enter, never `-l` over the control token. Pay special attention to multi-line [cam] messages and any retry/re-send path.\n\nVERIFICATION: add an integration guard in the style of test/integration/tmux-introspect.test.ts that asserts REAL submission against a live tmux pane (the message actually reaches the shell/agent), not merely the argv shape -- argv-shape tests lie about tmux semantics (proven CAM-55).\n\nSource: operator report 2026-07-19 during the CAM-357 ship (PR #293) recovery."
+}
