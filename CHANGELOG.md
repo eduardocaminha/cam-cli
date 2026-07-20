@@ -6,6 +6,21 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.225.0] - 2026-07-20
+
+### Added
+
+- US-R2-002 - Review round 2 fix 002: address reviewer finding
+- US-R2-001 - Review round 2 fix 001: address reviewer finding
+- US-R2-001 - Review round 2 fix 001: address reviewer finding
+- US-R1-002 - Review round 1 fix 002: address reviewer finding
+- US-R1-002 - Review round 1 fix 002: address reviewer finding
+- US-R1-002 - Review round 1 fix 002: address reviewer finding
+- US-R1-001 - Review round 1 fix 001: address reviewer finding
+- US-003 - Strengthen the non-falsifiable backoff-bound assertion in the idle-gate timeout test
+- US-002 - Append the derive-don't-freeze rule for main-derived comparands as a new EOF bullet
+- US-001 - Replace the ephemeral review-artifact citation in the self-nullifying-oracle bullet with a durable pointer
+
 ## [0.224.0] - 2026-07-20
 
 ### Added

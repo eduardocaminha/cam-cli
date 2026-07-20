@@ -718,6 +718,14 @@ describe('sendKeysVerified', () => {
 		const recordedSleeps: number[] = [];
 		let geometrySamplerCalls = 0;
 
+		// Derived (not frozen) from the pollIntervalMs override passed below, per
+		// the derive-don't-freeze rule (US-002, CAM-377): the idle-gate's own
+		// poll sleeps must equal this value exactly, so the same constant feeds
+		// both the override and the AC2 assertion below instead of two
+		// independently-typed literals that could drift apart.
+		const POLL_INTERVAL_MS = 1_000;
+		const IDLE_TIMEOUT_MS = 5_000;
+
 		try {
 			sendKeysVerified({
 				paneId: '%7',
@@ -732,8 +740,8 @@ describe('sendKeysVerified', () => {
 					recordedSleeps.push(ms);
 					fakeNow += ms;
 				},
-				pollIntervalMs: 1_000,
-				idleTimeoutMs: 5_000,
+				pollIntervalMs: POLL_INTERVAL_MS,
+				idleTimeoutMs: IDLE_TIMEOUT_MS,
 				maxAttempts: 3,
 				logEvent: (kind, detail) => events.push({ kind, detail }),
 			});
@@ -746,13 +754,47 @@ describe('sendKeysVerified', () => {
 		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
 		expect(sendKeysCalls).toHaveLength(1);
 
-		// AC2: zero backoff sleeps (only the idle-gate's own poll-interval
-		// sleeps are recorded, never a computeBackoffMs-derived value: every
-		// idle-gate poll sleep here is capped at pollIntervalMs/remaining, both
-		// far below a plausible backoff value), and the geometry sampler is
-		// never consulted for a delivery verdict.
-		expect(recordedSleeps.every((ms) => ms <= 1_000)).toBe(true);
+		// AC2: zero backoff sleeps. The old upper-bound assertion (every sleep
+		// no greater than the pollIntervalMs override) was non-falsifiable: a
+		// leaked computeBackoffMs value (default base 300, well under that
+		// bound) would have slipped under it undetected. With
+		// idleTimeoutMs=IDLE_TIMEOUT_MS (5_000) and pollIntervalMs=POLL_INTERVAL_MS
+		// (1_000), the idle-gate's own poll loop produces exactly 5 sleeps, each
+		// EXACTLY POLL_INTERVAL_MS (5_000 / 1_000, evenly divisible: every
+		// `remaining` value the loop observes is itself a multiple of
+		// POLL_INTERVAL_MS, so `Math.min(pollIntervalMs, remaining)` is always
+		// POLL_INTERVAL_MS, never a smaller remainder). Strict equality means
+		// any sleep of a different shape (a leaked backoff value, a truncated
+		// final poll, or any other magnitude) makes this assertion fail. The
+		// count assertion below (US-R1-002, CAM-376 review round 1) closes the
+		// vacuous-empty-array gap the `.every()` call alone left open: `[].every`
+		// is trivially true, so a regression that stops the idle-gate from
+		// sleeping at all (or returns before the poll loop) would have passed
+		// silently. The comparand is derived from the same constants fed to the
+		// call above, not a frozen literal, per the derive-don't-freeze rule
+		// (US-002, CAM-377). The geometry sampler is never consulted for a
+		// delivery verdict on this path.
+		expect(recordedSleeps).toHaveLength(IDLE_TIMEOUT_MS / POLL_INTERVAL_MS);
+		expect(recordedSleeps.every((ms) => ms === POLL_INTERVAL_MS)).toBe(true);
 		expect(geometrySamplerCalls).toBe(0);
+
+		// Falsifiability record, durable copy (US-R2-002, CAM-376 review round 2):
+		// scripts/cam/handoff.json is a per-story ROTATING artifact, so a mutation
+		// record written only there (as originally done for US-003) is gone by
+		// the very next story's finalize commit. This tracked-source copy is the
+		// durable one. Proof performed: a temporary `recordedSleeps.push(300)` (a
+		// computeBackoffMs-shaped value: default retryBaseMs base=300, streak=1,
+		// zero jitter, per src/tmux/dispatch.ts:544) was inserted immediately
+		// after the sendKeysVerified call above, then reverted before commit.
+		// Against the resulting array [1000,1000,1000,1000,1000,300], the OLD
+		// `every((ms) => ms <= 1_000)` bound evaluated true (vacuous pass); the
+		// NEW strict-equality assertion above evaluated false, and
+		// `bun test test/dispatch.test.ts` under the live mutation exited 1 (one
+		// failing assertion, at this line). retryBaseMs is never actually
+		// reached on this idle-gate-timeout path (sendOnceUnverified skips the
+		// retry/backoff loop entirely), which is why the mutation injects a
+		// retryBaseMs-SHAPED value directly into recordedSleeps rather than
+		// exercising the real option end to end.
 
 		// AC3: exactly one push-undelivered event, reason pane-not-idle,
 		// retriesExhausted === 1.
