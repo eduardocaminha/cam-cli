@@ -42,6 +42,13 @@ function fakeResult(stdout: string, status = 0): SpawnSyncReturns<string> {
  * Build a fake TmuxSpawnFn.
  *
  * - When args include 'list-panes', return `listPanesOut` with status 0.
+ * - When args include 'display-message', return a fixed, always-identical
+ *   geometry line WITHOUT recording the call: `sendKeysVerified`'s delivery
+ *   verdict (US-002, CAM-359) samples cursor geometry through this same
+ *   spawnFn, and a fixed reading makes the per-send baseline and post-send
+ *   sample always match, so the verdict is "delivered on attempt 1" — the
+ *   send-keys-argv-shape assertions below don't exercise the delivery
+ *   oracle itself.
  * - For all other calls (e.g. send-keys), return empty stdout with status 0
  *   and record the call.
  */
@@ -52,6 +59,9 @@ function makeFakeSpawnFn(
 	return (cmd, args, _opts) => {
 		if (args.includes('list-panes')) {
 			return fakeResult(listPanesOut);
+		}
+		if (args.includes('display-message')) {
+			return fakeResult('2;26;80;30');
 		}
 		calls.push({ cmd, args: args.slice() });
 		return fakeResult('');

@@ -88,6 +88,14 @@ function makeFakeTmuxSpawn(opts: {
 			return { ...base, stdout: Buffer.from('> ') };
 		}
 
+		if (subcommand === 'display-message') {
+			// sendKeysVerified's delivery verdict (US-002, CAM-359) samples cursor
+			// geometry here. A fixed, always-identical reading means the per-send
+			// baseline always matches the post-send sample, so delivery succeeds
+			// on attempt 1.
+			return { ...base, stdout: Buffer.from('2;26;80;30') };
+		}
+
 		if (subcommand === 'send-keys') {
 			return base;
 		}

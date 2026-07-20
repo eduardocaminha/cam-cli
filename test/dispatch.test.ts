@@ -20,26 +20,31 @@
 //       (US-002/CAM-358 regression: the review round 1 fix for US-R1-001 found
 //       nothing previously exercised the default-idleTimeoutMs wiring path)
 //     - IDLE_WAIT_DEADLINE_MS boundary: exceeds the old 5_000 ms default
-//   sendKeysVerified (US-002, CAM-200):
-//     - composer emptied immediately: delivered on the first attempt, no retry, no push-undelivered
-//     - composer still holds the pushed line every time: retries up to maxAttempts, then emits
-//       exactly one push-undelivered event via the injected logEvent, using a no-op sleepFn
-//     - settle window (US-001, CAM-358): a capturePaneFn that would report the stale PRE-send
-//       screen on the first post-send read, but the injected sleepFn advances a staged reader
-//       to the POST-send screen before that read happens, still yields delivered on attempt 1
+//   sendKeysVerified (US-002, CAM-200; geometry oracle US-002/CAM-359):
+//     - cursor geometry unchanged after settle (post-send == per-send baseline): delivered on
+//       the first attempt, no retry, no push-undelivered
+//     - cursor geometry differs every attempt (composer never empties): retries up to
+//       maxAttempts, then emits exactly one push-undelivered event via the injected logEvent,
+//       using a no-op sleepFn
+//     - settle window (US-001, CAM-358): a sampleGeometryFn that would report the stale
+//       PRE-send geometry on the first post-send read, but the injected sleepFn advances a
+//       staged reader to the POST-send (baseline-matching) geometry before that read happens,
+//       still yields delivered on attempt 1
+//     - a null (unknown/fail-closed) geometry sample, for either the baseline or the post-send
+//       read, is treated as NOT delivered and retried, never as delivered (US-002, CAM-359 AC5)
 
 import { describe, expect, test } from 'bun:test';
 import type { SpawnSyncReturns } from 'node:child_process';
 
 import {
 	isOrchPaneIdle,
-	isComposerEmptied,
 	sendKeysWhenIdle,
 	sendKeysVerified,
 	SEND_KEYS_SETTLE_MS,
 	IDLE_WAIT_DEADLINE_MS,
 	type CapturePaneFn,
 } from '../src/tmux/dispatch.ts';
+import type { CursorGeometry } from '../src/tmux/display-message.ts';
 import type { SpawnFn as TmuxSpawnFn } from '../src/tmux/session.ts';
 
 // ---------------------------------------------------------------------------
@@ -51,15 +56,30 @@ interface TmuxCall {
 	args: string[];
 }
 
-/** Build a minimal fake TmuxSpawnFn that records calls and returns success. */
+/**
+ * Build a minimal fake TmuxSpawnFn that records calls and returns success.
+ *
+ * `sendKeysVerified` (US-002, CAM-359) defaults `sampleGeometryFn` to the
+ * real `sampleCursorGeometry`, which shells out through the injected
+ * `tmuxSpawnFn` for a `display-message` call. Tests below that only exercise
+ * the idle-gate/send mechanics (and don't care about the delivery verdict)
+ * still route through that default, so this fake answers `display-message`
+ * with a fixed, always-identical geometry line — baseline and post-send
+ * samples both read the same value, so the delivery verdict is "delivered on
+ * attempt 1" by default without every idle-gate test having to inject its
+ * own `sampleGeometryFn`. Tests that DO care about the delivery verdict
+ * (the `sendKeysVerified` describe block) inject an explicit
+ * `sampleGeometryFn` that overrides this.
+ */
 function makeSpawnFn(): TmuxSpawnFn & { calls: TmuxCall[] } {
 	const calls: TmuxCall[] = [];
 	const fn = ((cmd: string, args: string[]) => {
 		calls.push({ cmd, args: [...args] });
+		const isDisplayMessage = args.includes('display-message');
 		const base: SpawnSyncReturns<Buffer> = {
 			pid: 1,
 			output: [null, Buffer.from(''), Buffer.from('')],
-			stdout: Buffer.from(''),
+			stdout: Buffer.from(isDisplayMessage ? '2;26;80;30' : ''),
 			stderr: Buffer.from(''),
 			status: 0,
 			signal: null,
@@ -317,25 +337,17 @@ describe('sendKeysWhenIdle', () => {
 });
 
 // ---------------------------------------------------------------------------
-// isComposerEmptied
+// sendKeysVerified (geometry oracle, US-002, CAM-359)
 // ---------------------------------------------------------------------------
 
-describe('isComposerEmptied', () => {
-	test('returns true when the pushed text is absent from the tail', () => {
-		expect(isComposerEmptied('> ', '/cam-review')).toBe(true);
-	});
+/** A stock empty-composer baseline geometry used across tests below. */
+const EMPTY_BASELINE: CursorGeometry = { cursorX: 2, cursorY: 26, paneWidth: 80, paneHeight: 30 };
 
-	test('returns false when the pushed text is still present in the tail', () => {
-		expect(isComposerEmptied('> /cam-review', '/cam-review')).toBe(false);
-	});
-});
-
-// ---------------------------------------------------------------------------
-// sendKeysVerified
-// ---------------------------------------------------------------------------
+/** A stock "text still in composer" geometry, distinct from EMPTY_BASELINE. */
+const FILLED_GEOMETRY: CursorGeometry = { cursorX: 10, cursorY: 26, paneWidth: 80, paneHeight: 30 };
 
 describe('sendKeysVerified', () => {
-	test('delivered on first attempt: one send-keys call, no retry, no push-undelivered', () => {
+	test('geometry unchanged after settle: delivered on first attempt, no retry, no push-undelivered', () => {
 		const spawnFn = makeSpawnFn();
 		const events: Array<{ kind: string; detail: unknown }> = [];
 
@@ -343,7 +355,8 @@ describe('sendKeysVerified', () => {
 			paneId: '%3',
 			text: '/cam-plan',
 			tmuxSpawnFn: spawnFn,
-			capturePaneFn: () => '> ', // idle pre-send, composer empty post-send
+			capturePaneFn: () => '> ', // idle pre-send
+			sampleGeometryFn: () => EMPTY_BASELINE, // baseline == post-send: delivered
 			sleepFn: () => {},
 			idleTimeoutMs: 5,
 			logEvent: (kind, detail) => events.push({ kind, detail }),
@@ -354,16 +367,16 @@ describe('sendKeysVerified', () => {
 		expect(events).toHaveLength(0);
 	});
 
-	test('settle window honored: sleepFn advances the staged reader so the verify reads the post-send screen, not the stale pre-send one (US-001, CAM-358)', () => {
+	test('settle window honored: sleepFn advances the staged reader so the post-send sample reflects the settled geometry, not the stale pre-settle one (US-001, CAM-358)', () => {
 		const spawnFn = makeSpawnFn();
 		const events: Array<{ kind: string; detail: unknown }> = [];
 
-		// The staged reader: before the settle sleep fires, a post-send capture
-		// would still observe the PRE-send screen (payload still visibly sitting
-		// in the composer, as a lagging real capture-pane would report
-		// immediately after send-keys returns). Only the injected sleepFn -
-		// when called with the settle window - flips `settled` and advances the
-		// staged reader to the POST-send screen (composer emptied).
+		// The staged reader: before the settle sleep fires, a post-send sample
+		// would still observe the FILLED (pre-settle) geometry, as a lagging
+		// real tmux read would report immediately after send-keys returns. Only
+		// the injected sleepFn — when called with the settle window — flips
+		// `settled` and advances the staged reader to the baseline-matching
+		// geometry.
 		let settled = false;
 		const sleepFn = (ms: number) => {
 			if (ms === SEND_KEYS_SETTLE_MS) settled = true;
@@ -372,52 +385,54 @@ describe('sendKeysVerified', () => {
 		const sendKeysCallCount = () =>
 			spawnFn.calls.filter((c) => c.args[2] === 'send-keys').length;
 
-		const capturePaneFn: CapturePaneFn = () => {
-			// Before any send-keys call, this is the PRE-send idle-gate capture.
-			if (sendKeysCallCount() === 0) return '> ';
-			// Post-send verify capture: PRE-send (stale) screen until the settle
-			// sleep has fired, POST-send (composer emptied) screen thereafter.
-			return settled ? '> ' : '> /cam-spec';
+		// Sample #1 (per-attempt baseline, taken BEFORE send-keys) always reads
+		// the empty baseline. Sample #2 (post-send verify, taken AFTER the
+		// settle sleep) reads FILLED until settled, EMPTY_BASELINE thereafter.
+		const sampleGeometryFn = (): CursorGeometry => {
+			if (sendKeysCallCount() === 0) return EMPTY_BASELINE;
+			return settled ? EMPTY_BASELINE : FILLED_GEOMETRY;
 		};
 
 		sendKeysVerified({
 			paneId: '%4',
 			text: '/cam-spec',
 			tmuxSpawnFn: spawnFn,
-			capturePaneFn,
+			capturePaneFn: () => '> ',
+			sampleGeometryFn,
 			sleepFn,
 			idleTimeoutMs: 5,
 			logEvent: (kind, detail) => events.push({ kind, detail }),
 		});
 
-		// Delivered verdict must reflect the settled (POST-send) screen: exactly
+		// Delivered verdict must reflect the settled (post-send) sample: exactly
 		// one send-keys call, no retry, no push-undelivered. Without the settle
-		// sleep between the send-keys spawn and the verify capture, this same
-		// staged reader would report PRE-send on attempt 1's verify and force a
+		// sleep between the send-keys spawn and the verify sample, this same
+		// staged reader would report FILLED on attempt 1's verify and force a
 		// retry (or exhaustion), misreporting delivery.
 		expect(sendKeysCallCount()).toBe(1);
 		expect(events).toHaveLength(0);
 	});
 
-	test('composer never empties: retries up to maxAttempts, then emits one push-undelivered event', () => {
+	test('geometry never returns to baseline: retries up to maxAttempts, then emits one push-undelivered event', () => {
 		const spawnFn = makeSpawnFn();
 		const events: Array<{ kind: string; detail: unknown }> = [];
 		let sleepCount = 0;
-		let captureCalls = 0;
 
-		// First capture (pre-send idle-gate) reports idle; every subsequent
-		// capture (post-send verify) reports the composer still holding the
-		// pushed line, simulating a dropped Enter that never submits.
-		const capturePaneFn: CapturePaneFn = () => {
-			captureCalls++;
-			return captureCalls === 1 ? '> ' : '> /cam-review';
+		// Every baseline sample reads EMPTY_BASELINE, but every post-send sample
+		// reads FILLED_GEOMETRY — simulating a dropped Enter that never submits,
+		// so the composer keeps holding the pushed text on every attempt.
+		let sampleCalls = 0;
+		const sampleGeometryFn = (): CursorGeometry => {
+			sampleCalls++;
+			return sampleCalls % 2 === 1 ? EMPTY_BASELINE : FILLED_GEOMETRY;
 		};
 
 		sendKeysVerified({
 			paneId: '%9',
 			text: '/cam-review',
 			tmuxSpawnFn: spawnFn,
-			capturePaneFn,
+			capturePaneFn: () => '> ',
+			sampleGeometryFn,
 			sleepFn: () => {
 				sleepCount++;
 			}, // no-op: the test never actually waits
@@ -439,12 +454,22 @@ describe('sendKeysVerified', () => {
 	test('logEvent is optional: omitting it emits no event and does not throw', () => {
 		const spawnFn = makeSpawnFn();
 
+		// Baseline always EMPTY_BASELINE, post-send always FILLED_GEOMETRY: the
+		// pair never matches, so delivery never succeeds and every attempt is
+		// spent.
+		let sampleCalls = 0;
+		const sampleGeometryFn = (): CursorGeometry => {
+			sampleCalls++;
+			return sampleCalls % 2 === 1 ? EMPTY_BASELINE : FILLED_GEOMETRY;
+		};
+
 		expect(() =>
 			sendKeysVerified({
 				paneId: '%2',
 				text: '/cam-ship',
 				tmuxSpawnFn: spawnFn,
-				capturePaneFn: () => '> /cam-ship', // composer never empties
+				capturePaneFn: () => '> ',
+				sampleGeometryFn,
 				sleepFn: () => {},
 				idleTimeoutMs: 5,
 				maxAttempts: 2,
@@ -453,5 +478,93 @@ describe('sendKeysVerified', () => {
 
 		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
 		expect(sendKeysCalls).toHaveLength(2);
+	});
+
+	test('null baseline sample (fail-closed/unknown) is treated as NOT delivered and retried (US-002, CAM-359 AC5)', () => {
+		const spawnFn = makeSpawnFn();
+		const events: Array<{ kind: string; detail: unknown }> = [];
+
+		// Every sample returns null (US-001's fail-closed result, e.g. a
+		// non-zero tmux exit). If a null baseline were ever treated as
+		// "matches", this would misreport delivery on attempt 1.
+		sendKeysVerified({
+			paneId: '%5',
+			text: '/cam-next',
+			tmuxSpawnFn: spawnFn,
+			capturePaneFn: () => '> ',
+			sampleGeometryFn: () => null,
+			sleepFn: () => {},
+			idleTimeoutMs: 5,
+			maxAttempts: 2,
+			logEvent: (kind, detail) => events.push({ kind, detail }),
+		});
+
+		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
+		expect(sendKeysCalls).toHaveLength(2);
+		expect(events).toHaveLength(1);
+		expect(events[0]?.kind).toBe('push-undelivered');
+	});
+
+	test('null post-send sample (fail-closed/unknown) is treated as NOT delivered and retried, even with a valid matching baseline (US-002, CAM-359 AC5)', () => {
+		const spawnFn = makeSpawnFn();
+		const events: Array<{ kind: string; detail: unknown }> = [];
+
+		// Baseline samples always succeed (EMPTY_BASELINE); post-send samples
+		// always fail closed (null). A geometry oracle that treated "unknown"
+		// as "assume unchanged" would misreport delivery here.
+		let sampleCalls = 0;
+		const sampleGeometryFn = (): CursorGeometry | null => {
+			sampleCalls++;
+			return sampleCalls % 2 === 1 ? EMPTY_BASELINE : null;
+		};
+
+		sendKeysVerified({
+			paneId: '%6',
+			text: '/cam-issue',
+			tmuxSpawnFn: spawnFn,
+			capturePaneFn: () => '> ',
+			sampleGeometryFn,
+			sleepFn: () => {},
+			idleTimeoutMs: 5,
+			maxAttempts: 2,
+			logEvent: (kind, detail) => events.push({ kind, detail }),
+		});
+
+		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
+		expect(sendKeysCalls).toHaveLength(2);
+		expect(events).toHaveLength(1);
+		expect(events[0]?.kind).toBe('push-undelivered');
+	});
+
+	test('comparison uses the full (x, y) pair: matching y with a different x is NOT delivered', () => {
+		const spawnFn = makeSpawnFn();
+		const events: Array<{ kind: string; detail: unknown }> = [];
+
+		// Same cursorY as EMPTY_BASELINE but a different cursorX — mirrors the
+		// Ink composer growing-upward gotcha (US-001/US-002 findings): y alone
+		// is not a sound discriminator, so this must NOT read as delivered.
+		const sameYDifferentX: CursorGeometry = { ...EMPTY_BASELINE, cursorX: 33 };
+
+		sendKeysVerified({
+			paneId: '%7',
+			text: '/cam-plan 1',
+			tmuxSpawnFn: spawnFn,
+			capturePaneFn: () => '> ',
+			sampleGeometryFn: (_paneId, _spawnFn) => {
+				// Baseline call vs verify call: alternate deterministically by
+				// counting send-keys calls issued so far.
+				const sendKeysDone = spawnFn.calls.filter((c) => c.args[2] === 'send-keys').length;
+				return sendKeysDone === 0 ? EMPTY_BASELINE : sameYDifferentX;
+			},
+			sleepFn: () => {},
+			idleTimeoutMs: 5,
+			maxAttempts: 1,
+			logEvent: (kind, detail) => events.push({ kind, detail }),
+		});
+
+		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
+		expect(sendKeysCalls).toHaveLength(1);
+		expect(events).toHaveLength(1);
+		expect(events[0]?.kind).toBe('push-undelivered');
 	});
 });

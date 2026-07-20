@@ -276,23 +276,46 @@ function fakeSpawnResult(stdout: string, status = 0): SpawnSyncReturns<string> {
 	};
 }
 
-describe('makeNotifyOrchestrator x sendKeysVerified (US-003, CAM-200)', () => {
-	test('retry then delivered: composer-emptied verify succeeds on the second attempt (2 send-keys calls, no push-undelivered)', () => {
+/**
+ * `sendKeysVerified`'s delivery verdict (US-002, CAM-359) samples cursor
+ * geometry via a `display-message` call routed through the same TmuxSpawnFn
+ * passed to `makeNotifyOrchestrator` — it is no longer derived from
+ * `capturePaneFn` (that reader now only feeds the PRE-send idle-gate). Two
+ * `display-message` samples happen per attempt: a baseline immediately
+ * before send-keys, and a post-send sample after the settle window. This
+ * responder alternates: odd calls (1st, 3rd, ...) are always the fixed
+ * baseline reading; even calls (2nd, 4th, ...) are the post-send reading,
+ * driven by `afterReadingForAttempt(attemptIndex)` (1-based).
+ */
+function makeGeometryDisplayResponder(
+	afterReadingForAttempt: (attemptIndex: number) => string,
+): (args: string[]) => string {
+	let dmCallCount = 0;
+	return (): string => {
+		dmCallCount++;
+		if (dmCallCount % 2 === 1) return '2;26;80;30'; // fixed baseline reading
+		const attemptIndex = dmCallCount / 2;
+		return afterReadingForAttempt(attemptIndex);
+	};
+}
+
+describe('makeNotifyOrchestrator x sendKeysVerified (US-003, CAM-200; geometry oracle US-002, CAM-359)', () => {
+	test('retry then delivered: geometry verify succeeds on the second attempt (2 send-keys calls, no push-undelivered)', () => {
 		const text = '[cam] US-003 DONE: typecheck ok, 5 pass / 0 fail';
 		const sendCalls: string[][] = [];
+		// Attempt 1's post-send reading differs from the baseline (undelivered);
+		// attempt 2's matches the baseline (delivered).
+		const displayResponder = makeGeometryDisplayResponder(
+			(attemptIndex) => (attemptIndex === 1 ? '10;26;80;30' : '2;26;80;30'),
+		);
 		const spawnFn: TmuxSpawnFn = (_cmd, args, _opts) => {
 			if (args.includes('list-panes')) return fakeSpawnResult('0;%5\n1;%6\n');
+			if (args.includes('display-message')) return fakeSpawnResult(displayResponder(args));
 			sendCalls.push(args.slice());
 			return fakeSpawnResult('');
 		};
 
-		let captureCallCount = 0;
-		const capturePaneFn = (_paneId: string): string => {
-			captureCallCount++;
-			if (captureCallCount === 1) return '> '; // PRE-send idle-gate: idle, ready.
-			if (captureCallCount === 2) return `${text}\n> `; // post-attempt-1 verify: still in composer.
-			return '> '; // post-attempt-2 verify: composer emptied.
-		};
+		const capturePaneFn = (_paneId: string): string => '> '; // idle-gate: always ready.
 
 		const events: Array<{ kind: WorkerEventKind; detail: WorkerEventDetail }> = [];
 		const logEvent = (kind: WorkerEventKind, detail: WorkerEventDetail): void => {
@@ -306,21 +329,20 @@ describe('makeNotifyOrchestrator x sendKeysVerified (US-003, CAM-200)', () => {
 		expect(events).toEqual([]);
 	});
 
-	test('retry exhausted: composer never emptied triggers exactly one push-undelivered event after maxAttempts sends', () => {
+	test('retry exhausted: geometry never returns to baseline triggers exactly one push-undelivered event after maxAttempts sends', () => {
 		const text = '[cam] review round 2: FIXES_PENDING:1';
 		const sendCalls: string[][] = [];
+		// Every post-send reading differs from the baseline: the composer never
+		// empties (a dropped Enter every attempt).
+		const displayResponder = makeGeometryDisplayResponder(() => '10;26;80;30');
 		const spawnFn: TmuxSpawnFn = (_cmd, args, _opts) => {
 			if (args.includes('list-panes')) return fakeSpawnResult('0;%7\n');
+			if (args.includes('display-message')) return fakeSpawnResult(displayResponder(args));
 			sendCalls.push(args.slice());
 			return fakeSpawnResult('');
 		};
 
-		let captureCallCount = 0;
-		const capturePaneFn = (_paneId: string): string => {
-			captureCallCount++;
-			if (captureCallCount === 1) return '> '; // PRE-send idle-gate: idle, ready.
-			return `${text}\n> `; // every post-send verify: text never leaves the composer.
-		};
+		const capturePaneFn = (_paneId: string): string => '> ';
 
 		const events: Array<{ kind: WorkerEventKind; detail: WorkerEventDetail }> = [];
 		const logEvent = (kind: WorkerEventKind, detail: WorkerEventDetail): void => {
@@ -339,17 +361,14 @@ describe('makeNotifyOrchestrator x sendKeysVerified (US-003, CAM-200)', () => {
 
 	test('adaptLogEventForPush wraps push-undelivered into a full WorkerEvent with uuid "sidecar"', () => {
 		const text = '[cam] review round 5: MAX_ROUNDS_DEBT';
+		const displayResponder = makeGeometryDisplayResponder(() => '10;26;80;30'); // never emptied: exhausts retries.
 		const spawnFn: TmuxSpawnFn = (_cmd, args, _opts) => {
 			if (args.includes('list-panes')) return fakeSpawnResult('0;%9\n');
+			if (args.includes('display-message')) return fakeSpawnResult(displayResponder(args));
 			return fakeSpawnResult('');
 		};
 
-		let captureCallCount = 0;
-		const capturePaneFn = (_paneId: string): string => {
-			captureCallCount++;
-			if (captureCallCount === 1) return '> ';
-			return `${text}\n> `; // never emptied: exhausts retries.
-		};
+		const capturePaneFn = (_paneId: string): string => '> ';
 
 		const recorded: WorkerEvent[] = [];
 		const fileLogger: WorkerEventLogger = (event) => {

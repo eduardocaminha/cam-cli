@@ -17,13 +17,32 @@
 // verification: a busy TUI can still drop the trailing Enter even after the
 // pane looked idle at check time (capture-pane lags by one refresh cycle), so
 // the pushed line silently never submits. sendKeysVerified re-checks the pane
-// after each send for a composer-emptied STATE signal (did the pushed text
-// leave the composer), and retries with bounded backoff up to N attempts,
-// emitting a 'push-undelivered' event on exhaustion instead of blocking or
-// throwing. sendKeysWhenIdle now delegates to it so every existing thin-proxy
-// caller (review.ts, issue.ts, spec.ts) gets verify+retry for free.
+// after each send for delivery, and retries with bounded backoff up to N
+// attempts, emitting a 'push-undelivered' event on exhaustion instead of
+// blocking or throwing. sendKeysWhenIdle now delegates to it so every
+// existing thin-proxy caller (review.ts, issue.ts, spec.ts) gets
+// verify+retry for free.
+//
+// Delivery verdict (US-002, CAM-359): the verdict is derived from tmux
+// CURSOR GEOMETRY, not from substring-matching the payload against captured
+// pane content. Captured pane text is renderable/forgeable (a wrapped
+// payload never appears whole on any single captured line, and payload text
+// like `->` can coincidentally match a soft-wrap anchor), so a content-match
+// oracle either always reports "delivered" for a wrapped payload (masking a
+// dropped Enter, CAM-358's original defect) or can be spoofed by payload
+// content. tmux's own `#{cursor_x}`/`#{cursor_y}` are server-side state a
+// payload cannot forge. A per-send baseline is sampled immediately before
+// each send-keys call; the verdict compares the FULL (x, y) pair sampled
+// after the settle window against that baseline. The pair must never be
+// reduced to a y-only (or x-only) comparison: measured against a real claude
+// TUI, an Ink composer grows UPWARD from the pane bottom, so cursor_y alone
+// is often identical between an empty and a wrapped composer, and at an
+// exact wrap-boundary payload length the post-send cursor_x can coincidentally
+// equal the baseline cursor_x while cursor_y differs. Either axis alone can
+// collide; only the full pair is a sound discriminator.
 
 import { tmuxArgs, type SpawnFn as TmuxSpawnFn } from './session.ts';
+import { sampleCursorGeometry, type CursorGeometry } from './display-message.ts';
 import { computeBackoffMs, JITTER_FRACTION } from '../supervisor/loop.ts';
 import type { WorkerEventKind, WorkerEventDetail } from '../supervisor/events.ts';
 
@@ -103,8 +122,17 @@ export interface SendKeysVerifiedOptions extends SendKeysWhenIdleOptions {
 	/** Random source fed to `computeBackoffMs`. Default: `Math.random`. */
 	randomFn?: () => number;
 	/**
+	 * Injectable cursor-geometry sampler (US-002, CAM-359). Default: the real
+	 * `sampleCursorGeometry` (src/tmux/display-message.ts), which shells out to
+	 * `tmux display-message`. Tests inject a fake to avoid a real tmux server.
+	 * Sampled once per attempt immediately before send-keys (the per-send
+	 * baseline) and once again after the settle window (the post-send
+	 * reading); the delivery verdict compares the two.
+	 */
+	sampleGeometryFn?: (paneId: string, tmuxSpawnFn: TmuxSpawnFn) => CursorGeometry | null;
+	/**
 	 * Injected event sink, called with `('push-undelivered', detail)` once all
-	 * attempts are exhausted without a composer-emptied verify. Optional and
+	 * attempts are exhausted without a geometry-verified delivery. Optional and
 	 * side-effect-free by default: omitting it emits no event (mirrors the
 	 * sub-state-machine logEvent seam pattern used by merge-watch). The caller
 	 * wraps this into a full WorkerEvent (ts/storyId/uuid) if it wants the
@@ -119,15 +147,17 @@ export interface SendKeysVerifiedOptions extends SendKeysWhenIdleOptions {
 
 /**
  * Settle window (ms) between a send-keys spawn and the post-send
- * `isComposerEmptied` verification capture (US-001, CAM-358).
+ * cursor-geometry verification sample (US-001/US-002, CAM-358/CAM-359).
  *
- * `capture-pane` lags the tmux server's own render cycle: reading the pane
- * immediately after send-keys returns can still observe the PRE-send screen
- * (the pushed text still visibly sitting in the composer), which makes
- * `isComposerEmptied` misreport an undelivered payload as delivered on
- * attempt 1 and skip the retry loop entirely. Sleeping this window (via the
- * injected `sleepFn`, never a bare `Bun.sleepSync`) before every verify
- * capture gives the pane one refresh cycle to catch up.
+ * tmux's own render/cursor-tracking cycle lags a send-keys call: sampling
+ * the cursor position immediately after send-keys returns can still observe
+ * the PRE-send geometry (the pushed text not yet reflected in the pane),
+ * which would misreport an undelivered payload as delivered on attempt 1
+ * and skip the retry loop entirely. Sleeping this window (via the injected
+ * `sleepFn`, never a bare `Bun.sleepSync`) before every post-send geometry
+ * sample gives the pane one refresh cycle to catch up. Geometry sampling
+ * does not remove this requirement: an un-rendered pane reads the SAME
+ * baseline geometry a genuinely empty (delivered) composer would.
  */
 export const SEND_KEYS_SETTLE_MS = 50;
 
@@ -195,23 +225,18 @@ export function isOrchPaneIdle(content: string): boolean {
 }
 
 /**
- * Return true if `text` (the line we just pushed) is no longer present in the
- * tail of the captured pane content, i.e. it left the composer (US-002,
- * CAM-200).
+ * Return true if two sampled cursor geometries represent the SAME pane
+ * position (US-002, CAM-359).
  *
- * This is a STATE check only: it looks for the pushed line's own text, never
- * for report content or any parsed structure in the rendered scrollback
- * (capture-pane is rendered markdown and lossy for that purpose; see the
- * CAM-75/77/78 structured-handback decision). A busy TUI that drops the
- * trailing Enter leaves the composer still holding `text`, which this
- * detects so the caller can retry.
- *
- * Exported for direct unit testing.
+ * Compares the full `(cursorX, cursorY)` pair. Never reduce this to a
+ * single-axis comparison (see the module header for why either axis alone
+ * can coincidentally collide between a delivered and an undelivered state).
+ * `paneWidth`/`paneHeight` are deliberately excluded from the comparison:
+ * they describe the pane's bounds, not the composer's delivery state, and a
+ * mid-attempt resize would otherwise falsely read as "undelivered".
  */
-export function isComposerEmptied(content: string, text: string): boolean {
-	const lines = content.split('\n').map((l) => l.trimEnd());
-	const tail = lines.slice(-5);
-	return !tail.some((l) => l.includes(text));
+function geometryUnchanged(before: CursorGeometry, after: CursorGeometry): boolean {
+	return before.cursorX === after.cursorX && before.cursorY === after.cursorY;
 }
 
 // ---------------------------------------------------------------------------
@@ -273,12 +298,18 @@ function waitForIdlePane(args: {
  *      submit (sendkeys-literal-enter-gotcha, CAM-55). The text is a single
  *      non-key-name arg, so tmux already sends its characters literally; only
  *      'Enter' must stay a recognised key.
- *   3. Settle + verify: sleep `SEND_KEYS_SETTLE_MS` (via the injected
- *      `sleepFn`, US-001, CAM-358) so the tmux server has one refresh cycle
- *      to render the post-send screen, then re-capture the pane and check
- *      `isComposerEmptied` (the pushed line left the composer). This is a
- *      pane-STATE check only; it never parses rendered scrollback for report
- *      content.
+ *   3. Baseline + settle + verify (US-002, CAM-359): immediately BEFORE each
+ *      send-keys call, sample the pane's cursor geometry as that attempt's
+ *      baseline via `sampleGeometryFn` (default `sampleCursorGeometry`,
+ *      src/tmux/display-message.ts). After send-keys, sleep
+ *      `SEND_KEYS_SETTLE_MS` (via the injected `sleepFn`, US-001, CAM-358)
+ *      so tmux has one refresh cycle to catch up, then sample geometry
+ *      again. The verdict is `geometryUnchanged(baseline, after)`: the full
+ *      `(cursorX, cursorY)` pair must match, never a single axis. A `null`
+ *      sample (the geometry helper's fail-closed result, e.g. a non-zero
+ *      tmux exit) is treated as NOT delivered on that attempt, never as
+ *      delivered. This never consumes captured pane content for the verdict
+ *      (capture-pane is rendered/forgeable; see the module header).
  *   4. Retry: if not delivered, sleep `computeBackoffMs(attempt, ...)`
  *      (src/supervisor/loop.ts:606) and resend, up to `maxAttempts` (default
  *      3) total attempts.
@@ -305,6 +336,7 @@ export function sendKeysVerified(opts: SendKeysVerifiedOptions): void {
 		jitterFraction = JITTER_FRACTION,
 		randomFn = Math.random,
 		logEvent,
+		sampleGeometryFn = sampleCursorGeometry,
 	} = opts;
 
 	const capture = capturePaneFn
@@ -321,6 +353,10 @@ export function sendKeysVerified(opts: SendKeysVerifiedOptions): void {
 
 	let delivered = false;
 	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+		// Per-send baseline: sampled immediately before send-keys (US-002,
+		// CAM-359). A null (unknown) sample fails closed below.
+		const baseline = sampleGeometryFn(paneId, tmuxSpawnFn);
+
 		// Atomic send-keys: text + Enter in ONE call, WITHOUT -l (see flow
 		// step 2 above; CAM-55 regression guard).
 		tmuxSpawnFn(
@@ -331,7 +367,9 @@ export function sendKeysVerified(opts: SendKeysVerifiedOptions): void {
 
 		sleepFn(SEND_KEYS_SETTLE_MS);
 
-		if (isComposerEmptied(capture(paneId), text)) {
+		const after = sampleGeometryFn(paneId, tmuxSpawnFn);
+
+		if (baseline !== null && after !== null && geometryUnchanged(baseline, after)) {
 			delivered = true;
 			break;
 		}

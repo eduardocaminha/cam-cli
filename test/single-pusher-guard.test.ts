@@ -70,6 +70,17 @@ function makeFakeSpawn(orchPaneId: string, calls: SpawnCall[]): SpawnFn {
 			return { ...base, stdout };
 		}
 
+		if (subcommand === 'display-message') {
+			// sendKeysVerified's delivery verdict (US-002, CAM-359) samples cursor
+			// geometry here, not via capturePaneFn. A fixed, always-identical
+			// reading means the per-send baseline always matches the post-send
+			// sample, so delivery succeeds on attempt 1 — this file's "exactly
+			// one send-keys call" assertions are about the single-pusher
+			// invariant, not the delivery oracle, and must not count these
+			// geometry-sample calls as pushes.
+			return { ...base, stdout: Buffer.from('2;26;80;30') };
+		}
+
 		// Record all other calls (i.e. send-keys calls).
 		calls.push({ cmd, args: [...args] });
 		return base;
