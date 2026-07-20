@@ -35,7 +35,7 @@
         "Lint spine green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/events.ts (interface at ~:528, WorkerEventKind union at ~:164 already lists 'push-undelivered' and needs no change), src/tmux/dispatch.ts (emit site ~:553), test/dispatch.test.ts, test/integration/dispatch-geometry.test.ts, test/issue.test.ts, test/supervisor/notify-orchestrator.test.ts. This story is type-first on purpose: making `reason` REQUIRED forces every constructor to be swept, which is the CAM-363 decision-2 / CAM-364 decision-2 precedent against fixtures that model a shape unable to distinguish two modes. Do NOT take the path of least resistance (`reason?:`). At this story's end only 'retries-exhausted' is ever emitted; 'pane-not-idle' exists in the type and is wired by US-002. Do not change behavior here: no branch changes in sendKeysVerified. Grep scripts/cam/patterns.md and scripts/cam/pattern-records.jsonl for 'dispatch' / 'send-keys' / 'event' before coding."
     },
