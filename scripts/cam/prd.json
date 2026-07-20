@@ -51,7 +51,7 @@
         "Full quality spine green. [oracle: named-command bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/prd-oracle-lint.ts, test/supervisor/prd-oracle-lint.test.ts. Target set is a FIXED LITERAL LIST per the issue spec: scripts/cam/handoff.json plus the reviewer's gitignored capture-pane artifact (see patterns.md:224 for that filename). Do NOT stat or read any path: purity contract means the rule decides from the criterion string alone. TEST NAMING IS LOAD-BEARING: describe blocks must be named `rotating-artifact-target rule: flagged forms` and `rotating-artifact-target rule: passing cases` verbatim or this story's own oracles go vacuous. Source bullet: patterns.md:907, which also records the CAM-376 US-001 AC4 incident this rule prevents."
     },
