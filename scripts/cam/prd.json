@@ -38,7 +38,7 @@
         "Typecheck passes (bun run typecheck), tests pass (bun test), and the lint spine passes (bun run check:all). [oracle: bash -c 'bun run typecheck && bun test && bun run check:all']"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: test/fixtures/oracle-lint/oracle-lint-cases.txt (broaden), test/supervisor/prd-oracle-lint.test.ts (drive the broadened matrix), scripts/cam/patterns.md (append one bullet). No src/ change is expected in this story; if the broadened matrix exposes a misclassification, fix it in src/supervisor/prd-oracle-lint.ts rather than deleting the row. The patterns.md bullet must contain the two literal phrases the oracle greps for: 'quote-stripping intentionally blinds frozen-comparand' and 'is unwrapped but -e is not'. Follow the file's existing bullet style (leading '- **title**', story+issue+date attribution). Per the repo knowledge-layer routing table, a durable gotcha goes to patterns.md, not to CLAUDE.md and not to lessons.archive.md. Append, never truncate patterns.md. Persisted .md files in this repo avoid em-dashes and decorative emoji."
     }
