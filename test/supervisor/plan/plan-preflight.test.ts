@@ -31,10 +31,44 @@
 
 import { describe, expect, test } from 'bun:test';
 import {
+	combineStreams,
 	runPlanPreflight,
 	type PlanPreflightSpawnFn,
 } from '../../../src/supervisor/plan-preflight.ts';
 import { truncatePreflightDetail } from '../../../src/supervisor/plan-preflight-marker.ts';
+
+// ---------------------------------------------------------------------------
+// combineStreams (US-001, CAM-368) — direct unit tests at the definition point
+// ---------------------------------------------------------------------------
+
+describe('combineStreams', () => {
+	test('stderr comes first when both streams are non-empty', () => {
+		expect(combineStreams('ERRLINE', 'OUTLINE').split('\n')[0]).toBe('ERRLINE');
+	});
+
+	test('stdout-only: returns stdout with no leading/trailing newline', () => {
+		expect(combineStreams('', 'OUT')).toBe('OUT');
+	});
+
+	test('stderr-only: returns stderr with no leading/trailing newline', () => {
+		expect(combineStreams('ERR', '')).toBe('ERR');
+	});
+
+	test('both streams empty: returns empty string', () => {
+		expect(combineStreams('', '')).toBe('');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// truncatePreflightDetail — real function, both-streams-empty contract
+// (AC6c, US-003, CAM-368)
+// ---------------------------------------------------------------------------
+
+describe('truncatePreflightDetail', () => {
+	test('empty detail (both streams empty) renders as empty string, not NO verdict', () => {
+		expect(truncatePreflightDetail('')).toBe('');
+	});
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -113,8 +147,16 @@ describe('runPlanPreflight — git-checkout-main failure', () => {
 
 	test('does not call git pull when checkout fails (first-fail-only)', () => {
 		const { fn, calls } = makeFakeSpawn([{ exitCode: 1, stdout: '', stderr: '' }]);
-		runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
+		const result = runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
 		expect(calls.length).toBe(1);
+		// AC6b (US-003, CAM-368): both streams empty must not swallow the
+		// failure -- ok stays false and detail is the empty string, not a
+		// fallback/placeholder. This is the original CAM-363 symptom shape:
+		// a failing step whose narration renders with NO verdict.
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.detail).toBe('');
+		}
 	});
 
 	test('detail carries stderr-only content when stdout is empty (US-001, CAM-363)', () => {
