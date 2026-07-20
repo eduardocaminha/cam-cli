@@ -1,0 +1,25 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Wait a settle window before the delivery-verification capture"
+  },
+  "branchName": "cam/issue-358",
+  "timestamp": "2026-07-20T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/tmux/dispatch.ts",
+    "test/dispatch.test.ts",
+    "scripts/file-size-budget.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "sendKeysVerified (src/tmux/dispatch.ts) now sleeps a new exported constant SEND_KEYS_SETTLE_MS (50ms) via the injected sleepFn between every send-keys spawn and its isComposerEmptied verify capture, on every attempt (not just the first). This fixes attempt-1 misreporting an undelivered payload as delivered when capture-pane still shows the pre-send screen. isComposerEmptied itself, the send-keys argv shape (text + 'Enter' in one call, no -l), and the idle-gate poll logic are all untouched. A new test in the 'sendKeysVerified' describe block proves the settle window is honored via a staged capturePaneFn (returns PRE-send screen until the injected sleepFn is called with exactly SEND_KEYS_SETTLE_MS, then POST-send screen). One pre-existing test ('sends keys immediately when pane is idle on first check') was updated: it previously asserted sleepCount===0 when the idle-gate needed no poll, but now the unconditional settle sleep always fires once per attempt, so it now asserts sleeps toEqual([SEND_KEYS_SETTLE_MS]). Any future work touching sendKeysVerified's retry/backoff timing should account for this settle sleep firing on every attempt (not just failed ones) when reasoning about sleepFn call counts in tests.",
+  "officialDocsValidated": [
+    {
+      "lib": "tmux (capture-pane / send-keys)",
+      "url": "https://man7.org/linux/man-pages/man1/tmux.1.html",
+      "fetchedAt": "2026-07-20T00:00:00Z",
+      "status": "aligned",
+      "summary": "tmux's man page documents capture-pane/send-keys semantics but does not specify a render-refresh SLA; corroborating community reports (e.g. tmux-python/libtmux#188) confirm capture-pane immediately after send-keys can observe stale (pre-send) content, matching this story's premise. No official API changed; the fix is a client-side settle sleep, which is the documented workaround pattern."
+    }
+  ]
+}
