@@ -18,7 +18,7 @@
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [scripts/cam/prd.json:19]: Criteria 4, 5, 7, 10 and 11 share the same unguarded empty-`L` construct as the two CRITICAL oracles. They do go red on main, but only incidentally: with L empty they degrade from single-line assertions to whole-file greps, and go red merely because at least one probed token is absent from the whole 897-line file. On the failure path they therefore do NOT enforce the \"on its own single line\" claim their criterion text makes (a future patterns.md where the tokens are scattered across different lines would satisfy them). Same one-line fix as the CRITICAL: guard `L` non-empty before the `sed -n \"${L}p\"`."
     },
     {
