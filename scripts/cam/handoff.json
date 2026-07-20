@@ -1,0 +1,12 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Add the oracle-falsifiability rule to the knowledge layer" },
+  "branchName": "cam/issue-372",
+  "timestamp": "2026-07-20T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": ["scripts/cam/patterns.md", "scripts/cam/CLAUDE.md"],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 was doc-only (no src/ or test/ touched, per its own AC12). Appended a new bullet strictly at EOF of scripts/cam/patterns.md (now 899 lines, was 897; new bullet is a single unwrapped line at line 899, blank separator at 898) so every pre-existing patterns.md:NNN cross-reference stays valid, including the line-776 pinning oracle this story's own AC3 checks. Extended the existing 'Test quality' bullet in scripts/cam/CLAUDE.md (still line 69) in place with a short falsifiability clause plus a pointer to patterns.md, rather than adding a new standalone invariant bullet. Do NOT touch the line-776 test-quality bullet's body (it carries a known out-of-scope 'Four clauses' vs five-clauses off-by-one) and do NOT touch test/dispatch.test.ts (that weak assertion is CAM-374, a separate issue/PR). If a later story in this PRD references the oracle-falsifiability rule, grep patterns.md for 'falsifiab' rather than assuming a fixed line number.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
