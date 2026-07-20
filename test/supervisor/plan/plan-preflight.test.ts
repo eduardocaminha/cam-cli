@@ -31,10 +31,33 @@
 
 import { describe, expect, test } from 'bun:test';
 import {
+	combineStreams,
 	runPlanPreflight,
 	type PlanPreflightSpawnFn,
 } from '../../../src/supervisor/plan-preflight.ts';
 import { truncatePreflightDetail } from '../../../src/supervisor/plan-preflight-marker.ts';
+
+// ---------------------------------------------------------------------------
+// combineStreams (US-001, CAM-368) — direct unit tests at the definition point
+// ---------------------------------------------------------------------------
+
+describe('combineStreams', () => {
+	test('stderr comes first when both streams are non-empty', () => {
+		expect(combineStreams('ERRLINE', 'OUTLINE').split('\n')[0]).toBe('ERRLINE');
+	});
+
+	test('stdout-only: returns stdout with no leading/trailing newline', () => {
+		expect(combineStreams('', 'OUT')).toBe('OUT');
+	});
+
+	test('stderr-only: returns stderr with no leading/trailing newline', () => {
+		expect(combineStreams('ERR', '')).toBe('ERR');
+	});
+
+	test('both streams empty: returns empty string', () => {
+		expect(combineStreams('', '')).toBe('');
+	});
+});
 
 // ---------------------------------------------------------------------------
 // Helpers

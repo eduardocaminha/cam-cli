@@ -67,6 +67,21 @@ export interface RunPlanPreflightOptions {
 export type PlanPreflightResult = { ok: true } | { ok: false; step: string; detail: string };
 
 /**
+ * Combine a spawned command's stderr and stdout into one detail string,
+ * stderr first. Every git/bun failure site (git-checkout-main, git-pull,
+ * typecheck, bun-test) routes its `detail` through this helper: the
+ * command's real verdict typically lands on stderr while stdout carries
+ * incidental banner/progress chatter, and `detail` reaches the operator via
+ * truncatePreflightDetail, which renders only the first line. Putting
+ * stderr first means the verdict survives that truncation instead of being
+ * buried behind stdout noise. Empty streams are dropped so a single
+ * non-empty stream never gains a spurious leading/trailing newline.
+ */
+export function combineStreams(stderr: string, stdout: string): string {
+	return [stderr, stdout].filter((s) => s.trim().length > 0).join('\n').trim();
+}
+
+/**
  * Run the deterministic plan pre-flight checks.
  *
  * Steps run in order; the FIRST required step that fails halts immediately
@@ -80,18 +95,14 @@ export function runPlanPreflight(opts: RunPlanPreflightOptions): PlanPreflightRe
 	// Step 1: git checkout main
 	const checkout = spawnFn('git', ['checkout', 'main']);
 	if ((checkout.exitCode ?? 1) !== 0) {
-		// git's verdict lands on stderr; stdout is incidental (often empty).
-		// stderr goes first so it survives truncatePreflightDetail's
-		// first-line rendering when both streams are non-empty.
-		const detail = [checkout.stderr, checkout.stdout].filter((s) => s.trim().length > 0).join('\n').trim();
+		const detail = combineStreams(checkout.stderr, checkout.stdout);
 		return { ok: false, step: 'git-checkout-main', detail };
 	}
 
 	// Step 2: git pull origin main
 	const pull = spawnFn('git', ['pull', 'origin', 'main']);
 	if ((pull.exitCode ?? 1) !== 0) {
-		// Same stderr-first reasoning as the checkout step above.
-		const detail = [pull.stderr, pull.stdout].filter((s) => s.trim().length > 0).join('\n').trim();
+		const detail = combineStreams(pull.stderr, pull.stdout);
 		return { ok: false, step: 'git-pull', detail };
 	}
 
@@ -111,21 +122,14 @@ export function runPlanPreflight(opts: RunPlanPreflightOptions): PlanPreflightRe
 	// Step 5: typecheck
 	const typecheck = spawnFn('bun', ['run', 'typecheck']);
 	if ((typecheck.exitCode ?? 1) !== 0) {
-		// tsc writes its error verdict to stderr; stdout is banner/progress
-		// noise. stderr goes first so it survives truncatePreflightDetail's
-		// first-line rendering when both streams are non-empty.
-		const detail = [typecheck.stderr, typecheck.stdout].filter((s) => s.trim().length > 0).join('\n').trim();
+		const detail = combineStreams(typecheck.stderr, typecheck.stdout);
 		return { ok: false, step: 'typecheck', detail };
 	}
 
 	// Step 6: bun test
 	const tests = spawnFn('bun', ['test']);
 	if ((tests.exitCode ?? 1) !== 0) {
-		// bun test can write the failure summary to either stream depending on
-		// how the underlying test failed; concatenate rather than prefer one,
-		// stderr first so it survives truncatePreflightDetail's first-line
-		// rendering when both streams are non-empty.
-		const detail = [tests.stderr, tests.stdout].filter((s) => s.trim().length > 0).join('\n').trim();
+		const detail = combineStreams(tests.stderr, tests.stdout);
 		return { ok: false, step: 'bun-test', detail };
 	}
 
