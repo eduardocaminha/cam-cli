@@ -32,14 +32,16 @@
 //       still yields delivered on attempt 1
 //     - a null (unknown/fail-closed) geometry sample, for either the baseline or the post-send
 //       read, is treated as NOT delivered and retried, never as delivered (US-002, CAM-359 AC5)
-//     - content backstop (review round 1 fix, US-R1-001): a geometry pair that reads unchanged
-//       at a wrap-boundary residue is overridden to NOT delivered when the captured cursor row
-//       still shows a remnant of the payload, and left as delivered when it does not
-//     - content backstop reads through the dedicated visibleCaptureFn, never capturePaneFn
+//     - prompt-row discriminator (US-001, CAM-364, replacing the tail-matching backstop from
+//       US-R1-001): a geometry pair that reads unchanged is delivered when the captured cursor
+//       row starts with the prompt glyph (measured empty-composer shape), and NOT delivered
+//       when it does not (measured wrap-boundary collision shape: blank cursor row, prompt one
+//       row up)
+//     - discriminator reads through the dedicated visibleCaptureFn, never capturePaneFn
 //       (review round 2 fix, US-R2-001, CAM-359): a scrollback-shaped capturePaneFn that would
-//       falsely retain the payload tail does not flip a genuinely-delivered verdict
-//   composerLineRetainsPayloadTail (US-R1-001, CAM-359): remnant present/absent, minimum
-//     2-char match length, out-of-range cursorY, empty text, trailing-whitespace trim
+//       falsely flip the verdict does not affect a genuinely-settled read
+//   cursorRowStartsWithPrompt (US-001, CAM-364): prompt-at-start present/absent, both glyphs
+//     (> and ❯), leading whitespace, mid-row glyph (not a match), out-of-range cursorY
 
 import { describe, expect, test } from 'bun:test';
 import type { SpawnSyncReturns } from 'node:child_process';
@@ -48,7 +50,7 @@ import {
 	isOrchPaneIdle,
 	sendKeysWhenIdle,
 	sendKeysVerified,
-	composerLineRetainsPayloadTail,
+	cursorRowStartsWithPrompt,
 	SEND_KEYS_SETTLE_MS,
 	IDLE_WAIT_DEADLINE_MS,
 	type CapturePaneFn,
@@ -79,6 +81,14 @@ interface TmuxCall {
  * own `sampleGeometryFn`. Tests that DO care about the delivery verdict
  * (the `sendKeysVerified` describe block) inject an explicit
  * `sampleGeometryFn` that overrides this.
+ *
+ * The same reasoning applies to the prompt-row discriminator (US-001,
+ * CAM-364): a non-`display-message` call (the default `visibleCaptureFn`
+ * fallback, `defaultCapturePaneFn`) answers with 27 rows whose last row (the
+ * fixed `cursorY: 26` from the geometry line above) starts with the prompt
+ * glyph, so the ambiguous "unchanged geometry" branch still reads delivered
+ * by default without every unrelated test having to inject its own
+ * `visibleCaptureFn`.
  */
 function makeSpawnFn(): TmuxSpawnFn & { calls: TmuxCall[] } {
 	const calls: TmuxCall[] = [];
@@ -88,7 +98,7 @@ function makeSpawnFn(): TmuxSpawnFn & { calls: TmuxCall[] } {
 		const base: SpawnSyncReturns<Buffer> = {
 			pid: 1,
 			output: [null, Buffer.from(''), Buffer.from('')],
-			stdout: Buffer.from(isDisplayMessage ? '2;26;80;30' : ''),
+			stdout: Buffer.from(isDisplayMessage ? '2;26;80;30' : `${'\n'.repeat(26)}❯ `),
 			stderr: Buffer.from(''),
 			status: 0,
 			signal: null,
@@ -577,10 +587,13 @@ describe('sendKeysVerified', () => {
 		expect(events[0]?.kind).toBe('push-undelivered');
 	});
 
-	test('geometry pair reads unchanged at a wrap-boundary residue AND the composer row still shows the payload tail: content backstop overrides to NOT delivered (review round 1 fix, US-R1-001)', () => {
+	test('geometry pair reads unchanged AND the cursor row is blank (measured wrap-boundary collision shape): prompt-row discriminator overrides to NOT delivered (US-001, CAM-364)', () => {
 		const spawnFn = makeSpawnFn();
 		const events: Array<{ kind: string; detail: unknown }> = [];
-		const payload = 'y'.repeat(80); // an exact wrap-boundary-length payload
+		// Measured repro: a 77-char payload ending in a space lands the wrapped
+		// cursor back on the baseline column at the SAME (cursorX, cursorY) as
+		// a genuinely empty composer.
+		const payload = `${'w'.repeat(76)} `;
 
 		sendKeysVerified({
 			paneId: '%10',
@@ -591,12 +604,17 @@ describe('sendKeysVerified', () => {
 			// cursor_y is pinned in production, so it never discriminates, and
 			// this payload's length lands cursor_x back on the baseline column.
 			sampleGeometryFn: () => EMPTY_BASELINE,
-			// Content backstop reader (review round 2 fix, US-R2-001, CAM-359:
+			// Discriminator reader (review round 2 fix, US-R2-001, CAM-359:
 			// dedicated `visibleCaptureFn`, decoupled from `capturePaneFn`, which
-			// here only feeds the idle-gate via its own default). The row at the
-			// reported cursor y still holds the just-typed text: the composer
-			// never actually cleared.
-			visibleCaptureFn: () => paneContentWithRow(EMPTY_BASELINE.cursorY, payload),
+			// here only feeds the idle-gate via its own default). Measured
+			// shape: the row AT the reported cursor y is BLANK, with the prompt
+			// and the payload's remnant one row up -- the composer never
+			// actually cleared.
+			visibleCaptureFn: () =>
+				paneContentWithRows([
+					[EMPTY_BASELINE.cursorY - 1, `❯ ${payload}`],
+					[EMPTY_BASELINE.cursorY, ''],
+				]),
 			capturePaneFn: () => '> ', // idle-gate only: pane reads ready pre-send.
 			sleepFn: () => {},
 			idleTimeoutMs: 5,
@@ -610,16 +628,19 @@ describe('sendKeysVerified', () => {
 		expect(events[0]?.kind).toBe('push-undelivered');
 	});
 
-	test('geometry pair reads unchanged AND the composer row shows no remnant of the payload: delivered on attempt 1 (backstop does not misfire on a genuine delivery)', () => {
+	test('geometry pair reads unchanged AND the cursor row starts with the prompt glyph (measured empty-composer shape): delivered on attempt 1 (US-001, CAM-364)', () => {
 		const spawnFn = makeSpawnFn();
 		const events: Array<{ kind: string; detail: unknown }> = [];
 
 		sendKeysVerified({
 			paneId: '%11',
-			text: 'y'.repeat(80),
+			text: 'some payload text',
 			tmuxSpawnFn: spawnFn,
 			sampleGeometryFn: () => EMPTY_BASELINE,
-			visibleCaptureFn: () => paneContentWithRow(EMPTY_BASELINE.cursorY, '> '),
+			// Measured shape: the genuinely empty composer's cursor row starts
+			// with the rendered prompt glyph.
+			visibleCaptureFn: () =>
+				paneContentWithRow(EMPTY_BASELINE.cursorY, '❯ Try "how do I log an error?"'),
 			capturePaneFn: () => '> ', // idle-gate only.
 			sleepFn: () => {},
 			idleTimeoutMs: 5,
@@ -632,10 +653,10 @@ describe('sendKeysVerified', () => {
 		expect(events).toHaveLength(0);
 	});
 
-	test('content backstop reads through visibleCaptureFn, NOT capturePaneFn (review round 2 fix, US-R2-001, CAM-359): a scrollback-shaped capturePaneFn that would falsely retain the payload tail does not affect the verdict', () => {
+	test('discriminator reads through visibleCaptureFn, NOT capturePaneFn (review round 2 fix, US-R2-001, CAM-359; preserved across US-001/CAM-364): a scrollback-shaped capturePaneFn that would falsely show the prompt at the cursor row does not flip a genuinely-undelivered verdict', () => {
 		const spawnFn = makeSpawnFn();
 		const events: Array<{ kind: string; detail: unknown }> = [];
-		const payload = 'z'.repeat(80);
+		const payload = `${'z'.repeat(76)} `;
 
 		sendKeysVerified({
 			paneId: '%12',
@@ -643,14 +664,18 @@ describe('sendKeysVerified', () => {
 			tmuxSpawnFn: spawnFn,
 			sampleGeometryFn: () => EMPTY_BASELINE,
 			// capturePaneFn simulates a FULL-SCROLLBACK reader that happens to
-			// hold the payload tail at the reported cursorY row purely by
+			// show the prompt glyph at the reported cursorY row purely by
 			// scrollback-history coincidence (the exact CAM-359 round 2 defect:
 			// indexing scrollback content by a visible-screen row number). If the
-			// backstop still consulted this reader, it would misreport
-			// NOT-delivered. The dedicated visibleCaptureFn reports the true,
-			// genuinely-emptied composer row, so the verdict must be delivered.
-			capturePaneFn: () => paneContentWithRow(EMPTY_BASELINE.cursorY, payload),
-			visibleCaptureFn: () => paneContentWithRow(EMPTY_BASELINE.cursorY, '> '),
+			// discriminator still consulted this reader, it would misreport
+			// delivered. The dedicated visibleCaptureFn reports the true,
+			// still-undelivered blank row (measured collision shape).
+			capturePaneFn: () => paneContentWithRow(EMPTY_BASELINE.cursorY, '❯ unrelated scrollback line'),
+			visibleCaptureFn: () =>
+				paneContentWithRows([
+					[EMPTY_BASELINE.cursorY - 1, `❯ ${payload}`],
+					[EMPTY_BASELINE.cursorY, ''],
+				]),
 			sleepFn: () => {},
 			idleTimeoutMs: 5,
 			maxAttempts: 2,
@@ -658,14 +683,14 @@ describe('sendKeysVerified', () => {
 		});
 
 		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
-		expect(sendKeysCalls).toHaveLength(1);
-		expect(events).toHaveLength(0);
+		expect(sendKeysCalls).toHaveLength(2);
+		expect(events).toHaveLength(1);
+		expect(events[0]?.kind).toBe('push-undelivered');
 	});
 });
 
 // ---------------------------------------------------------------------------
-// composerLineRetainsPayloadTail (geometry backstop, review round 1 fix,
-// US-R1-001, CAM-359)
+// cursorRowStartsWithPrompt (prompt-row discriminator, US-001, CAM-364)
 // ---------------------------------------------------------------------------
 
 /** Build captured pane content whose only non-blank line is at `rowIndex`. */
@@ -675,39 +700,47 @@ function paneContentWithRow(rowIndex: number, rowContent: string): string {
 	return lines.join('\n');
 }
 
-describe('composerLineRetainsPayloadTail', () => {
-	test('returns true when the row at cursorY ends with the tail of the sent text', () => {
-		const content = paneContentWithRow(3, 'some text /cam-review');
-		expect(composerLineRetainsPayloadTail(content, 3, '/cam-review')).toBe(true);
-	});
+/** Build captured pane content with several rows set explicitly by index. */
+function paneContentWithRows(entries: Array<[number, string]>): string {
+	const maxRow = Math.max(...entries.map(([rowIndex]) => rowIndex));
+	const lines = Array.from({ length: maxRow + 1 }, () => '');
+	for (const [rowIndex, rowContent] of entries) lines[rowIndex] = rowContent;
+	return lines.join('\n');
+}
 
-	test('returns false when the row at cursorY shows the idle prompt (no remnant)', () => {
+describe('cursorRowStartsWithPrompt', () => {
+	test('returns true when the row at cursorY starts with the ASCII prompt glyph', () => {
 		const content = paneContentWithRow(3, '> ');
-		expect(composerLineRetainsPayloadTail(content, 3, '/cam-review')).toBe(false);
+		expect(cursorRowStartsWithPrompt(content, 3)).toBe(true);
 	});
 
-	test('a 2-char remnant (the minimum residue a wrap-boundary collision can leave) still matches', () => {
-		const content = paneContentWithRow(5, 'yy');
-		expect(composerLineRetainsPayloadTail(content, 5, 'y'.repeat(80))).toBe(true);
+	test('returns true when the row at cursorY starts with the production U+276F glyph', () => {
+		const content = paneContentWithRow(3, '❯ Try "how do I log an error?"');
+		expect(cursorRowStartsWithPrompt(content, 3)).toBe(true);
 	});
 
-	test('a 1-char remnant is below the minimum match length and does not trigger', () => {
-		const content = paneContentWithRow(5, 'y');
-		expect(composerLineRetainsPayloadTail(content, 5, 'y'.repeat(80))).toBe(false);
+	test('tolerates leading whitespace/padding before the glyph', () => {
+		const content = paneContentWithRow(3, '  ❯ ');
+		expect(cursorRowStartsWithPrompt(content, 3)).toBe(true);
 	});
 
-	test('out-of-range cursorY (noUncheckedIndexedAccess guard) fails open to false', () => {
-		const content = paneContentWithRow(2, '/cam-plan');
-		expect(composerLineRetainsPayloadTail(content, 99, '/cam-plan')).toBe(false);
+	test('returns false for a blank row (measured wrap-boundary collision shape)', () => {
+		const content = paneContentWithRow(3, '');
+		expect(cursorRowStartsWithPrompt(content, 3)).toBe(false);
 	});
 
-	test('empty text returns false', () => {
-		const content = paneContentWithRow(2, 'anything');
-		expect(composerLineRetainsPayloadTail(content, 2, '')).toBe(false);
+	test('returns false when the prompt glyph appears mid-row, not at the start', () => {
+		const content = paneContentWithRow(3, 'some payload text > more');
+		expect(cursorRowStartsWithPrompt(content, 3)).toBe(false);
 	});
 
-	test('trailing whitespace padding on the captured row is trimmed before matching', () => {
-		const content = paneContentWithRow(4, '/cam-plan     ');
-		expect(composerLineRetainsPayloadTail(content, 4, '/cam-plan')).toBe(true);
+	test('returns false for arbitrary non-prompt row content', () => {
+		const content = paneContentWithRow(3, 'word wrapped continuation row');
+		expect(cursorRowStartsWithPrompt(content, 3)).toBe(false);
+	});
+
+	test('out-of-range cursorY (noUncheckedIndexedAccess guard) fails closed to false', () => {
+		const content = paneContentWithRow(2, '> ');
+		expect(cursorRowStartsWithPrompt(content, 99)).toBe(false);
 	});
 });

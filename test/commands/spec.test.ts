@@ -97,7 +97,11 @@ function makeFakeTmuxSpawn(opts: {
 		}
 
 		if (subcommand === 'capture-pane') {
-			return { ...base, stdout: Buffer.from('> ') };
+			// Idle pane content so the idle-check (US-008) passes immediately, AND
+			// row 26 (the fixed cursorY below) starts with the prompt glyph, so
+			// the default visibleCaptureFn keeps the prompt-row discriminator
+			// (US-001, CAM-364) reading delivered too.
+			return { ...base, stdout: Buffer.from(`${'\n'.repeat(26)}❯ `) };
 		}
 
 		if (subcommand === 'display-message') {

@@ -50,7 +50,12 @@ interface TmuxCall {
  * Answering it with a fixed, always-identical geometry line means the
  * per-send baseline and post-send sample always match, so the verdict is
  * "delivered on attempt 1" — which is what these argv-shape contract tests
- * need (they assert on the send-keys call, not on the delivery oracle).
+ * need (they assert on the send-keys call, not on the delivery oracle). The
+ * ambiguous-geometry branch also consults the prompt-row discriminator
+ * (US-001, CAM-364) via its default `visibleCaptureFn`, which falls through
+ * to this same spawnFn for any non-`display-message` call: answering with
+ * content whose row 26 (the fixed cursorY above) starts with the prompt
+ * glyph keeps that discriminator, too, reading delivered on attempt 1.
  */
 function makeRecordingTmuxSpawn(): TmuxSpawnFn & { calls: TmuxCall[] } {
 	const calls: TmuxCall[] = [];
@@ -60,7 +65,7 @@ function makeRecordingTmuxSpawn(): TmuxSpawnFn & { calls: TmuxCall[] } {
 		const result: SpawnSyncReturns<Buffer> = {
 			pid: 1,
 			output: [null, Buffer.from(''), Buffer.from('')],
-			stdout: Buffer.from(isDisplayMessage ? '2;26;80;30' : ''),
+			stdout: Buffer.from(isDisplayMessage ? '2;26;80;30' : `${'\n'.repeat(26)}❯ `),
 			stderr: Buffer.from(''),
 			status: 0,
 			signal: null,

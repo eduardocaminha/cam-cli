@@ -6,6 +6,14 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.220.0] - 2026-07-20
+
+### Added
+
+- US-003 - Add real-tmux regression coverage for the trailing-space wrap boundary
+- US-002 - Correct the raw-echo fixture to the real Ink collision shape
+- US-001 - Replace the tail-matching backstop with a prompt-row discriminator
+
 ## [0.219.0] - 2026-07-20
 
 ### Added

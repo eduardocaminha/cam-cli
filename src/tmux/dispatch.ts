@@ -43,25 +43,44 @@
 // only positional signal, and a modulo is inherently periodic: a payload
 // whose length lands the wrapped cursor back on the exact baseline column
 // collides on x too, so the (x, y) pair alone is PROVABLY insufficient for
-// that residue class, not merely a rare edge case. `composerLineRetainsPayloadTail`
-// closes that residual gap: when the geometry pair reads unchanged (the
-// ambiguous branch), it inspects the captured pane row AT the reported
-// cursor_y for the trailing suffix of the just-sent text. That suffix is
-// always contiguous on the row the cursor rests on, regardless of how many
-// rows the payload wrapped across before it — unlike a whole-payload
-// substring match, so it does not reopen the forgery/anchor-collision
-// concern above. The full-pair geometry comparison is still never reduced
-// to a single axis; the content backstop only ever narrows an "unchanged"
-// geometry verdict to "not delivered", never the reverse.
+// that residue class, not merely a rare edge case.
+//
+// Prompt-row discriminator (US-001, CAM-364, replacing the tail-matching
+// backstop from US-R1-001): the original fix inspected the cursor row for a
+// trailing suffix of the just-sent text and asserted that suffix was always
+// contiguous on that row regardless of wrap. A real trailing-space collision
+// disproves that assertion: measured against
+// a real claude Ink TUI (80x30 pane, 2026-07-20), a 77-char payload ending in
+// a space reproduces the SAME cursor geometry (2, 26) as the genuinely empty
+// composer, but the row AT cursor_y is BLANK by construction in that
+// collision (row[26] === ''), with the prompt and the payload's own remnant
+// sitting one row UP (row[25] === '❯ ...payload text...'). The genuinely
+// empty composer instead reads row[26] === '❯ Try "how do I log an
+// error?"'. The suffix scan found nothing on either side of that blank row
+// and silently misread the collision as delivered. The discriminator now
+// asks a cheaper, sounder question: does the PROMPT GLYPH sit at the START
+// of the cursor row? A genuinely empty composer's cursor row starts with the
+// rendered prompt (`❯` in production, tolerant of ASCII `>` for fixtures);
+// the blank collision row does not. The full-pair geometry comparison is
+// still never reduced to a single axis; the discriminator only ever narrows
+// an "unchanged" geometry verdict to "not delivered" when the prompt is
+// absent from the start of the row, never the reverse.
+//
+// Residue NOT closed by this fix: a payload whose own text contains a
+// literal prompt glyph landing at the START of a wrap row would still forge
+// this discriminator into a false "delivered" read. That residue is
+// narrower than the trailing-space collision class this fix closes, but it
+// is not zero.
 //
 // Reader decoupling (review round 2 fix, US-R2-001, CAM-359): cursor_y above
 // indexes rows relative to the TOP OF THE VISIBLE PANE, which only holds for
 // a VISIBLE-SCREEN capture (`capture-pane -p -t <paneId>`). The production
 // sidecar wires `capturePaneFn` to a FULL-SCROLLBACK reader
 // (`capture-pane -p -S -`) for unrelated reasons (state reads elsewhere in
-// the supervisor), and that same reader used to be reused for the content
-// backstop too, which silently indexed an arbitrary history line instead of
-// the true cursor row. The backstop now samples pane content through a
+// the supervisor), and that same reader used to be reused for the row
+// discriminator too, which silently indexed an arbitrary history line
+// instead of the true cursor row. The discriminator now samples pane content
+// through a
 // dedicated `visibleCaptureFn`, always built fresh from `tmuxSpawnFn`
 // (`capture-pane -p -t <paneId>`, no `-S -`) unless a test overrides it.
 // `capturePaneFn` feeds ONLY the PRE-send idle-gate (`waitForIdlePane`) from
@@ -183,8 +202,9 @@ export interface SendKeysVerifiedOptions extends SendKeysWhenIdleOptions {
 	 */
 	sampleGeometryFn?: (paneId: string, tmuxSpawnFn: TmuxSpawnFn) => CursorGeometry | null;
 	/**
-	 * Injectable VISIBLE-SCREEN capture-pane reader for the content backstop
-	 * (`composerLineRetainsPayloadTail`, US-R1-001; decoupled from
+	 * Injectable VISIBLE-SCREEN capture-pane reader for the prompt-row
+	 * discriminator (`cursorRowStartsWithPrompt`, US-001, CAM-364, replacing
+	 * the tail-matching backstop from US-R1-001; decoupled from
 	 * `capturePaneFn` in the review round 2 fix, US-R2-001, CAM-359).
 	 *
 	 * `cursorY` indexes rows relative to the TOP OF THE VISIBLE PANE, so this
@@ -295,66 +315,68 @@ export function isOrchPaneIdle(content: string): boolean {
  * A `true` result here is NOT a final delivered verdict by itself: in
  * production `cursorY` is pinned constant (see module header), so this can
  * coincidentally read `true` for an undelivered wrap-boundary-length
- * payload too. Callers must run `composerLineRetainsPayloadTail` as a
- * backstop before trusting a `true` result as "delivered".
+ * payload too. Callers must run `cursorRowStartsWithPrompt` as a
+ * discriminator before trusting a `true` result as "delivered".
  */
 function geometryUnchanged(before: CursorGeometry, after: CursorGeometry): boolean {
 	return before.cursorX === after.cursorX && before.cursorY === after.cursorY;
 }
 
 /**
- * Shortest trailing-suffix length `composerLineRetainsPayloadTail` will
- * still trust as a real remnant (below this, a coincidental match is too
- * likely to be worth acting on).
+ * Start-anchored prompt pattern (US-001, CAM-364): matches when a prompt
+ * glyph sits at the START of a line, optionally preceded by whitespace/
+ * padding. Tolerant of BOTH U+003E (`>`, ASCII test fixtures) and U+276F
+ * (`❯`, the production glyph) so both match.
+ *
+ * Deliberately distinct from `IDLE_PROMPT` above, which is END-anchored and
+ * feeds a different question (`isOrchPaneIdle`: does ANY of the last 5
+ * lines of the pane look like an idle prompt?). Measured against a real
+ * claude Ink TUI (2026-07-20), the real empty-composer row reads
+ * '❯ Try "how do I log an error?"' -- it ends in '?"', so `IDLE_PROMPT`'s
+ * end-anchor provably does NOT match it. Reusing `IDLE_PROMPT` here would
+ * misclassify every genuinely-delivered send as "not delivered".
  */
-const MIN_PAYLOAD_TAIL_MATCH = 2;
+const PROMPT_ROW_START = /^\s*[>❯]/;
 
 /**
- * Backstop for `geometryUnchanged`'s residual ambiguity (review round 1 fix,
- * US-R1-001, CAM-359): breaks the tie using pane CONTENT, narrowly.
+ * Discriminator for `geometryUnchanged`'s residual ambiguity (US-001,
+ * CAM-364, replacing the tail-matching backstop from US-R1-001): breaks the
+ * tie by checking whether the prompt glyph sits at the START of the row the
+ * cursor rests on.
  *
- * The trailing suffix of the just-sent `text` (the characters immediately
- * before the cursor) is always CONTIGUOUS on the single row the cursor
- * rests on, regardless of how many rows the payload wrapped across to get
- * there. That is a fundamentally different check from a whole-payload
- * substring match (rejected in the module header: a wrapped payload never
- * appears whole on any one captured line, and short fragments can coincide
- * with a soft-wrap anchor by chance) -- a trailing suffix anchored (via
- * `endsWith`, not a bare substring search) at the reported cursor row is
- * not subject to that ambiguity.
+ * Measured shapes (real claude Ink TUI, 80x30 pane, 2026-07-20), both at
+ * IDENTICAL cursor geometry (2, 26):
+ *   - Genuinely empty composer: row[26] === '❯ Try "how do I log an
+ *     error?"' -- the prompt glyph sits at the START of the cursor row.
+ *   - Wrap-boundary collision (a payload ending in a space that lands the
+ *     wrapped cursor back on the baseline column): row[26] === '' (BLANK by
+ *     construction), with the prompt and the payload's own remnant one row
+ *     UP at row[25].
  *
- * The row's own remnant length is not known in advance (a residue-class
- * collision can leave as few as `MIN_PAYLOAD_TAIL_MATCH` real characters on
- * the row -- see the fixture header for why), so this tries suffix lengths
- * from `min(text.length, 8)` down to `MIN_PAYLOAD_TAIL_MATCH`, longest
- * first, and accepts the first that matches.
+ * So: prompt-at-start-of-cursor-row means delivered; anything else (a blank
+ * row, payload text, the prompt one row up) means NOT delivered, fall
+ * through to retry. This is a sounder signal than the old suffix-match
+ * backstop: no minimum-match-length heuristic, no coincidental-suffix risk
+ * -- it only ever asks "is this the idle prompt row", never "does this
+ * fragment look like the tail of what we sent".
  *
  * Only meaningful when `geometryUnchanged` already read `true`: a geometry
  * mismatch is already a sound "not delivered" verdict on its own.
  *
  * `noUncheckedIndexedAccess` guard: an out-of-range `cursorY` (a resize
  * mid-attempt, or a fake/test geometry with an implausible row) yields
- * `undefined` for `lines[cursorY]`, treated as "no remnant found" (fails
- * open toward the geometry-only verdict, never fabricates a false remnant).
+ * `undefined` for `lines[cursorY]`, treated as "not the prompt row" (fails
+ * closed toward "not delivered", never fabricates a false prompt match).
+ *
+ * NOT-closed residue (module header): a payload containing a literal prompt
+ * glyph landing at the START of a wrap row would still forge this
+ * discriminator into a false "delivered" read.
  */
-export function composerLineRetainsPayloadTail(
-	capturedContent: string,
-	cursorY: number,
-	text: string,
-): boolean {
-	if (text.length === 0) return false;
+export function cursorRowStartsWithPrompt(capturedContent: string, cursorY: number): boolean {
 	const lines = capturedContent.split('\n');
 	const line = lines[cursorY];
 	if (line === undefined) return false;
-	// tmux may pad a short line with trailing whitespace; trim before
-	// anchoring the suffix match at the true end of the rendered content.
-	const trimmed = line.replace(/\s+$/, '');
-	if (trimmed.length === 0) return false;
-	const maxLen = Math.min(text.length, 8);
-	for (let len = maxLen; len >= MIN_PAYLOAD_TAIL_MATCH; len--) {
-		if (trimmed.endsWith(text.slice(-len))) return true;
-	}
-	return false;
+	return PROMPT_ROW_START.test(line);
 }
 
 // ---------------------------------------------------------------------------
@@ -426,14 +448,15 @@ function waitForIdlePane(args: {
  *      again. The full `(cursorX, cursorY)` pair must match, never a single
  *      axis. A `null` sample (the geometry helper's fail-closed result, e.g.
  *      a non-zero tmux exit) is treated as NOT delivered on that attempt,
- *      never as delivered. If the pair reads unchanged, `composerLineRetainsPayloadTail`
- *      inspects the row at the reported cursor_y, read via `visibleCaptureFn`
- *      (review round 2 fix, US-R2-001, CAM-359: a DEDICATED visible-screen
- *      reader, never `capturePaneFn`, whose scrollback semantics are
- *      unspecified and would misindex the row), for a remnant of the sent
- *      text before trusting the "delivered" verdict (module header: cursor_y
- *      is pinned constant in production, so geometry alone cannot rule out a
- *      wrap-boundary-length collision).
+ *      never as delivered. If the pair reads unchanged, `cursorRowStartsWithPrompt`
+ *      (US-001, CAM-364) inspects the row at the reported cursor_y, read via
+ *      `visibleCaptureFn` (review round 2 fix, US-R2-001, CAM-359: a
+ *      DEDICATED visible-screen reader, never `capturePaneFn`, whose
+ *      scrollback semantics are unspecified and would misindex the row), for
+ *      the prompt glyph sitting at the START of that row before trusting the
+ *      "delivered" verdict (module header: cursor_y is pinned constant in
+ *      production, so geometry alone cannot rule out a wrap-boundary-length
+ *      collision).
  *   4. Retry: if not delivered, sleep `computeBackoffMs(attempt, ...)`
  *      (src/supervisor/loop.ts:606) and resend, up to `maxAttempts` (default
  *      3) total attempts.
@@ -468,11 +491,11 @@ export function sendKeysVerified(opts: SendKeysVerifiedOptions): void {
 		? capturePaneFn
 		: (id: string) => defaultCapturePaneFn(id, tmuxSpawnFn);
 
-	// Dedicated visible-screen reader for the content backstop (review round 2
-	// fix, US-R2-001, CAM-359): deliberately NOT derived from `capture` above,
-	// since `capturePaneFn` may be a full-scrollback reader in production and
-	// `composerLineRetainsPayloadTail` indexes rows relative to the top of the
-	// VISIBLE pane.
+	// Dedicated visible-screen reader for the prompt-row discriminator (review
+	// round 2 fix, US-R2-001, CAM-359): deliberately NOT derived from `capture`
+	// above, since `capturePaneFn` may be a full-scrollback reader in
+	// production and `cursorRowStartsWithPrompt` (US-001, CAM-364) indexes
+	// rows relative to the top of the VISIBLE pane.
 	const visibleCapture = visibleCaptureFn
 		? visibleCaptureFn
 		: (id: string) => defaultCapturePaneFn(id, tmuxSpawnFn);
@@ -506,10 +529,10 @@ export function sendKeysVerified(opts: SendKeysVerifiedOptions): void {
 		if (baseline !== null && after !== null && geometryUnchanged(baseline, after)) {
 			// Ambiguous branch (review round 1 fix, US-R1-001): the geometry pair
 			// alone cannot rule out a wrap-boundary-length collision (module
-			// header). Break the tie with the content backstop before trusting
-			// this as delivered.
+			// header). Break the tie with the prompt-row discriminator (US-001,
+			// CAM-364) before trusting this as delivered.
 			const afterContent = visibleCapture(paneId);
-			if (!composerLineRetainsPayloadTail(afterContent, after.cursorY, text)) {
+			if (cursorRowStartsWithPrompt(afterContent, after.cursorY)) {
 				delivered = true;
 				break;
 			}
