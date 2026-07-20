@@ -69,7 +69,7 @@ export interface SendKeysWhenIdleOptions {
 	 * This ensures the caller never blocks indefinitely even if the pane is
 	 * stuck in a busy state (e.g. a long-running tool call).
 	 *
-	 * Default: 5_000 (5 seconds).
+	 * Default: `IDLE_WAIT_DEADLINE_MS` (see below).
 	 */
 	idleTimeoutMs?: number;
 	/**
@@ -130,6 +130,22 @@ export interface SendKeysVerifiedOptions extends SendKeysWhenIdleOptions {
  * capture gives the pane one refresh cycle to catch up.
  */
 export const SEND_KEYS_SETTLE_MS = 50;
+
+/**
+ * Default idle-wait deadline (ms) for `waitForIdlePane` before the
+ * send-anyway fallback fires (US-002, CAM-358).
+ *
+ * The previous inline default (5_000) made the fallback the COMMON case
+ * rather than the exception: an orchestrator running a routine long tool
+ * call (a full test run, a `git` operation, a slow lint pass) is routinely
+ * still mid-turn 5 seconds later, so the idle-gate timed out and sent blind
+ * on nearly every push (5 'did not go idle within 5000 ms; sending anyway'
+ * warnings logged in a single session, see journal DRAIN-CAM357-2026-07-19).
+ * Raised well above that so a routine long tool call is actually waited
+ * out; the send-anyway fallback (warn + send, never block indefinitely)
+ * still fires past this deadline unchanged.
+ */
+export const IDLE_WAIT_DEADLINE_MS = 30_000;
 
 /**
  * Glyphs that indicate the claude TUI is mid-turn (busy):
@@ -247,9 +263,10 @@ function waitForIdlePane(args: {
  * Flow:
  *   1. Idle-gate: poll `capture-pane` at `pollIntervalMs` intervals (default
  *      200 ms) until `isOrchPaneIdle` returns true or `idleTimeoutMs` is
- *      exhausted (default 5 000 ms). **Timeout fallback**: if the budget
- *      expires before the pane goes idle, a warning is printed to stderr and
- *      send-keys fires anyway. The caller is never blocked indefinitely.
+ *      exhausted (default `IDLE_WAIT_DEADLINE_MS`, 30 000 ms). **Timeout
+ *      fallback**: if the budget expires before the pane goes idle, a
+ *      warning is printed to stderr and send-keys fires anyway. The caller
+ *      is never blocked indefinitely.
  *   2. Send: text and 'Enter' are passed as discrete argv elements in a
  *      single `send-keys` invocation, WITHOUT `-l`. With `-l` every arg is
  *      literal, so 'Enter' would be typed as the text "Enter" and never
@@ -278,7 +295,7 @@ export function sendKeysVerified(opts: SendKeysVerifiedOptions): void {
 		tmuxSpawnFn,
 		capturePaneFn,
 		pollIntervalMs = 200,
-		idleTimeoutMs = 5_000,
+		idleTimeoutMs = IDLE_WAIT_DEADLINE_MS,
 		sleepFn = (ms: number) => {
 			Bun.sleepSync(ms);
 		},
