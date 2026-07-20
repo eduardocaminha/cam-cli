@@ -1,0 +1,11 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Replace the ephemeral review-artifact citation in the self-nullifying-oracle bullet with a durable pointer" },
+  "branchName": "cam/issue-376",
+  "timestamp": "2026-07-20T00:00:00Z",
+  "modifiedFiles": ["scripts/cam/patterns.md"],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 (CAM-376) edited exactly patterns.md:901 (the last line, the self-nullifying-oracle subspecies bullet). Before: '...contrary to their own \"RED-ON-MAIN (swept)\" annotation; see scripts/cam/review-artifact.txt sections 4-5).' After: '...contrary to their own \"RED-ON-MAIN (swept)\" annotation; see CAM-372 round 1 review findings).' The bullet's inline measured-facts clause (the parenthetical starting 'measured: two criteria in US-001's own acceptanceCriteria...') was retained verbatim; only the trailing evidence citation changed from the gitignored scripts/cam/review-artifact.txt path (which does not exist on a clean checkout, per patterns.md:748) to the durable CAM-372 round 1 review pointer. Lines 1-898 and line 899 are byte-identical to main (pinning criteria). review-artifact mentions in patterns.md dropped from 4 (main) to 3 (the legitimate ones at :224, :742, :748 untouched).",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
