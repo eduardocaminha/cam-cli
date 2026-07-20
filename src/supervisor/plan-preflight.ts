@@ -19,7 +19,7 @@
 
 /**
  * Injectable spawn seam. Accepts a binary name and its argument array;
- * returns the combined stdout and exit code.
+ * returns the separate stdout, stderr, and exit code of the call.
  *
  * The production implementation wraps node:child_process spawnSync with cwd
  * closed over. Unit tests inject a fake that records calls and returns
@@ -28,7 +28,10 @@
  * spawnSync does NOT throw on non-zero exit; always check exitCode directly
  * (US-R1-001 pattern: `(result.exitCode ?? 1) !== 0`).
  */
-export type PlanPreflightSpawnFn = (bin: string, args: string[]) => { stdout: string; exitCode: number };
+export type PlanPreflightSpawnFn = (
+	bin: string,
+	args: string[],
+) => { stdout: string; stderr: string; exitCode: number };
 
 /** Options for runPlanPreflight. */
 export interface RunPlanPreflightOptions {
@@ -55,8 +58,11 @@ export interface RunPlanPreflightOptions {
  * - `{ ok: true }` — all checks passed; safe to spawn the planner.
  * - `{ ok: false; step: string; detail: string }` — the first failing required
  *   step. `step` is one of: 'git-checkout-main', 'git-pull', 'clean-tree',
- *   'typecheck', 'bun-test'. `detail` is the raw stdout of the failing call
- *   (trimmed) for human-readable diagnosis.
+ *   'typecheck', 'bun-test'. For 'clean-tree', `detail` is the raw `git status
+ *   --porcelain` stdout (trimmed). For the other four steps, `detail` is
+ *   stderr and stdout concatenated (stderr first, see the inline comment at
+ *   each return site for why) so the diagnostic verdict is present alongside
+ *   any incidental output.
  */
 export type PlanPreflightResult = { ok: true } | { ok: false; step: string; detail: string };
 
@@ -74,13 +80,19 @@ export function runPlanPreflight(opts: RunPlanPreflightOptions): PlanPreflightRe
 	// Step 1: git checkout main
 	const checkout = spawnFn('git', ['checkout', 'main']);
 	if ((checkout.exitCode ?? 1) !== 0) {
-		return { ok: false, step: 'git-checkout-main', detail: checkout.stdout.trim() };
+		// git's verdict lands on stderr; stdout is incidental (often empty).
+		// stderr goes first so it survives truncatePreflightDetail's
+		// first-line rendering when both streams are non-empty.
+		const detail = [checkout.stderr, checkout.stdout].filter((s) => s.trim().length > 0).join('\n').trim();
+		return { ok: false, step: 'git-checkout-main', detail };
 	}
 
 	// Step 2: git pull origin main
 	const pull = spawnFn('git', ['pull', 'origin', 'main']);
 	if ((pull.exitCode ?? 1) !== 0) {
-		return { ok: false, step: 'git-pull', detail: pull.stdout.trim() };
+		// Same stderr-first reasoning as the checkout step above.
+		const detail = [pull.stderr, pull.stdout].filter((s) => s.trim().length > 0).join('\n').trim();
+		return { ok: false, step: 'git-pull', detail };
 	}
 
 	// Step 3: prune merged cam/* local branches (best-effort)
@@ -99,13 +111,22 @@ export function runPlanPreflight(opts: RunPlanPreflightOptions): PlanPreflightRe
 	// Step 5: typecheck
 	const typecheck = spawnFn('bun', ['run', 'typecheck']);
 	if ((typecheck.exitCode ?? 1) !== 0) {
-		return { ok: false, step: 'typecheck', detail: typecheck.stdout.trim() };
+		// tsc writes its error verdict to stderr; stdout is banner/progress
+		// noise. stderr goes first so it survives truncatePreflightDetail's
+		// first-line rendering when both streams are non-empty.
+		const detail = [typecheck.stderr, typecheck.stdout].filter((s) => s.trim().length > 0).join('\n').trim();
+		return { ok: false, step: 'typecheck', detail };
 	}
 
 	// Step 6: bun test
 	const tests = spawnFn('bun', ['test']);
 	if ((tests.exitCode ?? 1) !== 0) {
-		return { ok: false, step: 'bun-test', detail: tests.stdout.trim() };
+		// bun test can write the failure summary to either stream depending on
+		// how the underlying test failed; concatenate rather than prefer one,
+		// stderr first so it survives truncatePreflightDetail's first-line
+		// rendering when both streams are non-empty.
+		const detail = [tests.stderr, tests.stdout].filter((s) => s.trim().length > 0).join('\n').trim();
+		return { ok: false, step: 'bun-test', detail };
 	}
 
 	return { ok: true };

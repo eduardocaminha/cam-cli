@@ -24,6 +24,10 @@
 //  19.  Argv shape: bun run typecheck.
 //  20.  Argv shape: bun test.
 //  21.  Argv shape: gh pr list --head <branch> --state merged --json number --jq .[0].number.
+//  22.  US-001 (CAM-363): git-checkout-main/git-pull/typecheck/bun-test detail
+//       carries stderr-only content when stdout is empty.
+//  23.  US-001 (CAM-363): typecheck/bun-test detail carries content from BOTH
+//       streams when both stdout and stderr are non-empty.
 
 import { describe, expect, test } from 'bun:test';
 import {
@@ -38,12 +42,12 @@ import {
 type SpawnCall = { bin: string; args: string[] };
 
 /** Creates a fake spawnFn that records calls and returns responses in sequence. */
-function makeFakeSpawn(responses: Array<{ exitCode: number; stdout: string }>) {
+function makeFakeSpawn(responses: Array<{ exitCode: number; stdout: string; stderr: string }>) {
 	const calls: SpawnCall[] = [];
 	let idx = 0;
 	const fn: PlanPreflightSpawnFn = (bin, args) => {
 		calls.push({ bin, args });
-		const resp = responses[idx++] ?? { exitCode: 0, stdout: '' };
+		const resp = responses[idx++] ?? { exitCode: 0, stdout: '', stderr: '' };
 		return resp;
 	};
 	return { fn, calls };
@@ -53,13 +57,13 @@ function makeFakeSpawn(responses: Array<{ exitCode: number; stdout: string }>) {
  * All-pass response sequence for the five required steps, with ghAvailable=false
  * (no prune calls injected).
  */
-function allPassResponses(): Array<{ exitCode: number; stdout: string }> {
+function allPassResponses(): Array<{ exitCode: number; stdout: string; stderr: string }> {
 	return [
-		{ exitCode: 0, stdout: '' }, // git checkout main
-		{ exitCode: 0, stdout: '' }, // git pull origin main
-		{ exitCode: 0, stdout: '' }, // git status --porcelain (empty = clean)
-		{ exitCode: 0, stdout: '' }, // bun run typecheck
-		{ exitCode: 0, stdout: '' }, // bun test
+		{ exitCode: 0, stdout: '', stderr: '' }, // git checkout main
+		{ exitCode: 0, stdout: '', stderr: '' }, // git pull origin main
+		{ exitCode: 0, stdout: '', stderr: '' }, // git status --porcelain (empty = clean)
+		{ exitCode: 0, stdout: '', stderr: '' }, // bun run typecheck
+		{ exitCode: 0, stdout: '', stderr: '' }, // bun test
 	];
 }
 
@@ -96,7 +100,7 @@ describe('runPlanPreflight — happy path', () => {
 describe('runPlanPreflight — git-checkout-main failure', () => {
 	test('returns { ok: false, step: "git-checkout-main" } on non-zero exit', () => {
 		const { fn } = makeFakeSpawn([
-			{ exitCode: 1, stdout: 'error: pathspec main did not match any file(s)' },
+			{ exitCode: 1, stdout: 'error: pathspec main did not match any file(s)', stderr: '' },
 		]);
 		const result = runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
 		expect(result.ok).toBe(false);
@@ -107,17 +111,28 @@ describe('runPlanPreflight — git-checkout-main failure', () => {
 	});
 
 	test('does not call git pull when checkout fails (first-fail-only)', () => {
-		const { fn, calls } = makeFakeSpawn([{ exitCode: 1, stdout: '' }]);
+		const { fn, calls } = makeFakeSpawn([{ exitCode: 1, stdout: '', stderr: '' }]);
 		runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
 		expect(calls.length).toBe(1);
+	});
+
+	test('detail carries stderr-only content when stdout is empty (US-001, CAM-363)', () => {
+		const { fn } = makeFakeSpawn([
+			{ exitCode: 1, stdout: '', stderr: "error: pathspec 'main' did not match any file(s) known to git" },
+		]);
+		const result = runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.detail).toContain('pathspec');
+		}
 	});
 });
 
 describe('runPlanPreflight — git-pull failure', () => {
 	test('returns { ok: false, step: "git-pull" } on non-zero exit', () => {
 		const { fn } = makeFakeSpawn([
-			{ exitCode: 0, stdout: '' }, // checkout ok
-			{ exitCode: 1, stdout: 'fatal: unable to access remote' }, // pull fails
+			{ exitCode: 0, stdout: '', stderr: '' }, // checkout ok
+			{ exitCode: 1, stdout: 'fatal: unable to access remote', stderr: '' }, // pull fails
 		]);
 		const result = runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
 		expect(result.ok).toBe(false);
@@ -128,20 +143,32 @@ describe('runPlanPreflight — git-pull failure', () => {
 
 	test('does not run later steps when pull fails', () => {
 		const { fn, calls } = makeFakeSpawn([
-			{ exitCode: 0, stdout: '' },
-			{ exitCode: 1, stdout: '' },
+			{ exitCode: 0, stdout: '', stderr: '' },
+			{ exitCode: 1, stdout: '', stderr: '' },
 		]);
 		runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
 		expect(calls.length).toBe(2);
+	});
+
+	test('detail carries stderr-only content when stdout is empty (US-001, CAM-363)', () => {
+		const { fn } = makeFakeSpawn([
+			{ exitCode: 0, stdout: '', stderr: '' }, // checkout ok
+			{ exitCode: 1, stdout: '', stderr: 'fatal: unable to access remote: Could not resolve host' },
+		]);
+		const result = runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.detail).toContain('Could not resolve host');
+		}
 	});
 });
 
 describe('runPlanPreflight — clean-tree failure', () => {
 	test('returns { ok: false, step: "clean-tree" } when porcelain output is non-empty', () => {
 		const { fn } = makeFakeSpawn([
-			{ exitCode: 0, stdout: '' }, // checkout
-			{ exitCode: 0, stdout: '' }, // pull
-			{ exitCode: 0, stdout: ' M src/foo.ts\n?? src/bar.ts\n' }, // dirty tree
+			{ exitCode: 0, stdout: '', stderr: '' }, // checkout
+			{ exitCode: 0, stdout: '', stderr: '' }, // pull
+			{ exitCode: 0, stdout: ' M src/foo.ts\n?? src/bar.ts\n', stderr: '' }, // dirty tree
 		]);
 		const result = runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
 		expect(result.ok).toBe(false);
@@ -153,9 +180,9 @@ describe('runPlanPreflight — clean-tree failure', () => {
 
 	test('does not run typecheck or bun test when tree is dirty', () => {
 		const { fn, calls } = makeFakeSpawn([
-			{ exitCode: 0, stdout: '' },
-			{ exitCode: 0, stdout: '' },
-			{ exitCode: 0, stdout: ' M src/foo.ts\n' },
+			{ exitCode: 0, stdout: '', stderr: '' },
+			{ exitCode: 0, stdout: '', stderr: '' },
+			{ exitCode: 0, stdout: ' M src/foo.ts\n', stderr: '' },
 		]);
 		runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
 		// Only: checkout, pull, status (3 total); no typecheck or bun test
@@ -167,10 +194,10 @@ describe('runPlanPreflight — clean-tree failure', () => {
 describe('runPlanPreflight — typecheck failure', () => {
 	test('returns { ok: false, step: "typecheck" } on non-zero exit', () => {
 		const { fn } = makeFakeSpawn([
-			{ exitCode: 0, stdout: '' }, // checkout
-			{ exitCode: 0, stdout: '' }, // pull
-			{ exitCode: 0, stdout: '' }, // status clean
-			{ exitCode: 1, stdout: 'error TS2345: Argument type is not assignable' },
+			{ exitCode: 0, stdout: '', stderr: '' }, // checkout
+			{ exitCode: 0, stdout: '', stderr: '' }, // pull
+			{ exitCode: 0, stdout: '', stderr: '' }, // status clean
+			{ exitCode: 1, stdout: 'error TS2345: Argument type is not assignable', stderr: '' },
 		]);
 		const result = runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
 		expect(result.ok).toBe(false);
@@ -181,31 +208,100 @@ describe('runPlanPreflight — typecheck failure', () => {
 
 	test('does not run bun test when typecheck fails', () => {
 		const { fn, calls } = makeFakeSpawn([
-			{ exitCode: 0, stdout: '' },
-			{ exitCode: 0, stdout: '' },
-			{ exitCode: 0, stdout: '' },
-			{ exitCode: 1, stdout: '' },
+			{ exitCode: 0, stdout: '', stderr: '' },
+			{ exitCode: 0, stdout: '', stderr: '' },
+			{ exitCode: 0, stdout: '', stderr: '' },
+			{ exitCode: 1, stdout: '', stderr: '' },
 		]);
 		runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
 		// checkout, pull, status, typecheck (4); no bun test
 		expect(calls.length).toBe(4);
+	});
+
+	test('detail carries stderr-only content when stdout is empty (US-001, CAM-363)', () => {
+		const { fn } = makeFakeSpawn([
+			{ exitCode: 0, stdout: '', stderr: '' }, // checkout
+			{ exitCode: 0, stdout: '', stderr: '' }, // pull
+			{ exitCode: 0, stdout: '', stderr: '' }, // status clean
+			{ exitCode: 1, stdout: '', stderr: 'error TS2345: Argument type is not assignable' },
+		]);
+		const result = runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.detail).toContain('TS2345');
+		}
+	});
+
+	test('detail carries content from BOTH streams when both are non-empty (US-001, CAM-363)', () => {
+		const { fn } = makeFakeSpawn([
+			{ exitCode: 0, stdout: '', stderr: '' }, // checkout
+			{ exitCode: 0, stdout: '', stderr: '' }, // pull
+			{ exitCode: 0, stdout: '', stderr: '' }, // status clean
+			{
+				exitCode: 1,
+				stdout: 'tsc version 5.x banner chatter',
+				stderr: 'error TS2345: Argument type is not assignable',
+			},
+		]);
+		const result = runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.detail).toContain('TS2345');
+			expect(result.detail).toContain('banner chatter');
+		}
 	});
 });
 
 describe('runPlanPreflight — bun-test failure', () => {
 	test('returns { ok: false, step: "bun-test" } on non-zero exit', () => {
 		const { fn } = makeFakeSpawn([
-			{ exitCode: 0, stdout: '' }, // checkout
-			{ exitCode: 0, stdout: '' }, // pull
-			{ exitCode: 0, stdout: '' }, // status clean
-			{ exitCode: 0, stdout: '' }, // typecheck
-			{ exitCode: 1, stdout: '1 fail / 0 pass' }, // bun test fails
+			{ exitCode: 0, stdout: '', stderr: '' }, // checkout
+			{ exitCode: 0, stdout: '', stderr: '' }, // pull
+			{ exitCode: 0, stdout: '', stderr: '' }, // status clean
+			{ exitCode: 0, stdout: '', stderr: '' }, // typecheck
+			{ exitCode: 1, stdout: '1 fail / 0 pass', stderr: '' }, // bun test fails
 		]);
 		const result = runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
 		expect(result.ok).toBe(false);
 		if (!result.ok) {
 			expect(result.step).toBe('bun-test');
 			expect(result.detail).toContain('fail');
+		}
+	});
+
+	test('detail carries stderr-only content when stdout is empty (US-001, CAM-363)', () => {
+		const { fn } = makeFakeSpawn([
+			{ exitCode: 0, stdout: '', stderr: '' }, // checkout
+			{ exitCode: 0, stdout: '', stderr: '' }, // pull
+			{ exitCode: 0, stdout: '', stderr: '' }, // status clean
+			{ exitCode: 0, stdout: '', stderr: '' }, // typecheck
+			{ exitCode: 1, stdout: '', stderr: '2 fail / 5 pass\n' }, // bun-style summary on stderr
+		]);
+		const result = runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.step).toBe('bun-test');
+			expect(result.detail).toContain('2 fail / 5 pass');
+		}
+	});
+
+	test('detail carries content from BOTH streams when both are non-empty (US-001, CAM-363)', () => {
+		const { fn } = makeFakeSpawn([
+			{ exitCode: 0, stdout: '', stderr: '' }, // checkout
+			{ exitCode: 0, stdout: '', stderr: '' }, // pull
+			{ exitCode: 0, stdout: '', stderr: '' }, // status clean
+			{ exitCode: 0, stdout: '', stderr: '' }, // typecheck
+			{
+				exitCode: 1,
+				stdout: 'running 40 tests across 12 files',
+				stderr: '1 fail / 39 pass',
+			},
+		]);
+		const result = runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.detail).toContain('1 fail / 39 pass');
+			expect(result.detail).toContain('running 40 tests');
 		}
 	});
 });
@@ -224,15 +320,15 @@ describe('runPlanPreflight — branch prune step', () => {
 
 	test('lists cam/* branches via git for-each-ref when gh is available', () => {
 		const { fn, calls } = makeFakeSpawn([
-			{ exitCode: 0, stdout: '' }, // checkout
-			{ exitCode: 0, stdout: '' }, // pull
+			{ exitCode: 0, stdout: '', stderr: '' }, // checkout
+			{ exitCode: 0, stdout: '', stderr: '' }, // pull
 			// prune step: for-each-ref returns one branch (not merged)
-			{ exitCode: 0, stdout: 'cam/CAM-001-feature\n' },
-			{ exitCode: 0, stdout: '' }, // gh pr list -> empty (not merged)
+			{ exitCode: 0, stdout: 'cam/CAM-001-feature\n', stderr: '' },
+			{ exitCode: 0, stdout: '', stderr: '' }, // gh pr list -> empty (not merged)
 			// required steps
-			{ exitCode: 0, stdout: '' }, // status
-			{ exitCode: 0, stdout: '' }, // typecheck
-			{ exitCode: 0, stdout: '' }, // bun test
+			{ exitCode: 0, stdout: '', stderr: '' }, // status
+			{ exitCode: 0, stdout: '', stderr: '' }, // typecheck
+			{ exitCode: 0, stdout: '', stderr: '' }, // bun test
 		]);
 		const result = runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: true });
 		expect(result).toEqual({ ok: true });
@@ -246,13 +342,13 @@ describe('runPlanPreflight — branch prune step', () => {
 
 	test('passes --head <branch> to gh pr list', () => {
 		const { fn, calls } = makeFakeSpawn([
-			{ exitCode: 0, stdout: '' },
-			{ exitCode: 0, stdout: '' },
-			{ exitCode: 0, stdout: 'cam/CAM-001-feature\n' },
-			{ exitCode: 0, stdout: '' }, // gh pr list -> not merged
-			{ exitCode: 0, stdout: '' },
-			{ exitCode: 0, stdout: '' },
-			{ exitCode: 0, stdout: '' },
+			{ exitCode: 0, stdout: '', stderr: '' },
+			{ exitCode: 0, stdout: '', stderr: '' },
+			{ exitCode: 0, stdout: 'cam/CAM-001-feature\n', stderr: '' },
+			{ exitCode: 0, stdout: '', stderr: '' }, // gh pr list -> not merged
+			{ exitCode: 0, stdout: '', stderr: '' },
+			{ exitCode: 0, stdout: '', stderr: '' },
+			{ exitCode: 0, stdout: '', stderr: '' },
 		]);
 		runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: true });
 
@@ -265,15 +361,15 @@ describe('runPlanPreflight — branch prune step', () => {
 
 	test('calls git branch -D when gh pr list returns a merged PR number', () => {
 		const { fn, calls } = makeFakeSpawn([
-			{ exitCode: 0, stdout: '' }, // checkout
-			{ exitCode: 0, stdout: '' }, // pull
-			{ exitCode: 0, stdout: 'cam/CAM-001-feature\n' }, // for-each-ref
-			{ exitCode: 0, stdout: '42\n' }, // gh pr list -> PR 42 merged
-			{ exitCode: 0, stdout: '' }, // git branch -D
+			{ exitCode: 0, stdout: '', stderr: '' }, // checkout
+			{ exitCode: 0, stdout: '', stderr: '' }, // pull
+			{ exitCode: 0, stdout: 'cam/CAM-001-feature\n', stderr: '' }, // for-each-ref
+			{ exitCode: 0, stdout: '42\n', stderr: '' }, // gh pr list -> PR 42 merged
+			{ exitCode: 0, stdout: '', stderr: '' }, // git branch -D
 			// required steps
-			{ exitCode: 0, stdout: '' },
-			{ exitCode: 0, stdout: '' },
-			{ exitCode: 0, stdout: '' },
+			{ exitCode: 0, stdout: '', stderr: '' },
+			{ exitCode: 0, stdout: '', stderr: '' },
+			{ exitCode: 0, stdout: '', stderr: '' },
 		]);
 		runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: true });
 
@@ -286,13 +382,13 @@ describe('runPlanPreflight — branch prune step', () => {
 
 	test('does NOT delete branch when gh pr list returns empty (not merged)', () => {
 		const { fn, calls } = makeFakeSpawn([
-			{ exitCode: 0, stdout: '' },
-			{ exitCode: 0, stdout: '' },
-			{ exitCode: 0, stdout: 'cam/CAM-001-feature\n' },
-			{ exitCode: 0, stdout: '' }, // empty output -> no merged PR
-			{ exitCode: 0, stdout: '' },
-			{ exitCode: 0, stdout: '' },
-			{ exitCode: 0, stdout: '' },
+			{ exitCode: 0, stdout: '', stderr: '' },
+			{ exitCode: 0, stdout: '', stderr: '' },
+			{ exitCode: 0, stdout: 'cam/CAM-001-feature\n', stderr: '' },
+			{ exitCode: 0, stdout: '', stderr: '' }, // empty output -> no merged PR
+			{ exitCode: 0, stdout: '', stderr: '' },
+			{ exitCode: 0, stdout: '', stderr: '' },
+			{ exitCode: 0, stdout: '', stderr: '' },
 		]);
 		runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: true });
 
@@ -304,13 +400,13 @@ describe('runPlanPreflight — branch prune step', () => {
 
 	test('prune failure (for-each-ref fails) does NOT halt pre-flight', () => {
 		const { fn } = makeFakeSpawn([
-			{ exitCode: 0, stdout: '' }, // checkout
-			{ exitCode: 0, stdout: '' }, // pull
-			{ exitCode: 1, stdout: '' }, // for-each-ref fails -> prune skipped silently
+			{ exitCode: 0, stdout: '', stderr: '' }, // checkout
+			{ exitCode: 0, stdout: '', stderr: '' }, // pull
+			{ exitCode: 1, stdout: '', stderr: '' }, // for-each-ref fails -> prune skipped silently
 			// required steps
-			{ exitCode: 0, stdout: '' },
-			{ exitCode: 0, stdout: '' },
-			{ exitCode: 0, stdout: '' },
+			{ exitCode: 0, stdout: '', stderr: '' },
+			{ exitCode: 0, stdout: '', stderr: '' },
+			{ exitCode: 0, stdout: '', stderr: '' },
 		]);
 		const result = runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: true });
 		expect(result).toEqual({ ok: true });
@@ -318,12 +414,12 @@ describe('runPlanPreflight — branch prune step', () => {
 
 	test('prune with no cam/* branches (empty for-each-ref output) still passes', () => {
 		const { fn, calls } = makeFakeSpawn([
-			{ exitCode: 0, stdout: '' },
-			{ exitCode: 0, stdout: '' },
-			{ exitCode: 0, stdout: '' }, // for-each-ref returns empty
-			{ exitCode: 0, stdout: '' },
-			{ exitCode: 0, stdout: '' },
-			{ exitCode: 0, stdout: '' },
+			{ exitCode: 0, stdout: '', stderr: '' },
+			{ exitCode: 0, stdout: '', stderr: '' },
+			{ exitCode: 0, stdout: '', stderr: '' }, // for-each-ref returns empty
+			{ exitCode: 0, stdout: '', stderr: '' },
+			{ exitCode: 0, stdout: '', stderr: '' },
+			{ exitCode: 0, stdout: '', stderr: '' },
 		]);
 		const result = runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: true });
 		expect(result).toEqual({ ok: true });
@@ -339,15 +435,15 @@ describe('runPlanPreflight — branch prune step', () => {
 
 describe('runPlanPreflight — argv shapes', () => {
 	test('git checkout main: bin=git args=["checkout","main"]', () => {
-		const { fn, calls } = makeFakeSpawn([{ exitCode: 1, stdout: '' }]);
+		const { fn, calls } = makeFakeSpawn([{ exitCode: 1, stdout: '', stderr: '' }]);
 		runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
 		expect(calls[0]).toEqual({ bin: 'git', args: ['checkout', 'main'] });
 	});
 
 	test('git pull: bin=git args=["pull","origin","main"]', () => {
 		const { fn, calls } = makeFakeSpawn([
-			{ exitCode: 0, stdout: '' },
-			{ exitCode: 1, stdout: '' },
+			{ exitCode: 0, stdout: '', stderr: '' },
+			{ exitCode: 1, stdout: '', stderr: '' },
 		]);
 		runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: false });
 		expect(calls[1]).toEqual({ bin: 'git', args: ['pull', 'origin', 'main'] });
@@ -376,13 +472,13 @@ describe('runPlanPreflight — argv shapes', () => {
 
 	test('gh pr list: uses --json number --jq .[0].number', () => {
 		const { fn, calls } = makeFakeSpawn([
-			{ exitCode: 0, stdout: '' },
-			{ exitCode: 0, stdout: '' },
-			{ exitCode: 0, stdout: 'cam/CAM-005-branch\n' },
-			{ exitCode: 0, stdout: '' },
-			{ exitCode: 0, stdout: '' },
-			{ exitCode: 0, stdout: '' },
-			{ exitCode: 0, stdout: '' },
+			{ exitCode: 0, stdout: '', stderr: '' },
+			{ exitCode: 0, stdout: '', stderr: '' },
+			{ exitCode: 0, stdout: 'cam/CAM-005-branch\n', stderr: '' },
+			{ exitCode: 0, stdout: '', stderr: '' },
+			{ exitCode: 0, stdout: '', stderr: '' },
+			{ exitCode: 0, stdout: '', stderr: '' },
+			{ exitCode: 0, stdout: '', stderr: '' },
 		]);
 		runPlanPreflight({ cwd: SAMPLE_CWD, spawnFn: fn, ghAvailable: true });
 		const ghCall = calls.find((c) => c.bin === 'gh');
