@@ -1,25 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Wait a settle window before the delivery-verification capture"
+    "id": "US-002",
+    "title": "Raise the idle-wait deadline to a realistic named constant"
   },
   "branchName": "cam/issue-358",
-  "timestamp": "2026-07-20T00:00:00Z",
+  "timestamp": "2026-07-20T02:35:00Z",
   "createdFiles": [],
   "modifiedFiles": [
     "src/tmux/dispatch.ts",
-    "test/dispatch.test.ts",
+    "scripts/cam/patterns.md",
     "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "sendKeysVerified (src/tmux/dispatch.ts) now sleeps a new exported constant SEND_KEYS_SETTLE_MS (50ms) via the injected sleepFn between every send-keys spawn and its isComposerEmptied verify capture, on every attempt (not just the first). This fixes attempt-1 misreporting an undelivered payload as delivered when capture-pane still shows the pre-send screen. isComposerEmptied itself, the send-keys argv shape (text + 'Enter' in one call, no -l), and the idle-gate poll logic are all untouched. A new test in the 'sendKeysVerified' describe block proves the settle window is honored via a staged capturePaneFn (returns PRE-send screen until the injected sleepFn is called with exactly SEND_KEYS_SETTLE_MS, then POST-send screen). One pre-existing test ('sends keys immediately when pane is idle on first check') was updated: it previously asserted sleepCount===0 when the idle-gate needed no poll, but now the unconditional settle sleep always fires once per attempt, so it now asserts sleeps toEqual([SEND_KEYS_SETTLE_MS]). Any future work touching sendKeysVerified's retry/backoff timing should account for this settle sleep firing on every attempt (not just failed ones) when reasoning about sleepFn call counts in tests.",
+  "nextStoryContext": "sendKeysVerified's idle-gate default (src/tmux/dispatch.ts) is now the exported IDLE_WAIT_DEADLINE_MS constant (30_000 ms), replacing the inline idleTimeoutMs = 5_000 default that made the send-anyway fallback the common case for a routine long tool call (5 send-anyway warnings logged in one session per the CAM-358 filing). The idleTimeoutMs option is unchanged in shape (still caller-overridable; every existing test still injects a tiny idleTimeoutMs like 5 or 1_000 and needed no edits). isComposerEmptied, the send-keys argv shape, and SEND_KEYS_SETTLE_MS (US-001) are all untouched. The stale 'Default idleTimeoutMs is 5 000 ms' claim in scripts/cam/patterns.md (line 38, US-008 bullet) was corrected to point at the new named constant. file-size-budget.json's src/tmux/dispatch.ts ceiling was raised 348->365 (actual content.split('\\n').length, one more than wc -l) with a dated _ref entry naming US-002/CAM-358. No test file changes were needed for this story: all 21 dispatch.test.ts cases and the full 5146-test suite passed unchanged.",
   "officialDocsValidated": [
     {
-      "lib": "tmux (capture-pane / send-keys)",
-      "url": "https://man7.org/linux/man-pages/man1/tmux.1.html",
-      "fetchedAt": "2026-07-20T00:00:00Z",
-      "status": "aligned",
-      "summary": "tmux's man page documents capture-pane/send-keys semantics but does not specify a render-refresh SLA; corroborating community reports (e.g. tmux-python/libtmux#188) confirm capture-pane immediately after send-keys can observe stale (pre-send) content, matching this story's premise. No official API changed; the fix is a client-side settle sleep, which is the documented workaround pattern."
+      "lib": "none",
+      "status": "no_external_lib_touched"
     }
   ]
 }
