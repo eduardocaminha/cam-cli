@@ -1,0 +1,13 @@
+{
+  "id": "CAM-390",
+  "title": "The round-2 SUGGESTION about the fixture-shape guard was addressed in the data …",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-20T23:08:15.817Z",
+  "updatedAt": "2026-07-20T23:08:15.817Z",
+  "description": "The round-2 SUGGESTION about the fixture-shape guard was addressed in the data but not in the guard: the matrix now does carry double-quoted wrapper rows and backslash-escape rows, yet the US-002 fixture-shape oracle still only counts quotedOk/grepOk/bare/wrapped, so those two new dimensions are unprotected against a future story narrowing them away. Consider extending the shape guard to require at least one double-quoted wrapper row and one backslash-escape row.\n\nSource: cam/issue-388\nReview round: 3\n\nsuggestion-fingerprint: 53c10fa492e2",
+  "derivedFrom": [
+    "CAM-388"
+  ]
+}
