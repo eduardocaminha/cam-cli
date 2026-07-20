@@ -59,6 +59,7 @@ import { writeSidecarStalledMarker, removeSidecarStalledMarker, SIDECAR_STALLED_
 import { makeReadPlanVerdict, PLAN_VERDICT_REPORT_FILENAME } from '../supervisor/plan-verdict-report.ts';
 import { makeReadScopeProposal, SCOPE_PROPOSAL_FILENAME } from '../supervisor/scope-proposal.ts';
 import { runPlanPreflight, type PlanPreflightSpawnFn } from '../supervisor/plan-preflight.ts';
+import { makePreflightSpawnFn } from '../supervisor/plan-preflight-spawn.ts';
 import { readMergeMode, readMetaLoop, readPlanApproval, readResendConfig, readWorkerIsolation, type WorkerIsolation } from '../config/models.ts';
 import { makeProductionEnsureContainerFn } from '../supervisor/ensure-container.ts';
 import { preflightWorkerContainer, type PreflightResult } from '../supervisor/preflight-container.ts';
@@ -2636,14 +2637,7 @@ function makeProductionPlanPhaseFn(
 		};
 
 		// Build the preflight spawnFn (PlanPreflightSpawnFn shape: no stdio opt).
-		const preflightSpawnFn: PlanPreflightSpawnFn = (bin, args) => {
-			const r = Bun.spawnSync([bin, ...args], { cwd, stdout: 'pipe', stderr: 'pipe' });
-			return {
-				stdout: r.stdout instanceof Buffer ? new TextDecoder().decode(r.stdout) : '',
-				stderr: r.stderr instanceof Buffer ? new TextDecoder().decode(r.stderr) : '',
-				exitCode: r.exitCode,
-			};
-		};
+		const preflightSpawnFn: PlanPreflightSpawnFn = makePreflightSpawnFn(cwd);
 
 		// Build isPaneAlive + ensureWorkerPane (AC1/AC2, US-001). Extracted to
 		// makePlanPaneHelpers to keep this closure under biome's 80-line limit.
