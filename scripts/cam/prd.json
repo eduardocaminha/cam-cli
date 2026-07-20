@@ -64,7 +64,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: test/integration/dispatch-geometry.test.ts (254 lines; AC8 drop test at ~156-190, AC8 submit at ~192+; stale backstop comment at line 170). Depends on US-001 (discriminator) and US-002 (word-wrap fixture mode). This file is the ONLY test driving a real tmux server against the geometry oracle: its unit-test siblings structurally cannot catch a defect in the real interaction with tmux cursor tracking, so this residue class belongs HERE, not in test/dispatch.test.ts. Every sendKeysWhenIdle / sendKeysVerified call site emits the single event kind 'push-undelivered' with detail { paneId, retriesExhausted }; the four thin-proxy sites (issue.ts, review.ts, spec.ts, orch-recycle-watch.ts) and the sidecar sites share that contract, so do not add a new kind. Poll async waits with waitForCondition, never a fixed setTimeout. Real tmux may be slow: keep the existing 20_000 ms per-test timeout."
     }
