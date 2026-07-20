@@ -718,6 +718,13 @@ describe('sendKeysVerified', () => {
 		const recordedSleeps: number[] = [];
 		let geometrySamplerCalls = 0;
 
+		// Derived (not frozen) from the pollIntervalMs override passed below, per
+		// the derive-don't-freeze rule (US-002, CAM-377): the idle-gate's own
+		// poll sleeps must equal this value exactly, so the same constant feeds
+		// both the override and the AC2 assertion below instead of two
+		// independently-typed literals that could drift apart.
+		const POLL_INTERVAL_MS = 1_000;
+
 		try {
 			sendKeysVerified({
 				paneId: '%7',
@@ -732,7 +739,7 @@ describe('sendKeysVerified', () => {
 					recordedSleeps.push(ms);
 					fakeNow += ms;
 				},
-				pollIntervalMs: 1_000,
+				pollIntervalMs: POLL_INTERVAL_MS,
 				idleTimeoutMs: 5_000,
 				maxAttempts: 3,
 				logEvent: (kind, detail) => events.push({ kind, detail }),
@@ -746,12 +753,20 @@ describe('sendKeysVerified', () => {
 		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
 		expect(sendKeysCalls).toHaveLength(1);
 
-		// AC2: zero backoff sleeps (only the idle-gate's own poll-interval
-		// sleeps are recorded, never a computeBackoffMs-derived value: every
-		// idle-gate poll sleep here is capped at pollIntervalMs/remaining, both
-		// far below a plausible backoff value), and the geometry sampler is
-		// never consulted for a delivery verdict.
-		expect(recordedSleeps.every((ms) => ms <= 1_000)).toBe(true);
+		// AC2: zero backoff sleeps. The old upper-bound assertion (every sleep
+		// no greater than the pollIntervalMs override) was non-falsifiable: a
+		// leaked computeBackoffMs value (default base 300, well under that
+		// bound) would have slipped under it undetected. With
+		// idleTimeoutMs=5_000 and pollIntervalMs=POLL_INTERVAL_MS (1_000), the
+		// idle-gate's own poll loop produces exactly 5 sleeps, each EXACTLY
+		// POLL_INTERVAL_MS (5_000 / 1_000, evenly divisible: every `remaining`
+		// value the loop observes is itself a multiple of POLL_INTERVAL_MS, so
+		// `Math.min(pollIntervalMs, remaining)` is always POLL_INTERVAL_MS,
+		// never a smaller remainder). Strict equality means any sleep of a
+		// different shape (a leaked backoff value, a truncated final poll, or
+		// any other magnitude) makes this assertion fail. The geometry sampler
+		// is never consulted for a delivery verdict on this path.
+		expect(recordedSleeps.every((ms) => ms === POLL_INTERVAL_MS)).toBe(true);
 		expect(geometrySamplerCalls).toBe(0);
 
 		// AC3: exactly one push-undelivered event, reason pane-not-idle,
