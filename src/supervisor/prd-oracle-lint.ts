@@ -10,7 +10,16 @@
 //     absence/presence assertion, regardless of flag order, spacing, or bundling.
 //   - frozen-comparand: catches an oracle comparing against a literal integer
 //     read off main with no live re-derivation token, enforcing the
-//     derive-don't-freeze rule (patterns.md:903), US-001 CAM-381.
+//     derive-don't-freeze rule (patterns.md:903), US-001 CAM-381. Quote-aware
+//     (US-001 CAM-388): a match sitting inside a quoted span (test-input
+//     data, a grep search pattern) is ignored, except inside a shell
+//     interpreter's `-c '<payload>'` wrapper (sh/bash/zsh/dash), whose
+//     payload is unwrapped and still scanned; a non-interpreter command's
+//     bare `-c` flag (`grep -c`, `npx tool -c`) is never treated as a
+//     wrapper (US-R1-002 CAM-388). An unterminated quote is treated as
+//     literal text rather than swallowing the rest of the command, and the
+//     POSIX `'\''` single-quote escape idiom is recognized so it never fools
+//     the span-close search (US-R1-001 CAM-388).
 //   - rotating-artifact-target: catches an oracle asserting against a
 //     per-story ROTATING harness state file (scripts/cam/handoff.json or the
 //     reviewer's gitignored capture-pane artifact), enforcing the
@@ -162,12 +171,242 @@ const INTEGER_COMPARAND_RE = /(?:-eq|-ge|-le|==)\s*\d+\b/;
 const LIVE_DERIVATION_RE = /git\s+show\s+main:|git\s+diff\s+main\b|git\s+grep\b[^\n]*\bmain\b/;
 
 /**
+ * A shell-interpreter word (sh/bash/zsh/dash) immediately followed by a
+ * `-c` flag, at the very end of the text preceding a quote (optionally
+ * preceded by a path separator so `/bin/bash -c '...'` still matches).
+ * Scoping the wrapper check to an actual interpreter word (rather than any
+ * command's bare `-c` flag) is what CAM-388's US-R1-002 reviewer finding
+ * required: a non-interpreter `-c` payload such as `grep -c 'test $X -eq
+ * 41' file.ts` or `npx tool -c '...'` carries the same trailing-`-c'`
+ * shape but is NOT a shell wrapper -- its quoted payload is inert data
+ * (a grep search pattern), not a command to unwrap and re-scan.
+ */
+const SHELL_INTERPRETER_DASH_C_RE = /(?:^|[\s/])(?:sh|bash|zsh|dash)\s+-c\s*$/;
+
+/**
+ * True when the single/double quote starting at `quoteStart` in `command` is
+ * a `-c '<payload>'` wrapper argument (e.g. `sh -c '...'`, `bash -c "..."`,
+ * `/bin/bash -c '...'`): the text immediately preceding the quote, ignoring
+ * trailing whitespace, ends in a recognized shell interpreter word followed
+ * by the `-c` flag (see SHELL_INTERPRETER_DASH_C_RE above). Such payloads
+ * must be UNWRAPPED (recursed into), never deleted, so a genuine live shell
+ * comparison inside the wrapper keeps being detected (CAM-388). A `-c` flag
+ * belonging to a non-interpreter command (`grep -c`, `npx tool -c`) is NOT a
+ * wrapper and falls through to the ordinary quoted-span deletion path.
+ */
+function isDashCWrapper(command: string, quoteStart: number): boolean {
+	return SHELL_INTERPRETER_DASH_C_RE.test(command.slice(0, quoteStart));
+}
+
+/**
+ * The POSIX single-quote escape idiom: an apparent closing `'` immediately
+ * followed by `\''` does NOT terminate the quoted span -- it's the standard
+ * shell trick for embedding a literal `'` inside a single-quoted string
+ * (`'foo'\''bar'` decodes to `foo'bar`: close, escaped literal quote,
+ * reopen). Recognizing this continuation lets a single logical `-c` payload
+ * spanning multiple escaped segments (e.g. `sh -c 'echo '\''hi'\''; test
+ * $(wc -l < f) -eq 3'`) resolve to ONE quoted span ending at the true final
+ * quote, instead of prematurely closing at the first embedded segment and
+ * losing the rest of the payload to a non-wrapper (space-replaced) span
+ * (CAM-388 US-R1-001).
+ */
+const SINGLE_QUOTE_ESCAPE_CONTINUATION = "\\''";
+
+/**
+ * Finds the index of the quote character that truly closes a span of
+ * `quoteChar` opened just before `searchFrom`, skipping past any
+ * `'\''` escape-continuation (see SINGLE_QUOTE_ESCAPE_CONTINUATION above)
+ * immediately following a candidate closing quote, and, for a DOUBLE-quoted
+ * span, past a backslash-escaped `\"` that does not terminate the span
+ * either (US-R2-001, CAM-388). POSIX Shell Command Language 2.2.3: inside
+ * double quotes a backslash retains its special (escaping) meaning only
+ * when followed by `$`, backtick, `"`, `\`, or newline -- so `\"` inside
+ * `"..."` is a literal embedded quote, not a close, e.g. `bash -c "echo
+ * \"hi\"; test $(wc -l < f) -eq 3"` must resolve the wrapper's payload all
+ * the way to the FINAL `"`, not the first `\"`. Whether a candidate closing
+ * `"` is actually escaped depends on the parity of the run of backslashes
+ * immediately preceding it: an odd run escapes it (skip past), an even run
+ * is that many literal backslash pairs (the quote genuinely closes), e.g.
+ * `\\"`  (escaped backslash + real close) must still close the span.
+ * Single quotes have no backslash-escape meaning at all (only the `'\''`
+ * continuation idiom applies to them), so this backslash-parity check is
+ * scoped to `quoteChar === '"'` only. Returns -1 when no true closing quote
+ * exists anywhere in `command` (an unterminated quote).
+ */
+function findClosingQuoteIndex(command: string, quoteChar: string, searchFrom: number): number {
+	let from = searchFrom;
+	while (true) {
+		const idx = command.indexOf(quoteChar, from);
+		if (idx === -1) return -1;
+
+		if (quoteChar === "'") {
+			const continuationStart = idx + 1;
+			const continuationEnd = continuationStart + SINGLE_QUOTE_ESCAPE_CONTINUATION.length;
+			if (command.slice(continuationStart, continuationEnd) === SINGLE_QUOTE_ESCAPE_CONTINUATION) {
+				from = continuationEnd;
+				continue;
+			}
+			return idx;
+		}
+
+		let backslashRun = 0;
+		let j = idx - 1;
+		while (j >= 0 && command[j] === '\\') {
+			backslashRun++;
+			j--;
+		}
+		if (backslashRun % 2 === 1) {
+			from = idx + 1;
+			continue;
+		}
+		return idx;
+	}
+}
+
+/**
+ * Finds every top-level `$(...)` command-substitution span inside `content`
+ * (balanced-paren tracking, so a nested `$(...)` inside the substitution
+ * doesn't truncate it early) and returns them concatenated with spaces,
+ * discarding everything else (replaced with a space, never bare deletion,
+ * same tokens-don't-fuse rule as stripQuotedSpans). Used by stripQuotedSpans
+ * to preserve a command substitution's content when it sits inside a
+ * DOUBLE-quoted span that is not a `-c` wrapper (US-R2-002, CAM-388): per
+ * POSIX Shell Command Language 2.2.3, `"$(cmd)"` still executes `cmd` and
+ * substitutes its output -- double quotes suppress word-splitting of the
+ * result, not the substitution itself -- so a `$(...)` inside double quotes
+ * is live shell syntax, never inert quoted data. Single quotes have no such
+ * exception (`'$(cmd)'` is 100% literal text, no substitution happens), so
+ * this helper is only ever applied to double-quoted span content.
+ */
+/**
+ * Given `content[dollarIndex] === '$'` and `content[dollarIndex + 1] === '('`,
+ * returns the index immediately past the `)` that balances the opening `(`
+ * (balanced-paren depth counting, so a nested `$(...)` doesn't close early).
+ * Falls off the end of `content` (returns `content.length`) for an
+ * unterminated substitution. Split out of extractCommandSubstitutionSpans to
+ * keep that function's cognitive complexity within the project's lint ceiling.
+ */
+function findCommandSubstitutionEnd(content: string, dollarIndex: number): number {
+	let depth = 1;
+	let j = dollarIndex + 2;
+	while (j < content.length && depth > 0) {
+		if (content[j] === '(') depth++;
+		else if (content[j] === ')') depth--;
+		j++;
+	}
+	return j;
+}
+
+function extractCommandSubstitutionSpans(content: string): string {
+	let out = '';
+	let i = 0;
+
+	while (i < content.length) {
+		if (content[i] === '$' && content[i + 1] === '(') {
+			const end = findCommandSubstitutionEnd(content, i);
+			out += ` ${content.slice(i, end)} `;
+			i = end;
+		} else {
+			out += ' ';
+			i++;
+		}
+	}
+
+	return out;
+}
+
+/**
+ * Strips single/double-quoted spans out of `command` before frozen-comparand
+ * scanning, so an operator+integer byte pattern that is merely quoted TEST
+ * DATA (a JS array literal element, a grep search pattern) is never mistaken
+ * for a live shell comparison (CAM-388, the self-referential oracle trap: a
+ * behavioral oracle about this very rule must embed comparison-shaped
+ * strings as data, which the unstripped flat regex could not tell apart from
+ * a real comparison). A shell interpreter's `-c '<payload>'` wrapper
+ * argument is the one exception: its payload is UNWRAPPED (recursively
+ * stripped and spliced back unquoted) rather than deleted, so `sh -c 'test
+ * $(wc -l < f) -eq 3'` keeps flagging -- the quotes there wrap a real shell
+ * command, not inert data. A non-interpreter command's bare `-c` flag
+ * (`grep -c 'test $X -eq 41' file.ts`, `npx tool -c '...'`) is NOT a wrapper
+ * (US-R1-002 CAM-388): its quoted payload is ordinary inert data and is
+ * deleted like any other quoted span, never unwrapped and rescanned.
+ * Every other quoted span is replaced with a single space (never simple
+ * deletion) so tokens on either side of the span don't fuse into a new one
+ * -- EXCEPT a non-wrapper DOUBLE-quoted span, whose `$(...)` command
+ * substitution(s), if any, are preserved verbatim via
+ * extractCommandSubstitutionSpans above rather than blanked (US-R2-002,
+ * CAM-388): `test $(wc -l < "$(git show main:f.ts)") -eq 42` is not a `-c`
+ * wrapper, but the `"$(git show main:f.ts)"` span still executes a live
+ * `git show main:` re-derivation regardless of the surrounding double
+ * quotes, so blanking it whole (the pre-US-R2-002 behavior) silently
+ * destroyed the derivation token LIVE_DERIVATION_RE depends on, turning a
+ * legitimately re-derived comparand into a false-positive frozen one. A
+ * SINGLE-quoted span never gets this treatment -- `'$(...)'` performs no
+ * substitution at all in POSIX shell, so its content is genuinely inert and
+ * stays fully blanked.
+ *
+ * Two edge cases fixed by US-R1-001 (CAM-388, reviewer finding at
+ * prd-oracle-lint.ts:200): a quote with no matching close is treated as
+ * ordinary literal text (never consumed to end-of-string -- an unmatched
+ * apostrophe is not proof the remainder of the command is quoted data), and
+ * the `'\''` POSIX single-quote escape idiom is recognized via
+ * findClosingQuoteIndex above so it doesn't fool the span-close search. A
+ * third edge case fixed by US-R2-001 (CAM-388, reviewer finding at
+ * prd-oracle-lint.ts:222): a backslash-escaped `\"` inside a DOUBLE-quoted
+ * span (`bash -c "echo \"hi\"; test $(wc -l < f) -eq 3"`) does not close the
+ * span either -- findClosingQuoteIndex now skips past it via a
+ * backslash-run parity check, so a genuine live comparison later in a
+ * double-quoted `-c` wrapper is no longer silently excused.
+ */
+function stripQuotedSpans(command: string): string {
+	let out = '';
+	let i = 0;
+
+	while (i < command.length) {
+		const ch = command[i];
+		if (ch === "'" || ch === '"') {
+			const closeIdx = findClosingQuoteIndex(command, ch, i + 1);
+			if (closeIdx === -1) {
+				out += ch;
+				i++;
+				continue;
+			}
+			const content = command.slice(i + 1, closeIdx);
+			if (isDashCWrapper(command, i)) {
+				out += ` ${stripQuotedSpans(content)} `;
+			} else if (ch === '"') {
+				out += extractCommandSubstitutionSpans(content);
+			} else {
+				out += ' ';
+			}
+			i = closeIdx + 1;
+		} else {
+			out += ch;
+			i++;
+		}
+	}
+
+	return out;
+}
+
+/**
  * True when `command` compares against a literal integer via -eq/-ge/-le/==
  * with no live `main`-re-derivation token present anywhere in the command.
+ * Both regexes are run against the SAME quote-stripped text (see
+ * stripQuotedSpans). A derivation token that lives inside a `-c` wrapper
+ * payload, or inside a `$(...)` command substitution nested in a DOUBLE-quoted
+ * span, still excuses the comparand, because stripQuotedSpans preserves both
+ * (US-R2-002, CAM-388: a non-`-c` double-quoted `$(...)` still executes, so
+ * blanking it whole would silently discard a live derivation token). A
+ * derivation token that is merely quoted inert TEXT (single-quoted, or
+ * double-quoted with no `$(...)`) does not survive stripping and does not
+ * excuse the comparand -- exactly like a comparand that is merely quoted test
+ * data never trips the rule in the first place.
  */
 function hasFrozenIntegerComparand(command: string): boolean {
-	if (!INTEGER_COMPARAND_RE.test(command)) return false;
-	return !LIVE_DERIVATION_RE.test(command);
+	const stripped = stripQuotedSpans(command);
+	if (!INTEGER_COMPARAND_RE.test(stripped)) return false;
+	return !LIVE_DERIVATION_RE.test(stripped);
 }
 
 /**
