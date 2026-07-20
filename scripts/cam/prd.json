@@ -43,7 +43,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "File: scripts/cam/patterns.md, APPEND AT EOF only. Depends on US-001 because both stories touch the same file and US-001's in-place edit of the final line must land first; appending after it keeps line numbering 1-901 stable. APPEND-AT-EOF IS MANDATORY: bullets cross-reference each other by absolute line number (patterns.md:899 alone cites :566, :570, :572, :772, :774, :776), so a mid-file insert silently rots every one of them. GOTCHA: patterns.md has NO SECTIONS, it is a FLAT blank-line-separated list of top-level `- ` bullets; a new bullet is findable ONLY by its own keywords, so choose keywords deliberately (the discovery path is pure keyword grep). Grounding for this story: no bullet anywhere in patterns.md currently states the rule (idiom grep returns 0 matches on main); line 899 covers proving an oracle goes red and says nothing about how the comparand is obtained, so the two ideas are adjacent but disjoint. The concrete instance that raised this (CAM-372's criterion 2 hardcoding 897) is moot, that PRD merged and will never run again, so ONLY the generalizable rule ships. Keep the bullet a single physical line. Never prefix a living rule with `[resolved YYYY-MM]`. NO REBUILD."
     },
