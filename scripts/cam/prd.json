@@ -20,7 +20,7 @@
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [src/supervisor/prd-oracle-lint.ts:176]: isDashCWrapper matches ANY '-c' flag token preceding a quote (/(?:^|\\s)-c\\s*$/), not an interpreter's -c as its own docstring states ('e.g. sh -c '...', bash -c \"...\"', :169-170). A non-interpreter -c payload is therefore unwrapped and scanned as live shell: \"grep -c 'test $X -eq 41' file.ts\" and \"npx tool -c 'threshold -eq 5'\" both FLAG on the branch even though their only operator+integer byte pattern is inert quoted data. Not a regression (main flags them too), but an uncorrected instance of exactly the false-positive class this story exists to close, and 'grep -c' is a first-class idiom in this very module (GREP_COUNT_GUARD_RE at :346 matches 'grep -c ... -ge N'). Fix: scope the unwrap to a preceding shell-interpreter word (sh/bash/zsh/dash), and add a 'grep -c' ok row to the fixture matrix."
     },
     {
