@@ -45,7 +45,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: test/fixtures/dispatch-geometry/raw-echo.ts (PROMPT at line 53, computeRows at 71-82, render at 85-92, mode argv at 48). The fixture has now modeled the WRONG collision class TWICE: first eager downward wrap (corrected by US-R1-001), now char-wrap leaving 2 real characters on the cursor row, which is exactly why MIN_PAYLOAD_TAIL_MATCH = 2 appeared to work. Validate the new word-wrap mode against the measured table in the CAM-364 issue body, not against intuition about wrapping. Wrap is LAZY in the real TUI and single-token payloads NEVER collide (len=76 -> x=78, len=77 -> x=3, len=153 -> x=3); the collision is reachable ONLY via a trailing space at the boundary. PROMPT length stays 2 (U+276F + U+00A0) so existing char-wrap arithmetic and the cursorX===2 baseline are preserved. Keep the word-wrap behaviour additive (a mode), do not replace char-wrap mode."
     },
