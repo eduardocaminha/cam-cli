@@ -1,47 +1,43 @@
 {
   "id": "CAM-358",
   "title": "Sidecar send-keys push occasionally delivers the [cam] line without submitting (missing Enter)",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-20T02:14:04.579Z",
-  "updatedAt": "2026-07-20T05:00:55.836Z",
+  "updatedAt": "2026-07-20T05:01:24.439Z",
   "description": "OBSERVED (operator, recurring across multiple sessions/contexts): sidecar push lines ([cam] ...) sometimes land in the orchestrator pane's input as TEXT but are not submitted -- the message is produced but the terminating Enter is missing, so the line sits in the input awaiting a manual keystroke. Confirmed live this session: the '[cam] merge-watch timeout: PR #293 not yet merged after 240 polls' line was stalled un-submitted in the operator's input.\n\nROOT-CAUSE CLASS (known): tmux send-keys must deliver text + Enter in a SINGLE call. Two prior failure modes are documented: (a) Enter sent as a SEPARATE send-keys call becomes a newline in this TUI build instead of submitting (see memory tmux-drive-orchestrator-atomic-enter); (b) `-l` (literal) applied over the control token turns the string 'Enter' into literal text rather than a keypress, so nothing submits (CAM-55, sendkeys-literal-enter-gotcha, dispatch.ts:191 regression that broke all thin-proxies). That the symptom reappears across sessions suggests a remaining non-atomic send-keys path in the sidecar's push (likely multi-line message splitting or a retry path).\n\nSCOPE: audit every send-keys call-site in the sidecar's push path (src/supervisor/*, dispatch) and guarantee atomic text+Enter delivery in one call -- never a standalone Enter, never `-l` over the control token. Pay special attention to multi-line [cam] messages and any retry/re-send path.\n\nVERIFICATION: add an integration guard in the style of test/integration/tmux-introspect.test.ts that asserts REAL submission against a live tmux pane (the message actually reaches the shell/agent), not merely the argv shape -- argv-shape tests lie about tmux semantics (proven CAM-55).\n\nSource: operator report 2026-07-19 during the CAM-357 ship (PR #293) recovery.",
   "spec": {
-    "scope": "Fix the sidecar's orchestrator-pane push so a [cam] line is never silently lost. Grounding overturned the filed hypothesis: all send-keys call sites in src/ are already atomic (text+Enter in one call, no -l), and the IDLE_PROMPT predicate matches the real orchestrator pane. The actual defect is that the post-send verification in sendKeysVerified (src/tmux/dispatch.ts:289-316) is inert, so blind sends into a busy composer are never retried and never reported: (1) capture(paneId) is called immediately after send-keys with zero settle, while capture-pane lags one tmux refresh cycle, so isComposerEmptied sees the not-yet-rendered text and falsely reports delivered on attempt 1; (2) isComposerEmptied (dispatch.ts:181-185) matches line.includes(text) per-line, so any payload that soft-wraps in the composer can never match and is falsely reported delivered. Evidence: the supervisor log holds 5 'did not go idle within 5000 ms; sending anyway' warnings and cam-worker-events.jsonl holds 0 push-undelivered events. Additionally the 5000 ms idle deadline is far too short for an orchestrator legitimately busy running tools, making the blind send-anyway path the common case rather than the exception. Fix scope: add a settle delay before the verification capture, make the composer match wrap-tolerant, raise the idle deadline substantially while keeping send-anyway as a last resort, and cover the path with a real-tmux integration test rather than another argv-shape fake. Out of scope: switching to a transcript/echo-based oracle (couples the sidecar to unversioned TUI transcript rendering), and the send-keys sites outside the shared helper (Dashboard.tsx, retry/tmux.ts, behavioral-gate.ts, setup.ts).",
+    "scope": "NARROWED RE-SPEC (supersedes the prior CAM-358 spec; see the parked branch cam/issue-358 for the abandoned attempt). Fix ONLY the inert post-send verification timing in sendKeysVerified (src/tmux/dispatch.ts), which is the actual cause of the operator's silently-lost [cam] pushes. Two changes: (1) wait a settle window via the injected sleepFn between the send-keys spawn and the verification capture, because capturing immediately reads the pre-send screen and misreports an undelivered payload as 'composer emptied', which breaks the retry loop on attempt 1; (2) raise the idle deadline from 5_000 ms to a realistic value as a named constant, because an orchestrator running a long tool call is routinely busy far longer than 5 s, which made the blind send-anyway path the common case. Evidence for both: cam-supervisor.log recorded 5 'did not go idle within 5000 ms; sending anyway' warnings while cam-worker-events.jsonl recorded ZERO push-undelivered events, i.e. the verify path never once fired across 5 blind sends. EXPLICITLY OUT OF SCOPE: any change to the isComposerEmptied matching logic. The prior attempt tried to make it wrap-tolerant and burned two full review rounds producing successive CRITICALs (tail-join matched the transcript echo; a no-anchor fallback calibrated on the cat fixture's double-echo that the production Ink TUI does not exhibit; occurrence-counting over the full capture making the verdict scrollback-dependent; and a regex anchor forgeable by a '>' at a wrap-boundary column in the payload itself). Content-matching pane text is not a sound oracle and its redesign around pane geometry is tracked as a SEPARATE issue. Leave isComposerEmptied exactly as it is on main. Wrap-tolerance is latent, not the reported bug: the operator's pane is 138 columns and the lost payloads were 79-93 characters, so nothing wrapped.",
     "acceptanceCriteria": [
-      "sendKeysVerified waits at least one tmux refresh cycle between the send-keys spawn and the verification capture, so a not-yet-rendered payload is never read as delivered.",
-      "isComposerEmptied tolerates soft-wrapped payloads: a payload longer than the pane width that is still sitting un-submitted in the composer is reported as NOT delivered.",
-      "A payload that was genuinely submitted is still reported as delivered, so the retry loop does not resend and trip the back-to-back send-keys race documented at patterns.md:330.",
-      "The idle-wait deadline is raised well above 5000 ms and the value is a named constant, not an inline literal.",
-      "When retries are exhausted, the push-undelivered event still fires with paneId and retriesExhausted.",
-      "A new integration test under test/integration/ boots a real tmux pane on a private socket (reusing the swapSocketSpawn helper pattern) and drives production makeNotifyOrchestrator with a payload wider than the pane, asserting submission via the >=2-occurrence echo oracle used by test/integration/sendkeys-submit.test.ts.",
-      "That new integration test fails against the pre-fix verification logic and passes after the fix.",
-      "bun test is fully green with no skipped or weakened existing assertions in test/dispatch.test.ts or test/supervisor/notify-orchestrator.test.ts."
+      "sendKeysVerified waits a settle window via the injected sleepFn between the send-keys spawn and the verification capture; the delay is a named exported constant, not an inline literal.",
+      "The idle-wait deadline is a named constant well above 5000 ms; the send-anyway fallback still fires, still warns, and still never blocks indefinitely.",
+      "isComposerEmptied is byte-identical to its state on main: git diff main -- src/tmux/dispatch.ts shows no change inside that function.",
+      "The send-keys argv shape is unchanged: text and Enter in ONE call, never -l.",
+      "When retries are exhausted the push-undelivered event still fires with paneId and retriesExhausted.",
+      "A test proves the settle window is honored: with a capturePaneFn that returns the pre-send screen on the first read and the post-send screen after the settle, verification reports the correct verdict rather than the stale pre-send one.",
+      "bun test and bun run check:all are green with no existing assertion weakened or skipped."
     ],
     "gotchas": [
-      "Do NOT change the argv shape: text and Enter must stay in ONE send-keys call and -l must never be used (CAM-55 sendkeys-literal-enter-gotcha).",
-      "capture-pane lags by one tmux refresh cycle; this lag is the root cause and any verification that reads immediately after the send is unsound.",
-      "The sidecar wires a DIFFERENT capture reader than the unit tests: host.ts:579-586 passes capture-pane -p -S - (full scrollback) while dispatch.ts:191-198 and host.ts:270-275 use the visible-screen read. The last-5-lines window therefore means something different in production than in every fake-backed test; reconcile this or the fix will pass tests and still fail live.",
-      "A submitted line is echoed into the transcript and stays visible in the tail, so a naive not-delivered check produces false negatives and duplicate sends; back-to-back send-keys into the Ink prompt race and the second line is swallowed (patterns.md:330, merge-watch.ts:658-662).",
+      "Do NOT touch isComposerEmptied. Making it wrap-tolerant is a separate tracked issue and every in-place attempt so far produced a CRITICAL regression.",
+      "Do NOT change the argv shape: text+Enter in one send-keys call, never -l (CAM-55 sendkeys-literal-enter-gotcha).",
+      "The settle must go through the INJECTED sleepFn so tests stay deterministic and fast; never a bare sleep.",
+      "The sidecar wires a different capture reader than the unit tests (host.ts:579-586 uses capture-pane -p -S - full scrollback; dispatch.ts:191-198 uses the visible-screen read). This narrowed scope does not require reconciling them, but do not introduce any new dependence on which reader is wired.",
       "Bare sleeps are banned under test/integration/; use test/helpers/wait-for-condition.ts.",
-      "Integration tests must run on a private tmux socket and kill-server around themselves; never touch the live -L cam socket, which is running the operator's real session.",
-      "Argv-shape tests with scripted capturePaneFn stubs cannot catch this class of bug: the fakes return exactly what the code expects. A real-tmux test is required."
+      "The parked branch cam/issue-358 (origin, 64e2a909) holds the abandoned wrap/anchor attempt plus the reviewer's real-tmux probe evidence. Do NOT branch from it or cherry-pick from it; start clean from main."
     ],
     "domainTerms": [
       "sendKeysVerified: the shared send+verify+retry helper in src/tmux/dispatch.ts, sole production emitter of [cam] lines.",
-      "isComposerEmptied: the submission oracle that decides whether the payload left the composer.",
-      "IDLE_PROMPT / BUSY_GLYPHS: the regexes behind isOrchPaneIdle.",
+      "settle window: the wait between send-keys and the verification capture that lets the receiving TUI read the keystrokes off its pty and re-render.",
       "send-anyway path: the branch taken when waitForIdlePane times out; it sends into a possibly-busy composer.",
-      "push-undelivered: the structured event logged when the retry loop exhausts.",
-      "swapSocketSpawn: the test helper that rewrites -L cam to a private socket so production code runs against an isolated tmux server."
+      "push-undelivered: the structured event logged when the retry loop exhausts."
     ]
   },
   "wsjf": {
     "value": 9,
     "timeCriticality": 7,
     "riskReduction": 8,
-    "jobSize": 3
+    "jobSize": 1
   },
   "type": "fix"
 }
