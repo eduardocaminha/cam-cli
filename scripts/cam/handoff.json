@@ -1,18 +1,17 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Raise the idle-wait deadline to a realistic named constant"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
   "branchName": "cam/issue-358",
-  "timestamp": "2026-07-20T02:35:00Z",
+  "timestamp": "2026-07-20T03:10:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/tmux/dispatch.ts",
-    "scripts/cam/patterns.md",
+    "test/dispatch.test.ts",
     "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "sendKeysVerified's idle-gate default (src/tmux/dispatch.ts) is now the exported IDLE_WAIT_DEADLINE_MS constant (30_000 ms), replacing the inline idleTimeoutMs = 5_000 default that made the send-anyway fallback the common case for a routine long tool call (5 send-anyway warnings logged in one session per the CAM-358 filing). The idleTimeoutMs option is unchanged in shape (still caller-overridable; every existing test still injects a tiny idleTimeoutMs like 5 or 1_000 and needed no edits). isComposerEmptied, the send-keys argv shape, and SEND_KEYS_SETTLE_MS (US-001) are all untouched. The stale 'Default idleTimeoutMs is 5 000 ms' claim in scripts/cam/patterns.md (line 38, US-008 bullet) was corrected to point at the new named constant. file-size-budget.json's src/tmux/dispatch.ts ceiling was raised 348->365 (actual content.split('\\n').length, one more than wc -l) with a dated _ref entry naming US-002/CAM-358. No test file changes were needed for this story: all 21 dispatch.test.ts cases and the full 5146-test suite passed unchanged.",
+  "nextStoryContext": "Addressed the round-1 reviewer WARNING on US-002 (test/dispatch.test.ts): nothing exercised the idleTimeoutMs = IDLE_WAIT_DEADLINE_MS default-wiring path in sendKeysVerified/sendKeysWhenIdle, since every existing test injects an explicit idleTimeoutMs (5 or 1_000). Added two tests in the sendKeysWhenIdle describe block: (1) a boundary assertion that IDLE_WAIT_DEADLINE_MS === 30_000 and > 5_000; (2) a wiring test that omits idleTimeoutMs entirely, uses a capturePaneFn that always reports busy (never idle), and mocks both Date.now and process.stderr.write (restored in a finally) so the idle-gate's real deadline math can be driven by the injected sleepFn (fakeNow += ms) instead of a real 30s wall-clock wait -- asserts the send-anyway warning text embeds `did not go idle within 30000 ms` (not the old 5000 ms). Runtime stayed ~200ms for the whole file (23 tests). No production code changed: src/tmux/dispatch.ts, IDLE_WAIT_DEADLINE_MS, and SEND_KEYS_SETTLE_MS are untouched, this was pure test-coverage. Raised test/dispatch.test.ts's file-size ceiling 396->458 (actual content.split('\\n').length) with a dated _ref entry naming US-R1-001/CAM-358. Full bun run check:all spine (typecheck, test [5148 pass], embed-vendor, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps) passed green after the ceiling raise. Note: US-R1-002 (also filed by the round-1 reviewer, priority 2 in prd.json) is a separate doc-maintenance finding about a stale '5s idleTimeoutMs' claim surviving in patterns.md:646 and test/integration/review-verdict-handback.test.ts:57/102 after the US-002 default was raised to 30s; it was NOT touched by this story (out of scope, this story only addressed the US-R1-001 test-coverage finding) and remains passes:false for the next implementer.",
   "officialDocsValidated": [
     {
       "lib": "none",
