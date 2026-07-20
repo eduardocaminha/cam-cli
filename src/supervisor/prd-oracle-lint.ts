@@ -216,21 +216,47 @@ const SINGLE_QUOTE_ESCAPE_CONTINUATION = "\\''";
  * Finds the index of the quote character that truly closes a span of
  * `quoteChar` opened just before `searchFrom`, skipping past any
  * `'\''` escape-continuation (see SINGLE_QUOTE_ESCAPE_CONTINUATION above)
- * immediately following a candidate closing quote. Returns -1 when no true
- * closing quote exists anywhere in `command` (an unterminated quote).
+ * immediately following a candidate closing quote, and, for a DOUBLE-quoted
+ * span, past a backslash-escaped `\"` that does not terminate the span
+ * either (US-R2-001, CAM-388). POSIX Shell Command Language 2.2.3: inside
+ * double quotes a backslash retains its special (escaping) meaning only
+ * when followed by `$`, backtick, `"`, `\`, or newline -- so `\"` inside
+ * `"..."` is a literal embedded quote, not a close, e.g. `bash -c "echo
+ * \"hi\"; test $(wc -l < f) -eq 3"` must resolve the wrapper's payload all
+ * the way to the FINAL `"`, not the first `\"`. Whether a candidate closing
+ * `"` is actually escaped depends on the parity of the run of backslashes
+ * immediately preceding it: an odd run escapes it (skip past), an even run
+ * is that many literal backslash pairs (the quote genuinely closes), e.g.
+ * `\\"`  (escaped backslash + real close) must still close the span.
+ * Single quotes have no backslash-escape meaning at all (only the `'\''`
+ * continuation idiom applies to them), so this backslash-parity check is
+ * scoped to `quoteChar === '"'` only. Returns -1 when no true closing quote
+ * exists anywhere in `command` (an unterminated quote).
  */
 function findClosingQuoteIndex(command: string, quoteChar: string, searchFrom: number): number {
 	let from = searchFrom;
 	while (true) {
 		const idx = command.indexOf(quoteChar, from);
 		if (idx === -1) return -1;
-		const continuationStart = idx + 1;
-		const continuationEnd = continuationStart + SINGLE_QUOTE_ESCAPE_CONTINUATION.length;
-		if (
-			quoteChar === "'" &&
-			command.slice(continuationStart, continuationEnd) === SINGLE_QUOTE_ESCAPE_CONTINUATION
-		) {
-			from = continuationEnd;
+
+		if (quoteChar === "'") {
+			const continuationStart = idx + 1;
+			const continuationEnd = continuationStart + SINGLE_QUOTE_ESCAPE_CONTINUATION.length;
+			if (command.slice(continuationStart, continuationEnd) === SINGLE_QUOTE_ESCAPE_CONTINUATION) {
+				from = continuationEnd;
+				continue;
+			}
+			return idx;
+		}
+
+		let backslashRun = 0;
+		let j = idx - 1;
+		while (j >= 0 && command[j] === '\\') {
+			backslashRun++;
+			j--;
+		}
+		if (backslashRun % 2 === 1) {
+			from = idx + 1;
 			continue;
 		}
 		return idx;
@@ -260,7 +286,13 @@ function findClosingQuoteIndex(command: string, quoteChar: string, searchFrom: n
  * ordinary literal text (never consumed to end-of-string -- an unmatched
  * apostrophe is not proof the remainder of the command is quoted data), and
  * the `'\''` POSIX single-quote escape idiom is recognized via
- * findClosingQuoteIndex above so it doesn't fool the span-close search.
+ * findClosingQuoteIndex above so it doesn't fool the span-close search. A
+ * third edge case fixed by US-R2-001 (CAM-388, reviewer finding at
+ * prd-oracle-lint.ts:222): a backslash-escaped `\"` inside a DOUBLE-quoted
+ * span (`bash -c "echo \"hi\"; test $(wc -l < f) -eq 3"`) does not close the
+ * span either -- findClosingQuoteIndex now skips past it via a
+ * backslash-run parity check, so a genuine live comparison later in a
+ * double-quoted `-c` wrapper is no longer silently excused.
  */
 function stripQuotedSpans(command: string): string {
 	let out = '';
