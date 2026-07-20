@@ -16,6 +16,10 @@
 //     - timeout (always busy): fallback sends anyway, no indefinite block
 //     - send-keys does NOT use -l (would make Enter literal); Enter is a separate trailing key (atomic)
 //     - send-keys targets the correct pane ID
+//     - omitting idleTimeoutMs uses the exported IDLE_WAIT_DEADLINE_MS default
+//       (US-002/CAM-358 regression: the review round 1 fix for US-R1-001 found
+//       nothing previously exercised the default-idleTimeoutMs wiring path)
+//     - IDLE_WAIT_DEADLINE_MS boundary: exceeds the old 5_000 ms default
 //   sendKeysVerified (US-002, CAM-200):
 //     - composer emptied immediately: delivered on the first attempt, no retry, no push-undelivered
 //     - composer still holds the pushed line every time: retries up to maxAttempts, then emits
@@ -33,6 +37,7 @@ import {
 	sendKeysWhenIdle,
 	sendKeysVerified,
 	SEND_KEYS_SETTLE_MS,
+	IDLE_WAIT_DEADLINE_MS,
 	type CapturePaneFn,
 } from '../src/tmux/dispatch.ts';
 import type { SpawnFn as TmuxSpawnFn } from '../src/tmux/session.ts';
@@ -251,6 +256,63 @@ describe('sendKeysWhenIdle', () => {
 
 		const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
 		expect(sendKeys?.args).toContain('%7');
+	});
+
+	test('IDLE_WAIT_DEADLINE_MS exceeds the old 5_000 ms default (US-002, CAM-358)', () => {
+		// Boundary guard: if this constant were ever lowered back to (or below)
+		// the pre-US-002 5_000 ms default, CAM-358's stated fix ("a routine long
+		// tool call shouldn't blow the idle budget") would be silently lost.
+		expect(IDLE_WAIT_DEADLINE_MS).toBeGreaterThan(5_000);
+		expect(IDLE_WAIT_DEADLINE_MS).toBe(30_000);
+	});
+
+	test('omitting idleTimeoutMs falls back to IDLE_WAIT_DEADLINE_MS, not the old 5_000 ms default (US-002, CAM-358)', () => {
+		// Regression coverage for the review round 1 finding on US-R1-001: every
+		// other test in this file injects an explicit tiny idleTimeoutMs, so
+		// nothing previously exercised the default path at dispatch.ts's
+		// `idleTimeoutMs = IDLE_WAIT_DEADLINE_MS` wiring. This test omits the
+		// option entirely and proves the effective deadline via the send-anyway
+		// warning text, which embeds the deadline actually used.
+		const spawnFn = makeSpawnFn();
+
+		// Fake a monotonically-advancing clock driven only by the injected
+		// sleepFn, so the test doesn't burn real wall-clock time waiting out a
+		// 30s deadline. capturePaneFn always reports busy, so the idle-gate
+		// never resolves early and must run out the full budget.
+		const originalNow = Date.now;
+		const originalWrite = process.stderr.write;
+		let fakeNow = 0;
+		Date.now = () => fakeNow;
+		const captured: string[] = [];
+		process.stderr.write = ((chunk: string | Uint8Array) => {
+			captured.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk));
+			return true;
+		}) as typeof process.stderr.write;
+
+		try {
+			sendKeysWhenIdle({
+				paneId: '%1',
+				text: '/cam-plan',
+				tmuxSpawnFn: spawnFn,
+				capturePaneFn: () => '⠋ Busy forever\n', // never idle
+				sleepFn: (ms) => {
+					fakeNow += ms;
+				},
+				pollIntervalMs: 1_000,
+				// idleTimeoutMs intentionally omitted: exercises the default.
+			});
+		} finally {
+			Date.now = originalNow;
+			process.stderr.write = originalWrite;
+		}
+
+		// The warning text embeds the exact idleTimeoutMs the wiring used.
+		expect(captured.join('')).toContain(`did not go idle within ${IDLE_WAIT_DEADLINE_MS} ms`);
+		expect(captured.join('')).not.toContain('did not go idle within 5000 ms');
+
+		// Fallback still sends despite never observing idle.
+		const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
+		expect(sendKeys).toBeDefined();
 	});
 });
 
