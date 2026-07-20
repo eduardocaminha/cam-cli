@@ -2640,6 +2640,7 @@ function makeProductionPlanPhaseFn(
 			const r = Bun.spawnSync([bin, ...args], { cwd, stdout: 'pipe', stderr: 'pipe' });
 			return {
 				stdout: r.stdout instanceof Buffer ? new TextDecoder().decode(r.stdout) : '',
+				stderr: r.stderr instanceof Buffer ? new TextDecoder().decode(r.stderr) : '',
 				exitCode: r.exitCode,
 			};
 		};
