@@ -1,0 +1,13 @@
+{
+  "id": "CAM-384",
+  "title": "Test named 'does not match main by literal substring -- mainbranch is not the m…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-20T19:50:36.457Z",
+  "updatedAt": "2026-07-20T19:50:36.457Z",
+  "description": "Test named 'does not match main by literal substring -- mainbranch is not the main token' lives inside the 'frozen-comparand rule: flagged forms' describe and asserts not.toBeNull(). The assertion is correct (mainbranch must not count as a live main token, so the criterion IS flagged), but the 'does not match' phrasing reads as a negative/passing case and momentarily inverts the reader's expectation. Consider renaming to something like 'flags a mainbranch: ref, which is not the main token'.\n\nSource: cam/issue-381\nReview round: 1\n\nsuggestion-fingerprint: 3b3a38ac93f3",
+  "derivedFrom": [
+    "CAM-381"
+  ]
+}
