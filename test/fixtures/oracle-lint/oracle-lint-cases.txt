@@ -12,6 +12,8 @@ frozen-comparand :: ok :: bun -e 'const cs=["test $X -eq 41","test $X -ge 41"];f
 frozen-comparand :: ok :: grep -qF 'test $(git grep -c PATTERN mainbranch:file.ts) -eq 1' test/supervisor/prd-oracle-lint.test.ts
 frozen-comparand :: flag :: test $(wc -l < scripts/cam/patterns.md) -eq 42
 frozen-comparand :: flag :: sh -c 'test $(wc -l < scripts/cam/patterns.md) -eq 42'
+frozen-comparand :: flag :: sh -c 'echo '\''hi'\''; test $(wc -l < f) -eq 3'
+frozen-comparand :: flag :: printf '%s' a'b; test $(wc -l < f) -eq 7
 grep-q-plus-list-files :: ok :: grep -q 'PATTERN' file.ts
 grep-q-plus-list-files :: flag :: grep -Lq 'PATTERN' file.ts
 rotating-artifact-target :: ok :: grep -q 'ROTATING_ARTIFACT_RULE' src/supervisor/prd-oracle-lint.ts

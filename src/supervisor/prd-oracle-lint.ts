@@ -13,7 +13,11 @@
 //     derive-don't-freeze rule (patterns.md:903), US-001 CAM-381. Quote-aware
 //     (US-001 CAM-388): a match sitting inside a quoted span (test-input
 //     data, a grep search pattern) is ignored, except inside a `-c
-//     '<payload>'` wrapper, whose payload is unwrapped and still scanned.
+//     '<payload>'` wrapper, whose payload is unwrapped and still scanned. An
+//     unterminated quote is treated as literal text rather than swallowing
+//     the rest of the command, and the POSIX `'\''` single-quote escape
+//     idiom is recognized so it never fools the span-close search
+//     (US-R1-001 CAM-388).
 //   - rotating-artifact-target: catches an oracle asserting against a
 //     per-story ROTATING harness state file (scripts/cam/handoff.json or the
 //     reviewer's gitignored capture-pane artifact), enforcing the
@@ -177,6 +181,45 @@ function isDashCWrapper(command: string, quoteStart: number): boolean {
 }
 
 /**
+ * The POSIX single-quote escape idiom: an apparent closing `'` immediately
+ * followed by `\''` does NOT terminate the quoted span -- it's the standard
+ * shell trick for embedding a literal `'` inside a single-quoted string
+ * (`'foo'\''bar'` decodes to `foo'bar`: close, escaped literal quote,
+ * reopen). Recognizing this continuation lets a single logical `-c` payload
+ * spanning multiple escaped segments (e.g. `sh -c 'echo '\''hi'\''; test
+ * $(wc -l < f) -eq 3'`) resolve to ONE quoted span ending at the true final
+ * quote, instead of prematurely closing at the first embedded segment and
+ * losing the rest of the payload to a non-wrapper (space-replaced) span
+ * (CAM-388 US-R1-001).
+ */
+const SINGLE_QUOTE_ESCAPE_CONTINUATION = "\\''";
+
+/**
+ * Finds the index of the quote character that truly closes a span of
+ * `quoteChar` opened just before `searchFrom`, skipping past any
+ * `'\''` escape-continuation (see SINGLE_QUOTE_ESCAPE_CONTINUATION above)
+ * immediately following a candidate closing quote. Returns -1 when no true
+ * closing quote exists anywhere in `command` (an unterminated quote).
+ */
+function findClosingQuoteIndex(command: string, quoteChar: string, searchFrom: number): number {
+	let from = searchFrom;
+	while (true) {
+		const idx = command.indexOf(quoteChar, from);
+		if (idx === -1) return -1;
+		const continuationStart = idx + 1;
+		const continuationEnd = continuationStart + SINGLE_QUOTE_ESCAPE_CONTINUATION.length;
+		if (
+			quoteChar === "'" &&
+			command.slice(continuationStart, continuationEnd) === SINGLE_QUOTE_ESCAPE_CONTINUATION
+		) {
+			from = continuationEnd;
+			continue;
+		}
+		return idx;
+	}
+}
+
+/**
  * Strips single/double-quoted spans out of `command` before frozen-comparand
  * scanning, so an operator+integer byte pattern that is merely quoted TEST
  * DATA (a JS array literal element, a grep search pattern) is never mistaken
@@ -189,6 +232,13 @@ function isDashCWrapper(command: string, quoteStart: number): boolean {
  * flagging -- the quotes there wrap a real shell command, not inert data.
  * Every other quoted span is replaced with a single space (never simple
  * deletion) so tokens on either side of the span don't fuse into a new one.
+ *
+ * Two edge cases fixed by US-R1-001 (CAM-388, reviewer finding at
+ * prd-oracle-lint.ts:200): a quote with no matching close is treated as
+ * ordinary literal text (never consumed to end-of-string -- an unmatched
+ * apostrophe is not proof the remainder of the command is quoted data), and
+ * the `'\''` POSIX single-quote escape idiom is recognized via
+ * findClosingQuoteIndex above so it doesn't fool the span-close search.
  */
 function stripQuotedSpans(command: string): string {
 	let out = '';
@@ -197,11 +247,15 @@ function stripQuotedSpans(command: string): string {
 	while (i < command.length) {
 		const ch = command[i];
 		if (ch === "'" || ch === '"') {
-			const closeIdx = command.indexOf(ch, i + 1);
-			const end = closeIdx === -1 ? command.length : closeIdx;
-			const content = command.slice(i + 1, end);
+			const closeIdx = findClosingQuoteIndex(command, ch, i + 1);
+			if (closeIdx === -1) {
+				out += ch;
+				i++;
+				continue;
+			}
+			const content = command.slice(i + 1, closeIdx);
 			out += isDashCWrapper(command, i) ? ` ${stripQuotedSpans(content)} ` : ' ';
-			i = end + 1;
+			i = closeIdx + 1;
 		} else {
 			out += ch;
 			i++;
