@@ -18,7 +18,7 @@
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [test/dispatch.test.ts:769]: The strengthened assertion is still vacuously true on an empty array. Measured: recordedSleeps.every((ms) => ms === POLL_INTERVAL_MS) returns true for []. The in-test comment explicitly derives 'exactly 5 sleeps' from idleTimeoutMs/pollIntervalMs, but the test never asserts the count (grep shows only :718 decl, :739 push, :769 the every() call), so a regression that makes the idle-gate stop sleeping entirely, or return before the poll loop, passes silently. This is the same vacuous-pass family the story exists to close. Fix: add a derived count assertion alongside it, e.g. expect(recordedSleeps).toHaveLength(IDLE_TIMEOUT_MS / POLL_INTERVAL_MS), or assert the exact array via toEqual, keeping the comparand derived per the CAM-377 rule US-002 ships in this same PR."
     },
     {
