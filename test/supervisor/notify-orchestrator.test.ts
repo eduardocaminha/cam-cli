@@ -313,13 +313,14 @@ describe('makeNotifyOrchestrator x sendKeysVerified (US-003, CAM-200; geometry o
 		const spawnFn: TmuxSpawnFn = (_cmd, args, _opts) => {
 			if (args.includes('list-panes')) return fakeSpawnResult('0;%5\n1;%6\n');
 			if (args.includes('display-message')) return fakeSpawnResult(displayResponder(args));
-			// Content-backstop reader (review round 2 fix, US-R2-001, CAM-359):
-			// attempt 2's geometry pair is ambiguous (matches baseline), so
-			// sendKeysVerified's default visibleCaptureFn issues a real
-			// `capture-pane` call here. Answer with an idle prompt (no remnant
-			// of the sent text) so the backstop confirms delivered, and don't
+			// Prompt-row discriminator reader (review round 2 fix, US-R2-001,
+			// CAM-359; discriminator itself US-001, CAM-364): attempt 2's geometry
+			// pair is ambiguous (matches baseline), so sendKeysVerified's default
+			// visibleCaptureFn issues a real `capture-pane` call here. Answer with
+			// content whose row 26 (the fixed cursorY above) starts with the
+			// prompt glyph so the discriminator confirms delivered, and don't
 			// count it as a push (only send-keys calls belong in sendCalls).
-			if (args.includes('capture-pane')) return fakeSpawnResult('> ');
+			if (args.includes('capture-pane')) return fakeSpawnResult(`${'\n'.repeat(26)}❯ `);
 			sendCalls.push(args.slice());
 			return fakeSpawnResult('');
 		};

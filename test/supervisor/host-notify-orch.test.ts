@@ -8,9 +8,10 @@
 //      by buildWorkerReportSendKeysArgv (no -l, Enter as separate key arg,
 //      both in one call). An injected capturePaneFn reports an idle prompt so
 //      sendKeysVerified's idle-gate succeeds on the first attempt; the
-//      content-backstop verify (review round 2 fix, US-R2-001, CAM-359) reads
-//      through its own default visibleCaptureFn (built from the fake
-//      spawnFn's capture-pane branch), not from capturePaneFn.
+//      prompt-row discriminator (review round 2 fix, US-R2-001, CAM-359;
+//      discriminator itself US-001, CAM-364) reads through its own default
+//      visibleCaptureFn (built from the fake spawnFn's capture-pane branch),
+//      not from capturePaneFn.
 //   2. No orch pane (list-panes returns empty): no send-keys call (silent no-op).
 
 import { describe, expect, test } from 'bun:test';
@@ -51,12 +52,14 @@ function fakeResult(stdout: string, status = 0): SpawnSyncReturns<string> {
  *   sample always match, so the verdict is "delivered on attempt 1" — the
  *   send-keys-argv-shape assertions below don't exercise the delivery
  *   oracle itself.
- * - When args include 'capture-pane', return an idle prompt WITHOUT recording
- *   the call: the fixed geometry reading above makes every attempt's pair
- *   read "unchanged", so sendKeysVerified's content backstop (dedicated
- *   `visibleCaptureFn`, review round 2 fix US-R2-001, CAM-359) always fires;
- *   an idle prompt holds no remnant of the pushed text, so the backstop
- *   confirms delivered on attempt 1 without adding a phantom "call".
+ * - When args include 'capture-pane', return content whose row 26 (matching
+ *   the fixed `cursorY: 26` from the geometry line above) starts with the
+ *   prompt glyph, WITHOUT recording the call: the fixed geometry reading
+ *   above makes every attempt's pair read "unchanged", so sendKeysVerified's
+ *   prompt-row discriminator (dedicated `visibleCaptureFn`, review round 2
+ *   fix US-R2-001, CAM-359; discriminator itself US-001, CAM-364) always
+ *   fires; a row starting with the prompt confirms delivered on attempt 1
+ *   without adding a phantom "call".
  * - For all other calls (e.g. send-keys), return empty stdout with status 0
  *   and record the call.
  */
@@ -72,7 +75,7 @@ function makeFakeSpawnFn(
 			return fakeResult('2;26;80;30');
 		}
 		if (args.includes('capture-pane')) {
-			return fakeResult('> ');
+			return fakeResult(`${'\n'.repeat(26)}❯ `);
 		}
 		calls.push({ cmd, args: args.slice() });
 		return fakeResult('');
@@ -85,8 +88,9 @@ function makeFakeSpawnFn(
 
 // Fake capturePaneFn: always reports an idle prompt, so sendKeysVerified's
 // PRE-send idle-gate succeeds immediately (no real polling/backoff). The
-// POST-send content backstop no longer reads through this reader (review
-// round 2 fix, US-R2-001, CAM-359): see makeFakeSpawnFn's capture-pane branch.
+// POST-send prompt-row discriminator no longer reads through this reader
+// (review round 2 fix, US-R2-001, CAM-359): see makeFakeSpawnFn's
+// capture-pane branch.
 const idleNeverEchoesFn = (): string => '> ';
 
 describe('makeNotifyOrchestrator (US-002)', () => {

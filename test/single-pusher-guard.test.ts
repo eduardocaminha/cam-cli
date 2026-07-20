@@ -83,11 +83,12 @@ function makeFakeSpawn(orchPaneId: string, calls: SpawnCall[]): SpawnFn {
 
 		if (subcommand === 'capture-pane') {
 			// The fixed display-message reading above makes attempt 1's geometry
-			// pair always read "unchanged", so sendKeysVerified's content backstop
-			// (dedicated visibleCaptureFn, review round 2 fix US-R2-001, CAM-359)
-			// always fires. An idle prompt holds no remnant of the pushed text, so
-			// the backstop confirms delivered without adding a phantom push.
-			return { ...base, stdout: Buffer.from('> ') };
+			// pair always read "unchanged", so sendKeysVerified's prompt-row
+			// discriminator (dedicated visibleCaptureFn, review round 2 fix
+			// US-R2-001, CAM-359; discriminator itself US-001, CAM-364) always
+			// fires. Row 26 (the fixed cursorY above) starting with the prompt
+			// glyph confirms delivered without adding a phantom push.
+			return { ...base, stdout: Buffer.from(`${'\n'.repeat(26)}❯ `) };
 		}
 
 		// Record all other calls (i.e. send-keys calls).
@@ -98,10 +99,11 @@ function makeFakeSpawn(orchPaneId: string, calls: SpawnCall[]): SpawnFn {
 
 // Fake capturePaneFn: always reports an idle prompt, so sendKeysVerified's
 // (US-003, CAM-200) PRE-send idle-gate succeeds on the first attempt (no real
-// polling/backoff). The POST-send content backstop reads through its own
-// default visibleCaptureFn instead (review round 2 fix, US-R2-001, CAM-359;
-// see makeFakeSpawn's capture-pane branch), preserving this file's "exactly
-// one send-keys call" assertions.
+// polling/backoff). The POST-send prompt-row discriminator reads through its
+// own default visibleCaptureFn instead (review round 2 fix, US-R2-001,
+// CAM-359; discriminator itself US-001, CAM-364; see makeFakeSpawn's
+// capture-pane branch), preserving this file's "exactly one send-keys call"
+// assertions.
 const idleNeverEchoesFn = (): string => '> ';
 
 // ---------------------------------------------------------------------------

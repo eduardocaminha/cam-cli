@@ -1,0 +1,24 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Replace the tail-matching backstop with a prompt-row discriminator" },
+  "branchName": "cam/issue-364",
+  "timestamp": "2026-07-20T10:16:56Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/tmux/dispatch.ts",
+    "test/dispatch.test.ts",
+    "test/review.test.ts",
+    "test/single-pusher-guard.test.ts",
+    "test/commands/spec.test.ts",
+    "test/supervisor/host-notify-orch.test.ts",
+    "test/supervisor/notify-orchestrator.test.ts",
+    "test/supervisor/orchestrator-surface.test.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 (CAM-364) is the only story in this PRD; it removed composerLineRetainsPayloadTail and MIN_PAYLOAD_TAIL_MATCH from src/tmux/dispatch.ts entirely (function, export, call site, every doc reference) and replaced them with cursorRowStartsWithPrompt (start-anchored PROMPT_ROW_START = /^\\s*[>\\u276F]/, tolerant of both glyphs). The discriminator is consulted only inside the existing geometryUnchanged-true branch, reads via the dedicated visibleCaptureFn (never capturePaneFn), and fails closed (undefined row -> not delivered) under noUncheckedIndexedAccess. Module header rewritten: documents the measured real-TUI shapes (empty composer row starts with the prompt glyph; wrap-boundary collision leaves the cursor row BLANK with the prompt one row up) and explicitly names the still-open residue (a payload containing a literal prompt glyph landing at the START of a wrap row). IDLE_PROMPT/isOrchPaneIdle untouched. A non-obvious side effect: every shared fake-tmux-spawn test helper across dispatch/review/spec/single-pusher-guard/host-notify-orch/notify-orchestrator/orchestrator-surface tests answered bare capture-pane calls with a single-line '> ' string, which relied on the OLD backstop's fail-open-to-delivered behavior on a missing row; under the new fail-closed discriminator these all had to be updated to pad to the fixed geometry's row count with the prompt glyph on the last row (`${'\\n'.repeat(26)}\\u276F `). Any future geometry/discriminator change must re-audit ALL of those fakes, not just test/dispatch.test.ts. test/integration/dispatch-geometry.test.ts and its raw-echo.ts fixture were left untouched (verified compatible: continuation rows never carry the PROMPT prefix, so the fixture's existing collision/delivered cases still produce the correct verdict under the new discriminator) -- if that reasoning is ever revisited, note the fixture's collision model (non-blank leftover row) differs from the NEW measured real-TUI shape (blank cursor row) and was not reconciled in this story, since no acceptance criterion required it. file-size-budget.json ceilings raised for the 5 files this story grew (dispatch.ts, dispatch.test.ts, review.test.ts, host-notify-orch.test.ts, notify-orchestrator.test.ts) with a dated _ref entry citing CAM-364.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ],
+  "appliedPatternIds": []
+}
