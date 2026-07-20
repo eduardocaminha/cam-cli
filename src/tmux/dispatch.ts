@@ -53,6 +53,20 @@
 // concern above. The full-pair geometry comparison is still never reduced
 // to a single axis; the content backstop only ever narrows an "unchanged"
 // geometry verdict to "not delivered", never the reverse.
+//
+// Reader decoupling (review round 2 fix, US-R2-001, CAM-359): cursor_y above
+// indexes rows relative to the TOP OF THE VISIBLE PANE, which only holds for
+// a VISIBLE-SCREEN capture (`capture-pane -p -t <paneId>`). The production
+// sidecar wires `capturePaneFn` to a FULL-SCROLLBACK reader
+// (`capture-pane -p -S -`) for unrelated reasons (state reads elsewhere in
+// the supervisor), and that same reader used to be reused for the content
+// backstop too, which silently indexed an arbitrary history line instead of
+// the true cursor row. The backstop now samples pane content through a
+// dedicated `visibleCaptureFn`, always built fresh from `tmuxSpawnFn`
+// (`capture-pane -p -t <paneId>`, no `-S -`) unless a test overrides it.
+// `capturePaneFn` feeds ONLY the PRE-send idle-gate (`waitForIdlePane`) from
+// here on, which just scans the pane's last 5 lines and is insensitive to
+// scrollback vs visible-screen framing.
 
 import { join } from 'node:path';
 
@@ -92,6 +106,13 @@ export interface SendKeysWhenIdleOptions {
 	/**
 	 * Override the capture-pane reader for tests. Default: calls real tmux
 	 * `capture-pane -p -t <paneId>` via tmuxSpawnFn.
+	 *
+	 * Feeds ONLY the PRE-send idle-gate (`waitForIdlePane`, US-008) from the
+	 * review round 2 fix (US-R2-001, CAM-359) onward: it may be a
+	 * full-scrollback reader in production (the sidecar wires one for
+	 * unrelated state reads) without corrupting the content-backstop verdict,
+	 * since that backstop now reads through the separate `visibleCaptureFn`
+	 * (see `SendKeysVerifiedOptions`).
 	 */
 	capturePaneFn?: CapturePaneFn;
 	/**
@@ -161,6 +182,21 @@ export interface SendKeysVerifiedOptions extends SendKeysWhenIdleOptions {
 	 * reading); the delivery verdict compares the two.
 	 */
 	sampleGeometryFn?: (paneId: string, tmuxSpawnFn: TmuxSpawnFn) => CursorGeometry | null;
+	/**
+	 * Injectable VISIBLE-SCREEN capture-pane reader for the content backstop
+	 * (`composerLineRetainsPayloadTail`, US-R1-001; decoupled from
+	 * `capturePaneFn` in the review round 2 fix, US-R2-001, CAM-359).
+	 *
+	 * `cursorY` indexes rows relative to the TOP OF THE VISIBLE PANE, so this
+	 * reader must never be a full-scrollback capture (`capture-pane -p -S -`):
+	 * a scrollback reader indexes an arbitrary history line instead of the
+	 * true cursor row. Default: a fresh `capture-pane -p -t <paneId>` built
+	 * directly from `tmuxSpawnFn`, deliberately NOT derived from whatever
+	 * `capturePaneFn` the caller injected (whose scrollback semantics are
+	 * unspecified and, in production, full-history). Tests inject a fake to
+	 * simulate a specific row's content without a real tmux server.
+	 */
+	visibleCaptureFn?: CapturePaneFn;
 }
 
 // ---------------------------------------------------------------------------
@@ -391,10 +427,13 @@ function waitForIdlePane(args: {
  *      axis. A `null` sample (the geometry helper's fail-closed result, e.g.
  *      a non-zero tmux exit) is treated as NOT delivered on that attempt,
  *      never as delivered. If the pair reads unchanged, `composerLineRetainsPayloadTail`
- *      inspects the captured pane row at the reported cursor_y for a
- *      remnant of the sent text before trusting the "delivered" verdict
- *      (module header: cursor_y is pinned constant in production, so
- *      geometry alone cannot rule out a wrap-boundary-length collision).
+ *      inspects the row at the reported cursor_y, read via `visibleCaptureFn`
+ *      (review round 2 fix, US-R2-001, CAM-359: a DEDICATED visible-screen
+ *      reader, never `capturePaneFn`, whose scrollback semantics are
+ *      unspecified and would misindex the row), for a remnant of the sent
+ *      text before trusting the "delivered" verdict (module header: cursor_y
+ *      is pinned constant in production, so geometry alone cannot rule out a
+ *      wrap-boundary-length collision).
  *   4. Retry: if not delivered, sleep `computeBackoffMs(attempt, ...)`
  *      (src/supervisor/loop.ts:606) and resend, up to `maxAttempts` (default
  *      3) total attempts.
@@ -422,10 +461,20 @@ export function sendKeysVerified(opts: SendKeysVerifiedOptions): void {
 		randomFn = Math.random,
 		logEvent,
 		sampleGeometryFn = sampleCursorGeometry,
+		visibleCaptureFn,
 	} = opts;
 
 	const capture = capturePaneFn
 		? capturePaneFn
+		: (id: string) => defaultCapturePaneFn(id, tmuxSpawnFn);
+
+	// Dedicated visible-screen reader for the content backstop (review round 2
+	// fix, US-R2-001, CAM-359): deliberately NOT derived from `capture` above,
+	// since `capturePaneFn` may be a full-scrollback reader in production and
+	// `composerLineRetainsPayloadTail` indexes rows relative to the top of the
+	// VISIBLE pane.
+	const visibleCapture = visibleCaptureFn
+		? visibleCaptureFn
 		: (id: string) => defaultCapturePaneFn(id, tmuxSpawnFn);
 
 	const timedOut = waitForIdlePane({ paneId, capture, pollIntervalMs, idleTimeoutMs, sleepFn });
@@ -459,7 +508,7 @@ export function sendKeysVerified(opts: SendKeysVerifiedOptions): void {
 			// alone cannot rule out a wrap-boundary-length collision (module
 			// header). Break the tie with the content backstop before trusting
 			// this as delivered.
-			const afterContent = capture(paneId);
+			const afterContent = visibleCapture(paneId);
 			if (!composerLineRetainsPayloadTail(afterContent, after.cursorY, text)) {
 				delivered = true;
 				break;

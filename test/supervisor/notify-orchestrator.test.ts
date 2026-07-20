@@ -280,12 +280,14 @@ function fakeSpawnResult(stdout: string, status = 0): SpawnSyncReturns<string> {
  * `sendKeysVerified`'s delivery verdict (US-002, CAM-359) samples cursor
  * geometry via a `display-message` call routed through the same TmuxSpawnFn
  * passed to `makeNotifyOrchestrator` — it is no longer derived from
- * `capturePaneFn` (that reader now only feeds the PRE-send idle-gate). Two
- * `display-message` samples happen per attempt: a baseline immediately
- * before send-keys, and a post-send sample after the settle window. This
- * responder alternates: odd calls (1st, 3rd, ...) are always the fixed
- * baseline reading; even calls (2nd, 4th, ...) are the post-send reading,
- * driven by `afterReadingForAttempt(attemptIndex)` (1-based).
+ * `capturePaneFn` (that reader now only feeds the PRE-send idle-gate; review
+ * round 2 fix, US-R2-001, decoupled the content backstop onto its own
+ * `visibleCaptureFn`, defaulted from this same TmuxSpawnFn's `capture-pane`
+ * call). Two `display-message` samples happen per attempt: a baseline
+ * immediately before send-keys, and a post-send sample after the settle
+ * window. This responder alternates: odd calls (1st, 3rd, ...) are always the
+ * fixed baseline reading; even calls (2nd, 4th, ...) are the post-send
+ * reading, driven by `afterReadingForAttempt(attemptIndex)` (1-based).
  */
 function makeGeometryDisplayResponder(
 	afterReadingForAttempt: (attemptIndex: number) => string,
@@ -311,6 +313,13 @@ describe('makeNotifyOrchestrator x sendKeysVerified (US-003, CAM-200; geometry o
 		const spawnFn: TmuxSpawnFn = (_cmd, args, _opts) => {
 			if (args.includes('list-panes')) return fakeSpawnResult('0;%5\n1;%6\n');
 			if (args.includes('display-message')) return fakeSpawnResult(displayResponder(args));
+			// Content-backstop reader (review round 2 fix, US-R2-001, CAM-359):
+			// attempt 2's geometry pair is ambiguous (matches baseline), so
+			// sendKeysVerified's default visibleCaptureFn issues a real
+			// `capture-pane` call here. Answer with an idle prompt (no remnant
+			// of the sent text) so the backstop confirms delivered, and don't
+			// count it as a push (only send-keys calls belong in sendCalls).
+			if (args.includes('capture-pane')) return fakeSpawnResult('> ');
 			sendCalls.push(args.slice());
 			return fakeSpawnResult('');
 		};

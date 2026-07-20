@@ -1027,10 +1027,15 @@ export function buildSupervisorOptions(
 		} as Parameters<typeof spawnSync>[2]);
 
 	// US-003 (CAM-200): thread the capture-pane reader + logEvent deps
-	// sendKeysVerified needs for its idle-gate + composer-emptied verify +
-	// bounded-retry push. Reuses the SAME real capturePane closure (with -S -
-	// full scrollback) already wired above, and adapts the full logEvent
-	// WorkerEventLogger down to the bare (kind, detail) seam.
+	// sendKeysVerified needs for its idle-gate + bounded-retry push. Reuses the
+	// SAME real capturePane closure (with -S - full scrollback) already wired
+	// above -- safe as of the review round 2 fix (US-R2-001, CAM-359),
+	// because sendKeysVerified now feeds this scrollback reader ONLY to its
+	// PRE-send idle-gate; the content backstop's row-index lookup samples a
+	// SEPARATE, always-visible-screen reader it builds internally
+	// (`visibleCaptureFn`, defaulted from `tmuxSpawnFn`), never this one.
+	// Also adapts the full logEvent WorkerEventLogger down to the bare
+	// (kind, detail) seam.
 	const notifyOrchestrator = makeNotifyOrchestrator(
 		sessionName,
 		tmuxSpawnFn,

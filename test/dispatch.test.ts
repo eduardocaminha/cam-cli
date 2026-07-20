@@ -35,6 +35,9 @@
 //     - content backstop (review round 1 fix, US-R1-001): a geometry pair that reads unchanged
 //       at a wrap-boundary residue is overridden to NOT delivered when the captured cursor row
 //       still shows a remnant of the payload, and left as delivered when it does not
+//     - content backstop reads through the dedicated visibleCaptureFn, never capturePaneFn
+//       (review round 2 fix, US-R2-001, CAM-359): a scrollback-shaped capturePaneFn that would
+//       falsely retain the payload tail does not flip a genuinely-delivered verdict
 //   composerLineRetainsPayloadTail (US-R1-001, CAM-359): remnant present/absent, minimum
 //     2-char match length, out-of-range cursorY, empty text, trailing-whitespace trim
 
@@ -588,9 +591,13 @@ describe('sendKeysVerified', () => {
 			// cursor_y is pinned in production, so it never discriminates, and
 			// this payload's length lands cursor_x back on the baseline column.
 			sampleGeometryFn: () => EMPTY_BASELINE,
-			// But the pane content at the reported cursor row still holds the
-			// just-typed text: the composer never actually cleared.
-			capturePaneFn: () => paneContentWithRow(EMPTY_BASELINE.cursorY, payload),
+			// Content backstop reader (review round 2 fix, US-R2-001, CAM-359:
+			// dedicated `visibleCaptureFn`, decoupled from `capturePaneFn`, which
+			// here only feeds the idle-gate via its own default). The row at the
+			// reported cursor y still holds the just-typed text: the composer
+			// never actually cleared.
+			visibleCaptureFn: () => paneContentWithRow(EMPTY_BASELINE.cursorY, payload),
+			capturePaneFn: () => '> ', // idle-gate only: pane reads ready pre-send.
 			sleepFn: () => {},
 			idleTimeoutMs: 5,
 			maxAttempts: 2,
@@ -612,7 +619,38 @@ describe('sendKeysVerified', () => {
 			text: 'y'.repeat(80),
 			tmuxSpawnFn: spawnFn,
 			sampleGeometryFn: () => EMPTY_BASELINE,
-			capturePaneFn: () => paneContentWithRow(EMPTY_BASELINE.cursorY, '> '),
+			visibleCaptureFn: () => paneContentWithRow(EMPTY_BASELINE.cursorY, '> '),
+			capturePaneFn: () => '> ', // idle-gate only.
+			sleepFn: () => {},
+			idleTimeoutMs: 5,
+			maxAttempts: 2,
+			logEvent: (kind, detail) => events.push({ kind, detail }),
+		});
+
+		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
+		expect(sendKeysCalls).toHaveLength(1);
+		expect(events).toHaveLength(0);
+	});
+
+	test('content backstop reads through visibleCaptureFn, NOT capturePaneFn (review round 2 fix, US-R2-001, CAM-359): a scrollback-shaped capturePaneFn that would falsely retain the payload tail does not affect the verdict', () => {
+		const spawnFn = makeSpawnFn();
+		const events: Array<{ kind: string; detail: unknown }> = [];
+		const payload = 'z'.repeat(80);
+
+		sendKeysVerified({
+			paneId: '%12',
+			text: payload,
+			tmuxSpawnFn: spawnFn,
+			sampleGeometryFn: () => EMPTY_BASELINE,
+			// capturePaneFn simulates a FULL-SCROLLBACK reader that happens to
+			// hold the payload tail at the reported cursorY row purely by
+			// scrollback-history coincidence (the exact CAM-359 round 2 defect:
+			// indexing scrollback content by a visible-screen row number). If the
+			// backstop still consulted this reader, it would misreport
+			// NOT-delivered. The dedicated visibleCaptureFn reports the true,
+			// genuinely-emptied composer row, so the verdict must be delivered.
+			capturePaneFn: () => paneContentWithRow(EMPTY_BASELINE.cursorY, payload),
+			visibleCaptureFn: () => paneContentWithRow(EMPTY_BASELINE.cursorY, '> '),
 			sleepFn: () => {},
 			idleTimeoutMs: 5,
 			maxAttempts: 2,
