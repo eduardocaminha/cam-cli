@@ -6,6 +6,15 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.218.0] - 2026-07-20
+
+### Added
+
+- US-R1-002 - Review round 1 fix 002: address reviewer finding
+- US-R1-001 - Review round 1 fix 001: address reviewer finding
+- US-002 - Raise the idle-wait deadline to a realistic named constant
+- US-001 - Wait a settle window before the delivery-verification capture
+
 ## [0.217.0] - 2026-07-19
 
 ### Added
