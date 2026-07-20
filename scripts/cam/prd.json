@@ -33,7 +33,7 @@
         "Full quality spine green. [oracle: named-command bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/prd-oracle-lint.ts (add rule + register in RULES at ~:135), test/supervisor/prd-oracle-lint.test.ts. REUSE parseOracleDirectives from src/supervisor/behavioral-gate.ts; never write a second criterion parser (issue gotcha). PURITY: every rule must be decidable from the criterion string alone, the walk performs no I/O (module header contract). TEST NAMING IS LOAD-BEARING: the oracles above match `describe('frozen-comparand rule: flagged forms', ...)` and `describe('frozen-comparand rule: passing cases', ...)` verbatim, mirroring the existing grep-q-plus-list-files blocks at test lines 44/94; deviating from that naming makes the story's own oracles vacuous. Rule shape: flag an integer comparand (-eq/-ge/-le/== N, `wc -l` compared to a literal) when NO live re-derivation token (`git show main:`, `git grep ... main`, `git diff main`) appears in the SAME criterion. patterns.md:903 is the source bullet. Guard noUncheckedIndexedAccess on every regex capture group."
     },
