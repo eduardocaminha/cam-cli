@@ -757,12 +757,22 @@ describe('readPhaseModel vs repo project.toml (drift guard)', () => {
 
 	for (const phase of phases) {
 		test(`${phase}: readPhaseModel matches the configured value and is a known model`, () => {
+			const backend = readPhaseBackend(phase, repoConfigPath);
+			const backendSection = backend !== 'claude' ? modelsSection[backend] : undefined;
+			const nested =
+				backendSection !== undefined && backendSection !== null && typeof backendSection === 'object'
+					? (backendSection as Record<string, unknown>)[phase]
+					: undefined;
 			const configured = modelsSection[phase];
-			const expected = typeof configured === 'string' && configured.length > 0 ? configured : DEFAULTS[phase];
-			const actual = readPhaseModel(phase, repoConfigPath);
+			const expected =
+				typeof nested === 'string' && nested.length > 0
+					? nested
+					: typeof configured === 'string' && configured.length > 0
+						? configured
+						: DEFAULTS[phase];
+			const actual = readPhaseModel(phase, repoConfigPath, backend);
 			expect(actual).toBe(expected);
 
-			const backend = readPhaseBackend(phase, repoConfigPath);
 			if (backend === 'claude') {
 				expect(optionValues.has(actual) || actual === DEFAULTS[phase]).toBe(true);
 			} else {
