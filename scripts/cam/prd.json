@@ -34,7 +34,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "NEW FILE src/tmux/display-message.ts; import tmuxArgs + TmuxSpawnFn from src/tmux/session.ts (tmuxArgs at session.ts:72, SpawnFn at session.ts:81). Model the synchronous spawn shape on defaultCapturePaneFn (src/tmux/dispatch.ts:221-229), which reads r.stdout with the `typeof r.stdout === 'string' ? ... : (r.stdout?.toString() ?? '')` guard. DO NOT reuse src/retry/tmux.ts:16 buildDisplayArgs: it is vendored, omits '-L cam', and its MIT header must stay untouched. Verified against real tmux 3.6a: `display-message -p -t <pane> '#{cursor_x};#{cursor_y};#{pane_width};#{pane_height}'` -> `0;0;80;24`. Fail-closed parsing is load-bearing, not defensive padding: the tmux wiki states an unknown/missing format variable expands to nothing, so a lenient parser would read '' as 0 and report every push delivered (fail-open = the exact silent-loss bug this issue exists to kill). noUncheckedIndexedAccess makes split(';')[n] a `string | undefined`, so the guards are required by the compiler anyway. Real-tmux harness pattern to copy: test/integration/tmux-introspect.test.ts (dedicated TEST_SOCK, swapSocketSpawn rewriting '-L cam' to the test socket, waitForCondition polling not fixed sleeps, kill-server in beforeEach/afterEach, test.skipIf(!tmuxAvailable))."
     },
