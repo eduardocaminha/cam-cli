@@ -172,8 +172,8 @@ test.skipIf(!tmuxAvailable)(
 		// at exactly the 2-char prompt width, colliding with the baseline on
 		// BOTH axes -- the real production residue class (review round 1 fix,
 		// US-R1-001) that a Y-axis discriminator never actually covered. The
-		// content backstop (`composerLineRetainsPayloadTail`) is what
-		// correctly resolves this as undelivered now.
+		// prompt-row discriminator (`cursorRowStartsWithPrompt`, US-001,
+		// CAM-364) is what correctly resolves this as undelivered now.
 		const payload = 'y'.repeat(PANE_WIDTH);
 		expect(payload.length).toBe(PANE_WIDTH);
 
