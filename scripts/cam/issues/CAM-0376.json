@@ -1,0 +1,13 @@
+{
+  "id": "CAM-376",
+  "title": "The US-R1-001 bullet cites `scripts/cam/review-artifact.txt sections 4-5` as it…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-20T15:57:38.064Z",
+  "updatedAt": "2026-07-20T15:57:38.064Z",
+  "description": "The US-R1-001 bullet cites `scripts/cam/review-artifact.txt sections 4-5` as its evidence pointer, but that file is ephemeral and gitignored (.gitignore:81) and is overwritten by every subsequent review round; it is not tracked on main. patterns.md is by contract durable and versioned on main, so this cross-reference is unresolvable for any future reader. The bullet already states the measured facts inline ('measured: two criteria in US-001's own acceptanceCriteria, patterns.md keyword-density and CLAUDE.md placement, both did this against unmodified main'), so the citation is supplementary rather than load-bearing. Consider dropping the pointer or replacing it with the CAM issue number, which is durable.\n\nSource: cam/issue-372\nReview round: 2\n\nsuggestion-fingerprint: 7155ce033e6c",
+  "derivedFrom": [
+    "CAM-372"
+  ]
+}
