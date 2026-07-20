@@ -28,7 +28,7 @@
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [scripts/cam/patterns.md:646]: Doc Maintenance incomplete: the US-002 oracle only checked one exact string ('Default `idleTimeoutMs` is 5 000 ms'), and patterns.md:38 was correctly updated, but the same now-false 5s claim survives in three other places and is actively misleading after the raise. patterns.md:646 states the idle-gate 'polls the full 5s `idleTimeoutMs` budget' and advises the real-tmux fixture wall-clock is 'still well under the 5s per-test timeout' -- with a 30s default an unprimed pane would now block 30s, so the stated mitigation reasoning is inverted, not just stale. Same claim at test/integration/review-verdict-handback.test.ts:57 and :102. Update all three to name IDLE_WAIT_DEADLINE_MS / 30 000 ms in this commit per CLAUDE.md section 7."
     },
     {
