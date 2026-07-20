@@ -1,0 +1,72 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-364",
+  "description": "Replace the inert tail-matching submission backstop in src/tmux/dispatch.ts with an exact prompt-row discriminator, correct the overclaiming docs, and cover the real trailing-space wrap-boundary collision with a real-tmux regression test.",
+  "issueNumber": 364,
+  "type": "fix",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Replace the tail-matching backstop with a prompt-row discriminator",
+      "description": "As the sidecar dispatching a payload into the orchestrator pane, I need the unchanged-geometry tie broken by whether the prompt glyph sits at the START of the cursor row, so that the trailing-space wrap-boundary collision (where the cursor row is blank by construction) is correctly read as NOT delivered instead of being silently lost.",
+      "acceptanceCriteria": [
+        "composerLineRetainsPayloadTail is fully removed from src/tmux/dispatch.ts: the function, its export, its call site, and every doc reference. [oracle: file-assert ! grep -q 'composerLineRetainsPayloadTail' src/tmux/dispatch.ts]",
+        "MIN_PAYLOAD_TAIL_MATCH and the suffix-length scan are removed. [oracle: file-assert ! grep -q 'MIN_PAYLOAD_TAIL_MATCH' src/tmux/dispatch.ts]",
+        "A new start-anchored prompt pattern (e.g. /^\\s*[>\\u276F]/) is introduced, tolerant of BOTH U+003E and U+276F so the ASCII fixture and the production U+276F glyph both match. [oracle: file-assert grep -qE '\\^\\\\s\\*\\[>' src/tmux/dispatch.ts]",
+        "IDLE_PROMPT (/[>\\u276F]\\s*$/, end-anchored) and isOrchPaneIdle are NOT modified and NOT reused for the discriminator: IDLE_PROMPT provably does not match the real empty-composer row, which ends in '?\"'. [oracle: file-assert grep -q 'const IDLE_PROMPT = /\\[>' src/tmux/dispatch.ts]",
+        "The discriminator is consulted ONLY on the branch where geometryUnchanged already returned true; geometryUnchanged still compares the full (cursorX, cursorY) pair and is never reduced to a single axis. [oracle: file-assert grep -q 'before.cursorX === after.cursorX && before.cursorY === after.cursorY' src/tmux/dispatch.ts]",
+        "The discriminator reads pane content through visibleCaptureFn (visible-screen capture, no -S -), never capturePaneFn; the round-2 reader separation and its rationale comment survive. [oracle: file-assert grep -q 'visibleCaptureFn' src/tmux/dispatch.ts]",
+        "A null geometry sample on either side of a send still falls through to retry (fail-closed), and an out-of-range cursorY is guarded under noUncheckedIndexedAccess (lines[cursorY] is string | undefined). [oracle: bun test test/dispatch.test.ts]",
+        "The module header no longer contains the string 'closes that residual gap' and no longer asserts any trailing suffix is always contiguous on the cursor row. [oracle: file-assert ! grep -q 'closes that residual gap' src/tmux/dispatch.ts]",
+        "The module header documents the prompt-row discriminator and plainly names the remaining, NOT-closed forgery residue: a payload containing a literal prompt glyph landing at the start of a wrap row. [oracle: reviewer-judgment]",
+        "Unit tests in test/dispatch.test.ts replace the removed composerLineRetainsPayloadTail suite and cover BOTH directions using the MEASURED shapes: empty composer (glyph on the cursor row -> delivered, no resend) and the collision (blank cursor row, glyph plus payload at cursorY-1 -> not delivered, retry). [oracle: bun test test/dispatch.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/tmux/dispatch.ts (call site ~line 512, geometryUnchanged ~301, backstop ~305-358, module header ~38-69, JSDoc on visibleCaptureFn ~187 and on sendKeysVerified ~429), test/dispatch.test.ts (imports the removed symbol at line 51; suite at 667-712; header comment at line 41). MEASURED reproducer from the issue (real claude Ink TUI v2.1.215, 80x30 pane, 2026-07-20) is authoritative over intuition: empty composer cursor (2,26) with row[26] = '\\u276F\\u00A0Try \"how do I log an error?\"'; collision (77-char payload ending in a space) cursor (2,26) byte-identical, row[26] = '' blank, row[25] = '\\u276F\\u00A0word ... w'. Do NOT reuse IDLE_PROMPT (dispatch.ts:258, end-anchored, does not match the real empty row). Correct in BOTH directions: a duplicate resend trips the back-to-back send-keys race (see the 'Coalesce notifyOrchestrator' bullet in scripts/cam/patterns.md: the Ink prompt swallows the second of two back-to-back send-keys). Test-quality invariant: no tautological mock-call assertions; assert the verdict/retry behaviour, not that a fake was called. Do NOT overclaim in the corrected header: the glyph-forgery residue is narrower than the trailing-space class but is not zero, and the header being wrong about exactly this is why CAM-364 exists. src/tmux/dispatch.ts is executed by the sidecar, so the orchestrator must coherence-rebuild after ship."
+    },
+    {
+      "id": "US-002",
+      "title": "Correct the raw-echo fixture to the real Ink collision shape",
+      "description": "As a test author, I need the real-tmux fixture to render the production prompt glyph and to reproduce the ACTUAL production collision (trailing space word-wrapped onto the next row, leaving the cursor row blank), so that the integration suite exercises the residue class that exists in production rather than one that does not.",
+      "acceptanceCriteria": [
+        "test/fixtures/dispatch-geometry/raw-echo.ts renders the production prompt glyph U+276F followed by U+00A0 in place of the current ASCII '> ', preserving the 2-column empty-composer baseline (cursorX === 2). [oracle: file-assert grep -q '\\\\u276F' test/fixtures/dispatch-geometry/raw-echo.ts]",
+        "raw-echo.ts supports a word-wrap mode in which a payload ending in a space that lands exactly on the wrap boundary places the trailing space on the NEXT row, leaving the cursor row BLANK with the cursor at column 2 and the payload plus prompt glyph on the row above. [oracle: bun test test/integration/dispatch-geometry.test.ts]",
+        "The fixture header documents that the previous char-wrap-only model reproduced a collision shape (cursor row retaining 2 real characters) that does NOT occur in the real Ink TUI, and records the measured trailing-space sweep (len=75 -> x=77, 76 -> 78, 77 -> 2 COLLISION, 78 -> 5 at width 80). [oracle: reviewer-judgment]",
+        "The existing char-wrap mode and the existing AC6/AC7/AC8/2*paneWidth integration tests still pass with behaviour unmodified; any change to them is justified in the commit message as a fixture-model correction, never as a weakened assertion. [oracle: bun test test/integration/dispatch-geometry.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "File: test/fixtures/dispatch-geometry/raw-echo.ts (PROMPT at line 53, computeRows at 71-82, render at 85-92, mode argv at 48). The fixture has now modeled the WRONG collision class TWICE: first eager downward wrap (corrected by US-R1-001), now char-wrap leaving 2 real characters on the cursor row, which is exactly why MIN_PAYLOAD_TAIL_MATCH = 2 appeared to work. Validate the new word-wrap mode against the measured table in the CAM-364 issue body, not against intuition about wrapping. Wrap is LAZY in the real TUI and single-token payloads NEVER collide (len=76 -> x=78, len=77 -> x=3, len=153 -> x=3); the collision is reachable ONLY via a trailing space at the boundary. PROMPT length stays 2 (U+276F + U+00A0) so existing char-wrap arithmetic and the cursorX===2 baseline are preserved. Keep the word-wrap behaviour additive (a mode), do not replace char-wrap mode."
+    },
+    {
+      "id": "US-003",
+      "title": "Add real-tmux regression coverage for the trailing-space wrap boundary",
+      "description": "As a maintainer, I need a real-tmux integration test driving a trailing-space payload at the exact wrap boundary in both drop and submit modes, so that the collision class CAM-364 exists to close is proven closed in both directions against a real tmux server rather than a unit-level fake.",
+      "acceptanceCriteria": [
+        "A new test in test/integration/dispatch-geometry.test.ts drives a real tmux server with a trailing-space payload at the exact wrap boundary (len 77 at PANE_WIDTH 80) in DROP mode and asserts the payload is NOT reported delivered: exactly maxAttempts send-keys invocations and exactly one push-undelivered event. [oracle: bun test test/integration/dispatch-geometry.test.ts]",
+        "A companion test drives the SAME trailing-space boundary payload in SUBMIT mode and asserts exactly one send-keys invocation and zero push-undelivered events, proving the discriminator never causes a duplicate resend of a delivered payload. [oracle: bun test test/integration/dispatch-geometry.test.ts]",
+        "Both new tests follow the file's existing conventions: test.skipIf(!tmuxAvailable), the private socket, and the pane pinned to 80 columns. [oracle: file-assert grep -q 'test.skipIf(!tmuxAvailable)' test/integration/dispatch-geometry.test.ts]",
+        "The stale comment at test/integration/dispatch-geometry.test.ts:170 referencing composerLineRetainsPayloadTail is updated to name the prompt-row discriminator. [oracle: file-assert ! grep -q 'composerLineRetainsPayloadTail' test/integration/dispatch-geometry.test.ts]",
+        "No new event kinds are introduced: both tests assert the existing 'push-undelivered' kind with detail { paneId, retriesExhausted }. [oracle: file-assert ! grep -q \"kind).toBe('push-\" test/integration/dispatch-geometry.test.ts || grep -q \"push-undelivered\" test/integration/dispatch-geometry.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "File: test/integration/dispatch-geometry.test.ts (254 lines; AC8 drop test at ~156-190, AC8 submit at ~192+; stale backstop comment at line 170). Depends on US-001 (discriminator) and US-002 (word-wrap fixture mode). This file is the ONLY test driving a real tmux server against the geometry oracle: its unit-test siblings structurally cannot catch a defect in the real interaction with tmux cursor tracking, so this residue class belongs HERE, not in test/dispatch.test.ts. Every sendKeysWhenIdle / sendKeysVerified call site emits the single event kind 'push-undelivered' with detail { paneId, retriesExhausted }; the four thin-proxy sites (issue.ts, review.ts, spec.ts, orch-recycle-watch.ts) and the sidecar sites share that contract, so do not add a new kind. Poll async waits with waitForCondition, never a fixed setTimeout. Real tmux may be slow: keep the existing 20_000 ms per-test timeout."
+    }
+  ]
+}
