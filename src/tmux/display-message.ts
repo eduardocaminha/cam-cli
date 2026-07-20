@@ -10,8 +10,8 @@
 // #{cursor_y} format variables report, so keying the oracle on sampled
 // geometry instead of captured pane text closes that forgery gap.
 //
-// This module deliberately does NOT import src/retry/tmux.ts (vendored, MIT
-// licensed, must stay untouched): that module's buildDisplayArgs omits the
+// This module deliberately does NOT import the vendored tmux.ts helper under
+// src/retry/ (MIT licensed, must stay untouched): that module's buildDisplayArgs omits the
 // `-L cam` socket flag applied by every other dispatch-path tmux call, and
 // its capture/spawn helpers use an async Bun.spawn convention, whereas every
 // caller here spawns synchronously (TmuxSpawnFn mirrors src/tmux/session.ts
