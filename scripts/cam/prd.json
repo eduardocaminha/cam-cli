@@ -29,7 +29,7 @@
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [src/tmux/display-message.ts:13]: US-001 AC5's oracle fails at Layer B on my independent re-run: `! grep -q 'retry/tmux' src/tmux/display-message.ts` matches the header comment at line 13 ('This module deliberately does NOT import src/retry/tmux.ts'), so the mechanical gate reports FAIL. The substantive acceptance criterion holds -- the sole import is `./session.ts` at line 21 and nothing from the vendored module is referenced -- so this is an over-broad oracle rather than a code defect, and it is not treated as a hard-constraint failure. Still actionable and mechanical (single file): either scope the oracle to import lines (e.g. grep the `^import` lines only) or reword the comment so the gate is not self-tripping. Left as-is, any automated re-run of this AC reports a false red."
     },
     {
