@@ -54,8 +54,9 @@ function paneLabel(paneTarget: string): string {
  * Type a bare idle-prompt line into pane 0 so it ends with `>` (US-003,
  * CAM-200): a raw `cat` fixture pane never renders a claude-style prompt on
  * its own, and without one sendKeysVerified's PRE-send idle-gate polls the
- * full 5s `idleTimeoutMs` budget before falling back to send-anyway, which
- * risks the test exceeding bun's default per-test timeout. Cat's terminal
+ * full `IDLE_WAIT_DEADLINE_MS` (30 000 ms) budget before falling back to
+ * send-anyway, which risks the test exceeding bun's default per-test
+ * timeout. Cat's terminal
  * echo (and its own stdout copy of the line) leaves "> " sitting in the
  * pane tail, which `isOrchPaneIdle` recognises immediately. Poll the same
  * predicate (`isOrchPaneIdle`) production code uses instead of a fixed sleep.
@@ -99,8 +100,9 @@ test.skipIf(!tmuxAvailable)(
 		await waitForCondition(() => paneLabel(`${SESSION}.0`) === "orchestrator");
 
 		// Prime an idle prompt so sendKeysVerified's (US-003, CAM-200) PRE-send
-		// idle-gate resolves immediately instead of polling the full 5s timeout
-		// budget: a raw `cat` pane never renders a claude-style prompt on its own.
+		// idle-gate resolves immediately instead of polling the full
+		// IDLE_WAIT_DEADLINE_MS (30 000 ms) timeout budget: a raw `cat` pane
+		// never renders a claude-style prompt on its own.
 		await primeIdlePrompt();
 
 		// Build the production closure under test.
