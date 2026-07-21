@@ -1,0 +1,27 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Add cam pause / cam resume operator brake backed by a dedicated pause marker" },
+  "branchName": "cam/issue-360",
+  "timestamp": "2026-07-21T21:00:00Z",
+  "createdFiles": [
+    "src/supervisor/pause-marker.ts",
+    "src/commands/pause.ts",
+    "test/commands/pause.test.ts"
+  ],
+  "modifiedFiles": [
+    "index.ts",
+    "src/commands/resume.ts",
+    "src/commands/stop.ts",
+    ".gitignore",
+    "templates/.gitignore",
+    "src/vendor/_generated.ts",
+    "test/commands-freeze.test.ts",
+    "test/stop-markers.test.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "cam pause / cam resume are wired end-to-end: src/supervisor/pause-marker.ts (PAUSE_MARKER='.cam-pause', setPause/clearPause/isPauseSet, injectable fs seams, mirrors drain-kill-switch.ts) is the marker module; src/commands/pause.ts is the print-path command (cam pause, no flags besides --help); runResume (src/commands/resume.ts) calls clearPause(claudeDir) at the top of its flow (skipped under --dry-run) before any mode classification; performStop (src/commands/stop.ts) removes PAUSE_MARKER as part of its per-session marker cleanup loop. index.ts wires 'pause' into COMMANDS, HELP_REGISTRY, and the dispatch switch (mirrors the 'drain' case). Gotcha for future stories: adding/removing a top-level cam subcommand requires updating test/commands-freeze.test.ts's hardcoded FROZEN_COMMANDS array AND its toBe(N) count literal in the SAME commit -- typecheck alone does not catch a drift there (see the new patterns.md bullet). Scope note: this story deliberately does NOT wire isPauseSet into the sidecar loop's gating logic (loop.ts) -- the acceptance criteria only covered the marker module + pause/resume/stop commands + gitignore + gates, not actual loop-pause behavior; if a future story wants the sidecar to actually halt on the marker, that is new scope requiring loop.ts changes plus a real behavioral gate.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
