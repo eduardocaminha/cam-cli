@@ -13,7 +13,7 @@
       "id": "US-R2-001",
       "title": "Review round 2 fix 001: address reviewer finding",
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [README.md:147]: New first-class subcommand `cam pause` was added to the COMMANDS array, HELP registry, and PAUSE_HELP, but the exhaustive command reference in README.md (which lists the sibling operator commands cam status/stop/drain/resume at lines 147-150) was not updated to include `cam pause`. Per the project doc-maintenance convention (CLAUDE.md section 7 / review Documentation & Config Sync), a user-facing command addition must be reflected in the README command reference. Add a `cam pause` line beside `cam stop`/`cam drain`."
     },
     {
