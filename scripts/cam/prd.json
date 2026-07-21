@@ -110,7 +110,7 @@
         "Full lint spine green including the deterministic oracle-lint (bun run check:all), so a lint regression from this story fails THIS story, not a later one. [oracle: bun run check:all]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": "US-004",
       "notes": "Three comment/name-only edits, no behavior change. CAM-384: rename the test at test file lines 203-206 from 'does not match main by literal substring -- mainbranch is not the main token' to the positive form (e.g. 'flags a mainbranch: ref, which is not the main token'); change ONLY the name, keep command + `.not.toBeNull()` byte-identical (this test lives in the 'flagged forms' describe, so the negative-sounding name violated the 'flags X'/'does not flag X' convention). CAM-385: reword the doc comment on hasUnguardedSedLineAnchor (src/supervisor/prd-oracle-lint.ts:503-507) so it no longer says the guard must 'precede' the anchor (the guard is applied to the whole command with no positional constraint; the permissive behavior is defensible and must not change), per the standing lesson that a comment does not prove runtime behavior. CAM-392: move the extractCommandSubstitutionSpans JSDoc block (currently at lines ~283-292, above findCommandSubstitutionEnd) down to sit directly above `function extractCommandSubstitutionSpans` at line 300; comment-only, no code motion, and extractCommandSubstitutionSpans body must not be otherwise altered (CAM-389 is out of scope)."
     }
