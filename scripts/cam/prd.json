@@ -20,7 +20,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Single edit in scripts/cam/patterns.md, the US-003/CAM-376 bullet (currently line 907, re-grep before editing since lines drift). Change the token `test/dispatch.test.ts:754` to bare `test/dispatch.test.ts`; leave the rest of the sentence, including the inline quote `recordedSleeps.every((ms) => ms <= 1_000)`, intact. GOTCHA: the quoted assertion is HISTORICAL (pre-fix) and no longer exists in test/dispatch.test.ts on main (live assertion is strict-equality `=== POLL_INTERVAL_MS` around line 777); the durable anchor is the inline quote in patterns.md itself, so do NOT add any oracle asserting the old text resolves in the test file (would be red-on-main). Do NOT re-freeze a new :NNN suffix. Do NOT target scripts/cam/handoff.json (rotating). Doc-only: NO coherence rebuild, binary/sidecar stay at current version; does not touch vendor/ or templates/. Precedent: CAM-380 applied the identical fix to the adjacent US-R1-002 bullet, following the derive-don't-freeze rule (patterns.md:903) and content-reference precedent (patterns.md:913)."
     }
