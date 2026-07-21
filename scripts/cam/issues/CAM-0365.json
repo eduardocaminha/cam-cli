@@ -1,11 +1,11 @@
 {
   "id": "CAM-365",
   "title": "The strict /^-?\\d+$/ guard exists specifically to defeat the lenient-parseInt t…",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-20T09:35:29.876Z",
-  "updatedAt": "2026-07-21T04:14:14.253Z",
+  "updatedAt": "2026-07-21T04:36:54.592Z",
   "description": "The strict /^-?\\d+$/ guard exists specifically to defeat the lenient-parseInt trap (Number.parseInt('12abc') === 12), but no unit test drives that case: test/tmux-display-message.test.ts covers the empty-field variant ('12;;80;24') instead. I verified the behavior manually against the real helper (non-integer field -> null, see scripts/cam/review-artifact.txt section 3d) so this is a coverage gap, not a defect. Adding a '12abc;5;80;24' case would pin the guard that the doc comment calls load-bearing.\n\nSource: cam/issue-359\nReview round: 3\n\nsuggestion-fingerprint: cd7417fefb79",
   "derivedFrom": [
     "CAM-359"
