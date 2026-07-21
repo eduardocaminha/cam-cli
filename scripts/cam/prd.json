@@ -57,7 +57,7 @@
         "Full lint spine green including the deterministic oracle-lint (bun run check:all), so a lint regression from this story fails THIS story, not a later one. [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Edit hasFrozenIntegerComparand at src/supervisor/prd-oracle-lint.ts:406-410. CRITICAL (this is the forbidden trade that caused both CAM-388 review CRITICALs): strip ONCE via stripQuotedSpans, then split the ALREADY-STRIPPED text on &&, ||, ;, and newline, and test BOTH INTEGER_COMPARAND_RE and LIVE_DERIVATION_RE per clause. Never split the raw command (that resurrects quoted payloads CAM-388 made inert). Reject the no-escape-hatch direction: it over-flags `-ge 1` sanity floors and would redden the existing passing test at test file lines 215-221. The rule contract returns RuleFinding | null, so keep emitting a single finding. patterns.md:913 and patterns.md:923 (double-quote backslash escaping in stripQuotedSpans) are the durable context. Behavioral oracles only. Do NOT use `bun test <file>` as the sole gating oracle. Two of the criteria are deliberately GREEN pinning criteria and must not be reported as red."
     },
