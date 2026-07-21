@@ -1,13 +1,45 @@
 {
   "id": "CAM-362",
   "title": "The default-deadline test monkeypatches the global Date.now and process.stderr.…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-20T06:20:16.278Z",
-  "updatedAt": "2026-07-20T06:20:16.278Z",
+  "updatedAt": "2026-07-21T08:14:16.355Z",
   "description": "The default-deadline test monkeypatches the global Date.now and process.stderr.write. Both are correctly restored in a finally block and bun runs a file's tests serially, so this is safe today, but a shared withFakeClock helper under test/helpers/ would make the pattern reusable and harder to leak if the test is ever copied.\n\nSource: cam/issue-358\nReview round: 2\n\nsuggestion-fingerprint: 3d29a2c5ace6",
   "derivedFrom": [
     "CAM-358"
-  ]
+  ],
+  "spec": {
+    "scope": "Extract the duplicated fake-clock monkeypatch idiom in test/dispatch.test.ts into a shared, callback-style helper test/helpers/with-fake-clock.ts, and migrate the two existing sites to use it. The helper saves the original Date.now and process.stderr.write, installs a fake clock (Date.now returns a mutable fakeNow starting at 0) plus a stderr.write that captures written chunks, invokes the caller's callback with an object exposing advance(ms) (advancing fakeNow) and the captured-chunks array, and restores BOTH globals in a finally block so restoration is guaranteed even if the callback throws. Migrate Site A (the sendKeysWhenIdle default-deadline test near line 316) and Site B (the CAM-373 idle-gate exactly-once test near line 720) to withFakeClock, preserving each site's distinct behavior. Add a dedicated helper test proving restore-on-throw. Test-only change: no production/sidecar-executed code and no templates/ touched, so NO coherence rebuild is required.",
+    "acceptanceCriteria": [
+      "A new shared helper file test/helpers/with-fake-clock.ts exports a named withFakeClock function following the existing test/helpers convention (a `// test/helpers/with-fake-clock.ts` path-banner comment on line 1, a rationale docblock, named export only, no default export). [oracle: grep -q 'export function withFakeClock' test/helpers/with-fake-clock.ts]",
+      "withFakeClock is callback-style: it saves the original Date.now and process.stderr.write, installs a fake clock (Date.now returns a mutable fakeNow starting at 0) and a chunk-capturing process.stderr.write, invokes the caller's callback with an object exposing an advance(ms) function that advances fakeNow and the captured-chunks array, and restores BOTH globals in a finally block so restoration is guaranteed even when the callback throws. [oracle: reviewer-judgment]",
+      "test/dispatch.test.ts imports the helper via `import { withFakeClock } from './helpers/with-fake-clock.ts';` (relative path, explicit .ts extension per file convention). [oracle: grep -qF \"from './helpers/with-fake-clock.ts'\" test/dispatch.test.ts]",
+      "Both former inline fake-clock sites in test/dispatch.test.ts (the sendKeysWhenIdle default-deadline test near line 316 and the CAM-373 idle-gate exactly-once test near line 720) are migrated to withFakeClock; the inlined monkeypatch idiom `Date.now = () => fakeNow` no longer appears anywhere in test/dispatch.test.ts. [oracle: ! grep -qF 'Date.now = () => fakeNow' test/dispatch.test.ts]",
+      "The migrated sites preserve their distinct pre-existing behavior: the default-deadline test still asserts the captured stderr contains the IDLE_WAIT_DEADLINE_MS deadline message and NOT the literal 5000 ms message; the CAM-373 idle-gate test still records sleeps via its own sleepFn (advancing the clock through the helper's advance) and still asserts send-keys fires exactly once. [oracle: reviewer-judgment]",
+      "The dispatch test suite still passes unchanged after the refactor. [oracle: bun test test/dispatch.test.ts]",
+      "A dedicated helper test test/helpers/with-fake-clock.test.ts exists and passes, proving at minimum that withFakeClock restores both Date.now and process.stderr.write even when the callback throws (the leak-safety property motivating this refactor). [oracle: bun test test/helpers/with-fake-clock.test.ts]"
+    ],
+    "gotchas": [
+      "The two sites are NOT byte-identical: Site A (near 327) saves both originals contiguously and names its capture array `captured`; Site B (near 723) saves originalWrite first, then does test-specific setup, then saves originalNow, names its capture array `stderrChunks`, and also records sleeps in `recordedSleeps`. The finally restore block and the `Date.now = () => fakeNow` override are byte-identical at both. The helper must accommodate both usages: expose the captured array to the callback and let the caller's injected sleepFn advance the clock via advance(ms).",
+      "test/check-test-sleeps.test.ts references test/helpers/*.ts paths only as synthetic string FIXTURES passed to scanForSleeps (around lines 52 and 142); it is NOT an allowlist of real helper files, so the new helper needs NO registration there. The helper contains no real sleeps, so the sleep-scanner guard is unaffected.",
+      "Follow the existing test/helpers convention exactly (see flush-ink.ts, wait-for-condition.ts, mock-terminal-size.ts): path-banner comment on line 1, rationale docblock, named export only. The dispatch.test.ts import uses the relative ./helpers/<name>.ts form with explicit extension.",
+      "bun runs a file's tests serially, so the current inline pattern is safe today; the refactor's value is reusability + leak-safety if the idiom is ever copied, NOT fixing a live bug. Do not change dispatch behavior or existing assertions.",
+      "Test-only change: no templates/ and no sidecar-executed code (src/supervisor, src/tmux/dispatch.ts) is touched, so NO coherence rebuild is required after this ships."
+    ],
+    "domainTerms": [
+      "withFakeClock: the new shared test helper that monkeypatches Date.now + process.stderr.write with guaranteed finally-restore.",
+      "fake-clock idiom: saving Date.now/process.stderr.write, overriding with a mutable fakeNow + chunk-capturing stderr, restoring in finally.",
+      "Site A / Site B: the two dispatch.test.ts tests using the idiom (sendKeysWhenIdle default-deadline near line 316; CAM-373 idle-gate exactly-once near line 720).",
+      "IDLE_WAIT_DEADLINE_MS: the exported default deadline the Site A test asserts against."
+    ]
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 2,
+    "riskReduction": 3,
+    "jobSize": 2
+  },
+  "type": "chore"
 }
