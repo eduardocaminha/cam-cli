@@ -1,13 +1,38 @@
 {
   "id": "CAM-365",
   "title": "The strict /^-?\\d+$/ guard exists specifically to defeat the lenient-parseInt t…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-20T09:35:29.876Z",
-  "updatedAt": "2026-07-20T09:35:29.876Z",
+  "updatedAt": "2026-07-21T04:14:14.253Z",
   "description": "The strict /^-?\\d+$/ guard exists specifically to defeat the lenient-parseInt trap (Number.parseInt('12abc') === 12), but no unit test drives that case: test/tmux-display-message.test.ts covers the empty-field variant ('12;;80;24') instead. I verified the behavior manually against the real helper (non-integer field -> null, see scripts/cam/review-artifact.txt section 3d) so this is a coverage gap, not a defect. Adding a '12abc;5;80;24' case would pin the guard that the doc comment calls load-bearing.\n\nSource: cam/issue-359\nReview round: 3\n\nsuggestion-fingerprint: cd7417fefb79",
   "derivedFrom": [
     "CAM-359"
-  ]
+  ],
+  "spec": {
+    "scope": "Add one unit test to test/tmux-display-message.test.ts pinning the load-bearing strict-int guard in parseIntField (src/tmux/display-message.ts:84-88). The guard uses /^-?\\d+$/.test(field) specifically because Number.parseInt is too lenient (parseInt('12abc') === 12); its doc comment calls this out as load-bearing on a fail-CLOSED path. Existing tests cover empty stdout, non-zero exit, and an empty mid-string field ('12;;80;24'), but NOT the non-digit-content case the guard exists to defeat. Add a 'sampleCursorGeometry: fails CLOSED' case feeding '12abc;5;80;24' and asserting the result is null. Test-file-only change: no src edit, no sidecar-executed code touched, so NO coherence rebuild is needed.",
+    "acceptanceCriteria": [
+      "test/tmux-display-message.test.ts adds a sampleCursorGeometry case for a non-digit field reading '12abc;5;80;24' (the exact lenient-parseInt trap the /^-?\\d+$/ guard exists to defeat), asserting the result is null (fail-closed), placed in the existing 'fails CLOSED on malformed output' describe block. [oracle: file-assert grep -q '12abc;5;80;24' test/tmux-display-message.test.ts]",
+      "Typecheck and the full test/tmux-display-message.test.ts suite pass with the new case, confirming the guard returns null for the non-digit reading (a .not.toBeNull() mistake or a broken guard would fail this gate). [oracle: bun run typecheck && bun test test/tmux-display-message.test.ts]",
+      "The new case is genuinely falsifiable, not a tautology: it would go RED if parseIntField were loosened to a bare Number.parseInt, since parseInt('12abc')===12 would let all four fields parse and yield a fabricated CursorGeometry instead of null. Reviewer confirms the assertion pins the guard. [oracle: reviewer-judgment]"
+    ],
+    "gotchas": [
+      "This is a COVERAGE GAP, not a live defect: the guard already returns null for '12abc' on main (verified manually). So the behavior probe is already green on main; only the test's PRESENCE flips red->green (AC1). AC2 is a green-gate invariant, AC3 is the falsifiability rationale.",
+      "Keep it to exactly ONE added test case mirroring the existing '12;;80;24' block shape (fakeSpawn('12abc;5;80;24', 0) then expect(sampleCursorGeometry('%3', spawnFn)).toBeNull()). Do not refactor the existing cases.",
+      "Test-file-only: test/*.ts is not in the compiled binary, so no build-release/sidecar restart is needed after merge."
+    ],
+    "domainTerms": [
+      "parseIntField: the strict-int field parser guarding sampleCursorGeometry; rejects non-integer fields via /^-?\\d+$/ before Number.parseInt.",
+      "sampleCursorGeometry: parses a 4-field tmux cursor-geometry reading, fails CLOSED (returns null) on any malformed field.",
+      "lenient-parseInt trap: Number.parseInt('12abc')===12; the guard exists to reject exactly this."
+    ]
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 1,
+    "riskReduction": 3,
+    "jobSize": 1
+  },
+  "type": "chore"
 }
