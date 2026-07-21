@@ -10,69 +10,42 @@
 // tool call), then issues send-keys exactly once.
 //
 // Fallback on timeout: log the condition and still send, EXACTLY ONCE, with
-// no verify/retry cycle (US-002, CAM-373). The check is best-effort by design:
-// capture-pane lags by one tmux refresh cycle and we never want to block the
-// caller indefinitely. Because the idle-gate already spent the full budget
-// failing to observe an idle pane, a post-send geometry read on this path
-// would be near-certain to read "not delivered" too (the pane is known-busy),
-// so running the verify/retry loop here would just resend the same payload
-// up to `maxAttempts` times for one narration line. `push-undelivered` is
-// still emitted here (reason 'pane-not-idle'), but it reports that delivery
-// is UNKNOWN, not that it was verified to have failed.
+// no verify/retry cycle. The check is best-effort by design: capture-pane lags
+// by one tmux refresh cycle and we never want to block the caller indefinitely.
+// `push-undelivered` is still emitted here (reason 'pane-not-idle'), but it
+// reports that delivery is UNKNOWN, not that it was verified to have failed.
 //
-// sendKeysVerified (US-002, CAM-200) extends the idle case (pane went idle
-// within budget) with post-send delivery verification: a busy TUI can still
-// drop the trailing Enter even after the pane looked idle at check time
-// (capture-pane lags by one refresh cycle), so the pushed line silently
-// never submits. On that path only, sendKeysVerified re-checks the pane
-// after each send for delivery, and retries with bounded backoff up to N
-// attempts, emitting a 'push-undelivered' event (reason 'retries-exhausted')
-// on exhaustion instead of blocking or throwing. sendKeysWhenIdle now
-// delegates to it so every existing thin-proxy caller (review.ts, issue.ts,
-// spec.ts) gets verify+retry for free on the idle path.
+// sendKeysVerified (US-002) extends the idle case (pane went idle within
+// budget) with post-send delivery verification: a busy TUI can still drop the
+// trailing Enter even after the pane looked idle at check time (capture-pane
+// lags by one refresh cycle), so the pushed line silently never submits. On
+// that path only, sendKeysVerified re-checks the pane after each send for
+// delivery, and retries with bounded backoff up to N attempts, emitting a
+// 'push-undelivered' event (reason 'retries-exhausted') on exhaustion instead
+// of blocking or throwing. sendKeysWhenIdle now delegates to it so every
+// existing thin-proxy caller (review.ts, issue.ts, spec.ts) gets verify+retry
+// for free on the idle path.
 //
-// Delivery verdict (US-002, CAM-359): the verdict is derived primarily from
-// tmux CURSOR GEOMETRY, not from substring-matching the payload against
-// captured pane content. Captured pane text is renderable/forgeable (a
-// wrapped payload never appears whole on any single captured line, and
-// payload text like `->` can coincidentally match a soft-wrap anchor), so a
-// content-match oracle either always reports "delivered" for a wrapped
-// payload (masking a dropped Enter, CAM-358's original defect) or can be
-// spoofed by payload content. tmux's own `#{cursor_x}`/`#{cursor_y}` are
-// server-side state a payload cannot forge. A per-send baseline is sampled
-// immediately before each send-keys call; the verdict compares the FULL
-// (x, y) pair sampled after the settle window against that baseline.
+// Delivery verdict: derived from tmux CURSOR GEOMETRY, not from
+// substring-matching the payload against captured pane content (captured
+// text is renderable/forgeable, and a wrapped payload never appears whole on
+// any single captured line). tmux's own `#{cursor_x}`/`#{cursor_y}` are
+// server-side state a payload cannot forge. A baseline (x, y) is sampled once,
+// immediately before the single physical send-keys call; each verify attempt
+// re-samples and compares the FULL pair against that baseline.
 //
-// Corrected model (review round 1 fix, US-R1-001): measured against a real
-// claude TUI, an Ink composer grows UPWARD from the pane bottom, so
-// cursor_y is PINNED CONSTANT across every composer state (empty, wrapped,
-// short-filled all read the same cursor_y). cursor_y therefore contributes
-// ZERO discrimination in production; cursor_x (a value mod paneWidth) is the
-// only positional signal, and a modulo is inherently periodic: a payload
-// whose length lands the wrapped cursor back on the exact baseline column
-// collides on x too, so the (x, y) pair alone is PROVABLY insufficient for
-// that residue class, not merely a rare edge case.
-//
-// Prompt-row discriminator (US-001, CAM-364, replacing the tail-matching
-// backstop from US-R1-001): the original fix inspected the cursor row for a
-// trailing suffix of the just-sent text and asserted that suffix was always
-// contiguous on that row regardless of wrap. A real trailing-space collision
-// disproves that assertion: measured against
-// a real claude Ink TUI (80x30 pane, 2026-07-20), a 77-char payload ending in
-// a space reproduces the SAME cursor geometry (2, 26) as the genuinely empty
-// composer, but the row AT cursor_y is BLANK by construction in that
-// collision (row[26] === ''), with the prompt and the payload's own remnant
-// sitting one row UP (row[25] === '❯ ...payload text...'). The genuinely
-// empty composer instead reads row[26] === '❯ Try "how do I log an
-// error?"'. The suffix scan found nothing on either side of that blank row
-// and silently misread the collision as delivered. The discriminator now
-// asks a cheaper, sounder question: does the PROMPT GLYPH sit at the START
-// of the cursor row? A genuinely empty composer's cursor row starts with the
-// rendered prompt (`❯` in production, tolerant of ASCII `>` for fixtures);
-// the blank collision row does not. The full-pair geometry comparison is
-// still never reduced to a single axis; the discriminator only ever narrows
-// an "unchanged" geometry verdict to "not delivered" when the prompt is
-// absent from the start of the row, never the reverse.
+// Prompt-row discriminator (CAM-364): the full (x, y) pair alone is
+// PROVABLY insufficient for one residue class (an Ink composer grows upward
+// from a fixed bottom anchor, so cursor_y is pinned constant; cursor_x is a
+// value mod paneWidth, and a modulo is periodic, so a payload whose wrapped
+// length lands the cursor back on the baseline column collides on both
+// axes). When geometry reads "unchanged", the discriminator additionally
+// checks whether the row AT cursor_y starts with the rendered prompt glyph
+// (`cursorRowStartsWithPrompt`, `PROMPT_ROW_START = /^\s*[>❯]/`): a genuinely
+// empty composer's cursor row always starts with the prompt; a genuinely
+// undelivered row (blank, mid-wrap, or holding unsent text) never does. This
+// only ever narrows an "unchanged" geometry verdict to "not delivered", never
+// the reverse.
 //
 // Residue NOT closed by this fix: a payload whose own text contains a
 // literal prompt glyph landing at the START of a wrap row would still forge
@@ -80,35 +53,28 @@
 // narrower than the trailing-space collision class this fix closes, but it
 // is not zero.
 //
-// Reader decoupling (review round 2 fix, US-R2-001, CAM-359): cursor_y above
-// indexes rows relative to the TOP OF THE VISIBLE PANE, which only holds for
-// a VISIBLE-SCREEN capture (`capture-pane -p -t <paneId>`). The production
-// sidecar wires `capturePaneFn` to a FULL-SCROLLBACK reader
-// (`capture-pane -p -S -`) for unrelated reasons (state reads elsewhere in
-// the supervisor), and that same reader used to be reused for the row
-// discriminator too, which silently indexed an arbitrary history line
-// instead of the true cursor row. The discriminator now samples pane content
-// through a
-// dedicated `visibleCaptureFn`, always built fresh from `tmuxSpawnFn`
+// Reader decoupling (US-R2-001): cursor_y indexes rows relative to the TOP OF
+// THE VISIBLE PANE, which only holds for a VISIBLE-SCREEN capture
+// (`capture-pane -p -t <paneId>`). The production sidecar wires `capturePaneFn`
+// to a FULL-SCROLLBACK reader (`capture-pane -p -S -`) for unrelated state
+// reads elsewhere in the supervisor, so the row discriminator samples through
+// its own dedicated `visibleCaptureFn`, always built fresh from `tmuxSpawnFn`
 // (`capture-pane -p -t <paneId>`, no `-S -`) unless a test overrides it.
-// `capturePaneFn` feeds ONLY the PRE-send idle-gate (`waitForIdlePane`) from
-// here on, which just scans the pane's last 5 lines and is insensitive to
-// scrollback vs visible-screen framing.
+// `capturePaneFn` feeds ONLY the PRE-send idle-gate (`waitForIdlePane`), which
+// just scans the pane's last 5 lines and is insensitive to scrollback vs
+// visible-screen framing.
 //
-// Send-once guard on the idle path (US-001, CAM-375): the atomic send-keys
-// call used to sit INSIDE the verify/retry loop, so a persistent
-// geometry-oracle false-negative on a detected-idle pane re-sent the
-// IDENTICAL payload on every attempt -- a single narration line (e.g. a
-// BEFORE / update-branch event) could physically land in the pane up to
-// `maxAttempts` times. The baseline geometry is still sampled once, BEFORE
-// the (now single) send. send-keys then fires EXACTLY ONCE on the idle path.
-// Every subsequent attempt only re-samples and re-verifies (settle sleep +
-// post-send geometry sample + `geometryUnchanged` + `cursorRowStartsWithPrompt`)
-// and backs off before the next verify -- it never re-spawns send-keys.
-// `retriesExhausted` on the exhaustion event still equals `maxAttempts`: it
-// counts VERIFY attempts, not physical sends. The pane-not-idle fallback
-// (`sendOnceUnverified`) and the delivered-on-first-attempt fast path are
-// unaffected: both already issued exactly one physical send.
+// Send-once guard on the idle path (CAM-375): the baseline geometry sample
+// and the physical send-keys call each happen exactly ONCE, before the
+// verify/retry loop -- a persistent geometry-oracle false-negative no longer
+// re-sends the identical payload on every attempt. Every subsequent attempt
+// only re-samples and re-verifies (settle sleep + post-send geometry sample +
+// `geometryUnchanged` + `cursorRowStartsWithPrompt`) and backs off before the
+// next verify; it never re-spawns send-keys. `retriesExhausted` on the
+// exhaustion event still equals `maxAttempts`: it counts VERIFY attempts, not
+// physical sends. The pane-not-idle fallback (`sendOnceUnverified`) and the
+// delivered-on-first-attempt fast path are unaffected: both already issue
+// exactly one physical send.
 
 import { join } from 'node:path';
 
