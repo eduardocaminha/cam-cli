@@ -74,7 +74,7 @@
         "Full lint spine green including the deterministic oracle-lint (bun run check:all), so a lint regression from this story fails THIS story, not a later one. [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "Add rows to test/fixtures/oracle-lint/oracle-lint-cases.txt (format `<ruleName> :: <ok|flag> :: <command>`, parsed at test file lines 522-543). Extract INNER cases from cam382-false-positives.txt (`cmd --ge 5`, `echo foo-eq 42`, `run --eq 7`, `test $(foo-eq 42)`, and the four-operator set) with verdict ok, NOT the `bun -e '...'` wrapper commands (which the rule cannot see into: `-c` is unwrapped, `-e` is not, patterns.md:915). Decide deliberately whether cam382-false-positives.txt stays as historical documentation or is retired; if it stays it must no longer be the only home of a CI-unrun case. The current fixture-shape guard only asserts rows.length>0 (test file ~line 531): add explicit assertions that at least one double-quoted wrapper row (e.g. `bash -c \"...\"`) and at least one backslash-escape row (e.g. `\\\"`) exist, with a mutation-based falsifiability check per the spec. These `ok` rows depend on the US-001 anchor fix and US-002 clause scoping already landing, hence requires US-002. Do NOT rely on `bun test <file>` as the ONLY gate for the shape-guard criterion (add the mutation sweep)."
     },
