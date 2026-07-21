@@ -277,6 +277,11 @@ describe('frozen-comparand rule: flagged forms', () => {
 		const finding = rule.test('test $(git grep -c PATTERN src/main.rs) -eq 3');
 		expect(finding).not.toBeNull();
 	});
+
+	test('flags a genuine unquoted -eq comparison nested inside a double-quoted command substitution, unaffected by the Defect B recursive quote-stripping (US-002, CAM-386/389)', () => {
+		const finding = rule.test('echo "$(test $X -eq 41)"');
+		expect(finding).not.toBeNull();
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -354,6 +359,11 @@ describe('frozen-comparand rule: passing cases', () => {
 
 	test('does not flag an operator embedded mid-token inside a command substitution (foo-eq 42)', () => {
 		const finding = rule.test('test $(foo-eq 42)');
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag when a double-quoted command substitution nests inert single-quoted comparand-shaped data (Defect B, US-002, CAM-386/389: the recursive-strip false-positive)', () => {
+		const finding = rule.test(String.raw`echo "$(grep -c 'X -eq 1' f.ts)"`);
 		expect(finding).toBeNull();
 	});
 });

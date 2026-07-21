@@ -36,6 +36,8 @@ frozen-comparand :: ok :: run --eq 7
 frozen-comparand :: ok :: test $(foo-eq 42)
 frozen-comparand :: flag :: test $(git grep -c PATTERN main.ts) -eq 3
 frozen-comparand :: flag :: test $(git grep -c PATTERN src/main.rs) -eq 3
+frozen-comparand :: ok :: echo "$(grep -c 'X -eq 1' f.ts)"
+frozen-comparand :: flag :: echo "$(test $X -eq 41)"
 grep-q-plus-list-files :: ok :: grep -q 'PATTERN' file.ts
 grep-q-plus-list-files :: flag :: grep -Lq 'PATTERN' file.ts
 rotating-artifact-target :: ok :: grep -q 'ROTATING_ARTIFACT_RULE' src/supervisor/prd-oracle-lint.ts
