@@ -90,7 +90,7 @@
         "Full lint spine green including the deterministic oracle-lint (bun run check:all), so a lint regression from this story fails THIS story, not a later one. [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": "US-003",
       "notes": "Edit the 'oracle-lint-cases.txt fixture matrix' describe at test/supervisor/prd-oracle-lint.test.ts:522-543. Replace `rule!.test(command!)` (and the toBeDefined pattern) with `if (!rule) throw new Error(...)` / `if (command === undefined) throw new Error(...)` narrowing guards carrying a named, row-identifying message. Ordered after US-003 because both stories edit the same fixture-matrix block; landing US-003 first avoids re-churning the loop body twice. Behavioral verdict re-run stays as the additional gate, not the sole one for the no-`!` criterion (that one is a file-assert)."
     },
