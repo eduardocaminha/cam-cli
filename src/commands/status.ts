@@ -418,7 +418,9 @@ export interface StatusOptions {
 	/** Override "now" for wall-clock calculations (tests pin a deterministic time). */
 	now?: () => Date;
 	/** Override the Claude config directory (default: CLAUDE_CONFIG_DIR env var or
-	 *  ~/.claude). Used to locate the orchestrator transcript JSONL. */
+	 *  ~/.claude). Used to locate the orchestrator transcript JSONL only — the
+	 *  operator pause marker is always read from the project-local `<cwd>/.claude`
+	 *  dir instead (see US-R1-001), never from this option. */
 	claudeDir?: string;
 }
 
@@ -434,11 +436,15 @@ export function buildStatusReport(options: StatusOptions = {}): StatusReport {
 	const state = readStateFile(cwd);
 	const prd = readPrd(cwd);
 	const git = readGitInfo(cwd);
-	// US-003: the operator pause marker takes precedence over the
-	// phase-derived state (idle/active/paused) so an intentional brake
-	// always renders distinctly, regardless of what the loop's own state
-	// file says.
-	const operatorPaused = isPauseSet(claudeDir);
+	// US-003 / US-R1-001 (CAM-360 review round 1): the operator pause marker
+	// takes precedence over the phase-derived state (idle/active/paused) so
+	// an intentional brake always renders distinctly, regardless of what the
+	// loop's own state file says. The marker itself lives under the
+	// PROJECT-LOCAL `<cwd>/.claude` dir (matching pause.ts, host.ts, stop.ts
+	// — never the `claudeDir` above, which resolves to the global Claude
+	// config dir used only for transcript lookup and can diverge from cwd
+	// in production).
+	const operatorPaused = isPauseSet(join(cwd, '.claude'));
 
 	const report: StatusReport = { state: 'idle' };
 	if (git.branchName) report.branchName = git.branchName;

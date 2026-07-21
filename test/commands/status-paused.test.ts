@@ -16,6 +16,16 @@
 //     states are unaffected.
 //   - runStatus's print path renders a visibly distinct indicator + trailing
 //     hint for `operator-paused` vs. plain `paused`.
+//
+// US-R1-001 (CAM-360 review round 1 fix): the marker is ALWAYS read from the
+// project-local `<cwd>/.claude` dir (matching pause.ts/host.ts/stop.ts), never
+// from the `claudeDir` option (which only locates the orchestrator transcript
+// and may point at a different, global directory in production). Every test
+// below writes the marker via `setPause(join(cwd, '.claude'))` to mirror what
+// `cam pause` actually does, and the separate `claudeDir` passed to
+// buildStatusReport/runStatus is deliberately a DIFFERENT directory, so a
+// regression back to reading the marker from `claudeDir` would fail these
+// tests.
 
 import { describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -23,6 +33,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { buildStatusReport, runStatus } from '../../src/commands/status.ts';
+import { runPause } from '../../src/commands/pause.ts';
 import { setPause } from '../../src/supervisor/pause-marker.ts';
 
 function makeDirs(prefix: string): { cwd: string; claudeDir: string } {
@@ -40,7 +51,7 @@ describe('buildStatusReport — operator-paused (US-003)', () => {
 	test('marker present + no loop state file -> operator-paused (not idle)', () => {
 		const { cwd, claudeDir } = makeDirs('cam-status-oppause-nostate-');
 		try {
-			setPause(claudeDir);
+			setPause(join(cwd, '.claude'));
 			const report = buildStatusReport({ cwd, claudeDir });
 			expect(report.state).toBe('operator-paused');
 		} finally {
@@ -51,8 +62,8 @@ describe('buildStatusReport — operator-paused (US-003)', () => {
 	test('marker present + active:true state file -> operator-paused (not active)', () => {
 		const { cwd, claudeDir } = makeDirs('cam-status-oppause-active-');
 		try {
-			setPause(claudeDir);
 			mkdirSync(join(cwd, '.claude'), { recursive: true });
+			setPause(join(cwd, '.claude'));
 			writeFileSync(
 				join(cwd, '.claude', 'cam-loop.local.md'),
 				['---', 'active: true', 'iteration: 3', 'max_iterations: 30', '---', ''].join('\n'),
@@ -67,8 +78,8 @@ describe('buildStatusReport — operator-paused (US-003)', () => {
 	test('marker present + active:false state file -> operator-paused, not the plain paused label', () => {
 		const { cwd, claudeDir } = makeDirs('cam-status-oppause-precedence-');
 		try {
-			setPause(claudeDir);
 			mkdirSync(join(cwd, '.claude'), { recursive: true });
+			setPause(join(cwd, '.claude'));
 			writeFileSync(
 				join(cwd, '.claude', 'cam-loop.local.md'),
 				['---', 'active: false', 'iteration: 3', 'max_iterations: 30', '---', ''].join('\n'),
@@ -96,6 +107,39 @@ describe('buildStatusReport — operator-paused (US-003)', () => {
 			rmSync(join(cwd, '..'), { recursive: true, force: true });
 		}
 	});
+
+	// US-R1-001 (CAM-360 review round 1): the two prior tests above pass an
+	// explicit `claudeDir` equal to the write location, which masks the real
+	// production bug — `cam pause` always writes to the PROJECT-LOCAL
+	// `<cwd>/.claude` (pause.ts), but `buildStatusReport`'s DEFAULT claudeDir
+	// resolves to the global Claude config dir (CLAUDE_CONFIG_DIR env var or
+	// ~/.claude), used only for transcript lookup. This test exercises the
+	// real `cam pause` -> `cam status` flow with the DEFAULT claudeDir (no
+	// `claudeDir` option passed to buildStatusReport) and a `CLAUDE_CONFIG_DIR`
+	// that deliberately differs from `<cwd>/.claude`, proving the marker is
+	// still found via the project-local dir regardless of where the default
+	// transcript claudeDir points.
+	test('real runPause(cwd) -> buildStatusReport(cwd) with DEFAULT claudeDir -> operator-paused', () => {
+		const base = mkdtempSync(join(tmpdir(), 'cam-status-oppause-e2e-'));
+		const cwd = join(base, 'project');
+		const globalClaudeDir = join(base, 'global-claude-config-dir');
+		mkdirSync(cwd, { recursive: true });
+		mkdirSync(globalClaudeDir, { recursive: true });
+		const originalConfigDir = process.env['CLAUDE_CONFIG_DIR'];
+		process.env['CLAUDE_CONFIG_DIR'] = globalClaudeDir;
+		try {
+			runPause({ cwd });
+			// No `claudeDir` option passed: buildStatusReport must resolve the
+			// pause marker from the project-local `<cwd>/.claude`, not from
+			// `CLAUDE_CONFIG_DIR`/`globalClaudeDir` above.
+			const report = buildStatusReport({ cwd });
+			expect(report.state).toBe('operator-paused');
+		} finally {
+			if (originalConfigDir === undefined) delete process.env['CLAUDE_CONFIG_DIR'];
+			else process.env['CLAUDE_CONFIG_DIR'] = originalConfigDir;
+			rmSync(base, { recursive: true, force: true });
+		}
+	});
 });
 
 // --- runStatus (print path) -------------------------------------------------
@@ -119,8 +163,8 @@ describe('runStatus — operator-paused print path (US-003)', () => {
 	test('renders a distinct "operator-paused" indicator + trailing hint, not the plain "paused" label', () => {
 		const { cwd, claudeDir } = makeDirs('cam-status-run-oppause-');
 		try {
-			setPause(claudeDir);
 			mkdirSync(join(cwd, '.claude'), { recursive: true });
+			setPause(join(cwd, '.claude'));
 			writeFileSync(
 				join(cwd, '.claude', 'cam-loop.local.md'),
 				['---', 'active: false', 'iteration: 3', 'max_iterations: 30', '---', ''].join('\n'),
