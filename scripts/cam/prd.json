@@ -64,7 +64,7 @@
         "The full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "src/commands/status.ts: extend StatusState (currently 'idle' | 'active' | 'paused' at status.ts:187) with 'operator-paused'; read the pause marker via isPauseSet(claudeDir) from src/supervisor/pause-marker.ts (US-001) and let it take precedence over the phase-derived label so an operator pause renders distinctly. Render it in renderStateIndicator (status.ts:511-513) with its own glyph/label and add a matching trailing hint (status.ts:601-602), NOT folded into the existing active:false 'paused' branch (status.ts:460, which is the phase-conflation gotcha). Print path only (process.stdout / src/logging/screen helpers); this story deliberately avoids Ink and ink-testing-library, so no new external library is introduced. test/commands/status-paused.test.ts: with the marker present assert the operator-paused indicator renders and is distinct from the plain active:false paused label.",
       "notes_appliedPatternIds": null
