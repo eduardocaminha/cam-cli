@@ -1,17 +1,16 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Variadic composite promote in one atomic on-main commit" },
+  "lastCompletedStory": { "id": "US-002", "title": "Canonize demand-driven + composition-by-fix-site triage policy" },
   "branchName": "cam/issue-378",
-  "timestamp": "2026-07-21T00:00:00.000Z",
-  "createdFiles": [],
+  "timestamp": "2026-07-21T03:25:00.000Z",
+  "createdFiles": [
+    "memory/project_suggestion_triage.md"
+  ],
   "modifiedFiles": [
-    "src/commands/suggestions.ts",
-    "index.ts",
-    "test/commands/suggestions.test.ts",
-    "test/commands/suggestions-cli.test.ts",
+    ".claude/agents/subagent-orchestrator.md",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "promoteSuggestionOnMain's options field is now `fingerprints: string[]` (was `fingerprint: string`); result is `{ ok: true, fingerprints, issueId, sha }`. All fingerprints are validated against the pen BEFORE writeIssueFile is ever invoked (loop returns not-found on first miss), so all-or-nothing falls out for free -- no explicit rollback needed. buildPromotedDescription/buildPromotedTitle special-case entries.length===1 internally to stay byte-identical to the pre-US-001 single-fp shape; the commit message unconditionally joins fingerprints with '+' (degenerates to the bare fingerprint for a 1-element list). dispatchSuggestions' promoteFn/CAM_SUGGESTIONS_PROMOTED stdout line now also joins fingerprints with '+'. parseSuggestionsArgs' promote branch is now variadic (>=1 fingerprint, no upper bound); dismiss stays single-fp only. Any future story touching the pen's terminal-verdict auto-file path (CAM-189) or suggestion-followups.ts should be aware promote can now file one issue for N pen entries.",
+  "nextStoryContext": "memory/ did not exist before this story; it now holds exactly one file, memory/project_suggestion_triage.md, canonizing the two-rule pen triage policy (demand-driven promotion + composition-by-fix-site) per the operator's 2026-07-20 decision (journal DRAIN-CAM376). .claude/agents/subagent-orchestrator.md's existing suggestion-triage section (item 5 of the boot-read list, ~line 116-131) now names both rules inline and cross-references the memory/ file; templates/agents/subagent-orchestrator.md was deliberately left untouched (confirmed via diff before editing: the two copies already diverge, e.g. templates/ has an extra container-sidecar-stalled marker section .claude/ lacks) so no re-embed or embed-vendor:check was needed. Gotcha for any future story that creates a new file and cites its path in an agent doc in the same story: scripts/validate-agents-md.ts (the check:agents gate, part of check:all) resolves backtick path-claims against `git ls-files` (the tracked tree), so the new file must be `git add`-ed BEFORE running check:all or the gate fails with an untracked-path finding even though the file exists on disk.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
