@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.239.0] - 2026-07-21
+
+### Added
+
+- US-001 - Extract withFakeClock helper and migrate both dispatch.test.ts sites
+
 ## [0.238.0] - 2026-07-21
 
 ### Added
