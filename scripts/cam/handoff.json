@@ -1,17 +1,14 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Promote the CAM-382 false-positive cases into the executed matrix and extend the fixture-shape guard"
+    "id": "US-004",
+    "title": "Replace non-null assertions in the fixture-matrix test with a narrowing guard"
   },
   "createdFiles": [],
   "modifiedFiles": [
-    "test/fixtures/oracle-lint/oracle-lint-cases.txt",
-    "test/fixtures/oracle-lint/cam382-false-positives.txt",
-    "test/supervisor/prd-oracle-lint.test.ts",
-    "scripts/cam/patterns.md"
+    "test/supervisor/prd-oracle-lint.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "oracle-lint-cases.txt grew from 17 to 26 live rows: 9 new frozen-comparand rows were promoted from the INNER strings embedded in test/fixtures/oracle-lint/cam382-false-positives.txt's bun -e/grep -qF wrapper commands (the wrapper commands themselves were already rows, added by US-001/US-002; their -e payload is not scanned by the rule so the wrapper form alone never exercised the rule against the inner strings). Ground truth for each new row was derived by running the real rule directly (bun -e import of src/supervisor/prd-oracle-lint.ts), not by trusting the fixture file's own 'false-positives' name or the PRD notes' 'verdict ok' generalization: the four-operator set (`test $X -eq 41` etc., plus the mainbranch grep-pattern line) is actually a MISSED-detection/false-negative guard and correctly classifies as flag, while `cmd --ge 5` / `echo foo-eq 42` / `run --eq 7` / `test $(foo-eq 42)` are the genuine false-positive guards and classify as ok (see patterns.md, new bullet before the US-002 CAM-382 entry). cam382-false-positives.txt is retained as historical documentation (header comment updated) since none of its content is now the ONLY executed home of a case. test/supervisor/prd-oracle-lint.test.ts gained a shared parseFixtureRows() helper (the pre-existing 'every row classifies' test was refactored to use it, no behavior change) and a new 'oracle-lint-cases.txt fixture-shape guard' describe block: assertFixtureShape() now asserts rows.length>0 AND at least one double-quoted interpreter-wrapper row (bash/sh/zsh/dash -c \"...\") AND at least one backslash-escape row exist, plus a mutation-sweep test that strips every double-quoted-wrapper row from a temp copy (mkdtempSync) and expects assertFixtureShape to throw, printing the stripped count first. RULES still has exactly 4 named rules; no src/ changes this story (fixture + test only).",
+  "nextStoryContext": "The 'oracle-lint-cases.txt fixture matrix' test (test/supervisor/prd-oracle-lint.test.ts, 'every row classifies as its recorded ok/flag expectation') no longer uses `rule!.test(command!)` / `expected!`. It now destructures each parsed row as `const [ruleName, expected, command] = row` and throws a named Error before use: one guard for a malformed row (any of the three fields undefined, message includes JSON.stringify(row)), a second guard when RULES.find() returns no match for ruleName (message includes the offending ruleName and JSON.stringify(row)), mirroring the pre-existing `findGrepRule()` helper's `if (!rule) throw new Error(...)` idiom already used elsewhere in this file. Verified live: temporarily fed the guard an unknown rule name via `bun -e` and confirmed it throws the named Error with the row payload, not a bare TypeError. All 71 tests in the file still pass (same verdicts), full suite is 5243 pass / 0 fail, and `bun run check:all` is green end-to-end (typecheck, test, embed-vendor, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps all ok) -- no ceiling/floor raises were needed. No src/ changes; test-only story. Pure mechanical refactor, no new reusable pattern worth a patterns.md bullet.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
