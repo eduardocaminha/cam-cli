@@ -1,13 +1,46 @@
 {
   "id": "CAM-367",
   "title": "The module header has grown to ~89 lines of accreted narrative across CAM-358/C…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-20T11:05:09.134Z",
-  "updatedAt": "2026-07-20T11:05:09.134Z",
+  "updatedAt": "2026-07-21T12:58:51.354Z",
   "description": "The module header has grown to ~89 lines of accreted narrative across CAM-358/CAM-359/CAM-364 (original model, round-1 correction, round-2 reader decoupling, now the prompt-row discriminator). Every paragraph is accurate and the residue disclosure is honest, but a future reader must reconstruct the current design from a changelog. Consider condensing to a short 'current design + not-closed residue' statement and relocating the superseded-model history to scripts/cam/patterns.md, which already carries the full write-up.\n\nSource: cam/issue-364\nReview round: 1\n\nsuggestion-fingerprint: aea59cc60ef8",
   "derivedFrom": [
     "CAM-364"
-  ]
+  ],
+  "spec": {
+    "scope": "Condense the leading comment header of src/tmux/dispatch.ts (currently lines 1-111; first code at line 113) into a compact 'current design + not-closed residue' statement. Delete the superseded/changelog narrative -- specifically the 'Corrected model (review round 1 fix, US-R1-001)' paragraph and the embedded backstop-failure recounting from the CAM-358/CAM-359/CAM-364 evolution -- because that full history is ALREADY written up in scripts/cam/patterns.md (CAM-358 at :38, CAM-359 at :889 and :891, CAM-364 at :897). No patterns.md edit is required: the relocation target already holds the history, so 'relocate' here means 'drop from the header'. The condensed header must still state the CURRENT design: US-008 idle-guarantee send, US-002 post-send verify+retry, the CAM-364 prompt-row discriminator, the US-R2-001 reader-decoupling (visibleCaptureFn vs scrollback), and the CAM-375 send-once guard. This is a COMMENT-ONLY change to one file with zero behavior change; no code below line 113 may be touched, and no rebuild is needed. Non-goals: no code/logic changes, no symbol renames, no edits to any line below the header, no edits to patterns.md.",
+    "acceptanceCriteria": [
+      "The \"Residue NOT closed by this fix\" honesty disclosure is preserved verbatim in the condensed header. [oracle: grep -qF \"Residue NOT closed by this fix\" src/tmux/dispatch.ts]",
+      "The superseded \"Corrected model (review round 1 fix, US-R1-001)\" changelog paragraph is removed from the header, since its history already lives in scripts/cam/patterns.md. [oracle: ! grep -qF \"Corrected model (review round 1 fix\" src/tmux/dispatch.ts]",
+      "The condensed header still accurately describes the current prompt-row discriminator, reader-decoupling and send-once-guard behavior, is materially condensed (superseded changelog narrative removed, not merely reworded), and drops no current-behavior content that patterns.md does not carry. [oracle: reviewer-judgment]",
+      "The leading comment header is shorter than on main. [oracle: file-assert NOW=$(grep -n '^import ' src/tmux/dispatch.ts | head -1 | cut -d: -f1); BASE=$(git show main:src/tmux/dispatch.ts | grep -n '^import ' | head -1 | cut -d: -f1); [ \"$NOW\" -lt \"$BASE\" ]]"
+    ],
+    "gotchas": [
+      "The header is actually 111 lines (lines 1-111; blank line 112; first code line 113 is 'import { join } from node:path'), NOT ~89 as the issue title says.",
+      "PRESERVE verbatim the residue disclosure at current lines 77-81: 'Residue NOT closed by this fix: a payload whose own text contains a literal prompt glyph landing at the START of a wrap row would still forge this discriminator into a false delivered read. That residue is narrower than the trailing-space collision class this fix closes, but it is not zero.'",
+      "The reader-decoupling paragraph (US-R2-001, current lines 83-96, visibleCaptureFn vs capture-pane -p -S - scrollback) and the send-once-guard paragraph (CAM-375, current lines 98-111) describe CURRENT behavior and are ABSENT from patterns.md (CAM-375 appears nowhere in patterns.md). Do NOT delete them on the assumption patterns.md carries them; fold them into the condensed current-design summary.",
+      "The CAM-358/CAM-359/CAM-364 superseded-model narrative IS already in patterns.md (:38, :889, :891, :897), so dropping it from the header is the intended 'relocation' -- no patterns.md write needed.",
+      "Nothing external references the header by line number (the only dispatch.ts:NNN citations point at code below line 113), so renumbering the header breaks no references.",
+      "Comment-only diff to one file: no behavior change, so no coherence rebuild is required despite dispatch.ts being sidecar-executed."
+    ],
+    "domainTerms": [
+      "prompt-row discriminator: the /^\\s*[>\\u276f]/ current-fix that reads delivery from the cursor row's leading prompt glyph",
+      "residue disclosure: the honest 'Residue NOT closed by this fix' sentence stating the remaining false-delivered edge case",
+      "reader-decoupling (US-R2-001): visibleCaptureFn (visible screen) vs the scrollback reader (capture-pane -p -S -)",
+      "send-once guard (CAM-375): send-keys fires exactly once on the idle path; retries only re-sample/verify"
+    ],
+    "relatedDocs": [
+      "scripts/cam/patterns.md"
+    ]
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 1,
+    "riskReduction": 2,
+    "jobSize": 2
+  },
+  "type": "docs"
 }
