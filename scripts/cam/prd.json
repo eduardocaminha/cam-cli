@@ -59,7 +59,7 @@
         "Vendor drift check passes and the embedded blob is regenerated from the edited templates/ copy. [oracle: bun run embed-vendor:check && bun test test/embedded.test.ts]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/agents/subagent-implementer.md, templates/agents/subagent-implementer.md, then regen src/vendor/_generated.ts via `bun run embed-vendor`. Same VERBATIM shared sentence as US-001/US-002 (identical bytes): 'This rule limits the quality of the recommendation, not its scope: Simplicity remains the scope limiter. Operational cost is never a criterion, but quality degradation from context-window exhaustion is a quality criterion, not a cost one.' Add an EXECUTION-role lead-in (root-cause over shortcut; shortcut only to unblock something extremely necessary). Clause 1 matters most here: without it 'always the most robust' licenses speculative abstraction (patterns.md: PRDs of 8-9+ stories blow the review budget, CAM-53/101/109). This gap was already hand-corrected once (memory/feedback-recommend-on-merits-not-effort.md). Self-hosting pattern (patterns.md line 46) + dual-copy-per-file (memory/cam-dual-copy-is-per-file). LLM-consumed files: em-dash fine."
     },
