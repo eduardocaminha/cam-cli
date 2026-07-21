@@ -56,7 +56,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: scripts/cam/patterns.md (place near the frozen-comparand / derive-don't-freeze guidance around line 903). This folds penned suggestion 65d7a3ad6cfc (the two-clause exit-code footgun); the operator dismisses that pen entry after ship. Cross-reference the frozen-comparand guidance by absolute line number as required by the spec. Independent of US-001/US-002 (different file, no collision), sequenced last. Follow the repo doc-style rule: no em dash / decorative emoji in persisted .md; use colon/comma/parentheses. Keep the note a single bullet, surgical."
     }
