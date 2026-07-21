@@ -1,0 +1,10 @@
+{
+  "id": "CAM-394",
+  "title": "Split-advisory projects a garbage token count for the small-jobSize bucket",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-21T08:10:20.341Z",
+  "updatedAt": "2026-07-21T08:10:20.341Z",
+  "description": "The sidecar's split-advisory printed `~17449729 tokens` with a 'consider slicing' hint for a jobSize=2, 1-story PRD (CAM-393), and the same nonsensical projection has recurred verbatim-shaped across multiple small-jobSize cycles. The projection formula produces an absurd extrapolation for the small-jobSize historical bucket, likely an unbounded extrapolation from a near-zero historical sample. Purely advisory (does not gate the loop), so LOW urgency, but the number is clearly wrong and undermines trust in the advisory. Fix: bound/sanity-check the projection or suppress it when the historical sample is too small to extrapolate. Observed twice+ across DRAIN cycles ending 2026-07-21."
+}
