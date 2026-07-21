@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.244.0] - 2026-07-21
+
+### Added
+
+- US-001 - Suppress plan split-advisory for single-story PRDs
+
 ## [0.243.0] - 2026-07-21
 
 ### Added
