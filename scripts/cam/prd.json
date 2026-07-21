@@ -1,0 +1,29 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-394",
+  "description": "Suppress the plan split-advisory for single-story (un-sliceable) PRDs so the garbage token projection stops firing.",
+  "issueNumber": 394,
+  "type": "fix",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Suppress plan split-advisory for single-story PRDs",
+      "description": "As a cam operator, I need the plan split-advisory to stay silent for PRDs with a single (un-sliceable) user story so that the nonsensical ~17M-token projection stops appearing and eroding trust in the advisory.",
+      "acceptanceCriteria": [
+        "maybeEmitPlanSplitAdvisory (src/supervisor/plan-split-advisory.ts) returns early with no side effects when storyCount <= 1, added immediately after storyCount is computed and before the historical event-log read, bucketing, computeSplitAdvisory call, logEvent, and notify. [oracle: grep -q 'storyCount <= 1' src/supervisor/plan-split-advisory.ts]",
+        "For a single-story PRD (userStories.length <= 1), the function neither calls notify nor logs a plan-split-advisory event, even when the same-jobSize bucket projection would exceed the fire threshold. A new test in test/supervisor/plan-split-advisory.test.ts asserts this suppression via injected notify/logEvent spies that record zero calls. [oracle: bun test test/supervisor/plan-split-advisory.test.ts]",
+        "Multi-story PRDs (userStories.length >= 2) are unaffected: the projection still uses the same-jobSize bucket mean, the fire threshold (bucketMean > 1.5*bucketMedian) is unchanged, and all pre-existing split-advisory tests pass unmodified in intent. [oracle: bun test test/supervisor/plan-split-advisory.test.ts]",
+        "The projection formula and fire threshold in src/stats/split-advisory.ts are not touched. [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "The full quality spine passes on the branch (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Edit src/supervisor/plan-split-advisory.ts: add 'if (storyCount <= 1) return;' right after the storyCount computation at line ~75 (before the readEventLog/aggregateTokensPerIssue/computeSplitAdvisory/logEvent/notify block). storyCount is 'Array.isArray(prdRaw.userStories) ? prdRaw.userStories.length : 0', so '<= 1' correctly suppresses both malformed (0) and single-story (1) PRDs. Do NOT touch src/stats/split-advisory.ts (pure heuristic + mean/median); do NOT change the mean-vs-median projection or the bucketMean>1.5*bucketMedian fire threshold (swapping projectedTokens to bucketMedian would make it never fire -- explicitly out of scope). The guard is a plain early return, preserving the best-effort try/catch non-gating/no-throw contract. New test in test/supervisor/plan-split-advisory.test.ts: build records + a single-story prd.json fixture where the same-jobSize bucket would fire, inject notify/logEvent spies, assert both received zero calls; keep existing multi-story tests. Sidecar-executed code: after merge a coherence rebuild (bash scripts/build-release.sh --install then sidecar restart) is needed for a running sidecar to pick up the change (not doc/test-only)."
+    }
+  ]
+}
