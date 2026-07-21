@@ -1,11 +1,11 @@
 {
   "id": "CAM-391",
   "title": "Carried over from the round-2 review and still unaddressed: the fixture-matrix …",
-  "stage": "idea",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-20T23:08:18.107Z",
-  "updatedAt": "2026-07-20T23:08:18.107Z",
+  "updatedAt": "2026-07-21T01:17:08.603Z",
   "description": "Carried over from the round-2 review and still unaddressed: the fixture-matrix test uses non-null assertions (rule!.test(command!)) right after expect(...).toBeDefined(). A narrowing guard (if (!rule) throw new Error(`no such rule ${ruleName}`)) would carry the same safety without the ! escape hatch and would fail with a clearer message on a malformed fixture row.\n\nSource: cam/issue-388\nReview round: 3\n\nsuggestion-fingerprint: cb05996c8bb5",
   "derivedFrom": [
     "CAM-388"
