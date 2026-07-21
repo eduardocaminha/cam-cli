@@ -54,6 +54,8 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .claude/.cam-orch-pid
 # Inter-cycle drain kill-switch marker written by `cam drain --stop` (US-002, CAM-139)
 .claude/.cam-drain-stop
+# Operator pause brake marker written by `cam pause` (US-001, CAM-360)
+.claude/.cam-pause
 # Runtime per-story supervisor artifacts: session markers + durable out-logs (CAM-22/CAM-32)
 .claude/.cam-worker-*.session
 .claude/.cam-worker-out-*.log

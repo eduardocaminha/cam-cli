@@ -80,6 +80,7 @@ import { runOrchBudget } from './src/commands/orch-budget.ts';
 import { runStatsTokens } from './src/commands/stats.ts';
 import { runStop } from './src/commands/stop.ts';
 import { runDrain, parseDrainArgs } from './src/commands/drain.ts';
+import { runPause, parsePauseArgs } from './src/commands/pause.ts';
 import { runClaude, parseClaudeArgs, CLAUDE_HELP } from './src/commands/claude.ts';
 import { runConfig } from './src/commands/config.ts';
 import { runRetryMonitor, parseRetryMonitorArgs, RETRY_MONITOR_HELP } from './src/commands/retry-monitor.ts';
@@ -130,6 +131,7 @@ const HELP = renderHelp({
 				{ name: 'status', description: 'Show current loop state at a glance (idle / active / paused)' },
 				{ name: 'stats tokens', description: 'Print per-issue token spend (orch/worker/total) plus mean/median from the event log' },
 				{ name: 'stop', description: 'Cancel a running loop (clears state file + kills the per-project tmux session)' },
+				{ name: 'pause', description: 'Set the operator pause brake marker (.claude/.cam-pause), separate from loop state' },
 				{ name: 'drain [--stop|--clear]', description: 'Set or clear the inter-cycle drain kill-switch without killing the sidecar' },
 				{ name: 'resume [options]', description: 'Reconcile loop state after interrupt; auto-detect or --mode <name>' },
 				{ name: 'decide <decision>', description: 'Record your choice into the active operator-decision gate so the sidecar resumes deterministically' },
@@ -804,6 +806,22 @@ const STOP_HELP = renderHelp({
 		},
 	],
 	footer: 'After `cam stop`, the next `cam next` will not detect a stale loop.',
+});
+
+const PAUSE_HELP = renderHelp({
+	title: 'cam pause',
+	tagline: 'Set the operator pause brake marker',
+	usage: 'cam pause',
+	sections: [
+		{
+			heading: 'What it does',
+			body:
+				'Writes .claude/.cam-pause, a dedicated marker file. This is DISTINCT\n' +
+				'from the loop-state `active` field: the sidecar re-stamps `active:true`\n' +
+				'every iteration, which would silently clobber a brake stored there.',
+		},
+	],
+	footer: 'Run `cam resume` to clear the pause and continue the loop.',
 });
 
 const DRAIN_HELP = renderHelp({
@@ -2572,6 +2590,7 @@ const COMMANDS = [
 	'stats',
 	'orch-budget',
 	'stop',
+	'pause',
 	'drain',
 	'resume',
 	'decide',
@@ -2623,6 +2642,7 @@ const HELP_REGISTRY: Record<Command, string> = {
 	stats: STATS_HELP,
 	'orch-budget': ORCH_BUDGET_HELP,
 	stop: STOP_HELP,
+	pause: PAUSE_HELP,
 	drain: DRAIN_HELP,
 	resume: RESUME_HELP,
 	decide: DECIDE_HELP,
@@ -2909,6 +2929,19 @@ async function main(argv: string[]): Promise<number> {
 				return 1;
 			}
 			return runStop();
+		}
+		case 'pause': {
+			const pauseParsed = parsePauseArgs(argv.slice(3));
+			if (pauseParsed === null) {
+				printError(`unknown pause option: ${argv[3] ?? ''}`);
+				printFatalHint('run `cam pause --help` for usage');
+				return 1;
+			}
+			if (pauseParsed.help) {
+				process.stdout.write(PAUSE_HELP);
+				return 0;
+			}
+			return runPause();
 		}
 		case 'drain': {
 			const drainParsed = parseDrainArgs(argv.slice(3));
