@@ -46,7 +46,7 @@
         "The full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Add optional isPaused?: () => boolean to the RunSupervisorOptions bag (loop.ts:330-530) and consult it at the top of the `outer: while` inner loop (loop.ts:953) BEFORE dispatch; when true, break to a cooperative return with a new SupervisorResult status 'paused' (extend the status union near the other returns at loop.ts:940/1005/1024). The cooperative return must not unlink the state file, kill panes, or exit: it just ends the current runSupervisor invocation so the sidecar idles. Wire the production predicate in src/supervisor/host.ts:buildSupervisorOptions (patterns.md:44 sidecar dep-wiring, never duplicate inline): isPaused: () => isPauseSet(claudeDir), importing isPauseSet from src/supervisor/pause-marker.ts (US-001). Gotcha (spec): the outer readActive gate (loop.ts:2245-2301) is inter-cycle only and cannot interrupt an in-flight runSupervisor, which is exactly why the injected predicate at the inner-loop boundary is required. Keep sidecar + merge-watch timers alive: pausing is NOT cam stop (src/commands/stop.ts kills the tmux session). test/supervisor/pause-halt.test.ts: inject isPaused=()=>true plus spy teardown seams and assert paused status + zero teardown calls. test/supervisor/pause-resume.test.ts: isPaused flips false, assert the next unpassed story is dispatched (continue, not re-plan). Sidecar-executed rebuild is required after ship (bash scripts/build-release.sh --install, restart cam sidecar) since loop.ts/host.ts run inside the live sidecar.",
       "notes_appliedPatternIds": null
