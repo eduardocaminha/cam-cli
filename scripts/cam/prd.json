@@ -19,7 +19,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Test-file-only change. Edit ONLY test/tmux-display-message.test.ts; do NOT touch src/tmux/display-message.ts (guard at lines 84-88 already returns null for '12abc' on main, verified manually per issue). Add exactly ONE case: fakeSpawn('12abc;5;80;24', 0) then expect(sampleCursorGeometry('%3', spawnFn)).toBeNull(), inside the existing describe('sampleCursorGeometry: fails CLOSED on malformed output') block, mirroring the existing '12;;80;24' case (test line ~78). This is a COVERAGE GAP not a live defect: only the test's presence flips red->green. test/*.ts is not in the compiled binary, so NO build-release/sidecar restart or coherence rebuild is needed after merge. No vendor/templates touched."
     }
