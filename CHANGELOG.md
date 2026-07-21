@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.232.0] - 2026-07-21
+
+### Added
+
+- US-001 - Correct stale idleTimeoutMs default JSDoc in the three thin-proxy commands
+
 ## [0.231.0] - 2026-07-21
 
 ### Added

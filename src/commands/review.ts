@@ -79,7 +79,8 @@ export interface ReviewOptions {
 	capturePaneFn?: CapturePaneFn;
 	/**
 	 * Maximum ms to wait for the orchestrator pane to go idle before sending
-	 * anyway (fallback: log + still send). Default: 5 000.
+	 * anyway (fallback: log + still send). Default:
+	 * `IDLE_WAIT_DEADLINE_MS` (30 000 ms, see src/tmux/dispatch.ts).
 	 */
 	idleTimeoutMs?: number;
 	/**
