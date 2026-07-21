@@ -616,7 +616,7 @@ test('promoteSuggestionOnMain: files a real issue via writeIssueFile, preserves 
 
 	const result = promoteSuggestionOnMain({
 		cwd: '/fake/project',
-		fingerprint: SAMPLE_ENTRY.fingerprint,
+		fingerprints: [SAMPLE_ENTRY.fingerprint],
 		spawnFn,
 		clock,
 		readProjectToml: () => PROJECT_TOML,
@@ -624,7 +624,7 @@ test('promoteSuggestionOnMain: files a real issue via writeIssueFile, preserves 
 
 	expect(result.ok).toBe(true);
 	if (!result.ok) return;
-	expect(result.fingerprint).toBe(SAMPLE_ENTRY.fingerprint);
+	expect(result.fingerprints).toEqual([SAMPLE_ENTRY.fingerprint]);
 	expect(result.issueId).toBe('CAM-1');
 	expect(result.sha).toBe('firstco'); // the ONE commit-tree call: issue + pen removal together
 
@@ -670,7 +670,7 @@ test('promoteSuggestionOnMain: unknown fingerprint -- not-found, no issue filed,
 
 		const result = promoteSuggestionOnMain({
 			cwd: '/fake/project',
-			fingerprint: 'deadbeef0000',
+			fingerprints: ['deadbeef0000'],
 			spawnFn,
 			clock,
 			readProjectToml: () => PROJECT_TOML,
@@ -695,7 +695,7 @@ test('promoteSuggestionOnMain: entry with no sourceIssue -- files without derive
 
 	const result = promoteSuggestionOnMain({
 		cwd: '/fake/project',
-		fingerprint: entryNoSourceIssue.fingerprint,
+		fingerprints: [entryNoSourceIssue.fingerprint],
 		spawnFn,
 		clock,
 		readProjectToml: () => PROJECT_TOML,
@@ -716,7 +716,7 @@ test('promoteSuggestionOnMain: pen missing on main -- suggestions-missing, no is
 
 	const result = promoteSuggestionOnMain({
 		cwd: '/fake/project',
-		fingerprint: SAMPLE_ENTRY.fingerprint,
+		fingerprints: [SAMPLE_ENTRY.fingerprint],
 		spawnFn,
 		clock,
 		readProjectToml: () => PROJECT_TOML,
@@ -733,7 +733,7 @@ test('promoteSuggestionOnMain: diverged main -- error before any lookup or mutat
 
 	const result = promoteSuggestionOnMain({
 		cwd: '/fake/project',
-		fingerprint: SAMPLE_ENTRY.fingerprint,
+		fingerprints: [SAMPLE_ENTRY.fingerprint],
 		spawnFn,
 		clock,
 		readProjectToml: () => PROJECT_TOML,
@@ -978,7 +978,7 @@ test('promoteSuggestionOnMain: CAS retry -- per-attempt recompute survives a con
 
 	const result = promoteSuggestionOnMain({
 		cwd: '/fake/project',
-		fingerprint: SAMPLE_ENTRY.fingerprint,
+		fingerprints: [SAMPLE_ENTRY.fingerprint],
 		spawnFn,
 		clock,
 		readProjectToml: () => PROJECT_TOML,
@@ -1013,4 +1013,97 @@ test('promoteSuggestionOnMain: CAS retry -- per-attempt recompute survives a con
 	);
 	expect(issueHashCall).toBeDefined();
 	expect(issueHashCall?.input ?? '').toContain(`suggestion-fingerprint: ${SAMPLE_ENTRY.fingerprint}`);
+});
+
+// ---------------------------------------------------------------------------
+// Variadic composite promote (US-001, CAM-378)
+// ---------------------------------------------------------------------------
+
+test('promote composes multiple fingerprints into one issue', () => {
+	const existing = `${JSON.stringify(SAMPLE_ENTRY)}\n${JSON.stringify(OTHER_ENTRY)}\n`;
+	const { spawnFn, calls } = makeFullFakeSpawnFn({ suggestionsContent: existing });
+
+	const result = promoteSuggestionOnMain({
+		cwd: '/fake/project',
+		fingerprints: [SAMPLE_ENTRY.fingerprint, OTHER_ENTRY.fingerprint],
+		spawnFn,
+		clock,
+		readProjectToml: () => PROJECT_TOML,
+	});
+
+	expect(result.ok).toBe(true);
+	if (!result.ok) return;
+	expect(result.fingerprints).toEqual([SAMPLE_ENTRY.fingerprint, OTHER_ENTRY.fingerprint]);
+	expect(result.issueId).toBe('CAM-1');
+
+	// Exactly ONE commit-tree call: the composite issue and BOTH pen-line
+	// removals land in a single atomic on-main commit.
+	const commitTreeCalls = calls.filter((c) => c.args.includes('commit-tree'));
+	expect(commitTreeCalls.length).toBe(1);
+
+	// The filed issue's description carries a suggestion-fingerprint line for
+	// EVERY promoted entry, and merges both entries' derivedFrom/provenance
+	// (not only the first entry's).
+	const issueHashCall = calls.find(
+		(c) => c.args.includes('hash-object') && (c.input ?? '').includes('suggestion-fingerprint'),
+	);
+	expect(issueHashCall).toBeDefined();
+	const issueContent = issueHashCall?.input ?? '';
+	expect(issueContent).toContain(`suggestion-fingerprint: ${SAMPLE_ENTRY.fingerprint}`);
+	expect(issueContent).toContain(`suggestion-fingerprint: ${OTHER_ENTRY.fingerprint}`);
+	expect(issueContent).toContain(SAMPLE_ENTRY.body);
+	expect(issueContent).toContain(OTHER_ENTRY.body);
+	expect(issueContent).toContain('"derivedFrom"');
+	expect(issueContent).toContain('CAM-285'); // SAMPLE_ENTRY.sourceIssue -> CAM-285
+
+	// Both promoted pen lines are removed; nothing else was in the pen.
+	const penHashCall = calls.find(
+		(c) => c.args.includes('hash-object') && (c.input ?? '').trim() === '',
+	);
+	expect(penHashCall).toBeDefined();
+
+	// The commit message names BOTH promoted fingerprints, joined.
+	const commitTreeCall = calls.find((c) => c.args.includes('commit-tree'));
+	expect(
+		commitTreeCall?.args.some((a) =>
+			a.includes(`${SAMPLE_ENTRY.fingerprint}+${OTHER_ENTRY.fingerprint}`),
+		),
+	).toBe(true);
+});
+
+test('promote with an unknown fingerprint mutates nothing', () => {
+	const stderrLines: string[] = [];
+	const originalWrite = process.stderr.write.bind(process.stderr);
+	process.stderr.write = (chunk: string | Uint8Array): boolean => {
+		if (typeof chunk === 'string') stderrLines.push(chunk);
+		return true;
+	};
+
+	try {
+		const existing = `${JSON.stringify(SAMPLE_ENTRY)}\n${JSON.stringify(OTHER_ENTRY)}\n`;
+		const { spawnFn, calls } = makeFullFakeSpawnFn({ suggestionsContent: existing });
+
+		const result = promoteSuggestionOnMain({
+			cwd: '/fake/project',
+			fingerprints: [SAMPLE_ENTRY.fingerprint, 'deadbeef0000'],
+			spawnFn,
+			clock,
+			readProjectToml: () => PROJECT_TOML,
+		});
+
+		expect(result.ok).toBe(false);
+		if (result.ok) return;
+		expect(result.reason).toBe('not-found');
+		expect(stderrLines.join('')).toMatch(/unknown fingerprint/i);
+
+		// All-or-nothing: no issue filed, no CAS/commit machinery touched, pen
+		// untouched -- even though the FIRST fingerprint in the list is valid.
+		expect(calls.find((c) => c.args.includes('ls-tree'))).toBeUndefined();
+		expect(calls.find((c) => c.args.includes('hash-object'))).toBeUndefined();
+		expect(calls.find((c) => c.args.includes('commit-tree'))).toBeUndefined();
+		expect(calls.find((c) => c.args.includes('update-ref'))).toBeUndefined();
+		expect(calls.find((c) => c.args.includes('push'))).toBeUndefined();
+	} finally {
+		process.stderr.write = originalWrite;
+	}
 });

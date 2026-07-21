@@ -557,7 +557,7 @@ const PATTERNS_HELP = renderHelp({
 const SUGGESTIONS_HELP = renderHelp({
 	title: 'cam suggestions',
 	tagline: 'Triage the pen of penned reviewer SUGGESTIONs (scripts/cam/suggestions.jsonl)',
-	usage: 'cam suggestions list|promote <fingerprint>|dismiss <fingerprint>',
+	usage: 'cam suggestions list|promote <fingerprint> [<fingerprint> ...]|dismiss <fingerprint>',
 	sections: [
 		{
 			heading: 'Subcommands',
@@ -568,9 +568,9 @@ const SUGGESTIONS_HELP = renderHelp({
 						'Read scripts/cam/suggestions.jsonl from main and print each pending SUGGESTION (fingerprint, title, source, round)',
 				},
 				{
-					name: 'promote <fingerprint>',
+					name: 'promote <fingerprint> [<fingerprint> ...]',
 					description:
-						'File the matching pen entry as a real issue (derivedFrom + suggestion-fingerprint line preserved), then remove it from the pen',
+						'File the matching pen entry (or entries) as ONE real issue (derivedFrom + a suggestion-fingerprint line per entry preserved), then remove all promoted lines from the pen',
 				},
 				{
 					name: 'dismiss <fingerprint>',
@@ -586,15 +586,18 @@ const SUGGESTIONS_HELP = renderHelp({
 				'2. `list` renders each entry as fingerprint, title, source branch, and\n' +
 				'   review round (when recorded); an empty (or absent) pen prints a\n' +
 				'   friendly empty-state hint, not an error.\n' +
-				'3. `promote` files the entry and removes its pen line in ONE atomic\n' +
-				'   on-main commit (preserving derivedFrom from the entry\'s sourceIssue\n' +
-				'   and embedding a `suggestion-fingerprint: <fp>` description line so\n' +
-				'   future terminal reviews still dedup against it).\n' +
+				'3. `promote` files ONE issue and removes every promoted pen line in ONE\n' +
+				'   atomic on-main commit (merging derivedFrom from every entry\'s\n' +
+				'   sourceIssue and embedding a `suggestion-fingerprint: <fp>` description\n' +
+				'   line per entry so future terminal reviews still dedup against each\n' +
+				'   one). Two or more fingerprints compose into a single issue; this is\n' +
+				'   the supported way to promote entries that share a fix site.\n' +
 				'4. `dismiss` removes the one matching line from the pen; no issue is filed.\n' +
 				'5. Both mutations use the on-main commit-tree plumbing and rewrite only\n' +
-				'   the one matching-fingerprint line -- every other line is byte-preserved.\n' +
-				'6. An unknown fingerprint prints an error, exits non-zero, and mutates\n' +
-				'   nothing.',
+				'   the matching-fingerprint line(s) -- every other line is byte-preserved.\n' +
+				'6. An unknown fingerprint anywhere in the promote list prints an error,\n' +
+				'   exits non-zero, and mutates nothing (all fingerprints are validated\n' +
+				'   before any mutation).',
 		},
 	],
 	footer:
@@ -2112,12 +2115,12 @@ export function dispatchStats(parsed: ParsedStatsArgs, deps?: StatsDispatchDeps)
  */
 export type ParsedSuggestionsArgs =
 	| { mode: 'list'; help: false }
-	| { mode: 'promote'; help: false; fingerprint: string }
+	| { mode: 'promote'; help: false; fingerprints: string[] }
 	| { mode: 'dismiss'; help: false; fingerprint: string }
 	| { mode?: never; help: true };
 
 const SUGGESTIONS_USAGE =
-	'Usage: cam suggestions list|promote <fingerprint>|dismiss <fingerprint>';
+	'Usage: cam suggestions list|promote <fingerprint> [<fingerprint> ...]|dismiss <fingerprint>';
 
 export function parseSuggestionsArgs(args: string[]): ParsedSuggestionsArgs | null {
 	if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
@@ -2132,14 +2135,24 @@ export function parseSuggestionsArgs(args: string[]): ParsedSuggestionsArgs | nu
 		}
 		return { mode: 'list', help: false };
 	}
-	if (subCommand === 'promote' || subCommand === 'dismiss') {
+	if (subCommand === 'promote') {
+		// Variadic (US-001, CAM-378): two or more fingerprints compose ONE
+		// issue; a single fingerprint stays the pre-CAM-378 single-fp promote.
+		const fingerprints = args.slice(1);
+		if (fingerprints.length === 0) {
+			printFatalHint(SUGGESTIONS_USAGE);
+			return null;
+		}
+		return { mode: 'promote', help: false, fingerprints };
+	}
+	if (subCommand === 'dismiss') {
 		const rest = args.slice(1);
 		const fingerprint = rest[0];
 		if (fingerprint === undefined || rest.length > 1) {
 			printFatalHint(SUGGESTIONS_USAGE);
 			return null;
 		}
-		return { mode: subCommand, help: false, fingerprint };
+		return { mode: 'dismiss', help: false, fingerprint };
 	}
 	printFatalHint(SUGGESTIONS_USAGE);
 	return null;
@@ -2157,7 +2170,7 @@ export interface SuggestionsDispatchDeps {
 	 * Default: calls the real impl with process.cwd(), a real spawnSync, a
 	 * real clock, and readProjectToml reading scripts/cam/project.toml.
 	 */
-	promoteFn?: (fingerprint: string) => PromoteSuggestionOnMainResult;
+	promoteFn?: (fingerprints: string[]) => PromoteSuggestionOnMainResult;
 	/**
 	 * Injectable dismissSuggestionOnMain.
 	 * Default: calls the real impl with process.cwd() and a real spawnSync.
@@ -2191,11 +2204,11 @@ function realSuggestionsSpawnFn(
  * real spawnSync, a real clock, and readProjectToml reading the project's
  * scripts/cam/project.toml (same wiring `cam issue --file-local` uses).
  */
-function defaultPromoteSuggestionFn(fingerprint: string): PromoteSuggestionOnMainResult {
+function defaultPromoteSuggestionFn(fingerprints: string[]): PromoteSuggestionOnMainResult {
 	const cwd = process.cwd();
 	return promoteSuggestionOnMain({
 		cwd,
-		fingerprint,
+		fingerprints,
 		spawnFn: realSuggestionsSpawnFn,
 		clock: () => new Date().toISOString(),
 		readProjectToml: () => readFileSync(join(cwd, 'scripts/cam/project.toml'), 'utf8'),
@@ -2232,15 +2245,16 @@ export function dispatchSuggestions(
 
 	if (parsed.mode === 'promote') {
 		const promoteFn = deps?.promoteFn ?? defaultPromoteSuggestionFn;
-		const result = promoteFn(parsed.fingerprint);
+		const result = promoteFn(parsed.fingerprints);
 		if (!result.ok) {
 			// printError already fired inside promoteSuggestionOnMain.
 			return 1;
 		}
+		const fingerprintList = result.fingerprints.join('+');
 		printHint(
-			`promoted ${result.fingerprint} -> filed ${result.issueId} on main (${result.sha})`,
+			`promoted ${fingerprintList} -> filed ${result.issueId} on main (${result.sha})`,
 		);
-		writeStdout(`CAM_SUGGESTIONS_PROMOTED=${result.fingerprint} issue=${result.issueId}\n`);
+		writeStdout(`CAM_SUGGESTIONS_PROMOTED=${fingerprintList} issue=${result.issueId}\n`);
 		return 0;
 	}
 

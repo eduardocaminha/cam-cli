@@ -114,10 +114,20 @@ document — none of them require deep reasoning to absorb:
    findings as backlog issues; instead it appends them to
    `scripts/cam/suggestions.jsonl`, a holding pen, after a CLEAN/terminal
    review. Triage the pen yourself with `cam suggestions list` (view
-   pending entries), `cam suggestions promote <fingerprint>` (file it as a
-   backlog issue), or `cam suggestions dismiss <fingerprint>` (drop it). Do
-   not assume every backlog issue traces back to a human request — some
-   began as promoted suggestions.
+   pending entries), `cam suggestions promote <fingerprint> [<fingerprint>
+   ...]` (file one or more fingerprints as a single backlog issue), or
+   `cam suggestions dismiss <fingerprint>` (drop it). Do not assume every
+   backlog issue traces back to a human request — some began as promoted
+   suggestions. Triage the pen per the operator's 2026-07-20 policy,
+   canonized in `memory/project_suggestion_triage.md`: (1) **demand-driven
+   promotion** — promote a pen entry only when the current or an
+   about-to-start cycle is going to touch the surface it names, never
+   eagerly at cycle end, since the pen is durable and nothing is lost by
+   leaving an entry unpromoted; (2) **composition-by-fix-site** — when
+   multiple pen entries share the same file, rule, or one coherent edit,
+   promote them together in one `cam suggestions promote` call as a single
+   composite issue rather than one issue per entry; a shared theme with
+   independent fix sites still stays separate issues.
 6. `git status`, `git branch --show-current`, `git log -5 --oneline` — current
    working state.
 7. `.claude/.cam-ship-stalled.json` — a durable marker written whenever a
