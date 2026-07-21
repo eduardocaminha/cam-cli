@@ -1,13 +1,41 @@
 {
   "id": "CAM-355",
   "title": "The injected diff is wrapped in a ```diff markdown fence; a diff of a file that…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-19T16:20:21.075Z",
-  "updatedAt": "2026-07-19T16:20:21.075Z",
+  "updatedAt": "2026-07-21T05:19:12.504Z",
   "description": "The injected diff is wrapped in a ```diff markdown fence; a diff of a file that itself contains a triple-backtick sequence could break out of the fence. Non-blocking (codex still receives the full content), but a fence-safe delimiter or a note would harden the block.\n\nSource: cam/issue-354\nReview round: 1\n\nsuggestion-fingerprint: 19a488281f2a",
   "derivedFrom": [
     "CAM-354"
-  ]
+  ],
+  "spec": {
+    "scope": "Harden renderReviewerDiffBlock (src/supervisor/backend-adapter.ts:467-499) so the codex reviewer diff cannot break out of its markdown code fence. Today the diff is wrapped in a hardcoded ```diff opener (line 496) and ``` closer (line 498); a diff whose content contains a line of three-or-more backticks (e.g. reviewing a Markdown or fenced-code file) terminates the wrapper fence early and corrupts the injected reviewer prompt. Fix: derive the fence dynamically as a run of backticks strictly longer than the longest backtick run in the diff content actually emitted (minimum three) and use that same run for both opener and closer, per CommonMark. Add a unit test proving the breakout is prevented. Surgical: only renderReviewerDiffBlock and one new test case; do not touch the truncation path or call sites.",
+    "acceptanceCriteria": [
+      "A new unit test in test/supervisor/backend-adapter.test.ts named with the substring 'fence breakout' feeds renderReviewerDiffBlock a diff whose content contains a line of three backticks and asserts the wrapper fence is not terminated early. [oracle: grep -q 'fence breakout' test/supervisor/backend-adapter.test.ts]",
+      "Typecheck passes and the backend-adapter test file is green on-branch. [oracle: bun run typecheck && bun test test/supervisor/backend-adapter.test.ts]",
+      "The wrapper fence length is derived from the diff content (longest backtick run + 1, minimum three), not a hardcoded triple backtick; reverting to a fixed triple-backtick fence makes the new fence-breakout test fail. [oracle: reviewer-judgment]"
+    ],
+    "gotchas": [
+      "backend-adapter.ts is SIDECAR-EXECUTED: imported by src/supervisor/review.ts and src/supervisor/loop.ts and compiled into the binary run by the sidecar loop. A coherence rebuild (scripts/build-release.sh --install + sidecar restart) is mandatory after this merges, unlike the recent test-only ships.",
+      "The diff is already truncated at REVIEWER_DIFF_MAX_CHARS (backend-adapter.ts:484). Compute the fence over the exact content that is emitted (post-truncation), so truncation cannot reintroduce an unbalanced fence.",
+      "renderReviewerDiffBlock is called from CodexAdapter.buildSpawnArgv's reviewer case (backend-adapter.ts:556). The 'diff' info-string label after the opening fence is presentational; keep it. Codex receives the full content regardless, so this is a markdown-structure correctness fix, not a content-loss fix.",
+      "Keep it CommonMark-correct: the fence must be a run of backticks STRICTLY longer than any backtick run inside the content, and opener and closer must use the same length."
+    ],
+    "domainTerms": [
+      "renderReviewerDiffBlock",
+      "codex reviewer injection",
+      "CommonMark code fence",
+      "backtick run",
+      "REVIEWER_DIFF_MAX_CHARS"
+    ]
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 1,
+    "riskReduction": 3,
+    "jobSize": 2
+  },
+  "type": "fix"
 }
