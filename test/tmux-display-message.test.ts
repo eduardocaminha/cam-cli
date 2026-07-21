@@ -78,4 +78,14 @@ describe('sampleCursorGeometry: fails CLOSED on malformed output', () => {
 		const spawnFn = fakeSpawn('12;;80;24', 0);
 		expect(sampleCursorGeometry('%3', spawnFn)).toBeNull();
 	});
+
+	test('a field with trailing non-digit content (lenient-parseInt trap) yields null', () => {
+		// Number.parseInt('12abc') === 12, so a bare Number.parseInt would let
+		// this field (and the other three) parse and yield a fabricated
+		// CursorGeometry. The /^-?\d+$/ guard in parseIntField exists to defeat
+		// exactly this: it must reject trailing non-digit content, not just
+		// truncate-and-accept it.
+		const spawnFn = fakeSpawn('12abc;5;80;24', 0);
+		expect(sampleCursorGeometry('%3', spawnFn)).toBeNull();
+	});
 });

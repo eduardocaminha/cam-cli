@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.233.0] - 2026-07-21
+
+### Added
+
+- US-001 - Pin strict-int guard with lenient-parseInt trap case
+
 ## [0.232.0] - 2026-07-21
 
 ### Added
