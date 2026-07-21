@@ -166,9 +166,17 @@ const INTEGER_COMPARAND_RE = /(?<![\w-])(?:-eq|-ne|-gt|-lt|-ge|-le|==|!=)\s*\d+\
  * A live re-derivation token: the comparand is (at least in part) recomputed
  * against `main` at check time rather than frozen once during authoring.
  * Matches `git show main:<path>`, `git diff main`, or any `git grep ...`
- * invocation that also mentions `main`.
+ * invocation that also mentions `main`. The `git diff main` and `git grep
+ * ... main` alternatives require `main` to sit at a ref boundary (colon,
+ * whitespace, or end of string): a bare `\b` word boundary is insufficient
+ * because `.`/`/`/`-` are non-word chars, so it still matched `main` as a
+ * filename stem (`main.ts`, `src/main.rs`) even though no derivation ever
+ * ran (CAM-386, Defect A). `(?![\w./-])` rejects a following word char,
+ * dot, slash, or hyphen; the explicit-colon `git show main:` alternative
+ * already anchors on the colon and is unaffected.
  */
-const LIVE_DERIVATION_RE = /git\s+show\s+main:|git\s+diff\s+main\b|git\s+grep\b[^\n]*\bmain\b/;
+const LIVE_DERIVATION_RE =
+	/git\s+show\s+main:|git\s+diff\s+main(?![\w./-])|git\s+grep\b[^\n]*\bmain(?![\w./-])/;
 
 /**
  * A shell-interpreter word (sh/bash/zsh/dash) immediately followed by a
