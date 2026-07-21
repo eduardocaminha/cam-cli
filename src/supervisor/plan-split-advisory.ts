@@ -73,6 +73,7 @@ export function maybeEmitPlanSplitAdvisory(o: MaybeEmitPlanSplitAdvisoryOptions)
 			readFileSync(join(o.cwd, 'scripts/cam/prd.json'), 'utf8'),
 		) as { userStories?: unknown[] };
 		const storyCount = Array.isArray(prdRaw.userStories) ? prdRaw.userStories.length : 0;
+		if (storyCount <= 1) return;
 
 		const readEventLog = o.readEventLog ?? (() => readFileSync(join(o.cwd, '.claude', 'cam-worker-events.jsonl'), 'utf8'));
 		const summary = aggregateTokensPerIssue(readEventLog());
