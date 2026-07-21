@@ -21,10 +21,41 @@
 //   oracle-lint-cases.txt fixture matrix: every row classifies as recorded (US-002, CAM-388)
 
 import { describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { RULES, lintPrd } from '../../src/supervisor/prd-oracle-lint.ts';
 import type { PrdShape } from '../../src/commands/status.ts';
 
 const FIXTURE_PATH = 'test/fixtures/oracle-lint/oracle-lint-cases.txt';
+
+// A row that wraps a shell interpreter's -c payload in DOUBLE quotes (as
+// opposed to single quotes), e.g. `bash -c "..."` / `sh -c "..."`.
+const DOUBLE_QUOTED_WRAPPER_RE = /(?:^|[\s/])(?:sh|bash|zsh|dash)\s+-c\s+"/;
+
+function parseFixtureRows(text: string): string[][] {
+	return text
+		.trim()
+		.split('\n')
+		.filter((line) => line.length > 0 && !line.startsWith('#'))
+		.map((line) => line.split(' :: '));
+}
+
+/**
+ * Asserts the fixture matrix satisfies every required shape dimension.
+ * Throws (via `expect`) on the first violated dimension, so a mutated/
+ * narrowed copy of the fixture makes this function -- and any test built on
+ * top of it -- fail loudly instead of silently passing.
+ */
+function assertFixtureShape(rows: string[][]): void {
+	expect(rows.length).toBeGreaterThan(0);
+	const doubleQuotedWrapperRows = rows.filter(([, , command]) =>
+		DOUBLE_QUOTED_WRAPPER_RE.test(command ?? '')
+	).length;
+	const backslashEscapeRows = rows.filter(([, , command]) => (command ?? '').includes('\\')).length;
+	expect(doubleQuotedWrapperRows).toBeGreaterThan(0);
+	expect(backslashEscapeRows).toBeGreaterThan(0);
+}
 
 const GREP_RULE_NAME = 'grep-q-plus-list-files';
 const FROZEN_COMPARAND_RULE_NAME = 'frozen-comparand';
@@ -581,11 +612,7 @@ describe('lintPrd', () => {
 describe('oracle-lint-cases.txt fixture matrix', () => {
 	test('every row classifies as its recorded ok/flag expectation', async () => {
 		const text = await Bun.file(FIXTURE_PATH).text();
-		const rows = text
-			.trim()
-			.split('\n')
-			.filter((line) => line.length > 0 && !line.startsWith('#'))
-			.map((line) => line.split(' :: '));
+		const rows = parseFixtureRows(text);
 
 		expect(rows.length).toBeGreaterThan(0);
 
@@ -597,6 +624,58 @@ describe('oracle-lint-cases.txt fixture matrix', () => {
 			expect(rule).toBeDefined();
 			const got = rule!.test(command!) ? 'flag' : 'ok';
 			expect({ ruleName, command, got }).toEqual({ ruleName, command, got: expected! });
+		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// oracle-lint-cases.txt fixture-shape guard (US-003, CAM-382)
+// ---------------------------------------------------------------------------
+//
+// Extends the fixture matrix's shape guard beyond "at least one row exists":
+// it now also requires at least one double-quoted interpreter-wrapper row
+// (`bash -c "..."` / `sh -c "..."`) and at least one backslash-escape row,
+// and ASSERTS on those counts rather than merely computing them. The
+// mutation-sweep test proves the guard is not vacuous: stripping every
+// double-quoted-wrapper row out of a temp copy of the fixture must make the
+// guard fail.
+
+describe('oracle-lint-cases.txt fixture-shape guard', () => {
+	test('the tracked fixture has at least one double-quoted-wrapper row and at least one backslash-escape row', async () => {
+		const text = await Bun.file(FIXTURE_PATH).text();
+		const rows = parseFixtureRows(text);
+		assertFixtureShape(rows);
+	});
+
+	test('mutation sweep: stripping every double-quoted-wrapper row out of a temp copy makes the shape guard fail (falsifiability)', async () => {
+		const text = await Bun.file(FIXTURE_PATH).text();
+		const lines = text.split('\n');
+		let strippedCount = 0;
+		const mutatedLines = lines.filter((line) => {
+			if (line.length === 0 || line.startsWith('#')) return true;
+			const command = line.split(' :: ')[2] ?? '';
+			if (DOUBLE_QUOTED_WRAPPER_RE.test(command)) {
+				strippedCount++;
+				return false;
+			}
+			return true;
+		});
+
+		// Print the stripped-row count so a zero-mutation run is visibly
+		// vacuous, and assert it's non-zero so this sweep can never silently
+		// mutate nothing while still reporting a pass.
+		console.log(`mutation sweep: stripped ${strippedCount} double-quoted-wrapper row(s)`);
+		expect(strippedCount).toBeGreaterThan(0);
+
+		const dir = mkdtempSync(join(tmpdir(), 'cam-oracle-lint-shape-mutation-'));
+		const mutatedPath = join(dir, 'oracle-lint-cases.mutated.txt');
+		try {
+			writeFileSync(mutatedPath, mutatedLines.join('\n'));
+			const mutatedText = await Bun.file(mutatedPath).text();
+			const mutatedRows = parseFixtureRows(mutatedText);
+			expect(() => assertFixtureShape(mutatedRows)).toThrow();
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
 		}
 	});
 });
