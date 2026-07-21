@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.231.0] - 2026-07-21
+
+### Added
+
+- US-001 - Send-once guard on the idle verify/retry path in sendKeysVerified
+
 ## [0.230.0] - 2026-07-21
 
 ### Added
