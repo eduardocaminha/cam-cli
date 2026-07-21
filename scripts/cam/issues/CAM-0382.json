@@ -1,11 +1,11 @@
 {
   "id": "CAM-382",
   "title": "INTEGER_COMPARAND_RE covers -eq/-ge/-le/== but omits -gt, -lt, -ne and !=. `tes…",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-20T19:46:11.427Z",
-  "updatedAt": "2026-07-20T23:40:38.453Z",
+  "updatedAt": "2026-07-21T01:15:33.007Z",
   "description": "INTEGER_COMPARAND_RE covers -eq/-ge/-le/== but omits -gt, -lt, -ne and !=. `test $X -gt 41` is the identical frozen-comparand defect and slips through unflagged. This matches the PRD notes verbatim ('-eq/-ge/-le/== N'), so it is spec-conformant rather than a deviation, but it leaves a real coverage gap in the rule's stated purpose. Worth a follow-up issue widening the operator alternation plus a flagged-forms test per added operator.\n\nSource: cam/issue-381\nReview round: 1\n\nsuggestion-fingerprint: a8557d3c9660",
   "derivedFrom": [
     "CAM-381"
