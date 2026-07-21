@@ -1,19 +1,16 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Fix nested-quote false-positive in extractCommandSubstitutionSpans (Defect B, subsumes CAM-389)"
+    "id": "US-003",
+    "title": "Add patterns.md author note for the two-clause exit-code idiom footgun"
   },
   "branchName": "cam/issue-386",
-  "timestamp": "2026-07-21T00:30:00Z",
+  "timestamp": "2026-07-21T01:15:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/prd-oracle-lint.ts",
-    "test/supervisor/prd-oracle-lint.test.ts",
-    "test/fixtures/oracle-lint/oracle-lint-cases.txt",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 fixed extractCommandSubstitutionSpans (Defect B, CAM-386/389): instead of splicing a matched $(...) span back verbatim, it now routes it through stripQuotedSpans(content.slice(i, end)), creating mutual recursion (function declarations are hoisted, so the forward reference resolves). This strips inert single-quoted comparand-shaped data nested inside a preserved $(...) (e.g. echo \"$(grep -c 'X -eq 1' f.ts)\") while genuine unquoted content -- including a live git show main: derivation token -- survives recursion untouched (verified via the pre-existing test $(wc -l < \"$(git show main:f.ts)\") -eq 42 :: ok fixture row, unaffected). Recursion terminates because each round trip only descends into a strictly-smaller nested quoted span. Accepted residual limit (documented inline near extractCommandSubstitutionSpans): a 2+ level nested DOUBLE-quoted command substitution is not fully stripped at the deepest level -- astronomically rare in oracle criteria. Added two new unit tests (one passing-case, one flagged-forms) to test/supervisor/prd-oracle-lint.test.ts and two new fixture rows to oracle-lint-cases.txt (frozen-comparand :: ok :: the inert-nested-data shape, and frozen-comparand :: flag :: its genuine-unquoted-comparison counterpart). All quality gates green (typecheck, bun test 5249 pass, bun run check:all full spine incl. coverage/dead-code/dup/file-size/lint/ci-parity/agents-md). No _ref bump needed (file not near its file-size ceiling; coverage unaffected). CAM-389 (the tracked issue for this exact defect) should be closed by the operator by hand as subsumed, after a CLEAN review -- this is explicitly NOT a worker task. If a future story touches prd-oracle-lint.ts's quote-stripping pipeline again, grep patterns.md for 'CAM-388'/'CAM-386' first -- there is a long, load-bearing history of narrow regex/recursion fixes in this file and each carries a general lesson worth re-reading before editing further.",
+  "nextStoryContext": "US-003 was a docs-only story: added a new bullet to scripts/cam/patterns.md immediately after the derive-don't-freeze bullet (patterns.md:903), explaining that the two-clause exit-code idiom (e.g. `git diff main --quiet -- file.ts; test $? -eq 0`) is flagged BY DESIGN by hasFrozenIntegerComparand's per-clause scoping (patterns.md:929): the derivation token lives in clause 1, the comparand tested against $? lives in clause 2, and per-clause scoping cannot see across the clause boundary. The note tells oracle authors to either keep the derivation token and its comparand in one clause, or re-derive the comparand again in the second clause, rather than treating the BLOCK as a lint bug to fix. No source/test files touched; all quality gates (typecheck, bun test 5249 pass, full bun run check:all spine including coverage/dead-code/dup/file-size/lint/ci-parity/agents-md/embed-vendor) green with no _ref bump needed (file not near ceiling, coverage unaffected). This closes the last story of the CAM-386/389 PRD (US-001 nested-quote fix, US-002 command-substitution mutual-recursion fix, US-003 this docs note); all three were independent (different concerns) and are now done.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
