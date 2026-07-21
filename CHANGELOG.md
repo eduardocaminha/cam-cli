@@ -6,6 +6,14 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.229.0] - 2026-07-21
+
+### Added
+
+- [US-003] - Add patterns.md author note for the two-clause exit-code idiom footgun
+- [US-002] - Fix nested-quote false-positive in extractCommandSubstitutionSpans (Defect B, subsumes CAM-389)
+- [US-001] - Fix LIVE_DERIVATION_RE filename false-negative (Defect A)
+
 ## [0.228.0] - 2026-07-21
 
 ### Added
