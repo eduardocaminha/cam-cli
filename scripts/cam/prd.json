@@ -1,0 +1,30 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-351",
+  "description": "Harden the codex tmpfile-body test with a fence-regex-independent, hand-pinned fixture assertion that catches a stripFrontmatter regression the current self-mirroring assertion cannot.",
+  "issueNumber": 351,
+  "type": "chore",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add a fence-regex-independent fixture assertion for the codex instructions body",
+      "description": "As a maintainer of the codex adapter test suite, I need a hardened assertion that pins the frontmatter-stripped body against a hand-written literal (never re-derived from stripFrontmatter's own fence regex) so that a regression in the shared fence regex is caught instead of being mirrored identically by the test and passing undetected.",
+      "acceptanceCriteria": [
+        "A new test in test/supervisor/codex-adapter.test.ts builds a controlled fixture agent file (a known YAML frontmatter block plus a known body containing the sentinel FIXTURE_BODY_SENTINEL_CAM_351) in a real tmpdir, reads the on-disk content, and passes it through stripFrontmatter imported from src/templates/frontmatter.ts (read fixture from a real tmpdir file then stripFrontmatter; the production writeCodexInstructionsFile hard-codes .claude/agents/<name>.md so it cannot consume a fixture, hence read->strip only, not read->strip->write). [oracle: grep -q 'FIXTURE_BODY_SENTINEL_CAM_351' test/supervisor/codex-adapter.test.ts]",
+        "The stripped result is asserted equal to a hand-pinned literal expected-body string constant, and the assertion also confirms no frontmatter fence markers survive (result does not start with '---' and carries no residual closing fence line). [oracle: bun test]",
+        "The hand-pinned expected-body literal is a plain string constant, NOT computed by reusing stripFrontmatter's fence regex; the new fixture test block contains no .replace(/^---.../) call. This guarantee is scoped to the new block only, because the preserved real-agent-file assertion at line ~100 legitimately still uses raw.replace(/^---.../) and a whole-file absence grep would therefore false-BLOCK on a correct tree. [oracle: reviewer-judgment]",
+        "The hardened assertion is falsifiable: mutating stripFrontmatter's fence regex in src/templates/frontmatter.ts (e.g. dropping the closing-fence portion \\r?\\n---\\r?\\n?) makes the new fixture assertion go red under bun test, while the unmutated tree stays green. The implementer runs this red-on-main mutation sweep and reverts the mutation before committing. [oracle: reviewer-judgment]",
+        "The existing real-agent-file pipeline assertion (the raw.replace(/^---.../)-derived expectedBody toBe/prefix check around line 100) is preserved, not deleted. [oracle: grep -q 'raw.replace' test/supervisor/codex-adapter.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Only file to touch: test/supervisor/codex-adapter.test.ts. Import stripFrontmatter from '../../src/templates/frontmatter.ts' (exported at frontmatter.ts:105; regex is /^---\\r?\\n[\\s\\S]*?\\r?\\n---\\r?\\n?/ at line 106). Build the fixture with mkdtempSync/writeFileSync/readFileSync (already imported) into a real tmpdir; reuse the existing afterEach dirsToCleanup pattern (line 200-211) so the fixture dir is removed. Do NOT feed the fixture through writeCodexInstructionsFile: that fn (backend-adapter.ts:389) hard-codes join('.claude','agents',<name>.md) + /tmp output, so it cannot read an arbitrary fixture path; call stripFrontmatter directly on the disk-read fixture content (read->strip), which fully exercises the fence regex that is the regression target. The hand-pinned expected literal must be authored by hand from the known fixture body, never via raw.replace(...); that circularity is exactly what CAM-351 removes (issue gotcha 2). Falsifiability sweep (patterns.md: every oracle swept red-against-main before trusted): temporarily edit frontmatter.ts:106 to drop the closing-fence group, run bun test, confirm the new fixture assertion fails, then revert. Preserve the existing per-actor pipeline assertion (lines 80-111) verbatim, including line 100's raw.replace and the reviewer-prefix branch at 105-109. patterns.md 'Test quality' curated invariant: real I/O at wire boundary (tmpdir), no tautological oracle. No vendor/templates touched, so no embed-vendor gate."
+    }
+  ]
+}
