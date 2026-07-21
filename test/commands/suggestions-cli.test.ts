@@ -83,11 +83,19 @@ describe('parseSuggestionsArgs', () => {
 		}
 	});
 
-	test('promote <fingerprint> returns { mode: "promote", help: false, fingerprint }', () => {
+	test('promote <fingerprint> returns { mode: "promote", help: false, fingerprints: [fingerprint] }', () => {
 		expect(parseSuggestionsArgs(['promote', 'abc123def456'])).toEqual({
 			mode: 'promote',
 			help: false,
-			fingerprint: 'abc123def456',
+			fingerprints: ['abc123def456'],
+		});
+	});
+
+	test('promote <fp1> <fp2> returns { mode: "promote", help: false, fingerprints: [fp1, fp2] }', () => {
+		expect(parseSuggestionsArgs(['promote', 'abc123def456', 'ffeeddccbbaa'])).toEqual({
+			mode: 'promote',
+			help: false,
+			fingerprints: ['abc123def456', 'ffeeddccbbaa'],
 		});
 	});
 
@@ -210,13 +218,13 @@ describe('dispatchSuggestions', () => {
 		expect(parsed).not.toBeNull();
 		if (!parsed || parsed.help) return;
 
-		let receivedFingerprint: string | undefined;
+		let receivedFingerprints: string[] | undefined;
 		const code = dispatchSuggestions(parsed, {
-			promoteFn: (fingerprint: string): PromoteSuggestionOnMainResult => {
-				receivedFingerprint = fingerprint;
+			promoteFn: (fingerprints: string[]): PromoteSuggestionOnMainResult => {
+				receivedFingerprints = fingerprints;
 				return {
 					ok: true,
-					fingerprint,
+					fingerprints,
 					issueId: 'CAM-286',
 					sha: 'abc1234',
 				};
@@ -225,8 +233,35 @@ describe('dispatchSuggestions', () => {
 		});
 
 		expect(code).toBe(0);
-		expect(receivedFingerprint).toBe(SAMPLE_ENTRY.fingerprint);
+		expect(receivedFingerprints).toEqual([SAMPLE_ENTRY.fingerprint]);
 		expect(stdoutLines.join('')).toContain('CAM_SUGGESTIONS_PROMOTED=abc123def456 issue=CAM-286');
+	});
+
+	test('promote: variadic fingerprints forward the full list to promoteFn and join them in CAM_SUGGESTIONS_PROMOTED', () => {
+		const stdoutLines: string[] = [];
+		const parsed = parseSuggestionsArgs(['promote', SAMPLE_ENTRY.fingerprint, OTHER_ENTRY.fingerprint]);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		let receivedFingerprints: string[] | undefined;
+		const code = dispatchSuggestions(parsed, {
+			promoteFn: (fingerprints: string[]): PromoteSuggestionOnMainResult => {
+				receivedFingerprints = fingerprints;
+				return {
+					ok: true,
+					fingerprints,
+					issueId: 'CAM-287',
+					sha: 'def4567',
+				};
+			},
+			writeStdout: (line) => stdoutLines.push(line),
+		});
+
+		expect(code).toBe(0);
+		expect(receivedFingerprints).toEqual([SAMPLE_ENTRY.fingerprint, OTHER_ENTRY.fingerprint]);
+		expect(stdoutLines.join('')).toContain(
+			`CAM_SUGGESTIONS_PROMOTED=${SAMPLE_ENTRY.fingerprint}+${OTHER_ENTRY.fingerprint} issue=CAM-287`,
+		);
 	});
 
 	test('promote: failure returns non-zero without printing a CAM_SUGGESTIONS_PROMOTED line', () => {

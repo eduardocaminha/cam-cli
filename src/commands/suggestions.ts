@@ -52,7 +52,21 @@
 //     suggestion line concurrently appended or removed between the initial
 //     read and the winning commit survive instead of being clobbered.
 //
-// CAM-285 US-001, US-005. CAM-290 US-002. CAM-300 US-002.
+//
+// US-001 (CAM-378) additions:
+//   - promoteSuggestionOnMain now accepts a `fingerprints: string[]` list
+//     instead of one `fingerprint: string`: every fingerprint is validated
+//     against the pen BEFORE any mutation (all-or-nothing), then filed as ONE
+//     composite issue whose description carries a `suggestion-fingerprint:`
+//     line per promoted entry, merging every entry's derivedFrom/sourceIssue
+//     provenance (not only the first entry's). A single-element list stays
+//     byte-identical to the pre-CAM-378 single-fingerprint shape (one
+//     fingerprint line, one commit, unchanged commit message). This closes
+//     the hand-composed promote-fp1+dismiss-fp2 gap: dismiss removes a pen
+//     line without filing anything, so composing entries that share a fix
+//     site by hand silently re-arms the dismissed fingerprint's dedup.
+//
+// CAM-285 US-001, US-005. CAM-290 US-002. CAM-300 US-002. CAM-378 US-001.
 
 import {
 	checkMainUpToDate,
@@ -191,6 +205,23 @@ function removeSuggestionLine(
 		kept.push(rawLine);
 	}
 	return { updatedContent: kept.join('\n'), found };
+}
+
+/**
+ * Remove every JSONL line whose `fingerprint` is in `fingerprints` from
+ * `content`, applying `removeSuggestionLine` once per fingerprint so each
+ * removal is byte-preserving for every other line (US-001, CAM-378: the
+ * variadic composite promote path). A fingerprint absent from `content` (a
+ * concurrent writer already dropped it between the pre-mutation lookup and
+ * this CAS attempt) is a no-op for that one fingerprint, mirroring the
+ * single-fingerprint recompute callbacks above.
+ */
+function removeSuggestionLines(content: string, fingerprints: readonly string[]): string {
+	let current = content;
+	for (const fingerprint of fingerprints) {
+		current = removeSuggestionLine(current, fingerprint).updatedContent;
+	}
+	return current;
 }
 
 /**
@@ -457,8 +488,14 @@ export function dismissSuggestionOnMain(
 export interface PromoteSuggestionOnMainOptions {
 	/** Absolute path to the project root (git repo). */
 	cwd: string;
-	/** Fingerprint of the pen entry to file as a real issue. */
-	fingerprint: string;
+	/**
+	 * Fingerprints of the pen entries to file as ONE composite issue (US-001,
+	 * CAM-378). Must be non-empty; a single-element array is the pre-US-001
+	 * single-fingerprint promote and stays byte-identical (one fingerprint
+	 * line, one commit, commit message `chore(cam): suggestions promote <fp>
+	 * -> <id>`).
+	 */
+	fingerprints: string[];
 	/** Injectable spawnSync for all git subprocess calls. */
 	spawnFn: SpawnFn;
 	/** Injectable clock -- returns ISO 8601 timestamp (forwarded to createLocalIssueOnMain). */
@@ -469,12 +506,13 @@ export interface PromoteSuggestionOnMainOptions {
 
 export interface PromoteSuggestionOnMainSuccess {
 	ok: true;
-	fingerprint: string;
+	fingerprints: string[];
 	/** Id of the newly filed issue, e.g. 'CAM-286'. */
 	issueId: string;
 	/**
 	 * Short sha of the SINGLE atomic commit that both files the issue JSON and
-	 * removes the promoted line from the pen (US-002, CAM-290).
+	 * removes ALL promoted lines from the pen (US-002, CAM-290; US-001, CAM-378
+	 * for the variadic composite case).
 	 */
 	sha: string;
 }
@@ -489,16 +527,16 @@ export type PromoteSuggestionOnMainResult =
 	| PromoteSuggestionOnMainError;
 
 /**
- * Build the description for a promoted pen entry's filed issue, mirroring
- * buildFollowUpIssue's format (src/supervisor/suggestion-followups.ts) but
- * reusing the entry's ALREADY-STORED fingerprint rather than recomputing one
- * from a reconstructed ReviewFinding: the pen entry does not retain the
- * original finding's file/line, so recomputing via fingerprintFinding could
- * drift from the fingerprint the pen was keyed under. Reusing
- * `entry.fingerprint` keeps the promoted issue's dedup line byte-identical to
- * the pen's own dedup key, so future terminal reviews still recognize it.
+ * Build one entry's description block, mirroring buildFollowUpIssue's format
+ * (src/supervisor/suggestion-followups.ts) but reusing the entry's
+ * ALREADY-STORED fingerprint rather than recomputing one from a reconstructed
+ * ReviewFinding: the pen entry does not retain the original finding's
+ * file/line, so recomputing via fingerprintFinding could drift from the
+ * fingerprint the pen was keyed under. Reusing `entry.fingerprint` keeps the
+ * promoted issue's dedup line byte-identical to the pen's own dedup key, so
+ * future terminal reviews still recognize it.
  */
-function buildPromotedDescription(entry: SuggestionEntry): string {
+function buildEntryDescriptionBlock(entry: SuggestionEntry): string {
 	const provenanceLines = [`Source: ${entry.sourceBranch}`];
 	if (entry.reviewRound !== undefined) {
 		provenanceLines.push(`Review round: ${entry.reviewRound}`);
@@ -513,27 +551,62 @@ function buildPromotedDescription(entry: SuggestionEntry): string {
 }
 
 /**
- * File the pen entry matching `fingerprint` as a real issue AND remove that
- * one line from scripts/cam/suggestions.jsonl in a SINGLE atomic on-main
- * commit (US-002, CAM-290): the entry's `derivedFrom` is preserved (resolved
- * from `sourceIssue`) and its fingerprint is embedded in the filed issue's
- * description. There is no intermediate main state where the issue exists
- * but the pen line remains -- a process death or lost push can never split
- * the two.
+ * Build the description for a promoted issue. A single entry (the
+ * pre-US-001 shape) stays byte-identical to today: just that one block. Two
+ * or more entries (US-001, CAM-378: variadic composite promote) join every
+ * entry's own block -- each carrying its own `suggestion-fingerprint:` dedup
+ * line -- so the composite issue's description embeds a dedup line for every
+ * promoted fingerprint.
+ */
+function buildPromotedDescription(entries: SuggestionEntry[]): string {
+	if (entries.length === 1) {
+		// Non-null: entries.length === 1 guarantees index 0 exists.
+		return buildEntryDescriptionBlock(entries[0] as SuggestionEntry);
+	}
+	return entries.map((entry) => buildEntryDescriptionBlock(entry)).join('\n\n---\n\n');
+}
+
+/**
+ * Build the title for a promoted issue. A single entry keeps its own title
+ * verbatim (byte-identical to today); a composite promote (US-001, CAM-378)
+ * synthesizes a title naming every entry so the filed issue is identifiable
+ * without opening it.
+ */
+function buildPromotedTitle(entries: SuggestionEntry[]): string {
+	if (entries.length === 1) {
+		return (entries[0] as SuggestionEntry).title;
+	}
+	return `Promote ${entries.length} suggestions: ${entries.map((entry) => entry.title).join('; ')}`;
+}
+
+/**
+ * File the pen entries matching `fingerprints` as ONE composite issue AND
+ * remove ALL of those lines from scripts/cam/suggestions.jsonl in a SINGLE
+ * atomic on-main commit (US-002, CAM-290; US-001, CAM-378 for the variadic
+ * composite case): every entry's `derivedFrom` is preserved (resolved from
+ * its own `sourceIssue`, deduped) and every entry's fingerprint is embedded
+ * in the filed issue's description as its own `suggestion-fingerprint:` dedup
+ * line. There is no intermediate main state where the issue exists but a
+ * pen line remains -- a process death or lost push can never split the two.
+ *
+ * A single-element `fingerprints` array is the pre-US-001 shape and stays
+ * byte-identical to today: one issue, one fingerprint line, exactly that one
+ * pen line removed, commit message `chore(cam): suggestions promote <fp> ->
+ * <id>` unchanged.
  *
  * Bypasses createLocalIssueOnMain (which drops the co-commit ability) and
  * calls writeIssueFile directly, passing the rewritten pen content as
  * `extraFiles` and a `commitMessage` override; the id is re-derived inside
  * writeIssueFile's own CAS retry loop, never pre-computed here.
  *
- * An unknown fingerprint is a structured `not-found` error (printed +
- * returned): looked up BEFORE any mutation, so neither the issue nor the pen
- * is touched.
+ * ALL fingerprints are looked up BEFORE any mutation: an unknown fingerprint
+ * anywhere in the list is a structured `not-found` error (printed +
+ * returned) and neither the issue nor the pen is touched (all-or-nothing).
  */
 export function promoteSuggestionOnMain(
 	options: PromoteSuggestionOnMainOptions,
 ): PromoteSuggestionOnMainResult {
-	const { cwd, fingerprint, spawnFn, clock, readProjectToml } = options;
+	const { cwd, fingerprints, spawnFn, clock, readProjectToml } = options;
 
 	const guard = checkMainUpToDate(cwd, spawnFn, 'promote suggestion');
 	if (!guard.ok) {
@@ -544,43 +617,60 @@ export function promoteSuggestionOnMain(
 	if (!penRead.ok) {
 		return { ok: false, reason: 'suggestions-missing' };
 	}
-	const entry = parseSuggestionsJsonl(penRead.content).find((e) => e.fingerprint === fingerprint);
-	if (entry === undefined) {
-		printError(
-			'unknown fingerprint',
-			`no SUGGESTION in the pen matches fingerprint ${fingerprint}`,
-		);
-		return { ok: false, reason: 'not-found' };
+
+	// Step: validate EVERY fingerprint exists BEFORE any mutation. Bail out on
+	// the first miss -- writeIssueFile has not been invoked yet regardless of
+	// which fingerprint in the list is unknown, so this is already all-or-
+	// nothing (US-001, CAM-378).
+	const allEntries = parseSuggestionsJsonl(penRead.content);
+	const entries: SuggestionEntry[] = [];
+	for (const fingerprint of fingerprints) {
+		const entry = allEntries.find((e) => e.fingerprint === fingerprint);
+		if (entry === undefined) {
+			printError(
+				'unknown fingerprint',
+				`no SUGGESTION in the pen matches fingerprint ${fingerprint}`,
+			);
+			return { ok: false, reason: 'not-found' };
+		}
+		entries.push(entry);
 	}
 
-	// Resolve derivedFrom from the entry's sourceIssue (the PRD-backing parent
-	// issue), the same issue_prefix lookup createLocalIssueOnMain itself uses.
+	// Resolve derivedFrom from every entry's sourceIssue (the PRD-backing
+	// parent issue), the same issue_prefix lookup createLocalIssueOnMain
+	// itself uses, deduped across entries that share a sourceIssue.
 	const config = parseToml(readProjectToml());
 	const prefix = typeof config['issue_prefix'] === 'string' ? config['issue_prefix'] : 'CAM';
-	const parentId = resolveIssueId(entry.sourceIssue, prefix);
+	const parentIds = Array.from(
+		new Set(
+			entries
+				.map((entry) => resolveIssueId(entry.sourceIssue, prefix))
+				.filter((id): id is string => id !== null),
+		),
+	);
 
 	// The pen rewrite is passed as a per-attempt recompute callback (US-002,
 	// CAM-300): writeIssueFile's own CAS retry loop invokes it once per
 	// attempt, re-reading suggestions.jsonl from the advanced main
-	// (readPenContentFromMain) and re-running removeSuggestionLine keyed by
-	// fingerprint against that fresh content -- rather than a whole-file
-	// rewrite computed once, up front, that would clobber a line concurrently
-	// added or removed by another writer between the not-found guard above
-	// and the winning commit.
+	// (readPenContentFromMain) and re-running removeSuggestionLines keyed by
+	// every promoted fingerprint against that fresh content -- rather than a
+	// whole-file rewrite computed once, up front, that would clobber a line
+	// concurrently added or removed by another writer between the not-found
+	// guard above and the winning commit.
 	const result = writeIssueFile({
 		cwd,
-		title: entry.title,
-		description: buildPromotedDescription(entry),
+		title: buildPromotedTitle(entries),
+		description: buildPromotedDescription(entries),
 		prefix,
 		createdAt: clock(),
-		...(parentId !== null ? { derivedFrom: [parentId] } : {}),
+		...(parentIds.length > 0 ? { derivedFrom: parentIds } : {}),
 		extraFiles: (_mainSha) => {
 			const freshRead = readPenContentFromMain(cwd, spawnFn);
 			const freshContent = freshRead.ok ? freshRead.content : penRead.content;
-			const { updatedContent } = removeSuggestionLine(freshContent, fingerprint);
+			const updatedContent = removeSuggestionLines(freshContent, fingerprints);
 			return [{ path: SUGGESTIONS_JSONL_PATH, content: updatedContent }];
 		},
-		commitMessage: (id) => `chore(cam): suggestions promote ${fingerprint} -> ${id}`,
+		commitMessage: (id) => `chore(cam): suggestions promote ${fingerprints.join('+')} -> ${id}`,
 		spawnFn,
 	});
 
@@ -588,7 +678,7 @@ export function promoteSuggestionOnMain(
 
 	return {
 		ok: true,
-		fingerprint,
+		fingerprints,
 		issueId: result.id,
 		sha: result.sha,
 	};
