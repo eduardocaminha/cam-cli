@@ -25,7 +25,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/plan-preflight.ts (combineStreams def at line 80; call sites at 98,105,125,132; PlanPreflightSpawnFn type at 31-34; clean-tree step at 118-119 stays stdout-only) and test/supervisor/plan/plan-preflight.test.ts (combineStreams describe block at lines 44-60). Type the new param structurally against PlanPreflightSpawnFn's result shape ({ stdout: string; stderr: string }); the object destructuring order inside the body is cosmetic but the join array must stay [stderr, stdout] (stderr first is load-bearing: detail reaches the operator FIRST-LINE-ONLY via truncatePreflightDetail, src/supervisor/plan-preflight-marker.ts:135-139, consumed at src/supervisor/plan-runner.ts:1607). Do NOT change PlanPreflightSpawnFn (stderr stays required) and do NOT route clean-tree through combineStreams. Gotcha: plan-preflight.ts is sidecar-executed at plan time (wired via preflightFn in src/commands/sidecar.ts), so the change only takes effect in a running sidecar after a coherence rebuild. patterns.md relevant bullet: none beyond curated noUncheckedIndexedAccess. Sweep each grep oracle red-against-main before trusting it (curated Test-quality invariant)."
     }
