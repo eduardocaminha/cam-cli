@@ -35,7 +35,7 @@
         "Full lint spine green including the deterministic oracle-lint (bun run check:all), so a lint regression from this story fails THIS story, not a later one. [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edit INTEGER_COMPARAND_RE at src/supervisor/prd-oracle-lint.ts:163 and its doc comment (lines 156-163, which today only names -eq/-ge/-le/==). Add operators -ne, -gt, -lt, != AND a `(?:^|\\s)`-style left anchor (or an equivalent negative lookbehind excluding word chars AND the hyphen); a bare left \\b is measurably insufficient per the spec. Add per-operator flagged-forms tests in the 'frozen-comparand rule: flagged forms' describe (test file ~line 164) using findFrozenComparandRule(). patterns.md:913 (quote-blindness self-trap) and patterns.md:915 (`-e` blind spot) are the durable context for this module. Behavioral oracles only: import RULES, find by name, call rule.test(cmd); never grep the regex source. Do NOT use `bun test <file>` as the sole gating oracle for a behavior criterion (structurally tautological against main; PRD gotcha). This rule is sidecar-executed at plan time via plan-runner.ts runOracleLintCheck; a rebuild + sidecar respawn is mandatory after merge."
     },
