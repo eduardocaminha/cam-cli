@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.242.0] - 2026-07-21
+
+### Added
+
+- US-001 - Make the US-R1-002 patterns.md citation rot-proof by dropping its stale line number
+- US-001 - Make the US-R1-002 patterns.md citation rot-proof by dropping its stale line number
+
 ## [0.241.0] - 2026-07-21
 
 ### Added
