@@ -1,16 +1,17 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Scope the derivation excuse per clause instead of per whole command"
+    "id": "US-003",
+    "title": "Promote the CAM-382 false-positive cases into the executed matrix and extend the fixture-shape guard"
   },
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/prd-oracle-lint.ts",
+    "test/fixtures/oracle-lint/oracle-lint-cases.txt",
+    "test/fixtures/oracle-lint/cam382-false-positives.txt",
     "test/supervisor/prd-oracle-lint.test.ts",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "hasFrozenIntegerComparand (src/supervisor/prd-oracle-lint.ts) now strips quoted spans once (stripQuotedSpans, unchanged), then splits the STRIPPED text on /&&|\\|\\||;|\\n/ (CLAUSE_SPLIT_RE, new const placed after stripQuotedSpans) and requires INTEGER_COMPARAND_RE + !LIVE_DERIVATION_RE to both hold within the SAME clause before flagging -- a derivation token in one clause no longer excuses a frozen literal in a different clause. LIVE_DERIVATION_RE itself is still byte-unchanged and at the same line (171) as main; all new code was added strictly below it so the grep -n-diff byte-unchanged oracle keeps passing (see patterns.md for the line-count-delta gotcha). One pre-existing passing test ('does not flag when git diff main accompanies an integer', originally using a `;`-joined two-clause command) was rewritten to a single-clause form because its old shape was structurally the exact anti-pattern this story closes; the old multi-clause command now lives in a NEW test asserting it correctly flags. Two mixed-clause tests were added to each of the flagged-forms and passing-cases describe blocks per the story's AC4. RULES still has exactly 4 named rules; module purity (2 imports, no fs/Bun.spawn/etc, unchanged export surface) preserved.",
+  "nextStoryContext": "oracle-lint-cases.txt grew from 17 to 26 live rows: 9 new frozen-comparand rows were promoted from the INNER strings embedded in test/fixtures/oracle-lint/cam382-false-positives.txt's bun -e/grep -qF wrapper commands (the wrapper commands themselves were already rows, added by US-001/US-002; their -e payload is not scanned by the rule so the wrapper form alone never exercised the rule against the inner strings). Ground truth for each new row was derived by running the real rule directly (bun -e import of src/supervisor/prd-oracle-lint.ts), not by trusting the fixture file's own 'false-positives' name or the PRD notes' 'verdict ok' generalization: the four-operator set (`test $X -eq 41` etc., plus the mainbranch grep-pattern line) is actually a MISSED-detection/false-negative guard and correctly classifies as flag, while `cmd --ge 5` / `echo foo-eq 42` / `run --eq 7` / `test $(foo-eq 42)` are the genuine false-positive guards and classify as ok (see patterns.md, new bullet before the US-002 CAM-382 entry). cam382-false-positives.txt is retained as historical documentation (header comment updated) since none of its content is now the ONLY executed home of a case. test/supervisor/prd-oracle-lint.test.ts gained a shared parseFixtureRows() helper (the pre-existing 'every row classifies' test was refactored to use it, no behavior change) and a new 'oracle-lint-cases.txt fixture-shape guard' describe block: assertFixtureShape() now asserts rows.length>0 AND at least one double-quoted interpreter-wrapper row (bash/sh/zsh/dash -c \"...\") AND at least one backslash-escape row exist, plus a mutation-sweep test that strips every double-quoted-wrapper row from a temp copy (mkdtempSync) and expects assertFixtureShape to throw, printing the stripped count first. RULES still has exactly 4 named rules; no src/ changes this story (fixture + test only).",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
