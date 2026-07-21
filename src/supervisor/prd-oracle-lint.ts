@@ -166,9 +166,17 @@ const INTEGER_COMPARAND_RE = /(?<![\w-])(?:-eq|-ne|-gt|-lt|-ge|-le|==|!=)\s*\d+\
  * A live re-derivation token: the comparand is (at least in part) recomputed
  * against `main` at check time rather than frozen once during authoring.
  * Matches `git show main:<path>`, `git diff main`, or any `git grep ...`
- * invocation that also mentions `main`.
+ * invocation that also mentions `main`. The `git diff main` and `git grep
+ * ... main` alternatives require `main` to sit at a ref boundary (colon,
+ * whitespace, or end of string): a bare `\b` word boundary is insufficient
+ * because `.`/`/`/`-` are non-word chars, so it still matched `main` as a
+ * filename stem (`main.ts`, `src/main.rs`) even though no derivation ever
+ * ran (CAM-386, Defect A). `(?![\w./-])` rejects a following word char,
+ * dot, slash, or hyphen; the explicit-colon `git show main:` alternative
+ * already anchors on the colon and is unaffected.
  */
-const LIVE_DERIVATION_RE = /git\s+show\s+main:|git\s+diff\s+main\b|git\s+grep\b[^\n]*\bmain\b/;
+const LIVE_DERIVATION_RE =
+	/git\s+show\s+main:|git\s+diff\s+main(?![\w./-])|git\s+grep\b[^\n]*\bmain(?![\w./-])/;
 
 /**
  * A shell-interpreter word (sh/bash/zsh/dash) immediately followed by a
@@ -296,6 +304,26 @@ function findCommandSubstitutionEnd(content: string, dollarIndex: number): numbe
  * is live shell syntax, never inert quoted data. Single quotes have no such
  * exception (`'$(cmd)'` is 100% literal text, no substitution happens), so
  * this helper is only ever applied to double-quoted span content.
+ *
+ * The matched `$(...)` span is recursed through stripQuotedSpans (mutual
+ * recursion, defined below) rather than spliced back verbatim (Defect B,
+ * CAM-386/389): a `$(...)` can itself contain single-quoted data that is
+ * genuinely inert (e.g. a `grep -c 'X -eq 1' f.ts` search pattern), and
+ * splicing it verbatim left that inert operator+integer byte pattern in the
+ * frozen-comparand-scanned text, a false positive. Recursing strips that
+ * inert quoted data while the unquoted command structure -- including any
+ * live derivation token, e.g. `git show main:PATH` -- survives, since only
+ * genuinely quoted spans are touched. Recursion terminates: each mutual
+ * `extractCommandSubstitutionSpans` <-> `stripQuotedSpans` round trip only
+ * descends into a nested quoted span strictly inside the current `$(...)`
+ * span, which is strictly shorter than it (it excludes at least the opening
+ * and closing quote characters), so the recursion depth is bounded by the
+ * input length. Accepted residual limit: a 2+ level nested DOUBLE-quoted
+ * command substitution (a `$(...)` containing another `"..."`-wrapped
+ * `$(...)`) is not fully stripped at the deepest level, since each
+ * recursion round only re-enters stripQuotedSpans on the span it just
+ * matched, not on siblings past it -- astronomically rare in oracle
+ * criteria, documented here as a known limit, not a bug.
  */
 function extractCommandSubstitutionSpans(content: string): string {
 	let out = '';
@@ -304,7 +332,7 @@ function extractCommandSubstitutionSpans(content: string): string {
 	while (i < content.length) {
 		if (content[i] === '$' && content[i + 1] === '(') {
 			const end = findCommandSubstitutionEnd(content, i);
-			out += ` ${content.slice(i, end)} `;
+			out += ` ${stripQuotedSpans(content.slice(i, end))} `;
 			i = end;
 		} else {
 			out += ' ';

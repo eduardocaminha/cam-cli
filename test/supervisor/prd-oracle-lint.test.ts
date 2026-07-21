@@ -267,6 +267,21 @@ describe('frozen-comparand rule: flagged forms', () => {
 		const finding = rule.test("git diff main --quiet -- file.ts; test $? -eq 0");
 		expect(finding).not.toBeNull();
 	});
+
+	test('flags when the only "main" token is a filename stem (main.ts), not a git-ref (US-001, CAM-386, Defect A)', () => {
+		const finding = rule.test('test $(git grep -c PATTERN main.ts) -eq 3');
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags when the only "main" token is a filename stem under a directory (src/main.rs), not a git-ref (US-001, CAM-386, Defect A)', () => {
+		const finding = rule.test('test $(git grep -c PATTERN src/main.rs) -eq 3');
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags a genuine unquoted -eq comparison nested inside a double-quoted command substitution, unaffected by the Defect B recursive quote-stripping (US-002, CAM-386/389)', () => {
+		const finding = rule.test('echo "$(test $X -eq 41)"');
+		expect(finding).not.toBeNull();
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -297,6 +312,16 @@ describe('frozen-comparand rule: passing cases', () => {
 
 	test('does not flag when `git grep ... main` accompanies an integer', () => {
 		const finding = rule.test("test $(git grep -c 'PATTERN' main -- file.ts) -ge 1");
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag a bare `git grep PATTERN main` tree grep (main at end of string, US-001, CAM-386)', () => {
+		const finding = rule.test("test $(git grep -c 'PATTERN' main) -ge 1");
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag a `git grep PATTERN main:src/f.ts` ref (main followed by a colon, US-001, CAM-386)', () => {
+		const finding = rule.test("test $(git grep -c 'PATTERN' main:src/f.ts) -ge 1");
 		expect(finding).toBeNull();
 	});
 
@@ -334,6 +359,11 @@ describe('frozen-comparand rule: passing cases', () => {
 
 	test('does not flag an operator embedded mid-token inside a command substitution (foo-eq 42)', () => {
 		const finding = rule.test('test $(foo-eq 42)');
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag when a double-quoted command substitution nests inert single-quoted comparand-shaped data (Defect B, US-002, CAM-386/389: the recursive-strip false-positive)', () => {
+		const finding = rule.test(String.raw`echo "$(grep -c 'X -eq 1' f.ts)"`);
 		expect(finding).toBeNull();
 	});
 });
