@@ -6,6 +6,15 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.237.0] - 2026-07-21
+
+### Added
+
+- US-004 - Surface the merit-over-cost stance as human prose in docs/agent-readiness.md
+- US-003 - Add merit-over-cost rule to subagent-implementer (both copies)
+- US-002 - Add merit-over-cost rule to subagent-auditor (both copies)
+- US-001 - Add merit-over-cost rule to subagent-reviewer (both copies)
+
 ## [0.236.0] - 2026-07-21
 
 ### Added
