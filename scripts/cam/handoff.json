@@ -1,0 +1,10 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Condense dispatch.ts leading comment header" },
+  "createdFiles": [],
+  "modifiedFiles": ["src/tmux/dispatch.ts"],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 (only story in this PRD) is done: src/tmux/dispatch.ts's leading comment header (lines 1-111 before, now lines 1-77) was condensed to a comment-only diff. Removed the superseded 'Corrected model (review round 1 fix, US-R1-001)' paragraph and the CAM-358/CAM-359/CAM-364 backstop-failure/evolution recounting (that history already lives in scripts/cam/patterns.md at :38, :889, :891, :897, :941). Preserved verbatim the 'Residue NOT closed by this fix' disclosure and condensed-but-content-preserving descriptions of: US-008 idle-guarantee send + timeout fallback, US-002 post-send verify+retry (sendKeysVerified), the CAM-364 prompt-row discriminator (cursorRowStartsWithPrompt/PROMPT_ROW_START), the US-R2-001 reader-decoupling (visibleCaptureFn vs capture-pane -p -S - scrollback capturePaneFn), and the CAM-375 send-once guard (baseline sample + physical send each fire exactly once, retries only re-verify). No line at/after `import { join } from 'node:path'` (now line 79, previously 113) changed. All quality gates green: typecheck, bun test (5262 pass / 0 fail), bun run check:all (all 13 gates ok including embed-vendor, lint, file-size, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps).",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
