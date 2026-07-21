@@ -21,7 +21,7 @@
         "The full quality spine passes on the branch (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edit src/supervisor/plan-split-advisory.ts: add 'if (storyCount <= 1) return;' right after the storyCount computation at line ~75 (before the readEventLog/aggregateTokensPerIssue/computeSplitAdvisory/logEvent/notify block). storyCount is 'Array.isArray(prdRaw.userStories) ? prdRaw.userStories.length : 0', so '<= 1' correctly suppresses both malformed (0) and single-story (1) PRDs. Do NOT touch src/stats/split-advisory.ts (pure heuristic + mean/median); do NOT change the mean-vs-median projection or the bucketMean>1.5*bucketMedian fire threshold (swapping projectedTokens to bucketMedian would make it never fire -- explicitly out of scope). The guard is a plain early return, preserving the best-effort try/catch non-gating/no-throw contract. New test in test/supervisor/plan-split-advisory.test.ts: build records + a single-story prd.json fixture where the same-jobSize bucket would fire, inject notify/logEvent spies, assert both received zero calls; keep existing multi-story tests. Sidecar-executed code: after merge a coherence rebuild (bash scripts/build-release.sh --install then sidecar restart) is needed for a running sidecar to pick up the change (not doc/test-only)."
     }
