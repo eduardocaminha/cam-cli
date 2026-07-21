@@ -132,6 +132,8 @@ Each story must be completable in **one Claude Code context window**. Right-size
 - "Build the whole `cam dashboard`" → split into: snapshot reader, compose/render helper, Ink screen + keypress lifecycle.
 - "Add the Linear issue system end-to-end" → split into: GraphQL client, `project.toml` wiring, orchestrator dispatch, status-update calls.
 
+- **Merit over cost.** When you author a story's scope, design approach, or acceptance criteria, rank the options by engineering merit (quality, launch-readiness) and never undersize, oversize, or weaken a story's approach because a stronger one costs more effort or looks like "v1", "future enhancement", or added complexity. If the robust approach is expensive, note the cost as a separate factor after the recommendation -- it does not change what you plan. This rule limits the quality of the recommendation, not its scope: Simplicity remains the scope limiter. Operational cost is never a criterion, but quality degradation from context-window exhaustion is a quality criterion, not a cost one.
+
 ## Story Ordering
 
 Order by dependency (priority 1 = first to implement):
