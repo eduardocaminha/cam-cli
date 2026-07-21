@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.241.0] - 2026-07-21
+
+### Added
+
+- US-001 - Condense dispatch.ts leading comment header
+
 ## [0.240.0] - 2026-07-21
 
 ### Added
