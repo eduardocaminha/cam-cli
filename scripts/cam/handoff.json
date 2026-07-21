@@ -1,15 +1,15 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Add merit-over-cost rule to subagent-reviewer (both copies)" },
+  "lastCompletedStory": { "id": "US-002", "title": "Add merit-over-cost rule to subagent-auditor (both copies)" },
   "branchName": "cam/issue-379",
   "timestamp": "2026-07-21T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    ".claude/agents/subagent-reviewer.md",
-    "templates/agents/subagent-reviewer.md",
+    ".claude/agents/subagent-auditor.md",
+    "templates/agents/subagent-auditor.md",
     "src/vendor/_generated.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "Added a new '### Conventions' checklist bullet ('Merit over cost.') to both .claude/agents/subagent-reviewer.md and templates/agents/subagent-reviewer.md, verbatim-identical in both copies including the dictated shared sentence ('This rule limits the quality of the recommendation, not its scope: Simplicity remains the scope limiter. Operational cost is never a criterion, but quality degradation from context-window exhaustion is a quality criterion, not a cost one.'). Insertion point is the '### Conventions' section, which exists identically-named in both variants (not anchored to any cam-cli-only heading like 'Ink / TUI'), placed right after the existing four-sibling-ratchets bullet. Regenerated src/vendor/_generated.ts via `bun run embed-vendor` per the self-hosting pattern (patterns.md line 46); embed-vendor:check and test/embedded.test.ts both green. No pattern-records.jsonl exists yet in this repo (grep for dual-copy/subagent-reviewer/embed-vendor/self-hosting returned nothing), so appliedPatternIds is empty. Remaining PRD scope (if any) may include framing this same merit-over-cost rule into other review-adjacent surfaces (e.g. subagent-auditor) -- check prd.json for sibling stories before assuming this is the only surface.",
+  "nextStoryContext": "Added a new item 19 ('Merit over cost.') to section E (Repo invariants) of both .claude/agents/subagent-auditor.md and templates/agents/subagent-auditor.md, framed for AUDIT ('Do NOT APPROVE a PRD whose scope or quality was trimmed for effort or cost reasons...'), carrying the dictated verbatim shared sentence identical to US-001's reviewer wording ('This rule limits the quality of the recommendation, not its scope: Simplicity remains the scope limiter. Operational cost is never a criterion, but quality degradation from context-window exhaustion is a quality criterion, not a cost one.'). Section E (items 1-18) is identical text in both the .claude/ and templates/ copies, so it was the correct insertion point (NOT the cam-cli-only '### F. Project-specific sanity (cam-cli)' heading, which reads 'customize per project' in templates/ and has a totally different item set/count). Inserting the new item pushed section F's items up by 1 in both copies (.claude/: 19-25 -> 20-26; templates/: 19 -> 20) -- this exact renumber-section-E-then-bump-F mechanic already has documented precedent at scripts/cam/patterns.md:666 (US-002, CAM-273), so no new patterns.md bullet was needed, just confirmed reuse. Regenerated src/vendor/_generated.ts via `bun run embed-vendor`; embed-vendor:check and test/embedded.test.ts (63 pass) both green; full bun test suite 5256 pass / 0 fail. No pattern-records.jsonl exists in this repo yet (checked again, still absent), so appliedPatternIds is empty. Remaining PRD scope (if any): check prd.json for further stories in this merit-over-cost sweep (e.g. subagent-planner, subagent-implementer, or /cam-plan-level docs) before assuming US-001/US-002 (reviewer + auditor) covers the full epic.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
