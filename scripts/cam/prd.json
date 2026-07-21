@@ -24,7 +24,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Single-concern root-cause fix (locus A per the spec). Files: src/commands/sidecar.ts (add writeSidecarPidFn to SidecarOptions ~L123/L359 near writeSessionStartFn; import writeSidecarPid from src/supervisor/sidecar-pid.ts; call (options.writeSidecarPidFn ?? writeSidecarPid)(claudeDir, process.pid) adjacent to the writeSessionStartFn call at ~src/commands/sidecar.ts:3383, BEFORE the runContainerEnsureGuard early-return and before the poll loop at loopFn ~L3405). New test: test/supervisor/sidecar-self-pid.test.ts (exact filename, AC1 oracle references it). GOTCHAS: writeSidecarPid is NOT yet imported in sidecar.ts (grep confirms 0). The behavioral test MUST inject options.runSidecarLoopFn to resolve immediately (the loop otherwise never resolves) and set cwd to the temp dir so claudeDir resolves under it; mirror stubbing in test/sidecar-ship-phase.test.ts and temp-dir style in test/supervisor/sidecar-pid.test.ts. Do NOT touch run.ts's writeSidecarPid/removeSidecarPidIfExists. Do NOT add remove-on-exit, any signal handler, or a pgrep global scan. Needs a coherence rebuild after merge (sidecar-executed code). Grep scripts/cam/patterns.md for 'sidecar' before coding."
     }
