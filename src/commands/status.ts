@@ -43,7 +43,7 @@ import process from 'node:process';
 import { load as yamlLoad } from 'js-yaml';
 
 import { glyphs } from '../design/tokens.ts';
-import { accent, chalk, muted, warning } from '../logging/color.ts';
+import { accent, chalk, destructive, muted, warning } from '../logging/color.ts';
 import {
 	emitEntry,
 	emitSectionHeading,
@@ -51,6 +51,7 @@ import {
 	emitTrailingBlank,
 	emitWarn,
 } from '../logging/screen.ts';
+import { isPauseSet } from '../supervisor/pause-marker.ts';
 import {
 	orchestratorTranscriptPath,
 	parseTranscriptUsage,
@@ -184,7 +185,15 @@ export interface PrdShape {
 	};
 }
 
-export type StatusState = 'idle' | 'active' | 'paused';
+/**
+ * `operator-paused` is a distinct state from the phase-derived `paused`
+ * (which reflects `active:false` in the loop's own state file, set by the
+ * plugin on completion/cancel). `operator-paused` reflects the dedicated
+ * pause-marker file (`.cam-pause`, `src/supervisor/pause-marker.ts`, US-001)
+ * written by `cam pause` — an intentional operator brake — and takes
+ * precedence over the phase-derived label so the two are never conflated.
+ */
+export type StatusState = 'idle' | 'active' | 'paused' | 'operator-paused';
 
 export interface StatusReport {
 	state: StatusState;
@@ -425,6 +434,11 @@ export function buildStatusReport(options: StatusOptions = {}): StatusReport {
 	const state = readStateFile(cwd);
 	const prd = readPrd(cwd);
 	const git = readGitInfo(cwd);
+	// US-003: the operator pause marker takes precedence over the
+	// phase-derived state (idle/active/paused) so an intentional brake
+	// always renders distinctly, regardless of what the loop's own state
+	// file says.
+	const operatorPaused = isPauseSet(claudeDir);
 
 	const report: StatusReport = { state: 'idle' };
 	if (git.branchName) report.branchName = git.branchName;
@@ -454,10 +468,12 @@ export function buildStatusReport(options: StatusOptions = {}): StatusReport {
 			const story = pickCurrentStory(prd);
 			if (story) report.currentStory = { id: story.id, title: story.title };
 		}
+		if (operatorPaused) report.state = 'operator-paused';
 		return report;
 	}
 
 	report.state = state.active === false ? 'paused' : 'active';
+	if (operatorPaused) report.state = 'operator-paused';
 	if (typeof state.iteration === 'number' && typeof state.max_iterations === 'number') {
 		report.iteration = { current: state.iteration, max: state.max_iterations };
 	}
@@ -504,12 +520,18 @@ const CONTENT_INDENT = '    ';
 /**
  * Render a state indicator (glyph + label) from the shared design tokens, so
  * the print path speaks the same vocabulary as the Ink Dashboard:
- *   idle   → muted ◌ idle    (glyphs.pending)
- *   active → accent ● active  (glyphs.active)
- *   paused → warning ! paused (glyphs.warning)
+ *   idle             → muted ◌ idle               (glyphs.pending)
+ *   active           → accent ● active             (glyphs.active)
+ *   paused           → warning ! paused             (glyphs.warning)
+ *   operator-paused  → destructive ! operator-paused (glyphs.warning, US-003)
+ *
+ * `operator-paused` reuses the warning glyph but pairs it with the
+ * destructive color and a distinct label, so it never reads as the plain
+ * phase-derived `paused` state at a glance.
  */
-function renderStateIndicator(state: 'idle' | 'active' | 'paused'): string {
+function renderStateIndicator(state: StatusState): string {
 	if (state === 'idle') return `${muted(glyphs.pending)} ${muted('idle')}`;
+	if (state === 'operator-paused') return `${destructive(glyphs.warning)} operator-paused`;
 	if (state === 'paused') return `${warning(glyphs.warning)} paused`;
 	return `${accent(glyphs.active)} active`;
 }
@@ -598,7 +620,11 @@ export function runStatus(options: StatusOptions = {}): number {
 		process.stdout.write(`${renderEntry('promise', promiseShown)}\n`);
 	}
 
-	if (report.state === 'paused') {
+	if (report.state === 'operator-paused') {
+		emitWarn('Loop is operator-paused', '(.cam-pause marker present)');
+		emitSectionHeading('Next');
+		emitEntry('cam resume', 'clear the pause marker and continue');
+	} else if (report.state === 'paused') {
 		emitWarn('Loop is paused', '(active:false in state file)');
 		emitSectionHeading('Next');
 		emitEntry('cam stop', 'clear the state file');
