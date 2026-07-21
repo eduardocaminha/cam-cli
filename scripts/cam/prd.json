@@ -1,0 +1,31 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-355",
+  "description": "Harden the codex reviewer diff block so diff content containing triple-backtick lines cannot break out of its markdown code fence.",
+  "issueNumber": 355,
+  "type": "fix",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Derive a fence-safe wrapper for the reviewer diff block",
+      "description": "As a codex reviewer, I need the injected branch diff wrapped in a dynamically-sized backtick fence so that a diff of a fenced-code or Markdown file cannot terminate the wrapper fence early and corrupt my reviewer prompt.",
+      "acceptanceCriteria": [
+        "renderReviewerDiffBlock (src/supervisor/backend-adapter.ts) derives its opener/closer fence as a run of backticks strictly longer than the longest backtick run in the emitted diff content (minimum three), and uses the SAME run for both opener and closer, per CommonMark. [oracle: reviewer-judgment]",
+        "The fence length is computed over the exact post-truncation content that is emitted (result.diff + truncationMarker), so truncation at REVIEWER_DIFF_MAX_CHARS cannot reintroduce an unbalanced fence. [oracle: reviewer-judgment]",
+        "The presentational 'diff' info-string label after the opening fence is preserved. [oracle: grep -q 'diff' src/supervisor/backend-adapter.ts]",
+        "A new unit test in test/supervisor/backend-adapter.test.ts whose name contains the substring 'fence breakout' feeds renderReviewerDiffBlock a diff whose content contains a line of three backticks and asserts the wrapper fence is not terminated early (opener and closer are a matching run longer than three). [oracle: grep -q 'fence breakout' test/supervisor/backend-adapter.test.ts]",
+        "Reverting to a fixed triple-backtick fence makes the new fence-breakout test fail (the oracle is falsifiable, not tautological). [oracle: reviewer-judgment]",
+        "Only renderReviewerDiffBlock and the one new test case change; the truncation path (computeReviewerDiff) and all call sites (CodexAdapter.buildSpawnArgv reviewer branch) are untouched. [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test), and the backend-adapter test file is green on-branch (bun test test/supervisor/backend-adapter.test.ts). [oracle: bun test test/supervisor/backend-adapter.test.ts]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Single-file fix + one test. Edit renderReviewerDiffBlock at src/supervisor/backend-adapter.ts:468-500 (hardcoded '```diff' opener line 496, '```' closer line 498). Compute longest backtick run via a regex like /`+/g over the emitted content string (result.diff + truncationMarker), take max match length, fence length = max(3, longest+1); emit `'`'.repeat(fenceLen) + 'diff'` opener and `'`'.repeat(fenceLen)` closer. Guard noUncheckedIndexedAccess on regex-match access. New test goes in test/supervisor/backend-adapter.test.ts. GOTCHA (from issue spec): backend-adapter.ts is SIDECAR-EXECUTED (imported by src/supervisor/review.ts + src/supervisor/loop.ts, compiled into the sidecar binary) — a coherence rebuild (scripts/build-release.sh --install + sidecar restart) is mandatory after merge, unlike recent test-only ships. Codex receives full content regardless; this is a markdown-structure correctness fix, not content-loss. Prior art: patterns.md bullet 'Reviewer-scoped diff injection lives inside CodexAdapter.renderActor' (US-001, CAM-354, 2026-07-19) documents the diff-injection design this hardens; renderReviewerDiffBlock returns an already-truncated body. No external library from the docs-fetch table is touched (git subprocess semantics already validated in CAM-354)."
+    }
+  ]
+}
