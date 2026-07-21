@@ -10,9 +10,16 @@
   "officialDocsConsulted": [],
   "userStories": [
     {
+      "id": "US-R2-001",
+      "title": "Review round 2 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": false,
+      "notes": "WARNING [README.md:147]: New first-class subcommand `cam pause` was added to the COMMANDS array, HELP registry, and PAUSE_HELP, but the exhaustive command reference in README.md (which lists the sibling operator commands cam status/stop/drain/resume at lines 147-150) was not updated to include `cam pause`. Per the project doc-maintenance convention (CLAUDE.md section 7 / review Documentation & Config Sync), a user-facing command addition must be reflected in the README command reference. Add a `cam pause` line beside `cam stop`/`cam drain`."
+    },
+    {
       "id": "US-R1-001",
       "title": "Review round 1 fix 001: address reviewer finding",
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "notes": "CRITICAL [src/commands/status.ts:441]: US-003 is broken in production: buildStatusReport reads the pause marker via isPauseSet(claudeDir), but the default claudeDir resolves to process.env.CLAUDE_CONFIG_DIR ?? ~/.claude (the GLOBAL claude config dir, used for transcript lookup). `cam pause` writes the marker to the PROJECT-LOCAL <cwd>/.claude/.cam-pause (pause.ts:75 join(cwd,'.claude'), matching host.ts:537 and stop.ts:424). The two directories diverge in production, so `cam status` never sees the marker and renders 'idle'/'active'/'paused' instead of 'operator-paused'. Reviewer end-to-end repro (real runPause -> buildStatusReport with default claudeDir): marker written to <cwd>/.claude=true, but cam status state=idle (expected operator-paused). The US-003 AC 'cam status reads the pause marker and renders a distinct operator-paused state' is not satisfied. Fix: read isPauseSet(join(cwd,'.claude')) (the project-local dir), matching pause.ts/host.ts/stop.ts, not the transcript claudeDir. test/commands/status-paused.test.ts masks this by injecting an explicit claudeDir equal to the write location instead of exercising the real cam pause -> cam status flow (CAM-55 fakes-lie pattern); add a test that runs runPause({cwd}) then buildStatusReport({cwd}) with the DEFAULT claudeDir and asserts operator-paused."
     },
@@ -33,7 +40,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "The full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 2,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "Clone src/supervisor/drain-kill-switch.ts into a new src/supervisor/pause-marker.ts: export PAUSE_MARKER = '.cam-pause' and setPause/clearPause/isPauseSet with injectable DrainWriteFn/DrainRemoveFn/DrainExistsFn-style seams (mkdirSync recursive on set, presence is the signal, never throws). New src/commands/pause.ts mirrors src/commands/drain.ts print-path structure (emitTitle/emitOk/emitSectionHeading). Extend src/commands/resume.ts (runResume) to clearPause(claudeDir) at the start of its flow so cam resume clears the brake before its existing 4-mode recovery. index.ts: add a new 'pause' case (resume already dispatches at index.ts:2926); register 'pause' in the command list near index.ts:2576. Add PAUSE_MARKER to the performStop removal loop in src/commands/stop.ts (import beside DRAIN_STOP_MARKER at line 43; add to the marker array near line 576) per patterns.md:56 lifecycle-marker invariant. Add '.claude/.cam-pause' to both .gitignore (beside .cam-drain-stop line 56) and templates/.gitignore (beside line 33). templates/.gitignore is walked by scripts/generate-embedded-vendor.ts into src/vendor/_generated.ts, so run `bun run embed-vendor` after the edit, then `bun run embed-vendor:check` must pass. Gotcha (spec): do NOT reuse the active field for pause; parseStateFile ignores a raw active field when a phase key is present (status.ts:262-270) and makeOnProgress re-stamps active:true every iteration (host.ts:389-399). Test test/commands/pause.test.ts must (a) verify set/clear via injected seams and real tmpdir, and (b) write a cam-loop.local.md fixture, run runPause, and assert its bytes are unchanged.",
@@ -52,7 +59,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "The full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 3,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "Add optional isPaused?: () => boolean to the RunSupervisorOptions bag (loop.ts:330-530) and consult it at the top of the `outer: while` inner loop (loop.ts:953) BEFORE dispatch; when true, break to a cooperative return with a new SupervisorResult status 'paused' (extend the status union near the other returns at loop.ts:940/1005/1024). The cooperative return must not unlink the state file, kill panes, or exit: it just ends the current runSupervisor invocation so the sidecar idles. Wire the production predicate in src/supervisor/host.ts:buildSupervisorOptions (patterns.md:44 sidecar dep-wiring, never duplicate inline): isPaused: () => isPauseSet(claudeDir), importing isPauseSet from src/supervisor/pause-marker.ts (US-001). Gotcha (spec): the outer readActive gate (loop.ts:2245-2301) is inter-cycle only and cannot interrupt an in-flight runSupervisor, which is exactly why the injected predicate at the inner-loop boundary is required. Keep sidecar + merge-watch timers alive: pausing is NOT cam stop (src/commands/stop.ts kills the tmux session). test/supervisor/pause-halt.test.ts: inject isPaused=()=>true plus spy teardown seams and assert paused status + zero teardown calls. test/supervisor/pause-resume.test.ts: isPaused flips false, assert the next unpassed story is dispatched (continue, not re-plan). Sidecar-executed rebuild is required after ship (bash scripts/build-release.sh --install, restart cam sidecar) since loop.ts/host.ts run inside the live sidecar.",
@@ -70,7 +77,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "The full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 4,
+      "priority": 5,
       "passes": true,
       "requires": null,
       "notes": "src/commands/status.ts: extend StatusState (currently 'idle' | 'active' | 'paused' at status.ts:187) with 'operator-paused'; read the pause marker via isPauseSet(claudeDir) from src/supervisor/pause-marker.ts (US-001) and let it take precedence over the phase-derived label so an operator pause renders distinctly. Render it in renderStateIndicator (status.ts:511-513) with its own glyph/label and add a matching trailing hint (status.ts:601-602), NOT folded into the existing active:false 'paused' branch (status.ts:460, which is the phase-conflation gotcha). Print path only (process.stdout / src/logging/screen helpers); this story deliberately avoids Ink and ink-testing-library, so no new external library is introduced. test/commands/status-paused.test.ts: with the marker present assert the operator-paused indicator renders and is distinct from the plain active:false paused label.",
@@ -78,15 +85,21 @@
     }
   ],
   "review": {
-    "roundsCompleted": 1,
+    "roundsCompleted": 2,
     "maxRounds": 3,
     "lastVerdict": "FIXES_PENDING:1",
     "findings": [
       {
-        "severity": "CRITICAL",
-        "file": "src/commands/status.ts",
-        "line": 441,
-        "text": "US-003 is broken in production: buildStatusReport reads the pause marker via isPauseSet(claudeDir), but the default claudeDir resolves to process.env.CLAUDE_CONFIG_DIR ?? ~/.claude (the GLOBAL claude config dir, used for transcript lookup). `cam pause` writes the marker to the PROJECT-LOCAL <cwd>/.claude/.cam-pause (pause.ts:75 join(cwd,'.claude'), matching host.ts:537 and stop.ts:424). The two directories diverge in production, so `cam status` never sees the marker and renders 'idle'/'active'/'paused' instead of 'operator-paused'. Reviewer end-to-end repro (real runPause -> buildStatusReport with default claudeDir): marker written to <cwd>/.claude=true, but cam status state=idle (expected operator-paused). The US-003 AC 'cam status reads the pause marker and renders a distinct operator-paused state' is not satisfied. Fix: read isPauseSet(join(cwd,'.claude')) (the project-local dir), matching pause.ts/host.ts/stop.ts, not the transcript claudeDir. test/commands/status-paused.test.ts masks this by injecting an explicit claudeDir equal to the write location instead of exercising the real cam pause -> cam status flow (CAM-55 fakes-lie pattern); add a test that runs runPause({cwd}) then buildStatusReport({cwd}) with the DEFAULT claudeDir and asserts operator-paused."
+        "severity": "WARNING",
+        "file": "README.md",
+        "line": 147,
+        "text": "New first-class subcommand `cam pause` was added to the COMMANDS array, HELP registry, and PAUSE_HELP, but the exhaustive command reference in README.md (which lists the sibling operator commands cam status/stop/drain/resume at lines 147-150) was not updated to include `cam pause`. Per the project doc-maintenance convention (CLAUDE.md section 7 / review Documentation & Config Sync), a user-facing command addition must be reflected in the README command reference. Add a `cam pause` line beside `cam stop`/`cam drain`."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/commands/pause.ts",
+        "line": 73,
+        "text": "runPause always returns 0 even if setPause silently swallowed a write failure (permission error). This is documented as intentional (forgiving brake), but a paused loop that never actually got the marker written would be indistinguishable from success. Consider having setPause surface a best-effort boolean so pause can warn (not fail) when the marker could not be written."
       }
     ]
   }
