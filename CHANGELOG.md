@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.243.0] - 2026-07-21
+
+### Added
+
+- US-001 - Drop stale :754 line-number suffix from the US-003 patterns.md bullet
+- US-001 - Drop stale :754 line-number suffix from the US-003 patterns.md bullet
+
 ## [0.242.0] - 2026-07-21
 
 ### Added
