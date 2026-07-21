@@ -23,7 +23,7 @@
         "Vendor drift check passes and the embedded blob is regenerated from the edited templates/ copy. [oracle: bun run embed-vendor:check && bun test test/embedded.test.ts]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/agents/subagent-reviewer.md, templates/agents/subagent-reviewer.md, then regen src/vendor/_generated.ts via `bun run embed-vendor`. VERBATIM shared sentence that MUST appear identically in BOTH copies (the grep oracles key on it, do not alter one character): 'This rule limits the quality of the recommendation, not its scope: Simplicity remains the scope limiter. Operational cost is never a criterion, but quality degradation from context-window exhaustion is a quality criterion, not a cost one.' Add a REVIEW-role lead-in around it. Reviewer gap is the most severe (last gate) so this ships first. Self-hosting pattern (patterns.md line 46, 'Agent-prompt self-hosting pattern'): edit BOTH copies then `bun run embed-vendor`; test/embedded.test.ts byte-parity catches drift. Dual-copy is NOT byte-identical (memory/cam-dual-copy-is-per-file); the rule text is identical but insertion points differ per file, and this is an ADDITIVE edit, never a reconcile. .claude/ and templates/ agent .md are LLM-consumed so em-dash/emoji are fine. Prior art to match phrasing: .claude/agents/subagent-orchestrator.md merit block ('rank by engineering merit ... never by execution cost ... quality-within-scope, not gold-plating')."
     },
