@@ -22,7 +22,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Only file to touch: test/supervisor/codex-adapter.test.ts. Import stripFrontmatter from '../../src/templates/frontmatter.ts' (exported at frontmatter.ts:105; regex is /^---\\r?\\n[\\s\\S]*?\\r?\\n---\\r?\\n?/ at line 106). Build the fixture with mkdtempSync/writeFileSync/readFileSync (already imported) into a real tmpdir; reuse the existing afterEach dirsToCleanup pattern (line 200-211) so the fixture dir is removed. Do NOT feed the fixture through writeCodexInstructionsFile: that fn (backend-adapter.ts:389) hard-codes join('.claude','agents',<name>.md) + /tmp output, so it cannot read an arbitrary fixture path; call stripFrontmatter directly on the disk-read fixture content (read->strip), which fully exercises the fence regex that is the regression target. The hand-pinned expected literal must be authored by hand from the known fixture body, never via raw.replace(...); that circularity is exactly what CAM-351 removes (issue gotcha 2). Falsifiability sweep (patterns.md: every oracle swept red-against-main before trusted): temporarily edit frontmatter.ts:106 to drop the closing-fence group, run bun test, confirm the new fixture assertion fails, then revert. Preserve the existing per-actor pipeline assertion (lines 80-111) verbatim, including line 100's raw.replace and the reviewer-prefix branch at 105-109. patterns.md 'Test quality' curated invariant: real I/O at wire boundary (tmpdir), no tautological oracle. No vendor/templates touched, so no embed-vendor gate."
     }
