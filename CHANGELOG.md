@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.238.0] - 2026-07-21
+
+### Added
+
+- US-001 - Add merit-over-cost rule to subagent-planner (both copies) and regen embedded vendor
+- US-001 - Add merit-over-cost rule to subagent-planner (both copies) and regen embedded vendor
+
 ## [0.237.0] - 2026-07-21
 
 ### Added
