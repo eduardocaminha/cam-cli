@@ -23,9 +23,11 @@
 //   sendKeysVerified (US-002, CAM-200; geometry oracle US-002/CAM-359):
 //     - cursor geometry unchanged after settle (post-send == per-send baseline): delivered on
 //       the first attempt, no retry, no push-undelivered
-//     - cursor geometry differs every attempt (composer never empties): retries up to
-//       maxAttempts, then emits exactly one push-undelivered event via the injected logEvent,
-//       using a no-op sleepFn
+//     - send-once guard (US-001, CAM-375): cursor geometry differs every sample (composer
+//       never empties): send-keys fires EXACTLY ONCE (not maxAttempts times), retries up to
+//       maxAttempts VERIFY attempts, then emits exactly one push-undelivered event via the
+//       injected logEvent (retriesExhausted still equals maxAttempts, counting verify
+//       attempts not physical sends), using a no-op sleepFn
 //     - settle window (US-001, CAM-358): a sampleGeometryFn that would report the stale
 //       PRE-send geometry on the first post-send read, but the injected sleepFn advances a
 //       staged reader to the POST-send (baseline-matching) geometry before that read happens,
@@ -436,18 +438,20 @@ describe('sendKeysVerified', () => {
 		expect(events).toHaveLength(0);
 	});
 
-	test('geometry never returns to baseline: retries up to maxAttempts, then emits one push-undelivered event', () => {
+	test('send-once guard (US-001, CAM-375): detected-idle pane, geometry oracle never confirms delivery — send-keys fires exactly ONCE (not maxAttempts times), retries up to maxAttempts VERIFY attempts, then emits one push-undelivered event (AC1, AC4; red on unmodified main: main records 3 send-keys calls, per this story\'s handoff.json red-sweep)', () => {
 		const spawnFn = makeSpawnFn();
 		const events: Array<{ kind: string; detail: unknown }> = [];
 		let sleepCount = 0;
 
-		// Every baseline sample reads EMPTY_BASELINE, but every post-send sample
-		// reads FILLED_GEOMETRY — simulating a dropped Enter that never submits,
-		// so the composer keeps holding the pushed text on every attempt.
+		// A unique geometry value on every single sample call (never repeats),
+		// so the baseline sample and every post-send verify sample always
+		// differ — "geometry that reads changed on every sample so delivery is
+		// never confirmed" (AC1's oracle wording), simulating a dropped Enter
+		// that never submits, so the composer keeps holding the pushed text.
 		let sampleCalls = 0;
 		const sampleGeometryFn = (): CursorGeometry => {
 			sampleCalls++;
-			return sampleCalls % 2 === 1 ? EMPTY_BASELINE : FILLED_GEOMETRY;
+			return { cursorX: sampleCalls, cursorY: 26, paneWidth: 80, paneHeight: 30 };
 		};
 
 		sendKeysVerified({
@@ -464,11 +468,15 @@ describe('sendKeysVerified', () => {
 			logEvent: (kind, detail) => events.push({ kind, detail }),
 		});
 
+		// AC1: exactly ONE physical send-keys invocation, not maxAttempts (3).
 		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
-		expect(sendKeysCalls).toHaveLength(3);
-		// One backoff sleep between each of the 3 attempts (2 retries).
+		expect(sendKeysCalls).toHaveLength(1);
+		// AC5: settle sleep (once per verify attempt) + backoff sleep between
+		// attempts are both still in place: 3 settle sleeps + 2 backoff sleeps.
 		expect(sleepCount).toBeGreaterThanOrEqual(2);
 
+		// AC4: retriesExhausted still equals maxAttempts (3) -- it counts VERIFY
+		// attempts, not physical sends.
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
 		expect(events[0]?.detail).toEqual({ paneId: '%9', retriesExhausted: 3, reason: 'retries-exhausted' });
@@ -477,13 +485,14 @@ describe('sendKeysVerified', () => {
 	test('logEvent is optional: omitting it emits no event and does not throw', () => {
 		const spawnFn = makeSpawnFn();
 
-		// Baseline always EMPTY_BASELINE, post-send always FILLED_GEOMETRY: the
-		// pair never matches, so delivery never succeeds and every attempt is
+		// Baseline (first sample) reads EMPTY_BASELINE; every subsequent
+		// (post-send verify) sample reads FILLED_GEOMETRY: the pair never
+		// matches, so delivery never succeeds and every verify attempt is
 		// spent.
 		let sampleCalls = 0;
 		const sampleGeometryFn = (): CursorGeometry => {
 			sampleCalls++;
-			return sampleCalls % 2 === 1 ? EMPTY_BASELINE : FILLED_GEOMETRY;
+			return sampleCalls === 1 ? EMPTY_BASELINE : FILLED_GEOMETRY;
 		};
 
 		expect(() =>
@@ -499,8 +508,10 @@ describe('sendKeysVerified', () => {
 			}),
 		).not.toThrow();
 
+		// Send-once guard (US-001, CAM-375): exactly one physical send despite
+		// 2 verify attempts.
 		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
-		expect(sendKeysCalls).toHaveLength(2);
+		expect(sendKeysCalls).toHaveLength(1);
 	});
 
 	test('null baseline sample (fail-closed/unknown) is treated as NOT delivered and retried (US-002, CAM-359 AC5)', () => {
@@ -522,8 +533,10 @@ describe('sendKeysVerified', () => {
 			logEvent: (kind, detail) => events.push({ kind, detail }),
 		});
 
+		// Send-once guard (US-001, CAM-375): exactly one physical send despite
+		// 2 verify attempts.
 		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
-		expect(sendKeysCalls).toHaveLength(2);
+		expect(sendKeysCalls).toHaveLength(1);
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
 	});
@@ -532,13 +545,14 @@ describe('sendKeysVerified', () => {
 		const spawnFn = makeSpawnFn();
 		const events: Array<{ kind: string; detail: unknown }> = [];
 
-		// Baseline samples always succeed (EMPTY_BASELINE); post-send samples
-		// always fail closed (null). A geometry oracle that treated "unknown"
-		// as "assume unchanged" would misreport delivery here.
+		// The baseline sample (call 1) always succeeds (EMPTY_BASELINE); every
+		// subsequent (post-send verify) sample always fails closed (null). A
+		// geometry oracle that treated "unknown" as "assume unchanged" would
+		// misreport delivery here.
 		let sampleCalls = 0;
 		const sampleGeometryFn = (): CursorGeometry | null => {
 			sampleCalls++;
-			return sampleCalls % 2 === 1 ? EMPTY_BASELINE : null;
+			return sampleCalls === 1 ? EMPTY_BASELINE : null;
 		};
 
 		sendKeysVerified({
@@ -553,8 +567,10 @@ describe('sendKeysVerified', () => {
 			logEvent: (kind, detail) => events.push({ kind, detail }),
 		});
 
+		// Send-once guard (US-001, CAM-375): exactly one physical send despite
+		// 2 verify attempts.
 		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
-		expect(sendKeysCalls).toHaveLength(2);
+		expect(sendKeysCalls).toHaveLength(1);
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
 	});
@@ -626,8 +642,10 @@ describe('sendKeysVerified', () => {
 			logEvent: (kind, detail) => events.push({ kind, detail }),
 		});
 
+		// Send-once guard (US-001, CAM-375): exactly one physical send despite
+		// 2 verify attempts.
 		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
-		expect(sendKeysCalls).toHaveLength(2);
+		expect(sendKeysCalls).toHaveLength(1);
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
 	});
@@ -691,8 +709,10 @@ describe('sendKeysVerified', () => {
 			logEvent: (kind, detail) => events.push({ kind, detail }),
 		});
 
+		// Send-once guard (US-001, CAM-375): exactly one physical send despite
+		// 2 verify attempts.
 		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
-		expect(sendKeysCalls).toHaveLength(2);
+		expect(sendKeysCalls).toHaveLength(1);
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
 	});

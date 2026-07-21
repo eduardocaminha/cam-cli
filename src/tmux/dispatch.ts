@@ -94,6 +94,21 @@
 // `capturePaneFn` feeds ONLY the PRE-send idle-gate (`waitForIdlePane`) from
 // here on, which just scans the pane's last 5 lines and is insensitive to
 // scrollback vs visible-screen framing.
+//
+// Send-once guard on the idle path (US-001, CAM-375): the atomic send-keys
+// call used to sit INSIDE the verify/retry loop, so a persistent
+// geometry-oracle false-negative on a detected-idle pane re-sent the
+// IDENTICAL payload on every attempt -- a single narration line (e.g. a
+// BEFORE / update-branch event) could physically land in the pane up to
+// `maxAttempts` times. The baseline geometry is still sampled once, BEFORE
+// the (now single) send. send-keys then fires EXACTLY ONCE on the idle path.
+// Every subsequent attempt only re-samples and re-verifies (settle sleep +
+// post-send geometry sample + `geometryUnchanged` + `cursorRowStartsWithPrompt`)
+// and backs off before the next verify -- it never re-spawns send-keys.
+// `retriesExhausted` on the exhaustion event still equals `maxAttempts`: it
+// counts VERIFY attempts, not physical sends. The pane-not-idle fallback
+// (`sendOnceUnverified`) and the delivered-on-first-attempt fast path are
+// unaffected: both already issued exactly one physical send.
 
 import { join } from 'node:path';
 
@@ -492,40 +507,48 @@ function sendOnceUnverified(args: {
  *      the payload actually landed, and retrying it would just resend the
  *      same narration line up to `maxAttempts` times. The caller is never
  *      blocked indefinitely either way.
- *   2. Send (idle path only): text and 'Enter' are passed as discrete argv elements in a
- *      single `send-keys` invocation, WITHOUT `-l`. With `-l` every arg is
+ *   2. Baseline + send (idle path only, EXACTLY ONCE; US-001, CAM-375 send-once
+ *      guard): immediately BEFORE the single send-keys call, sample the
+ *      pane's cursor geometry as the baseline via `sampleGeometryFn` (default
+ *      `sampleCursorGeometry`, src/tmux/display-message.ts). Then issue ONE
+ *      `send-keys` invocation: text and 'Enter' are passed as discrete argv
+ *      elements in a single call, WITHOUT `-l`. With `-l` every arg is
  *      literal, so 'Enter' would be typed as the text "Enter" and never
  *      submit (sendkeys-literal-enter-gotcha, CAM-55). The text is a single
  *      non-key-name arg, so tmux already sends its characters literally; only
- *      'Enter' must stay a recognised key.
- *   3. Baseline + settle + verify (idle path only; US-002, CAM-359; content backstop review
- *      round 1 fix US-R1-001): immediately BEFORE each send-keys call,
- *      sample the pane's cursor geometry as that attempt's baseline via
- *      `sampleGeometryFn` (default `sampleCursorGeometry`,
- *      src/tmux/display-message.ts). After send-keys, sleep
- *      `SEND_KEYS_SETTLE_MS` (via the injected `sleepFn`, US-001, CAM-358)
- *      so tmux has one refresh cycle to catch up, then sample geometry
- *      again. The full `(cursorX, cursorY)` pair must match, never a single
- *      axis. A `null` sample (the geometry helper's fail-closed result, e.g.
- *      a non-zero tmux exit) is treated as NOT delivered on that attempt,
- *      never as delivered. If the pair reads unchanged, `cursorRowStartsWithPrompt`
- *      (US-001, CAM-364) inspects the row at the reported cursor_y, read via
- *      `visibleCaptureFn` (review round 2 fix, US-R2-001, CAM-359: a
- *      DEDICATED visible-screen reader, never `capturePaneFn`, whose
- *      scrollback semantics are unspecified and would misindex the row), for
- *      the prompt glyph sitting at the START of that row before trusting the
- *      "delivered" verdict (module header: cursor_y is pinned constant in
- *      production, so geometry alone cannot rule out a wrap-boundary-length
- *      collision).
- *   4. Retry (idle path only): if not delivered, sleep `computeBackoffMs(attempt, ...)`
- *      (src/supervisor/loop.ts:606) and resend, up to `maxAttempts` (default
- *      3) total attempts.
+ *      'Enter' must stay a recognised key. This send is never repeated below,
+ *      even across multiple verify attempts: a persistent geometry-oracle
+ *      false-negative re-verifies, it does not re-send.
+ *   3. Settle + verify, once per attempt (idle path only; US-002, CAM-359;
+ *      content backstop review round 1 fix US-R1-001; send-once guard
+ *      US-001, CAM-375): after the send above, sleep `SEND_KEYS_SETTLE_MS`
+ *      (via the injected `sleepFn`, US-001, CAM-358) so tmux has one refresh
+ *      cycle to catch up, then sample geometry again. The full `(cursorX,
+ *      cursorY)` pair is compared against the SAME baseline sampled in step 2
+ *      (never a single axis, never re-sampled per attempt: no new send
+ *      occurred to invalidate it). A `null` sample (the geometry helper's
+ *      fail-closed result, e.g. a non-zero tmux exit) is treated as NOT
+ *      delivered on that attempt, never as delivered. If the pair reads
+ *      unchanged, `cursorRowStartsWithPrompt` (US-001, CAM-364) inspects the
+ *      row at the reported cursor_y, read via `visibleCaptureFn` (review
+ *      round 2 fix, US-R2-001, CAM-359: a DEDICATED visible-screen reader,
+ *      never `capturePaneFn`, whose scrollback semantics are unspecified and
+ *      would misindex the row), for the prompt glyph sitting at the START of
+ *      that row before trusting the "delivered" verdict (module header:
+ *      cursor_y is pinned constant in production, so geometry alone cannot
+ *      rule out a wrap-boundary-length collision).
+ *   4. Retry-the-VERIFY, not the send (idle path only; US-001, CAM-375): if
+ *      not delivered, sleep `computeBackoffMs(attempt, ...)`
+ *      (src/supervisor/loop.ts:606) and re-run step 3 (settle + resample +
+ *      re-verify against the same baseline), up to `maxAttempts` (default 3)
+ *      total VERIFY attempts. send-keys itself is never re-issued.
  *
  * `push-undelivered` (via the injected `logEvent`, default: no-op, so callers
  * that don't care about durable events see zero side effects) is NOT
  * exclusively an exhaustion signal: it fires on exhaustion of the idle path's
- * verify/retry loop (still not delivered after `maxAttempts`, `reason:
- * 'retries-exhausted'`) OR, separately, on the timed-out path's single
+ * verify/retry loop (still not delivered after `maxAttempts` VERIFY attempts,
+ * `reason: 'retries-exhausted'`, `retriesExhausted` counting verify attempts,
+ * never physical sends) OR, separately, on the timed-out path's single
  * unverified send (`reason: 'pane-not-idle'`, step 1 above). Never throws and
  * never blocks indefinitely.
  */
@@ -569,20 +592,23 @@ export function sendKeysVerified(opts: SendKeysVerifiedOptions): void {
 		return;
 	}
 
+	// Baseline: sampled immediately before the single send-keys call (US-002,
+	// CAM-359). A null (unknown) sample fails closed below.
+	const baseline = sampleGeometryFn(paneId, tmuxSpawnFn);
+
+	// Send-once guard (US-001, CAM-375): the atomic send-keys call fires
+	// EXACTLY ONCE on the idle path, text + Enter in ONE call, WITHOUT -l
+	// (see flow step 2 above; CAM-55 regression guard). Every verify attempt
+	// below re-samples and re-verifies against this SAME baseline; none of
+	// them re-issue this call.
+	tmuxSpawnFn(
+		'tmux',
+		tmuxArgs(['send-keys', '-t', paneId, text, 'Enter']),
+		{ stdio: 'ignore' },
+	);
+
 	let delivered = false;
 	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-		// Per-send baseline: sampled immediately before send-keys (US-002,
-		// CAM-359). A null (unknown) sample fails closed below.
-		const baseline = sampleGeometryFn(paneId, tmuxSpawnFn);
-
-		// Atomic send-keys: text + Enter in ONE call, WITHOUT -l (see flow
-		// step 2 above; CAM-55 regression guard).
-		tmuxSpawnFn(
-			'tmux',
-			tmuxArgs(['send-keys', '-t', paneId, text, 'Enter']),
-			{ stdio: 'ignore' },
-		);
-
 		sleepFn(SEND_KEYS_SETTLE_MS);
 
 		const after = sampleGeometryFn(paneId, tmuxSpawnFn);
