@@ -1,11 +1,11 @@
 {
   "id": "CAM-395",
   "title": "Sibling stale line citation in patterns.md US-003 bullet: cites test/dispatch.test.ts:754 but that line is now an unrelated AC1 assertion",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-21T14:02:38.642Z",
-  "updatedAt": "2026-07-21T14:08:24.148Z",
+  "updatedAt": "2026-07-21T14:08:41.800Z",
   "description": "Discovered during CAM-380 grounding (measured on main after PR #318 / v0.242.0). The US-003 bullet in scripts/cam/patterns.md (tagged US-003, CAM-376, 2026-07-20; adjacent above the US-R1-002 bullet CAM-380 fixed) cites `test/dispatch.test.ts:754` as the location of the OLD historical assertion `recordedSleeps.every((ms) => ms <= 1_000)`. MEASURED on main: line 754 now holds an unrelated AC1 assertion `expect(sendKeysCalls).toHaveLength(1)`; the recordedSleeps region has drifted to ~776-777. So `:754` is stale, exactly the same rot defect CAM-380 just fixed one bullet down.\n\nNote: CAM-380's own description mistakenly asserted `:754` was 'correct as a HISTORICAL main-referencing citation, must not be touched' -- that premise was already false on main, which is why CAM-380 was scoped to `:769` only and this was carved out as a separate follow-up.\n\nSCOPE: convert the `test/dispatch.test.ts:754` pointer in the US-003 bullet to a rot-proof grep-able content reference (drop the :NNN suffix, anchor on the assertion text the bullet already quotes), per the same derive-don't-freeze precedent at patterns.md:903 and content-reference precedent at patterns.md:913 that CAM-380 followed. Doc-only, NO rebuild.\n\nORACLE NOTE for whoever specs this: do NOT re-freeze a new line number; verify with an absence grep of the stale `test/dispatch.test.ts:754` token plus content-greps that the cited assertion text resolves in both patterns.md and test/dispatch.test.ts. Do NOT target scripts/cam/handoff.json (rotating). Re-measure current line numbers on main before speccing -- they drift.\n\nSource: CAM-380 grounding, 2026-07-21",
   "specSource": "derived",
   "derivedFrom": [
@@ -16,5 +16,23 @@
     "timeCriticality": 1,
     "riskReduction": 2,
     "jobSize": 1
-  }
+  },
+  "spec": {
+    "scope": "In scripts/cam/patterns.md, the US-003/CAM-376 bullet (currently ~line 907) cites `test/dispatch.test.ts:754` as the location of the historical assertion `recordedSleeps.every((ms) => ms <= 1_000)`. Measured on main after PR #318 / v0.242.0: line 754 now holds an unrelated AC1 assertion (`expect(sendKeysCalls).toHaveLength(1)`) and the recordedSleeps region has drifted to line 777, so `:754` is a rotted pointer, the identical defect CAM-380 fixed in the adjacent US-R1-002 bullet. Fix: drop the `:754` line-number suffix, keeping the bare `test/dispatch.test.ts` file pointer plus the already-inline-quoted assertion text as the durable, rot-proof content reference, per the derive-don't-freeze precedent at patterns.md:903 and the content-reference precedent at patterns.md:913 that CAM-380 followed. Doc-only, no rebuild. Tightly scoped to the single `:754` citation in that one bullet.",
+    "acceptanceCriteria": [
+      "The stale line-number citation is gone from the US-003 bullet: [oracle: ! grep -qF 'test/dispatch.test.ts:754' scripts/cam/patterns.md]",
+      "The bullet still anchors on the quoted historical assertion text so the reference survives without a line number: [oracle: grep -qF 'recordedSleeps.every((ms) => ms <= 1_000)' scripts/cam/patterns.md]",
+      "The US-003/CAM-376 bullet still names test/dispatch.test.ts as the file (only the :754 suffix removed), the lesson's meaning is unchanged, and no sibling bullet (the US-R1-002 bullet at ~line 911 that CAM-380 already fixed, and the derive-don't-freeze/content-reference precedent bullets at ~903/~913) is edited: [oracle: reviewer-judgment]"
+    ],
+    "gotchas": [
+      "The quoted assertion `recordedSleeps.every((ms) => ms <= 1_000)` is HISTORICAL (pre-fix) and no longer exists in test/dispatch.test.ts on main (the live assertion is the strict-equality `=== POLL_INTERVAL_MS` at line 777). Do NOT add an oracle asserting the old text resolves in the test file: it would be red-on-main. The durable anchor is the inline quote in patterns.md itself, not a live line in the test file.",
+      "Line numbers drift: do NOT re-freeze a new :NNN suffix. The `:754` token and the `<= 1_000` quote are each unique in patterns.md (verified). Only the `:754` suffix is removed; the quote must stay to preserve the anchor.",
+      "Doc-only edit to scripts/cam/patterns.md; NO coherence rebuild (binary/sidecar stay at their current version)."
+    ],
+    "domainTerms": [
+      "US-003 bullet: the CAM-376 patterns.md bullet (~line 907) about non-falsifiable upper-bound `every((x) => x <= N)` in-test assertions.",
+      "content reference: a grep-able quoted-text pointer with no frozen line number, rot-proof unlike a `path:NNN` citation."
+    ]
+  },
+  "type": "docs"
 }
