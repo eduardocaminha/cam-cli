@@ -1,13 +1,43 @@
 {
   "id": "CAM-366",
   "title": "Carried unresolved from review rounds 1 and 2: the idleTimeoutMs JSDoc still re…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-20T09:35:32.215Z",
-  "updatedAt": "2026-07-20T09:35:32.215Z",
+  "updatedAt": "2026-07-21T03:35:41.079Z",
   "description": "Carried unresolved from review rounds 1 and 2: the idleTimeoutMs JSDoc still reads 'Default: 5 000' in all three thin-proxy commands (issue.ts:83, review.ts:82, spec.ts:117), but the effective default has been IDLE_WAIT_DEADLINE_MS = 30_000 since CAM-358 (dispatch.ts:236, consumed at dispatch.ts:453). Pre-existing drift the diff correctly did not touch under surgical-changes discipline.\n\nSource: cam/issue-359\nReview round: 3\n\nsuggestion-fingerprint: 253d11e835b9",
   "derivedFrom": [
     "CAM-359"
-  ]
+  ],
+  "spec": {
+    "scope": "Correct the stale 'Default: 5 000.' JSDoc on the idleTimeoutMs field in the three thin-proxy command option interfaces (src/commands/issue.ts, src/commands/review.ts, src/commands/spec.ts) to state the real effective default. The field is optional and, when unset (the only path the cam CLI itself ever takes), flows undefined through sendKeysWhenIdle into sendKeysVerified, which destructures idleTimeoutMs = IDLE_WAIT_DEADLINE_MS (src/tmux/dispatch.ts), and IDLE_WAIT_DEADLINE_MS = 30_000 since CAM-358. So a user reading the command help sees a 6x-wrong 5 000 ms when the real idle-wait deadline is 30 000 ms. This is doc-only comment text in three CLI files: no runtime behavior, no thin-proxy signature, and no sidecar-executed surface changes. Touch ONLY the 'Default:' line of the idleTimeoutMs JSDoc block in each file; leave the adjacent logEvent 'Default: the real event log' line and every other unrelated 'Default:' JSDoc in those files untouched. Carried twice as a review-round-3 SUGGESTION from cam/issue-359.",
+    "acceptanceCriteria": [
+      "The idleTimeoutMs field JSDoc in all three thin-proxy command files (src/commands/issue.ts, src/commands/review.ts, src/commands/spec.ts) no longer states the stale literal 'Default: 5 000.'. [oracle: ! grep -rq 'Default: 5 000' src/commands/issue.ts src/commands/review.ts src/commands/spec.ts]",
+      "Each of those three idleTimeoutMs JSDoc blocks now documents the real effective default by naming the runtime constant IDLE_WAIT_DEADLINE_MS (the value sendKeysVerified destructures, currently 30 000 ms), matching the naming convention already used in the dispatch.ts JSDoc rather than freezing a bare number. [oracle: for f in src/commands/issue.ts src/commands/review.ts src/commands/spec.ts; do grep -q 'IDLE_WAIT_DEADLINE_MS' \"$f\" || exit 1; done]",
+      "Comment-only edit: typecheck is clean and the full test suite stays green with no test-count delta, since the effective default was already 30 000 and only the documentation was wrong. [oracle: bun run typecheck && bun test]"
+    ],
+    "gotchas": [
+      "The literal uses a space as the thousands separator ('Default: 5 000.'); grep for '5 000', not '5000'.",
+      "Sibling 'Default:' lines live in the same JSDoc region: the logEvent field's 'Default: the real event log...' immediately follows the idleTimeoutMs one in each file, and spec.ts has several unrelated injectable-seam 'Default:' lines. Only the idleTimeoutMs field's 'Default: 5 000.' line is wrong; do not rewrite the others (surgical).",
+      "Comment-only change in CLI command files (src/commands/*.ts), NOT sidecar-executed loop code, so NO coherence rebuild of the binary/sidecar is required after merge and there is no runtime behavior to probe: AC1/AC2 are grep-shaped and AC3 is the standard green-gate.",
+      "Prefer naming the constant IDLE_WAIT_DEADLINE_MS over freezing the bare value 30 000 so the doc cannot rot if the constant is retuned (derive-don't-freeze, patterns.md); include the current value in parens for the human reader as the dispatch.ts JSDoc already does."
+    ],
+    "domainTerms": [
+      "idleTimeoutMs: optional thin-proxy option; when unset flows undefined to sendKeysVerified and defaults to IDLE_WAIT_DEADLINE_MS.",
+      "IDLE_WAIT_DEADLINE_MS: the 30_000 ms idle-wait deadline constant (src/tmux/dispatch.ts), effective default since CAM-358.",
+      "thin-proxy command: the cam issue / cam review / cam spec CLI entrypoints that send-keys into the live orchestrator pane.",
+      "sendKeysWhenIdle / sendKeysVerified: the idle-gate plus atomic send-keys helper the thin-proxies delegate to (src/tmux/dispatch.ts)."
+    ],
+    "relatedDocs": [
+      "scripts/cam/patterns.md (derive-don't-freeze rule)"
+    ]
+  },
+  "wsjf": {
+    "value": 4,
+    "timeCriticality": 2,
+    "riskReduction": 3,
+    "jobSize": 1
+  },
+  "type": "chore"
 }
