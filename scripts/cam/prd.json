@@ -41,7 +41,7 @@
         "Vendor drift check passes and the embedded blob is regenerated from the edited templates/ copy. [oracle: bun run embed-vendor:check && bun test test/embedded.test.ts]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/agents/subagent-auditor.md, templates/agents/subagent-auditor.md, then regen src/vendor/_generated.ts via `bun run embed-vendor`. Same VERBATIM shared sentence as US-001 (identical bytes in both copies): 'This rule limits the quality of the recommendation, not its scope: Simplicity remains the scope limiter. Operational cost is never a criterion, but quality degradation from context-window exhaustion is a quality criterion, not a cost one.' Add an AUDIT-role lead-in. GOTCHA (issue): do NOT anchor to the auditor's cam-cli-only '### F. Project-specific sanity (cam-cli)' heading, which does not exist in the templates/ generic variant; pick a role-agnostic section that exists in both. Self-hosting pattern (patterns.md line 46) + dual-copy-per-file (memory/cam-dual-copy-is-per-file). LLM-consumed files: em-dash fine."
     },
