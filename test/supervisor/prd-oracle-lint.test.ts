@@ -224,6 +224,18 @@ describe('frozen-comparand rule: flagged forms', () => {
 		const finding = rule.test('test $(git grep -c PATTERN mainbranch:file.ts) -eq 1');
 		expect(finding).not.toBeNull();
 	});
+
+	test('mixed-clause: flags a frozen comparand in one clause even when a DIFFERENT clause carries a live derivation (US-002, CAM-382: the one-token-excuses-three-comparands shape)', () => {
+		const finding = rule.test(
+			'test $(git show main:a.ts | wc -l) -ge 1 && test $(wc -l < b.ts) -eq 42'
+		);
+		expect(finding).not.toBeNull();
+	});
+
+	test('mixed-clause: flags a frozen comparand in a later clause even when an earlier clause carries a live `git diff main` derivation (US-002, CAM-382: excuse no longer leaks across `;`-separated clauses)', () => {
+		const finding = rule.test("git diff main --quiet -- file.ts; test $? -eq 0");
+		expect(finding).not.toBeNull();
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -240,8 +252,15 @@ describe('frozen-comparand rule: passing cases', () => {
 		expect(finding).toBeNull();
 	});
 
-	test('does not flag when `git diff main` accompanies an integer', () => {
-		const finding = rule.test("git diff main --quiet -- file.ts; test $? -eq 0");
+	test('does not flag when `git diff main` accompanies an integer in the SAME clause', () => {
+		const finding = rule.test('test $(git diff main -- file.ts | wc -l) -eq 0');
+		expect(finding).toBeNull();
+	});
+
+	test('mixed-clause: does not flag when EACH of two `&&`-joined clauses carries its own same-clause derivation-plus-floor (US-002, CAM-382)', () => {
+		const finding = rule.test(
+			'test $(git show main:a.ts | wc -l) -ge 1 && test $(git diff main -- b.ts | wc -l) -ge 1'
+		);
 		expect(finding).toBeNull();
 	});
 

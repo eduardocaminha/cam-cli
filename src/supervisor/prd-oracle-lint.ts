@@ -390,33 +390,60 @@ function stripQuotedSpans(command: string): string {
 }
 
 /**
+ * Splits the ALREADY quote-stripped command text into clauses on the shell
+ * statement-separator tokens `&&`, `||`, `;`, and newline (US-002, CAM-382).
+ * Operating on the stripped text (never the raw command) is load-bearing:
+ * splitting the raw command would resurrect a quoted payload's `&&`/`;` as a
+ * clause delimiter, exactly the false-positive class CAM-388 closed by
+ * stripping quotes before any scanning. No paren-depth tracking: a
+ * `$(...)` command substitution surviving stripping (US-R2-002 above) never
+ * itself contains a bare top-level `&&`/`||`/`;` in any oracle command this
+ * rule has to classify, so a plain split is sufficient here.
+ */
+const CLAUSE_SPLIT_RE = /&&|\|\||;|\n/;
+
+/**
  * True when `command` compares against a literal integer via
  * -eq/-ne/-gt/-lt/-ge/-le/==/!= with no live `main`-re-derivation token
- * present anywhere in the command.
- * Both regexes are run against the SAME quote-stripped text (see
- * stripQuotedSpans). A derivation token that lives inside a `-c` wrapper
+ * present in the SAME clause (US-002, CAM-382). The excuse is scoped per
+ * clause, not per whole command: a `git grep ... main` token in one clause no
+ * longer excuses an unrelated frozen literal sitting in a different
+ * `&&`/`||`/`;`/newline-separated clause, while a legitimate same-clause
+ * sanity floor (a derivation token and its integer floor in the same clause,
+ * e.g. `test $(git show main:f | wc -l) -ge 1`) stays excused. Both regexes
+ * are run against the SAME quote-stripped text (see stripQuotedSpans) before
+ * splitting into clauses. A derivation token that lives inside a `-c` wrapper
  * payload, or inside a `$(...)` command substitution nested in a DOUBLE-quoted
- * span, still excuses the comparand, because stripQuotedSpans preserves both
- * (US-R2-002, CAM-388: a non-`-c` double-quoted `$(...)` still executes, so
- * blanking it whole would silently discard a live derivation token). A
- * derivation token that is merely quoted inert TEXT (single-quoted, or
- * double-quoted with no `$(...)`) does not survive stripping and does not
+ * span, still excuses a same-clause comparand, because stripQuotedSpans
+ * preserves both (US-R2-002, CAM-388: a non-`-c` double-quoted `$(...)` still
+ * executes, so blanking it whole would silently discard a live derivation
+ * token). A derivation token that is merely quoted inert TEXT (single-quoted,
+ * or double-quoted with no `$(...)`) does not survive stripping and does not
  * excuse the comparand -- exactly like a comparand that is merely quoted test
  * data never trips the rule in the first place.
  */
 function hasFrozenIntegerComparand(command: string): boolean {
 	const stripped = stripQuotedSpans(command);
-	if (!INTEGER_COMPARAND_RE.test(stripped)) return false;
-	return !LIVE_DERIVATION_RE.test(stripped);
+	const clauses = stripped.split(CLAUSE_SPLIT_RE);
+	return clauses.some(
+		(clause) => INTEGER_COMPARAND_RE.test(clause) && !LIVE_DERIVATION_RE.test(clause)
+	);
 }
 
 /**
- * The frozen-comparand rule (US-001, CAM-381): flags an oracle comparing
- * against a literal integer read off main with no live re-derivation token,
- * enforcing the derive-don't-freeze rule (patterns.md:903). A comparand that
- * carries a live `git show main:` / `git diff main` / `git grep ... main`
- * derivation alongside an integer is never flagged: the presence of the live
- * token is what proves the comparand is re-derived at check time, not frozen.
+ * The frozen-comparand rule (US-001, CAM-381; per-clause scoping US-002,
+ * CAM-382): flags an oracle comparing against a literal integer read off
+ * main with no live re-derivation token in the SAME clause, enforcing the
+ * derive-don't-freeze rule (patterns.md:903). A comparand that carries a live
+ * `git show main:` / `git diff main` / `git grep ... main` derivation
+ * alongside an integer IN THE SAME `&&`/`||`/`;`/newline-separated clause is
+ * never flagged: the presence of the live token is what proves that clause's
+ * comparand is re-derived at check time, not frozen. A derivation token
+ * sitting in a DIFFERENT clause of the same command no longer excuses an
+ * unrelated frozen literal elsewhere in the command. One finding is returned
+ * per command even when more than one clause is at fault; the reason text
+ * below stays accurate for both the single- and multi-clause-at-fault case,
+ * since it describes the general rule rather than naming a specific clause.
  */
 const FROZEN_COMPARAND_RULE: OracleLintRule = {
 	name: 'frozen-comparand',
@@ -427,9 +454,11 @@ const FROZEN_COMPARAND_RULE: OracleLintRule = {
 				'oracle compares against a literal integer (-eq/-ne/-gt/-lt/-ge/-le/==/!= N, or a ' +
 				"'wc -l'-style pipeline compared the same way) with no live " +
 				"re-derivation token ('git show main:<path>', 'git diff main', or " +
-				"'git grep ... main') anywhere in the command -- a frozen literal " +
-				'rots silently the moment a later commit edits the compared file on ' +
-				'main; re-derive the comparand at check time instead (patterns.md:903)',
+				"'git grep ... main') in the SAME &&/||/;/newline-separated clause " +
+				"-- a frozen literal rots silently the moment a later commit edits the " +
+				'compared file on main, and a derivation token in a DIFFERENT clause ' +
+				"does not excuse it; re-derive the comparand at check time in the " +
+				'same clause instead (patterns.md:903)',
 		};
 	},
 };
