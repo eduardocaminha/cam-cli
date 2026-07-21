@@ -75,7 +75,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: docs/agent-readiness.md, insert under the existing '## Where cam is already ahead of the rubric' heading (line 100). This is human-readable persisted markdown: NO em-dash (use colon/comma/parentheses/period) and NO decorative emoji per global CLAUDE.md convention (the em-dash rule splits by audience: agent .md are LLM-consumed and exempt, this doc is not). No src/ or templates/ change here so no embed-vendor regen needed. Grep oracle keys on the literal 'never by operational cost'. Prior art phrasing: subagent-orchestrator.md merit block."
     }
