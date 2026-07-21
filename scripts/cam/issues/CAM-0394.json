@@ -1,11 +1,11 @@
 {
   "id": "CAM-394",
   "title": "Split-advisory projects a garbage token count for the small-jobSize bucket",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-21T08:10:20.341Z",
-  "updatedAt": "2026-07-21T14:55:23.807Z",
+  "updatedAt": "2026-07-21T16:38:20.131Z",
   "description": "The sidecar's split-advisory printed `~17449729 tokens` with a 'consider slicing' hint for a jobSize=2, 1-story PRD (CAM-393), and the same nonsensical projection has recurred verbatim-shaped across multiple small-jobSize cycles. The projection formula produces an absurd extrapolation for the small-jobSize historical bucket, likely an unbounded extrapolation from a near-zero historical sample. Purely advisory (does not gate the loop), so LOW urgency, but the number is clearly wrong and undermines trust in the advisory. Fix: bound/sanity-check the projection or suppress it when the historical sample is too small to extrapolate. Observed twice+ across DRAIN cycles ending 2026-07-21.",
   "spec": {
     "scope": "Suppress the plan split-advisory for single-story PRDs (userStories.length <= 1). A 1-story PRD is un-sliceable, so a 'consider slicing' advisory is definitionally meaningless for it; every observed instance of the garbage token projection occurred on a 1-story PRD. Add an early return 'if (storyCount <= 1) return;' in maybeEmitPlanSplitAdvisory (src/supervisor/plan-split-advisory.ts) immediately after storyCount is computed, before the historical event-log read, bucketing, event log, and notify. Do NOT change the mean-vs-median projection or the fire threshold: the fire decision compares bucketMean > 1.5*bucketMedian, so swapping projectedTokens to bucketMedian would make it never fire; that coupling is a separate design question and is explicitly out of scope.",
