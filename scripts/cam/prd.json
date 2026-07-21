@@ -38,7 +38,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: create memory/ (does not exist yet) + memory/project_suggestion_triage.md; edit .claude/agents/subagent-orchestrator.md ONLY (existing triage section ~line 115-120 documents promote/dismiss). Gotcha (patterns.md 'cam dual-copy is per-file' + 'Agent-prompt self-hosting pattern'): .claude/agents/ and templates/agents/ are NOT byte-identical and this issue explicitly says do NOT reconcile them; the edit is additive to .claude/ only, so templates/ is untouched and no re-embed/embed-vendor:check is required (diff confirmed: the two files already differ). Content: rule (1) demand-driven promotion (promote only when a cycle is about to touch the named surface; the pen is durable/committed so nothing is lost); rule (2) composition-by-fix-site (same file+rule+one coherent edit -> ONE composite issue; shared theme with independent fix sites stays separate; shared fate is the test, fix site the proxy). Persisted .md: no em-dash, no decorative emoji (project rule); agent .md may use em-dash but keep additive/consistent with surrounding prose."
     }
