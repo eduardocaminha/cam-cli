@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.235.0] - 2026-07-21
+
+### Added
+
+- US-001 - Derive a fence-safe wrapper for the reviewer diff block
+
 ## [0.234.0] - 2026-07-21
 
 ### Added
