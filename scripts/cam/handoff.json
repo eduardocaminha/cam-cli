@@ -1,0 +1,17 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Widen frozen-comparand operator alternation and add a correct left anchor"
+  },
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/supervisor/prd-oracle-lint.ts",
+    "test/supervisor/prd-oracle-lint.test.ts",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "INTEGER_COMPARAND_RE in src/supervisor/prd-oracle-lint.ts now matches all eight comparison operators (-eq/-ne/-gt/-lt/-ge/-le/==/!=) and requires a left anchor of start-of-string or whitespace via `(?<![\\w-])` (excludes both word chars and the hyphen, since a bare \\b is insufficient). LIVE_DERIVATION_RE was deliberately left byte-unchanged (out of scope, tracked separately as CAM-386) and still sits at line 171 -- any future edit to INTEGER_COMPARAND_RE's doc comment or code above that line must preserve the same total line count or the byte-unchanged-via-grep-n oracle used to pin LIVE_DERIVATION_RE will fail even though its own text is untouched (see the new patterns.md bullet). RULES still has exactly 4 named rules; module purity (2 imports, no fs/Bun.spawn/etc, unchanged export surface) preserved.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}

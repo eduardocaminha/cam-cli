@@ -154,13 +154,13 @@ const GREP_Q_LIST_FILES_RULE: OracleLintRule = {
 // ---------------------------------------------------------------------------
 
 /**
- * Matches a shell numeric-test operator (-eq/-ge/-le) or the `==` string-test
- * operator immediately followed by a literal integer (a frozen comparand).
- * A `wc -l` (or any other) pipeline compared this way is caught by the same
- * pattern: the regex targets the operator+literal pair, not the left-hand
- * side, so it doesn't matter what produced the left-hand value.
+ * Matches a shell numeric-test operator (-eq/-ne/-gt/-lt/-ge/-le) or the
+ * `==`/`!=` string-test operators, each followed by a literal integer (a
+ * frozen comparand). The negative lookbehind requires start-of-string or
+ * whitespace before the operator (excluding word chars AND the hyphen, since
+ * `\b` alone is insufficient), so a mid-token/double-hyphen form never matches.
  */
-const INTEGER_COMPARAND_RE = /(?:-eq|-ge|-le|==)\s*\d+\b/;
+const INTEGER_COMPARAND_RE = /(?<![\w-])(?:-eq|-ne|-gt|-lt|-ge|-le|==|!=)\s*\d+\b/;
 
 /**
  * A live re-derivation token: the comparand is (at least in part) recomputed
@@ -390,8 +390,9 @@ function stripQuotedSpans(command: string): string {
 }
 
 /**
- * True when `command` compares against a literal integer via -eq/-ge/-le/==
- * with no live `main`-re-derivation token present anywhere in the command.
+ * True when `command` compares against a literal integer via
+ * -eq/-ne/-gt/-lt/-ge/-le/==/!= with no live `main`-re-derivation token
+ * present anywhere in the command.
  * Both regexes are run against the SAME quote-stripped text (see
  * stripQuotedSpans). A derivation token that lives inside a `-c` wrapper
  * payload, or inside a `$(...)` command substitution nested in a DOUBLE-quoted
@@ -423,7 +424,7 @@ const FROZEN_COMPARAND_RULE: OracleLintRule = {
 		if (!hasFrozenIntegerComparand(command)) return null;
 		return {
 			reason:
-				'oracle compares against a literal integer (-eq/-ge/-le/== N, or a ' +
+				'oracle compares against a literal integer (-eq/-ne/-gt/-lt/-ge/-le/==/!= N, or a ' +
 				"'wc -l'-style pipeline compared the same way) with no live " +
 				"re-derivation token ('git show main:<path>', 'git diff main', or " +
 				"'git grep ... main') anywhere in the command -- a frozen literal " +

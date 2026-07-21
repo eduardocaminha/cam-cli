@@ -185,6 +185,26 @@ describe('frozen-comparand rule: flagged forms', () => {
 		expect(finding).not.toBeNull();
 	});
 
+	test('flags -ne against a literal integer', () => {
+		const finding = rule.test('test $(wc -l < scripts/cam/patterns.md) -ne 3');
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags -gt against a literal integer (the CAM-377 shape)', () => {
+		const finding = rule.test('test $(wc -l < scripts/cam/patterns.md) -gt 41');
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags -lt against a literal integer', () => {
+		const finding = rule.test('test $(wc -l < scripts/cam/patterns.md) -lt 3');
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags != against a literal integer', () => {
+		const finding = rule.test('test $(wc -l < scripts/cam/patterns.md) != 3');
+		expect(finding).not.toBeNull();
+	});
+
 	test('flags a wc -l pipeline frozen against HEAD, not main (git show present but not main)', () => {
 		const finding = rule.test('test $(git show HEAD:file.ts | wc -l) -eq 88');
 		expect(finding).not.toBeNull();
@@ -244,6 +264,26 @@ describe('frozen-comparand rule: passing cases', () => {
 		const finding = rule.test(
 			'test $(git show main:file.ts | wc -l) -eq $(wc -l < file.ts)'
 		);
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag an operator embedded behind a second hyphen (--ge 5)', () => {
+		const finding = rule.test('cmd --ge 5');
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag an operator embedded mid-token (foo-eq 42)', () => {
+		const finding = rule.test('echo foo-eq 42');
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag an operator embedded mid-token behind a double-dash flag (--eq 7)', () => {
+		const finding = rule.test('run --eq 7');
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag an operator embedded mid-token inside a command substitution (foo-eq 42)', () => {
+		const finding = rule.test('test $(foo-eq 42)');
 		expect(finding).toBeNull();
 	});
 });
