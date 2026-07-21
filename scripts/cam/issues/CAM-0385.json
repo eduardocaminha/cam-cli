@@ -1,11 +1,11 @@
 {
   "id": "CAM-385",
   "title": "Doc comment states the guard must 'precede' the sed anchor ('no test -n \"$VAR\" …",
-  "stage": "idea",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-20T19:50:38.964Z",
-  "updatedAt": "2026-07-20T19:50:38.964Z",
+  "updatedAt": "2026-07-21T01:17:04.184Z",
   "description": "Doc comment states the guard must 'precede' the sed anchor ('no test -n \"$VAR\" / [ -n \"$VAR\" ] guard for that exact variable name precedes it anywhere in the command'), but hasUnguardedSedLineAnchor applies guardRe to the whole command string with no positional constraint, so a guard appearing AFTER the anchor also suppresses the finding. The behavior is the more permissive of the two and is defensible; the comment should be reworded to match it (per the project lesson that a comment does not prove runtime behavior).\n\nSource: cam/issue-381\nReview round: 1\n\nsuggestion-fingerprint: 7912119d83c0",
   "derivedFrom": [
     "CAM-381"
