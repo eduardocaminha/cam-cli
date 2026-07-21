@@ -31,7 +31,7 @@
         "Vendor drift check passes (bun run embed-vendor:check). [oracle: bun run embed-vendor:check]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/agents/subagent-planner.md and templates/agents/subagent-planner.md (currently byte-identical, 205 lines). Insert the dictated bullet verbatim after line ~131 (last 'Too big' split bullet) and before '## Story Ordering' (line ~135) in BOTH copies with IDENTICAL text. Copy the exact bullet from the issue spec.scope; the two must-survive clauses (A scope-limiter 'Simplicity remains the scope limiter' and B context-window 'context-window exhaustion is a quality criterion, not a cost one') must be verbatim, matching the CAM-379 versions already in .claude/agents/subagent-{implementer,reviewer,auditor}.md. Gotchas: (1) do NOT reword the two clauses; (2) do NOT introduce divergence between the two copies or reconcile them into a shared file; (3) do NOT touch the implementer/reviewer/auditor/orchestrator copies; (4) after editing the templates copy, run `bun run embed-vendor` to refresh src/vendor/_generated.ts, else embed-vendor:check fails CI. Pattern: 'Agent-prompt self-hosting pattern' (patterns.md) - templates/agents is source of truth, .claude/agents is runtime mirror, both edited then embed-vendor run; call out 'intentional self-hosting' in the commit so an auditor does not flag harness drift. The templatesContents byte-parity test in test/embedded.test.ts catches drift."
     }
