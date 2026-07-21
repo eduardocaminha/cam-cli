@@ -14,6 +14,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CodexAdapter } from '../../src/supervisor/backend-adapter.ts';
+import { stripFrontmatter } from '../../src/templates/frontmatter.ts';
 
 const SAMPLE_UUID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
 const SAMPLE_PROMPT = "Implement it's US-001; use $HOME and `backtick`.";
@@ -226,6 +227,42 @@ function makeTmpRepo(prefix: string): { dir: string; run: (args: string[]) => { 
 
 	return { dir, run };
 }
+
+// -----------------------------------------------------------------------------
+// stripFrontmatter fence-regex-independent body pin (US-001, CAM-351). Unlike
+// the raw.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '')-derived expectedBody
+// check above (line ~100), which mirrors stripFrontmatter's own fence regex
+// and so would pass even if that regex regressed identically in both places,
+// this fixture's expected body is a hand-typed literal that never touches the
+// fence regex at all: a regression in stripFrontmatter's regex changes the
+// actual `stripped` value without changing this constant, so the assertion
+// goes red instead of silently mirroring the bug.
+// -----------------------------------------------------------------------------
+
+describe('stripFrontmatter fixture pin (US-001, CAM-351)', () => {
+	test('strips a controlled fixture frontmatter fence, matching a hand-pinned literal body', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-frontmatter-fixture-'));
+		dirsToCleanup.push(dir);
+
+		const fixtureFrontmatter = '---\nname: fixture-agent\ndescription: CAM-351 fixture agent\ncolor: blue\n---\n';
+		const fixtureBody =
+			'Fixture body line one with sentinel FIXTURE_BODY_SENTINEL_CAM_351.\nFixture body line two, no fences here.\n';
+		const fixturePath = join(dir, 'fixture-agent.md');
+		writeFileSync(fixturePath, fixtureFrontmatter + fixtureBody);
+
+		const raw = readFileSync(fixturePath, 'utf8');
+		const stripped = stripFrontmatter(raw);
+
+		// Hand-pinned literal, authored independently of stripFrontmatter's own
+		// fence regex (not derived by any .replace(/^---.../) call).
+		const expectedBody =
+			'Fixture body line one with sentinel FIXTURE_BODY_SENTINEL_CAM_351.\nFixture body line two, no fences here.\n';
+
+		expect(stripped).toBe(expectedBody);
+		expect(stripped.startsWith('---')).toBe(false);
+		expect(stripped.split('\n')).not.toContain('---');
+	});
+});
 
 describe('CodexAdapter reviewer diff injection against a real git fixture repo (US-001)', () => {
 	test.skipIf(!gitAvailable)(

@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.234.0] - 2026-07-21
+
+### Added
+
+- US-001 - Add a fence-regex-independent fixture assertion for the codex instructions body
+
 ## [0.233.0] - 2026-07-21
 
 ### Added
