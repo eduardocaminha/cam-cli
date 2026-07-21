@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.230.0] - 2026-07-21
+
+### Added
+
+- US-001 - Change combineStreams to a single object param, update 4 call sites and 4 unit tests
+
 ## [0.229.0] - 2026-07-21
 
 ### Added
