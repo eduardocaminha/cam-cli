@@ -616,14 +616,17 @@ describe('oracle-lint-cases.txt fixture matrix', () => {
 
 		expect(rows.length).toBeGreaterThan(0);
 
-		for (const [ruleName, expected, command] of rows) {
-			expect(ruleName).toBeDefined();
-			expect(expected).toBeDefined();
-			expect(command).toBeDefined();
+		for (const row of rows) {
+			const [ruleName, expected, command] = row;
+			if (ruleName === undefined || expected === undefined || command === undefined) {
+				throw new Error(`malformed fixture row (expected "rule :: verdict :: command"): ${JSON.stringify(row)}`);
+			}
 			const rule = RULES.find((r) => r.name === ruleName);
-			expect(rule).toBeDefined();
-			const got = rule!.test(command!) ? 'flag' : 'ok';
-			expect({ ruleName, command, got }).toEqual({ ruleName, command, got: expected! });
+			if (!rule) {
+				throw new Error(`fixture row names unknown rule "${ruleName}": ${JSON.stringify(row)}`);
+			}
+			const got = rule.test(command) ? 'flag' : 'ok';
+			expect({ ruleName, command, got }).toEqual({ ruleName, command, got: expected });
 		}
 	});
 });
