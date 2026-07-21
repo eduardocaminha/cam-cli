@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.236.0] - 2026-07-21
+
+### Added
+
+- US-002 - Canonize demand-driven + composition-by-fix-site triage policy
+- US-001 - Variadic composite promote in one atomic on-main commit
+
 ## [0.235.0] - 2026-07-21
 
 ### Added
