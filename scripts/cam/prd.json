@@ -23,7 +23,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Single-file fix + one test. Edit renderReviewerDiffBlock at src/supervisor/backend-adapter.ts:468-500 (hardcoded '```diff' opener line 496, '```' closer line 498). Compute longest backtick run via a regex like /`+/g over the emitted content string (result.diff + truncationMarker), take max match length, fence length = max(3, longest+1); emit `'`'.repeat(fenceLen) + 'diff'` opener and `'`'.repeat(fenceLen)` closer. Guard noUncheckedIndexedAccess on regex-match access. New test goes in test/supervisor/backend-adapter.test.ts. GOTCHA (from issue spec): backend-adapter.ts is SIDECAR-EXECUTED (imported by src/supervisor/review.ts + src/supervisor/loop.ts, compiled into the sidecar binary) — a coherence rebuild (scripts/build-release.sh --install + sidecar restart) is mandatory after merge, unlike recent test-only ships. Codex receives full content regardless; this is a markdown-structure correctness fix, not content-loss. Prior art: patterns.md bullet 'Reviewer-scoped diff injection lives inside CodexAdapter.renderActor' (US-001, CAM-354, 2026-07-19) documents the diff-injection design this hardens; renderReviewerDiffBlock returns an already-truncated body. No external library from the docs-fetch table is touched (git subprocess semantics already validated in CAM-354)."
     }
