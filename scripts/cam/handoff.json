@@ -1,0 +1,17 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Extract withFakeClock helper and migrate both dispatch.test.ts sites" },
+  "branchName": "cam/issue-362",
+  "timestamp": "2026-07-21T00:00:00Z",
+  "createdFiles": [
+    "test/helpers/with-fake-clock.ts",
+    "test/helpers/with-fake-clock.test.ts"
+  ],
+  "modifiedFiles": [
+    "test/dispatch.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "withFakeClock (test/helpers/with-fake-clock.ts) is now the shared fake-clock + stderr-capture helper: callback-style, invokes the caller's callback with { advance(ms), chunks }, restores both Date.now and process.stderr.write in a finally block. Both former inline sites in test/dispatch.test.ts (the sendKeysWhenIdle default-deadline test and the CAM-373 idle-gate exactly-once test) now use it; each site's distinct behavior (the CAM-373 site's own recordedSleeps array and sleepFn wiring, the default-deadline site's captured-vs-5000ms assertions) was preserved unchanged, only the monkeypatch/restore boilerplate moved into the helper. Any future test needing a fake Date.now + captured stderr should reuse this helper rather than re-inlining the pattern.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}

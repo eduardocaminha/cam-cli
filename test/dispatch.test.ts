@@ -63,6 +63,7 @@ import {
 } from '../src/tmux/dispatch.ts';
 import type { CursorGeometry } from '../src/tmux/display-message.ts';
 import type { SpawnFn as TmuxSpawnFn } from '../src/tmux/session.ts';
+import { withFakeClock } from './helpers/with-fake-clock.ts';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -324,36 +325,23 @@ describe('sendKeysWhenIdle', () => {
 		// sleepFn, so the test doesn't burn real wall-clock time waiting out a
 		// 30s deadline. capturePaneFn always reports busy, so the idle-gate
 		// never resolves early and must run out the full budget.
-		const originalNow = Date.now;
-		const originalWrite = process.stderr.write;
-		let fakeNow = 0;
-		Date.now = () => fakeNow;
-		const captured: string[] = [];
-		process.stderr.write = ((chunk: string | Uint8Array) => {
-			captured.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk));
-			return true;
-		}) as typeof process.stderr.write;
-
-		try {
+		withFakeClock(({ advance, chunks }) => {
 			sendKeysWhenIdle({
 				paneId: '%1',
 				text: '/cam-plan',
 				tmuxSpawnFn: spawnFn,
 				capturePaneFn: () => '⠋ Busy forever\n', // never idle
 				sleepFn: (ms) => {
-					fakeNow += ms;
+					advance(ms);
 				},
 				pollIntervalMs: 1_000,
 				// idleTimeoutMs intentionally omitted: exercises the default.
 			});
-		} finally {
-			Date.now = originalNow;
-			process.stderr.write = originalWrite;
-		}
 
-		// The warning text embeds the exact idleTimeoutMs the wiring used.
-		expect(captured.join('')).toContain(`did not go idle within ${IDLE_WAIT_DEADLINE_MS} ms`);
-		expect(captured.join('')).not.toContain('did not go idle within 5000 ms');
+			// The warning text embeds the exact idleTimeoutMs the wiring used.
+			expect(chunks.join('')).toContain(`did not go idle within ${IDLE_WAIT_DEADLINE_MS} ms`);
+			expect(chunks.join('')).not.toContain('did not go idle within 5000 ms');
+		});
 
 		// Fallback still sends despite never observing idle.
 		const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
@@ -720,20 +708,6 @@ describe('sendKeysVerified', () => {
 	test('idle-gate times out: sends EXACTLY ONCE with no verify/retry cycle, no backoff sleeps, the geometry sampler is never consulted, and emits exactly one push-undelivered event with reason pane-not-idle (US-002, CAM-373; red on main: main sends 3 times)', () => {
 		const spawnFn = makeSpawnFn();
 		const events: Array<{ kind: string; detail: unknown }> = [];
-		const originalWrite = process.stderr.write;
-		const stderrChunks: string[] = [];
-		process.stderr.write = ((chunk: string | Uint8Array) => {
-			stderrChunks.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk));
-			return true;
-		}) as typeof process.stderr.write;
-
-		// Fake-clock idiom (reused from the sendKeysWhenIdle default-deadline
-		// test above): a monotonically-advancing clock driven only by the
-		// injected sleepFn, and a capturePaneFn that never reports idle, so the
-		// idle-gate must run out its full budget rather than resolving early.
-		const originalNow = Date.now;
-		let fakeNow = 0;
-		Date.now = () => fakeNow;
 
 		const recordedSleeps: number[] = [];
 		let geometrySamplerCalls = 0;
@@ -746,7 +720,12 @@ describe('sendKeysVerified', () => {
 		const POLL_INTERVAL_MS = 1_000;
 		const IDLE_TIMEOUT_MS = 5_000;
 
-		try {
+		// Fake-clock idiom (reused from the sendKeysWhenIdle default-deadline
+		// test above, now via the shared withFakeClock helper, US-001, CAM-362):
+		// a monotonically-advancing clock driven only by the injected sleepFn,
+		// and a capturePaneFn that never reports idle, so the idle-gate must run
+		// out its full budget rather than resolving early.
+		withFakeClock(({ advance, chunks: stderrChunks }) => {
 			sendKeysVerified({
 				paneId: '%7',
 				text: '/cam-review',
@@ -758,17 +737,17 @@ describe('sendKeysVerified', () => {
 				},
 				sleepFn: (ms) => {
 					recordedSleeps.push(ms);
-					fakeNow += ms;
+					advance(ms);
 				},
 				pollIntervalMs: POLL_INTERVAL_MS,
 				idleTimeoutMs: IDLE_TIMEOUT_MS,
 				maxAttempts: 3,
 				logEvent: (kind, detail) => events.push({ kind, detail }),
 			});
-		} finally {
-			Date.now = originalNow;
-			process.stderr.write = originalWrite;
-		}
+
+			// AC4: the existing stderr warning on the timed-out path is preserved.
+			expect(stderrChunks.join('')).toContain(`did not go idle within 5000 ms`);
+		});
 
 		// AC1: exactly one send-keys invocation, no verify/retry loop.
 		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
@@ -821,9 +800,6 @@ describe('sendKeysVerified', () => {
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
 		expect(events[0]?.detail).toEqual({ paneId: '%7', retriesExhausted: 1, reason: 'pane-not-idle' });
-
-		// AC4: the existing stderr warning on the timed-out path is preserved.
-		expect(stderrChunks.join('')).toContain(`did not go idle within 5000 ms`);
 	});
 });
 
