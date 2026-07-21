@@ -1,10 +1,36 @@
 {
   "id": "CAM-394",
   "title": "Split-advisory projects a garbage token count for the small-jobSize bucket",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-21T08:10:20.341Z",
-  "updatedAt": "2026-07-21T08:10:20.341Z",
-  "description": "The sidecar's split-advisory printed `~17449729 tokens` with a 'consider slicing' hint for a jobSize=2, 1-story PRD (CAM-393), and the same nonsensical projection has recurred verbatim-shaped across multiple small-jobSize cycles. The projection formula produces an absurd extrapolation for the small-jobSize historical bucket, likely an unbounded extrapolation from a near-zero historical sample. Purely advisory (does not gate the loop), so LOW urgency, but the number is clearly wrong and undermines trust in the advisory. Fix: bound/sanity-check the projection or suppress it when the historical sample is too small to extrapolate. Observed twice+ across DRAIN cycles ending 2026-07-21."
+  "updatedAt": "2026-07-21T14:55:23.807Z",
+  "description": "The sidecar's split-advisory printed `~17449729 tokens` with a 'consider slicing' hint for a jobSize=2, 1-story PRD (CAM-393), and the same nonsensical projection has recurred verbatim-shaped across multiple small-jobSize cycles. The projection formula produces an absurd extrapolation for the small-jobSize historical bucket, likely an unbounded extrapolation from a near-zero historical sample. Purely advisory (does not gate the loop), so LOW urgency, but the number is clearly wrong and undermines trust in the advisory. Fix: bound/sanity-check the projection or suppress it when the historical sample is too small to extrapolate. Observed twice+ across DRAIN cycles ending 2026-07-21.",
+  "spec": {
+    "scope": "Suppress the plan split-advisory for single-story PRDs (userStories.length <= 1). A 1-story PRD is un-sliceable, so a 'consider slicing' advisory is definitionally meaningless for it; every observed instance of the garbage token projection occurred on a 1-story PRD. Add an early return 'if (storyCount <= 1) return;' in maybeEmitPlanSplitAdvisory (src/supervisor/plan-split-advisory.ts) immediately after storyCount is computed, before the historical event-log read, bucketing, event log, and notify. Do NOT change the mean-vs-median projection or the fire threshold: the fire decision compares bucketMean > 1.5*bucketMedian, so swapping projectedTokens to bucketMedian would make it never fire; that coupling is a separate design question and is explicitly out of scope.",
+    "acceptanceCriteria": [
+      "When the PRD has a single user story (userStories.length <= 1), maybeEmitPlanSplitAdvisory suppresses the advisory entirely -- it neither calls notify nor logs a plan-split-advisory event -- even when the same-jobSize bucket projection would exceed the fire threshold. A new test in test/supervisor/plan-split-advisory.test.ts asserts this suppression. [oracle: bun test test/supervisor/plan-split-advisory.test.ts]",
+      "Multi-story PRDs (userStories.length >= 2) are unaffected: the projection still uses the same-jobSize bucket mean and the fire threshold is unchanged, and all pre-existing split-advisory tests pass unmodified in intent. [oracle: reviewer-judgment]",
+      "The full quality spine passes on the branch. [oracle: bun run check:all]"
+    ],
+    "gotchas": [
+      "The advisory is best-effort wrapped in try/catch and must never gate or throw in the plan phase; the guard is a plain early return, preserving that contract.",
+      "storyCount is 'Array.isArray(prdRaw.userStories) ? prdRaw.userStories.length : 0', so '<= 1' correctly suppresses both malformed (0) and single-story (1) PRDs.",
+      "This is sidecar-executed code (src/supervisor/plan-split-advisory.ts plus the call site in src/commands/sidecar.ts); a coherence rebuild (bash scripts/build-release.sh --install then sidecar restart) is required after merge before a running sidecar picks up the change. It is NOT doc/test-only.",
+      "Do NOT touch src/stats/split-advisory.ts (the pure heuristic and mean computation); the fix lives entirely in the emit wrapper maybeEmitPlanSplitAdvisory."
+    ],
+    "domainTerms": [
+      "split advisory: a non-gating '[cam] split advisory:' line emitted after a plan, suggesting a large PRD be sliced into smaller ones.",
+      "jobSize bucket: historical PRDs grouped by exact jobSize; the projection is the arithmetic mean of that bucket's total token counts.",
+      "storyCount: the number of userStories in the current PRD (scripts/cam/prd.json)."
+    ]
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 1,
+    "riskReduction": 2,
+    "jobSize": 1
+  },
+  "type": "fix"
 }
