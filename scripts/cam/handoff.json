@@ -1,0 +1,21 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Fix LIVE_DERIVATION_RE filename false-negative (Defect A)"
+  },
+  "branchName": "cam/issue-386",
+  "timestamp": "2026-07-21T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/supervisor/prd-oracle-lint.ts",
+    "test/supervisor/prd-oracle-lint.test.ts",
+    "test/fixtures/oracle-lint/oracle-lint-cases.txt",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 fixed LIVE_DERIVATION_RE's `git diff main` and `git grep ... main` alternatives: the bare trailing `\\bmain\\b` was replaced with `\\bmain(?![\\w./-])` so `main` must sit at a ref boundary (colon, whitespace, or end), never as a filename stem (main.ts, src/main.rs). The `git show main:` alternative (explicit colon) was left unchanged. Verified via the exported RULES array's frozen-comparand rule (both filename shapes now flag; all pre-existing genuine-derivation shapes -- git show main:PATH, bare git grep PATTERN main, git grep PATTERN main:src/f.ts, git diff main -- f.ts -- still excuse/null). Added flagged-forms + passing-forms test rows and two fixture rows (main.ts, src/main.rs) to the table-driven matrix. All quality gates green (typecheck, bun test 5247 pass, bun run check:all full spine incl. coverage/dead-code/dup/file-size/lint). No _ref bump needed (file not in scripts/file-size-budget.json). If the PRD has a companion Defect B/US-002+ story touching the same file/regex area, re-read the updated LIVE_DERIVATION_RE doc comment (now includes the CAM-386 rationale) before editing further.",
+  "appliedPatternIds": [],
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
