@@ -20,7 +20,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Single-file doc-only edit to scripts/cam/patterns.md; NO rebuild (patterns.md is not sidecar-executed), no code/test file changes. Target: the US-R1-002 bullet, currently at patterns.md:911 (issue title's :909 is already drifted -- grep, do not trust the number). Change: delete the `:769` suffix from the token `test/dispatch.test.ts:769` so the pointer becomes a content reference; the bullet already quotes the assertion inline (recordedSleeps.every((ms) => ms === POLL_INTERVAL_MS)), which is the anchor. Live assertion is at test/dispatch.test.ts:777 (issue's proposed :778 was itself stale -- do NOT reintroduce any number). Sibling US-003 bullet at patterns.md:907 carries test/dispatch.test.ts:754 (a HISTORICAL/main-referencing citation, separately tracked) -- OUT OF SCOPE, must not be touched. Gotchas: derive-don't-freeze (patterns.md:903) forbids re-freezing a new :NNN; never target scripts/cam/handoff.json as an evidence oracle (patterns.md:909, rotating artifact) -- all oracles here target durable surfaces (patterns.md, test/dispatch.test.ts). These two rules were violated by the CAM-376 PRD's own criteria and cost that cycle all three review rounds."
     }
