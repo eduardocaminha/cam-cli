@@ -1,0 +1,20 @@
+{
+  "id": "CAM-395",
+  "title": "Sibling stale line citation in patterns.md US-003 bullet: cites test/dispatch.test.ts:754 but that line is now an unrelated AC1 assertion",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-21T14:02:38.642Z",
+  "updatedAt": "2026-07-21T14:02:38.642Z",
+  "description": "Discovered during CAM-380 grounding (measured on main after PR #318 / v0.242.0). The US-003 bullet in scripts/cam/patterns.md (tagged US-003, CAM-376, 2026-07-20; adjacent above the US-R1-002 bullet CAM-380 fixed) cites `test/dispatch.test.ts:754` as the location of the OLD historical assertion `recordedSleeps.every((ms) => ms <= 1_000)`. MEASURED on main: line 754 now holds an unrelated AC1 assertion `expect(sendKeysCalls).toHaveLength(1)`; the recordedSleeps region has drifted to ~776-777. So `:754` is stale, exactly the same rot defect CAM-380 just fixed one bullet down.\n\nNote: CAM-380's own description mistakenly asserted `:754` was 'correct as a HISTORICAL main-referencing citation, must not be touched' -- that premise was already false on main, which is why CAM-380 was scoped to `:769` only and this was carved out as a separate follow-up.\n\nSCOPE: convert the `test/dispatch.test.ts:754` pointer in the US-003 bullet to a rot-proof grep-able content reference (drop the :NNN suffix, anchor on the assertion text the bullet already quotes), per the same derive-don't-freeze precedent at patterns.md:903 and content-reference precedent at patterns.md:913 that CAM-380 followed. Doc-only, NO rebuild.\n\nORACLE NOTE for whoever specs this: do NOT re-freeze a new line number; verify with an absence grep of the stale `test/dispatch.test.ts:754` token plus content-greps that the cited assertion text resolves in both patterns.md and test/dispatch.test.ts. Do NOT target scripts/cam/handoff.json (rotating). Re-measure current line numbers on main before speccing -- they drift.\n\nSource: CAM-380 grounding, 2026-07-21",
+  "specSource": "derived",
+  "derivedFrom": [
+    "CAM-380"
+  ],
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 1,
+    "riskReduction": 2,
+    "jobSize": 1
+  }
+}
