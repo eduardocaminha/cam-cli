@@ -1,0 +1,83 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-379",
+  "description": "Propagate the merit-over-cost recommendation rule to the implementer, reviewer, and auditor agents (both .claude/ and templates/ copies) and surface the stance as human prose in docs/agent-readiness.md.",
+  "issueNumber": 379,
+  "type": "docs",
+  "relatedDocs": [
+    "docs/agent-readiness.md"
+  ],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add merit-over-cost rule to subagent-reviewer (both copies)",
+      "description": "As a cam reviewer agent, I need the merit-over-cost recommendation rule framed for REVIEW so that I flag a cost-motivated or effort-motivated weakness as a finding instead of letting a cheap-but-weak implementation pass the last gate.",
+      "acceptanceCriteria": [
+        "subagent-reviewer carries the rule framed for REVIEW (flag a cost-motivated or effort-motivated weakness as a finding; do not accept 'good enough for v1' as a rationale for a weaker implementation) and includes the dictated verbatim shared sentence. [oracle: grep -q \"context-window exhaustion is a quality criterion\" .claude/agents/subagent-reviewer.md]",
+        "The templates/ copy of subagent-reviewer carries the identical verbatim shared sentence so adopters get the same rule. [oracle: grep -q \"context-window exhaustion is a quality criterion\" templates/agents/subagent-reviewer.md]",
+        "Both must-survive clauses are preserved (clause 1: the rule limits QUALITY not SCOPE, Simplicity remains the scope limiter; clause 2: operational cost is never a criterion but quality degradation from context-window exhaustion is a quality criterion, not a cost one), with correct REVIEW framing and consistent with the prior-art block in subagent-orchestrator.md and memory/feedback-recommend-on-merits-not-effort.md. [oracle: reviewer-judgment]",
+        "The insertion is additive and NOT anchored to a cam-cli-only heading, so it lands in a section present in both variants. [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Vendor drift check passes and the embedded blob is regenerated from the edited templates/ copy. [oracle: bun run embed-vendor:check && bun test test/embedded.test.ts]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: .claude/agents/subagent-reviewer.md, templates/agents/subagent-reviewer.md, then regen src/vendor/_generated.ts via `bun run embed-vendor`. VERBATIM shared sentence that MUST appear identically in BOTH copies (the grep oracles key on it, do not alter one character): 'This rule limits the quality of the recommendation, not its scope: Simplicity remains the scope limiter. Operational cost is never a criterion, but quality degradation from context-window exhaustion is a quality criterion, not a cost one.' Add a REVIEW-role lead-in around it. Reviewer gap is the most severe (last gate) so this ships first. Self-hosting pattern (patterns.md line 46, 'Agent-prompt self-hosting pattern'): edit BOTH copies then `bun run embed-vendor`; test/embedded.test.ts byte-parity catches drift. Dual-copy is NOT byte-identical (memory/cam-dual-copy-is-per-file); the rule text is identical but insertion points differ per file, and this is an ADDITIVE edit, never a reconcile. .claude/ and templates/ agent .md are LLM-consumed so em-dash/emoji are fine. Prior art to match phrasing: .claude/agents/subagent-orchestrator.md merit block ('rank by engineering merit ... never by execution cost ... quality-within-scope, not gold-plating')."
+    },
+    {
+      "id": "US-002",
+      "title": "Add merit-over-cost rule to subagent-auditor (both copies)",
+      "description": "As a cam auditor agent, I need the merit-over-cost recommendation rule framed for AUDIT so that I do not approve a PRD whose scope or quality was trimmed for effort or cost reasons before any code is written.",
+      "acceptanceCriteria": [
+        "subagent-auditor carries the rule framed for AUDIT (do not APPROVE a PRD whose scope or quality was trimmed for effort/cost reasons) and includes the dictated verbatim shared sentence. [oracle: grep -q \"context-window exhaustion is a quality criterion\" .claude/agents/subagent-auditor.md]",
+        "The templates/ copy of subagent-auditor carries the identical verbatim shared sentence. [oracle: grep -q \"context-window exhaustion is a quality criterion\" templates/agents/subagent-auditor.md]",
+        "Both must-survive clauses are preserved (clause 1: limits QUALITY not SCOPE, Simplicity stays the scope limiter; clause 2: operational cost is never a criterion but context-window exhaustion IS a quality criterion), with correct AUDIT framing and consistent with the prior-art block in subagent-orchestrator.md and memory/feedback-recommend-on-merits-not-effort.md. [oracle: reviewer-judgment]",
+        "The insertion is additive and placed in a section present in both variants, NOT anchored to the cam-cli-only heading '### F. Project-specific sanity (cam-cli)'. [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Vendor drift check passes and the embedded blob is regenerated from the edited templates/ copy. [oracle: bun run embed-vendor:check && bun test test/embedded.test.ts]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: .claude/agents/subagent-auditor.md, templates/agents/subagent-auditor.md, then regen src/vendor/_generated.ts via `bun run embed-vendor`. Same VERBATIM shared sentence as US-001 (identical bytes in both copies): 'This rule limits the quality of the recommendation, not its scope: Simplicity remains the scope limiter. Operational cost is never a criterion, but quality degradation from context-window exhaustion is a quality criterion, not a cost one.' Add an AUDIT-role lead-in. GOTCHA (issue): do NOT anchor to the auditor's cam-cli-only '### F. Project-specific sanity (cam-cli)' heading, which does not exist in the templates/ generic variant; pick a role-agnostic section that exists in both. Self-hosting pattern (patterns.md line 46) + dual-copy-per-file (memory/cam-dual-copy-is-per-file). LLM-consumed files: em-dash fine."
+    },
+    {
+      "id": "US-003",
+      "title": "Add merit-over-cost rule to subagent-implementer (both copies)",
+      "description": "As a cam implementer agent, I need the merit-over-cost rule framed for EXECUTION so that I always choose the robust root-cause fix over a shortcut, taking a shortcut only to unblock something extremely necessary.",
+      "acceptanceCriteria": [
+        "subagent-implementer carries the rule framed for EXECUTION (always the robust root-cause fix over a shortcut; a shortcut is legitimate only to unblock something extremely necessary) and includes the dictated verbatim shared sentence. [oracle: grep -q \"context-window exhaustion is a quality criterion\" .claude/agents/subagent-implementer.md]",
+        "The templates/ copy of subagent-implementer carries the identical verbatim shared sentence. [oracle: grep -q \"context-window exhaustion is a quality criterion\" templates/agents/subagent-implementer.md]",
+        "Both must-survive clauses are preserved (clause 1: limits QUALITY not SCOPE so 'always most robust' does not license speculative abstraction; clause 2: operational cost is never a criterion but context-window exhaustion IS a quality criterion), with correct EXECUTION framing and consistent with subagent-orchestrator.md and memory/feedback-recommend-on-merits-not-effort.md. [oracle: reviewer-judgment]",
+        "The insertion is additive and placed in a section present in both variants. [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Vendor drift check passes and the embedded blob is regenerated from the edited templates/ copy. [oracle: bun run embed-vendor:check && bun test test/embedded.test.ts]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: .claude/agents/subagent-implementer.md, templates/agents/subagent-implementer.md, then regen src/vendor/_generated.ts via `bun run embed-vendor`. Same VERBATIM shared sentence as US-001/US-002 (identical bytes): 'This rule limits the quality of the recommendation, not its scope: Simplicity remains the scope limiter. Operational cost is never a criterion, but quality degradation from context-window exhaustion is a quality criterion, not a cost one.' Add an EXECUTION-role lead-in (root-cause over shortcut; shortcut only to unblock something extremely necessary). Clause 1 matters most here: without it 'always the most robust' licenses speculative abstraction (patterns.md: PRDs of 8-9+ stories blow the review budget, CAM-53/101/109). This gap was already hand-corrected once (memory/feedback-recommend-on-merits-not-effort.md). Self-hosting pattern (patterns.md line 46) + dual-copy-per-file (memory/cam-dual-copy-is-per-file). LLM-consumed files: em-dash fine."
+    },
+    {
+      "id": "US-004",
+      "title": "Surface the merit-over-cost stance as human prose in docs/agent-readiness.md",
+      "description": "As a human evaluating cam-runtime, I need to read the merit-over-cost stance in plain prose so that I understand cam's recommendation posture without opening any agent .md file.",
+      "acceptanceCriteria": [
+        "docs/agent-readiness.md states the stance as human-readable prose under the existing 'Where cam is already ahead of the rubric' section, so a human reads it without opening any agent file. [oracle: grep -q \"never by operational cost\" docs/agent-readiness.md]",
+        "The added paragraph uses no em-dash and no decorative emoji, per the repo human-doc convention. [oracle: reviewer-judgment]",
+        "The prose preserves both must-survive clauses (quality-not-scope limiter; operational cost never a criterion while context-window exhaustion is a quality criterion) and is consistent with the agent-file rule shipped in US-001..US-003. [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "File: docs/agent-readiness.md, insert under the existing '## Where cam is already ahead of the rubric' heading (line 100). This is human-readable persisted markdown: NO em-dash (use colon/comma/parentheses/period) and NO decorative emoji per global CLAUDE.md convention (the em-dash rule splits by audience: agent .md are LLM-consumed and exempt, this doc is not). No src/ or templates/ change here so no embed-vendor regen needed. Grep oracle keys on the literal 'never by operational cost'. Prior art phrasing: subagent-orchestrator.md merit block."
+    }
+  ]
+}
