@@ -1,11 +1,11 @@
 {
   "id": "CAM-362",
   "title": "The default-deadline test monkeypatches the global Date.now and process.stderr.…",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-20T06:20:16.278Z",
-  "updatedAt": "2026-07-21T08:14:16.355Z",
+  "updatedAt": "2026-07-21T08:39:12.143Z",
   "description": "The default-deadline test monkeypatches the global Date.now and process.stderr.write. Both are correctly restored in a finally block and bun runs a file's tests serially, so this is safe today, but a shared withFakeClock helper under test/helpers/ would make the pattern reusable and harder to leak if the test is ever copied.\n\nSource: cam/issue-358\nReview round: 2\n\nsuggestion-fingerprint: 3d29a2c5ace6",
   "derivedFrom": [
     "CAM-358"
