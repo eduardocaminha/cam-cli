@@ -98,7 +98,7 @@ afterEach(() => {
 });
 
 test.skipIf(!tmuxAvailable)(
-	'UNDELIVERED wrapping payload: send-keys attempted maxAttempts times, exactly one push-undelivered event (AC6)',
+	'UNDELIVERED wrapping payload: exactly one physical send-keys call (send-once guard, US-001, CAM-375), exactly one push-undelivered event with retriesExhausted maxAttempts (AC6)',
 	async () => {
 		await bootPane('drop');
 		const id = paneId();
@@ -122,7 +122,9 @@ test.skipIf(!tmuxAvailable)(
 			logEvent: (kind, detail) => events.push({ kind, detail }),
 		});
 
-		expect(sendKeysCalls).toHaveLength(3);
+		// Send-once guard (US-001, CAM-375): exactly one physical send despite
+		// maxAttempts (3) VERIFY attempts against the real (never-delivered) pane.
+		expect(sendKeysCalls).toHaveLength(1);
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
 		expect(events[0]?.detail).toEqual({ paneId: id, retriesExhausted: 3, reason: 'retries-exhausted' });
@@ -159,7 +161,7 @@ test.skipIf(!tmuxAvailable)(
 );
 
 test.skipIf(!tmuxAvailable)(
-	'wrap-boundary-exact payload (length === paneWidth): UNDELIVERED direction retries maxAttempts times with one push-undelivered event (AC8)',
+	'wrap-boundary-exact payload (length === paneWidth): UNDELIVERED direction verifies maxAttempts times but sends exactly once (send-once guard, US-001, CAM-375), with one push-undelivered event (AC8)',
 	async () => {
 		await bootPane('drop');
 		const id = paneId();
@@ -188,7 +190,9 @@ test.skipIf(!tmuxAvailable)(
 			logEvent: (kind, detail) => events.push({ kind, detail }),
 		});
 
-		expect(sendKeysCalls).toHaveLength(3);
+		// Send-once guard (US-001, CAM-375): exactly one physical send despite
+		// maxAttempts (3) VERIFY attempts against the real (never-delivered) pane.
+		expect(sendKeysCalls).toHaveLength(1);
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
 	},
@@ -251,7 +255,9 @@ test.skipIf(!tmuxAvailable)(
 			logEvent: (kind, detail) => events.push({ kind, detail }),
 		});
 
-		expect(sendKeysCalls).toHaveLength(3);
+		// Send-once guard (US-001, CAM-375): exactly one physical send despite
+		// maxAttempts (3) VERIFY attempts against the real (never-delivered) pane.
+		expect(sendKeysCalls).toHaveLength(1);
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
 	},
@@ -286,7 +292,9 @@ test.skipIf(!tmuxAvailable)(
 			logEvent: (kind, detail) => events.push({ kind, detail }),
 		});
 
-		expect(sendKeysCalls).toHaveLength(3);
+		// Send-once guard (US-001, CAM-375): exactly one physical send despite
+		// maxAttempts (3) VERIFY attempts against the real (never-delivered) pane.
+		expect(sendKeysCalls).toHaveLength(1);
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
 	},

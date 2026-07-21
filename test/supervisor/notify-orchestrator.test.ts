@@ -11,10 +11,12 @@
 //   4. notifyOrchestrator absent: loop runs without throwing (backward compat).
 //   5. reviewResult.status 'error': notifyOrchestrator IS called with '[cam] review BLOCKED:' (US-005).
 //   6. updatedPrd.review.lastVerdict null: notifyOrchestrator is NOT called.
-//   7. makeNotifyOrchestrator x sendKeysVerified (US-003): retry-then-delivered
-//      (2 send-keys attempts, no push-undelivered event).
-//   8. makeNotifyOrchestrator x sendKeysVerified (US-003): retry-exhausted
-//      (3 send-keys attempts, exactly one push-undelivered event).
+//   7. makeNotifyOrchestrator x sendKeysVerified (US-003; send-once guard US-001, CAM-375):
+//      retry-then-delivered (1 physical send-keys call, 2 verify attempts, no
+//      push-undelivered event).
+//   8. makeNotifyOrchestrator x sendKeysVerified (US-003; send-once guard US-001, CAM-375):
+//      retry-exhausted (1 physical send-keys call, 3 verify attempts, exactly one
+//      push-undelivered event with retriesExhausted 3).
 //   9. adaptLogEventForPush wraps push-undelivered into a full WorkerEvent
 //      (uuid 'sidecar', storyId undefined) for the durable file event logger.
 
@@ -283,11 +285,13 @@ function fakeSpawnResult(stdout: string, status = 0): SpawnSyncReturns<string> {
  * `capturePaneFn` (that reader now only feeds the PRE-send idle-gate; review
  * round 2 fix, US-R2-001, decoupled the content backstop onto its own
  * `visibleCaptureFn`, defaulted from this same TmuxSpawnFn's `capture-pane`
- * call). Two `display-message` samples happen per attempt: a baseline
- * immediately before send-keys, and a post-send sample after the settle
- * window. This responder alternates: odd calls (1st, 3rd, ...) are always the
- * fixed baseline reading; even calls (2nd, 4th, ...) are the post-send
- * reading, driven by `afterReadingForAttempt(attemptIndex)` (1-based).
+ * call). Send-once guard (US-001, CAM-375): a SINGLE baseline `display-message`
+ * sample happens once, immediately before the (also single) send-keys call;
+ * every verify attempt thereafter takes exactly one more `display-message`
+ * sample (the post-send reading), never a fresh baseline. This responder's
+ * first call is always the fixed baseline reading; every call after that is
+ * the post-send reading for the Nth verify attempt, driven by
+ * `afterReadingForAttempt(attemptIndex)` (1-based).
  */
 function makeGeometryDisplayResponder(
 	afterReadingForAttempt: (attemptIndex: number) => string,
@@ -295,14 +299,14 @@ function makeGeometryDisplayResponder(
 	let dmCallCount = 0;
 	return (): string => {
 		dmCallCount++;
-		if (dmCallCount % 2 === 1) return '2;26;80;30'; // fixed baseline reading
-		const attemptIndex = dmCallCount / 2;
+		if (dmCallCount === 1) return '2;26;80;30'; // fixed baseline reading
+		const attemptIndex = dmCallCount - 1;
 		return afterReadingForAttempt(attemptIndex);
 	};
 }
 
 describe('makeNotifyOrchestrator x sendKeysVerified (US-003, CAM-200; geometry oracle US-002, CAM-359)', () => {
-	test('retry then delivered: geometry verify succeeds on the second attempt (2 send-keys calls, no push-undelivered)', () => {
+	test('retry then delivered: geometry verify succeeds on the second attempt (1 physical send-keys call, no push-undelivered)', () => {
 		const text = '[cam] US-003 DONE: typecheck ok, 5 pass / 0 fail';
 		const sendCalls: string[][] = [];
 		// Attempt 1's post-send reading differs from the baseline (undelivered);
@@ -335,11 +339,13 @@ describe('makeNotifyOrchestrator x sendKeysVerified (US-003, CAM-200; geometry o
 		const notify = makeNotifyOrchestrator('cam-retry-test', spawnFn, capturePaneFn, logEvent);
 		notify(text);
 
-		expect(sendCalls.length).toBe(2);
+		// Send-once guard (US-001, CAM-375): exactly one physical send despite
+		// the delivery verdict only resolving on the second verify attempt.
+		expect(sendCalls.length).toBe(1);
 		expect(events).toEqual([]);
 	});
 
-	test('retry exhausted: geometry never returns to baseline triggers exactly one push-undelivered event after maxAttempts sends', () => {
+	test('retry exhausted: geometry never returns to baseline triggers exactly one push-undelivered event after maxAttempts VERIFY attempts (1 physical send-keys call, US-001, CAM-375)', () => {
 		const text = '[cam] review round 2: FIXES_PENDING:1';
 		const sendCalls: string[][] = [];
 		// Every post-send reading differs from the baseline: the composer never
@@ -362,8 +368,11 @@ describe('makeNotifyOrchestrator x sendKeysVerified (US-003, CAM-200; geometry o
 		const notify = makeNotifyOrchestrator('cam-exhaust-test', spawnFn, capturePaneFn, logEvent);
 		notify(text);
 
-		// Default maxAttempts is 3 (src/tmux/dispatch.ts sendKeysVerified).
-		expect(sendCalls.length).toBe(3);
+		// Default maxAttempts is 3 (src/tmux/dispatch.ts sendKeysVerified), but
+		// the send-once guard (US-001, CAM-375) means only ONE physical send
+		// fires regardless: retriesExhausted below still counts the 3 VERIFY
+		// attempts, not physical sends.
+		expect(sendCalls.length).toBe(1);
 		expect(events).toHaveLength(1);
 		expect(events[0]!.kind).toBe('push-undelivered');
 		expect(events[0]!.detail).toEqual({ paneId: '%7', retriesExhausted: 3, reason: 'retries-exhausted' });

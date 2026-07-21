@@ -1,0 +1,21 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Send-once guard on the idle verify/retry path in sendKeysVerified"
+  },
+  "branchName": "cam/issue-375",
+  "timestamp": "2026-07-21T00:00:00Z",
+  "modifiedFiles": [
+    "src/tmux/dispatch.ts",
+    "test/dispatch.test.ts",
+    "test/integration/dispatch-geometry.test.ts",
+    "test/supervisor/notify-orchestrator.test.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 (CAM-375) moved the atomic send-keys spawn OUT of sendKeysVerified's per-attempt verify/retry loop: the baseline geometry is now sampled exactly once, immediately before a SINGLE physical send-keys call, and every subsequent attempt only re-samples (settle sleep + post-send geometry read) and re-verifies against that same fixed baseline, never re-sending. retriesExhausted on the exhaustion push-undelivered event is unchanged (still equals maxAttempts) and now explicitly counts VERIFY attempts, not physical sends. The pane-not-idle fallback path (sendOnceUnverified) and the delivered-on-first-attempt fast path were already single-send and are unaffected. GOTCHA for any future dispatch.ts work: this call-cadence change (2 samples/attempt -> 1 baseline + 1 sample/attempt) broke every existing scripted-fake sampleGeometryFn/display-message responder that discriminated baseline-vs-post-send by call-count PARITY (odd/even); those were rewritten to use absolute-index rules or unique-per-call values (see patterns.md bullet appended this story, keyword 'call-cadence'). Red-on-main falsifiability was proven directly: stashed dispatch.ts, ran the AC1 test, confirmed it recorded 3 send-keys calls on unmodified main, then restored the fix and confirmed 1. No vendor/templates changes; embed-vendor:check not applicable. file-size-budget.json ceilings raised for the 3 files that grew (dispatch.ts 667->693, dispatch.test.ts 865->885, notify-orchestrator.test.ts 403->412), staged with a dated _ref note per the story's rubric.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
