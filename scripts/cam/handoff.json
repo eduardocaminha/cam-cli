@@ -1,0 +1,15 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Add a fence-regex-independent fixture assertion for the codex instructions body"
+  },
+  "branchName": "cam/issue-351",
+  "timestamp": "2026-07-21T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": ["test/supervisor/codex-adapter.test.ts"],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 (CAM-351) added a new describe block 'stripFrontmatter fixture pin (US-001, CAM-351)' in test/supervisor/codex-adapter.test.ts, placed after the shared dirsToCleanup/afterEach declaration and before the real-git-fixture describe block. It builds a controlled fixture agent file in a real tmpdir (mkdtempSync + writeFileSync), reads it back, and pipes it through stripFrontmatter (imported from src/templates/frontmatter.ts) directly -- no writeCodexInstructionsFile call, since that fn hard-codes .claude/agents/<name>.md and cannot consume a fixture path. The expected body is a hand-typed literal string constant (never derived via .replace(/^---.../)), so it is independent of stripFrontmatter's own fence regex. Falsifiability was verified by hand: frontmatter.ts:106's regex was temporarily broken (dropped the closing-fence group), bun test confirmed the new fixture assertion (plus several of the existing raw.replace(...)-derived assertions) went red, then the mutation was reverted and bun test confirmed green again before committing (git diff on frontmatter.ts is clean). The pre-existing raw.replace(...)-derived pipeline assertion around line ~100 was left untouched, as required. No vendor/templates files were touched, so embed-vendor:check was a no-op pass.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
