@@ -22,7 +22,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/issue.ts:83, src/commands/review.ts:82, src/commands/spec.ts:117 (the 'Default: 5 000.' line inside the idleTimeoutMs JSDoc block; the field is declared on the next-but-one line as `idleTimeoutMs?: number;`). Reference the exact wording pattern from src/tmux/dispatch.ts:174 ('Default: `IDLE_WAIT_DEADLINE_MS` (see below).') and the value comes from src/tmux/dispatch.ts:288 (`export const IDLE_WAIT_DEADLINE_MS = 30_000;`). Grep for '5 000' with a space thousands-separator, not '5000'. Do NOT touch the adjacent logEvent 'Default:' line, and spec.ts has several unrelated injectable-seam 'Default:' lines that must stay untouched. derive-don't-freeze (patterns.md): name the constant and put '(30 000 ms)' in parens for the human reader, as dispatch.ts already does. Comment-only change in CLI command files (NOT sidecar-executed loop code): no coherence rebuild required, no runtime behavior to probe."
     }
