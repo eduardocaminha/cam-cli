@@ -8,6 +8,12 @@
 # scripts/cam/patterns.md): frozen-comparand's quote-stripping intentionally
 # blinds it to a live comparison embedded in a non-`-c` interpreter payload
 # (e.g. `bun -e '...'`) -- `-c` is unwrapped but `-e` is not.
+# US-003 (CAM-382) promoted the INNER test-input strings from
+# test/fixtures/oracle-lint/cam382-false-positives.txt (the wrapper `bun -e`/
+# `grep -qF` commands are already rows above; their `-e` payload is not
+# scanned by the rule, so the wrapper form alone never exercises the rule
+# against the inner strings) into their own rows below, so this defect can
+# never again be a tracked-but-unrun reproduction.
 frozen-comparand :: ok :: bun -e 'const cs=["test $X -eq 41","test $X -ge 41"];for(const c of cs){console.log(c)}'
 frozen-comparand :: ok :: grep -qF 'test $(git grep -c PATTERN mainbranch:file.ts) -eq 1' test/supervisor/prd-oracle-lint.test.ts
 frozen-comparand :: flag :: test $(wc -l < scripts/cam/patterns.md) -eq 42
@@ -19,6 +25,15 @@ frozen-comparand :: ok :: npx tool -c 'threshold -eq 5'
 frozen-comparand :: flag :: bash -c "echo \"hi\"; test $(wc -l < f) -eq 3"
 frozen-comparand :: flag :: sh -c "test \"$X\" -eq 3"
 frozen-comparand :: ok :: test $(wc -l < "$(git show main:f.ts)") -eq 42
+frozen-comparand :: flag :: test $X -eq 41
+frozen-comparand :: flag :: test $X -ge 41
+frozen-comparand :: flag :: test $X -le 41
+frozen-comparand :: flag :: test $X == 41
+frozen-comparand :: flag :: test $(git grep -c PATTERN mainbranch:file.ts) -eq 1
+frozen-comparand :: ok :: cmd --ge 5
+frozen-comparand :: ok :: echo foo-eq 42
+frozen-comparand :: ok :: run --eq 7
+frozen-comparand :: ok :: test $(foo-eq 42)
 grep-q-plus-list-files :: ok :: grep -q 'PATTERN' file.ts
 grep-q-plus-list-files :: flag :: grep -Lq 'PATTERN' file.ts
 rotating-artifact-target :: ok :: grep -q 'ROTATING_ARTIFACT_RULE' src/supervisor/prd-oracle-lint.ts

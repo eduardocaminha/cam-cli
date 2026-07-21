@@ -154,13 +154,13 @@ const GREP_Q_LIST_FILES_RULE: OracleLintRule = {
 // ---------------------------------------------------------------------------
 
 /**
- * Matches a shell numeric-test operator (-eq/-ge/-le) or the `==` string-test
- * operator immediately followed by a literal integer (a frozen comparand).
- * A `wc -l` (or any other) pipeline compared this way is caught by the same
- * pattern: the regex targets the operator+literal pair, not the left-hand
- * side, so it doesn't matter what produced the left-hand value.
+ * Matches a shell numeric-test operator (-eq/-ne/-gt/-lt/-ge/-le) or the
+ * `==`/`!=` string-test operators, each followed by a literal integer (a
+ * frozen comparand). The negative lookbehind requires start-of-string or
+ * whitespace before the operator (excluding word chars AND the hyphen, since
+ * `\b` alone is insufficient), so a mid-token/double-hyphen form never matches.
  */
-const INTEGER_COMPARAND_RE = /(?:-eq|-ge|-le|==)\s*\d+\b/;
+const INTEGER_COMPARAND_RE = /(?<![\w-])(?:-eq|-ne|-gt|-lt|-ge|-le|==|!=)\s*\d+\b/;
 
 /**
  * A live re-derivation token: the comparand is (at least in part) recomputed
@@ -264,21 +264,6 @@ function findClosingQuoteIndex(command: string, quoteChar: string, searchFrom: n
 }
 
 /**
- * Finds every top-level `$(...)` command-substitution span inside `content`
- * (balanced-paren tracking, so a nested `$(...)` inside the substitution
- * doesn't truncate it early) and returns them concatenated with spaces,
- * discarding everything else (replaced with a space, never bare deletion,
- * same tokens-don't-fuse rule as stripQuotedSpans). Used by stripQuotedSpans
- * to preserve a command substitution's content when it sits inside a
- * DOUBLE-quoted span that is not a `-c` wrapper (US-R2-002, CAM-388): per
- * POSIX Shell Command Language 2.2.3, `"$(cmd)"` still executes `cmd` and
- * substitutes its output -- double quotes suppress word-splitting of the
- * result, not the substitution itself -- so a `$(...)` inside double quotes
- * is live shell syntax, never inert quoted data. Single quotes have no such
- * exception (`'$(cmd)'` is 100% literal text, no substitution happens), so
- * this helper is only ever applied to double-quoted span content.
- */
-/**
  * Given `content[dollarIndex] === '$'` and `content[dollarIndex + 1] === '('`,
  * returns the index immediately past the `)` that balances the opening `(`
  * (balanced-paren depth counting, so a nested `$(...)` doesn't close early).
@@ -297,6 +282,21 @@ function findCommandSubstitutionEnd(content: string, dollarIndex: number): numbe
 	return j;
 }
 
+/**
+ * Finds every top-level `$(...)` command-substitution span inside `content`
+ * (balanced-paren tracking, so a nested `$(...)` inside the substitution
+ * doesn't truncate it early) and returns them concatenated with spaces,
+ * discarding everything else (replaced with a space, never bare deletion,
+ * same tokens-don't-fuse rule as stripQuotedSpans). Used by stripQuotedSpans
+ * to preserve a command substitution's content when it sits inside a
+ * DOUBLE-quoted span that is not a `-c` wrapper (US-R2-002, CAM-388): per
+ * POSIX Shell Command Language 2.2.3, `"$(cmd)"` still executes `cmd` and
+ * substitutes its output -- double quotes suppress word-splitting of the
+ * result, not the substitution itself -- so a `$(...)` inside double quotes
+ * is live shell syntax, never inert quoted data. Single quotes have no such
+ * exception (`'$(cmd)'` is 100% literal text, no substitution happens), so
+ * this helper is only ever applied to double-quoted span content.
+ */
 function extractCommandSubstitutionSpans(content: string): string {
 	let out = '';
 	let i = 0;
@@ -390,32 +390,60 @@ function stripQuotedSpans(command: string): string {
 }
 
 /**
- * True when `command` compares against a literal integer via -eq/-ge/-le/==
- * with no live `main`-re-derivation token present anywhere in the command.
- * Both regexes are run against the SAME quote-stripped text (see
- * stripQuotedSpans). A derivation token that lives inside a `-c` wrapper
+ * Splits the ALREADY quote-stripped command text into clauses on the shell
+ * statement-separator tokens `&&`, `||`, `;`, and newline (US-002, CAM-382).
+ * Operating on the stripped text (never the raw command) is load-bearing:
+ * splitting the raw command would resurrect a quoted payload's `&&`/`;` as a
+ * clause delimiter, exactly the false-positive class CAM-388 closed by
+ * stripping quotes before any scanning. No paren-depth tracking: a
+ * `$(...)` command substitution surviving stripping (US-R2-002 above) never
+ * itself contains a bare top-level `&&`/`||`/`;` in any oracle command this
+ * rule has to classify, so a plain split is sufficient here.
+ */
+const CLAUSE_SPLIT_RE = /&&|\|\||;|\n/;
+
+/**
+ * True when `command` compares against a literal integer via
+ * -eq/-ne/-gt/-lt/-ge/-le/==/!= with no live `main`-re-derivation token
+ * present in the SAME clause (US-002, CAM-382). The excuse is scoped per
+ * clause, not per whole command: a `git grep ... main` token in one clause no
+ * longer excuses an unrelated frozen literal sitting in a different
+ * `&&`/`||`/`;`/newline-separated clause, while a legitimate same-clause
+ * sanity floor (a derivation token and its integer floor in the same clause,
+ * e.g. `test $(git show main:f | wc -l) -ge 1`) stays excused. Both regexes
+ * are run against the SAME quote-stripped text (see stripQuotedSpans) before
+ * splitting into clauses. A derivation token that lives inside a `-c` wrapper
  * payload, or inside a `$(...)` command substitution nested in a DOUBLE-quoted
- * span, still excuses the comparand, because stripQuotedSpans preserves both
- * (US-R2-002, CAM-388: a non-`-c` double-quoted `$(...)` still executes, so
- * blanking it whole would silently discard a live derivation token). A
- * derivation token that is merely quoted inert TEXT (single-quoted, or
- * double-quoted with no `$(...)`) does not survive stripping and does not
+ * span, still excuses a same-clause comparand, because stripQuotedSpans
+ * preserves both (US-R2-002, CAM-388: a non-`-c` double-quoted `$(...)` still
+ * executes, so blanking it whole would silently discard a live derivation
+ * token). A derivation token that is merely quoted inert TEXT (single-quoted,
+ * or double-quoted with no `$(...)`) does not survive stripping and does not
  * excuse the comparand -- exactly like a comparand that is merely quoted test
  * data never trips the rule in the first place.
  */
 function hasFrozenIntegerComparand(command: string): boolean {
 	const stripped = stripQuotedSpans(command);
-	if (!INTEGER_COMPARAND_RE.test(stripped)) return false;
-	return !LIVE_DERIVATION_RE.test(stripped);
+	const clauses = stripped.split(CLAUSE_SPLIT_RE);
+	return clauses.some(
+		(clause) => INTEGER_COMPARAND_RE.test(clause) && !LIVE_DERIVATION_RE.test(clause)
+	);
 }
 
 /**
- * The frozen-comparand rule (US-001, CAM-381): flags an oracle comparing
- * against a literal integer read off main with no live re-derivation token,
- * enforcing the derive-don't-freeze rule (patterns.md:903). A comparand that
- * carries a live `git show main:` / `git diff main` / `git grep ... main`
- * derivation alongside an integer is never flagged: the presence of the live
- * token is what proves the comparand is re-derived at check time, not frozen.
+ * The frozen-comparand rule (US-001, CAM-381; per-clause scoping US-002,
+ * CAM-382): flags an oracle comparing against a literal integer read off
+ * main with no live re-derivation token in the SAME clause, enforcing the
+ * derive-don't-freeze rule (patterns.md:903). A comparand that carries a live
+ * `git show main:` / `git diff main` / `git grep ... main` derivation
+ * alongside an integer IN THE SAME `&&`/`||`/`;`/newline-separated clause is
+ * never flagged: the presence of the live token is what proves that clause's
+ * comparand is re-derived at check time, not frozen. A derivation token
+ * sitting in a DIFFERENT clause of the same command no longer excuses an
+ * unrelated frozen literal elsewhere in the command. One finding is returned
+ * per command even when more than one clause is at fault; the reason text
+ * below stays accurate for both the single- and multi-clause-at-fault case,
+ * since it describes the general rule rather than naming a specific clause.
  */
 const FROZEN_COMPARAND_RULE: OracleLintRule = {
 	name: 'frozen-comparand',
@@ -423,12 +451,14 @@ const FROZEN_COMPARAND_RULE: OracleLintRule = {
 		if (!hasFrozenIntegerComparand(command)) return null;
 		return {
 			reason:
-				'oracle compares against a literal integer (-eq/-ge/-le/== N, or a ' +
+				'oracle compares against a literal integer (-eq/-ne/-gt/-lt/-ge/-le/==/!= N, or a ' +
 				"'wc -l'-style pipeline compared the same way) with no live " +
 				"re-derivation token ('git show main:<path>', 'git diff main', or " +
-				"'git grep ... main') anywhere in the command -- a frozen literal " +
-				'rots silently the moment a later commit edits the compared file on ' +
-				'main; re-derive the comparand at check time instead (patterns.md:903)',
+				"'git grep ... main') in the SAME &&/||/;/newline-separated clause " +
+				"-- a frozen literal rots silently the moment a later commit edits the " +
+				'compared file on main, and a derivation token in a DIFFERENT clause ' +
+				"does not excuse it; re-derive the comparand at check time in the " +
+				'same clause instead (patterns.md:903)',
 		};
 	},
 };
@@ -503,7 +533,7 @@ const SED_LINE_ANCHOR_RE = /sed\s+-n\s+"\$\{([A-Za-z_][A-Za-z0-9_]*)\}p"/;
 /**
  * True when `command` contains an unguarded empty-$L sed line anchor: the
  * anchor shape is present, and no `test -n "$VAR"` / `[ -n "$VAR" ]` guard
- * for that exact variable name precedes it anywhere in the command.
+ * for that exact variable name is present anywhere in the command.
  */
 function hasUnguardedSedLineAnchor(command: string): boolean {
 	const match = SED_LINE_ANCHOR_RE.exec(command);

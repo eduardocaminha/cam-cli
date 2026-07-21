@@ -7,6 +7,13 @@
 # scripts/cam/issues/CAM-0388.json (the marker itself is a gitignored,
 # per-plan-round rotating artifact and is gone by the time this fixture is
 # read -- never re-source it from an acceptance oracle, patterns.md:907).
+#
+# Retained as historical documentation of the incident (US-003, CAM-382,
+# 2026-07-20). This file is NOT executed by any test: every inner case it
+# embeds (the four-operator MISSED-detection set, the FALSELY-FLAGGED pair,
+# and the grep -qF search pattern) now also lives as an executed row in
+# test/fixtures/oracle-lint/oracle-lint-cases.txt, so it is no longer the
+# only home of a CI-unrun reproduction.
 bun -e 'const {RULES}=await import("./src/supervisor/prd-oracle-lint.ts");const r=RULES.find(x=>x.name==="frozen-comparand");const cs=["test $X -eq 41","test $X -ge 41","test $X -le 41","test $X == 41"];let bad=0;for(const c of cs){if(r.test(c)===null){console.log("MISSED:",c);bad++}}process.exit(bad?1:0)'
 bun -e 'const {RULES}=await import("./src/supervisor/prd-oracle-lint.ts");const r=RULES.find(x=>x.name==="frozen-comparand");const cs=["cmd --ge 5","echo foo-eq 42"];let bad=0;for(const c of cs){if(r.test(c)!==null){console.log("FALSELY FLAGGED:",c);bad++}}process.exit(bad?1:0)'
 grep -qF 'test $(git grep -c PATTERN mainbranch:file.ts) -eq 1' test/supervisor/prd-oracle-lint.test.ts

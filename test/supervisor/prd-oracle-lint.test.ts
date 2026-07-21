@@ -21,10 +21,41 @@
 //   oracle-lint-cases.txt fixture matrix: every row classifies as recorded (US-002, CAM-388)
 
 import { describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { RULES, lintPrd } from '../../src/supervisor/prd-oracle-lint.ts';
 import type { PrdShape } from '../../src/commands/status.ts';
 
 const FIXTURE_PATH = 'test/fixtures/oracle-lint/oracle-lint-cases.txt';
+
+// A row that wraps a shell interpreter's -c payload in DOUBLE quotes (as
+// opposed to single quotes), e.g. `bash -c "..."` / `sh -c "..."`.
+const DOUBLE_QUOTED_WRAPPER_RE = /(?:^|[\s/])(?:sh|bash|zsh|dash)\s+-c\s+"/;
+
+function parseFixtureRows(text: string): string[][] {
+	return text
+		.trim()
+		.split('\n')
+		.filter((line) => line.length > 0 && !line.startsWith('#'))
+		.map((line) => line.split(' :: '));
+}
+
+/**
+ * Asserts the fixture matrix satisfies every required shape dimension.
+ * Throws (via `expect`) on the first violated dimension, so a mutated/
+ * narrowed copy of the fixture makes this function -- and any test built on
+ * top of it -- fail loudly instead of silently passing.
+ */
+function assertFixtureShape(rows: string[][]): void {
+	expect(rows.length).toBeGreaterThan(0);
+	const doubleQuotedWrapperRows = rows.filter(([, , command]) =>
+		DOUBLE_QUOTED_WRAPPER_RE.test(command ?? '')
+	).length;
+	const backslashEscapeRows = rows.filter(([, , command]) => (command ?? '').includes('\\')).length;
+	expect(doubleQuotedWrapperRows).toBeGreaterThan(0);
+	expect(backslashEscapeRows).toBeGreaterThan(0);
+}
 
 const GREP_RULE_NAME = 'grep-q-plus-list-files';
 const FROZEN_COMPARAND_RULE_NAME = 'frozen-comparand';
@@ -185,6 +216,26 @@ describe('frozen-comparand rule: flagged forms', () => {
 		expect(finding).not.toBeNull();
 	});
 
+	test('flags -ne against a literal integer', () => {
+		const finding = rule.test('test $(wc -l < scripts/cam/patterns.md) -ne 3');
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags -gt against a literal integer (the CAM-377 shape)', () => {
+		const finding = rule.test('test $(wc -l < scripts/cam/patterns.md) -gt 41');
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags -lt against a literal integer', () => {
+		const finding = rule.test('test $(wc -l < scripts/cam/patterns.md) -lt 3');
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags != against a literal integer', () => {
+		const finding = rule.test('test $(wc -l < scripts/cam/patterns.md) != 3');
+		expect(finding).not.toBeNull();
+	});
+
 	test('flags a wc -l pipeline frozen against HEAD, not main (git show present but not main)', () => {
 		const finding = rule.test('test $(git show HEAD:file.ts | wc -l) -eq 88');
 		expect(finding).not.toBeNull();
@@ -200,8 +251,20 @@ describe('frozen-comparand rule: flagged forms', () => {
 		expect(finding).not.toBeNull();
 	});
 
-	test('does not match main by literal substring -- mainbranch is not the main token', () => {
+	test('flags a mainbranch: ref, which is not the main token', () => {
 		const finding = rule.test('test $(git grep -c PATTERN mainbranch:file.ts) -eq 1');
+		expect(finding).not.toBeNull();
+	});
+
+	test('mixed-clause: flags a frozen comparand in one clause even when a DIFFERENT clause carries a live derivation (US-002, CAM-382: the one-token-excuses-three-comparands shape)', () => {
+		const finding = rule.test(
+			'test $(git show main:a.ts | wc -l) -ge 1 && test $(wc -l < b.ts) -eq 42'
+		);
+		expect(finding).not.toBeNull();
+	});
+
+	test('mixed-clause: flags a frozen comparand in a later clause even when an earlier clause carries a live `git diff main` derivation (US-002, CAM-382: excuse no longer leaks across `;`-separated clauses)', () => {
+		const finding = rule.test("git diff main --quiet -- file.ts; test $? -eq 0");
 		expect(finding).not.toBeNull();
 	});
 });
@@ -220,8 +283,15 @@ describe('frozen-comparand rule: passing cases', () => {
 		expect(finding).toBeNull();
 	});
 
-	test('does not flag when `git diff main` accompanies an integer', () => {
-		const finding = rule.test("git diff main --quiet -- file.ts; test $? -eq 0");
+	test('does not flag when `git diff main` accompanies an integer in the SAME clause', () => {
+		const finding = rule.test('test $(git diff main -- file.ts | wc -l) -eq 0');
+		expect(finding).toBeNull();
+	});
+
+	test('mixed-clause: does not flag when EACH of two `&&`-joined clauses carries its own same-clause derivation-plus-floor (US-002, CAM-382)', () => {
+		const finding = rule.test(
+			'test $(git show main:a.ts | wc -l) -ge 1 && test $(git diff main -- b.ts | wc -l) -ge 1'
+		);
 		expect(finding).toBeNull();
 	});
 
@@ -244,6 +314,26 @@ describe('frozen-comparand rule: passing cases', () => {
 		const finding = rule.test(
 			'test $(git show main:file.ts | wc -l) -eq $(wc -l < file.ts)'
 		);
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag an operator embedded behind a second hyphen (--ge 5)', () => {
+		const finding = rule.test('cmd --ge 5');
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag an operator embedded mid-token (foo-eq 42)', () => {
+		const finding = rule.test('echo foo-eq 42');
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag an operator embedded mid-token behind a double-dash flag (--eq 7)', () => {
+		const finding = rule.test('run --eq 7');
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag an operator embedded mid-token inside a command substitution (foo-eq 42)', () => {
+		const finding = rule.test('test $(foo-eq 42)');
 		expect(finding).toBeNull();
 	});
 });
@@ -522,22 +612,73 @@ describe('lintPrd', () => {
 describe('oracle-lint-cases.txt fixture matrix', () => {
 	test('every row classifies as its recorded ok/flag expectation', async () => {
 		const text = await Bun.file(FIXTURE_PATH).text();
-		const rows = text
-			.trim()
-			.split('\n')
-			.filter((line) => line.length > 0 && !line.startsWith('#'))
-			.map((line) => line.split(' :: '));
+		const rows = parseFixtureRows(text);
 
 		expect(rows.length).toBeGreaterThan(0);
 
-		for (const [ruleName, expected, command] of rows) {
-			expect(ruleName).toBeDefined();
-			expect(expected).toBeDefined();
-			expect(command).toBeDefined();
+		for (const row of rows) {
+			const [ruleName, expected, command] = row;
+			if (ruleName === undefined || expected === undefined || command === undefined) {
+				throw new Error(`malformed fixture row (expected "rule :: verdict :: command"): ${JSON.stringify(row)}`);
+			}
 			const rule = RULES.find((r) => r.name === ruleName);
-			expect(rule).toBeDefined();
-			const got = rule!.test(command!) ? 'flag' : 'ok';
-			expect({ ruleName, command, got }).toEqual({ ruleName, command, got: expected! });
+			if (!rule) {
+				throw new Error(`fixture row names unknown rule "${ruleName}": ${JSON.stringify(row)}`);
+			}
+			const got = rule.test(command) ? 'flag' : 'ok';
+			expect({ ruleName, command, got }).toEqual({ ruleName, command, got: expected });
+		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// oracle-lint-cases.txt fixture-shape guard (US-003, CAM-382)
+// ---------------------------------------------------------------------------
+//
+// Extends the fixture matrix's shape guard beyond "at least one row exists":
+// it now also requires at least one double-quoted interpreter-wrapper row
+// (`bash -c "..."` / `sh -c "..."`) and at least one backslash-escape row,
+// and ASSERTS on those counts rather than merely computing them. The
+// mutation-sweep test proves the guard is not vacuous: stripping every
+// double-quoted-wrapper row out of a temp copy of the fixture must make the
+// guard fail.
+
+describe('oracle-lint-cases.txt fixture-shape guard', () => {
+	test('the tracked fixture has at least one double-quoted-wrapper row and at least one backslash-escape row', async () => {
+		const text = await Bun.file(FIXTURE_PATH).text();
+		const rows = parseFixtureRows(text);
+		assertFixtureShape(rows);
+	});
+
+	test('mutation sweep: stripping every double-quoted-wrapper row out of a temp copy makes the shape guard fail (falsifiability)', async () => {
+		const text = await Bun.file(FIXTURE_PATH).text();
+		const lines = text.split('\n');
+		let strippedCount = 0;
+		const mutatedLines = lines.filter((line) => {
+			if (line.length === 0 || line.startsWith('#')) return true;
+			const command = line.split(' :: ')[2] ?? '';
+			if (DOUBLE_QUOTED_WRAPPER_RE.test(command)) {
+				strippedCount++;
+				return false;
+			}
+			return true;
+		});
+
+		// Print the stripped-row count so a zero-mutation run is visibly
+		// vacuous, and assert it's non-zero so this sweep can never silently
+		// mutate nothing while still reporting a pass.
+		console.log(`mutation sweep: stripped ${strippedCount} double-quoted-wrapper row(s)`);
+		expect(strippedCount).toBeGreaterThan(0);
+
+		const dir = mkdtempSync(join(tmpdir(), 'cam-oracle-lint-shape-mutation-'));
+		const mutatedPath = join(dir, 'oracle-lint-cases.mutated.txt');
+		try {
+			writeFileSync(mutatedPath, mutatedLines.join('\n'));
+			const mutatedText = await Bun.file(mutatedPath).text();
+			const mutatedRows = parseFixtureRows(mutatedText);
+			expect(() => assertFixtureShape(mutatedRows)).toThrow();
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
 		}
 	});
 });

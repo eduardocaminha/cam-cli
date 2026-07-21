@@ -6,6 +6,18 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.228.0] - 2026-07-21
+
+### Added
+
+- US-005 - Fix three misleading comments/names without changing any behavior (handoff)
+- US-005 - Fix three misleading comments/names without changing any behavior
+- US-004 - Replace non-null assertions in the fixture-matrix test with a narrowing guard (handoff)
+- US-004 - Replace non-null assertions in the fixture-matrix test with a narrowing guard
+- US-003 - Promote the CAM-382 false-positive cases into the executed matrix and extend the fixture-shape guard
+- US-002 - Scope the derivation excuse per clause instead of per whole command
+- US-001 - Widen frozen-comparand operator alternation and add a correct left anchor
+
 ## [0.227.0] - 2026-07-20
 
 ### Added
