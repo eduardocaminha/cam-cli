@@ -510,6 +510,26 @@ export interface RunSupervisorOptions {
 	 * filesystem. When implBackend !== 'codex' this seam is never invoked.
 	 */
 	codexAuthCheckFn?: CodexAuthCheck;
+	/**
+	 * Cooperative pause brake predicate (US-002, CAM-360). Consulted at the very
+	 * top of the inner story-loop boundary, before reading prd.json or deciding
+	 * the next action, so a pause request halts BEFORE the next story's worker
+	 * is dispatched. When it returns true the loop returns immediately with
+	 * `{ status: 'paused' }`: no prd/handoff mutation, no `finishTerminal` call
+	 * (so no marker writes, no `teardownWorkerPaneFn`, no `onProgress` terminal
+	 * emission), and no process exit. This is a graceful brake, distinct from
+	 * `cam stop` (which tears down the tmux session): the sidecar process and
+	 * its in-memory merge-watch timers stay alive, and a later runSupervisor
+	 * invocation (once the marker is cleared) re-reads prd.json from scratch
+	 * and continues dispatching the remaining unpassed stories.
+	 *
+	 * Production wiring (host.ts) reads the dedicated pause marker file via
+	 * `isPauseSet(claudeDir)` (src/supervisor/pause-marker.ts, US-001).
+	 *
+	 * Optional: when absent the loop is byte-for-byte unchanged (no pause check
+	 * ever runs), preserving backward compatibility for existing callers/tests.
+	 */
+	isPaused?: () => boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -544,7 +564,7 @@ export interface ProgressPayload {
 export type OnProgress = (payload: ProgressPayload) => void;
 
 /** Terminal status returned by runSupervisor. */
-export type SupervisorStatus = 'complete' | 'awaiting-operator' | 'blocked' | 'max-iterations';
+export type SupervisorStatus = 'complete' | 'awaiting-operator' | 'blocked' | 'max-iterations' | 'paused';
 
 /** Return value of runSupervisor. */
 export interface SupervisorResult {
@@ -723,7 +743,7 @@ function defaultGenUuid(): string {
 /**
  * Run the cam supervisor loop.
  *
- * Iterates until one of four terminal states:
+ * Iterates until one of five terminal states:
  *   - 'complete': decideNextAction returned complete (all stories pass, incl.
  *                 operator ones, and review is terminal).
  *   - 'awaiting-operator': implement + review are done (review clean) and only
@@ -731,6 +751,10 @@ function defaultGenUuid(): string {
  *   - 'blocked':  decideNextAction returned blocked-no-implementable, OR a
  *                 worker came back with kind='blocked'.
  *   - 'max-iterations': hard cap reached.
+ *   - 'paused':   the injected `isPaused` predicate returned true at the top
+ *                 of an iteration (US-002, CAM-360). A cooperative brake, not
+ *                 a teardown: no marker writes, no pane teardown, no process
+ *                 exit.
  *
  * All I/O is injected via RunSupervisorOptions so the loop is fully
  * unit-testable without spawning real tmux or claude processes.
@@ -867,6 +891,10 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 		'awaiting-operator': 'awaiting-operator',
 		blocked: 'blocked',
 		'max-iterations': 'max-iterations',
+		// 'paused' never reaches finishTerminal (the pause check returns directly,
+		// see the isPaused guard at the top of the outer loop) -- this entry only
+		// exists to satisfy the exhaustive Record<SupervisorStatus, string> type.
+		paused: 'paused',
 	};
 
 	// finishTerminal wraps notifyTerminal + teardownWorkerPaneFn so EVERY terminal
@@ -951,6 +979,18 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	let deadWorkerStreak = 0;
 
 	outer: while (iterations < maxIter) {
+		// US-002 (CAM-360): cooperative pause brake, consulted before anything
+		// else this iteration -- before reading prd.json, before decideNextAction,
+		// before dispatching the next story's worker. Returns directly (no
+		// finishTerminal) so no marker writes / pane teardown / onProgress
+		// terminal emission fire: pausing is a graceful brake, not a teardown.
+		// `cam resume` clears the marker; the next runSupervisor invocation
+		// re-reads prd.json from scratch and continues with the remaining
+		// unpassed stories (no re-planning).
+		if (opts.isPaused?.()) {
+			return { status: 'paused', iterations, lastOutcome };
+		}
+
 		// --- Read current PRD state ---
 		const prd = readPrd();
 		if (prd === null) {

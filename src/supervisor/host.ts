@@ -62,6 +62,7 @@ import { appendOutcomeOnMain } from '../commands/pattern-records.ts';
 import type { PatternOutcomeStatus } from '../patterns/record.ts';
 import { realOnMainSpawnFn } from '../git/on-main.ts';
 import { readWorkerIsolation } from '../config/models.ts';
+import { isPauseSet } from './pause-marker.ts';
 import {
 	writeImplementBlockedMarker,
 	readImplementBlockedMarker,
@@ -1110,6 +1111,9 @@ export function buildSupervisorOptions(
 		writeImplementBlockedMarkerFn,
 		// US-001 (CAM-347): durable implement-blocked marker remover (complete terminal only).
 		removeImplementBlockedMarkerFn,
+		// US-002 (CAM-360): cooperative pause brake, read fresh on every iteration
+		// via the dedicated marker file (set by `cam pause`, cleared by `cam resume`).
+		isPaused: () => isPauseSet(claudeDir),
 	};
 
 	return {

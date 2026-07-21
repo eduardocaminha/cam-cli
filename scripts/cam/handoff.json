@@ -1,26 +1,19 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Add cam pause / cam resume operator brake backed by a dedicated pause marker" },
+  "lastCompletedStory": { "id": "US-002", "title": "Halt the supervisor inner story loop cooperatively when the pause marker is set" },
   "branchName": "cam/issue-360",
-  "timestamp": "2026-07-21T21:00:00Z",
+  "timestamp": "2026-07-21T22:30:00Z",
   "createdFiles": [
-    "src/supervisor/pause-marker.ts",
-    "src/commands/pause.ts",
-    "test/commands/pause.test.ts"
+    "test/supervisor/pause-halt.test.ts",
+    "test/supervisor/pause-resume.test.ts"
   ],
   "modifiedFiles": [
-    "index.ts",
-    "src/commands/resume.ts",
-    "src/commands/stop.ts",
-    ".gitignore",
-    "templates/.gitignore",
-    "src/vendor/_generated.ts",
-    "test/commands-freeze.test.ts",
-    "test/stop-markers.test.ts",
+    "src/supervisor/loop.ts",
+    "src/supervisor/host.ts",
     "scripts/file-size-budget.json",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "cam pause / cam resume are wired end-to-end: src/supervisor/pause-marker.ts (PAUSE_MARKER='.cam-pause', setPause/clearPause/isPauseSet, injectable fs seams, mirrors drain-kill-switch.ts) is the marker module; src/commands/pause.ts is the print-path command (cam pause, no flags besides --help); runResume (src/commands/resume.ts) calls clearPause(claudeDir) at the top of its flow (skipped under --dry-run) before any mode classification; performStop (src/commands/stop.ts) removes PAUSE_MARKER as part of its per-session marker cleanup loop. index.ts wires 'pause' into COMMANDS, HELP_REGISTRY, and the dispatch switch (mirrors the 'drain' case). Gotcha for future stories: adding/removing a top-level cam subcommand requires updating test/commands-freeze.test.ts's hardcoded FROZEN_COMMANDS array AND its toBe(N) count literal in the SAME commit -- typecheck alone does not catch a drift there (see the new patterns.md bullet). Scope note: this story deliberately does NOT wire isPauseSet into the sidecar loop's gating logic (loop.ts) -- the acceptance criteria only covered the marker module + pause/resume/stop commands + gitignore + gates, not actual loop-pause behavior; if a future story wants the sidecar to actually halt on the marker, that is new scope requiring loop.ts changes plus a real behavioral gate.",
+  "nextStoryContext": "RunSupervisorOptions gained an optional isPaused?: () => boolean (loop.ts), consulted as the literal FIRST statement inside runSupervisor's `outer: while` loop, before readPrd()/decideNextAction/any dispatch. When it returns true the function returns { status: 'paused', iterations, lastOutcome } immediately WITHOUT calling finishTerminal -- no teardownWorkerPaneFn, no implement-blocked-marker writes, no onProgress terminal emission. SupervisorStatus gained 'paused' as a 5th member of the union; TERMINAL_REASON (Record<SupervisorStatus,string>) got a harmless 'paused: paused' entry purely to satisfy the exhaustive-Record type (it is never read at runtime since finishTerminal is never called on the paused path). Production wiring: buildSupervisorOptions (host.ts) sets isPaused: () => isPauseSet(claudeDir), importing isPauseSet from src/supervisor/pause-marker.ts (US-001). Resume needs no special plumbing: runSupervisor always treats prd.json as the sole source of truth per invocation, so once `cam resume` clears the marker, the next runSupervisor call just re-reads prd.json and dispatches whatever is still passes:false -- proven by test/supervisor/pause-resume.test.ts. NOT wired in this story (explicitly out of scope per the AC list): the outer runSidecarLoop (loop.ts ~2164-2505) does not special-case result.status === 'paused' -- it falls through the same opts.clearActive() + sleep(idlePollMs) path every other terminal status takes, so a paused halt still flips active:false and the sidecar idles (consistent with 'graceful brake' semantics) but there is no dedicated 'paused' narration line to the orchestrator pane and no explicit cam-worker-events.jsonl 'sidecar-exit' entry for the pause case (finishTerminal, which emits that event, is deliberately skipped). If a future story wants pause-specific sidecar narration or an event-log trace, that is new scope. File-size ceilings were raised for both touched files (host.ts 1124->1128, loop.ts 2506->2546) in scripts/file-size-budget.json with a dated _ref note citing CAM-360/US-002; both changes are staged.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
