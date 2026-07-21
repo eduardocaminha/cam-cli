@@ -482,6 +482,15 @@ function renderReviewerDiffBlock(opts: Pick<SpawnArgvOptions, 'cwd'>): string {
 	const truncationMarker = result.truncated
 		? `\n\n[diff truncated at ${REVIEWER_DIFF_MAX_CHARS} chars; changed-file list above is complete even when the diff body is truncated]`
 		: '';
+	const diffContent = result.diff + truncationMarker;
+
+	// Fence-safe wrapper (CAM-355): derive the opener/closer backtick run so a
+	// diff containing its own fenced-code or Markdown backtick runs can never
+	// terminate the wrapper fence early. Per CommonMark, a fence only closes on
+	// a run of backticks >= the opener's length, so the wrapper run must be
+	// strictly longer than the longest backtick run present in the content.
+	const longestBacktickRun = (diffContent.match(/`+/g) ?? []).reduce((max, run) => Math.max(max, run.length), 0);
+	const fence = '`'.repeat(Math.max(3, longestBacktickRun + 1));
 
 	return [
 		header,
@@ -493,9 +502,9 @@ function renderReviewerDiffBlock(opts: Pick<SpawnArgvOptions, 'cwd'>): string {
 		fileList,
 		'',
 		'### Diff',
-		'```diff',
-		result.diff + truncationMarker,
-		'```',
+		`${fence}diff`,
+		diffContent,
+		fence,
 	].join('\n');
 }
 
