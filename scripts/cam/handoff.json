@@ -1,0 +1,12 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Make the US-R1-002 patterns.md citation rot-proof by dropping its stale line number" },
+  "branchName": "cam/issue-380",
+  "timestamp": "2026-07-21T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": ["scripts/cam/patterns.md"],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 (CAM-380) is doc-only: dropped the stale `:769` line-number suffix from the US-R1-002 bullet at scripts/cam/patterns.md (the bullet about `recordedSleeps.every` being vacuous on empty collections), rewording the sentence so the pointer anchors purely on the assertion's content (`recordedSleeps.every((ms) => ms === POLL_INTERVAL_MS)`) instead of a line number. No new absolute line number was frozen anywhere (derive-don't-freeze honored). The sibling US-003 bullet a few lines above (patterns.md:907, citing `test/dispatch.test.ts:754`) is a separately-tracked, intentionally untouched citation -- do not conflate the two or 'fix' :754 as part of this lineage.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
