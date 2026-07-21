@@ -1,0 +1,21 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Self-register sidecar pid at boot via writeSidecarPidFn DI seam"
+  },
+  "branchName": "cam/issue-387",
+  "timestamp": "2026-07-21T00:00:00Z",
+  "createdFiles": [
+    "test/supervisor/sidecar-self-pid.test.ts"
+  ],
+  "modifiedFiles": [
+    "src/commands/sidecar.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 (this story) added a writeSidecarPidFn DI seam to SidecarOptions in src/commands/sidecar.ts: runSidecar now self-writes process.pid to .claude/.cam-sidecar.pid at boot (imported writeSidecarPid from src/supervisor/sidecar-pid.ts), placed immediately after the existing writeSessionStartFn call and before runContainerEnsureGuard/the poll loop. run.ts's own writeSidecarPid(join(cwd,'.claude'), sidecarProc.pid) call and removeSidecarPidIfExists cleanup were left untouched (now a redundant same-pid write on the cam-run-spawns-sidecar path). No signal handlers, no remove-on-exit, no pgrep/global scan were added. src/commands/sidecar.ts's file-size budget ceiling was raised 3438->3453 lines (scripts/file-size-budget.json, _ref updated) to accommodate the new DI field + boot call + comments. If a later story touches the standalone-sidecar boot ritual docs (coherence-rebuild runbook), note that this closes the gap where `nohup cam sidecar ...` left the liveness gate reporting not-running.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
