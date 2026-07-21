@@ -24,7 +24,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Single file: src/tmux/dispatch.ts. Header is lines 1-111 (blank line 112; first code line 113 is `import { join } from 'node:path'`), NOT ~89 as the issue title says. PRESERVE verbatim the residue disclosure at current lines 77-81. The reader-decoupling paragraph (US-R2-001, lines 83-96) and send-once-guard paragraph (CAM-375, lines 98-111) describe CURRENT behavior and are ABSENT from patterns.md (CAM-375 appears nowhere in patterns.md); fold them into the condensed current-design summary, do NOT delete them assuming patterns.md carries them. The CAM-358/CAM-359/CAM-364 superseded-model narrative IS already in patterns.md (:38, :889, :891, :897), so dropping it from the header is the intended 'relocation' -- no patterns.md write is needed and none is allowed. Nothing external references the header by line number (dispatch.ts:NNN citations point only at code below line 113), so renumbering the header breaks no references. Comment-only diff, zero behavior change, so no coherence rebuild is required despite dispatch.ts being sidecar-executed. Non-goals: no code/logic changes, no symbol renames, no edits below the header, no edits to patterns.md."
     }
