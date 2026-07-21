@@ -122,6 +122,30 @@ describe('maybeEmitPlanSplitAdvisory', () => {
 		});
 	});
 
+	test('US-001: single-story PRD stays silent even when the same-jobSize bucket would otherwise fire', () => {
+		writeIssueFile(cwd, 'CAM-1', 5);
+		writeIssueFile(cwd, 'CAM-2', 5);
+		writeIssueFile(cwd, 'CAM-3', 5);
+		writeIssueFile(cwd, 'CAM-136', 5);
+		writePrd(cwd, 1); // single (un-sliceable) story -- must suppress regardless of projection
+		// bucket [100, 100, 1000] -> median 100, mean 400 -> 400 > 150 -> would fire for storyCount >= 2
+		const eventLog = [
+			cycleTokensLine('CAM-1', 100),
+			cycleTokensLine('CAM-2', 100),
+			cycleTokensLine('CAM-3', 1000),
+		].join('\n');
+
+		const notifications: string[] = [];
+		const events: WorkerEvent[] = [];
+		maybeEmitPlanSplitAdvisory({
+			...makeOpts(cwd, 136, notifications, events),
+			readEventLog: () => eventLog,
+		});
+
+		expect(notifications).toHaveLength(0);
+		expect(events).toHaveLength(0);
+	});
+
 	test('AC2: stays silent when projection is below threshold -- no event, no notify', () => {
 		writeIssueFile(cwd, 'CAM-1', 5);
 		writeIssueFile(cwd, 'CAM-2', 5);
