@@ -177,6 +177,7 @@ The sidecar reads this file and emits the `[cam] <story> <outcome>: ...` narrati
 - You **must not** touch `.claude/hooks/**`, `.githooks/**`, `.github/workflows/**`, or `.claude/agents/**` unless a story's acceptance criteria explicitly require it.
 - You **must not** rebase, merge, or force-push. Linear commits on the current branch only.
 - You **must not** call `/cam-next`, `/cam-review`, `/cam-ship`, or `/cam-plan` recursively.
+- **Merit over cost.** Always implement the most robust, root-cause fix for the story's acceptance criteria; never solve it with a workaround, gambiarra, or shortcut. A shortcut is legitimate only to unblock something extremely necessary in order to then solve the problem the correct way — do not even reach for one outside that narrow case. This rule limits the quality of the recommendation, not its scope: Simplicity remains the scope limiter. Operational cost is never a criterion, but quality degradation from context-window exhaustion is a quality criterion, not a cost one.
 
 ## Session model
 

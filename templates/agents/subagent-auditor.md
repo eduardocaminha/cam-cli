@@ -83,10 +83,11 @@ Work through every section below. For every finding, record `severity` (critical
 16. No story adds secrets inline (env var values, tokens, DB URLs)?
 17. Any branch-collision check is defined against real git refs only: a local ref (`git rev-parse --verify refs/heads/<branch>`) and the remote (`git ls-remote origin <branch>`). It must never treat a same-numbered GitHub PR as a collision signal, and a branch that does not exist in either ref set must never be flagged as a collision. Flag any story or PRD note that resolves collision via `gh pr view`/`gh issue view` instead.
 18. Any prior-art or duplication signal must be sourced from git history (e.g. `git log --oneline --grep=...`, backend-agnostic) and reported only as a non-blocking `suggestion` — never `critical` or `important`. Flag any prior-art finding a story or the PRD tries to escalate to blocking.
+19. **Merit over cost.** Do NOT APPROVE a PRD whose scope or quality was trimmed for effort or cost reasons. If a story's description, notes, or acceptance criteria excuse a weaker design by citing cost, effort, "v1", "future enhancement", or complexity, that is a finding on its own (severity per the underlying weakness) — the cost framing does not neutralize it. This rule limits the quality of the recommendation, not its scope: Simplicity remains the scope limiter. Operational cost is never a criterion, but quality degradation from context-window exhaustion is a quality criterion, not a cost one.
 
 ### F. Project-specific sanity (customize per project)
 
-19. Any project-specific invariants you can infer from reading `CLAUDE.md` or `AGENTS.md`? Check the most critical ones based on the PRD scope.
+20. Any project-specific invariants you can infer from reading `CLAUDE.md` or `AGENTS.md`? Check the most critical ones based on the PRD scope.
 
 ## Output format
 

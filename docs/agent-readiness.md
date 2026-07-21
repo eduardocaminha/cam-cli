@@ -109,6 +109,20 @@ acceptance and has no in-loop binary judge. So Level 3 understates cam on the
 judgment axis; the real gap is purely the deterministic plumbing
 (CI / gates / ratchets / typed records).
 
+cam's planner, implementer, reviewer, and auditor agents also share a
+merit-over-cost stance: recommendations and fixes are ranked by engineering
+merit and root-cause quality, never by operational cost. Effort, "v1",
+"future enhancement", or complexity are not valid reasons to downgrade a
+recommendation or wave through a weaker implementation; if cost is genuinely
+high, it is noted as a separate factor after the recommendation, not folded
+into which option gets recommended. This rule limits the quality of the
+recommendation, not its scope: simplicity remains the scope limiter, so it is
+not license for speculative abstraction or gold-plating. Operational cost is
+never a criterion, but quality degradation from context-window exhaustion is
+a quality criterion, not a cost one, so an agent may still stop short of a
+fuller fix when continuing would burn through context rather than through
+effort or money.
+
 ## Prioritized gap roadmap
 
 Filed as issues, dependency-ordered by leverage:
