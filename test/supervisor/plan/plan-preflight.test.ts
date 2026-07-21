@@ -43,19 +43,19 @@ import { truncatePreflightDetail } from '../../../src/supervisor/plan-preflight-
 
 describe('combineStreams', () => {
 	test('stderr comes first when both streams are non-empty', () => {
-		expect(combineStreams('ERRLINE', 'OUTLINE').split('\n')[0]).toBe('ERRLINE');
+		expect(combineStreams({ stderr: 'ERRLINE', stdout: 'OUTLINE' }).split('\n')[0]).toBe('ERRLINE');
 	});
 
 	test('stdout-only: returns stdout with no leading/trailing newline', () => {
-		expect(combineStreams('', 'OUT')).toBe('OUT');
+		expect(combineStreams({ stderr: '', stdout: 'OUT' })).toBe('OUT');
 	});
 
 	test('stderr-only: returns stderr with no leading/trailing newline', () => {
-		expect(combineStreams('ERR', '')).toBe('ERR');
+		expect(combineStreams({ stderr: 'ERR', stdout: '' })).toBe('ERR');
 	});
 
 	test('both streams empty: returns empty string', () => {
-		expect(combineStreams('', '')).toBe('');
+		expect(combineStreams({ stderr: '', stdout: '' })).toBe('');
 	});
 });
 
