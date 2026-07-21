@@ -1,0 +1,20 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Add merit-over-cost rule to subagent-planner (both copies) and regen embedded vendor"
+  },
+  "branchName": "cam/issue-393",
+  "timestamp": "2026-07-21T12:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    ".claude/agents/subagent-planner.md",
+    "templates/agents/subagent-planner.md",
+    "src/vendor/_generated.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "CAM-393 (US-001, the sole story in this PRD) closed the last hole in the think->build->gate->approve governance chain: subagent-planner.md (.claude/agents and templates/agents, kept byte-identical) now carries the merit-over-cost bullet at the end of '## Story Sizing Rules', before '## Story Ordering', with both CAM-379 must-survive clauses verbatim. src/vendor/_generated.ts was regenerated via `bun run embed-vendor` to match; embed-vendor:check and test/embedded.test.ts are green. No other agent copy was touched. This was the only story in the PRD.",
+  "appliedPatternIds": [],
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
