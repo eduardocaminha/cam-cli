@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.240.0] - 2026-07-21
+
+### Added
+
+- US-001 - Self-register sidecar pid at boot via writeSidecarPidFn DI seam
+
 ## [0.239.0] - 2026-07-21
 
 ### Added

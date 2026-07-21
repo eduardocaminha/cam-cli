@@ -96,6 +96,7 @@ import { runShipBump } from '../release/ship-bump.ts';
 import { buildShipFinalizeOpts, buildShipBumpOpts } from './ship-deps.ts';
 import { REVIEW_ARTIFACT_FILENAME } from '../supervisor/review-report.ts';
 import { writeSidecarSessionStart } from '../supervisor/session-start.ts';
+import { writeSidecarPid } from '../supervisor/sidecar-pid.ts';
 import { GATE_FILENAME, pollAndResolveGate, writeGateAndNotify, type GateResolutionRegistry } from '../supervisor/gate.ts';
 import {
 	IN_PROGRESS_CONFLICT_GATE,
@@ -357,6 +358,17 @@ export interface SidecarOptions {
 	 * regardless of how many active/idle cycles the injected loop simulates.
 	 */
 	writeSessionStartFn?: (claudeDir: string) => void;
+	/**
+	 * Override the sidecar's self-registered pid write (US-001, CAM-387).
+	 *
+	 * Production: writes `process.pid` into `.claude/.cam-sidecar.pid` via
+	 * `writeSidecarPid`, at boot before the poll loop starts. This makes
+	 * `sidecarAlive` (read by `cam plan`/`next`/`ship`'s liveness gate) report
+	 * the standalone `cam sidecar` process as running, without relying on a
+	 * caller (e.g. `run.ts`) to have written the pid on the sidecar's behalf.
+	 * Tests: inject a spy or a fake writer to assert it fires exactly once.
+	 */
+	writeSidecarPidFn?: (claudeDir: string, pid: number) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -3382,6 +3394,15 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 	// reused for this.
 	(options.writeSessionStartFn ??
 		((dir: string) => writeSidecarSessionStart(dir, new Date().toISOString())))(claudeDir);
+
+	// US-001 (CAM-387): self-register this process's own pid at boot, before
+	// anything else runs, so `sidecarAlive` (the liveness gate read by
+	// `cam plan`/`next`/`ship`) reports this standalone sidecar as running.
+	// run.ts's own writeSidecarPid call (spawn-time, from the orchestrator
+	// side) is left untouched; this is a redundant same-pid write for the
+	// `nohup cam sidecar ...` standalone-boot path, which never goes through
+	// run.ts.
+	(options.writeSidecarPidFn ?? writeSidecarPid)(claudeDir, process.pid);
 
 	// US-002 (CAM-282): sweep an orphaned implement-blocked marker (issueId
 	// points to an already-shipped/abandoned issue) BEFORE anything else can
