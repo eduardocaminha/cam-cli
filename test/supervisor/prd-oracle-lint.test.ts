@@ -251,7 +251,7 @@ describe('frozen-comparand rule: flagged forms', () => {
 		expect(finding).not.toBeNull();
 	});
 
-	test('does not match main by literal substring -- mainbranch is not the main token', () => {
+	test('flags a mainbranch: ref, which is not the main token', () => {
 		const finding = rule.test('test $(git grep -c PATTERN mainbranch:file.ts) -eq 1');
 		expect(finding).not.toBeNull();
 	});

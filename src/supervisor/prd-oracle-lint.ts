@@ -264,21 +264,6 @@ function findClosingQuoteIndex(command: string, quoteChar: string, searchFrom: n
 }
 
 /**
- * Finds every top-level `$(...)` command-substitution span inside `content`
- * (balanced-paren tracking, so a nested `$(...)` inside the substitution
- * doesn't truncate it early) and returns them concatenated with spaces,
- * discarding everything else (replaced with a space, never bare deletion,
- * same tokens-don't-fuse rule as stripQuotedSpans). Used by stripQuotedSpans
- * to preserve a command substitution's content when it sits inside a
- * DOUBLE-quoted span that is not a `-c` wrapper (US-R2-002, CAM-388): per
- * POSIX Shell Command Language 2.2.3, `"$(cmd)"` still executes `cmd` and
- * substitutes its output -- double quotes suppress word-splitting of the
- * result, not the substitution itself -- so a `$(...)` inside double quotes
- * is live shell syntax, never inert quoted data. Single quotes have no such
- * exception (`'$(cmd)'` is 100% literal text, no substitution happens), so
- * this helper is only ever applied to double-quoted span content.
- */
-/**
  * Given `content[dollarIndex] === '$'` and `content[dollarIndex + 1] === '('`,
  * returns the index immediately past the `)` that balances the opening `(`
  * (balanced-paren depth counting, so a nested `$(...)` doesn't close early).
@@ -297,6 +282,21 @@ function findCommandSubstitutionEnd(content: string, dollarIndex: number): numbe
 	return j;
 }
 
+/**
+ * Finds every top-level `$(...)` command-substitution span inside `content`
+ * (balanced-paren tracking, so a nested `$(...)` inside the substitution
+ * doesn't truncate it early) and returns them concatenated with spaces,
+ * discarding everything else (replaced with a space, never bare deletion,
+ * same tokens-don't-fuse rule as stripQuotedSpans). Used by stripQuotedSpans
+ * to preserve a command substitution's content when it sits inside a
+ * DOUBLE-quoted span that is not a `-c` wrapper (US-R2-002, CAM-388): per
+ * POSIX Shell Command Language 2.2.3, `"$(cmd)"` still executes `cmd` and
+ * substitutes its output -- double quotes suppress word-splitting of the
+ * result, not the substitution itself -- so a `$(...)` inside double quotes
+ * is live shell syntax, never inert quoted data. Single quotes have no such
+ * exception (`'$(cmd)'` is 100% literal text, no substitution happens), so
+ * this helper is only ever applied to double-quoted span content.
+ */
 function extractCommandSubstitutionSpans(content: string): string {
 	let out = '';
 	let i = 0;
@@ -533,7 +533,7 @@ const SED_LINE_ANCHOR_RE = /sed\s+-n\s+"\$\{([A-Za-z_][A-Za-z0-9_]*)\}p"/;
 /**
  * True when `command` contains an unguarded empty-$L sed line anchor: the
  * anchor shape is present, and no `test -n "$VAR"` / `[ -n "$VAR" ]` guard
- * for that exact variable name precedes it anywhere in the command.
+ * for that exact variable name is present anywhere in the command.
  */
 function hasUnguardedSedLineAnchor(command: string): boolean {
 	const match = SED_LINE_ANCHOR_RE.exec(command);
