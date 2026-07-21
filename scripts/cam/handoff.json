@@ -1,15 +1,13 @@
 {
-  "lastCompletedStory": { "id": "US-R1-001", "title": "Review round 1 fix 001: address reviewer finding" },
+  "lastCompletedStory": { "id": "US-R2-001", "title": "Review round 2 fix 001: address reviewer finding" },
   "branchName": "cam/issue-360",
-  "timestamp": "2026-07-21T23:40:00Z",
+  "timestamp": "2026-07-21T23:55:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/status.ts",
-    "test/commands/status-paused.test.ts",
-    "scripts/file-size-budget.json"
+    "README.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "CRITICAL fix from review round 1 (CAM-360): buildStatusReport's `operatorPaused = isPauseSet(claudeDir)` was reading the pause marker from the WRONG directory in production. `claudeDir` in status.ts defaults to `process.env['CLAUDE_CONFIG_DIR'] ?? join(os.homedir(), '.claude')` -- the GLOBAL Claude config dir, used ONLY for orchestrator-transcript lookup (`orchestratorTranscriptPath`). But `cam pause` (pause.ts) always writes `.cam-pause` under the PROJECT-LOCAL `<cwd>/.claude`, matching host.ts:537 and stop.ts:424. In production these two directories diverge, so `cam status` never saw the marker. Fix: `buildStatusReport` now calls `isPauseSet(join(cwd, '.claude'))` directly -- NEVER `isPauseSet(claudeDir)` -- so any future edit to status.ts must keep the pause-marker read hard-anchored to `<cwd>/.claude`, independent of the `options.claudeDir` override (which remains transcript-only). The 4 pre-existing tests in test/commands/status-paused.test.ts previously passed `setPause(claudeDir)` with `claudeDir` being a directory DIFFERENT from `<cwd>/.claude` and equal to what was passed back into buildStatusReport as `options.claudeDir` -- this was the fakes-lie pattern that masked the bug (CAM-55). They now call `setPause(join(cwd, '.claude'))` instead, while still passing a separate `claudeDir` into buildStatusReport/runStatus to prove the marker read is independent of that option. Added a new real end-to-end test: `runPause({cwd})` -> `buildStatusReport({cwd})` with the DEFAULT `claudeDir` (no `options.claudeDir` passed) and `CLAUDE_CONFIG_DIR` env pointed at a deliberately different tmp dir, asserting `operator-paused`. File-size ceiling raised for src/commands/status.ts (636->642) in scripts/file-size-budget.json with a dated _ref note citing CAM-360/US-R1-001; staged and committed in the same commit as the fix.",
+  "nextStoryContext": "Docs-only fix from review round 2 (CAM-360): the README.md command reference table (the fenced block starting at 'cam init [options]') listed cam status/stop/drain/resume but omitted the first-class 'cam pause' subcommand that US-003 had already wired into index.ts's COMMANDS array, HELP registry, and PAUSE_HELP. Added one line ('cam pause  Set the operator pause brake marker (.claude/.cam-pause), separate from loop state') between 'cam stop' and 'cam drain', matching the description text index.ts already uses for the command-list entry and PAUSE_HELP tagline. No source/behavior change; index.ts/pause.ts/status.ts were untouched. If a future story touches the command reference table again, keep the alphabetical-by-lifecycle ordering (status/stop/pause/drain/resume) that groups the three operator-brake commands (stop/pause/drain) together.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
