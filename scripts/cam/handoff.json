@@ -1,0 +1,27 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Derive a fence-safe wrapper for the reviewer diff block"
+  },
+  "branchName": "cam/issue-355",
+  "timestamp": "2026-07-21T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/supervisor/backend-adapter.ts",
+    "test/supervisor/backend-adapter.test.ts",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "renderReviewerDiffBlock (src/supervisor/backend-adapter.ts) now derives its opener/closer fence dynamically: longest backtick run in (result.diff + truncationMarker) via /`+/g, fence length = max(3, longest+1), same run used for both opener ('${fence}diff') and closer ('${fence}'). computeReviewerDiff and the CodexAdapter.buildSpawnArgv reviewer call site were untouched. New test 'renderReviewerDiffBlock fence breakout hardening (US-001, CAM-355)' in test/supervisor/backend-adapter.test.ts exercises this end-to-end via CodexAdapter.buildSpawnArgv against a real tmp git fixture repo (renderReviewerDiffBlock itself stays private/unexported), mirroring test/supervisor/codex-adapter.test.ts's makeTmpRepo/extractInstructionsFile helper pattern. Falsifiability verified by hand: stashing the fix and re-running the test file reproduces a red failure (fenceRun.length === 3, not > 3). GOTCHA carried over from the issue spec: backend-adapter.ts is sidecar-executed (imported by src/supervisor/review.ts and src/supervisor/loop.ts) -- a coherence rebuild (scripts/build-release.sh --install + sidecar restart) is mandatory after this branch merges, same as noted for CAM-354.",
+  "appliedPatternIds": [],
+  "officialDocsValidated": [
+    {
+      "lib": "CommonMark",
+      "channel": "WebFetch",
+      "url": "https://spec.commonmark.org/0.31.2/#fenced-code-blocks",
+      "fetchedAt": "2026-07-21T00:00:00Z",
+      "status": "aligned",
+      "summary": "Confirmed: closing fence must use the same character as the opener and be at least as long; a closer strictly longer than the opener is valid. Implementation uses the identical backtick run for opener and closer, which trivially satisfies 'closer >= opener' and 'same character'."
+    }
+  ]
+}
