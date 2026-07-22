@@ -54,7 +54,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edit src/supervisor/ensure-container.ts + test/supervisor/ensure-container.test.ts. Follow the apply*-DI-seam pattern exactly: applyFirewallIfPresent (:198-207) is the template. Slot the call AFTER applyConfigIfPresent (~:417) and BEFORE the final return (~:419) -- auth depends on the config step having repaired /home/bun/.claude ownership first, and it must be unconditional to catch the running->reuse branch. Add authCheckSpawnFn to EnsureWorkerContainerOptions and wire the production closure from spawnSync in makeProductionEnsureContainerFn (~:439-508, mirror the firewall closure ~:463-491) and pass it into the ensureWorkerContainer call (~:497-506). Depends on US-002 (imports applyContainerAuthCheck + ContainerAuthError). Test DI template: test/supervisor/ensure-container.test.ts makeRecordingSpawnFn returning a non-zero/loggedIn:false docker exec to simulate a failing probe (no real container). No external library, no fetch."
     },
