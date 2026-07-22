@@ -1,0 +1,10 @@
+{
+  "id": "CAM-401",
+  "title": "CAM-197 Slice 3: novo comando cam status deterministico + rule-set fechado de diagnostico why-not-moving",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-22T23:38:33.372Z",
+  "updatedAt": "2026-07-22T23:38:33.372Z",
+  "description": "Filho de CAM-197 (Layer 1, item novo). Novo comando deterministico que renderiza a posicao na state-machine do ciclo (phase, PRD in-flight, stories pendentes, container preflight, posicao do merge-watch, markers de wedge/stall) projetando os state-files + cam-worker-events.jsonl (infra do CAM-195, ja shipado). ALEM disso, um rule-set FECHADO e deterministico de diagnosticos 'por que nao anda': cada condicao concreta detectavel mapeada para uma mensagem fixa + proximo comando sugerido. Zero LLM, testavel. REQUISITO DURO: detectar o wedge do orch-pane ocupado (sidecar loga 'orchestrator pane %0 did not go idle...; sending anyway'). Se hoje isso so existe como linha no cam-supervisor.log, o slice ADICIONA um evento pra essa condicao (consistente com o padrao evented-refusals / one-state-file-owner do CAM-195) em vez de parsear o log. Origem do epic: audit do wedge CAM-118 (orch re-derivando estado toda sessao). TIPO feat."
+}
