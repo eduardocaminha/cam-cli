@@ -1,0 +1,18 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Register container-auth-unavailable stall reason"
+  },
+  "branchName": "cam/issue-396",
+  "timestamp": "2026-07-22T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/supervisor/sidecar-stalled.ts",
+    "test/supervisor/sidecar-stalled.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "The 'container-auth-unavailable' discriminator is now registered in all three required sites of src/supervisor/sidecar-stalled.ts (SidecarStalledReason type, VALID_REASONS array, JSDoc list on the type and on the file header block) plus round-trip coverage in test/supervisor/sidecar-stalled.test.ts. readSidecarStalledMarker/writeSidecarStalledMarker/removeSidecarStalledMarker themselves are reason-agnostic (they only validate against VALID_REASONS), so no other code path needed changes for this story. If a future story needs to WRITE this marker with reason='container-auth-unavailable' from the actual container-mode auth-preflight producer (not yet wired), that producer call site still needs to be located and wired up -- this story only unblocks the round-trip, it does not add a new producer call site.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
