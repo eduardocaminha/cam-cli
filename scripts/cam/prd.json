@@ -21,7 +21,7 @@
         "The full quality spine is green after the change. [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/backend-adapter.ts (codexSandboxArgs non-bypass branch L367: replace '--ask-for-approval never' fragment with '-c approval_policy=never', keep '--sandbox workspace-write'; leave bypass branch '--dangerously-bypass-approvals-and-sandbox' unchanged; rewrite the L346-362 header doc comment in the SAME edit, doc-maintenance). test/supervisor/codex-adapter.test.ts: flip the non-bypass shape assertion (~L54-63) from toContain('--ask-for-approval never') to toContain('-c approval_policy=never') + not.toContain('--ask-for-approval'); keep the bypass-branch L50 not.toContain('--ask-for-approval'); add the new contract test that asserts the argv string against the documented accepted-flag surface. Verified live (codex-cli 0.144.6): `codex exec --sandbox workspace-write -c approval_policy=never ...` parses (session header: 'approval: never / sandbox: workspace-write'); '--ask-for-approval' is a TOP-LEVEL codex flag, NOT an exec-subcommand flag, so exec rejects it at clap parse. Do NOT invoke real codex in the suite: CI (macos-latest) has no codex binary or auth. Gotcha: backend-adapter.ts is sidecar-executed; a coherence rebuild (bash scripts/build-release.sh --install + restart sidecar by pid) is required after this ships, but that is an operator post-merge step, not part of this story. Root cause: CAM-350 tests asserted argv SHAPE only, never that codex accepts it (shape-vs-semantics gap)."
     }
