@@ -51,7 +51,7 @@ describe('CodexAdapter.buildSpawnArgv (US-001)', () => {
 			expect(actual).not.toContain('--sandbox');
 		});
 
-		test(`${actor}: uses --sandbox workspace-write --ask-for-approval never for a non-bypass permissionMode`, () => {
+		test(`${actor}: uses --sandbox workspace-write -c approval_policy=never for a non-bypass permissionMode`, () => {
 			const adapter = new CodexAdapter();
 			const opts =
 				actor === 'reviewer'
@@ -59,7 +59,8 @@ describe('CodexAdapter.buildSpawnArgv (US-001)', () => {
 					: { uuid: SAMPLE_UUID, taskPrompt: SAMPLE_PROMPT, permissionMode: 'acceptEdits' };
 			const actual = adapter.buildSpawnArgv(actor, opts);
 			expect(actual).toContain('--sandbox workspace-write');
-			expect(actual).toContain('--ask-for-approval never');
+			expect(actual).toContain('-c approval_policy=never');
+			expect(actual).not.toContain('--ask-for-approval');
 			expect(actual).not.toContain('--dangerously-bypass-approvals-and-sandbox');
 		});
 
@@ -184,6 +185,69 @@ describe('CodexAdapter.buildSpawnArgv (US-001)', () => {
 			expect(written).not.toContain('Injected branch diff');
 		}
 	});
+});
+
+// -----------------------------------------------------------------------------
+// Contract test: codex exec's accepted flag surface (US-001, CAM-397). This
+// enumerates the exact flag set `codex exec` (codex-cli 0.144.6) accepts and
+// asserts the rendered CodexAdapter argv for every worker actor uses ONLY
+// flags from that surface -- in particular, never the top-level-only
+// `--ask-for-approval`, which `codex exec` rejects at argv parse (the bug
+// this story fixes). Deliberately does NOT shell out to a real codex binary:
+// this is a static contract over the rendered argv string, not a live probe.
+// -----------------------------------------------------------------------------
+
+describe('codex exec accepted flag surface contract (US-001, CAM-397)', () => {
+	// codex-cli 0.144.6 `codex exec --help`: the flags `codex exec` itself
+	// accepts. `--ask-for-approval` is a TOP-LEVEL `codex` flag, not one
+	// `exec` accepts, and is deliberately excluded from this list.
+	const CODEX_EXEC_ACCEPTED_FLAGS = [
+		'-s',
+		'--sandbox',
+		'-c',
+		'--config',
+		'-m',
+		'--model',
+		'--dangerously-bypass-approvals-and-sandbox',
+		'-C',
+		'--cd',
+		'-p',
+		'--profile',
+		'-i',
+		'--image',
+		'--output-schema',
+		'--json',
+		'-o',
+		'--output-last-message',
+		'--color',
+		'--ephemeral',
+		'--oss',
+	];
+
+	/** Extracts every `-x`/`--xxx`-shaped flag token from a rendered argv string. */
+	function extractFlagTokens(argv: string): string[] {
+		return argv.match(/(?<![\w'"])--?[a-zA-Z][\w-]*/g) ?? [];
+	}
+
+	for (const actor of ['implementer', 'planner', 'auditor', 'reviewer'] as const) {
+		for (const permissionMode of ['bypassPermissions', 'acceptEdits'] as const) {
+			test(`${actor} (${permissionMode}): rendered codex exec argv uses only exec-accepted flags`, () => {
+				const adapter = new CodexAdapter();
+				const opts =
+					actor === 'reviewer'
+						? { uuid: SAMPLE_UUID, permissionMode }
+						: { uuid: SAMPLE_UUID, taskPrompt: SAMPLE_PROMPT, permissionMode };
+				const actual = adapter.buildSpawnArgv(actor, opts);
+
+				expect(actual).toContain('codex exec');
+				expect(actual).not.toContain('--ask-for-approval');
+
+				for (const flag of extractFlagTokens(actual)) {
+					expect(CODEX_EXEC_ACCEPTED_FLAGS).toContain(flag);
+				}
+			});
+		}
+	}
 });
 
 // -----------------------------------------------------------------------------
