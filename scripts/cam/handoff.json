@@ -1,17 +1,18 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Add in-container claude auth probe module"
+    "id": "US-003",
+    "title": "Wire auth-check step into ensureWorkerContainer"
   },
   "branchName": "cam/issue-396",
   "timestamp": "2026-07-22T00:00:00Z",
-  "createdFiles": [
-    "src/supervisor/container-auth.ts",
-    "test/supervisor/container-auth.test.ts"
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/supervisor/ensure-container.ts",
+    "test/supervisor/ensure-container.test.ts",
+    "scripts/file-size-budget.json"
   ],
-  "modifiedFiles": [],
   "openQuestions": [],
-  "nextStoryContext": "src/supervisor/container-auth.ts now exports buildAuthCheckExecArgv(containerName) (['exec', containerName, 'claude', 'auth', 'status', '--json'], no -it, no sudo), applyContainerAuthCheck(containerName, spawnFn) (pure, never throws, returns {ok:true} | {ok:false,exitCode,stderrTail}), and ContainerAuthError (mirrors FirewallError: stderrTail + name='ContainerAuthError'). This module is purely pluggable so far -- nothing in the production ensure-container path calls applyContainerAuthCheck yet, and ContainerAuthError is never thrown anywhere. The next story (per this PRD's shape, presumably US-003) needs to wire applyContainerAuthCheck into the actual container ensure path (mirroring how ensureWorkerContainer in src/supervisor/ensure-container.ts drives applyContainerFirewall + throws FirewallError), and on failure should write the 'container-auth-unavailable' stall reason (already registered by US-001 in src/supervisor/sidecar-stalled.ts) before any worker is dispatched. The AuthCheckSpawnFn type intentionally mirrors FirewallSpawnFn's shape ({stdout,stderr,exitCode}), not ContainerSpawnFn's ({stdout,exitCode} only, no stderr) -- reuse FirewallSpawnFn's DI convention, not worker-container.ts's, when wiring the real spawnSync-backed implementation.",
+  "nextStoryContext": "ensureWorkerContainer (src/supervisor/ensure-container.ts) now imports applyContainerAuthCheck + ContainerAuthError from container-auth.ts (US-002) and gains applyAuthCheckIfPresent(containerName, authCheckSpawnFn): a complete no-op when authCheckSpawnFn is undefined, otherwise it runs the probe and throws ContainerAuthError on loggedIn!==true. It is called UNCONDITIONALLY, immediately after applyConfigIfPresent and immediately before the final `return { action }` -- so even the running->reused branch (which makes zero docker reconcile calls) still runs the auth probe. EnsureWorkerContainerOptions gained an optional authCheckSpawnFn: AuthCheckSpawnFn field (doc comment mirrors configSpawnFn's). makeProductionEnsureContainerFn wires a new authCheckSpawnFn closure (spawnSync-backed, stderr-capturing, same shape as firewallSpawnFn/configSpawnFn/toolchainExecFn -- kept as an independent closure per the seam-independence convention) and threads it into the ensureWorkerContainer call alongside the existing spawnFn/probe/statFn/firewallSpawnFn/configSpawnFn/toolchainExecFn. Test coverage added: auth check fires on all 4 reconcile branches (reused/started/created/rebuilt), fires AFTER config (ordering assertion via a shared order[] array), is a no-op when authCheckSpawnFn is absent, throws ContainerAuthError on loggedIn:false / non-zero exit, and the reused-branch-with-lost-token case explicitly asserts zero spawn.calls while still throwing (proving the reused branch cannot silently dispatch). No new patterns.md bullet was needed: this story is a direct repeat of the already-documented 'configSpawnFn seam + applyConfigIfPresent extraction pattern (US-003, CAM-185, 2026-07-04)' bullet at patterns.md:390, which already generalizes to any new apply*IfPresent seam including this one. The container-auth wiring epic (CAM-241) may have further stories consuming ContainerAuthError at the sidecar-boot call site (e.g. writing a stall-reason marker like 'container-auth-unavailable', already registered by US-001 in sidecar-stalled.ts) or a per-cycle dispatch guard mirroring ToolchainMismatchError's handling in runSidecar/runSupervisor -- check prd.json for the next story's acceptance criteria before assuming scope.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
