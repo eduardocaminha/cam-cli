@@ -12,6 +12,7 @@
 //   - .claude/.cam-orch-recycle     (ORCH_RECYCLE_MARKER)
 //   - .claude/.cam-orch-pid         (ORCH_PID_MARKER)
 //   - .claude/.cam-drain-stop       (DRAIN_STOP_MARKER)
+//   - .claude/.cam-pause            (PAUSE_MARKER)
 //   - scripts/cam/worker-report.json (WORKER_REPORT_FILENAME)
 //
 // Oracle: bun test test/stop-markers.test.ts
@@ -28,6 +29,7 @@ import { ORCH_READY_MARKER } from '../src/tmux/bootstrap-wait.ts';
 import { SUPERVISOR_LOCK_FILE } from '../src/supervisor/lock.ts';
 import { WORKER_REPORT_FILENAME } from '../src/supervisor/worker-report.ts';
 import { DRAIN_STOP_MARKER } from '../src/supervisor/drain-kill-switch.ts';
+import { PAUSE_MARKER } from '../src/supervisor/pause-marker.ts';
 
 // --- Helpers ---------------------------------------------------------------
 
@@ -113,7 +115,7 @@ describe('performStop — per-session marker cleanup (US-002)', () => {
 				},
 			});
 
-			// Expect exactly 9 unlink calls — one per marker.
+			// Expect exactly 10 unlink calls — one per marker.
 			expect(unlinked).toContain(join(dir, '.claude', 'cam-loop.local.md'));
 			expect(unlinked).toContain(join(claudeDir, SUPERVISOR_LOCK_FILE));
 			expect(unlinked).toContain(join(claudeDir, ORCH_SESSION_MARKER));
@@ -122,8 +124,9 @@ describe('performStop — per-session marker cleanup (US-002)', () => {
 			expect(unlinked).toContain(join(claudeDir, ORCH_RECYCLE_MARKER));
 			expect(unlinked).toContain(join(claudeDir, ORCH_PID_MARKER));
 			expect(unlinked).toContain(join(claudeDir, DRAIN_STOP_MARKER));
+			expect(unlinked).toContain(join(claudeDir, PAUSE_MARKER));
 			expect(unlinked).toContain(join(dir, WORKER_REPORT_FILENAME));
-			expect(unlinked).toHaveLength(9);
+			expect(unlinked).toHaveLength(10);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}

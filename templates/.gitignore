@@ -31,6 +31,8 @@ scripts/cam/scope-proposal.json
 .claude/.cam-orch-pid
 # Inter-cycle drain kill-switch marker written by `cam drain --stop` (US-002, CAM-139)
 .claude/.cam-drain-stop
+# Operator pause brake marker written by `cam pause` (US-001, CAM-360)
+.claude/.cam-pause
 # Runtime per-story worker out-log (CAM-22/CAM-32, mirrored into templates/ by CAM-160)
 .claude/.cam-worker-out-*.log
 # CAM-158: pipe-pane logs written by runPlanPhase (planner/auditor sessions), mirrored into templates/ by CAM-160

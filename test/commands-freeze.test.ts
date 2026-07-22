@@ -36,6 +36,7 @@ const FROZEN_COMMANDS = [
 	'stats',
 	'orch-budget',
 	'stop',
+	'pause',
 	'drain',
 	'resume',
 	'decide',
@@ -51,9 +52,9 @@ const FROZEN_COMMANDS = [
 ] as const;
 
 describe('COMMANDS frozen count + membership (US-002)', () => {
-	test('exact count (28 today)', () => {
+	test('exact count (29 today)', () => {
 		expect(COMMANDS.length).toBe(FROZEN_COMMANDS.length);
-		expect(COMMANDS.length).toBe(28);
+		expect(COMMANDS.length).toBe(29);
 	});
 
 	test('exact membership set (order-independent)', () => {

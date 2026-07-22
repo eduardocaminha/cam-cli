@@ -146,6 +146,7 @@ cam claude [args...]        Run claude with built-in auto-retry on rate limits
 cam dashboard               Navigable TUI: browse stories, dispatch /cam-* commands (pane 0.1; also standalone)
 cam status                  Show current loop state (idle / active / paused)
 cam stop                    Cancel a running loop
+cam pause                   Set the operator pause brake marker (.claude/.cam-pause), separate from loop state
 cam drain [--stop|--clear]  Set or clear the inter-cycle drain kill-switch without killing the sidecar
 cam resume [options]        Reconcile loop state after interrupt
 cam version                 Print the installed CAM Runtime version

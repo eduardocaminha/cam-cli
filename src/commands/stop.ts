@@ -41,6 +41,7 @@ import {
 import { SUPERVISOR_LOCK_FILE } from '../supervisor/lock.ts';
 import { WORKER_REPORT_FILENAME } from '../supervisor/worker-report.ts';
 import { DRAIN_STOP_MARKER } from '../supervisor/drain-kill-switch.ts';
+import { PAUSE_MARKER } from '../supervisor/pause-marker.ts';
 import { ORCH_READY_MARKER } from '../tmux/bootstrap-wait.ts';
 import { DEFAULT_CONTAINER_NAME } from '../supervisor/worker-container.ts';
 import { readWorkerIsolation, type WorkerIsolation } from '../config/models.ts';
@@ -574,6 +575,7 @@ export function performStop(options: StopOptions = {}): StopReport {
 		[claudeDir, ORCH_RECYCLE_MARKER],
 		[claudeDir, ORCH_PID_MARKER],
 		[claudeDir, DRAIN_STOP_MARKER],
+		[claudeDir, PAUSE_MARKER],
 		[cwd, WORKER_REPORT_FILENAME],
 	] as [string, string][]) {
 		const p = join(dir, name);

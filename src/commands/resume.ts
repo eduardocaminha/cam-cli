@@ -75,6 +75,7 @@ import process from 'node:process';
 
 import { parseStateFile, resolvePrdPath, type LoopState, type PrdShape } from './status.ts';
 import { readWorkerPaneMarker } from '../tmux/session.ts';
+import { clearPause } from '../supervisor/pause-marker.ts';
 import {
 	accent,
 	chalk,
@@ -594,6 +595,14 @@ export function buildResumeReport(options: ResumeOptions = {}): ResumeReport {
 export async function runResume(options: ResumeOptions = {}): Promise<number> {
 	const cwd = options.cwd ?? process.cwd();
 	const promptFn = options.prompt ?? defaultPrompt;
+
+	// Clear the operator pause brake (US-001, CAM-360) so a paused loop can be
+	// re-entered. Distinct from the loop-state `active` field — never touches
+	// `.claude/cam-loop.local.md`. Skipped under `--dry-run`, which promises no
+	// mutations.
+	if (!options.dryRun) {
+		clearPause(join(cwd, '.claude'));
+	}
 
 	// Explicit `--mode` short-circuits classification entirely.
 	if (options.mode) {
