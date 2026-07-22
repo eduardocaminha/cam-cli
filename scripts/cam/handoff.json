@@ -1,17 +1,17 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Register container-auth-unavailable stall reason"
+    "id": "US-002",
+    "title": "Add in-container claude auth probe module"
   },
   "branchName": "cam/issue-396",
   "timestamp": "2026-07-22T00:00:00Z",
-  "createdFiles": [],
-  "modifiedFiles": [
-    "src/supervisor/sidecar-stalled.ts",
-    "test/supervisor/sidecar-stalled.test.ts"
+  "createdFiles": [
+    "src/supervisor/container-auth.ts",
+    "test/supervisor/container-auth.test.ts"
   ],
+  "modifiedFiles": [],
   "openQuestions": [],
-  "nextStoryContext": "The 'container-auth-unavailable' discriminator is now registered in all three required sites of src/supervisor/sidecar-stalled.ts (SidecarStalledReason type, VALID_REASONS array, JSDoc list on the type and on the file header block) plus round-trip coverage in test/supervisor/sidecar-stalled.test.ts. readSidecarStalledMarker/writeSidecarStalledMarker/removeSidecarStalledMarker themselves are reason-agnostic (they only validate against VALID_REASONS), so no other code path needed changes for this story. If a future story needs to WRITE this marker with reason='container-auth-unavailable' from the actual container-mode auth-preflight producer (not yet wired), that producer call site still needs to be located and wired up -- this story only unblocks the round-trip, it does not add a new producer call site.",
+  "nextStoryContext": "src/supervisor/container-auth.ts now exports buildAuthCheckExecArgv(containerName) (['exec', containerName, 'claude', 'auth', 'status', '--json'], no -it, no sudo), applyContainerAuthCheck(containerName, spawnFn) (pure, never throws, returns {ok:true} | {ok:false,exitCode,stderrTail}), and ContainerAuthError (mirrors FirewallError: stderrTail + name='ContainerAuthError'). This module is purely pluggable so far -- nothing in the production ensure-container path calls applyContainerAuthCheck yet, and ContainerAuthError is never thrown anywhere. The next story (per this PRD's shape, presumably US-003) needs to wire applyContainerAuthCheck into the actual container ensure path (mirroring how ensureWorkerContainer in src/supervisor/ensure-container.ts drives applyContainerFirewall + throws FirewallError), and on failure should write the 'container-auth-unavailable' stall reason (already registered by US-001 in src/supervisor/sidecar-stalled.ts) before any worker is dispatched. The AuthCheckSpawnFn type intentionally mirrors FirewallSpawnFn's shape ({stdout,stderr,exitCode}), not ContainerSpawnFn's ({stdout,exitCode} only, no stderr) -- reuse FirewallSpawnFn's DI convention, not worker-container.ts's, when wiring the real spawnSync-backed implementation.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
