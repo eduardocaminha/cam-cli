@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.246.0] - 2026-07-22
+
+### Added
+
+- US-001 - Decouple sidecar narration push from the 30s idle-wait deadline
+
 ## [0.245.0] - 2026-07-22
 
 ### Added
