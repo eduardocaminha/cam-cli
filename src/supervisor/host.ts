@@ -49,7 +49,7 @@ import {
 	tmuxArgs,
 	type SpawnFn as TmuxSpawnFn,
 } from '../tmux/session.ts';
-import { sendKeysVerified, type CapturePaneFn } from '../tmux/dispatch.ts';
+import { sendKeysVerified, NARRATION_IDLE_TIMEOUT_MS, type CapturePaneFn } from '../tmux/dispatch.ts';
 import { isPidAlive } from '../commands/resume.ts';
 import { renderStateFile } from '../commands/next.ts';
 import { WORKER_REPORT_FILENAME } from './worker-report.ts';
@@ -300,6 +300,13 @@ export function adaptLogEventForPush(
  * already write their own; a lost non-terminal narration is self-healing
  * since the sidecar proceeds regardless).
  *
+ * The idle-gate here is bounded by `NARRATION_IDLE_TIMEOUT_MS` (2_000 ms,
+ * US-001, CAM-361), not the shared `IDLE_WAIT_DEADLINE_MS` (30_000 ms):
+ * narration is best-effort, so a mid-turn orchestrator pane must not stall
+ * the outer sidecar loop (and its in-memory merge-watch timers) for up to
+ * 30s per pushed line. Past that short deadline, `sendKeysVerified`'s
+ * send-anyway fallback fires as usual; nothing else about the call changes.
+ *
  * Best-effort: when getOrchPaneId returns null (orch pane closed or session
  * gone), the closure is a silent no-op. No throw, no error log.
  *
@@ -334,6 +341,7 @@ export function makeNotifyOrchestrator(
 			tmuxSpawnFn: spawnFn,
 			capturePaneFn,
 			logEvent,
+			idleTimeoutMs: NARRATION_IDLE_TIMEOUT_MS,
 		});
 	};
 }
