@@ -254,6 +254,26 @@ export const SEND_KEYS_SETTLE_MS = 50;
 export const IDLE_WAIT_DEADLINE_MS = 30_000;
 
 /**
+ * Dedicated idle-wait deadline (ms) for the sidecar's best-effort narration
+ * push (`makeNotifyOrchestrator`, src/supervisor/host.ts), strictly less than
+ * `IDLE_WAIT_DEADLINE_MS` (US-001, CAM-361).
+ *
+ * A mid-turn orchestrator pane blocking the shared 30s deadline stalls the
+ * OUTER sidecar loop and its in-memory merge-watch timers for up to 30s per
+ * narration line pushed while the operator is busy -- narration is fire-and-
+ * forget best-effort, so it should never hold the loop hostage that long.
+ * Bounding it to a short dedicated deadline lets the send-anyway fallback
+ * (see `sendOnceUnverified`) fire quickly instead.
+ *
+ * `IDLE_WAIT_DEADLINE_MS` itself stays untouched at 30_000: the one-shot CLI
+ * thin-proxy waits (`cam issue`/`cam review`/`cam spec`) and the
+ * `orch-recycle-watch` backstop process are each a dedicated short-lived
+ * process whose only job is this one send, so they can afford to wait out a
+ * routine long tool call in full.
+ */
+export const NARRATION_IDLE_TIMEOUT_MS = 2_000;
+
+/**
  * Glyphs that indicate the claude TUI is mid-turn (busy):
  * - Full braille block U+2800-U+28FF (covers every glyph claude renders during
  *   a spinner half-cycle; previously only ~10 specific chars were listed, which
