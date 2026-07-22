@@ -1,0 +1,10 @@
+{
+  "id": "CAM-399",
+  "title": "CAM-197 Slice 1: ADR grill fica no orch (boundary = LLM-nao-interativo, nao todo-LLM)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-22T23:38:28.621Z",
+  "updatedAt": "2026-07-22T23:38:28.621Z",
+  "description": "Filho de CAM-197. Escrever um ADR em docs/adr/ registrando a decisao do grill (2026-07-22): o grill operator-interativo do cam-spec FICA no contexto do orquestrador, nao move pra pane propria. Razao: dialogo interativo com o operador e por definicao o papel do orch; o boundary orch/worker se desenha em 'LLM nao-interativo', nao em 'todo LLM'. O custo de token do grill (~50k) e descartado pelo recycle no cycle-close (transcript tem valor zero pos-spec) e pertence a UM ciclo de PR, entao nao viola one-PR-per-session. Os 3 gates de ADR passam (hard-to-reverse: redefine o boundary do epic; surprising-without-context: contradiz a leitura literal 'orch so conversa'; genuine-trade-off: interface humana unica vs preservacao de contexto do orch). Deliverable: 1 arquivo ADR. Enquadra o epic CAM-197 inteiro, por isso e o primeiro slice. TIPO doc. Escopo minimo: so o ADR, nenhuma mudanca de codigo."
+}
