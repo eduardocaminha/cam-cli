@@ -71,7 +71,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edit src/commands/sidecar.ts (runContainerEnsureGuard ~:3331-3370) + new test/commands/sidecar-auth.test.ts. CRITICAL gotcha: mirror the FirewallError branch (:3344-3354, which WRITES the marker), NOT ContainerConfigError (:3355-3360) or ToolchainMismatchError (:3361-3367), which do NOT write a marker -- CAM-396 requires a durable marker. Add the `if (e instanceof ContainerAuthError)` branch importing ContainerAuthError from US-002 and writeSidecarStalledMarker/SIDECAR_STALLED_FILENAME already imported. Depends on US-001 (reason registered so the marker round-trips), US-002 (ContainerAuthError type), US-003 (ensure path actually throws it). Test template: test/commands/sidecar-firewall.test.ts -- runSidecar with an ensureContainerFn that throws + a runSidecarLoopFn spy proving the loop never runs, plus readSidecarStalledMarker asserting reason/detail/writtenAt. No production code reads the marker today (ADR-0026 boot surface not wired), but the round-trip + fail-closed abort are the behavioral contract. No external library, no fetch."
     }
