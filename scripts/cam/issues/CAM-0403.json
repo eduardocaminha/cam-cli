@@ -1,0 +1,10 @@
+{
+  "id": "CAM-403",
+  "title": "CAM-197 Slice 5: cam-review vira signal-writer fino; sidecar dirige os rounds; converge review manual com backend codex",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-22T23:38:38.279Z",
+  "updatedAt": "2026-07-22T23:38:38.279Z",
+  "description": "Filho de CAM-197 (Layer 2, PR de maior blast-radius). Hoje /cam-review roda subagent-reviewer via Task() no contexto do orch (216 linhas, sempre claude, nunca codex), duplicando o caminho autonomo do sidecar (makeReviewDispatch, o unico que alcanca o backend codex). Transformar cam-review num signal-writer fino igual plan/ship: o orch escreve phase:review, o sidecar dirige os rounds e empurra o handback, o orch narra. CONSEQUENCIAS: (i) o review manual converge com o caminho do sidecar e passa a poder usar o reviewer codex; (ii) subagent-reviewer SAI da allowlist de Task do orch (orch deixa de spawnar reviewer); (iii) 'review' vira assincrono como plan/ship. PR isolado. TIPO feat."
+}
