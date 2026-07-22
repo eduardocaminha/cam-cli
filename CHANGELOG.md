@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.248.0] - 2026-07-22
+
+### Added
+
+- US-001 - Render codex exec approval policy via -c approval_policy=never
+
 ## [0.247.0] - 2026-07-22
 
 ### Added

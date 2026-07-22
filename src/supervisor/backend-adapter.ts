@@ -347,7 +347,7 @@ export function codexEnvPrefix(isolation: WorkerIsolation): string {
  * Render codex's sandbox + approval flags from the same `permissionMode`
  * input claude's adapter reads (ADR-0047 mismatch e: METHOD-shaped behavior
  * inside buildSpawnArgv, not a caller-visible method). `--sandbox` and
- * `--ask-for-approval` are mutually exclusive with
+ * `-c approval_policy=...` are mutually exclusive with
  * `--dangerously-bypass-approvals-and-sandbox` per the codex CLI reference,
  * so exactly one branch is ever emitted:
  *
@@ -356,15 +356,24 @@ export function codexEnvPrefix(isolation: WorkerIsolation): string {
  *   `--dangerously-bypass-approvals-and-sandbox`: codex's own full-trust
  *   equivalent, matching claude's semantics one-for-one.
  * - Any other permissionMode maps to `--sandbox workspace-write
- *   --ask-for-approval never`: non-interactive (a spawned worker pane has no
+ *   -c approval_policy=never`: non-interactive (a spawned worker pane has no
  *   human to approve a prompt) but confined to the workspace, the closest
  *   codex sandbox mode to claude's non-bypass permission modes.
+ *
+ * The previously-rendered top-level-only approval flag is a `codex`-root
+ * flag, not one `codex exec` accepts (US-001, CAM-397): passing it to the
+ * `exec` subcommand fails argv parsing before the worker pane ever starts.
+ * `-c approval_policy=never` is the `-c/--config` override `codex exec` does
+ * accept and renders the same non-interactive approval policy (verified live
+ * against codex-cli 0.144.6: `codex exec --sandbox workspace-write -c
+ * approval_policy=never ...` parses and reports `approval: never / sandbox:
+ * workspace-write` in its session header).
  */
 function codexSandboxArgs(permissionMode: string): string {
 	if (permissionMode === 'bypassPermissions') {
 		return '--dangerously-bypass-approvals-and-sandbox';
 	}
-	return '--sandbox workspace-write --ask-for-approval never';
+	return '--sandbox workspace-write -c approval_policy=never';
 }
 
 /**
