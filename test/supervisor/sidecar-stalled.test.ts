@@ -56,6 +56,18 @@ describe('sidecar-stalled marker: round-trip (US-001, CAM-207)', () => {
 		expect(readSidecarStalledMarker(filePath)).toEqual(marker);
 	});
 
+	test('write then read round-trips the payload intact (container-auth-unavailable)', () => {
+		const marker: SidecarStalledMarker = {
+			reason: 'container-auth-unavailable',
+			detail: 'auth preflight: no credentials found',
+			writtenAt: '2026-07-22T21:00:00Z',
+		};
+
+		writeSidecarStalledMarker(filePath, marker);
+
+		expect(readSidecarStalledMarker(filePath)).toEqual(marker);
+	});
+
 	test('readSidecarStalledMarker returns null for an absent file', () => {
 		expect(readSidecarStalledMarker(filePath)).toBeNull();
 	});

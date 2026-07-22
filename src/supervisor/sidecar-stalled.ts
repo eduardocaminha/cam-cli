@@ -12,11 +12,12 @@
 // (src/supervisor/plan-escalation.ts): a plain JSON marker file under
 // .claude/, read/write/remove helpers that never throw.
 //
-// A single shared marker file/shape is used for two producers, distinguished
-// by the `reason` discriminator: 'firewall-init-failed' (this story) and,
-// later, 'sidecar-died' (a future story covering the sidecar process itself
-// dying rather than failing its firewall-init step). Do NOT create a second
-// marker file for the second producer -- reuse this one.
+// A single shared marker file/shape is used across multiple producers,
+// distinguished by the `reason` discriminator: 'firewall-init-failed'
+// (CAM-207), 'sidecar-died' (reserved for a future producer covering the
+// sidecar process itself dying), and 'container-auth-unavailable' (US-001,
+// CAM-396: the container-mode auth-preflight step). Do NOT create a second
+// marker file for a new producer -- reuse this one.
 
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 
@@ -26,11 +27,13 @@ export const SIDECAR_STALLED_FILENAME = '.cam-sidecar-stalled.json';
 /**
  * Structured reason a sidecar bring-up stalled.
  *   - 'firewall-init-failed': the container firewall init step (FirewallError)
- *     failed during runContainerEnsureGuard (this story).
+ *     failed during runContainerEnsureGuard (CAM-207).
  *   - 'sidecar-died': reserved for a future producer (the sidecar process
  *     itself dying rather than failing a specific boot step).
+ *   - 'container-auth-unavailable': the container-mode auth-preflight step
+ *     could not confirm credentials were available (US-001, CAM-396).
  */
-export type SidecarStalledReason = 'firewall-init-failed' | 'sidecar-died';
+export type SidecarStalledReason = 'firewall-init-failed' | 'sidecar-died' | 'container-auth-unavailable';
 
 /**
  * Durable sidecar-stalled marker payload.
@@ -44,7 +47,11 @@ export interface SidecarStalledMarker {
 	writtenAt: string;
 }
 
-const VALID_REASONS: readonly SidecarStalledReason[] = ['firewall-init-failed', 'sidecar-died'];
+const VALID_REASONS: readonly SidecarStalledReason[] = [
+	'firewall-init-failed',
+	'sidecar-died',
+	'container-auth-unavailable',
+];
 
 /**
  * Read the sidecar-stalled marker from a persistent file.
