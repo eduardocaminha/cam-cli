@@ -1,0 +1,10 @@
+{
+  "id": "CAM-400",
+  "title": "CAM-197 Slice 2: mecanizar cam-prune + cam issue get + pre-flight do cam-next em CLI deterministico",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-22T23:38:31.215Z",
+  "updatedAt": "2026-07-22T23:38:31.215Z",
+  "description": "Filho de CAM-197 (Layer 1). Mover a logica que hoje roda inline no contexto do orch para subcomandos CLI puros e deterministicos (zero LLM, sem pane): cam-prune (hoje 43 linhas de passos git inline), cam issue get (leitura de issue), e o pre-flight do cam-next (hoje 118 linhas rodando na sessao do orch). O orch passa a so chamar o comando e narrar. Composicao por fix-site: os 3 sao a mesma natureza (de-inline para subcomando deterministico), 1 PR. Separar o pre-flight num PR proprio SO se ele estufar no spec. TIPO feat/refactor."
+}
