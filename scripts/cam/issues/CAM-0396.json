@@ -1,11 +1,11 @@
 {
   "id": "CAM-396",
   "title": "Container ensure-guard needs a claude auth-preflight before dispatching workers in container mode",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-22T15:20:45.583Z",
-  "updatedAt": "2026-07-22T19:40:14.347Z",
+  "updatedAt": "2026-07-22T21:54:33.947Z",
   "description": "runContainerEnsureGuard / ensureWorkerContainer (src/supervisor/ensure-container.ts; src/commands/sidecar.ts:3331-3368) re-asserts firewall, config, and toolchain on every ensure but NOT claude auth. A worker_isolation=container sidecar can therefore dispatch an implementer/reviewer/planner worker (docker exec -it cam-worker claude ...) into a container where claude is unauthenticated; the worker fails at runtime instead of a clean fail-closed preflight -- a silent wedge that undermines CAM-139 (autonomous meta-loop requires trustworthy container mode). Discovered live during the CAM-175 ceremony 2026-07-22: CLAUDE_CODE_OAUTH_TOKEN was commented out in .env, so `docker exec cam-worker claude auth status --json` returned loggedIn:false/authMethod:none; after setting the token and recreating the container it returned loggedIn:true/authMethod:oauth_token. Fix: add an auth-preflight to the container ensure path that runs `docker exec cam-worker claude auth status --json`, parses loggedIn (the codebase's own auth-probe convention, src/commands/run-auth-preflight.ts:72-73), and on loggedIn:false fails closed -- write a durable stall marker mirroring the FirewallError path (.claude/.cam-sidecar-stalled.json, reason container-auth-unavailable) and abort so no worker dispatches, matching the FirewallError/ContainerConfigError/ToolchainMismatchError fail-closed handling at sidecar.ts:3344-3368.",
   "spec": {
     "scope": "Add a claude auth-preflight to the worker_isolation=container ensure path so the sidecar fails closed (never dispatches a worker) when claude is unauthenticated inside the cam-worker container. Today ensureWorkerContainer re-asserts toolchain, firewall, and config on every ensure but NOT auth, so a container-mode sidecar can dispatch an implementer/reviewer/planner worker into an unauthenticated container and the worker fails at runtime instead of a clean preflight -- a silent wedge that undermines CAM-139 (autonomous meta-loop needs trustworthy container mode). Mirror the existing FirewallError fail-closed path exactly: a new pure probe module, a no-op-when-unwired ensure step, a guard branch that writes the durable stall marker, and the new reason registered in the marker enumeration. Discovered live during the CAM-175 ceremony (claude auth was loggedIn:false inside the container and nothing caught it before dispatch).",
