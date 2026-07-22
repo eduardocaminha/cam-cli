@@ -6,6 +6,16 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.245.0] - 2026-07-22
+
+### Added
+
+- US-R2-001 - Review round 2 fix 001: address reviewer finding
+- US-R1-001 - Review round 1 fix 001: address reviewer finding
+- US-003 - Render a distinct operator-paused state in cam status
+- US-002 - Halt the supervisor inner story loop cooperatively when the pause marker is set
+- US-001 - Add cam pause / cam resume operator brake backed by a dedicated pause marker
+
 ## [0.244.0] - 2026-07-21
 
 ### Added

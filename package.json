@@ -1,6 +1,6 @@
 {
   "name": "cam-runtime",
-  "version": "0.244.0",
+  "version": "0.245.0",
   "module": "index.ts",
   "type": "module",
   "private": true,
