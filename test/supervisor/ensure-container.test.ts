@@ -34,6 +34,10 @@ import {
 	ToolchainMismatchError,
 	type ToolchainExecFn,
 } from '../../src/supervisor/toolchain-assert.ts';
+import {
+	ContainerAuthError,
+	type AuthCheckSpawnFn,
+} from '../../src/supervisor/container-auth.ts';
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -1108,5 +1112,224 @@ describe('ensureWorkerContainer: US-007 toolchain assert + auto-rebuild', () => 
 		// The 4-branch reconcile alone would have returned 'reused'; the
 		// toolchain mismatch upgrades the final action to 'rebuilt'.
 		expect(result.action).toBe('rebuilt');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-003 (CAM-241): auth check seam invoked unconditionally after config
+// ---------------------------------------------------------------------------
+
+/**
+ * Build an AuthCheckSpawnFn that records calls and returns a successful
+ * `claude auth status --json` probe (loggedIn: true, exit 0) by default.
+ */
+function makeAuthCheckSpawnFn(loggedIn = true, exitCode = 0): {
+	fn: AuthCheckSpawnFn;
+	calls: { cmd: string; args: string[] }[];
+} {
+	const calls: { cmd: string; args: string[] }[] = [];
+	const fn: AuthCheckSpawnFn = (cmd, args) => {
+		calls.push({ cmd, args });
+		return {
+			stdout: JSON.stringify({ loggedIn }),
+			stderr: '',
+			exitCode,
+		};
+	};
+	return { fn, calls };
+}
+
+/** Build opts that include an authCheckSpawnFn for testing the unconditional exec. */
+function makeOptsWithAuthCheck(
+	probe: DockerProbe,
+	spawnFn: ContainerSpawnFn,
+	authCheckSpawnFn: AuthCheckSpawnFn,
+	extra: Partial<EnsureWorkerContainerOptions> = {},
+): EnsureWorkerContainerOptions {
+	return { probe, spawnFn, authCheckSpawnFn, workspaceFolder: WORKSPACE, ...extra };
+}
+
+describe('ensureWorkerContainer: auth check invoked unconditionally on all branches (US-003)', () => {
+	test('auth check exec is invoked when action=reused (running branch, no docker reconcile call)', () => {
+		const probe = runningProbe();
+		const spawn = makeRecordingSpawnFn();
+		const auth = makeAuthCheckSpawnFn(true);
+		const result = ensureWorkerContainer(makeOptsWithAuthCheck(probe.fn, spawn.fn, auth.fn));
+
+		expect(result.action).toBe('reused');
+		expect(auth.calls).toHaveLength(1);
+		expect(auth.calls[0]?.cmd).toBe('docker');
+		expect(auth.calls[0]?.args[0]).toBe('exec');
+	});
+
+	test('auth check exec is invoked when action=started (stopped branch)', () => {
+		const probe = makeRoutedProbe({
+			info: { stdout: '', exitCode: 0 },
+			image: { stdout: '', exitCode: 0 },
+			inspect: { stdout: 'false\n', exitCode: 0 }, // stopped
+		});
+		const spawn = makeRecordingSpawnFn();
+		const auth = makeAuthCheckSpawnFn(true);
+		ensureWorkerContainer(makeOptsWithAuthCheck(probe.fn, spawn.fn, auth.fn));
+
+		expect(auth.calls).toHaveLength(1);
+	});
+
+	test('auth check exec is invoked when action=created (absent branch)', () => {
+		const probe = makeRoutedProbe({
+			info: { stdout: '', exitCode: 0 },
+			image: { stdout: '', exitCode: 0 },
+			inspect: { stdout: '', exitCode: 1 }, // absent
+		});
+		const spawn = makeRecordingSpawnFn();
+		const auth = makeAuthCheckSpawnFn(true);
+		ensureWorkerContainer(makeOptsWithAuthCheck(probe.fn, spawn.fn, auth.fn));
+
+		expect(auth.calls).toHaveLength(1);
+	});
+
+	test('auth check exec is invoked when action=rebuilt (image-stale branch)', () => {
+		const OLD_DATE = new Date(0).toISOString();
+		const probe = makeRoutedProbe({
+			info: { stdout: '', exitCode: 0 },
+			image: { stdout: OLD_DATE, exitCode: 0 },
+			inspect: { stdout: 'true', exitCode: 0 },
+		});
+		const spawn = makeRecordingSpawnFn();
+		const auth = makeAuthCheckSpawnFn(true);
+		ensureWorkerContainer(
+			makeOptsWithAuthCheck(probe.fn, spawn.fn, auth.fn, {
+				statFn: (_path) => ({ mtimeMs: Date.now() }), // stale trigger
+			}),
+		);
+
+		expect(auth.calls).toHaveLength(1);
+	});
+
+	test('auth check exec argv includes the correct container name', () => {
+		const probe = runningProbe();
+		const spawn = makeRecordingSpawnFn();
+		const auth = makeAuthCheckSpawnFn(true);
+		ensureWorkerContainer(
+			makeOptsWithAuthCheck(probe.fn, spawn.fn, auth.fn, { containerName: 'my-cam-worker' }),
+		);
+
+		expect(auth.calls[0]?.args).toContain('my-cam-worker');
+	});
+
+	test('auth check runs AFTER the config seam (config first, then auth)', () => {
+		const probe = runningProbe();
+		const spawn = makeRecordingSpawnFn();
+		const order: string[] = [];
+		const cfg: ConfigSpawnFn = (_cmd, _args) => {
+			order.push('config');
+			return { stdout: '', stderr: '', exitCode: 0 };
+		};
+		const auth: AuthCheckSpawnFn = (_cmd, _args) => {
+			order.push('auth');
+			return { stdout: JSON.stringify({ loggedIn: true }), stderr: '', exitCode: 0 };
+		};
+		ensureWorkerContainer(
+			makeOpts(probe.fn, spawn.fn, { configSpawnFn: cfg, authCheckSpawnFn: auth }),
+		);
+
+		expect(order[0]).toBe('config');
+		expect(order[order.length - 1]).toBe('auth');
+	});
+
+	test('no auth check call when authCheckSpawnFn is absent (host mode / legacy)', () => {
+		const probe = runningProbe();
+		const spawn = makeRecordingSpawnFn();
+		ensureWorkerContainer(makeOpts(probe.fn, spawn.fn));
+
+		const execCalls = spawn.calls.filter((c) => c.args[0] === 'exec');
+		expect(execCalls).toHaveLength(0);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-003 (CAM-241): ContainerAuthError thrown on unauthenticated container
+// ---------------------------------------------------------------------------
+
+describe('ensureWorkerContainer: ContainerAuthError thrown when unauthenticated (US-003)', () => {
+	test('throws ContainerAuthError when the probe reports loggedIn=false', () => {
+		const probe = runningProbe();
+		const spawn = makeRecordingSpawnFn();
+		const auth = makeAuthCheckSpawnFn(false);
+
+		expect(() => {
+			ensureWorkerContainer(makeOptsWithAuthCheck(probe.fn, spawn.fn, auth.fn));
+		}).toThrow(ContainerAuthError);
+	});
+
+	test('throws ContainerAuthError when the probe exec exits non-zero', () => {
+		const probe = runningProbe();
+		const spawn = makeRecordingSpawnFn();
+		const auth = makeAuthCheckSpawnFn(true, 1); // non-zero exit despite loggedIn:true payload
+
+		expect(() => {
+			ensureWorkerContainer(makeOptsWithAuthCheck(probe.fn, spawn.fn, auth.fn));
+		}).toThrow(ContainerAuthError);
+	});
+
+	test('ContainerAuthError is instanceof ContainerAuthError (typed check works)', () => {
+		const probe = runningProbe();
+		const spawn = makeRecordingSpawnFn();
+		const auth = makeAuthCheckSpawnFn(false);
+
+		try {
+			ensureWorkerContainer(makeOptsWithAuthCheck(probe.fn, spawn.fn, auth.fn));
+			throw new Error('Expected ContainerAuthError to be thrown');
+		} catch (e) {
+			expect(e).toBeInstanceOf(ContainerAuthError);
+		}
+	});
+
+	test('ContainerAuthError carries stderrTail from the auth spawn', () => {
+		const probe = runningProbe();
+		const spawn = makeRecordingSpawnFn();
+		const stderrText = 'claude: not logged in\nrun `claude auth login`';
+		const failAuth: AuthCheckSpawnFn = () => ({
+			stdout: JSON.stringify({ loggedIn: false }),
+			stderr: stderrText,
+			exitCode: 0,
+		});
+
+		try {
+			ensureWorkerContainer(makeOptsWithAuthCheck(probe.fn, spawn.fn, failAuth));
+			throw new Error('Expected ContainerAuthError to be thrown');
+		} catch (e) {
+			expect(e).toBeInstanceOf(ContainerAuthError);
+			if (e instanceof ContainerAuthError) {
+				expect(e.stderrTail).toContain('not logged in');
+			}
+		}
+	});
+
+	test('no ContainerAuthError thrown when the probe reports loggedIn=true', () => {
+		const probe = runningProbe();
+		const spawn = makeRecordingSpawnFn();
+		const auth = makeAuthCheckSpawnFn(true);
+		expect(() => {
+			ensureWorkerContainer(makeOptsWithAuthCheck(probe.fn, spawn.fn, auth.fn));
+		}).not.toThrow();
+	});
+
+	test('a reused running container (no docker reconcile call) with a lost token is still caught', () => {
+		// action=reused would normally produce zero spawnFn calls; the auth
+		// check must still fire and throw, proving the reused branch cannot
+		// silently dispatch a worker into an unauthenticated container.
+		const probe = runningProbe();
+		const spawn = makeRecordingSpawnFn();
+		const auth = makeAuthCheckSpawnFn(false);
+
+		let caughtError: unknown;
+		try {
+			ensureWorkerContainer(makeOptsWithAuthCheck(probe.fn, spawn.fn, auth.fn));
+		} catch (e) {
+			caughtError = e;
+		}
+		expect(caughtError).toBeInstanceOf(ContainerAuthError);
+		expect(spawn.calls).toHaveLength(0);
 	});
 });

@@ -6,6 +6,15 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.247.0] - 2026-07-22
+
+### Added
+
+- US-004 - Catch ContainerAuthError in the ensure-guard and fail closed
+- US-003 - Wire auth-check step into ensureWorkerContainer
+- US-002 - Add in-container claude auth probe module
+- US-001 - Register container-auth-unavailable stall reason
+
 ## [0.246.0] - 2026-07-22
 
 ### Added

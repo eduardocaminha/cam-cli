@@ -43,6 +43,11 @@ import {
 	type ConfigSpawnFn,
 } from './container-config.ts';
 import {
+	applyContainerAuthCheck,
+	ContainerAuthError,
+	type AuthCheckSpawnFn,
+} from './container-auth.ts';
+import {
 	assertContainerToolchain,
 	ToolchainMismatchError,
 	type ToolchainExecFn,
@@ -150,6 +155,24 @@ export interface EnsureWorkerContainerOptions {
 	configSpawnFn?: ConfigSpawnFn;
 
 	/**
+	 * Injectable spawn function for the in-container claude auth check exec
+	 * call (US-003, CAM-241).
+	 *
+	 * When provided, `ensureWorkerContainer` calls `applyContainerAuthCheck`
+	 * UNCONDITIONALLY after `applyConfigIfPresent`, regardless of which action
+	 * was taken. This ensures a reused running container (no docker reconcile
+	 * call at all) that has silently lost its OAuth token is still caught
+	 * before a worker is dispatched into it.
+	 *
+	 * If the probe reports `loggedIn !== true` (or exits non-zero, or its
+	 * stdout is unparsable), a `ContainerAuthError` is thrown so the caller
+	 * (sidecar boot) can abort fail-closed.
+	 *
+	 * When absent, no auth check call is made (host-mode / legacy callers).
+	 */
+	authCheckSpawnFn?: AuthCheckSpawnFn;
+
+	/**
 	 * Injectable exec seam for the US-006/US-007 toolchain assert (two cheap
 	 * `docker exec <containerName> bun|node --version` calls).
 	 *
@@ -228,6 +251,23 @@ function applyConfigIfPresent(
 	});
 	if (!cfgResult.ok) {
 		throw new ContainerConfigError(cfgResult.stderrTail);
+	}
+}
+
+/**
+ * Run the in-container claude auth check unconditionally (US-003, CAM-241).
+ * No-op when `authCheckSpawnFn` is absent (host mode / legacy callers).
+ * Throws `ContainerAuthError` when the probe reports the container as
+ * unauthenticated (non-zero exit, unparsable stdout, or `loggedIn !== true`).
+ */
+function applyAuthCheckIfPresent(
+	containerName: string,
+	authCheckSpawnFn: AuthCheckSpawnFn | undefined,
+): void {
+	if (authCheckSpawnFn === undefined) return;
+	const authResult = applyContainerAuthCheck(containerName, authCheckSpawnFn);
+	if (!authResult.ok) {
+		throw new ContainerAuthError(authResult.stderrTail);
 	}
 }
 
@@ -416,6 +456,19 @@ export function ensureWorkerContainer(
 	// complete no-op.
 	applyConfigIfPresent(containerName, opts.configSpawnFn, opts.build?.hostUid, opts.build?.hostGid);
 
+	// --- Unconditional auth check apply (US-003, CAM-241) ---
+	// Runs the in-container `claude auth status --json` probe after EVERY
+	// reconcile action (reused|started|created|rebuilt), including the
+	// running->reuse branch where no docker reconcile call happens at all.
+	// A reused running container can silently lose its OAuth token between
+	// sidecar ticks (e.g. token expiry, operator logout inside the container);
+	// running this check on every boot catches that before a worker is
+	// dispatched into an unauthenticated container.
+	//
+	// When authCheckSpawnFn is absent (host mode / legacy callers), this is a
+	// complete no-op.
+	applyAuthCheckIfPresent(containerName, opts.authCheckSpawnFn);
+
 	return { action };
 }
 
@@ -489,17 +542,30 @@ export function makeProductionEnsureContainerFn(cwd: string): () => void {
 				exitCode: r.status ?? 1,
 			};
 		};
+		// authCheckSpawnFn wraps spawnSync with stderr capture, mirroring
+		// firewallSpawnFn/configSpawnFn/toolchainExecFn (US-003, CAM-241).
+		const authCheckSpawnFn: AuthCheckSpawnFn = (cmd, args) => {
+			const r = spawnSync(cmd, args, { encoding: 'utf8' });
+			return {
+				stdout: typeof r.stdout === 'string' ? r.stdout : '',
+				stderr: typeof r.stderr === 'string' ? r.stderr : '',
+				exitCode: r.status ?? 1,
+			};
+		};
 		const { uid: hostUid, gid: hostGid } = resolveHostIds(spawnFn);
 		// Throws FirewallError on firewall non-convergence; caught by runSidecar.
 		// Throws ContainerConfigError on config repair failure; caught by runSidecar.
 		// Throws ToolchainMismatchError on toolchain non-convergence; caught by
 		// runSidecar (boot) and the per-cycle dispatch guard in runSupervisor.
+		// Throws ContainerAuthError on an unauthenticated container; caught by
+		// runSidecar (boot) so a lost token is caught before dispatch.
 		ensureWorkerContainer({
 			spawnFn,
 			probe,
 			statFn,
 			firewallSpawnFn,
 			configSpawnFn,
+			authCheckSpawnFn,
 			toolchainExecFn,
 			workspaceFolder: cwd,
 			build: { hostUid, hostGid },

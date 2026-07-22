@@ -27,6 +27,7 @@ import { randomUUID } from 'node:crypto';
 
 import { runSidecarLoop, type RunSidecarLoopOptions, type SpawnFn as LoopSpawnFn, type IsPaneAlive } from '../supervisor/loop.ts';
 import { FirewallError } from '../supervisor/container-firewall.ts';
+import { ContainerAuthError } from '../supervisor/container-auth.ts';
 import { ContainerConfigError } from '../supervisor/container-config.ts';
 import { ToolchainMismatchError } from '../supervisor/toolchain-assert.ts';
 import {
@@ -3327,6 +3328,12 @@ function buildSidecarLoopDeps(ctx: SidecarLoopDepsCtx, options: SidecarOptions):
  * returning abort=true; every other return path (host mode no-op, or a
  * container-mode ensure that succeeds) removes any stale marker, since both
  * represent a healthy bring-up.
+ *
+ * US-004 (CAM-396): a ContainerAuthError mirrors the FirewallError branch
+ * exactly (writes the marker, reason 'container-auth-unavailable', before
+ * returning abort=true) so no worker is dispatched into an unauthenticated
+ * container. ContainerConfigError / ToolchainMismatchError deliberately do
+ * NOT write a marker.
  */
 function runContainerEnsureGuard(cwd: string, options: SidecarOptions): boolean {
 	const stalledMarkerPath = join(cwd, '.claude', SIDECAR_STALLED_FILENAME);
@@ -3347,6 +3354,17 @@ function runContainerEnsureGuard(cwd: string, options: SidecarOptions): boolean 
 			);
 			writeSidecarStalledMarker(stalledMarkerPath, {
 				reason: 'firewall-init-failed',
+				detail: e.stderrTail,
+				writtenAt: new Date().toISOString(),
+			});
+			return true;
+		}
+		if (e instanceof ContainerAuthError) {
+			process.stderr.write(
+				`[cam] container auth check failed — no worker will be dispatched.\n${e.stderrTail}\n`,
+			);
+			writeSidecarStalledMarker(stalledMarkerPath, {
+				reason: 'container-auth-unavailable',
 				detail: e.stderrTail,
 				writtenAt: new Date().toISOString(),
 			});
