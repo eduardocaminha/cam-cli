@@ -21,7 +21,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Load-bearing per issue gotcha: ALL THREE sites in src/supervisor/sidecar-stalled.ts must gain the reason -- the SidecarStalledReason type (~:33), the VALID_REASONS readonly array (~:47), and the JSDoc list (~:26-33). If VALID_REASONS is missed, readSidecarStalledMarker silently returns null (:70-72). This is the 'JSON reader shape guards: validate discriminator fields' pattern (scripts/cam/patterns.md, US-R2-001): the discriminator must be in VALID_REASONS to pass the guard. Test template: test/supervisor/sidecar-stalled.test.ts (round-trip write+read at real tmpdir). No external library, no fetch."
     },
