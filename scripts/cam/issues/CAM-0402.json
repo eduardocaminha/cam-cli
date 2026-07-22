@@ -1,0 +1,10 @@
+{
+  "id": "CAM-402",
+  "title": "CAM-197 Slice 4: cam-issue create sempre spawna pane com handback estruturado (mata o path inline)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-22T23:38:35.941Z",
+  "updatedAt": "2026-07-22T23:38:35.941Z",
+  "description": "Filho de CAM-197 (Layer 2, LLM nao-interativo). Hoje assimetrico: o thin-proxy do terminal ja spawna uma pane, mas o path orch-invoked roda a expansao free-text->title/description INLINE no contexto do orch. Fazer ambos os paths sempre spawnarem uma pane que escreve handback estruturado (estilo worker-report.json) + push de uma linha via send-keys (decisao de comms CAM-75/77/78). O orch nunca roda a expansao in-context. TIPO refactor/feat."
+}
