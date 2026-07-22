@@ -37,7 +37,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New file src/supervisor/container-auth.ts + test/supervisor/container-auth.test.ts. Mirror src/supervisor/container-firewall.ts structure exactly: pure applyContainer* helper returns a discriminated {ok:true} | {ok:false,exitCode,stderrTail} union and NEVER throws; the typed ContainerAuthError is thrown by the caller (US-003), not here. The probe is non-interactive: argv has NO -it and NO sudo (unlike buildFirewallExecArgv which uses sudo). Reuse the parseAuthJson/loggedIn convention from src/commands/run-auth-preflight.ts:44-56,125 (loggedIn !== true => not ok). Do NOT reuse dockerExecWrap (src/commands/docker-exec.ts:34) -- it builds an interactive '-it' STRING for tmux panes, wrong for a spawnSync probe. Test DI fake template: test/commands/run-auth-preflight.test.ts (makeFakeAuthSpawn + loggedInPayload) for the auth JSON; container-firewall's test for the docker spawnFn shape. No external library, no fetch."
     },
