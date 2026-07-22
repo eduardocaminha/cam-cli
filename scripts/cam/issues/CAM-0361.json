@@ -1,13 +1,40 @@
 {
   "id": "CAM-361",
   "title": "Blocking-window consequence worth a follow-up issue, not a deviation from the P…",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-20T06:20:13.920Z",
-  "updatedAt": "2026-07-20T06:20:13.920Z",
+  "updatedAt": "2026-07-22T01:06:21.250Z",
   "description": "Blocking-window consequence worth a follow-up issue, not a deviation from the PRD (which mandated the raise): the default sleepFn is Bun.sleepSync, so 5s -> 30s makes every push against a busy orchestrator block the calling thread up to 30s. None of the 5 production call sites (src/commands/issue.ts:185, src/commands/review.ts:183, src/commands/spec.ts:218, src/commands/orch-recycle-watch.ts:417, src/supervisor/host.ts:330) passes an idleTimeoutMs override, so all inherit the 30s ceiling; host.ts:330 is reached from the sidecar merge-watch/narration path, so the sidecar outer loop can now stall 6x longer per narration. Same class as the known CAM-103 outer-loop-blocking concern. Consider an async settle/poll path or a shorter per-caller budget for best-effort narration pushes.\n\nSource: cam/issue-358\nReview round: 2\n\nsuggestion-fingerprint: ff94799a3c19",
   "derivedFrom": [
     "CAM-358"
-  ]
+  ],
+  "spec": {
+    "scope": "Decouple the sidecar's best-effort orchestrator-narration push from the 30s one-shot idle-wait deadline so a busy orchestrator pane can no longer stall the supervisor loop and its in-memory merge-watch timers for up to 30 seconds per narration line. makeNotifyOrchestrator (src/supervisor/host.ts:322) is the sidecar's single narration pusher and calls sendKeysVerified with no idleTimeoutMs, so it inherits IDLE_WAIT_DEADLINE_MS = 30_000 (src/tmux/dispatch.ts:254); when the orchestrator pane is mid-turn the idle-gate times out and blocks the sidecar loop the full 30s before sending anyway on every push. Fix (option b): introduce a dedicated NARRATION_IDLE_TIMEOUT_MS (2_000) in the dispatch module and pass it as idleTimeoutMs from makeNotifyOrchestrator's sendKeysVerified call, leaving the 30s IDLE_WAIT_DEADLINE_MS untouched for the one-shot CLI thin-proxy waits (issue/review/spec) and the orch-recycle-watch process, which legitimately want the long wait. sendKeysVerified already threads idleTimeoutMs into waitForIdlePane, so this is pure wiring: no change to the sync contract, the send-anyway-on-timeout fallback, or the existing dispatch tests.",
+    "acceptanceCriteria": [
+      "makeNotifyOrchestrator's narration push waits at most the dedicated narration idle-timeout before sending anyway to a busy (never-idle) orchestrator pane, not the 30s one-shot deadline. [oracle: bun test test/supervisor/narration-idle-timeout.test.ts]",
+      "A dedicated NARRATION_IDLE_TIMEOUT_MS (2_000 ms) is defined in the dispatch module and is strictly less than IDLE_WAIT_DEADLINE_MS (30_000 ms), which stays unchanged so the one-shot CLI thin-proxy waits and the orch-recycle-watch keep the full 30s. [oracle: bun test test/tmux/dispatch-timeouts.test.ts]",
+      "The full quality spine passes. [oracle: bun run check:all]"
+    ],
+    "gotchas": [
+      "Only ONE of the five sendKeysVerified / waitForIdlePane call sites is the problem: the sidecar's single narration pusher makeNotifyOrchestrator (src/supervisor/host.ts:322, sendKeysVerified call at host.ts:331). The other four (issue/review/spec one-shot CLI thin-proxies + the orch-recycle-watch separate process) legitimately want the full 30s and MUST stay at IDLE_WAIT_DEADLINE_MS. Do NOT blanket-lower the shared constant; add a dedicated narration constant and pass it only at the narration call site.",
+      "sendKeysVerified (src/tmux/dispatch.ts) already destructures idleTimeoutMs = IDLE_WAIT_DEADLINE_MS and threads it into waitForIdlePane (dispatch.ts:398-406, deadline computed at 406). So option (b) is pure wiring: pass idleTimeoutMs: NARRATION_IDLE_TIMEOUT_MS in the host.ts:331 options object. Do NOT touch the sync/sleepFn contract or the ~129 existing dispatch tests.",
+      "The send-anyway-on-timeout behavior is unchanged and intentional: on a busy pane the push still fires after the (now shorter) wait; the warn line 'did not go idle within N ms; sending anyway' (dispatch.ts:441) will read the new N. Narration is best-effort by design, and merge-watch already polls in seconds over an up-to-4h window, so a shorter idle wait cannot lose a merge.",
+      "Sidecar-executed rebuild required: src/supervisor/host.ts and src/tmux/dispatch.ts are executed by the running sidecar, so after ship do the coherence rebuild (bash scripts/build-release.sh --install, then restart cam sidecar).",
+      "Behavioral test seam: makeNotifyOrchestrator takes spawnFn + capturePaneFn; inject a capturePaneFn that always returns a non-idle (busy) pane and a sleepFn that accumulates slept ms to assert the total wait is bounded by ~2_000 ms, not 30_000. sendKeysVerified accepts sleepFn for exactly this."
+    ],
+    "domainTerms": [
+      "narration push",
+      "idle-wait deadline",
+      "best-effort send-anyway"
+    ]
+  },
+  "wsjf": {
+    "value": 6,
+    "timeCriticality": 4,
+    "riskReduction": 6,
+    "jobSize": 2
+  },
+  "type": "fix"
 }
