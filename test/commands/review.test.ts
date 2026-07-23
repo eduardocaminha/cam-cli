@@ -1,15 +1,22 @@
-// test/review.test.ts
+// test/commands/review.test.ts
 //
-// Unit tests for `cam review` (US-007: thin-proxy to orchestrator).
+// Unit tests for `cam review` (US-002 of CAM-403: phase-signal writer).
 //
 // What we cover:
-//   - parseReviewArgs: --help/-h, unknown flag rejection.
-//   - runReview (hit path): orchestrator alive -> send-keys /cam-review and return 0.
-//   - runReview (miss path): bootstraps cam run, waits for marker, then send-keys.
+//   - parseReviewArgs: --help/-h, unknown flag rejection (unchanged, still
+//     covered here for the default no-flags path).
+//   - runReview (hit path): orchestrator alive -> phase:review written to
+//     the state file and returns 0. NO send-keys dispatch.
+//   - runReview (miss path): bootstraps cam run, waits for marker, then
+//     writes the state file.
 //   - runReview: bootstrap failure returns 1.
 //   - runReview: marker timeout returns 1.
-//   - runReview: missing orch pane returns 1.
-//   - send-keys is atomic (NO -l; -l would make "Enter" literal; text + Enter same call).
+//   - runReview: pane mutex busy returns 1 and does NOT write the state file.
+//   - runReview: sidecar liveness gate (US-002, CAM-403) -- refuses and does
+//     NOT write phase:review when the sidecar is dead, mirroring runPlan
+//     and runShip.
+//   - The liveness/bootstrap preamble and paneCountMutex busy-refusal are
+//     preserved from the previous send-keys-based thin-proxy.
 
 import { describe, expect, test } from 'bun:test';
 import { tmpdir } from 'node:os';
@@ -17,12 +24,13 @@ import { mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 
-import { runReview } from '../src/commands/review.ts';
-import { parseReviewArgs } from '../index.ts';
+import { runReview } from '../../src/commands/review.ts';
+import { parseReviewArgs } from '../../index.ts';
 import {
 	projectSessionName,
 	type SpawnFn as TmuxSpawnFn,
-} from '../src/tmux/session.ts';
+} from '../../src/tmux/session.ts';
+import { parseStateFile } from '../../src/commands/status.ts';
 
 // --- Fake tmux spawn --------------------------------------------------------
 
@@ -83,30 +91,23 @@ function makeFakeTmuxSpawn(opts: {
 			return { ...base, stdout: Buffer.from('') };
 		}
 
-		if (subcommand === 'capture-pane') {
-			// Return idle pane content so the idle-check (US-008) passes
-			// immediately, AND so the default visibleCaptureFn's row 26 (the
-			// fixed cursorY below) starts with the prompt glyph, keeping the
-			// prompt-row discriminator (US-001, CAM-364) reading delivered too.
-			return { ...base, stdout: Buffer.from(`${'\n'.repeat(26)}❯ `) };
-		}
-
-		if (subcommand === 'display-message') {
-			// sendKeysVerified's delivery verdict (US-002, CAM-359) samples cursor
-			// geometry here. A fixed, always-identical reading means the per-send
-			// baseline always matches the post-send sample, so delivery succeeds
-			// on attempt 1.
-			return { ...base, stdout: Buffer.from('2;26;80;30') };
-		}
-
-		if (subcommand === 'send-keys') {
-			return base;
-		}
-
 		return base;
 	}) as TmuxSpawnFn & { calls: TmuxCall[] };
 	fn.calls = calls;
 	return fn;
+}
+
+/** Capture state-file writes from runReview. Returns last captured body. */
+function makeWriteCapture(): {
+	calls: Array<{ body: string }>;
+	writeFn: (cwd: string, body: string, opts: { force?: boolean }) => string;
+} {
+	const calls: Array<{ body: string }> = [];
+	const writeFn = (_cwd: string, body: string, _opts: { force?: boolean }) => {
+		calls.push({ body });
+		return 'captured';
+	};
+	return { calls, writeFn };
 }
 
 // --- parseReviewArgs -------------------------------------------------------
@@ -145,87 +146,124 @@ describe('parseReviewArgs', () => {
 	});
 });
 
-// --- runReview (thin-proxy): hit path ----------------------------------------
+// --- runReview: hit path -----------------------------------------------------
 
-describe('runReview (thin-proxy, hit path)', () => {
-	test('sends /cam-review to orchestrator pane and returns 0', async () => {
+describe('runReview (hit path)', () => {
+	test('writes phase:review and returns 0', async () => {
 		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-hit-'));
-		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%2' });
+		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
+		const { calls: writeCalls, writeFn } = makeWriteCapture();
 
 		const code = await runReview({
 			cwd: tmpDir,
 			tmuxSpawnFn: spawnFn,
+			writeFn,
+			sidecarAliveFn: () => true,
 		});
 
 		expect(code).toBe(0);
-
-		const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
-		expect(sendKeys).toBeDefined();
-		expect(sendKeys?.args).not.toContain('-l');
-		expect(sendKeys?.args).toContain('/cam-review');
-		expect(sendKeys?.args).toContain('Enter');
-		expect(sendKeys?.args).toContain('%2');
+		expect(writeCalls).toHaveLength(1);
+		const parsed = parseStateFile(writeCalls[0]?.body ?? '');
+		expect(parsed?.phase).toBe('review');
 	});
 
-	test('send-keys is atomic: text and Enter are in the same send-keys call', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-atomic-'));
-		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
+	test('does NOT call send-keys (state-file write is the signal)', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-no-sendkeys-'));
+		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
+		const { writeFn } = makeWriteCapture();
 
-		await runReview({ cwd: tmpDir, tmuxSpawnFn: spawnFn });
+		await runReview({
+			cwd: tmpDir,
+			tmuxSpawnFn: spawnFn,
+			writeFn,
+			sidecarAliveFn: () => true,
+		});
 
-		const sendKeys = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
-		expect(sendKeys).toHaveLength(1);
-		const call = sendKeys[0];
-		const enterIdx = call?.args.lastIndexOf('Enter') ?? -1;
-		const textIdx = call?.args.findIndex((a) => a === '/cam-review') ?? -1;
-		expect(enterIdx).toBeGreaterThan(textIdx);
+		const sendKeys = spawnFn.calls.find((c) => c.args.includes('send-keys'));
+		expect(sendKeys).toBeUndefined();
 	});
 
-	test('does NOT use -l (regression: -l makes "Enter" literal, never submits)', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-literal-'));
-		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
+	test('preserves other state-file fields already present (merge, not clobber)', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-merge-'));
+		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
+		const { calls: writeCalls, writeFn } = makeWriteCapture();
 
-		await runReview({ cwd: tmpDir, tmuxSpawnFn: spawnFn });
+		// First write establishes an existing state file (via a real writeStateFile
+		// call so buildReviewBody's existsSync/readFileSync path picks it up).
+		const { writeStateFile, renderStateFile } = await import('../../src/commands/next.ts');
+		writeStateFile(
+			tmpDir,
+			renderStateFile({
+				maxIterations: 42,
+				completionPromise: 'custom promise',
+				startedAt: '2026-01-01T00:00:00Z',
+				pid: 999,
+				phase: 'implementing',
+				iteration: 3,
+				currentStory: 'US-002',
+				storiesDone: 1,
+				storiesTotal: 5,
+				lastActivity: '2026-01-01T00:00:00Z',
+				plan_issue: 'CAM-999',
+			}),
+			{ force: true },
+		);
 
-		const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
-		expect(sendKeys?.args).not.toContain('-l');
+		const code = await runReview({
+			cwd: tmpDir,
+			tmuxSpawnFn: spawnFn,
+			writeFn,
+			sidecarAliveFn: () => true,
+		});
+
+		expect(code).toBe(0);
+		const parsed = parseStateFile(writeCalls[0]?.body ?? '');
+		expect(parsed?.phase).toBe('review');
+		expect(parsed?.max_iterations).toBe(42);
+		expect(parsed?.completion_promise).toBe('custom promise');
+		expect(parsed?.current_story).toBe('US-002');
+		expect(parsed?.stories_done).toBe(1);
+		expect(parsed?.stories_total).toBe(5);
+		expect(parsed?.plan_issue).toBe('CAM-999');
 	});
 
 	test('skips bootstrap when orchestrator is already alive', async () => {
 		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-no-bootstrap-'));
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
+		const { writeFn } = makeWriteCapture();
 		let bootstrapCalled = false;
 
 		await runReview({
 			cwd: tmpDir,
 			tmuxSpawnFn: spawnFn,
+			writeFn,
+			sidecarAliveFn: () => true,
 			bootstrapFn: async () => { bootstrapCalled = true; return true; },
 		});
 
 		expect(bootstrapCalled).toBe(false);
 	});
 
-	test('returns 1 and does not send-keys when pane mutex is busy', async () => {
+	test('returns 1 and does not write when pane mutex is busy', async () => {
 		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-busy-'));
 		const spawnFn = makeFakeTmuxSpawn({
 			sessionExists: true,
 			orchAlive: true,
 			paneMutexBusy: true,
 		});
+		const { calls: writeCalls, writeFn } = makeWriteCapture();
 
-		const code = await runReview({ cwd: tmpDir, tmuxSpawnFn: spawnFn });
+		const code = await runReview({ cwd: tmpDir, tmuxSpawnFn: spawnFn, writeFn });
 
 		expect(code).toBe(1);
-		// send-keys must NOT have been called (worker is still running)
-		const sendKeys = spawnFn.calls.find((c) => c.args[2] === 'send-keys');
-		expect(sendKeys).toBeUndefined();
+		expect(writeCalls).toHaveLength(0);
 	});
 });
 
-// --- runReview (thin-proxy): miss path ----------------------------------------
+// --- runReview: miss path -----------------------------------------------------
 
-describe('runReview (thin-proxy, miss path)', () => {
-	test('bootstraps + waits for marker + sends keys when orch not alive', async () => {
+describe('runReview (miss path)', () => {
+	test('bootstraps + waits for marker + writes state file when orch not alive', async () => {
 		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-miss-'));
 
 		let bootstrapCalled = false;
@@ -255,18 +293,10 @@ describe('runReview (thin-proxy, miss path)', () => {
 					if (fmt === '#{@cam_label}') {
 						return { ...base, stdout: Buffer.from('orchestrator\ndashboard\n') };
 					}
-					if (fmt === '#{pane_index};#{pane_id}') {
-						return { ...base, stdout: Buffer.from('0;%0\n') };
-					}
 					if (fmt === '#{pane_id}') {
-						// paneCountMutex: 2 panes = available (fresh session).
 						return { ...base, stdout: Buffer.from('%0\n%1\n') };
 					}
 					return { ...base, stdout: Buffer.from('') };
-				}
-				if (subcommand === 'capture-pane') {
-					// Return idle pane content so the idle-check (US-008) passes immediately.
-					return { ...base, stdout: Buffer.from('> ') };
 				}
 				return base;
 			},
@@ -280,6 +310,8 @@ describe('runReview (thin-proxy, miss path)', () => {
 			return true;
 		};
 
+		const { calls: writeCalls, writeFn } = makeWriteCapture();
+
 		const code = await runReview({
 			cwd: tmpDir,
 			tmuxSpawnFn: statefulSpawnFn,
@@ -287,14 +319,15 @@ describe('runReview (thin-proxy, miss path)', () => {
 			statFn: () => markerPresent,
 			sleepFn: () => {},
 			waitTimeoutMs: 5_000,
+			writeFn,
+			sidecarAliveFn: () => true,
 		});
 
 		expect(code).toBe(0);
 		expect(bootstrapCalled).toBe(true);
-
-		const sendKeys = statefulSpawnFn.calls.find((c) => c.args[2] === 'send-keys');
-		expect(sendKeys).toBeDefined();
-		expect(sendKeys?.args).toContain('/cam-review');
+		expect(writeCalls).toHaveLength(1);
+		const parsed = parseStateFile(writeCalls[0]?.body ?? '');
+		expect(parsed?.phase).toBe('review');
 	});
 
 	test('returns 1 when bootstrap fails', async () => {
@@ -327,55 +360,75 @@ describe('runReview (thin-proxy, miss path)', () => {
 	});
 });
 
-// --- runReview (thin-proxy): pane-not-found path ------------------------------
-
-describe('runReview (thin-proxy, pane lookup)', () => {
-	test('returns 1 when getOrchPaneId returns null (list-panes fails)', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-nopane-'));
-		const spawnFn: TmuxSpawnFn & { calls: TmuxCall[] } = (() => {
-			const calls: TmuxCall[] = [];
-			const fn = ((cmd: string, args: string[]) => {
-				calls.push({ cmd, args: [...args] });
-				const base: SpawnSyncReturns<Buffer> = {
-					pid: 1,
-					output: [null, Buffer.from(''), Buffer.from('')],
-					stdout: Buffer.from(''),
-					stderr: Buffer.from(''),
-					status: 0,
-					signal: null,
-				};
-				const subcommand = args[0] === '-L' ? args[2] : args[0];
-				if (subcommand === 'has-session') return base;
-				if (subcommand === 'list-panes') {
-					const fIdx = args.indexOf('-F');
-					const fmt = fIdx !== -1 ? (args[fIdx + 1] ?? '') : '';
-					if (fmt === '#{@cam_label}') {
-						return { ...base, stdout: Buffer.from('orchestrator\ndashboard\n') };
-					}
-					return { ...base, stdout: Buffer.from('') };
-				}
-				return base;
-			}) as TmuxSpawnFn & { calls: TmuxCall[] };
-			fn.calls = calls;
-			return fn;
-		})();
-
-		const code = await runReview({ cwd: tmpDir, tmuxSpawnFn: spawnFn });
-		expect(code).toBe(1);
-	});
-});
-
 // --- runReview: session name used in all tmux calls ---------------------------
 
 describe('runReview: session name', () => {
 	test('all tmux calls include the project session name', async () => {
 		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-sessname-'));
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
+		const { writeFn } = makeWriteCapture();
 		const sessionName = projectSessionName(tmpDir);
 
-		await runReview({ cwd: tmpDir, tmuxSpawnFn: spawnFn });
+		await runReview({ cwd: tmpDir, tmuxSpawnFn: spawnFn, writeFn, sidecarAliveFn: () => true });
 
 		const callsWithSession = spawnFn.calls.filter((c) => c.args.includes(sessionName));
 		expect(callsWithSession.length).toBeGreaterThan(0);
+	});
+});
+
+// --- runReview: sidecar liveness gate (US-002, CAM-403) -----------------------
+
+describe('runReview: sidecar liveness gate', () => {
+	test('refuses and does NOT write phase:review when the sidecar is dead', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-sidecar-dead-'));
+		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
+		const { calls: writeCalls, writeFn } = makeWriteCapture();
+		let probedClaudeDir: string | undefined;
+
+		const code = await runReview({
+			cwd: tmpDir,
+			tmuxSpawnFn: spawnFn,
+			writeFn,
+			sidecarAliveFn: (claudeDir) => {
+				probedClaudeDir = claudeDir;
+				return false;
+			},
+		});
+
+		expect(code).toBe(1);
+		expect(writeCalls).toHaveLength(0);
+		expect(probedClaudeDir).toBe(join(tmpDir, '.claude'));
+	});
+
+	test('proceeds and writes phase:review when the sidecar is alive', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-sidecar-alive-'));
+		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
+		const { calls: writeCalls, writeFn } = makeWriteCapture();
+
+		const code = await runReview({
+			cwd: tmpDir,
+			tmuxSpawnFn: spawnFn,
+			writeFn,
+			sidecarAliveFn: () => true,
+		});
+
+		expect(code).toBe(0);
+		expect(writeCalls).toHaveLength(1);
+	});
+
+	test('AC: the gate is mode-agnostic — a dead sidecar refuses regardless of worker_isolation', async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-sidecar-mode-agnostic-'));
+		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
+		const { calls: writeCalls, writeFn } = makeWriteCapture();
+
+		const code = await runReview({
+			cwd: tmpDir,
+			tmuxSpawnFn: spawnFn,
+			writeFn,
+			sidecarAliveFn: () => false,
+		});
+
+		expect(code).toBe(1);
+		expect(writeCalls).toHaveLength(0);
 	});
 });
