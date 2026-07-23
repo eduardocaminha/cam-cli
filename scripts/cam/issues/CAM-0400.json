@@ -1,10 +1,44 @@
 {
   "id": "CAM-400",
   "title": "CAM-197 Slice 2: mecanizar cam-prune + cam issue get + pre-flight do cam-next em CLI deterministico",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-22T23:38:31.215Z",
-  "updatedAt": "2026-07-22T23:38:31.215Z",
-  "description": "Filho de CAM-197 (Layer 1). Mover a logica que hoje roda inline no contexto do orch para subcomandos CLI puros e deterministicos (zero LLM, sem pane): cam-prune (hoje 43 linhas de passos git inline), cam issue get (leitura de issue), e o pre-flight do cam-next (hoje 118 linhas rodando na sessao do orch). O orch passa a so chamar o comando e narrar. Composicao por fix-site: os 3 sao a mesma natureza (de-inline para subcomando deterministico), 1 PR. Separar o pre-flight num PR proprio SO se ele estufar no spec. TIPO feat/refactor."
+  "updatedAt": "2026-07-23T14:08:05.823Z",
+  "description": "Filho de CAM-197 (Layer 1). Mover a logica que hoje roda inline no contexto do orch para subcomandos CLI puros e deterministicos (zero LLM, sem pane): cam-prune (hoje 43 linhas de passos git inline), cam issue get (leitura de issue), e o pre-flight do cam-next (hoje 118 linhas rodando na sessao do orch). O orch passa a so chamar o comando e narrar. Composicao por fix-site: os 3 sao a mesma natureza (de-inline para subcomando deterministico), 1 PR. Separar o pre-flight num PR proprio SO se ele estufar no spec. TIPO feat/refactor.",
+  "spec": {
+    "scope": "CAM-197 Layer-1 Slice 2: move three pieces of logic that today run inline in the orchestrator agent context into pure, deterministic, zero-LLM CLI subcommands, so the orchestrator only calls the command and narrates. (1) cam prune: a new subcommand implementing the branch-cleanup git dance currently spelled out inline in the /cam-prune template (dirty-tree STOP, main-branch STOP, checkout main, pull, git branch -D, git fetch --prune), with STOP conditions returning nonzero + a clear message and a --force escape for the confirmation cases. (2) cam issue get <id>: a new subcommand under cam issue that resolves the zero-padded issue filename and reads a single issue JSON from main (git show main:scripts/cam/issues/<PREFIX>-NNNN.json), the read the orch shells inline in several templates today. (3) cam next preflight: fold the deterministic preflight (git sync with remote, clean-tree check, typecheck, tests) that /cam-next instructs the orch to run inline into cam next itself, gating the active:true signal write on preflight success, with a --skip-preflight escape. All three are deterministic (zero LLM, no pane) and driven through injected deps so tests never shell out or run the real suite. Both template trees (.claude/commands/ and templates/commands/) are updated together (verified dual-copy, byte-identical) to replace the inline steps with a call to the new CLI, leaving no orphaned inline steps.",
+    "acceptanceCriteria": [
+      "cam prune refuses to run and exits nonzero when the working tree is dirty or when the current branch is main, and on a cam/* branch it checks out main, pulls origin main, deletes the branch, and runs git fetch --prune, all driven through injected git deps [oracle: bun test test/commands/prune.test.ts]",
+      "cam prune is registered as a deterministic zero-LLM subcommand: a parse function, a case in the index.ts dispatch switch, a PRUNE_HELP entry, and inclusion in the command-name help list, invokable as `cam prune` [oracle: reviewer-judgment]",
+      "cam issue get <id> resolves the zero-padded issue filename, reads the issue JSON from main via git show main:scripts/cam/issues/<PREFIX>-NNNN.json, prints it, and exits nonzero with a clear message when the id does not exist, all driven through injected deps [oracle: bun test test/commands/issue-get.test.ts]",
+      "cam issue get is added to the ParsedIssueArgs union and parseIssueArgs subcommand detection, wired in dispatchIssue, and surfaced in the cam issue help and summary strings [oracle: reviewer-judgment]",
+      "cam next runs a deterministic preflight (git sync with remote, clean-tree check, typecheck, tests) before writing active:true, gates the active signal on preflight success, and honors a --skip-preflight flag that bypasses the preflight, all driven through injected deps [oracle: bun test test/commands/next-preflight.test.ts]",
+      "the /cam-prune and /cam-next command templates in both .claude/commands/ and templates/commands/ replace their inline git and gate steps with a call to the new deterministic CLI subcommand, leave no orphaned inline steps, and the two template trees stay byte-identical [oracle: reviewer-judgment]",
+      "the full spine passes green [oracle: bun run check:all]"
+    ],
+    "gotchas": [
+      "CLI dispatch is a single monolithic switch in index.ts (no src/cli.ts): add a case around index.ts:2720-3071, a parse<Cmd>Args + null/help guards, register the name in the command-name array (index.ts:2583-2590) and the help-table map (index.ts:2638), and put the handler in src/commands/prune.ts. cam issue subcommands live inside parseIssueArgs (index.ts:1136-1200) and dispatchIssue (index.ts:2313); add a get mode to the ParsedIssueArgs union (index.ts:1079-1086).",
+      "Templates are a VERIFIED dual-copy: .claude/commands/cam-*.md is byte-identical to templates/commands/cam-*.md. Every template edit must be applied to BOTH files and kept byte-identical, or the review parity AC fails.",
+      "The /cam-next preflight is only ~17 imperative lines (cam-next.md:5-21: git fetch/rev-parse/pull-or-push, git status clean-tree, bun run typecheck, bun test); the rest of the 129-line file is architecture doc (thin-proxy dispatch, worker entrypoint, decideNextAction table L108-119), NOT preflight to de-inline. Only de-inline the imperative preflight.",
+      "Design decision (resolved on merits, faithful de-inline): the preflight FOLDS INTO cam next as a gate before the signal write (runNext at src/commands/next.ts:273-395, signal write L344-389), not a separate subcommand, because cam next is the natural single call the orch makes. Latency of the full test suite is bounded to human-initiated (re)starts, not per-worker sidecar dispatches (the sidecar loops workers internally without re-invoking cam next), so the cost is acceptable; --skip-preflight is the escape for the resume case.",
+      "All three handlers must be deterministic and dep-injected: tests must NOT shell out to real git or run the real typecheck/test suite. Follow the existing injectable-deps pattern (IssueDispatchDeps at index.ts:2313, runNext's already-parameterized shape). This prevents test recursion (cam next preflight running bun test which runs cam next).",
+      "cam issue get should build on the existing src/issues/ seams (resolve-id.ts for id->padded-filename, git show main read like readBacklogFromMain's git cat-file path), not re-implement id parsing. Padding convention: CAM-42 -> scripts/cam/issues/CAM-0042.json.",
+      "This diff touches sidecar-executed / orch-facing surfaces (templates/, index.ts dispatch, next.ts) so a coherence rebuild (bash scripts/build-release.sh --install, then kill sidecar by exact pid + restart) is required after merge before the new commands are live in the running binary."
+    ],
+    "domainTerms": [
+      "de-inline: move logic out of the orchestrator LLM template into a deterministic CLI subcommand the orch merely calls and narrates",
+      "dual-copy: .claude/commands/ (live) and templates/commands/ (vendored by init/setup) must stay byte-identical",
+      "preflight: the pre-signal checks in /cam-next (git sync, clean tree, typecheck, tests) run before flipping active:true",
+      "signal-write: cam next's read-modify-write of .claude/cam-loop.local.md setting active:true, which the sidecar polls"
+    ]
+  },
+  "wsjf": {
+    "value": 4,
+    "timeCriticality": 2,
+    "riskReduction": 3,
+    "jobSize": 4
+  },
+  "type": "feat"
 }
