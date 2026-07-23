@@ -46,6 +46,8 @@ import { glyphs } from '../design/tokens.ts';
 import { accent, chalk, destructive, muted, warning } from '../logging/color.ts';
 import {
 	emitEntry,
+	emitMutedHint,
+	emitOk,
 	emitSectionHeading,
 	emitTitle,
 	emitTrailingBlank,
@@ -818,6 +820,91 @@ function renderEntry(key: string, value: string): string {
 	return `${CONTENT_INDENT}${chalk.bold(key.padEnd(KEY_COL_WIDTH))}${value}`;
 }
 
+/**
+ * Render the "Markers" section (US-004, CAM-401): one warning row per
+ * projected blocker/wedge/stall marker, plus the merge-watch position when
+ * present. Speaks the same glyph-based vocabulary as `renderStateIndicator`
+ * (never divider color): each blocker row uses `emitWarn`'s `!` warning
+ * glyph, and the merge-watch row uses the same accent `●` "active" glyph
+ * `renderStateIndicator` uses for the loop's own active state, since polling
+ * an open PR is normal in-progress work, not a blocker.
+ *
+ * Sparse-by-design (AC3): when no marker is set and no merge-watch state
+ * exists, this renders nothing at all — no empty section heading, no empty
+ * rows.
+ */
+function renderMarkersSection(report: StatusReport): void {
+	const rows: Array<{ label: string; detail: string }> = [];
+	if (report.shipStalled) {
+		rows.push({ label: 'ship-stalled', detail: `PR #${report.shipStalled.prNumber} · ${report.shipStalled.reason}` });
+	}
+	if (report.planEscalated) {
+		rows.push({
+			label: 'plan-escalated',
+			detail: `${report.planEscalated.issueId} · ${report.planEscalated.summary}`,
+		});
+	}
+	if (report.planPreflightFailed) {
+		rows.push({
+			label: 'plan-preflight-failed',
+			detail: `${report.planPreflightFailed.step} · ${report.planPreflightFailed.detail}`,
+		});
+	}
+	if (report.implementBlocked) {
+		rows.push({
+			label: 'implement-blocked',
+			detail: `${report.implementBlocked.story ?? '(no story)'} · ${report.implementBlocked.reason}`,
+		});
+	}
+	if (report.postMergeStalled) {
+		rows.push({
+			label: 'post-merge-stalled',
+			detail: `PR #${report.postMergeStalled.prNumber} · ${report.postMergeStalled.reason}`,
+		});
+	}
+	if (report.sidecarStalled) {
+		rows.push({
+			label: 'sidecar-stalled',
+			detail: `${report.sidecarStalled.reason} · ${report.sidecarStalled.detail}`,
+		});
+	}
+	if (report.gate) {
+		rows.push({ label: 'gate', detail: `${report.gate.gate} · ${report.gate.context}` });
+	}
+
+	if (rows.length === 0 && !report.mergeWatch) return;
+
+	emitSectionHeading('Markers');
+	for (const row of rows) {
+		emitWarn(row.label, row.detail);
+	}
+	if (report.mergeWatch) {
+		process.stdout.write(
+			`${CONTENT_INDENT}${accent(glyphs.active)} merge-watch  PR #${report.mergeWatch.prNumber} · poll ${report.mergeWatch.pollCount}\n`,
+		);
+	}
+}
+
+/**
+ * Render the dedicated "Diagnostic" section (US-004, CAM-401): the closed
+ * why-not-moving diagnostic's fixed message + suggested next command,
+ * computed by `diagnoseWhyNotMoving`. Always rendered — the diagnostic is
+ * total over its closed rule-set, so the 'none' condition still produces a
+ * real "progressing normally" row (AC3) rather than an omitted section.
+ * The 'none' condition renders with the success glyph (`emitOk`); every
+ * other condition renders with the warning glyph (`emitWarn`) — the same
+ * glyph-based vocabulary `renderStateIndicator` uses, never divider color.
+ */
+function renderDiagnosticSection(diagnostic: WhyNotMovingDiagnostic): void {
+	emitSectionHeading('Diagnostic');
+	if (diagnostic.condition === 'none') {
+		emitOk(diagnostic.message);
+	} else {
+		emitWarn(diagnostic.message);
+	}
+	emitMutedHint(`next: ${diagnostic.suggestedCommand}`);
+}
+
 export function runStatus(options: StatusOptions = {}): number {
 	const now = options.now ?? (() => new Date());
 	const report = buildStatusReport(options);
@@ -846,6 +933,8 @@ export function runStatus(options: StatusOptions = {}): number {
 		if (report.tokens !== undefined) {
 			process.stdout.write(`${renderEntry('tokens', renderTokensLine(report.tokens))}\n`);
 		}
+		renderMarkersSection(report);
+		if (report.diagnostic) renderDiagnosticSection(report.diagnostic);
 		emitSectionHeading('Next');
 		emitEntry('cam next', 'start the autonomous loop');
 		emitEntry('cam plan', 'plan an issue and create a PRD');
@@ -896,6 +985,9 @@ export function runStatus(options: StatusOptions = {}): number {
 		const promiseShown = report.completionPromise === null ? muted('(none)') : `"${report.completionPromise}"`;
 		process.stdout.write(`${renderEntry('promise', promiseShown)}\n`);
 	}
+
+	renderMarkersSection(report);
+	if (report.diagnostic) renderDiagnosticSection(report.diagnostic);
 
 	if (report.state === 'operator-paused') {
 		emitWarn('Loop is operator-paused', '(.cam-pause marker present)');
