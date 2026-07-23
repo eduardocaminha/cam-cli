@@ -54,7 +54,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "File: src/supervisor/loop.ts. Add runReviewPhaseFn?: () => void | Promise<void> to RunSidecarLoopOptions next to runPlanPhaseFn (L2114) and runShipPhaseFn (L2133); add the dispatch branch next to the planning (L2222) and shipping (L2247) branches with the same throwing-fn outer guard. Design intent anchored in FLOW.md: cam review is listed among the signal-writer thin-proxies (FLOW.md L223) and the sidecar decideNextAction/review lifecycle (FLOW.md L390-398); the orch NARRATES the handback and never drives implement/review itself (FLOW.md L398-399). Add a loop.test.ts case that injects runReviewPhaseFn and asserts it fires only on phase:review; sweep red-against-main."
     },
