@@ -1,0 +1,31 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-404",
+  "description": "Deterministically wait for the raw-echo fixture to render its idle prompt in bootPane so the UNDELIVERED send-once tests stop flaking under CI load.",
+  "issueNumber": 404,
+  "type": "fix",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Deterministic idle-wait in bootPane setup to kill the UNDELIVERED send-once flake",
+      "description": "As a CI maintainer, I need the dispatch-geometry UNDELIVERED send-once tests to wait for the fixture pane to reach idle before any dispatch, so that a slow fixture cold-start under CI load can no longer flip the assertion into the pane-not-idle branch and cause an intermittent red gate.",
+      "acceptanceCriteria": [
+        "bootPane, after confirming the tmux session exists (has-session), deterministically waits via the already-imported waitForCondition polling capture-pane on the private test socket until isOrchPaneIdle returns true, before returning, so no test dispatches sendKeysVerified before the fixture has rendered its idle prompt. [oracle: grep -q 'isOrchPaneIdle' test/integration/dispatch-geometry.test.ts]",
+        "The idle-wait reuses the existing waitForCondition (default timeoutMs 5000 / intervalMs 20) and captures pane content via the existing tmuxRaw(['capture-pane','-p','-t',SESSION]) on the PRIVATE test socket, not via makeSwapSocketSpawn; no new helper is added. [oracle: reviewer-judgment]",
+        "isOrchPaneIdle is imported alongside sendKeysVerified from ../../src/tmux/dispatch.ts. [oracle: grep -q 'isOrchPaneIdle.*dispatch' test/integration/dispatch-geometry.test.ts]",
+        "The change is confined to the test harness (bootPane setup): production src/tmux/dispatch.ts is untouched, no per-test idleTimeoutMs:100 value is altered, and no asserted event tuple is changed. [oracle: file-assert git diff --name-only main -- src/tmux/dispatch.ts is empty]",
+        "The dedicated pane-not-idle test (~line 330) that intentionally wants the 100 ms timeout still constructs its own busy state and keeps its 'did not go idle within 100 ms' intent unchanged. [oracle: reviewer-judgment]",
+        "The full dispatch-geometry integration file passes (read the 'N pass / N fail' summary line and exit code, not glyphs). [oracle: bun test test/integration/dispatch-geometry.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "The spine is green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Single-file test-harness fix. File: test/integration/dispatch-geometry.test.ts (bootPane setup path, the single setup every test calls). Root cause: bootPane awaits only has-session (returns the instant bun spawns, before the fixture renders its idle prompt); the synchronous sendKeysVerified with idleTimeoutMs:100 (default pollIntervalMs:200 = ~2 probes) then times out under CI load and diverts to sendOnceUnverified, emitting push-undelivered{retriesExhausted:1, reason:'pane-not-idle'} + orch-pane-busy instead of the asserted retries-exhausted tuple (events.length 1->2). Fix belongs in bootPane setup only. GOTCHAS: (1) do NOT wrap sendKeysVerified in waitForCondition; it is synchronous void-returning, the events array is fully populated before assertions run. (2) isOrchPaneIdle is already exported from src/tmux/dispatch.ts:317; import alongside sendKeysVerified (test line 29). (3) waitForCondition already imported (test line 32) from ../helpers/wait-for-condition.ts. (4) tmuxRaw is defined at test line ~46; use tmuxRaw(['capture-pane','-p','-t',SESSION]) on the private test socket, NOT makeSwapSocketSpawn. (5) leave idleTimeoutMs:100 in individual tests and the dedicated pane-not-idle test alone. This file is skipIf(!tmuxAvailable) and drives real tmux subprocesses on the host worker; in run output 'did not go idle' warnings and any ✗ glyphs are fixture noise, read the pass/fail summary + exit code. No production change, no vendor/templates touched."
+    }
+  ]
+}
