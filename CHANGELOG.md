@@ -6,6 +6,16 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.251.0] - 2026-07-23
+
+### Added
+
+- US-005 - Collapse the cam-review template and drop subagent-reviewer from the orch Task allowlist
+- US-004 - Wire the production review phase closure driving one makeReviewDispatch round
+- US-003 - Dispatch runReviewPhaseFn from the sidecar poll loop on phase:review
+- US-002 - Make cam review a thin signal-writer gated on sidecar liveness
+- US-001 - Add 'review' to the LoopPhase enum and parser
+
 ## [0.250.0] - 2026-07-23
 
 ### Added
