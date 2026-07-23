@@ -1,10 +1,9 @@
 {
-  "lastCompletedStory": { "id": "US-003", "title": "Add the closed, ordered why-not-moving diagnostic rule-set" },
+  "lastCompletedStory": { "id": "US-004", "title": "Render the marker/merge-watch projection and diagnostic section in `cam status` output" },
   "branchName": "cam/issue-401",
-  "timestamp": "2026-07-23T00:00:00Z",
+  "timestamp": "2026-07-23T00:30:00Z",
   "createdFiles": [
-    "src/commands/status-diagnostics.ts",
-    "test/unit/status-diagnostics.test.ts"
+    "test/unit/status-render.test.ts"
   ],
   "modifiedFiles": [
     "src/commands/status.ts",
@@ -12,7 +11,7 @@
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-003 added a NEW pure module `src/commands/status-diagnostics.ts` exporting `diagnoseWhyNotMoving(report: WhyNotMovingReportInput, signals: WhyNotMovingSignals): WhyNotMovingDiagnostic` -- zero I/O, zero LLM, total over a closed 12-entry enum (`WhyNotMovingConditionId`, exported ordered as `WHY_NOT_MOVING_CONDITIONS`): operator-paused > ship-stalled > plan-escalated > plan-preflight-failed > implement-blocked > post-merge-stalled > sidecar-stalled > gate-awaiting-decision > merge-watch-waiting > orch-pane-busy > delivery-exhausted > none. Each condition maps to exactly ONE fixed message + ONE fixed suggested command (private `WHY_NOT_MOVING_TEXT` lookup table) -- no interpolation of any dynamic marker field (e.g. prNumber, reason) into the message/command text, by design, since the AC requires a FIXED string per condition. `buildStatusReport` (src/commands/status.ts) now attaches this as `report.diagnostic` (optional at the type level for construction ergonomics, but always set before either return path) by calling `diagnoseWhyNotMoving(report, readWhyNotMovingSignals(cwd))` right before each of buildStatusReport's two return statements (the idle-early-return branch and the final branch), so report.state (incl. the operator-paused override) is always final first. The orch-pane-busy / push-undelivered(reason) signals are NOT new StatusReport fields -- they are read straight from the event log by a new `readWhyNotMovingSignals` helper in status.ts, built on a new generic `scanLastEventOfKind<T>(cwd, kind, guard)` scanner that the pre-existing `readLastContainerPreflightEvent` (US-002) was ALSO refactored onto (net LOC roughly flat despite the two new readers -- see patterns.md bullet). `cam status`'s print path (runStatus) was NOT wired to render `report.diagnostic` -- out of scope for this story's AC, which only covered buildStatusReport attaching the model; printing it is a natural follow-up. src/commands/status.ts's file-size-budget.json ceiling was raised 850->913.",
+  "nextStoryContext": "US-004 wired US-002's projected StatusReport markers/mergeWatch fields and US-003's report.diagnostic into runStatus's print path (src/commands/status.ts). Two new private render helpers, both defined right before runStatus: `renderMarkersSection(report)` prints a 'Markers' emitSectionHeading followed by one emitWarn(label, detail) row per present blocker/wedge/stall marker (shipStalled/planEscalated/planPreflightFailed/implementBlocked/postMergeStalled/sidecarStalled/gate) plus a merge-watch row (accent ● glyph, NOT emitWarn -- an open PR polling CI is in-progress work, not a blocker) when report.mergeWatch is set; it renders NOTHING (no heading) when zero markers AND no mergeWatch are present, keeping idle/progressing output sparse. `renderDiagnosticSection(diagnostic)` always prints a 'Diagnostic' section: emitOk (success glyph) for the 'none' condition, emitWarn (warning glyph) for every other condition, followed by an emitMutedHint('next: <suggestedCommand>') row. Both are called from TWO call sites in runStatus: right before the idle branch's `emitSectionHeading('Next')` (idle path returns early), and right before the operator-paused/paused-specific `if` block near the bottom of the non-idle path (both still run afterward, now preceded by the new sections). No new StatusReport/WhyNotMovingDiagnostic fields were added -- purely the print path. AC5 (glyph vocabulary vs. divider color) was manually verified against renderStateIndicator's existing glyph-to-semantic mapping (pending/active/warning/destructive), not machine-checked (reviewer-judgment oracle). src/commands/status.ts's file-size-budget.json ceiling was raised 913->1005 for this story's two new render functions and their two call sites.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
