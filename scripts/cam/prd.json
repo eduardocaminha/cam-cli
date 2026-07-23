@@ -59,7 +59,7 @@
         "The full spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "Files: new pure module src/commands/status-diagnostics.ts (a pure function over the projected model, no I/O, no imports of readFileSync/spawn), wired into src/commands/status.ts buildStatusReport (attach diagnostic onto StatusReport; extend the interface). New test: test/unit/status-diagnostics.test.ts. The rule-set must be CLOSED (a finite enum/ordered list of conditions, each with a fixed message + suggested command constant) and ORDERED (fixed precedence when multiple conditions hold). Enumerate conditions from the US-002 projection: operator-paused (.cam-pause), ship-stalled, plan-escalated, plan-preflight-failed, implement-blocked, post-merge-stalled, sidecar-stalled, gate marker, merge-watch waiting on PR, busy-orch-pane wedge (orch-pane-busy event, transient), delivery-exhaustion (push-undelivered retries-exhausted), and the no-blocker/progressing default. Suggested commands must be real cam/git commands. Gotcha (issue domainTerms): busy-orch-pane wedge = sidecar found pane %0 not idle and sent anyway (transient) vs a genuine delivery failure (retries-exhausted); these are DIFFERENT diagnoses. Keep the function pure and total so every branch is unit-testable red-against-main (no tautological oracle). Precedent for a pure closed rule-set derived from state: src/supervisor/decide.ts. Zero-LLM is a hard requirement of the epic (CAM-197 Layer 1)."
     },
