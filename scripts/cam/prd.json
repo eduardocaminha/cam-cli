@@ -24,7 +24,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New file docs/launch-readiness.md. This is an analysis/audit deliverable (docs-only, no product-code change). Report convention: a top-of-file `Verdict Summary` table with one row per dimension where the dimension name and its `ready`/`gap` token share the SAME LINE (that is what each per-dimension grep oracle keys off), followed by one prose section per dimension. Persisted human-readable .md: no em-dash (travessao), no decorative emoji (global CLAUDE.md rule). Ground the distribution audit in the documented lesson that macOS bun-compile binaries need ad-hoc re-signing off dev machines (notarization for public install). Coordinate with CAM-331 (README) and CAM-332 (brand); do NOT rebuild the README here. Read docs/agent-readiness.md as a prior audit-style doc for tone/structure."
     },
