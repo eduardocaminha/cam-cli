@@ -1,29 +1,14 @@
 {
-  "lastCompletedStory": { "id": "US-003", "title": "Fold the deterministic preflight into `cam next` as a signal-write gate" },
-  "createdFiles": [
-    "src/commands/next-preflight.ts",
-    "test/commands/next-preflight.test.ts"
-  ],
+  "lastCompletedStory": { "id": "US-004", "title": "De-inline the /cam-prune and /cam-next templates to call the new CLI" },
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/next.ts",
-    "index.ts",
-    "test/next.test.ts",
-    "test/attach-hint.test.ts",
-    "templates/commands/cam-next.md",
-    ".claude/commands/cam-next.md",
-    "src/vendor/_generated.ts",
-    "scripts/file-size-budget.json",
-    "scripts/cam/patterns.md"
+    "templates/commands/cam-prune.md",
+    ".claude/commands/cam-prune.md",
+    "src/vendor/_generated.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "`cam next` now runs a deterministic preflight (src/commands/next-preflight.ts, runNextPreflight) as a gate on the active:true signal write, folding in what used to be the imperative 'Pre-flight Checks' section of cam-next.md (both templates/ and .claude/ dual copies, edited in the same commit): git fetch origin -> resolve current branch (git rev-parse --abbrev-ref HEAD, unless overridden) -> sync with remote (git rev-parse --verify origin/<branch>: exists -> git pull origin <branch>, absent -> git push -u origin <branch> to create the tracking branch) -> git status --porcelain clean-tree check -> bun run typecheck -> bun test. Every step is a discriminated union { ok: true } | { ok: false; step; detail }, first-failing-step halts (no later step runs), reusing combineStreams + the PlanPreflightSpawnFn shape from src/supervisor/plan-preflight.ts (aliased NextPreflightSpawnFn) rather than duplicating them. Wired into runNext (src/commands/next.ts) via two new NextOptions fields: skipPreflight?: boolean (the --skip-preflight CLI flag, the resume escape -- bypasses the gate entirely, preflightFn is never called) and preflightFn?: () => NextPreflightResult (defaults to a real spawnSync-backed closure built from the spawnSync already dynamically imported in runNext for tmux calls). Gate placement: after the existing sidecarLivenessGate check, before the active:true write block. index.ts: parseNextArgs gained skipPreflight (via --skip-preflight, no value), threaded into the runNext call at the 'next' case; NEXT_HELP got a matching Options entry. CRITICAL gotcha for the next story that touches runNext or its call sites: every runNext(...) test call across the WHOLE test/ tree that reaches past the sidecar-liveness gate must inject a preflightFn fake (or skipPreflight: true) -- otherwise it falls through to the real default and either shells out to real git in a tmpdir with no repo (fails at git-fetch) or -- if it somehow got further -- would recurse bun test inside bun test. This story already fixed the two pre-existing files affected (test/next.test.ts: 7 call sites; test/attach-hint.test.ts: 2 call sites); grep `runNext({` repo-wide before adding new tests. embed-vendor: templates/commands/cam-next.md is embedded generically by scripts/generate-embedded-vendor.ts's walkFiles (no filter, unlike the curated vendor/ FILES list), so any templates/ edit requires `bun run embed-vendor` (regenerates src/vendor/_generated.ts) before `bun run embed-vendor:check` / test/embedded.test.ts's byte-parity test will pass -- this file is NOT part of the curated FILES const, it rides the generic templates/ walk.",
+  "nextStoryContext": "US-004 de-inlined the remaining /cam-prune template. /cam-next was already de-inlined in US-003 as a direct side effect of folding the preflight into `cam next` itself (both dual copies already showed the 'Pre-flight Checks (deterministic, run by cam next itself)' section pointing at src/commands/next-preflight.ts before this story started -- verified via `diff -q` byte-identical, no edit needed there). This story's actual delta: .claude/commands/cam-prune.md + templates/commands/cam-prune.md replaced the imperative 7-step git dance (git status dirty-check, git branch --show-current, gh pr view confirmation, git checkout main / git pull origin main / git branch -D <branch> / git fetch --prune, print summary) with a call to `cam prune` (the deterministic CLI subcommand shipped in US-001, src/commands/prune.ts, runPrune/parsePruneArgs) plus narration guidance for each of its STOP paths (dirty tree, non-cam/* branch, open unmerged PR, already-on-main) mapped to the corresponding `--force` re-run advice. `bun run embed-vendor` was re-run to sync src/vendor/_generated.ts (templates/ rides the generic walkFiles path in scripts/generate-embedded-vendor.ts, not the curated FILES const -- same gotcha as US-003's cam-next.md edit). Both template pairs verified byte-identical post-edit via `diff -q`. No src/ or CLI-behavior changes in this story: `cam prune` itself was untouched, only the two command-prompt markdown files that narrate around it. If a future story needs to touch prune behavior, edit src/commands/prune.ts directly and remember its slash-command narration lives in the two dual-copy files touched here.",
   "officialDocsValidated": [
-    {
-      "lib": "git rev-parse --verify",
-      "url": "https://git-scm.com/docs/git-rev-parse",
-      "fetchedAt": "2026-07-23T00:00:00Z",
-      "status": "aligned",
-      "summary": "Confirmed --verify exits non-zero (fatal error, or silent with -q) when the given ref (e.g. origin/<branch>) does not resolve to a valid object -- exactly the signal runNextPreflight's syncWithRemote helper uses to decide pull-vs-push -u."
-    }
+    { "lib": "none", "status": "no_external_lib_touched" }
   ]
 }
