@@ -42,7 +42,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Appends three dimensions to docs/launch-readiness.md and adds their rows to the Verdict Summary table (same same-line name+verdict-token convention as US-001). Do NOT perform the cam-cli -> cam-runtime repo/dir rename (CAM-329 operator step); assess it as a factor in the license/repo-visibility verdict only. Persisted .md: no em-dash, no decorative emoji."
     },
