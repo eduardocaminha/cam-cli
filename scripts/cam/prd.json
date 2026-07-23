@@ -36,7 +36,7 @@
         "The full spine passes green. [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Build on existing src/issues/ seams: reuse issueFilePath(id) (src/issues/backlog.ts:205, already does the CAM-42 -> CAM-0042.json padding) for id->filename, and read from main via `git show main:<path>` (injectable spawnSync like readBacklogFromMain's cat-file path at src/issues/backlog.ts:127) instead of re-implementing id parsing. Put the read handler in src/commands/issue-get.ts (dep-injected). Wire: add `{ mode: 'get'; id: string; help: false }` to ParsedIssueArgs union (index.ts:1079-1086), add a `get <id>` branch to parseIssueArgs before the free-text fallthrough (index.ts:1136+, missing-id is a parse error like close/abandon/demote), add a `parsed.mode === 'get'` case to dispatchIssue (index.ts near 2483/2509) with an injectable dep on IssueDispatchDeps, update ISSUE_HELP (index.ts:352). Do NOT hand-file or write any issue file on-branch: get is read-only. noUncheckedIndexedAccess guards on args indexing."
     },
