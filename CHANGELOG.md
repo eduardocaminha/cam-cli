@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.249.0] - 2026-07-23
+
+### Added
+
+- US-001 - Write ADR 0048: grill stays in orchestrator context
+
 ## [0.248.0] - 2026-07-22
 
 ### Added
