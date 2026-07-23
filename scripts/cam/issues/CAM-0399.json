@@ -1,11 +1,11 @@
 {
   "id": "CAM-399",
   "title": "CAM-197 Slice 1: ADR grill fica no orch (boundary = LLM-nao-interativo, nao todo-LLM)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-22T23:38:28.621Z",
-  "updatedAt": "2026-07-22T23:40:41.089Z",
+  "updatedAt": "2026-07-23T10:26:34.385Z",
   "description": "Filho de CAM-197. Escrever um ADR em docs/adr/ registrando a decisao do grill (2026-07-22): o grill operator-interativo do cam-spec FICA no contexto do orquestrador, nao move pra pane propria. Razao: dialogo interativo com o operador e por definicao o papel do orch; o boundary orch/worker se desenha em 'LLM nao-interativo', nao em 'todo LLM'. O custo de token do grill (~50k) e descartado pelo recycle no cycle-close (transcript tem valor zero pos-spec) e pertence a UM ciclo de PR, entao nao viola one-PR-per-session. Os 3 gates de ADR passam (hard-to-reverse: redefine o boundary do epic; surprising-without-context: contradiz a leitura literal 'orch so conversa'; genuine-trade-off: interface humana unica vs preservacao de contexto do orch). Deliverable: 1 arquivo ADR. Enquadra o epic CAM-197 inteiro, por isso e o primeiro slice. TIPO doc. Escopo minimo: so o ADR, nenhuma mudanca de codigo.",
   "spec": {
     "scope": "Add a single Architectural Decision Record at docs/adr/0048-cam-spec-grill-stays-in-orchestrator-context.md recording the decision reached in the CAM-197 grill (2026-07-22): the cam-spec operator-interactive grill STAYS in the orchestrator context and does NOT move to a dedicated pane. The ADR states that the orchestrator/worker boundary is drawn at LLM-non-interactive work, not at all LLM work, because interactive operator dialogue is by definition the orchestrator's role. Rationale to capture: the ~50k-token grill cost is shed by the cycle-close recycle (the transcript has zero value post-spec) and belongs to a single PR cycle, so it does not violate the one-PR-per-session invariant; moving the grill to a pane would require redirecting the operator to talk to an interviewing pane, relaxing the single-human-facing-interface invariant and adding a new failure surface that the token saving does not justify. This is a DOC-ONLY change: no code edits, no behavior change. Follow the existing ADR structure used by docs/adr/0047-*.md: '# ADR 0048: <title>', '## Context', '## Decision', '## Consequences'. This ADR frames the whole CAM-197 epic and is its first slice.",
