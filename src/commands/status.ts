@@ -58,6 +58,40 @@ import {
 	renderTokensLine,
 	type TranscriptUsage,
 } from '../transcript/usage.ts';
+import {
+	MERGE_WATCH_FILENAME,
+	SHIP_STALLED_FILENAME,
+	readMergeWatchState,
+	readShipStalledMarker,
+	type ShipStalledMarker,
+} from '../release/merge-watch.ts';
+import { GATE_FILENAME, readGateFileLenient, type CamGate } from '../supervisor/gate.ts';
+import {
+	PLAN_ESCALATED_FILENAME,
+	readPlanEscalatedMarker,
+	type PlanEscalatedMarker,
+} from '../supervisor/plan-escalation.ts';
+import {
+	PLAN_PREFLIGHT_FAILED_FILENAME,
+	readPlanPreflightFailedMarker,
+	type PlanPreflightFailedMarker,
+} from '../supervisor/plan-preflight-marker.ts';
+import {
+	IMPLEMENT_BLOCKED_FILENAME,
+	readImplementBlockedMarker,
+	type ImplementBlockedMarker,
+} from '../supervisor/implement-blocked-marker.ts';
+import {
+	POST_MERGE_STALLED_FILENAME,
+	readPostMergeStalledMarker,
+	type PostMergeStalledMarker,
+} from '../supervisor/post-merge-stalled-marker.ts';
+import {
+	SIDECAR_STALLED_FILENAME,
+	readSidecarStalledMarker,
+	type SidecarStalledMarker,
+} from '../supervisor/sidecar-stalled.ts';
+import type { ContainerPreflightEventDetail } from '../supervisor/events.ts';
 
 // --- Constants -------------------------------------------------------------
 
@@ -225,6 +259,61 @@ export interface StatusReport {
 	 * active one.
 	 */
 	lastActivity?: string;
+	/**
+	 * Durable ship-stalled marker (US-002, CAM-401). Projected verbatim from
+	 * `.claude/.cam-ship-stalled.json` via `readShipStalledMarker`. Absent when
+	 * the marker file is absent or malformed.
+	 */
+	shipStalled?: ShipStalledMarker;
+	/**
+	 * Durable plan-escalation marker (US-002, CAM-401), from
+	 * `.claude/.cam-plan-escalated.json` via `readPlanEscalatedMarker`.
+	 */
+	planEscalated?: PlanEscalatedMarker;
+	/**
+	 * Durable plan-preflight-failed marker (US-002, CAM-401), from
+	 * `.claude/.cam-plan-preflight-failed.json` via
+	 * `readPlanPreflightFailedMarker`.
+	 */
+	planPreflightFailed?: PlanPreflightFailedMarker;
+	/**
+	 * Durable implement-blocked marker (US-002, CAM-401), from
+	 * `.claude/.cam-implement-blocked.json` via `readImplementBlockedMarker`.
+	 */
+	implementBlocked?: ImplementBlockedMarker;
+	/**
+	 * Durable post-merge-stalled marker (US-002, CAM-401), from
+	 * `.claude/.cam-post-merge-stalled.json` via `readPostMergeStalledMarker`.
+	 */
+	postMergeStalled?: PostMergeStalledMarker;
+	/**
+	 * Durable operator-decision gate (US-002, CAM-401), from
+	 * `.claude/.cam-gate.json` via `readGateFileLenient` (the lenient reader --
+	 * a malformed gate file degrades to this field being absent, never throws
+	 * out of `buildStatusReport`).
+	 */
+	gate?: CamGate;
+	/**
+	 * Durable merge-watch position (US-002, CAM-401): `prNumber` + `pollCount`
+	 * (defaults to 0 when absent on disk) + `lastPolledAt` (absent when the
+	 * watch has never polled yet), from `.claude/.cam-merge-watch.json` via
+	 * `readMergeWatchState`.
+	 */
+	mergeWatch?: { prNumber: number; pollCount: number; lastPolledAt?: number };
+	/**
+	 * Durable sidecar-stalled marker (US-002, CAM-401), from
+	 * `.claude/.cam-sidecar-stalled.json` via `readSidecarStalledMarker`.
+	 */
+	sidecarStalled?: SidecarStalledMarker;
+	/**
+	 * The LAST `container-preflight` event recorded in
+	 * `.claude/cam-worker-events.jsonl` (US-002, CAM-401). `buildStatusReport`
+	 * never re-runs preflight itself -- container preflight has no on-disk
+	 * status file, so this is the only way to surface its last result. `ts` is
+	 * the event's own timestamp, so a stale container-preflight result is
+	 * distinguishable from a fresh one.
+	 */
+	containerPreflight?: ContainerPreflightEventDetail & { ts: string };
 }
 
 // --- Parsers ---------------------------------------------------------------
@@ -410,6 +499,119 @@ function readGitInfo(cwd: string): { branchName?: string; lastCommit?: { sha: st
 	return out;
 }
 
+/**
+ * Read the LAST `container-preflight` event from `.claude/cam-worker-events.jsonl`
+ * (US-002, CAM-401). Container preflight has no on-disk status file (unlike
+ * the marker family above), so the event log is the only durable record of
+ * its last result; this never re-runs preflight itself.
+ *
+ * Returns `undefined` when the event log is absent/unreadable, contains no
+ * `container-preflight` line, or every `container-preflight` line is
+ * malformed. Never throws: each line is parsed independently inside its own
+ * try/catch so one malformed line does not stop the scan for a later valid
+ * one (mirrors the JSON reader shape-guard pattern used by the marker
+ * readers above).
+ */
+function readLastContainerPreflightEvent(
+	cwd: string,
+): (ContainerPreflightEventDetail & { ts: string }) | undefined {
+	const path = join(cwd, '.claude', 'cam-worker-events.jsonl');
+	let raw: string;
+	try {
+		raw = readFileSync(path, 'utf8');
+	} catch {
+		return undefined;
+	}
+
+	let last: (ContainerPreflightEventDetail & { ts: string }) | undefined;
+	for (const line of raw.split('\n')) {
+		const trimmed = line.trim();
+		if (!trimmed) continue;
+		try {
+			const parsed = JSON.parse(trimmed) as unknown;
+			if (parsed === null || typeof parsed !== 'object') continue;
+			const obj = parsed as Record<string, unknown>;
+			if (obj['kind'] !== 'container-preflight' || typeof obj['ts'] !== 'string') continue;
+			const detail = obj['detail'];
+			if (detail === null || typeof detail !== 'object') continue;
+			const detailObj = detail as Record<string, unknown>;
+			if (typeof detailObj['ready'] !== 'boolean') continue;
+			const reason = detailObj['reason'];
+			const entry: ContainerPreflightEventDetail & { ts: string } = {
+				ready: detailObj['ready'],
+				ts: obj['ts'],
+			};
+			if (typeof reason === 'string') entry.reason = reason;
+			last = entry;
+		} catch {
+			// Malformed line; skip and keep scanning for a later valid one.
+		}
+	}
+	return last;
+}
+
+/**
+ * Fields of `StatusReport` populated by `projectCycleState` (US-002,
+ * CAM-401): the six blocker/wedge/stall markers, the durable merge-watch
+ * position, the sidecar-stalled marker, and the last container-preflight
+ * event. Extracted from `buildStatusReport` into its own function (rather
+ * than inlined) purely to keep `buildStatusReport` under the project's
+ * per-function line budget; the two are always called together.
+ */
+type CycleStateProjection = Pick<
+	StatusReport,
+	| 'shipStalled'
+	| 'planEscalated'
+	| 'planPreflightFailed'
+	| 'implementBlocked'
+	| 'postMergeStalled'
+	| 'gate'
+	| 'mergeWatch'
+	| 'sidecarStalled'
+	| 'containerPreflight'
+>;
+
+/**
+ * Project the full cycle state-machine position (US-002, CAM-401):
+ * read-only, via each marker's existing lenient never-throw reader, all
+ * under `<cwd>/.claude/` (the event log is the one exception -- it has no
+ * on-disk status file of its own, so its LAST `container-preflight` line is
+ * read instead of re-running preflight).
+ */
+function projectCycleState(cwd: string): CycleStateProjection {
+	const claudeDirLocal = join(cwd, '.claude');
+	const out: CycleStateProjection = {};
+
+	const shipStalled = readShipStalledMarker(join(claudeDirLocal, SHIP_STALLED_FILENAME));
+	if (shipStalled) out.shipStalled = shipStalled;
+	const planEscalated = readPlanEscalatedMarker(join(claudeDirLocal, PLAN_ESCALATED_FILENAME));
+	if (planEscalated) out.planEscalated = planEscalated;
+	const planPreflightFailed = readPlanPreflightFailedMarker(
+		join(claudeDirLocal, PLAN_PREFLIGHT_FAILED_FILENAME),
+	);
+	if (planPreflightFailed) out.planPreflightFailed = planPreflightFailed;
+	const implementBlocked = readImplementBlockedMarker(join(claudeDirLocal, IMPLEMENT_BLOCKED_FILENAME));
+	if (implementBlocked) out.implementBlocked = implementBlocked;
+	const postMergeStalled = readPostMergeStalledMarker(join(claudeDirLocal, POST_MERGE_STALLED_FILENAME));
+	if (postMergeStalled) out.postMergeStalled = postMergeStalled;
+	const gate = readGateFileLenient(join(claudeDirLocal, GATE_FILENAME));
+	if (gate) out.gate = gate;
+
+	const mergeWatchState = readMergeWatchState(join(claudeDirLocal, MERGE_WATCH_FILENAME));
+	if (mergeWatchState) {
+		out.mergeWatch = { prNumber: mergeWatchState.prNumber, pollCount: mergeWatchState.pollCount ?? 0 };
+		if (mergeWatchState.lastPolledAt !== undefined) {
+			out.mergeWatch.lastPolledAt = mergeWatchState.lastPolledAt;
+		}
+	}
+	const sidecarStalled = readSidecarStalledMarker(join(claudeDirLocal, SIDECAR_STALLED_FILENAME));
+	if (sidecarStalled) out.sidecarStalled = sidecarStalled;
+	const containerPreflight = readLastContainerPreflightEvent(cwd);
+	if (containerPreflight) out.containerPreflight = containerPreflight;
+
+	return out;
+}
+
 // --- Public entrypoint -----------------------------------------------------
 
 export interface StatusOptions {
@@ -449,6 +651,12 @@ export function buildStatusReport(options: StatusOptions = {}): StatusReport {
 	const report: StatusReport = { state: 'idle' };
 	if (git.branchName) report.branchName = git.branchName;
 	if (git.lastCommit) report.lastCommit = git.lastCommit;
+
+	// US-002 (CAM-401): project the six blocker/wedge/stall markers, the
+	// durable merge-watch position, the sidecar-stalled marker, and the last
+	// container-preflight event. Extracted into `projectCycleState` to keep
+	// this function under the project's per-function line budget.
+	Object.assign(report, projectCycleState(cwd));
 
 	// Resolve token usage from the orchestrator transcript (best-effort, never throws).
 	const transcriptPath = orchestratorTranscriptPath(cwd, claudeDir);
