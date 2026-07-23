@@ -1,0 +1,86 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-401",
+  "description": "Extend deterministic `cam status` to project full cycle state-machine markers + merge-watch + sidecar-stalled + container-preflight event, add a closed why-not-moving diagnostic rule-set, and add a dedicated orch-pane-busy event kind.",
+  "issueNumber": 401,
+  "type": "feat",
+  "relatedDocs": [],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add orch-pane-busy event kind and emit it at the sidecar dispatch site",
+      "description": "As an operator diagnosing a wedged loop, I need the busy-orch-pane send-anyway condition emitted as a dedicated structured event so the why-not-moving diagnostic can tell the transient send-anyway wedge apart from a genuine delivery-exhaustion instead of parsing cam-supervisor.log.",
+      "acceptanceCriteria": [
+        "The WorkerEventKind union in src/supervisor/events.ts declares a dedicated 'orch-pane-busy' event kind wired into the WorkerEventDetail union via a typed OrchPaneBusyEventDetail interface. [oracle: file-assert grep -q 'orch-pane-busy' src/supervisor/events.ts]",
+        "src/tmux/dispatch.ts sendOnceUnverified emits the orch-pane-busy event (via the injected logEvent seam) when the orchestrator pane does not go idle within the idle timeout and the sidecar sends anyway, in addition to (not replacing) the existing generic push-undelivered reason:'pane-not-idle' emission required by downstream consumers. [oracle: bun test test/unit/dispatch-orch-pane-busy.test.ts]",
+        "The new event carries a typed detail (paneId + idleTimeoutMs) so a reader can attribute the wedge to a specific pane and timeout without parsing free text. [oracle: bun test test/unit/dispatch-orch-pane-busy.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "The full spine is green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/supervisor/events.ts (extend WorkerEventKind union ~line 129, declare OrchPaneBusyEventDetail interface near the other *EventDetail interfaces, add it to the WorkerEventDetail union ~line 618, add a doc-comment bullet in the kind-doc block like the other kinds), src/tmux/dispatch.ts (sendOnceUnverified ~line 452-468: it already calls logEvent?.('push-undelivered', { paneId, retriesExhausted: 1, reason: 'pane-not-idle' }); ADD a second logEvent?.('orch-pane-busy', {...}) alongside it, keep the push-undelivered call). New test: test/unit/dispatch-orch-pane-busy.test.ts. Follow the CAM-195 add-an-event pattern (one condition = one structured event kind appended to cam-worker-events.jsonl, consumed by readers, not log-parsed). Gotcha (issue): the busy-orch-pane condition today emits ONLY the generic push-undelivered reason:'pane-not-idle' which conflates with reason:'retries-exhausted' delivery-exhaustion; the dedicated kind disambiguates. Gotcha (issue ship follow-up): src/tmux/dispatch.ts and src/supervisor/events.ts are sidecar-executed, so a coherence rebuild (bash scripts/build-release.sh --install, then kill sidecar by pid from .claude/.cam-sidecar.pid and restart) is needed AFTER merge for the live event to take effect; call it out in the ship follow-up, not in this story. patterns.md 'Sidecar-supervisor invariant' + 'Single-pusher invariant' bullets are relevant context; logEvent here is the injected seam, not a direct writer."
+    },
+    {
+      "id": "US-002",
+      "title": "Project cycle markers, merge-watch, sidecar-stalled, and container-preflight event into the status read-model",
+      "description": "As an operator, I need `cam status` to project the full cycle state-machine position (all blocker/wedge/stall markers, the durable merge-watch position, the sidecar-stalled marker, and the last container-preflight event) into its status report model so I can see where the cycle actually is without re-deriving state by hand every session.",
+      "acceptanceCriteria": [
+        "buildStatusReport projects all six blocker/wedge/stall markers (.cam-ship-stalled.json, .cam-plan-escalated.json, .cam-plan-preflight-failed.json, .cam-implement-blocked.json, .cam-post-merge-stalled.json, .cam-gate.json) into the StatusReport model, each read via that marker's existing lenient never-throw reader under <cwd>/.claude/. [oracle: bun test test/unit/status-projection.test.ts]",
+        "buildStatusReport projects the durable merge-watch position (prNumber, pollCount, lastPolledAt) via readMergeWatchState from .cam-merge-watch.json, and the .cam-sidecar-stalled.json marker via readSidecarStalledMarker. [oracle: bun test test/unit/status-projection.test.ts]",
+        "buildStatusReport projects the LAST container-preflight event from .claude/cam-worker-events.jsonl (never re-running preflight, since container preflight has no on-disk status file). [oracle: bun test test/unit/status-projection.test.ts]",
+        "Every projected field is optional and absent when its marker/event is missing, and a malformed marker/event never throws (the report degrades to the field being absent). [oracle: bun test test/unit/status-projection.test.ts]",
+        "buildStatusReport performs no writes: it reads markers, merge-watch, the event log, prd, git, and the state file, and mutates no file. [oracle: bun test test/unit/status-projection.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "The full spine is green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": "US-001",
+      "notes": "Files: src/commands/status.ts (extend StatusReport interface ~line 198, extend buildStatusReport ~line 432; this is an EXTENSION of the existing ~641-line command, NOT a new command). New test: test/unit/status-projection.test.ts. Reuse the existing lenient never-throw readers, do NOT re-implement reads: readShipStalledMarker + readMergeWatchState (src/release/merge-watch.ts; MERGE_WATCH_FILENAME='.cam-merge-watch.json', SHIP_STALLED_FILENAME='.cam-ship-stalled.json'), readGateFileLenient (src/supervisor/gate.ts; GATE_FILENAME='.cam-gate.json'), readPlanEscalatedMarker (src/supervisor/plan-escalation.ts; PLAN_ESCALATED_FILENAME), readPlanPreflightFailedMarker (src/supervisor/plan-preflight-marker.ts; PLAN_PREFLIGHT_FAILED_FILENAME), readImplementBlockedMarker (src/supervisor/implement-blocked-marker.ts; IMPLEMENT_BLOCKED_FILENAME), readPostMergeStalledMarker (src/supervisor/post-merge-stalled-marker.ts; POST_MERGE_STALLED_FILENAME), readSidecarStalledMarker (src/supervisor/sidecar-stalled.ts; SIDECAR_STALLED_FILENAME). All markers live under <cwd>/.claude/ (same dir isPauseSet uses in buildStatusReport). Container-preflight: parse .claude/cam-worker-events.jsonl line-by-line and take the LAST kind:'container-preflight' event (ContainerPreflightEventDetail, events.ts:458); precedent readers: src/supervisor/plan-split-advisory.ts:78 (readEventLog reads whole file via readFileSync), src/commands/stats.ts:36, src/commands/journal.ts. Gotcha (issue): merge-watch position is durable per-tick on disk via readMergeWatchState (NOT the legacy in-memory runMergeWatch wrapper), so a separate cam status process CAN observe prNumber/pollCount/lastPolledAt. Read-only invariant is a HARD requirement: cam status must never write or mutate any state file or marker. Use synchronous point-reads (readFileSync/existsSync) per the Bun-only invariant carve-out for synchronous test collectors. Gotcha: the '✗' lines in bun test output are fixture strings, not failures; read exit code + 'N pass / N fail' summary."
+    },
+    {
+      "id": "US-003",
+      "title": "Add the closed, ordered why-not-moving diagnostic rule-set",
+      "description": "As an operator, I need a pure, closed, deterministic why-not-moving diagnostic that maps each concrete detectable cycle-blocking condition to exactly one fixed operator-facing message plus one suggested next command, with zero LLM, so I get an unambiguous 'here is why it is not moving and here is what to run' answer.",
+      "acceptanceCriteria": [
+        "A pure function derives the why-not-moving diagnostic from the projected status model (US-002) plus the orch-pane-busy / push-undelivered signals (US-001), returning for each detected condition exactly one fixed message and one suggested next command, with no LLM call and no I/O. [oracle: bun test test/unit/status-diagnostics.test.ts]",
+        "The rule-set is closed and ordered: the enumerated detectable conditions are evaluated in a fixed precedence order, each mapping to a fixed message/command, and every enumerated condition has a unit test asserting its exact message and command. [oracle: bun test test/unit/status-diagnostics.test.ts]",
+        "The diagnostic distinguishes the busy-orch-pane wedge (orch-pane-busy event present) from a genuine delivery-exhaustion (push-undelivered reason:'retries-exhausted') and emits the correct distinct fixed message and suggested command for each. [oracle: bun test test/unit/status-diagnostics.test.ts]",
+        "When no blocking condition is detected, the diagnostic returns a single fixed 'nothing blocking / cycle is progressing' result rather than an empty or ambiguous value. [oracle: bun test test/unit/status-diagnostics.test.ts]",
+        "buildStatusReport attaches the diagnostic result to the StatusReport model and still performs no writes. [oracle: bun test test/unit/status-diagnostics.test.ts]",
+        "The diagnostic invokes no LLM, is exhaustive over the enumerated detectable conditions, and cam status mutates no state file. [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "The full spine is green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": "US-002",
+      "notes": "Files: new pure module src/commands/status-diagnostics.ts (a pure function over the projected model, no I/O, no imports of readFileSync/spawn), wired into src/commands/status.ts buildStatusReport (attach diagnostic onto StatusReport; extend the interface). New test: test/unit/status-diagnostics.test.ts. The rule-set must be CLOSED (a finite enum/ordered list of conditions, each with a fixed message + suggested command constant) and ORDERED (fixed precedence when multiple conditions hold). Enumerate conditions from the US-002 projection: operator-paused (.cam-pause), ship-stalled, plan-escalated, plan-preflight-failed, implement-blocked, post-merge-stalled, sidecar-stalled, gate marker, merge-watch waiting on PR, busy-orch-pane wedge (orch-pane-busy event, transient), delivery-exhaustion (push-undelivered retries-exhausted), and the no-blocker/progressing default. Suggested commands must be real cam/git commands. Gotcha (issue domainTerms): busy-orch-pane wedge = sidecar found pane %0 not idle and sent anyway (transient) vs a genuine delivery failure (retries-exhausted); these are DIFFERENT diagnoses. Keep the function pure and total so every branch is unit-testable red-against-main (no tautological oracle). Precedent for a pure closed rule-set derived from state: src/supervisor/decide.ts. Zero-LLM is a hard requirement of the epic (CAM-197 Layer 1)."
+    },
+    {
+      "id": "US-004",
+      "title": "Render the marker/merge-watch projection and diagnostic section in `cam status` output",
+      "description": "As an operator, I need `cam status` to render the projected markers, merge-watch position, and the why-not-moving diagnostic (message + suggested next command) in its human-readable output so I can read the cycle position and the recommended next step at a glance.",
+      "acceptanceCriteria": [
+        "runStatus renders the projected blocker/wedge/stall markers and the merge-watch position (prNumber, pollCount) in the human-readable output using the existing src/logging/screen.ts printer helpers and design tokens (glyph-based, not divider color). [oracle: bun test test/unit/status-render.test.ts]",
+        "runStatus renders a dedicated diagnostic section showing the why-not-moving fixed message and the suggested next command. [oracle: bun test test/unit/status-render.test.ts]",
+        "When no markers are set and the cycle is progressing, the output stays sparse and shows the progressing/no-blocker diagnostic without dumping empty marker rows. [oracle: bun test test/unit/status-render.test.ts]",
+        "runStatus remains read-only and always exits 0 (a read-only inspection never fails). [oracle: bun test test/unit/status-render.test.ts]",
+        "The rendered output speaks the shared status vocabulary (glyph + label) consistently with renderStateIndicator, never signalling via divider color. [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "The full spine is green (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": "US-003",
+      "notes": "Files: src/commands/status.ts runStatus ~line 550 (printer path only; reuse renderEntry/renderStateIndicator, emitTitle, CONTENT_INDENT, KEY_COL_WIDTH, and the src/logging/screen.ts helpers). New test: test/unit/status-render.test.ts (capture stdout via the existing status-test pattern; buildStatusReport is already exposed for programmatic assertions so most logic can be tested at the model level, render test asserts the section is present and the suggested command string is shown). This is the print path (NOT Ink), so no ink-testing-library screen-render criterion applies. Ink glyph invariant still governs vocabulary choice: success/failure/state is the glyph, never divider color (patterns.md; CLAUDE.md curated invariant; lesson 2026-06-05). runStatus already always returns 0; keep it. Read-only invariant holds through the render path."
+    }
+  ]
+}
