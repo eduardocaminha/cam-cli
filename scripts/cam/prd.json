@@ -52,7 +52,7 @@
         "The full spine passes green. [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Design decision (resolved on merits per issue gotcha): the preflight FOLDS INTO runNext as a gate BEFORE the signal write (src/commands/next.ts:273-395, active:true write at L344-389), NOT a separate subcommand, because cam next is the natural single call the orch makes; --skip-preflight is the resume escape. Only de-inline the imperative preflight from cam-next.md:1-22 (git fetch origin / rev-parse origin/<branch> / pull-or-push, git status clean-tree, bun run typecheck, bun test); do NOT touch the architecture-doc portion of the file. CRITICAL: preflight deps MUST be injectable (add optional fields to NextOptions, follow runNext's already-parameterized shape) so tests never run real typecheck/bun test -- this prevents test recursion (cam next preflight running bun test which runs cam next). Add a --skip-preflight flag to parseNextArgs. Gate placement: run preflight after the liveness/mutex checks, before the stateFilePath active:true write."
     },
