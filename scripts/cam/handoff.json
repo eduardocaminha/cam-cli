@@ -1,22 +1,29 @@
 {
-  "lastCompletedStory": { "id": "US-002", "title": "Add deterministic `cam issue get <id>` subcommand" },
+  "lastCompletedStory": { "id": "US-003", "title": "Fold the deterministic preflight into `cam next` as a signal-write gate" },
   "createdFiles": [
-    "src/commands/issue-get.ts",
-    "test/commands/issue-get.test.ts"
+    "src/commands/next-preflight.ts",
+    "test/commands/next-preflight.test.ts"
   ],
   "modifiedFiles": [
+    "src/commands/next.ts",
     "index.ts",
-    "test/issue-dispatch.test.ts"
+    "test/next.test.ts",
+    "test/attach-hint.test.ts",
+    "templates/commands/cam-next.md",
+    ".claude/commands/cam-next.md",
+    "src/vendor/_generated.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "cam issue get <id> is now a pure, deterministic, read-only CLI subcommand: src/commands/issue-get.ts exports getIssueOnMain(cwd, id, spawnFn = spawnSync), which reuses issueFilePath (src/issues/backlog.ts) for the CAM-42 -> CAM-0042.json zero-padding and BacklogSpawnFn for the injectable spawnSync type, then runs `git show main:scripts/cam/issues/<PREFIX>-NNNN.json`. Non-zero exit from git show (verified empirically: `git show main:<missing path>` exits 128, no stdout) maps to { ok: false, reason: 'not-found' }; success maps to { ok: true, id, content } with the raw stdout. Wired into index.ts: ParsedIssueArgs gained `{ mode: 'get'; id: string; help: false }`, parseIssueArgs detects `get <id>` before the free-text fallthrough (missing id or extra args are parse errors, mirroring close/abandon/demote), IssueDispatchDeps gained an optional `getIssueOnMainFn` injection point, dispatchIssue's `mode === 'get'` branch prints the raw JSON to stdout on success (exit 0, deliberately no CAM_ISSUE_RESULT machine line since that contract is scoped to mutation outcomes) and a clear error to stderr on failure (exit 1), and ISSUE_HELP got a `get <id>` Arguments entry plus a usage-string update. Read-only: no CAS, no commit, no working-tree write -- contrast with close/abandon/demote (US-002/US-003 sibling work per prior notes) which do mutate/commit on main. If a future story wants callers (templates, orchestrator prompts) to use `cam issue get` instead of an inline `git show` shell-out, that migration is out of this story's scope.",
+  "nextStoryContext": "`cam next` now runs a deterministic preflight (src/commands/next-preflight.ts, runNextPreflight) as a gate on the active:true signal write, folding in what used to be the imperative 'Pre-flight Checks' section of cam-next.md (both templates/ and .claude/ dual copies, edited in the same commit): git fetch origin -> resolve current branch (git rev-parse --abbrev-ref HEAD, unless overridden) -> sync with remote (git rev-parse --verify origin/<branch>: exists -> git pull origin <branch>, absent -> git push -u origin <branch> to create the tracking branch) -> git status --porcelain clean-tree check -> bun run typecheck -> bun test. Every step is a discriminated union { ok: true } | { ok: false; step; detail }, first-failing-step halts (no later step runs), reusing combineStreams + the PlanPreflightSpawnFn shape from src/supervisor/plan-preflight.ts (aliased NextPreflightSpawnFn) rather than duplicating them. Wired into runNext (src/commands/next.ts) via two new NextOptions fields: skipPreflight?: boolean (the --skip-preflight CLI flag, the resume escape -- bypasses the gate entirely, preflightFn is never called) and preflightFn?: () => NextPreflightResult (defaults to a real spawnSync-backed closure built from the spawnSync already dynamically imported in runNext for tmux calls). Gate placement: after the existing sidecarLivenessGate check, before the active:true write block. index.ts: parseNextArgs gained skipPreflight (via --skip-preflight, no value), threaded into the runNext call at the 'next' case; NEXT_HELP got a matching Options entry. CRITICAL gotcha for the next story that touches runNext or its call sites: every runNext(...) test call across the WHOLE test/ tree that reaches past the sidecar-liveness gate must inject a preflightFn fake (or skipPreflight: true) -- otherwise it falls through to the real default and either shells out to real git in a tmpdir with no repo (fails at git-fetch) or -- if it somehow got further -- would recurse bun test inside bun test. This story already fixed the two pre-existing files affected (test/next.test.ts: 7 call sites; test/attach-hint.test.ts: 2 call sites); grep `runNext({` repo-wide before adding new tests. embed-vendor: templates/commands/cam-next.md is embedded generically by scripts/generate-embedded-vendor.ts's walkFiles (no filter, unlike the curated vendor/ FILES list), so any templates/ edit requires `bun run embed-vendor` (regenerates src/vendor/_generated.ts) before `bun run embed-vendor:check` / test/embedded.test.ts's byte-parity test will pass -- this file is NOT part of the curated FILES const, it rides the generic templates/ walk.",
   "officialDocsValidated": [
     {
-      "lib": "git show <ref>:<path>",
-      "url": "https://git-scm.com/docs/git-show",
+      "lib": "git rev-parse --verify",
+      "url": "https://git-scm.com/docs/git-rev-parse",
       "fetchedAt": "2026-07-23T00:00:00Z",
       "status": "aligned",
-      "summary": "Official docs don't enumerate exit-code/missing-path behavior explicitly, so verified empirically instead: `git show main:scripts/cam/issues/CAM-9999.json` against the real repo exits 128 with a 'fatal: path ... does not exist in main' stderr message and empty stdout -- confirms getIssueOnMain's `(result.status ?? 1) !== 0` -> { ok: false, reason: 'not-found' } mapping is correct."
+      "summary": "Confirmed --verify exits non-zero (fatal error, or silent with -q) when the given ref (e.g. origin/<branch>) does not resolve to a valid object -- exactly the signal runNextPreflight's syncWithRemote helper uses to decide pull-vs-push -u."
     }
   ]
 }
