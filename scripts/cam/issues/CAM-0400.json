@@ -1,11 +1,11 @@
 {
   "id": "CAM-400",
   "title": "CAM-197 Slice 2: mecanizar cam-prune + cam issue get + pre-flight do cam-next em CLI deterministico",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-22T23:38:31.215Z",
-  "updatedAt": "2026-07-23T14:08:05.823Z",
+  "updatedAt": "2026-07-23T15:57:26.005Z",
   "description": "Filho de CAM-197 (Layer 1). Mover a logica que hoje roda inline no contexto do orch para subcomandos CLI puros e deterministicos (zero LLM, sem pane): cam-prune (hoje 43 linhas de passos git inline), cam issue get (leitura de issue), e o pre-flight do cam-next (hoje 118 linhas rodando na sessao do orch). O orch passa a so chamar o comando e narrar. Composicao por fix-site: os 3 sao a mesma natureza (de-inline para subcomando deterministico), 1 PR. Separar o pre-flight num PR proprio SO se ele estufar no spec. TIPO feat/refactor.",
   "spec": {
     "scope": "CAM-197 Layer-1 Slice 2: move three pieces of logic that today run inline in the orchestrator agent context into pure, deterministic, zero-LLM CLI subcommands, so the orchestrator only calls the command and narrates. (1) cam prune: a new subcommand implementing the branch-cleanup git dance currently spelled out inline in the /cam-prune template (dirty-tree STOP, main-branch STOP, checkout main, pull, git branch -D, git fetch --prune), with STOP conditions returning nonzero + a clear message and a --force escape for the confirmation cases. (2) cam issue get <id>: a new subcommand under cam issue that resolves the zero-padded issue filename and reads a single issue JSON from main (git show main:scripts/cam/issues/<PREFIX>-NNNN.json), the read the orch shells inline in several templates today. (3) cam next preflight: fold the deterministic preflight (git sync with remote, clean-tree check, typecheck, tests) that /cam-next instructs the orch to run inline into cam next itself, gating the active:true signal write on preflight success, with a --skip-preflight escape. All three are deterministic (zero LLM, no pane) and driven through injected deps so tests never shell out or run the real suite. Both template trees (.claude/commands/ and templates/commands/) are updated together (verified dual-copy, byte-identical) to replace the inline steps with a call to the new CLI, leaving no orphaned inline steps.",
