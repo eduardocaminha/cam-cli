@@ -12,7 +12,8 @@ triage and the go/no-go recommendation.
 
 Audited against the current product state: post-CAM-329 rebrand (the
 display name is CAM Runtime; the command, binary, and internal identifiers
-stay `cam`), pre-CAM-331 README rebuild, pre-CAM-332 brand tokens.
+stay `cam`), post-CAM-332 brand tokens (already shipped), pre-CAM-331
+README rebuild.
 
 ## Verdict Summary
 
@@ -21,20 +22,26 @@ stay `cam`), pre-CAM-331 README rebuild, pre-CAM-332 brand tokens.
 | Distribution / install | gap |
 | First-run onboarding (`cam init` UX) | gap |
 | External-facing docs (README) | gap |
+| Security / secrets | gap |
+| License / repo-visibility | ready |
+| Telemetry / privacy stance | gap |
 
 ## Distribution / install: gap
 
-Today CAM Runtime ships as a private, unpublished, single-platform binary,
-built and installed by the same script that a contributor uses for local
-development. There is no packaged, public distribution path for a stranger.
+Today CAM Runtime ships as an unpackaged, single-platform binary, built and
+installed by the same script that a contributor uses for local development.
+The source repository is public (see the license/repo-visibility dimension
+below), but there is no packaged, public distribution path for a stranger.
 
 Concrete gaps:
 
-- **No public distribution channel.** The GitHub repository is private and
-  unpublished (see the license/repo-visibility dimension, audited in a
-  later story of this report); there is no release page, no Homebrew
-  formula, no install-script URL, and no package-manager entry a stranger
-  could reach without repo access.
+- **No packaged distribution channel, despite a public repo.** The GitHub
+  repository is public (verified directly against the GitHub API for this
+  report; see the license/repo-visibility dimension below for the full
+  audit), so a stranger can find and clone it, but there is still no
+  release page, no Homebrew formula, no install-script URL, and no
+  package-manager entry: cloning and building from source is the only
+  path in.
 - **No `npm`/`bunx` install path.** `package.json` has `"private": true`
   and no `bin` field. The only paths documented in the README are
   `git clone` + `bun install` + `./scripts/build-release.sh --install`
@@ -105,10 +112,11 @@ Concrete gaps:
 ## External-facing docs (README): gap
 
 This dimension is audited by coordinating with, not duplicating, CAM-331
-(the README rebuild, currently `specified`/`open`) and CAM-332 (the brand
-palette, currently `open`). The verdict below assesses the *current*
-README as an external-facing artifact; it does not restate or perform
-CAM-331/CAM-332's work.
+(the README rebuild, currently `specified`/`open`); CAM-332 (the brand
+palette) has already shipped (`stage: shipped`) and its tokens are the
+palette CAM-331 is expected to draw from. The verdict below assesses the
+*current* README as an external-facing artifact; it does not restate or
+perform CAM-331's remaining work.
 
 Concrete gaps:
 
@@ -124,15 +132,160 @@ Concrete gaps:
   layouts) ahead of "why would I use this", and has no visual assets,
   screenshots, or architecture diagrams for a stranger evaluating the
   project.
-- **No brand identity applied yet.** CAM-332 (the canonical brand palette
-  and design tokens) is still `open`; the README currently carries no
-  consistent visual identity, logo, or social-preview image for external
-  sharing.
+- **No brand identity applied to the README yet.** CAM-332 (the canonical
+  brand palette and design tokens) has already shipped
+  (`src/design/tokens.ts`, `brandGreens`/`brandNeutrals`), but nothing has
+  wired it into the README: the document still carries no consistent
+  visual identity, logo, or social-preview image for external sharing.
+  This is now purely a CAM-331 application gap, not a CAM-332 blocker.
 - **Positioning copy is present but not yet the finished external pitch.**
   The CAM-329 rebrand already landed the "CAM Runtime" name and the core
   one-paragraph positioning statement at the top of the README, so the
   raw material CAM-331 needs is in place; the gap is specifically the
   external-facing structure and assets, not the underlying positioning.
+
+## Security / secrets: gap
+
+cam's own attack surface for credentials is narrow and mostly well
+engineered. cam never stores or reads a raw Anthropic API key itself:
+Claude authentication is fully delegated to the `claude` CLI's own
+login/keychain state in host mode, or to a mounted `claude-code-config`
+Docker volume in container mode (`.devcontainer/devcontainer.json`).
+`GITHUB_TOKEN` mutation calls (`gh pr create`/`merge`/`comment`,
+`gh pr update-branch`) deliberately strip the token from the child
+process env so `gh` falls back to its own keyring OAuth credential
+rather than trusting a possibly under-scoped `.env` fine-grained PAT
+(`src/release/ship-pr.ts`, `src/commands/sidecar.ts`). `LINEAR_API_KEY`
+and `RESEND_API_KEY` are read from `process.env` only and never written
+to disk by cam, and `.env` itself is gitignored (confirmed untracked in
+this working tree). Container mode passes `GITHUB_TOKEN` and
+`CLAUDE_CODE_OAUTH_TOKEN` into the container by name only, never as a
+literal `KEY=value` argv token, so the value never appears in a process
+listing or `docker inspect` (`src/supervisor/worker-container.ts`).
+Container mode (opt-in, CAM-241 epic) also adds genuine defense-in-depth
+beyond host mode: a default-deny egress firewall (`iptables` plus
+`dnsmasq --ipset`, an exact 7-domain allowlist, idempotent, self-verifying
+on every start, `.devcontainer/init-firewall.sh`), and typed, fail-closed
+`docker exec` appliers for firewall/config/auth
+(`src/supervisor/container-firewall.ts`, `container-config.ts`,
+`container-auth.ts`) that throw a specific typed error rather than
+silently proceeding on failure.
+
+Set against that engineering, the *default* operating mode (no container)
+is materially permissive and undocumented as such. `readPermissionMode`
+(`src/config/permission-mode.ts`) defaults to `bypassPermissions`
+whenever `~/.config/cam/config.toml` is absent or the key is unset, which
+matches what `cam init` itself writes by default: every cam-dispatched
+`claude` session (orchestrator, worker, reviewer) runs with full
+autonomous filesystem and Bash access and no per-action confirmation
+prompt, on the bare host, unless the operator explicitly opts into
+container mode. The only host-mode guardrail is the
+`orch-agent-allowlist.sh` PreToolUse hook, and it is narrowly scoped: it
+only fires inside `CAM_SESSION`-marked sessions, and only denies
+non-allowlisted Task/Agent subagent spawns plus writes to two specific
+worker-protected file paths (`scripts/cam/prd.json`,
+`scripts/cam/issues/*`); it does not sandbox or otherwise restrict the
+primary agent's general Bash/file-write surface. None of this (the
+`bypassPermissions` default, container mode as the actual isolation
+boundary, or the allowlist hook's real scope) is disclosed anywhere in
+`README.md`.
+
+Concrete gaps:
+
+- **`bypassPermissions` is the undisclosed default for every cam-dispatched
+  agent session.** A stranger installing cam and running `cam init` gets
+  full autonomous Bash/filesystem access with no per-action confirmation,
+  and nothing in the README says so.
+- **Host mode, the default path, has no network egress restriction.** The
+  default-deny firewall is a container-mode-only guarantee; a stranger who
+  never opts into container mode gets none of it.
+- **No README/docs Security section.** There is no explanation of the
+  permission model, no guidance to run cam only against
+  repositories/directories the operator trusts, and no pointer to
+  container mode as the higher-isolation alternative.
+- **No `SECURITY.md` vulnerability-disclosure policy** at the repo root,
+  standard practice for a public OSS project accepting external scrutiny.
+
+## License / repo-visibility: ready
+
+Verified directly against GitHub for this report (`gh repo view`,
+`gh api repos/eduardocaminha/cam-cli`), the repository's actual state
+differs from the premise this story was planned under: `cam-cli` is
+already **public** (`private: false`, `visibility: public`), not
+private/unpublished. It has carried a public description, topics, and CI
+plus branch protection as a deliberate, tracked operator decision since
+mid-2026, not an oversight. The root `LICENSE` file is a valid MIT
+license (`Copyright (c) 2026 Eduardo Caminha`), correctly detected by
+GitHub's own license API (`license.key: "mit"`). Third-party attribution
+for the one vendored dependency this codebase carries (`src/retry/*`,
+ported from the MIT-licensed claude-auto-retry project) is properly
+recorded in `LICENSES/claude-auto-retry-MIT.txt` and cross-linked twice
+from `README.md` plus the top-level License section. Separately,
+`claude-code-harness/` (a local, reference-only checkout of Claude Code's
+own source used for behavior-parity comparisons, see `HANDOFF.md`) is
+listed in `.gitignore`, confirmed absent from git history, and confirmed
+NOT among the files `scripts/generate-embedded-vendor.ts` actually
+embeds into the distributed binary (only 3 files under `vendor/` plus
+`templates/` are); the "vendor/ and claude-code-harness/ embedded at
+build time" phrasing elsewhere in project docs describes a local
+dev/build convention, not what ships publicly, so it carries no
+public-repo license-exposure risk despite the phrasing.
+
+Two items remain pending but are non-blocking for this dimension
+specifically: the GitHub repository name (`eduardocaminha/cam-cli`) has
+not yet been renamed to match the CAM Runtime brand, which is explicitly
+CAM-329's separate GitHub-side operator step (out of scope for this
+story, factored in here only); and the repo carries no `SECURITY.md`,
+`CONTRIBUTING.md`, or `CODE_OF_CONDUCT.md`, a common but non-blocking
+polish item for a public OSS launch. `package.json`'s `"private": true`
+field and un-renamed `cam-runtime` package name are distribution-dimension
+details already covered in the Distribution / install section above, not
+license/visibility gaps.
+
+## Telemetry / privacy stance: gap
+
+cam ships with no first-party telemetry or analytics code: an exhaustive
+source grep for telemetry/analytics vendor SDKs (PostHog, Segment,
+Mixpanel, Sentry, Amplitude, Datadog, LogRocket) and for the literal
+strings `telemetry`/`analytics` returns nothing outside prose comments
+about *Claude Code's own* traffic; cam itself does not phone home, does
+not collect usage metrics, and does not transmit anything beyond what its
+own documented integrations (Claude Code, `git`/`gh`, the Linear GraphQL
+API, Resend for the optional operator-notification email) inherently
+require to function. Container mode goes one step further and actively
+opts the in-container `claude` process out of Anthropic's own
+non-essential traffic: `.devcontainer/devcontainer.json` and
+`src/supervisor/worker-container.ts` both set
+`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` and `DISABLE_AUTOUPDATER=1`
+on every container-mode worker.
+
+That container-mode opt-out is not applied in host mode, cam's default
+path: neither `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` nor
+`DISABLE_AUTOUPDATER` is set anywhere in the host-mode dispatch path, so a
+default installation inherits whatever telemetry/auto-update behavior the
+`claude` CLI ships with, undiminished. More fundamentally, none of this
+(the absence of first-party cam telemetry, the third-party data flows
+cam's normal operation necessarily creates toward Anthropic, GitHub,
+Linear, and Resend, or the host-vs-container inconsistency in disabling
+Claude Code's non-essential traffic) is written down anywhere a stranger
+evaluating this tool could find it. An autonomous agent that reads a
+repository, writes code, and pushes commits and PRs on the operator's
+behalf is exactly the kind of tool a privacy-conscious adopter checks for
+an explicit data-flow statement before installing.
+
+Concrete gaps:
+
+- **No documented telemetry/privacy stance anywhere** (no README section,
+  no `PRIVACY.md`), despite the underlying fact, no first-party cam
+  telemetry, being genuinely favorable.
+- **Inconsistent non-essential-traffic opt-out.**
+  `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` is only set in container
+  mode; host mode, the default, leaves Claude Code's own
+  telemetry/auto-update behavior at its out-of-the-box default.
+- **No explicit enumeration of third-party data flows** (Anthropic via
+  `claude`, GitHub via `git`/`gh`, Linear via `LINEAR_API_KEY`, Resend via
+  `RESEND_API_KEY`) for an operator to review before trusting cam with
+  push/PR-creation authority on their behalf.
 
 ## Coordination note
 
