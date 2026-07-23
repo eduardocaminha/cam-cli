@@ -1,0 +1,36 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-399",
+  "description": "Record ADR 0048: the cam-spec operator-interactive grill stays in the orchestrator context (orch/worker boundary is LLM-non-interactive, not all-LLM).",
+  "issueNumber": 399,
+  "type": "docs",
+  "relatedDocs": [
+    "docs/adr/0047-backendadapter-seam-methods-vs-inputs-vs-shared-contract-and-the-six-mismatch-resolution.md",
+    "docs/adr/0028-orchestrator-context-window-is-configured-defaulting-to-200k-not-model-derived.md"
+  ],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Write ADR 0048: grill stays in orchestrator context",
+      "description": "As the cam-cli maintainer, I need an Architectural Decision Record capturing the CAM-197 grill decision (the cam-spec operator-interactive grill stays in the orchestrator context and does not move to a dedicated pane) so that the orch/worker boundary rationale is durable and the whole CAM-197 epic is framed by a recorded, gate-passing decision.",
+      "acceptanceCriteria": [
+        "A new ADR file docs/adr/0048-cam-spec-grill-stays-in-orchestrator-context.md exists and records that the cam-spec grill stays in the orchestrator context rather than moving to a dedicated pane. [oracle: grep -q 'grill stays in the orchestrator context' docs/adr/0048-cam-spec-grill-stays-in-orchestrator-context.md]",
+        "The ADR records that the orchestrator/worker boundary is drawn at LLM-non-interactive work, not all LLM work. [oracle: grep -q 'LLM-non-interactive' docs/adr/0048-cam-spec-grill-stays-in-orchestrator-context.md]",
+        "The ADR follows the existing ADR structure (top-level '# ADR 0048:' title plus '## Context', '## Decision', '## Consequences' sections) consistent with 0047. [oracle: grep -q '^# ADR 0048:' docs/adr/0048-cam-spec-grill-stays-in-orchestrator-context.md]",
+        "The ADR explicitly addresses all three ADR admission gates (hard-to-reverse: redefines the epic boundary; surprising-without-context: contradicts the literal 'orch only converses' reading; genuine trade-off: single human-facing interface vs orchestrator context preservation) as the justification for recording it. [oracle: reviewer-judgment]",
+        "The ADR captures the token-cost rationale: the ~50k-token grill cost is shed by the cycle-close recycle (zero post-spec value) and belongs to a single PR cycle, so it does not violate the one-PR-per-session invariant. [oracle: reviewer-judgment]",
+        "Any src path referenced in the ADR actually exists on disk (doc-as-code gate ADR-0037 allowlist); reference only real paths or phrase to avoid unverifiable path claims. [oracle: reviewer-judgment]",
+        "The ADR is a human-readable .md following the operator no-em-dash convention (colons, parentheses, periods only). [oracle: ! grep -q '\\xe2\\x80\\x94' docs/adr/0048-cam-spec-grill-stays-in-orchestrator-context.md]",
+        "No code, config, or command behavior changed: the only added/modified file is the new ADR. [oracle: file-assert git diff --name-only main includes only docs/adr/0048-*.md]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "The full quality spine remains green with the ADR added. [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "DOC-ONLY: create docs/adr/0048-cam-spec-grill-stays-in-orchestrator-context.md, no code/config/command edits. Next ADR number is 0048 (0047-backendadapter-seam is latest on main); do not collide. Mirror the section structure of docs/adr/0047-*.md (# ADR NNNN: title / ## Context / ## Decision / ## Consequences). Comparands 'grill stays in the orchestrator context' and 'LLM-non-interactive' must appear verbatim. Be consistent with prior ADRs 0020 (orchestrator runs as an enforced agent), 0028 (orchestrator context window is configured), 0029 (context backstop must produce a handoff before arming). doc-as-code gate (ADR-0037) verifies any referenced src path exists on disk: reference only real paths (e.g. src/supervisor/review.ts, .claude/skills/grilling, the cam-spec command) or phrase to avoid path claims. Follow the persisted-doc no-em-dash convention (global CLAUDE.md). Grep scripts/cam/patterns.md for 'ADR' / 'doc-as-code' before writing."
+    }
+  ]
+}
