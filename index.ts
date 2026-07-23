@@ -50,6 +50,7 @@ import {
 } from './src/commands/patterns-prune.ts';
 import { runIssue } from './src/commands/issue.ts';
 import { runIssueList } from './src/commands/issue-list.ts';
+import { getIssueOnMain, type GetIssueOnMainOutcome } from './src/commands/issue-get.ts';
 import type {
 	CloseIssueOnMainOutcome,
 	AbandonIssueOnMainOutcome,
@@ -355,7 +356,7 @@ const ISSUE_HELP = renderHelp({
 	title: 'cam issue',
 	tagline: 'File an issue from free text, or list the actionable backlog',
 	usage:
-		'cam issue "<free text>" | cam issue list [--all] [--json] | cam issue close <id> | cam issue abandon <id> | cam issue demote <id>',
+		'cam issue "<free text>" | cam issue list [--all] [--json] | cam issue close <id> | cam issue abandon <id> | cam issue demote <id> | cam issue get <id>',
 	sections: [
 		{
 			heading: 'Arguments',
@@ -392,6 +393,11 @@ const ISSUE_HELP = renderHelp({
 					name: 'demote <id>',
 					description:
 						'Deterministically set stage:idea on main for a defective specified issue, so it can be re-specified (specified->idea for re-spec; in-process, no tmux, no LLM).',
+				},
+				{
+					name: 'get <id>',
+					description:
+						"Print a single issue's JSON from main to stdout (in-process, no tmux, no LLM). Read-only: never mutates or commits anything. Exits nonzero with a clear message when the id does not exist.",
 				},
 			],
 		},
@@ -1104,6 +1110,10 @@ const STATS_HELP = renderHelp({
  *     mutation on main (US-002, CAM-206/CAM-210 sibling). id is the required
  *     positional issue id; only the stage axis flips (spec/wsjf/blockedBy
  *     etc. are preserved) so the issue can be re-specified.
+ * - mode === 'get': deterministic in-process read of a single issue's JSON
+ *     from main (US-002, CAM-400). id is the required positional issue id;
+ *     read-only -- never mutates or commits anything (contrast with
+ *     close/abandon/demote above).
  * - help === true: caller should print ISSUE_HELP and exit 0.
  */
 export type ParsedIssueArgs =
@@ -1113,6 +1123,7 @@ export type ParsedIssueArgs =
 	| { mode: 'close'; id: string; help: false }
 	| { mode: 'abandon'; id: string; help: false }
 	| { mode: 'demote'; id: string; help: false }
+	| { mode: 'get'; id: string; help: false }
 	| { mode?: never; help: true };
 
 /**
@@ -1228,6 +1239,21 @@ export function parseIssueArgs(args: string[]): ParsedIssueArgs | null {
 			return null;
 		}
 		return { mode: 'demote', id, help: false };
+	}
+	// The `get <id>` subcommand is evaluated BEFORE the free-text fallthrough
+	// (alongside `list`/`close`/`abandon`/`demote`) so a missing id is a parse
+	// error, never a silent text-mode fallthrough treating 'get' as an issue title.
+	if (args[0] === 'get') {
+		const id = args[1];
+		if (id === undefined) {
+			printError('cam issue get requires an id (e.g. CAM-42)');
+			return null;
+		}
+		if (args.length > 2) {
+			printError(`unexpected argument: ${args[2]}`);
+			return null;
+		}
+		return { mode: 'get', id, help: false };
 	}
 	if (args.includes('--file-local')) {
 		let fastTrack = false;
@@ -2399,6 +2425,14 @@ export interface IssueDispatchDeps {
 	 * injection (US-002, CAM-210).
 	 */
 	demoteIssueOnMainFn?: (id: string) => DemoteIssueOnMainOutcome;
+	/**
+	 * Inject a fake for the `get <id>` branch's underlying getIssueOnMain call.
+	 * Default: `getIssueOnMain(process.cwd(), id)` (production spawnSync, no
+	 * CAS/commit -- read-only). The printing (raw JSON to stdout on success,
+	 * printError on failure) and exit-code mapping always run in dispatchIssue
+	 * itself, regardless of injection (US-002, CAM-400).
+	 */
+	getIssueOnMainFn?: (id: string) => GetIssueOnMainOutcome;
 }
 
 /** Shape of the JSON payload `cam issue --file-local` reads from stdin. */
@@ -2547,6 +2581,21 @@ export async function dispatchIssue(
 		}
 		printHint(`demoted ${result.id} on main (${result.sha})`);
 		process.stdout.write(`CAM_ISSUE_RESULT=${result.id}\n`);
+		return 0;
+	}
+	if (parsed.mode === 'get') {
+		// Read-only: no CAM_ISSUE_RESULT machine line (that contract is scoped to
+		// mutation outcomes -- see the `list` branch's comment above). Success
+		// prints the raw issue JSON to stdout; failure prints a clear error and
+		// exits nonzero.
+		const getIssueOnMainFn =
+			deps?.getIssueOnMainFn ?? ((id: string) => getIssueOnMain(process.cwd(), id));
+		const result = getIssueOnMainFn(parsed.id);
+		if (!result.ok) {
+			printError(`cam issue get ${parsed.id} failed: issue not found`);
+			return 1;
+		}
+		process.stdout.write(result.content);
 		return 0;
 	}
 	if (parsed.mode === 'file-local') {
