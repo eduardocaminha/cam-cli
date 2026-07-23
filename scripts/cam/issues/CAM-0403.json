@@ -1,10 +1,46 @@
 {
   "id": "CAM-403",
   "title": "CAM-197 Slice 5: cam-review vira signal-writer fino; sidecar dirige os rounds; converge review manual com backend codex",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-22T23:38:38.279Z",
-  "updatedAt": "2026-07-22T23:38:38.279Z",
-  "description": "Filho de CAM-197 (Layer 2, PR de maior blast-radius). Hoje /cam-review roda subagent-reviewer via Task() no contexto do orch (216 linhas, sempre claude, nunca codex), duplicando o caminho autonomo do sidecar (makeReviewDispatch, o unico que alcanca o backend codex). Transformar cam-review num signal-writer fino igual plan/ship: o orch escreve phase:review, o sidecar dirige os rounds e empurra o handback, o orch narra. CONSEQUENCIAS: (i) o review manual converge com o caminho do sidecar e passa a poder usar o reviewer codex; (ii) subagent-reviewer SAI da allowlist de Task do orch (orch deixa de spawnar reviewer); (iii) 'review' vira assincrono como plan/ship. PR isolado. TIPO feat."
+  "updatedAt": "2026-07-23T12:04:10.946Z",
+  "description": "Filho de CAM-197 (Layer 2, PR de maior blast-radius). Hoje /cam-review roda subagent-reviewer via Task() no contexto do orch (216 linhas, sempre claude, nunca codex), duplicando o caminho autonomo do sidecar (makeReviewDispatch, o unico que alcanca o backend codex). Transformar cam-review num signal-writer fino igual plan/ship: o orch escreve phase:review, o sidecar dirige os rounds e empurra o handback, o orch narra. CONSEQUENCIAS: (i) o review manual converge com o caminho do sidecar e passa a poder usar o reviewer codex; (ii) subagent-reviewer SAI da allowlist de Task do orch (orch deixa de spawnar reviewer); (iii) 'review' vira assincrono como plan/ship. PR isolado. TIPO feat.",
+  "spec": {
+    "scope": "Convert `cam review` from a send-keys thin-proxy into a thin signal-writer that writes phase:review to .claude/cam-loop.local.md (mirroring cam plan and cam ship), and add a standalone review phase to the sidecar poll loop that drives one makeReviewDispatch round reusing the existing autonomous review machinery, so the codex reviewer backend becomes reachable from manual review. Add 'review' to the LoopPhase enum and LOOP_PHASES parser, gate cam review on sidecar liveness (sidecarLivenessGate), collapse the in-context /cam-review template into a thin signal-writer note, and drop subagent-reviewer from the orchestrator Task allowlist so review no longer runs in the orchestrator context. Isolated PR.",
+    "acceptanceCriteria": [
+      "runReview writes phase:review to .claude/cam-loop.local.md via writeStateFile instead of injecting /cam-review via send-keys, preserving all other loop-state fields [oracle: bun test test/commands/review.test.ts]",
+      "cam review gates on sidecar liveness via sidecarLivenessGate and refuses with an operator message when no sidecar is alive, mirroring cam plan and cam ship [oracle: bun test test/commands/review.test.ts]",
+      "review is a member of LoopPhase and LOOP_PHASES and parseStateFile round-trips a phase:review state file [oracle: bun test test/commands/status.test.ts]",
+      "runSidecarLoop dispatches runReviewPhaseFn exactly when the read phase is review, mirroring the shipping and awaiting-operator branches [oracle: bun test test/supervisor/loop.test.ts]",
+      "the production review phase closure drives one makeReviewDispatch round and resets phase to idle in a finally block even when the dispatch throws [oracle: bun test test/commands/sidecar.test.ts]",
+      "the standalone review phase resolves its reviewer backend via readPhaseBackend reviewer so a project.toml backend reviewer=codex reaches the codex reviewer path [oracle: reviewer-judgment]",
+      "the cam-review template is collapsed to a thin signal-writer note with no in-context Task subagent-reviewer flow and subagent-reviewer is removed from the orchestrator Task allowlist [oracle: reviewer-judgment]",
+      "embedded vendor assets are regenerated so test/embedded.test.ts passes after the template edits [oracle: bun test test/embedded.test.ts]",
+      "the full spine is green [oracle: bun run check:all]"
+    ],
+    "gotchas": [
+      "makeReviewDispatch operates on prd.json (roundsCompleted, US-R fix-stories); a standalone phase:review requires an active prd.json and a cam branch, the same precondition as the in-context path. Gate cam review accordingly.",
+      "One phase:review equals one makeReviewDispatch round (one reviewer verdict). Fix-story burn-down is NOT auto-chained: on FIXES_PENDING the orchestrator narrates the handback and drives cam next. This mirrors plan and ship being single bounded phases (resolved sub-fork, Simplicity-First).",
+      "Sidecar-executed change: spans src/supervisor/loop.ts, src/commands/sidecar.ts, src/commands/review.ts, and src/commands/status.ts (the LoopPhase parser), plus a templates re-embed. Coherence rebuild required post-merge: build-release.sh --install, kill the sidecar by exact pid from .claude/.cam-sidecar.pid, relaunch standalone.",
+      "CAM-405: makeReviewDispatch and backend tests read the live project.toml; keep reviewer=claude committed. Do NOT flip reviewer=codex on the branch (breaks 42 tests in CI with codex-auth-failed). Codex reachability is validated by the code path (AC6 reviewer-judgment), never by a committed config flip.",
+      "embed-vendor: after editing templates/commands/cam-review.md and the orchestrator allowlist, run bun scripts/generate-embedded-vendor.ts (bun run embed-vendor) so src/vendor/_generated.ts and test/embedded.test.ts pass.",
+      "The loop-state template vendor/cam-loop.local.md.tmpl already carries phase: {{PHASE}}, so no template change is needed for the phase field itself; only the LoopPhase enum and LOOP_PHASES array in src/commands/status.ts must gain 'review'."
+    ],
+    "domainTerms": [
+      "signal-writer: a cam CLI command that writes a phase field to .claude/cam-loop.local.md and returns immediately, leaving the sidecar to execute the phase (cam plan, cam ship, and now cam review)",
+      "phase:review: the new LoopPhase the sidecar poll loop dispatches via runReviewPhaseFn",
+      "makeReviewDispatch: the existing autonomous review-round factory (src/supervisor/review.ts) that respawns the reviewer pane, parses the verdict, and mutates prd.json; the only path that reaches the codex reviewer backend",
+      "sidecarLivenessGate: the shared guard (src/commands/sidecar-gate.ts) that plan and ship call before writing their signal; cam review must adopt it",
+      "orch Task allowlist: templates/agents/subagent-orchestrator.md plus the orch-agent-allowlist.sh hook; subagent-reviewer is removed from it by this slice"
+    ]
+  },
+  "wsjf": {
+    "value": 4,
+    "timeCriticality": 3,
+    "riskReduction": 3,
+    "jobSize": 4
+  },
+  "type": "feat"
 }
