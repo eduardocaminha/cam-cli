@@ -1,0 +1,15 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Scaffold launch-readiness report and audit distribution, onboarding, and external-docs dimensions"
+  },
+  "branchName": "cam/issue-330",
+  "timestamp": "2026-07-23T00:00:00Z",
+  "createdFiles": ["docs/launch-readiness.md"],
+  "modifiedFiles": [],
+  "openQuestions": [],
+  "nextStoryContext": "docs/launch-readiness.md now exists with a Verdict Summary table (one row per dimension, dimension name and ready/gap token on the SAME LINE — that convention is what the per-dimension grep oracles key off) followed by prose sections. Three dimensions are audited so far, all verdict 'gap': distribution/install, first-run onboarding (cam init UX), external-facing docs (README). US-002 appends security/secrets, license/repo-visibility, and telemetry/privacy as three more table rows + sections using the identical same-line convention; US-003 appends versioning/release/update and support-channels, then closes the report with a prioritized triage, a go/no-go, and a Follow-up Issues section. Per the planner rule (CAM-162 defect), do NOT hand-file issues by writing scripts/cam/issues/CAM-XXXX.json on this branch (add/add collision risk when reconciling with main) -- US-003's deliverable is ready-to-file specs in its worker report, filed on main afterward by the orchestrator/operator. CAM-329 (rebrand to CAM Runtime) is shipped; CAM-331 (README rebuild) and CAM-332 (brand palette) are still open/specified, so the external-docs verdict correctly reads gap pending those. LICENSE file and repo-visibility facts were not looked up in this story (out of scope, US-002 owns that dimension) -- read them fresh rather than assuming.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
