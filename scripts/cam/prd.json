@@ -70,7 +70,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": "US-003",
       "notes": "File: src/commands/sidecar.ts. Build makeProductionReviewPhaseFn mirroring makeProductionShipPhaseFn (sidecar.ts:1314-1361) and makeProductionPlanPhaseFn: close over makeReviewDispatch (src/supervisor/review.ts:314; it already resolves readPhaseBackend('reviewer') at L354 and reaches the codex backend via selectAdapter) and reset phase to idle in a finally. Wire it into runReviewPhaseFn (RunSidecarLoopOptions, from US-003). Gotcha (spec): makeReviewDispatch operates on prd.json (roundsCompleted, US-R fix-stories) and requires an active prd.json + cam branch. CAM-405 gotcha: makeReviewDispatch + backend tests read the live project.toml; keep reviewer=claude committed on the branch (flipping to codex breaks 42 tests in CI with codex-auth-failed). Design intent: FLOW.md L390-398 (sidecar drives one review round, returns terminal verdict; orch narrates). Precedent ADRs: docs/adr/0009 (ship phase deterministic runner), docs/adr/0024 (phase is the resume discriminator)."
     },
