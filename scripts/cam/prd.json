@@ -62,7 +62,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "Closes docs/launch-readiness.md with the last two dimension sections/rows, a prioritized triage, a go/no-go, and a Follow-up Issues section. IMPORTANT (planner rule, CAM-162 defect): this worker story does NOT hand-file issues by writing scripts/cam/issues/CAM-XXXX.json on-branch (that add/add-collides when the branch reconciles with main). Filing follow-ups is a control-plane action performed on main via /cam-issue by the orchestrator/operator; the worker's deliverable is the ready-to-file specs IN the report, which the orchestrator then files. Analysis must reflect the post-CAM-54 codex backend and coordinate with CAM-331/CAM-332 without duplicating them. Persisted .md: no em-dash, no decorative emoji."
     }
