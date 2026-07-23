@@ -23,7 +23,7 @@
         "The spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Single-file test-harness fix. File: test/integration/dispatch-geometry.test.ts (bootPane setup path, the single setup every test calls). Root cause: bootPane awaits only has-session (returns the instant bun spawns, before the fixture renders its idle prompt); the synchronous sendKeysVerified with idleTimeoutMs:100 (default pollIntervalMs:200 = ~2 probes) then times out under CI load and diverts to sendOnceUnverified, emitting push-undelivered{retriesExhausted:1, reason:'pane-not-idle'} + orch-pane-busy instead of the asserted retries-exhausted tuple (events.length 1->2). Fix belongs in bootPane setup only. GOTCHAS: (1) do NOT wrap sendKeysVerified in waitForCondition; it is synchronous void-returning, the events array is fully populated before assertions run. (2) isOrchPaneIdle is already exported from src/tmux/dispatch.ts:317; import alongside sendKeysVerified (test line 29). (3) waitForCondition already imported (test line 32) from ../helpers/wait-for-condition.ts. (4) tmuxRaw is defined at test line ~46; use tmuxRaw(['capture-pane','-p','-t',SESSION]) on the private test socket, NOT makeSwapSocketSpawn. (5) leave idleTimeoutMs:100 in individual tests and the dedicated pane-not-idle test alone. This file is skipIf(!tmuxAvailable) and drives real tmux subprocesses on the host worker; in run output 'did not go idle' warnings and any ✗ glyphs are fixture noise, read the pass/fail summary + exit code. No production change, no vendor/templates touched."
     }
