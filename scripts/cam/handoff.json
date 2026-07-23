@@ -1,0 +1,21 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Add orch-pane-busy event kind and emit it at the sidecar dispatch site" },
+  "branchName": "cam/issue-401",
+  "timestamp": "2026-07-23T00:00:00Z",
+  "createdFiles": [
+    "test/unit/dispatch-orch-pane-busy.test.ts"
+  ],
+  "modifiedFiles": [
+    "src/supervisor/events.ts",
+    "src/tmux/dispatch.ts",
+    "test/dispatch.test.ts",
+    "test/integration/dispatch-geometry.test.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 added a dedicated 'orch-pane-busy' WorkerEventKind + OrchPaneBusyEventDetail (paneId, idleTimeoutMs) to src/supervisor/events.ts, and wired sendOnceUnverified (src/tmux/dispatch.ts) to emit it ALONGSIDE (not replacing) the existing generic push-undelivered (reason:'pane-not-idle') emission. This is a pure event-emission story: no reader/diagnostic yet consumes 'orch-pane-busy' (the 'why-not-moving diagnostic' this event exists to feed is a future story). Per the CAM-195 add-an-event pattern, per the notes gotcha: src/tmux/dispatch.ts and src/supervisor/events.ts are sidecar-executed, so a coherence rebuild (bash scripts/build-release.sh --install, then restart the sidecar via its pid in .claude/.cam-sidecar.pid) is needed AFTER merge for the live event to actually start appearing in .claude/cam-worker-events.jsonl; this is a ship follow-up concern, not part of this story. Adding this second logEvent call broke two pre-existing tests that asserted an exact events array length of 1 at this call site (test/dispatch.test.ts's 'idle-gate times out' test, test/integration/dispatch-geometry.test.ts's real-tmux 'pane-not-idle timeout path' test); both were updated in this same commit to expect 2 events (push-undelivered then orch-pane-busy), see the new patterns.md bullet for the general lesson. src/supervisor/events.ts's file-size-budget.json ceiling was raised 828->855 in this story (doc-comment-heavy file, small diff still tripped the ratchet per the CAM-170 precedent already in patterns.md).",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
