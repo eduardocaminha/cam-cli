@@ -1,13 +1,13 @@
 {
   "id": "CAM-330",
   "title": "Public launch readiness analysis for CAM Runtime (distribution, docs, onboarding, security, licensing)",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [
     "CAM-54"
   ],
   "createdAt": "2026-07-17T09:38:47.644Z",
-  "updatedAt": "2026-07-17T09:54:57.472Z",
+  "updatedAt": "2026-07-23T17:06:16.803Z",
   "description": "Sequenced AFTER CAM-54 (Codex backend) ships. Run a complete readiness analysis to make CAM Runtime publicly usable and ready to publicize/divulge. This is an analysis/audit deliverable that will likely spawn follow-up issues. Scope to nail down during spec: (a) packaged distribution + install for external users without a dev setup (the product is currently a private, unpublished bun-compiled binary installed via build-release.sh); (b) first-run onboarding + cam init UX for a stranger; (c) external-facing docs/README (vs the current internal-contributor docs); (d) secrets/credentials handling + security posture (API keys, keyring, firewall/container mode); (e) license + repo visibility; (f) telemetry/privacy stance; (g) versioning/release + update path; (h) support channels; (i) a triage of known gaps blocking a public v1. Depends on CAM-54.",
   "spec": {
     "scope": "Produce a complete PUBLIC-LAUNCH readiness analysis for CAM Runtime, sequenced AFTER CAM-54 (Codex backend) ships so the analysis reflects the full claude/codex product. Deliverable: a written readiness report (e.g. docs/launch-readiness.md) that audits each launch dimension, plus a triage that FILES follow-up issues for the blocking gaps and states a go/no-go for a public v1. This is an ANALYSIS/AUDIT deliverable, not a broad feature build -- its value is the findings + the filed follow-ups, and it consumes/coordinates rather than duplicates CAM-331 (README build). Dimensions to audit: (a) packaged distribution + install for external users WITHOUT a dev setup (today the product is a private, unpublished bun-compiled binary installed via build-release.sh to ~/.local/bin/cam); (b) first-run onboarding + cam init UX for a stranger; (c) external-facing docs (coordinate with CAM-331, do not rebuild the README here); (d) secrets/credentials handling + security posture (API keys, keyring, firewall/container mode); (e) license + repo visibility (repo is currently private/unpublished; the GitHub repo rename cam-cli->cam-runtime is a known separate step); (f) telemetry/privacy stance; (g) versioning/release + update path; (h) support channels; (i) a prioritized triage of known gaps blocking a public v1.",
