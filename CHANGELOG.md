@@ -6,6 +6,14 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.253.0] - 2026-07-23
+
+### Added
+
+- US-003 - Audit versioning/release/update and support-channels dimensions, then write the go/no-go and ready-to-file gap triage
+- US-002 - Audit security/secrets, license/repo-visibility, and telemetry/privacy dimensions
+- US-001 - Scaffold launch-readiness report and audit distribution, onboarding, and external-docs dimensions
+
 ## [0.252.0] - 2026-07-23
 
 ### Added
