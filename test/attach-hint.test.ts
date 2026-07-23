@@ -236,6 +236,7 @@ describe('runNext attach hint', () => {
 				tmuxSpawnFn,
 				env: {},
 				sidecarAliveFn: () => true,
+				preflightFn: () => ({ ok: true }),
 			}),
 		);
 
@@ -254,6 +255,7 @@ describe('runNext attach hint', () => {
 				tmuxSpawnFn,
 				env: { TMUX: '/tmp/tmux-1/default,1234,0', CAM_SESSION: sessionName },
 				sidecarAliveFn: () => true,
+				preflightFn: () => ({ ok: true }),
 			}),
 		);
 

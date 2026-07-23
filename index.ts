@@ -50,6 +50,7 @@ import {
 } from './src/commands/patterns-prune.ts';
 import { runIssue } from './src/commands/issue.ts';
 import { runIssueList } from './src/commands/issue-list.ts';
+import { getIssueOnMain, type GetIssueOnMainOutcome } from './src/commands/issue-get.ts';
 import type {
 	CloseIssueOnMainOutcome,
 	AbandonIssueOnMainOutcome,
@@ -74,6 +75,7 @@ import { buildShipFinalizeOpts, buildShipBumpOpts } from './src/commands/ship-de
 import { runShipBump, type ShipBumpResult } from './src/release/ship-bump.ts';
 import { runResume, type ExplicitMode } from './src/commands/resume.ts';
 import { runDecide, parseDecideArgs } from './src/commands/decide.ts';
+import { runPrune, parsePruneArgs } from './src/commands/prune.ts';
 import { runRun, parseRunArgs } from './src/commands/run.ts';
 import { runStatus } from './src/commands/status.ts';
 import { runOrchBudget } from './src/commands/orch-budget.ts';
@@ -135,6 +137,7 @@ const HELP = renderHelp({
 				{ name: 'drain [--stop|--clear]', description: 'Set or clear the inter-cycle drain kill-switch without killing the sidecar' },
 				{ name: 'resume [options]', description: 'Reconcile loop state after interrupt; auto-detect or --mode <name>' },
 				{ name: 'decide <decision>', description: 'Record your choice into the active operator-decision gate so the sidecar resumes deterministically' },
+				{ name: 'prune [--force]', description: 'Deterministic branch cleanup after a PR is merged (or abandoned): checkout main, pull, delete branch, fetch --prune' },
 				{ name: 'version', description: 'Print the installed CAM Runtime version (also `--version` / `-v`)' },
 				{ name: 'help', description: 'Show this help' },
 			],
@@ -353,7 +356,7 @@ const ISSUE_HELP = renderHelp({
 	title: 'cam issue',
 	tagline: 'File an issue from free text, or list the actionable backlog',
 	usage:
-		'cam issue "<free text>" | cam issue list [--all] [--json] | cam issue close <id> | cam issue abandon <id> | cam issue demote <id>',
+		'cam issue "<free text>" | cam issue list [--all] [--json] | cam issue close <id> | cam issue abandon <id> | cam issue demote <id> | cam issue get <id>',
 	sections: [
 		{
 			heading: 'Arguments',
@@ -390,6 +393,11 @@ const ISSUE_HELP = renderHelp({
 					name: 'demote <id>',
 					description:
 						'Deterministically set stage:idea on main for a defective specified issue, so it can be re-specified (specified->idea for re-spec; in-process, no tmux, no LLM).',
+				},
+				{
+					name: 'get <id>',
+					description:
+						"Print a single issue's JSON from main to stdout (in-process, no tmux, no LLM). Read-only: never mutates or commits anything. Exits nonzero with a clear message when the id does not exist.",
 				},
 			],
 		},
@@ -610,7 +618,7 @@ const SUGGESTIONS_HELP = renderHelp({
 const NEXT_HELP = renderHelp({
 	title: 'cam next',
 	tagline: 'Open a loop pane in the project session',
-	usage: 'cam next [--max-iter <N>] [--completion-promise <STR>]',
+	usage: 'cam next [--max-iter <N>] [--completion-promise <STR>] [--skip-preflight]',
 	sections: [
 		{
 			heading: 'Options',
@@ -619,6 +627,12 @@ const NEXT_HELP = renderHelp({
 				{
 					name: '--completion-promise <STR>',
 					description: 'Phrase the assistant emits to end the loop (default: COMPLETE)',
+				},
+				{
+					name: '--skip-preflight',
+					description:
+						'Bypass the deterministic preflight (git sync, clean tree, typecheck,\n' +
+						'  tests) and proceed straight to the signal write (resume escape)',
 				},
 			],
 		},
@@ -930,6 +944,34 @@ const DECIDE_HELP = renderHelp({
 	footer: 'Distinct from `cam resume` (4-mode interrupt recovery) -- this resolves a live operator-decision gate.',
 });
 
+const PRUNE_HELP = renderHelp({
+	title: 'cam prune',
+	tagline: 'Deterministic branch-cleanup after a PR is merged (or abandoned)',
+	usage: 'cam prune [--force]',
+	sections: [
+		{
+			heading: 'Flags',
+			entries: [
+				{
+					name: '--force',
+					description:
+						'Skip the non-cam/* branch and open-PR confirmations. Never bypasses the dirty-tree or main-branch STOP.',
+				},
+			],
+		},
+		{
+			heading: 'Behaviour',
+			body:
+				'1. STOPs (nonzero exit) if the working tree is dirty, or if already on main.\n' +
+				'2. STOPs unless --force if the current branch is not cam/*, or if it has\n' +
+				'   an open (unmerged) PR.\n' +
+				'3. Otherwise: git checkout main, git pull origin main, git branch -D\n' +
+				'   <branch>, git fetch --prune.',
+		},
+	],
+	footer: 'Zero-LLM: pure git/gh dance, no pane spawned. Never deletes main/master; never force-pushes.',
+});
+
 const CONFIG_HELP =
 	'Usage: cam config [--show]\n' +
 	'  Interactive wizard to set model per phase and backend\n' +
@@ -1074,6 +1116,10 @@ const STATS_HELP = renderHelp({
  *     mutation on main (US-002, CAM-206/CAM-210 sibling). id is the required
  *     positional issue id; only the stage axis flips (spec/wsjf/blockedBy
  *     etc. are preserved) so the issue can be re-specified.
+ * - mode === 'get': deterministic in-process read of a single issue's JSON
+ *     from main (US-002, CAM-400). id is the required positional issue id;
+ *     read-only -- never mutates or commits anything (contrast with
+ *     close/abandon/demote above).
  * - help === true: caller should print ISSUE_HELP and exit 0.
  */
 export type ParsedIssueArgs =
@@ -1083,6 +1129,7 @@ export type ParsedIssueArgs =
 	| { mode: 'close'; id: string; help: false }
 	| { mode: 'abandon'; id: string; help: false }
 	| { mode: 'demote'; id: string; help: false }
+	| { mode: 'get'; id: string; help: false }
 	| { mode?: never; help: true };
 
 /**
@@ -1198,6 +1245,21 @@ export function parseIssueArgs(args: string[]): ParsedIssueArgs | null {
 			return null;
 		}
 		return { mode: 'demote', id, help: false };
+	}
+	// The `get <id>` subcommand is evaluated BEFORE the free-text fallthrough
+	// (alongside `list`/`close`/`abandon`/`demote`) so a missing id is a parse
+	// error, never a silent text-mode fallthrough treating 'get' as an issue title.
+	if (args[0] === 'get') {
+		const id = args[1];
+		if (id === undefined) {
+			printError('cam issue get requires an id (e.g. CAM-42)');
+			return null;
+		}
+		if (args.length > 2) {
+			printError(`unexpected argument: ${args[2]}`);
+			return null;
+		}
+		return { mode: 'get', id, help: false };
 	}
 	if (args.includes('--file-local')) {
 		let fastTrack = false;
@@ -1425,14 +1487,28 @@ export async function dispatchSpec(
  */
 export function parseNextArgs(
 	args: string[],
-): { maxIterations?: number; completionPromise?: string; help: boolean } | null {
-	const result: { maxIterations?: number; completionPromise?: string; help: boolean } = {
+): {
+	maxIterations?: number;
+	completionPromise?: string;
+	skipPreflight?: boolean;
+	help: boolean;
+} | null {
+	const result: {
+		maxIterations?: number;
+		completionPromise?: string;
+		skipPreflight?: boolean;
+		help: boolean;
+	} = {
 		help: false,
 	};
 	for (let i = 0; i < args.length; i += 1) {
 		const arg = args[i]!;
 		if (arg === '--help' || arg === '-h') {
 			result.help = true;
+			continue;
+		}
+		if (arg === '--skip-preflight') {
+			result.skipPreflight = true;
 			continue;
 		}
 		if (arg === '--max-iter' || arg === '--max-iterations') {
@@ -2369,6 +2445,14 @@ export interface IssueDispatchDeps {
 	 * injection (US-002, CAM-210).
 	 */
 	demoteIssueOnMainFn?: (id: string) => DemoteIssueOnMainOutcome;
+	/**
+	 * Inject a fake for the `get <id>` branch's underlying getIssueOnMain call.
+	 * Default: `getIssueOnMain(process.cwd(), id)` (production spawnSync, no
+	 * CAS/commit -- read-only). The printing (raw JSON to stdout on success,
+	 * printError on failure) and exit-code mapping always run in dispatchIssue
+	 * itself, regardless of injection (US-002, CAM-400).
+	 */
+	getIssueOnMainFn?: (id: string) => GetIssueOnMainOutcome;
 }
 
 /** Shape of the JSON payload `cam issue --file-local` reads from stdin. */
@@ -2519,6 +2603,21 @@ export async function dispatchIssue(
 		process.stdout.write(`CAM_ISSUE_RESULT=${result.id}\n`);
 		return 0;
 	}
+	if (parsed.mode === 'get') {
+		// Read-only: no CAM_ISSUE_RESULT machine line (that contract is scoped to
+		// mutation outcomes -- see the `list` branch's comment above). Success
+		// prints the raw issue JSON to stdout; failure prints a clear error and
+		// exits nonzero.
+		const getIssueOnMainFn =
+			deps?.getIssueOnMainFn ?? ((id: string) => getIssueOnMain(process.cwd(), id));
+		const result = getIssueOnMainFn(parsed.id);
+		if (!result.ok) {
+			printError(`cam issue get ${parsed.id} failed: issue not found`);
+			return 1;
+		}
+		process.stdout.write(result.content);
+		return 0;
+	}
 	if (parsed.mode === 'file-local') {
 		// `fileLocalFn` (whole-branch override) takes priority when present,
 		// preserving the pre-CAM-212 branch-isolation tests (US-003). The
@@ -2596,6 +2695,7 @@ const COMMANDS = [
 	'drain',
 	'resume',
 	'decide',
+	'prune',
 	'claude',
 	'sidecar',
 	'orch-recycle-watch',
@@ -2648,6 +2748,7 @@ const HELP_REGISTRY: Record<Command, string> = {
 	drain: DRAIN_HELP,
 	resume: RESUME_HELP,
 	decide: DECIDE_HELP,
+	prune: PRUNE_HELP,
 	claude: CLAUDE_HELP,
 	sidecar: SIDECAR_HELP,
 	'orch-recycle-watch': ORCH_RECYCLE_WATCH_HELP,
@@ -2832,6 +2933,7 @@ async function main(argv: string[]): Promise<number> {
 			return runNext({
 				maxIterations: parsed.maxIterations,
 				completionPromise: parsed.completionPromise,
+				skipPreflight: parsed.skipPreflight,
 			});
 		}
 		case 'review': {
@@ -2986,6 +3088,18 @@ async function main(argv: string[]): Promise<number> {
 				return 0;
 			}
 			return runDecide({ decision: parsed.decision });
+		}
+		case 'prune': {
+			const parsed = parsePruneArgs(argv.slice(3));
+			if (parsed === null) {
+				printFatalHint('run `cam prune --help` for usage');
+				return 1;
+			}
+			if (parsed.help) {
+				process.stdout.write(PRUNE_HELP);
+				return 0;
+			}
+			return runPrune({ force: parsed.force });
 		}
 		case 'claude': {
 			const parsed = parseClaudeArgs(argv.slice(3));

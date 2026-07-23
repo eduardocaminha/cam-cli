@@ -1,26 +1,13 @@
-## Pre-flight Checks (run in this session)
+## Pre-flight Checks (deterministic, run by `cam next` itself)
 
-Run these checks yourself, in the current session, before the supervisor starts. They are cheap and fail fast.
-
-1. **Sync with remote**:
-   First fetch all refs (including main), then check if the remote tracking branch exists:
-   ```bash
-   git fetch origin
-   git rev-parse --verify origin/$(git branch --show-current) >/dev/null 2>&1
-   ```
-   - **If it exists**: `git pull origin $(git branch --show-current)` to get updates.
-   - **If it does not exist**: `git push -u origin $(git branch --show-current)` to create it (this means `/cam-plan` did not push; fix it now).
-2. **Check working tree**:
-   ```bash
-   git status
-   ```
-   If there are uncommitted changes, warn the user and ask how to proceed.
-3. **Typecheck**:
-   Run `bun run typecheck`. If it fails, fix type errors before proceeding.
-4. **Tests**:
-   Run `bun test`. If tests fail, fix them before proceeding.
-
-Only proceed once all pre-flight checks pass.
+`cam next` now runs this preflight itself (US-003, CAM-400) as a gate on the
+`active:true` signal write — it is no longer an imperative checklist for this
+session to run by hand. The gate: `git fetch origin`, sync with the remote
+(pull if the tracking branch exists, else `push -u` to create it), a
+clean-tree check, `bun run typecheck`, and `bun test`. A failing preflight
+returns nonzero and does NOT flip `active:true`. `cam next --skip-preflight`
+bypasses the gate and proceeds straight to the signal write (the resume
+escape). See `src/commands/next-preflight.ts`.
 
 ---
 

@@ -57,11 +57,18 @@
 //   (q) the central --help/-h short-circuit (CAM-211) still fires for
 //       `cam issue demote --help` before parseIssueArgs/dispatchIssue ever
 //       run, so it prints ISSUE_HELP and exits 0 with no demote side effect.
+//   (r) parseIssueArgs recognizes `get <id>` as { mode: 'get', id }, evaluated
+//       BEFORE the free-text fallthrough (US-002, CAM-400). A missing id is a
+//       parse error, never a silent text-mode fallthrough.
+//   (s) dispatchIssue routes mode 'get' to getIssueOnMainFn, prints the raw
+//       issue JSON to stdout on success (exit 0) and a clear error on failure
+//       (exit 1), NEVER emits CAM_ISSUE_RESULT (read-only, not a mutation),
+//       and NEVER touches runIssueFn or fileLocalFn (no thin-proxy).
 //
 // All external I/O is faked via injectable deps (fileLocalFn, runIssueFn,
 // issueListFn, closeIssueOnMainFn, abandonIssueOnMainFn, demoteIssueOnMainFn,
-// createLocalIssueOnMainFn, readStdinFn). No real stdin, git, or tmux is
-// exercised.
+// getIssueOnMainFn, createLocalIssueOnMainFn, readStdinFn). No real stdin,
+// git, or tmux is exercised.
 
 import { describe, expect, test } from 'bun:test';
 import { parseIssueArgs, dispatchIssue, main } from '../index.ts';
@@ -905,6 +912,137 @@ describe('cam issue demote --help (CAM-211 short-circuit)', () => {
 	test('exits 0, prints ISSUE_HELP, and never reaches parseIssueArgs/dispatchIssue demote logic', async () => {
 		const lines = await withCapturedStdoutAsync(async () => {
 			const code = await main(['bun', 'index.ts', 'issue', 'demote', '--help']);
+			expect(code).toBe(0);
+		});
+		expect(lines.some((l) => l.includes('cam issue'))).toBe(true);
+		expect(lines.some((l) => l.includes('CAM_ISSUE_RESULT'))).toBe(false);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// parseIssueArgs: `get <id>` subcommand (US-002, CAM-400)
+// ---------------------------------------------------------------------------
+
+describe('parseIssueArgs: get subcommand', () => {
+	test('cam issue get CAM-42 returns { mode: get, id: CAM-42, help: false }', () => {
+		const result = parseIssueArgs(['get', 'CAM-42']);
+		expect(result?.mode).toBe('get');
+		expect(result?.help).toBe(false);
+		if (result?.mode === 'get') {
+			expect(result.id).toBe('CAM-42');
+		}
+	});
+
+	test('a bare "get" positional is never misread as free-text issue creation', () => {
+		const result = withSilentStderr(() => parseIssueArgs(['get']));
+		expect(result?.mode).not.toBe('text');
+	});
+
+	test('cam issue get with no id returns null (parse error, never text-mode fallthrough)', () => {
+		const result = withSilentStderr(() => parseIssueArgs(['get']));
+		expect(result).toBeNull();
+	});
+
+	test('cam issue get CAM-42 extra returns null (unexpected argument)', () => {
+		const result = withSilentStderr(() => parseIssueArgs(['get', 'CAM-42', 'extra']));
+		expect(result).toBeNull();
+	});
+
+	test('free text starting with "get" as a full sentence is still mode:text (no regression)', () => {
+		// A single-token `args[0] === 'get'` check only fires on the exact
+		// positional keyword; a free-text arg that merely CONTAINS "get" is
+		// unaffected because it is still args[0] verbatim vs the literal 'get'.
+		const result = parseIssueArgs(['get the retry logic reviewed']);
+		// args[0] here is the whole string 'get the retry logic reviewed',
+		// not the bare keyword 'get', so this still falls through to text mode.
+		expect(result?.mode).toBe('text');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// dispatchIssue: `get <id>` branch (US-002, CAM-400)
+// ---------------------------------------------------------------------------
+
+describe('dispatchIssue: get routing isolation', () => {
+	test('get calls getIssueOnMainFn and NOT runIssueFn/fileLocalFn', async () => {
+		let getCalled = false;
+		let runIssueCalled = false;
+		let fileLocalCalled = false;
+
+		const code = await dispatchIssue(
+			{ mode: 'get', id: 'CAM-42', help: false },
+			{
+				getIssueOnMainFn: (id) => {
+					getCalled = true;
+					return { ok: true, id, content: '{"id":"CAM-42"}\n' };
+				},
+				runIssueFn: async () => {
+					runIssueCalled = true;
+					return 99;
+				},
+				fileLocalFn: async () => {
+					fileLocalCalled = true;
+					return 99;
+				},
+			},
+		);
+
+		expect(getCalled).toBe(true);
+		expect(runIssueCalled).toBe(false);
+		expect(fileLocalCalled).toBe(false);
+		expect(code).toBe(0);
+	});
+
+	test('get passes the parsed id through to getIssueOnMainFn', async () => {
+		let receivedId: string | undefined;
+		await dispatchIssue(
+			{ mode: 'get', id: 'CAM-99', help: false },
+			{
+				getIssueOnMainFn: (id) => {
+					receivedId = id;
+					return { ok: true, id, content: '{}\n' };
+				},
+			},
+		);
+		expect(receivedId).toBe('CAM-99');
+	});
+
+	test('get on success prints the raw issue JSON to stdout and exits 0 (no CAM_ISSUE_RESULT line: read-only)', async () => {
+		const lines = await withCapturedStdoutAsync(async () => {
+			const code = await dispatchIssue(
+				{ mode: 'get', id: 'CAM-42', help: false },
+				{
+					getIssueOnMainFn: (id) => ({ ok: true, id, content: '{"id":"CAM-42"}\n' }),
+				},
+			);
+			expect(code).toBe(0);
+		});
+		expect(lines.some((l) => l.includes('{"id":"CAM-42"}'))).toBe(true);
+		expect(lines.some((l) => l.includes('CAM_ISSUE_RESULT'))).toBe(false);
+	});
+
+	test('get on a not-found id prints a clear error and exits non-zero', async () => {
+		const code = await withSilentStderrAsync(() =>
+			dispatchIssue(
+				{ mode: 'get', id: 'CAM-999', help: false },
+				{
+					getIssueOnMainFn: () => ({ ok: false, reason: 'not-found' }),
+				},
+			),
+		);
+		expect(code).toBe(1);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// central --help/-h short-circuit still fires for `cam issue get --help`
+// (CAM-211, regression lock for the new get subcommand)
+// ---------------------------------------------------------------------------
+
+describe('cam issue get --help (CAM-211 short-circuit)', () => {
+	test('exits 0, prints ISSUE_HELP, and never reaches parseIssueArgs/dispatchIssue get logic', async () => {
+		const lines = await withCapturedStdoutAsync(async () => {
+			const code = await main(['bun', 'index.ts', 'issue', 'get', '--help']);
 			expect(code).toBe(0);
 		});
 		expect(lines.some((l) => l.includes('cam issue'))).toBe(true);
