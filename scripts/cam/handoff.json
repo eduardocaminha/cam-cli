@@ -1,0 +1,19 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Add reviewer-backend resolution seam to makeReviewDispatch and isolate the generic tests" },
+  "branchName": "cam/issue-405",
+  "timestamp": "2026-07-23T17:32:45Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/supervisor/review.ts",
+    "src/commands/sidecar.ts",
+    "test/supervisor/review.test.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 (CAM-405) added an optional `configPath?: string` field to MakeReviewDispatchOptions (src/supervisor/review.ts), threaded into the readPhaseBackend('reviewer', configPath)/readPhaseModel('reviewer', configPath, reviewBackend) calls inside makeReviewDispatch's closure. When absent (the production default, wired at src/commands/sidecar.ts:~1529's makeReviewDispatch call), resolution is byte-identical to before (live scripts/cam/project.toml). test/supervisor/review.test.ts's shared makeDispatchOpts helper now defaults configPath to a new module-level GENERIC_REVIEW_CONFIG_PATH fixture (backend=claude, isolated tmp file), so the ~41 generic dispatch tests no longer read the live project.toml. The 11 opts-building call sites inside withReviewerBackendCwd (the chdir-to-tmp-project.toml codex/container argv-shape tests) were each given an explicit `configPath: undefined` override so they keep resolving from their own real cwd-relative fixture -- makeDispatchOpts distinguishes 'key absent' from 'key explicitly undefined' via `'configPath' in overrides`, mirroring the existing `prd` override pattern in the same helper. A new regression describe block at the end of the file ('US-001 (CAM-405) reviewer-backend resolution seam') proves (a) the seam resolves off the fixture not the live config, and (b) a reviewer=codex fixture combined with the pre-existing codexAuthCheckFn seam (US-002/CAM-352) does not fail with codex-auth-failed. The committed scripts/cam/project.toml [backend].name stays 'claude' (AC6, unchanged). file-size-budget.json ceilings were raised for the 3 touched files (sidecar.ts 3682->3686, review.ts 665->689, review.test.ts 1915->2054) with a dated _ref note. No external library was touched (this is an internal DI-seam/test-isolation change to project-local code); Step 5.5 recorded as no_external_lib_touched.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ],
+  "appliedPatternIds": []
+}

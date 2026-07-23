@@ -278,6 +278,23 @@ export interface MakeReviewDispatchOptions {
 	 * this seam is never invoked.
 	 */
 	codexAuthCheckFn?: CodexAuthCheck;
+	/**
+	 * Reviewer-backend/model resolution seam (US-001, CAM-405). Overrides the
+	 * `configPath` argument threaded into the `readPhaseBackend('reviewer', ...)`
+	 * and `readPhaseModel('reviewer', ...)` calls below, so a per-call fixture
+	 * `project.toml` (e.g. a tmp file with `[backend] reviewer = "codex"`) is
+	 * consulted instead of the repo's live `scripts/cam/project.toml`.
+	 *
+	 * When absent (the production default), `readPhaseBackend`/`readPhaseModel`
+	 * fall back to their own default (`scripts/cam/project.toml` resolved from
+	 * `process.cwd()`), so reviewer-backend resolution in production is
+	 * unchanged. Exists purely so tests can isolate reviewer-backend/model
+	 * resolution from the repo's committed config (letting a `reviewer = "codex"`
+	 * project.toml be exercised in CI without requiring real codex auth or
+	 * mutating the live config file), without bypassing the real
+	 * `readPhaseBackend`/`readPhaseModel` resolution logic.
+	 */
+	configPath?: string;
 }
 
 /** Default max review rounds (mirrors decide.ts and cam-review.md). */
@@ -337,6 +354,10 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 	// US-002 (CAM-352): codex auth-check DI seam, threaded straight into
 	// codexAuthPreflight at the reviewer dispatch site.
 	const codexAuthCheckFn = opts.codexAuthCheckFn;
+	// US-001 (CAM-405): reviewer-backend/model resolution seam. When absent,
+	// readPhaseBackend/readPhaseModel resolve their own default (the live
+	// scripts/cam/project.toml), preserving production behavior byte-for-byte.
+	const configPath = opts.configPath;
 
 	return function reviewDispatch(uuid: string): ReviewDispatchResult {
 		// CAM-57: ensure a live worker pane exists before the respawn. When
@@ -351,8 +372,11 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 		// US-002 (CAM-356): resolve reviewBackend first and thread it into
 		// readPhaseModel so a codex-backed reviewer phase resolves its slug from
 		// [models.codex] instead of a backend-blind [models] read.
-		const reviewBackend = readPhaseBackend('reviewer');
-		const reviewModel = readPhaseModel('reviewer', undefined, reviewBackend);
+		// US-001 (CAM-405): configPath threads the resolution seam above through
+		// to both calls, so tests can point resolution at a fixture project.toml
+		// instead of the repo's live one.
+		const reviewBackend = readPhaseBackend('reviewer', configPath);
+		const reviewModel = readPhaseModel('reviewer', configPath, reviewBackend);
 
 		// Build and respawn the interactive reviewer (CAM-41: the prompt is
 		// mandatory; a promptless claude dies instantly).
