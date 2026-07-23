@@ -1,0 +1,15 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Deterministic idle-wait in bootPane setup to kill the UNDELIVERED send-once flake"
+  },
+  "createdFiles": [],
+  "modifiedFiles": [
+    "test/integration/dispatch-geometry.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 (this story) added a deterministic idle-wait to bootPane() in test/integration/dispatch-geometry.test.ts: after the existing has-session waitForCondition, a second waitForCondition polls tmuxRaw(['capture-pane','-p','-t',SESSION]).stdout.toString() through isOrchPaneIdle (both now imported from src/tmux/dispatch.ts) before bootPane returns, so no test dispatches sendKeysVerified before the fixture has rendered its idle prompt. The dedicated pane-not-idle test (~line 330) does NOT call bootPane at all (it inlines its own new-session + has-session wait against a long-lived 'sleep 100' busy pane), so it is unaffected by this change and keeps its 100ms idleTimeoutMs intent unchanged. src/tmux/dispatch.ts was untouched; this is a pure test-harness fix. All 8 tests in the file pass, full bun test (5485 pass / 0 fail) and bun run check:all (all 12 gates) are green.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
