@@ -1,10 +1,44 @@
 {
   "id": "CAM-401",
   "title": "CAM-197 Slice 3: novo comando cam status deterministico + rule-set fechado de diagnostico why-not-moving",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-22T23:38:33.372Z",
-  "updatedAt": "2026-07-22T23:38:33.372Z",
-  "description": "Filho de CAM-197 (Layer 1, item novo). Novo comando deterministico que renderiza a posicao na state-machine do ciclo (phase, PRD in-flight, stories pendentes, container preflight, posicao do merge-watch, markers de wedge/stall) projetando os state-files + cam-worker-events.jsonl (infra do CAM-195, ja shipado). ALEM disso, um rule-set FECHADO e deterministico de diagnosticos 'por que nao anda': cada condicao concreta detectavel mapeada para uma mensagem fixa + proximo comando sugerido. Zero LLM, testavel. REQUISITO DURO: detectar o wedge do orch-pane ocupado (sidecar loga 'orchestrator pane %0 did not go idle...; sending anyway'). Se hoje isso so existe como linha no cam-supervisor.log, o slice ADICIONA um evento pra essa condicao (consistente com o padrao evented-refusals / one-state-file-owner do CAM-195) em vez de parsear o log. Origem do epic: audit do wedge CAM-118 (orch re-derivando estado toda sessao). TIPO feat."
+  "updatedAt": "2026-07-23T10:40:09.495Z",
+  "description": "Filho de CAM-197 (Layer 1, item novo). Novo comando deterministico que renderiza a posicao na state-machine do ciclo (phase, PRD in-flight, stories pendentes, container preflight, posicao do merge-watch, markers de wedge/stall) projetando os state-files + cam-worker-events.jsonl (infra do CAM-195, ja shipado). ALEM disso, um rule-set FECHADO e deterministico de diagnosticos 'por que nao anda': cada condicao concreta detectavel mapeada para uma mensagem fixa + proximo comando sugerido. Zero LLM, testavel. REQUISITO DURO: detectar o wedge do orch-pane ocupado (sidecar loga 'orchestrator pane %0 did not go idle...; sending anyway'). Se hoje isso so existe como linha no cam-supervisor.log, o slice ADICIONA um evento pra essa condicao (consistente com o padrao evented-refusals / one-state-file-owner do CAM-195) em vez de parsear o log. Origem do epic: audit do wedge CAM-118 (orch re-derivando estado toda sessao). TIPO feat.",
+  "spec": {
+    "scope": "Extend the existing deterministic `cam status` command (src/commands/status.ts, runStatus/buildStatusReport, dispatched at index.ts:2897-2908) to project the FULL cycle state-machine position and add a closed, deterministic why-not-moving diagnostic rule-set (zero LLM, pure, testable). Today status reads only the loop-state file, prd.json, git, and the .cam-pause marker. This slice adds three things. (1) Projection: read and render the six blocker/wedge/stall markers (.cam-ship-stalled.json, .cam-plan-escalated.json, .cam-plan-preflight-failed.json, .cam-implement-blocked.json, .cam-post-merge-stalled.json, .cam-gate.json), the durable merge-watch position (.cam-merge-watch.json: prNumber, pollCount, lastPolledAt via readMergeWatchState), and the .cam-sidecar-stalled.json marker, each via its existing lenient never-throw reader under <cwd>/.claude/. Container preflight has NO on-disk status file, so project the last container-preflight event from cam-worker-events.jsonl instead of re-running preflight. (2) A closed, ordered, pure diagnostic rule-set: each concrete detectable cycle-blocking condition maps to one FIXED operator-facing message plus one suggested next command, unit-tested per condition. (3) A dedicated orch-pane-busy event kind added to the WorkerEventKind union in src/supervisor/events.ts (with a typed detail interface, wired into the WorkerEventDetail union) and emitted at the sidecar dispatch site (src/tmux/dispatch.ts sendOnceUnverified) when the orchestrator pane did not go idle and the sidecar sent anyway, so the diagnostic distinguishes the busy-orch-pane wedge from a genuine delivery-exhaustion (push-undelivered reason retries-exhausted) rather than parsing cam-supervisor.log. cam status stays strictly read-only: it must never write or mutate any state file or marker. Origin: CAM-197 Layer 1, audit of the CAM-118 wedge (orchestrator re-deriving cycle state every session).",
+    "acceptanceCriteria": [
+      "cam status projects all six blocker/wedge/stall markers plus the merge-watch position and the sidecar-stalled marker into its status report model, each read via that marker's existing lenient never-throw reader [oracle: bun test test/unit/status-projection.test.ts]",
+      "The WorkerEventKind union in src/supervisor/events.ts declares a dedicated orch-pane-busy event kind wired into the WorkerEventDetail union [oracle: file-assert grep -q \"orch-pane-busy\" src/supervisor/events.ts]",
+      "The sidecar dispatch path emits the orch-pane-busy event when the orchestrator pane does not go idle within the idle timeout and the sidecar sends anyway [oracle: bun test test/unit/dispatch-orch-pane-busy.test.ts]",
+      "The why-not-moving diagnostic is a pure, closed, ordered rule-set where each detectable condition maps to exactly one fixed message and one suggested next command, unit-tested per condition [oracle: bun test test/unit/status-diagnostics.test.ts]",
+      "The diagnostic distinguishes the busy-orch-pane wedge (orch-pane-busy event) from a genuine delivery-exhaustion (push-undelivered) and emits the correct fixed message and suggested command for each [oracle: bun test test/unit/status-diagnostics.test.ts]",
+      "cam status renders the marker and merge-watch projection plus the diagnostic section in its human-readable output [oracle: bun test test/unit/status-render.test.ts]",
+      "The diagnostic rule-set invokes no LLM, is exhaustive over the enumerated detectable conditions, and cam status mutates no state file (reviewer confirms closed-ness and read-only behavior) [oracle: reviewer-judgment]",
+      "The full spine is green [oracle: bun run check:all]"
+    ],
+    "gotchas": [
+      "cam status ALREADY EXISTS (src/commands/status.ts, ~642 lines, runStatus/buildStatusReport, dispatched at index.ts:2897-2908, help at index.ts:736-761). This is an EXTENSION, not a greenfield command: reuse buildStatusReport's read-model shape (PrdShape / parseStateFile) and the existing src/logging/screen.ts printer helpers; do not fork a second status command.",
+      "The busy-orch-pane condition today emits only the GENERIC push-undelivered event with reason 'pane-not-idle' at src/tmux/dispatch.ts:468 (sendOnceUnverified), which conflates with delivery-exhaustion (reason 'retries-exhausted'). Add a DEDICATED orch-pane-busy kind so the diagnostic tells the transient send-anyway wedge apart from a real delivery failure. Follow the CAM-195 add-an-event pattern: extend the WorkerEventKind union (events.ts:129), declare a *EventDetail interface, add it to the WorkerEventDetail union (events.ts:618), emit via the injected logEvent seam.",
+      "Every marker has an existing lenient never-throw reader (readShipStalledMarker merge-watch.ts, readGateFileLenient gate.ts:134, plan-escalation.ts, plan-preflight-marker.ts, implement-blocked-marker.ts, post-merge-stalled-marker.ts, sidecar-stalled.ts) under <cwd>/.claude/. Reuse them, do not re-implement the read. Merge-watch position is durable per-tick on disk in .cam-merge-watch.json via readMergeWatchState (NOT the legacy in-memory runMergeWatch wrapper), so a separate cam status process CAN observe prNumber/pollCount/lastPolledAt.",
+      "Container preflight has NO on-disk status file (preflightWorkerContainer computes fresh per tick in memory, side-effecty and container-gated). Do NOT re-run it from cam status; project the last container-preflight event from cam-worker-events.jsonl (loop.ts:1188-1194, ContainerPreflightEventDetail).",
+      "src/tmux/dispatch.ts and src/supervisor/events.ts are sidecar-executed: this slice needs a coherence rebuild (bash scripts/build-release.sh --install, then kill the sidecar by exact pid from .claude/.cam-sidecar.pid and restart it) AFTER merge before the new event and diagnostic take effect live. Call it out in the ship follow-up.",
+      "Read-only invariant: cam status must never write or mutate any state file or marker. The `✗` lines in check:all / bun test output are fixture strings, not failures: read the exit code and the bun 'N pass / N fail' summary, never grep for fail/error/✗."
+    ],
+    "domainTerms": [
+      "why-not-moving diagnostic: a closed, deterministic rule-set mapping each concrete detectable cycle-blocking condition to a fixed operator-facing message plus a single suggested next command, with zero LLM.",
+      "busy-orch-pane wedge: the sidecar found the orchestrator pane (%0) not idle within the idle timeout and sent keys anyway (dispatch.ts sendOnceUnverified); a transient send-anyway condition distinct from a genuine delivery-exhaustion.",
+      "marker projection: reading the gitignored <cwd>/.claude/ dot-JSON blocker/wedge/stall markers via their lenient never-throw readers to render cycle state, not to gate on them.",
+      "CAM-195 evented pattern: one condition equals one structured event kind appended to cam-worker-events.jsonl and consumed by readers, rather than parsing cam-supervisor.log."
+    ]
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 2,
+    "riskReduction": 3,
+    "jobSize": 3
+  },
+  "type": "feat"
 }
