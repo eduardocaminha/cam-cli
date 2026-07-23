@@ -20,7 +20,7 @@
         "The full spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/events.ts (extend WorkerEventKind union ~line 129, declare OrchPaneBusyEventDetail interface near the other *EventDetail interfaces, add it to the WorkerEventDetail union ~line 618, add a doc-comment bullet in the kind-doc block like the other kinds), src/tmux/dispatch.ts (sendOnceUnverified ~line 452-468: it already calls logEvent?.('push-undelivered', { paneId, retriesExhausted: 1, reason: 'pane-not-idle' }); ADD a second logEvent?.('orch-pane-busy', {...}) alongside it, keep the push-undelivered call). New test: test/unit/dispatch-orch-pane-busy.test.ts. Follow the CAM-195 add-an-event pattern (one condition = one structured event kind appended to cam-worker-events.jsonl, consumed by readers, not log-parsed). Gotcha (issue): the busy-orch-pane condition today emits ONLY the generic push-undelivered reason:'pane-not-idle' which conflates with reason:'retries-exhausted' delivery-exhaustion; the dedicated kind disambiguates. Gotcha (issue ship follow-up): src/tmux/dispatch.ts and src/supervisor/events.ts are sidecar-executed, so a coherence rebuild (bash scripts/build-release.sh --install, then kill sidecar by pid from .claude/.cam-sidecar.pid and restart) is needed AFTER merge for the live event to take effect; call it out in the ship follow-up, not in this story. patterns.md 'Sidecar-supervisor invariant' + 'Single-pusher invariant' bullets are relevant context; logEvent here is the injected seam, not a direct writer."
     },
