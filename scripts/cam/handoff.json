@@ -1,20 +1,17 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Add orch-pane-busy event kind and emit it at the sidecar dispatch site" },
+  "lastCompletedStory": { "id": "US-002", "title": "Project cycle markers, merge-watch, sidecar-stalled, and container-preflight event into the status read-model" },
   "branchName": "cam/issue-401",
   "timestamp": "2026-07-23T00:00:00Z",
   "createdFiles": [
-    "test/unit/dispatch-orch-pane-busy.test.ts"
+    "test/unit/status-projection.test.ts"
   ],
   "modifiedFiles": [
-    "src/supervisor/events.ts",
-    "src/tmux/dispatch.ts",
-    "test/dispatch.test.ts",
-    "test/integration/dispatch-geometry.test.ts",
+    "src/commands/status.ts",
     "scripts/file-size-budget.json",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 added a dedicated 'orch-pane-busy' WorkerEventKind + OrchPaneBusyEventDetail (paneId, idleTimeoutMs) to src/supervisor/events.ts, and wired sendOnceUnverified (src/tmux/dispatch.ts) to emit it ALONGSIDE (not replacing) the existing generic push-undelivered (reason:'pane-not-idle') emission. This is a pure event-emission story: no reader/diagnostic yet consumes 'orch-pane-busy' (the 'why-not-moving diagnostic' this event exists to feed is a future story). Per the CAM-195 add-an-event pattern, per the notes gotcha: src/tmux/dispatch.ts and src/supervisor/events.ts are sidecar-executed, so a coherence rebuild (bash scripts/build-release.sh --install, then restart the sidecar via its pid in .claude/.cam-sidecar.pid) is needed AFTER merge for the live event to actually start appearing in .claude/cam-worker-events.jsonl; this is a ship follow-up concern, not part of this story. Adding this second logEvent call broke two pre-existing tests that asserted an exact events array length of 1 at this call site (test/dispatch.test.ts's 'idle-gate times out' test, test/integration/dispatch-geometry.test.ts's real-tmux 'pane-not-idle timeout path' test); both were updated in this same commit to expect 2 events (push-undelivered then orch-pane-busy), see the new patterns.md bullet for the general lesson. src/supervisor/events.ts's file-size-budget.json ceiling was raised 828->855 in this story (doc-comment-heavy file, small diff still tripped the ratchet per the CAM-170 precedent already in patterns.md).",
+  "nextStoryContext": "US-002 extended StatusReport (src/commands/status.ts) with 9 new optional fields, all populated in a single new helper `projectCycleState(cwd): CycleStateProjection` (a Pick<StatusReport, ...> over just these fields) called once from buildStatusReport via `Object.assign(report, projectCycleState(cwd))`: shipStalled (readShipStalledMarker/.cam-ship-stalled.json), planEscalated (readPlanEscalatedMarker/.cam-plan-escalated.json), planPreflightFailed (readPlanPreflightFailedMarker/.cam-plan-preflight-failed.json), implementBlocked (readImplementBlockedMarker/.cam-implement-blocked.json), postMergeStalled (readPostMergeStalledMarker/.cam-post-merge-stalled.json), gate (readGateFileLenient/.cam-gate.json), mergeWatch ({prNumber, pollCount (defaults 0), lastPolledAt?} via readMergeWatchState/.cam-merge-watch.json), sidecarStalled (readSidecarStalledMarker/.cam-sidecar-stalled.json), and containerPreflight ({ready, reason?, ts} -- the LAST kind:'container-preflight' line from .claude/cam-worker-events.jsonl, via a new local readLastContainerPreflightEvent helper that parses each JSONL line inside its own try/catch so one malformed line never stops the scan). All reads are via each marker's existing lenient never-throw reader; zero writes anywhere in the new code (proven by an mtimeMs-diff test suite). The projection fan-out was extracted into its own function specifically because inlining it into buildStatusReport tripped Biome's noExcessiveLinesPerFunction (max 80) gate -- see the new patterns.md bullet for the general lesson (any read-model fan-out over 4+ existing lenient readers should be extracted up front). This story did NOT wire any of these new StatusReport fields into runStatus's stdout rendering (the print path) -- printing them is a natural follow-up but was out of scope for this story's acceptance criteria, which only covered buildStatusReport's projection. src/commands/status.ts's file-size-budget.json ceiling was raised 642->850 (a large jump: 9 new optional StatusReport fields + their doc comments + the projectCycleState helper + the event-log reader helper, all additive, no line removed).",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
