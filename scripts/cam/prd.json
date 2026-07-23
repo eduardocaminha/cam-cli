@@ -23,7 +23,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Single file: src/commands/status.ts (LoopPhase union L130, LOOP_PHASES array L133, parseStateFile L345/L375). The loop-state template vendor/cam-loop.local.md.tmpl already carries `phase: {{PHASE}}`, so NO template change is needed for the phase field itself (spec gotcha). This is the types/config foundation US-003/US-004 depend on. Precedent: 'shipping'/'planning' were added the same way (docs/adr/0006). Add a status.test.ts case asserting the phase:review round-trip; sweep it red-against-main first (it must fail before the enum gains 'review')."
     },
