@@ -25,6 +25,8 @@ README rebuild.
 | Security / secrets | gap |
 | License / repo-visibility | ready |
 | Telemetry / privacy stance | gap |
+| Versioning / release / update-path | gap |
+| Support channels | gap |
 
 ## Distribution / install: gap
 
@@ -287,10 +289,238 @@ Concrete gaps:
   `RESEND_API_KEY`) for an operator to review before trusting cam with
   push/PR-creation authority on their behalf.
 
-## Coordination note
+## Versioning / release / update-path: gap
 
-This report does not file follow-up issues for the gaps above; CAM-330's
-final story (US-003 of this PRD) closes the report with the prioritized
-gap triage and the go/no-go recommendation, and files blocking gaps as
-issues at that point. CAM-331 and CAM-332 already exist as issues and are
-explicitly out of scope for this report to duplicate.
+Internally, versioning is disciplined: `src/version.ts`'s `CAM_VERSION` and
+`package.json`'s `version` are kept in lockstep (`test/version.test.ts`
+asserts equality), semantic-release-style bumps run through `cam ship
+--bump`/`computeNextVersion` with a documented 0.x-major-demotion
+convention, `CHANGELOG.md` follows Keep a Changelog with a line-anchored
+`## [Unreleased]` heading and one dated section per version, and every
+release is tagged (`git tag`, `vX.Y.Z` at the correct post-squash-merge
+main SHA per the project's own tag-timing runbook). This machinery has
+produced 252 version bumps and 252 pushed tags to date, verified directly
+against this working tree's tag list and `CHANGELOG.md`.
+
+That entire pipeline stops at the git tag: verified directly with
+`gh release list`, this repository has published **zero** GitHub Releases
+despite 252 tags. There is no release-notes page, no attached binary
+artifact, and (per the distribution/install dimension above)
+`scripts/build-release.sh` produces a single darwin-arm64 binary that is
+never uploaded anywhere; every install, including every re-install after
+a version bump, means the user re-clones and rebuilds from source. There
+is also no update mechanism at all for an already-installed `cam` binary:
+no `cam update`/`cam upgrade` subcommand, no version-check-on-launch, no
+`DISABLE_AUTOUPDATER`-equivalent self-update path (that env var and its
+sibling `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` only govern the
+*wrapped* `claude` CLI's own auto-update behavior, never `cam` itself).
+A user who installed `cam` last month has no way to discover, from inside
+`cam`, that 20+ newer versions exist, and no supported path to move to one
+short of re-running the from-source install steps by hand.
+
+Concrete gaps:
+
+- **No published GitHub Releases**, despite a disciplined tag-per-version
+  history; a stranger browsing the repo's Releases tab today finds it
+  empty.
+- **No update mechanism for an installed binary.** No `cam update`
+  subcommand, no version-check, no self-update path; re-running the
+  from-source install script is the only way to move versions.
+- **No versioned binary distribution artifact at all** (compounds the
+  distribution/install dimension's finding above): even a manual update
+  means rebuilding from source, not downloading a new binary.
+- **No documented deprecation/compatibility policy** for a 0.x product
+  making frequent (multiple-per-day) minor bumps: nothing states what, if
+  anything, is stable across versions for an external adopter pinning a
+  version.
+
+## Support channels: gap
+
+The GitHub repository has Issues enabled (`has_issues: true`, verified via
+`gh api repos/eduardocaminha/cam-cli`) and a CI workflow
+(`.github/workflows/ci.yml`), so a baseline public bug-report surface
+exists. Everything past that baseline is either absent or exists only in
+a form aimed at the maintainer's own automated loop, not at an external
+user asking for help.
+
+Concrete gaps:
+
+- **No `.github/ISSUE_TEMPLATE/`.** Filing a bug or feature request on
+  GitHub gets a blank textbox; there is no structured template guiding a
+  reporter to include version, platform, or reproduction steps.
+- **No `CONTRIBUTING.md`.** A stranger who wants to file a well-formed
+  issue or send a PR has no documented process, coding conventions
+  pointer, or PR checklist (this gap is also flagged, non-blocking, under
+  license/repo-visibility above; it is restated here because it is
+  simultaneously a support-channel gap, not only a repo-hygiene one).
+- **No `SECURITY.md` vulnerability-disclosure channel** (same underlying
+  file gap as the security/secrets dimension above): a researcher finding
+  a vulnerability has no private-disclosure path and would have to file a
+  public GitHub issue.
+- **GitHub Discussions is disabled** (`has_discussions: false`) and the
+  GitHub Wiki is present but empty and unused (`has_wiki: true`,
+  default-on, no content): there is no async Q&A or community-support
+  surface beyond bug-tracker Issues.
+- **No real-time or maintainer-contact channel documented anywhere.** The
+  README has no "Getting help", "Support", or "Contact" section; there is
+  no Discord/Slack, no maintainer email, and no response-time expectation
+  set for issues filed against a public repo.
+- **`cam issue`, the project's own issue-filing CLI, is a tool for
+  cam-managed *downstream* projects' backlogs, not a support channel for
+  cam-cli itself.** It files into a project's local `scripts/cam/issues/`
+  store or Linear/GitHub per that project's config; it is not a substitute
+  for cam-cli's own external-facing GitHub Issues, and nothing in the
+  README distinguishes the two for a stranger who might otherwise assume
+  `cam issue` is "how you report a cam bug".
+
+## Prioritized gap triage
+
+Audited against the current product state described in the header above,
+including the post-CAM-54 codex backend (Codex CLI ships as a complete,
+per-subagent-selectable alternative to Claude: `[backend]` /
+`[models.<backend>]` in `project.toml`, the setup wizard's "which backend
+per subagent, and which is default" prompts, `src/supervisor/backend-adapter.ts`,
+`codex-auth.ts`; verified `stage: shipped` in
+`scripts/cam/issues/CAM-0054.json`). Eight of the nine dimensions above
+carry a `gap` verdict; only license/repo-visibility is `ready`. Ranked by
+severity to a stranger evaluating or trusting this tool for a public v1,
+most severe first:
+
+1. **Security / secrets, undisclosed `bypassPermissions` default (P0,
+   must-fix).** Every cam-dispatched agent session runs with full
+   autonomous Bash/filesystem access by default, on the bare host, with
+   zero README disclosure. This is the single most launch-relevant fact
+   in the whole audit: a stranger cannot make an informed trust decision
+   about running cam against their own machine without knowing this.
+2. **External-facing docs / README, CAM-331 not yet shipped (P0,
+   must-fix).** The README a stranger reads first is still the
+   internal-contributor document; it is also the document that would
+   carry the security disclosure above and the support-channel gaps
+   below, so shipping CAM-331 is the concrete remediation vehicle for
+   most of this triage's other items, not an independent gap.
+3. **Distribution / install, no packaged binary for any platform (P1,
+   must-fix).** A public repo with a from-source-only, single-platform,
+   dev-toolchain-required install path is not yet a public-v1-shaped
+   distribution story, independent of how good the README ends up being.
+4. **Telemetry / privacy stance, undocumented data flows (P1,
+   must-fix).** The underlying facts are favorable (no first-party cam
+   telemetry), which makes this cheap to fix relative to its trust value:
+   writing down what already is true is lower-risk work than the items
+   above, but it is still must-fix because an autonomous agent that
+   pushes code and PRs on the operator's behalf is exactly the tool a
+   privacy-conscious adopter checks before installing.
+5. **First-run onboarding, jargon-heavy setup wizard (P2, follow-up).**
+   Real friction for a first-time stranger, but it degrades the
+   experience rather than misrepresenting risk; does not block a v1 tag.
+6. **Versioning / release / update-path, no Releases page and no update
+   mechanism (P2, follow-up).** Internal versioning discipline is already
+   solid; the gap is purely external polish (a Releases page, eventually
+   a `cam update` path) that can follow v1 rather than gate it.
+7. **Support channels, no templates/contact/disclosure surface (P2,
+   follow-up).** Baseline GitHub Issues already exists; templates,
+   `CONTRIBUTING.md`, and a documented contact path are standard OSS
+   polish, not a v1 blocker, though the `SECURITY.md` sub-item is shared
+   with the P0 security disclosure item above and should land together
+   with it.
+8. **License / repo-visibility, `ready` with two tracked pending items
+   (not a gap; carried forward as follow-ups only).** MIT license,
+   correct attribution, and public visibility are already sound; the two
+   pending items (GitHub repo rename, missing policy files) are
+   explicitly non-blocking per that dimension's own verdict.
+
+## Go / no-go recommendation
+
+**No-go for public v1 as of this audit.** Four must-fix items block the
+tag (items 1-4 in the triage above): the undisclosed `bypassPermissions`
+default, the not-yet-shipped external README (CAM-331), the from-source-only
+single-platform distribution path, and the undocumented telemetry/privacy
+stance. All four are documentation-and-packaging work, not architecture
+changes: the underlying engineering (permission-mode plumbing, container-mode
+isolation, the zero-first-party-telemetry fact, the working build script) is
+already sound in every case; the gap is disclosure and packaging, not a
+redesign. None of the four is scoped to CAM-331/CAM-332 alone, so shipping
+CAM-331 closes the README item directly but not the other three.
+
+**Must-fix blocking set (must land before a public v1 tag):**
+
+- Disclose the `bypassPermissions` default and the container-mode
+  alternative in the README (Security section).
+- Ship CAM-331 (the external-facing README rebuild), or otherwise elevate
+  the current README, so a stranger's first read is not the
+  internal-contributor document.
+- Provide at least one packaged, non-source install path (a signed
+  release binary attached to a GitHub Release is the minimum bar; full
+  cross-platform builds and package-manager entries can follow).
+- Publish a telemetry/privacy statement (a README section or `PRIVACY.md`)
+  enumerating the third-party data flows (Anthropic, GitHub, optionally
+  Linear/Resend) and the host-vs-container non-essential-traffic
+  inconsistency.
+
+Every dimension carrying a `gap` verdict maps to either this must-fix set
+(security, external docs, distribution, telemetry: items 1-4) or the
+Follow-up Issues list below (onboarding, versioning/release, support
+channels: items 5-7), and the one `ready` dimension (license/repo-visibility)
+contributes its two pending items to the same follow-up list rather than
+being force-fit into either bucket, consistent with the triage above.
+
+## Follow-up Issues
+
+Ready-to-file issue specs for the orchestrator/operator to file on main via
+`/cam-issue` once this report closes. Per the CAM-162 defect rule, this
+worker story does not hand-file these on-branch itself.
+
+**Must-fix (blocking public v1; file as high-priority issues alongside, not
+instead of, direct action on the must-fix set above):**
+
+- **Title: "Disclose bypassPermissions default and container-mode
+  alternative in README."** Scope: add a Security section to `README.md`
+  (or a linked `docs/security.md`) stating the `bypassPermissions` default
+  for every cam-dispatched agent session, the scope of the
+  `orch-agent-allowlist.sh` hook, and container mode as the higher-isolation
+  opt-in; add `SECURITY.md` with a vulnerability-disclosure contact.
+- **Title: "Publish a telemetry/privacy statement."** Scope: add a README
+  section or `PRIVACY.md` enumerating cam's third-party data flows
+  (Anthropic/claude, GitHub/git+gh, optional Linear, optional Resend), state
+  plainly that cam has no first-party telemetry, and either apply
+  `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`/`DISABLE_AUTOUPDATER` in host
+  mode too or document why host mode intentionally differs from container
+  mode.
+- **Title: "Ship at least one packaged, non-source cam install path."**
+  Scope: attach a signed/notarized (or at minimum ad-hoc-resigned,
+  clearly-labeled-unsigned) darwin-arm64 binary to a GitHub Release, and
+  document the download-and-run steps in the README as an alternative to
+  the from-source path; cross-platform builds and package-manager entries
+  are separate, lower-priority follow-ups, not part of this issue's scope.
+- (CAM-331, the external-facing README rebuild, already exists and is
+  in progress; do not re-file it, only reference it as satisfying the
+  must-fix external-docs item once it ships.)
+
+**Non-blocking follow-ups (observations, not blockers):**
+
+- **Title: "Add first-run in-tool guidance for jargon-heavy setup
+  wizard."** Scope: inline glossary or help text for `issue_system`,
+  `backend`/per-subagent model selection, `merge_mode`, and `plan_approval`
+  during `cam init`'s setup wizard; a `claude`-not-authenticated detection
+  path beyond "not on PATH"; a first-run keybinding hint inside the
+  dashboard TUI.
+- **Title: "Publish GitHub Releases for tagged cam-cli versions."** Scope:
+  wire `gh release create` into the tag flow (`cam tag` or the ship
+  pipeline) so each of the existing 252+ tags going forward gets a
+  corresponding Release with changelog notes; backfill is optional.
+- **Title: "Add a `cam update`/version-check path for installed
+  binaries."** Scope: a subcommand or `cam init`-time check that compares
+  the installed binary's version against the latest tag/Release and
+  prints an upgrade hint; does not need to auto-install.
+- **Title: "Add GitHub issue templates, CONTRIBUTING.md, and enable
+  Discussions."** Scope: `.github/ISSUE_TEMPLATE/` (bug report, feature
+  request), a root `CONTRIBUTING.md` (dev setup, PR checklist, coding
+  conventions pointer), and enabling GitHub Discussions or documenting an
+  alternative async support channel.
+- **Title: "Rename the GitHub repository from cam-cli to cam-runtime."**
+  Scope: CAM-329's own separate GitHub-side operator step (rename
+  `eduardocaminha/cam-cli`), carried forward from the license/repo-visibility
+  dimension's `ready` verdict; non-blocking, not this report's action item.
+- **Title: "Add SECURITY.md, CONTRIBUTING.md, and CODE_OF_CONDUCT.md at
+  the repo root."** Scope: the license/repo-visibility dimension's other
+  pending item; `SECURITY.md` overlaps with the must-fix security-disclosure
+  issue above and should be authored once, satisfying both.
