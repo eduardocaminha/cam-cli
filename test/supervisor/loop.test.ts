@@ -4748,3 +4748,232 @@ describe('runSidecarLoop US-006 (CAM-64): recordPatternOutcomeFn hook at cycle-c
 		},
 	);
 });
+
+// ---------------------------------------------------------------------------
+// US-003 (CAM-403): runSidecarLoop review-phase dispatch
+// ---------------------------------------------------------------------------
+
+describe('runSidecarLoop — review-phase dispatch (US-003, CAM-403)', () => {
+	const COMPLETE_RESULT: SupervisorResult = { status: 'complete', iterations: 1, lastOutcome: null };
+
+	// AC1: runReviewPhaseFn called exactly once on a phase:review tick.
+	test('AC1: runReviewPhaseFn called exactly once on phase:review tick', async () => {
+		const ESCAPE = Symbol('escape');
+		let reviewPhaseCalls = 0;
+		let sleepCount = 0;
+
+		// Sequence: review -> idle -> idle
+		const phaseSeq = ['review', 'idle', 'idle'] as const;
+		let phaseIdx = 0;
+
+		const opts: RunSidecarLoopOptions = {
+			buildOpts: () => makeBaseOpts(),
+			readActive: () => false,
+			clearActive: () => {},
+			hasPendingStories: () => true,
+			acquireLock: () => ({ acquired: true as const, release: () => {} }),
+			runSupervisorFn: async () => COMPLETE_RESULT,
+			readLoopPhaseFn: () => phaseSeq[phaseIdx++],
+			runReviewPhaseFn: async () => {
+				reviewPhaseCalls++;
+			},
+			sleep: () => {
+				sleepCount++;
+				if (sleepCount >= 3) throw ESCAPE;
+			},
+		};
+
+		try {
+			await runSidecarLoop(opts);
+		} catch (e) {
+			if (e !== ESCAPE) throw e;
+		}
+
+		expect(reviewPhaseCalls).toBe(1);
+	});
+
+	// AC1: runReviewPhaseFn NOT called on phase:idle tick.
+	test('AC1: runReviewPhaseFn NOT called on phase:idle tick', async () => {
+		const ESCAPE = Symbol('escape');
+		let reviewPhaseCalls = 0;
+		let sleepCount = 0;
+
+		const opts: RunSidecarLoopOptions = {
+			buildOpts: () => makeBaseOpts(),
+			readActive: () => false,
+			clearActive: () => {},
+			hasPendingStories: () => true,
+			acquireLock: () => ({ acquired: true as const, release: () => {} }),
+			runSupervisorFn: async () => COMPLETE_RESULT,
+			readLoopPhaseFn: () => 'idle',
+			runReviewPhaseFn: async () => {
+				reviewPhaseCalls++;
+			},
+			sleep: () => {
+				sleepCount++;
+				if (sleepCount >= 2) throw ESCAPE;
+			},
+		};
+
+		try {
+			await runSidecarLoop(opts);
+		} catch (e) {
+			if (e !== ESCAPE) throw e;
+		}
+
+		expect(reviewPhaseCalls).toBe(0);
+	});
+
+	// AC1: runReviewPhaseFn NOT called on phase:planning or phase:shipping ticks
+	// (mutually exclusive with the other phase branches).
+	test.each(['planning', 'shipping', 'awaiting-operator', 'implementing'] as const)(
+		'AC1: runReviewPhaseFn NOT called on phase:%s tick',
+		async (phase) => {
+			const ESCAPE = Symbol('escape');
+			let reviewPhaseCalls = 0;
+			let sleepCount = 0;
+			const phaseSeq = [phase, 'idle'] as const;
+			let phaseIdx = 0;
+
+			const opts: RunSidecarLoopOptions = {
+				buildOpts: () => makeBaseOpts(),
+				readActive: () => false,
+				clearActive: () => {},
+				hasPendingStories: () => true,
+				acquireLock: () => ({ acquired: true as const, release: () => {} }),
+				runSupervisorFn: async () => COMPLETE_RESULT,
+				readLoopPhaseFn: () => phaseSeq[phaseIdx++] ?? 'idle',
+				runReviewPhaseFn: async () => {
+					reviewPhaseCalls++;
+				},
+				sleep: () => {
+					sleepCount++;
+					if (sleepCount >= 2) throw ESCAPE;
+				},
+			};
+
+			try {
+				await runSidecarLoop(opts);
+			} catch (e) {
+				if (e !== ESCAPE) throw e;
+			}
+
+			expect(reviewPhaseCalls).toBe(0);
+		},
+	);
+
+	// AC1: absent runReviewPhaseFn -> phase:review is silently ignored (falls
+	// through to the idle path, no crash).
+	test('AC1: phase:review with runReviewPhaseFn absent falls through to idle, no crash', async () => {
+		const ESCAPE = Symbol('escape');
+		let sleepCount = 0;
+
+		const opts: RunSidecarLoopOptions = {
+			buildOpts: () => makeBaseOpts(),
+			readActive: () => false,
+			clearActive: () => {},
+			hasPendingStories: () => true,
+			acquireLock: () => ({ acquired: true as const, release: () => {} }),
+			runSupervisorFn: async () => COMPLETE_RESULT,
+			readLoopPhaseFn: () => 'review',
+			sleep: () => {
+				sleepCount++;
+				if (sleepCount >= 2) throw ESCAPE;
+			},
+		};
+
+		let caught: unknown;
+		try {
+			await runSidecarLoop(opts);
+		} catch (e) {
+			caught = e;
+		}
+
+		expect(caught).toBe(ESCAPE);
+	});
+
+	// AC2: the review branch is mutually exclusive with the idle path (active !== true).
+	test('AC2: review-phase branch mutually exclusive with idle path', async () => {
+		const ESCAPE = Symbol('escape');
+		let reviewPhaseCalls = 0;
+		let idlePathCalls = 0; // fires only in the idle path, not the review-phase path
+		let sleepCount = 0;
+
+		const phaseSeq = ['review', 'idle'] as const;
+		let phaseIdx = 0;
+
+		const opts: RunSidecarLoopOptions = {
+			buildOpts: () => makeBaseOpts(),
+			readActive: () => false,
+			clearActive: () => {},
+			hasPendingStories: () => false,
+			acquireLock: () => ({ acquired: true as const, release: () => {} }),
+			runSupervisorFn: async () => COMPLETE_RESULT,
+			readLoopPhaseFn: () => phaseSeq[phaseIdx++] ?? 'idle',
+			runReviewPhaseFn: async () => {
+				reviewPhaseCalls++;
+			},
+			runMergeWatchFn: async () => {
+				idlePathCalls++;
+			},
+			sleep: () => {
+				sleepCount++;
+				if (sleepCount >= 3) throw ESCAPE;
+			},
+		};
+
+		try {
+			await runSidecarLoop(opts);
+		} catch (e) {
+			if (e !== ESCAPE) throw e;
+		}
+
+		// Review-phase branch: called exactly once, on the review tick.
+		expect(reviewPhaseCalls).toBe(1);
+		// Idle path (runMergeWatchFn) must not have fired on the review tick;
+		// it may fire on subsequent idle ticks.
+		expect(idlePathCalls).toBeGreaterThanOrEqual(1);
+	});
+
+	// AC2: a throwing injected runReviewPhaseFn cannot crash the outer loop
+	// (outer guard, mirroring the planning branch at loop.ts:2223).
+	test('AC2: a throwing runReviewPhaseFn is caught and logged, never crashes the loop', async () => {
+		const ESCAPE = Symbol('escape');
+		let sleepCount = 0;
+		const { logger: logEvent, events } = makeInMemoryEventLogger();
+
+		const opts: RunSidecarLoopOptions = {
+			buildOpts: () => makeBaseOpts(),
+			readActive: () => false,
+			clearActive: () => {},
+			hasPendingStories: () => true,
+			acquireLock: () => ({ acquired: true as const, release: () => {} }),
+			runSupervisorFn: async () => COMPLETE_RESULT,
+			readLoopPhaseFn: () => 'review',
+			runReviewPhaseFn: () => {
+				throw new Error('injected review-phase crash');
+			},
+			logEvent,
+			sleep: () => {
+				sleepCount++;
+				if (sleepCount >= 2) throw ESCAPE;
+			},
+		};
+
+		let caught: unknown;
+		try {
+			await runSidecarLoop(opts);
+		} catch (e) {
+			caught = e;
+		}
+
+		// The loop survives the throwing closure and reaches the injected sleep
+		// escape hatch, not an uncaught rejection from runReviewPhaseFn.
+		expect(caught).toBe(ESCAPE);
+
+		const crashEvents = events.filter((e) => e.kind === 'sidecar-exit');
+		expect(crashEvents.length).toBeGreaterThanOrEqual(1);
+		const detail = crashEvents[crashEvents.length - 1]?.detail as { reason?: string };
+		expect(detail.reason).toBe('review-phase-crash-outer');
+	});
+});

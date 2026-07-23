@@ -2132,6 +2132,24 @@ export interface RunSidecarLoopOptions {
 	 */
 	runShipPhaseFn?: () => void | Promise<void>;
 	/**
+	 * Run a review round (US-003, CAM-403).
+	 *
+	 * When injected AND readLoopPhaseFn() returns 'review', called once per
+	 * tick (sibling of the planning/shipping branches; phase:review derives
+	 * active:false, so this guard MUST precede the active!==true idle check
+	 * for the same reason as those two). The closure is responsible for its
+	 * own phase transition once the review round completes; this option
+	 * carries no separate "on done" callback, mirroring runShipPhaseFn.
+	 *
+	 * Production wiring (sidecar.ts): a closure over one makeReviewDispatch
+	 * round (US-004). Tests inject a spy to assert call count / crash-survival
+	 * without dispatching a real review.
+	 *
+	 * Optional: when absent, phase:review is silently ignored (zero behavior
+	 * change for all existing tests that do not inject readLoopPhaseFn).
+	 */
+	runReviewPhaseFn?: () => void | Promise<void>;
+	/**
 	 * Poll + resolve the operator-decision gate (US-003, CAM-241/153).
 	 *
 	 * When injected AND readLoopPhaseFn() returns 'awaiting-operator', called
@@ -2254,6 +2272,28 @@ export async function runSidecarLoop(opts: RunSidecarLoopOptions): Promise<void>
 					uuid: 'sidecar',
 					kind: 'sidecar-exit',
 					detail: { reason: 'ship-phase-crash-outer', error: err instanceof Error ? err.message : String(err) },
+				});
+			}
+			opts.sleep(idlePollMs);
+			continue;
+		}
+
+		// US-003 (CAM-403): review-phase branch (sibling of planning/shipping;
+		// phase:review derives active:false, so this guard MUST precede the
+		// active!==true idle check to avoid falling into the idle path on a
+		// review tick). Like the shipping branch, the injected closure is
+		// responsible for its own phase->idle reset, so this outer guard only
+		// catches + logs a crash; it never writes phase itself.
+		if (loopPhase === 'review' && opts.runReviewPhaseFn !== undefined) {
+			try {
+				await opts.runReviewPhaseFn();
+			} catch (err: unknown) {
+				opts.logEvent?.({
+					ts: new Date().toISOString(),
+					storyId: undefined,
+					uuid: 'sidecar',
+					kind: 'sidecar-exit',
+					detail: { reason: 'review-phase-crash-outer', error: err instanceof Error ? err.message : String(err) },
 				});
 			}
 			opts.sleep(idlePollMs);
