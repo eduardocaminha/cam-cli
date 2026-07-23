@@ -1,0 +1,10 @@
+{
+  "id": "CAM-404",
+  "title": "Flaky: dispatch-geometry UNDELIVERED send-once test (CAM-375 AC6) falha intermitente sob carga do CI",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-23T10:27:45.031Z",
+  "updatedAt": "2026-07-23T10:27:45.031Z",
+  "description": "test/integration/dispatch-geometry.test.ts, teste 'UNDELIVERED wrapping payload: exactly one physical send-keys call (send-once guard, US-001, CAM-375), exactly one push-undelivered event with retriesExhausted maxAttempts (AC6)' e sensivel a timing (444ms, send-keys tmux REAL) e flaka sob carga do CI. Evidencia coletada no ciclo do PR #325 (CAM-399): PASSOU na run 1 do CI e FALHOU na run 2 do mesmo PR, e passa 3/3 local; um PR doc+config-only nao tem como afeta-lo. Causa: premissa de timing no teste (espera o esgotamento de retries por tempo). Fix: endurecer com waitForCondition / espera deterministica em vez de depender do timing de retry sob carga. Pre-existente; bloqueou um merge e forcou um re-run legitimo (com prova de flake, nao evasao). TIPO fix."
+}
