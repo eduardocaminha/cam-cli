@@ -3,6 +3,7 @@ issue_system = "local"
 
 [backend]
 name = "claude"
+reviewer = "codex"
 
 [models]
 auditor = "opus"
@@ -24,3 +25,6 @@ orch_context_window = 500000
 
 [notify]
 resend_recipient = "caminhae@gmail.com"
+
+[models.codex]
+reviewer = "gpt-5.6-sol"
