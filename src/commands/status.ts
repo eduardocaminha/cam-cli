@@ -92,6 +92,7 @@ import {
 	type SidecarStalledMarker,
 } from '../supervisor/sidecar-stalled.ts';
 import type { ContainerPreflightEventDetail } from '../supervisor/events.ts';
+import { diagnoseWhyNotMoving, type WhyNotMovingDiagnostic, type WhyNotMovingSignals } from './status-diagnostics.ts';
 
 // --- Constants -------------------------------------------------------------
 
@@ -314,6 +315,17 @@ export interface StatusReport {
 	 * distinguishable from a fresh one.
 	 */
 	containerPreflight?: ContainerPreflightEventDetail & { ts: string };
+	/**
+	 * Closed, ordered, deterministic why-not-moving diagnostic (US-003,
+	 * CAM-401), derived by `diagnoseWhyNotMoving` (src/commands/status-diagnostics.ts)
+	 * from the rest of this projected model plus the orch-pane-busy /
+	 * push-undelivered event-log signals. Always present -- the diagnostic is
+	 * total over its closed rule-set and returns a fixed 'none' result rather
+	 * than an absent/ambiguous value when nothing is blocking. Optional only at
+	 * the type level (for construction ergonomics); `buildStatusReport` always
+	 * sets it before returning.
+	 */
+	diagnostic?: WhyNotMovingDiagnostic;
 }
 
 // --- Parsers ---------------------------------------------------------------
@@ -500,21 +512,21 @@ function readGitInfo(cwd: string): { branchName?: string; lastCommit?: { sha: st
 }
 
 /**
- * Read the LAST `container-preflight` event from `.claude/cam-worker-events.jsonl`
- * (US-002, CAM-401). Container preflight has no on-disk status file (unlike
- * the marker family above), so the event log is the only durable record of
- * its last result; this never re-runs preflight itself.
- *
- * Returns `undefined` when the event log is absent/unreadable, contains no
- * `container-preflight` line, or every `container-preflight` line is
- * malformed. Never throws: each line is parsed independently inside its own
- * try/catch so one malformed line does not stop the scan for a later valid
- * one (mirrors the JSON reader shape-guard pattern used by the marker
- * readers above).
+ * Generic last-matching-line scanner over `.claude/cam-worker-events.jsonl`
+ * (US-002/US-003, CAM-401): reads the whole log, parses each line
+ * independently inside its own try/catch so one malformed line never stops
+ * the scan, and keeps overwriting with the LAST line whose `kind` matches
+ * `kind` and whose parsed object passes `guard` (returns non-`undefined`).
+ * Shared by the container-preflight, orch-pane-busy, and push-undelivered
+ * projections below -- each differs only in `kind` and its own shape-guard.
+ * Never throws; returns `undefined` when the log is absent/unreadable or no
+ * line matches.
  */
-function readLastContainerPreflightEvent(
+function scanLastEventOfKind<T>(
 	cwd: string,
-): (ContainerPreflightEventDetail & { ts: string }) | undefined {
+	kind: string,
+	guard: (obj: Record<string, unknown>) => T | undefined,
+): T | undefined {
 	const path = join(cwd, '.claude', 'cam-worker-events.jsonl');
 	let raw: string;
 	try {
@@ -523,7 +535,7 @@ function readLastContainerPreflightEvent(
 		return undefined;
 	}
 
-	let last: (ContainerPreflightEventDetail & { ts: string }) | undefined;
+	let last: T | undefined;
 	for (const line of raw.split('\n')) {
 		const trimmed = line.trim();
 		if (!trimmed) continue;
@@ -531,23 +543,68 @@ function readLastContainerPreflightEvent(
 			const parsed = JSON.parse(trimmed) as unknown;
 			if (parsed === null || typeof parsed !== 'object') continue;
 			const obj = parsed as Record<string, unknown>;
-			if (obj['kind'] !== 'container-preflight' || typeof obj['ts'] !== 'string') continue;
-			const detail = obj['detail'];
-			if (detail === null || typeof detail !== 'object') continue;
-			const detailObj = detail as Record<string, unknown>;
-			if (typeof detailObj['ready'] !== 'boolean') continue;
-			const reason = detailObj['reason'];
-			const entry: ContainerPreflightEventDetail & { ts: string } = {
-				ready: detailObj['ready'],
-				ts: obj['ts'],
-			};
-			if (typeof reason === 'string') entry.reason = reason;
-			last = entry;
+			if (obj['kind'] !== kind) continue;
+			const result = guard(obj);
+			if (result !== undefined) last = result;
 		} catch {
 			// Malformed line; skip and keep scanning for a later valid one.
 		}
 	}
 	return last;
+}
+
+/**
+ * Read the LAST `container-preflight` event from `.claude/cam-worker-events.jsonl`
+ * (US-002, CAM-401). Container preflight has no on-disk status file (unlike
+ * the marker family above), so the event log is the only durable record of
+ * its last result; this never re-runs preflight itself.
+ *
+ * Returns `undefined` when the event log is absent/unreadable, contains no
+ * `container-preflight` line, or every `container-preflight` line is
+ * malformed.
+ */
+function readLastContainerPreflightEvent(
+	cwd: string,
+): (ContainerPreflightEventDetail & { ts: string }) | undefined {
+	return scanLastEventOfKind(cwd, 'container-preflight', (obj) => {
+		if (typeof obj['ts'] !== 'string') return undefined;
+		const detail = obj['detail'];
+		if (detail === null || typeof detail !== 'object') return undefined;
+		const detailObj = detail as Record<string, unknown>;
+		if (typeof detailObj['ready'] !== 'boolean') return undefined;
+		const reason = detailObj['reason'];
+		const entry: ContainerPreflightEventDetail & { ts: string } = { ready: detailObj['ready'], ts: obj['ts'] };
+		if (typeof reason === 'string') entry.reason = reason;
+		return entry;
+	});
+}
+
+/**
+ * Read the why-not-moving diagnostic's US-001 event-log signals (US-003,
+ * CAM-401): whether an `orch-pane-busy` event is present, and the `reason` of
+ * the LAST `push-undelivered` event. These two event kinds are not part of
+ * the marker-file family above (no on-disk status file), so they are read
+ * straight from the event log via `scanLastEventOfKind`, mirroring
+ * `readLastContainerPreflightEvent`. Never throws.
+ */
+function readWhyNotMovingSignals(cwd: string): WhyNotMovingSignals {
+	const orchPaneBusy =
+		scanLastEventOfKind(cwd, 'orch-pane-busy', (obj) => {
+			const detail = obj['detail'];
+			if (detail === null || typeof detail !== 'object') return undefined;
+			return typeof (detail as Record<string, unknown>)['paneId'] === 'string' ? true : undefined;
+		}) === true;
+
+	const pushUndeliveredReason = scanLastEventOfKind(cwd, 'push-undelivered', (obj) => {
+		const detail = obj['detail'];
+		if (detail === null || typeof detail !== 'object') return undefined;
+		const reason = (detail as Record<string, unknown>)['reason'];
+		return reason === 'retries-exhausted' || reason === 'pane-not-idle' ? reason : undefined;
+	});
+
+	const signals: WhyNotMovingSignals = { orchPaneBusy };
+	if (pushUndeliveredReason !== undefined) signals.pushUndeliveredReason = pushUndeliveredReason;
+	return signals;
 }
 
 /**
@@ -683,6 +740,9 @@ export function buildStatusReport(options: StatusOptions = {}): StatusReport {
 			if (story) report.currentStory = { id: story.id, title: story.title };
 		}
 		if (operatorPaused) report.state = 'operator-paused';
+		// US-003 (CAM-401): attach the closed why-not-moving diagnostic last, once
+		// `report.state` (incl. the operator-paused override) is final.
+		report.diagnostic = diagnoseWhyNotMoving(report, readWhyNotMovingSignals(cwd));
 		return report;
 	}
 
@@ -716,6 +776,9 @@ export function buildStatusReport(options: StatusOptions = {}): StatusReport {
 		const story = pickCurrentStory(prd);
 		if (story) report.currentStory = { id: story.id, title: story.title };
 	}
+	// US-003 (CAM-401): attach the closed why-not-moving diagnostic last, once
+	// `report.state` (incl. the operator-paused override) is final.
+	report.diagnostic = diagnoseWhyNotMoving(report, readWhyNotMovingSignals(cwd));
 	return report;
 }
 
