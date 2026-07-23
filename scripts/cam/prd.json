@@ -20,7 +20,7 @@
         "The full spine passes green. [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New handler in src/commands/prune.ts (dep-injected: git spawnFn + optional gh spawnFn, mirroring runNext's parameterized shape and IssueDispatchDeps at index.ts:2313). Register in index.ts: add 'prune' to COMMANDS array (index.ts:2583-2608), add PRUNE_HELP to HELP_REGISTRY (index.ts:2638 map, Record<Command,string> so a missing entry fails typecheck), add parsePruneArgs (follow parseSubcommandArgs idiom at index.ts:1136), and a `case 'prune'` in the dispatch switch (index.ts:2718+). Faithful de-inline of .claude/commands/cam-prune.md: dirty STOP, main-branch STOP, non-cam/* branch confirmation (--force), open-PR confirmation via `gh pr view --json state,mergedAt,url` (--force), then checkout main / pull origin main / git branch -D <branch> / git fetch --prune. NEVER delete main/master, never force-push. Tests must inject fake git/gh spawn fns, never shell out (curated invariant: hit real I/O at wire boundaries but DI-fakes fine for subprocess). noUncheckedIndexedAccess: guard regex/array access."
     },
