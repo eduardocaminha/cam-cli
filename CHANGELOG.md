@@ -6,6 +6,15 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.252.0] - 2026-07-23
+
+### Added
+
+- US-004 - De-inline the /cam-prune and /cam-next templates to call the new CLI
+- US-003 - Fold the deterministic preflight into `cam next` as a signal-write gate
+- US-002 - Add deterministic `cam issue get <id>` subcommand
+- US-001 - Add deterministic `cam prune` subcommand
+
 ## [0.251.0] - 2026-07-23
 
 ### Added
