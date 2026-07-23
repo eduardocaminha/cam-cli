@@ -27,7 +27,7 @@ import { afterEach, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-import { sendKeysVerified } from '../../src/tmux/dispatch.ts';
+import { isOrchPaneIdle, sendKeysVerified } from '../../src/tmux/dispatch.ts';
 import type { SpawnFn } from '../../src/tmux/session.ts';
 import type { WorkerEventDetail, WorkerEventKind } from '../../src/supervisor/events.ts';
 import { waitForCondition } from '../helpers/wait-for-condition.ts';
@@ -79,6 +79,13 @@ async function bootPane(mode: 'submit' | 'drop', wrapMode: 'char' | 'word' = 'ch
 		`bun ${FIXTURE_PATH} ${mode} ${PANE_WIDTH} ${PANE_HEIGHT} ${wrapMode}`,
 	]);
 	await waitForCondition(() => tmuxRaw(['has-session', '-t', SESSION]).status === 0);
+	// Deterministic idle-wait (US-001, CAM-401 undelivered send-once flake):
+	// the fixture's cold-start under CI load can lag past has-session, so wait
+	// until it has actually rendered its idle prompt before any test dispatches
+	// sendKeysVerified against it.
+	await waitForCondition(() =>
+		isOrchPaneIdle(tmuxRaw(['capture-pane', '-p', '-t', SESSION]).stdout.toString()),
+	);
 }
 
 function paneId(): string {
