@@ -1,0 +1,10 @@
+{
+  "id": "CAM-406",
+  "title": "Sidecar narration push stalls unsubmitted in orch pane on pane-not-idle fallback",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-23T22:26:00.102Z",
+  "updatedAt": "2026-07-23T22:26:00.102Z",
+  "description": "When pane %0 is not idle at send-keys time, sendKeysVerified's idle-gate times out and the sendOnceUnverified fallback dumps the text into the orchestrator's input WITHOUT an effective Enter, so the [cam] narration line sits unsubmitted until the operator manually presses Enter. Observed live 2026-07-23 on the plan-escalated push for CAM-398: the operator had to intervene or the loop would have sat idle forever. This is a live recurrence of the CAM-375/CAM-364/CAM-404 UNDELIVERED send-once class. The fallback should either retry until the pane goes idle instead of dumping unverified text, or guarantee submission; a stalled narration breaks the autonomous loop because the orchestrator never observes the terminal."
+}
