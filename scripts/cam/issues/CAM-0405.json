@@ -1,11 +1,11 @@
 {
   "id": "CAM-405",
   "title": "Testes makeReviewDispatch leem o project.toml vivo: backend codex fica un-CI-testavel e un-shippable como config commitado",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-23T10:27:47.594Z",
-  "updatedAt": "2026-07-23T17:15:04.987Z",
+  "updatedAt": "2026-07-23T17:48:10.185Z",
   "description": "A suite makeReviewDispatch (test/supervisor/review.test.ts) resolve o reviewer backend a partir do project.toml VIVO ([backend].reviewer). Consequencia descoberta no ciclo CAM-399: commitar [backend].reviewer=codex em qualquer arvore que chega no CI faz ~42 testes makeReviewDispatch falharem fail-closed com 'codex-auth-failed', porque o runner do CI nao tem codex autenticado. Ou seja: (a) codex nao pode virar o reviewer default commitado, e (b) o backend reviewer codex nao pode ser validado no CI de jeito nenhum; a validacao so e possivel via run local do sidecar (como foi feito pra fechar CAM-54). Opcoes de fix: (i) isolar os testes do config vivo (injetar backend fixture via DI), (ii) mockar/stubar o auth preflight do codex nesses testes, e/ou (iii) prover codex auth no CI. Relacionado: CAM-54 (codex backend, fechado por validacao local), CAM-398 (resolucao dinamica de modelo). Ate consertar: manter reviewer=claude no config commitado e validar codex so local. TIPO fix.",
   "spec": {
     "scope": "Isolate the makeReviewDispatch reviewer-backend resolution from the live on-disk project.toml so the reviewer backend can be injected per-call in tests. Add a test-facing injection seam to MakeReviewDispatchOptions (a pre-resolved reviewBackend/reviewModel override, or a projectConfigPath threaded into readPhaseBackend/readPhaseModel at src/supervisor/review.ts:354-355), thread it through the single production consumer (src/commands/sidecar.ts:1529) with production behavior unchanged (still resolves live), and update the ~41 generic makeDispatchOpts-based tests in test/supervisor/review.test.ts to supply the seam so they no longer read the repo's live scripts/cam/project.toml. Add a regression test proving that a config resolving reviewer=codex no longer breaks the generic dispatch tests with codex-auth-failed. Out of scope: provisioning codex auth in CI, dynamic model resolution (CAM-398), and switching the committed reviewer default to codex.",
