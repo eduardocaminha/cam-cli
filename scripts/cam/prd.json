@@ -78,7 +78,7 @@
         "The full spine is green (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": "US-003",
       "notes": "Files: src/commands/status.ts runStatus ~line 550 (printer path only; reuse renderEntry/renderStateIndicator, emitTitle, CONTENT_INDENT, KEY_COL_WIDTH, and the src/logging/screen.ts helpers). New test: test/unit/status-render.test.ts (capture stdout via the existing status-test pattern; buildStatusReport is already exposed for programmatic assertions so most logic can be tested at the model level, render test asserts the section is present and the suggested command string is shown). This is the print path (NOT Ink), so no ink-testing-library screen-render criterion applies. Ink glyph invariant still governs vocabulary choice: success/failure/state is the glyph, never divider color (patterns.md; CLAUDE.md curated invariant; lesson 2026-06-05). runStatus already always returns 0; keep it. Read-only invariant holds through the render path."
     }
