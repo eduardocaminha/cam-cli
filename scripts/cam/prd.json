@@ -39,7 +39,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "File: src/commands/review.ts (currently a 207-line send-keys thin-proxy; collapse it to the plan/ship signal-writer shape). Mirror src/commands/plan.ts exactly: import writeStateFile + renderStateFile from status.ts, import sidecarLivenessGate from ./sidecar-gate.ts, expose an injectable writeFn defaulting to writeStateFile (plan.ts:44/53/205). Gate order matches plan/ship: sidecarLivenessGate first, then write. Grep scripts/cam/patterns.md for 'signal-writer'/'sidecar' before coding. Gotcha (spec): a standalone phase:review requires an active prd.json + a cam branch, the same precondition as the in-context path; keep the gate consistent with plan/ship."
     },
