@@ -46,6 +46,8 @@ import { glyphs } from '../design/tokens.ts';
 import { accent, chalk, destructive, muted, warning } from '../logging/color.ts';
 import {
 	emitEntry,
+	emitMutedHint,
+	emitOk,
 	emitSectionHeading,
 	emitTitle,
 	emitTrailingBlank,
@@ -58,6 +60,41 @@ import {
 	renderTokensLine,
 	type TranscriptUsage,
 } from '../transcript/usage.ts';
+import {
+	MERGE_WATCH_FILENAME,
+	SHIP_STALLED_FILENAME,
+	readMergeWatchState,
+	readShipStalledMarker,
+	type ShipStalledMarker,
+} from '../release/merge-watch.ts';
+import { GATE_FILENAME, readGateFileLenient, type CamGate } from '../supervisor/gate.ts';
+import {
+	PLAN_ESCALATED_FILENAME,
+	readPlanEscalatedMarker,
+	type PlanEscalatedMarker,
+} from '../supervisor/plan-escalation.ts';
+import {
+	PLAN_PREFLIGHT_FAILED_FILENAME,
+	readPlanPreflightFailedMarker,
+	type PlanPreflightFailedMarker,
+} from '../supervisor/plan-preflight-marker.ts';
+import {
+	IMPLEMENT_BLOCKED_FILENAME,
+	readImplementBlockedMarker,
+	type ImplementBlockedMarker,
+} from '../supervisor/implement-blocked-marker.ts';
+import {
+	POST_MERGE_STALLED_FILENAME,
+	readPostMergeStalledMarker,
+	type PostMergeStalledMarker,
+} from '../supervisor/post-merge-stalled-marker.ts';
+import {
+	SIDECAR_STALLED_FILENAME,
+	readSidecarStalledMarker,
+	type SidecarStalledMarker,
+} from '../supervisor/sidecar-stalled.ts';
+import type { ContainerPreflightEventDetail } from '../supervisor/events.ts';
+import { diagnoseWhyNotMoving, type WhyNotMovingDiagnostic, type WhyNotMovingSignals } from './status-diagnostics.ts';
 
 // --- Constants -------------------------------------------------------------
 
@@ -225,6 +262,72 @@ export interface StatusReport {
 	 * active one.
 	 */
 	lastActivity?: string;
+	/**
+	 * Durable ship-stalled marker (US-002, CAM-401). Projected verbatim from
+	 * `.claude/.cam-ship-stalled.json` via `readShipStalledMarker`. Absent when
+	 * the marker file is absent or malformed.
+	 */
+	shipStalled?: ShipStalledMarker;
+	/**
+	 * Durable plan-escalation marker (US-002, CAM-401), from
+	 * `.claude/.cam-plan-escalated.json` via `readPlanEscalatedMarker`.
+	 */
+	planEscalated?: PlanEscalatedMarker;
+	/**
+	 * Durable plan-preflight-failed marker (US-002, CAM-401), from
+	 * `.claude/.cam-plan-preflight-failed.json` via
+	 * `readPlanPreflightFailedMarker`.
+	 */
+	planPreflightFailed?: PlanPreflightFailedMarker;
+	/**
+	 * Durable implement-blocked marker (US-002, CAM-401), from
+	 * `.claude/.cam-implement-blocked.json` via `readImplementBlockedMarker`.
+	 */
+	implementBlocked?: ImplementBlockedMarker;
+	/**
+	 * Durable post-merge-stalled marker (US-002, CAM-401), from
+	 * `.claude/.cam-post-merge-stalled.json` via `readPostMergeStalledMarker`.
+	 */
+	postMergeStalled?: PostMergeStalledMarker;
+	/**
+	 * Durable operator-decision gate (US-002, CAM-401), from
+	 * `.claude/.cam-gate.json` via `readGateFileLenient` (the lenient reader --
+	 * a malformed gate file degrades to this field being absent, never throws
+	 * out of `buildStatusReport`).
+	 */
+	gate?: CamGate;
+	/**
+	 * Durable merge-watch position (US-002, CAM-401): `prNumber` + `pollCount`
+	 * (defaults to 0 when absent on disk) + `lastPolledAt` (absent when the
+	 * watch has never polled yet), from `.claude/.cam-merge-watch.json` via
+	 * `readMergeWatchState`.
+	 */
+	mergeWatch?: { prNumber: number; pollCount: number; lastPolledAt?: number };
+	/**
+	 * Durable sidecar-stalled marker (US-002, CAM-401), from
+	 * `.claude/.cam-sidecar-stalled.json` via `readSidecarStalledMarker`.
+	 */
+	sidecarStalled?: SidecarStalledMarker;
+	/**
+	 * The LAST `container-preflight` event recorded in
+	 * `.claude/cam-worker-events.jsonl` (US-002, CAM-401). `buildStatusReport`
+	 * never re-runs preflight itself -- container preflight has no on-disk
+	 * status file, so this is the only way to surface its last result. `ts` is
+	 * the event's own timestamp, so a stale container-preflight result is
+	 * distinguishable from a fresh one.
+	 */
+	containerPreflight?: ContainerPreflightEventDetail & { ts: string };
+	/**
+	 * Closed, ordered, deterministic why-not-moving diagnostic (US-003,
+	 * CAM-401), derived by `diagnoseWhyNotMoving` (src/commands/status-diagnostics.ts)
+	 * from the rest of this projected model plus the orch-pane-busy /
+	 * push-undelivered event-log signals. Always present -- the diagnostic is
+	 * total over its closed rule-set and returns a fixed 'none' result rather
+	 * than an absent/ambiguous value when nothing is blocking. Optional only at
+	 * the type level (for construction ergonomics); `buildStatusReport` always
+	 * sets it before returning.
+	 */
+	diagnostic?: WhyNotMovingDiagnostic;
 }
 
 // --- Parsers ---------------------------------------------------------------
@@ -410,6 +513,164 @@ function readGitInfo(cwd: string): { branchName?: string; lastCommit?: { sha: st
 	return out;
 }
 
+/**
+ * Generic last-matching-line scanner over `.claude/cam-worker-events.jsonl`
+ * (US-002/US-003, CAM-401): reads the whole log, parses each line
+ * independently inside its own try/catch so one malformed line never stops
+ * the scan, and keeps overwriting with the LAST line whose `kind` matches
+ * `kind` and whose parsed object passes `guard` (returns non-`undefined`).
+ * Shared by the container-preflight, orch-pane-busy, and push-undelivered
+ * projections below -- each differs only in `kind` and its own shape-guard.
+ * Never throws; returns `undefined` when the log is absent/unreadable or no
+ * line matches.
+ */
+function scanLastEventOfKind<T>(
+	cwd: string,
+	kind: string,
+	guard: (obj: Record<string, unknown>) => T | undefined,
+): T | undefined {
+	const path = join(cwd, '.claude', 'cam-worker-events.jsonl');
+	let raw: string;
+	try {
+		raw = readFileSync(path, 'utf8');
+	} catch {
+		return undefined;
+	}
+
+	let last: T | undefined;
+	for (const line of raw.split('\n')) {
+		const trimmed = line.trim();
+		if (!trimmed) continue;
+		try {
+			const parsed = JSON.parse(trimmed) as unknown;
+			if (parsed === null || typeof parsed !== 'object') continue;
+			const obj = parsed as Record<string, unknown>;
+			if (obj['kind'] !== kind) continue;
+			const result = guard(obj);
+			if (result !== undefined) last = result;
+		} catch {
+			// Malformed line; skip and keep scanning for a later valid one.
+		}
+	}
+	return last;
+}
+
+/**
+ * Read the LAST `container-preflight` event from `.claude/cam-worker-events.jsonl`
+ * (US-002, CAM-401). Container preflight has no on-disk status file (unlike
+ * the marker family above), so the event log is the only durable record of
+ * its last result; this never re-runs preflight itself.
+ *
+ * Returns `undefined` when the event log is absent/unreadable, contains no
+ * `container-preflight` line, or every `container-preflight` line is
+ * malformed.
+ */
+function readLastContainerPreflightEvent(
+	cwd: string,
+): (ContainerPreflightEventDetail & { ts: string }) | undefined {
+	return scanLastEventOfKind(cwd, 'container-preflight', (obj) => {
+		if (typeof obj['ts'] !== 'string') return undefined;
+		const detail = obj['detail'];
+		if (detail === null || typeof detail !== 'object') return undefined;
+		const detailObj = detail as Record<string, unknown>;
+		if (typeof detailObj['ready'] !== 'boolean') return undefined;
+		const reason = detailObj['reason'];
+		const entry: ContainerPreflightEventDetail & { ts: string } = { ready: detailObj['ready'], ts: obj['ts'] };
+		if (typeof reason === 'string') entry.reason = reason;
+		return entry;
+	});
+}
+
+/**
+ * Read the why-not-moving diagnostic's US-001 event-log signals (US-003,
+ * CAM-401): whether an `orch-pane-busy` event is present, and the `reason` of
+ * the LAST `push-undelivered` event. These two event kinds are not part of
+ * the marker-file family above (no on-disk status file), so they are read
+ * straight from the event log via `scanLastEventOfKind`, mirroring
+ * `readLastContainerPreflightEvent`. Never throws.
+ */
+function readWhyNotMovingSignals(cwd: string): WhyNotMovingSignals {
+	const orchPaneBusy =
+		scanLastEventOfKind(cwd, 'orch-pane-busy', (obj) => {
+			const detail = obj['detail'];
+			if (detail === null || typeof detail !== 'object') return undefined;
+			return typeof (detail as Record<string, unknown>)['paneId'] === 'string' ? true : undefined;
+		}) === true;
+
+	const pushUndeliveredReason = scanLastEventOfKind(cwd, 'push-undelivered', (obj) => {
+		const detail = obj['detail'];
+		if (detail === null || typeof detail !== 'object') return undefined;
+		const reason = (detail as Record<string, unknown>)['reason'];
+		return reason === 'retries-exhausted' || reason === 'pane-not-idle' ? reason : undefined;
+	});
+
+	const signals: WhyNotMovingSignals = { orchPaneBusy };
+	if (pushUndeliveredReason !== undefined) signals.pushUndeliveredReason = pushUndeliveredReason;
+	return signals;
+}
+
+/**
+ * Fields of `StatusReport` populated by `projectCycleState` (US-002,
+ * CAM-401): the six blocker/wedge/stall markers, the durable merge-watch
+ * position, the sidecar-stalled marker, and the last container-preflight
+ * event. Extracted from `buildStatusReport` into its own function (rather
+ * than inlined) purely to keep `buildStatusReport` under the project's
+ * per-function line budget; the two are always called together.
+ */
+type CycleStateProjection = Pick<
+	StatusReport,
+	| 'shipStalled'
+	| 'planEscalated'
+	| 'planPreflightFailed'
+	| 'implementBlocked'
+	| 'postMergeStalled'
+	| 'gate'
+	| 'mergeWatch'
+	| 'sidecarStalled'
+	| 'containerPreflight'
+>;
+
+/**
+ * Project the full cycle state-machine position (US-002, CAM-401):
+ * read-only, via each marker's existing lenient never-throw reader, all
+ * under `<cwd>/.claude/` (the event log is the one exception -- it has no
+ * on-disk status file of its own, so its LAST `container-preflight` line is
+ * read instead of re-running preflight).
+ */
+function projectCycleState(cwd: string): CycleStateProjection {
+	const claudeDirLocal = join(cwd, '.claude');
+	const out: CycleStateProjection = {};
+
+	const shipStalled = readShipStalledMarker(join(claudeDirLocal, SHIP_STALLED_FILENAME));
+	if (shipStalled) out.shipStalled = shipStalled;
+	const planEscalated = readPlanEscalatedMarker(join(claudeDirLocal, PLAN_ESCALATED_FILENAME));
+	if (planEscalated) out.planEscalated = planEscalated;
+	const planPreflightFailed = readPlanPreflightFailedMarker(
+		join(claudeDirLocal, PLAN_PREFLIGHT_FAILED_FILENAME),
+	);
+	if (planPreflightFailed) out.planPreflightFailed = planPreflightFailed;
+	const implementBlocked = readImplementBlockedMarker(join(claudeDirLocal, IMPLEMENT_BLOCKED_FILENAME));
+	if (implementBlocked) out.implementBlocked = implementBlocked;
+	const postMergeStalled = readPostMergeStalledMarker(join(claudeDirLocal, POST_MERGE_STALLED_FILENAME));
+	if (postMergeStalled) out.postMergeStalled = postMergeStalled;
+	const gate = readGateFileLenient(join(claudeDirLocal, GATE_FILENAME));
+	if (gate) out.gate = gate;
+
+	const mergeWatchState = readMergeWatchState(join(claudeDirLocal, MERGE_WATCH_FILENAME));
+	if (mergeWatchState) {
+		out.mergeWatch = { prNumber: mergeWatchState.prNumber, pollCount: mergeWatchState.pollCount ?? 0 };
+		if (mergeWatchState.lastPolledAt !== undefined) {
+			out.mergeWatch.lastPolledAt = mergeWatchState.lastPolledAt;
+		}
+	}
+	const sidecarStalled = readSidecarStalledMarker(join(claudeDirLocal, SIDECAR_STALLED_FILENAME));
+	if (sidecarStalled) out.sidecarStalled = sidecarStalled;
+	const containerPreflight = readLastContainerPreflightEvent(cwd);
+	if (containerPreflight) out.containerPreflight = containerPreflight;
+
+	return out;
+}
+
 // --- Public entrypoint -----------------------------------------------------
 
 export interface StatusOptions {
@@ -450,6 +711,12 @@ export function buildStatusReport(options: StatusOptions = {}): StatusReport {
 	if (git.branchName) report.branchName = git.branchName;
 	if (git.lastCommit) report.lastCommit = git.lastCommit;
 
+	// US-002 (CAM-401): project the six blocker/wedge/stall markers, the
+	// durable merge-watch position, the sidecar-stalled marker, and the last
+	// container-preflight event. Extracted into `projectCycleState` to keep
+	// this function under the project's per-function line budget.
+	Object.assign(report, projectCycleState(cwd));
+
 	// Resolve token usage from the orchestrator transcript (best-effort, never throws).
 	const transcriptPath = orchestratorTranscriptPath(cwd, claudeDir);
 	if (transcriptPath !== null) {
@@ -475,6 +742,9 @@ export function buildStatusReport(options: StatusOptions = {}): StatusReport {
 			if (story) report.currentStory = { id: story.id, title: story.title };
 		}
 		if (operatorPaused) report.state = 'operator-paused';
+		// US-003 (CAM-401): attach the closed why-not-moving diagnostic last, once
+		// `report.state` (incl. the operator-paused override) is final.
+		report.diagnostic = diagnoseWhyNotMoving(report, readWhyNotMovingSignals(cwd));
 		return report;
 	}
 
@@ -508,6 +778,9 @@ export function buildStatusReport(options: StatusOptions = {}): StatusReport {
 		const story = pickCurrentStory(prd);
 		if (story) report.currentStory = { id: story.id, title: story.title };
 	}
+	// US-003 (CAM-401): attach the closed why-not-moving diagnostic last, once
+	// `report.state` (incl. the operator-paused override) is final.
+	report.diagnostic = diagnoseWhyNotMoving(report, readWhyNotMovingSignals(cwd));
 	return report;
 }
 
@@ -547,6 +820,91 @@ function renderEntry(key: string, value: string): string {
 	return `${CONTENT_INDENT}${chalk.bold(key.padEnd(KEY_COL_WIDTH))}${value}`;
 }
 
+/**
+ * Render the "Markers" section (US-004, CAM-401): one warning row per
+ * projected blocker/wedge/stall marker, plus the merge-watch position when
+ * present. Speaks the same glyph-based vocabulary as `renderStateIndicator`
+ * (never divider color): each blocker row uses `emitWarn`'s `!` warning
+ * glyph, and the merge-watch row uses the same accent `●` "active" glyph
+ * `renderStateIndicator` uses for the loop's own active state, since polling
+ * an open PR is normal in-progress work, not a blocker.
+ *
+ * Sparse-by-design (AC3): when no marker is set and no merge-watch state
+ * exists, this renders nothing at all — no empty section heading, no empty
+ * rows.
+ */
+function renderMarkersSection(report: StatusReport): void {
+	const rows: Array<{ label: string; detail: string }> = [];
+	if (report.shipStalled) {
+		rows.push({ label: 'ship-stalled', detail: `PR #${report.shipStalled.prNumber} · ${report.shipStalled.reason}` });
+	}
+	if (report.planEscalated) {
+		rows.push({
+			label: 'plan-escalated',
+			detail: `${report.planEscalated.issueId} · ${report.planEscalated.summary}`,
+		});
+	}
+	if (report.planPreflightFailed) {
+		rows.push({
+			label: 'plan-preflight-failed',
+			detail: `${report.planPreflightFailed.step} · ${report.planPreflightFailed.detail}`,
+		});
+	}
+	if (report.implementBlocked) {
+		rows.push({
+			label: 'implement-blocked',
+			detail: `${report.implementBlocked.story ?? '(no story)'} · ${report.implementBlocked.reason}`,
+		});
+	}
+	if (report.postMergeStalled) {
+		rows.push({
+			label: 'post-merge-stalled',
+			detail: `PR #${report.postMergeStalled.prNumber} · ${report.postMergeStalled.reason}`,
+		});
+	}
+	if (report.sidecarStalled) {
+		rows.push({
+			label: 'sidecar-stalled',
+			detail: `${report.sidecarStalled.reason} · ${report.sidecarStalled.detail}`,
+		});
+	}
+	if (report.gate) {
+		rows.push({ label: 'gate', detail: `${report.gate.gate} · ${report.gate.context}` });
+	}
+
+	if (rows.length === 0 && !report.mergeWatch) return;
+
+	emitSectionHeading('Markers');
+	for (const row of rows) {
+		emitWarn(row.label, row.detail);
+	}
+	if (report.mergeWatch) {
+		process.stdout.write(
+			`${CONTENT_INDENT}${accent(glyphs.active)} merge-watch  PR #${report.mergeWatch.prNumber} · poll ${report.mergeWatch.pollCount}\n`,
+		);
+	}
+}
+
+/**
+ * Render the dedicated "Diagnostic" section (US-004, CAM-401): the closed
+ * why-not-moving diagnostic's fixed message + suggested next command,
+ * computed by `diagnoseWhyNotMoving`. Always rendered — the diagnostic is
+ * total over its closed rule-set, so the 'none' condition still produces a
+ * real "progressing normally" row (AC3) rather than an omitted section.
+ * The 'none' condition renders with the success glyph (`emitOk`); every
+ * other condition renders with the warning glyph (`emitWarn`) — the same
+ * glyph-based vocabulary `renderStateIndicator` uses, never divider color.
+ */
+function renderDiagnosticSection(diagnostic: WhyNotMovingDiagnostic): void {
+	emitSectionHeading('Diagnostic');
+	if (diagnostic.condition === 'none') {
+		emitOk(diagnostic.message);
+	} else {
+		emitWarn(diagnostic.message);
+	}
+	emitMutedHint(`next: ${diagnostic.suggestedCommand}`);
+}
+
 export function runStatus(options: StatusOptions = {}): number {
 	const now = options.now ?? (() => new Date());
 	const report = buildStatusReport(options);
@@ -575,6 +933,8 @@ export function runStatus(options: StatusOptions = {}): number {
 		if (report.tokens !== undefined) {
 			process.stdout.write(`${renderEntry('tokens', renderTokensLine(report.tokens))}\n`);
 		}
+		renderMarkersSection(report);
+		if (report.diagnostic) renderDiagnosticSection(report.diagnostic);
 		emitSectionHeading('Next');
 		emitEntry('cam next', 'start the autonomous loop');
 		emitEntry('cam plan', 'plan an issue and create a PRD');
@@ -625,6 +985,9 @@ export function runStatus(options: StatusOptions = {}): number {
 		const promiseShown = report.completionPromise === null ? muted('(none)') : `"${report.completionPromise}"`;
 		process.stdout.write(`${renderEntry('promise', promiseShown)}\n`);
 	}
+
+	renderMarkersSection(report);
+	if (report.diagnostic) renderDiagnosticSection(report.diagnostic);
 
 	if (report.state === 'operator-paused') {
 		emitWarn('Loop is operator-paused', '(.cam-pause marker present)');

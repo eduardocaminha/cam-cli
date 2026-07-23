@@ -6,6 +6,15 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.250.0] - 2026-07-23
+
+### Added
+
+- US-004 - Render the marker/merge-watch projection and diagnostic section in cam status output
+- US-003 - Add the closed, ordered why-not-moving diagnostic rule-set
+- US-002 - Project cycle markers, merge-watch, sidecar-stalled, and container-preflight event into the status read-model
+- US-001 - Add orch-pane-busy event kind and emit it at the sidecar dispatch site
+
 ## [0.249.0] - 2026-07-23
 
 ### Added

@@ -44,8 +44,9 @@
 //       falsely flip the verdict does not affect a genuinely-settled read
 //     - idle-gate times out (US-002, CAM-373): sends EXACTLY ONCE with no verify/retry loop,
 //       zero backoff sleeps, the geometry sampler never consulted, and exactly one
-//       push-undelivered event with reason 'pane-not-idle' and retriesExhausted 1; the stderr
-//       warning is preserved
+//       push-undelivered event with reason 'pane-not-idle' and retriesExhausted 1 PLUS one
+//       dedicated 'orch-pane-busy' event carrying the same paneId/idleTimeoutMs (US-001,
+//       CAM-401); the stderr warning is preserved
 //   cursorRowStartsWithPrompt (US-001, CAM-364): prompt-at-start present/absent, both glyphs
 //     (> and ❯), leading whitespace, mid-row glyph (not a match), out-of-range cursorY
 
@@ -705,7 +706,7 @@ describe('sendKeysVerified', () => {
 		expect(events[0]?.kind).toBe('push-undelivered');
 	});
 
-	test('idle-gate times out: sends EXACTLY ONCE with no verify/retry cycle, no backoff sleeps, the geometry sampler is never consulted, and emits exactly one push-undelivered event with reason pane-not-idle (US-002, CAM-373; red on main: main sends 3 times)', () => {
+	test('idle-gate times out: sends EXACTLY ONCE with no verify/retry cycle, no backoff sleeps, the geometry sampler is never consulted, and emits a push-undelivered event (reason pane-not-idle) plus a dedicated orch-pane-busy event (US-002, CAM-373; US-001, CAM-401; red on main: main sends 3 times)', () => {
 		const spawnFn = makeSpawnFn();
 		const events: Array<{ kind: string; detail: unknown }> = [];
 
@@ -796,10 +797,14 @@ describe('sendKeysVerified', () => {
 		// exercising the real option end to end.
 
 		// AC3: exactly one push-undelivered event, reason pane-not-idle,
-		// retriesExhausted === 1.
-		expect(events).toHaveLength(1);
+		// retriesExhausted === 1, plus one dedicated orch-pane-busy event
+		// (US-001, CAM-401) carrying the same paneId and the configured
+		// idleTimeoutMs.
+		expect(events).toHaveLength(2);
 		expect(events[0]?.kind).toBe('push-undelivered');
 		expect(events[0]?.detail).toEqual({ paneId: '%7', retriesExhausted: 1, reason: 'pane-not-idle' });
+		expect(events[1]?.kind).toBe('orch-pane-busy');
+		expect(events[1]?.detail).toEqual({ paneId: '%7', idleTimeoutMs: IDLE_TIMEOUT_MS });
 	});
 });
 
