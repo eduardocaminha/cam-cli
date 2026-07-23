@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.254.0] - 2026-07-23
+
+### Added
+
+- US-001 - Add reviewer-backend resolution seam to makeReviewDispatch and isolate the generic tests
+
 ## [0.253.0] - 2026-07-23
 
 ### Added

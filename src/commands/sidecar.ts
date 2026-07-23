@@ -1526,6 +1526,10 @@ function makeProductionReviewPhaseFn(
 			const { isPaneAlive, ensureWorkerPane } = makePlanPaneHelpers(claudeDir, sessionName);
 			const { workerIsolation, preflightContainerFn, escalateFn } = buildReviewContainerOpts(cwd);
 
+			// US-001 (CAM-405): the `configPath` reviewer-backend/model resolution
+			// seam is intentionally left unset here, so makeReviewDispatch resolves
+			// the reviewer backend/model from the live scripts/cam/project.toml
+			// exactly as before (the seam exists for test isolation only).
 			const reviewDispatch = makeReviewDispatch({
 				spawn: loopSpawnFn,
 				capturePane: makeCapturePaneFn(realSpawnFn),

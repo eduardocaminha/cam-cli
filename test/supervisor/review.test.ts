@@ -24,7 +24,7 @@
 //  AC3: findings come from review-report.json, NOT capture-pane; proved by pane having
 //       rendered (markdown-stripped) text while file findings appear verbatim in fix stories.
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -265,6 +265,26 @@ function makePrd(opts: {
 	};
 }
 
+/**
+ * Shared reviewer-backend/model resolution fixture for the generic
+ * makeDispatchOpts-based dispatch tests (US-001, CAM-405).
+ *
+ * Threaded into MakeReviewDispatchOptions.configPath below so every generic
+ * test resolves reviewBackend/reviewModel from THIS fixture (backend=claude,
+ * matching DEFAULTS) instead of the repo's live scripts/cam/project.toml.
+ * This decouples the ~41 generic tests from whatever backend the committed
+ * project.toml declares, so it stays free to be set to a codex reviewer
+ * backend (which would otherwise require real codex auth in CI) without
+ * breaking generic dispatch-shape assertions here.
+ */
+const GENERIC_REVIEW_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-review-generic-config-'));
+const GENERIC_REVIEW_CONFIG_PATH = join(GENERIC_REVIEW_CONFIG_DIR, 'project.toml');
+writeFileSync(GENERIC_REVIEW_CONFIG_PATH, '[backend]\nreviewer = "claude"\n');
+
+afterAll(() => {
+	rmSync(GENERIC_REVIEW_CONFIG_DIR, { recursive: true, force: true });
+});
+
 /** Build a MakeReviewDispatchOptions with injectable fakes (CAM-42 polling contract). */
 function makeDispatchOpts(
 	overrides: Partial<MakeReviewDispatchOptions> & {
@@ -320,6 +340,14 @@ function makeDispatchOpts(
 		escalateFn: overrides.escalateFn,
 		// US-002 (CAM-352): codex auth-check DI seam passthrough.
 		codexAuthCheckFn: overrides.codexAuthCheckFn,
+		// US-001 (CAM-405): reviewer-backend/model resolution seam. Defaults to
+		// the shared generic fixture (isolated from the live project.toml).
+		// An explicit `configPath: undefined` override (used by the
+		// withReviewerBackendCwd-based codex/container tests, which rely on
+		// real cwd-relative resolution against their own chdir'd fixture) is
+		// honored via the `'configPath' in overrides` check, mirroring the
+		// `prd` override pattern above.
+		configPath: 'configPath' in overrides ? overrides.configPath : GENERIC_REVIEW_CONFIG_PATH,
 		capturedWrittenPrd,
 		capturedSpawnArgs,
 	};
@@ -578,6 +606,9 @@ describe('makeReviewDispatch', () => {
 			const capturedSpawnArgs: string[][] = [];
 
 			const opts = makeDispatchOpts({
+				// US-001 (CAM-405): explicit undefined preserves this test's real
+				// cwd-relative resolution against the withReviewerBackendCwd fixture.
+				configPath: undefined,
 				paneText: '<review>CLEAN</review>',
 				spawn: (_cmd, args) => {
 					capturedSpawnArgs.push(args);
@@ -1557,6 +1588,9 @@ describe('makeReviewDispatch: US-005 container mode dispatch', () => {
 		await withReviewerBackendCwd('claude', 'opus', () => {
 			const capturedSpawnArgs: string[][] = [];
 			const opts = makeDispatchOpts({
+				// US-001 (CAM-405): explicit undefined preserves this test's real
+				// cwd-relative resolution against the withReviewerBackendCwd fixture.
+				configPath: undefined,
 				paneText: '<review>CLEAN</review>',
 				prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
 				spawn: (_cmd, args) => {
@@ -1621,6 +1655,9 @@ describe('makeReviewDispatch: US-005 container mode dispatch', () => {
 		await withReviewerBackendCwd('claude', 'opus', () => {
 			const capturedSpawnArgs: string[][] = [];
 			const opts = makeDispatchOpts({
+				// US-001 (CAM-405): explicit undefined preserves this test's real
+				// cwd-relative resolution against the withReviewerBackendCwd fixture.
+				configPath: undefined,
 				paneText: '<review>CLEAN</review>',
 				prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
 				spawn: (_cmd, args) => {
@@ -1648,6 +1685,9 @@ describe('makeReviewDispatch: US-005 container mode dispatch', () => {
 		await withReviewerBackendCwd('claude', 'opus', () => {
 			const capturedSpawnArgs: string[][] = [];
 			const opts = makeDispatchOpts({
+				// US-001 (CAM-405): explicit undefined preserves this test's real
+				// cwd-relative resolution against the withReviewerBackendCwd fixture.
+				configPath: undefined,
 				paneText: '<review>CLEAN</review>',
 				prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
 				spawn: (_cmd, args) => {
@@ -1679,6 +1719,9 @@ describe('makeReviewDispatch: US-005 container mode dispatch', () => {
 		await withReviewerBackendCwd('claude', 'opus', () => {
 			const hostSpawnArgs: string[][] = [];
 			const hostOpts = makeDispatchOpts({
+				// US-001 (CAM-405): explicit undefined preserves this test's real
+				// cwd-relative resolution against the withReviewerBackendCwd fixture.
+				configPath: undefined,
 				paneText: '<review>CLEAN</review>',
 				prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
 				spawn: (_cmd, args) => {
@@ -1692,6 +1735,9 @@ describe('makeReviewDispatch: US-005 container mode dispatch', () => {
 
 			const containerSpawnArgs: string[][] = [];
 			const containerOpts = makeDispatchOpts({
+				// US-001 (CAM-405): explicit undefined preserves this test's real
+				// cwd-relative resolution against the withReviewerBackendCwd fixture.
+				configPath: undefined,
 				paneText: '<review>CLEAN</review>',
 				prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
 				spawn: (_cmd, args) => {
@@ -1776,6 +1822,9 @@ describe('makeReviewDispatch: US-002 codex auth preflight (CAM-352)', () => {
 			const capturedSpawnArgs: string[][] = [];
 			let authCheckCalled = false;
 			const opts = makeDispatchOpts({
+				// US-001 (CAM-405): explicit undefined preserves this test's real
+				// cwd-relative resolution against the withReviewerBackendCwd fixture.
+				configPath: undefined,
 				paneText: '<review>CLEAN</review>',
 				prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
 				spawn: (_cmd, args) => {
@@ -1805,6 +1854,9 @@ describe('makeReviewDispatch: US-002 codex auth preflight (CAM-352)', () => {
 		await withReviewerBackendCwd('codex', 'gpt-5-codex', async () => {
 			let escalateCalled = false;
 			const opts = makeDispatchOpts({
+				// US-001 (CAM-405): explicit undefined preserves this test's real
+				// cwd-relative resolution against the withReviewerBackendCwd fixture.
+				configPath: undefined,
 				paneText: '<review>CLEAN</review>',
 				prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
 				codexAuthCheckFn: () => ({ authenticated: false }),
@@ -1827,6 +1879,9 @@ describe('makeReviewDispatch: US-002 codex auth preflight (CAM-352)', () => {
 			const capturedSpawnArgs: string[][] = [];
 			let authCheckCalled = false;
 			const opts = makeDispatchOpts({
+				// US-001 (CAM-405): explicit undefined preserves this test's real
+				// cwd-relative resolution against the withReviewerBackendCwd fixture.
+				configPath: undefined,
 				paneText: '<review>CLEAN</review>',
 				prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
 				spawn: (_cmd, args) => {
@@ -1856,6 +1911,9 @@ describe('makeReviewDispatch: US-002 codex auth preflight (CAM-352)', () => {
 			const capturedSpawnArgs: string[][] = [];
 			let authCheckCalled = false;
 			const opts = makeDispatchOpts({
+				// US-001 (CAM-405): explicit undefined preserves this test's real
+				// cwd-relative resolution against the withReviewerBackendCwd fixture.
+				configPath: undefined,
 				paneText: '<review>CLEAN</review>',
 				prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
 				spawn: (_cmd, args) => {
@@ -1883,6 +1941,9 @@ describe('makeReviewDispatch: US-002 codex auth preflight (CAM-352)', () => {
 			const capturedSpawnArgs: string[][] = [];
 			let authCheckCalled = false;
 			const opts = makeDispatchOpts({
+				// US-001 (CAM-405): explicit undefined preserves this test's real
+				// cwd-relative resolution against the withReviewerBackendCwd fixture.
+				configPath: undefined,
 				paneText: '<review>CLEAN</review>',
 				prd: makePrd({ stories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
 				spawn: (_cmd, args) => {
@@ -1910,5 +1971,83 @@ describe('makeReviewDispatch: US-002 codex auth preflight (CAM-352)', () => {
 			expect(shellCmd).toContain('gpt-5.5');
 			expect(shellCmd).not.toMatch(/\b(opus|sonnet|haiku)\b/);
 		});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-001 (CAM-405): reviewer-backend/model resolution seam regression
+// ---------------------------------------------------------------------------
+
+describe('makeReviewDispatch: US-001 (CAM-405) reviewer-backend resolution seam', () => {
+	const SAMPLE_UUID = 'seed5eed-c0de-4a11-9999-000011112222';
+
+	test('configPath override resolves reviewBackend from the fixture, not the live scripts/cam/project.toml', () => {
+		const capturedSpawnArgs: string[][] = [];
+		const opts = makeDispatchOpts({
+			paneText: '<review>CLEAN</review>',
+			spawn: (_cmd, args) => {
+				capturedSpawnArgs.push(args);
+				return { stdout: '', exitCode: 0 };
+			},
+			configPath: GENERIC_REVIEW_CONFIG_PATH,
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
+		const reviewerRespawn = capturedSpawnArgs.find((args) => args.includes('respawn-pane'));
+		expect(reviewerRespawn).toBeDefined();
+		const shellCmd = (reviewerRespawn ?? [])[(reviewerRespawn ?? []).length - 1] ?? '';
+		// GENERIC_REVIEW_CONFIG_PATH has no [models] section, so reviewModel
+		// falls back to DEFAULTS.reviewer ('opus'), proving resolution went
+		// through the fixture rather than the committed project.toml.
+		expect(shellCmd).toContain('opus');
+	});
+
+	test('AC5 regression: reviewer=codex resolved via the injected seam does not fail with codex-auth-failed', () => {
+		const codexConfigDir = mkdtempSync(join(tmpdir(), 'cam-review-codex-seam-'));
+		const codexConfigPath = join(codexConfigDir, 'project.toml');
+		writeFileSync(
+			codexConfigPath,
+			'[backend]\nreviewer = "codex"\n\n[models.codex]\nreviewer = "gpt-5-codex"\n',
+		);
+		try {
+			const capturedSpawnArgs: string[][] = [];
+			let authCheckCalled = false;
+			const opts = makeDispatchOpts({
+				paneText: '<review>CLEAN</review>',
+				spawn: (_cmd, args) => {
+					capturedSpawnArgs.push(args);
+					return { stdout: '', exitCode: 0 };
+				},
+				// The seam under test: reviewBackend resolves to 'codex' from THIS
+				// fixture, not from the repo's live scripts/cam/project.toml (which
+				// stays on 'claude' per AC6). Combined with the pre-existing
+				// codexAuthCheckFn seam (US-002, CAM-352) faking an authenticated
+				// codex, this proves the generic dispatch path can validate a codex
+				// reviewer backend in CI without real codex auth.
+				configPath: codexConfigPath,
+				codexAuthCheckFn: () => {
+					authCheckCalled = true;
+					return { authenticated: true };
+				},
+			});
+
+			const dispatch = makeReviewDispatch(opts);
+			const result = dispatch(SAMPLE_UUID);
+
+			expect(authCheckCalled).toBe(true);
+			expect(result.status).not.toBe('error');
+			if (result.status === 'error') {
+				expect(result.detail).not.toContain('codex-auth-failed');
+			}
+			const reviewerRespawn = capturedSpawnArgs.find((args) => args.includes('respawn-pane'));
+			expect(reviewerRespawn).toBeDefined();
+			const shellCmd = (reviewerRespawn ?? [])[(reviewerRespawn ?? []).length - 1] ?? '';
+			expect(shellCmd).toContain('gpt-5-codex');
+		} finally {
+			rmSync(codexConfigDir, { recursive: true, force: true });
+		}
 	});
 });
