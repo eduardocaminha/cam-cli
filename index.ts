@@ -74,6 +74,7 @@ import { buildShipFinalizeOpts, buildShipBumpOpts } from './src/commands/ship-de
 import { runShipBump, type ShipBumpResult } from './src/release/ship-bump.ts';
 import { runResume, type ExplicitMode } from './src/commands/resume.ts';
 import { runDecide, parseDecideArgs } from './src/commands/decide.ts';
+import { runPrune, parsePruneArgs } from './src/commands/prune.ts';
 import { runRun, parseRunArgs } from './src/commands/run.ts';
 import { runStatus } from './src/commands/status.ts';
 import { runOrchBudget } from './src/commands/orch-budget.ts';
@@ -135,6 +136,7 @@ const HELP = renderHelp({
 				{ name: 'drain [--stop|--clear]', description: 'Set or clear the inter-cycle drain kill-switch without killing the sidecar' },
 				{ name: 'resume [options]', description: 'Reconcile loop state after interrupt; auto-detect or --mode <name>' },
 				{ name: 'decide <decision>', description: 'Record your choice into the active operator-decision gate so the sidecar resumes deterministically' },
+				{ name: 'prune [--force]', description: 'Deterministic branch cleanup after a PR is merged (or abandoned): checkout main, pull, delete branch, fetch --prune' },
 				{ name: 'version', description: 'Print the installed CAM Runtime version (also `--version` / `-v`)' },
 				{ name: 'help', description: 'Show this help' },
 			],
@@ -928,6 +930,34 @@ const DECIDE_HELP = renderHelp({
 		},
 	],
 	footer: 'Distinct from `cam resume` (4-mode interrupt recovery) -- this resolves a live operator-decision gate.',
+});
+
+const PRUNE_HELP = renderHelp({
+	title: 'cam prune',
+	tagline: 'Deterministic branch-cleanup after a PR is merged (or abandoned)',
+	usage: 'cam prune [--force]',
+	sections: [
+		{
+			heading: 'Flags',
+			entries: [
+				{
+					name: '--force',
+					description:
+						'Skip the non-cam/* branch and open-PR confirmations. Never bypasses the dirty-tree or main-branch STOP.',
+				},
+			],
+		},
+		{
+			heading: 'Behaviour',
+			body:
+				'1. STOPs (nonzero exit) if the working tree is dirty, or if already on main.\n' +
+				'2. STOPs unless --force if the current branch is not cam/*, or if it has\n' +
+				'   an open (unmerged) PR.\n' +
+				'3. Otherwise: git checkout main, git pull origin main, git branch -D\n' +
+				'   <branch>, git fetch --prune.',
+		},
+	],
+	footer: 'Zero-LLM: pure git/gh dance, no pane spawned. Never deletes main/master; never force-pushes.',
 });
 
 const CONFIG_HELP =
@@ -2596,6 +2626,7 @@ const COMMANDS = [
 	'drain',
 	'resume',
 	'decide',
+	'prune',
 	'claude',
 	'sidecar',
 	'orch-recycle-watch',
@@ -2648,6 +2679,7 @@ const HELP_REGISTRY: Record<Command, string> = {
 	drain: DRAIN_HELP,
 	resume: RESUME_HELP,
 	decide: DECIDE_HELP,
+	prune: PRUNE_HELP,
 	claude: CLAUDE_HELP,
 	sidecar: SIDECAR_HELP,
 	'orch-recycle-watch': ORCH_RECYCLE_WATCH_HELP,
@@ -2986,6 +3018,18 @@ async function main(argv: string[]): Promise<number> {
 				return 0;
 			}
 			return runDecide({ decision: parsed.decision });
+		}
+		case 'prune': {
+			const parsed = parsePruneArgs(argv.slice(3));
+			if (parsed === null) {
+				printFatalHint('run `cam prune --help` for usage');
+				return 1;
+			}
+			if (parsed.help) {
+				process.stdout.write(PRUNE_HELP);
+				return 0;
+			}
+			return runPrune({ force: parsed.force });
 		}
 		case 'claude': {
 			const parsed = parseClaudeArgs(argv.slice(3));

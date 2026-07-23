@@ -1,0 +1,22 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Add deterministic `cam prune` subcommand" },
+  "createdFiles": [
+    "src/commands/prune.ts",
+    "test/commands/prune.test.ts"
+  ],
+  "modifiedFiles": [
+    "index.ts",
+    "test/commands-freeze.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "cam prune is now a pure, deterministic CLI subcommand (src/commands/prune.ts): parsePruneArgs (--force/--help guards) + runPrune (options bag: cwd/force/spawnFn/ghSpawnFn, both default to realOnMainSpawnFn from src/git/on-main.ts). Decomposed into checkWorkingTreeClean / resolvePrunableBranch / hasOpenUnmergedPr / confirmPruneAllowed / performPruneDance to keep biome's noExcessiveCognitiveComplexity (max 15) satisfied -- the first draft was a single 90-line function and failed lint at complexity 50; if a future story extends runPrune, keep decomposing into small single-purpose helpers rather than growing the orchestrator function inline. Registered in index.ts: import, 'prune' in COMMANDS (after 'decide'), PRUNE_HELP in HELP_REGISTRY, `case 'prune'` in the dispatch switch, and an entry in the top-level HELP Commands listing. `.claude/commands/cam-prune.md` (the original LLM-driven slash-command doc this de-inlines) was intentionally left untouched -- this story adds a new deterministic primitive alongside it, it does not delete or rewrite the doc; a future story may want to point the orchestrator at `cam prune` instead of spawning a pane for the doc, but that wiring is out of this story's scope. test/commands-freeze.test.ts pins COMMANDS' exact count/membership and had to be updated in the same commit (29 -> 30, added 'prune') per that test's own maintenance comment.",
+  "officialDocsValidated": [
+    {
+      "lib": "gh (GitHub CLI) pr view --json",
+      "url": "https://cli.github.com/manual/gh_pr_view",
+      "fetchedAt": "2026-07-23T00:00:00Z",
+      "status": "aligned",
+      "summary": "Confirmed `gh pr view --json state,mergedAt,url` supports all three fields. The docs page itself doesn't enumerate state's string values, but the codebase's own established convention (src/release/merge-watch.ts, already gh-verified in an earlier story) confirms state is one of \"OPEN\" | \"MERGED\" | \"CLOSED\" -- matches what prune.ts's hasOpenUnmergedPr checks against."
+    }
+  ]
+}
