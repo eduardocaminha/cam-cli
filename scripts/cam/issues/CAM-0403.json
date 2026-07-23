@@ -1,11 +1,11 @@
 {
   "id": "CAM-403",
   "title": "CAM-197 Slice 5: cam-review vira signal-writer fino; sidecar dirige os rounds; converge review manual com backend codex",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-22T23:38:38.279Z",
-  "updatedAt": "2026-07-23T12:04:10.946Z",
+  "updatedAt": "2026-07-23T13:59:43.718Z",
   "description": "Filho de CAM-197 (Layer 2, PR de maior blast-radius). Hoje /cam-review roda subagent-reviewer via Task() no contexto do orch (216 linhas, sempre claude, nunca codex), duplicando o caminho autonomo do sidecar (makeReviewDispatch, o unico que alcanca o backend codex). Transformar cam-review num signal-writer fino igual plan/ship: o orch escreve phase:review, o sidecar dirige os rounds e empurra o handback, o orch narra. CONSEQUENCIAS: (i) o review manual converge com o caminho do sidecar e passa a poder usar o reviewer codex; (ii) subagent-reviewer SAI da allowlist de Task do orch (orch deixa de spawnar reviewer); (iii) 'review' vira assincrono como plan/ship. PR isolado. TIPO feat.",
   "spec": {
     "scope": "Convert `cam review` from a send-keys thin-proxy into a thin signal-writer that writes phase:review to .claude/cam-loop.local.md (mirroring cam plan and cam ship), and add a standalone review phase to the sidecar poll loop that drives one makeReviewDispatch round reusing the existing autonomous review machinery, so the codex reviewer backend becomes reachable from manual review. Add 'review' to the LoopPhase enum and LOOP_PHASES parser, gate cam review on sidecar liveness (sidecarLivenessGate), collapse the in-context /cam-review template into a thin signal-writer note, and drop subagent-reviewer from the orchestrator Task allowlist so review no longer runs in the orchestrator context. Isolated PR.",
