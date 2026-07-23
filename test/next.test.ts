@@ -28,6 +28,13 @@ import { parseStateFile, type LoopPhase } from '../src/commands/status.ts';
 import { type SpawnFn as TmuxSpawnFn } from '../src/tmux/session.ts';
 import yaml from 'js-yaml';
 
+// Deterministic-preflight gate (US-003, CAM-400) fake: these pre-existing
+// tests exercise the hit/miss/write-failure paths, not the preflight itself
+// (see test/commands/next-preflight.test.ts for that), so they inject a
+// passing fake to avoid falling through to the real spawnSync-backed default
+// (which would shell out to real git/bun and recurse into `bun test`).
+const PASSING_PREFLIGHT = () => ({ ok: true }) as const;
+
 // --- Fake tmux spawn --------------------------------------------------------
 
 interface TmuxCall {
@@ -367,7 +374,12 @@ describe('runNext (thin-proxy, hit path)', () => {
 		try {
 			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%3' });
 
-			const code = await runNext({ cwd: dir, tmuxSpawnFn: spawnFn, sidecarAliveFn: () => true });
+			const code = await runNext({
+				cwd: dir,
+				tmuxSpawnFn: spawnFn,
+				sidecarAliveFn: () => true,
+				preflightFn: PASSING_PREFLIGHT,
+			});
 
 			expect(code).toBe(0);
 			// send-keys is no longer called by cam next (sidecar handles dispatch)
@@ -408,6 +420,7 @@ describe('runNext (thin-proxy, hit path)', () => {
 				maxIterations: 10,
 				completionPromise: 'MY_PROMISE',
 				sidecarAliveFn: () => true,
+				preflightFn: PASSING_PREFLIGHT,
 			});
 			expect(code).toBe(0);
 		} finally {
@@ -420,7 +433,12 @@ describe('runNext (thin-proxy, hit path)', () => {
 		try {
 			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
 
-			await runNext({ cwd: dir, tmuxSpawnFn: spawnFn, sidecarAliveFn: () => true });
+			await runNext({
+				cwd: dir,
+				tmuxSpawnFn: spawnFn,
+				sidecarAliveFn: () => true,
+				preflightFn: PASSING_PREFLIGHT,
+			});
 
 			const stateContent = readFileSync(join(dir, '.claude', 'cam-loop.local.md'), 'utf8');
 			expect(stateContent).toContain('active: true');
@@ -519,6 +537,7 @@ describe('runNext (thin-proxy, miss path)', () => {
 				sleepFn: () => {},
 				waitTimeoutMs: 5_000,
 				sidecarAliveFn: () => true,
+				preflightFn: PASSING_PREFLIGHT,
 			});
 
 			// spawnFn always sees a live orch so it takes the hit path.
@@ -551,6 +570,7 @@ describe('runNext (write failure path)', () => {
 					tmuxSpawnFn: spawnFn,
 					writeFn: () => { throw new Error('EACCES: permission denied'); },
 					sidecarAliveFn: () => true,
+					preflightFn: PASSING_PREFLIGHT,
 				});
 			} finally {
 				process.stderr.write = origStderrWrite;
@@ -583,6 +603,7 @@ describe('runNext (write failure path)', () => {
 					tmuxSpawnFn: spawnFn,
 					writeFn: () => { throw new Error('write failed'); },
 					sidecarAliveFn: () => true,
+					preflightFn: PASSING_PREFLIGHT,
 				});
 			} finally {
 				process.stdout.write = origStdoutWrite;
@@ -671,7 +692,12 @@ describe('runNext: sidecar liveness gate', () => {
 		try {
 			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
 
-			const code = await runNext({ cwd: dir, tmuxSpawnFn: spawnFn, sidecarAliveFn: () => true });
+			const code = await runNext({
+				cwd: dir,
+				tmuxSpawnFn: spawnFn,
+				sidecarAliveFn: () => true,
+				preflightFn: PASSING_PREFLIGHT,
+			});
 
 			expect(code).toBe(0);
 			const stateContent = readFileSync(join(dir, '.claude', 'cam-loop.local.md'), 'utf8');

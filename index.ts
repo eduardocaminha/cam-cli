@@ -618,7 +618,7 @@ const SUGGESTIONS_HELP = renderHelp({
 const NEXT_HELP = renderHelp({
 	title: 'cam next',
 	tagline: 'Open a loop pane in the project session',
-	usage: 'cam next [--max-iter <N>] [--completion-promise <STR>]',
+	usage: 'cam next [--max-iter <N>] [--completion-promise <STR>] [--skip-preflight]',
 	sections: [
 		{
 			heading: 'Options',
@@ -627,6 +627,12 @@ const NEXT_HELP = renderHelp({
 				{
 					name: '--completion-promise <STR>',
 					description: 'Phrase the assistant emits to end the loop (default: COMPLETE)',
+				},
+				{
+					name: '--skip-preflight',
+					description:
+						'Bypass the deterministic preflight (git sync, clean tree, typecheck,\n' +
+						'  tests) and proceed straight to the signal write (resume escape)',
 				},
 			],
 		},
@@ -1481,14 +1487,28 @@ export async function dispatchSpec(
  */
 export function parseNextArgs(
 	args: string[],
-): { maxIterations?: number; completionPromise?: string; help: boolean } | null {
-	const result: { maxIterations?: number; completionPromise?: string; help: boolean } = {
+): {
+	maxIterations?: number;
+	completionPromise?: string;
+	skipPreflight?: boolean;
+	help: boolean;
+} | null {
+	const result: {
+		maxIterations?: number;
+		completionPromise?: string;
+		skipPreflight?: boolean;
+		help: boolean;
+	} = {
 		help: false,
 	};
 	for (let i = 0; i < args.length; i += 1) {
 		const arg = args[i]!;
 		if (arg === '--help' || arg === '-h') {
 			result.help = true;
+			continue;
+		}
+		if (arg === '--skip-preflight') {
+			result.skipPreflight = true;
 			continue;
 		}
 		if (arg === '--max-iter' || arg === '--max-iterations') {
@@ -2913,6 +2933,7 @@ async function main(argv: string[]): Promise<number> {
 			return runNext({
 				maxIterations: parsed.maxIterations,
 				completionPromise: parsed.completionPromise,
+				skipPreflight: parsed.skipPreflight,
 			});
 		}
 		case 'review': {

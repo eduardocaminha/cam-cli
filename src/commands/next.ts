@@ -43,6 +43,11 @@ import {
 import { waitForOrchestrator } from '../tmux/bootstrap-wait.ts';
 import { parseStateFile } from './status.ts';
 import { sidecarLivenessGate } from './sidecar-gate.ts';
+import {
+	runNextPreflight,
+	type NextPreflightResult,
+	type NextPreflightSpawnFn,
+} from './next-preflight.ts';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -241,6 +246,20 @@ export interface NextOptions {
 	 * to exercise the dead/alive branches without touching real pids.
 	 */
 	sidecarAliveFn?: (claudeDir: string) => boolean;
+	/**
+	 * Bypass the deterministic preflight gate (US-003, CAM-400) and proceed
+	 * directly to the existing active:true write path. This is the resume
+	 * escape for `cam next --skip-preflight`.
+	 */
+	skipPreflight?: boolean;
+	/**
+	 * Injectable preflight seam (US-003, CAM-400). Defaults to the real
+	 * `runNextPreflight` bound to a spawnSync-backed spawnFn over `cwd`.
+	 * Tests inject a fake so they never shell out to real git/bun (avoids
+	 * test recursion: a real preflight would run `bun test` from inside
+	 * `bun test`).
+	 */
+	preflightFn?: () => NextPreflightResult;
 }
 
 // --- Internal helpers -------------------------------------------------------
@@ -340,6 +359,37 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 
 	// --- Sidecar liveness gate (US-003, CAM-207) ------------------------------
 	if (!sidecarLivenessGate(claudeDir, 'next', options.sidecarAliveFn)) return 1;
+
+	// --- Deterministic preflight gate (US-003, CAM-400) -----------------------
+	// Runs the git-sync/clean-tree/typecheck/tests preflight (formerly the
+	// imperative "Pre-flight Checks" section of cam-next.md) and gates the
+	// active:true write on it. `--skip-preflight` is the resume escape.
+	if (!options.skipPreflight) {
+		const runPreflight =
+			options.preflightFn ??
+			(() => {
+				const preflightSpawnFn: NextPreflightSpawnFn = (bin, args) => {
+					const result = spawnSync(bin, args, { cwd, encoding: 'utf8' });
+					return {
+						stdout: result.stdout ?? '',
+						stderr: result.stderr ?? '',
+						exitCode: result.status ?? 1,
+					};
+				};
+				return runNextPreflight({ cwd, spawnFn: preflightSpawnFn });
+			});
+		const preflight = runPreflight();
+		if (!preflight.ok) {
+			printError(
+				`Preflight failed at step: ${preflight.step}`,
+				preflight.detail.length > 0
+					? preflight.detail
+					: 'run `cam next --skip-preflight` to bypass (resume escape)',
+			);
+			emitTrailingBlank();
+			return 1;
+		}
+	}
 
 	// --- Flip active:true to trigger the sidecar (US-FIX-002) ----------------
 	// The sidecar (spawned by cam run) polls .claude/cam-loop.local.md for the
