@@ -89,7 +89,7 @@
         "The full spine is green. [oracle: bun run check:all]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": "US-004",
       "notes": "The orch Task allowlist lives at templates/.claude/hooks/orch-agent-allowlist.sh (NOT templates/hooks/ - that directory has no such file); subagent-reviewer appears at L29 (header comment), L123 (case arm - the actual gate), and L138 (error-message helper list) and all three must go. Edit the templates/ copies AND their .claude/ mirrors (templates/commands/cam-review.md + .claude/commands/cam-review.md; templates/.claude/hooks/orch-agent-allowlist.sh + .claude/hooks/orch-agent-allowlist.sh; templates/agents/subagent-orchestrator.md + .claude/agents/subagent-orchestrator.md). Dual-copy is per-file, NOT guaranteed byte-identical (memory: cam-dual-copy-is-per-file, verified CAM-123): diff each pair before assuming a shared edit. subagent-orchestrator.md references subagent-reviewer at L42-44 (allowlist prose), L299/L328/L354/L366/L378-386 (in-context /cam-review Task flow) - rewrite those to the signal-writer model (review is now a sidecar-driven phase, the orch narrates the handback, it never spawns subagent-reviewer). Model the collapsed cam-review.md on templates/commands/cam-ship.md (the phase:shipping signal-writer note). Then run `bun run embed-vendor` to regen src/vendor/_generated.ts before committing (embed-vendor:check gates it). Grep scripts/cam/patterns.md for 'allowlist'/'dual-copy'. This is a templates/-touching story: embed-vendor:check + check:all are mandatory gates."
     }
