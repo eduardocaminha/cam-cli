@@ -1,43 +1,33 @@
 Clean up the current cam branch after PR is merged (or abandoned) and return to main.
 
-Steps:
-1. `git status` — check for uncommitted changes. If dirty, STOP and warn:
-   ```
-   ❌ Cannot prune — uncommitted changes detected. Commit or stash first.
-   ```
-2. Identify the current branch name via `git branch --show-current`
-   - If already on `main`, STOP: "Already on main — nothing to prune."
-   - If NOT a `cam/*` branch, ask for confirmation before proceeding.
-3. Check if the branch has an open PR: `gh pr view --json state,mergedAt,url 2>/dev/null`
-   - If PR is open (not merged), WARN and ask for confirmation:
-     ```
-     ⚠️  Branch has an open PR: <url>
-     Are you sure you want to prune? The PR will remain open but the local branch will be deleted.
-     ```
-   - If PR is merged, proceed without confirmation.
-   - If no PR exists, proceed without confirmation.
-4. Switch to main and pull latest:
-   ```bash
-   git checkout main
-   git pull origin main
-   ```
-5. Delete the local branch:
-   ```bash
-   git branch -D <branch-name>
-   ```
-6. Prune stale remote tracking branches:
-   ```bash
-   git fetch --prune
-   ```
-7. Print summary:
-   ```
-   ✅ Pruned branch: <branch-name>
-   Now on: main (up to date with origin)
-   ```
+`cam prune` (US-004, CAM-400) is a deterministic CLI subcommand — no LLM judgment
+involved. Run it and narrate the result instead of re-running the git dance
+yourself:
+
+```bash
+cam prune
+```
+
+Behaviour (enforced by the CLI, not by this session):
+1. STOPs (nonzero exit) if the working tree is dirty, or if already on main.
+2. STOPs unless `--force` if the current branch is not `cam/*`, or if it has
+   an open (unmerged) PR.
+3. Otherwise: `git checkout main`, `git pull origin main`,
+   `git branch -D <branch>`, `git fetch --prune`.
+
+On success, `cam prune` prints the pruned branch name and confirms the
+working tree is on main — relay that to the user.
+
+If `cam prune` exits nonzero, read its printed error and act on it:
+- Dirty tree: tell the user to commit or stash first. Don't offer to stash
+  or discard on their behalf.
+- Non-`cam/*` branch, or an open unmerged PR: ask the user for confirmation,
+  then re-run with `cam prune --force` if they confirm.
+- Already on main: nothing to prune — tell the user.
 
 Rules:
-- NEVER delete `main` or `master`.
+- NEVER delete `main` or `master` — `cam prune` enforces this internally and
+  it is never bypassable via `--force`.
 - NEVER force-push anything.
-- If uncommitted changes exist, STOP — don't offer to stash or discard.
-- Ask for confirmation if the branch has an open (unmerged) PR.
-- The remote branch is NOT deleted here — GitHub auto-deletes on merge when `delete_branch_on_merge` is enabled.
+- The remote branch is NOT deleted here — GitHub auto-deletes on merge when
+  `delete_branch_on_merge` is enabled.
