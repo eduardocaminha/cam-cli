@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.255.0] - 2026-07-23
+
+### Added
+
+- US-001 - Deterministic idle-wait in bootPane setup to kill the UNDELIVERED send-once flake
+
 ## [0.254.0] - 2026-07-23
 
 ### Added
