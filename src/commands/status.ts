@@ -127,7 +127,13 @@ export function resolvePrdPath(cwd: string): string {
  * Named `LoopPhase` to avoid collision with the orchestrator/planner/auditor/...
  * `Phase` type in `src/config/models.ts`.
  */
-export type LoopPhase = 'idle' | 'planning' | 'implementing' | 'awaiting-operator' | 'shipping';
+export type LoopPhase =
+	| 'idle'
+	| 'planning'
+	| 'implementing'
+	| 'awaiting-operator'
+	| 'shipping'
+	| 'review';
 
 /** All valid LoopPhase values (used for validation during parse). */
 const LOOP_PHASES: readonly LoopPhase[] = [
@@ -136,6 +142,7 @@ const LOOP_PHASES: readonly LoopPhase[] = [
 	'implementing',
 	'awaiting-operator',
 	'shipping',
+	'review',
 ];
 
 /**

@@ -1,0 +1,12 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Add 'review' to the LoopPhase enum and parser" },
+  "branchName": "cam/issue-403",
+  "timestamp": "2026-07-23T09:30:00Z",
+  "createdFiles": ["test/commands/status.test.ts"],
+  "modifiedFiles": ["src/commands/status.ts", "scripts/file-size-budget.json"],
+  "openQuestions": [],
+  "nextStoryContext": "LoopPhase now has a 6th member: 'review' (idle|planning|implementing|awaiting-operator|shipping|review), added to both the union type and the LOOP_PHASES parser array in src/commands/status.ts. parseStateFile round-trips phase:review; active derives false for it (only phase:implementing derives active:true, per the existing derivation rule). No production code path writes or dispatches on phase:review yet -- that's the follow-up work (US-003/US-004 per the PRD notes): the sidecar's runSidecarLoop (src/supervisor/loop.ts) will need a new branch (mirroring the existing planning/shipping/awaiting-operator branches, all of which must precede the `active !== true` idle check since they all derive active:false) plus a writer (mirroring makeSetPhaseFn's shipping/planning precedent) and a reader wired through makeReadLoopPhase (src/commands/sidecar.ts). No template change needed: vendor/cam-loop.local.md.tmpl already emits a generic `phase: {{PHASE}}` placeholder, not a hardcoded enum, so it accepts 'review' with zero edits.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
