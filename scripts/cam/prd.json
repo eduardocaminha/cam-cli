@@ -28,7 +28,7 @@
         "The full quality spine remains green with the ADR added. [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "DOC-ONLY: create docs/adr/0048-cam-spec-grill-stays-in-orchestrator-context.md, no code/config/command edits. Next ADR number is 0048 (0047-backendadapter-seam is latest on main); do not collide. Mirror the section structure of docs/adr/0047-*.md (# ADR NNNN: title / ## Context / ## Decision / ## Consequences). Comparands 'grill stays in the orchestrator context' and 'LLM-non-interactive' must appear verbatim. Be consistent with prior ADRs 0020 (orchestrator runs as an enforced agent), 0028 (orchestrator context window is configured), 0029 (context backstop must produce a handoff before arming). doc-as-code gate (ADR-0037) verifies any referenced src path exists on disk: reference only real paths (e.g. src/supervisor/review.ts, .claude/skills/grilling, the cam-spec command) or phrase to avoid path claims. Follow the persisted-doc no-em-dash convention (global CLAUDE.md). Grep scripts/cam/patterns.md for 'ADR' / 'doc-as-code' before writing."
     }
