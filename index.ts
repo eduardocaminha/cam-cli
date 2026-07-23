@@ -649,7 +649,7 @@ const NEXT_HELP = renderHelp({
 
 const REVIEW_HELP = renderHelp({
 	title: 'cam review',
-	tagline: 'Dispatch /cam-review to the live orchestrator',
+	tagline: 'Write phase:review to the loop state file',
 	usage: 'cam review',
 	sections: [
 		{
@@ -657,11 +657,13 @@ const REVIEW_HELP = renderHelp({
 			body:
 				'1. Checks whether a live orchestrator session exists\n' +
 				'   (cam-orch-<basename>-<hash>).\n' +
-				'2. On hit: sends /cam-review to the orchestrator pane via\n' +
-				'   atomic tmux send-keys and returns immediately.\n' +
+				'2. On hit: refuses unless the sidecar is alive, then writes\n' +
+				'   phase:review to .claude/cam-loop.local.md, preserving all\n' +
+				'   other state-file fields; the sidecar runs the review pipeline\n' +
+				'   and returns immediately.\n' +
 				'3. On miss: bootstraps the orchestrator via `cam run --no-attach`,\n' +
 				'   waits for .claude/.cam-orch-ready + liveness re-check, then\n' +
-				'   sends /cam-review.\n' +
+				'   writes phase:review.\n' +
 				'4. If not already inside the session, prints a hint:\n' +
 				'     Run `cam run` to open the project session.',
 		},

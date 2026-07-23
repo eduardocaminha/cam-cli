@@ -1,229 +1,31 @@
-Review all changes on the current branch vs `main` using the `subagent-reviewer` agent.
-
-**CLI thin-proxy invocation**: `cam review` (run from a terminal outside the session) is a thin-proxy. It detects the active cam session, waits for the orchestrator to be idle, then injects `/cam-review` into the orchestrator pane via atomic `send-keys`. The content below is what the orchestrator executes when it receives this slash command.
-
-The `subagent-reviewer` runs in a **separate context** with read-only access. It receives only the diff and acceptance criteria -- not the generator's reasoning or progress notes.
-
-The review-fix cycle is **bounded**: at most `CAM_MAX_REVIEW_ROUNDS` rounds (default 3, env override). Each round either ends with `<review>CLEAN</review>` (loop terminates with `<promise>COMPLETE</promise>`) or with N findings that get turned into `US-RX-NNN` stories for the implementer to pick up next iteration. After max-rounds, ship with explicit debt rather than spinning forever.
-
-**Relationship to the autonomous sidecar review pass**: this document is the manual/on-demand path only. Steps 0-5 below run inside the orchestrator's own context, spawning `subagent-reviewer` via `Task()`, when a human (or the orchestrator itself) triggers `/cam-review`. The sidecar's autonomous per-story review pass (run between story batches in the titled 3rd worker pane) is a separate mechanism: `makeReviewDispatch` / `buildReviewerWorkerArgv` (`src/supervisor/review.ts`) respawn the reviewer directly and never read this file, even though both entry points drive the same `subagent-reviewer` agent and the same `prd.json.review` bookkeeping.
-
-**Operator-decision routing (ADR-0041, ADR-0043)**: three moments across the plan/implement/review cycle require an operator decision -- scope approval (the plan runner pauses on the full audited PRD when `plan_approval: operator`, `makePlanApprovalResolver` in `src/supervisor/plan-approval-gate.ts`), an ambiguity/blocker surfaced mid-cycle (an implementer `BLOCKED_AMBIGUITY`/`BLOCKED_QUALITY` exit, or planner non-convergence), and a review finding that needs a product decision rather than a mechanical fix (Step 4 below). All three route to the EXISTING file-based gate primitive (`.claude/.cam-gate.json` validated against `cam-gate.schema.json`, resolved by the operator via `cam decide <option>`, ADR-0041) -- never to AskUserQuestion, which stays disallowed for every cam subagent (ADR-0043). This is documentation of already-shipped routing, not a new mechanism.
-
+---
+model: claude-sonnet-4-6
 ---
 
-## Manual /cam-review flow (Steps 0-5)
+Write the `phase:review` signal to trigger the deterministic review runner for the current branch.
 
-Everything below is the manual/on-demand path only; the sidecar's autonomous per-story review pass never reads this file.
+**CLI path**: `cam review` (run from a terminal outside the session) writes `phase:review` to `.claude/cam-loop.local.md` and returns immediately. The sidecar detects `phase === 'review'` on its next tick and calls the review dispatch (`makeReviewDispatch`, `src/supervisor/review.ts`, wired in `makeProductionReviewPhaseFn`, `src/commands/sidecar.ts`).
 
-## Step 0: Read review state from PRD
+**Slash-command path** (this file): write the same `phase:review` signal, then narrate. Both paths are signal-writers only; the full control-flow (round-cap check against `CAM_MAX_REVIEW_ROUNDS`, reviewer worker respawn in the titled 3rd pane, `<review>` verdict poll, `prd.json.review` update, fix-story materialization on `FIXES_PENDING`) lives entirely in the review dispatch. No in-context Task flow runs anymore: the reviewer worker is dispatched as a TUI pane by the sidecar, exactly one round per `phase:review` tick, never spawned via `Task()` inside the orchestrator's own context.
 
-Before gathering context, read `scripts/cam/prd.json` and check the optional `review` block:
+## Write the signal
 
-```json
-{
-  "review": {
-    "roundsCompleted": 0,
-    "maxRounds": 3,
-    "lastReviewSha": null,
-    "lastVerdict": null
-  }
-}
+Read `.claude/cam-loop.local.md`. Update `phase`, preserving all other fields:
+
+```yaml
+phase: review
 ```
 
-If the block is absent (older PRDs), treat all fields as defaults: `roundsCompleted=0`, `maxRounds=3`, `lastReviewSha=null`, `lastVerdict=null`.
+## Narrate
 
-`maxRounds` may be overridden by env var `CAM_MAX_REVIEW_ROUNDS`. Read it once at the top:
-```bash
-CAM_MAX_REVIEW_ROUNDS="${CAM_MAX_REVIEW_ROUNDS:-3}"
-```
-
-The number of the round about to run is `roundsCompleted + 1`. Use this for round-aware story IDs (`US-R<round>-NNN`) and for the delta-diff scope (Step 1 below).
-
-If `roundsCompleted >= maxRounds`, **STOP** and tell the operator:
-```
-⚠ Already at max review rounds ({roundsCompleted}/{maxRounds}). Ship with debt or raise the cap via CAM_MAX_REVIEW_ROUNDS.
-```
-Do not dispatch `subagent-reviewer` again.
-
----
-
-## Step 1: Gather context
-
-Before spawning `subagent-reviewer`, collect the inputs it needs:
-
-1. **Acceptance criteria**: Read `scripts/cam/prd.json`. For each story where `passes: true`, extract its `id`, `title`, and `acceptanceCriteria` array.
-
-2. **Diff summary**: Run `git diff <BASE>...HEAD --stat` where `<BASE>` is:
-   - **Round 1** (no `lastReviewSha`): `<BASE> = main`
-   - **Round 2+**: `<BASE> = lastReviewSha` (delta-diff so `subagent-reviewer` audits only what changed since the last round)
-
-   When using delta-diff for round 2+, also pass the **cumulative diff vs main** as a second context block.
-
-3. **Full diff**: Run `git diff <BASE>...HEAD`.
-
-4. **Commit list**: Run `git log <BASE>..HEAD --oneline`.
-
-5. **Pre-fetch doc URLs (optional)**: Scan the diff for external libraries touched. If you know the specific doc URL `subagent-reviewer` should consult, include those URLs as hints under a `Pre-fetched doc URLs` section in the Step 2 prompt.
-
----
-
-## Step 2: Spawn the reviewer agent
+After writing:
 
 ```
-Task(
-  subagent_type="subagent-reviewer",
-  description="Cam code review",
-  prompt="""
-<acceptance criteria from Step 1>
-
-<diff summary and commit list from Step 1>
-
-<pre-fetched doc URLs from Step 1.5, if any, under a `Pre-fetched doc URLs` heading>
-
-Round N of max M.
-<round 2+ only: previous round's verdict + fix commits since lastReviewSha>
-
-Review these changes against your checklist. Read changed files in full for context. Run the project's build/typecheck command to verify. Report findings in the output format from your AGENT.md. End your output with a `<review>CLEAN</review>` or `<review>FIXES_PENDING:N</review>` tag on the very last line.
-"""
-)
+Review phase signal written (phase:review -> .claude/cam-loop.local.md).
+The sidecar will call the review dispatch on the next tick:
+  round-cap check -> reviewer worker (titled 3rd pane) -> <review> verdict poll ->
+  prd.json.review update (CLEAN / FIXES_PENDING / MAX_ROUNDS_DEBT) ->
+  fix-story materialization (FIXES_PENDING only).
+A pushed `[cam] review round complete: ...` (or `failed: ...`) summary line
+reports the outcome; read scripts/cam/prd.json.review for the structured result.
 ```
-
-Do NOT pass: `scripts/cam/handoff.json` or any generator reasoning.
-
----
-
-## Step 3: Report findings
-
-Display the `subagent-reviewer`'s output verbatim.
-
-### Verdict body contract
-
-The reviewer emits a structured **verdict body** block immediately before the terminal `<review>` sentinel. This body is the **payload the CAM-55 report-on-exit pushes to the orchestrator**:
-
-```json
-{
-  "status": "PASS or FAIL",
-  "justification": "<one-sentence prose summary of the verdict>",
-  "itemizedFailures": [
-    { "criterion": "<criterion-name>", "evidence": "<file:line or quoted snippet>", "note": "<short explanation>" }
-  ]
-}
-```
-
-The `status` field is binary: `"PASS"` when all 8 Layer-B criteria are satisfied and no hard-constraint rule triggered; `"FAIL"` otherwise. `itemizedFailures` lists only criteria that FAIL. The terminal `<review>CLEAN</review>` / `<review>FIXES_PENDING:N</review>` sentinel (parsed by `parseReviewVerdict` in `src/supervisor/review.ts:151`) is separate from this body and must remain the absolute last line of the reviewer's output.
-
----
-
-## Step 4: Triage findings
-
-After displaying the `subagent-reviewer`'s output, append a triage block:
-
-| Destination | Trigger |
-|---|---|
-| **Fix in this branch** | CRITICAL items, and WARNINGs that are mechanical and clearly within scope — edits of ≤3 files, no product decision needed. |
-| **New cam issue** — HIGH BAR | Must clear ALL three: (1) affects real users today OR blocks a near-term roadmap item, (2) is an active bug / regression / security gap, (3) cannot be addressed by a one-line follow-up note. |
-| **Backlog / skip** | Default. Use for: stylistic preferences, defensive-only concerns, "consider X" suggestions, spec-vs-code wording drift. |
-
-Print the triage:
-
-```
-## TRIAGE
-
-### Fix in this branch
-- [file:line] short description — why it fits
-
-### New cam issue — suggested title
-- [file:line] short description — why it needs its own issue
-
-### Backlog / skip
-- [file:line] short description — why skip
-
-### Suggested next step
-- If any "Fix in this branch" items: "Want me to apply? (applies fixes + runs quality gates + commit)"
-- If APPROVE and empty triage: "Ready for /cam-ship"
-```
-
-**Rubric guardrails** (apply before routing):
-- Don't blindly follow every SUGGESTION — validate it against project reality. If a suggestion assumes a primitive/file/library that isn't actually in the repo, or the PRD explicitly forbids it, route it to **skip** and say why.
-- If a CRITICAL item's fix needs a product decision (not just a mechanical edit), demote it to "New cam issue" — CRITICAL severity doesn't override the need for proper scoping. The escalation channel for that product decision is the file-based gate (`cam decide`, ADR-0041), never AskUserQuestion (disallowed, ADR-0043) and never an ad-hoc pause.
-- Never promote a SUGGESTION to "Fix in this branch" just because it's cheap — cheap + out-of-scope still inflates the branch.
-
-**Bias toward `skip`.** 0–2 items under "New cam issue" is normal. 3+ issues from a single review is a smell — reconsider the rubric against each item and demote the weakest ones.
-
----
-
-## Step 5: Update PRD review state + materialize fix-stories
-
-### Step 5.1 — Parse the verdict
-
-Grep the `subagent-reviewer` output for the `<review>` tag:
-- `<review>CLEAN</review>` — APPROVE with zero actionable findings
-- `<review>FIXES_PENDING:N</review>` — N findings need to become stories
-
-### Step 5.2 — Compute the new round number
-
-```
-NEW_ROUND = (prd.review?.roundsCompleted ?? 0) + 1
-```
-
-### Step 5.3 — On `CLEAN`
-
-Update `prd.json`:
-```json
-{
-  "review": {
-    "roundsCompleted": NEW_ROUND,
-    "maxRounds": <existing-or-3>,
-    "lastReviewSha": "<git rev-parse HEAD>",
-    "lastVerdict": "CLEAN"
-  }
-}
-```
-
-Print to operator:
-```
-✅ Review round N: CLEAN. Ready for /cam-ship.
-```
-
-### Step 5.4 — On `FIXES_PENDING:N`
-
-For each "Fix in this branch" finding, create a story in `prd.json.userStories`:
-- **id**: `US-R{NEW_ROUND}-{NNN}` (e.g. `US-R1-001`)
-- **title**: short imperative from the finding
-- **acceptanceCriteria**: the full triage line including `[file:line]`
-- **passes**: `false`
-- **priority**: insert at the **top** of the queue
-
-Update `prd.json.review`:
-```json
-{
-  "roundsCompleted": NEW_ROUND,
-  "maxRounds": <existing-or-3>,
-  "lastReviewSha": "<git rev-parse HEAD>",
-  "lastVerdict": "FIXES_PENDING"
-}
-```
-
-Print to operator:
-```
-⚠ Review round N: FIXES_PENDING:K
-Created K fix-stories at top of PRD: US-R{N}-001..US-R{N}-{NNN}.
-
-Run /cam-next to dispatch the implementer to fix them.
-Cap: round {N}/{maxRounds}.
-```
-
-### Step 5.5 — Max-rounds safety valve
-
-If `NEW_ROUND > maxRounds`, update `prd.json.review.lastVerdict = "MAX_ROUNDS_DEBT"` and print:
-```
-🚧 Review round N exceeded maxRounds ({maxRounds}). Shipping with debt.
-Persistent CRITICAL/WARNING findings: <list>
-```
-
-The orchestrator treats `MAX_ROUNDS_DEBT` like `CLEAN` for loop-termination — emit `<promise>COMPLETE</promise>` and let `/cam-ship` proceed.
-
-### Step 5.6 — Don't commit yet
-
-This step ONLY mutates `prd.json`. **Do not commit.** Exception: when `lastVerdict === "CLEAN"`, you MAY commit with message `chore(cam): mark review round N CLEAN`.

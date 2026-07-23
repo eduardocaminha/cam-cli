@@ -25,7 +25,8 @@ import { tmpdir } from 'node:os';
 import process from 'node:process';
 import { randomUUID } from 'node:crypto';
 
-import { runSidecarLoop, type RunSidecarLoopOptions, type SpawnFn as LoopSpawnFn, type IsPaneAlive } from '../supervisor/loop.ts';
+import { runSidecarLoop, type RunSidecarLoopOptions, type SpawnFn as LoopSpawnFn, type IsPaneAlive, type ReviewDispatchResult } from '../supervisor/loop.ts';
+import { makeReviewDispatch } from '../supervisor/review.ts';
 import { FirewallError } from '../supervisor/container-firewall.ts';
 import { ContainerAuthError } from '../supervisor/container-auth.ts';
 import { ContainerConfigError } from '../supervisor/container-config.ts';
@@ -34,6 +35,7 @@ import {
 	buildSupervisorOptions,
 	makeNotifyOrchestrator,
 	makeReadReviewReport,
+	makeClearReviewReport,
 	makeCapturePaneFn,
 	adaptLogEventForPush,
 	makeRecordPatternOutcomeFn,
@@ -306,6 +308,21 @@ export interface SidecarOptions {
 	 * spawning real git/gh processes.
 	 */
 	runShipPhaseFn?: RunSidecarLoopOptions['runShipPhaseFn'];
+	/**
+	 * Override the review-phase runner (US-004, CAM-403).
+	 *
+	 * Production: makeProductionReviewPhaseFn closure over makeReviewDispatch
+	 * (review.ts) with all deps wired (spawnFn, capturePane, isPaneAlive/
+	 * ensureWorkerPane via makePlanPaneHelpers, readReviewReport/
+	 * clearReviewReport, container isolation). Drives EXACTLY ONE
+	 * makeReviewDispatch round per tick (one reviewer verdict) and ALWAYS
+	 * resets phase to idle when the round ends, success or failure. Fix-story
+	 * burn-down is NOT auto-chained here: the orchestrator narrates the round
+	 * outcome and drives `cam next` for the following round.
+	 * Tests: inject a spy to assert call count / crash-survival without
+	 * dispatching a real reviewer.
+	 */
+	runReviewPhaseFn?: RunSidecarLoopOptions['runReviewPhaseFn'];
 	/**
 	 * Override the gate-phase runner (US-003, CAM-241/153).
 	 *
@@ -1391,6 +1408,176 @@ function makeProductionShipPhaseFn(
 	};
 }
 
+/**
+ * Build the review-phase container isolation deps (US-004, CAM-403).
+ *
+ * Mirrors buildPlanContainerOpts (US-006, CAM-152) with a review-specific
+ * escalate subject: reads worker_isolation from project.toml, builds a
+ * preflightWorkerContainer closure (real spawnSync probe, no stat check)
+ * when isolation === 'container', and builds an escalateFn from Resend
+ * config when both apiKey and recipient are set. In host mode both optional
+ * fields are undefined (zero behavior change).
+ *
+ * This is a SEPARATE instance from host.ts's own container/escalate wiring
+ * for the per-story autonomous review inside runSupervisor: the standalone
+ * phase:review dispatch below has no access to that instance (different
+ * closure, different lifecycle), so it resolves its own from the same
+ * project.toml, exactly like buildPlanContainerOpts does for the plan phase.
+ */
+function buildReviewContainerOpts(cwd: string): {
+	workerIsolation: WorkerIsolation;
+	preflightContainerFn: (() => PreflightResult) | undefined;
+	escalateFn: (() => Promise<void>) | undefined;
+} {
+	const workerIsolation = readWorkerIsolation(join(cwd, 'scripts/cam/project.toml'));
+	const preflightContainerFn: (() => PreflightResult) | undefined =
+		workerIsolation === 'container'
+			? (): PreflightResult => preflightWorkerContainer({
+				probe: (args) => {
+					const r = Bun.spawnSync(['docker', ...args], { stdout: 'pipe', stderr: 'pipe' });
+					return {
+						stdout: r.stdout instanceof Buffer ? new TextDecoder().decode(r.stdout) : '',
+						exitCode: r.exitCode,
+					};
+				},
+			})
+			: undefined;
+	const resendCfg = readResendConfig(join(cwd, 'scripts/cam/project.toml'));
+	const escalateFn: (() => Promise<void>) | undefined =
+		(resendCfg.apiKey !== '' && resendCfg.recipient !== '')
+			? async (): Promise<void> => {
+				await sendEscalation({
+					apiKey: resendCfg.apiKey,
+					recipient: resendCfg.recipient,
+					from: resendCfg.from !== '' ? resendCfg.from : undefined,
+					subject: '[cam] Review container not ready: preflight failed before worker spawn',
+					html: '<p><strong>[cam]</strong> The review phase container preflight failed. The cam-worker container is not ready. Manual intervention required.</p>',
+				});
+			}
+			: undefined;
+	return { workerIsolation, preflightContainerFn, escalateFn };
+}
+
+/**
+ * Narrate the outcome of a single review round to the orchestrator pane
+ * (US-004, CAM-403). Mirrors narrateShipPhaseResult's one-line convention.
+ */
+function narrateReviewPhaseResult(result: ReviewDispatchResult, notify: (line: string) => void): void {
+	if (result.status === 'ok') {
+		notify(`[cam] review round complete: ${result.detail}`);
+		return;
+	}
+	notify(`[cam] review round failed: ${result.detail}`);
+}
+
+/**
+ * Build the production runReviewPhaseFn closure (US-004, CAM-403).
+ *
+ * Wires makeReviewDispatch (review.ts) with production adapters, mirroring
+ * host.ts's own reviewDispatch wiring (the per-story autonomous review
+ * dispatched from inside runSupervisor) but self-contained here for the
+ * sidecar's standalone phase:review tick:
+ *   - spawn/capturePane: loop.ts-shaped SpawnFn + CapturePane over Bun.spawnSync
+ *     (loopSpawnFn) / makeCapturePaneFn(realSpawnFn).
+ *   - isPaneAlive/ensureWorkerPane: makePlanPaneHelpers (CAM-57 self-heal,
+ *     shared worker-pane marker -- same helper the plan phase already uses).
+ *   - readReviewReport/clearReviewReport: makeReadReviewReport(cwd) /
+ *     makeClearReviewReport(cwd) (host.ts), the structured reviewer exit
+ *     report channel (US-002/US-R1-001, CAM-75).
+ *   - workerIsolation/preflightContainerFn/escalateFn: buildReviewContainerOpts.
+ *
+ * The reviewer backend is resolved by makeReviewDispatch ITSELF via
+ * readPhaseBackend('reviewer') (review.ts:354), so a project.toml
+ * [backend] reviewer=codex reaches the codex reviewer path through
+ * selectAdapter -- no separate resolution is needed at this call site (AC2).
+ *
+ * Drives EXACTLY ONE round: a single reviewDispatch(uuid) call, i.e. one
+ * reviewer verdict (AC1/AC3). makeReviewDispatch already writes any new
+ * US-RN-NNN fix stories (or the MAX_ROUNDS_DEBT terminal) into prd.json as
+ * part of that single round; fix-story burn-down is NOT auto-chained here --
+ * the phase is ALWAYS reset to idle when the round ends (finally), success or
+ * failure, so the sidecar never gets wedged in phase:review and the
+ * orchestrator narrates + drives `cam next` for the following round (mirrors
+ * makeProductionShipPhaseFn's finally-block contract, US-004/CAM-149). Any
+ * thrown exception (e.g. an unreadable prd.json) is caught, logged as a
+ * 'sidecar-exit' event, and swallowed.
+ *
+ * Not exported: tests inject options.runReviewPhaseFn directly.
+ */
+function makeProductionReviewPhaseFn(
+	cwd: string,
+	claudeDir: string,
+	sessionName: string,
+	logEvent: WorkerEventLogger,
+	realSpawnFn: SpawnFn,
+): () => void {
+	return (): void => {
+		const setPhase = makeSetPhaseFn(claudeDir, cwd);
+		try {
+			const prdPath = join(cwd, 'scripts/cam/prd.json');
+			const loopSpawnFn: LoopSpawnFn = (cmd, args, spawnOpts) => {
+				const stdio = spawnOpts?.stdio ?? 'pipe';
+				const result = Bun.spawnSync([cmd, ...args], { cwd, stdout: stdio, stderr: stdio });
+				return {
+					stdout: result.stdout instanceof Buffer ? new TextDecoder().decode(result.stdout) : '',
+					exitCode: result.exitCode,
+				};
+			};
+			const { isPaneAlive, ensureWorkerPane } = makePlanPaneHelpers(claudeDir, sessionName);
+			const { workerIsolation, preflightContainerFn, escalateFn } = buildReviewContainerOpts(cwd);
+
+			const reviewDispatch = makeReviewDispatch({
+				spawn: loopSpawnFn,
+				capturePane: makeCapturePaneFn(realSpawnFn),
+				readPrd: (): PrdSnapshot | null => {
+					try {
+						return JSON.parse(readFileSync(prdPath, 'utf8')) as PrdSnapshot;
+					} catch {
+						return null;
+					}
+				},
+				writePrd: (prd) => {
+					writeFileSync(prdPath, JSON.stringify(prd, null, 2) + '\n', 'utf8');
+				},
+				workerPaneId: readWorkerPaneMarker(claudeDir) ?? '%2',
+				isPaneAlive,
+				ensureWorkerPane,
+				sleepFn: (ms) => {
+					Bun.sleepSync(ms);
+				},
+				permissionMode: 'bypassPermissions',
+				logEvent,
+				readReviewReport: makeReadReviewReport(cwd),
+				clearReviewReport: makeClearReviewReport(cwd),
+				workerIsolation,
+				preflightContainerFn,
+				escalateFn,
+			});
+
+			const result = reviewDispatch(randomUUID());
+			narrateReviewPhaseResult(
+				result,
+				makeNotifyOrchestrator(
+					sessionName,
+					realSpawnFn,
+					makeCapturePaneFn(realSpawnFn),
+					adaptLogEventForPush(logEvent),
+				),
+			);
+		} catch (err: unknown) {
+			logEvent({
+				ts: new Date().toISOString(),
+				storyId: undefined,
+				uuid: 'sidecar',
+				kind: 'sidecar-exit',
+				detail: { reason: 'review-phase-crash', error: err instanceof Error ? err.message : String(err) },
+			});
+		} finally {
+			setPhase('idle');
+		}
+	};
+}
+
 // ---------------------------------------------------------------------------
 // Dep-resolution helper (extracted from runSidecar to keep it under the biome
 // cognitive-complexity <=15 and function-length <=80 line limits; CAM-60
@@ -1426,6 +1613,7 @@ interface SidecarLoopDepsResult {
 	readLoopPhaseFn: RunSidecarLoopOptions['readLoopPhaseFn'];
 	runPlanPhaseFn: RunSidecarLoopOptions['runPlanPhaseFn'];
 	runShipPhaseFn: RunSidecarLoopOptions['runShipPhaseFn'];
+	runReviewPhaseFn: RunSidecarLoopOptions['runReviewPhaseFn'];
 	runGatePhaseFn: RunSidecarLoopOptions['runGatePhaseFn'];
 	rearmImplementingFn: RunSidecarLoopOptions['rearmImplementingFn'];
 }
@@ -2794,6 +2982,25 @@ function buildShipPhaseDeps(
 }
 
 /**
+ * Build the review-phase injectable dep (US-004, CAM-403).
+ *
+ * Extracted from buildSidecarLoopDeps to keep it under the biome
+ * noExcessiveCognitiveComplexity(max=15) limit (CAM-60 factory/helper
+ * pattern), mirroring buildShipPhaseDeps.
+ */
+function buildReviewPhaseDeps(
+	ctx: SidecarLoopDepsCtx,
+	options: SidecarOptions,
+): Pick<SidecarLoopDepsResult, 'runReviewPhaseFn'> {
+	const { cwd, claudeDir, sessionName, logEvent, realSpawnFn } = ctx;
+	return {
+		runReviewPhaseFn: options.runReviewPhaseFn ?? makeProductionReviewPhaseFn(
+			cwd, claudeDir, sessionName, logEvent, realSpawnFn,
+		),
+	};
+}
+
+/**
  * Build the in-progress-conflict gate's abandon-path deps (US-004, CAM-241/153,
  * AC3; checkoutMainFn hardened to surface a failed checkout in US-001,
  * CAM-314): rm handoff.json, rm prd.json, git checkout main -- each
@@ -3286,6 +3493,9 @@ function buildSidecarLoopDeps(ctx: SidecarLoopDepsCtx, options: SidecarOptions):
 	// US-004 / CAM-149: ship-phase dep extracted to a helper (biome complexity budget).
 	const shipPhaseDeps = buildShipPhaseDeps(ctx, options);
 
+	// US-004 (CAM-403): review-phase dep extracted to a helper (biome complexity budget).
+	const reviewPhaseDeps = buildReviewPhaseDeps(ctx, options);
+
 	// US-003 (CAM-241/153): gate-phase dep extracted to a helper (biome complexity budget).
 	const gatePhaseDeps = buildGatePhaseDeps(ctx, options);
 
@@ -3300,7 +3510,7 @@ function buildSidecarLoopDeps(ctx: SidecarLoopDepsCtx, options: SidecarOptions):
 		readActiveFn, clearActiveFn, hasPendingStoriesFn, sleepFn, hasSessionFn,
 		acquireLockFn, buildOptsFn, runMergeWatchFn, flipActiveFn, readImplementBlockedMarkerFn, autoShipFn,
 		readReviewReportFn, fileSuggestionsFn, recordPatternOutcomeFn, escalateFn,
-		runMetaLoopObserveFn, ...planPhaseDeps, ...shipPhaseDeps, ...gatePhaseDeps, ...rearmDeps,
+		runMetaLoopObserveFn, ...planPhaseDeps, ...shipPhaseDeps, ...reviewPhaseDeps, ...gatePhaseDeps, ...rearmDeps,
 	};
 }
 
@@ -3464,6 +3674,7 @@ export async function runSidecar(options: SidecarOptions = {}): Promise<void> {
 		readLoopPhaseFn: deps.readLoopPhaseFn,
 		runPlanPhaseFn: deps.runPlanPhaseFn,
 		runShipPhaseFn: deps.runShipPhaseFn,
+		runReviewPhaseFn: deps.runReviewPhaseFn,
 		runGatePhaseFn: deps.runGatePhaseFn,
 		rearmImplementingFn: deps.rearmImplementingFn,
 	});

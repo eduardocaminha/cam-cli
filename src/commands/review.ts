@@ -1,19 +1,21 @@
 // src/commands/review.ts
 //
-// Implementation of `cam review` -- thin-proxy that routes /cam-review to the
-// live orchestrator pane via send-keys (US-007).
+// Implementation of `cam review` -- thin-proxy that writes phase:review to
+// the loop state file instead of injecting /cam-review via send-keys
+// (US-002 of CAM-403).
 //
-// Acceptance criteria (US-007):
-//   1. Detect a live orchestrator via orchestratorAlive (US-005 predicate).
-//   2. On hit: atomic send-keys /cam-review to the orchestrator pane and
-//      return 0 immediately (fire-and-forget).
-//   3. On miss: bootstrap cam run --no-attach, poll .claude/.cam-orch-ready
-//      (with orchestratorAlive re-check), then send-keys.
-//   4. send-keys is atomic (text + Enter in one call), NO -l (it would make "Enter" literal).
-//   5. No --permission-mode CLI flag (enforced by no-permission-mode-flag.test.ts).
-//   6. Typecheck passes (bun run typecheck).
-//   7. Tests pass (bun test).
+// Acceptance criteria (US-002):
+//   1. runReview writes phase:review to .claude/cam-loop.local.md (mirrors
+//      runPlan's buildPlanningBody / runShip's buildShippingBody +
+//      writeStateFile pattern), preserving all other state-file fields,
+//      instead of injecting /cam-review via send-keys.
+//   2. cam review gates on sidecar liveness via sidecarLivenessGate,
+//      mirroring runPlan and runShip.
+//   3. No --permission-mode CLI flag.
+//   4. Typecheck passes (bun run typecheck).
+//   5. Tests pass (bun test).
 
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
 
@@ -29,15 +31,20 @@ import {
 import {
 	hasSession,
 	orchestratorAlive,
-	getOrchPaneId,
 	paneCountMutex,
 	projectSessionName,
 	type Env,
 	type SpawnFn as TmuxSpawnFn,
 } from '../tmux/session.ts';
 import { waitForOrchestrator } from '../tmux/bootstrap-wait.ts';
-import { sendKeysWhenIdle, makePushLogEvent, type CapturePaneFn } from '../tmux/dispatch.ts';
-import type { WorkerEventKind, WorkerEventDetail } from '../supervisor/events.ts';
+import { parseStateFile } from './status.ts';
+import {
+	renderStateFile,
+	writeStateFile,
+	DEFAULT_MAX_ITERATIONS,
+	DEFAULT_COMPLETION_PROMISE,
+} from './next.ts';
+import { sidecarLivenessGate } from './sidecar-gate.ts';
 
 // --- Types -----------------------------------------------------------------
 
@@ -66,31 +73,20 @@ export interface ReviewOptions {
 	 */
 	statFn?: (path: string) => boolean;
 	/**
-	 * Sleep function for the ready-poll and idle-poll. Defaults to `Bun.sleepSync`.
+	 * Sleep function for the ready-poll. Defaults to `Bun.sleepSync`.
 	 * Tests inject a no-op to avoid real waits.
 	 */
 	sleepFn?: (ms: number) => void;
 	/** Total poll budget for waitForOrchestrator (ms). Default 60 000. */
 	waitTimeoutMs?: number;
+	/** Injectable state-file writer for tests. Defaults to writeStateFile. */
+	writeFn?: (cwd: string, body: string, opts: { force?: boolean }) => string;
 	/**
-	 * Override the capture-pane reader used by the idle-check before send-keys.
-	 * Tests inject a fake that returns controlled pane content strings.
+	 * Injectable sidecar-liveness probe (US-002, CAM-403). Defaults to
+	 * `sidecarAlive` from `src/supervisor/sidecar-pid.ts`. Tests inject a fake
+	 * to exercise the dead/alive branches without touching real pids.
 	 */
-	capturePaneFn?: CapturePaneFn;
-	/**
-	 * Maximum ms to wait for the orchestrator pane to go idle before sending
-	 * anyway (fallback: log + still send). Default:
-	 * `IDLE_WAIT_DEADLINE_MS` (30 000 ms, see src/tmux/dispatch.ts).
-	 */
-	idleTimeoutMs?: number;
-	/**
-	 * Injectable sink for events emitted by `sendKeysWhenIdle` (currently only
-	 * `'push-undelivered'`, on retry exhaustion). Default: the real event log
-	 * (`.claude/cam-worker-events.jsonl`), adapted via `adaptLogEventForPush`
-	 * (US-003, CAM-359). Tests inject `makeInMemoryEventLogger()` instead of
-	 * touching the real event log.
-	 */
-	logEvent?: (kind: WorkerEventKind, detail: WorkerEventDetail) => void;
+	sidecarAliveFn?: (claudeDir: string) => boolean;
 }
 
 // --- Internal helpers -------------------------------------------------------
@@ -102,25 +98,57 @@ async function doBootstrap(cwd: string, bootstrapFn?: () => Promise<boolean>): P
 	return (result.status ?? 1) === 0;
 }
 
+/**
+ * Build the state-file body for phase:review.
+ * Merges with existing state-file fields when the file is already present
+ * (mirrors plan.ts's buildPlanningBody / ship.ts's buildShippingBody).
+ */
+function buildReviewBody(claudeDir: string): string {
+	const stateFilePath = join(claudeDir, 'cam-loop.local.md');
+	const now = new Date().toISOString();
+	if (!existsSync(stateFilePath)) {
+		return renderStateFile({
+			maxIterations: DEFAULT_MAX_ITERATIONS,
+			completionPromise: DEFAULT_COMPLETION_PROMISE,
+			startedAt: now,
+			pid: process.pid,
+			phase: 'review',
+			lastActivity: now,
+		});
+	}
+	const contents = readFileSync(stateFilePath, 'utf8');
+	const parsed = parseStateFile(contents);
+	return renderStateFile({
+		maxIterations: parsed?.max_iterations ?? DEFAULT_MAX_ITERATIONS,
+		completionPromise: parsed?.completion_promise ?? DEFAULT_COMPLETION_PROMISE,
+		startedAt: parsed?.started_at ?? now,
+		pid: parsed?.pid ?? process.pid,
+		phase: 'review',
+		iteration: parsed?.iteration,
+		currentStory: parsed?.current_story,
+		storiesDone: parsed?.stories_done,
+		storiesTotal: parsed?.stories_total,
+		lastActivity: now,
+		plan_issue: parsed?.plan_issue,
+	});
+}
+
 // --- Public entrypoint -----------------------------------------------------
 
 /**
- * Run the `cam review` flow: thin-proxy to the live orchestrator (US-007).
+ * Run the `cam review` flow: writes phase:review to the loop state file
+ * (US-002 of CAM-403).
  *
- * If the orchestrator is already running (hasSession + orchestratorAlive):
- *   - Sends `/cam-review` to the orchestrator pane via send-keys.
+ * The liveness/bootstrap/mutex preamble is unchanged from the previous
+ * thin-proxy. The SEND step (send-keys /cam-review to the orchestrator
+ * pane) is replaced by a state-file write that the sidecar's poll loop
+ * detects and acts on.
  *
- * If the orchestrator is not running:
- *   - Bootstraps it via `cam run --no-attach` (or injected bootstrapFn).
- *   - Polls `.claude/.cam-orch-ready` + orchestratorAlive until ready.
- *   - Then sends the request.
- *
- * Returns 0 on success, 1 on bootstrap/liveness failure.
+ * Returns 0 on success, 1 on any failure.
  */
 export async function runReview(options: ReviewOptions = {}): Promise<number> {
 	const cwd = options.cwd ?? process.cwd();
 	const env = options.env ?? process.env;
-	const request = '/cam-review';
 
 	const { spawnSync } = await import('node:child_process');
 	const tmuxSpawnFn: TmuxSpawnFn =
@@ -133,9 +161,8 @@ export async function runReview(options: ReviewOptions = {}): Promise<number> {
 	const sessionName = projectSessionName(cwd);
 	const claudeDir = join(cwd, '.claude');
 
-	// --- Liveness check -------------------------------------------------------
+	// --- Liveness check / bootstrap -------------------------------------------
 	const alive = hasSession(sessionName, tmuxSpawnFn) && orchestratorAlive(sessionName, tmuxSpawnFn);
-
 	if (!alive) {
 		emitMutedHint('No live orchestrator detected, bootstrapping cam run...');
 		const bootstrapped = await doBootstrap(cwd, options.bootstrapFn);
@@ -175,32 +202,26 @@ export async function runReview(options: ReviewOptions = {}): Promise<number> {
 		return 1;
 	}
 
-	// --- Send request ---------------------------------------------------------
-	const orchPaneId = getOrchPaneId(sessionName, tmuxSpawnFn);
-	if (!orchPaneId) {
+	// --- Sidecar liveness gate (US-002, CAM-403) ------------------------------
+	if (!sidecarLivenessGate(claudeDir, 'review', options.sidecarAliveFn)) return 1;
+
+	// --- Write phase:review to state file (US-002) -----------------------------
+	// The sidecar's poll loop reads this phase and runs the review pipeline.
+	// No slash command is injected into the orchestrator pane anymore.
+	try {
+		const body = buildReviewBody(claudeDir);
+		(options.writeFn ?? writeStateFile)(cwd, body, { force: true });
+		emitMutedHint('phase:review written to .claude/cam-loop.local.md');
+	} catch (err) {
 		printError(
-			'Could not find orchestrator pane',
-			'The session exists but pane index 0 is missing.',
+			'Failed to write phase:review to .claude/cam-loop.local.md',
+			err instanceof Error ? err.message : String(err),
 		);
 		emitTrailingBlank();
 		return 1;
 	}
 
-	// sendKeysWhenIdle: idle-gate + atomic send-keys (no -l; US-008).
-	// logEvent (US-003, CAM-359) defaults via makePushLogEvent (wraps
-	// adaptLogEventForPush) so retry exhaustion traces instead of vanishing.
-	const logEvent = options.logEvent ?? makePushLogEvent(cwd, 'cli-review');
-	sendKeysWhenIdle({
-		paneId: orchPaneId,
-		text: request,
-		tmuxSpawnFn,
-		capturePaneFn: options.capturePaneFn,
-		sleepFn: options.sleepFn,
-		idleTimeoutMs: options.idleTimeoutMs,
-		logEvent,
-	});
-
-	emitOk(`Sent "${request}" to orchestrator pane ${orchPaneId}`);
+	emitOk('Review phase initiated (phase:review written; sidecar will run the review pipeline)');
 	emitAttachHint(sessionName, env);
 	emitTrailingBlank();
 	return 0;

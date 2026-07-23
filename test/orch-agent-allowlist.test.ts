@@ -158,19 +158,21 @@ describe('orch-agent-allowlist.sh', () => {
 		},
 	);
 
+	// --- Scoped DENY cases ---
+	// Code-writers, general-purpose, and absent/unknown types are denied.
+
+	// US-005 (CAM-403): subagent-reviewer is no longer spawnable in-context --
+	// review now runs as a sidecar-driven TUI worker pane, never via Task().
 	test.skipIf(!jqAvailable)(
-		'scoped: subagent-reviewer yields allow',
+		'scoped: subagent-reviewer yields deny',
 		async () => {
 			const result = await runHook(
 				{ tool_name: 'Task', tool_input: { subagent_type: 'subagent-reviewer' } },
 				SCOPED_ENV,
 			);
-			assertAllow(result);
+			assertDeny(result);
 		},
 	);
-
-	// --- Scoped DENY cases ---
-	// Code-writers, general-purpose, and absent/unknown types are denied.
 
 	test.skipIf(!jqAvailable)(
 		'scoped: general-purpose yields deny',

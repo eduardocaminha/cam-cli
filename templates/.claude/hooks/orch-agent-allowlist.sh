@@ -26,7 +26,7 @@
 #
 # Capability policy (Task/Agent spawns, applies only when CAM_SESSION is set):
 #   ALLOW: read-only / plan-time helpers that do not write code.
-#     {Explore, Plan, claude-code-guide, subagent-planner, subagent-auditor, subagent-reviewer}
+#     {Explore, Plan, claude-code-guide, subagent-planner, subagent-auditor}
 #   DENY: everything else, including code-writers and absent/unknown types.
 #     Default-deny is preserved within scope: an unrecognised type is always DENY,
 #     so a misread subagent_type can only produce a false DENY, never a false ALLOW.
@@ -120,7 +120,7 @@ subagent_type="$(printf '%s' "$payload" \
 
 # Capability check: ALLOW read-only plan-time helpers; DENY everything else.
 case "$subagent_type" in
-  Explore|Plan|claude-code-guide|subagent-planner|subagent-auditor|subagent-reviewer)
+  Explore|Plan|claude-code-guide|subagent-planner|subagent-auditor)
     # ALLOW: exit 0, no output.
     exit 0
     ;;
@@ -135,7 +135,7 @@ jq -n \
       permissionDecision: "deny",
       permissionDecisionReason: (
         "Subagent type \"" + $t + "\" is not in the cam capability allowlist."
-        + " Allowed read-only helpers: Explore, Plan, claude-code-guide, subagent-planner, subagent-auditor, subagent-reviewer."
+        + " Allowed read-only helpers: Explore, Plan, claude-code-guide, subagent-planner, subagent-auditor."
         + " For code work, dispatch the implementer worker via /cam-next instead."
         + " (Policy is scoped to cam-managed sessions via CAM_SESSION.)"
       )
