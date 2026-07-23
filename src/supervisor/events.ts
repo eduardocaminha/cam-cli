@@ -125,6 +125,15 @@ import handoffSchema from '../../scripts/cam/handoff.schema.json';
  *     poll-loop check is skipped and this notice records the gap instead of
  *     calling readWorkerTokens or silently dropping enforcement. See
  *     WorkerTokenCeilingUnavailableEventDetail.
+ *   - 'orch-pane-busy' (US-001, CAM-401): emitted alongside (not replacing)
+ *     'push-undelivered' (reason: 'pane-not-idle') when the orchestrator pane
+ *     does not go idle within the idle-gate's deadline and the sidecar sends
+ *     anyway (sendOnceUnverified, src/tmux/dispatch.ts). The generic
+ *     push-undelivered event conflates this transient send-anyway condition
+ *     with genuine retries-exhausted delivery failure; this dedicated kind
+ *     lets a why-not-moving diagnostic attribute a wedge to a specific pane
+ *     and timeout without parsing cam-supervisor.log. See
+ *     OrchPaneBusyEventDetail.
  */
 export type WorkerEventKind =
 	| 'worker-start'
@@ -166,7 +175,8 @@ export type WorkerEventKind =
 	| 'plan-approval-branch-failed'
 	| 'abandon-checkout-main-failed'
 	| 'pattern-outcome-append-failed'
-	| 'worker-token-ceiling-unavailable';
+	| 'worker-token-ceiling-unavailable'
+	| 'orch-pane-busy';
 
 /** Gate status recorded in a 'result' event. */
 export type GateStatus = 'pass' | 'fail' | 'unknown';
@@ -614,6 +624,22 @@ export interface WorkerTokenCeilingUnavailableEventDetail {
 	ceiling: number;
 }
 
+/**
+ * 'orch-pane-busy' event detail (US-001, CAM-401): recorded alongside (not
+ * replacing) the generic 'push-undelivered' (reason: 'pane-not-idle') emitted
+ * by `sendOnceUnverified` (src/tmux/dispatch.ts) when the orchestrator pane
+ * did not go idle within `idleTimeoutMs` and the sidecar sent anyway. Carries
+ * only wake-up-delivery metadata, mirroring PushUndeliveredEventDetail's
+ * no-report-content invariant.
+ *   - paneId: the tmux pane id the wake-up push targeted (e.g. '%3').
+ *   - idleTimeoutMs: the idle-gate deadline that was exhausted before the
+ *     send-anyway fallback fired.
+ */
+export interface OrchPaneBusyEventDetail {
+	paneId: string;
+	idleTimeoutMs: number;
+}
+
 /** Detail payload by event kind ('worker-start'/'worker-end' carry free-form maps). */
 export type WorkerEventDetail =
 	| ResultEventDetail
@@ -643,6 +669,7 @@ export type WorkerEventDetail =
 	| AbandonCheckoutMainFailedEventDetail
 	| PatternOutcomeAppendFailedEventDetail
 	| WorkerTokenCeilingUnavailableEventDetail
+	| OrchPaneBusyEventDetail
 	| Record<string, unknown>;
 
 /** A single structured worker lifecycle event. */

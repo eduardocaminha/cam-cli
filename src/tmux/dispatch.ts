@@ -14,6 +14,10 @@
 // by one tmux refresh cycle and we never want to block the caller indefinitely.
 // `push-undelivered` is still emitted here (reason 'pane-not-idle'), but it
 // reports that delivery is UNKNOWN, not that it was verified to have failed.
+// A dedicated 'orch-pane-busy' event (US-001, CAM-401) is emitted alongside
+// it so a why-not-moving diagnostic can attribute this transient send-anyway
+// wedge to a specific pane/timeout without conflating it with genuine
+// retries-exhausted delivery failure.
 //
 // sendKeysVerified (US-002) extends the idle case (pane went idle within
 // budget) with post-send delivery verification: a busy TUI can still drop the
@@ -448,6 +452,13 @@ function waitForIdlePane(args: {
  * known-busy, so a post-send read would be meaningless), so the emitted
  * event does not mean "we verified it failed" the way the exhaustion-path
  * event does.
+ *
+ * Emits TWO events, not one (US-001, CAM-401): the existing generic
+ * `push-undelivered` (reason: 'pane-not-idle', required by downstream
+ * consumers) plus a dedicated `orch-pane-busy` carrying the same paneId and
+ * `idleTimeoutMs`, so a why-not-moving diagnostic can tell this transient
+ * send-anyway wedge apart from genuine retries-exhausted delivery failure
+ * without parsing cam-supervisor.log.
  */
 function sendOnceUnverified(args: {
 	paneId: string;
@@ -466,6 +477,7 @@ function sendOnceUnverified(args: {
 		{ stdio: 'ignore' },
 	);
 	logEvent?.('push-undelivered', { paneId, retriesExhausted: 1, reason: 'pane-not-idle' });
+	logEvent?.('orch-pane-busy', { paneId, idleTimeoutMs });
 }
 
 // ---------------------------------------------------------------------------
