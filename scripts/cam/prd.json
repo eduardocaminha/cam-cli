@@ -69,7 +69,7 @@
         "The full spine passes green. [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Depends on US-001, US-002, US-003 (the CLI subcommands must exist before the templates can call them). Dual-copy is VERIFIED byte-identical (issue gotcha): edit .claude/commands/cam-*.md AND templates/commands/cam-*.md identically, then run `bun run embed-vendor` to sync src/vendor/_generated.ts (agent-prompt self-hosting pattern, patterns.md). The templatesContents byte-parity test in test/embedded.test.ts catches drift. cam-next.md: only replace the imperative preflight block (lines ~1-22); keep the architecture doc (thin-proxy dispatch, worker entrypoint, decideNextAction table). cam-prune.md: replace steps 1-7 with a `cam prune` call plus narration of its output; keep the Rules section as narration guidance. This story touches templates/ so embed-vendor:check is mandatory. Commit message should note 'intentional self-hosting' so an auditor does not flag harness drift."
     }
