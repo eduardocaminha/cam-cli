@@ -1,11 +1,11 @@
 {
   "id": "CAM-404",
   "title": "Flaky: dispatch-geometry UNDELIVERED send-once test (CAM-375 AC6) falha intermitente sob carga do CI",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-23T10:27:45.031Z",
-  "updatedAt": "2026-07-23T17:59:03.316Z",
+  "updatedAt": "2026-07-23T18:25:20.557Z",
   "description": "test/integration/dispatch-geometry.test.ts, teste 'UNDELIVERED wrapping payload: exactly one physical send-keys call (send-once guard, US-001, CAM-375), exactly one push-undelivered event with retriesExhausted maxAttempts (AC6)' e sensivel a timing (444ms, send-keys tmux REAL) e flaka sob carga do CI. Evidencia coletada no ciclo do PR #325 (CAM-399): PASSOU na run 1 do CI e FALHOU na run 2 do mesmo PR, e passa 3/3 local; um PR doc+config-only nao tem como afeta-lo. Causa: premissa de timing no teste (espera o esgotamento de retries por tempo). Fix: endurecer com waitForCondition / espera deterministica em vez de depender do timing de retry sob carga. Pre-existente; bloqueou um merge e forcou um re-run legitimo (com prova de flake, nao evasao). TIPO fix.",
   "spec": {
     "scope": "Fix the intermittent CI flake in test/integration/dispatch-geometry.test.ts (the UNDELIVERED send-once tests, CAM-375 AC6/AC8 and CAM-364). Root cause: bootPane spawns the raw-echo fixture in a fresh tmux session and only awaits `has-session` (which succeeds the instant bun is spawned, before it renders its idle prompt), then returns. The tests immediately call the synchronous sendKeysVerified with idleTimeoutMs:100 (default pollIntervalMs:200, so only ~2 idle probes). Under CI load the fixture cold-start + first render + capture lag exceeds the 100 ms idle budget, so the pre-send waitForIdlePane gate times out and diverts to sendOnceUnverified, emitting push-undelivered{retriesExhausted:1, reason:'pane-not-idle'} plus an orch-pane-busy event instead of the asserted push-undelivered{retriesExhausted:3, reason:'retries-exhausted'} — flipping events.length 1->2 and failing the assertion. The fix is a deterministic wait in bootPane: after confirming the session exists, poll capture-pane on the private test socket via the already-imported waitForCondition until isOrchPaneIdle (already exported from src/tmux/dispatch.ts) returns true, so the fixture has provably rendered its idle prompt before any dispatch. This removes the race for the whole file at the setup layer, no production change. Out of scope: any change to production src/tmux/dispatch.ts, per-test idleTimeoutMs values, or the dedicated pane-not-idle test that intentionally wants the timeout.",
