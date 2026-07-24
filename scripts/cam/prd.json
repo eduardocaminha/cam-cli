@@ -112,7 +112,7 @@
         "The full quality spine passes, including lint and the file-size budget gate. GREEN-ON-MAIN (swept 2026-07-23): exit 0 on unmodified main; standard quality gate. [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/loop.ts (the implModel resolution at ~:1095, which measurably precedes the :1113 argv build), test/supervisor/loop-model-resolution.test.ts (new), scripts/file-size-budget.json (raise src/supervisor/loop.ts from 2586 and the loop test file from 4980 if exceeded, appending to the _ref narrative like every prior raise). This is the first end-to-end tracer: config -> resolution -> argv -> spawn. Mirror the existing codex-auth abort block verbatim (loop.ts:1238-1254: blocked lastOutcome with the actionable reason, iterations++, escalateFn fire-and-forget) rather than inventing a new abort shape; patterns.md:883 documents that established wiring shape. loop.ts has NO configPath seam (patterns.md:877): drive backend/model resolution by chdir'ing into a tmpdir with a staged scripts/cam/project.toml, following the loop.test.ts withCodexBackendCwd helper; do not add a configPath seam here. Do add the cache-reader seam to RunSupervisorOptions next to codexAuthCheckFn so tests never read the host's ~/.codex."
     },
