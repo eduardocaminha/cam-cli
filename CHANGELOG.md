@@ -6,6 +6,19 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.256.0] - 2026-07-24
+
+### Added
+
+- US-R1-001 - Review round 1 fix 001: address reviewer finding
+- US-007 - Wire model resolution into the run.ts orchestrator dispatch
+- US-006 - Wire model resolution into the review.ts reviewer dispatch
+- US-005 - Wire model resolution into the plan-runner planner and auditor dispatches
+- US-004 - Wire model resolution into the loop.ts implementer dispatch
+- US-003 - Add the backend-aware model resolution layer with fail-closed codex and claude paths
+- US-002 - Add the codex models-cache reader behind an injectable DI seam
+- US-001 - Establish the canonical claude model vocabulary and one claude-shape predicate
+
 ## [0.255.0] - 2026-07-23
 
 ### Added
