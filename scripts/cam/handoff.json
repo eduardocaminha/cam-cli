@@ -1,23 +1,19 @@
 {
-  "lastCompletedStory": { "id": "US-002", "title": "Add the codex models-cache reader behind an injectable DI seam" },
+  "lastCompletedStory": { "id": "US-003", "title": "Add the backend-aware model resolution layer with fail-closed codex and claude paths" },
   "createdFiles": [
-    "src/config/codex-models-cache.ts",
-    "test/config/codex-models-cache.test.ts"
+    "src/config/model-resolution.ts",
+    "test/config/model-resolution.test.ts"
   ],
   "modifiedFiles": [
-    "scripts/cam/patterns.md"
+    "docs/recovery-runbook.md"
   ],
-  "openQuestions": [
-    "During this story's own quality-gate run, running two concurrent `bun run check:all` invocations against this repo produced a genuine but non-reproducible-in-isolation failure in test/integration/behavioral-gate.test.ts (a fixed shared tmux socket name, 'cam-it-gate', collided across the two processes). Re-running check:all a single time, in isolation, was fully green (typecheck, 5535/5535 tests, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps all ok, exit 0). This is documented as an operational gotcha in patterns.md (never fire two check:all/bun test invocations concurrently against the same tree), not a product defect in src/config/codex-models-cache.ts or any other source file."
-  ],
-  "nextStoryContext": "src/config/codex-models-cache.ts now exports selectTopCodexModel (pure selector over already-parsed cache JSON: unknown -> CodexModelSelection, filters visibility==='list' && supported_in_api===true, stable-sorts survivors by priority ascending, returns { ok:true; slug } or a structured { ok:false; reason } -- NEVER throws) and readCodexModelsCache (the default production reader, type CodexModelsCacheReader = (path?: string) => CodexModelSelection, defaulting to join(homedir(), '.codex', 'models_cache.json'), mirroring codexAuthCheck's synchronous existsSync/readFileSync point-read idiom). Both are fail-closed on ANY schema drift (not an object, missing/non-array models, a non-object entry, a non-string slug, a non-number priority, or every entry filtered out) -- a partially-valid cache is never partially trusted. The next story (per this story's notes, referenced as US-003 in the prior handoff) is expected to wire readCodexModelsCache into the actual codex dispatch path: turning a not-ok result into either a fallback to the existing project.toml pin, or a fail-closed abort -- neither behavior exists yet, this story only built the reader in isolation with zero call sites wired. Schema fields were confirmed against the openai/codex Rust source (codex-rs/protocol/src/openai_models.rs's ModelInfo struct and the ModelVisibility enum, which serializes 'List'->'list' via #[serde(rename_all = \"lowercase\")]), not just inferred from a sample cache file.",
+  "openQuestions": [],
+  "nextStoryContext": "src/config/model-resolution.ts now exports resolvePhaseModel({ phase, backend, configPath?, cacheReader? }) -> { ok: true; model } | { ok: false; message }, composed entirely on top of pre-existing modules (readPhaseModel from models.ts, validateClaudeModel from claude-models.ts, isClaudeAliasModel from supervisor/codex-auth.ts, readCodexModelsCache from codex-models-cache.ts). src/config/models.ts is byte-for-byte untouched (pinned by a git-diff oracle). Codex precedence: nested [models.codex].<phase> pin (verbatim, no shape check) > non-claude-shaped flat [models].<phase> value (verbatim) > cacheReader() auto-resolution (default readCodexModelsCache) > fail-closed ok:false naming '~/.codex/models_cache.json' and the '[models.codex]' pin remedy. The nested-vs-flat discriminator is two readPhaseModel calls (with and without the backend arg) compared for inequality -- cheapest available, no new parse path. Claude precedence: flat/default value validated with the STRICT validateClaudeModel typo-guard, returned verbatim on ok, else ok:false naming the offending value and the 'project.toml [models].<phase>' key; the codex cache reader is never invoked on this path. Nothing in the codebase calls resolvePhaseModel yet -- it was built and tested in isolation, same 'reader-first, wiring-later' shape as US-002's readCodexModelsCache. The 6 existing readPhaseModel call sites (run.ts, loop.ts, review.ts, plan-runner.ts x2, config.ts) are UNCHANGED and still call readPhaseModel directly; a future story would need to decide whether/how to route those call sites through resolvePhaseModel (and whether the resulting ok:false abort composes with or supersedes the existing codexAuthPreflight claude-alias-model early-reject at each of those 4 dispatch sites, since the two checks currently overlap in the 'claude alias handed to codex' case).",
   "officialDocsValidated": [
     {
-      "lib": "openai/codex (models_cache.json schema)",
-      "url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/protocol/src/openai_models.rs",
-      "fetchedAt": "2026-07-23T21:50:00Z",
-      "status": "aligned",
-      "summary": "Fetched the ModelInfo struct and ModelVisibility enum from the codex-rs protocol source. Confirmed field names/types match this story's implementation exactly: slug: String, visibility: ModelVisibility, supported_in_api: bool, priority: i32. ModelVisibility is a 3-variant enum (List/Hide/None) with #[serde(rename_all = \"lowercase\")], confirming 'list' is the correct exact-string comparison for the eligibility filter."
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "This story composes existing internal modules (models.ts, claude-models.ts, codex-auth.ts, codex-models-cache.ts) with no new external library or documented API surface; US-001/US-002's Step 5.5 fetches (Claude Code model-config docs, openai/codex protocol source) already cover the vocabulary this module reuses."
     }
   ]
 }
