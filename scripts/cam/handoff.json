@@ -1,25 +1,23 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Establish the canonical claude model vocabulary and one claude-shape predicate" },
+  "lastCompletedStory": { "id": "US-002", "title": "Add the codex models-cache reader behind an injectable DI seam" },
   "createdFiles": [
-    "src/config/claude-models.ts",
-    "test/config/claude-models.test.ts",
-    "test/supervisor/codex-auth-claude-shape.test.ts"
+    "src/config/codex-models-cache.ts",
+    "test/config/codex-models-cache.test.ts"
   ],
   "modifiedFiles": [
-    "src/supervisor/codex-auth.ts",
-    "CONTEXT.md"
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [
-    "One `bun test` full-suite invocation (background-captured, output truncated by my own `tail -30`) reported '5517 pass / 2 fail' with no failing test name visible. Reran the full suite 5 additional times (fully captured, no truncation): all 5 were deterministic '5519 pass / 0 fail' with zero '(fail)' markers, matching the also-green `bun run check:all` spine run. Could not identify which 2 tests were implicated in the single anomalous run, and it did not reproduce, so it is not actionable as a known defect; flagging for visibility per the no-flaky-evasion discipline rather than silently dropping it. If it recurs and is reproducible, capture full (untruncated) output and file a follow-up."
+    "During this story's own quality-gate run, running two concurrent `bun run check:all` invocations against this repo produced a genuine but non-reproducible-in-isolation failure in test/integration/behavioral-gate.test.ts (a fixed shared tmux socket name, 'cam-it-gate', collided across the two processes). Re-running check:all a single time, in isolation, was fully green (typecheck, 5535/5535 tests, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps all ok, exit 0). This is documented as an operational gotcha in patterns.md (never fire two check:all/bun test invocations concurrently against the same tree), not a product defect in src/config/codex-models-cache.ts or any other source file."
   ],
-  "nextStoryContext": "GOVERNING DECISION now implemented and durable: src/config/claude-models.ts exports CLAUDE_MODEL_ALIASES (10 doc-verified values: default, best, fable, opus, sonnet, haiku, opusplan, sonnet[1m], opus[1m], opusplan[1m]) and validateClaudeModel (STRICT typo-guard, exact membership + /^claude-/ prefix only, never substring). src/supervisor/codex-auth.ts's isClaudeAliasModel is now the SUPERSET 'claude-shaped' predicate consumed by the codex path (CLAUDE_MODEL_ALIASES member OR claude-* name OR legacy /\\b(opus|sonnet|haiku)\\b/i match, including dashed non-prefixed forms like 'sonnet-4-5'). The two predicates are intentionally divergent and must stay that way: validateClaudeModel only for the claude-backend typo-guard, isClaudeAliasModel only for the codex flat-pin claude-shape decision. src/ui/ConfigScreen.tsx was NOT touched (out of scope per this story); its MODEL_OPTIONS (8 values, no 'best' or 'opusplan[1m]') is now drift-guarded as a subset of CLAUDE_MODEL_ALIASES by test/config/claude-models.test.ts, so a future story adding 'best'/'opusplan[1m]' to the picker only needs to grow MODEL_OPTIONS, never re-derive the alias list. CONTEXT.md's 'model tier alias' term now lists all ten aliases and cross-references CLAUDE_MODEL_ALIASES as canonical.",
+  "nextStoryContext": "src/config/codex-models-cache.ts now exports selectTopCodexModel (pure selector over already-parsed cache JSON: unknown -> CodexModelSelection, filters visibility==='list' && supported_in_api===true, stable-sorts survivors by priority ascending, returns { ok:true; slug } or a structured { ok:false; reason } -- NEVER throws) and readCodexModelsCache (the default production reader, type CodexModelsCacheReader = (path?: string) => CodexModelSelection, defaulting to join(homedir(), '.codex', 'models_cache.json'), mirroring codexAuthCheck's synchronous existsSync/readFileSync point-read idiom). Both are fail-closed on ANY schema drift (not an object, missing/non-array models, a non-object entry, a non-string slug, a non-number priority, or every entry filtered out) -- a partially-valid cache is never partially trusted. The next story (per this story's notes, referenced as US-003 in the prior handoff) is expected to wire readCodexModelsCache into the actual codex dispatch path: turning a not-ok result into either a fallback to the existing project.toml pin, or a fail-closed abort -- neither behavior exists yet, this story only built the reader in isolation with zero call sites wired. Schema fields were confirmed against the openai/codex Rust source (codex-rs/protocol/src/openai_models.rs's ModelInfo struct and the ModelVisibility enum, which serializes 'List'->'list' via #[serde(rename_all = \"lowercase\")]), not just inferred from a sample cache file.",
   "officialDocsValidated": [
     {
-      "lib": "Claude Code CLI (model-config)",
-      "url": "https://code.claude.com/docs/en/model-config",
-      "fetchedAt": "2026-07-23T00:00:00Z",
+      "lib": "openai/codex (models_cache.json schema)",
+      "url": "https://raw.githubusercontent.com/openai/codex/main/codex-rs/protocol/src/openai_models.rs",
+      "fetchedAt": "2026-07-23T21:50:00Z",
       "status": "aligned",
-      "summary": "Fetched current 'Model configuration' doc. 'Model aliases' table lists default/best/fable/sonnet/opus/haiku/sonnet[1m]/opus[1m]/opusplan (9). The 'opusplan model setting' section documents `opusplan[1m]` as settable ('To force 1M context for both phases when you are not on an auto-upgrade tier, set the model to opusplan[1m]'), confirming the 10th CLAUDE_MODEL_ALIASES value. Doc also confirms the recognized-string check accepts 'a model alias', 'any name that starts with claude-', matching validateClaudeModel's exact shape."
+      "summary": "Fetched the ModelInfo struct and ModelVisibility enum from the codex-rs protocol source. Confirmed field names/types match this story's implementation exactly: slug: String, visibility: ModelVisibility, supported_in_api: bool, priority: i32. ModelVisibility is a 3-variant enum (List/Hide/None) with #[serde(rename_all = \"lowercase\")], confirming 'list' is the correct exact-string comparison for the eligibility filter."
     }
   ]
 }
