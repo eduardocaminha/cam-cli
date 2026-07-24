@@ -31,6 +31,13 @@
   ],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "WARNING [src/commands/run.ts:811]: The new orchestrator model-resolution abort is surfaced to the operator under the hardcoded headline 'codex auth preflight failed'. setupPanes returns { blocked: true, message: 'model-resolution-failed: ...' } (run.ts:492-494), and runRun prints it via printError('codex auth preflight failed', result.blocked) (run.ts:811), so a config/model-pin failure renders as '✗ codex auth preflight failed — model-resolution-failed: no valid codex model pin for phase ...'. The bold headline is factually wrong (auth is fine) and points the operator at `codex login` instead of project.toml. The diff defends the reuse on cost grounds (scripts/cam/patterns.md US-007 bullet: 'reuses that exact same surfacing path for free, no new escalation plumbing needed'), which is not a valid rationale for a misleading operator diagnostic on a fail-closed path. Mechanical fix: carry a header/kind alongside the blocked message (or branch the printError headline on the 'model-resolution-failed:' prefix) and assert it in test/commands/run-model-resolution.test.ts."
+    },
+    {
       "id": "US-001",
       "title": "Establish the canonical claude model vocabulary and one claude-shape predicate",
       "description": "As a cam operator, I need a single doc-verified list of valid claude model values and a single 'is this claude-shaped' predicate, so that the typo-guard and the codex flat-pin decision can never disagree about what counts as a claude model.",
@@ -48,7 +55,7 @@
         "Tests pass (bun test). GREEN-ON-MAIN (swept 2026-07-23): exit 0, 5485 pass / 0 fail on unmodified main; standard quality gate. [oracle: bun test]",
         "The full quality spine passes, including lint and the file-size budget gate. GREEN-ON-MAIN (swept 2026-07-23): exit 0 on unmodified main; standard quality gate. [oracle: bun run check:all]"
       ],
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "requires": null,
       "notes": "Files: src/config/claude-models.ts (new), src/supervisor/codex-auth.ts (extend isClaudeAliasModel only; keep the MIT-free local header and the documented decision order), CONTEXT.md, test/config/claude-models.test.ts (new), test/supervisor/codex-auth-claude-shape.test.ts (new). GOVERNING DECISION for later stories (resolves the round-1 auditor ambiguity): isClaudeAliasModel is the SUPERSET and is THE decision fn for 'is this flat [models].<phase> value claude-shaped' on the codex path (matching the existing codexAuthPreflight guard); validateClaudeModel is the STRICT predicate and is used ONLY for the claude-backend typo-guard. Consequence to keep: flat 'sonnet-4-5' and 'my-opus-model' are claude-shaped and therefore NOT valid codex pins. Do NOT edit src/ui/ConfigScreen.tsx: import MODEL_OPTIONS read-only for the containment test (it is already exported, patterns.md:684). Grep patterns.md for: :684 (two hardcoded model lists drift silently unless a test cross-checks them), :706 (CLI tier aliases replaced dated ids), :881 (codex-auth.ts module shape and why the claude-alias check fires before authCheck), :899 (oracle falsifiability). The repo's live scripts/cam/project.toml uses opus/sonnet only, so the extended predicate cannot self-block this loop. Skills: none beyond the standard implementer flow."
@@ -68,7 +75,7 @@
         "Tests pass (bun test). GREEN-ON-MAIN (swept 2026-07-23): exit 0, 5485 pass / 0 fail on unmodified main; standard quality gate. [oracle: bun test]",
         "The full quality spine passes, including lint and the file-size budget gate. GREEN-ON-MAIN (swept 2026-07-23): exit 0 on unmodified main; standard quality gate. [oracle: bun run check:all]"
       ],
-      "priority": 2,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "Files: src/config/codex-models-cache.ts (new), test/config/codex-models-cache.test.ts (new). Mirror the codexAuthCheck DI-seam idiom exactly (src/supervisor/codex-auth.ts:60, patterns.md:881): an exported reader-fn type + a default production reader, injected by callers, never a monkeypatched os.homedir. Synchronous node:fs point-reads (existsSync/readFileSync) are the sanctioned shape here per the curated Bun-only invariant carve-out. Schema is undocumented and version-fragile ({ models: [ { slug, display_name, visibility, supported_in_api, priority } ] }, codex-cli 0.144.6 has no public `codex models`), so parse defensively and treat every drift as a structured not-ok, never a throw: US-003 turns not-ok into pin-fallback or a fail-closed abort. Keep the fixture data inline in the test; do not read the operator's real ~/.codex cache in any test."
@@ -91,7 +98,7 @@
         "Tests pass (bun test). GREEN-ON-MAIN (swept 2026-07-23): exit 0, 5485 pass / 0 fail on unmodified main; standard quality gate. [oracle: bun test]",
         "The full quality spine passes, including lint and the file-size budget gate. GREEN-ON-MAIN (swept 2026-07-23): exit 0 on unmodified main; standard quality gate. [oracle: bun run check:all]"
       ],
-      "priority": 3,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "Files: src/config/model-resolution.ts (new), test/config/model-resolution.test.ts (new), docs/recovery-runbook.md. Compose, do not rewrite: call readPhaseModel(phase, configPath, backend) (src/config/models.ts:158) for the pin lookup and readNestedBackendModel's existing precedence, then layer the decision on top. Because readPhaseModel collapses nested-vs-flat into one string, distinguishing 'nested pin' from 'flat value' needs a second targeted read of [models.<backend>].<phase> (readPhaseModel(phase, configPath, backend) vs readPhaseModel(phase, configPath) is the cheapest discriminator: equal results mean the value came from the flat table). Precedence rationale and the flat-pin policy are DECIDED in the issue: three repo fixtures ('gpt-5-codex' in loop/plan-runner/run codex tests) and any host that has never run codex depend on flat pins staying valid; do not rewrite those fixtures. cacheReader defaults to the US-002 production reader. Grep patterns.md :446 (readPhaseModel's backend param), :100 ([models]/[backend] config surface + read-at-spawn invariant), :893 (the 6 readPhaseModel call sites). ADR: only if the resolution precedence is judged hard-to-reverse + surprising + a real trade-off; next free number is 0049."
@@ -111,7 +118,7 @@
         "Tests pass (bun test). GREEN-ON-MAIN (swept 2026-07-23): exit 0, 5485 pass / 0 fail on unmodified main; standard quality gate. [oracle: bun test]",
         "The full quality spine passes, including lint and the file-size budget gate. GREEN-ON-MAIN (swept 2026-07-23): exit 0 on unmodified main; standard quality gate. [oracle: bun run check:all]"
       ],
-      "priority": 4,
+      "priority": 5,
       "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/loop.ts (the implModel resolution at ~:1095, which measurably precedes the :1113 argv build), test/supervisor/loop-model-resolution.test.ts (new), scripts/file-size-budget.json (raise src/supervisor/loop.ts from 2586 and the loop test file from 4980 if exceeded, appending to the _ref narrative like every prior raise). This is the first end-to-end tracer: config -> resolution -> argv -> spawn. Mirror the existing codex-auth abort block verbatim (loop.ts:1238-1254: blocked lastOutcome with the actionable reason, iterations++, escalateFn fire-and-forget) rather than inventing a new abort shape; patterns.md:883 documents that established wiring shape. loop.ts has NO configPath seam (patterns.md:877): drive backend/model resolution by chdir'ing into a tmpdir with a staged scripts/cam/project.toml, following the loop.test.ts withCodexBackendCwd helper; do not add a configPath seam here. Do add the cache-reader seam to RunSupervisorOptions next to codexAuthCheckFn so tests never read the host's ~/.codex."
@@ -132,7 +139,7 @@
         "Tests pass (bun test). GREEN-ON-MAIN (swept 2026-07-23): exit 0, 5485 pass / 0 fail on unmodified main; standard quality gate. [oracle: bun test]",
         "The full quality spine passes, including lint and the file-size budget gate. GREEN-ON-MAIN (swept 2026-07-23): exit 0 on unmodified main; standard quality gate. [oracle: bun run check:all]"
       ],
-      "priority": 5,
+      "priority": 6,
       "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/plan-runner.ts (planner site ~:629, auditor site ~:686; both are already preflight-then-build, so no reorder is needed), test/supervisor/plan/plan-runner-model-resolution.test.ts (new), scripts/file-size-budget.json (raise src/supervisor/plan-runner.ts from 1821 if exceeded). Reuse the existing per-site abort contract (return { ok: false, reason } plus the fire-and-forget escalateFn) exactly as the codexAuthPreflight blocks above them do. Like loop.ts, plan-runner.ts has no configPath seam (patterns.md:877): stage a project.toml in a chdir'd tmpdir, following the existing plan-runner codex-auth test precedent, and inject the cache reader through a new optional option next to codexAuthCheckFn."
@@ -153,7 +160,7 @@
         "Tests pass (bun test). GREEN-ON-MAIN (swept 2026-07-23): exit 0, 5485 pass / 0 fail on unmodified main; standard quality gate. [oracle: bun test]",
         "The full quality spine passes, including lint and the file-size budget gate. GREEN-ON-MAIN (swept 2026-07-23): exit 0 on unmodified main; standard quality gate. [oracle: bun run check:all]"
       ],
-      "priority": 6,
+      "priority": 7,
       "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/review.ts (reviewModel resolution at ~:379, which precedes the :386 shellCmd and :428 dispatchCmd builds), test/supervisor/review-model-resolution.test.ts (new), scripts/file-size-budget.json (raise src/supervisor/review.ts from 689 if exceeded). This is the one site with a configPath seam already (patterns.md:975, CAM-405): pass it through to resolvePhaseModel and keep the shared makeDispatchOpts generic default intact, or the ~40 generic tests silently couple to the repo's live config. Mirror the abort block at review.ts:444-457 (codexReason + fire-and-forget escalateFn) for the not-ok path; inject the cache reader via a new optional field next to codexAuthCheckFn."
@@ -175,10 +182,51 @@
         "Tests pass (bun test). GREEN-ON-MAIN (swept 2026-07-23): exit 0, 5485 pass / 0 fail on unmodified main; standard quality gate. [oracle: bun test]",
         "The full quality spine passes, including lint and the file-size budget gate. GREEN-ON-MAIN (swept 2026-07-23): exit 0 on unmodified main; standard quality gate. [oracle: bun run check:all]"
       ],
-      "priority": 7,
+      "priority": 8,
       "passes": true,
       "requires": null,
       "notes": "Files: src/commands/run.ts (orchModel resolution at :458, which precedes the buildOrchestratorPaneCommand call at :460 and the :495 preflight), test/commands/run-model-resolution.test.ts (new), scripts/file-size-budget.json (raise src/commands/run.ts from 926 if exceeded). The orchestrator backend stays on the global readBackend() reader by design (patterns.md:871): do not switch it to readPhaseBackend. Mirror the blocked-result contract patterns.md:887 documents for this site. OUT OF SCOPE and untouched: buildOrchestratorPaneCommand hardcodes claude at run.ts:275, a pre-existing gap the issue explicitly defers. Inject the cache reader via a new optional field next to codexAuthCheckFn on the run options."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:1",
+    "findings": [
+      {
+        "severity": "WARNING",
+        "file": "src/commands/run.ts",
+        "line": 811,
+        "text": "The new orchestrator model-resolution abort is surfaced to the operator under the hardcoded headline 'codex auth preflight failed'. setupPanes returns { blocked: true, message: 'model-resolution-failed: ...' } (run.ts:492-494), and runRun prints it via printError('codex auth preflight failed', result.blocked) (run.ts:811), so a config/model-pin failure renders as '✗ codex auth preflight failed — model-resolution-failed: no valid codex model pin for phase ...'. The bold headline is factually wrong (auth is fine) and points the operator at `codex login` instead of project.toml. The diff defends the reuse on cost grounds (scripts/cam/patterns.md US-007 bullet: 'reuses that exact same surfacing path for free, no new escalation plumbing needed'), which is not a valid rationale for a misleading operator diagnostic on a fail-closed path. Mechanical fix: carry a header/kind alongside the blocked message (or branch the printError headline on the 'model-resolution-failed:' prefix) and assert it in test/commands/run-model-resolution.test.ts."
+      },
+      {
+        "severity": "WARNING",
+        "text": "(consider-class, non-blocking) validateClaudeModel accepts only exact CLAUDE_MODEL_ALIASES membership or a /^claude-/ full name, so it fail-closes the other model-name forms the same consulted doc documents as valid for the `model` setting (https://code.claude.com/docs/en/model-config, 'Available models': Amazon Bedrock inference profile ARN, Microsoft Foundry deployment name, Google Cloud Agent Platform version name). cam's posture is subscription-only (docs/adr/0028, src/orchestrator/context-window.ts), so this is not reachable today, but the PRD used exactly this argument to add opusplan[1m] ('an omitted-but-valid alias would turn a working operator config into a blocked dispatch'). Consider an escape hatch or a documented note; a design call, not a mechanical fix."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/config/model-resolution.ts",
+        "line": 115,
+        "text": "resolveCodexModel discriminates 'nested [models.codex].<phase> pin fired' from 'flat value' by string inequality (withNested !== flatOnly). When an operator sets the SAME value in both tables (e.g. [models] implementer = \"opus\" and [models.codex] implementer = \"opus\"), nestedPinFired is false and the documented rule-1 'nested pin returned verbatim, no claude-shape check' silently does not apply: the explicit pin falls through to cache auto-resolution. Benign today (a claude alias is not dispatchable on codex anyway), but the precedence is heuristic rather than exact, and no test covers the equal-values case. A targeted read of [models.codex].<phase> would make it exact."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/supervisor/plan-runner.ts",
+        "line": 656,
+        "text": "The planner/auditor model-resolution aborts return modelResolution.message unprefixed under kind 'codex-auth-failed' (plan-runner.ts:1026/1047), while the three sibling sites (loop.ts:1124, review.ts:411, run.ts:493) all prefix with 'model-resolution-failed: '. Adding the same prefix here keeps a model-resolution abort distinguishable from a real auth failure wherever the reason surfaces (escalation mail, event log), without touching the PlanPhaseResult union the AC pinned."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "test/config/claude-models.test.ts",
+        "line": 48,
+        "text": "In the parametrized rejection loop, the bad = '' case asserts expect(result.message).toContain(bad), which is vacuously true for the empty string. The companion expect(result.ok).toBe(false) still makes the case meaningful, but the message assertion for '' proves nothing; consider asserting a stable substring of the guard message instead for that one input."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "docs/recovery-runbook.md",
+        "line": 2404,
+        "text": "Section (z) documents the codex fail-closed abort, but not the other new operator-facing abort this PR introduces: the strict claude typo-guard ('<value>' is not a recognized claude model ...; check the project.toml [models].<phase> key), which now hard-blocks every claude-backed dispatch for a non-alias, non-claude-* model value. A two-line addition to the same section would cover it."
+      }
+    ]
+  }
 }
