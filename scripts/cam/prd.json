@@ -92,7 +92,7 @@
         "The full quality spine passes, including lint and the file-size budget gate. GREEN-ON-MAIN (swept 2026-07-23): exit 0 on unmodified main; standard quality gate. [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/config/model-resolution.ts (new), test/config/model-resolution.test.ts (new), docs/recovery-runbook.md. Compose, do not rewrite: call readPhaseModel(phase, configPath, backend) (src/config/models.ts:158) for the pin lookup and readNestedBackendModel's existing precedence, then layer the decision on top. Because readPhaseModel collapses nested-vs-flat into one string, distinguishing 'nested pin' from 'flat value' needs a second targeted read of [models.<backend>].<phase> (readPhaseModel(phase, configPath, backend) vs readPhaseModel(phase, configPath) is the cheapest discriminator: equal results mean the value came from the flat table). Precedence rationale and the flat-pin policy are DECIDED in the issue: three repo fixtures ('gpt-5-codex' in loop/plan-runner/run codex tests) and any host that has never run codex depend on flat pins staying valid; do not rewrite those fixtures. cacheReader defaults to the US-002 production reader. Grep patterns.md :446 (readPhaseModel's backend param), :100 ([models]/[backend] config surface + read-at-spawn invariant), :893 (the 6 readPhaseModel call sites). ADR: only if the resolution precedence is judged hard-to-reverse + surprising + a real trade-off; next free number is 0049."
     },
