@@ -1,19 +1,20 @@
 {
-  "lastCompletedStory": { "id": "US-003", "title": "Add the backend-aware model resolution layer with fail-closed codex and claude paths" },
+  "lastCompletedStory": { "id": "US-004", "title": "Wire model resolution into the loop.ts implementer dispatch" },
   "createdFiles": [
-    "src/config/model-resolution.ts",
-    "test/config/model-resolution.test.ts"
+    "test/supervisor/loop-model-resolution.test.ts"
   ],
   "modifiedFiles": [
-    "docs/recovery-runbook.md"
+    "src/supervisor/loop.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "src/config/model-resolution.ts now exports resolvePhaseModel({ phase, backend, configPath?, cacheReader? }) -> { ok: true; model } | { ok: false; message }, composed entirely on top of pre-existing modules (readPhaseModel from models.ts, validateClaudeModel from claude-models.ts, isClaudeAliasModel from supervisor/codex-auth.ts, readCodexModelsCache from codex-models-cache.ts). src/config/models.ts is byte-for-byte untouched (pinned by a git-diff oracle). Codex precedence: nested [models.codex].<phase> pin (verbatim, no shape check) > non-claude-shaped flat [models].<phase> value (verbatim) > cacheReader() auto-resolution (default readCodexModelsCache) > fail-closed ok:false naming '~/.codex/models_cache.json' and the '[models.codex]' pin remedy. The nested-vs-flat discriminator is two readPhaseModel calls (with and without the backend arg) compared for inequality -- cheapest available, no new parse path. Claude precedence: flat/default value validated with the STRICT validateClaudeModel typo-guard, returned verbatim on ok, else ok:false naming the offending value and the 'project.toml [models].<phase>' key; the codex cache reader is never invoked on this path. Nothing in the codebase calls resolvePhaseModel yet -- it was built and tested in isolation, same 'reader-first, wiring-later' shape as US-002's readCodexModelsCache. The 6 existing readPhaseModel call sites (run.ts, loop.ts, review.ts, plan-runner.ts x2, config.ts) are UNCHANGED and still call readPhaseModel directly; a future story would need to decide whether/how to route those call sites through resolvePhaseModel (and whether the resulting ok:false abort composes with or supersedes the existing codexAuthPreflight claude-alias-model early-reject at each of those 4 dispatch sites, since the two checks currently overlap in the 'claude alias handed to codex' case).",
+  "nextStoryContext": "src/supervisor/loop.ts's implementer dispatch call site now calls resolvePhaseModel({ phase: 'implementer', backend: implBackend, cacheReader: opts.codexModelsCacheReaderFn }) instead of readPhaseModel('implementer', undefined, implBackend), replacing the raw model read with the US-003 fail-closed decision fn. A new RunSupervisorOptions.codexModelsCacheReaderFn?: CodexModelsCacheReader field (mirrors codexAuthCheckFn) is the injectable seam for resolvePhaseModel's cacheReader; when absent, resolvePhaseModel's own default parameter (readCodexModelsCache) is used, since the call site passes opts.codexModelsCacheReaderFn straight through (an explicit undefined value still triggers the destructuring default inside resolvePhaseModel, no ?? needed). A NOT-ok resolution aborts BEFORE the argv build (buildSpawnArgv), mirroring the existing codexAuthPreflight abort block verbatim: blocked lastOutcome with a 'model-resolution-failed: <message> (advisory <storyId>)' detail, iterations++, fire-and-forget escalateFn, finishTerminal('blocked'), early return -- this is a NEW, EARLIER abort point than codexAuthPreflight (which still runs unchanged, immediately before respawn-pane, unreordered relative to buildSpawnArgv per AC1). Only the implementer dispatch site was wired in this story; the other 3 supervisor dispatch call sites that still call readPhaseModel directly (reviewer in review.ts, planner+auditor in plan-runner.ts) plus the run.ts orchestrator site were explicitly out of scope (this story's AC only names loop.ts) and remain candidates for a follow-up story if the same auto-resolve-then-abort wiring is wanted there too. loop.ts crossed its file-size ceiling (2586->2633, content.split('\\n').length); raised in scripts/file-size-budget.json with a tracker-ref-carrying _ref entry, staged before the check:all re-run per the ratchet-gate rubric.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "This story composes existing internal modules (models.ts, claude-models.ts, codex-auth.ts, codex-models-cache.ts) with no new external library or documented API surface; US-001/US-002's Step 5.5 fetches (Claude Code model-config docs, openai/codex protocol source) already cover the vocabulary this module reuses."
+      "summary": "This story wires the already-built (US-003) resolvePhaseModel decision fn into one existing loop.ts call site; no new external library or documented API surface was introduced. US-001/US-002's Step 5.5 fetches (Claude Code model-config docs, openai/codex protocol source) already cover the vocabulary this wiring reuses."
     }
   ]
 }
