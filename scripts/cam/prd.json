@@ -69,7 +69,7 @@
         "The full quality spine passes, including lint and the file-size budget gate. GREEN-ON-MAIN (swept 2026-07-23): exit 0 on unmodified main; standard quality gate. [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/config/codex-models-cache.ts (new), test/config/codex-models-cache.test.ts (new). Mirror the codexAuthCheck DI-seam idiom exactly (src/supervisor/codex-auth.ts:60, patterns.md:881): an exported reader-fn type + a default production reader, injected by callers, never a monkeypatched os.homedir. Synchronous node:fs point-reads (existsSync/readFileSync) are the sanctioned shape here per the curated Bun-only invariant carve-out. Schema is undocumented and version-fragile ({ models: [ { slug, display_name, visibility, supported_in_api, priority } ] }, codex-cli 0.144.6 has no public `codex models`), so parse defensively and treat every drift as a structured not-ok, never a throw: US-003 turns not-ok into pin-fallback or a fail-closed abort. Keep the fixture data inline in the test; do not read the operator's real ~/.codex cache in any test."
     },
