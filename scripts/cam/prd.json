@@ -176,7 +176,7 @@
         "The full quality spine passes, including lint and the file-size budget gate. GREEN-ON-MAIN (swept 2026-07-23): exit 0 on unmodified main; standard quality gate. [oracle: bun run check:all]"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/run.ts (orchModel resolution at :458, which precedes the buildOrchestratorPaneCommand call at :460 and the :495 preflight), test/commands/run-model-resolution.test.ts (new), scripts/file-size-budget.json (raise src/commands/run.ts from 926 if exceeded). The orchestrator backend stays on the global readBackend() reader by design (patterns.md:871): do not switch it to readPhaseBackend. Mirror the blocked-result contract patterns.md:887 documents for this site. OUT OF SCOPE and untouched: buildOrchestratorPaneCommand hardcodes claude at run.ts:275, a pre-existing gap the issue explicitly defers. Inject the cache reader via a new optional field next to codexAuthCheckFn on the run options."
     }
