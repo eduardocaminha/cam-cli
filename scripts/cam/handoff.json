@@ -1,0 +1,25 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Establish the canonical claude model vocabulary and one claude-shape predicate" },
+  "createdFiles": [
+    "src/config/claude-models.ts",
+    "test/config/claude-models.test.ts",
+    "test/supervisor/codex-auth-claude-shape.test.ts"
+  ],
+  "modifiedFiles": [
+    "src/supervisor/codex-auth.ts",
+    "CONTEXT.md"
+  ],
+  "openQuestions": [
+    "One `bun test` full-suite invocation (background-captured, output truncated by my own `tail -30`) reported '5517 pass / 2 fail' with no failing test name visible. Reran the full suite 5 additional times (fully captured, no truncation): all 5 were deterministic '5519 pass / 0 fail' with zero '(fail)' markers, matching the also-green `bun run check:all` spine run. Could not identify which 2 tests were implicated in the single anomalous run, and it did not reproduce, so it is not actionable as a known defect; flagging for visibility per the no-flaky-evasion discipline rather than silently dropping it. If it recurs and is reproducible, capture full (untruncated) output and file a follow-up."
+  ],
+  "nextStoryContext": "GOVERNING DECISION now implemented and durable: src/config/claude-models.ts exports CLAUDE_MODEL_ALIASES (10 doc-verified values: default, best, fable, opus, sonnet, haiku, opusplan, sonnet[1m], opus[1m], opusplan[1m]) and validateClaudeModel (STRICT typo-guard, exact membership + /^claude-/ prefix only, never substring). src/supervisor/codex-auth.ts's isClaudeAliasModel is now the SUPERSET 'claude-shaped' predicate consumed by the codex path (CLAUDE_MODEL_ALIASES member OR claude-* name OR legacy /\\b(opus|sonnet|haiku)\\b/i match, including dashed non-prefixed forms like 'sonnet-4-5'). The two predicates are intentionally divergent and must stay that way: validateClaudeModel only for the claude-backend typo-guard, isClaudeAliasModel only for the codex flat-pin claude-shape decision. src/ui/ConfigScreen.tsx was NOT touched (out of scope per this story); its MODEL_OPTIONS (8 values, no 'best' or 'opusplan[1m]') is now drift-guarded as a subset of CLAUDE_MODEL_ALIASES by test/config/claude-models.test.ts, so a future story adding 'best'/'opusplan[1m]' to the picker only needs to grow MODEL_OPTIONS, never re-derive the alias list. CONTEXT.md's 'model tier alias' term now lists all ten aliases and cross-references CLAUDE_MODEL_ALIASES as canonical.",
+  "officialDocsValidated": [
+    {
+      "lib": "Claude Code CLI (model-config)",
+      "url": "https://code.claude.com/docs/en/model-config",
+      "fetchedAt": "2026-07-23T00:00:00Z",
+      "status": "aligned",
+      "summary": "Fetched current 'Model configuration' doc. 'Model aliases' table lists default/best/fable/sonnet/opus/haiku/sonnet[1m]/opus[1m]/opusplan (9). The 'opusplan model setting' section documents `opusplan[1m]` as settable ('To force 1M context for both phases when you are not on an auto-upgrade tier, set the model to opusplan[1m]'), confirming the 10th CLAUDE_MODEL_ALIASES value. Doc also confirms the recognized-string check accepts 'a model alias', 'any name that starts with claude-', matching validateClaudeModel's exact shape."
+    }
+  ]
+}
