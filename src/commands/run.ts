@@ -808,7 +808,18 @@ export function runRun(options: RunOptions = {}): number {
 			codexModelsCacheReaderFn: options.codexModelsCacheReaderFn,
 		});
 		if (result.blocked !== undefined) {
-			printError('codex auth preflight failed', result.blocked);
+			// US-R1-001 (review round 1 fix, CAM-398): `result.blocked` carries TWO
+			// distinct failure kinds behind the same string field: the
+			// codexAuthPreflight abort (codex CLI not authenticated) and the
+			// US-007 model-resolution abort (config/model-pin failure, prefixed
+			// 'model-resolution-failed:'). Branch the headline on that prefix so a
+			// model-resolution failure never renders under the misleading "codex
+			// auth preflight failed" bold headline, which would send the operator
+			// to `codex login` when auth was never the problem.
+			const headline = result.blocked.startsWith('model-resolution-failed:')
+				? 'model resolution failed'
+				: 'codex auth preflight failed';
+			printError(headline, result.blocked);
 			emitTrailingBlank();
 			return 1;
 		}

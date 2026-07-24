@@ -27,6 +27,12 @@
 //        the production reader when omitted, and a claude-backed dispatch
 //        never invokes it.
 //
+// US-R1-001 (review round 1 fix): a model-resolution abort must surface under
+// a distinct 'model resolution failed' headline, never the misleading 'codex
+// auth preflight failed' wording the codexAuthPreflight abort path reuses
+// (both aborts return the same { blocked: true; message } shape). See the
+// AC2/AC4 test below.
+//
 // readBackend/readPhaseModel are not injectable through RunOptions; they
 // always read scripts/cam/project.toml relative to process.cwd() (same
 // constraint documented in run-codex-auth.test.ts), so every codex-backend
@@ -227,6 +233,11 @@ describe('run.ts model resolution: AC2/AC4 - not-ok resolution aborts before spa
 
 			expect(stderrOutput).toContain('model-resolution-failed');
 			expect(stderrOutput).toContain('models_cache.json missing');
+			// US-R1-001 (review round 1 fix): the headline must NOT be the
+			// misleading auth-preflight wording -- this is a config/model-pin
+			// failure, not an unauthenticated codex CLI.
+			expect(stderrOutput).toContain('model resolution failed');
+			expect(stderrOutput).not.toContain('codex auth preflight failed');
 			expect(findOrchRespawn(spawn.calls)).toBeUndefined();
 			expect(findDashboardRespawn(spawn.calls)).toBeUndefined();
 		});
