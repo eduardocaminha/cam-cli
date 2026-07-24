@@ -61,11 +61,13 @@ import {
 	writeSidecarLivenessWatcherPid,
 	removeSidecarLivenessWatcherPidIfExists,
 } from '../supervisor/sidecar-pid.ts';
-import { DEFAULTS, readMetaLoop, readPhaseModel, readBackend, readWorkerIsolation } from '../config/models.ts';
+import { DEFAULTS, readMetaLoop, readBackend, readWorkerIsolation } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 import { makeFileEventLogger } from '../supervisor/events.ts';
 import { checkClaudeAuth } from './run-auth-preflight.ts';
 import { codexAuthPreflight, type CodexAuthCheck } from '../supervisor/codex-auth.ts';
+import { resolvePhaseModel } from '../config/model-resolution.ts';
+import type { CodexModelsCacheReader } from '../config/codex-models-cache.ts';
 
 // Re-export projectSessionName so existing callers (test/run.test.ts) continue
 // to import it from this module without breaking.
@@ -156,6 +158,16 @@ export interface RunOptions {
 	 * resolves to 'codex'.
 	 */
 	codexAuthCheckFn?: CodexAuthCheck;
+	/**
+	 * Injectable codex models-cache reader (DI seam, US-007, CAM-398). Mirrors
+	 * codexAuthCheckFn immediately above: forwarded into `resolvePhaseModel` at
+	 * the orchestrator dispatch site in `setupPanes`. When absent,
+	 * `resolvePhaseModel` falls back to its own default (the real
+	 * `~/.codex/models_cache.json` reader). Never invoked on the claude backend,
+	 * and never invoked on the codex backend when a valid pin (nested or
+	 * non-claude-shaped flat) is already found.
+	 */
+	codexModelsCacheReaderFn?: CodexModelsCacheReader;
 }
 
 export interface ParsedRunArgs {
@@ -342,6 +354,11 @@ interface SetupOpts {
 	genSessionId: () => string;
 	/** Injectable codex auth-check (US-003). See RunOptions.codexAuthCheckFn. */
 	codexAuthCheckFn?: CodexAuthCheck;
+	/**
+	 * Injectable codex models-cache reader (US-007). See
+	 * RunOptions.codexModelsCacheReaderFn.
+	 */
+	codexModelsCacheReaderFn?: CodexModelsCacheReader;
 }
 
 /**
@@ -451,11 +468,31 @@ function setupPanes(
 	// Resolve model/backend once so argv and the spawn-resolution event
 	// report the identical resolved values (reviewer finding: double-read).
 	// US-002 (CAM-356): resolve orchBackend first and thread it into
-	// readPhaseModel; orchestrator backend itself stays on the global
+	// model resolution; orchestrator backend itself stays on the global
 	// readBackend() reader (CAM-350: orchestrator backend is deliberately
 	// global, not per-phase).
+	// US-007 (CAM-398): resolvePhaseModel runs before argv build (below) and
+	// before codexAuthPreflight (further down, unchanged in position relative
+	// to buildOrchestratorPaneCommand), replacing the raw readPhaseModel read so
+	// a codex-backed orchestrator whose config only carries a claude-shaped
+	// flat model auto-resolves a live codex slug (via the injectable
+	// codexModelsCacheReaderFn seam) instead of leaking the claude alias into
+	// `codex exec -m`. A not-ok resolution aborts before any pane is
+	// respawned, mirroring the codexAuthPreflight abort block below it: same
+	// `{ blocked: true, message }` shape, which the caller (runRun) already
+	// surfaces via printError -- this IS the escalation seam for `cam run`'s
+	// synchronous CLI setup path (there is no async fire-and-forget escalateFn
+	// here, unlike the background loop/review/plan-runner dispatch sites).
 	const orchBackend = readBackend();
-	const orchModel = readPhaseModel('orchestrator', undefined, orchBackend);
+	const modelResolution = resolvePhaseModel({
+		phase: 'orchestrator',
+		backend: orchBackend,
+		cacheReader: opts.codexModelsCacheReaderFn,
+	});
+	if (!modelResolution.ok) {
+		return { blocked: true, message: `model-resolution-failed: ${modelResolution.message}` };
+	}
+	const orchModel = modelResolution.model;
 
 	const agentCmd = buildOrchestratorPaneCommand({
 		sessionName,
@@ -768,6 +805,7 @@ export function runRun(options: RunOptions = {}): number {
 			spawnFn,
 			genSessionId,
 			codexAuthCheckFn: options.codexAuthCheckFn,
+			codexModelsCacheReaderFn: options.codexModelsCacheReaderFn,
 		});
 		if (result.blocked !== undefined) {
 			printError('codex auth preflight failed', result.blocked);
