@@ -1,0 +1,184 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-398",
+  "description": "Backend-aware model resolution: auto-resolve codex slugs from ~/.codex/models_cache.json and fail closed on an unknown claude model, at every dispatch site.",
+  "issueNumber": 398,
+  "type": "feat",
+  "relatedDocs": [
+    "docs/recovery-runbook.md",
+    "CONTEXT.md"
+  ],
+  "officialDocsConsulted": [
+    {
+      "lib": "Claude Code CLI (model configuration)",
+      "channel": "WebFetch",
+      "url": "https://code.claude.com/docs/en/model-config",
+      "version": "current (docs site, read 2026-07-23)",
+      "fetchedAt": "2026-07-24T00:04:03Z",
+      "summary": "The Model aliases table confirms the issue AC's nine-alias set verbatim, including 'best' ('Uses Fable 5 where your organization has access to it, otherwise the latest Opus model'): default, best, fable, sonnet, opus, haiku, sonnet[1m], opus[1m], opusplan. The same page ALSO documents 'opusplan[1m]' as a settable model value ('To force 1M context for both phases when you are not on an auto-upgrade tier, set the model to opusplan[1m]'), which the issue's nine-item list omits; because the claude guard is fail-closed, an omitted-but-valid alias would turn a working operator config into a blocked dispatch, so this PRD's canonical set is the doc's superset (ten values). Full model names (claude-*) remain valid alongside aliases.",
+      "localConventionConflict": "MODEL_OPTIONS (src/ui/ConfigScreen.tsx:98-107) and CONTEXT.md's 'model tier alias' term both list only 8 aliases (no 'best', no 'opusplan[1m]'); this PRD resolves the clash by putting the doc-verified superset in a NEW non-UI module plus a MODEL_OPTIONS-containment test, and by updating the CONTEXT.md term, while leaving the out-of-scope picker untouched.",
+      "status": "ok"
+    },
+    {
+      "lib": "Bun (test runner CLI)",
+      "channel": "WebFetch",
+      "url": "https://bun.sh/docs/cli/test",
+      "version": "current (bun 1.3.13 local)",
+      "fetchedAt": "2026-07-24T00:04:03Z",
+      "summary": "A positional argument to `bun test` is a filename FILTER, not a path, unless it starts with './' or '/' ('To run a specific file in the test runner, make sure the path starts with ./ or /'), and a filter that matches zero test files exits non-zero. Every named-command oracle in this PRD therefore uses the explicit './test/...' form (a bare 'test/supervisor/plan-runner.test.ts' filter was measured to fuzzy-match a DIFFERENT file on main), and the red-on-main sweep of not-yet-existing test files relies on that documented non-zero exit.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Establish the canonical claude model vocabulary and one claude-shape predicate",
+      "description": "As a cam operator, I need a single doc-verified list of valid claude model values and a single 'is this claude-shaped' predicate, so that the typo-guard and the codex flat-pin decision can never disagree about what counts as a claude model.",
+      "acceptanceCriteria": [
+        "A new non-UI module src/config/claude-models.ts exports CLAUDE_MODEL_ALIASES containing exactly the ten doc-verified values: default, best, fable, opus, sonnet, haiku, opusplan, sonnet[1m], opus[1m], opusplan[1m] (the issue's nine plus opusplan[1m], which the consulted Claude Code model-config doc documents as settable; omitting it would fail-close a documented-valid config). RED-ON-MAIN (swept 2026-07-23: exit 1, no matching test file, so the filter matches nothing). [oracle: bun test ./test/config/claude-models.test.ts]",
+        "src/config/claude-models.ts exports validateClaudeModel(model), the STRICT typo-guard predicate: ok for every CLAUDE_MODEL_ALIASES member and for any /^claude-/ full name (e.g. claude-opus-4-8); not-ok, with a message naming the offending value, for 'sonnett', 'gpt-5.6-sol', 'sonnet-4-5' and '' (exact membership, never substring matching). RED-ON-MAIN (swept 2026-07-23: exit 2, src/config/claude-models.ts does not exist, so grep exits 2). [oracle: grep -q 'validateClaudeModel' src/config/claude-models.ts]",
+        "The claude typo-guard cases above are exercised by real unit tests: every alias and a claude-* name validate ok, and each of the four rejected values yields a not-ok whose message contains the offending value. RED-ON-MAIN (swept 2026-07-23: exit 1, no matching test file). [oracle: bun test ./test/config/claude-models.test.ts]",
+        "isClaudeAliasModel (src/supervisor/codex-auth.ts) is extended to the SUPERSET notion and documented in-module as the single 'claude-shaped' test consumed by the codex path: true for every CLAUDE_MODEL_ALIASES member, for every /^claude-/ name, and for every legacy /\\b(opus|sonnet|haiku)\\b/i match including the dashed non-prefixed 'sonnet-4-5' and 'my-opus-model'; false for 'gpt-5-codex', 'gpt-5.6-sol' and 'codex-auto-review'. No second divergent claude-shape notion is introduced. RED-ON-MAIN (swept 2026-07-23: exit 1, no matching test file). [oracle: bun test ./test/supervisor/codex-auth-claude-shape.test.ts]",
+        "A drift guard asserts every MODEL_OPTIONS value (imported from src/ui/ConfigScreen.tsx, read-only) is a member of CLAUDE_MODEL_ALIASES, so the picker can never offer an alias the fail-closed guard would reject. RED-ON-MAIN (swept 2026-07-23: exit 1, no matching test file). [oracle: bun test ./test/config/claude-models.test.ts]",
+        "codexAuthPreflight's decision order and its behavior for non-claude-shaped models are unchanged; the pre-existing suite passes unmodified. GREEN-ON-MAIN (swept 2026-07-23): exit 0. Explicitly a green-on-main regression/pinning guard on invariance, as patterns.md:899 permits, not a claim about new behavior. [oracle: bun test ./test/supervisor/codex-auth.test.ts]",
+        "src/ui/ConfigScreen.tsx is not edited at all (the issue puts the picker out of scope). GREEN-ON-MAIN (swept 2026-07-23): exit 0, trivially so on main by construction; the pin goes red the moment the file is touched on-branch. [oracle: git diff --quiet main -- src/ui/ConfigScreen.tsx]",
+        "The ConfigScreen picker behavior is unchanged, verified by its existing ink-testing-library suite rather than by judgment. GREEN-ON-MAIN (swept 2026-07-23): exit 0, 25 tests. Green-on-main invariance pin. [oracle: bun test ./test/ui/config-screen.test.tsx]",
+        "CONTEXT.md's 'model tier alias' term (line ~257) is updated to the full current alias set, listing best and fable adjacently as 'best, fable'. RED-ON-MAIN (swept 2026-07-23: exit 1, CONTEXT.md's term currently lists only the 8 pre-best aliases). [oracle: grep -q 'best, fable' CONTEXT.md]",
+        "Typecheck passes (bun run typecheck). GREEN-ON-MAIN (swept 2026-07-23): exit 0 on unmodified main; standard quality gate, not a falsifiability oracle for new behavior. [oracle: bun run typecheck]",
+        "Tests pass (bun test). GREEN-ON-MAIN (swept 2026-07-23): exit 0, 5485 pass / 0 fail on unmodified main; standard quality gate. [oracle: bun test]",
+        "The full quality spine passes, including lint and the file-size budget gate. GREEN-ON-MAIN (swept 2026-07-23): exit 0 on unmodified main; standard quality gate. [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/config/claude-models.ts (new), src/supervisor/codex-auth.ts (extend isClaudeAliasModel only; keep the MIT-free local header and the documented decision order), CONTEXT.md, test/config/claude-models.test.ts (new), test/supervisor/codex-auth-claude-shape.test.ts (new). GOVERNING DECISION for later stories (resolves the round-1 auditor ambiguity): isClaudeAliasModel is the SUPERSET and is THE decision fn for 'is this flat [models].<phase> value claude-shaped' on the codex path (matching the existing codexAuthPreflight guard); validateClaudeModel is the STRICT predicate and is used ONLY for the claude-backend typo-guard. Consequence to keep: flat 'sonnet-4-5' and 'my-opus-model' are claude-shaped and therefore NOT valid codex pins. Do NOT edit src/ui/ConfigScreen.tsx: import MODEL_OPTIONS read-only for the containment test (it is already exported, patterns.md:684). Grep patterns.md for: :684 (two hardcoded model lists drift silently unless a test cross-checks them), :706 (CLI tier aliases replaced dated ids), :881 (codex-auth.ts module shape and why the claude-alias check fires before authCheck), :899 (oracle falsifiability). The repo's live scripts/cam/project.toml uses opus/sonnet only, so the extended predicate cannot self-block this loop. Skills: none beyond the standard implementer flow."
+    },
+    {
+      "id": "US-002",
+      "title": "Add the codex models-cache reader behind an injectable DI seam",
+      "description": "As the codex dispatch path, I need a resilient reader of ~/.codex/models_cache.json that deterministically picks the top available slug, so that a dead pinned slug is no longer the only thing standing between cam and a working codex dispatch.",
+      "acceptanceCriteria": [
+        "A new module src/config/codex-models-cache.ts exports a pure selector over already-parsed cache JSON that filters entries to visibility === 'list' AND supported_in_api === true, sorts by priority ascending (stable for ties), and returns the top slug; a fixture mirroring the live cache (gpt-5.6-sol listed/supported/priority 1, gpt-5.3-codex unlisted or unsupported) resolves to 'gpt-5.6-sol'. RED-ON-MAIN (swept 2026-07-23: exit 1, no matching test file). [oracle: bun test ./test/config/codex-models-cache.test.ts]",
+        "The selector and reader never throw: a missing file, an unreadable file, non-JSON content, a missing/non-array models field, entries with a non-string slug or non-number priority, and a cache whose every entry is filtered out each return a STRUCTURED not-ok result carrying a reason. RED-ON-MAIN (swept 2026-07-23: exit 1, no matching test file). [oracle: bun test ./test/config/codex-models-cache.test.ts]",
+        "The real default reader is exercised against an actual file written into a scratch tmpdir via an explicit path argument, and returns a structured not-ok result for a path that does not exist. RED-ON-MAIN (swept 2026-07-23: exit 1, no matching test file). [oracle: bun test ./test/config/codex-models-cache.test.ts]",
+        "That tmpdir exercise is a real filesystem round-trip, not a fake: the test creates its scratch directory with mkdtempSync. RED-ON-MAIN (swept 2026-07-23: exit 2, test/config/codex-models-cache.test.ts does not exist, so grep exits 2). [oracle: grep -q 'mkdtempSync' test/config/codex-models-cache.test.ts]",
+        "Supplementary anti-monkeypatch guard (NOT the sole oracle for the two criteria above): os.homedir is never reassigned in the test file. GREEN-ON-MAIN (swept 2026-07-23): exit 0 but VACUOUSLY (the file is absent, grep exits 2, the negation passes), so this criterion is a supplementary guard on how the tmpdir test is written, and the two criteria above carry the substantive red-on-main oracles. [oracle: ! grep -q 'homedir =' test/config/codex-models-cache.test.ts]",
+        "The reader's default path is join(homedir(), '.codex', 'models_cache.json'), mirroring codexAuthCheck's point-read idiom, and the module exports an injectable reader function type so callers can inject a fake without touching the real home directory. RED-ON-MAIN (swept 2026-07-23: exit 2, src/config/codex-models-cache.ts does not exist, so grep exits 2). [oracle: grep -q 'models_cache.json' src/config/codex-models-cache.ts]",
+        "Typecheck passes (bun run typecheck). GREEN-ON-MAIN (swept 2026-07-23): exit 0 on unmodified main; standard quality gate, not a falsifiability oracle for new behavior. [oracle: bun run typecheck]",
+        "Tests pass (bun test). GREEN-ON-MAIN (swept 2026-07-23): exit 0, 5485 pass / 0 fail on unmodified main; standard quality gate. [oracle: bun test]",
+        "The full quality spine passes, including lint and the file-size budget gate. GREEN-ON-MAIN (swept 2026-07-23): exit 0 on unmodified main; standard quality gate. [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/config/codex-models-cache.ts (new), test/config/codex-models-cache.test.ts (new). Mirror the codexAuthCheck DI-seam idiom exactly (src/supervisor/codex-auth.ts:60, patterns.md:881): an exported reader-fn type + a default production reader, injected by callers, never a monkeypatched os.homedir. Synchronous node:fs point-reads (existsSync/readFileSync) are the sanctioned shape here per the curated Bun-only invariant carve-out. Schema is undocumented and version-fragile ({ models: [ { slug, display_name, visibility, supported_in_api, priority } ] }, codex-cli 0.144.6 has no public `codex models`), so parse defensively and treat every drift as a structured not-ok, never a throw: US-003 turns not-ok into pin-fallback or a fail-closed abort. Keep the fixture data inline in the test; do not read the operator's real ~/.codex cache in any test."
+    },
+    {
+      "id": "US-003",
+      "title": "Add the backend-aware model resolution layer with fail-closed codex and claude paths",
+      "description": "As a cam phase dispatch, I need one resolution function that turns (phase, backend) into either a concrete dispatchable model or an actionable abort, so that a codex dispatch never receives a claude alias and a mistyped claude model never reaches spawn.",
+      "acceptanceCriteria": [
+        "A new module src/config/model-resolution.ts exports resolvePhaseModel({ phase, backend, configPath?, cacheReader? }) returning a discriminated { ok: true, model } | { ok: false, message }, and for the codex backend applies exactly this precedence: nested [models.codex].<phase> pin (verbatim, highest) > non-claude-shaped flat [models].<phase> value > cache auto-resolution > fail-closed abort. RED-ON-MAIN (swept 2026-07-23: exit 1, no matching test file). [oracle: bun test ./test/config/model-resolution.test.ts]",
+        "The single decision fn for 'is this flat value claude-shaped' on the codex path is the US-001 SUPERSET isClaudeAliasModel imported from src/supervisor/codex-auth.ts (matching the existing codexAuthPreflight guard); validateClaudeModel is imported only for the claude-backend typo-guard, and no third notion of claude-shaped is defined in this module. RED-ON-MAIN (swept 2026-07-23: exit 2, src/config/model-resolution.ts does not exist, so grep exits 2). [oracle: grep -q 'isClaudeAliasModel' src/config/model-resolution.ts]",
+        "A dashed non-prefixed flat value is governed by that superset: with backend=codex, no nested pin, and flat [models].implementer = 'sonnet-4-5', resolution does NOT honor it as a pin: with an injected cache reader that resolves it returns the cache's top slug, and with a not-ok cache reader it returns ok:false. The same holds for flat 'sonnet' and 'opus'. RED-ON-MAIN (swept 2026-07-23: exit 1, no matching test file). [oracle: bun test ./test/config/model-resolution.test.ts]",
+        "A non-claude-shaped flat value IS a valid codex pin: with backend=codex and flat [models].implementer = 'gpt-5-codex', resolution returns 'gpt-5-codex' verbatim and the injected cache reader is never invoked (asserted with a reader that records invocation and would otherwise return a different slug). RED-ON-MAIN (swept 2026-07-23: exit 1, no matching test file). [oracle: bun test ./test/config/model-resolution.test.ts]",
+        "For the claude backend, resolution returns the configured value verbatim for 'opus', 'sonnet', 'best', 'opusplan[1m]' and 'claude-opus-4-8', and returns ok:false with a message naming the offending value and the project.toml [models] key for 'sonnett' and 'gpt-5.6-sol'; the codex cache reader is never invoked on the claude path. RED-ON-MAIN (swept 2026-07-23: exit 1, no matching test file). [oracle: bun test ./test/config/model-resolution.test.ts]",
+        "The codex fail-closed message is actionable: it contains the cache path '~/.codex/models_cache.json' and names the pin remedy ('[models.codex]'), and it is produced only when there is no valid pin AND the cache is missing/unreadable/schema-incompatible/empty-after-filter. RED-ON-MAIN (swept 2026-07-23: exit 1, no matching test file). [oracle: bun test ./test/config/model-resolution.test.ts]",
+        "readPhaseModel's own fallback chain is unchanged: src/config/models.ts is not edited by this story. GREEN-ON-MAIN (swept 2026-07-23): exit 0, trivially so on main by construction; the pin goes red the moment the file is touched on-branch. [oracle: git diff --quiet main -- src/config/models.ts]",
+        "The pre-existing test/config/models.test.ts assertions for readPhaseModel pass unmodified, including the codex-falls-to-flat case at test/config/models.test.ts:265-291 and the DEFAULTS-vs-MODEL_OPTIONS and repo-project.toml consistency tests. GREEN-ON-MAIN (swept 2026-07-23): exit 0, 93 tests. Green-on-main regression pin. [oracle: bun test ./test/config/models.test.ts]",
+        "docs/recovery-runbook.md gains an entry for the new operator-facing fail-closed abort that names the codex models cache path and the pin remedy. RED-ON-MAIN (swept 2026-07-23: exit 1, docs/recovery-runbook.md has no models_cache.json mention on main). [oracle: grep -q 'models_cache.json' docs/recovery-runbook.md]",
+        "Typecheck passes (bun run typecheck). GREEN-ON-MAIN (swept 2026-07-23): exit 0 on unmodified main; standard quality gate, not a falsifiability oracle for new behavior. [oracle: bun run typecheck]",
+        "Tests pass (bun test). GREEN-ON-MAIN (swept 2026-07-23): exit 0, 5485 pass / 0 fail on unmodified main; standard quality gate. [oracle: bun test]",
+        "The full quality spine passes, including lint and the file-size budget gate. GREEN-ON-MAIN (swept 2026-07-23): exit 0 on unmodified main; standard quality gate. [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/config/model-resolution.ts (new), test/config/model-resolution.test.ts (new), docs/recovery-runbook.md. Compose, do not rewrite: call readPhaseModel(phase, configPath, backend) (src/config/models.ts:158) for the pin lookup and readNestedBackendModel's existing precedence, then layer the decision on top. Because readPhaseModel collapses nested-vs-flat into one string, distinguishing 'nested pin' from 'flat value' needs a second targeted read of [models.<backend>].<phase> (readPhaseModel(phase, configPath, backend) vs readPhaseModel(phase, configPath) is the cheapest discriminator: equal results mean the value came from the flat table). Precedence rationale and the flat-pin policy are DECIDED in the issue: three repo fixtures ('gpt-5-codex' in loop/plan-runner/run codex tests) and any host that has never run codex depend on flat pins staying valid; do not rewrite those fixtures. cacheReader defaults to the US-002 production reader. Grep patterns.md :446 (readPhaseModel's backend param), :100 ([models]/[backend] config surface + read-at-spawn invariant), :893 (the 6 readPhaseModel call sites). ADR: only if the resolution precedence is judged hard-to-reverse + surprising + a real trade-off; next free number is 0049."
+    },
+    {
+      "id": "US-004",
+      "title": "Wire model resolution into the loop.ts implementer dispatch",
+      "description": "As the implementer dispatch, I need the resolution layer applied before argv build, so that a codex-backed implementer auto-resolves a live slug end-to-end instead of leaking a claude alias into `codex exec -m`.",
+      "acceptanceCriteria": [
+        "resolvePhaseModel is invoked at the existing readPhaseModel call site in src/supervisor/loop.ts (before that site's argv build), and no control-flow reorder of codexAuthPreflight relative to buildSpawnArgv is performed. RED-ON-MAIN (swept 2026-07-23: exit 1, src/supervisor/loop.ts has no resolvePhaseModel reference on main). [oracle: grep -q 'resolvePhaseModel' src/supervisor/loop.ts]",
+        "A codex-backed dispatch whose config carries only a claude-shaped flat model, with an injected cache reader resolving 'gpt-5.6-sol', spawns argv containing 'gpt-5.6-sol' and never the claude alias. RED-ON-MAIN (swept 2026-07-23: exit 1, no matching test file). [oracle: bun test ./test/supervisor/loop-model-resolution.test.ts]",
+        "A not-ok resolution aborts before any spawn: the site's existing abort shape carries the actionable message, the escalation seam fires, and no tmux respawn-pane invocation is recorded. RED-ON-MAIN (swept 2026-07-23: exit 1, no matching test file). [oracle: bun test ./test/supervisor/loop-model-resolution.test.ts]",
+        "The cache reader reaches this site through an injectable option seam mirroring codexAuthCheckFn (defaulting to the production reader when omitted), and a claude-backed dispatch never invokes it. RED-ON-MAIN (swept 2026-07-23: exit 1, no matching test file). [oracle: bun test ./test/supervisor/loop-model-resolution.test.ts]",
+        "The pre-existing test/supervisor/loop.test.ts suite passes unmodified. GREEN-ON-MAIN (swept 2026-07-23): exit 0. Green-on-main regression pin (includes the container ensure / preflight early-return ordering assertions). [oracle: bun test ./test/supervisor/loop.test.ts]",
+        "The pre-existing test/supervisor/worker-argv-model.test.ts suite passes unmodified. GREEN-ON-MAIN (swept 2026-07-23): exit 0. Green-on-main regression pin (pins the implementer argv model passthrough). [oracle: bun test ./test/supervisor/worker-argv-model.test.ts]",
+        "Typecheck passes (bun run typecheck). GREEN-ON-MAIN (swept 2026-07-23): exit 0 on unmodified main; standard quality gate, not a falsifiability oracle for new behavior. [oracle: bun run typecheck]",
+        "Tests pass (bun test). GREEN-ON-MAIN (swept 2026-07-23): exit 0, 5485 pass / 0 fail on unmodified main; standard quality gate. [oracle: bun test]",
+        "The full quality spine passes, including lint and the file-size budget gate. GREEN-ON-MAIN (swept 2026-07-23): exit 0 on unmodified main; standard quality gate. [oracle: bun run check:all]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/supervisor/loop.ts (the implModel resolution at ~:1095, which measurably precedes the :1113 argv build), test/supervisor/loop-model-resolution.test.ts (new), scripts/file-size-budget.json (raise src/supervisor/loop.ts from 2586 and the loop test file from 4980 if exceeded, appending to the _ref narrative like every prior raise). This is the first end-to-end tracer: config -> resolution -> argv -> spawn. Mirror the existing codex-auth abort block verbatim (loop.ts:1238-1254: blocked lastOutcome with the actionable reason, iterations++, escalateFn fire-and-forget) rather than inventing a new abort shape; patterns.md:883 documents that established wiring shape. loop.ts has NO configPath seam (patterns.md:877): drive backend/model resolution by chdir'ing into a tmpdir with a staged scripts/cam/project.toml, following the loop.test.ts withCodexBackendCwd helper; do not add a configPath seam here. Do add the cache-reader seam to RunSupervisorOptions next to codexAuthCheckFn so tests never read the host's ~/.codex."
+    },
+    {
+      "id": "US-005",
+      "title": "Wire model resolution into the plan-runner planner and auditor dispatches",
+      "description": "As the plan-phase dispatches, I need the resolution layer applied at both readPhaseModel sites, so that a codex-backed planner or auditor resolves a live slug or aborts actionably instead of dispatching a dead one.",
+      "acceptanceCriteria": [
+        "resolvePhaseModel is invoked at the existing readPhaseModel call site in src/supervisor/plan-runner.ts (before that site's argv build), and no control-flow reorder of codexAuthPreflight relative to buildSpawnArgv is performed. RED-ON-MAIN (swept 2026-07-23: exit 1, src/supervisor/plan-runner.ts has no resolvePhaseModel reference on main). [oracle: grep -q 'resolvePhaseModel' src/supervisor/plan-runner.ts]",
+        "Both plan-phase sites are wired, not just one: the planner site (~plan-runner.ts:629) and the auditor site (~:686) each resolve before their own argv build and each abort through the existing ResolveAndSpawnResult { ok: false, reason } shape. RED-ON-MAIN (swept 2026-07-23: exit 1, no matching test file). [oracle: bun test ./test/supervisor/plan/plan-runner-model-resolution.test.ts]",
+        "A codex-backed dispatch whose config carries only a claude-shaped flat model, with an injected cache reader resolving 'gpt-5.6-sol', spawns argv containing 'gpt-5.6-sol' and never the claude alias. RED-ON-MAIN (swept 2026-07-23: exit 1, no matching test file). [oracle: bun test ./test/supervisor/plan/plan-runner-model-resolution.test.ts]",
+        "A not-ok resolution aborts before any spawn: the site's existing abort shape carries the actionable message, the escalation seam fires, and no tmux respawn-pane invocation is recorded. RED-ON-MAIN (swept 2026-07-23: exit 1, no matching test file). [oracle: bun test ./test/supervisor/plan/plan-runner-model-resolution.test.ts]",
+        "The cache reader reaches this site through an injectable option seam mirroring codexAuthCheckFn (defaulting to the production reader when omitted), and a claude-backed dispatch never invokes it. RED-ON-MAIN (swept 2026-07-23: exit 1, no matching test file). [oracle: bun test ./test/supervisor/plan/plan-runner-model-resolution.test.ts]",
+        "The pre-existing test/supervisor/plan/plan-runner.test.ts suite passes unmodified. GREEN-ON-MAIN (swept 2026-07-23): exit 0. Green-on-main regression pin (pins the planner/auditor spawn sequence). [oracle: bun test ./test/supervisor/plan/plan-runner.test.ts]",
+        "The pre-existing test/supervisor/plan/plan-runner-codex-auth.test.ts suite passes unmodified. GREEN-ON-MAIN (swept 2026-07-23): exit 0. Green-on-main regression pin (pins the existing codex-auth abort contract at both sites). [oracle: bun test ./test/supervisor/plan/plan-runner-codex-auth.test.ts]",
+        "Typecheck passes (bun run typecheck). GREEN-ON-MAIN (swept 2026-07-23): exit 0 on unmodified main; standard quality gate, not a falsifiability oracle for new behavior. [oracle: bun run typecheck]",
+        "Tests pass (bun test). GREEN-ON-MAIN (swept 2026-07-23): exit 0, 5485 pass / 0 fail on unmodified main; standard quality gate. [oracle: bun test]",
+        "The full quality spine passes, including lint and the file-size budget gate. GREEN-ON-MAIN (swept 2026-07-23): exit 0 on unmodified main; standard quality gate. [oracle: bun run check:all]"
+      ],
+      "priority": 5,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/supervisor/plan-runner.ts (planner site ~:629, auditor site ~:686; both are already preflight-then-build, so no reorder is needed), test/supervisor/plan/plan-runner-model-resolution.test.ts (new), scripts/file-size-budget.json (raise src/supervisor/plan-runner.ts from 1821 if exceeded). Reuse the existing per-site abort contract (return { ok: false, reason } plus the fire-and-forget escalateFn) exactly as the codexAuthPreflight blocks above them do. Like loop.ts, plan-runner.ts has no configPath seam (patterns.md:877): stage a project.toml in a chdir'd tmpdir, following the existing plan-runner codex-auth test precedent, and inject the cache reader through a new optional option next to codexAuthCheckFn."
+    },
+    {
+      "id": "US-006",
+      "title": "Wire model resolution into the review.ts reviewer dispatch",
+      "description": "As the reviewer dispatch, I need the resolution layer applied at its readPhaseModel site, so that a codex-backed reviewer resolves a live slug or aborts actionably before the reviewer pane is respawned.",
+      "acceptanceCriteria": [
+        "resolvePhaseModel is invoked at the existing readPhaseModel call site in src/supervisor/review.ts (before that site's argv build), and no control-flow reorder of codexAuthPreflight relative to buildSpawnArgv is performed. RED-ON-MAIN (swept 2026-07-23: exit 1, src/supervisor/review.ts has no resolvePhaseModel reference on main). [oracle: grep -q 'resolvePhaseModel' src/supervisor/review.ts]",
+        "Resolution is threaded through the existing CAM-405 configPath seam on MakeReviewDispatchOptions, so a fixture project.toml drives it without chdir and without disturbing the generic-fixture default that the pre-existing tests rely on. RED-ON-MAIN (swept 2026-07-23: exit 1, no matching test file). [oracle: bun test ./test/supervisor/review-model-resolution.test.ts]",
+        "A codex-backed dispatch whose config carries only a claude-shaped flat model, with an injected cache reader resolving 'gpt-5.6-sol', spawns argv containing 'gpt-5.6-sol' and never the claude alias. RED-ON-MAIN (swept 2026-07-23: exit 1, no matching test file). [oracle: bun test ./test/supervisor/review-model-resolution.test.ts]",
+        "A not-ok resolution aborts before any spawn: the site's existing abort shape carries the actionable message, the escalation seam fires, and no tmux respawn-pane invocation is recorded. RED-ON-MAIN (swept 2026-07-23: exit 1, no matching test file). [oracle: bun test ./test/supervisor/review-model-resolution.test.ts]",
+        "The cache reader reaches this site through an injectable option seam mirroring codexAuthCheckFn (defaulting to the production reader when omitted), and a claude-backed dispatch never invokes it. RED-ON-MAIN (swept 2026-07-23: exit 1, no matching test file). [oracle: bun test ./test/supervisor/review-model-resolution.test.ts]",
+        "The pre-existing test/supervisor/review.test.ts suite passes unmodified. GREEN-ON-MAIN (swept 2026-07-23): exit 0. Green-on-main regression pin (includes the ~40 generic dispatch-factory tests and the CAM-405 configPath seam isolation cases). [oracle: bun test ./test/supervisor/review.test.ts]",
+        "The pre-existing test/supervisor/review-argv-model.test.ts suite passes unmodified. GREEN-ON-MAIN (swept 2026-07-23): exit 0. Green-on-main regression pin (pins the reviewer argv model passthrough). [oracle: bun test ./test/supervisor/review-argv-model.test.ts]",
+        "Typecheck passes (bun run typecheck). GREEN-ON-MAIN (swept 2026-07-23): exit 0 on unmodified main; standard quality gate, not a falsifiability oracle for new behavior. [oracle: bun run typecheck]",
+        "Tests pass (bun test). GREEN-ON-MAIN (swept 2026-07-23): exit 0, 5485 pass / 0 fail on unmodified main; standard quality gate. [oracle: bun test]",
+        "The full quality spine passes, including lint and the file-size budget gate. GREEN-ON-MAIN (swept 2026-07-23): exit 0 on unmodified main; standard quality gate. [oracle: bun run check:all]"
+      ],
+      "priority": 6,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/supervisor/review.ts (reviewModel resolution at ~:379, which precedes the :386 shellCmd and :428 dispatchCmd builds), test/supervisor/review-model-resolution.test.ts (new), scripts/file-size-budget.json (raise src/supervisor/review.ts from 689 if exceeded). This is the one site with a configPath seam already (patterns.md:975, CAM-405): pass it through to resolvePhaseModel and keep the shared makeDispatchOpts generic default intact, or the ~40 generic tests silently couple to the repo's live config. Mirror the abort block at review.ts:444-457 (codexReason + fire-and-forget escalateFn) for the not-ok path; inject the cache reader via a new optional field next to codexAuthCheckFn."
+    },
+    {
+      "id": "US-007",
+      "title": "Wire model resolution into the run.ts orchestrator dispatch",
+      "description": "As the orchestrator dispatch, I need the resolution layer applied at its readPhaseModel site, so that a codex-backed orchestrator config is resolved or blocked at boot with an actionable message instead of dying on a 400.",
+      "acceptanceCriteria": [
+        "resolvePhaseModel is invoked at the existing readPhaseModel call site in src/commands/run.ts (before that site's argv build), and no control-flow reorder of codexAuthPreflight relative to buildSpawnArgv is performed. RED-ON-MAIN (swept 2026-07-23: exit 1, src/commands/run.ts has no resolvePhaseModel reference on main). [oracle: grep -q 'resolvePhaseModel' src/commands/run.ts]",
+        "The not-ok path returns the existing { blocked: true, message } shape from the orchestrator setup result (run.ts:500-502) with the actionable resolution message, and the orchestrator pane is never respawned. RED-ON-MAIN (swept 2026-07-23: exit 1, no matching test file). [oracle: bun test ./test/commands/run-model-resolution.test.ts]",
+        "A codex-backed dispatch whose config carries only a claude-shaped flat model, with an injected cache reader resolving 'gpt-5.6-sol', spawns argv containing 'gpt-5.6-sol' and never the claude alias. RED-ON-MAIN (swept 2026-07-23: exit 1, no matching test file). [oracle: bun test ./test/commands/run-model-resolution.test.ts]",
+        "A not-ok resolution aborts before any spawn: the site's existing abort shape carries the actionable message, the escalation seam fires, and no tmux respawn-pane invocation is recorded. RED-ON-MAIN (swept 2026-07-23: exit 1, no matching test file). [oracle: bun test ./test/commands/run-model-resolution.test.ts]",
+        "The cache reader reaches this site through an injectable option seam mirroring codexAuthCheckFn (defaulting to the production reader when omitted), and a claude-backed dispatch never invokes it. RED-ON-MAIN (swept 2026-07-23: exit 1, no matching test file). [oracle: bun test ./test/commands/run-model-resolution.test.ts]",
+        "The pre-existing test/commands/run.test.ts suite passes unmodified. GREEN-ON-MAIN (swept 2026-07-23): exit 0. Green-on-main regression pin (pins the pane setup and boot sequence). [oracle: bun test ./test/commands/run.test.ts]",
+        "The pre-existing test/commands/run-codex-auth.test.ts suite passes unmodified. GREEN-ON-MAIN (swept 2026-07-23): exit 0. Green-on-main regression pin (pins the existing orchestrator codex-auth blocked contract). [oracle: bun test ./test/commands/run-codex-auth.test.ts]",
+        "The pre-existing test/commands/run-model-argv.test.ts suite passes unmodified. GREEN-ON-MAIN (swept 2026-07-23): exit 0. Green-on-main regression pin (pins the orchestrator argv model passthrough). [oracle: bun test ./test/commands/run-model-argv.test.ts]",
+        "Typecheck passes (bun run typecheck). GREEN-ON-MAIN (swept 2026-07-23): exit 0 on unmodified main; standard quality gate, not a falsifiability oracle for new behavior. [oracle: bun run typecheck]",
+        "Tests pass (bun test). GREEN-ON-MAIN (swept 2026-07-23): exit 0, 5485 pass / 0 fail on unmodified main; standard quality gate. [oracle: bun test]",
+        "The full quality spine passes, including lint and the file-size budget gate. GREEN-ON-MAIN (swept 2026-07-23): exit 0 on unmodified main; standard quality gate. [oracle: bun run check:all]"
+      ],
+      "priority": 7,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/run.ts (orchModel resolution at :458, which precedes the buildOrchestratorPaneCommand call at :460 and the :495 preflight), test/commands/run-model-resolution.test.ts (new), scripts/file-size-budget.json (raise src/commands/run.ts from 926 if exceeded). The orchestrator backend stays on the global readBackend() reader by design (patterns.md:871): do not switch it to readPhaseBackend. Mirror the blocked-result contract patterns.md:887 documents for this site. OUT OF SCOPE and untouched: buildOrchestratorPaneCommand hardcodes claude at run.ts:275, a pre-existing gap the issue explicitly defers. Inject the cache reader via a new optional field next to codexAuthCheckFn on the run options."
+    }
+  ]
+}
