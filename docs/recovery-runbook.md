@@ -2401,3 +2401,55 @@ Cross-reference: `docs/adr/0025-post-merge-divergence-recovers-via-git-pull-reba
 checkout/pull-rebase/tag/prune/close), `src/supervisor/post-merge-stalled-marker.ts`
 (marker read/write/remove), `templates/agents/subagent-orchestrator.md` (boot-read
 surfacing prose).
+
+## (z) CAM-398: codex dispatch fail-closed abort, "no valid model pin"
+
+**Symptom**: a codex-backed dispatch (implementer/planner/auditor/reviewer with
+`[backend] <phase> = "codex"`, or the global `backend = "codex"`) aborts before
+spawning `codex exec`, with a message shaped like:
+
+```
+no valid codex model pin for phase 'implementer' (flat/default value 'sonnet' is
+a claude tier alias, not a codex model), and the codex models cache could not be
+resolved (models cache file not found at /Users/<you>/.codex/models_cache.json);
+pin a model under [models.codex] in project.toml, or ensure
+~/.codex/models_cache.json is present and readable
+```
+
+**Root cause**: `resolvePhaseModel` (`src/config/model-resolution.ts`) resolves
+a dispatchable codex model in this order: a nested `[models.codex].<phase>` pin
+(verbatim) > a non-claude-shaped flat `[models].<phase>` value (verbatim) >
+auto-resolution from `~/.codex/models_cache.json` (the codex CLI's own
+model-availability cache, read by `readCodexModelsCache`,
+`src/config/codex-models-cache.ts`) > this fail-closed abort. The abort fires
+only when BOTH conditions hold: no valid pin was found (the configured or
+default flat value is claude-shaped, e.g. the un-configured `sonnet`/`opus`
+`DEFAULTS` fallback), AND the cache is missing, unreadable, schema-incompatible,
+or has no eligible entry after filtering (`visibility === 'list' &&
+supported_in_api === true`). A dispatch never silently falls through to a
+claude-only alias on the codex backend; it always aborts actionably instead.
+
+**Recovery** (either is sufficient):
+
+1. Pin an explicit codex model in `scripts/cam/project.toml`:
+
+   ```toml
+   [models.codex]
+   implementer = "gpt-5-codex"
+   ```
+
+   Any non-claude-shaped value works (a flat `[models].<phase>` entry is also
+   honored as a pin as long as it is not claude-shaped, but `[models.codex]`
+   is the explicit, highest-precedence form and survives even if `[models]`
+   is later reconfigured for the claude backend).
+
+2. Or make sure the codex CLI has a populated, readable
+   `~/.codex/models_cache.json` (run any `codex` command once, which the CLI
+   itself refreshes on use), then retry the dispatch with no pin at all: the
+   auto-resolution step picks the top available slug automatically.
+
+Cross-reference: `src/config/model-resolution.ts` (`resolvePhaseModel`),
+`src/config/codex-models-cache.ts` (`readCodexModelsCache`,
+`selectTopCodexModel`), `src/supervisor/codex-auth.ts` (`isClaudeAliasModel`,
+the same claude-shape superset predicate used here), `scripts/cam/patterns.md`
+(the `isClaudeAliasModel`/`validateClaudeModel` two-predicates bullet).

@@ -41,8 +41,10 @@ import { readWorkerOutcome, parseAnySentinel } from './result.ts';
 import type { WorkerOutcome } from './result.ts';
 import { selectAdapter } from './backend-adapter.ts';
 import { buildImplementerTaskPrompt } from './task-prompt.ts';
-import { readPhaseModel, readPhaseBackend } from '../config/models.ts';
+import { readPhaseBackend } from '../config/models.ts';
 import type { WorkerIsolation } from '../config/models.ts';
+import { resolvePhaseModel } from '../config/model-resolution.ts';
+import type { CodexModelsCacheReader } from '../config/codex-models-cache.ts';
 import { dockerExecWrap } from './docker-exec.ts';
 import { FirewallError } from './container-firewall.ts';
 import { ContainerConfigError } from './container-config.ts';
@@ -510,6 +512,18 @@ export interface RunSupervisorOptions {
 	 * filesystem. When implBackend !== 'codex' this seam is never invoked.
 	 */
 	codexAuthCheckFn?: CodexAuthCheck;
+	/**
+	 * Codex models-cache reader DI seam (US-004, CAM-398). Injectable override
+	 * for the cache reader `resolvePhaseModel` falls through to when the
+	 * implementer phase's codex backend has no explicit pin (mirrors
+	 * `codexAuthCheckFn` immediately above: same "optional, defaults to the
+	 * real reader, tests inject a fake" shape). When absent, `resolvePhaseModel`
+	 * falls back to its own default (the real `~/.codex/models_cache.json`
+	 * reader, `readCodexModelsCache`). Never invoked on the claude backend, and
+	 * never invoked on the codex backend when a valid pin (nested or
+	 * non-claude-shaped flat) is already found.
+	 */
+	codexModelsCacheReaderFn?: CodexModelsCacheReader;
 	/**
 	 * Cooperative pause brake predicate (US-002, CAM-360). Consulted at the very
 	 * top of the inner story-loop boundary, before reading prd.json or deciding
@@ -1092,7 +1106,40 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// readPhaseModel so a codex-backed implementer phase resolves its
 			// slug from [models.codex] instead of a backend-blind [models] read.
 			const implBackend = readPhaseBackend('implementer');
-			const implModel = readPhaseModel('implementer', undefined, implBackend);
+			// US-004 (CAM-398): route the phase+backend pair through
+			// resolvePhaseModel instead of calling readPhaseModel directly, so a
+			// codex-backed implementer whose config only carries a claude-shaped
+			// flat model auto-resolves a live codex slug (via the injectable
+			// cacheReader seam below) instead of leaking the claude alias into
+			// `codex exec -m`. This abort is a NEW, earlier fail-closed check:
+			// it runs before argv build (buildSpawnArgv below) and does not
+			// reorder codexAuthPreflight, which stays exactly where it was,
+			// immediately before the respawn-pane call.
+			const modelResolution = resolvePhaseModel({
+				phase: 'implementer',
+				backend: implBackend,
+				cacheReader: opts.codexModelsCacheReaderFn,
+			});
+			if (!modelResolution.ok) {
+				const modelReason = `model-resolution-failed: ${modelResolution.message} (advisory ${advisoryStoryId ?? 'unknown'})`;
+				lastOutcome = { kind: 'blocked', storyId: undefined, detail: modelReason };
+				iterations++;
+				if (opts.escalateFn !== undefined) {
+					const escalateFn = opts.escalateFn;
+					void (async () => {
+						try {
+							await escalateFn();
+						} catch (e) {
+							process.stderr.write(
+								`[cam] escalateFn error (swallowed): ${e instanceof Error ? e.message : String(e)}\n`,
+							);
+						}
+					})();
+				}
+				finishTerminal('blocked');
+				return { status: 'blocked', iterations, lastOutcome };
+			}
+			const implModel = modelResolution.model;
 
 			// US-001 (CAM-224): build the per-story task prompt from the exact
 			// story record decideNextAction selected, matched against the prd

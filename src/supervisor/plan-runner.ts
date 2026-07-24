@@ -41,7 +41,7 @@ import type { LoopPhase, PrdShape } from '../commands/status.ts';
 import type { PreflightResult } from './preflight-container.ts';
 import { truncatePreflightDetail, type PlanPreflightFailedWriterParams } from './plan-preflight-marker.ts';
 import { selectAdapter } from './backend-adapter.ts';
-import { readPhaseModel, readPhaseBackend } from '../config/models.ts';
+import { readPhaseBackend } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 import { decidePostAuditAction } from '../plan/plan-approval-decision.ts';
 import { dockerExecWrap } from './docker-exec.ts';
@@ -49,6 +49,8 @@ import type { PlanEscalatedMarker } from './plan-escalation.ts';
 import { lintPrd, type PrdOracleLintFinding } from './prd-oracle-lint.ts';
 import { codexAuthPreflight } from './codex-auth.ts';
 import type { CodexAuthCheck } from './codex-auth.ts';
+import { resolvePhaseModel } from '../config/model-resolution.ts';
+import type { CodexModelsCacheReader } from '../config/codex-models-cache.ts';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -568,6 +570,21 @@ export interface RunPlanPhaseOptions {
 	 * and MakeReviewDispatchOptions.
 	 */
 	codexAuthCheckFn?: CodexAuthCheck;
+
+	// -------------------------------------------------------------------------
+	// Model resolution (US-005, CAM-398)
+	// -------------------------------------------------------------------------
+
+	/**
+	 * Injectable codex models-cache reader (DI seam) forwarded to
+	 * resolvePhaseModel at both the planner and auditor spawn sites. When
+	 * absent, resolvePhaseModel falls back to its own default (the real
+	 * `~/.codex/models_cache.json` reader). Never invoked on the claude
+	 * backend, and never invoked on the codex backend when a valid pin
+	 * (nested or non-claude-shaped flat) is already found. Mirrors
+	 * codexModelsCacheReaderFn in RunSupervisorOptions (loop.ts).
+	 */
+	codexModelsCacheReaderFn?: CodexModelsCacheReader;
 }
 
 // ---------------------------------------------------------------------------
@@ -609,6 +626,14 @@ type ResolveAndSpawnResult = { ok: true; uuid: string } | { ok: false; reason: s
  * a not-ready result aborts WITHOUT spawning the planner (ok:false, reason),
  * firing escalateFn (when provided) fire-and-forget, mirroring
  * runContainerPlanPreflight's escalation contract.
+ * US-005 / CAM-398: resolvePhaseModel runs before the codex auth preflight
+ * (and before argv build), replacing the raw readPhaseModel read so a
+ * codex-backed planner whose config only carries a claude-shaped flat model
+ * auto-resolves a live codex slug instead of leaking the claude alias into
+ * `codex exec -m`. A not-ok resolution aborts through the SAME ResolveAndSpawnResult
+ * { ok: false, reason } shape and fire-and-forget escalateFn contract as the
+ * codexAuthPreflight block immediately below it; codexAuthPreflight is not
+ * reordered relative to buildSpawnArgv.
  */
 function resolveAndSpawnPlanner(
 	spawnFn: SpawnFn,
@@ -621,12 +646,23 @@ function resolveAndSpawnPlanner(
 	codexAuthCheckFn: CodexAuthCheck | undefined,
 	escalateFn: (() => Promise<void>) | undefined,
 	claudeDir?: string,
+	codexModelsCacheReaderFn?: CodexModelsCacheReader,
 ): ResolveAndSpawnResult {
 	const uuid = genUuid().toLowerCase();
-	// US-002 (CAM-356): resolve backend first and thread it into readPhaseModel
-	// so a codex-backed planner phase resolves its slug from [models.codex].
+	// US-002 (CAM-356): resolve backend first and thread it into
+	// resolvePhaseModel so a codex-backed planner phase resolves its slug
+	// from [models.codex].
 	const backend = readPhaseBackend('planner');
-	const model = readPhaseModel('planner', undefined, backend);
+	// US-005 (CAM-398): resolve via the fail-closed decision fn instead of
+	// a raw readPhaseModel read.
+	const modelResolution = resolvePhaseModel({ phase: 'planner', backend, cacheReader: codexModelsCacheReaderFn });
+	if (!modelResolution.ok) {
+		if (escalateFn !== undefined) {
+			void escalateFn(); // fire-and-forget: best-effort, never throws by contract
+		}
+		return { ok: false, reason: modelResolution.message };
+	}
+	const model = modelResolution.model;
 	emitSpawnResolution({ phase: 'planner', model, backend, writeEvent: makeEventWriter(logEvent, uuid) });
 	// US-002 (CAM-352): fail-closed codex auth preflight, immediately before
 	// respawn-pane.
@@ -666,6 +702,14 @@ function resolveAndSpawnPlanner(
  * a not-ready result aborts WITHOUT spawning the auditor (ok:false, reason),
  * firing escalateFn (when provided) fire-and-forget, mirroring
  * runContainerPlanPreflight's escalation contract.
+ * US-005 / CAM-398: resolvePhaseModel runs before the codex auth preflight
+ * (and before argv build), replacing the raw readPhaseModel read so a
+ * codex-backed auditor whose config only carries a claude-shaped flat model
+ * auto-resolves a live codex slug instead of leaking the claude alias into
+ * `codex exec -m`. A not-ok resolution aborts through the SAME ResolveAndSpawnResult
+ * { ok: false, reason } shape and fire-and-forget escalateFn contract as the
+ * codexAuthPreflight block immediately below it; codexAuthPreflight is not
+ * reordered relative to buildSpawnArgv.
  */
 function resolveAndSpawnAuditor(
 	spawnFn: SpawnFn,
@@ -678,12 +722,23 @@ function resolveAndSpawnAuditor(
 	codexAuthCheckFn: CodexAuthCheck | undefined,
 	escalateFn: (() => Promise<void>) | undefined,
 	claudeDir?: string,
+	codexModelsCacheReaderFn?: CodexModelsCacheReader,
 ): ResolveAndSpawnResult {
 	const uuid = genUuid().toLowerCase();
-	// US-002 (CAM-356): resolve backend first and thread it into readPhaseModel
-	// so a codex-backed auditor phase resolves its slug from [models.codex].
+	// US-002 (CAM-356): resolve backend first and thread it into
+	// resolvePhaseModel so a codex-backed auditor phase resolves its slug
+	// from [models.codex].
 	const backend = readPhaseBackend('auditor');
-	const model = readPhaseModel('auditor', undefined, backend);
+	// US-005 (CAM-398): resolve via the fail-closed decision fn instead of
+	// a raw readPhaseModel read.
+	const modelResolution = resolvePhaseModel({ phase: 'auditor', backend, cacheReader: codexModelsCacheReaderFn });
+	if (!modelResolution.ok) {
+		if (escalateFn !== undefined) {
+			void escalateFn(); // fire-and-forget: best-effort, never throws by contract
+		}
+		return { ok: false, reason: modelResolution.message };
+	}
+	const model = modelResolution.model;
 	emitSpawnResolution({ phase: 'auditor', model, backend, writeEvent: makeEventWriter(logEvent, uuid) });
 	// US-002 (CAM-352): fail-closed codex auth preflight, immediately before
 	// respawn-pane.
@@ -963,11 +1018,11 @@ function runPlannerSpawnStep(
 	permissionMode: string,
 	workerIsolation: WorkerIsolation,
 ): PlanPhaseResult | string {
-	const { spawnFn, genUuid, plannerPaneId, ensureWorkerPane, claudeDir, logEvent, preflightContainerFn, escalateFn, codexAuthCheckFn } = opts;
+	const { spawnFn, genUuid, plannerPaneId, ensureWorkerPane, claudeDir, logEvent, preflightContainerFn, escalateFn, codexAuthCheckFn, codexModelsCacheReaderFn } = opts;
 	const planBlock = runContainerPlanPreflight('planner', workerIsolation, preflightContainerFn, escalateFn);
 	if (planBlock !== null) return planBlock;
 	const plannerLivePaneId = resolveLivePaneId(ensureWorkerPane, plannerPaneId);
-	const plannerSpawn = resolveAndSpawnPlanner(spawnFn, plannerLivePaneId, genUuid, plannerTaskPrompt, permissionMode, logEvent, workerIsolation, codexAuthCheckFn, escalateFn, claudeDir);
+	const plannerSpawn = resolveAndSpawnPlanner(spawnFn, plannerLivePaneId, genUuid, plannerTaskPrompt, permissionMode, logEvent, workerIsolation, codexAuthCheckFn, escalateFn, claudeDir, codexModelsCacheReaderFn);
 	if (!plannerSpawn.ok) return { kind: 'codex-auth-failed', phase: 'planner', reason: plannerSpawn.reason };
 	return plannerLivePaneId;
 }
@@ -984,11 +1039,11 @@ function runAuditorSpawnStep(
 	permissionMode: string,
 	workerIsolation: WorkerIsolation,
 ): PlanPhaseResult | string {
-	const { spawnFn, genUuid, plannerPaneId, ensureWorkerPane, claudeDir, logEvent, preflightContainerFn, escalateFn, codexAuthCheckFn } = opts;
+	const { spawnFn, genUuid, plannerPaneId, ensureWorkerPane, claudeDir, logEvent, preflightContainerFn, escalateFn, codexAuthCheckFn, codexModelsCacheReaderFn } = opts;
 	const auditorBlock = runContainerPlanPreflight('auditor', workerIsolation, preflightContainerFn, escalateFn);
 	if (auditorBlock !== null) return auditorBlock;
 	const auditorLivePaneId = resolveLivePaneId(ensureWorkerPane, plannerPaneId);
-	const auditorSpawn = resolveAndSpawnAuditor(spawnFn, auditorLivePaneId, genUuid, auditorTaskPrompt, permissionMode, logEvent, workerIsolation, codexAuthCheckFn, escalateFn, claudeDir);
+	const auditorSpawn = resolveAndSpawnAuditor(spawnFn, auditorLivePaneId, genUuid, auditorTaskPrompt, permissionMode, logEvent, workerIsolation, codexAuthCheckFn, escalateFn, claudeDir, codexModelsCacheReaderFn);
 	if (!auditorSpawn.ok) return { kind: 'codex-auth-failed', phase: 'auditor', reason: auditorSpawn.reason };
 	return auditorLivePaneId;
 }

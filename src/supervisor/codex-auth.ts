@@ -24,6 +24,8 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+import { CLAUDE_MODEL_ALIASES } from '../config/claude-models.ts';
+
 // ---------------------------------------------------------------------------
 // Auth-check seam
 // ---------------------------------------------------------------------------
@@ -67,18 +69,37 @@ export function codexAuthCheck(): CodexAuthCheckResult {
 // ---------------------------------------------------------------------------
 
 /**
- * Matches a bare or dashed claude tier alias (opus/sonnet/haiku) anywhere in
- * a model string, case-insensitive, as a whole word. Catches both the bare
- * default project.toml values (`"opus"`, `"sonnet"`) and dated/prefixed
- * variants (`"claude-opus-4-8"`), which is exactly the shape that produced
- * the live 400 this preflight exists to prevent: codex's `-m` flag rejects
- * these claude-only model names outright.
+ * Legacy fallback: matches a bare or dashed claude tier word (opus/sonnet/
+ * haiku) anywhere in a model string, case-insensitive, as a whole word.
+ * Catches dashed non-prefixed forms a strict alias/prefix check would miss,
+ * e.g. `"sonnet-4-5"` or `"my-opus-model"` -- exactly the shape that
+ * produced the live 400 this preflight exists to prevent: codex's `-m` flag
+ * rejects these claude-only model names outright.
  */
 const CLAUDE_ALIAS_MODEL_RE = /\b(opus|sonnet|haiku)\b/i;
 
-/** True when `model` is an obviously-claude tier alias, never a valid codex model id. */
+/**
+ * The single "claude-shaped" test consumed by the codex path (GOVERNING
+ * DECISION, US-001 CAM-398): this is the SUPERSET notion, used ONLY to
+ * decide whether a flat `[models].<phase>` value is claude-shaped and
+ * therefore NOT a valid codex pin. It intentionally over-matches relative to
+ * {@link import('../config/claude-models.ts').validateClaudeModel}, the
+ * STRICT typo-guard predicate used only for the claude-backend typo-guard --
+ * the two predicates serve different fail-closed directions and must never
+ * be merged into one.
+ *
+ * True for:
+ * - every {@link CLAUDE_MODEL_ALIASES} member (exact, e.g. `"opusplan[1m]"`)
+ * - every `claude-`-prefixed full name (e.g. `"claude-opus-4-8"`)
+ * - every legacy `/\b(opus|sonnet|haiku)\b/i` match, including dashed
+ *   non-prefixed forms like `"sonnet-4-5"` or `"my-opus-model"`
+ */
 export function isClaudeAliasModel(model: string): boolean {
-	return CLAUDE_ALIAS_MODEL_RE.test(model);
+	return (
+		(CLAUDE_MODEL_ALIASES as readonly string[]).includes(model) ||
+		model.startsWith('claude-') ||
+		CLAUDE_ALIAS_MODEL_RE.test(model)
+	);
 }
 
 // ---------------------------------------------------------------------------

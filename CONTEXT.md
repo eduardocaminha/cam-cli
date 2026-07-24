@@ -255,7 +255,7 @@ A durable .claude/.cam-*.json file (ship-stalled, plan-escalated, plan-preflight
 An append-only, on-main-committed scripts/cam/suggestions.jsonl file where reviewer SUGGESTION findings accumulate (one JSONL line each, deduped by the suggestion-fingerprint) instead of being auto-filed as stage:idea issues. It is triaged in batch via the cam suggestions CLI (list/promote/dismiss); a suggestion becomes a real issue only when explicitly promoted.
 
 **model tier alias**:
-A stable model selector (opus, sonnet, haiku, default, fable, opusplan, sonnet[1m], opus[1m]) that the Claude Code CLI resolves at spawn to the current latest model of that tier for the logged-in subscription. cam stores an alias in project.toml [models] and forwards it as --model, so it auto-tracks new model launches without hardcoding dated model ids. Trade-off: an alias is always-latest (not reproducible); a dated snapshot id pins a specific model.
+A stable model selector (default, best, fable, opus, sonnet, haiku, opusplan, sonnet[1m], opus[1m], opusplan[1m]) that the Claude Code CLI resolves at spawn to the current latest model of that tier for the logged-in subscription. cam stores an alias in project.toml [models] and forwards it as --model, so it auto-tracks new model launches without hardcoding dated model ids. Trade-off: an alias is always-latest (not reproducible); a dated snapshot id pins a specific model. The canonical, doc-verified list of all ten values lives in src/config/claude-models.ts's CLAUDE_MODEL_ALIASES.
 
 **actor-ACL**:
 An authority check keyed on which actor (worker vs deterministic supervisor vs operator) may mutate a field. In cam it governs story passes:true: only the supervisor (post-gate) or the operator may set it, never the worker.

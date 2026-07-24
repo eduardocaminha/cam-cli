@@ -35,12 +35,14 @@ import type { WorkerEventLogger } from './events.ts';
 import type { ReviewReport, ReviewFinding } from './review-report.ts';
 import type { PreflightResult } from './preflight-container.ts';
 import { ClaudeAdapter, selectAdapter, DEFAULT_REVIEWER_AGENT, REVIEWER_TASK_PROMPT } from './backend-adapter.ts';
-import { readPhaseModel, readPhaseBackend } from '../config/models.ts';
+import { readPhaseBackend } from '../config/models.ts';
 import type { WorkerIsolation } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 import { dockerExecWrap } from './docker-exec.ts';
 import { codexAuthPreflight } from './codex-auth.ts';
 import type { CodexAuthCheck } from './codex-auth.ts';
+import { resolvePhaseModel } from '../config/model-resolution.ts';
+import type { CodexModelsCacheReader } from '../config/codex-models-cache.ts';
 
 export { DEFAULT_REVIEWER_AGENT, REVIEWER_TASK_PROMPT };
 
@@ -281,20 +283,31 @@ export interface MakeReviewDispatchOptions {
 	/**
 	 * Reviewer-backend/model resolution seam (US-001, CAM-405). Overrides the
 	 * `configPath` argument threaded into the `readPhaseBackend('reviewer', ...)`
-	 * and `readPhaseModel('reviewer', ...)` calls below, so a per-call fixture
+	 * call and the `resolvePhaseModel` call below, so a per-call fixture
 	 * `project.toml` (e.g. a tmp file with `[backend] reviewer = "codex"`) is
 	 * consulted instead of the repo's live `scripts/cam/project.toml`.
 	 *
-	 * When absent (the production default), `readPhaseBackend`/`readPhaseModel`
+	 * When absent (the production default), `readPhaseBackend`/`resolvePhaseModel`
 	 * fall back to their own default (`scripts/cam/project.toml` resolved from
 	 * `process.cwd()`), so reviewer-backend resolution in production is
 	 * unchanged. Exists purely so tests can isolate reviewer-backend/model
 	 * resolution from the repo's committed config (letting a `reviewer = "codex"`
 	 * project.toml be exercised in CI without requiring real codex auth or
 	 * mutating the live config file), without bypassing the real
-	 * `readPhaseBackend`/`readPhaseModel` resolution logic.
+	 * `readPhaseBackend`/`resolvePhaseModel` resolution logic.
 	 */
 	configPath?: string;
+	/**
+	 * Injectable codex models-cache reader (DI seam, US-006, CAM-398). Mirrors
+	 * codexAuthCheckFn immediately above: forwarded into `resolvePhaseModel` at
+	 * the reviewer dispatch site below. When absent, `resolvePhaseModel` falls
+	 * back to its own default (the real `~/.codex/models_cache.json` reader).
+	 * Never invoked on the claude backend, and never invoked on the codex
+	 * backend when a valid pin (nested or non-claude-shaped flat) is already
+	 * found. Mirrors codexModelsCacheReaderFn in RunSupervisorOptions (loop.ts)
+	 * and RunPlanPhaseOptions (plan-runner.ts).
+	 */
+	codexModelsCacheReaderFn?: CodexModelsCacheReader;
 }
 
 /** Default max review rounds (mirrors decide.ts and cam-review.md). */
@@ -355,9 +368,12 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 	// codexAuthPreflight at the reviewer dispatch site.
 	const codexAuthCheckFn = opts.codexAuthCheckFn;
 	// US-001 (CAM-405): reviewer-backend/model resolution seam. When absent,
-	// readPhaseBackend/readPhaseModel resolve their own default (the live
+	// readPhaseBackend/resolvePhaseModel resolve their own default (the live
 	// scripts/cam/project.toml), preserving production behavior byte-for-byte.
 	const configPath = opts.configPath;
+	// US-006 (CAM-398): injectable codex models-cache reader, threaded
+	// straight into resolvePhaseModel at the reviewer dispatch site.
+	const codexModelsCacheReaderFn = opts.codexModelsCacheReaderFn;
 
 	return function reviewDispatch(uuid: string): ReviewDispatchResult {
 		// CAM-57: ensure a live worker pane exists before the respawn. When
@@ -370,13 +386,44 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 		// Resolve model/backend once so argv and the spawn-resolution event
 		// report the identical resolved values (reviewer finding: double-read).
 		// US-002 (CAM-356): resolve reviewBackend first and thread it into
-		// readPhaseModel so a codex-backed reviewer phase resolves its slug from
+		// model resolution so a codex-backed reviewer phase resolves its slug from
 		// [models.codex] instead of a backend-blind [models] read.
 		// US-001 (CAM-405): configPath threads the resolution seam above through
 		// to both calls, so tests can point resolution at a fixture project.toml
 		// instead of the repo's live one.
 		const reviewBackend = readPhaseBackend('reviewer', configPath);
-		const reviewModel = readPhaseModel('reviewer', configPath, reviewBackend);
+		// US-006 (CAM-398): resolvePhaseModel runs before argv build (below) and
+		// before codexAuthPreflight (further down, unchanged in position relative
+		// to buildSpawnArgv), replacing the raw readPhaseModel read so a
+		// codex-backed reviewer whose config only carries a claude-shaped flat
+		// model auto-resolves a live codex slug (via the injectable
+		// codexModelsCacheReaderFn seam) instead of leaking the claude alias into
+		// `codex exec -m`. A not-ok resolution aborts before any spawn, mirroring
+		// the codexAuthPreflight abort block below it (actionable message,
+		// fire-and-forget escalateFn, no tmux respawn-pane invocation).
+		const modelResolution = resolvePhaseModel({
+			phase: 'reviewer',
+			backend: reviewBackend,
+			configPath,
+			cacheReader: codexModelsCacheReaderFn,
+		});
+		if (!modelResolution.ok) {
+			const modelReason = `model-resolution-failed: ${modelResolution.message}`;
+			if (opts.escalateFn !== undefined) {
+				const ef = opts.escalateFn;
+				void (async () => {
+					try {
+						await ef();
+					} catch (e) {
+						process.stderr.write(
+							`[cam] escalateFn error (swallowed): ${e instanceof Error ? e.message : String(e)}\n`,
+						);
+					}
+				})();
+			}
+			return { status: 'error', detail: modelReason };
+		}
+		const reviewModel = modelResolution.model;
 
 		// Build and respawn the interactive reviewer (CAM-41: the prompt is
 		// mandatory; a promptless claude dies instantly).
