@@ -49,7 +49,7 @@
         "The full quality spine passes, including lint and the file-size budget gate. GREEN-ON-MAIN (swept 2026-07-23): exit 0 on unmodified main; standard quality gate. [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/config/claude-models.ts (new), src/supervisor/codex-auth.ts (extend isClaudeAliasModel only; keep the MIT-free local header and the documented decision order), CONTEXT.md, test/config/claude-models.test.ts (new), test/supervisor/codex-auth-claude-shape.test.ts (new). GOVERNING DECISION for later stories (resolves the round-1 auditor ambiguity): isClaudeAliasModel is the SUPERSET and is THE decision fn for 'is this flat [models].<phase> value claude-shaped' on the codex path (matching the existing codexAuthPreflight guard); validateClaudeModel is the STRICT predicate and is used ONLY for the claude-backend typo-guard. Consequence to keep: flat 'sonnet-4-5' and 'my-opus-model' are claude-shaped and therefore NOT valid codex pins. Do NOT edit src/ui/ConfigScreen.tsx: import MODEL_OPTIONS read-only for the containment test (it is already exported, patterns.md:684). Grep patterns.md for: :684 (two hardcoded model lists drift silently unless a test cross-checks them), :706 (CLI tier aliases replaced dated ids), :881 (codex-auth.ts module shape and why the claude-alias check fires before authCheck), :899 (oracle falsifiability). The repo's live scripts/cam/project.toml uses opus/sonnet only, so the extended predicate cannot self-block this loop. Skills: none beyond the standard implementer flow."
     },
