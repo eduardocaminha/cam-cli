@@ -133,7 +133,7 @@
         "The full quality spine passes, including lint and the file-size budget gate. GREEN-ON-MAIN (swept 2026-07-23): exit 0 on unmodified main; standard quality gate. [oracle: bun run check:all]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/plan-runner.ts (planner site ~:629, auditor site ~:686; both are already preflight-then-build, so no reorder is needed), test/supervisor/plan/plan-runner-model-resolution.test.ts (new), scripts/file-size-budget.json (raise src/supervisor/plan-runner.ts from 1821 if exceeded). Reuse the existing per-site abort contract (return { ok: false, reason } plus the fire-and-forget escalateFn) exactly as the codexAuthPreflight blocks above them do. Like loop.ts, plan-runner.ts has no configPath seam (patterns.md:877): stage a project.toml in a chdir'd tmpdir, following the existing plan-runner codex-auth test precedent, and inject the cache reader through a new optional option next to codexAuthCheckFn."
     },
