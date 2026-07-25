@@ -1,10 +1,50 @@
 {
   "id": "CAM-415",
   "title": "Epic: naming e posicionamento pre-launch",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-25T00:47:42.619Z",
-  "updatedAt": "2026-07-25T00:47:42.619Z",
-  "description": "Decidir o nome do produto antes do launch publico (a secao de diferenciacao do CAM-331 depende deste posicionamento; ADR-0045 adiou o rename do repo deliberadamente, este epico finaliza a decisao). Pesquisa de candidatos no estilo do mercado (Warren, Gas Town, Orca, Relay, Tenet, Forge) em andamento, com checagem de colisao (GitHub, npm, dominios, marcas; CAM colide com computer-aided manufacturing em SEO de dev-tool). Padrao possivel: produto com nome novo e binario continua cam (como Gas Town usa gt). Alem do nome: persistir o dossie competitivo consolidado 2026-07-24 (uniao dos dois docs do operador com a pesquisa de 4 frentes e a verificacao de metering) em docs/positioning.md como fonte da secao de diferenciacao do README. Tese de posicionamento: control plane vendor-neutro que agrega subscriptions e governa com verificacao falsificavel, local-first, do issue ao pos-merge."
+  "updatedAt": "2026-07-25T13:21:15.828Z",
+  "description": "Decidir o nome do produto antes do launch publico (a secao de diferenciacao do CAM-331 depende deste posicionamento; ADR-0045 adiou o rename do repo deliberadamente, este epico finaliza a decisao). Pesquisa de candidatos no estilo do mercado (Warren, Gas Town, Orca, Relay, Tenet, Forge) em andamento, com checagem de colisao (GitHub, npm, dominios, marcas; CAM colide com computer-aided manufacturing em SEO de dev-tool). Padrao possivel: produto com nome novo e binario continua cam (como Gas Town usa gt). Alem do nome: persistir o dossie competitivo consolidado 2026-07-24 (uniao dos dois docs do operador com a pesquisa de 4 frentes e a verificacao de metering) em docs/positioning.md como fonte da secao de diferenciacao do README. Tese de posicionamento: control plane vendor-neutro que agrega subscriptions e governa com verificacao falsificavel, local-first, do issue ao pos-merge.",
+  "spec": {
+    "scope": "Persistir as decisoes de naming e posicionamento (fechadas com o operador em 2026-07-24/25 apos 4 rodadas de pesquisa com ~110 candidatos e bateria deterministica) como artefatos canonicos do repositorio. Ciclo DOCS-ONLY: nenhum rename de codigo, template, build script ou binario acontece aqui. Decisoes a registrar: (1) o produto passa a se chamar GAMBREL (a armacao de carpintaria que segura a peca enquanto e trabalhada e inspecionada; metafora da supervisao deterministica segurando o trabalho dos coding agents ate passar verificacao); (2) binario canonico `gambrel`, alias unico de digitacao `gbrl` (alias nao se fala, se digita; alternativas gam/gamb/grel mortas com evidencia nos docs-fonte), `cam` rebaixado a symlink de legado nao documentado; (3) faseamento: docs agora, nomeacao do binario no packaging do launch (item de distribution do launch-readiness), contratos internos (env vars CAM_*, state files .cam-*, socket tmux -L cam, slash commands /cam-*, sentinels) NUNCA renomeiam; isso reafirma a doutrina display-only do ADR-0045 e supera apenas a clausula de adiamento do nome. Artefatos a produzir: (A) um novo ADR em docs/adr/ com a politica completa e o racional; (B) docs/positioning.md com quatro secoes: definicao de categoria (local software delivery runtime / control plane para coding agents), tese de posicao unica (agregacao vendor-neutra de subscriptions que nenhum vendor pode ocupar + loop externo deterministico + verificacao falsificavel + ciclo issue-ate-pos-merge + contra-tese tokens-por-issue: o mercado otimiza paralelismo, uma nao-restricao sob assinatura rate-limited, evidencia SPOQ 14.3x irrestrito colapsando a 1.4x em backend de 2 slots; as unicas alavancas reais sao CEGIS cumulativo, verificacao incremental e dispatch por utilidade, ver descricao do CAM-416), resumo do landscape competitivo (cockpits: Orca/Conductor/Sculptor; frameworks de spec: BMAD; linhagem ralph; Gas Town + Beads; runtimes concorrentes diretos: Pilot/Relay/Tenet/Forge/Zeroshot; hosted: Devin/OpenHands/Cursor/Codex cloud; benchmark industrial: Spotify Honk), e a decisao de naming com processo de 4 rodadas, kill evidence e reservas ranqueadas (Garboard, Puncheon, Laudo, Chancela). Fontes de conteudo: os quatro docs em /Users/eduardo/Downloads/ listados em relatedDocs e as descricoes dos epicos CAM-408 a CAM-416 (ler via cam issue get). docs/positioning.md sera a fonte da secao de diferenciacao do README publico (CAM-331), que NAO e escopo deste ciclo.",
+    "acceptanceCriteria": [
+      "docs/adr/ contains a new accepted ADR documenting the complete Gambrel naming policy: product name Gambrel, canonical binary gambrel, single alias gbrl, cam demoted to an undocumented legacy symlink, and the staged rename plan (docs-only now, binary naming at launch packaging, internal contracts never renamed), superseding the naming-deferral clause of ADR-0045. [oracle: reviewer-judgment]",
+      "docs/positioning.md exists and carries four sections: category definition, unique-position thesis, competitive landscape summary, and the naming decision with ranked reserves. [oracle: file-assert test -f docs/positioning.md]",
+      "The unique-position thesis in docs/positioning.md includes the vendor-neutral subscription-aggregation argument and the tokens-per-issue counter-thesis with the SPOQ 14.3x-to-1.4x evidence. [oracle: reviewer-judgment]",
+      "The naming section records the 4-round process, kill evidence for at least Slipway, Ingot, Crivo and Assay, the alias policy (gambrel canonical, gbrl single alias, cam legacy), and the ranked reserves Garboard, Puncheon, Laudo, Chancela. [oracle: reviewer-judgment]",
+      "No em dash and no decorative emoji appear in the newly persisted docs, per the operator formatting rule for human-readable persisted markdown. [oracle: reviewer-judgment]",
+      "The full quality spine is green. [oracle: bun run check:all]"
+    ],
+    "gotchas": [
+      "Regra de formatacao do operador (2026-05-20): NENHUM travessao (em dash) e nenhum emoji decorativo em markdown persistido legivel por humanos; substituir por dois-pontos, virgula, parenteses ou ponto. Excecao: arquivos de instrucao de agente, que nao sao escopo deste ciclo.",
+      "NAO renomear nada em codigo, templates, build scripts ou binario neste ciclo. A nomeacao gambrel/gbrl do binario pertence ao packaging do launch (item distribution do docs/launch-readiness.md). Contratos internos (CAM_* env vars, .cam-* state files, socket -L cam, /cam-*) nunca renomeiam: contrato invisivel, renomear e risco puro.",
+      "NAO tocar README.md: e escopo do CAM-331. docs/positioning.md e a fonte que o CAM-331 vai consumir.",
+      "ADR: usar o proximo numero livre em docs/adr/ (0049 esperado); passar os tres gates (dificil de reverter, surpreendente, trade-off real); superar APENAS a clausula de adiamento de nome do ADR-0045, reafirmando explicitamente a doutrina display-only dele.",
+      "CONTEXT.md e populado pelo writer deterministico do CAM-118; nao editar a mao neste ciclo.",
+      "Os docs-fonte em /Users/eduardo/Downloads/ sao checklists operador-facing: adaptar o conteudo para voz de produto no repo, nao copiar verbatim. Os snapshots de disponibilidade de namespace neles sao datados de 2026-07-25 e EXPIRAM: no repo, registrar sempre com a data de verificacao, nunca como fato permanente.",
+      "O dossie competitivo nomeia produtos reais de terceiros: manter afirmacoes factuais e rastreaveis as evidencias dos docs-fonte, sem depreciacao.",
+      "As descricoes dos epicos CAM-408 a CAM-416 carregam a tese consolidada (ler via cam issue get CAM-4XX); o CAM-416 carrega a contra-tese tokens-por-issue com as citacoes academicas."
+    ],
+    "domainTerms": [
+      "Gambrel: nome do produto; armacao de carpintaria/acougue que segura a peca para trabalho e inspecao; metafora da supervisao deterministica.",
+      "gbrl: alias unico de digitacao do binario gambrel; nao se fala, se digita.",
+      "display-only rebrand: doutrina do ADR-0045, reafirmada: marca muda na camada de exibicao, contratos internos permanecem cam.",
+      "positioning doc: docs/positioning.md, fonte canonica da secao de diferenciacao do README publico (CAM-331)."
+    ],
+    "relatedDocs": [
+      "/Users/eduardo/Downloads/cam-naming-analise.md",
+      "/Users/eduardo/Downloads/cam-rename-passos-obrigatorios.md",
+      "/Users/eduardo/Downloads/cam-runtime-analise-competitiva.md",
+      "/Users/eduardo/Downloads/cam-runtime-web-sugestoes.md"
+    ]
+  },
+  "wsjf": {
+    "value": 4,
+    "timeCriticality": 4,
+    "riskReduction": 2,
+    "jobSize": 2
+  },
+  "type": "docs"
 }
