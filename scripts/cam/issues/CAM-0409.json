@@ -1,0 +1,10 @@
+{
+  "id": "CAM-409",
+  "title": "Epic: dual-lane execution: interativo e headless selecionaveis pelo usuario",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-25T00:47:28.236Z",
+  "updatedAt": "2026-07-25T00:47:28.236Z",
+  "description": "Decisao do operador 2026-07-24: manter a lane interativa TUI como estrategia atual E oferecer execucao 100% headless via web, com o usuario escolhendo o modo (config executor_mode por projeto e por fase, sobre o seam de runner adapters do epico do control plane). Objetivo: cobrir o maximo de casos subscription-only. Contexto de metering verificado na fonte oficial: a Anthropic anunciou e PAUSOU em 15/06/2026 a separacao de creditos Agent SDK para headless claude -p (Pro $20, Max 5x $100, Max 20x $200 em API-equivalente mensal, fallback para API ou stop quando esgota); hoje nada mudou e headless funciona na subscription normal. A arquitetura dual-lane e o hedge: se a politica for ativada, o usuario volta para interativo com um toggle. codex exec (OpenAI) nao tem split anunciado equivalente (verificar ao especificar). Requisitos: paridade de contrato entre lanes (worker-report identico, gates identicos), headless usando --output-format json para parsing robusto, e a lane interativa permanece default."
+}
