@@ -1,0 +1,10 @@
+{
+  "id": "CAM-414",
+  "title": "Epic: arquitetura de execucao em grafo (DAG/waves): pesquisa e decisao",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-25T00:47:40.304Z",
+  "updatedAt": "2026-07-25T00:47:40.304Z",
+  "description": "Questao do operador 2026-07-24: mover de serial para DAG? graph engineering e a melhor forma? existe formalismo superior ja documentado em ciencia da computacao que o mercado nao esta vendo e que encaixa com desenvolvimento autonomo? Pesquisa profunda em andamento cobrindo: limites formais de DAG para workflows ciclicos (review e re-plan sao ciclos; Petri nets e workflow nets de van der Aalst), Build Systems a la Carte (taxonomia scheduler x rebuilder), computacao incremental (Adapton, Salsa), partial-order planning e HTN da literatura de AI planning, teoria de filas e Little's law (paralelismo sob recurso unico rate-limited nao aumenta throughput), actor model e OTP supervision trees, durable execution (Temporal, sagas), autonomic computing MAPE-K, execucao especulativa (merge queues Bors sao batching especulativo), process mining sobre nossos proprios event logs, e CEGIS (o review loop formalizado). Saida: ADR com decisao fundamentada e plano de migracao ou rejeicao justificada. Amarrar com os epicos de worktree, subscription pool e control plane."
+}
