@@ -1,0 +1,10 @@
+{
+  "id": "CAM-413",
+  "title": "Epic: radar de inteligencia competitiva periodica",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-25T00:47:37.764Z",
+  "updatedAt": "2026-07-25T00:47:37.764Z",
+  "description": "Pedido do operador 2026-07-24: agentes ou automacao que periodicamente vasculhem todas as ferramentas mapeadas (abertas: codigo, releases, changelogs no GitHub; fechadas: site, docs, blog) e tragam achados para os nossos planos. Seed list do dossie: Pilot, Relay, Tenet, Forge, Zeroshot, Aperant, Kodo, Firebreak, Orca (Stably), Gas Town + Beads, Warren, gortex, BMAD/bmad-loop, ralph-orchestrator, Conductor, Sculptor, claude-flow/Ruflo, vibe-kanban, Sandcastle, lista awesome-agent-orchestrators, e blogs de engenharia (serie Spotify Honk). Design a decidir no grill: cadencia (ex. semanal), mecanismo (scheduled routine, subcomando cam radar disparado por cron, ou sessao dedicada), saida estruturada (digest versionado + entradas no suggestion pen ou issues candidatos com fingerprint para dedup), e criterio de sinal vs ruido (mudancas de release e feature, nao contagem de estrelas)."
+}
