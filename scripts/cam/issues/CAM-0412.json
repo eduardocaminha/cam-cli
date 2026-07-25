@@ -1,0 +1,10 @@
+{
+  "id": "CAM-412",
+  "title": "Epic: profundidade de verificacao: steal-list do mercado",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-25T00:47:35.315Z",
+  "updatedAt": "2026-07-25T00:47:35.315Z",
+  "description": "Incorporar o melhor de cada ferramenta mapeada no dossie competitivo 2026-07-24, ranqueado por merito: (1) test-integrity hash no estilo Firebreak, testes protegidos contra edicao pelo implementer, anti-gate-gaming que estende a doutrina no-flaky-evasion; (2) agent-readiness score do repositorio (Spotify Honk rec 7: comandos de build identificaveis, testes confiaveis, sinais deterministicos de sucesso), vira feature de onboarding que nenhum concorrente tem; (3) verifiers padronizados como componentes do runtime + sumarizacao de logs antes de devolver ao agente (Honk recs 2-3); (4) mutation testing como gate opcional; (5) backpropagation de findings de review para gaps de spec (padrao Forge), extensao natural do suggestion pen; (6) avaliacao de code-intel via MCP (gortex ou equivalente) sob os workers para economia de tokens."
+}
