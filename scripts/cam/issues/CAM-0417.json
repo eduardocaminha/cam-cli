@@ -1,0 +1,10 @@
+{
+  "id": "CAM-417",
+  "title": "Epic: build in public: Substack + pipeline de conteudo gerado pelo cam + rebrand visual para YC/Product Hunt",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-25T23:16:50.915Z",
+  "updatedAt": "2026-07-25T23:16:50.915Z",
+  "description": "Montar a operacao build-in-public do produto (Garboard) usando o Substack existente do operador (eduardocaminha). Tres frentes: (1) pipeline de conteudo: o proprio cam gera drafts dos posts (changelog narrativo por ciclo shipado, licoes do journal, teses do docs/positioning.md), com revisao do operador antes de publicar; definir cadencia e formato; (2) rebrand visual: reposicionar identidade (cores, tipografia, id visual via cam-dss, cross-repo) para leitura facil por YC/Product Hunt, com a opcao deliberada de ser diferente do padrao dev-tool para se destacar; consome as decisoes de naming/posicionamento do CAM-415 (Garboard) e alimenta o README publico (CAM-331); (3) organizar o playbook: o que mostrar (métricas do loop, PRs autonomos, verificacao falsificavel como diferencial), o que nao mostrar, e como o canal Substack se liga ao launch (Product Hunt, HN). Nota: parte do trabalho e cross-repo (cam-dss) e parte e editorial (operador no loop); o cam produz os artefatos de texto e design tokens."
+}
