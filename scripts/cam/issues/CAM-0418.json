@@ -1,0 +1,10 @@
+{
+  "id": "CAM-418",
+  "title": "Internalizar utilizacoes externas do workflow (grilling, autoretry, skills de terceiros) como capacidades autorais do produto",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-25T23:16:53.194Z",
+  "updatedAt": "2026-07-25T23:16:53.194Z",
+  "description": "Hoje o workflow depende de utilizacoes externas nao-autorais: a skill de grilling (grill-with-docs, linhagem mattpocock/skills) usada no design de epicos e specs, autoretry, e possivelmente outras skills/plugins de terceiros carregadas no harness. Inventariar todas as dependencias externas de workflow em uso real (grep nos templates, .claude/, docs de processo), e portar cada uma para dentro do produto como capacidade interna autoral: versionada no repo, embedada no binario como os demais templates, com voz e contratos proprios, sem dependencia de fonte externa que pode mudar ou sumir. Criterio de pronto: nenhum passo do fluxo canonico (spec, grill, plan, implement, review, ship) depende de skill/plugin de terceiro."
+}
