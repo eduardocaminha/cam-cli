@@ -1,0 +1,10 @@
+{
+  "id": "CAM-410",
+  "title": "Epic: subscription pool: agregacao de capacidade multi-backend (Gemini, Copilot)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-25T00:47:30.621Z",
+  "updatedAt": "2026-07-25T00:47:30.621Z",
+  "description": "O moat estrutural vendor-neutro: capacidade agentica total = soma das assinaturas do usuario, orquestrada com dispatch rate-limit-aware. Nenhum vendor vai construir isso (Anthropic nao roteia para Codex e vice-versa); so um terceiro neutro pode ocupar essa posicao. cam ja tem o seam BackendAdapter per-phase (ADR-0046/47) e resolucao de modelo por backend (CAM-398). Fatias: adapter Gemini CLI (tier gratuito generoso ou Google AI Pro/Ultra, verificar limites atuais ao especificar), adapter GitHub Copilot CLI (Pro/Pro+, premium requests), scheduling ciente das janelas de rate limit por assinatura, extensao do roteamento por fase existente aos novos backends. Compliance: sempre via CLI oficial de cada vendor autenticado localmente (lane permitida, padrao Orca), nunca extracao de tokens. E o pre-requisito real do paralelismo: multiplos workers em multiplas assinaturas, nao N workers na mesma janela de 5h."
+}
