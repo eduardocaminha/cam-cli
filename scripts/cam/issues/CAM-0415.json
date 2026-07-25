@@ -1,0 +1,10 @@
+{
+  "id": "CAM-415",
+  "title": "Epic: naming e posicionamento pre-launch",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-25T00:47:42.619Z",
+  "updatedAt": "2026-07-25T00:47:42.619Z",
+  "description": "Decidir o nome do produto antes do launch publico (a secao de diferenciacao do CAM-331 depende deste posicionamento; ADR-0045 adiou o rename do repo deliberadamente, este epico finaliza a decisao). Pesquisa de candidatos no estilo do mercado (Warren, Gas Town, Orca, Relay, Tenet, Forge) em andamento, com checagem de colisao (GitHub, npm, dominios, marcas; CAM colide com computer-aided manufacturing em SEO de dev-tool). Padrao possivel: produto com nome novo e binario continua cam (como Gas Town usa gt). Alem do nome: persistir o dossie competitivo consolidado 2026-07-24 (uniao dos dois docs do operador com a pesquisa de 4 frentes e a verificacao de metering) em docs/positioning.md como fonte da secao de diferenciacao do README. Tese de posicionamento: control plane vendor-neutro que agrega subscriptions e governa com verificacao falsificavel, local-first, do issue ao pos-merge."
+}
