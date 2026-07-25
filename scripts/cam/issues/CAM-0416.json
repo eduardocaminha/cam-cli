@@ -1,0 +1,10 @@
+{
+  "id": "CAM-416",
+  "title": "Epic: reducao de tokens-por-issue: CEGIS cumulativo, verificacao incremental, dispatch por utilidade",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-25T00:54:34.724Z",
+  "updatedAt": "2026-07-25T00:54:34.724Z",
+  "description": "A descoberta central da pesquisa de teoria 2026-07-24: sob assinatura unica rate-limited, throughput = tokens_da_janela / tokens_por_issue, independente de paralelismo (Little's Law + Theory of Constraints; SPOQ arXiv 2606.03115 mostra 14.3x irrestrito colapsando a 1.4x em backend de 2 slots). O mercado inteiro (Gas Town, claude-flow, Orca, SPOQ) otimiza paralelismo, uma nao-restricao; a unica alavanca real e reduzir tokens-por-issue. Fatias: (1) review como CEGIS cumulativo (Solar-Lezama 2006/2008): cada defeito de round vira regression check persistente alimentado nos rounds seguintes, o loop nunca redescobre o mesmo defeito e converge; ataca a causa raiz dos estouros de cap com PRD grande; (2) verificacao incremental com early cutoff (Build Systems a la Carte, Mokhov/Peyton Jones 2018; Adapton PLDI 2014; Salsa/rust-analyzer): apos fix story, re-rodar apenas o cone de invalidacao demand-driven, nunca o review inteiro do PRD; (3) dispatch por funcao de utilidade MAPE-K (Kephart e Chess 2003, Walsh et al. ICAC 2004): utilidade sobre tokens restantes na janela, risco da story e rounds esperados decide o que despachar e se despacha; (4) merge queue especulativa com bisseccao estilo Bors/Refinery na camada de CI (especula com computo de CI, nao com tokens, gratis no nosso modelo de custo). Relacoes: o substrato de durable execution vai pro grill do CAM-408; a decisao de grafo hibrido e ordem parcial no planner vai pro CAM-414; este epico e a contra-tese ao mercado e vira o diferencial mensuravel do dashboard de savings: issues shipped por dolar de assinatura."
+}
