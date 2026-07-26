@@ -525,6 +525,24 @@ export interface RunSupervisorOptions {
 	 */
 	codexModelsCacheReaderFn?: CodexModelsCacheReader;
 	/**
+	 * Implementer-backend/model resolution seam (US-001, CAM-420). Overrides the
+	 * `configPath` argument threaded into the `readPhaseBackend('implementer', ...)`
+	 * call and the `resolvePhaseModel` call below, so a per-call fixture
+	 * `project.toml` (e.g. a tmp file with `[backend] implementer = "codex"`) is
+	 * consulted instead of the repo's live `scripts/cam/project.toml`.
+	 *
+	 * When absent (the production default), `readPhaseBackend`/`resolvePhaseModel`
+	 * fall back to their own default (`scripts/cam/project.toml` resolved from
+	 * `process.cwd()`), so implementer-backend resolution in production is
+	 * unchanged. Exists purely so tests can isolate implementer-backend/model
+	 * resolution from the repo's committed config (letting an `implementer =
+	 * "codex"` project.toml be exercised in CI without requiring real codex auth
+	 * or mutating the live config file), without bypassing the real
+	 * `readPhaseBackend`/`resolvePhaseModel` resolution logic. Mirrors
+	 * `configPath` in MakeReviewDispatchOptions (review.ts).
+	 */
+	configPath?: string;
+	/**
 	 * Cooperative pause brake predicate (US-002, CAM-360). Consulted at the very
 	 * top of the inner story-loop boundary, before reading prd.json or deciding
 	 * the next action, so a pause request halts BEFORE the next story's worker
@@ -1105,7 +1123,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// US-002 (CAM-356): resolve implBackend first and thread it into
 			// readPhaseModel so a codex-backed implementer phase resolves its
 			// slug from [models.codex] instead of a backend-blind [models] read.
-			const implBackend = readPhaseBackend('implementer');
+			const implBackend = readPhaseBackend('implementer', opts.configPath);
 			// US-004 (CAM-398): route the phase+backend pair through
 			// resolvePhaseModel instead of calling readPhaseModel directly, so a
 			// codex-backed implementer whose config only carries a claude-shaped
@@ -1118,6 +1136,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			const modelResolution = resolvePhaseModel({
 				phase: 'implementer',
 				backend: implBackend,
+				configPath: opts.configPath,
 				cacheReader: opts.codexModelsCacheReaderFn,
 			});
 			if (!modelResolution.ok) {
