@@ -31,7 +31,7 @@
       "id": "US-R2-002",
       "title": "Review round 2 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [src/supervisor/host.ts:307]: makeNotifyOrchestrator's doc block still documents the deleted control flow: 'Past that short deadline, `sendKeysVerified`'s send-anyway fallback fires as usual; nothing else about the call changes.' After US-003 there is no send-anyway fallback: the timed-out path now runs the same baseline/send/verify/bare-submit-remediation loop and can end in push-recovered or a TERMINAL push-undelivered plus orch-pane-busy. The same block (lines 296-301) and the @param logEvent doc (line 324) also describe the seam as emitting only 'push-undelivered' on retry exhaustion, with no mention of push-recovered. This is the identical drift class the round-1 review flagged and US-R1-001/US-R1-002 fixed in src/supervisor/events.ts and src/tmux/dispatch.ts; host.ts is the third file in that set (the production sidecar wiring of the changed call) and was missed. Grep confirms it is the only remaining stale 'send-anyway' description in src/."
     },
     {
