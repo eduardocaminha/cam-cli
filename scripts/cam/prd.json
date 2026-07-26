@@ -33,7 +33,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/loop.ts, test/supervisor/loop-configpath-seam.test.ts (new). The enclosing options interface is already DI-shaped (codexAuthCheckFn, codexModelsCacheReaderFn siblings); this is an additive field, no control-flow reordering (issue gotcha: opts is already in lexical scope, opts.codexModelsCacheReaderFn is read ten lines below the site at loop.ts:1121). CodexAdapter.buildSpawnArgv reads .claude/agents/subagent-implementer.md relative to cwd (patterns.md:877 region, CAM-350 bullets); the seam does NOT change cwd, so running from repo root finds the real agent file and no stub staging is needed, unlike the chdir pattern. Non-goals N1/N2/N3 from the issue: do not thread readPhaseEffort, do not touch already-seamed sites (review.ts, run.ts, orch-resolve.ts, config.ts), do not change any signature in src/config/. The regression-test model is review.test.ts:2008, NOT test/commands/run-configpath-seam.test.ts (wrong model, its fixture has no [backend] section; issue gotcha)."
     },
