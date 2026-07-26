@@ -585,6 +585,27 @@ export interface RunPlanPhaseOptions {
 	 * codexModelsCacheReaderFn in RunSupervisorOptions (loop.ts).
 	 */
 	codexModelsCacheReaderFn?: CodexModelsCacheReader;
+
+	/**
+	 * Planner/auditor-backend/model resolution seam (US-002, CAM-420). Overrides
+	 * the `configPath` argument threaded into the `readPhaseBackend('planner', ...)`
+	 * / `readPhaseBackend('auditor', ...)` calls and the `resolvePhaseModel` calls
+	 * immediately below each, so a per-call fixture `project.toml` (e.g. a tmp
+	 * file with `[backend] planner = "codex"`) is consulted instead of the repo's
+	 * live `scripts/cam/project.toml`.
+	 *
+	 * When absent (the production default), `readPhaseBackend`/`resolvePhaseModel`
+	 * fall back to their own default (`scripts/cam/project.toml` resolved from
+	 * `process.cwd()`), so planner/auditor-backend resolution in production is
+	 * unchanged. Exists purely so tests can isolate planner/auditor-backend/model
+	 * resolution from the repo's committed config (letting a `planner = "codex"`
+	 * / `auditor = "codex"` project.toml be exercised in CI without requiring
+	 * real codex auth or mutating the live config file), without bypassing the
+	 * real `readPhaseBackend`/`resolvePhaseModel` resolution logic. Mirrors
+	 * `configPath` in RunSupervisorOptions (loop.ts) and MakeReviewDispatchOptions
+	 * (review.ts).
+	 */
+	configPath?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -614,6 +635,30 @@ function makeEventWriter(
 type ResolveAndSpawnResult = { ok: true; uuid: string } | { ok: false; reason: string };
 
 /**
+ * Shared options for resolveAndSpawnPlanner / resolveAndSpawnAuditor (US-002,
+ * CAM-420). Converted from 11 positional parameters to a single options
+ * object so adding `configPath` did not grow either function to a 12th
+ * positional parameter; `paneId` is the live worker pane id resolved by the
+ * caller (resolveLivePaneId), and the phase ('planner' | 'auditor') stays
+ * hardcoded inside each function, unchanged from the prior positional form.
+ */
+interface ResolveAndSpawnOptions {
+	spawnFn: SpawnFn;
+	paneId: string;
+	genUuid: () => string;
+	taskPrompt: string;
+	permissionMode: string;
+	logEvent: WorkerEventLogger | undefined;
+	workerIsolation: WorkerIsolation;
+	codexAuthCheckFn: CodexAuthCheck | undefined;
+	escalateFn: (() => Promise<void>) | undefined;
+	claudeDir?: string;
+	codexModelsCacheReaderFn?: CodexModelsCacheReader;
+	/** Planner/auditor-backend/model resolution seam (US-002, CAM-420). See RunPlanPhaseOptions.configPath. */
+	configPath?: string;
+}
+
+/**
  * Resolve model/backend, emit spawn-resolution, run the codex auth preflight,
  * build the argv shell string, set @cam_label on the pane, spawn the planner
  * worker via respawn-pane -k, and pipe pane output to a per-worker out-log
@@ -634,28 +679,23 @@ type ResolveAndSpawnResult = { ok: true; uuid: string } | { ok: false; reason: s
  * { ok: false, reason } shape and fire-and-forget escalateFn contract as the
  * codexAuthPreflight block immediately below it; codexAuthPreflight is not
  * reordered relative to buildSpawnArgv.
+ * US-002 / CAM-420: configPath threads into both readPhaseBackend and
+ * resolvePhaseModel below, so tests can resolve planner backend/model from a
+ * fixture project.toml instead of the repo's live config.
  */
-function resolveAndSpawnPlanner(
-	spawnFn: SpawnFn,
-	plannerPaneId: string,
-	genUuid: () => string,
-	taskPrompt: string,
-	permissionMode: string,
-	logEvent: WorkerEventLogger | undefined,
-	workerIsolation: WorkerIsolation,
-	codexAuthCheckFn: CodexAuthCheck | undefined,
-	escalateFn: (() => Promise<void>) | undefined,
-	claudeDir?: string,
-	codexModelsCacheReaderFn?: CodexModelsCacheReader,
-): ResolveAndSpawnResult {
+function resolveAndSpawnPlanner(opts: ResolveAndSpawnOptions): ResolveAndSpawnResult {
+	const {
+		spawnFn, paneId, genUuid, taskPrompt, permissionMode, logEvent, workerIsolation,
+		codexAuthCheckFn, escalateFn, claudeDir, codexModelsCacheReaderFn, configPath,
+	} = opts;
 	const uuid = genUuid().toLowerCase();
 	// US-002 (CAM-356): resolve backend first and thread it into
 	// resolvePhaseModel so a codex-backed planner phase resolves its slug
 	// from [models.codex].
-	const backend = readPhaseBackend('planner');
+	const backend = readPhaseBackend('planner', configPath);
 	// US-005 (CAM-398): resolve via the fail-closed decision fn instead of
 	// a raw readPhaseModel read.
-	const modelResolution = resolvePhaseModel({ phase: 'planner', backend, cacheReader: codexModelsCacheReaderFn });
+	const modelResolution = resolvePhaseModel({ phase: 'planner', backend, configPath, cacheReader: codexModelsCacheReaderFn });
 	if (!modelResolution.ok) {
 		if (escalateFn !== undefined) {
 			void escalateFn(); // fire-and-forget: best-effort, never throws by contract
@@ -679,12 +719,12 @@ function resolveAndSpawnPlanner(
 	const shell = selectAdapter(backend).buildSpawnArgv('planner', { uuid, taskPrompt, permissionMode, model, isolation: workerIsolation });
 	// US-006 / CAM-152: wrap via dockerExecWrap in container mode.
 	const dispatchCmd = workerIsolation === 'container' ? dockerExecWrap(shell) : shell;
-	spawnFn('tmux', ['-L', 'cam', 'set-option', '-p', '-t', plannerPaneId, '@cam_label', 'planner']);
-	spawnFn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', plannerPaneId, dispatchCmd]);
+	spawnFn('tmux', ['-L', 'cam', 'set-option', '-p', '-t', paneId, '@cam_label', 'planner']);
+	spawnFn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', paneId, dispatchCmd]);
 	// AC4: pipe pane output to a per-worker out-log so silent no-ops are diagnosable.
 	if (claudeDir !== undefined) {
 		const outLog = join(claudeDir, `cam-plan-out-planner-${uuid}.log`);
-		spawnFn('tmux', ['-L', 'cam', 'pipe-pane', '-t', plannerPaneId, `cat >> ${outLog}`]);
+		spawnFn('tmux', ['-L', 'cam', 'pipe-pane', '-t', paneId, `cat >> ${outLog}`]);
 	}
 	return { ok: true, uuid };
 }
@@ -710,28 +750,23 @@ function resolveAndSpawnPlanner(
  * { ok: false, reason } shape and fire-and-forget escalateFn contract as the
  * codexAuthPreflight block immediately below it; codexAuthPreflight is not
  * reordered relative to buildSpawnArgv.
+ * US-002 / CAM-420: configPath threads into both readPhaseBackend and
+ * resolvePhaseModel below, so tests can resolve auditor backend/model from a
+ * fixture project.toml instead of the repo's live config.
  */
-function resolveAndSpawnAuditor(
-	spawnFn: SpawnFn,
-	plannerPaneId: string,
-	genUuid: () => string,
-	taskPrompt: string,
-	permissionMode: string,
-	logEvent: WorkerEventLogger | undefined,
-	workerIsolation: WorkerIsolation,
-	codexAuthCheckFn: CodexAuthCheck | undefined,
-	escalateFn: (() => Promise<void>) | undefined,
-	claudeDir?: string,
-	codexModelsCacheReaderFn?: CodexModelsCacheReader,
-): ResolveAndSpawnResult {
+function resolveAndSpawnAuditor(opts: ResolveAndSpawnOptions): ResolveAndSpawnResult {
+	const {
+		spawnFn, paneId, genUuid, taskPrompt, permissionMode, logEvent, workerIsolation,
+		codexAuthCheckFn, escalateFn, claudeDir, codexModelsCacheReaderFn, configPath,
+	} = opts;
 	const uuid = genUuid().toLowerCase();
 	// US-002 (CAM-356): resolve backend first and thread it into
 	// resolvePhaseModel so a codex-backed auditor phase resolves its slug
 	// from [models.codex].
-	const backend = readPhaseBackend('auditor');
+	const backend = readPhaseBackend('auditor', configPath);
 	// US-005 (CAM-398): resolve via the fail-closed decision fn instead of
 	// a raw readPhaseModel read.
-	const modelResolution = resolvePhaseModel({ phase: 'auditor', backend, cacheReader: codexModelsCacheReaderFn });
+	const modelResolution = resolvePhaseModel({ phase: 'auditor', backend, configPath, cacheReader: codexModelsCacheReaderFn });
 	if (!modelResolution.ok) {
 		if (escalateFn !== undefined) {
 			void escalateFn(); // fire-and-forget: best-effort, never throws by contract
@@ -755,12 +790,12 @@ function resolveAndSpawnAuditor(
 	const shell = selectAdapter(backend).buildSpawnArgv('auditor', { uuid, taskPrompt, permissionMode, model, isolation: workerIsolation });
 	// US-006 / CAM-152: wrap via dockerExecWrap in container mode.
 	const dispatchCmd = workerIsolation === 'container' ? dockerExecWrap(shell) : shell;
-	spawnFn('tmux', ['-L', 'cam', 'set-option', '-p', '-t', plannerPaneId, '@cam_label', 'auditor']);
-	spawnFn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', plannerPaneId, dispatchCmd]);
+	spawnFn('tmux', ['-L', 'cam', 'set-option', '-p', '-t', paneId, '@cam_label', 'auditor']);
+	spawnFn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', paneId, dispatchCmd]);
 	// AC4: pipe pane output to a per-worker out-log so silent no-ops are diagnosable.
 	if (claudeDir !== undefined) {
 		const outLog = join(claudeDir, `cam-plan-out-auditor-${uuid}.log`);
-		spawnFn('tmux', ['-L', 'cam', 'pipe-pane', '-t', plannerPaneId, `cat >> ${outLog}`]);
+		spawnFn('tmux', ['-L', 'cam', 'pipe-pane', '-t', paneId, `cat >> ${outLog}`]);
 	}
 	return { ok: true, uuid };
 }
@@ -1018,11 +1053,14 @@ function runPlannerSpawnStep(
 	permissionMode: string,
 	workerIsolation: WorkerIsolation,
 ): PlanPhaseResult | string {
-	const { spawnFn, genUuid, plannerPaneId, ensureWorkerPane, claudeDir, logEvent, preflightContainerFn, escalateFn, codexAuthCheckFn, codexModelsCacheReaderFn } = opts;
+	const { spawnFn, genUuid, plannerPaneId, ensureWorkerPane, claudeDir, logEvent, preflightContainerFn, escalateFn, codexAuthCheckFn, codexModelsCacheReaderFn, configPath } = opts;
 	const planBlock = runContainerPlanPreflight('planner', workerIsolation, preflightContainerFn, escalateFn);
 	if (planBlock !== null) return planBlock;
 	const plannerLivePaneId = resolveLivePaneId(ensureWorkerPane, plannerPaneId);
-	const plannerSpawn = resolveAndSpawnPlanner(spawnFn, plannerLivePaneId, genUuid, plannerTaskPrompt, permissionMode, logEvent, workerIsolation, codexAuthCheckFn, escalateFn, claudeDir, codexModelsCacheReaderFn);
+	const plannerSpawn = resolveAndSpawnPlanner({
+		spawnFn, paneId: plannerLivePaneId, genUuid, taskPrompt: plannerTaskPrompt, permissionMode,
+		logEvent, workerIsolation, codexAuthCheckFn, escalateFn, claudeDir, codexModelsCacheReaderFn, configPath,
+	});
 	if (!plannerSpawn.ok) return { kind: 'codex-auth-failed', phase: 'planner', reason: plannerSpawn.reason };
 	return plannerLivePaneId;
 }
@@ -1039,11 +1077,14 @@ function runAuditorSpawnStep(
 	permissionMode: string,
 	workerIsolation: WorkerIsolation,
 ): PlanPhaseResult | string {
-	const { spawnFn, genUuid, plannerPaneId, ensureWorkerPane, claudeDir, logEvent, preflightContainerFn, escalateFn, codexAuthCheckFn, codexModelsCacheReaderFn } = opts;
+	const { spawnFn, genUuid, plannerPaneId, ensureWorkerPane, claudeDir, logEvent, preflightContainerFn, escalateFn, codexAuthCheckFn, codexModelsCacheReaderFn, configPath } = opts;
 	const auditorBlock = runContainerPlanPreflight('auditor', workerIsolation, preflightContainerFn, escalateFn);
 	if (auditorBlock !== null) return auditorBlock;
 	const auditorLivePaneId = resolveLivePaneId(ensureWorkerPane, plannerPaneId);
-	const auditorSpawn = resolveAndSpawnAuditor(spawnFn, auditorLivePaneId, genUuid, auditorTaskPrompt, permissionMode, logEvent, workerIsolation, codexAuthCheckFn, escalateFn, claudeDir, codexModelsCacheReaderFn);
+	const auditorSpawn = resolveAndSpawnAuditor({
+		spawnFn, paneId: auditorLivePaneId, genUuid, taskPrompt: auditorTaskPrompt, permissionMode,
+		logEvent, workerIsolation, codexAuthCheckFn, escalateFn, claudeDir, codexModelsCacheReaderFn, configPath,
+	});
 	if (!auditorSpawn.ok) return { kind: 'codex-auth-failed', phase: 'auditor', reason: auditorSpawn.reason };
 	return auditorLivePaneId;
 }
