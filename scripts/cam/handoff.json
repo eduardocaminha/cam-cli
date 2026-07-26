@@ -1,22 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-R2-001",
-    "title": "Review round 2 fix 001: address reviewer finding"
+    "id": "US-R2-002",
+    "title": "Review round 2 fix 002: address reviewer finding"
   },
   "branchName": "cam/issue-406",
-  "timestamp": "2026-07-26T03:55:24Z",
+  "timestamp": "2026-07-26T04:07:29Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "scripts/cam/prd.json"
+    "src/supervisor/host.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 AC6 now asserts src/tmux/dispatch.ts's budget ceiling equals the live content.split('\\n').length gate metric instead of requiring the branch ceiling to exceed main. The criterion records the final branch state as 690/690, strictly tighter than main's 693 ceiling, and test/dispatch.test.ts as 954/954. US-R2-002 remains scoped to correcting the stale makeNotifyOrchestrator documentation in src/supervisor/host.ts.",
+  "nextStoryContext": "The makeNotifyOrchestrator documentation in src/supervisor/host.ts now matches the unified baseline/send/verify/bare-submit-remediation flow and documents push-recovered, terminal push-undelivered, and the idle-timeout orch-pane-busy co-event. The adjacent capturePaneFn documentation now correctly states that this dependency feeds only the pre-send idle gate. No runtime behavior changed.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "PRD acceptance-criterion and oracle metadata only; no external library API was exercised."
+      "summary": "Documentation-only correction to describe existing internal control flow; no external library API was exercised."
     }
   ]
 }
