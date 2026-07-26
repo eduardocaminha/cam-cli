@@ -131,8 +131,12 @@ describe('run.ts effort resolution: AC2 - config wins over EFFORT_DEFAULTS', () 
 			expect(code).toBe(0);
 			const orchRespawn = findOrchRespawn(spawn.calls);
 			const dispatchedCmd = orchRespawn?.args[orchRespawn.args.length - 1] ?? '';
-			expect(dispatchedCmd).toContain(`--effort 'max'`);
-			expect(dispatchedCmd).not.toContain(`--effort 'xhigh'`);
+			// US-003 (CAM-425): effort is a seeded bash variable re-resolved per
+			// respawn, so the resolved value appears in the seed assignment while
+			// the claude invocation reads it live ("$effort").
+			expect(dispatchedCmd).toContain(`effort='max'`);
+			expect(dispatchedCmd).toContain(`--effort "$effort"`);
+			expect(dispatchedCmd).not.toContain(`effort='xhigh'`);
 		} finally {
 			rmSync(cwd, { recursive: true, force: true });
 			rmSync(stageDir, { recursive: true, force: true });

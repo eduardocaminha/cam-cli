@@ -128,8 +128,13 @@ describe('run.ts configPath seam (US-002, CAM-425)', () => {
 			const orchRespawn = findOrchRespawn(spawn.calls);
 			expect(orchRespawn).toBeDefined();
 			const dispatchedCmd = orchRespawn?.args[orchRespawn.args.length - 1] ?? '';
-			expect(dispatchedCmd).toContain(`--model 'haiku'`);
-			expect(dispatchedCmd).toContain(`--effort 'medium'`);
+			// US-003 (CAM-425): model/effort are seeded bash variables re-resolved
+			// per respawn, so the resolved value appears in the seed assignment
+			// while the claude invocation reads it live ("$model"/"$effort").
+			expect(dispatchedCmd).toContain(`model='haiku'`);
+			expect(dispatchedCmd).toContain(`effort='medium'`);
+			expect(dispatchedCmd).toContain(`--model "$model"`);
+			expect(dispatchedCmd).toContain(`--effort "$effort"`);
 		} finally {
 			rmSync(cwd, { recursive: true, force: true });
 			rmSync(stageDir, { recursive: true, force: true });
