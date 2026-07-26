@@ -64,6 +64,14 @@ function makeSwapSocketSpawn(sendKeysCalls: string[][]): SpawnFn {
 	};
 }
 
+function expectPayloadSentOnce(sendKeysCalls: string[][], paneId: string, payload: string): void {
+	expect(sendKeysCalls.filter((call) => call.includes(payload))).toHaveLength(1);
+	expect(sendKeysCalls).toHaveLength(3);
+	expect(sendKeysCalls.slice(1).every(
+		(call) => call.slice(2).join(' ') === `send-keys -t ${paneId} Enter`,
+	)).toBe(true);
+}
+
 /** Boot a fresh session with the raw-echo fixture as the pane's command. */
 async function bootPane(mode: 'submit' | 'drop', wrapMode: 'char' | 'word' = 'char'): Promise<void> {
 	tmuxRaw(['kill-server']);
@@ -105,7 +113,7 @@ afterEach(() => {
 });
 
 test.skipIf(!tmuxAvailable)(
-	'UNDELIVERED wrapping payload: exactly one physical send-keys call (send-once guard, US-001, CAM-375), exactly one push-undelivered event with retriesExhausted maxAttempts (AC6)',
+	'UNDELIVERED wrapping payload: payload text is physically sent once (send-once guard, US-001, CAM-375), exactly one push-undelivered event with retriesExhausted maxAttempts (AC6)',
 	async () => {
 		await bootPane('drop');
 		const id = paneId();
@@ -129,9 +137,9 @@ test.skipIf(!tmuxAvailable)(
 			logEvent: (kind, detail) => events.push({ kind, detail }),
 		});
 
-		// Send-once guard (US-001, CAM-375): exactly one physical send despite
-		// maxAttempts (3) VERIFY attempts against the real (never-delivered) pane.
-		expect(sendKeysCalls).toHaveLength(1);
+		// Send-once guard: one payload call, followed only by bare Enter
+		// remediations between the three real verify attempts.
+		expectPayloadSentOnce(sendKeysCalls, id, payload);
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
 		expect(events[0]?.detail).toEqual({ paneId: id, retriesExhausted: 3, reason: 'retries-exhausted' });
@@ -168,7 +176,7 @@ test.skipIf(!tmuxAvailable)(
 );
 
 test.skipIf(!tmuxAvailable)(
-	'wrap-boundary-exact payload (length === paneWidth): UNDELIVERED direction verifies maxAttempts times but sends exactly once (send-once guard, US-001, CAM-375), with one push-undelivered event (AC8)',
+	'wrap-boundary-exact payload (length === paneWidth): UNDELIVERED direction verifies maxAttempts times but sends payload once (send-once guard, US-001, CAM-375), with one push-undelivered event (AC8)',
 	async () => {
 		await bootPane('drop');
 		const id = paneId();
@@ -197,9 +205,7 @@ test.skipIf(!tmuxAvailable)(
 			logEvent: (kind, detail) => events.push({ kind, detail }),
 		});
 
-		// Send-once guard (US-001, CAM-375): exactly one physical send despite
-		// maxAttempts (3) VERIFY attempts against the real (never-delivered) pane.
-		expect(sendKeysCalls).toHaveLength(1);
+		expectPayloadSentOnce(sendKeysCalls, id, payload);
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
 	},
@@ -262,9 +268,7 @@ test.skipIf(!tmuxAvailable)(
 			logEvent: (kind, detail) => events.push({ kind, detail }),
 		});
 
-		// Send-once guard (US-001, CAM-375): exactly one physical send despite
-		// maxAttempts (3) VERIFY attempts against the real (never-delivered) pane.
-		expect(sendKeysCalls).toHaveLength(1);
+		expectPayloadSentOnce(sendKeysCalls, id, payload);
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
 	},
@@ -299,9 +303,7 @@ test.skipIf(!tmuxAvailable)(
 			logEvent: (kind, detail) => events.push({ kind, detail }),
 		});
 
-		// Send-once guard (US-001, CAM-375): exactly one physical send despite
-		// maxAttempts (3) VERIFY attempts against the real (never-delivered) pane.
-		expect(sendKeysCalls).toHaveLength(1);
+		expectPayloadSentOnce(sendKeysCalls, id, WORD_WRAP_COLLISION_PAYLOAD);
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
 	},

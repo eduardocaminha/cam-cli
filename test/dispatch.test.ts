@@ -22,12 +22,11 @@
 //     - IDLE_WAIT_DEADLINE_MS boundary: exceeds the old 5_000 ms default
 //   sendKeysVerified (US-002, CAM-200; geometry oracle US-002/CAM-359):
 //     - cursor geometry unchanged after settle (post-send == per-send baseline): delivered on
-//       the first attempt, no retry, no push-undelivered
+//       the first attempt, no remediation, no event
 //     - send-once guard (US-001, CAM-375): cursor geometry differs every sample (composer
-//       never empties): send-keys fires EXACTLY ONCE (not maxAttempts times), retries up to
-//       maxAttempts VERIFY attempts, then emits exactly one push-undelivered event via the
-//       injected logEvent (retriesExhausted still equals maxAttempts, counting verify
-//       attempts not physical sends), using a no-op sleepFn
+//       never empties): the PAYLOAD-CARRYING send-keys fires EXACTLY ONCE, bare submit
+//       remediations run between verify attempts, then exactly one push-undelivered event
+//       records maxAttempts VERIFY attempts
 //     - settle window (US-001, CAM-358): a sampleGeometryFn that would report the stale
 //       PRE-send geometry on the first post-send read, but the injected sleepFn advances a
 //       staged reader to the POST-send (baseline-matching) geometry before that read happens,
@@ -361,7 +360,7 @@ const EMPTY_BASELINE: CursorGeometry = { cursorX: 2, cursorY: 26, paneWidth: 80,
 const FILLED_GEOMETRY: CursorGeometry = { cursorX: 10, cursorY: 26, paneWidth: 80, paneHeight: 30 };
 
 describe('sendKeysVerified', () => {
-	test('geometry unchanged after settle: delivered on first attempt, no retry, no push-undelivered', () => {
+	test('first-try success still emits no event and spawns exactly one send-keys call', () => {
 		const spawnFn = makeSpawnFn();
 		const events: Array<{ kind: string; detail: unknown }> = [];
 
@@ -379,6 +378,55 @@ describe('sendKeysVerified', () => {
 		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
 		expect(sendKeysCalls).toHaveLength(1);
 		expect(events).toHaveLength(0);
+	});
+
+	test('bare submit remediation on the idle path uses one explicit Enter and never repeats payload text', () => {
+		const spawnFn = makeSpawnFn();
+		const payload = '/cam-review';
+		let sampleCalls = 0;
+
+		sendKeysVerified({
+			paneId: '%8',
+			text: payload,
+			tmuxSpawnFn: spawnFn,
+			capturePaneFn: () => '> ',
+			sampleGeometryFn: () => (++sampleCalls === 2 ? FILLED_GEOMETRY : EMPTY_BASELINE),
+			sleepFn: () => {},
+			idleTimeoutMs: 5,
+			maxAttempts: 3,
+		});
+
+		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
+		expect(sendKeysCalls).toHaveLength(2);
+		expect(sendKeysCalls[0]?.args.slice(2)).toEqual(['send-keys', '-t', '%8', payload, 'Enter']);
+		expect(sendKeysCalls[1]?.args.slice(2)).toEqual(['send-keys', '-t', '%8', 'Enter']);
+		expect(sendKeysCalls.slice(1).some((call) => call.args.includes(payload))).toBe(false);
+	});
+
+	test('push-recovered after remediation emits once with the idle-path remediation count', () => {
+		const spawnFn = makeSpawnFn();
+		const events: Array<{ kind: string; detail: unknown }> = [];
+		let sampleCalls = 0;
+
+		sendKeysVerified({
+			paneId: '%6',
+			text: '/cam-next',
+			tmuxSpawnFn: spawnFn,
+			capturePaneFn: () => '> ',
+			sampleGeometryFn: () => (++sampleCalls === 2 ? FILLED_GEOMETRY : EMPTY_BASELINE),
+			sleepFn: () => {},
+			idleTimeoutMs: 5,
+			maxAttempts: 3,
+			logEvent: (kind, detail) => events.push({ kind, detail }),
+		});
+
+		expect(events).toEqual([
+			{
+				kind: 'push-recovered',
+				detail: { paneId: '%6', submitRemediations: 1, paneWasIdle: true },
+			},
+		]);
+		expect(events.some((event) => event.kind === 'push-undelivered')).toBe(false);
 	});
 
 	test('settle window honored: sleepFn advances the staged reader so the post-send sample reflects the settled geometry, not the stale pre-settle one (US-001, CAM-358)', () => {
@@ -427,7 +475,7 @@ describe('sendKeysVerified', () => {
 		expect(events).toHaveLength(0);
 	});
 
-	test('send-once guard (US-001, CAM-375): detected-idle pane, geometry oracle never confirms delivery — send-keys fires exactly ONCE (not maxAttempts times), retries up to maxAttempts VERIFY attempts, then emits one push-undelivered event (AC1, AC4; red on unmodified main: main records 3 send-keys calls, per this story\'s handoff.json red-sweep)', () => {
+	test('send-once guard (US-001, CAM-375): exhausted verification sends payload text once, bare submits between attempts, and only push-undelivered', () => {
 		const spawnFn = makeSpawnFn();
 		const events: Array<{ kind: string; detail: unknown }> = [];
 		let sleepCount = 0;
@@ -457,9 +505,13 @@ describe('sendKeysVerified', () => {
 			logEvent: (kind, detail) => events.push({ kind, detail }),
 		});
 
-		// AC1: exactly ONE physical send-keys invocation, not maxAttempts (3).
+		// The payload-bearing call stays physically unique. Each later call is
+		// exactly one bare Enter remediation and can never duplicate the text.
 		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
-		expect(sendKeysCalls).toHaveLength(1);
+		const payloadCalls = sendKeysCalls.filter((c) => c.args.includes('/cam-review'));
+		expect(payloadCalls).toHaveLength(1);
+		expect(sendKeysCalls).toHaveLength(3);
+		expect(sendKeysCalls.slice(1).every((c) => c.args.slice(2).join(' ') === 'send-keys -t %9 Enter')).toBe(true);
 		// AC5: settle sleep (once per verify attempt) + backoff sleep between
 		// attempts are both still in place: 3 settle sleeps + 2 backoff sleeps.
 		expect(sleepCount).toBeGreaterThanOrEqual(2);
@@ -497,10 +549,9 @@ describe('sendKeysVerified', () => {
 			}),
 		).not.toThrow();
 
-		// Send-once guard (US-001, CAM-375): exactly one physical send despite
-		// 2 verify attempts.
+		// Send-once guard: payload text appears in exactly one physical call.
 		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
-		expect(sendKeysCalls).toHaveLength(1);
+		expect(sendKeysCalls.filter((c) => c.args.includes('/cam-ship'))).toHaveLength(1);
 	});
 
 	test('null baseline sample (fail-closed/unknown) is treated as NOT delivered and retried (US-002, CAM-359 AC5)', () => {
@@ -522,10 +573,9 @@ describe('sendKeysVerified', () => {
 			logEvent: (kind, detail) => events.push({ kind, detail }),
 		});
 
-		// Send-once guard (US-001, CAM-375): exactly one physical send despite
-		// 2 verify attempts.
+		// Send-once guard: payload text appears in exactly one physical call.
 		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
-		expect(sendKeysCalls).toHaveLength(1);
+		expect(sendKeysCalls.filter((c) => c.args.includes('/cam-next'))).toHaveLength(1);
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
 	});
@@ -556,10 +606,9 @@ describe('sendKeysVerified', () => {
 			logEvent: (kind, detail) => events.push({ kind, detail }),
 		});
 
-		// Send-once guard (US-001, CAM-375): exactly one physical send despite
-		// 2 verify attempts.
+		// Send-once guard: payload text appears in exactly one physical call.
 		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
-		expect(sendKeysCalls).toHaveLength(1);
+		expect(sendKeysCalls.filter((c) => c.args.includes('/cam-issue'))).toHaveLength(1);
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
 	});
@@ -631,10 +680,9 @@ describe('sendKeysVerified', () => {
 			logEvent: (kind, detail) => events.push({ kind, detail }),
 		});
 
-		// Send-once guard (US-001, CAM-375): exactly one physical send despite
-		// 2 verify attempts.
+		// Send-once guard: payload text appears in exactly one physical call.
 		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
-		expect(sendKeysCalls).toHaveLength(1);
+		expect(sendKeysCalls.filter((c) => c.args.includes(payload))).toHaveLength(1);
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
 	});
@@ -698,10 +746,9 @@ describe('sendKeysVerified', () => {
 			logEvent: (kind, detail) => events.push({ kind, detail }),
 		});
 
-		// Send-once guard (US-001, CAM-375): exactly one physical send despite
-		// 2 verify attempts.
+		// Send-once guard: payload text appears in exactly one physical call.
 		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
-		expect(sendKeysCalls).toHaveLength(1);
+		expect(sendKeysCalls.filter((c) => c.args.includes(payload))).toHaveLength(1);
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
 	});
