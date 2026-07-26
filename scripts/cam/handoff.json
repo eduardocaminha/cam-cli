@@ -1,0 +1,30 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Add push-recovered to the push event taxonomy and re-scope push-undelivered to terminal-only"
+  },
+  "branchName": "cam/issue-406",
+  "timestamp": "2026-07-26T00:55:32Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "scripts/cam/patterns.md",
+    "scripts/file-size-budget.json",
+    "src/supervisor/events.ts",
+    "test/supervisor/events.test.ts",
+    "test/supervisor/loop.test.ts",
+    "test/ui/config-screen.test.tsx"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 adds types and documentation only; no push-recovered emitter is wired yet. Later wiring stories should emit nothing on first-try delivery, push-recovered only after at least one bare-submit remediation, and push-undelivered only after terminal verification failure. Backend-sensitive supervisor tests now pin an explicit Claude fixture, and Ink frame assertions normalize ANSI output so the tmux behavioral gate remains deterministic.",
+  "appliedPatternIds": [],
+  "officialDocsValidated": [
+    {
+      "lib": "ink-testing-library",
+      "channel": "WebFetch",
+      "url": "https://github.com/vadimdemedes/ink-testing-library",
+      "fetchedAt": "2026-07-26T00:54:50Z",
+      "status": "aligned",
+      "summary": "The current render API still returns lastFrame, stdin, rerender, and unmount; the test-local wrapper preserves that API while normalizing lastFrame text."
+    }
+  ]
+}
