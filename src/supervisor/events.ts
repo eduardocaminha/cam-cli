@@ -93,12 +93,16 @@ import handoffSchema from '../../scripts/cam/handoff.schema.json';
  *     an invalid `status` (not one of the handoff.schema.json enum values) or
  *     an unknown object key. Warn-only, non-fatal: it NEVER halts the loop.
  *     See HandoffSchemaWarningEventDetail and validateOfficialDocsValidated.
- *   - 'push-undelivered' (US-001, CAM-200): emitted when a wake-up push
- *     (send-keys nudge to a worker/orchestrator pane) fails delivery
- *     verification after bounded retry. Distinct from the unrelated 'pushed'
- *     kind above (a git-origin push-verification record); this kind carries
- *     only wake-up-delivery metadata (pane id, retries exhausted), never
- *     report content. See PushUndeliveredEventDetail.
+ *   - 'push-undelivered' (US-001, CAM-200): reserved for a wake-up push
+ *     (send-keys nudge to a worker/orchestrator pane) whose unified verify loop
+ *     terminally fails. Distinct from the unrelated 'pushed' kind above (a
+ *     git-origin push-verification record); this kind carries only
+ *     wake-up-delivery metadata, never report content. See
+ *     PushUndeliveredEventDetail.
+ *   - 'push-recovered' (US-001, CAM-406): emitted when a wake-up push verifies
+ *     only after one or more bare-submit remediations. This recovered outcome
+ *     is distinct from both a silent first-try success (which emits nothing)
+ *     and a terminal 'push-undelivered'. See PushRecoveredEventDetail.
  *   - 'plan-split-advisory' (US-003, CAM-241/136): emitted by the plan runner
  *     (US-004) when computeSplitAdvisory (src/stats/split-advisory.ts) fires
  *     for the just-planned issue's jobSize -- a non-gating signal that the
@@ -171,6 +175,7 @@ export type WorkerEventKind =
 	| 'suggestion-filed'
 	| 'handoff-schema-warning'
 	| 'push-undelivered'
+	| 'push-recovered'
 	| 'plan-split-advisory'
 	| 'plan-approval-branch-failed'
 	| 'abandon-checkout-main-failed'
@@ -536,28 +541,43 @@ export interface HandoffSchemaWarningEventDetail {
 
 /**
  * 'push-undelivered' event detail (US-001, CAM-200; reason added US-001,
- * CAM-373): recorded when a wake-up push to a pane fails delivery
- * verification after bounded retry. Carries only wake-up-delivery metadata:
- * no report content ever travels in this event, per the CAM-75/77/78
- * structured-handback decision (durable truth lives in files; the pane only
- * carries the wake-up nudge).
+ * CAM-373): reserved for TERMINAL non-delivery when the unified verify loop
+ * exhausts its bounded attempts, for either reason. Carries only
+ * wake-up-delivery metadata: no report content ever travels in this event, per
+ * the CAM-75/77/78 structured-handback decision (durable truth lives in files;
+ * the pane only carries the wake-up nudge).
  *   - paneId: the tmux pane id the wake-up push targeted (e.g. '%3').
- *   - retriesExhausted: the number of retry attempts made before giving up.
+ *   - retriesExhausted: the number of VERIFY attempts made before giving up,
+ *     counted for both reasons.
  *   - reason: which mode of non-delivery this is. Required so the two modes
  *     are never conflated in the event log:
  *       - 'retries-exhausted': the geometry-verified retry loop ran to
  *         maxAttempts without the pane ever settling back to its baseline;
  *         delivery is genuinely uncertain (the text may or may not have
  *         landed, and Enter may or may not have submitted it).
- *       - 'pane-not-idle' (wired by US-002): the pane never reached idle
- *         before the push was attempted, so send-keys was never even
- *         issued; delivery did not happen by construction, not by a failed
- *         verification race.
+ *       - 'pane-not-idle': the unified verify loop terminally failed on a pane
+ *         the idle gate never observed idle; this no longer means send-keys
+ *         was withheld before verification began.
  */
 export interface PushUndeliveredEventDetail {
 	paneId: string;
 	retriesExhausted: number;
 	reason: 'retries-exhausted' | 'pane-not-idle';
+}
+
+/**
+ * 'push-recovered' event detail (US-001, CAM-406): recorded when wake-up push
+ * delivery verifies only after remediation.
+ *   - paneId: the tmux pane id the wake-up push targeted (e.g. '%3').
+ *   - submitRemediations: number of bare submit keys sent before verification
+ *     succeeded; always at least 1.
+ *   - paneWasIdle: whether the idle gate observed an idle pane before the
+ *     payload send.
+ */
+export interface PushRecoveredEventDetail {
+	paneId: string;
+	submitRemediations: number;
+	paneWasIdle: boolean;
 }
 
 /**
@@ -665,6 +685,7 @@ export type WorkerEventDetail =
 	| SuggestionFiledEventDetail
 	| HandoffSchemaWarningEventDetail
 	| PushUndeliveredEventDetail
+	| PushRecoveredEventDetail
 	| PlanSplitAdvisoryEventDetail
 	| AbandonCheckoutMainFailedEventDetail
 	| PatternOutcomeAppendFailedEventDetail

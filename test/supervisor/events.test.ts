@@ -18,6 +18,7 @@ import {
 	validateOfficialDocsValidated,
 	type HandoffSchemaWarningEventDetail,
 	type PushEventDetail,
+	type PushRecoveredEventDetail,
 	type ReviewVerdictHandbackEventDetail,
 	type WorkerEvent,
 } from '../../src/supervisor/events.ts';
@@ -115,6 +116,31 @@ describe("'pushed' event kind", () => {
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
+});
+
+test('makeFileEventLogger round-trips a push-recovered event with all delivery fields', () => {
+	const dir = mkdtempSync(join(tmpdir(), 'cam-events-push-recovered-'));
+	try {
+		const path = join(dir, 'cam-worker-events.jsonl');
+		const logger = makeFileEventLogger(path);
+		const detail: PushRecoveredEventDetail = {
+			paneId: '%7',
+			submitRemediations: 2,
+			paneWasIdle: true,
+		};
+		logger({ ts: 't1', storyId: 'US-001', uuid: 'u1', kind: 'push-recovered', detail });
+
+		const lines = readFileSync(path, 'utf8').trimEnd().split('\n');
+		expect(lines).toHaveLength(1);
+		const parsed = JSON.parse(lines[0] ?? '') as WorkerEvent;
+		const parsedDetail = parsed.detail as PushRecoveredEventDetail;
+		expect(parsed.kind).toBe('push-recovered');
+		expect(parsedDetail.paneId).toBe('%7');
+		expect(parsedDetail.submitRemediations).toBe(2);
+		expect(parsedDetail.paneWasIdle).toBe(true);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });
 
 // ---------------------------------------------------------------------------
