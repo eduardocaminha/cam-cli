@@ -24,7 +24,7 @@
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [docs/adr/0049-garboard-naming-policy-binary-alias-org-and-staged-rename.md:17]: ADR 0049 mischaracterizes what it supersedes in ADR-0045. ADR-0045's Decision section does not defer the command name; it decides it: 'Deliberately leave the cam command, config/state directories, CAM_* env vars ... unchanged.' ADR-0045's only actual deferral clause is 'Defer the GitHub repo / local directory rename to a separate operator-driven step with a coordinated fixture sweep', which ADR 0049 never mentions. ADR 0049 reverses the decided part (canonical binary becomes garboard, cam demoted to an undocumented legacy symlink) while claiming it 'supersedes only the naming-deferral clause of ADR-0045' and 'explicitly reaffirms' its doctrine. For a decision-record system this is exactly the drift ADRs exist to prevent: state that the command-name clause of ADR-0045's Decision is superseded as of launch packaging (install compatibility preserved via the legacy symlink), and say what happens to 0045's real deferral clause on the repo/directory rename."
     },
     {
