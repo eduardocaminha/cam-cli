@@ -1,26 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "Prove the bare-submit remediation against a real tmux pane"
+    "id": "US-005",
+    "title": "Keep the why-not-moving diagnostic truthful after the fix"
   },
   "branchName": "cam/issue-406",
-  "timestamp": "2026-07-26T01:56:33Z",
+  "timestamp": "2026-07-26T02:08:35Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "test/fixtures/dispatch-geometry/raw-echo.ts",
-    "test/integration/dispatch-geometry.test.ts"
+    "src/commands/status-diagnostics.ts",
+    "test/unit/status-diagnostics.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "The raw-echo real-tmux fixture now accepts drop-first, which leaves the first payload-bearing Enter unsubmitted and submits on subsequent Enter bytes. The new ninth skipIf(!tmuxAvailable)-guarded test observes the payload in the real composer before the first bare remediation, records real display-message geometry changing then returning to baseline, and proves one payload send plus one Enter-only remediation emits a single push-recovered event. The busy-pane test still uses the same payload-counting helper with two bare remediations and terminal retriesExhausted:3 metadata.",
+  "nextStoryContext": "The orch-pane-busy diagnostic now describes terminal non-delivery after bare-submit remediation, while delivery-exhausted remains the idle-pane verified-retry exhaustion path. The closed condition ids, precedence order, and orch-pane-busy suggested command (`cam status`) are unchanged. A focused test pins the new exact message and command.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
-      "lib": "tmux",
-      "channel": "WebFetch",
-      "url": "https://github.com/tmux/tmux/wiki/Advanced-Use#sending-keys",
-      "fetchedAt": "2026-07-26T01:56:33Z",
-      "status": "aligned",
-      "summary": "Current tmux documentation confirms -L isolates servers, send-keys accepts sequential key arguments with Enter recognized as a key, and capture-pane -p reads visible pane content; the private-socket real-pane fixture and Enter-only remediation assertions align."
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Pure operator-message, module-comment, and test update; no external library API was exercised."
     }
   ]
 }
