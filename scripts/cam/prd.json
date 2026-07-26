@@ -45,7 +45,7 @@
       "id": "US-R1-004",
       "title": "Review round 1 fix 004: address reviewer finding",
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [test/dispatch.test.ts:750]: Retargeting the idle-gate-timeout test dropped the idle-gate's poll-cadence coverage instead of relocating it. The replaced test (main, test/dispatch.test.ts:713-778) drove the real poll loop with a fake clock and asserted STRICT equality on the gate's own sleeps: `expect(recordedSleeps).toHaveLength(IDLE_TIMEOUT_MS / POLL_INTERVAL_MS)` plus `every((ms) => ms === POLL_INTERVAL_MS)`. The replacement passes idleTimeoutMs: 0, so the poll loop never sleeps and only POST-gate settle/backoff sleeps are asserted; grep confirms no test on the branch now pins the gate's poll interval or poll count (a regression that stopped the gate sleeping, or polled at the wrong interval, would go green). The deleted block also carried the durable falsifiability record that CAM-376 review round 2 deliberately parked in tracked source precisely because handoff.json rotates away; it was removed without being relocated to scripts/cam/patterns.md. Restore a dedicated idle-gate cadence test (fake clock, pollIntervalMs/idleTimeoutMs derived, strict equality) alongside the new post-gate sequence test."
     },
     {
