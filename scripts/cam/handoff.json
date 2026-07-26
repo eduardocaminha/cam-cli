@@ -1,22 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-002",
-    "title": "Review round 1 fix 002: address reviewer finding"
+    "id": "US-R1-003",
+    "title": "Review round 1 fix 003: address reviewer finding"
   },
   "branchName": "cam/issue-406",
-  "timestamp": "2026-07-26T02:45:24Z",
+  "timestamp": "2026-07-26T02:53:03Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/tmux/dispatch.ts"
+    "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "SendKeysWhenIdleOptions now documents the actual unified timeout behavior: both idle-gate outcomes run the same send-once, bounded verify, and bare-submit remediation loop. push-undelivered is terminal exhaustion for either reason; timed-out terminal failure co-emits orch-pane-busy, while remediation recovery emits push-recovered. Related stale send-anyway summaries in dispatch.ts were aligned too.",
+  "nextStoryContext": "The src/tmux/dispatch.ts file-size ceiling now matches the final tree exactly at 690 lines, below main's prior 693-line ceiling. The stale 701-line headroom and obsolete US-002 justification were removed; the top-level _ref now explains the final-tree tightening while retaining test/dispatch.test.ts's exact 913-line regression budget.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Documentation-only correction to internal tmux dispatch comments; no external library API was exercised."
+      "summary": "Internal file-size ratchet metadata only; no external library API was exercised."
     }
   ]
 }
