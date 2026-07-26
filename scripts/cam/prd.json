@@ -207,7 +207,7 @@
         "Full quality spine passes (bun run check:all; CI runs this on codex-unauthenticated runners per .github/workflows/ci.yml:26, which is the environment the emptied-HOME run simulates). [oracle: bun run check:all]"
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: scripts/cam/project.toml, scripts/cam/patterns.md. Under this flip the plan-side live-default tests (plan-runner-codex-auth, plan-runner-model-resolution) stay green: they read the planner/auditor phases, which still resolve claude ([backend] gains only implementer = \"codex\"; readPhaseBackend falls through name-level claude for other phases). Pre-existing skipIf usage in loop.test.ts and the integration plan files is untouched history, which is why the guard is diff-scoped rather than a repo-wide absence grep (a repo-wide one would be red for pre-existing, out-of-scope reasons). Do not edit the out-of-scope stale comments at test/commands/run-model-resolution.test.ts:126 or test/supervisor/review.test.ts:358 (MakeReviewDispatchOptions wording, a CAM-405-era leftover): both are outside issue AC11's occurrence list; the review.test.ts one is noted in scope-proposal outOfScope for a follow-up filed on main."
     }
