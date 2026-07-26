@@ -53,7 +53,7 @@
         "Full quality spine passes (bun run check:all). Included per-story (audit F-06): the options-object conversion touches functions the story notes flag for biome noExcessiveCognitiveComplexity max=15; a lint failure must surface in THIS story, not seven stories later. [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/plan-runner.ts, test/supervisor/plan/plan-runner-configpath-seam.test.ts (new). Threading path measured: runPlannerSpawnStep/runAuditorSpawnStep destructure opts at :1021/:1042 and forward 11 positionals to resolveAndSpawnPlanner/resolveAndSpawnAuditor; the options-object conversion is internal to plan-runner.ts. No control-flow reordering (issue gotcha; the CAM-398 plan escalated on exactly that misreading). Auditor tests reuse plannerPaneId via resolveLivePaneId, mirror runPlannerSpawnStep. Same non-goals as US-001. This file later receives the plan-side dress-rehearsal comment (US-010) and the fixture-vs-live distinguishability test, so keep its helpers reusable."
     },
