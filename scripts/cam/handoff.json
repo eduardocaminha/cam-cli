@@ -1,24 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-004",
-    "title": "Review round 1 fix 004: address reviewer finding"
+    "id": "US-R2-001",
+    "title": "Review round 2 fix 001: address reviewer finding"
   },
   "branchName": "cam/issue-406",
-  "timestamp": "2026-07-26T03:04:10Z",
+  "timestamp": "2026-07-26T03:55:24Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "scripts/cam/patterns.md",
-    "scripts/file-size-budget.json",
-    "test/dispatch.test.ts"
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "test/dispatch.test.ts now has a dedicated sendKeysVerified idle-gate cadence regression that uses a fake clock, derived 1000ms/5000ms timing constants, an exact derived poll count, and strict per-sleep equality. It remains separate from the idleTimeoutMs:0 test that pins the post-gate settle/backoff sequence. The CAM-376 mutation/falsifiability record was relocated to tracked scripts/cam/patterns.md, and the test file's exact size ceiling is 954 lines.",
+  "nextStoryContext": "US-002 AC6 now asserts src/tmux/dispatch.ts's budget ceiling equals the live content.split('\\n').length gate metric instead of requiring the branch ceiling to exceed main. The criterion records the final branch state as 690/690, strictly tighter than main's 693 ceiling, and test/dispatch.test.ts as 954/954. US-R2-002 remains scoped to correcting the stale makeNotifyOrchestrator documentation in src/supervisor/host.ts.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Internal Bun test coverage and durable project-pattern documentation only; no external library API was exercised."
+      "summary": "PRD acceptance-criterion and oracle metadata only; no external library API was exercised."
     }
   ]
 }
