@@ -28,7 +28,7 @@
 
 import { existsSync, mkdirSync, openSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { basename, dirname, join } from 'node:path';
+import { dirname, join } from 'node:path';
 import process from 'node:process';
 import { randomUUID } from 'node:crypto';
 
@@ -69,6 +69,7 @@ import { checkClaudeEffortSupport, type EffortCapabilityCheck } from './run-effo
 import { codexAuthPreflight, type CodexAuthCheck } from '../supervisor/codex-auth.ts';
 import { resolvePhaseModel } from '../config/model-resolution.ts';
 import type { CodexModelsCacheReader } from '../config/codex-models-cache.ts';
+import { resolveSelfInvokeArgv } from '../util/self-invoke.ts';
 
 // Re-export projectSessionName so existing callers (test/run.test.ts) continue
 // to import it from this module without breaking.
@@ -256,34 +257,28 @@ function q(s: string): string {
 /**
  * Build the same-binary self-invoke resolver command used to re-resolve
  * model+effort on every orchestrator respawn (US-003, CAM-425; fixed in
- * US-R1-001 after a reviewer finding on the shipped distribution).
+ * US-R1-001 after a reviewer finding on the shipped distribution; hardened
+ * in US-001, CAM-426, to drop the negative basename heuristic).
  *
- * `process.execPath` + `process.argv[1]` is a reliable `[binary, script]`
- * self-invoke pair ONLY when running interpreted (`bun index.ts ...`), where
- * `execPath` is bun itself and `argv[1]` is the real `index.ts` path bun can
- * be re-invoked against (mirrors forkMonitor's convention, src/retry/
- * launcher.ts). It breaks on the compiled distribution cam actually ships
- * (`bun build --compile`, scripts/build-release.sh): inside a compiled
- * single-file executable, `execPath` IS the standalone binary (self-
- * contained, no separate bun runtime to invoke), and `argv[1]` is bun's
- * internal virtual embedded-entry path (observed as `/$bunfs/root/<outfile>`
- * on bun 1.3.13) -- not a real script argument the compiled binary's own
- * `main()` command dispatch (argv[2]) understands, so passing it back in
- * prints `unknown command: /$bunfs/root/<outfile>` and exits 1.
- *
- * Detect compiled mode via EITHER signal (defense in depth against a future
- * bun version changing the virtual path's exact prefix): `argv1` starting
- * with the bunfs prefix, or `execPath`'s basename not being literally `bun`.
- * In compiled mode, self-invoke the binary directly with `orch-resolve` as
- * its sole argument; otherwise keep the pre-existing `<bun> <script>
- * orch-resolve` shape.
+ * A thin shell-quoting wrapper: all interpreted-vs-compiled self-invoke
+ * detection lives in {@link resolveSelfInvokeArgv} (src/util/self-invoke.ts),
+ * the single canonical fix site for this bug class. Detection is keyed ONLY
+ * on the positive `/$bunfs/` virtual-entry signal (bun's internal embedded-
+ * entry path inside a `bun build --compile` binary, observed as
+ * `/$bunfs/root/<outfile>` on bun 1.3.13). The former second signal, a
+ * negative check comparing execPath's basename against the literal string
+ * "bun", was a NEGATIVE heuristic and has been removed: it misclassified an
+ * interpreted run under a version-managed bun shim (e.g. `bun-1.3` rather
+ * than literally `bun`) as compiled, dropping the real script argv1 and
+ * breaking the self-invoke. The deliberate trade of positive-signal-only
+ * detection: a future bun version changing the bunfs prefix degrades to
+ * orch-resolve's loud fail-safe fallback (a failed/absent resolver leaves the
+ * last known-good model/effort in place and the loop still respawns) rather
+ * than propagating a silent dead-child failure from a wrongly-collapsed argv.
  */
 export function resolveOrchResolverCmd(execPath: string, argv1: string | undefined): string {
-	const isCompiled = (argv1 !== undefined && argv1.startsWith('/$bunfs/')) || basename(execPath) !== 'bun';
-	if (isCompiled) {
-		return `${q(execPath)} orch-resolve`;
-	}
-	return `${q(execPath)} ${q(argv1 ?? 'cam')} orch-resolve`;
+	const argv = resolveSelfInvokeArgv(execPath, argv1);
+	return `${argv.map(q).join(' ')} orch-resolve`;
 }
 
 /** Inputs for {@link buildOrchestratorPaneCommand}. */
