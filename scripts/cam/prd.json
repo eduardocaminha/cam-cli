@@ -28,7 +28,7 @@
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [src/commands/run-effort-preflight.ts:40]: checkClaudeEffortSupport has no direct unit test. Its four documented fail-closed branches (spawnFn throws, result.error set on ENOENT, non-zero exit status, string-vs-Buffer stdout) are never exercised: the only test that touches the production default (test/commands/run-effort-argv.test.ts:214-238) asserts merely that a `claude --help` call was recorded on the fake spawn, and that fake returns status 0 with empty stdout, so exactly one path (supported=false via missing substring) is covered. This probe is the safety gate that decides whether a boot-fatal flag is emitted, so its error paths need the adversarial cases (throw / error / non-zero exit / Buffer stdout containing '--effort') in a dedicated test/commands/run-effort-preflight.test.ts."
     },
     {
