@@ -34,7 +34,7 @@
         "The full quality spine stays green, including the file-size ratchet that the AC4 raise exists to keep satisfied. PINNING GUARD ON INVARIANCE: deliberately GREEN-ON-MAIN (measured exit 0 on unmodified main 2026-07-25). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/events.ts (WorkerEventKind union around line 138-179, kinds-catalog doc block above it, PushUndeliveredEventDetail at ~line 538, new PushRecoveredEventDetail next to it, WorkerEventDetail union at the file tail), test/supervisor/events.test.ts, scripts/file-size-budget.json. This story is TYPES ONLY: no emitter is wired yet (US-002/US-003 wire it), so no dispatch.ts edit belongs here and there is deliberately no inertness oracle (an absence assertion on dispatch.ts would go red the moment US-002 lands and the reviewer re-runs Layer B across the whole PRD). ADR-0022: the ceiling raise happens IN this story, not at ship. Both target files are AT ceiling on main, so the very first added line breaches the gate; run `bun run check:file-size` (or check:all) after coding and raise to the measured actual. patterns.md:959 records that adding an event kind is additive to the two unions but breaks pre-existing tests asserting an EXACT event count/array at an emitting call site: nothing emits push-recovered yet, so that hazard lands in US-002/US-003, not here."
     },
