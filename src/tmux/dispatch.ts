@@ -134,9 +134,10 @@ export interface SendKeysWhenIdleOptions {
 	/**
 	 * Maximum milliseconds to wait for an idle pane before giving up.
 	 *
-	 * Fallback behavior on timeout: log a warning to stderr and send anyway.
-	 * This ensures the caller never blocks indefinitely even if the pane is
-	 * stuck in a busy state (e.g. a long-running tool call).
+	 * On timeout, log a warning to stderr, then continue through the same
+	 * send-once + bounded verification/bare-submit remediation loop used when
+	 * the pane becomes idle. This ensures the caller never waits indefinitely
+	 * while still confirming delivery or terminal non-delivery.
 	 *
 	 * Default: `IDLE_WAIT_DEADLINE_MS` (see below).
 	 */
@@ -147,19 +148,19 @@ export interface SendKeysWhenIdleOptions {
 	 */
 	sleepFn?: (ms: number) => void;
 	/**
-	 * Injected event sink, called with `('push-undelivered', detail)` on TWO
-	 * distinct occasions that are NOT both an exhaustion signal (US-002,
-	 * CAM-373): (1) all verify/retry attempts are exhausted without a
-	 * geometry-verified delivery (`reason: 'retries-exhausted'`, US-003,
-	 * CAM-359), or (2) the idle-gate itself timed out, in which case exactly
-	 * one send fires with NO verify/retry cycle and delivery is genuinely
-	 * UNKNOWN, not confirmed failed (`reason: 'pane-not-idle'`). Optional and
-	 * side-effect-free by default: omitting it emits no event (mirrors the
-	 * sub-state-machine logEvent seam pattern used by merge-watch). The caller
-	 * wraps this into a full WorkerEvent (ts/storyId/uuid) if it wants the
-	 * event durably recorded. Declared here (rather than only on
-	 * `SendKeysVerifiedOptions`) so every plain `sendKeysWhenIdle` call site
-	 * can thread it through too.
+	 * Injected event sink for the delivery lifecycle. `push-undelivered` fires
+	 * only after the unified verification/remediation loop exhausts
+	 * `maxAttempts`; its reason is `pane-not-idle` when the idle gate timed out
+	 * and `retries-exhausted` otherwise. A remediation recovery emits
+	 * `push-recovered`, and terminal non-delivery after an idle-gate timeout
+	 * also emits `orch-pane-busy`.
+	 *
+	 * Optional and side-effect-free by default: omitting it emits no event
+	 * (mirrors the sub-state-machine logEvent seam pattern used by
+	 * merge-watch). The caller wraps this into a full WorkerEvent
+	 * (ts/storyId/uuid) if it wants the event durably recorded. Declared here
+	 * (rather than only on `SendKeysVerifiedOptions`) so every plain
+	 * `sendKeysWhenIdle` call site can thread it through too.
 	 */
 	logEvent?: (kind: WorkerEventKind, detail: WorkerEventDetail) => void;
 }
@@ -239,17 +240,18 @@ export const SEND_KEYS_SETTLE_MS = 50;
 
 /**
  * Default idle-wait deadline (ms) for `waitForIdlePane` before the
- * send-anyway fallback fires (US-002, CAM-358).
+ * timed-out send/verify path starts (US-002, CAM-358).
  *
- * The previous inline default (5_000) made the fallback the COMMON case
+ * The previous inline default (5_000) made the timed-out path the COMMON case
  * rather than the exception: an orchestrator running a routine long tool
  * call (a full test run, a `git` operation, a slow lint pass) is routinely
- * still mid-turn 5 seconds later, so the idle-gate timed out and sent blind
- * on nearly every push (5 'did not go idle within 5000 ms; sending anyway'
+ * still mid-turn 5 seconds later, so the idle-gate timed out on nearly every
+ * push (5 'did not go idle within 5000 ms; sending anyway'
  * warnings logged in a single session, see journal DRAIN-CAM357-2026-07-19).
  * Raised well above that so a routine long tool call is actually waited
- * out; the send-anyway fallback (warn + send, never block indefinitely)
- * still fires past this deadline unchanged.
+ * out; past this deadline the caller warns, then continues through the
+ * unified send-once + verification/remediation loop without waiting
+ * indefinitely.
  */
 export const IDLE_WAIT_DEADLINE_MS = 30_000;
 
@@ -413,7 +415,8 @@ function defaultCapturePaneFn(paneId: string, spawnFn: TmuxSpawnFn): string {
 /**
  * Poll `capture` at `pollIntervalMs` intervals until `isOrchPaneIdle` returns
  * true or `idleTimeoutMs` is exhausted. Returns whether the wait timed out
- * (fallback: caller still sends, but logs a warning first).
+ * (the caller logs a warning, then continues through the unified send and
+ * verification/remediation flow).
  */
 function waitForIdlePane(args: {
 	paneId: string;
