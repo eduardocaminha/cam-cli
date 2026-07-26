@@ -1,0 +1,24 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Add configPath seam to RunSupervisorOptions with red-swept implementer codex regression test"
+  },
+  "branchName": "cam/issue-420",
+  "timestamp": "2026-07-26T00:00:00Z",
+  "createdFiles": [
+    "test/supervisor/loop-configpath-seam.test.ts"
+  ],
+  "modifiedFiles": [
+    "src/supervisor/loop.ts",
+    "scripts/cam/handoff.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 (CAM-420) added an optional configPath field to RunSupervisorOptions (src/supervisor/loop.ts:205 region), doc-commented in the style of MakeReviewDispatchOptions.configPath (review.ts). Both implementer-resolution call sites now thread it: readPhaseBackend('implementer', opts.configPath) at the loop.ts implementer-branch site, and configPath: opts.configPath inside the resolvePhaseModel({...}) argument immediately below it. No local ?? default was added at either site (opts.configPath flows straight through; both readPhaseBackend and resolvePhaseModel already treat a missing/undefined configPath as 'use the live scripts/cam/project.toml from process.cwd()', so omitting the field preserves production behavior byte-for-byte). Red-sweep record (issue AC7, restated per AC5 of this story): the new test/supervisor/loop-configpath-seam.test.ts file was copied into a fresh git worktree of unmodified main (git worktree add /tmp/cam-main-redsweep main; bun install --frozen-lockfile inside the worktree), then run there with `bun test test/supervisor/loop-configpath-seam.test.ts`. Measured result on main: 1 fail / 0 pass, failing at the `expect(authCheckCalled).toBe(true)` assertion with authCheckCalled still false -- exactly the predicted failure mode, since on main RunSupervisorOptions has no configPath field so readPhaseBackend('implementer') (no second argument) resolves the worktree's own live scripts/cam/project.toml (backend='claude'), never reaching the codex branch, so codexAuthPreflight's backend!=='codex' short-circuit means the injected codexAuthCheckFn is never invoked. On this branch (with the seam wired in) the same file is green (1 pass / 0 fail). The worktree was removed after the sweep (git worktree remove --force). This confirms the new test is a falsifiable regression guard, not a tautology. Any downstream story touching the implementer dispatch call sites in loop.ts should keep readPhaseBackend/resolvePhaseModel's configPath argument order intact (phase first, configPath second) to match the reviewer-side sibling seam in review.ts (CAM-405) and the planner/auditor seam in plan-runner.ts.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Pure internal DI-seam wiring story: no new external library surface introduced. Both readPhaseBackend(phase, configPath?) and resolvePhaseModel({..., configPath?}) already accepted an optional configPath argument in src/config/models.ts and src/config/model-resolution.ts prior to this story; this story only threads the pre-existing internal signatures through a new RunSupervisorOptions field, mirroring the already-shipped review.ts/plan-runner.ts seams."
+    }
+  ]
+}
