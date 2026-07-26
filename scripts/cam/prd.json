@@ -170,7 +170,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: the five listed test files plus the comment-only edit in plan-runner-codex-auth.test.ts. Frozen census (audit F-07): with US-007 (3 files) and US-008 (5 files), this story's 5 files complete the 13 edited plan-phase files; plan-runner-codex-auth and plan-runner-model-resolution are deliberately code-untouched (live-default coverage, chdir helpers at codex-auth:105 and model-resolution:124 per the issue's blast-radius census). Six files exceeds the 1-3 heuristic; justified by measured mechanics: 153-470 lines each, one fixture block or 1-2 inline literals per file, plus a comment rewrite."
     },
