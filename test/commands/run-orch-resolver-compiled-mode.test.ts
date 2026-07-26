@@ -10,6 +10,13 @@
 // as `unknown command: /$bunfs/root/<outfile>` when passed back as an argv
 // token -- while invoking the binary directly as `<bin> orch-resolve` works.
 //
+// Updated for US-001 (CAM-426): the former second detection signal
+// (`basename(execPath) !== 'bun'`) was a NEGATIVE heuristic that misclassified
+// an interpreted run under a version-managed bun shim (e.g. `bun-1.3` rather
+// than literally `bun`) as compiled, dropping the real script argv1. Detection
+// is now keyed ONLY on the positive `/$bunfs/` argv1 signal, via the extracted
+// resolveSelfInvokeArgv primitive (src/util/self-invoke.ts).
+//
 // Coverage:
 //   AC1 (pure unit): resolveOrchResolverCmd renders the pre-existing
 //       `<execPath> <argv1> orch-resolve` shape in interpreted mode (execPath
@@ -17,10 +24,11 @@
 //   AC2 (pure unit): resolveOrchResolverCmd collapses to `<execPath>
 //       orch-resolve` (execPath alone, no second argv token) when argv1 looks
 //       like bun's virtual embedded-entry path.
-//   AC3 (pure unit): same collapse when execPath's basename is not literally
-//       'bun' (a compiled binary's execPath is the binary itself), even if
-//       argv1 does not carry the bunfs prefix -- the two detection signals
-//       are independent (defense in depth).
+//   AC3 (pure unit, inverted per US-001): an interpreted run under a
+//       version-managed interpreter shim (execPath basename e.g. 'bun-1.3')
+//       with a real script argv1 renders the interpreted 3-token form, NOT
+//       the collapsed compiled form -- basename is no longer a detection
+//       signal at all.
 //   AC4 (wiring, end-to-end via runRun): with process.execPath/argv[1]
 //       monkeypatched to simulate a compiled-binary invocation, the resolver
 //       command actually embedded in the dispatched orchestrator pane argv
@@ -51,9 +59,9 @@ describe('resolveOrchResolverCmd (US-R1-001, CAM-425)', () => {
 		expect(cmd).not.toContain('bunfs');
 	});
 
-	test('compiled mode (execPath basename is not "bun"): collapses to <execPath> orch-resolve even without a bunfs argv1', () => {
-		const cmd = resolveOrchResolverCmd('/usr/local/bin/cam', undefined);
-		expect(cmd).toBe(`'/usr/local/bin/cam' orch-resolve`);
+	test('interpreted mode under a version-managed bun shim (execPath basename e.g. "bun-1.3"): renders the 3-token interpreted form, not the collapsed compiled form (US-001, CAM-426 -- basename is no longer a detection signal)', () => {
+		const cmd = resolveOrchResolverCmd('/opt/homebrew/bin/bun-1.3', '/repo/index.ts');
+		expect(cmd).toBe(`'/opt/homebrew/bin/bun-1.3' '/repo/index.ts' orch-resolve`);
 	});
 
 	test('interpreted mode with a missing argv1 falls back to the bare "cam" PATH lookup', () => {

@@ -23,13 +23,18 @@ import { runClaude } from '../../src/commands/claude.ts';
 // ---------------------------------------------------------------------------
 
 describe('forkMonitor — detached spawn', () => {
-  test('calls detachedSpawn with argv ending in retry-monitor <pane> <pid>', () => {
+  test('interpreted shape: full argv equality (execPath, script, retry-monitor, pane, pid)', () => {
     const spawnCalls: string[][] = [];
     const fakeDetachedSpawn: DetachedSpawnAdapter = (argv) => {
       spawnCalls.push(argv);
       return 0;
     };
     const fakeOnSignal: SignalHandler = (_sig, _fn) => { /* no-op */ };
+
+    const origExecPath = process.execPath;
+    const origArgv1 = process.argv[1];
+    Object.defineProperty(process, 'execPath', { value: '/usr/local/bin/bun', configurable: true });
+    process.argv[1] = '/repo/index.ts';
 
     forkMonitor({
       args: ['/cam-next'],
@@ -40,17 +45,28 @@ describe('forkMonitor — detached spawn', () => {
       onSignal: fakeOnSignal,
     });
 
+    Object.defineProperty(process, 'execPath', { value: origExecPath, configurable: true });
+    if (origArgv1 !== undefined) {
+      process.argv[1] = origArgv1;
+    } else {
+      process.argv.length = 1;
+    }
+
     expect(spawnCalls.length).toBe(1);
     const argv = spawnCalls[0]!;
-    // Must end with: retry-monitor <pane> <pid>
-    const lastThree = argv.slice(-3);
-    expect(lastThree).toEqual(['retry-monitor', '%3', '12345']);
+    expect(argv).toEqual(['/usr/local/bin/bun', '/repo/index.ts', 'retry-monitor', '%3', '12345']);
+    expect(argv.length).toBe(5);
   });
 
-  test('argv[0] is process.execPath (bun binary)', () => {
+  test('compiled shape: full argv equality, no script token (4 tokens)', () => {
     const spawnCalls: string[][] = [];
     const fakeDetachedSpawn: DetachedSpawnAdapter = (argv) => { spawnCalls.push(argv); return 0; };
     const fakeOnSignal: SignalHandler = (_sig, _fn) => { /* no-op */ };
+
+    const origExecPath = process.execPath;
+    const origArgv1 = process.argv[1];
+    Object.defineProperty(process, 'execPath', { value: '/usr/local/bin/cam', configurable: true });
+    process.argv[1] = '/$bunfs/root/cam';
 
     forkMonitor({
       args: [],
@@ -61,25 +77,17 @@ describe('forkMonitor — detached spawn', () => {
       onSignal: fakeOnSignal,
     });
 
-    expect(spawnCalls[0]?.[0]).toBe(process.execPath);
-  });
+    Object.defineProperty(process, 'execPath', { value: origExecPath, configurable: true });
+    if (origArgv1 !== undefined) {
+      process.argv[1] = origArgv1;
+    } else {
+      process.argv.length = 1;
+    }
 
-  test('argv contains the subcommand token "retry-monitor"', () => {
-    const spawnCalls: string[][] = [];
-    const fakeDetachedSpawn: DetachedSpawnAdapter = (argv) => { spawnCalls.push(argv); return 0; };
-    const fakeOnSignal: SignalHandler = (_sig, _fn) => { /* no-op */ };
-
-    forkMonitor({
-      args: [],
-      pane: 'cam:1.0',
-      claudePid: 1001,
-      cleanup: () => {},
-      detachedSpawn: fakeDetachedSpawn,
-      onSignal: fakeOnSignal,
-    });
-
+    expect(spawnCalls.length).toBe(1);
     const argv = spawnCalls[0]!;
-    expect(argv).toContain('retry-monitor');
+    expect(argv).toEqual(['/usr/local/bin/cam', 'retry-monitor', '%1', '99']);
+    expect(argv.length).toBe(4);
   });
 
   test('calls onMonitorSpawned with the PID returned by detachedSpawn', () => {

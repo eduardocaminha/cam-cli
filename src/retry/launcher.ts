@@ -16,6 +16,7 @@
 import { isRateLimited } from './patterns.ts';
 import { parseResetTime, calculateWaitMs } from './time-parser.ts';
 import { loadConfig } from './config.ts';
+import { resolveSelfInvokeArgv } from '../util/self-invoke.ts';
 
 // ---------------------------------------------------------------------------
 // Spawn adapter interface — injectable for tests
@@ -234,9 +235,15 @@ export function forkMonitor(opts: InteractiveOptions): void {
   // Resolve the argv for the monitor child.
   // We invoke ourselves (the cam binary / bun + this entry point) with
   // the `retry-monitor` subcommand so the child reuses all our own code.
-  const self = process.execPath; // path to bun executable
-  const mainScript = process.argv[1] ?? 'cam'; // path to index.ts / cam binary
-  const monitorArgv = [self, mainScript, 'retry-monitor', pane, String(claudePid)];
+  // All interpreted-vs-compiled self-invoke detection lives in
+  // resolveSelfInvokeArgv (src/util/self-invoke.ts), the single canonical
+  // fix site for this bug class (US-002, CAM-426).
+  const monitorArgv = [
+    ...resolveSelfInvokeArgv(process.execPath, process.argv[1]),
+    'retry-monitor',
+    pane,
+    String(claudePid),
+  ];
 
   const monitorPid = detachedSpawn(monitorArgv);
   if (onMonitorSpawned) onMonitorSpawned(monitorPid);
