@@ -17,7 +17,10 @@
 //        replan rounds -- a re-plan round's own just-written draft prd.json
 //        must never be misdetected as in-progress work from a different cycle.
 
-import { test, expect } from 'bun:test';
+import { afterAll, test, expect } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import {
 	runPlanPhase,
@@ -30,6 +33,20 @@ import type { SpawnFn } from '../src/supervisor/loop.ts';
 import type { PlanVerdictReport } from '../src/supervisor/plan-verdict-report.ts';
 import type { IssueEntry } from '../src/issues/types.ts';
 import type { PlanPreflightResult } from '../src/supervisor/plan-preflight.ts';
+
+// ---------------------------------------------------------------------------
+// Generic backend fixture (US-008, CAM-420): isolates this suite's
+// planner/auditor backend resolution from the repo's real project.toml, so a
+// codex planner/auditor config cannot break these generic-backend tests.
+// ---------------------------------------------------------------------------
+
+const GENERIC_PLAN_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-plan-runner-in-progress-conflict-test-'));
+const GENERIC_PLAN_CONFIG_PATH = join(GENERIC_PLAN_CONFIG_DIR, 'project.toml');
+writeFileSync(GENERIC_PLAN_CONFIG_PATH, '[backend]\nplanner = "claude"\nauditor = "claude"\n');
+
+afterAll(() => {
+	rmSync(GENERIC_PLAN_CONFIG_DIR, { recursive: true, force: true });
+});
 
 const MOCK_ISSUE: IssueEntry = {
 	id: 'CAM-153',
@@ -66,6 +83,7 @@ function baseOpts(overrides: Partial<RunPlanPhaseOptions> = {}): RunPlanPhaseOpt
 		plannerPaneId: '%3',
 		paneCountMutexFn: () => 'available',
 		...overrides,
+		configPath: 'configPath' in overrides ? overrides.configPath : GENERIC_PLAN_CONFIG_PATH,
 	};
 }
 
@@ -176,6 +194,7 @@ test('re-plan rounds never re-invoke detectInProgressConflictFn (round 1 only)',
 		pollIntervalMs: 1,
 		plannerTimeoutMs: 999_999,
 		auditorTimeoutMs: 999_999,
+		configPath: GENERIC_PLAN_CONFIG_PATH,
 		detectInProgressConflictFn: () => { detectCalls++; return null; },
 		writeInProgressConflictGateFn: () => { /* must never be called in this scenario */ },
 		teardownPlanPanesFn: () => {

@@ -22,8 +22,11 @@
 //        exit-teardown (US-001, CAM-269): harmless no-op since no plan pane
 //        was ever spawned.
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 import type { SpawnSyncReturns } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
 	runPlanPhase,
 	runPlanPhaseWithReplan,
@@ -34,6 +37,20 @@ import type { SpawnFn } from '../src/supervisor/loop.ts';
 import type { IssueEntry } from '../src/issues/types.ts';
 import { selectPlanTargetFromFile } from '../src/issues/select.ts';
 import type { BacklogSpawnFn } from '../src/issues/backlog.ts';
+
+// ---------------------------------------------------------------------------
+// Generic backend fixture (US-008, CAM-420): isolates this suite's
+// planner/auditor backend resolution from the repo's real project.toml, so a
+// codex planner/auditor config cannot break these generic-backend tests.
+// ---------------------------------------------------------------------------
+
+const GENERIC_PLAN_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-plan-runner-target-invalid-test-'));
+const GENERIC_PLAN_CONFIG_PATH = join(GENERIC_PLAN_CONFIG_DIR, 'project.toml');
+writeFileSync(GENERIC_PLAN_CONFIG_PATH, '[backend]\nplanner = "claude"\nauditor = "claude"\n');
+
+afterAll(() => {
+	rmSync(GENERIC_PLAN_CONFIG_DIR, { recursive: true, force: true });
+});
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -124,6 +141,7 @@ function makeBaseOpts(overrides: Partial<RunPlanPhaseOptions> = {}): {
 		plannerTimeoutMs: 999_999,
 		auditorTimeoutMs: 999_999,
 		...overrides,
+		configPath: 'configPath' in overrides ? overrides.configPath : GENERIC_PLAN_CONFIG_PATH,
 	};
 
 	return { opts, calls };
@@ -227,6 +245,7 @@ describe('runPlanPhase - explicit-target-wins regression (AC3)', () => {
 			pollIntervalMs: 1,
 			plannerTimeoutMs: 999_999,
 			auditorTimeoutMs: 999_999,
+			configPath: GENERIC_PLAN_CONFIG_PATH,
 		});
 
 		// The selected issue is the explicit target, not the ranked champion.

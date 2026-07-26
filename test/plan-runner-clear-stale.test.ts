@@ -14,13 +14,27 @@
 //        right after the clear and before any pane spawn. Both files are
 //        gone after the call.
 
-import { test, expect } from 'bun:test';
-import { mkdtempSync, writeFileSync, existsSync, unlinkSync, mkdirSync } from 'node:fs';
+import { afterAll, test, expect } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync, existsSync, unlinkSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { runPlanPhase } from '../src/supervisor/plan-runner.ts';
 import { makeReadPlanVerdict, PLAN_VERDICT_REPORT_FILENAME } from '../src/supervisor/plan-verdict-report.ts';
+
+// ---------------------------------------------------------------------------
+// Generic backend fixture (US-008, CAM-420): isolates this suite's
+// planner/auditor backend resolution from the repo's real project.toml, so a
+// codex planner/auditor config cannot break these generic-backend tests.
+// ---------------------------------------------------------------------------
+
+const GENERIC_PLAN_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-plan-runner-clear-stale-fixture-'));
+const GENERIC_PLAN_CONFIG_PATH = join(GENERIC_PLAN_CONFIG_DIR, 'project.toml');
+writeFileSync(GENERIC_PLAN_CONFIG_PATH, '[backend]\nplanner = "claude"\nauditor = "claude"\n');
+
+afterAll(() => {
+	rmSync(GENERIC_PLAN_CONFIG_DIR, { recursive: true, force: true });
+});
 
 // ---------------------------------------------------------------------------
 // Minimal fake for SpawnFn (never called: preflight fails before any spawn).
@@ -89,6 +103,7 @@ test(
 			plannerPaneId: '%2',
 			paneCountMutexFn: () => 'available',
 			clearStalePlanArtifactsFn,
+			configPath: GENERIC_PLAN_CONFIG_PATH,
 		});
 
 		// 7. The run must return 'preflight-failed' (clear runs before preflight).

@@ -18,13 +18,30 @@
 //
 //   AC5: selectIssueFn returning null -> no-plannable-issue, no planner spawn.
 
-import { test, expect } from 'bun:test';
+import { afterAll, test, expect } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
 	runPlanPhase,
 	buildPlannerTaskPrompt,
 	DEFAULT_PLANNER_TASK_PROMPT,
 } from '../src/supervisor/plan-runner.ts';
 import type { IssueEntry } from '../src/issues/types.ts';
+
+// ---------------------------------------------------------------------------
+// Generic backend fixture (US-008, CAM-420): isolates this suite's
+// planner/auditor backend resolution from the repo's real project.toml, so a
+// codex planner/auditor config cannot break these generic-backend tests.
+// ---------------------------------------------------------------------------
+
+const GENERIC_PLAN_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-plan-runner-target-prompt-test-'));
+const GENERIC_PLAN_CONFIG_PATH = join(GENERIC_PLAN_CONFIG_DIR, 'project.toml');
+writeFileSync(GENERIC_PLAN_CONFIG_PATH, '[backend]\nplanner = "claude"\nauditor = "claude"\n');
+
+afterAll(() => {
+	rmSync(GENERIC_PLAN_CONFIG_DIR, { recursive: true, force: true });
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -121,6 +138,7 @@ test('runPlanPhase: spawned planner receives prompt built from selected issue id
 		pollIntervalMs: 1,
 		plannerTimeoutMs: 999_999,
 		auditorTimeoutMs: 999_999,
+		configPath: GENERIC_PLAN_CONFIG_PATH,
 		// No plannerTaskPrompt override -> must use buildPlannerTaskPrompt(issue.id).
 	});
 
@@ -162,6 +180,7 @@ test('runPlanPhase: spawned planner receives CAM-157 id, not top-of-queue CAM-99
 		pollIntervalMs: 1,
 		plannerTimeoutMs: 999_999,
 		auditorTimeoutMs: 999_999,
+		configPath: GENERIC_PLAN_CONFIG_PATH,
 	});
 
 	const plannerShell = capturedShellStrings[0] ?? '';
@@ -200,6 +219,7 @@ test('runPlanPhase: opts.plannerTaskPrompt override is honored (backward compat)
 		pollIntervalMs: 1,
 		plannerTimeoutMs: 999_999,
 		auditorTimeoutMs: 999_999,
+		configPath: GENERIC_PLAN_CONFIG_PATH,
 		// Explicit override: must use this, NOT buildPlannerTaskPrompt(issue.id).
 		plannerTaskPrompt: OVERRIDE_PROMPT,
 	});
@@ -235,6 +255,7 @@ test('runPlanPhase: selectIssueFn returning null -> no-plannable-issue, no plann
 		pollIntervalMs: 1,
 		plannerTimeoutMs: 999_999,
 		auditorTimeoutMs: 999_999,
+		configPath: GENERIC_PLAN_CONFIG_PATH,
 	});
 
 	// AC5: result kind is no-plannable-issue.
@@ -277,6 +298,7 @@ test('runPlanPhase: when selectIssueFn returns top-of-queue issue, prompt names 
 		pollIntervalMs: 1,
 		plannerTimeoutMs: 999_999,
 		auditorTimeoutMs: 999_999,
+		configPath: GENERIC_PLAN_CONFIG_PATH,
 	});
 
 	const plannerShell = capturedShellStrings[0] ?? '';
