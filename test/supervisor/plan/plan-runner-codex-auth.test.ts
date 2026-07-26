@@ -16,11 +16,14 @@
 //   AC5: the shared codexAuthPreflight fn from US-001 is reused (no inline
 //        duplicate), proved indirectly via the 'codex login' message text.
 //
-// readPhaseBackend/readPhaseModel are not injectable through
-// RunPlanPhaseOptions; they always read scripts/cam/project.toml relative to
-// process.cwd() (same constraint as loop.test.ts's codex-ceiling test and
-// review.test.ts's codex-auth-preflight tests), so every codex-backend test
-// below stages a temp cwd.
+// RunPlanPhaseOptions.configPath IS fixture-injectable (US-002, CAM-420): it
+// threads into readPhaseBackend/readPhaseModel so a test can point them at a
+// staged project.toml instead of the real one. The tests below deliberately
+// omit configPath anyway (same as loop.test.ts's codex-ceiling test and
+// review.test.ts's codex-auth-preflight tests): they exist to keep exercising
+// the live cwd-default path (readPhaseBackend/readPhaseModel falling back to
+// scripts/cam/project.toml relative to process.cwd() when configPath is
+// absent), so every codex-backend test below stages a temp cwd instead.
 
 import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';

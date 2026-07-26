@@ -18,6 +18,9 @@
 //        auditor; clean PRD -> auditor unchanged, zero behavior change).
 
 import { describe, expect, test } from 'bun:test';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
 	runPlanPhase,
 	runPlanPhaseWithReplan,
@@ -36,6 +39,10 @@ import type { PrdShape } from '../../src/commands/status.ts';
 // ---------------------------------------------------------------------------
 // Shared fixtures
 // ---------------------------------------------------------------------------
+
+const GENERIC_PLAN_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-plan-runner-test-config-'));
+const GENERIC_PLAN_CONFIG_PATH = join(GENERIC_PLAN_CONFIG_DIR, 'project.toml');
+writeFileSync(GENERIC_PLAN_CONFIG_PATH, '[backend]\nplanner = "claude"\nauditor = "claude"\n');
 
 const MOCK_ISSUE: IssueEntry = {
 	id: 'CAM-310',
@@ -159,6 +166,7 @@ function makeOpts(overrides: Partial<RunPlanPhaseOptions> = {}): {
 		plannerTimeoutMs: 999_999,
 		auditorTimeoutMs: 999_999,
 		...overrides,
+		configPath: 'configPath' in overrides ? overrides.configPath : GENERIC_PLAN_CONFIG_PATH,
 	};
 
 	return { opts, calls };
@@ -227,6 +235,7 @@ function makeReplanOpts(
 			markerCalls.push(params);
 		},
 		...overrides,
+		configPath: 'configPath' in overrides ? overrides.configPath : GENERIC_PLAN_CONFIG_PATH,
 	};
 
 	return {

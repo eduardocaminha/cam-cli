@@ -17,6 +17,9 @@
 //        `gh` invocation occurs.
 
 import { describe, expect, test } from 'bun:test';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
 	runPlanPhase,
 	runPlanPhaseWithReplan,
@@ -34,6 +37,10 @@ import type { PlanPreflightResult } from '../../../src/supervisor/plan-preflight
 // ---------------------------------------------------------------------------
 // Shared fixtures
 // ---------------------------------------------------------------------------
+
+const GENERIC_PLAN_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-plan-runner-auditor-payload-config-'));
+const GENERIC_PLAN_CONFIG_PATH = join(GENERIC_PLAN_CONFIG_DIR, 'project.toml');
+writeFileSync(GENERIC_PLAN_CONFIG_PATH, '[backend]\nplanner = "claude"\nauditor = "claude"\n');
 
 /**
  * Reproduces the CAM-156 scenario (ADR-0027): a local IssueEntry id
@@ -130,6 +137,7 @@ function makeOpts(
 		plannerTimeoutMs: 999_999,
 		auditorTimeoutMs: 999_999,
 		...overrides,
+		configPath: 'configPath' in overrides ? overrides.configPath : GENERIC_PLAN_CONFIG_PATH,
 	};
 
 	return { opts, calls };

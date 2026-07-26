@@ -49,6 +49,10 @@ import {
 } from '../../src/supervisor/plan-verdict-report.ts';
 import { waitForCondition } from '../helpers/wait-for-condition.ts';
 
+const GENERIC_PLAN_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-plan-runner-target-obey-config-'));
+const GENERIC_PLAN_CONFIG_PATH = join(GENERIC_PLAN_CONFIG_DIR, 'project.toml');
+writeFileSync(GENERIC_PLAN_CONFIG_PATH, '[backend]\nplanner = "claude"\nauditor = "claude"\n');
+
 const TEST_SOCK = 'cam-it-target';
 const SESSION = 'target-test';
 
@@ -302,6 +306,7 @@ test.skipIf(!tmuxAvailable)(
 				pollIntervalMs: 1,
 				plannerTimeoutMs: 999_999,
 				auditorTimeoutMs: 999_999,
+				configPath: GENERIC_PLAN_CONFIG_PATH,
 			});
 		} catch {
 			threw = true;
@@ -453,6 +458,7 @@ test.skipIf(!tmuxAvailable)(
 			pollIntervalMs: 1,
 			plannerTimeoutMs: 999_999,
 			auditorTimeoutMs: 999_999,
+			configPath: GENERIC_PLAN_CONFIG_PATH,
 		});
 
 		// prd.json must exist with issueNumber === 99.
