@@ -1,29 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Unify the pane-not-idle fallback onto the same verify plus remediation loop"
+    "id": "US-004",
+    "title": "Prove the bare-submit remediation against a real tmux pane"
   },
   "branchName": "cam/issue-406",
-  "timestamp": "2026-07-26T01:41:53Z",
+  "timestamp": "2026-07-26T01:56:33Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/tmux/dispatch.ts",
-    "test/dispatch.test.ts",
-    "test/integration/dispatch-geometry.test.ts",
-    "test/supervisor/narration-idle-timeout.test.ts",
-    "test/unit/dispatch-orch-pane-busy.test.ts"
+    "test/fixtures/dispatch-geometry/raw-echo.ts",
+    "test/integration/dispatch-geometry.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "src/tmux/dispatch.ts now has one verifyAfterPayloadSend loop for both idle-gate outcomes. The timedOut flag only selects paneWasIdle/reason metadata and gates the terminal orch-pane-busy co-emission; it never branches around geometry/prompt-row verification. Payload text is still sent once, while failed non-terminal verifies use sendBareSubmitKey. A timed-out recovery emits only push-recovered with paneWasIdle:false. The src/supervisor/events.ts orch-pane-busy prose still names the removed sendOnceUnverified helper and is intentionally left for the PRD's later diagnostic-wording story.",
+  "nextStoryContext": "The raw-echo real-tmux fixture now accepts drop-first, which leaves the first payload-bearing Enter unsubmitted and submits on subsequent Enter bytes. The new ninth skipIf(!tmuxAvailable)-guarded test observes the payload in the real composer before the first bare remediation, records real display-message geometry changing then returning to baseline, and proves one payload send plus one Enter-only remediation emits a single push-recovered event. The busy-pane test still uses the same payload-counting helper with two bare remediations and terminal retriesExhausted:3 metadata.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
       "lib": "tmux",
       "channel": "WebFetch",
       "url": "https://github.com/tmux/tmux/wiki/Advanced-Use#sending-keys",
-      "fetchedAt": "2026-07-26T01:41:53Z",
+      "fetchedAt": "2026-07-26T01:56:33Z",
       "status": "aligned",
-      "summary": "Current tmux documentation confirms send-keys accepts multiple argv key names, sends Enter as a key when passed separately, and makes Enter literal only under -l; the single payload send plus bare-Enter remediation matches that API."
+      "summary": "Current tmux documentation confirms -L isolates servers, send-keys accepts sequential key arguments with Enter recognized as a key, and capture-pane -p reads visible pane content; the private-socket real-pane fixture and Enter-only remediation assertions align."
     }
   ]
 }
