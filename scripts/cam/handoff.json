@@ -1,30 +1,30 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Add push-recovered to the push event taxonomy and re-scope push-undelivered to terminal-only"
+    "id": "US-002",
+    "title": "Remediate a failed verify with a bare submit key on the idle path and emit push-recovered"
   },
   "branchName": "cam/issue-406",
-  "timestamp": "2026-07-26T00:55:32Z",
+  "timestamp": "2026-07-26T01:17:03Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "scripts/cam/patterns.md",
     "scripts/file-size-budget.json",
-    "src/supervisor/events.ts",
-    "test/supervisor/events.test.ts",
-    "test/supervisor/loop.test.ts",
-    "test/ui/config-screen.test.tsx"
+    "src/tmux/dispatch.ts",
+    "test/dispatch.test.ts",
+    "test/integration/dispatch-geometry.test.ts",
+    "test/integration/review-verdict-handback.test.ts",
+    "test/supervisor/notify-orchestrator.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 adds types and documentation only; no push-recovered emitter is wired yet. Later wiring stories should emit nothing on first-try delivery, push-recovered only after at least one bare-submit remediation, and push-undelivered only after terminal verification failure. Backend-sensitive supervisor tests now pin an explicit Claude fixture, and Ink frame assertions normalize ANSI output so the tmux behavioral gate remains deterministic.",
+  "nextStoryContext": "sendBareSubmitKey is exported from src/tmux/dispatch.ts with signature (paneId, tmuxSpawnFn) and sends exactly `send-keys -t <paneId> Enter` through tmuxArgs, with no payload text and no -l. The idle path now calls it after each failed non-terminal verify, emits push-recovered only when a later verify succeeds, and preserves a single payload-bearing send. US-003 can reuse this helper verbatim on the pane-not-idle path. Real cat fixtures echo bare submits as blank lines, so shallow-pane assertions that must retain the original payload should inspect capture-pane scrollback.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
-      "lib": "ink-testing-library",
-      "channel": "WebFetch",
-      "url": "https://github.com/vadimdemedes/ink-testing-library",
-      "fetchedAt": "2026-07-26T00:54:50Z",
+      "lib": "tmux",
+      "channel": "WebSearch",
+      "url": "https://github.com/tmux/tmux/wiki/Advanced-Use#sending-keys",
+      "fetchedAt": "2026-07-26T01:12:02Z",
       "status": "aligned",
-      "summary": "The current render API still returns lastFrame, stdin, rerender, and unmount; the test-local wrapper preserves that API while normalizing lastFrame text."
+      "summary": "Current tmux documentation confirms send-keys recognizes Enter as a key, while -l disables key-name lookup and would send the literal text instead."
     }
   ]
 }
