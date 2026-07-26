@@ -43,6 +43,8 @@
 //       falsely flip the verdict does not affect a genuinely-settled read
 //     - pane-not-idle path (US-003, CAM-406): the same geometry/prompt-row
 //       verify + bare-submit remediation loop runs while payload text is sent once
+//     - idle-gate cadence (US-R1-004, CAM-406): a fake clock pins the exact
+//       derived poll count and interval independently of post-gate sleeps
 //     - both terminal reasons report maxAttempts VERIFY attempts; pane-not-idle
 //       is selected if and only if the idle gate timed out
 //     - the timed-out path's post-gate sleeps are exactly the existing settle +
@@ -752,6 +754,45 @@ describe('sendKeysVerified', () => {
 		expect(sendKeysCalls.filter((c) => c.args.includes(payload))).toHaveLength(1);
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
+	});
+
+	test('idle-gate timeout preserves the exact injected poll cadence before the unified post-gate flow (US-R1-004, CAM-406)', () => {
+		const POLL_INTERVAL_MS = 1_000;
+		const IDLE_TIMEOUT_MS = 5_000;
+		const recordedGateSleeps: number[] = [];
+		const recordedSpawn = makeSpawnFn();
+		let payloadSent = false;
+		const spawnFn: TmuxSpawnFn = (cmd, args, opts) => {
+			if (args[2] === 'send-keys' && args.includes('/cam-review')) payloadSent = true;
+			return recordedSpawn(cmd, args, opts);
+		};
+
+		withFakeClock(({ advance, chunks }) => {
+			sendKeysVerified({
+				paneId: '%7',
+				text: '/cam-review',
+				tmuxSpawnFn: spawnFn,
+				capturePaneFn: () => '⠋ Busy forever\n',
+				pollIntervalMs: POLL_INTERVAL_MS,
+				idleTimeoutMs: IDLE_TIMEOUT_MS,
+				sampleGeometryFn: () => EMPTY_BASELINE,
+				visibleCaptureFn: () => paneContentWithRow(EMPTY_BASELINE.cursorY, '❯ '),
+				sleepFn: (ms) => {
+					if (payloadSent) return;
+					recordedGateSleeps.push(ms);
+					advance(ms);
+				},
+				maxAttempts: 1,
+			});
+
+			expect(chunks.join('')).toContain(`did not go idle within ${IDLE_TIMEOUT_MS} ms`);
+		});
+
+		// Both assertions are derived from the injected values: the count closes
+		// the vacuous [].every gap, while strict equality rejects a leaked
+		// settle/backoff magnitude or a truncated final poll.
+		expect(recordedGateSleeps).toHaveLength(IDLE_TIMEOUT_MS / POLL_INTERVAL_MS);
+		expect(recordedGateSleeps.every((ms) => ms === POLL_INTERVAL_MS)).toBe(true);
 	});
 
 	test('pane-not-idle path runs the unified verify loop with bounded blocking on the pane-not-idle path and sends payload text exactly once', () => {
