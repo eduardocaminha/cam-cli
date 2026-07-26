@@ -31,7 +31,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/orch-resolve.ts (new), src/logging/spawn-resolution.ts (add optional effort field; existing call sites in run.ts/review.ts/loop.ts/plan-runner.ts stay untouched because the field is optional), index.ts (COMMANDS at :2677, HELP_REGISTRY at :2730, dispatch switch, ORCH_RESOLVE_HELP const), test/commands/orch-resolve.test.ts (new), test/commands-freeze.test.ts (FROZEN_COMMANDS + literal 31), test/help-registry.test.ts (internal-command list). Precedent to mirror: reviewer/implementer/planner/auditor already re-resolve per dispatch with configPath seams (src/supervisor/review.ts:373,394,404-409 with the 'Re-resolve per-call, not once at construction' comment at review.ts:379-381; src/supervisor/loop.ts:1108,1118-1122; src/supervisor/plan-runner.ts:655,658,731,734). readPhaseEffort (src/config/models.ts:197) currently has ZERO production consumers; this story creates the first (issue AC4: grep for readPhaseEffort outside src/config/models.ts and outside test/ becomes non-empty). Effort tier validation: NONE needed; readPhaseEffort falls back to EFFORT_DEFAULTS and EFFORT_OPTIONS (src/ui/ConfigScreen.tsx:124-130) already matches the claude tier set exactly (spec gotcha 9). Do NOT emit ultracode. Grep scripts/cam/patterns.md for 'oracle-falsifiability' (patterns.md:899) and 'commands-freeze' before writing tests; every new in-test assertion must be mutation-swept red per patterns.md:945-adjacent bullet. Project invariants: Bun-only, noUncheckedIndexedAccess (guard regex/array access), never add --permission-mode."
     },
