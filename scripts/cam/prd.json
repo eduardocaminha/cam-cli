@@ -153,7 +153,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: the five listed test files (frozen census per audit F-07; do NOT re-derive by grep at implement time, the list is authoritative). Five files exceeds the 1-3 heuristic; justified by measured mechanics: 103-331 lines each, one fixture block per file, 6 total inline-literal edits across the two builder-less files, 0 process.chdir anywhere in the set. Fixture shape identical to US-007 (planner AND auditor = claude)."
     },
