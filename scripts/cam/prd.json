@@ -38,7 +38,7 @@
       "id": "US-R1-003",
       "title": "Review round 1 fix 003: address reviewer finding",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [scripts/file-size-budget.json:1]: src/tmux/dispatch.ts's ceiling ends the branch at 701 while the file measures 687 by the gate's own metric (content.split('\\n').length), leaving 14 lines of unearned headroom. main's ceiling was 693, so this branch net-loosens the ratchet by 8 lines for a file that actually SHRANK by 6 (US-003 collapsed sendOnceUnverified into the shared loop after US-002 had already raised the ceiling to its then-actual 701). The _ref justification ('raise src/tmux/dispatch.ts 693->701 ... add idle-path bare-submit remediation') no longer describes the final tree, and the US-002 oracle (701 -gt 693) cannot detect this because the ratchet only checks actual > ceiling. Every other file touched in this diff lands EXACT (events.ts 876/876, events.test.ts 542/542, dispatch.test.ts 913/913, loop.test.ts 4999/4999); re-derive this one to the measured actual at the final branch state and adjust the _ref note accordingly."
     },
     {
