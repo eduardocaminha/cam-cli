@@ -1,30 +1,29 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Remediate a failed verify with a bare submit key on the idle path and emit push-recovered"
+    "id": "US-003",
+    "title": "Unify the pane-not-idle fallback onto the same verify plus remediation loop"
   },
   "branchName": "cam/issue-406",
-  "timestamp": "2026-07-26T01:17:03Z",
+  "timestamp": "2026-07-26T01:41:53Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "scripts/file-size-budget.json",
     "src/tmux/dispatch.ts",
     "test/dispatch.test.ts",
     "test/integration/dispatch-geometry.test.ts",
-    "test/integration/review-verdict-handback.test.ts",
-    "test/supervisor/notify-orchestrator.test.ts"
+    "test/supervisor/narration-idle-timeout.test.ts",
+    "test/unit/dispatch-orch-pane-busy.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "sendBareSubmitKey is exported from src/tmux/dispatch.ts with signature (paneId, tmuxSpawnFn) and sends exactly `send-keys -t <paneId> Enter` through tmuxArgs, with no payload text and no -l. The idle path now calls it after each failed non-terminal verify, emits push-recovered only when a later verify succeeds, and preserves a single payload-bearing send. US-003 can reuse this helper verbatim on the pane-not-idle path. Real cat fixtures echo bare submits as blank lines, so shallow-pane assertions that must retain the original payload should inspect capture-pane scrollback.",
+  "nextStoryContext": "src/tmux/dispatch.ts now has one verifyAfterPayloadSend loop for both idle-gate outcomes. The timedOut flag only selects paneWasIdle/reason metadata and gates the terminal orch-pane-busy co-emission; it never branches around geometry/prompt-row verification. Payload text is still sent once, while failed non-terminal verifies use sendBareSubmitKey. A timed-out recovery emits only push-recovered with paneWasIdle:false. The src/supervisor/events.ts orch-pane-busy prose still names the removed sendOnceUnverified helper and is intentionally left for the PRD's later diagnostic-wording story.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
       "lib": "tmux",
-      "channel": "WebSearch",
+      "channel": "WebFetch",
       "url": "https://github.com/tmux/tmux/wiki/Advanced-Use#sending-keys",
-      "fetchedAt": "2026-07-26T01:12:02Z",
+      "fetchedAt": "2026-07-26T01:41:53Z",
       "status": "aligned",
-      "summary": "Current tmux documentation confirms send-keys recognizes Enter as a key, while -l disables key-name lookup and would send the literal text instead."
+      "summary": "Current tmux documentation confirms send-keys accepts multiple argv key names, sends Enter as a key when passed separately, and makes Enter literal only under -l; the single payload send plus bare-Enter remediation matches that API."
     }
   ]
 }
