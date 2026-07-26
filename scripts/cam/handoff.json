@@ -1,22 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-003",
-    "title": "Review round 1 fix 003: address reviewer finding"
+    "id": "US-R1-004",
+    "title": "Review round 1 fix 004: address reviewer finding"
   },
   "branchName": "cam/issue-406",
-  "timestamp": "2026-07-26T02:53:03Z",
+  "timestamp": "2026-07-26T03:04:10Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "scripts/file-size-budget.json"
+    "scripts/cam/patterns.md",
+    "scripts/file-size-budget.json",
+    "test/dispatch.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "The src/tmux/dispatch.ts file-size ceiling now matches the final tree exactly at 690 lines, below main's prior 693-line ceiling. The stale 701-line headroom and obsolete US-002 justification were removed; the top-level _ref now explains the final-tree tightening while retaining test/dispatch.test.ts's exact 913-line regression budget.",
+  "nextStoryContext": "test/dispatch.test.ts now has a dedicated sendKeysVerified idle-gate cadence regression that uses a fake clock, derived 1000ms/5000ms timing constants, an exact derived poll count, and strict per-sleep equality. It remains separate from the idleTimeoutMs:0 test that pins the post-gate settle/backoff sequence. The CAM-376 mutation/falsifiability record was relocated to tracked scripts/cam/patterns.md, and the test file's exact size ceiling is 954 lines.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Internal file-size ratchet metadata only; no external library API was exercised."
+      "summary": "Internal Bun test coverage and durable project-pattern documentation only; no external library API was exercised."
     }
   ]
 }
