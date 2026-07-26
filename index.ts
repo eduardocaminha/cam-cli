@@ -79,6 +79,7 @@ import { runPrune, parsePruneArgs } from './src/commands/prune.ts';
 import { runRun, parseRunArgs } from './src/commands/run.ts';
 import { runStatus } from './src/commands/status.ts';
 import { runOrchBudget } from './src/commands/orch-budget.ts';
+import { runOrchResolve } from './src/commands/orch-resolve.ts';
 import { runStatsTokens } from './src/commands/stats.ts';
 import { runStop } from './src/commands/stop.ts';
 import { runDrain, parseDrainArgs } from './src/commands/drain.ts';
@@ -1048,6 +1049,24 @@ const ORCH_BUDGET_HELP = renderHelp({
 				'(CAM_ORCH_BUDGET=<spend>/<threshold> over=<true|false>) and always\n' +
 				'exits 0. Invoked each cycle by the orchestrator agent. Not listed in\n' +
 				'top-level `cam help`.',
+		},
+	],
+});
+
+const ORCH_RESOLVE_HELP = renderHelp({
+	title: 'cam orch-resolve',
+	tagline: 'Internal command — not for direct use',
+	usage: 'cam orch-resolve',
+	sections: [
+		{
+			heading: 'Behaviour',
+			body:
+				'Read-only, no flags. Re-reads scripts/cam/project.toml and prints a\n' +
+				'single JSON line ({"model":...,"backend":...,"effort":...}) for the\n' +
+				'orchestrator phase, so a respawn can pick up config edits without\n' +
+				'forking resolvePhaseModel\'s rules into bash. Exits 0 on success; on a\n' +
+				'not-ok model resolution, prints the resolution message to stderr and\n' +
+				'exits 1 with nothing on stdout. Not listed in top-level `cam help`.',
 		},
 	],
 });
@@ -2690,6 +2709,7 @@ const COMMANDS = [
 	'status',
 	'stats',
 	'orch-budget',
+	'orch-resolve',
 	'stop',
 	'pause',
 	'drain',
@@ -2743,6 +2763,7 @@ const HELP_REGISTRY: Record<Command, string> = {
 	status: STATUS_HELP,
 	stats: STATS_HELP,
 	'orch-budget': ORCH_BUDGET_HELP,
+	'orch-resolve': ORCH_RESOLVE_HELP,
 	stop: STOP_HELP,
 	pause: PAUSE_HELP,
 	drain: DRAIN_HELP,
@@ -3020,6 +3041,12 @@ async function main(argv: string[]): Promise<number> {
 			// CAM-23 US-001: machine-parseable orchestrator token-budget line.
 			// Read-only, no flags; the orchestrator agent invokes it each cycle.
 			return runOrchBudget();
+		}
+		case 'orch-resolve': {
+			// US-001 (CAM-425): deterministic {model, backend, effort} JSON line
+			// for the orchestrator phase. Read-only, no flags; re-reads
+			// project.toml on every invocation so a respawn picks up config edits.
+			return runOrchResolve();
 		}
 		case 'stop': {
 			const tail = argv.slice(3);
