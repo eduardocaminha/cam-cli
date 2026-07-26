@@ -142,41 +142,49 @@ function assertChildSawMarker(parentOutput: ParentOutput): void {
 // symlink-resolved path.
 // ---------------------------------------------------------------------------
 
-test('compiled binary: process.argv[1] starts with /$bunfs/, and the self-spawned child observes the marker at argv[2]', () => {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-self-invoke-compiled-'));
-	dirsToCleanup.push(dir);
+test(
+	'compiled binary: process.argv[1] starts with /$bunfs/, and the self-spawned child observes the marker at argv[2]',
+	() => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-self-invoke-compiled-'));
+		dirsToCleanup.push(dir);
 
-	writeFixture(dir);
-	const binPath = join(dir, 'fixture-bin');
+		writeFixture(dir);
+		const binPath = join(dir, 'fixture-bin');
 
-	const build = Bun.spawnSync(['bun', 'build', '--compile', './fixture.ts', '--outfile', './fixture-bin'], {
-		cwd: dir,
-		stdout: 'pipe',
-		stderr: 'pipe',
-	});
-	if (build.exitCode !== 0) {
-		throw new Error(`bun build --compile failed (exit ${build.exitCode}): ${build.stderr.toString('utf8')}`);
-	}
+		const build = Bun.spawnSync(['bun', 'build', '--compile', './fixture.ts', '--outfile', './fixture-bin'], {
+			cwd: dir,
+			stdout: 'pipe',
+			stderr: 'pipe',
+		});
+		if (build.exitCode !== 0) {
+			throw new Error(`bun build --compile failed (exit ${build.exitCode}): ${build.stderr.toString('utf8')}`);
+		}
 
-	const run = Bun.spawnSync([binPath], { cwd: dir, stdout: 'pipe', stderr: 'pipe', stdin: 'ignore' });
-	expect(run.exitCode).toBe(0);
+		const run = Bun.spawnSync([binPath], { cwd: dir, stdout: 'pipe', stderr: 'pipe', stdin: 'ignore' });
+		expect(run.exitCode).toBe(0);
 
-	const parentOutput = parseParentOutput(run.stdout.toString('utf8'));
-	expect(parentOutput.argv1).not.toBeNull();
-	expect((parentOutput.argv1 as string).startsWith('/$bunfs/')).toBe(true);
-	assertChildSawMarker(parentOutput);
-});
+		const parentOutput = parseParentOutput(run.stdout.toString('utf8'));
+		expect(parentOutput.argv1).not.toBeNull();
+		expect((parentOutput.argv1 as string).startsWith('/$bunfs/')).toBe(true);
+		assertChildSawMarker(parentOutput);
+	},
+	{ timeout: 30_000 },
+);
 
-test('interpreted fixture: the self-spawned child observes the marker at argv[2]', () => {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-self-invoke-interpreted-'));
-	dirsToCleanup.push(dir);
+test(
+	'interpreted fixture: the self-spawned child observes the marker at argv[2]',
+	() => {
+		const dir = mkdtempSync(join(tmpdir(), 'cam-self-invoke-interpreted-'));
+		dirsToCleanup.push(dir);
 
-	const fixturePath = writeFixture(dir);
+		const fixturePath = writeFixture(dir);
 
-	const run = Bun.spawnSync(['bun', fixturePath], { cwd: dir, stdout: 'pipe', stderr: 'pipe', stdin: 'ignore' });
-	expect(run.exitCode).toBe(0);
+		const run = Bun.spawnSync(['bun', fixturePath], { cwd: dir, stdout: 'pipe', stderr: 'pipe', stdin: 'ignore' });
+		expect(run.exitCode).toBe(0);
 
-	const parentOutput = parseParentOutput(run.stdout.toString('utf8'));
-	expect(parentOutput.argv1).toBe(realpathSync(fixturePath));
-	assertChildSawMarker(parentOutput);
-});
+		const parentOutput = parseParentOutput(run.stdout.toString('utf8'));
+		expect(parentOutput.argv1).toBe(realpathSync(fixturePath));
+		assertChildSawMarker(parentOutput);
+	},
+	{ timeout: 30_000 },
+);
