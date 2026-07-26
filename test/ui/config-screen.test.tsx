@@ -31,6 +31,7 @@ import { ConfigScreen, MODEL_OPTIONS, computeNextFocus, buildTabDefs } from '../
 import type { ConfigChoices } from '../../src/ui/ConfigScreen.tsx';
 import { EFFORT_DEFAULTS, DEFAULTS } from '../../src/config/models.ts';
 import type { Phase } from '../../src/config/models.ts';
+import { stripAnsi } from '../../src/logging/color.ts';
 import { waitForFrame } from '../helpers/flush-ink.ts';
 import { installTerminalSizeMock } from '../helpers/mock-terminal-size.ts';
 
@@ -51,7 +52,11 @@ const ALL_PHASES: readonly Phase[] = ['orchestrator', 'planner', 'auditor', 'imp
 const TOTAL_FIELD_COUNT = 5 * 3 + 2 + 4;
 
 function renderConfig(onDone: (c: ConfigChoices) => void = () => {}) {
-	return render(createElement(ConfigScreen, { onDone, onCancel: () => {} }));
+	const rendered = render(createElement(ConfigScreen, { onDone, onCancel: () => {} }));
+	return {
+		...rendered,
+		lastFrame: () => stripAnsi(rendered.lastFrame() ?? ''),
+	};
 }
 
 describe('ConfigScreen — 7-tab layout (AC1)', () => {

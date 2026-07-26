@@ -7,8 +7,10 @@
 // downstream consumers.
 //
 // What we cover:
-//   - the idle-gate timing out fires BOTH events, in order: 'push-undelivered'
-//     (reason 'pane-not-idle', unchanged), then 'orch-pane-busy'
+//   - terminal non-delivery after an idle-gate timeout fires BOTH events, in
+//     order: 'push-undelivered' (reason 'pane-not-idle'), then 'orch-pane-busy'
+//   - a timed-out push recovered by bare-submit remediation emits only
+//     push-recovered (paneWasIdle:false), never orch-pane-busy
 //   - 'orch-pane-busy' detail carries the exact paneId and idleTimeoutMs the
 //     caller configured, so a reader can attribute the wedge without parsing
 //     free text
@@ -66,9 +68,61 @@ describe('sendKeysVerified: orch-pane-busy event (US-001, CAM-401)', () => {
 
 		expect(events).toHaveLength(2);
 		expect(events[0]?.kind).toBe('push-undelivered');
-		expect(events[0]?.detail).toEqual({ paneId: '%3', retriesExhausted: 1, reason: 'pane-not-idle' });
+		expect(events[0]?.detail).toEqual({ paneId: '%3', retriesExhausted: 3, reason: 'pane-not-idle' });
 		expect(events[1]?.kind).toBe('orch-pane-busy');
 		expect(events[1]?.detail).toEqual({ paneId: '%3', idleTimeoutMs: 5 });
+	});
+
+	test('orch-pane-busy is emitted only on terminal non-delivery', () => {
+		const recoveredSpawn = makeSpawnFn();
+		const recoveredEvents: { kind: WorkerEventKind; detail: WorkerEventDetail }[] = [];
+		const geometry = { cursorX: 2, cursorY: 0, paneWidth: 80, paneHeight: 1 };
+		let recoveredSamples = 0;
+
+		sendKeysVerified({
+			paneId: '%4',
+			text: '/cam-review',
+			tmuxSpawnFn: recoveredSpawn,
+			capturePaneFn: () => '⠋ Busy forever\n',
+			idleTimeoutMs: 0,
+			sampleGeometryFn: () => {
+				recoveredSamples++;
+				return recoveredSamples === 2 ? { ...geometry, cursorX: 10 } : geometry;
+			},
+			visibleCaptureFn: () => '❯ ',
+			sleepFn: () => {},
+			maxAttempts: 3,
+			logEvent: (kind, detail) => recoveredEvents.push({ kind, detail }),
+		});
+
+		expect(recoveredEvents).toEqual([
+			{
+				kind: 'push-recovered',
+				detail: { paneId: '%4', submitRemediations: 1, paneWasIdle: false },
+			},
+		]);
+		expect(recoveredEvents.some((event) => event.kind === 'orch-pane-busy')).toBe(false);
+
+		const terminalEvents: { kind: WorkerEventKind; detail: WorkerEventDetail }[] = [];
+		sendKeysVerified({
+			paneId: '%5',
+			text: '/cam-review',
+			tmuxSpawnFn: makeSpawnFn(),
+			capturePaneFn: () => '⠋ Busy forever\n',
+			idleTimeoutMs: 0,
+			sampleGeometryFn: () => null,
+			sleepFn: () => {},
+			maxAttempts: 2,
+			logEvent: (kind, detail) => terminalEvents.push({ kind, detail }),
+		});
+
+		expect(terminalEvents).toEqual([
+			{
+				kind: 'push-undelivered',
+				detail: { paneId: '%5', retriesExhausted: 2, reason: 'pane-not-idle' },
+			},
+			{ kind: 'orch-pane-busy', detail: { paneId: '%5', idleTimeoutMs: 0 } },
+		]);
 	});
 
 	test('orch-pane-busy detail carries the exact paneId and idleTimeoutMs configured', () => {

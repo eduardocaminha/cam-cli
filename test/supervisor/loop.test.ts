@@ -168,6 +168,25 @@ function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervi
 	};
 }
 
+/** Run a backend-sensitive supervisor assertion against an explicit Claude fixture. */
+async function withClaudeImplementerCwd<T>(fn: () => T | Promise<T>): Promise<T> {
+	const tmpDir = mkdtempSync(join(tmpdir(), 'cam-loop-claude-backend-'));
+	const camDir = join(tmpDir, 'scripts', 'cam');
+	mkdirSync(camDir, { recursive: true });
+	writeFileSync(
+		join(camDir, 'project.toml'),
+		'[backend]\nimplementer = "claude"\n\n[models]\nimplementer = "sonnet"\n',
+	);
+	const prevCwd = process.cwd();
+	process.chdir(tmpDir);
+	try {
+		return await fn();
+	} finally {
+		process.chdir(prevCwd);
+		rmSync(tmpDir, { recursive: true, force: true });
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Reset uuid counter before each test
 // ---------------------------------------------------------------------------
@@ -465,7 +484,7 @@ describe('runSupervisor', () => {
 			logEvent: logger,
 		});
 
-		const result = await runSupervisor(opts);
+		const result = await withClaudeImplementerCwd(() => runSupervisor(opts));
 
 		expect(result.status).toBe('blocked');
 		expect(result.lastOutcome?.detail).toContain('worker-token-ceiling');
@@ -2314,7 +2333,7 @@ describe('runSupervisor @cam_label pane labeling (US-002)', () => {
 			},
 		});
 
-		await runSupervisor(opts);
+		await withClaudeImplementerCwd(() => runSupervisor(opts));
 
 		// The shell command string passed to respawn-pane must not contain ' -p '.
 		const respawnCall = spawnCalls.find((a) => a.includes('respawn-pane'));
@@ -3300,7 +3319,7 @@ describe('runSupervisor US-003: sidecar notifyOrchestrator on implementer advanc
 				},
 			});
 
-			await runSupervisor(opts);
+			await withClaudeImplementerCwd(() => runSupervisor(opts));
 
 			expect(dispatchedCmds.length).toBeGreaterThanOrEqual(1);
 			const dispatchedCmd = dispatchedCmds[0] ?? '';
@@ -3330,7 +3349,7 @@ describe('runSupervisor US-003: sidecar notifyOrchestrator on implementer advanc
 				},
 			});
 
-			const result = await runSupervisor(opts);
+			const result = await withClaudeImplementerCwd(() => runSupervisor(opts));
 
 			// Host mode completes normally (preflight not-ready is observe-only)
 			expect(result.status).toBe('complete');
@@ -4316,8 +4335,8 @@ describe('runSupervisor US-002 (CAM-352): codex auth preflight at implementer di
 	});
 
 	test('AC4: claude backend (default) -> codexAuthCheckFn never invoked, dispatch path unchanged', async () => {
-		// No withCodexBackendCwd: the repo's own scripts/cam/project.toml resolves
-		// the implementer backend to 'claude' by default.
+		// Pin an explicit Claude fixture so this remains isolated from the live
+		// project's per-phase implementer backend.
 		let respawnCalled = false;
 		let authCheckCalled = false;
 		const opts = makeBaseOpts({
@@ -4332,7 +4351,7 @@ describe('runSupervisor US-002 (CAM-352): codex auth preflight at implementer di
 			},
 		});
 
-		const result = await runSupervisor(opts);
+		const result = await withClaudeImplementerCwd(() => runSupervisor(opts));
 
 		expect(authCheckCalled).toBe(false);
 		expect(result.status).toBe('complete');

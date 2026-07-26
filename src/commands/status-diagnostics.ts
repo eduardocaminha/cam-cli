@@ -18,17 +18,16 @@
 // Precedence (highest first): operator-paused > ship-stalled > plan-escalated
 // > plan-preflight-failed > implement-blocked > post-merge-stalled >
 // sidecar-stalled > gate-awaiting-decision > merge-watch-waiting >
-// orch-pane-busy (transient send-anyway wedge) > delivery-exhausted (genuine
-// push-undelivered retries-exhausted) > none.
+// orch-pane-busy (busy-pane submission failed after remediation) >
+// delivery-exhausted (idle-pane verified retries exhausted) > none.
 //
 // orch-pane-busy vs delivery-exhausted (AC3): these are deliberately kept
 // distinct and in this precedence order rather than correlated by recency.
-// `orch-pane-busy` is emitted alongside `push-undelivered` (reason
-// 'pane-not-idle') when the sidecar found the orchestrator pane not idle and
-// sent anyway -- a transient, self-resolving condition. `push-undelivered`
-// (reason 'retries-exhausted') is emitted alone when the idle-verified retry
-// loop never confirmed delivery -- a genuine delivery failure. Conflating the
-// two would mask a real problem behind a benign one.
+// `orch-pane-busy` means the wake-up push to a busy orchestrator pane never
+// submitted even after bare-submit remediation. `push-undelivered` (reason
+// 'retries-exhausted') means an idle pane exhausted its verified delivery
+// retries. Both are terminal non-delivery conditions, but their distinct
+// failure paths require distinct operator diagnostics.
 
 import type { StatusReport } from './status.ts';
 
@@ -144,7 +143,7 @@ const WHY_NOT_MOVING_TEXT: Record<WhyNotMovingConditionId, { message: string; su
 	},
 	'orch-pane-busy': {
 		message:
-			'Orchestrator pane was busy when the sidecar last pushed a wake-up nudge (transient, self-resolving send-anyway).',
+			'A wake-up push to the busy orchestrator pane never submitted even after bare-submit remediation: a terminal non-delivery.',
 		suggestedCommand: 'cam status',
 	},
 	'delivery-exhausted': {

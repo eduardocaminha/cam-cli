@@ -54,18 +54,53 @@ function tmuxRaw(args: string[]): ReturnType<typeof spawnSync> {
  * capture-pane, display-message) lands on the private test socket instead
  * of the real `cam` one. Records every `send-keys` call for the assertions.
  */
-function makeSwapSocketSpawn(sendKeysCalls: string[][]): SpawnFn {
+interface SwapSocketObservations {
+	beforeBareSubmit?: () => void;
+	geometryReads?: string[];
+}
+
+function makeSwapSocketSpawn(
+	sendKeysCalls: string[][],
+	observations: SwapSocketObservations = {},
+): SpawnFn {
 	return (cmd, args, opts) => {
 		const swapped = [...args];
 		const lIdx = swapped.indexOf('-L');
 		if (lIdx !== -1 && swapped[lIdx + 1] === 'cam') swapped[lIdx + 1] = TEST_SOCK;
-		if (swapped.includes('send-keys')) sendKeysCalls.push(swapped);
-		return spawnSync(cmd, swapped, { stdio: opts?.stdio ?? 'pipe' }) as ReturnType<SpawnFn>;
+		const sendKeysIdx = swapped.indexOf('send-keys');
+		if (sendKeysIdx !== -1) {
+			sendKeysCalls.push(swapped);
+			const sendKeysArgv = swapped.slice(sendKeysIdx);
+			if (sendKeysArgv.length === 4 && sendKeysArgv[3] === 'Enter') {
+				observations.beforeBareSubmit?.();
+			}
+		}
+		const result = spawnSync(cmd, swapped, { stdio: opts?.stdio ?? 'pipe' });
+		if (swapped.includes('display-message')) {
+			observations.geometryReads?.push(result.stdout.toString().trim());
+		}
+		return result as ReturnType<SpawnFn>;
 	};
 }
 
+function expectPayloadSentOnce(
+	sendKeysCalls: string[][],
+	paneId: string,
+	payload: string,
+	expectedRemediations = 2,
+): void {
+	expect(sendKeysCalls.filter((call) => call.includes(payload))).toHaveLength(1);
+	expect(sendKeysCalls).toHaveLength(expectedRemediations + 1);
+	expect(sendKeysCalls.slice(1).every(
+		(call) => call.slice(2).join(' ') === `send-keys -t ${paneId} Enter`,
+	)).toBe(true);
+}
+
 /** Boot a fresh session with the raw-echo fixture as the pane's command. */
-async function bootPane(mode: 'submit' | 'drop', wrapMode: 'char' | 'word' = 'char'): Promise<void> {
+async function bootPane(
+	mode: 'submit' | 'drop' | 'drop-first',
+	wrapMode: 'char' | 'word' = 'char',
+): Promise<void> {
 	tmuxRaw(['kill-server']);
 	tmuxRaw([
 		'new-session',
@@ -105,7 +140,7 @@ afterEach(() => {
 });
 
 test.skipIf(!tmuxAvailable)(
-	'UNDELIVERED wrapping payload: exactly one physical send-keys call (send-once guard, US-001, CAM-375), exactly one push-undelivered event with retriesExhausted maxAttempts (AC6)',
+	'UNDELIVERED wrapping payload: payload text is physically sent once (send-once guard, US-001, CAM-375), exactly one push-undelivered event with retriesExhausted maxAttempts (AC6)',
 	async () => {
 		await bootPane('drop');
 		const id = paneId();
@@ -129,9 +164,9 @@ test.skipIf(!tmuxAvailable)(
 			logEvent: (kind, detail) => events.push({ kind, detail }),
 		});
 
-		// Send-once guard (US-001, CAM-375): exactly one physical send despite
-		// maxAttempts (3) VERIFY attempts against the real (never-delivered) pane.
-		expect(sendKeysCalls).toHaveLength(1);
+		// Send-once guard: one payload call, followed only by bare Enter
+		// remediations between the three real verify attempts.
+		expectPayloadSentOnce(sendKeysCalls, id, payload);
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
 		expect(events[0]?.detail).toEqual({ paneId: id, retriesExhausted: 3, reason: 'retries-exhausted' });
@@ -168,7 +203,61 @@ test.skipIf(!tmuxAvailable)(
 );
 
 test.skipIf(!tmuxAvailable)(
-	'wrap-boundary-exact payload (length === paneWidth): UNDELIVERED direction verifies maxAttempts times but sends exactly once (send-once guard, US-001, CAM-375), with one push-undelivered event (AC8)',
+	'bare submit key submits the payload the busy TUI left unsubmitted',
+	async () => {
+		await bootPane('drop-first');
+		const id = paneId();
+		const sendKeysCalls: string[][] = [];
+		const geometryReads: string[] = [];
+		const composerBeforeBareSubmit: string[] = [];
+		const events: Array<{ kind: WorkerEventKind; detail: WorkerEventDetail }> = [];
+		const payload = '[cam] US-004 bare-submit recovery';
+
+		const spawnFn = makeSwapSocketSpawn(sendKeysCalls, {
+			geometryReads,
+			beforeBareSubmit: () => {
+				composerBeforeBareSubmit.push(
+					tmuxRaw(['capture-pane', '-p', '-t', id]).stdout.toString(),
+				);
+			},
+		});
+
+		sendKeysVerified({
+			paneId: id,
+			text: payload,
+			tmuxSpawnFn: spawnFn,
+			idleTimeoutMs: 100,
+			maxAttempts: 3,
+			retryBaseMs: 20,
+			retryMaxMs: 50,
+			logEvent: (kind, detail) => events.push({ kind, detail }),
+		});
+
+		await waitForCondition(() => {
+			const capture = tmuxRaw(['capture-pane', '-p', '-t', id]).stdout.toString();
+			return isOrchPaneIdle(capture) && !capture.includes(payload);
+		});
+
+		expectPayloadSentOnce(sendKeysCalls, id, payload, 1);
+		expect(composerBeforeBareSubmit).toHaveLength(1);
+		expect(composerBeforeBareSubmit[0]).toContain(payload);
+		expect(geometryReads).toHaveLength(3);
+		expect(geometryReads[1]).not.toBe(geometryReads[0]);
+		expect(geometryReads[2]).toBe(geometryReads[0]);
+		expect(events).toHaveLength(1);
+		expect(events[0]?.kind).toBe('push-recovered');
+		expect(events[0]?.detail).toEqual({ paneId: id, submitRemediations: 1, paneWasIdle: true });
+		expect(
+			events[0]?.detail !== undefined &&
+				'submitRemediations' in events[0].detail &&
+				events[0].detail.submitRemediations,
+		).toBeGreaterThanOrEqual(1);
+	},
+	20_000,
+);
+
+test.skipIf(!tmuxAvailable)(
+	'wrap-boundary-exact payload (length === paneWidth): UNDELIVERED direction verifies maxAttempts times but sends payload once (send-once guard, US-001, CAM-375), with one push-undelivered event (AC8)',
 	async () => {
 		await bootPane('drop');
 		const id = paneId();
@@ -197,9 +286,7 @@ test.skipIf(!tmuxAvailable)(
 			logEvent: (kind, detail) => events.push({ kind, detail }),
 		});
 
-		// Send-once guard (US-001, CAM-375): exactly one physical send despite
-		// maxAttempts (3) VERIFY attempts against the real (never-delivered) pane.
-		expect(sendKeysCalls).toHaveLength(1);
+		expectPayloadSentOnce(sendKeysCalls, id, payload);
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
 	},
@@ -262,9 +349,7 @@ test.skipIf(!tmuxAvailable)(
 			logEvent: (kind, detail) => events.push({ kind, detail }),
 		});
 
-		// Send-once guard (US-001, CAM-375): exactly one physical send despite
-		// maxAttempts (3) VERIFY attempts against the real (never-delivered) pane.
-		expect(sendKeysCalls).toHaveLength(1);
+		expectPayloadSentOnce(sendKeysCalls, id, payload);
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
 	},
@@ -299,9 +384,7 @@ test.skipIf(!tmuxAvailable)(
 			logEvent: (kind, detail) => events.push({ kind, detail }),
 		});
 
-		// Send-once guard (US-001, CAM-375): exactly one physical send despite
-		// maxAttempts (3) VERIFY attempts against the real (never-delivered) pane.
-		expect(sendKeysCalls).toHaveLength(1);
+		expectPayloadSentOnce(sendKeysCalls, id, WORD_WRAP_COLLISION_PAYLOAD);
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
 	},
@@ -335,7 +418,7 @@ test.skipIf(!tmuxAvailable)(
 );
 
 test.skipIf(!tmuxAvailable)(
-	'pane-not-idle timeout path (real tmux, non-idle pane): exactly ONE send-keys call, one push-undelivered event (reason pane-not-idle, retriesExhausted 1) plus one orch-pane-busy event (US-003, CAM-373; US-001, CAM-401)',
+	'pane-not-idle timeout path (real tmux, non-idle pane): payload once plus bare-submit remediation, then terminal pane-not-idle events (US-003, CAM-406)',
 	async () => {
 		// A real long-lived foreground command (never renders a `>`/`❯` idle
 		// prompt, nor exits) so `isOrchPaneIdle` genuinely reads false for the
@@ -373,10 +456,11 @@ test.skipIf(!tmuxAvailable)(
 			logEvent: (kind, detail) => events.push({ kind, detail }),
 		});
 
-		expect(sendKeysCalls).toHaveLength(1);
+		expectPayloadSentOnce(sendKeysCalls, id, '[cam] US-003 DONE: pane-not-idle probe');
+		expect(sendKeysCalls).toHaveLength(3);
 		expect(events).toHaveLength(2);
 		expect(events[0]?.kind).toBe('push-undelivered');
-		expect(events[0]?.detail).toEqual({ paneId: id, retriesExhausted: 1, reason: 'pane-not-idle' });
+		expect(events[0]?.detail).toEqual({ paneId: id, retriesExhausted: 3, reason: 'pane-not-idle' });
 		expect(events[1]?.kind).toBe('orch-pane-busy');
 		expect(events[1]?.detail).toEqual({ paneId: id, idleTimeoutMs: 100 });
 	},

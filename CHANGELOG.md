@@ -6,6 +6,22 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.257.0] - 2026-07-26
+
+### Added
+
+- US-R2-002 - Review round 2 fix 002: address reviewer finding
+- [US-R2-001] - Review round 2 fix 001: address reviewer finding
+- US-R1-004 - Review round 1 fix 004: address reviewer finding
+- US-R1-003 - Review round 1 fix 003: address reviewer finding
+- US-R1-002 - Review round 1 fix 002: address reviewer finding
+- US-R1-001 - Review round 1 fix 001: address reviewer finding
+- US-005 - Keep the why-not-moving diagnostic truthful after the fix
+- US-004 - Prove the bare-submit remediation against a real tmux pane
+- US-003 - Unify the pane-not-idle fallback onto the same verify plus remediation loop
+- US-002 - Remediate a failed verify with a bare submit key on the idle path and emit push-recovered
+- US-001 - Add push-recovered to the push event taxonomy and re-scope push-undelivered to terminal-only
+
 ## [0.256.0] - 2026-07-24
 
 ### Added

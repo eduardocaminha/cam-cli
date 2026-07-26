@@ -89,10 +89,16 @@
 //       - argv[2] === 'drop': swallows the byte silently, modeling a busy
 //         TUI that drops the trailing Enter (the CAM-358 defect this whole
 //         oracle exists to catch).
+//       - argv[2] === 'drop-first': swallows only the FIRST submit byte, then
+//         clears and redraws on every later one. This models a busy Ink TUI
+//         dropping the payload-carrying send's trailing Enter before a bare
+//         submit-key remediation succeeds (US-004, CAM-406).
 //
-// Usage: `bun raw-echo.ts <submit|drop> <paneWidth> <paneHeight> <char|word>`
+// Usage:
+// `bun raw-echo.ts <submit|drop|drop-first> <paneWidth> <paneHeight> <char|word>`
 
-const mode = process.argv[2] === 'drop' ? 'drop' : 'submit';
+const mode =
+	process.argv[2] === 'drop' || process.argv[2] === 'drop-first' ? process.argv[2] : 'submit';
 const paneWidth = Number.parseInt(process.argv[3] ?? '80', 10);
 const paneHeight = Number.parseInt(process.argv[4] ?? '24', 10);
 const wrapMode = process.argv[5] === 'word' ? 'word' : 'char';
@@ -114,6 +120,7 @@ const PROMPT = '\u276F\u00A0';
 const ANCHOR_ROW = paneHeight - 1;
 
 let buffer = '';
+let submitBytesSeen = 0;
 
 /**
  * Lay `buffer` out into composer rows using CHAR-WRAP (the pre-CAM-364
@@ -190,11 +197,12 @@ render();
 stdin.on('data', (chunk: Buffer) => {
 	for (const byte of chunk) {
 		if (byte === 0x0d || byte === 0x0a) {
-			if (mode === 'submit') {
+			submitBytesSeen++;
+			if (mode === 'submit' || (mode === 'drop-first' && submitBytesSeen > 1)) {
 				buffer = '';
 				render();
 			}
-			// drop mode: swallow silently, buffer/render unchanged.
+			// drop mode (and drop-first's first submit): leave the composer intact.
 			continue;
 		}
 		buffer += String.fromCharCode(byte);

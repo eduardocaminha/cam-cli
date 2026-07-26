@@ -36,9 +36,10 @@ function tmuxRaw(args: string[]): ReturnType<typeof spawnSync> {
 	return spawnSync("tmux", ["-L", TEST_SOCK, ...args], { stdio: "pipe" });
 }
 
-/** Real capture-pane read of pane 0 (poll target for prompt/verdict content). */
-function captureContent(): string {
-	return tmuxRaw(["capture-pane", "-t", `${SESSION}.0`, "-p"]).stdout?.toString() ?? "";
+/** Real capture-pane read; history keeps remediated verdicts observable. */
+function captureContent(history = false): string {
+	const historyArgs = history ? ["-S", "-"] : [];
+	return tmuxRaw(["capture-pane", "-t", `${SESSION}.0`, "-p", ...historyArgs]).stdout?.toString() ?? "";
 }
 
 /** Real display-message read of a pane's `@cam_label` user option. */
@@ -114,10 +115,9 @@ test.skipIf(!tmuxAvailable)(
 		notify(verdictLine);
 
 		// Poll until tmux has processed the send-keys call.
-		await waitForCondition(() => captureContent().includes(verdictLine));
+		await waitForCondition(() => captureContent(true).includes(verdictLine));
 
-		// Assert the verdict line is observable in the pane via capture-pane.
-		const out = captureContent();
+		const out = captureContent(true);
 		expect(out).toContain(verdictLine);
 	},
 );
@@ -135,9 +135,9 @@ test.skipIf(!tmuxAvailable)(
 		const notify = makeNotifyOrchestrator(SESSION, swapSocketSpawn);
 		const verdictLine = formatReviewVerdictLine(2, "FIXES_PENDING:3");
 		notify(verdictLine);
-		await waitForCondition(() => captureContent().includes(verdictLine));
+		await waitForCondition(() => captureContent(true).includes(verdictLine));
 
-		const out = captureContent();
+		const out = captureContent(true);
 		expect(out).toContain(verdictLine);
 	},
 );
@@ -155,9 +155,9 @@ test.skipIf(!tmuxAvailable)(
 		const notify = makeNotifyOrchestrator(SESSION, swapSocketSpawn);
 		const verdictLine = formatReviewVerdictLine(4, "MAX_ROUNDS_DEBT");
 		notify(verdictLine);
-		await waitForCondition(() => captureContent().includes(verdictLine));
+		await waitForCondition(() => captureContent(true).includes(verdictLine));
 
-		const out = captureContent();
+		const out = captureContent(true);
 		expect(out).toContain(verdictLine);
 	},
 );

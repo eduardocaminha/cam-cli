@@ -22,12 +22,11 @@
 //     - IDLE_WAIT_DEADLINE_MS boundary: exceeds the old 5_000 ms default
 //   sendKeysVerified (US-002, CAM-200; geometry oracle US-002/CAM-359):
 //     - cursor geometry unchanged after settle (post-send == per-send baseline): delivered on
-//       the first attempt, no retry, no push-undelivered
+//       the first attempt, no remediation, no event
 //     - send-once guard (US-001, CAM-375): cursor geometry differs every sample (composer
-//       never empties): send-keys fires EXACTLY ONCE (not maxAttempts times), retries up to
-//       maxAttempts VERIFY attempts, then emits exactly one push-undelivered event via the
-//       injected logEvent (retriesExhausted still equals maxAttempts, counting verify
-//       attempts not physical sends), using a no-op sleepFn
+//       never empties): the PAYLOAD-CARRYING send-keys fires EXACTLY ONCE, bare submit
+//       remediations run between verify attempts, then exactly one push-undelivered event
+//       records maxAttempts VERIFY attempts
 //     - settle window (US-001, CAM-358): a sampleGeometryFn that would report the stale
 //       PRE-send geometry on the first post-send read, but the injected sleepFn advances a
 //       staged reader to the POST-send (baseline-matching) geometry before that read happens,
@@ -42,11 +41,14 @@
 //     - discriminator reads through the dedicated visibleCaptureFn, never capturePaneFn
 //       (review round 2 fix, US-R2-001, CAM-359): a scrollback-shaped capturePaneFn that would
 //       falsely flip the verdict does not affect a genuinely-settled read
-//     - idle-gate times out (US-002, CAM-373): sends EXACTLY ONCE with no verify/retry loop,
-//       zero backoff sleeps, the geometry sampler never consulted, and exactly one
-//       push-undelivered event with reason 'pane-not-idle' and retriesExhausted 1 PLUS one
-//       dedicated 'orch-pane-busy' event carrying the same paneId/idleTimeoutMs (US-001,
-//       CAM-401); the stderr warning is preserved
+//     - pane-not-idle path (US-003, CAM-406): the same geometry/prompt-row
+//       verify + bare-submit remediation loop runs while payload text is sent once
+//     - idle-gate cadence (US-R1-004, CAM-406): a fake clock pins the exact
+//       derived poll count and interval independently of post-gate sleeps
+//     - both terminal reasons report maxAttempts VERIFY attempts; pane-not-idle
+//       is selected if and only if the idle gate timed out
+//     - the timed-out path's post-gate sleeps are exactly the existing settle +
+//       derived backoff sequence, with no extra constant/wait
 //   cursorRowStartsWithPrompt (US-001, CAM-364): prompt-at-start present/absent, both glyphs
 //     (> and ❯), leading whitespace, mid-row glyph (not a match), out-of-range cursorY
 
@@ -361,7 +363,7 @@ const EMPTY_BASELINE: CursorGeometry = { cursorX: 2, cursorY: 26, paneWidth: 80,
 const FILLED_GEOMETRY: CursorGeometry = { cursorX: 10, cursorY: 26, paneWidth: 80, paneHeight: 30 };
 
 describe('sendKeysVerified', () => {
-	test('geometry unchanged after settle: delivered on first attempt, no retry, no push-undelivered', () => {
+	test('first-try success still emits no event and spawns exactly one send-keys call', () => {
 		const spawnFn = makeSpawnFn();
 		const events: Array<{ kind: string; detail: unknown }> = [];
 
@@ -379,6 +381,55 @@ describe('sendKeysVerified', () => {
 		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
 		expect(sendKeysCalls).toHaveLength(1);
 		expect(events).toHaveLength(0);
+	});
+
+	test('bare submit remediation on the idle path uses one explicit Enter and never repeats payload text', () => {
+		const spawnFn = makeSpawnFn();
+		const payload = '/cam-review';
+		let sampleCalls = 0;
+
+		sendKeysVerified({
+			paneId: '%8',
+			text: payload,
+			tmuxSpawnFn: spawnFn,
+			capturePaneFn: () => '> ',
+			sampleGeometryFn: () => (++sampleCalls === 2 ? FILLED_GEOMETRY : EMPTY_BASELINE),
+			sleepFn: () => {},
+			idleTimeoutMs: 5,
+			maxAttempts: 3,
+		});
+
+		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
+		expect(sendKeysCalls).toHaveLength(2);
+		expect(sendKeysCalls[0]?.args.slice(2)).toEqual(['send-keys', '-t', '%8', payload, 'Enter']);
+		expect(sendKeysCalls[1]?.args.slice(2)).toEqual(['send-keys', '-t', '%8', 'Enter']);
+		expect(sendKeysCalls.slice(1).some((call) => call.args.includes(payload))).toBe(false);
+	});
+
+	test('push-recovered after remediation emits once with the idle-path remediation count', () => {
+		const spawnFn = makeSpawnFn();
+		const events: Array<{ kind: string; detail: unknown }> = [];
+		let sampleCalls = 0;
+
+		sendKeysVerified({
+			paneId: '%6',
+			text: '/cam-next',
+			tmuxSpawnFn: spawnFn,
+			capturePaneFn: () => '> ',
+			sampleGeometryFn: () => (++sampleCalls === 2 ? FILLED_GEOMETRY : EMPTY_BASELINE),
+			sleepFn: () => {},
+			idleTimeoutMs: 5,
+			maxAttempts: 3,
+			logEvent: (kind, detail) => events.push({ kind, detail }),
+		});
+
+		expect(events).toEqual([
+			{
+				kind: 'push-recovered',
+				detail: { paneId: '%6', submitRemediations: 1, paneWasIdle: true },
+			},
+		]);
+		expect(events.some((event) => event.kind === 'push-undelivered')).toBe(false);
 	});
 
 	test('settle window honored: sleepFn advances the staged reader so the post-send sample reflects the settled geometry, not the stale pre-settle one (US-001, CAM-358)', () => {
@@ -427,7 +478,7 @@ describe('sendKeysVerified', () => {
 		expect(events).toHaveLength(0);
 	});
 
-	test('send-once guard (US-001, CAM-375): detected-idle pane, geometry oracle never confirms delivery — send-keys fires exactly ONCE (not maxAttempts times), retries up to maxAttempts VERIFY attempts, then emits one push-undelivered event (AC1, AC4; red on unmodified main: main records 3 send-keys calls, per this story\'s handoff.json red-sweep)', () => {
+	test('send-once guard (US-001, CAM-375): exhausted verification sends payload text once, bare submits between attempts, and only push-undelivered', () => {
 		const spawnFn = makeSpawnFn();
 		const events: Array<{ kind: string; detail: unknown }> = [];
 		let sleepCount = 0;
@@ -457,9 +508,13 @@ describe('sendKeysVerified', () => {
 			logEvent: (kind, detail) => events.push({ kind, detail }),
 		});
 
-		// AC1: exactly ONE physical send-keys invocation, not maxAttempts (3).
+		// The payload-bearing call stays physically unique. Each later call is
+		// exactly one bare Enter remediation and can never duplicate the text.
 		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
-		expect(sendKeysCalls).toHaveLength(1);
+		const payloadCalls = sendKeysCalls.filter((c) => c.args.includes('/cam-review'));
+		expect(payloadCalls).toHaveLength(1);
+		expect(sendKeysCalls).toHaveLength(3);
+		expect(sendKeysCalls.slice(1).every((c) => c.args.slice(2).join(' ') === 'send-keys -t %9 Enter')).toBe(true);
 		// AC5: settle sleep (once per verify attempt) + backoff sleep between
 		// attempts are both still in place: 3 settle sleeps + 2 backoff sleeps.
 		expect(sleepCount).toBeGreaterThanOrEqual(2);
@@ -497,10 +552,9 @@ describe('sendKeysVerified', () => {
 			}),
 		).not.toThrow();
 
-		// Send-once guard (US-001, CAM-375): exactly one physical send despite
-		// 2 verify attempts.
+		// Send-once guard: payload text appears in exactly one physical call.
 		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
-		expect(sendKeysCalls).toHaveLength(1);
+		expect(sendKeysCalls.filter((c) => c.args.includes('/cam-ship'))).toHaveLength(1);
 	});
 
 	test('null baseline sample (fail-closed/unknown) is treated as NOT delivered and retried (US-002, CAM-359 AC5)', () => {
@@ -522,10 +576,9 @@ describe('sendKeysVerified', () => {
 			logEvent: (kind, detail) => events.push({ kind, detail }),
 		});
 
-		// Send-once guard (US-001, CAM-375): exactly one physical send despite
-		// 2 verify attempts.
+		// Send-once guard: payload text appears in exactly one physical call.
 		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
-		expect(sendKeysCalls).toHaveLength(1);
+		expect(sendKeysCalls.filter((c) => c.args.includes('/cam-next'))).toHaveLength(1);
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
 	});
@@ -556,10 +609,9 @@ describe('sendKeysVerified', () => {
 			logEvent: (kind, detail) => events.push({ kind, detail }),
 		});
 
-		// Send-once guard (US-001, CAM-375): exactly one physical send despite
-		// 2 verify attempts.
+		// Send-once guard: payload text appears in exactly one physical call.
 		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
-		expect(sendKeysCalls).toHaveLength(1);
+		expect(sendKeysCalls.filter((c) => c.args.includes('/cam-issue'))).toHaveLength(1);
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
 	});
@@ -631,10 +683,9 @@ describe('sendKeysVerified', () => {
 			logEvent: (kind, detail) => events.push({ kind, detail }),
 		});
 
-		// Send-once guard (US-001, CAM-375): exactly one physical send despite
-		// 2 verify attempts.
+		// Send-once guard: payload text appears in exactly one physical call.
 		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
-		expect(sendKeysCalls).toHaveLength(1);
+		expect(sendKeysCalls.filter((c) => c.args.includes(payload))).toHaveLength(1);
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
 	});
@@ -698,113 +749,150 @@ describe('sendKeysVerified', () => {
 			logEvent: (kind, detail) => events.push({ kind, detail }),
 		});
 
-		// Send-once guard (US-001, CAM-375): exactly one physical send despite
-		// 2 verify attempts.
+		// Send-once guard: payload text appears in exactly one physical call.
 		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
-		expect(sendKeysCalls).toHaveLength(1);
+		expect(sendKeysCalls.filter((c) => c.args.includes(payload))).toHaveLength(1);
 		expect(events).toHaveLength(1);
 		expect(events[0]?.kind).toBe('push-undelivered');
 	});
 
-	test('idle-gate times out: sends EXACTLY ONCE with no verify/retry cycle, no backoff sleeps, the geometry sampler is never consulted, and emits a push-undelivered event (reason pane-not-idle) plus a dedicated orch-pane-busy event (US-002, CAM-373; US-001, CAM-401; red on main: main sends 3 times)', () => {
-		const spawnFn = makeSpawnFn();
-		const events: Array<{ kind: string; detail: unknown }> = [];
-
-		const recordedSleeps: number[] = [];
-		let geometrySamplerCalls = 0;
-
-		// Derived (not frozen) from the pollIntervalMs override passed below, per
-		// the derive-don't-freeze rule (US-002, CAM-377): the idle-gate's own
-		// poll sleeps must equal this value exactly, so the same constant feeds
-		// both the override and the AC2 assertion below instead of two
-		// independently-typed literals that could drift apart.
+	test('idle-gate timeout preserves the exact injected poll cadence before the unified post-gate flow (US-R1-004, CAM-406)', () => {
 		const POLL_INTERVAL_MS = 1_000;
 		const IDLE_TIMEOUT_MS = 5_000;
+		const recordedGateSleeps: number[] = [];
+		const recordedSpawn = makeSpawnFn();
+		let payloadSent = false;
+		const spawnFn: TmuxSpawnFn = (cmd, args, opts) => {
+			if (args[2] === 'send-keys' && args.includes('/cam-review')) payloadSent = true;
+			return recordedSpawn(cmd, args, opts);
+		};
 
-		// Fake-clock idiom (reused from the sendKeysWhenIdle default-deadline
-		// test above, now via the shared withFakeClock helper, US-001, CAM-362):
-		// a monotonically-advancing clock driven only by the injected sleepFn,
-		// and a capturePaneFn that never reports idle, so the idle-gate must run
-		// out its full budget rather than resolving early.
-		withFakeClock(({ advance, chunks: stderrChunks }) => {
+		withFakeClock(({ advance, chunks }) => {
 			sendKeysVerified({
 				paneId: '%7',
 				text: '/cam-review',
 				tmuxSpawnFn: spawnFn,
-				capturePaneFn: () => '⠋ Busy forever\n', // never idle
-				sampleGeometryFn: () => {
-					geometrySamplerCalls++;
-					return EMPTY_BASELINE;
-				},
-				sleepFn: (ms) => {
-					recordedSleeps.push(ms);
-					advance(ms);
-				},
+				capturePaneFn: () => '⠋ Busy forever\n',
 				pollIntervalMs: POLL_INTERVAL_MS,
 				idleTimeoutMs: IDLE_TIMEOUT_MS,
-				maxAttempts: 3,
-				logEvent: (kind, detail) => events.push({ kind, detail }),
+				sampleGeometryFn: () => EMPTY_BASELINE,
+				visibleCaptureFn: () => paneContentWithRow(EMPTY_BASELINE.cursorY, '❯ '),
+				sleepFn: (ms) => {
+					if (payloadSent) return;
+					recordedGateSleeps.push(ms);
+					advance(ms);
+				},
+				maxAttempts: 1,
 			});
 
-			// AC4: the existing stderr warning on the timed-out path is preserved.
-			expect(stderrChunks.join('')).toContain(`did not go idle within 5000 ms`);
+			expect(chunks.join('')).toContain(`did not go idle within ${IDLE_TIMEOUT_MS} ms`);
 		});
 
-		// AC1: exactly one send-keys invocation, no verify/retry loop.
-		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
-		expect(sendKeysCalls).toHaveLength(1);
+		// Both assertions are derived from the injected values: the count closes
+		// the vacuous [].every gap, while strict equality rejects a leaked
+		// settle/backoff magnitude or a truncated final poll.
+		expect(recordedGateSleeps).toHaveLength(IDLE_TIMEOUT_MS / POLL_INTERVAL_MS);
+		expect(recordedGateSleeps.every((ms) => ms === POLL_INTERVAL_MS)).toBe(true);
+	});
 
-		// AC2: zero backoff sleeps. The old upper-bound assertion (every sleep
-		// no greater than the pollIntervalMs override) was non-falsifiable: a
-		// leaked computeBackoffMs value (default base 300, well under that
-		// bound) would have slipped under it undetected. With
-		// idleTimeoutMs=IDLE_TIMEOUT_MS (5_000) and pollIntervalMs=POLL_INTERVAL_MS
-		// (1_000), the idle-gate's own poll loop produces exactly 5 sleeps, each
-		// EXACTLY POLL_INTERVAL_MS (5_000 / 1_000, evenly divisible: every
-		// `remaining` value the loop observes is itself a multiple of
-		// POLL_INTERVAL_MS, so `Math.min(pollIntervalMs, remaining)` is always
-		// POLL_INTERVAL_MS, never a smaller remainder). Strict equality means
-		// any sleep of a different shape (a leaked backoff value, a truncated
-		// final poll, or any other magnitude) makes this assertion fail. The
-		// count assertion below (US-R1-002, CAM-376 review round 1) closes the
-		// vacuous-empty-array gap the `.every()` call alone left open: `[].every`
-		// is trivially true, so a regression that stops the idle-gate from
-		// sleeping at all (or returns before the poll loop) would have passed
-		// silently. The comparand is derived from the same constants fed to the
-		// call above, not a frozen literal, per the derive-don't-freeze rule
-		// (US-002, CAM-377). The geometry sampler is never consulted for a
-		// delivery verdict on this path.
-		expect(recordedSleeps).toHaveLength(IDLE_TIMEOUT_MS / POLL_INTERVAL_MS);
-		expect(recordedSleeps.every((ms) => ms === POLL_INTERVAL_MS)).toBe(true);
-		expect(geometrySamplerCalls).toBe(0);
+	test('pane-not-idle path runs the unified verify loop with bounded blocking on the pane-not-idle path and sends payload text exactly once', () => {
+		const MAX_ATTEMPTS = 4;
+		const RETRY_BASE_MS = 20;
+		const RETRY_MAX_MS = 50;
+		const recordedSpawn = makeSpawnFn();
+		const payload = '/cam-review';
+		const lifecycle: string[] = [];
+		const recordedSleeps: number[] = [];
+		const events: Array<{ kind: string; detail: unknown }> = [];
+		const spawnFn: TmuxSpawnFn = (cmd, args, opts) => {
+			if (args[2] === 'send-keys') {
+				lifecycle.push(args.includes(payload) ? 'send:payload' : 'send:bare-submit');
+			}
+			return recordedSpawn(cmd, args, opts);
+		};
+		let sampleCalls = 0;
+		let visibleCaptureCalls = 0;
+		sendKeysVerified({
+			paneId: '%7',
+			text: payload,
+			tmuxSpawnFn: spawnFn,
+			capturePaneFn: () => '⠋ Busy forever\n',
+			idleTimeoutMs: 0,
+			sampleGeometryFn: () => {
+				sampleCalls++;
+				lifecycle.push(`sample:${sampleCalls}`);
+				return sampleCalls === 1 || sampleCalls === MAX_ATTEMPTS + 1
+					? EMPTY_BASELINE
+					: FILLED_GEOMETRY;
+			},
+			visibleCaptureFn: () => {
+				visibleCaptureCalls++;
+				return paneContentWithRow(EMPTY_BASELINE.cursorY, '❯ ');
+			},
+			sleepFn: (ms) => { recordedSleeps.push(ms); },
+			maxAttempts: MAX_ATTEMPTS,
+			retryBaseMs: RETRY_BASE_MS,
+			retryMaxMs: RETRY_MAX_MS,
+			jitterFraction: 0.25,
+			randomFn: () => 0.5,
+			logEvent: (kind, detail) => events.push({ kind, detail }),
+		});
+		// The baseline is immediately before the one payload send.
+		expect(lifecycle.slice(0, 2)).toEqual(['sample:1', 'send:payload']);
+		const sendKeysCalls = recordedSpawn.calls.filter((call) => call.args[2] === 'send-keys');
+		expect(sendKeysCalls.filter((call) => call.args.includes(payload))).toHaveLength(1);
+		expect(sendKeysCalls.slice(1).every((call) => call.args.at(-1) === 'Enter')).toBe(true);
+		expect(visibleCaptureCalls).toBe(1);
+		expect(events).toEqual([
+			{
+				kind: 'push-recovered',
+				detail: { paneId: '%7', submitRemediations: MAX_ATTEMPTS - 1, paneWasIdle: false },
+			},
+		]);
+		// randomFn=0.5 makes the jitter multiplier exactly 1. Derive the exact
+		// post-gate settle/backoff sequence from the injected base/cap/attempts.
+		const expectedBackoffs = Array.from(
+			{ length: MAX_ATTEMPTS - 1 },
+			(_, index) => Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** index),
+		);
+		const expectedSleeps = expectedBackoffs.flatMap((backoff) => [SEND_KEYS_SETTLE_MS, backoff]);
+		expectedSleeps.push(SEND_KEYS_SETTLE_MS);
+		expect(recordedSleeps).toEqual(expectedSleeps);
+	});
 
-		// Falsifiability record, durable copy (US-R2-002, CAM-376 review round 2):
-		// scripts/cam/handoff.json is a per-story ROTATING artifact, so a mutation
-		// record written only there (as originally done for US-003) is gone by
-		// the very next story's finalize commit. This tracked-source copy is the
-		// durable one. Proof performed: a temporary `recordedSleeps.push(300)` (a
-		// computeBackoffMs-shaped value: default retryBaseMs base=300, streak=1,
-		// zero jitter, per src/tmux/dispatch.ts:544) was inserted immediately
-		// after the sendKeysVerified call above, then reverted before commit.
-		// Against the resulting array [1000,1000,1000,1000,1000,300], the OLD
-		// `every((ms) => ms <= 1_000)` bound evaluated true (vacuous pass); the
-		// NEW strict-equality assertion above evaluated false, and
-		// `bun test test/dispatch.test.ts` under the live mutation exited 1 (one
-		// failing assertion, at this line). retryBaseMs is never actually
-		// reached on this idle-gate-timeout path (sendOnceUnverified skips the
-		// retry/backoff loop entirely), which is why the mutation injects a
-		// retryBaseMs-SHAPED value directly into recordedSleeps rather than
-		// exercising the real option end to end.
-
-		// AC3: exactly one push-undelivered event, reason pane-not-idle,
-		// retriesExhausted === 1, plus one dedicated orch-pane-busy event
-		// (US-001, CAM-401) carrying the same paneId and the configured
-		// idleTimeoutMs.
-		expect(events).toHaveLength(2);
-		expect(events[0]?.kind).toBe('push-undelivered');
-		expect(events[0]?.detail).toEqual({ paneId: '%7', retriesExhausted: 1, reason: 'pane-not-idle' });
-		expect(events[1]?.kind).toBe('orch-pane-busy');
-		expect(events[1]?.detail).toEqual({ paneId: '%7', idleTimeoutMs: IDLE_TIMEOUT_MS });
+	test('retriesExhausted equals maxAttempts on both terminal reasons and reason tracks only the idle timeout', () => {
+		const MAX_ATTEMPTS = 4;
+		const runTerminal = (timedOut: boolean) => {
+			const spawnFn = makeSpawnFn();
+			const events: Array<{ kind: string; detail: unknown }> = [];
+			let sampleCalls = 0;
+			sendKeysVerified({
+				paneId: timedOut ? '%8' : '%9',
+				text: '/cam-ship',
+				tmuxSpawnFn: spawnFn,
+				capturePaneFn: () => (timedOut ? '⠋ Busy forever\n' : '> '),
+				idleTimeoutMs: 0,
+				sampleGeometryFn: () => (++sampleCalls === 1 ? EMPTY_BASELINE : FILLED_GEOMETRY),
+				sleepFn: () => {},
+				maxAttempts: MAX_ATTEMPTS,
+				jitterFraction: 0,
+				logEvent: (kind, detail) => events.push({ kind, detail }),
+			});
+			return events;
+		};
+		expect(runTerminal(true)).toEqual([
+			{
+				kind: 'push-undelivered',
+				detail: { paneId: '%8', retriesExhausted: MAX_ATTEMPTS, reason: 'pane-not-idle' },
+			},
+			{ kind: 'orch-pane-busy', detail: { paneId: '%8', idleTimeoutMs: 0 } },
+		]);
+		expect(runTerminal(false)).toEqual([
+			{
+				kind: 'push-undelivered',
+				detail: { paneId: '%9', retriesExhausted: MAX_ATTEMPTS, reason: 'retries-exhausted' },
+			},
+		]);
 	});
 });
 

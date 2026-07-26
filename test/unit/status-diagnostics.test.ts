@@ -181,11 +181,12 @@ describe('diagnoseWhyNotMoving: closed rule-set, one fixed message/command per c
 		});
 	});
 
-	test('orch-pane-busy', () => {
+	test('orch-pane-busy message describes terminal non-delivery', () => {
 		const result = diagnoseWhyNotMoving(baseReport(), { orchPaneBusy: true });
 		expect(result).toEqual({
 			condition: 'orch-pane-busy',
-			message: 'Orchestrator pane was busy when the sidecar last pushed a wake-up nudge (transient, self-resolving send-anyway).',
+			message:
+				'A wake-up push to the busy orchestrator pane never submitted even after bare-submit remediation: a terminal non-delivery.',
 			suggestedCommand: 'cam status',
 		});
 	});
