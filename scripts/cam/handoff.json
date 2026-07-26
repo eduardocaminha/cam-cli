@@ -1,22 +1,30 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Add internal `cam orch-resolve` subcommand: deterministic {model, backend, effort} resolver" },
+  "lastCompletedStory": { "id": "US-002", "title": "Thread configPath + effort through run.ts initial resolution and emit --effort in the orchestrator argv" },
   "branchName": "cam/issue-425",
-  "timestamp": "2026-07-26T11:34:04Z",
+  "timestamp": "2026-07-26T12:10:00Z",
   "createdFiles": [
-    "src/commands/orch-resolve.ts",
-    "test/commands/orch-resolve.test.ts"
+    "src/commands/run-effort-preflight.ts",
+    "test/commands/run-configpath-seam.test.ts",
+    "test/commands/run-effort-argv.test.ts",
+    "test/commands/run-spawn-resolution-effort.test.ts"
   ],
   "modifiedFiles": [
-    "index.ts",
-    "src/logging/spawn-resolution.ts",
-    "test/commands-freeze.test.ts",
-    "test/help-registry.test.ts"
+    "src/commands/run.ts",
+    "test/run.test.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [
-    "US-001 only adds the `cam orch-resolve` subcommand and its command-registration surface; it does NOT wire the resolver into the orchestrator bash self-handoff/respawn loop (run.ts's buildOrchestratorPaneCommand / the bounded respawn wrapper). That wiring — making the wrapper actually call `cam orch-resolve` on each respawn instead of the model baked into argv at `cam run` setup time — is presumably a follow-up story; it was out of this story's acceptance criteria."
+    "US-002 only fixes the FIRST (initial cam run) orchestrator spawn: setupPanes now resolves model/backend/effort through an injectable configPath and gates --effort emission on a capability probe, but the resolved values are still interpolated as literal strings into the bash -c while-true loop body at build time. The while-true loop itself (buildOrchestratorPaneCommand's respawn branch) still re-execs that SAME literal argv on every self-handoff respawn -- editing project.toml mid-session still has no effect until a full `cam run` restart. That re-resolution-per-respawn work (invoking `cam orch-resolve`, added in US-001, from inside the bash wrapper on each iteration, with a last-known-good fallback and a divergence event) is US-003, already scoped in prd.json and NOT touched by this story."
   ],
-  "nextStoryContext": "runOrchResolve (src/commands/orch-resolve.ts) composes readBackend + resolvePhaseModel + readPhaseEffort (all pre-existing, untouched) and prints one JSON line {model,backend,effort} to stdout on success (exit 0) or the resolution message to stderr with nothing on stdout (exit 1). Seams: configPath, cacheReader, cwd (for the default event-log path only), logEvent (WorkerEventLogger, default makeFileEventLogger(<cwd>/.claude/cam-worker-events.jsonl)), write, writeError. The emitted spawn-resolution event uses a fixed uuid sentinel 'orch-resolve' (mirrors recordCycleTokens's 'cycle-close' sentinel in journal.ts) since this command runs outside any per-worker session. SpawnResolutionEvent/EmitSpawnResolutionOpts (src/logging/spawn-resolution.ts) gained an optional `effort` field; every pre-existing call site (run.ts, loop.ts, review.ts, plan-runner.ts) omits it and is unaffected (emitSpawnResolution only includes `effort` in the emitted event when the caller passes one). COMMANDS is now 31 entries (added 'orch-resolve' next to 'orch-budget'); test/commands-freeze.test.ts and test/help-registry.test.ts were updated in the same commit.",
+  "nextStoryContext": "setupPanes (src/commands/run.ts) now threads an injectable `configPath?: string` (on both the public RunOptions and the internal SetupOpts) into all three per-phase reads at the orchestrator resolution site: readBackend(opts.configPath), resolvePhaseModel({ phase: 'orchestrator', backend, configPath: opts.configPath, cacheReader }), and readPhaseEffort('orchestrator', opts.configPath) (this last one was a brand-new call site: readPhaseEffort had zero production consumers before this story, `cam orch-resolve` from US-001 being the only other one). A NEW injectable capability probe (`effortSupportCheckFn?: EffortCapabilityCheck` on RunOptions/SetupOpts, default `checkClaudeEffortSupport` in the new sibling module src/commands/run-effort-preflight.ts) gates whether the resolved effort actually reaches the argv: production default runs `spawnFn('claude', ['--help'], { stdio: 'pipe' })` and greps stdout for the literal '--effort' substring, fail-closed (false) on any spawn error/ENOENT/non-zero-exit/unreadable-output. When unsupported, setupPanes prints a one-line emitWarn() and passes the empty string (never undefined) as buildOrchestratorPaneCommand's new `effort` option, which the pure builder treats identically to omitted: the flag is left out of the argv entirely rather than emitted as `--effort ''`. When supported, the argv gets `--effort '<value>'` inserted between `--model` and `--agent subagent-orchestrator`. Separately, emitSpawnResolution's call in setupPanes now ALWAYS includes the resolved effort (readPhaseEffort's return value, not the capability-gated one) in its detail -- this is a deliberate design split: the spawn-resolution event answers 'what did config declare' (audit trail), the argv answers 'what did claude actually receive' (runtime truth), and they are allowed to diverge when the local claude build predates --effort. src/commands/run.ts crossed its file-size ceiling (975->1052) and test/run.test.ts also crossed its own (1034->1054, from a new `effort` field on the shared `base` fixture plus 2 new tests); both raised with tracker-ref-carrying `_ref` entries in scripts/file-size-budget.json, staged before the check:all re-run per the ratchet-gate rubric.",
   "officialDocsValidated": [
-    { "lib": "none", "status": "no_external_lib_touched", "summary": "Harness-internal CLI subcommand composed entirely of pre-existing internal modules (config/models.ts, config/model-resolution.ts, logging/spawn-resolution.ts, supervisor/events.ts); no new external library API surface was exercised." }
+    {
+      "lib": "Claude Code CLI (claude)",
+      "url": "https://code.claude.com/docs/en/cli-reference",
+      "fetchedAt": "2026-07-26T12:05:00Z",
+      "status": "aligned",
+      "summary": "Re-confirmed (story-level fetch, epic-level validation already on file in prd.json officialDocsConsulted): --effort accepts low|medium|high|xhigh|max|ultracode (ultracode requires >=2.1.203, out of scope), overrides effortLevel for the session, does not persist. Unrecognized-flag behavior is NOT explicitly documented (only mistyped SUBCOMMANDs are documented as exit-with-suggestion); this confirms the capability-gate design (fail-closed omission + warning on an unconfirmed/unsupported build) is the correct conservative choice rather than assuming a safe no-op on an unknown flag."
+    }
   ]
 }
