@@ -6,6 +6,18 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.258.0] - 2026-07-26
+
+### Added
+
+- US-R1-004 - Review round 1 fix 004: address reviewer finding
+- US-R1-003 - Review round 1 fix 003: address reviewer finding
+- US-R1-002 - Review round 1 fix 002: address reviewer finding
+- US-R1-001 - Review round 1 fix 001: address reviewer finding
+- US-003 - Add the naming-decision section to docs/positioning.md
+- US-002 - Create docs/positioning.md: category, unique-position thesis, competitive landscape
+- US-001 - Write ADR 0049: the Garboard naming policy
+
 ## [0.257.0] - 2026-07-26
 
 ### Added
