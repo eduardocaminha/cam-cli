@@ -74,7 +74,7 @@
         "Full quality spine is green (bun run check:all). [oracle: bun run check:all] [green-on-main by design: invariance guard per patterns.md:899; measured exit 0 on unmodified main 2026-07-26]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Edits docs/positioning.md only (created by US-002; depends on it). Sources: scripts/cam/issues/CAM-0415.json spec gotchas (the 2026-07-25 live-measured round data lives verbatim in the gotchas array and is AUTHORITATIVE over the Downloads docs, which record GAMBREL as final), /Users/eduardo/Downloads/cam-naming-analise.md and cam-rename-passos-obrigatorios.md for the 4-round battery process and kill evidence, and ADR 0049 from US-001 for the policy cross-reference. CRITICAL (reproducibility): the Downloads paths are untracked and machine-local; restate every fact, never cite those paths as evidence. Namespace snapshots EXPIRE: always record with the verification date. Third-party product claims stay factual and non-disparaging. Formatting: no em dash, no decorative emoji. check:all note: staging before check:all is optional; the check:agents path-claims gate scans only CLAUDE.md, scripts/cam/CLAUDE.md and .claude/agents/*.md (SCAN_FILES + AGENTS_GLOB in scripts/validate-agents-md.ts), so docs/positioning.md is never on its scan surface. Oracle discipline: all content oracles swept red against unmodified main 2026-07-26 per patterns.md:899; note the tenet token in the family/riffs conjunction may already be green after US-002 lands (Tenet appears in the landscape section), which is acceptable because the oracle's red-on-main baseline and the remaining nine tokens still discriminate this story's content."
     }
