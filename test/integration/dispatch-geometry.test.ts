@@ -54,26 +54,53 @@ function tmuxRaw(args: string[]): ReturnType<typeof spawnSync> {
  * capture-pane, display-message) lands on the private test socket instead
  * of the real `cam` one. Records every `send-keys` call for the assertions.
  */
-function makeSwapSocketSpawn(sendKeysCalls: string[][]): SpawnFn {
+interface SwapSocketObservations {
+	beforeBareSubmit?: () => void;
+	geometryReads?: string[];
+}
+
+function makeSwapSocketSpawn(
+	sendKeysCalls: string[][],
+	observations: SwapSocketObservations = {},
+): SpawnFn {
 	return (cmd, args, opts) => {
 		const swapped = [...args];
 		const lIdx = swapped.indexOf('-L');
 		if (lIdx !== -1 && swapped[lIdx + 1] === 'cam') swapped[lIdx + 1] = TEST_SOCK;
-		if (swapped.includes('send-keys')) sendKeysCalls.push(swapped);
-		return spawnSync(cmd, swapped, { stdio: opts?.stdio ?? 'pipe' }) as ReturnType<SpawnFn>;
+		const sendKeysIdx = swapped.indexOf('send-keys');
+		if (sendKeysIdx !== -1) {
+			sendKeysCalls.push(swapped);
+			const sendKeysArgv = swapped.slice(sendKeysIdx);
+			if (sendKeysArgv.length === 4 && sendKeysArgv[3] === 'Enter') {
+				observations.beforeBareSubmit?.();
+			}
+		}
+		const result = spawnSync(cmd, swapped, { stdio: opts?.stdio ?? 'pipe' });
+		if (swapped.includes('display-message')) {
+			observations.geometryReads?.push(result.stdout.toString().trim());
+		}
+		return result as ReturnType<SpawnFn>;
 	};
 }
 
-function expectPayloadSentOnce(sendKeysCalls: string[][], paneId: string, payload: string): void {
+function expectPayloadSentOnce(
+	sendKeysCalls: string[][],
+	paneId: string,
+	payload: string,
+	expectedRemediations = 2,
+): void {
 	expect(sendKeysCalls.filter((call) => call.includes(payload))).toHaveLength(1);
-	expect(sendKeysCalls).toHaveLength(3);
+	expect(sendKeysCalls).toHaveLength(expectedRemediations + 1);
 	expect(sendKeysCalls.slice(1).every(
 		(call) => call.slice(2).join(' ') === `send-keys -t ${paneId} Enter`,
 	)).toBe(true);
 }
 
 /** Boot a fresh session with the raw-echo fixture as the pane's command. */
-async function bootPane(mode: 'submit' | 'drop', wrapMode: 'char' | 'word' = 'char'): Promise<void> {
+async function bootPane(
+	mode: 'submit' | 'drop' | 'drop-first',
+	wrapMode: 'char' | 'word' = 'char',
+): Promise<void> {
 	tmuxRaw(['kill-server']);
 	tmuxRaw([
 		'new-session',
@@ -171,6 +198,60 @@ test.skipIf(!tmuxAvailable)(
 
 		expect(sendKeysCalls).toHaveLength(1);
 		expect(events).toHaveLength(0);
+	},
+	20_000,
+);
+
+test.skipIf(!tmuxAvailable)(
+	'bare submit key submits the payload the busy TUI left unsubmitted',
+	async () => {
+		await bootPane('drop-first');
+		const id = paneId();
+		const sendKeysCalls: string[][] = [];
+		const geometryReads: string[] = [];
+		const composerBeforeBareSubmit: string[] = [];
+		const events: Array<{ kind: WorkerEventKind; detail: WorkerEventDetail }> = [];
+		const payload = '[cam] US-004 bare-submit recovery';
+
+		const spawnFn = makeSwapSocketSpawn(sendKeysCalls, {
+			geometryReads,
+			beforeBareSubmit: () => {
+				composerBeforeBareSubmit.push(
+					tmuxRaw(['capture-pane', '-p', '-t', id]).stdout.toString(),
+				);
+			},
+		});
+
+		sendKeysVerified({
+			paneId: id,
+			text: payload,
+			tmuxSpawnFn: spawnFn,
+			idleTimeoutMs: 100,
+			maxAttempts: 3,
+			retryBaseMs: 20,
+			retryMaxMs: 50,
+			logEvent: (kind, detail) => events.push({ kind, detail }),
+		});
+
+		await waitForCondition(() => {
+			const capture = tmuxRaw(['capture-pane', '-p', '-t', id]).stdout.toString();
+			return isOrchPaneIdle(capture) && !capture.includes(payload);
+		});
+
+		expectPayloadSentOnce(sendKeysCalls, id, payload, 1);
+		expect(composerBeforeBareSubmit).toHaveLength(1);
+		expect(composerBeforeBareSubmit[0]).toContain(payload);
+		expect(geometryReads).toHaveLength(3);
+		expect(geometryReads[1]).not.toBe(geometryReads[0]);
+		expect(geometryReads[2]).toBe(geometryReads[0]);
+		expect(events).toHaveLength(1);
+		expect(events[0]?.kind).toBe('push-recovered');
+		expect(events[0]?.detail).toEqual({ paneId: id, submitRemediations: 1, paneWasIdle: true });
+		expect(
+			events[0]?.detail !== undefined &&
+				'submitRemediations' in events[0].detail &&
+				events[0].detail.submitRemediations,
+		).toBeGreaterThanOrEqual(1);
 	},
 	20_000,
 );
