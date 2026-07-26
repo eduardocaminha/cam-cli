@@ -23,7 +23,7 @@
 //  17. US-003: notifies orchestrator exactly once on genuine implementer advance.
 //  18. US-003: does NOT notify on a no-progress re-confirmation retry.
 
-import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
+import { describe, expect, test, beforeEach, afterEach, afterAll } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -125,6 +125,25 @@ function fakeGenUuid(): string {
 	return `00000000-0000-0000-0000-${String(uuidCounter).padStart(12, '0')}`;
 }
 
+/**
+ * Shared implementer-backend/model resolution fixture for the generic
+ * makeBaseOpts-based runSupervisor tests (US-003, CAM-420).
+ *
+ * Threaded into RunSupervisorOptions.configPath below so every generic test
+ * resolves the implementer backend/model from THIS fixture (backend=claude)
+ * instead of the repo's live scripts/cam/project.toml. This decouples the
+ * ~120 generic tests in this file from whatever backend the committed
+ * project.toml declares, mirroring the review.test.ts GENERIC_REVIEW_CONFIG_PATH
+ * idiom (US-001, CAM-405).
+ */
+const GENERIC_SUPERVISOR_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-loop-generic-config-'));
+const GENERIC_SUPERVISOR_CONFIG_PATH = join(GENERIC_SUPERVISOR_CONFIG_DIR, 'project.toml');
+writeFileSync(GENERIC_SUPERVISOR_CONFIG_PATH, '[backend]\nimplementer = "claude"\n');
+
+afterAll(() => {
+	rmSync(GENERIC_SUPERVISOR_CONFIG_DIR, { recursive: true, force: true });
+});
+
 // ---------------------------------------------------------------------------
 // Base options factory
 // ---------------------------------------------------------------------------
@@ -165,6 +184,14 @@ function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervi
 		// Use a stable nowMs so sentinel polling doesn't immediately timeout.
 		nowMs: () => 0,
 		...overrides,
+		// US-003 (CAM-420): implementer-backend/model resolution seam. Defaults
+		// to the shared generic fixture (isolated from the live project.toml).
+		// An explicit `configPath: undefined` override (used by the
+		// withClaudeImplementerCwd/withCodexBackendCwd-based tests, which rely
+		// on real cwd-relative resolution against their own chdir'd fixture)
+		// is honored via the `'configPath' in overrides` check, mirroring the
+		// review.test.ts GENERIC_REVIEW_CONFIG_PATH pattern (US-001, CAM-405).
+		configPath: 'configPath' in overrides ? overrides.configPath : GENERIC_SUPERVISOR_CONFIG_PATH,
 	};
 }
 
@@ -468,6 +495,8 @@ describe('runSupervisor', () => {
 		// ceiling, the 3rd poll crosses it. Spend = input + cacheCreation + cacheRead.
 		let call = 0;
 		const opts = makeBaseOpts({
+			// Real cwd-relative resolution against the withClaudeImplementerCwd fixture.
+			configPath: undefined,
 			readPrd: () => prd,
 			capturePane: (_paneId) => UNKNOWN_PANE, // never a sentinel; keep polling
 			pollIntervalMs: 0,
@@ -536,8 +565,10 @@ describe('runSupervisor', () => {
 
 	test('worker token ceiling on a codex implementer backend: skips the backstop, logs a notice, never crashes, still completes (US-003, CAM-350)', async () => {
 		// Resolve the implementer backend to 'codex' via a real project.toml in a
-		// temp cwd (readPhaseBackend is not injectable through RunSupervisorOptions;
-		// it always reads scripts/cam/project.toml relative to process.cwd()). The
+		// temp cwd. readPhaseBackend is now fixture-injectable via
+		// RunSupervisorOptions.configPath (CAM-420), but this test passes an
+		// explicit `configPath: undefined` below to keep exercising the real
+		// cwd-relative resolution against this chdir'd fixture on purpose. The
 		// CodexAdapter's buildSpawnArgv also reads .claude/agents/subagent-implementer.md
 		// relative to cwd (mirrors run.test.ts's makeTmpProject stub precedent), so
 		// stage a stub agent file alongside the project.toml fixture.
@@ -566,6 +597,8 @@ describe('runSupervisor', () => {
 			let prdCall = 0;
 			const { logger, events } = makeInMemoryEventLogger();
 			const opts = makeBaseOpts({
+				// Real cwd-relative resolution against this test's own chdir'd fixture.
+				configPath: undefined,
 				readPrd: () => prds[prdCall++] ?? prd_clean,
 				readHandoff: () => makeHandoff('US-001'),
 				capturePane: (_paneId) => donePane('US-001'),
@@ -2321,6 +2354,8 @@ describe('runSupervisor @cam_label pane labeling (US-002)', () => {
 		const spawnCalls: string[][] = [];
 
 		const opts = makeBaseOpts({
+			// Real cwd-relative resolution against the withClaudeImplementerCwd fixture.
+			configPath: undefined,
 			readPrd: () => {
 				prdCall++;
 				return prdCall <= 2 ? prdFalse : prdTrue;
@@ -3307,6 +3342,8 @@ describe('runSupervisor US-003: sidecar notifyOrchestrator on implementer advanc
 
 			const opts = makeBaseOpts({
 				...oneStoryBase(),
+				// Real cwd-relative resolution against the withClaudeImplementerCwd fixture.
+				configPath: undefined,
 				workerIsolation: 'container',
 				preflightContainerFn: () => ({ ready: true }),
 				spawn: (_cmd, args) => {
@@ -3338,6 +3375,8 @@ describe('runSupervisor US-003: sidecar notifyOrchestrator on implementer advanc
 
 			const opts = makeBaseOpts({
 				...oneStoryBase(),
+				// Real cwd-relative resolution against the withClaudeImplementerCwd fixture.
+				configPath: undefined,
 				// workerIsolation intentionally absent -> defaults to 'host'
 				preflightContainerFn: () => ({ ready: false, reason: 'daemon-unreachable' }),
 				spawn: (_cmd, args) => {
@@ -4242,9 +4281,11 @@ describe('runSupervisor US-002 (CAM-352): codex auth preflight at implementer di
 
 	/**
 	 * Stage a temp cwd with a project.toml resolving the implementer backend
-	 * to 'codex' with a non-claude-alias model (readPhaseBackend/readPhaseModel
-	 * are not injectable through RunSupervisorOptions; they always read
-	 * scripts/cam/project.toml relative to process.cwd()). Also stages a stub
+	 * to 'codex' with a non-claude-alias model. readPhaseBackend/readPhaseModel
+	 * are now fixture-injectable via RunSupervisorOptions.configPath (CAM-420),
+	 * but the tests using this helper pass an explicit `configPath: undefined`
+	 * below to keep exercising the real cwd-relative resolution against this
+	 * chdir'd fixture on purpose. Also stages a stub
 	 * .claude/agents/subagent-implementer.md so CodexAdapter.buildSpawnArgv
 	 * can read it on the authenticated (proceed) path.
 	 */
@@ -4272,6 +4313,8 @@ describe('runSupervisor US-002 (CAM-352): codex auth preflight at implementer di
 			let authCheckCalled = false;
 			const opts = makeBaseOpts({
 				...oneStoryBase(),
+				// Real cwd-relative resolution against the withCodexBackendCwd fixture.
+				configPath: undefined,
 				spawn: (_cmd, args) => {
 					if (args.includes('respawn-pane')) respawnCalled = true;
 					return { stdout: '', exitCode: 0 };
@@ -4297,6 +4340,8 @@ describe('runSupervisor US-002 (CAM-352): codex auth preflight at implementer di
 			let escalateCalled = false;
 			const opts = makeBaseOpts({
 				...oneStoryBase(),
+				// Real cwd-relative resolution against the withCodexBackendCwd fixture.
+				configPath: undefined,
 				codexAuthCheckFn: () => ({ authenticated: false }),
 				escalateFn: async () => {
 					escalateCalled = true;
@@ -4316,6 +4361,8 @@ describe('runSupervisor US-002 (CAM-352): codex auth preflight at implementer di
 			let authCheckCalled = false;
 			const opts = makeBaseOpts({
 				...oneStoryBase(),
+				// Real cwd-relative resolution against the withCodexBackendCwd fixture.
+				configPath: undefined,
 				spawn: (_cmd, args) => {
 					if (args.includes('respawn-pane')) respawnCalled = true;
 					return { stdout: '', exitCode: 0 };
@@ -4341,6 +4388,8 @@ describe('runSupervisor US-002 (CAM-352): codex auth preflight at implementer di
 		let authCheckCalled = false;
 		const opts = makeBaseOpts({
 			...oneStoryBase(),
+			// Real cwd-relative resolution against the withClaudeImplementerCwd fixture.
+			configPath: undefined,
 			spawn: (_cmd, args) => {
 				if (args.includes('respawn-pane')) respawnCalled = true;
 				return { stdout: '', exitCode: 0 };
