@@ -4,7 +4,10 @@
 //
 // All tests inject a fake event-writer: no real fs, no real stderr.
 
-import { test, expect, describe } from 'bun:test';
+import { test, expect, describe, afterAll } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
 	emitSpawnResolution,
 	type SpawnResolutionEvent,
@@ -120,6 +123,19 @@ function donePane(): string {
 	return `Implemented\nCAM_IMPLEMENTER_STATUS=DONE story=US-001\n`;
 }
 
+/**
+ * Shared implementer-backend/model resolution fixture (US-004, CAM-420),
+ * mirroring loop.test.ts's GENERIC_SUPERVISOR_CONFIG_PATH idiom (US-003):
+ * decouples this file's tests from the repo's live scripts/cam/project.toml.
+ */
+const GENERIC_SUPERVISOR_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-spawn-resolution-generic-config-'));
+const GENERIC_SUPERVISOR_CONFIG_PATH = join(GENERIC_SUPERVISOR_CONFIG_DIR, 'project.toml');
+writeFileSync(GENERIC_SUPERVISOR_CONFIG_PATH, '[backend]\nimplementer = "claude"\n');
+
+afterAll(() => {
+	rmSync(GENERIC_SUPERVISOR_CONFIG_DIR, { recursive: true, force: true });
+});
+
 function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervisorOptions {
 	const spawn: SpawnFn = (_cmd, _args) => ({ stdout: '', exitCode: 0 });
 	const capturePane: CapturePane = () => donePane();
@@ -161,6 +177,9 @@ function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervi
 		sleepFn: (_ms) => {},
 		nowMs: () => 0,
 		...overrides,
+		// US-004 (CAM-420): defaults to the shared generic fixture, isolated
+		// from the live project.toml (mirrors loop.test.ts's US-003 idiom).
+		configPath: 'configPath' in overrides ? overrides.configPath : GENERIC_SUPERVISOR_CONFIG_PATH,
 	};
 }
 

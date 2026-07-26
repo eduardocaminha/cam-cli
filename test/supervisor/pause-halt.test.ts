@@ -19,8 +19,8 @@
 //   5. Production wiring smoke: buildSupervisorOptions(cwd).opts.isPaused
 //      reflects the real `.cam-pause` marker file (host.ts, US-002).
 
-import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { describe, expect, test, beforeEach, afterEach, afterAll } from 'bun:test';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runSupervisor } from '../../src/supervisor/loop.ts';
@@ -81,6 +81,19 @@ const PRD_PATH = '/fake/prd.json';
 const HANDOFF_PATH = '/fake/handoff.json';
 const WORKER_PANE_ID = '%3';
 
+/**
+ * Shared implementer-backend/model resolution fixture (US-004, CAM-420),
+ * mirroring loop.test.ts's GENERIC_SUPERVISOR_CONFIG_PATH idiom (US-003):
+ * decouples this file's tests from the repo's live scripts/cam/project.toml.
+ */
+const GENERIC_SUPERVISOR_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-pause-halt-generic-config-'));
+const GENERIC_SUPERVISOR_CONFIG_PATH = join(GENERIC_SUPERVISOR_CONFIG_DIR, 'project.toml');
+writeFileSync(GENERIC_SUPERVISOR_CONFIG_PATH, '[backend]\nimplementer = "claude"\n');
+
+afterAll(() => {
+	rmSync(GENERIC_SUPERVISOR_CONFIG_DIR, { recursive: true, force: true });
+});
+
 function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervisorOptions {
 	const spawn: SpawnFn = (_cmd, _args) => ({ stdout: '', exitCode: 0 });
 	const capturePane: CapturePane = (_paneId) => '';
@@ -111,6 +124,9 @@ function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervi
 		sleepFn: (_ms: number) => {},
 		nowMs: () => 0,
 		...overrides,
+		// US-004 (CAM-420): defaults to the shared generic fixture, isolated
+		// from the live project.toml (mirrors loop.test.ts's US-003 idiom).
+		configPath: 'configPath' in overrides ? overrides.configPath : GENERIC_SUPERVISOR_CONFIG_PATH,
 	};
 }
 
