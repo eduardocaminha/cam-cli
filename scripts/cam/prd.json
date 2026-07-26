@@ -51,7 +51,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/run.ts (SetupOpts + setupPanes resolution site :486-495, OrchestratorPaneCommandOptions + buildOrchestratorPaneCommand :259-330, emitSpawnResolution :508-523), test/commands/run-configpath-seam.test.ts (new), test/commands/run-effort-argv.test.ts (new), test/commands/run-spawn-resolution-effort.test.ts (new), test/run.test.ts (shape updates). Minimum claude version assumed: --effort exists in the officially documented CLI surface and is confirmed on the local 2.1.220 (see officialDocsConsulted); no hard version floor is imposed because the capability probe degrades gracefully (omit flag + warn) on older builds. Do NOT touch the second orchestrator spawn path at src/commands/setup.ts:476-481 (onboarding handoff, out of scope) nor the persona frontmatter effort channel (src/templates/frontmatter.ts:57-92, currently stale at 'xhigh', stays as-is: argv is the runtime authority, spec gotcha 8). Existing tests test/commands/run-model-resolution.test.ts:315-342 and test/commands/run-codex-auth.test.ts:257 deliberately read the live repo config: leave them, the seam is for NEW tests (spec gotcha 3). test/commands/run-model-argv.test.ts is NOT a valid oracle for anything here (spec gotcha 4: it passes a literal model in and asserts it comes out). Grep scripts/cam/patterns.md for 'CAM-405' and 'oracle-falsifiability'."
     },
