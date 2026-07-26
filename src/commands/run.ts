@@ -28,7 +28,7 @@
 
 import { existsSync, mkdirSync, openSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import process from 'node:process';
 import { randomUUID } from 'node:crypto';
 
@@ -253,6 +253,39 @@ function q(s: string): string {
 	return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
+/**
+ * Build the same-binary self-invoke resolver command used to re-resolve
+ * model+effort on every orchestrator respawn (US-003, CAM-425; fixed in
+ * US-R1-001 after a reviewer finding on the shipped distribution).
+ *
+ * `process.execPath` + `process.argv[1]` is a reliable `[binary, script]`
+ * self-invoke pair ONLY when running interpreted (`bun index.ts ...`), where
+ * `execPath` is bun itself and `argv[1]` is the real `index.ts` path bun can
+ * be re-invoked against (mirrors forkMonitor's convention, src/retry/
+ * launcher.ts). It breaks on the compiled distribution cam actually ships
+ * (`bun build --compile`, scripts/build-release.sh): inside a compiled
+ * single-file executable, `execPath` IS the standalone binary (self-
+ * contained, no separate bun runtime to invoke), and `argv[1]` is bun's
+ * internal virtual embedded-entry path (observed as `/$bunfs/root/<outfile>`
+ * on bun 1.3.13) -- not a real script argument the compiled binary's own
+ * `main()` command dispatch (argv[2]) understands, so passing it back in
+ * prints `unknown command: /$bunfs/root/<outfile>` and exits 1.
+ *
+ * Detect compiled mode via EITHER signal (defense in depth against a future
+ * bun version changing the virtual path's exact prefix): `argv1` starting
+ * with the bunfs prefix, or `execPath`'s basename not being literally `bun`.
+ * In compiled mode, self-invoke the binary directly with `orch-resolve` as
+ * its sole argument; otherwise keep the pre-existing `<bun> <script>
+ * orch-resolve` shape.
+ */
+export function resolveOrchResolverCmd(execPath: string, argv1: string | undefined): string {
+	const isCompiled = (argv1 !== undefined && argv1.startsWith('/$bunfs/')) || basename(execPath) !== 'bun';
+	if (isCompiled) {
+		return `${q(execPath)} orch-resolve`;
+	}
+	return `${q(execPath)} ${q(argv1 ?? 'cam')} orch-resolve`;
+}
+
 /** Inputs for {@link buildOrchestratorPaneCommand}. */
 export interface OrchestratorPaneCommandOptions {
 	/** tmux session name to kill on teardown. */
@@ -305,9 +338,14 @@ export interface OrchestratorPaneCommandOptions {
 	 * the invocation itself is the CALLER's responsibility (keeps this builder
 	 * pure string assembly, no I/O). Defaults to the bare `'cam orch-resolve'`
 	 * (PATH lookup) when omitted; the real setupPanes caller instead builds this
-	 * from `process.execPath` (mirroring forkMonitor's self-invoke convention,
-	 * src/retry/launcher.ts), which is robust against a stale/absent `cam` on
-	 * PATH (2026-06-06 lesson) across a long-lived session's many respawns.
+	 * via {@link resolveOrchResolverCmd} (mirroring forkMonitor's self-invoke
+	 * convention, src/retry/launcher.ts), which is robust against a stale/absent
+	 * `cam` on PATH (2026-06-06 lesson) across a long-lived session's many
+	 * respawns, AND against a `bun build --compile` distribution (review
+	 * finding, US-R1-001, CAM-425): inside a compiled binary, `process.argv[1]`
+	 * is bun's internal virtual embedded-entry path, not a real script bun can
+	 * be re-invoked against, so the invocation must instead run the compiled
+	 * binary itself with `orch-resolve` as its sole argument.
 	 */
 	resolverCmd?: string;
 	/**
@@ -624,7 +662,7 @@ function setupPanes(
 	// [process.execPath, mainScript, subcommand] convention, src/retry/
 	// launcher.ts), robust against a stale/absent `cam` on PATH across a
 	// long-lived session's many respawns.
-	const resolverCmd = `${q(process.execPath)} ${q(process.argv[1] ?? 'cam')} orch-resolve`;
+	const resolverCmd = resolveOrchResolverCmd(process.execPath, process.argv[1]);
 	const eventsLogPath = join(dotClaude, 'cam-worker-events.jsonl');
 
 	const agentCmd = buildOrchestratorPaneCommand({
