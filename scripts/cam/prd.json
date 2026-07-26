@@ -187,7 +187,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: test/supervisor/plan/plan-runner-configpath-seam.test.ts only (plus handoff). This is the audit F-07 split: the dress rehearsal is its own final plan-side story instead of being appended to an unbounded file-sweep story. If the rehearsal measures anything other than exactly the 3 named residual fails, that is a missed isolation site: the failing file name localizes it; fix in place (it will be one of the 14 frozen-census files) rather than rationalizing the count. The [models.codex] section has no planner/auditor pins, so the rehearsal flip exercises the codex auto-resolution/preflight path exactly as CI would."
     },
