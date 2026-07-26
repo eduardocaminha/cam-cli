@@ -412,3 +412,9 @@ The written audit (e.g. docs/launch-readiness.md) of CAM Runtime's fitness for p
 
 **public v1 go/no-go**:
 The explicit release recommendation the readiness analysis (CAM-330) produces, naming the must-fix blocking set for a public v1.
+
+**self-invoke primitive**:
+The single canonical function (resolveSelfInvokeArgv) that computes the argv prefix for a cam process to re-invoke its own entrypoint, correct in both interpreted (bun + script path) and compiled (standalone binary) modes.
+
+**bunfs virtual entry**:
+The /$bunfs/root/<outfile> path that bun injects as process.argv[1] inside a bun build --compile binary. Its presence is the positive signal that the process is running as a compiled binary; subcommand dispatch therefore reads argv[2] in both modes.
