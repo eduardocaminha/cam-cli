@@ -15,7 +15,10 @@
 //   AC6: auditor-phase preflight failure returns phase='auditor', planner WAS spawned.
 //   AC7: escalateFn absent in container-preflight-failed path does not throw.
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
 	runPlanPhase,
 	type RunPlanPhaseOptions,
@@ -25,6 +28,20 @@ import type { SpawnFn } from '../../../src/supervisor/loop.ts';
 import type { IssueEntry } from '../../../src/issues/types.ts';
 import type { PreflightResult } from '../../../src/supervisor/preflight-container.ts';
 import { waitForCondition } from '../../helpers/wait-for-condition.ts';
+
+// ---------------------------------------------------------------------------
+// Generic backend fixture (US-007, CAM-420): isolates this suite's
+// planner/auditor backend resolution from the repo's real project.toml, so a
+// codex planner/auditor config cannot break these generic-backend tests.
+// ---------------------------------------------------------------------------
+
+const GENERIC_PLAN_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-plan-runner-container-test-'));
+const GENERIC_PLAN_CONFIG_PATH = join(GENERIC_PLAN_CONFIG_DIR, 'project.toml');
+writeFileSync(GENERIC_PLAN_CONFIG_PATH, '[backend]\nplanner = "claude"\nauditor = "claude"\n');
+
+afterAll(() => {
+	rmSync(GENERIC_PLAN_CONFIG_DIR, { recursive: true, force: true });
+});
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -89,6 +106,7 @@ function makeOpts(
 		workerIsolation: container.workerIsolation,
 		preflightContainerFn: container.preflightContainerFn,
 		escalateFn: container.escalateFn,
+		configPath: GENERIC_PLAN_CONFIG_PATH,
 	};
 }
 

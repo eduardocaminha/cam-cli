@@ -6,6 +6,22 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.261.0] - 2026-07-26
+
+### Added
+
+- US-011 - Re-commit implementer = codex and prove the suite green under a codex-unauthenticated environment
+- US-010 - Plan-side dress rehearsal: prove the planner/auditor isolation under a codex-resolving live config
+- US-009 - Isolate the remaining supervisor and integration plan-runner test files and fix the stale codex-auth comment
+- US-008 - Isolate the five root-level plan-runner test files onto the plan fixture
+- US-007 - Isolate the three largest plan-runner test files onto a generic plan fixture
+- US-006 - Pre-emptively isolate the five non-failing implementer-side supervisor test files
+- US-005 - Isolate the two builder-less signal-bearing supervisor test files (events, ensure-worker-pane)
+- US-004 - Isolate the four builder-based signal-bearing supervisor test files onto fixture configs
+- US-003 - Isolate test/supervisor/loop.test.ts onto a generic claude fixture config
+- US-002 - Add configPath seam to RunPlanPhaseOptions with red-swept planner and auditor codex regression tests
+- US-001 - Add configPath seam to RunSupervisorOptions with red-swept implementer codex regression test
+
 ## [0.260.0] - 2026-07-26
 
 ### Added

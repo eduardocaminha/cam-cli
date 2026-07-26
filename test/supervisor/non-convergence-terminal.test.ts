@@ -22,7 +22,7 @@
 //        is absent (verdict already terminal).
 //     9. await-operator + cap-REENTRY: promotion fires in the await-operator branch.
 
-import { describe, expect, test, beforeEach } from 'bun:test';
+import { describe, expect, test, beforeEach, afterAll } from 'bun:test';
 import { writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -44,6 +44,22 @@ import type {
 } from '../../src/supervisor/loop.ts';
 import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
 import { DEFAULT_MAX_ROUNDS } from '../../src/supervisor/decide.ts';
+
+/**
+ * Shared implementer-backend/model resolution fixture for the generic
+ * makeBaseOpts-based runSupervisor tests (US-006, CAM-420), mirroring the
+ * loop.test.ts GENERIC_SUPERVISOR_CONFIG_PATH idiom (US-003, CAM-420). This
+ * file does not fail under the codex-backend flip today, but is isolated
+ * pre-emptively so future call sites cannot silently re-couple it to the
+ * live scripts/cam/project.toml.
+ */
+const GENERIC_SUPERVISOR_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-non-convergence-generic-config-'));
+const GENERIC_SUPERVISOR_CONFIG_PATH = join(GENERIC_SUPERVISOR_CONFIG_DIR, 'project.toml');
+writeFileSync(GENERIC_SUPERVISOR_CONFIG_PATH, '[backend]\nimplementer = "claude"\n');
+
+afterAll(() => {
+	rmSync(GENERIC_SUPERVISOR_CONFIG_DIR, { recursive: true, force: true });
+});
 
 // ---------------------------------------------------------------------------
 // Fake builder helpers
@@ -104,6 +120,9 @@ function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervi
 		sleepFn: (_ms: number) => {},
 		nowMs: () => 0,
 		...overrides,
+		// US-006 (CAM-420): implementer-backend/model resolution seam. Defaults
+		// to the shared generic fixture (isolated from the live project.toml).
+		configPath: 'configPath' in overrides ? overrides.configPath : GENERIC_SUPERVISOR_CONFIG_PATH,
 	};
 }
 

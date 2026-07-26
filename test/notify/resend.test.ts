@@ -7,9 +7,10 @@
 // AC2: Non-convergence terminal fires escalateFn; a forced escalateFn failure
 //      does NOT crash the pipeline (returns 'complete').
 
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { describe, expect, test, beforeEach } from 'bun:test';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { describe, expect, test, beforeEach, afterAll } from 'bun:test';
 import { sendEscalation, type ResendSendFn } from '../../src/notify/resend.ts';
 import { runSupervisor } from '../../src/supervisor/loop.ts';
 import type {
@@ -164,6 +165,22 @@ function fakeGenUuid(): string {
 	return `00000000-0000-0000-0000-${String(uuidCounter).padStart(12, '0')}`;
 }
 
+/**
+ * Shared implementer-backend/model resolution fixture for the generic
+ * makeBaseOpts-based runSupervisor tests (US-006, CAM-420), mirroring the
+ * loop.test.ts GENERIC_SUPERVISOR_CONFIG_PATH idiom (US-003, CAM-420). This
+ * file does not fail under the codex-backend flip today, but is isolated
+ * pre-emptively so future call sites cannot silently re-couple it to the
+ * live scripts/cam/project.toml.
+ */
+const GENERIC_SUPERVISOR_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-resend-generic-config-'));
+const GENERIC_SUPERVISOR_CONFIG_PATH = join(GENERIC_SUPERVISOR_CONFIG_DIR, 'project.toml');
+writeFileSync(GENERIC_SUPERVISOR_CONFIG_PATH, '[backend]\nimplementer = "claude"\n');
+
+afterAll(() => {
+	rmSync(GENERIC_SUPERVISOR_CONFIG_DIR, { recursive: true, force: true });
+});
+
 function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervisorOptions {
 	const spawn: SpawnFn = (_cmd, _args) => ({ stdout: '', exitCode: 0 });
 	const capturePane: CapturePane = (_paneId) => '';
@@ -194,6 +211,9 @@ function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervi
 		sleepFn: (_ms: number) => {},
 		nowMs: () => 0,
 		...overrides,
+		// US-006 (CAM-420): implementer-backend/model resolution seam. Defaults
+		// to the shared generic fixture (isolated from the live project.toml).
+		configPath: 'configPath' in overrides ? overrides.configPath : GENERIC_SUPERVISOR_CONFIG_PATH,
 	};
 }
 

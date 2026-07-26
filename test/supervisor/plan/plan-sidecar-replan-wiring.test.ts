@@ -68,6 +68,15 @@ describe('sidecar.ts production wiring oracle - re-plan loop + teardown + escala
 		expect(fnMatch?.[0]).toContain('runPlanPhaseWithReplan({');
 	});
 
+	// US-009 (CAM-420) note: this file is a pure source-text oracle over
+	// sidecar.ts (no RunPlanPhaseOptions/RunPlanPhaseWithReplanOptions opts
+	// literal is ever built here), so unlike the other builder-less
+	// plan-phase test files there is no inline opts object to add a literal
+	// `configPath: GENERIC_PLAN_CONFIG_PATH` sibling key to. The single
+	// call-site match this file's derived-comparand oracle counts is the
+	// assertion string literal directly above (the open-brace call-shape
+	// check), not an opts literal.
+
 	test('the runPlanPhaseWithReplan call wires teardownPlanPanesFn', () => {
 		const callMatch = source.match(/runPlanPhaseWithReplan\(\{[\s\S]*?\n\t\}\);/);
 		expect(callMatch).not.toBeNull();

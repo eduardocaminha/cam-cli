@@ -19,7 +19,7 @@
 //        option seam mirroring codexAuthCheckFn (defaults to the production
 //        reader when omitted); a claude-backed dispatch never invokes it.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test, afterAll } from 'bun:test';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -72,6 +72,19 @@ function fakeGenUuid(): string {
 	return `00000000-0000-0000-0000-${String(uuidCounter).padStart(12, '0')}`;
 }
 
+/**
+ * Shared implementer-backend/model resolution fixture (US-004, CAM-420),
+ * mirroring loop.test.ts's GENERIC_SUPERVISOR_CONFIG_PATH idiom (US-003):
+ * decouples this file's tests from the repo's live scripts/cam/project.toml.
+ */
+const GENERIC_SUPERVISOR_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-loop-model-resolution-generic-config-'));
+const GENERIC_SUPERVISOR_CONFIG_PATH = join(GENERIC_SUPERVISOR_CONFIG_DIR, 'project.toml');
+writeFileSync(GENERIC_SUPERVISOR_CONFIG_PATH, '[backend]\nimplementer = "claude"\n');
+
+afterAll(() => {
+	rmSync(GENERIC_SUPERVISOR_CONFIG_DIR, { recursive: true, force: true });
+});
+
 function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervisorOptions {
 	return {
 		spawn: (_cmd, _args) => ({ stdout: '', exitCode: 0 }),
@@ -92,6 +105,9 @@ function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervi
 		sleepFn: (_ms: number) => {},
 		nowMs: () => 0,
 		...overrides,
+		// US-004 (CAM-420): defaults to the shared generic fixture, isolated
+		// from the live project.toml (mirrors loop.test.ts's US-003 idiom).
+		configPath: 'configPath' in overrides ? overrides.configPath : GENERIC_SUPERVISOR_CONFIG_PATH,
 	};
 }
 
@@ -129,10 +145,13 @@ function oneStoryBase(): Partial<RunSupervisorOptions> {
  * cacheReader path fires, per resolvePhaseModel's precedence). Also stages a
  * stub .claude/agents/subagent-implementer.md so CodexAdapter.buildSpawnArgv
  * can read it on the authenticated (proceed) path -- mirrors loop.test.ts's
- * withCodexBackendCwd helper (readPhaseBackend/readPhaseModel are not
- * injectable through RunSupervisorOptions; they always read
- * scripts/cam/project.toml relative to process.cwd(), per
- * scripts/cam/patterns.md's CAM-350 US-003 bullet).
+ * withCodexBackendCwd helper. readPhaseBackend/readPhaseModel ARE now
+ * fixture-injectable via RunSupervisorOptions.configPath (CAM-420, US-004
+ * added this seam project-wide); this helper deliberately opts OUT of the
+ * shared fixture (passing an explicit `configPath: undefined` at its call
+ * sites below) so it keeps exercising real cwd-relative resolution against
+ * its own staged project.toml, per scripts/cam/patterns.md's CAM-350 US-003
+ * bullet.
  */
 async function withClaudeShapedCodexCwd<T>(fn: () => T | Promise<T>): Promise<T> {
 	const tmpDir = mkdtempSync(join(tmpdir(), 'cam-loop-model-resolution-'));
@@ -163,6 +182,9 @@ describe('runSupervisor US-004 (CAM-398): resolvePhaseModel wired into implement
 			const dispatchedCmds: string[] = [];
 			const opts = makeBaseOpts({
 				...oneStoryBase(),
+				// Opt out of the shared fixture: this helper stages its own
+				// cwd-relative project.toml (US-004, CAM-420).
+				configPath: undefined,
 				codexAuthCheckFn: () => ({ authenticated: true }),
 				codexModelsCacheReaderFn: (): ReturnType<CodexModelsCacheReader> => {
 					cacheReaderCalled = true;
@@ -196,6 +218,9 @@ describe('runSupervisor US-004 (CAM-398): resolvePhaseModel wired into implement
 			let authCheckCalled = false;
 			const opts = makeBaseOpts({
 				...oneStoryBase(),
+				// Opt out of the shared fixture: this helper stages its own
+				// cwd-relative project.toml (US-004, CAM-420).
+				configPath: undefined,
 				codexAuthCheckFn: () => {
 					authCheckCalled = true;
 					return { authenticated: true };
@@ -247,6 +272,9 @@ describe('runSupervisor US-004 (CAM-398): resolvePhaseModel wired into implement
 			let respawnCalled = false;
 			const opts = makeBaseOpts({
 				...oneStoryBase(),
+				// Opt out of the shared fixture: this test stages its own
+				// cwd-relative project.toml (US-004, CAM-420).
+				configPath: undefined,
 				codexAuthCheckFn: () => ({ authenticated: true }),
 				// codexModelsCacheReaderFn intentionally absent.
 				spawn: (_cmd, args) => {

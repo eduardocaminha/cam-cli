@@ -23,7 +23,7 @@
 //   AC7 (outer crash-survival): a throwing fileSuggestionsFn never crashes
 //        the loop; a 'sidecar-exit' event is logged with a dedicated reason.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test, afterAll } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -84,6 +84,22 @@ describe('AC1: loop.ts source-text oracle -- suggestion-filing hook placement', 
 // Shared fakes for AC2/AC6/AC7
 // ---------------------------------------------------------------------------
 
+/**
+ * Shared implementer-backend/model resolution fixture for the generic
+ * makeDummySupervisorOpts-based runSidecarLoop tests (US-006, CAM-420),
+ * mirroring the loop.test.ts GENERIC_SUPERVISOR_CONFIG_PATH idiom (US-003,
+ * CAM-420). This file does not fail under the codex-backend flip today, but
+ * is isolated pre-emptively so future call sites cannot silently re-couple
+ * it to the live scripts/cam/project.toml.
+ */
+const GENERIC_SUPERVISOR_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-suggestion-filing-hook-generic-config-'));
+const GENERIC_SUPERVISOR_CONFIG_PATH = join(GENERIC_SUPERVISOR_CONFIG_DIR, 'project.toml');
+writeFileSync(GENERIC_SUPERVISOR_CONFIG_PATH, '[backend]\nimplementer = "claude"\n');
+
+afterAll(() => {
+	rmSync(GENERIC_SUPERVISOR_CONFIG_DIR, { recursive: true, force: true });
+});
+
 function makeDummySupervisorOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervisorOptions {
 	return {
 		spawn: () => ({ stdout: '', exitCode: 0 }),
@@ -103,6 +119,9 @@ function makeDummySupervisorOpts(overrides: Partial<RunSupervisorOptions> = {}):
 		sleepFn: () => {},
 		nowMs: () => 0,
 		...overrides,
+		// US-006 (CAM-420): implementer-backend/model resolution seam. Defaults
+		// to the shared generic fixture (isolated from the live project.toml).
+		configPath: 'configPath' in overrides ? overrides.configPath : GENERIC_SUPERVISOR_CONFIG_PATH,
 	};
 }
 

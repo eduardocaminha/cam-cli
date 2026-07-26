@@ -15,7 +15,10 @@
 //   5. runSupervisor: backward compat - when ensureWorkerPane is absent,
 //      workerPaneId from opts is used as-is for respawn-pane.
 
-import { describe, expect, test, beforeEach } from 'bun:test';
+import { describe, expect, test, beforeEach, afterAll } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { runSupervisor } from '../../src/supervisor/loop.ts';
 import type {
 	RunSupervisorOptions,
@@ -50,6 +53,21 @@ const PRD_PATH = '/fake/prd.json';
 const HANDOFF_PATH = '/fake/handoff.json';
 const STALE_PANE_ID = '%3';
 const NEW_PANE_ID = '%99';
+
+/**
+ * Implementer-backend/model resolution fixture for the runSupervisor call
+ * sites below (US-005, CAM-420), mirroring loop.test.ts's
+ * GENERIC_SUPERVISOR_CONFIG_PATH idiom (US-003): this file has no opts
+ * builder, so the fixture is threaded as a literal `configPath` key on each
+ * inline RunSupervisorOptions object instead of a shared-default line.
+ */
+const GENERIC_SUPERVISOR_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-ensure-worker-pane-generic-config-'));
+const GENERIC_SUPERVISOR_CONFIG_PATH = join(GENERIC_SUPERVISOR_CONFIG_DIR, 'project.toml');
+writeFileSync(GENERIC_SUPERVISOR_CONFIG_PATH, '[backend]\nimplementer = "claude"\n');
+
+afterAll(() => {
+	rmSync(GENERIC_SUPERVISOR_CONFIG_DIR, { recursive: true, force: true });
+});
 
 // Deterministic uuid counter
 let uuidCounter = 0;
@@ -124,6 +142,7 @@ describe('runSupervisor ensureWorkerPane (implement branch)', () => {
 			sleepFn: () => {},
 			nowMs: () => 0,
 			ensureWorkerPane,
+			configPath: GENERIC_SUPERVISOR_CONFIG_PATH,
 		};
 
 		await runSupervisor(opts);
@@ -183,6 +202,7 @@ describe('runSupervisor ensureWorkerPane (implement branch)', () => {
 			sleepFn: () => {},
 			nowMs: () => 0,
 			ensureWorkerPane,
+			configPath: GENERIC_SUPERVISOR_CONFIG_PATH,
 		};
 
 		await runSupervisor(opts);
@@ -236,6 +256,7 @@ describe('runSupervisor ensureWorkerPane (implement branch)', () => {
 			sleepFn: () => {},
 			nowMs: () => 0,
 			// ensureWorkerPane intentionally absent
+			configPath: GENERIC_SUPERVISOR_CONFIG_PATH,
 		};
 
 		await runSupervisor(opts);

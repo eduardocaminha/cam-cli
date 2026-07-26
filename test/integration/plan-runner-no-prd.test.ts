@@ -34,6 +34,10 @@ import type { IssueEntry } from '../../src/issues/types.ts';
 import type { PlanApproval } from '../../src/config/models.ts';
 import { waitForCondition } from '../helpers/wait-for-condition.ts';
 
+const GENERIC_PLAN_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-plan-runner-no-prd-it-config-'));
+const GENERIC_PLAN_CONFIG_PATH = join(GENERIC_PLAN_CONFIG_DIR, 'project.toml');
+writeFileSync(GENERIC_PLAN_CONFIG_PATH, '[backend]\nplanner = "claude"\nauditor = "claude"\n');
+
 const TEST_SOCK = 'cam-it-noprd';
 const SESSION = 'noprd-test';
 
@@ -196,6 +200,7 @@ test.skipIf(!tmuxAvailable)(
 				pollIntervalMs: 1,
 				plannerTimeoutMs: 999_999,
 				auditorTimeoutMs: 999_999,
+				configPath: GENERIC_PLAN_CONFIG_PATH,
 			});
 		} catch {
 			planPhaseThrew = true;

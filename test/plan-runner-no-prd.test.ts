@@ -10,7 +10,10 @@
 //        does NOT fire escalateFn, returns { kind: 'no-action' }, which maps to
 //        phase:idle via exitPhaseAfterPlan (proved by phase-setter assertion).
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
 	runPlanPhase,
 	runPostAuditAction,
@@ -22,6 +25,20 @@ import type { IssueEntry } from '../src/issues/types.ts';
 import type { LoopPhase } from '../src/commands/status.ts';
 import type { PlanApproval } from '../src/config/models.ts';
 import { waitForCondition } from './helpers/wait-for-condition.ts';
+
+// ---------------------------------------------------------------------------
+// Generic backend fixture (US-008, CAM-420): isolates this suite's
+// planner/auditor backend resolution from the repo's real project.toml, so a
+// codex planner/auditor config cannot break these generic-backend tests.
+// ---------------------------------------------------------------------------
+
+const GENERIC_PLAN_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-plan-runner-no-prd-test-'));
+const GENERIC_PLAN_CONFIG_PATH = join(GENERIC_PLAN_CONFIG_DIR, 'project.toml');
+writeFileSync(GENERIC_PLAN_CONFIG_PATH, '[backend]\nplanner = "claude"\nauditor = "claude"\n');
+
+afterAll(() => {
+	rmSync(GENERIC_PLAN_CONFIG_DIR, { recursive: true, force: true });
+});
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -95,6 +112,7 @@ function makePlannerfailedOpts(overrides: Partial<RunPlanPhaseOptions> = {}): {
 		plannerTimeoutMs: 999_999,
 		auditorTimeoutMs: 999_999,
 		...overrides,
+		configPath: 'configPath' in overrides ? overrides.configPath : GENERIC_PLAN_CONFIG_PATH,
 	};
 
 	return { opts, calls };
@@ -170,6 +188,7 @@ describe('runPlanPhase - planner-failed path (AC1)', () => {
 			pollIntervalMs: 1,
 			plannerTimeoutMs: 999_999,
 			auditorTimeoutMs: 999_999,
+			configPath: GENERIC_PLAN_CONFIG_PATH,
 		};
 		const result = runPlanPhase(opts);
 		// Without readPlannerReportFn, planner-failed is NOT triggered. The auditor
