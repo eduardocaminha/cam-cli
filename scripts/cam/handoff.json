@@ -1,20 +1,19 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Extract resolveSelfInvokeArgv primitive and delegate resolveOrchResolverCmd to it"
+    "id": "US-002",
+    "title": "Fix forkMonitor's dead retry-monitor child via resolveSelfInvokeArgv"
   },
   "branchName": "cam/issue-426",
-  "timestamp": "2026-07-26T16:43:00Z",
-  "createdFiles": [
-    "src/util/self-invoke.ts",
-    "test/util/self-invoke.test.ts"
-  ],
+  "timestamp": "2026-07-26T17:10:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/run.ts",
-    "test/commands/run-orch-resolver-compiled-mode.test.ts"
+    "src/retry/launcher.ts",
+    "test/retry/interactive.test.ts",
+    "scripts/cam/patterns.md",
+    "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "resolveSelfInvokeArgv (src/util/self-invoke.ts) is now the single canonical fix site for interpreted-vs-compiled self-invoke detection, keyed ONLY on the positive argv1.startsWith('/$bunfs/') signal. resolveOrchResolverCmd (src/commands/run.ts) is a thin wrapper: argv = resolveSelfInvokeArgv(execPath, argv1); return argv.map(q).join(' ') + ' orch-resolve'. The negative basename(execPath) !== 'bun' heuristic is fully removed from src/ (the basename import was dropped from run.ts since it had no other use there -- do not re-add it without checking for actual other call sites first). patterns.md's CAM-425 US-R1-001 bullet documents the OLD two-signal design and is now stale re: detection logic; left as-is per Surgical Changes (out of scope for this story to edit a historical bullet describing a past fix), but any future work continuing this thread should treat src/util/self-invoke.ts + its doc comment as the current source of truth, not that bullet. forkMonitor (src/retry/launcher.ts) still carries the same latent self-invoke bug class (noted as an out-of-scope follow-up target in the CAM-425 bullet) and has NOT been touched by this story -- still a plausible future target if a story ever asks for it.",
+  "nextStoryContext": "forkMonitor (src/retry/launcher.ts) now delegates to resolveSelfInvokeArgv (src/util/self-invoke.ts) for its monitor-child argv, mirroring resolveOrchResolverCmd (src/commands/run.ts). Both call sites now share the single canonical fix site for the interpreted-vs-compiled self-invoke bug class; there are no other known local reimplementations of this pattern left in src/. test/retry/interactive.test.ts's two forkMonitor argv tests assert full-array equality for both shapes (interpreted: 5-token [execPath, argv1, 'retry-monitor', pane, pid]; compiled: 4-token [execPath, 'retry-monitor', pane, pid], swept red against the pre-fix construction) by monkeypatching process.execPath (via Object.defineProperty, since execPath is non-writable in this Bun version) and process.argv[1] around the forkMonitor call, restoring both in the same test body. scripts/file-size-budget.json's ceilings for src/retry/launcher.ts (323->329) and test/retry/interactive.test.ts (383->391) were raised in this story per the file-size gate's content.split('\\n').length measurement (not wc -l); the _ref note documents both raises together since both files grew in the same story. patterns.md's CAM-425 US-R1-001 bullet no longer names forkMonitor as an unaddressed follow-up target -- it now records that forkMonitor shares the primitive as of this story.",
   "officialDocsValidated": [
     {
       "lib": "none",
