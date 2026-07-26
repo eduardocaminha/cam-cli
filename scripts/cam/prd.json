@@ -31,7 +31,7 @@
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [src/tmux/dispatch.ts:149]: SendKeysWhenIdleOptions.logEvent's doc comment (lines 149-164) still documents the removed control flow: it claims push-undelivered fires on 'TWO distinct occasions that are NOT both an exhaustion signal' and that on the idle-gate timeout 'exactly one send fires with NO verify/retry cycle and delivery is genuinely UNKNOWN, not confirmed failed'. After US-003 both reasons ARE exhaustion signals (retriesExhausted === maxAttempts on both, dispatch.ts:633) and the timed-out path runs the full verify loop, so delivery IS confirmed failed. The comment directly contradicts this file's own rewritten header (lines 12-31) and the sendKeysVerified docstring (lines 555-561), which is the drift class the project's own durable lesson warns about (a comment does not prove behavior). Also update the neighbouring idleTimeoutMs doc (lines 135-143), which still summarises the fallback as 'log a warning to stderr and send anyway' with no mention of verification or remediation."
     },
     {
