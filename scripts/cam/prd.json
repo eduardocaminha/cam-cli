@@ -105,7 +105,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: test/supervisor/events.test.ts, test/supervisor/ensure-worker-pane.test.ts. Both oracles red-swept on main (0 fixture occurrences vs 5 and 3 call sites). The count oracle intentionally derives both sides live at check time so a later refactor cannot silently strand it frozen. Neither file uses process.chdir, so no opt-outs are needed. events.test.ts note: the supervisor's event logger design is all-synchronous injected-I/O (patterns.md:859 carve-out); do not restructure the inline opts into async helpers while adding the field."
     },
