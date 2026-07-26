@@ -1,13 +1,45 @@
 {
   "id": "CAM-426",
   "title": "Promote 2 suggestions: forkMonitor carries the exact latent bug US-R1-001 just fixed: `const mainScrip…; resolveOrchResolverCmd's second detection arm, `basename(execPath) !== 'bun'`, …",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-26T13:37:32.717Z",
-  "updatedAt": "2026-07-26T13:37:32.717Z",
+  "updatedAt": "2026-07-26T16:27:53.259Z",
   "description": "forkMonitor carries the exact latent bug US-R1-001 just fixed: `const mainScript = process.argv[1] ?? 'cam'` produces [execPath, '/$bunfs/root/<outfile>', 'retry-monitor', ...] inside a compiled binary, and the child's main() reads argv[2] = the bunfs path and exits 1 with 'unknown command'. Verified with a real compiled binary from this branch: `<bin> '/$bunfs/root/<outfile>' <cmd>` prints 'unknown command'. This means `cam retry`'s monitor child is silently dead on every installed (compiled) binary. Pre-existing on main and correctly out of scope for this PR (the round-1 finding named only the orch-resolve call site, and patterns.md documents it as a follow-up target), so it is not a regression here: file it as its own issue and reuse the new exported resolveOrchResolverCmd there.\n\nSource: cam/issue-425\nReview round: 2\n\nsuggestion-fingerprint: 1085d5c932a6\n\n---\n\nresolveOrchResolverCmd's second detection arm, `basename(execPath) !== 'bun'`, misclassifies an interpreted run under a non-standard interpreter filename (e.g. a version-managed `bun-1.3` shim) as compiled mode, emitting `<bun-shim> orch-resolve`, which bun would treat as a script path and fail. The failure is fail-safe (fallback + one orch-resolve-fallback event per respawn, never a broken session) but silently disables live re-resolution. The bunfs-prefix arm alone is the positive signal; consider keying on it (or on Bun.main starting with '/$bunfs/') and dropping the negative basename heuristic.\n\nSource: cam/issue-425\nReview round: 2\n\nsuggestion-fingerprint: 8eac1584e083",
   "derivedFrom": [
     "CAM-425"
-  ]
+  ],
+  "spec": {
+    "acceptanceCriteria": [
+      "A new exported function resolveSelfInvokeArgv(execPath: string, argv1: string | undefined): string[] exists under src/util/ and is the single place in src/ that decides interpreted-vs-compiled self-invocation. Compiled detection keys ONLY on the positive signal (argv1 !== undefined && argv1.startsWith('/$bunfs/')); the negative basename(execPath) !== 'bun' heuristic exists nowhere in src/ after this change (grep-verifiable). Interpreted mode returns [execPath, argv1 ?? 'cam']; compiled mode returns [execPath].",
+      "resolveOrchResolverCmd (src/commands/run.ts) delegates to resolveSelfInvokeArgv (no duplicated detection logic) and renders identical command strings for the two previously-correct cases (interpreted with real script argv1; compiled with /$bunfs/ argv1). The former Arm B behavior is inverted and tested: an interpreted run under a version-managed interpreter shim (execPath basename e.g. 'bun-1.3') with a real script argv1 now renders the interpreted 3-token form, not the collapsed compiled form. The test at test/commands/run-orch-resolver-compiled-mode.test.ts asserting collapse on basename alone is updated accordingly, and the run.ts comment block documenting Arm B as defense-in-depth is updated in the same commit (Doc Maintenance).",
+      "forkMonitor (src/retry/launcher.ts) builds its child argv as [...resolveSelfInvokeArgv(process.execPath, process.argv[1]), 'retry-monitor', pane, String(claudePid)]. Unit tests assert the FULL spawned argv (prefix included) for both shapes: interpreted (bun execPath + script argv1 => 5 tokens) and compiled (/$bunfs/ argv1 => 4 tokens, no script token). Asserting only argv[0] and the trailing 3 tokens is no longer sufficient anywhere in test/retry/interactive.test.ts.",
+      "An integration test performs a real `bun build --compile` of a small fixture entry that imports resolveSelfInvokeArgv from src/, runs the compiled fixture, has it self-spawn [...resolveSelfInvokeArgv(process.execPath, process.argv[1]), '<marker-token>'], and asserts (a) inside the compiled binary process.argv[1] starts with '/$bunfs/' and (b) the spawned child observes the marker token at process.argv[2]. The same fixture run interpreted (bun <fixture>.ts) also self-spawns and the child likewise sees the marker at argv[2]. The test builds into a tmpdir, cleans up its artifacts including .bun-build temp files (CAM-407), and is NOT skipIf-guarded: if bun compile is unavailable the test fails loudly.",
+      "Quality gates green: bun run typecheck, bun test, bun run check:all."
+    ],
+    "scope": "Kill the last unfixed instance of the compiled-binary self-invoke bug class and make its fix canonical. Extract resolveSelfInvokeArgv(execPath, argv1): string[] into src/util/ as the single source of truth for re-invoking the running cam entrypoint (interpreted: [execPath, argv1 ?? 'cam']; compiled: [execPath]), keyed exclusively on the positive /$bunfs/ prefix signal. resolveOrchResolverCmd becomes a thin shell-quoting wrapper over it; forkMonitor spreads it into its monitor argv, which revives the retry-monitor child on every installed compiled binary (dead since 2026-05-14, silently: child stderr is ignored, exit status unchecked, and it dies before its own logger starts). Verification is two-layer: pure unit tests for branch logic per patterns.md, plus one empirical compiled-binary integration test that pins the /$bunfs/ premise repo-wide. Update the stale run.ts Arm B comment and the patterns.md bullet naming forkMonitor as a follow-up target.",
+    "gotchas": [
+      "The issue title says 'cam retry' but no such command exists. forkMonitor's only call site is src/commands/claude.ts:146 inside launchClaudeInteractive; the affected user-facing command is `cam claude` (interactive, inside tmux). Print mode (cam claude -p) never touches forkMonitor.",
+      "resolveOrchResolverCmd returns a shell-quoted STRING (via q()) while Bun.spawn needs a string[] argv, so 'reuse' means extraction of a shared argv-level primitive, not a direct call.",
+      "Bun compiled binaries inject the virtual /$bunfs/root/<outfile> entry as the CHILD's argv[1] automatically; the spawned argv must NOT include a script token in compiled mode. index.ts main() dispatches on argv[2] in both modes: that is why the buggy argv put the bunfs path in the command slot and died with 'unknown command'.",
+      "Dropping the basename arm is a deliberate trade: a future bun version changing the /$bunfs/ prefix degrades to orch-resolve's designed fail-safe (last-known-good fallback + loud orch-resolve-fallback event), whereas keeping the arm would propagate a SILENT dead-child failure to forkMonitor for anyone on a version-managed bun shim. Positive signal beats negative heuristic once the primitive is shared.",
+      "bun build --compile leaks .bun-build temp files (CAM-407): the integration test must build in a tmpdir and clean up after itself.",
+      "Do not skipIf-guard the integration test (CAM-424 class: 146 silent skipIfs already make the suite lie on some hosts).",
+      "The existing forkMonitor tests pass with a garbage argv[1] because they assert only argv[0] and argv.slice(-3); that blind spot is exactly how the bug survived since 2026-05-14 and must be closed, not preserved.",
+      "Adjacent cam resume defects surfaced during grounding (stale ~/.cam/retry.pid on normal exit, pid-reuse noop misclassification ahead of supervisor checks, and a noop hint promising a respawn the monitor never performs) are OUT OF SCOPE: filed as a separate issue by fix-site policy, to be specced against post-CAM-426 reality.",
+      "Out of scope: post-spawn liveness checks on the detached unref'd monitor child (racy, speculative once the argv is correct and the premise is pinned by the integration test)."
+    ],
+    "domainTerms": [
+      "self-invoke primitive: the single canonical function (resolveSelfInvokeArgv) that computes the argv prefix for a cam process to re-invoke its own entrypoint, correct in both interpreted and compiled modes",
+      "bunfs virtual entry: the /$bunfs/root/<outfile> path that bun injects as process.argv[1] inside a bun build --compile binary; its presence is the positive signal for compiled mode"
+    ]
+  },
+  "wsjf": {
+    "value": 3,
+    "timeCriticality": 2,
+    "riskReduction": 4,
+    "jobSize": 2
+  },
+  "type": "fix"
 }
