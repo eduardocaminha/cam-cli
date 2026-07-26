@@ -113,7 +113,7 @@
         "The full quality spine stays green. PINNING GUARD ON INVARIANCE: deliberately GREEN-ON-MAIN (measured exit 0 on unmodified main 2026-07-25). [oracle: bun run check:all]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/status-diagnostics.ts (module header lines 20-31, WHY_NOT_MOVING_TEXT entry for 'orch-pane-busy' at ~line 145), test/unit/status-diagnostics.test.ts (the existing 'orch-pane-busy' case at line 184 asserts the old message string and must be updated in lockstep). Scope guard: do NOT edit src/commands/status.ts, which sits AT its ceiling on main (gate-measured 1012/1012) and whose signal derivation (`scanLastEventOfKind` for orch-pane-busy / push-undelivered, status.ts:593-607) needs no change: after US-003, orch-pane-busy is only ever written for a terminal failure, so presence-of-event remains the correct signal. If a doc touch there does become necessary, raise that ceiling with a CAM-406 `_ref` entry per ADR-0022. Neither status-diagnostics.ts nor its test is budgeted today. `push-recovered` deliberately does NOT become a diagnostic condition: a recovered push is a non-event for why-not-moving, and adding a condition would change the closed rule-set this story pins as unchanged."
     }
