@@ -1,0 +1,215 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-420",
+  "description": "Extend the CAM-405 configPath seam to implementer/planner/auditor phase resolution, isolate the supervisor and plan-runner test suites onto fixture configs, and re-commit implementer = codex proven under a codex-unauthenticated environment",
+  "issueNumber": 420,
+  "type": "feat",
+  "relatedDocs": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "Bun",
+      "channel": "WebFetch",
+      "url": "https://bun.sh/docs/install/cache",
+      "version": "current",
+      "fetchedAt": "2026-07-26T20:30:00Z",
+      "summary": "Confirms Bun's global install cache lives at ~/.bun/install/cache (relocatable via BUN_INSTALL_CACHE_DIR), so running bun install under an emptied HOME relocates the cache and re-fetches packages (auditor-measured 2.5s with --frozen-lockfile). This validates the dress-rehearsal recipe: install with the real HOME to reuse the warm cache, then run bun test under the emptied HOME.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add configPath seam to RunSupervisorOptions with red-swept implementer codex regression test",
+      "description": "As a CI maintainer, I need the implementer phase-resolution inside runSupervisor to accept an injectable configPath so that supervisor tests can resolve backend/model from a fixture instead of the live scripts/cam/project.toml, making a committed codex implementer backend safe for CI.",
+      "acceptanceCriteria": [
+        "RunSupervisorOptions (src/supervisor/loop.ts:205) gains an optional configPath field, doc-commented in the style of MakeReviewDispatchOptions.configPath (src/supervisor/review.ts:283-299). Oracle red-swept on main: 0 occurrences of configPath in loop.ts today. [oracle: grep -q 'configPath?: string' src/supervisor/loop.ts]",
+        "Both implementer resolution calls receive the seam with no local ?? default at the site (issue AC1; match review.ts:370-373 where the local is the possibly-undefined option): readPhaseBackend('implementer', opts.configPath) at the loop.ts:1108 site and configPath: opts.configPath inside the resolvePhaseModel argument at :1118. [oracle: grep -q \"readPhaseBackend('implementer', opts.configPath)\" src/supervisor/loop.ts && grep -q 'configPath: opts.configPath' src/supervisor/loop.ts]",
+        "When configPath is omitted, resolved backend and model are byte-for-byte identical to current behavior: the whole existing suite stays green with zero test edits in this story. [oracle: bun test]",
+        "New file test/supervisor/loop-configpath-seam.test.ts with an issue-AC6 codex regression test modelled on test/supervisor/review.test.ts:2008: stages a tmpdir project.toml selecting [backend] implementer = \"codex\" plus a [models.codex] implementer pin (e.g. gpt-5-codex), injects a fake codexAuthCheckFn, and asserts (a) the fake auth check was called, (b) no outcome detail contains 'codex-auth-failed', (c) the dispatched worker command carries the pinned codex model. [oracle: bun test test/supervisor/loop-configpath-seam.test.ts]",
+        "Red-sweep (issue AC7): the new test file, copied into a worktree of unmodified main (git worktree add <tmp> main; bun install --frozen-lockfile in the worktree first, node_modules is gitignored), measurably FAILS there (on main the seam does not exist, resolution reads the cwd toml, the fake auth check is never called). Record the measured red result in an in-file red-sweep comment (durable oracle surface; handoff.json rotates per story, scripts/cam/patterns.md:907-909) AND restate it as free text in this story's handoff.json summary. [oracle: grep -q 'red-sweep' test/supervisor/loop-configpath-seam.test.ts]",
+        "Pinning guard, labelled per patterns.md:899 (green on main by construction since the file does not exist yet; this is a regression guard on invariance, not a claim about new behavior): the new test file never uses skipIf. [oracle: ! grep -q 'skipIf' test/supervisor/loop-configpath-seam.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/supervisor/loop.ts, test/supervisor/loop-configpath-seam.test.ts (new). The enclosing options interface is already DI-shaped (codexAuthCheckFn, codexModelsCacheReaderFn siblings); this is an additive field, no control-flow reordering (issue gotcha: opts is already in lexical scope, opts.codexModelsCacheReaderFn is read ten lines below the site at loop.ts:1121). CodexAdapter.buildSpawnArgv reads .claude/agents/subagent-implementer.md relative to cwd (patterns.md:877 region, CAM-350 bullets); the seam does NOT change cwd, so running from repo root finds the real agent file and no stub staging is needed, unlike the chdir pattern. Non-goals N1/N2/N3 from the issue: do not thread readPhaseEffort, do not touch already-seamed sites (review.ts, run.ts, orch-resolve.ts, config.ts), do not change any signature in src/config/. The regression-test model is review.test.ts:2008, NOT test/commands/run-configpath-seam.test.ts (wrong model, its fixture has no [backend] section; issue gotcha)."
+    },
+    {
+      "id": "US-002",
+      "title": "Add configPath seam to RunPlanPhaseOptions with red-swept planner and auditor codex regression tests",
+      "description": "As a CI maintainer, I need the planner and auditor phase-resolution inside the plan-runner to accept the same injectable configPath so that plan-side tests can resolve from a fixture and a future codex planner/auditor config cannot break CI.",
+      "acceptanceCriteria": [
+        "RunPlanPhaseOptions (src/supervisor/plan-runner.ts:286) gains an optional configPath field, doc-commented in the MakeReviewDispatchOptions.configPath style. Oracle red-swept on main: 0 occurrences of configPath in plan-runner.ts today. [oracle: grep -q 'configPath?: string' src/supervisor/plan-runner.ts]",
+        "All four plan-runner reader calls receive it (readPhaseBackend/resolvePhaseModel at :655/:658 for planner and :731/:734 for auditor), threaded from the exported entrypoints runPlanPhase (:1121) and runPlanPhaseWithReplan (:1260) through runPlannerSpawnStep (:1015) and runAuditorSpawnStep (:1036). resolveAndSpawnPlanner (:638) and resolveAndSpawnAuditor (:714) currently take 11 positional parameters: convert them to an options object rather than growing a 12th positional (issue AC3); no call site outside plan-runner.ts changes shape. [oracle: grep -q \"readPhaseBackend('planner', \" src/supervisor/plan-runner.ts && grep -q \"readPhaseBackend('auditor', \" src/supervisor/plan-runner.ts]",
+        "When configPath is omitted, behavior is byte-for-byte identical: the whole existing suite stays green with zero test edits in this story. [oracle: bun test]",
+        "New file test/supervisor/plan/plan-runner-configpath-seam.test.ts with TWO issue-AC6 codex regression tests (one planner, one auditor), each modelled on review.test.ts:2008: tmpdir project.toml selecting codex for that phase plus a [models.codex] pin, injected fake codexAuthCheckFn, asserting the fake was called, the result kind is not 'codex-auth-failed', and the spawned argv carries the pinned codex slug. [oracle: bun test test/supervisor/plan/plan-runner-configpath-seam.test.ts]",
+        "Red-sweep (issue AC7): both tests measurably FAIL when the file is copied into a worktree of unmodified main (bun install --frozen-lockfile there first); record the measured red in an in-file red-sweep comment and restate it in this story's handoff.json summary. [oracle: grep -q 'red-sweep' test/supervisor/plan/plan-runner-configpath-seam.test.ts]",
+        "Pinning guard, labelled per patterns.md:899 (green on main by construction, file does not exist yet): the new test file never uses skipIf. [oracle: ! grep -q 'skipIf' test/supervisor/plan/plan-runner-configpath-seam.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). Included per-story (audit F-06): the options-object conversion touches functions the story notes flag for biome noExcessiveCognitiveComplexity max=15; a lint failure must surface in THIS story, not seven stories later. [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/supervisor/plan-runner.ts, test/supervisor/plan/plan-runner-configpath-seam.test.ts (new). Threading path measured: runPlannerSpawnStep/runAuditorSpawnStep destructure opts at :1021/:1042 and forward 11 positionals to resolveAndSpawnPlanner/resolveAndSpawnAuditor; the options-object conversion is internal to plan-runner.ts. No control-flow reordering (issue gotcha; the CAM-398 plan escalated on exactly that misreading). Auditor tests reuse plannerPaneId via resolveLivePaneId, mirror runPlannerSpawnStep. Same non-goals as US-001. This file later receives the plan-side dress-rehearsal comment (US-010) and the fixture-vs-live distinguishability test, so keep its helpers reusable."
+    },
+    {
+      "id": "US-003",
+      "title": "Isolate test/supervisor/loop.test.ts onto a generic claude fixture config",
+      "description": "As a CI maintainer, I need loop.test.ts's ~120 runSupervisor invocations to resolve the implementer backend/model from a module-level fixture so that the 74 failures it contributes under a committed codex backend on an unauthenticated runner disappear.",
+      "acceptanceCriteria": [
+        "A module-level real-tmpdir fixture config GENERIC_SUPERVISOR_CONFIG_PATH (mkdtempSync; content: a [backend] section with implementer = \"claude\"; afterAll cleanup) is defaulted into makeBaseOpts (loop.test.ts:136) via the review.test.ts:343-350 idiom, placed AFTER the ...overrides spread: configPath: 'configPath' in overrides ? overrides.configPath : GENERIC_SUPERVISOR_CONFIG_PATH. Oracle red-swept on main: loop.test.ts has 0 configPath occurrences today. [oracle: grep -q \"'configPath' in overrides\" test/supervisor/loop.test.ts]",
+        "Every test that runs inside a chdir helper (withCodexBackendCwd at the loop.test.ts:172 and :4251 regions, withClaudeImplementerCwd) opts out with an explicit configPath: undefined so it keeps covering the live cwd-default path on purpose (issue AC4). [oracle: grep -q 'configPath: undefined' test/supervisor/loop.test.ts]",
+        "The stale non-injectability comments at loop.test.ts:539 and :4246 are rewritten: the replacement wording contains the literal token 'fixture-injectable' (e.g. 'fixture-injectable via RunSupervisorOptions.configPath (CAM-420)') and does not reintroduce the substring 'injectable through RunSupervisorOptions'. Both grep directions measured red on main (2 matches / 0 matches). [oracle: ! grep -q 'injectable through RunSupervisorOptions' test/supervisor/loop.test.ts && grep -q 'fixture-injectable' test/supervisor/loop.test.ts]",
+        "Dress rehearsal, run AFTER this story's commit (a worktree of HEAD only sees committed work): WT=$(mktemp -d)/wt && git worktree add \"$WT\" HEAD && perl -pi -e 's/^\\[backend\\]$/[backend]\\nimplementer = \"codex\"/' \"$WT/scripts/cam/project.toml\" && (cd \"$WT\" && bun install --frozen-lockfile && HOME=$(mktemp -d) bun test); git worktree remove --force \"$WT\". The bun install step is mandatory (audit F-04): node_modules is gitignored (.gitignore:2) so a fresh worktree has no dependencies and the suite errors on 'Cannot find package' for a reason unrelated to the seam; note an emptied HOME also relocates Bun's install cache (~/.bun/install/cache) so an install run under it re-fetches (measured 2.5s), which is why the recipe installs with the real HOME and empties HOME only for the test run. Expected result: fail count drops from the measured baseline 85 to EXACTLY 11, none in loop.test.ts (residual: events 3, ensure-worker-pane 3, spawn-resolution 2, pause-halt 1, loop-model-resolution 1, pause-resume 1). Record before/after counts in handoff.json summary. [oracle: named-command, the recipe above with fail count = 11]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: test/supervisor/loop.test.ts (4998 lines, single file on purpose: it alone carries 74 of the 85 measured failures). Fixture shape model: test/supervisor/review.test.ts:268-286 (module fixture) + :343-350 (builder default with 'configPath' in overrides opt-out). The chdir opt-out matters because configPath, when set, takes precedence over cwd-relative default resolution (defaultProjectConfigPath, src/config/models.ts:89-91); a chdir-staged toml would be silently bypassed without the explicit undefined. Do NOT mutate the repo's live scripts/cam/project.toml in-place for any test (patterns.md:877 region gotcha). Grep patterns.md for 'CAM-350' and 'red-first' bullets before starting."
+    },
+    {
+      "id": "US-004",
+      "title": "Isolate the four builder-based signal-bearing supervisor test files onto fixture configs",
+      "description": "As a CI maintainer, I need pause-halt, pause-resume, spawn-resolution and loop-model-resolution isolated onto fixture configs so that their measured 5 failures under a committed codex backend disappear.",
+      "acceptanceCriteria": [
+        "Each of test/supervisor/pause-halt.test.ts (258 lines), test/supervisor/pause-resume.test.ts (163), test/logging/spawn-resolution.test.ts (210) and test/supervisor/loop-model-resolution.test.ts (291) gains its own module-level GENERIC_SUPERVISOR_CONFIG_PATH fixture ([backend] implementer = \"claude\", afterAll cleanup) defaulted through its existing overrides builder via the 'configPath' in overrides idiom. All four measured with an overrides builder present and 0 configPath occurrences on main. [oracle: for f in test/supervisor/pause-halt.test.ts test/supervisor/pause-resume.test.ts test/logging/spawn-resolution.test.ts test/supervisor/loop-model-resolution.test.ts; do grep -q \"'configPath' in overrides\" \"$f\" || exit 1; done]",
+        "loop-model-resolution's chdir-based tests (withClaudeShapedCodexCwd and sibling helpers; 4 process.chdir call sites measured) opt out with explicit configPath: undefined, preserving their deliberate cwd-staged coverage. [oracle: grep -q 'configPath: undefined' test/supervisor/loop-model-resolution.test.ts]",
+        "The stale non-injectability comment at loop-model-resolution.test.ts:132-136 is rewritten. Retargeted oracle (audit F-01: the previous pattern was green on main because the comment line-wraps at :132-133; this pattern measured RED on main at :133): the file no longer matches 'injectable through RunSupervisorOptions' and now contains the literal token 'fixture-injectable'; the replacement wording must not reintroduce the old substring. [oracle: ! grep -q 'injectable through RunSupervisorOptions' test/supervisor/loop-model-resolution.test.ts && grep -q 'fixture-injectable' test/supervisor/loop-model-resolution.test.ts]",
+        "Dress rehearsal (same recipe as US-003, run after commit, bun install --frozen-lockfile in the worktree before testing, emptied HOME for the test run only): fail count drops from 11 to EXACTLY 6, all in events.test.ts (3) and ensure-worker-pane.test.ts (3). Record counts in handoff.json summary. [oracle: named-command, US-003 recipe with fail count = 6]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: test/supervisor/pause-halt.test.ts, test/supervisor/pause-resume.test.ts, test/logging/spawn-resolution.test.ts, test/supervisor/loop-model-resolution.test.ts. Four files exceeds the 1-3 heuristic; justified by measured size (163-291 lines each, one module fixture block plus one builder line per file, all four already have Partial-overrides builders, chdir opt-outs exist only in loop-model-resolution). Split from the builder-less pair (US-005) per audit F-03/F-08: these four need zero call-site edits, the builder-less two need per-literal edits, so the mechanics differ."
+    },
+    {
+      "id": "US-005",
+      "title": "Isolate the two builder-less signal-bearing supervisor test files (events, ensure-worker-pane)",
+      "description": "As a CI maintainer, I need events.test.ts and ensure-worker-pane.test.ts isolated onto fixture configs so that the last 6 measured implementer-side failures under a committed codex backend disappear.",
+      "acceptanceCriteria": [
+        "test/supervisor/events.test.ts (541 lines) and test/supervisor/ensure-worker-pane.test.ts (346) each gain a module-level GENERIC_SUPERVISOR_CONFIG_PATH fixture ([backend] implementer = \"claude\", afterAll cleanup). These files have NO opts builder (measured: 5 and 3 runSupervisor call sites, 0 'overrides' occurrences; each test builds RunSupervisorOptions inline), so the fixture is added as configPath: GENERIC_SUPERVISOR_CONFIG_PATH on every inline opts literal instead of the builder idiom. This is the audit F-03 alternative (a) to the spec's AC4 idiom, chosen over inventing a builder because a builder refactor of 8 inline literals is a larger, riskier diff than 8 one-line additions. Derived-comparand oracle (patterns.md derive-don't-freeze): one fixture usage per runSupervisor call site. [oracle: test \"$(grep -c 'configPath: GENERIC_SUPERVISOR_CONFIG_PATH' test/supervisor/events.test.ts)\" -eq \"$(grep -c 'runSupervisor(' test/supervisor/events.test.ts)\" && test \"$(grep -c 'configPath: GENERIC_SUPERVISOR_CONFIG_PATH' test/supervisor/ensure-worker-pane.test.ts)\" -eq \"$(grep -c 'runSupervisor(' test/supervisor/ensure-worker-pane.test.ts)\"]",
+        "Dress rehearsal (US-003 recipe, run after commit, with the mandatory bun install --frozen-lockfile worktree step): fail count drops from 6 to EXACTLY 0 under the implementer=codex flip with emptied HOME, completing the implementer-side isolation (85 -> 0 across US-003/004/005). Record counts in handoff.json summary. [oracle: named-command, US-003 recipe with fail count = 0]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 5,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: test/supervisor/events.test.ts, test/supervisor/ensure-worker-pane.test.ts. Both oracles red-swept on main (0 fixture occurrences vs 5 and 3 call sites). The count oracle intentionally derives both sides live at check time so a later refactor cannot silently strand it frozen. Neither file uses process.chdir, so no opt-outs are needed. events.test.ts note: the supervisor's event logger design is all-synchronous injected-I/O (patterns.md:859 carve-out); do not restructure the inline opts into async helpers while adding the field."
+    },
+    {
+      "id": "US-006",
+      "title": "Pre-emptively isolate the five non-failing implementer-side supervisor test files",
+      "description": "As a CI maintainer, I need the five implementer-side files that do not fail today (implement-blocked-marker-wiring, non-convergence-terminal, notify-orchestrator, notify/resend, suggestion-filing-hook) isolated onto the same fixture so that future tests added there cannot silently re-couple the suite to the live project.toml.",
+      "acceptanceCriteria": [
+        "Each of test/supervisor/implement-blocked-marker-wiring.test.ts (451 lines), test/supervisor/non-convergence-terminal.test.ts (438), test/supervisor/notify-orchestrator.test.ts (411), test/notify/resend.test.ts (324) and test/supervisor/suggestion-filing-hook.test.ts (627) gains a module-level GENERIC_SUPERVISOR_CONFIG_PATH fixture defaulted through its existing overrides builder via the 'configPath' in overrides idiom (all five measured with builders present, 0 configPath occurrences, 0 process.chdir). [oracle: for f in test/supervisor/implement-blocked-marker-wiring.test.ts test/supervisor/non-convergence-terminal.test.ts test/supervisor/notify-orchestrator.test.ts test/notify/resend.test.ts test/supervisor/suggestion-filing-hook.test.ts; do grep -q \"'configPath' in overrides\" \"$f\" || exit 1; done]",
+        "Honesty label (per patterns.md:899): these five files contribute ZERO failures under today's flip (auditor-measured; this is pre-emptive isolation with no live signal), so NO dress-rehearsal fail-count drop is claimed for this story; the presence greps above are the only new-behavior oracles and were each measured red on main (0 configPath occurrences per file). [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 6,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: the five listed test files. Five files exceeds the 1-3 heuristic; justified by measured mechanics: every file already has a Partial-overrides builder, the edit is one module fixture block plus one builder line per file, no opt-outs (0 chdir). The issue scope explicitly blesses including these as correct pre-emptive isolation while noting they carry no live signal, which is why the honesty label replaces a dress rehearsal here."
+    },
+    {
+      "id": "US-007",
+      "title": "Isolate the three largest plan-runner test files onto a generic plan fixture",
+      "description": "As a CI maintainer, I need plan-runner.test.ts, plan-runner-replan.test.ts and plan-runner-container.test.ts (96 of the ~158 plan-phase invocations) resolving planner/auditor from a fixture so that a codex planner/auditor config cannot break the generic plan suites.",
+      "acceptanceCriteria": [
+        "test/supervisor/plan/plan-runner.test.ts (786 lines, 44 call sites) and test/supervisor/plan/plan-runner-replan.test.ts (492 lines, 31 call sites) each gain a module-level GENERIC_PLAN_CONFIG_PATH fixture ([backend] with planner = \"claude\" and auditor = \"claude\", afterAll cleanup) defaulted through their existing overrides builders via the 'configPath' in overrides idiom. [oracle: grep -q \"'configPath' in overrides\" test/supervisor/plan/plan-runner.test.ts && grep -q \"'configPath' in overrides\" test/supervisor/plan/plan-runner-replan.test.ts]",
+        "test/supervisor/plan/plan-runner-container.test.ts (463 lines): its builder is makeOpts(container, spawnCalls) with NO overrides parameter (measured: 0 'overrides' occurrences, 21 call sites, 0 configPath), so the fixture default is added inside the opts object makeOpts returns rather than via the overrides idiom; zero per-call-site edits (audit F-03: the prescribed overrides-grep oracle could not pass here without inventing a builder, so this file gets its own oracle). [oracle: grep -q 'configPath: GENERIC_PLAN_CONFIG_PATH' test/supervisor/plan/plan-runner-container.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 7,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: the three listed test files. All three measured 0 process.chdir, so no opt-outs. The fixture declares BOTH planner and auditor as claude because these suites exercise both spawn steps. Behavioral falsifiability for the plan side is deliberately deferred to US-010's dress rehearsal (issue AC10): nothing in the committed config resolves planner/auditor to codex, so presence greps here are necessarily claims about new code only; each was red-swept on main (0 configPath occurrences in all three files)."
+    },
+    {
+      "id": "US-008",
+      "title": "Isolate the five root-level plan-runner test files onto the plan fixture",
+      "description": "As a CI maintainer, I need the root-level plan-runner suites (target-invalid, target-prompt, clear-stale, no-prd, in-progress-conflict) resolving planner/auditor from a fixture, completing the frozen plan-side census for test/ root.",
+      "acceptanceCriteria": [
+        "Builder-based files gain the fixture via the 'configPath' in overrides idiom: test/plan-runner-target-invalid.test.ts (331 lines), test/plan-runner-no-prd.test.ts (296), test/plan-runner-in-progress-conflict.test.ts (197), each with an existing overrides builder measured on main. [oracle: for f in test/plan-runner-target-invalid.test.ts test/plan-runner-no-prd.test.ts test/plan-runner-in-progress-conflict.test.ts; do grep -q \"'configPath' in overrides\" \"$f\" || exit 1; done]",
+        "Builder-less files get configPath: GENERIC_PLAN_CONFIG_PATH on every inline opts literal (audit F-03 alternative (a)): test/plan-runner-target-prompt.test.ts (285 lines, 5 call sites, 0 overrides) and test/plan-runner-clear-stale.test.ts (103 lines, 1 call site). Derived-comparand oracle: one fixture usage per runPlanPhase/runPlanPhaseWithReplan call site. [oracle: test \"$(grep -c 'configPath: GENERIC_PLAN_CONFIG_PATH' test/plan-runner-target-prompt.test.ts)\" -eq \"$(grep -Ec 'runPlanPhase(WithReplan)?\\(' test/plan-runner-target-prompt.test.ts)\" && test \"$(grep -c 'configPath: GENERIC_PLAN_CONFIG_PATH' test/plan-runner-clear-stale.test.ts)\" -eq \"$(grep -Ec 'runPlanPhase(WithReplan)?\\(' test/plan-runner-clear-stale.test.ts)\"]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 8,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: the five listed test files (frozen census per audit F-07; do NOT re-derive by grep at implement time, the list is authoritative). Five files exceeds the 1-3 heuristic; justified by measured mechanics: 103-331 lines each, one fixture block per file, 6 total inline-literal edits across the two builder-less files, 0 process.chdir anywhere in the set. Fixture shape identical to US-007 (planner AND auditor = claude)."
+    },
+    {
+      "id": "US-009",
+      "title": "Isolate the remaining supervisor and integration plan-runner test files and fix the stale codex-auth comment",
+      "description": "As a CI maintainer, I need the last five plan-phase test files isolated onto the plan fixture and the stale non-injectability comment in plan-runner-codex-auth.test.ts corrected, completing the frozen plan-side census.",
+      "acceptanceCriteria": [
+        "Builder-based files gain the fixture via the 'configPath' in overrides idiom: test/supervisor/plan-runner.test.ts (366 lines, 9 call sites) and test/supervisor/plan/plan-runner-auditor-payload.test.ts (317 lines, 8 call sites). [oracle: grep -q \"'configPath' in overrides\" test/supervisor/plan-runner.test.ts && grep -q \"'configPath' in overrides\" test/supervisor/plan/plan-runner-auditor-payload.test.ts]",
+        "Builder-less files get configPath: GENERIC_PLAN_CONFIG_PATH on every inline opts literal: test/supervisor/plan/plan-sidecar-replan-wiring.test.ts (153 lines, 1 call site), test/integration/plan-runner-target-obey.test.ts (470 lines, 2 call sites), test/integration/plan-runner-no-prd.test.ts (282 lines, 1 call site). Derived-comparand oracle as in US-008. [oracle: for f in test/supervisor/plan/plan-sidecar-replan-wiring.test.ts test/integration/plan-runner-target-obey.test.ts test/integration/plan-runner-no-prd.test.ts; do test \"$(grep -c 'configPath: GENERIC_PLAN_CONFIG_PATH' \"$f\")\" -eq \"$(grep -Ec 'runPlanPhase(WithReplan)?\\(' \"$f\")\" || exit 1; done]",
+        "The stale comment at test/supervisor/plan/plan-runner-codex-auth.test.ts:19-23 ('not injectable through RunPlanPhaseOptions', line-wrapped across :19-20) is rewritten with explicit patterns (audit F-02: the previous criterion named no literal pattern): the replacement contains the literal token 'fixture-injectable', avoids the substring 'injectable through' entirely, and states that these tests deliberately omit configPath to keep covering the live cwd-default path. NO other edit to that file, and NO edit at all to test/supervisor/plan/plan-runner-model-resolution.test.ts (both keep their live-default coverage; they build opts inline and pass no configPath, so the new default never applies to them). Both grep directions measured red on main (:19 matches / 0 matches). [oracle: ! grep -q 'injectable through' test/supervisor/plan/plan-runner-codex-auth.test.ts && grep -q 'fixture-injectable' test/supervisor/plan/plan-runner-codex-auth.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 9,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: the five listed test files plus the comment-only edit in plan-runner-codex-auth.test.ts. Frozen census (audit F-07): with US-007 (3 files) and US-008 (5 files), this story's 5 files complete the 13 edited plan-phase files; plan-runner-codex-auth and plan-runner-model-resolution are deliberately code-untouched (live-default coverage, chdir helpers at codex-auth:105 and model-resolution:124 per the issue's blast-radius census). Six files exceeds the 1-3 heuristic; justified by measured mechanics: 153-470 lines each, one fixture block or 1-2 inline literals per file, plus a comment rewrite."
+    },
+    {
+      "id": "US-010",
+      "title": "Plan-side dress rehearsal: prove the planner/auditor isolation under a codex-resolving live config",
+      "description": "As a CI maintainer, I need a behavioral proof that the plan-side isolation holds when the live project.toml resolves planner and auditor to codex on an unauthenticated machine, since every plan-side presence grep is green-on-main by construction.",
+      "acceptanceCriteria": [
+        "A fixture-vs-live distinguishability test is added to test/supervisor/plan/plan-runner-configpath-seam.test.ts (issue AC10 cheap positive signal): using the generic claude fixture (no [models] section), assert the spawned planner argv carries 'opus' (DEFAULTS.planner, src/config/models.ts:62-70) and does NOT contain 'fable' (the live scripts/cam/project.toml pin), proving resolution went through the fixture. [oracle: bun test test/supervisor/plan/plan-runner-configpath-seam.test.ts && grep -q 'fable' test/supervisor/plan/plan-runner-configpath-seam.test.ts]",
+        "Dress rehearsal, run after US-007/008/009 are committed: WT=$(mktemp -d)/wt && git worktree add \"$WT\" HEAD && perl -pi -e 's/^\\[backend\\]$/[backend]\\nplanner = \"codex\"\\nauditor = \"codex\"/' \"$WT/scripts/cam/project.toml\" && (cd \"$WT\" && bun install --frozen-lockfile && HOME=$(mktemp -d) bun test test/supervisor/plan/plan-runner.test.ts test/supervisor/plan/plan-runner-replan.test.ts test/supervisor/plan/plan-runner-container.test.ts test/supervisor/plan/plan-runner-auditor-payload.test.ts test/supervisor/plan/plan-sidecar-replan-wiring.test.ts test/supervisor/plan/plan-runner-configpath-seam.test.ts test/supervisor/plan/plan-runner-codex-auth.test.ts test/supervisor/plan/plan-runner-model-resolution.test.ts test/supervisor/plan-runner.test.ts test/plan-runner-target-invalid.test.ts test/plan-runner-target-prompt.test.ts test/plan-runner-clear-stale.test.ts test/plan-runner-no-prd.test.ts test/plan-runner-in-progress-conflict.test.ts test/integration/plan-runner-target-obey.test.ts test/integration/plan-runner-no-prd.test.ts); git worktree remove --force \"$WT\". The bun install step is mandatory (audit F-04, gitignored node_modules). Expected result, scoped per audit F-05: the 14 isolated files are ALL green, and the total fail count is EXACTLY 3, confined to the two deliberate live-default files and matching these test names: 'AC4 - claude backend (repo default project.toml) -> codexAuthCheckFn never called' and 'absent codexAuthCheckFn + claude backend' (plan-runner-codex-auth.test.ts, 2 fails) and 'claude-backed dispatch (repo default project.toml) never invokes the injected cacheReader' (plan-runner-model-resolution.test.ts, 1 fail). These 3 fail BY DESIGN under the rehearsal flip because they assert the repo default resolves claude; the rehearsal never claims full greenness. Record before/after counts in handoff.json summary. [oracle: named-command, the recipe above with fail count = 3 in exactly the two named files]",
+        "The measured rehearsal result (file list, pass/fail counts, the 3 expected residual fails and why they are by-design) is persisted as a durable in-file dress-rehearsal comment in test/supervisor/plan/plan-runner-configpath-seam.test.ts (handoff.json rotates and is banned as an evidence oracle, patterns.md:907-909; the token 'dress-rehearsal' measured absent repo-wide in test/ on main, so this grep is red on main). [oracle: grep -q 'dress-rehearsal' test/supervisor/plan/plan-runner-configpath-seam.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 10,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: test/supervisor/plan/plan-runner-configpath-seam.test.ts only (plus handoff). This is the audit F-07 split: the dress rehearsal is its own final plan-side story instead of being appended to an unbounded file-sweep story. If the rehearsal measures anything other than exactly the 3 named residual fails, that is a missed isolation site: the failing file name localizes it; fix in place (it will be one of the 14 frozen-census files) rather than rationalizing the count. The [models.codex] section has no planner/auditor pins, so the rehearsal flip exercises the codex auto-resolution/preflight path exactly as CI would."
+    },
+    {
+      "id": "US-011",
+      "title": "Re-commit implementer = codex and prove the suite green under a codex-unauthenticated environment",
+      "description": "As the cam operator, I need [backend] implementer = \"codex\" restored in the committed project.toml (undoing revert ea72a1da) with acceptance evidence from a codex-unauthenticated run, so the proven-live codex implementer becomes committable config without breaking CI.",
+      "acceptanceCriteria": [
+        "scripts/cam/project.toml contains implementer = \"codex\" under [backend], restoring what ea72a1da removed (issue AC8; this story is sequenced LAST). Measured red on main: the only implementer assignment today is name-level claude plus the [models.codex] slug. [oracle: grep -q 'implementer = \"codex\"' scripts/cam/project.toml]",
+        "Pinning guard, labelled per patterns.md:899 (green on main by design, invariance claim): the pre-existing [models.codex] implementer = \"gpt-5.6-sol\" pin is untouched. [oracle: grep -q 'implementer = \"gpt-5.6-sol\"' scripts/cam/project.toml]",
+        "Issue AC9 dual-run acceptance evidence: BOTH runs recorded with pass/fail counts in handoff.json summary: (a) plain bun test on this codex-authenticated machine, and (b) HOME=$(mktemp -d) bun test (emptied HOME makes ~/.codex/auth.json unreadable; codexAuthCheck point-reads join(homedir(),'.codex','auth.json'), src/supervisor/codex-auth.ts:63, no env-var equivalent). Run (b) must show 0 fails; run (a) alone is EXPLICITLY NOT acceptance evidence (auditor measured 5630 pass / 0 fail on an unseamed flipped tree, making it tautological). No worktree is needed here: the working tree already has node_modules; the emptied HOME only affects the test run (and would relocate Bun's install cache if an install were run under it). [oracle: HOME=$(mktemp -d) bun test]",
+        "Issue AC11 repo-wide comment sweep: no test file still claims non-injectability through RunSupervisorOptions. The pattern is deliberately the SHORT wrap-safe one (audit F-01: the longer 'not injectable through RunSupervisorOptions' phrase is green on main because loop-model-resolution.test.ts wraps it at :132-133; the short pattern measured RED on main with 3 matches: loop-model-resolution:133, loop.test.ts:539, loop.test.ts:4246). [oracle: ! grep -rq 'injectable through RunSupervisorOptions' test/]",
+        "scripts/cam/patterns.md: the CAM-350 US-003 non-injectability bullet (patterns.md:877) is superseded: annotate it as superseded by CAM-420 and append a new bullet recording the fixture-injectable contract (RunSupervisorOptions.configPath and RunPlanPhaseOptions.configPath, the generic-fixture-default idiom, the explicit configPath: undefined opt-out) plus the measured AC9 dual-run evidence. Measured red on main: 0 occurrences of CAM-420 in patterns.md. [oracle: grep -q 'CAM-420' scripts/cam/patterns.md]",
+        "Pinning guard on the branch diff, labelled per patterns.md:899 and audit F-09 (green on an empty diff by construction; regression guard, not a new-behavior claim), widened from the two new files to everything this PRD touched: no line ADDED by this branch introduces skipIf into test/. [oracle: ! (git diff main...HEAD -- test/ | grep '^+' | grep -q 'skipIf')]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes (bun run check:all; CI runs this on codex-unauthenticated runners per .github/workflows/ci.yml:26, which is the environment the emptied-HOME run simulates). [oracle: bun run check:all]"
+      ],
+      "priority": 11,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: scripts/cam/project.toml, scripts/cam/patterns.md. Under this flip the plan-side live-default tests (plan-runner-codex-auth, plan-runner-model-resolution) stay green: they read the planner/auditor phases, which still resolve claude ([backend] gains only implementer = \"codex\"; readPhaseBackend falls through name-level claude for other phases). Pre-existing skipIf usage in loop.test.ts and the integration plan files is untouched history, which is why the guard is diff-scoped rather than a repo-wide absence grep (a repo-wide one would be red for pre-existing, out-of-scope reasons). Do not edit the out-of-scope stale comments at test/commands/run-model-resolution.test.ts:126 or test/supervisor/review.test.ts:358 (MakeReviewDispatchOptions wording, a CAM-405-era leftover): both are outside issue AC11's occurrence list; the review.test.ts one is noted in scope-proposal outOfScope for a follow-up filed on main."
+    }
+  ]
+}
