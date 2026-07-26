@@ -38,7 +38,7 @@
       "id": "US-R1-004",
       "title": "Review round 1 fix 004: address reviewer finding",
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [docs/launch-readiness.md:31]: Doc-sync gap: ADR 0049 line 29 delegates the binary rename to launch packaging 'as a distribution item of launch readiness', and the source issue's gotchas place the garboard/gar binary naming in the distribution dimension of docs/launch-readiness.md, but that file's 'Distribution / install: gap' section carries no such item and line 14 still frames 'CAM Runtime' as the product display name. The staged rename plan therefore has no tracked home in the launch checklist it points at. One item in the distribution gap list closes it (mechanical, single file)."
     },
     {
