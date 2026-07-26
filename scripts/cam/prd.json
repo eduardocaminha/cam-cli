@@ -51,7 +51,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/retry/launcher.ts (forkMonitor at line 224; buggy construction at lines 238-239: const mainScript = process.argv[1] ?? 'cam'), test/retry/interactive.test.ts (existing tests assert only argv[0] and argv.slice(-3), the exact blind spot that let the bug survive; close it, do not preserve it), scripts/cam/patterns.md (US-R1-001 CAM-425 bullet, grep for 'plausible follow-up target'). Gotcha from spec: the issue title says 'cam retry' but no such command exists; forkMonitor's only call site is src/commands/claude.ts:146 inside launchClaudeInteractive, so the affected user-facing command is cam claude (interactive, inside tmux); print mode never touches forkMonitor. Bun injects the /$bunfs/ virtual entry as the CHILD's argv[1] automatically in compiled mode, so the spawned argv must NOT include a script token there; index.ts main() dispatches on argv[2] in both modes. Out of scope (per spec): post-spawn liveness checks on the detached unref'd monitor child; adjacent cam resume defects (filed separately by fix-site policy)."
     },
