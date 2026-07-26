@@ -69,7 +69,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: new test/integration/self-invoke-compiled.test.ts plus a small fixture entry (co-locate under test/integration/ per existing convention; dir already hosts real-subprocess tests like tmux-introspect.test.ts and commit-exists-real-git.test.ts as the pattern to follow). The fixture must import resolveSelfInvokeArgv from src/ (US-001 dependency) so the pinned premise is the production primitive, not a copy. Depends on US-001 only; independent of US-002. Use waitForCondition for async waits, never a fixed setTimeout (curated test-quality invariant). Compile with an explicit --outfile inside the tmpdir; clean the tmpdir and any .bun-build temp files in afterAll even on failure. Marker-token assertion is behavioral (child echoes its argv[2]); no mock-call-only assertions. Official Bun docs (see officialDocsConsulted) confirm /$bunfs/ as the documented internal prefix; this test is the repo-wide empirical pin against a future change."
     }
