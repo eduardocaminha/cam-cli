@@ -130,14 +130,12 @@ import handoffSchema from '../../scripts/cam/handoff.schema.json';
  *     calling readWorkerTokens or silently dropping enforcement. See
  *     WorkerTokenCeilingUnavailableEventDetail.
  *   - 'orch-pane-busy' (US-001, CAM-401): emitted alongside (not replacing)
- *     'push-undelivered' (reason: 'pane-not-idle') when the orchestrator pane
- *     does not go idle within the idle-gate's deadline and the sidecar sends
- *     anyway (sendOnceUnverified, src/tmux/dispatch.ts). The generic
- *     push-undelivered event conflates this transient send-anyway condition
- *     with genuine retries-exhausted delivery failure; this dedicated kind
- *     lets a why-not-moving diagnostic attribute a wedge to a specific pane
- *     and timeout without parsing cam-supervisor.log. See
- *     OrchPaneBusyEventDetail.
+ *     a TERMINAL 'push-undelivered' (reason: 'pane-not-idle') only after the
+ *     unified verify plus bare-submit remediation loop exhausts maxAttempts
+ *     for an orchestrator pane the idle gate never observed idle. This
+ *     dedicated kind lets a why-not-moving diagnostic attribute that terminal
+ *     non-delivery to a specific pane and timeout without parsing
+ *     cam-supervisor.log. See OrchPaneBusyEventDetail.
  */
 export type WorkerEventKind =
 	| 'worker-start'
@@ -646,14 +644,14 @@ export interface WorkerTokenCeilingUnavailableEventDetail {
 
 /**
  * 'orch-pane-busy' event detail (US-001, CAM-401): recorded alongside (not
- * replacing) the generic 'push-undelivered' (reason: 'pane-not-idle') emitted
- * by `sendOnceUnverified` (src/tmux/dispatch.ts) when the orchestrator pane
- * did not go idle within `idleTimeoutMs` and the sidecar sent anyway. Carries
- * only wake-up-delivery metadata, mirroring PushUndeliveredEventDetail's
- * no-report-content invariant.
+ * replacing) a TERMINAL 'push-undelivered' (reason: 'pane-not-idle') only
+ * after the unified verify plus bare-submit remediation loop exhausts
+ * maxAttempts for an orchestrator pane the idle gate never observed idle.
+ * Carries only wake-up-delivery metadata, mirroring
+ * PushUndeliveredEventDetail's no-report-content invariant.
  *   - paneId: the tmux pane id the wake-up push targeted (e.g. '%3').
- *   - idleTimeoutMs: the idle-gate deadline that was exhausted before the
- *     send-anyway fallback fired.
+ *   - idleTimeoutMs: the idle-gate deadline that expired before the terminal
+ *     non-delivery path completed.
  */
 export interface OrchPaneBusyEventDetail {
 	paneId: string;
