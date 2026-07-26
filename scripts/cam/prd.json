@@ -33,7 +33,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: new src/util/self-invoke.ts (src/util/ currently holds only retry-pid.ts), src/commands/run.ts (resolveOrchResolverCmd at ~line 281, comment block ~lines 269-280, drop the basename arm at line 282; the basename import stays because run.ts uses it elsewhere for session naming), test/util/ new unit test, test/commands/run-orch-resolver-compiled-mode.test.ts (160 lines, currently asserts collapse on basename alone; invert that case). resolveOrchResolverCmd returns a shell-quoted STRING via q() while callers of the primitive need string[]: extraction is argv-level, the q()-joining stays in run.ts. Domain terms 'self-invoke primitive' and 'bunfs virtual entry' are already in CONTEXT.md (lines 416-420). Grounding: patterns.md bullets for US-003/US-R1-001 of CAM-425 (grep patterns.md for 'bunfs' / 'self-invoke'); test as a PURE unit per the US-R1-001 bullet. Doc conflict inherited from officialDocsConsulted: official Bun API Bun.isStandaloneExecutable exists; spec pins the pure argv1 /$bunfs/ prefix check for unit-testability; document the choice in the comment, do not switch APIs."
     },
