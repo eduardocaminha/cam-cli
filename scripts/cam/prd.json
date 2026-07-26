@@ -137,7 +137,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: the three listed test files. All three measured 0 process.chdir, so no opt-outs. The fixture declares BOTH planner and auditor as claude because these suites exercise both spawn steps. Behavioral falsifiability for the plan side is deliberately deferred to US-010's dress rehearsal (issue AC10): nothing in the committed config resolves planner/auditor to codex, so presence greps here are necessarily claims about new code only; each was red-swept on main (0 configPath occurrences in all three files)."
     },
