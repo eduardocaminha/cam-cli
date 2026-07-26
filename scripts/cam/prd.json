@@ -121,7 +121,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: the five listed test files. Five files exceeds the 1-3 heuristic; justified by measured mechanics: every file already has a Partial-overrides builder, the edit is one module fixture block plus one builder line per file, no opt-outs (0 chdir). The issue scope explicitly blesses including these as correct pre-emptive isolation while noting they carry no live signal, which is why the honesty label replaces a dress rehearsal here."
     },
