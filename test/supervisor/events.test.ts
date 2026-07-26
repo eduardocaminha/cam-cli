@@ -5,8 +5,8 @@
 // and asserts a single story produces worker-start -> worker-end -> result ->
 // tokens, in order, sharing one uuid.
 
-import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { describe, expect, test, afterAll } from 'bun:test';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -258,6 +258,21 @@ describe('readWorkerTokens', () => {
 // Full lifecycle through runSupervisor (AC#5)
 // ---------------------------------------------------------------------------
 
+/**
+ * Implementer-backend/model resolution fixture for the runSupervisor call
+ * sites below (US-005, CAM-420), mirroring loop.test.ts's
+ * GENERIC_SUPERVISOR_CONFIG_PATH idiom (US-003): this file has no opts
+ * builder, so the fixture is threaded as a literal `configPath` key on each
+ * inline RunSupervisorOptions object instead of a shared-default line.
+ */
+const GENERIC_SUPERVISOR_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-events-generic-config-'));
+const GENERIC_SUPERVISOR_CONFIG_PATH = join(GENERIC_SUPERVISOR_CONFIG_DIR, 'project.toml');
+writeFileSync(GENERIC_SUPERVISOR_CONFIG_PATH, '[backend]\nimplementer = "claude"\n');
+
+afterAll(() => {
+	rmSync(GENERIC_SUPERVISOR_CONFIG_DIR, { recursive: true, force: true });
+});
+
 describe('runSupervisor emits a full per-story lifecycle', () => {
 	const PRD_PATH = '/fake/prd.json';
 	const HANDOFF_PATH = '/fake/handoff.json';
@@ -312,6 +327,7 @@ describe('runSupervisor emits a full per-story lifecycle', () => {
 			nowMs: () => 0,
 			logEvent: logger,
 			readWorkerTokens: () => ({ inputTokens: 100, outputTokens: 50, cacheReadTokens: 20, cacheCreationTokens: 10 }),
+			configPath: GENERIC_SUPERVISOR_CONFIG_PATH,
 		};
 
 		const result = await runSupervisor(opts);
@@ -380,6 +396,7 @@ describe('runSupervisor emits a full per-story lifecycle', () => {
 			sleepFn: (_ms) => {},
 			nowMs: () => 0,
 			logEvent: logger,
+			configPath: GENERIC_SUPERVISOR_CONFIG_PATH,
 		};
 
 		const result = await runSupervisor(opts);
@@ -433,6 +450,7 @@ describe('runSupervisor emits a full per-story lifecycle', () => {
 			sleepFn: (_ms) => {},
 			nowMs: () => 0,
 			logEvent: logger,
+			configPath: GENERIC_SUPERVISOR_CONFIG_PATH,
 		};
 
 		const result = await runSupervisor(opts);
@@ -492,6 +510,7 @@ describe('runSupervisor emits a full per-story lifecycle', () => {
 			sleepFn: (_ms) => {},
 			nowMs: () => 0,
 			logEvent: logger,
+			configPath: GENERIC_SUPERVISOR_CONFIG_PATH,
 		};
 
 		// The guard must never halt an otherwise-healthy loop.
@@ -532,6 +551,7 @@ describe('runSupervisor emits a full per-story lifecycle', () => {
 			taskPrompt: 'Implement the next story.',
 			sleepFn: (_ms) => {},
 			nowMs: () => 0,
+			configPath: GENERIC_SUPERVISOR_CONFIG_PATH,
 		};
 
 		// Without logEvent the loop must still reach 'complete' and not throw.
