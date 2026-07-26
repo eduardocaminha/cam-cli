@@ -9,7 +9,8 @@
 //     with ["bun","index.ts",<cmd>,"--help"]. Each must return exit code 0
 //     and print non-empty usage text.
 //   - The internal commands (sidecar, orch-recycle-watch,
-//     sidecar-liveness-watch, orch-budget) are covered by the same table.
+//     sidecar-liveness-watch, orch-budget, orch-resolve) are covered by the
+//     same table.
 //     `cam sidecar` in particular spawns a long-lived daemon loop when its
 //     body runs — the test returning promptly (bun's default test timeout
 //     would otherwise trip) is itself the evidence the guard fired before
@@ -47,6 +48,7 @@ describe('HELP_REGISTRY (US-001)', () => {
 			'orch-recycle-watch',
 			'sidecar-liveness-watch',
 			'orch-budget',
+			'orch-resolve',
 		]) {
 			expect(commands).toContain(internal);
 		}

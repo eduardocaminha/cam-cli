@@ -581,6 +581,10 @@ describe('buildOrchestratorPaneCommand (CAM-23 self-handoff wrapper)', () => {
 		stateFile: '/project/.claude/cam-loop.local.md',
 		readyMarker: '/project/.claude/.cam-orch-ready',
 		pidMarker: '/project/.claude/.cam-orch-pid',
+		// US-002 (CAM-425): every test in this describe block now exercises the
+		// argv shape WITH --effort present, so the flag-order/mv/jq/pid/no-&
+		// assertions below all cover the new shape by construction.
+		effort: 'xhigh',
 	};
 
 	it('preserves --permission-mode bypassPermissions and the initial session-id', () => {
@@ -602,6 +606,27 @@ describe('buildOrchestratorPaneCommand (CAM-23 self-handoff wrapper)', () => {
 		const catIdx = cmd.indexOf(`"$(cat ${`'${base.promptFile}'`})"`, claudeIdx);
 		expect(modelIdx).toBeLessThan(agentIdx);
 		expect(agentIdx).toBeLessThan(catIdx);
+	});
+
+	it('seeds the effort bash variable from the initial value and reads it dynamically between --model and --agent (US-002 CAM-425, re-resolved per respawn as of US-003)', () => {
+		const cmd = buildOrchestratorPaneCommand(base);
+		// The initial value is seeded into the `effort` bash variable up front...
+		expect(cmd).toContain(`effort='${base.effort}'`);
+		// ...and the claude invocation reads that variable live ("$effort"),
+		// never the literal initial value baked into the argv template: this is
+		// what lets a respawn's re-resolved effort actually reach argv (US-003).
+		expect(cmd).toContain('--effort "$effort"');
+		const claudeIdx = cmd.indexOf('claude --permission-mode');
+		const modelIdx = cmd.indexOf('--model', claudeIdx);
+		const effortIdx = cmd.indexOf('--effort', claudeIdx);
+		const agentIdx = cmd.indexOf('--agent subagent-orchestrator', claudeIdx);
+		expect(modelIdx).toBeLessThan(effortIdx);
+		expect(effortIdx).toBeLessThan(agentIdx);
+	});
+
+	it('omits --effort entirely when the effort option is empty (capability-degradation omission, US-002 CAM-425)', () => {
+		const cmd = buildOrchestratorPaneCommand({ ...base, effort: '' });
+		expect(cmd).not.toContain('--effort');
 	});
 
 	it('guards on the handoff file, consumes it, and rewrites the session marker on respawn', () => {
@@ -703,6 +728,59 @@ describe('buildOrchestratorPaneCommand (CAM-23 self-handoff wrapper)', () => {
 		expect(cmd.indexOf(`rm -f '${base.pidMarker}'`)).toBeLessThan(
 			cmd.indexOf(`kill-session -t ${base.sessionName}`),
 		);
+	});
+
+	it('re-resolves model+effort per respawn via the resolver command, defaulting to the bare "cam orch-resolve" (US-003 CAM-425)', () => {
+		const cmd = buildOrchestratorPaneCommand(base);
+		expect(cmd).toContain('resolved=$(cam orch-resolve 2>/dev/null)');
+		// The resolver call must happen AFTER the fresh uuid is minted (so the
+		// fallback event, which stamps uuid:"$sid", carries the NEW respawn id),
+		// and after the session-id marker is rewritten.
+		expect(cmd.indexOf(`uuidgen`)).toBeLessThan(cmd.indexOf('resolved=$('));
+		expect(cmd.indexOf(`> '${base.sessionIdMarker}'`)).toBeLessThan(cmd.indexOf('resolved=$('));
+	});
+
+	it('embeds a caller-supplied resolverCmd verbatim instead of the default', () => {
+		const cmd = buildOrchestratorPaneCommand({ ...base, resolverCmd: "'/abs/cam' orch-resolve" });
+		expect(cmd).toContain("resolved=$('/abs/cam' orch-resolve 2>/dev/null)");
+		expect(cmd).not.toContain('resolved=$(cam orch-resolve 2>/dev/null)');
+	});
+
+	it('parses the resolver JSON with jq and only adopts model+effort when ALL of resolved/model/effort are non-empty', () => {
+		const cmd = buildOrchestratorPaneCommand(base);
+		expect(cmd).toContain(`newmodel=$(printf '%s' "$resolved" | jq -r '.model // empty' 2>/dev/null)`);
+		expect(cmd).toContain(`neweffort=$(printf '%s' "$resolved" | jq -r '.effort // empty' 2>/dev/null)`);
+		expect(cmd).toContain(
+			'if [ -n "$resolved" ] && [ -n "$newmodel" ] && [ -n "$neweffort" ]; then model="$newmodel"; effort="$neweffort";',
+		);
+	});
+
+	it('falls back to the last known-good model+effort AND appends a shape-matching orch-resolve-fallback event when resolution fails (US-003 CAM-425)', () => {
+		const cmd = buildOrchestratorPaneCommand(base);
+		// Fallback branch: model/effort bash vars are left untouched (no
+		// reassignment), and a jq -nc printf line records the divergence.
+		expect(cmd).toContain(
+			'jq -nc --arg ts "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" --arg uuid "$sid" --arg model "$model" --arg effort "$effort"',
+		);
+		expect(cmd).toContain(
+			'\'{ts:$ts, uuid:$uuid, kind:"orch-resolve-fallback", detail:{phase:"orchestrator", model:$model, effort:$effort}}\'',
+		);
+		// Default eventsLogPath is the sibling of pidMarker.
+		expect(cmd).toContain(`>> '/project/.claude/cam-worker-events.jsonl'`);
+		// The fallback append must sit inside the ELSE branch of the resolver
+		// guard, i.e. after the `if [ -n "$resolved" ]...` check and before the
+		// reason-based counter update (which is unconditional either way).
+		const guardIdx = cmd.indexOf('if [ -n "$resolved" ]');
+		const fallbackIdx = cmd.indexOf('kind:"orch-resolve-fallback"');
+		const counterIdx = cmd.indexOf(`if [ "$reason" = 'cycle-close' ]`);
+		expect(guardIdx).toBeLessThan(fallbackIdx);
+		expect(fallbackIdx).toBeLessThan(counterIdx);
+	});
+
+	it('respects a caller-supplied eventsLogPath for the fallback event instead of the pidMarker-derived default', () => {
+		const cmd = buildOrchestratorPaneCommand({ ...base, eventsLogPath: '/custom/events.jsonl' });
+		expect(cmd).toContain(`>> '/custom/events.jsonl'`);
+		expect(cmd).not.toContain(`>> '/project/.claude/cam-worker-events.jsonl'`);
 	});
 });
 

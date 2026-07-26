@@ -6,6 +6,16 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.259.0] - 2026-07-26
+
+### Added
+
+- US-R1-002 - address reviewer finding: checkClaudeEffortSupport fail-closed branches untested
+- US-R1-001 - address reviewer finding: compiled-binary resolverCmd self-invoke
+- US-003 - Wrapper re-resolves model + effort per respawn via cam orch-resolve, with fail-safe fallback and divergence event
+- US-002 - Thread configPath + effort through run.ts initial resolution and emit --effort in the orchestrator argv
+- US-001 - Add internal `cam orch-resolve` subcommand: deterministic {model, backend, effort} resolver
+
 ## [0.258.0] - 2026-07-26
 
 ### Added

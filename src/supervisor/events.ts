@@ -136,6 +136,16 @@ import handoffSchema from '../../scripts/cam/handoff.schema.json';
  *     dedicated kind lets a why-not-moving diagnostic attribute that terminal
  *     non-delivery to a specific pane and timeout without parsing
  *     cam-supervisor.log. See OrchPaneBusyEventDetail.
+ *   - 'orch-resolve-fallback' (US-003, CAM-425): emitted by the bash
+ *     self-handoff respawn wrapper (buildOrchestratorPaneCommand, run.ts)
+ *     itself, via a `jq -n` printf line appended directly to
+ *     .claude/cam-worker-events.jsonl -- NOT by a TS emit site -- whenever the
+ *     per-respawn `cam orch-resolve` re-resolution invocation fails, is not
+ *     found, or prints nothing. The wrapper still respawns claude using the
+ *     last known-good model/effort (the values already seeded from the prior
+ *     resolution, or the initial `cam run` resolution on the first respawn);
+ *     this event is the sole observable record of that silent-divergence
+ *     class this issue exists to close. See OrchResolveFallbackEventDetail.
  */
 export type WorkerEventKind =
 	| 'worker-start'
@@ -179,7 +189,8 @@ export type WorkerEventKind =
 	| 'abandon-checkout-main-failed'
 	| 'pattern-outcome-append-failed'
 	| 'worker-token-ceiling-unavailable'
-	| 'orch-pane-busy';
+	| 'orch-pane-busy'
+	| 'orch-resolve-fallback';
 
 /** Gate status recorded in a 'result' event. */
 export type GateStatus = 'pass' | 'fail' | 'unknown';
@@ -658,6 +669,24 @@ export interface OrchPaneBusyEventDetail {
 	idleTimeoutMs: number;
 }
 
+/**
+ * 'orch-resolve-fallback' event detail (US-003, CAM-425): recorded by the bash
+ * respawn wrapper when a per-respawn `cam orch-resolve` re-resolution attempt
+ * fails, is not found, or prints nothing, and the wrapper falls back to the
+ * last known-good model/effort instead.
+ *   - phase: always 'orchestrator' (the only phase the self-handoff respawn
+ *     wrapper re-resolves).
+ *   - model: the last known-good model the wrapper is respawning claude with.
+ *   - effort: the last known-good effort tier (empty string when the local
+ *     claude build does not support --effort, mirroring the argv-gated
+ *     `effort` field the initial 'spawn-resolution' event already carries).
+ */
+export interface OrchResolveFallbackEventDetail {
+	phase: 'orchestrator';
+	model: string;
+	effort: string;
+}
+
 /** Detail payload by event kind ('worker-start'/'worker-end' carry free-form maps). */
 export type WorkerEventDetail =
 	| ResultEventDetail
@@ -689,6 +718,7 @@ export type WorkerEventDetail =
 	| PatternOutcomeAppendFailedEventDetail
 	| WorkerTokenCeilingUnavailableEventDetail
 	| OrchPaneBusyEventDetail
+	| OrchResolveFallbackEventDetail
 	| Record<string, unknown>;
 
 /** A single structured worker lifecycle event. */

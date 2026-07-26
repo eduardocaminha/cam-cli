@@ -28,7 +28,7 @@
 
 import { existsSync, mkdirSync, openSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import process from 'node:process';
 import { randomUUID } from 'node:crypto';
 
@@ -61,10 +61,11 @@ import {
 	writeSidecarLivenessWatcherPid,
 	removeSidecarLivenessWatcherPidIfExists,
 } from '../supervisor/sidecar-pid.ts';
-import { DEFAULTS, readMetaLoop, readBackend, readWorkerIsolation } from '../config/models.ts';
+import { DEFAULTS, readMetaLoop, readBackend, readPhaseEffort, readWorkerIsolation } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 import { makeFileEventLogger } from '../supervisor/events.ts';
 import { checkClaudeAuth } from './run-auth-preflight.ts';
+import { checkClaudeEffortSupport, type EffortCapabilityCheck } from './run-effort-preflight.ts';
 import { codexAuthPreflight, type CodexAuthCheck } from '../supervisor/codex-auth.ts';
 import { resolvePhaseModel } from '../config/model-resolution.ts';
 import type { CodexModelsCacheReader } from '../config/codex-models-cache.ts';
@@ -168,6 +169,23 @@ export interface RunOptions {
 	 * non-claude-shaped flat) is already found.
 	 */
 	codexModelsCacheReaderFn?: CodexModelsCacheReader;
+	/**
+	 * Injectable config-file path override (DI seam, US-002 CAM-425). Forwarded
+	 * to readBackend, resolvePhaseModel and readPhaseEffort at the orchestrator
+	 * resolution site in setupPanes, mirroring the CAM-405 seam on
+	 * MakeReviewDispatchOptions.configPath (src/supervisor/review.ts). When
+	 * absent, resolution reads scripts/cam/project.toml relative to
+	 * process.cwd(), preserving production behavior byte-for-byte.
+	 */
+	configPath?: string;
+	/**
+	 * Injectable `--effort` capability probe (DI seam, US-002 CAM-425).
+	 * Defaults to checkClaudeEffortSupport (greps the local `claude --help`
+	 * output for '--effort'). Tests inject a fake so both the supported and
+	 * unsupported argv shapes are exercised without spawning a real claude
+	 * process.
+	 */
+	effortSupportCheckFn?: EffortCapabilityCheck;
 }
 
 export interface ParsedRunArgs {
@@ -225,6 +243,49 @@ export function buildOrchestratorBootPrompt(configPath?: string): string {
 /** Max consecutive orchestrator self-respawns per tmux session before teardown (CAM-23). */
 export const DEFAULT_MAX_ORCH_RESPAWNS = 5;
 
+/**
+ * Single-quote-escape a path/value for embedding in a `bash -c` string, so a
+ * cwd (or resolved config value) with spaces or quotes cannot break out of the
+ * argument boundary. Shared by buildOrchestratorPaneCommand and the resolver-
+ * command builder below (both assemble bash text from the same trust model).
+ */
+function q(s: string): string {
+	return `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * Build the same-binary self-invoke resolver command used to re-resolve
+ * model+effort on every orchestrator respawn (US-003, CAM-425; fixed in
+ * US-R1-001 after a reviewer finding on the shipped distribution).
+ *
+ * `process.execPath` + `process.argv[1]` is a reliable `[binary, script]`
+ * self-invoke pair ONLY when running interpreted (`bun index.ts ...`), where
+ * `execPath` is bun itself and `argv[1]` is the real `index.ts` path bun can
+ * be re-invoked against (mirrors forkMonitor's convention, src/retry/
+ * launcher.ts). It breaks on the compiled distribution cam actually ships
+ * (`bun build --compile`, scripts/build-release.sh): inside a compiled
+ * single-file executable, `execPath` IS the standalone binary (self-
+ * contained, no separate bun runtime to invoke), and `argv[1]` is bun's
+ * internal virtual embedded-entry path (observed as `/$bunfs/root/<outfile>`
+ * on bun 1.3.13) -- not a real script argument the compiled binary's own
+ * `main()` command dispatch (argv[2]) understands, so passing it back in
+ * prints `unknown command: /$bunfs/root/<outfile>` and exits 1.
+ *
+ * Detect compiled mode via EITHER signal (defense in depth against a future
+ * bun version changing the virtual path's exact prefix): `argv1` starting
+ * with the bunfs prefix, or `execPath`'s basename not being literally `bun`.
+ * In compiled mode, self-invoke the binary directly with `orch-resolve` as
+ * its sole argument; otherwise keep the pre-existing `<bun> <script>
+ * orch-resolve` shape.
+ */
+export function resolveOrchResolverCmd(execPath: string, argv1: string | undefined): string {
+	const isCompiled = (argv1 !== undefined && argv1.startsWith('/$bunfs/')) || basename(execPath) !== 'bun';
+	if (isCompiled) {
+		return `${q(execPath)} orch-resolve`;
+	}
+	return `${q(execPath)} ${q(argv1 ?? 'cam')} orch-resolve`;
+}
+
 /** Inputs for {@link buildOrchestratorPaneCommand}. */
 export interface OrchestratorPaneCommandOptions {
 	/** tmux session name to kill on teardown. */
@@ -254,6 +315,47 @@ export interface OrchestratorPaneCommandOptions {
 	 * passes readPhaseModel('orchestrator') so the project config is respected.
 	 */
 	model?: string;
+	/**
+	 * INITIAL effort tier to seed the `effort` bash variable the claude
+	 * invocation reads (US-002, CAM-425; re-resolved per respawn as of US-003).
+	 * The caller (setupPanes) resolves this via readPhaseEffort('orchestrator',
+	 * configPath) and downgrades it to the empty string when the injectable
+	 * capability probe reports the local claude build predates `--effort` (an
+	 * unknown flag is boot-fatal, so omission must be unconditional in that
+	 * case). This builder stays PURE string assembly: an empty string (or
+	 * omitted) means the `--effort` clause is left out of the argv template
+	 * ENTIRELY (a one-time, build-time capability decision that persists across
+	 * every respawn); a non-empty string means the argv always reads the LIVE
+	 * `effort` bash variable (`--effort "$effort"`, re-resolved on every
+	 * respawn), seeded here to this initial value.
+	 */
+	effort?: string;
+	/**
+	 * Shell command invoked at every respawn to re-resolve model+effort (US-003,
+	 * CAM-425), e.g. `'/path/to/cam' orch-resolve` or `'cam' 'orch-resolve'`
+	 * already fully assembled and quoted by the caller: this builder embeds the
+	 * string verbatim inside `$(<resolverCmd> 2>/dev/null)`, so any quoting of
+	 * the invocation itself is the CALLER's responsibility (keeps this builder
+	 * pure string assembly, no I/O). Defaults to the bare `'cam orch-resolve'`
+	 * (PATH lookup) when omitted; the real setupPanes caller instead builds this
+	 * via {@link resolveOrchResolverCmd} (mirroring forkMonitor's self-invoke
+	 * convention, src/retry/launcher.ts), which is robust against a stale/absent
+	 * `cam` on PATH (2026-06-06 lesson) across a long-lived session's many
+	 * respawns, AND against a `bun build --compile` distribution (review
+	 * finding, US-R1-001, CAM-425): inside a compiled binary, `process.argv[1]`
+	 * is bun's internal virtual embedded-entry path, not a real script bun can
+	 * be re-invoked against, so the invocation must instead run the compiled
+	 * binary itself with `orch-resolve` as its sole argument.
+	 */
+	resolverCmd?: string;
+	/**
+	 * Path to .claude/cam-worker-events.jsonl (US-003, CAM-425). The respawn
+	 * branch appends an 'orch-resolve-fallback' event line here (built via
+	 * `jq -n`, KEY-AND-SHAPE-identical to makeFileEventLogger's WorkerEvent
+	 * shape) whenever re-resolution fails, is not found, or prints nothing.
+	 * Defaults to the sibling of `pidMarker` when omitted.
+	 */
+	eventsLogPath?: string;
 }
 
 /**
@@ -262,29 +364,42 @@ export interface OrchestratorPaneCommandOptions {
  * The wrapper runs claude in a BOUNDED loop. On each claude exit it inspects the
  * handoff marker: if present (and under the respawn cap) it consumes the handoff
  * (rename to .consumed.json so the same payload cannot re-trigger), mints a FRESH
- * session uuid via `uuidgen`, rewrites .cam-orch-session, and re-execs claude so
- * the new session rehydrates from the handoff (US-004). Otherwise it tears the
- * tmux session down: removes the loop state file (so a clean `/exit` leaves no
- * stale `cam-loop.local.md`, matching `cam stop`) then kill-session. `bypassPermissions`
+ * session uuid via `uuidgen`, rewrites .cam-orch-session, RE-RESOLVES model+effort
+ * via `resolverCmd` (US-003, CAM-425 -- falling back to the last known-good pair
+ * plus a divergence event on failure), and re-execs claude so the new session
+ * rehydrates from the handoff (US-004). Otherwise it tears the tmux session down:
+ * removes the loop state file (so a clean `/exit` leaves no stale
+ * `cam-loop.local.md`, matching `cam stop`) then kill-session. `bypassPermissions`
  * is preserved (intentional, 2026-06-06 lesson on macOS amfid). Pure string
  * assembly, no I/O, so it is unit-testable.
  */
 export function buildOrchestratorPaneCommand(opts: OrchestratorPaneCommandOptions): string {
 	const max = opts.maxRespawns ?? DEFAULT_MAX_ORCH_RESPAWNS;
 	const model = opts.model ?? DEFAULTS.orchestrator;
+	const initialEffort = opts.effort ?? '';
 	const consumed = opts.handoffMarker.replace(/\.json$/, '.consumed.json');
-	// Single-quote-escape paths/values embedded in the bash -c string so a cwd
-	// with spaces or quotes cannot break out of the argument boundary.
-	const q = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
+	const resolverCmd = opts.resolverCmd ?? 'cam orch-resolve';
+	const eventsLogPath = opts.eventsLogPath ?? join(dirname(opts.pidMarker), 'cam-worker-events.jsonl');
+	// US-002 (CAM-425): whether the argv template mentions --effort AT ALL is a
+	// ONE-TIME, build-time decision (empty/omitted initial effort means the
+	// local claude build predates --effort, an unconditional-omission
+	// capability gate that never changes mid-session); the VALUE that flows
+	// through it (both --model and, when supported, --effort) becomes a bash
+	// variable re-resolved on every respawn (US-003), which is why model/effort
+	// are seeded here rather than baked as literals into the invocation line.
+	const effortSupported = initialEffort.length > 0;
+	const effortClause = effortSupported ? ' --effort "$effort"' : '';
+	const claudeInvocation =
+		`claude --permission-mode bypassPermissions --session-id "$sid" --model "$model"${effortClause} --agent subagent-orchestrator "$(cat ${q(opts.promptFile)})"`;
 	return (
-		`sid=${q(opts.sessionId)}; n=0; max=${max}; ` +
+		`sid=${q(opts.sessionId)}; n=0; max=${max}; model=${q(model)}; effort=${q(initialEffort)}; ` +
 		// Write the wrapper's stable bash pid once, before the loop. $$ is the pid
 		// of this bash process (the while-loop shell); it is stable across respawns
 		// because the same shell persists the entire session. Do NOT use $BASHPID
 		// (empty in macOS bash 3.2.57). Single-quote-escape the path via q().
 		`printf '%s' "$$" > ${q(opts.pidMarker)}; ` +
 		`while true; do ` +
-		`claude --permission-mode bypassPermissions --session-id "$sid" --model ${q(model)} --agent subagent-orchestrator "$(cat ${q(opts.promptFile)})"; ` +
+		`${claudeInvocation}; ` +
 		`if [ -f ${q(opts.handoffMarker)} ] && [ "$n" -lt "$max" ]; then ` +
 		// Read the reason field BEFORE consuming (renaming) the handoff so it is
 		// available for the counter decision. jq is used here per operator decision
@@ -304,6 +419,29 @@ export function buildOrchestratorPaneCommand(opts: OrchestratorPaneCommandOption
 		// the transcript after a respawn and silently disable the budget check.
 		`sid=$(uuidgen | tr 'A-Z' 'a-z'); ` +
 		`printf '%s' "$sid" > ${q(opts.sessionIdMarker)}; ` +
+		// US-003 (CAM-425): re-resolve model+effort so an edited project.toml
+		// takes effect at THIS respawn instead of never. Guarded on a plain
+		// command-failure check (never a bash watchdog/timeout, per the
+		// robust-binary gotcha: orch-resolve is a local TOML point-read, and
+		// macOS bash 3.2.57 has no coreutils `timeout`) -- a not-found/failed/
+		// empty-output resolver, or malformed JSON, all fail the guard the same
+		// way and fall into the else branch below, which leaves $model/$effort
+		// untouched (the last known-good pair) and still lets the loop respawn.
+		`resolved=$(${resolverCmd} 2>/dev/null); ` +
+		`newmodel=$(printf '%s' "$resolved" | jq -r '.model // empty' 2>/dev/null); ` +
+		`neweffort=$(printf '%s' "$resolved" | jq -r '.effort // empty' 2>/dev/null); ` +
+		`if [ -n "$resolved" ] && [ -n "$newmodel" ] && [ -n "$neweffort" ]; then ` +
+		`model="$newmodel"; effort="$neweffort"; ` +
+		`else ` +
+		// KEY-AND-SHAPE parity with makeFileEventLogger's WorkerEvent (US-003,
+		// CAM-425): ts/uuid/kind/detail, storyId omitted (mirroring the
+		// orchestrator-phase 'spawn-resolution' events, which also carry
+		// storyId: undefined -- dropped by JSON.stringify, never emitted as a
+		// literal null). Built via `jq -n` so model/effort values are safely
+		// escaped rather than hand-concatenated into the JSON text.
+		`jq -nc --arg ts "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" --arg uuid "$sid" --arg model "$model" --arg effort "$effort" ` +
+		`'{ts:$ts, uuid:$uuid, kind:"orch-resolve-fallback", detail:{phase:"orchestrator", model:$model, effort:$effort}}' >> ${q(eventsLogPath)}; ` +
+		`fi; ` +
 		// A cycle-close handoff (genuine progress) resets the counter so the session
 		// can drain the queue indefinitely. Any other reason increments n (no-progress
 		// backstop preserved: consecutive non-advancing respawns still reach the cap).
@@ -359,6 +497,13 @@ interface SetupOpts {
 	 * RunOptions.codexModelsCacheReaderFn.
 	 */
 	codexModelsCacheReaderFn?: CodexModelsCacheReader;
+	/** Injectable config-file path override (US-002 CAM-425). See RunOptions.configPath. */
+	configPath?: string;
+	/**
+	 * Injectable --effort capability probe (US-002 CAM-425). See
+	 * RunOptions.effortSupportCheckFn.
+	 */
+	effortSupportCheckFn?: EffortCapabilityCheck;
 }
 
 /**
@@ -483,16 +628,42 @@ function setupPanes(
 	// surfaces via printError -- this IS the escalation seam for `cam run`'s
 	// synchronous CLI setup path (there is no async fire-and-forget escalateFn
 	// here, unlike the background loop/review/plan-runner dispatch sites).
-	const orchBackend = readBackend();
+	const orchBackend = readBackend(opts.configPath);
 	const modelResolution = resolvePhaseModel({
 		phase: 'orchestrator',
 		backend: orchBackend,
+		configPath: opts.configPath,
 		cacheReader: opts.codexModelsCacheReaderFn,
 	});
 	if (!modelResolution.ok) {
 		return { blocked: true, message: `model-resolution-failed: ${modelResolution.message}` };
 	}
 	const orchModel = modelResolution.model;
+	// US-002 (CAM-425): [efforts] was dead config wired to nothing; resolve it
+	// alongside the model, through the same configPath seam.
+	const orchEffort = readPhaseEffort('orchestrator', opts.configPath);
+
+	// US-002 (CAM-425): gate --effort emission on an injectable capability
+	// probe. An unknown flag makes claude exit immediately at boot AND at
+	// every self-handoff respawn, on any machine cam is distributed to, so a
+	// claude build predating --effort must never receive it.
+	const effortSupportCheck = opts.effortSupportCheckFn ?? checkClaudeEffortSupport;
+	const effortSupported = effortSupportCheck(spawnFn);
+	if (!effortSupported) {
+		emitWarn(
+			'claude build does not support --effort',
+			'omitting --effort from the orchestrator invocation; upgrade claude to apply configured effort tiers',
+		);
+	}
+	const effortForArgv = effortSupported ? orchEffort : '';
+
+	// US-003 (CAM-425): the bash wrapper re-resolves model+effort on every
+	// respawn via this same-binary self-invoke (mirrors forkMonitor's
+	// [process.execPath, mainScript, subcommand] convention, src/retry/
+	// launcher.ts), robust against a stale/absent `cam` on PATH across a
+	// long-lived session's many respawns.
+	const resolverCmd = resolveOrchResolverCmd(process.execPath, process.argv[1]);
+	const eventsLogPath = join(dotClaude, 'cam-worker-events.jsonl');
 
 	const agentCmd = buildOrchestratorPaneCommand({
 		sessionName,
@@ -504,14 +675,22 @@ function setupPanes(
 		readyMarker: readyMarkerPath,
 		pidMarker: join(dotClaude, ORCH_PID_MARKER),
 		model: orchModel,
+		effort: effortForArgv,
+		resolverCmd,
+		eventsLogPath,
 	});
 	// US-007: emit structured {phase, model, backend} spawn-resolution event.
 	// writeEvent persists the event to .claude/cam-worker-events.jsonl.
-	const orchEventLogger = makeFileEventLogger(join(dotClaude, 'cam-worker-events.jsonl'));
+	// US-002 (CAM-425): `effort` always carries the RESOLVED config value
+	// (orchEffort), regardless of the capability-gate outcome, so the audit
+	// trail records what config declared even on a session where the argv
+	// itself had to omit the flag.
+	const orchEventLogger = makeFileEventLogger(eventsLogPath);
 	emitSpawnResolution({
 		phase: 'orchestrator',
 		model: orchModel,
 		backend: orchBackend,
+		effort: orchEffort,
 		writeEvent: (e) =>
 			orchEventLogger({
 				ts: new Date().toISOString(),
@@ -739,6 +918,15 @@ export {
 } from './run-auth-preflight.ts';
 
 // ---------------------------------------------------------------------------
+// Claude --effort capability probe (re-export from sibling module)
+// ---------------------------------------------------------------------------
+
+// Extracted to src/commands/run-effort-preflight.ts to keep this file within
+// its file-size budget (US-002, CAM-425). Consumers may import from either
+// location.
+export { checkClaudeEffortSupport, type EffortCapabilityCheck } from './run-effort-preflight.ts';
+
+// ---------------------------------------------------------------------------
 // Public entrypoint
 // ---------------------------------------------------------------------------
 
@@ -806,6 +994,8 @@ export function runRun(options: RunOptions = {}): number {
 			genSessionId,
 			codexAuthCheckFn: options.codexAuthCheckFn,
 			codexModelsCacheReaderFn: options.codexModelsCacheReaderFn,
+			configPath: options.configPath,
+			effortSupportCheckFn: options.effortSupportCheckFn,
 		});
 		if (result.blocked !== undefined) {
 			// US-R1-001 (review round 1 fix, CAM-398): `result.blocked` carries TWO

@@ -33,6 +33,13 @@ export interface SpawnResolutionEvent {
 	model: string;
 	/** Resolved backend string (e.g. 'claude', 'codex'). */
 	backend: string;
+	/**
+	 * Resolved effort tier (e.g. 'xhigh', 'high'). Optional (US-001, CAM-425):
+	 * pre-existing call sites (run.ts, loop.ts, review.ts, plan-runner.ts) do
+	 * not resolve an effort and omit this field; `cam orch-resolve` is the
+	 * first caller to populate it.
+	 */
+	effort?: string;
 }
 
 /**
@@ -53,6 +60,8 @@ export interface EmitSpawnResolutionOpts {
 	model: string;
 	/** Resolved backend for this phase. */
 	backend: string;
+	/** Resolved effort tier for this phase (US-001, CAM-425). Optional. */
+	effort?: string;
 	/**
 	 * Optional event sink. When provided, called with the structured event.
 	 * When absent, the event is silently dropped.
@@ -61,11 +70,14 @@ export interface EmitSpawnResolutionOpts {
 }
 
 /**
- * Emit a structured {phase, model, backend} spawn-resolution event.
+ * Emit a structured {phase, model, backend[, effort]} spawn-resolution event.
  */
 export function emitSpawnResolution(opts: EmitSpawnResolutionOpts): void {
-	const { phase, model, backend, writeEvent } = opts;
+	const { phase, model, backend, effort, writeEvent } = opts;
 
-	// Emit the structured event (no-op when writer is absent).
-	writeEvent?.({ phase, model, backend });
+	// Emit the structured event (no-op when writer is absent). `effort` is
+	// only included when the caller resolved one (US-001, CAM-425); existing
+	// call sites that pass no `effort` keep emitting the pre-existing
+	// {phase, model, backend} shape byte-for-byte.
+	writeEvent?.(effort !== undefined ? { phase, model, backend, effort } : { phase, model, backend });
 }
