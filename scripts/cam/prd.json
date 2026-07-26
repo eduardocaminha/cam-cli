@@ -22,7 +22,7 @@
       "id": "US-R1-001",
       "title": "Review round 1 fix 001: address reviewer finding",
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [test/integration/self-invoke-compiled.test.ts:145]: The new real-compile integration test runs at 3.89-3.93s (3 consecutive local runs, warm macOS arm64) against bun's 5000ms per-test default, and declares no explicit timeout. Phase profile: `bun build --compile` 1383ms + run-binary-plus-inner-self-spawn 2916ms, i.e. ~21% headroom on fast local hardware. CI runs the same `bun test` on macos-latest (.github/workflows/ci.yml:15), where writing and cold-executing a 63MB standalone binary is materially slower, so this is a live CI-timeout flake risk in a repo that already had to fix CI-load flakes (main a0478daa). Ten sibling integration tests already set an explicit `{ timeout: N }` (test/integration/orch-recycle-watch.test.ts:267 45_000, issue-file-on-main.test.ts:203 20_000, ship-finalize-dirty-prd.test.ts:177 20_000, orch-respawn-reresolve.test.ts:143 15_000). Fix: give both tests in the file an explicit timeout (e.g. `{ timeout: 30_000 }`), matching that convention."
     },
     {
