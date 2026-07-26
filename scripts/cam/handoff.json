@@ -1,0 +1,22 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Add internal `cam orch-resolve` subcommand: deterministic {model, backend, effort} resolver" },
+  "branchName": "cam/issue-425",
+  "timestamp": "2026-07-26T11:34:04Z",
+  "createdFiles": [
+    "src/commands/orch-resolve.ts",
+    "test/commands/orch-resolve.test.ts"
+  ],
+  "modifiedFiles": [
+    "index.ts",
+    "src/logging/spawn-resolution.ts",
+    "test/commands-freeze.test.ts",
+    "test/help-registry.test.ts"
+  ],
+  "openQuestions": [
+    "US-001 only adds the `cam orch-resolve` subcommand and its command-registration surface; it does NOT wire the resolver into the orchestrator bash self-handoff/respawn loop (run.ts's buildOrchestratorPaneCommand / the bounded respawn wrapper). That wiring — making the wrapper actually call `cam orch-resolve` on each respawn instead of the model baked into argv at `cam run` setup time — is presumably a follow-up story; it was out of this story's acceptance criteria."
+  ],
+  "nextStoryContext": "runOrchResolve (src/commands/orch-resolve.ts) composes readBackend + resolvePhaseModel + readPhaseEffort (all pre-existing, untouched) and prints one JSON line {model,backend,effort} to stdout on success (exit 0) or the resolution message to stderr with nothing on stdout (exit 1). Seams: configPath, cacheReader, cwd (for the default event-log path only), logEvent (WorkerEventLogger, default makeFileEventLogger(<cwd>/.claude/cam-worker-events.jsonl)), write, writeError. The emitted spawn-resolution event uses a fixed uuid sentinel 'orch-resolve' (mirrors recordCycleTokens's 'cycle-close' sentinel in journal.ts) since this command runs outside any per-worker session. SpawnResolutionEvent/EmitSpawnResolutionOpts (src/logging/spawn-resolution.ts) gained an optional `effort` field; every pre-existing call site (run.ts, loop.ts, review.ts, plan-runner.ts) omits it and is unaffected (emitSpawnResolution only includes `effort` in the emitted event when the caller passes one). COMMANDS is now 31 entries (added 'orch-resolve' next to 'orch-budget'); test/commands-freeze.test.ts and test/help-registry.test.ts were updated in the same commit.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "Harness-internal CLI subcommand composed entirely of pre-existing internal modules (config/models.ts, config/model-resolution.ts, logging/spawn-resolution.ts, supervisor/events.ts); no new external library API surface was exercised." }
+  ]
+}
