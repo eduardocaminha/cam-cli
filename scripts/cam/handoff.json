@@ -1,0 +1,14 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Write ADR 0049: the Garboard naming policy" },
+  "branchName": "cam/issue-415",
+  "timestamp": "2026-07-26T00:00:00Z",
+  "createdFiles": [
+    "docs/adr/0049-garboard-naming-policy-binary-alias-org-and-staged-rename.md"
+  ],
+  "modifiedFiles": [],
+  "openQuestions": [],
+  "nextStoryContext": "ADR 0049 is landed and records the full Garboard naming policy: product name Garboard (garboard strake metaphor), canonical binary garboard, typed alias gar (garb rejected as longer, gbd rejected as a classic gdb typo), cam demoted to an undocumented legacy symlink, canonical GitHub org garboard-run, and the staged rename plan (docs-only now, binary naming at launch packaging, internal contracts CAM_*/. cam-*/tmux -L cam/slash-commands/sentinels never rename). It supersedes only the naming-deferral clause of ADR-0045 and explicitly reaffirms ADR-0045's display-only doctrine. GAMBREL (the round 1-4 champion) is recorded as demoted with its own kill evidence (org tombstoned 2026-07-25, roof/butchery-dominated SERP, operator sound rejection). The next likely story (per CAM-415 spec) is docs/positioning.md: four sections (category definition, unique-position thesis with the vendor-neutral subscription-aggregation argument and the tokens-per-issue counter-thesis / SPOQ 14.3x-to-1.4x evidence from CAM-416, competitive landscape summary, and the naming decision with the 5-round process, kill evidence for at least Slipway/Ingot/Crivo/Assay, and ranked reserves Gateship/Puncheon/Laudo/Chancela). Source docs for that story: the four /Users/eduardo/Downloads/*.md files in CAM-0415's relatedDocs (cam-naming-analise.md and cam-rename-passos-obrigatorios.md are short and record GAMBREL as final -- superseded by CAM-0415's spec text which is authoritative and names GARBOARD as final; cam-runtime-analise-competitiva.md and cam-runtime-web-sugestoes.md are long, 1600+/1400+ lines, and hold the competitive-landscape and SPOQ material, not yet read in full) plus the epic descriptions CAM-0408..CAM-0416.json (read via jq, not the CLI). Do not touch README.md (CAM-331 scope) or CONTEXT.md (CAM-118 writer owns it). No em dash, no decorative emoji in any new persisted doc.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
