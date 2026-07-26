@@ -61,10 +61,11 @@ import {
 	writeSidecarLivenessWatcherPid,
 	removeSidecarLivenessWatcherPidIfExists,
 } from '../supervisor/sidecar-pid.ts';
-import { DEFAULTS, readMetaLoop, readBackend, readWorkerIsolation } from '../config/models.ts';
+import { DEFAULTS, readMetaLoop, readBackend, readPhaseEffort, readWorkerIsolation } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 import { makeFileEventLogger } from '../supervisor/events.ts';
 import { checkClaudeAuth } from './run-auth-preflight.ts';
+import { checkClaudeEffortSupport, type EffortCapabilityCheck } from './run-effort-preflight.ts';
 import { codexAuthPreflight, type CodexAuthCheck } from '../supervisor/codex-auth.ts';
 import { resolvePhaseModel } from '../config/model-resolution.ts';
 import type { CodexModelsCacheReader } from '../config/codex-models-cache.ts';
@@ -168,6 +169,23 @@ export interface RunOptions {
 	 * non-claude-shaped flat) is already found.
 	 */
 	codexModelsCacheReaderFn?: CodexModelsCacheReader;
+	/**
+	 * Injectable config-file path override (DI seam, US-002 CAM-425). Forwarded
+	 * to readBackend, resolvePhaseModel and readPhaseEffort at the orchestrator
+	 * resolution site in setupPanes, mirroring the CAM-405 seam on
+	 * MakeReviewDispatchOptions.configPath (src/supervisor/review.ts). When
+	 * absent, resolution reads scripts/cam/project.toml relative to
+	 * process.cwd(), preserving production behavior byte-for-byte.
+	 */
+	configPath?: string;
+	/**
+	 * Injectable `--effort` capability probe (DI seam, US-002 CAM-425).
+	 * Defaults to checkClaudeEffortSupport (greps the local `claude --help`
+	 * output for '--effort'). Tests inject a fake so both the supported and
+	 * unsupported argv shapes are exercised without spawning a real claude
+	 * process.
+	 */
+	effortSupportCheckFn?: EffortCapabilityCheck;
 }
 
 export interface ParsedRunArgs {
@@ -254,6 +272,18 @@ export interface OrchestratorPaneCommandOptions {
 	 * passes readPhaseModel('orchestrator') so the project config is respected.
 	 */
 	model?: string;
+	/**
+	 * Effort tier to pass as `--effort` to the claude orchestrator process
+	 * (US-002, CAM-425). The caller (setupPanes) resolves this via
+	 * readPhaseEffort('orchestrator', configPath) and downgrades it to the
+	 * empty string when the injectable capability probe reports the local
+	 * claude build predates `--effort` (an unknown flag is boot-fatal, so
+	 * omission must be unconditional in that case). This builder stays PURE
+	 * string assembly: an empty string (or omitted) means the flag is left out
+	 * of the argv entirely; any non-empty string is emitted verbatim as
+	 * `--effort '<value>'` between `--model` and `--agent`.
+	 */
+	effort?: string;
 }
 
 /**
@@ -276,6 +306,11 @@ export function buildOrchestratorPaneCommand(opts: OrchestratorPaneCommandOption
 	// Single-quote-escape paths/values embedded in the bash -c string so a cwd
 	// with spaces or quotes cannot break out of the argument boundary.
 	const q = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
+	// US-002 (CAM-425): empty/omitted effort means "leave the flag out of the
+	// argv entirely" (capability-degradation omission); the caller is the sole
+	// decider of when that applies (setupPanes, via the injectable capability
+	// probe), this builder just assembles the string.
+	const effortFlag = opts.effort !== undefined && opts.effort.length > 0 ? ` --effort ${q(opts.effort)}` : '';
 	return (
 		`sid=${q(opts.sessionId)}; n=0; max=${max}; ` +
 		// Write the wrapper's stable bash pid once, before the loop. $$ is the pid
@@ -284,7 +319,7 @@ export function buildOrchestratorPaneCommand(opts: OrchestratorPaneCommandOption
 		// (empty in macOS bash 3.2.57). Single-quote-escape the path via q().
 		`printf '%s' "$$" > ${q(opts.pidMarker)}; ` +
 		`while true; do ` +
-		`claude --permission-mode bypassPermissions --session-id "$sid" --model ${q(model)} --agent subagent-orchestrator "$(cat ${q(opts.promptFile)})"; ` +
+		`claude --permission-mode bypassPermissions --session-id "$sid" --model ${q(model)}${effortFlag} --agent subagent-orchestrator "$(cat ${q(opts.promptFile)})"; ` +
 		`if [ -f ${q(opts.handoffMarker)} ] && [ "$n" -lt "$max" ]; then ` +
 		// Read the reason field BEFORE consuming (renaming) the handoff so it is
 		// available for the counter decision. jq is used here per operator decision
@@ -359,6 +394,13 @@ interface SetupOpts {
 	 * RunOptions.codexModelsCacheReaderFn.
 	 */
 	codexModelsCacheReaderFn?: CodexModelsCacheReader;
+	/** Injectable config-file path override (US-002 CAM-425). See RunOptions.configPath. */
+	configPath?: string;
+	/**
+	 * Injectable --effort capability probe (US-002 CAM-425). See
+	 * RunOptions.effortSupportCheckFn.
+	 */
+	effortSupportCheckFn?: EffortCapabilityCheck;
 }
 
 /**
@@ -483,16 +525,34 @@ function setupPanes(
 	// surfaces via printError -- this IS the escalation seam for `cam run`'s
 	// synchronous CLI setup path (there is no async fire-and-forget escalateFn
 	// here, unlike the background loop/review/plan-runner dispatch sites).
-	const orchBackend = readBackend();
+	const orchBackend = readBackend(opts.configPath);
 	const modelResolution = resolvePhaseModel({
 		phase: 'orchestrator',
 		backend: orchBackend,
+		configPath: opts.configPath,
 		cacheReader: opts.codexModelsCacheReaderFn,
 	});
 	if (!modelResolution.ok) {
 		return { blocked: true, message: `model-resolution-failed: ${modelResolution.message}` };
 	}
 	const orchModel = modelResolution.model;
+	// US-002 (CAM-425): [efforts] was dead config wired to nothing; resolve it
+	// alongside the model, through the same configPath seam.
+	const orchEffort = readPhaseEffort('orchestrator', opts.configPath);
+
+	// US-002 (CAM-425): gate --effort emission on an injectable capability
+	// probe. An unknown flag makes claude exit immediately at boot AND at
+	// every self-handoff respawn, on any machine cam is distributed to, so a
+	// claude build predating --effort must never receive it.
+	const effortSupportCheck = opts.effortSupportCheckFn ?? checkClaudeEffortSupport;
+	const effortSupported = effortSupportCheck(spawnFn);
+	if (!effortSupported) {
+		emitWarn(
+			'claude build does not support --effort',
+			'omitting --effort from the orchestrator invocation; upgrade claude to apply configured effort tiers',
+		);
+	}
+	const effortForArgv = effortSupported ? orchEffort : '';
 
 	const agentCmd = buildOrchestratorPaneCommand({
 		sessionName,
@@ -504,14 +564,20 @@ function setupPanes(
 		readyMarker: readyMarkerPath,
 		pidMarker: join(dotClaude, ORCH_PID_MARKER),
 		model: orchModel,
+		effort: effortForArgv,
 	});
 	// US-007: emit structured {phase, model, backend} spawn-resolution event.
 	// writeEvent persists the event to .claude/cam-worker-events.jsonl.
+	// US-002 (CAM-425): `effort` always carries the RESOLVED config value
+	// (orchEffort), regardless of the capability-gate outcome, so the audit
+	// trail records what config declared even on a session where the argv
+	// itself had to omit the flag.
 	const orchEventLogger = makeFileEventLogger(join(dotClaude, 'cam-worker-events.jsonl'));
 	emitSpawnResolution({
 		phase: 'orchestrator',
 		model: orchModel,
 		backend: orchBackend,
+		effort: orchEffort,
 		writeEvent: (e) =>
 			orchEventLogger({
 				ts: new Date().toISOString(),
@@ -739,6 +805,15 @@ export {
 } from './run-auth-preflight.ts';
 
 // ---------------------------------------------------------------------------
+// Claude --effort capability probe (re-export from sibling module)
+// ---------------------------------------------------------------------------
+
+// Extracted to src/commands/run-effort-preflight.ts to keep this file within
+// its file-size budget (US-002, CAM-425). Consumers may import from either
+// location.
+export { checkClaudeEffortSupport, type EffortCapabilityCheck } from './run-effort-preflight.ts';
+
+// ---------------------------------------------------------------------------
 // Public entrypoint
 // ---------------------------------------------------------------------------
 
@@ -806,6 +881,8 @@ export function runRun(options: RunOptions = {}): number {
 			genSessionId,
 			codexAuthCheckFn: options.codexAuthCheckFn,
 			codexModelsCacheReaderFn: options.codexModelsCacheReaderFn,
+			configPath: options.configPath,
+			effortSupportCheckFn: options.effortSupportCheckFn,
 		});
 		if (result.blocked !== undefined) {
 			// US-R1-001 (review round 1 fix, CAM-398): `result.blocked` carries TWO

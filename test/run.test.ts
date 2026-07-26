@@ -581,6 +581,10 @@ describe('buildOrchestratorPaneCommand (CAM-23 self-handoff wrapper)', () => {
 		stateFile: '/project/.claude/cam-loop.local.md',
 		readyMarker: '/project/.claude/.cam-orch-ready',
 		pidMarker: '/project/.claude/.cam-orch-pid',
+		// US-002 (CAM-425): every test in this describe block now exercises the
+		// argv shape WITH --effort present, so the flag-order/mv/jq/pid/no-&
+		// assertions below all cover the new shape by construction.
+		effort: 'xhigh',
 	};
 
 	it('preserves --permission-mode bypassPermissions and the initial session-id', () => {
@@ -602,6 +606,22 @@ describe('buildOrchestratorPaneCommand (CAM-23 self-handoff wrapper)', () => {
 		const catIdx = cmd.indexOf(`"$(cat ${`'${base.promptFile}'`})"`, claudeIdx);
 		expect(modelIdx).toBeLessThan(agentIdx);
 		expect(agentIdx).toBeLessThan(catIdx);
+	});
+
+	it('emits --effort between --model and --agent (US-002 CAM-425)', () => {
+		const cmd = buildOrchestratorPaneCommand(base);
+		expect(cmd).toContain(`--effort '${base.effort}'`);
+		const claudeIdx = cmd.indexOf('claude --permission-mode');
+		const modelIdx = cmd.indexOf('--model', claudeIdx);
+		const effortIdx = cmd.indexOf('--effort', claudeIdx);
+		const agentIdx = cmd.indexOf('--agent subagent-orchestrator', claudeIdx);
+		expect(modelIdx).toBeLessThan(effortIdx);
+		expect(effortIdx).toBeLessThan(agentIdx);
+	});
+
+	it('omits --effort entirely when the effort option is empty (capability-degradation omission, US-002 CAM-425)', () => {
+		const cmd = buildOrchestratorPaneCommand({ ...base, effort: '' });
+		expect(cmd).not.toContain('--effort');
 	});
 
 	it('guards on the handoff file, consumes it, and rewrites the session marker on respawn', () => {
