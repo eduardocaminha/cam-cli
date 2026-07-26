@@ -6,6 +6,15 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.260.0] - 2026-07-26
+
+### Added
+
+- [US-R1-001] - Review round 1 fix 001: address reviewer finding
+- [US-003] - Pin the /$bunfs/ compiled self-invoke premise with a real compiled-binary integration test
+- US-002 - Fix forkMonitor's dead retry-monitor child via resolveSelfInvokeArgv
+- US-001 - Extract resolveSelfInvokeArgv primitive and delegate resolveOrchResolverCmd to it
+
 ## [0.259.0] - 2026-07-26
 
 ### Added
