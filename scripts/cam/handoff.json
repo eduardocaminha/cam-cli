@@ -1,23 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Fix forkMonitor's dead retry-monitor child via resolveSelfInvokeArgv"
+    "id": "US-003",
+    "title": "Pin the /$bunfs/ compiled self-invoke premise with a real compiled-binary integration test"
   },
   "branchName": "cam/issue-426",
-  "timestamp": "2026-07-26T17:10:00Z",
-  "createdFiles": [],
+  "timestamp": "2026-07-26T17:40:00Z",
+  "createdFiles": [
+    "test/integration/self-invoke-compiled.test.ts"
+  ],
   "modifiedFiles": [
-    "src/retry/launcher.ts",
-    "test/retry/interactive.test.ts",
-    "scripts/cam/patterns.md",
-    "scripts/file-size-budget.json"
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "forkMonitor (src/retry/launcher.ts) now delegates to resolveSelfInvokeArgv (src/util/self-invoke.ts) for its monitor-child argv, mirroring resolveOrchResolverCmd (src/commands/run.ts). Both call sites now share the single canonical fix site for the interpreted-vs-compiled self-invoke bug class; there are no other known local reimplementations of this pattern left in src/. test/retry/interactive.test.ts's two forkMonitor argv tests assert full-array equality for both shapes (interpreted: 5-token [execPath, argv1, 'retry-monitor', pane, pid]; compiled: 4-token [execPath, 'retry-monitor', pane, pid], swept red against the pre-fix construction) by monkeypatching process.execPath (via Object.defineProperty, since execPath is non-writable in this Bun version) and process.argv[1] around the forkMonitor call, restoring both in the same test body. scripts/file-size-budget.json's ceilings for src/retry/launcher.ts (323->329) and test/retry/interactive.test.ts (383->391) were raised in this story per the file-size gate's content.split('\\n').length measurement (not wc -l); the _ref note documents both raises together since both files grew in the same story. patterns.md's CAM-425 US-R1-001 bullet no longer names forkMonitor as an unaddressed follow-up target -- it now records that forkMonitor shares the primitive as of this story.",
+  "nextStoryContext": "test/integration/self-invoke-compiled.test.ts empirically pins the /$bunfs/ premise resolveSelfInvokeArgv (src/util/self-invoke.ts) keys on, closing the gap left by every prior pure-unit / monkeypatch test of this bug class (test/commands/run-orch-resolver-compiled-mode.test.ts, test/retry/interactive.test.ts): it runs a REAL `bun build --compile` of a dynamically-written fixture (written into a fresh mkdtempSync tmpdir per test, never a permanently-committed fixture file) that imports resolveSelfInvokeArgv from src/ via an absolute import.meta.dir-derived path, then self-spawns itself with `[...resolveSelfInvokeArgv(execPath, argv1), markerToken]` in both compiled and interpreted mode and asserts the marker round-trips to the child's argv[2]. Three empirically-confirmed gotchas are documented in the new patterns.md bullet and must be respected by any FUTURE test that spawns a compiled binary from within `bun test`: (1) `bun build --compile`'s `.bun-build` scratch file lands in the build subprocess's OWN cwd (not near outfile/source) -- pin cwd to the same tmpdir being cleaned up in afterEach (CAM-407 leak-class discipline); (2) a compiled binary's own argv always reserves 2 slots ([0] literal \"bun\", [1] the /$bunfs/ virtual entry) before real args start at index 2, mirroring interpreted mode's [0]=bunPath,[1]=scriptPath shape closely enough that \"is argv[2] defined\" is a mode-agnostic child-vs-initial-run signal; process.execPath inside a compiled binary is its OWN path, never the literal \"bun\" (that's argv[0] only); (3) a nested spawnSync self-spawn chain (bun test -> compiled binary -> its own self-spawned child) hangs past bun test's 5000ms default timeout unless `stdin: 'ignore'` is set at EVERY level of the chain -- the identical chain run from a plain `bun script.ts` outside bun:test needed no such option and completed in <200ms, so this is bun:test-process-specific, not a general bun quirk. No new file-size-budget entry was needed (the new test file is unlisted in scripts/file-size-budget.json, which only enforces listed files). scripts/cam/project.toml showed a stray uncommitted diff (a `resend_from` key appearing after running the check:all spine against the live repo, source not investigated) that was reverted via `git checkout --` before committing since it was unrelated to this story's scope -- flagging in case a future story's gate run reproduces the same stray diff, so it isn't mistaken for that story's own change.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched"
+      "lib": "bun (bun build --compile)",
+      "url": "https://bun.sh/docs/bundler/executables",
+      "fetchedAt": "2026-07-26T17:35:00Z",
+      "status": "aligned",
+      "summary": "Docs confirm /$bunfs/ is Bun's real, intentional internal path prefix for embedded-file virtual paths produced by `import ... with { type: 'file' }` (\"Replaces the import with an internal path (prefixed with /$bunfs/)\"). The docs do not separately document process.argv[1]'s exact compiled-mode value (that remains an empirically-observed behavior, as already recorded in prior patterns.md entries for CAM-425/426), but the prefix itself is a documented, stable Bun convention, not an implementation accident this test is pinning against undocumented behavior alone."
     }
   ]
 }
