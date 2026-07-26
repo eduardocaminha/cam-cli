@@ -24,7 +24,7 @@
       "id": "US-R2-001",
       "title": "Review round 2 fix 001: address reviewer finding",
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "CRITICAL [scripts/cam/prd.json:79]: Layer B oracle FAIL. US-002 AC6's directive `test $(branch ceiling src/tmux/dispatch.ts) -gt $(main ceiling)` exits 1 on the final branch state: branch=690, main=693. US-R1-003 correctly tightened the ceiling from 701 down to the gate-measured actual (690), which is BELOW main's 693, so the AC's 'both ceilings are raised' claim is no longer true of the tree and the story is nevertheless marked passes:true. The ratchet itself is green and strictly tighter than main (check:file-size ok, 690 ceiling == 690 measured actual), so the defect is the stale acceptance criterion, not a loose gate. Reconcile by re-scoping AC6/its oracle to assert the ceiling equals the gate-measured actual at the final branch state (e.g. compare `ceiling` against `content.split('\\n').length`), and record that dispatch.ts ended the branch below main's ceiling. Do NOT satisfy the literal oracle by re-raising the ceiling above 693: that would reinstate the exact unearned headroom US-R1-003 was chartered to remove."
     },
     {
