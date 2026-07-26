@@ -260,13 +260,11 @@ export function makeRecordPatternOutcomeFn(
 // ---------------------------------------------------------------------------
 
 /**
- * Build a CapturePaneFn (src/tmux/dispatch.ts) over the given TmuxSpawnFn, for
- * callers that only have a bare spawnFn in scope and need the same
- * capture-pane reader shape sendKeysVerified's composer-emptied verify step
- * expects (US-003, CAM-200). Mirrors the raw `capture-pane -p -t <paneId>`
- * shape dispatch.ts's own internal default reader builds, so behavior is
- * unchanged whether a caller threads this explicitly or omits capturePaneFn
- * and lets sendKeysVerified default it from the same spawnFn.
+ * Build a CapturePaneFn over a TmuxSpawnFn for callers that only have a bare
+ * spawnFn. It supplies sendKeysVerified's pre-send idle gate (US-003,
+ * CAM-200) and mirrors dispatch.ts's raw `capture-pane -p -t <paneId>`
+ * default, so idle-gate behavior is unchanged whether a caller threads it
+ * explicitly or lets sendKeysVerified derive it from the same spawnFn.
  */
 export function makeCapturePaneFn(spawnFn: TmuxSpawnFn): CapturePaneFn {
 	return (paneId: string): string => {
@@ -279,9 +277,9 @@ export function makeCapturePaneFn(spawnFn: TmuxSpawnFn): CapturePaneFn {
  * Adapt a full WorkerEventLogger (ts/storyId/uuid/kind/detail) down to the
  * bare `(kind, detail) => void` seam sendKeysVerified's `logEvent` expects
  * (US-003, CAM-200). `storyId` is always `undefined` and `uuid` is fixed to
- * `'sidecar'`: a push-undelivered narration is not tied to a specific story
- * or worker session, mirroring the same fixed-uuid convention already used
- * for merge-watch/ship-phase sidecar-originated events.
+ * `'sidecar'`: narration-push delivery events are not tied to a story or
+ * worker session, mirroring the fixed-uuid convention already used for
+ * merge-watch/ship-phase sidecar-originated events.
  */
 export function adaptLogEventForPush(
 	logEvent: WorkerEventLogger,
@@ -294,21 +292,23 @@ export function adaptLogEventForPush(
 /**
  * Build a notifyOrchestrator closure that resolves the orchestrator pane via
  * getOrchPaneId and, if found, pushes the line via `sendKeysVerified` (US-003,
- * CAM-200): idle-gate + composer-emptied delivery verify + bounded retry,
- * emitting `'push-undelivered'` via the injected `logEvent` on retry
- * exhaustion instead of writing any new durable marker (terminal states
- * already write their own; a lost non-terminal narration is self-healing
- * since the sidecar proceeds regardless).
+ * CAM-200): idle-gate + geometry/prompt-row delivery verification + bounded
+ * bare-submit remediation. The injected `logEvent` emits `'push-recovered'`
+ * when remediation succeeds, or a terminal `'push-undelivered'` on retry
+ * exhaustion; an idle-timeout terminal also emits `'orch-pane-busy'`. These
+ * events replace any new durable marker: terminal states already write their
+ * own, while lost non-terminal narration self-heals as the sidecar proceeds.
  *
  * The idle-gate here is bounded by `NARRATION_IDLE_TIMEOUT_MS` (2_000 ms,
  * US-001, CAM-361), not the shared `IDLE_WAIT_DEADLINE_MS` (30_000 ms):
- * narration is best-effort, so a mid-turn orchestrator pane must not stall
- * the outer sidecar loop (and its in-memory merge-watch timers) for up to
- * 30s per pushed line. Past that short deadline, `sendKeysVerified`'s
- * send-anyway fallback fires as usual; nothing else about the call changes.
+ * narration is best-effort, so a mid-turn pane must not stall the sidecar and
+ * its merge-watch timers for up to 30s. Past that short deadline,
+ * `sendKeysVerified` runs the same baseline/send/verify/remediation loop used after an idle observation.
+ * Recovery emits `'push-recovered'` with `paneWasIdle: false`; terminal
+ * non-delivery emits `'push-undelivered'` (`reason: 'pane-not-idle'`) together
+ * with `'orch-pane-busy'`.
  *
- * Best-effort: when getOrchPaneId returns null (orch pane closed or session
- * gone), the closure is a silent no-op. No throw, no error log.
+ * Best-effort: a missing orchestrator pane is a silent no-op (no throw or log).
  *
  * Invariants (sendkeys-literal-enter-gotcha, CAM-55):
  *   - send-keys text + Enter go in ONE tmux call (atomic).
@@ -318,13 +318,13 @@ export function adaptLogEventForPush(
  *
  * @param sessionName    The project's tmux session name.
  * @param spawnFn        Injectable SpawnFn (tmux-flavoured: returns SpawnSyncReturns).
- * @param capturePaneFn  Injectable capture-pane reader for the composer-emptied
- *                       verify step. Omitting it falls back to sendKeysVerified's
- *                       own spawnFn-derived default reader.
- * @param logEvent       Bare `(kind, detail) => void` sink for `'push-undelivered'`
- *                       on retry exhaustion. Omitting it is a zero-side-effect
- *                       no-op (mirrors the sub-state-machine logEvent seam,
- *                       US-002/CAM-200).
+ * @param capturePaneFn  Injectable capture-pane reader for the pre-send idle
+ *                       gate. Omitting it falls back to sendKeysVerified's own
+ *                       spawnFn-derived default reader.
+ * @param logEvent       Bare `(kind, detail) => void` sink for recovery
+ *                       (`'push-recovered'`), terminal non-delivery
+ *                       (`'push-undelivered'`), and idle-timeout terminal
+ *                       `'orch-pane-busy'`; omission is side-effect-free.
  */
 export function makeNotifyOrchestrator(
 	sessionName: string,
