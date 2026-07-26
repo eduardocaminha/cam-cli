@@ -71,7 +71,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: test/supervisor/loop.test.ts (4998 lines, single file on purpose: it alone carries 74 of the 85 measured failures). Fixture shape model: test/supervisor/review.test.ts:268-286 (module fixture) + :343-350 (builder default with 'configPath' in overrides opt-out). The chdir opt-out matters because configPath, when set, takes precedence over cwd-relative default resolution (defaultProjectConfigPath, src/config/models.ts:89-91); a chdir-staged toml would be silently bypassed without the explicit undefined. Do NOT mutate the repo's live scripts/cam/project.toml in-place for any test (patterns.md:877 region gotcha). Grep patterns.md for 'CAM-350' and 'red-first' bullets before starting."
     },
