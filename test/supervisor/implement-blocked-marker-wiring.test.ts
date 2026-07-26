@@ -5,7 +5,7 @@
 // remove, never throw) are covered separately in
 // test/supervisor/implement-blocked-marker.test.ts.
 
-import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
+import { describe, expect, test, beforeEach, afterEach, afterAll } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -26,6 +26,22 @@ import type {
 import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
 import { buildSupervisorOptions } from '../../src/supervisor/host.ts';
 import { IMPLEMENT_BLOCKED_FILENAME, readImplementBlockedMarker } from '../../src/supervisor/implement-blocked-marker.ts';
+
+/**
+ * Shared implementer-backend/model resolution fixture for the generic
+ * makeBaseOpts-based runSupervisor tests (US-006, CAM-420), mirroring the
+ * loop.test.ts GENERIC_SUPERVISOR_CONFIG_PATH idiom (US-003, CAM-420). This
+ * file does not fail under the codex-backend flip today, but is isolated
+ * pre-emptively so future call sites cannot silently re-couple it to the
+ * live scripts/cam/project.toml.
+ */
+const GENERIC_SUPERVISOR_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-implement-blocked-wiring-generic-config-'));
+const GENERIC_SUPERVISOR_CONFIG_PATH = join(GENERIC_SUPERVISOR_CONFIG_DIR, 'project.toml');
+writeFileSync(GENERIC_SUPERVISOR_CONFIG_PATH, '[backend]\nimplementer = "claude"\n');
+
+afterAll(() => {
+	rmSync(GENERIC_SUPERVISOR_CONFIG_DIR, { recursive: true, force: true });
+});
 
 /** Build a prd snapshot with N stories, optionally some already passing. */
 function makePrd(opts: {
@@ -90,6 +106,9 @@ function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervi
 		sleepFn: (_ms: number) => {},
 		nowMs: () => 0,
 		...overrides,
+		// US-006 (CAM-420): implementer-backend/model resolution seam. Defaults
+		// to the shared generic fixture (isolated from the live project.toml).
+		configPath: 'configPath' in overrides ? overrides.configPath : GENERIC_SUPERVISOR_CONFIG_PATH,
 	};
 }
 
