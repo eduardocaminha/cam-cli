@@ -89,7 +89,7 @@
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: test/supervisor/pause-halt.test.ts, test/supervisor/pause-resume.test.ts, test/logging/spawn-resolution.test.ts, test/supervisor/loop-model-resolution.test.ts. Four files exceeds the 1-3 heuristic; justified by measured size (163-291 lines each, one module fixture block plus one builder line per file, all four already have Partial-overrides builders, chdir opt-outs exist only in loop-model-resolution). Split from the builder-less pair (US-005) per audit F-03/F-08: these four need zero call-site edits, the builder-less two need per-literal edits, so the mechanics differ."
     },
