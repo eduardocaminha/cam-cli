@@ -1,23 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "Keep the why-not-moving diagnostic truthful after the fix"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
   "branchName": "cam/issue-406",
-  "timestamp": "2026-07-26T02:08:35Z",
+  "timestamp": "2026-07-26T02:32:39Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/status-diagnostics.ts",
-    "test/unit/status-diagnostics.test.ts"
+    "src/supervisor/events.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "The orch-pane-busy diagnostic now describes terminal non-delivery after bare-submit remediation, while delivery-exhausted remains the idle-pane verified-retry exhaustion path. The closed condition ids, precedence order, and orch-pane-busy suggested command (`cam status`) are unchanged. A focused test pins the new exact message and command.",
+  "nextStoryContext": "The canonical events taxonomy now describes orch-pane-busy as co-emitted only with terminal pane-not-idle push-undelivered after the unified verify and bare-submit remediation loop exhausts maxAttempts. Both stale sendOnceUnverified and transient send-anyway wording were removed from the two targeted events.ts blocks.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure operator-message, module-comment, and test update; no external library API was exercised."
+      "summary": "Documentation-only correction to the internal event taxonomy; no external library API was exercised."
     }
   ]
 }
