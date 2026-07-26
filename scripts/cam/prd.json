@@ -18,6 +18,20 @@
   ],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "CRITICAL [src/commands/run.ts:627]: The production per-respawn resolver command `${q(process.execPath)} ${q(process.argv[1] ?? 'cam')} orch-resolve` is invalid on the compiled distribution, which is how cam actually ships (scripts/build-release.sh:63, `bun build --compile ./index.ts`). Verified empirically with a binary compiled from THIS branch: inside a bun single-file executable process.argv[1] is the virtual embedded entry path (`/$bunfs/root/<outfile>`, probed on bun 1.3.13), and bun does not strip it when it is passed back as an argument, so `main()` reads it as argv[2] (index.ts:2801) and prints `unknown command: /$bunfs/root/cam-branch` with exit 1, while the same binary invoked as `<bin> orch-resolve` correctly prints {\"model\":\"opus\",\"backend\":\"claude\",\"effort\":\"max\"}. Consequence: on every installed-binary session the guard `[ -n \"$resolved\" ] && [ -n \"$newmodel\" ] && [ -n \"$neweffort\" ]` fails, the wrapper re-execs the build-time model/effort forever and appends one orch-resolve-fallback event per respawn. US-003's core acceptance criterion (an edited project.toml takes effect at the next respawn) is therefore unmet on the shipped path, which is the exact staleness defect this issue exists to close; it only works under `bun index.ts run`. The integration test cannot falsify this because it hand-builds the from-source shape (test/integration/orch-respawn-reresolve.test.ts:111) instead of the string setupPanes actually produces. Fix: detect compiled mode (e.g. argv[1] starting with the bunfs prefix, or basename(execPath) !== 'bun') and emit `<execPath> orch-resolve` in that case, and add a test asserting the resolverCmd string produced by setupPanes is invocable in BOTH modes."
+    },
+    {
+      "id": "US-R1-002",
+      "title": "Review round 1 fix 002: address reviewer finding",
+      "priority": 2,
+      "passes": false,
+      "notes": "WARNING [src/commands/run-effort-preflight.ts:40]: checkClaudeEffortSupport has no direct unit test. Its four documented fail-closed branches (spawnFn throws, result.error set on ENOENT, non-zero exit status, string-vs-Buffer stdout) are never exercised: the only test that touches the production default (test/commands/run-effort-argv.test.ts:214-238) asserts merely that a `claude --help` call was recorded on the fake spawn, and that fake returns status 0 with empty stdout, so exactly one path (supported=false via missing substring) is covered. This probe is the safety gate that decides whether a boot-fatal flag is emitted, so its error paths need the adversarial cases (throw / error / non-zero exit / Buffer stdout containing '--effort') in a dedicated test/commands/run-effort-preflight.test.ts."
+    },
+    {
       "id": "US-001",
       "title": "Add internal `cam orch-resolve` subcommand: deterministic {model, backend, effort} resolver",
       "description": "As the orchestrator wrapper, I need a deterministic resolver inside the cam binary that re-reads project.toml and prints the orchestrator's resolved {model, backend, effort} on demand, so that every respawn can pick up config edits without forking resolvePhaseModel's rules (CAM-398 nested [models.codex] pin, flat-pin policy, models_cache auto-resolve, claude typo-guard) into bash.",
@@ -30,7 +44,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 1,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "Files: src/commands/orch-resolve.ts (new), src/logging/spawn-resolution.ts (add optional effort field; existing call sites in run.ts/review.ts/loop.ts/plan-runner.ts stay untouched because the field is optional), index.ts (COMMANDS at :2677, HELP_REGISTRY at :2730, dispatch switch, ORCH_RESOLVE_HELP const), test/commands/orch-resolve.test.ts (new), test/commands-freeze.test.ts (FROZEN_COMMANDS + literal 31), test/help-registry.test.ts (internal-command list). Precedent to mirror: reviewer/implementer/planner/auditor already re-resolve per dispatch with configPath seams (src/supervisor/review.ts:373,394,404-409 with the 'Re-resolve per-call, not once at construction' comment at review.ts:379-381; src/supervisor/loop.ts:1108,1118-1122; src/supervisor/plan-runner.ts:655,658,731,734). readPhaseEffort (src/config/models.ts:197) currently has ZERO production consumers; this story creates the first (issue AC4: grep for readPhaseEffort outside src/config/models.ts and outside test/ becomes non-empty). Effort tier validation: NONE needed; readPhaseEffort falls back to EFFORT_DEFAULTS and EFFORT_OPTIONS (src/ui/ConfigScreen.tsx:124-130) already matches the claude tier set exactly (spec gotcha 9). Do NOT emit ultracode. Grep scripts/cam/patterns.md for 'oracle-falsifiability' (patterns.md:899) and 'commands-freeze' before writing tests; every new in-test assertion must be mutation-swept red per patterns.md:945-adjacent bullet. Project invariants: Bun-only, noUncheckedIndexedAccess (guard regex/array access), never add --permission-mode."
@@ -50,7 +64,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 2,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "Files: src/commands/run.ts (SetupOpts + setupPanes resolution site :486-495, OrchestratorPaneCommandOptions + buildOrchestratorPaneCommand :259-330, emitSpawnResolution :508-523), test/commands/run-configpath-seam.test.ts (new), test/commands/run-effort-argv.test.ts (new), test/commands/run-spawn-resolution-effort.test.ts (new), test/run.test.ts (shape updates). Minimum claude version assumed: --effort exists in the officially documented CLI surface and is confirmed on the local 2.1.220 (see officialDocsConsulted); no hard version floor is imposed because the capability probe degrades gracefully (omit flag + warn) on older builds. Do NOT touch the second orchestrator spawn path at src/commands/setup.ts:476-481 (onboarding handoff, out of scope) nor the persona frontmatter effort channel (src/templates/frontmatter.ts:57-92, currently stale at 'xhigh', stays as-is: argv is the runtime authority, spec gotcha 8). Existing tests test/commands/run-model-resolution.test.ts:315-342 and test/commands/run-codex-auth.test.ts:257 deliberately read the live repo config: leave them, the seam is for NEW tests (spec gotcha 3). test/commands/run-model-argv.test.ts is NOT a valid oracle for anything here (spec gotcha 4: it passes a literal model in and asserts it comes out). Grep scripts/cam/patterns.md for 'CAM-405' and 'oracle-falsifiability'."
@@ -69,10 +83,59 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 3,
+      "priority": 5,
       "passes": true,
       "requires": null,
       "notes": "Files: src/commands/run.ts (buildOrchestratorPaneCommand loop body :286-326 + the call site passing the resolver invocation), src/supervisor/events.ts (WorkerEventKind union :140 + new detail interface + WorkerEventDetail union), test/integration/orch-respawn-reresolve.test.ts (new), test/run.test.ts (shape updates). Resolver invocation design: keep the builder PURE (no I/O, run.ts:259-270 doc): run.ts injects the resolver command STRING (built from process.execPath, which IS the cam binary in the compiled distribution, plus the orch-resolve subcommand) as a new option; the integration test injects a stub resolver script path instead, and a second test can point it at the real `bun index.ts orch-resolve` for full realism. Robust-binary gotcha (spec gotcha 6): the binary may be absent or mid-rebuild (ETXTBSY fails fast) at respawn; guard with a plain command-failure check (if out=$(...) && [ -n \"$out\" ]) and fall through to last known-good, do NOT build a bash watchdog: macOS bash 3.2.57 has no coreutils timeout, and orch-resolve is a local TOML point-read. Parse the resolver's single JSON line in bash with jq (already a wrapper dependency for the reason field, run.ts:295-ish; operator-blessed per CAM-91/96). Bash-printf event line must single-quote-escape via the existing q() helper and produce ONE line ending in \\n (makeFileEventLogger parity: JSON.stringify + '\\n', src/supervisor/events.ts:726-731). Fresh-uuid-per-respawn, $$-not-$BASHPID (empty on macOS bash 3.2.57), and lowercase-uuid transcript-path coupling are all load-bearing existing comments in the loop body: preserve them. Grep scripts/cam/patterns.md for 'wrapper', 'respawn', 'oracle-falsifiability' (patterns.md:899) and the self-nullifying-oracle bullets (patterns.md:772,774) before authoring assertions; mutation-sweep every new in-test assertion red before committing."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:2",
+    "findings": [
+      {
+        "severity": "CRITICAL",
+        "file": "src/commands/run.ts",
+        "line": 627,
+        "text": "The production per-respawn resolver command `${q(process.execPath)} ${q(process.argv[1] ?? 'cam')} orch-resolve` is invalid on the compiled distribution, which is how cam actually ships (scripts/build-release.sh:63, `bun build --compile ./index.ts`). Verified empirically with a binary compiled from THIS branch: inside a bun single-file executable process.argv[1] is the virtual embedded entry path (`/$bunfs/root/<outfile>`, probed on bun 1.3.13), and bun does not strip it when it is passed back as an argument, so `main()` reads it as argv[2] (index.ts:2801) and prints `unknown command: /$bunfs/root/cam-branch` with exit 1, while the same binary invoked as `<bin> orch-resolve` correctly prints {\"model\":\"opus\",\"backend\":\"claude\",\"effort\":\"max\"}. Consequence: on every installed-binary session the guard `[ -n \"$resolved\" ] && [ -n \"$newmodel\" ] && [ -n \"$neweffort\" ]` fails, the wrapper re-execs the build-time model/effort forever and appends one orch-resolve-fallback event per respawn. US-003's core acceptance criterion (an edited project.toml takes effect at the next respawn) is therefore unmet on the shipped path, which is the exact staleness defect this issue exists to close; it only works under `bun index.ts run`. The integration test cannot falsify this because it hand-builds the from-source shape (test/integration/orch-respawn-reresolve.test.ts:111) instead of the string setupPanes actually produces. Fix: detect compiled mode (e.g. argv[1] starting with the bunfs prefix, or basename(execPath) !== 'bun') and emit `<execPath> orch-resolve` in that case, and add a test asserting the resolverCmd string produced by setupPanes is invocable in BOTH modes."
+      },
+      {
+        "severity": "WARNING",
+        "file": "src/commands/run-effort-preflight.ts",
+        "line": 40,
+        "text": "checkClaudeEffortSupport has no direct unit test. Its four documented fail-closed branches (spawnFn throws, result.error set on ENOENT, non-zero exit status, string-vs-Buffer stdout) are never exercised: the only test that touches the production default (test/commands/run-effort-argv.test.ts:214-238) asserts merely that a `claude --help` call was recorded on the fake spawn, and that fake returns status 0 with empty stdout, so exactly one path (supported=false via missing substring) is covered. This probe is the safety gate that decides whether a boot-fatal flag is emitted, so its error paths need the adversarial cases (throw / error / non-zero exit / Buffer stdout containing '--effort') in a dedicated test/commands/run-effort-preflight.test.ts."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/commands/run.ts",
+        "line": 391,
+        "text": "The wrapper parses only .model and .effort from the resolver JSON and ignores the .backend field orch-resolve prints. If project.toml's backend is switched mid-session, a respawn will adopt a codex slug and pass it to the hardcoded `claude --model`. The same mismatch already exists on main at the initial spawn (buildOrchestratorPaneCommand always launches claude), so this is not a regression, but live re-resolution now makes it reachable mid-session; consider gating adoption on the resolved backend matching the one used at build time."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/commands/orch-resolve.ts",
+        "line": 81,
+        "text": "readPhaseEffort returns any non-empty string, so a typo such as efforts.orchestrator = 'maximum' flows straight into --effort and into the spawn-resolution audit event. Verified against claude 2.1.220: an unknown value only warns and silently falls back to the default effort, so it cannot brick a session, but the event then records a tier claude did not apply (a small instance of the silent-misattribution class this issue targets). Validating against the documented tier set (low|medium|high|xhigh|max, already enumerated as EFFORT_OPTIONS in src/ui/ConfigScreen.tsx:124-130) and falling back to EFFORT_DEFAULTS would close it."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "test/commands/run-effort-argv.test.ts",
+        "line": 231,
+        "text": "This test's only assertion is that the fake spawn recorded a `claude --help` call, which documents a call rather than verifying behavior. Since the fake returns empty stdout, the probe must answer false; asserting that the dispatched argv consequently omits --effort would make the test verify the production default's real outcome instead of its invocation."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "scripts/file-size-budget.json",
+        "line": 22,
+        "text": "src/commands/run.ts is raised 975 -> 1127 (+152, of which 107 added lines are comment/doc prose). The raise is justified in the _ref and the growth is cohesive with the file's purpose, and the capability probe was correctly extracted to a sibling module, but run.ts is now the third-largest source file in the repo. buildOrchestratorPaneCommand (the ~120-line bash-template builder, pure string assembly with its own test block) is the natural next extraction, following the run-auth-preflight.ts / run-effort-preflight.ts precedent, rather than raising the ceiling again next cycle."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/commands/run.ts",
+        "line": 888,
+        "text": "The re-export `export { checkClaudeEffortSupport, type EffortCapabilityCheck } from './run-effort-preflight.ts'` has no consumers anywhere in src/ or test/ (the sole other reference is a comment). It mirrors the run-auth-preflight re-export precedent, but it adds unused surface to the file whose size ceiling was just raised."
+      }
+    ]
+  }
 }
