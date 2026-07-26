@@ -28,7 +28,10 @@
 //  19.  writeEscalationMarkerFn NOT called on a non-audit terminal.
 //  20.  Backward compat: options work when teardownPlanPanesFn/writeEscalationMarkerFn absent.
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
 	runPlanPhaseWithReplan,
 	type RunPlanPhaseWithReplanOptions,
@@ -40,6 +43,20 @@ import type { PlanVerdictReport } from '../../../src/supervisor/plan-verdict-rep
 import type { IssueEntry } from '../../../src/issues/types.ts';
 import type { PlanPreflightResult } from '../../../src/supervisor/plan-preflight.ts';
 import type { WorkerEvent } from '../../../src/supervisor/events.ts';
+
+// ---------------------------------------------------------------------------
+// Generic backend fixture (US-007, CAM-420): isolates this suite's
+// planner/auditor backend resolution from the repo's real project.toml, so a
+// codex planner/auditor config cannot break these generic-backend tests.
+// ---------------------------------------------------------------------------
+
+const GENERIC_PLAN_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-plan-runner-replan-test-'));
+const GENERIC_PLAN_CONFIG_PATH = join(GENERIC_PLAN_CONFIG_DIR, 'project.toml');
+writeFileSync(GENERIC_PLAN_CONFIG_PATH, '[backend]\nplanner = "claude"\nauditor = "claude"\n');
+
+afterAll(() => {
+	rmSync(GENERIC_PLAN_CONFIG_DIR, { recursive: true, force: true });
+});
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -184,6 +201,7 @@ function makeReplanOpts(
 			loggedEvents.push(event);
 		},
 		...overrides,
+		configPath: 'configPath' in overrides ? overrides.configPath : GENERIC_PLAN_CONFIG_PATH,
 	};
 
 	return {

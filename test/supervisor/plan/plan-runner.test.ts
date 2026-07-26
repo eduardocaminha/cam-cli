@@ -22,7 +22,10 @@
 //  17.  Exactly 2 set-option @cam_label calls on happy path.
 //  18.  paneCountMutexFn called exactly once (before first planner spawn).
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
 	runPlanPhase,
 	type RunPlanPhaseOptions,
@@ -33,6 +36,20 @@ import type { SpawnFn } from '../../../src/supervisor/loop.ts';
 import type { PlanVerdictReport } from '../../../src/supervisor/plan-verdict-report.ts';
 import type { IssueEntry } from '../../../src/issues/types.ts';
 import type { PlanPreflightResult } from '../../../src/supervisor/plan-preflight.ts';
+
+// ---------------------------------------------------------------------------
+// Generic backend fixture (US-007, CAM-420): isolates this suite's
+// planner/auditor backend resolution from the repo's real project.toml, so a
+// codex planner/auditor config cannot break these generic-backend tests.
+// ---------------------------------------------------------------------------
+
+const GENERIC_PLAN_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-plan-runner-test-'));
+const GENERIC_PLAN_CONFIG_PATH = join(GENERIC_PLAN_CONFIG_DIR, 'project.toml');
+writeFileSync(GENERIC_PLAN_CONFIG_PATH, '[backend]\nplanner = "claude"\nauditor = "claude"\n');
+
+afterAll(() => {
+	rmSync(GENERIC_PLAN_CONFIG_DIR, { recursive: true, force: true });
+});
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -141,6 +158,7 @@ function makeOpts(overrides: Partial<RunPlanPhaseOptions> = {}): {
 			}
 		},
 		...overrides,
+		configPath: 'configPath' in overrides ? overrides.configPath : GENERIC_PLAN_CONFIG_PATH,
 	};
 
 	return { opts, calls, loggedPhases };
@@ -191,6 +209,7 @@ function makeOptsAlwaysAlive(reportAfterTicks: number): {
 		pollIntervalMs: 1,
 		plannerTimeoutMs: 999_999,
 		auditorTimeoutMs: 999_999,
+		configPath: GENERIC_PLAN_CONFIG_PATH,
 		readPlannerReportFn: () => {
 			reportReadCount++;
 			plannerTickCount++;
