@@ -31,7 +31,7 @@
       "id": "US-R1-003",
       "title": "Review round 1 fix 003: address reviewer finding",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [docs/positioning.md:37]: Time-sensitive competitor claims are stale or undated, against the section's own stated discipline at line 33 ('dated where the underlying fact (GitHub star count, feature availability, pricing tier) is time-sensitive'). Line 37 says Orca has 'Over 12,500 GitHub stars as of 2026-07'; GitHub API repos/stablyai/orca measured 29,274 stars on 2026-07-26, so a figure roughly 2.3x low carries a current-month date label and understates the closest cockpit competitor's traction in the doc that will feed the public README (CAM-331). Line 69's Spotify Honk 'over 1,500 pull requests' claim carries no date at all, though Spotify's own reporting had moved to roughly 1,000 merged PRs every 10 days by 2026-03. Re-measure and date both, or state the measurement date of the source research round rather than the publication month."
     },
     {
