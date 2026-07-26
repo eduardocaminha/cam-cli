@@ -337,7 +337,7 @@ test.skipIf(!tmuxAvailable)(
 );
 
 test.skipIf(!tmuxAvailable)(
-	'pane-not-idle timeout path (real tmux, non-idle pane): exactly ONE send-keys call, one push-undelivered event (reason pane-not-idle, retriesExhausted 1) plus one orch-pane-busy event (US-003, CAM-373; US-001, CAM-401)',
+	'pane-not-idle timeout path (real tmux, non-idle pane): payload once plus bare-submit remediation, then terminal pane-not-idle events (US-003, CAM-406)',
 	async () => {
 		// A real long-lived foreground command (never renders a `>`/`❯` idle
 		// prompt, nor exits) so `isOrchPaneIdle` genuinely reads false for the
@@ -375,10 +375,11 @@ test.skipIf(!tmuxAvailable)(
 			logEvent: (kind, detail) => events.push({ kind, detail }),
 		});
 
-		expect(sendKeysCalls).toHaveLength(1);
+		expectPayloadSentOnce(sendKeysCalls, id, '[cam] US-003 DONE: pane-not-idle probe');
+		expect(sendKeysCalls).toHaveLength(3);
 		expect(events).toHaveLength(2);
 		expect(events[0]?.kind).toBe('push-undelivered');
-		expect(events[0]?.detail).toEqual({ paneId: id, retriesExhausted: 1, reason: 'pane-not-idle' });
+		expect(events[0]?.detail).toEqual({ paneId: id, retriesExhausted: 3, reason: 'pane-not-idle' });
 		expect(events[1]?.kind).toBe('orch-pane-busy');
 		expect(events[1]?.detail).toEqual({ paneId: id, idleTimeoutMs: 100 });
 	},

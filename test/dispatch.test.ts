@@ -41,11 +41,12 @@
 //     - discriminator reads through the dedicated visibleCaptureFn, never capturePaneFn
 //       (review round 2 fix, US-R2-001, CAM-359): a scrollback-shaped capturePaneFn that would
 //       falsely flip the verdict does not affect a genuinely-settled read
-//     - idle-gate times out (US-002, CAM-373): sends EXACTLY ONCE with no verify/retry loop,
-//       zero backoff sleeps, the geometry sampler never consulted, and exactly one
-//       push-undelivered event with reason 'pane-not-idle' and retriesExhausted 1 PLUS one
-//       dedicated 'orch-pane-busy' event carrying the same paneId/idleTimeoutMs (US-001,
-//       CAM-401); the stderr warning is preserved
+//     - pane-not-idle path (US-003, CAM-406): the same geometry/prompt-row
+//       verify + bare-submit remediation loop runs while payload text is sent once
+//     - both terminal reasons report maxAttempts VERIFY attempts; pane-not-idle
+//       is selected if and only if the idle gate timed out
+//     - the timed-out path's post-gate sleeps are exactly the existing settle +
+//       derived backoff sequence, with no extra constant/wait
 //   cursorRowStartsWithPrompt (US-001, CAM-364): prompt-at-start present/absent, both glyphs
 //     (> and ❯), leading whitespace, mid-row glyph (not a match), out-of-range cursorY
 
@@ -753,105 +754,104 @@ describe('sendKeysVerified', () => {
 		expect(events[0]?.kind).toBe('push-undelivered');
 	});
 
-	test('idle-gate times out: sends EXACTLY ONCE with no verify/retry cycle, no backoff sleeps, the geometry sampler is never consulted, and emits a push-undelivered event (reason pane-not-idle) plus a dedicated orch-pane-busy event (US-002, CAM-373; US-001, CAM-401; red on main: main sends 3 times)', () => {
-		const spawnFn = makeSpawnFn();
-		const events: Array<{ kind: string; detail: unknown }> = [];
-
+	test('pane-not-idle path runs the unified verify loop with bounded blocking on the pane-not-idle path and sends payload text exactly once', () => {
+		const MAX_ATTEMPTS = 4;
+		const RETRY_BASE_MS = 20;
+		const RETRY_MAX_MS = 50;
+		const recordedSpawn = makeSpawnFn();
+		const payload = '/cam-review';
+		const lifecycle: string[] = [];
 		const recordedSleeps: number[] = [];
-		let geometrySamplerCalls = 0;
+		const events: Array<{ kind: string; detail: unknown }> = [];
+		const spawnFn: TmuxSpawnFn = (cmd, args, opts) => {
+			if (args[2] === 'send-keys') {
+				lifecycle.push(args.includes(payload) ? 'send:payload' : 'send:bare-submit');
+			}
+			return recordedSpawn(cmd, args, opts);
+		};
+		let sampleCalls = 0;
+		let visibleCaptureCalls = 0;
+		sendKeysVerified({
+			paneId: '%7',
+			text: payload,
+			tmuxSpawnFn: spawnFn,
+			capturePaneFn: () => '⠋ Busy forever\n',
+			idleTimeoutMs: 0,
+			sampleGeometryFn: () => {
+				sampleCalls++;
+				lifecycle.push(`sample:${sampleCalls}`);
+				return sampleCalls === 1 || sampleCalls === MAX_ATTEMPTS + 1
+					? EMPTY_BASELINE
+					: FILLED_GEOMETRY;
+			},
+			visibleCaptureFn: () => {
+				visibleCaptureCalls++;
+				return paneContentWithRow(EMPTY_BASELINE.cursorY, '❯ ');
+			},
+			sleepFn: (ms) => { recordedSleeps.push(ms); },
+			maxAttempts: MAX_ATTEMPTS,
+			retryBaseMs: RETRY_BASE_MS,
+			retryMaxMs: RETRY_MAX_MS,
+			jitterFraction: 0.25,
+			randomFn: () => 0.5,
+			logEvent: (kind, detail) => events.push({ kind, detail }),
+		});
+		// The baseline is immediately before the one payload send.
+		expect(lifecycle.slice(0, 2)).toEqual(['sample:1', 'send:payload']);
+		const sendKeysCalls = recordedSpawn.calls.filter((call) => call.args[2] === 'send-keys');
+		expect(sendKeysCalls.filter((call) => call.args.includes(payload))).toHaveLength(1);
+		expect(sendKeysCalls.slice(1).every((call) => call.args.at(-1) === 'Enter')).toBe(true);
+		expect(visibleCaptureCalls).toBe(1);
+		expect(events).toEqual([
+			{
+				kind: 'push-recovered',
+				detail: { paneId: '%7', submitRemediations: MAX_ATTEMPTS - 1, paneWasIdle: false },
+			},
+		]);
+		// randomFn=0.5 makes the jitter multiplier exactly 1. Derive the exact
+		// post-gate settle/backoff sequence from the injected base/cap/attempts.
+		const expectedBackoffs = Array.from(
+			{ length: MAX_ATTEMPTS - 1 },
+			(_, index) => Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** index),
+		);
+		const expectedSleeps = expectedBackoffs.flatMap((backoff) => [SEND_KEYS_SETTLE_MS, backoff]);
+		expectedSleeps.push(SEND_KEYS_SETTLE_MS);
+		expect(recordedSleeps).toEqual(expectedSleeps);
+	});
 
-		// Derived (not frozen) from the pollIntervalMs override passed below, per
-		// the derive-don't-freeze rule (US-002, CAM-377): the idle-gate's own
-		// poll sleeps must equal this value exactly, so the same constant feeds
-		// both the override and the AC2 assertion below instead of two
-		// independently-typed literals that could drift apart.
-		const POLL_INTERVAL_MS = 1_000;
-		const IDLE_TIMEOUT_MS = 5_000;
-
-		// Fake-clock idiom (reused from the sendKeysWhenIdle default-deadline
-		// test above, now via the shared withFakeClock helper, US-001, CAM-362):
-		// a monotonically-advancing clock driven only by the injected sleepFn,
-		// and a capturePaneFn that never reports idle, so the idle-gate must run
-		// out its full budget rather than resolving early.
-		withFakeClock(({ advance, chunks: stderrChunks }) => {
+	test('retriesExhausted equals maxAttempts on both terminal reasons and reason tracks only the idle timeout', () => {
+		const MAX_ATTEMPTS = 4;
+		const runTerminal = (timedOut: boolean) => {
+			const spawnFn = makeSpawnFn();
+			const events: Array<{ kind: string; detail: unknown }> = [];
+			let sampleCalls = 0;
 			sendKeysVerified({
-				paneId: '%7',
-				text: '/cam-review',
+				paneId: timedOut ? '%8' : '%9',
+				text: '/cam-ship',
 				tmuxSpawnFn: spawnFn,
-				capturePaneFn: () => '⠋ Busy forever\n', // never idle
-				sampleGeometryFn: () => {
-					geometrySamplerCalls++;
-					return EMPTY_BASELINE;
-				},
-				sleepFn: (ms) => {
-					recordedSleeps.push(ms);
-					advance(ms);
-				},
-				pollIntervalMs: POLL_INTERVAL_MS,
-				idleTimeoutMs: IDLE_TIMEOUT_MS,
-				maxAttempts: 3,
+				capturePaneFn: () => (timedOut ? '⠋ Busy forever\n' : '> '),
+				idleTimeoutMs: 0,
+				sampleGeometryFn: () => (++sampleCalls === 1 ? EMPTY_BASELINE : FILLED_GEOMETRY),
+				sleepFn: () => {},
+				maxAttempts: MAX_ATTEMPTS,
+				jitterFraction: 0,
 				logEvent: (kind, detail) => events.push({ kind, detail }),
 			});
-
-			// AC4: the existing stderr warning on the timed-out path is preserved.
-			expect(stderrChunks.join('')).toContain(`did not go idle within 5000 ms`);
-		});
-
-		// AC1: exactly one send-keys invocation, no verify/retry loop.
-		const sendKeysCalls = spawnFn.calls.filter((c) => c.args[2] === 'send-keys');
-		expect(sendKeysCalls).toHaveLength(1);
-
-		// AC2: zero backoff sleeps. The old upper-bound assertion (every sleep
-		// no greater than the pollIntervalMs override) was non-falsifiable: a
-		// leaked computeBackoffMs value (default base 300, well under that
-		// bound) would have slipped under it undetected. With
-		// idleTimeoutMs=IDLE_TIMEOUT_MS (5_000) and pollIntervalMs=POLL_INTERVAL_MS
-		// (1_000), the idle-gate's own poll loop produces exactly 5 sleeps, each
-		// EXACTLY POLL_INTERVAL_MS (5_000 / 1_000, evenly divisible: every
-		// `remaining` value the loop observes is itself a multiple of
-		// POLL_INTERVAL_MS, so `Math.min(pollIntervalMs, remaining)` is always
-		// POLL_INTERVAL_MS, never a smaller remainder). Strict equality means
-		// any sleep of a different shape (a leaked backoff value, a truncated
-		// final poll, or any other magnitude) makes this assertion fail. The
-		// count assertion below (US-R1-002, CAM-376 review round 1) closes the
-		// vacuous-empty-array gap the `.every()` call alone left open: `[].every`
-		// is trivially true, so a regression that stops the idle-gate from
-		// sleeping at all (or returns before the poll loop) would have passed
-		// silently. The comparand is derived from the same constants fed to the
-		// call above, not a frozen literal, per the derive-don't-freeze rule
-		// (US-002, CAM-377). The geometry sampler is never consulted for a
-		// delivery verdict on this path.
-		expect(recordedSleeps).toHaveLength(IDLE_TIMEOUT_MS / POLL_INTERVAL_MS);
-		expect(recordedSleeps.every((ms) => ms === POLL_INTERVAL_MS)).toBe(true);
-		expect(geometrySamplerCalls).toBe(0);
-
-		// Falsifiability record, durable copy (US-R2-002, CAM-376 review round 2):
-		// scripts/cam/handoff.json is a per-story ROTATING artifact, so a mutation
-		// record written only there (as originally done for US-003) is gone by
-		// the very next story's finalize commit. This tracked-source copy is the
-		// durable one. Proof performed: a temporary `recordedSleeps.push(300)` (a
-		// computeBackoffMs-shaped value: default retryBaseMs base=300, streak=1,
-		// zero jitter, per src/tmux/dispatch.ts:544) was inserted immediately
-		// after the sendKeysVerified call above, then reverted before commit.
-		// Against the resulting array [1000,1000,1000,1000,1000,300], the OLD
-		// `every((ms) => ms <= 1_000)` bound evaluated true (vacuous pass); the
-		// NEW strict-equality assertion above evaluated false, and
-		// `bun test test/dispatch.test.ts` under the live mutation exited 1 (one
-		// failing assertion, at this line). retryBaseMs is never actually
-		// reached on this idle-gate-timeout path (sendOnceUnverified skips the
-		// retry/backoff loop entirely), which is why the mutation injects a
-		// retryBaseMs-SHAPED value directly into recordedSleeps rather than
-		// exercising the real option end to end.
-
-		// AC3: exactly one push-undelivered event, reason pane-not-idle,
-		// retriesExhausted === 1, plus one dedicated orch-pane-busy event
-		// (US-001, CAM-401) carrying the same paneId and the configured
-		// idleTimeoutMs.
-		expect(events).toHaveLength(2);
-		expect(events[0]?.kind).toBe('push-undelivered');
-		expect(events[0]?.detail).toEqual({ paneId: '%7', retriesExhausted: 1, reason: 'pane-not-idle' });
-		expect(events[1]?.kind).toBe('orch-pane-busy');
-		expect(events[1]?.detail).toEqual({ paneId: '%7', idleTimeoutMs: IDLE_TIMEOUT_MS });
+			return events;
+		};
+		expect(runTerminal(true)).toEqual([
+			{
+				kind: 'push-undelivered',
+				detail: { paneId: '%8', retriesExhausted: MAX_ATTEMPTS, reason: 'pane-not-idle' },
+			},
+			{ kind: 'orch-pane-busy', detail: { paneId: '%8', idleTimeoutMs: 0 } },
+		]);
+		expect(runTerminal(false)).toEqual([
+			{
+				kind: 'push-undelivered',
+				detail: { paneId: '%9', retriesExhausted: MAX_ATTEMPTS, reason: 'retries-exhausted' },
+			},
+		]);
 	});
 });
 

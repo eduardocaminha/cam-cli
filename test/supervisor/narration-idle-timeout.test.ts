@@ -2,8 +2,8 @@
 //
 // Behavioral regression test for US-001 (CAM-361): makeNotifyOrchestrator's
 // best-effort narration push must wait at most a short dedicated
-// NARRATION_IDLE_TIMEOUT_MS (2_000 ms) before firing sendKeysVerified's
-// send-anyway fallback, never the full shared IDLE_WAIT_DEADLINE_MS
+// NARRATION_IDLE_TIMEOUT_MS (2_000 ms) before entering sendKeysVerified's
+// unified send/verify flow, never the full shared IDLE_WAIT_DEADLINE_MS
 // (30_000 ms) a mid-turn orchestrator pane used to block the caller for.
 //
 // This exercises the REAL idle-gate poll loop (default sleepFn ->
@@ -19,7 +19,7 @@
 //   1. capturePaneFn always reports a busy (never-idle) pane -> the idle-gate
 //      times out, elapsed wall-clock time is bounded near
 //      NARRATION_IDLE_TIMEOUT_MS (well under IDLE_WAIT_DEADLINE_MS), and the
-//      send-anyway fallback fires exactly once (a single send-keys call).
+//      payload-bearing send fires exactly once.
 
 import { describe, expect, test } from 'bun:test';
 import type { SpawnSyncReturns } from 'node:child_process';
@@ -45,8 +45,9 @@ describe('makeNotifyOrchestrator idle-gate bound (US-001, CAM-361)', () => {
 		const sendCalls: string[][] = [];
 		const spawnFn: TmuxSpawnFn = (_cmd, args, _opts) => {
 			if (args.includes('list-panes')) return fakeSpawnResult('0;%12\n');
-			// Any other call (send-keys) is the physical push; record it.
-			sendCalls.push(args.slice());
+			if (args.includes('display-message')) return fakeSpawnResult('2;0;80;1');
+			if (args.includes('capture-pane')) return fakeSpawnResult('❯ ');
+			if (args.includes('send-keys')) sendCalls.push(args.slice());
 			return fakeSpawnResult('');
 		};
 
@@ -59,7 +60,8 @@ describe('makeNotifyOrchestrator idle-gate bound (US-001, CAM-361)', () => {
 		notify('[cam] narration line while orch is mid-turn');
 		const elapsedMs = Date.now() - startedAt;
 
-		// The send-anyway fallback still fires exactly once.
+		// The timeout path still sends the payload-bearing call exactly once;
+		// matching geometry + visible prompt lets the unified loop verify on try 1.
 		expect(sendCalls.length).toBe(1);
 		expect(sendCalls[0]).toContain('send-keys');
 
