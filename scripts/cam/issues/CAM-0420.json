@@ -1,0 +1,10 @@
+{
+  "id": "CAM-420",
+  "title": "Isolar os testes de dispatch do supervisor (implementer e demais fases) do project.toml vivo, no padrao CAM-405, para backend codex ser config commitavel",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-26T04:27:10.756Z",
+  "updatedAt": "2026-07-26T04:27:10.756Z",
+  "description": "O CAM-405 criou o seam de configPath so para makeReviewDispatch (reviewer). Commitar [backend] implementer = codex quebrou o CI com 85 fails (medido no PR #333, run 30187674682): os testes de runSupervisor (loop.test.ts e familia) leem o project.toml vivo via readPhaseBackend/readPhaseModel sem configPath, entao um tree com backend codex faz o dispatch de teste resolver codex, falhar o auth preflight fail-closed na maquina de CI sem codex auth, e quebrar asserts de spawn-resolution/claude-backed. Fix: estender o seam de configPath (ou injecao equivalente) a TODOS os sites de resolucao de fase consumidos por teste (implementer no loop.ts, planner/auditor no plan-runner, run.ts), com teste de regressao provando que um config codex-resolving nao quebra a suite generica, no mesmo desenho do CAM-405. Desbloqueia: re-aplicar implementer=codex (gpt-5.6-sol) como config commitada; o backend codex ja provou funcionar ao vivo (11/11 stories DONE round-a-round no ciclo CAM-406). Reverter aplicado em ea72a1da deve ser desfeito quando isto shipar."
+}
