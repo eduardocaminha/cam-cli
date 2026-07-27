@@ -6,6 +6,25 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.262.0] - 2026-07-27
+
+### Added
+
+- US-R2-004 - Review round 2 fix 004: address reviewer finding
+- US-R2-003 - Review round 2 fix 003: address reviewer finding
+- US-R2-002 - Review round 2 fix 002: address reviewer finding
+- US-R2-001 - Review round 2 fix 001: address reviewer finding
+- US-R1-005 - Review round 1 fix 005: address reviewer finding
+- US-R1-004 - Review round 1 fix 004: address reviewer finding
+- US-R1-003 - Review round 1 fix 003: address reviewer finding
+- US-R1-002 - Review round 1 fix 002: address reviewer finding
+- US-R1-001 - Review round 1 fix 001: address reviewer finding
+- US-005 - Wire implement and review dispatches and all remaining sentinels through the verified path
+- US-004 - Wire plan-runner planner and auditor dispatches through verified out-of-band dispatch with observable terminals
+- US-003 - Capture spawn stderr in the production loopSpawnFn and build the verified-dispatch helper
+- US-002 - Add durable dispatch-failed marker with status projection and resolved stop semantics
+- US-001 - Deliver worker task prompts out-of-band via per-dispatch prompt file
+
 ## [0.261.0] - 2026-07-26
 
 ### Added
