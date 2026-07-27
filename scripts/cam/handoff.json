@@ -1,22 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-004",
-    "title": "Review round 1 fix 004: address reviewer finding"
+    "id": "US-R1-005",
+    "title": "Review round 1 fix 005: address reviewer finding"
   },
   "branchName": "cam/issue-433",
-  "timestamp": "2026-07-27T15:40:00Z",
+  "timestamp": "2026-07-27T16:10:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/worker-argv.ts",
-    "src/supervisor/plan-argv.ts",
+    "src/supervisor/verified-dispatch.ts",
+    "src/supervisor/worker-dispatch.ts",
+    "src/supervisor/loop.ts",
     "src/supervisor/review.ts",
-    "scripts/file-size-budget.json"
+    "src/supervisor/plan-runner.ts",
+    "test/supervisor/verified-dispatch.test.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [
-    "prd.json:96 (US-002 AC2 oracle) is still unfixed and implementer-protected (see US-R1-003's openQuestion, unresolved): an orchestrator/operator session needs to add --exclude='_generated.ts' to that oracle string directly, since prd.json edits are hard-blocked for implementer sessions.",
-    "US-R1-005 (verified-dispatch.ts's @cam_label uses the raw sentinel phase string, e.g. 'implementer-timeout', which isSessionStale doesn't recognize as a worker label) is still open in prd.json for a future story."
+    "prd.json:96 (US-002 AC2 oracle) is still unfixed and implementer-protected (see US-R1-003's openQuestion, unresolved): an orchestrator/operator session needs to add --exclude='_generated.ts' to that oracle string directly, since prd.json edits are hard-blocked for implementer sessions."
   ],
-  "nextStoryContext": "Addressed the CAM-433 round-1 WARNING at src/supervisor/worker-argv.ts:16 (US-R1-004): corrected the stale 'Pure function; no spawning, no file I/O' / 'pure functions, no I/O' / 'is a pure function (no I/O)' module-header design-decision bullets in worker-argv.ts, plan-argv.ts, and review.ts, which contradicted the fact that ClaudeAdapter.buildSpawnArgv (backend-adapter.ts) writes the task prompt to a per-dispatch file on disk (reaping prior siblings) as a side effect of building the argv string. Also corrected the stale 'single-quote-escaped' claim and the literal '<task>'/'<taskPrompt>' return-shape docstring examples on all 6 exported builder functions (buildImplementerWorkerArgv, buildPlannerWorkerArgv, buildAuditorWorkerArgv, buildReviewerWorkerArgv) in the same 3 files, since those function-level docstrings carried the identical staleness the finding called out at the module-header level (same file, same defect class, left unaddressed would just relocate the misleading claim). No production behavior changed: comment-only fix. Raised src/supervisor/review.ts's file-size ceiling 782->789 (dated _ref note added) to cover the corrected docstrings. Quality gates: typecheck ok, 5663 tests pass / 0 fail, full `bun run check:all` spine green (typecheck, test, embed-vendor, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps). New patterns.md bullet added documenting that a module-header 'Design decisions' block is a separate contract from per-field JSDoc and both need sweeping together. Remaining review round 1 findings still open in prd.json for future stories: US-R1-005 (verified-dispatch.ts's @cam_label staleness, see openQuestions above).",
+  "nextStoryContext": "Addressed the CAM-433 round-1 WARNING at src/supervisor/verified-dispatch.ts:142 (US-R1-005): runVerifiedDispatch's set-option @cam_label call used opts.phase for BOTH the tmux introspection label AND the failure-reason string threaded through events/markers/notifications. That collapse was fine for the ordinary (non-sentinel) dispatch call sites, where phase is already a recognized worker label ('implementer', 'reviewer', 'planner', 'auditor'), but the 5 sentinel/timeout call sites -- loop.ts's implementer-token-ceiling and implementer-timeout, review.ts's review-timeout, and plan-runner.ts's emitPlanTimeoutTerminal for planner-timeout/auditor-timeout -- pass a failure-reason string as phase that isSessionStale (src/tmux/session.ts, WORKER_LABELS = {'implementer','reviewer'}) does not recognize. Before US-003/US-004/US-005 wired the shared verified-dispatch primitive, a timed-out pane kept its prior recognized worker label; after, it kept the unrecognized reason string indefinitely, so the next `cam run` invocation would mark a healthy 3-pane session stale and kill+recreate the orchestrator+dashboard panes along with it. Fix: added an optional `label?: string` field to VerifiedDispatchOptions (verified-dispatch.ts) used only for the @cam_label set-option call, defaulting to `phase` for full backward compat (all pre-existing call sites, including the ordinary planner/auditor/implementer/reviewer dispatches, are unaffected since they never set label). Threaded the same optional field through WorkerDispatchLifecycleOptions (worker-dispatch.ts)'s runVerifiedWorkerDispatch and runCheckedWorkerSentinel. Updated the 5 sentinel call sites to pass an explicit worker-role label: loop.ts's two runCheckedWorkerSentinel calls now pass label:'implementer'; review.ts's review-timeout call passes label:'reviewer'; plan-runner.ts's emitPlanTimeoutTerminal now passes label:phase (the original un-suffixed 'planner'/'auditor' short name) alongside phase:reason (the '<phase>-timeout' string) on its runVerifiedDispatch call. The phase field, event/marker/notify contents, and every existing assertion on marker.phase/reason are unchanged -- only the literal @cam_label tmux value written for these 5 sentinel dispatches changed. New tests added to test/supervisor/verified-dispatch.test.ts: an omitted-label-falls-back-to-phase case and an explicit-label-overrides-phase-without-changing-marker-phase case, both asserting on a new labelArgs capture array in the fake tmux spawn harness. Quality gates: typecheck ok, 5665 tests pass / 0 fail (plus 2 new), full `bun run check:all` spine green (typecheck, test, embed-vendor, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps). Raised 3 file-size ceilings to their exact gate-measured line counts (loop.ts 2710->2712, plan-runner.ts 2115->2116, review.ts 789->790) with a dated _ref note naming this story and CAM-433. Remaining review round 1 findings still open in prd.json for future stories: only the US-R1-003 openQuestion above (prd.json:96 oracle exclude, orchestrator/operator-only edit) is still outstanding; no other US-R1-* story is left with an unaddressed finding as of this handoff.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
