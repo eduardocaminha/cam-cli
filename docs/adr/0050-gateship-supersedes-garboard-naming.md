@@ -61,7 +61,7 @@ The same 2026-07-27 round that killed Garboard and vetted Gateship also screened
 - **gaterun**: rejected, layer 4: the SERP is taken by the Gate River Run, plus an API-gateway namesake project on GitHub.
 - **The whole `helm-` prefix family**: rejected as a family; "helm" is heavily occupied in the developer-tooling space (most prominently the Kubernetes package manager Helm), making any `helm-`-prefixed candidate carry an immediate, unavoidable disambiguation cost against an already-famous same-category tool.
 - **prowmark** (runner-up): the strongest alternative after Gateship, on-thesis nautical-inspection metaphor with a clean namespace sweep, but eliminated for being one letter away from Promark, a D'Addario percussion brand dating to 1957: a distant category, not a layer-4-adjacent live homonymous product in the same sense as Garboard's collision, but still a naming collision the operator judged not worth the confusion cost.
-- **deckward** (runner-up): the second-strongest alternative, but eliminated as a homophone of "Deckard" (the Blade Runner protagonist), a pop-culture collision the operator judged too on-the-nose to adopt.
+- **deckward** (runner-up): the second-strongest alternative, clean in software, but eliminated as a homophone of "Deckard", the codename of Valve's Steam Frame headset, an actively-launching hardware product with a hot 2026 news cycle; the operator judged that live-homonym collision too on-the-nose to adopt.
 
 Order by merit presented to the operator was gateship > prowmark > deckward; the operator decided Gateship on 2026-07-27 after this four-layer, 21-candidate triage.
 
