@@ -1,47 +1,45 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "Wire plan-runner planner and auditor dispatches through verified out-of-band dispatch with observable terminals"
+    "id": "US-005",
+    "title": "Wire implement and review dispatches and all remaining sentinels through the verified path"
   },
   "branchName": "cam/issue-433",
-  "timestamp": "2026-07-27T12:10:46Z",
+  "timestamp": "2026-07-27T13:40:00Z",
   "createdFiles": [
-    "test/helpers/verified-pane-pid-spawn.ts",
-    "test/integration/dispatch-oversize-prompt.test.ts"
+    "src/supervisor/worker-dispatch.ts",
+    "test/supervisor/worker-dispatch-lifecycle.test.ts"
   ],
   "modifiedFiles": [
     "scripts/cam/patterns.md",
     "scripts/file-size-budget.json",
     "src/commands/sidecar.ts",
-    "src/supervisor/plan-runner.ts",
-    "src/supervisor/task-prompt-file.ts",
-    "test/integration/plan-runner-no-prd.test.ts",
-    "test/integration/plan-runner-target-obey.test.ts",
-    "test/plan-runner-in-progress-conflict.test.ts",
-    "test/plan-runner-no-prd.test.ts",
-    "test/plan-runner-target-invalid.test.ts",
-    "test/plan-runner-target-prompt.test.ts",
-    "test/supervisor/plan-runner.test.ts",
-    "test/supervisor/plan/plan-runner-auditor-payload.test.ts",
-    "test/supervisor/plan/plan-runner-codex-auth.test.ts",
-    "test/supervisor/plan/plan-runner-configpath-seam.test.ts",
-    "test/supervisor/plan/plan-runner-container.test.ts",
-    "test/supervisor/plan/plan-runner-model-resolution.test.ts",
-    "test/supervisor/plan/plan-runner-replan.test.ts",
-    "test/supervisor/plan/plan-runner.test.ts",
-    "test/supervisor/task-prompt-file.test.ts"
+    "src/supervisor/host.ts",
+    "src/supervisor/loop.ts",
+    "src/supervisor/review.ts",
+    "test/logging/spawn-resolution.test.ts",
+    "test/supervisor/ensure-worker-pane.test.ts",
+    "test/supervisor/events.test.ts",
+    "test/supervisor/loop-configpath-seam.test.ts",
+    "test/supervisor/loop-model-resolution.test.ts",
+    "test/supervisor/loop.test.ts",
+    "test/supervisor/non-convergence-autochain.test.ts",
+    "test/supervisor/non-convergence-terminal.test.ts",
+    "test/supervisor/pause-halt.test.ts",
+    "test/supervisor/pause-resume.test.ts",
+    "test/supervisor/review-model-resolution.test.ts",
+    "test/supervisor/review.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "Plan-runner planner and auditor spawns now always use runVerifiedDispatch with pane_pid before/after checks, checked set-option/respawn-pane/pipe-pane calls, prompt-file transport and terminal cleanup. Planner/auditor timeout sentinels also use the checked helper, then emit a timeout event, durable dispatch-failed marker and notification. Production wiring persists/removes .cam-dispatch-failed.json and notifies the orchestrator; all pre-existing plan-runner test fakes that reach dispatch now synthesize a real pane_pid transition through test/helpers/verified-pane-pid-spawn.ts.",
+  "nextStoryContext": "All three dispatch paths (plan-runner US-004, implementer and both reviewer paths US-005) now route through runVerifiedDispatch/runVerifiedWorkerDispatch with mandatory pane_pid identity checks, checked set-option/respawn-pane/pipe-pane exits, prompt-file transport, and dispatch-failed observable terminals (event + durable marker + orchestrator notification). New shared wrapper src/supervisor/worker-dispatch.ts (runVerifiedWorkerDispatch, runCheckedWorkerSentinel, removeWorkerTaskPrompt) is reused by both loop.ts (implementer dispatch, token-ceiling sentinel, timeout sentinel) and review.ts (reviewer dispatch, review-timeout sentinel), so set-option/@cam_label is now applied inside runVerifiedDispatch itself (opts.phase) -- loop.ts no longer issues a separate unchecked set-option before either dispatch. All implement/review terminals (worker-report read, review verdict read, timeout, pane-died, dispatch failure, container/codex preflight block) call removeWorkerTaskPrompt so the dispatch's own prompt file never survives past its terminal; a subsequent successful verified dispatch clears any pre-existing dispatch-failed marker via removeDispatchFailedMarkerFn. scripts/cam/project.toml's implementer backend was reset to 'claude' by the operator directly in the working tree before this story started (codex quota exhausted until 2026-08-01); left as-is and committed since it predates this story's edits and is a real operator decision, not implementer work. CAM-433's audit findings (F-02 through F-05) are now closed across all three dispatch paths (plan-runner, implementer, reviewer); F-01 (US-001 prompt-file transport) and F-06 (US-002 vendor encoding) were closed in earlier stories. No further open dispatch-path findings remain from the CAM-433 audit as of this story.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
       "lib": "tmux",
       "channel": "WebOpen",
       "url": "https://raw.githubusercontent.com/tmux/tmux/master/tmux.1",
-      "fetchedAt": "2026-07-27T12:09:00Z",
+      "fetchedAt": "2026-07-27T13:35:00Z",
       "status": "aligned",
-      "summary": "Official tmux master manpage confirms respawn-pane -k kills the existing command, pane_pid is the PID of the first process in the pane, set-option -p targets pane options, and pipe-pane connects target-pane output to a shell command."
+      "summary": "Re-confirmed against the official tmux master manpage for this story's checked sentinel paths: respawn-pane -k kills the pane's existing command before reactivating it with the new one, and pipe-pane connects target-pane output to a shell command. No new tmux subcommand was introduced beyond what US-003/US-004 already validated (display-message -p '#{pane_pid}', set-option -p); this story reuses the same runVerifiedDispatch primitive for the implementer and both reviewer paths plus the three remaining sentinel respawns, with exit codes on every call inspected via the existing SpawnResult.exitCode contract (standard child-process semantics, not tmux-specific)."
     }
   ]
 }
