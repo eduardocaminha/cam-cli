@@ -42,3 +42,7 @@ Every future reference to the product in docs, positioning material, and launch 
 The `garboard-run` GitHub org, the `garboard` npm package, and the `.dev`/`.io`/`.sh` domain registrations are operator ceremonies outside this docs-only cycle: the availability facts recorded here expire and must be re-checked at the moment those ceremonies actually run, not assumed still true from the 2026-07-25 verification date.
 
 Binary, template, build-script, and slash-command renames stay out of scope until launch packaging picks up the staged plan above; a future ADR is only needed if that plan changes, not to execute it.
+
+---
+
+**Superseded by ADR-0050: `garboard.dev` turned out to be a live, thesis-identical adjacent product (verify-before-ship web-app builder), with `garboard.app` on the same nameservers and `garboard.com` parked for sale; the product name is now Gateship.**
