@@ -71,16 +71,16 @@ Concrete gaps:
   `tmux` and the separately-installed, separately-signed-in `claude` CLI
   before `cam --version` ever runs. There is no toolchain-free path for a
   non-developer to obtain a working `cam` binary.
-- **Staged product rename to `garboard`/`gar` has no tracked item here
-  yet.** ADR 0049 (the Garboard naming policy) explicitly defers the
+- **Staged product rename to `gateship` has no tracked item here
+  yet.** ADR-0050 (the Gateship naming decision) explicitly defers the
   binary rename to launch packaging, "as a distribution item of launch
-  readiness": the canonical binary moves from `cam` to `garboard`, a
-  `gar` typed alias is created by the installer, and `cam` is demoted to
-  an undocumented legacy symlink for existing installs. None of the
-  distribution work audited above (packaging, cross-platform builds,
-  code signing) currently accounts for that rename; it belongs in this
-  dimension's checklist so the staged plan has a tracked home when
-  launch packaging picks it up.
+  readiness": the canonical binary moves from `cam` to `gateship`, a
+  typed alias (if any) is chosen and created by the installer at that
+  stage, and `cam` is demoted to an undocumented legacy symlink for
+  existing installs. None of the distribution work audited above
+  (packaging, cross-platform builds, code signing) currently accounts
+  for that rename; it belongs in this dimension's checklist so the
+  staged plan has a tracked home when launch packaging picks it up.
 
 ## First-run onboarding (`cam init` UX): gap
 

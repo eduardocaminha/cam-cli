@@ -1,16 +1,18 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Write ADR-0050 (GATESHIP supersedes GARBOARD) and append the supersession note to ADR-0049"
+    "id": "US-002",
+    "title": "Sweep GARBOARD out of the active presentation docs and reconcile the on-main issue records"
   },
-  "createdFiles": [
-    "docs/adr/0050-gateship-supersedes-garboard-naming.md"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
-    "docs/adr/0049-garboard-naming-policy-binary-alias-org-and-staged-rename.md"
+    "docs/positioning.md",
+    "docs/launch-readiness.md",
+    "scripts/cam/patterns.md"
   ],
-  "openQuestions": [],
-  "nextStoryContext": "ADR-0050 supersedes ADR-0049 in full: product name is now Gateship (was Garboard), binary rename to `gateship` deferred to launch packaging, no typed alias chosen yet (re-decided at packaging stage), CAM_*/cam internal contracts unchanged (ADR-0045 reaffirmed). ADR-0049 was appended-only (a single supersession block at EOF, no other edits) and its append-only-prefix-of-main invariance pin still holds. docs/positioning.md and the README differentiation section (CAM-331) remain out of scope for this docs-only cycle and are explicitly noted in ADR-0050 as blocked-on-this-landing-first; a future story picking those up should cite ADR-0050, not re-litigate naming. No code/binary/template renamed in this story.",
+  "openQuestions": [
+    "AC3's repo-wide grep sweep still matches scripts/cam/prd.json and this very handoff.json's lastCompletedStory.title. prd.json necessarily narrates the retired product name in its own story titles/descriptions/notes (it is the PRD that specifies this very sweep), is worker-write-denied per ADR-0036, and is an ephemeral artifact git-rm'd at cam ship --finalize per ADR-0040, so that residual self-resolves at ship time, not fixable mid-branch. lastCompletedStory.title is required to carry this story's real title verbatim for traceability, and this story's own real title names the retired brand; that one-field residual clears on the NEXT story's handoff overwrite, not this one's. AC4-AC6 (the on-main CAM-331/CAM-417/CAM-421 issue-record edits) are explicitly out of scope for this worker per the story's own acceptance criteria text; they are on-main control-plane edits reserved for the orchestrator/operator."
+  ],
+  "nextStoryContext": "docs/positioning.md and docs/launch-readiness.md now present the product as Gateship, citing ADR-0050; positioning.md's former section 4 (the full five-round naming battle, kill evidence, and reserves for the retired name) was rewritten to a short current-decision statement plus an alias/rename-policy subsection, with the full history left to live in the ADRs (docs/adr/) rather than re-narrated. No code, template, binary, or build script was touched (docs-only, matching ADR-0050's staged-rename doctrine). The three on-main issue-record reconciliations (CAM-331, CAM-417, CAM-421) named in this story's AC4-AC6 were deliberately NOT performed here: the story's own acceptance criteria text marks them as an orchestrator/operator on-main control-plane action, never a worker-on-branch edit, so a future story or the orchestrator should verify those three records directly against main rather than assuming this story closed them.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
