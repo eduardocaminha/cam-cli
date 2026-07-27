@@ -36,7 +36,7 @@
       "id": "US-R1-004",
       "title": "Review round 1 fix 004: address reviewer finding",
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [docs/positioning.md:73]: False sourcing claim introduced by the section-4 rewrite. Line 73 states 'The two ADRs (docs/adr/) hold the full multi-round research process, the kill evidence for every candidate considered, the four-layer gate, and the ranked reserves as the historical record'. That is not true for every candidate: US-002 deleted old sections 4.2 and 4.3, which held the only versioned kill evidence for slipway (four active dev-tooling projects using the name), ingot (INGOT Brokers fintech collision, active Oxide crate, existing same-category repo), crivo (npm 3.4.3 whose own description is 'local quality gate for AI-agent coding workflows'), assay (npm/crates/PyPI/org all taken, assay.com since 2000), and the tenet/tenant/nova/fide riffs. git grep confirms none of those appear in ADR-0049 or ADR-0050; they now survive only in scripts/cam/issues/CAM-0415.json, a control-plane record the sentence does not point at. This also contradicts the document's own opening pledge (line 3) that every fact is restated self-contained and traceable. Either narrow the sentence to what the ADRs actually hold, or carry the missing kill evidence forward into ADR-0050."
     },
     {
