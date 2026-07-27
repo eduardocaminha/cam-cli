@@ -42,7 +42,7 @@
         "Full quality spine passes per AC11. [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New files only: test/helpers/test-deps.ts + test/helpers/test-deps.test.ts (test files under test/helpers/ are collected by bun test; precedent test/helpers/with-fake-clock.test.ts). The module MUST live under test/helpers/ because AC1/AC2's centralization greps carry the filter `grep -vE 'test/helpers/|test/fixtures/'`. Probe once at module load (version-flag spawnSync or Bun.which), never per-test. Design the decision fn pure with authoritative inputs injected ({available, waivers}), default-wired to the real probe/env read via destructure defaults, exactly like codexAuthPreflight (src/supervisor/codex-auth.ts, see patterns.md CAM-352 bullets). Do NOT touch the DI-fake option-name sites test/run.test.ts:82 and test/stop.test.ts:58, and nothing under test/fixtures/version-skip-guard/**. tmux install-hint text must enforce the documented policy at scripts/cam/CLAUDE.md:36 (tmux is a hard runtime dependency), not invent a new one."
     },
