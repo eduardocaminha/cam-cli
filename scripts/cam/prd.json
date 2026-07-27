@@ -39,7 +39,7 @@
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [scripts/check-skip-ratchet.ts:138]: The new skip-ratchet gate is fail-open: it can report green on a suite that never ran. makeDefaultGetSuiteOutput (:138-143) discards the `bun test` exit code and success flag entirely (only stdout+stderr text is returned), and parseSkipCount (:91-94) returns 0 for any output lacking a ' N skip' line, so a crashed / zero-test / garbage run is indistinguishable from a clean 0-skip run. Proven empirically by the reviewer (review-artifact.txt SECTION 7): feeding 'error: Cannot find module ...\\nbun: command crashed\\n' to checkSkipRatchet on the host lane yields ok=true, 'host lane: 0 skip (matches recorded expectation)'. This is the exact failure mode the gate exists to prevent ('a partial run can never present as green'), and it is directly reachable via the wired standalone script `bun run check:skip-ratchet`. Fix: require positive evidence the suite ran (a ' N pass' / 'Ran N tests across M files' marker, or a non-crash exit code) before comparing, and add the malformed-output unit case to test/check-skip-ratchet.test.ts. Wiring the already-recorded-but-unread `passFloor` from test/helpers/lane-expectations.json (:5,:11) closes the same hole; today nothing in the repo reads that field."
     },
     {
