@@ -1,16 +1,16 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-003",
-    "title": "Review round 1 fix 003: address reviewer finding"
+    "id": "US-R1-004",
+    "title": "Review round 1 fix 004: address reviewer finding"
   },
   "branchName": "cam/issue-434",
-  "timestamp": "2026-07-27T19:00:00Z",
+  "timestamp": "2026-07-27T18:30:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "scripts/cam/patterns.md"
+    "docs/positioning.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R1-003's reviewer finding (US-002 AC6's repo-gate oracle at prd.json:71 exiting red because prd.json/handoff.json necessarily narrate the retired name and are worker-write-denied per ADR-0036) is now RESOLVED: an orchestrator/operator amendment (commit 0a7fdf92, outside CAM_WORKER=1) added ':!scripts/cam/prd.json', ':!scripts/cam/handoff.json', and ':!scripts/cam/patterns.md' to the AC6 exclusion list. Re-ran the exact oracle string against branch HEAD this session and it exits 0. No further code change was needed or made in this dispatch; this session's work was verification (AC6 oracle green, typecheck clean, bun test 5665 pass / 0 fail, bun run check:all fully green) plus a patterns.md bullet closing the loop on the prior two BLOCKED_QUALITY dispatches. See the new patterns.md bullet immediately after the line-1064 'CORRECTION' bullet for the full resolution record.",
+  "nextStoryContext": "US-R1-004 fixed a false sourcing claim at docs/positioning.md section 4 (naming decision): the sentence said 'the two ADRs hold ... the kill evidence for every candidate considered', but that is false for the discarded four-round-battery candidates (Slipway, Ingot, Crivo, Assay, and the tenet/tenant/nova/fide riffs), whose kill evidence lived only in positioning.md sections 4.2/4.3 before US-002 of this PRD deleted those sections (git show 198e6bff has the deleted text if ever needed) and does not survive in ADR-0049 or ADR-0050 (verified via git grep, both files read in full this session). Chose the 'narrow the sentence' resolution path over 'carry the evidence into ADR-0050': rewriting an already-accepted ADR to retroactively add kill-evidence detail it never itself verified is riskier and out of scope for a docs-narrowing fix, and ADR-0050's own doctrine treats prior ADRs as historical record not to be rewritten. The corrected sentence now scopes the ADRs' held evidence to the finalists that actually reached a live-measured round (GAMBREL + the -board family in ADR-0049; the 2026-07-27 21-candidate round in ADR-0050) and explicitly states the wider four-round battery's kill evidence is not carried in either ADR. No other content in positioning.md, the ADRs, or CAM-0415.json was touched. Single-line diff; all quality gates (typecheck, bun test 5665 pass / 0 fail, bun run check:all) green.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
