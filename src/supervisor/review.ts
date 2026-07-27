@@ -14,7 +14,11 @@
 //        d. updates prd.json (roundsCompleted, lastVerdict, new US-RX-NNN stories).
 //
 // Design decisions:
-//   - buildReviewerWorkerArgv is a pure function (no I/O).
+//   - buildReviewerWorkerArgv is NOT a pure function: it delegates to
+//     ClaudeAdapter.buildSpawnArgv, which writes the task prompt to a
+//     per-dispatch file on disk (reaping any prior prompt-file siblings) as
+//     a side effect of building the argv string (US-001, CAM-433,
+//     task-prompt-file.ts).
 //   - parseReviewVerdict is a pure function (no I/O). It returns newStories: []
 //     always; story creation is the responsibility of makeReviewDispatch, which
 //     has access to the prd round counter.
@@ -97,7 +101,7 @@ export interface ReviewerWorkerArgvOptions {
  * Returns a shell string with the shape:
  *
  *   env -u CLAUDECODE -u ... claude --permission-mode <mode> --session-id <uuid> \
- *     --agent <agentName> '<taskPrompt>'
+ *     --agent <agentName> "$(cat -- '<taskPromptFilePath>')"
  *
  * The `env -u ...` prefix strips nesting-detection env vars so the reviewer
  * boots from a tmux server bootstrapped inside a claude session (CAM-43). -p
@@ -105,8 +109,11 @@ export interface ReviewerWorkerArgvOptions {
  * The tmux wait-for chain is also omitted; the supervisor detects completion
  * by polling capture-pane for the <review> verdict tag.
  *
- * The task prompt is the initial-prompt argument (CAM-41: a promptless reviewer
- * dies instantly) and --permission-mode lets quality gates run unprompted.
+ * The task prompt is written to a per-dispatch file (task-prompt-file.ts,
+ * US-001/CAM-433) rather than embedded in the argv; the returned string
+ * carries a `"$(cat -- '<path>')"` snippet that reads it back at exec time
+ * (CAM-41: a promptless reviewer dies instantly). --permission-mode lets
+ * quality gates run unprompted.
  *
  * US-003 (CAM-339): thin wrapper resolving the 'reviewer' actor and delegating
  * to ClaudeAdapter.buildSpawnArgv (backend-adapter.ts) for the actual assembly.

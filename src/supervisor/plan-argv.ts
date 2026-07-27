@@ -4,8 +4,11 @@
 // as interactive TUI worker panes within the plan-runner.
 //
 // These builders mirror buildImplementerWorkerArgv (worker-argv.ts) and
-// buildReviewerWorkerArgv (review.ts): pure functions, no I/O, same
-// env-strip + shell-escape pattern (CAM-43 + CAM-42).
+// buildReviewerWorkerArgv (review.ts): same env-strip + shell-escape pattern
+// (CAM-43 + CAM-42). NOT pure: each delegates to ClaudeAdapter.buildSpawnArgv,
+// which writes the task prompt to a per-dispatch file on disk (reaping any
+// prior prompt-file siblings) as a side effect of building the argv string
+// (US-001, CAM-433, task-prompt-file.ts).
 //
 // Design decisions:
 //   - No -p, no --output-format: subscription rule (CAM-42).
@@ -14,7 +17,8 @@
 //     (US-005) passes readPhaseModel('planner'/'auditor') at spawn time.
 //   - The shell string format:
 //       env -u CLAUDECODE -u ... claude --permission-mode <mode>
-//         --session-id <uuid> --model '<model>' --agent <agent> '<prompt>'
+//         --session-id <uuid> --model '<model>' --agent <agent> \
+//         "$(cat -- '<taskPromptFilePath>')"
 //   - US-003 (CAM-339): buildPlannerWorkerArgv / buildAuditorWorkerArgv are
 //     now thin wrappers over ClaudeAdapter.buildSpawnArgv (backend-adapter.ts),
 //     which resolves the adapter per-actor and holds the actual assembly
@@ -67,10 +71,13 @@ export interface PlannerWorkerArgvOptions {
  * Returns a shell string with the shape:
  *
  *   env -u CLAUDECODE -u ... claude --permission-mode <mode> --session-id <uuid> \
- *     --model '<model>' --agent <agentName> '<taskPrompt>'
+ *     --model '<model>' --agent <agentName> "$(cat -- '<taskPromptFilePath>')"
  *
  * The `env -u ...` prefix strips nesting-detection env vars (CAM-43).
  * -p and --output-format are omitted (CAM-42: subscription rule, interactive TUI only).
+ * `taskPrompt` is written to a per-dispatch file (task-prompt-file.ts,
+ * US-001/CAM-433) rather than embedded in the argv; the returned string
+ * carries a `"$(cat -- '<path>')"` snippet that reads it back at exec time.
  *
  * US-003 (CAM-339): thin wrapper resolving the 'planner' actor and delegating
  * to ClaudeAdapter.buildSpawnArgv for the actual assembly.
@@ -119,10 +126,13 @@ export interface AuditorWorkerArgvOptions {
  * Returns a shell string with the shape:
  *
  *   env -u CLAUDECODE -u ... claude --permission-mode <mode> --session-id <uuid> \
- *     --model '<model>' --agent <agentName> '<taskPrompt>'
+ *     --model '<model>' --agent <agentName> "$(cat -- '<taskPromptFilePath>')"
  *
  * The `env -u ...` prefix strips nesting-detection env vars (CAM-43).
  * -p and --output-format are omitted (CAM-42: subscription rule, interactive TUI only).
+ * `taskPrompt` is written to a per-dispatch file (task-prompt-file.ts,
+ * US-001/CAM-433) rather than embedded in the argv; the returned string
+ * carries a `"$(cat -- '<path>')"` snippet that reads it back at exec time.
  *
  * US-003 (CAM-339): thin wrapper resolving the 'auditor' actor and delegating
  * to ClaudeAdapter.buildSpawnArgv for the actual assembly.
