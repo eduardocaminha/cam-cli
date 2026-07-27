@@ -1481,6 +1481,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				runCheckedWorkerSentinel({
 					spawnFn: spawn,
 					phase: 'implementer-token-ceiling',
+					label: 'implementer',
 					paneId: workerPaneId,
 					uuid,
 					claudeDir: opts.claudeDir,
@@ -1518,6 +1519,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					runCheckedWorkerSentinel({
 						spawnFn: spawn,
 						phase: 'implementer-timeout',
+						label: 'implementer',
 						paneId: workerPaneId,
 						uuid,
 						claudeDir: opts.claudeDir,

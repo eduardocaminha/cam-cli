@@ -35,6 +35,19 @@ export interface VerifiedDispatchOptions {
 	notifyFn: (message: string) => void;
 	storyId?: string;
 	clock?: () => string;
+	/**
+	 * The `@cam_label` value set on the pane before respawn (US-R1-005,
+	 * CAM-433 review round 1). Defaults to `phase` for backward compat, but a
+	 * sentinel dispatch (timeout / token-ceiling) passes a failure-reason
+	 * string as `phase` (e.g. 'implementer-timeout') that `isSessionStale`
+	 * (src/tmux/session.ts) does not recognize as a worker label. Leaving that
+	 * reason string on the pane after a sentinel respawn would make a healthy
+	 * 3-pane session look stale on the next `cam run`, tearing down the live
+	 * orchestrator+dashboard panes along with it. Callers that dispatch a
+	 * sentinel must pass the pane's actual worker role here so the label
+	 * always reflects "what this pane is", not "why it was last respawned".
+	 */
+	label?: string;
 }
 
 export type VerifiedDispatchResult =
@@ -139,7 +152,7 @@ export function runVerifiedDispatch(opts: VerifiedDispatchOptions): VerifiedDisp
 	if (!before.ok) return emitDispatchFailure(opts, before.failure);
 
 	const labelResult = opts.spawnFn('tmux', [
-		'-L', 'cam', 'set-option', '-p', '-t', opts.paneId, '@cam_label', opts.phase,
+		'-L', 'cam', 'set-option', '-p', '-t', opts.paneId, '@cam_label', opts.label ?? opts.phase,
 	]);
 	const labelFailure = failedCommand('set-option-exited', labelResult);
 	if (labelFailure !== null) return emitDispatchFailure(opts, labelFailure);

@@ -29,6 +29,8 @@ export interface WorkerDispatchLifecycleOptions {
 	removeDispatchFailedMarkerFn?: () => void;
 	notifyFn?: (message: string) => void;
 	removeTaskPromptFileFn?: (uuid: string) => void;
+	/** See VerifiedDispatchOptions.label (US-R1-005): defaults to `phase`. */
+	label?: string;
 }
 
 function effectiveClaudeDir(claudeDir: string | undefined): string {
@@ -79,6 +81,7 @@ export function runVerifiedWorkerDispatch(
 		writeDispatchFailedMarkerFn: opts.writeDispatchFailedMarkerFn ?? ((): void => {}),
 		notifyFn: opts.notifyFn ?? ((): void => {}),
 		storyId: opts.storyId,
+		label: opts.label,
 	});
 	if (!result.ok) {
 		removeWorkerTaskPrompt(opts, opts.uuid);
@@ -114,5 +117,6 @@ export function runCheckedWorkerSentinel(
 		writeDispatchFailedMarkerFn: opts.writeDispatchFailedMarkerFn ?? ((): void => {}),
 		notifyFn: opts.notifyFn ?? ((): void => {}),
 		storyId: opts.storyId,
+		label: opts.label,
 	});
 }

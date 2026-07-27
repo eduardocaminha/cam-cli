@@ -27,18 +27,23 @@ interface FakeTmuxOptions {
 interface FakeTmux {
 	spawnFn: SpawnFn;
 	formats: string[];
+	labelArgs: string[];
 	readonly piped: boolean;
 }
 
 function makeBehavioralTmux(opts: FakeTmuxOptions = {}): FakeTmux {
 	let panePid = '4100';
 	const formats: string[] = [];
+	const labelArgs: string[] = [];
 	let piped = false;
 	const spawnFn: SpawnFn = (_cmd, args) => {
 		const subcommand = args[2];
 		if (subcommand === 'display-message') {
 			formats.push(args.at(-1) ?? '');
 			return { stdout: `${panePid}\n`, stderr: '', exitCode: 0 };
+		}
+		if (subcommand === 'set-option') {
+			labelArgs.push(args.at(-1) ?? '');
 		}
 		if (subcommand === opts.failCommand) {
 			return {
@@ -56,6 +61,7 @@ function makeBehavioralTmux(opts: FakeTmuxOptions = {}): FakeTmux {
 	return {
 		spawnFn,
 		formats,
+		labelArgs,
 		get piped() {
 			return piped;
 		},
@@ -172,5 +178,39 @@ describe('runVerifiedDispatch', () => {
 		expect(harness.events).toEqual([]);
 		expect(harness.markers).toEqual([]);
 		expect(harness.notifications).toEqual([]);
+	});
+
+	// US-R1-005 (CAM-433 review round 1): the `@cam_label` set on the pane must
+	// be able to diverge from `phase` so a sentinel dispatch (whose `phase` is
+	// a failure-reason string like 'implementer-timeout', not a worker label)
+	// can still leave a session-recognized label behind.
+	test('omitted label falls back to phase for @cam_label', () => {
+		const fake = makeBehavioralTmux();
+		const harness = makeHarness(fake);
+
+		runVerifiedDispatch(harness.options);
+
+		expect(fake.labelArgs).toEqual(['planner']);
+	});
+
+	test('explicit label overrides phase for @cam_label without changing event/marker phase', () => {
+		const fake = makeBehavioralTmux({ failCommand: 'respawn-pane', exitCode: 23 });
+		const harness = makeHarness(fake);
+		harness.options.phase = 'implementer-timeout';
+		harness.options.label = 'implementer';
+
+		const result = runVerifiedDispatch(harness.options);
+
+		expect(result.ok).toBe(false);
+		expect(fake.labelArgs).toEqual(['implementer']);
+		expect(harness.markers).toEqual([{
+			phase: 'implementer-timeout',
+			paneId: '%7',
+			uuid: 'dispatch-uuid',
+			exitCode: 23,
+			stderr: 'respawn-pane known stderr',
+			reason: 'respawn-pane-exited',
+			timestamp: NOW,
+		}]);
 	});
 });

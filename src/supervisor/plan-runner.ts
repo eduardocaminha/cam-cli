@@ -1044,6 +1044,7 @@ function emitPlanTimeoutTerminal(
 	const sentinel = runVerifiedDispatch({
 		spawnFn: opts.spawnFn,
 		phase: reason,
+		label: phase,
 		paneId,
 		uuid,
 		dispatchCmd: `echo ${reason}`,

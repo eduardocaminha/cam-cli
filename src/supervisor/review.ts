@@ -588,6 +588,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 				runCheckedWorkerSentinel({
 					spawnFn: spawn,
 					phase: 'review-timeout',
+					label: 'reviewer',
 					paneId: liveWorkerPaneId,
 					uuid,
 					claudeDir: opts.claudeDir,
