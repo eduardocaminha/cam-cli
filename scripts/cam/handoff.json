@@ -1,16 +1,17 @@
 {
   "lastCompletedStory": {
-    "id": "US-R2-002",
-    "title": "Review round 2 fix 002: address reviewer finding"
+    "id": "US-R2-003",
+    "title": "Review round 2 fix 003: address reviewer finding"
   },
   "branchName": "cam/issue-433",
-  "timestamp": "2026-07-27T18:45:00Z",
+  "timestamp": "2026-07-27T19:15:00Z",
   "createdFiles": [],
   "modifiedFiles": [
+    "src/commands/status.ts",
     "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "Fixed the stale ratchet loosening finding recorded in this story's prd.json notes: scripts/generate-embedded-vendor.ts's file-size-budget.json ceiling was raised 159->165 by US-002 to justify a jsLiteral Unicode-escape special-case, US-R1-003 later reverted that special-case (patterns.md:1028), and the file is back to a gate-measured (content.split('\\n').length) actual of 159 lines -- but the ceiling was left at 165, a 7-line loosening with no code behind it and an _ref narrative describing code no longer on the branch. Restored the ceiling to 159 and prepended a dated _ref note (US-R2-002, CAM-433) documenting the restore, in the same commit. Verified: `bun -e \"console.log(require('fs').readFileSync('scripts/generate-embedded-vendor.ts','utf8').split('\\n').length)\"` -> 159, matching the restored ceiling exactly (no headroom needed, actual == ceiling). Full gates re-run clean: typecheck 0 errors, bun test 5665 pass / 0 fail, bun run check:all all-green (file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps, embed-vendor up to date). No patterns.md bullet added: this is a mechanical application of the already-documented stale-ratchet-after-revert convention (patterns.md:96, :158, :432), not a new insight.",
+  "nextStoryContext": "Fixed the ratchet-satisfied-by-deleting-docs finding recorded in this story's prd.json notes: US-002 (CAM-401) had satisfied src/commands/status.ts's file-size ceiling (1012) by compressing/deleting three pre-existing comment blocks unrelated to CAM-433 -- the CycleStateProjection type-doc (losing the 'the two are always called together' contract note), the projectCycleState function-doc's event-log-exception note, and the buildStatusReport inline comment -- landing the file at 1009 lines with no budget entry at all, instead of taking a real-count-derived raise as the same PR correctly did for its other 11 touched files. Restored all three comment blocks to their exact pre-US-002 wording (verified via `git show 32a81b73 -- src/commands/status.ts`) and raised the ceiling 1012->1021 to match the gate-measured `content.split('\\n').length` actual, with a dated _ref note (US-R2-003, CAM-433) prepended ahead of the existing chain. No code behavior changed, comment-only + budget-only diff. Verified: `bun -e \"console.log(require('fs').readFileSync('src/commands/status.ts','utf8').split('\\n').length)\"` -> 1021, matching the raised ceiling exactly. Full gates re-run clean: typecheck 0 errors, bun test 5665 pass / 0 fail, bun run check:all all-green (file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps, embed-vendor up to date). No patterns.md bullet added: this is a mechanical application of the already-documented gate-satisfied-by-deleting-docs convention (same family as the round-1 jsLiteral finding), not a new insight.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
