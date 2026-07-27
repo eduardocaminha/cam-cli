@@ -14,7 +14,11 @@
 //        d. updates prd.json (roundsCompleted, lastVerdict, new US-RX-NNN stories).
 //
 // Design decisions:
-//   - buildReviewerWorkerArgv is a pure function (no I/O).
+//   - buildReviewerWorkerArgv is NOT a pure function: it delegates to
+//     ClaudeAdapter.buildSpawnArgv, which writes the task prompt to a
+//     per-dispatch file on disk (reaping any prior prompt-file siblings) as
+//     a side effect of building the argv string (US-001, CAM-433,
+//     task-prompt-file.ts).
 //   - parseReviewVerdict is a pure function (no I/O). It returns newStories: []
 //     always; story creation is the responsibility of makeReviewDispatch, which
 //     has access to the prd round counter.
@@ -43,6 +47,12 @@ import { codexAuthPreflight } from './codex-auth.ts';
 import type { CodexAuthCheck } from './codex-auth.ts';
 import { resolvePhaseModel } from '../config/model-resolution.ts';
 import type { CodexModelsCacheReader } from '../config/codex-models-cache.ts';
+import type { DispatchFailedMarker } from './dispatch-failed-marker.ts';
+import {
+	removeWorkerTaskPrompt,
+	runCheckedWorkerSentinel,
+	runVerifiedWorkerDispatch,
+} from './worker-dispatch.ts';
 
 export { DEFAULT_REVIEWER_AGENT, REVIEWER_TASK_PROMPT };
 
@@ -61,7 +71,7 @@ export interface ReviewerWorkerArgvOptions {
 	agentName?: string;
 	/**
 	 * Free-text task prompt for the reviewer session. The TUI needs an initial
-	 * prompt (CAM-41: a promptless reviewer dies instantly). Will be shell-escaped.
+	 * prompt (CAM-41); it is delivered via the per-dispatch prompt file.
 	 * Defaults to REVIEWER_TASK_PROMPT.
 	 */
 	taskPrompt?: string;
@@ -91,7 +101,7 @@ export interface ReviewerWorkerArgvOptions {
  * Returns a shell string with the shape:
  *
  *   env -u CLAUDECODE -u ... claude --permission-mode <mode> --session-id <uuid> \
- *     --agent <agentName> '<taskPrompt>'
+ *     --agent <agentName> "$(cat -- '<taskPromptFilePath>')"
  *
  * The `env -u ...` prefix strips nesting-detection env vars so the reviewer
  * boots from a tmux server bootstrapped inside a claude session (CAM-43). -p
@@ -99,8 +109,11 @@ export interface ReviewerWorkerArgvOptions {
  * The tmux wait-for chain is also omitted; the supervisor detects completion
  * by polling capture-pane for the <review> verdict tag.
  *
- * The task prompt is the initial-prompt argument (CAM-41: a promptless reviewer
- * dies instantly) and --permission-mode lets quality gates run unprompted.
+ * The task prompt is written to a per-dispatch file (task-prompt-file.ts,
+ * US-001/CAM-433) rather than embedded in the argv; the returned string
+ * carries a `"$(cat -- '<path>')"` snippet that reads it back at exec time
+ * (CAM-41: a promptless reviewer dies instantly). --permission-mode lets
+ * quality gates run unprompted.
  *
  * US-003 (CAM-339): thin wrapper resolving the 'reviewer' actor and delegating
  * to ClaudeAdapter.buildSpawnArgv (backend-adapter.ts) for the actual assembly.
@@ -189,6 +202,16 @@ export interface MakeReviewDispatchOptions {
 	writePrd: WritePrd;
 	/** Pane id of the worker slot used for the reviewer. */
 	workerPaneId: string;
+	/** Project `.claude` directory for per-dispatch task-prompt transport. */
+	claudeDir?: string;
+	/** Persist a verified dispatch or checked timeout-sentinel failure. */
+	writeDispatchFailedMarkerFn?: (marker: DispatchFailedMarker) => void;
+	/** Remove stale dispatch-failed evidence after verified convergence. */
+	removeDispatchFailedMarkerFn?: () => void;
+	/** Live narration sink for verified dispatch/timeout failures. */
+	notifyFn?: (message: string) => void;
+	/** Remove this review dispatch's own task-prompt file at its terminal. */
+	removeTaskPromptFileFn?: (uuid: string) => void;
 	/** Check whether the reviewer pane is still alive (poll loop guard). */
 	isPaneAlive: (paneId: string) => boolean;
 	/** Sleep between polling ticks. Tests inject a no-op. */
@@ -432,6 +455,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 		// hardcoding ClaudeAdapter.
 		const shellCmd = selectAdapter(reviewBackend).buildSpawnArgv('reviewer', {
 			uuid,
+			claudeDir: opts.claudeDir,
 			agentName,
 			taskPrompt,
 			permissionMode,
@@ -466,6 +490,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 						}
 					})();
 				}
+				removeWorkerTaskPrompt(opts, uuid);
 				return { status: 'error', detail: containerReason };
 			}
 		}
@@ -502,10 +527,26 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 					}
 				})();
 			}
+			removeWorkerTaskPrompt(opts, uuid);
 			return { status: 'error', detail: codexReason };
 		}
 
-		spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', liveWorkerPaneId, dispatchCmd]);
+		const dispatchResult = runVerifiedWorkerDispatch({
+			spawnFn: spawn,
+			phase: 'reviewer',
+			paneId: liveWorkerPaneId,
+			uuid,
+			dispatchCmd,
+			claudeDir: opts.claudeDir,
+			logEvent,
+			writeDispatchFailedMarkerFn: opts.writeDispatchFailedMarkerFn,
+			removeDispatchFailedMarkerFn: opts.removeDispatchFailedMarkerFn,
+			notifyFn: opts.notifyFn,
+			removeTaskPromptFileFn: opts.removeTaskPromptFileFn,
+		});
+		if (!dispatchResult.ok) {
+			return { status: 'error', detail: `dispatch-failed: ${dispatchResult.marker.reason}` };
+		}
 
 		// Poll until one of three sources signals completion:
 		//   1. review-report.json present and well-formed (primary, structured).
@@ -530,6 +571,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 			}
 
 			if (!isPaneAlive(liveWorkerPaneId)) {
+				removeWorkerTaskPrompt(opts, uuid);
 				return {
 					status: 'error',
 					detail: 'Reviewer pane died before a <review> verdict was emitted.',
@@ -543,13 +585,25 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 
 			if (now() - startMs >= timeoutMs) {
 				// Kill the stuck reviewer so the retry (CAM-37) starts clean.
-				spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', liveWorkerPaneId, 'echo review-timeout']);
+				runCheckedWorkerSentinel({
+					spawnFn: spawn,
+					phase: 'review-timeout',
+					label: 'reviewer',
+					paneId: liveWorkerPaneId,
+					uuid,
+					claudeDir: opts.claudeDir,
+					logEvent,
+					writeDispatchFailedMarkerFn: opts.writeDispatchFailedMarkerFn,
+					notifyFn: opts.notifyFn,
+					removeTaskPromptFileFn: opts.removeTaskPromptFileFn,
+				}, 'echo review-timeout');
 				return {
 					status: 'error',
 					detail: 'Reviewer timed out before emitting a <review> verdict.',
 				};
 			}
 		}
+		removeWorkerTaskPrompt(opts, uuid);
 
 		// Resolve verdict and findings from whichever source triggered loop exit.
 		// File-based verdict takes priority over tag-based verdict.

@@ -128,6 +128,7 @@ import {
 	type PlanMutexState,
 } from '../../../src/supervisor/plan-runner.ts';
 import type { SpawnFn } from '../../../src/supervisor/loop.ts';
+import { withVerifiedPanePid } from '../../helpers/verified-pane-pid-spawn.ts';
 import type { IssueEntry } from '../../../src/issues/types.ts';
 import { DEFAULTS } from '../../../src/config/models.ts';
 
@@ -178,7 +179,7 @@ function makeOpts(
 	};
 
 	return {
-		spawnFn,
+		spawnFn: withVerifiedPanePid(spawnFn),
 		isPaneAlive: () => false, // pane dies immediately; both poll loops exit fast
 		sleepFn: () => {},
 		genUuid: () => FAKE_UUID,

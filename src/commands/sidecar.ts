@@ -56,6 +56,12 @@ import { runPlanPhaseWithReplan, runPostAuditAction, deriveBranchName, type Plan
 import { maybeEmitPlanSplitAdvisory } from '../supervisor/plan-split-advisory.ts';
 import { writePlanEscalatedMarker, removePlanEscalatedMarker, PLAN_ESCALATED_FILENAME, type PlanEscalatedMarker } from '../supervisor/plan-escalation.ts';
 import { writePlanPreflightFailedMarker, removePlanPreflightFailedMarker, PLAN_PREFLIGHT_FAILED_FILENAME, type PlanPreflightFailedMarker, type PlanPreflightFailedWriterParams } from '../supervisor/plan-preflight-marker.ts';
+import {
+	DISPATCH_FAILED_FILENAME,
+	removeDispatchFailedMarker,
+	writeDispatchFailedMarker,
+	type DispatchFailedMarker,
+} from '../supervisor/dispatch-failed-marker.ts';
 import { readImplementBlockedMarker, removeImplementBlockedMarker, IMPLEMENT_BLOCKED_FILENAME } from '../supervisor/implement-blocked-marker.ts';
 import { writePostMergeStalledMarker, POST_MERGE_STALLED_FILENAME } from '../supervisor/post-merge-stalled-marker.ts';
 import { writeSidecarStalledMarker, removeSidecarStalledMarker, SIDECAR_STALLED_FILENAME } from '../supervisor/sidecar-stalled.ts';
@@ -885,6 +891,25 @@ function spawnSyncNodeShaped(
 }
 
 /**
+ * Build the production loop.ts SpawnFn adapter over Bun.spawnSync.
+ *
+ * Exported for the real-I/O wire-boundary regression test (CAM-433, audit
+ * F-02). stdout and stderr are decoded symmetrically whenever the selected
+ * stdio mode returns buffers; non-piped streams become empty strings.
+ */
+export function makeProductionLoopSpawnFn(cwd: string): LoopSpawnFn {
+	return (cmd, args, spawnOpts) => {
+		const stdio = spawnOpts?.stdio ?? 'pipe';
+		const result = Bun.spawnSync([cmd, ...args], { cwd, stdout: stdio, stderr: stdio });
+		return {
+			stdout: result.stdout instanceof Buffer ? new TextDecoder().decode(result.stdout) : '',
+			stderr: result.stderr instanceof Buffer ? new TextDecoder().decode(result.stderr) : '',
+			exitCode: result.exitCode,
+		};
+	};
+}
+
+/**
  * Parse a `gh pr view` spawnSync result into a discriminated GhPollResult
  * (US-001, CAM-170): ok:true with the parsed PrStatus on a zero exit with
  * well-shaped JSON, ok:false carrying the gh stderr (or a synthesized message
@@ -1359,14 +1384,7 @@ function makeProductionShipPhaseFn(
 	return (): void => {
 		const setPhase = makeSetPhaseFn(claudeDir, cwd);
 		try {
-			const loopSpawnFn: LoopSpawnFn = (cmd, args, spawnOpts) => {
-				const stdio = spawnOpts?.stdio ?? 'pipe';
-				const result = Bun.spawnSync([cmd, ...args], { cwd, stdout: stdio, stderr: stdio });
-				return {
-					stdout: result.stdout instanceof Buffer ? new TextDecoder().decode(result.stdout) : '',
-					exitCode: result.exitCode,
-				};
-			};
+			const loopSpawnFn = makeProductionLoopSpawnFn(cwd);
 
 			const prStepDeps = buildProductionShipPrStepDeps(cwd, claudeDir);
 
@@ -1515,16 +1533,15 @@ function makeProductionReviewPhaseFn(
 		const setPhase = makeSetPhaseFn(claudeDir, cwd);
 		try {
 			const prdPath = join(cwd, 'scripts/cam/prd.json');
-			const loopSpawnFn: LoopSpawnFn = (cmd, args, spawnOpts) => {
-				const stdio = spawnOpts?.stdio ?? 'pipe';
-				const result = Bun.spawnSync([cmd, ...args], { cwd, stdout: stdio, stderr: stdio });
-				return {
-					stdout: result.stdout instanceof Buffer ? new TextDecoder().decode(result.stdout) : '',
-					exitCode: result.exitCode,
-				};
-			};
+			const loopSpawnFn = makeProductionLoopSpawnFn(cwd);
 			const { isPaneAlive, ensureWorkerPane } = makePlanPaneHelpers(claudeDir, sessionName);
 			const { workerIsolation, preflightContainerFn, escalateFn } = buildReviewContainerOpts(cwd);
+			const notify = makeNotifyOrchestrator(
+				sessionName,
+				realSpawnFn,
+				makeCapturePaneFn(realSpawnFn),
+				adaptLogEventForPush(logEvent),
+			);
 
 			// US-001 (CAM-405): the `configPath` reviewer-backend/model resolution
 			// seam is intentionally left unset here, so makeReviewDispatch resolves
@@ -1556,18 +1573,15 @@ function makeProductionReviewPhaseFn(
 				workerIsolation,
 				preflightContainerFn,
 				escalateFn,
+				writeDispatchFailedMarkerFn: (marker) =>
+					writeDispatchFailedMarker(join(claudeDir, DISPATCH_FAILED_FILENAME), marker),
+				removeDispatchFailedMarkerFn: () =>
+					removeDispatchFailedMarker(join(claudeDir, DISPATCH_FAILED_FILENAME)),
+				notifyFn: notify,
 			});
 
 			const result = reviewDispatch(randomUUID());
-			narrateReviewPhaseResult(
-				result,
-				makeNotifyOrchestrator(
-					sessionName,
-					realSpawnFn,
-					makeCapturePaneFn(realSpawnFn),
-					adaptLogEventForPush(logEvent),
-				),
-			);
+			narrateReviewPhaseResult(result, notify);
 		} catch (err: unknown) {
 			logEvent({
 				ts: new Date().toISOString(),
@@ -2755,6 +2769,16 @@ function runProductionPlanPhaseWithReplan(deps: PlanWorkerRunDeps): PlanPhaseRes
 		plannerPaneId,
 		paneCountMutexFn: () => paneCountMutex(sessionName, realSpawnFn),
 		logEvent,
+		writeDispatchFailedMarkerFn: (marker: DispatchFailedMarker) =>
+			writeDispatchFailedMarker(join(claudeDir, DISPATCH_FAILED_FILENAME), marker),
+		removeDispatchFailedMarkerFn: () =>
+			removeDispatchFailedMarker(join(claudeDir, DISPATCH_FAILED_FILENAME)),
+		notifyFn: makeNotifyOrchestrator(
+			sessionName,
+			realSpawnFn,
+			makeCapturePaneFn(realSpawnFn),
+			adaptLogEventForPush(logEvent),
+		),
 		ensureWorkerPane,
 		claudeDir,
 		clearStalePlanArtifactsFn: makeClearStalePlanArtifacts(cwd),
@@ -2831,15 +2855,8 @@ function makeProductionPlanPhaseFn(
 		// Read plan_issue fresh on each invocation (US-001, CAM-154).
 		const planIssue = readPlanIssueFn();
 
-		// Build a loop.ts-compatible SpawnFn wrapping Bun.spawnSync with cwd.
-		const loopSpawnFn: LoopSpawnFn = (cmd, args, spawnOpts) => {
-			const stdio = spawnOpts?.stdio ?? 'pipe';
-			const result = Bun.spawnSync([cmd, ...args], { cwd, stdout: stdio, stderr: stdio });
-			return {
-				stdout: result.stdout instanceof Buffer ? new TextDecoder().decode(result.stdout) : '',
-				exitCode: result.exitCode,
-			};
-		};
+		// Build the production loop.ts SpawnFn (real Bun.spawnSync + both streams).
+		const loopSpawnFn = makeProductionLoopSpawnFn(cwd);
 
 		// Build the preflight spawnFn (PlanPreflightSpawnFn shape: no stdio opt).
 		const preflightSpawnFn: PlanPreflightSpawnFn = makePreflightSpawnFn(cwd);

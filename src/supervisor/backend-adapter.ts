@@ -27,11 +27,13 @@
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { DEFAULTS } from '../config/models.ts';
 import type { WorkerIsolation } from '../config/models.ts';
 import { stripFrontmatter } from '../templates/frontmatter.ts';
+import { taskPromptFileArgument, writeTaskPromptFile } from './task-prompt-file.ts';
 
 /** The four worker actors in scope for the seam (ADR-0046/0047). */
 export type WorkerActor = 'implementer' | 'planner' | 'auditor' | 'reviewer';
@@ -47,7 +49,14 @@ export interface SpawnArgvOptions {
 	/** UUID for this worker invocation; passed as --session-id. */
 	uuid: string;
 	/**
-	 * Free-text task prompt sent to the agent. Will be shell-escaped.
+	 * Project `.claude` directory used for the per-dispatch task-prompt file.
+	 * Production call sites always pass this explicitly. The isolated tmp
+	 * fallback preserves the public adapter seam for unit/third-party callers
+	 * without letting tests reap a live project's dispatch file.
+	 */
+	claudeDir?: string;
+	/**
+	 * Free-text task prompt sent to the agent via a per-dispatch prompt file.
 	 * Required for implementer/planner/auditor; optional for reviewer
 	 * (defaults to REVIEWER_TASK_PROMPT).
 	 */
@@ -228,6 +237,12 @@ function shellEscape(s: string): string {
 	return `'${s.replace(/'/g, "'\\''")}'`;
 }
 
+function resolveTaskPromptArgument(opts: SpawnArgvOptions, taskPrompt: string): string {
+	const claudeDir =
+		opts.claudeDir ?? join(tmpdir(), `cam-cli-task-prompts-${process.pid}`, '.claude');
+	return taskPromptFileArgument(writeTaskPromptFile(claudeDir, opts.uuid, taskPrompt));
+}
+
 /**
  * ClaudeAdapter: the claude-CLI implementation of BackendAdapter. Holds the
  * real per-actor argv assembly (US-003, CAM-339): buildImplementerWorkerArgv /
@@ -243,7 +258,7 @@ export class ClaudeAdapter implements BackendAdapter {
 				const agentName = opts.agentName ?? DEFAULT_IMPLEMENTER_AGENT;
 				const model = opts.model ?? DEFAULTS.implementer;
 				const isolation = opts.isolation ?? 'host';
-				const escapedPrompt = shellEscape(required.taskPrompt);
+				const promptArgument = resolveTaskPromptArgument(opts, required.taskPrompt);
 				return (
 					workerEnvPrefix(isolation) +
 					`${WORKER_ACTOR_ENV} ` +
@@ -252,7 +267,7 @@ export class ClaudeAdapter implements BackendAdapter {
 					` --session-id ${opts.uuid}` +
 					` --model ${shellEscape(model)}` +
 					` --agent ${agentName}` +
-					` ${escapedPrompt}`
+					` ${promptArgument}`
 				);
 			}
 			case 'planner': {
@@ -260,7 +275,7 @@ export class ClaudeAdapter implements BackendAdapter {
 				const agentName = opts.agentName ?? DEFAULT_PLANNER_AGENT;
 				const model = opts.model ?? DEFAULTS.planner;
 				const isolation = opts.isolation ?? 'host';
-				const escapedPrompt = shellEscape(required.taskPrompt);
+				const promptArgument = resolveTaskPromptArgument(opts, required.taskPrompt);
 				return (
 					workerEnvPrefix(isolation) +
 					`claude` +
@@ -268,7 +283,7 @@ export class ClaudeAdapter implements BackendAdapter {
 					` --session-id ${opts.uuid}` +
 					` --model ${shellEscape(model)}` +
 					` --agent ${agentName}` +
-					` ${escapedPrompt}`
+					` ${promptArgument}`
 				);
 			}
 			case 'auditor': {
@@ -276,7 +291,7 @@ export class ClaudeAdapter implements BackendAdapter {
 				const agentName = opts.agentName ?? DEFAULT_AUDITOR_AGENT;
 				const model = opts.model ?? DEFAULTS.auditor;
 				const isolation = opts.isolation ?? 'host';
-				const escapedPrompt = shellEscape(required.taskPrompt);
+				const promptArgument = resolveTaskPromptArgument(opts, required.taskPrompt);
 				return (
 					workerEnvPrefix(isolation) +
 					`claude` +
@@ -284,14 +299,14 @@ export class ClaudeAdapter implements BackendAdapter {
 					` --session-id ${opts.uuid}` +
 					` --model ${shellEscape(model)}` +
 					` --agent ${agentName}` +
-					` ${escapedPrompt}`
+					` ${promptArgument}`
 				);
 			}
 			case 'reviewer': {
 				const agentName = opts.agentName ?? DEFAULT_REVIEWER_AGENT;
 				const model = opts.model ?? DEFAULTS.reviewer;
 				const isolation = opts.isolation ?? 'host';
-				const escapedPrompt = shellEscape(opts.taskPrompt ?? REVIEWER_TASK_PROMPT);
+				const promptArgument = resolveTaskPromptArgument(opts, opts.taskPrompt ?? REVIEWER_TASK_PROMPT);
 				const permissionMode = opts.permissionMode ?? 'bypassPermissions';
 				return (
 					workerEnvPrefix(isolation) +
@@ -300,7 +315,7 @@ export class ClaudeAdapter implements BackendAdapter {
 					` --session-id ${opts.uuid}` +
 					` --model ${shellEscape(model)}` +
 					` --agent ${agentName}` +
-					` ${escapedPrompt}`
+					` ${promptArgument}`
 				);
 			}
 		}
@@ -549,21 +564,24 @@ export class CodexAdapter implements BackendAdapter {
 				const agentName = opts.agentName ?? DEFAULT_IMPLEMENTER_AGENT;
 				const model = opts.model ?? DEFAULTS.implementer;
 				const isolation = opts.isolation ?? 'host';
-				return this.renderActor(agentName, model, required.taskPrompt, required.permissionMode, isolation);
+				const promptArgument = resolveTaskPromptArgument(opts, required.taskPrompt);
+				return this.renderActor(agentName, model, promptArgument, required.permissionMode, isolation);
 			}
 			case 'planner': {
 				const required = requireForNonReviewerActor('planner', opts);
 				const agentName = opts.agentName ?? DEFAULT_PLANNER_AGENT;
 				const model = opts.model ?? DEFAULTS.planner;
 				const isolation = opts.isolation ?? 'host';
-				return this.renderActor(agentName, model, required.taskPrompt, required.permissionMode, isolation);
+				const promptArgument = resolveTaskPromptArgument(opts, required.taskPrompt);
+				return this.renderActor(agentName, model, promptArgument, required.permissionMode, isolation);
 			}
 			case 'auditor': {
 				const required = requireForNonReviewerActor('auditor', opts);
 				const agentName = opts.agentName ?? DEFAULT_AUDITOR_AGENT;
 				const model = opts.model ?? DEFAULTS.auditor;
 				const isolation = opts.isolation ?? 'host';
-				return this.renderActor(agentName, model, required.taskPrompt, required.permissionMode, isolation);
+				const promptArgument = resolveTaskPromptArgument(opts, required.taskPrompt);
+				return this.renderActor(agentName, model, promptArgument, required.permissionMode, isolation);
 			}
 			case 'reviewer': {
 				const agentName = opts.agentName ?? DEFAULT_REVIEWER_AGENT;
@@ -571,10 +589,11 @@ export class CodexAdapter implements BackendAdapter {
 				const isolation = opts.isolation ?? 'host';
 				const taskPrompt = opts.taskPrompt ?? REVIEWER_TASK_PROMPT;
 				const permissionMode = opts.permissionMode ?? 'bypassPermissions';
+				const promptArgument = resolveTaskPromptArgument(opts, taskPrompt);
 				// US-001 (CAM-354): reviewer-only diff injection. Never computed for
 				// implementer/planner/auditor (AC6).
 				const diffBlock = renderReviewerDiffBlock(opts);
-				return this.renderActor(agentName, model, taskPrompt, permissionMode, isolation, diffBlock);
+				return this.renderActor(agentName, model, promptArgument, permissionMode, isolation, diffBlock);
 			}
 		}
 	}
@@ -583,20 +602,19 @@ export class CodexAdapter implements BackendAdapter {
 	private renderActor(
 		agentName: string,
 		model: string,
-		taskPrompt: string,
+		promptArgument: string,
 		permissionMode: string,
 		isolation: WorkerIsolation,
 		appendedInstructionsBlock?: string,
 	): string {
 		const instructionsFile = writeCodexInstructionsFile(agentName, appendedInstructionsBlock);
-		const escapedPrompt = shellEscape(taskPrompt);
 		return (
 			codexEnvPrefix(isolation) +
 			`codex exec` +
 			` ${codexSandboxArgs(permissionMode)}` +
 			` -m ${shellEscape(model)}` +
 			` -c model_instructions_file=${instructionsFile}` +
-			` ${escapedPrompt}`
+			` ${promptArgument}`
 		);
 	}
 }

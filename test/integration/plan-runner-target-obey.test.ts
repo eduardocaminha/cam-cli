@@ -48,6 +48,7 @@ import {
 	makeReadPlanVerdict,
 } from '../../src/supervisor/plan-verdict-report.ts';
 import { waitForCondition } from '../helpers/wait-for-condition.ts';
+import { readTaskPromptFromCommand } from '../helpers/task-prompt.ts';
 
 const GENERIC_PLAN_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-plan-runner-target-obey-config-'));
 const GENERIC_PLAN_CONFIG_PATH = join(GENERIC_PLAN_CONFIG_DIR, 'project.toml');
@@ -179,7 +180,7 @@ test.skipIf(!tmuxAvailable)(
 		//   Write a minimal APPROVE verdict report so runPlanPhase can complete
 		//   via the audit-approved path (not auditor-timeout).
 		// ------------------------------------------------------------------
-		let plannerShellStr = '';
+		let plannerPrompt = '';
 		let plannerRespawnCount = 0;
 		let auditorRespawnCount = 0;
 
@@ -193,11 +194,11 @@ test.skipIf(!tmuxAvailable)(
 					if (plannerRespawnCount === 0) {
 						// First respawn = planner spawn.
 						plannerRespawnCount++;
-						plannerShellStr = shellStr;
+						plannerPrompt = readTaskPromptFromCommand(shellStr);
 
 						// Extract issue id from the prompt.
 						// buildPlannerTaskPrompt produces: "Plan issue CAM-NNN specifically ..."
-						const idMatch = /Plan issue (CAM-\d+)/.exec(shellStr);
+						const idMatch = /Plan issue (CAM-\d+)/.exec(plannerPrompt);
 						const issueId = idMatch?.[1];
 						const numericStr = issueId?.split('-').at(-1);
 						const numericId = numericStr !== undefined ? Number(numericStr) : null;
@@ -219,7 +220,7 @@ test.skipIf(!tmuxAvailable)(
 						const swapped = [...args];
 						const lIdx = swapped.indexOf('-L');
 						if (lIdx !== -1 && swapped[lIdx + 1] === 'cam') swapped[lIdx + 1] = TEST_SOCK;
-						swapped[swapped.length - 1] = 'exit 0';
+						swapped[swapped.length - 1] = 'cat';
 						const r = spawnSync(cmd, swapped, {
 							stdio: spawnOpts?.stdio ?? 'pipe',
 							encoding: 'utf8',
@@ -242,7 +243,7 @@ test.skipIf(!tmuxAvailable)(
 					const swapped = [...args];
 					const lIdx = swapped.indexOf('-L');
 					if (lIdx !== -1 && swapped[lIdx + 1] === 'cam') swapped[lIdx + 1] = TEST_SOCK;
-					swapped[swapped.length - 1] = 'exit 0';
+					swapped[swapped.length - 1] = 'cat';
 					const r = spawnSync(cmd, swapped, {
 						stdio: spawnOpts?.stdio ?? 'pipe',
 						encoding: 'utf8',
@@ -331,10 +332,10 @@ test.skipIf(!tmuxAvailable)(
 		expect(prdContent.issueNumber).toBe(157);
 
 		// The prompt sent to the planner must contain 'CAM-157'.
-		expect(plannerShellStr).toContain('CAM-157');
+		expect(plannerPrompt).toContain('CAM-157');
 
 		// The prompt must NOT contain the top-of-queue issue id.
-		expect(plannerShellStr).not.toContain('CAM-99');
+		expect(plannerPrompt).not.toContain('CAM-99');
 
 		// planResult must be a recognized kind (not an exception).
 		// The result is audit-approved when the auditor wrote the verdict.
@@ -367,7 +368,7 @@ test.skipIf(!tmuxAvailable)(
 		const workerPaneId = openPaneInSession(SESSION, ['cat'], swapSocketSpawn, orchPaneId);
 		await waitForCondition(() => isPaneAlive(workerPaneId));
 
-		let plannerShellStr = '';
+		let plannerPrompt = '';
 		let plannerRespawnCount = 0;
 
 		const loopSpawnFn: LoopSpawnFn = (cmd, args, spawnOpts) => {
@@ -379,9 +380,9 @@ test.skipIf(!tmuxAvailable)(
 
 					if (plannerRespawnCount === 0) {
 						plannerRespawnCount++;
-						plannerShellStr = shellStr;
+						plannerPrompt = readTaskPromptFromCommand(shellStr);
 
-						const idMatch = /Plan issue (CAM-\d+)/.exec(shellStr);
+						const idMatch = /Plan issue (CAM-\d+)/.exec(plannerPrompt);
 						const issueId = idMatch?.[1];
 						const numericStr = issueId?.split('-').at(-1);
 						const numericId = numericStr !== undefined ? Number(numericStr) : null;
@@ -405,7 +406,7 @@ test.skipIf(!tmuxAvailable)(
 						const swapped = [...args];
 						const lIdx = swapped.indexOf('-L');
 						if (lIdx !== -1 && swapped[lIdx + 1] === 'cam') swapped[lIdx + 1] = TEST_SOCK;
-						swapped[swapped.length - 1] = 'exit 0';
+						swapped[swapped.length - 1] = 'cat';
 						const r = spawnSync(cmd, swapped, { stdio: 'pipe', encoding: 'utf8' });
 						return { stdout: '', exitCode: r.status ?? null };
 					}
@@ -414,7 +415,7 @@ test.skipIf(!tmuxAvailable)(
 					const swapped = [...args];
 					const lIdx = swapped.indexOf('-L');
 					if (lIdx !== -1 && swapped[lIdx + 1] === 'cam') swapped[lIdx + 1] = TEST_SOCK;
-					swapped[swapped.length - 1] = 'exit 0';
+					swapped[swapped.length - 1] = 'cat';
 					const r = spawnSync(cmd, swapped, { stdio: 'pipe', encoding: 'utf8' });
 					return { stdout: '', exitCode: r.status ?? null };
 				}
@@ -469,8 +470,8 @@ test.skipIf(!tmuxAvailable)(
 		expect(prdContent.issueNumber).toBe(99);
 
 		// Prompt must contain CAM-99.
-		expect(plannerShellStr).toContain('CAM-99');
+		expect(plannerPrompt).toContain('CAM-99');
 		// Prompt must NOT contain CAM-157.
-		expect(plannerShellStr).not.toContain('CAM-157');
+		expect(plannerPrompt).not.toContain('CAM-157');
 	},
 );

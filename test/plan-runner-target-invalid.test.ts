@@ -34,9 +34,11 @@ import {
 	type RunPlanPhaseWithReplanOptions,
 } from '../src/supervisor/plan-runner.ts';
 import type { SpawnFn } from '../src/supervisor/loop.ts';
+import { readTaskPromptFromCommand } from './helpers/task-prompt.ts';
 import type { IssueEntry } from '../src/issues/types.ts';
 import { selectPlanTargetFromFile } from '../src/issues/select.ts';
 import type { BacklogSpawnFn } from '../src/issues/backlog.ts';
+import { withVerifiedPanePid } from './helpers/verified-pane-pid-spawn.ts';
 
 // ---------------------------------------------------------------------------
 // Generic backend fixture (US-008, CAM-420): isolates this suite's
@@ -123,7 +125,6 @@ function makeBaseOpts(overrides: Partial<RunPlanPhaseOptions> = {}): {
 	};
 
 	const opts: RunPlanPhaseOptions = {
-		spawnFn,
 		isPaneAlive: () => false,
 		sleepFn: () => {},
 		genUuid: () => 'test-uuid-0000-0000-0000-invalidtarget',
@@ -141,6 +142,7 @@ function makeBaseOpts(overrides: Partial<RunPlanPhaseOptions> = {}): {
 		plannerTimeoutMs: 999_999,
 		auditorTimeoutMs: 999_999,
 		...overrides,
+		spawnFn: withVerifiedPanePid(overrides.spawnFn ?? spawnFn),
 		configPath: 'configPath' in overrides ? overrides.configPath : GENERIC_PLAN_CONFIG_PATH,
 	};
 
@@ -216,16 +218,16 @@ describe('runPlanPhase - explicit-target-wins regression (AC3)', () => {
 		const spawn = makeBacklogSpawnFn(entries);
 		const targetId = 'CAM-777';
 
-		const capturedShellStrings: string[] = [];
+		const capturedPrompts: string[] = [];
 		const spawnFn: SpawnFn = (cmd, args) => {
 			if (cmd === 'tmux' && args.includes('respawn-pane')) {
-				capturedShellStrings.push(args[args.length - 1] ?? '');
+				capturedPrompts.push(readTaskPromptFromCommand(args[args.length - 1] ?? ''));
 			}
 			return { stdout: '', exitCode: 0 };
 		};
 
 		const result = runPlanPhase({
-			spawnFn,
+			spawnFn: withVerifiedPanePid(spawnFn),
 			isPaneAlive: () => false,
 			sleepFn: () => {},
 			genUuid: () => 'test-uuid-0000-0000-0000-targetwins00',
@@ -252,9 +254,9 @@ describe('runPlanPhase - explicit-target-wins regression (AC3)', () => {
 		expect(result.kind).not.toBe('plan-target-invalid');
 		expect(result.kind).not.toBe('no-plannable-issue');
 
-		const plannerShell = capturedShellStrings[0] ?? '';
-		expect(plannerShell).toContain('Plan issue CAM-777 specifically');
-		expect(plannerShell).not.toContain('Plan issue CAM-1 specifically');
+		const plannerPrompt = capturedPrompts[0] ?? '';
+		expect(plannerPrompt).toContain('Plan issue CAM-777 specifically');
+		expect(plannerPrompt).not.toContain('Plan issue CAM-1 specifically');
 	});
 });
 

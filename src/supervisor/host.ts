@@ -70,6 +70,11 @@ import {
 	advanceBlockedMarker,
 	IMPLEMENT_BLOCKED_FILENAME,
 } from './implement-blocked-marker.ts';
+import {
+	DISPATCH_FAILED_FILENAME,
+	removeDispatchFailedMarker,
+	writeDispatchFailedMarker,
+} from './dispatch-failed-marker.ts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -570,6 +575,7 @@ export function buildSupervisorOptions(
 		} as Parameters<typeof spawnSync>[2]);
 		return {
 			stdout: typeof result.stdout === 'string' ? result.stdout : '',
+			stderr: typeof result.stderr === 'string' ? result.stderr : '',
 			exitCode: result.status ?? null,
 		};
 	};
@@ -628,6 +634,20 @@ export function buildSupervisorOptions(
 
 	// US-013 structured event sink.
 	const logEvent = makeFileEventLogger(join(claudeDir, 'cam-worker-events.jsonl'));
+	const dispatchFailedMarkerPath = join(claudeDir, DISPATCH_FAILED_FILENAME);
+
+	// Shared production narration sink for implementer and both reviewer paths.
+	const tmuxSpawnFn: TmuxSpawnFn = (cmd, args, spawnOpts) =>
+		spawnSync(cmd, args, {
+			stdio: spawnOpts?.stdio ?? 'pipe',
+			encoding: 'utf8',
+		} as Parameters<typeof spawnSync>[2]);
+	const notifyOrchestrator = makeNotifyOrchestrator(
+		sessionName,
+		tmuxSpawnFn,
+		capturePane,
+		adaptLogEventForPush(logEvent),
+	);
 
 	// Concurrency lock factory.
 	const lockPath = join(claudeDir, SUPERVISOR_LOCK_FILE);
@@ -807,21 +827,8 @@ export function buildSupervisorOptions(
 
 	// Review dispatch.
 	const reviewDispatch: RunSupervisorOptions['reviewDispatch'] = makeReviewDispatch({
-		spawn: (cmd, args) => {
-			const proc = spawnSync(cmd, args, { stdio: 'pipe' });
-			return {
-				stdout: proc.stdout?.toString() ?? '',
-				exitCode: proc.status ?? null,
-			};
-		},
-		capturePane: (paneId) => {
-			const proc = spawnSync(
-				'tmux',
-				['-L', 'cam', 'capture-pane', '-p', '-S', '-', '-t', paneId],
-				{ stdio: 'pipe' },
-			);
-			return proc.stdout?.toString() ?? '';
-		},
+		spawn: supervisorSpawn,
+		capturePane,
 		isPaneAlive,
 		sleepFn: (ms) => {
 			Bun.sleepSync(ms);
@@ -840,6 +847,7 @@ export function buildSupervisorOptions(
 			writeFileSync(prdPath, JSON.stringify(prd, null, 2) + '\n', 'utf8');
 		},
 		workerPaneId,
+		claudeDir,
 		// CAM-57: thread ensureWorkerPane into the review dispatch so the review
 		// closure also self-heals a dead pane before each respawn.
 		ensureWorkerPane: ensureWorkerPaneFn,
@@ -852,6 +860,11 @@ export function buildSupervisorOptions(
 		// US-005 / CAM-152: reviewer container isolation (mirrors implementer wiring).
 		workerIsolation,
 		preflightContainerFn,
+		writeDispatchFailedMarkerFn: (marker) =>
+			writeDispatchFailedMarker(dispatchFailedMarkerPath, marker),
+		removeDispatchFailedMarkerFn: () =>
+			removeDispatchFailedMarker(dispatchFailedMarkerPath),
+		notifyFn: notifyOrchestrator,
 	});
 
 	const writeSessionMarker: RunSupervisorOptions['writeSessionMarker'] = (storyId, uuid) => {
@@ -1025,33 +1038,6 @@ export function buildSupervisorOptions(
 	const readWorkerReport = makeReadWorkerReport(cwd);
 	const clearWorkerReport = makeClearWorkerReport(cwd);
 
-	// US-002: build the notifyOrchestrator closure that resolves the orch pane
-	// and pushes the verdict line via sendKeysVerified. Uses a spawnSync adapter
-	// that matches the TmuxSpawnFn signature (returns SpawnSyncReturns, not the
-	// loop.ts SpawnFn shape). Best-effort: silent no-op when orch pane is gone.
-	const tmuxSpawnFn: TmuxSpawnFn = (cmd, args, spawnOpts) =>
-		spawnSync(cmd, args, {
-			stdio: spawnOpts?.stdio ?? 'pipe',
-			encoding: 'utf8',
-		} as Parameters<typeof spawnSync>[2]);
-
-	// US-003 (CAM-200): thread the capture-pane reader + logEvent deps
-	// sendKeysVerified needs for its idle-gate + bounded-retry push. Reuses the
-	// SAME real capturePane closure (with -S - full scrollback) already wired
-	// above -- safe as of the review round 2 fix (US-R2-001, CAM-359),
-	// because sendKeysVerified now feeds this scrollback reader ONLY to its
-	// PRE-send idle-gate; the content backstop's row-index lookup samples a
-	// SEPARATE, always-visible-screen reader it builds internally
-	// (`visibleCaptureFn`, defaulted from `tmuxSpawnFn`), never this one.
-	// Also adapts the full logEvent WorkerEventLogger down to the bare
-	// (kind, detail) seam.
-	const notifyOrchestrator = makeNotifyOrchestrator(
-		sessionName,
-		tmuxSpawnFn,
-		capturePane,
-		adaptLogEventForPush(logEvent),
-	);
-
 	// onProgress: rewrite state file on each iteration and terminal exit.
 	// Built here so the sidecar can inject it when calling runSupervisor.
 	const startedAt = new Date().toISOString();
@@ -1081,6 +1067,7 @@ export function buildSupervisorOptions(
 		workerPaneId,
 		prdPath,
 		handoffPath,
+		claudeDir,
 		// US-002 (CAM-187): commit-existence gate, threaded into readWorkerOutcome.
 		commitExistsForStory,
 		// US-004: empty-push gate, threaded into readWorkerOutcome.
@@ -1097,6 +1084,10 @@ export function buildSupervisorOptions(
 		onProgress,
 		readWorkerReport,
 		clearWorkerReport,
+		writeDispatchFailedMarkerFn: (marker) =>
+			writeDispatchFailedMarker(dispatchFailedMarkerPath, marker),
+		removeDispatchFailedMarkerFn: () =>
+			removeDispatchFailedMarker(dispatchFailedMarkerPath),
 		// US-002: push review verdict line to the orchestrator pane. Best-effort.
 		notifyOrchestrator,
 		// CAM-57: self-heal dead worker pane before each dispatch.

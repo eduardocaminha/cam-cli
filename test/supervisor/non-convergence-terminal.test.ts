@@ -44,6 +44,7 @@ import type {
 } from '../../src/supervisor/loop.ts';
 import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
 import { DEFAULT_MAX_ROUNDS } from '../../src/supervisor/decide.ts';
+import { withVerifiedPanePid } from '../helpers/verified-pane-pid-spawn.ts';
 
 /**
  * Shared implementer-backend/model resolution fixture for the generic
@@ -101,7 +102,7 @@ function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervi
 	const writeSessionMarker: WriteSessionMarker = (_storyId, _uuid) => {};
 	const isPaneAlive: IsPaneAlive = (_paneId) => true;
 
-	return {
+	const merged: RunSupervisorOptions = {
 		spawn,
 		capturePane,
 		readPrd,
@@ -124,6 +125,8 @@ function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervi
 		// to the shared generic fixture (isolated from the live project.toml).
 		configPath: 'configPath' in overrides ? overrides.configPath : GENERIC_SUPERVISOR_CONFIG_PATH,
 	};
+	merged.spawn = withVerifiedPanePid(overrides.spawn ?? spawn);
+	return merged;
 }
 
 beforeEach(() => {

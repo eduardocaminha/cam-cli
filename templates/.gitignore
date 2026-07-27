@@ -15,11 +15,14 @@ scripts/cam/plan-verdict-report.json
 scripts/cam/scope-proposal.json
 # Durable plan-escalation marker written on plan non-convergence (US-002, CAM-204)
 .claude/.cam-plan-escalated.json
+# Durable worker-dispatch failure evidence (US-002, CAM-433)
+.claude/.cam-dispatch-failed.json
 # Durable sidecar-stalled marker written on firewall-init failure (US-001, CAM-207)
 .claude/.cam-sidecar-stalled.json
 
 # CAM-68: escaped harness runtime markers (orchestrator + setup + handoff + sidecar)
 .claude/.cam-orchestrator-prompt.txt
+.claude/.cam-task-prompt-*.txt
 .claude/.cam-setup-menu.sh
 .claude/.cam-setup-prompt.txt
 .claude/.cam-orch-ready
@@ -35,6 +38,10 @@ scripts/cam/scope-proposal.json
 .claude/.cam-pause
 # Runtime per-story worker out-log (CAM-22/CAM-32, mirrored into templates/ by CAM-160)
 .claude/.cam-worker-out-*.log
+# CAM-433 (US-R1-001): implementer/reviewer pipe-pane out-log, written without a
+# leading dot by runVerifiedWorkerDispatch (src/supervisor/worker-dispatch.ts);
+# distinct from the legacy dotted .cam-worker-out-*.log pattern above.
+.claude/cam-worker-out-*.log
 # CAM-158: pipe-pane logs written by runPlanPhase (planner/auditor sessions), mirrored into templates/ by CAM-160
 .claude/cam-plan-out-*.log
 # Recycle watcher log written by spawnWatcherDefault in run.ts (US-004)

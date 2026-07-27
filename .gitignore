@@ -43,6 +43,7 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .claude/.cam-orch-session
 # CAM-68: escaped harness runtime markers (orchestrator + setup + handoff + sidecar)
 .claude/.cam-orchestrator-prompt.txt
+.claude/.cam-task-prompt-*.txt
 .claude/.cam-setup-menu.sh
 .claude/.cam-setup-prompt.txt
 .claude/.cam-orch-ready
@@ -59,6 +60,10 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # Runtime per-story supervisor artifacts: session markers + durable out-logs (CAM-22/CAM-32)
 .claude/.cam-worker-*.session
 .claude/.cam-worker-out-*.log
+# CAM-433 (US-R1-001): implementer/reviewer pipe-pane out-log, written without a
+# leading dot by runVerifiedWorkerDispatch (src/supervisor/worker-dispatch.ts);
+# distinct from the legacy dotted .cam-worker-out-*.log pattern above.
+.claude/cam-worker-out-*.log
 # CAM-158: pipe-pane logs written by runPlanPhase (planner/auditor sessions)
 .claude/cam-plan-out-*.log
 # Runtime supervisor markers written by `cam plan` / `cam next` (CAM-22)
@@ -93,6 +98,8 @@ scripts/cam/scope-proposal.json
 .claude/.cam-ship-stalled.json
 # Durable plan-preflight-failed marker written on preflight halt (US-002, CAM-215)
 .claude/.cam-plan-preflight-failed.json
+# Durable worker-dispatch failure evidence (US-002, CAM-433)
+.claude/.cam-dispatch-failed.json
 # Durable post-merge-stalled marker written on incomplete post-merge (US-001, CAM-174)
 .claude/.cam-post-merge-stalled.json
 # Durable sidecar-stalled marker written on firewall-init failure (US-001, CAM-207)

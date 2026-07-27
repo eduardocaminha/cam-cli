@@ -27,6 +27,7 @@ import type {
 } from '../../src/supervisor/loop.ts';
 import { makeInMemoryEventLogger } from '../../src/supervisor/events.ts';
 import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
+import { withVerifiedPanePid } from '../helpers/verified-pane-pid-spawn.ts';
 
 describe('emitSpawnResolution - event shape', () => {
 	test('emits a {phase, model, backend} event for the implementer phase', () => {
@@ -158,7 +159,7 @@ function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervi
 	const writeSessionMarker: WriteSessionMarker = (_storyId, _uuid) => {};
 	const isPaneAlive: IsPaneAlive = () => true;
 
-	return {
+	const merged: RunSupervisorOptions = {
 		spawn,
 		capturePane,
 		readPrd,
@@ -181,6 +182,8 @@ function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervi
 		// from the live project.toml (mirrors loop.test.ts's US-003 idiom).
 		configPath: 'configPath' in overrides ? overrides.configPath : GENERIC_SUPERVISOR_CONFIG_PATH,
 	};
+	merged.spawn = withVerifiedPanePid(overrides.spawn ?? spawn);
+	return merged;
 }
 
 describe('runSupervisor - spawn-resolution event persistence (production wiring)', () => {

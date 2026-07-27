@@ -27,6 +27,7 @@ import {
 	type SupervisorResult,
 } from '../../src/supervisor/loop.ts';
 import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
+import { withVerifiedPanePid } from '../helpers/verified-pane-pid-spawn.ts';
 
 // ---------------------------------------------------------------------------
 // Temp dir management
@@ -57,7 +58,7 @@ function makeTmpDir(): string {
 /** Minimal supervisor options whose supervisor never actually runs. */
 function makeDummySupervisorOpts(): RunSupervisorOptions {
 	return {
-		spawn: () => ({ stdout: '', exitCode: 0 }),
+		spawn: withVerifiedPanePid(() => ({ stdout: '', exitCode: 0 })),
 		capturePane: () => '',
 		readPrd: () => null,
 		writePrd: () => {},
@@ -104,7 +105,7 @@ describe('AC1 + AC2: makeReviewDispatch at terminal round (newRound == maxRounds
 		const writtenPrds: PrdSnapshot[] = [];
 
 		const dispatch = makeReviewDispatch({
-			spawn: () => ({ stdout: '', exitCode: 0 }),
+			spawn: withVerifiedPanePid(() => ({ stdout: '', exitCode: 0 })),
 			capturePane: () => '',
 			readPrd: () => prd,
 			writePrd: (p) => {
@@ -174,7 +175,7 @@ describe('AC1 + AC2: makeReviewDispatch at terminal round (newRound == maxRounds
 		const writtenPrds: PrdSnapshot[] = [];
 
 		const dispatch = makeReviewDispatch({
-			spawn: () => ({ stdout: '', exitCode: 0 }),
+			spawn: withVerifiedPanePid(() => ({ stdout: '', exitCode: 0 })),
 			capturePane: () => '',
 			readPrd: () => prd,
 			writePrd: (p) => {
@@ -354,7 +355,7 @@ describe('AC4: auto-chain does not fire at MAX_ROUNDS_DEBT terminal', () => {
 
 		const opts: RunSidecarLoopOptions = {
 			buildOpts: () => ({
-				spawn: () => ({ stdout: '', exitCode: 0 }),
+				spawn: withVerifiedPanePid(() => ({ stdout: '', exitCode: 0 })),
 				capturePane: () => '',
 				// CAM-191: the outer loop's post-clearActive auto-ship gate calls
 				// readPrd() one extra time (after runSupervisorFn returns) to check

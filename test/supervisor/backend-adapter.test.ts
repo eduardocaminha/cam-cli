@@ -16,18 +16,23 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { ClaudeAdapter, CodexAdapter, selectAdapter } from '../../src/supervisor/backend-adapter.ts';
+import { taskPromptFileArgument } from '../../src/supervisor/task-prompt-file.ts';
 
 const SAMPLE_UUID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
 const SAMPLE_PROMPT = "Implement it's US-002; use $HOME and `backtick`.";
 const SAMPLE_MODE = 'bypassPermissions';
+const ADAPTER_CLAUDE_DIR = join(tmpdir(), `cam-backend-adapter-${process.pid}`, '.claude');
+const SAMPLE_PROMPT_ARGUMENT = taskPromptFileArgument(
+	join(ADAPTER_CLAUDE_DIR, `.cam-task-prompt-${SAMPLE_UUID}.txt`),
+);
 
 describe('ClaudeAdapter.buildSpawnArgv golden characterization (US-001)', () => {
 	test('implementer: matches pinned golden (defaults)', () => {
 		const adapter = new ClaudeAdapter();
-		const opts = { uuid: SAMPLE_UUID, taskPrompt: SAMPLE_PROMPT, permissionMode: SAMPLE_MODE };
+		const opts = { uuid: SAMPLE_UUID, claudeDir: ADAPTER_CLAUDE_DIR, taskPrompt: SAMPLE_PROMPT, permissionMode: SAMPLE_MODE };
 		const actual = adapter.buildSpawnArgv('implementer', opts);
 		const expected =
-			"env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_SSE_PORT -u CLAUDE_CODE_EXECPATH -u CLAUDE_AGENT_SDK_VERSION -u CLAUDE_CODE_OAUTH_TOKEN CAM_WORKER=1 claude --permission-mode bypassPermissions --session-id a1b2c3d4-e5f6-7890-abcd-ef1234567890 --model 'sonnet' --agent subagent-implementer 'Implement it'\\''s US-002; use $HOME and `backtick`.'";
+			`env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_SSE_PORT -u CLAUDE_CODE_EXECPATH -u CLAUDE_AGENT_SDK_VERSION -u CLAUDE_CODE_OAUTH_TOKEN CAM_WORKER=1 claude --permission-mode bypassPermissions --session-id a1b2c3d4-e5f6-7890-abcd-ef1234567890 --model 'sonnet' --agent subagent-implementer ${SAMPLE_PROMPT_ARGUMENT}`;
 		expect(actual).toBe(expected);
 	});
 
@@ -35,6 +40,7 @@ describe('ClaudeAdapter.buildSpawnArgv golden characterization (US-001)', () => 
 		const adapter = new ClaudeAdapter();
 		const opts = {
 			uuid: SAMPLE_UUID,
+			claudeDir: ADAPTER_CLAUDE_DIR,
 			taskPrompt: SAMPLE_PROMPT,
 			permissionMode: SAMPLE_MODE,
 			agentName: 'custom-implementer',
@@ -43,16 +49,16 @@ describe('ClaudeAdapter.buildSpawnArgv golden characterization (US-001)', () => 
 		};
 		const actual = adapter.buildSpawnArgv('implementer', opts);
 		const expected =
-			"env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_SSE_PORT -u CLAUDE_CODE_EXECPATH -u CLAUDE_AGENT_SDK_VERSION CAM_WORKER=1 claude --permission-mode bypassPermissions --session-id a1b2c3d4-e5f6-7890-abcd-ef1234567890 --model 'claude-sonnet-4-6' --agent custom-implementer 'Implement it'\\''s US-002; use $HOME and `backtick`.'";
+			`env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_SSE_PORT -u CLAUDE_CODE_EXECPATH -u CLAUDE_AGENT_SDK_VERSION CAM_WORKER=1 claude --permission-mode bypassPermissions --session-id a1b2c3d4-e5f6-7890-abcd-ef1234567890 --model 'claude-sonnet-4-6' --agent custom-implementer ${SAMPLE_PROMPT_ARGUMENT}`;
 		expect(actual).toBe(expected);
 	});
 
 	test('planner: matches pinned golden (defaults)', () => {
 		const adapter = new ClaudeAdapter();
-		const opts = { uuid: SAMPLE_UUID, taskPrompt: SAMPLE_PROMPT, permissionMode: SAMPLE_MODE };
+		const opts = { uuid: SAMPLE_UUID, claudeDir: ADAPTER_CLAUDE_DIR, taskPrompt: SAMPLE_PROMPT, permissionMode: SAMPLE_MODE };
 		const actual = adapter.buildSpawnArgv('planner', opts);
 		const expected =
-			"env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_SSE_PORT -u CLAUDE_CODE_EXECPATH -u CLAUDE_AGENT_SDK_VERSION -u CLAUDE_CODE_OAUTH_TOKEN claude --permission-mode bypassPermissions --session-id a1b2c3d4-e5f6-7890-abcd-ef1234567890 --model 'opus' --agent subagent-planner 'Implement it'\\''s US-002; use $HOME and `backtick`.'";
+			`env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_SSE_PORT -u CLAUDE_CODE_EXECPATH -u CLAUDE_AGENT_SDK_VERSION -u CLAUDE_CODE_OAUTH_TOKEN claude --permission-mode bypassPermissions --session-id a1b2c3d4-e5f6-7890-abcd-ef1234567890 --model 'opus' --agent subagent-planner ${SAMPLE_PROMPT_ARGUMENT}`;
 		expect(actual).toBe(expected);
 	});
 
@@ -60,6 +66,7 @@ describe('ClaudeAdapter.buildSpawnArgv golden characterization (US-001)', () => 
 		const adapter = new ClaudeAdapter();
 		const opts = {
 			uuid: SAMPLE_UUID,
+			claudeDir: ADAPTER_CLAUDE_DIR,
 			taskPrompt: SAMPLE_PROMPT,
 			permissionMode: SAMPLE_MODE,
 			agentName: 'custom-planner',
@@ -68,16 +75,16 @@ describe('ClaudeAdapter.buildSpawnArgv golden characterization (US-001)', () => 
 		};
 		const actual = adapter.buildSpawnArgv('planner', opts);
 		const expected =
-			"env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_SSE_PORT -u CLAUDE_CODE_EXECPATH -u CLAUDE_AGENT_SDK_VERSION -u CLAUDE_CODE_OAUTH_TOKEN claude --permission-mode bypassPermissions --session-id a1b2c3d4-e5f6-7890-abcd-ef1234567890 --model 'claude-opus-4-8' --agent custom-planner 'Implement it'\\''s US-002; use $HOME and `backtick`.'";
+			`env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_SSE_PORT -u CLAUDE_CODE_EXECPATH -u CLAUDE_AGENT_SDK_VERSION -u CLAUDE_CODE_OAUTH_TOKEN claude --permission-mode bypassPermissions --session-id a1b2c3d4-e5f6-7890-abcd-ef1234567890 --model 'claude-opus-4-8' --agent custom-planner ${SAMPLE_PROMPT_ARGUMENT}`;
 		expect(actual).toBe(expected);
 	});
 
 	test('auditor: matches pinned golden (defaults)', () => {
 		const adapter = new ClaudeAdapter();
-		const opts = { uuid: SAMPLE_UUID, taskPrompt: SAMPLE_PROMPT, permissionMode: SAMPLE_MODE };
+		const opts = { uuid: SAMPLE_UUID, claudeDir: ADAPTER_CLAUDE_DIR, taskPrompt: SAMPLE_PROMPT, permissionMode: SAMPLE_MODE };
 		const actual = adapter.buildSpawnArgv('auditor', opts);
 		const expected =
-			"env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_SSE_PORT -u CLAUDE_CODE_EXECPATH -u CLAUDE_AGENT_SDK_VERSION -u CLAUDE_CODE_OAUTH_TOKEN claude --permission-mode bypassPermissions --session-id a1b2c3d4-e5f6-7890-abcd-ef1234567890 --model 'opus' --agent subagent-auditor 'Implement it'\\''s US-002; use $HOME and `backtick`.'";
+			`env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_SSE_PORT -u CLAUDE_CODE_EXECPATH -u CLAUDE_AGENT_SDK_VERSION -u CLAUDE_CODE_OAUTH_TOKEN claude --permission-mode bypassPermissions --session-id a1b2c3d4-e5f6-7890-abcd-ef1234567890 --model 'opus' --agent subagent-auditor ${SAMPLE_PROMPT_ARGUMENT}`;
 		expect(actual).toBe(expected);
 	});
 
@@ -85,6 +92,7 @@ describe('ClaudeAdapter.buildSpawnArgv golden characterization (US-001)', () => 
 		const adapter = new ClaudeAdapter();
 		const opts = {
 			uuid: SAMPLE_UUID,
+			claudeDir: ADAPTER_CLAUDE_DIR,
 			taskPrompt: SAMPLE_PROMPT,
 			permissionMode: SAMPLE_MODE,
 			agentName: 'custom-auditor',
@@ -93,16 +101,16 @@ describe('ClaudeAdapter.buildSpawnArgv golden characterization (US-001)', () => 
 		};
 		const actual = adapter.buildSpawnArgv('auditor', opts);
 		const expected =
-			"env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_SSE_PORT -u CLAUDE_CODE_EXECPATH -u CLAUDE_AGENT_SDK_VERSION claude --permission-mode bypassPermissions --session-id a1b2c3d4-e5f6-7890-abcd-ef1234567890 --model 'claude-sonnet-4-6' --agent custom-auditor 'Implement it'\\''s US-002; use $HOME and `backtick`.'";
+			`env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_SSE_PORT -u CLAUDE_CODE_EXECPATH -u CLAUDE_AGENT_SDK_VERSION claude --permission-mode bypassPermissions --session-id a1b2c3d4-e5f6-7890-abcd-ef1234567890 --model 'claude-sonnet-4-6' --agent custom-auditor ${SAMPLE_PROMPT_ARGUMENT}`;
 		expect(actual).toBe(expected);
 	});
 
 	test('reviewer: matches pinned golden (all-defaults path: no taskPrompt/permissionMode)', () => {
 		const adapter = new ClaudeAdapter();
-		const opts = { uuid: SAMPLE_UUID };
+		const opts = { uuid: SAMPLE_UUID, claudeDir: ADAPTER_CLAUDE_DIR };
 		const actual = adapter.buildSpawnArgv('reviewer', opts);
 		const expected =
-			"env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_SSE_PORT -u CLAUDE_CODE_EXECPATH -u CLAUDE_AGENT_SDK_VERSION -u CLAUDE_CODE_OAUTH_TOKEN claude --permission-mode bypassPermissions --session-id a1b2c3d4-e5f6-7890-abcd-ef1234567890 --model 'opus' --agent subagent-reviewer 'Review all changes on the current branch vs main per your AGENT.md. Run the project quality gates. End your output with the <review> verdict tag on the very last line.'";
+			`env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_SSE_PORT -u CLAUDE_CODE_EXECPATH -u CLAUDE_AGENT_SDK_VERSION -u CLAUDE_CODE_OAUTH_TOKEN claude --permission-mode bypassPermissions --session-id a1b2c3d4-e5f6-7890-abcd-ef1234567890 --model 'opus' --agent subagent-reviewer ${SAMPLE_PROMPT_ARGUMENT}`;
 		expect(actual).toBe(expected);
 	});
 
@@ -110,6 +118,7 @@ describe('ClaudeAdapter.buildSpawnArgv golden characterization (US-001)', () => 
 		const adapter = new ClaudeAdapter();
 		const opts = {
 			uuid: SAMPLE_UUID,
+			claudeDir: ADAPTER_CLAUDE_DIR,
 			taskPrompt: SAMPLE_PROMPT,
 			permissionMode: 'acceptEdits',
 			agentName: 'custom-reviewer',
@@ -118,7 +127,7 @@ describe('ClaudeAdapter.buildSpawnArgv golden characterization (US-001)', () => 
 		};
 		const actual = adapter.buildSpawnArgv('reviewer', opts);
 		const expected =
-			"env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_SSE_PORT -u CLAUDE_CODE_EXECPATH -u CLAUDE_AGENT_SDK_VERSION -u CLAUDE_CODE_OAUTH_TOKEN claude --permission-mode acceptEdits --session-id a1b2c3d4-e5f6-7890-abcd-ef1234567890 --model 'claude-opus-4-8' --agent custom-reviewer 'Implement it'\\''s US-002; use $HOME and `backtick`.'";
+			`env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_SESSION_ID -u CLAUDE_CODE_SSE_PORT -u CLAUDE_CODE_EXECPATH -u CLAUDE_AGENT_SDK_VERSION -u CLAUDE_CODE_OAUTH_TOKEN claude --permission-mode acceptEdits --session-id a1b2c3d4-e5f6-7890-abcd-ef1234567890 --model 'claude-opus-4-8' --agent custom-reviewer ${SAMPLE_PROMPT_ARGUMENT}`;
 		expect(actual).toBe(expected);
 	});
 
@@ -137,6 +146,25 @@ describe('ClaudeAdapter.buildSpawnArgv golden characterization (US-001)', () => 
 		const adapter = new ClaudeAdapter();
 		for (const actor of ['implementer', 'planner', 'auditor'] as const) {
 			expect(() => adapter.buildSpawnArgv(actor, { uuid: SAMPLE_UUID, taskPrompt: SAMPLE_PROMPT })).toThrow();
+		}
+	});
+
+	test('all actor commands are O(1) in prompt size and never contain a runtime-generated 40000-char prompt body', () => {
+		const largePrompt = `runtime-large-${'x'.repeat(40_000)}`;
+		for (const actor of ['implementer', 'planner', 'auditor', 'reviewer'] as const) {
+			const base = { uuid: SAMPLE_UUID, claudeDir: ADAPTER_CLAUDE_DIR };
+			const smallOpts = actor === 'reviewer'
+				? { ...base, taskPrompt: 'small' }
+				: { ...base, taskPrompt: 'small', permissionMode: SAMPLE_MODE };
+			const largeOpts = actor === 'reviewer'
+				? { ...base, taskPrompt: largePrompt }
+				: { ...base, taskPrompt: largePrompt, permissionMode: SAMPLE_MODE };
+
+			const smallCommand = new ClaudeAdapter().buildSpawnArgv(actor, smallOpts);
+			const largeCommand = new ClaudeAdapter().buildSpawnArgv(actor, largeOpts);
+
+			expect(largeCommand).not.toContain(largePrompt);
+			expect(largeCommand.length).toBe(smallCommand.length);
 		}
 	});
 });

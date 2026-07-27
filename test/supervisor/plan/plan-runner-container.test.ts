@@ -28,6 +28,7 @@ import type { SpawnFn } from '../../../src/supervisor/loop.ts';
 import type { IssueEntry } from '../../../src/issues/types.ts';
 import type { PreflightResult } from '../../../src/supervisor/preflight-container.ts';
 import { waitForCondition } from '../../helpers/wait-for-condition.ts';
+import { withVerifiedPanePid } from '../../helpers/verified-pane-pid-spawn.ts';
 
 // ---------------------------------------------------------------------------
 // Generic backend fixture (US-007, CAM-420): isolates this suite's
@@ -89,7 +90,7 @@ function makeOpts(
 	};
 
 	return {
-		spawnFn,
+		spawnFn: withVerifiedPanePid(spawnFn),
 		isPaneAlive: () => false, // pane dies immediately; both poll loops exit fast
 		sleepFn: () => {},
 		genUuid: () => FAKE_UUID,
@@ -159,7 +160,7 @@ describe('plan-runner container: AC1 - preflight called before each spawn', () =
 
 		const opts: RunPlanPhaseOptions = {
 			...makeOpts({ workerIsolation: 'container', preflightContainerFn }, spawnCalls),
-			spawnFn,
+			spawnFn: withVerifiedPanePid(spawnFn),
 		};
 		runPlanPhase(opts);
 

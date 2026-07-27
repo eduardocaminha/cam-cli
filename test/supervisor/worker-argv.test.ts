@@ -17,6 +17,7 @@ import {
 	WORKER_ENV_UNSET,
 	workerEnvPrefix,
 } from '../../src/supervisor/worker-argv.ts';
+import { readTaskPromptFromCommand } from '../helpers/task-prompt.ts';
 
 const SAMPLE_UUID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
 const SAMPLE_PROMPT = 'Implement US-003 per the PRD.';
@@ -119,31 +120,26 @@ describe('buildImplementerWorkerArgv', () => {
 		expect(prefix).toContain('-u CLAUDE_CODE_SESSION_ID');
 	});
 
-	test('task prompt with embedded single quotes is shell-escaped', () => {
+	test('task prompt with embedded single quotes is delivered out-of-band', () => {
 		const dangerousPrompt = "Implement it's critical; use $HOME and `backtick`";
 		const result = buildImplementerWorkerArgv({
 			uuid: SAMPLE_UUID,
 			taskPrompt: dangerousPrompt,
 			permissionMode: SAMPLE_MODE,
 		});
-		// The prompt content must be present but the single quote must be escaped
-		// as '\'' so the shell cannot break out of the quoted argument.
-		expect(result).toContain("'\\''");
-		// $ and backtick must not be interpolated: they remain literal inside
-		// single quotes, so the raw characters should still appear in the string.
-		expect(result).toContain('$HOME');
-		expect(result).toContain('`backtick`');
+		expect(result).not.toContain(dangerousPrompt);
+		expect(readTaskPromptFromCommand(result)).toBe(dangerousPrompt);
 	});
 
-	test('task prompt with dollar sign and backticks is safely enclosed in single quotes', () => {
+	test('task prompt with dollar sign and backticks is read byte-intact from its file', () => {
 		const dangerousPrompt = 'Cost is $100 and run `ls`';
 		const result = buildImplementerWorkerArgv({
 			uuid: SAMPLE_UUID,
 			taskPrompt: dangerousPrompt,
 			permissionMode: SAMPLE_MODE,
 		});
-		// The prompt must be wrapped in single quotes (so $ and ` are literal)
-		expect(result).toMatch(/'Cost is \$100 and run `ls`'/);
+		expect(result).not.toContain(dangerousPrompt);
+		expect(readTaskPromptFromCommand(result)).toBe(dangerousPrompt);
 	});
 
 	test('agentName can be overridden', () => {
@@ -171,7 +167,7 @@ describe('buildImplementerWorkerArgv', () => {
 		expect(result).not.toContain('tee');
 	});
 
-	test('retains --permission-mode, --session-id, --agent, and prompt', () => {
+	test('retains --permission-mode, --session-id, --agent, and prompt-file argument', () => {
 		const result = buildImplementerWorkerArgv({
 			uuid: SAMPLE_UUID,
 			taskPrompt: SAMPLE_PROMPT,
@@ -180,7 +176,8 @@ describe('buildImplementerWorkerArgv', () => {
 		expect(result).toContain(`--permission-mode ${SAMPLE_MODE}`);
 		expect(result).toContain(`--session-id ${SAMPLE_UUID}`);
 		expect(result).toContain(`--agent ${DEFAULT_IMPLEMENTER_AGENT}`);
-		expect(result).toContain(SAMPLE_PROMPT);
+		expect(result).not.toContain(SAMPLE_PROMPT);
+		expect(readTaskPromptFromCommand(result)).toBe(SAMPLE_PROMPT);
 	});
 
 	// -------------------------------------------------------------------------

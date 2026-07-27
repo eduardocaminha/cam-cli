@@ -60,6 +60,12 @@ import type { PreflightResult } from './preflight-container.ts';
 import type { ImplementBlockedMarker } from './implement-blocked-marker.ts';
 import { codexAuthPreflight } from './codex-auth.ts';
 import type { CodexAuthCheck } from './codex-auth.ts';
+import type { DispatchFailedMarker } from './dispatch-failed-marker.ts';
+import {
+	removeWorkerTaskPrompt,
+	runCheckedWorkerSentinel,
+	runVerifiedWorkerDispatch,
+} from './worker-dispatch.ts';
 
 /**
  * Params for the injectable implement-blocked marker writer (US-005, CAM-195,
@@ -82,13 +88,24 @@ export type ImplementBlockedWriterParams = Omit<
 
 /**
  * Spawns a command synchronously.
- * Returns { stdout: string; exitCode: number | null }.
+ *
+ * INVARIANCE PIN (audit F-02, CAM-433): `stderr` is an additive field so the
+ * existing loop.ts, review.ts, plan-runner.ts, and sidecar.ts consumers keep
+ * their compile surface unchanged. It remains optional only for legacy
+ * dependency-injected test fakes; the production factory always supplies the
+ * decoded string, and verified dispatch treats an absent fake value as empty.
  */
+export interface SpawnResult {
+	stdout: string;
+	stderr?: string;
+	exitCode: number | null;
+}
+
 export type SpawnFn = (
 	cmd: string,
 	args: string[],
 	opts?: { stdio?: 'pipe' | 'ignore' | 'inherit' },
-) => { stdout: string; exitCode: number | null };
+) => SpawnResult;
 
 /**
  * Check whether a tmux pane is still alive.
@@ -240,6 +257,14 @@ export interface RunSupervisorOptions {
 	prdPath: string;
 	/** Absolute path to handoff.json (for readWorkerOutcome). */
 	handoffPath: string;
+	/** Project `.claude` directory for per-dispatch task-prompt transport. */
+	claudeDir?: string;
+	/** Persist a verified dispatch or checked-sentinel failure terminal. */
+	writeDispatchFailedMarkerFn?: (marker: DispatchFailedMarker) => void;
+	/** Remove stale dispatch-failed evidence after verified convergence. */
+	removeDispatchFailedMarkerFn?: () => void;
+	/** Remove this implement dispatch's own task-prompt file at its terminal. */
+	removeTaskPromptFileFn?: (uuid: string) => void;
 	/**
 	 * Optional commit-existence gate (US-002, CAM-187), threaded straight into
 	 * every readWorkerOutcome call. When injected, a passes:true-without-a-
@@ -1178,6 +1203,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// hardcoding ClaudeAdapter.
 			const shellCmd = selectAdapter(implBackend).buildSpawnArgv('implementer', {
 				uuid,
+				claudeDir: opts.claudeDir,
 				taskPrompt: dispatchTaskPrompt,
 				permissionMode,
 				model: implModel,
@@ -1192,12 +1218,6 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			if (ensureWorkerPane !== undefined) {
 				workerPaneId = ensureWorkerPane();
 			}
-
-			// US-002: set the worker pane label for this phase before respawning.
-			// The pane-border-format #{@cam_label} at the session level picks this up,
-			// rendering the same green pill that the orchestrator and dashboard panes use.
-			// Best-effort: set-option -p is a no-op when the pane is not yet visible.
-			spawn('tmux', ['-L', 'cam', 'set-option', '-p', '-t', workerPaneId, '@cam_label', 'implementer']);
 
 			// US-004: erase any stale report from the previous worker run before
 			// dispatching the new one. This prevents a leftover report file from
@@ -1225,6 +1245,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					}
 					lastOutcome = { kind: 'blocked', storyId: undefined, detail: containerReason };
 					iterations++;
+					removeWorkerTaskPrompt(opts, uuid);
 					if (opts.escalateFn !== undefined) {
 						const escalateFn = opts.escalateFn;
 						void (async () => {
@@ -1265,6 +1286,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					const containerReason = `container-not-ready: ${preflightResult.reason} (advisory ${advisoryStoryId ?? 'unknown'})`;
 					lastOutcome = { kind: 'blocked', storyId: undefined, detail: containerReason };
 					iterations++;
+					removeWorkerTaskPrompt(opts, uuid);
 					if (opts.escalateFn !== undefined) {
 						const escalateFn = opts.escalateFn;
 						void (async () => {
@@ -1306,6 +1328,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				const codexReason = `codex-auth-failed: ${codexPreflight.message} (advisory ${advisoryStoryId ?? 'unknown'})`;
 				lastOutcome = { kind: 'blocked', storyId: undefined, detail: codexReason };
 				iterations++;
+				removeWorkerTaskPrompt(opts, uuid);
 				if (opts.escalateFn !== undefined) {
 					const escalateFn = opts.escalateFn;
 					void (async () => {
@@ -1322,9 +1345,31 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				return { status: 'blocked', iterations, lastOutcome };
 			}
 
-			// Respawn the worker pane with the implementer command.
-			// respawn-pane -k reuses the existing pane (no new split-window spawned).
-			spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', workerPaneId, dispatchCmd]);
+			// Mandatory checked dispatch: inspect set-option/respawn/pipe exits and
+			// prove respawn-pane changed pane_pid before treating the worker as live.
+			const dispatchResult = runVerifiedWorkerDispatch({
+				spawnFn: spawn,
+				phase: 'implementer',
+				paneId: workerPaneId,
+				uuid,
+				dispatchCmd,
+				claudeDir: opts.claudeDir,
+				storyId: advisoryStoryId,
+				logEvent,
+				writeDispatchFailedMarkerFn: opts.writeDispatchFailedMarkerFn,
+				removeDispatchFailedMarkerFn: opts.removeDispatchFailedMarkerFn,
+				notifyFn: opts.notifyOrchestrator,
+				removeTaskPromptFileFn: opts.removeTaskPromptFileFn,
+			});
+			if (!dispatchResult.ok) {
+				iterations++;
+				lastOutcome = {
+					kind: 'blocked',
+					storyId: advisoryStoryId,
+					detail: `dispatch-failed: ${dispatchResult.marker.reason}`,
+				};
+				return blockedResult(lastOutcome, advisoryStoryId);
+			}
 
 			// US-013: worker-start. storyId is advisory here (the worker
 			// self-selects); later events carry the actual completed story.
@@ -1424,6 +1469,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			}
 
 			iterations++;
+			removeWorkerTaskPrompt(opts, uuid);
 
 			// US-013: worker-end. pollOutcome records how it ended.
 			emit('worker-end', advisoryStoryId, uuid, { mode: 'sentinel', pollOutcome });
@@ -1432,7 +1478,19 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// (re-dispatching would only burn more tokens), bypassing the dead-worker
 			// backoff path. Emitted before the pane-died/timeout handling below.
 			if (pollOutcome === 'token-ceiling') {
-				spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', workerPaneId, 'echo token-ceiling']);
+				runCheckedWorkerSentinel({
+					spawnFn: spawn,
+					phase: 'implementer-token-ceiling',
+					label: 'implementer',
+					paneId: workerPaneId,
+					uuid,
+					claudeDir: opts.claudeDir,
+					storyId: advisoryStoryId,
+					logEvent,
+					writeDispatchFailedMarkerFn: opts.writeDispatchFailedMarkerFn,
+					notifyFn: opts.notifyOrchestrator,
+					removeTaskPromptFileFn: opts.removeTaskPromptFileFn,
+				}, 'echo token-ceiling');
 				emit('worker-token-ceiling', advisoryStoryId, uuid, {
 					spend: tokenSpendAtBreach,
 					ceiling: maxWorkerTokens,
@@ -1458,7 +1516,19 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			if (pollOutcome === 'pane-died' || pollOutcome === 'timeout') {
 				if (pollOutcome === 'timeout') {
 					// Kill the stuck worker so the next dispatch starts from a clean pane.
-					spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', workerPaneId, 'echo timeout']);
+					runCheckedWorkerSentinel({
+						spawnFn: spawn,
+						phase: 'implementer-timeout',
+						label: 'implementer',
+						paneId: workerPaneId,
+						uuid,
+						claudeDir: opts.claudeDir,
+						storyId: advisoryStoryId,
+						logEvent,
+						writeDispatchFailedMarkerFn: opts.writeDispatchFailedMarkerFn,
+						notifyFn: opts.notifyOrchestrator,
+						removeTaskPromptFileFn: opts.removeTaskPromptFileFn,
+					}, 'echo timeout');
 				}
 				deadWorkerStreak += 1;
 				const isContainerExecFailure = workerIsolation === 'container' && pollOutcome === 'pane-died';
@@ -1765,16 +1835,6 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 
 		// --- Review branch ---
 		if (action.kind === 'review') {
-			// CAM-57: ensure a live worker pane exists before the review dispatch,
-			// same self-heal as the implement branch above.
-			if (ensureWorkerPane !== undefined) {
-				workerPaneId = ensureWorkerPane();
-			}
-
-			// US-002: label the worker pane for the review phase.
-			// Same pattern as the implement branch: set-option -p is best-effort.
-			spawn('tmux', ['-L', 'cam', 'set-option', '-p', '-t', workerPaneId, '@cam_label', 'reviewer']);
-
 			// CAM-37: a reviewer worker can silently no-op (instant-exit /
 			// rate-limited: empty output, no `<review>` verdict) or its pane can be
 			// captured before it flushes, making reviewDispatch return 'error'.

@@ -19,6 +19,7 @@ import {
 	DEFAULT_AUDITOR_AGENT,
 } from '../../../src/supervisor/plan-argv.ts';
 import { DEFAULTS } from '../../../src/config/models.ts';
+import { readTaskPromptFromCommand } from '../../helpers/task-prompt.ts';
 
 const SAMPLE_UUID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
 const SAMPLE_PROMPT = 'Plan the next sprint.';
@@ -131,31 +132,36 @@ describe('buildPlannerWorkerArgv', () => {
 		expect(result.indexOf('--model')).toBeLessThan(result.indexOf('--agent'));
 	});
 
-	test('prompt with embedded single quotes is shell-escaped', () => {
+	test('prompt with embedded single quotes is delivered out-of-band', () => {
+		const prompt = "it's a plan";
 		const result = buildPlannerWorkerArgv({
 			uuid: SAMPLE_UUID,
-			taskPrompt: "it's a plan",
+			taskPrompt: prompt,
 			permissionMode: SAMPLE_MODE,
 		});
-		expect(result).toContain("'\\''");
+		expect(result).not.toContain(prompt);
+		expect(readTaskPromptFromCommand(result)).toBe(prompt);
 	});
 
-	test('prompt with dollar sign and backticks is safely enclosed in single quotes', () => {
+	test('prompt with dollar sign and backticks is read byte-intact from its file', () => {
+		const prompt = 'cost $100 and run `ls`';
 		const result = buildPlannerWorkerArgv({
 			uuid: SAMPLE_UUID,
-			taskPrompt: 'cost $100 and run `ls`',
+			taskPrompt: prompt,
 			permissionMode: SAMPLE_MODE,
 		});
-		expect(result).toMatch(/'cost \$100 and run `ls`'/);
+		expect(result).not.toContain(prompt);
+		expect(readTaskPromptFromCommand(result)).toBe(prompt);
 	});
 
-	test('contains the task prompt in the output', () => {
+	test('reads the task prompt from the prompt file', () => {
 		const result = buildPlannerWorkerArgv({
 			uuid: SAMPLE_UUID,
 			taskPrompt: SAMPLE_PROMPT,
 			permissionMode: SAMPLE_MODE,
 		});
-		expect(result).toContain(SAMPLE_PROMPT);
+		expect(result).not.toContain(SAMPLE_PROMPT);
+		expect(readTaskPromptFromCommand(result)).toBe(SAMPLE_PROMPT);
 	});
 
 	// -------------------------------------------------------------------------
@@ -293,31 +299,36 @@ describe('buildAuditorWorkerArgv', () => {
 		expect(result.indexOf('--model')).toBeLessThan(result.indexOf('--agent'));
 	});
 
-	test('prompt with embedded single quotes is shell-escaped', () => {
+	test('prompt with embedded single quotes is delivered out-of-band', () => {
+		const prompt = "it's an audit";
 		const result = buildAuditorWorkerArgv({
 			uuid: SAMPLE_UUID,
-			taskPrompt: "it's an audit",
+			taskPrompt: prompt,
 			permissionMode: SAMPLE_MODE,
 		});
-		expect(result).toContain("'\\''");
+		expect(result).not.toContain(prompt);
+		expect(readTaskPromptFromCommand(result)).toBe(prompt);
 	});
 
-	test('prompt with dollar sign and backticks is safely enclosed in single quotes', () => {
+	test('prompt with dollar sign and backticks is read byte-intact from its file', () => {
+		const prompt = 'cost $100 and run `ls`';
 		const result = buildAuditorWorkerArgv({
 			uuid: SAMPLE_UUID,
-			taskPrompt: 'cost $100 and run `ls`',
+			taskPrompt: prompt,
 			permissionMode: SAMPLE_MODE,
 		});
-		expect(result).toMatch(/'cost \$100 and run `ls`'/);
+		expect(result).not.toContain(prompt);
+		expect(readTaskPromptFromCommand(result)).toBe(prompt);
 	});
 
-	test('contains the task prompt in the output', () => {
+	test('reads the task prompt from the prompt file', () => {
 		const result = buildAuditorWorkerArgv({
 			uuid: SAMPLE_UUID,
 			taskPrompt: SAMPLE_PROMPT,
 			permissionMode: SAMPLE_MODE,
 		});
-		expect(result).toContain(SAMPLE_PROMPT);
+		expect(result).not.toContain(SAMPLE_PROMPT);
+		expect(readTaskPromptFromCommand(result)).toBe(SAMPLE_PROMPT);
 	});
 
 	// -------------------------------------------------------------------------

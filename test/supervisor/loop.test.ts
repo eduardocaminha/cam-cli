@@ -62,6 +62,7 @@ import { makeRecordPatternOutcomeFn } from '../../src/supervisor/host.ts';
 import { realOnMainSpawnFn } from '../../src/git/on-main.ts';
 import type { PatternRecord } from '../../src/patterns/record.ts';
 import { waitForCondition } from '../helpers/wait-for-condition.ts';
+import { withVerifiedPanePid } from '../helpers/verified-pane-pid-spawn.ts';
 
 // ---------------------------------------------------------------------------
 // Fake builder helpers
@@ -163,7 +164,7 @@ function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervi
 	const writeSessionMarker: WriteSessionMarker = (_storyId, _uuid) => {};
 	const isPaneAlive: IsPaneAlive = (_paneId) => true;
 
-	return {
+	const merged: RunSupervisorOptions = {
 		spawn,
 		capturePane,
 		readPrd,
@@ -193,6 +194,11 @@ function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervi
 		// review.test.ts GENERIC_REVIEW_CONFIG_PATH pattern (US-001, CAM-405).
 		configPath: 'configPath' in overrides ? overrides.configPath : GENERIC_SUPERVISOR_CONFIG_PATH,
 	};
+	// CAM-433: every implementer dispatch now proves pane_pid changed.
+	// Preserve specialized fake results while synthesizing realistic identity
+	// transitions for the generic successful tmux fake.
+	merged.spawn = withVerifiedPanePid(overrides.spawn ?? spawn);
+	return merged;
 }
 
 /** Run a backend-sensitive supervisor assertion against an explicit Claude fixture. */
@@ -1430,7 +1436,7 @@ describe('runSupervisor', () => {
 		expect(DEFAULT_POLL_INTERVAL_MS).toBe(5_000);
 	});
 
-	test('spawn is called twice per implement iteration: set-option then respawn-pane (US-002)', async () => {
+	test('implement dispatch performs the complete verified pane_pid path (CAM-433)', async () => {
 		const prd1 = makePrd({
 			stories: [{ id: 'US-001', priority: 1, passes: false }],
 		});
@@ -1458,20 +1464,21 @@ describe('runSupervisor', () => {
 
 		await runSupervisor(opts);
 
-		// US-002: two spawn calls per implement iteration:
-		//   1. set-option -p -t <paneId> @cam_label implementer
-		//   2. respawn-pane -k -t <paneId> <shellCmd>
-		expect(spawnCalls.length).toBe(2);
-		// First call sets the @cam_label.
-		const labelCall = spawnCalls[0] ?? [];
+		// Mandatory path: pane_pid before, label, respawn, pane_pid after, pipe.
+		expect(spawnCalls).toHaveLength(5);
+		expect(spawnCalls[0]).toContain('display-message');
+		expect(spawnCalls[0]).toContain('#{pane_pid}');
+		const labelCall = spawnCalls[1] ?? [];
 		expect(labelCall).toContain('set-option');
 		expect(labelCall).toContain('@cam_label');
 		expect(labelCall).toContain('implementer');
 		expect(labelCall).toContain(WORKER_PANE_ID);
-		// Second call does the respawn.
-		const respawnCall = spawnCalls[1] ?? [];
+		const respawnCall = spawnCalls[2] ?? [];
 		expect(respawnCall).toContain('respawn-pane');
 		expect(respawnCall).toContain(WORKER_PANE_ID);
+		expect(spawnCalls[3]).toContain('display-message');
+		expect(spawnCalls[3]).toContain('#{pane_pid}');
+		expect(spawnCalls[4]).toContain('pipe-pane');
 	});
 
 	// -------------------------------------------------------------------------
@@ -2268,9 +2275,9 @@ describe('runSupervisor @cam_label pane labeling (US-002)', () => {
 		expect(labelIdx).toBeLessThan(respawnIdx);
 	});
 
-	test('review dispatch: set-option @cam_label reviewer is called before review respawn-pane (AC1)', async () => {
-		// All stories done; decideNextAction -> review. We need to verify a
-		// set-option @cam_label reviewer call goes out before reviewDispatch runs.
+	test('review branch delegates the complete verified dispatch to reviewDispatch (CAM-433)', async () => {
+		// makeReviewDispatch owns the atomic pane_pid/label/respawn/pipe sequence.
+		// loop.ts must not issue a separate unchecked reviewer label command.
 		const prd_noReview = makePrd({
 			stories: [{ id: 'US-001', priority: 1, passes: true }],
 			review: { roundsCompleted: 0, lastVerdict: null },
@@ -2283,24 +2290,17 @@ describe('runSupervisor @cam_label pane labeling (US-002)', () => {
 		let prdCall = 0;
 		const spawnCalls: string[][] = [];
 		let reviewDispatchCalled = false;
-		let reviewerLabelCallIdx = -1;
 		let reviewDispatchCallCount = 0;
 
 		const opts = makeBaseOpts({
 			readPrd: () => prds[prdCall++] ?? prd_clean,
 			spawn: (_cmd, args) => {
-				const idx = spawnCalls.push([...args]) - 1;
-				// Track when the reviewer label is set.
-				if (args.includes('set-option') && args.includes('@cam_label') && args.includes('reviewer')) {
-					reviewerLabelCallIdx = idx;
-				}
+				spawnCalls.push([...args]);
 				return { stdout: '', exitCode: 0 };
 			},
 			reviewDispatch: (_uuid) => {
 				reviewDispatchCalled = true;
 				reviewDispatchCallCount += 1;
-				// Assert label was set before dispatch runs.
-				expect(reviewerLabelCallIdx).toBeGreaterThanOrEqual(0);
 				return { status: 'ok', detail: 'CLEAN' };
 			},
 		});
@@ -2308,13 +2308,8 @@ describe('runSupervisor @cam_label pane labeling (US-002)', () => {
 		await runSupervisor(opts);
 
 		expect(reviewDispatchCalled).toBe(true);
-		// @cam_label reviewer was set.
-		const labelCall = spawnCalls.find(
-			(a) => a.includes('set-option') && a.includes('@cam_label') && a.includes('reviewer'),
-		);
-		expect(labelCall).toBeDefined();
-		expect(labelCall).toContain('-p');
-		expect(labelCall).toContain(WORKER_PANE_ID);
+		expect(reviewDispatchCallCount).toBe(1);
+		expect(spawnCalls).toHaveLength(0);
 	});
 
 	test('worker respawn-pane does not include kill-session wrapper (AC3)', async () => {

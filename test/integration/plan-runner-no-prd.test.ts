@@ -141,15 +141,11 @@ test.skipIf(!tmuxAvailable)(
 		expect(initialState?.phase).toBe('planning');
 
 		// ------------------------------------------------------------------
-		// 3. Spawn a planner stand-in that exits WITHOUT writing prd.json.
-		//    Uses respawn-pane -k with `exit 0` (the shortest possible exit).
+		// 3. Leave the allocated pane alive so verified dispatch can capture
+		//    its pre-respawn pane_pid. The injected respawn below replaces it
+		//    with the short-lived planner stand-in.
 		// ------------------------------------------------------------------
-		tmuxRaw(['respawn-pane', '-k', '-t', workerPaneId, 'exit 0']);
-		// Wait for the stand-in to exit so isPaneAlive will return false.
-		await waitForCondition(() => !isPaneAlive(workerPaneId));
-
-		// Verify the pane is actually dead before driving runPlanPhase.
-		expect(isPaneAlive(workerPaneId)).toBe(false);
+		expect(isPaneAlive(workerPaneId)).toBe(true);
 
 		// ------------------------------------------------------------------
 		// 4. Build the LoopSpawnFn: records all calls + socket-swaps tmux.
@@ -164,6 +160,12 @@ test.skipIf(!tmuxAvailable)(
 				const swapped = [...args];
 				const lIdx = swapped.indexOf('-L');
 				if (lIdx !== -1 && swapped[lIdx + 1] === 'cam') swapped[lIdx + 1] = TEST_SOCK;
+				if (swapped[2] === 'respawn-pane') {
+					// Keep the stand-in alive long enough for the mandatory
+					// post-respawn pane_pid probe, then let the planner poll
+					// observe its real process exit without a prd.json.
+					swapped[swapped.length - 1] = "sh -c 'sleep 0.5'";
+				}
 				const r = spawnSync(cmd, swapped, { stdio: spawnOpts?.stdio ?? 'pipe', encoding: 'utf8' });
 				return {
 					stdout: typeof r.stdout === 'string' ? r.stdout : '',
@@ -176,7 +178,7 @@ test.skipIf(!tmuxAvailable)(
 
 		// ------------------------------------------------------------------
 		// 5. Drive runPlanPhase.
-		//    - plannerPaneId: the real (now-dead) pane
+		//    - plannerPaneId: the live pane slot whose process is replaced
 		//    - isPaneAlive: real pane-dead check on private socket
 		//    - readPlannerReportFn: always null (no prd.json)
 		//    - sleepFn: no-op (fast poll)
@@ -187,7 +189,7 @@ test.skipIf(!tmuxAvailable)(
 			planResult = runPlanPhase({
 				spawnFn: loopSpawnFn,
 				isPaneAlive,
-				sleepFn: () => {},
+				sleepFn: (ms) => Bun.sleepSync(Math.max(ms, 10)),
 				genUuid: () => 'it-uuid-0000-0000-0000-noprd000000',
 				selectIssueFn: () => MOCK_ISSUE,
 				// readPlannerReportFn is DEFINED but returns null: no prd.json.

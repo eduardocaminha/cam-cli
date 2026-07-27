@@ -7,13 +7,18 @@
 // string launches claude as a TUI session:
 //
 //   claude --permission-mode <mode> --session-id <uuid> \
-//     --agent <agentName> '<prompt>'
+//     --agent <agentName> "$(cat -- '<taskPromptFilePath>')"
 //
 // Completion is detected by the supervisor via capture-pane polling for
 // the CAM_*_STATUS sentinel line; there is no exit/wait-for chain.
 //
 // Design decisions:
-//   - Pure function; no spawning, no file I/O.
+//   - NOT a pure function: buildImplementerWorkerArgv delegates to
+//     ClaudeAdapter.buildSpawnArgv, which writes the task prompt to a
+//     per-dispatch file on disk (reaping any prior prompt-file siblings)
+//     as a side effect of building the argv string (US-001, CAM-433,
+//     task-prompt-file.ts). It does not spawn a process itself, but it is
+//     not I/O-free either; callers must not invoke it speculatively.
 //   - The shell string is prefixed with `env -u <var> ...` to strip the
 //     nesting-detection env vars (CLAUDECODE etc) from the worker process.
 //     When the tmux `-L cam` server is bootstrapped from inside a claude
@@ -22,8 +27,11 @@
 //     transcript, empty pane). Stripping them locally in the worker command
 //     fixes this without perturbing the env of whoever inspects the session
 //     (CAM-43, found in CAM-42 US-006 validation).
-//   - Task prompt is single-quote-escaped so any embedded quotes,
-//     dollar signs, or backticks cannot escape the shell argument boundary.
+//   - Task prompt is no longer embedded in the argv string directly: it is
+//     written to a per-dispatch file and the argv carries a double-quoted
+//     `"$(cat -- '<path>')"` snippet that reads it back at exec time, so
+//     embedded quotes, dollar signs, or backticks in the prompt never touch
+//     the argv shell-argument boundary (US-001, CAM-433).
 //   - agentName defaults to 'subagent-implementer' (matches .claude/agents/
 //     subagent-implementer.md frontmatter `name` field).
 //   - `--permission-mode` is NOT a CLI flag on any cam subcommand; it is
@@ -50,7 +58,7 @@ export {
 export interface ImplementerWorkerArgvOptions {
 	/** UUID for this worker invocation; passed as --session-id. */
 	uuid: string;
-	/** Free-text task prompt sent to the implementer agent. Will be shell-escaped. */
+	/** Free-text task prompt sent to the implementer via a per-dispatch file. */
 	taskPrompt: string;
 	/** Claude permission mode (e.g. 'bypassPermissions', 'acceptEdits'). */
 	permissionMode: string;
@@ -82,7 +90,7 @@ export interface ImplementerWorkerArgvOptions {
  * Returns:
  *
  *   env -u CLAUDECODE -u ... CAM_WORKER=1 claude --permission-mode <mode> \
- *     --session-id <uuid> --agent <agentName> '<task>'
+ *     --session-id <uuid> --agent <agentName> "$(cat -- '<taskPromptFilePath>')"
  *
  * `CAM_WORKER=1` (WORKER_ACTOR_ENV, US-002/CAM-63) marks the spawned process as
  * a worker actor so a later ACL hook can distinguish it from a planner/
@@ -93,9 +101,12 @@ export interface ImplementerWorkerArgvOptions {
  * interaction. The tmux wait-for chain is also omitted; the supervisor detects
  * completion by polling capture-pane for the sentinel text.
  *
- * `<task>` is single-quote-escaped. The other interpolated values (uuid,
- * permissionMode, agentName) are controlled by the supervisor and are expected
- * to be shell-safe identifiers; they are not additionally escaped to keep the
+ * `taskPrompt` is written to a per-dispatch file (task-prompt-file.ts,
+ * US-001/CAM-433) rather than embedded in the argv; the returned string
+ * carries a double-quoted `"$(cat -- '<path>')"` snippet that reads it back
+ * at exec time. The other interpolated values (uuid, permissionMode,
+ * agentName) are controlled by the supervisor and are expected to be
+ * shell-safe identifiers; they are not additionally escaped to keep the
  * output readable.
  *
  * US-003 (CAM-339): thin wrapper resolving the 'implementer' actor and

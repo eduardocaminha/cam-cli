@@ -9,8 +9,8 @@
 //   - Mirrors the discipline of worker-argv.ts and plan-argv.ts.
 //   - Reuses DEFAULT_CONTAINER_NAME from worker-container.ts (no duplicate literal).
 //   - The inner shell string is preserved byte-for-byte: the CAM-43 env -u prefix,
-//     CAM-23 lowercase --session-id, --model quoting, and the single-quoted prompt
-//     all run INSIDE the container as intended.
+//     CAM-23 lowercase --session-id and --model quoting are forwarded intact;
+//     the host pane shell resolves prompt-file substitution before Docker exec.
 //   - `docker exec -it` execs argv directly (no shell interpolation by Docker);
 //     the host pane shell tokenizes the full wrapped string, so no inner `sh -c`
 //     is needed.

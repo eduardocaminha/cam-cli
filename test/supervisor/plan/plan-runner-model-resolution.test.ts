@@ -35,6 +35,7 @@ import type { SpawnFn } from '../../../src/supervisor/loop.ts';
 import type { IssueEntry } from '../../../src/issues/types.ts';
 import type { CodexModelsCacheReader } from '../../../src/config/codex-models-cache.ts';
 import { waitForCondition } from '../../helpers/wait-for-condition.ts';
+import { withVerifiedPanePid } from '../../helpers/verified-pane-pid-spawn.ts';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -75,7 +76,7 @@ function makeOpts(res: ResolutionOpts = {}, spawnCalls: string[][] = []): RunPla
 	};
 
 	return {
-		spawnFn,
+		spawnFn: withVerifiedPanePid(spawnFn),
 		isPaneAlive: () => false, // pane dies immediately; both poll loops exit fast
 		sleepFn: () => {},
 		genUuid: () => FAKE_UUID,

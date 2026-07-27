@@ -93,6 +93,7 @@ import {
 	readSidecarStalledMarker,
 	type SidecarStalledMarker,
 } from '../supervisor/sidecar-stalled.ts';
+import { DISPATCH_FAILED_FILENAME, readDispatchFailedMarker, type DispatchFailedMarker } from '../supervisor/dispatch-failed-marker.ts';
 import type { ContainerPreflightEventDetail } from '../supervisor/events.ts';
 import { diagnoseWhyNotMoving, type WhyNotMovingDiagnostic, type WhyNotMovingSignals } from './status-diagnostics.ts';
 
@@ -315,6 +316,8 @@ export interface StatusReport {
 	 * `.claude/.cam-sidecar-stalled.json` via `readSidecarStalledMarker`.
 	 */
 	sidecarStalled?: SidecarStalledMarker;
+	/** Durable dispatch-failed marker projected by `readDispatchFailedMarker`. */
+	dispatchFailed?: DispatchFailedMarker;
 	/**
 	 * The LAST `container-preflight` event recorded in
 	 * `.claude/cam-worker-events.jsonl` (US-002, CAM-401). `buildStatusReport`
@@ -634,6 +637,7 @@ type CycleStateProjection = Pick<
 	| 'gate'
 	| 'mergeWatch'
 	| 'sidecarStalled'
+	| 'dispatchFailed'
 	| 'containerPreflight'
 >;
 
@@ -672,6 +676,8 @@ function projectCycleState(cwd: string): CycleStateProjection {
 	}
 	const sidecarStalled = readSidecarStalledMarker(join(claudeDirLocal, SIDECAR_STALLED_FILENAME));
 	if (sidecarStalled) out.sidecarStalled = sidecarStalled;
+	const dispatchFailed = readDispatchFailedMarker(join(claudeDirLocal, DISPATCH_FAILED_FILENAME));
+	if (dispatchFailed) out.dispatchFailed = dispatchFailed;
 	const containerPreflight = readLastContainerPreflightEvent(cwd);
 	if (containerPreflight) out.containerPreflight = containerPreflight;
 
@@ -874,6 +880,9 @@ function renderMarkersSection(report: StatusReport): void {
 			label: 'sidecar-stalled',
 			detail: `${report.sidecarStalled.reason} · ${report.sidecarStalled.detail}`,
 		});
+	}
+	if (report.dispatchFailed) {
+		rows.push({ label: 'dispatch-failed', detail: `${report.dispatchFailed.phase} · ${report.dispatchFailed.reason}` });
 	}
 	if (report.gate) {
 		rows.push({ label: 'gate', detail: `${report.gate.gate} · ${report.gate.context}` });

@@ -146,6 +146,10 @@ import handoffSchema from '../../scripts/cam/handoff.schema.json';
  *     resolution, or the initial `cam run` resolution on the first respawn);
  *     this event is the sole observable record of that silent-divergence
  *     class this issue exists to close. See OrchResolveFallbackEventDetail.
+ *   - 'dispatch-failed' (US-003, CAM-433): emitted when a verified tmux
+ *     dispatch command exits non-zero or a zero-exit respawn leaves pane_pid
+ *     unchanged. Mirrored by the durable dispatch-failed marker and an
+ *     orchestrator notification. See DispatchFailedEventDetail.
  */
 export type WorkerEventKind =
 	| 'worker-start'
@@ -190,7 +194,8 @@ export type WorkerEventKind =
 	| 'pattern-outcome-append-failed'
 	| 'worker-token-ceiling-unavailable'
 	| 'orch-pane-busy'
-	| 'orch-resolve-fallback';
+	| 'orch-resolve-fallback'
+	| 'dispatch-failed';
 
 /** Gate status recorded in a 'result' event. */
 export type GateStatus = 'pass' | 'fail' | 'unknown';
@@ -687,6 +692,15 @@ export interface OrchResolveFallbackEventDetail {
 	effort: string;
 }
 
+/** Observable diagnostic for a terminal verified-dispatch failure. */
+export interface DispatchFailedEventDetail {
+	phase: string;
+	paneId: string;
+	exitCode: number;
+	stderr: string;
+	reason: string;
+}
+
 /** Detail payload by event kind ('worker-start'/'worker-end' carry free-form maps). */
 export type WorkerEventDetail =
 	| ResultEventDetail
@@ -719,6 +733,7 @@ export type WorkerEventDetail =
 	| WorkerTokenCeilingUnavailableEventDetail
 	| OrchPaneBusyEventDetail
 	| OrchResolveFallbackEventDetail
+	| DispatchFailedEventDetail
 	| Record<string, unknown>;
 
 /** A single structured worker lifecycle event. */
