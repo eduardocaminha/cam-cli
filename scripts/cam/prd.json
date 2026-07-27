@@ -48,7 +48,7 @@
         "Full quality spine passes, including the file-size gate; any file pushed past its ceiling gets its scripts/file-size-budget.json raise in the SAME commit, derived from the real line count, never guessed (AC11). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Corrected pointers (audit F-07): the prompt is escaped inline at FIVE sites, backend-adapter.ts:246 (implementer), :263 (planner), :279 (auditor), :294 (reviewer) in ClaudeAdapter's switch, plus CodexAdapter.renderActor :583-592 (escapedPrompt at :592); backend-adapter.ts:311 is only a section comment, not a site. shellEscape itself is defined at :226 and stays for model names. Existing in-repo precedent for a file consumed at exec: writeCodexInstructionsFile (backend-adapter.ts:395), wired via '-c model_instructions_file=<path>'. The exec-time read must keep the argv O(1) AND injection-safe; note that command-substitution-style reads strip trailing newlines, which is why AC2 (US-004) requires the no-final-newline measurement inside the test. Adapters receive claudeDir/uuid already (opts.uuid); thread the prompt-file path through buildSpawnArgv opts rather than writing files inside the adapter render if that keeps seams testable, implementer's call, but the reap-before-write MUST live in the module so the bound holds for every caller. Gotcha (issue): use single quotes in any grep oracle touching $/backtick sequences; never combine grep -q with -l/-L. patterns.md grep keywords: 'oracle-falsifiability', 'derive-don't-freeze', 'shellEscape'. Budgets today: src/tmux/session.ts 589; backend-adapter has its own entry, derive the raise from wc -l if exceeded."
     },
