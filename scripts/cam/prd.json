@@ -34,7 +34,7 @@
       "id": "US-R1-001",
       "title": "Review round 1 fix 001: address reviewer finding",
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "CRITICAL [src/supervisor/worker-dispatch.ts:43]: The new implementer/reviewer pipe-pane target is `<claudeDir>/cam-worker-out-<phase>-<uuid>.log` (no leading dot), but .gitignore:62 and templates/.gitignore:40 only ignore `.claude/.cam-worker-out-*.log` (WITH a leading dot). Verified with `git check-ignore -q`: `.claude/cam-worker-out-implementer-x.log` -> NOT-IGNORED, `.claude/.cam-worker-out-implementer-x.log` -> IGNORED. The first real implement or review dispatch therefore leaves an untracked file in the working tree, and the very next plan phase fails its clean-tree preflight (`git status --porcelain` non-empty at src/supervisor/plan-preflight.ts:118-122, ADR-0014), wedging the loop. This is exactly the failure class US-001 AC5 was written to prevent for the prompt file. Fix: either write to the already-ignored dotted stem or register `.claude/cam-worker-out-*.log` in BOTH .gitignore and templates/.gitignore + re-run `bun run embed-vendor`."
     },
     {
