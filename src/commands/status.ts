@@ -619,7 +619,14 @@ function readWhyNotMovingSignals(cwd: string): WhyNotMovingSignals {
 	return signals;
 }
 
-/** Cycle-state fields projected separately to keep `buildStatusReport` within its function budget. */
+/**
+ * Fields of `StatusReport` populated by `projectCycleState` (US-002,
+ * CAM-401): the six blocker/wedge/stall markers, the durable merge-watch
+ * position, the sidecar-stalled marker, and the last container-preflight
+ * event. Extracted from `buildStatusReport` into its own function (rather
+ * than inlined) purely to keep `buildStatusReport` under the project's
+ * per-function line budget; the two are always called together.
+ */
 type CycleStateProjection = Pick<
 	StatusReport,
 	| 'shipStalled'
@@ -637,8 +644,9 @@ type CycleStateProjection = Pick<
 /**
  * Project the full cycle state-machine position (US-002, CAM-401):
  * read-only, via each marker's existing lenient never-throw reader, all
- * under `<cwd>/.claude/`; container preflight comes from its LAST event-log
- * entry because it has no dedicated marker file.
+ * under `<cwd>/.claude/` (the event log is the one exception -- it has no
+ * on-disk status file of its own, so its LAST `container-preflight` line is
+ * read instead of re-running preflight).
  */
 function projectCycleState(cwd: string): CycleStateProjection {
 	const claudeDirLocal = join(cwd, '.claude');
@@ -716,7 +724,10 @@ export function buildStatusReport(options: StatusOptions = {}): StatusReport {
 	if (git.branchName) report.branchName = git.branchName;
 	if (git.lastCommit) report.lastCommit = git.lastCommit;
 
-	// Project cycle markers separately to keep this function within its line budget.
+	// US-002 (CAM-401): project the six blocker/wedge/stall markers, the
+	// durable merge-watch position, the sidecar-stalled marker, and the last
+	// container-preflight event. Extracted into `projectCycleState` to keep
+	// this function under the project's per-function line budget.
 	Object.assign(report, projectCycleState(cwd));
 
 	// Resolve token usage from the orchestrator transcript (best-effort, never throws).
