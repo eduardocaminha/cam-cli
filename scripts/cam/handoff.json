@@ -1,31 +1,33 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Add durable dispatch-failed marker with status projection and resolved stop semantics"
+    "id": "US-003",
+    "title": "Capture spawn stderr in the production loopSpawnFn and build the verified-dispatch helper"
   },
   "branchName": "cam/issue-433",
-  "timestamp": "2026-07-27T10:56:26Z",
+  "timestamp": "2026-07-27T11:23:23Z",
   "createdFiles": [
-    "src/supervisor/dispatch-failed-marker.ts",
-    "test/supervisor/dispatch-failed-marker.test.ts"
+    "src/supervisor/verified-dispatch.ts",
+    "test/supervisor/sidecar-loop-spawn.test.ts",
+    "test/supervisor/verified-dispatch.test.ts"
   ],
   "modifiedFiles": [
-    ".gitignore",
     "scripts/cam/patterns.md",
     "scripts/file-size-budget.json",
-    "scripts/generate-embedded-vendor.ts",
-    "src/commands/status.ts",
-    "src/vendor/_generated.ts",
-    "templates/.gitignore"
+    "src/commands/sidecar.ts",
+    "src/supervisor/events.ts",
+    "src/supervisor/loop.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "The durable dispatch-failed marker primitive and cam status projection now exist. performStop intentionally preserves the marker; later stories own removal only after a successful dispatch or terminal convergence. Use DISPATCH_FAILED_FILENAME at every TypeScript call site. The embed generator emits this filename with an equivalent Unicode escape so templates/.gitignore still round-trips byte-for-byte without duplicating the bare literal under src/.",
+  "nextStoryContext": "makeProductionLoopSpawnFn now returns decoded stdout and stderr plus exitCode for every sidecar loop phase. runVerifiedDispatch is the shared but not-yet-wired dispatch primitive: it reads pane_pid before set-option/respawn-pane and after respawn-pane, rejects non-zero tmux commands and unchanged zero-exit identities, and independently attempts the dispatch-failed event, durable marker, and notification sinks. Later wiring stories should pass every production dispatch through this helper and remove the durable marker only on their specified successful convergence path.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched",
-      "summary": "Only Node.js standard-library filesystem and path APIs plus existing internal status and stop helpers were used; no external library was touched."
+      "lib": "Bun",
+      "channel": "WebFetch",
+      "url": "https://bun.com/docs/runtime/child-process",
+      "fetchedAt": "2026-07-27T11:23:09Z",
+      "status": "aligned",
+      "summary": "Official Bun spawnSync docs confirm that piped SyncSubprocess stdout and stderr are Buffer values and exit status is exposed; the production adapter decodes both streams symmetrically and preserves exitCode."
     }
   ]
 }
