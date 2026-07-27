@@ -1,33 +1,47 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Capture spawn stderr in the production loopSpawnFn and build the verified-dispatch helper"
+    "id": "US-004",
+    "title": "Wire plan-runner planner and auditor dispatches through verified out-of-band dispatch with observable terminals"
   },
   "branchName": "cam/issue-433",
-  "timestamp": "2026-07-27T11:23:23Z",
+  "timestamp": "2026-07-27T12:10:46Z",
   "createdFiles": [
-    "src/supervisor/verified-dispatch.ts",
-    "test/supervisor/sidecar-loop-spawn.test.ts",
-    "test/supervisor/verified-dispatch.test.ts"
+    "test/helpers/verified-pane-pid-spawn.ts",
+    "test/integration/dispatch-oversize-prompt.test.ts"
   ],
   "modifiedFiles": [
     "scripts/cam/patterns.md",
     "scripts/file-size-budget.json",
     "src/commands/sidecar.ts",
-    "src/supervisor/events.ts",
-    "src/supervisor/loop.ts"
+    "src/supervisor/plan-runner.ts",
+    "src/supervisor/task-prompt-file.ts",
+    "test/integration/plan-runner-no-prd.test.ts",
+    "test/integration/plan-runner-target-obey.test.ts",
+    "test/plan-runner-in-progress-conflict.test.ts",
+    "test/plan-runner-no-prd.test.ts",
+    "test/plan-runner-target-invalid.test.ts",
+    "test/plan-runner-target-prompt.test.ts",
+    "test/supervisor/plan-runner.test.ts",
+    "test/supervisor/plan/plan-runner-auditor-payload.test.ts",
+    "test/supervisor/plan/plan-runner-codex-auth.test.ts",
+    "test/supervisor/plan/plan-runner-configpath-seam.test.ts",
+    "test/supervisor/plan/plan-runner-container.test.ts",
+    "test/supervisor/plan/plan-runner-model-resolution.test.ts",
+    "test/supervisor/plan/plan-runner-replan.test.ts",
+    "test/supervisor/plan/plan-runner.test.ts",
+    "test/supervisor/task-prompt-file.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "makeProductionLoopSpawnFn now returns decoded stdout and stderr plus exitCode for every sidecar loop phase. runVerifiedDispatch is the shared but not-yet-wired dispatch primitive: it reads pane_pid before set-option/respawn-pane and after respawn-pane, rejects non-zero tmux commands and unchanged zero-exit identities, and independently attempts the dispatch-failed event, durable marker, and notification sinks. Later wiring stories should pass every production dispatch through this helper and remove the durable marker only on their specified successful convergence path.",
+  "nextStoryContext": "Plan-runner planner and auditor spawns now always use runVerifiedDispatch with pane_pid before/after checks, checked set-option/respawn-pane/pipe-pane calls, prompt-file transport and terminal cleanup. Planner/auditor timeout sentinels also use the checked helper, then emit a timeout event, durable dispatch-failed marker and notification. Production wiring persists/removes .cam-dispatch-failed.json and notifies the orchestrator; all pre-existing plan-runner test fakes that reach dispatch now synthesize a real pane_pid transition through test/helpers/verified-pane-pid-spawn.ts.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
-      "lib": "Bun",
-      "channel": "WebFetch",
-      "url": "https://bun.com/docs/runtime/child-process",
-      "fetchedAt": "2026-07-27T11:23:09Z",
+      "lib": "tmux",
+      "channel": "WebOpen",
+      "url": "https://raw.githubusercontent.com/tmux/tmux/master/tmux.1",
+      "fetchedAt": "2026-07-27T12:09:00Z",
       "status": "aligned",
-      "summary": "Official Bun spawnSync docs confirm that piped SyncSubprocess stdout and stderr are Buffer values and exit status is exposed; the production adapter decodes both streams symmetrically and preserves exitCode."
+      "summary": "Official tmux master manpage confirms respawn-pane -k kills the existing command, pane_pid is the PID of the first process in the pane, set-option -p targets pane options, and pipe-pane connects target-pane output to a shell command."
     }
   ]
 }
