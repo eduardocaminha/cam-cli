@@ -41,7 +41,7 @@
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "CRITICAL [src/supervisor/plan-runner.ts:463]: Layer B behavioral gate FAIL: the US-002 acceptance-criterion oracle `! grep -rq --include='*.ts' --exclude='dispatch-failed-marker.ts' -F '.cam-dispatch-failed' src` exits 1 at branch HEAD (reproduced with both ugrep 7.5.0 and /usr/bin/grep). The bare literal `.claude/.cam-dispatch-failed.json` appears in a JSDoc block at plan-runner.ts:463, added by the US-004 commit (684c5a64) after US-002 certified the same oracle green. The invariance pin US-002 shipped (and contorted the vendor generator to preserve, see the WARNING below) is red on the branch being merged. Fix the source of truth: reference DISPATCH_FAILED_FILENAME in the comment (or drop the bare literal) so the story's own oracle is green at HEAD."
     },
     {
