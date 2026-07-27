@@ -1,6 +1,7 @@
 // scripts/test-in-container.ts
 //
-// On-demand in-container test harness (US-001, CAM-186 PRD).
+// On-demand in-container test harness (US-001, CAM-186 PRD; waiver + exact
+// skip-count assertion wired in US-006, CAM-424 PRD).
 //
 // Ensures the cam-worker container is running (reusing the existing
 // ensure-container path) and then runs `bun test` inside it via a
@@ -8,8 +9,19 @@
 // lines and failure blocks to extract pass/fail/skip counts and the names of
 // any failing tests.
 //
-// Exit code: non-zero if and only if there are test FAILURES (fail count > 0).
-// A run with only skips (fail count 0) exits 0.
+// The container image (oven/bun:1.2-slim) has no tmux and no procps
+// (pgrep/ps), by design -- .devcontainer/Dockerfile installs git and jq but
+// deliberately not tmux. That absence is declared explicitly, once, on the
+// exec'd process via `docker exec -e CAM_TEST_WAIVERS=...` (per `docker exec
+// --help`: `-e, --env list` sets an environment variable scoped to the
+// exec'd process only, never the container's persistent env) rather than
+// left to silently skip.
+//
+// Exit code: non-zero if there are test FAILURES (fail count > 0), OR the
+// observed skip count does not EXACTLY match the container lane's recorded
+// expectation in test/helpers/lane-expectations.json. Skipping is a visible,
+// counted act, not a silently-green outcome -- any drift (more or fewer
+// skips than recorded) is a real signal and must fail the run.
 //
 // NOT a CI gate: this script is intentionally absent from the GATES manifest
 // in scripts/check-all.ts and from .github/workflows/ci.yml.  macOS CI
@@ -20,10 +32,24 @@
 //        bun run test:container       (package.json convenience alias)
 
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import process from 'node:process';
 
 import { makeProductionEnsureContainerFn } from '../src/supervisor/ensure-container.ts';
 import { DEFAULT_CONTAINER_NAME } from '../src/supervisor/worker-container.ts';
+import { checkSkipCount, EXPECTATIONS_PATH } from './check-skip-ratchet.ts';
+import type { LaneExpectationsFile } from './check-skip-ratchet.ts';
+import { WAIVER_ENV_VAR } from '../test/helpers/test-deps.ts';
+import type { DepName } from '../test/helpers/test-deps.ts';
+
+/**
+ * The container lane's hard-dependency binaries that are absent by design in
+ * the worker container image (oven/bun:1.2-slim has no tmux, no procps).
+ * `ps` is NOT listed here: it is classified 'legitimate-environmental' in
+ * test/helpers/test-deps.ts and therefore never needs an explicit waiver.
+ */
+const CONTAINER_WAIVED_DEPS: readonly DepName[] = ['tmux', 'pgrep', 'uuidgen'];
 
 // ---------------------------------------------------------------------------
 // Types
@@ -54,6 +80,9 @@ export type EnsureContainerFn = () => void;
  */
 export type ExecBunTestFn = (containerName: string) => { output: string; exitCode: number };
 
+/** Injectable fn that reads and parses test/helpers/lane-expectations.json. */
+export type ReadExpectationsFn = () => LaneExpectationsFile;
+
 /** Options for `runInContainerTests`. */
 export interface RunInContainerTestsOptions {
 	/**
@@ -72,7 +101,14 @@ export interface RunInContainerTestsOptions {
 	 */
 	execFn?: ExecBunTestFn;
 	/**
-	 * Working directory for the production ensure-container factory.
+	 * Injectable lane-expectations reader.
+	 * When absent, a real read of test/helpers/lane-expectations.json (rooted
+	 * at `cwd`) is made.
+	 */
+	readExpectations?: ReadExpectationsFn;
+	/**
+	 * Working directory for the production ensure-container factory and the
+	 * default lane-expectations reader.
 	 * Defaults to process.cwd().
 	 */
 	cwd?: string;
@@ -146,14 +182,19 @@ export function parseBunOutput(output: string): BunTestSummary {
 /**
  * Ensure the cam-worker container is running and execute `bun test` inside it.
  *
- * Returns the parsed Bun summary and the exit code the caller should use:
- *   exitCode 1 when fail > 0, exitCode 0 otherwise (even with skips).
+ * Returns the parsed Bun summary, the container lane's skip-count ratchet
+ * check (against test/helpers/lane-expectations.json), and the exit code the
+ * caller should use: exitCode 1 when fail > 0 OR the observed skip count
+ * does not exactly match the recorded expectation; exitCode 0 only when both
+ * hold.
  *
- * The returned exitCode is derived from the parsed fail count, not from the
- * raw docker exec exit code, because `bun test` may exit non-zero on skips.
+ * The returned exitCode is derived from the parsed fail count and the skip
+ * ratchet check, not from the raw docker exec exit code, because `bun test`
+ * may exit non-zero on skips alone.
  */
 export function runInContainerTests(options: RunInContainerTestsOptions = {}): {
 	summary: BunTestSummary;
+	skipCheck: ReturnType<typeof checkSkipCount>;
 	exitCode: number;
 } {
 	const containerName = options.containerName ?? DEFAULT_CONTAINER_NAME;
@@ -175,23 +216,47 @@ export function runInContainerTests(options: RunInContainerTestsOptions = {}): {
 
 	const summary = parseBunOutput(output);
 
-	// Re-derive exit code from parsed fail count (not from raw docker exit code).
-	const exitCode = summary.fail > 0 ? 1 : 0;
+	const readExpectations: ReadExpectationsFn =
+		options.readExpectations ?? makeDefaultReadExpectations(cwd);
+	const expectedSkips = readExpectations().lanes.container.expectedSkips;
+	const skipCheck = checkSkipCount(summary.skip, expectedSkips, 'container');
 
-	return { summary, exitCode };
+	// Re-derive exit code from the parsed fail count AND the skip ratchet
+	// check (not from the raw docker exit code).
+	const exitCode = summary.fail > 0 || !skipCheck.ok ? 1 : 0;
+
+	return { summary, skipCheck, exitCode };
 }
 
 // ---------------------------------------------------------------------------
-// Production exec adapter
+// Production adapters
 // ---------------------------------------------------------------------------
 
 /**
+ * Return the `docker exec` argument vector to run `bun test` inside the
+ * named container, with the container lane's dependency waiver injected via
+ * `-e`.
+ *
+ * Shape: `['exec', '-e', 'CAM_TEST_WAIVERS=tmux,pgrep,uuidgen', containerName, 'bun', 'test']`
+ *
+ * Why `-e` (mirrors buildFirewallExecArgv / buildAuthCheckExecArgv style):
+ *   `docker exec --help` documents `-e, --env list` as scoped to the exec'd
+ *   process only, never the container's persistent env -- exactly the
+ *   per-run, per-invocation declaration this lane needs.
+ */
+export function buildContainerTestExecArgv(containerName: string): string[] {
+	const waivers = CONTAINER_WAIVED_DEPS.join(',');
+	return ['exec', '-e', `${WAIVER_ENV_VAR}=${waivers}`, containerName, 'bun', 'test'];
+}
+
+/**
  * Build the production docker exec fn.
- * Calls `docker exec <container> bun test` (no -it: non-interactive, capturable).
+ * Calls `docker exec -e CAM_TEST_WAIVERS=<...> <container> bun test`
+ * (no -it: non-interactive, capturable).
  */
 function makeDefaultExecFn(): ExecBunTestFn {
 	return (containerName: string) => {
-		const r = spawnSync('docker', ['exec', containerName, 'bun', 'test'], {
+		const r = spawnSync('docker', buildContainerTestExecArgv(containerName), {
 			encoding: 'utf8',
 		});
 		const out = typeof r.stdout === 'string' ? r.stdout : '';
@@ -200,12 +265,17 @@ function makeDefaultExecFn(): ExecBunTestFn {
 	};
 }
 
+/** Build the production lane-expectations reader, rooted at `cwd`. */
+function makeDefaultReadExpectations(cwd: string): ReadExpectationsFn {
+	return () => JSON.parse(readFileSync(join(cwd, EXPECTATIONS_PATH), 'utf8')) as LaneExpectationsFile;
+}
+
 // ---------------------------------------------------------------------------
 // CLI entrypoint
 // ---------------------------------------------------------------------------
 
 if (import.meta.main) {
-	const { summary, exitCode } = runInContainerTests();
+	const { summary, skipCheck, exitCode } = runInContainerTests();
 
 	process.stdout.write(
 		`pass: ${summary.pass}, fail: ${summary.fail}, skip: ${summary.skip}\n`,
@@ -216,6 +286,7 @@ if (import.meta.main) {
 			process.stdout.write(`  ✗ ${name}\n`);
 		}
 	}
+	process.stdout.write(`${skipCheck.message}\n`);
 
 	process.exit(exitCode);
 }

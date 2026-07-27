@@ -1,6 +1,7 @@
 // test/test-in-container.test.ts
 //
-// Unit tests for scripts/test-in-container.ts (US-001, CAM-186 PRD).
+// Unit tests for scripts/test-in-container.ts (US-001, CAM-186 PRD; waiver +
+// exact skip-count assertion coverage added in US-006, CAM-424 PRD).
 //
 // All tests drive parseBunOutput and runInContainerTests with injected fakes;
 // no real Docker daemon is touched.  The parse logic is tested against inline
@@ -8,14 +9,35 @@
 //
 // Coverage:
 //   parseBunOutput: pass/fail/skip counts, failingTests extraction.
-//   runInContainerTests: exit code 0 on no failures, non-zero on failures,
-//     exit 0 on skips-only, ensureFn call count, container name threading.
+//   runInContainerTests: exit code 0 only when fail count is 0 AND the
+//     observed skip count exactly matches the injected container-lane
+//     expectation; non-zero on either a failure or a skip-count mismatch;
+//     ensureFn call count; container name threading.
+//   makeDefaultExecFn (via a spawnSync-observing integration-style check on
+//     the real production fn is not exercised here -- covered instead by
+//     grepping the built argv string through a thin exported seam is not
+//     needed since CONTAINER_WAIVED_DEPS/WAIVER_ENV_VAR wiring is asserted
+//     structurally through the file's own source text in the acceptance
+//     criteria oracles).
 
 import { describe, expect, test } from 'bun:test';
 import {
+	buildContainerTestExecArgv,
 	parseBunOutput,
 	runInContainerTests,
 } from '../scripts/test-in-container.ts';
+import type { LaneExpectationsFile } from '../scripts/check-skip-ratchet.ts';
+
+/** Minimal fake test/helpers/lane-expectations.json reader for a given container expectedSkips. */
+function fakeExpectations(containerExpectedSkips: number): () => LaneExpectationsFile {
+	return () => ({
+		lanes: {
+			host: { expectedSkips: 0, passFloor: 0 },
+			container: { expectedSkips: containerExpectedSkips, passFloor: 0 },
+		},
+		triage: { hardDependency: 0, legitimateEnvironmental: 0 },
+	});
+}
 
 // ---------------------------------------------------------------------------
 // Fixtures: recorded Bun test output (format: bun test v1.x.x, non-TTY)
@@ -240,10 +262,11 @@ describe('parseBunOutput', () => {
 // ---------------------------------------------------------------------------
 
 describe('runInContainerTests exit code', () => {
-	test('exits 0 when fail count is 0 (all pass)', () => {
+	test('exits 0 when fail count is 0 and skip count matches expectation', () => {
 		const { exitCode } = runInContainerTests({
 			ensureFn: () => {},
 			execFn: () => ({ output: FIXTURE_ALL_PASS, exitCode: 0 }),
+			readExpectations: fakeExpectations(2), // FIXTURE_ALL_PASS has 2 skip
 		});
 		expect(exitCode).toBe(0);
 	});
@@ -252,16 +275,29 @@ describe('runInContainerTests exit code', () => {
 		const { exitCode } = runInContainerTests({
 			ensureFn: () => {},
 			execFn: () => ({ output: FIXTURE_WITH_FAILURES, exitCode: 1 }),
+			readExpectations: fakeExpectations(1), // FIXTURE_WITH_FAILURES has 1 skip
 		});
 		expect(exitCode).toBe(1);
 	});
 
-	test('exits 0 when only skips (fail count 0)', () => {
+	test('exits 0 when only skips (fail count 0) and skip count matches expectation', () => {
 		const { exitCode } = runInContainerTests({
 			ensureFn: () => {},
 			execFn: () => ({ output: FIXTURE_ONLY_SKIPS, exitCode: 0 }),
+			readExpectations: fakeExpectations(3), // FIXTURE_ONLY_SKIPS has 3 skip
 		});
 		expect(exitCode).toBe(0);
+	});
+
+	test('exits 1 when fail count is 0 but skip count does NOT match expectation', () => {
+		const { exitCode, skipCheck } = runInContainerTests({
+			ensureFn: () => {},
+			execFn: () => ({ output: FIXTURE_ONLY_SKIPS, exitCode: 0 }),
+			readExpectations: fakeExpectations(99), // FIXTURE_ONLY_SKIPS has 3 skip, not 99
+		});
+		expect(exitCode).toBe(1);
+		expect(skipCheck.ok).toBe(false);
+		expect(skipCheck.message).toContain('observed 3 skip, expected 99');
 	});
 
 	test('exits 0 even when docker exec exits non-zero but bun reports 0 failures', () => {
@@ -269,6 +305,7 @@ describe('runInContainerTests exit code', () => {
 		const { exitCode, summary } = runInContainerTests({
 			ensureFn: () => {},
 			execFn: () => ({ output: FIXTURE_ONLY_SKIPS, exitCode: 1 }),
+			readExpectations: fakeExpectations(3),
 		});
 		expect(exitCode).toBe(0);
 		expect(summary.fail).toBe(0);
@@ -278,6 +315,7 @@ describe('runInContainerTests exit code', () => {
 		const { exitCode } = runInContainerTests({
 			ensureFn: () => {},
 			execFn: () => ({ output: FIXTURE_WITH_FAILURES, exitCode: 0 }),
+			readExpectations: fakeExpectations(1),
 		});
 		expect(exitCode).toBe(1);
 	});
@@ -295,6 +333,7 @@ describe('runInContainerTests ensureFn', () => {
 				callCount++;
 			},
 			execFn: () => ({ output: FIXTURE_ALL_PASS, exitCode: 0 }),
+			readExpectations: fakeExpectations(2),
 		});
 		expect(callCount).toBe(1);
 	});
@@ -313,6 +352,7 @@ describe('runInContainerTests container name', () => {
 				capturedName = name;
 				return { output: FIXTURE_ALL_PASS, exitCode: 0 };
 			},
+			readExpectations: fakeExpectations(2),
 		});
 		expect(capturedName).toBe('cam-worker');
 	});
@@ -326,6 +366,7 @@ describe('runInContainerTests container name', () => {
 				capturedName = name;
 				return { output: FIXTURE_ALL_PASS, exitCode: 0 };
 			},
+			readExpectations: fakeExpectations(2),
 		});
 		expect(capturedName).toBe('my-test-container');
 	});
@@ -340,6 +381,7 @@ describe('runInContainerTests returned summary', () => {
 		const { summary } = runInContainerTests({
 			ensureFn: () => {},
 			execFn: () => ({ output: FIXTURE_WITH_FAILURES, exitCode: 1 }),
+			readExpectations: fakeExpectations(1),
 		});
 		expect(summary.fail).toBe(2);
 		expect(summary.failingTests).toContain('should fail');
@@ -350,6 +392,7 @@ describe('runInContainerTests returned summary', () => {
 		const { summary } = runInContainerTests({
 			ensureFn: () => {},
 			execFn: () => ({ output: FIXTURE_ALL_PASS, exitCode: 0 }),
+			readExpectations: fakeExpectations(2),
 		});
 		expect(summary.failingTests).toHaveLength(0);
 	});
@@ -358,8 +401,38 @@ describe('runInContainerTests returned summary', () => {
 		const { summary } = runInContainerTests({
 			ensureFn: () => {},
 			execFn: () => ({ output: FIXTURE_ONLY_SKIPS, exitCode: 0 }),
+			readExpectations: fakeExpectations(3),
 		});
 		expect(summary.skip).toBe(3);
 		expect(summary.fail).toBe(0);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// buildContainerTestExecArgv
+// ---------------------------------------------------------------------------
+
+describe('buildContainerTestExecArgv', () => {
+	test('injects CAM_TEST_WAIVERS=tmux,pgrep,uuidgen via -e', () => {
+		const argv = buildContainerTestExecArgv('cam-worker');
+		expect(argv).toEqual([
+			'exec',
+			'-e',
+			'CAM_TEST_WAIVERS=tmux,pgrep,uuidgen',
+			'cam-worker',
+			'bun',
+			'test',
+		]);
+	});
+
+	test('threads the given container name', () => {
+		const argv = buildContainerTestExecArgv('my-test-container');
+		expect(argv).toContain('my-test-container');
+	});
+
+	test('does not include ps in the waiver (legitimate-environmental, needs none)', () => {
+		const argv = buildContainerTestExecArgv('cam-worker');
+		const envArg = argv[2] ?? '';
+		expect(envArg).not.toContain('ps');
 	});
 });
