@@ -98,7 +98,7 @@
         "Full quality spine passes per AC11. [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "~17 files: 13 tmux probe files, 2 jq files, orch-recycle-pid-resolve.test.ts (pgrepCheck/bunCheck/psAvailable) and orch-recycle-watch.test.ts (tmuxAvailable :58, pgrepAvailable :59, uuidgenAvailable :60; there is NO psAvailable in that file, verified). Gated tests keep skip-on-unavailable semantics: the LOUDNESS for a missing unwaived dep comes from the US-002 preflight failing the run, and the COUNTING from the US-005 ratchet; do not convert gated tests into 37 unactionable hard failures. 42 tmux skipIf sites map to only 37 skipped tests (site count != test count; centralization oracles count SITES, the ratchet counts TESTS). ADR-0039 protects the 18 real tmux -L driver calls and the 5 pgrep -f + 1 ps -ax calls."
     },
