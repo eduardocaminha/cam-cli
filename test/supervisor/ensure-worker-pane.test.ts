@@ -27,6 +27,7 @@ import type {
 } from '../../src/supervisor/loop.ts';
 import { makeReviewDispatch } from '../../src/supervisor/review.ts';
 import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
+import { withVerifiedPanePid } from '../helpers/verified-pane-pid-spawn.ts';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -124,7 +125,7 @@ describe('runSupervisor ensureWorkerPane (implement branch)', () => {
 		};
 
 		const opts: RunSupervisorOptions = {
-			spawn,
+			spawn: withVerifiedPanePid(spawn),
 			capturePane,
 			readPrd: () => prdState,
 			writePrd: (p) => { prdState = p; },
@@ -184,7 +185,7 @@ describe('runSupervisor ensureWorkerPane (implement branch)', () => {
 		};
 
 		const opts: RunSupervisorOptions = {
-			spawn,
+			spawn: withVerifiedPanePid(spawn),
 			capturePane,
 			readPrd: () => prdState,
 			writePrd: (p) => { prdState = p; },
@@ -238,7 +239,7 @@ describe('runSupervisor ensureWorkerPane (implement branch)', () => {
 		};
 
 		const opts: RunSupervisorOptions = {
-			spawn,
+			spawn: withVerifiedPanePid(spawn),
 			capturePane,
 			readPrd: () => prdState,
 			writePrd: (p) => { prdState = p; },
@@ -298,7 +299,7 @@ describe('makeReviewDispatch ensureWorkerPane (review branch)', () => {
 		};
 
 		const reviewDispatch = makeReviewDispatch({
-			spawn: fakeSpawn,
+			spawn: withVerifiedPanePid(fakeSpawn),
 			capturePane: (id) => (id === NEW_PANE_ID ? '<review>CLEAN</review>' : ''),
 			readPrd: () => prdState,
 			writePrd: (p) => { prdState = p; },
@@ -339,7 +340,7 @@ describe('makeReviewDispatch ensureWorkerPane (review branch)', () => {
 		let prdState = makeReviewPrd();
 
 		const reviewDispatch = makeReviewDispatch({
-			spawn: fakeSpawn,
+			spawn: withVerifiedPanePid(fakeSpawn),
 			capturePane: (id) => (id === STALE_PANE_ID ? '<review>CLEAN</review>' : ''),
 			readPrd: () => prdState,
 			writePrd: (p) => { prdState = p; },

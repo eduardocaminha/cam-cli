@@ -31,6 +31,7 @@ import { join } from 'node:path';
 import { makeReviewDispatch } from '../../src/supervisor/review.ts';
 import type { MakeReviewDispatchOptions } from '../../src/supervisor/review.ts';
 import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
+import { withVerifiedPanePid } from '../helpers/verified-pane-pid-spawn.ts';
 import type { SpawnFn, CapturePane, ReadPrd, WritePrd } from '../../src/supervisor/loop.ts';
 import type { CodexModelsCacheReader } from '../../src/config/codex-models-cache.ts';
 import { waitForCondition } from '../helpers/wait-for-condition.ts';
@@ -62,7 +63,7 @@ function makeOpts(
 	const writePrd: WritePrd = () => {};
 
 	return {
-		spawn: overrides.spawn ?? spawn,
+		spawn: withVerifiedPanePid(overrides.spawn ?? spawn),
 		capturePane: overrides.capturePane ?? capturePane,
 		readPrd: overrides.readPrd ?? readPrd,
 		writePrd: overrides.writePrd ?? writePrd,

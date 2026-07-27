@@ -27,6 +27,7 @@ import { join } from 'node:path';
 import { runSupervisor } from '../../src/supervisor/loop.ts';
 import type { RunSupervisorOptions } from '../../src/supervisor/loop.ts';
 import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
+import { withVerifiedPanePid } from '../helpers/verified-pane-pid-spawn.ts';
 import type { WorkerReport } from '../../src/supervisor/worker-report.ts';
 import type { CodexModelsCacheReader } from '../../src/config/codex-models-cache.ts';
 import { waitForCondition } from '../helpers/wait-for-condition.ts';
@@ -86,7 +87,7 @@ afterAll(() => {
 });
 
 function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervisorOptions {
-	return {
+	const merged: RunSupervisorOptions = {
 		spawn: (_cmd, _args) => ({ stdout: '', exitCode: 0 }),
 		capturePane: (_paneId) => '',
 		readPrd: () => null,
@@ -109,6 +110,8 @@ function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervi
 		// from the live project.toml (mirrors loop.test.ts's US-003 idiom).
 		configPath: 'configPath' in overrides ? overrides.configPath : GENERIC_SUPERVISOR_CONFIG_PATH,
 	};
+	merged.spawn = withVerifiedPanePid(overrides.spawn ?? merged.spawn);
+	return merged;
 }
 
 /**

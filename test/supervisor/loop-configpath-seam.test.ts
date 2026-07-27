@@ -51,6 +51,7 @@ import { join } from 'node:path';
 import { runSupervisor } from '../../src/supervisor/loop.ts';
 import type { RunSupervisorOptions } from '../../src/supervisor/loop.ts';
 import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
+import { withVerifiedPanePid } from '../helpers/verified-pane-pid-spawn.ts';
 import type { WorkerReport } from '../../src/supervisor/worker-report.ts';
 
 // ---------------------------------------------------------------------------
@@ -95,7 +96,7 @@ function fakeGenUuid(): string {
 }
 
 function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervisorOptions {
-	return {
+	const merged: RunSupervisorOptions = {
 		spawn: (_cmd, _args) => ({ stdout: '', exitCode: 0 }),
 		capturePane: (_paneId) => '',
 		readPrd: () => null,
@@ -115,6 +116,8 @@ function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervi
 		nowMs: () => 0,
 		...overrides,
 	};
+	merged.spawn = withVerifiedPanePid(overrides.spawn ?? merged.spawn);
+	return merged;
 }
 
 /**

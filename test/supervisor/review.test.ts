@@ -41,6 +41,7 @@ import type { SpawnFn, CapturePane, ReadPrd, WritePrd } from '../../src/supervis
 import { makeReadReviewReport } from '../../src/supervisor/host.ts';
 import { REVIEW_REPORT_FILENAME } from '../../src/supervisor/review-report.ts';
 import { readTaskPromptFromCommand } from '../helpers/task-prompt.ts';
+import { withVerifiedPanePid } from '../helpers/verified-pane-pid-spawn.ts';
 import { waitForCondition } from '../helpers/wait-for-condition.ts';
 
 // ---------------------------------------------------------------------------
@@ -320,7 +321,7 @@ function makeDispatchOpts(
 	};
 
 	return {
-		spawn: overrides.spawn ?? spawn,
+		spawn: withVerifiedPanePid(overrides.spawn ?? spawn),
 		capturePane: overrides.capturePane ?? capturePane,
 		readPrd: overrides.readPrd ?? readPrd,
 		writePrd: overrides.writePrd ?? writePrd,
@@ -336,6 +337,10 @@ function makeDispatchOpts(
 		readReviewReport: overrides.readReviewReport,
 		warnFn: overrides.warnFn,
 		clearReviewReport: overrides.clearReviewReport,
+		writeDispatchFailedMarkerFn: overrides.writeDispatchFailedMarkerFn,
+		removeDispatchFailedMarkerFn: overrides.removeDispatchFailedMarkerFn,
+		notifyFn: overrides.notifyFn,
+		removeTaskPromptFileFn: overrides.removeTaskPromptFileFn,
 		// US-005 / CAM-152: container isolation passthrough.
 		workerIsolation: overrides.workerIsolation,
 		preflightContainerFn: overrides.preflightContainerFn,
@@ -549,9 +554,10 @@ describe('makeReviewDispatch', () => {
 		expect(result.status).toBe('error');
 		expect(result.detail).toContain('timed out');
 		// On timeout the stuck reviewer pane is respawned (killed).
-		const lastSpawn = opts.capturedSpawnArgs[opts.capturedSpawnArgs.length - 1] ?? [];
-		expect(lastSpawn).toContain('respawn-pane');
-		expect(lastSpawn[lastSpawn.length - 1]).toBe('echo review-timeout');
+		const timeoutRespawn = opts.capturedSpawnArgs.find(
+			(args) => args.includes('respawn-pane') && args[args.length - 1] === 'echo review-timeout',
+		);
+		expect(timeoutRespawn).toBeDefined();
 	});
 
 	test('pane dies before a verdict: returns status=error (CAM-42 polling)', () => {
@@ -606,6 +612,7 @@ describe('makeReviewDispatch', () => {
 	test('spawns an interactive reviewer with prompt and permission mode (CAM-42)', async () => {
 		await withReviewerBackendCwd('claude', 'opus', () => {
 			const capturedSpawnArgs: string[][] = [];
+			let capturedPrompt = '';
 
 			const opts = makeDispatchOpts({
 				// US-001 (CAM-405): explicit undefined preserves this test's real
@@ -614,6 +621,10 @@ describe('makeReviewDispatch', () => {
 				paneText: '<review>CLEAN</review>',
 				spawn: (_cmd, args) => {
 					capturedSpawnArgs.push(args);
+					const command = args[args.length - 1] ?? '';
+					if (args.includes('respawn-pane') && command.includes('claude')) {
+						capturedPrompt = readTaskPromptFromCommand(command);
+					}
 					return { stdout: '', exitCode: 0 };
 				},
 			});
@@ -623,7 +634,7 @@ describe('makeReviewDispatch', () => {
 
 			// spawn called with respawn-pane arguments.
 			expect(capturedSpawnArgs.length).toBeGreaterThan(0);
-			const firstSpawnCall = capturedSpawnArgs[0] ?? [];
+			const firstSpawnCall = capturedSpawnArgs.find((args) => args.includes('respawn-pane')) ?? [];
 			expect(firstSpawnCall).toContain('respawn-pane');
 
 			// The reviewer shell command is interactive: prompt + permission mode,
@@ -633,7 +644,7 @@ describe('makeReviewDispatch', () => {
 			expect(shellCmd).toContain('--permission-mode bypassPermissions');
 			expect(shellCmd).toContain(`--agent ${DEFAULT_REVIEWER_AGENT}`);
 			expect(shellCmd).not.toContain(REVIEWER_TASK_PROMPT);
-			expect(readTaskPromptFromCommand(shellCmd)).toBe(REVIEWER_TASK_PROMPT);
+			expect(capturedPrompt).toBe(REVIEWER_TASK_PROMPT);
 			expect(shellCmd).not.toContain('claude -p');
 			expect(shellCmd).not.toMatch(/\s-p(\s|$)/);
 			expect(shellCmd).not.toContain('wait-for');
@@ -1607,10 +1618,9 @@ describe('makeReviewDispatch: US-005 container mode dispatch', () => {
 			const dispatch = makeReviewDispatch(opts);
 			dispatch(SAMPLE_UUID);
 
-			// First spawn call is the respawn-pane dispatch.
-			const firstCall = capturedSpawnArgs[0] ?? [];
-			expect(firstCall).toContain('respawn-pane');
-			const shellCmd = firstCall[firstCall.length - 1] ?? '';
+			const respawnCall = capturedSpawnArgs.find((args) => args.includes('respawn-pane')) ?? [];
+			expect(respawnCall).toContain('respawn-pane');
+			const shellCmd = respawnCall[respawnCall.length - 1] ?? '';
 
 			// Must start with 'docker exec -it cam-worker' (dockerExecWrap prefix).
 			expect(shellCmd).toMatch(/^docker exec -it cam-worker /);
@@ -1708,8 +1718,8 @@ describe('makeReviewDispatch: US-005 container mode dispatch', () => {
 			expect(result.status).toBe('ok');
 
 			// The respawn-pane shellCmd must NOT be wrapped with docker exec.
-			const firstCall = capturedSpawnArgs[0] ?? [];
-			const shellCmd = firstCall[firstCall.length - 1] ?? '';
+			const respawnCall = capturedSpawnArgs.find((args) => args.includes('respawn-pane')) ?? [];
+			const shellCmd = respawnCall[respawnCall.length - 1] ?? '';
 			expect(shellCmd).not.toMatch(/^docker exec/);
 			expect(shellCmd).toContain('claude');
 			// US-001 (CAM-242): host isolation strips CLAUDE_CODE_OAUTH_TOKEN so the
@@ -1734,7 +1744,8 @@ describe('makeReviewDispatch: US-005 container mode dispatch', () => {
 				workerIsolation: 'host',
 			});
 			makeReviewDispatch(hostOpts)(SAMPLE_UUID);
-			const hostCmd = (hostSpawnArgs[0] ?? [])[((hostSpawnArgs[0] ?? []).length) - 1] ?? '';
+			const hostRespawn = hostSpawnArgs.find((args) => args.includes('respawn-pane')) ?? [];
+			const hostCmd = hostRespawn[hostRespawn.length - 1] ?? '';
 
 			const containerSpawnArgs: string[][] = [];
 			const containerOpts = makeDispatchOpts({
@@ -1751,9 +1762,8 @@ describe('makeReviewDispatch: US-005 container mode dispatch', () => {
 				preflightContainerFn: () => ({ ready: true }),
 			});
 			makeReviewDispatch(containerOpts)(SAMPLE_UUID);
-			const containerFullCmd = (containerSpawnArgs[0] ?? [])[
-				((containerSpawnArgs[0] ?? []).length) - 1
-			] ?? '';
+			const containerRespawn = containerSpawnArgs.find((args) => args.includes('respawn-pane')) ?? [];
+			const containerFullCmd = containerRespawn[containerRespawn.length - 1] ?? '';
 			// Strip the dockerExecWrap prefix to isolate the inner shell string.
 			const containerInner = containerFullCmd.replace(/^docker exec -it cam-worker /, '');
 

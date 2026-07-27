@@ -1536,6 +1536,12 @@ function makeProductionReviewPhaseFn(
 			const loopSpawnFn = makeProductionLoopSpawnFn(cwd);
 			const { isPaneAlive, ensureWorkerPane } = makePlanPaneHelpers(claudeDir, sessionName);
 			const { workerIsolation, preflightContainerFn, escalateFn } = buildReviewContainerOpts(cwd);
+			const notify = makeNotifyOrchestrator(
+				sessionName,
+				realSpawnFn,
+				makeCapturePaneFn(realSpawnFn),
+				adaptLogEventForPush(logEvent),
+			);
 
 			// US-001 (CAM-405): the `configPath` reviewer-backend/model resolution
 			// seam is intentionally left unset here, so makeReviewDispatch resolves
@@ -1567,18 +1573,15 @@ function makeProductionReviewPhaseFn(
 				workerIsolation,
 				preflightContainerFn,
 				escalateFn,
+				writeDispatchFailedMarkerFn: (marker) =>
+					writeDispatchFailedMarker(join(claudeDir, DISPATCH_FAILED_FILENAME), marker),
+				removeDispatchFailedMarkerFn: () =>
+					removeDispatchFailedMarker(join(claudeDir, DISPATCH_FAILED_FILENAME)),
+				notifyFn: notify,
 			});
 
 			const result = reviewDispatch(randomUUID());
-			narrateReviewPhaseResult(
-				result,
-				makeNotifyOrchestrator(
-					sessionName,
-					realSpawnFn,
-					makeCapturePaneFn(realSpawnFn),
-					adaptLogEventForPush(logEvent),
-				),
-			);
+			narrateReviewPhaseResult(result, notify);
 		} catch (err: unknown) {
 			logEvent({
 				ts: new Date().toISOString(),

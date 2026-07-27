@@ -37,6 +37,7 @@ import type {
 	IsPaneAlive,
 } from '../../src/supervisor/loop.ts';
 import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
+import { withVerifiedPanePid } from '../helpers/verified-pane-pid-spawn.ts';
 import { buildSupervisorOptions } from '../../src/supervisor/host.ts';
 import { setPause, clearPause } from '../../src/supervisor/pause-marker.ts';
 
@@ -105,7 +106,7 @@ function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervi
 	const writeSessionMarker: WriteSessionMarker = (_storyId, _uuid) => {};
 	const isPaneAlive: IsPaneAlive = (_paneId) => true;
 
-	return {
+	const merged: RunSupervisorOptions = {
 		spawn,
 		capturePane,
 		readPrd,
@@ -128,6 +129,8 @@ function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervi
 		// from the live project.toml (mirrors loop.test.ts's US-003 idiom).
 		configPath: 'configPath' in overrides ? overrides.configPath : GENERIC_SUPERVISOR_CONFIG_PATH,
 	};
+	merged.spawn = withVerifiedPanePid(overrides.spawn ?? spawn);
+	return merged;
 }
 
 beforeEach(() => {

@@ -43,6 +43,12 @@ import { codexAuthPreflight } from './codex-auth.ts';
 import type { CodexAuthCheck } from './codex-auth.ts';
 import { resolvePhaseModel } from '../config/model-resolution.ts';
 import type { CodexModelsCacheReader } from '../config/codex-models-cache.ts';
+import type { DispatchFailedMarker } from './dispatch-failed-marker.ts';
+import {
+	removeWorkerTaskPrompt,
+	runCheckedWorkerSentinel,
+	runVerifiedWorkerDispatch,
+} from './worker-dispatch.ts';
 
 export { DEFAULT_REVIEWER_AGENT, REVIEWER_TASK_PROMPT };
 
@@ -191,6 +197,14 @@ export interface MakeReviewDispatchOptions {
 	workerPaneId: string;
 	/** Project `.claude` directory for per-dispatch task-prompt transport. */
 	claudeDir?: string;
+	/** Persist a verified dispatch or checked timeout-sentinel failure. */
+	writeDispatchFailedMarkerFn?: (marker: DispatchFailedMarker) => void;
+	/** Remove stale dispatch-failed evidence after verified convergence. */
+	removeDispatchFailedMarkerFn?: () => void;
+	/** Live narration sink for verified dispatch/timeout failures. */
+	notifyFn?: (message: string) => void;
+	/** Remove this review dispatch's own task-prompt file at its terminal. */
+	removeTaskPromptFileFn?: (uuid: string) => void;
 	/** Check whether the reviewer pane is still alive (poll loop guard). */
 	isPaneAlive: (paneId: string) => boolean;
 	/** Sleep between polling ticks. Tests inject a no-op. */
@@ -469,6 +483,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 						}
 					})();
 				}
+				removeWorkerTaskPrompt(opts, uuid);
 				return { status: 'error', detail: containerReason };
 			}
 		}
@@ -505,10 +520,26 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 					}
 				})();
 			}
+			removeWorkerTaskPrompt(opts, uuid);
 			return { status: 'error', detail: codexReason };
 		}
 
-		spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', liveWorkerPaneId, dispatchCmd]);
+		const dispatchResult = runVerifiedWorkerDispatch({
+			spawnFn: spawn,
+			phase: 'reviewer',
+			paneId: liveWorkerPaneId,
+			uuid,
+			dispatchCmd,
+			claudeDir: opts.claudeDir,
+			logEvent,
+			writeDispatchFailedMarkerFn: opts.writeDispatchFailedMarkerFn,
+			removeDispatchFailedMarkerFn: opts.removeDispatchFailedMarkerFn,
+			notifyFn: opts.notifyFn,
+			removeTaskPromptFileFn: opts.removeTaskPromptFileFn,
+		});
+		if (!dispatchResult.ok) {
+			return { status: 'error', detail: `dispatch-failed: ${dispatchResult.marker.reason}` };
+		}
 
 		// Poll until one of three sources signals completion:
 		//   1. review-report.json present and well-formed (primary, structured).
@@ -533,6 +564,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 			}
 
 			if (!isPaneAlive(liveWorkerPaneId)) {
+				removeWorkerTaskPrompt(opts, uuid);
 				return {
 					status: 'error',
 					detail: 'Reviewer pane died before a <review> verdict was emitted.',
@@ -546,13 +578,24 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 
 			if (now() - startMs >= timeoutMs) {
 				// Kill the stuck reviewer so the retry (CAM-37) starts clean.
-				spawn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', liveWorkerPaneId, 'echo review-timeout']);
+				runCheckedWorkerSentinel({
+					spawnFn: spawn,
+					phase: 'review-timeout',
+					paneId: liveWorkerPaneId,
+					uuid,
+					claudeDir: opts.claudeDir,
+					logEvent,
+					writeDispatchFailedMarkerFn: opts.writeDispatchFailedMarkerFn,
+					notifyFn: opts.notifyFn,
+					removeTaskPromptFileFn: opts.removeTaskPromptFileFn,
+				}, 'echo review-timeout');
 				return {
 					status: 'error',
 					detail: 'Reviewer timed out before emitting a <review> verdict.',
 				};
 			}
 		}
+		removeWorkerTaskPrompt(opts, uuid);
 
 		// Resolve verdict and findings from whichever source triggered loop exit.
 		// File-based verdict takes priority over tag-based verdict.

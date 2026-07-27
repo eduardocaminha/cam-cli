@@ -26,6 +26,7 @@ import { runSupervisor } from '../../src/supervisor/loop.ts';
 import type { RunSupervisorOptions } from '../../src/supervisor/loop.ts';
 import type { WorkerOutcome } from '../../src/supervisor/result.ts';
 import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
+import { withVerifiedPanePid } from '../helpers/verified-pane-pid-spawn.ts';
 
 // ---------------------------------------------------------------------------
 // makeInMemoryEventLogger
@@ -308,7 +309,7 @@ describe('runSupervisor emits a full per-story lifecycle', () => {
 		};
 
 		const opts: RunSupervisorOptions = {
-			spawn: () => ({ stdout: '', exitCode: 0 }),
+			spawn: withVerifiedPanePid(() => ({ stdout: '', exitCode: 0 })),
 			capturePane: () => 'done\nCAM_IMPLEMENTER_STATUS=DONE story=US-001\n',
 			readPrd,
 			writePrd: () => {},
@@ -378,7 +379,7 @@ describe('runSupervisor emits a full per-story lifecycle', () => {
 		let prdCall = 0;
 
 		const opts: RunSupervisorOptions = {
-			spawn: () => ({ stdout: '', exitCode: 0 }),
+			spawn: withVerifiedPanePid(() => ({ stdout: '', exitCode: 0 })),
 			capturePane: () => '',
 			readPrd: () => prdReturns[prdCall++] ?? null,
 			writePrd: () => {},
@@ -432,7 +433,7 @@ describe('runSupervisor emits a full per-story lifecycle', () => {
 		let prdCall = 0;
 
 		const opts: RunSupervisorOptions = {
-			spawn: () => ({ stdout: '', exitCode: 0 }),
+			spawn: withVerifiedPanePid(() => ({ stdout: '', exitCode: 0 })),
 			capturePane: () => '',
 			readPrd: () => prdReturns[prdCall++] ?? null,
 			writePrd: () => {},
@@ -492,7 +493,7 @@ describe('runSupervisor emits a full per-story lifecycle', () => {
 		};
 
 		const opts: RunSupervisorOptions = {
-			spawn: () => ({ stdout: '', exitCode: 0 }),
+			spawn: withVerifiedPanePid(() => ({ stdout: '', exitCode: 0 })),
 			capturePane: () => 'done\nCAM_IMPLEMENTER_STATUS=DONE story=US-001\n',
 			readPrd: () => prdReturns[prdCall++] ?? null,
 			writePrd: () => {},
@@ -534,7 +535,7 @@ describe('runSupervisor emits a full per-story lifecycle', () => {
 		let prdCall = 0;
 
 		const opts: RunSupervisorOptions = {
-			spawn: () => ({ stdout: '', exitCode: 0 }),
+			spawn: withVerifiedPanePid(() => ({ stdout: '', exitCode: 0 })),
 			capturePane: () => 'done\nCAM_IMPLEMENTER_STATUS=DONE story=US-001\n',
 			readPrd: () => prdReturns[prdCall++] ?? null,
 			writePrd: () => {},
