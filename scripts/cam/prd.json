@@ -48,7 +48,7 @@
       "id": "US-R2-003",
       "title": "Review round 2 fix 003: address reviewer finding",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [src/commands/status.ts:619]: The file-size ratchet was satisfied by deleting unrelated pre-existing documentation instead of taking a derived raise. status.ts is 1011 lines on main with a ceiling of 1012 (one line of slack). US-002 adds ~9 lines of real code (import, StatusReport.dispatchFailed field + doc, CycleStateProjection union member, the projectCycleState read, the renderMarkersSection row), which would have pushed it to ~1020. Instead three pre-existing comment blocks unrelated to CAM-433 were compressed or deleted -- the CycleStateProjection doc at :619 (losing the 'the two are always called together' contract note), the projectCycleState event-log-exception note, and the buildStatusReport inline comment, all of which documented the US-002/CAM-401 extraction rationale -- landing the file at 1009 with no budget entry at all. This is the same gate-satisfaction family the round-1 review flagged in the jsLiteral finding, and it touches code the story had no reason to touch (Surgical Changes). Restore the three comment blocks and take a real-count-derived raise with an _ref entry, as this PR correctly does for the other 11 files."
     },
     {
