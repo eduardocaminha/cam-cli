@@ -117,7 +117,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: test/helpers/lane-expectations.json (new), scripts/check-skip-ratchet.ts (new), test/check-skip-ratchet.test.ts (new), scripts/check-all.ts + package.json (wiring). Lane detection: host is the default; the container lane is selected by the same explicit declaration mechanism as the waiver (env), never by sniffing. To avoid double-running the suite inside check:all, the docs fetch confirms bun test --reporter=junit --reporter-outfile emits machine-readable counts alongside normal stdout; parsing the existing test step's output is acceptable, a second full suite run is also acceptable (operational cost is not a criterion). The ratchet counts TESTS, not skipIf sites. gates-manifest test enforces check-all/package.json/ci.yml coherence, and check:ci-parity enforces green-local==green-CI; both live inside check:all. patterns.md:903 derive-don't-freeze governs every floor comparison outside the lane file itself."
     },
