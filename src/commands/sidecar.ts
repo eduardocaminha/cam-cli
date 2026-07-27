@@ -885,6 +885,25 @@ function spawnSyncNodeShaped(
 }
 
 /**
+ * Build the production loop.ts SpawnFn adapter over Bun.spawnSync.
+ *
+ * Exported for the real-I/O wire-boundary regression test (CAM-433, audit
+ * F-02). stdout and stderr are decoded symmetrically whenever the selected
+ * stdio mode returns buffers; non-piped streams become empty strings.
+ */
+export function makeProductionLoopSpawnFn(cwd: string): LoopSpawnFn {
+	return (cmd, args, spawnOpts) => {
+		const stdio = spawnOpts?.stdio ?? 'pipe';
+		const result = Bun.spawnSync([cmd, ...args], { cwd, stdout: stdio, stderr: stdio });
+		return {
+			stdout: result.stdout instanceof Buffer ? new TextDecoder().decode(result.stdout) : '',
+			stderr: result.stderr instanceof Buffer ? new TextDecoder().decode(result.stderr) : '',
+			exitCode: result.exitCode,
+		};
+	};
+}
+
+/**
  * Parse a `gh pr view` spawnSync result into a discriminated GhPollResult
  * (US-001, CAM-170): ok:true with the parsed PrStatus on a zero exit with
  * well-shaped JSON, ok:false carrying the gh stderr (or a synthesized message
@@ -1359,14 +1378,7 @@ function makeProductionShipPhaseFn(
 	return (): void => {
 		const setPhase = makeSetPhaseFn(claudeDir, cwd);
 		try {
-			const loopSpawnFn: LoopSpawnFn = (cmd, args, spawnOpts) => {
-				const stdio = spawnOpts?.stdio ?? 'pipe';
-				const result = Bun.spawnSync([cmd, ...args], { cwd, stdout: stdio, stderr: stdio });
-				return {
-					stdout: result.stdout instanceof Buffer ? new TextDecoder().decode(result.stdout) : '',
-					exitCode: result.exitCode,
-				};
-			};
+			const loopSpawnFn = makeProductionLoopSpawnFn(cwd);
 
 			const prStepDeps = buildProductionShipPrStepDeps(cwd, claudeDir);
 
@@ -1515,14 +1527,7 @@ function makeProductionReviewPhaseFn(
 		const setPhase = makeSetPhaseFn(claudeDir, cwd);
 		try {
 			const prdPath = join(cwd, 'scripts/cam/prd.json');
-			const loopSpawnFn: LoopSpawnFn = (cmd, args, spawnOpts) => {
-				const stdio = spawnOpts?.stdio ?? 'pipe';
-				const result = Bun.spawnSync([cmd, ...args], { cwd, stdout: stdio, stderr: stdio });
-				return {
-					stdout: result.stdout instanceof Buffer ? new TextDecoder().decode(result.stdout) : '',
-					exitCode: result.exitCode,
-				};
-			};
+			const loopSpawnFn = makeProductionLoopSpawnFn(cwd);
 			const { isPaneAlive, ensureWorkerPane } = makePlanPaneHelpers(claudeDir, sessionName);
 			const { workerIsolation, preflightContainerFn, escalateFn } = buildReviewContainerOpts(cwd);
 
@@ -2831,15 +2836,8 @@ function makeProductionPlanPhaseFn(
 		// Read plan_issue fresh on each invocation (US-001, CAM-154).
 		const planIssue = readPlanIssueFn();
 
-		// Build a loop.ts-compatible SpawnFn wrapping Bun.spawnSync with cwd.
-		const loopSpawnFn: LoopSpawnFn = (cmd, args, spawnOpts) => {
-			const stdio = spawnOpts?.stdio ?? 'pipe';
-			const result = Bun.spawnSync([cmd, ...args], { cwd, stdout: stdio, stderr: stdio });
-			return {
-				stdout: result.stdout instanceof Buffer ? new TextDecoder().decode(result.stdout) : '',
-				exitCode: result.exitCode,
-			};
-		};
+		// Build the production loop.ts SpawnFn (real Bun.spawnSync + both streams).
+		const loopSpawnFn = makeProductionLoopSpawnFn(cwd);
 
 		// Build the preflight spawnFn (PlanPreflightSpawnFn shape: no stdio opt).
 		const preflightSpawnFn: PlanPreflightSpawnFn = makePreflightSpawnFn(cwd);

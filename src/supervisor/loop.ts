@@ -82,13 +82,24 @@ export type ImplementBlockedWriterParams = Omit<
 
 /**
  * Spawns a command synchronously.
- * Returns { stdout: string; exitCode: number | null }.
+ *
+ * INVARIANCE PIN (audit F-02, CAM-433): `stderr` is an additive field so the
+ * existing loop.ts, review.ts, plan-runner.ts, and sidecar.ts consumers keep
+ * their compile surface unchanged. It remains optional only for legacy
+ * dependency-injected test fakes; the production factory always supplies the
+ * decoded string, and verified dispatch treats an absent fake value as empty.
  */
+export interface SpawnResult {
+	stdout: string;
+	stderr?: string;
+	exitCode: number | null;
+}
+
 export type SpawnFn = (
 	cmd: string,
 	args: string[],
 	opts?: { stdio?: 'pipe' | 'ignore' | 'inherit' },
-) => { stdout: string; exitCode: number | null };
+) => SpawnResult;
 
 /**
  * Check whether a tmux pane is still alive.
