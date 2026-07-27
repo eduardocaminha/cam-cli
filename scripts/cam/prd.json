@@ -48,7 +48,7 @@
       "id": "US-R1-003",
       "title": "Review round 1 fix 003: address reviewer finding",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [scripts/generate-embedded-vendor.ts:66]: `jsLiteral` (the generic literal encoder for every embedded vendor/template file) was special-cased to rewrite `.cam-dispatch-failed.json` into `\\u002ecam-dispatch-failed.json`, and the build script now imports DISPATCH_FAILED_FILENAME from src/supervisor/dispatch-failed-marker.ts, purely so a static grep oracle would not see the literal in the generated file. That is gate-satisfaction, not a code requirement: the encoding is semantically identical, no consumer benefits, it couples the codegen script to a supervisor module, and it silently makes one magic string encode differently from every other byte in the embedded corpus. It also did not hold (see the CRITICAL above). The correct fix is to scope the oracle away from generated output (e.g. `--exclude=_generated.ts`) and revert `jsLiteral` to plain `JSON.stringify(value)`."
     },
     {
