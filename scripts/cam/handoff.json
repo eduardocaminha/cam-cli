@@ -1,16 +1,16 @@
 {
   "lastCompletedStory": {
-    "id": "US-R2-001",
-    "title": "Review round 2 fix 001: address reviewer finding"
+    "id": "US-R2-002",
+    "title": "Review round 2 fix 002: address reviewer finding"
   },
   "branchName": "cam/issue-434",
-  "timestamp": "2026-07-27T19:00:00Z",
+  "timestamp": "2026-07-27T19:20:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "docs/positioning.md"
+    "docs/adr/0050-gateship-supersedes-garboard-naming.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R2-001 fixed the round-1-fix regression flagged by review round 2 (CRITICAL, docs/positioning.md:73): US-R1-004's rewritten section-4 sourcing sentence had reintroduced the literal retired product name ('...that killed Garboard and vetted Gateship'), turning US-002's AC0 and AC6 oracles red again. Single-token fix: reworded to 'that killed the superseded name and vetted Gateship' (no retired-name literal, meaning preserved). Verified both oracles green against branch HEAD after the edit: AC0 (`grep -qi 'gateship' docs/positioning.md && ! grep -qi 'garboard' docs/positioning.md`) exits 0; AC6 repo gate using the CURRENT prd.json exclusion list (which already includes ':!scripts/cam/patterns.md' per the US-R1-003/CAM-434 orchestrator amendment, commit 0a7fdf92) exits 0 with docs/positioning.md no longer an offender. No other content touched; single-line diff. All quality gates green: typecheck 0 errors, bun test 5665 pass / 0 fail, bun run check:all clean (file-size/debt-markers/coverage/dead-code/dup/ci-parity/agents-md/test-sleeps all ok; only pre-existing non-blocking warnings: biome.json deprecated 'recommended' field, a few knip ignore-list hints, validate-agents-md KNOWN_MISSING informational notices). Next reviewer round should re-check whether any other docs/adr prose still narrates the retired name outside the already-exempted historical/control-plane paths (docs/adr/, issues/, journal, CHANGELOG, patterns.md, patterns.archive.md, suggestions.jsonl, prd.json, handoff.json).",
+  "nextStoryContext": "US-R2-002 fixed the round-2 WARNING flagged by review at docs/adr/0050-gateship-supersedes-garboard-naming.md:76 (and its line-20 twin): the ADR asserted docs/positioning.md was still an out-of-cycle, operator-scheduled follow-up blocked on this ADR landing, but docs/positioning.md was in fact already rewritten to Gateship inside this same cycle by US-002 (commit a3df6786), and the PRD's own US-002 AC0 mandates it. Verified via grep that docs/positioning.md already uses Gateship pervasively (lines 3, 7, 15, 23, 33, 37, 47, 57, 60, 65, 69, 73, 77, 82) before editing. Fix: narrowed both line 20 and line 76 to state docs/positioning.md was rewritten within this cycle (CAM-434) and that only the README differentiation section (CAM-331) remains a genuine out-of-cycle, operator-scheduled follow-up. No other content touched; two-line diff, both in the 'Staged rename plan' bullet and the 'Consequences' section. All quality gates green: typecheck 0 errors, bun test 5665 pass / 0 fail, bun run check:all clean (file-size/debt-markers/coverage/dead-code/dup/ci-parity/agents-md/test-sleeps all ok; only pre-existing non-blocking warnings carried over from US-R2-001: biome.json deprecated 'recommended' field, a few knip ignore-list hints, validate-agents-md KNOWN_MISSING informational notices). Next reviewer round should re-check remaining ADR-0050 findings from round 1/2 (e.g. lines 53-61 candidate-elimination sourcing, line 64 deckward attribution) if not already addressed by sibling US-R2-00x stories in this same PRD, and should re-sweep whether any other docs/adr prose still narrates the retired name outside the already-exempted historical/control-plane paths.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
