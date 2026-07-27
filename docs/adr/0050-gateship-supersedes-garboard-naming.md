@@ -50,17 +50,17 @@ Gateship was run through all four layers on 2026-07-27:
 
 The same 2026-07-27 round that killed Garboard and vetted Gateship also screened a wider candidate set. Each was eliminated for a specific, recorded reason:
 
-- **keelgate**: rejected, awkward compound with no clean phonetic or semantic payoff over the shortlist leaders.
-- **deckrun**: rejected, generic-sounding compound, weak differentiation in search results.
-- **shipset**: rejected, reads as a noun phrase for a bundle/kit rather than a verification-before-ship product name.
-- **gatework**: rejected, "-work" suffix reads as a services/consultancy name, not a product.
-- **bowmark**: rejected, weak metaphor fit relative to the shortlist leaders.
-- **keelward**: rejected, "-ward" suffix collides in cadence with too many existing shipping/logistics brand names.
-- **wayhelm**: rejected, weak metaphor fit and awkward pronunciation.
-- **gatepath**: rejected, generic compound, low distinctiveness in search.
-- **gaterun**: rejected, generic compound, low distinctiveness in search.
+- **keelgate**: rejected, layer 4: a live software product at `keelgate.com` since 2026-06-01; the "Keel" root is also already taken in the developer-tooling space by `keel.so` and `keel.sh`, and "-gate" carries a scandal connotation on top of both.
+- **deckrun**: rejected, layer 4: a live Kubernetes PaaS whose CLI is itself named `deck`, plus a homonymous MCP tool.
+- **shipset**: rejected, layer 4: a live AI product at `shipset.app`.
+- **gatework**: rejected, layer 4: Gateworks Corporation, an embedded-hardware company with a GitHub org, independently corroborated via <https://www.gateworks.com/company/> and <https://github.com/gateworks>.
+- **bowmark**: rejected, layer 4/1: Bowmark Capital, a software-focused private-equity firm, owns the `.com`.
+- **keelward**: rejected, layer 1: a live business owns the `.com`.
+- **wayhelm**: rejected, layer 1: a live business owns the `.com`.
+- **gatepath**: rejected, layer 1: a centenarian NGO owns both the `.com` and the `.org`.
+- **gaterun**: rejected, layer 4: the SERP is taken by the Gate River Run, plus an API-gateway namesake project on GitHub.
 - **The whole `helm-` prefix family**: rejected as a family; "helm" is heavily occupied in the developer-tooling space (most prominently the Kubernetes package manager Helm), making any `helm-`-prefixed candidate carry an immediate, unavoidable disambiguation cost against an already-famous same-category tool.
-- **prowmark** (runner-up): the strongest alternative after Gateship, on-thesis nautical-inspection metaphor with a clean namespace sweep, but eliminated for being one letter away from Promark, an existing commercial brand, which creates a live layer-4-adjacent confusion risk of the same class this ADR exists to guard against.
+- **prowmark** (runner-up): the strongest alternative after Gateship, on-thesis nautical-inspection metaphor with a clean namespace sweep, but eliminated for being one letter away from Promark, a D'Addario percussion brand dating to 1957: a distant category, not a layer-4-adjacent live homonymous product in the same sense as Garboard's collision, but still a naming collision the operator judged not worth the confusion cost.
 - **deckward** (runner-up): the second-strongest alternative, but eliminated as a homophone of "Deckard" (the Blade Runner protagonist), a pop-culture collision the operator judged too on-the-nose to adopt.
 
 Order by merit presented to the operator was gateship > prowmark > deckward; the operator decided Gateship on 2026-07-27 after this four-layer, 21-candidate triage.
