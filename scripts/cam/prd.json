@@ -22,7 +22,7 @@
       "id": "US-R2-002",
       "title": "Review round 2 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [docs/adr/0050-gateship-supersedes-garboard-naming.md:76]: ADR-0050 states a fact about its own cycle that the same branch falsifies. Line 76: '`docs/positioning.md` and the README differentiation section (CAM-331) are operator-scheduled follow-ups outside this docs-only cycle; they should be written or updated against Gateship once picked up' (line 20 similarly: 'explicitly noted as blocked on this supersession landing first'). docs/positioning.md was in fact rewritten to Gateship inside this very cycle, by US-002 of the same PRD, in the same branch and the same PR (commit a3df6786), and the PRD's own US-002 AC0 mandates it. A reader of the ADR after merge is told positioning.md still awaits the rename when it does not. Only CAM-331 (README) is a genuine out-of-cycle follow-up. This is the same defect class the round-1 WARNING flagged in the other direction (a decision record asserting sourcing that does not hold): narrow lines 20 and 76 to CAM-331/README, or record that positioning.md was swept in this cycle."
     },
     {
