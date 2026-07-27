@@ -1,18 +1,16 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Sweep GARBOARD out of the active presentation docs and reconcile the on-main issue records"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
+  "branchName": "cam/issue-434",
+  "timestamp": "2026-07-27T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "docs/positioning.md",
-    "docs/launch-readiness.md",
-    "scripts/cam/patterns.md"
+    "docs/adr/0050-gateship-supersedes-garboard-naming.md"
   ],
-  "openQuestions": [
-    "AC3's repo-wide grep sweep still matches scripts/cam/prd.json and this very handoff.json's lastCompletedStory.title. prd.json necessarily narrates the retired product name in its own story titles/descriptions/notes (it is the PRD that specifies this very sweep), is worker-write-denied per ADR-0036, and is an ephemeral artifact git-rm'd at cam ship --finalize per ADR-0040, so that residual self-resolves at ship time, not fixable mid-branch. lastCompletedStory.title is required to carry this story's real title verbatim for traceability, and this story's own real title names the retired brand; that one-field residual clears on the NEXT story's handoff overwrite, not this one's. AC4-AC6 (the on-main CAM-331/CAM-417/CAM-421 issue-record edits) are explicitly out of scope for this worker per the story's own acceptance criteria text; they are on-main control-plane edits reserved for the orchestrator/operator."
-  ],
-  "nextStoryContext": "docs/positioning.md and docs/launch-readiness.md now present the product as Gateship, citing ADR-0050; positioning.md's former section 4 (the full five-round naming battle, kill evidence, and reserves for the retired name) was rewritten to a short current-decision statement plus an alias/rename-policy subsection, with the full history left to live in the ADRs (docs/adr/) rather than re-narrated. No code, template, binary, or build script was touched (docs-only, matching ADR-0050's staged-rename doctrine). The three on-main issue-record reconciliations (CAM-331, CAM-417, CAM-421) named in this story's AC4-AC6 were deliberately NOT performed here: the story's own acceptance criteria text marks them as an orchestrator/operator on-main control-plane action, never a worker-on-branch edit, so a future story or the orchestrator should verify those three records directly against main rather than assuming this story closed them.",
+  "openQuestions": [],
+  "nextStoryContext": "ADR-0050's 'Eliminated candidates and runners-up' section (AC5) was rewritten per the reviewer's US-R1-001 finding: nine of the eleven eliminated-candidate bullets (keelgate, deckrun, shipset, gatework, bowmark, keelward, wayhelm, gatepath, gaterun) had fabricated aesthetic rejection reasons instead of the measured layer-1/layer-4 evidence from CAM-434 spec.acceptanceCriteria[4]; only the helm- prefix family entry was already correct and was left unchanged. Also corrected the prowmark runner-up entry, which had mislabeled the Promark collision as 'a live layer-4-adjacent confusion risk': Promark is a D'Addario percussion brand (1957), a distant category, not an adjacent one, so the entry now says so explicitly while still recording the elimination. The deckward runner-up entry (line 64) was NOT touched by this story: the reviewer's finding for that entry is a separate story (US-R1-002, the Valve Steam Frame codename mis-attribution), not part of this one. No code, template, or binary was touched (docs-only ADR correction).",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
