@@ -31,6 +31,41 @@
   ],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": false,
+      "notes": "CRITICAL [src/supervisor/worker-dispatch.ts:43]: The new implementer/reviewer pipe-pane target is `<claudeDir>/cam-worker-out-<phase>-<uuid>.log` (no leading dot), but .gitignore:62 and templates/.gitignore:40 only ignore `.claude/.cam-worker-out-*.log` (WITH a leading dot). Verified with `git check-ignore -q`: `.claude/cam-worker-out-implementer-x.log` -> NOT-IGNORED, `.claude/.cam-worker-out-implementer-x.log` -> IGNORED. The first real implement or review dispatch therefore leaves an untracked file in the working tree, and the very next plan phase fails its clean-tree preflight (`git status --porcelain` non-empty at src/supervisor/plan-preflight.ts:118-122, ADR-0014), wedging the loop. This is exactly the failure class US-001 AC5 was written to prevent for the prompt file. Fix: either write to the already-ignored dotted stem or register `.claude/cam-worker-out-*.log` in BOTH .gitignore and templates/.gitignore + re-run `bun run embed-vendor`."
+    },
+    {
+      "id": "US-R1-002",
+      "title": "Review round 1 fix 002: address reviewer finding",
+      "priority": 2,
+      "passes": false,
+      "notes": "CRITICAL [src/supervisor/plan-runner.ts:463]: Layer B behavioral gate FAIL: the US-002 acceptance-criterion oracle `! grep -rq --include='*.ts' --exclude='dispatch-failed-marker.ts' -F '.cam-dispatch-failed' src` exits 1 at branch HEAD (reproduced with both ugrep 7.5.0 and /usr/bin/grep). The bare literal `.claude/.cam-dispatch-failed.json` appears in a JSDoc block at plan-runner.ts:463, added by the US-004 commit (684c5a64) after US-002 certified the same oracle green. The invariance pin US-002 shipped (and contorted the vendor generator to preserve, see the WARNING below) is red on the branch being merged. Fix the source of truth: reference DISPATCH_FAILED_FILENAME in the comment (or drop the bare literal) so the story's own oracle is green at HEAD."
+    },
+    {
+      "id": "US-R1-003",
+      "title": "Review round 1 fix 003: address reviewer finding",
+      "priority": 3,
+      "passes": false,
+      "notes": "WARNING [scripts/generate-embedded-vendor.ts:66]: `jsLiteral` (the generic literal encoder for every embedded vendor/template file) was special-cased to rewrite `.cam-dispatch-failed.json` into `\\u002ecam-dispatch-failed.json`, and the build script now imports DISPATCH_FAILED_FILENAME from src/supervisor/dispatch-failed-marker.ts, purely so a static grep oracle would not see the literal in the generated file. That is gate-satisfaction, not a code requirement: the encoding is semantically identical, no consumer benefits, it couples the codegen script to a supervisor module, and it silently makes one magic string encode differently from every other byte in the embedded corpus. It also did not hold (see the CRITICAL above). The correct fix is to scope the oracle away from generated output (e.g. `--exclude=_generated.ts`) and revert `jsLiteral` to plain `JSON.stringify(value)`."
+    },
+    {
+      "id": "US-R1-004",
+      "title": "Review round 1 fix 004: address reviewer finding",
+      "priority": 4,
+      "passes": false,
+      "notes": "WARNING [src/supervisor/worker-argv.ts:16]: Module-header contracts now contradict the code. buildSpawnArgv writes a file and reaps siblings on every call (backend-adapter.ts:240-244 resolveTaskPromptArgument -> writeTaskPromptFile), yet worker-argv.ts:16 still declares 'Pure function; no spawning, no file I/O', worker-argv.ts:26-27 still describes the prompt as 'single-quote-escaped', plan-argv.ts:7 still says 'pure functions, no I/O', and review.ts:17 still says 'buildReviewerWorkerArgv is a pure function (no I/O)'. These are the load-bearing headers a maintainer reads before calling the builders, and they now actively mislead (a stray call to buildSpawnArgv silently reaps the live dispatch's prompt file). Update the four headers in the same PR; the per-field JSDoc was updated but the module contracts were not."
+    },
+    {
+      "id": "US-R1-005",
+      "title": "Review round 1 fix 005: address reviewer finding",
+      "priority": 5,
+      "passes": false,
+      "notes": "WARNING [src/supervisor/verified-dispatch.ts:142]: runVerifiedDispatch sets `@cam_label` to the raw `phase` string, and the sentinel call sites pass phases that are not worker labels: 'implementer-token-ceiling' (loop.ts:1481), 'implementer-timeout' (loop.ts:1518), 'review-timeout' (review.ts:581), 'planner-timeout'/'auditor-timeout' (plan-runner.ts:1046). isSessionStale (src/tmux/session.ts:169) accepts only {'implementer','reviewer'} on the third pane and treats anything else as a STALE session, and cam run kills+recreates a stale session (src/commands/run.ts:533). Before this change the sentinel respawns left the label alone; now a post-timeout pane keeps a non-worker label indefinitely, so a healthy live session can be torn down on the next `cam run`. Decouple the tmux label from the failure-reason phase (pass an explicit `label`, or map sentinel phases back to their worker label)."
+    },
+    {
       "id": "US-001",
       "title": "Deliver worker task prompts out-of-band via per-dispatch prompt file",
       "description": "As the cam supervisor, I need every worker task prompt (planner, auditor, implementer, reviewer, codex) written to a per-dispatch-uuid file under .claude/ and read at exec time, so that the tmux command length is O(1) in issue/PRD size and an oversized record can never exceed the packed-argv limit again (AC1, AC8, AC9, AC10).",
@@ -47,7 +82,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes, including the file-size gate; any file pushed past its ceiling gets its scripts/file-size-budget.json raise in the SAME commit, derived from the real line count, never guessed (AC11). [oracle: bun run check:all]"
       ],
-      "priority": 1,
+      "priority": 6,
       "passes": true,
       "requires": null,
       "notes": "Corrected pointers (audit F-07): the prompt is escaped inline at FIVE sites, backend-adapter.ts:246 (implementer), :263 (planner), :279 (auditor), :294 (reviewer) in ClaudeAdapter's switch, plus CodexAdapter.renderActor :583-592 (escapedPrompt at :592); backend-adapter.ts:311 is only a section comment, not a site. shellEscape itself is defined at :226 and stays for model names. Existing in-repo precedent for a file consumed at exec: writeCodexInstructionsFile (backend-adapter.ts:395), wired via '-c model_instructions_file=<path>'. The exec-time read must keep the argv O(1) AND injection-safe; note that command-substitution-style reads strip trailing newlines, which is why AC2 (US-004) requires the no-final-newline measurement inside the test. Adapters receive claudeDir/uuid already (opts.uuid); thread the prompt-file path through buildSpawnArgv opts rather than writing files inside the adapter render if that keeps seams testable, implementer's call, but the reap-before-write MUST live in the module so the bound holds for every caller. Gotcha (issue): use single quotes in any grep oracle touching $/backtick sequences; never combine grep -q with -l/-L. patterns.md grep keywords: 'oracle-falsifiability', 'derive-don't-freeze', 'shellEscape'. Budgets today: src/tmux/session.ts 589; backend-adapter has its own entry, derive the raise from wc -l if exceeded."
@@ -68,7 +103,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes; src/commands/status.ts (budget 1012) gets a real-count-derived raise in the same commit if pushed past its ceiling (AC11). [oracle: bun run check:all]"
       ],
-      "priority": 2,
+      "priority": 7,
       "passes": true,
       "requires": null,
       "notes": "Model the module 1:1 on src/supervisor/plan-escalation.ts (PLAN_ESCALATED_FILENAME + read/write/remove trio) and the status projection on status.ts projectCycleState (~:653), which already reads five sibling markers, follow that exact shape. Marker consumers arrive in US-003 (writer wiring) and US-004/US-005 (removal wiring): this story ships the primitive + read surface only, so it is independently testable. stderr in the payload is what makes AC3 diagnosable end-to-end; keep it a plain string (possibly empty), never optional-dropped. patterns.md grep keywords: 'marker', 'plan-escalated', 'preflight-failed'."
@@ -87,7 +122,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes; src/commands/sidecar.ts (budget 3686) gets a real-count-derived raise in the same commit if pushed past its ceiling (AC11). [oracle: bun run check:all]"
       ],
-      "priority": 3,
+      "priority": 8,
       "passes": true,
       "requires": null,
       "notes": "Bun docs (consulted): SyncSubprocess.stderr is a Buffer when piped; the current wrapper already passes stderr: stdio and decodes only stdout, so the fix decodes result.stderr symmetrically. The helper's unit tests may use behavioral DI-fakes for tmux (ADR-0039 allows fakes with behavior, not mock-called assertions); the REAL-tmux end-to-end proof lands in US-004's integration tests. Identity check gotcha: the relabel via set-option runs BEFORE respawn-pane in every current path (plan-runner.ts:793-794), so a label must never be read as respawn success; capture pane_pid before relabel+respawn, compare after. Wire the helper's deps (spawnFn with stderr, logEvent, marker writer, notifyFn) by injection so US-004/US-005 thread their existing seams. patterns.md grep keywords: 'sentinel', 'supervisor', 'spawn'."
@@ -108,7 +143,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes; src/supervisor/plan-runner.ts sits exactly at its 1917-line ceiling today, so this story almost certainly includes a scripts/file-size-budget.json raise derived from the real post-change wc -l, in the same commit (AC11). [oracle: bun run check:all]"
       ],
-      "priority": 4,
+      "priority": 9,
       "passes": true,
       "requires": null,
       "notes": "Crime-scene facts to honor: relabel (set-option, :793) precedes respawn (:794) and pipe-pane follows (:798), so neither the label nor an existing out-log proves the auditor ran; isPaneAlive (:1004) is true for the WRONG session, so pane-death fallbacks never fire; the three wedged runs had argv of 17660/16828/16828 bytes vs the measured 16364 limit. Existing integration siblings to mirror for real-tmux harness setup: test/integration/plan-runner-pane-spawn.test.ts, test/integration/tmux-introspect.test.ts (uses a dedicated -L socket; do the same, never the live 'cam' socket). Timeout terminals should reuse the US-002 marker with reason 'planner-timeout'/'auditor-timeout' rather than inventing a second marker family. Existing unit file test/supervisor/plan-runner.test.ts and test/supervisor/plan/ subdir carry the DI seams (spawnFn, readPlanVerdictFn, notifyFn, logEvent); extend, don't fork. Issue workaround context: the orphan-prd in-progress-conflict gate is out of scope here, only the dispatch/terminal path is. patterns.md grep keywords: 'plan-runner', 'sentinel', 'capture-pane is rendered markdown'."
@@ -127,10 +162,83 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes; src/supervisor/loop.ts (budget 2652) and src/supervisor/review.ts (budget 736) get real-count-derived raises in the same commit if pushed past their ceilings (AC11). [oracle: bun run check:all]"
       ],
-      "priority": 5,
+      "priority": 10,
       "passes": true,
       "requires": null,
       "notes": "buildImplementerTaskPrompt (src/supervisor/task-prompt.ts:27-42) currently peaks ~4719 bytes, same failure class as the auditor, far from the limit: this story fixes the CLASS per the issue gotcha, not just the site that already burned. loop.ts and review.ts share the SpawnFn widened in US-003 and the container-mode dockerExecWrap + codexAuthPreflight ordering immediately before respawn-pane (loop.ts:1301-1327, review.ts:489-508): the verified helper must slot after those preflights, not before. Existing test files carrying the DI seams: test/supervisor/loop.test.ts (large; note its own budget in scripts/file-size-budget.json), review coverage lives across test/supervisor/review-*.test.ts, extend the matching file. The broad 'bun test test/supervisor' oracles are pass/fail on the whole supervisor suite because the exact test-file split across loop/review files is layout-dependent; each new assertion is still individually swept red-on-main per the sweep criterion. patterns.md grep keywords: 'loop.ts', 'reviewer', 'sentinel', 'file-size'."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:5",
+    "findings": [
+      {
+        "severity": "CRITICAL",
+        "file": "src/supervisor/worker-dispatch.ts",
+        "line": 43,
+        "text": "The new implementer/reviewer pipe-pane target is `<claudeDir>/cam-worker-out-<phase>-<uuid>.log` (no leading dot), but .gitignore:62 and templates/.gitignore:40 only ignore `.claude/.cam-worker-out-*.log` (WITH a leading dot). Verified with `git check-ignore -q`: `.claude/cam-worker-out-implementer-x.log` -> NOT-IGNORED, `.claude/.cam-worker-out-implementer-x.log` -> IGNORED. The first real implement or review dispatch therefore leaves an untracked file in the working tree, and the very next plan phase fails its clean-tree preflight (`git status --porcelain` non-empty at src/supervisor/plan-preflight.ts:118-122, ADR-0014), wedging the loop. This is exactly the failure class US-001 AC5 was written to prevent for the prompt file. Fix: either write to the already-ignored dotted stem or register `.claude/cam-worker-out-*.log` in BOTH .gitignore and templates/.gitignore + re-run `bun run embed-vendor`."
+      },
+      {
+        "severity": "CRITICAL",
+        "file": "src/supervisor/plan-runner.ts",
+        "line": 463,
+        "text": "Layer B behavioral gate FAIL: the US-002 acceptance-criterion oracle `! grep -rq --include='*.ts' --exclude='dispatch-failed-marker.ts' -F '.cam-dispatch-failed' src` exits 1 at branch HEAD (reproduced with both ugrep 7.5.0 and /usr/bin/grep). The bare literal `.claude/.cam-dispatch-failed.json` appears in a JSDoc block at plan-runner.ts:463, added by the US-004 commit (684c5a64) after US-002 certified the same oracle green. The invariance pin US-002 shipped (and contorted the vendor generator to preserve, see the WARNING below) is red on the branch being merged. Fix the source of truth: reference DISPATCH_FAILED_FILENAME in the comment (or drop the bare literal) so the story's own oracle is green at HEAD."
+      },
+      {
+        "severity": "WARNING",
+        "file": "scripts/generate-embedded-vendor.ts",
+        "line": 66,
+        "text": "`jsLiteral` (the generic literal encoder for every embedded vendor/template file) was special-cased to rewrite `.cam-dispatch-failed.json` into `\\u002ecam-dispatch-failed.json`, and the build script now imports DISPATCH_FAILED_FILENAME from src/supervisor/dispatch-failed-marker.ts, purely so a static grep oracle would not see the literal in the generated file. That is gate-satisfaction, not a code requirement: the encoding is semantically identical, no consumer benefits, it couples the codegen script to a supervisor module, and it silently makes one magic string encode differently from every other byte in the embedded corpus. It also did not hold (see the CRITICAL above). The correct fix is to scope the oracle away from generated output (e.g. `--exclude=_generated.ts`) and revert `jsLiteral` to plain `JSON.stringify(value)`."
+      },
+      {
+        "severity": "WARNING",
+        "file": "src/supervisor/worker-argv.ts",
+        "line": 16,
+        "text": "Module-header contracts now contradict the code. buildSpawnArgv writes a file and reaps siblings on every call (backend-adapter.ts:240-244 resolveTaskPromptArgument -> writeTaskPromptFile), yet worker-argv.ts:16 still declares 'Pure function; no spawning, no file I/O', worker-argv.ts:26-27 still describes the prompt as 'single-quote-escaped', plan-argv.ts:7 still says 'pure functions, no I/O', and review.ts:17 still says 'buildReviewerWorkerArgv is a pure function (no I/O)'. These are the load-bearing headers a maintainer reads before calling the builders, and they now actively mislead (a stray call to buildSpawnArgv silently reaps the live dispatch's prompt file). Update the four headers in the same PR; the per-field JSDoc was updated but the module contracts were not."
+      },
+      {
+        "severity": "WARNING",
+        "file": "src/supervisor/verified-dispatch.ts",
+        "line": 142,
+        "text": "runVerifiedDispatch sets `@cam_label` to the raw `phase` string, and the sentinel call sites pass phases that are not worker labels: 'implementer-token-ceiling' (loop.ts:1481), 'implementer-timeout' (loop.ts:1518), 'review-timeout' (review.ts:581), 'planner-timeout'/'auditor-timeout' (plan-runner.ts:1046). isSessionStale (src/tmux/session.ts:169) accepts only {'implementer','reviewer'} on the third pane and treats anything else as a STALE session, and cam run kills+recreates a stale session (src/commands/run.ts:533). Before this change the sentinel respawns left the label alone; now a post-timeout pane keeps a non-worker label indefinitely, so a healthy live session can be torn down on the next `cam run`. Decouple the tmux label from the failure-reason phase (pass an explicit `label`, or map sentinel phases back to their worker label)."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/supervisor/task-prompt-file.ts",
+        "line": 63,
+        "text": "`\"$(cat -- 'path')\"` fails open: if the prompt file is missing or unreadable at exec time, cat writes to stderr, the substitution yields an empty string, and claude is launched with an empty prompt (CAM-41: a promptless session dies instantly) while runVerifiedDispatch still reports ok because pane_pid changed. Low reachability today (the reap bound keeps exactly one file and terminals own removal), but it is the one remaining silent-dispatch path in a PRD whose thesis is that no dispatch fails silently. Consider making the read fail loudly (e.g. `sh -c 'cat -- file || exit 1'`-style guard) so an absent prompt becomes a pane death rather than an empty session."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/supervisor/task-prompt-file.ts",
+        "line": 25,
+        "text": "writeTaskPromptFile reaps every sibling BEFORE validating the uuid (taskPromptFilename is only called at line 33), so an invalid uuid destroys the live dispatch's prompt file and then throws. Validate first, then reap. The uuid regex guard (line 13) is also the module's only path-traversal defense and has no test; add an explicit rejection case (e.g. '../evil')."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/supervisor/verified-dispatch.ts",
+        "line": 61,
+        "text": "tmux argv is assembled from hardcoded `'-L', 'cam'` literals instead of `tmuxArgs()` (src/tmux/session.ts:73) / `displayMessageArgv()` (src/tmux/display-message.ts:67), which exist precisely to centralize the socket flag. The cost shows up in the test: test/integration/dispatch-oversize-prompt.test.ts:38-55 needs a `swapSocketSpawn` shim that string-rewrites `-L cam` to reach a private socket. Routing through tmuxArgs would let the socket be injected instead of rewritten."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/supervisor/verified-dispatch.ts",
+        "line": 16,
+        "text": "Three of the eight DispatchFailureReason variants are never exercised by a test: 'pane-pid-before-exited', 'pane-pid-before-empty', 'pane-pid-after-empty'. The empty-stdout branch matters because tmux expands an unknown/missing format variable to an empty string rather than erroring (the exact lesson recorded in src/tmux/display-message.ts:99-104), so it is the branch most likely to regress silently."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/supervisor/plan-runner.ts",
+        "line": 1,
+        "text": "plan-runner.ts grew 1917 -> 2114 lines this PR (ceiling 1917 -> 2115) and is now the second-largest src file. The raise itself is legitimate and derived from the real count (verified: actual 2114, budget 2115), but the newly added dispatch/terminal block (effectivePlanClaudeDir, planOutLogPath, shellQuote, removePlanTaskPrompt, runVerifiedPlanDispatch, emitPlanTimeoutTerminal) is cohesive and self-contained enough to live in its own module next to verified-dispatch.ts. Also note shellQuote is now duplicated verbatim in plan-runner.ts:709, worker-dispatch.ts:38, and task-prompt-file.ts:49."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "scripts/cam/project.toml",
+        "line": 6,
+        "text": "The operator's backend flip (implementer = codex -> claude, with a Portuguese rationale comment) was swept into the US-005 feature commit (965c4cf7). It is unrelated to CAM-433 and will land with this PR; call it out in the PR description or split it so the merge is not silently a config change too."
+      }
+    ]
+  }
 }
