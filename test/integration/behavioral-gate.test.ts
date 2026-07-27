@@ -18,10 +18,9 @@ import {
 	BEHAVIORAL_GATE_SOCKET,
 	type RunBehavioralGateOpts,
 } from '../../src/supervisor/behavioral-gate.ts';
+import { tmuxAvailable } from '../helpers/test-deps.ts';
 
 const TEST_SOCK = 'cam-it-gate';
-
-const tmuxAvailable = spawnSync('tmux', ['-V']).status === 0;
 
 /** Run tmux directly on the private test socket (for setup/teardown). */
 function tmuxRaw(args: string[]): ReturnType<typeof spawnSync> {

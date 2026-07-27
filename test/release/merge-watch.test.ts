@@ -62,6 +62,7 @@ import {
 	type PrStatus,
 	type ShipStalledMarker,
 } from '../../src/release/merge-watch.ts';
+import { jqAvailable } from '../helpers/test-deps.ts';
 import {
 	runSidecarLoop,
 	type RunSidecarLoopOptions,
@@ -2046,7 +2047,6 @@ describe('AC4: gcMergeWatchIfGarbage real-fs regression (US-001)', () => {
 // ---------------------------------------------------------------------------
 
 describe('AC3: preserved-seed -> enrich -> stepMergeWatch closeIssueId (US-001)', () => {
-	const jqAvailable = Bun.which('jq') !== null;
 	let tempDir: string;
 
 	beforeEach(() => {

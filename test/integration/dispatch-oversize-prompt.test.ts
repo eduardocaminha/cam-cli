@@ -25,10 +25,10 @@ import {
 } from '../../src/supervisor/task-prompt-file.ts';
 import { runVerifiedDispatch } from '../../src/supervisor/verified-dispatch.ts';
 import { waitForCondition } from '../helpers/wait-for-condition.ts';
+import { tmuxAvailable } from '../helpers/test-deps.ts';
 
 const TEST_SOCKET = `cam-it-oversize-${process.pid}`;
 const SESSION = 'oversize-dispatch';
-const tmuxAvailable = spawnSync('tmux', ['-V']).status === 0;
 const cleanupDirs: string[] = [];
 
 function tmuxRaw(args: string[]): ReturnType<typeof spawnSync> {

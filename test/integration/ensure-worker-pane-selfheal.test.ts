@@ -30,11 +30,10 @@ import {
 	type SpawnFn,
 } from '../../src/tmux/session.ts';
 import { waitForCondition } from '../helpers/wait-for-condition.ts';
+import { tmuxAvailable } from '../helpers/test-deps.ts';
 
 const TEST_SOCK = 'cam-it-selfheal';
 const SESSION = 'selfheal-test';
-
-const tmuxAvailable = spawnSync('tmux', ['-V']).status === 0;
 
 /** Run tmux on the private test socket directly (for setup/teardown). */
 function tmuxRaw(args: string[]): ReturnType<typeof spawnSync> {

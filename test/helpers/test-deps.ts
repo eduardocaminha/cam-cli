@@ -157,6 +157,21 @@ export function isAvailable(name: DepName): boolean {
  */
 export const gitAvailable: boolean = isAvailable('git');
 
+/**
+ * Precomputed `isAvailable(name)` convenience bindings for the remaining 6
+ * tracked binaries, exported for the test files that gate
+ * `test.skipIf(!xAvailable)(...)` on their presence (US-004, CAM-424).
+ * Mirrors `gitAvailable` above: centralizes the probe here instead of each
+ * call site hand-rolling its own `spawnSync(name, ['--version'|'-V'], ...)`
+ * check.
+ */
+export const tmuxAvailable: boolean = isAvailable('tmux');
+export const jqAvailable: boolean = isAvailable('jq');
+export const pgrepAvailable: boolean = isAvailable('pgrep');
+export const psAvailable: boolean = isAvailable('ps');
+export const uuidgenAvailable: boolean = isAvailable('uuidgen');
+export const bunAvailable: boolean = isAvailable('bun');
+
 // ---------------------------------------------------------------------------
 // Waiver reader
 // ---------------------------------------------------------------------------

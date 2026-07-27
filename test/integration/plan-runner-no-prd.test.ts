@@ -33,6 +33,7 @@ import type { SpawnFn as LoopSpawnFn } from '../../src/supervisor/loop.ts';
 import type { IssueEntry } from '../../src/issues/types.ts';
 import type { PlanApproval } from '../../src/config/models.ts';
 import { waitForCondition } from '../helpers/wait-for-condition.ts';
+import { tmuxAvailable } from '../helpers/test-deps.ts';
 
 const GENERIC_PLAN_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-plan-runner-no-prd-it-config-'));
 const GENERIC_PLAN_CONFIG_PATH = join(GENERIC_PLAN_CONFIG_DIR, 'project.toml');
@@ -40,8 +41,6 @@ writeFileSync(GENERIC_PLAN_CONFIG_PATH, '[backend]\nplanner = "claude"\nauditor 
 
 const TEST_SOCK = 'cam-it-noprd';
 const SESSION = 'noprd-test';
-
-const tmuxAvailable = spawnSync('tmux', ['-V']).status === 0;
 
 /** Run tmux on the private test socket (for setup/teardown). */
 function tmuxRaw(args: string[]): ReturnType<typeof spawnSync> {
