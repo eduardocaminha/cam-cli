@@ -1,19 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-003",
-    "title": "Review round 1 fix 003: address reviewer finding"
+    "id": "US-R1-004",
+    "title": "Review round 1 fix 004: address reviewer finding"
   },
   "branchName": "cam/issue-433",
-  "timestamp": "2026-07-27T15:10:00Z",
+  "timestamp": "2026-07-27T15:40:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "scripts/generate-embedded-vendor.ts",
-    "src/vendor/_generated.ts"
+    "src/supervisor/worker-argv.ts",
+    "src/supervisor/plan-argv.ts",
+    "src/supervisor/review.ts",
+    "scripts/file-size-budget.json"
   ],
   "openQuestions": [
-    "prd.json:96 (US-002 AC2 oracle: `! grep -rq --include='*.ts' --exclude='dispatch-failed-marker.ts' -F '.cam-dispatch-failed' src`) is now stale/mis-scoped after this story reverted the jsLiteral encoding hack: verified empirically that the unscoped oracle now exits 0 (red, literal found in src/vendor/_generated.ts, which legitimately re-embeds templates/.gitignore verbatim) while adding `--exclude='_generated.ts'` makes it exit 1 (green). Implementer sessions are hard-blocked from writing prd.json (Write/Edit/MultiEdit tool guard), so this story could not apply the fix itself. An orchestrator/operator session should add `--exclude='_generated.ts'` to that oracle string in prd.json, matching the existing scripts/check-debt-markers.ts filterScannablePaths and test/spine/no-inline-specified-predicate.test.ts precedents for excluding src/vendor/_generated.ts from literal-content scans (it is codegen'd data, not hand-authored source). Left unaddressed, the next review round will likely reproduce the red oracle and re-flag it, same as it did for the US-004 regression this PRD already fixed once (US-R1-002)."
+    "prd.json:96 (US-002 AC2 oracle) is still unfixed and implementer-protected (see US-R1-003's openQuestion, unresolved): an orchestrator/operator session needs to add --exclude='_generated.ts' to that oracle string directly, since prd.json edits are hard-blocked for implementer sessions.",
+    "US-R1-005 (verified-dispatch.ts's @cam_label uses the raw sentinel phase string, e.g. 'implementer-timeout', which isSessionStale doesn't recognize as a worker label) is still open in prd.json for a future story."
   ],
-  "nextStoryContext": "Addressed the CAM-433 round-1 WARNING at scripts/generate-embedded-vendor.ts:66: reverted jsLiteral from a special-cased Unicode-escape of DISPATCH_FAILED_FILENAME back to plain JSON.stringify(value), and removed the codegen script's import of DISPATCH_FAILED_FILENAME from src/supervisor/dispatch-failed-marker.ts. Regenerated src/vendor/_generated.ts via `bun run embed-vendor`; embed-vendor:check is clean. This intentionally re-introduces the bare literal `.claude/.cam-dispatch-failed.json` into _generated.ts (verbatim from templates/.gitignore, exactly like every other embedded byte), which is the correct outcome per the reviewer's finding: the literal belongs there, and the negative-grep oracle that pins it should exclude generated output rather than the encoder special-casing one string. See the open question above and the new patterns.md bullet ('A negative-grep invariance-pin oracle over src must exclude codegen output, not special-case the codegen's own encoder to dodge it') for the residual prd.json edit an orchestrator/operator session needs to make. Quality gates: typecheck ok, 5663 tests pass / 0 fail, full `bun run check:all` spine green (embed-vendor, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps), no ceiling raises needed. Remaining review round 1 findings still open in prd.json for future stories: US-R1-004 (four stale 'pure function/no I/O' module-header docstrings in worker-argv.ts/plan-argv.ts/review.ts now contradict buildSpawnArgv's file I/O), US-R1-005 (verified-dispatch.ts's @cam_label uses the raw sentinel phase string, e.g. 'implementer-timeout', which isSessionStale doesn't recognize as a worker label and can cause a healthy post-timeout session to be torn down as stale on the next `cam run`).",
+  "nextStoryContext": "Addressed the CAM-433 round-1 WARNING at src/supervisor/worker-argv.ts:16 (US-R1-004): corrected the stale 'Pure function; no spawning, no file I/O' / 'pure functions, no I/O' / 'is a pure function (no I/O)' module-header design-decision bullets in worker-argv.ts, plan-argv.ts, and review.ts, which contradicted the fact that ClaudeAdapter.buildSpawnArgv (backend-adapter.ts) writes the task prompt to a per-dispatch file on disk (reaping prior siblings) as a side effect of building the argv string. Also corrected the stale 'single-quote-escaped' claim and the literal '<task>'/'<taskPrompt>' return-shape docstring examples on all 6 exported builder functions (buildImplementerWorkerArgv, buildPlannerWorkerArgv, buildAuditorWorkerArgv, buildReviewerWorkerArgv) in the same 3 files, since those function-level docstrings carried the identical staleness the finding called out at the module-header level (same file, same defect class, left unaddressed would just relocate the misleading claim). No production behavior changed: comment-only fix. Raised src/supervisor/review.ts's file-size ceiling 782->789 (dated _ref note added) to cover the corrected docstrings. Quality gates: typecheck ok, 5663 tests pass / 0 fail, full `bun run check:all` spine green (typecheck, test, embed-vendor, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps). New patterns.md bullet added documenting that a module-header 'Design decisions' block is a separate contract from per-field JSDoc and both need sweeping together. Remaining review round 1 findings still open in prd.json for future stories: US-R1-005 (verified-dispatch.ts's @cam_label staleness, see openQuestions above).",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
