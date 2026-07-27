@@ -6,6 +6,19 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.263.0] - 2026-07-27
+
+### Added
+
+- US-R2-002 - Review round 2 fix 002: address reviewer finding
+- US-R2-001 - Review round 2 fix 001: address reviewer finding
+- US-R1-004 - Review round 1 fix 004: address reviewer finding
+- US-R1-003 - Review round 1 fix 003: address reviewer finding
+- US-R1-002 - Review round 1 fix 002: address reviewer finding
+- US-R1-001 - Review round 1 fix 001: address reviewer finding
+- US-002 - Sweep GARBOARD out of the active presentation docs and reconcile the on-main issue records
+- US-001 - Write ADR-0050 (GATESHIP supersedes GARBOARD) and append the supersession note to ADR-0049
+
 ## [0.262.0] - 2026-07-27
 
 ### Added
