@@ -69,7 +69,7 @@
         "Full quality spine passes; src/commands/status.ts (budget 1012) gets a real-count-derived raise in the same commit if pushed past its ceiling (AC11). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Model the module 1:1 on src/supervisor/plan-escalation.ts (PLAN_ESCALATED_FILENAME + read/write/remove trio) and the status projection on status.ts projectCycleState (~:653), which already reads five sibling markers, follow that exact shape. Marker consumers arrive in US-003 (writer wiring) and US-004/US-005 (removal wiring): this story ships the primitive + read surface only, so it is independently testable. stderr in the payload is what makes AC3 diagnosable end-to-end; keep it a plain string (possibly empty), never optional-dropped. patterns.md grep keywords: 'marker', 'plan-escalated', 'preflight-failed'."
     },
