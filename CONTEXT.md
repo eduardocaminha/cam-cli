@@ -418,3 +418,12 @@ The single canonical function (resolveSelfInvokeArgv) that computes the argv pre
 
 **bunfs virtual entry**:
 The /$bunfs/root/<outfile> path that bun injects as process.argv[1] inside a bun build --compile binary. Its presence is the positive signal that the process is running as a compiled binary; subcommand dispatch therefore reads argv[2] in both modes.
+
+**dispatch-failed marker**:
+The durable .cam-dispatch-failed.json file (CAM-433) written when a verified planner/implementer/reviewer dispatch fails at any checked step (pane_pid read, @cam_label set, respawn-pane, pipe-pane) or when respawn-pane's exit-0 does not correspond to a real process replacement. Carries phase, paneId, uuid, exitCode, stderr, reason, and timestamp; projected read-only into `cam status`, and cleared only by the next dispatch that converges (pane_pid changes and pipe-pane exits zero), never by a boot read.
+
+**verified dispatch**:
+The shared tmux dispatch primitive (runVerifiedDispatch, CAM-433) used by every implementer/reviewer/planner/auditor respawn: relabel the pane's @cam_label, respawn-pane -k, then prove the process actually changed via pane_pid identity verification before piping output. Replaces a bare respawn-pane exit-code check, which a lying zero exit cannot be trusted against on its own.
+
+**pane_pid identity verification**:
+Reading a tmux pane's #{pane_pid} before and after a respawn-pane call and requiring the two to differ. A respawn-pane exit code of 0 alone is not proof the pane's process was replaced; an unchanged pane_pid after a nominally successful respawn is itself a dispatch failure (reason pane-pid-unchanged).
