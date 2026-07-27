@@ -1,19 +1,16 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-001",
-    "title": "Review round 1 fix 001: address reviewer finding"
+    "id": "US-R1-002",
+    "title": "Review round 1 fix 002: address reviewer finding"
   },
   "branchName": "cam/issue-433",
-  "timestamp": "2026-07-27T14:10:00Z",
+  "timestamp": "2026-07-27T14:30:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    ".gitignore",
-    "templates/.gitignore",
-    "src/vendor/_generated.ts",
-    "scripts/cam/patterns.md"
+    "src/supervisor/plan-runner.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "Fixed the CAM-433 round-1 CRITICAL finding at src/supervisor/worker-dispatch.ts:43: workerOutLogPath writes `<claudeDir>/cam-worker-out-<phase>-<uuid>.log` (no leading dot), which was not covered by the pre-existing `.claude/.cam-worker-out-*.log` (WITH a leading dot) gitignore entry. Chose the gitignore-registration fix (not a rename to the dotted stem) because there is exact precedent for an undotted pipe-pane-out-log glob two lines below in both files: `.claude/cam-plan-out-*.log` (CAM-158/CAM-160, plan-runner's own out-log). Added the literal glob `.claude/cam-worker-out-*.log` to BOTH .gitignore and templates/.gitignore immediately after the legacy dotted entry, with a comment distinguishing the two conventions, then ran `bun run embed-vendor` to regenerate src/vendor/_generated.ts and confirmed `embed-vendor:check` is clean. Verified empirically with `git check-ignore -v` on both `.claude/cam-worker-out-implementer-x.log` (now correctly ignored) and `.claude/.cam-worker-out-implementer-x.log` (still ignored, unaffected). No source/behavior code changed, only the two gitignore files plus the generated vendor embed and a patterns.md bullet. Remaining review round 1 findings still open in prd.json for future stories: US-R1-002 (plan-runner.ts:463 bare dispatch-failed literal breaks its own US-002 grep oracle), US-R1-003 (revert the jsLiteral special-case encoding + rescope the oracle away from generated output), US-R1-004 (four stale 'pure function/no I/O' module-header docstrings in worker-argv.ts/plan-argv.ts/review.ts now contradict buildSpawnArgv's file I/O), US-R1-005 (verified-dispatch.ts's @cam_label uses the raw sentinel phase string, e.g. 'implementer-timeout', which isSessionStale doesn't recognize as a worker label and can cause a healthy post-timeout session to be torn down as stale on the next `cam run`). None of the review's SUGGESTION-severity findings (task-prompt-file.ts fail-open cat, reap-before-validate ordering, hardcoded '-L cam' literals instead of tmuxArgs(), untested DispatchFailureReason variants, plan-runner.ts module-split suggestion, project.toml operator-config-drift-in-feature-commit) were filed as separate prd.json stories; they remain only in prd.review.findings as non-blocking record.",
+  "nextStoryContext": "Fixed the CAM-433 round-1 CRITICAL finding at src/supervisor/plan-runner.ts:463: the JSDoc comment on writeDispatchFailedMarkerFn had hardened the bare literal `.claude/.cam-dispatch-failed.json`, which was added by the US-004 commit (684c5a64) after US-002 certified the US-002 acceptance-criterion oracle (`! grep -rq --include='*.ts' --exclude='dispatch-failed-marker.ts' -F '.cam-dispatch-failed' src`) green. Reworded the comment to reference the filename via the exported `DISPATCH_FAILED_FILENAME` constant in prose (`.claude/${DISPATCH_FAILED_FILENAME}`) instead of the bare literal, so the literal string `.cam-dispatch-failed` no longer appears outside dispatch-failed-marker.ts. Verified the oracle passes standalone (grep exits 1 i.e. CLEAN) and re-ran the full `bun run check:all` spine (typecheck, 5663 tests, embed-vendor, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps) all green with no ceiling raises needed. No import of DISPATCH_FAILED_FILENAME was added since it's referenced only in comment prose, not executable code (DispatchFailedMarker type was already imported). Remaining review round 1 findings still open in prd.json for future stories: US-R1-003 (revert the jsLiteral special-case encoding + rescope the oracle away from generated output), US-R1-004 (four stale 'pure function/no I/O' module-header docstrings in worker-argv.ts/plan-argv.ts/review.ts now contradict buildSpawnArgv's file I/O), US-R1-005 (verified-dispatch.ts's @cam_label uses the raw sentinel phase string, e.g. 'implementer-timeout', which isSessionStale doesn't recognize as a worker label and can cause a healthy post-timeout session to be torn down as stale on the next `cam run`).",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
