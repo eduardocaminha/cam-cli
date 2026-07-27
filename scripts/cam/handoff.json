@@ -1,16 +1,16 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-004",
-    "title": "Review round 1 fix 004: address reviewer finding"
+    "id": "US-R2-001",
+    "title": "Review round 2 fix 001: address reviewer finding"
   },
   "branchName": "cam/issue-434",
-  "timestamp": "2026-07-27T18:30:00Z",
+  "timestamp": "2026-07-27T19:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
     "docs/positioning.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R1-004 fixed a false sourcing claim at docs/positioning.md section 4 (naming decision): the sentence said 'the two ADRs hold ... the kill evidence for every candidate considered', but that is false for the discarded four-round-battery candidates (Slipway, Ingot, Crivo, Assay, and the tenet/tenant/nova/fide riffs), whose kill evidence lived only in positioning.md sections 4.2/4.3 before US-002 of this PRD deleted those sections (git show 198e6bff has the deleted text if ever needed) and does not survive in ADR-0049 or ADR-0050 (verified via git grep, both files read in full this session). Chose the 'narrow the sentence' resolution path over 'carry the evidence into ADR-0050': rewriting an already-accepted ADR to retroactively add kill-evidence detail it never itself verified is riskier and out of scope for a docs-narrowing fix, and ADR-0050's own doctrine treats prior ADRs as historical record not to be rewritten. The corrected sentence now scopes the ADRs' held evidence to the finalists that actually reached a live-measured round (GAMBREL + the -board family in ADR-0049; the 2026-07-27 21-candidate round in ADR-0050) and explicitly states the wider four-round battery's kill evidence is not carried in either ADR. No other content in positioning.md, the ADRs, or CAM-0415.json was touched. Single-line diff; all quality gates (typecheck, bun test 5665 pass / 0 fail, bun run check:all) green.",
+  "nextStoryContext": "US-R2-001 fixed the round-1-fix regression flagged by review round 2 (CRITICAL, docs/positioning.md:73): US-R1-004's rewritten section-4 sourcing sentence had reintroduced the literal retired product name ('...that killed Garboard and vetted Gateship'), turning US-002's AC0 and AC6 oracles red again. Single-token fix: reworded to 'that killed the superseded name and vetted Gateship' (no retired-name literal, meaning preserved). Verified both oracles green against branch HEAD after the edit: AC0 (`grep -qi 'gateship' docs/positioning.md && ! grep -qi 'garboard' docs/positioning.md`) exits 0; AC6 repo gate using the CURRENT prd.json exclusion list (which already includes ':!scripts/cam/patterns.md' per the US-R1-003/CAM-434 orchestrator amendment, commit 0a7fdf92) exits 0 with docs/positioning.md no longer an offender. No other content touched; single-line diff. All quality gates green: typecheck 0 errors, bun test 5665 pass / 0 fail, bun run check:all clean (file-size/debt-markers/coverage/dead-code/dup/ci-parity/agents-md/test-sleeps all ok; only pre-existing non-blocking warnings: biome.json deprecated 'recommended' field, a few knip ignore-list hints, validate-agents-md KNOWN_MISSING informational notices). Next reviewer round should re-check whether any other docs/adr prose still narrates the retired name outside the already-exempted historical/control-plane paths (docs/adr/, issues/, journal, CHANGELOG, patterns.md, patterns.archive.md, suggestions.jsonl, prd.json, handoff.json).",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
