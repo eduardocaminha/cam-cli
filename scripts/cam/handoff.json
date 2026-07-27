@@ -1,0 +1,21 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Create centralized dependency-probe helper with classification and waiver semantics" },
+  "branchName": "cam/issue-424",
+  "timestamp": "2026-07-27T00:00:00Z",
+  "createdFiles": ["test/helpers/test-deps.ts", "test/helpers/test-deps.test.ts"],
+  "modifiedFiles": [],
+  "openQuestions": [
+    "pgrep is classified hard-dependency by default (same reasoning as tmux/git/jq/uuidgen/bun) even though it comes from the same procps package as ps and is therefore also absent in the oven/bun:1.2-slim worker container. Only ps has a documented narrow host-vs-container rationale (test/integration/orch-recycle-pid-resolve.test.ts). If a later migration story finds pgrep needs the same legitimate-environmental carve-out, update its DEP_METADATA entry in test/helpers/test-deps.ts rather than defaulting other unclassified binaries to environmental."
+  ],
+  "nextStoryContext": "test/helpers/test-deps.ts is built but NOT yet wired into any of the ~46 existing scattered Bun.which/spawnSync probes across test/**. A follow-up story should migrate call sites (starting with test/integration/orch-recycle-pid-resolve.test.ts, whose ps-absence rationale was carried into test-deps.ts's DEP_METADATA.ps.rationale per this story's AC3) onto depPreflight/getDepInfo/isAvailable instead of hand-rolled Bun.which checks. Public surface: DepName, DepClassification, DepInfo, getDepInfo, isAvailable, WAIVER_ENV_VAR, parseWaivers, isWaived, depPreflight (+ DepPreflightResult union: {kind:'available'} | {kind:'skip',reason} | {kind:'fail',message}).",
+  "officialDocsValidated": [
+    {
+      "lib": "Bun",
+      "channel": "WebFetch",
+      "url": "https://bun.com/docs/api/utils",
+      "fetchedAt": "2026-07-27T00:00:00Z",
+      "status": "aligned",
+      "summary": "Confirmed Bun.which(name) returns null (not undefined/throw) when the binary is absent from PATH, matching test-deps.ts's `Bun.which(name) !== null` probe and the pre-existing repo convention (e.g. test/orch-agent-allowlist.test.ts, test/integration/orch-recycle-watch.test.ts)."
+    }
+  ]
+}
