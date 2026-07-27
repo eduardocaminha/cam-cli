@@ -38,6 +38,7 @@ import { readTaskPromptFromCommand } from './helpers/task-prompt.ts';
 import type { IssueEntry } from '../src/issues/types.ts';
 import { selectPlanTargetFromFile } from '../src/issues/select.ts';
 import type { BacklogSpawnFn } from '../src/issues/backlog.ts';
+import { withVerifiedPanePid } from './helpers/verified-pane-pid-spawn.ts';
 
 // ---------------------------------------------------------------------------
 // Generic backend fixture (US-008, CAM-420): isolates this suite's
@@ -124,7 +125,6 @@ function makeBaseOpts(overrides: Partial<RunPlanPhaseOptions> = {}): {
 	};
 
 	const opts: RunPlanPhaseOptions = {
-		spawnFn,
 		isPaneAlive: () => false,
 		sleepFn: () => {},
 		genUuid: () => 'test-uuid-0000-0000-0000-invalidtarget',
@@ -142,6 +142,7 @@ function makeBaseOpts(overrides: Partial<RunPlanPhaseOptions> = {}): {
 		plannerTimeoutMs: 999_999,
 		auditorTimeoutMs: 999_999,
 		...overrides,
+		spawnFn: withVerifiedPanePid(overrides.spawnFn ?? spawnFn),
 		configPath: 'configPath' in overrides ? overrides.configPath : GENERIC_PLAN_CONFIG_PATH,
 	};
 
@@ -226,7 +227,7 @@ describe('runPlanPhase - explicit-target-wins regression (AC3)', () => {
 		};
 
 		const result = runPlanPhase({
-			spawnFn,
+			spawnFn: withVerifiedPanePid(spawnFn),
 			isPaneAlive: () => false,
 			sleepFn: () => {},
 			genUuid: () => 'test-uuid-0000-0000-0000-targetwins00',

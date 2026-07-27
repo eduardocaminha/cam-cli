@@ -35,6 +35,17 @@ export function writeTaskPromptFile(claudeDir: string, uuid: string, prompt: str
 	return path;
 }
 
+/**
+ * Remove one completed dispatch's prompt file.
+ *
+ * Terminal owners call this as soon as the dispatched worker produces its
+ * report, times out, or fails to dispatch. `force:true` keeps cleanup
+ * idempotent when a later prompt write already reaped the same file.
+ */
+export function removeTaskPromptFile(claudeDir: string, uuid: string): void {
+	rmSync(join(claudeDir, taskPromptFilename(uuid)), { force: true });
+}
+
 function shellEscapePath(path: string): string {
 	return `'${path.replace(/'/g, "'\\''")}'`;
 }

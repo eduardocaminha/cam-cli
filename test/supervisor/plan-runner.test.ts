@@ -18,7 +18,7 @@
 //        auditor; clean PRD -> auditor unchanged, zero behavior change).
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -36,6 +36,13 @@ import type { IssueEntry } from '../../src/issues/types.ts';
 import type { PlanPreflightResult } from '../../src/supervisor/plan-preflight.ts';
 import { readTaskPromptFromCommand } from '../helpers/task-prompt.ts';
 import type { PrdShape } from '../../src/commands/status.ts';
+import type { WorkerEvent } from '../../src/supervisor/events.ts';
+import {
+	DISPATCH_FAILED_FILENAME,
+	removeDispatchFailedMarker,
+	writeDispatchFailedMarker,
+	type DispatchFailedMarker,
+} from '../../src/supervisor/dispatch-failed-marker.ts';
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -112,6 +119,32 @@ interface TmuxCall {
 	taskPrompt?: string;
 }
 
+interface CheckedSpawnFixture {
+	fn: SpawnFn;
+	calls: TmuxCall[];
+}
+
+function makeCheckedSpawn(
+	override?: (
+		cmd: string,
+		args: string[],
+	) => { stdout: string; stderr?: string; exitCode: number | null } | undefined,
+): CheckedSpawnFixture {
+	const calls: TmuxCall[] = [];
+	let panePid = 900;
+	const fn: SpawnFn = (cmd, args) => {
+		calls.push({ cmd, args });
+		const overridden = override?.(cmd, args);
+		if (overridden !== undefined) return overridden;
+		if (args[2] === 'display-message' && args.includes('#{pane_pid}')) {
+			return { stdout: `${panePid}\n`, exitCode: 0 };
+		}
+		if (args[2] === 'respawn-pane') panePid++;
+		return { stdout: '', exitCode: 0 };
+	};
+	return { fn, calls };
+}
+
 function auditorRespawnCalls(calls: TmuxCall[]): TmuxCall[] {
 	return calls.filter(
 		(c) => c.args[2] === 'respawn-pane' && c.args.some((a) => a.includes('subagent-auditor')),
@@ -135,14 +168,20 @@ function makeOpts(overrides: Partial<RunPlanPhaseOptions> = {}): {
 } {
 	const calls: TmuxCall[] = [];
 	let plannerAliveCount = 1;
+	let panePid = 100;
 
 	const spawnFn: SpawnFn = (cmd, args) => {
+		if (args[2] === 'display-message' && args.includes('#{pane_pid}')) {
+			calls.push({ cmd, args });
+			return { stdout: `${panePid}\n`, exitCode: 0 };
+		}
 		const shell = args[args.length - 1] ?? '';
 		const taskPrompt =
 			args.includes('respawn-pane') && shell.includes('.cam-task-prompt-')
 				? readTaskPromptFromCommand(shell)
 				: undefined;
 		calls.push({ cmd, args, taskPrompt });
+		if (args[2] === 'respawn-pane') panePid++;
 		return { stdout: '', exitCode: 0 };
 	};
 
@@ -200,14 +239,20 @@ function makeReplanOpts(
 	const markerCalls: PlanEscalationWriterParams[] = [];
 	let roundIndex = 0;
 	let plannerAliveCount = 1;
+	let panePid = 200;
 
 	const spawnFn: SpawnFn = (cmd, args) => {
+		if (args[2] === 'display-message' && args.includes('#{pane_pid}')) {
+			calls.push({ cmd, args });
+			return { stdout: `${panePid}\n`, exitCode: 0 };
+		}
 		const shell = args[args.length - 1] ?? '';
 		const taskPrompt =
 			args.includes('respawn-pane') && shell.includes('.cam-task-prompt-')
 				? readTaskPromptFromCommand(shell)
 				: undefined;
 		calls.push({ cmd, args, taskPrompt });
+		if (args[2] === 'respawn-pane') panePid++;
 		return { stdout: '', exitCode: 0 };
 	};
 
@@ -383,5 +428,176 @@ describe('runPlanPhaseWithReplan: lint findings fold into the re-plan loop (AC3,
 		expect(result.kind).toBe('plan-escalated');
 		expect(result.roundsCompleted).toBe(2);
 		expect(markerCalls[0]?.summary).toBe(BLOCK_REPORT.summary);
+	});
+});
+
+describe('CAM-433 verified plan dispatch and terminal lifecycles', () => {
+	test('planner and record-bearing auditor prompts stay out of tmux argv; verified success removes prompt files and a stale failure marker', () => {
+		const claudeDir = mkdtempSync(join(tmpdir(), 'cam-plan-verified-success-'));
+		const markerPath = join(claudeDir, DISPATCH_FAILED_FILENAME);
+		const uniqueAuditorRecord = 'AUDITOR_RECORD_MUST_ONLY_EXIST_IN_PROMPT_FILE';
+		const issue: IssueEntry = {
+			...MOCK_ISSUE,
+			title: uniqueAuditorRecord,
+			spec: {
+				acceptanceCriteria: [`${uniqueAuditorRecord} acceptance`],
+				scope: uniqueAuditorRecord,
+				gotchas: [],
+				domainTerms: [],
+			},
+		};
+		const staleMarker: DispatchFailedMarker = {
+			phase: 'planner',
+			paneId: '%3',
+			uuid: 'stale',
+			exitCode: 1,
+			stderr: 'old',
+			reason: 'respawn-pane-exited',
+			timestamp: '2026-07-27T00:00:00.000Z',
+		};
+		writeDispatchFailedMarker(markerPath, staleMarker);
+
+		try {
+			const { opts, calls } = makeOpts({
+				claudeDir,
+				selectIssueFn: () => issue,
+				writeDispatchFailedMarkerFn: (marker) =>
+					writeDispatchFailedMarker(markerPath, marker),
+				removeDispatchFailedMarkerFn: () => removeDispatchFailedMarker(markerPath),
+			});
+			const result = runPlanPhase(opts);
+			expect(result.kind).toBe('audit-approved');
+
+			const auditorRespawn = auditorRespawnCalls(calls)[0];
+			expect(auditorRespawn?.taskPrompt).toContain(uniqueAuditorRecord);
+			const auditorArgv = auditorRespawn?.args.at(-1) ?? '';
+			expect(auditorArgv).toContain('.cam-task-prompt-');
+			expect(auditorArgv).not.toContain(uniqueAuditorRecord);
+
+			// Two pane_pid reads per actor, and pipe-pane is part of each verified
+			// helper call rather than an unchecked follow-up.
+			expect(calls.filter((call) => call.args.includes('#{pane_pid}'))).toHaveLength(4);
+			expect(calls.filter((call) => call.args[2] === 'pipe-pane')).toHaveLength(2);
+			expect(existsSync(markerPath)).toBe(false);
+			expect(
+				readdirSync(claudeDir).filter((name) => name.startsWith('.cam-task-prompt-')),
+			).toEqual([]);
+		} finally {
+			rmSync(claudeDir, { recursive: true, force: true });
+		}
+	});
+
+	test('unchanged pane_pid is a dispatch-failed terminal and removes its prompt file', () => {
+		const claudeDir = mkdtempSync(join(tmpdir(), 'cam-plan-verified-unchanged-'));
+		const events: WorkerEvent[] = [];
+		const markers: DispatchFailedMarker[] = [];
+		const messages: string[] = [];
+		const spawn = makeCheckedSpawn((_cmd, args) => {
+			if (args[2] === 'display-message' && args.includes('#{pane_pid}')) {
+				return { stdout: '444\n', exitCode: 0 };
+			}
+			return undefined;
+		});
+
+		try {
+			const { opts } = makeOpts({
+				spawnFn: spawn.fn,
+				claudeDir,
+				logEvent: (event) => events.push(event),
+				writeDispatchFailedMarkerFn: (marker) => markers.push(marker),
+				notifyFn: (message) => messages.push(message),
+			});
+			const result = runPlanPhase(opts);
+			expect(result).toEqual({
+				kind: 'dispatch-failed',
+				phase: 'planner',
+				reason: 'pane-pid-unchanged',
+			});
+			expect(events.some((event) => event.kind === 'dispatch-failed')).toBe(true);
+			expect(markers.at(-1)?.reason).toBe('pane-pid-unchanged');
+			expect(messages.some((message) => message.includes('pane-pid-unchanged'))).toBe(true);
+			expect(
+				readdirSync(claudeDir).filter((name) => name.startsWith('.cam-task-prompt-')),
+			).toEqual([]);
+		} finally {
+			rmSync(claudeDir, { recursive: true, force: true });
+		}
+	});
+
+	test('planner timeout checks the sentinel respawn exit and emits event, marker, notification, and prompt cleanup', () => {
+		const claudeDir = mkdtempSync(join(tmpdir(), 'cam-plan-timeout-planner-'));
+		const events: WorkerEvent[] = [];
+		const markers: DispatchFailedMarker[] = [];
+		const messages: string[] = [];
+		const spawn = makeCheckedSpawn((_cmd, args) =>
+			args[2] === 'respawn-pane' && args.includes('echo planner-timeout')
+				? { stdout: '', stderr: 'sentinel refused', exitCode: 23 }
+				: undefined,
+		);
+		let now = 0;
+
+		try {
+			const { opts } = makeOpts({
+				spawnFn: spawn.fn,
+				claudeDir,
+				isPaneAlive: () => true,
+				clock: () => (now += 1_000),
+				plannerTimeoutMs: 1,
+				logEvent: (event) => events.push(event),
+				writeDispatchFailedMarkerFn: (marker) => markers.push(marker),
+				notifyFn: (message) => messages.push(message),
+			});
+			expect(runPlanPhase(opts).kind).toBe('planner-timeout');
+			expect(
+				events.some(
+					(event) =>
+						event.kind === 'dispatch-failed' &&
+						(event.detail as { reason?: string }).reason === 'respawn-pane-exited',
+				),
+			).toBe(true);
+			expect(markers.some((marker) => marker.exitCode === 23)).toBe(true);
+			expect(markers.at(-1)?.reason).toBe('planner-timeout');
+			expect(messages.some((message) => message.includes('planner timed out'))).toBe(true);
+			expect(
+				readdirSync(claudeDir).filter((name) => name.startsWith('.cam-task-prompt-')),
+			).toEqual([]);
+		} finally {
+			rmSync(claudeDir, { recursive: true, force: true });
+		}
+	});
+
+	test('auditor timeout checks the sentinel respawn exit and emits event, marker, and notification', () => {
+		const events: WorkerEvent[] = [];
+		const markers: DispatchFailedMarker[] = [];
+		const messages: string[] = [];
+		const spawn = makeCheckedSpawn((_cmd, args) =>
+			args[2] === 'respawn-pane' && args.includes('echo auditor-timeout')
+				? { stdout: '', stderr: 'auditor sentinel refused', exitCode: 29 }
+				: undefined,
+		);
+		let now = 0;
+		const { opts } = makeOpts({
+			spawnFn: spawn.fn,
+			isPaneAlive: () => true,
+			readPlannerReportFn: () => ({ written: true }),
+			readPlanVerdictFn: () => null,
+			clock: () => (now += 1_000),
+			auditorTimeoutMs: 1,
+			logEvent: (event) => events.push(event),
+			writeDispatchFailedMarkerFn: (marker) => markers.push(marker),
+			notifyFn: (message) => messages.push(message),
+		});
+
+		expect(runPlanPhase(opts).kind).toBe('auditor-timeout');
+		expect(
+			events.some(
+				(event) =>
+					event.kind === 'dispatch-failed' &&
+					(event.detail as { reason?: string }).reason === 'respawn-pane-exited',
+			),
+		).toBe(true);
+		expect(markers.some((marker) => marker.exitCode === 29)).toBe(true);
+		expect(markers.at(-1)?.reason).toBe('auditor-timeout');
+		expect(messages.some((message) => message.includes('auditor timed out'))).toBe(true);
 	});
 });

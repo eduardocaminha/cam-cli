@@ -33,6 +33,7 @@ import type { SpawnFn } from '../src/supervisor/loop.ts';
 import type { PlanVerdictReport } from '../src/supervisor/plan-verdict-report.ts';
 import type { IssueEntry } from '../src/issues/types.ts';
 import type { PlanPreflightResult } from '../src/supervisor/plan-preflight.ts';
+import { withVerifiedPanePid } from './helpers/verified-pane-pid-spawn.ts';
 
 // ---------------------------------------------------------------------------
 // Generic backend fixture (US-008, CAM-420): isolates this suite's
@@ -72,7 +73,6 @@ const noopSpawnFn: SpawnFn = () => ({ stdout: '', exitCode: 0 });
 /** Minimal base opts; each test overrides only what it needs. */
 function baseOpts(overrides: Partial<RunPlanPhaseOptions> = {}): RunPlanPhaseOptions {
 	return {
-		spawnFn: noopSpawnFn,
 		isPaneAlive: () => false,
 		sleepFn: () => {},
 		genUuid: () => 'uuid-0000',
@@ -83,6 +83,7 @@ function baseOpts(overrides: Partial<RunPlanPhaseOptions> = {}): RunPlanPhaseOpt
 		plannerPaneId: '%3',
 		paneCountMutexFn: () => 'available',
 		...overrides,
+		spawnFn: withVerifiedPanePid(overrides.spawnFn ?? noopSpawnFn),
 		configPath: 'configPath' in overrides ? overrides.configPath : GENERIC_PLAN_CONFIG_PATH,
 	};
 }
@@ -175,7 +176,7 @@ test('re-plan rounds never re-invoke detectInProgressConflictFn (round 1 only)',
 	const verdicts: PlanVerdictReport[] = [BLOCK_REPORT, APPROVE_REPORT];
 
 	const replanOpts: RunPlanPhaseWithReplanOptions = {
-		spawnFn: noopSpawnFn,
+		spawnFn: withVerifiedPanePid(noopSpawnFn),
 		isPaneAlive: () => {
 			if (plannerAliveCount > 0) {
 				plannerAliveCount--;

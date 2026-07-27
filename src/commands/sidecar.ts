@@ -56,6 +56,12 @@ import { runPlanPhaseWithReplan, runPostAuditAction, deriveBranchName, type Plan
 import { maybeEmitPlanSplitAdvisory } from '../supervisor/plan-split-advisory.ts';
 import { writePlanEscalatedMarker, removePlanEscalatedMarker, PLAN_ESCALATED_FILENAME, type PlanEscalatedMarker } from '../supervisor/plan-escalation.ts';
 import { writePlanPreflightFailedMarker, removePlanPreflightFailedMarker, PLAN_PREFLIGHT_FAILED_FILENAME, type PlanPreflightFailedMarker, type PlanPreflightFailedWriterParams } from '../supervisor/plan-preflight-marker.ts';
+import {
+	DISPATCH_FAILED_FILENAME,
+	removeDispatchFailedMarker,
+	writeDispatchFailedMarker,
+	type DispatchFailedMarker,
+} from '../supervisor/dispatch-failed-marker.ts';
 import { readImplementBlockedMarker, removeImplementBlockedMarker, IMPLEMENT_BLOCKED_FILENAME } from '../supervisor/implement-blocked-marker.ts';
 import { writePostMergeStalledMarker, POST_MERGE_STALLED_FILENAME } from '../supervisor/post-merge-stalled-marker.ts';
 import { writeSidecarStalledMarker, removeSidecarStalledMarker, SIDECAR_STALLED_FILENAME } from '../supervisor/sidecar-stalled.ts';
@@ -2760,6 +2766,16 @@ function runProductionPlanPhaseWithReplan(deps: PlanWorkerRunDeps): PlanPhaseRes
 		plannerPaneId,
 		paneCountMutexFn: () => paneCountMutex(sessionName, realSpawnFn),
 		logEvent,
+		writeDispatchFailedMarkerFn: (marker: DispatchFailedMarker) =>
+			writeDispatchFailedMarker(join(claudeDir, DISPATCH_FAILED_FILENAME), marker),
+		removeDispatchFailedMarkerFn: () =>
+			removeDispatchFailedMarker(join(claudeDir, DISPATCH_FAILED_FILENAME)),
+		notifyFn: makeNotifyOrchestrator(
+			sessionName,
+			realSpawnFn,
+			makeCapturePaneFn(realSpawnFn),
+			adaptLogEventForPush(logEvent),
+		),
 		ensureWorkerPane,
 		claudeDir,
 		clearStalePlanArtifactsFn: makeClearStalePlanArtifacts(cwd),

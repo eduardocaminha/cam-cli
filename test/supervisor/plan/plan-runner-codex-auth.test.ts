@@ -38,6 +38,7 @@ import type { SpawnFn } from '../../../src/supervisor/loop.ts';
 import type { IssueEntry } from '../../../src/issues/types.ts';
 import type { CodexAuthCheck } from '../../../src/supervisor/codex-auth.ts';
 import { waitForCondition } from '../../helpers/wait-for-condition.ts';
+import { withVerifiedPanePid } from '../../helpers/verified-pane-pid-spawn.ts';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -76,7 +77,7 @@ function makeOpts(auth: AuthOpts = {}, spawnCalls: string[][] = []): RunPlanPhas
 	};
 
 	return {
-		spawnFn,
+		spawnFn: withVerifiedPanePid(spawnFn),
 		isPaneAlive: () => false, // pane dies immediately; both poll loops exit fast
 		sleepFn: () => {},
 		genUuid: () => FAKE_UUID,

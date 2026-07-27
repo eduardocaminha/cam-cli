@@ -116,9 +116,14 @@ function makeOpts(overrides: Partial<RunPlanPhaseOptions> = {}): {
 
 	// Track pane alive state across planner polling phase
 	let plannerAliveCount = 1; // pane alive for 1 poll tick, then dies
+	let panePid = 100;
 
 	const spawnFn: SpawnFn = (cmd, args) => {
 		calls.push({ cmd, args });
+		if (args[2] === 'display-message' && args.includes('#{pane_pid}')) {
+			return { stdout: `${panePid}\n`, exitCode: 0 };
+		}
+		if (args[2] === 'respawn-pane') panePid++;
 		return { stdout: '', exitCode: 0 };
 	};
 
@@ -183,9 +188,14 @@ function makeOptsAlwaysAlive(reportAfterTicks: number): {
 	const calls: TmuxCall[] = [];
 	let reportReadCount = 0;
 	let plannerTickCount = 0;
+	let panePid = 200;
 
 	const spawnFn: SpawnFn = (cmd, args) => {
 		calls.push({ cmd, args });
+		if (args[2] === 'display-message' && args.includes('#{pane_pid}')) {
+			return { stdout: `${panePid}\n`, exitCode: 0 };
+		}
+		if (args[2] === 'respawn-pane') panePid++;
 		return { stdout: '', exitCode: 0 };
 	};
 

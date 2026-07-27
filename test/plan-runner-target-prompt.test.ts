@@ -29,6 +29,7 @@ import {
 } from '../src/supervisor/plan-runner.ts';
 import type { IssueEntry } from '../src/issues/types.ts';
 import { readTaskPromptFromCommand } from './helpers/task-prompt.ts';
+import { withVerifiedPanePid } from './helpers/verified-pane-pid-spawn.ts';
 
 // ---------------------------------------------------------------------------
 // Generic backend fixture (US-008, CAM-420): isolates this suite's
@@ -123,7 +124,7 @@ test('runPlanPhase: spawned planner receives prompt built from selected issue id
 	const isPaneAlive = (_paneId: string): boolean => false;
 
 	runPlanPhase({
-		spawnFn,
+		spawnFn: withVerifiedPanePid(spawnFn),
 		isPaneAlive,
 		sleepFn: () => {},
 		genUuid: () => 'test-uuid-0000-0000-0000-target00000',
@@ -166,7 +167,7 @@ test('runPlanPhase: spawned planner receives CAM-157 id, not top-of-queue CAM-99
 	};
 
 	runPlanPhase({
-		spawnFn,
+		spawnFn: withVerifiedPanePid(spawnFn),
 		isPaneAlive: () => false,
 		sleepFn: () => {},
 		genUuid: () => 'test-uuid-0000-0000-0000-targetcam157',
@@ -206,7 +207,7 @@ test('runPlanPhase: opts.plannerTaskPrompt override is honored (backward compat)
 	};
 
 	runPlanPhase({
-		spawnFn,
+		spawnFn: withVerifiedPanePid(spawnFn),
 		isPaneAlive: () => false,
 		sleepFn: () => {},
 		genUuid: () => 'test-uuid-0000-0000-0000-override00',
@@ -242,7 +243,7 @@ test('runPlanPhase: selectIssueFn returning null -> no-plannable-issue, no plann
 	};
 
 	const result = runPlanPhase({
-		spawnFn,
+		spawnFn: withVerifiedPanePid(spawnFn),
 		isPaneAlive: () => false,
 		sleepFn: () => {},
 		genUuid: () => 'test-uuid-0000-0000-0000-nullissue0',
@@ -283,7 +284,7 @@ test('runPlanPhase: when selectIssueFn returns top-of-queue issue, prompt names 
 	};
 
 	runPlanPhase({
-		spawnFn,
+		spawnFn: withVerifiedPanePid(spawnFn),
 		isPaneAlive: () => false,
 		sleepFn: () => {},
 		genUuid: () => 'test-uuid-0000-0000-0000-topqueue00',

@@ -25,6 +25,7 @@ import type { IssueEntry } from '../src/issues/types.ts';
 import type { LoopPhase } from '../src/commands/status.ts';
 import type { PlanApproval } from '../src/config/models.ts';
 import { waitForCondition } from './helpers/wait-for-condition.ts';
+import { withVerifiedPanePid } from './helpers/verified-pane-pid-spawn.ts';
 
 // ---------------------------------------------------------------------------
 // Generic backend fixture (US-008, CAM-420): isolates this suite's
@@ -87,7 +88,6 @@ function makePlannerfailedOpts(overrides: Partial<RunPlanPhaseOptions> = {}): {
 	};
 
 	const opts: RunPlanPhaseOptions = {
-		spawnFn,
 		isPaneAlive: () => {
 			if (paneAliveCount > 0) {
 				paneAliveCount--;
@@ -112,6 +112,7 @@ function makePlannerfailedOpts(overrides: Partial<RunPlanPhaseOptions> = {}): {
 		plannerTimeoutMs: 999_999,
 		auditorTimeoutMs: 999_999,
 		...overrides,
+		spawnFn: withVerifiedPanePid(overrides.spawnFn ?? spawnFn),
 		configPath: 'configPath' in overrides ? overrides.configPath : GENERIC_PLAN_CONFIG_PATH,
 	};
 
@@ -174,7 +175,7 @@ describe('runPlanPhase - planner-failed path (AC1)', () => {
 		let paneAliveCount = 1;
 		const spawnFn: SpawnFn = (cmd, args) => { calls.push({ cmd, args }); return { stdout: '', exitCode: 0 }; };
 		const opts: RunPlanPhaseOptions = {
-			spawnFn,
+			spawnFn: withVerifiedPanePid(spawnFn),
 			isPaneAlive: () => { if (paneAliveCount > 0) { paneAliveCount--; return true; } return false; },
 			sleepFn: () => {},
 			genUuid: () => 'compat-uuid',

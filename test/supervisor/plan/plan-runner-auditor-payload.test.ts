@@ -34,6 +34,7 @@ import type { PlanVerdictReport } from '../../../src/supervisor/plan-verdict-rep
 import type { IssueEntry } from '../../../src/issues/types.ts';
 import type { PlanPreflightResult } from '../../../src/supervisor/plan-preflight.ts';
 import { readTaskPromptFromCommand } from '../../helpers/task-prompt.ts';
+import { withVerifiedPanePid } from '../../helpers/verified-pane-pid-spawn.ts';
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -118,7 +119,6 @@ function makeOpts(
 	};
 
 	const opts: RunPlanPhaseOptions = {
-		spawnFn,
 		isPaneAlive: () => {
 			if (plannerAliveCount > 0) {
 				plannerAliveCount--;
@@ -144,6 +144,7 @@ function makeOpts(
 		plannerTimeoutMs: 999_999,
 		auditorTimeoutMs: 999_999,
 		...overrides,
+		spawnFn: withVerifiedPanePid(overrides.spawnFn ?? spawnFn),
 		configPath: 'configPath' in overrides ? overrides.configPath : GENERIC_PLAN_CONFIG_PATH,
 	};
 
@@ -282,7 +283,7 @@ describe('runPlanPhase auditor spawn payload (AC3)', () => {
 		let plannerAliveCount = 1;
 		const result = runPlanPhaseWithReplan({
 			...opts,
-			spawnFn,
+			spawnFn: withVerifiedPanePid(spawnFn),
 			isPaneAlive: () => {
 				if (plannerAliveCount > 0) {
 					plannerAliveCount--;

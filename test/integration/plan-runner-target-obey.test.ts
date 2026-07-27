@@ -220,7 +220,7 @@ test.skipIf(!tmuxAvailable)(
 						const swapped = [...args];
 						const lIdx = swapped.indexOf('-L');
 						if (lIdx !== -1 && swapped[lIdx + 1] === 'cam') swapped[lIdx + 1] = TEST_SOCK;
-						swapped[swapped.length - 1] = 'exit 0';
+						swapped[swapped.length - 1] = 'cat';
 						const r = spawnSync(cmd, swapped, {
 							stdio: spawnOpts?.stdio ?? 'pipe',
 							encoding: 'utf8',
@@ -243,7 +243,7 @@ test.skipIf(!tmuxAvailable)(
 					const swapped = [...args];
 					const lIdx = swapped.indexOf('-L');
 					if (lIdx !== -1 && swapped[lIdx + 1] === 'cam') swapped[lIdx + 1] = TEST_SOCK;
-					swapped[swapped.length - 1] = 'exit 0';
+					swapped[swapped.length - 1] = 'cat';
 					const r = spawnSync(cmd, swapped, {
 						stdio: spawnOpts?.stdio ?? 'pipe',
 						encoding: 'utf8',
@@ -406,7 +406,7 @@ test.skipIf(!tmuxAvailable)(
 						const swapped = [...args];
 						const lIdx = swapped.indexOf('-L');
 						if (lIdx !== -1 && swapped[lIdx + 1] === 'cam') swapped[lIdx + 1] = TEST_SOCK;
-						swapped[swapped.length - 1] = 'exit 0';
+						swapped[swapped.length - 1] = 'cat';
 						const r = spawnSync(cmd, swapped, { stdio: 'pipe', encoding: 'utf8' });
 						return { stdout: '', exitCode: r.status ?? null };
 					}
@@ -415,7 +415,7 @@ test.skipIf(!tmuxAvailable)(
 					const swapped = [...args];
 					const lIdx = swapped.indexOf('-L');
 					if (lIdx !== -1 && swapped[lIdx + 1] === 'cam') swapped[lIdx + 1] = TEST_SOCK;
-					swapped[swapped.length - 1] = 'exit 0';
+					swapped[swapped.length - 1] = 'cat';
 					const r = spawnSync(cmd, swapped, { stdio: 'pipe', encoding: 'utf8' });
 					return { stdout: '', exitCode: r.status ?? null };
 				}

@@ -44,6 +44,7 @@ import type { IssueEntry } from '../../../src/issues/types.ts';
 import type { PlanPreflightResult } from '../../../src/supervisor/plan-preflight.ts';
 import type { WorkerEvent } from '../../../src/supervisor/events.ts';
 import { readTaskPromptFromCommand } from '../../helpers/task-prompt.ts';
+import { withVerifiedPanePid } from '../../helpers/verified-pane-pid-spawn.ts';
 
 // ---------------------------------------------------------------------------
 // Generic backend fixture (US-007, CAM-420): isolates this suite's
@@ -163,7 +164,6 @@ function makeReplanOpts(
 	let plannerAliveCount = 1;
 
 	const opts: RunPlanPhaseWithReplanOptions = {
-		spawnFn,
 		isPaneAlive: () => {
 			if (plannerAliveCount > 0) {
 				plannerAliveCount--;
@@ -208,6 +208,7 @@ function makeReplanOpts(
 			loggedEvents.push(event);
 		},
 		...overrides,
+		spawnFn: withVerifiedPanePid(overrides.spawnFn ?? spawnFn),
 		configPath: 'configPath' in overrides ? overrides.configPath : GENERIC_PLAN_CONFIG_PATH,
 	};
 

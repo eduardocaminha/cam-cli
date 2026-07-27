@@ -1,10 +1,11 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, test } from 'bun:test';
 import {
 	TASK_PROMPT_FILE_STEM,
+	removeTaskPromptFile,
 	taskPromptFileArgument,
 	writeTaskPromptFile,
 } from '../../src/supervisor/task-prompt-file.ts';
@@ -68,5 +69,17 @@ describe('writeTaskPromptFile', () => {
 
 		expect(readThroughRealShell(path).equals(Buffer.from('body\nline'))).toBe(true);
 		expect(readFileSync(path, 'utf8')).toBe('body\nline\n\n');
+	});
+
+	test('terminal cleanup removes only the named dispatch prompt and is idempotent', () => {
+		const claudeDir = makeClaudeDir();
+		const path = writeTaskPromptFile(claudeDir, 'terminal', 'done');
+		writeFileSync(join(claudeDir, 'unrelated.txt'), 'keep');
+
+		removeTaskPromptFile(claudeDir, 'terminal');
+		removeTaskPromptFile(claudeDir, 'terminal');
+
+		expect(existsSync(path)).toBe(false);
+		expect(readFileSync(join(claudeDir, 'unrelated.txt'), 'utf8')).toBe('keep');
 	});
 });

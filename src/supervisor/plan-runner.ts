@@ -29,6 +29,7 @@
 //     'Biome cognitive complexity: use factory/helper extraction not grandfather').
 
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import type { SpawnFn, IsPaneAlive } from './loop.ts';
 import type { WorkerEventLogger } from './events.ts';
 import type { PlanPreflightResult } from './plan-preflight.ts';
@@ -51,6 +52,9 @@ import { codexAuthPreflight } from './codex-auth.ts';
 import type { CodexAuthCheck } from './codex-auth.ts';
 import { resolvePhaseModel } from '../config/model-resolution.ts';
 import type { CodexModelsCacheReader } from '../config/codex-models-cache.ts';
+import { removeTaskPromptFile } from './task-prompt-file.ts';
+import { runVerifiedDispatch } from './verified-dispatch.ts';
+import type { DispatchFailedMarker } from './dispatch-failed-marker.ts';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -214,6 +218,8 @@ export const DEFAULT_PLAN_TIMEOUT_MS = 30 * 60 * 1_000;
  *   mutex-busy           - pane-count mutex was 'busy'; no pane spawned (AC5).
  *   planner-timeout      - planner pane still alive after plannerTimeoutMs.
  *   auditor-timeout      - plan-verdict-report.json absent when auditor died or timed out.
+ *   dispatch-failed      - verified planner/auditor tmux dispatch failed; the event,
+ *                          durable marker, and notification terminal were attempted.
  *   planner-failed       - planner poll ended but readPlannerReportFn returned null (no
  *                          prd.json written); auditor is NEVER spawned (US-003, CAM-155).
  *   plan-target-invalid  - opts.planTargetId was set (an explicit /cam-plan <id> target) AND
@@ -253,6 +259,7 @@ export type PlanPhaseResult =
 	| { kind: 'mutex-busy' }
 	| { kind: 'planner-timeout' }
 	| { kind: 'auditor-timeout' }
+	| { kind: 'dispatch-failed'; phase: 'planner' | 'auditor'; reason: string }
 	| { kind: 'planner-failed' }
 	/**
 	 * Container preflight blocked the spawn (US-006, CAM-152).
@@ -451,6 +458,34 @@ export interface RunPlanPhaseOptions {
 	logEvent?: WorkerEventLogger;
 
 	/**
+	 * Persist the durable dispatch-failed marker emitted by verified planner /
+	 * auditor dispatches and timeout terminals. Production writes
+	 * .claude/.cam-dispatch-failed.json; absent is a backward-compatible no-op
+	 * sink, but pane identity verification itself is never skipped.
+	 */
+	writeDispatchFailedMarkerFn?: (marker: DispatchFailedMarker) => void;
+
+	/**
+	 * Remove a stale dispatch-failed marker after a later verified planner or
+	 * auditor dispatch succeeds. This runs only after pane_pid changes and
+	 * pipe-pane exits zero.
+	 */
+	removeDispatchFailedMarkerFn?: () => void;
+
+	/**
+	 * Best-effort live terminal narration for dispatch failures and planner /
+	 * auditor timeouts. Production pushes to the orchestrator pane.
+	 */
+	notifyFn?: (message: string) => void;
+
+	/**
+	 * Remove this plan dispatch's own task-prompt file on every post-dispatch
+	 * terminal. Defaults to removeTaskPromptFile against the effective
+	 * claudeDir; injectable so unit tests can assert exact lifecycle closure.
+	 */
+	removeTaskPromptFileFn?: (uuid: string) => void;
+
+	/**
 	 * Clear stale plan-verdict-report.json and prd.json before the plan phase
 	 * starts (AC1, US-002, CAM-155). Called at the very top of runPlanPhase,
 	 * before preflight, so a stale APPROVE verdict cannot contaminate the new run
@@ -631,8 +666,10 @@ function makeEventWriter(
 		});
 }
 
-/** Result of resolveAndSpawnPlanner / resolveAndSpawnAuditor (US-002, CAM-352). */
-type ResolveAndSpawnResult = { ok: true; uuid: string } | { ok: false; reason: string };
+/** Result of resolveAndSpawnPlanner / resolveAndSpawnAuditor. */
+type ResolveAndSpawnResult =
+	| { ok: true; uuid: string }
+	| { ok: false; reason: string; dispatchFailed?: true };
 
 /**
  * Shared options for resolveAndSpawnPlanner / resolveAndSpawnAuditor (US-002,
@@ -649,6 +686,10 @@ interface ResolveAndSpawnOptions {
 	taskPrompt: string;
 	permissionMode: string;
 	logEvent: WorkerEventLogger | undefined;
+	writeDispatchFailedMarkerFn: ((marker: DispatchFailedMarker) => void) | undefined;
+	removeDispatchFailedMarkerFn: (() => void) | undefined;
+	notifyFn: ((message: string) => void) | undefined;
+	removeTaskPromptFileFn: ((uuid: string) => void) | undefined;
 	workerIsolation: WorkerIsolation;
 	codexAuthCheckFn: CodexAuthCheck | undefined;
 	escalateFn: (() => Promise<void>) | undefined;
@@ -656,6 +697,72 @@ interface ResolveAndSpawnOptions {
 	codexModelsCacheReaderFn?: CodexModelsCacheReader;
 	/** Planner/auditor-backend/model resolution seam (US-002, CAM-420). See RunPlanPhaseOptions.configPath. */
 	configPath?: string;
+}
+
+type PlanDispatchPhase = 'planner' | 'auditor';
+
+function effectivePlanClaudeDir(claudeDir: string | undefined): string {
+	return claudeDir ?? join(tmpdir(), `cam-cli-task-prompts-${process.pid}`, '.claude');
+}
+
+function planOutLogPath(claudeDir: string | undefined, phase: string, uuid: string): string {
+	return join(effectivePlanClaudeDir(claudeDir), `cam-plan-out-${phase}-${uuid}.log`);
+}
+
+function shellQuote(value: string): string {
+	return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+function removePlanTaskPrompt(
+	opts: {
+		claudeDir?: string;
+		removeTaskPromptFileFn?: (uuid: string) => void;
+	},
+	uuid: string,
+): void {
+	try {
+		if (opts.removeTaskPromptFileFn !== undefined) {
+			opts.removeTaskPromptFileFn(uuid);
+			return;
+		}
+		removeTaskPromptFile(effectivePlanClaudeDir(opts.claudeDir), uuid);
+	} catch {
+		// Cleanup is idempotent and best-effort; terminal observability still runs.
+	}
+}
+
+/**
+ * Run the shared verified tmux dispatch and translate its terminal into the
+ * plan-runner result shape. Every plan dispatch always performs pane_pid
+ * before/after verification, even when tests omit the observable sinks.
+ */
+function runVerifiedPlanDispatch(
+	opts: ResolveAndSpawnOptions,
+	phase: PlanDispatchPhase,
+	uuid: string,
+	dispatchCmd: string,
+): ResolveAndSpawnResult {
+	const result = runVerifiedDispatch({
+		spawnFn: opts.spawnFn,
+		phase,
+		paneId: opts.paneId,
+		uuid,
+		dispatchCmd,
+		pipeCommand: `cat >> ${shellQuote(planOutLogPath(opts.claudeDir, phase, uuid))}`,
+		logEvent: opts.logEvent ?? ((): void => {}),
+		writeDispatchFailedMarkerFn: opts.writeDispatchFailedMarkerFn ?? ((): void => {}),
+		notifyFn: opts.notifyFn ?? ((): void => {}),
+	});
+	if (!result.ok) {
+		removePlanTaskPrompt(opts, uuid);
+		return { ok: false, reason: result.marker.reason, dispatchFailed: true };
+	}
+	try {
+		opts.removeDispatchFailedMarkerFn?.();
+	} catch {
+		// Best-effort stale-evidence cleanup must not turn a verified spawn red.
+	}
+	return { ok: true, uuid };
 }
 
 /**
@@ -685,7 +792,7 @@ interface ResolveAndSpawnOptions {
  */
 function resolveAndSpawnPlanner(opts: ResolveAndSpawnOptions): ResolveAndSpawnResult {
 	const {
-		spawnFn, paneId, genUuid, taskPrompt, permissionMode, logEvent, workerIsolation,
+		genUuid, taskPrompt, permissionMode, logEvent, workerIsolation,
 		codexAuthCheckFn, escalateFn, claudeDir, codexModelsCacheReaderFn, configPath,
 	} = opts;
 	const uuid = genUuid().toLowerCase();
@@ -718,7 +825,7 @@ function resolveAndSpawnPlanner(opts: ResolveAndSpawnOptions): ResolveAndSpawnRe
 	// ClaudeAdapter.
 	const shell = selectAdapter(backend).buildSpawnArgv('planner', {
 		uuid,
-		claudeDir,
+		claudeDir: effectivePlanClaudeDir(claudeDir),
 		taskPrompt,
 		permissionMode,
 		model,
@@ -726,14 +833,7 @@ function resolveAndSpawnPlanner(opts: ResolveAndSpawnOptions): ResolveAndSpawnRe
 	});
 	// US-006 / CAM-152: wrap via dockerExecWrap in container mode.
 	const dispatchCmd = workerIsolation === 'container' ? dockerExecWrap(shell) : shell;
-	spawnFn('tmux', ['-L', 'cam', 'set-option', '-p', '-t', paneId, '@cam_label', 'planner']);
-	spawnFn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', paneId, dispatchCmd]);
-	// AC4: pipe pane output to a per-worker out-log so silent no-ops are diagnosable.
-	if (claudeDir !== undefined) {
-		const outLog = join(claudeDir, `cam-plan-out-planner-${uuid}.log`);
-		spawnFn('tmux', ['-L', 'cam', 'pipe-pane', '-t', paneId, `cat >> ${outLog}`]);
-	}
-	return { ok: true, uuid };
+	return runVerifiedPlanDispatch(opts, 'planner', uuid, dispatchCmd);
 }
 
 /**
@@ -763,7 +863,7 @@ function resolveAndSpawnPlanner(opts: ResolveAndSpawnOptions): ResolveAndSpawnRe
  */
 function resolveAndSpawnAuditor(opts: ResolveAndSpawnOptions): ResolveAndSpawnResult {
 	const {
-		spawnFn, paneId, genUuid, taskPrompt, permissionMode, logEvent, workerIsolation,
+		genUuid, taskPrompt, permissionMode, logEvent, workerIsolation,
 		codexAuthCheckFn, escalateFn, claudeDir, codexModelsCacheReaderFn, configPath,
 	} = opts;
 	const uuid = genUuid().toLowerCase();
@@ -796,7 +896,7 @@ function resolveAndSpawnAuditor(opts: ResolveAndSpawnOptions): ResolveAndSpawnRe
 	// ClaudeAdapter.
 	const shell = selectAdapter(backend).buildSpawnArgv('auditor', {
 		uuid,
-		claudeDir,
+		claudeDir: effectivePlanClaudeDir(claudeDir),
 		taskPrompt,
 		permissionMode,
 		model,
@@ -804,14 +904,7 @@ function resolveAndSpawnAuditor(opts: ResolveAndSpawnOptions): ResolveAndSpawnRe
 	});
 	// US-006 / CAM-152: wrap via dockerExecWrap in container mode.
 	const dispatchCmd = workerIsolation === 'container' ? dockerExecWrap(shell) : shell;
-	spawnFn('tmux', ['-L', 'cam', 'set-option', '-p', '-t', paneId, '@cam_label', 'auditor']);
-	spawnFn('tmux', ['-L', 'cam', 'respawn-pane', '-k', '-t', paneId, dispatchCmd]);
-	// AC4: pipe pane output to a per-worker out-log so silent no-ops are diagnosable.
-	if (claudeDir !== undefined) {
-		const outLog = join(claudeDir, `cam-plan-out-auditor-${uuid}.log`);
-		spawnFn('tmux', ['-L', 'cam', 'pipe-pane', '-t', paneId, `cat >> ${outLog}`]);
-	}
-	return { ok: true, uuid };
+	return runVerifiedPlanDispatch(opts, 'auditor', uuid, dispatchCmd);
 }
 
 /**
@@ -936,10 +1029,72 @@ function resolveNoIssueResult(
 		: { kind: 'no-plannable-issue' };
 }
 
+function emitPlanTimeoutTerminal(
+	opts: RunPlanPhaseOptions,
+	phase: PlanDispatchPhase,
+	paneId: string,
+	uuid: string,
+): void {
+	const reason = `${phase}-timeout`;
+	const timestamp = new Date().toISOString();
+	removePlanTaskPrompt(opts, uuid);
+
+	// The timeout sentinel is itself a checked respawn: every tmux exit code
+	// and the pane identity transition are inspected by the shared helper.
+	const sentinel = runVerifiedDispatch({
+		spawnFn: opts.spawnFn,
+		phase: reason,
+		paneId,
+		uuid,
+		dispatchCmd: `echo ${reason}`,
+		pipeCommand: `cat >> ${shellQuote(planOutLogPath(opts.claudeDir, reason, uuid))}`,
+		logEvent: opts.logEvent ?? ((): void => {}),
+		writeDispatchFailedMarkerFn: opts.writeDispatchFailedMarkerFn ?? ((): void => {}),
+		notifyFn: opts.notifyFn ?? ((): void => {}),
+		clock: () => timestamp,
+	});
+	const marker: DispatchFailedMarker = {
+		phase,
+		paneId,
+		uuid,
+		exitCode: sentinel.ok ? 0 : sentinel.marker.exitCode,
+		stderr: sentinel.ok ? '' : sentinel.marker.stderr,
+		reason,
+		timestamp,
+	};
+	try {
+		opts.logEvent?.({
+			ts: timestamp,
+			storyId: undefined,
+			uuid,
+			kind: 'dispatch-failed',
+			detail: {
+				phase,
+				paneId,
+				exitCode: marker.exitCode,
+				stderr: marker.stderr,
+				reason,
+			},
+		});
+	} catch {
+		// Continue to the durable marker and live notification.
+	}
+	try {
+		opts.writeDispatchFailedMarkerFn?.(marker);
+	} catch {
+		// Continue to the live notification.
+	}
+	try {
+		opts.notifyFn?.(`[cam] ${phase} timed out (pane ${paneId})`);
+	} catch {
+		// The returned PlanPhaseResult remains an observable terminal.
+	}
+}
+
 /**
  * Poll until the planner completes (prd.json written OR pane dies) or the
- * deadline fires. Returns true on completion; false on timeout (after killing
- * the pane).
+ * deadline fires. Returns true on completion and false on timeout. The caller
+ * owns the checked timeout respawn and observable terminal.
  *
  * Completion is detected by two signals (in priority order, mirroring
  * review.ts makeReviewDispatch):
@@ -956,7 +1111,6 @@ function pollPlannerDeath(
 	isPaneAlive: IsPaneAlive,
 	sleepFn: (ms: number) => void,
 	clock: () => number,
-	spawnFn: SpawnFn,
 	plannerPaneId: string,
 	pollIntervalMs: number,
 	plannerTimeoutMs: number,
@@ -979,9 +1133,6 @@ function pollPlannerDeath(
 		}
 
 		if (clock() - start >= plannerTimeoutMs) {
-			spawnFn('tmux', [
-				'-L', 'cam', 'respawn-pane', '-k', '-t', plannerPaneId, 'echo planner-timeout',
-			]);
 			return false;
 		}
 	}
@@ -995,7 +1146,8 @@ type AuditorPollResult =
 /**
  * Poll until plan-verdict-report.json is present, the auditor pane dies, or
  * the deadline fires. Returns { ok: true, report } on success; { ok: false }
- * on pane-death-without-report or timeout (after killing the pane on timeout).
+ * on pane-death-without-report or timeout. The caller owns the checked timeout
+ * respawn and observable terminal.
  *
  * The verdict is read via readPlanVerdictFn ONLY - never from capture-pane
  * (patterns.md 'capture-pane is rendered markdown').
@@ -1004,7 +1156,6 @@ function pollAuditorReport(
 	isPaneAlive: IsPaneAlive,
 	sleepFn: (ms: number) => void,
 	clock: () => number,
-	spawnFn: SpawnFn,
 	readPlanVerdictFn: () => PlanVerdictReport | null,
 	plannerPaneId: string,
 	pollIntervalMs: number,
@@ -1017,9 +1168,6 @@ function pollAuditorReport(
 		if (verdict !== null) return { ok: true, report: verdict };
 		if (!isPaneAlive(plannerPaneId)) return { ok: false };
 		if (clock() - start >= auditorTimeoutMs) {
-			spawnFn('tmux', [
-				'-L', 'cam', 'respawn-pane', '-k', '-t', plannerPaneId, 'echo auditor-timeout',
-			]);
 			return { ok: false };
 		}
 	}
@@ -1066,17 +1214,28 @@ function runPlannerSpawnStep(
 	plannerTaskPrompt: string,
 	permissionMode: string,
 	workerIsolation: WorkerIsolation,
-): PlanPhaseResult | string {
-	const { spawnFn, genUuid, plannerPaneId, ensureWorkerPane, claudeDir, logEvent, preflightContainerFn, escalateFn, codexAuthCheckFn, codexModelsCacheReaderFn, configPath } = opts;
+): PlanPhaseResult | { paneId: string; uuid: string } {
+	const {
+		spawnFn, genUuid, plannerPaneId, ensureWorkerPane, claudeDir, logEvent,
+		preflightContainerFn, escalateFn, codexAuthCheckFn, codexModelsCacheReaderFn,
+		configPath, writeDispatchFailedMarkerFn, removeDispatchFailedMarkerFn,
+		notifyFn, removeTaskPromptFileFn,
+	} = opts;
 	const planBlock = runContainerPlanPreflight('planner', workerIsolation, preflightContainerFn, escalateFn);
 	if (planBlock !== null) return planBlock;
 	const plannerLivePaneId = resolveLivePaneId(ensureWorkerPane, plannerPaneId);
 	const plannerSpawn = resolveAndSpawnPlanner({
 		spawnFn, paneId: plannerLivePaneId, genUuid, taskPrompt: plannerTaskPrompt, permissionMode,
-		logEvent, workerIsolation, codexAuthCheckFn, escalateFn, claudeDir, codexModelsCacheReaderFn, configPath,
+		logEvent, workerIsolation, codexAuthCheckFn, escalateFn, claudeDir,
+		codexModelsCacheReaderFn, configPath, writeDispatchFailedMarkerFn,
+		removeDispatchFailedMarkerFn, notifyFn, removeTaskPromptFileFn,
 	});
-	if (!plannerSpawn.ok) return { kind: 'codex-auth-failed', phase: 'planner', reason: plannerSpawn.reason };
-	return plannerLivePaneId;
+	if (!plannerSpawn.ok) {
+		return plannerSpawn.dispatchFailed
+			? { kind: 'dispatch-failed', phase: 'planner', reason: plannerSpawn.reason }
+			: { kind: 'codex-auth-failed', phase: 'planner', reason: plannerSpawn.reason };
+	}
+	return { paneId: plannerLivePaneId, uuid: plannerSpawn.uuid };
 }
 
 /**
@@ -1090,17 +1249,28 @@ function runAuditorSpawnStep(
 	auditorTaskPrompt: string,
 	permissionMode: string,
 	workerIsolation: WorkerIsolation,
-): PlanPhaseResult | string {
-	const { spawnFn, genUuid, plannerPaneId, ensureWorkerPane, claudeDir, logEvent, preflightContainerFn, escalateFn, codexAuthCheckFn, codexModelsCacheReaderFn, configPath } = opts;
+): PlanPhaseResult | { paneId: string; uuid: string } {
+	const {
+		spawnFn, genUuid, plannerPaneId, ensureWorkerPane, claudeDir, logEvent,
+		preflightContainerFn, escalateFn, codexAuthCheckFn, codexModelsCacheReaderFn,
+		configPath, writeDispatchFailedMarkerFn, removeDispatchFailedMarkerFn,
+		notifyFn, removeTaskPromptFileFn,
+	} = opts;
 	const auditorBlock = runContainerPlanPreflight('auditor', workerIsolation, preflightContainerFn, escalateFn);
 	if (auditorBlock !== null) return auditorBlock;
 	const auditorLivePaneId = resolveLivePaneId(ensureWorkerPane, plannerPaneId);
 	const auditorSpawn = resolveAndSpawnAuditor({
 		spawnFn, paneId: auditorLivePaneId, genUuid, taskPrompt: auditorTaskPrompt, permissionMode,
-		logEvent, workerIsolation, codexAuthCheckFn, escalateFn, claudeDir, codexModelsCacheReaderFn, configPath,
+		logEvent, workerIsolation, codexAuthCheckFn, escalateFn, claudeDir,
+		codexModelsCacheReaderFn, configPath, writeDispatchFailedMarkerFn,
+		removeDispatchFailedMarkerFn, notifyFn, removeTaskPromptFileFn,
 	});
-	if (!auditorSpawn.ok) return { kind: 'codex-auth-failed', phase: 'auditor', reason: auditorSpawn.reason };
-	return auditorLivePaneId;
+	if (!auditorSpawn.ok) {
+		return auditorSpawn.dispatchFailed
+			? { kind: 'dispatch-failed', phase: 'auditor', reason: auditorSpawn.reason }
+			: { kind: 'codex-auth-failed', phase: 'auditor', reason: auditorSpawn.reason };
+	}
+	return { paneId: auditorLivePaneId, uuid: auditorSpawn.uuid };
 }
 
 function runPlanWorkerSequence(
@@ -1109,7 +1279,7 @@ function runPlanWorkerSequence(
 	issue: IssueEntry,
 ): PlanPhaseResult {
 	const {
-		isPaneAlive, sleepFn, clock, spawnFn,
+		isPaneAlive, sleepFn, clock,
 		readPlannerReportFn, readPlanVerdictFn, readPrdContentFn,
 	} = opts;
 	const permissionMode = opts.permissionMode ?? 'bypassPermissions';
@@ -1128,12 +1298,19 @@ function runPlanWorkerSequence(
 	// Step 4: Container preflight (US-006) + codex auth preflight (US-002,
 	// CAM-352) + planner spawn.
 	const plannerStep = runPlannerSpawnStep(opts, plannerTaskPrompt, permissionMode, workerIsolation);
-	if (typeof plannerStep !== 'string') return plannerStep;
-	const plannerLivePaneId = plannerStep;
+	if ('kind' in plannerStep) return plannerStep;
+	const plannerLivePaneId = plannerStep.paneId;
 
 	// Step 5: Poll planner — primary signal: prd.json written; fallback: pane dies.
-	const plannerDied = pollPlannerDeath(isPaneAlive, sleepFn, clock, spawnFn, plannerLivePaneId, pollIntervalMs, plannerTimeoutMs, readPlannerReportFn);
-	if (!plannerDied) return { kind: 'planner-timeout' };
+	const plannerDied = pollPlannerDeath(
+		isPaneAlive, sleepFn, clock, plannerLivePaneId, pollIntervalMs,
+		plannerTimeoutMs, readPlannerReportFn,
+	);
+	if (!plannerDied) {
+		emitPlanTimeoutTerminal(opts, 'planner', plannerLivePaneId, plannerStep.uuid);
+		return { kind: 'planner-timeout' };
+	}
+	removePlanTaskPrompt(opts, plannerStep.uuid);
 
 	// US-003: Guard — re-check if prd.json was actually written (Bug 4-adjacent).
 	if (isPlannerNoPrd(readPlannerReportFn)) return { kind: 'planner-failed' };
@@ -1149,12 +1326,19 @@ function runPlanWorkerSequence(
 	// Step 6: Container preflight (US-006) + codex auth preflight (US-002,
 	// CAM-352) + auditor spawn.
 	const auditorStep = runAuditorSpawnStep(opts, auditorTaskPrompt, permissionMode, workerIsolation);
-	if (typeof auditorStep !== 'string') return auditorStep;
-	const auditorLivePaneId = auditorStep;
+	if ('kind' in auditorStep) return auditorStep;
+	const auditorLivePaneId = auditorStep.paneId;
 
 	// Step 7: Poll auditor — verdict from FILE ONLY, never from capture-pane.
-	const auditorResult = pollAuditorReport(isPaneAlive, sleepFn, clock, spawnFn, readPlanVerdictFn, auditorLivePaneId, pollIntervalMs, auditorTimeoutMs);
-	if (!auditorResult.ok) return { kind: 'auditor-timeout' };
+	const auditorResult = pollAuditorReport(
+		isPaneAlive, sleepFn, clock, readPlanVerdictFn, auditorLivePaneId,
+		pollIntervalMs, auditorTimeoutMs,
+	);
+	if (!auditorResult.ok) {
+		emitPlanTimeoutTerminal(opts, 'auditor', auditorLivePaneId, auditorStep.uuid);
+		return { kind: 'auditor-timeout' };
+	}
+	removePlanTaskPrompt(opts, auditorStep.uuid);
 	const { report } = auditorResult;
 	return report.verdict === 'APPROVE' ? { kind: 'audit-approved', issue, report } : { kind: 'audit-blocked', issue, report };
 }
