@@ -12,6 +12,34 @@
   "officialDocsConsulted": [],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "CRITICAL [docs/adr/0050-gateship-supersedes-garboard-naming.md:53]: US-001 AC5 requires ADR-0050 to record 'every eliminated candidate with its eliminatory reason'. Lines 53-61 record fabricated aesthetic reasons instead of the measured eliminatory evidence recorded in CAM-434 spec.acceptanceCriteria[4]. Nine of ten entries are wrong: keelgate (ADR: 'awkward compound with no clean phonetic or semantic payoff' / ACTUAL: live software product at keelgate.com since 2026-06-01, Keel root already taken in devtools by keel.so and keel.sh, plus the -gate scandal connotation); deckrun (ADR: 'generic-sounding compound' / ACTUAL: live Kubernetes PaaS whose CLI is named deck, plus a homonymous MCP tool); shipset (ADR: 'reads as a noun phrase for a bundle/kit' / ACTUAL: live AI product at shipset.app); gatework (ADR: \"'-work' suffix reads as a services/consultancy name\" / ACTUAL: Gateworks Corporation, embedded hardware, with a GitHub org: reviewer independently corroborated via https://www.gateworks.com/company/ and https://github.com/gateworks); bowmark (ADR: 'weak metaphor fit' / ACTUAL: Bowmark Capital, a software-focused PE firm, owns the .com); keelward and wayhelm (ADR: suffix cadence / awkward pronunciation / ACTUAL: live businesses owning the .com); gatepath (ADR: 'generic compound' / ACTUAL: a centenarian NGO owning the .com and .org); gaterun (ADR: 'generic compound' / ACTUAL: SERP taken by the Gate River Run, plus an API-gateway namesake on GitHub). Only the helm- family entry matches. This is not a wording nit: it silently converts nine LAYER-4/namespace kills into subjective aesthetic rejections, which destroys the very evidence this ADR exists to preserve and directly undercuts its own central thesis (line 39: layer 4 is eliminatory). A future naming cycle reading this record would conclude layer 4 almost never bites, when in fact it killed nine of the twelve screened candidates. Rewrite lines 53-61 from CAM-434 AC5 verbatim. Related: line 63 also mislabels the Promark collision as 'a live layer-4-adjacent confusion risk' when Promark is a D'Addario percussion brand (1957), a distant category, not an adjacent one."
+    },
+    {
+      "id": "US-R1-002",
+      "title": "Review round 1 fix 002: address reviewer finding",
+      "priority": 2,
+      "passes": false,
+      "notes": "CRITICAL [docs/adr/0050-gateship-supersedes-garboard-naming.md:64]: The deckward runner-up elimination reason is mis-attributed. ADR-0050 says it was 'eliminated as a homophone of \"Deckard\" (the Blade Runner protagonist), a pop-culture collision the operator judged too on-the-nose'. The operator's recorded reason in CAM-434 spec.gotchas is different and materially stronger: 'deckward ficou em terceiro: limpo em software, mas homofono de Deckard, codinome do Steam Frame da Valve, com ciclo de noticias quente em 2026' (Deckard is the codename of Valve's Steam Frame, with a hot 2026 news cycle). A 1982 film character is a weak collision; an actively-launching Valve hardware product with a live news cycle is the actual disqualifier, and is the same live-homonym class ADR-0050's layer 4 is about. Correct the attribution to the Valve Steam Frame codename."
+    },
+    {
+      "id": "US-R1-003",
+      "title": "Review round 1 fix 003: address reviewer finding",
+      "priority": 3,
+      "passes": false,
+      "notes": "CRITICAL [scripts/cam/prd.json:43]: Layer B behavioral-gate FAIL (hard constraint). US-002's AC6 repo-gate oracle re-ran red at review time: `test -z \"$(git grep -li garboard -- ':!docs/adr/' ':!scripts/cam/issues/' ':!scripts/cam/journal.md' ':!scripts/cam/journal.archive.md' ':!scripts/cam/patterns.archive.md' ':!scripts/cam/suggestions.jsonl' ':!CHANGELOG.md')\"` exits 1, with offenders scripts/cam/handoff.json (1 match) and scripts/cam/prd.json (20 matches). The implementer did not fix this and did not narrate it as red; instead scripts/cam/patterns.md (new bullet, line 1058) documents it as an 'accepted gap' to be recorded in handoff.json openQuestions. Per the no-flaky-evasion hard stop, a red gate cannot be narrated green, and an accepted-gap note is not a pass. The substance of the gap is real (prd.json is worker-write-denied per ADR-0036 and necessarily narrates the retired name; handoff.json's single hit is the mandated verbatim lastCompletedStory.title), so the correct resolution is an explicit orchestrator/operator amendment of the oracle text in prd.json to add ':!scripts/cam/prd.json' and ':!scripts/cam/handoff.json' to the exclusion list, with the exemption rationale stated in the AC prose, exactly as the recorded CAM-433 US-R1-003 precedent prescribes. Until that amendment lands the AC is unmet as written."
+    },
+    {
+      "id": "US-R1-004",
+      "title": "Review round 1 fix 004: address reviewer finding",
+      "priority": 4,
+      "passes": false,
+      "notes": "WARNING [docs/positioning.md:73]: False sourcing claim introduced by the section-4 rewrite. Line 73 states 'The two ADRs (docs/adr/) hold the full multi-round research process, the kill evidence for every candidate considered, the four-layer gate, and the ranked reserves as the historical record'. That is not true for every candidate: US-002 deleted old sections 4.2 and 4.3, which held the only versioned kill evidence for slipway (four active dev-tooling projects using the name), ingot (INGOT Brokers fintech collision, active Oxide crate, existing same-category repo), crivo (npm 3.4.3 whose own description is 'local quality gate for AI-agent coding workflows'), assay (npm/crates/PyPI/org all taken, assay.com since 2000), and the tenet/tenant/nova/fide riffs. git grep confirms none of those appear in ADR-0049 or ADR-0050; they now survive only in scripts/cam/issues/CAM-0415.json, a control-plane record the sentence does not point at. This also contradicts the document's own opening pledge (line 3) that every fact is restated self-contained and traceable. Either narrow the sentence to what the ADRs actually hold, or carry the missing kill evidence forward into ADR-0050."
+    },
+    {
       "id": "US-001",
       "title": "Write ADR-0050 (GATESHIP supersedes GARBOARD) and append the supersession note to ADR-0049",
       "description": "As the operator, I need an explicit supersession ADR that registers GATESHIP as the product name, records the measured reason GARBOARD died, formalizes the four-layer name gate that was missing, and preserves ADR-0049 untouched except for an appended supersession pointer, so that the naming decision is closed on the record and never re-litigated from zero.",
@@ -28,7 +56,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 1,
+      "priority": 5,
       "passes": true,
       "requires": null,
       "notes": "Files: docs/adr/0050-gateship-supersedes-garboard-naming.md (new), docs/adr/0049-garboard-naming-policy-binary-alias-org-and-staged-rename.md (EOF append only). Write ADR-0050 in English mirroring ADR-0049's structure (Context/Decision/Consequences), since it supersedes that record. SUPERSESSION DOCTRINE (issue gotcha): ADR-0049 must NEVER be edited in place; the historical record of the error is part of the value. The only change to 0049 is a supersession block APPENDED after its last line ('Superseded by ADR-0050: <reason one-liner>'); do not touch the title, Context, Decision or Consequences text. The append-only pin oracle is DELIBERATELY GREEN ON MAIN (invariance pin, not red-on-main); its falsifiability sweep was already executed by the orchestrator on 2026-07-27 in a throwaway worktree with 4 reproducible results: main untouched exit 0; deleting a mid-file markdown bullet exit 1; rewriting an existing line exit 1; appending a supersession block at EOF exit 0. ORACLE LINT RULE (applies to any oracle you add in tests too): never compare against an integer literal (-eq/-ne/etc.) without a live re-derivation token (git show main:, git diff main, git grep ... main) in the SAME clause; for invariance prefer integer-free forms (prefix identity, content equality, empty set). SCOPE OF THE DECISION: ADR-0050 registers the product name GATESHIP and the name gate; carry forward 0049's staged-rename doctrine (display layer moves now, binary rename at launch packaging, internal contracts CAM_*/cam never rename) with GATESHIP replacing GARBOARD as the target, and explicitly reaffirm ADR-0045's display-only doctrine. Do NOT invent policy the operator did not decide: 0049's typed alias 'gar' was garboard-derived, so record the alias as re-decided at launch packaging rather than coining a new one. Order by merit presented to the operator was gateship > prowmark > deckward; decision GATESHIP on 2026-07-27 after a 21-candidate four-layer triage. Do not rename the binary, code identifiers, or buy domains (out of scope per issue). ADR admission gates (hard to reverse / surprising / genuine trade-off) all pass; say so briefly as 0049 did."
@@ -48,10 +76,53 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 2,
+      "priority": 6,
       "passes": true,
       "requires": null,
       "notes": "Files: docs/positioning.md (22 garboard occurrences, mostly section '4. Naming decision' with subsections 4.1-4.6), docs/launch-readiness.md (3 occurrences around line 74: 'canonical binary moves from cam to garboard'). Depends on US-001: cite ADR-0050 by its real filename. positioning.md section 4 should present GATESHIP as the settled name citing ADR-0050 and keep only what a reader needs (the ADRs own the full 5-round history and kill evidence); watch for the CAM-415 review lesson recorded in the journal: the file self-contradicted once by describing the product under one name in sections 1-3 while section 4.5 demoted that name, so re-read the WHOLE file for name coherence after the edit. Alias policy (4.5) and reserves (4.6): reconcile with what ADR-0050 actually decides (alias re-decided at launch packaging; do not invent a new alias). HARD CONSTRAINT (ADR-0036 / CAM-162 defect class): do NOT edit anything under scripts/cam/issues/, scripts/cam/journal.md, scripts/cam/suggestions.jsonl or CHANGELOG.md on this branch; the three git-show-main oracles are satisfied by the orchestrator/operator editing those issue records directly on main during this cycle, and the reviewer's Layer B gate re-runs them independently. If they are still red at your verification step, report the story DONE-blocked-on-main via worker-report rather than editing control-plane files. The AC6 grep oracle's exclusion list is the planner's encoding of the AC's own exemption rationale ('onde o nome antigo e o assunto do registro') extended to append-only history and worker-denied control-plane records; the on-main oracles above close the gap for the open records that DID present garboard as current. Doc-as-code gate (ADR-0037) detects path claims in markdown by heuristic: keep any file paths you touch in these docs real. Oracle-lint rule from the issue applies to all oracles: no integer-literal comparison without live re-derivation in the same clause (the test -z form used here is integer-free by design)."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:4",
+    "findings": [
+      {
+        "severity": "CRITICAL",
+        "file": "docs/adr/0050-gateship-supersedes-garboard-naming.md",
+        "line": 53,
+        "text": "US-001 AC5 requires ADR-0050 to record 'every eliminated candidate with its eliminatory reason'. Lines 53-61 record fabricated aesthetic reasons instead of the measured eliminatory evidence recorded in CAM-434 spec.acceptanceCriteria[4]. Nine of ten entries are wrong: keelgate (ADR: 'awkward compound with no clean phonetic or semantic payoff' / ACTUAL: live software product at keelgate.com since 2026-06-01, Keel root already taken in devtools by keel.so and keel.sh, plus the -gate scandal connotation); deckrun (ADR: 'generic-sounding compound' / ACTUAL: live Kubernetes PaaS whose CLI is named deck, plus a homonymous MCP tool); shipset (ADR: 'reads as a noun phrase for a bundle/kit' / ACTUAL: live AI product at shipset.app); gatework (ADR: \"'-work' suffix reads as a services/consultancy name\" / ACTUAL: Gateworks Corporation, embedded hardware, with a GitHub org: reviewer independently corroborated via https://www.gateworks.com/company/ and https://github.com/gateworks); bowmark (ADR: 'weak metaphor fit' / ACTUAL: Bowmark Capital, a software-focused PE firm, owns the .com); keelward and wayhelm (ADR: suffix cadence / awkward pronunciation / ACTUAL: live businesses owning the .com); gatepath (ADR: 'generic compound' / ACTUAL: a centenarian NGO owning the .com and .org); gaterun (ADR: 'generic compound' / ACTUAL: SERP taken by the Gate River Run, plus an API-gateway namesake on GitHub). Only the helm- family entry matches. This is not a wording nit: it silently converts nine LAYER-4/namespace kills into subjective aesthetic rejections, which destroys the very evidence this ADR exists to preserve and directly undercuts its own central thesis (line 39: layer 4 is eliminatory). A future naming cycle reading this record would conclude layer 4 almost never bites, when in fact it killed nine of the twelve screened candidates. Rewrite lines 53-61 from CAM-434 AC5 verbatim. Related: line 63 also mislabels the Promark collision as 'a live layer-4-adjacent confusion risk' when Promark is a D'Addario percussion brand (1957), a distant category, not an adjacent one."
+      },
+      {
+        "severity": "CRITICAL",
+        "file": "docs/adr/0050-gateship-supersedes-garboard-naming.md",
+        "line": 64,
+        "text": "The deckward runner-up elimination reason is mis-attributed. ADR-0050 says it was 'eliminated as a homophone of \"Deckard\" (the Blade Runner protagonist), a pop-culture collision the operator judged too on-the-nose'. The operator's recorded reason in CAM-434 spec.gotchas is different and materially stronger: 'deckward ficou em terceiro: limpo em software, mas homofono de Deckard, codinome do Steam Frame da Valve, com ciclo de noticias quente em 2026' (Deckard is the codename of Valve's Steam Frame, with a hot 2026 news cycle). A 1982 film character is a weak collision; an actively-launching Valve hardware product with a live news cycle is the actual disqualifier, and is the same live-homonym class ADR-0050's layer 4 is about. Correct the attribution to the Valve Steam Frame codename."
+      },
+      {
+        "severity": "CRITICAL",
+        "file": "scripts/cam/prd.json",
+        "line": 43,
+        "text": "Layer B behavioral-gate FAIL (hard constraint). US-002's AC6 repo-gate oracle re-ran red at review time: `test -z \"$(git grep -li garboard -- ':!docs/adr/' ':!scripts/cam/issues/' ':!scripts/cam/journal.md' ':!scripts/cam/journal.archive.md' ':!scripts/cam/patterns.archive.md' ':!scripts/cam/suggestions.jsonl' ':!CHANGELOG.md')\"` exits 1, with offenders scripts/cam/handoff.json (1 match) and scripts/cam/prd.json (20 matches). The implementer did not fix this and did not narrate it as red; instead scripts/cam/patterns.md (new bullet, line 1058) documents it as an 'accepted gap' to be recorded in handoff.json openQuestions. Per the no-flaky-evasion hard stop, a red gate cannot be narrated green, and an accepted-gap note is not a pass. The substance of the gap is real (prd.json is worker-write-denied per ADR-0036 and necessarily narrates the retired name; handoff.json's single hit is the mandated verbatim lastCompletedStory.title), so the correct resolution is an explicit orchestrator/operator amendment of the oracle text in prd.json to add ':!scripts/cam/prd.json' and ':!scripts/cam/handoff.json' to the exclusion list, with the exemption rationale stated in the AC prose, exactly as the recorded CAM-433 US-R1-003 precedent prescribes. Until that amendment lands the AC is unmet as written."
+      },
+      {
+        "severity": "WARNING",
+        "file": "docs/positioning.md",
+        "line": 73,
+        "text": "False sourcing claim introduced by the section-4 rewrite. Line 73 states 'The two ADRs (docs/adr/) hold the full multi-round research process, the kill evidence for every candidate considered, the four-layer gate, and the ranked reserves as the historical record'. That is not true for every candidate: US-002 deleted old sections 4.2 and 4.3, which held the only versioned kill evidence for slipway (four active dev-tooling projects using the name), ingot (INGOT Brokers fintech collision, active Oxide crate, existing same-category repo), crivo (npm 3.4.3 whose own description is 'local quality gate for AI-agent coding workflows'), assay (npm/crates/PyPI/org all taken, assay.com since 2000), and the tenet/tenant/nova/fide riffs. git grep confirms none of those appear in ADR-0049 or ADR-0050; they now survive only in scripts/cam/issues/CAM-0415.json, a control-plane record the sentence does not point at. This also contradicts the document's own opening pledge (line 3) that every fact is restated self-contained and traceable. Either narrow the sentence to what the ADRs actually hold, or carry the missing kill evidence forward into ADR-0050."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "docs/positioning.md",
+        "line": 73,
+        "text": "The previous section 4.5 cited ADR-0049 by full path (docs/adr/0049-garboard-naming-policy-binary-alias-org-and-staged-rename.md). The rewrite now cites only the bare label 'ADR-0050' plus the directory 'docs/adr/'. Citing the full filename would keep the reference resolvable by a reader grepping the repo, matching the precedent the section itself replaced."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "docs/adr/0050-gateship-supersedes-garboard-naming.md",
+        "line": 46,
+        "text": "ADR-0050 records gateship-one at 255 stars while ADR-0049 line 32 records the same org at 256 stars. Both are point-in-time and the two ADRs now sit side by side; a one-clause note that the count is dated (as ADR-0050 already does for the domain facts) would keep a future reader from reading the delta as a contradiction."
+      }
+    ]
+  }
 }
