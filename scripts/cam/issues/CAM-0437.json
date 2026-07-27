@@ -1,0 +1,10 @@
+{
+  "id": "CAM-437",
+  "title": "Debito de review do CAM-433: os branches de falha do proprio mecanismo de dispatch verificado nao tem teste",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-27T16:22:38.972Z",
+  "updatedAt": "2026-07-27T16:22:38.972Z",
+  "description": "Origem: MAX_ROUNDS_DEBT da rodada 3 de review do CAM-433 (branch cam/issue-433), 2026-07-27. Nenhum gate falhou e todos os oracles passaram na re-execucao independente do reviewer; o debito e de criterio soft (tests-with-meaningful-assert) e foi mapeado com precisao pelo reviewer.\n\nGAP 1 (test/supervisor/verified-dispatch.test.ts:39): os quatro branches de falha de leitura de pane_pid em runVerifiedDispatch (pane-pid-before-exited, pane-pid-before-empty, pane-pid-after-exited, pane-pid-after-empty) nao sao exercitados por nenhum teste. Todo DI fake da suite devolve pid nao-vazio com exit 0 para display-message. Probe do reviewer: grep pelos quatro nomes em test/ da zero matches.\n\nGAP 2 (src/supervisor/task-prompt-file.ts:25): o guard de path-traversal em taskPromptFilename (regex /^[A-Za-z0-9-]+$/ sobre o uuid, unica defesa do modulo) nao tem teste do caso de rejeicao. Probe do reviewer: grep por invalid-uuid rejection em test/ da zero matches.\n\nPOR QUE NAO E POLIMENTO: o CAM-433 shipou exatamente o mecanismo que detecta dispatch silenciosamente falho, e os branches SEM teste sao os branches de FALHA desse mecanismo. A verificacao que pega falha silenciosa esta ela mesma sem verificacao nos proprios caminhos de falha. E o mesmo formato de buraco que o CAM-433 fechou, um nivel acima.\n\nESCOPO: exercitar os quatro branches de pane_pid com fakes comportamentais que devolvam pid vazio e exit nao-zero (ADR-0039 permite DI fake aqui, o wire boundary real ja e coberto pelos testes de tmux real do proprio CAM-433), e um teste de rejeicao de uuid invalido (traversal ../ e afins) em taskPromptFilename."
+}
