@@ -135,7 +135,7 @@
         "Full quality spine passes per AC11. [oracle: bun run check:all]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: scripts/test-in-container.ts, test/helpers/lane-expectations.json (finalize container expectedSkips with the measured number). Container lane waives tmux AND the procps-provided binaries (ps; see the AC9 rationale carried in the helper since US-001; pgrep also absent in oven/bun:1.2-slim). The Dockerfile installs git and jq, zero tmux: that asymmetry is the design reason the waiver exists at all. The officialDocsConsulted Docker entry covers docker exec --env on non-TTY exec per the spec's gotcha requiring it for any story driving the Docker CLI. In-container baseline context: CAM-186 achieved 0 real fails in-container on v0.60.0 via this same harness (scripts/test-in-container.ts), so a red here is a regression signal, not noise."
     },
