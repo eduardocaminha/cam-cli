@@ -1,0 +1,17 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Write ADR-0050 (GATESHIP supersedes GARBOARD) and append the supersession note to ADR-0049"
+  },
+  "createdFiles": [
+    "docs/adr/0050-gateship-supersedes-garboard-naming.md"
+  ],
+  "modifiedFiles": [
+    "docs/adr/0049-garboard-naming-policy-binary-alias-org-and-staged-rename.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "ADR-0050 supersedes ADR-0049 in full: product name is now Gateship (was Garboard), binary rename to `gateship` deferred to launch packaging, no typed alias chosen yet (re-decided at packaging stage), CAM_*/cam internal contracts unchanged (ADR-0045 reaffirmed). ADR-0049 was appended-only (a single supersession block at EOF, no other edits) and its append-only-prefix-of-main invariance pin still holds. docs/positioning.md and the README differentiation section (CAM-331) remain out of scope for this docs-only cycle and are explicitly noted in ADR-0050 as blocked-on-this-landing-first; a future story picking those up should cite ADR-0050, not re-litigate naming. No code/binary/template renamed in this story.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
