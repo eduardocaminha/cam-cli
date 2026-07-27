@@ -1,0 +1,21 @@
+{
+	"lanes": {
+		"host": {
+			"expectedSkips": 0,
+			"passFloor": 5716,
+			"measuredAt": "2026-07-27",
+			"measuredVia": "full-PATH `bun test` on cam/issue-424 (US-005, CAM-424), AFTER this story's own 14 new tests (test/check-skip-ratchet.test.ts + 2 GATES-manifest-coherence additions): 5716 pass / 0 fail / no skip-summary-line printed (Bun omits the line entirely at zero)."
+		},
+		"container": {
+			"expectedSkips": 40,
+			"passFloor": 5676,
+			"measuredAt": "2026-07-27",
+			"measuredVia": "provisional (finalized by US-006): `bun run test:container` on cam/issue-424 (US-005, CAM-424), AFTER this story's own 14 new tests, measured 5673 pass / 3 fail / 40 skip with NO waiver declared. The 3 fails are US-002's preflight tests for tmux/pgrep/uuidgen (absent in oven/bun:1.2-slim, not yet waived); once US-006 wires CAM_TEST_WAIVERS=tmux,pgrep,uuidgen into scripts/test-in-container.ts's docker exec call, those 3 tests are expected to flip to pass (passFloor 5676 = 5673 + 3), while the skip count is unaffected (the individual skipIf gates on those same binaries already skip independently of the waiver)."
+		}
+	},
+	"triage": {
+		"hardDependency": 42,
+		"legitimateEnvironmental": 1,
+		"measuredVia": "distinct test/** files (excluding test/helpers/ and test/fixtures/) that `import { xAvailable } from '.../test-deps.ts'`, bucketed by that binary's DepClassification in test/helpers/test-deps.ts. hardDependency = 42 distinct files across the union of tmux/git/jq/pgrep/uuidgen/bun (some files import more than one hard-dependency binding, e.g. test/integration/orch-recycle-watch.test.ts imports tmux+pgrep+uuidgen). legitimateEnvironmental = 1 file (test/integration/orch-recycle-pid-resolve.test.ts, the sole importer of psAvailable)."
+	}
+}
