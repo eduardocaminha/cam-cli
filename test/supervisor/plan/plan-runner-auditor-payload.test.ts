@@ -33,6 +33,7 @@ import type { SpawnFn } from '../../../src/supervisor/loop.ts';
 import type { PlanVerdictReport } from '../../../src/supervisor/plan-verdict-report.ts';
 import type { IssueEntry } from '../../../src/issues/types.ts';
 import type { PlanPreflightResult } from '../../../src/supervisor/plan-preflight.ts';
+import { readTaskPromptFromCommand } from '../../helpers/task-prompt.ts';
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -96,6 +97,7 @@ const PREFLIGHT_OK: PlanPreflightResult = { ok: true };
 interface TmuxCall {
 	cmd: string;
 	args: string[];
+	taskPrompt?: string;
 }
 
 function makeOpts(
@@ -106,7 +108,12 @@ function makeOpts(
 	let plannerAliveCount = 1;
 
 	const spawnFn: SpawnFn = (cmd, args) => {
-		calls.push({ cmd, args });
+		const shell = args[args.length - 1] ?? '';
+		const taskPrompt =
+			args.includes('respawn-pane') && shell.includes('.cam-task-prompt-')
+				? readTaskPromptFromCommand(shell)
+				: undefined;
+		calls.push({ cmd, args, taskPrompt });
 		return { stdout: '', exitCode: 0 };
 	};
 
@@ -143,11 +150,11 @@ function makeOpts(
 	return { opts, calls };
 }
 
-function findAuditorShell(calls: TmuxCall[]): string {
+function findAuditorPrompt(calls: TmuxCall[]): string {
 	const auditorRespawn = calls.find(
 		(c) => c.args[2] === 'respawn-pane' && c.args.some((a) => a.includes('subagent-auditor')),
 	);
-	return auditorRespawn?.args[auditorRespawn.args.length - 1] ?? '';
+	return auditorRespawn?.taskPrompt ?? '';
 }
 
 // ---------------------------------------------------------------------------
@@ -230,19 +237,19 @@ describe('runPlanPhase auditor spawn payload (AC3)', () => {
 	test('auditor spawn payload embeds the selected issue id', () => {
 		const { opts, calls } = makeOpts(CAM_156_ISSUE);
 		runPlanPhase(opts);
-		expect(findAuditorShell(calls)).toContain('CAM-156');
+		expect(findAuditorPrompt(calls)).toContain('CAM-156');
 	});
 
 	test('auditor spawn payload embeds the selected issue title', () => {
 		const { opts, calls } = makeOpts(CAM_156_ISSUE);
 		runPlanPhase(opts);
-		expect(findAuditorShell(calls)).toContain('Fix push-verification false-BLOCK on stale expected-ref');
+		expect(findAuditorPrompt(calls)).toContain('Fix push-verification false-BLOCK on stale expected-ref');
 	});
 
 	test('auditor spawn payload embeds the derived branch name, not a planner slug', () => {
 		const { opts, calls } = makeOpts(CAM_156_ISSUE);
 		runPlanPhase(opts);
-		expect(findAuditorShell(calls)).toContain('cam/issue-156');
+		expect(findAuditorPrompt(calls)).toContain('cam/issue-156');
 	});
 
 	test('opts.auditorTaskPrompt override still wins (backward compat)', () => {
@@ -250,7 +257,7 @@ describe('runPlanPhase auditor spawn payload (AC3)', () => {
 			auditorTaskPrompt: 'Custom override prompt',
 		});
 		runPlanPhase(opts);
-		expect(findAuditorShell(calls)).toContain('Custom override prompt');
+		expect(findAuditorPrompt(calls)).toContain('Custom override prompt');
 	});
 
 	test('re-plan rounds inherit the same record-bearing auditor prompt (AC3)', () => {
@@ -264,7 +271,12 @@ describe('runPlanPhase auditor spawn payload (AC3)', () => {
 		};
 		const calls: TmuxCall[] = [];
 		const spawnFn: SpawnFn = (cmd, args) => {
-			calls.push({ cmd, args });
+			const shell = args[args.length - 1] ?? '';
+			const taskPrompt =
+				args.includes('respawn-pane') && shell.includes('.cam-task-prompt-')
+					? readTaskPromptFromCommand(shell)
+					: undefined;
+			calls.push({ cmd, args, taskPrompt });
 			return { stdout: '', exitCode: 0 };
 		};
 		let plannerAliveCount = 1;
@@ -286,9 +298,8 @@ describe('runPlanPhase auditor spawn payload (AC3)', () => {
 		);
 		expect(auditorRespawns.length).toBe(2); // 2 rounds -> 2 auditor spawns
 		for (const respawn of auditorRespawns) {
-			const shell = respawn.args[respawn.args.length - 1] ?? '';
-			expect(shell).toContain('CAM-156');
-			expect(shell).toContain('cam/issue-156');
+			expect(respawn.taskPrompt).toContain('CAM-156');
+			expect(respawn.taskPrompt).toContain('cam/issue-156');
 		}
 	});
 });
@@ -301,11 +312,11 @@ describe('CAM-156 regression: coincident GitHub PR #156 never triggers bare-numb
 	test('auditor spawn payload carries the fully-resolved CAM-156 record', () => {
 		const { opts, calls } = makeOpts(CAM_156_ISSUE);
 		runPlanPhase(opts);
-		const shell = findAuditorShell(calls);
-		expect(shell).toContain('CAM-156');
-		expect(shell).toContain('Fix push-verification false-BLOCK on stale expected-ref');
-		expect(shell).toContain('Push verification used the prior story HEAD instead of the just-landed US-005 push.');
-		expect(shell).toContain('cam/issue-156');
+		const prompt = findAuditorPrompt(calls);
+		expect(prompt).toContain('CAM-156');
+		expect(prompt).toContain('Fix push-verification false-BLOCK on stale expected-ref');
+		expect(prompt).toContain('Push verification used the prior story HEAD instead of the just-landed US-005 push.');
+		expect(prompt).toContain('cam/issue-156');
 	});
 
 	test('runPlanPhase issues no gh invocation for issue/PR identity', () => {
@@ -319,7 +330,7 @@ describe('CAM-156 regression: coincident GitHub PR #156 never triggers bare-numb
 	test('the derived branch is cam/issue-156, never a planner-authored slug', () => {
 		const { opts, calls } = makeOpts(CAM_156_ISSUE);
 		runPlanPhase(opts);
-		const shell = findAuditorShell(calls);
-		expect(shell).not.toMatch(/cam\/issue-156-[a-z]/); // no slug suffix appended
+		const prompt = findAuditorPrompt(calls);
+		expect(prompt).not.toMatch(/cam\/issue-156-[a-z]/); // no slug suffix appended
 	});
 });

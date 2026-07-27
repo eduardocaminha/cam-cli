@@ -716,7 +716,14 @@ function resolveAndSpawnPlanner(opts: ResolveAndSpawnOptions): ResolveAndSpawnRe
 	// US-002 (CAM-350): route through selectAdapter(backend) so a per-phase
 	// 'codex' backend actually reaches spawn instead of always hardcoding
 	// ClaudeAdapter.
-	const shell = selectAdapter(backend).buildSpawnArgv('planner', { uuid, taskPrompt, permissionMode, model, isolation: workerIsolation });
+	const shell = selectAdapter(backend).buildSpawnArgv('planner', {
+		uuid,
+		claudeDir,
+		taskPrompt,
+		permissionMode,
+		model,
+		isolation: workerIsolation,
+	});
 	// US-006 / CAM-152: wrap via dockerExecWrap in container mode.
 	const dispatchCmd = workerIsolation === 'container' ? dockerExecWrap(shell) : shell;
 	spawnFn('tmux', ['-L', 'cam', 'set-option', '-p', '-t', paneId, '@cam_label', 'planner']);
@@ -787,7 +794,14 @@ function resolveAndSpawnAuditor(opts: ResolveAndSpawnOptions): ResolveAndSpawnRe
 	// US-002 (CAM-350): route through selectAdapter(backend) so a per-phase
 	// 'codex' backend actually reaches spawn instead of always hardcoding
 	// ClaudeAdapter.
-	const shell = selectAdapter(backend).buildSpawnArgv('auditor', { uuid, taskPrompt, permissionMode, model, isolation: workerIsolation });
+	const shell = selectAdapter(backend).buildSpawnArgv('auditor', {
+		uuid,
+		claudeDir,
+		taskPrompt,
+		permissionMode,
+		model,
+		isolation: workerIsolation,
+	});
 	// US-006 / CAM-152: wrap via dockerExecWrap in container mode.
 	const dispatchCmd = workerIsolation === 'container' ? dockerExecWrap(shell) : shell;
 	spawnFn('tmux', ['-L', 'cam', 'set-option', '-p', '-t', paneId, '@cam_label', 'auditor']);

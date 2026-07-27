@@ -61,7 +61,7 @@ export interface ReviewerWorkerArgvOptions {
 	agentName?: string;
 	/**
 	 * Free-text task prompt for the reviewer session. The TUI needs an initial
-	 * prompt (CAM-41: a promptless reviewer dies instantly). Will be shell-escaped.
+	 * prompt (CAM-41); it is delivered via the per-dispatch prompt file.
 	 * Defaults to REVIEWER_TASK_PROMPT.
 	 */
 	taskPrompt?: string;
@@ -189,6 +189,8 @@ export interface MakeReviewDispatchOptions {
 	writePrd: WritePrd;
 	/** Pane id of the worker slot used for the reviewer. */
 	workerPaneId: string;
+	/** Project `.claude` directory for per-dispatch task-prompt transport. */
+	claudeDir?: string;
 	/** Check whether the reviewer pane is still alive (poll loop guard). */
 	isPaneAlive: (paneId: string) => boolean;
 	/** Sleep between polling ticks. Tests inject a no-op. */
@@ -432,6 +434,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 		// hardcoding ClaudeAdapter.
 		const shellCmd = selectAdapter(reviewBackend).buildSpawnArgv('reviewer', {
 			uuid,
+			claudeDir: opts.claudeDir,
 			agentName,
 			taskPrompt,
 			permissionMode,

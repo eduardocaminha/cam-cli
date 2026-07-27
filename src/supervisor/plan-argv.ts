@@ -35,7 +35,7 @@ export { DEFAULT_PLANNER_AGENT, DEFAULT_AUDITOR_AGENT } from './backend-adapter.
 export interface PlannerWorkerArgvOptions {
 	/** UUID for this worker invocation; passed as --session-id. */
 	uuid: string;
-	/** Free-text task prompt sent to the planner agent. Will be shell-escaped. */
+	/** Free-text task prompt sent to the planner via a per-dispatch file. */
 	taskPrompt: string;
 	/**
 	 * Claude permission mode forwarded to the spawned claude process (NEVER a
@@ -87,7 +87,7 @@ export function buildPlannerWorkerArgv(opts: PlannerWorkerArgvOptions): string {
 export interface AuditorWorkerArgvOptions {
 	/** UUID for this worker invocation; passed as --session-id. */
 	uuid: string;
-	/** Free-text task prompt sent to the auditor agent. Will be shell-escaped. */
+	/** Free-text task prompt sent to the auditor via a per-dispatch file. */
 	taskPrompt: string;
 	/**
 	 * Claude permission mode forwarded to the spawned claude process (NEVER a

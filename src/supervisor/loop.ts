@@ -240,6 +240,8 @@ export interface RunSupervisorOptions {
 	prdPath: string;
 	/** Absolute path to handoff.json (for readWorkerOutcome). */
 	handoffPath: string;
+	/** Project `.claude` directory for per-dispatch task-prompt transport. */
+	claudeDir?: string;
 	/**
 	 * Optional commit-existence gate (US-002, CAM-187), threaded straight into
 	 * every readWorkerOutcome call. When injected, a passes:true-without-a-
@@ -1178,6 +1180,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// hardcoding ClaudeAdapter.
 			const shellCmd = selectAdapter(implBackend).buildSpawnArgv('implementer', {
 				uuid,
+				claudeDir: opts.claudeDir,
 				taskPrompt: dispatchTaskPrompt,
 				permissionMode,
 				model: implModel,

@@ -34,6 +34,7 @@ import {
 	type RunPlanPhaseWithReplanOptions,
 } from '../src/supervisor/plan-runner.ts';
 import type { SpawnFn } from '../src/supervisor/loop.ts';
+import { readTaskPromptFromCommand } from './helpers/task-prompt.ts';
 import type { IssueEntry } from '../src/issues/types.ts';
 import { selectPlanTargetFromFile } from '../src/issues/select.ts';
 import type { BacklogSpawnFn } from '../src/issues/backlog.ts';
@@ -216,10 +217,10 @@ describe('runPlanPhase - explicit-target-wins regression (AC3)', () => {
 		const spawn = makeBacklogSpawnFn(entries);
 		const targetId = 'CAM-777';
 
-		const capturedShellStrings: string[] = [];
+		const capturedPrompts: string[] = [];
 		const spawnFn: SpawnFn = (cmd, args) => {
 			if (cmd === 'tmux' && args.includes('respawn-pane')) {
-				capturedShellStrings.push(args[args.length - 1] ?? '');
+				capturedPrompts.push(readTaskPromptFromCommand(args[args.length - 1] ?? ''));
 			}
 			return { stdout: '', exitCode: 0 };
 		};
@@ -252,9 +253,9 @@ describe('runPlanPhase - explicit-target-wins regression (AC3)', () => {
 		expect(result.kind).not.toBe('plan-target-invalid');
 		expect(result.kind).not.toBe('no-plannable-issue');
 
-		const plannerShell = capturedShellStrings[0] ?? '';
-		expect(plannerShell).toContain('Plan issue CAM-777 specifically');
-		expect(plannerShell).not.toContain('Plan issue CAM-1 specifically');
+		const plannerPrompt = capturedPrompts[0] ?? '';
+		expect(plannerPrompt).toContain('Plan issue CAM-777 specifically');
+		expect(plannerPrompt).not.toContain('Plan issue CAM-1 specifically');
 	});
 });
 

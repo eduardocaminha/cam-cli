@@ -34,6 +34,7 @@ import type { SpawnFn } from '../../src/supervisor/loop.ts';
 import type { PlanVerdictReport } from '../../src/supervisor/plan-verdict-report.ts';
 import type { IssueEntry } from '../../src/issues/types.ts';
 import type { PlanPreflightResult } from '../../src/supervisor/plan-preflight.ts';
+import { readTaskPromptFromCommand } from '../helpers/task-prompt.ts';
 import type { PrdShape } from '../../src/commands/status.ts';
 
 // ---------------------------------------------------------------------------
@@ -108,6 +109,7 @@ const PREFLIGHT_OK: PlanPreflightResult = { ok: true };
 interface TmuxCall {
 	cmd: string;
 	args: string[];
+	taskPrompt?: string;
 }
 
 function auditorRespawnCalls(calls: TmuxCall[]): TmuxCall[] {
@@ -135,7 +137,12 @@ function makeOpts(overrides: Partial<RunPlanPhaseOptions> = {}): {
 	let plannerAliveCount = 1;
 
 	const spawnFn: SpawnFn = (cmd, args) => {
-		calls.push({ cmd, args });
+		const shell = args[args.length - 1] ?? '';
+		const taskPrompt =
+			args.includes('respawn-pane') && shell.includes('.cam-task-prompt-')
+				? readTaskPromptFromCommand(shell)
+				: undefined;
+		calls.push({ cmd, args, taskPrompt });
 		return { stdout: '', exitCode: 0 };
 	};
 
@@ -195,7 +202,12 @@ function makeReplanOpts(
 	let plannerAliveCount = 1;
 
 	const spawnFn: SpawnFn = (cmd, args) => {
-		calls.push({ cmd, args });
+		const shell = args[args.length - 1] ?? '';
+		const taskPrompt =
+			args.includes('respawn-pane') && shell.includes('.cam-task-prompt-')
+				? readTaskPromptFromCommand(shell)
+				: undefined;
+		calls.push({ cmd, args, taskPrompt });
 		return { stdout: '', exitCode: 0 };
 	};
 
@@ -343,12 +355,12 @@ describe('runPlanPhaseWithReplan: lint findings fold into the re-plan loop (AC3,
 		runPlanPhaseWithReplan(opts);
 		const plannerCalls = plannerRespawnCalls(calls);
 		expect(plannerCalls).toHaveLength(2);
-		const round2Shell = plannerCalls[1]?.args[plannerCalls[1].args.length - 1] ?? '';
-		expect(round2Shell).toContain('CAM-310');
-		expect(round2Shell).toContain('Do not re-select from the backlog');
-		expect(round2Shell).toContain('grep-q-plus-list-files');
-		expect(round2Shell).toContain('grep -qL');
-		expect(round2Shell).toContain('path/to/file.ts');
+		const round2Prompt = plannerCalls[1]?.taskPrompt ?? '';
+		expect(round2Prompt).toContain('CAM-310');
+		expect(round2Prompt).toContain('Do not re-select from the backlog');
+		expect(round2Prompt).toContain('grep-q-plus-list-files');
+		expect(round2Prompt).toContain('grep -qL');
+		expect(round2Prompt).toContain('path/to/file.ts');
 	});
 
 	test('AC4: exhausting re-plan rounds on a persistently-broken oracle escalates via writeEscalationMarkerFn, auditor never spawned', () => {

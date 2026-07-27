@@ -20,6 +20,7 @@ scripts/cam/scope-proposal.json
 
 # CAM-68: escaped harness runtime markers (orchestrator + setup + handoff + sidecar)
 .claude/.cam-orchestrator-prompt.txt
+.claude/.cam-task-prompt-*.txt
 .claude/.cam-setup-menu.sh
 .claude/.cam-setup-prompt.txt
 .claude/.cam-orch-ready

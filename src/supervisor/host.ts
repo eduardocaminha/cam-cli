@@ -840,6 +840,7 @@ export function buildSupervisorOptions(
 			writeFileSync(prdPath, JSON.stringify(prd, null, 2) + '\n', 'utf8');
 		},
 		workerPaneId,
+		claudeDir,
 		// CAM-57: thread ensureWorkerPane into the review dispatch so the review
 		// closure also self-heals a dead pane before each respawn.
 		ensureWorkerPane: ensureWorkerPaneFn,
@@ -1081,6 +1082,7 @@ export function buildSupervisorOptions(
 		workerPaneId,
 		prdPath,
 		handoffPath,
+		claudeDir,
 		// US-002 (CAM-187): commit-existence gate, threaded into readWorkerOutcome.
 		commitExistsForStory,
 		// US-004: empty-push gate, threaded into readWorkerOutcome.

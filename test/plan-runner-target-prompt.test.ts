@@ -28,6 +28,7 @@ import {
 	DEFAULT_PLANNER_TASK_PROMPT,
 } from '../src/supervisor/plan-runner.ts';
 import type { IssueEntry } from '../src/issues/types.ts';
+import { readTaskPromptFromCommand } from './helpers/task-prompt.ts';
 
 // ---------------------------------------------------------------------------
 // Generic backend fixture (US-008, CAM-420): isolates this suite's
@@ -107,13 +108,13 @@ test('buildPlannerTaskPrompt: different issue ids produce different prompts', ()
 
 test('runPlanPhase: spawned planner receives prompt built from selected issue id, not DEFAULT_PLANNER_TASK_PROMPT', () => {
 	// Capture the shell string passed to respawn-pane.
-	const capturedShellStrings: string[] = [];
+	const capturedPrompts: string[] = [];
 
 	const spawnFn = (cmd: string, args: string[]): { stdout: string; exitCode: number } => {
 		// Capture respawn-pane calls (the shell string is the last arg).
 		if (cmd === 'tmux' && args.includes('respawn-pane')) {
 			const shellStr = args[args.length - 1] ?? '';
-			capturedShellStrings.push(shellStr);
+			capturedPrompts.push(readTaskPromptFromCommand(shellStr));
 		}
 		return { stdout: '', exitCode: 0 };
 	};
@@ -143,23 +144,23 @@ test('runPlanPhase: spawned planner receives prompt built from selected issue id
 	});
 
 	// At least one respawn-pane call must have happened (the planner spawn).
-	expect(capturedShellStrings.length).toBeGreaterThanOrEqual(1);
+	expect(capturedPrompts.length).toBeGreaterThanOrEqual(1);
 
-	const plannerShell = capturedShellStrings[0] ?? '';
+	const plannerPrompt = capturedPrompts[0] ?? '';
 
 	// AC1: prompt contains the selected issue id.
-	expect(plannerShell).toContain('CAM-157');
+	expect(plannerPrompt).toContain('CAM-157');
 
 	// AC1: prompt does NOT fall through to DEFAULT_PLANNER_TASK_PROMPT.
-	expect(plannerShell).not.toContain(DEFAULT_PLANNER_TASK_PROMPT);
+	expect(plannerPrompt).not.toContain(DEFAULT_PLANNER_TASK_PROMPT);
 });
 
 test('runPlanPhase: spawned planner receives CAM-157 id, not top-of-queue CAM-99', () => {
-	const capturedShellStrings: string[] = [];
+	const capturedPrompts: string[] = [];
 
 	const spawnFn = (cmd: string, args: string[]): { stdout: string; exitCode: number } => {
 		if (cmd === 'tmux' && args.includes('respawn-pane')) {
-			capturedShellStrings.push(args[args.length - 1] ?? '');
+			capturedPrompts.push(readTaskPromptFromCommand(args[args.length - 1] ?? ''));
 		}
 		return { stdout: '', exitCode: 0 };
 	};
@@ -183,10 +184,10 @@ test('runPlanPhase: spawned planner receives CAM-157 id, not top-of-queue CAM-99
 		configPath: GENERIC_PLAN_CONFIG_PATH,
 	});
 
-	const plannerShell = capturedShellStrings[0] ?? '';
-	expect(plannerShell).toContain('CAM-157');
+	const plannerPrompt = capturedPrompts[0] ?? '';
+	expect(plannerPrompt).toContain('CAM-157');
 	// Must NOT name the top-of-queue issue.
-	expect(plannerShell).not.toContain('CAM-99');
+	expect(plannerPrompt).not.toContain('CAM-99');
 });
 
 // ---------------------------------------------------------------------------
@@ -194,12 +195,12 @@ test('runPlanPhase: spawned planner receives CAM-157 id, not top-of-queue CAM-99
 // ---------------------------------------------------------------------------
 
 test('runPlanPhase: opts.plannerTaskPrompt override is honored (backward compat)', () => {
-	const capturedShellStrings: string[] = [];
+	const capturedPrompts: string[] = [];
 	const OVERRIDE_PROMPT = 'Fixed test prompt: do something specific.';
 
 	const spawnFn = (cmd: string, args: string[]): { stdout: string; exitCode: number } => {
 		if (cmd === 'tmux' && args.includes('respawn-pane')) {
-			capturedShellStrings.push(args[args.length - 1] ?? '');
+			capturedPrompts.push(readTaskPromptFromCommand(args[args.length - 1] ?? ''));
 		}
 		return { stdout: '', exitCode: 0 };
 	};
@@ -224,9 +225,8 @@ test('runPlanPhase: opts.plannerTaskPrompt override is honored (backward compat)
 		plannerTaskPrompt: OVERRIDE_PROMPT,
 	});
 
-	const plannerShell = capturedShellStrings[0] ?? '';
-	// The override prompt must appear in the shell string.
-	expect(plannerShell).toContain(OVERRIDE_PROMPT);
+	const plannerPrompt = capturedPrompts[0] ?? '';
+	expect(plannerPrompt).toContain(OVERRIDE_PROMPT);
 });
 
 // ---------------------------------------------------------------------------
@@ -273,11 +273,11 @@ test('runPlanPhase: selectIssueFn returning null -> no-plannable-issue, no plann
 // ---------------------------------------------------------------------------
 
 test('runPlanPhase: when selectIssueFn returns top-of-queue issue, prompt names that issue', () => {
-	const capturedShellStrings: string[] = [];
+	const capturedPrompts: string[] = [];
 
 	const spawnFn = (cmd: string, args: string[]): { stdout: string; exitCode: number } => {
 		if (cmd === 'tmux' && args.includes('respawn-pane')) {
-			capturedShellStrings.push(args[args.length - 1] ?? '');
+			capturedPrompts.push(readTaskPromptFromCommand(args[args.length - 1] ?? ''));
 		}
 		return { stdout: '', exitCode: 0 };
 	};
@@ -301,7 +301,7 @@ test('runPlanPhase: when selectIssueFn returns top-of-queue issue, prompt names 
 		configPath: GENERIC_PLAN_CONFIG_PATH,
 	});
 
-	const plannerShell = capturedShellStrings[0] ?? '';
+	const plannerPrompt = capturedPrompts[0] ?? '';
 	// Top-of-queue issue id must appear in the prompt.
-	expect(plannerShell).toContain('CAM-99');
+	expect(plannerPrompt).toContain('CAM-99');
 });

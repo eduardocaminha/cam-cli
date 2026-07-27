@@ -50,7 +50,7 @@ export {
 export interface ImplementerWorkerArgvOptions {
 	/** UUID for this worker invocation; passed as --session-id. */
 	uuid: string;
-	/** Free-text task prompt sent to the implementer agent. Will be shell-escaped. */
+	/** Free-text task prompt sent to the implementer via a per-dispatch file. */
 	taskPrompt: string;
 	/** Claude permission mode (e.g. 'bypassPermissions', 'acceptEdits'). */
 	permissionMode: string;

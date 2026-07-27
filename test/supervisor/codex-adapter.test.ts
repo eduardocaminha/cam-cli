@@ -113,14 +113,15 @@ describe('CodexAdapter.buildSpawnArgv (US-001)', () => {
 		});
 	}
 
-	test('shell-escapes the task prompt (single quotes, embedded quotes/backticks/$)', () => {
+	test('reads the task prompt out-of-band instead of embedding shell-sensitive prompt bytes', () => {
 		const adapter = new CodexAdapter();
 		const actual = adapter.buildSpawnArgv('implementer', {
 			uuid: SAMPLE_UUID,
 			taskPrompt: SAMPLE_PROMPT,
 			permissionMode: SAMPLE_MODE,
 		});
-		expect(actual).toContain("'Implement it'\\''s US-001; use $HOME and `backtick`.'");
+		expect(actual).not.toContain(SAMPLE_PROMPT);
+		expect(actual).toContain('.cam-task-prompt-');
 	});
 
 	test('emits NO --session-id flag', () => {
@@ -131,7 +132,6 @@ describe('CodexAdapter.buildSpawnArgv (US-001)', () => {
 			permissionMode: SAMPLE_MODE,
 		});
 		expect(actual).not.toContain('--session-id');
-		expect(actual).not.toContain(SAMPLE_UUID);
 	});
 
 	test('emits NO claude-style CLAUDECODE nesting-guard env strip', () => {
@@ -163,6 +163,26 @@ describe('CodexAdapter.buildSpawnArgv (US-001)', () => {
 		const adapter = new CodexAdapter();
 		for (const actor of ['implementer', 'planner', 'auditor'] as const) {
 			expect(() => adapter.buildSpawnArgv(actor, { uuid: SAMPLE_UUID, taskPrompt: SAMPLE_PROMPT })).toThrow();
+		}
+	});
+
+	test('all actor commands are O(1) in prompt size and never contain a runtime-generated 40000-char prompt body', () => {
+		const claudeDir = join(tmpdir(), `cam-codex-o1-${process.pid}`, '.claude');
+		const largePrompt = `runtime-large-${'x'.repeat(40_000)}`;
+		for (const actor of ['implementer', 'planner', 'auditor', 'reviewer'] as const) {
+			const base = { uuid: SAMPLE_UUID, claudeDir };
+			const smallOpts = actor === 'reviewer'
+				? { ...base, taskPrompt: 'small' }
+				: { ...base, taskPrompt: 'small', permissionMode: SAMPLE_MODE };
+			const largeOpts = actor === 'reviewer'
+				? { ...base, taskPrompt: largePrompt }
+				: { ...base, taskPrompt: largePrompt, permissionMode: SAMPLE_MODE };
+
+			const smallCommand = new CodexAdapter().buildSpawnArgv(actor, smallOpts);
+			const largeCommand = new CodexAdapter().buildSpawnArgv(actor, largeOpts);
+
+			expect(largeCommand).not.toContain(largePrompt);
+			expect(largeCommand.length).toBe(smallCommand.length);
 		}
 	});
 

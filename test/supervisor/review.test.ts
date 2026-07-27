@@ -40,6 +40,7 @@ import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
 import type { SpawnFn, CapturePane, ReadPrd, WritePrd } from '../../src/supervisor/loop.ts';
 import { makeReadReviewReport } from '../../src/supervisor/host.ts';
 import { REVIEW_REPORT_FILENAME } from '../../src/supervisor/review-report.ts';
+import { readTaskPromptFromCommand } from '../helpers/task-prompt.ts';
 import { waitForCondition } from '../helpers/wait-for-condition.ts';
 
 // ---------------------------------------------------------------------------
@@ -83,7 +84,7 @@ describe('buildReviewerWorkerArgv', () => {
 		expect(result).toContain('--permission-mode bypassPermissions');
 	});
 
-	test('contains --permission-mode and --session-id and --agent and prompt', () => {
+	test('contains --permission-mode, --session-id, --agent, and prompt-file argument', () => {
 		const result = buildReviewerWorkerArgv({
 			uuid: SAMPLE_UUID,
 			taskPrompt: REVIEWER_TASK_PROMPT,
@@ -92,8 +93,8 @@ describe('buildReviewerWorkerArgv', () => {
 		expect(result).toContain(`--agent ${DEFAULT_REVIEWER_AGENT}`);
 		expect(result).toContain(`--session-id ${SAMPLE_UUID}`);
 		expect(result).toContain('--permission-mode bypassPermissions');
-		expect(result).toContain('Review all changes on the current branch vs main');
-		expect(result).toContain('<review> verdict tag on the very last line');
+		expect(result).not.toContain(REVIEWER_TASK_PROMPT);
+		expect(readTaskPromptFromCommand(result)).toBe(REVIEWER_TASK_PROMPT);
 	});
 
 	test('starts with the env -u prefix, then claude --permission-mode (CAM-43)', () => {
@@ -132,18 +133,19 @@ describe('buildReviewerWorkerArgv', () => {
 		expect(DEFAULT_REVIEWER_AGENT).toBe('subagent-reviewer');
 	});
 
-	test('task prompt is single-quote shell-escaped', () => {
+	test('task prompt is delivered out-of-band', () => {
 		const result = buildReviewerWorkerArgv({
 			uuid: SAMPLE_UUID,
 			taskPrompt: "review what's on the branch",
 			permissionMode: 'bypassPermissions',
 		});
-		expect(result).toContain("'\\''");
+		expect(result).not.toContain("review what's on the branch");
+		expect(readTaskPromptFromCommand(result)).toBe("review what's on the branch");
 	});
 
 	test('defaults the prompt to REVIEWER_TASK_PROMPT when omitted', () => {
 		const result = buildReviewerWorkerArgv({ uuid: SAMPLE_UUID });
-		expect(result).toContain('<review> verdict tag on the very last line');
+		expect(readTaskPromptFromCommand(result)).toBe(REVIEWER_TASK_PROMPT);
 	});
 
 	test('does not contain tee (TUI keeps its pty)', () => {
@@ -630,7 +632,8 @@ describe('makeReviewDispatch', () => {
 			expect(shellCmd).toContain(`--session-id ${SAMPLE_UUID}`);
 			expect(shellCmd).toContain('--permission-mode bypassPermissions');
 			expect(shellCmd).toContain(`--agent ${DEFAULT_REVIEWER_AGENT}`);
-			expect(shellCmd).toContain('Review all changes on the current branch vs main');
+			expect(shellCmd).not.toContain(REVIEWER_TASK_PROMPT);
+			expect(readTaskPromptFromCommand(shellCmd)).toBe(REVIEWER_TASK_PROMPT);
 			expect(shellCmd).not.toContain('claude -p');
 			expect(shellCmd).not.toMatch(/\s-p(\s|$)/);
 			expect(shellCmd).not.toContain('wait-for');

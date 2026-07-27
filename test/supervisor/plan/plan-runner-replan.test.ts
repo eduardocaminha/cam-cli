@@ -43,6 +43,7 @@ import type { PlanVerdictReport } from '../../../src/supervisor/plan-verdict-rep
 import type { IssueEntry } from '../../../src/issues/types.ts';
 import type { PlanPreflightResult } from '../../../src/supervisor/plan-preflight.ts';
 import type { WorkerEvent } from '../../../src/supervisor/events.ts';
+import { readTaskPromptFromCommand } from '../../helpers/task-prompt.ts';
 
 // ---------------------------------------------------------------------------
 // Generic backend fixture (US-007, CAM-420): isolates this suite's
@@ -118,6 +119,7 @@ const PREFLIGHT_FAIL: PlanPreflightResult = {
 interface TmuxCall {
 	cmd: string;
 	args: string[];
+	taskPrompt?: string;
 }
 
 /**
@@ -148,7 +150,12 @@ function makeReplanOpts(
 	const loggedEvents: WorkerEvent[] = [];
 
 	const spawnFn: SpawnFn = (cmd, args) => {
-		calls.push({ cmd, args });
+		const shell = args[args.length - 1] ?? '';
+		const taskPrompt =
+			args.includes('respawn-pane') && shell.includes('.cam-task-prompt-')
+				? readTaskPromptFromCommand(shell)
+				: undefined;
+		calls.push({ cmd, args, taskPrompt });
 		return { stdout: '', exitCode: 0 };
 	};
 
@@ -264,8 +271,7 @@ describe('runPlanPhaseWithReplan', () => {
 		);
 		// Two rounds -> two planner spawns.
 		expect(plannerRespawns.length).toBe(2);
-		const round2Shell = plannerRespawns[1]?.args[plannerRespawns[1].args.length - 1] ?? '';
-		expect(round2Shell).toContain('Missing acceptance criteria for US-002 in round 1');
+		expect(plannerRespawns[1]?.taskPrompt).toContain('Missing acceptance criteria for US-002 in round 1');
 	});
 
 	test('round-2 planner spawn prompt names the pinned issue id and forbids re-selection (AC1)', () => {
@@ -275,9 +281,8 @@ describe('runPlanPhaseWithReplan', () => {
 		const plannerRespawns = calls.filter(
 			(c) => c.args[2] === 'respawn-pane' && c.args.some((a) => a.includes('subagent-planner')),
 		);
-		const round2Shell = plannerRespawns[1]?.args[plannerRespawns[1].args.length - 1] ?? '';
-		expect(round2Shell).toContain('CAM-204');
-		expect(round2Shell).toContain('Do not re-select from the backlog');
+		expect(plannerRespawns[1]?.taskPrompt).toContain('CAM-204');
+		expect(plannerRespawns[1]?.taskPrompt).toContain('Do not re-select from the backlog');
 	});
 
 	test('teardownPlanPanesFn fires BEFORE round 2 runPlanPhase (AC4)', () => {
