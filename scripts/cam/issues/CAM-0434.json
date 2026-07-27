@@ -1,0 +1,10 @@
+{
+  "id": "CAM-434",
+  "title": "Reabrir a decisao de nome: GARBOARD colide com produto vivo e adjacente em garboard.dev",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-27T12:17:32.430Z",
+  "updatedAt": "2026-07-27T12:17:32.430Z",
+  "description": "MEDIDO em 2026-07-27: garboard.dev esta no ar como produto vivo (nao parkeado), descrito como builder de web apps que gera apps prontos para producao a partir de descricao ou URL importada e os VERIFICA contra criterios checaveis por maquina antes de shipar, com receipts de verificacao e codigo sem lock-in. DNS: garboard.dev A=216.150.1.1 NS=vercel-dns; garboard.app A=216.150.1.65 NS=vercel-dns (mesmo dono provavel); garboard.com parkeado a venda em afternic; garboard.io, garboard.sh e usegarboard.com sem A nem NS.\n\nPOR QUE E FATAL E NAO SO INCONVENIENTE: nao e apenas indisponibilidade de dominio. E colisao de NOME dentro da MESMA tese (loop autonomo que constroi e verifica antes de entregar). Qualquer material publico nosso passaria a competir por atribuicao com um produto que ja ocupa o termo na mesma categoria, e o dono controla .dev e .app simultaneamente. Trocar para .io ou usegarboard.com resolveria endereco e nao resolveria nada de posicionamento.\n\nO QUE FICA PENDENTE: o ADR-0049 fixou GARBOARD como nome de produto e precisa de supersessao explicita, nao de edicao silenciosa. O dossie de posicionamento shipado no CAM-415 assume o nome. O CAM-331 (README publico) e downstream direto e NAO pode shipar carregando GARBOARD: fica bloqueado ate existir nome novo.\n\nESCOPO DESTE ISSUE: reabrir e fechar a decisao de nome, com verificacao de disponibilidade feita ANTES de adotar (dominio, npm, org do GitHub, e busca por produto homonimo na categoria, que foi exatamente o check que faltou da primeira vez), depois superseder o ADR-0049 com o registro do motivo. A escolha do nome em si e decisao do operador.\n\nLICAO A REGISTRAR NO ADR NOVO: checar homonimo VIVO na mesma categoria faz parte do gate de nome. Disponibilidade de dominio nao e o teste; ocupacao do termo por produto adjacente e."
+}
