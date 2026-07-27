@@ -1,16 +1,16 @@
 {
   "lastCompletedStory": {
-    "id": "US-R2-001",
-    "title": "Review round 2 fix 001: address reviewer finding"
+    "id": "US-R2-002",
+    "title": "Review round 2 fix 002: address reviewer finding"
   },
   "branchName": "cam/issue-433",
-  "timestamp": "2026-07-27T18:15:00Z",
+  "timestamp": "2026-07-27T18:45:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "scripts/cam/patterns.md"
+    "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R2-001's underlying finding (US-002 AC2 oracle unsatisfiable against src/vendor/_generated.ts, the CAM-433 literal-sweep-vs-codegen conflict) was already resolved before this dispatch by an out-of-band operator PRD amendment (commit 1f39e11a, sanctioned after the prior 3 identical BLOCKED_QUALITY dispatches tripped CAM-214's circuit breaker): scripts/cam/prd.json's US-002 AC2 oracle now carries --exclude='_generated.ts'. This dispatch independently re-verified (not re-asserted from memory): the unscoped oracle still legitimately fails at HEAD on src/vendor/_generated.ts:25 (expected -- AC12 requires the marker literal in templates/.gitignore, which codegen mirrors verbatim), the amended scoped oracle passes, every other US-002 acceptance-criteria oracle passes (bun test test/supervisor/dispatch-failed-marker.test.ts: 5 pass; status.ts projection grep: pass; .gitignore + templates/.gitignore grep: pass; embed-vendor:check: ok; patterns.md CAM-433 sweep-tag grep: pass), and US-002.passes is already true in prd.json. Full gates re-run clean: typecheck 0 errors, bun test 5665 pass / 0 fail, bun run check:all all-green (file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps). No source-code change was required this story. The only edit made was marking the patterns.md:1032 bullet [resolved 2026-07] with the resolution mechanism (operator-amendment path), so a future implementer/reviewer session reads it as closed rather than re-investigating the same defect. The amendment-path gap itself (no first-class in-loop channel for 'operator, please apply this prd.json patch' short of manual intervention after a circuit-break) remains tracked as CAM-436, out of scope here.",
+  "nextStoryContext": "Fixed the stale ratchet loosening finding recorded in this story's prd.json notes: scripts/generate-embedded-vendor.ts's file-size-budget.json ceiling was raised 159->165 by US-002 to justify a jsLiteral Unicode-escape special-case, US-R1-003 later reverted that special-case (patterns.md:1028), and the file is back to a gate-measured (content.split('\\n').length) actual of 159 lines -- but the ceiling was left at 165, a 7-line loosening with no code behind it and an _ref narrative describing code no longer on the branch. Restored the ceiling to 159 and prepended a dated _ref note (US-R2-002, CAM-433) documenting the restore, in the same commit. Verified: `bun -e \"console.log(require('fs').readFileSync('scripts/generate-embedded-vendor.ts','utf8').split('\\n').length)\"` -> 159, matching the restored ceiling exactly (no headroom needed, actual == ceiling). Full gates re-run clean: typecheck 0 errors, bun test 5665 pass / 0 fail, bun run check:all all-green (file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps, embed-vendor up to date). No patterns.md bullet added: this is a mechanical application of the already-documented stale-ratchet-after-revert convention (patterns.md:96, :158, :432), not a new insight.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
