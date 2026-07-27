@@ -128,7 +128,7 @@
         "Full quality spine passes; src/supervisor/loop.ts (budget 2652) and src/supervisor/review.ts (budget 736) get real-count-derived raises in the same commit if pushed past their ceilings (AC11). [oracle: bun run check:all]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "buildImplementerTaskPrompt (src/supervisor/task-prompt.ts:27-42) currently peaks ~4719 bytes, same failure class as the auditor, far from the limit: this story fixes the CLASS per the issue gotcha, not just the site that already burned. loop.ts and review.ts share the SpawnFn widened in US-003 and the container-mode dockerExecWrap + codexAuthPreflight ordering immediately before respawn-pane (loop.ts:1301-1327, review.ts:489-508): the verified helper must slot after those preflights, not before. Existing test files carrying the DI seams: test/supervisor/loop.test.ts (large; note its own budget in scripts/file-size-budget.json), review coverage lives across test/supervisor/review-*.test.ts, extend the matching file. The broad 'bun test test/supervisor' oracles are pass/fail on the whole supervisor suite because the exact test-file split across loop/review files is layout-dependent; each new assertion is still individually swept red-on-main per the sweep criterion. patterns.md grep keywords: 'loop.ts', 'reviewer', 'sentinel', 'file-size'."
     }
