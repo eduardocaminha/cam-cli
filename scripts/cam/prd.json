@@ -1,0 +1,160 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-424",
+  "description": "Fail-loud test-suite dependency mechanism: centralized probe helper, preflight failing test, named lane waivers, per-lane skip-count ratchet (mechanism half of CAM-424; dead-gate sweep split to CAM-432)",
+  "issueNumber": 424,
+  "type": "feat",
+  "relatedDocs": [
+    "docs/adr/0039-cam-testing-philosophy-behavioral-di-fakes-plus-real-i-o-at-wire-boundaries-not-no-mocks-ever.md"
+  ],
+  "officialDocsConsulted": [
+    {
+      "lib": "Bun",
+      "channel": "WebFetch",
+      "url": "https://bun.sh/docs/cli/test",
+      "version": "current (local toolchain 1.3.x)",
+      "fetchedAt": "2026-07-27T12:00:00Z",
+      "summary": "Confirms verbatim 'If a test fails, the test runner exits with a non-zero exit code' (the only documented exit guarantee, matching AC13's local citation of node_modules/bun-types/docs/test/index.mdx:64). --preload exists but the docs give NO guarantee that a throw in preload aborts the run non-zero, confirming the plain-failing-test preflight route. --reporter=junit --reporter-outfile is documented for machine-readable counts the ratchet parser can consume.",
+      "status": "ok"
+    },
+    {
+      "lib": "Docker",
+      "channel": "WebFetch",
+      "url": "https://docs.docker.com/reference/cli/docker/container/exec/",
+      "version": "current",
+      "fetchedAt": "2026-07-27T12:00:00Z",
+      "summary": "docker exec --env/-e is documented to set additional environment variables 'for the process started by docker exec', scoped to that exec'd process only, independent of TTY mode. Sufficient and correct for injecting the per-run container-lane waiver; no documented exit-code caveat for non-interactive exec.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Create centralized dependency-probe helper with classification and waiver semantics",
+      "description": "As a test-suite maintainer, I need one tracked module that probes each external binary once, classifies each dependency as hard-dependency or legitimate-environmental, and reads an explicit named waiver declaration, so that dependency handling becomes centralized, visible and falsifiable instead of 46 scattered silent predicates.",
+      "acceptanceCriteria": [
+        "A new tracked module test/helpers/test-deps.ts exports, for each binary in {tmux, git, jq, pgrep, ps, uuidgen, bun}: a once-probed availability boolean, the dependency's classification (hard-dependency vs legitimate-environmental), and a waiver reader over an explicit env var named CAM_TEST_WAIVERS (comma-separated binary names). Change-detecting oracle, red on main (file absent). [oracle: grep -q 'CAM_TEST_WAIVERS' test/helpers/test-deps.ts]",
+        "A pure preflight-decision function (DI seam for injected absence, mirroring codexAuthPreflight's destructure-default pattern) is covered by behavioral seam tests in a tracked test file: injected absence of a hard dependency with NO waiver yields a failure decision whose message names that binary with an actionable install hint; the same injected absence WITH the waiver declared yields skip-allowed. This is the AC7 replacement for the v1 tautological grep; DI-injected absence is ADR-0039-compliant here because the real-I/O route is unavailable for /usr/bin binaries. [oracle: bun test test/helpers/test-deps.test.ts]",
+        "The ps legitimate-environmental rationale (absent in oven/bun:1.2-slim; the production recycle-watcher runs on the host) is carried into the helper's classification data so it survives the later migration of test/integration/orch-recycle-pid-resolve.test.ts. [oracle: grep -qi 'oven/bun' test/helpers/test-deps.ts]",
+        "No file outside test/helpers/ is created or modified by this story (porcelain form, which unlike git diff sees untracked files; scripts/cam/ state files are exempt). [oracle: test -z \"$(git status --porcelain | awk '{print $NF}' | grep -vE '^(test/helpers/|scripts/cam/)')\"]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes per AC11. [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "New files only: test/helpers/test-deps.ts + test/helpers/test-deps.test.ts (test files under test/helpers/ are collected by bun test; precedent test/helpers/with-fake-clock.test.ts). The module MUST live under test/helpers/ because AC1/AC2's centralization greps carry the filter `grep -vE 'test/helpers/|test/fixtures/'`. Probe once at module load (version-flag spawnSync or Bun.which), never per-test. Design the decision fn pure with authoritative inputs injected ({available, waivers}), default-wired to the real probe/env read via destructure defaults, exactly like codexAuthPreflight (src/supervisor/codex-auth.ts, see patterns.md CAM-352 bullets). Do NOT touch the DI-fake option-name sites test/run.test.ts:82 and test/stop.test.ts:58, and nothing under test/fixtures/version-skip-guard/**. tmux install-hint text must enforce the documented policy at scripts/cam/CLAUDE.md:36 (tmux is a hard runtime dependency), not invent a new one."
+    },
+    {
+      "id": "US-002",
+      "title": "Add fail-loud preflight as a plain failing test per hard dependency",
+      "description": "As a contributor running the suite on a host missing a hard dependency, I need bun test to exit non-zero with an actionable message naming the missing binary, so a partial run can never present as green.",
+      "acceptanceCriteria": [
+        "A new tracked test file test/preflight-deps.test.ts contains one ordinary test per hard dependency that FAILS with an actionable message (binary name + install hint) when that binary is absent and the lane declares no waiver, and passes when the binary is present or waived. Per AC13: do NOT implement as a throw in a [test].preload module, do NOT rely on filename sort order, and do NOT create bunfig.toml anywhere (no criterion in this PRD may be conditioned on bunfig.toml existing). [oracle: test -f test/preflight-deps.test.ts && ! test -f bunfig.toml && grep -q 'brew install tmux' test/preflight-deps.test.ts]",
+        "AC3 defining real-I/O oracle (change-detecting, swept exit=0 with 5597 pass / 37 skip on unmodified main): derive the environment, never hardcode Cellar paths: BUNBIN=$(dirname \"$(readlink -f \"$(command -v bun)\")\") then env -i HOME=\"$HOME\" TERM=\"$TERM\" PATH=\"$BUNBIN:/usr/bin:/bin:/usr/sbin:/sbin\" bun test must exit NON-ZERO with output naming tmux and how to install it. An exit 0 under this exact command is a FAILED criterion no matter how many tests passed. [oracle: named-command above, echo exit=$? must be non-zero]",
+        "AC4 controls: full-PATH bun test reports 0 fail, NO skip summary line, exit 0, and a parsed pass count not below main's floor, derived live from a clean main worktree run (git worktree add), never frozen as a literal in this criterion. PATH-surgery inertness control: the same env -i line WITH the tmux directory prepended (derived via command -v tmux + readlink -f + dirname) matches the full-PATH result exactly, proving any AC3 divergence is caused by this change, not the surgery. [oracle: named-command bun test + the two derived env -i runs]",
+        "The preflight tests themselves are unit-covered through the US-001 DI seam (absent+unwaived fails naming the binary; absent+waived passes; present passes). [oracle: bun test test/preflight-deps.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes per AC11. [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Depends on US-001's helper. Route rationale (AC13, measured): no bunfig.toml exists in the repo, package.json:11 is plain 'bun test', preload-throw abort semantics are undocumented (re-confirmed via the Bun docs fetch in officialDocsConsulted), and collection order is undocumented; the ONLY documented exit guarantee is that a failing test exits non-zero, which a plain failing test satisfies with no ordering assumption. Fail-fast speed would be the only benefit of ordering tricks and is a cost concern, explicitly not a reason to prefer undocumented mechanisms. Hard-vs-waivable at this point: on the host lane no waiver is permitted; ps stays skippable only under a declared waiver (AC9 rationale in helper). tmux is the only genuinely separable binary for real-I/O proof (git/jq/pgrep/ps/uuidgen live in /usr/bin or /bin; creating symlinks to simulate absence is forbidden). ADR-0039 section on real I/O at wire boundaries governs why the AC3 proof must be a real PATH-surgery run, not a mock."
+    },
+    {
+      "id": "US-003",
+      "title": "Migrate the 25 gitAvailable probe declarations to the helper",
+      "description": "As the centralization sweep's first tranche, I need every inline gitAvailable probe declaration replaced by an import from test/helpers/test-deps.ts, so git availability is resolved in exactly one place while every real git wire-boundary call survives untouched.",
+      "acceptanceCriteria": [
+        "Change-detecting oracle (swept on main: 25 files): grep -rlE \"(const|let) gitAvailable *=\" test --include='*.ts' | grep -vE 'test/helpers/|test/fixtures/' returns EMPTY. [oracle: the grep above exits non-zero / prints nothing]",
+        "AC14(iv) git must-survive invariance pin (green on main by construction; comparand DERIVED from main at check time, never frozen): the line count of grep -rnP \"spawnSync\\((\\\"|')git\\1, \\[(?!\\\"--version\\\"|'--version')\" test/ on the branch equals the same grep run in a clean main worktree (currently 73 lines across 29 files; -P is required for the negative lookahead, and the double-quoted call at test/vendor/check-agent-frontmatter-standalone.test.ts:32 must stay counted). Deleting any real git call to satisfy a grep is a FAILED story per ADR-0039. [oracle: file-assert, branch count == main-derived count]",
+        "No silent shrinkage: full-PATH bun test reports 0 fail, no skip summary line, exit 0, and a pass count not below the main-derived floor (derive live via a main worktree; do not freeze the literal). [oracle: bun test + derived floor comparison]",
+        "Nothing under test/fixtures/version-skip-guard/** is modified. [oracle: git diff --name-only main -- test/fixtures/ prints nothing && git status --porcelain test/fixtures/ prints nothing]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes per AC11. [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "25 files (mechanical one-declaration-per-file edit): the skipIf(!gitAvailable...) CALL SITES REMAIN IN PLACE and now reference the helper export; deleting the 72 now-dead git gates is CAM-432, explicitly OUT OF SCOPE here (mixing them was rejected on risk-isolation grounds in the spec's SPLIT NOTE). The 73 real spawnSync git calls in test bodies are the must-survive inventory protected by ADR-0039 (docs/adr/0039-...md); the binary-name trap in the spec's gotchas explains why oracles here are shaped on the DECLARATION form. Re-swept 2026-07-27 at main 1a3b334a: gitAvailable declarations still 25 files; git pin still 73 lines. AC14 comparands must be re-derived from main at verification time (git worktree or git show main:<path> | grep -c), because main drifts (total declarations already drifted 45->46 since the spec's sweep at 44accd73)."
+    },
+    {
+      "id": "US-004",
+      "title": "Migrate all remaining probe declarations (tmux, jq, pgrep, ps, bun, uuidgen)",
+      "description": "As the centralization sweep's completion, I need every remaining inline probe declaration and version-flag probe replaced by helper imports, so AC1 and AC2 both hold repo-wide while the tmux/pgrep/ps must-survive drivers stay intact.",
+      "acceptanceCriteria": [
+        "AC1 primary centralization oracle (change-detecting; re-swept on main 1a3b334a: 46 lines / 42 files): grep -rnE \"(const|let) [A-Za-z_]*[Aa]vailable *=\" test --include='*.ts' | grep -vE 'test/helpers/|test/fixtures/' returns EMPTY. [oracle: the grep above prints nothing]",
+        "AC2 completeness oracle for intermediate consts (change-detecting; re-swept on main: 41 lines): grep -rnE \"spawnSync\\(\\[?[\\\"'](tmux|git|jq|pgrep|ps|uuidgen|bun)[\\\"'](, *\\[)?[^)]{0,60}(-V|--version)\" test --include='*.ts' | grep -vE 'test/helpers/|test/fixtures/' returns EMPTY, including the intermediate consts pgrepCheck/bunCheck at test/integration/orch-recycle-pid-resolve.test.ts:41/:44. Do NOT add an array-form binary-name pattern such as Bun\\.spawnSync\\(\\[\"tmux\": swept, it matches 5 legitimate driver calls in sendkeys-submit.test.ts that must survive. [oracle: the grep above prints nothing]",
+        "AC14(i-iii) must-survive invariance pins (green on main by construction; every comparand DERIVED from a clean main worktree at check time): (i) grep -rnE \"spawnSync\\('pgrep', \\['-f',\" test/integration/orch-recycle-watch.test.ts == main-derived count (currently 5); (ii) grep -rnE \"spawnSync\\('ps', \\['-ax',\" test/ == main-derived count (currently 1; MUST stay test/-scoped, repo-wide matches a JSDoc comment in src/); (iii) tmux drivers, node form grep -rnE \"^[^/*]*spawnSync\\((\\\"|')tmux(\\\"|'), ?\\[(\\\"|')-L(\\\"|')\" test/ == main-derived count (re-swept: now 14 lines / 13 files; the ^[^/*]* comment guard and the -L anchor are both load-bearing) and Bun form grep -rnE 'Bun\\.spawnSync\\(\\[\\\"tmux\\\", \\\"-L\\\"' test/ == main-derived count (currently 5, all sendkeys-submit.test.ts). [oracle: file-assert, each branch count == main-derived count]",
+        "Invariance pin (green on main by construction): the two DI-fake option-name sites keep their tmuxAvailable token untouched. [oracle: grep -q 'tmuxAvailable' test/run.test.ts && grep -q 'tmuxAvailable' test/stop.test.ts]",
+        "Nothing under test/fixtures/version-skip-guard/** is modified (7 files, including legal-capability-skip.ts:6 which AC2's unfiltered pattern would match). [oracle: git diff --name-only main -- test/fixtures/ prints nothing && git status --porcelain test/fixtures/ prints nothing]",
+        "No silent shrinkage: full-PATH bun test reports 0 fail, no skip summary line, exit 0, pass count not below the main-derived floor (derive live; do not freeze). [oracle: bun test + derived floor comparison]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes per AC11. [oracle: bun run check:all]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "~17 files: 13 tmux probe files, 2 jq files, orch-recycle-pid-resolve.test.ts (pgrepCheck/bunCheck/psAvailable) and orch-recycle-watch.test.ts (tmuxAvailable :58, pgrepAvailable :59, uuidgenAvailable :60; there is NO psAvailable in that file, verified). Gated tests keep skip-on-unavailable semantics: the LOUDNESS for a missing unwaived dep comes from the US-002 preflight failing the run, and the COUNTING from the US-005 ratchet; do not convert gated tests into 37 unactionable hard failures. 42 tmux skipIf sites map to only 37 skipped tests (site count != test count; centralization oracles count SITES, the ratchet counts TESTS). ADR-0039 protects the 18 real tmux -L driver calls and the 5 pgrep -f + 1 ps -ax calls."
+    },
+    {
+      "id": "US-005",
+      "title": "Add lane-expectations file and per-lane skip-count ratchet gate",
+      "description": "As the gate spine, I need a versioned per-lane expectations file (expected skip count, pass floor, triage counts) asserted by a ratchet gate wired into check:all, so any future silent skip breaks the gate and the triage evidence lives on a durable tracked surface instead of rotating harness state.",
+      "acceptanceCriteria": [
+        "A new tracked file test/helpers/lane-expectations.json records, per lane (host, container): expectedSkips and passFloor; plus a triage block with the AC9 per-category counts of the probe-bearing files (hardDependency vs legitimateEnvironmental). This TRACKED file is the durable record for the triage evidence: no oracle in this PRD targets scripts/cam/handoff.json, scripts/cam/review-artifact.txt, or any per-story rotating harness artifact (patterns.md:907/:938). Change-detecting oracle, red on main (file absent). [oracle: bun -e \"const j=require('./test/helpers/lane-expectations.json'); if (typeof j.lanes.host.expectedSkips!=='number'||typeof j.lanes.host.passFloor!=='number'||typeof j.lanes.container.expectedSkips!=='number'||typeof j.triage.hardDependency!=='number'||typeof j.triage.legitimateEnvironmental!=='number') process.exit(1)\"]",
+        "The same per-file classification and per-category counts are also stated in the PR body for reviewer inspection. [oracle: reviewer-judgment]",
+        "A new ratchet gate script scripts/check-skip-ratchet.ts parses the suite result for the current lane (junit reporter output or stdout summary), treats a MISSING skip summary line as ZERO (parser constraint, swept: bun test omits the ' N skip' line entirely at zero), compares the observed skip count to the lane's recorded expectation, and fails with a message naming the delta. Unit tests in a tracked test file cover: missing-line-as-zero, exact-match pass, and a +1 delta failure whose message names the delta. [oracle: bun test test/check-skip-ratchet.test.ts]",
+        "The ratchet is wired into the gate spine: a package.json script exists, scripts/check-all.ts runs it, and gates-manifest coherence (test/gates-manifest.test.ts) plus check:ci-parity stay green INSIDE check:all (AC11: this story touches the GATES manifest, so stopping at typecheck+test would miss its own regression). [oracle: bun run check:all]",
+        "The host lane's recorded passFloor equals the measured full-PATH pass count on this branch and expectedSkips is 0 (the lane file's own recorded values are the ONE place a frozen literal belongs, per AC4's derive-don't-freeze rule; the container lane's expectedSkips may carry a provisional value here and is measured and finalized in US-006). [oracle: full-PATH bun test summary matches the values recorded in test/helpers/lane-expectations.json]",
+        "AC6 demonstration EXECUTED, not reasoned: temporarily add one test.skipIf(true) case in a scratch test file, run the gate, observe FAILURE naming the +1 delta; remove the scratch file, observe the gate pass. Do not commit the scratch file (working tree clean of it at commit). Both observations reported verbatim in the PR body. [oracle: reviewer-judgment on the two verbatim observations, plus git status --porcelain shows no scratch test file at commit time]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]"
+      ],
+      "priority": 5,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: test/helpers/lane-expectations.json (new), scripts/check-skip-ratchet.ts (new), test/check-skip-ratchet.test.ts (new), scripts/check-all.ts + package.json (wiring). Lane detection: host is the default; the container lane is selected by the same explicit declaration mechanism as the waiver (env), never by sniffing. To avoid double-running the suite inside check:all, the docs fetch confirms bun test --reporter=junit --reporter-outfile emits machine-readable counts alongside normal stdout; parsing the existing test step's output is acceptable, a second full suite run is also acceptable (operational cost is not a criterion). The ratchet counts TESTS, not skipIf sites. gates-manifest test enforces check-all/package.json/ci.yml coherence, and check:ci-parity enforces green-local==green-CI; both live inside check:all. patterns.md:903 derive-don't-freeze governs every floor comparison outside the lane file itself."
+    },
+    {
+      "id": "US-006",
+      "title": "Wire the container lane onto a named counted waiver in the in-container harness",
+      "description": "As the container lane (which lacks tmux and procps by design), I need scripts/test-in-container.ts to declare its missing dependencies through the explicit waiver and assert the exact skipped count, so skipping becomes a visible, counted act and an unwaived container run goes red.",
+      "acceptanceCriteria": [
+        "scripts/test-in-container.ts injects the waiver into the container explicitly on its docker exec test invocation (documented --env/-e semantics: scoped to the exec'd process, which is exactly the per-run declaration the lane needs). [oracle: grep -q 'CAM_TEST_WAIVERS' scripts/test-in-container.ts]",
+        "The harness asserts the observed skip count EQUALS the container lane's recorded expectation from test/helpers/lane-expectations.json (exact number; a 'skip'-substring grep is explicitly rejected by AC5 as green-today-regardless), and exits non-zero on mismatch. [oracle: grep -q 'lane-expectations' scripts/test-in-container.ts plus the real run below]",
+        "The stale skip-tolerant policy is replacedced at both sites: the verbatim comment 'A run with only skips (fail count 0) exits 0.' no longer appears. Change-detecting oracle, red on main (grep currently matches scripts/test-in-container.ts:12). [oracle: ! grep -q 'A run with only skips (fail count 0) exits 0' scripts/test-in-container.ts]",
+        "Proven on REAL docker locally (AC12: the ci-container job's heavy steps are conditional on container_changed, so a green PR is NOT evidence the waiver path works): with the waiver set, bun scripts/test-in-container.ts exits 0 AND its observed skip count equals the declared expectation; the measured container skip count is recorded as the final value in test/helpers/lane-expectations.json. With the waiver deliberately NOT set inside the container, the run exits non-zero (preflight fires). Both real runs' summary output reported verbatim in the PR body. [oracle: named-command bun scripts/test-in-container.ts (waived run) + reviewer-judgment on the verbatim no-waiver run output]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes per AC11. [oracle: bun run check:all]"
+      ],
+      "priority": 6,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: scripts/test-in-container.ts, test/helpers/lane-expectations.json (finalize container expectedSkips with the measured number). Container lane waives tmux AND the procps-provided binaries (ps; see the AC9 rationale carried in the helper since US-001; pgrep also absent in oven/bun:1.2-slim). The Dockerfile installs git and jq, zero tmux: that asymmetry is the design reason the waiver exists at all. The officialDocsConsulted Docker entry covers docker exec --env on non-TTY exec per the spec's gotcha requiring it for any story driving the Docker CLI. In-container baseline context: CAM-186 achieved 0 real fails in-container on v0.60.0 via this same harness (scripts/test-in-container.ts), so a red here is a regression signal, not noise."
+    },
+    {
+      "id": "US-007",
+      "title": "Update skip-guard doctrine and trace the CI lanes",
+      "description": "As the doctrine layer, I need scripts/check-version-skips.ts to stop declaring capability-probe skips ungoverned and the CI workflow's lane selection traced, so the governing mechanism (preflight + ratchet) is named where the old policy lived and the host CI lane provably sets no waiver.",
+      "acceptanceCriteria": [
+        "scripts/check-version-skips.ts's header comment no longer asserts that capability-probe skips 'remain legal' ungoverned; it names the preflight and ratchet as the mechanism now governing capability probes. Change-detecting oracles, both red on main. [oracle: ! grep -q 'remain legal (CAM-59' scripts/check-version-skips.ts && grep -qi 'preflight' scripts/check-version-skips.ts]",
+        "The host ci lane declares NO waiver: .github/workflows/ci.yml contains no CAM_TEST_WAIVERS assignment (the container lane's waiver lives inside scripts/test-in-container.ts, never in the workflow). [oracle: ! grep -q 'CAM_TEST_WAIVERS' .github/workflows/ci.yml]",
+        "AC12 trace recorded in the PR body: which lane each CI job selects (ci = host via brew-installed tmux and check:all; ci-container = container via the harness waiver, heavy steps conditional on container_changed), confirmation the host lane sets no waiver, and the observation that the previously-unverified 'brew install tmux' step is now enforced by the preflight (a silent no-op turns CI red instead of silently dropping 37 tests). [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Full quality spine passes per AC11 (this story edits a gate script). [oracle: bun run check:all]"
+      ],
+      "priority": 7,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: scripts/check-version-skips.ts (comment block at :14-:17, currently 'Does NOT flag skips conditioned on ... capability probes ... those remain legal (CAM-59 ...)'), possibly .github/workflows/ci.yml (trace only; no waiver may be added there). The check-version-skips gate's SCAN behavior does not change in this story, only its stated doctrine: capability-probe skips are still not version-skips, but they are no longer ungoverned, the preflight (test/preflight-deps.test.ts) and ratchet (scripts/check-skip-ratchet.ts) now govern them. Its fixtures under test/fixtures/version-skip-guard/ stay untouched."
+    }
+  ]
+}
