@@ -55,7 +55,7 @@
       "id": "US-R2-004",
       "title": "Review round 2 fix 004: address reviewer finding",
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [CONTEXT.md]: Domain-model doc sync gap. `.cam-dispatch-failed.json` joins the durable-marker family but gets no CONTEXT.md glossary entry, while the three most recently added siblings all have one (.cam-sidecar-stalled.json at :192, .cam-post-merge-stalled.json, .cam-plan-preflight-failed.json). scripts/cam/CLAUDE.md's Domain Model Convention routes 'term definition, bounded-context vocabulary' to CONTEXT.md, and this PR introduces two such terms (the dispatch-failed marker and verified dispatch / pane_pid identity verification). Add the marker entry following the sibling shape."
     },
     {
