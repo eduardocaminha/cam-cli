@@ -22,7 +22,7 @@
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "CRITICAL [docs/adr/0050-gateship-supersedes-garboard-naming.md:64]: The deckward runner-up elimination reason is mis-attributed. ADR-0050 says it was 'eliminated as a homophone of \"Deckard\" (the Blade Runner protagonist), a pop-culture collision the operator judged too on-the-nose'. The operator's recorded reason in CAM-434 spec.gotchas is different and materially stronger: 'deckward ficou em terceiro: limpo em software, mas homofono de Deckard, codinome do Steam Frame da Valve, com ciclo de noticias quente em 2026' (Deckard is the codename of Valve's Steam Frame, with a hot 2026 news cycle). A 1982 film character is a weak collision; an actively-launching Valve hardware product with a live news cycle is the actual disqualifier, and is the same live-homonym class ADR-0050's layer 4 is about. Correct the attribution to the Valve Steam Frame codename."
     },
     {
