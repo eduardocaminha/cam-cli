@@ -14,7 +14,13 @@
 //
 // Does NOT flag skips conditioned on process.platform, process.env, or
 // capability probes (e.g. `spawnSync('tmux', ...)`, `Bun.which(...)`): those
-// remain legal (CAM-59 real-tmux/git availability skips in test/integration/).
+// are still not version-skips, but they are no longer ungoverned. The
+// preflight (test/preflight-deps.test.ts) and the skip-count ratchet
+// (scripts/check-skip-ratchet.ts) are the mechanism that now governs
+// capability-probe skips per lane (CAM-424 PRD, US-002/US-005): the
+// preflight fails a lane outright when a declared dependency is missing and
+// unwaived, and the ratchet fails the lane when its observed skip count
+// drifts from the recorded expectation in test/helpers/lane-expectations.json.
 //
 // Excludes test/fixtures/ from the real scan so the guard's own positive/
 // negative fixtures do not trip it (CAM-60 debt-marker self-reference
