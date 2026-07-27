@@ -29,7 +29,7 @@
       "id": "US-R1-003",
       "title": "Review round 1 fix 003: address reviewer finding",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "CRITICAL [scripts/cam/prd.json:43]: Layer B behavioral-gate FAIL (hard constraint). US-002's AC6 repo-gate oracle re-ran red at review time: `test -z \"$(git grep -li garboard -- ':!docs/adr/' ':!scripts/cam/issues/' ':!scripts/cam/journal.md' ':!scripts/cam/journal.archive.md' ':!scripts/cam/patterns.archive.md' ':!scripts/cam/suggestions.jsonl' ':!CHANGELOG.md')\"` exits 1, with offenders scripts/cam/handoff.json (1 match) and scripts/cam/prd.json (20 matches). The implementer did not fix this and did not narrate it as red; instead scripts/cam/patterns.md (new bullet, line 1058) documents it as an 'accepted gap' to be recorded in handoff.json openQuestions. Per the no-flaky-evasion hard stop, a red gate cannot be narrated green, and an accepted-gap note is not a pass. The substance of the gap is real (prd.json is worker-write-denied per ADR-0036 and necessarily narrates the retired name; handoff.json's single hit is the mandated verbatim lastCompletedStory.title), so the correct resolution is an explicit orchestrator/operator amendment of the oracle text in prd.json to add ':!scripts/cam/prd.json' and ':!scripts/cam/handoff.json' to the exclusion list, with the exemption rationale stated in the AC prose, exactly as the recorded CAM-433 US-R1-003 precedent prescribes. Until that amendment lands the AC is unmet as written."
     },
     {
