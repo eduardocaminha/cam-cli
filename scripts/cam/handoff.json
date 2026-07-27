@@ -1,21 +1,21 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Create centralized dependency-probe helper with classification and waiver semantics" },
+  "lastCompletedStory": { "id": "US-002", "title": "Add fail-loud preflight as a plain failing test per hard dependency" },
   "branchName": "cam/issue-424",
-  "timestamp": "2026-07-27T00:00:00Z",
-  "createdFiles": ["test/helpers/test-deps.ts", "test/helpers/test-deps.test.ts"],
+  "timestamp": "2026-07-27T01:00:00Z",
+  "createdFiles": ["test/preflight-deps.test.ts"],
   "modifiedFiles": [],
   "openQuestions": [
     "pgrep is classified hard-dependency by default (same reasoning as tmux/git/jq/uuidgen/bun) even though it comes from the same procps package as ps and is therefore also absent in the oven/bun:1.2-slim worker container. Only ps has a documented narrow host-vs-container rationale (test/integration/orch-recycle-pid-resolve.test.ts). If a later migration story finds pgrep needs the same legitimate-environmental carve-out, update its DEP_METADATA entry in test/helpers/test-deps.ts rather than defaulting other unclassified binaries to environmental."
   ],
-  "nextStoryContext": "test/helpers/test-deps.ts is built but NOT yet wired into any of the ~46 existing scattered Bun.which/spawnSync probes across test/**. A follow-up story should migrate call sites (starting with test/integration/orch-recycle-pid-resolve.test.ts, whose ps-absence rationale was carried into test-deps.ts's DEP_METADATA.ps.rationale per this story's AC3) onto depPreflight/getDepInfo/isAvailable instead of hand-rolled Bun.which checks. Public surface: DepName, DepClassification, DepInfo, getDepInfo, isAvailable, WAIVER_ENV_VAR, parseWaivers, isWaived, depPreflight (+ DepPreflightResult union: {kind:'available'} | {kind:'skip',reason} | {kind:'fail',message}).",
+  "nextStoryContext": "test/preflight-deps.test.ts adds one real-probe fail-loud test per hard dependency (tmux, git, jq, pgrep, uuidgen, bun; ps excluded, legitimate-environmental) plus DI-seam behavioral coverage (AC4), all against depPreflight from test/helpers/test-deps.ts (US-001). Verified live: full-PATH `bun test` on this branch = 5702 pass / 0 fail / exit 0 / no skip-summary-line, vs. a live `git worktree add` of main = 5665 pass / 0 fail / exit 0 (338 files) -- floor cleared. Real PATH-surgery (`env -i ... PATH=\"$BUNBIN:/usr/bin:/bin:/usr/sbin:/sbin\"`, tmux absent) = exit 1, tmux test fails naming the binary + `brew install tmux`/`apt-get install tmux`. Inertness control (same env -i, tmux dir prepended) matched full-PATH exactly (5702/0/exit0) on the 2nd of 2 runs; the 1st run had a single unrelated timing flake in test/integration/orch-recycle-watch.test.ts (recycle watcher e2e) under full-suite CPU contention, reproduced-clean both standalone and on immediate re-run at full suite scope -- pre-existing test, not touched by this story, not a defect in the preflight file itself. test-deps.ts's DI seam (US-001) remains unmigrated at the ~46 scattered Bun.which/spawnSync call sites across test/**; that migration is still the next open story, now with test/preflight-deps.test.ts as a second reference consumer of the public surface (DepName, DepClassification, DepInfo, getDepInfo, isAvailable, WAIVER_ENV_VAR, parseWaivers, isWaived, depPreflight).",
   "officialDocsValidated": [
     {
       "lib": "Bun",
       "channel": "WebFetch",
-      "url": "https://bun.com/docs/api/utils",
-      "fetchedAt": "2026-07-27T00:00:00Z",
+      "url": "https://bun.com/docs/cli/test",
+      "fetchedAt": "2026-07-27T01:00:00Z",
       "status": "aligned",
-      "summary": "Confirmed Bun.which(name) returns null (not undefined/throw) when the binary is absent from PATH, matching test-deps.ts's `Bun.which(name) !== null` probe and the pre-existing repo convention (e.g. test/orch-agent-allowlist.test.ts, test/integration/orch-recycle-watch.test.ts)."
+      "summary": "Confirmed bun test's only documented exit guarantee is non-zero exit when any test fails, and that neither test-file collection order nor [test].preload abort semantics are documented -- validating AC13's route rationale (plain failing test per dependency, no preload-throw, no filename-sort-order reliance, no bunfig.toml)."
     }
   ]
 }
