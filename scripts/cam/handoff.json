@@ -1,49 +1,33 @@
 {
-  "lastCompletedStory": { "id": "US-003", "title": "Migrate the 25 gitAvailable probe declarations to the helper" },
+  "lastCompletedStory": { "id": "US-004", "title": "Migrate all remaining probe declarations (tmux, jq, pgrep, ps, bun, uuidgen)" },
   "branchName": "cam/issue-424",
-  "timestamp": "2026-07-27T02:00:00Z",
+  "timestamp": "2026-07-27T03:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
     "test/helpers/test-deps.ts",
-    "test/commands/issue-specify.test.ts",
-    "test/commands/pattern-records.test.ts",
-    "test/commands/patterns-prune.test.ts",
-    "test/integration/commit-exists-real-git.test.ts",
-    "test/integration/domain-docs-on-main.test.ts",
-    "test/integration/finalize-story-real-git.test.ts",
-    "test/integration/gitignore-implement-blocked-marker.test.ts",
-    "test/integration/issue-dir-real-git.test.ts",
-    "test/integration/issue-file-on-main.test.ts",
-    "test/integration/issue-specify-ref-only.test.ts",
-    "test/integration/journal-append-on-main.test.ts",
-    "test/integration/journal-ref-only.test.ts",
-    "test/integration/post-merge-on-main.test.ts",
-    "test/integration/ship-finalize-dirty-prd.test.ts",
-    "test/integration/sync-worktree-on-main.test.ts",
-    "test/integration/triage-real-git.test.ts",
-    "test/integration/triage-ref-only.test.ts",
-    "test/integration/write-issue-file-worktree-sync.test.ts",
-    "test/issues/backlog-maxbuffer-regression.test.ts",
-    "test/issues/backlog.test.ts",
-    "test/release/post-merge-close-maxbuffer.test.ts",
-    "test/supervisor/backend-adapter.test.ts",
-    "test/supervisor/codex-adapter.test.ts",
-    "test/supervisor/in-progress-conflict.test.ts",
-    "test/supervisor/loop.test.ts"
+    "test/integration/behavioral-gate.test.ts",
+    "test/integration/dispatch-geometry.test.ts",
+    "test/integration/dispatch-oversize-prompt.test.ts",
+    "test/integration/ensure-worker-pane-selfheal.test.ts",
+    "test/integration/orch-recycle-pid-resolve.test.ts",
+    "test/integration/orch-recycle-watch.test.ts",
+    "test/integration/plan-runner-no-prd.test.ts",
+    "test/integration/plan-runner-pane-spawn.test.ts",
+    "test/integration/plan-runner-target-obey.test.ts",
+    "test/integration/review-verdict-handback.test.ts",
+    "test/integration/sendkeys-submit.test.ts",
+    "test/integration/stop-sidecar-real.test.ts",
+    "test/integration/tmux-display-geometry.test.ts",
+    "test/integration/tmux-introspect.test.ts",
+    "test/integration/worker-pane-geometry.test.ts",
+    "test/orch-agent-allowlist.test.ts",
+    "test/release/merge-watch.test.ts"
   ],
   "openQuestions": [
-    "AC1's oracle (grep for `(const|let) gitAvailable *=`) also matches a plain local re-derivation like `const gitAvailable = isAvailable('git');` -- it is not satisfied by swapping the RHS from spawnSync to the helper's isAvailable() while keeping a local const. The only oracle-satisfying shape is a pure `import { gitAvailable } from '../helpers/test-deps.ts';` at each of the 25 call sites, which required adding a new `export const gitAvailable = isAvailable('git');` convenience binding to test-deps.ts itself (not present after US-001/US-002). Future stories reading test-deps.ts's public surface should be aware `gitAvailable` (precomputed boolean) now sits alongside `isAvailable`/`getDepInfo` as a named export, kept only because ~25 skipIf call sites already reference the identifier `gitAvailable` verbatim.",
-    "CAM-432 (explicitly out of scope here, per this story's notes) still needs to delete the now-provably-dead `test.skipIf(!gitAvailable)(...)` gates once git is confirmed to be a true hard dependency everywhere in CI; the call sites were deliberately left untouched by this story."
+    "CAM-432 (out of scope for both US-003 and US-004) still needs to delete the now-provably-dead `test.skipIf(!xAvailable)(...)` gates once each binary is confirmed a true hard dependency everywhere in CI; all skipIf call sites were deliberately left untouched by this story."
   ],
-  "nextStoryContext": "US-003 migrated all 25 non-helper `const/let gitAvailable = spawnSync('git', ['--version'], ...)` declarations to `import { gitAvailable } from '../helpers/test-deps.ts';`, adding one new export (`gitAvailable: boolean = isAvailable('git')`) to test-deps.ts (US-001) to satisfy AC1's oracle, which forbids ANY `const|let gitAvailable =` binding outside test/helpers or test/fixtures -- a local `const gitAvailable = isAvailable('git');` re-derivation still trips that grep, so a pure import is the only shape that passes. Every `test.skipIf(!gitAvailable)(...)` call site was left untouched (that's CAM-432, explicitly out of scope). All 73 real `spawnSync('git', [...])` wire-boundary calls (ADR-0039 must-survive inventory) are untouched -- only the 25 `--version` probe declarations, which the AC14 regex explicitly excludes via negative lookahead, were removed. Verified live: full-PATH `bun test` = 5702 pass / 0 fail / exit 0 / no skip-summary-line (same floor as US-002, no shrinkage since no tests were added/removed, only refactored); `bun run typecheck` clean; `bun run check:all` full spine green (test, embed-vendor, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps). test/fixtures/version-skip-guard/** untouched (git diff/status both empty). A handful of the 25 files had a now-vacant `// Skip guard` comment-section header (3-line separator block with nothing left under it after the declaration moved to an import) or a doubled blank line where the declaration used to sit; both were cleaned up in the same commit as a direct, in-scope consequence of removing the declaration line (not a broader refactor). The next centralization tranche this unblocks: any remaining scattered `Bun.which`/`spawnSync(--version)` probes for the other 6 tracked binaries (tmux, jq, pgrep, ps, uuidgen, bun) across test/**, per test-deps.ts's module doc comment (still describes ~46 total scattered call sites pre-US-003; git's 25 are now migrated, ~21 remain across the other binaries plus CAM-432's dead-gate deletion).",
+  "nextStoryContext": "US-004 completed the centralization sweep started in US-003: added 6 new precomputed exports to test-deps.ts (tmuxAvailable, jqAvailable, pgrepAvailable, psAvailable, uuidgenAvailable, bunAvailable -- each `isAvailable(name)`, mirroring gitAvailable from US-003), then migrated all 21 remaining scattered probe-declaration lines across 17 call-site files to pure `import { xAvailable } from '../helpers/test-deps.ts'`. Two multi-var files needed care: test/integration/orch-recycle-watch.test.ts (tmuxAvailable/pgrepAvailable/uuidgenAvailable combined into one import, `shouldRun` derivation kept as a local const) and test/integration/orch-recycle-pid-resolve.test.ts (removed the intermediate pgrepCheck/bunCheck spawnSync consts entirely, since only their derived booleans were ever used downstream). test/integration/sendkeys-submit.test.ts's tmuxAvailable was a try/catch-wrapped IIFE around `Bun.spawnSync([\"tmux\", \"-V\"])`; replaced wholesale with the import since Bun.which never throws (no try/catch needed). test/release/merge-watch.test.ts had a describe-block-scoped `const jqAvailable` (not module-level) migrated the same way. AC1 and AC2 centralization oracles both now return EMPTY repo-wide (verified). AC14(i-iii) must-survive invariance pins all match main-derived counts exactly: pgrep -f x5, ps -ax x1, tmux -L node-form x14, tmux -L Bun-form x5 -- none of the real ADR-0039-protected wire-boundary driver calls were touched, only the `-V`/`--version` probe declarations. test/run.test.ts and test/stop.test.ts's `tmuxAvailable` DI-fake option-name tokens (object property names, not module-level const/let declarations) were correctly left untouched -- they don't match the AC1 regex and are a different concept entirely (a fake-spawn behavior toggle, not a real probe). Verified live: full-PATH `bun test` = 5702 pass / 0 fail / exit 0 / no skip-summary-line (identical floor to US-003, pure refactor, no tests added/removed); `bun run typecheck` clean; `bun run check:all` full spine green (test, embed-vendor, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps). test/fixtures/version-skip-guard/** untouched (git diff/status both empty). The centralization sweep this PRD (CAM-424) set out to do is now complete for all 7 tracked binaries (git, tmux, jq, pgrep, ps, uuidgen, bun); no further probe-declaration migration work remains under test/**. Only remaining open thread is CAM-432 (delete provably-dead skipIf gates), explicitly out of scope for this PRD.",
   "officialDocsValidated": [
-    {
-      "lib": "Bun",
-      "channel": "WebFetch",
-      "url": "https://bun.com/docs/api/utils",
-      "fetchedAt": "2026-07-27T02:00:00Z",
-      "status": "aligned",
-      "summary": "Confirmed Bun.which(name) returns string|null (found path vs not found), matching test-deps.ts's `probe()` (Bun.which(name) !== null), which this story's new `gitAvailable` export transitively depends on. No production code in test-deps.ts was changed by this story beyond adding the new export; behavior is unchanged."
-    }
+    { "lib": "none", "status": "no_external_lib_touched" }
   ]
 }
