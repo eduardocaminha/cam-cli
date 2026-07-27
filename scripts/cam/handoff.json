@@ -1,45 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "Wire implement and review dispatches and all remaining sentinels through the verified path"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
   "branchName": "cam/issue-433",
-  "timestamp": "2026-07-27T13:40:00Z",
-  "createdFiles": [
-    "src/supervisor/worker-dispatch.ts",
-    "test/supervisor/worker-dispatch-lifecycle.test.ts"
-  ],
+  "timestamp": "2026-07-27T14:10:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "scripts/cam/patterns.md",
-    "scripts/file-size-budget.json",
-    "src/commands/sidecar.ts",
-    "src/supervisor/host.ts",
-    "src/supervisor/loop.ts",
-    "src/supervisor/review.ts",
-    "test/logging/spawn-resolution.test.ts",
-    "test/supervisor/ensure-worker-pane.test.ts",
-    "test/supervisor/events.test.ts",
-    "test/supervisor/loop-configpath-seam.test.ts",
-    "test/supervisor/loop-model-resolution.test.ts",
-    "test/supervisor/loop.test.ts",
-    "test/supervisor/non-convergence-autochain.test.ts",
-    "test/supervisor/non-convergence-terminal.test.ts",
-    "test/supervisor/pause-halt.test.ts",
-    "test/supervisor/pause-resume.test.ts",
-    "test/supervisor/review-model-resolution.test.ts",
-    "test/supervisor/review.test.ts"
+    ".gitignore",
+    "templates/.gitignore",
+    "src/vendor/_generated.ts",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "All three dispatch paths (plan-runner US-004, implementer and both reviewer paths US-005) now route through runVerifiedDispatch/runVerifiedWorkerDispatch with mandatory pane_pid identity checks, checked set-option/respawn-pane/pipe-pane exits, prompt-file transport, and dispatch-failed observable terminals (event + durable marker + orchestrator notification). New shared wrapper src/supervisor/worker-dispatch.ts (runVerifiedWorkerDispatch, runCheckedWorkerSentinel, removeWorkerTaskPrompt) is reused by both loop.ts (implementer dispatch, token-ceiling sentinel, timeout sentinel) and review.ts (reviewer dispatch, review-timeout sentinel), so set-option/@cam_label is now applied inside runVerifiedDispatch itself (opts.phase) -- loop.ts no longer issues a separate unchecked set-option before either dispatch. All implement/review terminals (worker-report read, review verdict read, timeout, pane-died, dispatch failure, container/codex preflight block) call removeWorkerTaskPrompt so the dispatch's own prompt file never survives past its terminal; a subsequent successful verified dispatch clears any pre-existing dispatch-failed marker via removeDispatchFailedMarkerFn. scripts/cam/project.toml's implementer backend was reset to 'claude' by the operator directly in the working tree before this story started (codex quota exhausted until 2026-08-01); left as-is and committed since it predates this story's edits and is a real operator decision, not implementer work. CAM-433's audit findings (F-02 through F-05) are now closed across all three dispatch paths (plan-runner, implementer, reviewer); F-01 (US-001 prompt-file transport) and F-06 (US-002 vendor encoding) were closed in earlier stories. No further open dispatch-path findings remain from the CAM-433 audit as of this story.",
+  "nextStoryContext": "Fixed the CAM-433 round-1 CRITICAL finding at src/supervisor/worker-dispatch.ts:43: workerOutLogPath writes `<claudeDir>/cam-worker-out-<phase>-<uuid>.log` (no leading dot), which was not covered by the pre-existing `.claude/.cam-worker-out-*.log` (WITH a leading dot) gitignore entry. Chose the gitignore-registration fix (not a rename to the dotted stem) because there is exact precedent for an undotted pipe-pane-out-log glob two lines below in both files: `.claude/cam-plan-out-*.log` (CAM-158/CAM-160, plan-runner's own out-log). Added the literal glob `.claude/cam-worker-out-*.log` to BOTH .gitignore and templates/.gitignore immediately after the legacy dotted entry, with a comment distinguishing the two conventions, then ran `bun run embed-vendor` to regenerate src/vendor/_generated.ts and confirmed `embed-vendor:check` is clean. Verified empirically with `git check-ignore -v` on both `.claude/cam-worker-out-implementer-x.log` (now correctly ignored) and `.claude/.cam-worker-out-implementer-x.log` (still ignored, unaffected). No source/behavior code changed, only the two gitignore files plus the generated vendor embed and a patterns.md bullet. Remaining review round 1 findings still open in prd.json for future stories: US-R1-002 (plan-runner.ts:463 bare dispatch-failed literal breaks its own US-002 grep oracle), US-R1-003 (revert the jsLiteral special-case encoding + rescope the oracle away from generated output), US-R1-004 (four stale 'pure function/no I/O' module-header docstrings in worker-argv.ts/plan-argv.ts/review.ts now contradict buildSpawnArgv's file I/O), US-R1-005 (verified-dispatch.ts's @cam_label uses the raw sentinel phase string, e.g. 'implementer-timeout', which isSessionStale doesn't recognize as a worker label and can cause a healthy post-timeout session to be torn down as stale on the next `cam run`). None of the review's SUGGESTION-severity findings (task-prompt-file.ts fail-open cat, reap-before-validate ordering, hardcoded '-L cam' literals instead of tmuxArgs(), untested DispatchFailureReason variants, plan-runner.ts module-split suggestion, project.toml operator-config-drift-in-feature-commit) were filed as separate prd.json stories; they remain only in prd.review.findings as non-blocking record.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
-      "lib": "tmux",
-      "channel": "WebOpen",
-      "url": "https://raw.githubusercontent.com/tmux/tmux/master/tmux.1",
-      "fetchedAt": "2026-07-27T13:35:00Z",
-      "status": "aligned",
-      "summary": "Re-confirmed against the official tmux master manpage for this story's checked sentinel paths: respawn-pane -k kills the pane's existing command before reactivating it with the new one, and pipe-pane connects target-pane output to a shell command. No new tmux subcommand was introduced beyond what US-003/US-004 already validated (display-message -p '#{pane_pid}', set-option -p); this story reuses the same runVerifiedDispatch primitive for the implementer and both reviewer paths plus the three remaining sentinel respawns, with exit codes on every call inspected via the existing SpawnResult.exitCode contract (standard child-process semantics, not tmux-specific)."
+      "lib": "none",
+      "status": "no_external_lib_touched"
     }
   ]
 }
