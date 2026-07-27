@@ -55,7 +55,7 @@
       "id": "US-R1-004",
       "title": "Review round 1 fix 004: address reviewer finding",
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [src/supervisor/worker-argv.ts:16]: Module-header contracts now contradict the code. buildSpawnArgv writes a file and reaps siblings on every call (backend-adapter.ts:240-244 resolveTaskPromptArgument -> writeTaskPromptFile), yet worker-argv.ts:16 still declares 'Pure function; no spawning, no file I/O', worker-argv.ts:26-27 still describes the prompt as 'single-quote-escaped', plan-argv.ts:7 still says 'pure functions, no I/O', and review.ts:17 still says 'buildReviewerWorkerArgv is a pure function (no I/O)'. These are the load-bearing headers a maintainer reads before calling the builders, and they now actively mislead (a stray call to buildSpawnArgv silently reaps the live dispatch's prompt file). Update the four headers in the same PR; the per-field JSDoc was updated but the module contracts were not."
     },
     {
