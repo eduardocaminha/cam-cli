@@ -109,7 +109,7 @@
         "Full quality spine passes; src/supervisor/plan-runner.ts sits exactly at its 1917-line ceiling today, so this story almost certainly includes a scripts/file-size-budget.json raise derived from the real post-change wc -l, in the same commit (AC11). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Crime-scene facts to honor: relabel (set-option, :793) precedes respawn (:794) and pipe-pane follows (:798), so neither the label nor an existing out-log proves the auditor ran; isPaneAlive (:1004) is true for the WRONG session, so pane-death fallbacks never fire; the three wedged runs had argv of 17660/16828/16828 bytes vs the measured 16364 limit. Existing integration siblings to mirror for real-tmux harness setup: test/integration/plan-runner-pane-spawn.test.ts, test/integration/tmux-introspect.test.ts (uses a dedicated -L socket; do the same, never the live 'cam' socket). Timeout terminals should reuse the US-002 marker with reason 'planner-timeout'/'auditor-timeout' rather than inventing a second marker family. Existing unit file test/supervisor/plan-runner.test.ts and test/supervisor/plan/ subdir carry the DI seams (spawnFn, readPlanVerdictFn, notifyFn, logEvent); extend, don't fork. Issue workaround context: the orphan-prd in-progress-conflict gate is out of scope here, only the dispatch/terminal path is. patterns.md grep keywords: 'plan-runner', 'sentinel', 'capture-pane is rendered markdown'."
     },
