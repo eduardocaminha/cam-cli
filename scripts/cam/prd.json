@@ -60,7 +60,7 @@
         "Full quality spine passes per AC11. [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Depends on US-001's helper. Route rationale (AC13, measured): no bunfig.toml exists in the repo, package.json:11 is plain 'bun test', preload-throw abort semantics are undocumented (re-confirmed via the Bun docs fetch in officialDocsConsulted), and collection order is undocumented; the ONLY documented exit guarantee is that a failing test exits non-zero, which a plain failing test satisfies with no ordering assumption. Fail-fast speed would be the only benefit of ordering tricks and is a cost concern, explicitly not a reason to prefer undocumented mechanisms. Hard-vs-waivable at this point: on the host lane no waiver is permitted; ps stays skippable only under a declared waiver (AC9 rationale in helper). tmux is the only genuinely separable binary for real-I/O proof (git/jq/pgrep/ps/uuidgen live in /usr/bin or /bin; creating symlinks to simulate absence is forbidden). ADR-0039 section on real I/O at wire boundaries governs why the AC3 proof must be a real PATH-surgery run, not a mock."
     },
