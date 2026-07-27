@@ -39,7 +39,6 @@ import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from '
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import process from 'node:process';
-import { DISPATCH_FAILED_FILENAME } from '../src/supervisor/dispatch-failed-marker.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '..');
@@ -60,15 +59,10 @@ const FILES = [
  * `\n` escaping (rather than backticks/template literals) because vendored
  * shell scripts may contain backticks for command substitution which would
  * silently break a template literal, and `JSON.stringify` is the safest way
- * to round-trip arbitrary content. The dispatch-failed filename uses an
- * equivalent Unicode escape in generated source so the defining module
- * remains the only src TypeScript file carrying its bare literal.
+ * to round-trip arbitrary content.
  */
 function jsLiteral(value: string): string {
-	return JSON.stringify(value).replaceAll(
-		DISPATCH_FAILED_FILENAME,
-		`\\u002e${DISPATCH_FAILED_FILENAME.slice(1)}`,
-	);
+	return JSON.stringify(value);
 }
 
 /**
