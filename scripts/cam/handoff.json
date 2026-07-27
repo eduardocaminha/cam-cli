@@ -1,18 +1,16 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-002",
-    "title": "Review round 1 fix 002: address reviewer finding"
+    "id": "US-R1-003",
+    "title": "Review round 1 fix 003: address reviewer finding"
   },
   "branchName": "cam/issue-434",
-  "timestamp": "2026-07-27T18:00:00Z",
+  "timestamp": "2026-07-27T19:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
     "scripts/cam/patterns.md"
   ],
-  "openQuestions": [
-    "US-R1-003 is BLOCKED, not completed. Its finding is US-002's AC6 repo-gate oracle at prd.json:71 (`test -z \"$(git grep -li garboard -- ':!docs/adr/' ':!scripts/cam/issues/' ':!scripts/cam/journal.md' ':!scripts/cam/journal.archive.md' ':!scripts/cam/patterns.archive.md' ':!scripts/cam/suggestions.jsonl' ':!CHANGELOG.md')\"`), which re-runs red: offenders are scripts/cam/prd.json (28 case-insensitive 'garboard' hits, inherent to the PRD text narrating the retired name) and scripts/cam/handoff.json (self-resolves on the next handoff overwrite). The only real fix is adding ':!scripts/cam/prd.json' and ':!scripts/cam/handoff.json' to that exclusion list at prd.json:71. This session verified empirically it cannot make that edit: CAM_WORKER=1 and CAM_SESSION are set, and .claude/hooks/orch-agent-allowlist.sh denies Write/Edit/MultiEdit against any *scripts/cam/prd.json path whenever CAM_WORKER=1, unconditionally. No implementer session, in any retry of this story, can perform this fix. It requires an orchestrator/operator (non-CAM_WORKER) session to add the two excludes directly to prd.json:71, or to explicitly accept the residual in the AC prose and close the finding without a further implementer retry. See the corrective scripts/cam/patterns.md bullet (appended this story, directly below the line-1058 'accepted gap' bullet it supersedes) for full detail and the identical CAM-433 precedent (prd.json:96, a different oracle, same dead end)."
-  ],
-  "nextStoryContext": "US-R1-003 could not implement a code fix: the reviewer finding names a red Layer B behavioral-gate oracle (US-002's AC6, prd.json:71) whose only correct resolution is a one-line edit to prd.json's oracle exclusion list, and prd.json is hard-blocked from Write/Edit/MultiEdit for this (and every) CAM_WORKER=1 implementer session (.claude/hooks/orch-agent-allowlist.sh). No source, template, or binary was touched; typecheck was re-run clean as a baseline-health check (bunx tsc --noEmit, zero errors) but there is no bun-test-visible gate tied to this finding (it is a reviewer Layer B tmux reproduction, not a wired bun test). Only scripts/cam/patterns.md was modified, appending a corrective bullet immediately after the line-1058 'accepted gap' bullet this finding invalidated (documenting a gap as accepted is itself a no-flaky-evasion violation once flagged, per this round's review). This story is left passes:false; see openQuestions for the exact orchestrator/operator action needed to unblock it.",
+  "openQuestions": [],
+  "nextStoryContext": "US-R1-003's reviewer finding (US-002 AC6's repo-gate oracle at prd.json:71 exiting red because prd.json/handoff.json necessarily narrate the retired name and are worker-write-denied per ADR-0036) is now RESOLVED: an orchestrator/operator amendment (commit 0a7fdf92, outside CAM_WORKER=1) added ':!scripts/cam/prd.json', ':!scripts/cam/handoff.json', and ':!scripts/cam/patterns.md' to the AC6 exclusion list. Re-ran the exact oracle string against branch HEAD this session and it exits 0. No further code change was needed or made in this dispatch; this session's work was verification (AC6 oracle green, typecheck clean, bun test 5665 pass / 0 fail, bun run check:all fully green) plus a patterns.md bullet closing the loop on the prior two BLOCKED_QUALITY dispatches. See the new patterns.md bullet immediately after the line-1064 'CORRECTION' bullet for the full resolution record.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
