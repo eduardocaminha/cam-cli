@@ -1,0 +1,49 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Deliver worker task prompts out-of-band via per-dispatch prompt file"
+  },
+  "branchName": "cam/issue-433",
+  "timestamp": "2026-07-27T10:29:29Z",
+  "createdFiles": [
+    "src/supervisor/task-prompt-file.ts",
+    "test/helpers/task-prompt.ts",
+    "test/supervisor/task-prompt-file.test.ts"
+  ],
+  "modifiedFiles": [
+    ".gitignore",
+    "scripts/cam/patterns.md",
+    "scripts/file-size-budget.json",
+    "src/supervisor/backend-adapter.ts",
+    "src/supervisor/docker-exec.ts",
+    "src/supervisor/host.ts",
+    "src/supervisor/loop.ts",
+    "src/supervisor/plan-argv.ts",
+    "src/supervisor/plan-runner.ts",
+    "src/supervisor/review.ts",
+    "src/supervisor/worker-argv.ts",
+    "src/vendor/_generated.ts",
+    "templates/.gitignore",
+    "test/integration/plan-runner-target-obey.test.ts",
+    "test/plan-runner-target-invalid.test.ts",
+    "test/plan-runner-target-prompt.test.ts",
+    "test/supervisor/backend-adapter.test.ts",
+    "test/supervisor/codex-adapter.test.ts",
+    "test/supervisor/plan-runner.test.ts",
+    "test/supervisor/plan/plan-argv.test.ts",
+    "test/supervisor/plan/plan-runner-auditor-payload.test.ts",
+    "test/supervisor/plan/plan-runner-replan.test.ts",
+    "test/supervisor/review.test.ts",
+    "test/supervisor/worker-argv.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "All planner, auditor, implementer, reviewer, and Codex task prompts now flow through one reaping per-dispatch file under the project .claude directory. Production dispatch sites pass claudeDir explicitly; adapter-only callers use an isolated process-scoped tmp fallback. POSIX command substitution intentionally strips trailing newline bytes, and the real-subprocess boundary test pins that policy.",
+  "appliedPatternIds": [],
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Only Node.js standard-library filesystem, path, and subprocess APIs were used; no external library was touched."
+    }
+  ]
+}
