@@ -13,6 +13,18 @@
 // when the count is zero -- it never prints ' 0 skip'. A MISSING line is
 // therefore treated as zero, not as "unparseable".
 //
+// Fail-open guard (US-R1-002, review round 1 finding on scripts/check-
+// skip-ratchet.ts:138): a crashed / zero-test / garbage `bun test` run (e.g.
+// 'error: Cannot find module ...\nbun: command crashed\n') has no ' N skip'
+// line either, and was previously indistinguishable from a genuine clean
+// 0-skip run -- the exact failure mode this gate exists to prevent. Before
+// comparing skip counts, `checkSkipRatchet` now requires POSITIVE evidence
+// the suite actually ran to completion: a 'Ran N tests across M files.' tally
+// line, AND an observed ' N pass' count at or above the lane's recorded
+// `passFloor` (test/helpers/lane-expectations.json). Either check failing
+// reports a suite-did-not-run/suite-ran-partial failure instead of silently
+// falling through to a 0-skip match.
+//
 // Lane selection: 'host' is the default. The container lane is selected via
 // the explicit CAM_TEST_LANE=container env var -- the same explicit-
 // declaration mechanism as CAM_TEST_WAIVERS (test/helpers/test-deps.ts),
@@ -20,6 +32,8 @@
 //
 // Exports:
 //   parseSkipCount(output)                  - parse the skip line, 0 if absent
+//   parsePassCount(output)                  - parse the pass line, null if absent
+//   suiteRanToCompletion(output)            - true iff the 'Ran N tests...' tally line is present
 //   resolveLane(env)                        - 'host' (default) or 'container'
 //   checkSkipCount(observed, expected, lane) - pure comparison + message
 //   checkSkipRatchet(options)               - full check, DI-injectable
@@ -79,6 +93,18 @@ export const EXPECTATIONS_PATH = 'test/helpers/lane-expectations.json';
  */
 const SKIP_LINE_RE = /^ (\d+) skip/m;
 
+/** Matches Bun's pass-summary line (e.g. ' 5720 pass'). Present on every completed run, including all-fail runs. */
+const PASS_LINE_RE = /^ (\d+) pass/m;
+
+/**
+ * Matches Bun's final completion tally (e.g. 'Ran 5720 tests across 341
+ * files. [12.34s]'). Only printed once the run reaches the end of the
+ * suite; a crash, missing module, or other abort before that point never
+ * prints this line, which is exactly the positive-evidence signal this gate
+ * needs before trusting a 0-skip (or any) comparison.
+ */
+const RAN_LINE_RE = /^Ran \d+ tests? across \d+ files?\./m;
+
 // ---------------------------------------------------------------------------
 // Pure parsing / resolution functions
 // ---------------------------------------------------------------------------
@@ -91,6 +117,27 @@ const SKIP_LINE_RE = /^ (\d+) skip/m;
 export function parseSkipCount(output: string): number {
 	const m = SKIP_LINE_RE.exec(output);
 	return m ? parseInt(m[1] ?? '0', 10) : 0;
+}
+
+/**
+ * Parse the ' N pass' summary line out of `bun test` output.
+ * Returns null when the line is absent -- unlike the skip line, Bun always
+ * prints a pass line for any run that reaches completion (even ' 0 pass'),
+ * so a missing pass line is itself evidence the run never completed.
+ */
+export function parsePassCount(output: string): number | null {
+	const m = PASS_LINE_RE.exec(output);
+	return m ? parseInt(m[1] ?? '0', 10) : null;
+}
+
+/**
+ * True iff `output` contains Bun's final completion tally line
+ * ('Ran N tests across M files.'). This is the positive-evidence marker that
+ * the suite actually ran to completion rather than crashing or aborting
+ * before printing a summary.
+ */
+export function suiteRanToCompletion(output: string): boolean {
+	return RAN_LINE_RE.test(output);
 }
 
 /** Resolve the current lane from an env object. Defaults to 'host'; never sniffs. */
@@ -129,6 +176,43 @@ export function checkSkipCount(observedSkips: number, expectedSkips: number, lan
 			`(delta ${signedDelta}). Update ${EXPECTATIONS_PATH} if this change is ` +
 			`intentional, or fix the regression if it is not.`,
 	};
+}
+
+/**
+ * Verify `output` carries positive evidence the suite ran to completion,
+ * before any skip-count comparison is trusted.
+ *
+ * Returns a failing `SkipRatchetResult` when either check fails:
+ *   1. no 'Ran N tests across M files.' completion tally line, or
+ *   2. an observed pass count below the lane's recorded `passFloor`
+ *      (including the case where no pass line was parsed at all).
+ * Returns `null` when the suite ran cleanly and the caller should proceed to
+ * the skip-count comparison.
+ */
+export function checkSuiteRan(output: string, passFloor: number, lane: Lane): SkipRatchetResult | null {
+	if (!suiteRanToCompletion(output)) {
+		return {
+			ok: false,
+			message:
+				`${lane} lane: suite did not report a completion tally ` +
+				`('Ran N tests across M files.'); treating as a crashed or ` +
+				`partial run, not a clean run. Raw output (first 300 chars): ` +
+				`${output.slice(0, 300)}`,
+		};
+	}
+
+	const observedPass = parsePassCount(output);
+	if (observedPass === null || observedPass < passFloor) {
+		return {
+			ok: false,
+			message:
+				`${lane} lane: observed ${observedPass ?? 0} pass, below recorded ` +
+				`passFloor ${passFloor} (${EXPECTATIONS_PATH}); suite likely crashed ` +
+				`or ran only a subset. Update ${EXPECTATIONS_PATH} if this drop is intentional.`,
+		};
+	}
+
+	return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -172,10 +256,14 @@ export function checkSkipRatchet(
 		options.readExpectations ?? makeDefaultReadExpectations(join(cwd, EXPECTATIONS_PATH));
 
 	const expectations = readExpectations();
-	const observedSkips = parseSkipCount(getSuiteOutput());
-	const expectedSkips = expectations.lanes[lane].expectedSkips;
+	const laneExpectation = expectations.lanes[lane];
+	const output = getSuiteOutput();
 
-	return checkSkipCount(observedSkips, expectedSkips, lane);
+	const suiteRanResult = checkSuiteRan(output, laneExpectation.passFloor, lane);
+	if (suiteRanResult) return suiteRanResult;
+
+	const observedSkips = parseSkipCount(output);
+	return checkSkipCount(observedSkips, laneExpectation.expectedSkips, lane);
 }
 
 // ---------------------------------------------------------------------------

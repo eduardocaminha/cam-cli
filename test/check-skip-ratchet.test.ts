@@ -10,8 +10,11 @@ import { describe, expect, test } from 'bun:test';
 import {
 	checkSkipCount,
 	checkSkipRatchet,
+	checkSuiteRan,
+	parsePassCount,
 	parseSkipCount,
 	resolveLane,
+	suiteRanToCompletion,
 	type LaneExpectationsFile,
 } from '../scripts/check-skip-ratchet.ts';
 
@@ -32,6 +35,73 @@ describe('parseSkipCount', () => {
 
 	test('empty output is treated as zero', () => {
 		expect(parseSkipCount('')).toBe(0);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// parsePassCount
+// ---------------------------------------------------------------------------
+
+describe('parsePassCount', () => {
+	test('parses a present pass line', () => {
+		const output = '\n 5702 pass\n 0 fail\nRan 5702 tests across 340 files. [79.42s]\n';
+		expect(parsePassCount(output)).toBe(5702);
+	});
+
+	test('missing pass line (crashed run) returns null, never 0', () => {
+		const output = 'error: Cannot find module "foo"\nbun: command crashed\n';
+		expect(parsePassCount(output)).toBeNull();
+	});
+
+	test('empty output returns null', () => {
+		expect(parsePassCount('')).toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// suiteRanToCompletion
+// ---------------------------------------------------------------------------
+
+describe('suiteRanToCompletion', () => {
+	test('true when the Ran-tally line is present', () => {
+		const output = '\n 5702 pass\n 0 fail\nRan 5702 tests across 340 files. [79.42s]\n';
+		expect(suiteRanToCompletion(output)).toBe(true);
+	});
+
+	test('false on a crashed/garbage run with no tally line (AC: fail-open guard)', () => {
+		const output = 'error: Cannot find module "foo"\nbun: command crashed\n';
+		expect(suiteRanToCompletion(output)).toBe(false);
+	});
+
+	test('false on empty output', () => {
+		expect(suiteRanToCompletion('')).toBe(false);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// checkSuiteRan
+// ---------------------------------------------------------------------------
+
+describe('checkSuiteRan', () => {
+	test('null (suite ran cleanly) when tally line present and pass count clears the floor', () => {
+		const output = '\n 5702 pass\n 0 fail\nRan 5702 tests across 340 files. [79.42s]\n';
+		expect(checkSuiteRan(output, 5700, 'host')).toBeNull();
+	});
+
+	test('fails when the completion tally line is missing (crashed run masquerading as clean)', () => {
+		const output = 'error: Cannot find module "foo"\nbun: command crashed\n';
+		const result = checkSuiteRan(output, 5700, 'host');
+		expect(result).not.toBeNull();
+		expect(result?.ok).toBe(false);
+		expect(result?.message).toContain('completion tally');
+	});
+
+	test('fails when the observed pass count is below the recorded passFloor', () => {
+		const output = '\n 100 pass\n 0 fail\nRan 100 tests across 5 files. [1.00s]\n';
+		const result = checkSuiteRan(output, 5700, 'host');
+		expect(result).not.toBeNull();
+		expect(result?.ok).toBe(false);
+		expect(result?.message).toContain('passFloor');
 	});
 });
 
@@ -88,8 +158,11 @@ describe('checkSkipRatchet', () => {
 	function makeExpectations(): LaneExpectationsFile {
 		return {
 			lanes: {
-				host: { expectedSkips: 0, passFloor: 5702 },
-				container: { expectedSkips: 40, passFloor: 5662 },
+				// passFloor set below the fixtures' expected-clean pass count so a
+				// single legitimate new skip (test below) still clears the floor;
+				// only a crashed/partial run should trip it.
+				host: { expectedSkips: 0, passFloor: 5700 },
+				container: { expectedSkips: 40, passFloor: 5650 },
 			},
 			triage: { hardDependency: 42, legitimateEnvironmental: 1 },
 		};
@@ -98,7 +171,7 @@ describe('checkSkipRatchet', () => {
 	test('host lane, missing skip line, matches recorded zero expectation', () => {
 		const result = checkSkipRatchet({
 			lane: 'host',
-			getSuiteOutput: () => ' 5702 pass\n 0 fail\n',
+			getSuiteOutput: () => ' 5702 pass\n 0 fail\nRan 5702 tests across 340 files. [79.42s]\n',
 			readExpectations: makeExpectations,
 		});
 		expect(result.ok).toBe(true);
@@ -107,7 +180,7 @@ describe('checkSkipRatchet', () => {
 	test('container lane, present skip line, matches recorded expectation', () => {
 		const result = checkSkipRatchet({
 			lane: 'container',
-			getSuiteOutput: () => ' 5662 pass\n 0 fail\n 40 skip\n',
+			getSuiteOutput: () => ' 5662 pass\n 0 fail\n 40 skip\nRan 5702 tests across 340 files. [79.42s]\n',
 			readExpectations: makeExpectations,
 		});
 		expect(result.ok).toBe(true);
@@ -116,10 +189,30 @@ describe('checkSkipRatchet', () => {
 	test('a newly introduced skip on the host lane fails the gate', () => {
 		const result = checkSkipRatchet({
 			lane: 'host',
-			getSuiteOutput: () => ' 5701 pass\n 0 fail\n 1 skip\n',
+			getSuiteOutput: () => ' 5701 pass\n 0 fail\n 1 skip\nRan 5702 tests across 340 files. [79.42s]\n',
 			readExpectations: makeExpectations,
 		});
 		expect(result.ok).toBe(false);
 		expect(result.message).toContain('+1');
+	});
+
+	test('a crashed run (no summary at all) fails the gate instead of matching the recorded zero-skip expectation (fail-open regression guard)', () => {
+		const result = checkSkipRatchet({
+			lane: 'host',
+			getSuiteOutput: () => 'error: Cannot find module "foo"\nbun: command crashed\n',
+			readExpectations: makeExpectations,
+		});
+		expect(result.ok).toBe(false);
+		expect(result.message).toContain('completion tally');
+	});
+
+	test('a run that completes but under-runs the recorded passFloor fails the gate even with a matching skip count', () => {
+		const result = checkSkipRatchet({
+			lane: 'host',
+			getSuiteOutput: () => ' 12 pass\n 0 fail\nRan 12 tests across 1 files. [0.10s]\n',
+			readExpectations: makeExpectations,
+		});
+		expect(result.ok).toBe(false);
+		expect(result.message).toContain('passFloor');
 	});
 });
