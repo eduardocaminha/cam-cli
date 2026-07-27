@@ -41,7 +41,7 @@
       "id": "US-R2-002",
       "title": "Review round 2 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [scripts/file-size-budget.json]: Stale ratchet loosening. The ceiling for scripts/generate-embedded-vendor.ts was raised 159->165 by US-002, justified in the _ref solely by the jsLiteral special-case ('encode the dispatch-failed filename as an equivalent Unicode escape in generated TypeScript'). US-R1-003 reverted exactly that code, and the file is now 158 lines -- one line BELOW main's 159. The ceiling was left at 165, leaving a 7-line loosening of the ratchet with no code behind it and an _ref narrative that no longer describes the branch. Restore the entry to 159 (or the real post-revert count) in the same commit that reverted the growth."
     },
     {
