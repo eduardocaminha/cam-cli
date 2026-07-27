@@ -1,10 +1,44 @@
 {
   "id": "CAM-434",
   "title": "Reabrir a decisao de nome: GARBOARD colide com produto vivo e adjacente em garboard.dev",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-27T12:17:32.430Z",
-  "updatedAt": "2026-07-27T12:17:32.430Z",
-  "description": "MEDIDO em 2026-07-27: garboard.dev esta no ar como produto vivo (nao parkeado), descrito como builder de web apps que gera apps prontos para producao a partir de descricao ou URL importada e os VERIFICA contra criterios checaveis por maquina antes de shipar, com receipts de verificacao e codigo sem lock-in. DNS: garboard.dev A=216.150.1.1 NS=vercel-dns; garboard.app A=216.150.1.65 NS=vercel-dns (mesmo dono provavel); garboard.com parkeado a venda em afternic; garboard.io, garboard.sh e usegarboard.com sem A nem NS.\n\nPOR QUE E FATAL E NAO SO INCONVENIENTE: nao e apenas indisponibilidade de dominio. E colisao de NOME dentro da MESMA tese (loop autonomo que constroi e verifica antes de entregar). Qualquer material publico nosso passaria a competir por atribuicao com um produto que ja ocupa o termo na mesma categoria, e o dono controla .dev e .app simultaneamente. Trocar para .io ou usegarboard.com resolveria endereco e nao resolveria nada de posicionamento.\n\nO QUE FICA PENDENTE: o ADR-0049 fixou GARBOARD como nome de produto e precisa de supersessao explicita, nao de edicao silenciosa. O dossie de posicionamento shipado no CAM-415 assume o nome. O CAM-331 (README publico) e downstream direto e NAO pode shipar carregando GARBOARD: fica bloqueado ate existir nome novo.\n\nESCOPO DESTE ISSUE: reabrir e fechar a decisao de nome, com verificacao de disponibilidade feita ANTES de adotar (dominio, npm, org do GitHub, e busca por produto homonimo na categoria, que foi exatamente o check que faltou da primeira vez), depois superseder o ADR-0049 com o registro do motivo. A escolha do nome em si e decisao do operador.\n\nLICAO A REGISTRAR NO ADR NOVO: checar homonimo VIVO na mesma categoria faz parte do gate de nome. Disponibilidade de dominio nao e o teste; ocupacao do termo por produto adjacente e."
+  "updatedAt": "2026-07-27T12:50:04.704Z",
+  "description": "MEDIDO em 2026-07-27: garboard.dev esta no ar como produto vivo (nao parkeado), descrito como builder de web apps que gera apps prontos para producao a partir de descricao ou URL importada e os VERIFICA contra criterios checaveis por maquina antes de shipar, com receipts de verificacao e codigo sem lock-in. DNS: garboard.dev A=216.150.1.1 NS=vercel-dns; garboard.app A=216.150.1.65 NS=vercel-dns (mesmo dono provavel); garboard.com parkeado a venda em afternic; garboard.io, garboard.sh e usegarboard.com sem A nem NS.\n\nPOR QUE E FATAL E NAO SO INCONVENIENTE: nao e apenas indisponibilidade de dominio. E colisao de NOME dentro da MESMA tese (loop autonomo que constroi e verifica antes de entregar). Qualquer material publico nosso passaria a competir por atribuicao com um produto que ja ocupa o termo na mesma categoria, e o dono controla .dev e .app simultaneamente. Trocar para .io ou usegarboard.com resolveria endereco e nao resolveria nada de posicionamento.\n\nO QUE FICA PENDENTE: o ADR-0049 fixou GARBOARD como nome de produto e precisa de supersessao explicita, nao de edicao silenciosa. O dossie de posicionamento shipado no CAM-415 assume o nome. O CAM-331 (README publico) e downstream direto e NAO pode shipar carregando GARBOARD: fica bloqueado ate existir nome novo.\n\nESCOPO DESTE ISSUE: reabrir e fechar a decisao de nome, com verificacao de disponibilidade feita ANTES de adotar (dominio, npm, org do GitHub, e busca por produto homonimo na categoria, que foi exatamente o check que faltou da primeira vez), depois superseder o ADR-0049 com o registro do motivo. A escolha do nome em si e decisao do operador.\n\nLICAO A REGISTRAR NO ADR NOVO: checar homonimo VIVO na mesma categoria faz parte do gate de nome. Disponibilidade de dominio nao e o teste; ocupacao do termo por produto adjacente e.",
+  "spec": {
+    "scope": "Executar a troca de nome de produto de GARBOARD para GATESHIP e superseder o ADR-0049 registrando o motivo e o gate de nome que faltou. Dentro do escopo: ADR novo que supersede o 0049, atualizacao dos artefatos que carregam o nome antigo (docs/positioning.md e o que mais o grep de GARBOARD encontrar), e o registro do gate de verificacao de nome. Fora do escopo: renomear o binario cam ou qualquer identificador de codigo, comprar dominio, e o README publico (CAM-331, que e consumidor desta decisao e continua bloqueado ate ela existir).",
+    "acceptanceCriteria": [
+      "AC1 Existe um ADR novo que supersede explicitamente o ADR-0049, com anotacao de supersessao nos DOIS lados (o novo aponta para o 0049 e o 0049 aponta para o novo), registrando GATESHIP como nome de produto.",
+      "AC2 O ADR novo registra o motivo medido da troca: garboard.dev e um produto VIVO e adjacente (builder de web apps que verifica contra criterios checaveis por maquina antes de shipar), com garboard.app tambem tomado no mesmo NS da Vercel e garboard.com parkeado a venda. Nao basta dizer que o nome mudou, tem que ficar registrado por que.",
+      "AC3 O ADR novo formaliza o GATE DE NOME que faltou, como checklist de quatro camadas a ser rodado ANTES de adotar qualquer nome futuro: dominio, npm, org do GitHub, e busca por produto vivo homonimo na categoria e nas adjacentes. A quarta camada e a que falhou e tem que estar explicita como eliminatoria: disponibilidade de dominio nao e o teste, ocupacao do termo por produto adjacente e.",
+      "AC4 O ADR novo registra a evidencia que sustenta GATESHIP: nenhum dono comercial do termo em nenhuma superficie pesquisada, .dev e .io e .app e .ai sem registro, npm e PyPI e crates sem pacote, e as unicas ocupacoes sao a org GitHub gateship-one (player Android Odyssey, 255 stars, sem pretensao comercial) e o corpus de fandom de Stargate. Registra tambem o custo aceito: gateship.com esta registrado desde 2005 e dormente sem nameservers, entao o .com nao e nosso hoje.",
+      "AC5 O ADR novo registra os nomes eliminados e o motivo eliminatorio de cada um, para que a decisao nao seja re-litigada do zero: keelgate (produto de software vivo em keelgate.com desde 2026-06-01, mais raiz Keel ja tomada em devtools por keel.so e keel.sh, mais o sufixo -gate conotando escandalo), deckrun (PaaS Kubernetes vivo com CLI chamado deck, mais ferramenta MCP homonima), shipset (produto de IA vivo em shipset.app), gatework (Gateworks Corporation, hardware embarcado, com org no GitHub), bowmark (Bowmark Capital, PE focada em software, dona do .com), keelward e wayhelm (negocios vivos donos do .com), gatepath (ONG centenaria dona do .com e do .org), gaterun (SERP tomado pela Gate River Run, mais xara de API gateway no GitHub), e o prefixo helm- inteiro (colisao com o Helm da CNCF dentro da nossa categoria).",
+      "AC6 Nenhum artefato versionado legivel por humano continua apresentando GARBOARD como o nome do produto. O gate e um grep por GARBOARD no repo: as unicas ocorrencias remanescentes permitidas sao as historicas dentro do ADR-0049 e do ADR novo, onde o nome antigo e o assunto do registro.",
+      "AC7 O CAM-331 deixa de estar bloqueado por indefinicao de nome ao fim desta issue, e isso e verificavel: o issue record do CAM-331 nao pode continuar assumindo GARBOARD."
+    ],
+    "gotchas": [
+      "MEDIDO em 2026-07-27: garboard.dev A=216.150.1.1 NS=vercel-dns e site vivo de produto; garboard.app A=216.150.1.65 NS=vercel-dns; garboard.com parkeado a venda em afternic; garboard.io e garboard.sh e usegarboard.com sem A nem NS.",
+      "A colisao fatal nao foi de dominio e sim de TESE: o produto em garboard.dev vende construir e VERIFICAR antes de entregar, que e a mesma frase que nos vendemos. Colisao de nome na mesma tese e pior que colisao de nome em categoria distante.",
+      "Decisao do operador em 2026-07-27, apos triagem de 21 candidatos em quatro camadas: GATESHIP. A ordem por merito apresentada foi gateship, depois prowmark, depois deckward.",
+      "prowmark ficou em segundo e nao foi escolhido: era o unico com WHOIS no match em todos os TLDs, portanto o unico onde seriamos donos de .com e .dev e .io e .app, mas fica a uma letra de Promark, baqueta da D'Addario desde 1957.",
+      "deckward ficou em terceiro: limpo em software, mas homofono de Deckard, codinome do Steam Frame da Valve, com ciclo de noticias quente em 2026.",
+      "Nao renomear o binario nem identificadores de codigo nesta issue. cam continua sendo o comando. Esta issue e sobre nome de PRODUTO e artefatos que o apresentam.",
+      "ADR-0049 nao pode ser editado silenciosamente para dizer outro nome. O registro historico do erro e parte do valor: supersessao explicita, nunca reescrita.",
+      "docs/positioning.md foi shipado no CAM-415 assumindo o nome antigo e e o artefato mais provavel de precisar de passagem."
+    ],
+    "domainTerms": [
+      "gate de nome: checklist de quatro camadas (dominio, npm, org GitHub, produto vivo homonimo na categoria) rodado antes de adotar um nome",
+      "colisao adjacente: termo ja ocupado por produto vivo na mesma categoria ou em categoria vizinha, condicao eliminatoria",
+      "supersessao de ADR: anotacao explicita nos dois lados, o novo apontando o superado e o superado apontando o novo"
+    ]
+  },
+  "wsjf": {
+    "value": 7,
+    "timeCriticality": 6,
+    "riskReduction": 5,
+    "jobSize": 2
+  },
+  "type": "chore"
 }
