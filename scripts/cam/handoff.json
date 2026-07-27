@@ -1,33 +1,26 @@
 {
-  "lastCompletedStory": { "id": "US-004", "title": "Migrate all remaining probe declarations (tmux, jq, pgrep, ps, bun, uuidgen)" },
+  "lastCompletedStory": { "id": "US-005", "title": "Add lane-expectations file and per-lane skip-count ratchet gate" },
   "branchName": "cam/issue-424",
-  "timestamp": "2026-07-27T03:00:00Z",
-  "createdFiles": [],
+  "timestamp": "2026-07-27T04:30:00Z",
+  "createdFiles": [
+    "test/helpers/lane-expectations.json",
+    "scripts/check-skip-ratchet.ts",
+    "test/check-skip-ratchet.test.ts"
+  ],
   "modifiedFiles": [
-    "test/helpers/test-deps.ts",
-    "test/integration/behavioral-gate.test.ts",
-    "test/integration/dispatch-geometry.test.ts",
-    "test/integration/dispatch-oversize-prompt.test.ts",
-    "test/integration/ensure-worker-pane-selfheal.test.ts",
-    "test/integration/orch-recycle-pid-resolve.test.ts",
-    "test/integration/orch-recycle-watch.test.ts",
-    "test/integration/plan-runner-no-prd.test.ts",
-    "test/integration/plan-runner-pane-spawn.test.ts",
-    "test/integration/plan-runner-target-obey.test.ts",
-    "test/integration/review-verdict-handback.test.ts",
-    "test/integration/sendkeys-submit.test.ts",
-    "test/integration/stop-sidecar-real.test.ts",
-    "test/integration/tmux-display-geometry.test.ts",
-    "test/integration/tmux-introspect.test.ts",
-    "test/integration/worker-pane-geometry.test.ts",
-    "test/orch-agent-allowlist.test.ts",
-    "test/release/merge-watch.test.ts"
+    "package.json",
+    "scripts/check-all.ts",
+    "test/check-all.test.ts",
+    "test/gates-manifest.test.ts",
+    "scripts/file-size-budget.json"
   ],
   "openQuestions": [
-    "CAM-432 (out of scope for both US-003 and US-004) still needs to delete the now-provably-dead `test.skipIf(!xAvailable)(...)` gates once each binary is confirmed a true hard dependency everywhere in CI; all skipIf call sites were deliberately left untouched by this story."
+    "AC2/AC6 asked for the triage classification counts and the AC6 verbatim demo observations to be 'stated in the PR body'. The ship path is fully deterministic (CAM-149, src/release/pr-body.ts) and composePrBody only sources prd.description/prd.notes (top-level); prd.json carries no top-level notes field today and this story did not invent a writer for it (patterns.md:410 already documents this as by-design, not a gap). Following the precedent set by US-004's handoff (which recorded its own equivalent AC9-style classification counts in nextStoryContext rather than in prd.json), this story records the AC2 classification counts and the AC6 verbatim observations below and in the commit message body, as the durable reviewer-visible surface actually available to an autonomous implementer. If the reviewer or operator wants this literally rendered in the on-GitHub PR body text, that requires either a top-level prd.notes writer or a reviewer-side PR-body-edit step, neither of which exists yet -- flagging for reviewer-judgment rather than silently deciding it's out of scope.",
+    "CAM-432 (out of scope for US-003 through US-005) still needs to delete the now-provably-dead `test.skipIf(!xAvailable)(...)` gates once each binary is confirmed a true hard dependency everywhere in CI; untouched by this story."
   ],
-  "nextStoryContext": "US-004 completed the centralization sweep started in US-003: added 6 new precomputed exports to test-deps.ts (tmuxAvailable, jqAvailable, pgrepAvailable, psAvailable, uuidgenAvailable, bunAvailable -- each `isAvailable(name)`, mirroring gitAvailable from US-003), then migrated all 21 remaining scattered probe-declaration lines across 17 call-site files to pure `import { xAvailable } from '../helpers/test-deps.ts'`. Two multi-var files needed care: test/integration/orch-recycle-watch.test.ts (tmuxAvailable/pgrepAvailable/uuidgenAvailable combined into one import, `shouldRun` derivation kept as a local const) and test/integration/orch-recycle-pid-resolve.test.ts (removed the intermediate pgrepCheck/bunCheck spawnSync consts entirely, since only their derived booleans were ever used downstream). test/integration/sendkeys-submit.test.ts's tmuxAvailable was a try/catch-wrapped IIFE around `Bun.spawnSync([\"tmux\", \"-V\"])`; replaced wholesale with the import since Bun.which never throws (no try/catch needed). test/release/merge-watch.test.ts had a describe-block-scoped `const jqAvailable` (not module-level) migrated the same way. AC1 and AC2 centralization oracles both now return EMPTY repo-wide (verified). AC14(i-iii) must-survive invariance pins all match main-derived counts exactly: pgrep -f x5, ps -ax x1, tmux -L node-form x14, tmux -L Bun-form x5 -- none of the real ADR-0039-protected wire-boundary driver calls were touched, only the `-V`/`--version` probe declarations. test/run.test.ts and test/stop.test.ts's `tmuxAvailable` DI-fake option-name tokens (object property names, not module-level const/let declarations) were correctly left untouched -- they don't match the AC1 regex and are a different concept entirely (a fake-spawn behavior toggle, not a real probe). Verified live: full-PATH `bun test` = 5702 pass / 0 fail / exit 0 / no skip-summary-line (identical floor to US-003, pure refactor, no tests added/removed); `bun run typecheck` clean; `bun run check:all` full spine green (test, embed-vendor, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps). test/fixtures/version-skip-guard/** untouched (git diff/status both empty). The centralization sweep this PRD (CAM-424) set out to do is now complete for all 7 tracked binaries (git, tmux, jq, pgrep, ps, uuidgen, bun); no further probe-declaration migration work remains under test/**. Only remaining open thread is CAM-432 (delete provably-dead skipIf gates), explicitly out of scope for this PRD.",
+  "nextStoryContext": "US-005 added the durable per-lane skip-count ratchet gate (mechanism half of CAM-424's final piece; US-006 finalizes the container lane). New tracked file test/helpers/lane-expectations.json records: host { expectedSkips: 0, passFloor: 5716 }, container { expectedSkips: 40, passFloor: 5676 (provisional) }, and triage { hardDependency: 42, legitimateEnvironmental: 1 } -- the SAME AC9 per-file counts from US-004 (42 distinct test/** files importing a hard-dependency xAvailable binding across tmux/git/jq/pgrep/uuidgen/bun; 1 file, test/integration/orch-recycle-pid-resolve.test.ts, importing the sole legitimateEnvironmental binding psAvailable). scripts/check-skip-ratchet.ts exports 4 pure/DI-injectable pieces: parseSkipCount(output) (regex /^ (\\d+) skip/m, returns 0 when the line is absent -- Bun never prints ' 0 skip', it omits the line entirely at zero, confirmed empirically since Bun's own docs at bun.com/docs/cli/test don't document this edge case), resolveLane(env) ('host' default, 'container' only on the exact literal CAM_TEST_LANE=container env var -- explicit declaration, never sniffed, mirroring CAM_TEST_WAIVERS's explicitness), checkSkipCount(observed, expected, lane) (pure comparison, fails on ANY delta -- increase or decrease -- naming the signed delta, e.g. '+1' or '-2'), and checkSkipRatchet(options) (full DI-injectable flow: getSuiteOutput/readExpectations/lane/cwd all overridable, defaults to a real `bun test` spawnSync + real file read). Wired as the 14th gate in scripts/check-all.ts's GATES manifest (package.json's check:skip-ratchet script), with test/gates-manifest.test.ts and test/check-all.test.ts both extended for coherence (both green inside `bun run check:all`, all 14 gates). AC6 was executed live (not reasoned): added a scratch test/_scratch-ac6-demo.test.ts with one test.skipIf(true), ran `bun scripts/check-skip-ratchet.ts`, observed verbatim failure 'check:skip-ratchet: host lane: observed 1 skip, expected 0 (delta +1). Update test/helpers/lane-expectations.json if this change is intentional, or fix the regression if it is not.' (exit 1); removed the scratch file, re-ran, observed verbatim 'check:skip-ratchet: host lane: 0 skip (matches recorded expectation)' (exit 0); git status --porcelain was clean of the scratch file at commit time. Verified live: full-PATH `bun test` = 5716 pass / 0 fail / no skip-summary-line (14 new tests added by this story vs US-004's 5702 floor: check-skip-ratchet.test.ts's 14 cases); `bun run typecheck` clean; `bun run check:all` full 14-gate spine green including the new skip-ratchet gate itself (`check:skip-ratchet: host lane: 0 skip (matches recorded expectation)`). scripts/file-size-budget.json's test/check-all.test.ts ceiling raised 428->436 (gate-measured content.split('\\n').length actual) with a dated US-005/CAM-424 note prepended to _ref. US-006 (next, not yet started) finalizes the container lane's expectedSkips/passFloor in this same lane-expectations.json against a real docker run via scripts/test-in-container.ts, and needs to update the file's still-provisional container block accordingly.",
   "officialDocsValidated": [
-    { "lib": "none", "status": "no_external_lib_touched" }
-  ]
+    { "lib": "bun (bun test)", "url": "https://bun.com/docs/cli/test", "fetchedAt": "2026-07-27T04:20:00Z", "status": "aligned", "summary": "Docs show only the pass/fail summary example ('2 pass\\n8 fail\\nRan 10 tests...') and do not explicitly document skip-count formatting or zero-skip omission. No contradiction found; the missing-line-as-zero parser constraint matches empirical behavior observed on this branch's own full-PATH `bun test` runs (0 actual skips, no ' N skip' line printed) and prior CAM-424 stories' equivalent empirical sweeps (patterns.md:394)." }
+  ],
+  "appliedPatternIds": []
 }
