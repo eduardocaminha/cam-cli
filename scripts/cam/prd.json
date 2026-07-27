@@ -152,7 +152,7 @@
         "Full quality spine passes per AC11 (this story edits a gate script). [oracle: bun run check:all]"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: scripts/check-version-skips.ts (comment block at :14-:17, currently 'Does NOT flag skips conditioned on ... capability probes ... those remain legal (CAM-59 ...)'), possibly .github/workflows/ci.yml (trace only; no waiver may be added there). The check-version-skips gate's SCAN behavior does not change in this story, only its stated doctrine: capability-probe skips are still not version-skips, but they are no longer ungoverned, the preflight (test/preflight-deps.test.ts) and ratchet (scripts/check-skip-ratchet.ts) now govern them. Its fixtures under test/fixtures/version-skip-guard/ stay untouched."
     }
