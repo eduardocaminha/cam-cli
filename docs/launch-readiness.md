@@ -81,6 +81,9 @@ Concrete gaps:
   (packaging, cross-platform builds, code signing) currently accounts
   for that rename; it belongs in this dimension's checklist so the
   staged plan has a tracked home when launch packaging picks it up.
+  The public domain `gateship.dev` is registered (Porkbun,
+  2026-07-27, USD 8.75 first year), so packaging, installer copy and
+  the public README can treat it as the canonical home.
 
 ## First-run onboarding (`cam init` UX): gap
 
