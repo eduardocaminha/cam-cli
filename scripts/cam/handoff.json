@@ -1,7 +1,7 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-001",
-    "title": "Review round 1 fix 001: address reviewer finding"
+    "id": "US-R1-002",
+    "title": "Review round 1 fix 002: address reviewer finding"
   },
   "branchName": "cam/issue-434",
   "timestamp": "2026-07-27T00:00:00Z",
@@ -10,7 +10,7 @@
     "docs/adr/0050-gateship-supersedes-garboard-naming.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "ADR-0050's 'Eliminated candidates and runners-up' section (AC5) was rewritten per the reviewer's US-R1-001 finding: nine of the eleven eliminated-candidate bullets (keelgate, deckrun, shipset, gatework, bowmark, keelward, wayhelm, gatepath, gaterun) had fabricated aesthetic rejection reasons instead of the measured layer-1/layer-4 evidence from CAM-434 spec.acceptanceCriteria[4]; only the helm- prefix family entry was already correct and was left unchanged. Also corrected the prowmark runner-up entry, which had mislabeled the Promark collision as 'a live layer-4-adjacent confusion risk': Promark is a D'Addario percussion brand (1957), a distant category, not an adjacent one, so the entry now says so explicitly while still recording the elimination. The deckward runner-up entry (line 64) was NOT touched by this story: the reviewer's finding for that entry is a separate story (US-R1-002, the Valve Steam Frame codename mis-attribution), not part of this one. No code, template, or binary was touched (docs-only ADR correction).",
+  "nextStoryContext": "ADR-0050's 'deckward' runner-up bullet (AC5, line 64) was corrected per the reviewer's US-R1-002 finding: the elimination reason was mis-attributed to 'Deckard, the Blade Runner protagonist' (a 1982 film character, a weak pop-culture collision), when the operator's actual recorded reason in CAM-434 spec.gotchas is 'Deckard, codinome do Steam Frame da Valve, com ciclo de noticias quente em 2026' (Valve's Steam Frame headset codename, an actively-launching hardware product with a hot 2026 news cycle). The bullet now attributes the collision to the Valve Steam Frame codename, the same live-homonym class as ADR-0050's layer-4 gate. This was the last of the two US-R1 reviewer findings (US-R1-001 handled the other nine bullets + prowmark); no other part of ADR-0050 was touched. No code, template, or binary was touched (docs-only ADR correction).",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
