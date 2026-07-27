@@ -17,7 +17,7 @@ The product is named **Gateship**, superseding ADR-0049 in full. ADR-0049's nami
 **Typed alias.** ADR-0049's typed alias `gar` was Garboard-derived and is retired with the name it was derived from. This ADR does not coin a replacement alias: that choice is re-decided at the launch-packaging stage of the staged rename plan below, the same stage ADR-0049 deferred the binary rename itself to. Inventing a `gateship`-derived alias now, ahead of that stage, would be policy this ADR was not asked to decide.
 
 **Staged rename plan** (carried forward from ADR-0049, Gateship substituted for Garboard as the target):
-- Now (this cycle): docs-only. This ADR and any prose referencing the product name use Gateship. No code, template, build script, or binary is renamed. `docs/positioning.md` and the README differentiation section (CAM-331) are out of scope for this ADR and are explicitly noted as blocked on this supersession landing first, since CAM-331 was blocked pending exactly this kind of name resolution.
+- Now (this cycle): docs-only. This ADR and any prose referencing the product name use Gateship. No code, template, build script, or binary is renamed. `docs/positioning.md` is rewritten against Gateship within this same cycle (CAM-434); the README differentiation section (CAM-331) remains out of scope for this ADR and is explicitly noted as blocked on this supersession landing first, since CAM-331 was blocked pending exactly this kind of name resolution.
 - At launch packaging: the binary is renamed to `gateship`, and a typed alias (if any) is chosen and created by the installer at that time, as a distribution item of launch readiness, not before.
 - Never: internal contracts never rename, at any stage, for the same reasoning ADR-0045 and ADR-0049 already applied: `CAM_*` environment variables, `.cam-*` state files, the `tmux -L cam` socket, `/cam-*` slash commands, and sentinel strings (`CAM_*_STATUS`) are invisible contracts baked into running installs, on-disk state, and deterministic git history; renaming any of them is pure downside with no user-facing upside.
 
@@ -73,7 +73,7 @@ Every future reference to the product in docs, positioning material, and launch 
 
 ADR-0049 is left untouched except for an appended supersession pointer at the end of its file: its Context, Decision, and Consequences sections are the historical record of a real, thorough process that still produced a collision, and that record is itself part of the value of this correction, not an error to be edited away.
 
-`docs/positioning.md` and the README differentiation section (CAM-331) are operator-scheduled follow-ups outside this docs-only cycle; they should be written or updated against Gateship once picked up, citing this ADR rather than re-litigating the naming decision.
+`docs/positioning.md` was rewritten against Gateship within this same docs-only cycle (CAM-434); the README differentiation section (CAM-331) remains an operator-scheduled follow-up outside this cycle and should be written against Gateship once picked up, citing this ADR rather than re-litigating the naming decision.
 
 The `gateship` npm package, and the `.dev`/`.io`/`.app`/`.ai` domain registrations, are operator ceremonies outside this docs-only cycle: the availability facts recorded here are point-in-time, exactly as ADR-0049 warned about its own facts, and must be re-checked at the moment those ceremonies actually run.
 
