@@ -62,7 +62,7 @@
       "id": "US-R1-005",
       "title": "Review round 1 fix 005: address reviewer finding",
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [src/supervisor/verified-dispatch.ts:142]: runVerifiedDispatch sets `@cam_label` to the raw `phase` string, and the sentinel call sites pass phases that are not worker labels: 'implementer-token-ceiling' (loop.ts:1481), 'implementer-timeout' (loop.ts:1518), 'review-timeout' (review.ts:581), 'planner-timeout'/'auditor-timeout' (plan-runner.ts:1046). isSessionStale (src/tmux/session.ts:169) accepts only {'implementer','reviewer'} on the third pane and treats anything else as a STALE session, and cam run kills+recreates a stale session (src/commands/run.ts:533). Before this change the sentinel respawns left the label alone; now a post-timeout pane keeps a non-worker label indefinitely, so a healthy live session can be torn down on the next `cam run`. Decouple the tmux label from the failure-reason phase (pass an explicit `label`, or map sentinel phases back to their worker label)."
     },
     {
