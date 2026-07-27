@@ -43,12 +43,7 @@ import {
 	type SpawnFn,
 } from '../../src/commands/ship-finalize.ts';
 import type { SpawnSyncReturns } from 'node:child_process';
-
-// ---------------------------------------------------------------------------
-// Skip guard: mirrors tmux-introspect.test.ts pattern
-// ---------------------------------------------------------------------------
-
-const gitAvailable = spawnSync('git', ['--version'], { stdio: 'pipe' }).status === 0;
+import { gitAvailable } from '../helpers/test-deps.ts';
 
 // ---------------------------------------------------------------------------
 // Tmp-dir lifecycle

@@ -149,6 +149,14 @@ export function isAvailable(name: DepName): boolean {
 	return DEPS[name].available;
 }
 
+/**
+ * Precomputed `isAvailable('git')`, exported for the ~25 test files that
+ * gate `test.skipIf(!gitAvailable)(...)` on git's presence (US-003,
+ * CAM-424). Centralizes the probe in this module instead of each call site
+ * hand-rolling its own `spawnSync('git', ['--version'], ...)` check.
+ */
+export const gitAvailable: boolean = isAvailable('git');
+
 // ---------------------------------------------------------------------------
 // Waiver reader
 // ---------------------------------------------------------------------------

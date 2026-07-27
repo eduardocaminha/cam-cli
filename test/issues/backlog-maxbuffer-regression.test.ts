@@ -40,12 +40,11 @@ import { makeProductionFileSuggestionsFn } from '../../src/commands/sidecar.ts';
 import { fingerprintFinding, type FollowUpProvenance } from '../../src/supervisor/suggestion-followups.ts';
 import type { ReviewFinding, ReviewReport } from '../../src/supervisor/review-report.ts';
 import type { IssueEntry } from '../../src/issues/types.ts';
+import { gitAvailable } from '../helpers/test-deps.ts';
 
 // ---------------------------------------------------------------------------
 // Skip guard + tmp-dir lifecycle (mirrors test/integration/issue-dir-real-git.test.ts)
 // ---------------------------------------------------------------------------
-
-const gitAvailable = spawnSync('git', ['--version'], { stdio: 'pipe' }).status === 0;
 
 const dirsToCleanup: string[] = [];
 

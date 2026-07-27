@@ -31,12 +31,7 @@ import {
 	type SpawnFn,
 } from '../../src/commands/issue-file.ts';
 import type { IssueEntry } from '../../src/issues/types.ts';
-
-// ---------------------------------------------------------------------------
-// Skip guard
-// ---------------------------------------------------------------------------
-
-const gitAvailable = spawnSync('git', ['--version'], { stdio: 'pipe' }).status === 0;
+import { gitAvailable } from '../helpers/test-deps.ts';
 
 // ---------------------------------------------------------------------------
 // Tmp-dir lifecycle

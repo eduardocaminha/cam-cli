@@ -34,12 +34,7 @@ import {
 } from '../../src/commands/issue-specify.ts';
 import type { Spec } from '../../src/issues/spec.ts';
 import type { WsjfScore } from '../../src/issues/types.ts';
-
-// ---------------------------------------------------------------------------
-// Skip guard
-// ---------------------------------------------------------------------------
-
-const gitAvailable = spawnSync('git', ['--version'], { stdio: 'pipe' }).status === 0;
+import { gitAvailable } from '../helpers/test-deps.ts';
 
 // ---------------------------------------------------------------------------
 // Tmp-dir lifecycle

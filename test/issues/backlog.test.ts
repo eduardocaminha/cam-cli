@@ -22,6 +22,7 @@ import {
 	allocateId,
 	type BacklogSpawnFn,
 } from '../../src/issues/backlog.ts';
+import { gitAvailable } from '../helpers/test-deps.ts';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -524,8 +525,6 @@ describe('allocateId', () => {
 // id collision: `git cat-file --batch` output was parsed even when spawnSync
 // silently truncated it at Node's default 1 MiB maxBuffer, so the
 // highest-id issues were dropped and allocateId re-minted colliding ids.
-
-const gitAvailable = spawnSync('git', ['--version'], { stdio: 'pipe' }).status === 0;
 
 const dirsToCleanup: string[] = [];
 

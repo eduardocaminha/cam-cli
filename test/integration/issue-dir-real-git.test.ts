@@ -49,12 +49,7 @@ import {
 } from '../../src/issues/backlog.ts';
 import type { SpawnFn } from '../../src/git/on-main.ts';
 import type { IssueEntry } from '../../src/issues/types.ts';
-
-// ---------------------------------------------------------------------------
-// Skip guard
-// ---------------------------------------------------------------------------
-
-const gitAvailable = spawnSync('git', ['--version'], { stdio: 'pipe' }).status === 0;
+import { gitAvailable } from '../helpers/test-deps.ts';
 
 // ---------------------------------------------------------------------------
 // Tmp-dir lifecycle

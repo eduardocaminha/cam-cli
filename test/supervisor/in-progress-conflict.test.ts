@@ -34,6 +34,7 @@ import {
 import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
 import type { CamGate } from '../../src/supervisor/gate.ts';
 import type { SpawnFn } from '../../src/supervisor/loop.ts';
+import { gitAvailable } from '../helpers/test-deps.ts';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -165,8 +166,6 @@ describe('buildInProgressConflictContext (AC2)', () => {
 // ---------------------------------------------------------------------------
 // AC1: readHeadBranchName -- REAL git tmpdir
 // ---------------------------------------------------------------------------
-
-const gitAvailable = spawnSync('git', ['--version'], { stdio: 'pipe' }).status === 0;
 
 const realSpawnFn: SpawnFn = (cmd, args) => {
 	const r = spawnSync(cmd, args, { stdio: 'pipe', encoding: 'utf8' });

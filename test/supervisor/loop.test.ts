@@ -63,6 +63,7 @@ import { realOnMainSpawnFn } from '../../src/git/on-main.ts';
 import type { PatternRecord } from '../../src/patterns/record.ts';
 import { waitForCondition } from '../helpers/wait-for-condition.ts';
 import { withVerifiedPanePid } from '../helpers/verified-pane-pid-spawn.ts';
+import { gitAvailable } from '../helpers/test-deps.ts';
 
 // ---------------------------------------------------------------------------
 // Fake builder helpers
@@ -4683,7 +4684,6 @@ describe('runSidecarLoop US-006 (CAM-64): recordPatternOutcomeFn hook at cycle-c
 	// integration tests use (test/commands/pattern-records.test.ts).
 	// -----------------------------------------------------------------------
 
-	const gitAvailable = spawnSync('git', ['--version'], { stdio: 'pipe' }).status === 0;
 	const dirsToCleanup: string[] = [];
 
 	afterEach(() => {

@@ -22,8 +22,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { buildSupervisorOptions } from '../../src/supervisor/host.ts';
-
-const gitAvailable = spawnSync('git', ['--version'], { stdio: 'pipe' }).status === 0;
+import { gitAvailable } from '../helpers/test-deps.ts';
 
 const dirsToCleanup: string[] = [];
 

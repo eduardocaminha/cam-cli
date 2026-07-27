@@ -27,6 +27,7 @@ import {
 } from '../../src/commands/pattern-records.ts';
 import { realOnMainSpawnFn, type SpawnFn } from '../../src/git/on-main.ts';
 import { confirmationScore, type PatternRecord } from '../../src/patterns/record.ts';
+import { gitAvailable } from '../helpers/test-deps.ts';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -115,8 +116,6 @@ test('appendPatternRecordOnMain: malformed record fails isPatternRecord -- valid
 // ---------------------------------------------------------------------------
 // Real-git integration (AC4): real temp git repo, real spawnSync.
 // ---------------------------------------------------------------------------
-
-const gitAvailable = spawnSync('git', ['--version'], { stdio: 'pipe' }).status === 0;
 
 const dirsToCleanup: string[] = [];
 

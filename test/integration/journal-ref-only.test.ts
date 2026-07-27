@@ -26,12 +26,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { appendJournalEntryOnMain, type SpawnFn, type JournalCycleEntry } from '../../src/commands/journal.ts';
 import { writeIssueFile } from '../../src/issues/alloc.ts';
-
-// ---------------------------------------------------------------------------
-// Skip guard
-// ---------------------------------------------------------------------------
-
-const gitAvailable = spawnSync('git', ['--version'], { stdio: 'pipe' }).status === 0;
+import { gitAvailable } from '../helpers/test-deps.ts';
 
 // ---------------------------------------------------------------------------
 // Tmp-dir lifecycle

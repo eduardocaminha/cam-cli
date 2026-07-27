@@ -28,6 +28,7 @@ import {
 import { appendPatternRecordOnMain, PATTERN_RECORDS_JSONL_PATH } from '../../src/commands/pattern-records.ts';
 import { realOnMainSpawnFn } from '../../src/git/on-main.ts';
 import type { PatternRecord } from '../../src/patterns/record.ts';
+import { gitAvailable } from '../helpers/test-deps.ts';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -259,8 +260,6 @@ describe('computePruneDecision — AC4: anchor-decay demotes one tier, "optional
 // ---------------------------------------------------------------------------
 // prunePatternRecordsOnMain (real git integration)
 // ---------------------------------------------------------------------------
-
-const gitAvailable = spawnSync('git', ['--version'], { stdio: 'pipe' }).status === 0;
 
 const dirsToCleanup: string[] = [];
 
