@@ -94,6 +94,8 @@ scripts/cam/scope-proposal.json
 .claude/.cam-ship-stalled.json
 # Durable plan-preflight-failed marker written on preflight halt (US-002, CAM-215)
 .claude/.cam-plan-preflight-failed.json
+# Durable worker-dispatch failure evidence (US-002, CAM-433)
+.claude/.cam-dispatch-failed.json
 # Durable post-merge-stalled marker written on incomplete post-merge (US-001, CAM-174)
 .claude/.cam-post-merge-stalled.json
 # Durable sidecar-stalled marker written on firewall-init failure (US-001, CAM-207)

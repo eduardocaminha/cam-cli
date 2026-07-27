@@ -93,6 +93,7 @@ import {
 	readSidecarStalledMarker,
 	type SidecarStalledMarker,
 } from '../supervisor/sidecar-stalled.ts';
+import { DISPATCH_FAILED_FILENAME, readDispatchFailedMarker, type DispatchFailedMarker } from '../supervisor/dispatch-failed-marker.ts';
 import type { ContainerPreflightEventDetail } from '../supervisor/events.ts';
 import { diagnoseWhyNotMoving, type WhyNotMovingDiagnostic, type WhyNotMovingSignals } from './status-diagnostics.ts';
 
@@ -315,6 +316,8 @@ export interface StatusReport {
 	 * `.claude/.cam-sidecar-stalled.json` via `readSidecarStalledMarker`.
 	 */
 	sidecarStalled?: SidecarStalledMarker;
+	/** Durable dispatch-failed marker projected by `readDispatchFailedMarker`. */
+	dispatchFailed?: DispatchFailedMarker;
 	/**
 	 * The LAST `container-preflight` event recorded in
 	 * `.claude/cam-worker-events.jsonl` (US-002, CAM-401). `buildStatusReport`
@@ -616,14 +619,7 @@ function readWhyNotMovingSignals(cwd: string): WhyNotMovingSignals {
 	return signals;
 }
 
-/**
- * Fields of `StatusReport` populated by `projectCycleState` (US-002,
- * CAM-401): the six blocker/wedge/stall markers, the durable merge-watch
- * position, the sidecar-stalled marker, and the last container-preflight
- * event. Extracted from `buildStatusReport` into its own function (rather
- * than inlined) purely to keep `buildStatusReport` under the project's
- * per-function line budget; the two are always called together.
- */
+/** Cycle-state fields projected separately to keep `buildStatusReport` within its function budget. */
 type CycleStateProjection = Pick<
 	StatusReport,
 	| 'shipStalled'
@@ -634,15 +630,15 @@ type CycleStateProjection = Pick<
 	| 'gate'
 	| 'mergeWatch'
 	| 'sidecarStalled'
+	| 'dispatchFailed'
 	| 'containerPreflight'
 >;
 
 /**
  * Project the full cycle state-machine position (US-002, CAM-401):
  * read-only, via each marker's existing lenient never-throw reader, all
- * under `<cwd>/.claude/` (the event log is the one exception -- it has no
- * on-disk status file of its own, so its LAST `container-preflight` line is
- * read instead of re-running preflight).
+ * under `<cwd>/.claude/`; container preflight comes from its LAST event-log
+ * entry because it has no dedicated marker file.
  */
 function projectCycleState(cwd: string): CycleStateProjection {
 	const claudeDirLocal = join(cwd, '.claude');
@@ -672,6 +668,8 @@ function projectCycleState(cwd: string): CycleStateProjection {
 	}
 	const sidecarStalled = readSidecarStalledMarker(join(claudeDirLocal, SIDECAR_STALLED_FILENAME));
 	if (sidecarStalled) out.sidecarStalled = sidecarStalled;
+	const dispatchFailed = readDispatchFailedMarker(join(claudeDirLocal, DISPATCH_FAILED_FILENAME));
+	if (dispatchFailed) out.dispatchFailed = dispatchFailed;
 	const containerPreflight = readLastContainerPreflightEvent(cwd);
 	if (containerPreflight) out.containerPreflight = containerPreflight;
 
@@ -718,10 +716,7 @@ export function buildStatusReport(options: StatusOptions = {}): StatusReport {
 	if (git.branchName) report.branchName = git.branchName;
 	if (git.lastCommit) report.lastCommit = git.lastCommit;
 
-	// US-002 (CAM-401): project the six blocker/wedge/stall markers, the
-	// durable merge-watch position, the sidecar-stalled marker, and the last
-	// container-preflight event. Extracted into `projectCycleState` to keep
-	// this function under the project's per-function line budget.
+	// Project cycle markers separately to keep this function within its line budget.
 	Object.assign(report, projectCycleState(cwd));
 
 	// Resolve token usage from the orchestrator transcript (best-effort, never throws).
@@ -874,6 +869,9 @@ function renderMarkersSection(report: StatusReport): void {
 			label: 'sidecar-stalled',
 			detail: `${report.sidecarStalled.reason} · ${report.sidecarStalled.detail}`,
 		});
+	}
+	if (report.dispatchFailed) {
+		rows.push({ label: 'dispatch-failed', detail: `${report.dispatchFailed.phase} · ${report.dispatchFailed.reason}` });
 	}
 	if (report.gate) {
 		rows.push({ label: 'gate', detail: `${report.gate.gate} · ${report.gate.context}` });

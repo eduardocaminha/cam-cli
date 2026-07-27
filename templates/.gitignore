@@ -15,6 +15,8 @@ scripts/cam/plan-verdict-report.json
 scripts/cam/scope-proposal.json
 # Durable plan-escalation marker written on plan non-convergence (US-002, CAM-204)
 .claude/.cam-plan-escalated.json
+# Durable worker-dispatch failure evidence (US-002, CAM-433)
+.claude/.cam-dispatch-failed.json
 # Durable sidecar-stalled marker written on firewall-init failure (US-001, CAM-207)
 .claude/.cam-sidecar-stalled.json
 
