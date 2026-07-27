@@ -78,7 +78,7 @@
         "Full quality spine passes per AC11. [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "25 files (mechanical one-declaration-per-file edit): the skipIf(!gitAvailable...) CALL SITES REMAIN IN PLACE and now reference the helper export; deleting the 72 now-dead git gates is CAM-432, explicitly OUT OF SCOPE here (mixing them was rejected on risk-isolation grounds in the spec's SPLIT NOTE). The 73 real spawnSync git calls in test bodies are the must-survive inventory protected by ADR-0039 (docs/adr/0039-...md); the binary-name trap in the spec's gotchas explains why oracles here are shaped on the DECLARATION form. Re-swept 2026-07-27 at main 1a3b334a: gitAvailable declarations still 25 files; git pin still 73 lines. AC14 comparands must be re-derived from main at verification time (git worktree or git show main:<path> | grep -c), because main drifts (total declarations already drifted 45->46 since the spec's sweep at 44accd73)."
     },
