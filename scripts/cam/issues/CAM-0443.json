@@ -1,0 +1,13 @@
+{
+  "id": "CAM-443",
+  "title": "Repeat of two round-1 suggestions still open: (a) the wrapper parses only .mode…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-27T20:46:12.636Z",
+  "updatedAt": "2026-07-27T20:46:12.636Z",
+  "description": "Repeat of two round-1 suggestions still open: (a) the wrapper parses only .model and .effort and ignores the .backend the resolver prints, so a mid-session backend switch to codex would feed a codex slug to the hardcoded `claude --model` (same mismatch already exists on main at the initial spawn, so not a regression, but live re-resolution makes it reachable mid-session); (b) readPhaseEffort returns any non-empty string, so `efforts.orchestrator = 'maximum'` flows into --effort and into the audit event (claude 2.1.220 only warns and falls back, per the official CLI reference tier set low|medium|high|xhigh|max), recording a tier claude never applied.\n\nSource: cam/issue-425\nReview round: 2\n\nsuggestion-fingerprint: fea35bcabca0",
+  "derivedFrom": [
+    "CAM-425"
+  ]
+}
