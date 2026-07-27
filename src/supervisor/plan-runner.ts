@@ -459,9 +459,9 @@ export interface RunPlanPhaseOptions {
 
 	/**
 	 * Persist the durable dispatch-failed marker emitted by verified planner /
-	 * auditor dispatches and timeout terminals. Production writes
-	 * .claude/.cam-dispatch-failed.json; absent is a backward-compatible no-op
-	 * sink, but pane identity verification itself is never skipped.
+	 * auditor dispatches and timeout terminals. Production writes to
+	 * `.claude/${DISPATCH_FAILED_FILENAME}`; absent is a backward-compatible
+	 * no-op sink, but pane identity verification itself is never skipped.
 	 */
 	writeDispatchFailedMarkerFn?: (marker: DispatchFailedMarker) => void;
 
