@@ -88,7 +88,7 @@
         "Full quality spine passes; src/commands/sidecar.ts (budget 3686) gets a real-count-derived raise in the same commit if pushed past its ceiling (AC11). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Bun docs (consulted): SyncSubprocess.stderr is a Buffer when piped; the current wrapper already passes stderr: stdio and decodes only stdout, so the fix decodes result.stderr symmetrically. The helper's unit tests may use behavioral DI-fakes for tmux (ADR-0039 allows fakes with behavior, not mock-called assertions); the REAL-tmux end-to-end proof lands in US-004's integration tests. Identity check gotcha: the relabel via set-option runs BEFORE respawn-pane in every current path (plan-runner.ts:793-794), so a label must never be read as respawn success; capture pane_pid before relabel+respawn, compare after. Wire the helper's deps (spawnFn with stderr, logEvent, marker writer, notifyFn) by injection so US-004/US-005 thread their existing seams. patterns.md grep keywords: 'sentinel', 'supervisor', 'spawn'."
     },
