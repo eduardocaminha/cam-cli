@@ -1,0 +1,10 @@
+{
+  "id": "CAM-462",
+  "title": "Gate de coerencia de nome: nada durable guarda o rename depois que o PRD e sobrescrito",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-28T17:44:47.358Z",
+  "updatedAt": "2026-07-28T17:44:47.358Z",
+  "description": "Achado do reviewer do CAM-457, repetido nos rounds 1 e 3, e independente da minha propria proposta ao operador no mesmo dia. Depois do merge do CAM-457, a unica checagem falsificavel de que o nome aposentado nao volta vive em scripts/cam/prd.json, que o proximo cam plan APAGA (plan-runner.ts:515-518). Um arquivo novo com o nome morto amanha passa batido, e um terceiro nome aparecendo passa batido; o repo ja carregou 3 nomes simultaneos sem ninguem notar. VEICULO, apontado pelo reviewer e melhor que o que eu tinha proposto: o repo ja tem o padrao exato de ratchet de literal proibido em test/no-permission-mode-flag.test.ts, com defesa em duas camadas (comportamental como contrato primario, textual como tripwire). Espelhar num arquivo so. PROVA DE FALSIFICABILIDADE JA DISPONIVEL: CHANGELOG.md linha 3 ainda diz 'All notable changes to CAM Runtime are documented here', a ultima superficie viva com o nome morto (as entradas datadas em :604-612 sao historia e NAO devem ser reescritas). Ou seja o ratchet nasce vermelho por causa dessa linha, conserta-se a linha, e fica verde: falsificabilidade demonstrada em vez de alegada. Oraculo do CHANGELOG precisa ser ESCOPADO com sed ao topo do arquivo (sed -n '1,10p'), nunca grep global, senao a historia datada da falso-positivo."
+}
