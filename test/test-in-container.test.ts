@@ -1,7 +1,9 @@
 // test/test-in-container.test.ts
 //
 // Unit tests for scripts/test-in-container.ts (US-001, CAM-186 PRD; waiver +
-// exact skip-count assertion coverage added in US-006, CAM-424 PRD).
+// exact skip-count assertion coverage added in US-006, CAM-424 PRD; the
+// checkSuiteRan positive-evidence guard on the container lane added in
+// US-R2-002, review round 2 finding on this file).
 //
 // All tests drive parseBunOutput and runInContainerTests with injected fakes;
 // no real Docker daemon is touched.  The parse logic is tested against inline
@@ -10,8 +12,10 @@
 // Coverage:
 //   parseBunOutput: pass/fail/skip counts, failingTests extraction.
 //   runInContainerTests: exit code 0 only when fail count is 0 AND the
-//     observed skip count exactly matches the injected container-lane
-//     expectation; non-zero on either a failure or a skip-count mismatch;
+//     checkSuiteRan positive-evidence guard passes AND the observed skip
+//     count exactly matches the injected container-lane expectation;
+//     non-zero on a failure, a crashed/partial run (no completion tally or
+//     pass count below the recorded passFloor), or a skip-count mismatch;
 //     ensureFn call count; container name threading.
 //   makeDefaultExecFn (via a spawnSync-observing integration-style check on
 //     the real production fn is not exercised here -- covered instead by
@@ -28,12 +32,20 @@ import {
 } from '../scripts/test-in-container.ts';
 import type { LaneExpectationsFile } from '../scripts/check-skip-ratchet.ts';
 
-/** Minimal fake test/helpers/lane-expectations.json reader for a given container expectedSkips. */
-function fakeExpectations(containerExpectedSkips: number): () => LaneExpectationsFile {
+/**
+ * Minimal fake test/helpers/lane-expectations.json reader for a given
+ * container expectedSkips and (optional) passFloor. passFloor defaults to 0
+ * so existing skip-comparison-focused tests are unaffected by the
+ * checkSuiteRan positive-evidence guard.
+ */
+function fakeExpectations(
+	containerExpectedSkips: number,
+	containerPassFloor = 0,
+): () => LaneExpectationsFile {
 	return () => ({
 		lanes: {
 			host: { expectedSkips: 0, passFloor: 0 },
-			container: { expectedSkips: containerExpectedSkips, passFloor: 0 },
+			container: { expectedSkips: containerExpectedSkips, passFloor: containerPassFloor },
 		},
 		triage: { hardDependency: 0, legitimateEnvironmental: 0 },
 	});
@@ -64,6 +76,7 @@ const FIXTURE_ALL_PASS = `bun test v1.x.x (abc123)
  5 pass
  0 fail
  2 skip
+Ran 7 tests across 2 files. [0.10s]
 `;
 
 /**
@@ -94,6 +107,7 @@ const FIXTURE_WITH_FAILURES = `bun test v1.x.x (abc123)
  3 pass
  2 fail
  1 skip
+Ran 6 tests across 3 files. [0.10s]
 `;
 
 /** Only skips, zero failures: 0 pass, 0 fail, 3 skip. */
@@ -107,10 +121,19 @@ const FIXTURE_ONLY_SKIPS = `bun test v1.x.x (abc123)
  0 pass
  0 fail
  3 skip
+Ran 3 tests across 1 files. [0.10s]
 `;
 
 /** Empty output (no bun test ran). */
 const FIXTURE_EMPTY = '';
+
+/**
+ * Crashed run: no completion tally, no summary lines at all -- the exact
+ * shape the reviewer used to demonstrate the finding (US-R2-002). Container
+ * `expectedSkips` can be 0 and this must still fail the run: checkSuiteRan
+ * must reject it before the skip-count comparison is ever reached.
+ */
+const FIXTURE_CRASHED = 'error: Cannot find module "x"\nbun: command crashed\n';
 
 /** Single failing test, no duration suffix -- plain '(fail) <name>' format. */
 const FIXTURE_NO_DURATION = `bun test v1.x.x (abc123)
@@ -318,6 +341,44 @@ describe('runInContainerTests exit code', () => {
 			readExpectations: fakeExpectations(1),
 		});
 		expect(exitCode).toBe(1);
+	});
+
+	// -------------------------------------------------------------------------
+	// checkSuiteRan positive-evidence guard (US-R2-002, review round 2 finding)
+	// -------------------------------------------------------------------------
+
+	test('exits 1 on a crashed run with no completion tally, even though expectedSkips is 0', () => {
+		const { exitCode, skipCheck } = runInContainerTests({
+			ensureFn: () => {},
+			execFn: () => ({ output: FIXTURE_CRASHED, exitCode: 1 }),
+			readExpectations: fakeExpectations(0),
+		});
+		expect(exitCode).toBe(1);
+		expect(skipCheck.ok).toBe(false);
+		expect(skipCheck.message).toContain('did not report a completion tally');
+	});
+
+	test('exits 1 when the completion tally is present but observed pass is below the container passFloor', () => {
+		// FIXTURE_ONLY_SKIPS has 0 pass and a matching 3-skip count; a passFloor
+		// above the observed pass count must still fail the run even though the
+		// skip count itself would otherwise match.
+		const { exitCode, skipCheck } = runInContainerTests({
+			ensureFn: () => {},
+			execFn: () => ({ output: FIXTURE_ONLY_SKIPS, exitCode: 0 }),
+			readExpectations: fakeExpectations(3, 5),
+		});
+		expect(exitCode).toBe(1);
+		expect(skipCheck.ok).toBe(false);
+		expect(skipCheck.message).toContain('below recorded');
+	});
+
+	test('exits 0 when the completion tally is present and observed pass meets the container passFloor', () => {
+		const { exitCode } = runInContainerTests({
+			ensureFn: () => {},
+			execFn: () => ({ output: FIXTURE_ALL_PASS, exitCode: 0 }),
+			readExpectations: fakeExpectations(2, 5), // FIXTURE_ALL_PASS has 5 pass
+		});
+		expect(exitCode).toBe(0);
 	});
 });
 

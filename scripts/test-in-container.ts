@@ -18,6 +18,10 @@
 // left to silently skip.
 //
 // Exit code: non-zero if there are test FAILURES (fail count > 0), OR the
+// container lane fails the checkSuiteRan positive-evidence guard (US-R2-002,
+// review round 2 finding on this file: a crashed/zero-test/garbage run has no
+// ' N skip' line either and was previously indistinguishable from a genuine
+// clean 0-skip run whenever container.expectedSkips happened to be 0), OR the
 // observed skip count does not EXACTLY match the container lane's recorded
 // expectation in test/helpers/lane-expectations.json. Skipping is a visible,
 // counted act, not a silently-green outcome -- any drift (more or fewer
@@ -38,8 +42,8 @@ import process from 'node:process';
 
 import { makeProductionEnsureContainerFn } from '../src/supervisor/ensure-container.ts';
 import { DEFAULT_CONTAINER_NAME } from '../src/supervisor/worker-container.ts';
-import { checkSkipCount, EXPECTATIONS_PATH } from './check-skip-ratchet.ts';
-import type { LaneExpectationsFile } from './check-skip-ratchet.ts';
+import { checkSkipCount, checkSuiteRan, EXPECTATIONS_PATH } from './check-skip-ratchet.ts';
+import type { LaneExpectationsFile, SkipRatchetResult } from './check-skip-ratchet.ts';
 import { WAIVER_ENV_VAR } from '../test/helpers/test-deps.ts';
 import type { DepName } from '../test/helpers/test-deps.ts';
 
@@ -182,19 +186,27 @@ export function parseBunOutput(output: string): BunTestSummary {
 /**
  * Ensure the cam-worker container is running and execute `bun test` inside it.
  *
- * Returns the parsed Bun summary, the container lane's skip-count ratchet
- * check (against test/helpers/lane-expectations.json), and the exit code the
- * caller should use: exitCode 1 when fail > 0 OR the observed skip count
- * does not exactly match the recorded expectation; exitCode 0 only when both
- * hold.
+ * Returns the parsed Bun summary, the container lane's ratchet check result
+ * (against test/helpers/lane-expectations.json), and the exit code the
+ * caller should use: exitCode 1 when fail > 0, OR the container lane fails
+ * the checkSuiteRan positive-evidence guard (no completion tally, or an
+ * observed pass count below the lane's recorded passFloor), OR the observed
+ * skip count does not exactly match the recorded expectation; exitCode 0
+ * only when all hold.
  *
- * The returned exitCode is derived from the parsed fail count and the skip
+ * checkSuiteRan runs BEFORE the skip-count comparison, mirroring
+ * checkSkipRatchet's host-lane sequencing in check-skip-ratchet.ts: without
+ * it, a crashed/zero-test/garbage run (no ' N skip' line, no completion
+ * tally) is indistinguishable from a genuine clean 0-skip run whenever the
+ * container lane's recorded expectedSkips happens to be 0.
+ *
+ * The returned exitCode is derived from the parsed fail count and the
  * ratchet check, not from the raw docker exec exit code, because `bun test`
  * may exit non-zero on skips alone.
  */
 export function runInContainerTests(options: RunInContainerTestsOptions = {}): {
 	summary: BunTestSummary;
-	skipCheck: ReturnType<typeof checkSkipCount>;
+	skipCheck: SkipRatchetResult;
 	exitCode: number;
 } {
 	const containerName = options.containerName ?? DEFAULT_CONTAINER_NAME;
@@ -218,8 +230,14 @@ export function runInContainerTests(options: RunInContainerTestsOptions = {}): {
 
 	const readExpectations: ReadExpectationsFn =
 		options.readExpectations ?? makeDefaultReadExpectations(cwd);
-	const expectedSkips = readExpectations().lanes.container.expectedSkips;
-	const skipCheck = checkSkipCount(summary.skip, expectedSkips, 'container');
+	const containerExpectation = readExpectations().lanes.container;
+
+	// Positive-evidence guard first (US-R2-002): a crashed/zero-test/garbage
+	// run must never be silently treated as a clean 0-skip run just because
+	// it also has no ' N skip' line.
+	const suiteRanResult = checkSuiteRan(output, containerExpectation.passFloor, 'container');
+	const skipCheck: SkipRatchetResult =
+		suiteRanResult ?? checkSkipCount(summary.skip, containerExpectation.expectedSkips, 'container');
 
 	// Re-derive exit code from the parsed fail count AND the skip ratchet
 	// check (not from the raw docker exit code).
