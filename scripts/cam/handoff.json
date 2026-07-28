@@ -1,31 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Accept and require oracle forms at filing time on the derived and fast-track paths"
+    "id": "US-003",
+    "title": "Update the /cam-issue filing contract to author oracle forms into the payload"
   },
   "branchName": "cam/issue-449",
   "timestamp": "2026-07-28T00:00:00Z",
-  "createdFiles": [
-    "test/integration/issue-file-spec-channel.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
-    "index.ts",
-    "src/commands/issue-file.ts",
-    "src/issues/alloc.ts",
-    "test/issue-file.test.ts",
-    "test/issues/alloc.test.ts",
+    ".claude/commands/cam-issue.md",
+    "templates/commands/cam-issue.md",
+    "src/vendor/_generated.ts",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "createLocalIssueOnMain (src/commands/issue-file.ts) now runs a new validateSpecGuardrail (calling the EXISTING validateSpec from src/issues/spec.ts) whenever specSource is present (both --fast-track and --derived-from), before applyFastTrackGuardrails. A missing or invalid spec returns { ok: false, reason: 'guardrail-failed' } before any mutation, same as the other 4 guardrails. spec threads verbatim: index.ts's FileLocalStdinPayload.spec -> _buildCreateIssueOpts -> CreateLocalIssueOnMainOptions.spec -> writeIssueFile's WriteIssueFileOptions.spec -> buildIssueEntry, which now persists it into the written IssueEntry (src/issues/alloc.ts) instead of omitting the key. This closes the gap US-001 (isPlannable's acceptanceCriteria gate, ADR-0051) opened: a freshly-filed --derived-from/--fast-track issue is now immediately isPlannable, with no separate cam spec step required. cam suggestions promote is UNCHANGED (writeIssueFile with no specSource -> stage:idea, guardrail never runs); do not special-case it in production code, only pin it with tests. Any future caller of createLocalIssueOnMain/writeIssueFile with specSource set MUST also supply a valid spec ({ acceptanceCriteria: string[] (non-empty), scope: string (non-empty), gotchas: string[], domainTerms: string[] }) or filing will be refused.",
+  "nextStoryContext": "The /cam-issue create contract (.claude/commands/cam-issue.md `local` -> `create` subsection, mirrored byte-identically to templates/commands/cam-issue.md and re-embedded into src/vendor/_generated.ts) now documents the derived/fast-track filing payload: step 4 requires a `spec` object ({ acceptanceCriteria, scope, gotchas, domainTerms }) whenever --derived-from/--fast-track is used, instructs the filer to write the LITERAL oracle text per acceptance criterion and sweep it RED against main before filing (not merely include a criteria key), shows a single-quoted heredoc example (CAM-106 safe-quoting), and documents the CAM_ISSUE_RESULT=ERROR reason=guardrail-failed refusal contract (matches src/commands/issue-file.ts's real `guardrail-failed` reason string, verified by grep). This closes the gap US-002 opened: the filing-time spec channel now has its sole documented producer (.claude/commands/cam-issue.md) actually instructing the filer to populate it. No production TS code changed in this story -- doc-only plus the mechanical embed-vendor regen. validate-agents-md's scan surface (CLAUDE.md, scripts/cam/CLAUDE.md, .claude/agents/*.md) does NOT include .claude/commands/*.md, so the 'doc-as-code path check' AC9 language in the story referred to the check:all spine passing overall, not a scan of cam-issue.md specifically -- confirmed by reading scripts/validate-agents-md.ts's SCAN_FILES/AGENTS_GLOB constants.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
-      "lib": "bun (Bun.spawnSync)",
-      "url": "https://bun.com/docs/api/spawn",
-      "fetchedAt": "2026-07-28T00:00:00Z",
-      "status": "aligned",
-      "summary": "The fetched docs page claims Bun.spawnSync has NO stdin option ('use Bun.spawn to incrementally write to the subprocess's input stream'), which conflicts with node_modules/bun-types/bun.d.ts (SpawnSyncOptions extends BaseOptions, which declares stdin?: In, In extends Writable including ArrayBufferView). Per the 'comment/doc does not prove runtime behavior' lesson, verified empirically instead of trusting either source: `bun -e` on the installed Bun 1.3.13 ran `Bun.spawnSync(['cat'], { stdin: new TextEncoder().encode('hello-stdin-body\\n'), stdout: 'pipe' })` and it correctly echoed the piped input (exitCode 0, stdout matched). The new integration test (test/integration/issue-file-spec-channel.test.ts) also exercises this same stdin option against the real `bun index.ts issue --file-local` subprocess and passed. Implementation is therefore aligned with the REAL, current Bun 1.3.13 API; the fetched docs page is stale/inaccurate for this version, not the code."
+      "lib": "none",
+      "status": "no_external_lib_touched"
     }
   ]
 }
