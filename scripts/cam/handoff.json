@@ -1,21 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-002",
-    "title": "Review round 1 fix 002: address reviewer finding"
+    "id": "US-R1-003",
+    "title": "Review round 1 fix 003: address reviewer finding"
   },
   "branchName": "cam/issue-458",
-  "timestamp": "2026-07-28T21:17:00Z",
+  "timestamp": "2026-07-28T21:45:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "README.md",
-    "src/config/models.ts",
-    "src/config/toml.ts",
-    "scripts/file-size-budget.json"
+    "test/init.test.ts",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R1-002 fixed the reviewer's stale-cross-reference finding: after this branch's US-001/US-002 (deletion of src/config/permission-mode.ts and its unread permission_mode key), `~/.config/cam/config.toml` has zero readers and zero writers anywhere in the codebase, but 3 surfaces still described it as a live per-user config surface (mirror image of the dead permission_mode knob the parent PRD set out to remove). Fixed all 3, mechanically, without touching anything else: (1) README.md:258's source-layout table row for `src/config/` now reads 'scripts/cam/project.toml reader/writer + model/effort/backend resolution' instead of naming `~/.config/cam/config.toml`. (2) src/config/models.ts's header comment (previously reworded in this diff to say project.toml and the per-user surface 'target a separate, per-user config surface', asserting a surface that no longer exists) now states plainly there is no per-user config surface and that `~/.config/cam/` holds only `retry.toml` (written/read by src/retry/config.ts, untouched by this module). (3) src/config/toml.ts's module header and `loadConfig`'s null-safe-contract docstring no longer call it 'the ~/.config/cam/config.toml reader/writer' or justify null-safety via a fresh-machine-no-~/.config/cam/ scenario; both now describe it as generic-over-path with every current caller targeting scripts/cam/project.toml, and the docstring justifies null-safety via 'fresh checkout, no scripts/cam/project.toml yet' instead. The toml.ts comment edit grew the file from 209 to 211 lines (measured via content.split('\\n').length, matching the file-size gate's counting method, not wc -l); scripts/file-size-budget.json's per-file ceiling for src/config/toml.ts was raised 209->211 and a new dated note naming this story (US-R1-002, CAM-458) was prepended to the top-level _ref field, preserving all prior entries. Verified via grep across src/, README.md, docs/ that no remaining reference to `~/.config/cam/config.toml` or `CAM_CONFIG_PATH` exists anywhere outside src/retry/config.ts's retry.toml (a genuinely separate, still-live per-user surface that this finding never targeted). Note for the next story: when I started this iteration, README.md/src/config/models.ts/src/config/toml.ts and the file-size-budget.json ceiling bump were already present as uncommitted changes in the working tree (git status showed them modified/staged at session start) — the fix content and the _ref prepend text already matched this story's scope exactly, so I verified correctness (typecheck, full bun test, full bun run check:all, all green) and committed as-is rather than re-doing the work; nothing further needed reverting or redoing. scripts/cam/prd.json remains untouched/unstaged per the standing rule that the implementer never edits prd.json's passes field.",
+  "nextStoryContext": "US-R1-003 fixed the reviewer's finding at test/init.test.ts:81: the 3 tests were bound to a `CAM_CONFIG_PATH` env-var seam that US-001 (this same PRD) had already made dead in production code (src/commands/init.ts reads no such variable and has no config-write path at all), so the tests could never go red no matter what init actually did. The mechanical fix note suggested driving init via `HOME` pointed at a tmpdir instead. I attempted exactly that first, then verified against real runtime behavior (not just the note's prose, per the global 'verify comments against runtime' lesson) and discovered Bun 1.3.13's `node:os` `homedir()` does NOT dynamically re-read `process.env.HOME` after process start, contrary to both Node's and Bun's own documented behavior (confirmed via WebFetch against https://bun.com/reference/node/os/homedir, which claims $HOME-based resolution) -- mutating `process.env.HOME` mid-test has zero effect on subsequent `homedir()` calls in the same process. So a HOME-redirect design would have silently reproduced the exact same defect (test bound to a seam nothing reacts to), just with a different env var. Instead I collapsed the 3 duplicate tests into 1 that snapshots the REAL (unfakeable) `~/.config/cam` directory listing before calling `runInit()` twice and asserts it is unchanged after -- this is safe on both a clean CI runner (both snapshots null) and this repo's own dev machine (which has a stale `~/.config/cam/config.toml` left over from pre-US-001 `cam init` runs, plus a legitimately-live `retry.toml` from src/retry/config.ts -- both preserved unchanged by the assertion, no false positive). This is a live, falsifiable regression guard: a future code path that writes ANY new file under `~/.config/cam/`, including at the exact old default path, would flip the snapshot diff and fail the test. Documented the Bun `homedir()` env-mutation quirk as a new scripts/cam/patterns.md bullet (option (a) child-process-with-spawn-time-env, option (b) real-value-before/after-diff -- this story used (b)) since it's a genuinely reusable gotcha for any future test needing to redirect a Bun `node:os` path function. No production src/ files touched; scope was strictly test/init.test.ts per the finding. All quality gates (typecheck, full `bun test` 5760/5760, full `bun run check:all` spine including coverage/dead-code/dup/lint/file-size/ci-parity/skip-ratchet) green.",
   "officialDocsValidated": [
-    { "lib": "none", "status": "no_external_lib_touched" }
+    {
+      "lib": "node:os (Bun runtime)",
+      "url": "https://bun.com/reference/node/os/homedir",
+      "fetchedAt": "2026-07-28T21:40:00Z",
+      "status": "corrected",
+      "summary": "Docs claim homedir() reads $HOME on POSIX per-call, matching Node's documented behavior. Empirically verified on Bun 1.3.13 that mutating process.env.HOME mid-process has NO effect on subsequent homedir() calls (the value is resolved once, before user JS runs). Test design was corrected to bind to the real, unfakeable homedir() result via a before/after directory snapshot instead of relying on an env-var redirect that doesn't actually work on this runtime."
+    }
   ],
   "appliedPatternIds": []
 }
