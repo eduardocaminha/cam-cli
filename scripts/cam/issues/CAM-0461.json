@@ -1,0 +1,10 @@
+{
+  "id": "CAM-461",
+  "title": "Declaracao de telemetria e privacidade (must-fix 4 do lancamento): nenhuma existe hoje",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-28T17:44:44.558Z",
+  "updatedAt": "2026-07-28T17:44:44.558Z",
+  "description": "Must-fix 4 do docs/launch-readiness.md, nunca filado desde o CAM-330. Medido em 28/07 na main: PRIVACY.md nao existe e o README nao tem secao de privacidade nem de telemetria (0 headings). O fato de fundo e FAVORAVEL (nao ha telemetria de primeira parte), o que torna a ausencia da declaracao pura perda: o produto ja e publico, roda com bypassPermissions no host, e nao diz a ninguem para onde os dados vao. Precisa enumerar os fluxos de terceiros (Anthropic, GitHub, opcionalmente Linear e Resend) e a inconsistencia de trafego nao-essencial entre host e container. Oraculos sugeridos, ambos varridos VERMELHO na main em 28/07: existencia de PRIVACY.md (0), e heading de privacy/telemetry no README (0). Ver tambem docs/launch-readiness.md secao 'Telemetry / privacy stance: gap'."
+}
