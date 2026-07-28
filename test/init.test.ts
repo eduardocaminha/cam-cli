@@ -1,7 +1,8 @@
 // test/init.test.ts
 //
-// End-to-end test for `cam init` — exercises `runInit()` against the real
-// `~/.config/cam` directory, snapshotted before/after rather than redirected.
+// End-to-end test for `cam init` — exercises `runInit()` against an isolated
+// `~/.config/cam` directory, redirected via a genuinely separate child
+// process spawned with `HOME` set at spawn time.
 //
 // `cam init` no longer writes `~/.config/cam/config.toml` (US-001, CAM-458):
 // its one seeded key was never read by any spawn path, and no code path in
@@ -10,25 +11,32 @@
 // and asserts on that redirected path is bound to a seam nothing in
 // production touches and can never go red.
 //
-// The obvious replacement seam, redirecting `HOME` for the test process and
-// asserting against `join(homedir(), '.config', 'cam', ...)`, does not work
-// on this runtime: verified empirically (not from docs) that Bun's
-// `node:os` `homedir()` does NOT re-read `process.env.HOME` after process
-// start, unlike the documented Node.js behavior — mutating `process.env.HOME`
-// mid-test has no effect on subsequent `homedir()` calls. See
-// `scripts/cam/patterns.md` for the write-up.
+// The obvious in-process replacement seam, mutating `process.env.HOME` for
+// the test process and asserting against `join(homedir(), '.config', 'cam',
+// ...)`, does not work on this runtime: verified empirically (not from docs)
+// that Bun's `node:os` `homedir()` does NOT re-read `process.env.HOME` after
+// process start, unlike the documented Node.js behavior — mutating
+// `process.env.HOME` mid-test has no effect on subsequent `homedir()` calls.
+// A first cut of this test (US-001, CAM-458) worked around that by
+// snapshotting the REAL, unredirected `~/.config/cam` before/after and
+// asserting no change — the reviewer (round 2) correctly flagged that as
+// environment-dependent: on any machine that already has
+// `~/.config/cam/config.toml` (this repo's own dev machine included, from
+// pre-US-001 `cam init` runs), a name-only directory listing is identical
+// before and after even if a future regression *overwrites* that exact file,
+// so the guard could go green on a real regression. See
+// `scripts/cam/patterns.md` for the empirical write-up of both findings.
 //
-// So this test binds to the one seam that IS real and unfakeable: the
-// process's actual `homedir()` (whatever it resolves to, dev machine or CI
-// runner) and its actual `.config/cam/` directory contents. It snapshots
-// that directory's entries before calling `runInit()`, runs it (twice, to
-// also cover repeated-run idempotency), and asserts the entries are
-// unchanged — this goes red the moment any future code path writes a new
-// file under `~/.config/cam/`, including at the exact default path
-// `join(homedir(), '.config', 'cam', 'config.toml')`. It is safe to run on a
-// dev machine that already has stale files there (this repo's own dev
-// machine does, from `cam init` runs that predate US-001) because it only
-// asserts *no change*, never a fixed empty state.
+// This test now takes the genuinely deterministic seam instead: `HOME` set
+// in the env of a freshly spawned `bun` child process (`process.env.HOME`
+// mutated *before* the Bun binary starts DOES redirect `homedir()`,
+// confirmed empirically) running `test/fixtures/init-home-redirect-probe.ts`
+// against a fresh, empty temp dir. That temp dir is guaranteed to have no
+// `.config/cam` before the probe runs, on every machine (dev box or CI
+// runner) — so the assertion is a fixed `null` before AND after, not a
+// same-as-before diff, and it goes red the moment any future code path
+// writes anything under the (isolated) config dir, including at the exact
+// default path `join(homedir(), '.config', 'cam', 'config.toml')`.
 //
 // This test does NOT assert on the runInit() exit code because the exit
 // code couples to whether `claude` is on PATH (the claude-presence check
@@ -37,49 +45,42 @@
 //   env PATH="/usr/bin:/bin:$(dirname "$(command -v bun)")" bun test test/init.test.ts
 // which must pass without claude on PATH.
 
-import { describe, expect, test } from 'bun:test';
-import { existsSync, readdirSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { runInit, type SpawnFn } from '../src/commands/init.ts';
-
-// Deterministic stub for the three real subprocess spawns runInit's linear
-// path makes (CAM-205): `command -v claude` via /bin/sh, `claude --version`,
-// and the vendored `bun <smoke-script>` run. Exit codes are deliberately not
-// asserted anywhere in this file (see header above), so any stable shape is
-// fine — we simulate "claude not found" (mirrors CI runners with no claude
-// binary) and a skipped vendored smoke, matching the existing PATH-coupling
-// rationale without ever touching a real process.
-const stubSpawnFn: SpawnFn = (cmd, args) => {
-	if (cmd === '/bin/sh' && args[0] === '-c' && args[1] === 'command -v claude') {
-		return { status: 1, stdout: '', stderr: '' };
-	}
-	if (cmd === 'claude' && args[0] === '--version') {
-		return { status: 0, stdout: 'Claude Code 2.5.0 (Sonnet 4.6)\n', stderr: '' };
-	}
-	if (cmd === 'bun') {
-		return { status: 2, stdout: '[smoke] skipping — stubbed in test\n', stderr: '' };
-	}
-	return { status: 1, stdout: '', stderr: `unexpected stub spawn: ${cmd} ${args.join(' ')}` };
-};
-
-/** Sorted directory listing, or `null` when the directory doesn't exist. */
-function snapshotDir(dir: string): string[] | null {
-	if (!existsSync(dir)) return null;
-	return [...readdirSync(dir)].sort();
-}
+const probePath = join(import.meta.dir, 'fixtures', 'init-home-redirect-probe.ts');
 
 describe('runInit', () => {
-	test('never creates or removes anything under ~/.config/cam, across repeated runs', async () => {
-		const configDir = join(homedir(), '.config', 'cam');
-		const before = snapshotDir(configDir);
+	let fakeHome: string | undefined;
 
-		// Run twice; exit codes are NOT asserted (PATH-coupling concern, see file header).
-		await runInit({ spawnFn: stubSpawnFn });
-		await runInit({ spawnFn: stubSpawnFn });
+	afterEach(() => {
+		if (fakeHome) rmSync(fakeHome, { recursive: true, force: true });
+		fakeHome = undefined;
+	});
 
-		const after = snapshotDir(configDir);
-		expect(after).toEqual(before);
+	test('never creates or removes anything under an isolated ~/.config/cam, across repeated runs', () => {
+		fakeHome = mkdtempSync(join(tmpdir(), 'cam-init-home-'));
+
+		const result = Bun.spawnSync(['bun', probePath], {
+			env: { ...process.env, HOME: fakeHome },
+			stdout: 'pipe',
+			stderr: 'pipe',
+		});
+
+		expect(result.exitCode).toBe(0);
+		// `runInit()`'s linear path prints its own check-summary lines to
+		// stdout ahead of the probe's JSON; the probe always writes its JSON
+		// as the last line (see test/fixtures/init-home-redirect-probe.ts).
+		const lines = result.stdout.toString('utf8').trim().split('\n');
+		const jsonLine = lines[lines.length - 1] ?? '';
+		const parsed = JSON.parse(jsonLine) as { before: string[] | null; after: string[] | null };
+
+		// The temp HOME starts empty, so `~/.config/cam` must be absent both
+		// before and after — a fixed, environment-independent expectation that
+		// goes red the instant runInit() writes anything under it.
+		expect(parsed.before).toBeNull();
+		expect(parsed.after).toBeNull();
 	});
 });

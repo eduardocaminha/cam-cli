@@ -1,24 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-003",
-    "title": "Review round 1 fix 003: address reviewer finding"
+    "id": "US-R2-001",
+    "title": "Review round 2 fix 001: address reviewer finding"
   },
   "branchName": "cam/issue-458",
-  "timestamp": "2026-07-28T21:45:00Z",
-  "createdFiles": [],
+  "timestamp": "2026-07-28T22:20:00Z",
+  "createdFiles": [
+    "test/fixtures/init-home-redirect-probe.ts"
+  ],
   "modifiedFiles": [
-    "test/init.test.ts",
-    "scripts/cam/patterns.md"
+    "test/init.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R1-003 fixed the reviewer's finding at test/init.test.ts:81: the 3 tests were bound to a `CAM_CONFIG_PATH` env-var seam that US-001 (this same PRD) had already made dead in production code (src/commands/init.ts reads no such variable and has no config-write path at all), so the tests could never go red no matter what init actually did. The mechanical fix note suggested driving init via `HOME` pointed at a tmpdir instead. I attempted exactly that first, then verified against real runtime behavior (not just the note's prose, per the global 'verify comments against runtime' lesson) and discovered Bun 1.3.13's `node:os` `homedir()` does NOT dynamically re-read `process.env.HOME` after process start, contrary to both Node's and Bun's own documented behavior (confirmed via WebFetch against https://bun.com/reference/node/os/homedir, which claims $HOME-based resolution) -- mutating `process.env.HOME` mid-test has zero effect on subsequent `homedir()` calls in the same process. So a HOME-redirect design would have silently reproduced the exact same defect (test bound to a seam nothing reacts to), just with a different env var. Instead I collapsed the 3 duplicate tests into 1 that snapshots the REAL (unfakeable) `~/.config/cam` directory listing before calling `runInit()` twice and asserts it is unchanged after -- this is safe on both a clean CI runner (both snapshots null) and this repo's own dev machine (which has a stale `~/.config/cam/config.toml` left over from pre-US-001 `cam init` runs, plus a legitimately-live `retry.toml` from src/retry/config.ts -- both preserved unchanged by the assertion, no false positive). This is a live, falsifiable regression guard: a future code path that writes ANY new file under `~/.config/cam/`, including at the exact old default path, would flip the snapshot diff and fail the test. Documented the Bun `homedir()` env-mutation quirk as a new scripts/cam/patterns.md bullet (option (a) child-process-with-spawn-time-env, option (b) real-value-before/after-diff -- this story used (b)) since it's a genuinely reusable gotcha for any future test needing to redirect a Bun `node:os` path function. No production src/ files touched; scope was strictly test/init.test.ts per the finding. All quality gates (typecheck, full `bun test` 5760/5760, full `bun run check:all` spine including coverage/dead-code/dup/lint/file-size/ci-parity/skip-ratchet) green.",
+  "nextStoryContext": "Round 2 reviewer finding at test/init.test.ts:74 (SECTION 5b of scripts/cam/review-artifact.txt): US-R1-003's name-only directory-listing snapshot (snapshotDir returning [...readdirSync(dir)].sort()) could not detect a regression that OVERWRITES the pre-existing ~/.config/cam/config.toml at the exact default path, because the listing is identical before and after (reproduced by the reviewer: before=[\"config.toml\"], after=[\"config.toml\"] => MISSED). This machine has exactly that stale file, so the guard's own header-comment claim ('goes red the moment any future code path writes a new file... including at the exact default path') was false on this repo's dev machine. Took the reviewer-identified stronger fix (patterns.md 'homedir() env-mutation' bullet option (a), not the cheaper stat/mtime mechanical alternative, per the no-shortcuts-on-effort-grounds instruction): test/init.test.ts now spawns a genuinely separate `bun` child process (Bun.spawnSync) with `HOME` set in the spawn-time env, pointed at a freshly mkdtempSync'd empty temp dir. That directory is guaranteed to have no `.config/cam` before OR after a non-regressing runInit(), on every machine (dev box or CI runner alike) -- so the assertion is a FIXED `null`/`null`, not a same-as-before diff, and it cannot be blind to an overwrite-at-default-path regression the way the name-only same-machine snapshot was. New fixture file test/fixtures/init-home-redirect-probe.ts contains the actual runInit()-driving logic (imported and run inside the child process, so it observes homedir() as resolved by the redirected HOME) and prints `{before, after}` as its last stdout line, which the parent test parses (skipping runInit's own linear print output ahead of it). Verified the guard is now genuinely falsifiable by hand-simulating the exact regression this story is about (temporarily adding a config.toml write inside runInitLinear, confirming the test goes red with `after: [\"config.toml\"]`, then reverting via git checkout -- src/commands/init.ts) BEFORE trusting it green. No production src/ files touched; scope was strictly test/init.test.ts + the new fixture, per the finding. All quality gates green: typecheck 0 errors, full `bun test` 5760/5760 pass, full `bun run check:all` spine (coverage/dead-code/dup/lint/file-size/ci-parity/skip-ratchet/agents-md) all ok.",
   "officialDocsValidated": [
     {
-      "lib": "node:os (Bun runtime)",
-      "url": "https://bun.com/reference/node/os/homedir",
-      "fetchedAt": "2026-07-28T21:40:00Z",
-      "status": "corrected",
-      "summary": "Docs claim homedir() reads $HOME on POSIX per-call, matching Node's documented behavior. Empirically verified on Bun 1.3.13 that mutating process.env.HOME mid-process has NO effect on subsequent homedir() calls (the value is resolved once, before user JS runs). Test design was corrected to bind to the real, unfakeable homedir() result via a before/after directory snapshot instead of relying on an env-var redirect that doesn't actually work on this runtime."
+      "lib": "none",
+      "status": "no_external_lib_touched"
     }
   ],
   "appliedPatternIds": []
