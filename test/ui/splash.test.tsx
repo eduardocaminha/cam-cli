@@ -1,6 +1,6 @@
 // test/ui/splash.test.tsx
 //
-// US-001: uppercase "CAM" block wordmark + "Runtime" line + Fir Green brand
+// US-001: uppercase "CAM" block wordmark + "Gateship" line + Fir Green brand
 // accent in the splash panel. Renders the REAL Splash component via
 // ink-testing-library and inspects the frame (not header comments), per the
 // project invariant: never assert behavior from a comment.
@@ -16,12 +16,12 @@ import { installTerminalSizeMock } from '../helpers/mock-terminal-size.ts';
 installTerminalSizeMock();
 
 describe('Splash', () => {
-	test('renders the bordered panel, uppercase wordmark, Runtime line, tagline and version/url line', async () => {
+	test('renders the bordered panel, uppercase wordmark, Gateship line, tagline and version/url line', async () => {
 		const { lastFrame, unmount } = render(
 			createElement(Splash, { version: '9.9.9' }),
 		);
 
-		const frame = await waitForFrame(lastFrame, (f) => f.includes('Runtime'));
+		const frame = await waitForFrame(lastFrame, (f) => f.includes('Gateship'));
 
 		// Bordered panel (rounded border corners from Ink's `borderStyle="round"`).
 		expect(frame).toContain('╭');
@@ -32,8 +32,8 @@ describe('Splash', () => {
 		// Uppercase "CAM" block wordmark rows are present (block glyph rows).
 		expect(frame).toContain('█████');
 
-		// Styled "Runtime" line renders below the wordmark.
-		expect(frame).toContain('Runtime');
+		// Styled "Gateship" line renders below the wordmark.
+		expect(frame).toContain('Gateship');
 
 		// Tagline + version/url line still render.
 		expect(frame).toContain('Autonomous Claude Code loop');
