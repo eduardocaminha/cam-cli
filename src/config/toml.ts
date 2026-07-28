@@ -1,6 +1,10 @@
 // src/config/toml.ts
 //
-// Minimal TOML reader + writer for `~/.config/cam/config.toml`.
+// Minimal TOML reader + writer, generic over the config file path. Every
+// current caller targets `scripts/cam/project.toml` (project-scoped, not a
+// per-user `~/.config/cam/` surface); `~/.config/cam/retry.toml` is written
+// by `src/retry/config.ts` via its own inline `Bun.TOML.parse` call, not
+// through this module.
 //
 // Why a hand-rolled writer? Bun ships `Bun.TOML.parse` (verified against
 // https://bun.com/reference/bun/TOML/parse — current API is `parse(input: string): object`)
@@ -146,10 +150,10 @@ export function parseToml(text: string): TomlConfig {
  * `node:fs.readFileSync` rather than `Bun.file().text()` so the same code
  * works in tests under tmp-dirs without spinning up Bun's filesystem layer.
  *
- * The `null`-safe contract is important: `cam init` must work both on a
- * fresh machine (no `~/.config/cam/`) AND on a machine with prior config.
- * Returning `{}` for "missing file" means callers can mutate-and-save without
- * branching on existence.
+ * The `null`-safe contract is important: setup/config writers must work both
+ * on a fresh checkout (no `scripts/cam/project.toml` yet) AND on one with a
+ * prior config. Returning `{}` for "missing file" means callers can
+ * mutate-and-save without branching on existence.
  */
 export function loadConfig(path: string): TomlConfig {
 	if (!existsSync(path)) return {};

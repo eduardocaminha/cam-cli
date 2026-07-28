@@ -255,7 +255,7 @@ Source layout:
 index.ts              CLI dispatch
 src/commands/         one file per `cam <subcommand>`
 src/linear/           Linear GraphQL client
-src/config/           ~/.config/cam/config.toml + scripts/cam/project.toml
+src/config/           scripts/cam/project.toml reader/writer + model/effort/backend resolution
 templates/            shipped to projects by `cam init`
   agents/             subagent-orchestrator, planner, implementer, reviewer, auditor
   commands/           /cam-plan, /cam-next, /cam-review, /cam-ship, /cam-issue, /cam-prune
