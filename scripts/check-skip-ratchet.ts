@@ -25,6 +25,16 @@
 // reports a suite-did-not-run/suite-ran-partial failure instead of silently
 // falling through to a 0-skip match.
 //
+// Too-tight-floor guard (US-001, CAM-447 PRD): a `passFloor` recorded with
+// little or no headroom below the observed pass count is itself a defect --
+// the gate would go red on the very next test added anywhere in the suite,
+// forcing a re-record every few cycles. `checkSuiteRan` now also rejects a
+// POSITIVE `passFloor` (0 means "no floor declared" and is exempt) whose gap
+// to the observed pass count is below `MIN_PASS_FLOOR_HEADROOM`, with a
+// message naming the too-tight failure distinctly ('too tight', never the
+// crashed-run wording above) since the operator response is the opposite:
+// re-record the floor lower, not investigate a broken run.
+//
 // Lane selection: 'host' is the default. The container lane is selected via
 // the explicit CAM_TEST_LANE=container env var -- the same explicit-
 // declaration mechanism as CAM_TEST_WAIVERS (test/helpers/test-deps.ts),
@@ -85,6 +95,22 @@ export const LANE_ENV_VAR = 'CAM_TEST_LANE';
 
 /** Repo-relative path to the lane-expectations file. */
 export const EXPECTATIONS_PATH = 'test/helpers/lane-expectations.json';
+
+/**
+ * Minimum gap, in passing tests, a recorded `passFloor` must keep below the
+ * currently observed pass count (US-001, CAM-447 PRD).
+ *
+ * Anti-churn rationale: a suite only ever grows (adding tests only widens the
+ * gap between a fixed floor and the live count), so once a lane's floor is
+ * re-recorded with real headroom under this constant, the rule is satisfied
+ * for good -- it never needs re-tightening again on its own. The failure mode
+ * this guards against is the opposite: a floor recorded AT or just below the
+ * observed count (zero or near-zero headroom) turns green today and red on
+ * the very next test added anywhere in the suite, forcing an immediate
+ * re-record and restarting the churn. Pinning a required headroom means the
+ * rule fires (and is fixed) exactly once, rather than every few cycles.
+ */
+export const MIN_PASS_FLOOR_HEADROOM = 50;
 
 /**
  * Matches Bun's skip-summary line (e.g. ' 3 skip'). Bun omits this line
@@ -182,10 +208,16 @@ export function checkSkipCount(observedSkips: number, expectedSkips: number, lan
  * Verify `output` carries positive evidence the suite ran to completion,
  * before any skip-count comparison is trusted.
  *
- * Returns a failing `SkipRatchetResult` when either check fails:
+ * Returns a failing `SkipRatchetResult` when any check fails, in order:
  *   1. no 'Ran N tests across M files.' completion tally line, or
  *   2. an observed pass count below the lane's recorded `passFloor`
- *      (including the case where no pass line was parsed at all).
+ *      (including the case where no pass line was parsed at all), or
+ *   3. (applicability guard: only when `passFloor > 0`) an observed pass
+ *      count that clears the floor but by less than
+ *      `MIN_PASS_FLOOR_HEADROOM` -- the floor was re-recorded too tight and
+ *      will go red on the very next test added anywhere in the suite. A
+ *      recorded floor of 0 means "no floor declared" and is exempt from this
+ *      check (the below-floor comparison above is already vacuous at 0).
  * Returns `null` when the suite ran cleanly and the caller should proceed to
  * the skip-count comparison.
  */
@@ -209,6 +241,18 @@ export function checkSuiteRan(output: string, passFloor: number, lane: Lane): Sk
 				`${lane} lane: observed ${observedPass ?? 0} pass, below recorded ` +
 				`passFloor ${passFloor} (${EXPECTATIONS_PATH}); suite likely crashed ` +
 				`or ran only a subset. Update ${EXPECTATIONS_PATH} if this drop is intentional.`,
+		};
+	}
+
+	const headroom = observedPass - passFloor;
+	if (passFloor > 0 && headroom < MIN_PASS_FLOOR_HEADROOM) {
+		return {
+			ok: false,
+			message:
+				`${lane} lane: recorded passFloor ${passFloor} is too tight against ` +
+				`observed ${observedPass} pass (headroom ${headroom}, below the required ` +
+				`${MIN_PASS_FLOOR_HEADROOM}); re-record ${EXPECTATIONS_PATH} with a lower ` +
+				`floor that leaves real headroom, so adding tests doesn't retrigger this check.`,
 		};
 	}
 
