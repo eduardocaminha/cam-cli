@@ -1,0 +1,10 @@
+{
+  "id": "CAM-446",
+  "title": "orch-recycle-watch.test.ts non-determinism under CPU-restricted env -i run must be fixed at root, not licensed as an artifact",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-27T23:08:43.820Z",
+  "updatedAt": "2026-07-27T23:08:43.820Z",
+  "description": "During US-002 (CAM-424) verification of test/preflight-deps.test.ts, an env -i restricted-PATH bun test run (a literal PRD oracle, US-002 AC4) hit a failure in test/integration/orch-recycle-watch.test.ts, an e2e SIGTERM/respawn test with real subprocess timing unrelated to dependency preflight. The failure reproduced clean both standalone and on an immediate re-run at full-suite scope. patterns.md previously carried a doctrine carve-out (since removed in US-R1-001, CAM-433) treating a solitary timing-only failure under a resource-restricted run as an acceptable resource-contention artifact worth one re-run to confirm before concluding root cause. That carve-out is a no-flaky-evasion violation regardless of the failure characterization: non-determinism in a test is itself a defect. Root cause candidate: the test bounds five sequential waitForCondition polls (has-session default, pgrep-initial 5s, pgrep-watcher-scheduled 10s, session-marker-change 12s, pgrep-new 10s) inside a single 45s outer test timeout (test/integration/orch-recycle-watch.test.ts around lines 180-251); under CPU contention the cumulative real subprocess/tmux/pgrep latency across all five waits can exceed the 45s outer budget even when each individual wait is within its own timeout. Fix should either raise the outer test timeout to a value that provably covers the worst-case sum of the five inner budgets with margin, or make the test's own timeout budgets self-consistent (assert sum-of-inner <= outer via a computed constant) rather than independently authored magic numbers that can silently violate that invariant."
+}
