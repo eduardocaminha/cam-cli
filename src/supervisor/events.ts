@@ -494,10 +494,13 @@ export interface ContainerPreflightEventDetail {
  * BLOCK->re-plan loop exhausts MAX_REPLAN_ROUNDS without an APPROVE verdict.
  *   - issueId: the issue the re-plan loop was targeting.
  *   - roundsCompleted: how many re-plan rounds actually ran before giving up.
+ *   - exhaustedBudget: which of the two independent re-plan budgets (US-003,
+ *     CAM-448, ADR-0052) was exhausted -- 'oracle-lint' or 'auditor'.
  */
 export interface PlanEscalatedEventDetail {
 	issueId: string;
 	roundsCompleted: number;
+	exhaustedBudget: 'oracle-lint' | 'auditor';
 }
 
 /**

@@ -37,6 +37,7 @@ import {
 	type RunPlanPhaseWithReplanOptions,
 	type PlanEscalationWriterParams,
 	MAX_REPLAN_ROUNDS,
+	MAX_LINT_REPLAN_ROUNDS,
 } from '../../../src/supervisor/plan-runner.ts';
 import type { SpawnFn } from '../../../src/supervisor/loop.ts';
 import type { PlanVerdictReport } from '../../../src/supervisor/plan-verdict-report.ts';
@@ -345,6 +346,33 @@ describe('runPlanPhaseWithReplan', () => {
 		expect(auditorRespawns.length).toBeGreaterThanOrEqual(2);
 	});
 
+	// US-003 (CAM-448, ADR-0052 AC2): the lint budget is tracked independently
+	// and bounded on its own -- a run that blocks on oracle-lint every single
+	// round must still terminate (never spin unboundedly) once
+	// MAX_LINT_REPLAN_ROUNDS is spent, escalating with exhaustedBudget naming
+	// 'oracle-lint', and total planner spawns across the whole call stay
+	// bounded by the sum of the two independent budgets.
+	test('lint budget is independently bounded and escalates naming the oracle-lint budget', () => {
+		const { opts, calls, markerCalls } = makeReplanOpts([BLOCK_REPORT_ROUND1, BLOCK_REPORT_ROUND2], {
+			readPrdContentFn: () => BROKEN_PRD,
+		});
+		const result = runPlanPhaseWithReplan(opts);
+		expect(result.kind).toBe('plan-escalated');
+		expect(markerCalls[0]?.exhaustedBudget).toBe('oracle-lint');
+
+		const auditorRespawns = calls.filter(
+			(c) => c.args[2] === 'respawn-pane' && c.args.some((a) => a.includes('subagent-auditor')),
+		);
+		// Oracle-lint blocks BEFORE the auditor is ever spawned (US-002, CAM-310).
+		expect(auditorRespawns.length).toBe(0);
+
+		const plannerRespawns = calls.filter(
+			(c) => c.args[2] === 'respawn-pane' && c.args.some((a) => a.includes('subagent-planner')),
+		);
+		expect(plannerRespawns.length).toBeGreaterThan(0);
+		expect(plannerRespawns.length).toBeLessThanOrEqual(MAX_LINT_REPLAN_ROUNDS + MAX_REPLAN_ROUNDS);
+	});
+
 	// -------------------------------------------------------------------------
 	// Both rounds blocked: exhaustion -> plan-escalated (AC3)
 	// -------------------------------------------------------------------------
@@ -378,7 +406,23 @@ describe('runPlanPhaseWithReplan', () => {
 			summary: 'Round 2 plan still has issues',
 			findings: BLOCK_REPORT_ROUND2.findings,
 			roundsCompleted: MAX_REPLAN_ROUNDS,
+			exhaustedBudget: 'auditor',
 		});
+	});
+
+	// -------------------------------------------------------------------------
+	// US-003 (CAM-448, ADR-0052): the durable marker AND the emitted event
+	// name WHICH of the two independent budgets was exhausted, so an operator
+	// can tell a planner-cannot-write-oracles failure apart from an
+	// auditor-keeps-rejecting-the-design failure.
+	// -------------------------------------------------------------------------
+	test('escalation marker and event name the exhausted budget', () => {
+		const { opts, markerCalls, loggedEvents } = makeReplanOpts([BLOCK_REPORT_ROUND1, BLOCK_REPORT_ROUND2]);
+		const result = runPlanPhaseWithReplan(opts);
+		expect(result.kind).toBe('plan-escalated');
+		expect(markerCalls[0]?.exhaustedBudget).toBe('auditor');
+		const event = loggedEvents.find((e) => e.kind === 'plan-escalated');
+		expect(event?.detail).toMatchObject({ exhaustedBudget: 'auditor' });
 	});
 
 	// -------------------------------------------------------------------------
@@ -396,7 +440,11 @@ describe('runPlanPhaseWithReplan', () => {
 		const { opts, loggedEvents } = makeReplanOpts([BLOCK_REPORT_ROUND1, BLOCK_REPORT_ROUND2]);
 		runPlanPhaseWithReplan(opts);
 		const event = loggedEvents.find((e) => e.kind === 'plan-escalated');
-		expect(event?.detail).toEqual({ issueId: 'CAM-204', roundsCompleted: MAX_REPLAN_ROUNDS });
+		expect(event?.detail).toEqual({
+			issueId: 'CAM-204',
+			roundsCompleted: MAX_REPLAN_ROUNDS,
+			exhaustedBudget: 'auditor',
+		});
 	});
 
 	test('non-escalation terminal (audit-approved): no plan-escalated event logged', () => {

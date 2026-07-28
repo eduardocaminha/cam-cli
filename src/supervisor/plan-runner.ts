@@ -1612,6 +1612,7 @@ export function runPlanPhaseWithReplan(opts: RunPlanPhaseWithReplanOptions): Pla
 				summary: result.report.summary,
 				findings: result.report.findings,
 				roundsCompleted,
+				exhaustedBudget: result.origin,
 			});
 			// US-R1-001 (CAM-204 review fix): emit the structured 'plan-escalated'
 			// event UNCONDITIONALLY on this terminal (AC2). The durable marker above
@@ -1625,7 +1626,7 @@ export function runPlanPhaseWithReplan(opts: RunPlanPhaseWithReplanOptions): Pla
 				storyId: undefined,
 				uuid: 'plan-escalation',
 				kind: 'plan-escalated',
-				detail: { issueId: result.issue.id, roundsCompleted },
+				detail: { issueId: result.issue.id, roundsCompleted, exhaustedBudget: result.origin },
 			});
 			return {
 				kind: 'plan-escalated',

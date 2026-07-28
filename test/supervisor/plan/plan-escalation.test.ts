@@ -69,6 +69,25 @@ describe('plan-escalation marker: round-trip (US-002, CAM-204)', () => {
 		expect(readPlanEscalatedMarker(filePath)).toEqual(marker);
 	});
 
+	// US-003 (CAM-448): a marker written by an older binary, before
+	// exhaustedBudget existed, carries exactly the five original fields and
+	// must still round-trip instead of being rejected by the shape guard.
+	test('a five-field marker without exhaustedBudget still round-trips', () => {
+		const legacyMarker = {
+			issueId: 'CAM-204',
+			summary: 'Plan did not converge after 2 rounds.',
+			findings: [],
+			roundsCompleted: 2,
+			writtenAt: '2026-07-06T21:00:00Z',
+		};
+		writeFileSync(filePath, JSON.stringify(legacyMarker), 'utf8');
+
+		const read = readPlanEscalatedMarker(filePath);
+
+		expect(read).toEqual(legacyMarker);
+		expect(read?.exhaustedBudget).toBeUndefined();
+	});
+
 	test('readPlanEscalatedMarker returns null for an absent file', () => {
 		expect(readPlanEscalatedMarker(filePath)).toBeNull();
 	});

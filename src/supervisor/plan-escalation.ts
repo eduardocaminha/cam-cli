@@ -32,6 +32,15 @@ export const PLAN_ESCALATED_FILENAME = '.cam-plan-escalated.json';
  *   - summary: the auditor's final one-sentence BLOCK summary.
  *   - findings: the final round's structured findings (empty array allowed).
  *   - roundsCompleted: how many re-plan rounds actually ran before giving up.
+ *   - exhaustedBudget: which of the two independent re-plan budgets
+ *     (US-002, CAM-448, ADR-0052) was exhausted to produce this escalation --
+ *     'oracle-lint' when the last round's block came from the deterministic
+ *     oracle-lint checker, 'auditor' when it came from a real auditor BLOCK
+ *     verdict. Optional at the read boundary (US-003, CAM-448) even though
+ *     the writer always sets it: a marker written by a binary that predates
+ *     this field must still parse (backward compatibility), and existing
+ *     PlanEscalatedMarker literals elsewhere in the codebase must keep
+ *     compiling without adding it.
  *   - writtenAt: ISO 8601 timestamp the marker was written.
  */
 export interface PlanEscalatedMarker {
@@ -39,6 +48,7 @@ export interface PlanEscalatedMarker {
 	summary: string;
 	findings: PlanVerdictFinding[];
 	roundsCompleted: number;
+	exhaustedBudget?: 'oracle-lint' | 'auditor';
 	writtenAt: string;
 }
 
@@ -72,11 +82,19 @@ export function readPlanEscalatedMarker(filePath: string): PlanEscalatedMarker |
 		) {
 			return null;
 		}
+		// exhaustedBudget is optional at the read boundary (US-003, CAM-448): a
+		// marker written before this field existed still parses. When present,
+		// it must be one of the two known budget names, otherwise it is dropped
+		// rather than trusted.
+		const rawExhaustedBudget = obj['exhaustedBudget'];
+		const exhaustedBudget =
+			rawExhaustedBudget === 'oracle-lint' || rawExhaustedBudget === 'auditor' ? rawExhaustedBudget : undefined;
 		return {
 			issueId: obj['issueId'] as string,
 			summary: obj['summary'] as string,
 			findings: obj['findings'] as PlanVerdictFinding[],
 			roundsCompleted: obj['roundsCompleted'] as number,
+			...(exhaustedBudget !== undefined ? { exhaustedBudget } : {}),
 			writtenAt: obj['writtenAt'] as string,
 		};
 	} catch {
