@@ -23,7 +23,7 @@
         "The quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/init.ts (header comment :12, linear write :313, interactive CheckDef :373 + writeConfigOutcome :410-419, and the now-unused defaultConfigPath/configPath plumbing if it goes dead), test/init.test.ts, index.ts (init help Behaviour step 3 at :196), src/config/toml.ts (the `Used by cam init to set permission_mode` doc comment at :184 goes stale). Verified live on main before planning: `~/.config/cam/config.toml` has exactly ZERO readers other than the dead module deleted in US-002, so dropping the write regresses no feature; `~/.config/cam/retry.toml` is a different file written by a different path and must keep working. `mergeIntoConfig` stays exported in src/config/toml.ts (still test-covered; knip.json sets exclude:[\"exports\"], so an unused export does not fail the gate). Do NOT touch any spawn site (run.ts:392, setup.ts:480/:561, sidecar.ts:1569, plan-runner.ts:1312): runtime behavior must be byte-identical. scripts/file-size-budget.json entries may need LOWERING for the shrunken files: lowering always passes the ratchet, any RAISE needs a CAM-458 tracker ref in the staged diff (scripts/check-file-sizes.ts). check:all also runs a coverage ratchet, so re-run it after deleting code."
     },
