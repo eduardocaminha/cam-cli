@@ -59,7 +59,7 @@
         "Quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: CONTEXT.md only (entries at :71-72 'plannable issue', :248 'plannable set'; :431 'plannable gate' is already correct and is the wording PIN to converge on). Ground truth for the wording is src/issues/plannable.ts:20-26 plus its hasAcceptanceCriteria doc comment (spec is optional and may be entirely absent, so both the missing-spec and empty-array shapes are non-plannable). GOTCHA the AC oracles extract from the term header to the FIRST BLANK LINE, so the acceptance-criteria mention must sit inside that same paragraph block; adding it as a new paragraph below leaves the oracle red. GOTCHA CONTEXT.md is the glossary channel written by the CAM-118 deterministic writer and merged by term text (patterns.md, grep 'mergeContextMd'): keep the '**term**:' header line byte-shape intact so a later merge still matches the term. Keep it glossary-only per scripts/cam/CLAUDE.md Domain Model Convention: definition prose only, no implementation detail, no spec. Out of scope by explicit decision in CAM-455: the missing 'push-recovered' glossary entry is an OMISSION, not a contradiction, and is not promoted here. Repo prose rule: no em dash in persisted human-readable .md."
     },
