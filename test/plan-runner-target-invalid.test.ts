@@ -66,6 +66,7 @@ const MOCK_ISSUE: IssueEntry = {
 	blockedBy: [],
 	createdAt: '2026-07-01T00:00:00Z',
 	updatedAt: '2026-07-01T00:00:00Z',
+	spec: { acceptanceCriteria: ['x'], scope: 's', gotchas: [], domainTerms: [] },
 };
 
 interface SpawnCall {
@@ -204,6 +205,7 @@ describe('runPlanPhase - explicit-target-wins regression (AC3)', () => {
 				createdAt: '2026-07-01T00:00:00Z',
 				updatedAt: '2026-07-01T00:00:00Z',
 				rank: 1,
+				spec: { acceptanceCriteria: ['x'], scope: 's', gotchas: [], domainTerms: [] },
 			},
 			{
 				id: 'CAM-777',
@@ -213,6 +215,7 @@ describe('runPlanPhase - explicit-target-wins regression (AC3)', () => {
 				blockedBy: [],
 				createdAt: '2026-07-02T00:00:00Z',
 				updatedAt: '2026-07-02T00:00:00Z',
+				spec: { acceptanceCriteria: ['x'], scope: 's', gotchas: [], domainTerms: [] },
 			},
 		];
 		const spawn = makeBacklogSpawnFn(entries);

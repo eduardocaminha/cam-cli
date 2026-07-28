@@ -164,6 +164,8 @@ function resolveSpecificIssue(
 function buildNotPlannableReason(entry: IssueEntry, backlog: IssueEntry[]): string {
 	if (entry.status !== 'open') return `status is ${entry.status} (not open)`;
 	if (entry.stage !== 'specified') return `stage is ${entry.stage} (not specified)`;
+	if ((entry.spec?.acceptanceCriteria?.length ?? 0) === 0)
+		return 'no acceptanceCriteria in spec (see `cam spec`)';
 	if (isBlocked(entry, backlog)) return 'blocked by an unshipped dependency';
 	return 'not plannable';
 }
