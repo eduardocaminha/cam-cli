@@ -179,11 +179,9 @@ export function saveConfig(path: string, config: TomlConfig, comments?: TomlComm
 
 /**
  * Merge `updates` into the config at `path`, preserving any pre-existing keys
- * that aren't being overwritten.
- *
- * Used by `cam init` to set `permission_mode = "bypassPermissions"` without
- * clobbering keys a future story (or a hand-edit) may have added. Top-level
- * scalar updates and section-table updates both behave additively:
+ * that aren't being overwritten (a hand-edit, or another writer, may have
+ * added them). Top-level scalar updates and section-table updates both
+ * behave additively:
  *   - top-level scalar update → replaces that one key
  *   - section update → merges into existing section (new keys added,
  *     existing keys overwritten by the update, sibling keys preserved).

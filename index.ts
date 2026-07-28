@@ -193,8 +193,7 @@ const INIT_HELP = renderHelp({
 				'Stage 1 — Machine validation:\n' +
 				'  1. Checks `claude` is on PATH and logged in.\n' +
 				'  2. Runs vendored smokes (check-agent-frontmatter).\n' +
-				'  3. Writes ~/.config/cam/config.toml with permission_mode = "bypassPermissions".\n' +
-				'  4. Writes ~/.config/cam/retry.toml with the built-in retry policy defaults\n' +
+				'  3. Writes ~/.config/cam/retry.toml with the built-in retry policy defaults\n' +
 				'     (first run only; existing file is preserved). Edit this file to tune\n' +
 				'     max attempts, rate-limit patterns, and the retry log retention window.\n' +
 				'\n' +

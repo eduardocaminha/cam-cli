@@ -3,21 +3,23 @@
 // End-to-end test for `cam init` — exercises `runInit()` against a tmp
 // config path.
 //
-// The tests here verify the config-write behavior only. They do NOT assert
-// on the runInit() exit code because the exit code couples to whether `claude`
-// is on PATH (the claude-presence check fails on CI runners that have no
-// claude binary, returning exit code 1 even though config.toml was written
-// successfully). The oracle for these tests is:
+// `cam init` no longer writes `~/.config/cam/config.toml` (US-001, CAM-458):
+// its one seeded key was never read by any spawn path. These tests prove
+// init leaves the `CAM_CONFIG_PATH` target absent rather than asserting on
+// any config content. They do NOT
+// assert on the runInit() exit code because the exit code couples to whether
+// `claude` is on PATH (the claude-presence check fails on CI runners that
+// have no claude binary, returning exit code 1 regardless of the config
+// write). The oracle for these tests is:
 //   env PATH="/usr/bin:/bin:$(dirname "$(command -v bun)")" bun test test/init.test.ts
 // which must pass without claude on PATH.
 
 import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { runInit, type SpawnFn } from '../src/commands/init.ts';
-import { loadConfig } from '../src/config/toml.ts';
 
 // Deterministic stub for the three real subprocess spawns runInit's linear
 // path makes (CAM-205): `command -v claude` via /bin/sh, `claude --version`,
@@ -62,35 +64,24 @@ afterEach(() => {
 });
 
 describe('runInit', () => {
-	test('writes config.toml with permission_mode=bypassPermissions on a fresh path', async () => {
+	test('leaves the CAM_CONFIG_PATH target absent on a fresh machine', async () => {
 		// Exit code is NOT asserted: it depends on whether `claude` is on PATH
-		// (a CI environment concern, not the config-write behavior under test).
+		// (a CI environment concern, unrelated to whether a config file gets written).
 		await runInit({ spawnFn: stubSpawnFn });
-		expect(existsSync(configPath)).toBe(true);
-		const config = loadConfig(configPath);
-		expect(config.permission_mode).toBe('bypassPermissions');
+		expect(existsSync(configPath)).toBe(false);
 	});
 
-	test('preserves existing keys when re-running', async () => {
+	test('still leaves the target absent across repeated runs', async () => {
 		// Run twice; exit codes are NOT asserted (PATH-coupling concern, see file header).
 		await runInit({ spawnFn: stubSpawnFn });
 		await runInit({ spawnFn: stubSpawnFn });
-		const config = loadConfig(configPath);
-		expect(config.permission_mode).toBe('bypassPermissions');
+		expect(existsSync(configPath)).toBe(false);
 	});
 
-	test('uses CAM_CONFIG_PATH override (not ~/.config/cam/config.toml)', async () => {
+	test('CAM_CONFIG_PATH target sits under the tmp workDir, never the real home', async () => {
 		await runInit({ spawnFn: stubSpawnFn });
-		// The tmp config path was written.
-		expect(existsSync(configPath)).toBe(true);
-		// Sanity: the path is under our tmp dir, not under the real home.
+		expect(existsSync(configPath)).toBe(false);
+		// Sanity: the path we asserted against is under our tmp dir, not the real home.
 		expect(configPath.startsWith(workDir)).toBe(true);
-	});
-
-	test('produces a TOML file with a trailing newline', async () => {
-		await runInit({ spawnFn: stubSpawnFn });
-		const raw = readFileSync(configPath, 'utf8');
-		expect(raw.endsWith('\n')).toBe(true);
-		expect(raw).toContain('permission_mode = "bypassPermissions"');
 	});
 });
