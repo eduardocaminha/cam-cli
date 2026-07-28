@@ -1,0 +1,24 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Stop cam init from writing the unread permission_mode key"
+  },
+  "branchName": "cam/issue-458",
+  "timestamp": "2026-07-28T19:08:08Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/commands/init.ts",
+    "index.ts",
+    "src/config/toml.ts",
+    "test/init.test.ts",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [
+    "src/config/permission-mode.ts (readPermissionMode) remains a genuinely dead module (no caller anywhere reads it, confirmed by grep before this story) and was deliberately left untouched per this story's notes, which flagged it as scoped to a separate US-002. A follow-up story should delete src/config/permission-mode.ts (and DEFAULT_PERMISSION_MODE) outright unless a future spawn path is wired to actually read it."
+  ],
+  "nextStoryContext": "US-001 (CAM-458) removed cam init's dead permission_mode config-write step entirely: both runInitLinear and the interactive writeConfigOutcome/CheckDef('config') path, plus the now-dead defaultConfigPath/configPath/homedir/join plumbing in src/commands/init.ts, the index.ts init --help Behaviour line advertising the write, and the stale doc comment in src/config/toml.ts. mergeIntoConfig itself stays in src/config/toml.ts (still test-covered by test/toml.test.ts, unrelated to this story). test/init.test.ts now asserts init leaves the CAM_CONFIG_PATH target absent (real tmpdir fs check) instead of asserting on permission_mode content. Gotcha for any future negative-grep oracle: the oracle matches the literal token anywhere including your own explanatory comments -- see the new patterns.md bullet.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ],
+  "appliedPatternIds": []
+}
