@@ -368,8 +368,8 @@ The external mulch project's typed expertise-record + scoring + decay design (re
 **on-main ref-only writer**:
 The commitTreeToMain + dedup write path (src/git/on-main.ts) that commits directly to main without touching the working tree; multi-writer safe while a cam run session is live.
 
-**CAM Runtime**:
-The product's display name (formerly cam-cli): a local software-delivery runtime for coding agents that turns issues and goals into verifiable planning, implementation, review, and ship workflows, keeping state, coordinating specialized agents, and recovering interrupted runs. The invoked command stays cam.
+**Gateship**:
+The product's display name: a local software delivery runtime, a control plane for coding agents that sits between an issue (or a PRD generated from one) and a merged, verified pull request, owning the outer loop a human would otherwise run by hand (plan, implement, review, ship), keeping state, coordinating specialized agents, and recovering interrupted runs. The invoked command stays cam.
 
 **wordmark**:
 The hand-authored uppercase CAM ASCII block logo rendered on the splash screen (src/ui/Splash.tsx), distinct from the tagline text line.
@@ -390,7 +390,7 @@ The issue's mandated first deliverable: a design ADR resolving the claude/codex 
 The backend-agnostic completion+result boundary (CAM_*_STATUS lines, <review> tags, worker-report.json/review-report.json) parsed by report-parse.ts (ADR-0038); the enabler of mixed-backend runs.
 
 **Fir Green**:
-#10C66F -- CAM Runtime brand PRIMARY ACCENT: subscribe button, links, nav, highlights, and the splash accent (CAM-329).
+#10C66F -- Gateship brand PRIMARY ACCENT: subscribe button, links, nav, highlights, and the splash accent (CAM-329).
 
 **Forest Green**:
 #003333 -- deep green for text placed over green surfaces (e.g. calendar days).
@@ -398,17 +398,17 @@ The backend-agnostic completion+result boundary (CAM_*_STATUS lines, <review> ta
 **Aero Green**:
 #CAFFE3 -- light green for the welcome-page background and light highlights.
 
-**brand neutrals (CAM Runtime)**:
+**brand neutrals (Gateship)**:
 #1F1F1F ink (dark text/backgrounds, tiles, dark cards, banner), #6F6F6F secondary text, #9C9C9C secondary over dark, #EDECF0 surface (light cards), #E3E3E5 line (borders/dividers), #FFFFFF base white.
 
 **subagent colors**:
 Blue Lotus #426DFF, Lemon #AFE220, Sun Yellow #FFDF24, Salmon #FF6666 -- used ONLY to mark agents in figures; explicitly NOT part of the site or TUI chrome.
 
 **external README**:
-The public-launch, English, ultra-professional README for CAM Runtime (with vendored cam-dss visual assets), distinct from the internal-contributor documentation. Build owned by CAM-331; informed by the CAM-330 readiness analysis and the CAM-332 brand palette.
+The public-launch, English, ultra-professional README for Gateship (with vendored cam-dss visual assets), distinct from the internal-contributor documentation. Build owned by CAM-331; informed by the CAM-330 readiness analysis and the CAM-332 brand palette.
 
 **launch-readiness report**:
-The written audit (e.g. docs/launch-readiness.md) of CAM Runtime's fitness for public release across distribution/install, onboarding, external docs, security/secrets, license/repo-visibility, telemetry/privacy, versioning/release/update, support channels, and a prioritized gap triage.
+The written audit (e.g. docs/launch-readiness.md) of Gateship's fitness for public release across distribution/install, onboarding, external docs, security/secrets, license/repo-visibility, telemetry/privacy, versioning/release/update, support channels, and a prioritized gap triage.
 
 **public v1 go/no-go**:
 The explicit release recommendation the readiness analysis (CAM-330) produces, naming the must-fix blocking set for a public v1.
