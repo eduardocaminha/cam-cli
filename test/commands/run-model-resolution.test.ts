@@ -123,8 +123,9 @@ function makeTmpProject(): string {
  * Stage a temp cwd resolving the orchestrator backend to 'codex' with a
  * claude-SHAPED flat model (so the flat `[models]` pin is rejected and
  * resolution falls through to the injectable cache reader), chdir into it
- * (readBackend/resolvePhaseModel read from process.cwd(), no configPath seam
- * on this site), and restore afterward.
+ * (readBackend does accept a configPath argument, src/config/models.ts:224,
+ * but this call site relies on its process.cwd()-derived default instead of
+ * forwarding one), and restore afterward.
  */
 function withClaudeShapedCodexCwd<T>(fn: (cwd: string) => T): T {
 	const cwd = makeTmpProject();

@@ -220,12 +220,16 @@ function tmuxAvailable(spawnFn: SpawnFn): boolean {
  * before the agent even boots, and reinforcing it in the first user turn
  * removes any ambiguity about whether to pause and ask.
  *
- * @param configPath  Forwarded to readMetaLoop(); overridable by tests.
+ * @param configPath  Forwarded to readMetaLoop() and readWorkerIsolation(); overridable by tests.
  */
 export function buildOrchestratorBootPrompt(configPath?: string): string {
 	const metaLoop = readMetaLoop(configPath);
 	const lines = ['Boot up as the cam orchestrator; follow your Boot context section.'];
-	if (metaLoop === 'auto') {
+	// Auto-chaining is only actually armed when meta_loop=auto AND
+	// worker_isolation=container (src/commands/sidecar.ts:2944-2953); the
+	// prompt must agree with that gate rather than announcing autonomous mode
+	// when the sidecar would refuse to dispatch.
+	if (metaLoop === 'auto' && readWorkerIsolation(configPath) === 'container') {
 		lines.push(
 			'meta_loop is "auto": once boot is complete, announce autonomous mode and proceed directly into dispatch. Do not close the greeting with a question asking for direction.',
 		);
@@ -581,7 +585,11 @@ function setupPanes(
 	const dotClaude = join(cwd, '.claude');
 	mkdirSync(dotClaude, { recursive: true });
 	const promptFile = join(dotClaude, '.cam-orchestrator-prompt.txt');
-	writeFileSync(promptFile, buildOrchestratorBootPrompt(), 'utf8');
+	writeFileSync(
+		promptFile,
+		buildOrchestratorBootPrompt(join(cwd, 'scripts', 'cam', 'project.toml')),
+		'utf8',
+	);
 
 	// Generate and persist the orchestrator session id so the dashboard can
 	// locate the JSONL transcript for token-spend reporting (US-002).

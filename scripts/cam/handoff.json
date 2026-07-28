@@ -1,0 +1,28 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Gate the orchestrator boot prompt on worker_isolation and forward configPath at both call sites"
+  },
+  "branchName": "cam/issue-455",
+  "timestamp": "2026-07-28T12:09:55Z",
+  "createdFiles": [
+    "test/commands/run-boot-prompt-isolation.test.ts"
+  ],
+  "modifiedFiles": [
+    "src/commands/run.ts",
+    "src/commands/setup.ts",
+    "test/run.test.ts",
+    "test/commands/run-model-resolution.test.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "buildOrchestratorBootPrompt (src/commands/run.ts:225) now gates its 'proceed directly into dispatch' instruction on BOTH readMetaLoop(configPath)==='auto' AND readWorkerIsolation(configPath)==='container', matching the sidecar's own auto-chaining PIN at src/commands/sidecar.ts:2944-2953 (unchanged). Both production call sites (setupPanes in run.ts:588, spawnSetupTmux in setup.ts:551) now forward configPath = join(cwd, 'scripts', 'cam', 'project.toml') instead of calling with no argument -- the CAM-431 seam residue is fully closed at this function's call sites. New behavioral test test/commands/run-boot-prompt-isolation.test.ts proves both sides of the gate against real project.toml fixtures in a real tmpdir. test/run.test.ts's pre-existing meta_loop=auto fixture (writeMetaLoopToml helper) was extended with an optional workerIsolation param and the 'auto' case now writes worker_isolation='container' explicitly. Corrected a stale comment in test/commands/run-model-resolution.test.ts that claimed readBackend had no configPath seam (it does, src/config/models.ts:224). File-size ceilings raised (with CAM-455 tracker ref in the budget's _ref) for src/commands/run.ts (1165->1168), src/commands/setup.ts (881->885), and test/run.test.ts (1112->1122) -- all three grew directly from this story's edits. No sidecar.ts behavior was touched (that file's auto-chaining gate remains the single source of truth this story only aligned the prompt to).",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Pure internal TypeScript refactor: gates an existing prompt-builder on config keys already read elsewhere in the codebase (readMetaLoop/readWorkerIsolation, both backed by Bun's built-in Bun.TOML.parse, previously validated in an earlier story per src/config/toml.ts's own header comment). No new external library or API surface introduced."
+    }
+  ]
+}
