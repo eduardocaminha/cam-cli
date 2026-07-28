@@ -6,6 +6,18 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.268.0] - 2026-07-28
+
+### Added
+
+- US-004 - update handoff for CLI-oracle rule addition
+- US-004 - Add the CLI-oracle rule to the curated oracle-authoring block in patterns.md
+- US-003 - update handoff and patterns for CONTEXT.md plannable entries sync
+- US-003 - Make the CONTEXT.md plannable-issue and plannable-set entries agree with the shipped predicate
+- US-002 - update handoff and patterns for cam-plan.md acceptanceCriteria sync
+- US-002 - State the acceptanceCriteria condition in both cam-plan.md twins and regenerate the vendor embed
+- US-001 - Gate the orchestrator boot prompt on worker_isolation and forward configPath at both call sites
+
 ## [0.267.0] - 2026-07-28
 
 ### Added
