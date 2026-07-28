@@ -1,24 +1,19 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Delete the unread readPermissionMode module and its stale cross-references"
+    "id": "US-003",
+    "title": "Make README and --help state the hardcoded permission mode truthfully"
   },
   "branchName": "cam/issue-458",
-  "timestamp": "2026-07-28T19:30:00Z",
+  "timestamp": "2026-07-28T20:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/config/permission-mode.ts",
-    "src/config/models.ts",
-    "src/config/toolchain.ts",
-    "src/commands/run.ts",
+    "README.md",
     "index.ts",
-    "test/no-permission-mode-flag.test.ts",
-    "knip.json",
-    "scripts/file-size-budget.json",
-    "scripts/cam/patterns.md"
+    "src/commands/claude.ts",
+    "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-002 (CAM-458) deleted src/config/permission-mode.ts (DEFAULT_PERMISSION_MODE, readPermissionMode) outright: the module had zero real importers, only comment mentions. All comment cross-references were reworded to state the fact directly (permission mode is a hardcoded bypassPermissions literal at each of the 5 claude spawn sites: run.ts:392, setup.ts:480/:561, sidecar.ts:1569, plan-runner.ts:1312) instead of naming the now-deleted module: src/config/models.ts:6/:11/:146, src/config/toolchain.ts:18, src/commands/run.ts:609-613, index.ts:11-17, test/no-permission-mode-flag.test.ts:3-6. Also removed the knip ignore entry and the file-size-budget.json entry for the deleted file, and repointed scripts/cam/patterns.md:1004's security-posture bullet away from the deleted file path. The no-CLI-flag invariant (test/no-permission-mode-flag.test.ts) is untouched behaviorally, only its header comment changed, and still passes. Gotcha for any future negative-grep oracle sweeping src/index.ts/test: it also caught scripts/file-size-budget.json's own budget key (the string appears as a JSON key, not just in prose) and src/commands/run.ts's own line-count growing past its file-size ceiling by +1 line from the comment reword -- raised 1168->1169 with a dated _ref entry, staged before re-running the gate (the tracker-ref check reads the staged diff, not the working tree). Historical/state files (scripts/cam/prd.json, review-artifact.txt, review-report.json, plan-verdict-report.json, journal.md, issues/*.json) still contain the literal tokens in dated narrative/audit text; these are out of the story's oracle scope (src/, index.ts, test/ only) and were deliberately left untouched as historical record.",
+  "nextStoryContext": "US-003 (CAM-458) rewrote every remaining README/--help surface that still framed bypassPermissions as config-driven (post-US-002 module deletion). README.md: the command-list note (was line 156-157, 'is read from ~/.config/cam/config.toml') and the Security section (was line 301-322, 'or the key is unset', named the now-deleted src/config/permission-mode.ts module) now both state the literal-at-every-spawn-site fact plus name all 4 spawn sites (run.ts, setup.ts, sidecar.ts, plan-runner.ts) and explicitly say the permission_mode config key 'is not read by any spawn path'; the CAM-457 worker_isolation/orchestrator-always-bypass disclosures were preserved verbatim. index.ts: the top-level footer and all 4 repeated per-command 'Behaviour' step-1 lines (cam plan/spec/issue/next, was 'Reads permission_mode from ~/.config/cam/config.toml (default: bypassPermissions)') were reworded to 'Permission mode is a hardcoded bypassPermissions literal at the spawn site' while preserving the exact substring '--permission-mode flag' (an acceptance-oracle anchor, do not drop it in a future edit). src/commands/claude.ts:59 Config-section help text ('Permission mode:  ~/.config/cam/config.toml') was reworded similarly, but note the nuance: `cam claude` itself still forwards args verbatim to the real `claude` binary, so a user CAN pass --permission-mode straight through as a forwarded arg (kept the 'cam claude --permission-mode <mode> <prompt>' example, reworded only the prose above it) -- this is a distinct fact from cam's own subcommands never accepting the flag, don't conflate the two in future wording. Gate note: the claude.ts reword grew the file 201->203 lines, past its file-size-budget.json ceiling; raised with a dated _ref entry (mirrors the US-002 precedent) and staged before re-running check:all. Deliberately NOT touched: README.md:258 (source-layout tree note mentioning ~/.config/cam/config.toml generically, not about permission mode) and docs/launch-readiness.md (dated audit report, out of this story's oracle scope, per the story notes). The 4 index.ts 'claude --permission-mode <mode> \"/cam-plan\"' pane-spawn command examples were left as-is (still literally accurate: the pane runs that argv, <mode> is just always bypassPermissions now) -- rewording those to spell out the literal was considered but is out of this story's scope (AC5/AC6 only require removing the config.toml claim and preserving the no-CLI-flag statement).",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ],
