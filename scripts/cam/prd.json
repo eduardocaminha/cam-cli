@@ -20,7 +20,7 @@
       "id": "US-R2-002",
       "title": "Review round 2 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [scripts/build-release.sh:114]: The CAM_CONFIG_PATH seam removal is not swept: three surviving files still set or document a now-dead env var, the same stale-cross-reference class round 1 already blocked on (US-R1-001 for docs/, US-R1-003 for the vestigial env plumbing inside test/init.test.ts). After US-001 nothing in src/ reads CAM_CONFIG_PATH (verified: grep -rln CAM_CONFIG_PATH over src/ index.ts returns nothing; the only per-user path left is ~/.config/cam/retry.toml, resolved from process.env.HOME in src/retry/config.ts:101). Still live: (1) scripts/build-release.sh:114 sets CAM_CONFIG_PATH=\"${SMOKE_DIR}/config.toml\" on the hermetic init smoke, reading as an isolation guarantee that is now provided by the deleted write rather than by this var; (2) test/interactivity/interactivity.test.ts:506-514 saves, sets and restores process.env.CAM_CONFIG_PATH around a runInit() call, byte-identical vestigial plumbing to what US-R1-003 removed from test/init.test.ts:51-60; (3) test/build-release-smoke.test.ts:32 documents the smoke line with CAM_CONFIG_PATH=... in it. Mechanical, 3 files, no test asserts the string (binInitInvocations() at test/build-release-smoke.test.ts:35-42 filters comments and matches only the `}\" init` shape, so dropping the var from the shell line breaks nothing)."
     },
     {
