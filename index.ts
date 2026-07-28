@@ -168,8 +168,8 @@ const HELP = renderHelp({
 	],
 	footer:
 		'Run `cam <command> --help` for command-specific options. Permission mode\n' +
-		'for spawned claude sessions is read from `~/.config/cam/config.toml` —\n' +
-		'no subcommand exposes a CLI flag for it (run `cam init` to set).',
+		'is a hardcoded `bypassPermissions` literal at every spawn site; no\n' +
+		'config key or --permission-mode flag controls it.',
 });
 
 const INIT_HELP = renderHelp({
@@ -271,8 +271,8 @@ const PLAN_HELP = renderHelp({
 		{
 			heading: 'Behaviour',
 			body:
-				'1. Reads permission_mode from ~/.config/cam/config.toml (default:\n' +
-				'   bypassPermissions). cam does NOT accept a --permission-mode flag.\n' +
+				'1. Permission mode is a hardcoded bypassPermissions literal at the\n' +
+				'   spawn site. cam does NOT accept a --permission-mode flag.\n' +
 				'2. Ensures the project session exists (cam-orch-<basename>-<hash>);\n' +
 				'   creates it (with 2-pane layout: orchestrator + dashboard) if needed.\n' +
 				'3. Opens a new pane inside the session running:\n' +
@@ -326,8 +326,8 @@ const SPEC_HELP = renderHelp({
 		{
 			heading: 'Behaviour',
 			body:
-				'1. Reads permission_mode from ~/.config/cam/config.toml (default:\n' +
-				'   bypassPermissions). cam does NOT accept a --permission-mode flag.\n' +
+				'1. Permission mode is a hardcoded bypassPermissions literal at the\n' +
+				'   spawn site. cam does NOT accept a --permission-mode flag.\n' +
 				'2. Ensures the project session exists (cam-orch-<basename>-<hash>);\n' +
 				'   creates it (with 2-pane layout: orchestrator + dashboard) if needed.\n' +
 				'3. Sends `/cam-spec <id>` to the orchestrator pane via atomic send-keys.\n' +
@@ -405,8 +405,8 @@ const ISSUE_HELP = renderHelp({
 		{
 			heading: 'Behaviour',
 			body:
-				'1. Reads permission_mode from ~/.config/cam/config.toml (default:\n' +
-				'   bypassPermissions). cam does NOT accept a --permission-mode flag.\n' +
+				'1. Permission mode is a hardcoded bypassPermissions literal at the\n' +
+				'   spawn site. cam does NOT accept a --permission-mode flag.\n' +
 				'2. Ensures the project session exists (cam-orch-<basename>-<hash>);\n' +
 				'   creates it (with 2-pane layout: orchestrator + dashboard) if needed.\n' +
 				'3. Opens a new pane inside the session running:\n' +
@@ -640,8 +640,8 @@ const NEXT_HELP = renderHelp({
 		{
 			heading: 'Behaviour',
 			body:
-				'1. Reads permission_mode from ~/.config/cam/config.toml (default:\n' +
-				'   bypassPermissions). cam does NOT accept a --permission-mode flag.\n' +
+				'1. Permission mode is a hardcoded bypassPermissions literal at the\n' +
+				'   spawn site. cam does NOT accept a --permission-mode flag.\n' +
 				'2. Pre-arms the cam-loop plugin by writing\n' +
 				'   .claude/cam-loop.local.md (vendored template at\n' +
 				'   vendor/cam-loop.local.md.tmpl).\n' +
