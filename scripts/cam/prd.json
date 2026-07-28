@@ -33,7 +33,7 @@
         "The lint spine stays green. [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/plan-runner.ts (PlanPhaseResult union member at :277, runOracleLintCheck at :994-1004, the auditor BLOCK return at :1344), test/supervisor/plan-runner.test.ts (BROKEN_PRD :87 / CLEAN_PRD :99 fixtures and the makeOpts harness already inject readPrdContentFn). GOTCHA: making origin REQUIRED breaks the audit-blocked object literal at test/supervisor/plan/plan-runner-postaudit.test.ts:87 by construction; update that literal rather than weakening the field to optional. GOTCHA: runOracleLintCheck's return type is Extract<PlanPhaseResult, { kind: 'audit-blocked' }>, so the new field flows into it automatically once the union member changes. Design context: docs/adr/0052 ('Decision' paragraph) and the lint-origin BLOCK / auditor-origin BLOCK glossary entries in CONTEXT.md. Do NOT touch the round budgets in this story: US-002 owns them."
     },
