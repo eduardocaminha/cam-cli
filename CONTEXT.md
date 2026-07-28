@@ -439,3 +439,18 @@ The classification of an oracle as either change-detection or invariance pin. A 
 
 **specSource**:
 The provenance of an issue's specification: interview when produced by an operator interview, derived when synthesized from one or more parent issues, operator when asserted directly by the operator.
+
+**lint-origin BLOCK**:
+A plan-round rejection synthesized by the deterministic oracle lint (runOracleLintCheck) from the prd.json the planner just wrote, before the auditor is spawned. It is returned with result kind audit-blocked, which is why it is indistinguishable from an auditor-origin BLOCK unless an explicit origin discriminator is carried.
+
+**auditor-origin BLOCK**:
+A plan-round rejection produced by the auditor subagent after it has actually run and returned a BLOCK verdict. Distinct from a lint-origin BLOCK in cause and in what a correction round can achieve, even though both share the audit-blocked result kind.
+
+**auditor correction budget**:
+The number of re-plan rounds reserved for correcting findings the auditor actually produced. Its purpose is to guarantee that auditor findings receive at least one correction attempt before the plan escalates.
+
+**oracle-lint budget**:
+The independently bounded number of re-plan rounds allowed for a planner that keeps emitting a PRD with provably broken oracles. Bounded separately from the auditor correction budget so that a persistently broken oracle cannot spin the planner indefinitely.
+
+**post-auditor correction round**:
+A re-plan round that follows an auditor-origin BLOCK and exists to address the auditor's findings. The structural guarantee at issue in CAM-448 is that every PRD reaching the auditor receives at least one of these before escalating.

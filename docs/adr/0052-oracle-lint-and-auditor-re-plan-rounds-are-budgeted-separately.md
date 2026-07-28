@@ -1,0 +1,13 @@
+# ADR 0052: Oracle-lint and auditor re-plan rounds are budgeted separately
+
+## Context
+
+The deterministic oracle lint runs after the planner writes prd.json and before the auditor is spawned (ADR-0040), and it signals rejection by synthesizing a result of kind audit-blocked. The re-plan driver counted every audit-blocked result with a single counter against a single bound of 2 rounds, with no predicate distinguishing where the block came from. Measured on the CAM-447 plan on 2026-07-28 via the worker event log: the planner spawned twice (01:06:56 and 01:16:19), the auditor spawned exactly once (01:23:05), and the plan escalated at 01:27:51 having discarded five concrete auditor findings, one of them critical. The lint had consumed the only re-plan round, so the auditor's findings received zero correction rounds. The lint is also known to over-fire (CAM-438), so a deterministic gate that can be wrong was spending the budget of the reviewing agent that was right.
+
+## Decision
+
+Budget lint-origin and auditor-origin rounds separately, each independently bounded, and record on both the durable escalation marker and the plan-escalated event which budget was exhausted. MAX_REPLAN_ROUNDS keeps its name and its value of 2 and continues to mean the auditor budget; the lint budget is a new, separate constant. The invariant adopted is deliberately narrow: a lint round must not consume the auditor's correction budget. It is explicitly NOT the broader claim that the auditor must always run. When the lint blocks every round, the auditor is still never spawned, preserving ADR-0040's reason for existing, which is to avoid spending the auditor on a PRD that is already provably broken.
+
+## Consequences
+
+Every PRD that reaches the auditor now receives at least one post-auditor correction round before escalating. Worst-case planner spawns per plan call rise from the auditor bound alone to the sum of the two bounds, which is an accepted and intended cost, and remains finite. The escalation marker gains a field naming the exhausted budget, so an operator can tell a planner that cannot write valid oracles apart from a design the auditor keeps rejecting; the field is optional at the read boundary so markers written by older binaries still parse. One existing test encoded the defective behaviour as expected (a lint block followed by an auditor block folding into a single escalation) and is rewritten rather than deleted. The inverse reading of this decision, that the auditor should always run at least once, is the most likely way to implement it wrongly, and is pinned by a dedicated invariance test.
