@@ -8,15 +8,22 @@ implementer = "claude"  # decisao do operador 2026-07-27: volta para sonnet (quo
 [models]
 auditor = "opus"
 implementer = "sonnet"
-orchestrator = "fable"
-planner = "fable"
+orchestrator = "opus"
+planner = "opus"
 reviewer = "opus"
+# INERTE: ship e zero-LLM e nao spawna nada; resolvePhaseModel nunca e chamado
+# com phase ship. Esta chave so aparece no display de `cam config --show`. O
+# modelo real do slash command vive em .claude/commands/cam-ship.md.
 ship = "sonnet"
 
 [models.codex]
 implementer = "gpt-5.6-sol"
 
 [efforts]
+# Somente orchestrator e lido: readPhaseEffort tem dois call sites em producao
+# (run.ts, orch-resolve.ts) e ambos passam 'orchestrator'. Escrever planner,
+# auditor, reviewer ou implementer aqui parseia e e ignorado; o effort desses
+# papeis vem do frontmatter de .claude/agents/subagent-<phase>.md (CAM-445).
 orchestrator = "max"
 
 [ship]
