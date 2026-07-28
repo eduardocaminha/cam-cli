@@ -1,20 +1,20 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Clear the dead name from the remaining src/ comment surfaces and prove the tree-wide sweep"
+    "id": "US-003",
+    "title": "Present the README as Gateship without restructuring it"
   },
   "branchName": "cam/issue-457",
   "timestamp": "2026-07-28T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/ui/Splash.tsx",
-    "src/design/tokens.ts"
+    "README.md"
   ],
   "openQuestions": [
     "scripts/cam/prd.json necessarily still narrates 'CAM Runtime'/'CAM' in this PRD's own story titles/descriptions/notes text (it is the PRD specifying the sweep); this is a permanent residual that only self-resolves at cam ship --finalize (prd.json is git rm'd then, per ADR-0040), not fixable mid-branch per patterns.md:1058 precedent.",
-    "This handoff's own lastCompletedStory.title field necessarily still names the retired brand verbatim (required for traceability); that one-story-transient residual clears on the NEXT story's handoff overwrite, per the same patterns.md:1058 precedent."
+    "This handoff's own lastCompletedStory.title field necessarily still names the retired brand verbatim (required for traceability); that one-story-transient residual clears on the NEXT story's handoff overwrite, per the same patterns.md:1058 precedent.",
+    "README.md still carries several other stale/inconsistent command descriptions in the ## Commands block (e.g. 'cam run [options] Open or attach the single per-project session (2-pane layout)' vs. index.ts's current 'Open or attach the long-lived orchestrator (tmux session)') that predate this story and are out of scope per the story's notes (only lines 1, 3, 152 were in-scope); flagging for whichever story eventually owns full README/CLI-help parity (the notes point to CAM-331, blocked on CAM-421)."
   ],
-  "nextStoryContext": "US-002 was a comment-only sweep: reworded the identity-panel header comment in src/ui/Splash.tsx (lines 3, 5, 11: 'CAM Runtime' -> 'Gateship' in the module banner, twice in the wordmark/Runtime-line description) and the two brand-token JSDoc comments in src/design/tokens.ts (line 74's brandGreens header, line 96's brandNeutrals header). No token values, no Fir Green hex (#10C66F), no wordmark glyph art, and no rendered frame changed -- verified via test/ui/splash.test.tsx staying green (2 pass, unchanged assertions). Tree-wide sweep confirmed zero 'CAM Runtime' occurrences anywhere under src/ (excluding src/vendor/_generated.ts, which is generated and untouched). ADR-0050's pin of invariance re-verified live against origin main: the CAM_VERSION/CAM_SESSION env-var file-set and the 'tmux -L cam' socket-literal file-set are both byte-identical between local main and this branch's src/ -- no internal contract was touched, this story was strictly comment prose. Both budgeted files stayed within their existing file-size ceilings (tokens.ts 108/109, Splash.tsx 132/134) so no budget raise was needed. Remaining dead-name occurrences (if any) outside src/ -- docs, README, CHANGELOG, package.json, scripts/, templates/ -- are out of this story's scope (AC3's oracle is scoped to `src/` only) and should be independently swept by whichever later story in this PRD owns that surface, re-verifying ADR-0050's invariance pin before touching any CAM_*/tmux-socket/slash-command literal.",
+  "nextStoryContext": "US-003 was a 3-line surgical rename inside README.md only: H1 ('# CAM Runtime' -> '# Gateship'), the intro paragraph's first sentence (replaced with the category sentence from docs/positioning.md line 7: 'Gateship is a local software delivery runtime: a control plane for coding agents.', keeping the rest of the paragraph -- 'It turns issues and goals into...' -- untouched), and the 'cam version' line inside the ## Commands fenced code block (line 152, now 'Print the installed Gateship version', matching index.ts:143's US-001-renamed help text verbatim on the description column). No section was added, removed, or reordered; main's 12 '## ' headings are all still present and the file grew by 0 net lines (paragraph rewrap absorbed the word-count delta, so line count is unchanged at 329, satisfying the AC6 'not truncated' oracle with equality). Did NOT touch: package.json name, the repo name, docs/launch-readiness.md (historical audit record, explicitly out of scope), or any other README section/command description beyond the 3 specified lines -- several other command descriptions in the ## Commands block are independently stale versus current index.ts help text (see openQuestions) but were out of this story's scope. The definitive public README overhaul (differentiation section, visual assets) remains CAM-331, blocked on CAM-421.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
