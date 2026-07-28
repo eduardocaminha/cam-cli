@@ -42,7 +42,7 @@
         "Quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .claude/commands/cam-plan.md (line 11, the 'No argument' bullet), templates/commands/cam-plan.md, src/vendor/_generated.ts (REGENERATED, never hand-edited), possibly scripts/file-size-budget.json. NON-GOAL do not loosen src/issues/plannable.ts: the code is correct, the prose is what lies. GOTCHA the two twins are byte-identical today (verified with diff); editing only one breaks the AC2 pin, so apply the SAME text to both, then run bun run embed-vendor. Grep scripts/cam/patterns.md for 'Agent-prompt self-hosting pattern' and 'Three-copy cam-plan sync' (both bullets bind this exact file trio). GOTCHA per patterns.md 'Thin slash-command stubs invalidate content-assertion tests', test/embedded.test.ts asserts specific clauses of the embedded cam-plan.md copy; run bun test test/embedded.test.ts right after the regen. GOTCHA a backtick inside a literal-substring grep phrase silently breaks the match (patterns.md, CAM-449 US-003): the token acceptanceCriteria must appear as raw text the grep can see, so if you inline-code-format it verify the exact oracle command against your draft rather than eyeballing the sentence. Also watch src/vendor/_generated.ts against its ceiling in scripts/file-size-budget.json (raise with a dated CAM-455 _ref note in the same commit if the regen tips it)."
     },
