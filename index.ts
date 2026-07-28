@@ -111,7 +111,7 @@ import { CAM_VERSION } from './src/version.ts';
 
 const HELP = renderHelp({
 	title: 'cam',
-	tagline: 'CAM Runtime: a local software-delivery runtime for coding agents',
+	tagline: 'Gateship: a local software-delivery runtime for coding agents',
 	usage: 'cam <command> [options]',
 	sections: [
 		{
@@ -140,7 +140,7 @@ const HELP = renderHelp({
 				{ name: 'resume [options]', description: 'Reconcile loop state after interrupt; auto-detect or --mode <name>' },
 				{ name: 'decide <decision>', description: 'Record your choice into the active operator-decision gate so the sidecar resumes deterministically' },
 				{ name: 'prune [--force]', description: 'Deterministic branch cleanup after a PR is merged (or abandoned): checkout main, pull, delete branch, fetch --prune' },
-				{ name: 'version', description: 'Print the installed CAM Runtime version (also `--version` / `-v`)' },
+				{ name: 'version', description: 'Print the installed Gateship version (also `--version` / `-v`)' },
 				{ name: 'help', description: 'Show this help' },
 			],
 		},
