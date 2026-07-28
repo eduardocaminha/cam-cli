@@ -39,7 +39,7 @@
       "id": "US-R2-002",
       "title": "Review round 2 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [scripts/test-in-container.ts:221]: The US-R1-002 fail-open fix was applied to scripts/check-skip-ratchet.ts but not to its sibling on the container lane. runInContainerTests (:221-226) reads only lanes.container.expectedSkips and compares it via checkSkipCount, never calling the checkSuiteRan positive-evidence guard that check-skip-ratchet.ts:192 now exports, and never reading the recorded lanes.container.passFloor (test/helpers/lane-expectations.json:11) at all. Reviewer-verified empirically: parseBunOutput('error: Cannot find module \"x\"\\nbun: command crashed\\n') returns {pass:0,fail:0,skip:0}, and runInContainerTests on that output returns exitCode 0 whenever container.expectedSkips is 0. It is fail-closed today only because the recorded expectation happens to be 40 -- a value the gate's own failure message explicitly invites a future editor to change ('Update test/helpers/lane-expectations.json if this change is intentional'). That reopens on the container lane the exact defect class this PRD exists to eliminate ('a partial run can never present as green', US-002 description). Fix is mechanical and single-file: call checkSuiteRan(output, lanes.container.passFloor, 'container') before the skip comparison and fail non-zero when it returns a result."
     },
     {
