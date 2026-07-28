@@ -6,6 +6,17 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.266.0] - 2026-07-28
+
+### Added
+
+- US-R2-001 - Review round 2 fix 001: address reviewer finding
+- US-R1-002 - Review round 1 fix 002: address reviewer finding
+- US-R1-001 - Review round 1 fix 001: address reviewer finding
+- US-003 - Name the exhausted budget on the escalation marker and event
+- US-002 - Budget oracle-lint and auditor re-plan rounds independently
+- US-001 - Carry the block origin on the audit-blocked plan result
+
 ## [0.265.0] - 2026-07-28
 
 ### Added
