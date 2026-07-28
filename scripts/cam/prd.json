@@ -24,7 +24,7 @@
       "id": "US-R1-001",
       "title": "Review round 1 fix 001: address reviewer finding",
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [src/supervisor/plan-escalation.ts:89]: The positive read path of the new exhaustedBudget field is untested. No test anywhere writes a persisted marker CONTAINING exhaustedBudget and reads it back through readPlanEscalatedMarker: test/supervisor/plan/plan-escalation.test.ts only covers the legacy five-field marker (asserting the field is undefined), and every other PlanEscalatedMarker in the suite (test/unit/status-projection.test.ts, test/unit/status-diagnostics.test.ts) is an in-memory literal that never crosses the read boundary. A regression that always dropped the field at read (e.g. `const exhaustedBudget = undefined`) would leave all 5755 tests green, yet readPlanEscalatedMarker (src/commands/status.ts:657) is the only production consumer of the persisted marker, so the operator-facing purpose of US-003 would be silently defeated. Add a round-trip test asserting a marker written with exhaustedBudget: 'auditor' reads back with the field intact, plus the adversarial case that an unknown value (e.g. 'bogus') is dropped rather than trusted (the branch the comment at :87-88 claims)."
     },
     {
