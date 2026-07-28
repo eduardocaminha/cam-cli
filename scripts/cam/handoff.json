@@ -1,22 +1,21 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Make the CONTEXT.md plannable-issue and plannable-set entries agree with the shipped predicate"
+    "id": "US-004",
+    "title": "Add the CLI-oracle rule to the curated oracle-authoring block in patterns.md"
   },
   "branchName": "cam/issue-455",
-  "timestamp": "2026-07-28T13:40:00Z",
+  "timestamp": "2026-07-28T14:10:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "CONTEXT.md",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "CONTEXT.md's three related glossary entries now agree with the shipped isPlannable predicate (src/issues/plannable.ts:20-26). The 'plannable issue' entry (line 72) was reworded to name acceptance criteria as one of the qualifying conditions and dropped the false absolute sentence ('This is the single condition that qualifies an issue for /cam-plan'). The 'plannable set' entry (line 248) was reworded the same way. The 'plannable gate' entry (line 431) was already correct and untouched, serving as the wording pin. Fix was glossary-only prose (no implementation detail, no code citation, per the Domain Model Convention), unlike the command-doc twins fixed in US-002 which DO cite plannable.ts:20-26. The still-open, explicitly out-of-scope item noted in this story's prd.json notes is the missing 'push-recovered' glossary entry (an omission, not a contradiction) -- not addressed here, left for a future story if ever prioritized. All three story oracles verified green before commit; full bun run check:all spine (typecheck, 5763 tests, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps, skip-ratchet) passed clean with zero file-size or coverage budget raises needed.",
+  "nextStoryContext": "The curated CURATED BLOCK: oracle authoring rules in scripts/cam/patterns.md (starts line 1068) now carries a fifth numbered rule: a CLI-behavior oracle invokes `bun index.ts <sub>`, never `cam <sub>`, because `cam` resolves to the INSTALLED binary (almost always older than the change under test) and going red for that reason is a wrong-artifact failure, not a behavior failure. The rule carries the measured CAM-449 AC7 evidence verbatim (installed binary 0.262.0 returned a plannable set different from the working tree's) rather than an invented rationale, per the block's own rule 4 (evidence fidelity) applied reflexively. The block's preamble now says 'These five rules' (was 'these four'); the old literal phrase 'These four rules' no longer appears anywhere in the file. Rules 1-4 and their corollaries were left byte-for-byte untouched (append-and-amend-only convention); only the preamble sentence and the new rule-5 bullet were added. All three prose oracles (scoped sed+grep for rule 5 on its own physical line with `bun index.ts` literal, whole-file grep for the '0.262.0' evidence token, negative grep for the retired 'These four rules' phrase) were run verbatim against the draft before committing, per the repo's own backtick-breaks-literal-grep gotcha (CAM-449 US-003) -- confirmed neither of the new sentences code-formats a token in a way that splits a required literal span. Full bun run check:all spine (typecheck, 5763 tests, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps, skip-ratchet) passed clean, zero budget raises needed. This closes one of the four CAM-455 composite fix-sites (CAM-451); the other three (CAM-450 predicate restatements in cam-plan.md/CONTEXT.md, and the run.ts auto-chaining boot-prompt mismatch) are separate stories in this same PRD, not touched here.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure prose glossary-sync story: reworded two CONTEXT.md entries to match an already-shipped TypeScript predicate (isPlannable, CAM-449 US-001). No external library, new API surface, or production TypeScript code was touched."
+      "summary": "Pure prose story: added one numbered rule plus a one-word preamble edit to an existing curated documentation block in scripts/cam/patterns.md. No external library, API surface, or production TypeScript code was touched."
     }
   ],
   "appliedPatternIds": []
