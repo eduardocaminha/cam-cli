@@ -1,0 +1,10 @@
+{
+  "id": "CAM-463",
+  "title": "CONTEXT.md:432 ainda descreve o plannable gate exigindo formas de oraculo, que o predicado nao checa",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-28T17:44:50.283Z",
+  "updatedAt": "2026-07-28T17:44:50.283Z",
+  "description": "Residual medido do CAM-450, fora dos sitios de conserto que ele nomeou, e sobreviveu ao CAM-457. CONTEXT.md linha 432 define o plannable gate como exigindo que a issue esteja aberta, em stage specified, nao bloqueada, 'and carrying oracle forms'. O predicado shipado checa apenas entry.spec?.acceptanceCriteria?.length > 0 (src/issues/plannable.ts:33-36) e o arquivo nao tem UMA referencia a oraculo. Nota de mecanismo, que e o motivo de valer registro: a US-005 do CAM-457 estava editando ESSE arquivo, mexeu em entradas do glossario a poucas linhas de distancia, e deixou a frase falsa intacta, corretamente, porque o escopo dela era nome e nao predicado. A falsidade nao sobrevive por descuido nem por falta de review: sobrevive porque nao esta no escopo de ninguem e nenhum gate deterministico a alcanca. Um arquivo pode ser reescrito por cima e continuar mentindo."
+}
