@@ -31,7 +31,7 @@
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [src/supervisor/events.ts:494]: Doc comments describing the escalation contract were left stale by the budget split, including the very block this diff edited. events.ts:494 still reads 'BLOCK->re-plan loop exhausts MAX_REPLAN_ROUNDS without an APPROVE verdict' two lines above the newly added exhaustedBudget bullet that exists precisely because that is no longer the only escalation path. Same staleness at events.ts:72, src/supervisor/plan-runner.ts:248 (plan-escalated kind doc), :1472 (writeEscalationMarkerFn seam doc: 'Invoked exactly once, when MAX_REPLAN_ROUNDS consecutive audit-blocked rounds are exhausted'), :1523 (function headline: 'Drive runPlanPhase through up to MAX_REPLAN_ROUNDS rounds'), :2161, src/supervisor/plan-escalation.ts:6 and :23, and src/commands/sidecar.ts:2396. In a codebase whose recorded lesson is that stale comments mislead decisions, a mechanical sweep of these sentences belongs in the same change that altered the behavior they describe."
     },
     {
