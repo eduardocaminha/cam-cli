@@ -63,7 +63,7 @@
         "The quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: README.md (the command-list note at :156-157 and the Security section at ~:300-325), index.ts (module header comment :13-14, the top-level help note :171, and the per-command Behaviour step 1 repeated at :275, :330, :409, :644), src/commands/claude.ts:59. Write the Security text against the post-US-002 state: the value is a literal at each spawn site (src/commands/run.ts:392 orchestrator, src/commands/setup.ts:480 and :561, src/commands/sidecar.ts:1569 worker/reviewer dispatch, src/supervisor/plan-runner.ts:1312 plan phase) and there is no config key or CLI flag that changes it. README is a persisted human-readable .md: no em dash, no decorative emoji (global convention). Do not weaken the honesty of the section: a hostile reader auditing the code must not discover a STRONGER fact than the section discloses, which is the exact reviewer criterion CAM-457 failed on. docs/launch-readiness.md:191 and :210 describe the same claim but are a dated audit report, not current-state docs: leave them unless the wording reads as present-tense truth. Contratos internos (CAM_*, .cam-*, tmux -L cam, /cam-*) never rename (ADR-0050:19-22)."
     }
