@@ -1,21 +1,18 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Name the exhausted budget on the escalation marker and event"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
   "branchName": "cam/issue-448",
-  "timestamp": "2026-07-28T03:05:00-03:00",
+  "timestamp": "2026-07-28T04:15:00-03:00",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/plan-escalation.ts",
-    "src/supervisor/events.ts",
-    "src/supervisor/plan-runner.ts",
-    "test/supervisor/plan/plan-runner-replan.test.ts",
     "test/supervisor/plan/plan-escalation.test.ts",
-    "scripts/file-size-budget.json"
+    "test/integration/orch-respawn-reresolve.test.ts",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "PlanEscalatedMarker (src/supervisor/plan-escalation.ts) and PlanEscalatedEventDetail (src/supervisor/events.ts) now both carry exhaustedBudget: 'oracle-lint' | 'auditor', set from the terminal audit-blocked result's own `origin` field (the same discriminator US-002 introduced for the independent lint/auditor round budgets) at both write sites in runPlanPhaseWithReplan (src/supervisor/plan-runner.ts): the writeMarker({...}) call and the planOpts.logEvent?.({ kind: 'plan-escalated', detail: {...} }) call. On PlanEscalatedMarker the field is optional (`exhaustedBudget?:`) purely at the READ boundary (readPlanEscalatedMarker's shape guard treats it as optional, silently dropping an invalid/wrong-type value rather than rejecting the whole marker) so a marker written by a pre-US-003 binary still round-trips; the WRITE side (writeMarker call in plan-runner.ts) always supplies it -- there is no code path that omits it going forward. On PlanEscalatedEventDetail the field is REQUIRED (no backward-compat concern: events are transient flight-recorder entries, never read back across a binary upgrade the way the durable marker is). Two existing plan-runner-replan.test.ts assertions that pinned the marker/event payload with toEqual({...}) (an exact-shape assertion, GOTCHA called out in this story's own PRD notes) had to gain the new field rather than being left to silently under-assert; the same care applies to ANY future field added to either type -- grep for `toEqual(` against the marker/event shape before adding a field, don't just add it and let tests happen to still pass. sidecar.ts's makeWriteEscalationMarkerFn needed NO change: it spreads `...params` from PlanEscalationWriterParams (Omit<PlanEscalatedMarker, 'writtenAt'>) into the full marker, so a new optional field on PlanEscalatedMarker flows through for free -- always check for a spread-through seam like this before assuming a threading story needs a production-wiring-file edit.",
+  "nextStoryContext": "US-R1-001 closed the round-1 WARNING at plan-escalation.ts:89: the positive read path of exhaustedBudget was untested. test/supervisor/plan/plan-escalation.test.ts now has three new cases: a round-trip with exhaustedBudget: 'auditor', a round-trip with exhaustedBudget: 'oracle-lint', and the adversarial case where an on-disk 'bogus' value is dropped by the shape guard rather than trusted (readPlanEscalatedMarker's exact behavior at plan-escalation.ts:89-91). While running the full bun test / check:all gates for this story, a pre-existing flake surfaced in test/integration/orch-respawn-reresolve.test.ts (added in US-003/CAM-425): its two real-subprocess tests use spawnSync with an internal 15_000ms timeout but had no per-test bun:test timeout override, so they rode bun's un-raisable 5000ms default and could fail under check:all's CPU contention even though they pass in isolation (same CAM-201 flake class documented in patterns.md). Per gate discipline (no-flaky-evasion), fixed at the root rather than dismissed: added { timeout: 20_000 } as the third arg to both test(...) calls. This is unrelated to exhaustedBudget but was required to get a green check:all for this story; the next agent does not need to revisit either file. US-R1-002 (priority 2, already in prd.json) is the next queued round-1 fix: stale doc comments describing the escalation contract (events.ts:494/:72, plan-runner.ts:248/:1472/:1523/:2161, plan-escalation.ts:6/:23, sidecar.ts:2396) still describe the pre-US-002/US-003 single-budget behavior and need a mechanical sweep to reflect the oracle-lint/auditor budget split. Two SUGGESTIONs (non-blocking, not separately filed as US-R1 stories) remain in prd.json's review.findings for future consideration: (1) plan-runner.ts:1448's PlanEscalationWriterParams inherits exhaustedBudget as optional from Omit<PlanEscalatedMarker,'writtenAt'>, which the reviewer suggests tightening to required at the writer seam; (2) plan-runner-replan.test.ts:366's planner-spawn bound assertion only covers the all-lint-blocked case, not an interleaved lint+auditor+lint run where the summed MAX_LINT_REPLAN_ROUNDS+MAX_REPLAN_ROUNDS bound is actually load-bearing.",
   "officialDocsValidated": [
     {
       "lib": "none",
