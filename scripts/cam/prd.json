@@ -21,6 +21,20 @@
   ],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": false,
+      "notes": "WARNING [src/supervisor/plan-escalation.ts:89]: The positive read path of the new exhaustedBudget field is untested. No test anywhere writes a persisted marker CONTAINING exhaustedBudget and reads it back through readPlanEscalatedMarker: test/supervisor/plan/plan-escalation.test.ts only covers the legacy five-field marker (asserting the field is undefined), and every other PlanEscalatedMarker in the suite (test/unit/status-projection.test.ts, test/unit/status-diagnostics.test.ts) is an in-memory literal that never crosses the read boundary. A regression that always dropped the field at read (e.g. `const exhaustedBudget = undefined`) would leave all 5755 tests green, yet readPlanEscalatedMarker (src/commands/status.ts:657) is the only production consumer of the persisted marker, so the operator-facing purpose of US-003 would be silently defeated. Add a round-trip test asserting a marker written with exhaustedBudget: 'auditor' reads back with the field intact, plus the adversarial case that an unknown value (e.g. 'bogus') is dropped rather than trusted (the branch the comment at :87-88 claims)."
+    },
+    {
+      "id": "US-R1-002",
+      "title": "Review round 1 fix 002: address reviewer finding",
+      "priority": 2,
+      "passes": false,
+      "notes": "WARNING [src/supervisor/events.ts:494]: Doc comments describing the escalation contract were left stale by the budget split, including the very block this diff edited. events.ts:494 still reads 'BLOCK->re-plan loop exhausts MAX_REPLAN_ROUNDS without an APPROVE verdict' two lines above the newly added exhaustedBudget bullet that exists precisely because that is no longer the only escalation path. Same staleness at events.ts:72, src/supervisor/plan-runner.ts:248 (plan-escalated kind doc), :1472 (writeEscalationMarkerFn seam doc: 'Invoked exactly once, when MAX_REPLAN_ROUNDS consecutive audit-blocked rounds are exhausted'), :1523 (function headline: 'Drive runPlanPhase through up to MAX_REPLAN_ROUNDS rounds'), :2161, src/supervisor/plan-escalation.ts:6 and :23, and src/commands/sidecar.ts:2396. In a codebase whose recorded lesson is that stale comments mislead decisions, a mechanical sweep of these sentences belongs in the same change that altered the behavior they describe."
+    },
+    {
       "id": "US-001",
       "title": "Carry the block origin on the audit-blocked plan result",
       "description": "As the plan supervisor, I need every audit-blocked result to declare whether it came from the deterministic oracle lint or from the auditor, so the re-plan driver can budget the two independently instead of folding them into one indistinguishable counter.",
@@ -32,7 +46,7 @@
         "Tests pass (bun test) with zero failures. Expressed as a zero-failure assertion, never a pass-count floor, because a pinned pass count rots on every added test (CAM-447). [oracle: out=$(bun test 2>&1); echo \"$out\" | grep -qE ' 0 fail']",
         "The lint spine stays green. [oracle: bun run check:all]"
       ],
-      "priority": 1,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/plan-runner.ts (PlanPhaseResult union member at :277, runOracleLintCheck at :994-1004, the auditor BLOCK return at :1344), test/supervisor/plan-runner.test.ts (BROKEN_PRD :87 / CLEAN_PRD :99 fixtures and the makeOpts harness already inject readPrdContentFn). GOTCHA: making origin REQUIRED breaks the audit-blocked object literal at test/supervisor/plan/plan-runner-postaudit.test.ts:87 by construction; update that literal rather than weakening the field to optional. GOTCHA: runOracleLintCheck's return type is Extract<PlanPhaseResult, { kind: 'audit-blocked' }>, so the new field flows into it automatically once the union member changes. Design context: docs/adr/0052 ('Decision' paragraph) and the lint-origin BLOCK / auditor-origin BLOCK glossary entries in CONTEXT.md. Do NOT touch the round budgets in this story: US-002 owns them."
@@ -51,7 +65,7 @@
         "Tests pass (bun test) with zero failures. [oracle: out=$(bun test 2>&1); echo \"$out\" | grep -qE ' 0 fail']",
         "The lint spine stays green. [oracle: bun run check:all]"
       ],
-      "priority": 2,
+      "priority": 4,
       "passes": true,
       "requires": "US-001",
       "notes": "Files: src/supervisor/plan-runner.ts (runPlanPhaseWithReplan at :1500, the single-counter init at :1507, the loop guard at :1509, and the POST-loop escalation branch at :1531), test/supervisor/plan/plan-runner-replan.test.ts (options-builder harness), test/supervisor/plan-runner.test.ts (the AC6 rewrite at :425). GOTCHA, enforcement point: the fix is NOT only the loop guard at :1509. After the loop exits, escalating requires that the budget matching the FINAL block's origin actually be exhausted; changing only the guard leaves the terminal wrong. GOTCHA, harness blind spot: runOracleLintCheck early-returns null when readPrdContentFn === undefined (:998), and EVERY existing test in plan-runner-replan.test.ts leaves it unset, which is why none of them touch the lint path today. A new test that forgets to inject it silently drives the auditor path and passes for the wrong reason; test/supervisor/plan-runner.test.ts is the only file that currently injects it and is the reference for the fixture shape. GOTCHA, harness side effect: the per-round verdict advances via roundIndex++ inside teardownPlanPanesFn (plan-runner-replan.test.ts:195-203), not inside the runner; any override of teardownPlanPanesFn must preserve that or every round reads verdict[0] forever. GOTCHA, bun -t is a regex (confirmed in officialDocsConsulted), so + and parentheses in a pinned test name must be escaped, as the spawn-cycle pin oracle already shows. Accepted cost, not a regression: worst-case planner spawns per plan call rise from MAX_REPLAN_ROUNDS to MAX_LINT_REPLAN_ROUNDS + MAX_REPLAN_ROUNDS; the independent bound is what keeps it finite. Three separate tests assert MAX_REPLAN_ROUNDS === 2 (test/supervisor/plan/plan-replan.test.ts:99-101, test/plan-runner-in-progress-conflict.test.ts:211, and the spawn-cycle pin), which is why the lint budget must be a NEW constant. Do NOT absorb CAM-438 (lint over-fire): a perfectly precise lint would still be wrong to charge the auditor's budget. Design context: docs/adr/0052 'Decision' and 'Consequences'."
@@ -69,10 +83,41 @@
         "Tests pass (bun test) with zero failures. [oracle: out=$(bun test 2>&1); echo \"$out\" | grep -qE ' 0 fail']",
         "The lint spine stays green. [oracle: bun run check:all]"
       ],
-      "priority": 3,
+      "priority": 5,
       "passes": true,
       "requires": "US-002",
       "notes": "Files: src/supervisor/plan-escalation.ts (marker interface :37-43 and the read shape guard :66-81), src/supervisor/events.ts (PlanEscalatedEventDetail :498-501), src/supervisor/plan-runner.ts (writeMarker :1533-1538 and logEvent detail :1546-1552), test/supervisor/plan/plan-escalation.test.ts, test/supervisor/plan/plan-runner-replan.test.ts. GOTCHA, assertions that break BY CONSTRUCTION when the field is added: test/supervisor/plan/plan-runner-replan.test.ts:328-333 asserts the marker payload with toEqual on exactly {issueId, summary, findings, roundsCompleted}, and test/supervisor/plan/plan-escalation.test.ts:35 and :106 use toEqual round-trips. Update those assertions rather than working around them. GOTCHA: test/unit/status-projection.test.ts:68-72 and test/unit/status-diagnostics.test.ts:81, :227, :409-413 construct PlanEscalatedMarker literals and break if the field is required at the type level for readers; keeping it optional is what keeps this tractable. No production wiring change is needed in src/commands/sidecar.ts:2402, which spreads PlanEscalationWriterParams into the marker, so the field flows through once the writer params type carries it: verify this rather than assuming it. src/commands/status.ts:657 only reads the marker for display and needs no change. Design context: docs/adr/0052 'Consequences' (operator can distinguish the two failure modes; older markers still parse)."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:2",
+    "findings": [
+      {
+        "severity": "WARNING",
+        "file": "src/supervisor/plan-escalation.ts",
+        "line": 89,
+        "text": "The positive read path of the new exhaustedBudget field is untested. No test anywhere writes a persisted marker CONTAINING exhaustedBudget and reads it back through readPlanEscalatedMarker: test/supervisor/plan/plan-escalation.test.ts only covers the legacy five-field marker (asserting the field is undefined), and every other PlanEscalatedMarker in the suite (test/unit/status-projection.test.ts, test/unit/status-diagnostics.test.ts) is an in-memory literal that never crosses the read boundary. A regression that always dropped the field at read (e.g. `const exhaustedBudget = undefined`) would leave all 5755 tests green, yet readPlanEscalatedMarker (src/commands/status.ts:657) is the only production consumer of the persisted marker, so the operator-facing purpose of US-003 would be silently defeated. Add a round-trip test asserting a marker written with exhaustedBudget: 'auditor' reads back with the field intact, plus the adversarial case that an unknown value (e.g. 'bogus') is dropped rather than trusted (the branch the comment at :87-88 claims)."
+      },
+      {
+        "severity": "WARNING",
+        "file": "src/supervisor/events.ts",
+        "line": 494,
+        "text": "Doc comments describing the escalation contract were left stale by the budget split, including the very block this diff edited. events.ts:494 still reads 'BLOCK->re-plan loop exhausts MAX_REPLAN_ROUNDS without an APPROVE verdict' two lines above the newly added exhaustedBudget bullet that exists precisely because that is no longer the only escalation path. Same staleness at events.ts:72, src/supervisor/plan-runner.ts:248 (plan-escalated kind doc), :1472 (writeEscalationMarkerFn seam doc: 'Invoked exactly once, when MAX_REPLAN_ROUNDS consecutive audit-blocked rounds are exhausted'), :1523 (function headline: 'Drive runPlanPhase through up to MAX_REPLAN_ROUNDS rounds'), :2161, src/supervisor/plan-escalation.ts:6 and :23, and src/commands/sidecar.ts:2396. In a codebase whose recorded lesson is that stale comments mislead decisions, a mechanical sweep of these sentences belongs in the same change that altered the behavior they describe."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/supervisor/plan-runner.ts",
+        "line": 1448,
+        "text": "PlanEscalationWriterParams = Omit<PlanEscalatedMarker, 'writtenAt'> inherits exhaustedBudget as OPTIONAL, so the writer seam does not force a future escalation site to declare which budget was exhausted, even though US-001 deliberately made the same discriminator REQUIRED on the audit-blocked result for exactly that reason. Consider `Omit<PlanEscalatedMarker, 'writtenAt' | 'exhaustedBudget'> & { exhaustedBudget: 'oracle-lint' | 'auditor' }` so optionality stays confined to the read boundary where backward compatibility actually needs it."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "test/supervisor/plan/plan-runner-replan.test.ts",
+        "line": 366,
+        "text": "The planner-spawn bound is asserted only for the all-lint-blocked run, where the true bound is MAX_LINT_REPLAN_ROUNDS (2) but the assertion allows MAX_LINT_REPLAN_ROUNDS + MAX_REPLAN_ROUNDS (4). An interleaved run (lint block, auditor block, lint block) is the case where the summed bound is actually load-bearing and is currently uncovered; a test driving alternating origins would pin the combined worst case the ADR calls out as the accepted cost."
+      }
+    ]
+  }
 }

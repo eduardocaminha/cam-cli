@@ -88,6 +88,67 @@ describe('plan-escalation marker: round-trip (US-002, CAM-204)', () => {
 		expect(read?.exhaustedBudget).toBeUndefined();
 	});
 
+	// US-R1-001 (review round 1, CAM-448): the positive read path of
+	// exhaustedBudget was previously untested end-to-end -- every prior test
+	// either omitted the field or asserted it stays undefined. Prove a marker
+	// written WITH exhaustedBudget: 'auditor' round-trips through the real
+	// write+read pair with the field intact.
+	test('a marker written with exhaustedBudget: "auditor" round-trips with the field intact', () => {
+		const marker: PlanEscalatedMarker = {
+			issueId: 'CAM-204',
+			summary: 'Plan did not converge after 2 rounds.',
+			findings: [],
+			roundsCompleted: 2,
+			exhaustedBudget: 'auditor',
+			writtenAt: '2026-07-06T21:00:00Z',
+		};
+
+		writePlanEscalatedMarker(filePath, marker);
+
+		expect(readPlanEscalatedMarker(filePath)).toEqual(marker);
+	});
+
+	test('a marker written with exhaustedBudget: "oracle-lint" round-trips with the field intact', () => {
+		const marker: PlanEscalatedMarker = {
+			issueId: 'CAM-204',
+			summary: 'Plan did not converge after 2 rounds.',
+			findings: [],
+			roundsCompleted: 2,
+			exhaustedBudget: 'oracle-lint',
+			writtenAt: '2026-07-06T21:00:00Z',
+		};
+
+		writePlanEscalatedMarker(filePath, marker);
+
+		expect(readPlanEscalatedMarker(filePath)).toEqual(marker);
+	});
+
+	// Adversarial case: an unknown/invalid exhaustedBudget value must be
+	// dropped by the shape guard rather than trusted (the branch documented
+	// at plan-escalation.ts:87-88), not merely coerced or passed through.
+	test('an unknown exhaustedBudget value is dropped rather than trusted', () => {
+		const onDiskMarker = {
+			issueId: 'CAM-204',
+			summary: 'Plan did not converge after 2 rounds.',
+			findings: [],
+			roundsCompleted: 2,
+			exhaustedBudget: 'bogus',
+			writtenAt: '2026-07-06T21:00:00Z',
+		};
+		writeFileSync(filePath, JSON.stringify(onDiskMarker), 'utf8');
+
+		const read = readPlanEscalatedMarker(filePath);
+
+		expect(read?.exhaustedBudget).toBeUndefined();
+		expect(read).toEqual({
+			issueId: 'CAM-204',
+			summary: 'Plan did not converge after 2 rounds.',
+			findings: [],
+			roundsCompleted: 2,
+			writtenAt: '2026-07-06T21:00:00Z',
+		});
+	});
+
 	test('readPlanEscalatedMarker returns null for an absent file', () => {
 		expect(readPlanEscalatedMarker(filePath)).toBeNull();
 	});

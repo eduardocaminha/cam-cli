@@ -161,7 +161,13 @@ test('END-TO-END RE-RESOLUTION: real bun index.ts orch-resolve picks up a projec
 	} finally {
 		rmSync(cwd, { recursive: true, force: true });
 	}
-});
+	// Real-subprocess integration test (CAM-201 flake class, patterns.md:460):
+	// bun's default 5000ms per-test timeout is shorter than this test's own
+	// 15_000ms spawnSync budget, so the outer test can time out before the
+	// subprocess's own timeout ever fires under full-suite CPU contention.
+	// bunfig.toml's [test].timeout is silently ignored on this bun version;
+	// the third-arg override is the only reliable fix.
+}, { timeout: 20_000 });
 
 test('FAIL-SAFE + DIVERGENCE-EVENT SHAPE PARITY: a resolver that succeeds once then fails still respawns on the last known-good pair and records a shape-matching fallback event (AC2/AC3)', () => {
 	const cwd = mkdtempSync(join(tmpdir(), 'cam-reresolve-fallback-'));
@@ -325,4 +331,7 @@ test('FAIL-SAFE + DIVERGENCE-EVENT SHAPE PARITY: a resolver that succeeds once t
 	} finally {
 		rmSync(cwd, { recursive: true, force: true });
 	}
-});
+	// Same CAM-201 flake class as the test above: real spawnSync subprocess
+	// with its own 15_000ms budget, which can exceed bun's 5000ms default
+	// per-test timeout under full-suite CPU contention.
+}, { timeout: 20_000 });
