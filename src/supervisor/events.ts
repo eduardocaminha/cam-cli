@@ -69,7 +69,9 @@ import handoffSchema from '../../scripts/cam/handoff.schema.json';
  *     spread into detail -- so a failed ship is diagnosable from
  *     .claude/cam-worker-events.jsonl without reading source.
  *   - 'plan-escalated' (US-002, CAM-204): emitted when the BLOCK->re-plan
- *     loop (US-003) exhausts MAX_REPLAN_ROUNDS without an APPROVE verdict.
+ *     loop (US-003) exhausts its re-plan budget without an APPROVE verdict
+ *     (MAX_REPLAN_ROUNDS for auditor-origin blocks, MAX_LINT_REPLAN_ROUNDS
+ *     for oracle-lint-origin blocks, US-002, CAM-448, ADR-0052).
  *     Mirrored by a durable .cam-plan-escalated.json marker
  *     (src/supervisor/plan-escalation.ts) so a recycled orchestrator can
  *     derive the BLOCK terminal on wake even when the live send-keys
@@ -491,13 +493,19 @@ export interface ContainerPreflightEventDetail {
 
 /**
  * 'plan-escalated' event detail (US-002, CAM-204): emitted when the
- * BLOCK->re-plan loop exhausts MAX_REPLAN_ROUNDS without an APPROVE verdict.
+ * BLOCK->re-plan loop exhausts its re-plan budget without an APPROVE verdict
+ * (US-003, CAM-448, ADR-0052: MAX_REPLAN_ROUNDS for auditor-origin blocks,
+ * MAX_LINT_REPLAN_ROUNDS for oracle-lint-origin blocks, tracked
+ * independently -- see exhaustedBudget below).
  *   - issueId: the issue the re-plan loop was targeting.
  *   - roundsCompleted: how many re-plan rounds actually ran before giving up.
+ *   - exhaustedBudget: which of the two independent re-plan budgets (US-003,
+ *     CAM-448, ADR-0052) was exhausted -- 'oracle-lint' or 'auditor'.
  */
 export interface PlanEscalatedEventDetail {
 	issueId: string;
 	roundsCompleted: number;
+	exhaustedBudget: 'oracle-lint' | 'auditor';
 }
 
 /**

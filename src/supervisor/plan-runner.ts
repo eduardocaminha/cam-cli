@@ -104,8 +104,25 @@ export function deriveBranchName(issueNumber: unknown): string | null {
  * MAX_REPLAN_ROUNDS re-plan attempts, a still-blocked plan terminates as
  * escalated: there is no plan analog of the review loop's MAX_ROUNDS_DEBT
  * (non-convergence is a hard stop, never proceed-with-debt).
+ *
+ * This budgets ONLY audit-blocked rounds whose `origin` is 'auditor' (a real
+ * BLOCK verdict from the spawned auditor). Rounds blocked by the
+ * deterministic oracle lint are budgeted separately by
+ * MAX_LINT_REPLAN_ROUNDS (US-002, CAM-448, ADR-0052): a lint-origin block
+ * must not spend the auditor's correction budget, so the auditor's findings
+ * always get their own post-auditor correction rounds before the plan
+ * escalates.
  */
 export const MAX_REPLAN_ROUNDS = 2;
+
+/**
+ * Round cap for oracle-lint-origin audit-blocked rounds (US-002, CAM-448,
+ * ADR-0052). Independent from MAX_REPLAN_ROUNDS so a persistently-broken
+ * oracle cannot spin the planner indefinitely, while a lint block on round 1
+ * still leaves the full auditor budget (MAX_REPLAN_ROUNDS) intact for
+ * whatever real auditor findings surface once the PRD passes lint.
+ */
+export const MAX_LINT_REPLAN_ROUNDS = 2;
 
 /**
  * Build a re-plan planner task prompt that embeds the prior round's auditor
@@ -228,10 +245,12 @@ export const DEFAULT_PLAN_TIMEOUT_MS = 30 * 60 * 1_000;
  *                          spawned (US-002, CAM-203): an explicit target is never a silent
  *                          no-op that plans a different issue.
  *   plan-escalated       - ONLY produced by runPlanPhaseWithReplan (US-003, CAM-204):
- *                          MAX_REPLAN_ROUNDS consecutive audit-blocked rounds without an
- *                          APPROVE verdict. Terminal, never proceeds to branch (ADR-0012:
- *                          non-convergence is a hard stop, never proceed-with-debt).
- *                          runPlanPhase itself never returns this kind.
+ *                          the re-plan budget matching the latest block's origin is
+ *                          exhausted without an APPROVE verdict (MAX_REPLAN_ROUNDS for
+ *                          auditor-origin, MAX_LINT_REPLAN_ROUNDS for oracle-lint-origin,
+ *                          US-002, CAM-448, ADR-0052). Terminal, never proceeds to branch
+ *                          (ADR-0012: non-convergence is a hard stop, never
+ *                          proceed-with-debt). runPlanPhase itself never returns this kind.
  *   in-progress-conflict - detectInProgressConflictFn detected in-progress work at plan
  *                          start (US-004, CAM-241/153, AC1): an existing prd.json carrying
  *                          a passes:false non-operator story, or HEAD on a cam/* branch.
@@ -274,7 +293,14 @@ export type PlanPhaseResult =
 	 */
 	| { kind: 'codex-auth-failed'; phase: 'planner' | 'auditor'; reason: string }
 	| { kind: 'audit-approved'; issue: IssueEntry; report: PlanVerdictReport }
-	| { kind: 'audit-blocked'; issue: IssueEntry; report: PlanVerdictReport }
+	/**
+	 * `origin` declares whether this block came from the deterministic oracle
+	 * lint (runOracleLintCheck, never spawns the auditor) or from the auditor
+	 * itself (a real BLOCK verdict). REQUIRED so a future construction site
+	 * cannot silently default to the wrong provenance -- the re-plan driver
+	 * budgets the two independently (US-001, CAM-448).
+	 */
+	| { kind: 'audit-blocked'; issue: IssueEntry; report: PlanVerdictReport; origin: 'oracle-lint' | 'auditor' }
 	| { kind: 'plan-escalated'; issue: IssueEntry; report: PlanVerdictReport; roundsCompleted: number };
 
 // ---------------------------------------------------------------------------
@@ -1000,7 +1026,7 @@ function runOracleLintCheck(
 	if (prd === null) return null;
 	const findings = lintPrd(prd);
 	if (findings.length === 0) return null;
-	return { kind: 'audit-blocked', issue, report: buildLintBlockReport(findings) };
+	return { kind: 'audit-blocked', issue, report: buildLintBlockReport(findings), origin: 'oracle-lint' };
 }
 
 /**
@@ -1341,7 +1367,9 @@ function runPlanWorkerSequence(
 	}
 	removePlanTaskPrompt(opts, auditorStep.uuid);
 	const { report } = auditorResult;
-	return report.verdict === 'APPROVE' ? { kind: 'audit-approved', issue, report } : { kind: 'audit-blocked', issue, report };
+	return report.verdict === 'APPROVE'
+		? { kind: 'audit-approved', issue, report }
+		: { kind: 'audit-blocked', issue, report, origin: 'auditor' };
 }
 
 /**
@@ -1442,10 +1470,12 @@ export interface RunPlanPhaseWithReplanOptions extends RunPlanPhaseOptions {
 	teardownPlanPanesFn?: () => void;
 
 	/**
-	 * Escalation-marker writer seam. Invoked exactly once, when
-	 * MAX_REPLAN_ROUNDS consecutive audit-blocked rounds are exhausted without
-	 * an APPROVE verdict (AC3, US-003, ADR-0012: non-convergence is a hard
-	 * stop, never proceed-with-debt). Called with the LAST round's issue id,
+	 * Escalation-marker writer seam. Invoked exactly once, when the re-plan
+	 * budget matching the latest block's origin is exhausted without an
+	 * APPROVE verdict (MAX_REPLAN_ROUNDS for auditor-origin, MAX_LINT_REPLAN_ROUNDS
+	 * for oracle-lint-origin, US-002, CAM-448, ADR-0052) (AC3, US-003,
+	 * ADR-0012: non-convergence is a hard stop, never proceed-with-debt).
+	 * Called with the LAST round's issue id,
 	 * summary, findings, and the total rounds completed. Optional: defaults to
 	 * a no-op for backward compat. Production wiring (US-004) constructs the
 	 * full PlanEscalatedMarker (adding writtenAt) and calls
@@ -1455,9 +1485,50 @@ export interface RunPlanPhaseWithReplanOptions extends RunPlanPhaseOptions {
 }
 
 /**
- * Drive runPlanPhase through up to MAX_REPLAN_ROUNDS rounds, mirroring the
- * review loop's FIXES_PENDING -> re-implement -> MAX_ROUNDS control flow in
- * loop.ts (US-003, CAM-204).
+ * Per-origin round counters for runPlanPhaseWithReplan's independent lint /
+ * auditor budgets (US-002, CAM-448, ADR-0052). Extracted alongside
+ * bumpReplanBudget/replanBudgetRemains to keep runPlanPhaseWithReplan under
+ * biome's cognitive-complexity limit (patterns.md 'Biome cognitive
+ * complexity: use factory/helper extraction').
+ */
+interface ReplanBudgetState {
+	lintRoundsUsed: number;
+	auditorRoundsUsed: number;
+}
+
+/** Increments the counter matching `result`'s block origin; a no-op for any non-blocked result. */
+function bumpReplanBudget(result: PlanPhaseResult, state: ReplanBudgetState): ReplanBudgetState {
+	if (result.kind !== 'audit-blocked') return state;
+	return result.origin === 'oracle-lint'
+		? { ...state, lintRoundsUsed: state.lintRoundsUsed + 1 }
+		: { ...state, auditorRoundsUsed: state.auditorRoundsUsed + 1 };
+}
+
+/**
+ * True when the budget matching an already-confirmed-blocked round's OWN
+ * origin (MAX_LINT_REPLAN_ROUNDS for oracle-lint, MAX_REPLAN_ROUNDS for
+ * auditor) has not yet been exhausted. Callers narrow `result.kind ===
+ * 'audit-blocked'` themselves (e.g. the while-loop condition below) so this
+ * stays a plain boolean helper rather than a type predicate: fusing the
+ * kind-check into a predicate here would make TS mis-narrow `result` to
+ * "never audit-blocked" after the loop exits on budget exhaustion, which is
+ * exactly the still-blocked case the post-loop escalation branch depends on.
+ */
+function replanBudgetRemains(
+	result: Extract<PlanPhaseResult, { kind: 'audit-blocked' }>,
+	state: ReplanBudgetState,
+): boolean {
+	return result.origin === 'oracle-lint'
+		? state.lintRoundsUsed < MAX_LINT_REPLAN_ROUNDS
+		: state.auditorRoundsUsed < MAX_REPLAN_ROUNDS;
+}
+
+/**
+ * Drive runPlanPhase through up to the applicable re-plan budget's rounds
+ * (MAX_REPLAN_ROUNDS for auditor-origin blocks, MAX_LINT_REPLAN_ROUNDS for
+ * oracle-lint-origin blocks, tracked independently, US-002, CAM-448,
+ * ADR-0052), mirroring the review loop's FIXES_PENDING -> re-implement ->
+ * MAX_ROUNDS control flow in loop.ts (US-003, CAM-204).
  *
  * Round 1 runs runPlanPhase unchanged (opts as given). Each subsequent round
  * (while the previous round was audit-blocked and rounds remain) re-runs
@@ -1474,10 +1545,15 @@ export interface RunPlanPhaseWithReplanOptions extends RunPlanPhaseOptions {
  *
  * Terminal outcomes:
  *   - audit-approved: returned as-is (proceeds to the caller's branch path).
- *   - MAX_REPLAN_ROUNDS exhausted still audit-blocked: writeEscalationMarkerFn
- *     is invoked with the last round's findings, and a terminal
- *     `plan-escalated` result is returned (never `audit-blocked`, never
- *     branch, AC3).
+ *   - Budget exhausted still audit-blocked: writeEscalationMarkerFn is invoked
+ *     with the last round's findings, and a terminal `plan-escalated` result
+ *     is returned (never `audit-blocked`, never branch, AC3). The budget that
+ *     gates continuation is chosen by the LATEST round's block `origin`
+ *     (US-002, CAM-448): oracle-lint blocks are counted against
+ *     MAX_LINT_REPLAN_ROUNDS, auditor blocks against MAX_REPLAN_ROUNDS, each
+ *     tracked independently -- a lint block never spends the auditor's
+ *     budget and vice versa, so a lint block on round 1 still leaves the
+ *     full auditor budget for the auditor's own findings.
  *   - Any other (non-audit) kind from round 1: returned as-is, no re-plan
  *     round is ever triggered.
  *
@@ -1505,8 +1581,13 @@ export function runPlanPhaseWithReplan(opts: RunPlanPhaseWithReplanOptions): Pla
 	try {
 		let result = runPlanPhase(planOpts);
 		let roundsCompleted = 1;
+		// Independent per-origin budgets (US-002, CAM-448, ADR-0052): a
+		// lint-origin block must never spend the auditor's correction budget,
+		// so the two are tracked separately and each round's continuation is
+		// gated by the budget matching THAT round's own block origin.
+		let budget = bumpReplanBudget(result, { lintRoundsUsed: 0, auditorRoundsUsed: 0 });
 
-		while (result.kind === 'audit-blocked' && roundsCompleted < MAX_REPLAN_ROUNDS) {
+		while (result.kind === 'audit-blocked' && replanBudgetRemains(result, budget)) {
 			const blockedIssue = result.issue;
 			const blockedFindings = result.report.findings;
 
@@ -1526,15 +1607,18 @@ export function runPlanPhaseWithReplan(opts: RunPlanPhaseWithReplanOptions): Pla
 				detectInProgressConflictFn: undefined,
 				writeInProgressConflictGateFn: undefined,
 			});
+			budget = bumpReplanBudget(result, budget);
 		}
 
 		if (result.kind === 'audit-blocked') {
-			// MAX_REPLAN_ROUNDS exhausted without convergence (ADR-0012 hard stop).
+			// Budget for the last round's block origin exhausted without
+			// convergence (ADR-0012 hard stop).
 			writeMarker({
 				issueId: result.issue.id,
 				summary: result.report.summary,
 				findings: result.report.findings,
 				roundsCompleted,
+				exhaustedBudget: result.origin,
 			});
 			// US-R1-001 (CAM-204 review fix): emit the structured 'plan-escalated'
 			// event UNCONDITIONALLY on this terminal (AC2). The durable marker above
@@ -1548,7 +1632,7 @@ export function runPlanPhaseWithReplan(opts: RunPlanPhaseWithReplanOptions): Pla
 				storyId: undefined,
 				uuid: 'plan-escalation',
 				kind: 'plan-escalated',
-				detail: { issueId: result.issue.id, roundsCompleted },
+				detail: { issueId: result.issue.id, roundsCompleted, exhaustedBudget: result.origin },
 			});
 			return {
 				kind: 'plan-escalated',
@@ -2080,7 +2164,9 @@ export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionRe
 	}
 
 	// plan-escalated (US-004, CAM-204): the BLOCK->re-plan loop (US-003)
-	// exhausted MAX_REPLAN_ROUNDS without converging. The durable marker was
+	// exhausted the re-plan budget matching the latest block's origin
+	// (MAX_REPLAN_ROUNDS for auditor-origin, MAX_LINT_REPLAN_ROUNDS for
+	// oracle-lint-origin, US-002, CAM-448, ADR-0052) without converging. The durable marker was
 	// ALREADY written unconditionally by runPlanPhaseWithReplan's
 	// writeEscalationMarkerFn seam BEFORE this function is ever invoked, so
 	// its persistence never depends on notifyFn/escalateFn presence or

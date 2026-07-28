@@ -358,6 +358,22 @@ describe('runPlanPhase: oracle lint wiring (AC2, AC3, AC5)', () => {
 		expect(finding.description).toContain(BROKEN_ORACLE_COMMAND);
 	});
 
+	test("audit-blocked carries origin oracle-lint for a lint block and auditor for an auditor BLOCK", () => {
+		const { opts: lintOpts, calls: lintCalls } = makeOpts({ readPrdContentFn: () => BROKEN_PRD });
+		const lintResult = runPlanPhase(lintOpts) as { kind: 'audit-blocked'; origin: 'oracle-lint' | 'auditor' };
+		expect(lintResult.kind).toBe('audit-blocked');
+		expect(lintResult.origin).toBe('oracle-lint');
+		expect(auditorRespawnCalls(lintCalls)).toHaveLength(0);
+
+		const { opts: auditorOpts } = makeOpts({
+			readPrdContentFn: () => CLEAN_PRD,
+			readPlanVerdictFn: () => BLOCK_REPORT,
+		});
+		const auditorResult = runPlanPhase(auditorOpts) as { kind: 'audit-blocked'; origin: 'oracle-lint' | 'auditor' };
+		expect(auditorResult.kind).toBe('audit-blocked');
+		expect(auditorResult.origin).toBe('auditor');
+	});
+
 	test('AC5: a clean prd.json proceeds to the auditor unchanged (zero behavior change)', () => {
 		const { opts, calls } = makeOpts({ readPrdContentFn: () => CLEAN_PRD });
 		const result = runPlanPhase(opts);
@@ -422,12 +438,22 @@ describe('runPlanPhaseWithReplan: lint findings fold into the re-plan loop (AC3,
 		expect(calls.filter((c) => c.cmd === 'git')).toHaveLength(0);
 	});
 
-	test('mixed: round-1 lint-block then round-2 real auditor BLOCK both fold into the SAME escalation path', () => {
-		const { opts, markerCalls } = makeReplanOpts([BROKEN_PRD, CLEAN_PRD], [APPROVE_REPORT, BLOCK_REPORT]);
-		const result = runPlanPhaseWithReplan(opts) as { kind: 'plan-escalated'; roundsCompleted: number };
-		expect(result.kind).toBe('plan-escalated');
-		expect(result.roundsCompleted).toBe(2);
-		expect(markerCalls[0]?.summary).toBe(BLOCK_REPORT.summary);
+	test('mixed: round-1 lint-block then round-2 real auditor BLOCK do NOT fold into the same escalation path (US-002, CAM-448)', () => {
+		// Round 1: lint blocks (BROKEN_PRD), spending the lint budget only.
+		// Round 2: prd.json is clean (CLEAN_PRD), so the auditor is spawned for
+		// real and returns BLOCK -- that spends the FIRST round of the
+		// (untouched) auditor budget, not the exhausted lint budget. Round 3
+		// (also lint-clean, falls back to CLEAN_PRD) still has auditor budget
+		// left and approves, so the run converges instead of escalating.
+		const { opts, markerCalls, calls } = makeReplanOpts(
+			[BROKEN_PRD, CLEAN_PRD],
+			[APPROVE_REPORT, BLOCK_REPORT, APPROVE_REPORT],
+		);
+		const result = runPlanPhaseWithReplan(opts);
+		expect(result.kind).toBe('audit-approved');
+		expect(auditorRespawnCalls(calls).length).toBeGreaterThanOrEqual(2);
+		// No escalation: the marker writer is never invoked.
+		expect(markerCalls).toHaveLength(0);
 	});
 });
 

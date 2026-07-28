@@ -140,13 +140,19 @@ test('END-TO-END RE-RESOLUTION: real bun index.ts orch-resolve picks up a projec
 		const result = spawnSync('bash', ['-c', cmd], {
 			cwd,
 			encoding: 'utf8',
-			timeout: 15_000,
+			timeout: 25_000,
 			env: { ...process.env, PATH: `${fakeBinDir}:${process.env.PATH}` },
 		});
-		expect(result.error).toBeUndefined();
+		expect(
+			result.error,
+			`spawnSync error (status=${result.status}, signal=${result.signal})\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+		).toBeUndefined();
 
 		const invocations = parseArgvLog(argvLog);
-		expect(invocations.length).toBe(2);
+		expect(
+			invocations.length,
+			`expected 2 claude invocations, got ${invocations.length} (status=${result.status}, signal=${result.signal})\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+		).toBe(2);
 		const first = invocations[0] ?? [];
 		const second = invocations[1] ?? [];
 
@@ -161,7 +167,29 @@ test('END-TO-END RE-RESOLUTION: real bun index.ts orch-resolve picks up a projec
 	} finally {
 		rmSync(cwd, { recursive: true, force: true });
 	}
-});
+	// Real-subprocess integration test (CAM-201 flake class, patterns.md:460),
+	// REVISED at US-R2-001 (CAM-448): node:child_process spawnSync blocks the
+	// JS thread synchronously (native waitpid loop), so bun's per-test timeout
+	// -- itself an async/timer-based mechanism -- CANNOT preempt it while it is
+	// running (confirmed against Bun/Node subprocess semantics: a synchronous
+	// blocking call yields no event-loop turn for a JS timer to fire on). The
+	// spawnSync `timeout` option below is therefore the ONLY budget that can
+	// actually govern this test's real wall-clock ceiling; the third-arg
+	// per-test timeout only needs to stay comfortably ABOVE it so bun's own
+	// bookkeeping/assertion overhead after spawnSync returns never trips it.
+	// Both budgets are raised in step (25_000 / 30_000) to give the heaviest
+	// operation here (a real `bun index.ts orch-resolve` subprocess spawn) more
+	// headroom under contention. Round-1 (US-R1-001) raised only the inert
+	// outer budget, which could not have fixed -- and did not explain -- the
+	// originally-recorded symptom (a clean `invocations.length` 1-vs-2
+	// mismatch with `result.error` undefined, i.e. no timeout at all); that
+	// symptom was NOT reproduced under bounded empirical stress-testing for
+	// this round (repeated runs with 20-70 concurrent CPU-bound background
+	// processes, both sequential and parallel). The two `expect()` calls above
+	// now carry the subprocess's stdout/stderr/status/signal in their failure
+	// message so a future recurrence is diagnosable from the test output
+	// itself instead of requiring re-derivation from patterns.md prose.
+}, { timeout: 30_000 });
 
 test('FAIL-SAFE + DIVERGENCE-EVENT SHAPE PARITY: a resolver that succeeds once then fails still respawns on the last known-good pair and records a shape-matching fallback event (AC2/AC3)', () => {
 	const cwd = mkdtempSync(join(tmpdir(), 'cam-reresolve-fallback-'));
@@ -248,13 +276,19 @@ test('FAIL-SAFE + DIVERGENCE-EVENT SHAPE PARITY: a resolver that succeeds once t
 		const result = spawnSync('bash', ['-c', cmd], {
 			cwd,
 			encoding: 'utf8',
-			timeout: 15_000,
+			timeout: 25_000,
 			env: { ...process.env, PATH: `${fakeBinDir}:${process.env.PATH}` },
 		});
-		expect(result.error).toBeUndefined();
+		expect(
+			result.error,
+			`spawnSync error (status=${result.status}, signal=${result.signal})\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+		).toBeUndefined();
 
 		const invocations = parseArgvLog(argvLog);
-		expect(invocations.length).toBe(3);
+		expect(
+			invocations.length,
+			`expected 3 claude invocations, got ${invocations.length} (status=${result.status}, signal=${result.signal})\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+		).toBe(3);
 		const [first, second, third] = invocations as [string[], string[], string[]];
 
 		// Invocation 1: initial (TS-resolved) seed.
@@ -325,4 +359,9 @@ test('FAIL-SAFE + DIVERGENCE-EVENT SHAPE PARITY: a resolver that succeeds once t
 	} finally {
 		rmSync(cwd, { recursive: true, force: true });
 	}
-});
+	// Same CAM-201 flake class and same US-R2-001 (CAM-448) revision as the
+	// test above: spawnSync's own 25_000ms timeout is the real governing
+	// budget (a synchronous blocking call cannot be preempted by bun's
+	// per-test timeout), so the third-arg timeout below is raised in step
+	// (30_000) rather than independently.
+}, { timeout: 30_000 });

@@ -2,9 +2,12 @@
 //
 // Durable plan-escalation marker (US-002, CAM-204).
 //
-// Written on plan non-convergence (a BLOCK verdict that persists after
-// MAX_REPLAN_ROUNDS re-plan rounds, ADR-0012: non-convergence is a hard stop,
-// never proceed-with-debt) so the orchestrator can derive a BLOCK terminal on
+// Written on plan non-convergence (a BLOCK verdict that persists after the
+// re-plan budget matching the latest block's origin is exhausted --
+// MAX_REPLAN_ROUNDS for auditor-origin blocks, MAX_LINT_REPLAN_ROUNDS for
+// oracle-lint-origin blocks, tracked independently, US-002, CAM-448,
+// ADR-0052 -- ADR-0012: non-convergence is a hard stop, never
+// proceed-with-debt) so the orchestrator can derive a BLOCK terminal on
 // wake even when the live send-keys narration to the orchestrator pane is
 // dropped. CAM-200-independent, CAM-195-style: a plain JSON marker file under
 // .claude/, mirroring the durable ship-stalled marker precedent verbatim
@@ -19,8 +22,10 @@ import type { PlanVerdictFinding } from './plan-verdict-report.ts';
 
 /**
  * Filename of the durable plan-escalation marker (relative to the .claude/
- * dir, US-002, CAM-204). Written when the BLOCK->re-plan loop exhausts
- * MAX_REPLAN_ROUNDS without an APPROVE verdict; removed when the same issue
+ * dir, US-002, CAM-204). Written when the BLOCK->re-plan loop exhausts the
+ * re-plan budget matching the latest block's origin (MAX_REPLAN_ROUNDS for
+ * auditor-origin, MAX_LINT_REPLAN_ROUNDS for oracle-lint-origin, US-002,
+ * CAM-448, ADR-0052) without an APPROVE verdict; removed when the same issue
  * later plans clean (caller's responsibility to check issueId match first,
  * mirroring removeShipStalledMarker).
  */
@@ -32,6 +37,15 @@ export const PLAN_ESCALATED_FILENAME = '.cam-plan-escalated.json';
  *   - summary: the auditor's final one-sentence BLOCK summary.
  *   - findings: the final round's structured findings (empty array allowed).
  *   - roundsCompleted: how many re-plan rounds actually ran before giving up.
+ *   - exhaustedBudget: which of the two independent re-plan budgets
+ *     (US-002, CAM-448, ADR-0052) was exhausted to produce this escalation --
+ *     'oracle-lint' when the last round's block came from the deterministic
+ *     oracle-lint checker, 'auditor' when it came from a real auditor BLOCK
+ *     verdict. Optional at the read boundary (US-003, CAM-448) even though
+ *     the writer always sets it: a marker written by a binary that predates
+ *     this field must still parse (backward compatibility), and existing
+ *     PlanEscalatedMarker literals elsewhere in the codebase must keep
+ *     compiling without adding it.
  *   - writtenAt: ISO 8601 timestamp the marker was written.
  */
 export interface PlanEscalatedMarker {
@@ -39,6 +53,7 @@ export interface PlanEscalatedMarker {
 	summary: string;
 	findings: PlanVerdictFinding[];
 	roundsCompleted: number;
+	exhaustedBudget?: 'oracle-lint' | 'auditor';
 	writtenAt: string;
 }
 
@@ -72,11 +87,19 @@ export function readPlanEscalatedMarker(filePath: string): PlanEscalatedMarker |
 		) {
 			return null;
 		}
+		// exhaustedBudget is optional at the read boundary (US-003, CAM-448): a
+		// marker written before this field existed still parses. When present,
+		// it must be one of the two known budget names, otherwise it is dropped
+		// rather than trusted.
+		const rawExhaustedBudget = obj['exhaustedBudget'];
+		const exhaustedBudget =
+			rawExhaustedBudget === 'oracle-lint' || rawExhaustedBudget === 'auditor' ? rawExhaustedBudget : undefined;
 		return {
 			issueId: obj['issueId'] as string,
 			summary: obj['summary'] as string,
 			findings: obj['findings'] as PlanVerdictFinding[],
 			roundsCompleted: obj['roundsCompleted'] as number,
+			...(exhaustedBudget !== undefined ? { exhaustedBudget } : {}),
 			writtenAt: obj['writtenAt'] as string,
 		};
 	} catch {
