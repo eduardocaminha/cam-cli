@@ -69,7 +69,7 @@ A runtime JSON file the sidecar writes on a silent terminal state (ship stalled,
 The mechanism by which the long-lived cam orchestrator hands its accumulated context to a fresh copy of itself at a cycle boundary, instead of degrading as its context window fills. At cycle close the orchestrator writes a handoff file and arms a recycle marker via cam journal append --cycle-close; a recycle watcher terminates the stale session and the wrapper respawns a fresh orchestrator that rehydrates from the consumed handoff. A context-occupancy backstop (around 80 percent of the window) arms the same recycle autonomously as a secondary trigger. Plain cam journal append signals that a handoff is due but does not arm the recycle.
 
 **plannable issue**:
-An issue eligible to enter planning: its stage is specified, its status is open, and it is not blocked by an unshipped dependency. This is the single condition that qualifies an issue for /cam-plan.
+An issue eligible to enter planning: its stage is specified, its status is open, it carries a non-empty set of acceptance criteria, and it is not blocked by an unshipped dependency.
 
 **issue stage**:
 The lifecycle-progress axis of an issue: idea, specified, planned, or shipped. It records how far the issue has advanced and is orthogonal to status.
@@ -246,7 +246,7 @@ Re-running the /cam-spec interview on an issue whose spec is defective. Reached 
 A stage:specified spec that is internally contradictory or that a planner keeps mis-implementing, such that the cycle cannot converge without rebuilding the spec.
 
 **plannable set**:
-The issues selectPlannableIssue will pick for /cam-plan (stage:specified, open). Demoting to idea removes an issue from this set until it is re-specified.
+The issues selectPlannableIssue will pick for /cam-plan (stage:specified, open, carrying acceptance criteria, not blocked). Demoting to idea removes an issue from this set until it is re-specified.
 
 **boot-surfaced marker**:
 A durable .claude/.cam-*.json file (ship-stalled, plan-escalated, plan-preflight-failed, implement-blocked, post-merge-stalled, sidecar-stalled) that a deterministic recovery/terminal path writes to record a non-happy outcome. The orchestrator reads it at boot and surfaces it as an opening blocker line (read-only); it never deletes the marker itself. Each marker is cleared only by its own specific deterministic path (e.g. implement-blocked by the next re-armed implement dispatch for the same issue; plan-preflight-failed by the next non-preflight-failed plan run; plan-escalated by the next converging plan run).
