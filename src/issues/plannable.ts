@@ -12,10 +12,25 @@ export function isSpecifiedOpen(entry: IssueEntry): boolean {
 }
 
 /**
- * Layer 2 (selection core): true iff the entry is specified+open AND not
- * blocked by an unshipped dependency. Used by select.ts / plan.ts, which
- * exclude blocked issues from the selection queue.
+ * Layer 2 (selection core): true iff the entry is specified+open, carries a
+ * non-empty set of acceptance criteria (ADR-0051), AND is not blocked by an
+ * unshipped dependency. Used by select.ts / plan.ts, which exclude blocked
+ * issues from the selection queue.
  */
 export function isPlannable(entry: IssueEntry, backlog: IssueEntry[]): boolean {
-	return isSpecifiedOpen(entry) && !isBlocked(entry, backlog);
+	return (
+		isSpecifiedOpen(entry) &&
+		hasAcceptanceCriteria(entry) &&
+		!isBlocked(entry, backlog)
+	);
+}
+
+/**
+ * True iff the entry carries a spec with a non-empty acceptanceCriteria
+ * array (ADR-0051). `spec` is optional and may be entirely absent (derived /
+ * fast-tracked issues omit the key rather than writing `{}`), so this guards
+ * both the missing-spec and empty-array shapes.
+ */
+function hasAcceptanceCriteria(entry: IssueEntry): boolean {
+	return (entry.spec?.acceptanceCriteria?.length ?? 0) > 0;
 }

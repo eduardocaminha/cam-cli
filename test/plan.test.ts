@@ -106,6 +106,7 @@ function makePlannable(id: string): IssueEntry {
 		blockedBy: [],
 		createdAt: '2026-01-01T00:00:00Z',
 		updatedAt: '2026-01-01T00:00:00Z',
+		spec: { acceptanceCriteria: ['x'], scope: 's', gotchas: [], domainTerms: [] },
 	};
 }
 
@@ -414,6 +415,47 @@ describe('runPlan (F-01 validation, specific N)', () => {
 
 		expect(code).toBe(1);
 		expect(writeCalls).toHaveLength(0);
+	});
+
+	test('AC4: returns 1 and names the missing-criteria case when spec.acceptanceCriteria is empty', async () => {
+		// Review round 1 finding (US-R1-001): the missing-criteria arm of
+		// buildNotPlannableReason (plan.ts) was previously unreachable by any
+		// test -- every fixture that reached this branch already carried a
+		// non-empty acceptanceCriteria array. This fixture is specified/open/
+		// unblocked (so it clears the status/stage/isBlocked checks first) but
+		// carries an empty acceptanceCriteria array, forcing the real branch.
+		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-no-criteria-'));
+		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
+		const { calls: writeCalls, writeFn } = makeWriteCapture();
+		const noCriteria: IssueEntry = {
+			...makePlannable('CAM-14'),
+			spec: { acceptanceCriteria: [], scope: 's', gotchas: [], domainTerms: [] },
+		};
+
+		const original = process.stderr.write.bind(process.stderr);
+		const captured: string[] = [];
+		process.stderr.write = ((chunk: string | Uint8Array) => {
+			captured.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk));
+			return true;
+		}) as typeof process.stderr.write;
+
+		let code: number;
+		try {
+			code = await runPlan({
+				cwd: tmpDir,
+				tmuxSpawnFn: spawnFn,
+				writeFn,
+				issue: 14,
+				readBacklogFn: () => [noCriteria],
+				sidecarAliveFn: () => true,
+			});
+		} finally {
+			process.stderr.write = original;
+		}
+
+		expect(code).toBe(1);
+		expect(writeCalls).toHaveLength(0);
+		expect(captured.join('')).toMatch(/no acceptanceCriteria in spec/);
 	});
 
 	test('AC3: specific N does NOT fall back to top-of-queue when invalid', async () => {

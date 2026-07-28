@@ -645,6 +645,14 @@ describe('createLocalIssueOnMain — issue_prefix', () => {
 // US-002: Fast-track guardrails (pre-commit, validate-before-mutate)
 // ---------------------------------------------------------------------------
 
+// A valid Spec fixture (US-002): non-empty acceptanceCriteria + non-empty scope.
+const VALID_SPEC = {
+	acceptanceCriteria: ['The thing works as described'],
+	scope: 'A small, well-bounded change',
+	gotchas: [] as string[],
+	domainTerms: [] as string[],
+};
+
 // Helper: silence stderr for guardrail-refusal tests
 function withSilentStderr<T>(fn: () => T): T {
 	const original = process.stderr.write.bind(process.stderr);
@@ -684,21 +692,24 @@ describe('createLocalIssueOnMain — fast-track guardrails (US-002)', () => {
 				spawnFn,
 				specSource: 'operator' as const,
 				description: 'A non-empty description',
+				spec: VALID_SPEC,
 				wsjf: { value: 8, timeCriticality: 5, riskReduction: 3, jobSize: 4 },
 			}),
 		);
 		assertOk(result);
 
-		// hash-object input must have stage:'specified' and specSource:'operator'
+		// hash-object input must have stage:'specified', specSource:'operator', and the persisted spec
 		const hashCall = calls.find((c) => c.args.includes('hash-object'));
 		expect(hashCall).toBeDefined();
 		const entry = JSON.parse(hashCall!.options.input!) as {
 			stage: string;
 			specSource: string;
+			spec: { acceptanceCriteria: string[]; scope: string };
 			wsjf: { value: number; timeCriticality: number; riskReduction: number; jobSize: number };
 		};
 		expect(entry.stage).toBe('specified');
 		expect(entry.specSource).toBe('operator');
+		expect(entry.spec).toEqual(VALID_SPEC);
 		expect(entry.wsjf).toEqual({ value: 8, timeCriticality: 5, riskReduction: 3, jobSize: 4 });
 	});
 
@@ -712,6 +723,7 @@ describe('createLocalIssueOnMain — fast-track guardrails (US-002)', () => {
 					specSource: 'derived' as const,
 					derivedFrom: ['CAM-88'],
 					description: 'A fix derived from CAM-88',
+					spec: VALID_SPEC,
 					// No explicit wsjf; parent CAM-88 has no wsjf either -> unresolvable
 				}),
 			)
@@ -745,6 +757,7 @@ describe('createLocalIssueOnMain — fast-track guardrails (US-002)', () => {
 				specSource: 'derived' as const,
 				derivedFrom: ['CAM-88'],
 				description: 'A fix derived from CAM-88',
+				spec: VALID_SPEC,
 				// No explicit wsjf -- should inherit parent's wsjf
 			}),
 		);
@@ -787,6 +800,7 @@ describe('createLocalIssueOnMain — fast-track guardrails (US-002)', () => {
 				specSource: 'derived' as const,
 				derivedFrom: ['CAM-88'],
 				description: 'A high-priority fix',
+				spec: VALID_SPEC,
 				wsjf: explicitWsjf,  // explicit overrides parent
 			}),
 		);
@@ -810,6 +824,7 @@ describe('createLocalIssueOnMain — fast-track guardrails (US-002)', () => {
 					specSource: 'derived' as const,
 					derivedFrom: [],  // empty: validation fails
 					description: 'A fix',
+					spec: VALID_SPEC,
 					wsjf: { value: 5, timeCriticality: 3, riskReduction: 2, jobSize: 4 },
 				}),
 			)
@@ -831,5 +846,122 @@ describe('createLocalIssueOnMain — fast-track guardrails (US-002)', () => {
 		const entry = JSON.parse(hashCall!.options.input!) as { stage: string; specSource?: string };
 		expect(entry.stage).toBe('idea');
 		expect(entry.specSource).toBeUndefined();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-002 (CAM-449): spec is REQUIRED and validated via validateSpec whenever
+// specSource is present, on BOTH the --fast-track and --derived-from paths.
+// ---------------------------------------------------------------------------
+
+describe('createLocalIssueOnMain — spec guardrail (US-002, CAM-449)', () => {
+	test('--fast-track (operator) with NO spec at all REFUSES (non-ok, no commit)', () => {
+		const { spawnFn, calls } = makeRecordingSpawn();
+		const result = withSilentStderr(() =>
+			createLocalIssueOnMain(
+				makeOptions({
+					spawnFn,
+					specSource: 'operator' as const,
+					description: 'A non-empty description',
+					wsjf: { value: 8, timeCriticality: 5, riskReduction: 3, jobSize: 4 },
+					// spec omitted entirely
+				}),
+			)
+		);
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.reason).toBe('guardrail-failed');
+		}
+		expect(calls.find((c) => c.args.includes('update-ref'))).toBeUndefined();
+	});
+
+	test('--fast-track (operator) with an empty acceptanceCriteria array REFUSES', () => {
+		const { spawnFn, calls } = makeRecordingSpawn();
+		const result = withSilentStderr(() =>
+			createLocalIssueOnMain(
+				makeOptions({
+					spawnFn,
+					specSource: 'operator' as const,
+					description: 'A non-empty description',
+					wsjf: { value: 8, timeCriticality: 5, riskReduction: 3, jobSize: 4 },
+					spec: { acceptanceCriteria: [], scope: 'Some scope', gotchas: [], domainTerms: [] },
+				}),
+			)
+		);
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.reason).toBe('guardrail-failed');
+		}
+		expect(calls.find((c) => c.args.includes('update-ref'))).toBeUndefined();
+	});
+
+	test('--fast-track (operator) with an empty scope string REFUSES', () => {
+		const { spawnFn, calls } = makeRecordingSpawn();
+		const result = withSilentStderr(() =>
+			createLocalIssueOnMain(
+				makeOptions({
+					spawnFn,
+					specSource: 'operator' as const,
+					description: 'A non-empty description',
+					wsjf: { value: 8, timeCriticality: 5, riskReduction: 3, jobSize: 4 },
+					spec: { acceptanceCriteria: ['AC1'], scope: '   ', gotchas: [], domainTerms: [] },
+				}),
+			)
+		);
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.reason).toBe('guardrail-failed');
+		}
+		expect(calls.find((c) => c.args.includes('update-ref'))).toBeUndefined();
+	});
+
+	test('--derived-from with NO spec at all REFUSES (uniform with --fast-track, not specSource-conditional)', () => {
+		const { spawnFn, calls } = makeRecordingSpawn();
+		const result = withSilentStderr(() =>
+			createLocalIssueOnMain(
+				makeOptions({
+					spawnFn,
+					specSource: 'derived' as const,
+					derivedFrom: ['CAM-88'],
+					description: 'A fix derived from CAM-88',
+					wsjf: { value: 5, timeCriticality: 3, riskReduction: 2, jobSize: 4 },
+					// spec omitted entirely
+				}),
+			)
+		);
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.reason).toBe('guardrail-failed');
+		}
+		expect(calls.find((c) => c.args.includes('update-ref'))).toBeUndefined();
+	});
+
+	test('--derived-from with a valid spec persists spec.acceptanceCriteria into the written entry', () => {
+		const { spawnFn, calls } = makeRecordingSpawn();
+		const result = createLocalIssueOnMain(
+			makeOptions({
+				spawnFn,
+				specSource: 'derived' as const,
+				derivedFrom: ['CAM-88'],
+				description: 'A fix derived from CAM-88',
+				spec: VALID_SPEC,
+				wsjf: { value: 5, timeCriticality: 3, riskReduction: 2, jobSize: 4 },
+			}),
+		);
+		assertOk(result);
+
+		const hashCall = calls.find((c) => c.args.includes('hash-object'));
+		expect(hashCall).toBeDefined();
+		const entry = JSON.parse(hashCall!.options.input!) as {
+			spec: { acceptanceCriteria: string[]; scope: string };
+		};
+		expect(entry.spec).toEqual(VALID_SPEC);
+		expect(entry.spec.acceptanceCriteria.length).toBeGreaterThan(0);
+	});
+
+	test('normal filing (no specSource) never triggers the spec guardrail, even with no spec provided', () => {
+		const { spawnFn } = makeRecordingSpawn();
+		const result = createLocalIssueOnMain(makeOptions({ spawnFn }));
+		assertOk(result);
 	});
 });
