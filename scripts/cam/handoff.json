@@ -1,20 +1,21 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Budget oracle-lint and auditor re-plan rounds independently"
+    "id": "US-003",
+    "title": "Name the exhausted budget on the escalation marker and event"
   },
   "branchName": "cam/issue-448",
-  "timestamp": "2026-07-28T02:55:00-03:00",
+  "timestamp": "2026-07-28T03:05:00-03:00",
   "createdFiles": [],
   "modifiedFiles": [
+    "src/supervisor/plan-escalation.ts",
+    "src/supervisor/events.ts",
     "src/supervisor/plan-runner.ts",
-    "test/supervisor/plan-runner.test.ts",
     "test/supervisor/plan/plan-runner-replan.test.ts",
-    "scripts/file-size-budget.json",
-    "scripts/cam/patterns.md"
+    "test/supervisor/plan/plan-escalation.test.ts",
+    "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "runPlanPhaseWithReplan (src/supervisor/plan-runner.ts) now tracks TWO independent round budgets instead of one: MAX_LINT_REPLAN_ROUNDS (new, =2) for audit-blocked rounds whose origin is 'oracle-lint', and the pre-existing MAX_REPLAN_ROUNDS (unchanged name and value =2) for origin 'auditor'. Continuation and exhaustion are both gated by the LATEST round's own block origin (helpers bumpReplanBudget/replanBudgetRemains, extracted to stay under biome's cognitive-complexity ceiling -- see the new patterns.md bullet on the type-predicate narrowing trap if a future story touches this loop guard again). Worst-case total rounds per plan call is now MAX_LINT_REPLAN_ROUNDS + MAX_REPLAN_ROUNDS (up from MAX_REPLAN_ROUNDS alone) -- an accepted, bounded cost, not a regression. The CAM-447 pathology test (test/supervisor/plan-runner.test.ts, was 'mixed: round-1 lint-block then round-2 real auditor BLOCK both fold into the SAME escalation path') is REWRITTEN (not deleted) to assert the new non-escalating (audit-approved) outcome for that same round-1-lint / round-2-auditor-BLOCK scenario; the AC4 pure-lint-every-round escalation test and the pure-auditor spawn-cycle pin were left behaviorally unmodified and both still assert roundsCompleted/spawn-count == MAX_REPLAN_ROUNDS (2), which only holds because MAX_LINT_REPLAN_ROUNDS was ALSO set to 2 -- if a future story wants to change the lint budget's numeric value independently of the auditor budget's, that AC4 pin (test/supervisor/plan-runner.test.ts) needs re-deriving, not just a constant bump. docs/adr/0052 documents the Decision/Consequences for this split.",
+  "nextStoryContext": "PlanEscalatedMarker (src/supervisor/plan-escalation.ts) and PlanEscalatedEventDetail (src/supervisor/events.ts) now both carry exhaustedBudget: 'oracle-lint' | 'auditor', set from the terminal audit-blocked result's own `origin` field (the same discriminator US-002 introduced for the independent lint/auditor round budgets) at both write sites in runPlanPhaseWithReplan (src/supervisor/plan-runner.ts): the writeMarker({...}) call and the planOpts.logEvent?.({ kind: 'plan-escalated', detail: {...} }) call. On PlanEscalatedMarker the field is optional (`exhaustedBudget?:`) purely at the READ boundary (readPlanEscalatedMarker's shape guard treats it as optional, silently dropping an invalid/wrong-type value rather than rejecting the whole marker) so a marker written by a pre-US-003 binary still round-trips; the WRITE side (writeMarker call in plan-runner.ts) always supplies it -- there is no code path that omits it going forward. On PlanEscalatedEventDetail the field is REQUIRED (no backward-compat concern: events are transient flight-recorder entries, never read back across a binary upgrade the way the durable marker is). Two existing plan-runner-replan.test.ts assertions that pinned the marker/event payload with toEqual({...}) (an exact-shape assertion, GOTCHA called out in this story's own PRD notes) had to gain the new field rather than being left to silently under-assert; the same care applies to ANY future field added to either type -- grep for `toEqual(` against the marker/event shape before adding a field, don't just add it and let tests happen to still pass. sidecar.ts's makeWriteEscalationMarkerFn needed NO change: it spreads `...params` from PlanEscalationWriterParams (Omit<PlanEscalatedMarker, 'writtenAt'>) into the full marker, so a new optional field on PlanEscalatedMarker flows through for free -- always check for a spread-through seam like this before assuming a threading story needs a production-wiring-file edit.",
   "officialDocsValidated": [
     {
       "lib": "none",
