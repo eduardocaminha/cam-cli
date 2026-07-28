@@ -609,6 +609,53 @@ describe('writeIssueFile -- specSource / derivedFrom / wsjf (US-002)', () => {
 		const entry = JSON.parse(writtenContent) as { derivedFrom?: string[] };
 		expect(entry.derivedFrom).toBeUndefined();
 	});
+
+	test('spec (with acceptanceCriteria) is persisted into the written JSON (US-002, CAM-449)', () => {
+		let writtenContent = '';
+		const { spy } = makeSpawnFn([]);
+		const wrappedSpy: SpawnFn = (_cmd, args, opts) => {
+			if (args[2] === 'hash-object') { writtenContent = opts.input ?? ''; }
+			return spy(_cmd, args, opts);
+		};
+
+		writeIssueFile({
+			cwd: '/fake/cwd',
+			title: 'Derived fix with spec',
+			description: 'A fix derived from parent',
+			specSource: 'derived',
+			derivedFrom: ['CAM-42'],
+			spec: { acceptanceCriteria: ['AC1', 'AC2'], scope: 'A bounded change', gotchas: [], domainTerms: [] },
+			wsjf: { value: 8, timeCriticality: 6, riskReduction: 5, jobSize: 3 },
+			createdAt: '2026-07-28T00:00:00Z',
+			spawnFn: wrappedSpy,
+		});
+
+		const entry = JSON.parse(writtenContent) as {
+			spec?: { acceptanceCriteria: string[]; scope: string };
+		};
+		expect(entry.spec).toBeDefined();
+		expect(entry.spec?.acceptanceCriteria).toEqual(['AC1', 'AC2']);
+		expect(entry.spec?.scope).toBe('A bounded change');
+	});
+
+	test('spec is omitted from JSON when not provided', () => {
+		let writtenContent = '';
+		const { spy } = makeSpawnFn([]);
+		const wrappedSpy: SpawnFn = (_cmd, args, opts) => {
+			if (args[2] === 'hash-object') { writtenContent = opts.input ?? ''; }
+			return spy(_cmd, args, opts);
+		};
+
+		writeIssueFile({
+			cwd: '/fake/cwd',
+			title: 'Normal idea issue',
+			createdAt: '2026-06-30T00:00:00Z',
+			spawnFn: wrappedSpy,
+		});
+
+		const entry = JSON.parse(writtenContent) as { spec?: unknown };
+		expect(entry.spec).toBeUndefined();
+	});
 });
 
 // ---------------------------------------------------------------------------

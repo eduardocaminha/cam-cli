@@ -32,6 +32,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { allocateId, type BacklogSpawnFn } from './backlog.ts';
+import type { Spec } from './spec.ts';
 import type { IssueEntry, IssueStage, IssueStatus, WsjfScore } from './types.ts';
 import {
 	buildIndexEnv,
@@ -76,6 +77,14 @@ export interface WriteIssueFileOptions {
 	specSource?: 'interview' | 'derived' | 'operator';
 	/** Parent issue ids (when specSource === 'derived'). */
 	derivedFrom?: string[];
+	/**
+	 * Structured spec (acceptanceCriteria + scope + gotchas + domainTerms),
+	 * persisted verbatim into the written IssueEntry so that an issue born
+	 * stage:specified carries its oracle forms: isPlannable (src/issues/plannable.ts,
+	 * ADR-0051) requires a non-empty spec.acceptanceCriteria before an issue is
+	 * selectable for planning.
+	 */
+	spec?: Spec;
 	/** WSJF scoring resolved at filing time. */
 	wsjf?: WsjfScore;
 	/**
@@ -129,6 +138,7 @@ function buildIssueEntry(
 	description: string | undefined,
 	specSource: 'interview' | 'derived' | 'operator' | undefined,
 	derivedFrom: string[] | undefined,
+	spec: Spec | undefined,
 	wsjf: WsjfScore | undefined,
 ): IssueEntry {
 	// Fast-track issues are born stage:'specified'; others use the caller-supplied default.
@@ -145,6 +155,10 @@ function buildIssueEntry(
 		...(description !== undefined ? { description } : {}),
 		...(specSource !== undefined ? { specSource } : {}),
 		...(derivedFrom !== undefined && derivedFrom.length > 0 ? { derivedFrom } : {}),
+		// spec (with acceptanceCriteria + scope) is persisted so isPlannable's
+		// hasAcceptanceCriteria check (ADR-0051) sees it, instead of the key
+		// being omitted entirely.
+		...(spec !== undefined ? { spec } : {}),
 		...(wsjf !== undefined ? { wsjf } : {}),
 	};
 }
@@ -200,6 +214,7 @@ export function writeIssueFile(opts: WriteIssueFileOptions): WriteIssueFileResul
 		prefix = 'CAM',
 		specSource,
 		derivedFrom,
+		spec,
 		wsjf,
 		extraFiles = [],
 		commitMessage,
@@ -230,7 +245,7 @@ export function writeIssueFile(opts: WriteIssueFileOptions): WriteIssueFileResul
 			const now = createdAt ?? new Date().toISOString();
 			const entry = buildIssueEntry(
 				idUnpadded, title, stage, status, blockedBy, now,
-				description, specSource, derivedFrom, wsjf,
+				description, specSource, derivedFrom, spec, wsjf,
 			);
 			const content = JSON.stringify(entry, null, 2) + '\n';
 

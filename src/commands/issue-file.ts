@@ -26,7 +26,8 @@ import { parseToml } from '../config/toml.ts';
 import { writeIssueFile } from '../issues/alloc.ts';
 import { readBacklogFromMain } from '../issues/backlog.ts';
 import type { BacklogSpawnFn } from '../issues/backlog.ts';
-import { validateSpecSource } from '../issues/spec.ts';
+import { validateSpec, validateSpecSource } from '../issues/spec.ts';
+import type { Spec } from '../issues/spec.ts';
 import type { WsjfScore } from '../issues/types.ts';
 import type { SpawnFn } from '../git/on-main.ts';
 import { printError } from '../logging/color.ts';
@@ -60,6 +61,15 @@ export interface CreateLocalIssueOnMainOptions {
 	specSource?: 'interview' | 'derived' | 'operator';
 	/** Parent issue ids parsed from --derived-from (required when specSource === 'derived'). */
 	derivedFrom?: string[];
+	/**
+	 * Structured spec (acceptanceCriteria + scope + gotchas + domainTerms) from
+	 * the stdin JSON payload. REQUIRED and validated via the existing
+	 * validateSpec helper (non-empty acceptanceCriteria + non-empty scope)
+	 * whenever specSource is present -- both --fast-track and --derived-from
+	 * promote straight to stage:'specified' (alloc.ts buildIssueEntry), so an
+	 * issue born stage:specified always carries its oracle forms (ADR-0051).
+	 */
+	spec?: Spec;
 	/**
 	 * Explicit WSJF scores from stdin JSON. When absent on the --derived-from path,
 	 * WSJF is inherited from the first parent that has a wsjf field (suggested default).
@@ -190,6 +200,33 @@ type FastTrackGuardrailResult =
 	| { ok: true; resolvedWsjf: WsjfScore }
 	| { ok: false; reason: 'guardrail-failed' };
 
+/** Result of validateSpecGuardrail: no payload beyond ok/reason (spec is not resolved, only checked). */
+type SpecGuardrailResult = { ok: true } | { ok: false; reason: 'guardrail-failed' };
+
+/**
+ * Guardrail: spec is REQUIRED and must satisfy validateSpec (non-empty
+ * acceptanceCriteria + non-empty scope) whenever specSource is present. Both
+ * --fast-track (operator) and --derived-from (derived) promote straight to
+ * stage:'specified' (alloc.ts buildIssueEntry), so an issue born
+ * stage:specified must always carry its oracle forms (ADR-0051). Applied
+ * uniformly to both flags: a specSource-conditional gate would leave the
+ * same hole open under the other flag.
+ *
+ * Extracted as its own small helper (rather than folded into
+ * applyFastTrackGuardrails) to keep that function under Biome's cognitive
+ * complexity ceiling (see the comment at its definition).
+ */
+function validateSpecGuardrail(spec: unknown): SpecGuardrailResult {
+	const result = validateSpec(spec);
+	if (!result.ok) {
+		for (const err of result.errors) {
+			printError('spec guardrail', err);
+		}
+		return { ok: false, reason: 'guardrail-failed' };
+	}
+	return { ok: true };
+}
+
 /**
  * Run all 4 hard pre-commit guardrails for a fast-track filing and resolve WSJF.
  *
@@ -271,7 +308,7 @@ function applyFastTrackGuardrails(
 export function createLocalIssueOnMain(
 	options: CreateLocalIssueOnMainOptions,
 ): CreateLocalIssueOnMainOutcome {
-	const { cwd, title, description, specSource, derivedFrom, wsjf, spawnFn, clock, readProjectToml } = options;
+	const { cwd, title, description, specSource, derivedFrom, spec, wsjf, spawnFn, clock, readProjectToml } = options;
 
 	// Guards 0a-0c: run before any mutation.
 	const guard = checkMainUpToDate(cwd, spawnFn);
@@ -284,6 +321,10 @@ export function createLocalIssueOnMain(
 	// --derived-from flag was used). Normal filing (no flags) bypasses all guards.
 	let resolvedWsjf: WsjfScore | undefined;
 	if (specSource !== undefined) {
+		const specGuardrail = validateSpecGuardrail(spec);
+		if (!specGuardrail.ok) {
+			return specGuardrail;
+		}
 		const guardrail = applyFastTrackGuardrails(specSource, derivedFrom, description, wsjf, cwd, spawnFn);
 		if (!guardrail.ok) {
 			return guardrail;
@@ -307,6 +348,7 @@ export function createLocalIssueOnMain(
 		spawnFn,
 		...(specSource !== undefined ? { specSource } : {}),
 		...(derivedFrom !== undefined && derivedFrom.length > 0 ? { derivedFrom } : {}),
+		...(spec !== undefined ? { spec } : {}),
 		...(resolvedWsjf !== undefined ? { wsjf: resolvedWsjf } : {}),
 	});
 

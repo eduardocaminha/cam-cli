@@ -104,6 +104,7 @@ import {
 	type DismissSuggestionOnMainResult,
 } from './src/commands/suggestions.ts';
 import type { WsjfScore } from './src/issues/types.ts';
+import type { Spec } from './src/issues/spec.ts';
 import { printError, printFatalHint, printHint, printWarning } from './src/logging/color.ts';
 import { renderHelp } from './src/logging/help.ts';
 import { CAM_VERSION } from './src/version.ts';
@@ -2474,12 +2475,22 @@ export interface IssueDispatchDeps {
 	getIssueOnMainFn?: (id: string) => GetIssueOnMainOutcome;
 }
 
-/** Shape of the JSON payload `cam issue --file-local` reads from stdin. */
+/**
+ * Shape of the JSON payload `cam issue --file-local` reads from stdin.
+ *
+ * `spec`, when present, is forwarded verbatim to createLocalIssueOnMain and
+ * validated there via validateSpec (src/issues/spec.ts): a non-empty
+ * spec.acceptanceCriteria array and a non-empty spec.scope string are
+ * REQUIRED whenever the filing flags (--fast-track / --derived-from) are
+ * used, because those flags promote the filed issue straight to
+ * stage:'specified' (ADR-0051).
+ */
 type FileLocalStdinPayload = {
 	title: string;
 	description?: string;
 	priority?: string;
 	wsjf?: WsjfScore;
+	spec?: Spec;
 };
 
 /** Build production CreateLocalIssueOnMainOptions from project root + parsed stdin JSON + CLI flags. */
@@ -2494,6 +2505,7 @@ function _buildCreateIssueOpts(
 		...(parsedStdin.description !== undefined ? { description: parsedStdin.description } : {}),
 		...(parsedStdin.priority !== undefined ? { priority: parsedStdin.priority } : {}),
 		...(parsedStdin.wsjf !== undefined ? { wsjf: parsedStdin.wsjf } : {}),
+		...(parsedStdin.spec !== undefined ? { spec: parsedStdin.spec } : {}),
 		...(flags?.specSource !== undefined ? { specSource: flags.specSource } : {}),
 		...(flags?.derivedFrom !== undefined && flags.derivedFrom.length > 0 ? { derivedFrom: flags.derivedFrom } : {}),
 		spawnFn: realOnMainSpawnFn,
