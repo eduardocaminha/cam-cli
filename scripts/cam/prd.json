@@ -29,16 +29,30 @@
   ],
   "userStories": [
     {
+      "id": "US-R2-001",
+      "title": "Review round 2 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "WARNING [test/helpers/lane-expectations.json:5]: Both recorded passFloor values and both measuredVia narratives are stale at branch HEAD, so US-005 AC5 ('the host lane's recorded passFloor equals the measured full-PATH pass count on this branch') is not satisfied. Reviewer-measured on this branch: host full-PATH `bun test` = 5731 pass (recorded passFloor 5720, -11); real Docker `bun scripts/test-in-container.ts` = 5691 pass (recorded passFloor 5680, -11). The drift is exactly the 11 tests US-R1-002 added to test/check-skip-ratchet.test.ts after US-006 finalized this file, and nobody re-measured. Functionally the gate still passes (passFloor is a floor), but this file is declared by AC1 to be 'the durable record for the triage evidence', and its host measuredVia (:7) asserts '5720 pass / 0 fail' while its container measuredVia (:13) asserts '5680 pass / 0 fail / 40 skip' -- two claims a reader falsifies in one command each. The guard is also 11 tests looser than intended. Fix: re-measure both lanes at branch HEAD and update passFloor (:5, :11) plus both measuredVia strings (:7, :13). Reviewer note: triage.hardDependency=42 and triage.legitimateEnvironmental=1 were independently re-derived and are correct; only the pass counts are stale."
+    },
+    {
+      "id": "US-R2-002",
+      "title": "Review round 2 fix 002: address reviewer finding",
+      "priority": 2,
+      "passes": false,
+      "notes": "WARNING [scripts/test-in-container.ts:221]: The US-R1-002 fail-open fix was applied to scripts/check-skip-ratchet.ts but not to its sibling on the container lane. runInContainerTests (:221-226) reads only lanes.container.expectedSkips and compares it via checkSkipCount, never calling the checkSuiteRan positive-evidence guard that check-skip-ratchet.ts:192 now exports, and never reading the recorded lanes.container.passFloor (test/helpers/lane-expectations.json:11) at all. Reviewer-verified empirically: parseBunOutput('error: Cannot find module \"x\"\\nbun: command crashed\\n') returns {pass:0,fail:0,skip:0}, and runInContainerTests on that output returns exitCode 0 whenever container.expectedSkips is 0. It is fail-closed today only because the recorded expectation happens to be 40 -- a value the gate's own failure message explicitly invites a future editor to change ('Update test/helpers/lane-expectations.json if this change is intentional'). That reopens on the container lane the exact defect class this PRD exists to eliminate ('a partial run can never present as green', US-002 description). Fix is mechanical and single-file: call checkSuiteRan(output, lanes.container.passFloor, 'container') before the skip comparison and fail non-zero when it returns a result."
+    },
+    {
       "id": "US-R1-001",
       "title": "Review round 1 fix 001: address reviewer finding",
-      "priority": 1,
+      "priority": 3,
       "passes": true,
       "notes": "CRITICAL [scripts/cam/patterns.md:1088]: No-flaky-evasion carve-out committed into durable project doctrine. The US-002 bullet narrates a failing test during the PRD's own US-002 AC4 named-command oracle run ('one control run hit a single unrelated timing flake in test/integration/orch-recycle-watch.test.ts ... that reproduced clean both standalone and on an immediate re-run'), dismisses it as a 'resource-contention artifact', and then generalizes that dismissal into a persisted rule future workers will cite: 'Treat a solitary timing-only failure in an unrelated real-subprocess-timing test, under a deliberately resource-restricted env -i run, as a resource-contention artifact worth one clean re-run to confirm before concluding root cause'. The self-exemption ('NOT the forbidden re-run-to-confirm-flakiness pattern ... that rule still binds bun test / typecheck / check:all against the normal full PATH') does not hold: the env -i run IS a story-relevant gate, it is a literal PRD oracle (US-002 AC4, '[oracle: named-command bun test + the two derived env -i runs]'), so a failure inside it is a failing story oracle, re-run to green and proceeded past. Non-determinism in test/integration/orch-recycle-watch.test.ts (bounded waitForCondition budgets of 5s/10s/12s at :193-251 under a 45s outer timeout, real subprocess SIGTERM/respawn timing) is a defect to file and fix, never a pass rationale. Required fix: remove the doctrine carve-out paragraph from patterns.md, and file the observed non-determinism as its own issue instead of licensing it. Note the reviewer's own independent AC3/AC4 re-runs (review-artifact.txt SECTION 3/4) produced zero unrelated failures, so nothing on this branch is currently red."
     },
     {
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
-      "priority": 2,
+      "priority": 4,
       "passes": true,
       "notes": "WARNING [scripts/check-skip-ratchet.ts:138]: The new skip-ratchet gate is fail-open: it can report green on a suite that never ran. makeDefaultGetSuiteOutput (:138-143) discards the `bun test` exit code and success flag entirely (only stdout+stderr text is returned), and parseSkipCount (:91-94) returns 0 for any output lacking a ' N skip' line, so a crashed / zero-test / garbage run is indistinguishable from a clean 0-skip run. Proven empirically by the reviewer (review-artifact.txt SECTION 7): feeding 'error: Cannot find module ...\\nbun: command crashed\\n' to checkSkipRatchet on the host lane yields ok=true, 'host lane: 0 skip (matches recorded expectation)'. This is the exact failure mode the gate exists to prevent ('a partial run can never present as green'), and it is directly reachable via the wired standalone script `bun run check:skip-ratchet`. Fix: require positive evidence the suite ran (a ' N pass' / 'Ran N tests across M files' marker, or a non-crash exit code) before comparing, and add the malformed-output unit case to test/check-skip-ratchet.test.ts. Wiring the already-recorded-but-unread `passFloor` from test/helpers/lane-expectations.json (:5,:11) closes the same hole; today nothing in the repo reads that field."
     },
@@ -55,7 +69,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes per AC11. [oracle: bun run check:all]"
       ],
-      "priority": 3,
+      "priority": 5,
       "passes": true,
       "requires": null,
       "notes": "New files only: test/helpers/test-deps.ts + test/helpers/test-deps.test.ts (test files under test/helpers/ are collected by bun test; precedent test/helpers/with-fake-clock.test.ts). The module MUST live under test/helpers/ because AC1/AC2's centralization greps carry the filter `grep -vE 'test/helpers/|test/fixtures/'`. Probe once at module load (version-flag spawnSync or Bun.which), never per-test. Design the decision fn pure with authoritative inputs injected ({available, waivers}), default-wired to the real probe/env read via destructure defaults, exactly like codexAuthPreflight (src/supervisor/codex-auth.ts, see patterns.md CAM-352 bullets). Do NOT touch the DI-fake option-name sites test/run.test.ts:82 and test/stop.test.ts:58, and nothing under test/fixtures/version-skip-guard/**. tmux install-hint text must enforce the documented policy at scripts/cam/CLAUDE.md:36 (tmux is a hard runtime dependency), not invent a new one."
@@ -73,7 +87,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes per AC11. [oracle: bun run check:all]"
       ],
-      "priority": 4,
+      "priority": 6,
       "passes": true,
       "requires": null,
       "notes": "Depends on US-001's helper. Route rationale (AC13, measured): no bunfig.toml exists in the repo, package.json:11 is plain 'bun test', preload-throw abort semantics are undocumented (re-confirmed via the Bun docs fetch in officialDocsConsulted), and collection order is undocumented; the ONLY documented exit guarantee is that a failing test exits non-zero, which a plain failing test satisfies with no ordering assumption. Fail-fast speed would be the only benefit of ordering tricks and is a cost concern, explicitly not a reason to prefer undocumented mechanisms. Hard-vs-waivable at this point: on the host lane no waiver is permitted; ps stays skippable only under a declared waiver (AC9 rationale in helper). tmux is the only genuinely separable binary for real-I/O proof (git/jq/pgrep/ps/uuidgen live in /usr/bin or /bin; creating symlinks to simulate absence is forbidden). ADR-0039 section on real I/O at wire boundaries governs why the AC3 proof must be a real PATH-surgery run, not a mock."
@@ -91,7 +105,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes per AC11. [oracle: bun run check:all]"
       ],
-      "priority": 5,
+      "priority": 7,
       "passes": true,
       "requires": null,
       "notes": "25 files (mechanical one-declaration-per-file edit): the skipIf(!gitAvailable...) CALL SITES REMAIN IN PLACE and now reference the helper export; deleting the 72 now-dead git gates is CAM-432, explicitly OUT OF SCOPE here (mixing them was rejected on risk-isolation grounds in the spec's SPLIT NOTE). The 73 real spawnSync git calls in test bodies are the must-survive inventory protected by ADR-0039 (docs/adr/0039-...md); the binary-name trap in the spec's gotchas explains why oracles here are shaped on the DECLARATION form. Re-swept 2026-07-27 at main 1a3b334a: gitAvailable declarations still 25 files; git pin still 73 lines. AC14 comparands must be re-derived from main at verification time (git worktree or git show main:<path> | grep -c), because main drifts (total declarations already drifted 45->46 since the spec's sweep at 44accd73)."
@@ -111,7 +125,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes per AC11. [oracle: bun run check:all]"
       ],
-      "priority": 6,
+      "priority": 8,
       "passes": true,
       "requires": null,
       "notes": "~17 files: 13 tmux probe files, 2 jq files, orch-recycle-pid-resolve.test.ts (pgrepCheck/bunCheck/psAvailable) and orch-recycle-watch.test.ts (tmuxAvailable :58, pgrepAvailable :59, uuidgenAvailable :60; there is NO psAvailable in that file, verified). Gated tests keep skip-on-unavailable semantics: the LOUDNESS for a missing unwaived dep comes from the US-002 preflight failing the run, and the COUNTING from the US-005 ratchet; do not convert gated tests into 37 unactionable hard failures. 42 tmux skipIf sites map to only 37 skipped tests (site count != test count; centralization oracles count SITES, the ratchet counts TESTS). ADR-0039 protects the 18 real tmux -L driver calls and the 5 pgrep -f + 1 ps -ax calls."
@@ -130,7 +144,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 7,
+      "priority": 9,
       "passes": true,
       "requires": null,
       "notes": "Files: test/helpers/lane-expectations.json (new), scripts/check-skip-ratchet.ts (new), test/check-skip-ratchet.test.ts (new), scripts/check-all.ts + package.json (wiring). Lane detection: host is the default; the container lane is selected by the same explicit declaration mechanism as the waiver (env), never by sniffing. To avoid double-running the suite inside check:all, the docs fetch confirms bun test --reporter=junit --reporter-outfile emits machine-readable counts alongside normal stdout; parsing the existing test step's output is acceptable, a second full suite run is also acceptable (operational cost is not a criterion). The ratchet counts TESTS, not skipIf sites. gates-manifest test enforces check-all/package.json/ci.yml coherence, and check:ci-parity enforces green-local==green-CI; both live inside check:all. patterns.md:903 derive-don't-freeze governs every floor comparison outside the lane file itself."
@@ -148,7 +162,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes per AC11. [oracle: bun run check:all]"
       ],
-      "priority": 8,
+      "priority": 10,
       "passes": true,
       "requires": null,
       "notes": "Files: scripts/test-in-container.ts, test/helpers/lane-expectations.json (finalize container expectedSkips with the measured number). Container lane waives tmux AND the procps-provided binaries (ps; see the AC9 rationale carried in the helper since US-001; pgrep also absent in oven/bun:1.2-slim). The Dockerfile installs git and jq, zero tmux: that asymmetry is the design reason the waiver exists at all. The officialDocsConsulted Docker entry covers docker exec --env on non-TTY exec per the spec's gotcha requiring it for any story driving the Docker CLI. In-container baseline context: CAM-186 achieved 0 real fails in-container on v0.60.0 via this same harness (scripts/test-in-container.ts), so a red here is a regression signal, not noise."
@@ -165,56 +179,72 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Full quality spine passes per AC11 (this story edits a gate script). [oracle: bun run check:all]"
       ],
-      "priority": 9,
+      "priority": 11,
       "passes": true,
       "requires": null,
       "notes": "Files: scripts/check-version-skips.ts (comment block at :14-:17, currently 'Does NOT flag skips conditioned on ... capability probes ... those remain legal (CAM-59 ...)'), possibly .github/workflows/ci.yml (trace only; no waiver may be added there). The check-version-skips gate's SCAN behavior does not change in this story, only its stated doctrine: capability-probe skips are still not version-skips, but they are no longer ungoverned, the preflight (test/preflight-deps.test.ts) and ratchet (scripts/check-skip-ratchet.ts) now govern them. Its fixtures under test/fixtures/version-skip-guard/ stay untouched."
     }
   ],
   "review": {
-    "roundsCompleted": 1,
+    "roundsCompleted": 2,
     "maxRounds": 3,
     "lastVerdict": "FIXES_PENDING:2",
     "findings": [
       {
-        "severity": "CRITICAL",
-        "file": "scripts/cam/patterns.md",
-        "line": 1088,
-        "text": "No-flaky-evasion carve-out committed into durable project doctrine. The US-002 bullet narrates a failing test during the PRD's own US-002 AC4 named-command oracle run ('one control run hit a single unrelated timing flake in test/integration/orch-recycle-watch.test.ts ... that reproduced clean both standalone and on an immediate re-run'), dismisses it as a 'resource-contention artifact', and then generalizes that dismissal into a persisted rule future workers will cite: 'Treat a solitary timing-only failure in an unrelated real-subprocess-timing test, under a deliberately resource-restricted env -i run, as a resource-contention artifact worth one clean re-run to confirm before concluding root cause'. The self-exemption ('NOT the forbidden re-run-to-confirm-flakiness pattern ... that rule still binds bun test / typecheck / check:all against the normal full PATH') does not hold: the env -i run IS a story-relevant gate, it is a literal PRD oracle (US-002 AC4, '[oracle: named-command bun test + the two derived env -i runs]'), so a failure inside it is a failing story oracle, re-run to green and proceeded past. Non-determinism in test/integration/orch-recycle-watch.test.ts (bounded waitForCondition budgets of 5s/10s/12s at :193-251 under a 45s outer timeout, real subprocess SIGTERM/respawn timing) is a defect to file and fix, never a pass rationale. Required fix: remove the doctrine carve-out paragraph from patterns.md, and file the observed non-determinism as its own issue instead of licensing it. Note the reviewer's own independent AC3/AC4 re-runs (review-artifact.txt SECTION 3/4) produced zero unrelated failures, so nothing on this branch is currently red."
+        "severity": "WARNING",
+        "file": "test/helpers/lane-expectations.json",
+        "line": 5,
+        "text": "Both recorded passFloor values and both measuredVia narratives are stale at branch HEAD, so US-005 AC5 ('the host lane's recorded passFloor equals the measured full-PATH pass count on this branch') is not satisfied. Reviewer-measured on this branch: host full-PATH `bun test` = 5731 pass (recorded passFloor 5720, -11); real Docker `bun scripts/test-in-container.ts` = 5691 pass (recorded passFloor 5680, -11). The drift is exactly the 11 tests US-R1-002 added to test/check-skip-ratchet.test.ts after US-006 finalized this file, and nobody re-measured. Functionally the gate still passes (passFloor is a floor), but this file is declared by AC1 to be 'the durable record for the triage evidence', and its host measuredVia (:7) asserts '5720 pass / 0 fail' while its container measuredVia (:13) asserts '5680 pass / 0 fail / 40 skip' -- two claims a reader falsifies in one command each. The guard is also 11 tests looser than intended. Fix: re-measure both lanes at branch HEAD and update passFloor (:5, :11) plus both measuredVia strings (:7, :13). Reviewer note: triage.hardDependency=42 and triage.legitimateEnvironmental=1 were independently re-derived and are correct; only the pass counts are stale."
       },
       {
         "severity": "WARNING",
-        "file": "scripts/check-skip-ratchet.ts",
-        "line": 138,
-        "text": "The new skip-ratchet gate is fail-open: it can report green on a suite that never ran. makeDefaultGetSuiteOutput (:138-143) discards the `bun test` exit code and success flag entirely (only stdout+stderr text is returned), and parseSkipCount (:91-94) returns 0 for any output lacking a ' N skip' line, so a crashed / zero-test / garbage run is indistinguishable from a clean 0-skip run. Proven empirically by the reviewer (review-artifact.txt SECTION 7): feeding 'error: Cannot find module ...\\nbun: command crashed\\n' to checkSkipRatchet on the host lane yields ok=true, 'host lane: 0 skip (matches recorded expectation)'. This is the exact failure mode the gate exists to prevent ('a partial run can never present as green'), and it is directly reachable via the wired standalone script `bun run check:skip-ratchet`. Fix: require positive evidence the suite ran (a ' N pass' / 'Ran N tests across M files' marker, or a non-crash exit code) before comparing, and add the malformed-output unit case to test/check-skip-ratchet.test.ts. Wiring the already-recorded-but-unread `passFloor` from test/helpers/lane-expectations.json (:5,:11) closes the same hole; today nothing in the repo reads that field."
+        "file": "scripts/test-in-container.ts",
+        "line": 221,
+        "text": "The US-R1-002 fail-open fix was applied to scripts/check-skip-ratchet.ts but not to its sibling on the container lane. runInContainerTests (:221-226) reads only lanes.container.expectedSkips and compares it via checkSkipCount, never calling the checkSuiteRan positive-evidence guard that check-skip-ratchet.ts:192 now exports, and never reading the recorded lanes.container.passFloor (test/helpers/lane-expectations.json:11) at all. Reviewer-verified empirically: parseBunOutput('error: Cannot find module \"x\"\\nbun: command crashed\\n') returns {pass:0,fail:0,skip:0}, and runInContainerTests on that output returns exitCode 0 whenever container.expectedSkips is 0. It is fail-closed today only because the recorded expectation happens to be 40 -- a value the gate's own failure message explicitly invites a future editor to change ('Update test/helpers/lane-expectations.json if this change is intentional'). That reopens on the container lane the exact defect class this PRD exists to eliminate ('a partial run can never present as green', US-002 description). Fix is mechanical and single-file: call checkSuiteRan(output, lanes.container.passFloor, 'container') before the skip comparison and fail non-zero when it returns a result."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "test/test-in-container.test.ts",
+        "line": 16,
+        "text": "Re-raised from review round 1 (unaddressed): the 'Coverage:' header bullet about makeDefaultExecFn (:16-21) is still a garbled run-on merge of two drafts ('via a spawnSync-observing integration-style check on the real production fn is not exercised here -- covered instead by grepping the built argv string through a thin exported seam is not needed since ...'). The actual coverage story (pure buildContainerTestExecArgv is unit-tested; the spawnSync wrapper is not) fits in one clause."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "test/test-in-container.test.ts",
+        "line": 436,
+        "text": "Re-raised from review round 1 (unaddressed): expect(envArg).not.toContain('ps') asserts a substring over the whole 'CAM_TEST_WAIVERS=tmux,pgrep,uuidgen' string. It is falsifiable today (adding 'ps' to CONTAINER_WAIVED_DEPS does trip it), but brittle: any future binary whose name contains 'ps' would trip it spuriously. Split on '=' then ',' and assert the parsed name list does not contain 'ps'."
       },
       {
         "severity": "SUGGESTION",
         "file": "scripts/test-in-container.ts",
-        "line": 47,
-        "text": "The CONTAINER_WAIVED_DEPS doc comment justifies the list with 'oven/bun:1.2-slim has no tmux, no procps' but the list also contains uuidgen, which comes from uuid-runtime, not procps. The reviewer's real unwaived container run confirms uuidgen is genuinely absent, so the list is correct and only the rationale text is incomplete."
-      },
-      {
-        "severity": "SUGGESTION",
-        "file": "test/test-in-container.test.ts",
-        "line": 28,
-        "text": "The new 'Coverage:' header bullet about makeDefaultExecFn is a garbled run-on sentence ('via a spawnSync-observing integration-style check on the real production fn is not exercised here -- covered instead by grepping the built argv string through a thin exported seam is not needed since ...'). It reads as two merged drafts; the actual coverage story (pure buildContainerTestExecArgv is unit-tested, the spawnSync wrapper is not) is simple enough to state in one clause."
-      },
-      {
-        "severity": "SUGGESTION",
-        "file": "test/test-in-container.test.ts",
-        "line": 434,
-        "text": "The 'does not include ps in the waiver' test asserts expect(envArg).not.toContain('ps') on the whole 'CAM_TEST_WAIVERS=...' string. A substring check over the joined value is brittle (it would also trip on any future binary name containing 'ps'). Splitting on '=' then ',' and asserting the parsed name list does not contain 'ps' matches the actual invariant."
+        "line": 48,
+        "text": "Re-raised from review round 1 (unaddressed): the CONTAINER_WAIVED_DEPS doc comment justifies the list with 'oven/bun:1.2-slim has no tmux, no procps' but the list also contains uuidgen, which comes from uuid-runtime rather than procps. The reviewer's real unwaived container run confirms uuidgen is genuinely absent (it is one of the 3 preflight fails), so only the rationale text is incomplete."
       },
       {
         "severity": "SUGGESTION",
         "file": "scripts/test-in-container.ts",
         "line": 157,
-        "text": "parseBunOutput re-implements the ' N skip' summary parse that scripts/check-skip-ratchet.ts:80/:91 already exports as parseSkipCount, while correctly reusing checkSkipCount from that same module. Reusing parseSkipCount for the skip line would keep the two parsers from drifting if Bun's summary format changes."
+        "text": "Re-raised from review round 1 (unaddressed): parseBunOutput re-implements the ' N skip' summary parse that scripts/check-skip-ratchet.ts now exports as parseSkipCount, while correctly reusing checkSkipCount from that same module. Reusing parseSkipCount would keep the two parsers from drifting if Bun's summary format changes."
       },
       {
         "severity": "SUGGESTION",
-        "text": "Four acceptance criteria are reviewer-judgment on PR-body content that does not exist yet at review time (US-005 AC2 per-file triage classification, US-005 AC6 verbatim scratch-file demonstration, US-006 AC4 verbatim real-Docker run output, US-007 AC3 CI lane trace). The reviewer re-derived all four independently: the triage counts live in test/helpers/lane-expectations.json, the delta-failure demonstration was re-executed via CAM_TEST_LANE=container (review-artifact.txt SECTION 6), both Docker runs were re-executed (SECTION 5), and the CI lane trace was verified against .github/workflows/ci.yml (SECTION 8). The ship step must still carry these four items into the PR body verbatim to satisfy the criteria as written."
+        "file": "scripts/check-skip-ratchet.ts",
+        "line": 106,
+        "text": "The gate's positive-evidence marker (RAN_LINE_RE, 'Ran N tests across M files.') and its pass/skip line parsers depend on Bun's stdout summary FORMAT, which the official docs (https://bun.com/docs/cli/test) show only in an example and never guarantee as a stable contract. Verified empirically against the local toolchain, so this is not a defect today, but a Bun formatting change would silently turn the new completion check into a permanent red. The PRD's own officialDocsConsulted entry names the documented alternative (--reporter=junit --reporter-outfile) for machine-readable counts."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "scripts/check-skip-ratchet.ts",
+        "line": 229,
+        "text": "makeDefaultReadExpectations lets a missing or malformed test/helpers/lane-expectations.json surface as a raw readFileSync/JSON.parse stack trace rather than the clear 'check:skip-ratchet: ...' message every other exit path in this script produces. Exit is still non-zero, so this is presentation only."
+      },
+      {
+        "severity": "SUGGESTION",
+        "text": "Wiring the skip-ratchet gate as a standalone GATES entry makes `bun run check:all` execute the full suite a second time (reviewer-measured: 76.6s for the skip-ratchet gate on top of the existing test and coverage gates). The PRD explicitly accepted this, and operational cost is not a review criterion, so this is recorded only as the obvious future consolidation: have the existing `test` gate hand its captured output to checkSkipRatchet via the already-present getSuiteOutput DI seam."
+      },
+      {
+        "severity": "SUGGESTION",
+        "text": "CAM_TEST_WAIVERS and CAM_TEST_LANE are new contributor-facing environment variables but are documented only in source-file header comments and scripts/cam/patterns.md (harness knowledge). Neither README.md nor scripts/cam/CLAUDE.md's Quality Gates section mentions them, so a contributor whose suite goes red on a missing binary has to read the failing test's source to discover the waiver escape hatch (the failure message does name the variable, which mitigates this)."
       }
     ]
   }
