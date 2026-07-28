@@ -86,7 +86,7 @@
         "The lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: README.md only. This is must-fix #1 of docs/launch-readiness.md. The measured fact to carry: src/config/permission-mode.ts exports DEFAULT_PERMISSION_MODE = 'bypassPermissions', applied when ~/.config/cam/config.toml is missing or the key is unset, and it is what `cam init` writes. The mitigation to name: `[loop] worker_isolation = \"container\"` in scripts/cam/project.toml (see src/commands/setup.ts:168 and src/config/models.ts:454 for the exact accepted values container|host, default host). README lines 155-158 already say the permission mode is read from ~/.config/cam/config.toml and that no subcommand exposes a flag for it: place the new section so it complements those lines instead of contradicting them, and keep the never-add-a---permission-mode-flag invariant intact (do not document a flag that must never exist). Evidence fidelity: the text must carry the measured fact, not just the flag name."
     },
