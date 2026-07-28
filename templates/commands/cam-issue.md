@@ -115,17 +115,46 @@ Subcommands:
 
 **CONVENTION**: never hand-edit issue files on a feature branch; always file via `cam issue` (it commits to main deterministically).
 
+There are two filing shapes: a plain idea (no flags, `stage:idea`), and a
+**derived or fast-track filing** (`--derived-from <id[,id...]>` or
+`--fast-track`), which promotes the new issue straight to `stage:specified`
+so it is immediately plannable without a separate `/cam-spec` interview.
+
 1. Expand the free-text argument into a structured **title** (concise, under 80 chars) and an optional **description** (one or two sentences).
 2. Build a JSON payload with `title` and `description`. Include `priority` (integer 1-4, 1 = urgent) only when the request implies one.
-3. Invoke `cam issue --file-local`, piping the JSON payload to stdin. It commits the new issue directly to `main` without touching the current work branch:
+3. **If this is a plain idea filing** (no derived-from flag, no fast-track flag), invoke `cam issue --file-local`, piping the JSON payload to stdin. It commits the new issue directly to `main` without touching the current work branch:
    ```bash
    echo '{"title":"<title>","description":"<description>"}' | cam issue --file-local
    ```
    The command prints the new identifier (e.g. `CAM-42`) to stdout and exits 0 on success.
-4. Print the returned identifier and end with:
+4. **If this is a derived or fast-track filing**, the payload MUST also carry a `spec` object (`{ acceptanceCriteria: string[], scope: string, gotchas: string[], domainTerms: string[] }`); `createLocalIssueOnMain` validates it via `validateSpec` (`src/issues/spec.ts`) and refuses to file when it is missing or malformed, because `--fast-track`/`--derived-from` promote straight to `stage:specified` (ADR-0051). Do not file with a bare claim in `spec.acceptanceCriteria`: **every entry must be the LITERAL text of the check itself, already swept RED against main**, not a description of intent left for the planner to reinvent. For each acceptance criterion:
+   - Write it as a concrete, checkable statement.
+   - Attach the exact oracle text (`[oracle: file-assert ...]` / `[oracle: named-command ...]`), the exact command a gate will run.
+   - Run that oracle against `main` before filing and confirm it currently fails (RED); note the sweep result inline in the criterion text (e.g. `swept RED on main <date>: <observed state>`). An oracle that is already green on main cannot detect the change this issue is meant to produce.
+
+   Use a **single-quoted heredoc** for the stdin payload (never an unquoted `echo`/heredoc): an operator's or upstream text's `$`/backticks would otherwise be shell-interpolated and corrupt the JSON (CAM-106).
+   ```bash
+   cam issue --file-local --derived-from CAM-100 <<'EOF'
+   {
+     "title": "<title>",
+     "description": "<description>",
+     "spec": {
+       "acceptanceCriteria": [
+         "The parser rejects a trailing comma. [oracle: file-assert grep -q 'rejects trailing comma' test/parser.test.ts]"
+       ],
+       "scope": "<one-line scope statement>",
+       "gotchas": [],
+       "domainTerms": []
+     }
+   }
+   EOF
+   ```
+   `--fast-track` follows the identical shape, substituting `--fast-track` for `--derived-from <id[,id...]>` (the two flags are mutually exclusive).
+5. Print the returned identifier and end with:
    ```
    CAM_ISSUE_RESULT=<identifier>
    ```
+   **Refusal contract**: if the guardrail rejects the payload (missing/invalid `spec` on a derived or fast-track filing, or any other filing guardrail), the command prints `CAM_ISSUE_RESULT=ERROR reason=guardrail-failed`, exits non-zero, and nothing is committed. Report the guardrail failure to the operator; never retry by silently dropping the flag or omitting the spec.
 
 #### `get <id>`
 
