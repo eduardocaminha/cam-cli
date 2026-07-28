@@ -1,0 +1,22 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Rename the running binary's user-facing display strings to Gateship"
+  },
+  "branchName": "cam/issue-457",
+  "timestamp": "2026-07-28T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "index.ts",
+    "src/commands/run.ts",
+    "src/retry/config.ts"
+  ],
+  "openQuestions": [
+    "scripts/cam/prd.json necessarily still narrates 'CAM Runtime'/'CAM' in this US-001 story's own title/description/notes text (it is the PRD specifying the sweep); this is a permanent residual that only self-resolves at cam ship --finalize (prd.json is git rm'd then, per ADR-0040), not fixable mid-branch per patterns.md:1058 precedent.",
+    "This handoff's own lastCompletedStory.title field necessarily still names the retired brand verbatim (required for traceability); that one-story-transient residual clears on the NEXT story's handoff overwrite, per the same patterns.md:1058 precedent."
+  ],
+  "nextStoryContext": "US-001 did a like-for-like display-string swap only: index.ts tagline (:114) and version help entry description (:143, name field untouched per renderHelp's 24-char padding rule), src/commands/run.ts tmux status-right pill (:786) + its comment (:783), and src/retry/config.ts DEFAULT_TOML header comment (:30). Internal contracts (CAM_* env vars, .cam-* markers, 'tmux -L cam' socket literal, /cam-* commands) were deliberately left untouched per ADR-0050's pin of invariance and verified byte-identical to main via the AC6 oracle (both file-sets matched local main, which is in sync with origin/main at b0eceb59). No vendor/ or templates/ file carries the dead name, so embed-vendor was not triggered. Next stories in this PRD sweeping the dead name elsewhere (docs, README, CHANGELOG, package.json, etc.) should independently verify their own scope against ADR-0050's invariance pin before touching any CAM_*/tmux-socket/slash-command literal.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
