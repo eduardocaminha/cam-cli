@@ -70,7 +70,7 @@
         "The lint spine stays green. [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "Files: src/supervisor/plan-escalation.ts (marker interface :37-43 and the read shape guard :66-81), src/supervisor/events.ts (PlanEscalatedEventDetail :498-501), src/supervisor/plan-runner.ts (writeMarker :1533-1538 and logEvent detail :1546-1552), test/supervisor/plan/plan-escalation.test.ts, test/supervisor/plan/plan-runner-replan.test.ts. GOTCHA, assertions that break BY CONSTRUCTION when the field is added: test/supervisor/plan/plan-runner-replan.test.ts:328-333 asserts the marker payload with toEqual on exactly {issueId, summary, findings, roundsCompleted}, and test/supervisor/plan/plan-escalation.test.ts:35 and :106 use toEqual round-trips. Update those assertions rather than working around them. GOTCHA: test/unit/status-projection.test.ts:68-72 and test/unit/status-diagnostics.test.ts:81, :227, :409-413 construct PlanEscalatedMarker literals and break if the field is required at the type level for readers; keeping it optional is what keeps this tractable. No production wiring change is needed in src/commands/sidecar.ts:2402, which spreads PlanEscalationWriterParams into the marker, so the field flows through once the writer params type carries it: verify this rather than assuming it. src/commands/status.ts:657 only reads the marker for display and needs no change. Design context: docs/adr/0052 'Consequences' (operator can distinguish the two failure modes; older markers still parse)."
     }
