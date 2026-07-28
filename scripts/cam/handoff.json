@@ -1,0 +1,26 @@
+{
+	"lastCompletedStory": {
+		"id": "US-001",
+		"title": "Enforce a guarded MIN_PASS_FLOOR_HEADROOM in the skip-ratchet gate and re-record the host lane"
+	},
+	"branchName": "cam/issue-447",
+	"timestamp": "2026-07-28T00:00:00Z",
+	"createdFiles": [],
+	"modifiedFiles": [
+		"scripts/check-skip-ratchet.ts",
+		"scripts/file-size-budget.json",
+		"test/check-skip-ratchet.test.ts",
+		"test/helpers/lane-expectations.json",
+		"test/test-in-container.test.ts",
+		"scripts/cam/patterns.md"
+	],
+	"openQuestions": [],
+	"nextStoryContext": "MIN_PASS_FLOOR_HEADROOM (pinned at 50) now guards checkSuiteRan's passFloor comparison in scripts/check-skip-ratchet.ts: a POSITIVE passFloor whose gap to the observed pass count is below 50 is rejected as 'too tight' (distinct wording from the pre-existing crashed-run message); a floor of 0 stays exempt (no floor declared). Honest red-then-green order for this story: landing the rule alone (before re-recording the lane file) turned `bun scripts/check-skip-ratchet.ts` RED, because the stale host passFloor (5731, recorded 2026-07-27) sat only 30 below the freshly observed 5761 pass -- a gap under the 50 headroom threshold. Re-recording test/helpers/lane-expectations.json's host lane (passFloor 5500, gap 261, measuredAt 2026-07-28, measuredVia carrying the exact '5761 pass / 0 fail / 0 skip' token form plus that same date) turned the gate GREEN again in the same story. Verified real (not narrated): `bun scripts/check-skip-ratchet.ts` printed 'host lane: 0 skip (matches recorded expectation)' exit 0 after the re-record. Container lane's passFloor (5691) was left untouched -- out of scope for this story, its gap was not re-measured here. `bun run check:all` (all 14 gates) is green end-to-end. No external library was touched (pure internal gate logic + JSON fixtures), so Step 5.5 is a no-op for this story.",
+	"appliedPatternIds": [],
+	"officialDocsValidated": [
+		{
+			"lib": "none",
+			"status": "no_external_lib_touched"
+		}
+	]
+}
