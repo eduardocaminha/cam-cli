@@ -1,19 +1,20 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Carry the block origin on the audit-blocked plan result"
+    "id": "US-002",
+    "title": "Budget oracle-lint and auditor re-plan rounds independently"
   },
   "branchName": "cam/issue-448",
-  "timestamp": "2026-07-28T02:17:20-03:00",
+  "timestamp": "2026-07-28T02:55:00-03:00",
   "createdFiles": [],
   "modifiedFiles": [
     "src/supervisor/plan-runner.ts",
     "test/supervisor/plan-runner.test.ts",
-    "test/supervisor/plan/plan-runner-postaudit.test.ts",
-    "scripts/file-size-budget.json"
+    "test/supervisor/plan/plan-runner-replan.test.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "The audit-blocked member of PlanPhaseResult (src/supervisor/plan-runner.ts:284, shifted +7 lines by this story's doc comment) now carries a REQUIRED origin: 'oracle-lint' | 'auditor' field. Both construction sites are updated (runOracleLintCheck sets 'oracle-lint'; the auditor BLOCK branch in runPlanWorkerSequence sets 'auditor'). This story is discriminator-only: the re-plan loop (runPlanPhaseWithReplan) still counts both origins against the single MAX_REPLAN_ROUNDS budget untouched -- a later story in this PRD is expected to split the budget per-origin using this new field. Any other test file that constructs an 'audit-blocked' object literal (grep `kind: 'audit-blocked'` across test/) must include origin; only test/supervisor/plan/plan-runner-postaudit.test.ts had a literal construction (fixture BLOCKED_RESULT) needing the update -- the other two hits were `as {...}` casts on runPlanPhase's return, unaffected by making the field required. File-size ceiling for src/supervisor/plan-runner.ts was raised 2116->2125 in scripts/file-size-budget.json for the added field + doc comment.",
+  "nextStoryContext": "runPlanPhaseWithReplan (src/supervisor/plan-runner.ts) now tracks TWO independent round budgets instead of one: MAX_LINT_REPLAN_ROUNDS (new, =2) for audit-blocked rounds whose origin is 'oracle-lint', and the pre-existing MAX_REPLAN_ROUNDS (unchanged name and value =2) for origin 'auditor'. Continuation and exhaustion are both gated by the LATEST round's own block origin (helpers bumpReplanBudget/replanBudgetRemains, extracted to stay under biome's cognitive-complexity ceiling -- see the new patterns.md bullet on the type-predicate narrowing trap if a future story touches this loop guard again). Worst-case total rounds per plan call is now MAX_LINT_REPLAN_ROUNDS + MAX_REPLAN_ROUNDS (up from MAX_REPLAN_ROUNDS alone) -- an accepted, bounded cost, not a regression. The CAM-447 pathology test (test/supervisor/plan-runner.test.ts, was 'mixed: round-1 lint-block then round-2 real auditor BLOCK both fold into the SAME escalation path') is REWRITTEN (not deleted) to assert the new non-escalating (audit-approved) outcome for that same round-1-lint / round-2-auditor-BLOCK scenario; the AC4 pure-lint-every-round escalation test and the pure-auditor spawn-cycle pin were left behaviorally unmodified and both still assert roundsCompleted/spawn-count == MAX_REPLAN_ROUNDS (2), which only holds because MAX_LINT_REPLAN_ROUNDS was ALSO set to 2 -- if a future story wants to change the lint budget's numeric value independently of the auditor budget's, that AC4 pin (test/supervisor/plan-runner.test.ts) needs re-deriving, not just a constant bump. docs/adr/0052 documents the Decision/Consequences for this split.",
   "officialDocsValidated": [
     {
       "lib": "none",
