@@ -31,6 +31,7 @@ import { isOrchPaneIdle, sendKeysVerified } from '../../src/tmux/dispatch.ts';
 import type { SpawnFn } from '../../src/tmux/session.ts';
 import type { WorkerEventDetail, WorkerEventKind } from '../../src/supervisor/events.ts';
 import { waitForCondition } from '../helpers/wait-for-condition.ts';
+import { tmuxAvailable } from '../helpers/test-deps.ts';
 
 const TEST_SOCK = 'cam-it-dispatch-geometry';
 const SESSION = 'dispatch-geometry-test';
@@ -40,8 +41,6 @@ const PANE_HEIGHT = 24;
 const FIXTURE_PATH = fileURLToPath(
 	new URL('../fixtures/dispatch-geometry/raw-echo.ts', import.meta.url),
 );
-
-const tmuxAvailable = spawnSync('tmux', ['-V']).status === 0;
 
 /** Run tmux on the private test socket directly (for setup/teardown). */
 function tmuxRaw(args: string[]): ReturnType<typeof spawnSync> {

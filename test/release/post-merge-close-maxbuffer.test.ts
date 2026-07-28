@@ -34,8 +34,7 @@ import { join } from 'node:path';
 import { defaultCloseIssueFn } from '../../src/release/post-merge.ts';
 import { closeIssueOnMain, type SpawnFn } from '../../src/commands/issue-specify.ts';
 import type { IssueEntry } from '../../src/issues/types.ts';
-
-const gitAvailable = spawnSync('git', ['--version'], { stdio: 'pipe' }).status === 0;
+import { gitAvailable } from '../helpers/test-deps.ts';
 
 const dirsToCleanup: string[] = [];
 

@@ -6,6 +6,22 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.264.0] - 2026-07-28
+
+### Added
+
+- US-R2-002 - Review round 2 fix 002: address reviewer finding
+- US-R2-001 - Review round 2 fix 001: address reviewer finding
+- US-R1-002 - Review round 1 fix 002: address reviewer finding
+- US-R1-001 - Review round 1 fix 001: address reviewer finding
+- US-007 - Update skip-guard doctrine and trace the CI lanes
+- US-006 - Wire the container lane onto a named counted waiver in the in-container harness
+- US-005 - Add lane-expectations file and per-lane skip-count ratchet gate
+- US-004 - Migrate all remaining probe declarations (tmux, jq, pgrep, ps, bun, uuidgen)
+- US-003 - Migrate the 25 gitAvailable probe declarations to the helper
+- US-002 - Add fail-loud preflight as a plain failing test per hard dependency
+- US-001 - Create centralized dependency-probe helper with classification and waiver semantics
+
 ## [0.263.0] - 2026-07-27
 
 ### Added

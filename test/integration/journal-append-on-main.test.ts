@@ -31,12 +31,7 @@ import {
 	type SpawnFn,
 	type JournalCycleEntry,
 } from '../../src/commands/journal.ts';
-
-// ---------------------------------------------------------------------------
-// Skip guard
-// ---------------------------------------------------------------------------
-
-const gitAvailable = spawnSync('git', ['--version'], { stdio: 'pipe' }).status === 0;
+import { gitAvailable } from '../helpers/test-deps.ts';
 
 // ---------------------------------------------------------------------------
 // Tmp-dir lifecycle

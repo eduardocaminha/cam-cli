@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CodexAdapter } from '../../src/supervisor/backend-adapter.ts';
 import { stripFrontmatter } from '../../src/templates/frontmatter.ts';
+import { gitAvailable } from '../helpers/test-deps.ts';
 
 const SAMPLE_UUID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
 const SAMPLE_PROMPT = "Implement it's US-001; use $HOME and `backtick`.";
@@ -279,8 +280,6 @@ describe('codex exec accepted flag surface contract (US-001, CAM-397)', () => {
 // the base ref is deterministically named 'main' regardless of the host's
 // init.defaultBranch), seed commit, then a feature branch with a known change.
 // -----------------------------------------------------------------------------
-
-const gitAvailable = spawnSync('git', ['--version'], { stdio: 'pipe' }).status === 0;
 
 const dirsToCleanup: string[] = [];
 

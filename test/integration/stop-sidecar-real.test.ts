@@ -38,6 +38,7 @@ import {
 import { WORKER_REPORT_FILENAME } from '../../src/supervisor/worker-report.ts';
 import { runSidecarLoop } from '../../src/supervisor/loop.ts';
 import { waitForCondition } from '../helpers/wait-for-condition.ts';
+import { tmuxAvailable } from '../helpers/test-deps.ts';
 
 // ---------------------------------------------------------------------------
 // Shared infrastructure
@@ -45,9 +46,6 @@ import { waitForCondition } from '../helpers/wait-for-condition.ts';
 
 const TEST_SOCK = 'cam-it-stop';
 const TEST_SESSION = 'stop-sidecar-test';
-
-/** Detect tmux availability once at module load time. */
-const tmuxAvailable = spawnSync('tmux', ['-V']).status === 0;
 
 /** Run tmux on the private test socket directly (for setup/teardown). */
 function tmuxRaw(args: string[]): ReturnType<typeof spawnSync> {

@@ -20,7 +20,8 @@ import { mkdtempSync, symlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const jqAvailable = Bun.which('jq') !== null;
+import { jqAvailable } from './helpers/test-deps.ts';
+
 const HOOK_SCRIPT = join(import.meta.dir, '..', '.claude', 'hooks', 'orch-agent-allowlist.sh');
 
 // Explicit env objects passed to Bun.spawn. PATH is required for bash to find jq.

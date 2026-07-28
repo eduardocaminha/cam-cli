@@ -50,14 +50,12 @@ import {
 } from '../../src/commands/run.ts';
 import { ORCH_RECYCLE_MARKER, ORCH_SESSION_MARKER } from '../../src/tmux/session.ts';
 import { waitForCondition } from '../helpers/wait-for-condition.ts';
+import { tmuxAvailable, pgrepAvailable, uuidgenAvailable } from '../helpers/test-deps.ts';
 
 // ---------------------------------------------------------------------------
 // Availability checks
 // ---------------------------------------------------------------------------
 
-const tmuxAvailable = spawnSync('tmux', ['-V'], { stdio: 'pipe' }).status === 0;
-const pgrepAvailable = Bun.which('pgrep') !== null;
-const uuidgenAvailable = Bun.which('uuidgen') !== null;
 const shouldRun = tmuxAvailable && pgrepAvailable && uuidgenAvailable;
 
 // ---------------------------------------------------------------------------

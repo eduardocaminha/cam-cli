@@ -33,23 +33,16 @@ import { tmpdir } from 'node:os';
 
 import { ORCH_PID_MARKER } from '../../src/tmux/session.ts';
 import { waitForCondition } from '../helpers/wait-for-condition.ts';
+import { pgrepAvailable, bunAvailable, psAvailable } from '../helpers/test-deps.ts';
 
 // ---------------------------------------------------------------------------
 // Prerequisites
 // ---------------------------------------------------------------------------
-
-const pgrepCheck = spawnSync('pgrep', ['--version'], { stdio: 'pipe' });
-// pgrep exits non-zero or fails to spawn when absent.
-const pgrepAvailable = pgrepCheck.status !== null;
-
-const bunCheck = spawnSync('bun', ['--version'], { stdio: 'pipe' });
-const bunAvailable = bunCheck.status === 0;
-
+//
 // `ps` (from procps) is required to reproduce ppid-walk behavior.
 // It is absent in oven/bun:1.2-slim (no procps package installed); skip there.
 // The production recycle-watcher runs on the host (not inside the container),
 // so this is env-specific: the test does not reflect a container toolchain gap.
-const psAvailable = Bun.which('ps') !== null;
 
 // ---------------------------------------------------------------------------
 // Cleanup registry

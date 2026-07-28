@@ -1,0 +1,21 @@
+{
+	"lanes": {
+		"host": {
+			"expectedSkips": 0,
+			"passFloor": 5731,
+			"measuredAt": "2026-07-27",
+			"measuredVia": "RE-MEASURED (US-R2-001, review round 2) on cam/issue-424 at branch HEAD, after US-R1-002 added 11 tests to test/check-skip-ratchet.test.ts: full-PATH `bun test` = 5731 pass / 0 fail / no skip-summary-line printed (Bun omits the line entirely at zero)."
+		},
+		"container": {
+			"expectedSkips": 40,
+			"passFloor": 5691,
+			"measuredAt": "2026-07-27",
+			"measuredVia": "RE-MEASURED (US-R2-001, review round 2) on cam/issue-424 at branch HEAD, after US-R1-002 added 11 tests to test/check-skip-ratchet.test.ts: real Docker locally via `bun scripts/test-in-container.ts` (waiver wired via `docker exec -e CAM_TEST_WAIVERS=tmux,pgrep,uuidgen`) measured 5691 pass / 0 fail / 40 skip, exit 0 (skip count matches this recorded expectation; delta of +11 vs the prior 5680 passFloor is exactly the 11 new host-added tests, none of which are container-skipped)."
+		}
+	},
+	"triage": {
+		"hardDependency": 42,
+		"legitimateEnvironmental": 1,
+		"measuredVia": "distinct test/** files (excluding test/helpers/ and test/fixtures/) that `import { xAvailable } from '.../test-deps.ts'`, bucketed by that binary's DepClassification in test/helpers/test-deps.ts. hardDependency = 42 distinct files across the union of tmux/git/jq/pgrep/uuidgen/bun (some files import more than one hard-dependency binding, e.g. test/integration/orch-recycle-watch.test.ts imports tmux+pgrep+uuidgen). legitimateEnvironmental = 1 file (test/integration/orch-recycle-pid-resolve.test.ts, the sole importer of psAvailable)."
+	}
+}

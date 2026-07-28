@@ -88,6 +88,7 @@ export const GATES: Gate[] = [
 	g('ci-parity', 'bun run check:ci-parity'),
 	g('agents-md', 'bun scripts/validate-agents-md.ts'),
 	g('test-sleeps', 'bun scripts/check-test-sleeps.ts'),
+	g('skip-ratchet', 'bun scripts/check-skip-ratchet.ts'),
 ];
 
 // ---------------------------------------------------------------------------

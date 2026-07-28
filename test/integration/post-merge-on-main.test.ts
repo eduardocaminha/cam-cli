@@ -32,13 +32,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 import { runPostMerge, type SpawnFn } from '../../src/release/post-merge.ts';
-
-// ---------------------------------------------------------------------------
-// Skip guard
-// ---------------------------------------------------------------------------
-
-const gitAvailable =
-	spawnSync('git', ['--version'], { stdio: 'pipe' }).status === 0;
+import { gitAvailable } from '../helpers/test-deps.ts';
 
 // ---------------------------------------------------------------------------
 // Tmp-dir lifecycle

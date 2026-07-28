@@ -14,11 +14,10 @@ import { spawnSync } from 'node:child_process';
 import { sampleCursorGeometry, type CursorGeometry } from '../../src/tmux/display-message.ts';
 import type { SpawnFn } from '../../src/tmux/session.ts';
 import { waitForCondition } from '../helpers/wait-for-condition.ts';
+import { tmuxAvailable } from '../helpers/test-deps.ts';
 
 const TEST_SOCK = 'cam-it-display-msg';
 const SESSION = 'display-msg-test';
-
-const tmuxAvailable = spawnSync('tmux', ['-V']).status === 0;
 
 /** Run tmux on the private test socket directly (for setup/teardown). */
 function tmuxRaw(args: string[]): ReturnType<typeof spawnSync> {

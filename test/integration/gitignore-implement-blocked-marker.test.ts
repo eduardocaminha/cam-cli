@@ -23,8 +23,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-
-const gitAvailable = spawnSync('git', ['--version'], { stdio: 'pipe' }).status === 0;
+import { gitAvailable } from '../helpers/test-deps.ts';
 
 const dirsToCleanup: string[] = [];
 

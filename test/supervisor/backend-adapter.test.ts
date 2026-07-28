@@ -17,6 +17,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { ClaudeAdapter, CodexAdapter, selectAdapter } from '../../src/supervisor/backend-adapter.ts';
 import { taskPromptFileArgument } from '../../src/supervisor/task-prompt-file.ts';
+import { gitAvailable } from '../helpers/test-deps.ts';
 
 const SAMPLE_UUID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
 const SAMPLE_PROMPT = "Implement it's US-002; use $HOME and `backtick`.";
@@ -209,8 +210,6 @@ describe("selectAdapter(backend) factory (US-002)", () => {
 // real `git diff main...HEAD` subprocess boundary feeds a diff containing its
 // own triple-backtick line into the wrapper correctly.
 // -----------------------------------------------------------------------------
-
-const gitAvailable = spawnSync('git', ['--version'], { stdio: 'pipe' }).status === 0;
 
 const dirsToCleanup: string[] = [];
 

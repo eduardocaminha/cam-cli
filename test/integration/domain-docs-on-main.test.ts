@@ -18,12 +18,7 @@ import { join } from 'node:path';
 import { writeIssueFile } from '../../src/issues/alloc.ts';
 import { writeDomainDocsOnMain, type SpawnFn } from '../../src/commands/domain-docs.ts';
 import type { DomainDocsPayload } from '../../src/domain-docs/render.ts';
-
-// ---------------------------------------------------------------------------
-// Skip guard
-// ---------------------------------------------------------------------------
-
-const gitAvailable = spawnSync('git', ['--version'], { stdio: 'pipe' }).status === 0;
+import { gitAvailable } from '../helpers/test-deps.ts';
 
 // ---------------------------------------------------------------------------
 // Tmp-dir lifecycle

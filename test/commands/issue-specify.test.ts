@@ -39,6 +39,7 @@ import type {
 	WorkerEventLogger,
 	StagePromotedEventDetail,
 } from '../../src/supervisor/events.ts';
+import { gitAvailable } from '../helpers/test-deps.ts';
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -594,8 +595,6 @@ test('production-wiring: default sink writes stage-promoted event to cam-worker-
 // ===========================================================================
 // 2. Real-git integration tests
 // ===========================================================================
-
-const gitAvailable = spawnSync('git', ['--version'], { stdio: 'pipe' }).status === 0;
 
 const dirsToCleanup: string[] = [];
 
