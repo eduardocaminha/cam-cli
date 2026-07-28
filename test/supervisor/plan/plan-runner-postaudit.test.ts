@@ -87,6 +87,7 @@ const BLOCKED_RESULT: PlanPhaseResult = {
 	kind: 'audit-blocked',
 	issue: MOCK_ISSUE,
 	report: BLOCK_REPORT,
+	origin: 'auditor',
 };
 
 const ESCALATED_REPORT: PlanVerdictReport = {

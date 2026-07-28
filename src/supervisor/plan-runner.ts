@@ -274,7 +274,14 @@ export type PlanPhaseResult =
 	 */
 	| { kind: 'codex-auth-failed'; phase: 'planner' | 'auditor'; reason: string }
 	| { kind: 'audit-approved'; issue: IssueEntry; report: PlanVerdictReport }
-	| { kind: 'audit-blocked'; issue: IssueEntry; report: PlanVerdictReport }
+	/**
+	 * `origin` declares whether this block came from the deterministic oracle
+	 * lint (runOracleLintCheck, never spawns the auditor) or from the auditor
+	 * itself (a real BLOCK verdict). REQUIRED so a future construction site
+	 * cannot silently default to the wrong provenance -- the re-plan driver
+	 * budgets the two independently (US-001, CAM-448).
+	 */
+	| { kind: 'audit-blocked'; issue: IssueEntry; report: PlanVerdictReport; origin: 'oracle-lint' | 'auditor' }
 	| { kind: 'plan-escalated'; issue: IssueEntry; report: PlanVerdictReport; roundsCompleted: number };
 
 // ---------------------------------------------------------------------------
@@ -1000,7 +1007,7 @@ function runOracleLintCheck(
 	if (prd === null) return null;
 	const findings = lintPrd(prd);
 	if (findings.length === 0) return null;
-	return { kind: 'audit-blocked', issue, report: buildLintBlockReport(findings) };
+	return { kind: 'audit-blocked', issue, report: buildLintBlockReport(findings), origin: 'oracle-lint' };
 }
 
 /**
@@ -1341,7 +1348,9 @@ function runPlanWorkerSequence(
 	}
 	removePlanTaskPrompt(opts, auditorStep.uuid);
 	const { report } = auditorResult;
-	return report.verdict === 'APPROVE' ? { kind: 'audit-approved', issue, report } : { kind: 'audit-blocked', issue, report };
+	return report.verdict === 'APPROVE'
+		? { kind: 'audit-approved', issue, report }
+		: { kind: 'audit-blocked', issue, report, origin: 'auditor' };
 }
 
 /**

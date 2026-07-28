@@ -358,6 +358,22 @@ describe('runPlanPhase: oracle lint wiring (AC2, AC3, AC5)', () => {
 		expect(finding.description).toContain(BROKEN_ORACLE_COMMAND);
 	});
 
+	test("audit-blocked carries origin oracle-lint for a lint block and auditor for an auditor BLOCK", () => {
+		const { opts: lintOpts, calls: lintCalls } = makeOpts({ readPrdContentFn: () => BROKEN_PRD });
+		const lintResult = runPlanPhase(lintOpts) as { kind: 'audit-blocked'; origin: 'oracle-lint' | 'auditor' };
+		expect(lintResult.kind).toBe('audit-blocked');
+		expect(lintResult.origin).toBe('oracle-lint');
+		expect(auditorRespawnCalls(lintCalls)).toHaveLength(0);
+
+		const { opts: auditorOpts } = makeOpts({
+			readPrdContentFn: () => CLEAN_PRD,
+			readPlanVerdictFn: () => BLOCK_REPORT,
+		});
+		const auditorResult = runPlanPhase(auditorOpts) as { kind: 'audit-blocked'; origin: 'oracle-lint' | 'auditor' };
+		expect(auditorResult.kind).toBe('audit-blocked');
+		expect(auditorResult.origin).toBe('auditor');
+	});
+
 	test('AC5: a clean prd.json proceeds to the auditor unchanged (zero behavior change)', () => {
 		const { opts, calls } = makeOpts({ readPrdContentFn: () => CLEAN_PRD });
 		const result = runPlanPhase(opts);
