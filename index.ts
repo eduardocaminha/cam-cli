@@ -9,12 +9,12 @@
 // only `next` adds two more options, both with simple value parsing).
 //
 // IMPORTANT INVARIANT (US-007 acceptance criterion 7):
-//   No subcommand parser registers a `--permission-mode` flag. The value is
-//   sourced exclusively from `~/.config/cam/config.toml` via
-//   `src/config/permission-mode.ts`. The unit test
-//   `test/no-permission-mode-flag.test.ts` greps this file (and every file
-//   in `src/commands/`) for `--permission-mode` patterns and fails the build
-//   on a registration. Search markers documented in that test.
+//   No subcommand parser registers a `--permission-mode` flag. Permission
+//   mode is a hardcoded `bypassPermissions` literal at each spawn site, not
+//   a CLI knob. The unit test `test/no-permission-mode-flag.test.ts` greps
+//   this file (and every file in `src/commands/`) for `--permission-mode`
+//   patterns and fails the build on a registration. Search markers
+//   documented in that test.
 
 import process from 'node:process';
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';

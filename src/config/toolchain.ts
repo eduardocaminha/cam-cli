@@ -15,7 +15,7 @@
 //
 // The reader is defensive on every error path (missing file, malformed
 // content, wrong shape): it returns `null` rather than throwing, mirroring
-// the `readPermissionMode` / `readPhaseModel` convention in this directory.
+// the `readPhaseModel` convention in this directory.
 // This module intentionally does NOT touch the filesystem at import time;
 // callers pass an injectable `readFileFn` (or accept the default, which
 // reads from `process.cwd()`), keeping it a pure, test-friendly seam.

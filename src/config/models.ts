@@ -3,12 +3,12 @@
 // Single source of truth for per-phase model selection and backend choice.
 // Values are read from `scripts/cam/project.toml` (project-scoped, resolved
 // from cwd). The per-user `~/.config/cam/config.toml` and `CAM_CONFIG_PATH`
-// are NOT consulted here: those target the user config (see permission-mode.ts).
+// are NOT consulted here: those target a separate, per-user config surface.
 //
 // The default values below are applied when the config file is missing, when a
 // section or key is absent, when the file is malformed TOML, or when the value
-// is a non-string. This mirrors the try/catch/default pattern in
-// `src/config/permission-mode.ts:47-61`.
+// is a non-string. This mirrors the try/catch/default pattern used elsewhere
+// in this directory for defensive config reads.
 
 import { join } from 'node:path';
 import process from 'node:process';
@@ -142,9 +142,8 @@ function readNestedBackendModel(
  *
  * The function is **defensive on every error path**: a missing file, a
  * malformed TOML file, a missing `[models]` section, a missing key, or a
- * non-string value all fall back to the default. The rationale mirrors
- * `readPermissionMode`: the autonomous loop must never be blocked by a
- * misconfigured project.toml.
+ * non-string value all fall back to the default. The rationale: the
+ * autonomous loop must never be blocked by a misconfigured project.toml.
  *
  * @param phase    The cam phase to resolve a model for.
  * @param configPath  Override the config file path (default:
