@@ -6,6 +6,18 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.269.0] - 2026-07-28
+
+### Added
+
+- US-R2-001 - Review round 2 fix 001: address reviewer finding
+- US-R1-001 - Review round 1 fix 001: address reviewer finding
+- US-005 - Correct the CONTEXT.md glossary so agents stop reading the dead name as truth
+- US-004 - Disclose the bypassPermissions default in a README security section
+- US-003 - Present the README as Gateship without restructuring it
+- US-002 - Clear the dead name from the remaining src/ comment surfaces and prove the tree-wide sweep
+- US-001 - Rename the running binary's user-facing display strings to Gateship
+
 ## [0.268.0] - 2026-07-28
 
 ### Added
