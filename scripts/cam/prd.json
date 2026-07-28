@@ -76,7 +76,7 @@
         "Quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: scripts/cam/patterns.md only, the curated block starting at line 1068 ('CURATED BLOCK: oracle authoring rules, promoted 2026-07-27 (CAM-439)'), whose existing rules 1-4 are indented two spaces as '  N. **Title.** body'. Match that exact shape for rule 5 or the AC1 regex '^[[:space:]]+5\\. ' misses. GOTCHA the regex requires 'bun index.ts' on the SAME physical line as the '5.' marker; a rule whose first line is only a bold title and whose body wraps to the next line leaves the oracle red. GOTCHA a backtick inside a literal-substring grep phrase silently breaks the match (patterns.md, CAM-449 US-003): if you code-format the command as `bun index.ts`, the backticks sit OUTSIDE the required span so the match survives, but code-formatting '0.262.0' as `0.262.0` also survives; run both exact oracle commands against your draft rather than eyeballing. GOTCHA prose is where rework concentrates in this repo (CAM-455 measured round-1 findings rising from 0.1 to 3.7): the new rule must carry the measured CAM-449 AC7 evidence, not an invented rationale. Repo prose rule: no em dash in persisted human-readable .md. Do not truncate or reorder existing bullets; patterns.md is append-and-amend-only."
     }
