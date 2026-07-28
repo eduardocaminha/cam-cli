@@ -312,7 +312,14 @@ interactive `claude` session is. If you want the agent's write/execute reach
 contained instead of running bypass-permissions against your host, set
 `[loop] worker_isolation = "container"` in `scripts/cam/project.toml` (default
 is `"host"`), which routes worker sessions into container isolation instead of
-running directly against your machine.
+running directly against your machine. This mitigation is partial: `worker_isolation`
+is read only by the sidecar's worker/reviewer dispatch path (`src/commands/sidecar.ts`,
+via `readWorkerIsolation` in `src/config/models.ts`), so it contains implementer
+and reviewer sessions only. The orchestrator pane itself is always spawned on
+the host with `claude --permission-mode bypassPermissions`
+(`src/commands/setup.ts`), even when `worker_isolation = "container"` is set,
+so the long-lived orchestrator retains unrestricted host read/write/execute
+reach regardless of this setting.
 
 ---
 
