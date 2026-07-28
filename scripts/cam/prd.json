@@ -66,7 +66,7 @@
         "The lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: README.md only (329 lines on main, a contributor-facing doc). Scope is surgical: swap the dead name for Gateship at lines 1, 3 and 152, reusing the category sentence from docs/positioning.md line 7 rather than inventing product prose. Do NOT rewrite sections, do NOT add visual assets or a differentiation section: the definitive public README is CAM-331 and it is blocked on CAM-421 (the palette and asset names its gotchas cite are already stale). Line 152 lives inside a fenced code block mirroring `bun index.ts --help`, so its wording must match what US-001 wrote into index.ts:143. Do NOT touch docs/launch-readiness.md: the dead name there is a historical audit record. Do NOT touch package.json `name` or the repo name: both are operator ceremonies."
     },
