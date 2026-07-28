@@ -6,6 +6,14 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.267.0] - 2026-07-28
+
+### Added
+
+- US-003 - Record the passFloor-headroom convention in patterns.md
+- US-002 - Re-measure and re-record the container lane from a real Docker run
+- US-001 - Enforce a guarded MIN_PASS_FLOOR_HEADROOM in the skip-ratchet gate and re-record the host lane
+
 ## [0.266.0] - 2026-07-28
 
 ### Added
