@@ -104,7 +104,7 @@
         "The lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: CONTEXT.md only. Entries are merge-written by mergeContextMd (src/domain-docs/render.ts, called from src/commands/domain-docs.ts): the block shape is a `**Term**:` line followed by the definition, so the rename must preserve that exact shape or a later merge will duplicate the term instead of updating it. Keep it glossary-only (no implementation detail, no decision text): the decision lives in ADR-0050. The definition body should track docs/positioning.md line 7. The :393/:401 brand-neutral entries mention the Fir Green palette that CAM-421 will revisit: rename the product only, leave the palette claims alone. Do NOT rename the 'CAM_*'-style contract vocabulary anywhere in the file."
     }
