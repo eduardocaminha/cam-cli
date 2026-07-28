@@ -11,6 +11,7 @@ import {
 	checkSkipCount,
 	checkSkipRatchet,
 	checkSuiteRan,
+	MIN_PASS_FLOOR_HEADROOM,
 	parsePassCount,
 	parseSkipCount,
 	resolveLane,
@@ -85,7 +86,7 @@ describe('suiteRanToCompletion', () => {
 describe('checkSuiteRan', () => {
 	test('null (suite ran cleanly) when tally line present and pass count clears the floor', () => {
 		const output = '\n 5702 pass\n 0 fail\nRan 5702 tests across 340 files. [79.42s]\n';
-		expect(checkSuiteRan(output, 5700, 'host')).toBeNull();
+		expect(checkSuiteRan(output, 5600, 'host')).toBeNull();
 	});
 
 	test('fails when the completion tally line is missing (crashed run masquerading as clean)', () => {
@@ -102,6 +103,25 @@ describe('checkSuiteRan', () => {
 		expect(result).not.toBeNull();
 		expect(result?.ok).toBe(false);
 		expect(result?.message).toContain('passFloor');
+	});
+
+	test('fails when the recorded passFloor is floor too tight against the observed pass count', () => {
+		const output = ' 5758 pass\n 0 fail\nRan 5758 tests across 343 files. [1s]\n';
+		const result = checkSuiteRan(output, 5758, 'host');
+		expect(result).not.toBeNull();
+		expect(result?.ok).toBe(false);
+		expect(result?.message).toContain('too tight');
+		expect(result?.message).not.toContain('suite likely crashed');
+	});
+
+	test('a recorded floor of 0 disables the headroom rule even with a tiny observed pass count', () => {
+		const output = ' 5 pass\n 0 fail\nRan 5 tests across 1 files. [0.10s]\n';
+		expect(checkSuiteRan(output, 0, 'container')).toBeNull();
+	});
+
+	test('a positive floor with at least MIN_PASS_FLOOR_HEADROOM gap clears the guard', () => {
+		const output = ' 200 pass\n 0 fail\nRan 200 tests across 3 files. [0.10s]\n';
+		expect(checkSuiteRan(output, 200 - MIN_PASS_FLOOR_HEADROOM, 'container')).toBeNull();
 	});
 });
 
@@ -159,10 +179,12 @@ describe('checkSkipRatchet', () => {
 		return {
 			lanes: {
 				// passFloor set below the fixtures' expected-clean pass count so a
-				// single legitimate new skip (test below) still clears the floor;
-				// only a crashed/partial run should trip it.
-				host: { expectedSkips: 0, passFloor: 5700 },
-				container: { expectedSkips: 40, passFloor: 5650 },
+				// single legitimate new skip (test below) still clears the floor,
+				// AND with at least MIN_PASS_FLOOR_HEADROOM of gap so the too-tight
+				// guard doesn't trip on these fixtures; only a crashed/partial run
+				// should trip the guard.
+				host: { expectedSkips: 0, passFloor: 5600 },
+				container: { expectedSkips: 40, passFloor: 5550 },
 			},
 			triage: { hardDependency: 42, legitimateEnvironmental: 1 },
 		};

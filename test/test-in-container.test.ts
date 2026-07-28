@@ -128,6 +128,22 @@ Ran 3 tests across 1 files. [0.10s]
 const FIXTURE_EMPTY = '';
 
 /**
+ * Large clean run used to exercise a POSITIVE container passFloor with real
+ * MIN_PASS_FLOOR_HEADROOM headroom (US-001, CAM-447 PRD): 200 pass, 0 fail,
+ * 2 skip. FIXTURE_ALL_PASS's 5 pass can never sit MIN_PASS_FLOOR_HEADROOM
+ * above any non-negative floor, so this fixture stands in wherever a
+ * positive-floor case is needed instead of degenerating into the floor-0
+ * no-op path.
+ */
+const FIXTURE_ALL_PASS_LARGE = `bun test v1.x.x (abc123)
+
+ 200 pass
+ 0 fail
+ 2 skip
+Ran 202 tests across 3 files. [1.20s]
+`;
+
+/**
  * Crashed run: no completion tally, no summary lines at all -- the exact
  * shape the reviewer used to demonstrate the finding (US-R2-002). Container
  * `expectedSkips` can be 0 and this must still fail the run: checkSuiteRan
@@ -373,10 +389,14 @@ describe('runInContainerTests exit code', () => {
 	});
 
 	test('exits 0 when the completion tally is present and observed pass meets the container passFloor', () => {
+		// A floor of 5 against FIXTURE_ALL_PASS's 5 pass would be a zero-gap
+		// floor, which the too-tight guard (US-001, CAM-447 PRD) rejects; use
+		// the large fixture (200 pass) against a floor of 100 so the case still
+		// exercises a genuinely POSITIVE floor with real headroom (gap 100).
 		const { exitCode } = runInContainerTests({
 			ensureFn: () => {},
-			execFn: () => ({ output: FIXTURE_ALL_PASS, exitCode: 0 }),
-			readExpectations: fakeExpectations(2, 5), // FIXTURE_ALL_PASS has 5 pass
+			execFn: () => ({ output: FIXTURE_ALL_PASS_LARGE, exitCode: 0 }),
+			readExpectations: fakeExpectations(2, 100), // FIXTURE_ALL_PASS_LARGE has 200 pass, 2 skip
 		});
 		expect(exitCode).toBe(0);
 	});

@@ -2,9 +2,9 @@
 	"lanes": {
 		"host": {
 			"expectedSkips": 0,
-			"passFloor": 5731,
-			"measuredAt": "2026-07-27",
-			"measuredVia": "RE-MEASURED (US-R2-001, review round 2) on cam/issue-424 at branch HEAD, after US-R1-002 added 11 tests to test/check-skip-ratchet.test.ts: full-PATH `bun test` = 5731 pass / 0 fail / no skip-summary-line printed (Bun omits the line entirely at zero)."
+			"passFloor": 5500,
+			"measuredAt": "2026-07-28",
+			"measuredVia": "RE-MEASURED (US-001, CAM-447 PRD) on cam/issue-447 at branch HEAD on 2026-07-28, via full-PATH `bun test`: 5761 pass / 0 fail / 0 skip (Bun omits the ' N skip' summary line at zero; recorded explicitly per the token form this file's own contract requires). passFloor rounded down to the nearest multiple of 100 leaving a 261-pass gap, comfortably clear of MIN_PASS_FLOOR_HEADROOM (50), so the floor does not need re-recording again next cycle."
 		},
 		"container": {
 			"expectedSkips": 40,
