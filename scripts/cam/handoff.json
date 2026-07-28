@@ -1,24 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "State the acceptanceCriteria condition in both cam-plan.md twins and regenerate the vendor embed"
+    "id": "US-003",
+    "title": "Make the CONTEXT.md plannable-issue and plannable-set entries agree with the shipped predicate"
   },
   "branchName": "cam/issue-455",
-  "timestamp": "2026-07-28T13:05:00Z",
+  "timestamp": "2026-07-28T13:40:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    ".claude/commands/cam-plan.md",
-    "templates/commands/cam-plan.md",
-    "src/vendor/_generated.ts",
+    "CONTEXT.md",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "The 'No argument' bullet (line 11) in both .claude/commands/cam-plan.md and templates/commands/cam-plan.md now states all four isPlannable conditions verbatim: `stage === 'specified' && status === 'open' && spec.acceptanceCriteria.length > 0 && !blocked` (matching src/issues/plannable.ts:20-26), with an explicit citation to that file:line as the source of truth. The two twins remain byte-identical (verified with diff -q) and src/vendor/_generated.ts was regenerated via bun run embed-vendor (embed-vendor:check passes). No production TypeScript was touched -- src/issues/plannable.ts is unchanged, this story only repaired the prose description of the already-correct predicate. No file-size ceiling raise was needed (src/vendor/_generated.ts stayed at 50 lines, under its 51-line budget).",
+  "nextStoryContext": "CONTEXT.md's three related glossary entries now agree with the shipped isPlannable predicate (src/issues/plannable.ts:20-26). The 'plannable issue' entry (line 72) was reworded to name acceptance criteria as one of the qualifying conditions and dropped the false absolute sentence ('This is the single condition that qualifies an issue for /cam-plan'). The 'plannable set' entry (line 248) was reworded the same way. The 'plannable gate' entry (line 431) was already correct and untouched, serving as the wording pin. Fix was glossary-only prose (no implementation detail, no code citation, per the Domain Model Convention), unlike the command-doc twins fixed in US-002 which DO cite plannable.ts:20-26. The still-open, explicitly out-of-scope item noted in this story's prd.json notes is the missing 'push-recovered' glossary entry (an omission, not a contradiction) -- not addressed here, left for a future story if ever prioritized. All three story oracles verified green before commit; full bun run check:all spine (typecheck, 5763 tests, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps, skip-ratchet) passed clean with zero file-size or coverage budget raises needed.",
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Pure prose-doc-sync story: repaired a stale command-doc description of an already-shipped TypeScript predicate (isPlannable, CAM-449 US-001) and regenerated the derived vendor embed. No external library or new API surface introduced."
+      "summary": "Pure prose glossary-sync story: reworded two CONTEXT.md entries to match an already-shipped TypeScript predicate (isPlannable, CAM-449 US-001). No external library, new API surface, or production TypeScript code was touched."
     }
   ],
   "appliedPatternIds": []
