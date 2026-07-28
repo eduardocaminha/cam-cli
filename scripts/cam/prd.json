@@ -20,7 +20,7 @@
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [README.md:258]: After this branch `~/.config/cam/config.toml` has zero readers and zero writers anywhere in the codebase (verified: no src/ file references CAM_CONFIG_PATH or that path outside comments; loadConfig/mergeIntoConfig callers all target scripts/cam/project.toml, and ~/.config/cam/retry.toml is written by src/retry/config.ts:113). Three surfaces still advertise it as a live per-user config surface: README.md:258 maps `src/config/` to \"~/.config/cam/config.toml + scripts/cam/project.toml\"; src/config/toml.ts:3 calls the module a \"Minimal TOML reader + writer for ~/.config/cam/config.toml\" and :150 justifies its null-safe contract with \"`cam init` must work both on a fresh machine (no ~/.config/cam/)\"; and src/config/models.ts:5 was reworded IN THIS DIFF to say those \"target a separate, per-user config surface\", which asserts a surface that no longer exists. A reader auditing cam still discovers a plausible-looking config file that nothing reads, which is the exact failure mode this PRD set out to remove (mirror image of the dead permission_mode knob). 3 files, mechanical."
     },
     {
