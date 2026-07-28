@@ -27,7 +27,7 @@
       "id": "US-R1-003",
       "title": "Review round 1 fix 003: address reviewer finding",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [test/init.test.ts:81]: The rewritten tests are bound to a seam that no longer exists in production code, so they cannot catch the regression they claim to guard. US-001 deleted `defaultConfigPath()` and the `configPath` option from src/commands/init.ts, so nothing in src/ reads CAM_CONFIG_PATH any more; the beforeEach/afterEach env plumbing at :51-60 is now vestigial, and `expect(existsSync(configPath)).toBe(false)` asserts the absence of a fresh mkdtemp path that no code path can construct. If a future change reintroduces the config write at the real default (`join(homedir(), '.config', 'cam', 'config.toml')`), all three tests still pass. The three tests also assert the same single fact (:71, :78, :83) with no error/edge case, so the file has no success/error/edge triad. Mechanical fix: drive init with HOME (or an explicit injected path) pointed at the tmpdir and assert no config file is produced anywhere under it, and collapse the three duplicates into one meaningful test."
     },
     {
