@@ -43,6 +43,7 @@ import type { PlanVerdictReport } from '../../../src/supervisor/plan-verdict-rep
 import type { IssueEntry } from '../../../src/issues/types.ts';
 import type { PlanPreflightResult } from '../../../src/supervisor/plan-preflight.ts';
 import type { WorkerEvent } from '../../../src/supervisor/events.ts';
+import type { PrdShape } from '../../../src/commands/status.ts';
 import { readTaskPromptFromCommand } from '../../helpers/task-prompt.ts';
 import { withVerifiedPanePid } from '../../helpers/verified-pane-pid-spawn.ts';
 
@@ -111,6 +112,30 @@ const PREFLIGHT_FAIL: PlanPreflightResult = {
 	ok: false,
 	step: 'typecheck',
 	detail: 'error TS2345',
+};
+
+/** A PRD whose only story carries the self-nullifying grep -q + -L idiom (lint-FAILING). */
+const BROKEN_PRD: PrdShape = {
+	userStories: [
+		{
+			id: 'US-001',
+			title: 'Story with a broken oracle',
+			passes: false,
+			acceptanceCriteria: ["Some criterion. [oracle: grep -qL 'X' path/to/file.ts]"],
+		},
+	],
+};
+
+/** A PRD whose oracle is well-formed (lint-clean). */
+const CLEAN_PRD: PrdShape = {
+	userStories: [
+		{
+			id: 'US-001',
+			title: 'Story with a clean oracle',
+			passes: false,
+			acceptanceCriteria: ["Some criterion. [oracle: grep -q 'X' path/to/file.ts]"],
+		},
+	],
 };
 
 // ---------------------------------------------------------------------------
@@ -295,6 +320,29 @@ describe('runPlanPhaseWithReplan', () => {
 		// Sanity: two full planner+auditor spawn cycles occurred (round1 + round2).
 		const respawnCalls = calls.filter((c) => c.args[2] === 'respawn-pane');
 		expect(respawnCalls.length).toBe(4); // 2 planner + 2 auditor
+	});
+
+	// -------------------------------------------------------------------------
+	// Lint-origin blocks budget independently from auditor-origin blocks
+	// (US-002, CAM-448, ADR-0052)
+	// -------------------------------------------------------------------------
+	test('lint round 1 leaves the auditor budget intact and a post-auditor correction round still runs', () => {
+		// Round 1: oracle lint fails (BROKEN_PRD) -> audit-blocked, origin
+		// 'oracle-lint', auditor never spawned. Every later round's prd.json is
+		// lint-clean (CLEAN_PRD), so rounds 2+ reach the auditor.
+		let lintCallCount = 0;
+		const { opts, calls } = makeReplanOpts([APPROVE_REPORT, BLOCK_REPORT_ROUND1, APPROVE_REPORT], {
+			readPrdContentFn: () => {
+				lintCallCount++;
+				return lintCallCount === 1 ? BROKEN_PRD : CLEAN_PRD;
+			},
+		});
+		const result = runPlanPhaseWithReplan(opts);
+		expect(result.kind).toBe('audit-approved');
+		const auditorRespawns = calls.filter(
+			(c) => c.args[2] === 'respawn-pane' && c.args.some((a) => a.includes('subagent-auditor')),
+		);
+		expect(auditorRespawns.length).toBeGreaterThanOrEqual(2);
 	});
 
 	// -------------------------------------------------------------------------
