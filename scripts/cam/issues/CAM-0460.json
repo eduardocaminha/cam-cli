@@ -1,0 +1,40 @@
+{
+  "id": "CAM-460",
+  "title": "Caminho de instalacao empacotado (must-fix 3 do lancamento): 269 tags e zero Releases, package.json private com bin null",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-28T17:44:13.637Z",
+  "updatedAt": "2026-07-28T17:44:13.637Z",
+  "description": "Must-fix 3 do docs/launch-readiness.md, nunca filado desde o CAM-330. Prioridade declarada do operador em 2026-07-28: lancamento publico, destravar topico por topico a partir do proximo ciclo. Medido em 28/07: o repo JA E PUBLICO (eduardocaminha/cam-cli, PUBLIC, 1 star) e se descreve como runtime, mas nao existe nenhuma forma de um estranho instalar. 269 tags publicadas e ZERO GitHub Releases; package.json com private: true e bin: null; o README so documenta pre-requisitos (tmux, bun, gh), nunca a instalacao do proprio produto. Porta trancada com placa de aberto. Este e tambem o estagio em que o ADR-0050 deliberadamente adiou DUAS decisoes de nome: o binario passa a chamar gateship, e o alias digitado (se houver) e escolhido e criado pelo instalador AQUI, nao antes.",
+  "specSource": "operator",
+  "spec": {
+    "acceptanceCriteria": [
+      "O package e publicavel: private deixa de ser true e bin aponta para um entry point. [oracle: named-command bash -c 'test \"$(jq -r .private package.json)\" != \"true\" && test \"$(jq -r .bin package.json)\" != \"null\"'] (varrido VERMELHO na main 2026-07-28: private=true e bin=null, os dois lados falsos)",
+      "Existe automacao que publica um binario como asset de GitHub Release. [oracle: named-command bash -c 'test $(grep -rl \"gh release create\\|action-gh-release\" .github/workflows scripts 2>/dev/null | wc -l) -gt 0'] (varrido VERMELHO na main 2026-07-28: 0 arquivos)",
+      "O README documenta instalacao NAO-fonte apontando para um asset de Release. [oracle: file-assert grep -q 'releases/download' README.md] (varrido VERMELHO na main 2026-07-28: 0 ocorrencias. ATENCAO: um grep por 'brew install' le VERDE com 3 hits, mas os 3 sao pre-requisitos de tmux/bun/gh nas linhas 23-25, nao instalacao do cam; nao use esse extrator)",
+      "As duas decisoes de nome que o ADR-0050 adiou para este estagio ficam registradas num ADR novo: o nome do binario e se um alias digitado existe. [oracle: named-command bash -c 'test $(grep -rl \"typed alias\" docs/adr/ | wc -l) -gt 2'] (varrido VERMELHO na main 2026-07-28: exatamente 2 ADRs mencionam typed alias, o 0049 e o 0050)",
+      "PIN DE INVARIANCIA: nenhum contrato interno renomeia (ADR-0050:19-22). As contagens de CAM_, .cam-, tmux -L cam e /cam- em src e index.ts ficam identicas as da main, comparando derivado ao vivo e nao congelado, e o extrator precisa devolver contagem maior que zero dos dois lados antes de comparar.",
+      "A espinha de qualidade passa. [oracle: named-command bun run check:all]"
+    ],
+    "scope": "Dar ao produto um caminho de instalacao empacotado e assinado, e registrar no mesmo ciclo as duas decisoes de nome que o ADR-0050 adiou para o estagio de launch packaging.",
+    "gotchas": [
+      "DECISAO DE ALIAS, com medicao de 28/07 e recomendacao: NAO criar alias curto automatico. gs e o binario canonico do Ghostscript em praticamente toda distro e no Homebrew (livre nesta maquina so por ausencia do pacote); gt e a CLI do Graphite, produto vivo em categoria adjacente, que e exatamente a camada 4 eliminatoria do gate de nome do ADR-0050. Se um alias for mesmo shipado, gship e o unico candidato varrido limpo. Argumento de merito: uma ferramenta que roda com bypassPermissions no host do usuario nao deveria, no mesmo instalador, tomar duas letras do namespace global sem perguntar.",
+      "BURACO QUE NINGUEM DECIDIU: o que acontece com o cam ja instalado. Contrato interno nunca renomeia, mas o comando DIGITADO e outra coisa. Precisa de historia explicita, shim de compatibilidade ou corte seco, nao deixar implicito.",
+      "Binario bun build --compile no macOS arm64 precisa de re-assinatura ad-hoc (codesign --force --sign -), senao trava em diretorio de sistema; build-release.sh ja faz isso, e distribuicao publica exigiria Developer ID mais notarizacao.",
+      "Este issue NAO cobre o README externo (CAM-331), bloqueado no CAM-421 e nas referencias visuais do operador."
+    ],
+    "domainTerms": [
+      "launch packaging",
+      "typed alias",
+      "staged rename",
+      "must-fix"
+    ]
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 5,
+    "riskReduction": 4,
+    "jobSize": 3
+  }
+}
