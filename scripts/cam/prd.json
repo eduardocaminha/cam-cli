@@ -12,6 +12,13 @@
   "officialDocsConsulted": [],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "WARNING [src/ui/Splash.tsx:11]: The diff replaced a true comment with a false one: line 11 now claims the identity panel \"reads as the Gateship brand identity\", but the panel renders the ASCII \"CAM\" wordmark (:117-119) plus a literal bold \"Runtime\" line (:120-122), i.e. the running binary's splash still displays the dead name \"CAM Runtime\". Verified by rendering the real component with ink-testing-library (frame captured in scripts/cam/review-artifact.txt section 3), not by reading the comment. This is the lying-surface defect class US-005 exists to close, and the splash test's own header (test/ui/splash.test.tsx:5-6) codifies the invariant \"never assert behavior from a comment\". Fix by either rewording lines 10-11 to state what actually renders (and naming CAM-421/CAM-331 as the owner of the visual identity), or renaming the rendered \"Runtime\" text line, which is a plain display string like index.ts:114 and run.ts:786 and not the wordmark art the PRD deferred."
+    },
+    {
       "id": "US-001",
       "title": "Rename the running binary's user-facing display strings to Gateship",
       "description": "As a user running cam, I need the CLI tagline, the version help text, the tmux status bar, and the config.toml written to my disk to say Gateship, so that the running product stops advertising a name that no decision, doc, or repo still uses.",
@@ -26,7 +33,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "The lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "requires": null,
       "notes": "Files: index.ts (tagline :114, version help entry :143), src/commands/run.ts (:783 comment, :786 status-right), src/retry/config.ts (:30 DEFAULT_TOML header). The literal to replace is the two-word string 'CAM Runtime', NEVER the bare token CAM: CAM_* env vars, .cam-* markers, 'tmux -L cam' and /cam-* are internal contracts frozen by ADR-0050 lines 19-22. No sed -i over the whole tree. Draw the product sentence from docs/positioning.md line 7 ('local software delivery runtime: a control plane for coding agents') rather than inventing a new one. patterns.md:1078 rule 5: a CLI-behavior oracle uses `bun index.ts <sub>`, never `cam <sub>` (the installed binary is 0.268.0 and will diverge from this branch). renderHelp pads the name column to 24 chars (patterns.md:522) so keep the version entry's `name` field untouched and only edit its `description`. No templates/ or vendor/ file carries the dead name (verified: 0 hits), so embed-vendor is not triggered by this story. src/commands/run.ts has a file-size budget entry (1168) in scripts/file-size-budget.json: this story is a like-for-like string swap and must not grow it."
@@ -45,7 +52,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "The lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 2,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "Files: src/ui/Splash.tsx (comment block lines 3-11), src/design/tokens.ts (comments :74 and :96). Comment-only edits: do NOT touch the wordmark art, the token values, or the Fir Green hex (#10C66F), which are CAM-329/CAM-332 decisions out of scope here and re-litigated by CAM-421. src/vendor/_generated.ts is a GENERATED blob and is excluded from the sweep oracle: never hand-edit it. Both files carry file-size budget entries (src/design/tokens.ts 109, src/ui/Splash.tsx 134): a comment reword must not grow them. patterns.md rule on Ink: success/failure is the glyph, never divider color, so no rendering behavior changes here."
@@ -65,7 +72,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "The lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 3,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "File: README.md only (329 lines on main, a contributor-facing doc). Scope is surgical: swap the dead name for Gateship at lines 1, 3 and 152, reusing the category sentence from docs/positioning.md line 7 rather than inventing product prose. Do NOT rewrite sections, do NOT add visual assets or a differentiation section: the definitive public README is CAM-331 and it is blocked on CAM-421 (the palette and asset names its gotchas cite are already stale). Line 152 lives inside a fenced code block mirroring `bun index.ts --help`, so its wording must match what US-001 wrote into index.ts:143. Do NOT touch docs/launch-readiness.md: the dead name there is a historical audit record. Do NOT touch package.json `name` or the repo name: both are operator ceremonies."
@@ -85,7 +92,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "The lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 4,
+      "priority": 5,
       "passes": true,
       "requires": null,
       "notes": "File: README.md only. This is must-fix #1 of docs/launch-readiness.md. The measured fact to carry: src/config/permission-mode.ts exports DEFAULT_PERMISSION_MODE = 'bypassPermissions', applied when ~/.config/cam/config.toml is missing or the key is unset, and it is what `cam init` writes. The mitigation to name: `[loop] worker_isolation = \"container\"` in scripts/cam/project.toml (see src/commands/setup.ts:168 and src/config/models.ts:454 for the exact accepted values container|host, default host). README lines 155-158 already say the permission mode is read from ~/.config/cam/config.toml and that no subcommand exposes a flag for it: place the new section so it complements those lines instead of contradicting them, and keep the never-add-a---permission-mode-flag invariant intact (do not document a flag that must never exist). Evidence fidelity: the text must carry the measured fact, not just the flag name."
@@ -103,10 +110,45 @@
         "Tests pass (bun test). [oracle: bun test]",
         "The lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 5,
+      "priority": 6,
       "passes": true,
       "requires": null,
       "notes": "File: CONTEXT.md only. Entries are merge-written by mergeContextMd (src/domain-docs/render.ts, called from src/commands/domain-docs.ts): the block shape is a `**Term**:` line followed by the definition, so the rename must preserve that exact shape or a later merge will duplicate the term instead of updating it. Keep it glossary-only (no implementation detail, no decision text): the decision lives in ADR-0050. The definition body should track docs/positioning.md line 7. The :393/:401 brand-neutral entries mention the Fir Green palette that CAM-421 will revisit: rename the product only, leave the palette claims alone. Do NOT rename the 'CAM_*'-style contract vocabulary anywhere in the file."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:1",
+    "findings": [
+      {
+        "severity": "WARNING",
+        "file": "src/ui/Splash.tsx",
+        "line": 11,
+        "text": "The diff replaced a true comment with a false one: line 11 now claims the identity panel \"reads as the Gateship brand identity\", but the panel renders the ASCII \"CAM\" wordmark (:117-119) plus a literal bold \"Runtime\" line (:120-122), i.e. the running binary's splash still displays the dead name \"CAM Runtime\". Verified by rendering the real component with ink-testing-library (frame captured in scripts/cam/review-artifact.txt section 3), not by reading the comment. This is the lying-surface defect class US-005 exists to close, and the splash test's own header (test/ui/splash.test.tsx:5-6) codifies the invariant \"never assert behavior from a comment\". Fix by either rewording lines 10-11 to state what actually renders (and naming CAM-421/CAM-331 as the owner of the visual identity), or renaming the rendered \"Runtime\" text line, which is a plain display string like index.ts:114 and run.ts:786 and not the wordmark art the PRD deferred."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "CHANGELOG.md",
+        "line": 3,
+        "text": "CHANGELOG.md line 3 still reads \"All notable changes to CAM Runtime are documented here\". That is a live statement, not rewritten history (unlike the historical entries at :604-612, which must stay), and it is a public-repo landing surface carrying the dead name. Out of this PRD's declared scope, so non-blocking, but worth a one-line follow-up before any public amplification."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "README.md",
+        "line": 301,
+        "text": "The Security disclosure sits at line 301 of 347, after Architecture and just before Recent changes. US-004's story description asks for the posture to be stated \"up front\" for a prospective evaluator; every acceptance criterion is met, but a hostile reader scanning the top of the README would still not meet it. Consider hoisting the section near Prerequisites/Install."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "index.ts",
+        "line": 114,
+        "text": "The CLI tagline keeps main's old category prose with only the name swapped (\"Gateship: a local software-delivery runtime for coding agents\"), while README.md:3 adopts docs/positioning.md:7 (\"a local software delivery runtime: a control plane for coding agents\"). US-001's notes asked for the positioning sentence rather than invented prose, so the CLI and README now state the category differently and hyphenate it differently."
+      },
+      {
+        "severity": "SUGGESTION",
+        "text": "No test guards the rename: nothing under test/ references Gateship, and no assertion fails if the dead name returns to index.ts, run.ts, or config.ts. The grep oracles live only in prd.json, which is per-cycle state. A one-file ratchet mirroring test/no-permission-mode-flag.test.ts would make the sweep durable."
+      }
+    ]
+  }
 }
