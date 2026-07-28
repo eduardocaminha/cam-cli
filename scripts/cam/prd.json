@@ -46,7 +46,7 @@
         "The lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/ui/Splash.tsx (comment block lines 3-11), src/design/tokens.ts (comments :74 and :96). Comment-only edits: do NOT touch the wordmark art, the token values, or the Fir Green hex (#10C66F), which are CAM-329/CAM-332 decisions out of scope here and re-litigated by CAM-421. src/vendor/_generated.ts is a GENERATED blob and is excluded from the sweep oracle: never hand-edit it. Both files carry file-size budget entries (src/design/tokens.ts 109, src/ui/Splash.tsx 134): a comment reword must not grow them. patterns.md rule on Ink: success/failure is the glyph, never divider color, so no rendering behavior changes here."
     },
