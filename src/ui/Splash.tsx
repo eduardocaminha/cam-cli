@@ -1,14 +1,14 @@
 // src/ui/Splash.tsx
 //
-// Entry / identity panel for CAM Runtime. Inside a rounded border:
+// Entry / identity panel for Gateship. Inside a rounded border:
 //   1. Uppercase "CAM" block wordmark, letter-by-letter (C / A / M), rendered
-//      in the CAM Runtime brand primary (Fir Green, `brandGreens.firGreen` in
+//      in the Gateship brand primary (Fir Green, `brandGreens.firGreen` in
 //      `src/design/tokens.ts`) rather than the chrome `palette.accent`. The
 //      wordmark rows are composed programmatically from per-letter glyph
 //      grids (`LETTER_C` / `LETTER_A` / `LETTER_M`) so every row is
 //      guaranteed the same width.
 //   2. A styled "Runtime" line directly under the wordmark, also in Fir
-//      Green, so the panel reads as the "CAM Runtime" brand identity.
+//      Green, so the panel reads as the Gateship brand identity.
 //   3. Two-line tagline ("Autonomous Claude Code loop" / "powered by your
 //      subscription").
 //   4. Version + repo URL line.

@@ -71,7 +71,7 @@ export const layout = {
 export const DIVIDER = '─'.repeat(layout.dividerWidth);
 
 /**
- * CAM Runtime brand greens. This is the product/marketing identity (splash,
+ * Gateship brand greens. This is the product/marketing identity (splash,
  * README, external site) and is a SEPARATE concern from `palette` above,
  * which carries the chrome's semantic status roles (success/warning/
  * destructive/muted). Importing a brand token must never force-restyle a
@@ -93,7 +93,7 @@ export const brandGreens = {
 	white: '#FFFFFF',
 } as const;
 
-/** CAM Runtime brand neutrals, paired with `brandGreens` for the same identity. */
+/** Gateship brand neutrals, paired with `brandGreens` for the same identity. */
 export const brandNeutrals = {
 	/** Ink: dark text/backgrounds, tiles, dark cards, banner. */
 	ink: '#1F1F1F',
