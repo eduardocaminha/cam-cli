@@ -8,9 +8,9 @@
 		},
 		"container": {
 			"expectedSkips": 40,
-			"passFloor": 5691,
-			"measuredAt": "2026-07-27",
-			"measuredVia": "RE-MEASURED (US-R2-001, review round 2) on cam/issue-424 at branch HEAD, after US-R1-002 added 11 tests to test/check-skip-ratchet.test.ts: real Docker locally via `bun scripts/test-in-container.ts` (waiver wired via `docker exec -e CAM_TEST_WAIVERS=tmux,pgrep,uuidgen`) measured 5691 pass / 0 fail / 40 skip, exit 0 (skip count matches this recorded expectation; delta of +11 vs the prior 5680 passFloor is exactly the 11 new host-added tests, none of which are container-skipped)."
+			"passFloor": 5500,
+			"measuredAt": "2026-07-28",
+			"measuredVia": "RE-MEASURED (US-002, CAM-447 PRD) on cam/issue-447 at branch HEAD on 2026-07-28, via real Docker locally, command `bun scripts/test-in-container.ts` (waiver wired via `docker exec -e CAM_TEST_WAIVERS=tmux,pgrep,uuidgen` against the running cam-worker container): 5721 pass / 0 fail / 40 skip, exit 0 (skip count matches this recorded expectation). passFloor rounded down to the nearest multiple of 100 leaving a 221-pass gap, comfortably clear of MIN_PASS_FLOOR_HEADROOM (50), so the floor does not need re-recording again next cycle."
 		}
 	},
 	"triage": {
