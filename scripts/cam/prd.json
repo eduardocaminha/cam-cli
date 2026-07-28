@@ -1,0 +1,112 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-457",
+  "description": "Move the dead display name to Gateship across the public and running surfaces (README, CLI tagline/help, tmux status bar, generated config.toml, src comments, CONTEXT.md) and disclose the bypassPermissions default in the README, without renaming any internal contract.",
+  "issueNumber": 457,
+  "type": "feat",
+  "relatedDocs": [
+    "docs/adr/0050-gateship-naming.md",
+    "docs/positioning.md",
+    "docs/launch-readiness.md"
+  ],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Rename the running binary's user-facing display strings to Gateship",
+      "description": "As a user running cam, I need the CLI tagline, the version help text, the tmux status bar, and the config.toml written to my disk to say Gateship, so that the running product stops advertising a name that no decision, doc, or repo still uses.",
+      "acceptanceCriteria": [
+        "`bun index.ts --help` presents the product as Gateship in its tagline line. [oracle: bun index.ts --help | grep -qi gateship]",
+        "`bun index.ts --help` no longer prints the dead name anywhere in its output (covers both the tagline at index.ts:114 and the version entry at index.ts:143). [oracle: ! bun index.ts --help | grep -q 'CAM Runtime']",
+        "index.ts carries zero occurrences of the dead name and does carry the live name. [oracle: ! grep -q 'CAM Runtime' index.ts && grep -qi gateship index.ts]",
+        "The tmux status-right pill rendered by src/commands/run.ts:786 (and its comment at :783) says Gateship, not the dead name. [oracle: ! grep -q 'CAM Runtime' src/commands/run.ts && grep -qi gateship src/commands/run.ts]",
+        "The DEFAULT_TOML header written to the user's disk by src/retry/config.ts:30 says Gateship, not the dead name. [oracle: ! grep -q 'CAM Runtime' src/retry/config.ts && grep -qi gateship src/retry/config.ts]",
+        "PIN OF INVARIANCE (ADR-0050 lines 19-22): no internal contract is renamed. The set of src/ files carrying the CAM_* env-var contract and the set carrying the 'tmux -L cam' socket literal are both byte-identical to main, with each comparand re-derived live from main in the same clause. [oracle: test \"$(git grep -l 'CAM_VERSION\\|CAM_SESSION' main -- src/ | sed 's/^main://' | sort)\" = \"$(git grep -l 'CAM_VERSION\\|CAM_SESSION' -- src/ | sort)\" && test \"$(git grep -l 'tmux -L cam' main -- src/ | sed 's/^main://' | sort)\" = \"$(git grep -l 'tmux -L cam' -- src/ | sort)\"]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "The lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: index.ts (tagline :114, version help entry :143), src/commands/run.ts (:783 comment, :786 status-right), src/retry/config.ts (:30 DEFAULT_TOML header). The literal to replace is the two-word string 'CAM Runtime', NEVER the bare token CAM: CAM_* env vars, .cam-* markers, 'tmux -L cam' and /cam-* are internal contracts frozen by ADR-0050 lines 19-22. No sed -i over the whole tree. Draw the product sentence from docs/positioning.md line 7 ('local software delivery runtime: a control plane for coding agents') rather than inventing a new one. patterns.md:1078 rule 5: a CLI-behavior oracle uses `bun index.ts <sub>`, never `cam <sub>` (the installed binary is 0.268.0 and will diverge from this branch). renderHelp pads the name column to 24 chars (patterns.md:522) so keep the version entry's `name` field untouched and only edit its `description`. No templates/ or vendor/ file carries the dead name (verified: 0 hits), so embed-vendor is not triggered by this story. src/commands/run.ts has a file-size budget entry (1168) in scripts/file-size-budget.json: this story is a like-for-like string swap and must not grow it."
+    },
+    {
+      "id": "US-002",
+      "title": "Clear the dead name from the remaining src/ comment surfaces and prove the tree-wide sweep",
+      "description": "As a contributor reading the code, I need the brand comments in the splash and design-token modules to name Gateship so that the source stops teaching a dead name, and I need one tree-wide sweep that proves no src/ occurrence survives.",
+      "acceptanceCriteria": [
+        "The splash identity comments (src/ui/Splash.tsx:3, :5, :11) name Gateship and no longer name the dead product. [oracle: ! grep -q 'CAM Runtime' src/ui/Splash.tsx && grep -qi gateship src/ui/Splash.tsx]",
+        "The brand-token comments (src/design/tokens.ts:74, :96) name Gateship and no longer name the dead product. [oracle: ! grep -q 'CAM Runtime' src/design/tokens.ts && grep -qi gateship src/design/tokens.ts]",
+        "Tree-wide sweep: zero occurrences of the dead name remain anywhere under src/, excluding the generated vendor blob. [oracle: ! grep -rq 'CAM Runtime' src/ --exclude=_generated.ts]",
+        "Verify the splash screen still renders correctly (ink-testing-library coverage for the identity panel stays green; the change is comment-only so the rendered frame must be unchanged). [oracle: bun test test/ui/splash.test.tsx]",
+        "PIN OF INVARIANCE (ADR-0050 lines 19-22): no internal contract is renamed. The set of src/ files carrying the CAM_* env-var contract and the set carrying the 'tmux -L cam' socket literal are both byte-identical to main, with each comparand re-derived live from main in the same clause. [oracle: test \"$(git grep -l 'CAM_VERSION\\|CAM_SESSION' main -- src/ | sed 's/^main://' | sort)\" = \"$(git grep -l 'CAM_VERSION\\|CAM_SESSION' -- src/ | sort)\" && test \"$(git grep -l 'tmux -L cam' main -- src/ | sed 's/^main://' | sort)\" = \"$(git grep -l 'tmux -L cam' -- src/ | sort)\"]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "The lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/ui/Splash.tsx (comment block lines 3-11), src/design/tokens.ts (comments :74 and :96). Comment-only edits: do NOT touch the wordmark art, the token values, or the Fir Green hex (#10C66F), which are CAM-329/CAM-332 decisions out of scope here and re-litigated by CAM-421. src/vendor/_generated.ts is a GENERATED blob and is excluded from the sweep oracle: never hand-edit it. Both files carry file-size budget entries (src/design/tokens.ts 109, src/ui/Splash.tsx 134): a comment reword must not grow them. patterns.md rule on Ink: success/failure is the glyph, never divider color, so no rendering behavior changes here."
+    },
+    {
+      "id": "US-003",
+      "title": "Present the README as Gateship without restructuring it",
+      "description": "As someone landing on the public repo, I need the README to introduce the product by its live name so that the first impression does not show a third, dead name alongside the repo name and the package name.",
+      "acceptanceCriteria": [
+        "The README H1 is Gateship. [oracle: grep -qi '^# Gateship$' README.md]",
+        "The README carries zero occurrences of the dead name (H1 :1, intro paragraph :3, the `cam version` line inside the commands code block :152). [oracle: ! grep -q 'CAM Runtime' README.md]",
+        "The README presents the product as Gateship in prose. [oracle: grep -qi gateship README.md]",
+        "The README's embedded command listing matches the renamed CLI help text from US-001. [oracle: grep -qiE 'cam version +Print the installed Gateship version' README.md]",
+        "The existing README structure is preserved (this is a rename, not a rewrite): every top-level section that exists on main still exists, and the section count is re-derived live from main in the same clause. [oracle: grep -q '^## Prerequisites' README.md && grep -q '^## Install' README.md && grep -q '^## Commands' README.md && grep -q '^## License' README.md && test \"$(git show main:README.md | grep -c '^## ')\" -le \"$(grep -c '^## ' README.md)\"]",
+        "The README is not truncated: its length is at least the length of main's README, with the comparand re-derived live from main in the same clause. [oracle: test \"$(git show main:README.md | wc -l)\" -le \"$(wc -l < README.md)\"]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "The lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "File: README.md only (329 lines on main, a contributor-facing doc). Scope is surgical: swap the dead name for Gateship at lines 1, 3 and 152, reusing the category sentence from docs/positioning.md line 7 rather than inventing product prose. Do NOT rewrite sections, do NOT add visual assets or a differentiation section: the definitive public README is CAM-331 and it is blocked on CAM-421 (the palette and asset names its gotchas cite are already stale). Line 152 lives inside a fenced code block mirroring `bun index.ts --help`, so its wording must match what US-001 wrote into index.ts:143. Do NOT touch docs/launch-readiness.md: the dead name there is a historical audit record. Do NOT touch package.json `name` or the repo name: both are operator ceremonies."
+    },
+    {
+      "id": "US-004",
+      "title": "Disclose the bypassPermissions default in a README security section",
+      "description": "As a prospective user evaluating the project in public, I need the README to state up front that the default permission mode runs the agent without permission prompts and to name the container-isolation alternative, so that the security posture is disclosed by us rather than discovered by a hostile reader.",
+      "acceptanceCriteria": [
+        "The README gains a first-level security section heading. [oracle: grep -qiE '^#+ .*security' README.md]",
+        "The section names the actual default permission mode, and that claim still matches the code's source of truth, re-checked in the same clause. [oracle: grep -q 'bypassPermissions' README.md && grep -q \"DEFAULT_PERMISSION_MODE = 'bypassPermissions'\" src/config/permission-mode.ts]",
+        "The section explains what the default DOES (the agent runs without a permission prompt), not merely that a flag exists. [oracle: grep -qi 'permission prompt' README.md]",
+        "The section names the container-isolation alternative by its real config key so a reader can act on it. [oracle: grep -q 'worker_isolation' README.md && grep -qi container README.md]",
+        "The disclosure reads as an honest, self-contained paragraph a hostile reader could not improve on by discovering the default themselves: it states the default, its consequence, and the mitigation. [oracle: reviewer-judgment]",
+        "The rest of the README is preserved and not truncated by the insertion, with the length comparand re-derived live from main in the same clause. [oracle: grep -q '^## License' README.md && test \"$(git show main:README.md | wc -l)\" -le \"$(wc -l < README.md)\"]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "The lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "File: README.md only. This is must-fix #1 of docs/launch-readiness.md. The measured fact to carry: src/config/permission-mode.ts exports DEFAULT_PERMISSION_MODE = 'bypassPermissions', applied when ~/.config/cam/config.toml is missing or the key is unset, and it is what `cam init` writes. The mitigation to name: `[loop] worker_isolation = \"container\"` in scripts/cam/project.toml (see src/commands/setup.ts:168 and src/config/models.ts:454 for the exact accepted values container|host, default host). README lines 155-158 already say the permission mode is read from ~/.config/cam/config.toml and that no subcommand exposes a flag for it: place the new section so it complements those lines instead of contradicting them, and keep the never-add-a---permission-mode-flag invariant intact (do not document a flag that must never exist). Evidence fidelity: the text must carry the measured fact, not just the flag name."
+    },
+    {
+      "id": "US-005",
+      "title": "Correct the CONTEXT.md glossary so agents stop reading the dead name as truth",
+      "description": "As an agent (or contributor) reading CONTEXT.md as the canonical vocabulary, I need the product term to be Gateship so that the domain model stops being a lying surface, the same class of defect CAM-455 just closed.",
+      "acceptanceCriteria": [
+        "CONTEXT.md carries zero occurrences of the dead name and does carry the live name (5 occurrences on main: :371 term header, :393, :401, :408, :411). [oracle: ! grep -q 'CAM Runtime' CONTEXT.md && grep -qi gateship CONTEXT.md]",
+        "The product term header is renamed in place and still parses as a glossary term block for the deterministic writer. [oracle: grep -q '^\\*\\*Gateship\\*\\*:$' CONTEXT.md]",
+        "No glossary entry is added, dropped, or merged by the rename: the entry count is re-derived live from main in the same clause. [oracle: test \"$(git show main:CONTEXT.md | grep -c '^\\*\\*')\" = \"$(grep -c '^\\*\\*' CONTEXT.md)\"]",
+        "PIN OF INVARIANCE: the glossary's internal-contract vocabulary (CAM_*, .cam-*, 'tmux -L cam') is untouched, with the comparand re-derived live from main in the same clause. [oracle: test \"$(git show main:CONTEXT.md | grep -c 'CAM_\\|\\.cam-\\|tmux -L cam')\" = \"$(grep -c 'CAM_\\|\\.cam-\\|tmux -L cam' CONTEXT.md)\"]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "The lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 5,
+      "passes": false,
+      "requires": null,
+      "notes": "File: CONTEXT.md only. Entries are merge-written by mergeContextMd (src/domain-docs/render.ts, called from src/commands/domain-docs.ts): the block shape is a `**Term**:` line followed by the definition, so the rename must preserve that exact shape or a later merge will duplicate the term instead of updating it. Keep it glossary-only (no implementation detail, no decision text): the decision lives in ADR-0050. The definition body should track docs/positioning.md line 7. The :393/:401 brand-neutral entries mention the Fir Green palette that CAM-421 will revisit: rename the product only, leave the palette claims alone. Do NOT rename the 'CAM_*'-style contract vocabulary anywhere in the file."
+    }
+  ]
+}
