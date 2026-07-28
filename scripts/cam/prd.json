@@ -77,7 +77,7 @@
         "The full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "Files: scripts/cam/patterns.md only (append a bullet; never truncate, never reorder existing bullets). This story is split out from the gate work deliberately: its oracles are independent of the rule change and it must not compete for context with the measurement-heavy stories. patterns.md is large and appending may trip the file-size gate inside `bun run check:all`; raising that file's budget in the same commit is the expected, in-scope resolution (workers raise their own budget), not a reason to shorten the bullet. Do NOT mark the bullet '[resolved YYYY-MM]': this is a living convention, not a one-time mechanic. Numbers in the bullet are historical evidence with dates attached, which is the one legitimate use of a past count; do not phrase them as comparands and do not add any oracle that greps for a live count."
     }
