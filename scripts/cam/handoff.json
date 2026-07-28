@@ -1,21 +1,20 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Rename the running binary's user-facing display strings to Gateship"
+    "id": "US-002",
+    "title": "Clear the dead name from the remaining src/ comment surfaces and prove the tree-wide sweep"
   },
   "branchName": "cam/issue-457",
   "timestamp": "2026-07-28T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "index.ts",
-    "src/commands/run.ts",
-    "src/retry/config.ts"
+    "src/ui/Splash.tsx",
+    "src/design/tokens.ts"
   ],
   "openQuestions": [
-    "scripts/cam/prd.json necessarily still narrates 'CAM Runtime'/'CAM' in this US-001 story's own title/description/notes text (it is the PRD specifying the sweep); this is a permanent residual that only self-resolves at cam ship --finalize (prd.json is git rm'd then, per ADR-0040), not fixable mid-branch per patterns.md:1058 precedent.",
+    "scripts/cam/prd.json necessarily still narrates 'CAM Runtime'/'CAM' in this PRD's own story titles/descriptions/notes text (it is the PRD specifying the sweep); this is a permanent residual that only self-resolves at cam ship --finalize (prd.json is git rm'd then, per ADR-0040), not fixable mid-branch per patterns.md:1058 precedent.",
     "This handoff's own lastCompletedStory.title field necessarily still names the retired brand verbatim (required for traceability); that one-story-transient residual clears on the NEXT story's handoff overwrite, per the same patterns.md:1058 precedent."
   ],
-  "nextStoryContext": "US-001 did a like-for-like display-string swap only: index.ts tagline (:114) and version help entry description (:143, name field untouched per renderHelp's 24-char padding rule), src/commands/run.ts tmux status-right pill (:786) + its comment (:783), and src/retry/config.ts DEFAULT_TOML header comment (:30). Internal contracts (CAM_* env vars, .cam-* markers, 'tmux -L cam' socket literal, /cam-* commands) were deliberately left untouched per ADR-0050's pin of invariance and verified byte-identical to main via the AC6 oracle (both file-sets matched local main, which is in sync with origin/main at b0eceb59). No vendor/ or templates/ file carries the dead name, so embed-vendor was not triggered. Next stories in this PRD sweeping the dead name elsewhere (docs, README, CHANGELOG, package.json, etc.) should independently verify their own scope against ADR-0050's invariance pin before touching any CAM_*/tmux-socket/slash-command literal.",
+  "nextStoryContext": "US-002 was a comment-only sweep: reworded the identity-panel header comment in src/ui/Splash.tsx (lines 3, 5, 11: 'CAM Runtime' -> 'Gateship' in the module banner, twice in the wordmark/Runtime-line description) and the two brand-token JSDoc comments in src/design/tokens.ts (line 74's brandGreens header, line 96's brandNeutrals header). No token values, no Fir Green hex (#10C66F), no wordmark glyph art, and no rendered frame changed -- verified via test/ui/splash.test.tsx staying green (2 pass, unchanged assertions). Tree-wide sweep confirmed zero 'CAM Runtime' occurrences anywhere under src/ (excluding src/vendor/_generated.ts, which is generated and untouched). ADR-0050's pin of invariance re-verified live against origin main: the CAM_VERSION/CAM_SESSION env-var file-set and the 'tmux -L cam' socket-literal file-set are both byte-identical between local main and this branch's src/ -- no internal contract was touched, this story was strictly comment prose. Both budgeted files stayed within their existing file-size ceilings (tokens.ts 108/109, Splash.tsx 132/134) so no budget raise was needed. Remaining dead-name occurrences (if any) outside src/ -- docs, README, CHANGELOG, package.json, scripts/, templates/ -- are out of this story's scope (AC3's oracle is scoped to `src/` only) and should be independently swept by whichever later story in this PRD owns that surface, re-verifying ADR-0050's invariance pin before touching any CAM_*/tmux-socket/slash-command literal.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
