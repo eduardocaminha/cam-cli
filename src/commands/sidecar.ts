@@ -2393,8 +2393,10 @@ function makeTeardownPlanPanesFn(claudeDir: string): () => void {
  * NOT add, keeping plan-runner.ts clock-free) and persists the durable
  * .cam-plan-escalated.json marker via writePlanEscalatedMarker
  * (src/supervisor/plan-escalation.ts, US-002). Called unconditionally by
- * runPlanPhaseWithReplan on MAX_REPLAN_ROUNDS exhaustion, independent of
- * notifyFn/escalateFn presence or success (AC2).
+ * runPlanPhaseWithReplan when the re-plan budget matching the latest block's
+ * origin is exhausted (MAX_REPLAN_ROUNDS for auditor-origin,
+ * MAX_LINT_REPLAN_ROUNDS for oracle-lint-origin, US-002, CAM-448, ADR-0052),
+ * independent of notifyFn/escalateFn presence or success (AC2).
  */
 function makeWriteEscalationMarkerFn(claudeDir: string): (params: PlanEscalationWriterParams) => void {
 	const filePath = join(claudeDir, PLAN_ESCALATED_FILENAME);

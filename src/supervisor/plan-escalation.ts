@@ -2,9 +2,12 @@
 //
 // Durable plan-escalation marker (US-002, CAM-204).
 //
-// Written on plan non-convergence (a BLOCK verdict that persists after
-// MAX_REPLAN_ROUNDS re-plan rounds, ADR-0012: non-convergence is a hard stop,
-// never proceed-with-debt) so the orchestrator can derive a BLOCK terminal on
+// Written on plan non-convergence (a BLOCK verdict that persists after the
+// re-plan budget matching the latest block's origin is exhausted --
+// MAX_REPLAN_ROUNDS for auditor-origin blocks, MAX_LINT_REPLAN_ROUNDS for
+// oracle-lint-origin blocks, tracked independently, US-002, CAM-448,
+// ADR-0052 -- ADR-0012: non-convergence is a hard stop, never
+// proceed-with-debt) so the orchestrator can derive a BLOCK terminal on
 // wake even when the live send-keys narration to the orchestrator pane is
 // dropped. CAM-200-independent, CAM-195-style: a plain JSON marker file under
 // .claude/, mirroring the durable ship-stalled marker precedent verbatim
@@ -19,8 +22,10 @@ import type { PlanVerdictFinding } from './plan-verdict-report.ts';
 
 /**
  * Filename of the durable plan-escalation marker (relative to the .claude/
- * dir, US-002, CAM-204). Written when the BLOCK->re-plan loop exhausts
- * MAX_REPLAN_ROUNDS without an APPROVE verdict; removed when the same issue
+ * dir, US-002, CAM-204). Written when the BLOCK->re-plan loop exhausts the
+ * re-plan budget matching the latest block's origin (MAX_REPLAN_ROUNDS for
+ * auditor-origin, MAX_LINT_REPLAN_ROUNDS for oracle-lint-origin, US-002,
+ * CAM-448, ADR-0052) without an APPROVE verdict; removed when the same issue
  * later plans clean (caller's responsibility to check issueId match first,
  * mirroring removeShipStalledMarker).
  */

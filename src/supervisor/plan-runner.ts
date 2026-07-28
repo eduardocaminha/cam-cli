@@ -245,10 +245,12 @@ export const DEFAULT_PLAN_TIMEOUT_MS = 30 * 60 * 1_000;
  *                          spawned (US-002, CAM-203): an explicit target is never a silent
  *                          no-op that plans a different issue.
  *   plan-escalated       - ONLY produced by runPlanPhaseWithReplan (US-003, CAM-204):
- *                          MAX_REPLAN_ROUNDS consecutive audit-blocked rounds without an
- *                          APPROVE verdict. Terminal, never proceeds to branch (ADR-0012:
- *                          non-convergence is a hard stop, never proceed-with-debt).
- *                          runPlanPhase itself never returns this kind.
+ *                          the re-plan budget matching the latest block's origin is
+ *                          exhausted without an APPROVE verdict (MAX_REPLAN_ROUNDS for
+ *                          auditor-origin, MAX_LINT_REPLAN_ROUNDS for oracle-lint-origin,
+ *                          US-002, CAM-448, ADR-0052). Terminal, never proceeds to branch
+ *                          (ADR-0012: non-convergence is a hard stop, never
+ *                          proceed-with-debt). runPlanPhase itself never returns this kind.
  *   in-progress-conflict - detectInProgressConflictFn detected in-progress work at plan
  *                          start (US-004, CAM-241/153, AC1): an existing prd.json carrying
  *                          a passes:false non-operator story, or HEAD on a cam/* branch.
@@ -1468,10 +1470,12 @@ export interface RunPlanPhaseWithReplanOptions extends RunPlanPhaseOptions {
 	teardownPlanPanesFn?: () => void;
 
 	/**
-	 * Escalation-marker writer seam. Invoked exactly once, when
-	 * MAX_REPLAN_ROUNDS consecutive audit-blocked rounds are exhausted without
-	 * an APPROVE verdict (AC3, US-003, ADR-0012: non-convergence is a hard
-	 * stop, never proceed-with-debt). Called with the LAST round's issue id,
+	 * Escalation-marker writer seam. Invoked exactly once, when the re-plan
+	 * budget matching the latest block's origin is exhausted without an
+	 * APPROVE verdict (MAX_REPLAN_ROUNDS for auditor-origin, MAX_LINT_REPLAN_ROUNDS
+	 * for oracle-lint-origin, US-002, CAM-448, ADR-0052) (AC3, US-003,
+	 * ADR-0012: non-convergence is a hard stop, never proceed-with-debt).
+	 * Called with the LAST round's issue id,
 	 * summary, findings, and the total rounds completed. Optional: defaults to
 	 * a no-op for backward compat. Production wiring (US-004) constructs the
 	 * full PlanEscalatedMarker (adding writtenAt) and calls
@@ -1520,9 +1524,11 @@ function replanBudgetRemains(
 }
 
 /**
- * Drive runPlanPhase through up to MAX_REPLAN_ROUNDS rounds, mirroring the
- * review loop's FIXES_PENDING -> re-implement -> MAX_ROUNDS control flow in
- * loop.ts (US-003, CAM-204).
+ * Drive runPlanPhase through up to the applicable re-plan budget's rounds
+ * (MAX_REPLAN_ROUNDS for auditor-origin blocks, MAX_LINT_REPLAN_ROUNDS for
+ * oracle-lint-origin blocks, tracked independently, US-002, CAM-448,
+ * ADR-0052), mirroring the review loop's FIXES_PENDING -> re-implement ->
+ * MAX_ROUNDS control flow in loop.ts (US-003, CAM-204).
  *
  * Round 1 runs runPlanPhase unchanged (opts as given). Each subsequent round
  * (while the previous round was audit-blocked and rounds remain) re-runs
@@ -2158,7 +2164,9 @@ export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionRe
 	}
 
 	// plan-escalated (US-004, CAM-204): the BLOCK->re-plan loop (US-003)
-	// exhausted MAX_REPLAN_ROUNDS without converging. The durable marker was
+	// exhausted the re-plan budget matching the latest block's origin
+	// (MAX_REPLAN_ROUNDS for auditor-origin, MAX_LINT_REPLAN_ROUNDS for
+	// oracle-lint-origin, US-002, CAM-448, ADR-0052) without converging. The durable marker was
 	// ALREADY written unconditionally by runPlanPhaseWithReplan's
 	// writeEscalationMarkerFn seam BEFORE this function is ever invoked, so
 	// its persistence never depends on notifyFn/escalateFn presence or
