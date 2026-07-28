@@ -1,18 +1,20 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-001",
-    "title": "Review round 1 fix 001: address reviewer finding"
+    "id": "US-R1-002",
+    "title": "Review round 1 fix 002: address reviewer finding"
   },
   "branchName": "cam/issue-448",
-  "timestamp": "2026-07-28T04:15:00-03:00",
+  "timestamp": "2026-07-28T04:55:00-03:00",
   "createdFiles": [],
   "modifiedFiles": [
-    "test/supervisor/plan/plan-escalation.test.ts",
-    "test/integration/orch-respawn-reresolve.test.ts",
-    "scripts/cam/patterns.md"
+    "src/supervisor/events.ts",
+    "src/supervisor/plan-runner.ts",
+    "src/supervisor/plan-escalation.ts",
+    "src/commands/sidecar.ts",
+    "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-R1-001 closed the round-1 WARNING at plan-escalation.ts:89: the positive read path of exhaustedBudget was untested. test/supervisor/plan/plan-escalation.test.ts now has three new cases: a round-trip with exhaustedBudget: 'auditor', a round-trip with exhaustedBudget: 'oracle-lint', and the adversarial case where an on-disk 'bogus' value is dropped by the shape guard rather than trusted (readPlanEscalatedMarker's exact behavior at plan-escalation.ts:89-91). While running the full bun test / check:all gates for this story, a pre-existing flake surfaced in test/integration/orch-respawn-reresolve.test.ts (added in US-003/CAM-425): its two real-subprocess tests use spawnSync with an internal 15_000ms timeout but had no per-test bun:test timeout override, so they rode bun's un-raisable 5000ms default and could fail under check:all's CPU contention even though they pass in isolation (same CAM-201 flake class documented in patterns.md). Per gate discipline (no-flaky-evasion), fixed at the root rather than dismissed: added { timeout: 20_000 } as the third arg to both test(...) calls. This is unrelated to exhaustedBudget but was required to get a green check:all for this story; the next agent does not need to revisit either file. US-R1-002 (priority 2, already in prd.json) is the next queued round-1 fix: stale doc comments describing the escalation contract (events.ts:494/:72, plan-runner.ts:248/:1472/:1523/:2161, plan-escalation.ts:6/:23, sidecar.ts:2396) still describe the pre-US-002/US-003 single-budget behavior and need a mechanical sweep to reflect the oracle-lint/auditor budget split. Two SUGGESTIONs (non-blocking, not separately filed as US-R1 stories) remain in prd.json's review.findings for future consideration: (1) plan-runner.ts:1448's PlanEscalationWriterParams inherits exhaustedBudget as optional from Omit<PlanEscalatedMarker,'writtenAt'>, which the reviewer suggests tightening to required at the writer seam; (2) plan-runner-replan.test.ts:366's planner-spawn bound assertion only covers the all-lint-blocked case, not an interleaved lint+auditor+lint run where the summed MAX_LINT_REPLAN_ROUNDS+MAX_REPLAN_ROUNDS bound is actually load-bearing.",
+  "nextStoryContext": "US-R1-002 closed the round-1 WARNING at events.ts:494: doc comments describing the escalation contract were left stale by the US-002/US-003 independent oracle-lint/auditor budget split. Mechanical sweep applied to every site the reviewer named, all now reading '...the re-plan budget matching the latest block's origin is exhausted (MAX_REPLAN_ROUNDS for auditor-origin, MAX_LINT_REPLAN_ROUNDS for oracle-lint-origin, US-002, CAM-448, ADR-0052)' instead of the stale single-budget 'exhausts MAX_REPLAN_ROUNDS' phrasing: events.ts:72 (module event-list doc) and :494 (PlanEscalatedEventDetail doc); plan-runner.ts:248 (plan-escalated PlanPhaseResult kind doc), :1472 (writeEscalationMarkerFn seam doc), :1526-1527 (runPlanPhaseWithReplan function headline, also fixed an awkward mid-sentence line break introduced by the edit), :2160-2161 (plan-escalated handler comment); plan-escalation.ts:5-9 (module header) and :22-24 (PLAN_ESCALATED_FILENAME doc); sidecar.ts:2396 (makeWriteEscalationMarkerFn doc). No behavior change, comments only. The file-size gate tripped on all three touched production files (sidecar.ts 3703->3705, events.ts 922->927, plan-runner.ts 2194->2202) purely from the added comment lines; ceilings raised to the gate-measured content.split('\\n').length actuals with a dated _ref entry naming this story, staged in the same commit. Full bun test (5758 pass / 0 fail) and bun run check:all both green. This was the LAST passes:false story in prd.json (jq confirms US-R1-002 was the only remaining non-passing entry before the supervisor flips it): the next agent invocation should find PRD_COMPLETE unless the supervisor's terminal-verdict hook files new round-2 fixes off the two SUGGESTIONs still open in prd.json's review.findings (plan-runner.ts:1448's PlanEscalationWriterParams optional-vs-required exhaustedBudget tightening; plan-runner-replan.test.ts:366's uncovered interleaved lint+auditor+lint summed-bound case) or off a fresh review round.",
   "officialDocsValidated": [
     {
       "lib": "none",
