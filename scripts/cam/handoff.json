@@ -1,0 +1,23 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Carry the block origin on the audit-blocked plan result"
+  },
+  "branchName": "cam/issue-448",
+  "timestamp": "2026-07-28T02:17:20-03:00",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/supervisor/plan-runner.ts",
+    "test/supervisor/plan-runner.test.ts",
+    "test/supervisor/plan/plan-runner-postaudit.test.ts",
+    "scripts/file-size-budget.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "The audit-blocked member of PlanPhaseResult (src/supervisor/plan-runner.ts:284, shifted +7 lines by this story's doc comment) now carries a REQUIRED origin: 'oracle-lint' | 'auditor' field. Both construction sites are updated (runOracleLintCheck sets 'oracle-lint'; the auditor BLOCK branch in runPlanWorkerSequence sets 'auditor'). This story is discriminator-only: the re-plan loop (runPlanPhaseWithReplan) still counts both origins against the single MAX_REPLAN_ROUNDS budget untouched -- a later story in this PRD is expected to split the budget per-origin using this new field. Any other test file that constructs an 'audit-blocked' object literal (grep `kind: 'audit-blocked'` across test/) must include origin; only test/supervisor/plan/plan-runner-postaudit.test.ts had a literal construction (fixture BLOCKED_RESULT) needing the update -- the other two hits were `as {...}` casts on runPlanPhase's return, unaffected by making the field required. File-size ceiling for src/supervisor/plan-runner.ts was raised 2116->2125 in scripts/file-size-budget.json for the added field + doc comment.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched"
+    }
+  ]
+}
