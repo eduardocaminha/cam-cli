@@ -6,6 +6,16 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.265.0] - 2026-07-28
+
+### Added
+
+- US-R1-001 - Review round 1 fix 001: address reviewer finding
+- US-003 - Update the /cam-issue filing contract to author oracle forms into the payload
+- US-002 - Accept and require oracle forms at filing time on the derived and fast-track paths
+- US-001 - Gate plannability on non-empty acceptance criteria (handoff + patterns)
+- US-001 - Gate plannability on non-empty acceptance criteria
+
 ## [0.264.0] - 2026-07-28
 
 ### Added
