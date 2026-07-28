@@ -1,11 +1,11 @@
 {
   "id": "CAM-449",
   "title": "Issue derived vira plannable com spec vazio: o planner inventa todos os oraculos",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-28T01:36:29.770Z",
-  "updatedAt": "2026-07-28T01:41:47.972Z",
+  "updatedAt": "2026-07-28T04:30:32.613Z",
   "description": "`cam issue --file-local --derived-from <id>` promove a issue direto para stage:specified com specSource:derived, mas grava um objeto `spec` VAZIO. A issue passa por isPlannable e chega ao planner sem nenhum acceptanceCriteria e, portanto, sem nenhuma FORMA de oraculo.\n\nMedido em main, 2026-07-28, sobre os 4 issues plannable:\n- CAM-331 (specSource ausente, passou por entrevista /cam-spec real): 6 acceptanceCriteria\n- CAM-432 (derived): 0 acceptanceCriteria\n- CAM-441 (derived): 0 acceptanceCriteria\n- CAM-447 (derived): 0 acceptanceCriteria\n\nOu seja 3 de 4 candidatos plannable entregam ao planner apenas prosa (descricoes de 3952 a 6703 chars) e zero criterio estruturado. O planner e obrigado a inventar cada oraculo a partir de texto livre.\n\nIsso e exatamente a causa-raiz ja documentada em scripts/cam/patterns.md:1078 (bloco curado de oracle authoring, CAM-439): \"deliver the FORM of the oracle, not the claim. Stating what must be true and leaving the planner to invent the check is what produced the escalations above; the planner then invents something unsatisfiable or vacuous.\" O bloco foi promovido depois de SETE ciclos consecutivos cujo defeito nasceu no spec e nao no planner (CAM-398, CAM-425, CAM-420, CAM-424 duas vezes, CAM-433, CAM-434). O CAM-447 e o oitavo: escalou em 2026-07-28 com o auditor apontando textualmente que nenhum criterio carregava sweep red-on-main e que um oraculo ja era verde em main.\n\nO canal estruturado que o bloco curado exige (spec.acceptanceCriteria carregando o texto literal do oraculo, ja varrido) existe no schema e esta literalmente sem uso em todo issue derived.\n\nConsertar, opcoes a decidir com o operador:\n(a) isPlannable passa a exigir spec.acceptanceCriteria nao vazio, de forma que uma issue derived precise de um passo de spec antes de planejar;\n(b) --derived-from passa a gravar stage:idea em vez de specified, forcando /cam-spec;\n(c) o caminho derived passa a exigir que as formas de oraculo sejam fornecidas no momento da filagem.\n\nNao confundir com CAM-448 (lint e auditor dividem o mesmo budget de re-plan): aquele e o motivo de o auditor nao conseguir CORRIGIR o defeito; este e o motivo de o defeito EXISTIR. Sao complementares.\n\nRelacionado: CAM-439 (oraculo de fidelidade de evidencia), CAM-448.",
   "spec": {
     "acceptanceCriteria": [
