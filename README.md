@@ -1,12 +1,12 @@
-# CAM Runtime
+# Gateship
 
-CAM Runtime is a local software-delivery runtime for coding agents. It turns
-issues and goals into verifiable planning, implementation, review, and ship
-workflows, keeping state, coordinating specialized agents, and recovering
-interrupted runs. `cam` wraps long-running Claude Code sessions, scaffolds a
-project for the cam autonomous loop, and runs a long-lived orchestrator agent
-that drives `/cam-plan`, `/cam-next`, `/cam-review`, `/cam-ship` cycles
-against Linear, GitHub, or local issues.
+Gateship is a local software delivery runtime: a control plane for coding
+agents. It turns issues and goals into verifiable planning, implementation,
+review, and ship workflows, keeping state, coordinating specialized agents,
+and recovering interrupted runs. `cam` wraps long-running Claude Code
+sessions, scaffolds a project for the cam autonomous loop, and runs a
+long-lived orchestrator agent that drives `/cam-plan`, `/cam-next`,
+`/cam-review`, `/cam-ship` cycles against Linear, GitHub, or local issues.
 
 Built on Bun + TypeScript. Distributed as a single-file binary built from source.
 
@@ -149,7 +149,7 @@ cam stop                    Cancel a running loop
 cam pause                   Set the operator pause brake marker (.claude/.cam-pause), separate from loop state
 cam drain [--stop|--clear]  Set or clear the inter-cycle drain kill-switch without killing the sidecar
 cam resume [options]        Reconcile loop state after interrupt
-cam version                 Print the installed CAM Runtime version
+cam version                 Print the installed Gateship version
 cam help                    Show top-level help
 ```
 
@@ -295,6 +295,31 @@ sidecar (background process, spawned by cam run)
 Workers (implementer, reviewer) are interactive TUI `claude` sessions invoked with `--agent <name>`. On completion, the worker writes `scripts/cam/worker-report.json` (structured outcome). The sidecar polls for the report file, then emits the `[cam]` narration line to the orchestrator pane via its own `notifyOrchestrator` seam. Scrollback polling is not used for completion detection. The old stop-hook driver (a vendored Stop hook + `/cam-next` re-inject) is retired; `claude -p` (print mode) is not used for workers.
 
 Workers always run in the **titled 3rd pane** (created on first dispatch, reused across stories via `respawn-pane -k`). A mutex check before each dispatch prevents concurrent workers: if 3 panes are already present, the dispatch is refused until the worker-pane closes.
+
+---
+
+## Security
+
+By default, `cam` spawns `claude` with `permission_mode = "bypassPermissions"`
+(the `DEFAULT_PERMISSION_MODE` in `src/config/permission-mode.ts`), applied
+whenever `~/.config/cam/config.toml` is missing or the key is unset, which is
+what `cam init` writes on a fresh machine. In practice this means every worker
+and orchestrator session runs with no permission prompt: the agent can read,
+write, and execute anywhere your user account can, without asking first for
+each file edit or shell command. This is a deliberate trade-off for autonomous
+looping, not an oversight, but it is not "safe by default" in the way an
+interactive `claude` session is. If you want the agent's write/execute reach
+contained instead of running bypass-permissions against your host, set
+`[loop] worker_isolation = "container"` in `scripts/cam/project.toml` (default
+is `"host"`), which routes worker sessions into container isolation instead of
+running directly against your machine. This mitigation is partial: `worker_isolation`
+is read only by the sidecar's worker/reviewer dispatch path (`src/commands/sidecar.ts`,
+via `readWorkerIsolation` in `src/config/models.ts`), so it contains implementer
+and reviewer sessions only. The orchestrator pane itself is always spawned on
+the host with `claude --permission-mode bypassPermissions`
+(`src/commands/setup.ts`), even when `worker_isolation = "container"` is set,
+so the long-lived orchestrator retains unrestricted host read/write/execute
+reach regardless of this setting.
 
 ---
 

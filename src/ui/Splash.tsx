@@ -1,14 +1,18 @@
 // src/ui/Splash.tsx
 //
-// Entry / identity panel for CAM Runtime. Inside a rounded border:
+// Entry / identity panel for Gateship. Inside a rounded border:
 //   1. Uppercase "CAM" block wordmark, letter-by-letter (C / A / M), rendered
-//      in the CAM Runtime brand primary (Fir Green, `brandGreens.firGreen` in
+//      in the Gateship brand primary (Fir Green, `brandGreens.firGreen` in
 //      `src/design/tokens.ts`) rather than the chrome `palette.accent`. The
 //      wordmark rows are composed programmatically from per-letter glyph
 //      grids (`LETTER_C` / `LETTER_A` / `LETTER_M`) so every row is
 //      guaranteed the same width.
-//   2. A styled "Runtime" line directly under the wordmark, also in Fir
-//      Green, so the panel reads as the "CAM Runtime" brand identity.
+//   2. A styled "Gateship" line directly under the wordmark, also in Fir
+//      Green: the live product name, distinct from the "CAM" command-name
+//      wordmark above it. This is a plain display string (like the tagline
+//      in index.ts's HELP block or the tmux status-right label in run.ts),
+//      not the wordmark art; any further visual-identity redesign of the
+//      panel (wordmark, lockup, etc.) is CAM-421/CAM-331's scope.
 //   3. Two-line tagline ("Autonomous Claude Code loop" / "powered by your
 //      subscription").
 //   4. Version + repo URL line.
@@ -41,7 +45,7 @@ const WORDMARK_ROWS = LETTER_C.map(
 
 /**
  * Outer width (cells) of the bordered panel. Wide enough for the tagline
- * lines (the widest content); the narrower wordmark and "Runtime" line are
+ * lines (the widest content); the narrower wordmark and "Gateship" line are
  * centered inside it.
  */
 const PANEL_WIDTH = 53;
@@ -118,7 +122,7 @@ export function Splash({
 				<WordmarkRow key={i} row={row} />
 			))}
 			<Text bold color={brandGreens.firGreen}>
-				Runtime
+				Gateship
 			</Text>
 			<Box marginTop={1} flexDirection="column" alignItems="center">
 				<Text>{tagline[0]}</Text>

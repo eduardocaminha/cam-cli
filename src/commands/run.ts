@@ -780,10 +780,10 @@ function setupPanes(
 	// active-pane name changes length (orchestrator vs menu).
 	opt('status-justify', 'absolute-centre');
 	opt('status-style', `bg=default fg=${MUTED}`);
-	// Left: active-pane green pill. Right: CAM Runtime.
+	// Left: active-pane green pill. Right: Gateship.
 	opt('status-left', `#[fg=${MUTED}]active: #[bg=${ACCENT} fg=${DARK} bold] #{@cam_label} #[default]`);
 	opt('status-left-length', '40');
-	opt('status-right', `#[fg=${ACCENT} bold] CAM Runtime #[default]`);
+	opt('status-right', `#[fg=${ACCENT} bold] Gateship #[default]`);
 	opt('status-right-length', '24');
 	winOpt('window-status-format', navHint);
 	winOpt('window-status-current-format', navHint);
