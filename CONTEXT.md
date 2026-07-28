@@ -427,3 +427,15 @@ The shared tmux dispatch primitive (runVerifiedDispatch, CAM-433) used by every 
 
 **pane_pid identity verification**:
 Reading a tmux pane's #{pane_pid} before and after a respawn-pane call and requiring the two to differ. A respawn-pane exit code of 0 alone is not proof the pane's process was replaced; an unchanged pane_pid after a nominally successful respawn is itself a dispatch failure (reason pane-pid-unchanged).
+
+**plannable gate**:
+The predicate that decides whether a backlog issue may be handed to the planner. An issue passes the gate only when it is open, at stage specified, not blocked by an unshipped dependency, and carrying oracle forms.
+
+**oracle form**:
+The literal shell check text that sits under an acceptance criterion, as opposed to the prose claim the criterion asserts. A criterion delivers a form when the check can be copied and run verbatim; it delivers only a claim when it states what must be true and leaves the check to be invented downstream.
+
+**oracle species**:
+The classification of an oracle as either change-detection or invariance pin. A change-detection oracle must be red against the pre-change tree, because the condition it detects does not exist there yet. An invariance pin is green by construction and derives its comparand from the tree at check time rather than freezing a literal.
+
+**specSource**:
+The provenance of an issue's specification: interview when produced by an operator interview, derived when synthesized from one or more parent issues, operator when asserted directly by the operator.
