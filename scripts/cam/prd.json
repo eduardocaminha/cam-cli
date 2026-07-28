@@ -60,7 +60,7 @@
         "The full quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": "US-001",
       "notes": "Files: test/helpers/lane-expectations.json (container object only). The container lane is exercised by scripts/test-in-container.ts, which calls checkSuiteRan(output, containerExpectation.passFloor, 'container') at :238 before the skip comparison, so US-001's rule applies to this lane through the same function; nothing in scripts/ needs editing here. The run wires waivers via `docker exec -e CAM_TEST_WAIVERS=tmux,pgrep,uuidgen` and the default container name is cam-worker. docs/container-test-baseline.md is background for how the skip set was triaged (its own historical 3098/3064 figures are a dated snapshot and are deliberately OUT OF SCOPE for this cycle: do not edit them). The recorded container floor on main is 5691 against a host measurement of 5758, so expect a tight gap and a red gate until this story lands. Do not copy 5691, 5694 or any host-derived arithmetic into the file; the issue forbids exactly that. Same doctrine as US-001: derive-don't-freeze (patterns.md:932), oracle-falsifiability sweep (patterns.md:928), and no frozen live count anywhere in the record beyond the dated prose token. Container-mode dev may need the image up first; if `ensure-up` has to run, that is expected and is not an inferred measurement."
     },
