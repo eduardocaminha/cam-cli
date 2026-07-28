@@ -1,0 +1,84 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-455",
+  "description": "Repair four lying surfaces (cam-plan.md twins, CONTEXT.md glossary, patterns.md oracle-authoring block, orchestrator boot prompt) so every agent-read artifact agrees with the shipped code, and close the CAM-431 configPath seam at the same two call sites.",
+  "issueNumber": 455,
+  "type": "feat",
+  "relatedDocs": [
+    "CONTEXT.md",
+    "scripts/cam/patterns.md"
+  ],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Gate the orchestrator boot prompt on worker_isolation and forward configPath at both call sites",
+      "description": "As the cam orchestrator booting a session, I need the boot prompt's autonomous-mode instruction to be emitted only when auto-dispatch is actually armed (meta_loop=auto AND worker_isolation=container), so that my very first user turn stops contradicting the sidecar's own auto-chaining guard and the agent persona body.",
+      "acceptanceCriteria": [
+        "buildOrchestratorBootPrompt consults worker_isolation in addition to meta_loop, so the 'auto' branch emits the 'proceed directly into dispatch' instruction only when the sidecar would actually arm auto-chaining. The reference PIN for the gate condition is src/commands/sidecar.ts:2944-2953 (meta_loop=auto plus worker_isolation!=container disables auto-chaining); do NOT change that sidecar behavior, only make the prompt agree with it. Oracle is scoped to the function body, not the file, because readWorkerIsolation is already imported at run.ts:64 and already used at run.ts:872 in a different function. [oracle: sed -n '/export function buildOrchestratorBootPrompt/,/^}/p' src/commands/run.ts | grep -q 'readWorkerIsolation']",
+        "A behavioral test in test/commands/run-boot-prompt-isolation.test.ts proves BOTH sides of the gate against real project.toml fixtures written into a real tmpdir (no mocked config reader): with meta_loop=auto plus worker_isolation=host the prompt does NOT contain the proceed-directly-into-dispatch instruction, and with meta_loop=auto plus worker_isolation=container it does. Every test name in the file must be free of parentheses, because 'bun test -t' treats its argument as a REGEX. [oracle: out=$(bun test test/commands/run-boot-prompt-isolation.test.ts -t 'boot prompt' 2>&1); echo \"$out\" | grep -qE '[1-9][0-9]* pass' && ! echo \"$out\" | grep -qE '[1-9][0-9]* fail']",
+        "Both production call sites forward configPath instead of calling with no argument, closing the CAM-431 seam residue at the exact sites this story already touches. The signature already accepts configPath (src/commands/run.ts:225); the defect is the two call sites at src/commands/run.ts:584 and src/commands/setup.ts:551, each of which already has a cwd in scope. [oracle: ! grep -qE 'buildOrchestratorBootPrompt\\(\\)' src/commands/run.ts src/commands/setup.ts]",
+        "The stale comment in test/commands/run-model-resolution.test.ts, which claims there is no configPath seam on that site, is corrected to state that readBackend does accept configPath (src/config/models.ts:224). The comment text is BROKEN ACROSS TWO LINES in the file, so the comparand is the short substring, not the whole sentence. [oracle: ! grep -q 'no configPath seam' test/commands/run-model-resolution.test.ts]",
+        "The pre-existing boot-prompt suite in test/run.test.ts stays green: its meta_loop=auto case at test/run.test.ts:808 writes a fixture with NO worker_isolation key (which defaults to host) and asserts the prompt contains 'autonomous', so under the new gate it must be updated to write worker_isolation = \"container\" in the fixture rather than deleted or weakened. [oracle: out=$(bun test test/run.test.ts 2>&1); echo \"$out\" | grep -qE '[1-9][0-9]* pass' && ! echo \"$out\" | grep -qE '[1-9][0-9]* fail']",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/run.ts (buildOrchestratorBootPrompt at :225-238 and the call site at :584), src/commands/setup.ts (:551), NEW test/commands/run-boot-prompt-isolation.test.ts, test/run.test.ts (:787-830 describe block), test/commands/run-model-resolution.test.ts (:126). GOTCHA readWorkerIsolation is ALREADY imported at src/commands/run.ts:64 (from ../config/models.ts) and already used at :872 inside isContainerIsolation; do not add a duplicate import, and do not trust a file-wide grep for it (that is why the AC oracle is sed-scoped to the function body). GOTCHA configPath shape: readMetaLoop/readWorkerIsolation default to join(process.cwd(), 'scripts', 'cam', 'project.toml') (src/config/models.ts:89); at both call sites the correct forwarded value is join(cwd, 'scripts', 'cam', 'project.toml') built from the same cwd already used for the .claude dir on the adjacent line. GOTCHA file-size budget: src/commands/run.ts is at 1159 lines against a 1165 ceiling (scripts/file-size-budget.json), so ~6 lines of headroom; if the gate tips it, raise the ceiling IN THE SAME COMMIT and prepend a dated CAM-455 note to the budget's _ref prose field, because check:file-size requires a tracker ref in the STAGED diff of the budget file itself (patterns.md, grep 'file-size-budget'). NON-GOAL do not touch .claude/agents/subagent-orchestrator.md:93, which already describes host correctly, and do not touch the sidecar auto-dispatch behavior. The generated artifact this repairs is .claude/.cam-orchestrator-prompt.txt, written by both call sites. Grep scripts/cam/patterns.md for 'DI seam' and 'real I/O at wire boundaries' before writing the test: fixtures must be real files in a real tmpdir."
+    },
+    {
+      "id": "US-002",
+      "title": "State the acceptanceCriteria condition in both cam-plan.md twins and regenerate the vendor embed",
+      "description": "As the orchestrator executing the no-argument /cam-plan path, I need the command doc to enumerate the same four plannability conditions the shipped predicate enforces, so that I stop selecting issues the runtime will reject and the hole CAM-449 shipped to close is actually closed on the surface I execute.",
+      "acceptanceCriteria": [
+        "Both cam-plan.md twins (.claude/commands/cam-plan.md and templates/commands/cam-plan.md) state the acceptanceCriteria condition in the no-argument filter, matching the shipped predicate isPlannable in src/issues/plannable.ts:20-26 (stage specified AND status open AND non-empty spec.acceptanceCriteria AND not blocked). The doc line to repair is the 'No argument' bullet at line 11, which today lists only three conditions. [oracle: grep -q 'acceptanceCriteria' .claude/commands/cam-plan.md && grep -q 'acceptanceCriteria' templates/commands/cam-plan.md]",
+        "INVARIANCE PIN, green by construction today and must stay green: the two twins remain byte-identical and the vendor embed carries no drift. [oracle: diff -q .claude/commands/cam-plan.md templates/commands/cam-plan.md && bun run embed-vendor:check]",
+        "Vendor drift check passes after regeneration (bun run embed-vendor then bun run embed-vendor:check). [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: .claude/commands/cam-plan.md (line 11, the 'No argument' bullet), templates/commands/cam-plan.md, src/vendor/_generated.ts (REGENERATED, never hand-edited), possibly scripts/file-size-budget.json. NON-GOAL do not loosen src/issues/plannable.ts: the code is correct, the prose is what lies. GOTCHA the two twins are byte-identical today (verified with diff); editing only one breaks the AC2 pin, so apply the SAME text to both, then run bun run embed-vendor. Grep scripts/cam/patterns.md for 'Agent-prompt self-hosting pattern' and 'Three-copy cam-plan sync' (both bullets bind this exact file trio). GOTCHA per patterns.md 'Thin slash-command stubs invalidate content-assertion tests', test/embedded.test.ts asserts specific clauses of the embedded cam-plan.md copy; run bun test test/embedded.test.ts right after the regen. GOTCHA a backtick inside a literal-substring grep phrase silently breaks the match (patterns.md, CAM-449 US-003): the token acceptanceCriteria must appear as raw text the grep can see, so if you inline-code-format it verify the exact oracle command against your draft rather than eyeballing the sentence. Also watch src/vendor/_generated.ts against its ceiling in scripts/file-size-budget.json (raise with a dated CAM-455 _ref note in the same commit if the regen tips it)."
+    },
+    {
+      "id": "US-003",
+      "title": "Make the CONTEXT.md plannable-issue and plannable-set entries agree with the shipped predicate",
+      "description": "As an agent grepping CONTEXT.md as the canonical vocabulary source, I need the plannable-issue and plannable-set entries to name the acceptance-criteria condition and to stop asserting that three conditions are the single qualifying condition, so that the glossary stops carrying three divergent definitions of one concept.",
+      "acceptanceCriteria": [
+        "The 'plannable issue' entry no longer claims the listed conditions are the single qualifying condition; the sentence 'This is the single condition that qualifies an issue for /cam-plan' (CONTEXT.md:72, 1 occurrence today) is gone, because it is literally false after CAM-449. [oracle: ! grep -q 'This is the single condition' CONTEXT.md]",
+        "The 'plannable issue' entry names acceptance criteria as a condition. Oracle is scoped to the entry itself (the extractor returns the 3 non-blank lines of that entry), never the whole file, since 'acceptance criteri' already appears elsewhere in CONTEXT.md. [oracle: sed -n '/^\\*\\*plannable issue\\*\\*:/,/^$/p' CONTEXT.md | grep -qi 'acceptance criteri']",
+        "The 'plannable set' entry (CONTEXT.md:248) names acceptance criteria too, so all three related entries agree: 'plannable issue', 'plannable set', and 'plannable gate' (CONTEXT.md:431, which already says 'carrying oracle forms'). Oracle scoped to the entry. [oracle: sed -n '/^\\*\\*plannable set\\*\\*:/,/^$/p' CONTEXT.md | grep -qi 'acceptance criteri']",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "File: CONTEXT.md only (entries at :71-72 'plannable issue', :248 'plannable set'; :431 'plannable gate' is already correct and is the wording PIN to converge on). Ground truth for the wording is src/issues/plannable.ts:20-26 plus its hasAcceptanceCriteria doc comment (spec is optional and may be entirely absent, so both the missing-spec and empty-array shapes are non-plannable). GOTCHA the AC oracles extract from the term header to the FIRST BLANK LINE, so the acceptance-criteria mention must sit inside that same paragraph block; adding it as a new paragraph below leaves the oracle red. GOTCHA CONTEXT.md is the glossary channel written by the CAM-118 deterministic writer and merged by term text (patterns.md, grep 'mergeContextMd'): keep the '**term**:' header line byte-shape intact so a later merge still matches the term. Keep it glossary-only per scripts/cam/CLAUDE.md Domain Model Convention: definition prose only, no implementation detail, no spec. Out of scope by explicit decision in CAM-455: the missing 'push-recovered' glossary entry is an OMISSION, not a contradiction, and is not promoted here. Repo prose rule: no em dash in persisted human-readable .md."
+    },
+    {
+      "id": "US-004",
+      "title": "Add the CLI-oracle rule to the curated oracle-authoring block in patterns.md",
+      "description": "As whoever authors an acceptance criterion for this repo, I need the curated oracle-authoring block to carry the rule that a CLI-behavior oracle invokes 'bun index.ts <sub>' and never 'cam <sub>', so that oracles stop measuring the installed binary instead of the working tree and stop going red for the wrong artifact.",
+      "acceptanceCriteria": [
+        "The curated oracle-authoring block in scripts/cam/patterns.md gains a fifth numbered rule stating that an oracle checking CLI behavior invokes 'bun index.ts <sub>' and never 'cam <sub>', because 'cam' measures the INSTALLED binary, which is almost always older than the change under test. Oracle is scoped to the curated block, not the file, and requires the literal 'bun index.ts' on the same physical line as the '5.' marker, because the token already appears 3 times elsewhere in the file so a global grep would be tautological. [oracle: sed -n '/CURATED BLOCK: oracle authoring rules/,$p' scripts/cam/patterns.md | grep -qE '^[[:space:]]+5\\. .*bun index\\.ts']",
+        "EVIDENCE FIDELITY, which is rule 4 of the block applied to the block itself: rule 5 carries the MEASURED evidence token, not a plausible restatement of the problem. The measurement is CAM-449 AC7, where the installed binary at version 0.262.0 returned a plannable set different from the working tree's, turning the criterion red for the wrong artifact and inducing the documented mid-cycle rebuild hazard. [oracle: grep -q '0\\.262\\.0' scripts/cam/patterns.md]",
+        "The block's own preamble stops saying there are four rules once a fifth exists, so the header does not become a new lying surface. The phrase 'These four rules are what those cycles measured' occurs exactly once in the file today, inside that preamble. [oracle: ! grep -q 'These four rules' scripts/cam/patterns.md]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "File: scripts/cam/patterns.md only, the curated block starting at line 1068 ('CURATED BLOCK: oracle authoring rules, promoted 2026-07-27 (CAM-439)'), whose existing rules 1-4 are indented two spaces as '  N. **Title.** body'. Match that exact shape for rule 5 or the AC1 regex '^[[:space:]]+5\\. ' misses. GOTCHA the regex requires 'bun index.ts' on the SAME physical line as the '5.' marker; a rule whose first line is only a bold title and whose body wraps to the next line leaves the oracle red. GOTCHA a backtick inside a literal-substring grep phrase silently breaks the match (patterns.md, CAM-449 US-003): if you code-format the command as `bun index.ts`, the backticks sit OUTSIDE the required span so the match survives, but code-formatting '0.262.0' as `0.262.0` also survives; run both exact oracle commands against your draft rather than eyeballing. GOTCHA prose is where rework concentrates in this repo (CAM-455 measured round-1 findings rising from 0.1 to 3.7): the new rule must carry the measured CAM-449 AC7 evidence, not an invented rationale. Repo prose rule: no em dash in persisted human-readable .md. Do not truncate or reorder existing bullets; patterns.md is append-and-amend-only."
+    }
+  ]
+}
