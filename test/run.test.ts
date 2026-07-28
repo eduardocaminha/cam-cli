@@ -785,13 +785,23 @@ describe('buildOrchestratorPaneCommand (CAM-23 self-handoff wrapper)', () => {
 });
 
 describe('buildOrchestratorBootPrompt (CAM-240 US-002: minimal --agent nudge, meta_loop-aware)', () => {
-	function writeMetaLoopToml(dir: string, metaLoop: string | undefined): string {
+	function writeMetaLoopToml(
+		dir: string,
+		metaLoop: string | undefined,
+		workerIsolation?: string,
+	): string {
 		const path = join(dir, 'project.toml');
-		writeFileSync(
-			path,
-			metaLoop === undefined ? '' : `[loop]\nmeta_loop = "${metaLoop}"\n`,
-			'utf8',
-		);
+		const lines: string[] = [];
+		if (metaLoop !== undefined || workerIsolation !== undefined) {
+			lines.push('[loop]');
+			if (metaLoop !== undefined) {
+				lines.push(`meta_loop = "${metaLoop}"`);
+			}
+			if (workerIsolation !== undefined) {
+				lines.push(`worker_isolation = "${workerIsolation}"`);
+			}
+		}
+		writeFileSync(path, lines.length > 0 ? `${lines.join('\n')}\n` : '', 'utf8');
 		return path;
 	}
 
@@ -805,9 +815,9 @@ describe('buildOrchestratorBootPrompt (CAM-240 US-002: minimal --agent nudge, me
 		expect(prompt).not.toContain('cam issue list');
 	});
 
-	it('under meta_loop "auto": announces autonomous mode and omits "What would you like to do?"', () => {
+	it('under meta_loop "auto" with worker_isolation "container": announces autonomous mode and omits "What would you like to do?"', () => {
 		const dir = mkdtempSync(join(tmpdir(), 'cam-boot-prompt-'));
-		const configPath = writeMetaLoopToml(dir, 'auto');
+		const configPath = writeMetaLoopToml(dir, 'auto', 'container');
 		const prompt = buildOrchestratorBootPrompt(configPath);
 		expect(prompt.toLowerCase()).toContain('autonomous');
 		expect(prompt).not.toContain('What would you like to do?');

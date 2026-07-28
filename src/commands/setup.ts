@@ -548,7 +548,11 @@ function spawnSetupTmux(opts: {
 	writeFileSync(promptFile, prompt, 'utf8');
 
 	const orchPromptFile = join(dotClaude, '.cam-orchestrator-prompt.txt');
-	writeFileSync(orchPromptFile, buildOrchestratorBootPrompt(), 'utf8');
+	writeFileSync(
+		orchPromptFile,
+		buildOrchestratorBootPrompt(join(cwd, 'scripts', 'cam', 'project.toml')),
+		'utf8',
+	);
 
 	const menuFile = join(dotClaude, '.cam-setup-menu.sh');
 	writeFileSync(menuFile, buildSetupMenuScript(), 'utf8');
