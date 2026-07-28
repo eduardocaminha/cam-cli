@@ -1,18 +1,18 @@
 {
   "lastCompletedStory": {
-    "id": "US-R2-001",
-    "title": "Review round 2 fix 001: address reviewer finding"
+    "id": "US-R2-002",
+    "title": "Review round 2 fix 002: address reviewer finding"
   },
   "branchName": "cam/issue-458",
-  "timestamp": "2026-07-28T22:20:00Z",
-  "createdFiles": [
-    "test/fixtures/init-home-redirect-probe.ts"
-  ],
+  "timestamp": "2026-07-28T22:45:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "test/init.test.ts"
+    "scripts/build-release.sh",
+    "test/build-release-smoke.test.ts",
+    "test/interactivity/interactivity.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "Round 2 reviewer finding at test/init.test.ts:74 (SECTION 5b of scripts/cam/review-artifact.txt): US-R1-003's name-only directory-listing snapshot (snapshotDir returning [...readdirSync(dir)].sort()) could not detect a regression that OVERWRITES the pre-existing ~/.config/cam/config.toml at the exact default path, because the listing is identical before and after (reproduced by the reviewer: before=[\"config.toml\"], after=[\"config.toml\"] => MISSED). This machine has exactly that stale file, so the guard's own header-comment claim ('goes red the moment any future code path writes a new file... including at the exact default path') was false on this repo's dev machine. Took the reviewer-identified stronger fix (patterns.md 'homedir() env-mutation' bullet option (a), not the cheaper stat/mtime mechanical alternative, per the no-shortcuts-on-effort-grounds instruction): test/init.test.ts now spawns a genuinely separate `bun` child process (Bun.spawnSync) with `HOME` set in the spawn-time env, pointed at a freshly mkdtempSync'd empty temp dir. That directory is guaranteed to have no `.config/cam` before OR after a non-regressing runInit(), on every machine (dev box or CI runner alike) -- so the assertion is a FIXED `null`/`null`, not a same-as-before diff, and it cannot be blind to an overwrite-at-default-path regression the way the name-only same-machine snapshot was. New fixture file test/fixtures/init-home-redirect-probe.ts contains the actual runInit()-driving logic (imported and run inside the child process, so it observes homedir() as resolved by the redirected HOME) and prints `{before, after}` as its last stdout line, which the parent test parses (skipping runInit's own linear print output ahead of it). Verified the guard is now genuinely falsifiable by hand-simulating the exact regression this story is about (temporarily adding a config.toml write inside runInitLinear, confirming the test goes red with `after: [\"config.toml\"]`, then reverting via git checkout -- src/commands/init.ts) BEFORE trusting it green. No production src/ files touched; scope was strictly test/init.test.ts + the new fixture, per the finding. All quality gates green: typecheck 0 errors, full `bun test` 5760/5760 pass, full `bun run check:all` spine (coverage/dead-code/dup/lint/file-size/ci-parity/skip-ratchet/agents-md) all ok.",
+  "nextStoryContext": "Round 2 reviewer finding at scripts/build-release.sh:114 (SECTION 5b-equivalent of scripts/cam/review-artifact.txt): after US-001 removed the ~/.config/cam/config.toml write, nothing in src/ reads CAM_CONFIG_PATH any more (grep -rln CAM_CONFIG_PATH over src/ index.ts returns nothing), but 3 files still set/documented the now-dead var -- the same stale-cross-reference class round 1 already fixed for docs/ (US-R1-001) and for the vestigial env plumbing inside test/init.test.ts (US-R1-003). Swept all 3: (1) scripts/build-release.sh:114 dropped the `CAM_CONFIG_PATH=\"${SMOKE_DIR}/config.toml\"` prefix from the hermetic init smoke invocation (also trimmed the 'and a tmp config' clause from the preceding comment block); (2) test/interactivity/interactivity.test.ts:502-517 dropped the save/set/restore of process.env.CAM_CONFIG_PATH around the runInit() gate test -- and since that also made the mkdtempSync'd tmpWorkDir pointless (it was only ever used to build the redirected config path, never as a cwd or passed to runInit()), removed the now-fully-vestigial tmpdir create/cleanup too rather than leaving a create-then-delete-nothing artifact; (3) test/build-release-smoke.test.ts:32 updated the doc-comment example line that showed the old CAM_CONFIG_PATH=... shape to match the new invocation. Verified via binInitInvocations() in test/build-release-smoke.test.ts (matches only the `}\" init` shape, never asserted the env-var string) that dropping the var breaks nothing, and confirmed by grep that no live src/ or test/ code references CAM_CONFIG_PATH any more (only test/init.test.ts's own explanatory prose, describing the historical removal, and the immutable scripts/cam/journal.archive.md still mention the name -- both expected, neither live plumbing). All quality gates green: typecheck 0 errors, full `bun test` 5760/5760 pass, full `bun run check:all` spine (test/embed-vendor/lint/file-size/debt-markers/version-skips/coverage/dead-code/dup/ci-parity/agents-md/test-sleeps/skip-ratchet) all ok.",
   "officialDocsValidated": [
     {
       "lib": "none",
