@@ -27,7 +27,7 @@
         "The lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: index.ts (tagline :114, version help entry :143), src/commands/run.ts (:783 comment, :786 status-right), src/retry/config.ts (:30 DEFAULT_TOML header). The literal to replace is the two-word string 'CAM Runtime', NEVER the bare token CAM: CAM_* env vars, .cam-* markers, 'tmux -L cam' and /cam-* are internal contracts frozen by ADR-0050 lines 19-22. No sed -i over the whole tree. Draw the product sentence from docs/positioning.md line 7 ('local software delivery runtime: a control plane for coding agents') rather than inventing a new one. patterns.md:1078 rule 5: a CLI-behavior oracle uses `bun index.ts <sub>`, never `cam <sub>` (the installed binary is 0.268.0 and will diverge from this branch). renderHelp pads the name column to 24 chars (patterns.md:522) so keep the version entry's `name` field untouched and only edit its `description`. No templates/ or vendor/ file carries the dead name (verified: 0 hits), so embed-vendor is not triggered by this story. src/commands/run.ts has a file-size budget entry (1168) in scripts/file-size-budget.json: this story is a like-for-like string swap and must not grow it."
     },
