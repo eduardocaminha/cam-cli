@@ -298,6 +298,24 @@ Workers always run in the **titled 3rd pane** (created on first dispatch, reused
 
 ---
 
+## Security
+
+By default, `cam` spawns `claude` with `permission_mode = "bypassPermissions"`
+(the `DEFAULT_PERMISSION_MODE` in `src/config/permission-mode.ts`), applied
+whenever `~/.config/cam/config.toml` is missing or the key is unset, which is
+what `cam init` writes on a fresh machine. In practice this means every worker
+and orchestrator session runs with no permission prompt: the agent can read,
+write, and execute anywhere your user account can, without asking first for
+each file edit or shell command. This is a deliberate trade-off for autonomous
+looping, not an oversight, but it is not "safe by default" in the way an
+interactive `claude` session is. If you want the agent's write/execute reach
+contained instead of running bypass-permissions against your host, set
+`[loop] worker_isolation = "container"` in `scripts/cam/project.toml` (default
+is `"host"`), which routes worker sessions into container isolation instead of
+running directly against your machine.
+
+---
+
 ## Recent changes
 
 - **Single-hub dispatch (CAM-55)**: `cam run` is the only dispatch hub. `cam plan`, `cam issue`, `cam spec`, `cam review`, and `cam ship` are send-keys thin-proxies that inject slash commands into the orchestrator pane; `cam next` is a pure `active:true` sidecar trigger (no send-keys). Workers run in a uniform titled 3rd pane; completion is push-based (worker writes `scripts/cam/worker-report.json`; the sidecar reads it and emits the `[cam]` narration line to the orchestrator pane). A mutex prevents concurrent worker dispatches (3 panes = busy). The idle-guarantee (`sendKeysWhenIdle`) ensures the orchestrator is not mid-response when slash commands are injected.
