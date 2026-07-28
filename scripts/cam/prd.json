@@ -1,0 +1,71 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-458",
+  "description": "Make the permission-mode story true on every surface: retire the config knob no spawn path reads, delete its unread reader, and correct README + --help.",
+  "issueNumber": 458,
+  "type": "feat",
+  "relatedDocs": [
+    "docs/launch-readiness.md"
+  ],
+  "officialDocsConsulted": [],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Stop cam init from writing the unread permission_mode key",
+      "description": "As an operator running `cam init`, I need the tool to stop seeding a `permission_mode` key that no spawn path reads, so that I am never handed a silent no-op security knob.",
+      "acceptanceCriteria": [
+        "Neither init path (linear `runInitLinear` nor interactive `writeConfigOutcome`) writes the `permission_mode` key, and no comment in the file still advertises it. [oracle: file-assert ! grep -q permission_mode src/commands/init.ts]",
+        "The user-config write step is removed outright (its check row and its success/failure reporting included) rather than left writing an empty `~/.config/cam/config.toml`; `permission_mode` was the only key it ever seeded. [oracle: file-assert ! grep -q mergeIntoConfig src/commands/init.ts]",
+        "`cam init --help` no longer advertises the config write in its Behaviour steps, and the surrounding retry.toml step text stays intact. [oracle: named-command bash -c '! grep -q \"config.toml with permission_mode\" index.ts && grep -q \"retry.toml\" index.ts']",
+        "test/init.test.ts drops its permission_mode assertions and instead proves init leaves the CAM_CONFIG_PATH target absent, hitting the real tmpdir filesystem (no mock-call-only assertion). [oracle: named-command bash -c '! grep -q permission_mode test/init.test.ts && bun test test/init.test.ts']",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "The quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/init.ts (header comment :12, linear write :313, interactive CheckDef :373 + writeConfigOutcome :410-419, and the now-unused defaultConfigPath/configPath plumbing if it goes dead), test/init.test.ts, index.ts (init help Behaviour step 3 at :196), src/config/toml.ts (the `Used by cam init to set permission_mode` doc comment at :184 goes stale). Verified live on main before planning: `~/.config/cam/config.toml` has exactly ZERO readers other than the dead module deleted in US-002, so dropping the write regresses no feature; `~/.config/cam/retry.toml` is a different file written by a different path and must keep working. `mergeIntoConfig` stays exported in src/config/toml.ts (still test-covered; knip.json sets exclude:[\"exports\"], so an unused export does not fail the gate). Do NOT touch any spawn site (run.ts:392, setup.ts:480/:561, sidecar.ts:1569, plan-runner.ts:1312): runtime behavior must be byte-identical. scripts/file-size-budget.json entries may need LOWERING for the shrunken files: lowering always passes the ratchet, any RAISE needs a CAM-458 tracker ref in the staged diff (scripts/check-file-sizes.ts). check:all also runs a coverage ratchet, so re-run it after deleting code."
+    },
+    {
+      "id": "US-002",
+      "title": "Delete the unread readPermissionMode module and its stale cross-references",
+      "description": "As a maintainer auditing cam's permission posture, I need the unreachable permission-mode reader gone, so that a code reader finds exactly one story (hardcoded at the spawn site) instead of a plausible-looking config path that nothing calls.",
+      "acceptanceCriteria": [
+        "src/config/permission-mode.ts is deleted. [oracle: file-assert ! test -f src/config/permission-mode.ts]",
+        "No file under src/, test/, or index.ts still references the deleted module, its reader, or its constant (comment references included: the import-shaped grep is not enough here because every surviving reference today is a comment). [oracle: named-command bash -c '! grep -rq \"config/permission-mode\\|readPermissionMode\\|DEFAULT_PERMISSION_MODE\" src index.ts test']",
+        "The knip ignore entry for the deleted file is removed. [oracle: file-assert ! grep -q 'src/config/permission-mode.ts' knip.json]",
+        "The file-size budget no longer carries an entry for the deleted file. [oracle: file-assert ! grep -q '\"src/config/permission-mode.ts\"' scripts/file-size-budget.json]",
+        "The no-CLI-flag invariant is still enforced: test/no-permission-mode-flag.test.ts still passes after its module reference in the header comment is reworded. [oracle: named-command bun test test/no-permission-mode-flag.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "The quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "ORACLE TRAP (lived while filing this issue, CAM-458 gotcha 1): a bare `grep readPermissionMode src` returns 3 hits and reads GREEN, but all 3 are COMMENT mentions and real importers are ZERO. The criterion above therefore sweeps comments too. Comment references to rewrite: src/config/models.ts:6 and :11, src/config/toolchain.ts:18, src/commands/run.ts:611, index.ts:13-14, test/no-permission-mode-flag.test.ts:5. Reword them to state the fact instead: the mode is a hardcoded `bypassPermissions` literal at each spawn site. DESIGN DECISION already made (do not re-litigate): the alternative was reviving the knob by wiring readPermissionMode into the 5 spawn sites; rejected on merit, not effort, because honoring `permission_mode = \"default\"` in an autonomous loop wedges every worker on an interactive prompt with no human at the pane (a knob that appears to work and silently destroys the loop), and the supported containment control is already `[loop] worker_isolation = \"container\"`. A real, fail-closed permission knob would be its own designed issue. Do NOT touch spawn sites (run.ts:392, setup.ts:480/:561, sidecar.ts:1569, plan-runner.ts:1312) or the `--permission-mode` argv they build; the curated invariant (never add a --permission-mode CLI flag) is unchanged and stays enforced by test/no-permission-mode-flag.test.ts. Deleting a file listed in knip `ignore` may surface a knip configuration hint: hints are informational and do not affect exit code (patterns.md, CAM-60), but remove the stale entry anyway. Re-run check:all after the deletion for the coverage ratchet."
+    },
+    {
+      "id": "US-003",
+      "title": "Make README and --help state the hardcoded permission mode truthfully",
+      "description": "As a security-conscious reader auditing cam before running it, I need the README Security section and every --help surface to state that bypassPermissions is hardcoded and that no config key controls it, so that I never believe I disabled a bypass that is still on.",
+      "acceptanceCriteria": [
+        "The README Security section no longer frames bypassPermissions as a config default. [oracle: file-assert ! grep -q 'or the key is unset' README.md]",
+        "The Security section states that the mode is hardcoded at every spawn site. [oracle: file-assert grep -qi 'hardcoded' README.md]",
+        "The Security section states that a permission_mode config key is not read by any spawn path. [oracle: file-assert grep -qi 'not read by' README.md]",
+        "The pre-existing README claim (line ~157) that permission mode is read from ~/.config/cam/config.toml is corrected in the same edit. [oracle: file-assert ! grep -q 'is read from' README.md]",
+        "No --help text claims the mode comes from the user config file, on any command surface. [oracle: named-command bash -c '! grep -rq \"cam/config.toml\" index.ts src/commands/claude.ts']",
+        "The no-CLI-flag statement survives on the help surface (the fix removes the false claim, not the true one). [oracle: file-assert grep -q -- '--permission-mode flag' index.ts]",
+        "The CAM-457 disclosures already in the Security section survive: container mode as partial mitigation and the orchestrator always running bypassPermissions on the host. [oracle: named-command bash -c 'grep -q \"worker_isolation\" README.md && grep -q \"orchestrator\" README.md']",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "The quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: README.md (the command-list note at :156-157 and the Security section at ~:300-325), index.ts (module header comment :13-14, the top-level help note :171, and the per-command Behaviour step 1 repeated at :275, :330, :409, :644), src/commands/claude.ts:59. Write the Security text against the post-US-002 state: the value is a literal at each spawn site (src/commands/run.ts:392 orchestrator, src/commands/setup.ts:480 and :561, src/commands/sidecar.ts:1569 worker/reviewer dispatch, src/supervisor/plan-runner.ts:1312 plan phase) and there is no config key or CLI flag that changes it. README is a persisted human-readable .md: no em dash, no decorative emoji (global convention). Do not weaken the honesty of the section: a hostile reader auditing the code must not discover a STRONGER fact than the section discloses, which is the exact reviewer criterion CAM-457 failed on. docs/launch-readiness.md:191 and :210 describe the same claim but are a dated audit report, not current-state docs: leave them unless the wording reads as present-tense truth. Contratos internos (CAM_*, .cam-*, tmux -L cam, /cam-*) never rename (ADR-0050:19-22)."
+    }
+  ]
+}
