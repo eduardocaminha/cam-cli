@@ -10,23 +10,44 @@
   "officialDocsConsulted": [],
   "userStories": [
     {
+      "id": "US-R2-001",
+      "title": "Review round 2 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": true,
+      "notes": "WARNING [test/init.test.ts:74]: The rewritten regression guard cannot detect the regression it names on any machine that already has ~/.config/cam/config.toml, and its header comment claims otherwise. snapshotDir() (:68-71) returns a NAME-ONLY listing ([...readdirSync(dir)].sort()), so if a future change reintroduces the mergeIntoConfig write US-001 removed, at the exact real default path join(homedir(), '.config', 'cam', 'config.toml'), the listing before and after is identical and the test stays GREEN. Reproduced by the reviewer: before: [\"config.toml\"] after: [\"config.toml\"] => regression MISSED (scripts/cam/review-artifact.txt SECTION 5b). This machine is exactly that case (ls -la ~/.config/cam shows config.toml dated Jun 5 plus retry.toml), and the test's own comment at :26-28 asserts the guard 'goes red the moment any future code path writes a new file under ~/.config/cam, including at the exact default path join(homedir(), \".config\", \"cam\", \"config.toml\")' -- an untrue claim about verification strength, in a PRD whose charter is removing untrue claims. It is falsifiable only on a clean runner where the directory is absent, which makes the guard environment-dependent. Mechanical fix (1 file): snapshot content-identity, not just names (e.g. map each entry to `${name}:${statSync(join(dir,name)).size}:${mtimeMs}` or a content hash) so an overwrite at the default path also diffs, and correct the header comment to whatever the assertion actually proves. The genuinely deterministic alternative the branch already identified but did not take (patterns.md option (a): drive init in a child process spawned with HOME set at spawn time, which the reviewer confirmed does redirect homedir()) remains the stronger option and must not be declined on effort grounds."
+    },
+    {
+      "id": "US-R2-002",
+      "title": "Review round 2 fix 002: address reviewer finding",
+      "priority": 2,
+      "passes": false,
+      "notes": "WARNING [scripts/build-release.sh:114]: The CAM_CONFIG_PATH seam removal is not swept: three surviving files still set or document a now-dead env var, the same stale-cross-reference class round 1 already blocked on (US-R1-001 for docs/, US-R1-003 for the vestigial env plumbing inside test/init.test.ts). After US-001 nothing in src/ reads CAM_CONFIG_PATH (verified: grep -rln CAM_CONFIG_PATH over src/ index.ts returns nothing; the only per-user path left is ~/.config/cam/retry.toml, resolved from process.env.HOME in src/retry/config.ts:101). Still live: (1) scripts/build-release.sh:114 sets CAM_CONFIG_PATH=\"${SMOKE_DIR}/config.toml\" on the hermetic init smoke, reading as an isolation guarantee that is now provided by the deleted write rather than by this var; (2) test/interactivity/interactivity.test.ts:506-514 saves, sets and restores process.env.CAM_CONFIG_PATH around a runInit() call, byte-identical vestigial plumbing to what US-R1-003 removed from test/init.test.ts:51-60; (3) test/build-release-smoke.test.ts:32 documents the smoke line with CAM_CONFIG_PATH=... in it. Mechanical, 3 files, no test asserts the string (binInitInvocations() at test/build-release-smoke.test.ts:35-42 filters comments and matches only the `}\" init` shape, so dropping the var from the shell line breaks nothing)."
+    },
+    {
+      "id": "US-R2-003",
+      "title": "Review round 2 fix 003: address reviewer finding",
+      "priority": 3,
+      "passes": false,
+      "notes": "WARNING [scripts/cam/prd.json:32]: Six of this PRD's 25 oracle directives are unrunnable as authored, so those acceptance criteria were never machine-verified by the behavioral gate at either layer. US-001 AC3/AC4, US-002 AC2/AC5 and US-003 AC5/AC7 embed a LITERAL 'named-command ' prefix inside the directive. classifyOracleText (src/supervisor/behavioral-gate.ts:108-125) strips only 'file-assert ' and 'tmux-pty ' and takes everything else verbatim as the shell command, so runBehavioralGate ships `named-command bash -c '...'` to the shell and gets exit 127 (zsh: command not found: named-command) every time. Reviewer's independent run: 10 PASS / 6 FAIL(127), full capture in scripts/cam/review-artifact.txt SECTION 1. The reviewer re-ran all six intended commands by hand with the prefix stripped: all exit 0 (SECTION 2), so no behavior defect is hidden behind them, but the automated gate for those six criteria was vacuous. Mechanical fix in this PR: drop the literal 'named-command ' prefix from those six criteria strings so a re-run of the gate actually exercises them. The durable fix belongs in a separate issue and is a real product/doc mismatch: templates/commands/cam-issue.md:132 and the implementer/reviewer agent contracts all display the '[oracle: named-command ...]' prefixed form, while templates/agents/subagent-planner.md:158 and the parser expect the bare command, so a planner following the documented form emits directives that can only ever exit 127."
+    },
+    {
       "id": "US-R1-001",
       "title": "Review round 1 fix 001: address reviewer finding",
-      "priority": 1,
+      "priority": 4,
       "passes": true,
       "notes": "WARNING [docs/launch-readiness.md:190]: Stale present-tense cross-reference to the module this branch deleted. docs/launch-readiness.md:190-193 still states: \"`readPermissionMode` (`src/config/permission-mode.ts`) defaults to `bypassPermissions` whenever `~/.config/cam/config.toml` is absent or the key is unset, which matches what `cam init` itself writes by default.\" After US-002 that file does not exist, and after US-001 `cam init` writes no such key. The PRD carve-out for this doc (US-003 notes: \"leave them unless the wording reads as present-tense truth\") does not apply, because the wording IS present tense and names a deleted symbol; docs/launch-readiness.md is also listed in prd.json relatedDocs. This is the same stale-cross-reference class US-002 was chartered to eliminate; its AC2 grep was scoped to `src index.ts test`, so docs/ escaped the sweep. Mechanical fix: correct the paragraph (and the \"bypassPermissions is the undisclosed default\" bullet at :208) to the hardcoded-at-spawn-site fact, or date-stamp the section as an audit snapshot."
     },
     {
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
-      "priority": 2,
+      "priority": 5,
       "passes": true,
       "notes": "WARNING [README.md:258]: After this branch `~/.config/cam/config.toml` has zero readers and zero writers anywhere in the codebase (verified: no src/ file references CAM_CONFIG_PATH or that path outside comments; loadConfig/mergeIntoConfig callers all target scripts/cam/project.toml, and ~/.config/cam/retry.toml is written by src/retry/config.ts:113). Three surfaces still advertise it as a live per-user config surface: README.md:258 maps `src/config/` to \"~/.config/cam/config.toml + scripts/cam/project.toml\"; src/config/toml.ts:3 calls the module a \"Minimal TOML reader + writer for ~/.config/cam/config.toml\" and :150 justifies its null-safe contract with \"`cam init` must work both on a fresh machine (no ~/.config/cam/)\"; and src/config/models.ts:5 was reworded IN THIS DIFF to say those \"target a separate, per-user config surface\", which asserts a surface that no longer exists. A reader auditing cam still discovers a plausible-looking config file that nothing reads, which is the exact failure mode this PRD set out to remove (mirror image of the dead permission_mode knob). 3 files, mechanical."
     },
     {
       "id": "US-R1-003",
       "title": "Review round 1 fix 003: address reviewer finding",
-      "priority": 3,
+      "priority": 6,
       "passes": true,
       "notes": "WARNING [test/init.test.ts:81]: The rewritten tests are bound to a seam that no longer exists in production code, so they cannot catch the regression they claim to guard. US-001 deleted `defaultConfigPath()` and the `configPath` option from src/commands/init.ts, so nothing in src/ reads CAM_CONFIG_PATH any more; the beforeEach/afterEach env plumbing at :51-60 is now vestigial, and `expect(existsSync(configPath)).toBe(false)` asserts the absence of a fresh mkdtemp path that no code path can construct. If a future change reintroduces the config write at the real default (`join(homedir(), '.config', 'cam', 'config.toml')`), all three tests still pass. The three tests also assert the same single fact (:71, :78, :83) with no error/edge case, so the file has no success/error/edge triad. Mechanical fix: drive init with HOME (or an explicit injected path) pointed at the tmpdir and assert no config file is produced anywhere under it, and collapse the three duplicates into one meaningful test."
     },
@@ -43,7 +64,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "The quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 4,
+      "priority": 7,
       "passes": true,
       "requires": null,
       "notes": "Files: src/commands/init.ts (header comment :12, linear write :313, interactive CheckDef :373 + writeConfigOutcome :410-419, and the now-unused defaultConfigPath/configPath plumbing if it goes dead), test/init.test.ts, index.ts (init help Behaviour step 3 at :196), src/config/toml.ts (the `Used by cam init to set permission_mode` doc comment at :184 goes stale). Verified live on main before planning: `~/.config/cam/config.toml` has exactly ZERO readers other than the dead module deleted in US-002, so dropping the write regresses no feature; `~/.config/cam/retry.toml` is a different file written by a different path and must keep working. `mergeIntoConfig` stays exported in src/config/toml.ts (still test-covered; knip.json sets exclude:[\"exports\"], so an unused export does not fail the gate). Do NOT touch any spawn site (run.ts:392, setup.ts:480/:561, sidecar.ts:1569, plan-runner.ts:1312): runtime behavior must be byte-identical. scripts/file-size-budget.json entries may need LOWERING for the shrunken files: lowering always passes the ratchet, any RAISE needs a CAM-458 tracker ref in the staged diff (scripts/check-file-sizes.ts). check:all also runs a coverage ratchet, so re-run it after deleting code."
@@ -62,7 +83,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "The quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 5,
+      "priority": 8,
       "passes": true,
       "requires": null,
       "notes": "ORACLE TRAP (lived while filing this issue, CAM-458 gotcha 1): a bare `grep readPermissionMode src` returns 3 hits and reads GREEN, but all 3 are COMMENT mentions and real importers are ZERO. The criterion above therefore sweeps comments too. Comment references to rewrite: src/config/models.ts:6 and :11, src/config/toolchain.ts:18, src/commands/run.ts:611, index.ts:13-14, test/no-permission-mode-flag.test.ts:5. Reword them to state the fact instead: the mode is a hardcoded `bypassPermissions` literal at each spawn site. DESIGN DECISION already made (do not re-litigate): the alternative was reviving the knob by wiring readPermissionMode into the 5 spawn sites; rejected on merit, not effort, because honoring `permission_mode = \"default\"` in an autonomous loop wedges every worker on an interactive prompt with no human at the pane (a knob that appears to work and silently destroys the loop), and the supported containment control is already `[loop] worker_isolation = \"container\"`. A real, fail-closed permission knob would be its own designed issue. Do NOT touch spawn sites (run.ts:392, setup.ts:480/:561, sidecar.ts:1569, plan-runner.ts:1312) or the `--permission-mode` argv they build; the curated invariant (never add a --permission-mode CLI flag) is unchanged and stays enforced by test/no-permission-mode-flag.test.ts. Deleting a file listed in knip `ignore` may surface a knip configuration hint: hints are informational and do not affect exit code (patterns.md, CAM-60), but remove the stale entry anyway. Re-run check:all after the deletion for the coverage ratchet."
@@ -83,52 +104,58 @@
         "Tests pass (bun test). [oracle: bun test]",
         "The quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 6,
+      "priority": 9,
       "passes": true,
       "requires": null,
       "notes": "Files: README.md (the command-list note at :156-157 and the Security section at ~:300-325), index.ts (module header comment :13-14, the top-level help note :171, and the per-command Behaviour step 1 repeated at :275, :330, :409, :644), src/commands/claude.ts:59. Write the Security text against the post-US-002 state: the value is a literal at each spawn site (src/commands/run.ts:392 orchestrator, src/commands/setup.ts:480 and :561, src/commands/sidecar.ts:1569 worker/reviewer dispatch, src/supervisor/plan-runner.ts:1312 plan phase) and there is no config key or CLI flag that changes it. README is a persisted human-readable .md: no em dash, no decorative emoji (global convention). Do not weaken the honesty of the section: a hostile reader auditing the code must not discover a STRONGER fact than the section discloses, which is the exact reviewer criterion CAM-457 failed on. docs/launch-readiness.md:191 and :210 describe the same claim but are a dated audit report, not current-state docs: leave them unless the wording reads as present-tense truth. Contratos internos (CAM_*, .cam-*, tmux -L cam, /cam-*) never rename (ADR-0050:19-22)."
     }
   ],
   "review": {
-    "roundsCompleted": 1,
+    "roundsCompleted": 2,
     "maxRounds": 3,
     "lastVerdict": "FIXES_PENDING:3",
     "findings": [
       {
         "severity": "WARNING",
-        "file": "docs/launch-readiness.md",
-        "line": 190,
-        "text": "Stale present-tense cross-reference to the module this branch deleted. docs/launch-readiness.md:190-193 still states: \"`readPermissionMode` (`src/config/permission-mode.ts`) defaults to `bypassPermissions` whenever `~/.config/cam/config.toml` is absent or the key is unset, which matches what `cam init` itself writes by default.\" After US-002 that file does not exist, and after US-001 `cam init` writes no such key. The PRD carve-out for this doc (US-003 notes: \"leave them unless the wording reads as present-tense truth\") does not apply, because the wording IS present tense and names a deleted symbol; docs/launch-readiness.md is also listed in prd.json relatedDocs. This is the same stale-cross-reference class US-002 was chartered to eliminate; its AC2 grep was scoped to `src index.ts test`, so docs/ escaped the sweep. Mechanical fix: correct the paragraph (and the \"bypassPermissions is the undisclosed default\" bullet at :208) to the hardcoded-at-spawn-site fact, or date-stamp the section as an audit snapshot."
-      },
-      {
-        "severity": "WARNING",
-        "file": "README.md",
-        "line": 258,
-        "text": "After this branch `~/.config/cam/config.toml` has zero readers and zero writers anywhere in the codebase (verified: no src/ file references CAM_CONFIG_PATH or that path outside comments; loadConfig/mergeIntoConfig callers all target scripts/cam/project.toml, and ~/.config/cam/retry.toml is written by src/retry/config.ts:113). Three surfaces still advertise it as a live per-user config surface: README.md:258 maps `src/config/` to \"~/.config/cam/config.toml + scripts/cam/project.toml\"; src/config/toml.ts:3 calls the module a \"Minimal TOML reader + writer for ~/.config/cam/config.toml\" and :150 justifies its null-safe contract with \"`cam init` must work both on a fresh machine (no ~/.config/cam/)\"; and src/config/models.ts:5 was reworded IN THIS DIFF to say those \"target a separate, per-user config surface\", which asserts a surface that no longer exists. A reader auditing cam still discovers a plausible-looking config file that nothing reads, which is the exact failure mode this PRD set out to remove (mirror image of the dead permission_mode knob). 3 files, mechanical."
-      },
-      {
-        "severity": "WARNING",
         "file": "test/init.test.ts",
-        "line": 81,
-        "text": "The rewritten tests are bound to a seam that no longer exists in production code, so they cannot catch the regression they claim to guard. US-001 deleted `defaultConfigPath()` and the `configPath` option from src/commands/init.ts, so nothing in src/ reads CAM_CONFIG_PATH any more; the beforeEach/afterEach env plumbing at :51-60 is now vestigial, and `expect(existsSync(configPath)).toBe(false)` asserts the absence of a fresh mkdtemp path that no code path can construct. If a future change reintroduces the config write at the real default (`join(homedir(), '.config', 'cam', 'config.toml')`), all three tests still pass. The three tests also assert the same single fact (:71, :78, :83) with no error/edge case, so the file has no success/error/edge triad. Mechanical fix: drive init with HOME (or an explicit injected path) pointed at the tmpdir and assert no config file is produced anywhere under it, and collapse the three duplicates into one meaningful test."
+        "line": 74,
+        "text": "The rewritten regression guard cannot detect the regression it names on any machine that already has ~/.config/cam/config.toml, and its header comment claims otherwise. snapshotDir() (:68-71) returns a NAME-ONLY listing ([...readdirSync(dir)].sort()), so if a future change reintroduces the mergeIntoConfig write US-001 removed, at the exact real default path join(homedir(), '.config', 'cam', 'config.toml'), the listing before and after is identical and the test stays GREEN. Reproduced by the reviewer: before: [\"config.toml\"] after: [\"config.toml\"] => regression MISSED (scripts/cam/review-artifact.txt SECTION 5b). This machine is exactly that case (ls -la ~/.config/cam shows config.toml dated Jun 5 plus retry.toml), and the test's own comment at :26-28 asserts the guard 'goes red the moment any future code path writes a new file under ~/.config/cam, including at the exact default path join(homedir(), \".config\", \"cam\", \"config.toml\")' -- an untrue claim about verification strength, in a PRD whose charter is removing untrue claims. It is falsifiable only on a clean runner where the directory is absent, which makes the guard environment-dependent. Mechanical fix (1 file): snapshot content-identity, not just names (e.g. map each entry to `${name}:${statSync(join(dir,name)).size}:${mtimeMs}` or a content hash) so an overwrite at the default path also diffs, and correct the header comment to whatever the assertion actually proves. The genuinely deterministic alternative the branch already identified but did not take (patterns.md option (a): drive init in a child process spawned with HOME set at spawn time, which the reviewer confirmed does redirect homedir()) remains the stronger option and must not be declined on effort grounds."
+      },
+      {
+        "severity": "WARNING",
+        "file": "scripts/build-release.sh",
+        "line": 114,
+        "text": "The CAM_CONFIG_PATH seam removal is not swept: three surviving files still set or document a now-dead env var, the same stale-cross-reference class round 1 already blocked on (US-R1-001 for docs/, US-R1-003 for the vestigial env plumbing inside test/init.test.ts). After US-001 nothing in src/ reads CAM_CONFIG_PATH (verified: grep -rln CAM_CONFIG_PATH over src/ index.ts returns nothing; the only per-user path left is ~/.config/cam/retry.toml, resolved from process.env.HOME in src/retry/config.ts:101). Still live: (1) scripts/build-release.sh:114 sets CAM_CONFIG_PATH=\"${SMOKE_DIR}/config.toml\" on the hermetic init smoke, reading as an isolation guarantee that is now provided by the deleted write rather than by this var; (2) test/interactivity/interactivity.test.ts:506-514 saves, sets and restores process.env.CAM_CONFIG_PATH around a runInit() call, byte-identical vestigial plumbing to what US-R1-003 removed from test/init.test.ts:51-60; (3) test/build-release-smoke.test.ts:32 documents the smoke line with CAM_CONFIG_PATH=... in it. Mechanical, 3 files, no test asserts the string (binInitInvocations() at test/build-release-smoke.test.ts:35-42 filters comments and matches only the `}\" init` shape, so dropping the var from the shell line breaks nothing)."
+      },
+      {
+        "severity": "WARNING",
+        "file": "scripts/cam/prd.json",
+        "line": 32,
+        "text": "Six of this PRD's 25 oracle directives are unrunnable as authored, so those acceptance criteria were never machine-verified by the behavioral gate at either layer. US-001 AC3/AC4, US-002 AC2/AC5 and US-003 AC5/AC7 embed a LITERAL 'named-command ' prefix inside the directive. classifyOracleText (src/supervisor/behavioral-gate.ts:108-125) strips only 'file-assert ' and 'tmux-pty ' and takes everything else verbatim as the shell command, so runBehavioralGate ships `named-command bash -c '...'` to the shell and gets exit 127 (zsh: command not found: named-command) every time. Reviewer's independent run: 10 PASS / 6 FAIL(127), full capture in scripts/cam/review-artifact.txt SECTION 1. The reviewer re-ran all six intended commands by hand with the prefix stripped: all exit 0 (SECTION 2), so no behavior defect is hidden behind them, but the automated gate for those six criteria was vacuous. Mechanical fix in this PR: drop the literal 'named-command ' prefix from those six criteria strings so a re-run of the gate actually exercises them. The durable fix belongs in a separate issue and is a real product/doc mismatch: templates/commands/cam-issue.md:132 and the implementer/reviewer agent contracts all display the '[oracle: named-command ...]' prefixed form, while templates/agents/subagent-planner.md:158 and the parser expect the bare command, so a planner following the documented form emits directives that can only ever exit 127."
       },
       {
         "severity": "SUGGESTION",
         "file": "index.ts",
         "line": 196,
-        "text": "INIT_HELP still claims Stage 1 step 3 \"Writes ~/.config/cam/retry.toml with the built-in retry policy defaults (first run only)\". `cam init` does not write retry.toml: it is created lazily by src/retry/config.ts:111-114 on the first `cam claude` / retry-monitor load. Pre-existing on main and explicitly protected by US-001's AC (\"the surrounding retry.toml step text stays intact\"), so out of this PR's scope, but it is the same class of untrue help text this PRD exists to remove. Same claim in src/commands/claude.ts:57 (\"written by `cam init`\")."
+        "text": "INIT_HELP was edited in this diff (step 4 renumbered to step 3) but kept the untrue claim it renumbered: 'Writes ~/.config/cam/retry.toml with the built-in retry policy defaults (first run only)'. cam init has zero retry references (grep -rn retry src/commands/init.ts returns nothing); retry.toml is created lazily by src/retry/config.ts:100-114 on the first retry-config load. Same untruth at src/commands/claude.ts:57 ('written by `cam init`'), on the line directly above the Permission-mode block this diff rewrote for exactly this reason. US-001's AC3 deliberately protected this text ('the surrounding retry.toml step text stays intact'), so it is out of the PRD's charter, but it is the same class of lying help surface this PRD exists to remove and was already raised as a SUGGESTION in round 1. Worth a follow-up issue rather than an in-PR edit."
       },
       {
         "severity": "SUGGESTION",
         "file": "README.md",
         "line": 303,
-        "text": "The Security section enumerates the spawn sites as run.ts, setup.ts, sidecar.ts and plan-runner.ts. Two further literal-default sites exist: src/supervisor/host.ts:541 (`options.permissionMode ?? 'bypassPermissions'`) and src/supervisor/backend-adapter.ts:310/:591 (same fallback for the codex backend). The disclosed fact is not weakened by these (they are the same hardcoded value), but the list reads as exhaustive when it is not."
+        "text": "The Security section says the mode is hardcoded 'at every spawn site:' and then enumerates four files (run.ts, setup.ts, sidecar.ts, plan-runner.ts). The enumeration reads exhaustive but is not: src/supervisor/host.ts:541 and src/supervisor/backend-adapter.ts:310 and :591 apply the same `options.permissionMode ?? 'bypassPermissions'` default. The disclosed fact is not weakened (the reviewer verified the only call site that ever passes a value is src/commands/sidecar.ts:1569, and it passes 'bypassPermissions'), so the sentence is true; only the list is partial. Repeat of an unaddressed round-1 SUGGESTION."
       },
       {
         "severity": "SUGGESTION",
         "file": "scripts/file-size-budget.json",
         "line": 12,
-        "text": "src/commands/init.ts shrank from 427 to 372 counted lines but its ceiling stayed at 427, leaving 55 lines of new slack in the ratchet. The PRD notes anticipated lowering it (\"entries may need LOWERING for the shrunken files\"). Lowering always passes the gate, so this is a free tightening."
+        "text": "src/commands/init.ts is now 372 counted lines but its ceiling stays at 427, leaving 55 lines of unclaimed slack in the ratchet after this PR deleted code from it. Lowering a ceiling always passes the gate, so this is a free tightening the PRD notes themselves anticipated ('entries may need LOWERING for the shrunken files'). Repeat of an unaddressed round-1 SUGGESTION. The three raises in the same file (toml.ts 209->211, claude.ts 201->203, run.ts 1168->1169) are all exact-fit, comment-only growths carrying a CAM-458 tracker ref: JUSTIFIED, no objection."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "test/toml.test.ts",
+        "line": 34,
+        "text": "The generic TOML reader/writer suite still uses `permission_mode = \"bypassPermissions\"` as its canonical sample key in roughly a dozen cases. The module is genuinely generic so nothing is wrong, but after this PRD retired that key everywhere else, keeping it as the headline fixture leaves a reader grepping the repo one last plausible-looking hit for a knob that no longer exists. Swapping it for a key the module actually serves (e.g. a scripts/cam/project.toml key) would finish the sweep."
       }
     ]
   }
