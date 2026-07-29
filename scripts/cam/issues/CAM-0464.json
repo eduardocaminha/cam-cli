@@ -1,0 +1,10 @@
+{
+  "id": "CAM-464",
+  "title": "Rotulo de oraculo embutido no texto torna criterios inexecutaveis e verdes sem rodar",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-28T23:07:54.013Z",
+  "updatedAt": "2026-07-28T23:07:54.013Z",
+  "description": "MEDIDO no CAM-458 (review round 2, 2026-07-28): 6 dos 25 criterios do PRD trazem o rotulo de classificacao 'named-command ' dentro do proprio texto da diretiva, entao o comando resultante vira literalmente 'named-command bash -c ...', que nao existe. classifyOracleText nao reconhece, o criterio nunca e executado, e a story e marcada passes:true assim mesmo. Efeito: 24 por cento da verificacao de maquina daquele PRD nunca rodou e nada sinalizou. Auditei os 6 a mao depois: todos passam no branch e 4 varrem vermelho contra a main, ou seja o trabalho estava certo e so a verificacao faltou, o que torna a classe silenciosa e nao ruidosa. AGRAVANTE ESTRUTURAL: o sitio de conserto e o proprio prd.json, que o worker e proibido de editar (CLAUDE.md passo 8), entao a fix story gerada pelo review e impossivel por construcao. No CAM-458 ela bloqueou duas vezes com keyHash identico (US-R2-003, BLOCKED_QUALITY) e travou o ciclo. Relacionado a CAM-436 (finding cujo sitio de conserto e o prd.json). Sitio de conserto em aberto: o planner para de emitir o rotulo, ou classifyOracleText passa a tolera-lo, ou o oracle-lint passa a rejeitar a forma na hora do plano em vez de deixar chegar verde no review."
+}
