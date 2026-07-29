@@ -1,0 +1,41 @@
+{
+  "id": "CAM-470",
+  "title": "cam stats cycles: metrica de ciclo deterministica, versionada, emitida no cycle-close, + backfill dos 269 ciclos historicos",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-29T21:36:52.771Z",
+  "updatedAt": "2026-07-29T21:36:52.771Z",
+  "description": "O event log esta gitignored: 7 semanas de historia (2026-06-09 a 2026-07-29), 86.805 eventos, 269 ciclos com cycleId, 16 MB, existindo so no disco de uma maquina, irrecuperavel e nao auditavel por terceiro. E sem comando de contagem o orquestrador estima em vez de contar: medido duas vezes em uma sessao (reportou check:all em 7min quando sao 4min37 / 277s, e 8 rodadas de gate por ciclo quando foram 5). Contagem e tarefa deterministica; nao deve ser feita por LLM. Solucao: subcomando cam stats cycles derivando uma linha por ciclo do log, arquivo derivado VERSIONADO (linha por ciclo, legivel e diffavel), emissao automatica no gancho de cycle-close que ja existe em src/commands/journal.ts:399-436, e backfill unico dos 269 ciclos existentes. Precedente a estender: src/commands/stats.ts (116 linhas, cam stats tokens, deterministico, mesmo log). NAO-OBJETIVO: SQLite. Parsear os 86.805 eventos leva 0,16s medido; o JSONL append-only e seguro para multiplos escritores (sidecar, worker, orquestrador so acrescentam linha) e o projeto tem cicatriz de escrita concorrente (colisao de next_id em issues.local.json). Banco, se entrar, entra como cache derivado reconstruivel, nunca fonte; gatilho: consulta acima de 2s, cruzar projetos, ou UI ao vivo. Motivacao: e a base de credibilidade da publicacao do lancamento (metodo como codigo + dado versionado = terceiro recalcula), numa area onde Factory AI e Warren publicam alegacao sem dado.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Estender src/commands/stats.ts com o subcomando cycles, escrever o arquivo derivado versionado em scripts/cam/, pendurar a emissao no gancho de cycle-close existente, e backfillar os ciclos historicos. Nenhum banco de dados, nenhum subsistema novo, o log cru permanece gitignored.",
+    "acceptanceCriteria": [
+      "O subcomando 'cam stats cycles' existe e sai 0 contra o event log do repo. [oracle: named-command cam stats cycles] swept RED on main 2026-07-29: exit=1, imprime 'Usage: cam stats tokens', e grep -c cycles em src/commands/stats.ts retorna 0. Sanidade must-pass no mesmo binario: 'cam stats tokens' sai 0, provando que a sonda nao e vacua.",
+      "Existe teste cobrindo que a saida tem exatamente uma linha por cycleId distinto, sem duplicar ciclo. [oracle: file-assert grep -q 'one row per distinct cycleId' test/commands/stats-cycles.test.ts] swept RED on main 2026-07-29: test/commands/stats-cycles.test.ts nao existe.",
+      "Existe teste cobrindo que nenhum campo obrigatorio da linha emitida sai null, undefined ou 'unknown'. [oracle: file-assert grep -q 'no field is unknown' test/commands/stats-cycles.test.ts] swept RED on main 2026-07-29: arquivo inexistente. Nota: CAM-444 registra que o event log grava gates como unknown; esta issue nao pode herdar esse defeito nos campos que ela mesma emite.",
+      "Existe teste pinando os valores conferidos a mao do ciclo SESSION-CAM466-2026-07-29: 5 rodadas de worker, 3 rounds de review com vereditos FIXES_PENDING:1, FIXES_PENDING:1 e MAX_ROUNDS_DEBT, prNumber 347, mergeMode ci-gated, total de tokens 25646518. [oracle: file-assert grep -q 'SESSION-CAM466-2026-07-29' test/commands/stats-cycles.test.ts] swept RED on main 2026-07-29: arquivo inexistente.",
+      "O arquivo derivado de metricas de ciclo existe e e rastreado pelo git, com uma linha por ciclo historico. [oracle: named-command git ls-files --error-unmatch scripts/cam/cycle-metrics.jsonl] swept RED on main 2026-07-29: exit=1, arquivo nao rastreado. Sanidade must-pass: o mesmo comando contra scripts/cam/journal.md sai 0, provando que a sonda nao e vacua.",
+      "O event log cru permanece gitignored, para ninguem versionar 16 MB por engano. [oracle: named-command git check-ignore -v .claude/cam-worker-events.jsonl] PIN DE INVARIANCIA, verde por construcao em main 2026-07-29 (exit=0): nao deve nunca ficar vermelho.",
+      "Existe teste cobrindo que o caminho de cycle-close acrescenta exatamente uma linha nova ao arquivo derivado, com o cycleId do ciclo fechado, sem intervencao manual. [oracle: file-assert grep -q 'cycle-close appends exactly one row' test/commands/stats-cycles.test.ts] swept RED on main 2026-07-29: arquivo inexistente."
+    ],
+    "gotchas": [
+      "As fronteiras de ciclo JA existem no log: eventos kind 'cycle-tokens' carregam detail.cycleId, detail.issueNumber, orchTokens, workerTokens, total e orchSessionId. Sao 269 deles. Nao inventar heuristica de intervalo de tempo para separar ciclos: aproximar por gap de 3h foi o que esta sessao fez por nao ter olhado o marcador, e era desnecessario.",
+      "Os dados por ciclo vem de kinds distintos e precisam ser cruzados: worker-start/worker-end (rodadas e tempo de worker), result (stories e filesChanged), review-verdict-handback (detail.verdict + detail.round), ship-phase-result (detail.prNumber + detail.mergeMode), cycle-tokens (tokens e a propria fronteira).",
+      "O gancho de cycle-close ja le e escreve o log: src/commands/journal.ts:399-436 varre as linhas pelo indice do ultimo evento cycle-tokens. Pendurar ali, nao criar caminho paralelo.",
+      "O arquivo derivado precisa ser texto legivel e diffavel porque a finalidade e auditoria por terceiro. Formato binario derrota o proposito da issue.",
+      "Nao versionar o log cru: 16 MB, especifico da maquina, crescimento ilimitado (2.729 eventos em junho, 84.076 em julho)."
+    ],
+    "domainTerms": [
+      "cycle-metrics: linha derivada, uma por ciclo, versionada no repo, computada por codigo a partir do event log, destinada a auditoria externa",
+      "cycleId: identificador de ciclo ja presente em detail.cycleId dos eventos cycle-tokens, no formato SESSION-<ISSUE>-<YYYY-MM-DD>",
+      "derived cache: papel eventual de um banco neste desenho, reconstruivel a partir do JSONL, nunca fonte da verdade"
+    ]
+  },
+  "wsjf": {
+    "value": 5,
+    "timeCriticality": 5,
+    "riskReduction": 5,
+    "jobSize": 5
+  }
+}
