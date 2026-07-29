@@ -1,0 +1,15 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Derive bounded cycle-metric rows from the event log" },
+  "branchName": "cam/issue-470",
+  "timestamp": "2026-07-29T23:30:00Z",
+  "createdFiles": [
+    "src/stats/cycles.ts",
+    "test/commands/stats-cycles.test.ts"
+  ],
+  "modifiedFiles": [],
+  "openQuestions": [],
+  "nextStoryContext": "US-002 (Add cam stats cycles and backfill the historical cycle rows) consumes aggregateCycleMetrics(eventLogJsonl) from src/stats/cycles.ts exactly as US-001 shaped it: aggregateCycleMetrics(content: string | null) -> { header: { schemaVersion, unattributedLeadingEvents }, rows: CycleMetricsRow[] }. CycleMetricsRow fields: cycleId, issueNumber, closedAt, workerRounds, reviewRounds, orchTokens, workerTokens, total, plus OPTIONAL prNumber/mergeMode (absent keys unless the slice's last shipped event set them -- never null/'unknown'). Field names workerRounds and reviewRounds are load-bearing per US-001's own notes (US-002's jq oracles select them by name). Row order is first-seen order of each cycleId's FIRST bounded marker (ascending log position); a cycleId whose two markers merge (AC3/F-07) keeps that first-marker position but sums workerRounds/orchTokens/workerTokens/total and unions reviewRounds' distinct-round sets, with closedAt tracking the LAST merged marker's recordedAt. No row ever carries a 'gates' field (CAM-444 defect not inherited by design). CYCLE_METRICS_SCHEMA_VERSION (currently 1) is exported from src/stats/cycles.ts for the artifact writer to stamp the header. US-002 wires this into `cam stats cycles` (mirror runStatsTokens's injectable cwd/readEventLog/write shape in src/commands/stats.ts) plus a NEW scripts/cam/cycle-metrics.jsonl backfill artifact (git-tracked, one JSON line per header/row, generated via a `--rebuild` flag) -- see the story's own notes for the 4 index.ts CLI-registration points and the CAM-121 branch-clobber gotcha (only this ONE branch commit may ever write cycle-metrics.jsonl; from US-003 onward only the on-main appender does).",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
