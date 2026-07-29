@@ -22,7 +22,7 @@
       "id": "US-R1-001",
       "title": "Review round 1 fix 001: address reviewer finding",
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [scripts/cam/patterns.md:346]: Stale durable-wisdom bullet: patterns.md:346 (\"Greedy leading .* to anchor regex to the LAST occurrence (US-001, CAM-116)\") still prescribes the exact regex this PR deletes as defective (`.*\\[oracle:\\s*(.*?)\\s*\\]\\s*$`) and names behavioral-gate.ts as its confirmation site. patterns.md is the grep-on-demand channel every implementer consults for the subsystem it touches (scripts/cam/CLAUDE.md, Codebase Patterns), so after this PR the file teaches the CAM-466 defect A (end anchor drops any criterion whose sweep evidence is recorded after the closing bracket) as a recommended pattern. Doc-maintenance convention (global CLAUDE.md section 7 plus the Knowledge-Layer Routing table) requires the doc to move in the same commit as the behavior it documents. Fix is mechanical and single-file: mark the bullet `[resolved 2026-07]` or replace it with the depth-scan lesson (locate the last `[oracle:` opener, scan forward tracking bracket depth, close at the balanced `]`, unterminated -> malformed)."
     },
     {
