@@ -1,17 +1,17 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Un-anchor oracle-mark extraction without swallowing a second mark or truncating a bracket-bearing payload"
+    "id": "US-002",
+    "title": "Strip the named-command label so the gate executes the bare command"
   },
   "branchName": "cam/issue-466",
-  "timestamp": "2026-07-29T12:00:00Z",
+  "timestamp": "2026-07-29T12:30:00Z",
   "createdFiles": [],
   "modifiedFiles": [
     "src/supervisor/behavioral-gate.ts",
     "test/supervisor/behavioral-gate.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "parseOracleDirective in src/supervisor/behavioral-gate.ts now locates the LAST literal '[oracle:' opener via lastIndexOf and extracts the payload by tracking bracket depth forward to the balanced ']' (extractLastOracleRaw), replacing the old end-anchored ORACLE_SUFFIX_RE regex. This fixes three bugs at once: (1) trailing prose after the closing bracket no longer nullifies the whole criterion, (2) two marks on one line no longer let the end anchor jump the capture across the first mark's close to the second mark's close plus trailing prose, (3) a literal balanced ']' inside the payload (e.g. a grep character class like [0-9]) survives in full because depth-tracking, not a [^\\]]* non-bracket class, delimits the close. classifyOracleText (file-assert / tmux-pty / reviewer-judgment / named-command dispatch) is untouched. An opener whose bracket never balances still yields null (same as 'no mark present') for now -- the notes flagged that US-003 (malformed-mark handling) may want to separate that failure mode from true absence, but that is out of scope here and was left alone. No PRD/prd.json changes required by this story.",
+  "nextStoryContext": "classifyOracleText in src/supervisor/behavioral-gate.ts now has an explicit named-command label branch placed right before the final fallthrough: `raw.startsWith('named-command ')` strips the label and trims the remainder into .command (empty remainder -> no-oracle, mirroring the file-assert/tmux-pty prefix branches), and a separate `raw === 'named-command'` exact-match branch (mirroring reviewer-judgment's exact-match style) yields no-oracle for the bare label alone since there is no trailing space to anchor a startsWith check once extractLastOracleRaw's .trim() has already removed it. This is deliberately NOT symmetric with the pre-existing file-assert/tmux-pty bare-label behavior (those still fall through to a named-command whose .command equals the label text itself, per the already-green tests at behavioral-gate.test.ts:167-187) -- that asymmetry was intentional per this story's AC2, not a leftover inconsistency to fix; do not 'fix' file-assert/tmux-pty to match without a story asking for it. A lookalike command that merely starts with the label text but isn't the label itself (e.g. 'named-commander --flag') is untouched because the space-anchored startsWith and the exact-match branch both miss it, falling through to the ordinary named-command case as before. runBehavioralGate itself was NOT touched -- it already just reads directive.command verbatim, so fixing the parser was sufficient to fix the send-keys argv end-to-end (AC3 confirmed this transitively). US-003 (malformed vs no-oracle for an unterminated mark) is unrelated to this branch and was left alone. No PRD/prd.json changes required by this story.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
