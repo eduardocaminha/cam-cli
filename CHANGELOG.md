@@ -6,6 +6,25 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.270.0] - 2026-07-29
+
+### Added
+
+- US-R2-003 - Review round 2 fix 003: address reviewer finding
+- US-R2-002 - Review round 2 fix 002: address reviewer finding
+- US-R2-001 - Review round 2 fix 001: address reviewer finding
+- US-R1-003 - Review round 1 fix 003: address reviewer finding
+- US-R1-002 - Review round 1 fix 002: address reviewer finding
+- US-R1-001 - Review round 1 fix 001: address reviewer finding
+- US-003 - Make README and --help state the hardcoded permission mode truthfully
+- US-002 - Delete the unread readPermissionMode module and its stale cross-references
+- US-001 - Stop cam init from writing the unread permission_mode key
+
+### Fixed
+
+- drop patterns.md bullet asserting a disproved test technique
+- strip dead named-command prefix from 6 oracle directives
+
 ## [0.269.0] - 2026-07-28
 
 ### Added
