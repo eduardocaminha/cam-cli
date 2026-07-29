@@ -1,23 +1,29 @@
 // test/supervisor/behavioral-gate.test.ts
 //
-// Unit tests for src/supervisor/behavioral-gate.ts (US-001, CAM-116).
+// Unit tests for src/supervisor/behavioral-gate.ts (US-001, CAM-116; US-002/US-003, CAM-466).
 //
 // Coverage:
-//   1. parseOracleDirective returns null for criteria with no [oracle: ...] suffix.
-//   2. parseOracleDirective classifies the three oracle kinds correctly:
-//        named-command, file-assert, reviewer-judgment.
+//   1. parseOracleDirective returns null for criteria with no [oracle: ...] mark.
+//   2. parseOracleDirective classifies the four oracle kinds correctly:
+//        named-command, file-assert, reviewer-judgment, tmux-pty.
 //   3. parseOracleDirective classifies tmux-pty oracles and exposes artifactRef.
-//   4. Malformed / empty oracle text yields no-oracle, never throws.
+//   4. Empty oracle text or a bare/unrecognized label yields no-oracle, never throws.
 //   5. parseOracleDirectives filters non-oracle criteria and preserves order.
 //   6. AC4 guard: review-report.ts is untouched (import-only from behavioral-gate.ts).
+//   7. Un-anchored last-mark extraction (US-001, CAM-466) and named-command
+//      label stripping (US-002, CAM-466).
+//   8. Unterminated mark yields the distinct malformed kind, never no-oracle
+//      (US-003, CAM-466).
 
 import { describe, expect, test } from 'bun:test';
 import {
 	parseOracleDirective,
 	parseOracleDirectives,
+	runBehavioralGate,
 	type OracleDirective,
 	type CriterionOracle,
 } from '../../src/supervisor/behavioral-gate.ts';
+import type { SpawnFn } from '../../src/tmux/session.ts';
 
 // ---------------------------------------------------------------------------
 // parseOracleDirective - null for absent oracle
@@ -155,10 +161,10 @@ describe('parseOracleDirective: tmux-pty', () => {
 });
 
 // ---------------------------------------------------------------------------
-// parseOracleDirective - malformed / empty oracle text (no-oracle)
+// parseOracleDirective - empty or unrecognized-label oracle text (no-oracle)
 // ---------------------------------------------------------------------------
 
-describe('parseOracleDirective: no-oracle (malformed)', () => {
+describe('parseOracleDirective: no-oracle (empty or bare label)', () => {
 	test('returns no-oracle for empty oracle content [oracle: ]', () => {
 		const result = parseOracleDirective('Some criterion. [oracle: ]');
 		expect(result).toEqual({ kind: 'no-oracle', raw: '' } satisfies OracleDirective);
@@ -197,6 +203,89 @@ describe('parseOracleDirective: no-oracle (malformed)', () => {
 		for (const input of weirdInputs) {
 			expect(() => parseOracleDirective(input)).not.toThrow();
 		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// parseOracleDirective - named-command label stripping (US-002, CAM-466)
+// ---------------------------------------------------------------------------
+
+describe('parseOracleDirective: named-command label stripping (US-002, CAM-466)', () => {
+	test('named-command-label-stripped: strips the label so .command carries only the bare command', () => {
+		const result = parseOracleDirective(
+			'c. [oracle: named-command bun run check:all]',
+		);
+		expect(result).toEqual({
+			kind: 'named-command',
+			command: 'bun run check:all',
+		} satisfies OracleDirective);
+	});
+
+	test('bare-named-command-label: the bare label alone yields no-oracle with no command property', () => {
+		const result = parseOracleDirective('c. [oracle: named-command]');
+		expect(result).toEqual({ kind: 'no-oracle', raw: 'named-command' } satisfies OracleDirective);
+		expect(result && 'command' in result).toBe(false);
+	});
+
+	test('a lookalike command starting with the label text but not the label itself is untouched', () => {
+		const result = parseOracleDirective('c. [oracle: named-commander --flag]');
+		expect(result).toEqual({
+			kind: 'named-command',
+			command: 'named-commander --flag',
+		} satisfies OracleDirective);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// parseOracleDirective - un-anchored extraction (US-001, CAM-466)
+// ---------------------------------------------------------------------------
+
+describe('parseOracleDirective: un-anchored extraction (US-001, CAM-466)', () => {
+	test('post-bracket-prose: an oracle mark followed by trailing prose parses to exactly the payload', () => {
+		const result = parseOracleDirective(
+			'crit. [oracle: true] (swept RED on main 2026-07-29)',
+		);
+		expect(result).toEqual({ kind: 'named-command', command: 'true' } satisfies OracleDirective);
+	});
+
+	test('two-marks-one-line: two oracle marks with trailing prose resolve to the LAST mark only', () => {
+		const result = parseOracleDirective(
+			'c. [oracle: false] then [oracle: true] trailing prose',
+		);
+		expect(result).toEqual({ kind: 'named-command', command: 'true' } satisfies OracleDirective);
+	});
+
+	test('retains a literal balanced bracket inside the payload in full', () => {
+		const result = parseOracleDirective('c. [oracle: grep -qE ^v[0-9]+ f]');
+		expect(result).toEqual({
+			kind: 'named-command',
+			command: 'grep -qE ^v[0-9]+ f',
+		} satisfies OracleDirective);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// parseOracleDirective / runBehavioralGate - malformed (unterminated mark, US-003, CAM-466)
+// ---------------------------------------------------------------------------
+
+describe('parseOracleDirective: malformed (unterminated mark, US-003, CAM-466)', () => {
+	test('malformed-unterminated-mark: an oracle mark that is never closed parses to kind malformed, not null', () => {
+		const result = parseOracleDirective('c. [oracle: bun test');
+		expect(result).toEqual({ kind: 'malformed', raw: 'bun test' } satisfies OracleDirective);
+	});
+
+	test('malformed-unterminated-mark: runBehavioralGate refuses a malformed directive loudly with zero tmux calls', () => {
+		const sent: string[] = [];
+		const spawnFn: SpawnFn = (_cmd, args) => {
+			sent.push(args.join(' '));
+			return { status: 0, stdout: Buffer.from('CAMGATE_0') } as ReturnType<SpawnFn>;
+		};
+
+		const result = runBehavioralGate({ kind: 'malformed', raw: 'bun test' }, { spawnFn });
+
+		expect(result.passed).toBe(false);
+		expect(result.detail).toMatch(/malformed/);
+		expect(sent).toHaveLength(0);
 	});
 });
 

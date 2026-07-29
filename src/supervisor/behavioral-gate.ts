@@ -54,12 +54,32 @@ export interface TmuxPtyOracle {
 }
 
 /**
- * Returned for a malformed or empty oracle text. Never throws -- an
- * unparseable oracle must not crash the gate (AC3).
+ * Returned when a mark was extracted (or no mark is present at all) but there
+ * is no command to run: an empty payload, or a bare kind label with nothing
+ * after it (e.g. `named-command` with no trailing command). Never throws --
+ * an unparseable oracle must not crash the gate (AC3). Distinct from
+ * MalformedOracle, which is reserved for a mark whose bracket never closes --
+ * see the MalformedOracle doc comment for the boundary.
  */
 export interface NoRunnableOracle {
 	kind: 'no-oracle';
 	/** The raw oracle text that could not be classified. */
+	raw: string;
+}
+
+/**
+ * Returned when a criterion carries an oracle mark opener (`[oracle:`) whose
+ * bracket never balances -- e.g. a typo'd directive missing its closing `]`.
+ * Distinct from NoRunnableOracle (US-003, CAM-466): no-oracle means a mark
+ * WAS extracted but its payload is empty or an unrecognized bare label;
+ * malformed means NO payload could be extracted at all because the mark
+ * itself is unterminated. Collapsing the two into the same silent result
+ * makes a typo'd directive indistinguishable from a criterion that legitimately
+ * carries no oracle -- malformed keeps that distinction loud.
+ */
+export interface MalformedOracle {
+	kind: 'malformed';
+	/** The trailing text after the unterminated opener, trimmed. */
 	raw: string;
 }
 
@@ -69,7 +89,8 @@ export type OracleDirective =
 	| FileAssertOracle
 	| ReviewerJudgmentOracle
 	| TmuxPtyOracle
-	| NoRunnableOracle;
+	| NoRunnableOracle
+	| MalformedOracle;
 
 /** One oracle-carrying criterion paired with its parsed directive. */
 export interface CriterionOracle {
@@ -83,15 +104,59 @@ export interface CriterionOracle {
 // Parser implementation
 // ---------------------------------------------------------------------------
 
+/** Literal opener for the oracle mark. */
+const ORACLE_OPENER = '[oracle:';
+
 /**
- * Matches the LAST [oracle: ...] suffix on a criterion string.
- * The leading `.*` is greedy: it consumes as much as possible so that
- * `\[oracle:` anchors to the LAST occurrence in the string (important when
- * the criterion text also mentions [oracle: ...] as an example in prose).
- * Capture group 1: the trimmed oracle text (may be empty for "[oracle: ]").
- * The suffix may be followed only by optional whitespace at end of string.
+ * Locate the LAST oracle mark in a criterion and extract its trimmed inner
+ * text by tracking bracket depth from the opening '[' to its balanced ']'.
+ *
+ * Un-anchored extraction (US-001, CAM-466): the previous end-anchored regex
+ * required the mark to be flush at the end of the string, which (a) silently
+ * dropped any criterion whose oracle mark was followed by trailing prose
+ * (e.g. sweep-evidence notes recorded after the closing bracket), and (b) was
+ * defeated by a second mark on the same line -- the end anchor forced the
+ * lazy capture to run all the way to the LAST ']' in the string even when
+ * that ']' belonged to trailing prose, not a mark, yielding null instead of
+ * the last mark's payload.
+ *
+ * Depth-tracking (rather than a `[^\]]*`-style non-bracket capture class) is
+ * required so a payload containing a literal balanced ']' -- e.g. a grep
+ * character class like `[0-9]` -- is retained in full instead of being
+ * truncated at the first ']' encountered.
+ *
+ * Returns { kind: 'absent' } when no `[oracle:` opener is present at all --
+ * the criterion carries no oracle mark, and parseOracleDirective yields null.
+ *
+ * Returns { kind: 'unterminated' } when the LAST opener's bracket never
+ * balances (US-003, CAM-466): the mark's presence is real but no payload can
+ * be extracted, which parseOracleDirective surfaces as a loud `malformed`
+ * directive rather than silently returning null.
  */
-const ORACLE_SUFFIX_RE = /.*\[oracle:\s*(.*?)\s*\]\s*$/;
+type ExtractedOracleMark =
+	| { kind: 'absent' }
+	| { kind: 'found'; raw: string }
+	| { kind: 'unterminated'; raw: string };
+
+function extractLastOracleRaw(criterion: string): ExtractedOracleMark {
+	const openerStart = criterion.lastIndexOf(ORACLE_OPENER);
+	if (openerStart === -1) return { kind: 'absent' };
+
+	const innerStart = openerStart + ORACLE_OPENER.length;
+	let depth = 0;
+	for (let i = openerStart; i < criterion.length; i++) {
+		const ch = criterion[i];
+		if (ch === '[') depth++;
+		else if (ch === ']') {
+			depth--;
+			if (depth === 0) {
+				return { kind: 'found', raw: criterion.slice(innerStart, i).trim() };
+			}
+		}
+	}
+
+	return { kind: 'unterminated', raw: criterion.slice(innerStart).trim() };
+}
 
 /**
  * Classify the inner oracle text into a typed OracleDirective.
@@ -121,6 +186,27 @@ function classifyOracleText(raw: string): OracleDirective {
 		return { kind: 'tmux-pty', toolName: 'tmux-pty', artifactRef };
 	}
 
+	// Explicit named-command label (US-002, CAM-466): the documented directive
+	// form is "[oracle: named-command <cmd>]", but the label is not itself part
+	// of the shell command -- strip it before the payload reaches the tmux
+	// send-keys boundary, mirroring the file-assert / tmux-pty prefix branches
+	// above (empty remainder after stripping -> no-oracle, never a directive
+	// carrying an empty command).
+	if (raw.startsWith('named-command ')) {
+		const command = raw.slice('named-command '.length).trim();
+		if (command === '') {
+			return { kind: 'no-oracle', raw };
+		}
+		return { kind: 'named-command', command };
+	}
+
+	// Bare label with no command after it (no trailing space either) has no
+	// command to run at all -- graceful no-oracle, not a crash and not
+	// malformed (malformed is reserved for a mark that cannot be closed).
+	if (raw === 'named-command') {
+		return { kind: 'no-oracle', raw };
+	}
+
 	// Everything else is a named-command (exact shell command to run).
 	return { kind: 'named-command', command: raw };
 }
@@ -128,26 +214,31 @@ function classifyOracleText(raw: string): OracleDirective {
 /**
  * Extract and parse the [oracle: ...] directive from one acceptance criterion.
  *
- * Returns null when the criterion carries no [oracle: ...] suffix (criteria
+ * Returns null when the criterion carries no [oracle: ...] mark (criteria
  * without an oracle yield no directive per AC1).
  *
- * Returns a NoRunnableOracle when the suffix is present but the oracle text is
- * malformed or empty (graceful -- never throws, per AC3).
+ * Returns a NoRunnableOracle when a mark is present but the oracle text is
+ * empty or an unrecognized bare label (graceful -- never throws, per AC3).
+ *
+ * Returns a MalformedOracle when the mark opener is present but its bracket
+ * never balances (US-003, CAM-466): distinct from NoRunnableOracle -- see
+ * the MalformedOracle doc comment for the boundary.
  */
 export function parseOracleDirective(criterion: string): OracleDirective | null {
-	const m = ORACLE_SUFFIX_RE.exec(criterion);
-	if (m === null) return null;
+	const extracted = extractLastOracleRaw(criterion);
+	if (extracted.kind === 'absent') return null;
+	if (extracted.kind === 'unterminated') return { kind: 'malformed', raw: extracted.raw };
 
-	const raw = m[1] ?? '';
-	return classifyOracleText(raw);
+	return classifyOracleText(extracted.raw);
 }
 
 /**
  * Parse all [oracle: ...] directives from a PRD story's acceptanceCriteria.
  *
- * Returns one CriterionOracle per criterion that carries an [oracle: ...] suffix.
- * Criteria without a suffix are skipped (yield no entry in the result).
- * Malformed oracle text yields { kind: 'no-oracle' } rather than throwing.
+ * Returns one CriterionOracle per criterion that carries an [oracle: ...] mark.
+ * Criteria without a mark are skipped (yield no entry in the result).
+ * Empty or unrecognized-label oracle text yields { kind: 'no-oracle' } rather
+ * than throwing; an unterminated mark yields { kind: 'malformed' } instead.
  *
  * @param criteria - The acceptanceCriteria array from a PRD story record.
  * @returns Ordered list of criterion index + directive pairs.
@@ -246,6 +337,13 @@ function resolveNonRunnableResult(directive: OracleDirective): BehavioralGateRes
 			detail: `oracle kind no-oracle is not runnable (raw: ${directive.raw})`,
 		};
 	}
+	if (directive.kind === 'malformed') {
+		return {
+			passed: false,
+			capturedPane: '',
+			detail: `oracle kind malformed is not runnable (unterminated oracle mark, raw: ${directive.raw})`,
+		};
+	}
 	if (directive.kind === 'tmux-pty') {
 		return {
 			passed: false,
@@ -301,8 +399,8 @@ function pollForExitCode(
  *   4. Kill the session (always, via finally).
  *   5. Return { passed, capturedPane, detail }.
  *
- * Non-runnable oracles (reviewer-judgment, no-oracle, tmux-pty) return
- * passed:false immediately with an explanatory detail string.
+ * Non-runnable oracles (reviewer-judgment, no-oracle, tmux-pty, malformed)
+ * return passed:false immediately with an explanatory detail string.
  *
  * Isolation guarantee: the socket is injectable and defaults to
  * BEHAVIORAL_GATE_SOCKET, so the gate never spawns on the live 'cam' socket.
