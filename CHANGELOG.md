@@ -6,6 +6,17 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.271.0] - 2026-07-29
+
+### Added
+
+- US-R2-001 - Review round 2 fix 001: address reviewer finding
+- US-R1-001 - Review round 1 fix 001: address reviewer finding
+- US-003 - Give an unterminated oracle mark a loud malformed kind instead of a silent null
+- US-002 - Strip the named-command label so the gate executes the bare command
+- US-001 - Un-anchor oracle-mark extraction without swallowing a second mark or truncating a bracket-bearing payload
+- US-001 - Un-anchor oracle-mark extraction without swallowing a second mark or truncating a bracket-bearing payload
+
 ## [0.270.0] - 2026-07-29
 
 ### Added
