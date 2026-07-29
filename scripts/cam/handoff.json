@@ -1,19 +1,16 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Give an unterminated oracle mark a loud malformed kind instead of a silent null"
+    "id": "US-R1-001",
+    "title": "Review round 1 fix 001: address reviewer finding"
   },
   "branchName": "cam/issue-466",
-  "timestamp": "2026-07-29T13:15:00Z",
+  "timestamp": "2026-07-29T13:45:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/supervisor/behavioral-gate.ts",
-    "test/supervisor/behavioral-gate.test.ts"
+    "scripts/cam/patterns.md"
   ],
-  "openQuestions": [
-    "Deferred gap (by this story's own honest-scope-boundary clause, not a bug): a malformed directive is loud only to a caller that inspects the parsed kind or runs runBehavioralGate on it. lintStoryCriteria (src/supervisor/prd-oracle-lint.ts:661) still does `if (directive.kind !== 'named-command' && directive.kind !== 'file-assert') continue;`, so plan-time lint stays silent on malformed. The reviewer contract's Layer B step still filters to 'kind named-command or file-assert', so malformed is not yet a review-blocking finding. Wiring either surface is out of this story's scope and belongs in a follow-up filed by the orchestrator via /cam-issue on main."
-  ],
-  "nextStoryContext": "behavioral-gate.ts's OracleDirective union now has a 5th member: MalformedOracle { kind: 'malformed'; raw: string }. Boundary vs the pre-existing NoRunnableOracle ('no-oracle'): no-oracle means an oracle mark WAS extracted (bracket balanced) but its payload is empty or an unrecognized bare label (e.g. bare 'file-assert', bare 'named-command'); malformed means the LAST `[oracle:` opener's bracket never balances at all, so no payload can be extracted -- exactly the case that returned null on main before this story. extractLastOracleRaw (private) now returns a 3-way discriminated result `{ kind: 'absent' } | { kind: 'found'; raw } | { kind: 'unterminated'; raw }` instead of `string | null`; 'absent' (no `[oracle:` substring anywhere) is the only case parseOracleDirective still maps to `null` -- a criterion with genuinely no oracle mark is unaffected. resolveNonRunnableResult in the same file now refuses 'malformed' BEFORE the `directive as NamedCommandOracle | FileAssertOracle` cast, mirroring how it already refuses reviewer-judgment/no-oracle/tmux-pty; this ordering is load-bearing (AC2 pins zero tmux calls for a malformed directive). lintStoryCriteria (prd-oracle-lint.ts) and the reviewer's Layer B contract are UNCHANGED and deliberately still skip the malformed kind -- see openQuestions for the deferred follow-up. No PRD/prd.json changes required by this story.",
+  "openQuestions": [],
+  "nextStoryContext": "This story only addressed the review round 1 WARNING at patterns.md:346 (stale bullet still prescribing the deleted end-anchored greedy-.* regex as the correct oracle-mark extraction pattern). The old bullet is now prefixed `[resolved 2026-07]` and left in place for history; a new bullet directly below it documents the depth-scan approach that actually ships in extractLastOracleRaw (behavioral-gate.ts): locate the LAST `[oracle:` opener via lastIndexOf, scan forward tracking bracket depth, close at the balanced `]`, unterminated -> malformed. This is a docs-only fix; behavioral-gate.ts itself was not touched (it already had the correct implementation from US-001/US-002/US-003). Review round 1 also recorded 4 non-blocking SUGGESTIONs (stale doc comments at behavioral-gate.ts:59/236 re: malformed vs no-oracle wording, a documented-but-untested edge case at extractLastOracleRaw re: unmatched-bracket payload truncation, and agent-doc contracts not yet enumerating the 'malformed' kind) -- none were in scope for this fix-story (only the single WARNING was); they remain in prd.json's review.findings for the reviewer/orchestrator to triage.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
