@@ -83,15 +83,49 @@ export interface CriterionOracle {
 // Parser implementation
 // ---------------------------------------------------------------------------
 
+/** Literal opener for the oracle mark. */
+const ORACLE_OPENER = '[oracle:';
+
 /**
- * Matches the LAST [oracle: ...] suffix on a criterion string.
- * The leading `.*` is greedy: it consumes as much as possible so that
- * `\[oracle:` anchors to the LAST occurrence in the string (important when
- * the criterion text also mentions [oracle: ...] as an example in prose).
- * Capture group 1: the trimmed oracle text (may be empty for "[oracle: ]").
- * The suffix may be followed only by optional whitespace at end of string.
+ * Locate the LAST oracle mark in a criterion and extract its trimmed inner
+ * text by tracking bracket depth from the opening '[' to its balanced ']'.
+ *
+ * Un-anchored extraction (US-001, CAM-466): the previous end-anchored regex
+ * required the mark to be flush at the end of the string, which (a) silently
+ * dropped any criterion whose oracle mark was followed by trailing prose
+ * (e.g. sweep-evidence notes recorded after the closing bracket), and (b) was
+ * defeated by a second mark on the same line -- the end anchor forced the
+ * lazy capture to run all the way to the LAST ']' in the string even when
+ * that ']' belonged to trailing prose, not a mark, yielding null instead of
+ * the last mark's payload.
+ *
+ * Depth-tracking (rather than a `[^\]]*`-style non-bracket capture class) is
+ * required so a payload containing a literal balanced ']' -- e.g. a grep
+ * character class like `[0-9]` -- is retained in full instead of being
+ * truncated at the first ']' encountered.
+ *
+ * Returns null when no `[oracle:` opener is present, or when the LAST
+ * opener's bracket never balances (unterminated mark: no valid mark to run).
  */
-const ORACLE_SUFFIX_RE = /.*\[oracle:\s*(.*?)\s*\]\s*$/;
+function extractLastOracleRaw(criterion: string): string | null {
+	const openerStart = criterion.lastIndexOf(ORACLE_OPENER);
+	if (openerStart === -1) return null;
+
+	let depth = 0;
+	for (let i = openerStart; i < criterion.length; i++) {
+		const ch = criterion[i];
+		if (ch === '[') depth++;
+		else if (ch === ']') {
+			depth--;
+			if (depth === 0) {
+				const innerStart = openerStart + ORACLE_OPENER.length;
+				return criterion.slice(innerStart, i).trim();
+			}
+		}
+	}
+
+	return null;
+}
 
 /**
  * Classify the inner oracle text into a typed OracleDirective.
@@ -135,10 +169,9 @@ function classifyOracleText(raw: string): OracleDirective {
  * malformed or empty (graceful -- never throws, per AC3).
  */
 export function parseOracleDirective(criterion: string): OracleDirective | null {
-	const m = ORACLE_SUFFIX_RE.exec(criterion);
-	if (m === null) return null;
+	const raw = extractLastOracleRaw(criterion);
+	if (raw === null) return null;
 
-	const raw = m[1] ?? '';
 	return classifyOracleText(raw);
 }
 

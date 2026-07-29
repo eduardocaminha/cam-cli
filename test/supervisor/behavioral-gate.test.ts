@@ -201,6 +201,34 @@ describe('parseOracleDirective: no-oracle (malformed)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// parseOracleDirective - un-anchored extraction (US-001, CAM-466)
+// ---------------------------------------------------------------------------
+
+describe('parseOracleDirective: un-anchored extraction (US-001, CAM-466)', () => {
+	test('post-bracket-prose: an oracle mark followed by trailing prose parses to exactly the payload', () => {
+		const result = parseOracleDirective(
+			'crit. [oracle: true] (swept RED on main 2026-07-29)',
+		);
+		expect(result).toEqual({ kind: 'named-command', command: 'true' } satisfies OracleDirective);
+	});
+
+	test('two-marks-one-line: two oracle marks with trailing prose resolve to the LAST mark only', () => {
+		const result = parseOracleDirective(
+			'c. [oracle: false] then [oracle: true] trailing prose',
+		);
+		expect(result).toEqual({ kind: 'named-command', command: 'true' } satisfies OracleDirective);
+	});
+
+	test('retains a literal balanced bracket inside the payload in full', () => {
+		const result = parseOracleDirective('c. [oracle: grep -qE ^v[0-9]+ f]');
+		expect(result).toEqual({
+			kind: 'named-command',
+			command: 'grep -qE ^v[0-9]+ f',
+		} satisfies OracleDirective);
+	});
+});
+
+// ---------------------------------------------------------------------------
 // parseOracleDirectives (bulk)
 // ---------------------------------------------------------------------------
 
