@@ -63,13 +63,30 @@ export interface NoRunnableOracle {
 	raw: string;
 }
 
+/**
+ * Returned when a criterion carries an oracle mark opener (`[oracle:`) whose
+ * bracket never balances -- e.g. a typo'd directive missing its closing `]`.
+ * Distinct from NoRunnableOracle (US-003, CAM-466): no-oracle means a mark
+ * WAS extracted but its payload is empty or an unrecognized bare label;
+ * malformed means NO payload could be extracted at all because the mark
+ * itself is unterminated. Collapsing the two into the same silent result
+ * makes a typo'd directive indistinguishable from a criterion that legitimately
+ * carries no oracle -- malformed keeps that distinction loud.
+ */
+export interface MalformedOracle {
+	kind: 'malformed';
+	/** The trailing text after the unterminated opener, trimmed. */
+	raw: string;
+}
+
 /** Discriminated union of all possible oracle directive shapes. */
 export type OracleDirective =
 	| NamedCommandOracle
 	| FileAssertOracle
 	| ReviewerJudgmentOracle
 	| TmuxPtyOracle
-	| NoRunnableOracle;
+	| NoRunnableOracle
+	| MalformedOracle;
 
 /** One oracle-carrying criterion paired with its parsed directive. */
 export interface CriterionOracle {
@@ -104,13 +121,24 @@ const ORACLE_OPENER = '[oracle:';
  * character class like `[0-9]` -- is retained in full instead of being
  * truncated at the first ']' encountered.
  *
- * Returns null when no `[oracle:` opener is present, or when the LAST
- * opener's bracket never balances (unterminated mark: no valid mark to run).
+ * Returns { kind: 'absent' } when no `[oracle:` opener is present at all --
+ * the criterion carries no oracle mark, and parseOracleDirective yields null.
+ *
+ * Returns { kind: 'unterminated' } when the LAST opener's bracket never
+ * balances (US-003, CAM-466): the mark's presence is real but no payload can
+ * be extracted, which parseOracleDirective surfaces as a loud `malformed`
+ * directive rather than silently returning null.
  */
-function extractLastOracleRaw(criterion: string): string | null {
-	const openerStart = criterion.lastIndexOf(ORACLE_OPENER);
-	if (openerStart === -1) return null;
+type ExtractedOracleMark =
+	| { kind: 'absent' }
+	| { kind: 'found'; raw: string }
+	| { kind: 'unterminated'; raw: string };
 
+function extractLastOracleRaw(criterion: string): ExtractedOracleMark {
+	const openerStart = criterion.lastIndexOf(ORACLE_OPENER);
+	if (openerStart === -1) return { kind: 'absent' };
+
+	const innerStart = openerStart + ORACLE_OPENER.length;
 	let depth = 0;
 	for (let i = openerStart; i < criterion.length; i++) {
 		const ch = criterion[i];
@@ -118,13 +146,12 @@ function extractLastOracleRaw(criterion: string): string | null {
 		else if (ch === ']') {
 			depth--;
 			if (depth === 0) {
-				const innerStart = openerStart + ORACLE_OPENER.length;
-				return criterion.slice(innerStart, i).trim();
+				return { kind: 'found', raw: criterion.slice(innerStart, i).trim() };
 			}
 		}
 	}
 
-	return null;
+	return { kind: 'unterminated', raw: criterion.slice(innerStart).trim() };
 }
 
 /**
@@ -188,12 +215,17 @@ function classifyOracleText(raw: string): OracleDirective {
  *
  * Returns a NoRunnableOracle when the suffix is present but the oracle text is
  * malformed or empty (graceful -- never throws, per AC3).
+ *
+ * Returns a MalformedOracle when the mark opener is present but its bracket
+ * never balances (US-003, CAM-466): distinct from NoRunnableOracle -- see
+ * the MalformedOracle doc comment for the boundary.
  */
 export function parseOracleDirective(criterion: string): OracleDirective | null {
-	const raw = extractLastOracleRaw(criterion);
-	if (raw === null) return null;
+	const extracted = extractLastOracleRaw(criterion);
+	if (extracted.kind === 'absent') return null;
+	if (extracted.kind === 'unterminated') return { kind: 'malformed', raw: extracted.raw };
 
-	return classifyOracleText(raw);
+	return classifyOracleText(extracted.raw);
 }
 
 /**
@@ -300,6 +332,13 @@ function resolveNonRunnableResult(directive: OracleDirective): BehavioralGateRes
 			detail: `oracle kind no-oracle is not runnable (raw: ${directive.raw})`,
 		};
 	}
+	if (directive.kind === 'malformed') {
+		return {
+			passed: false,
+			capturedPane: '',
+			detail: `oracle kind malformed is not runnable (unterminated oracle mark, raw: ${directive.raw})`,
+		};
+	}
 	if (directive.kind === 'tmux-pty') {
 		return {
 			passed: false,
@@ -355,8 +394,8 @@ function pollForExitCode(
  *   4. Kill the session (always, via finally).
  *   5. Return { passed, capturedPane, detail }.
  *
- * Non-runnable oracles (reviewer-judgment, no-oracle, tmux-pty) return
- * passed:false immediately with an explanatory detail string.
+ * Non-runnable oracles (reviewer-judgment, no-oracle, tmux-pty, malformed)
+ * return passed:false immediately with an explanatory detail string.
  *
  * Isolation guarantee: the socket is injectable and defaults to
  * BEHAVIORAL_GATE_SOCKET, so the gate never spawns on the live 'cam' socket.

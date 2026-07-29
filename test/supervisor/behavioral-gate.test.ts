@@ -15,9 +15,11 @@ import { describe, expect, test } from 'bun:test';
 import {
 	parseOracleDirective,
 	parseOracleDirectives,
+	runBehavioralGate,
 	type OracleDirective,
 	type CriterionOracle,
 } from '../../src/supervisor/behavioral-gate.ts';
+import type { SpawnFn } from '../../src/tmux/session.ts';
 
 // ---------------------------------------------------------------------------
 // parseOracleDirective - null for absent oracle
@@ -255,6 +257,31 @@ describe('parseOracleDirective: un-anchored extraction (US-001, CAM-466)', () =>
 			kind: 'named-command',
 			command: 'grep -qE ^v[0-9]+ f',
 		} satisfies OracleDirective);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// parseOracleDirective / runBehavioralGate - malformed (unterminated mark, US-003, CAM-466)
+// ---------------------------------------------------------------------------
+
+describe('parseOracleDirective: malformed (unterminated mark, US-003, CAM-466)', () => {
+	test('malformed-unterminated-mark: an oracle mark that is never closed parses to kind malformed, not null', () => {
+		const result = parseOracleDirective('c. [oracle: bun test');
+		expect(result).toEqual({ kind: 'malformed', raw: 'bun test' } satisfies OracleDirective);
+	});
+
+	test('malformed-unterminated-mark: runBehavioralGate refuses a malformed directive loudly with zero tmux calls', () => {
+		const sent: string[] = [];
+		const spawnFn: SpawnFn = (_cmd, args) => {
+			sent.push(args.join(' '));
+			return { status: 0, stdout: Buffer.from('CAMGATE_0') } as ReturnType<SpawnFn>;
+		};
+
+		const result = runBehavioralGate({ kind: 'malformed', raw: 'bun test' }, { spawnFn });
+
+		expect(result.passed).toBe(false);
+		expect(result.detail).toMatch(/malformed/);
+		expect(sent).toHaveLength(0);
 	});
 });
 
