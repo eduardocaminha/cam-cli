@@ -402,3 +402,17 @@ export function aggregateCycleMetrics(eventLogJsonl: string | null): CycleMetric
 
 	return { header: { schemaVersion: CYCLE_METRICS_SCHEMA_VERSION, unattributedLeadingEvents }, rows };
 }
+
+/**
+ * Serialize a CycleMetricsResult into the NDJSON artifact format written to
+ * scripts/cam/cycle-metrics.jsonl (US-002): one JSON line for the header,
+ * followed by one JSON line per row, in `rows` order (first-seen order of
+ * each cycleId's first bounded marker). Pure formatting -- no filesystem
+ * access. Deterministic given a deterministic `result`, which is exactly
+ * what AC10 (re-running `--rebuild` on a clean tree leaves the tracked file
+ * byte-identical) depends on.
+ */
+export function serializeCycleMetrics(result: CycleMetricsResult): string {
+	const lines: unknown[] = [result.header, ...result.rows];
+	return `${lines.map((line) => JSON.stringify(line)).join('\n')}\n`;
+}

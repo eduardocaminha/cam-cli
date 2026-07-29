@@ -11,10 +11,11 @@
 // cwd / readEventLog / write, and always exits 0 -- a missing or empty event
 // log is "no data yet", not an error.
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
 
+import { aggregateCycleMetrics, serializeCycleMetrics, type CycleMetricsRow } from '../stats/cycles.ts';
 import { aggregateTokensPerIssue, type IssueTokenRollup } from '../stats/tokens.ts';
 
 export interface RunStatsTokensOptions {
@@ -112,5 +113,116 @@ export function runStatsTokens(options: RunStatsTokensOptions = {}): number {
 	write(
 		`CAM_STATS_TOKENS=issues=${summary.perIssue.length} mean=${fmt(summary.meanTokensPerIssue)} median=${fmt(summary.medianTokensPerIssue)} unattributed=${fmt(summary.unattributedTokens)}\n`,
 	);
+	return 0;
+}
+
+// ---------------------------------------------------------------------------
+// `cam stats cycles` (CAM-470 US-002)
+// ---------------------------------------------------------------------------
+
+/** Path of the committed cycle-metrics artifact, relative to the project root. */
+const CYCLE_METRICS_ARTIFACT_REL_PATH = ['scripts', 'cam', 'cycle-metrics.jsonl'];
+
+export interface RunStatsCyclesOptions {
+	/** Project root (default: process.cwd()). */
+	cwd?: string;
+	/**
+	 * Injectable: read the event log JSONL content. Default: reads
+	 * join(cwd, '.claude', 'cam-worker-events.jsonl') via readFileSync,
+	 * returning null when absent/unreadable (mirrors runStatsTokens above).
+	 */
+	readEventLog?: () => string | null;
+	/** Output writer (default: process.stdout.write). Injected for tests. */
+	write?: (s: string) => void;
+	/**
+	 * When true, regenerate scripts/cam/cycle-metrics.jsonl from the event
+	 * log (the explicit write path, AC10). Default: false (read-only report,
+	 * mirroring runStatsTokens's always-read-only contract).
+	 */
+	rebuild?: boolean;
+	/**
+	 * Injectable artifact writer, only invoked when `rebuild` is true.
+	 * Default: writeFileSync to join(cwd, ...CYCLE_METRICS_ARTIFACT_REL_PATH).
+	 */
+	writeArtifact?: (content: string) => void;
+}
+
+const CYCLE_COL_WIDTH = 42;
+const CYCLE_ISSUE_WIDTH = 12;
+const CYCLE_NUM_COL_WIDTH = 10;
+
+/** Render the per-cycle worker/review-round/total table (empty rows handled by the caller). */
+function renderCyclesTable(rows: CycleMetricsRow[]): string {
+	const header =
+		'Cycle'.padEnd(CYCLE_COL_WIDTH) +
+		'Issue'.padEnd(CYCLE_ISSUE_WIDTH) +
+		'WkrRounds'.padStart(CYCLE_NUM_COL_WIDTH) +
+		'RevRounds'.padStart(CYCLE_NUM_COL_WIDTH) +
+		'Total'.padStart(CYCLE_NUM_COL_WIDTH);
+	const body = rows.map(
+		(r) =>
+			r.cycleId.padEnd(CYCLE_COL_WIDTH) +
+			r.issueNumber.padEnd(CYCLE_ISSUE_WIDTH) +
+			String(r.workerRounds).padStart(CYCLE_NUM_COL_WIDTH) +
+			String(r.reviewRounds).padStart(CYCLE_NUM_COL_WIDTH) +
+			String(r.total).padStart(CYCLE_NUM_COL_WIDTH),
+	);
+	return [header, ...body].join('\n');
+}
+
+/** Default writeArtifact: real fs write to the committed artifact path. */
+function defaultWriteArtifact(cwd: string): (content: string) => void {
+	return (content: string) => {
+		writeFileSync(join(cwd, ...CYCLE_METRICS_ARTIFACT_REL_PATH), content, 'utf8');
+	};
+}
+
+/**
+ * Implementation of `cam stats cycles`. Always exits 0 -- a missing/empty
+ * event log or a log with no bounded cycle (fewer than two 'cycle-tokens'
+ * markers) is "no data yet", not an error, mirroring runStatsTokens. Prints
+ * the human-readable report plus one machine-parseable summary line
+ * (CAM_STATS_CYCLES=...). When `rebuild` is set, additionally regenerates the
+ * committed artifact (scripts/cam/cycle-metrics.jsonl) from the same
+ * aggregation (AC10).
+ */
+export function runStatsCycles(options: RunStatsCyclesOptions = {}): number {
+	const cwd = options.cwd ?? process.cwd();
+	const readEventLog = options.readEventLog ?? (() => defaultReadEventLog(cwd));
+	const write =
+		options.write ??
+		((s: string) => {
+			process.stdout.write(s);
+		});
+
+	const result = aggregateCycleMetrics(readEventLog());
+
+	const lines: string[] = [];
+	if (result.rows.length === 0) {
+		lines.push(
+			'No cycle data recorded yet (.claude/cam-worker-events.jsonl is missing, empty, or has fewer than two \'cycle-tokens\' markers).',
+		);
+	} else {
+		lines.push(renderCyclesTable(result.rows));
+	}
+
+	lines.push('');
+	// AC6: disclose the unattributed leading span explicitly -- an
+	// always-present line, never folded into any row and never silently
+	// dropped when zero (ADR-0053, mirrors the AC4 unattributed-spend line
+	// in runStatsTokens above).
+	lines.push(
+		`Unattributed leading span: ${result.header.unattributedLeadingEvents} event-log line(s) before the first 'cycle-tokens' marker (no established left bound, so not published as a cycle).`,
+	);
+
+	write(`${lines.join('\n')}\n`);
+	// AC9: machine-parseable line mirroring CAM_STATS_TOKENS= above.
+	write(`CAM_STATS_CYCLES=cycles=${result.rows.length} unattributedLeadingEvents=${result.header.unattributedLeadingEvents}\n`);
+
+	if (options.rebuild) {
+		const writeArtifact = options.writeArtifact ?? defaultWriteArtifact(cwd);
+		writeArtifact(serializeCycleMetrics(result));
+	}
+
 	return 0;
 }

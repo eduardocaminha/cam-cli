@@ -20,7 +20,14 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test, expect, describe } from 'bun:test';
-import { aggregateCycleMetrics, CYCLE_METRICS_SCHEMA_VERSION, type CycleMetricsRow } from '../../src/stats/cycles.ts';
+import {
+	aggregateCycleMetrics,
+	serializeCycleMetrics,
+	CYCLE_METRICS_SCHEMA_VERSION,
+	type CycleMetricsRow,
+} from '../../src/stats/cycles.ts';
+import { runStatsCycles } from '../../src/commands/stats.ts';
+import { parseStatsArgs, dispatchStats } from '../../index.ts';
 
 // ---------------------------------------------------------------------------
 // Fixture builders
@@ -317,4 +324,162 @@ describe('aggregateCycleMetrics: real-log sanity', () => {
 			}
 		},
 	);
+});
+
+// ---------------------------------------------------------------------------
+// serializeCycleMetrics (US-002): NDJSON artifact formatting
+// ---------------------------------------------------------------------------
+
+describe('serializeCycleMetrics', () => {
+	test('one line for the header, then one line per row, in order, each valid JSON', () => {
+		const log = [
+			makeCycleTokensLine('cam/A', 'CAM-A', 1, 1, 2, 't-a'),
+			makeWorkerStartLine('w1'),
+			makeCycleTokensLine('cam/B', 'CAM-B', 2, 2, 4, 't-b'),
+		].join('\n');
+		const result = aggregateCycleMetrics(log);
+
+		const serialized = serializeCycleMetrics(result);
+		const lines = serialized.split('\n').filter((l) => l !== '');
+		expect(lines).toHaveLength(1 + result.rows.length);
+		expect(JSON.parse(lines[0] as string)).toEqual(result.header);
+		expect(JSON.parse(lines[1] as string)).toEqual(result.rows[0]);
+		// Trailing newline: the file ends in '\n', mirroring appendFileSync conventions elsewhere.
+		expect(serialized.endsWith('\n')).toBe(true);
+	});
+
+	test('re-serializing the same result twice produces byte-identical output (AC10 idempotency precondition)', () => {
+		const log = [
+			makeCycleTokensLine('cam/A', 'CAM-A', 1, 1, 2, 't-a'),
+			makeCycleTokensLine('cam/B', 'CAM-B', 2, 2, 4, 't-b'),
+		].join('\n');
+		const result = aggregateCycleMetrics(log);
+		expect(serializeCycleMetrics(result)).toBe(serializeCycleMetrics(aggregateCycleMetrics(log)));
+	});
+});
+
+// ---------------------------------------------------------------------------
+// runStatsCycles (src/commands/stats.ts, US-002): I/O-wired report + sentinel
+// ---------------------------------------------------------------------------
+
+describe('runStatsCycles', () => {
+	test('missing event log (readEventLog -> null): exits 0, reports no data, sentinel with zeros', () => {
+		const written: string[] = [];
+		const code = runStatsCycles({ readEventLog: () => null, write: (s) => written.push(s) });
+		expect(code).toBe(0);
+		const output = written.join('');
+		expect(output).toContain('No cycle data recorded yet');
+		expect(output).toContain('CAM_STATS_CYCLES=cycles=0 unattributedLeadingEvents=0');
+	});
+
+	test('renders a table row per bounded cycle plus the always-present unattributed-leading-span line', () => {
+		const log = [
+			makeWorkerStartLine('pre'),
+			makeCycleTokensLine('cam/A', 'CAM-A', 1, 1, 2, 't-a'),
+			makeWorkerStartLine('w1'),
+			makeReviewVerdictHandbackLine(1),
+			makeCycleTokensLine('cam/B', 'CAM-B', 2, 2, 4, 't-b'),
+		].join('\n');
+		const written: string[] = [];
+		const code = runStatsCycles({ readEventLog: () => log, write: (s) => written.push(s) });
+		expect(code).toBe(0);
+		const output = written.join('');
+
+		expect(output).toContain('cam/B');
+		expect(output).not.toContain('cam/A'); // AC2/AC3: the first marker publishes no row of its own.
+		expect(output).toContain('Unattributed leading span: 1 event-log line(s)');
+
+		const sentinelLines = output.split('\n').filter((l) => l.startsWith('CAM_STATS_CYCLES='));
+		expect(sentinelLines).toHaveLength(1);
+		expect(sentinelLines[0]).toBe('CAM_STATS_CYCLES=cycles=1 unattributedLeadingEvents=1');
+	});
+
+	test('rebuild:true calls the injected writeArtifact with the serialized aggregation; rebuild:false (default) never calls it', () => {
+		const log = [
+			makeCycleTokensLine('cam/A', 'CAM-A', 1, 1, 2, 't-a'),
+			makeCycleTokensLine('cam/B', 'CAM-B', 2, 2, 4, 't-b'),
+		].join('\n');
+
+		let writtenArtifact: string | undefined;
+		const codeRebuild = runStatsCycles({
+			readEventLog: () => log,
+			write: () => {},
+			rebuild: true,
+			writeArtifact: (content) => {
+				writtenArtifact = content;
+			},
+		});
+		expect(codeRebuild).toBe(0);
+		expect(writtenArtifact).toBe(serializeCycleMetrics(aggregateCycleMetrics(log)));
+
+		let calledWithoutRebuild = false;
+		const codeReadOnly = runStatsCycles({
+			readEventLog: () => log,
+			write: () => {},
+			writeArtifact: () => {
+				calledWithoutRebuild = true;
+			},
+		});
+		expect(codeReadOnly).toBe(0);
+		expect(calledWithoutRebuild).toBe(false);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// index.ts wiring: parseStatsArgs / dispatchStats for the 'cycles' subcommand
+// ---------------------------------------------------------------------------
+
+describe('parseStatsArgs: cycles subcommand', () => {
+	test('cycles (no flag) returns { mode: "cycles", help: false, rebuild: false }', () => {
+		expect(parseStatsArgs(['cycles'])).toEqual({ mode: 'cycles', help: false, rebuild: false });
+	});
+
+	test('cycles --rebuild returns rebuild: true', () => {
+		expect(parseStatsArgs(['cycles', '--rebuild'])).toEqual({ mode: 'cycles', help: false, rebuild: true });
+	});
+});
+
+describe('dispatchStats: cycles subcommand', () => {
+	test('cycles mode delegates to statsCyclesFn with the parsed rebuild flag', () => {
+		const parsed = parseStatsArgs(['cycles', '--rebuild']);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		let receivedRebuild: boolean | undefined;
+		const code = dispatchStats(parsed, {
+			statsCyclesFn: (rebuild) => {
+				receivedRebuild = rebuild;
+				return 0;
+			},
+		});
+		expect(code).toBe(0);
+		expect(receivedRebuild).toBe(true);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Committed artifact sanity (US-002): unlike the event log, the artifact
+// itself IS git-tracked, so this check always runs (no skipIf).
+// ---------------------------------------------------------------------------
+
+const ARTIFACT_PATH = join(import.meta.dir, '..', '..', 'scripts', 'cam', 'cycle-metrics.jsonl');
+
+describe('scripts/cam/cycle-metrics.jsonl: committed backfill sanity', () => {
+	test('every line parses as JSON, the first line is the header, no row ever carries a gates field', () => {
+		const content = readFileSync(ARTIFACT_PATH, 'utf8');
+		const lines = content.split('\n').filter((l) => l !== '');
+		expect(lines.length).toBeGreaterThan(1);
+
+		const header = JSON.parse(lines[0] as string) as { schemaVersion?: unknown; unattributedLeadingEvents?: unknown };
+		expect(header.schemaVersion).toBe(CYCLE_METRICS_SCHEMA_VERSION);
+		expect(typeof header.unattributedLeadingEvents).toBe('number');
+
+		for (const line of lines.slice(1)) {
+			expect(line).not.toContain('"gates"');
+			const row = JSON.parse(line) as Record<string, unknown>;
+			expect(typeof row['cycleId']).toBe('string');
+			if ('prNumber' in row) expect(row['prNumber']).not.toBeNull();
+			if ('mergeMode' in row) expect(row['mergeMode']).not.toBe('unknown');
+		}
+	});
 });
