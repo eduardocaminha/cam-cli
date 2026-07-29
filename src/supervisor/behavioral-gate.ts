@@ -155,6 +155,27 @@ function classifyOracleText(raw: string): OracleDirective {
 		return { kind: 'tmux-pty', toolName: 'tmux-pty', artifactRef };
 	}
 
+	// Explicit named-command label (US-002, CAM-466): the documented directive
+	// form is "[oracle: named-command <cmd>]", but the label is not itself part
+	// of the shell command -- strip it before the payload reaches the tmux
+	// send-keys boundary, mirroring the file-assert / tmux-pty prefix branches
+	// above (empty remainder after stripping -> no-oracle, never a directive
+	// carrying an empty command).
+	if (raw.startsWith('named-command ')) {
+		const command = raw.slice('named-command '.length).trim();
+		if (command === '') {
+			return { kind: 'no-oracle', raw };
+		}
+		return { kind: 'named-command', command };
+	}
+
+	// Bare label with no command after it (no trailing space either) has no
+	// command to run at all -- graceful no-oracle, not a crash and not
+	// malformed (malformed is reserved for a mark that cannot be closed).
+	if (raw === 'named-command') {
+		return { kind: 'no-oracle', raw };
+	}
+
 	// Everything else is a named-command (exact shell command to run).
 	return { kind: 'named-command', command: raw };
 }

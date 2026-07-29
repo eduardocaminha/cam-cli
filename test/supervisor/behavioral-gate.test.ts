@@ -201,6 +201,36 @@ describe('parseOracleDirective: no-oracle (malformed)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// parseOracleDirective - named-command label stripping (US-002, CAM-466)
+// ---------------------------------------------------------------------------
+
+describe('parseOracleDirective: named-command label stripping (US-002, CAM-466)', () => {
+	test('named-command-label-stripped: strips the label so .command carries only the bare command', () => {
+		const result = parseOracleDirective(
+			'c. [oracle: named-command bun run check:all]',
+		);
+		expect(result).toEqual({
+			kind: 'named-command',
+			command: 'bun run check:all',
+		} satisfies OracleDirective);
+	});
+
+	test('bare-named-command-label: the bare label alone yields no-oracle with no command property', () => {
+		const result = parseOracleDirective('c. [oracle: named-command]');
+		expect(result).toEqual({ kind: 'no-oracle', raw: 'named-command' } satisfies OracleDirective);
+		expect(result && 'command' in result).toBe(false);
+	});
+
+	test('a lookalike command starting with the label text but not the label itself is untouched', () => {
+		const result = parseOracleDirective('c. [oracle: named-commander --flag]');
+		expect(result).toEqual({
+			kind: 'named-command',
+			command: 'named-commander --flag',
+		} satisfies OracleDirective);
+	});
+});
+
+// ---------------------------------------------------------------------------
 // parseOracleDirective - un-anchored extraction (US-001, CAM-466)
 // ---------------------------------------------------------------------------
 
