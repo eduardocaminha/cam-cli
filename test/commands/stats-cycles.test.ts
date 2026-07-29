@@ -17,9 +17,12 @@
 // CLI-level and on-main-writer tests; this file stays scoped to the pure
 // aggregation module for US-001.
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import type { SpawnSyncReturns } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { test, expect, describe } from 'bun:test';
+import { afterEach, test, expect, describe } from 'bun:test';
 import {
 	aggregateCycleMetrics,
 	serializeCycleMetrics,
@@ -28,6 +31,12 @@ import {
 } from '../../src/stats/cycles.ts';
 import { runStatsCycles } from '../../src/commands/stats.ts';
 import { parseStatsArgs, dispatchStats } from '../../index.ts';
+import {
+	upsertCycleMetricsRowOnMain,
+	readCycleMetricsContentFromMain,
+} from '../../src/commands/cycle-metrics.ts';
+import { realOnMainSpawnFn, type SpawnFn } from '../../src/git/on-main.ts';
+import { gitAvailable } from '../helpers/test-deps.ts';
 
 // ---------------------------------------------------------------------------
 // Fixture builders
@@ -482,4 +491,296 @@ describe('scripts/cam/cycle-metrics.jsonl: committed backfill sanity', () => {
 			if ('mergeMode' in row) expect(row['mergeMode']).not.toBe('unknown');
 		}
 	});
+});
+
+// ---------------------------------------------------------------------------
+// upsertCycleMetricsRowOnMain (src/commands/cycle-metrics.ts, US-003 of
+// CAM-470): real-temp-git-repo integration tests (test-quality convention --
+// hit real I/O at the wire boundary, not a tautological argv-recording mock).
+// ---------------------------------------------------------------------------
+
+const dirsToCleanup: string[] = [];
+
+afterEach(() => {
+	for (const d of dirsToCleanup) {
+		try {
+			rmSync(d, { recursive: true, force: true });
+		} catch {
+			// ignore cleanup errors
+		}
+	}
+	dirsToCleanup.length = 0;
+});
+
+interface RepoHandles {
+	dir: string;
+	run: (args: string[]) => SpawnSyncReturns<string>;
+}
+
+/** A real, remote-less temp git repo checked out on `main` (mirrors test/commands/pattern-records.ts's makeTmpRepo). */
+function makeTmpRepo(): RepoHandles {
+	const dir = mkdtempSync(join(tmpdir(), 'cam-cycle-metrics-'));
+	dirsToCleanup.push(dir);
+
+	const run = (args: string[]) => spawnSync('git', ['-C', dir, ...args], { stdio: 'pipe', encoding: 'utf8' });
+
+	run(['init']);
+	run(['symbolic-ref', 'HEAD', 'refs/heads/main']);
+	run(['config', 'user.email', 'test@example.com']);
+	run(['config', 'user.name', 'Test User']);
+	run(['commit', '--allow-empty', '-m', 'chore: initial harness state']);
+
+	return { dir, run };
+}
+
+describe('upsertCycleMetricsRowOnMain: bootstrap-on-first-append (AC3)', () => {
+	test.skipIf(!gitAvailable)(
+		'store absent on main: first write bootstraps a full derivation, byte-identical to a --rebuild of the same log',
+		() => {
+			const { dir } = makeTmpRepo();
+			const log = [
+				makeCycleTokensLine('cam/A', 'CAM-A', 1, 1, 2, 't-a'),
+				makeWorkerStartLine('w1'),
+				makeCycleTokensLine('cam/B', 'CAM-B', 2, 2, 4, 't-b'),
+			].join('\n');
+
+			const result = upsertCycleMetricsRowOnMain({
+				cwd: dir,
+				eventLogJsonl: log,
+				cycleId: 'cam/B',
+				spawnFn: realOnMainSpawnFn,
+			});
+
+			expect(result.ok).toBe(true);
+			if (!result.ok) return;
+			if (!result.committed) throw new Error('expected a commit to land');
+			expect(result.bootstrapped).toBe(true);
+
+			const stored = readCycleMetricsContentFromMain(dir, realOnMainSpawnFn);
+			expect(stored).toBe(serializeCycleMetrics(aggregateCycleMetrics(log)));
+		},
+	);
+});
+
+describe('upsertCycleMetricsRowOnMain: in-place upsert (AC4)', () => {
+	test.skipIf(!gitAvailable)(
+		'replaces the matching cycleId line in its original slot; blank lines, malformed lines, and other rows survive byte-for-byte',
+		() => {
+			const { dir, run } = makeTmpRepo();
+
+			const headerLine = JSON.stringify({ schemaVersion: CYCLE_METRICS_SCHEMA_VERSION, unattributedLeadingEvents: 0 });
+			const oldRowX = JSON.stringify({
+				cycleId: 'cam/X',
+				issueNumber: 'CAM-X',
+				closedAt: 't-old',
+				workerRounds: 1,
+				reviewRounds: 0,
+				orchTokens: 1,
+				workerTokens: 1,
+				total: 2,
+			});
+			const rowY = JSON.stringify({
+				cycleId: 'cam/Y',
+				issueNumber: 'CAM-Y',
+				closedAt: 't-y',
+				workerRounds: 0,
+				reviewRounds: 0,
+				orchTokens: 5,
+				workerTokens: 5,
+				total: 10,
+			});
+			const malformedLine = '{not valid json';
+			// Deliberately includes a blank line and an unparseable line, mirroring
+			// appendOutcomeToLine's fixture shape (test/commands/pattern-records.test.ts).
+			const seedContent = `${headerLine}\n\n${malformedLine}\n${oldRowX}\n${rowY}\n`;
+
+			mkdirSync(join(dir, 'scripts', 'cam'), { recursive: true });
+			writeFileSync(join(dir, 'scripts', 'cam', 'cycle-metrics.jsonl'), seedContent);
+			run(['add', 'scripts/cam/cycle-metrics.jsonl']);
+			run(['commit', '-m', 'test: seed cycle-metrics store']);
+
+			const prev = makeCycleTokensLine('cam/prev', 'CAM-PREV', 0, 0, 0, 't-prev');
+			const marker = makeCycleTokensLine('cam/X', 'CAM-X', 9, 9, 18, 't-new');
+			const log = [prev, marker].join('\n');
+
+			const result = upsertCycleMetricsRowOnMain({
+				cwd: dir,
+				eventLogJsonl: log,
+				cycleId: 'cam/X',
+				spawnFn: realOnMainSpawnFn,
+			});
+
+			expect(result.ok).toBe(true);
+			if (!result.ok) return;
+			if (!result.committed) throw new Error('expected a commit to land');
+			expect(result.bootstrapped).toBe(false);
+
+			const newRowX = JSON.stringify(aggregateCycleMetrics(log).rows.find((r) => r.cycleId === 'cam/X'));
+			const expected = `${headerLine}\n\n${malformedLine}\n${newRowX}\n${rowY}\n`;
+			expect(readCycleMetricsContentFromMain(dir, realOnMainSpawnFn)).toBe(expected);
+		},
+	);
+});
+
+describe("upsertCycleMetricsRowOnMain: 'the incremental cycle-close upsert produces a file byte-identical to a full rebuild'", () => {
+	test.skipIf(!gitAvailable)(
+		'applying the incremental writer once per marker over a fixture log yields exactly the bytes a single full derivation of that same log produces',
+		() => {
+			const { dir } = makeTmpRepo();
+
+			const m0 = makeCycleTokensLine('cam/only-first', 'CAM-0', 0, 0, 0, 't0'); // no established left bound
+			const m1 = makeCycleTokensLine('cam/A', 'CAM-A', 1, 1, 2, 't1');
+			const m2 = makeCycleTokensLine('cam/B', 'CAM-B', 2, 2, 4, 't2');
+			const m3 = makeCycleTokensLine('cam/A', 'CAM-A', 3, 3, 6, 't3'); // merges back into cam/A (AC3/F-07)
+
+			const logAfterM0 = [m0].join('\n');
+			const logAfterM1 = [m0, m1].join('\n');
+			const logAfterM2 = [m0, m1, m2].join('\n');
+			const fullLog = [m0, m1, m2, m3].join('\n');
+
+			// One incremental call per marker, each seeing only the log available
+			// AT THAT MOMENT (the event log only ever grows), exactly mirroring how
+			// the US-004 caller will drive this at real cycle-close time.
+			const r0 = upsertCycleMetricsRowOnMain({
+				cwd: dir,
+				eventLogJsonl: logAfterM0,
+				cycleId: 'cam/only-first',
+				spawnFn: realOnMainSpawnFn,
+			});
+			expect(r0.ok).toBe(true);
+			if (r0.ok) expect(r0.committed).toBe(false); // no established row yet -- nothing to commit
+
+			const r1 = upsertCycleMetricsRowOnMain({
+				cwd: dir,
+				eventLogJsonl: logAfterM1,
+				cycleId: 'cam/A',
+				spawnFn: realOnMainSpawnFn,
+			});
+			expect(r1.ok).toBe(true);
+			if (r1.ok && r1.committed) expect(r1.bootstrapped).toBe(true);
+
+			const r2 = upsertCycleMetricsRowOnMain({
+				cwd: dir,
+				eventLogJsonl: logAfterM2,
+				cycleId: 'cam/B',
+				spawnFn: realOnMainSpawnFn,
+			});
+			expect(r2.ok).toBe(true);
+			if (r2.ok && r2.committed) expect(r2.bootstrapped).toBe(false);
+
+			const r3 = upsertCycleMetricsRowOnMain({
+				cwd: dir,
+				eventLogJsonl: fullLog,
+				cycleId: 'cam/A',
+				spawnFn: realOnMainSpawnFn,
+			});
+			expect(r3.ok).toBe(true);
+
+			const stored = readCycleMetricsContentFromMain(dir, realOnMainSpawnFn);
+			expect(stored).toBe(serializeCycleMetrics(aggregateCycleMetrics(fullLog)));
+		},
+	);
+});
+
+describe('upsertCycleMetricsRowOnMain: no established left bound (AC6)', () => {
+	test.skipIf(!gitAvailable)(
+		'a log whose only marker is the first one yields a header with zero rows, not a fabricated head row',
+		() => {
+			const { dir } = makeTmpRepo();
+			const log = [makeWorkerStartLine('w1'), makeCycleTokensLine('cam/only', 'CAM-1', 10, 5, 15, 't1')].join('\n');
+
+			const result = upsertCycleMetricsRowOnMain({
+				cwd: dir,
+				eventLogJsonl: log,
+				cycleId: 'cam/only',
+				spawnFn: realOnMainSpawnFn,
+			});
+
+			expect(result.ok).toBe(true);
+			if (!result.ok) return;
+			expect(result.committed).toBe(false);
+			if (result.committed) return;
+			expect(result.reason).toBe('no-established-row');
+
+			// No commit ever fired: the store is still absent from main.
+			expect(readCycleMetricsContentFromMain(dir, realOnMainSpawnFn)).toBe('');
+		},
+	);
+});
+
+describe('upsertCycleMetricsRowOnMain: structured failure modes, never a throw (AC7)', () => {
+	const log = [
+		makeCycleTokensLine('cam/prev', 'CAM-PREV', 0, 0, 0, 't-prev'),
+		makeCycleTokensLine('cam/target', 'CAM-TARGET', 1, 1, 2, 't-target'),
+	].join('\n');
+
+	test.skipIf(!gitAvailable)('detached HEAD: returns { ok: false, reason: "detached-head" }, no throw', () => {
+		const { dir, run } = makeTmpRepo();
+		const mainSha = run(['rev-parse', 'main']).stdout.trim();
+		run(['checkout', '--detach', mainSha]);
+
+		let result: ReturnType<typeof upsertCycleMetricsRowOnMain> | undefined;
+		expect(() => {
+			result = upsertCycleMetricsRowOnMain({ cwd: dir, eventLogJsonl: log, cycleId: 'cam/target', spawnFn: realOnMainSpawnFn });
+		}).not.toThrow();
+
+		expect(result?.ok).toBe(false);
+		if (!result || result.ok) return;
+		expect(result.reason).toBe('detached-head');
+	});
+
+	test.skipIf(!gitAvailable)('missing local main branch: returns { ok: false, reason: "missing-main" }, no throw', () => {
+		const { dir, run } = makeTmpRepo();
+		run(['branch', '-m', 'main', 'renamed-away']);
+
+		let result: ReturnType<typeof upsertCycleMetricsRowOnMain> | undefined;
+		expect(() => {
+			result = upsertCycleMetricsRowOnMain({ cwd: dir, eventLogJsonl: log, cycleId: 'cam/target', spawnFn: realOnMainSpawnFn });
+		}).not.toThrow();
+
+		expect(result?.ok).toBe(false);
+		if (!result || result.ok) return;
+		expect(result.reason).toBe('missing-main');
+	});
+
+	test.skipIf(!gitAvailable)(
+		'commitTreeToMain CAS-exhaustion: returns { ok: false, reason: "commit-failed", error }, no throw',
+		() => {
+			const { dir } = makeTmpRepo();
+
+			// Wrap the real spawnFn so every `update-ref` call is rejected -- forces
+			// commitTreeToMain to exhaust CAS_MAX_ATTEMPTS and throw internally; the
+			// writer must catch that throw and surface it as a structured result.
+			const casAlwaysFailsSpawnFn: SpawnFn = (cmd, args, opts) => {
+				if (cmd === 'git' && args.includes('update-ref')) {
+					return {
+						stdout: '',
+						stderr: 'simulated CAS rejection',
+						status: 1,
+						pid: 1,
+						output: [],
+						signal: null,
+					} as SpawnSyncReturns<string>;
+				}
+				return realOnMainSpawnFn(cmd, args, opts);
+			};
+
+			let result: ReturnType<typeof upsertCycleMetricsRowOnMain> | undefined;
+			expect(() => {
+				result = upsertCycleMetricsRowOnMain({
+					cwd: dir,
+					eventLogJsonl: log,
+					cycleId: 'cam/target',
+					spawnFn: casAlwaysFailsSpawnFn,
+				});
+			}).not.toThrow();
+
+			expect(result?.ok).toBe(false);
+			if (!result || result.ok) return;
+			expect(result.reason).toBe('commit-failed');
+			if (result.reason === 'commit-failed') {
+				expect(result.error.length).toBeGreaterThan(0);
+			}
+		},
+	);
 });
