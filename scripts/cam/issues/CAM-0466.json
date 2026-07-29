@@ -1,11 +1,11 @@
 {
   "id": "CAM-466",
   "title": "Camada de oraculo falha em silencio: regex ancorado no fim descarta a diretiva e o rotulo named-command vira comando inexistente",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-29T06:53:15.285Z",
-  "updatedAt": "2026-07-29T06:53:15.285Z",
+  "updatedAt": "2026-07-29T10:12:40.790Z",
   "description": "MEDIDO em 2026-07-29 contra os arquivos reais. DEFEITO A (silencioso, o grave): ORACLE_SUFFIX_RE em src/supervisor/behavioral-gate.ts:94 e /.*\\[oracle:\\s*(.*?)\\s*\\]\\s*$/, ancorado no fim, entao o colchete de fechamento precisa ser seguido so de espaco ate o fim da string. Qualquer criterio que registre a evidencia da varredura vermelha DEPOIS do colchete nao casa, parseOracleDirective devolve null em behavioral-gate.ts:139, e o criterio passa a ser tratado como se NAO TIVESSE ORACULO NENHUM. A story e marcada passes:true com zero verificacao de maquina e nada e emitido. Medido com a regex real sobre os seis criterios do CAM-460: AC0=false AC1=false AC2=false AC3=false AC4=false AC5=true. Isso pune exatamente a forma disciplinada: scripts/cam/patterns.md EXIGE que todo oraculo seja varrido vermelho contra a main, e registrar esse resultado depois do colchete e o que quebra. DEFEITO B: classifyOracleText em behavioral-gate.ts:99-126 remove so os prefixos 'file-assert ' e 'tmux-pty ' (mais o casamento exato 'reviewer-judgment' e a string vazia). Uma diretiva cujo primeiro token e 'named-command' cai no fallthrough da linha 125 e devolve command com o ROTULO AINDA COLADO. Esse .command e lido em behavioral-gate.ts:324 e interpolado no tmux send-keys em behavioral-gate.ts:344, entao o shell recebe literalmente 'named-command bun run check:all; echo CAMGATE_$?'. Medido: 'command -v named-command' sai 1. Resultado: exit 127. DEFEITO C (a razao de A ser invisivel): um criterio que contem a marca de oraculo mas falha ao parsear e indistinguivel de um criterio que legitimamente nao tem oraculo. Os dois viram no-oracle. Malformado precisa ser alto; ausente de verdade continua silencioso. RAIO DE ALCANCE, medido, sem inflar: no backlog VIVO (43 idea + 4 specified abertos) so UM issue carrega oraculo, o CAM-460, com 5 diretivas, das quais 4 tem primeiro token named-command e 5 dos 6 criterios sao descartados pelo defeito A. Liquido: 0 dos 6 criterios do CAM-460 sao verificaveis por maquina. O custo recorrente e por PRD, nao por issue de backlog: o round 2 de review do CAM-458 mediu 6 de 25 criterios (24 por cento) mortos pelo defeito B. Subsume o CAM-464, que descrevia so o defeito B e estava em stage:idea sem spec.",
   "specSource": "derived",
   "derivedFrom": [
