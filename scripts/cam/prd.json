@@ -19,9 +19,16 @@
   ],
   "userStories": [
     {
+      "id": "US-R2-001",
+      "title": "Review round 2 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": false,
+      "notes": "WARNING [src/supervisor/behavioral-gate.ts:57]: Three docstrings inside the very file this PR rewrites now state the opposite of the contract it ships, and one of them is a false postcondition on an exported function. (a) :56-59 NoRunnableOracle: \"Returned for a malformed or empty oracle text\" now names the sibling kind and asserts the exact mapping that :66-75 MalformedOracle was added to deny (\"no-oracle means a mark WAS extracted ...; malformed means NO payload could be extracted\"), so the union's two doc comments contradict each other on the single boundary US-003 exists to establish. (b) :236 parseOracleDirectives: \"Malformed oracle text yields { kind: 'no-oracle' } rather than throwing\" is now factually false for an unterminated mark, which yields kind 'malformed'. (c) :213-217 parseOracleDirective: still says \"Returns null when the criterion carries no [oracle: ...] suffix\" and \"when the suffix is present\", but US-001's whole point is that the mark is no longer required to be a suffix; the word survives the un-anchoring it describes. Same class in the test file: the header at test/supervisor/behavioral-gate.test.ts:3-12 still reads \"(US-001, CAM-116)\" with a 6-item coverage list predating the three new CAM-466 describe blocks, and the block title at :163 \"no-oracle (malformed)\" now collides with the real 'malformed' kind. This is the identical defect class the branch already accepted a fix-story for in round 1 (US-R1-001, stale patterns.md:346 teaching the deleted regex), applied here to the closer, more authoritative surface: the exported API's own docstrings, which are the contract every LLM implementer greps. Project convention requires the doc to move in the same commit as the behavior (global CLAUDE.md section 7; the repo treats lying agent-read surfaces as shippable defects, cf. CAM-455). Fix is mechanical and confined to 2 files, comments only, no behavior change: restate NoRunnableOracle as 'empty payload or bare kind label', correct the parseOracleDirectives postcondition to name the malformed kind, replace 'suffix' with 'mark' in parseOracleDirective's doc, and refresh the test header/describe title."
+    },
+    {
       "id": "US-R1-001",
       "title": "Review round 1 fix 001: address reviewer finding",
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "notes": "WARNING [scripts/cam/patterns.md:346]: Stale durable-wisdom bullet: patterns.md:346 (\"Greedy leading .* to anchor regex to the LAST occurrence (US-001, CAM-116)\") still prescribes the exact regex this PR deletes as defective (`.*\\[oracle:\\s*(.*?)\\s*\\]\\s*$`) and names behavioral-gate.ts as its confirmation site. patterns.md is the grep-on-demand channel every implementer consults for the subsystem it touches (scripts/cam/CLAUDE.md, Codebase Patterns), so after this PR the file teaches the CAM-466 defect A (end anchor drops any criterion whose sweep evidence is recorded after the closing bracket) as a recommended pattern. Doc-maintenance convention (global CLAUDE.md section 7 plus the Knowledge-Layer Routing table) requires the doc to move in the same commit as the behavior it documents. Fix is mechanical and single-file: mark the bullet `[resolved 2026-07]` or replace it with the depth-scan lesson (locate the last `[oracle:` opener, scan forward tracking bracket depth, close at the balanced `]`, unterminated -> malformed)."
     },
@@ -37,7 +44,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 2,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/behavioral-gate.ts (ORACLE_SUFFIX_RE at :94 and parseOracleDirective at :137, plus the doc comment at :86-93 that describes the end-anchor contract), test/supervisor/behavioral-gate.test.ts.\n\nMEASURED BASELINE, do not repeat the previous plan round's false claim: main DOES support a literal ']' inside the payload. Because the end anchor forces the lazy capture to run to the FINAL ']', `parseOracleDirective(\"c. \" + OB + \"oracle: grep -qE ^v\" + OB + \"0-9\" + CB + \"+ f\" + CB)` returns the whole payload \"grep -qE ^v[0-9]+ f\" on unmodified main (measured 2026-07-29, exit 0). Real oracle shapes in this repo depend on that: patterns.md:946 records a live `bun -e '...cs=[\"test $X -eq 41\"]...'` oracle, and any `bun -e` payload indexing `m[1]` carries brackets too. Therefore a `[^\\]]*`-style capture class is FORBIDDEN here: it would truncate that payload to \"grep -qE ^v[0-9\" and hand the gate a half shell command whose exit code is meaningless, i.e. it would re-introduce the exact silent-oracle class CAM-466 exists to kill. AC3 pins this explicitly.\n\nRecommended approach (satisfies all three constraints at once, unlike any single regex): locate the LAST occurrence of the literal mark opener, then scan forward tracking bracket depth and close at the balanced ']'. Post-bracket prose is then tolerated for free (AC1), a second mark cannot be crossed (AC2), and a balanced bracket inside the payload survives (AC3). An opener that never balances yields no close: that is precisely the condition US-003 turns into the malformed kind, so keep the extraction step's failure signal separable from 'no mark present' rather than collapsing both to null.\n\nIf you do iterate matches with a /g regex instead, note the MDN row in officialDocsConsulted: a hoisted module-level /g regex is stateful across calls (lastIndex persists, and is only reset on a failed match), so construct it per call or reset lastIndex; the current ORACLE_SUFFIX_RE is safe to hoist only because it is non-global.\n\nPatterns to grep before coding: `grep -n 'oracle' scripts/cam/patterns.md` around the falsifiability rule (patterns.md:928) and the self-nullifying-oracle bullets (patterns.md:772/:774) -- every new assertion you write must itself be swept red against unmodified main before you trust it, and never combine grep -q with -l/-L.\n\nGotcha specific to this PRD: its own acceptance criteria were authored to be parseable by the BROKEN parser they fix (no literal bracket in any payload, no prose after any closing bracket, brackets built via String.fromCharCode inside the test payload). Preserve that property in any criterion you touch, and do NOT write the `named-command ` label into a criterion: the label strip does not exist until US-002."
@@ -54,7 +61,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 3,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/behavioral-gate.ts (classifyOracleText at :99-126), test/supervisor/behavioral-gate.test.ts.\n\nThe fix is one more prefix branch alongside the existing file-assert and tmux-pty branches, with the identical empty-remainder handling (empty after stripping -> no-oracle, never a directive carrying an empty command). Do not special-case anything else: a payload like `named-commander --flag` must keep working as an ordinary bare command, so strip the label only when it is followed by a separator, the same shape the existing branches use.\n\nWhy this defect is expensive, measured and recorded in the issue: round 2 of the CAM-458 review found 6 of 25 criteria (24 percent) dead from it, and 4 of CAM-460's 5 directives use the label form. The documentation shows the label form (templates/commands/cam-issue.md:132 and the implementer/reviewer contracts) while templates/agents/subagent-planner.md:158 and the parser expect the bare form; the issue's decision is to fix the PARSER so already-filed specs come back to life. Aligning the docs is explicitly secondary and optional per the issue's gotchas, and is NOT in this PRD.\n\nAC3 drives the real defect endpoint (the send-keys interpolation at behavioral-gate.ts:344) through an injected spawnFn, so it never touches a real tmux server: the fake returns status 0 plus a CAMGATE_0 pane so pollForExitCode returns on its first iteration (~300ms of Bun.sleepSync). Keep injecting spawnFn in any test you add for this: patterns.md's fakes-lie lesson still applies, which is why AC1/AC2 pin the parse result directly rather than trusting only the fake."
@@ -72,52 +79,52 @@
         "Tests pass (bun test). [oracle: bun test]",
         "The full quality spine passes. [oracle: bun run check:all]"
       ],
-      "priority": 4,
+      "priority": 5,
       "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/behavioral-gate.ts (the OracleDirective union around :60-72, parseOracleDirective at :137, resolveNonRunnableResult at :253), test/supervisor/behavioral-gate.test.ts.\n\nKind boundary, so US-002 and US-003 cannot disagree: no-oracle keeps its current meaning (a mark WAS extracted but its payload is empty or is a bare kind label, e.g. the bare file-assert case at :108-111 and the bare named-command case US-002 adds). malformed is the NEW and strictly different condition: a mark opener is present but no balanced close exists, so no payload can be extracted at all -- exactly the case that returns null on main today. Do not merge the two and do not repurpose no-oracle.\n\nHandle malformed in resolveNonRunnableResult BEFORE the `directive as NamedCommandOracle | FileAssertOracle` cast at :324, otherwise the new kind reaches the cast with an undefined .command and the gate spawns tmux for the string \"undefined\" and reports passed:true (measured on main by AC2's oracle: 4 tmux calls, passed:true). AC2 asserts zero tmux calls precisely to pin that ordering.\n\nMEASURED LIVE-SURFACE FACTS behind this story's honest scope boundary, so the reviewer does not have to re-derive them: (a) `grep -rn runBehavioralGate src/` finds it only inside behavioral-gate.ts -- it has no caller inside src/; its live callers are the agent contracts, which invoke it via Bash (.claude/agents/subagent-implementer.md:89 at Layer A, .claude/agents/subagent-reviewer.md:50 at Layer B). (b) The reviewer contract's step 2 filters to \"kind named-command or file-assert\", so a malformed directive is still not re-run and still not a review-blocking finding after this story. (c) prd-oracle-lint.ts:661 does `continue` on any kind that is not named-command/file-assert, so the plan-time lint stays silent on malformed too.\n\nThe deferral is grounded in the issue's own scope clause, quoted verbatim: \"NAO expandir para oracle-lint em tempo de plano, NAO mexer no tratamento de prd.json, NAO reescrever os criterios de nenhum issue ja filado.\" and its gotcha \"Alinhar a documentacao e secundario e opcional.\" Closing gap (b) means editing .claude/agents/** and templates/agents/** plus a vendor re-embed, and closing gap (c) means editing the plan-time lint the issue explicitly fences off; both belong in a follow-up issue that the ORCHESTRATOR files on main via /cam-issue. Do NOT create an issue file on-branch from this story (add/add collision at reconcile, the CAM-162 defect); record the gap in handoff.openQuestions instead.\n\nThis story carries the spine gate (bun run check:all) because it lands last: expect the sibling ratchets (file-size, coverage, knip, jscpd) to fire here for the whole PRD's growth in behavioral-gate.ts, and resolve each per the implementer rubric (raise only the ceiling of the file this PRD actually grew, with a dated CAM-466 note prepended to the top-level _ref, staged in the same commit)."
     }
   ],
   "review": {
-    "roundsCompleted": 1,
+    "roundsCompleted": 2,
     "maxRounds": 3,
     "lastVerdict": "FIXES_PENDING:1",
     "findings": [
       {
         "severity": "WARNING",
-        "file": "scripts/cam/patterns.md",
-        "line": 346,
-        "text": "Stale durable-wisdom bullet: patterns.md:346 (\"Greedy leading .* to anchor regex to the LAST occurrence (US-001, CAM-116)\") still prescribes the exact regex this PR deletes as defective (`.*\\[oracle:\\s*(.*?)\\s*\\]\\s*$`) and names behavioral-gate.ts as its confirmation site. patterns.md is the grep-on-demand channel every implementer consults for the subsystem it touches (scripts/cam/CLAUDE.md, Codebase Patterns), so after this PR the file teaches the CAM-466 defect A (end anchor drops any criterion whose sweep evidence is recorded after the closing bracket) as a recommended pattern. Doc-maintenance convention (global CLAUDE.md section 7 plus the Knowledge-Layer Routing table) requires the doc to move in the same commit as the behavior it documents. Fix is mechanical and single-file: mark the bullet `[resolved 2026-07]` or replace it with the depth-scan lesson (locate the last `[oracle:` opener, scan forward tracking bracket depth, close at the balanced `]`, unterminated -> malformed)."
+        "file": "src/supervisor/behavioral-gate.ts",
+        "line": 57,
+        "text": "Three docstrings inside the very file this PR rewrites now state the opposite of the contract it ships, and one of them is a false postcondition on an exported function. (a) :56-59 NoRunnableOracle: \"Returned for a malformed or empty oracle text\" now names the sibling kind and asserts the exact mapping that :66-75 MalformedOracle was added to deny (\"no-oracle means a mark WAS extracted ...; malformed means NO payload could be extracted\"), so the union's two doc comments contradict each other on the single boundary US-003 exists to establish. (b) :236 parseOracleDirectives: \"Malformed oracle text yields { kind: 'no-oracle' } rather than throwing\" is now factually false for an unterminated mark, which yields kind 'malformed'. (c) :213-217 parseOracleDirective: still says \"Returns null when the criterion carries no [oracle: ...] suffix\" and \"when the suffix is present\", but US-001's whole point is that the mark is no longer required to be a suffix; the word survives the un-anchoring it describes. Same class in the test file: the header at test/supervisor/behavioral-gate.test.ts:3-12 still reads \"(US-001, CAM-116)\" with a 6-item coverage list predating the three new CAM-466 describe blocks, and the block title at :163 \"no-oracle (malformed)\" now collides with the real 'malformed' kind. This is the identical defect class the branch already accepted a fix-story for in round 1 (US-R1-001, stale patterns.md:346 teaching the deleted regex), applied here to the closer, more authoritative surface: the exported API's own docstrings, which are the contract every LLM implementer greps. Project convention requires the doc to move in the same commit as the behavior (global CLAUDE.md section 7; the repo treats lying agent-read surfaces as shippable defects, cf. CAM-455). Fix is mechanical and confined to 2 files, comments only, no behavior change: restate NoRunnableOracle as 'empty payload or bare kind label', correct the parseOracleDirectives postcondition to name the malformed kind, replace 'suffix' with 'mark' in parseOracleDirective's doc, and refresh the test header/describe title."
       },
       {
         "severity": "SUGGESTION",
         "file": "src/supervisor/behavioral-gate.ts",
-        "line": 236,
-        "text": "parseOracleDirectives' doc comment still says \"Malformed oracle text yields { kind: 'no-oracle' } rather than throwing\", which US-003 made only half true: an unterminated mark now yields kind 'malformed'. Same for the NoRunnableOracle doc at :59 (\"Returned for a malformed or empty oracle text\"), whose wording now collides with the new kind name."
+        "line": 417,
+        "text": "The invariant that keeps the new kind away from the cast is not compiler-enforced. resolveNonRunnableResult returns BehavioralGateResult | null, which cannot narrow `directive` for TypeScript, so runBehavioralGate still reaches `directive as NamedCommandOracle | FileAssertOracle` on trust. That is precisely the shape of the bug US-003 AC2 measured on main (an unhandled kind reached the cast with an undefined .command, issued 4 tmux calls and returned passed:true). US-003 handles the one new kind correctly, but the next kind added to the union will compile silently into the same false-PASS. A switch over directive.kind in runBehavioralGate with a `const _exhaustive: never = directive` default would make the same guarantee at compile time rather than by comment."
       },
       {
         "severity": "SUGGESTION",
         "file": "src/supervisor/behavioral-gate.ts",
-        "line": 143,
-        "text": "Depth-tracking truncates a payload that carries an UNMATCHED ']' where main kept it whole: parseOracleDirective(\"c. [oracle: grep -q \\\"]\\\" f]\") now yields command 'grep -q \\\"' (main's end-anchored regex yielded 'grep -q \\\"]\\\" f'). This is inherent to tolerating post-bracket prose (the two readings are ambiguous), and the measured base rate is 0 of 399 live oracle marks in the repo, so it is not blocking; but the limitation is neither pinned by a test nor stated in the extractLastOracleRaw doc comment, which currently advertises only the balanced-bracket win."
+        "line": 106,
+        "text": "extractLastOracleRaw's doc comment advertises only the balanced-bracket win and states neither of the two shapes where depth-tracking is strictly less tolerant than the regex it replaces. Measured against main: a payload carrying an UNMATCHED ']' is now truncated (\"c. [oracle: grep -q \\\"]\\\" f]\" yields command 'grep -q \"' where main yielded 'grep -q \"]\" f'), and a payload carrying an UNMATCHED '[' now becomes malformed (\"c. [oracle: grep -qE '^\\\\[' f]\" where main parsed it whole). Both are defensible (they fail loudly, and the reviewer measured the base rate at 0 of 324 live oracle marks in scripts/cam/issues/*.json), but neither is pinned by a test nor mentioned in the doc, so a future maintainer reading only the comment will believe the scan is strictly more tolerant than the regex."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "test/supervisor/behavioral-gate.test.ts",
+        "line": 209,
+        "text": "US-002's highest-value behavior (the label must not reach the tmux send-keys argv, the defect that made real gates exit 127) is asserted only by the PRD's own ephemeral AC3 oracle, not by any durable test. The new label-stripping block pins the parse result only; the shell-boundary composition is left to the malformed block's spawnFn fake, which asserts zero calls. Adding one label-form runBehavioralGate case with an injected spawnFn asserting the send-keys argv contains the bare command and not the label would persist AC3's guarantee into the suite, mirroring the fake already used at :273-285."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/supervisor/behavioral-gate.ts",
+        "line": 202,
+        "text": "US-002 leaves the three kind labels asymmetric: a bare 'named-command' payload now returns no-oracle, but a bare 'file-assert' or 'tmux-pty' payload still falls through to named-command and would be handed to the shell as the nonsense command 'file-assert' / 'tmux-pty' (pinned as designed behavior by test/supervisor/behavioral-gate.test.ts:169-189). That is the same silent-oracle class CAM-466 targets, one branch short. Pre-existing and correctly outside this PRD's scope; worth a follow-up issue on main."
       },
       {
         "severity": "SUGGESTION",
         "file": ".claude/agents/subagent-reviewer.md",
         "line": 54,
-        "text": "The Layer A/Layer B contracts still enumerate non-runnable kinds as (reviewer-judgment, no-oracle, tmux-pty) in .claude/agents/subagent-implementer.md:91, .claude/agents/subagent-reviewer.md:54 and both templates/agents mirrors, so the new 'malformed' kind is loud only to a caller that inspects the parsed kind. US-003's description declares this deferral honestly and the issue's scope clause fences off agent docs plus the plan-time lint (prd-oracle-lint.ts:661 still `continue`s on the kind), so it is correctly out of this PR; it should be filed on main as a follow-up rather than left implicit."
-      },
-      {
-        "severity": "SUGGESTION",
-        "file": "src/supervisor/behavioral-gate.ts",
-        "line": 169,
-        "text": "Asymmetry left behind by US-002: a bare 'named-command' payload now returns no-oracle, but a bare 'file-assert' or 'tmux-pty' payload still falls through to named-command and would be sent to the shell as the nonsense command 'file-assert' / 'tmux-pty' (pinned as designed behavior by the tests at test/supervisor/behavioral-gate.test.ts:174-189). That is the same silent-oracle class CAM-466 targets, one branch short. Pre-existing and out of this PRD's scope; worth a follow-up."
-      },
-      {
-        "severity": "SUGGESTION",
-        "file": "test/supervisor/behavioral-gate.test.ts",
-        "line": 3,
-        "text": "The file header still describes the suite as \"(US-001, CAM-116)\" with a 6-item coverage list that predates the three new CAM-466 describe blocks (un-anchored extraction, label stripping, malformed)."
+        "text": "The Layer A/Layer B contracts still enumerate the non-runnable kinds as (reviewer-judgment, no-oracle, tmux-pty) at .claude/agents/subagent-implementer.md:91, .claude/agents/subagent-reviewer.md:54 and both templates/agents mirrors, and prd-oracle-lint.ts:661 still `continue`s on any kind outside named-command/file-assert. So the new 'malformed' kind is loud only to a caller that inspects the parsed kind or runs the gate directly. US-003's description declares this deferral explicitly and the CAM-466 issue scope clause fences off both the agent docs (which would force a vendor re-embed) and the plan-time lint, so it is correctly out of this PR; it should be filed on main as a follow-up rather than left implicit. Carried over from review round 1, still open."
       }
     ]
   }

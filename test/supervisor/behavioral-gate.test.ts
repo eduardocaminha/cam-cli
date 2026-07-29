@@ -1,15 +1,19 @@
 // test/supervisor/behavioral-gate.test.ts
 //
-// Unit tests for src/supervisor/behavioral-gate.ts (US-001, CAM-116).
+// Unit tests for src/supervisor/behavioral-gate.ts (US-001, CAM-116; US-002/US-003, CAM-466).
 //
 // Coverage:
-//   1. parseOracleDirective returns null for criteria with no [oracle: ...] suffix.
-//   2. parseOracleDirective classifies the three oracle kinds correctly:
-//        named-command, file-assert, reviewer-judgment.
+//   1. parseOracleDirective returns null for criteria with no [oracle: ...] mark.
+//   2. parseOracleDirective classifies the four oracle kinds correctly:
+//        named-command, file-assert, reviewer-judgment, tmux-pty.
 //   3. parseOracleDirective classifies tmux-pty oracles and exposes artifactRef.
-//   4. Malformed / empty oracle text yields no-oracle, never throws.
+//   4. Empty oracle text or a bare/unrecognized label yields no-oracle, never throws.
 //   5. parseOracleDirectives filters non-oracle criteria and preserves order.
 //   6. AC4 guard: review-report.ts is untouched (import-only from behavioral-gate.ts).
+//   7. Un-anchored last-mark extraction (US-001, CAM-466) and named-command
+//      label stripping (US-002, CAM-466).
+//   8. Unterminated mark yields the distinct malformed kind, never no-oracle
+//      (US-003, CAM-466).
 
 import { describe, expect, test } from 'bun:test';
 import {
@@ -157,10 +161,10 @@ describe('parseOracleDirective: tmux-pty', () => {
 });
 
 // ---------------------------------------------------------------------------
-// parseOracleDirective - malformed / empty oracle text (no-oracle)
+// parseOracleDirective - empty or unrecognized-label oracle text (no-oracle)
 // ---------------------------------------------------------------------------
 
-describe('parseOracleDirective: no-oracle (malformed)', () => {
+describe('parseOracleDirective: no-oracle (empty or bare label)', () => {
 	test('returns no-oracle for empty oracle content [oracle: ]', () => {
 		const result = parseOracleDirective('Some criterion. [oracle: ]');
 		expect(result).toEqual({ kind: 'no-oracle', raw: '' } satisfies OracleDirective);

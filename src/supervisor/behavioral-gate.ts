@@ -54,8 +54,12 @@ export interface TmuxPtyOracle {
 }
 
 /**
- * Returned for a malformed or empty oracle text. Never throws -- an
- * unparseable oracle must not crash the gate (AC3).
+ * Returned when a mark was extracted (or no mark is present at all) but there
+ * is no command to run: an empty payload, or a bare kind label with nothing
+ * after it (e.g. `named-command` with no trailing command). Never throws --
+ * an unparseable oracle must not crash the gate (AC3). Distinct from
+ * MalformedOracle, which is reserved for a mark whose bracket never closes --
+ * see the MalformedOracle doc comment for the boundary.
  */
 export interface NoRunnableOracle {
 	kind: 'no-oracle';
@@ -210,11 +214,11 @@ function classifyOracleText(raw: string): OracleDirective {
 /**
  * Extract and parse the [oracle: ...] directive from one acceptance criterion.
  *
- * Returns null when the criterion carries no [oracle: ...] suffix (criteria
+ * Returns null when the criterion carries no [oracle: ...] mark (criteria
  * without an oracle yield no directive per AC1).
  *
- * Returns a NoRunnableOracle when the suffix is present but the oracle text is
- * malformed or empty (graceful -- never throws, per AC3).
+ * Returns a NoRunnableOracle when a mark is present but the oracle text is
+ * empty or an unrecognized bare label (graceful -- never throws, per AC3).
  *
  * Returns a MalformedOracle when the mark opener is present but its bracket
  * never balances (US-003, CAM-466): distinct from NoRunnableOracle -- see
@@ -231,9 +235,10 @@ export function parseOracleDirective(criterion: string): OracleDirective | null 
 /**
  * Parse all [oracle: ...] directives from a PRD story's acceptanceCriteria.
  *
- * Returns one CriterionOracle per criterion that carries an [oracle: ...] suffix.
- * Criteria without a suffix are skipped (yield no entry in the result).
- * Malformed oracle text yields { kind: 'no-oracle' } rather than throwing.
+ * Returns one CriterionOracle per criterion that carries an [oracle: ...] mark.
+ * Criteria without a mark are skipped (yield no entry in the result).
+ * Empty or unrecognized-label oracle text yields { kind: 'no-oracle' } rather
+ * than throwing; an unterminated mark yields { kind: 'malformed' } instead.
  *
  * @param criteria - The acceptanceCriteria array from a PRD story record.
  * @returns Ordered list of criterion index + directive pairs.
