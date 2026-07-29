@@ -1,9 +1,9 @@
 // test/no-permission-mode-flag.test.ts
 //
 // US-007 acceptance criterion 7 invariant: NO subcommand parser registers a
-// `--permission-mode` flag. The value is sourced exclusively from
-// `~/.config/cam/config.toml` via `src/config/permission-mode.ts`. This
-// test fails the build if a future change accidentally adds the flag back.
+// `--permission-mode` flag. Permission mode is a hardcoded `bypassPermissions`
+// literal at each spawn site, not a CLI knob. This test fails the build if a
+// future change accidentally adds the flag back.
 //
 // Two-layer defense:
 //   1. Behavioral — feed `--permission-mode acceptEdits` to each subcommand

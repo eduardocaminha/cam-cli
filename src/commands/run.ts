@@ -607,9 +607,10 @@ function setupPanes(
 
 	// Pane 0: orchestrator (claude), wrapped in the CAM-23 bounded self-handoff
 	// loop. --permission-mode bypassPermissions is INTENTIONAL (2026-06-06): the
-	// orchestrator runs unattended and must bypass; do NOT change to
-	// readPermissionMode. --session-id passes the known uuid so the transcript is
-	// written at <claudeDir>/projects/<encode(cwd)>/<uuid>.jsonl (US-002). On
+	// orchestrator runs unattended and must bypass; this is hardcoded at the
+	// spawn site, not read from a config knob. --session-id passes the known
+	// uuid so the transcript is written at
+	// <claudeDir>/projects/<encode(cwd)>/<uuid>.jsonl (US-002). On
 	// claude exit the wrapper either respawns a FRESH orchestrator reading the
 	// handoff (when .cam-orch-handoff.json is present, bounded by maxRespawns) or
 	// kill-sessions the whole tmux session (the pre-CAM-23 teardown).

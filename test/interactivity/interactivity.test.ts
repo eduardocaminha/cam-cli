@@ -502,19 +502,10 @@ describe('Test 5: Init and setup interactivity gate — non-interactive path whe
 	test('runInit in test environment (stdin not a raw-capable TTY) does not throw and exits via the linear print path', async () => {
 		// In bun test, process.stdin.isTTY is undefined (falsy) → gate returns
 		// false → runInitLinear is selected → no Ink render, no raw-mode crash.
-		const tmpWorkDir = mkdtempSync(join(tmpdir(), 'cam-gate-init-test-'));
-		const prevConfigPath = process.env.CAM_CONFIG_PATH;
-		process.env.CAM_CONFIG_PATH = join(tmpWorkDir, 'config.toml');
-		try {
-			// Must resolve (not reject) with a number exit code — proves the
-			// linear path ran without throwing "Raw mode is not supported".
-			const exitCode = await runInit();
-			expect(typeof exitCode).toBe('number');
-		} finally {
-			if (prevConfigPath === undefined) delete process.env.CAM_CONFIG_PATH;
-			else process.env.CAM_CONFIG_PATH = prevConfigPath;
-			rmSync(tmpWorkDir, { recursive: true, force: true });
-		}
+		// Must resolve (not reject) with a number exit code — proves the
+		// linear path ran without throwing "Raw mode is not supported".
+		const exitCode = await runInit();
+		expect(typeof exitCode).toBe('number');
 		// Generous explicit per-test timeout (rather than Bun's default 5000ms):
 		// runInitLinear does real fs/config I/O that can lag under full-suite
 		// CPU contention, so the preflight cannot false-positive a timeout here.

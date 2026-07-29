@@ -2,28 +2,23 @@
 //
 // Implementation of `cam init` — the per-machine readiness validator.
 //
-// Acceptance criteria (US-005, updated US-007):
+// Acceptance criteria (US-005, updated US-007, updated US-001 CAM-458):
 //   1. Validates `claude` is on PATH; parses `--version`; warns (does not fail) on mismatch.
 //   2. Runs the vendored smokes from `vendor/`:
 //        - `check-agent-frontmatter.ts` (gcc-style YAML frontmatter validator)
 //      A vendored-smoke exit 2 is treated as "skip-with-warning" not "fail" —
 //      it means the smoke can't run in this environment (e.g. no git repo)
 //      and that's fine for `init`.
-//   3. Writes `~/.config/cam/config.toml` with `permission_mode = "bypassPermissions"`,
-//      preserving any other existing keys.
-//   4. Exits 0 on a clean machine, non-zero with structured diagnostics on a corrupted one.
+//   3. Exits 0 on a clean machine, non-zero with structured diagnostics on a corrupted one.
 
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
 import process from 'node:process';
 
 import { Box, render } from 'ink';
 import { createElement } from 'react';
 
 import { printError, printHint, printSuccess, printWarning } from '../logging/color.ts';
-import { mergeIntoConfig } from '../config/toml.ts';
 import { materializeEmbedded, type EmbeddedKey } from '../vendor/embedded.ts';
 import { InitScreen, type CheckDef, type CheckOutcome } from '../ui/InitScreen.tsx';
 import { Splash } from '../ui/Splash.tsx';
@@ -38,14 +33,6 @@ import { CAM_VERSION } from '../version.ts';
  * the harness on weeks-old releases for no real reason.
  */
 const CLAUDE_VERSION_FLOOR = '2.0.0';
-
-/**
- * Default path for the per-user config. Override via the `CAM_CONFIG_PATH`
- * env var so tests can target a tmpdir without touching the real `~/.config`.
- */
-function defaultConfigPath(): string {
-	return process.env.CAM_CONFIG_PATH ?? join(homedir(), '.config', 'cam', 'config.toml');
-}
 
 /**
  * Resolve a vendored smoke file's on-disk path. In dev mode the embedded
@@ -239,7 +226,6 @@ function reportSmoke(label: string, result: SmokeResult): void {
 // --- Public entrypoint -----------------------------------------------------
 
 export interface InitOptions {
-	configPath?: string;
 	/**
 	 * Injectable subprocess-spawn seam (CAM-205). Only reaches the non-interactive
 	 * (`runInitLinear`) path — tests run under `bun test` where stdin/stdout are
@@ -268,29 +254,24 @@ export function isInitInteractiveGate(
 /**
  * Run the full `cam init` flow. Returns the process exit code.
  *
- * Calls into `mergeIntoConfig` for the writer step, so tests can drive the
- * full flow against an alternate config path via `CAM_CONFIG_PATH` or the
- * `options.configPath` argument without touching `~/.config/cam/config.toml`.
- *
  * Two render paths:
  *  - Interactive TTY: animated Ink screen with per-check spinners.
  *  - Non-TTY (CI, pipes, `bun test`): legacy linear print output, kept
  *    verbatim so existing tests and log-scrapers stay valid.
  */
 export async function runInit(options: InitOptions = {}): Promise<number> {
-	const configPath = options.configPath ?? defaultConfigPath();
 	const isInteractive = isInitInteractiveGate(
 		Boolean(process.stdout.isTTY),
 		Boolean(process.stdin.isTTY),
 		process.env.CI,
 	);
 	if (!isInteractive) {
-		return runInitLinear(configPath, options.spawnFn);
+		return runInitLinear(options.spawnFn);
 	}
-	return runInitInteractive(configPath);
+	return runInitInteractive();
 }
 
-function runInitLinear(configPath: string, spawnFn: SpawnFn = defaultSpawnFn): number {
+function runInitLinear(spawnFn: SpawnFn = defaultSpawnFn): number {
 	const failures: string[] = [];
 
 	// 1. claude
@@ -308,19 +289,7 @@ function runInitLinear(configPath: string, spawnFn: SpawnFn = defaultSpawnFn): n
 	reportSmoke('check-agent-frontmatter', frontmatter);
 	if (!frontmatter.ok) failures.push('check-agent-frontmatter');
 
-	// 3. write config
-	try {
-		mergeIntoConfig(configPath, { permission_mode: 'bypassPermissions' });
-		printSuccess(`Config written ${configPath}`);
-	} catch (err) {
-		printError(
-			`Failed to write ${configPath}`,
-			err instanceof Error ? err.message : String(err),
-		);
-		failures.push('config');
-	}
-
-	// 4. summary
+	// 3. summary
 	if (failures.length > 0) {
 		printError(
 			`${failures.length} check(s) failed`,
@@ -332,8 +301,8 @@ function runInitLinear(configPath: string, spawnFn: SpawnFn = defaultSpawnFn): n
 	return 0;
 }
 
-async function runInitInteractive(configPath: string): Promise<number> {
-	const checks = buildInteractiveChecks(configPath);
+async function runInitInteractive(): Promise<number> {
+	const checks = buildInteractiveChecks();
 	let failedIds: string[] = [];
 	const view = createElement(
 		Box,
@@ -352,7 +321,7 @@ async function runInitInteractive(configPath: string): Promise<number> {
 	return failedIds.length === 0 ? 0 : 1;
 }
 
-function buildInteractiveChecks(configPath: string): CheckDef[] {
+function buildInteractiveChecks(): CheckDef[] {
 	return [
 		{
 			id: 'claude',
@@ -365,12 +334,6 @@ function buildInteractiveChecks(configPath: string): CheckDef[] {
 			label: 'agent-frontmatter',
 			description: 'Validates .claude/agents/*.md files',
 			run: () => smokeToOutcome(runVendoredSmoke(vendorScriptPath('check-agent-frontmatter.ts'))),
-		},
-		{
-			id: 'config',
-			label: 'config',
-			description: 'Saves your default permission mode',
-			run: () => writeConfigOutcome(configPath),
 		},
 	];
 }
@@ -405,22 +368,4 @@ function smokeToOutcome(r: SmokeResult): CheckOutcome {
 	}
 	const firstStderrLine = r.stderr.split('\n').find((l) => l.trim() !== '') ?? 'failed';
 	return { status: 'fail', detail: 'smoke failed', hint: firstStderrLine };
-}
-
-function writeConfigOutcome(configPath: string): CheckOutcome {
-	try {
-		mergeIntoConfig(configPath, { permission_mode: 'bypassPermissions' });
-		return { status: 'ok', detail: shortenHomePath(configPath) };
-	} catch (err) {
-		return {
-			status: 'fail',
-			detail: `failed to write ${shortenHomePath(configPath)}`,
-			hint: err instanceof Error ? err.message : String(err),
-		};
-	}
-}
-
-function shortenHomePath(p: string): string {
-	const home = homedir();
-	return p.startsWith(`${home}/`) ? `~/${p.slice(home.length + 1)}` : p;
 }

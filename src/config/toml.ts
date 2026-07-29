@@ -1,6 +1,10 @@
 // src/config/toml.ts
 //
-// Minimal TOML reader + writer for `~/.config/cam/config.toml`.
+// Minimal TOML reader + writer, generic over the config file path. Every
+// current caller targets `scripts/cam/project.toml` (project-scoped, not a
+// per-user `~/.config/cam/` surface); `~/.config/cam/retry.toml` is written
+// by `src/retry/config.ts` via its own inline `Bun.TOML.parse` call, not
+// through this module.
 //
 // Why a hand-rolled writer? Bun ships `Bun.TOML.parse` (verified against
 // https://bun.com/reference/bun/TOML/parse — current API is `parse(input: string): object`)
@@ -146,10 +150,10 @@ export function parseToml(text: string): TomlConfig {
  * `node:fs.readFileSync` rather than `Bun.file().text()` so the same code
  * works in tests under tmp-dirs without spinning up Bun's filesystem layer.
  *
- * The `null`-safe contract is important: `cam init` must work both on a
- * fresh machine (no `~/.config/cam/`) AND on a machine with prior config.
- * Returning `{}` for "missing file" means callers can mutate-and-save without
- * branching on existence.
+ * The `null`-safe contract is important: setup/config writers must work both
+ * on a fresh checkout (no `scripts/cam/project.toml` yet) AND on one with a
+ * prior config. Returning `{}` for "missing file" means callers can
+ * mutate-and-save without branching on existence.
  */
 export function loadConfig(path: string): TomlConfig {
 	if (!existsSync(path)) return {};
@@ -179,11 +183,9 @@ export function saveConfig(path: string, config: TomlConfig, comments?: TomlComm
 
 /**
  * Merge `updates` into the config at `path`, preserving any pre-existing keys
- * that aren't being overwritten.
- *
- * Used by `cam init` to set `permission_mode = "bypassPermissions"` without
- * clobbering keys a future story (or a hand-edit) may have added. Top-level
- * scalar updates and section-table updates both behave additively:
+ * that aren't being overwritten (a hand-edit, or another writer, may have
+ * added them). Top-level scalar updates and section-table updates both
+ * behave additively:
  *   - top-level scalar update → replaces that one key
  *   - section update → merges into existing section (new keys added,
  *     existing keys overwritten by the update, sibling keys preserved).

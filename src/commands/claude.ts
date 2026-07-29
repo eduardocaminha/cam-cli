@@ -56,8 +56,10 @@ export const CLAUDE_HELP = renderHelp({
 			body:
 				'Retry policy:     ~/.config/cam/retry.toml  (written by `cam init`; safe to edit)\n' +
 				'Retry logs:       ~/.cam/retry-logs/\n' +
-				'Permission mode:  ~/.config/cam/config.toml — `cam claude` does not expose a\n' +
-				'                  CLI flag for it. Pass it directly as a claude arg if needed:\n' +
+				'Permission mode:  hardcoded bypassPermissions literal elsewhere in cam; no\n' +
+				'                  config key or CLI flag controls it. `cam claude` itself\n' +
+				'                  does not expose such a flag either, but forwards args\n' +
+				'                  verbatim, so you CAN pass one straight to claude:\n' +
 				'                    cam claude --permission-mode <mode> <prompt>',
 		},
 	],

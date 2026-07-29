@@ -187,37 +187,44 @@ on every start, `.devcontainer/init-firewall.sh`), and typed, fail-closed
 silently proceeding on failure.
 
 Set against that engineering, the *default* operating mode (no container)
-is materially permissive and undocumented as such. `readPermissionMode`
-(`src/config/permission-mode.ts`) defaults to `bypassPermissions`
-whenever `~/.config/cam/config.toml` is absent or the key is unset, which
-matches what `cam init` itself writes by default: every cam-dispatched
-`claude` session (orchestrator, worker, reviewer) runs with full
-autonomous filesystem and Bash access and no per-action confirmation
-prompt, on the bare host, unless the operator explicitly opts into
-container mode. The only host-mode guardrail is the
-`orch-agent-allowlist.sh` PreToolUse hook, and it is narrowly scoped: it
-only fires inside `CAM_SESSION`-marked sessions, and only denies
-non-allowlisted Task/Agent subagent spawns plus writes to two specific
+is materially permissive and, as of this audit (pre-CAM-331 README
+rebuild), undocumented as such. `permission_mode = "bypassPermissions"`
+is hardcoded as a literal at every spawn site (`src/commands/run.ts`,
+`src/commands/setup.ts`, `src/commands/sidecar.ts`,
+`src/supervisor/plan-runner.ts`): there is no `permission_mode` config
+key, it is not read by any spawn path, and no subcommand accepts a
+`--permission-mode` flag. Every cam-dispatched `claude` session
+(orchestrator, worker, reviewer) runs with full autonomous filesystem
+and Bash access and no per-action confirmation prompt, on the bare
+host, unless the operator explicitly opts into container mode (or, for
+worker/reviewer sessions only, sets `[loop] worker_isolation =
+"container"` in `scripts/cam/project.toml`; the orchestrator pane
+itself is always spawned on the host regardless of that setting). The
+only host-mode guardrail is the `orch-agent-allowlist.sh` PreToolUse
+hook, and it is narrowly scoped: it only fires inside
+`CAM_SESSION`-marked sessions, and only denies non-allowlisted
+Task/Agent subagent spawns plus writes to two specific
 worker-protected file paths (`scripts/cam/prd.json`,
 `scripts/cam/issues/*`); it does not sandbox or otherwise restrict the
 primary agent's general Bash/file-write surface. None of this (the
 `bypassPermissions` default, container mode as the actual isolation
-boundary, or the allowlist hook's real scope) is disclosed anywhere in
-`README.md`.
+boundary, or the allowlist hook's real scope) was disclosed anywhere in
+`README.md` at the time of this audit.
 
 Concrete gaps:
 
-- **`bypassPermissions` is the undisclosed default for every cam-dispatched
-  agent session.** A stranger installing cam and running `cam init` gets
-  full autonomous Bash/filesystem access with no per-action confirmation,
-  and nothing in the README says so.
+- **`bypassPermissions` was the undisclosed default for every
+  cam-dispatched agent session, at the time of this audit.** A stranger
+  installing cam and running `cam init` gets full autonomous
+  Bash/filesystem access with no per-action confirmation, and nothing
+  in the README said so.
 - **Host mode, the default path, has no network egress restriction.** The
   default-deny firewall is a container-mode-only guarantee; a stranger who
   never opts into container mode gets none of it.
-- **No README/docs Security section.** There is no explanation of the
-  permission model, no guidance to run cam only against
-  repositories/directories the operator trusts, and no pointer to
-  container mode as the higher-isolation alternative.
+- **No README/docs Security section, at the time of this audit.** There
+  was no explanation of the permission model, no guidance to run cam
+  only against repositories/directories the operator trusts, and no
+  pointer to container mode as the higher-isolation alternative.
 - **No `SECURITY.md` vulnerability-disclosure policy** at the repo root,
   standard practice for a public OSS project accepting external scrutiny.
 

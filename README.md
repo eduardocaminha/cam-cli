@@ -154,8 +154,8 @@ cam help                    Show top-level help
 ```
 
 Run `cam <command> --help` for command-specific options. Permission mode
-for spawned claude sessions is read from `~/.config/cam/config.toml`.
-No subcommand exposes a CLI flag for it.
+for spawned claude sessions is hardcoded to `bypassPermissions` at every
+spawn site; no config key or CLI flag controls it.
 
 ### Single project session
 
@@ -255,7 +255,7 @@ Source layout:
 index.ts              CLI dispatch
 src/commands/         one file per `cam <subcommand>`
 src/linear/           Linear GraphQL client
-src/config/           ~/.config/cam/config.toml + scripts/cam/project.toml
+src/config/           scripts/cam/project.toml reader/writer + model/effort/backend resolution
 templates/            shipped to projects by `cam init`
   agents/             subagent-orchestrator, planner, implementer, reviewer, auditor
   commands/           /cam-plan, /cam-next, /cam-review, /cam-ship, /cam-issue, /cam-prune
@@ -300,11 +300,14 @@ Workers always run in the **titled 3rd pane** (created on first dispatch, reused
 
 ## Security
 
-By default, `cam` spawns `claude` with `permission_mode = "bypassPermissions"`
-(the `DEFAULT_PERMISSION_MODE` in `src/config/permission-mode.ts`), applied
-whenever `~/.config/cam/config.toml` is missing or the key is unset, which is
-what `cam init` writes on a fresh machine. In practice this means every worker
-and orchestrator session runs with no permission prompt: the agent can read,
+`cam` spawns `claude` with `permission_mode = "bypassPermissions"` hardcoded
+as a literal at every spawn site: the orchestrator (`src/commands/run.ts`),
+`cam init`'s setup panes (`src/commands/setup.ts`), the worker/reviewer
+dispatch path (`src/commands/sidecar.ts`), and the plan-runner phase
+(`src/supervisor/plan-runner.ts`). There is no `permission_mode` config key:
+it is not read by any spawn path, and no subcommand accepts a
+`--permission-mode` flag. In practice this means every worker and
+orchestrator session runs with no permission prompt: the agent can read,
 write, and execute anywhere your user account can, without asking first for
 each file edit or shell command. This is a deliberate trade-off for autonomous
 looping, not an oversight, but it is not "safe by default" in the way an

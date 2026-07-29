@@ -29,7 +29,7 @@ const script = readFileSync(SCRIPT_PATH, 'utf8');
  * `init`, ignoring comments.
  *
  * Targets the real hermetic line, e.g.:
- *   if (cd "${SMOKE_DIR}" && CAM_CONFIG_PATH=... "${BIN_ABS}" init --no-tmux --existing --issue-system none </dev/null); then
+ *   if (cd "${SMOKE_DIR}" && "${BIN_ABS}" init --no-tmux --existing --issue-system none </dev/null); then
  * The `\}"? \s+init` arm matches `${BIN_ABS}" init`; the `/cam"? \s+init` arm
  * catches a regression that hardcodes a `.../cam init` path.
  */
