@@ -454,3 +454,18 @@ The independently bounded number of re-plan rounds allowed for a planner that ke
 
 **post-auditor correction round**:
 A re-plan round that follows an auditor-origin BLOCK and exists to address the auditor's findings. The structural guarantee at issue in CAM-448 is that every PRD reaching the auditor receives at least one of these before escalating.
+
+**cycle-metrics row**:
+One line of the versioned cycle-metrics artifact, derived by code from the event log, describing exactly one attributed cycle. Its purpose is recomputation by a third party, so it is text, diffable, and never a binary format.
+
+**attributed cycle slice**:
+The run of events from the one immediately after the previous cycle-tokens marker through the current marker. Bounded on both ends: the left bound is what makes the resulting row honest, and a slice whose left bound cannot be established is not a cycle.
+
+**unattributed leading span**:
+The events preceding the first cycle-tokens marker in a log. They belong to no attributable cycle, because nothing in the log establishes where one ends and the next begins. Disclosed as an explicit count in the artifact header rather than folded into the first row or dropped in silence.
+
+**cycleId**:
+The opaque cycle key carried by cycle-tokens events. Free-form in practice: branch names, drain markers, bare issue ids, and session ids all occur. Treated as an identity only, never parsed for a date or an issue number, and never sorted as if it encoded order.
+
+**derived cache**:
+The only sanctioned role for a database in this system: a store rebuilt from the append-only event log, never the source of truth. The log stays canonical because it is multi-writer-safe by construction and because git can diff it.

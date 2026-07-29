@@ -1,0 +1,13 @@
+# ADR 0053: Cycle metrics attribute only bounded slices, and disclose the unattributed leading span
+
+## Context
+
+Cycle boundaries are recorded in the event log as cycle-tokens markers. The obvious derivation rule, a slice is the run of events ending at each marker, is bounded on the tail but not on the head: it leaves the events before the very first marker with nowhere to go except the first published row. In this repo that is not a rounding error. The log begins 2026-06-09 and the first marker was written 2026-06-29, when the instrumentation shipped, so 2207 events belonging to roughly 26 pre-instrumentation cycles sit ahead of the first boundary. Folded into the first row they publish 318 worker rounds against 89 for the largest genuine cycle, a 3.5x outlier in the first line of a file whose entire stated purpose is that an outsider can recompute it. An auditor caught this before any code shipped, and every acceptance oracle in the original plan passed anyway, because the oracles compared marker sums and distinct-id counts, quantities the defect leaves untouched.
+
+## Decision
+
+A cycle slice runs from the event after the previous marker through the current marker, bounded on both ends. A marker with no predecessor has no established left bound, so it publishes no row. The span before the first marker is disclosed instead, as an explicit event count in the artifact's header line, which makes the gap visible to whoever reads the file rather than to whoever reads the code. This follows the token-accounting precedent already in the codebase, where spend that cannot be attributed to an issue is surfaced as a distinct always-printed figure rather than dropped or folded into some issue's total.
+
+## Consequences
+
+The published table is missing its oldest cycle, and in any freshly initialized project the first cycle produces no row, because the log alone cannot prove that the head span is one cycle rather than twenty-six. That cost is accepted: the alternative rules all fail worse. Folding misattributes by a factor of 3.5 in the most visible row. Dropping the span silently hides 26 cycles from the file's reader while looking correct. Attributing the head span when it appears to hold a single cycle would reintroduce exactly the interval heuristic this design rejects, and in this repo that heuristic would have been wrong 26 times over. The header figure is immutable in an append-only log that grows only at the tail, so the disclosure never rots, and an implementation that regresses to folding is detectable: it publishes exactly one row more than the bounded rule does, which is a check an outside reader can run.
