@@ -1,11 +1,11 @@
 {
   "id": "CAM-458",
   "title": "Verdade do permission-mode: cam init escreve uma chave que ninguem le, e o README implica um opt-out inexistente",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-28T17:27:23.454Z",
-  "updatedAt": "2026-07-28T17:27:23.454Z",
+  "updatedAt": "2026-07-29T06:39:22.052Z",
   "description": "Debito de review do CAM-457 (round 3, WARNING nao resolvido por esgotamento de rounds). Duas faces do mesmo sitio: a secao Security do README enquadra bypassPermissions como default de config ('applied whenever the key is unset'), sugerindo um botao operavel; e o botao de fato existe no arquivo gerado pelo cam init mas nao e lido por nenhum spawn. Quem setar permission_mode = 'default' acha que desligou o bypass e nao desligou, em silencio. Medido: readPermissionMode (src/config/permission-mode.ts:47) tem ZERO importadores reais (as 3 ocorrencias em src/ sao comentarios); todo spawn hardcoda o modo em run.ts:392, setup.ts:480 e :561, sidecar.ts:1569 e plan-runner.ts:1312; cam init escreve a chave em init.ts:313 e :412.",
   "specSource": "derived",
   "derivedFrom": [
