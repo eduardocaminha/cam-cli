@@ -1,0 +1,18 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Un-anchor oracle-mark extraction without swallowing a second mark or truncating a bracket-bearing payload"
+  },
+  "branchName": "cam/issue-466",
+  "timestamp": "2026-07-29T12:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/supervisor/behavioral-gate.ts",
+    "test/supervisor/behavioral-gate.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "parseOracleDirective in src/supervisor/behavioral-gate.ts now locates the LAST literal '[oracle:' opener via lastIndexOf and extracts the payload by tracking bracket depth forward to the balanced ']' (extractLastOracleRaw), replacing the old end-anchored ORACLE_SUFFIX_RE regex. This fixes three bugs at once: (1) trailing prose after the closing bracket no longer nullifies the whole criterion, (2) two marks on one line no longer let the end anchor jump the capture across the first mark's close to the second mark's close plus trailing prose, (3) a literal balanced ']' inside the payload (e.g. a grep character class like [0-9]) survives in full because depth-tracking, not a [^\\]]* non-bracket class, delimits the close. classifyOracleText (file-assert / tmux-pty / reviewer-judgment / named-command dispatch) is untouched. An opener whose bracket never balances still yields null (same as 'no mark present') for now -- the notes flagged that US-003 (malformed-mark handling) may want to separate that failure mode from true absence, but that is out of scope here and was left alone. No PRD/prd.json changes required by this story.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
