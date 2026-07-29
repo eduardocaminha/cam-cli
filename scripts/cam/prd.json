@@ -27,7 +27,7 @@
       "id": "US-R2-003",
       "title": "Review round 2 fix 003: address reviewer finding",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [scripts/cam/prd.json:32]: Six of this PRD's 25 oracle directives are unrunnable as authored, so those acceptance criteria were never machine-verified by the behavioral gate at either layer. US-001 AC3/AC4, US-002 AC2/AC5 and US-003 AC5/AC7 embed a LITERAL 'named-command ' prefix inside the directive. classifyOracleText (src/supervisor/behavioral-gate.ts:108-125) strips only 'file-assert ' and 'tmux-pty ' and takes everything else verbatim as the shell command, so runBehavioralGate ships `named-command bash -c '...'` to the shell and gets exit 127 (zsh: command not found: named-command) every time. Reviewer's independent run: 10 PASS / 6 FAIL(127), full capture in scripts/cam/review-artifact.txt SECTION 1. The reviewer re-ran all six intended commands by hand with the prefix stripped: all exit 0 (SECTION 2), so no behavior defect is hidden behind them, but the automated gate for those six criteria was vacuous. Mechanical fix in this PR: drop the literal 'named-command ' prefix from those six criteria strings so a re-run of the gate actually exercises them. The durable fix belongs in a separate issue and is a real product/doc mismatch: templates/commands/cam-issue.md:132 and the implementer/reviewer agent contracts all display the '[oracle: ...]' prefixed form, while templates/agents/subagent-planner.md:158 and the parser expect the bare command, so a planner following the documented form emits directives that can only ever exit 127."
     },
     {
