@@ -32,7 +32,7 @@
         "The quality spine passes; non-regression gate, green on main today by construction. [oracle: named-command bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Site: src/supervisor/review.ts:687-708 (the MAX_ROUNDS_DEBT writePrd) spreads ...(prd.review ?? {}) and never writes fileFindings, though fileFindings is already in scope and IS written by the under-ceiling branch at :736. Reuse that exact conditional shape (`...(fileFindings !== undefined ? { findings: fileFindings } : {})`), do not invent a new path. Comment to rewrite: src/supervisor/review.ts:664-669 (CAM-115), same commit, or the file starts lying (CAM-458 class). Tests: test/supervisor/review.test.ts, drive through makeReviewDispatch as the existing tests at :795 and :942 do. Do NOT touch the promotion paths at src/supervisor/loop.ts:1091/:1112/:1885 (no fileFindings in scope). Do NOT touch cycle-metrics: the claim that this corrupts it is false by measurement (src/stats/cycles.ts:55-76 has no verdict field; :172-175 discards verdict). Nothing in src/ READS prd.review.findings (only the destructure-to-delete at :670), so the pin must be on the writePrd payload itself. ORACLE TRAP for this story: a test that merely EXISTS with the requested name satisfies a -t oracle without proving anything, so each new test must be run against unmodified main (git worktree of main + copy the test in) and the exit codes recorded in scripts/cam/patterns.md per AC5. Grep patterns.md for 'red-on-main', 'rotating', 'derive-don't-freeze' before authoring that bullet."
     },
