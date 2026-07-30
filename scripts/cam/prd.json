@@ -1,0 +1,77 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-478",
+  "description": "Make the terminal review record truthful: MAX_ROUNDS_DEBT persists the deciding round's findings, and fix stories carry a sanitized finding-derived title plus verbatim description.",
+  "issueNumber": 478,
+  "type": "feat",
+  "relatedDocs": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "Bun",
+      "channel": "WebFetch",
+      "url": "https://bun.sh/docs/cli/test",
+      "version": "current",
+      "fetchedAt": "2026-07-30T00:00:00Z",
+      "summary": "Confirmed `-t` / `--test-name-pattern` runs only tests whose name matches the given regex (matched against the test/suite name), and that `bun test` exits non-zero when a test fails. No breaking changes or deprecations affecting the named-command oracles in this PRD; every oracle here is a `bun test <file> -t \"<name>\"` invocation, which stays valid on current Bun. The docs do not state the exit code for a zero-match pattern, so the issue's own measured result (exit 1 when the regex matches zero tests, exit 0 for an existing test name) remains the authority and is the reason each new test name must additionally be swept red against unmodified main.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Persist the deciding round's findings on the MAX_ROUNDS_DEBT path",
+      "description": "As an orchestrator deciding between ship and halt, I need prd.review.findings at a MAX_ROUNDS_DEBT terminal to hold the findings of the round that actually decided the terminal (when they parsed), and to hold the prior round's findings only when nothing parsed, so that I never convert already-fixed findings into debt or halt a ship for nothing.",
+      "acceptanceCriteria": [
+        "On the MAX_ROUNDS_DEBT exit with findings parsed from review-report.json, the written prd.review.findings contains the TERMINAL round's findings and NOT the seeded prior-round sentinel text. The pinning test seeds prd.review.findings with prior-round sentinel text, drives the dispatch to the ceiling with distinct terminal findings, and asserts both the presence of the terminal text and the absence of the sentinel. [oracle: named-command bun test test/supervisor/review.test.ts -t \"DEBT terminal round persists its own findings\"]",
+        "On the MAX_ROUNDS_DEBT exit with NO parsed findings (tag-fallback path, fileFindings undefined), the previously written findings array is preserved byte-for-byte, because it is the only record available. This opposite-direction pin may not be omitted. [oracle: named-command bun test test/supervisor/review.test.ts -t \"DEBT tag-fallback preserves the prior findings\"]",
+        "The stale contract sentence is gone from the source: the comment no longer claims the DEBT paths intentionally keep the last round's findings. [oracle: named-command bash -c 'test \"$(grep -c \"intentionally keep the last round\" src/supervisor/review.ts)\" = \"0\"']",
+        "The rewritten comment documents the corrected contract in the SAME commit as the behavior change and is traceable to this issue. [oracle: named-command bash -c 'grep -q \"CAM-478\" src/supervisor/review.ts && grep -q \"terminal round\" src/supervisor/review.ts']",
+        "The falsifiability evidence for both new test names is recorded in a DURABLE tracked file (scripts/cam/patterns.md), not in rotating harness state: a bullet naming this issue, both new test names, and the exit code each produced when run against unmodified main before the fix. Never record this in scripts/cam/handoff.json or scripts/cam/review-artifact.txt (both rotate every story/review cycle; see patterns.md:938 and the CAM-433 precedent at patterns.md:944). [oracle: named-command bash -c 'grep -q \"CAM-478 red-on-main sweep\" scripts/cam/patterns.md && grep -q \"DEBT terminal round persists its own findings\" scripts/cam/patterns.md && grep -q \"DEBT tag-fallback preserves the prior findings\" scripts/cam/patterns.md']",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test), including the pre-existing DEBT test at test/supervisor/review.test.ts:521 and the CAM-115 CLEAN test at :431. [oracle: bun test]",
+        "The quality spine passes; non-regression gate, green on main today by construction. [oracle: named-command bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Site: src/supervisor/review.ts:687-708 (the MAX_ROUNDS_DEBT writePrd) spreads ...(prd.review ?? {}) and never writes fileFindings, though fileFindings is already in scope and IS written by the under-ceiling branch at :736. Reuse that exact conditional shape (`...(fileFindings !== undefined ? { findings: fileFindings } : {})`), do not invent a new path. Comment to rewrite: src/supervisor/review.ts:664-669 (CAM-115), same commit, or the file starts lying (CAM-458 class). Tests: test/supervisor/review.test.ts, drive through makeReviewDispatch as the existing tests at :795 and :942 do. Do NOT touch the promotion paths at src/supervisor/loop.ts:1091/:1112/:1885 (no fileFindings in scope). Do NOT touch cycle-metrics: the claim that this corrupts it is false by measurement (src/stats/cycles.ts:55-76 has no verdict field; :172-175 discards verdict). Nothing in src/ READS prd.review.findings (only the destructure-to-delete at :670), so the pin must be on the writePrd payload itself. ORACLE TRAP for this story: a test that merely EXISTS with the requested name satisfies a -t oracle without proving anything, so each new test must be run against unmodified main (git worktree of main + copy the test in) and the exit codes recorded in scripts/cam/patterns.md per AC5. Grep patterns.md for 'red-on-main', 'rotating', 'derive-don't-freeze' before authoring that bullet."
+    },
+    {
+      "id": "US-002",
+      "title": "Give fix stories a verbatim description and a sanitized finding-derived title",
+      "description": "As a fix-story worker spawned from a review finding, I need the story's description to carry the verbatim finding and the title to be derived from that finding (sanitized to a single pipe-free bounded line), so that the finding reaches my spawn prompt directly instead of only through notes I must re-read from prd.json.",
+      "acceptanceCriteria": [
+        "Every fix story built from a PARSED finding carries a non-empty description with the verbatim finding text (severity, location when present, text) and a title derived from the finding instead of the generic 'address reviewer finding' template. notes is NOT removed: description is added alongside it. [oracle: named-command bun test test/supervisor/review.test.ts -t \"fix story carries finding-derived title and description\"]",
+        "On the tag-fallback path (no parsed findings) fix stories keep the placeholder title and keep description absent, preserving the documented backward-compat behavior. Opposite direction of the previous criterion; may not be omitted. [oracle: named-command bun test test/supervisor/review.test.ts -t \"fix story tag-fallback keeps the placeholder title\"]",
+        "The derived title is SANITIZED before becoming a story title: single line (no newline), no pipe character (it renders inside a markdown table cell at src/release/pr-body.ts:141), and length-bounded. [oracle: named-command bun test test/supervisor/review.test.ts -t \"derived fix-story title is single-line and pipe-free\"]",
+        "Both halves of the plumbing landed: buildFixStories' return type carries description AND the story projection at src/supervisor/review.ts:717-723 forwards it, so the field is not produced then silently dropped. The existing verbatim-notes assertions at test/supervisor/review.test.ts:1265-1290 still pass unchanged. [oracle: named-command bun test test/supervisor/review.test.ts]",
+        "The stale buildFixStories contract documented at scripts/cam/patterns.md:106 is updated to describe the new title+description contract. [oracle: named-command bash -c 'grep -q \"buildFixStories\" scripts/cam/patterns.md && grep -q \"finding-derived title\" scripts/cam/patterns.md']",
+        "The falsifiability evidence for this story's three new test names is recorded in the DURABLE tracked scripts/cam/patterns.md (never scripts/cam/handoff.json or scripts/cam/review-artifact.txt, both per-story rotating; patterns.md:938), naming each test and the exit code it produced against unmodified main before the fix. [oracle: named-command bash -c 'grep -q \"CAM-478 red-on-main sweep\" scripts/cam/patterns.md && grep -q \"fix story carries finding-derived title and description\" scripts/cam/patterns.md && grep -q \"fix story tag-fallback keeps the placeholder title\" scripts/cam/patterns.md && grep -q \"derived fix-story title is single-line and pipe-free\" scripts/cam/patterns.md']",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "The quality spine passes. [oracle: named-command bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Sites: buildFixStories (src/supervisor/review.ts:763-789, title template at :776, notes at :783) plus the story projection at :717-723. Widen BOTH or the field is produced and discarded. description already exists as an optional field on the story type (PrdSnapshot userStories, src/supervisor/decide.ts:35-44), so no type file needs changing for the field to exist. WHY this is not cosmetic: buildImplementerTaskPrompt (src/supervisor/task-prompt.ts:28-41) interpolates id/title/description/priority/requires/branchName/acceptanceCriteria and does NOT interpolate notes; today the finding only reaches the worker via notes it must re-read (templates/agents/subagent-implementer.md:35 and :49). buildFixStories is a private helper (:763) and must NOT be exported for testing: drive it through makeReviewDispatch like test/supervisor/review.test.ts:795 and :942. Title propagates to the commit subject (templates/agents/subagent-implementer.md:99) and handoff.json, so multi-line or unbounded titles degrade both; commitSubjectMatchesStory (src/supervisor/result.ts:426-430) matches by ID and only requires non-empty after the separator, so retitling is safe there. Story identity is by id (US-R{round}-{nnn}, built at :775; dispatch selects by s.id at src/supervisor/loop.ts:1197), never by title. No existing test asserts the generic title (test/supervisor/review.test.ts has zero 'title' assertions). Do NOT populate a files field (schema support unverified) and do NOT auto-generate acceptanceCriteria (explicit non-scope). Do NOT try to fix ReviewDispatchResult.newStories (:145), which is always [] at :175/:185. src/commands/status.ts:211-222 not rendering description is not a blocker and must not be widened here. Same ORACLE TRAP as US-001: sweep each new test red against unmodified main and record it in patterns.md per AC6."
+    },
+    {
+      "id": "US-003",
+      "title": "Keep derived fix-story titles out of the PR-body setup checklist",
+      "description": "As a reviewer reading a PR body, I need a fix story whose derived title happens to contain a setup cue word (token, install, dependency, webhook, migration, ...) to leave the setup checklist unchanged, so that the PR never announces a setup step that does not exist.",
+      "acceptanceCriteria": [
+        "A PRD containing a fix story whose derived title carries a setup-cue trigger word renders the SAME setup-checklist section as the identical PRD without that story, proving the derived title does not contaminate renderSetupChecklist's cue haystack. [oracle: named-command bun test test/release/pr-body.test.ts -t \"derived fix-story title does not contaminate the setup checklist\"]",
+        "Genuine setup cues still fire: a PRD whose description or notes carries a cue word still renders its setup rows, so the non-contamination fix did not disable the feature. The pre-existing test/release/pr-body.test.ts suite (26 tests, green on main today) passes unchanged. [oracle: named-command bun test test/release/pr-body.test.ts]",
+        "The falsifiability evidence for this story's new test name is recorded in the DURABLE tracked scripts/cam/patterns.md (never scripts/cam/handoff.json or scripts/cam/review-artifact.txt, both per-story rotating; patterns.md:938), naming the test and the exit code it produced against unmodified main before the fix. [oracle: named-command bash -c 'grep -q \"CAM-478 red-on-main sweep\" scripts/cam/patterns.md && grep -q \"derived fix-story title does not contaminate the setup checklist\" scripts/cam/patterns.md']",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "The quality spine passes. [oracle: named-command bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Depends on US-002 (derived titles must exist first). Site: renderSetupChecklist (src/release/pr-body.ts:152-154) builds its haystack from prd.description + prd.notes + EVERY story title and runs SETUP_CHECKLIST_CUES (:61-105) over it; cues include env var, migration, install, dependency, api key, token, credential, secret, oauth, webhook. Sanitizing the title (US-002) does NOT solve this, which is why it needs its own pin. The behavior change belongs in src/release/pr-body.ts (the highest-merit option is to keep review-generated fix-story titles out of the cue haystack while leaving human-authored story titles in it, so real setup cues keep firing) plus test/release/pr-body.test.ts. Do NOT touch src/supervisor/suggestion-followups.ts or src/supervisor/ship-runner.ts (CAM-459, explicitly sequenced after this issue). Same ORACLE TRAP as US-001/US-002: the new test must be swept red against unmodified main and the result recorded in patterns.md per AC3."
+    }
+  ]
+}
