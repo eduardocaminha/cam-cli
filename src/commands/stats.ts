@@ -151,6 +151,21 @@ const CYCLE_COL_WIDTH = 42;
 const CYCLE_ISSUE_WIDTH = 12;
 const CYCLE_NUM_COL_WIDTH = 10;
 
+/**
+ * Left-pad-safe column cell: `cycleId` is an OPAQUE free-form string (a
+ * branch name) with no length ceiling, unlike `issueNumber`, so it can meet
+ * or exceed `CYCLE_COL_WIDTH` on real data (observed up to 47 chars against a
+ * 42-char column). `String.padEnd` only ever ADDS padding -- it never
+ * truncates -- so a value already at or past `width` collides directly with
+ * the next column with zero separating space. Truncate to `width - 1` chars
+ * first (reserving one guaranteed separator column) so `padEnd(width)` always
+ * emits at least one space, mirroring the CAM-217 renderHelp gotcha
+ * (patterns.md) applied here to a table column instead of a help entry name.
+ */
+function truncateForColumn(value: string, width: number): string {
+	return value.length >= width ? value.slice(0, width - 1) : value;
+}
+
 /** Render the per-cycle worker/review-round/total table (empty rows handled by the caller). */
 function renderCyclesTable(rows: CycleMetricsRow[]): string {
 	const header =
@@ -161,7 +176,7 @@ function renderCyclesTable(rows: CycleMetricsRow[]): string {
 		'Total'.padStart(CYCLE_NUM_COL_WIDTH);
 	const body = rows.map(
 		(r) =>
-			r.cycleId.padEnd(CYCLE_COL_WIDTH) +
+			truncateForColumn(r.cycleId, CYCLE_COL_WIDTH).padEnd(CYCLE_COL_WIDTH) +
 			r.issueNumber.padEnd(CYCLE_ISSUE_WIDTH) +
 			String(r.workerRounds).padStart(CYCLE_NUM_COL_WIDTH) +
 			String(r.reviewRounds).padStart(CYCLE_NUM_COL_WIDTH) +

@@ -406,6 +406,28 @@ describe('runStatsCycles', () => {
 		expect(sentinelLines[0]).toBe('CAM_STATS_CYCLES=cycles=1 unattributedLeadingEvents=1');
 	});
 
+	test('a cycleId longer than the Cycle column still separates from Issue by at least one space (US-R1-001, CAM-470 review finding)', () => {
+		// Real observed example from the committed artifact: 47 chars, wider
+		// than CYCLE_COL_WIDTH (42), which used to collide directly into the
+		// Issue column with zero separating space.
+		const longCycleId = 'cam/CAM-94-blocked-narration-supervisor-outcomeCAM-94';
+		const log = [
+			makeWorkerStartLine('pre'),
+			makeCycleTokensLine('cam/A', 'CAM-A', 1, 1, 2, 't-a'),
+			makeWorkerStartLine('w1'),
+			makeCycleTokensLine(longCycleId, 'CAM-94', 2, 2, 4, 't-b'),
+		].join('\n');
+		const written: string[] = [];
+		const code = runStatsCycles({ readEventLog: () => log, write: (s) => written.push(s) });
+		expect(code).toBe(0);
+		const output = written.join('');
+
+		const row = output.split('\n').find((l) => l.includes('CAM-94'));
+		expect(row).toBeDefined();
+		expect(row).toMatch(/ CAM-94/); // guaranteed separator between the (truncated) cycleId and the issue column.
+		expect(row).not.toContain('outcomeCAM-94'); // no direct column collision.
+	});
+
 	test('rebuild:true calls the injected writeArtifact with the serialized aggregation; rebuild:false (default) never calls it', () => {
 		const log = [
 			makeCycleTokensLine('cam/A', 'CAM-A', 1, 1, 2, 't-a'),

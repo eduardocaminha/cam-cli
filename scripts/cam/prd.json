@@ -21,6 +21,13 @@
   ],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "Review round 1 fix 001: address reviewer finding",
+      "priority": 1,
+      "passes": false,
+      "notes": "WARNING [src/commands/stats.ts:148]: `renderCyclesTable` pads cycleId with `padEnd(CYCLE_COL_WIDTH = 42)` and never truncates, but cycleId is an OPAQUE free-form string (branch names) that reaches 47 chars in the committed artifact. The Cycle and Issue columns therefore collide on real data today, e.g. `cam/CAM-94-blocked-narration-supervisor-outcomeCAM-94` and `cam/CAM-134-remove-dead-buildmergedescriptionCAM-134`, in `bun index.ts stats cycles`. This is the same separator-loss class the PRD's own gotcha cites (patterns.md:522, renderHelp losing the space at 24 chars): the implementer applied that check to `stats --help` but not to their own new table. The sibling `renderTokensTable` never hit it because `issueNumber.padEnd(14)` only ever holds short ids like `CAM-470`. Fix mechanically in one file: truncate (or ellipsize) cycleId to CYCLE_COL_WIDTH - 1, or widen the column past the observed max and add a guaranteed separator."
+    },
+    {
       "id": "US-001",
       "title": "Derive bounded cycle-metric rows from the event log",
       "description": "As the orchestrator, I need one deterministic row per bounded cycle slice derived from the event log by code, so that per-cycle counts (worker rounds, review rounds, token spend) are computed instead of estimated by an LLM.",
@@ -36,7 +43,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "requires": null,
       "notes": "Files: NEW src/stats/cycles.ts, NEW test/commands/stats-cycles.test.ts. Shape precedent to copy closely: src/stats/tokens.ts (pure string-in/data-out module, tolerant parseLine/asDetailRecord helpers, accumulator + collect projection). Slice rule (ADR-0053, read it before coding): a slice runs from the event AFTER the previous cycle-tokens marker THROUGH the current marker; the first marker has no established left bound and publishes NO row; the leading span is disclosed as the header's unattributedLeadingEvents count, exactly mirroring how unattributedTokens is kept as a distinct field (src/stats/tokens.ts:44-61) and always printed (src/commands/stats.ts:93-103). Row fields: cycleId, issueNumber, closedAt (the marker's recordedAt), workerRounds (count of worker-start events in the slice), reviewRounds (DISTINCT detail.round values), plus the marker's token figures used exactly as recorded (CycleTokensEventDetail, src/supervisor/events.ts:421-431), plus prNumber and mergeMode ONLY for slices containing a 'shipped' ship-phase-result. Field names workerRounds and reviewRounds are load-bearing: US-002's value oracles select them by name via jq. GOTCHAS: (a) review-verdict-handback has two emit sites (src/supervisor/loop.ts:1890 MAX_ROUNDS_DEBT promotion and :1926 normal handback), so one round can emit two events; 9 of 269 real slices carry duplicate rounds, worst case cam/pr-204-plan-block-replan-loop with 5 events over rounds [1,2]. (b) ship-phase-result flattens ShipPhaseResult into detail at the emit site (src/commands/sidecar.ts:1342-1348), so detail.kind SHADOWS the envelope kind and must be selected on explicitly; prNumber/mergeMode exist only on the 'shipped' variant (src/supervisor/ship-runner.ts:117-126). (c) cycleId is an OPAQUE free-form string (branch names, DRAIN-*, bare CAM-N, SESSION-*, SPEC-*, operator-ceremony-*): never parse it, never derive a date from it, never sort by it. (d) noUncheckedIndexedAccess: every array/regex-group access is T|undefined, guard it. (e) The header must stay deterministic (no generatedAt) or US-003's byte-identical-rebuild requirement becomes unsatisfiable. Test quality: hit real fixtures built in the test file plus at least one assertion against the repo's own log content read from disk if convenient, and never assert only that a mock was called."
@@ -61,7 +68,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 2,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "Files: src/commands/stats.ts (add runStatsCycles alongside runStatsTokens, same injectable cwd/readEventLog/write shape), index.ts (four registration points: ParsedStatsArgs union + STATS_USAGE at :2179-2195, a real mode switch in dispatchStats at :2209-2216 which today has none because mode is single-valued, the Subcommands section of STATS_HELP at :1074-1102, and the top-level HELP entry at :136), NEW scripts/cam/cycle-metrics.jsonl (the generated backfill, committed), test/commands/stats-cycles.test.ts (extend with the CLI-level tests). Surface contract: bare `stats cycles` is READ-ONLY (prints the report, always exits 0 even on a missing/empty log, exactly like runStatsTokens) and `stats cycles --rebuild` regenerates the artifact in the working tree from a full derivation; the one-time backfill of the historical cycles IS one `--rebuild` run whose output you commit. This branch commit is the FIRST AND LAST time a feature branch may write this file (see US-003/US-004: only the on-main appender writes it afterwards; a later branch-side rewrite would clobber rows appended on main mid-cycle, the CAM-121 scar). GOTCHAS: (a) every CLI oracle here invokes `bun index.ts stats cycles`, never `cam stats cycles`, per curated oracle rule 5 in patterns.md:1078 (CAM-451/CAM-455): `cam` resolves to the installed binary, which is older than the branch. (b) renderHelp silently loses the separator space when a HelpEntry.name reaches 24 chars (patterns.md:522) -- 'cycles [--rebuild]' and 'stats tokens|cycles' are both short enough, but check the rendered `bun index.ts stats --help` output, not just the diff. (c) No templates/ or vendor/ change is in scope (see US-003 note on the bootstrap posture), so no embed-vendor regeneration. (d) Do not let the report recompute token totals: use them exactly as recorded, and keep the orch-vs-worker asymmetry note precedent in mind (src/commands/stats.ts:105-109)."
@@ -82,7 +89,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 3,
+      "priority": 4,
       "passes": true,
       "requires": "US-001",
       "notes": "Files: NEW src/commands/cycle-metrics.ts (on-main upsert/append writer + the shared path constant), test/commands/stats-cycles.test.ts (extend; a sibling test file may hold extra cases, but the two spec-named tests -- byte-identical rebuild and the one-row append -- must live in test/commands/stats-cycles.test.ts because that path is the issue's oracle). Closest precedent to port, read it first: src/commands/pattern-records.ts (readPatternRecordsContentFromMain at :119-133 for the `git show main:` read that treats a missing file as an empty store at :12-15; appendOutcomeToLine at :338-369 for the in-place slot-preserving upsert; the per-attempt CAS recompute discipline where every retry re-reads the advanced main and re-applies the mutation). GOTCHAS: (a) src/git/on-main.ts:328-332 states that NEW callers must import the shared checkMainUpToDate/pushMainBestEffort exports; a fifth private byte-copy trips the jscpd duplication gate in bun run check:all. (b) suggestions.jsonl is NOT the precedent: it is seeded empty by cam init and its absent-file branch is a hard printError (src/commands/suggestions.ts:167-176). A template seed cannot work here (F-03): copyTemplates (src/commands/setup.ts:750-751) only materializes into the WORKING TREE and setup.ts has no git add/commit anywhere, while an on-main appender needs the path to exist on MAIN. Hence bootstrap-on-first-append, hence no templates/ change and no embed-vendor regeneration. (c) Real I/O at the wire boundary: test the git paths against a real temporary git repo (real tmpdir + real spawn), not a mock that only records argv. (d) Parsing stays tolerant (src/stats/tokens.ts:14-16): malformed lines are skipped, never thrown on."
@@ -102,10 +109,53 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint/static spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 4,
+      "priority": 5,
       "passes": true,
       "requires": "US-003",
       "notes": "Files: index.ts (JournalDispatchDeps at :1805-1866 gains the optional field; a module-level defaultCycleMetricsAppendFn mirroring defaultArchiveFn; the call slot immediately after recordFn() at :1958 and strictly before armMarker() at :2027; the JOURNAL_HELP Behaviour body at the journal help block), test/commands/journal-append.test.ts (dispatchJournal tests already live here), test/commands/stats-cycles.test.ts (the spec-named one-row-append test). Sequence is load-bearing and already documented in place: journal entry persisted -> recordCycleTokens -> cycle-metrics row -> archive checks -> armMarker -> CAM_ORCH_HANDOFF_DUE. GOTCHAS: (a) Do NOT gate the emission on --cycle-close: recordCycleTokens is unconditional, so gating the row would let a plain append create a marker with no matching row and silently break marker-to-row parity. (b) Best-effort contract is absolute: a throw or ok:false may only printWarning; it must never change the exit code or block marker arming and the handoff (index.ts:1996-2025 is the exact shape to copy). (c) renderHelp's 24-char name-column gotcha (patterns.md:522) applies if you touch a HelpEntry name; here only the Behaviour body text changes. (d) Live-cycle reconciliation to expect during this very PRD: this hook may bootstrap the artifact ON MAIN before the branch's US-002 backfill merges. That is why US-003 bootstraps with a FULL derivation (identical content, so the two sides agree); still, merge origin/main into the branch before `cam ship --finalize` (the CAM-121 clobber scar) so the main-side write is not squashed away. (e) After this PRD, no feature branch ever commits scripts/cam/cycle-metrics.jsonl again."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:1",
+    "findings": [
+      {
+        "severity": "WARNING",
+        "file": "src/commands/stats.ts",
+        "line": 148,
+        "text": "`renderCyclesTable` pads cycleId with `padEnd(CYCLE_COL_WIDTH = 42)` and never truncates, but cycleId is an OPAQUE free-form string (branch names) that reaches 47 chars in the committed artifact. The Cycle and Issue columns therefore collide on real data today, e.g. `cam/CAM-94-blocked-narration-supervisor-outcomeCAM-94` and `cam/CAM-134-remove-dead-buildmergedescriptionCAM-134`, in `bun index.ts stats cycles`. This is the same separator-loss class the PRD's own gotcha cites (patterns.md:522, renderHelp losing the space at 24 chars): the implementer applied that check to `stats --help` but not to their own new table. The sibling `renderTokensTable` never hit it because `issueNumber.padEnd(14)` only ever holds short ids like `CAM-470`. Fix mechanically in one file: truncate (or ellipsize) cycleId to CYCLE_COL_WIDTH - 1, or widen the column past the observed max and add a guaranteed separator."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/stats/cycles.ts",
+        "line": 357,
+        "text": "`/* c8 ignore next */` is a c8/istanbul pragma and this is the only occurrence in the whole repo; coverage runs on bun's built-in reporter (`bun run check:coverage`), which does not honour it. The defensive throw itself is fine, but the pragma is inert and implies tooling the project does not use. Prefer a plain comment explaining the invariant."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/stats/cycles.ts",
+        "line": 188,
+        "text": "`mergeMode as MergeMode` widens any string to the `'immediate' | 'ci-gated'` union after only a `typeof === 'string'` check. The tolerant-reader posture is right, but US-002 AC8 forbids publishing a bogus mergeMode, and a membership check (`mergeMode === 'immediate' || mergeMode === 'ci-gated'`) would enforce that in the type system instead of trusting the emit site. Same-cost change, strictly stronger guarantee."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "index.ts",
+        "line": 2270,
+        "text": "`parseStatsArgs` computes `rebuild: args.slice(1).includes('--rebuild')` and silently ignores every other flag, so a typo (`cam stats cycles --rebiuld`) produces output byte-identical to a successful read-only run with no signal that the artifact was not regenerated. This does mirror the in-file `parseJournalArgs` precedent for `--force`/`--cycle-close`, so it is not a convention break; but unlike those booleans, a dropped `--rebuild` is completely silent. Consider rejecting unknown flags after the subcommand, as `parseRunArgs` already does."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/commands/stats.ts",
+        "line": 191,
+        "text": "`cam stats cycles --rebuild` writes `scripts/cam/cycle-metrics.jsonl` into the working tree at any cwd with no branch guard, while the PRD's own posture (US-002/US-004 notes, the CAM-121 clobber scar) is that no feature branch may ever commit this file again after this PR. Nothing in the code or in STATS_HELP states that. Consider a warning (or a hard refusal) when `--rebuild` runs off main, or at minimum a line in the STATS_HELP Behaviour body."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "README.md",
+        "line": 144,
+        "text": "The README `## Commands` block lists `cam journal append` / `cam patterns archive` but no `cam stats` entry at all. This is a pre-existing omission (`stats tokens` is missing too, so the new subcommand does not create a fresh inconsistency), but this PR is the natural point to add `cam stats tokens|cycles` to the block."
+      }
+    ]
+  }
 }
