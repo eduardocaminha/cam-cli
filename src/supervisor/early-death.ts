@@ -192,12 +192,15 @@ export interface EarlyDeathProbeDeps {
 /**
  * Builds a stateful probe: `(uuid) => EarlyDeathVerdict`. Each call resolves
  * the session's transcript path via the shared `transcriptPathForSession`
- * resolver, reads it, and compares against the LAST sample recorded for that
- * uuid (tracked in a closure-local Map, one entry per session). An absent or
- * unreadable transcript always reports still-working (a resolver miss can
- * never fabricate a death) and clears any stale sample for that uuid so a
- * transcript that later appears is not falsely credited with a frozen window
- * it never actually held.
+ * resolver, reads it, and compares against the FREEZE-ANCHOR sample recorded
+ * for that uuid (tracked in a closure-local Map, one entry per session): the
+ * anchor is only replaced when the transcript's byte size actually changes,
+ * so its timestamp stays pinned for as long as the size stays flat and the
+ * frozen window accumulates across poll ticks instead of resetting to one
+ * poll interval on every call. An absent or unreadable transcript always
+ * reports still-working (a resolver miss can never fabricate a death) and
+ * clears any stale sample for that uuid so a transcript that later appears is
+ * not falsely credited with a frozen window it never actually held.
  */
 export function makeEarlyDeathProbe(deps: EarlyDeathProbeDeps): (uuid: string) => EarlyDeathVerdict {
 	const readFileFn = deps.readFileFn ?? ((path: string) => readFileSync(path, 'utf8'));
@@ -217,7 +220,15 @@ export function makeEarlyDeathProbe(deps: EarlyDeathProbeDeps): (uuid: string) =
 
 		const currentSample: TranscriptSample = { size: Buffer.byteLength(jsonl, 'utf8'), timestamp: nowFn() };
 		const previousSample = samples.get(uuid) ?? null;
-		samples.set(uuid, currentSample);
+
+		// Freeze-anchor semantics: only replace the stored sample when the byte
+		// size actually changed (or there is no prior sample yet). When the size
+		// is unchanged, keep the anchor's original timestamp so the frozen
+		// window accumulates across ticks instead of resetting to one poll
+		// interval on every call (the bug this anchoring fixes).
+		if (previousSample === null || currentSample.size !== previousSample.size) {
+			samples.set(uuid, currentSample);
+		}
 
 		return classifyEarlyDeath({ previousSample, currentSample, jsonl, floorMs: deps.floorMs });
 	};

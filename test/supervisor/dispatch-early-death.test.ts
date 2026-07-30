@@ -260,6 +260,40 @@ describe('makeEarlyDeathProbe (stateful)', () => {
 			expect(probe(healthyUuid)).toEqual({ verdict: 'still-working' });
 		});
 	});
+
+	test('regression (US-R2-001): a frozen dead-on-first-turn transcript still fires across many production-cadence poll ticks', () => {
+		withTmpDirs((cwd, claudeDir) => {
+			const uuid = 'production-cadence-uuid';
+			const path = transcriptPathForSession(uuid, cwd, claudeDir);
+			mkdirSync(dirname(path), { recursive: true });
+			writeFileSync(path, DEAD_JSONL, 'utf8');
+
+			let clock = 0;
+			const probe = makeEarlyDeathProbe({ cwd, claudeDir, nowFn: () => clock });
+
+			// Drive the probe at the REAL production poll cadence (5s ticks, the
+			// same as DEFAULT_POLL_INTERVAL_MS / DEFAULT_REVIEW_POLL_INTERVAL_MS /
+			// DEFAULT_PLAN_POLL_INTERVAL_MS) for 40 simulated minutes (480 ticks)
+			// against a permanently-frozen dead transcript. Before the
+			// freeze-anchor fix, samples.set ran unconditionally on every call, so
+			// the stored "previous" sample was always exactly one tick (5s) old
+			// and elapsedMs never reached the 60s floor -- this never fired. With
+			// the fix (only replace the stored sample when the byte size
+			// changes), the anchor's timestamp stays pinned at tick 0 while the
+			// size stays flat, so the frozen window accumulates across ticks.
+			let fired = false;
+			for (let tick = 0; tick < 480; tick++) {
+				clock += 5_000;
+				const verdict = probe(uuid);
+				if (verdict.verdict === 'dead-on-first-turn') {
+					fired = true;
+					break;
+				}
+			}
+
+			expect(fired).toBe(true);
+		});
+	});
 });
 
 // ---------------------------------------------------------------------------

@@ -21,9 +21,25 @@
   ],
   "userStories": [
     {
+      "id": "US-R2-001",
+      "title": "CRITICAL: makeEarlyDeathProbe overwrites the stored sample on EVERY call (sampl…",
+      "priority": 1,
+      "passes": false,
+      "description": "CRITICAL [src/supervisor/early-death.ts:220]: makeEarlyDeathProbe overwrites the stored sample on EVERY call (samples.set(uuid, currentSample) runs unconditionally), so the previous sample is always exactly one poll tick old. All four production call sites invoke the probe once per poll tick at 5_000 ms (DEFAULT_POLL_INTERVAL_MS loop.ts:681, DEFAULT_REVIEW_POLL_INTERVAL_MS review.ts:353, DEFAULT_PLAN_POLL_INTERVAL_MS plan-runner.ts:217), so currentSample.timestamp - previousSample.timestamp is always 5_000 ms, always below EARLY_DEATH_FLOOR_MS (60_000), and the elapsedMs < floorMs guard at early-death.ts:167 returns 'still-working' on every tick, forever. Reproduced at Layer B by driving the REAL probe against the real dead-on-first-turn fixture in a real tmpdir with a 5 s injected clock for 480 ticks (40 simulated minutes of a permanently frozen dead transcript): 'fired at: NEVER' (evidence in scripts/cam/review-artifact.txt section 3). The same isolation shows the pure core is fine under anchored semantics (prev pinned at t=0, now t=65000 -> dead-on-first-turn) and only the probe's bookkeeping is wrong (prev at t=60000, now t=65000 -> still-working). Net effect: the shipped detector cannot fire in production on any of the four dispatch loops, so the PRD's whole outcome (a first-turn 529 stops costing a 30/60-minute cap and stops being labelled a timeout) is unimplemented in production while US-003 AC6 and US-005 AC4 ('the production wiring injects a real detector probe, so the fix does not ship inert behind an undefined seam') read as satisfied because they only grep for the identifier. Fix: keep the stored sample as a freeze ANCHOR (update it only when the byte size changes; keep its original timestamp while the size is unchanged) so the frozen window accumulates across ticks instead of resetting every tick.",
+      "notes": "CRITICAL [src/supervisor/early-death.ts:220]: makeEarlyDeathProbe overwrites the stored sample on EVERY call (samples.set(uuid, currentSample) runs unconditionally), so the previous sample is always exactly one poll tick old. All four production call sites invoke the probe once per poll tick at 5_000 ms (DEFAULT_POLL_INTERVAL_MS loop.ts:681, DEFAULT_REVIEW_POLL_INTERVAL_MS review.ts:353, DEFAULT_PLAN_POLL_INTERVAL_MS plan-runner.ts:217), so currentSample.timestamp - previousSample.timestamp is always 5_000 ms, always below EARLY_DEATH_FLOOR_MS (60_000), and the elapsedMs < floorMs guard at early-death.ts:167 returns 'still-working' on every tick, forever. Reproduced at Layer B by driving the REAL probe against the real dead-on-first-turn fixture in a real tmpdir with a 5 s injected clock for 480 ticks (40 simulated minutes of a permanently frozen dead transcript): 'fired at: NEVER' (evidence in scripts/cam/review-artifact.txt section 3). The same isolation shows the pure core is fine under anchored semantics (prev pinned at t=0, now t=65000 -> dead-on-first-turn) and only the probe's bookkeeping is wrong (prev at t=60000, now t=65000 -> still-working). Net effect: the shipped detector cannot fire in production on any of the four dispatch loops, so the PRD's whole outcome (a first-turn 529 stops costing a 30/60-minute cap and stops being labelled a timeout) is unimplemented in production while US-003 AC6 and US-005 AC4 ('the production wiring injects a real detector probe, so the fix does not ship inert behind an undefined seam') read as satisfied because they only grep for the identifier. Fix: keep the stored sample as a freeze ANCHOR (update it only when the byte size changes; keep its original timestamp while the size is unchanged) so the frozen window accumulates across ticks instead of resetting every tick."
+    },
+    {
+      "id": "US-R2-002",
+      "title": "CRITICAL: No test drives the real probe at the cadence the production loops cal…",
+      "priority": 2,
+      "passes": false,
+      "description": "CRITICAL [test/supervisor/dispatch-early-death.test.ts:275]: No test drives the real probe at the cadence the production loops call it, which is why a green 5911-test suite ships an inert feature (the ADR-0039 / CAM-55 'fakes lie' failure mode this PRD's relatedDocs cite). Every poll-loop test (implementer :339/:361/:394/:416, reviewer :477, planner :545, auditor :564, four-loop :586) injects alwaysDeadOnFirstTurn (:275), a fake that ignores freeze accounting entirely; the only tests that exercise makeEarlyDeathProbe (:173, :241) call it exactly twice with the clock jumped by EARLY_DEATH_FLOOR_MS + 1_000 between calls, a cadence no production caller uses. Add a boundary/regression test that calls the real probe repeatedly at pollIntervalMs (5_000) against a frozen dead transcript and asserts it reports dead-on-first-turn once the cumulative freeze crosses the floor (and a sibling case where the transcript grows every few ticks and never fires), so the detector's freeze accounting is pinned against the wired cadence rather than a bespoke two-call one.",
+      "notes": "CRITICAL [test/supervisor/dispatch-early-death.test.ts:275]: No test drives the real probe at the cadence the production loops call it, which is why a green 5911-test suite ships an inert feature (the ADR-0039 / CAM-55 'fakes lie' failure mode this PRD's relatedDocs cite). Every poll-loop test (implementer :339/:361/:394/:416, reviewer :477, planner :545, auditor :564, four-loop :586) injects alwaysDeadOnFirstTurn (:275), a fake that ignores freeze accounting entirely; the only tests that exercise makeEarlyDeathProbe (:173, :241) call it exactly twice with the clock jumped by EARLY_DEATH_FLOOR_MS + 1_000 between calls, a cadence no production caller uses. Add a boundary/regression test that calls the real probe repeatedly at pollIntervalMs (5_000) against a frozen dead transcript and asserts it reports dead-on-first-turn once the cumulative freeze crosses the floor (and a sibling case where the transcript grows every few ticks and never fires), so the detector's freeze accounting is pinned against the wired cadence rather than a bespoke two-call one."
+    },
+    {
       "id": "US-R1-001",
       "title": "WARNING: pollPlannerDeath now returns { kind: 'pane-died' } the instant isPaneA…",
-      "priority": 1,
+      "priority": 3,
       "passes": true,
       "description": "WARNING [src/supervisor/plan-runner.ts:1302]: pollPlannerDeath now returns { kind: 'pane-died' } the instant isPaneAlive is false, dropping the fresh post-poll re-read of readPlannerReportFn that main performed via isPlannerNoPrd (deleted in this branch). If the planner writes prd.json and its pane exits inside the same poll tick (between the report read at :1297 and the isPaneAlive call at :1302), the phase now terminates as planner-failed with reason 'planner pane exited before writing prd.json' even though prd.json exists, and the auditor is never spawned. Reproduced at Layer B: runPlanPhase with readPlannerReportFn returning null on call 1 and a written prd afterwards yields {\"kind\":\"planner-failed\",\"reason\":\"planner pane exited before writing prd.json\"} after exactly 1 read (evidence in scripts/cam/review-artifact.txt section 3). US-004 AC1 scopes this terminal to pane death 'before prd.json exists'; restore the one-line confirmation read before returning pane-died (and pin it with a test).",
       "notes": "WARNING [src/supervisor/plan-runner.ts:1302]: pollPlannerDeath now returns { kind: 'pane-died' } the instant isPaneAlive is false, dropping the fresh post-poll re-read of readPlannerReportFn that main performed via isPlannerNoPrd (deleted in this branch). If the planner writes prd.json and its pane exits inside the same poll tick (between the report read at :1297 and the isPaneAlive call at :1302), the phase now terminates as planner-failed with reason 'planner pane exited before writing prd.json' even though prd.json exists, and the auditor is never spawned. Reproduced at Layer B: runPlanPhase with readPlannerReportFn returning null on call 1 and a written prd afterwards yields {\"kind\":\"planner-failed\",\"reason\":\"planner pane exited before writing prd.json\"} after exactly 1 read (evidence in scripts/cam/review-artifact.txt section 3). US-004 AC1 scopes this terminal to pane death 'before prd.json exists'; restore the one-line confirmation read before returning pane-died (and pin it with a test)."
@@ -43,7 +59,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 2,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/verified-dispatch.ts (DispatchFailureReason union at :16-25; add an optional `cause` to VerifiedDispatchOptions and thread it through emitDispatchFailure at :88-135 into marker, DispatchFailedEventDetail, and the notifyFn string), src/supervisor/dispatch-failed-marker.ts (DispatchFailedMarker at :16-24 plus the field-by-field validation in readDispatchFailedMarker at :30-58 -- keep cause OPTIONAL in the validator or every already-written marker becomes null), src/supervisor/events.ts (DispatchFailedEventDetail at :704-710). Tests: test/supervisor/dispatch-failed-marker.test.ts, test/supervisor/verified-dispatch.test.ts. This story adds vocabulary + plumbing ONLY; no poll loop is touched yet, so no cause is produced yet. Do NOT import src/retry/patterns.ts (LIMIT_PATTERNS / isRateLimited): wiring that classifier is CAM-435 and is explicitly out of scope. Do NOT add retry logic. Cost/AC-oracle discipline: never read an oracle exit status through a pipe (`bun test ... | tail` reports tail's status); the ./ prefix on every test-path oracle is required. scripts/file-size-budget.json may need a raise for the touched files: raise it in THIS story's commit with a `_ref` note (ADR-0022), and if the branch conflicts on `_ref`, merge origin/main first."
@@ -64,7 +80,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 3,
+      "priority": 5,
       "passes": true,
       "requires": null,
       "notes": "New file src/supervisor/early-death.ts + new test test/supervisor/dispatch-early-death.test.ts. Shape: a pure core (verdict from sampled byte size + previous size + frozen-duration + floor) plus a thin stateful probe factory that closes over cwd/claudeDir/readFile and tracks the last sample per uuid, so the poll loops (US-003, US-005) call it once per interval. REUSE transcriptPathForSession (src/transcript/usage.ts:232-235); src/supervisor/events.ts:29 already imports it -- do not write a second resolver. Resolve the Claude config root exactly as src/supervisor/host.ts:1033 does (process.env['CLAUDE_CONFIG_DIR'] ?? join(homedir(), '.claude')); patterns.md (grep 'claudeDir is not one canonical directory', CAM-360) documents the exact bug class where a story's own test injected the dir it had just written and the production wiring pointed elsewhere -- inject a tmpdir claudeDir in tests AND keep production resolution in the wiring stories consistent with the token reader. Transient-error recognition must be local to this module (a small literal/regex set covering the measured 'API Error: 529 Overloaded. This is a server-side issue, usually temporary'); do NOT import src/retry/patterns.ts (CAM-435, out of scope). Fixtures: dead-on-first-turn is 8-9 JSONL entries / ~3.1-3.4 KB with a single assistant entry that is the API error; healthy is ~70 entries / ~256 KB with 16 tool_use blocks. Every test drives an injected clock (precedent test/supervisor/loop.test.ts:384 and :427) and never wall time; scripts/check-test-sleeps.ts gates sleeps. Bun docs note (officialDocsConsulted): BunFile has no mtime member, so compare byte length of the read content (readFileSync via the injected reader) instead of expecting a Bun mtime API."
@@ -85,7 +101,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 4,
+      "priority": 6,
       "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/loop.ts (poll loop :1400-1470, pollOutcome union at :1401 gains an early-death member; terminal handling :1515-1560 reuses the pane-died/timeout branch so MAX_DEAD_WORKER_RETRIES=4 / NO_PROGRESS_BACKOFF_MS=60000 / MAX_BACKOFF_MS=300000 stay the ONLY retry envelope), src/supervisor/review.ts (poll loop :566-608, timeout branch :586-604), src/supervisor/worker-dispatch.ts (thread the US-001 optional cause through WorkerDispatchLifecycleOptions -> runCheckedWorkerSentinel at :104-130 into runVerifiedDispatch), src/supervisor/host.ts (production injection next to the existing readWorkerTokensAdapter at :1032-1035 -- REUSE the same transcriptClaudeDir variable so the probe and the token reader can never resolve different dirs). Name the injected option earlyDeathProbeFn (the wiring oracle greps that literal). Caps differ per phase: implementer host 30 min (loop.ts:650), implementer container 60 min (loop.ts:662), reviewer 30 min (review.ts:343) -- express the floor via the US-002 constant/derivation, never a hardcoded 30 minutes. Liveness today rests solely on tmux pane_dead (host.ts:583-592, consumed loop.ts:1403 and review.ts:573) and is provably insufficient (the second measured occurrence had exitCode 0, empty stderr, live inert pane for 30 minutes); the transcript read is the new signal, and pipe-pane out-logs are write-only (zero readers in src/) so they are not a substitute. Do NOT touch the respawn-pane -k / pipe-pane ordering or remain-on-exit (CAM-477), the idle-pane mutex (CAM-440), or wire src/retry/patterns.ts (CAM-435). Tests drive the injected clock and sleepFn (precedent test/supervisor/loop.test.ts:384/:427; pair a no-op sleepFn with a tiny timeout per patterns.md line 30 or the loop spins the CPU to the real deadline). Keep worker/orchestrator scratch in /tmp: any untracked repo file fails the plan preflight clean-tree guard. Raise scripts/file-size-budget.json in this commit with a `_ref` note if loop.ts / review.ts / their test files exceed budget."
@@ -104,7 +120,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 5,
+      "priority": 7,
       "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/plan-runner.ts, new test test/supervisor/plan-runner-early-death.test.ts, and src/supervisor/plan-runner.ts's consumer src/commands/sidecar.ts only if the notify text for planner-failed needs the reason (runPostAuditAction handles 'planner-failed' at plan-runner.ts:2150-2153). Three sites: (a) pollPlannerDeath (:1137-1168) returns TRUE on pane death, making pane death indistinguishable from prd.json completion, and the caller then produces { kind: 'planner-failed' } (declared :282, returned :1343) with NO reason field -- change the poll return and the result kind TOGETHER, or the cause is extracted then discarded at the type boundary; keep the union member name 'planner-failed' and add an OPTIONAL reason so the existing consumers (test/plan-runner-no-prd.test.ts:130/:225, test/integration/plan-runner-no-prd.test.ts:214, test/supervisor/plan/plan-runner-replan.test.ts:575, test/supervisor/plan/plan-runner-postaudit.test.ts:662, plan-runner.ts:2150) stay valid. (b) pollAuditorReport (:1182-1201) returns a byte-identical { ok: false } for both pane death (:1196) and cap elapsed (:1197-1199) and the caller labels both auditor-timeout (:1364-1366). (c) The phase corruption is `${phase}-timeout` at :1064, passed as `phase` into runVerifiedDispatch at :1072; the plan timeout path emits TWO dispatch-failed events for one failure (inner from verified-dispatch.ts:116-122, outer at :1105-1119) and the marker written at :1090 overwrites the inner -- keep phase a real phase name on BOTH and keep the reason in the reason field. This story does not add the detector; it makes a reason-bearing home for US-005's cause. Tests drive the injected clock, never wall time. Raise scripts/file-size-budget.json in this commit with a `_ref` note if plan-runner.ts exceeds budget."
@@ -123,70 +139,76 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 6,
+      "priority": 8,
       "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/plan-runner.ts (pollPlannerDeath :1137-1168 and pollAuditorReport :1182-1201 gain the same probe consultation the implementer/reviewer loops got in US-003; RunPlanPhaseOptions gains earlyDeathProbeFn; emitPlanTimeoutTerminal :1058-1119 must pass the cause into the US-001 marker/event/notify fields), src/commands/sidecar.ts (production wiring: makeProductionPlanPhaseFn closes over runPlanPhase -- resolve the Claude config root the same way src/supervisor/host.ts:1033 does and reuse the US-002 probe factory), tests test/supervisor/plan-runner-early-death.test.ts and test/supervisor/dispatch-early-death.test.ts (the four-loop criterion reuses the implementer/reviewer drivers added in US-003 plus the two plan loops; keep helpers shared rather than duplicating four ad hoc harnesses). All four loops share ONE exit set (report-file present, pane_dead, cap elapsed) -- fix the shared shape, do not special-case a phase. Planner and auditor caps are both 30 min (plan-runner.ts:219) with a 5 s poll interval (:216), but the floor must still come from the US-002 constant/derivation. DO NOT add retry or re-spawn policy: MAX_DEAD_WORKER_RETRIES=4 (loop.ts:774) already exists and is merely starved by 30-minute attempts. Out of scope and must not be touched: pane-scrape evidence and src/retry/patterns.ts wiring (CAM-435, stays open), respawn/pipe-pane ordering and remain-on-exit (CAM-477, stays open), idle-pane mutex (CAM-440). Carry the measured cost baseline into the PR body: healthy planner 2m30s (07:43:20.115Z spawn to 07:45:50.721Z auditor spawn) versus two dead-on-first-turn planners at 30m04s each (06:21:15.797Z-06:51:20.183Z and 06:54:43.957Z-07:24:48.214Z); across 1237 completed worker runs the median is 6.9 min and p90 18.0 min, so the 30-minute cap is 4.3x the median productive run. Raise scripts/file-size-budget.json in this commit with a `_ref` note if plan-runner.ts / sidecar.ts / the test files exceed budget."
     }
   ],
   "review": {
-    "roundsCompleted": 1,
+    "roundsCompleted": 2,
     "maxRounds": 3,
-    "lastVerdict": "FIXES_PENDING:1",
+    "lastVerdict": "FIXES_PENDING:2",
     "findings": [
       {
-        "severity": "WARNING",
-        "file": "src/supervisor/plan-runner.ts",
-        "line": 1302,
-        "text": "pollPlannerDeath now returns { kind: 'pane-died' } the instant isPaneAlive is false, dropping the fresh post-poll re-read of readPlannerReportFn that main performed via isPlannerNoPrd (deleted in this branch). If the planner writes prd.json and its pane exits inside the same poll tick (between the report read at :1297 and the isPaneAlive call at :1302), the phase now terminates as planner-failed with reason 'planner pane exited before writing prd.json' even though prd.json exists, and the auditor is never spawned. Reproduced at Layer B: runPlanPhase with readPlannerReportFn returning null on call 1 and a written prd afterwards yields {\"kind\":\"planner-failed\",\"reason\":\"planner pane exited before writing prd.json\"} after exactly 1 read (evidence in scripts/cam/review-artifact.txt section 3). US-004 AC1 scopes this terminal to pane death 'before prd.json exists'; restore the one-line confirmation read before returning pane-died (and pin it with a test)."
+        "severity": "CRITICAL",
+        "file": "src/supervisor/early-death.ts",
+        "line": 220,
+        "text": "makeEarlyDeathProbe overwrites the stored sample on EVERY call (samples.set(uuid, currentSample) runs unconditionally), so the previous sample is always exactly one poll tick old. All four production call sites invoke the probe once per poll tick at 5_000 ms (DEFAULT_POLL_INTERVAL_MS loop.ts:681, DEFAULT_REVIEW_POLL_INTERVAL_MS review.ts:353, DEFAULT_PLAN_POLL_INTERVAL_MS plan-runner.ts:217), so currentSample.timestamp - previousSample.timestamp is always 5_000 ms, always below EARLY_DEATH_FLOOR_MS (60_000), and the elapsedMs < floorMs guard at early-death.ts:167 returns 'still-working' on every tick, forever. Reproduced at Layer B by driving the REAL probe against the real dead-on-first-turn fixture in a real tmpdir with a 5 s injected clock for 480 ticks (40 simulated minutes of a permanently frozen dead transcript): 'fired at: NEVER' (evidence in scripts/cam/review-artifact.txt section 3). The same isolation shows the pure core is fine under anchored semantics (prev pinned at t=0, now t=65000 -> dead-on-first-turn) and only the probe's bookkeeping is wrong (prev at t=60000, now t=65000 -> still-working). Net effect: the shipped detector cannot fire in production on any of the four dispatch loops, so the PRD's whole outcome (a first-turn 529 stops costing a 30/60-minute cap and stops being labelled a timeout) is unimplemented in production while US-003 AC6 and US-005 AC4 ('the production wiring injects a real detector probe, so the fix does not ship inert behind an undefined seam') read as satisfied because they only grep for the identifier. Fix: keep the stored sample as a freeze ANCHOR (update it only when the byte size changes; keep its original timestamp while the size is unchanged) so the frozen window accumulates across ticks instead of resetting every tick."
+      },
+      {
+        "severity": "CRITICAL",
+        "file": "test/supervisor/dispatch-early-death.test.ts",
+        "line": 275,
+        "text": "No test drives the real probe at the cadence the production loops call it, which is why a green 5911-test suite ships an inert feature (the ADR-0039 / CAM-55 'fakes lie' failure mode this PRD's relatedDocs cite). Every poll-loop test (implementer :339/:361/:394/:416, reviewer :477, planner :545, auditor :564, four-loop :586) injects alwaysDeadOnFirstTurn (:275), a fake that ignores freeze accounting entirely; the only tests that exercise makeEarlyDeathProbe (:173, :241) call it exactly twice with the clock jumped by EARLY_DEATH_FLOOR_MS + 1_000 between calls, a cadence no production caller uses. Add a boundary/regression test that calls the real probe repeatedly at pollIntervalMs (5_000) against a frozen dead transcript and asserts it reports dead-on-first-turn once the cumulative freeze crosses the floor (and a sibling case where the transcript grows every few ticks and never fires), so the detector's freeze accounting is pinned against the wired cadence rather than a bespoke two-call one."
       },
       {
         "severity": "WARNING",
         "file": "src/supervisor/early-death.ts",
         "line": 123,
-        "text": "Consider-class (non-blocking): TRANSIENT_API_ERROR_TEXT_RE is /^API Error:.*(5\\d{2}|overloaded|rate.?limit|timeout|ECONNRESET|socket hang up)/is with the dotAll flag, so it matches any multi-line assistant message that merely begins with 'API Error:' and mentions one of those tokens anywhere later. A healthy worker's transcript routinely stays flat for more than EARLY_DEATH_FLOOR_MS (60 s) while a long Bash tool call runs (this repo's own `bun test` takes 85 s), so 'frozen past the floor' is not by itself rare; combined with model-authored prose that starts with 'API Error:' it would kill a live worker and burn a dead-worker retry. The authoritative signal (isApiErrorMessage:true, verified present on real transcripts at Layer B) already covers every measured case; the text fallback only widens the false-positive surface. Suggest gating the text fallback more tightly (single-line anchor, or require the API-error entry to be the transcript's terminal entry)."
+        "text": "Consider-class (non-blocking, re-raised from round 1 and still open): TRANSIENT_API_ERROR_TEXT_RE is /^API Error:.*(5\\d{2}|overloaded|rate.?limit|timeout|ECONNRESET|socket hang up)/is with the dotAll flag, so it matches any multi-line assistant message that merely begins with 'API Error:' and mentions one of those tokens anywhere later. The authoritative signal (isApiErrorMessage: true, present on every real transcript entry produced by claude-code-harness/utils/messages.ts createAssistantAPIErrorMessage) already covers every measured case; the text fallback only widens the false-positive surface, and once the CRITICAL freeze-anchor bug above is fixed the detector will actually fire, so this surface stops being theoretical. Suggest a single-line anchor, or requiring the API-error entry to be the transcript's terminal entry."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/supervisor/plan-runner.ts",
+        "line": 1374,
+        "text": "pollAuditorReport returns { ok: false, cause: 'pane-died' } the instant isPaneAlive is false, with no confirmation re-read of readPlanVerdictFn. That is exactly the same-tick write-then-exit race US-R1-001 just fixed for pollPlannerDeath (and documented as a general rule in the new patterns.md bullet), applied to the auditor: a verdict written between the readPlanVerdictFn call at :1371 and the isPaneAlive call at :1374 is discarded and the plan cycle terminates auditor-timeout. Pre-existing on main (not a regression of this branch), but the sibling fix and the new pattern bullet make the asymmetry conspicuous."
       },
       {
         "severity": "SUGGESTION",
         "file": "src/supervisor/loop.ts",
         "line": 1433,
-        "text": "The implementer loop consults earlyDeathProbeFn BEFORE the worker-report check, whereas review.ts (:580-600) and plan-runner.ts (:1297-1306) both check their report file first. review.ts's comment claims it mirrors the implementer loop 'exactly', which is not the case. Report presence is the definitive completion signal; checking it first costs at most one poll tick and removes any chance of discarding a completed report."
+        "text": "Re-raised from round 1, still open: the implementer loop consults earlyDeathProbeFn BEFORE the worker-report check, whereas review.ts (:596) and plan-runner.ts (:1311) both check their report file first. The review.ts comment at :596 claims it mirrors the implementer poll loop 'exactly', which is not the case. Report presence is the definitive completion signal; checking it first costs at most one poll tick and removes any chance of discarding a completed report."
       },
       {
         "severity": "SUGGESTION",
         "file": "src/supervisor/loop.ts",
         "line": 1554,
-        "text": "The new terminals emit phase 'implementer-session-died-early' (loop.ts) and 'reviewer-session-died-early' (review.ts:606/620) while reason is already 'session-died-early', i.e. the phase field again carries the cause. That is the shape US-004 just removed from plan-runner.ts and that the new patterns.md bullet forbids ('Never synthesize a phase value by string-interpolating a reason suffix onto it'). It follows the pre-existing loop.ts convention ('implementer-timeout'), so it is consistent locally, but the branch now documents two opposite rules for the same field."
-      },
-      {
-        "severity": "SUGGESTION",
-        "file": "src/supervisor/early-death.ts",
-        "line": 218,
-        "text": "The probe reads the full transcript on every tick just to sample its byte size. Bun docs confirm BunFile exposes a synchronous .size (https://bun.sh/docs/api/file-io), and node:fs statSync().size is equally sync, so the content read could be deferred until the freeze window is actually met. Measured cost today is small (1.32 ms for a real 4.48 MB transcript vs 0.49 ms statSync), so this is efficiency, not a defect."
+        "text": "Re-raised from round 1, still open: the new terminals emit phase 'implementer-session-died-early' (loop.ts:1554) and 'reviewer-session-died-early' (review.ts:606/620) while reason is already 'session-died-early', i.e. the phase field again carries the cause. That is the shape US-004 just removed from plan-runner.ts and that this branch's own new patterns.md bullet forbids ('Never synthesize a phase value by string-interpolating a reason suffix onto it'). It follows the pre-existing loop.ts convention ('implementer-timeout'), so it is locally consistent, but the branch now documents two opposite rules for the same field."
       },
       {
         "severity": "SUGGESTION",
         "file": "src/supervisor/early-death.ts",
         "line": 205,
-        "text": "makeEarlyDeathProbe's `samples` Map is never evicted: one entry accumulates per session uuid for the lifetime of the sidecar process (which can run for days). Entries are tiny, but deleting the uuid's sample on a terminal verdict would bound it."
+        "text": "Re-raised from round 1, still open: makeEarlyDeathProbe's `samples` Map is never evicted; one entry accumulates per session uuid for the lifetime of the sidecar process (which can run for days). Entries are tiny, but deleting the uuid's sample on a terminal verdict would bound it."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/supervisor/early-death.ts",
+        "line": 212,
+        "text": "The probe reads the full transcript on every tick just to sample its byte size. Bun docs confirm BunFile exposes a synchronous .size (https://bun.sh/docs/api/file-io reference block: `readonly size: number`, and 0 for a non-existent path) and node:fs statSync().size is equally sync, so the content read could be deferred until the freeze window is actually met. Efficiency, not a defect."
       },
       {
         "severity": "SUGGESTION",
         "file": "test/supervisor/plan-runner-early-death.test.ts",
         "line": 142,
-        "text": "The test named 'the reason-bearing planner-failed terminal reaches the notification channel' never injects or asserts notifyFn: it only re-asserts result.reason is defined, duplicating the preceding test. Either drive runPostAuditAction/handlePlannerFailed and assert the notification text, or rename the test to what it actually checks."
-      },
-      {
-        "severity": "SUGGESTION",
-        "file": "test/supervisor/dispatch-early-death.test.ts",
-        "line": 5,
-        "text": "The header comment and US-002's AC call the fixtures 'REAL'; test/fixtures/early-death/*.jsonl are faithful hand-authored replicas (synthetic uuids like 'line-0001-...'), not captured transcripts. The reviewer independently drove the detector against a real live ~/.claude/projects transcript and it classified correctly (artifact section 1), so correctness holds, but the wording overstates the fixture provenance."
+        "text": "Re-raised from round 1, still open: the test named 'the reason-bearing planner-failed terminal reaches the notification channel' never injects or asserts notifyFn; it only re-asserts result.reason is defined, duplicating the preceding test. Either drive runPostAuditAction/handlePlannerFailed and assert the notification text (handlePlannerFailed at plan-runner.ts:2177 has no test asserting the reason suffix reaches the notification), or rename the test to what it actually checks."
       },
       {
         "severity": "SUGGESTION",
         "file": "src/commands/status.ts",
         "line": 885,
-        "text": "`cam status` renders the dispatch-failed marker as `${phase} · ${reason}` and does not surface the new `cause` field, so the human-facing reader still cannot see the upstream 529 text that the marker now carries."
+        "text": "Re-raised from round 1, still open: `cam status` renders the dispatch-failed marker as `${phase} - ${reason}` and does not surface the new `cause` field, so the human-facing reader still cannot see the upstream 529 text the marker now carries."
       }
     ]
   }
