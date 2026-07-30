@@ -294,6 +294,45 @@ describe('makeEarlyDeathProbe (stateful)', () => {
 			expect(fired).toBe(true);
 		});
 	});
+
+	test('regression (US-R2-002): a transcript that grows every few ticks never fires across many production-cadence poll ticks', () => {
+		withTmpDirs((cwd, claudeDir) => {
+			const uuid = 'growing-cadence-uuid';
+			const path = transcriptPathForSession(uuid, cwd, claudeDir);
+			mkdirSync(dirname(path), { recursive: true });
+
+			// A real healthy transcript (normal last assistant entry, not an API
+			// error) that grows a little every few ticks -- never frozen long
+			// enough to cross EARLY_DEATH_FLOOR_MS (60s) between growth events,
+			// and its content never qualifies as dead-on-first-turn anyway. This
+			// is the sibling of the frozen-dead-transcript regression above: the
+			// same production cadence (5s ticks, 480 ticks / 40 simulated
+			// minutes), but the detector must NEVER fire.
+			const extraLine = HEALTHY_JSONL.split('\n').filter((l) => l.trim() !== '').at(-1) ?? '';
+			let content = HEALTHY_JSONL;
+			writeFileSync(path, content, 'utf8');
+
+			let clock = 0;
+			const probe = makeEarlyDeathProbe({ cwd, claudeDir, nowFn: () => clock });
+			const GROWTH_EVERY_TICKS = 3; // grows every 15s, well under the 60s floor
+
+			let fired = false;
+			for (let tick = 1; tick <= 480; tick++) {
+				clock += 5_000;
+				if (tick % GROWTH_EVERY_TICKS === 0) {
+					content += `\n${extraLine}`;
+					writeFileSync(path, content, 'utf8');
+				}
+				const verdict = probe(uuid);
+				if (verdict.verdict === 'dead-on-first-turn') {
+					fired = true;
+					break;
+				}
+			}
+
+			expect(fired).toBe(false);
+		});
+	});
 });
 
 // ---------------------------------------------------------------------------
