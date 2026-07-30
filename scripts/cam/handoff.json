@@ -1,16 +1,15 @@
 {
-  "lastCompletedStory": { "id": "US-004", "title": "Emit the cycle-metrics row automatically at cycle close" },
+  "lastCompletedStory": { "id": "US-R1-001", "title": "Review round 1 fix 001: address reviewer finding" },
   "branchName": "cam/issue-470",
   "timestamp": "2026-07-29T23:59:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "index.ts",
-    "test/commands/journal-append.test.ts",
-    "test/commands/patterns-cli.test.ts",
-    "test/commands/stats-cycles.test.ts"
+    "src/commands/stats.ts",
+    "test/commands/stats-cycles.test.ts",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-004 wired the US-003 writer (upsertCycleMetricsRowOnMain, src/commands/cycle-metrics.ts) into dispatchJournal (index.ts): a new optional JournalDispatchDeps.cycleMetricsAppendFn (default: defaultCycleMetricsAppendFn, reading .claude/cam-worker-events.jsonl via readFileSync + a real spawnSync, mirroring defaultArchiveFn/defaultPatternsArchiveFn) is called UNCONDITIONALLY on every successful `cam journal append` -- not gated on --cycle-close, because recordCycleTokens itself is unconditional and no cycle-tokens marker may exist without a matching cycle-metrics row. Call site sits immediately after recordFn() and strictly before the `if (parsed.cycleClose)` block (so strictly before archiveFn/patternsArchiveFn/armRecycleMarkerFn), wrapped in try/catch, best-effort (a throw or ok:false only printWarning's, never changes the exit code, the recycle marker, or CAM_ORCH_HANDOFF_DUE). JOURNAL_HELP's Behaviour body got a new non-restructuring paragraph documenting this (per the CAM-217 silently-undocumented-behaviour scar) between the exit-code contract and the `cam journal archive` section. With this story, the full cycle-metrics pipeline (US-001 pure aggregation, US-002 CLI --rebuild reporter, US-003 on-main writer, US-004 automatic emission) is complete: `scripts/cam/cycle-metrics.jsonl` now grows automatically at every cycle close with zero manual step. GOTCHA for any FUTURE story that makes another dispatchJournal dep unconditional: making cycleMetricsAppendFn unconditional (rather than --cycle-close-gated like archiveFn/patternsArchiveFn) required injecting a hermetic fake into 19 pre-existing dispatchJournal(...) test call sites across two files (test/commands/journal-append.test.ts, test/commands/patterns-cli.test.ts) that previously didn't need one -- see the new patterns.md bullet (CAM-470) for the full blast-radius accounting and the two reusable fake shapes (noopCycleMetricsFn / inline order-tracking fakes).",
+  "nextStoryContext": "US-R1-001 fixed the reviewer's WARNING against src/commands/stats.ts:148 (renderCyclesTable): cycleId is an OPAQUE free-form string (branch names) with no length ceiling and reached 47 chars in the committed artifact, colliding directly into the Issue column because String.padEnd only ever adds padding and never truncates a value already at or past the target width. Fixed with a new truncateForColumn(value, width) helper (value.length >= width ? value.slice(0, width - 1) : value) applied to cycleId before padEnd(CYCLE_COL_WIDTH), guaranteeing at least one separator column regardless of input length; issueNumber (fixed-shape CAM-NNN) was left untouched since it has an enforced short shape. Added a regression test in test/commands/stats-cycles.test.ts reproducing the exact 54-char collision example from the review finding (asserts the row no longer contains the collided substring and that a separator space precedes the issue column). This story only fixed the one WARNING finding; the review round's five SUGGESTIONs (c8-ignore pragma inertness in src/stats/cycles.ts:357, mergeMode widening via typeof-only check in src/stats/cycles.ts:188, silent unknown-flag handling in parseStatsArgs at index.ts:2270, no branch guard on --rebuild writing scripts/cam/cycle-metrics.jsonl off-main, and the missing README `cam stats` entry) were NOT addressed here -- they are non-blocking SUGGESTIONs, not the WARNING this fix-story exists for, and remain open for a future story/issue if the operator wants them actioned. Full quality spine (bun run check:all, all 10 ratchets) is green.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
