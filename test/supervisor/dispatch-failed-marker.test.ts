@@ -75,6 +75,25 @@ describe('dispatch-failed marker I/O', () => {
 		});
 	});
 
+	test('preserves the cause field through a write and read round-trip', () => {
+		withTmpProject((_cwd, claudeDir) => {
+			const markerPath = join(claudeDir, DISPATCH_FAILED_FILENAME);
+			const withCause: DispatchFailedMarker = { ...MARKER, cause: 'API Error: 529 overloaded' };
+			writeDispatchFailedMarker(markerPath, withCause);
+
+			expect(readDispatchFailedMarker(markerPath)).toEqual(withCause);
+		});
+	});
+
+	test('still parses a marker written without a cause field', () => {
+		withTmpProject((_cwd, claudeDir) => {
+			const markerPath = join(claudeDir, DISPATCH_FAILED_FILENAME);
+			writeFileSync(markerPath, JSON.stringify(MARKER));
+
+			expect(readDispatchFailedMarker(markerPath)).toEqual(MARKER);
+		});
+	});
+
 	test('remove is idempotent and write/remove failures never throw', () => {
 		withTmpProject((_cwd, claudeDir) => {
 			const markerPath = join(claudeDir, DISPATCH_FAILED_FILENAME);

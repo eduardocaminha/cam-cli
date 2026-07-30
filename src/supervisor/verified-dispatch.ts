@@ -21,7 +21,14 @@ export type DispatchFailureReason =
 	| 'pane-pid-after-exited'
 	| 'pane-pid-after-empty'
 	| 'pane-pid-unchanged'
-	| 'pipe-pane-exited';
+	| 'pipe-pane-exited'
+	/**
+	 * Shared early-death literal (US-001, CAM-479): the worker session died on
+	 * or before its first turn (e.g. a first-turn API error), a distinct
+	 * observable terminal from a work timeout. Every phase that detects an
+	 * early death reuses this one literal instead of inventing an ad hoc label.
+	 */
+	| 'session-died-early';
 
 export interface VerifiedDispatchOptions {
 	spawnFn: SpawnFn;
@@ -35,6 +42,14 @@ export interface VerifiedDispatchOptions {
 	notifyFn: (message: string) => void;
 	storyId?: string;
 	clock?: () => string;
+	/**
+	 * Extracted cause text for this dispatch attempt (US-001, CAM-479), e.g. a
+	 * transcript-derived early-death reason. Threaded verbatim into the marker,
+	 * the dispatch-failed event detail, and the notification so the three
+	 * observable channels never disagree. Absent when no caller has extracted
+	 * a cause yet (this story adds vocabulary + plumbing only).
+	 */
+	cause?: string;
 	/**
 	 * The `@cam_label` value set on the pane before respawn (US-R1-005,
 	 * CAM-433 review round 1). Defaults to `phase` for backward compat, but a
@@ -101,6 +116,7 @@ function emitDispatchFailure(
 		stderr,
 		reason: failure.reason,
 		timestamp,
+		...(opts.cause !== undefined ? { cause: opts.cause } : {}),
 	};
 	const detail: DispatchFailedEventDetail = {
 		phase: marker.phase,
@@ -108,6 +124,7 @@ function emitDispatchFailure(
 		exitCode: marker.exitCode,
 		stderr: marker.stderr,
 		reason: marker.reason,
+		...(marker.cause !== undefined ? { cause: marker.cause } : {}),
 	};
 
 	// Each channel is attempted independently so one broken sink cannot silence
@@ -129,10 +146,13 @@ function emitDispatchFailure(
 		// Continue to the live notification.
 	}
 	try {
+		const causeSuffix = marker.cause === undefined || marker.cause.trim() === ''
+			? ''
+			: `: ${marker.cause.trim()}`;
 		const stderrSuffix = stderr.trim() === '' ? '' : `: ${stderr.trim()}`;
 		opts.notifyFn(
 			`[cam] ${opts.phase} dispatch failed (${failure.reason}, pane ${opts.paneId}, ` +
-			`exit ${marker.exitCode})${stderrSuffix}`,
+			`exit ${marker.exitCode})${causeSuffix}${stderrSuffix}`,
 		);
 	} catch {
 		// The structured return still exposes the terminal to the caller.
