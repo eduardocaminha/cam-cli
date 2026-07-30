@@ -1,23 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Add the pure early-death detector over a session transcript"
+    "id": "US-003",
+    "title": "End the implementer and reviewer waits at the floor with a cause-bearing terminal"
   },
   "branchName": "cam/issue-479",
-  "timestamp": "2026-07-30T13:10:00.000Z",
-  "createdFiles": [
-    "src/supervisor/early-death.ts",
-    "test/supervisor/dispatch-early-death.test.ts",
-    "test/fixtures/early-death/dead-on-first-turn.jsonl",
-    "test/fixtures/early-death/healthy-planner.jsonl"
-  ],
+  "timestamp": "2026-07-30T14:30:00.000Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "scripts/cam/patterns.md"
+    "src/supervisor/host.ts",
+    "src/supervisor/loop.ts",
+    "src/supervisor/review.ts",
+    "src/supervisor/verified-dispatch.ts",
+    "test/supervisor/dispatch-early-death.test.ts",
+    "scripts/cam/patterns.md",
+    "scripts/file-size-budget.json"
   ],
-  "openQuestions": [
-    "This story adds ONLY the pure predicate + probe factory (classifyEarlyDeath, extractLastAssistantEntry, isTransientApiError, makeEarlyDeathProbe, EARLY_DEATH_FLOOR_MS) in src/supervisor/early-death.ts. Nothing calls makeEarlyDeathProbe from the poll loop yet, and nothing sets DispatchFailureReason='session-died-early' or the VerifiedDispatchOptions.cause field (US-001, CAM-479) from a real detected death. Wiring the probe into the actual poll loop (loop.ts, likely alongside the existing perWorkerTimeoutMs/isPaneAlive checks) and threading its verdict into runVerifiedDispatch's cause/reason is the next story's job."
-  ],
-  "nextStoryContext": "US-002 (CAM-479) added src/supervisor/early-death.ts: a pure two-layer early-death detector over a worker session transcript. Layer 1 (pure, no I/O): `classifyEarlyDeath({previousSample, currentSample, jsonl, floorMs?})` returns `{verdict:'dead-on-first-turn', cause}` only when BOTH the transcript's byte size has not grown across the floor window (EARLY_DEATH_FLOOR_MS=60_000ms, proven far below both DEFAULT_PER_WORKER_TIMEOUT_MS=30min and DEFAULT_CONTAINER_WORKER_TIMEOUT_MS=60min from loop.ts) AND the transcript's last assistant entry (`extractLastAssistantEntry`) is a transient API error (`isTransientApiError`: checks the real `isApiErrorMessage:true` transcript-line flag first, falls back to a local `/^API Error:.*(5\\d{2}|overloaded|rate.?limit|timeout|...)/is` regex on the verbatim text) -- otherwise `{verdict:'still-working'}`. `cause` is the last assistant entry's verbatim text (not synthesized). Layer 2 (stateful): `makeEarlyDeathProbe({cwd, claudeDir, readFileFn?, nowFn?, floorMs?})` returns a `(uuid) => EarlyDeathVerdict` closure that resolves the transcript path via the EXISTING shared `transcriptPathForSession` (src/transcript/usage.ts, no second resolver), tracks the last byte-size sample per uuid in a closure-local Map, and reports still-working (clearing any stale sample) whenever the file is absent or the reader throws -- a resolver miss can never fabricate a death. Two REAL fixtures back the tests: test/fixtures/early-death/dead-on-first-turn.jsonl (8 entries, ~3.1KB, exactly one assistant entry which IS the `isApiErrorMessage:true` 529-Overloaded error) and healthy-planner.jsonl (67 entries, ~258KB, 16 tool_use blocks, real multi-turn thinking/text/tool_use/tool_result shape). Every test drives an injected clock (`nowFn`) or explicit timestamps, never wall time. Next story (per handoff openQuestions) wires this probe into the actual poll loop and into US-001's `cause`/`session-died-early` vocabulary on verified-dispatch.ts.",
+  "openQuestions": [],
+  "nextStoryContext": "US-003 (CAM-479) wired US-002's pure early-death detector (src/supervisor/early-death.ts) into both poll loops. loop.ts: `earlyDeathProbeFn` (RunSupervisorOptions, optional) is consulted once per implementer poll tick, right after the isPaneAlive check and before the report/sentinel checks; a 'dead-on-first-turn' verdict sets pollOutcome='session-died-early' and breaks immediately (proven <10% of both the 30-min host cap and the 60-min container cap in-test). review.ts: `earlyDeathProbeFn` (MakeReviewDispatchOptions, optional) is consulted symmetrically in the reviewer poll loop. Both phases route the early-death outcome through the EXISTING dead-worker-streak/backoff/MAX_DEAD_WORKER_RETRIES machinery (loop.ts) or the EXISTING MAX_REVIEW_DISPATCH_ATTEMPTS retry path (review.ts) -- no second retry mechanism. Terminal emission is split into two independent calls: `runCheckedWorkerSentinel` (unchanged, kills/respawns the stuck pane, same as the pre-existing timeout branch) followed by a NEW `emitEarlyDeathTerminal` (verified-dispatch.ts) that emits reason='session-died-early' plus the verbatim transcript cause on all three observable channels (dispatch-failed event, durable DispatchFailedMarker, orchestrator notification). `emitEarlyDeathTerminal` takes a new narrower `DispatchFailureEmitOptions` interface (no tmux dispatch fields) since it has nothing to report from a real command result; `VerifiedDispatchOptions` is a structural supertype so `emitDispatchFailure`'s existing implementation serves both without duplication. `DispatchFailureReason` (verified-dispatch.ts) gained the 'session-died-early' member. Production wiring: host.ts declares a single `earlyDeathProbeFn = makeEarlyDeathProbe({cwd, claudeDir: transcriptClaudeDir})` shared between the implementer opts bag and the reviewer dispatch, reusing the SAME transcriptClaudeDir variable the pre-existing US-013 token reader already resolves (they can never diverge). All 10 acceptance-criteria oracles pass individually (18/18 tests in dispatch-early-death.test.ts, loop.test.ts + review.test.ts stay green at 254/254, full suite 5901/5901, typecheck clean, full `bun run check:all` spine green including coverage/dead-code/dup/file-size). No open questions or follow-ups identified for this story; CAM-479's epic scope (US-001 cause field, US-002 detector, US-003 wiring) is now complete per the PRD notes trail.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ],
