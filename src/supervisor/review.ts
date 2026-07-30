@@ -53,6 +53,8 @@ import {
 	runCheckedWorkerSentinel,
 	runVerifiedWorkerDispatch,
 } from './worker-dispatch.ts';
+import { emitEarlyDeathTerminal } from './verified-dispatch.ts';
+import type { EarlyDeathVerdict } from './early-death.ts';
 
 export { DEFAULT_REVIEWER_AGENT, REVIEWER_TASK_PROMPT };
 
@@ -331,6 +333,17 @@ export interface MakeReviewDispatchOptions {
 	 * and RunPlanPhaseOptions (plan-runner.ts).
 	 */
 	codexModelsCacheReaderFn?: CodexModelsCacheReader;
+	/**
+	 * Early-death transcript probe (US-003, CAM-479). Mirrors earlyDeathProbeFn
+	 * in RunSupervisorOptions (loop.ts): called once per poll tick with the
+	 * reviewer's session uuid. A 'dead-on-first-turn' verdict ends the wait at
+	 * the detector's floor instead of the full DEFAULT_REVIEW_TIMEOUT_MS,
+	 * killing the stuck reviewer pane and returning status='error' through the
+	 * SAME MAX_REVIEW_DISPATCH_ATTEMPTS retry path the loop already applies to
+	 * every other reviewDispatch 'error' result -- no second retry mechanism.
+	 * Optional: when absent the poll loop is byte-for-byte unchanged.
+	 */
+	earlyDeathProbeFn?: (uuid: string) => EarlyDeathVerdict;
 }
 
 /** Default max review rounds (mirrors decide.ts and cam-review.md). */
@@ -397,6 +410,8 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 	// US-006 (CAM-398): injectable codex models-cache reader, threaded
 	// straight into resolvePhaseModel at the reviewer dispatch site.
 	const codexModelsCacheReaderFn = opts.codexModelsCacheReaderFn;
+	// US-003 (CAM-479): early-death transcript probe, consulted once per poll tick.
+	const earlyDeathProbeFn = opts.earlyDeathProbeFn;
 
 	return function reviewDispatch(uuid: string): ReviewDispatchResult {
 		// CAM-57: ensure a live worker pane exists before the respawn. When
@@ -576,6 +591,46 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 					status: 'error',
 					detail: 'Reviewer pane died before a <review> verdict was emitted.',
 				};
+			}
+
+			// US-003 (CAM-479): a pane can be alive but the reviewer session inside
+			// it died on its first turn. Ends the wait at the detector's floor
+			// instead of the full timeoutMs, mirroring the implementer poll loop
+			// (loop.ts) exactly.
+			if (earlyDeathProbeFn !== undefined) {
+				const earlyDeathVerdict = earlyDeathProbeFn(uuid);
+				if (earlyDeathVerdict.verdict === 'dead-on-first-turn') {
+					// Kill the stuck reviewer so the retry (CAM-37) starts clean.
+					runCheckedWorkerSentinel({
+						spawnFn: spawn,
+						phase: 'reviewer-session-died-early',
+						label: 'reviewer',
+						paneId: liveWorkerPaneId,
+						uuid,
+						claudeDir: opts.claudeDir,
+						logEvent,
+						writeDispatchFailedMarkerFn: opts.writeDispatchFailedMarkerFn,
+						notifyFn: opts.notifyFn,
+						removeTaskPromptFileFn: opts.removeTaskPromptFileFn,
+					}, 'echo session-died-early');
+					// The cause-bearing terminal on all three observable channels,
+					// independent of whether the sentinel replacement above itself
+					// succeeded.
+					emitEarlyDeathTerminal({
+						phase: 'reviewer-session-died-early',
+						paneId: liveWorkerPaneId,
+						uuid,
+						logEvent: logEvent ?? ((): void => {}),
+						writeDispatchFailedMarkerFn: opts.writeDispatchFailedMarkerFn ?? ((): void => {}),
+						notifyFn: opts.notifyFn ?? ((): void => {}),
+						cause: earlyDeathVerdict.cause,
+					});
+					removeWorkerTaskPrompt(opts, uuid);
+					return {
+						status: 'error',
+						detail: `session-died-early: ${earlyDeathVerdict.cause}`,
+					};
+				}
 			}
 
 			// Fallback completion signal: <review> tag scraped from capture-pane.

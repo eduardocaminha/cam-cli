@@ -11,7 +11,30 @@ import { dirname, join } from 'node:path';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
-import { DEFAULT_CONTAINER_WORKER_TIMEOUT_MS, DEFAULT_PER_WORKER_TIMEOUT_MS } from '../../src/supervisor/loop.ts';
+import {
+	DEFAULT_CONTAINER_WORKER_TIMEOUT_MS,
+	DEFAULT_PER_WORKER_TIMEOUT_MS,
+	DEFAULT_POLL_INTERVAL_MS,
+	MAX_DEAD_WORKER_RETRIES,
+	NO_PROGRESS_BACKOFF_MS,
+	runSupervisor,
+} from '../../src/supervisor/loop.ts';
+import type {
+	RunSupervisorOptions,
+	SpawnFn,
+	CapturePane,
+	ReadPrd,
+	WritePrd,
+	ReadHandoff,
+	ClockFn,
+	ReviewDispatch,
+	WriteSessionMarker,
+	IsPaneAlive,
+} from '../../src/supervisor/loop.ts';
+import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
+import { makeInMemoryEventLogger } from '../../src/supervisor/events.ts';
+import { makeReviewDispatch, DEFAULT_REVIEW_TIMEOUT_MS, DEFAULT_REVIEW_POLL_INTERVAL_MS } from '../../src/supervisor/review.ts';
+import type { MakeReviewDispatchOptions } from '../../src/supervisor/review.ts';
 import { transcriptPathForSession } from '../../src/transcript/usage.ts';
 import {
 	EARLY_DEATH_FLOOR_MS,
@@ -19,6 +42,8 @@ import {
 	extractLastAssistantEntry,
 	makeEarlyDeathProbe,
 } from '../../src/supervisor/early-death.ts';
+import type { EarlyDeathVerdict } from '../../src/supervisor/early-death.ts';
+import { withVerifiedPanePid } from '../helpers/verified-pane-pid-spawn.ts';
 
 const FIXTURES_DIR = join(import.meta.dir, '..', 'fixtures', 'early-death');
 const DEAD_JSONL = readFileSync(join(FIXTURES_DIR, 'dead-on-first-turn.jsonl'), 'utf8');
@@ -227,5 +252,236 @@ describe('makeEarlyDeathProbe (stateful)', () => {
 			expect(probe(deadUuid).verdict).toBe('dead-on-first-turn');
 			expect(probe(healthyUuid)).toEqual({ verdict: 'still-working' });
 		});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-003 (CAM-479): the implementer and reviewer poll loops consult the
+// early-death detector and terminate at the floor, cause-bearing, instead of
+// waiting out the full timeout cap.
+// ---------------------------------------------------------------------------
+
+/** Cause text lifted from the real dead-on-first-turn fixture (not a synthesized string). */
+const DEAD_ON_FIRST_TURN_CAUSE = extractLastAssistantEntry(DEAD_JSONL)?.text ?? '';
+
+/** An earlyDeathProbeFn fake that reports dead-on-first-turn on every call. */
+function alwaysDeadOnFirstTurn(_uuid: string): EarlyDeathVerdict {
+	return { verdict: 'dead-on-first-turn', cause: DEAD_ON_FIRST_TURN_CAUSE };
+}
+
+/** Pane text with no recognizable sentinel (the pane is alive but the session is frozen). */
+const FROZEN_PANE = 'Thinking...\n';
+
+const IMPLEMENTER_PRD_PATH = '/fake/prd.json';
+const IMPLEMENTER_HANDOFF_PATH = '/fake/handoff.json';
+const IMPLEMENTER_WORKER_PANE_ID = '%3';
+
+/** Build a prd snapshot with a single not-yet-passing story. */
+function makeSingleStoryPrd(): PrdSnapshot {
+	return {
+		userStories: [{ id: 'US-001', priority: 1, passes: false, requires: null }],
+		review: { roundsCompleted: 0, maxRounds: 3 },
+	};
+}
+
+// Isolate implementer-backend/model resolution from the repo's live
+// scripts/cam/project.toml, mirroring loop.test.ts's GENERIC_SUPERVISOR_CONFIG_PATH.
+const GENERIC_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-early-death-config-'));
+const GENERIC_CONFIG_PATH = join(GENERIC_CONFIG_DIR, 'project.toml');
+writeFileSync(GENERIC_CONFIG_PATH, '[backend]\nimplementer = "claude"\nreviewer = "claude"\n');
+
+/** Build a RunSupervisorOptions fixture with injectable fakes for the poll-loop tests. */
+function makeSupervisorOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervisorOptions {
+	const spawn: SpawnFn = (_cmd, _args) => ({ stdout: '', exitCode: 0 });
+	const capturePane: CapturePane = (_paneId) => FROZEN_PANE;
+	const prd = makeSingleStoryPrd();
+	const readPrd: ReadPrd = () => prd;
+	const writePrd: WritePrd = (_prd) => {};
+	const readHandoff: ReadHandoff = () => null;
+	const clock: ClockFn = () => '2026-07-30T00:00:00Z';
+	const reviewDispatch: ReviewDispatch = (_uuid) => ({ status: 'ok', detail: 'review ok' });
+	const writeSessionMarker: WriteSessionMarker = (_storyId, _uuid) => {};
+	const isPaneAlive: IsPaneAlive = (_paneId) => true;
+
+	const merged: RunSupervisorOptions = {
+		spawn,
+		capturePane,
+		readPrd,
+		writePrd,
+		readHandoff,
+		clock,
+		genUuid: () => '00000000-0000-0000-0000-000000000001',
+		reviewDispatch,
+		writeSessionMarker,
+		isPaneAlive,
+		workerPaneId: IMPLEMENTER_WORKER_PANE_ID,
+		prdPath: IMPLEMENTER_PRD_PATH,
+		handoffPath: IMPLEMENTER_HANDOFF_PATH,
+		permissionMode: 'bypassPermissions',
+		taskPrompt: 'Implement the next story from the PRD.',
+		sleepFn: (_ms: number) => {},
+		nowMs: () => 0,
+		configPath: GENERIC_CONFIG_PATH,
+		...overrides,
+	};
+	merged.spawn = withVerifiedPanePid(overrides.spawn ?? spawn);
+	return merged;
+}
+
+describe('US-003 (CAM-479): implementer poll loop consults the early-death probe', () => {
+	test('the implementer poll loop ends an early-death wait far below its timeout cap', async () => {
+		const sleeps: number[] = [];
+		const opts = makeSupervisorOpts({
+			pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
+			// A single dispatch attempt is enough to prove the POLL LOOP itself
+			// (not the dead-worker retry chain) exits far below the cap.
+			maxIterations: 1,
+			randomFn: () => 0.5,
+			sleepFn: (ms) => sleeps.push(ms),
+			earlyDeathProbeFn: alwaysDeadOnFirstTurn,
+		});
+
+		await runSupervisor(opts);
+
+		// Exactly one poll tick elapsed before the probe fired (not dozens/hundreds
+		// of ticks approaching the real cap).
+		const pollTicks = sleeps.filter((ms) => ms === DEFAULT_POLL_INTERVAL_MS);
+		expect(pollTicks).toHaveLength(1);
+		const totalElapsedMs = sleeps.reduce((sum, ms) => sum + ms, 0);
+		expect(totalElapsedMs).toBeLessThan(DEFAULT_PER_WORKER_TIMEOUT_MS * 0.1);
+	});
+
+	test('an early-death implementer terminal carries session-died-early and the transcript cause in event, marker, and notification', async () => {
+		const { logger, events } = makeInMemoryEventLogger();
+		const markers: Array<{ reason: string; cause?: string }> = [];
+		const notifications: string[] = [];
+		const opts = makeSupervisorOpts({
+			pollIntervalMs: 0,
+			maxIterations: 1,
+			randomFn: () => 0.5,
+			sleepFn: (_ms) => {},
+			earlyDeathProbeFn: alwaysDeadOnFirstTurn,
+			logEvent: logger,
+			writeDispatchFailedMarkerFn: (marker) => markers.push(marker),
+			notifyOrchestrator: (line) => notifications.push(line),
+		});
+
+		await runSupervisor(opts);
+
+		const dispatchFailedEvent = events.find((e) => e.kind === 'dispatch-failed');
+		expect(dispatchFailedEvent).toBeDefined();
+		expect(dispatchFailedEvent?.detail).toMatchObject({
+			reason: 'session-died-early',
+			cause: DEAD_ON_FIRST_TURN_CAUSE,
+		});
+
+		const marker = markers.find((m) => m.reason === 'session-died-early');
+		expect(marker).toBeDefined();
+		expect(marker?.cause).toBe(DEAD_ON_FIRST_TURN_CAUSE);
+
+		const notification = notifications.find((n) => n.includes('session-died-early'));
+		expect(notification).toBeDefined();
+		expect(notification).toContain(DEAD_ON_FIRST_TURN_CAUSE);
+	});
+
+	test("a container implementer's longer cap does not change the early-death floor", async () => {
+		const sleeps: number[] = [];
+		const opts = makeSupervisorOpts({
+			workerIsolation: 'container',
+			pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
+			maxIterations: 1,
+			randomFn: () => 0.5,
+			sleepFn: (ms) => sleeps.push(ms),
+			earlyDeathProbeFn: alwaysDeadOnFirstTurn,
+		});
+		// Sanity: the container fallback ceiling really is the larger one, so a
+		// pass here proves the floor, not merely a small configured cap.
+		expect(opts.perWorkerTimeoutMs ?? DEFAULT_CONTAINER_WORKER_TIMEOUT_MS).not.toBe(DEFAULT_PER_WORKER_TIMEOUT_MS);
+
+		await runSupervisor(opts);
+
+		const pollTicks = sleeps.filter((ms) => ms === DEFAULT_POLL_INTERVAL_MS);
+		expect(pollTicks).toHaveLength(1);
+		const totalElapsedMs = sleeps.reduce((sum, ms) => sum + ms, 0);
+		expect(totalElapsedMs).toBeLessThan(DEFAULT_CONTAINER_WORKER_TIMEOUT_MS * 0.1);
+	});
+
+	test('an early-death outcome feeds the existing dead-worker streak and adds no new retry mechanism', async () => {
+		const sleeps: number[] = [];
+		const { logger, events } = makeInMemoryEventLogger();
+		const opts = makeSupervisorOpts({
+			pollIntervalMs: 0,
+			maxIterations: 50,
+			randomFn: () => 0.5,
+			sleepFn: (ms) => {
+				if (ms > 0) sleeps.push(ms);
+			},
+			earlyDeathProbeFn: alwaysDeadOnFirstTurn,
+			logEvent: logger,
+		});
+
+		const result = await runSupervisor(opts);
+
+		// Same terminal shape as the pre-existing pane-died/timeout dead-worker
+		// tests (loop.test.ts): blocks exactly at MAX_DEAD_WORKER_RETRIES, with
+		// the SAME escalating backoff sequence -- no second retry mechanism.
+		expect(result.status).toBe('blocked');
+		expect(result.iterations).toBe(MAX_DEAD_WORKER_RETRIES);
+		expect(sleeps).toEqual([NO_PROGRESS_BACKOFF_MS * 1, NO_PROGRESS_BACKOFF_MS * 2, NO_PROGRESS_BACKOFF_MS * 4]);
+		const retryEvents = events.filter((e) => e.kind === 'pane-died-retry');
+		expect(retryEvents).toHaveLength(MAX_DEAD_WORKER_RETRIES - 1);
+		expect(retryEvents[0]?.detail).toMatchObject({ attempt: 1, pollOutcome: 'session-died-early' });
+		expect(result.lastOutcome?.detail).toContain('dead-worker');
+	});
+});
+
+describe('US-003 (CAM-479): reviewer poll loop consults the early-death probe', () => {
+	const GENERIC_REVIEW_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-early-death-review-config-'));
+	const GENERIC_REVIEW_CONFIG_PATH = join(GENERIC_REVIEW_CONFIG_DIR, 'project.toml');
+	writeFileSync(GENERIC_REVIEW_CONFIG_PATH, '[backend]\nreviewer = "claude"\n');
+
+	function makePrdWithReview(): PrdSnapshot {
+		return { userStories: [], review: { roundsCompleted: 0, maxRounds: 3 } };
+	}
+
+	function makeReviewOpts(overrides: Partial<MakeReviewDispatchOptions> = {}): MakeReviewDispatchOptions {
+		const spawn: SpawnFn = (_cmd, _args) => ({ stdout: '', exitCode: 0 });
+		const capturePane: CapturePane = (_paneId) => FROZEN_PANE;
+		const readPrd: ReadPrd = () => makePrdWithReview();
+		const writePrd: WritePrd = (_prd) => {};
+
+		return {
+			spawn: withVerifiedPanePid(overrides.spawn ?? spawn),
+			capturePane: overrides.capturePane ?? capturePane,
+			readPrd: overrides.readPrd ?? readPrd,
+			writePrd: overrides.writePrd ?? writePrd,
+			workerPaneId: overrides.workerPaneId ?? '%7',
+			isPaneAlive: overrides.isPaneAlive ?? (() => true),
+			sleepFn: overrides.sleepFn ?? (() => {}),
+			permissionMode: overrides.permissionMode ?? 'bypassPermissions',
+			pollIntervalMs: overrides.pollIntervalMs ?? DEFAULT_REVIEW_POLL_INTERVAL_MS,
+			timeoutMs: overrides.timeoutMs ?? DEFAULT_REVIEW_TIMEOUT_MS,
+			now: overrides.now,
+			configPath: GENERIC_REVIEW_CONFIG_PATH,
+			...overrides,
+		};
+	}
+
+	test('the reviewer poll loop ends an early-death wait far below its timeout cap', () => {
+		const sleeps: number[] = [];
+		const opts = makeReviewOpts({
+			sleepFn: (ms) => sleeps.push(ms),
+			earlyDeathProbeFn: alwaysDeadOnFirstTurn,
+		});
+		const dispatch = makeReviewDispatch(opts);
+
+		const result = dispatch('11111111-2222-3333-4444-555555555555');
+
+		expect(result.status).toBe('error');
+		expect(result.detail).toContain('session-died-early');
+		const pollTicks = sleeps.filter((ms) => ms === DEFAULT_REVIEW_POLL_INTERVAL_MS);
+		expect(pollTicks).toHaveLength(1);
+		const totalElapsedMs = sleeps.reduce((sum, ms) => sum + ms, 0);
+		expect(totalElapsedMs).toBeLessThan(DEFAULT_REVIEW_TIMEOUT_MS * 0.1);
 	});
 });

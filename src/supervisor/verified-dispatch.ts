@@ -102,10 +102,32 @@ function failedCommand(reason: DispatchFailureReason, result: SpawnResult): Fail
 	return normalizedExitCode(result) === 0 ? null : { reason, result };
 }
 
+/**
+ * Narrow shape of VerifiedDispatchOptions actually consumed by
+ * emitDispatchFailure (phase/paneId/uuid/logEvent/marker-writer/notifier/
+ * storyId/clock/cause). VerifiedDispatchOptions remains a structural subtype
+ * (its extra spawnFn/dispatchCmd/pipeCommand fields are simply unused by the
+ * emitter), and this narrower shape is also the public contract for
+ * emitEarlyDeathTerminal below (US-003, CAM-479): a caller that has no tmux
+ * dispatch details at all -- only a transcript-derived death verdict -- can
+ * still drive the exact same three-channel emission.
+ */
+export interface DispatchFailureEmitOptions {
+	phase: string;
+	paneId: string;
+	uuid: string;
+	logEvent: WorkerEventLogger;
+	writeDispatchFailedMarkerFn: (marker: DispatchFailedMarker) => void;
+	notifyFn: (message: string) => void;
+	storyId?: string;
+	clock?: () => string;
+	cause?: string;
+}
+
 function emitDispatchFailure(
-	opts: VerifiedDispatchOptions,
+	opts: DispatchFailureEmitOptions,
 	failure: FailedStep,
-): VerifiedDispatchResult {
+): { ok: false; marker: DispatchFailedMarker } {
 	const timestamp = opts.clock?.() ?? new Date().toISOString();
 	const stderr = failure.result.stderr ?? '';
 	const marker: DispatchFailedMarker = {
@@ -158,6 +180,27 @@ function emitDispatchFailure(
 		// The structured return still exposes the terminal to the caller.
 	}
 	return { ok: false, marker };
+}
+
+/**
+ * Emit the cause-bearing early-death terminal on all three observable
+ * channels (dispatch-failed event, durable marker, orchestrator notification;
+ * US-003, CAM-479). The reason recorded is always the shared
+ * 'session-died-early' literal; `cause` carries the verbatim transcript text
+ * extracted by the early-death detector (src/supervisor/early-death.ts).
+ *
+ * Unlike every other emitDispatchFailure call site, this one is not reporting
+ * a failed tmux command: it is invoked once the poll loop's own transcript
+ * probe -- not a tmux exit code -- has already decided the session is dead.
+ * exitCode/stderr are synthesized as 0/'' since there is no real command
+ * result to report; the reason and cause are what matters here.
+ */
+export function emitEarlyDeathTerminal(opts: DispatchFailureEmitOptions): DispatchFailedMarker {
+	const { marker } = emitDispatchFailure(opts, {
+		reason: 'session-died-early',
+		result: { stdout: '', exitCode: 0, stderr: '' },
+	});
+	return marker;
 }
 
 /**
