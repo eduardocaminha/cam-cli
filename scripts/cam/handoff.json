@@ -1,0 +1,25 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Carry the real cause and a shared session-died-early reason on the dispatch failure record"
+  },
+  "branchName": "cam/issue-479",
+  "timestamp": "2026-07-30T12:39:10.000Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/supervisor/verified-dispatch.ts",
+    "src/supervisor/dispatch-failed-marker.ts",
+    "src/supervisor/events.ts",
+    "test/supervisor/dispatch-failed-marker.test.ts",
+    "test/supervisor/verified-dispatch.test.ts",
+    "scripts/file-size-budget.json"
+  ],
+  "openQuestions": [
+    "This story adds vocabulary + plumbing only: the new 'session-died-early' DispatchFailureReason literal and the optional 'cause' field on VerifiedDispatchOptions/DispatchFailedMarker/DispatchFailedEventDetail exist but nothing produces a cause or emits 'session-died-early' yet. Wiring an actual transcript-derived classifier (LIMIT_PATTERNS / isRateLimited from src/retry/patterns.ts, or a poll-loop early-death detector) is explicitly out of scope here and tracked as CAM-435."
+  ],
+  "nextStoryContext": "US-001 (CAM-479) added: (1) 'session-died-early' to the DispatchFailureReason union in src/supervisor/verified-dispatch.ts, (2) an optional `cause?: string` on VerifiedDispatchOptions threaded through emitDispatchFailure into the marker, the DispatchFailedEventDetail, and the notifyFn string (cause suffix precedes the existing stderr suffix), (3) an optional `cause?: string` on DispatchFailedMarker (dispatch-failed-marker.ts) with additive validation in readDispatchFailedMarker (absent cause still parses; present-but-non-string cause is rejected), (4) the mirrored optional `cause?: string` on DispatchFailedEventDetail in events.ts. No call site sets `cause` or produces 'session-died-early' yet -- that wiring (likely importing src/retry/patterns.ts's LIMIT_PATTERNS/isRateLimited against a first-turn transcript check, per CAM-435) is the next story's job. src/supervisor/events.ts's file-size ceiling was raised 927->929 in scripts/file-size-budget.json with a dated _ref note citing this story.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ],
+  "appliedPatternIds": []
+}
