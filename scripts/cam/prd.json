@@ -30,7 +30,7 @@
       "id": "US-R2-002",
       "title": "Review round 2 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "CRITICAL [src/issues/self-contaminating-search.ts:207]: isCommandPosition's left-context allowlist (start-of-string, '|', '&', ';', '(', or the word 'xargs') does not accept an OPENING QUOTE, so a tool word appearing immediately after `-c '` or `-c \"` is treated as non-invoked text. That is this project's dominant oracle idiom -- US-003's own AC3 oracle is literally `bash -c 'grep -q ... && grep -q ...'` -- so a store-reaching recursive search authored in the most natural wrapper evades both guardrails. Measured: findStoreReachingSearch(`bash -c 'grep -rl zzqqx scripts'`) -> null; (`bash -c \"grep -rl zzqqx scripts\"`) -> null; (`sh -c \"rg -l zzqqx scripts/cam\"`) -> null; (`bash -c 'test -n \"$(grep -rl zzqqx scripts)\"'`) -> null. End-to-end for each: validateSpec.ok === true and 0 self-contaminating-search lint findings. The same too-narrow enumeration also misses common command prefixes: `env FOO=1 grep -rl zzqqx scripts`, `sudo grep -rl zzqqx scripts`, and `xargs -0 grep -rl zzqqx scripts` / `xargs -n1 grep ...` (xargs is allowlisted but only when IMMEDIATELY adjacent to the tool word) all return null. Fix: accept a quote character and a backtick as command-position delimiters, and allow an intervening flag/assignment run before an allowlisted prefix word (xargs/env/sudo/time/command); add each measured shape as a regression case in both test files."
     },
     {
