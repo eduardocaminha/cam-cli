@@ -93,4 +93,36 @@ describe("findStoreReachingSearch", () => {
 		const result = findStoreReachingSearch("bun run check:all");
 		expect(result).toBeNull();
 	});
+
+	// --- Review round 1 (US-R1-001, CAM-474): command-position false positives ---
+
+	test("accepts a tool word inside a quoted search needle (grep -q \"rg\" ...)", () => {
+		const result = findStoreReachingSearch('grep -q "rg" scripts/cam/patterns.md');
+		expect(result).toBeNull();
+	});
+
+	test("accepts a tool word as a hyphen-delimited segment of an unrelated token", () => {
+		const result = findStoreReachingSearch("bun run gen-rg-report");
+		expect(result).toBeNull();
+	});
+
+	test("accepts a tool word as a file extension segment of an unrelated token", () => {
+		const result = findStoreReachingSearch("test -f docs/x.rg");
+		expect(result).toBeNull();
+	});
+
+	test("accepts a tool word merely echoed as plain text, not invoked", () => {
+		const result = findStoreReachingSearch('bash -c "echo rg"');
+		expect(result).toBeNull();
+	});
+
+	test("still flags a genuine search hidden inside a $(...) command-substitution wrapper", () => {
+		const result = findStoreReachingSearch('test $(grep -rl zzqqx scripts ) -gt 0');
+		expect(result).toEqual({ root: "scripts" });
+	});
+
+	test("still flags a genuine search piped through xargs", () => {
+		const result = findStoreReachingSearch("find . -type f | xargs rg zzqqx scripts");
+		expect(result).toEqual({ root: "scripts" });
+	});
 });

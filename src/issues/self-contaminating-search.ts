@@ -33,6 +33,20 @@
 //     regardless of its roots: this is the sanctioned safe-repair idiom
 //     (CAM-460 AC2), and refusing it would break the very fix this
 //     detector exists to enable.
+//   - A tool-word match only starts an invocation when it is in COMMAND
+//     POSITION: the start of `command`, or immediately preceded (ignoring
+//     whitespace) by a clause separator ('|', '&', ';'), an opening paren
+//     ('(' or the tail of '$(', including subshells), or the word 'xargs'
+//     (CAM-474 review round 1: a bare \b(grep|rg)\b scan with no position
+//     check matched inside an unrelated hyphenated token like
+//     'gen-rg-report', a file extension like 'docs/x.rg', a quoted search
+//     NEEDLE like grep -q "rg" file, and an echoed word like
+//     `bash -c "echo rg"` -- all zero-search false positives). This check
+//     is deliberately raw-text-based, not a full re-tokenization of
+//     `command`: a genuine store-reaching search hidden inside a
+//     `$(grep ...)` command-substitution wrapper (CAM-460 AC2's own shape)
+//     must still be caught, and '(' immediately preceding the tool word
+//     covers that without needing to parse the enclosing quotes.
 //
 // NOT in scope for this detector: quote-stripping the surrounding command
 // (a shell interpreter's -c wrapper, a JS probe string, etc). This scanner
@@ -48,6 +62,12 @@ const STORE_PATH = 'scripts/cam/issues';
 
 /** Recognized recursive-by-tool-identity or recursive-flag-capable search tools. */
 const SEARCH_TOOL_RE = /\b(grep|egrep|fgrep|rg)\b/g;
+
+/** A clause separator or opening-paren character allowed immediately before a tool word (see isCommandPosition). */
+const COMMAND_POSITION_CHAR_RE = /[|&;(]/;
+
+/** A word character, used to find the boundary of the word preceding a tool-word match. */
+const WORD_CHAR_RE = /[A-Za-z0-9_]/;
 
 /** A short-option flag group: leading '-' followed by one or more letters. */
 const SHORT_FLAG_GROUP_RE = /^-[A-Za-z]+$/;
@@ -126,6 +146,29 @@ function isStoreReachingRoot(root: string): boolean {
 
 	if (normalized === STORE_PATH) return true;
 	return STORE_PATH.startsWith(`${normalized}/`);
+}
+
+/**
+ * True when the tool-word match starting at `matchIndex` in `command` is in
+ * COMMAND POSITION: the start of `command`, or immediately preceded
+ * (ignoring whitespace) by a clause separator ('|', '&', ';'), an opening
+ * paren ('(' -- also covers '$(' since that ends in '('), or the word
+ * 'xargs'. Rejects a tool word that is merely a substring of an unrelated
+ * token (a hyphen-delimited segment, a file extension) or the content of a
+ * quoted search pattern/needle sitting inside an already-classified
+ * invocation's argument list.
+ */
+function isCommandPosition(command: string, matchIndex: number): boolean {
+	let i = matchIndex - 1;
+	while (i >= 0 && /\s/.test(command[i] ?? '')) i--;
+	if (i < 0) return true;
+
+	const prevChar = command[i];
+	if (prevChar !== undefined && COMMAND_POSITION_CHAR_RE.test(prevChar)) return true;
+
+	let start = i;
+	while (start >= 0 && WORD_CHAR_RE.test(command[start] ?? '')) start--;
+	return command.slice(start + 1, i + 1) === 'xargs';
 }
 
 /** Per-invocation scan result: what the tokens after the tool word resolved to. */
@@ -243,6 +286,7 @@ export function findStoreReachingSearch(command: string): { root: string } | nul
 	while ((match = SEARCH_TOOL_RE.exec(command)) !== null) {
 		const tool = match[1];
 		if (tool === undefined) continue;
+		if (!isCommandPosition(command, match.index)) continue;
 
 		const argsStart = match.index + match[0].length;
 		const tokens = tokenize(command.slice(argsStart));

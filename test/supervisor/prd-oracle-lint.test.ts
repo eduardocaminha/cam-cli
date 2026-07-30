@@ -613,6 +613,28 @@ describe('self-contaminating-search rule: passing cases', () => {
 		const finding = rule.test('bun run typecheck');
 		expect(finding).toBeNull();
 	});
+
+	// --- Review round 1 (US-R1-001, CAM-474): command-position false positives ---
+
+	test('does not flag a tool word inside a quoted search needle (grep -q "rg" ...)', () => {
+		const finding = rule.test('grep -q "rg" scripts/cam/patterns.md');
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag a tool word as a hyphen-delimited segment of an unrelated token', () => {
+		const finding = rule.test('bun run gen-rg-report');
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag a tool word as a file extension segment of an unrelated token', () => {
+		const finding = rule.test('test -f docs/x.rg');
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag a tool word merely echoed as plain text, not invoked', () => {
+		const finding = rule.test('bash -c "echo rg"');
+		expect(finding).toBeNull();
+	});
 });
 
 // ---------------------------------------------------------------------------
