@@ -37,7 +37,7 @@
       "id": "US-R2-003",
       "title": "Review round 2 fix 003: address reviewer finding",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [test/issues/self-contaminating-search.test.ts:120]: The test named 'still flags a genuine search hidden inside a $(...) command-substitution wrapper' is shaped to the implementation rather than to the behavior it claims to verify: it asserts on `'test $(grep -rl zzqqx scripts ) -gt 0'` with a space inserted before the ')'. Delete that one space (the form every real command actually has) and the test fails, because the root token becomes `scripts)`. The test therefore certifies coverage of the command-substitution wrapper class while that class is in fact undetected, which is precisely the tests-with-meaningful-assert failure mode: it is green for a reason unrelated to the behavior under test. Rewrite it to assert the space-free canonical form (and keep the spaced variant as a separate case if desired)."
     },
     {
