@@ -44,7 +44,7 @@
       "id": "US-R2-004",
       "title": "Review round 2 fix 004: address reviewer finding",
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [scripts/cam/patterns.md:1128]: The new durable patterns.md bullet records a capability claim that is measurably false, poisoning the canonical wisdom store for future stories. It asserts that re-tokenizing 'would make a genuine `$(grep -rl ... )` search hidden inside a `bash -c '...'` wrapper (CAM-460 AC2's own shape, and an existing regression test) invisible' and that 'isCommandPosition's char-adjacency check catches the `$(`-prefixed real invocation while still rejecting the four false-positive shapes above'. Measured on this HEAD: `bash -c 'grep -rl zzqqx scripts'` -> null and `bash -c 'test -n \"$(grep -rl zzqqx scripts)\"'` -> null, so the chosen design does NOT preserve wrapper-internal detection in general; it happens to work only for the exact spaced/piped fixtures in the test file. Per the project's own 'a comment does not prove behavior, verify the runtime' lesson, this bullet must be corrected in the same change that fixes the two CRITICALs, stating the actual boundary (which left-context delimiters are recognized and which are not) rather than an unqualified 'catches the real invocation'."
     },
     {
