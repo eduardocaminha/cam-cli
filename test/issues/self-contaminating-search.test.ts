@@ -152,4 +152,26 @@ describe("findStoreReachingSearch", () => {
 		const result = findStoreReachingSearch("grep -rl zzqqx /Users/me/repo/other-scripts");
 		expect(result).toBeNull();
 	});
+
+	// --- Review round 2 (US-R2-001, CAM-474): trailing shell-punctuation false negatives ---
+
+	test("flags the space-free $(...) command-substitution wrapper (no space before the closing paren)", () => {
+		const result = findStoreReachingSearch("test $(grep -rl zzqqx scripts) -gt 0");
+		expect(result).toEqual({ root: "scripts" });
+	});
+
+	test("flags the space-free backtick command-substitution wrapper", () => {
+		const result = findStoreReachingSearch("test `grep -rl zzqqx scripts` -gt 0");
+		expect(result).toEqual({ root: "scripts" });
+	});
+
+	test("flags a space-free $(...) wrapper rooted exactly at scripts/cam/issues", () => {
+		const result = findStoreReachingSearch("test $(grep -rl zzqqx scripts/cam/issues) -gt 0");
+		expect(result).toEqual({ root: "scripts/cam/issues" });
+	});
+
+	test("does not flag a space-free $(...) wrapper rooted at a legitimate non-store path", () => {
+		const result = findStoreReachingSearch("test $(grep -rl zzqqx docs/adr) -gt 0");
+		expect(result).toBeNull();
+	});
 });

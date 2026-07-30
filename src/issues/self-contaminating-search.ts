@@ -42,7 +42,8 @@
 //   - A tool-word match only starts an invocation when it is in COMMAND
 //     POSITION: the start of `command`, or immediately preceded (ignoring
 //     whitespace) by a clause separator ('|', '&', ';'), an opening paren
-//     ('(' or the tail of '$(', including subshells), or the word 'xargs'
+//     ('(' or the tail of '$(', including subshells), a backtick (the head
+//     of a `` `...` `` command substitution), or the word 'xargs'
 //     (CAM-474 review round 1: a bare \b(grep|rg)\b scan with no position
 //     check matched inside an unrelated hyphenated token like
 //     'gen-rg-report', a file extension like 'docs/x.rg', a quoted search
@@ -53,6 +54,14 @@
 //     `$(grep ...)` command-substitution wrapper (CAM-460 AC2's own shape)
 //     must still be caught, and '(' immediately preceding the tool word
 //     covers that without needing to parse the enclosing quotes.
+//   - A positional token's trailing shell punctuation (an unbalanced ')',
+//     a trailing backtick, or a trailing quote character) is stripped
+//     before the token is treated as a root, because the space-free forms
+//     of command substitution -- `$(grep -rl X scripts)` and
+//     `` `grep -rl X scripts` `` -- leave that closing punctuation glued to
+//     the final positional token with no intervening whitespace (CAM-474
+//     review round 2): without this, 'scripts)' fails every root check
+//     that 'scripts' would pass.
 //
 // NOT in scope for this detector: quote-stripping the surrounding command
 // (a shell interpreter's -c wrapper, a JS probe string, etc). This scanner
@@ -79,8 +88,8 @@ const STORE_PATH_ANCESTOR_PREFIXES = STORE_PATH.split('/').map((_, i, segments) 
 /** Recognized recursive-by-tool-identity or recursive-flag-capable search tools. */
 const SEARCH_TOOL_RE = /\b(grep|egrep|fgrep|rg)\b/g;
 
-/** A clause separator or opening-paren character allowed immediately before a tool word (see isCommandPosition). */
-const COMMAND_POSITION_CHAR_RE = /[|&;(]/;
+/** A clause separator, opening-paren, or backtick character allowed immediately before a tool word (see isCommandPosition). */
+const COMMAND_POSITION_CHAR_RE = /[|&;(`]/;
 
 /** A word character, used to find the boundary of the word preceding a tool-word match. */
 const WORD_CHAR_RE = /[A-Za-z0-9_]/;
@@ -107,6 +116,42 @@ function unquote(token: string): string {
 		}
 	}
 	return token;
+}
+
+/** Counts occurrences of a single character in `s`. */
+function countChar(s: string, ch: string): number {
+	let n = 0;
+	for (const c of s) if (c === ch) n++;
+	return n;
+}
+
+/**
+ * Strips trailing shell punctuation -- an unbalanced ')', a trailing
+ * backtick, or a trailing quote character -- that a real invocation leaves
+ * glued to its final positional token with no intervening whitespace, e.g.
+ * `$(grep -rl X scripts)` tokenizes its root as 'scripts)', and
+ * `` `grep -rl X scripts` `` tokenizes its root as 'scripts`' (CAM-474
+ * review round 2). Only strips a trailing char that is UNMATCHED within the
+ * token itself (an odd quote/backtick count, or more ')' than '(' overall),
+ * so a root that legitimately balances one of these chars internally is
+ * left untouched.
+ */
+function stripTrailingShellPunctuation(token: string): string {
+	let result = token;
+	for (;;) {
+		const last = result.at(-1);
+		if (last === ')') {
+			if (countChar(result, ')') <= countChar(result, '(')) return result;
+			result = result.slice(0, -1);
+			continue;
+		}
+		if (last === '`' || last === "'" || last === '"') {
+			if (countChar(result, last) % 2 === 0) return result;
+			result = result.slice(0, -1);
+			continue;
+		}
+		return result;
+	}
 }
 
 /**
@@ -198,11 +243,12 @@ function isStoreReachingRoot(root: string): boolean {
  * True when the tool-word match starting at `matchIndex` in `command` is in
  * COMMAND POSITION: the start of `command`, or immediately preceded
  * (ignoring whitespace) by a clause separator ('|', '&', ';'), an opening
- * paren ('(' -- also covers '$(' since that ends in '('), or the word
- * 'xargs'. Rejects a tool word that is merely a substring of an unrelated
- * token (a hyphen-delimited segment, a file extension) or the content of a
- * quoted search pattern/needle sitting inside an already-classified
- * invocation's argument list.
+ * paren ('(' -- also covers '$(' since that ends in '('), a backtick (the
+ * head of a `` `...` `` command substitution), or the word 'xargs'. Rejects
+ * a tool word that is merely a substring of an unrelated token (a
+ * hyphen-delimited segment, a file extension) or the content of a quoted
+ * search pattern/needle sitting inside an already-classified invocation's
+ * argument list.
  */
 function isCommandPosition(command: string, matchIndex: number): boolean {
 	let i = matchIndex - 1;
@@ -290,7 +336,7 @@ function applyToken(token: string, nextToken: string | undefined, state: Invocat
 		return 0;
 	}
 
-	state.roots.push(unquote(token));
+	state.roots.push(stripTrailingShellPunctuation(unquote(token)));
 	return 0;
 }
 

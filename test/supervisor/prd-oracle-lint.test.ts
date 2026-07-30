@@ -575,6 +575,16 @@ describe('self-contaminating-search rule: flagged forms', () => {
 		);
 		expect(finding).not.toBeNull();
 	});
+
+	test('flags the space-free $(...) command-substitution wrapper (US-R2-001, CAM-474 review round 2)', () => {
+		const finding = rule.test('test $(grep -rl zzqqx scripts) -gt 0');
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags the space-free backtick command-substitution wrapper (US-R2-001, CAM-474 review round 2)', () => {
+		const finding = rule.test('test `grep -rl zzqqx scripts` -gt 0');
+		expect(finding).not.toBeNull();
+	});
 });
 
 // ---------------------------------------------------------------------------
