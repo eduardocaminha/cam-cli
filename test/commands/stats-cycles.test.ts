@@ -457,6 +457,28 @@ describe('runStatsCycles', () => {
 		expect(codeReadOnly).toBe(0);
 		expect(calledWithoutRebuild).toBe(false);
 	});
+
+	test('rebuild:true with a writeArtifact that throws (e.g. missing scripts/cam/ dir) exits 1 instead of letting the raw exception escape', () => {
+		const log = [makeCycleTokensLine('cam/A', 'CAM-A', 1, 1, 2, 't-a')].join('\n');
+
+		let thrown = false;
+		let code: number | undefined;
+		try {
+			code = runStatsCycles({
+				readEventLog: () => log,
+				write: () => {},
+				rebuild: true,
+				writeArtifact: () => {
+					throw new Error("ENOENT: no such file or directory, open 'scripts/cam/cycle-metrics.jsonl'");
+				},
+			});
+		} catch {
+			thrown = true;
+		}
+
+		expect(thrown).toBe(false); // the ENOENT must be caught, not escape as an uncaught exception.
+		expect(code).toBe(1);
+	});
 });
 
 // ---------------------------------------------------------------------------

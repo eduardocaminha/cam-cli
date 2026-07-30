@@ -15,6 +15,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
 
+import { printError } from '../logging/color.ts';
 import { aggregateCycleMetrics, serializeCycleMetrics, type CycleMetricsRow } from '../stats/cycles.ts';
 import { aggregateTokensPerIssue, type IssueTokenRollup } from '../stats/tokens.ts';
 
@@ -235,8 +236,18 @@ export function runStatsCycles(options: RunStatsCyclesOptions = {}): number {
 	write(`CAM_STATS_CYCLES=cycles=${result.rows.length} unattributedLeadingEvents=${result.header.unattributedLeadingEvents}\n`);
 
 	if (options.rebuild) {
+		const artifactPath = join(cwd, ...CYCLE_METRICS_ARTIFACT_REL_PATH);
 		const writeArtifact = options.writeArtifact ?? defaultWriteArtifact(cwd);
-		writeArtifact(serializeCycleMetrics(result));
+		try {
+			writeArtifact(serializeCycleMetrics(result));
+		} catch (err) {
+			const detail = err instanceof Error ? err.message : String(err);
+			printError(
+				`failed to write ${artifactPath}: ${detail}`,
+				'scripts/cam/ must exist (run from the project root, or `cam init` first)',
+			);
+			return 1;
+		}
 	}
 
 	return 0;
