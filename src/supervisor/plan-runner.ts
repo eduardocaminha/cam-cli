@@ -1276,6 +1276,22 @@ function checkEarlyDeath(
 	return verdict.verdict === 'dead-on-first-turn' ? verdict.cause : null;
 }
 
+/**
+ * Resolves the poll outcome once the planner pane has died (US-R1-001,
+ * CAM-479): confirms with one extra readPlannerReportFn re-read that prd.json
+ * was not, in fact, written in the same poll tick as the pane exit (a race
+ * between the primary read and the isPaneAlive check), before trusting
+ * pane-died. Extracted to keep pollPlannerDeath under biome's
+ * noExcessiveCognitiveComplexity(max=15) limit, mirroring the checkEarlyDeath
+ * extraction above.
+ */
+function resolvePlannerPaneDeathOutcome(
+	readPlannerReportFn: (() => unknown | null) | undefined,
+): PlannerPollOutcome {
+	if (readPlannerReportFn === undefined) return { kind: 'completed' };
+	return readPlannerReportFn() !== null ? { kind: 'completed' } : { kind: 'pane-died' };
+}
+
 function pollPlannerDeath(
 	isPaneAlive: IsPaneAlive,
 	sleepFn: (ms: number) => void,
@@ -1299,8 +1315,11 @@ function pollPlannerDeath(
 		}
 
 		// Fallback: pane died naturally (e.g. non-interactive mode, test injection).
+		// resolvePlannerPaneDeathOutcome confirms with one extra re-read that
+		// prd.json wasn't written in the same tick as the pane exit before
+		// trusting pane-died (US-R1-001, CAM-479).
 		if (!isPaneAlive(plannerPaneId)) {
-			return readPlannerReportFn === undefined ? { kind: 'completed' } : { kind: 'pane-died' };
+			return resolvePlannerPaneDeathOutcome(readPlannerReportFn);
 		}
 
 		const earlyDeathCause = checkEarlyDeath(uuid, earlyDeathProbeFn);

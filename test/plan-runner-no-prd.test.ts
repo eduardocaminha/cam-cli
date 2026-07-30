@@ -168,6 +168,30 @@ describe('runPlanPhase - planner-failed path (AC1)', () => {
 		expect(verdictReadCount).toBe(0);
 	});
 
+	test('same-tick race: prd.json written just as the pane exits -> completes, NOT planner-failed (US-R1-001, CAM-479)', () => {
+		// Reproduces the exact race the story describes: readPlannerReportFn
+		// returns null on the primary read (line 1297-equivalent), but the
+		// planner writes prd.json and its pane exits inside the SAME poll
+		// tick, so a confirmation re-read (taken right before trusting
+		// pane-died) must observe the write and return 'completed' instead of
+		// a false 'pane-died' -> 'planner-failed' terminal.
+		let readCount = 0;
+		const { opts } = makePlannerfailedOpts({
+			readPlannerReportFn: () => {
+				readCount++;
+				// First call (primary read): no prd.json yet.
+				// Second call (confirmation re-read after pane-died): written.
+				return readCount === 1 ? null : { written: true };
+			},
+			readPlanVerdictFn: () => ({ verdict: 'APPROVE', summary: 'ok', findings: [] }),
+		});
+		const result = runPlanPhase(opts);
+		expect(result.kind).not.toBe('planner-failed');
+		expect(result.kind).toBe('audit-approved');
+		// The confirmation re-read must actually have happened (2 reads, not 1).
+		expect(readCount).toBeGreaterThanOrEqual(2);
+	});
+
 	test('backward-compat: absent readPlannerReportFn + pane dies -> proceeds to auditor (NOT planner-failed)', () => {
 		// When readPlannerReportFn is NOT injected and the pane dies, the old behavior
 		// (fall through to the auditor) is preserved. Pane dies after 1 tick.
