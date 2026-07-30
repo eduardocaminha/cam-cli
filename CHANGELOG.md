@@ -6,6 +6,17 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.272.0] - 2026-07-30
+
+### Added
+
+- US-R2-001 - Review round 2 fix 001: address reviewer finding
+- US-R1-001 - Review round 1 fix 001: address reviewer finding
+- US-004 - Emit the cycle-metrics row automatically at cycle close
+- US-003 - Append a cycle-metrics row on main, in place
+- US-002 - Add cam stats cycles and backfill the historical cycle rows
+- US-001 - Derive bounded cycle-metric rows from the event log
+
 ## [0.271.0] - 2026-07-29
 
 ### Added
