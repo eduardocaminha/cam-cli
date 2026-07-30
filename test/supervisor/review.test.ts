@@ -542,6 +542,75 @@ describe('makeReviewDispatch', () => {
 		expect(fixStories.length).toBe(0);
 	});
 
+	test('DEBT terminal round persists its own findings', () => {
+		// Seed prd.review.findings with a prior-round sentinel: this must NOT
+		// survive into the MAX_ROUNDS_DEBT write once the terminal round parses
+		// its own (distinct) findings from review-report.json (CAM-478).
+		const priorRoundSentinel = [
+			{ severity: 'CRITICAL' as const, file: 'src/stale.ts', line: 1, text: 'PRIOR-ROUND-SENTINEL: already fixed' },
+		];
+		const terminalRoundFindings = [
+			{ severity: 'CRITICAL' as const, file: 'src/fresh.ts', line: 2, text: 'TERMINAL-ROUND-FINDING: real debt' },
+		];
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		const opts = makeDispatchOpts({
+			paneText: '<review>FIXES_PENDING:1</review>',
+			prd: makePrd({
+				stories: [],
+				review: {
+					roundsCompleted: 2,
+					maxRounds: 3,
+					findings: priorRoundSentinel,
+				},
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => ({ verdict: 'FIXES_PENDING:1', findings: terminalRoundFindings }),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
+		const written = capturedWrittenPrd[0];
+		expect(written?.review?.lastVerdict).toBe('MAX_ROUNDS_DEBT');
+		const findings = written?.review?.findings;
+		expect(findings).toBeDefined();
+		const findingTexts = (findings ?? []).map((f) => f.text);
+		expect(findingTexts).toContain('TERMINAL-ROUND-FINDING: real debt');
+		expect(findingTexts).not.toContain('PRIOR-ROUND-SENTINEL: already fixed');
+	});
+
+	test('DEBT tag-fallback preserves the prior findings', () => {
+		// No readReviewReport injected -> tag-based fallback (fileFindings
+		// undefined). The only record available is the prior round's findings,
+		// so they must be preserved byte-for-byte (CAM-478).
+		const priorRoundFindings = [
+			{ severity: 'WARNING' as const, file: 'src/prior.ts', line: 5, text: 'PRIOR-ROUND-ONLY-RECORD' },
+		];
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		const opts = makeDispatchOpts({
+			paneText: '<review>FIXES_PENDING:2</review>',
+			prd: makePrd({
+				stories: [],
+				review: {
+					roundsCompleted: 2,
+					maxRounds: 3,
+					findings: priorRoundFindings,
+				},
+			}),
+			capturedWrittenPrd,
+			// No readReviewReport -> tag-fallback path, fileFindings stays undefined.
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
+		const written = capturedWrittenPrd[0];
+		expect(written?.review?.lastVerdict).toBe('MAX_ROUNDS_DEBT');
+		expect(written?.review?.findings).toEqual(priorRoundFindings);
+	});
+
 	test('no <review> tag ever: times out and returns status=error', () => {
 		const opts = makeDispatchOpts({
 			paneText: 'No verdict tag here at all.',
@@ -832,6 +901,112 @@ describe('makeReviewDispatch', () => {
 		const s3 = stories.find((s) => s.id === 'US-R1-003');
 		expect(s3?.notes).toContain('SUGGESTION');
 		expect(s3?.notes).toContain('consider extracting helper');
+	});
+
+	// -------------------------------------------------------------------------
+	// US-002 (CAM-478): fix-story title+description carry the finding directly,
+	// instead of only through notes the fix-worker must re-read from prd.json.
+	// -------------------------------------------------------------------------
+
+	test('fix story carries finding-derived title and description', () => {
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		const findings = [
+			{ severity: 'CRITICAL', file: 'src/foo.ts', line: 42, text: 'null deref on prd' },
+		];
+		const opts = makeDispatchOpts({
+			paneText: 'no tag',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => ({ verdict: 'FIXES_PENDING:1', findings }),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		dispatch(SAMPLE_UUID);
+
+		const written = capturedWrittenPrd[0];
+		const stories = written?.userStories ?? [];
+		const s1 = stories.find((s) => s.id === 'US-R1-001');
+
+		// description carries the verbatim finding (severity, location, text),
+		// alongside notes -- notes is NOT removed.
+		expect(s1?.description).toBeDefined();
+		expect(s1?.description).toContain('CRITICAL');
+		expect(s1?.description).toContain('src/foo.ts');
+		expect(s1?.description).toContain('42');
+		expect(s1?.description).toContain('null deref on prd');
+		expect(s1?.notes).toBeDefined();
+		expect(s1?.notes).toBe(s1?.description);
+
+		// title is derived from the finding, not the generic template.
+		expect(s1?.title).not.toContain('address reviewer finding');
+		expect(s1?.title).toContain('CRITICAL');
+		expect(s1?.title).toContain('null deref on prd');
+	});
+
+	test('fix story tag-fallback keeps the placeholder title', () => {
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		// readReviewReport returns null (no parsed findings); pane carries the tag.
+		const opts = makeDispatchOpts({
+			paneText: '<review>FIXES_PENDING:1</review>',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => null,
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		dispatch(SAMPLE_UUID);
+
+		const written = capturedWrittenPrd[0];
+		const stories = written?.userStories ?? [];
+		const s1 = stories.find((s) => s.id === 'US-R1-001');
+
+		expect(s1?.title).toContain('address reviewer finding');
+		expect(s1?.description).toBeUndefined();
+		expect(s1?.notes).toBeUndefined();
+	});
+
+	test('derived fix-story title is single-line and pipe-free', () => {
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		const longMultilineText =
+			'first line of the finding\nsecond line | with a pipe char\n' +
+			'and a very long tail that pushes the raw finding text well past any '.repeat(3) +
+			'reasonable bound so the title must be truncated.';
+		const findings = [
+			{ severity: 'WARNING', text: longMultilineText },
+		];
+		const opts = makeDispatchOpts({
+			paneText: 'no tag',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => ({ verdict: 'FIXES_PENDING:1', findings }),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		dispatch(SAMPLE_UUID);
+
+		const written = capturedWrittenPrd[0];
+		const stories = written?.userStories ?? [];
+		const s1 = stories.find((s) => s.id === 'US-R1-001');
+		const title = s1?.title ?? '';
+
+		// Must actually be derived from the finding (not the generic placeholder),
+		// otherwise sanitization would be trivially satisfied by an unrelated
+		// fixed-shape string regardless of the fix.
+		expect(title).toContain('WARNING');
+		expect(title).not.toContain('address reviewer finding');
+		expect(title.length).toBeGreaterThan(0);
+		expect(title).not.toContain('\n');
+		expect(title).not.toContain('|');
+		expect(title.length).toBeLessThanOrEqual(80);
 	});
 
 	test('fallback: readReviewReport always null -> tag-based path used', () => {

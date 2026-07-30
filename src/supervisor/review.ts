@@ -664,9 +664,8 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 			// CAM-115: a CLEAN verdict clears findings carried over from a prior
 			// FIXES_PENDING round (line ~586 below), so prd.review.findings always
 			// reflects the current round instead of showing stale findings. This
-			// scope is CLEAN-only: the MAX_ROUNDS_DEBT write paths (below, and
-			// src/supervisor/loop.ts) intentionally keep the last round's findings
-			// to document the debt and must not be touched here.
+			// scope is CLEAN-only: the MAX_ROUNDS_DEBT write path (below) has its
+			// own contract (CAM-478) for which round's findings it persists.
 			const { findings: _staleFindings, ...reviewWithoutFindings } = prd.review ?? {};
 			writePrd({
 				...prd,
@@ -692,6 +691,15 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 			// defeats the US-006 non-convergence hard terminal. By skipping
 			// buildFixStories on the terminal round, prd.json userStories are
 			// unchanged and the pipeline stops cleanly at MAX_ROUNDS_DEBT.
+			//
+			// CAM-478: prd.review.findings must hold the findings of the terminal
+			// round that actually decided MAX_ROUNDS_DEBT when they parsed
+			// (fileFindings !== undefined overrides whatever the spread carried
+			// over from a prior round), and falls back to preserving the prior
+			// round's findings only when nothing parsed this round (fileFindings
+			// undefined, tag-fallback path) since that stale record is the only
+			// one available. Never convert already-fixed findings into debt, and
+			// never halt a ship over findings that no longer parsed.
 			writePrd({
 				...prd,
 				review: {
@@ -699,6 +707,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 					roundsCompleted: newRound,
 					maxRounds,
 					lastVerdict: 'MAX_ROUNDS_DEBT',
+					...(fileFindings !== undefined ? { findings: fileFindings } : {}),
 				},
 			});
 			return {
@@ -719,6 +728,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 			title: s.title,
 			priority: i + 1,
 			passes: false,
+			...(s.description !== undefined ? { description: s.description } : {}),
 			...(s.notes !== undefined ? { notes: s.notes } : {}),
 		}));
 		const bumpedExisting = existingStories.map((s) => ({
@@ -749,6 +759,26 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+/** Upper bound on a derived fix-story title's length (chars), sanitized suffix included. */
+const FIX_STORY_TITLE_MAX_LEN = 80;
+
+/**
+ * Derive a fix-story title from a finding's severity + text, sanitized so it
+ * is safe to use as a story title (single line, no pipe, length-bounded).
+ *
+ * Sanitization is required because the title flows into the commit subject
+ * (templates/agents/subagent-implementer.md:99), handoff.json, and a markdown
+ * table cell in the PR body (src/release/pr-body.ts:141): a raw multi-line or
+ * pipe-containing finding text would corrupt any of those renderings.
+ */
+function deriveFixStoryTitle(finding: ReviewFinding): string {
+	const raw = `${finding.severity}: ${finding.text}`;
+	const singleLine = raw.replace(/[\r\n]+/g, ' ').trim();
+	const pipeFree = singleLine.replace(/\|/g, '/');
+	if (pipeFree.length <= FIX_STORY_TITLE_MAX_LEN) return pipeFree;
+	return `${pipeFree.slice(0, FIX_STORY_TITLE_MAX_LEN - 1).trimEnd()}…`;
+}
+
 /**
  * Build fix story records for a FIXES_PENDING round.
  * Generates `count` stories with IDs US-R{round}-001 .. US-R{round}-{NNN}.
@@ -756,31 +786,40 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
  * When `findings` are provided (from review-report.json), each story's `notes`
  * field is populated with the verbatim finding text (severity/file/line/text)
  * so a fix-worker reads the real finding rather than a generic placeholder.
+ * `description` is populated with that same verbatim finding text so it
+ * reaches the fix-worker's spawn prompt directly (buildImplementerTaskPrompt
+ * interpolates description, not notes), and `title` is replaced with a
+ * sanitized, finding-derived title instead of the generic placeholder.
  *
  * When `findings` is absent (tag-based fallback path), stories are created with
- * placeholder titles only (backward-compat behavior).
+ * placeholder titles only and no `description` (backward-compat behavior).
  */
 function buildFixStories(
 	count: number,
 	round: number,
 	findings?: ReviewFinding[],
-): Array<{ id: string; title: string; notes?: string }> {
-	const stories: Array<{ id: string; title: string; notes?: string }> = [];
+): Array<{ id: string; title: string; description?: string; notes?: string }> {
+	const stories: Array<{ id: string; title: string; description?: string; notes?: string }> = [];
 	const actualCount = Math.max(count, 1); // always create at least 1 story on FIXES_PENDING
 
 	for (let i = 1; i <= actualCount; i++) {
 		const nnn = String(i).padStart(3, '0');
 		const finding: ReviewFinding | undefined = findings !== undefined ? findings[i - 1] : undefined;
-		const story: { id: string; title: string; notes?: string } = {
+		const story: { id: string; title: string; description?: string; notes?: string } = {
 			id: `US-R${round}-${nnn}`,
 			title: `Review round ${round} fix ${nnn}: address reviewer finding`,
 		};
 		if (finding !== undefined) {
-			// Inject verbatim finding into notes so the fix-worker has the real context.
+			// Inject verbatim finding into notes/description so the fix-worker has
+			// the real context (notes for the re-reader path, description so it
+			// reaches the spawn prompt directly).
 			const loc = finding.file !== undefined
 				? ` [${finding.file}${finding.line !== undefined ? `:${finding.line}` : ''}]`
 				: '';
-			story.notes = `${finding.severity}${loc}: ${finding.text}`;
+			const verbatim = `${finding.severity}${loc}: ${finding.text}`;
+			story.notes = verbatim;
+			story.description = verbatim;
+			story.title = deriveFixStoryTitle(finding);
 		}
 		stories.push(story);
 	}

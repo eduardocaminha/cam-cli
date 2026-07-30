@@ -6,6 +6,14 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.274.0] - 2026-07-30
+
+### Added
+
+- US-003 - Keep derived fix-story titles out of the PR-body setup checklist
+- US-002 - Give fix stories a verbatim description and a sanitized finding-derived title
+- US-001 - Persist the deciding round's findings on the MAX_ROUNDS_DEBT path
+
 ## [0.273.0] - 2026-07-30
 
 ### Added
