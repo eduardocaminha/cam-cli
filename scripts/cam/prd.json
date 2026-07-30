@@ -1,0 +1,124 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-479",
+  "description": "Detect a worker session that dies on its first API turn from its own transcript and propagate the real cause, so a 5-second death stops costing a 30-minute cap and stops being labelled a timeout.",
+  "issueNumber": 479,
+  "type": "feat",
+  "relatedDocs": [
+    "docs/adr/0039-cam-testing-philosophy-behavioral-di-fakes-plus-real-i-o-at-wire-boundaries-not-no-mocks-ever.md",
+    "docs/adr/0004-plan-phase-deterministic-sidecar-runner.md"
+  ],
+  "officialDocsConsulted": [
+    {
+      "lib": "Bun",
+      "channel": "WebFetch",
+      "url": "https://bun.sh/docs/api/file-io",
+      "version": "current",
+      "fetchedAt": "2026-07-30T13:05:00Z",
+      "summary": "BunFile exposes a synchronous `.size` byte count (0 for a missing path) but the documented BunFile reference carries NO mtime/lastModified member, so a transcript-growth probe should compare byte length of the already-read content (or use node:fs statSync for mtime) rather than expecting a Bun mtime API. Bun explicitly directs anything node:fs covers but Bun.file does not to its near-complete node:fs implementation, and no deprecation affects readFileSync.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Carry the real cause and a shared session-died-early reason on the dispatch failure record",
+      "description": "As the autonomous orchestrator reading only the event log and the durable marker, I need the dispatch failure record to carry the extracted cause text plus one shared session-died-early reason literal, so a first-turn API death stops being recorded as a work timeout with no cause anywhere.",
+      "acceptanceCriteria": [
+        "A single new reason literal session-died-early joins the shared DispatchFailureReason union, so no phase invents its own ad hoc early-death label. [oracle: grep -q 'session-died-early' src/supervisor/verified-dispatch.ts]",
+        "The durable dispatch-failed marker declares the extracted cause text as its own field, so a reader of the marker alone learns why the dispatch failed without opening any transcript. [oracle: grep -qE 'cause[?]?:' src/supervisor/dispatch-failed-marker.ts]",
+        "A marker written with a cause round-trips through readDispatchFailedMarker with the cause text preserved. [oracle: bun test ./test/supervisor/dispatch-failed-marker.test.ts -t \"preserves the cause field through a write and read round-trip\"]",
+        "A pre-existing marker JSON that carries no cause field still parses instead of being rejected as malformed, so the field is additive and no already-written evidence file becomes unreadable. [oracle: bun test ./test/supervisor/dispatch-failed-marker.test.ts -t \"still parses a marker written without a cause field\"]",
+        "When a caller supplies a cause, the same text reaches the dispatch-failed event detail, the durable marker, and the orchestrator notification, so the three observable channels never disagree. [oracle: bun test ./test/supervisor/verified-dispatch.test.ts -t \"emits the supplied cause on the dispatch-failed event, the marker, and the notification\"]",
+        "The eight pre-existing DispatchFailureReason literals keep their observable-terminal contract (event plus marker plus notification) unchanged. [oracle: bun test ./test/supervisor/verified-dispatch.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/supervisor/verified-dispatch.ts (DispatchFailureReason union at :16-25; add an optional `cause` to VerifiedDispatchOptions and thread it through emitDispatchFailure at :88-135 into marker, DispatchFailedEventDetail, and the notifyFn string), src/supervisor/dispatch-failed-marker.ts (DispatchFailedMarker at :16-24 plus the field-by-field validation in readDispatchFailedMarker at :30-58 -- keep cause OPTIONAL in the validator or every already-written marker becomes null), src/supervisor/events.ts (DispatchFailedEventDetail at :704-710). Tests: test/supervisor/dispatch-failed-marker.test.ts, test/supervisor/verified-dispatch.test.ts. This story adds vocabulary + plumbing ONLY; no poll loop is touched yet, so no cause is produced yet. Do NOT import src/retry/patterns.ts (LIMIT_PATTERNS / isRateLimited): wiring that classifier is CAM-435 and is explicitly out of scope. Do NOT add retry logic. Cost/AC-oracle discipline: never read an oracle exit status through a pipe (`bun test ... | tail` reports tail's status); the ./ prefix on every test-path oracle is required. scripts/file-size-budget.json may need a raise for the touched files: raise it in THIS story's commit with a `_ref` note (ADR-0022), and if the branch conflicts on `_ref`, merge origin/main first."
+    },
+    {
+      "id": "US-002",
+      "title": "Add the pure early-death detector over a session transcript",
+      "description": "As the supervisor waiting on a spawned worker, I need a pure predicate that reads the session's own transcript and reports dead-on-first-turn versus still-working, so a death whose signal is available in seconds stops being indistinguishable from work in progress.",
+      "acceptanceCriteria": [
+        "A pure predicate classifies a spawned session as dead-on-first-turn from its transcript alone: a transcript whose byte size has not grown across the floor window AND whose last assistant entry is a transient API error reports early-death, while a still-growing transcript, or one whose last assistant entry is normal work, reports still-working. [oracle: bun test ./test/supervisor/dispatch-early-death.test.ts -t \"classifies a frozen transcript whose last assistant entry is an API error as dead-on-first-turn\"]",
+        "The detector is driven against a REAL healthy-planner fixture (about 70 entries, roughly 256 KB, tool_use blocks, still growing between samples) and reports still-working, so the predicate is proven against both fixtures and not the dead one alone. [oracle: bun test ./test/supervisor/dispatch-early-death.test.ts -t \"classifies a still-growing multi-entry transcript with tool_use work as still-working\"]",
+        "The extracted cause text is the transcript's last assistant entry verbatim enough for a reader to see the upstream error (e.g. the 529 Overloaded line), not a synthesized label. [oracle: bun test ./test/supervisor/dispatch-early-death.test.ts -t \"extracts the last assistant entry as the cause text\"]",
+        "The transcript path is resolved through the existing shared resolver rather than a second path resolver. [oracle: grep -q 'transcriptPathForSession' src/supervisor/early-death.ts]",
+        "The probe resolves the transcript under an injected Claude config root that is NOT the homedir default, written to a real tmpdir, so a CLAUDE_CONFIG_DIR environment (measured live) cannot make the detector read a permanently stale ~/.claude/projects directory and never fire. [oracle: bun test ./test/supervisor/dispatch-early-death.test.ts -t \"resolves the transcript under an injected claudeDir that is not the homedir default\"]",
+        "The floor window is a named constant or a cap-relative derivation, and is proven far below BOTH the 30-minute host cap and the 60-minute container cap, so no cap is hardcoded. [oracle: bun test ./test/supervisor/dispatch-early-death.test.ts -t \"derives a floor far below both the 30-minute host cap and the 60-minute container cap\"]",
+        "An absent or unreadable transcript reports still-working rather than early-death, so a resolver miss can never fabricate a death. [oracle: bun test ./test/supervisor/dispatch-early-death.test.ts -t \"reports still-working when the transcript is absent or unreadable\"]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "New file src/supervisor/early-death.ts + new test test/supervisor/dispatch-early-death.test.ts. Shape: a pure core (verdict from sampled byte size + previous size + frozen-duration + floor) plus a thin stateful probe factory that closes over cwd/claudeDir/readFile and tracks the last sample per uuid, so the poll loops (US-003, US-005) call it once per interval. REUSE transcriptPathForSession (src/transcript/usage.ts:232-235); src/supervisor/events.ts:29 already imports it -- do not write a second resolver. Resolve the Claude config root exactly as src/supervisor/host.ts:1033 does (process.env['CLAUDE_CONFIG_DIR'] ?? join(homedir(), '.claude')); patterns.md (grep 'claudeDir is not one canonical directory', CAM-360) documents the exact bug class where a story's own test injected the dir it had just written and the production wiring pointed elsewhere -- inject a tmpdir claudeDir in tests AND keep production resolution in the wiring stories consistent with the token reader. Transient-error recognition must be local to this module (a small literal/regex set covering the measured 'API Error: 529 Overloaded. This is a server-side issue, usually temporary'); do NOT import src/retry/patterns.ts (CAM-435, out of scope). Fixtures: dead-on-first-turn is 8-9 JSONL entries / ~3.1-3.4 KB with a single assistant entry that is the API error; healthy is ~70 entries / ~256 KB with 16 tool_use blocks. Every test drives an injected clock (precedent test/supervisor/loop.test.ts:384 and :427) and never wall time; scripts/check-test-sleeps.ts gates sleeps. Bun docs note (officialDocsConsulted): BunFile has no mtime member, so compare byte length of the read content (readFileSync via the injected reader) instead of expecting a Bun mtime API."
+    },
+    {
+      "id": "US-003",
+      "title": "End the implementer and reviewer waits at the floor with a cause-bearing terminal",
+      "description": "As the autonomous loop, I need the implementer and reviewer poll loops to consult the early-death detector and terminate at the floor carrying session-died-early plus the transcript cause, so a first-turn death costs a minute instead of the full cap and the recorded label stops lying.",
+      "acceptanceCriteria": [
+        "The implementer poll loop reaches its failure terminal at under ten percent of its configured cap when the spawned session died on its first turn, driven with an injected clock. [oracle: bun test ./test/supervisor/dispatch-early-death.test.ts -t \"the implementer poll loop ends an early-death wait far below its timeout cap\"]",
+        "The reviewer poll loop reaches its failure terminal at under ten percent of its configured cap under the same condition, driven with an injected clock. [oracle: bun test ./test/supervisor/dispatch-early-death.test.ts -t \"the reviewer poll loop ends an early-death wait far below its timeout cap\"]",
+        "An early-death implementer terminal emits reason session-died-early and carries the transcript cause text on all three observable channels (dispatch-failed event, durable marker, orchestrator notification). [oracle: bun test ./test/supervisor/dispatch-early-death.test.ts -t \"an early-death implementer terminal carries session-died-early and the transcript cause in event, marker, and notification\"]",
+        "A container-isolated implementer (60-minute cap) still ends an early-death wait at the same floor, so the fix is not silently host-only. [oracle: bun test ./test/supervisor/dispatch-early-death.test.ts -t \"a container implementer's longer cap does not change the early-death floor\"]",
+        "No second retry mechanism is introduced: an early-death outcome increments the existing dead-worker streak exactly like pane-died/timeout and blocks at the existing MAX_DEAD_WORKER_RETRIES bound with the existing backoff. [oracle: bun test ./test/supervisor/dispatch-early-death.test.ts -t \"an early-death outcome feeds the existing dead-worker streak and adds no new retry mechanism\"]",
+        "The production supervisor wiring injects a real detector probe, so the fix does not ship inert behind an undefined seam. [oracle: grep -q 'earlyDeathProbeFn' src/supervisor/host.ts]",
+        "The pre-existing implementer and reviewer suites stay green, so the added poll-exit does not disturb the report-file, pane-death, or cap terminals. [oracle: bun test ./test/supervisor/loop.test.ts ./test/supervisor/review.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/supervisor/loop.ts (poll loop :1400-1470, pollOutcome union at :1401 gains an early-death member; terminal handling :1515-1560 reuses the pane-died/timeout branch so MAX_DEAD_WORKER_RETRIES=4 / NO_PROGRESS_BACKOFF_MS=60000 / MAX_BACKOFF_MS=300000 stay the ONLY retry envelope), src/supervisor/review.ts (poll loop :566-608, timeout branch :586-604), src/supervisor/worker-dispatch.ts (thread the US-001 optional cause through WorkerDispatchLifecycleOptions -> runCheckedWorkerSentinel at :104-130 into runVerifiedDispatch), src/supervisor/host.ts (production injection next to the existing readWorkerTokensAdapter at :1032-1035 -- REUSE the same transcriptClaudeDir variable so the probe and the token reader can never resolve different dirs). Name the injected option earlyDeathProbeFn (the wiring oracle greps that literal). Caps differ per phase: implementer host 30 min (loop.ts:650), implementer container 60 min (loop.ts:662), reviewer 30 min (review.ts:343) -- express the floor via the US-002 constant/derivation, never a hardcoded 30 minutes. Liveness today rests solely on tmux pane_dead (host.ts:583-592, consumed loop.ts:1403 and review.ts:573) and is provably insufficient (the second measured occurrence had exitCode 0, empty stderr, live inert pane for 30 minutes); the transcript read is the new signal, and pipe-pane out-logs are write-only (zero readers in src/) so they are not a substitute. Do NOT touch the respawn-pane -k / pipe-pane ordering or remain-on-exit (CAM-477), the idle-pane mutex (CAM-440), or wire src/retry/patterns.ts (CAM-435). Tests drive the injected clock and sleepFn (precedent test/supervisor/loop.test.ts:384/:427; pair a no-op sleepFn with a tiny timeout per patterns.md line 30 or the loop spins the CPU to the real deadline). Keep worker/orchestrator scratch in /tmp: any untracked repo file fails the plan preflight clean-tree guard. Raise scripts/file-size-budget.json in this commit with a `_ref` note if loop.ts / review.ts / their test files exceed budget."
+    },
+    {
+      "id": "US-004",
+      "title": "Make the plan-phase failure records honest: reason-bearing planner terminal, distinguishable auditor results, uncorrupted phase field",
+      "description": "As an orchestrator that acts only on the event log, I need the plan phase's three record-integrity defects fixed, so planner pane death stops being reported as poll completion, auditor pane death stops being indistinguishable from a 30-minute timeout, and the phase field stops carrying a synthesized reason string.",
+      "acceptanceCriteria": [
+        "Planner pane death before prd.json exists is no longer reported as poll completion: it yields a reason-bearing terminal instead of the bare planner-failed terminal that carries no reason field at all. [oracle: bun test ./test/supervisor/plan-runner-early-death.test.ts -t \"planner pane death before prd.json yields a reason-bearing terminal, not bare planner-failed\"]",
+        "The auditor poll loop returns distinguishable results for pane death versus cap elapsed, instead of one byte-identical bare failure for both, and the caller labels each with its own cause. [oracle: bun test ./test/supervisor/plan-runner-early-death.test.ts -t \"auditor pane death and auditor cap elapsed are distinguishable at the poll boundary\"]",
+        "The emitted phase field carries only a real phase name and never a synthesized reason string, so the event log stops recording phase values like planner-timeout. [oracle: ! grep -q 'phase}-timeout' src/supervisor/plan-runner.ts]",
+        "A plan timeout emits phase 'planner' with the reason carried in the reason field on both the dispatch-failed event and the durable marker, and the inner sentinel dispatch no longer stamps a reason string into its own phase field. [oracle: bun test ./test/supervisor/plan-runner-early-death.test.ts -t \"the plan timeout terminal emits a real phase name with the reason in the reason field\"]",
+        "The pre-existing plan-runner suites stay green, so the reshaped poll returns and terminal kinds do not break the re-plan loop or the post-audit actions. [oracle: bun test ./test/supervisor/plan-runner.test.ts ./test/plan-runner-no-prd.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/supervisor/plan-runner.ts, new test test/supervisor/plan-runner-early-death.test.ts, and src/supervisor/plan-runner.ts's consumer src/commands/sidecar.ts only if the notify text for planner-failed needs the reason (runPostAuditAction handles 'planner-failed' at plan-runner.ts:2150-2153). Three sites: (a) pollPlannerDeath (:1137-1168) returns TRUE on pane death, making pane death indistinguishable from prd.json completion, and the caller then produces { kind: 'planner-failed' } (declared :282, returned :1343) with NO reason field -- change the poll return and the result kind TOGETHER, or the cause is extracted then discarded at the type boundary; keep the union member name 'planner-failed' and add an OPTIONAL reason so the existing consumers (test/plan-runner-no-prd.test.ts:130/:225, test/integration/plan-runner-no-prd.test.ts:214, test/supervisor/plan/plan-runner-replan.test.ts:575, test/supervisor/plan/plan-runner-postaudit.test.ts:662, plan-runner.ts:2150) stay valid. (b) pollAuditorReport (:1182-1201) returns a byte-identical { ok: false } for both pane death (:1196) and cap elapsed (:1197-1199) and the caller labels both auditor-timeout (:1364-1366). (c) The phase corruption is `${phase}-timeout` at :1064, passed as `phase` into runVerifiedDispatch at :1072; the plan timeout path emits TWO dispatch-failed events for one failure (inner from verified-dispatch.ts:116-122, outer at :1105-1119) and the marker written at :1090 overwrites the inner -- keep phase a real phase name on BOTH and keep the reason in the reason field. This story does not add the detector; it makes a reason-bearing home for US-005's cause. Tests drive the injected clock, never wall time. Raise scripts/file-size-budget.json in this commit with a `_ref` note if plan-runner.ts exceeds budget."
+    },
+    {
+      "id": "US-005",
+      "title": "End the planner and auditor waits at the floor and propagate the transcript cause",
+      "description": "As the autonomous loop dispatching a plan cycle, I need the planner and auditor poll loops to consult the same early-death detector and record session-died-early with the transcript cause, so all four dispatch waits fail fast and a 529 on the first turn is finally readable from the event log alone.",
+      "acceptanceCriteria": [
+        "The detector is consulted inside each of the four dispatch poll loops (implementer, reviewer, planner, auditor), so a first-turn death ends the wait at the floor instead of the cap: driven with an injected clock, each loop reaches its failure terminal at under ten percent of its configured cap. [oracle: bun test ./test/supervisor/dispatch-early-death.test.ts -t \"every dispatch poll loop ends an early-death wait far below its timeout cap\"]",
+        "An early-death planner terminal emits reason session-died-early with the transcript cause text on all three observable channels (dispatch-failed event, durable marker, orchestrator notification), so the recorded label names the upstream 529 rather than a work timeout. [oracle: bun test ./test/supervisor/plan-runner-early-death.test.ts -t \"an early-death planner terminal carries session-died-early and the transcript cause in event, marker, and notification\"]",
+        "An early-death auditor terminal does the same and remains distinguishable from an auditor cap-elapsed terminal. [oracle: bun test ./test/supervisor/plan-runner-early-death.test.ts -t \"an early-death auditor terminal carries session-died-early and stays distinct from cap elapsed\"]",
+        "The production plan-phase wiring injects a real detector probe, so the plan path does not ship inert behind an undefined seam. [oracle: grep -q 'earlyDeathProbeFn' src/commands/sidecar.ts]",
+        "The pre-existing plan-runner suite stays green, so the added poll-exit does not disturb the prd.json, verdict-file, pane-death, or cap terminals. [oracle: bun test ./test/supervisor/plan-runner.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 5,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/supervisor/plan-runner.ts (pollPlannerDeath :1137-1168 and pollAuditorReport :1182-1201 gain the same probe consultation the implementer/reviewer loops got in US-003; RunPlanPhaseOptions gains earlyDeathProbeFn; emitPlanTimeoutTerminal :1058-1119 must pass the cause into the US-001 marker/event/notify fields), src/commands/sidecar.ts (production wiring: makeProductionPlanPhaseFn closes over runPlanPhase -- resolve the Claude config root the same way src/supervisor/host.ts:1033 does and reuse the US-002 probe factory), tests test/supervisor/plan-runner-early-death.test.ts and test/supervisor/dispatch-early-death.test.ts (the four-loop criterion reuses the implementer/reviewer drivers added in US-003 plus the two plan loops; keep helpers shared rather than duplicating four ad hoc harnesses). All four loops share ONE exit set (report-file present, pane_dead, cap elapsed) -- fix the shared shape, do not special-case a phase. Planner and auditor caps are both 30 min (plan-runner.ts:219) with a 5 s poll interval (:216), but the floor must still come from the US-002 constant/derivation. DO NOT add retry or re-spawn policy: MAX_DEAD_WORKER_RETRIES=4 (loop.ts:774) already exists and is merely starved by 30-minute attempts. Out of scope and must not be touched: pane-scrape evidence and src/retry/patterns.ts wiring (CAM-435, stays open), respawn/pipe-pane ordering and remain-on-exit (CAM-477, stays open), idle-pane mutex (CAM-440). Carry the measured cost baseline into the PR body: healthy planner 2m30s (07:43:20.115Z spawn to 07:45:50.721Z auditor spawn) versus two dead-on-first-turn planners at 30m04s each (06:21:15.797Z-06:51:20.183Z and 06:54:43.957Z-07:24:48.214Z); across 1237 completed worker runs the median is 6.9 min and p90 18.0 min, so the 30-minute cap is 4.3x the median productive run. Raise scripts/file-size-budget.json in this commit with a `_ref` note if plan-runner.ts / sidecar.ts / the test files exceed budget."
+    }
+  ]
+}
