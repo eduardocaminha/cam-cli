@@ -36,7 +36,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/supervisor/verified-dispatch.ts (DispatchFailureReason union at :16-25; add an optional `cause` to VerifiedDispatchOptions and thread it through emitDispatchFailure at :88-135 into marker, DispatchFailedEventDetail, and the notifyFn string), src/supervisor/dispatch-failed-marker.ts (DispatchFailedMarker at :16-24 plus the field-by-field validation in readDispatchFailedMarker at :30-58 -- keep cause OPTIONAL in the validator or every already-written marker becomes null), src/supervisor/events.ts (DispatchFailedEventDetail at :704-710). Tests: test/supervisor/dispatch-failed-marker.test.ts, test/supervisor/verified-dispatch.test.ts. This story adds vocabulary + plumbing ONLY; no poll loop is touched yet, so no cause is produced yet. Do NOT import src/retry/patterns.ts (LIMIT_PATTERNS / isRateLimited): wiring that classifier is CAM-435 and is explicitly out of scope. Do NOT add retry logic. Cost/AC-oracle discipline: never read an oracle exit status through a pipe (`bun test ... | tail` reports tail's status); the ./ prefix on every test-path oracle is required. scripts/file-size-budget.json may need a raise for the touched files: raise it in THIS story's commit with a `_ref` note (ADR-0022), and if the branch conflicts on `_ref`, merge origin/main first."
     },
