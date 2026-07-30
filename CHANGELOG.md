@@ -6,6 +6,21 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.273.0] - 2026-07-30
+
+### Added
+
+- US-R2-004 - Review round 2 fix 004: address reviewer finding
+- US-R2-003 - Review round 2 fix 003: address reviewer finding
+- US-R2-002 - Review round 2 fix 002: address reviewer finding
+- US-R2-001 - Review round 2 fix 001: address reviewer finding
+- US-R1-002 - Review round 1 fix 002: address reviewer finding
+- US-R1-002 - Review round 1 fix 002: address reviewer finding
+- US-R1-001 - Review round 1 fix 001: address reviewer finding
+- US-003 - Flag the same form at plan time as self-contaminating-search and record the class in patterns.md
+- US-002 - Refuse a store-reaching recursive-search oracle at filing time
+- US-001 - Refuse a blank or non-string acceptance criterion at filing time
+
 ## [0.272.0] - 2026-07-30
 
 ### Added
