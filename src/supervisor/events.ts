@@ -707,6 +707,8 @@ export interface DispatchFailedEventDetail {
 	exitCode: number;
 	stderr: string;
 	reason: string;
+	/** Extracted cause text, mirrored from the durable marker (US-001 CAM-479). */
+	cause?: string;
 }
 
 /** Detail payload by event kind ('worker-start'/'worker-end' carry free-form maps). */

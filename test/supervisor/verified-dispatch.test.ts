@@ -193,6 +193,19 @@ describe('runVerifiedDispatch', () => {
 		expect(fake.labelArgs).toEqual(['planner']);
 	});
 
+	test('emits the supplied cause on the dispatch-failed event, the marker, and the notification', () => {
+		const fake = makeBehavioralTmux({ failCommand: 'respawn-pane', exitCode: 1, stderr: '' });
+		const harness = makeHarness(fake);
+		harness.options.cause = 'API Error: 529 overloaded';
+
+		const result = runVerifiedDispatch(harness.options);
+
+		expect(result.ok).toBe(false);
+		expect(harness.events[0]).toMatchObject({ detail: { cause: 'API Error: 529 overloaded' } });
+		expect(harness.markers[0]?.cause).toBe('API Error: 529 overloaded');
+		expect(harness.notifications[0]).toContain('API Error: 529 overloaded');
+	});
+
 	test('explicit label overrides phase for @cam_label without changing event/marker phase', () => {
 		const fake = makeBehavioralTmux({ failCommand: 'respawn-pane', exitCode: 23 });
 		const harness = makeHarness(fake);

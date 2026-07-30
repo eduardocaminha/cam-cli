@@ -21,6 +21,12 @@ export interface DispatchFailedMarker {
 	stderr: string;
 	reason: string;
 	timestamp: string;
+	/**
+	 * Extracted cause text (e.g. a transcript-derived early-death reason,
+	 * US-001 CAM-479), optional so a marker written before this field existed
+	 * still parses (additive field, never a rejection criterion).
+	 */
+	cause?: string;
 }
 
 /**
@@ -40,11 +46,12 @@ export function readDispatchFailedMarker(filePath: string): DispatchFailedMarker
 			typeof obj['exitCode'] !== 'number' ||
 			typeof obj['stderr'] !== 'string' ||
 			typeof obj['reason'] !== 'string' ||
-			typeof obj['timestamp'] !== 'string'
+			typeof obj['timestamp'] !== 'string' ||
+			(obj['cause'] !== undefined && typeof obj['cause'] !== 'string')
 		) {
 			return null;
 		}
-		return {
+		const marker: DispatchFailedMarker = {
 			phase: obj['phase'] as string,
 			paneId: obj['paneId'] as string,
 			uuid: obj['uuid'] as string,
@@ -53,6 +60,8 @@ export function readDispatchFailedMarker(filePath: string): DispatchFailedMarker
 			reason: obj['reason'] as string,
 			timestamp: obj['timestamp'] as string,
 		};
+		if (typeof obj['cause'] === 'string') marker.cause = obj['cause'];
+		return marker;
 	} catch {
 		return null;
 	}

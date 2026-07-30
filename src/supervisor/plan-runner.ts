@@ -55,6 +55,7 @@ import type { CodexModelsCacheReader } from '../config/codex-models-cache.ts';
 import { removeTaskPromptFile } from './task-prompt-file.ts';
 import { runVerifiedDispatch } from './verified-dispatch.ts';
 import type { DispatchFailedMarker } from './dispatch-failed-marker.ts';
+import type { EarlyDeathVerdict } from './early-death.ts';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -233,12 +234,24 @@ export const DEFAULT_PLAN_TIMEOUT_MS = 30 * 60 * 1_000;
  *
  * Additional kinds:
  *   mutex-busy           - pane-count mutex was 'busy'; no pane spawned (AC5).
- *   planner-timeout      - planner pane still alive after plannerTimeoutMs.
- *   auditor-timeout      - plan-verdict-report.json absent when auditor died or timed out.
+ *   planner-timeout      - planner pane still alive after plannerTimeoutMs (cap elapsed).
+ *   auditor-timeout      - plan-verdict-report.json absent when auditor died, timed out, or
+ *                          (US-005, CAM-479 AC2/AC3) earlyDeathProbeFn detected the auditor
+ *                          session died on its first turn; the emitted `reason` distinguishes
+ *                          all three causes on every observable channel even though this kind
+ *                          stays the same for all of them.
  *   dispatch-failed      - verified planner/auditor tmux dispatch failed; the event,
  *                          durable marker, and notification terminal were attempted.
  *   planner-failed       - planner poll ended but readPlannerReportFn returned null (no
  *                          prd.json written); auditor is NEVER spawned (US-003, CAM-155).
+ *                          Carries an OPTIONAL `reason` (US-004, CAM-479 AC1): set when the
+ *                          poll ended because the pane died before ever writing prd.json, so
+ *                          that case is no longer reported as bare, reason-less failure. Also
+ *                          set (US-005, CAM-479 AC1/AC2) to `` `session-died-early: ${cause}` ``
+ *                          when the pane stayed alive but earlyDeathProbeFn detected the
+ *                          session inside it died on its first turn; the transcript cause is
+ *                          ALSO emitted on the dispatch-failed event, durable marker, and
+ *                          orchestrator notification (reason `'session-died-early'`).
  *   plan-target-invalid  - opts.planTargetId was set (an explicit /cam-plan <id> target) AND
  *                          selectIssueFn() returned null (the target is missing / not-open /
  *                          not-plannable); carries the target id. The planner pane is NEVER
@@ -279,7 +292,7 @@ export type PlanPhaseResult =
 	| { kind: 'planner-timeout' }
 	| { kind: 'auditor-timeout' }
 	| { kind: 'dispatch-failed'; phase: 'planner' | 'auditor'; reason: string }
-	| { kind: 'planner-failed' }
+	| { kind: 'planner-failed'; reason?: string }
 	/**
 	 * Container preflight blocked the spawn (US-006, CAM-152).
 	 * `phase` indicates which spawn was blocked ('planner' or 'auditor').
@@ -667,6 +680,33 @@ export interface RunPlanPhaseOptions {
 	 * (review.ts).
 	 */
 	configPath?: string;
+
+	// -------------------------------------------------------------------------
+	// Early-death transcript probe (US-005, CAM-479)
+	// -------------------------------------------------------------------------
+
+	/**
+	 * Detect whether a dispatched planner/auditor session died on its first
+	 * turn (typically a transient upstream API error, e.g. a 529) despite the
+	 * tmux pane itself staying alive. Mirrors earlyDeathProbeFn in
+	 * RunSupervisorOptions (loop.ts) and MakeReviewDispatchOptions (review.ts):
+	 * the SAME makeEarlyDeathProbe factory (src/supervisor/early-death.ts) is
+	 * shared across all four dispatch poll loops in production wiring
+	 * (sidecar.ts).
+	 *
+	 * Consulted inside pollPlannerDeath and pollAuditorReport, checked AFTER
+	 * the pane-alive fallback and BEFORE the cap-elapsed deadline check
+	 * (mirrors review.ts's makeReviewDispatch ordering). A 'dead-on-first-turn'
+	 * verdict ends the wait at the detector's floor (EARLY_DEATH_FLOOR_MS)
+	 * instead of the full plannerTimeoutMs/auditorTimeoutMs cap, and the
+	 * verdict's cause text is threaded into the emitted terminal's `cause`
+	 * field on all three observable channels (dispatch-failed event, durable
+	 * marker, orchestrator notification).
+	 *
+	 * Optional for backward compat: when undefined, poll behavior is unchanged
+	 * from before this story (no early-death check is ever attempted).
+	 */
+	earlyDeathProbeFn?: (uuid: string) => EarlyDeathVerdict;
 }
 
 // ---------------------------------------------------------------------------
@@ -962,18 +1002,6 @@ function runContainerPlanPreflight(
 }
 
 /**
- * Return true when the planner poll ended without prd.json being written.
- *
- * pollPlannerDeath exits via EITHER the report signal (non-null) OR pane-death.
- * A fresh re-call of readPlannerReportFn distinguishes: undefined = absent dep
- * (backward-compat); non-null = prd.json written (happy path); null = no prd.json
- * (planner-failed). Extracted to satisfy biome complexity limits (US-003, CAM-155).
- */
-function isPlannerNoPrd(readPlannerReportFn?: () => unknown | null): boolean {
-	return readPlannerReportFn !== undefined && readPlannerReportFn() === null;
-}
-
-/**
  * Build a synthetic BLOCK PlanVerdictReport from the deterministic oracle
  * linter's findings (US-002, CAM-310), folding lintPrd's output into the
  * EXISTING audit-BLOCK machinery so runPlanPhaseWithReplan's while-loop
@@ -1055,21 +1083,82 @@ function resolveNoIssueResult(
 		: { kind: 'no-plannable-issue' };
 }
 
+/**
+ * Distinguishes WHY a plan-phase poll ended without its report file: the
+ * deadline elapsed while the pane stayed alive ('cap-elapsed', the original
+ * and only mode for the planner poll), the pane died on its own before
+ * the deadline ('pane-died', US-004, CAM-479 AC2), or the session inside a
+ * still-alive pane died on its first turn per the transcript probe
+ * ('session-died-early', US-005, CAM-479 AC2/AC3). Threaded into the emitted
+ * reason string so all three causes are distinguishable on every observable
+ * channel, never one byte-identical failure for all.
+ */
+type PlanTimeoutCause = 'cap-elapsed' | 'pane-died' | 'session-died-early';
+
+/**
+ * Build the reason string for a plan-phase timeout/pane-death terminal.
+ *
+ * Deliberately NOT built by interpolating the phase name directly into a
+ * "-timeout" suffix: that exact construction was the source of the phase-
+ * field corruption fixed by this story (US-004, CAM-479 AC3/AC4) -- the
+ * synthesized string was passed on as the INNER sentinel dispatch's own
+ * `phase` field below, so a real phase name never reached that inner
+ * dispatch-failed event/marker. `phase` now stays a real phase name
+ * everywhere; this reason string is carried ONLY in the `reason` field.
+ */
+function planTimeoutReason(phase: PlanDispatchPhase, cause: PlanTimeoutCause): string {
+	// US-005 (CAM-479 AC2/AC3): the shared 'session-died-early' literal
+	// (verified-dispatch.ts DispatchFailureReason), never phase-qualified --
+	// this is the SAME reason string the implementer/reviewer terminals emit
+	// (loop.ts/review.ts), so the label is grep-identical across all four
+	// dispatch phases.
+	if (cause === 'session-died-early') return 'session-died-early';
+	if (cause === 'pane-died') return phase === 'planner' ? 'planner-pane-died' : 'auditor-pane-died';
+	return phase === 'planner' ? 'planner-timeout' : 'auditor-timeout';
+}
+
+/**
+ * Build the live-notification message for a plan timeout/pane-death/early-
+ * death terminal. The pre-existing 'timed out (pane ...)' wording is kept
+ * byte-identical for cap-elapsed and pane-died (AC5: the pre-existing
+ * plan-runner suite asserts this exact substring), while a 'session-died-early'
+ * cause gets its own wording carrying both the shared reason literal and the
+ * verbatim transcript cause (US-005, CAM-479 AC2/AC3).
+ */
+function planTimeoutNotifyMessage(
+	phase: PlanDispatchPhase,
+	paneId: string,
+	cause: PlanTimeoutCause,
+	transcriptCause: string | undefined,
+): string {
+	if (cause === 'session-died-early') {
+		const causeSuffix =
+			transcriptCause !== undefined && transcriptCause.trim() !== '' ? `: ${transcriptCause.trim()}` : '';
+		return `[cam] ${phase} session-died-early (pane ${paneId})${causeSuffix}`;
+	}
+	return `[cam] ${phase} timed out (pane ${paneId})`;
+}
+
 function emitPlanTimeoutTerminal(
 	opts: RunPlanPhaseOptions,
 	phase: PlanDispatchPhase,
 	paneId: string,
 	uuid: string,
+	cause: PlanTimeoutCause = 'cap-elapsed',
+	transcriptCause?: string,
 ): void {
-	const reason = `${phase}-timeout`;
+	const reason = planTimeoutReason(phase, cause);
 	const timestamp = new Date().toISOString();
 	removePlanTaskPrompt(opts, uuid);
 
 	// The timeout sentinel is itself a checked respawn: every tmux exit code
 	// and the pane identity transition are inspected by the shared helper.
+	// `phase` here is the REAL phase name (US-004, CAM-479 AC4): the inner
+	// sentinel dispatch no longer stamps the synthesized `reason` string into
+	// its own `phase` field the way the pre-fix code did.
 	const sentinel = runVerifiedDispatch({
 		spawnFn: opts.spawnFn,
-		phase: reason,
+		phase,
 		label: phase,
 		paneId,
 		uuid,
@@ -1088,6 +1177,10 @@ function emitPlanTimeoutTerminal(
 		stderr: sentinel.ok ? '' : sentinel.marker.stderr,
 		reason,
 		timestamp,
+		// US-005 (CAM-479 AC2/AC3): the transcript-derived cause text, threaded
+		// onto the durable marker exactly like the implementer/reviewer
+		// early-death terminals (loop.ts/review.ts emitEarlyDeathTerminal).
+		...(transcriptCause !== undefined ? { cause: transcriptCause } : {}),
 	};
 	try {
 		opts.logEvent?.({
@@ -1101,6 +1194,7 @@ function emitPlanTimeoutTerminal(
 				exitCode: marker.exitCode,
 				stderr: marker.stderr,
 				reason,
+				...(transcriptCause !== undefined ? { cause: transcriptCause } : {}),
 			},
 		});
 	} catch {
@@ -1112,16 +1206,41 @@ function emitPlanTimeoutTerminal(
 		// Continue to the live notification.
 	}
 	try {
-		opts.notifyFn?.(`[cam] ${phase} timed out (pane ${paneId})`);
+		opts.notifyFn?.(planTimeoutNotifyMessage(phase, paneId, cause, transcriptCause));
 	} catch {
 		// The returned PlanPhaseResult remains an observable terminal.
 	}
 }
 
 /**
+ * Discriminated outcome of the planner poll (US-004, CAM-479 AC1). Replaces
+ * the prior bare boolean, which reported pane death as byte-identical to
+ * prd.json-written completion: a poll-completion signal that then had to be
+ * reverse-engineered by a second, separate read of readPlannerReportFn.
+ *
+ *   'completed'  - prd.json was written (primary signal), OR the pane died
+ *                  naturally while readPlannerReportFn is absent entirely
+ *                  (backward-compat: the pre-US-003 caller never distinguished
+ *                  this case, so it still falls through to the auditor).
+ *   'pane-died'  - readPlannerReportFn IS defined, but the pane died before it
+ *                  ever returned non-null: a real planner failure, not a poll
+ *                  completion.
+ *   'timeout'    - plannerTimeoutMs elapsed with the pane still alive.
+ *   'session-died-early' - the pane stayed alive but earlyDeathProbeFn
+ *                  detected the session inside it died on its first turn
+ *                  (US-005, CAM-479 AC1). Carries the transcript-derived
+ *                  `cause` text.
+ */
+type PlannerPollOutcome =
+	| { kind: 'completed' }
+	| { kind: 'pane-died' }
+	| { kind: 'timeout' }
+	| { kind: 'session-died-early'; cause: string };
+
+/**
  * Poll until the planner completes (prd.json written OR pane dies) or the
- * deadline fires. Returns true on completion and false on timeout. The caller
- * owns the checked timeout respawn and observable terminal.
+ * deadline fires. The caller owns the checked timeout respawn and observable
+ * terminal.
  *
  * Completion is detected by two signals (in priority order, mirroring
  * review.ts makeReviewDispatch):
@@ -1132,8 +1251,47 @@ function emitPlanTimeoutTerminal(
  *
  * Without signal (1), interactive TUI workers (claude sessions) never
  * self-exit, so isPaneAlive stays true until plannerTimeoutMs and the
- * happy path returns planner-timeout (US-R1-001 critical bug).
+ * happy path returns 'timeout' (US-R1-001 critical bug).
+ *
+ * US-005 (CAM-479 AC1): when the pane IS alive, earlyDeathProbeFn (uuid) is
+ * consulted BEFORE the cap-elapsed deadline check, mirroring review.ts's
+ * makeReviewDispatch ordering (report -> pane-alive -> early-death ->
+ * fallback/deadline). A 'dead-on-first-turn' verdict ends the wait at the
+ * detector's floor instead of plannerTimeoutMs.
  */
+/**
+ * Returns the transcript-derived cause when earlyDeathProbeFn(uuid) reports
+ * dead-on-first-turn; null when the probe is absent or still reports
+ * still-working. Extracted from pollPlannerDeath/pollAuditorReport to keep
+ * both under biome's noExcessiveCognitiveComplexity(max=15) limit (US-005,
+ * CAM-479; patterns.md 'Biome cognitive complexity: use factory/helper
+ * extraction').
+ */
+function checkEarlyDeath(
+	uuid: string,
+	earlyDeathProbeFn: ((uuid: string) => EarlyDeathVerdict) | undefined,
+): string | null {
+	if (earlyDeathProbeFn === undefined) return null;
+	const verdict = earlyDeathProbeFn(uuid);
+	return verdict.verdict === 'dead-on-first-turn' ? verdict.cause : null;
+}
+
+/**
+ * Resolves the poll outcome once the planner pane has died (US-R1-001,
+ * CAM-479): confirms with one extra readPlannerReportFn re-read that prd.json
+ * was not, in fact, written in the same poll tick as the pane exit (a race
+ * between the primary read and the isPaneAlive check), before trusting
+ * pane-died. Extracted to keep pollPlannerDeath under biome's
+ * noExcessiveCognitiveComplexity(max=15) limit, mirroring the checkEarlyDeath
+ * extraction above.
+ */
+function resolvePlannerPaneDeathOutcome(
+	readPlannerReportFn: (() => unknown | null) | undefined,
+): PlannerPollOutcome {
+	if (readPlannerReportFn === undefined) return { kind: 'completed' };
+	return readPlannerReportFn() !== null ? { kind: 'completed' } : { kind: 'pane-died' };
+}
+
 function pollPlannerDeath(
 	isPaneAlive: IsPaneAlive,
 	sleepFn: (ms: number) => void,
@@ -1141,8 +1299,10 @@ function pollPlannerDeath(
 	plannerPaneId: string,
 	pollIntervalMs: number,
 	plannerTimeoutMs: number,
+	uuid: string,
 	readPlannerReportFn?: () => unknown | null,
-): boolean {
+	earlyDeathProbeFn?: (uuid: string) => EarlyDeathVerdict,
+): PlannerPollOutcome {
 	const start = clock();
 	while (true) {
 		sleepFn(pollIntervalMs);
@@ -1151,33 +1311,52 @@ function pollPlannerDeath(
 		// Check BEFORE pane-death so we can detect completion even if the pane
 		// exits right after writing (mirrors review.ts readReviewReport pattern).
 		if (readPlannerReportFn !== undefined && readPlannerReportFn() !== null) {
-			return true;
+			return { kind: 'completed' };
 		}
 
 		// Fallback: pane died naturally (e.g. non-interactive mode, test injection).
+		// resolvePlannerPaneDeathOutcome confirms with one extra re-read that
+		// prd.json wasn't written in the same tick as the pane exit before
+		// trusting pane-died (US-R1-001, CAM-479).
 		if (!isPaneAlive(plannerPaneId)) {
-			return true;
+			return resolvePlannerPaneDeathOutcome(readPlannerReportFn);
+		}
+
+		const earlyDeathCause = checkEarlyDeath(uuid, earlyDeathProbeFn);
+		if (earlyDeathCause !== null) {
+			return { kind: 'session-died-early', cause: earlyDeathCause };
 		}
 
 		if (clock() - start >= plannerTimeoutMs) {
-			return false;
+			return { kind: 'timeout' };
 		}
 	}
 }
 
-/** Internal result from the auditor poll loop. */
+/**
+ * Internal result from the auditor poll loop (US-004/US-005, CAM-479 AC2).
+ * The failure branch carries a `cause` distinguishing pane death, cap
+ * elapsed, and session-died-early, instead of one byte-identical
+ * `{ ok: false }` for all three. `earlyDeathCause` carries the verbatim
+ * transcript text ONLY when `cause` is 'session-died-early'.
+ */
 type AuditorPollResult =
 	| { ok: true; report: PlanVerdictReport }
-	| { ok: false };
+	| { ok: false; cause: PlanTimeoutCause; earlyDeathCause?: string };
 
 /**
  * Poll until plan-verdict-report.json is present, the auditor pane dies, or
- * the deadline fires. Returns { ok: true, report } on success; { ok: false }
- * on pane-death-without-report or timeout. The caller owns the checked timeout
- * respawn and observable terminal.
+ * the deadline fires. Returns { ok: true, report } on success; { ok: false,
+ * cause } on pane-death-without-report, session-died-early, or timeout. The
+ * caller owns the checked timeout respawn and observable terminal, and
+ * labels each cause distinctly (US-004, CAM-479 AC2).
  *
  * The verdict is read via readPlanVerdictFn ONLY - never from capture-pane
  * (patterns.md 'capture-pane is rendered markdown').
+ *
+ * US-005 (CAM-479 AC2/AC3): when the pane IS alive, earlyDeathProbeFn (uuid)
+ * is consulted BEFORE the cap-elapsed deadline check, mirroring
+ * pollPlannerDeath's ordering above.
  */
 function pollAuditorReport(
 	isPaneAlive: IsPaneAlive,
@@ -1187,15 +1366,21 @@ function pollAuditorReport(
 	plannerPaneId: string,
 	pollIntervalMs: number,
 	auditorTimeoutMs: number,
+	uuid: string,
+	earlyDeathProbeFn?: (uuid: string) => EarlyDeathVerdict,
 ): AuditorPollResult {
 	const start = clock();
 	while (true) {
 		sleepFn(pollIntervalMs);
 		const verdict = readPlanVerdictFn();
 		if (verdict !== null) return { ok: true, report: verdict };
-		if (!isPaneAlive(plannerPaneId)) return { ok: false };
+		if (!isPaneAlive(plannerPaneId)) return { ok: false, cause: 'pane-died' };
+		const earlyDeathCause = checkEarlyDeath(uuid, earlyDeathProbeFn);
+		if (earlyDeathCause !== null) {
+			return { ok: false, cause: 'session-died-early', earlyDeathCause };
+		}
 		if (clock() - start >= auditorTimeoutMs) {
-			return { ok: false };
+			return { ok: false, cause: 'cap-elapsed' };
 		}
 	}
 }
@@ -1300,15 +1485,60 @@ function runAuditorSpawnStep(
 	return { paneId: auditorLivePaneId, uuid: auditorSpawn.uuid };
 }
 
+/**
+ * Run Step 5 (poll planner) and interpret the outcome. Returns a terminal
+ * PlanPhaseResult on 'timeout' | 'session-died-early' | 'pane-died', or null
+ * to signal the caller should continue to the oracle lint + auditor spawn.
+ *
+ * Extracted from runPlanWorkerSequence to keep it under biome's
+ * noExcessiveLinesPerFunction(maxLines=80) limit (US-005, CAM-479;
+ * patterns.md 'Biome cognitive complexity: use factory/helper extraction').
+ */
+function runPlannerPollStep(
+	opts: RunPlanPhaseOptions,
+	plannerLivePaneId: string,
+	plannerUuid: string,
+	pollIntervalMs: number,
+	plannerTimeoutMs: number,
+): PlanPhaseResult | null {
+	const { isPaneAlive, sleepFn, clock, readPlannerReportFn, earlyDeathProbeFn } = opts;
+	const plannerPoll = pollPlannerDeath(
+		isPaneAlive, sleepFn, clock, plannerLivePaneId, pollIntervalMs,
+		plannerTimeoutMs, plannerUuid, readPlannerReportFn, earlyDeathProbeFn,
+	);
+	if (plannerPoll.kind === 'timeout') {
+		emitPlanTimeoutTerminal(opts, 'planner', plannerLivePaneId, plannerUuid);
+		return { kind: 'planner-timeout' };
+	}
+
+	// US-005 (CAM-479, AC1/AC2): the pane stayed alive but the session inside
+	// it died on its first turn. Ends the wait at the detector's floor and
+	// carries the transcript cause on all three observable channels, distinct
+	// from both 'planner-timeout' (cap-elapsed) and the bare pane-died failure
+	// below.
+	if (plannerPoll.kind === 'session-died-early') {
+		emitPlanTimeoutTerminal(
+			opts, 'planner', plannerLivePaneId, plannerUuid, 'session-died-early', plannerPoll.cause,
+		);
+		return { kind: 'planner-failed', reason: `session-died-early: ${plannerPoll.cause}` };
+	}
+	removePlanTaskPrompt(opts, plannerUuid);
+
+	// US-004 (CAM-479, AC1): pane death BEFORE prd.json existed is a real
+	// planner failure, never a poll-completion signal. Reason-bearing, unlike
+	// the bare 'planner-failed' this replaced.
+	if (plannerPoll.kind === 'pane-died') {
+		return { kind: 'planner-failed', reason: 'planner pane exited before writing prd.json' };
+	}
+	return null;
+}
+
 function runPlanWorkerSequence(
 	opts: RunPlanPhaseOptions,
 	plannerTaskPrompt: string,
 	issue: IssueEntry,
 ): PlanPhaseResult {
-	const {
-		isPaneAlive, sleepFn, clock,
-		readPlannerReportFn, readPlanVerdictFn, readPrdContentFn,
-	} = opts;
+	const { isPaneAlive, sleepFn, clock, readPlanVerdictFn, readPrdContentFn, earlyDeathProbeFn } = opts;
 	const permissionMode = opts.permissionMode ?? 'bypassPermissions';
 	// US-001, CAM-273 (ADR-0027): default to a record-bearing prompt built from
 	// the already-resolved issue + its code-derived branch name, rather than
@@ -1329,18 +1559,10 @@ function runPlanWorkerSequence(
 	const plannerLivePaneId = plannerStep.paneId;
 
 	// Step 5: Poll planner — primary signal: prd.json written; fallback: pane dies.
-	const plannerDied = pollPlannerDeath(
-		isPaneAlive, sleepFn, clock, plannerLivePaneId, pollIntervalMs,
-		plannerTimeoutMs, readPlannerReportFn,
+	const plannerPollResult = runPlannerPollStep(
+		opts, plannerLivePaneId, plannerStep.uuid, pollIntervalMs, plannerTimeoutMs,
 	);
-	if (!plannerDied) {
-		emitPlanTimeoutTerminal(opts, 'planner', plannerLivePaneId, plannerStep.uuid);
-		return { kind: 'planner-timeout' };
-	}
-	removePlanTaskPrompt(opts, plannerStep.uuid);
-
-	// US-003: Guard — re-check if prd.json was actually written (Bug 4-adjacent).
-	if (isPlannerNoPrd(readPlannerReportFn)) return { kind: 'planner-failed' };
+	if (plannerPollResult !== null) return plannerPollResult;
 
 	// US-002 (CAM-310): deterministic oracle lint of the prd.json the planner
 	// just wrote. Runs AFTER the presence guard above but BEFORE the auditor is
@@ -1359,10 +1581,18 @@ function runPlanWorkerSequence(
 	// Step 7: Poll auditor — verdict from FILE ONLY, never from capture-pane.
 	const auditorResult = pollAuditorReport(
 		isPaneAlive, sleepFn, clock, readPlanVerdictFn, auditorLivePaneId,
-		pollIntervalMs, auditorTimeoutMs,
+		pollIntervalMs, auditorTimeoutMs, auditorStep.uuid, earlyDeathProbeFn,
 	);
 	if (!auditorResult.ok) {
-		emitPlanTimeoutTerminal(opts, 'auditor', auditorLivePaneId, auditorStep.uuid);
+		// US-004/US-005 (CAM-479, AC2/AC3): the terminal PlanPhaseResult kind
+		// stays 'auditor-timeout' for all three causes (pre-existing consumers
+		// key off this kind), but the emitted reason distinguishes pane death,
+		// cap elapsed, and session-died-early on every observable channel
+		// (event, marker, notification); earlyDeathCause carries the verbatim
+		// transcript text only for the session-died-early cause.
+		emitPlanTimeoutTerminal(
+			opts, 'auditor', auditorLivePaneId, auditorStep.uuid, auditorResult.cause, auditorResult.earlyDeathCause,
+		);
 		return { kind: 'auditor-timeout' };
 	}
 	removePlanTaskPrompt(opts, auditorStep.uuid);
@@ -1929,6 +2159,29 @@ function executeGitProceedBranch(
 }
 
 /**
+ * Handle the planner-failed terminal (US-003, CAM-155): the planner poll
+ * ended without prd.json being written. Notify best-effort; do NOT fire
+ * escalateFn (a transient planner no-op is not an operator-alert condition).
+ * Phase exits to idle via the no-action return.
+ *
+ * `reason`, when present, is appended to the notification (US-004, CAM-479
+ * AC1): the pane-death case now carries a reason instead of the bare,
+ * reason-less terminal this replaced.
+ *
+ * Extracted from runPostAuditAction to keep that function under biome's
+ * noExcessiveLinesPerFunction(maxLines=80) limit (CAM-60 factory/helper
+ * extraction pattern), mirroring handlePlanTargetInvalid / handlePreflightFailed.
+ */
+function handlePlannerFailed(
+	reason: string | undefined,
+	notifyFn: ((msg: string) => void) | undefined,
+): PostAuditActionResult {
+	const reasonSuffix = reason !== undefined ? `: ${reason}` : '';
+	notifyFn?.(`[cam] plan failed: planner exited without writing prd.json${reasonSuffix}`);
+	return { kind: 'no-action' };
+}
+
+/**
  * Handle the plan-target-invalid terminal (US-003, CAM-203): an explicit
  * /cam-plan <id> target could not be planned (missing / not-open /
  * not-specified / blocked). This is an operator-input error, not an infra
@@ -2144,12 +2397,10 @@ export function runPostAuditAction(opts: RunPostAuditOptions): PostAuditActionRe
 		return { kind: 'in-progress-conflict' };
 	}
 
-	// planner-failed: planner produced no prd.json; notify best-effort, no escalate
-	// (US-003, CAM-155). Do NOT fire escalateFn: a transient planner no-op is not an
-	// operator-alert condition. Phase exits to idle via the no-action return (AC2).
+	// planner-failed (US-003, CAM-155; reason-bearing per US-004, CAM-479 AC1):
+	// see handlePlannerFailed.
 	if (planResult.kind === 'planner-failed') {
-		notifyFn?.('[cam] plan failed: planner exited without writing prd.json');
-		return { kind: 'no-action' };
+		return handlePlannerFailed(planResult.reason, notifyFn);
 	}
 
 	// plan-target-invalid (US-003, CAM-203): see handlePlanTargetInvalid.

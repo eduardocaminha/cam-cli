@@ -63,6 +63,7 @@ import type { PatternOutcomeStatus } from '../patterns/record.ts';
 import { realOnMainSpawnFn } from '../git/on-main.ts';
 import { readWorkerIsolation } from '../config/models.ts';
 import { isPauseSet } from './pause-marker.ts';
+import { makeEarlyDeathProbe } from './early-death.ts';
 import {
 	writeImplementBlockedMarker,
 	readImplementBlockedMarker,
@@ -551,6 +552,18 @@ export function buildSupervisorOptions(
 	const sessionName = projectSessionName(cwd);
 	const stateFilePath = join(claudeDir, 'cam-loop.local.md');
 
+	// US-003 (CAM-479): the Claude config root actual session transcripts live
+	// under (distinct from `claudeDir` above, which is this PROJECT's .claude
+	// dir used for task-prompt-file transport). Declared here, before both
+	// makeReviewDispatch and the RunSupervisorOptions opts bag below, so the
+	// early-death probe and the US-013 token reader (readWorkerTokensAdapter,
+	// further down) resolve the SAME directory and can never silently diverge.
+	const transcriptClaudeDir = process.env['CLAUDE_CONFIG_DIR'] ?? join(homedir(), '.claude');
+	// A real detector probe (US-003, CAM-479): production wiring so the fix is
+	// never inert behind an undefined seam. Shared by both the implementer opts
+	// bag and the reviewer dispatch below.
+	const earlyDeathProbeFn = makeEarlyDeathProbe({ cwd, claudeDir: transcriptClaudeDir });
+
 	// Per-worker token ceiling (CAM-5).
 	const maxWorkerTokens = (() => {
 		const envVal = process.env['CAM_WORKER_MAX_TOKENS'];
@@ -865,6 +878,8 @@ export function buildSupervisorOptions(
 		removeDispatchFailedMarkerFn: () =>
 			removeDispatchFailedMarker(dispatchFailedMarkerPath),
 		notifyFn: notifyOrchestrator,
+		// US-003 (CAM-479): early-death transcript probe (real detector, not inert).
+		earlyDeathProbeFn,
 	});
 
 	const writeSessionMarker: RunSupervisorOptions['writeSessionMarker'] = (storyId, uuid) => {
@@ -1029,8 +1044,8 @@ export function buildSupervisorOptions(
 		}
 	};
 
-	// US-013 token reader.
-	const transcriptClaudeDir = process.env['CLAUDE_CONFIG_DIR'] ?? join(homedir(), '.claude');
+	// US-013 token reader. Reuses the SAME transcriptClaudeDir declared above
+	// (shared with earlyDeathProbeFn) so the two can never resolve different dirs.
 	const readWorkerTokensAdapter: RunSupervisorOptions['readWorkerTokens'] = (uuid) =>
 		readWorkerTokens(uuid, cwd, transcriptClaudeDir);
 
@@ -1113,6 +1128,8 @@ export function buildSupervisorOptions(
 		// US-002 (CAM-360): cooperative pause brake, read fresh on every iteration
 		// via the dedicated marker file (set by `cam pause`, cleared by `cam resume`).
 		isPaused: () => isPauseSet(claudeDir),
+		// US-003 (CAM-479): early-death transcript probe (real detector, not inert).
+		earlyDeathProbeFn,
 	};
 
 	return {

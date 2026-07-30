@@ -66,6 +66,8 @@ import {
 	runCheckedWorkerSentinel,
 	runVerifiedWorkerDispatch,
 } from './worker-dispatch.ts';
+import { emitEarlyDeathTerminal } from './verified-dispatch.ts';
+import type { EarlyDeathVerdict } from './early-death.ts';
 
 /**
  * Params for the injectable implement-blocked marker writer (US-005, CAM-195,
@@ -587,6 +589,20 @@ export interface RunSupervisorOptions {
 	 * ever runs), preserving backward compatibility for existing callers/tests.
 	 */
 	isPaused?: () => boolean;
+	/**
+	 * Early-death transcript probe (US-003, CAM-479). Called once per poll tick
+	 * in the implement poll loop, immediately after the isPaneAlive check, with
+	 * the worker's session uuid. When it reports 'dead-on-first-turn' the loop
+	 * ends the wait immediately (at the detector's floor, ~60s, far below the
+	 * 30/60-minute cap) instead of waiting out the full timeout: the pane is
+	 * alive but the session died on its first turn (e.g. a transient upstream
+	 * API error), and the transcript is the only signal that can see that.
+	 * Production wiring (host.ts) injects `makeEarlyDeathProbe` from
+	 * `early-death.ts`, bound to the same cwd/claudeDir the token reader uses.
+	 * Optional: when absent the loop is byte-for-byte unchanged (no probe call
+	 * ever runs), preserving backward compatibility for existing callers/tests.
+	 */
+	earlyDeathProbeFn?: (uuid: string) => EarlyDeathVerdict;
 }
 
 // ---------------------------------------------------------------------------
@@ -886,6 +902,8 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 	// US-002 (CAM-352): codex auth-check DI seam, threaded straight into
 	// codexAuthPreflight at the implementer dispatch site.
 	const codexAuthCheckFn = opts.codexAuthCheckFn;
+	// US-003 (CAM-479): early-death transcript probe, consulted once per poll tick.
+	const earlyDeathProbeFn = opts.earlyDeathProbeFn;
 
 	// US-001 (CAM-215): sole notifyOrchestrator narration sources.
 	const narrateReport = (): void => { const r = readWorkerReport?.(); r && opts.notifyOrchestrator?.(formatWorkerReportSummary(r)); };
@@ -1378,8 +1396,10 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// Poll capture-pane until we see the sentinel, the pane dies, the token
 			// ceiling is crossed (CAM-5), or timeout.
 			const startMs = now();
-			let pollOutcome: 'sentinel' | 'pane-died' | 'timeout' | 'token-ceiling' = 'timeout';
+			let pollOutcome: 'sentinel' | 'pane-died' | 'timeout' | 'token-ceiling' | 'session-died-early' = 'timeout';
 			let tokenSpendAtBreach = 0;
+			// US-003 (CAM-479): set only when pollOutcome ends as 'session-died-early'.
+			let earlyDeathCause: string | undefined;
 			const applyTokenCeiling = shouldApplyTokenCeiling(
 				implBackend,
 				maxWorkerTokens,
@@ -1403,6 +1423,20 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				if (!isPaneAlive(workerPaneId)) {
 					pollOutcome = 'pane-died';
 					break;
+				}
+				// US-003 (CAM-479): a pane can be alive but the session inside it died
+				// on its first turn (typically a transient upstream API error). The
+				// pane-alive check above cannot see that; only a transcript read can.
+				// Checked before the report/sentinel checks below so a dead session
+				// never has to wait out an extra poll tick for a report that will
+				// never arrive.
+				if (earlyDeathProbeFn !== undefined) {
+					const earlyDeathVerdict = earlyDeathProbeFn(uuid);
+					if (earlyDeathVerdict.verdict === 'dead-on-first-turn') {
+						pollOutcome = 'session-died-early';
+						earlyDeathCause = earlyDeathVerdict.cause;
+						break;
+					}
 				}
 				// US-002: worker-report.json is the canonical implementer completion-detect
 				// path. When readWorkerReport is injected (always in production via
@@ -1513,12 +1547,14 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// US-004 / B-2 (CAM-152): in container mode, pane-died means docker exec
 			// exited (container gone mid-dispatch). Route to a container-named reason.
 			// There is NO host fallback path in container mode.
-			if (pollOutcome === 'pane-died' || pollOutcome === 'timeout') {
-				if (pollOutcome === 'timeout') {
+			// US-003 (CAM-479): an early-death verdict feeds this SAME dead-worker
+			// streak/backoff/cap -- no second retry mechanism is introduced.
+			if (pollOutcome === 'pane-died' || pollOutcome === 'timeout' || pollOutcome === 'session-died-early') {
+				if (pollOutcome === 'timeout' || pollOutcome === 'session-died-early') {
 					// Kill the stuck worker so the next dispatch starts from a clean pane.
 					runCheckedWorkerSentinel({
 						spawnFn: spawn,
-						phase: 'implementer-timeout',
+						phase: pollOutcome === 'session-died-early' ? 'implementer-session-died-early' : 'implementer-timeout',
 						label: 'implementer',
 						paneId: workerPaneId,
 						uuid,
@@ -1528,7 +1564,23 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 						writeDispatchFailedMarkerFn: opts.writeDispatchFailedMarkerFn,
 						notifyFn: opts.notifyOrchestrator,
 						removeTaskPromptFileFn: opts.removeTaskPromptFileFn,
-					}, 'echo timeout');
+					}, pollOutcome === 'session-died-early' ? 'echo session-died-early' : 'echo timeout');
+				}
+				if (pollOutcome === 'session-died-early') {
+					// US-003 (CAM-479): the cause-bearing terminal on all three
+					// observable channels, independent of whether the sentinel
+					// replacement above itself succeeded.
+					emitEarlyDeathTerminal({
+						phase: 'implementer-session-died-early',
+						paneId: workerPaneId,
+						uuid,
+						storyId: advisoryStoryId,
+						clock,
+						logEvent: logEvent ?? ((): void => {}),
+						writeDispatchFailedMarkerFn: opts.writeDispatchFailedMarkerFn ?? ((): void => {}),
+						notifyFn: opts.notifyOrchestrator ?? ((): void => {}),
+						cause: earlyDeathCause,
+					});
 				}
 				deadWorkerStreak += 1;
 				const isContainerExecFailure = workerIsolation === 'container' && pollOutcome === 'pane-died';
@@ -1545,7 +1597,9 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					storyId: undefined,
 					detail: isContainerExecFailure
 						? 'container-exec-failure'
-						: pollOutcome === 'pane-died' ? 'pane-died-pre-result' : 'timeout',
+						: pollOutcome === 'pane-died' ? 'pane-died-pre-result'
+						: pollOutcome === 'session-died-early' ? 'session-died-early'
+						: 'timeout',
 				};
 				const deadBackoffMs = computeBackoffMs(deadWorkerStreak, {
 					base: NO_PROGRESS_BACKOFF_MS,

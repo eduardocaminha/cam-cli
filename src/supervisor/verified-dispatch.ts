@@ -21,7 +21,14 @@ export type DispatchFailureReason =
 	| 'pane-pid-after-exited'
 	| 'pane-pid-after-empty'
 	| 'pane-pid-unchanged'
-	| 'pipe-pane-exited';
+	| 'pipe-pane-exited'
+	/**
+	 * Shared early-death literal (US-001, CAM-479): the worker session died on
+	 * or before its first turn (e.g. a first-turn API error), a distinct
+	 * observable terminal from a work timeout. Every phase that detects an
+	 * early death reuses this one literal instead of inventing an ad hoc label.
+	 */
+	| 'session-died-early';
 
 export interface VerifiedDispatchOptions {
 	spawnFn: SpawnFn;
@@ -35,6 +42,14 @@ export interface VerifiedDispatchOptions {
 	notifyFn: (message: string) => void;
 	storyId?: string;
 	clock?: () => string;
+	/**
+	 * Extracted cause text for this dispatch attempt (US-001, CAM-479), e.g. a
+	 * transcript-derived early-death reason. Threaded verbatim into the marker,
+	 * the dispatch-failed event detail, and the notification so the three
+	 * observable channels never disagree. Absent when no caller has extracted
+	 * a cause yet (this story adds vocabulary + plumbing only).
+	 */
+	cause?: string;
 	/**
 	 * The `@cam_label` value set on the pane before respawn (US-R1-005,
 	 * CAM-433 review round 1). Defaults to `phase` for backward compat, but a
@@ -87,10 +102,32 @@ function failedCommand(reason: DispatchFailureReason, result: SpawnResult): Fail
 	return normalizedExitCode(result) === 0 ? null : { reason, result };
 }
 
+/**
+ * Narrow shape of VerifiedDispatchOptions actually consumed by
+ * emitDispatchFailure (phase/paneId/uuid/logEvent/marker-writer/notifier/
+ * storyId/clock/cause). VerifiedDispatchOptions remains a structural subtype
+ * (its extra spawnFn/dispatchCmd/pipeCommand fields are simply unused by the
+ * emitter), and this narrower shape is also the public contract for
+ * emitEarlyDeathTerminal below (US-003, CAM-479): a caller that has no tmux
+ * dispatch details at all -- only a transcript-derived death verdict -- can
+ * still drive the exact same three-channel emission.
+ */
+export interface DispatchFailureEmitOptions {
+	phase: string;
+	paneId: string;
+	uuid: string;
+	logEvent: WorkerEventLogger;
+	writeDispatchFailedMarkerFn: (marker: DispatchFailedMarker) => void;
+	notifyFn: (message: string) => void;
+	storyId?: string;
+	clock?: () => string;
+	cause?: string;
+}
+
 function emitDispatchFailure(
-	opts: VerifiedDispatchOptions,
+	opts: DispatchFailureEmitOptions,
 	failure: FailedStep,
-): VerifiedDispatchResult {
+): { ok: false; marker: DispatchFailedMarker } {
 	const timestamp = opts.clock?.() ?? new Date().toISOString();
 	const stderr = failure.result.stderr ?? '';
 	const marker: DispatchFailedMarker = {
@@ -101,6 +138,7 @@ function emitDispatchFailure(
 		stderr,
 		reason: failure.reason,
 		timestamp,
+		...(opts.cause !== undefined ? { cause: opts.cause } : {}),
 	};
 	const detail: DispatchFailedEventDetail = {
 		phase: marker.phase,
@@ -108,6 +146,7 @@ function emitDispatchFailure(
 		exitCode: marker.exitCode,
 		stderr: marker.stderr,
 		reason: marker.reason,
+		...(marker.cause !== undefined ? { cause: marker.cause } : {}),
 	};
 
 	// Each channel is attempted independently so one broken sink cannot silence
@@ -129,15 +168,39 @@ function emitDispatchFailure(
 		// Continue to the live notification.
 	}
 	try {
+		const causeSuffix = marker.cause === undefined || marker.cause.trim() === ''
+			? ''
+			: `: ${marker.cause.trim()}`;
 		const stderrSuffix = stderr.trim() === '' ? '' : `: ${stderr.trim()}`;
 		opts.notifyFn(
 			`[cam] ${opts.phase} dispatch failed (${failure.reason}, pane ${opts.paneId}, ` +
-			`exit ${marker.exitCode})${stderrSuffix}`,
+			`exit ${marker.exitCode})${causeSuffix}${stderrSuffix}`,
 		);
 	} catch {
 		// The structured return still exposes the terminal to the caller.
 	}
 	return { ok: false, marker };
+}
+
+/**
+ * Emit the cause-bearing early-death terminal on all three observable
+ * channels (dispatch-failed event, durable marker, orchestrator notification;
+ * US-003, CAM-479). The reason recorded is always the shared
+ * 'session-died-early' literal; `cause` carries the verbatim transcript text
+ * extracted by the early-death detector (src/supervisor/early-death.ts).
+ *
+ * Unlike every other emitDispatchFailure call site, this one is not reporting
+ * a failed tmux command: it is invoked once the poll loop's own transcript
+ * probe -- not a tmux exit code -- has already decided the session is dead.
+ * exitCode/stderr are synthesized as 0/'' since there is no real command
+ * result to report; the reason and cause are what matters here.
+ */
+export function emitEarlyDeathTerminal(opts: DispatchFailureEmitOptions): DispatchFailedMarker {
+	const { marker } = emitDispatchFailure(opts, {
+		reason: 'session-died-early',
+		result: { stdout: '', exitCode: 0, stderr: '' },
+	});
+	return marker;
 }
 
 /**
