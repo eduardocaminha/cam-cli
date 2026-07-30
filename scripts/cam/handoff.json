@@ -1,0 +1,12 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Refuse a blank or non-string acceptance criterion at filing time" },
+  "branchName": "cam/issue-474",
+  "timestamp": "2026-07-29T23:30:00Z",
+  "createdFiles": [],
+  "modifiedFiles": ["src/issues/spec.ts", "test/issues/spec.test.ts"],
+  "openQuestions": [],
+  "nextStoryContext": "validateSpec now rejects any acceptanceCriteria element that is not a non-empty (post-trim) string, reusing the existing module-private isNonEmptyString helper (src/issues/spec.ts:60) per element via Array.prototype.every. The array-level checks (missing/non-array/empty) are unchanged and still short-circuit before the new element-level check runs. Both existing callers (validateSpecGuardrail in src/commands/issue-file.ts:219, and the spec interview in src/commands/issue-specify.ts:332) get the stricter behavior for free with no call-site changes. Regression fixtures in test/issue-file.test.ts and test/integration/issue-file-spec-channel.test.ts (real-string criteria) were unaffected. No follow-up needed.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
