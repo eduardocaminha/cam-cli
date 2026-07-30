@@ -18,8 +18,9 @@
 //
 // Detection rules:
 //   - A search invocation is RECURSIVE when it is grep/egrep/fgrep carrying
-//     -r/-R (bundled or separate short flags, or --recursive), or when it is
-//     rg (ripgrep is recursive by default -- no flag required).
+//     -r/-R (bundled or separate short flags, or --recursive, or -R's
+//     documented long form --dereference-recursive), or when it is rg
+//     (ripgrep is recursive by default -- no flag required).
 //   - A root is STORE-REACHING when it is '.', or a directory-ancestor-of-
 //     or-equal-to scripts/cam/issues ('scripts', 'scripts/cam',
 //     'scripts/cam/issues', with or without a trailing slash), or when the
@@ -27,7 +28,12 @@
 //     to cwd). The ancestor test makes the file-vs-directory distinction
 //     fall out for free: 'scripts/cam/patterns.md' is not an ancestor of
 //     the store, so a single-file root under scripts stays legal even with
-//     -r, and 'docs/adr/' is legal.
+//     -r, and 'docs/adr/' is legal. An ABSOLUTE root is resolved the same
+//     way: stripped of a leading cwd prefix and re-checked as a relative
+//     root when it lives under the current working directory, or matched
+//     by its store-path suffix (an absolute root ending in '/scripts',
+//     '/scripts/cam', or '/scripts/cam/issues') otherwise, e.g. a search
+//     rooted at another checkout of this repo (CAM-474 review round 1).
 //   - An explicit '--exclude-dir=issues' (or '--exclude-dir issues')
 //     anywhere in the invocation nullifies the finding for that invocation
 //     regardless of its roots: this is the sanctioned safe-repair idiom
@@ -59,6 +65,16 @@
 
 /** The fixed store directory this detector protects. */
 const STORE_PATH = 'scripts/cam/issues';
+
+/**
+ * Directory-ancestor-of-or-equal-to prefixes of STORE_PATH ('scripts',
+ * 'scripts/cam', 'scripts/cam/issues'), used to match an absolute root that
+ * is not under the current working directory by its trailing path segments
+ * (see matchesStoreSuffix).
+ */
+const STORE_PATH_ANCESTOR_PREFIXES = STORE_PATH.split('/').map((_, i, segments) =>
+	segments.slice(0, i + 1).join('/'),
+);
 
 /** Recognized recursive-by-tool-identity or recursive-flag-capable search tools. */
 const SEARCH_TOOL_RE = /\b(grep|egrep|fgrep|rg)\b/g;
@@ -135,14 +151,44 @@ function tokenize(segment: string): string[] {
 }
 
 /**
+ * True when `normalized` (an absolute path already stripped of a trailing
+ * slash) ends at a directory-ancestor-of-or-equal-to STORE_PATH boundary,
+ * e.g. '/Users/me/repo/scripts' or '/Users/me/repo/scripts/cam/issues'.
+ * Used as a fallback for an absolute root that does not live under the
+ * current process cwd (a different checkout of this repo, a container
+ * mount, etc): matching on the trailing segments, guarded by a '/'
+ * boundary so 'other-scripts' does not falsely match 'scripts'.
+ */
+function matchesStoreSuffix(normalized: string): boolean {
+	return STORE_PATH_ANCESTOR_PREFIXES.some(
+		(prefix) => normalized === prefix || normalized.endsWith(`/${prefix}`),
+	);
+}
+
+/**
  * True when `root` is '.', or a directory-ancestor-of-or-equal-to
- * scripts/cam/issues, tolerating a trailing slash and a leading './'.
+ * scripts/cam/issues, tolerating a trailing slash and a leading './'. An
+ * absolute root is resolved by stripping a leading cwd prefix (so it can be
+ * checked as a relative root) when it lives under the current working
+ * directory, or by matching its store-path suffix otherwise (CAM-474
+ * review round 1, US-R1-002): a bare './'-and-trailing-slash normalization
+ * left an absolute root like '/Users/me/repo/scripts' unmatched even
+ * though it plainly reaches the store.
  */
 function isStoreReachingRoot(root: string): boolean {
 	if (root === '.' || root === './') return true;
 
 	let normalized = root.replace(/\/+$/, '');
 	if (normalized.startsWith('./')) normalized = normalized.slice(2);
+
+	if (normalized.startsWith('/')) {
+		const cwdPrefix = `${process.cwd()}/`;
+		if (normalized.startsWith(cwdPrefix)) {
+			normalized = normalized.slice(cwdPrefix.length);
+		} else {
+			return matchesStoreSuffix(normalized);
+		}
+	}
 
 	if (normalized === STORE_PATH) return true;
 	return STORE_PATH.startsWith(`${normalized}/`);
@@ -213,7 +259,8 @@ function isRecursiveShortFlag(token: string): boolean {
 /**
  * Classifies one non-redirection, non-clause-end token of a search
  * invocation, mutating `state` in place: flags (--exclude-dir, --recursive,
- * bundled -r/-R) update state's flags and are consumed; the first
+ * --dereference-recursive, bundled -r/-R) update state's flags and are
+ * consumed; the first
  * remaining positional token is the search pattern (never a root); every
  * later positional token is a root. Returns the number of EXTRA tokens (0
  * or 1) consumed past `token` itself (only the space-separated
@@ -229,7 +276,7 @@ function applyToken(token: string, nextToken: string | undefined, state: Invocat
 	}
 
 	if (LONG_FLAG_RE.test(token)) {
-		if (token === '--recursive') state.recursive = true;
+		if (token === '--recursive' || token === '--dereference-recursive') state.recursive = true;
 		return 0;
 	}
 

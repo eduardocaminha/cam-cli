@@ -125,4 +125,31 @@ describe("findStoreReachingSearch", () => {
 		const result = findStoreReachingSearch("find . -type f | xargs rg zzqqx scripts");
 		expect(result).toEqual({ root: "scripts" });
 	});
+
+	// --- Review round 1 (US-R1-002, CAM-474): false-negative gaps ---
+
+	test("flags --dereference-recursive as the documented long form of -R", () => {
+		const result = findStoreReachingSearch("grep --dereference-recursive zzqqx scripts");
+		expect(result).toEqual({ root: "scripts" });
+	});
+
+	test("flags an absolute root reaching the store outside the current cwd", () => {
+		const result = findStoreReachingSearch("grep -rl zzqqx /Users/me/repo/scripts");
+		expect(result).toEqual({ root: "/Users/me/repo/scripts" });
+	});
+
+	test("flags an absolute root reaching the store when rooted under the current cwd", () => {
+		const result = findStoreReachingSearch(`grep -rl zzqqx ${process.cwd()}/scripts/cam/issues`);
+		expect(result).toEqual({ root: `${process.cwd()}/scripts/cam/issues` });
+	});
+
+	test("does not flag an absolute root under the current cwd that is not the store", () => {
+		const result = findStoreReachingSearch(`grep -rl zzqqx ${process.cwd()}/docs/adr`);
+		expect(result).toBeNull();
+	});
+
+	test("does not flag an absolute root that merely shares the 'scripts' suffix substring", () => {
+		const result = findStoreReachingSearch("grep -rl zzqqx /Users/me/repo/other-scripts");
+		expect(result).toBeNull();
+	});
 });
