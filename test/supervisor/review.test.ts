@@ -903,6 +903,112 @@ describe('makeReviewDispatch', () => {
 		expect(s3?.notes).toContain('consider extracting helper');
 	});
 
+	// -------------------------------------------------------------------------
+	// US-002 (CAM-478): fix-story title+description carry the finding directly,
+	// instead of only through notes the fix-worker must re-read from prd.json.
+	// -------------------------------------------------------------------------
+
+	test('fix story carries finding-derived title and description', () => {
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		const findings = [
+			{ severity: 'CRITICAL', file: 'src/foo.ts', line: 42, text: 'null deref on prd' },
+		];
+		const opts = makeDispatchOpts({
+			paneText: 'no tag',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => ({ verdict: 'FIXES_PENDING:1', findings }),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		dispatch(SAMPLE_UUID);
+
+		const written = capturedWrittenPrd[0];
+		const stories = written?.userStories ?? [];
+		const s1 = stories.find((s) => s.id === 'US-R1-001');
+
+		// description carries the verbatim finding (severity, location, text),
+		// alongside notes -- notes is NOT removed.
+		expect(s1?.description).toBeDefined();
+		expect(s1?.description).toContain('CRITICAL');
+		expect(s1?.description).toContain('src/foo.ts');
+		expect(s1?.description).toContain('42');
+		expect(s1?.description).toContain('null deref on prd');
+		expect(s1?.notes).toBeDefined();
+		expect(s1?.notes).toBe(s1?.description);
+
+		// title is derived from the finding, not the generic template.
+		expect(s1?.title).not.toContain('address reviewer finding');
+		expect(s1?.title).toContain('CRITICAL');
+		expect(s1?.title).toContain('null deref on prd');
+	});
+
+	test('fix story tag-fallback keeps the placeholder title', () => {
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		// readReviewReport returns null (no parsed findings); pane carries the tag.
+		const opts = makeDispatchOpts({
+			paneText: '<review>FIXES_PENDING:1</review>',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => null,
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		dispatch(SAMPLE_UUID);
+
+		const written = capturedWrittenPrd[0];
+		const stories = written?.userStories ?? [];
+		const s1 = stories.find((s) => s.id === 'US-R1-001');
+
+		expect(s1?.title).toContain('address reviewer finding');
+		expect(s1?.description).toBeUndefined();
+		expect(s1?.notes).toBeUndefined();
+	});
+
+	test('derived fix-story title is single-line and pipe-free', () => {
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		const longMultilineText =
+			'first line of the finding\nsecond line | with a pipe char\n' +
+			'and a very long tail that pushes the raw finding text well past any '.repeat(3) +
+			'reasonable bound so the title must be truncated.';
+		const findings = [
+			{ severity: 'WARNING', text: longMultilineText },
+		];
+		const opts = makeDispatchOpts({
+			paneText: 'no tag',
+			prd: makePrd({
+				stories: [],
+				review: { roundsCompleted: 0, maxRounds: 3 },
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => ({ verdict: 'FIXES_PENDING:1', findings }),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		dispatch(SAMPLE_UUID);
+
+		const written = capturedWrittenPrd[0];
+		const stories = written?.userStories ?? [];
+		const s1 = stories.find((s) => s.id === 'US-R1-001');
+		const title = s1?.title ?? '';
+
+		// Must actually be derived from the finding (not the generic placeholder),
+		// otherwise sanitization would be trivially satisfied by an unrelated
+		// fixed-shape string regardless of the fix.
+		expect(title).toContain('WARNING');
+		expect(title).not.toContain('address reviewer finding');
+		expect(title.length).toBeGreaterThan(0);
+		expect(title).not.toContain('\n');
+		expect(title).not.toContain('|');
+		expect(title.length).toBeLessThanOrEqual(80);
+	});
+
 	test('fallback: readReviewReport always null -> tag-based path used', () => {
 		const capturedWrittenPrd: PrdSnapshot[] = [];
 		// readReviewReport always returns null; pane has the tag.
