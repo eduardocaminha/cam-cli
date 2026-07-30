@@ -73,6 +73,128 @@ describe("validateSpec", () => {
 		expect(result.ok).toBe(false);
 		expect(result.errors.length).toBeGreaterThanOrEqual(2);
 	});
+
+	test("rejects a blank-string acceptanceCriteria element", () => {
+		const result = validateSpec({
+			acceptanceCriteria: [""],
+			scope: "some scope",
+			gotchas: [],
+			domainTerms: [],
+		});
+		expect(result.ok).toBe(false);
+		expect(result.errors.some((e) => e.includes("acceptanceCriteria"))).toBe(true);
+	});
+
+	test("rejects a whitespace-only acceptanceCriteria element", () => {
+		const result = validateSpec({
+			acceptanceCriteria: ["   "],
+			scope: "some scope",
+			gotchas: [],
+			domainTerms: [],
+		});
+		expect(result.ok).toBe(false);
+		expect(result.errors.some((e) => e.includes("acceptanceCriteria"))).toBe(true);
+	});
+
+	test("rejects a non-string acceptanceCriteria element", () => {
+		const result = validateSpec({
+			acceptanceCriteria: [123],
+			scope: "some scope",
+			gotchas: [],
+			domainTerms: [],
+		});
+		expect(result.ok).toBe(false);
+		expect(result.errors.some((e) => e.includes("acceptanceCriteria"))).toBe(true);
+	});
+
+	test("rejects when a blank element is mixed with a real one", () => {
+		const result = validateSpec({
+			acceptanceCriteria: ["AC1 is a real criterion", ""],
+			scope: "some scope",
+			gotchas: [],
+			domainTerms: [],
+		});
+		expect(result.ok).toBe(false);
+		expect(result.errors.some((e) => e.includes("acceptanceCriteria"))).toBe(true);
+	});
+
+	// --- Self-contaminating-search oracle guardrail (US-002, CAM-474) ---
+
+	test("rejects a criterion whose oracle is a store-reaching recursive grep", () => {
+		const result = validateSpec({
+			acceptanceCriteria: ["AC1 [oracle: named-command grep -rl zzqqx scripts]"],
+			scope: "some scope",
+			gotchas: [],
+			domainTerms: [],
+		});
+		expect(result.ok).toBe(false);
+		expect(result.errors.some((e) => e.includes("self-contaminating search"))).toBe(true);
+	});
+
+	test("rejects a criterion whose oracle is a recursive grep with no positional root (defaults to cwd)", () => {
+		const result = validateSpec({
+			acceptanceCriteria: ["AC1 [oracle: named-command grep -r zzqqx]"],
+			scope: "some scope",
+			gotchas: [],
+			domainTerms: [],
+		});
+		expect(result.ok).toBe(false);
+		expect(result.errors.some((e) => e.includes("self-contaminating search"))).toBe(true);
+	});
+
+	test("accepts a pinpoint git show read of a single store file", () => {
+		const result = validateSpec({
+			acceptanceCriteria: [
+				"AC1 [oracle: file-assert git show main:scripts/cam/issues/CAM-0460.json]",
+			],
+			scope: "some scope",
+			gotchas: [],
+			domainTerms: [],
+		});
+		expect(result).toEqual({ ok: true, errors: [] });
+	});
+
+	test("accepts a store-reaching root when explicitly excluded via --exclude-dir=issues", () => {
+		const result = validateSpec({
+			acceptanceCriteria: [
+				"AC1 [oracle: named-command grep -rl zzqqx .github/workflows scripts --exclude-dir=issues]",
+			],
+			scope: "some scope",
+			gotchas: [],
+			domainTerms: [],
+		});
+		expect(result).toEqual({ ok: true, errors: [] });
+	});
+
+	test("accepts a docs/adr root", () => {
+		const result = validateSpec({
+			acceptanceCriteria: ["AC1 [oracle: named-command grep -rl zzqqx docs/adr/]"],
+			scope: "some scope",
+			gotchas: [],
+			domainTerms: [],
+		});
+		expect(result).toEqual({ ok: true, errors: [] });
+	});
+
+	test("accepts a single-file root under scripts", () => {
+		const result = validateSpec({
+			acceptanceCriteria: ["AC1 [oracle: named-command grep -rl zzqqx scripts/cam/patterns.md]"],
+			scope: "some scope",
+			gotchas: [],
+			domainTerms: [],
+		});
+		expect(result).toEqual({ ok: true, errors: [] });
+	});
+
+	test("accepts a criterion with no oracle mark at all", () => {
+		const result = validateSpec({
+			acceptanceCriteria: ["A criterion with no machine-checkable oracle"],
+			scope: "some scope",
+			gotchas: [],
+			domainTerms: [],
+		});
+		expect(result).toEqual({ ok: true, errors: [] });
+	});
 });
 
 // ---------------------------------------------------------------------------

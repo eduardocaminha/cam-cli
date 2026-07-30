@@ -29,6 +29,12 @@
 //     vacuous pass when the underlying grep search matches zero lines,
 //     enforcing the unguarded-empty-anchor rule (patterns.md:901), US-003
 //     CAM-381.
+//   - self-contaminating-search: catches a recursive grep/egrep/fgrep/rg
+//     oracle whose search root reaches scripts/cam/issues, reusing the
+//     shared detection core exported from src/issues/self-contaminating-search.ts
+//     (US-002, CAM-474) so filing-time refusal and plan-time linting can
+//     never drift apart. Catches CAM-460 AC2's already-filed offending shape
+//     retroactively, US-003 CAM-474.
 //
 // Design (mirrors scripts/check-test-sleeps.ts's pure-scanner shape):
 //   - Rules are a named-rules list: array of { name, test(command): finding | null }.
@@ -42,6 +48,7 @@
 // Usage: lintPrd(prd) -> PrdOracleLintFinding[]
 
 import { parseOracleDirectives } from './behavioral-gate.ts';
+import { findStoreReachingSearch } from '../issues/self-contaminating-search.ts';
 import type { PrdShape } from '../commands/status.ts';
 
 // ---------------------------------------------------------------------------
@@ -633,6 +640,40 @@ const ZERO_MATCH_VACUOUS_RULE: OracleLintRule = {
 	},
 };
 
+// ---------------------------------------------------------------------------
+// self-contaminating-search rule
+// ---------------------------------------------------------------------------
+
+/**
+ * The self-contaminating-search rule (US-003, CAM-474): flags a recursive
+ * grep/egrep/fgrep/rg oracle whose search root reaches scripts/cam/issues,
+ * the same class the filing-time guardrail (validateSpec, src/issues/spec.ts,
+ * US-002) refuses at issue-write time. Filing-time refusal only stops a NEW
+ * offending oracle from being written; it cannot retroactively catch one that
+ * was already filed before the guardrail existed (CAM-460 AC2 today), so this
+ * plan-time lint rule reuses the exact same predicate,
+ * findStoreReachingSearch (src/issues/self-contaminating-search.ts), rather
+ * than re-implementing the path-parsing logic here: a store-reaching
+ * recursive search turns the very act of FILING the criterion's own search
+ * target into the mechanism that satisfies it, with zero implementation work.
+ */
+const SELF_CONTAMINATING_SEARCH_RULE: OracleLintRule = {
+	name: 'self-contaminating-search',
+	test(command: string): RuleFinding | null {
+		const finding = findStoreReachingSearch(command);
+		if (finding === null) return null;
+		return {
+			reason:
+				'oracle runs a recursive grep/egrep/fgrep/rg search whose root ' +
+				`(${finding.root === '.' ? 'no positional root given -- defaults to cwd' : finding.root}) ` +
+				'reaches scripts/cam/issues -- filing the criterion writes the searched-for ' +
+				'text into that very store as JSON, so the search is satisfied by the act of ' +
+				'filing the issue, not by any implementation work; scope the search to a ' +
+				'narrower root, or add an explicit --exclude-dir=issues',
+		};
+	},
+};
+
 /**
  * The named-rules list (array of { name, test(command): finding | null }).
  * Adding a future rule is a one-liner: push another OracleLintRule here.
@@ -642,6 +683,7 @@ export const RULES: OracleLintRule[] = [
 	FROZEN_COMPARAND_RULE,
 	ROTATING_ARTIFACT_RULE,
 	ZERO_MATCH_VACUOUS_RULE,
+	SELF_CONTAMINATING_SEARCH_RULE,
 ];
 
 // ---------------------------------------------------------------------------

@@ -1,4 +1,6 @@
 import type { WsjfScore } from "./types.ts";
+import { parseOracleDirective } from "../supervisor/behavioral-gate.ts";
+import { findStoreReachingSearch } from "./self-contaminating-search.ts";
 
 /**
  * Structured deep-spec written by the spec interview (acceptanceCriteria +
@@ -18,6 +20,37 @@ export interface Spec {
 export interface ValidationResult {
 	ok: boolean;
 	errors: string[];
+}
+
+/**
+ * Scans each already-validated (non-empty-string) acceptanceCriteria element
+ * for a self-contaminating-search oracle (US-002, CAM-474): a criterion
+ * whose [oracle: ...] directive is a recursive grep/rg search rooted such
+ * that it reaches scripts/cam/issues. Filing such an issue writes the
+ * searched-for text as JSON inside the very area being searched, making the
+ * criterion green with zero implementation. Extracted from validateSpec to
+ * keep its cognitive complexity within the project's lint ceiling.
+ */
+function findSelfContaminatingSearchErrors(criteria: string[]): string[] {
+	const errors: string[] = [];
+
+	for (const criterion of criteria) {
+		const directive = parseOracleDirective(criterion);
+		if (directive === null) continue;
+		if (directive.kind !== "named-command" && directive.kind !== "file-assert") continue;
+
+		const finding = findStoreReachingSearch(directive.command);
+		if (finding !== null) {
+			errors.push(
+				`acceptanceCriteria oracle is a self-contaminating search: recursive search ` +
+					`root "${finding.root}" reaches scripts/cam/issues, so the act of filing ` +
+					`the issue would write the searched-for text inside the search area and ` +
+					`make the criterion green with zero implementation`,
+			);
+		}
+	}
+
+	return errors;
 }
 
 /**
@@ -41,6 +74,10 @@ export function validateSpec(x: unknown): ValidationResult {
 	const ac = candidate["acceptanceCriteria"];
 	if (!Array.isArray(ac) || ac.length === 0) {
 		errors.push("acceptanceCriteria must be a non-empty array");
+	} else if (!ac.every((c) => isNonEmptyString(c))) {
+		errors.push("acceptanceCriteria elements must all be non-empty strings");
+	} else {
+		errors.push(...findSelfContaminatingSearchErrors(ac as string[]));
 	}
 
 	const scope = candidate["scope"];
