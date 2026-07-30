@@ -585,6 +585,21 @@ describe('self-contaminating-search rule: flagged forms', () => {
 		const finding = rule.test('test `grep -rl zzqqx scripts` -gt 0');
 		expect(finding).not.toBeNull();
 	});
+
+	test("flags a recursive search inside a bash -c '...' wrapper (US-R2-002, CAM-474 review round 2, this project's own dominant oracle idiom)", () => {
+		const finding = rule.test("bash -c 'grep -rl zzqqx scripts'");
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags a recursive rg search inside an sh -c "..." wrapper (US-R2-002, CAM-474 review round 2)', () => {
+		const finding = rule.test('sh -c "rg -l zzqqx scripts/cam"');
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags an xargs-prefixed invocation with an intervening short flag (US-R2-002, CAM-474 review round 2)', () => {
+		const finding = rule.test("xargs -0 grep -rl zzqqx scripts");
+		expect(finding).not.toBeNull();
+	});
 });
 
 // ---------------------------------------------------------------------------

@@ -43,17 +43,31 @@
 //     POSITION: the start of `command`, or immediately preceded (ignoring
 //     whitespace) by a clause separator ('|', '&', ';'), an opening paren
 //     ('(' or the tail of '$(', including subshells), a backtick (the head
-//     of a `` `...` `` command substitution), or the word 'xargs'
-//     (CAM-474 review round 1: a bare \b(grep|rg)\b scan with no position
-//     check matched inside an unrelated hyphenated token like
-//     'gen-rg-report', a file extension like 'docs/x.rg', a quoted search
-//     NEEDLE like grep -q "rg" file, and an echoed word like
-//     `bash -c "echo rg"` -- all zero-search false positives). This check
-//     is deliberately raw-text-based, not a full re-tokenization of
-//     `command`: a genuine store-reaching search hidden inside a
-//     `$(grep ...)` command-substitution wrapper (CAM-460 AC2's own shape)
-//     must still be caught, and '(' immediately preceding the tool word
-//     covers that without needing to parse the enclosing quotes.
+//     of a `` `...` `` command substitution), an opening quote (`'` or `"`)
+//     whose OWN preceding token (ignoring whitespace) is the shell
+//     interpreter's `-c` flag, i.e. the head of a `bash -c '...'` /
+//     `sh -c "..."` command-string argument, or an allowlisted prefix word
+//     (`xargs`, `env`, `sudo`, `time`, `command`) -- itself possibly
+//     preceded by one or more flag/assignment tokens of its own (e.g.
+//     `xargs -0 grep ...`, `env FOO=1 grep ...`) (CAM-474 review round 1 +
+//     round 2: a bare \b(grep|rg)\b scan with no position check matched
+//     inside an unrelated hyphenated token like 'gen-rg-report', a file
+//     extension like 'docs/x.rg', a quoted search NEEDLE like
+//     grep -q "rg" file, and an echoed word like `bash -c "echo rg"` --
+//     all zero-search false positives; round 2 additionally found that this
+//     project's own dominant oracle idiom, `bash -c '<search>'`, was itself
+//     missed because an opening quote was not a recognized left-context
+//     delimiter, and that `env`/`sudo`/`xargs -0`-style prefixes with an
+//     intervening flag or assignment were missed too). The quote check is
+//     scoped to a preceding `-c` specifically (not every opening quote)
+//     because a quoted NEEDLE argument to an unrelated flag, e.g.
+//     grep -q "rg" file, is also an opening quote immediately before a tool
+//     word but is not an invocation. This check is deliberately
+//     raw-text-based, not a full re-tokenization of `command`: a genuine
+//     store-reaching search hidden inside a `$(grep ...)`
+//     command-substitution wrapper (CAM-460 AC2's own shape) must still be
+//     caught, and '(' immediately preceding the tool word covers that
+//     without needing to parse the enclosing quotes.
 //   - A positional token's trailing shell punctuation (an unbalanced ')',
 //     a trailing backtick, or a trailing quote character) is stripped
 //     before the token is treated as a root, because the space-free forms
@@ -91,8 +105,19 @@ const SEARCH_TOOL_RE = /\b(grep|egrep|fgrep|rg)\b/g;
 /** A clause separator, opening-paren, or backtick character allowed immediately before a tool word (see isCommandPosition). */
 const COMMAND_POSITION_CHAR_RE = /[|&;(`]/;
 
-/** A word character, used to find the boundary of the word preceding a tool-word match. */
-const WORD_CHAR_RE = /[A-Za-z0-9_]/;
+/** The shell-interpreter flag ('-c') whose quoted argument is itself a command string, e.g. `bash -c '...'`. */
+const SHELL_DASH_C_FLAG = '-c';
+
+/**
+ * Prefix words that make the following tool word command-position, e.g.
+ * `xargs grep ...`, `env FOO=1 grep ...`, `sudo grep ...`. May themselves be
+ * preceded by their own flag/assignment tokens (isCommandPosition walks
+ * those away before checking membership here).
+ */
+const COMMAND_PREFIX_WORDS = new Set(['xargs', 'env', 'sudo', 'time', 'command']);
+
+/** A `VAR=value`-shaped token, e.g. the `FOO=1` in `env FOO=1 grep ...`. */
+const ASSIGNMENT_TOKEN_RE = /^[A-Za-z_][A-Za-z0-9_]*=/;
 
 /** A short-option flag group: leading '-' followed by one or more letters. */
 const SHORT_FLAG_GROUP_RE = /^-[A-Za-z]+$/;
@@ -240,12 +265,67 @@ function isStoreReachingRoot(root: string): boolean {
 }
 
 /**
+ * Extracts the whitespace-delimited word ending immediately before index
+ * `end` (exclusive) in `command`. Returns the word and the index of its
+ * first character, so a caller can continue scanning further left.
+ */
+function precedingWord(command: string, end: number): { word: string; start: number } {
+	let start = end - 1;
+	while (start >= 0 && !/\s/.test(command[start] ?? '')) start--;
+	return { word: command.slice(start + 1, end), start };
+}
+
+/**
+ * True when the opening quote at index `quoteIndex` in `command` is the head
+ * of a shell-interpreter `-c` command-string argument (`bash -c '...'`,
+ * `sh -c "..."`): true exactly when the token immediately preceding the
+ * quote (ignoring whitespace) is `-c`. A quoted NEEDLE argument to an
+ * unrelated flag (`grep -q "rg" file`) fails this check and is correctly
+ * left out of command position.
+ */
+function isShellDashCQuoteOpen(command: string, quoteIndex: number): boolean {
+	let i = quoteIndex - 1;
+	while (i >= 0 && /\s/.test(command[i] ?? '')) i--;
+	if (i < 0) return false;
+
+	const { word } = precedingWord(command, i + 1);
+	return word === SHELL_DASH_C_FLAG;
+}
+
+/**
+ * Walks the whitespace-separated words ending at index `end` (exclusive)
+ * leftward through `command`, skipping over flag ('-0', '-n1', ...) or
+ * 'VAR=value' assignment tokens, to find an allowlisted prefix word
+ * (xargs/env/sudo/time/command) that may sit one or more tokens before the
+ * position `end` marks (CAM-474 review round 2: `env FOO=1 grep ...` and
+ * `xargs -0 grep ...` both put a non-prefix token directly before the tool
+ * word). Stops and returns false at the first word that is neither an
+ * allowlisted prefix nor a flag/assignment token.
+ */
+function hasCommandPrefixWord(command: string, end: number): boolean {
+	while (end > 0) {
+		const { word, start } = precedingWord(command, end);
+
+		if (COMMAND_PREFIX_WORDS.has(word)) return true;
+		if (!word.startsWith('-') && !ASSIGNMENT_TOKEN_RE.test(word)) return false;
+
+		let j = start;
+		while (j >= 0 && /\s/.test(command[j] ?? '')) j--;
+		end = j + 1;
+	}
+	return false;
+}
+
+/**
  * True when the tool-word match starting at `matchIndex` in `command` is in
  * COMMAND POSITION: the start of `command`, or immediately preceded
  * (ignoring whitespace) by a clause separator ('|', '&', ';'), an opening
  * paren ('(' -- also covers '$(' since that ends in '('), a backtick (the
- * head of a `` `...` `` command substitution), or the word 'xargs'. Rejects
- * a tool word that is merely a substring of an unrelated token (a
+ * head of a `` `...` `` command substitution), an opening quote whose own
+ * preceding token is the shell interpreter's '-c' flag (see
+ * isShellDashCQuoteOpen), or an allowlisted prefix word, possibly preceded
+ * by its own flag/assignment tokens (see hasCommandPrefixWord). Rejects a
+ * tool word that is merely a substring of an unrelated token (a
  * hyphen-delimited segment, a file extension) or the content of a quoted
  * search pattern/needle sitting inside an already-classified invocation's
  * argument list.
@@ -256,11 +336,11 @@ function isCommandPosition(command: string, matchIndex: number): boolean {
 	if (i < 0) return true;
 
 	const prevChar = command[i];
-	if (prevChar !== undefined && COMMAND_POSITION_CHAR_RE.test(prevChar)) return true;
+	if (prevChar === undefined) return false;
+	if (COMMAND_POSITION_CHAR_RE.test(prevChar)) return true;
+	if (prevChar === "'" || prevChar === '"') return isShellDashCQuoteOpen(command, i);
 
-	let start = i;
-	while (start >= 0 && WORD_CHAR_RE.test(command[start] ?? '')) start--;
-	return command.slice(start + 1, i + 1) === 'xargs';
+	return hasCommandPrefixWord(command, i + 1);
 }
 
 /** Per-invocation scan result: what the tokens after the tool word resolved to. */

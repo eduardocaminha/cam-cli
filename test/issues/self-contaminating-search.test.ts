@@ -174,4 +174,46 @@ describe("findStoreReachingSearch", () => {
 		const result = findStoreReachingSearch("test $(grep -rl zzqqx docs/adr) -gt 0");
 		expect(result).toBeNull();
 	});
+
+	// --- Review round 2 (US-R2-002, CAM-474): command-position false negatives ---
+
+	test("flags a recursive search inside a bash -c '...' wrapper (this project's own dominant oracle idiom)", () => {
+		const result = findStoreReachingSearch("bash -c 'grep -rl zzqqx scripts'");
+		expect(result).toEqual({ root: "scripts" });
+	});
+
+	test('flags a recursive search inside a bash -c "..." wrapper (double-quoted form)', () => {
+		const result = findStoreReachingSearch('bash -c "grep -rl zzqqx scripts"');
+		expect(result).toEqual({ root: "scripts" });
+	});
+
+	test('flags a recursive rg search inside an sh -c "..." wrapper', () => {
+		const result = findStoreReachingSearch('sh -c "rg -l zzqqx scripts/cam"');
+		expect(result).toEqual({ root: "scripts/cam" });
+	});
+
+	test('does not flag a quoted search NEEDLE argument to an unrelated flag (grep -q "rg" ...)', () => {
+		const result = findStoreReachingSearch('grep -q "rg" scripts/cam/patterns.md');
+		expect(result).toBeNull();
+	});
+
+	test("flags an env-prefixed invocation with an intervening VAR=value assignment", () => {
+		const result = findStoreReachingSearch("env FOO=1 grep -rl zzqqx scripts");
+		expect(result).toEqual({ root: "scripts" });
+	});
+
+	test("flags a sudo-prefixed invocation", () => {
+		const result = findStoreReachingSearch("sudo grep -rl zzqqx scripts");
+		expect(result).toEqual({ root: "scripts" });
+	});
+
+	test("flags an xargs-prefixed invocation with an intervening short flag (xargs -0 grep ...)", () => {
+		const result = findStoreReachingSearch("xargs -0 grep -rl zzqqx scripts");
+		expect(result).toEqual({ root: "scripts" });
+	});
+
+	test("flags an xargs-prefixed invocation with an intervening -n flag (xargs -n1 grep ...)", () => {
+		const result = findStoreReachingSearch("xargs -n1 grep -rl zzqqx scripts");
+		expect(result).toEqual({ root: "scripts" });
+	});
 });
