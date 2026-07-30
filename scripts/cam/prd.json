@@ -69,7 +69,7 @@
         "The quality spine passes. [oracle: named-command bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Depends on US-002 (derived titles must exist first). Site: renderSetupChecklist (src/release/pr-body.ts:152-154) builds its haystack from prd.description + prd.notes + EVERY story title and runs SETUP_CHECKLIST_CUES (:61-105) over it; cues include env var, migration, install, dependency, api key, token, credential, secret, oauth, webhook. Sanitizing the title (US-002) does NOT solve this, which is why it needs its own pin. The behavior change belongs in src/release/pr-body.ts (the highest-merit option is to keep review-generated fix-story titles out of the cue haystack while leaving human-authored story titles in it, so real setup cues keep firing) plus test/release/pr-body.test.ts. Do NOT touch src/supervisor/suggestion-followups.ts or src/supervisor/ship-runner.ts (CAM-459, explicitly sequenced after this issue). Same ORACLE TRAP as US-001/US-002: the new test must be swept red against unmodified main and the result recorded in patterns.md per AC3."
     }
