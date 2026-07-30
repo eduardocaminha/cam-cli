@@ -1,23 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Carry the real cause and a shared session-died-early reason on the dispatch failure record"
+    "id": "US-002",
+    "title": "Add the pure early-death detector over a session transcript"
   },
   "branchName": "cam/issue-479",
-  "timestamp": "2026-07-30T12:39:10.000Z",
-  "createdFiles": [],
+  "timestamp": "2026-07-30T13:10:00.000Z",
+  "createdFiles": [
+    "src/supervisor/early-death.ts",
+    "test/supervisor/dispatch-early-death.test.ts",
+    "test/fixtures/early-death/dead-on-first-turn.jsonl",
+    "test/fixtures/early-death/healthy-planner.jsonl"
+  ],
   "modifiedFiles": [
-    "src/supervisor/verified-dispatch.ts",
-    "src/supervisor/dispatch-failed-marker.ts",
-    "src/supervisor/events.ts",
-    "test/supervisor/dispatch-failed-marker.test.ts",
-    "test/supervisor/verified-dispatch.test.ts",
-    "scripts/file-size-budget.json"
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [
-    "This story adds vocabulary + plumbing only: the new 'session-died-early' DispatchFailureReason literal and the optional 'cause' field on VerifiedDispatchOptions/DispatchFailedMarker/DispatchFailedEventDetail exist but nothing produces a cause or emits 'session-died-early' yet. Wiring an actual transcript-derived classifier (LIMIT_PATTERNS / isRateLimited from src/retry/patterns.ts, or a poll-loop early-death detector) is explicitly out of scope here and tracked as CAM-435."
+    "This story adds ONLY the pure predicate + probe factory (classifyEarlyDeath, extractLastAssistantEntry, isTransientApiError, makeEarlyDeathProbe, EARLY_DEATH_FLOOR_MS) in src/supervisor/early-death.ts. Nothing calls makeEarlyDeathProbe from the poll loop yet, and nothing sets DispatchFailureReason='session-died-early' or the VerifiedDispatchOptions.cause field (US-001, CAM-479) from a real detected death. Wiring the probe into the actual poll loop (loop.ts, likely alongside the existing perWorkerTimeoutMs/isPaneAlive checks) and threading its verdict into runVerifiedDispatch's cause/reason is the next story's job."
   ],
-  "nextStoryContext": "US-001 (CAM-479) added: (1) 'session-died-early' to the DispatchFailureReason union in src/supervisor/verified-dispatch.ts, (2) an optional `cause?: string` on VerifiedDispatchOptions threaded through emitDispatchFailure into the marker, the DispatchFailedEventDetail, and the notifyFn string (cause suffix precedes the existing stderr suffix), (3) an optional `cause?: string` on DispatchFailedMarker (dispatch-failed-marker.ts) with additive validation in readDispatchFailedMarker (absent cause still parses; present-but-non-string cause is rejected), (4) the mirrored optional `cause?: string` on DispatchFailedEventDetail in events.ts. No call site sets `cause` or produces 'session-died-early' yet -- that wiring (likely importing src/retry/patterns.ts's LIMIT_PATTERNS/isRateLimited against a first-turn transcript check, per CAM-435) is the next story's job. src/supervisor/events.ts's file-size ceiling was raised 927->929 in scripts/file-size-budget.json with a dated _ref note citing this story.",
+  "nextStoryContext": "US-002 (CAM-479) added src/supervisor/early-death.ts: a pure two-layer early-death detector over a worker session transcript. Layer 1 (pure, no I/O): `classifyEarlyDeath({previousSample, currentSample, jsonl, floorMs?})` returns `{verdict:'dead-on-first-turn', cause}` only when BOTH the transcript's byte size has not grown across the floor window (EARLY_DEATH_FLOOR_MS=60_000ms, proven far below both DEFAULT_PER_WORKER_TIMEOUT_MS=30min and DEFAULT_CONTAINER_WORKER_TIMEOUT_MS=60min from loop.ts) AND the transcript's last assistant entry (`extractLastAssistantEntry`) is a transient API error (`isTransientApiError`: checks the real `isApiErrorMessage:true` transcript-line flag first, falls back to a local `/^API Error:.*(5\\d{2}|overloaded|rate.?limit|timeout|...)/is` regex on the verbatim text) -- otherwise `{verdict:'still-working'}`. `cause` is the last assistant entry's verbatim text (not synthesized). Layer 2 (stateful): `makeEarlyDeathProbe({cwd, claudeDir, readFileFn?, nowFn?, floorMs?})` returns a `(uuid) => EarlyDeathVerdict` closure that resolves the transcript path via the EXISTING shared `transcriptPathForSession` (src/transcript/usage.ts, no second resolver), tracks the last byte-size sample per uuid in a closure-local Map, and reports still-working (clearing any stale sample) whenever the file is absent or the reader throws -- a resolver miss can never fabricate a death. Two REAL fixtures back the tests: test/fixtures/early-death/dead-on-first-turn.jsonl (8 entries, ~3.1KB, exactly one assistant entry which IS the `isApiErrorMessage:true` 529-Overloaded error) and healthy-planner.jsonl (67 entries, ~258KB, 16 tool_use blocks, real multi-turn thinking/text/tool_use/tool_result shape). Every test drives an injected clock (`nowFn`) or explicit timestamps, never wall time. Next story (per handoff openQuestions) wires this probe into the actual poll loop and into US-001's `cause`/`session-died-early` vocabulary on verified-dispatch.ts.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ],
