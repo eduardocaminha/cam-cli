@@ -30,7 +30,7 @@
       "id": "US-R1-002",
       "title": "Review round 1 fix 002: address reviewer finding",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [src/issues/self-contaminating-search.ts:189]: Two false-negative gaps let a genuinely store-reaching search past the guardrail. (1) applyToken only special-cases token === '--recursive', so the documented long form of -R is missed: findStoreReachingSearch('grep --dereference-recursive zzqqx scripts') -> null, even though man grep defines '-R, --dereference-recursive: Read all files under each directory, recursively'. (2) isStoreReachingRoot (:121-129) normalizes only a leading './' and trailing slashes, so an absolute root reaching the store is missed: findStoreReachingSearch('grep -rl zzqqx /Users/me/repo/scripts') -> null. Both are one-file mechanical fixes (accept '--dereference-recursive' alongside '--recursive'; strip a cwd prefix or match the store suffix for absolute roots) plus their test cases, in the same module the CRITICAL touches."
     },
     {
