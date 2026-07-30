@@ -664,9 +664,8 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 			// CAM-115: a CLEAN verdict clears findings carried over from a prior
 			// FIXES_PENDING round (line ~586 below), so prd.review.findings always
 			// reflects the current round instead of showing stale findings. This
-			// scope is CLEAN-only: the MAX_ROUNDS_DEBT write paths (below, and
-			// src/supervisor/loop.ts) intentionally keep the last round's findings
-			// to document the debt and must not be touched here.
+			// scope is CLEAN-only: the MAX_ROUNDS_DEBT write path (below) has its
+			// own contract (CAM-478) for which round's findings it persists.
 			const { findings: _staleFindings, ...reviewWithoutFindings } = prd.review ?? {};
 			writePrd({
 				...prd,
@@ -692,6 +691,15 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 			// defeats the US-006 non-convergence hard terminal. By skipping
 			// buildFixStories on the terminal round, prd.json userStories are
 			// unchanged and the pipeline stops cleanly at MAX_ROUNDS_DEBT.
+			//
+			// CAM-478: prd.review.findings must hold the findings of the terminal
+			// round that actually decided MAX_ROUNDS_DEBT when they parsed
+			// (fileFindings !== undefined overrides whatever the spread carried
+			// over from a prior round), and falls back to preserving the prior
+			// round's findings only when nothing parsed this round (fileFindings
+			// undefined, tag-fallback path) since that stale record is the only
+			// one available. Never convert already-fixed findings into debt, and
+			// never halt a ship over findings that no longer parsed.
 			writePrd({
 				...prd,
 				review: {
@@ -699,6 +707,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 					roundsCompleted: newRound,
 					maxRounds,
 					lastVerdict: 'MAX_ROUNDS_DEBT',
+					...(fileFindings !== undefined ? { findings: fileFindings } : {}),
 				},
 			});
 			return {

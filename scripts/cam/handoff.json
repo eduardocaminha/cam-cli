@@ -1,0 +1,19 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Persist the deciding round's findings on the MAX_ROUNDS_DEBT path"
+  },
+  "branchName": "cam/issue-478",
+  "timestamp": "2026-07-30T09:00:00Z",
+  "modifiedFiles": [
+    "src/supervisor/review.ts",
+    "test/supervisor/review.test.ts",
+    "scripts/cam/patterns.md",
+    "scripts/file-size-budget.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "CAM-478 (US-001) fixed the MAX_ROUNDS_DEBT write path in src/supervisor/review.ts (makeReviewDispatch) to conditionally override prd.review.findings with fileFindings when fileFindings !== undefined (terminal round's own parsed findings), and to fall back to whatever the ...(prd.review ?? {}) spread already carried (the prior round's findings) only when fileFindings is undefined (tag-fallback path). This mirrors the existing FIXES_PENDING branch's conditional shape at review.ts:736 exactly. Two new pinning tests were added to test/supervisor/review.test.ts right after the pre-existing MAX_ROUNDS_DEBT test at :521: 'DEBT terminal round persists its own findings' and 'DEBT tag-fallback preserves the prior findings'. Both were red-on-main swept via a detached main worktree before being trusted (see scripts/cam/patterns.md, CAM-478 bullet at the end of the file) -- the terminal-round test exits 1 on unmodified main, the tag-fallback test exits 0 on main (it documents an already-correct half of the old behavior). The stale CAM-115 comment claiming the DEBT paths 'intentionally keep the last round's findings' was rewritten to describe the corrected CAM-478 contract instead. file-size-budget.json ceilings were raised for both touched files (review.ts 790->799, review.test.ts 2067->2136) with a dated _ref note; full bun run check:all spine is green.",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}

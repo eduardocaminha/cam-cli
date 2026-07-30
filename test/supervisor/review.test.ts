@@ -542,6 +542,75 @@ describe('makeReviewDispatch', () => {
 		expect(fixStories.length).toBe(0);
 	});
 
+	test('DEBT terminal round persists its own findings', () => {
+		// Seed prd.review.findings with a prior-round sentinel: this must NOT
+		// survive into the MAX_ROUNDS_DEBT write once the terminal round parses
+		// its own (distinct) findings from review-report.json (CAM-478).
+		const priorRoundSentinel = [
+			{ severity: 'CRITICAL' as const, file: 'src/stale.ts', line: 1, text: 'PRIOR-ROUND-SENTINEL: already fixed' },
+		];
+		const terminalRoundFindings = [
+			{ severity: 'CRITICAL' as const, file: 'src/fresh.ts', line: 2, text: 'TERMINAL-ROUND-FINDING: real debt' },
+		];
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		const opts = makeDispatchOpts({
+			paneText: '<review>FIXES_PENDING:1</review>',
+			prd: makePrd({
+				stories: [],
+				review: {
+					roundsCompleted: 2,
+					maxRounds: 3,
+					findings: priorRoundSentinel,
+				},
+			}),
+			capturedWrittenPrd,
+			readReviewReport: () => ({ verdict: 'FIXES_PENDING:1', findings: terminalRoundFindings }),
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
+		const written = capturedWrittenPrd[0];
+		expect(written?.review?.lastVerdict).toBe('MAX_ROUNDS_DEBT');
+		const findings = written?.review?.findings;
+		expect(findings).toBeDefined();
+		const findingTexts = (findings ?? []).map((f) => f.text);
+		expect(findingTexts).toContain('TERMINAL-ROUND-FINDING: real debt');
+		expect(findingTexts).not.toContain('PRIOR-ROUND-SENTINEL: already fixed');
+	});
+
+	test('DEBT tag-fallback preserves the prior findings', () => {
+		// No readReviewReport injected -> tag-based fallback (fileFindings
+		// undefined). The only record available is the prior round's findings,
+		// so they must be preserved byte-for-byte (CAM-478).
+		const priorRoundFindings = [
+			{ severity: 'WARNING' as const, file: 'src/prior.ts', line: 5, text: 'PRIOR-ROUND-ONLY-RECORD' },
+		];
+		const capturedWrittenPrd: PrdSnapshot[] = [];
+		const opts = makeDispatchOpts({
+			paneText: '<review>FIXES_PENDING:2</review>',
+			prd: makePrd({
+				stories: [],
+				review: {
+					roundsCompleted: 2,
+					maxRounds: 3,
+					findings: priorRoundFindings,
+				},
+			}),
+			capturedWrittenPrd,
+			// No readReviewReport -> tag-fallback path, fileFindings stays undefined.
+		});
+
+		const dispatch = makeReviewDispatch(opts);
+		const result = dispatch(SAMPLE_UUID);
+
+		expect(result.status).toBe('ok');
+		const written = capturedWrittenPrd[0];
+		expect(written?.review?.lastVerdict).toBe('MAX_ROUNDS_DEBT');
+		expect(written?.review?.findings).toEqual(priorRoundFindings);
+	});
+
 	test('no <review> tag ever: times out and returns status=error', () => {
 		const opts = makeDispatchOpts({
 			paneText: 'No verdict tag here at all.',
