@@ -1,10 +1,10 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Persist the deciding round's findings on the MAX_ROUNDS_DEBT path"
+    "id": "US-002",
+    "title": "Give fix stories a verbatim description and a sanitized finding-derived title"
   },
   "branchName": "cam/issue-478",
-  "timestamp": "2026-07-30T09:00:00Z",
+  "timestamp": "2026-07-30T09:45:00Z",
   "modifiedFiles": [
     "src/supervisor/review.ts",
     "test/supervisor/review.test.ts",
@@ -12,8 +12,9 @@
     "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "CAM-478 (US-001) fixed the MAX_ROUNDS_DEBT write path in src/supervisor/review.ts (makeReviewDispatch) to conditionally override prd.review.findings with fileFindings when fileFindings !== undefined (terminal round's own parsed findings), and to fall back to whatever the ...(prd.review ?? {}) spread already carried (the prior round's findings) only when fileFindings is undefined (tag-fallback path). This mirrors the existing FIXES_PENDING branch's conditional shape at review.ts:736 exactly. Two new pinning tests were added to test/supervisor/review.test.ts right after the pre-existing MAX_ROUNDS_DEBT test at :521: 'DEBT terminal round persists its own findings' and 'DEBT tag-fallback preserves the prior findings'. Both were red-on-main swept via a detached main worktree before being trusted (see scripts/cam/patterns.md, CAM-478 bullet at the end of the file) -- the terminal-round test exits 1 on unmodified main, the tag-fallback test exits 0 on main (it documents an already-correct half of the old behavior). The stale CAM-115 comment claiming the DEBT paths 'intentionally keep the last round's findings' was rewritten to describe the corrected CAM-478 contract instead. file-size-budget.json ceilings were raised for both touched files (review.ts 790->799, review.test.ts 2067->2136) with a dated _ref note; full bun run check:all spine is green.",
+  "nextStoryContext": "CAM-478 (US-002) widened buildFixStories' internal return type (src/supervisor/review.ts) from { id, title, notes? } to { id, title, description?, notes? }. On the PARSED-finding path, buildFixStories now sets story.notes AND story.description to the identical verbatim string (`${severity}${loc}: ${text}`, unsanitized, unbounded -- notes is NOT removed), and derives story.title via a new deriveFixStoryTitle(finding) helper (sanitized: newlines collapsed to spaces, pipe chars replaced with '/', truncated to FIX_STORY_TITLE_MAX_LEN=80 chars with a trailing ellipsis) instead of the generic 'address reviewer finding' placeholder. On the tag-fallback path (findings undefined, or findings[i-1] undefined for an out-of-range index), the story keeps the placeholder title and gets neither notes nor description -- unchanged backward-compat behavior. The story projection (storiesWithPriority map, right after `const newStories = buildFixStories(...)`) was widened to forward `description` the same conditional-spread way `notes` already was, so the field isn't produced then silently dropped before writePrd. Three new tests added to test/supervisor/review.test.ts, inserted right after the existing 'file-based findings injected into fix story notes' test: 'fix story carries finding-derived title and description' (PARSED path, red on unmodified review.ts: description was undefined), 'fix story tag-fallback keeps the placeholder title' (tag-fallback path, green on unmodified review.ts -- documents an already-correct half of the old contract, same shape as the US-001 sweep precedent), and 'derived fix-story title is single-line and pipe-free' (sanitization, using a deliberately multi-line/pipe-containing/over-80-char finding text -- the first cut of this test was GREEN on unmodified main too, a tautological-oracle trap identical in kind to the one the red-on-main sweep step exists to catch, since the pre-fix title is a fixed-shape template independent of finding content; adding `expect(title).toContain('WARNING')` made it correctly red on main). All three sweep results are recorded in scripts/cam/patterns.md (grep 'CAM-478 red-on-main sweep (US-002)'). PrdSnapshot.userStories in src/supervisor/decide.ts already declared an optional `description` field (no type-file change needed). file-size-budget.json ceilings were raised for both touched files (review.ts 799->829, review.test.ts 2136->2242) with a dated _ref note; full bun run check:all spine is green. Do not conflate this with US-001 (already shipped, MAX_ROUNDS_DEBT findings-persistence, unrelated write path in the same file).",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
-  ]
+  ],
+  "appliedPatternIds": []
 }
