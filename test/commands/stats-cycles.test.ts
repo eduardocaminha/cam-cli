@@ -30,12 +30,15 @@ import {
 	type CycleMetricsRow,
 } from '../../src/stats/cycles.ts';
 import { runStatsCycles } from '../../src/commands/stats.ts';
-import { parseStatsArgs, dispatchStats } from '../../index.ts';
+import { parseStatsArgs, dispatchStats, dispatchJournal, parseJournalArgs } from '../../index.ts';
 import {
 	upsertCycleMetricsRowOnMain,
 	readCycleMetricsContentFromMain,
 } from '../../src/commands/cycle-metrics.ts';
 import { realOnMainSpawnFn, type SpawnFn } from '../../src/git/on-main.ts';
+import type { JournalCycleEntry } from '../../src/commands/journal.ts';
+import type { ArchiveJournalOnMainResult } from '../../src/commands/journal-archive.ts';
+import type { ArchivePatternsOnMainResult } from '../../src/commands/patterns-archive.ts';
 import { gitAvailable } from '../helpers/test-deps.ts';
 
 // ---------------------------------------------------------------------------
@@ -781,6 +784,91 @@ describe('upsertCycleMetricsRowOnMain: structured failure modes, never a throw (
 			if (result.reason === 'commit-failed') {
 				expect(result.error.length).toBeGreaterThan(0);
 			}
+		},
+	);
+});
+
+// ---------------------------------------------------------------------------
+// AC5 (US-004, CAM-470): one cycle-close appends exactly one row with no
+// manual intervention -- drives the FULL `cam journal append --cycle-close`
+// path (dispatchJournal, index.ts) against a real fixture repo, wiring
+// cycleMetricsAppendFn to the real upsertCycleMetricsRowOnMain. Every other
+// side effect (journal.md write, archive checks, recycle marker) is faked so
+// this test isolates the cycle-metrics artifact growth.
+// ---------------------------------------------------------------------------
+
+describe("dispatchJournal --cycle-close: 'one cycle-close appends exactly one row with no manual intervention' (AC5)", () => {
+	test.skipIf(!gitAvailable)(
+		'driving one cycle-close against a fixture repo grows the artifact by exactly one row and leaves every prior line byte-identical',
+		async () => {
+			const { dir } = makeTmpRepo();
+
+			const headerLine = JSON.stringify({ schemaVersion: CYCLE_METRICS_SCHEMA_VERSION, unattributedLeadingEvents: 0 });
+			const rowY = JSON.stringify({
+				cycleId: 'cam/Y',
+				issueNumber: 'CAM-Y',
+				closedAt: 't-y',
+				workerRounds: 0,
+				reviewRounds: 0,
+				orchTokens: 5,
+				workerTokens: 5,
+				total: 10,
+			});
+			const seedContent = `${headerLine}\n${rowY}\n`;
+			mkdirSync(join(dir, 'scripts', 'cam'), { recursive: true });
+			writeFileSync(join(dir, 'scripts', 'cam', 'cycle-metrics.jsonl'), seedContent);
+			spawnSync('git', ['-C', dir, 'add', 'scripts/cam/cycle-metrics.jsonl'], { stdio: 'pipe', encoding: 'utf8' });
+			spawnSync('git', ['-C', dir, 'commit', '-m', 'test: seed cycle-metrics store'], { stdio: 'pipe', encoding: 'utf8' });
+
+			const prevMarker = makeCycleTokensLine('cam/prev-close', 'CAM-PREV', 0, 0, 0, 't-prev');
+			const closeMarker = makeCycleTokensLine('cam/US-004-close', 'CAM-470', 3, 4, 7, 't-close');
+			const log = [prevMarker, closeMarker].join('\n');
+
+			const entry: JournalCycleEntry = {
+				cycleId: 'cam/US-004-close',
+				title: 'one cycle-close appends exactly one row',
+				started: '2026-07-29',
+				closed: '2026-07-29',
+				branch: 'cam/issue-470',
+				issue: 'CAM-470',
+				outcome: 'shipped',
+				summary: 'AC5 fixture-repo drive of dispatchJournal --cycle-close.',
+			};
+
+			const parsed = parseJournalArgs(['append', '--cycle-close']);
+			expect(parsed).not.toBeNull();
+			if (!parsed || parsed.help) return;
+
+			const code = await dispatchJournal(parsed, {
+				readStdin: async () => JSON.stringify(entry),
+				appendFn: () => ({ ok: true, cycleId: entry.cycleId, sha: 'fakejournalsha' }), // journal.md write is out of scope for this test
+				writeStdout: () => {},
+				recordCycleTokensFn: () => {}, // avoid real transcript/event-log I/O
+				handoffExistsFn: () => true,
+				watcherAliveFn: () => true,
+				archiveFn: (): ArchiveJournalOnMainResult => ({ ok: true, archived: 0, entries: 0, sha: '' }),
+				patternsArchiveFn: (): ArchivePatternsOnMainResult => ({ ok: true, archived: 0, sha: '' }),
+				cycleMetricsAppendFn: (cycleId) =>
+					upsertCycleMetricsRowOnMain({ cwd: dir, eventLogJsonl: log, cycleId, spawnFn: realOnMainSpawnFn }),
+				armRecycleMarkerFn: () => {}, // no real marker file I/O in this test
+			});
+
+			expect(code).toBe(0);
+
+			const newRow = JSON.stringify(aggregateCycleMetrics(log).rows.find((r) => r.cycleId === 'cam/US-004-close'));
+			const expectedContent = `${headerLine}\n${rowY}\n${newRow}\n`;
+			const storedContent = readCycleMetricsContentFromMain(dir, realOnMainSpawnFn);
+			expect(storedContent).toBe(expectedContent);
+
+			// Exactly one row grew: 2 pre-existing lines (header + rowY) -> 3.
+			const seedLineCount = seedContent.split('\n').filter((l) => l !== '').length;
+			const storedLineCount = storedContent.split('\n').filter((l) => l !== '').length;
+			expect(storedLineCount).toBe(seedLineCount + 1);
+
+			// Every prior line survives byte-identical, in its original position.
+			const storedLines = storedContent.split('\n').filter((l) => l !== '');
+			expect(storedLines[0]).toBe(headerLine);
+			expect(storedLines[1]).toBe(rowY);
 		},
 	);
 });

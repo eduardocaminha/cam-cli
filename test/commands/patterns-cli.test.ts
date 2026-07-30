@@ -13,7 +13,22 @@ import { test, expect, describe } from 'bun:test';
 import type { ArchivePatternsOnMainResult } from '../../src/commands/patterns-archive.ts';
 import type { ArchiveJournalOnMainResult } from '../../src/commands/journal-archive.ts';
 import type { JournalCycleEntry } from '../../src/commands/journal.ts';
+import type { UpsertCycleMetricsRowOnMainResult } from '../../src/commands/cycle-metrics.ts';
 import { dispatchPatterns, parsePatternsArgs, dispatchJournal, parseJournalArgs } from '../../index.ts';
+
+/**
+ * Hermetic no-op fake for the US-004 unconditional cycle-metrics upsert
+ * (mirrors the same fake in test/commands/journal-append.test.ts): every
+ * dispatchJournal call reaching the success path must inject this, since the
+ * emission is unconditional and omitting it would fall through to the real
+ * defaultCycleMetricsAppendFn (real git I/O).
+ */
+const noopCycleMetricsFn = (): UpsertCycleMetricsRowOnMainResult => ({
+	ok: true,
+	committed: false,
+	reason: 'no-established-row',
+	cycleId: 'noop',
+});
 
 // ---------------------------------------------------------------------------
 // Fixtures (mirrors test/commands/journal-append.test.ts SAMPLE_ENTRY)
@@ -186,6 +201,7 @@ describe('dispatchJournal --cycle-close auto-invokes patternsArchiveFn (US-003)'
 				order.push('patterns-archive-check');
 				return { ok: true, archived: 0, sha: '' };
 			},
+			cycleMetricsAppendFn: noopCycleMetricsFn,
 			armRecycleMarkerFn: () => { order.push('arm-marker'); },
 		});
 
@@ -224,6 +240,7 @@ describe('dispatchJournal --cycle-close auto-invokes patternsArchiveFn (US-003)'
 				watcherAliveFn: () => true,
 				archiveFn: (): ArchiveJournalOnMainResult => ({ ok: true, archived: 0, entries: 0, sha: '' }),
 				patternsArchiveFn: (): ArchivePatternsOnMainResult => ({ ok: false, reason: 'diverged' }),
+				cycleMetricsAppendFn: noopCycleMetricsFn,
 				armRecycleMarkerFn: () => { markerArmed = true; },
 			});
 
@@ -261,6 +278,7 @@ describe('dispatchJournal --cycle-close auto-invokes patternsArchiveFn (US-003)'
 				watcherAliveFn: () => true,
 				archiveFn: (): ArchiveJournalOnMainResult => ({ ok: true, archived: 0, entries: 0, sha: '' }),
 				patternsArchiveFn: (): ArchivePatternsOnMainResult => { throw new Error('boom'); },
+				cycleMetricsAppendFn: noopCycleMetricsFn,
 				armRecycleMarkerFn: () => { markerArmed = true; },
 			});
 
@@ -289,6 +307,7 @@ describe('dispatchJournal --cycle-close auto-invokes patternsArchiveFn (US-003)'
 				patternsArchiveCalled = true;
 				return { ok: true, archived: 0, sha: '' };
 			},
+			cycleMetricsAppendFn: noopCycleMetricsFn,
 		});
 
 		expect(code).toBe(0);
