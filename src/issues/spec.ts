@@ -41,6 +41,8 @@ export function validateSpec(x: unknown): ValidationResult {
 	const ac = candidate["acceptanceCriteria"];
 	if (!Array.isArray(ac) || ac.length === 0) {
 		errors.push("acceptanceCriteria must be a non-empty array");
+	} else if (!ac.every((c) => isNonEmptyString(c))) {
+		errors.push("acceptanceCriteria elements must all be non-empty strings");
 	}
 
 	const scope = candidate["scope"];

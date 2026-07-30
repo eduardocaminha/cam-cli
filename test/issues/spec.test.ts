@@ -73,6 +73,50 @@ describe("validateSpec", () => {
 		expect(result.ok).toBe(false);
 		expect(result.errors.length).toBeGreaterThanOrEqual(2);
 	});
+
+	test("rejects a blank-string acceptanceCriteria element", () => {
+		const result = validateSpec({
+			acceptanceCriteria: [""],
+			scope: "some scope",
+			gotchas: [],
+			domainTerms: [],
+		});
+		expect(result.ok).toBe(false);
+		expect(result.errors.some((e) => e.includes("acceptanceCriteria"))).toBe(true);
+	});
+
+	test("rejects a whitespace-only acceptanceCriteria element", () => {
+		const result = validateSpec({
+			acceptanceCriteria: ["   "],
+			scope: "some scope",
+			gotchas: [],
+			domainTerms: [],
+		});
+		expect(result.ok).toBe(false);
+		expect(result.errors.some((e) => e.includes("acceptanceCriteria"))).toBe(true);
+	});
+
+	test("rejects a non-string acceptanceCriteria element", () => {
+		const result = validateSpec({
+			acceptanceCriteria: [123],
+			scope: "some scope",
+			gotchas: [],
+			domainTerms: [],
+		});
+		expect(result.ok).toBe(false);
+		expect(result.errors.some((e) => e.includes("acceptanceCriteria"))).toBe(true);
+	});
+
+	test("rejects when a blank element is mixed with a real one", () => {
+		const result = validateSpec({
+			acceptanceCriteria: ["AC1 is a real criterion", ""],
+			scope: "some scope",
+			gotchas: [],
+			domainTerms: [],
+		});
+		expect(result.ok).toBe(false);
+		expect(result.errors.some((e) => e.includes("acceptanceCriteria"))).toBe(true);
+	});
 });
 
 // ---------------------------------------------------------------------------
