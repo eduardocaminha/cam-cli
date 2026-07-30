@@ -117,6 +117,11 @@ describe("findStoreReachingSearch", () => {
 	});
 
 	test("still flags a genuine search hidden inside a $(...) command-substitution wrapper", () => {
+		const result = findStoreReachingSearch("test $(grep -rl zzqqx scripts) -gt 0");
+		expect(result).toEqual({ root: "scripts" });
+	});
+
+	test("still flags the same $(...) wrapper with a space before the closing paren", () => {
 		const result = findStoreReachingSearch('test $(grep -rl zzqqx scripts ) -gt 0');
 		expect(result).toEqual({ root: "scripts" });
 	});
