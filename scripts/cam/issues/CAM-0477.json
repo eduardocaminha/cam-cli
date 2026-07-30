@@ -1,0 +1,10 @@
+{
+  "id": "CAM-477",
+  "title": "Dispatch falha com pane desaparecido sob timeout: 3a ocorrencia auto-recuperada",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-07-30T05:47:34.301Z",
+  "updatedAt": "2026-07-30T05:47:34.301Z",
+  "description": "TERCEIRA OCORRENCIA MEDIDA da mesma classe, agora com evidencia completa de auto-recuperacao. No CAM-474 (2026-07-30T04:20:12.914Z) o event log registrou dispatch-failed {\"phase\":\"review-timeout\",\"paneId\":\"%42\",\"exitCode\":1,\"stderr\":\"can't find pane: %42\",\"reason\":\"pipe-pane-exited\"}, seguido 2,5s depois de push-recovered no pane %0 e 4s depois de spawn-resolution novo para phase reviewer, que subiu no pane %43 e completou o round normalmente.\n\nHISTORICO: duas ocorrencias no ciclo do CAM-458 (uma no implementer, uma no reviewer), ambas sob timeout, ambas auto-recuperadas, com reason pane-pid-after-empty. Esta terceira tem reason diferente (pipe-pane-exited) mas o mesmo formato: o pane alvo desapareceu entre a decisao de despachar e a operacao de tmux sobre ele.\n\nPOR QUE FILAR MESMO AUTO-RECUPERANDO: o custo hoje e um round de review de ~30min repetido (o round 2 tinha subido 03:50:10Z e a falha veio 04:20:12Z, exatamente no limite de timeout), e a recorrencia em tres ciclos mostra fragilidade estrutural de spawn, nao transiente isolado. Em modo autonomo sem operador olhando, uma variante que NAO auto-recupere fica indistinguivel de loop travado.\n\nDIRECAO SUGERIDA, nao decidida: a falha e sempre uma operacao de tmux sobre pane que morreu entre o check e o uso, ou seja race de TOCTOU. Vale investigar se o caminho de timeout mata o pane antes de tentar pipe-pane sobre ele, o que faria a causa ser ordem interna e nao corrida externa. Relacionado ao CAM-435 (pane-died do implementer descarta a causa) e ao CAM-440 (worker pane ocioso segura o mutex)."
+}
