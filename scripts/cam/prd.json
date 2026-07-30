@@ -24,7 +24,7 @@
       "id": "US-R1-001",
       "title": "Review round 1 fix 001: address reviewer finding",
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [src/commands/stats.ts:148]: `renderCyclesTable` pads cycleId with `padEnd(CYCLE_COL_WIDTH = 42)` and never truncates, but cycleId is an OPAQUE free-form string (branch names) that reaches 47 chars in the committed artifact. The Cycle and Issue columns therefore collide on real data today, e.g. `cam/CAM-94-blocked-narration-supervisor-outcomeCAM-94` and `cam/CAM-134-remove-dead-buildmergedescriptionCAM-134`, in `bun index.ts stats cycles`. This is the same separator-loss class the PRD's own gotcha cites (patterns.md:522, renderHelp losing the space at 24 chars): the implementer applied that check to `stats --help` but not to their own new table. The sibling `renderTokensTable` never hit it because `issueNumber.padEnd(14)` only ever holds short ids like `CAM-470`. Fix mechanically in one file: truncate (or ellipsize) cycleId to CYCLE_COL_WIDTH - 1, or widen the column past the observed max and add a guaranteed separator."
     },
     {
