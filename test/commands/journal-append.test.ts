@@ -30,7 +30,24 @@ import {
 import { DEFAULT_THRESHOLD as JOURNAL_ARCHIVE_DEFAULT_THRESHOLD } from '../../src/commands/journal-archive.ts';
 import type { ArchiveJournalOnMainResult } from '../../src/commands/journal-archive.ts';
 import type { ArchivePatternsOnMainResult } from '../../src/commands/patterns-archive.ts';
+import type { UpsertCycleMetricsRowOnMainResult } from '../../src/commands/cycle-metrics.ts';
 import { dispatchJournal, parseJournalArgs, main } from '../../index.ts';
+
+/**
+ * Hermetic no-op fake for the US-004 unconditional cycle-metrics upsert:
+ * every dispatchJournal test that reaches the success path (any `mode:
+ * 'append'` call whose appendFn returns ok:true) must inject this, since the
+ * emission is unconditional (not gated on --cycle-close) and omitting it
+ * would fall through to the real defaultCycleMetricsAppendFn (real git I/O),
+ * mirroring the CAM-218/CAM-125 real-subprocess-default-fn flake class
+ * documented in patterns.md.
+ */
+const noopCycleMetricsFn = (): UpsertCycleMetricsRowOnMainResult => ({
+	ok: true,
+	committed: false,
+	reason: 'no-established-row',
+	cycleId: 'noop',
+});
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -390,6 +407,7 @@ describe('dispatchJournal', () => {
 			}),
 			writeStdout: (line) => stdoutLines.push(line),
 			recordCycleTokensFn: () => {}, // no-op: avoid real I/O in this test
+			cycleMetricsAppendFn: noopCycleMetricsFn,
 		});
 
 		expect(code).toBe(0);
@@ -461,6 +479,7 @@ describe('dispatchJournal', () => {
 			},
 			writeStdout: () => {},
 			recordCycleTokensFn: () => {}, // no-op: avoid real I/O
+			cycleMetricsAppendFn: noopCycleMetricsFn,
 		});
 
 		expect(capturedForce).toBe(true);
@@ -480,6 +499,7 @@ describe('dispatchJournal', () => {
 			},
 			writeStdout: () => {},
 			recordCycleTokensFn: () => {}, // no-op: avoid real I/O
+			cycleMetricsAppendFn: noopCycleMetricsFn,
 		});
 
 		expect(capturedForce).toBe(false);
@@ -499,6 +519,7 @@ describe('dispatchJournal', () => {
 			},
 			writeStdout: () => {},
 			recordCycleTokensFn: () => {}, // no-op: avoid real I/O
+			cycleMetricsAppendFn: noopCycleMetricsFn,
 		});
 
 		expect(capturedEntry?.cycleId).toBe(SAMPLE_ENTRY.cycleId);
@@ -525,6 +546,7 @@ describe('dispatchJournal', () => {
 			}),
 			writeStdout: (line) => emitted.push(line),
 			recordCycleTokensFn: () => {}, // no-op: avoid real I/O
+			cycleMetricsAppendFn: noopCycleMetricsFn,
 		});
 
 		expect(code).toBe(0);
@@ -570,6 +592,7 @@ describe('dispatchJournal', () => {
 			}),
 			writeStdout: () => {},
 			recordCycleTokensFn: () => { callCount++; },
+			cycleMetricsAppendFn: noopCycleMetricsFn,
 		});
 
 		expect(callCount).toBe(1);
@@ -611,6 +634,7 @@ describe('dispatchJournal', () => {
 			watcherAliveFn: () => true,
 			archiveFn: (): ArchiveJournalOnMainResult => ({ ok: true, archived: 0, entries: 0, sha: '' }), // no real git
 			patternsArchiveFn: (): ArchivePatternsOnMainResult => ({ ok: true, archived: 0, sha: '' }), // no real git
+			cycleMetricsAppendFn: noopCycleMetricsFn,
 			armRecycleMarkerFn: () => { markerArmed = true; },
 		});
 
@@ -644,6 +668,7 @@ describe('dispatchJournal', () => {
 				recordCycleTokensFn: () => {},
 				handoffExistsFn: () => true,
 				watcherAliveFn: () => false,
+				cycleMetricsAppendFn: noopCycleMetricsFn,
 				armRecycleMarkerFn: () => { markerArmed = true; },
 			});
 
@@ -683,6 +708,7 @@ describe('dispatchJournal', () => {
 				handoffExistsFn: () => false,
 				// watcher alive is irrelevant here: handoff check fires FIRST (exit 3)
 				watcherAliveFn: () => true,
+				cycleMetricsAppendFn: noopCycleMetricsFn,
 				armRecycleMarkerFn: () => { markerArmed = true; },
 			});
 
@@ -716,6 +742,7 @@ describe('dispatchJournal', () => {
 			watcherAliveFn: () => true,
 			archiveFn: (): ArchiveJournalOnMainResult => ({ ok: true, archived: 0, entries: 0, sha: '' }), // no real git
 			patternsArchiveFn: (): ArchivePatternsOnMainResult => ({ ok: true, archived: 0, sha: '' }), // no real git
+			cycleMetricsAppendFn: noopCycleMetricsFn,
 			armRecycleMarkerFn: () => { markerArmed = true; },
 		});
 
@@ -734,6 +761,7 @@ describe('dispatchJournal', () => {
 			appendFn: () => ({ ok: true, cycleId: SAMPLE_ENTRY.cycleId, sha: 'abc' }),
 			writeStdout: () => {},
 			recordCycleTokensFn: () => {},
+			cycleMetricsAppendFn: noopCycleMetricsFn,
 			armRecycleMarkerFn: () => { markerArmed = true; },
 		});
 
@@ -766,6 +794,7 @@ describe('dispatchJournal', () => {
 				order.push('archive-check');
 				return { ok: true, archived: 0, entries: 3, sha: '' };
 			},
+			cycleMetricsAppendFn: noopCycleMetricsFn,
 			armRecycleMarkerFn: () => { order.push('arm-marker'); },
 		});
 
@@ -796,6 +825,7 @@ describe('dispatchJournal', () => {
 				handoffExistsFn: () => true,
 				watcherAliveFn: () => true,
 				archiveFn: (): ArchiveJournalOnMainResult => ({ ok: false, reason: 'diverged' }),
+				cycleMetricsAppendFn: noopCycleMetricsFn,
 				armRecycleMarkerFn: () => { markerArmed = true; },
 			});
 
@@ -832,6 +862,7 @@ describe('dispatchJournal', () => {
 				handoffExistsFn: () => true,
 				watcherAliveFn: () => true,
 				archiveFn: (): ArchiveJournalOnMainResult => { throw new Error('boom'); },
+				cycleMetricsAppendFn: noopCycleMetricsFn,
 				armRecycleMarkerFn: () => { markerArmed = true; },
 			});
 
@@ -860,10 +891,155 @@ describe('dispatchJournal', () => {
 				archiveCalled = true;
 				return { ok: true, archived: 0, entries: 0, sha: '' };
 			},
+			cycleMetricsAppendFn: noopCycleMetricsFn,
 		});
 
 		expect(code).toBe(0);
 		expect(archiveCalled).toBe(false);
+	});
+
+	// ---------------------------------------------------------------------------
+	// US-004 (CAM-470): unconditional cycle-metrics row upsert at every append
+	// ---------------------------------------------------------------------------
+
+	test('US-004: cycleMetricsAppendFn is called on a PLAIN append (no --cycle-close) -- the emission is unconditional', async () => {
+		let cycleMetricsCalledWith: string | undefined;
+		const parsed = parseJournalArgs(['append']);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		const code = await dispatchJournal(parsed, {
+			readStdin: async () => JSON.stringify(SAMPLE_ENTRY),
+			appendFn: () => ({ ok: true, cycleId: SAMPLE_ENTRY.cycleId, sha: 'abc' }),
+			writeStdout: () => {},
+			recordCycleTokensFn: () => {},
+			cycleMetricsAppendFn: (cycleId): UpsertCycleMetricsRowOnMainResult => {
+				cycleMetricsCalledWith = cycleId;
+				return { ok: true, committed: false, reason: 'no-established-row', cycleId };
+			},
+		});
+
+		expect(code).toBe(0);
+		expect(cycleMetricsCalledWith).toBe(SAMPLE_ENTRY.cycleId);
+	});
+
+	test('US-004: cycle-metrics upsert runs after CAM_JOURNAL_APPENDED + recordCycleTokens, before armMarker + CAM_ORCH_HANDOFF_DUE (call-order oracle)', async () => {
+		const order: string[] = [];
+		const parsed = parseJournalArgs(['append', '--cycle-close']);
+		expect(parsed).not.toBeNull();
+		if (!parsed || parsed.help) return;
+
+		const code = await dispatchJournal(parsed, {
+			readStdin: async () => JSON.stringify(SAMPLE_ENTRY),
+			appendFn: () => ({ ok: true, cycleId: SAMPLE_ENTRY.cycleId, sha: 'sha1234' }),
+			writeStdout: (line) => {
+				if (line.startsWith('CAM_JOURNAL_APPENDED')) order.push('appended');
+				if (line.startsWith('CAM_ORCH_HANDOFF_DUE')) order.push('handoff-due');
+			},
+			recordCycleTokensFn: () => { order.push('record-tokens'); },
+			handoffExistsFn: () => true,
+			watcherAliveFn: () => true,
+			cycleMetricsAppendFn: (cycleId): UpsertCycleMetricsRowOnMainResult => {
+				order.push('cycle-metrics-upsert');
+				return { ok: true, committed: false, reason: 'no-established-row', cycleId };
+			},
+			archiveFn: (): ArchiveJournalOnMainResult => {
+				order.push('archive-check');
+				return { ok: true, archived: 0, entries: 0, sha: '' };
+			},
+			patternsArchiveFn: (): ArchivePatternsOnMainResult => {
+				order.push('patterns-archive-check');
+				return { ok: true, archived: 0, sha: '' };
+			},
+			armRecycleMarkerFn: () => { order.push('arm-marker'); },
+		});
+
+		expect(code).toBe(0);
+		expect(order).toEqual([
+			'appended',
+			'record-tokens',
+			'cycle-metrics-upsert',
+			'archive-check',
+			'patterns-archive-check',
+			'arm-marker',
+			'handoff-due',
+		]);
+	});
+
+	test('US-004: cycleMetricsAppendFn returns ok:false -- logs a warning, exit code unchanged, marker still armed, handoff still emitted', async () => {
+		const stdoutLines: string[] = [];
+		let markerArmed = false;
+		let sawWarning = false;
+		const originalWrite = process.stdout.write.bind(process.stdout);
+		process.stdout.write = ((chunk: string | Uint8Array): boolean => {
+			if (typeof chunk === 'string' && /cycle-metrics upsert failed/.test(chunk)) sawWarning = true;
+			return true;
+		}) as typeof process.stdout.write;
+
+		try {
+			const parsed = parseJournalArgs(['append', '--cycle-close']);
+			expect(parsed).not.toBeNull();
+			if (!parsed || parsed.help) return;
+
+			const code = await dispatchJournal(parsed, {
+				readStdin: async () => JSON.stringify(SAMPLE_ENTRY),
+				appendFn: () => ({ ok: true, cycleId: SAMPLE_ENTRY.cycleId, sha: 'sha1234' }),
+				writeStdout: (line) => stdoutLines.push(line),
+				recordCycleTokensFn: () => {},
+				handoffExistsFn: () => true,
+				watcherAliveFn: () => true,
+				cycleMetricsAppendFn: (): UpsertCycleMetricsRowOnMainResult => ({ ok: false, reason: 'diverged' }),
+				archiveFn: (): ArchiveJournalOnMainResult => ({ ok: true, archived: 0, entries: 0, sha: '' }),
+				patternsArchiveFn: (): ArchivePatternsOnMainResult => ({ ok: true, archived: 0, sha: '' }),
+				armRecycleMarkerFn: () => { markerArmed = true; },
+			});
+
+			expect(code).toBe(0);
+			expect(markerArmed).toBe(true);
+			expect(stdoutLines).toHaveLength(2);
+			expect(stdoutLines[1]).toBe('CAM_ORCH_HANDOFF_DUE=true\n');
+			expect(sawWarning).toBe(true);
+		} finally {
+			process.stdout.write = originalWrite;
+		}
+	});
+
+	test('US-004: cycleMetricsAppendFn throws -- logs a warning, exit code unchanged, marker still armed, handoff still emitted', async () => {
+		const stdoutLines: string[] = [];
+		let markerArmed = false;
+		let sawWarning = false;
+		const originalWrite = process.stdout.write.bind(process.stdout);
+		process.stdout.write = ((chunk: string | Uint8Array): boolean => {
+			if (typeof chunk === 'string' && /cycle-metrics upsert threw/.test(chunk)) sawWarning = true;
+			return true;
+		}) as typeof process.stdout.write;
+
+		try {
+			const parsed = parseJournalArgs(['append', '--cycle-close']);
+			expect(parsed).not.toBeNull();
+			if (!parsed || parsed.help) return;
+
+			const code = await dispatchJournal(parsed, {
+				readStdin: async () => JSON.stringify(SAMPLE_ENTRY),
+				appendFn: () => ({ ok: true, cycleId: SAMPLE_ENTRY.cycleId, sha: 'sha1234' }),
+				writeStdout: (line) => stdoutLines.push(line),
+				recordCycleTokensFn: () => {},
+				handoffExistsFn: () => true,
+				watcherAliveFn: () => true,
+				cycleMetricsAppendFn: (): UpsertCycleMetricsRowOnMainResult => { throw new Error('boom'); },
+				archiveFn: (): ArchiveJournalOnMainResult => ({ ok: true, archived: 0, entries: 0, sha: '' }),
+				patternsArchiveFn: (): ArchivePatternsOnMainResult => ({ ok: true, archived: 0, sha: '' }),
+				armRecycleMarkerFn: () => { markerArmed = true; },
+			});
+
+			expect(code).toBe(0);
+			expect(markerArmed).toBe(true);
+			expect(stdoutLines).toHaveLength(2);
+			expect(stdoutLines[1]).toBe('CAM_ORCH_HANDOFF_DUE=true\n');
+			expect(sawWarning).toBe(true);
+		} finally {
+			process.stdout.write = originalWrite;
+		}
 	});
 });
 

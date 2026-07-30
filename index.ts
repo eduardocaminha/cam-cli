@@ -45,6 +45,10 @@ import {
 	type ArchivePatternsOnMainResult,
 } from './src/commands/patterns-archive.ts';
 import {
+	upsertCycleMetricsRowOnMain,
+	type UpsertCycleMetricsRowOnMainResult,
+} from './src/commands/cycle-metrics.ts';
+import {
 	prunePatternRecordsOnMain,
 	type PrunePatternRecordsOnMainResult,
 } from './src/commands/patterns-prune.ts';
@@ -80,7 +84,7 @@ import { runRun, parseRunArgs } from './src/commands/run.ts';
 import { runStatus } from './src/commands/status.ts';
 import { runOrchBudget } from './src/commands/orch-budget.ts';
 import { runOrchResolve } from './src/commands/orch-resolve.ts';
-import { runStatsTokens } from './src/commands/stats.ts';
+import { runStatsTokens, runStatsCycles } from './src/commands/stats.ts';
 import { runStop } from './src/commands/stop.ts';
 import { runDrain, parseDrainArgs } from './src/commands/drain.ts';
 import { runPause, parsePauseArgs } from './src/commands/pause.ts';
@@ -133,7 +137,7 @@ const HELP = renderHelp({
 				{ name: 'claude [args...]', description: 'Run claude in print mode with auto-retry on rate limits' },
 				{ name: 'dashboard', description: 'Standalone read-only TUI (alt-screen) for monitoring a loop' },
 				{ name: 'status', description: 'Show current loop state at a glance (idle / active / paused)' },
-				{ name: 'stats tokens', description: 'Print per-issue token spend (orch/worker/total) plus mean/median from the event log' },
+				{ name: 'stats tokens|cycles', description: 'Print per-issue token spend (orch/worker/total) or per-cycle worker/review-round counts from the event log' },
 				{ name: 'stop', description: 'Cancel a running loop (clears state file + kills the per-project tmux session)' },
 				{ name: 'pause', description: 'Set the operator pause brake marker (.claude/.cam-pause), separate from loop state' },
 				{ name: 'drain [--stop|--clear]', description: 'Set or clear the inter-cycle drain kill-switch without killing the sidecar' },
@@ -485,6 +489,12 @@ const JOURNAL_HELP = renderHelp({
 				'  exit 4  --cycle-close requested but no live recycle watcher was found\n' +
 				'          (.claude/.cam-watcher.pid absent or the process is dead); use\n' +
 				'          /exit manually or start `cam run` to restart the watcher.\n' +
+				'\n' +
+				'Cycle-metrics row (always on, every append): after recording the\n' +
+				'per-cycle token accounting, every `cam journal append` -- not only\n' +
+				'--cycle-close -- also upserts one row into scripts/cam/cycle-metrics.jsonl\n' +
+				'on main, best-effort (a failure or throw only logs a warning; it never\n' +
+				'changes the exit code, the recycle marker, or CAM_ORCH_HANDOFF_DUE).\n' +
 				'\n' +
 				'`cam journal archive [--threshold N]`:\n' +
 				'  Does not read stdin. Moves the oldest floor(entries/3) post-marker\n' +
@@ -1073,8 +1083,8 @@ const ORCH_RESOLVE_HELP = renderHelp({
 
 const STATS_HELP = renderHelp({
 	title: 'cam stats',
-	tagline: 'Per-issue token spend from the event log',
-	usage: 'cam stats tokens',
+	tagline: 'Per-issue token spend or per-cycle round counts from the event log',
+	usage: 'cam stats tokens|cycles',
 	sections: [
 		{
 			heading: 'Subcommands',
@@ -1082,6 +1092,11 @@ const STATS_HELP = renderHelp({
 				{
 					name: 'tokens',
 					description: 'Print per-issue orch/worker/total token spend plus global mean/median',
+				},
+				{
+					name: 'cycles [--rebuild]',
+					description:
+						"Print per-cycle worker/review-round counts and token totals; --rebuild regenerates scripts/cam/cycle-metrics.jsonl",
 				},
 			],
 		},
@@ -1095,6 +1110,12 @@ const STATS_HELP = renderHelp({
 				'The orch component of a cycle-tokens total excludes output tokens (input +\n' +
 				'cacheCreation + cacheRead only); the worker component includes all four\n' +
 				'fields. Totals are used as recorded, not recomputed from transcripts.\n' +
+				"`stats cycles` bounds each row to the slice between two consecutive\n" +
+				"'cycle-tokens' markers (ADR-0053, aggregateCycleMetrics in\n" +
+				'src/stats/cycles.ts): the span before the FIRST marker has no established\n' +
+				'left bound and is disclosed as an unattributed leading span instead of\n' +
+				'being folded into a row. `--rebuild` regenerates the whole committed\n' +
+				'artifact from the log; without it, `stats cycles` is read-only.\n' +
 				'Always exits 0, including on a missing or empty event log (no data is not\n' +
 				'an error).',
 		},
@@ -1829,6 +1850,19 @@ export interface JournalDispatchDeps {
 	 * with process.cwd() and a real spawnSync (mirrors defaultArchiveFn).
 	 */
 	patternsArchiveFn?: () => ArchivePatternsOnMainResult;
+	/**
+	 * Injectable upsertCycleMetricsRowOnMain (US-004, CAM-470). Auto-invoked,
+	 * best-effort, UNCONDITIONALLY on every successful append (not gated on
+	 * --cycle-close, unlike archiveFn/patternsArchiveFn) -- mirrors
+	 * recordCycleTokens itself being unconditional, so no cycle-tokens marker
+	 * can exist without a matching cycle-metrics row. Called strictly after
+	 * recordCycleTokensFn and strictly before the --cycle-close branch's
+	 * armRecycleMarkerFn (once the marker is armed the watcher can SIGTERM this
+	 * process mid-write). Default: calls the real upsertCycleMetricsRowOnMain
+	 * with process.cwd(), the current .claude/cam-worker-events.jsonl content,
+	 * and a real spawnSync (mirrors defaultArchiveFn / defaultPatternsArchiveFn).
+	 */
+	cycleMetricsAppendFn?: (cycleId: string) => UpsertCycleMetricsRowOnMainResult;
 	/** Injectable stdout writer. Default: `process.stdout.write`. */
 	writeStdout?: (line: string) => void;
 	/**
@@ -1877,6 +1911,30 @@ function defaultArchiveFn(threshold: number): ArchiveJournalOnMainResult {
 		spawnFn: (cmd, args, opts) =>
 			spawnSync(cmd, args, { ...opts, stdio: 'pipe' }) as SpawnSyncReturns<string>,
 		threshold,
+	});
+}
+
+/**
+ * Default cycleMetricsAppendFn: the real upsertCycleMetricsRowOnMain with
+ * process.cwd(), the current .claude/cam-worker-events.jsonl content, and a
+ * real spawnSync. Mirrors defaultArchiveFn / defaultPatternsArchiveFn: the
+ * unconditional cycle-metrics call in dispatchJournal falls back to this when
+ * a test/caller does not inject `deps.cycleMetricsAppendFn`.
+ */
+function defaultCycleMetricsAppendFn(cycleId: string): UpsertCycleMetricsRowOnMainResult {
+	const cwd = process.cwd();
+	let eventLogJsonl: string | null;
+	try {
+		eventLogJsonl = readFileSync(join(cwd, '.claude', 'cam-worker-events.jsonl'), 'utf8');
+	} catch {
+		eventLogJsonl = null;
+	}
+	return upsertCycleMetricsRowOnMain({
+		cwd,
+		eventLogJsonl,
+		cycleId,
+		spawnFn: (cmd, args, opts) =>
+			spawnSync(cmd, args, { ...opts, stdio: 'pipe' }) as SpawnSyncReturns<string>,
 	});
 }
 
@@ -1956,6 +2014,28 @@ export async function dispatchJournal(
 			});
 		});
 	recordFn();
+
+	// US-004 (CAM-470): unconditionally upsert the cycle-metrics row for this
+	// closed cycle. UNLIKE the archive checks below (--cycle-close only), this
+	// runs on EVERY `cam journal append` -- recordCycleTokens itself is
+	// unconditional, so no cycle-tokens marker may ever exist without a
+	// matching cycle-metrics row. Ordering is load-bearing: strictly AFTER the
+	// recordCycleTokens call above, strictly BEFORE armRecycleMarkerFn is
+	// reached (below, --cycle-close only), since once the marker is armed the
+	// watcher can SIGTERM this process mid-write. Best-effort: a throw or
+	// ok:false logs a warning only -- it must never change dispatchJournal's
+	// exit code or block the recycle marker / handoff signal.
+	const cycleMetricsAppendFn = deps?.cycleMetricsAppendFn ?? defaultCycleMetricsAppendFn;
+	try {
+		const cycleMetricsResult = cycleMetricsAppendFn(journalEntry.cycleId);
+		if (!cycleMetricsResult.ok) {
+			printWarning(
+				`cam journal append: cycle-metrics upsert failed (${cycleMetricsResult.reason}); continuing`,
+			);
+		}
+	} catch (err) {
+		printWarning(`cam journal append: cycle-metrics upsert threw; continuing: ${String(err)}`);
+	}
 
 	// --cycle-close: arm the recycle marker only when the handoff is already present.
 	// Ordering is load-bearing: marker must not be written before the handoff exists,
@@ -2171,45 +2251,58 @@ export function dispatchPatterns(
 /**
  * Discriminated union returned by parseStatsArgs.
  * - mode === 'tokens': dispatch the stats tokens subcommand.
+ * - mode === 'cycles': dispatch the stats cycles subcommand; `rebuild` is
+ *   true only when `--rebuild` was passed (regenerate the committed
+ *   artifact) -- otherwise `stats cycles` is read-only (CAM-470 US-002).
  * - help === true: caller should print STATS_HELP and exit 0. This is the
  *   default for both `--help`/`-h` AND no subcommand at all (mirrors
- *   parsePatternsArgs: `stats` currently has a single subcommand, so a bare
- *   `cam stats` showing usage is more useful than an error).
+ *   parsePatternsArgs: a bare `cam stats` showing usage is more useful than
+ *   an error).
  */
 export type ParsedStatsArgs =
 	| { mode: 'tokens'; help: false }
+	| { mode: 'cycles'; help: false; rebuild: boolean }
 	| { mode?: never; help: true };
 
-const STATS_USAGE = 'Usage: cam stats tokens';
+const STATS_USAGE = 'Usage: cam stats tokens|cycles';
 
 export function parseStatsArgs(args: string[]): ParsedStatsArgs | null {
 	if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
 		return { help: true };
 	}
 	const subCommand = args[0];
-	if (subCommand !== 'tokens') {
-		printFatalHint(STATS_USAGE);
-		return null;
+	if (subCommand === 'tokens') return { mode: 'tokens', help: false };
+	if (subCommand === 'cycles') {
+		return { mode: 'cycles', help: false, rebuild: args.slice(1).includes('--rebuild') };
 	}
-	return { mode: 'tokens', help: false };
+	printFatalHint(STATS_USAGE);
+	return null;
 }
 
-/** Injectable deps for dispatchStats -- all optional; production uses the real runStatsTokens. */
+/** Injectable deps for dispatchStats -- all optional; production uses the real runStatsTokens/runStatsCycles. */
 export interface StatsDispatchDeps {
 	/** Injectable runStatsTokens. Default: real impl with process.cwd(). */
 	statsTokensFn?: () => number;
+	/** Injectable runStatsCycles. Default: real impl with process.cwd(). */
+	statsCyclesFn?: (rebuild: boolean) => number;
 }
 
 /**
- * Route a parsed `cam stats` call. Exported so unit tests can inject a fake
- * statsTokensFn to verify wiring without touching the real event log or
- * stdout (the report content itself is tested against runStatsTokens
- * directly in test/commands/stats.test.ts).
+ * Route a parsed `cam stats` call. Exported so unit tests can inject fake
+ * statsTokensFn/statsCyclesFn deps to verify wiring without touching the
+ * real event log or stdout (the report content itself is tested against
+ * runStatsTokens/runStatsCycles directly in test/commands/stats.test.ts and
+ * test/commands/stats-cycles.test.ts).
  */
 export function dispatchStats(parsed: ParsedStatsArgs, deps?: StatsDispatchDeps): number {
 	if (parsed.help) {
 		process.stdout.write(STATS_HELP);
 		return 0;
+	}
+	if (parsed.mode === 'cycles') {
+		const statsCyclesFn =
+			deps?.statsCyclesFn ?? ((rebuild: boolean) => runStatsCycles({ cwd: process.cwd(), rebuild }));
+		return statsCyclesFn(parsed.rebuild);
 	}
 	const statsTokensFn = deps?.statsTokensFn ?? (() => runStatsTokens({ cwd: process.cwd() }));
 	return statsTokensFn();
