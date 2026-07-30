@@ -6,6 +6,19 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.275.0] - 2026-07-30
+
+### Added
+
+- US-R2-002 - No test drives the real probe at the cadence the production loops call it
+- US-R2-001 - Anchor makeEarlyDeathProbe's stored sample so the frozen window accumulates across poll ticks
+- US-R1-001 - Restore confirmation re-read before pollPlannerDeath returns pane-died
+- US-005 - End the planner and auditor waits at the floor and propagate the transcript cause
+- US-004 - Make the plan-phase failure records honest: reason-bearing planner terminal, distinguishable auditor results, uncorrupted phase field
+- US-003 - End the implementer and reviewer waits at the floor with a cause-bearing terminal
+- US-002 - Add the pure early-death detector over a session transcript
+- US-001 - Carry the real cause and a shared session-died-early reason on the dispatch failure record
+
 ## [0.274.0] - 2026-07-30
 
 ### Added
