@@ -21,7 +21,7 @@
 
 import { existsSync, mkdtempSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { tmpdir, homedir } from 'node:os';
 import process from 'node:process';
 import { randomUUID } from 'node:crypto';
 
@@ -53,6 +53,7 @@ import { renderStateFile, writeStateFile } from './next.ts';
 import { TERMINAL_VERDICTS, type PrdSnapshot } from '../supervisor/decide.ts';
 import { hasSession, projectSessionName, getOrchPaneId, paneCountMutex, readWorkerPaneMarker, openPaneInSession, writeWorkerPaneMarker, type SpawnFn } from '../tmux/session.ts';
 import { runPlanPhaseWithReplan, runPostAuditAction, deriveBranchName, type PlanPhaseResult, type PostAuditActionResult, type PlanEscalationWriterParams } from '../supervisor/plan-runner.ts';
+import { makeEarlyDeathProbe, type EarlyDeathVerdict } from '../supervisor/early-death.ts';
 import { maybeEmitPlanSplitAdvisory } from '../supervisor/plan-split-advisory.ts';
 import { writePlanEscalatedMarker, removePlanEscalatedMarker, PLAN_ESCALATED_FILENAME, type PlanEscalatedMarker } from '../supervisor/plan-escalation.ts';
 import { writePlanPreflightFailedMarker, removePlanPreflightFailedMarker, PLAN_PREFLIGHT_FAILED_FILENAME, type PlanPreflightFailedMarker, type PlanPreflightFailedWriterParams } from '../supervisor/plan-preflight-marker.ts';
@@ -2727,6 +2728,8 @@ interface PlanWorkerRunDeps {
 	isPaneAlive: IsPaneAlive;
 	ensureWorkerPane: () => string;
 	containerOpts: PlanContainerOpts;
+	/** Real early-death transcript probe (US-005, CAM-479 AC4). See RunPlanPhaseOptions.earlyDeathProbeFn. */
+	earlyDeathProbeFn: (uuid: string) => EarlyDeathVerdict;
 }
 
 /**
@@ -2742,6 +2745,7 @@ function runProductionPlanPhaseWithReplan(deps: PlanWorkerRunDeps): PlanPhaseRes
 	const {
 		cwd, claudeDir, sessionName, realSpawnFn, logEvent, loopSpawnFn,
 		preflightSpawnFn, plannerPaneId, planIssue, isPaneAlive, ensureWorkerPane, containerOpts,
+		earlyDeathProbeFn,
 	} = deps;
 	return runPlanPhaseWithReplan({
 		spawnFn: loopSpawnFn,
@@ -2794,6 +2798,9 @@ function runProductionPlanPhaseWithReplan(deps: PlanWorkerRunDeps): PlanPhaseRes
 		// field doc on RunPlanPhaseOptions.detectInProgressConflictFn).
 		detectInProgressConflictFn: makeDetectInProgressConflictFn(cwd, loopSpawnFn),
 		writeInProgressConflictGateFn: makeWriteInProgressConflictGateFn(cwd, claudeDir, sessionName, realSpawnFn, logEvent),
+		// US-005 (CAM-479 AC4): real detector probe so the planner/auditor poll
+		// loops are never inert behind an undefined seam in production.
+		earlyDeathProbeFn,
 	});
 }
 
@@ -2840,6 +2847,14 @@ function makeProductionPlanPhaseFn(
 ): () => void {
 	// Build the plan_issue reader once (US-001, CAM-154); called fresh each invocation.
 	const readPlanIssueFn = makeReadPlanIssue(claudeDir);
+	// US-005 (CAM-479 AC4): resolve the Claude config root the SAME way
+	// host.ts does (CLAUDE_CONFIG_DIR, falling back to ~/.claude) so the plan
+	// phase's transcript probe can never silently diverge from the
+	// implementer/reviewer probes' resolution. Built once, shared across every
+	// plan-phase dispatch for the life of this sidecar process (mirrors
+	// host.ts's single shared earlyDeathProbeFn instance).
+	const transcriptClaudeDir = process.env['CLAUDE_CONFIG_DIR'] ?? join(homedir(), '.claude');
+	const earlyDeathProbeFn = makeEarlyDeathProbe({ cwd, claudeDir: transcriptClaudeDir });
 	return (): void => {
 		// US-005 (CAM-155): outermost safety net -- any exception from runPlanPhase or
 		// runPostAuditAction is caught here, logged, and the phase is forced back to
@@ -2876,6 +2891,7 @@ function makeProductionPlanPhaseFn(
 		const planResult = runProductionPlanPhaseWithReplan({
 			cwd, claudeDir, sessionName, realSpawnFn, logEvent, loopSpawnFn,
 			preflightSpawnFn, plannerPaneId, planIssue, isPaneAlive, ensureWorkerPane, containerOpts,
+			earlyDeathProbeFn,
 		});
 
 		// Post-audit phase: read branchName, build escalateFn, run post-audit

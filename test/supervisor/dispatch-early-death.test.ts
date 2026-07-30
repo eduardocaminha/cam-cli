@@ -44,6 +44,13 @@ import {
 } from '../../src/supervisor/early-death.ts';
 import type { EarlyDeathVerdict } from '../../src/supervisor/early-death.ts';
 import { withVerifiedPanePid } from '../helpers/verified-pane-pid-spawn.ts';
+import {
+	runPlanPhase,
+	DEFAULT_PLAN_TIMEOUT_MS,
+	DEFAULT_PLAN_POLL_INTERVAL_MS,
+	type RunPlanPhaseOptions,
+} from '../../src/supervisor/plan-runner.ts';
+import type { IssueEntry } from '../../src/issues/types.ts';
 
 const FIXTURES_DIR = join(import.meta.dir, '..', 'fixtures', 'early-death');
 const DEAD_JSONL = readFileSync(join(FIXTURES_DIR, 'dead-on-first-turn.jsonl'), 'utf8');
@@ -483,5 +490,162 @@ describe('US-003 (CAM-479): reviewer poll loop consults the early-death probe', 
 		expect(pollTicks).toHaveLength(1);
 		const totalElapsedMs = sleeps.reduce((sum, ms) => sum + ms, 0);
 		expect(totalElapsedMs).toBeLessThan(DEFAULT_REVIEW_TIMEOUT_MS * 0.1);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-005 (CAM-479): the planner and auditor poll loops (plan-runner.ts) also
+// consult the early-death probe, so all four dispatch poll loops share the
+// same detector.
+// ---------------------------------------------------------------------------
+
+const MOCK_PLAN_ISSUE: IssueEntry = {
+	id: 'CAM-479',
+	title: 'Test issue',
+	stage: 'specified',
+	status: 'open',
+	blockedBy: [],
+	createdAt: '2026-07-01T00:00:00Z',
+	updatedAt: '2026-07-01T00:00:00Z',
+};
+
+const GENERIC_PLAN_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-dispatch-early-death-plan-config-'));
+const GENERIC_PLAN_CONFIG_PATH = join(GENERIC_PLAN_CONFIG_DIR, 'project.toml');
+writeFileSync(GENERIC_PLAN_CONFIG_PATH, '[backend]\nplanner = "claude"\nauditor = "claude"\n');
+
+/** Minimal spawnFn: respawn-pane/display-message/etc succeed by default. */
+function makePlanSpawn(): SpawnFn {
+	return (_cmd, _args) => ({ stdout: '', exitCode: 0 });
+}
+
+function makePlanOpts(overrides: Partial<RunPlanPhaseOptions> = {}): RunPlanPhaseOptions {
+	return {
+		spawnFn: withVerifiedPanePid(makePlanSpawn()),
+		isPaneAlive: () => true,
+		sleepFn: () => {},
+		genUuid: () => 'test-uuid-dispatch-early-death',
+		selectIssueFn: () => MOCK_PLAN_ISSUE,
+		readPlanVerdictFn: () => null,
+		preflightFn: () => ({ ok: true }),
+		clock: (() => {
+			let t = 0;
+			return () => (t += 100);
+		})(),
+		plannerPaneId: '%3',
+		paneCountMutexFn: () => 'available',
+		pollIntervalMs: DEFAULT_PLAN_POLL_INTERVAL_MS,
+		plannerTimeoutMs: DEFAULT_PLAN_TIMEOUT_MS,
+		auditorTimeoutMs: DEFAULT_PLAN_TIMEOUT_MS,
+		configPath: GENERIC_PLAN_CONFIG_PATH,
+		...overrides,
+	};
+}
+
+describe('US-005 (CAM-479): planner poll loop consults the early-death probe', () => {
+	test('the planner poll loop ends an early-death wait far below its timeout cap', () => {
+		const sleeps: number[] = [];
+		const opts = makePlanOpts({
+			sleepFn: (ms) => sleeps.push(ms),
+			readPlannerReportFn: () => null, // never completes normally
+			earlyDeathProbeFn: alwaysDeadOnFirstTurn,
+		});
+
+		const result = runPlanPhase(opts);
+
+		expect(result.kind).toBe('planner-failed');
+		const pollTicks = sleeps.filter((ms) => ms === DEFAULT_PLAN_POLL_INTERVAL_MS);
+		expect(pollTicks).toHaveLength(1);
+		const totalElapsedMs = sleeps.reduce((sum, ms) => sum + ms, 0);
+		expect(totalElapsedMs).toBeLessThan(DEFAULT_PLAN_TIMEOUT_MS * 0.1);
+	});
+});
+
+describe('US-005 (CAM-479): auditor poll loop consults the early-death probe', () => {
+	test('the auditor poll loop ends an early-death wait far below its timeout cap', () => {
+		const sleeps: number[] = [];
+		const opts = makePlanOpts({
+			sleepFn: (ms) => sleeps.push(ms),
+			readPlannerReportFn: () => ({ written: true }), // planner completes immediately
+			readPlanVerdictFn: () => null, // auditor never writes a verdict
+			earlyDeathProbeFn: alwaysDeadOnFirstTurn,
+		});
+
+		const result = runPlanPhase(opts);
+
+		expect(result.kind).toBe('auditor-timeout');
+		const pollTicks = sleeps.filter((ms) => ms === DEFAULT_PLAN_POLL_INTERVAL_MS);
+		// One tick to resolve the planner's completion signal, one more for the
+		// auditor's own early-death check.
+		expect(pollTicks).toHaveLength(2);
+		const totalElapsedMs = sleeps.reduce((sum, ms) => sum + ms, 0);
+		expect(totalElapsedMs).toBeLessThan(DEFAULT_PLAN_TIMEOUT_MS * 0.1);
+	});
+});
+
+describe('US-005 (CAM-479): every dispatch poll loop consults the early-death probe', () => {
+	test('every dispatch poll loop ends an early-death wait far below its timeout cap', async () => {
+		// Implementer (loop.ts runSupervisor).
+		const implementerSleeps: number[] = [];
+		const implementerOpts = makeSupervisorOpts({
+			pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
+			maxIterations: 1,
+			randomFn: () => 0.5,
+			sleepFn: (ms) => implementerSleeps.push(ms),
+			earlyDeathProbeFn: alwaysDeadOnFirstTurn,
+		});
+
+		// Reviewer (review.ts makeReviewDispatch).
+		const reviewerSleeps: number[] = [];
+		const reviewerSpawn: SpawnFn = (_cmd, _args) => ({ stdout: '', exitCode: 0 });
+		const reviewerOpts: MakeReviewDispatchOptions = {
+			spawn: withVerifiedPanePid(reviewerSpawn),
+			capturePane: (_paneId) => FROZEN_PANE,
+			readPrd: () => ({ userStories: [], review: { roundsCompleted: 0, maxRounds: 3 } }),
+			writePrd: (_prd) => {},
+			workerPaneId: '%7',
+			isPaneAlive: () => true,
+			sleepFn: (ms) => reviewerSleeps.push(ms),
+			permissionMode: 'bypassPermissions',
+			pollIntervalMs: DEFAULT_REVIEW_POLL_INTERVAL_MS,
+			timeoutMs: DEFAULT_REVIEW_TIMEOUT_MS,
+			configPath: GENERIC_CONFIG_PATH,
+			earlyDeathProbeFn: alwaysDeadOnFirstTurn,
+		};
+
+		// Planner (plan-runner.ts runPlanPhase).
+		const plannerSleeps: number[] = [];
+		const plannerOpts = makePlanOpts({
+			sleepFn: (ms) => plannerSleeps.push(ms),
+			readPlannerReportFn: () => null,
+			earlyDeathProbeFn: alwaysDeadOnFirstTurn,
+		});
+
+		// Auditor (plan-runner.ts runPlanPhase, planner completes instantly).
+		const auditorSleeps: number[] = [];
+		const auditorOpts = makePlanOpts({
+			sleepFn: (ms) => auditorSleeps.push(ms),
+			readPlannerReportFn: () => ({ written: true }),
+			readPlanVerdictFn: () => null,
+			earlyDeathProbeFn: alwaysDeadOnFirstTurn,
+		});
+
+		await runSupervisor(implementerOpts);
+		const implementerElapsedMs = implementerSleeps.reduce((sum, ms) => sum + ms, 0);
+		expect(implementerElapsedMs).toBeLessThan(DEFAULT_PER_WORKER_TIMEOUT_MS * 0.1);
+
+		const reviewerResult = makeReviewDispatch(reviewerOpts)('22222222-3333-4444-5555-666666666666');
+		expect(reviewerResult.status).toBe('error');
+		const reviewerElapsedMs = reviewerSleeps.reduce((sum, ms) => sum + ms, 0);
+		expect(reviewerElapsedMs).toBeLessThan(DEFAULT_REVIEW_TIMEOUT_MS * 0.1);
+
+		const plannerResult = runPlanPhase(plannerOpts);
+		expect(plannerResult.kind).toBe('planner-failed');
+		const plannerElapsedMs = plannerSleeps.reduce((sum, ms) => sum + ms, 0);
+		expect(plannerElapsedMs).toBeLessThan(DEFAULT_PLAN_TIMEOUT_MS * 0.1);
+
+		const auditorResult = runPlanPhase(auditorOpts);
+		expect(auditorResult.kind).toBe('auditor-timeout');
+		const auditorElapsedMs = auditorSleeps.reduce((sum, ms) => sum + ms, 0);
+		expect(auditorElapsedMs).toBeLessThan(DEFAULT_PLAN_TIMEOUT_MS * 0.1);
 	});
 });

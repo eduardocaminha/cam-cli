@@ -1,6 +1,6 @@
 // test/supervisor/plan-runner-early-death.test.ts
 //
-// Unit tests for the plan phase's three record-integrity defects (US-004,
+// Unit tests for the plan phase's record-integrity defects (US-004/US-005,
 // CAM-479):
 //
 //   AC1: planner pane death before prd.json exists yields a reason-bearing
@@ -14,9 +14,16 @@
 //        reason field on both the dispatch-failed event and the durable
 //        marker, and the inner sentinel dispatch no longer stamps a reason
 //        string into its own phase field.
+//
+// US-005 additions (CAM-479):
+//   - An early-death planner terminal emits reason session-died-early with
+//     the transcript cause text on all three observable channels
+//     (dispatch-failed event, durable marker, orchestrator notification).
+//   - An early-death auditor terminal does the same and remains
+//     distinguishable from an auditor cap-elapsed terminal.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runPlanPhase, type RunPlanPhaseOptions } from '../../src/supervisor/plan-runner.ts';
@@ -24,7 +31,22 @@ import type { SpawnFn } from '../../src/supervisor/loop.ts';
 import type { IssueEntry } from '../../src/issues/types.ts';
 import type { WorkerEvent } from '../../src/supervisor/events.ts';
 import type { DispatchFailedMarker } from '../../src/supervisor/dispatch-failed-marker.ts';
+import { extractLastAssistantEntry, type EarlyDeathVerdict } from '../../src/supervisor/early-death.ts';
 import { withVerifiedPanePid } from '../helpers/verified-pane-pid-spawn.ts';
+
+// Real dead-on-first-turn fixture (US-002, CAM-479), the SAME one
+// dispatch-early-death.test.ts drives against, so this suite's early-death
+// cause text is never a synthesized string.
+const DEAD_JSONL = readFileSync(
+	join(import.meta.dir, '..', 'fixtures', 'early-death', 'dead-on-first-turn.jsonl'),
+	'utf8',
+);
+const DEAD_ON_FIRST_TURN_CAUSE = extractLastAssistantEntry(DEAD_JSONL)?.text ?? '';
+
+/** An earlyDeathProbeFn fake that reports dead-on-first-turn on every call. */
+function alwaysDeadOnFirstTurn(_uuid: string): EarlyDeathVerdict {
+	return { verdict: 'dead-on-first-turn', cause: DEAD_ON_FIRST_TURN_CAUSE };
+}
 
 // ---------------------------------------------------------------------------
 // Generic backend fixture (isolates this suite's planner/auditor backend
@@ -255,5 +277,119 @@ describe('AC4: plan timeout terminal phase/reason integrity', () => {
 		const outerMarker = markers.at(-1);
 		expect(outerMarker?.phase).toBe('planner');
 		expect(outerMarker?.reason).toBe('planner-timeout');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// US-005 (CAM-479): planner/auditor poll loops consult the early-death probe
+// ---------------------------------------------------------------------------
+
+describe('US-005 (CAM-479): early-death terminals carry session-died-early + cause', () => {
+	test('an early-death planner terminal carries session-died-early and the transcript cause in event, marker, and notification', () => {
+		const events: WorkerEvent[] = [];
+		const markers: DispatchFailedMarker[] = [];
+		const notifications: string[] = [];
+		const { fn } = makeSpawn();
+		const opts = baseOpts({
+			spawnFn: withVerifiedPanePid(fn),
+			isPaneAlive: () => true, // the pane never dies; only the transcript probe can end this poll
+			readPlannerReportFn: () => null,
+			readPlanVerdictFn: () => null, // must never be reached
+			earlyDeathProbeFn: alwaysDeadOnFirstTurn,
+			logEvent: (event) => events.push(event),
+			writeDispatchFailedMarkerFn: (marker) => markers.push(marker),
+			notifyFn: (message) => notifications.push(message),
+		});
+
+		const result = runPlanPhase(opts) as { kind: string; reason?: string };
+
+		expect(result.kind).toBe('planner-failed');
+		expect(result.reason).toContain('session-died-early');
+		expect(result.reason).toContain(DEAD_ON_FIRST_TURN_CAUSE);
+
+		const dispatchFailedEvent = events.find(
+			(event) =>
+				event.kind === 'dispatch-failed' &&
+				(event.detail as { reason?: string }).reason === 'session-died-early',
+		);
+		expect(dispatchFailedEvent).toBeDefined();
+		expect((dispatchFailedEvent?.detail as { cause?: string }).cause).toBe(DEAD_ON_FIRST_TURN_CAUSE);
+		expect((dispatchFailedEvent?.detail as { phase?: string }).phase).toBe('planner');
+
+		const marker = markers.find((m) => m.reason === 'session-died-early');
+		expect(marker).toBeDefined();
+		expect(marker?.cause).toBe(DEAD_ON_FIRST_TURN_CAUSE);
+		expect(marker?.phase).toBe('planner');
+
+		const notification = notifications.find((n) => n.includes('session-died-early'));
+		expect(notification).toBeDefined();
+		expect(notification).toContain(DEAD_ON_FIRST_TURN_CAUSE);
+	});
+
+	test('an early-death auditor terminal carries session-died-early and stays distinct from cap elapsed', () => {
+		// Scenario A: the auditor session dies on its first turn (transcript
+		// probe fires) well before auditorTimeoutMs would ever elapse.
+		const eventsA: WorkerEvent[] = [];
+		const markersA: DispatchFailedMarker[] = [];
+		const notificationsA: string[] = [];
+		const { fn: fnA } = makeSpawn();
+		const optsA = baseOpts({
+			spawnFn: withVerifiedPanePid(fnA),
+			isPaneAlive: () => true,
+			readPlannerReportFn: () => ({ written: true }),
+			readPlanVerdictFn: () => null,
+			auditorTimeoutMs: 999_999, // cap never reached
+			earlyDeathProbeFn: alwaysDeadOnFirstTurn,
+			logEvent: (event) => eventsA.push(event),
+			writeDispatchFailedMarkerFn: (marker) => markersA.push(marker),
+			notifyFn: (message) => notificationsA.push(message),
+		});
+
+		const resultA = runPlanPhase(optsA);
+		expect(resultA.kind).toBe('auditor-timeout');
+
+		const dispatchFailedEventA = eventsA.find(
+			(event) =>
+				event.kind === 'dispatch-failed' &&
+				(event.detail as { reason?: string }).reason === 'session-died-early',
+		);
+		expect(dispatchFailedEventA).toBeDefined();
+		expect((dispatchFailedEventA?.detail as { cause?: string }).cause).toBe(DEAD_ON_FIRST_TURN_CAUSE);
+		expect((dispatchFailedEventA?.detail as { phase?: string }).phase).toBe('auditor');
+
+		const markerA = markersA.find((m) => m.reason === 'session-died-early');
+		expect(markerA).toBeDefined();
+		expect(markerA?.cause).toBe(DEAD_ON_FIRST_TURN_CAUSE);
+		expect(markerA?.phase).toBe('auditor');
+
+		const notificationA = notificationsA.find((n) => n.includes('session-died-early'));
+		expect(notificationA).toBeDefined();
+		expect(notificationA).toContain(DEAD_ON_FIRST_TURN_CAUSE);
+
+		// Scenario B: the auditor pane stays alive with no early-death verdict;
+		// the cap elapses instead. Must remain distinguishable from scenario A
+		// on the durable marker (no `cause`, a different `reason`).
+		const markersB: DispatchFailedMarker[] = [];
+		const { fn: fnB } = makeSpawn();
+		const optsB = baseOpts({
+			spawnFn: withVerifiedPanePid(fnB),
+			isPaneAlive: () => true,
+			readPlannerReportFn: () => ({ written: true }),
+			readPlanVerdictFn: () => null,
+			auditorTimeoutMs: 1,
+			clock: (() => {
+				let t = 0;
+				return () => (t += 1_000);
+			})(),
+			writeDispatchFailedMarkerFn: (marker) => markersB.push(marker),
+		});
+
+		const resultB = runPlanPhase(optsB);
+		expect(resultB.kind).toBe('auditor-timeout');
+		const markerB = markersB.find((m) => m.phase === 'auditor');
+		expect(markerB?.reason).toBe('auditor-timeout');
+		expect(markerB?.cause).toBeUndefined();
+
+		expect(markerA?.reason).not.toBe(markerB?.reason);
 	});
 });
