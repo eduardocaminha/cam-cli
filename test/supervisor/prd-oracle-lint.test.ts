@@ -15,6 +15,8 @@
 //   rotating-artifact-target rule: passing cases (US-002, CAM-381)
 //   zero-match-vacuous rule: flagged forms (US-003, CAM-381)
 //   zero-match-vacuous rule: passing cases (US-003, CAM-381)
+//   self-contaminating-search rule: flagged forms (US-003, CAM-474)
+//   self-contaminating-search rule: passing cases (US-003, CAM-474)
 //   lintPrd: walks stories, carries storyId/command/ruleName/reason
 //   lintPrd: criterion with no [oracle:] suffix yields no finding
 //   lintPrd: reviewer-judgment / tmux-pty / no-oracle directives are skipped
@@ -61,6 +63,7 @@ const GREP_RULE_NAME = 'grep-q-plus-list-files';
 const FROZEN_COMPARAND_RULE_NAME = 'frozen-comparand';
 const ROTATING_ARTIFACT_RULE_NAME = 'rotating-artifact-target';
 const ZERO_MATCH_VACUOUS_RULE_NAME = 'zero-match-vacuous';
+const SELF_CONTAMINATING_SEARCH_RULE_NAME = 'self-contaminating-search';
 
 function findGrepRule() {
 	const rule = RULES.find((r) => r.name === GREP_RULE_NAME);
@@ -86,18 +89,25 @@ function findZeroMatchVacuousRule() {
 	return rule;
 }
 
+function findSelfContaminatingSearchRule() {
+	const rule = RULES.find((r) => r.name === SELF_CONTAMINATING_SEARCH_RULE_NAME);
+	if (!rule) throw new Error('self-contaminating-search rule missing from RULES');
+	return rule;
+}
+
 // ---------------------------------------------------------------------------
 // RULES: named-rules list shape
 // ---------------------------------------------------------------------------
 
 describe('RULES: named-rules list shape', () => {
-	test('is an array of exactly four rules: grep-q-plus-list-files, frozen-comparand, rotating-artifact-target, zero-match-vacuous', () => {
-		expect(RULES).toHaveLength(4);
+	test('is an array of exactly five rules: grep-q-plus-list-files, frozen-comparand, rotating-artifact-target, zero-match-vacuous, self-contaminating-search', () => {
+		expect(RULES).toHaveLength(5);
 		expect(RULES.map((r) => r.name)).toEqual([
 			GREP_RULE_NAME,
 			FROZEN_COMPARAND_RULE_NAME,
 			ROTATING_ARTIFACT_RULE_NAME,
 			ZERO_MATCH_VACUOUS_RULE_NAME,
+			SELF_CONTAMINATING_SEARCH_RULE_NAME,
 		]);
 		for (const rule of RULES) {
 			expect(typeof rule.test).toBe('function');
@@ -531,6 +541,75 @@ describe('zero-match-vacuous rule: passing cases', () => {
 	});
 
 	test('does not flag a command with neither shape at all', () => {
+		const finding = rule.test('bun run typecheck');
+		expect(finding).toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// self-contaminating-search rule: flagged forms (US-003, CAM-474)
+// ---------------------------------------------------------------------------
+
+describe('self-contaminating-search rule: flagged forms', () => {
+	const rule = findSelfContaminatingSearchRule();
+
+	test('flags a recursive grep -rl rooted at scripts (bare positional root)', () => {
+		const finding = rule.test('grep -rl zzqqx scripts');
+		expect(finding).not.toBeNull();
+		expect(finding!.reason).toContain('scripts/cam/issues');
+	});
+
+	test('flags a bare recursive grep -r with no positional root at all (defaults to cwd)', () => {
+		const finding = rule.test("grep -r 'PATTERN'");
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags rg (recursive by default, no flag needed) rooted at scripts/cam', () => {
+		const finding = rule.test("rg 'PATTERN' scripts/cam");
+		expect(finding).not.toBeNull();
+	});
+
+	test('retroactively flags the real CAM-460 AC2 shape (bash -c wrapper, piped wc -l, quoted alternation pattern)', () => {
+		const finding = rule.test(
+			'bash -c \'test $(grep -rl "gh release create\\|action-gh-release" .github/workflows scripts 2>/dev/null | wc -l) -gt 0\''
+		);
+		expect(finding).not.toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// self-contaminating-search rule: passing cases (US-003, CAM-474)
+// ---------------------------------------------------------------------------
+
+describe('self-contaminating-search rule: passing cases', () => {
+	const rule = findSelfContaminatingSearchRule();
+
+	test('does not flag a pinpoint git show read of a single store file', () => {
+		const finding = rule.test('git show main:scripts/cam/issues/CAM-0460.json');
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag a recursive grep rooted at a single FILE under scripts (not a directory ancestor of the store)', () => {
+		const finding = rule.test("grep -r 'PATTERN' scripts/cam/patterns.md");
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag a recursive grep guarded by an explicit --exclude-dir=issues (the sanctioned CAM-460 AC2 repair idiom)', () => {
+		const finding = rule.test('grep -rl zzqqx --exclude-dir=issues scripts');
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag a recursive grep guarded by the space-separated --exclude-dir issues form', () => {
+		const finding = rule.test('grep -rl zzqqx --exclude-dir issues scripts');
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag a non-recursive grep against scripts', () => {
+		const finding = rule.test('grep zzqqx scripts/cam/patterns.md');
+		expect(finding).toBeNull();
+	});
+
+	test('does not flag a command with no search tool at all', () => {
 		const finding = rule.test('bun run typecheck');
 		expect(finding).toBeNull();
 	});
