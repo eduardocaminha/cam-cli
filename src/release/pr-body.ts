@@ -143,13 +143,30 @@ function renderStoriesTable(stories: PrdSnapshotStory[]): string {
 }
 
 /**
+ * Fix-story IDs minted by `buildFixStories` (src/supervisor/review.ts) follow
+ * `US-R<round>-<nnn>`, e.g. `US-R1-001`. Their titles are derived verbatim
+ * from reviewer finding text (`deriveFixStoryTitle`) and can incidentally
+ * contain a setup-cue trigger word (e.g. "rotate the leaked API token")
+ * without any real setup action existing. Human-authored story IDs never
+ * match this shape, so it is a reliable way to exclude fix-story titles from
+ * the cue haystack below while still scanning human-authored titles (US-003,
+ * CAM-478).
+ */
+const FIX_STORY_ID_PATTERN = /^US-R\d+-/;
+
+/**
  * Render the "Setup checklist" table: manual user actions (config/env/install)
- * detected by scanning prd.description, prd.notes, and every story title for
- * cue keywords (see SETUP_CHECKLIST_CUES). Renders a clear empty-state line,
- * never an empty table, when no cue matches.
+ * detected by scanning prd.description, prd.notes, and every human-authored
+ * story title for cue keywords (see SETUP_CHECKLIST_CUES). Review-generated
+ * fix-story titles (see FIX_STORY_ID_PATTERN) are excluded from the haystack
+ * so a finding-derived title cannot fabricate a setup step. Renders a clear
+ * empty-state line, never an empty table, when no cue matches.
  */
 function renderSetupChecklist(prd: PrdSnapshot): string {
-	const haystack = [prd.description ?? '', prd.notes ?? '', ...(prd.userStories ?? []).map((story) => story.title)].join('\n');
+	const storyTitles = (prd.userStories ?? [])
+		.filter((story) => !FIX_STORY_ID_PATTERN.test(story.id))
+		.map((story) => story.title);
+	const haystack = [prd.description ?? '', prd.notes ?? '', ...storyTitles].join('\n');
 
 	const matched = SETUP_CHECKLIST_CUES.filter((cue) => cue.pattern.test(haystack));
 	if (matched.length === 0) return NO_SETUP_CHECKLIST_TEXT;

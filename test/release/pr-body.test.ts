@@ -204,4 +204,32 @@ describe('composePrBody Setup checklist', () => {
 		});
 		expect(body).toContain('Configuration change');
 	});
+
+	test('derived fix-story title does not contaminate the setup checklist', () => {
+		const withoutFixStory: PrdSnapshot = {
+			project: 'cam-cli',
+			description: 'A plain PRD with no setup cues anywhere.',
+			userStories: [{ id: 'US-001', title: 'Add a widget to the dashboard', passes: true }],
+		};
+		const withFixStory: PrdSnapshot = {
+			...withoutFixStory,
+			userStories: [
+				...(withoutFixStory.userStories ?? []),
+				{ id: 'US-R1-001', title: 'WARNING: rotate the leaked API token before merge', passes: false },
+			],
+		};
+
+		const setupSection = (body: string) => body.slice(body.indexOf('## Setup checklist'));
+
+		expect(setupSection(composePrBody(withFixStory))).toBe(setupSection(composePrBody(withoutFixStory)));
+	});
+
+	test('a genuine setup cue in a human-authored story title still fires', () => {
+		const body = composePrBody({
+			project: 'cam-cli',
+			userStories: [{ id: 'US-001', title: 'Register the payment webhook token', passes: false }],
+		});
+		expect(body).toContain('| # | Item | Where | How | Status |');
+		expect(body).not.toContain('No manual setup actions detected.');
+	});
 });
