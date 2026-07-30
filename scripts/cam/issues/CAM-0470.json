@@ -1,11 +1,11 @@
 {
   "id": "CAM-470",
   "title": "cam stats cycles: metrica de ciclo deterministica, versionada, emitida no cycle-close, + backfill dos 269 ciclos historicos",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-29T21:36:52.771Z",
-  "updatedAt": "2026-07-29T22:39:20.551Z",
+  "updatedAt": "2026-07-30T01:39:09.359Z",
   "description": "O event log esta gitignored: 7 semanas de historia (2026-06-09 a 2026-07-29), 86.805 eventos, 269 ciclos com cycleId, 16 MB, existindo so no disco de uma maquina, irrecuperavel e nao auditavel por terceiro. E sem comando de contagem o orquestrador estima em vez de contar: medido duas vezes em uma sessao (reportou check:all em 7min quando sao 4min37 / 277s, e 8 rodadas de gate por ciclo quando foram 5). Contagem e tarefa deterministica; nao deve ser feita por LLM. Solucao: subcomando cam stats cycles derivando uma linha por ciclo do log, arquivo derivado VERSIONADO (linha por ciclo, legivel e diffavel), emissao automatica no gancho de cycle-close que ja existe em src/commands/journal.ts:399-436, e backfill unico dos 269 ciclos existentes. Precedente a estender: src/commands/stats.ts (116 linhas, cam stats tokens, deterministico, mesmo log). NAO-OBJETIVO: SQLite. Parsear os 86.805 eventos leva 0,16s medido; o JSONL append-only e seguro para multiplos escritores (sidecar, worker, orquestrador so acrescentam linha) e o projeto tem cicatriz de escrita concorrente (colisao de next_id em issues.local.json). Banco, se entrar, entra como cache derivado reconstruivel, nunca fonte; gatilho: consulta acima de 2s, cruzar projetos, ou UI ao vivo. Motivacao: e a base de credibilidade da publicacao do lancamento (metodo como codigo + dado versionado = terceiro recalcula), numa area onde Factory AI e Warren publicam alegacao sem dado.",
   "specSource": "operator",
   "spec": {
