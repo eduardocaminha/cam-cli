@@ -24,7 +24,7 @@
       "id": "US-R2-001",
       "title": "Review round 2 fix 001: address reviewer finding",
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "WARNING [src/commands/stats.ts:191]: `cam stats cycles --rebuild` surfaces a raw uncaught ENOENT stack trace instead of the project's clear-message error convention when `scripts/cam/` does not exist. `defaultWriteArtifact` calls `writeFileSync(join(cwd, ...CYCLE_METRICS_ARTIFACT_REL_PATH), ...)` with no guard and no try/catch, so the throw escapes `runStatsCycles` (called at stats.ts:238) and escapes dispatchStats. Reproduced by the reviewer in a temp dir containing only `.claude/cam-worker-events.jsonl`: exit code is 1 (correct) but the operator sees `ENOENT: no such file or directory, open '.../scripts/cam/cycle-metrics.jsonl'` plus a `at runStatsCycles (src/commands/stats.ts:238:74)` stack frame and a `Bun v1.3.13 (macOS arm64)` footer. This is asymmetric with the sibling read path, which handles the exact same missing-artifact class gracefully (`bun index.ts stats cycles` exits 0 with 'No cycle data recorded yet'), and with the file's own module-header contract ('always exits 0 -- a missing or empty event log is \"no data yet\", not an error'). `printError` from '../logging/color.ts' is the established convention for precisely this absent-artifact case (see src/commands/suggestions.ts:170). Fix mechanically in one file: wrap the `writeArtifact` call at stats.ts:236-239 in a try/catch that emits `printError` with the resolved path plus a remediation hint and returns a non-zero code, or mkdir -p the parent directory before writing."
     },
     {
