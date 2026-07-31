@@ -78,3 +78,5 @@ ADR-0049 is left untouched except for an appended supersession pointer at the en
 The `gateship` npm package, and the `.dev`/`.io`/`.app`/`.ai` domain registrations, are operator ceremonies outside this docs-only cycle: the availability facts recorded here are point-in-time, exactly as ADR-0049 warned about its own facts, and must be re-checked at the moment those ceremonies actually run.
 
 Binary, template, build-script, and slash-command renames stay out of scope until launch packaging picks up the staged plan above; a future ADR is only needed if that plan changes, not to execute it. The four-layer name gate formalized above applies to any future naming cycle this project runs, including a third cycle if Gateship itself is ever displaced.
+
+**Amended by ADR-0054: the deferred typed alias is decided (`gship`), and the "Never rename internal contracts" clause is replaced by a bounded pre-launch window that closes at the first external install. The `CAM-` issue prefix and historical commit trailers remain permanently never-renamed.**
