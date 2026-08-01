@@ -484,3 +484,6 @@ Padrao em que o processo invoca uma subcomando de si mesmo por process.execPath 
 
 **fidelidade de evidencia**:
 Especie de oraculo para entregavel em prosa. Um grep de presenca de token confirma que uma palavra existe e nada sobre a veracidade da afirmacao ao redor. Um oraculo de fidelidade e aquele que fica vermelho quando a afirmacao verdadeira e trocada por prosa inventada plausivel, e por isso e varrido contra uma copia fabricada antes de ser aceito.
+
+**oraculo vacuo por parse**:
+Criterio de aceitacao cujo marcador de oraculo nao e reconhecido pelo parser (kind malformed), tipicamente por colchete desbalanceado dentro do regex. O criterio some da verificacao sem erro visivel: o lint o pula e o gate comportamental nao o executa. E pior que um oraculo errado, porque um oraculo errado ao menos falha; este nunca roda e por isso nunca contradiz nada.
