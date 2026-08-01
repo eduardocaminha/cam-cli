@@ -469,3 +469,18 @@ The opaque cycle key carried by cycle-tokens events. Free-form in practice: bran
 
 **derived cache**:
 The only sanctioned role for a database in this system: a store rebuilt from the append-only event log, never the source of truth. The log stays canonical because it is multi-writer-safe by construction and because git can diff it.
+
+**instalacao aditiva**:
+Instalacao que acrescenta os binarios novos (gateship, gship) sem remover o binario antigo (cam). Necessaria enquanto o loop ainda se auto-spawna pelo nome antigo, porque uma instalacao destrutiva feita durante um ciclo tira do proprio loop a capacidade de respawnar sidecar, watcher e dashboard.
+
+**janela de rename**:
+Periodo delimitado, aberto pelo ADR-0054, durante o qual os cinco contratos internos (CAM_*, .cam-*, socket tmux -L cam, comandos /cam-*, sentinelas) e o diretorio scripts/cam/ podem ser renomeados. Abre no estagio de launch packaging e fecha na primeira instalacao externa, quando a clausula Never original volta a valer integralmente.
+
+**prerelease de lancamento**:
+Primeiro GitHub Release publicado, marcado prerelease. Entrega um caminho de instalacao real e verificavel sem consumar a primeira instalacao externa que fecharia a janela de rename.
+
+**auto-spawn por execPath**:
+Padrao em que o processo invoca uma subcomando de si mesmo por process.execPath mais process.argv[1], em vez do nome do binario resolvido via PATH. Torna o auto-spawn imune a rename do binario e a divergencia entre o binario instalado e o codigo da branch.
+
+**fidelidade de evidencia**:
+Especie de oraculo para entregavel em prosa. Um grep de presenca de token confirma que uma palavra existe e nada sobre a veracidade da afirmacao ao redor. Um oraculo de fidelidade e aquele que fica vermelho quando a afirmacao verdadeira e trocada por prosa inventada plausivel, e por isso e varrido contra uma copia fabricada antes de ser aceito.
