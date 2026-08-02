@@ -1,24 +1,28 @@
 {
-  "lastCompletedStory": { "id": "US-002", "title": "Respawn the loop's own children (dashboard, sidecar, watchers) by execPath" },
+  "lastCompletedStory": { "id": "US-003", "title": "Autostart the hub from the thin proxies by execPath, and clear the residual name literals" },
   "createdFiles": [
-    "test/commands/run-self-spawn-argv.test.ts",
-    "test/integration/dashboard-pane-selfspawn.test.ts"
+    "src/util/hub-bootstrap.ts",
+    "test/commands/hub-autostart-argv.test.ts"
   ],
   "modifiedFiles": [
-    "src/util/self-invoke.ts",
-    "src/commands/run.ts",
-    "src/commands/sidecar-liveness-watch.ts",
+    "src/commands/plan.ts",
+    "src/commands/next.ts",
+    "src/commands/issue.ts",
+    "src/commands/spec.ts",
+    "src/commands/review.ts",
+    "src/commands/ship.ts",
+    "src/commands/sidecar.ts",
     "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "All five self-respawn sites now build their argv from an injected execPath/argv1 pair instead of a literal 'cam' PATH lookup, via a new generic helper `buildSelfSpawnArgv(execPath, argv1, ...subcommandArgs)` added to src/util/self-invoke.ts (thin wrapper over resolveSelfInvokeArgv from US-001, spread + append, mirroring forkMonitor exactly). Each call site got a small pure, exported, injectable builder so tests assert real argv shape instead of mock-call tautologies: buildDashboardRespawnArgv/buildSidecarSpawnArgv/buildRecycleWatchSpawnArgv/buildSidecarLivenessWatchSpawnArgv in src/commands/run.ts, and buildSidecarRespawnArgv in src/commands/sidecar-liveness-watch.ts. The dashboard pane respawn (tmux respawn-pane, DIRECT exec no bash -c) now spreads the builder's argv after '-t <dashboardPaneId>'; the three Bun.spawn sites (sidecar, orch-recycle-watch, sidecar-liveness-watch) pass the builder's argv array directly as Bun.spawn's cmd. Confirmed via a real tmux manual-page fetch AND a real-tmux integration test that `respawn-pane` given >=2 trailing arguments execs them directly via execvp (no shell re-join/re-split), so a runtime+script pair with internal-space path elements survives unmangled -- this was the exact risk class the US-004 note in this same PRD's patterns.md CAM-55 anchor warns about, now empirically closed for THIS specific site rather than assumed. GOTCHA carried forward from US-002's own notes field (still true post-implementation): in dev/interpreted mode a respawned sidecar/watcher/dashboard child now advertises `<bun> <script> <subcommand>` in `ps` instead of a literal `cam <subcommand>`, which is precisely the discovery breakage the next story (US-004, if scoped that way) must absorb -- grep patterns.md for 'sidecar liveness' / 'ps' / 'discovery' before touching any code that parses `ps` output for these child processes. Quality spine (bun run check:all) required one file-size ceiling raise for src/commands/run.ts (1169->1221, the 6 new pure builder exports + docs pushed it over); scripts/file-size-budget.json's _ref was updated and staged per protocol, no other budget touched.",
+  "nextStoryContext": "The six thin-proxy `doBootstrap` fallbacks (plan/next/issue/spec/review/ship, previously byte-identical `spawnSync('cam', ['run', '--no-attach'])`) now all delegate to a single new shared module `src/util/hub-bootstrap.ts`: `buildHubAutostartArgv(execPath, argv1)` is a thin wrapper over US-002's `buildSelfSpawnArgv` fixed to the `run --no-attach` subcommand, and `bootstrapHub(cwd)` is the shared fallback that resolves argv from `process.execPath`/`process.argv[1]`, spawns it synchronously via node:child_process's spawnSync (dynamic import, matching the pre-existing per-command style), and reports success via `(result.status ?? 1) === 0` exactly as before. Each command's `doBootstrap` is now just `if (bootstrapFn) return bootstrapFn(); return bootstrapHub(cwd);` -- the injectable `bootstrapFn` seam, cwd, and stdio:'ignore' semantics are all unchanged, so the six proxies' existing tests kept passing unmodified. The remaining literal-name comment in `src/commands/sidecar.ts` (documenting why `cam sidecar` is a real registered subcommand) was reworded to reference `buildSidecarSpawnArgv(execPath, argv1)` (the US-002 builder that actually spawns it) instead of the literal `Bun.spawn(['cam', 'sidecar', ...])` string. GOTCHA hit and resolved: destructuring the shared argv array (`const [cmd, ...args] = argv`) does NOT satisfy `noUncheckedIndexedAccess` the way you'd expect from a plain array type -- TS still infers `cmd: string | undefined` from a `string[]`-typed source in this codebase's tsconfig, so `bootstrapHub` instead reads `argv[0]` into a local, does a `cmd === undefined` early-return guard (an intentionally-unreachable branch since the builder always returns >= 3 elements), and passes `argv.slice(1)` as the args array; this is the pattern to copy for any future shared-argv-builder consumer. Quality spine required one file-size ceiling raise: `src/commands/sidecar.ts` 3721->3722 (the reworded comment is 1 line longer than the original); `scripts/file-size-budget.json`'s `_ref` was updated and staged per protocol, no other budget touched. AC7/AC8 packaging/contract-count invariance pins were both re-verified live post-change (package.json name unchanged, no install.sh, CAM_/.cam-/tmux -L cam/`/cam-` occurrence counts in src+index.ts identical to main) and pass cleanly since this story never touched packaging or the five ADR-0054 internal-contract literal families.",
   "officialDocsValidated": [
     {
-      "lib": "tmux (man page)",
-      "url": "https://man.openbsd.org/tmux.1",
+      "lib": "node:child_process",
+      "url": "https://nodejs.org/api/child_process.html#child_processspawnsynccommand-args-options",
       "fetchedAt": "2026-08-02T00:00:00Z",
       "status": "aligned",
-      "summary": "Confirmed respawn-pane/new-window/split-window treat >=2 trailing arguments as a direct execvp argv vector (no sh -c re-join), only a SINGLE trailing argument goes through $SHELL -c. This is exactly the shape all five self-respawn sites now rely on (execPath + optional argv1 + subcommand args = 2-4 elements), confirmed empirically too via test/integration/dashboard-pane-selfspawn.test.ts."
+      "summary": "Confirmed spawnSync's returned `status` is a number on normal exit and `null` only when the child was terminated by a signal, and that spawnSync (unlike execSync/execFileSync) never throws on a non-zero exit code. The `(result.status ?? 1) === 0` guard carried into the new shared bootstrapHub helper matches this exactly (pre-existing behavior, unchanged by this story)."
     }
   ],
   "appliedPatternIds": []
