@@ -60,6 +60,7 @@ import {
 	removeWatcherPidIfExists,
 	writeSidecarLivenessWatcherPid,
 	removeSidecarLivenessWatcherPidIfExists,
+	SIDECAR_LOG_FILENAME,
 } from '../supervisor/sidecar-pid.ts';
 import { DEFAULTS, readMetaLoop, readBackend, readPhaseEffort, readWorkerIsolation } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
@@ -1102,13 +1103,13 @@ export function runRun(options: RunOptions = {}): number {
 
 		// Ensure .claude/ exists before opening the log file.
 		mkdirSync(join(cwd, '.claude'), { recursive: true });
-		const sidecarLogPath = join(cwd, '.claude', 'cam-supervisor.log');
+		const sidecarLogPath = join(cwd, '.claude', SIDECAR_LOG_FILENAME);
 		const spawnSidecarFn = options.spawnSidecarFn ?? spawnSidecarDefault;
 		const sidecarProc = spawnSidecarFn(cwd, sidecarLogPath);
 		// Persist pid immediately after spawn so `cam stop` can SIGTERM the
 		// sidecar even when it holds no supervisor lock (idle branch).
 		writeSidecarPid(join(cwd, '.claude'), sidecarProc.pid);
-		emitMutedHint(`Sidecar supervisor started (log: .claude/cam-supervisor.log)`);
+		emitMutedHint(`Sidecar supervisor started (log: .claude/${SIDECAR_LOG_FILENAME})`);
 
 		// US-002: Clean any stale recycle marker BEFORE spawning the watcher.
 		// A leftover .cam-orch-recycle from a prior session would cause the

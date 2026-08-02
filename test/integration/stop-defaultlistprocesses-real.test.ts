@@ -12,21 +12,30 @@
 // "fakes lie" class, patterns.md CAM-55 / the project's own test-quality
 // rule: "hit real I/O at wire boundaries").
 //
-// This test spawns a REAL process shaped exactly like the interpreted
-// self-spawn argv (`[runtime, script, 'sidecar']`, see isSidecarArgv's
-// docstring and case 2 of stop-name-agnostic.test.ts) in a private temp cwd,
-// and drives it through the REAL production path: `performStop` with no
-// `listProcessesFn` override, so the default `defaultListProcesses` (real
-// `ps` + `lsof`) performs the discovery. A second, adjacent process in the
-// SAME cwd whose argv does not end in the literal 'sidecar' token must NOT
-// be matched (or killed) -- isSidecarArgv's quick filter excludes it before
-// `lsof` is ever consulted.
+// Updated in US-R2-001 (CAM-482): round 2 review proved live, against this
+// exact real production path, that argv shape + cwd alone (US-R1-001's
+// absolute-argv[0] anchor) still misclassifies an unrelated process as this
+// project's sidecar -- `Bun.spawn(['/usr/bin/tail','-F','sidecar'], {cwd})`
+// still yielded `fallbackSidecarKilled: true`. `defaultListProcesses` now
+// additionally requires the candidate to hold this project's
+// `.claude/cam-supervisor.log` open (the real sidecar always does, via
+// `spawnSidecarDefault`'s stdio redirection in src/commands/run.ts) before
+// trusting an argv+cwd match. This file now spawns THREE real, concurrent
+// processes in the same private temp cwd:
+//   1. a genuine-shaped sidecar that ALSO holds the log file open -> MATCHED
+//      and SIGTERM'd.
+//   2. a sidecar-shaped decoy (same argv shape, same cwd) that does NOT hold
+//      the log file open -- the exact false-positive class the round-1
+//      CRITICAL reproduced -- must NOT be matched or killed.
+//   3. an adjacent process whose argv does not end in the literal 'sidecar'
+//      token -- excluded by the cheap quick filter before lsof is ever
+//      consulted, regardless of cwd or open files.
 //
 // Skips cleanly when `ps` or `lsof` is absent (both legitimate-environmental
 // in the oven/bun worker-container image, see test/helpers/test-deps.ts).
 
 import { test, expect } from 'bun:test';
-import { mkdtempSync, rmSync, realpathSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, openSync, rmSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import process from 'node:process';
@@ -36,15 +45,17 @@ import { waitForCondition } from '../helpers/wait-for-condition.ts';
 import { psAvailable, lsofAvailable } from '../helpers/test-deps.ts';
 
 // A script body that just idles long enough for `ps`+`lsof` to observe the
-// process; both spawned scripts share this body -- only their trailing argv
-// token differs (the thing isSidecarArgv actually discriminates on). This is
+// process; all three spawned scripts share this body -- only their trailing
+// argv token (and, for the genuine sidecar, their stdio) differ. This is
 // SOURCE TEXT written to a spawned child script, not a fixed sleep in this
 // test's own async control flow -- check:test-sleeps pattern-matches string
 // literals too, so it is cited inline below (CAM-482) to suppress the gate.
 const IDLE_SCRIPT_BODY = 'await new Promise((resolve) => setTimeout(resolve, 20000));\n'; // CAM-482: child-script source text, not a fixed sleep
 
 test.skipIf(!psAvailable || !lsofAvailable)(
-	'defaultListProcesses: discovers a real interpreted sidecar process via ps+lsof, and does NOT match an adjacent non-sidecar process in the same cwd',
+	'defaultListProcesses: matches a real sidecar process that holds the log open, ' +
+		'rejects a sidecar-shaped decoy that does not (US-R2-001 regression), ' +
+		'and never matches an adjacent non-sidecar process',
 	async () => {
 		const tempDirRaw = mkdtempSync(join(tmpdir(), 'cam-stop-real-listprocesses-'));
 		// lsof reports the process's REAL (symlink-resolved) cwd -- macOS's
@@ -53,13 +64,29 @@ test.skipIf(!psAvailable || !lsofAvailable)(
 		// check in matchesSidecarForProject spuriously fails.
 		const projectCwd = realpathSync(tempDirRaw);
 
+		const claudeDir = join(projectCwd, '.claude');
+		mkdirSync(claudeDir, { recursive: true });
+		// Mirrors spawnSidecarDefault (src/commands/run.ts): open the log file
+		// for append and hand its fd to the child's stdout+stderr.
+		const logFd = openSync(join(claudeDir, 'cam-supervisor.log'), 'a');
+
 		const sidecarScript = join(projectCwd, 'sidecar-marker.ts');
+		const decoyScript = join(projectCwd, 'decoy-marker.ts');
 		const otherScript = join(projectCwd, 'other-marker.ts');
 		writeFileSync(sidecarScript, IDLE_SCRIPT_BODY, 'utf8');
+		writeFileSync(decoyScript, IDLE_SCRIPT_BODY, 'utf8');
 		writeFileSync(otherScript, IDLE_SCRIPT_BODY, 'utf8');
 
-		// Interpreted self-spawn shape: [runtime, script, 'sidecar'].
+		// Genuine sidecar: interpreted self-spawn shape [runtime, script,
+		// 'sidecar'], AND holds .claude/cam-supervisor.log open on fd 1/2.
 		const sidecarProc = Bun.spawn([process.execPath, sidecarScript, 'sidecar'], {
+			cwd: projectCwd,
+			stdio: ['ignore', logFd, logFd],
+		});
+		// Decoy: identical argv shape and cwd, but does NOT hold the log file
+		// open -- reproduces the round-1 CRITICAL's `/usr/bin/tail -F sidecar`
+		// case (real process, real ps+lsof, argv+cwd match, no log held open).
+		const decoyProc = Bun.spawn([process.execPath, decoyScript, 'sidecar'], {
 			cwd: projectCwd,
 			stdio: ['ignore', 'ignore', 'ignore'],
 		});
@@ -73,12 +100,13 @@ test.skipIf(!psAvailable || !lsofAvailable)(
 
 		try {
 			expect(sidecarProc.pid).toBeGreaterThan(0);
+			expect(decoyProc.pid).toBeGreaterThan(0);
 			expect(otherProc.pid).toBeGreaterThan(0);
 
 			// Poll performStop (idempotent, no side effect until a real match is
 			// found) until the real ps+lsof scan discovers and SIGTERMs the
-			// sidecar-shaped process. Bounded poll instead of a fixed sleep: the
-			// process needs a moment to register in the OS process table.
+			// genuine sidecar process. Bounded poll instead of a fixed sleep: the
+			// processes need a moment to register in the OS process table.
 			let sawFallbackKill = false;
 			await waitForCondition(
 				() => {
@@ -90,16 +118,26 @@ test.skipIf(!psAvailable || !lsofAvailable)(
 			);
 			expect(sawFallbackKill).toBe(true);
 
-			// The real SIGTERM was actually delivered and the process actually died.
+			// The real SIGTERM was actually delivered to the genuine sidecar and
+			// it actually died.
 			await sidecarProc.exited;
 			expect(() => process.kill(sidecarProc.pid, 0)).toThrow();
 
-			// The adjacent non-sidecar process in the SAME cwd was never matched:
-			// it is still alive.
+			// The decoy (same argv shape + cwd, no log held open) was never
+			// matched: it is still alive. This is the US-R2-001 regression check.
+			expect(() => process.kill(decoyProc.pid, 0)).not.toThrow();
+
+			// The adjacent non-sidecar-argv process in the SAME cwd was never
+			// matched either: it is still alive.
 			expect(() => process.kill(otherProc.pid, 0)).not.toThrow();
 		} finally {
 			try {
 				otherProc.kill();
+			} catch {
+				// best-effort cleanup
+			}
+			try {
+				decoyProc.kill();
 			} catch {
 				// best-effort cleanup
 			}

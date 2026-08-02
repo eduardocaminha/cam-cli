@@ -18,6 +18,16 @@ import { join } from 'node:path';
 export const SIDECAR_PID_FILE = '.cam-sidecar.pid';
 
 /**
+ * Filename within `.claude/` where the sidecar's stdout+stderr are redirected
+ * (see `spawnSidecarDefault`, src/commands/run.ts). Every real sidecar process
+ * holds this file open on fd 1/2 for its entire lifetime; `cam stop`'s
+ * fallback scoped scan (src/commands/stop.ts) uses that as a process-identity
+ * check, since an unrelated process cannot hold this project's own log file
+ * open by accident (US-R2-001, CAM-482).
+ */
+export const SIDECAR_LOG_FILENAME = 'cam-supervisor.log';
+
+/**
  * Persist the sidecar pid to `<claudeDir>/.cam-sidecar.pid`.
  *
  * `claudeDir` is typically `<cwd>/.claude`. Creates the directory if absent.
