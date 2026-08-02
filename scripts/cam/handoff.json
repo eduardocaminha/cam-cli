@@ -1,0 +1,20 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Drop the literal binary-name fallback from the self-invoke helper" },
+  "createdFiles": [],
+  "modifiedFiles": [
+    "src/util/self-invoke.ts",
+    "test/util/self-invoke.test.ts",
+    "test/commands/run-orch-resolver-compiled-mode.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "resolveSelfInvokeArgv (src/util/self-invoke.ts) now returns [execPath] alone for BOTH the compiled case AND the degenerate interpreted case (argv1 undefined) -- no literal 'cam' fallback anywhere in the helper or its docstring. Only the third branch (interpreted mode with a real argv1) returns [execPath, argv1]. Both production call sites (forkMonitor in src/retry/launcher.ts, resolveOrchResolverCmd in src/commands/run.ts) consume the returned array via spread/array-passthrough, so the shorter single-element argv flows through safely; resolveOrchResolverCmd's own compiled-mode test for a missing argv1 was updated to expect the collapsed '<execPath> orch-resolve' form. Both PRD invariance pins (package.json name unchanged, no install.sh; ADR-0054's 5 internal-contract counts unchanged vs main) were re-verified green after this change -- this story never touched packaging or the CAM_/.cam-/tmux -L cam/slash-command surfaces, only the self-invoke argv builder.",
+  "officialDocsValidated": [
+    {
+      "lib": "bun",
+      "url": "https://bun.com/docs/api/spawn",
+      "fetchedAt": "2026-08-02T11:55:00Z",
+      "status": "aligned",
+      "summary": "Confirmed Bun.spawn's cmd argv accepts a single-element array (cmd[0] as an absolute executable path with no further arguments), matching the new execPath-only degenerate-case return shape."
+    }
+  ]
+}
