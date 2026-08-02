@@ -1,0 +1,10 @@
+{
+  "id": "CAM-486",
+  "title": "Primeira execucao nao orienta um estranho: sem glossario, sem deteccao de claude nao autenticado, sem dica de teclado no TUI",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-02T14:01:47.003Z",
+  "updatedAt": "2026-08-02T14:01:47.003Z",
+  "description": "MEDIDO 2026-08-02: nao existe nenhuma superficie de primeira execucao que explique o vocabulario proprio do produto nem detecte o modo de falha mais provavel de um instalador novo. Tres lacunas distintas mas do mesmo sitio (a experiencia de primeira execucao) e da mesma edicao coerente (o caminho de bootstrap do cam run mais a tela inicial em src/ui/).\n\n(1) GLOSSARIO. O produto usa como vocabulario cotidiano termos que nao significam nada para quem chega: orquestrador, sidecar, worker pane, story, PRD, oraculo, gate, handoff, ciclo. CONTEXT.md ja e o canal canonico de glossario e existe, mas nada no fluxo de primeira execucao aponta para ele nem apresenta o minimo necessario para entender a primeira tela.\n\n(2) CLAUDE NAO AUTENTICADO. O produto inteiro shella para o binario claude. Se o usuario instalou o cam mas nunca autenticou o Claude Code, o loop sobe, spawna pane, e o worker morre sem sinal legivel. Este projeto ja gastou ciclos justamente com pane morto sendo confundido com outra coisa (ver CAM-32 e CAM-435, que trata de pane-died do implementer descartando a causa). Para um estranho na primeira execucao, isso e a diferenca entre uma mensagem de uma linha e desistir do produto. A deteccao precisa acontecer ANTES de abrir tmux, e falhar com instrucao acionavel.\n\n(3) DICA DE TECLADO NO TUI. A sessao e um tmux com panes; quem nunca usou tmux nao sabe sair, alternar pane nem reanexar. Uma linha na tela inicial resolve.\n\nNAO CONFUNDIR COM CAM-331: aquele e o README externo, superficie de leitura antes de instalar. Este e o que acontece depois de instalar, dentro do produto.\n\nORIGEM: docs/launch-readiness.md:520-525, follow-up que nunca foi filado."
+}
