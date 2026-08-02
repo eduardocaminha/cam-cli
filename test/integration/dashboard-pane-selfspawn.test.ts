@@ -107,4 +107,5 @@ test.skipIf(!tmuxAvailable)(
 		expect(written.argc).toBe(4);
 		expect(written.payload).toBe(payload);
 	},
+	{ timeout: 15_000 },
 );

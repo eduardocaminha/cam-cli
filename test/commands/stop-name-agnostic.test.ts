@@ -46,9 +46,13 @@ describe('matchesSidecarForProject — name-agnostic discovery (US-004, CAM-482)
 	});
 
 	test('case 2: interpreted sidecar `<runtime> <script> sidecar` MATCHES', () => {
+		// argv[0] is an absolute runtime path here, mirroring reality: Bun always
+		// resolves `process.execPath` (what self-spawn actually passes as
+		// argv[0], see resolveSelfInvokeArgv) to an absolute path, never a bare
+		// PATH-relative name like 'bun' (US-R1-001, CAM-482).
 		const record: ProcessRecord = {
 			pid: 51001,
-			argv: ['bun', '/repo/index.ts', 'sidecar'],
+			argv: ['/opt/homebrew/bin/bun', '/repo/index.ts', 'sidecar'],
 			cwd: PROJECT_CWD,
 		};
 		expect(matchesSidecarForProject(record, PROJECT_CWD)).toBe(true);

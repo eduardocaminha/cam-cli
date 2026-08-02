@@ -285,18 +285,40 @@ function killSession(spawnFn: SpawnSyncFn, sessionName: string): boolean {
 /**
  * Returns true when `argv` matches the exact shape emitted by
  * `buildSidecarSpawnArgv`/`buildSelfSpawnArgv(execPath, argv1, 'sidecar')`
- * (US-004, CAM-482): the final element is the literal subcommand token
- * `'sidecar'`, and the argv is either the compiled-binary self-spawn shape
- * `[execPath, 'sidecar']` (2 elements) or the interpreted-runtime shape
- * `[runtime, script, 'sidecar']` (3 elements).
+ * (US-004, CAM-482; re-anchored in US-R1-001, CAM-482): the final element is
+ * the literal subcommand token `'sidecar'`, the argv is either the
+ * compiled-binary self-spawn shape `[execPath, 'sidecar']` (2 elements) or
+ * the interpreted-runtime shape `[runtime, script, 'sidecar']` (3 elements),
+ * AND `argv[0]` is an absolute path.
  *
  * Deliberately independent of what argv[0]/argv[1] actually name (a binary
  * path, its basename, a runtime, a script path): a fixed binary-name literal
  * or a fixed subcommand index breaks the moment self-spawn resolves by
  * execPath (US-002/US-003) or the binary ships under a different name.
+ *
+ * The absolute-path requirement on `argv[0]` is NOT name-agnosticism being
+ * abandoned; it re-anchors on a property the real self-spawn always has and
+ * an ad-hoc shell command does not. Both production shapes are built from
+ * `resolveSelfInvokeArgv` (src/util/self-invoke.ts), which always spreads
+ * `process.execPath` as `argv[0]` -- `process.execPath` is always an absolute
+ * filesystem path to the running binary/runtime (verified empirically: Bun
+ * resolves `process.argv[1]`/`execPath` to an absolute path even when the
+ * process itself was invoked with a relative script name). An interactive
+ * command a developer happens to type in the project cwd (`rg sidecar`,
+ * `tail -F sidecar`, `git log sidecar`) is invoked via a bare PATH-relative
+ * name as `argv[0]`, never an absolute path, so it can no longer collide with
+ * this predicate. Without this anchor, ANY 2-or-3-token command ending in the
+ * literal word `sidecar` was misclassified as this project's sidecar process
+ * and SIGTERM'd by the fallback scan (CAM-482).
  */
 export function isSidecarArgv(argv: string[]): boolean {
-	return (argv.length === 2 || argv.length === 3) && argv[argv.length - 1] === 'sidecar';
+	const first = argv[0];
+	return (
+		(argv.length === 2 || argv.length === 3) &&
+		argv[argv.length - 1] === 'sidecar' &&
+		first !== undefined &&
+		first.startsWith('/')
+	);
 }
 
 /**
