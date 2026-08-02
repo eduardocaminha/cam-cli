@@ -1,28 +1,19 @@
 {
-  "lastCompletedStory": { "id": "US-003", "title": "Autostart the hub from the thin proxies by execPath, and clear the residual name literals" },
+  "lastCompletedStory": { "id": "US-004", "title": "Make sidecar process discovery in cam stop name-agnostic" },
   "createdFiles": [
-    "src/util/hub-bootstrap.ts",
-    "test/commands/hub-autostart-argv.test.ts"
+    "test/commands/stop-name-agnostic.test.ts"
   ],
   "modifiedFiles": [
-    "src/commands/plan.ts",
-    "src/commands/next.ts",
-    "src/commands/issue.ts",
-    "src/commands/spec.ts",
-    "src/commands/review.ts",
-    "src/commands/ship.ts",
-    "src/commands/sidecar.ts",
+    "src/commands/stop.ts",
     "scripts/file-size-budget.json"
   ],
   "openQuestions": [],
-  "nextStoryContext": "The six thin-proxy `doBootstrap` fallbacks (plan/next/issue/spec/review/ship, previously byte-identical `spawnSync('cam', ['run', '--no-attach'])`) now all delegate to a single new shared module `src/util/hub-bootstrap.ts`: `buildHubAutostartArgv(execPath, argv1)` is a thin wrapper over US-002's `buildSelfSpawnArgv` fixed to the `run --no-attach` subcommand, and `bootstrapHub(cwd)` is the shared fallback that resolves argv from `process.execPath`/`process.argv[1]`, spawns it synchronously via node:child_process's spawnSync (dynamic import, matching the pre-existing per-command style), and reports success via `(result.status ?? 1) === 0` exactly as before. Each command's `doBootstrap` is now just `if (bootstrapFn) return bootstrapFn(); return bootstrapHub(cwd);` -- the injectable `bootstrapFn` seam, cwd, and stdio:'ignore' semantics are all unchanged, so the six proxies' existing tests kept passing unmodified. The remaining literal-name comment in `src/commands/sidecar.ts` (documenting why `cam sidecar` is a real registered subcommand) was reworded to reference `buildSidecarSpawnArgv(execPath, argv1)` (the US-002 builder that actually spawns it) instead of the literal `Bun.spawn(['cam', 'sidecar', ...])` string. GOTCHA hit and resolved: destructuring the shared argv array (`const [cmd, ...args] = argv`) does NOT satisfy `noUncheckedIndexedAccess` the way you'd expect from a plain array type -- TS still infers `cmd: string | undefined` from a `string[]`-typed source in this codebase's tsconfig, so `bootstrapHub` instead reads `argv[0]` into a local, does a `cmd === undefined` early-return guard (an intentionally-unreachable branch since the builder always returns >= 3 elements), and passes `argv.slice(1)` as the args array; this is the pattern to copy for any future shared-argv-builder consumer. Quality spine required one file-size ceiling raise: `src/commands/sidecar.ts` 3721->3722 (the reworded comment is 1 line longer than the original); `scripts/file-size-budget.json`'s `_ref` was updated and staged per protocol, no other budget touched. AC7/AC8 packaging/contract-count invariance pins were both re-verified live post-change (package.json name unchanged, no install.sh, CAM_/.cam-/tmux -L cam/`/cam-` occurrence counts in src+index.ts identical to main) and pass cleanly since this story never touched packaging or the five ADR-0054 internal-contract literal families.",
+  "nextStoryContext": "`cam stop`'s fallback scoped `ps`-based sidecar discovery (src/commands/stop.ts) is now fully name-agnostic. The new exported `isSidecarArgv(argv: string[])` predicate matches on argv SHAPE alone (last element is the literal `'sidecar'` token, total length 2 or 3), never on a literal binary name: this covers both the compiled self-spawn shape `[execPath, 'sidecar']` (2 elements) and the interpreted shape `[runtime, script, 'sidecar']` (3 elements) that `buildSidecarSpawnArgv`/`buildSelfSpawnArgv(execPath, argv1, 'sidecar')` (US-002/US-003) actually produce. `matchesSidecarForProject` now composes `isSidecarArgv(record.argv)` with the UNCHANGED strict `record.cwd === projectCwd` scoping (still exact equality, no prefix/substring widening -- name-agnosticism only changed process recognition, not project scoping). `defaultListProcesses`'s `ps -eo pid,args` quick filter (the cheap pre-lsof screen) now reuses the same `isSidecarArgv` predicate instead of a `cmdBase !== 'cam'` literal, and no longer normalizes `argv[0]` to a bare basename before building the `ProcessRecord` -- raw argv (whatever path/runtime it actually is) is stored and matched against directly. This closes the GOTCHA flagged at the end of the US-002 patterns.md bullet (dev/interpreted-mode children advertise `<bun> <script> sidecar>` in `ps`, not a literal `cam sidecar`, and would have been invisible to the old name-literal filter). GOTCHA for whichever story next touches sidecar/self-spawn `ps`-discovery: `isSidecarArgv`'s length-2-or-3 shape assumption is specific to the CURRENT `buildSidecarSpawnArgv` call convention (exactly one subcommand word, no extra args ever appended after `'sidecar'`); if a future story ever appends extra argv words after the subcommand at any self-spawn call site, this exact-length check needs revisiting (a same-basename-agnostic `argv[argv.length - N] === 'sidecar'`-style check, or a marker-token approach, whichever fits the new call shape) rather than assumed to still hold. The three pre-existing `matchesSidecarForProject`-consuming tests in `test/stop-sidecar-fallback.test.ts` (fixture argv `['cam', 'sidecar']`/`['cam', 'run']`) still pass unmodified since `['cam', 'sidecar']` is itself a valid 2-element sidecar shape under the new predicate -- the old literal-name fixtures happen to also satisfy the new shape-based rule.",
   "officialDocsValidated": [
     {
-      "lib": "node:child_process",
-      "url": "https://nodejs.org/api/child_process.html#child_processspawnsynccommand-args-options",
-      "fetchedAt": "2026-08-02T00:00:00Z",
-      "status": "aligned",
-      "summary": "Confirmed spawnSync's returned `status` is a number on normal exit and `null` only when the child was terminated by a signal, and that spawnSync (unlike execSync/execFileSync) never throws on a non-zero exit code. The `(result.status ?? 1) === 0` guard carried into the new shared bootstrapHub helper matches this exactly (pre-existing behavior, unchanged by this story)."
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "US-004 is a pure internal argv-shape matching change to matchesSidecarForProject/defaultListProcesses in src/commands/stop.ts; the pre-existing node:child_process spawnSync/ps/lsof shelling-out pattern is unchanged from prior stories (already validated in US-003's handoff)."
     }
   ],
   "appliedPatternIds": []
