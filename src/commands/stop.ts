@@ -283,18 +283,29 @@ function killSession(spawnFn: SpawnSyncFn, sessionName: string): boolean {
 }
 
 /**
- * Returns true when `record` is a `cam sidecar` process whose cwd matches
- * `projectCwd` exactly. Scoped strictly: cwd equality, not prefix/substring.
+ * Returns true when `argv` matches the exact shape emitted by
+ * `buildSidecarSpawnArgv`/`buildSelfSpawnArgv(execPath, argv1, 'sidecar')`
+ * (US-004, CAM-482): the final element is the literal subcommand token
+ * `'sidecar'`, and the argv is either the compiled-binary self-spawn shape
+ * `[execPath, 'sidecar']` (2 elements) or the interpreted-runtime shape
+ * `[runtime, script, 'sidecar']` (3 elements).
  *
- * Argv must begin with `cam` (index 0) and `sidecar` (index 1). The cwd
- * comparison is strict equality so no other project's sidecar is touched.
+ * Deliberately independent of what argv[0]/argv[1] actually name (a binary
+ * path, its basename, a runtime, a script path): a fixed binary-name literal
+ * or a fixed subcommand index breaks the moment self-spawn resolves by
+ * execPath (US-002/US-003) or the binary ships under a different name.
+ */
+export function isSidecarArgv(argv: string[]): boolean {
+	return (argv.length === 2 || argv.length === 3) && argv[argv.length - 1] === 'sidecar';
+}
+
+/**
+ * Returns true when `record` is a sidecar process (per {@link isSidecarArgv})
+ * whose cwd matches `projectCwd` exactly. Scoped strictly: cwd equality, not
+ * prefix/substring, so no other project's sidecar is touched.
  */
 export function matchesSidecarForProject(record: ProcessRecord, projectCwd: string): boolean {
-	return (
-		record.cwd === projectCwd &&
-		record.argv[0] === 'cam' &&
-		record.argv[1] === 'sidecar'
-	);
+	return record.cwd === projectCwd && isSidecarArgv(record.argv);
 }
 
 /**
@@ -323,9 +334,10 @@ function defaultListProcesses(): ProcessRecord[] {
 		if (!Number.isFinite(pid) || pid <= 0) continue;
 
 		const argv = argsStr.split(/\s+/).filter(Boolean);
-		// Quick filter: skip anything that cannot be `cam sidecar`.
-		const cmdBase = (argv[0] ?? '').split('/').pop() ?? '';
-		if (cmdBase !== 'cam' || argv[1] !== 'sidecar') continue;
+		// Quick filter: skip anything that cannot be a sidecar self-spawn
+		// (cheap, avoids an lsof call per process). Name-agnostic: see
+		// isSidecarArgv for the argv shape this matches against.
+		if (!isSidecarArgv(argv)) continue;
 
 		// Resolve cwd via lsof. The -F n format emits lines prefixed with 'n'.
 		const lsofResult = spawnSync(
@@ -340,9 +352,7 @@ function defaultListProcesses(): ProcessRecord[] {
 		const cwd = cwdLine.slice(1).trim();
 		if (!cwd) continue;
 
-		// Normalise argv[0] to the bare name for consistent matching.
-		const normArgv = [cmdBase, ...argv.slice(1)];
-		records.push({ pid, argv: normArgv, cwd });
+		records.push({ pid, argv, cwd });
 	}
 
 	return records;
