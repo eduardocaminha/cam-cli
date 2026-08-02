@@ -100,9 +100,9 @@ export function buildSidecarRespawnArgv(execPath: string, argv1: string | undefi
 }
 
 /**
- * Respawns the sidecar with stdout/stderr redirected to `.claude/cam-supervisor.log`,
- * the SAME log file `spawnSidecarDefault` (src/commands/run.ts) redirects the
- * original sidecar's stdio to.
+ * Respawns the sidecar with stdout/stderr redirected to the `SIDECAR_LOG_FILENAME`
+ * log file (under `.claude/`), the SAME log file `spawnSidecarDefault`
+ * (src/commands/run.ts) redirects the original sidecar's stdio to.
  *
  * This is required, not cosmetic (US-R4-001, CAM-482): `defaultListProcesses`'s
  * process-identity check (src/commands/stop.ts) treats "holds this project's
