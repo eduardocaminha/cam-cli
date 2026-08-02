@@ -20,10 +20,19 @@
 // process-identity check below -- silently left running in exactly the
 // situation the fallback scan exists for (pid file absent/stale). The fix
 // gives that respawn the SAME `openSync(logPath, 'a')` stdout/stderr
-// redirection `spawnSidecarDefault` already used. The second test below
-// reproduces that exact liveness-watch respawn shape (built via the real
-// `buildSidecarRespawnArgv` self-spawn-argv builder, log fd opened the same
-// way `makeSpawnSidecarFn` now does) and asserts it IS discovered/killed.
+// redirection `spawnSidecarDefault` already used.
+//
+// Updated in US-R6-003 (CAM-482): the US-R4-001 test below originally
+// re-implemented that fd-open/spawn/stdio shape by hand instead of calling
+// the production closure, so it was not falsifiable against a regression in
+// the actual fix (reverting `makeSpawnSidecarFn` back to
+// `stdio: ['ignore','ignore','ignore']` still left this test green). It now
+// imports and calls the exported `makeSpawnSidecarFn` directly -- the exact
+// closure `runSidecarLivenessWatch` wires by default -- with only its argv
+// overridden (a controlled idle marker script instead of the real
+// self-invoke, which would otherwise re-spawn this test file itself; see the
+// DI-seam doc comment on `makeSpawnSidecarFn`). The fd open/redirect/close
+// logic exercised is byte-for-byte the shipped production code.
 //
 // Updated in US-R2-001 (CAM-482): round 2 review proved live, against this
 // exact real production path, that argv shape + cwd alone (US-R1-001's
@@ -54,7 +63,7 @@ import { join } from 'node:path';
 import process from 'node:process';
 
 import { performStop } from '../../src/commands/stop.ts';
-import { buildSidecarRespawnArgv } from '../../src/commands/sidecar-liveness-watch.ts';
+import { buildSidecarRespawnArgv, makeSpawnSidecarFn } from '../../src/commands/sidecar-liveness-watch.ts';
 import { waitForCondition } from '../helpers/wait-for-condition.ts';
 import { psAvailable, lsofAvailable } from '../helpers/test-deps.ts';
 
@@ -167,7 +176,8 @@ test.skipIf(!psAvailable || !lsofAvailable)(
 );
 
 test.skipIf(!psAvailable || !lsofAvailable)(
-	'defaultListProcesses: discovers a liveness-watch-respawned sidecar (US-R4-001 regression)',
+	'defaultListProcesses: discovers a liveness-watch-respawned sidecar, spawned through the ' +
+		'REAL makeSpawnSidecarFn closure (US-R4-001 regression, made falsifiable in US-R6-003)',
 	async () => {
 		const tempDirRaw = mkdtempSync(join(tmpdir(), 'cam-stop-real-livenesswatch-'));
 		// lsof reports the process's REAL (symlink-resolved) cwd, see note above.
@@ -175,26 +185,27 @@ test.skipIf(!psAvailable || !lsofAvailable)(
 
 		const claudeDir = join(projectCwd, '.claude');
 		mkdirSync(claudeDir, { recursive: true });
-		const logPath = join(claudeDir, 'cam-supervisor.log');
 
 		const markerScript = join(projectCwd, 'liveness-respawn-marker.ts');
 		writeFileSync(markerScript, IDLE_SCRIPT_BODY, 'utf8');
 
-		// Reproduces `makeSpawnSidecarFn`'s exact respawn shape
-		// (src/commands/sidecar-liveness-watch.ts): the real self-spawn argv
-		// builder, PLUS the fixed `openSync(logPath, 'a')` stdout/stderr
-		// redirection. Before the fix, this respawn used
+		// Calls the ACTUAL production closure-builder
+		// (src/commands/sidecar-liveness-watch.ts's exported `makeSpawnSidecarFn`),
+		// the same one `runSidecarLivenessWatch` wires by default -- not a
+		// hand-rolled reimplementation of its stdio shape. Only the self-invoke
+		// argv is overridden (a controlled idle marker script instead of the
+		// real self-invoke, which would otherwise re-spawn this test file
+		// itself); the fd open/redirect/close logic under test is untouched.
+		// Before the US-R4-001 fix, this closure used
 		// `stdio: ['ignore','ignore','ignore']` and held no fd on the log file,
-		// making it invisible to the process-identity check below.
+		// making it invisible to the process-identity check below -- reverting
+		// that fix now fails THIS test, not just a hand-rolled proxy of it.
 		const respawnArgv = buildSidecarRespawnArgv(process.execPath, markerScript);
-		const logFd = openSync(logPath, 'a');
-		const respawnProc = Bun.spawn(respawnArgv, {
-			cwd: projectCwd,
-			stdio: ['ignore', logFd, logFd],
-		});
+		const spawnSidecarFn = makeSpawnSidecarFn(projectCwd, respawnArgv);
+		const handle = spawnSidecarFn();
 
 		try {
-			expect(respawnProc.pid).toBeGreaterThan(0);
+			expect(handle.pid).toBeGreaterThan(0);
 
 			let sawFallbackKill = false;
 			await waitForCondition(
@@ -207,11 +218,24 @@ test.skipIf(!psAvailable || !lsofAvailable)(
 			);
 			expect(sawFallbackKill).toBe(true);
 
-			await respawnProc.exited;
-			expect(() => process.kill(respawnProc.pid, 0)).toThrow();
+			// The real SIGTERM was actually delivered and the process actually
+			// died. `SidecarLivenessWatchProcessHandle` exposes only `pid`/`kill`
+			// (no `.exited` promise), so poll signal-0 instead of awaiting exit.
+			await waitForCondition(
+				() => {
+					try {
+						process.kill(handle.pid, 0);
+						return false;
+					} catch {
+						return true;
+					}
+				},
+				{ timeoutMs: 5_000, intervalMs: 100 },
+			);
+			expect(() => process.kill(handle.pid, 0)).toThrow();
 		} finally {
 			try {
-				respawnProc.kill();
+				handle.kill();
 			} catch {
 				// already dead -- expected on the success path
 			}

@@ -114,12 +114,28 @@ export function buildSidecarRespawnArgv(execPath: string, argv1: string | undefi
  * as `spawnSidecarDefault` does, keeps every self-spawned sidecar shape
  * (initial spawn, liveness-watch respawn) discoverable through the same
  * identity check.
+ *
+ * Exported (US-R6-003, CAM-482) so a real-I/O regression test can construct
+ * and invoke the ACTUAL production closure rather than re-implementing its
+ * fd-open/spawn/close shape by hand. `argvOverride` is a narrow DI seam for
+ * that same test: production always self-invokes via the real
+ * `buildSidecarRespawnArgv(process.execPath, process.argv[1])` self-spawn
+ * (the default), but a test running under `bun test` has `process.argv[1]`
+ * pointing at the test file itself, so respawning with the real default argv
+ * would re-invoke the whole test suite as a child process. The override lets
+ * a test point the exact same fd-handling code at a lightweight, controlled
+ * idle marker script instead, without touching the fd open/redirect/close
+ * logic under test at all.
  */
-function makeSpawnSidecarFn(cwd: string): () => SidecarLivenessWatchProcessHandle {
+export function makeSpawnSidecarFn(
+	cwd: string,
+	argvOverride?: string[],
+): () => SidecarLivenessWatchProcessHandle {
 	return () => {
 		const logPath = join(cwd, '.claude', SIDECAR_LOG_FILENAME);
 		const logFd = openSync(logPath, 'a');
-		const proc = Bun.spawn(buildSidecarRespawnArgv(process.execPath, process.argv[1]), {
+		const argv = argvOverride ?? buildSidecarRespawnArgv(process.execPath, process.argv[1]);
+		const proc = Bun.spawn(argv, {
 			cwd,
 			stdio: ['ignore', logFd, logFd],
 		});
