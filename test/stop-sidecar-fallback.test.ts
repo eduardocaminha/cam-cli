@@ -159,3 +159,37 @@ describe('sidecar fallback — false-positive argv class (CAM-482)', () => {
 		expect(report.fallbackSidecarKilled).toBe(false);
 	});
 });
+
+// ---------------------------------------------------------------------------
+// Regression (US-R1-002, CAM-482): space-bearing install path -> still matched
+// ---------------------------------------------------------------------------
+
+describe('sidecar fallback — space-bearing absolute install path (CAM-482)', () => {
+	test('a real sidecar whose execPath contains a space is still matched and SIGTERMd', () => {
+		const killCalls: Array<{ pid: number; signal: string }> = [];
+		const killFn: KillFn = (pid, signal) => { killCalls.push({ pid, signal }); };
+
+		const listProcessesFn: ListProcessesFn = () => [
+			// Mirrors what `defaultListProcesses` produces from the raw `ps`
+			// args column for an install under `/Users/x/My Tools/cam sidecar`:
+			// splitting on whitespace fragments the execPath into 3 elements
+			// instead of the "clean" 2-element compiled shape.
+			{ pid: 42005, argv: ['/Users/x/My', 'Tools/cam', 'sidecar'], cwd: PROJECT_CWD },
+		];
+
+		const report = performStop({
+			cwd: PROJECT_CWD,
+			spawnSyncFn: noTmuxSpawn,
+			existsSyncFn: () => false,
+			unlinkSyncFn: () => {},
+			sidecarPidReader: () => null,
+			sidecarPidAliveFn: () => false,
+			sidecarPidRemover: () => {},
+			killFn,
+			listProcessesFn,
+		});
+
+		expect(killCalls).toEqual([{ pid: 42005, signal: 'SIGTERM' }]);
+		expect(report.fallbackSidecarKilled).toBe(true);
+	});
+});

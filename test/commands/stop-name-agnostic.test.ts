@@ -75,4 +75,31 @@ describe('matchesSidecarForProject — name-agnostic discovery (US-004, CAM-482)
 		};
 		expect(matchesSidecarForProject(record, PROJECT_CWD)).toBe(false);
 	});
+
+	// US-R1-002 (CAM-482): `defaultListProcesses` builds `argv` by splitting the
+	// raw `ps -eo pid,args` column on whitespace, which fragments any argv
+	// element containing an internal space (e.g. an install path like
+	// `/Users/x/My Tools/cam`) into multiple array elements. These two cases
+	// reproduce that fragmentation directly (no exact `argv.length` any more).
+	test('case 5: compiled sidecar under a space-bearing absolute install path MATCHES', () => {
+		const record: ProcessRecord = {
+			pid: 51004,
+			// `/Users/x/My Tools/cam sidecar` as reported by `ps`, split on
+			// whitespace: the execPath fragments into 3 elements, not 1.
+			argv: ['/Users/x/My', 'Tools/cam', 'sidecar'],
+			cwd: PROJECT_CWD,
+		};
+		expect(matchesSidecarForProject(record, PROJECT_CWD)).toBe(true);
+	});
+
+	test('case 6: interpreted sidecar under a space-bearing script path MATCHES', () => {
+		const record: ProcessRecord = {
+			pid: 51005,
+			// `/opt/homebrew/bin/bun /repo/cam script dir/run me.ts sidecar`
+			// split on whitespace: the script path fragments into 4 elements.
+			argv: ['/opt/homebrew/bin/bun', '/repo/cam', 'script', 'dir/run', 'me.ts', 'sidecar'],
+			cwd: PROJECT_CWD,
+		};
+		expect(matchesSidecarForProject(record, PROJECT_CWD)).toBe(true);
+	});
 });

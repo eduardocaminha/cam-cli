@@ -283,13 +283,14 @@ function killSession(spawnFn: SpawnSyncFn, sessionName: string): boolean {
 }
 
 /**
- * Returns true when `argv` matches the exact shape emitted by
+ * Returns true when `argv` matches the shape emitted by
  * `buildSidecarSpawnArgv`/`buildSelfSpawnArgv(execPath, argv1, 'sidecar')`
- * (US-004, CAM-482; re-anchored in US-R1-001, CAM-482): the final element is
- * the literal subcommand token `'sidecar'`, the argv is either the
- * compiled-binary self-spawn shape `[execPath, 'sidecar']` (2 elements) or
- * the interpreted-runtime shape `[runtime, script, 'sidecar']` (3 elements),
- * AND `argv[0]` is an absolute path.
+ * (US-004, CAM-482; re-anchored in US-R1-001, CAM-482; token-count dropped in
+ * US-R1-002, CAM-482): the final element is the literal subcommand token
+ * `'sidecar'`, AND `argv[0]` is an absolute path. The compiled-binary
+ * self-spawn shape is `[execPath, 'sidecar']` (2 elements) and the
+ * interpreted-runtime shape is `[runtime, script, 'sidecar']` (3 elements),
+ * but the exact element COUNT is deliberately not checked (see below).
  *
  * Deliberately independent of what argv[0]/argv[1] actually name (a binary
  * path, its basename, a runtime, a script path): a fixed binary-name literal
@@ -310,15 +311,26 @@ function killSession(spawnFn: SpawnSyncFn, sessionName: string): boolean {
  * this predicate. Without this anchor, ANY 2-or-3-token command ending in the
  * literal word `sidecar` was misclassified as this project's sidecar process
  * and SIGTERM'd by the fallback scan (CAM-482).
+ *
+ * No exact token-count check (US-R1-002, CAM-482): `defaultListProcesses`
+ * builds `argv` by splitting the raw `ps -eo pid,args` column on whitespace,
+ * which has no way to distinguish "one argv element containing a space" from
+ * "two separate elements" -- `ps` itself loses that boundary. An install path
+ * containing a space (e.g. `/Users/x/My Tools/cam`) therefore fragments
+ * `execPath`/`script` across 3+ (compiled) or 4+ (interpreted) array
+ * elements, which an exact `length === 2 || length === 3` check would reject
+ * even though it is the same live sidecar. Anchoring on the last element
+ * (`'sidecar'`, a literal with no spaces, always intact as its own token) and
+ * an absolute-path first element tolerates any amount of internal
+ * fragmentation from a space-bearing path without reopening the false-match
+ * class this predicate exists to close (`sidecar` is still required as the
+ * exact trailing token, and a bare PATH-relative command still can't start
+ * with `/`).
  */
 export function isSidecarArgv(argv: string[]): boolean {
 	const first = argv[0];
-	return (
-		(argv.length === 2 || argv.length === 3) &&
-		argv[argv.length - 1] === 'sidecar' &&
-		first !== undefined &&
-		first.startsWith('/')
-	);
+	const last = argv[argv.length - 1];
+	return argv.length >= 2 && last === 'sidecar' && first !== undefined && first.startsWith('/');
 }
 
 /**
