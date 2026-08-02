@@ -25,10 +25,11 @@
 // of its own. `test/no-permission-mode-flag.test.ts` enforces this by scanning
 // every file in `src/commands/`.
 
+import { openSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
 
-import { sidecarAlive, writeSidecarPid } from '../supervisor/sidecar-pid.ts';
+import { SIDECAR_LOG_FILENAME, sidecarAlive, writeSidecarPid } from '../supervisor/sidecar-pid.ts';
 import { SIDECAR_STALLED_FILENAME, writeSidecarStalledMarker } from '../supervisor/sidecar-stalled.ts';
 import { buildSelfSpawnArgv } from '../util/self-invoke.ts';
 
@@ -98,11 +99,29 @@ export function buildSidecarRespawnArgv(execPath: string, argv1: string | undefi
 	return buildSelfSpawnArgv(execPath, argv1, 'sidecar');
 }
 
+/**
+ * Respawns the sidecar with stdout/stderr redirected to `.claude/cam-supervisor.log`,
+ * the SAME log file `spawnSidecarDefault` (src/commands/run.ts) redirects the
+ * original sidecar's stdio to.
+ *
+ * This is required, not cosmetic (US-R4-001, CAM-482): `defaultListProcesses`'s
+ * process-identity check (src/commands/stop.ts) treats "holds this project's
+ * sidecar log file open" as the defining trait of a real sidecar process. A
+ * respawn with `stdio: ['ignore','ignore','ignore']` holds no fd on that log
+ * file, so it is invisible to `cam stop`'s fallback scoped scan and is
+ * silently left running in exactly the situation the fallback exists for
+ * (pid file absent or stale). Opening the same log path for append, exactly
+ * as `spawnSidecarDefault` does, keeps every self-spawned sidecar shape
+ * (initial spawn, liveness-watch respawn) discoverable through the same
+ * identity check.
+ */
 function makeSpawnSidecarFn(cwd: string): () => SidecarLivenessWatchProcessHandle {
 	return () => {
+		const logPath = join(cwd, '.claude', SIDECAR_LOG_FILENAME);
+		const logFd = openSync(logPath, 'a');
 		const proc = Bun.spawn(buildSidecarRespawnArgv(process.execPath, process.argv[1]), {
 			cwd,
-			stdio: ['ignore', 'ignore', 'ignore'],
+			stdio: ['ignore', logFd, logFd],
 		});
 		return {
 			pid: proc.pid,

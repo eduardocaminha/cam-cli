@@ -12,6 +12,19 @@
 // "fakes lie" class, patterns.md CAM-55 / the project's own test-quality
 // rule: "hit real I/O at wire boundaries").
 //
+// Updated in US-R4-001 (CAM-482): round 4 review proved live, against this
+// exact production path, that a liveness-watch-respawned sidecar
+// (src/commands/sidecar-liveness-watch.ts's `makeSpawnSidecarFn`) was an
+// UNDER-match: it used to spawn with `stdio: ['ignore','ignore','ignore']`,
+// so it held no fd on `.claude/cam-supervisor.log` and was invisible to the
+// process-identity check below -- silently left running in exactly the
+// situation the fallback scan exists for (pid file absent/stale). The fix
+// gives that respawn the SAME `openSync(logPath, 'a')` stdout/stderr
+// redirection `spawnSidecarDefault` already used. The second test below
+// reproduces that exact liveness-watch respawn shape (built via the real
+// `buildSidecarRespawnArgv` self-spawn-argv builder, log fd opened the same
+// way `makeSpawnSidecarFn` now does) and asserts it IS discovered/killed.
+//
 // Updated in US-R2-001 (CAM-482): round 2 review proved live, against this
 // exact real production path, that argv shape + cwd alone (US-R1-001's
 // absolute-argv[0] anchor) still misclassifies an unrelated process as this
@@ -41,6 +54,7 @@ import { join } from 'node:path';
 import process from 'node:process';
 
 import { performStop } from '../../src/commands/stop.ts';
+import { buildSidecarRespawnArgv } from '../../src/commands/sidecar-liveness-watch.ts';
 import { waitForCondition } from '../helpers/wait-for-condition.ts';
 import { psAvailable, lsofAvailable } from '../helpers/test-deps.ts';
 
@@ -143,6 +157,61 @@ test.skipIf(!psAvailable || !lsofAvailable)(
 			}
 			try {
 				sidecarProc.kill();
+			} catch {
+				// already dead -- expected on the success path
+			}
+			rmSync(tempDirRaw, { recursive: true, force: true });
+		}
+	},
+	15_000,
+);
+
+test.skipIf(!psAvailable || !lsofAvailable)(
+	'defaultListProcesses: discovers a liveness-watch-respawned sidecar (US-R4-001 regression)',
+	async () => {
+		const tempDirRaw = mkdtempSync(join(tmpdir(), 'cam-stop-real-livenesswatch-'));
+		// lsof reports the process's REAL (symlink-resolved) cwd, see note above.
+		const projectCwd = realpathSync(tempDirRaw);
+
+		const claudeDir = join(projectCwd, '.claude');
+		mkdirSync(claudeDir, { recursive: true });
+		const logPath = join(claudeDir, 'cam-supervisor.log');
+
+		const markerScript = join(projectCwd, 'liveness-respawn-marker.ts');
+		writeFileSync(markerScript, IDLE_SCRIPT_BODY, 'utf8');
+
+		// Reproduces `makeSpawnSidecarFn`'s exact respawn shape
+		// (src/commands/sidecar-liveness-watch.ts): the real self-spawn argv
+		// builder, PLUS the fixed `openSync(logPath, 'a')` stdout/stderr
+		// redirection. Before the fix, this respawn used
+		// `stdio: ['ignore','ignore','ignore']` and held no fd on the log file,
+		// making it invisible to the process-identity check below.
+		const respawnArgv = buildSidecarRespawnArgv(process.execPath, markerScript);
+		const logFd = openSync(logPath, 'a');
+		const respawnProc = Bun.spawn(respawnArgv, {
+			cwd: projectCwd,
+			stdio: ['ignore', logFd, logFd],
+		});
+
+		try {
+			expect(respawnProc.pid).toBeGreaterThan(0);
+
+			let sawFallbackKill = false;
+			await waitForCondition(
+				() => {
+					const report = performStop({ cwd: projectCwd });
+					sawFallbackKill = report.fallbackSidecarKilled;
+					return sawFallbackKill;
+				},
+				{ timeoutMs: 10_000, intervalMs: 200 },
+			);
+			expect(sawFallbackKill).toBe(true);
+
+			await respawnProc.exited;
+			expect(() => process.kill(respawnProc.pid, 0)).toThrow();
+		} finally {
+			try {
+				respawnProc.kill();
 			} catch {
 				// already dead -- expected on the success path
 			}
