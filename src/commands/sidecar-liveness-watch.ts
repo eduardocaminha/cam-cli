@@ -30,6 +30,7 @@ import process from 'node:process';
 
 import { sidecarAlive, writeSidecarPid } from '../supervisor/sidecar-pid.ts';
 import { SIDECAR_STALLED_FILENAME, writeSidecarStalledMarker } from '../supervisor/sidecar-stalled.ts';
+import { buildSelfSpawnArgv } from '../util/self-invoke.ts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -87,9 +88,19 @@ export interface SidecarLivenessWatchOptions {
 // Production dep factories
 // ---------------------------------------------------------------------------
 
+/**
+ * Pure self-spawn argv for the sidecar-liveness watcher's own sidecar
+ * respawn (US-002, CAM-482). Mirrors {@link buildSidecarSpawnArgv} in
+ * run.ts (src/commands/run.ts): always respawns the exact binary running the
+ * loop, never a possibly-stale `cam` resolved off PATH.
+ */
+export function buildSidecarRespawnArgv(execPath: string, argv1: string | undefined): string[] {
+	return buildSelfSpawnArgv(execPath, argv1, 'sidecar');
+}
+
 function makeSpawnSidecarFn(cwd: string): () => SidecarLivenessWatchProcessHandle {
 	return () => {
-		const proc = Bun.spawn(['cam', 'sidecar'], {
+		const proc = Bun.spawn(buildSidecarRespawnArgv(process.execPath, process.argv[1]), {
 			cwd,
 			stdio: ['ignore', 'ignore', 'ignore'],
 		});

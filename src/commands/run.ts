@@ -69,7 +69,7 @@ import { checkClaudeEffortSupport, type EffortCapabilityCheck } from './run-effo
 import { codexAuthPreflight, type CodexAuthCheck } from '../supervisor/codex-auth.ts';
 import { resolvePhaseModel } from '../config/model-resolution.ts';
 import type { CodexModelsCacheReader } from '../config/codex-models-cache.ts';
-import { resolveSelfInvokeArgv } from '../util/self-invoke.ts';
+import { resolveSelfInvokeArgv, buildSelfSpawnArgv } from '../util/self-invoke.ts';
 
 // Re-export projectSessionName so existing callers (test/run.test.ts) continue
 // to import it from this module without breaking.
@@ -283,6 +283,26 @@ function q(s: string): string {
 export function resolveOrchResolverCmd(execPath: string, argv1: string | undefined): string {
 	const argv = resolveSelfInvokeArgv(execPath, argv1);
 	return `${argv.map(q).join(' ')} orch-resolve`;
+}
+
+/**
+ * Build the argv words appended after `-t <dashboardPaneId>` for the
+ * dashboard pane's `tmux respawn-pane` (US-002, CAM-482). Pure string-array
+ * assembly, no I/O: the caller (setupPanes) passes `process.execPath` /
+ * `process.argv[1]` and this Bun.spawn'd argv array (never shell-parsed by
+ * tmux; `spawnFn('tmux', ...)` execve's tmux directly, so each element is its
+ * own execve argv word to the tmux binary, immune to word-splitting) becomes
+ * the pane's live command. Reuses {@link buildSelfSpawnArgv}, mirroring
+ * forkMonitor's self-invoke convention (src/retry/launcher.ts), so the
+ * dashboard child always respawns the exact binary running the loop rather
+ * than a possibly-stale `cam` resolved off PATH.
+ */
+export function buildDashboardRespawnArgv(
+	execPath: string,
+	argv1: string | undefined,
+	orchPaneId: string,
+): string[] {
+	return buildSelfSpawnArgv(execPath, argv1, 'dashboard', orchPaneId);
 }
 
 /** Inputs for {@link buildOrchestratorPaneCommand}. */
@@ -737,7 +757,13 @@ function setupPanes(
 	// closes the pane; tmux reflows the survivor to fill the right column.
 	spawnFn(
 		'tmux',
-		tmuxArgs(['respawn-pane', '-k', '-t', dashboardPaneId, 'cam', 'dashboard', orchPaneId]),
+		tmuxArgs([
+			'respawn-pane',
+			'-k',
+			'-t',
+			dashboardPaneId,
+			...buildDashboardRespawnArgv(process.execPath, process.argv[1], orchPaneId),
+		]),
 		{ stdio: 'ignore' },
 	);
 
@@ -816,10 +842,19 @@ function setupPanes(
  *
  * We use Bun.spawn (not node:child_process.spawn) per the Bun-runtime pattern.
  */
+/**
+ * Pure self-spawn argv for the background sidecar child (US-002, CAM-482).
+ * See {@link buildDashboardRespawnArgv} for the shared rationale: always
+ * respawn the exact binary running the loop, never a PATH-resolved literal.
+ */
+export function buildSidecarSpawnArgv(execPath: string, argv1: string | undefined): string[] {
+	return buildSelfSpawnArgv(execPath, argv1, 'sidecar');
+}
+
 function spawnSidecarDefault(cwd: string, logPath: string): SidecarProcess {
 	// Open the log file for append (create if absent).
 	const logFd = openSync(logPath, 'a');
-	const proc = Bun.spawn(['cam', 'sidecar'], {
+	const proc = Bun.spawn(buildSidecarSpawnArgv(process.execPath, process.argv[1]), {
 		cwd,
 		stdio: ['ignore', logFd, logFd],
 	});
@@ -848,9 +883,17 @@ function spawnSidecarDefault(cwd: string, logPath: string): SidecarProcess {
  * spawnSidecarDefault: NOT detached, shares cam run's process group, killed
  * in the SIGINT/SIGTERM cleanup handler.
  */
+/**
+ * Pure self-spawn argv for the background recycle-watcher child (US-002,
+ * CAM-482). See {@link buildDashboardRespawnArgv} for the shared rationale.
+ */
+export function buildRecycleWatchSpawnArgv(execPath: string, argv1: string | undefined): string[] {
+	return buildSelfSpawnArgv(execPath, argv1, 'orch-recycle-watch');
+}
+
 function spawnWatcherDefault(cwd: string, logPath: string): SidecarProcess {
 	const logFd = openSync(logPath, 'a');
-	const proc = Bun.spawn(['cam', 'orch-recycle-watch'], {
+	const proc = Bun.spawn(buildRecycleWatchSpawnArgv(process.execPath, process.argv[1]), {
 		cwd,
 		stdio: ['ignore', logFd, logFd],
 	});
@@ -890,9 +933,18 @@ export function shouldSpawnSidecarLivenessWatch(configPath?: string): boolean {
  * contract as spawnSidecarDefault/spawnWatcherDefault: NOT detached, shares
  * cam run's process group, killed in the SIGINT/SIGTERM cleanup handler.
  */
+/**
+ * Pure self-spawn argv for the background sidecar-liveness-watch child
+ * (US-002, CAM-482). See {@link buildDashboardRespawnArgv} for the shared
+ * rationale.
+ */
+export function buildSidecarLivenessWatchSpawnArgv(execPath: string, argv1: string | undefined): string[] {
+	return buildSelfSpawnArgv(execPath, argv1, 'sidecar-liveness-watch');
+}
+
 function spawnSidecarLivenessWatchDefault(cwd: string, logPath: string): SidecarProcess {
 	const logFd = openSync(logPath, 'a');
-	const proc = Bun.spawn(['cam', 'sidecar-liveness-watch'], {
+	const proc = Bun.spawn(buildSidecarLivenessWatchSpawnArgv(process.execPath, process.argv[1]), {
 		cwd,
 		stdio: ['ignore', logFd, logFd],
 	});
