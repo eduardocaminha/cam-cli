@@ -1,0 +1,10 @@
+{
+  "id": "CAM-487",
+  "title": "Nao existe politica declarada de compatibilidade e depreciacao para o 0.x, e o produto esta prestes a ter usuario externo",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-02T14:01:49.366Z",
+  "updatedAt": "2026-08-02T14:01:49.366Z",
+  "description": "MEDIDO 2026-08-02: nada no repo declara o que um usuario pode esperar de estabilidade. Existem 276 tags e 275 secoes no CHANGELOG.md, cerca de uma versao por ciclo, e a unica regra de versionamento escrita vive em scripts/cam/CLAUDE.md na secao Release Conventions, que e documento interno de agente: a convencao 0.x rebaixa bump major para minor, e 1.0.0 exige edicao manual de src/version.ts. Isso responde como a versao e calculada, nao o que o usuario pode assumir.\n\nO QUE PRECISA FICAR ESCRITO, a refinar no spec: o que conta como superficie publica (nomes de comando e flags do CLI, formato de project.toml, esquema do prd.json e do issues.local.json, ou apenas o primeiro deles), com que aviso previo algo quebra, e o que 0.x significa aqui na pratica. Tambem precisa dizer o que acontece com estado em disco entre versoes, porque o produto mantem arquivos versionados no repo do usuario.\n\nPOR QUE AGORA E NAO DEPOIS: enquanto ha uma instalacao, quebrar contrato custa zero. O ADR-0054 usa exatamente esse raciocinio para abrir uma janela de rename que fecha na primeira instalacao externa. A politica de depreciacao e a versao generalizada da mesma ideia, e escrever depois de ter usuario e escrever tarde demais, porque a expectativa ja terá se formado sem contrato.\n\nSITIO PROVAVEL: secao no README publico ou docs/versioning.md, com ponteiro do CHANGELOG. Se a decisao envolver trade-off real, cabe ADR.\n\nORIGEM: docs/launch-readiness.md:352-355, follow-up que nunca foi filado."
+}
