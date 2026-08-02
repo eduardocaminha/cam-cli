@@ -49,7 +49,7 @@
       "id": "US-R1-004",
       "title": "WARNING: The new bullet is prefixed `[resolved 2026-08-02]`, which does not mat…",
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "description": "WARNING [scripts/cam/patterns.md:1154]: The new bullet is prefixed `[resolved 2026-08-02]`, which does not match the archiver's marker regex RESOLVED_MARKER_RE = /\\[resolved \\d{4}-\\d{2}\\]/ (src/commands/patterns-archive.ts:44) nor the documented `[resolved YYYY-MM]` form (scripts/cam/CLAUDE.md:91); verified with the real regex (full-date form: false, YYYY-MM form: true). Every one of the 11 existing markers in patterns.archive.md uses YYYY-MM. Effect: `cam patterns archive` will silently never archive this bullet. Separately, reconsider marking it resolved at all: unlike the GOTCHA it closes, the bullet documents the LIVE isSidecarArgv shape contract, so archiving it would remove active knowledge.",
       "notes": "WARNING [scripts/cam/patterns.md:1154]: The new bullet is prefixed `[resolved 2026-08-02]`, which does not match the archiver's marker regex RESOLVED_MARKER_RE = /\\[resolved \\d{4}-\\d{2}\\]/ (src/commands/patterns-archive.ts:44) nor the documented `[resolved YYYY-MM]` form (scripts/cam/CLAUDE.md:91); verified with the real regex (full-date form: false, YYYY-MM form: true). Every one of the 11 existing markers in patterns.archive.md uses YYYY-MM. Effect: `cam patterns archive` will silently never archive this bullet. Separately, reconsider marking it resolved at all: unlike the GOTCHA it closes, the bullet documents the LIVE isSidecarArgv shape contract, so archiving it would remove active knowledge."
     },
