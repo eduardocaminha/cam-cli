@@ -25,7 +25,7 @@
 // of its own. `test/no-permission-mode-flag.test.ts` enforces this by scanning
 // every file in `src/commands/`.
 
-import { openSync } from 'node:fs';
+import { closeSync, openSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
 
@@ -123,6 +123,14 @@ function makeSpawnSidecarFn(cwd: string): () => SidecarLivenessWatchProcessHandl
 			cwd,
 			stdio: ['ignore', logFd, logFd],
 		});
+		// Unlike spawnSidecarDefault (run.ts), which runs once per `cam run`,
+		// this closure runs on every respawn attempt over the lifetime of a
+		// long-lived watcher process (state.attempts resets to 0 whenever the
+		// sidecar is observed alive again — see handleOneTick), so a flapping
+		// sidecar would otherwise accumulate fds without bound. Bun.spawn's
+		// child holds its own duplicated fd, so the parent's copy is
+		// redundant once the child process has started.
+		closeSync(logFd);
 		return {
 			pid: proc.pid,
 			kill: () => {
