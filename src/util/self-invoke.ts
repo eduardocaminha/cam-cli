@@ -31,12 +31,15 @@
  * Decide the self-invoke argv for re-running this same binary/script,
  * keyed only on the positive `/$bunfs/` virtual-entry signal:
  *   - compiled mode (`argv1` starts with `/$bunfs/`): `[execPath]`.
- *   - interpreted mode (anything else): `[execPath, argv1 ?? 'cam']`.
+ *   - degenerate interpreted mode (`argv1` undefined): `[execPath]` alone --
+ *     `execPath` is always defined, so this is the honest answer with no
+ *     PATH-resolvable name required.
+ *   - interpreted mode with a real script path: `[execPath, argv1]`.
  */
 export function resolveSelfInvokeArgv(execPath: string, argv1: string | undefined): string[] {
 	const isCompiled = argv1 !== undefined && argv1.startsWith('/$bunfs/');
-	if (isCompiled) {
+	if (isCompiled || argv1 === undefined) {
 		return [execPath];
 	}
-	return [execPath, argv1 ?? 'cam'];
+	return [execPath, argv1];
 }

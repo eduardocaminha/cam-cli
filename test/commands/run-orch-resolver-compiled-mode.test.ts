@@ -64,9 +64,9 @@ describe('resolveOrchResolverCmd (US-R1-001, CAM-425)', () => {
 		expect(cmd).toBe(`'/opt/homebrew/bin/bun-1.3' '/repo/index.ts' orch-resolve`);
 	});
 
-	test('interpreted mode with a missing argv1 falls back to the bare "cam" PATH lookup', () => {
+	test('degenerate interpreted mode with a missing argv1 collapses to <execPath> orch-resolve', () => {
 		const cmd = resolveOrchResolverCmd('/opt/homebrew/bin/bun', undefined);
-		expect(cmd).toBe(`'/opt/homebrew/bin/bun' 'cam' orch-resolve`);
+		expect(cmd).toBe(`'/opt/homebrew/bin/bun' orch-resolve`);
 	});
 });
 

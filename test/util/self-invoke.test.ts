@@ -24,8 +24,8 @@ describe('resolveSelfInvokeArgv (US-001, CAM-426)', () => {
 		expect(argv).toEqual(['/opt/homebrew/bin/bun-1.3', '/repo/index.ts']);
 	});
 
-	test('interpreted mode with undefined argv1 falls back to the bare "cam" PATH lookup', () => {
+	test('degenerate interpreted mode with undefined argv1 resolves to an execPath-only argv', () => {
 		const argv = resolveSelfInvokeArgv('/opt/homebrew/bin/bun', undefined);
-		expect(argv).toEqual(['/opt/homebrew/bin/bun', 'cam']);
+		expect(argv).toEqual(['/opt/homebrew/bin/bun']);
 	});
 });
