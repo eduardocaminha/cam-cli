@@ -32,7 +32,12 @@ import { buildSelfSpawnArgv } from '../../src/util/self-invoke.ts';
 import { waitForCondition } from '../helpers/wait-for-condition.ts';
 import { tmuxAvailable } from '../helpers/test-deps.ts';
 
-const TEST_SOCK = 'cam-it-selfspawn';
+// Per-process socket name: a fixed name is destroyed by any second process
+// running this same file concurrently (its beforeEach/afterEach kill-server
+// tears down the FIRST instance's server mid-test, killing the respawned
+// pane child before it can write marker.json). Deriving the socket from
+// process.pid makes kill-server unable to cross instances (CAM-482 US-R8-001).
+const TEST_SOCK = `cam-it-selfspawn-${process.pid}`;
 const SESSION = 'selfspawn';
 
 function tmuxRaw(args: string[]): ReturnType<typeof spawnSync> {
