@@ -287,11 +287,12 @@ function killSession(spawnFn: SpawnSyncFn, sessionName: string): boolean {
  * Returns true when `argv` matches the shape emitted by
  * `buildSidecarSpawnArgv`/`buildSelfSpawnArgv(execPath, argv1, 'sidecar')`
  * (US-004, CAM-482; re-anchored in US-R1-001, CAM-482; token-count dropped in
- * US-R1-002, CAM-482): the final element is the literal subcommand token
- * `'sidecar'`, AND `argv[0]` is an absolute path. The compiled-binary
- * self-spawn shape is `[execPath, 'sidecar']` (2 elements) and the
- * interpreted-runtime shape is `[runtime, script, 'sidecar']` (3 elements),
- * but the exact element COUNT is deliberately not checked (see below).
+ * US-R1-002, CAM-482; absolute-argv[0] anchor DROPPED in US-R2-002, CAM-482):
+ * the final element is the literal subcommand token `'sidecar'`. The
+ * compiled-binary self-spawn shape is `[execPath, 'sidecar']` (2 elements)
+ * and the interpreted-runtime shape is `[runtime, script, 'sidecar']` (3
+ * elements), but the exact element COUNT is deliberately not checked (see
+ * below), and `argv[0]` is NOT required to be an absolute path (see below).
  *
  * Deliberately independent of what argv[0]/argv[1] actually name (a binary
  * path, its basename, a runtime, a script path): a fixed binary-name literal
@@ -299,22 +300,32 @@ function killSession(spawnFn: SpawnSyncFn, sessionName: string): boolean {
  * execPath (US-002/US-003) or the binary ships under a different name.
  *
  * This is only a cheap QUICK FILTER (US-R2-001, CAM-482): it is deliberately
- * NOT sufficient on its own to classify a process as this project's sidecar.
- * Argv shape alone cannot distinguish the real self-spawn from an unrelated
- * tool/agent/editor-spawned command that happens to end in the literal word
- * `sidecar` with an absolute argv[0] -- e.g. `/opt/homebrew/bin/rg -n
- * sidecar`, `/opt/homebrew/bin/bun test sidecar`, or
- * `/usr/bin/tail -F sidecar` (the exact round-1 CRITICAL repro, still
- * matching this predicate; see review-artifact.txt section 3). `sidecar` is
- * a routine grep/test filter term in this very repo. The absolute-path
- * requirement on `argv[0]` only re-anchors on a property the real self-spawn
- * always has (both production shapes are built from `resolveSelfInvokeArgv`,
- * src/util/self-invoke.ts, which always spreads `process.execPath` as
- * `argv[0]`, always an absolute path); it excludes a bare PATH-relative
- * hand-typed command but does NOT exclude an absolute-argv[0] tool invocation
- * that merely echoes the token `sidecar`. Callers MUST additionally require
- * process identity (see `defaultListProcesses`'s `holdsSidecarLogOpen` check)
- * before trusting a match from this predicate alone.
+ * NOT sufficient on its own to classify a process as this project's sidecar,
+ * in EITHER direction. Argv shape alone cannot distinguish the real
+ * self-spawn from an unrelated tool/agent/editor-spawned command that
+ * happens to end in the literal word `sidecar` -- e.g. `/opt/homebrew/bin/rg
+ * -n sidecar`, `/opt/homebrew/bin/bun test sidecar`, or `/usr/bin/tail -F
+ * sidecar` (the round-1 CRITICAL repro). `sidecar` is a routine grep/test
+ * filter term in this very repo. The only reliable defense against that
+ * false-positive direction is process IDENTITY (see
+ * `defaultListProcesses`'s `holdsSidecarLogOpen` check, US-R2-001): callers
+ * MUST additionally require it before trusting a match from this predicate
+ * alone.
+ *
+ * No absolute-path requirement on `argv[0]` (US-R2-002, CAM-482; DROPPED, was
+ * added in US-R1-001): requiring `argv[0].startsWith('/')` was a SYMMETRIC
+ * under-match, not a fix -- it excluded the false-positive class above only
+ * when the impostor's argv[0] was itself PATH-relative (a narrow subset: the
+ * round-1 CRITICAL repro's `/usr/bin/tail` is absolute and still matched
+ * regardless), while ALSO excluding a live sidecar advertised under a bare,
+ * PATH-relative argv[0] (`['cam', 'sidecar']`, the shape every pre-US-002
+ * binary spawns, and the shape a sidecar advertises when re-exec'd via a bare
+ * `cam` on PATH rather than an absolute install path) -- exactly the upgrade
+ * window US-004's own notes call out as legitimate. Since the identity check
+ * is the only defense that actually holds for the false-positive direction
+ * (see above), the argv[0] anchor bought no real safety and only cost real
+ * visibility; dropping it fixes the under-match without reopening any
+ * genuinely-closed hole.
  *
  * No exact token-count check (US-R1-002, CAM-482): `defaultListProcesses`
  * builds `argv` by splitting the raw `ps -eo pid,args` column on whitespace,
@@ -323,15 +334,14 @@ function killSession(spawnFn: SpawnSyncFn, sessionName: string): boolean {
  * containing a space (e.g. `/Users/x/My Tools/cam`) therefore fragments
  * `execPath`/`script` across 3+ (compiled) or 4+ (interpreted) array
  * elements, which an exact `length === 2 || length === 3` check would reject
- * even though it is the same live sidecar. Anchoring on the last element
- * (`'sidecar'`, a literal with no spaces, always intact as its own token) and
- * an absolute-path first element tolerates any amount of internal
- * fragmentation from a space-bearing path.
+ * even though it is the same live sidecar. Anchoring on only the last
+ * element (`'sidecar'`, a literal with no spaces, always intact as its own
+ * token) tolerates any amount of internal fragmentation from a space-bearing
+ * path.
  */
 export function isSidecarArgv(argv: string[]): boolean {
-	const first = argv[0];
 	const last = argv[argv.length - 1];
-	return argv.length >= 2 && last === 'sidecar' && first !== undefined && first.startsWith('/');
+	return argv.length >= 2 && last === 'sidecar';
 }
 
 /**
@@ -386,10 +396,10 @@ function parseLsofOpenFiles(stdout: string): LsofOpenFile[] {
  * project's sidecar log file open.
  *
  * Process-identity check (US-R2-001, CAM-482): argv shape alone is not
- * sufficient (see `isSidecarArgv`'s docstring) -- any absolute-argv[0]
- * command whose last token is `sidecar` and whose cwd happens to match this
- * project (`/usr/bin/tail -F sidecar`, `/opt/homebrew/bin/rg -n sidecar`)
- * would otherwise be misclassified as this project's sidecar and SIGTERM'd.
+ * sufficient (see `isSidecarArgv`'s docstring) -- any command whose last
+ * token is `sidecar` and whose cwd happens to match this project
+ * (`/usr/bin/tail -F sidecar`, `/opt/homebrew/bin/rg -n sidecar`) would
+ * otherwise be misclassified as this project's sidecar and SIGTERM'd.
  * The real sidecar process always holds `.claude/cam-supervisor.log` open on
  * fd 1/2 for its entire lifetime (`spawnSidecarDefault`, src/commands/run.ts,
  * redirects stdio there via `openSync(logPath, 'a')`); an unrelated process
