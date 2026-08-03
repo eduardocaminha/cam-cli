@@ -1,29 +1,44 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-001",
-    "title": "CRITICAL: The installer's tag-resolution error path is unreachable dead code an…"
+    "id": "US-R1-002",
+    "title": "CRITICAL: US-005's acceptance criteria 1 and 2 are green only because their ext…"
   },
   "branchName": "cam/issue-460",
   "timestamp": "2026-08-03T00:00:00Z",
-  "createdFiles": [
-    "test/install-sh.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
-    "install.sh",
+    ".claude/agents/subagent-implementer.md",
+    ".claude/agents/subagent-orchestrator.md",
+    ".claude/commands/cam-issue.md",
+    ".claude/commands/cam-next.md",
+    ".claude/commands/cam-prune.md",
+    ".claude/commands/cam-review.md",
+    ".claude/commands/cam-ship.md",
+    ".claude/commands/cam-spec.md",
+    ".claude/skills/domain-modeling/SKILL.md",
+    "scripts/cam/CLAUDE.md",
     "scripts/cam/patterns.md",
-    "scripts/cam/prd.json"
+    "src/vendor/_generated.ts",
+    "templates/agents/subagent-implementer.md",
+    "templates/agents/subagent-orchestrator.md",
+    "templates/commands/cam-issue.md",
+    "templates/commands/cam-next.md",
+    "templates/commands/cam-prune.md",
+    "templates/commands/cam-review.md",
+    "templates/commands/cam-ship.md",
+    "templates/commands/cam-spec.md",
+    "templates/skills/domain-modeling/SKILL.md",
+    "vendor/check-agent-frontmatter.ts"
   ],
   "openQuestions": [
-    "This session's prd.json already carried a pre-staged second round-1 story, US-R1-002 (priority 2, same install.sh/CLAUDE-instruction-file family: widens US-005's AC1/AC2 oracle terminator from `( |$)` to `([^a-zA-Z0-9_-]|$)` to catch backtick-terminated `cam <cmd>` mentions the narrow oracle missed). Not touched by this story; flagging since it is the very next non-operator, passes:false story by priority order and lives in the same subsystem area (install/rename instruction surface)."
+    "`vendor/README.md` still names the retired `cam init`/`cam next` forms in prose (lines 3, 11, 15, 41, 45); it is not embedded into `src/vendor/_generated.ts` and is outside the story's cited AC1 (66) / AC2 (46) scopes, so it was left untouched per surgical-changes discipline -- flagging as a real but out-of-scope residual for a future doc-hygiene story.",
+    "The reviewer's `worker-report.json`/finding text described AC1 as 66 matches and AC2 as 46 matches under a widened terminator; my own re-run of the widened-terminator scan (full AC1 command list, boundary `(^|[^a-zA-Z_/-])cam ($CMDS)([^a-zA-Z0-9_-]|$)`) found 68 in AC1 scope and, after accounting for two markdown line-wrap splits a per-line regex misses, a total of 46 in AC2 scope once vendor/check-agent-frontmatter.ts's two embedded comment mentions of `cam init` are included alongside templates/'s 2 -- both counts now measure 0 post-fix; the small discrepancy from the story's 66 (mine found 68) is most likely a different exact command token list used by the planner's manual count vs. mine, not a missed file, since a post-fix full-scope re-scan (collapsed-newline included) returns zero in both scopes."
   ],
-  "nextStoryContext": "install.sh's tag-resolution error path (install.sh:64-73) is now reachable: the curl-list step is checked explicitly via `if ! RELEASES_JSON=\"$(curl -fsSL ...)\"` (prints 'ERROR: failed to reach the GitHub API to list releases ...' on network failure/rate-limit), and the grep+sed parse step is a separate `TAG=\"$(printf '%s' \"${RELEASES_JSON}\" | grep -m1 ... | sed ...)\" || true` (the `|| true` is required even split-out, because a bare assignment whose pipeline's last-failing command exits non-zero still trips `set -e` on its own line under `set -euo pipefail`, regardless of how many steps the pipeline is split into -- confirmed empirically with `bash -c 'set -euo pipefail; TAG=\"$(false)\"; echo reached'` exiting 1 before the echo). Both failure modes (zero releases published -- this repo's real current state pre-launch -- and curl/network failure) now print a diagnostic to stderr and exit 1, verified live via `GATESHIP_INSTALL_DIR=$(mktemp -d) bash install.sh` under a fake-curl PATH shim, and covered hermetically (no real network dependency) by the new test/install-sh.test.ts, which is the reusable pattern for testing this class of shell error-path-reachability bug going forward. Root cause and fix pattern are written up in full in scripts/cam/patterns.md (bottom bullet). prd.json in this working tree already carries US-R1-002 (priority 2, passes:false) staged by the reviewer/planner before this story started -- it is the next candidate by priority and touches the adjacent rename-instruction-surface subsystem (widening US-005's oracle terminator), not install.sh itself.",
+  "nextStoryContext": "The `cam` -> `gship`/`gateship` typed-command migration (ADR-0054) that US-005 believed complete is now actually complete under the widened, backtick-aware boundary `([^a-zA-Z0-9_-]|$)`: AC1 scope (.claude/agents, .claude/commands, .claude/skills, .claude/hooks, templates/, scripts/cam/CLAUDE.md, excluding the four pinned history files journal.md/journal.archive.md/patterns.md/patterns.archive.md) and AC2 scope (src/vendor/_generated.ts, which embeds templates/ whole-dir plus three named vendor/ files listed in scripts/generate-embedded-vendor.ts's FILES const) both re-scanned to 0 remaining `cam <subcommand>` matches with the wide terminator, verified twice: once as a raw grep and once against newline-collapsed file content (to catch markdown-wrapped code spans a per-line perl substitution silently skips -- two such wraps were found and hand-fixed in subagent-orchestrator.md, present in both the .claude/ and templates/ copies). `bun run embed-vendor` was re-run after every source edit (templates/ and vendor/) and `embed-vendor:check` is clean. All five US-005 AC5 pinned internal-contract counts (CAM_=164, .cam-=153, tmux -L cam=3, /cam-=205, all measured in src+index.ts against main) are unchanged, and the four historical-prose files were not touched. Full `bun run check:all` is green (5960 pass / 0 fail, coverage/debt-markers/dead-code/dup/ci-parity/agents-md/test-sleeps/skip-ratchet all ok). `vendor/README.md` (not embedded, not in either AC's scope) still carries stale `cam init`/`cam next` prose mentions -- left alone per this story's exact scope, flagged in openQuestions as a real residual for a future pass. Next non-operator, passes:false story by priority is whatever the reviewer/planner has staged next in prd.json (none pre-staged as of this handoff, unlike the US-R1-001 -> US-R1-002 handoff).",
   "officialDocsValidated": [
     {
-      "lib": "bash (set -e / pipefail semantics)",
-      "url": "https://www.gnu.org/software/bash/manual/html_node/The-Set-Builtin.html",
-      "fetchedAt": "2026-08-03T00:00:00Z",
-      "status": "corrected",
-      "summary": "WebFetch's model-generated summary of the GNU bash manual claimed a bare `var=\"$(cmd)\"` assignment does NOT trip `set -e` when cmd fails (citing the && / || exemption, which does not apply to a standalone assignment statement). This is wrong and was falsified by direct empirical execution on the actual bash on this host (GNU bash 3.2.57 arm64-darwin): `bash -c 'set -euo pipefail; TAG=\"$(false)\"; echo reached'` exits 1 and never reaches the echo. The implementation (and the || true on the split-out parse step) is based on this verified real runtime behavior, not on the fetched summary; the fetch is recorded here as a caution against trusting a documentation-summary tool over direct execution for shell semantics."
+      "lib": "none",
+      "status": "no_external_lib_touched"
     }
   ],
   "appliedPatternIds": []
