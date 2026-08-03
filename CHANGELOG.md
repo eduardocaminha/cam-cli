@@ -6,6 +6,19 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.277.0] - 2026-08-03
+
+### Added
+
+- US-R6-002 - correct stale US-R1-001 patterns.md bullet + record the sync-to-async ripple
+- US-R2-001 - stream the suite gate live instead of capture-then-replay
+- US-R1-003 - restate check-all.test.ts header, isolate full-manifest name/order tests from real gate I/O
+- US-R1-002 - Contain a thrown in-process gate as a failed GateResult
+- US-R1-001 - Add committed regression tests for check-all's in-process gates
+- US-003 - Measure the collapsed check:all and record the numbers durably
+- US-002 - Feed coverage and skip-ratchet from the shared blob in-process
+- US-001 - Capture the suite gate's combined output in check-all
+
 ## [0.276.0] - 2026-08-03
 
 ### Added
