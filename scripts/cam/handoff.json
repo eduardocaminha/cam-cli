@@ -1,32 +1,29 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Renomear a superficie digitada do binario (help, usage, --version) e desancorar o gate agents-md do prefixo aposentado"
+    "id": "US-003",
+    "title": "Compilar os quatro alvos a partir de um host unico e publica-los como assets de um Release marcado prerelease"
   },
   "branchName": "cam/issue-460",
-  "timestamp": "2026-08-03T22:40:00Z",
-  "createdFiles": [],
+  "timestamp": "2026-08-03T23:40:00Z",
+  "createdFiles": [
+    ".github/workflows/release.yml"
+  ],
   "modifiedFiles": [
-    "index.ts",
     "scripts/build-release.sh",
-    "scripts/file-size-budget.json",
-    "scripts/validate-agents-md.ts",
-    "test/commands/patterns-cli.test.ts",
-    "test/commands/patterns-dispatch.test.ts",
-    "test/commands/stats.test.ts",
-    "test/commands/suggestions-cli.test.ts",
-    "test/issue-dispatch.test.ts",
-    "test/issue.test.ts",
-    "test/validate-agents-md.test.ts",
-    "test/version.test.ts",
+    "README.md",
+    "test/embedded.test.ts",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "This session found the implementation for US-002 already committed (HEAD was cf84895f, a well-formed `feat: US-002 - ...` commit) by a prior session that crashed before pushing/writing worker-report.json -- no code was re-implemented; this session independently re-verified all 4 story-specific AC oracles (help/usage cam-free + gship present, --version prints `gateship X.Y.Z`, agents-md gate CAM_CMD_RE desanchored to `/^(?:cam|gship|gateship)\\s+/` with the named durable test present, and the 5-contract invariance pin) plus the full gate spine (typecheck clean, bun test 5957 pass / 0 fail, bun run check:all all-green) before completing the tail of the protocol. index.ts's typed-invocation surface (all --help output, usage: strings, --version) now prints `gship` for commands-to-type and `gateship <ver>` for the product/version identity; the 5 ADR-0054-pinned internal contracts (CAM_ env vars, .cam- state files, the `tmux -L cam` socket, /cam- slash commands, sentinel strings) are untouched and pinned by AC4 against a live main comparison, not a frozen count -- do not rename any of those five in a story that isn't explicitly scoped to do so. scripts/validate-agents-md.ts's CAM_CMD_RE now accepts cam|gship|gateship as the invocation prefix, so the gate keeps checking the still-cam-prefixed claims in CLAUDE.md/scripts/cam/CLAUDE.md/.claude/agents/*.md until those docs are renamed in a later story (that later doc-rename story does not need to touch this regex again). scripts/build-release.sh's two --version smoke EXPECTED strings already match the new `gateship X.Y.Z` shape. test/version.test.ts's file-size ceiling was raised 91->92 with a tracker-ref'd `_ref` entry (CAM-460/US-002).",
+  "nextStoryContext": "scripts/build-release.sh now cross-compiles all four release targets (bun-darwin-arm64, bun-darwin-x64, bun-linux-x64, bun-linux-arm64) from a single macOS host in one run, writing dist/gateship-<os>-<arch> for each; the old single dist/cam-darwin-arm64 artifact name is retired. Only the host-native artifact (resolved via uname -s/-m) is executed for the --version smoke and the hermetic `cam init` soft-check (CAM-15 lineage: mktemp -d cwd, --no-tmux, absolute BIN_ABS path) -- the other three cross-compiled binaries cannot run on the build host and are never executed by this script; a caller verifies their machine code with `file`. codesign (ad-hoc re-sign + verify) runs only for the two bun-darwin-* outputs; ELF/linux artifacts are never signed. `--install` is now additive and writes TWO fixed filenames, `gateship` and `gship`, into dirname(INSTALL_DEST) (or ~/.local/bin when --install is passed bare) -- the script never removes a pre-existing `cam` binary (ADR-0055). Verified live end-to-end on this Mac arm64 host: all 4 artifacts built and passed `file` architecture checks (darwin-arm64 Mach-O arm64 61MB, darwin-x64 Mach-O x86_64 66MB, linux-x64 ELF x86-64 98MB, linux-arm64 ELF aarch64 98MB), and a hermetic `--install \"$D/gateship\"` run produced both `$D/gateship` and `$D/gship` as working executables with no `rm ... cam` anywhere in the script. New `.github/workflows/release.yml` triggers on `tags: v*`, builds via `bun run build:release` on macos-latest, and runs `gh release create \"${{ github.ref_name }}\" dist/gateship-* --prerelease --generate-notes` using the ambient `${{ github.token }}` (no new secret needed); this workflow is intentionally NOT added to `.github/workflows/ci.yml` because `scripts/check-ci-parity.ts`'s CI_YML_PATH only ever reads ci.yml, so a release-only workflow is structurally invisible to that parity gate and must stay that way. README.md's from-source Install section and the Development section's build:release comment were updated to the new gateship-* artifact names and the gateship/gship install targets (surgical accuracy fix only -- the larger lead-with-packaged-install README rewrite plus the curl-able installer is explicitly US-004/US-005 scope per the PRD notes, not touched here). The artifact naming convention (gateship-darwin-arm64, gateship-darwin-x64, gateship-linux-x64, gateship-linux-arm64) is exactly what the next story (curl-able installer) needs to construct its download URL against https://github.com/eduardocaminha/cam-cli/releases/download/<tag>/<asset>.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched"
+      "lib": "bun (bun build --compile)",
+      "url": "https://bun.sh/docs/bundler/executables",
+      "fetchedAt": "2026-08-03T23:30:00Z",
+      "status": "aligned",
+      "summary": "Confirmed --target=bun-<os>-<arch> is the documented cross-compile flag and the four triples used (bun-darwin-arm64, bun-darwin-x64, bun-linux-x64, bun-linux-arm64) are exactly the ones the docs list; confirmed codesign on macOS is a manual post-build step (`codesign --force --sign -`), matching the existing ad-hoc re-sign already in the script."
     }
-  ]
+  ],
+  "appliedPatternIds": []
 }
