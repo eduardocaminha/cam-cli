@@ -10,8 +10,8 @@
 // real hard dependency of cam itself, its absence is a defect" from "this
 // binary is known-legitimately-absent in one narrow environment".
 //
-// This module centralizes that decision for the 7 binaries the suite
-// depends on (tmux, git, jq, pgrep, ps, uuidgen, bun):
+// This module centralizes that decision for the 8 binaries the suite
+// depends on (tmux, git, jq, pgrep, ps, lsof, uuidgen, bun):
 //   - each is probed exactly ONCE, at module load (never per-test);
 //   - each carries an explicit classification: 'hard-dependency' (expected
 //     present on any real dev/CI host; absence is a real toolchain gap) or
@@ -31,8 +31,8 @@
 // read. This is ADR-0039-compliant: DI-injected absence stands in for real
 // I/O exactly where the real-I/O route is unavailable.
 
-/** The 7 external binaries this test suite depends on. */
-export type DepName = 'tmux' | 'git' | 'jq' | 'pgrep' | 'ps' | 'uuidgen' | 'bun';
+/** The 8 external binaries this test suite depends on. */
+export type DepName = 'tmux' | 'git' | 'jq' | 'pgrep' | 'ps' | 'lsof' | 'uuidgen' | 'bun';
 
 /**
  * 'hard-dependency': expected present on any real dev/CI host; absence is a
@@ -54,7 +54,7 @@ export interface DepInfo {
 	installHint: string;
 }
 
-const DEP_NAMES: readonly DepName[] = ['tmux', 'git', 'jq', 'pgrep', 'ps', 'uuidgen', 'bun'];
+const DEP_NAMES: readonly DepName[] = ['tmux', 'git', 'jq', 'pgrep', 'ps', 'lsof', 'uuidgen', 'bun'];
 
 /** Static classification/rationale/install-hint data, keyed by dependency name. */
 const DEP_METADATA: Record<
@@ -111,6 +111,18 @@ const DEP_METADATA: Record<
 			'ps not found on PATH; install procps (`apt-get install procps` on ' +
 			'Debian/Ubuntu) if you need to exercise this path outside the worker container.',
 	},
+	lsof: {
+		classification: 'legitimate-environmental',
+		rationale:
+			'lsof is absent in oven/bun:1.2-slim (no procps/lsof package installed in the ' +
+			'worker container image, same gap as `ps`); `cam stop`\'s fallback sidecar-discovery ' +
+			'scan (defaultListProcesses in src/commands/stop.ts) runs on the host, not inside the ' +
+			'worker container, so a container test environment lacking lsof does not reflect a ' +
+			'host toolchain gap.',
+		installHint:
+			'lsof not found on PATH; install it (ships by default on macOS, ' +
+			'`apt-get install lsof` on Debian/Ubuntu) if you need to exercise this path outside the worker container.',
+	},
 	uuidgen: {
 		classification: 'hard-dependency',
 		rationale:
@@ -158,9 +170,10 @@ export function isAvailable(name: DepName): boolean {
 export const gitAvailable: boolean = isAvailable('git');
 
 /**
- * Precomputed `isAvailable(name)` convenience bindings for the remaining 6
+ * Precomputed `isAvailable(name)` convenience bindings for the remaining 7
  * tracked binaries, exported for the test files that gate
- * `test.skipIf(!xAvailable)(...)` on their presence (US-004, CAM-424).
+ * `test.skipIf(!xAvailable)(...)` on their presence (US-004, CAM-424;
+ * `lsofAvailable` added US-R1-003, CAM-482).
  * Mirrors `gitAvailable` above: centralizes the probe here instead of each
  * call site hand-rolling its own `spawnSync(name, ['--version'|'-V'], ...)`
  * check.
@@ -169,6 +182,7 @@ export const tmuxAvailable: boolean = isAvailable('tmux');
 export const jqAvailable: boolean = isAvailable('jq');
 export const pgrepAvailable: boolean = isAvailable('pgrep');
 export const psAvailable: boolean = isAvailable('ps');
+export const lsofAvailable: boolean = isAvailable('lsof');
 export const uuidgenAvailable: boolean = isAvailable('uuidgen');
 export const bunAvailable: boolean = isAvailable('bun');
 

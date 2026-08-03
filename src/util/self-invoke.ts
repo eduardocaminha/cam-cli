@@ -31,12 +31,37 @@
  * Decide the self-invoke argv for re-running this same binary/script,
  * keyed only on the positive `/$bunfs/` virtual-entry signal:
  *   - compiled mode (`argv1` starts with `/$bunfs/`): `[execPath]`.
- *   - interpreted mode (anything else): `[execPath, argv1 ?? 'cam']`.
+ *   - degenerate interpreted mode (`argv1` undefined): `[execPath]` alone --
+ *     `execPath` is always defined, so this is the honest answer with no
+ *     PATH-resolvable name required.
+ *   - interpreted mode with a real script path: `[execPath, argv1]`.
  */
 export function resolveSelfInvokeArgv(execPath: string, argv1: string | undefined): string[] {
 	const isCompiled = argv1 !== undefined && argv1.startsWith('/$bunfs/');
-	if (isCompiled) {
+	if (isCompiled || argv1 === undefined) {
 		return [execPath];
 	}
-	return [execPath, argv1 ?? 'cam'];
+	return [execPath, argv1];
+}
+
+/**
+ * Build a self-spawn argv for a background child that re-invokes THIS same
+ * binary/script (compiled or interpreted) against a given subcommand, e.g.
+ * `cam run`'s sidecar/watcher spawns and the sidecar-liveness watcher's own
+ * sidecar respawn (US-002, CAM-482).
+ *
+ * Thin wrapper over {@link resolveSelfInvokeArgv}: spreads the resolved
+ * execPath/argv1 pair, then appends `subcommandArgs` verbatim. Mirrors
+ * forkMonitor's convention (src/retry/launcher.ts) exactly, generalized to any
+ * subcommand instead of hardcoding `retry-monitor`. Never falls back to a
+ * literal PATH-resolvable binary name: a long-lived session must always
+ * respawn the exact binary that is running it, not a possibly-stale `cam` on
+ * PATH.
+ */
+export function buildSelfSpawnArgv(
+	execPath: string,
+	argv1: string | undefined,
+	...subcommandArgs: string[]
+): string[] {
+	return [...resolveSelfInvokeArgv(execPath, argv1), ...subcommandArgs];
 }

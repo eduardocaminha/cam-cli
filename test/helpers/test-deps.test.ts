@@ -22,8 +22,8 @@ import {
 } from './test-deps.ts';
 
 describe('getDepInfo / classification data', () => {
-	test('every one of the 7 required binaries has classification data', () => {
-		const expected: DepName[] = ['tmux', 'git', 'jq', 'pgrep', 'ps', 'uuidgen', 'bun'];
+	test('every one of the 8 required binaries has classification data', () => {
+		const expected: DepName[] = ['tmux', 'git', 'jq', 'pgrep', 'ps', 'lsof', 'uuidgen', 'bun'];
 		for (const name of expected) {
 			const info = getDepInfo(name);
 			expect(info.name).toBe(name);
@@ -39,6 +39,13 @@ describe('getDepInfo / classification data', () => {
 		expect(info.classification).toBe('legitimate-environmental');
 		expect(info.rationale.toLowerCase()).toContain('oven/bun');
 		expect(info.rationale.toLowerCase()).toContain('recycle-watcher');
+	});
+
+	test('lsof is classified legitimate-environmental with the oven/bun container rationale', () => {
+		const info = getDepInfo('lsof');
+		expect(info.classification).toBe('legitimate-environmental');
+		expect(info.rationale.toLowerCase()).toContain('oven/bun');
+		expect(info.rationale.toLowerCase()).toContain('defaultlistprocesses');
 	});
 
 	test('tmux is classified hard-dependency (every cam session is a tmux split)', () => {

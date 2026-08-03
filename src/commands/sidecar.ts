@@ -5,7 +5,8 @@
 // `cam sidecar` is an INTERNAL command spawned as a detached background process
 // by `cam run`. It is not listed in `cam help` (there is no public user-facing
 // use case) but it IS a real registered subcommand in index.ts so that
-// `Bun.spawn(['cam', 'sidecar', ...])` works against the installed binary.
+// `Bun.spawn(buildSidecarSpawnArgv(execPath, argv1))` (US-002, CAM-482) works
+// against the exact running binary/script.
 //
 // Architecture (FLOW.md §4 + §9, sidecar model):
 //   The sidecar:

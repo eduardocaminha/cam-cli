@@ -38,6 +38,7 @@ import {
 	type SpawnFn as TmuxSpawnFn,
 } from '../tmux/session.ts';
 import { waitForOrchestrator } from '../tmux/bootstrap-wait.ts';
+import { bootstrapHub } from '../util/hub-bootstrap.ts';
 import { parseStateFile } from './status.ts';
 import {
 	renderStateFile,
@@ -90,9 +91,7 @@ export interface PlanOptions {
 
 async function doBootstrap(cwd: string, bootstrapFn?: () => Promise<boolean>): Promise<boolean> {
 	if (bootstrapFn) return bootstrapFn();
-	const { spawnSync } = await import('node:child_process');
-	const result = spawnSync('cam', ['run', '--no-attach'], { cwd, stdio: 'ignore' });
-	return (result.status ?? 1) === 0;
+	return bootstrapHub(cwd);
 }
 
 /** Parse the numeric suffix from an issue id like "CAM-151" -> 151. */

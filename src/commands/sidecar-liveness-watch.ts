@@ -25,11 +25,13 @@
 // of its own. `test/no-permission-mode-flag.test.ts` enforces this by scanning
 // every file in `src/commands/`.
 
+import { closeSync, openSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
 
-import { sidecarAlive, writeSidecarPid } from '../supervisor/sidecar-pid.ts';
+import { SIDECAR_LOG_FILENAME, sidecarAlive, writeSidecarPid } from '../supervisor/sidecar-pid.ts';
 import { SIDECAR_STALLED_FILENAME, writeSidecarStalledMarker } from '../supervisor/sidecar-stalled.ts';
+import { buildSelfSpawnArgv } from '../util/self-invoke.ts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -87,12 +89,64 @@ export interface SidecarLivenessWatchOptions {
 // Production dep factories
 // ---------------------------------------------------------------------------
 
-function makeSpawnSidecarFn(cwd: string): () => SidecarLivenessWatchProcessHandle {
+/**
+ * Pure self-spawn argv for the sidecar-liveness watcher's own sidecar
+ * respawn (US-002, CAM-482). Mirrors {@link buildSidecarSpawnArgv} in
+ * run.ts (src/commands/run.ts): always respawns the exact binary running the
+ * loop, never a possibly-stale `cam` resolved off PATH.
+ */
+export function buildSidecarRespawnArgv(execPath: string, argv1: string | undefined): string[] {
+	return buildSelfSpawnArgv(execPath, argv1, 'sidecar');
+}
+
+/**
+ * Respawns the sidecar with stdout/stderr redirected to the `SIDECAR_LOG_FILENAME`
+ * log file (under `.claude/`), the SAME log file `spawnSidecarDefault`
+ * (src/commands/run.ts) redirects the original sidecar's stdio to.
+ *
+ * This is required, not cosmetic (US-R4-001, CAM-482): `defaultListProcesses`'s
+ * process-identity check (src/commands/stop.ts) treats "holds this project's
+ * sidecar log file open" as the defining trait of a real sidecar process. A
+ * respawn with `stdio: ['ignore','ignore','ignore']` holds no fd on that log
+ * file, so it is invisible to `cam stop`'s fallback scoped scan and is
+ * silently left running in exactly the situation the fallback exists for
+ * (pid file absent or stale). Opening the same log path for append, exactly
+ * as `spawnSidecarDefault` does, keeps every self-spawned sidecar shape
+ * (initial spawn, liveness-watch respawn) discoverable through the same
+ * identity check.
+ *
+ * Exported (US-R6-003, CAM-482) so a real-I/O regression test can construct
+ * and invoke the ACTUAL production closure rather than re-implementing its
+ * fd-open/spawn/close shape by hand. `argvOverride` is a narrow DI seam for
+ * that same test: production always self-invokes via the real
+ * `buildSidecarRespawnArgv(process.execPath, process.argv[1])` self-spawn
+ * (the default), but a test running under `bun test` has `process.argv[1]`
+ * pointing at the test file itself, so respawning with the real default argv
+ * would re-invoke the whole test suite as a child process. The override lets
+ * a test point the exact same fd-handling code at a lightweight, controlled
+ * idle marker script instead, without touching the fd open/redirect/close
+ * logic under test at all.
+ */
+export function makeSpawnSidecarFn(
+	cwd: string,
+	argvOverride?: string[],
+): () => SidecarLivenessWatchProcessHandle {
 	return () => {
-		const proc = Bun.spawn(['cam', 'sidecar'], {
+		const logPath = join(cwd, '.claude', SIDECAR_LOG_FILENAME);
+		const logFd = openSync(logPath, 'a');
+		const argv = argvOverride ?? buildSidecarRespawnArgv(process.execPath, process.argv[1]);
+		const proc = Bun.spawn(argv, {
 			cwd,
-			stdio: ['ignore', 'ignore', 'ignore'],
+			stdio: ['ignore', logFd, logFd],
 		});
+		// Unlike spawnSidecarDefault (run.ts), which runs once per `cam run`,
+		// this closure runs on every respawn attempt over the lifetime of a
+		// long-lived watcher process (state.attempts resets to 0 whenever the
+		// sidecar is observed alive again — see handleOneTick), so a flapping
+		// sidecar would otherwise accumulate fds without bound. Bun.spawn's
+		// child holds its own duplicated fd, so the parent's copy is
+		// redundant once the child process has started.
+		closeSync(logFd);
 		return {
 			pid: proc.pid,
 			kill: () => {

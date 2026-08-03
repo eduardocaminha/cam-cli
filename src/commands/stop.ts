@@ -37,6 +37,7 @@ import {
 	removeWatcherPid,
 	readSidecarLivenessWatcherPid,
 	removeSidecarLivenessWatcherPid,
+	SIDECAR_LOG_FILENAME,
 } from '../supervisor/sidecar-pid.ts';
 import { SUPERVISOR_LOCK_FILE } from '../supervisor/lock.ts';
 import { WORKER_REPORT_FILENAME } from '../supervisor/worker-report.ts';
@@ -283,25 +284,130 @@ function killSession(spawnFn: SpawnSyncFn, sessionName: string): boolean {
 }
 
 /**
- * Returns true when `record` is a `cam sidecar` process whose cwd matches
- * `projectCwd` exactly. Scoped strictly: cwd equality, not prefix/substring.
+ * Returns true when `argv` matches the shape emitted by
+ * `buildSidecarSpawnArgv`/`buildSelfSpawnArgv(execPath, argv1, 'sidecar')`
+ * (US-004, CAM-482; re-anchored in US-R1-001, CAM-482; token-count dropped in
+ * US-R1-002, CAM-482; absolute-argv[0] anchor DROPPED in US-R2-002, CAM-482):
+ * the final element is the literal subcommand token `'sidecar'`. The
+ * compiled-binary self-spawn shape is `[execPath, 'sidecar']` (2 elements)
+ * and the interpreted-runtime shape is `[runtime, script, 'sidecar']` (3
+ * elements), but the exact element COUNT is deliberately not checked (see
+ * below), and `argv[0]` is NOT required to be an absolute path (see below).
  *
- * Argv must begin with `cam` (index 0) and `sidecar` (index 1). The cwd
- * comparison is strict equality so no other project's sidecar is touched.
+ * Deliberately independent of what argv[0]/argv[1] actually name (a binary
+ * path, its basename, a runtime, a script path): a fixed binary-name literal
+ * or a fixed subcommand index breaks the moment self-spawn resolves by
+ * execPath (US-002/US-003) or the binary ships under a different name.
+ *
+ * This is only a cheap QUICK FILTER (US-R2-001, CAM-482): it is deliberately
+ * NOT sufficient on its own to classify a process as this project's sidecar,
+ * in EITHER direction. Argv shape alone cannot distinguish the real
+ * self-spawn from an unrelated tool/agent/editor-spawned command that
+ * happens to end in the literal word `sidecar` -- e.g. `/opt/homebrew/bin/rg
+ * -n sidecar`, `/opt/homebrew/bin/bun test sidecar`, or `/usr/bin/tail -F
+ * sidecar` (the round-1 CRITICAL repro). `sidecar` is a routine grep/test
+ * filter term in this very repo. The only reliable defense against that
+ * false-positive direction is process IDENTITY (see
+ * `defaultListProcesses`'s `holdsSidecarLogOpen` check, US-R2-001): callers
+ * MUST additionally require it before trusting a match from this predicate
+ * alone.
+ *
+ * No absolute-path requirement on `argv[0]` (US-R2-002, CAM-482; DROPPED, was
+ * added in US-R1-001): requiring `argv[0].startsWith('/')` was a SYMMETRIC
+ * under-match, not a fix -- it excluded the false-positive class above only
+ * when the impostor's argv[0] was itself PATH-relative (a narrow subset: the
+ * round-1 CRITICAL repro's `/usr/bin/tail` is absolute and still matched
+ * regardless), while ALSO excluding a live sidecar advertised under a bare,
+ * PATH-relative argv[0] (`['cam', 'sidecar']`, the shape every pre-US-002
+ * binary spawns, and the shape a sidecar advertises when re-exec'd via a bare
+ * `cam` on PATH rather than an absolute install path) -- exactly the upgrade
+ * window US-004's own notes call out as legitimate. Since the identity check
+ * is the only defense that actually holds for the false-positive direction
+ * (see above), the argv[0] anchor bought no real safety and only cost real
+ * visibility; dropping it fixes the under-match without reopening any
+ * genuinely-closed hole.
+ *
+ * No exact token-count check (US-R1-002, CAM-482): `defaultListProcesses`
+ * builds `argv` by splitting the raw `ps -eo pid,args` column on whitespace,
+ * which has no way to distinguish "one argv element containing a space" from
+ * "two separate elements" -- `ps` itself loses that boundary. An install path
+ * containing a space (e.g. `/Users/x/My Tools/cam`) therefore fragments
+ * `execPath`/`script` across 3+ (compiled) or 4+ (interpreted) array
+ * elements, which an exact `length === 2 || length === 3` check would reject
+ * even though it is the same live sidecar. Anchoring on only the last
+ * element (`'sidecar'`, a literal with no spaces, always intact as its own
+ * token) tolerates any amount of internal fragmentation from a space-bearing
+ * path.
+ */
+export function isSidecarArgv(argv: string[]): boolean {
+	const last = argv[argv.length - 1];
+	return argv.length >= 2 && last === 'sidecar';
+}
+
+/**
+ * Returns true when `record` is a sidecar process (per {@link isSidecarArgv})
+ * whose cwd matches `projectCwd` exactly. Scoped strictly: cwd equality, not
+ * prefix/substring, so no other project's sidecar is touched.
+ *
+ * Argv shape + cwd is still not sufficient identity on its own (US-R2-001,
+ * CAM-482) -- an unrelated process can share both by coincidence. Production
+ * discovery (`defaultListProcesses`) additionally requires the candidate to
+ * hold this project's sidecar log file open before it is ever handed to this
+ * function; unit tests that call this function directly with hand-built
+ * `ProcessRecord`s are exercising the argv+cwd layer only, by design.
  */
 export function matchesSidecarForProject(record: ProcessRecord, projectCwd: string): boolean {
-	return (
-		record.cwd === projectCwd &&
-		record.argv[0] === 'cam' &&
-		record.argv[1] === 'sidecar'
-	);
+	return record.cwd === projectCwd && isSidecarArgv(record.argv);
+}
+
+/** One `lsof -F fn` open-file entry: a file descriptor id paired with the path/name lsof resolved for it. */
+type LsofOpenFile = { fd: string; name: string };
+
+/**
+ * Parses `lsof -F fn` output into `{ fd, name }` pairs.
+ *
+ * lsof's `-F` machine-readable format emits one field per line, each prefixed
+ * with its field letter (no separator). Requesting fields `fn` means every
+ * open-file record is a `f<fd>` line (e.g. `fcwd`, `f1`) immediately followed
+ * by an `n<name>` line with the resolved path. A leading `p<pid>` line (always
+ * first) has no matching `n` line and is naturally skipped since `currentFd`
+ * starts `null` and only an `f` line sets it.
+ */
+function parseLsofOpenFiles(stdout: string): LsofOpenFile[] {
+	const entries: LsofOpenFile[] = [];
+	let currentFd: string | null = null;
+	for (const line of stdout.split('\n')) {
+		if (line.startsWith('f')) {
+			currentFd = line.slice(1).trim();
+		} else if (line.startsWith('n') && currentFd !== null) {
+			entries.push({ fd: currentFd, name: line.slice(1).trim() });
+			currentFd = null;
+		}
+	}
+	return entries;
 }
 
 /**
  * Production default for `listProcessesFn`.
  *
- * Uses `ps -eo pid,args` to enumerate processes, then `lsof -a -d cwd -p <pid>
- * -F n` to resolve the cwd for any candidate that looks like `cam sidecar`.
+ * Uses `ps -eo pid,args` to enumerate processes, then for any candidate whose
+ * argv looks like `cam sidecar` (per {@link isSidecarArgv}) runs a single
+ * `lsof -p <pid> -F fn` to resolve BOTH its cwd AND whether it holds this
+ * project's sidecar log file open.
+ *
+ * Process-identity check (US-R2-001, CAM-482): argv shape alone is not
+ * sufficient (see `isSidecarArgv`'s docstring) -- any command whose last
+ * token is `sidecar` and whose cwd happens to match this project
+ * (`/usr/bin/tail -F sidecar`, `/opt/homebrew/bin/rg -n sidecar`) would
+ * otherwise be misclassified as this project's sidecar and SIGTERM'd.
+ * The real sidecar process always holds `.claude/cam-supervisor.log` open on
+ * fd 1/2 for its entire lifetime (`spawnSidecarDefault`, src/commands/run.ts,
+ * redirects stdio there via `openSync(logPath, 'a')`); an unrelated process
+ * cannot hold this project's own log file open by accident. A candidate is
+ * only ever returned once it holds that exact path open as one of its file
+ * descriptors, verified from the SAME `lsof` call already spent resolving its
+ * cwd (no extra process spawn per candidate).
+ *
  * Returns an empty array when either command is unavailable or fails.
  */
 function defaultListProcesses(): ProcessRecord[] {
@@ -323,26 +429,30 @@ function defaultListProcesses(): ProcessRecord[] {
 		if (!Number.isFinite(pid) || pid <= 0) continue;
 
 		const argv = argsStr.split(/\s+/).filter(Boolean);
-		// Quick filter: skip anything that cannot be `cam sidecar`.
-		const cmdBase = (argv[0] ?? '').split('/').pop() ?? '';
-		if (cmdBase !== 'cam' || argv[1] !== 'sidecar') continue;
+		// Quick filter: skip anything that cannot be a sidecar self-spawn
+		// (cheap, avoids an lsof call per process). Name-agnostic: see
+		// isSidecarArgv for the argv shape this matches against, and its
+		// docstring for why this filter alone is not sufficient identity.
+		if (!isSidecarArgv(argv)) continue;
 
-		// Resolve cwd via lsof. The -F n format emits lines prefixed with 'n'.
-		const lsofResult = spawnSync(
-			'lsof',
-			['-a', '-d', 'cwd', '-p', String(pid), '-F', 'n'],
-			{ encoding: 'utf8' },
-		);
+		// Single lsof call resolves both the cwd (fd 'cwd') and every other
+		// open file descriptor, so the process-identity check below reuses it
+		// instead of spawning a second lsof per candidate.
+		const lsofResult = spawnSync('lsof', ['-p', String(pid), '-F', 'fn'], { encoding: 'utf8' });
 		if (lsofResult.status !== 0 || !lsofResult.stdout) continue;
 
-		const cwdLine = lsofResult.stdout.split('\n').find((l) => l.startsWith('n'));
-		if (!cwdLine) continue;
-		const cwd = cwdLine.slice(1).trim();
+		const openFiles = parseLsofOpenFiles(lsofResult.stdout);
+		const cwdEntry = openFiles.find((entry) => entry.fd === 'cwd');
+		const cwd = cwdEntry?.name;
 		if (!cwd) continue;
 
-		// Normalise argv[0] to the bare name for consistent matching.
-		const normArgv = [cmdBase, ...argv.slice(1)];
-		records.push({ pid, argv: normArgv, cwd });
+		// Process-identity check: the candidate must hold THIS project's
+		// sidecar log file open, not merely match argv shape + cwd.
+		const expectedLogPath = join(cwd, '.claude', SIDECAR_LOG_FILENAME);
+		const holdsSidecarLogOpen = openFiles.some((entry) => entry.name === expectedLogPath);
+		if (!holdsSidecarLogOpen) continue;
+
+		records.push({ pid, argv, cwd });
 	}
 
 	return records;

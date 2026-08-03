@@ -59,6 +59,7 @@ import {
 	type SpawnFn as TmuxSpawnFn,
 } from '../tmux/session.ts';
 import { waitForOrchestrator } from '../tmux/bootstrap-wait.ts';
+import { bootstrapHub } from '../util/hub-bootstrap.ts';
 import { sendKeysWhenIdle, makePushLogEvent, type CapturePaneFn } from '../tmux/dispatch.ts';
 import type { WorkerEventKind, WorkerEventDetail } from '../supervisor/events.ts';
 import {
@@ -91,7 +92,8 @@ export interface SpecOptions {
 	/**
 	 * Bootstrap the orchestrator when not alive. Receives `cwd` and
 	 * returns a Promise<boolean> (true = bootstrap succeeded).
-	 * Defaults to `spawnSync('cam', ['run', '--no-attach'])`.
+	 * Defaults to `bootstrapHub`, which spawns the hub via the exact
+	 * execPath/argv1 running this process (US-003, CAM-482).
 	 * Tests inject a no-op that returns true immediately.
 	 */
 	bootstrapFn?: () => Promise<boolean>;
@@ -132,9 +134,7 @@ export interface SpecOptions {
 
 async function doBootstrap(cwd: string, bootstrapFn?: () => Promise<boolean>): Promise<boolean> {
 	if (bootstrapFn) return bootstrapFn();
-	const { spawnSync } = await import('node:child_process');
-	const result = spawnSync('cam', ['run', '--no-attach'], { cwd, stdio: 'ignore' });
-	return (result.status ?? 1) === 0;
+	return bootstrapHub(cwd);
 }
 
 // --- Public entrypoint -----------------------------------------------------
