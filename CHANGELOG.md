@@ -6,6 +6,28 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.276.0] - 2026-08-03
+
+### Added
+
+- US-R8-003 - fix stale isSidecarArgv contract + dangling reference in patterns.md
+- US-R8-002 - falsifying test for makeSpawnSidecarFn parent-side fd-leak fix
+- US-R8-001 - derive dashboard-pane-selfspawn tmux socket name per-process
+- US-R6-003 - export makeSpawnSidecarFn so the US-R4-001 regression test exercises the real production closure
+- US-R6-002 - close leaked log fd in sidecar-liveness respawn closure
+- US-R6-001 - fix internal-contracts PIN DE INVARIANCIA oracle parity
+- US-R4-001 - close under-match: liveness-watch sidecar respawn now holds the sidecar log fd open
+- US-R2-002 - close symmetric under-match in isSidecarArgv's absolute-argv[0] anchor
+- US-R2-001 - close false-positive class in cam stop's sidecar fallback scan with a process-identity check
+- US-R1-004 - un-mark stale-marker-format bullet as resolved (live isSidecarArgv knowledge)
+- US-R1-003 - real ps+lsof integration test for defaultListProcesses
+- US-R1-002 - tolerate space-fragmented argv in isSidecarArgv
+- US-R1-001 - CRITICAL: isSidecarArgv over-matches and makes `cam stop` SIGTERM unrelated processes
+- US-004 - Make sidecar process discovery in cam stop name-agnostic
+- US-003 - Autostart the hub from the thin proxies by execPath, and clear the residual name literals
+- US-002 - Respawn the loop's own children (dashboard, sidecar, watchers) by execPath
+- US-001 - Drop the literal binary-name fallback from the self-invoke helper
+
 ## [0.275.0] - 2026-07-30
 
 ### Added
