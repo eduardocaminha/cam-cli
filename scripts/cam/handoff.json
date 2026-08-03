@@ -1,28 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Compilar os quatro alvos a partir de um host unico e publica-los como assets de um Release marcado prerelease"
+    "id": "US-004",
+    "title": "Publicar um instalador curl-avel e documentar a instalacao empacotada com fidelidade sobre a assinatura"
   },
   "branchName": "cam/issue-460",
-  "timestamp": "2026-08-03T23:40:00Z",
+  "timestamp": "2026-08-03T23:55:00Z",
   "createdFiles": [
-    ".github/workflows/release.yml"
+    "install.sh"
   ],
   "modifiedFiles": [
-    "scripts/build-release.sh",
-    "README.md",
-    "test/embedded.test.ts",
-    "scripts/cam/patterns.md"
+    "README.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "scripts/build-release.sh now cross-compiles all four release targets (bun-darwin-arm64, bun-darwin-x64, bun-linux-x64, bun-linux-arm64) from a single macOS host in one run, writing dist/gateship-<os>-<arch> for each; the old single dist/cam-darwin-arm64 artifact name is retired. Only the host-native artifact (resolved via uname -s/-m) is executed for the --version smoke and the hermetic `cam init` soft-check (CAM-15 lineage: mktemp -d cwd, --no-tmux, absolute BIN_ABS path) -- the other three cross-compiled binaries cannot run on the build host and are never executed by this script; a caller verifies their machine code with `file`. codesign (ad-hoc re-sign + verify) runs only for the two bun-darwin-* outputs; ELF/linux artifacts are never signed. `--install` is now additive and writes TWO fixed filenames, `gateship` and `gship`, into dirname(INSTALL_DEST) (or ~/.local/bin when --install is passed bare) -- the script never removes a pre-existing `cam` binary (ADR-0055). Verified live end-to-end on this Mac arm64 host: all 4 artifacts built and passed `file` architecture checks (darwin-arm64 Mach-O arm64 61MB, darwin-x64 Mach-O x86_64 66MB, linux-x64 ELF x86-64 98MB, linux-arm64 ELF aarch64 98MB), and a hermetic `--install \"$D/gateship\"` run produced both `$D/gateship` and `$D/gship` as working executables with no `rm ... cam` anywhere in the script. New `.github/workflows/release.yml` triggers on `tags: v*`, builds via `bun run build:release` on macos-latest, and runs `gh release create \"${{ github.ref_name }}\" dist/gateship-* --prerelease --generate-notes` using the ambient `${{ github.token }}` (no new secret needed); this workflow is intentionally NOT added to `.github/workflows/ci.yml` because `scripts/check-ci-parity.ts`'s CI_YML_PATH only ever reads ci.yml, so a release-only workflow is structurally invisible to that parity gate and must stay that way. README.md's from-source Install section and the Development section's build:release comment were updated to the new gateship-* artifact names and the gateship/gship install targets (surgical accuracy fix only -- the larger lead-with-packaged-install README rewrite plus the curl-able installer is explicitly US-004/US-005 scope per the PRD notes, not touched here). The artifact naming convention (gateship-darwin-arm64, gateship-darwin-x64, gateship-linux-x64, gateship-linux-arm64) is exactly what the next story (curl-able installer) needs to construct its download URL against https://github.com/eduardocaminha/cam-cli/releases/download/<tag>/<asset>.",
+  "nextStoryContext": "New root-level `install.sh` (executable, chmod +x) is the curl-able installer: `curl -fsSL https://raw.githubusercontent.com/eduardocaminha/cam-cli/main/install.sh | bash`. It detects os/arch (darwin-arm64, darwin-x64, linux-x64, linux-arm64 -- the exact four names US-003's build-release.sh publishes as dist/gateship-<target>), resolves the release tag either from GATESHIP_VERSION (override) or by listing https://api.github.com/repos/eduardocaminha/cam-cli/releases and grepping the first \"tag_name\" (NOT /releases/latest -- every release is currently published --prerelease per ADR-0055/US-003's release.yml, and GitHub's /releases/latest endpoint excludes prereleases entirely, so it would 404 forever until the ADR-0054 rename window closes and a non-prerelease Release is cut), downloads the matching asset from https://github.com/eduardocaminha/cam-cli/releases/download/<tag>/gateship-<target> into a private mktemp file, then copies it to BOTH `gateship` and `gship` under $HOME/.local/bin (override with GATESHIP_INSTALL_DIR). It is strictly additive: it never touches, removes, or overwrites a pre-existing `cam` binary (ADR-0055 -- that removal stays a deliberate operator step). On darwin it strips the Gatekeeper quarantine bit post-install (`xattr -d com.apple.quarantine ... || true`) because a binary that arrives via download is quarantined even though it is ad-hoc signed (the ad-hoc re-signing happens upstream in build-release.sh/release.yml, not in install.sh -- install.sh only clears quarantine, it does not codesign). README.md's Install section was restructured: Option A is now the packaged curl installer (was 'Option A: From source'), followed by a new '#### About the signature (macOS)' subsection that tells the truth -- ad-hoc signed, explicitly NOT notarized by Apple (no Apple Developer account, operator decision 2026-08-01), with the literal `xattr -d com.apple.quarantine ~/.local/bin/gateship` / `~/.local/bin/gship` remediation commands a user actually runs if Gatekeeper still blocks execution. The old 'Public distribution note' (which said distribution wasn't happening yet) was folded into and superseded by this new subsection since distribution via install.sh + Release assets is now real. From-source build is now 'Option B' and the no-compile shim path is now 'Option C' (renumbered, content otherwise untouched). No npm/manifest publish was added or implied (ADR-0055: the manifest stays publishable but not published this cycle). scripts/file-size-budget.json was not touched -- README.md carries no ceiling.",
   "officialDocsValidated": [
     {
-      "lib": "bun (bun build --compile)",
-      "url": "https://bun.sh/docs/bundler/executables",
-      "fetchedAt": "2026-08-03T23:30:00Z",
+      "lib": "GitHub REST API (releases)",
+      "channel": "WebFetch",
+      "url": "https://docs.github.com/en/rest/releases/releases?apiVersion=2022-11-28",
+      "fetchedAt": "2026-08-03T23:50:00Z",
       "status": "aligned",
-      "summary": "Confirmed --target=bun-<os>-<arch> is the documented cross-compile flag and the four triples used (bun-darwin-arm64, bun-darwin-x64, bun-linux-x64, bun-linux-arm64) are exactly the ones the docs list; confirmed codesign on macOS is a manual post-build step (`codesign --force --sign -`), matching the existing ad-hoc re-sign already in the script."
+      "summary": "Confirmed the list-releases response schema uses `tag_name` as the field name (matches install.sh's sed extraction) and that GET /repos/{owner}/{repo}/releases includes prereleases for public repos (unlike /releases/latest, which explicitly excludes them -- this is why install.sh lists releases instead of hitting /releases/latest). Docs fetch did not explicitly restate newest-first ordering of the list endpoint; this is well-established, widely-relied-upon GitHub API behavior (matches the web Releases page order) and was not independently re-verified beyond the fetched page."
     }
   ],
   "appliedPatternIds": []
