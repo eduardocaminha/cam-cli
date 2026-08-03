@@ -35,7 +35,7 @@
         "A espinha de qualidade passa. [oracle: named-command bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Arquivos: package.json, bun.lock. LICENSE ja existe na raiz, entao o campo license descreve o que ja esta la. O nome canonico e gateship e o alias digitado e gship (ADR-0054, decisao parte 1); o mapa bin expoe os dois. NPM NAO E PUBLICADO NESTE CICLO (ADR-0055): o objetivo e tornar publicavel, nao publicar, entao nao rode nenhum npm publish nem bun publish. index.ts nao tem shebang hoje (linha 1 e comentario), entao se bin apontar para ./index.ts adicione o shebang no mesmo commit ou aponte bin para o entrypoint que o build produz; escolha uma das duas e seja consistente com o campo files. engines deve refletir o runtime real: CLAUDE.md exige Bun >= 1.2 e o toolchain pinado em .bun-version e 1.3.14. A versao continua vindo de src/version.ts (parseada em scripts/build-release.sh:49-54); package.json apenas espelha, nunca vira a fonte. Ordem de trabalho do lockfile: edite package.json, rode bun install (sem --frozen) para regravar o nome do workspace raiz em bun.lock:6, e so entao valide com bun install --frozen-lockfile; .github/workflows/ci.yml roda --frozen-lockfile nas linhas 24 e 78 e nenhum gate local roda, entao a divergencia so apareceria no PR e travaria a fase de ship."
     },
