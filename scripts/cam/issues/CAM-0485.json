@@ -1,0 +1,10 @@
+{
+  "id": "CAM-485",
+  "title": "Nao existe cam update nem verificacao de versao: depois do primeiro Release o usuario nao tem como saber que esta desatualizado",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-02T14:01:14.183Z",
+  "updatedAt": "2026-08-02T14:01:14.183Z",
+  "description": "MEDIDO 2026-08-02: o registro de comandos em index.ts na main nao tem entrada update nem upgrade, so version. Nao ha nenhuma checagem de versao na inicializacao. Hoje isso e inofensivo porque existe exatamente uma instalacao no mundo e ela e atualizada a mao com build-release.sh --install, mas passa a doer no instante em que o primeiro Release publico existir: o usuario instala um binario, o projeto continua publicando tags (276 hoje, cerca de uma por ciclo) e nada no produto informa que ha versao nova.\n\nDEPENDE DO CAM-460 e nao faz sentido antes dele: sem Release publicado nao existe feed de versao contra o qual comparar. A ordem correta e empacotamento primeiro, depois auto-atualizacao.\n\nESCOPO A DECIDIR NO SPEC: (a) apenas checagem passiva, comparando a versao local com a ultima release da API do GitHub e imprimindo aviso, ou (b) update ativo que baixa e troca o binario. A opcao (b) e mais util e mais arriscada, porque trocar o proprio binario em execucao tem o mesmo problema de ETXTBSY ja documentado em patterns.md (a receita conhecida e rm mais cp, nunca cp por cima). Se for (b), a substituicao precisa cuidar tambem da re-assinatura ad-hoc, porque um binario baixado da internet no macOS chega em quarentena, diferente de um compilado local.\n\nCUIDADO DE FREQUENCIA: checagem de versao a cada invocacao adiciona latencia de rede a um CLI que roda em loop. Precisa de cache com TTL e de opt-out, e nao pode falhar fechado quando a rede cai.\n\nORIGEM: docs/launch-readiness.md:346-348 e :531-533, follow-up que nunca foi filado."
+}
