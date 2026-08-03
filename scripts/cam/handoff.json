@@ -1,26 +1,42 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "Publicar um instalador curl-avel e documentar a instalacao empacotada com fidelidade sobre a assinatura"
+    "id": "US-005",
+    "title": "Migrar os arquivos de instrucao executavel para o comando novo e regenerar o blob embutido"
   },
   "branchName": "cam/issue-460",
-  "timestamp": "2026-08-03T23:55:00Z",
-  "createdFiles": [
-    "install.sh"
-  ],
+  "timestamp": "2026-08-04T00:40:00Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "README.md"
+    ".claude/agents/subagent-orchestrator.md",
+    ".claude/commands/cam-issue.md",
+    ".claude/commands/cam-next.md",
+    ".claude/commands/cam-plan.md",
+    ".claude/commands/cam-prune.md",
+    ".claude/commands/cam-spec.md",
+    "scripts/cam/CLAUDE.md",
+    "src/vendor/_generated.ts",
+    "templates/agents/subagent-orchestrator.md",
+    "templates/commands/cam-issue.md",
+    "templates/commands/cam-next.md",
+    "templates/commands/cam-plan.md",
+    "templates/commands/cam-prune.md",
+    "templates/commands/cam-spec.md",
+    "templates/scripts/cam/CLAUDE.md",
+    "templates/scripts/cam/issues.schema.json",
+    "templates/scripts/cam/journal.md",
+    "templates/scripts/cam/orch-handoff.schema.json",
+    "test/embedded.test.ts",
+    "test/vendor/orchestrator-backlog-derivation.test.ts"
   ],
-  "openQuestions": [],
-  "nextStoryContext": "New root-level `install.sh` (executable, chmod +x) is the curl-able installer: `curl -fsSL https://raw.githubusercontent.com/eduardocaminha/cam-cli/main/install.sh | bash`. It detects os/arch (darwin-arm64, darwin-x64, linux-x64, linux-arm64 -- the exact four names US-003's build-release.sh publishes as dist/gateship-<target>), resolves the release tag either from GATESHIP_VERSION (override) or by listing https://api.github.com/repos/eduardocaminha/cam-cli/releases and grepping the first \"tag_name\" (NOT /releases/latest -- every release is currently published --prerelease per ADR-0055/US-003's release.yml, and GitHub's /releases/latest endpoint excludes prereleases entirely, so it would 404 forever until the ADR-0054 rename window closes and a non-prerelease Release is cut), downloads the matching asset from https://github.com/eduardocaminha/cam-cli/releases/download/<tag>/gateship-<target> into a private mktemp file, then copies it to BOTH `gateship` and `gship` under $HOME/.local/bin (override with GATESHIP_INSTALL_DIR). It is strictly additive: it never touches, removes, or overwrites a pre-existing `cam` binary (ADR-0055 -- that removal stays a deliberate operator step). On darwin it strips the Gatekeeper quarantine bit post-install (`xattr -d com.apple.quarantine ... || true`) because a binary that arrives via download is quarantined even though it is ad-hoc signed (the ad-hoc re-signing happens upstream in build-release.sh/release.yml, not in install.sh -- install.sh only clears quarantine, it does not codesign). README.md's Install section was restructured: Option A is now the packaged curl installer (was 'Option A: From source'), followed by a new '#### About the signature (macOS)' subsection that tells the truth -- ad-hoc signed, explicitly NOT notarized by Apple (no Apple Developer account, operator decision 2026-08-01), with the literal `xattr -d com.apple.quarantine ~/.local/bin/gateship` / `~/.local/bin/gship` remediation commands a user actually runs if Gatekeeper still blocks execution. The old 'Public distribution note' (which said distribution wasn't happening yet) was folded into and superseded by this new subsection since distribution via install.sh + Release assets is now real. From-source build is now 'Option B' and the no-compile shim path is now 'Option C' (renumbered, content otherwise untouched). No npm/manifest publish was added or implied (ADR-0055: the manifest stays publishable but not published this cycle). scripts/file-size-budget.json was not touched -- README.md carries no ceiling.",
+  "openQuestions": [
+    "AC1's oracle only matches a typed-subcommand mention followed by a plain space or end-of-line; several backtick-terminated mentions in the same 17 files (e.g. `cam tag` in scripts/cam/CLAUDE.md:140, `cam claude` in .claude/commands/cam-next.md:33 and templates/commands/cam-next.md:33) were left untouched because they don't match the narrow oracle and are outside the planner's exact per-file counts (measured 2026-08-01). They are a known, accepted oracle gap, not a defect introduced by this story -- flagging in case a future doc-hygiene story wants to close the gap.",
+    "The scripts/cam/CLAUDE.md and templates/scripts/cam/CLAUDE.md pair is NOT byte-mirrored (confirmed by diff): the templates/ copy is a generic-project starter template with placeholder stack sections, so it only needed the single 'cam patterns archive' -> 'gship patterns archive' rename, not the full set of renames applied to the real scripts/cam/CLAUDE.md."
+  ],
+  "nextStoryContext": "The typed CLI invocation surface in executable instruction files (.claude/agents, .claude/commands, templates/agents, templates/commands, templates/scripts/cam/*.md|*.json, scripts/cam/CLAUDE.md) now says `gship <subcommand>` instead of `cam <subcommand>`, matching the binary rename ADR-0054 already applied to help/usage/--version output (US-002) and the packaged installer (US-004). Exactly the AC1 oracle's narrow match set (subcommand token followed by a literal space or end-of-line) was renamed via a per-file `perl -i -pe` substitution -- the four historical-prose files (scripts/cam/journal.md, journal.archive.md, patterns.md, patterns.archive.md) were deliberately left untouched (AC4 pin: rewriting history falsifies the record, ADR-0054 already forbids it), and the five internal-contract layers (CAM_*, .cam-*, tmux -L cam socket, /cam-* slash commands, scripts/cam/ path) were left untouched (AC5 pin: those rename in a later, still-unscheduled cycle per ADR-0054's bounded pre-launch window). `bun run embed-vendor` was re-run after the templates/ edits to regenerate src/vendor/_generated.ts (it embeds templates/ only, never .claude/), and two tests that asserted a literal 'cam issue list' / 'cam issue --file-local' substring against the embedded persona/command content were updated to the new 'gship ...' wording in the same commit. `bash scripts/build-release.sh --install` was re-run post-commit so ~/.local/bin/gateship and ~/.local/bin/gship exist and reflect this story's renamed instruction files before the live orchestrator loop (which is mid-cycle on this very branch) respawns and re-reads scripts/cam/CLAUDE.md / .claude/agents/subagent-orchestrator.md; ~/.local/bin/cam was left untouched (still the pre-rename binary the loop is currently spawned from -- do not remove it, ADR-0055). This story (US-005, priority 5) is the last of CAM-460's PRD per the notes' own 'SEQUENCIA OPERACIONAL' comment, so the next agent invocation (if any) is likely the review/ship phase, not a new implementer story.",
   "officialDocsValidated": [
     {
-      "lib": "GitHub REST API (releases)",
-      "channel": "WebFetch",
-      "url": "https://docs.github.com/en/rest/releases/releases?apiVersion=2022-11-28",
-      "fetchedAt": "2026-08-03T23:50:00Z",
-      "status": "aligned",
-      "summary": "Confirmed the list-releases response schema uses `tag_name` as the field name (matches install.sh's sed extraction) and that GET /repos/{owner}/{repo}/releases includes prereleases for public repos (unlike /releases/latest, which explicitly excludes them -- this is why install.sh lists releases instead of hitting /releases/latest). Docs fetch did not explicitly restate newest-first ordering of the list endpoint; this is well-established, widely-relied-upon GitHub API behavior (matches the web Releases page order) and was not independently re-verified beyond the fetched page."
+      "lib": "none",
+      "status": "no_external_lib_touched"
     }
   ],
   "appliedPatternIds": []
