@@ -35,9 +35,13 @@
 //           Each entry: { name, status ('ok'|'fail'), durationMs }.
 //           Quiet per-gate lines are still printed to stdout.
 //           Exit code is still aggregate (nonzero if any gate fails).
+//
+// Every run, flag or no flag, also appends one line to the gitignored
+// .claude/cam-gate-history.jsonl -- { ts, results } -- so gate outcomes
+// accumulate across runs and can answer which gates ever catch anything.
 
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import process from 'node:process';
 
 import type { ResourceUsage, SyncSubprocess } from 'bun';
@@ -432,6 +436,30 @@ export async function runGates(options: RunGatesOptions = {}): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
+// Gate history
+// ---------------------------------------------------------------------------
+
+/** Gitignored append-only log of gate outcomes, one JSON line per check:all run. */
+const GATE_HISTORY_PATH = join('.claude', 'cam-gate-history.jsonl');
+
+/**
+ * Append one `{ts, results}` line to the gate history.
+ *
+ * Instrumentation only: it answers "which gates have ever failed anything?"
+ * over weeks of runs, so a failure to write must never change the suite's
+ * verdict -- any error is swallowed.
+ */
+function appendHistoryLine(results: GateResult[]): void {
+	try {
+		const path = join(process.cwd(), GATE_HISTORY_PATH);
+		mkdirSync(dirname(path), { recursive: true });
+		appendFileSync(path, JSON.stringify({ ts: new Date().toISOString(), results }) + '\n');
+	} catch {
+		// Non-fatal: instrumentation must not fail the gate spine.
+	}
+}
+
+// ---------------------------------------------------------------------------
 // CLI entrypoint
 // ---------------------------------------------------------------------------
 
@@ -439,12 +467,17 @@ if (import.meta.main) {
 	const bail = process.argv.includes('--bail');
 	const jsonFlag = process.argv.includes('--json');
 
-	const onResults = jsonFlag
-		? (results: GateResult[]) => {
-				const outPath = join(process.cwd(), 'gate-results.json');
-				writeFileSync(outPath, JSON.stringify(results, null, 2) + '\n');
-			}
-		: undefined;
+	const onResults = (results: GateResult[]) => {
+		// Every run appends one line to the gate history, --json or not: the
+		// worker runs check:all without --json, so gating gate-outcome data on
+		// that flag threw away every worker run's results. Gitignored, never
+		// committed -- a mid-cycle auto-commit on main is what puts the open PR
+		// BEHIND (CAM-480).
+		appendHistoryLine(results);
+		if (!jsonFlag) return;
+		const outPath = join(process.cwd(), 'gate-results.json');
+		writeFileSync(outPath, JSON.stringify(results, null, 2) + '\n');
+	};
 
 	const code = await runGates({ bail, onResults });
 	process.exit(code);
