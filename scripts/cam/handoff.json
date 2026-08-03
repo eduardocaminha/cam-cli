@@ -1,42 +1,29 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "Migrar os arquivos de instrucao executavel para o comando novo e regenerar o blob embutido"
+    "id": "US-R1-001",
+    "title": "CRITICAL: The installer's tag-resolution error path is unreachable dead code an…"
   },
   "branchName": "cam/issue-460",
-  "timestamp": "2026-08-04T00:40:00Z",
-  "createdFiles": [],
+  "timestamp": "2026-08-03T00:00:00Z",
+  "createdFiles": [
+    "test/install-sh.test.ts"
+  ],
   "modifiedFiles": [
-    ".claude/agents/subagent-orchestrator.md",
-    ".claude/commands/cam-issue.md",
-    ".claude/commands/cam-next.md",
-    ".claude/commands/cam-plan.md",
-    ".claude/commands/cam-prune.md",
-    ".claude/commands/cam-spec.md",
-    "scripts/cam/CLAUDE.md",
-    "src/vendor/_generated.ts",
-    "templates/agents/subagent-orchestrator.md",
-    "templates/commands/cam-issue.md",
-    "templates/commands/cam-next.md",
-    "templates/commands/cam-plan.md",
-    "templates/commands/cam-prune.md",
-    "templates/commands/cam-spec.md",
-    "templates/scripts/cam/CLAUDE.md",
-    "templates/scripts/cam/issues.schema.json",
-    "templates/scripts/cam/journal.md",
-    "templates/scripts/cam/orch-handoff.schema.json",
-    "test/embedded.test.ts",
-    "test/vendor/orchestrator-backlog-derivation.test.ts"
+    "install.sh",
+    "scripts/cam/patterns.md",
+    "scripts/cam/prd.json"
   ],
   "openQuestions": [
-    "AC1's oracle only matches a typed-subcommand mention followed by a plain space or end-of-line; several backtick-terminated mentions in the same 17 files (e.g. `cam tag` in scripts/cam/CLAUDE.md:140, `cam claude` in .claude/commands/cam-next.md:33 and templates/commands/cam-next.md:33) were left untouched because they don't match the narrow oracle and are outside the planner's exact per-file counts (measured 2026-08-01). They are a known, accepted oracle gap, not a defect introduced by this story -- flagging in case a future doc-hygiene story wants to close the gap.",
-    "The scripts/cam/CLAUDE.md and templates/scripts/cam/CLAUDE.md pair is NOT byte-mirrored (confirmed by diff): the templates/ copy is a generic-project starter template with placeholder stack sections, so it only needed the single 'cam patterns archive' -> 'gship patterns archive' rename, not the full set of renames applied to the real scripts/cam/CLAUDE.md."
+    "This session's prd.json already carried a pre-staged second round-1 story, US-R1-002 (priority 2, same install.sh/CLAUDE-instruction-file family: widens US-005's AC1/AC2 oracle terminator from `( |$)` to `([^a-zA-Z0-9_-]|$)` to catch backtick-terminated `cam <cmd>` mentions the narrow oracle missed). Not touched by this story; flagging since it is the very next non-operator, passes:false story by priority order and lives in the same subsystem area (install/rename instruction surface)."
   ],
-  "nextStoryContext": "The typed CLI invocation surface in executable instruction files (.claude/agents, .claude/commands, templates/agents, templates/commands, templates/scripts/cam/*.md|*.json, scripts/cam/CLAUDE.md) now says `gship <subcommand>` instead of `cam <subcommand>`, matching the binary rename ADR-0054 already applied to help/usage/--version output (US-002) and the packaged installer (US-004). Exactly the AC1 oracle's narrow match set (subcommand token followed by a literal space or end-of-line) was renamed via a per-file `perl -i -pe` substitution -- the four historical-prose files (scripts/cam/journal.md, journal.archive.md, patterns.md, patterns.archive.md) were deliberately left untouched (AC4 pin: rewriting history falsifies the record, ADR-0054 already forbids it), and the five internal-contract layers (CAM_*, .cam-*, tmux -L cam socket, /cam-* slash commands, scripts/cam/ path) were left untouched (AC5 pin: those rename in a later, still-unscheduled cycle per ADR-0054's bounded pre-launch window). `bun run embed-vendor` was re-run after the templates/ edits to regenerate src/vendor/_generated.ts (it embeds templates/ only, never .claude/), and two tests that asserted a literal 'cam issue list' / 'cam issue --file-local' substring against the embedded persona/command content were updated to the new 'gship ...' wording in the same commit. `bash scripts/build-release.sh --install` was re-run post-commit so ~/.local/bin/gateship and ~/.local/bin/gship exist and reflect this story's renamed instruction files before the live orchestrator loop (which is mid-cycle on this very branch) respawns and re-reads scripts/cam/CLAUDE.md / .claude/agents/subagent-orchestrator.md; ~/.local/bin/cam was left untouched (still the pre-rename binary the loop is currently spawned from -- do not remove it, ADR-0055). This story (US-005, priority 5) is the last of CAM-460's PRD per the notes' own 'SEQUENCIA OPERACIONAL' comment, so the next agent invocation (if any) is likely the review/ship phase, not a new implementer story.",
+  "nextStoryContext": "install.sh's tag-resolution error path (install.sh:64-73) is now reachable: the curl-list step is checked explicitly via `if ! RELEASES_JSON=\"$(curl -fsSL ...)\"` (prints 'ERROR: failed to reach the GitHub API to list releases ...' on network failure/rate-limit), and the grep+sed parse step is a separate `TAG=\"$(printf '%s' \"${RELEASES_JSON}\" | grep -m1 ... | sed ...)\" || true` (the `|| true` is required even split-out, because a bare assignment whose pipeline's last-failing command exits non-zero still trips `set -e` on its own line under `set -euo pipefail`, regardless of how many steps the pipeline is split into -- confirmed empirically with `bash -c 'set -euo pipefail; TAG=\"$(false)\"; echo reached'` exiting 1 before the echo). Both failure modes (zero releases published -- this repo's real current state pre-launch -- and curl/network failure) now print a diagnostic to stderr and exit 1, verified live via `GATESHIP_INSTALL_DIR=$(mktemp -d) bash install.sh` under a fake-curl PATH shim, and covered hermetically (no real network dependency) by the new test/install-sh.test.ts, which is the reusable pattern for testing this class of shell error-path-reachability bug going forward. Root cause and fix pattern are written up in full in scripts/cam/patterns.md (bottom bullet). prd.json in this working tree already carries US-R1-002 (priority 2, passes:false) staged by the reviewer/planner before this story started -- it is the next candidate by priority and touches the adjacent rename-instruction-surface subsystem (widening US-005's oracle terminator), not install.sh itself.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched"
+      "lib": "bash (set -e / pipefail semantics)",
+      "url": "https://www.gnu.org/software/bash/manual/html_node/The-Set-Builtin.html",
+      "fetchedAt": "2026-08-03T00:00:00Z",
+      "status": "corrected",
+      "summary": "WebFetch's model-generated summary of the GNU bash manual claimed a bare `var=\"$(cmd)\"` assignment does NOT trip `set -e` when cmd fails (citing the && / || exemption, which does not apply to a standalone assignment statement). This is wrong and was falsified by direct empirical execution on the actual bash on this host (GNU bash 3.2.57 arm64-darwin): `bash -c 'set -euo pipefail; TAG=\"$(false)\"; echo reached'` exits 1 and never reaches the echo. The implementation (and the || true on the split-out parse step) is based on this verified real runtime behavior, not on the fetched summary; the fetch is recorded here as a caution against trusting a documentation-summary tool over direct execution for shell semantics."
     }
   ],
   "appliedPatternIds": []
