@@ -21,6 +21,30 @@
   ],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "CRITICAL: US-002's in-process gate behaviour has no committed regression test.…",
+      "priority": 1,
+      "passes": false,
+      "description": "CRITICAL [test/check-all.test.ts:176]: US-002's in-process gate behaviour has no committed regression test. The only changed assertions for the two collapsed gates are structural (`expect(gate && 'run' in gate).toBe(true)` / `expect(gate && 'cmd' in gate).toBe(false)` at test/check-all.test.ts:176-182), and test/check-all-capture.test.ts covers only decodeCapturedOutput plus the onSuiteOutput hook with gate lists that contain no in-process gate. Nothing committed asserts that runGates actually threads the captured blob into gate.run (scripts/check-all.ts:332-333), that an empty blob fails both gates closed, that a below-floor blob fails coverage, or that a failing suite does not contaminate the coverage/skip-ratchet rows. Replacing the threaded blob with '', inverting a gate verdict, or making runInProcessGate a no-op leaves the whole suite green: the three full-manifest tests (test/check-all.test.ts:366, :379) already execute the real in-process gates and were observed printing 'fail coverage'/'fail skip-ratchet' while still passing, since they assert only names and lengths. The anti-inert guarantee ADR-0056 was written to secure therefore lives only in the ephemeral prd.json oracle strings, which are overwritten on the next PRD cycle. Add committed tests (empty-blob fail-closed, below-floor coverage fail, three skip-ratchet failure modes, anti-contamination) using an injected gates array of the two in-process gates.",
+      "notes": "CRITICAL [test/check-all.test.ts:176]: US-002's in-process gate behaviour has no committed regression test. The only changed assertions for the two collapsed gates are structural (`expect(gate && 'run' in gate).toBe(true)` / `expect(gate && 'cmd' in gate).toBe(false)` at test/check-all.test.ts:176-182), and test/check-all-capture.test.ts covers only decodeCapturedOutput plus the onSuiteOutput hook with gate lists that contain no in-process gate. Nothing committed asserts that runGates actually threads the captured blob into gate.run (scripts/check-all.ts:332-333), that an empty blob fails both gates closed, that a below-floor blob fails coverage, or that a failing suite does not contaminate the coverage/skip-ratchet rows. Replacing the threaded blob with '', inverting a gate verdict, or making runInProcessGate a no-op leaves the whole suite green: the three full-manifest tests (test/check-all.test.ts:366, :379) already execute the real in-process gates and were observed printing 'fail coverage'/'fail skip-ratchet' while still passing, since they assert only names and lengths. The anti-inert guarantee ADR-0056 was written to secure therefore lives only in the ephemeral prd.json oracle strings, which are overwritten on the next PRD cycle. Add committed tests (empty-blob fail-closed, below-floor coverage fail, three skip-ratchet failure modes, anti-contamination) using an injected gates array of the two in-process gates."
+    },
+    {
+      "id": "US-R1-002",
+      "title": "WARNING: An exception thrown by an in-process gate escapes runGates and aborts…",
+      "priority": 2,
+      "passes": false,
+      "description": "WARNING [scripts/check-all.ts:284]: An exception thrown by an in-process gate escapes runGates and aborts the whole spine. executeGate calls runInProcessGate unguarded, and checkCoverage/checkSkipRatchet both do readFileSync + JSON.parse on their real budget/expectations files (scripts/check-coverage.ts:138, scripts/check-skip-ratchet.ts:274). Reproduced: `runGates({ cwd: '/tmp', spawnFn: <valid-blob fake>, onResults: ... })` printed 7 ok rows then THREW 'ENOENT ... /tmp/scripts/coverage-budget.json'; the remaining 6 gates never ran and onResults never fired, so under --json no gate-results.json is written and CI's step-summary step would find no file. Before the collapse the same condition was contained in the check-coverage.ts subprocess and surfaced as a `fail coverage` row with the spine continuing. Wrap gate.run in try/catch and map a throw to { passed: false, errors: [message] }.",
+      "notes": "WARNING [scripts/check-all.ts:284]: An exception thrown by an in-process gate escapes runGates and aborts the whole spine. executeGate calls runInProcessGate unguarded, and checkCoverage/checkSkipRatchet both do readFileSync + JSON.parse on their real budget/expectations files (scripts/check-coverage.ts:138, scripts/check-skip-ratchet.ts:274). Reproduced: `runGates({ cwd: '/tmp', spawnFn: <valid-blob fake>, onResults: ... })` printed 7 ok rows then THREW 'ENOENT ... /tmp/scripts/coverage-budget.json'; the remaining 6 gates never ran and onResults never fired, so under --json no gate-results.json is written and CI's step-summary step would find no file. Before the collapse the same condition was contained in the check-coverage.ts subprocess and surfaced as a `fail coverage` row with the spine continuing. Wrap gate.run in try/catch and map a throw to { passed: false, errors: [message] }."
+    },
+    {
+      "id": "US-R1-003",
+      "title": "WARNING: The file header still claims 'All tests drive runGates with a fake spa…",
+      "priority": 3,
+      "passes": false,
+      "description": "WARNING [test/check-all.test.ts:5]: The file header still claims 'All tests drive runGates with a fake spawnFn; no real subprocess is invoked', which the collapse made false: the full-manifest tests (test/check-all.test.ts:366, :379, and the --json name-order case) now run the real coverage gate, which spawns a real `git diff --cached -U0 scripts/coverage-budget.json` via scripts/ratchet-diff.ts:52-59 and reads the real scripts/coverage-budget.json and test/helpers/lane-expectations.json off disk. These unit tests silently acquired an ambient git + cwd dependency that contradicts the project's stated DI convention ('unit tests never shell out'). Either restate the header and note the real-I/O dependency, or pass an explicit spawn-only gates array to those three tests.",
+      "notes": "WARNING [test/check-all.test.ts:5]: The file header still claims 'All tests drive runGates with a fake spawnFn; no real subprocess is invoked', which the collapse made false: the full-manifest tests (test/check-all.test.ts:366, :379, and the --json name-order case) now run the real coverage gate, which spawns a real `git diff --cached -U0 scripts/coverage-budget.json` via scripts/ratchet-diff.ts:52-59 and reads the real scripts/coverage-budget.json and test/helpers/lane-expectations.json off disk. These unit tests silently acquired an ambient git + cwd dependency that contradicts the project's stated DI convention ('unit tests never shell out'). Either restate the header and note the real-I/O dependency, or pass an explicit spawn-only gates array to those three tests."
+    },
+    {
       "id": "US-001",
       "title": "Capture the suite gate's combined output in check-all",
       "description": "As the gate spine, I need the suite gate to run `bun test --coverage` with piped stdio and expose its combined stdout+stderr as one shared blob (while still echoing that output to the operator), so that the coverage and skip-ratchet consumers can later be fed from it instead of re-running the suite.",
@@ -35,7 +59,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 1,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "Files: scripts/check-all.ts (SpawnFn type + runGates + new capture helper), test/check-all.test.ts (the `test gate: bun test` assertion at the per-gate block must be restated to `bun test --coverage`, and the `makeResult` fake at test/check-all.test.ts:33-43 must grow stdout/stderr Buffers), NEW test/check-all-capture.test.ts, scripts/file-size-budget.json.\n\nMECHANISM IS PINNED, NOT AN OPEN CHOICE: the shared blob MUST derive from the spawn result's piped Buffers (`stdout: 'pipe', stderr: 'pipe'` on the suite spawn only; decode stdout then stderr and concatenate, exactly as the two existing adapters already do at check-coverage.ts:132 and check-skip-ratchet.ts:269), with live progress restored by echoing the captured buffers back to process.stdout/process.stderr after the spawn returns. Do NOT implement this as a `tee`/`pipefail` shell form: every downstream oracle in US-002 and US-003 injects the blob through the fake spawn's stdout/stderr Buffers, a shape only the piped form can produce, so a tee-based capture would strand them.\n\nKeep the non-suite gates on inherited stdio; only the suite gate is captured. That means SpawnFn's baked-in 'inherit','inherit' generics (check-all.ts:34) must widen (e.g. to a structural `{ success, exitCode, stdout?: Buffer, stderr?: Buffer }` subset, or `SyncSubprocess<'pipe'|'inherit','pipe'|'inherit'>`); `import type { SyncSubprocess } from 'bun'` stays.\n\npatterns.md bullets to re-read before coding (grep them, do not read the file whole): 'Oracle-friendly manifest design (US-001, CAM-59)' -- keep GATES entries as full space-separated command strings so `g(name, cmdStr)` still splits them and grep-based oracles still match; 'Migrating an injectable SpawnFn seam ... to Bun.spawnSync (US-001, CAM-308)' -- the pass/fail verdict must stay `result.success && result.exitCode === 0` (a signal-killed child reports exitCode null at runtime), and any hand-built SyncSubprocess fixture needs a fully zeroed ResourceUsage object, not a partial cast; 'Oracle-falsifiability rule (US-001, CAM-372)' at patterns.md:928 -- every assertion you add must be swept red against main first.\n\nBun docs (fetched this plan, see officialDocsConsulted): stdout defaults to 'pipe' but stderr defaults to 'inherit', so BOTH must be set explicitly; leave `maxBuffer` unset (it kills the child once exceeded, and the coverage table plus summary is hundreds of KB).\n\nCAM-474 bracket rule: the oracles above are deliberately bracket-free. If you re-run them, treat exit 2 or a syntax error as an EXTRACTION failure, never as a red criterion."
@@ -60,7 +84,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 2,
+      "priority": 5,
       "passes": true,
       "requires": "US-001",
       "notes": "Files: scripts/check-all.ts (Gate manifest stops being uniform: the two consumer gates become in-process runs instead of spawns), test/check-all.test.ts (restate the `coverage gate` and `skip-ratchet gate` cases), scripts/file-size-budget.json. Do NOT touch scripts/check-coverage.ts or scripts/check-skip-ratchet.ts beyond what the in-process call needs -- both DI seams already exist: `GetSuiteOutputFn` is raw-string typed (check-skip-ratchet.ts:84) and `parseCoverageOutput` is exported and pure (check-coverage.ts:87).\n\nCall shape decided in the issue spec (in-process, no fallback path): `checkCoverage({ getCoverage: () => parseCoverageOutput(captured) })` and `checkSkipRatchet({ getSuiteOutput: () => captured })`. Existing production precedent for feeding pre-captured output to the skip checks without a second run: scripts/test-in-container.ts:238-240.\n\nFail-closed asymmetry that must NOT be bypassed (issue AC6): `parseSkipCount` returns 0 when the skip line is absent, so on its own it fails OPEN; only `checkSuiteRan`'s positive-evidence tally guard (check-skip-ratchet.ts:224-234) makes the empty-blob case fail closed. Keep it in the path.\n\nThe two parsers are mutually non-conflicting over one superset blob: coverage line-scans for /^All files\\s*\\|/ and ignores everything else, while skip-ratchet uses /m-anchored single-leading-space regexes (/^ (\\d+) skip/m, /^ (\\d+) pass/m) that a coverage table row can never match. RAN_LINE_RE already tolerates the singular 'Ran 25 tests across 1 file.' form; do not tighten it.\n\nLeave the container lane alone (CAM_TEST_LANE, check-skip-ratchet.ts:94,170-172): scripts/test-in-container.ts is the separate fourth CI run and is explicitly out of scope.\n\npatterns.md bullets to grep before coding: 'Gate-spine convention (US-005, CAM-59)' -- gates are declared in GATES and never invoked ad-hoc in ci.yml; 'Oracle-falsifiability rule (US-001, CAM-372)' at patterns.md:928 -- sweep every new in-test assertion red against main; the CAM-474 both-directions rule -- after narrowing or widening a gate's failure condition, re-measure true positives AND false positives in the same round (the anti-contamination criterion above is exactly that second direction).\n\nCAM-474 bracket rule: the oracles above are deliberately bracket-free; treat exit 2 or a syntax error as an EXTRACTION failure, never as a red criterion. DO NOT delete, skip or thin any test to make a gate green (measured: test:src 2.08x, flat since 2026-07-15, 0 skipped tests -- the defect is redundant EXECUTION, not test volume)."
@@ -77,10 +101,53 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 3,
+      "priority": 6,
       "passes": true,
       "requires": "US-002",
       "notes": "Files: scripts/cam/patterns.md (append one bullet; never truncate the file). No source change is expected here -- this story exists because a collapse can ship INERT (the CAM-479 disease: fix shipped inert while grep-oracles read satisfied), so its whole value is the two real measurements and the durable record of them.\n\nHow to get the honest BEFORE number: measure it on main (e.g. `git stash` / a worktree or a checkout of origin/main) with the same `bun scripts/check-all.ts --json` command, on the same machine, in the same session. Do not reuse the 34511ms/34381ms figures from the issue body as the before total: they are a per-gate sample from an older recorded gate-results.json, quoted in the issue as the fingerprint of the defect, not as this cycle's measurement.\n\ngate-results.json is written to cwd by the --json flag (check-all.ts:163-168) and is a build artifact: do not commit it (confirm it is ignored, or delete it before committing).\n\nKnowledge-layer routing (scripts/cam/CLAUDE.md): a reusable technical insight goes to scripts/cam/patterns.md as a bullet, which is exactly what this story writes; do not also duplicate it into CONTEXT.md or docs/adr/.\n\nThe standalone-run criterion is slow by design (~one suite execution per script). Run it once, at the end, after the spine is otherwise green."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:3",
+    "findings": [
+      {
+        "severity": "CRITICAL",
+        "file": "test/check-all.test.ts",
+        "line": 176,
+        "text": "US-002's in-process gate behaviour has no committed regression test. The only changed assertions for the two collapsed gates are structural (`expect(gate && 'run' in gate).toBe(true)` / `expect(gate && 'cmd' in gate).toBe(false)` at test/check-all.test.ts:176-182), and test/check-all-capture.test.ts covers only decodeCapturedOutput plus the onSuiteOutput hook with gate lists that contain no in-process gate. Nothing committed asserts that runGates actually threads the captured blob into gate.run (scripts/check-all.ts:332-333), that an empty blob fails both gates closed, that a below-floor blob fails coverage, or that a failing suite does not contaminate the coverage/skip-ratchet rows. Replacing the threaded blob with '', inverting a gate verdict, or making runInProcessGate a no-op leaves the whole suite green: the three full-manifest tests (test/check-all.test.ts:366, :379) already execute the real in-process gates and were observed printing 'fail coverage'/'fail skip-ratchet' while still passing, since they assert only names and lengths. The anti-inert guarantee ADR-0056 was written to secure therefore lives only in the ephemeral prd.json oracle strings, which are overwritten on the next PRD cycle. Add committed tests (empty-blob fail-closed, below-floor coverage fail, three skip-ratchet failure modes, anti-contamination) using an injected gates array of the two in-process gates."
+      },
+      {
+        "severity": "WARNING",
+        "file": "scripts/check-all.ts",
+        "line": 284,
+        "text": "An exception thrown by an in-process gate escapes runGates and aborts the whole spine. executeGate calls runInProcessGate unguarded, and checkCoverage/checkSkipRatchet both do readFileSync + JSON.parse on their real budget/expectations files (scripts/check-coverage.ts:138, scripts/check-skip-ratchet.ts:274). Reproduced: `runGates({ cwd: '/tmp', spawnFn: <valid-blob fake>, onResults: ... })` printed 7 ok rows then THREW 'ENOENT ... /tmp/scripts/coverage-budget.json'; the remaining 6 gates never ran and onResults never fired, so under --json no gate-results.json is written and CI's step-summary step would find no file. Before the collapse the same condition was contained in the check-coverage.ts subprocess and surfaced as a `fail coverage` row with the spine continuing. Wrap gate.run in try/catch and map a throw to { passed: false, errors: [message] }."
+      },
+      {
+        "severity": "WARNING",
+        "file": "test/check-all.test.ts",
+        "line": 5,
+        "text": "The file header still claims 'All tests drive runGates with a fake spawnFn; no real subprocess is invoked', which the collapse made false: the full-manifest tests (test/check-all.test.ts:366, :379, and the --json name-order case) now run the real coverage gate, which spawns a real `git diff --cached -U0 scripts/coverage-budget.json` via scripts/ratchet-diff.ts:52-59 and reads the real scripts/coverage-budget.json and test/helpers/lane-expectations.json off disk. These unit tests silently acquired an ambient git + cwd dependency that contradicts the project's stated DI convention ('unit tests never shell out'). Either restate the header and note the real-I/O dependency, or pass an explicit spawn-only gates array to those three tests."
+      },
+      {
+        "severity": "WARNING",
+        "file": "scripts/check-all.ts",
+        "line": 224,
+        "text": "Live progress during the ~100s suite gate is gone, which deviates from ADR-0056's stated consequence that 'the operator's live progress must be teed rather than swallowed'. captureAndEchoSuiteOutput writes the completed Buffers only after Bun.spawnSync returns, so the pane emits nothing for the entire suite run and then dumps ~2500 lines at once. The output is preserved, not swallowed, so this is not inert, but a check:all pane is now indistinguishable from a wedged one for 100 seconds. Non-mechanical to fix (a genuine tee needs the async Bun.spawn form, which would make runGates async), so filed as a consider-class concern rather than a blocking one; if the post-hoc echo is accepted as the permanent shape, ADR-0056's consequence sentence should be amended to say so."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "scripts/check-all.ts",
+        "line": 308,
+        "text": "The pipe decision and the capture/echo decision are keyed on different things: makeDefaultSpawnFn pipes on argv shape (cmd === 'bun' && args[0] === 'test' && args.includes('--coverage')) while runSpawnGate echoes and shares on gate name (SUITE_GATE_NAME === 'test', line 254). Renaming the suite gate would keep the stdio piped while disabling the echo, so the operator would lose the suite output entirely (the gates then fail closed, so it is a red spine rather than a silent pass, but the trap is avoidable). Key both off the same predicate, e.g. have makeDefaultSpawnFn take the gate name or derive the pipe decision from SUITE_GATE_NAME."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "scripts/cam/patterns.md",
+        "line": 1174,
+        "text": "The two new bullets use em-dashes, which the operator's persisted-markdown convention forbids (replace with a comma, parentheses or a full stop). Pre-existing bullets in this file do the same, so this is consistency drift rather than a regression introduced here."
+      }
+    ]
+  }
 }
