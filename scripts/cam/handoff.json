@@ -1,0 +1,34 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Tornar o manifesto publicavel sob o nome do produto e sincronizar o lockfile"
+  },
+  "branchName": "cam/issue-460",
+  "timestamp": "2026-08-03T21:42:26Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "package.json",
+    "bun.lock",
+    "index.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "package.json is now publishable: name=gateship, private=false, bin={gateship,gship} both pointing at ./index.ts, license=MIT, repository points at github.com/eduardocaminha/cam-cli, engines.bun=>=1.2.0, files=[index.ts, src, LICENSE, README.md]. index.ts got a #!/usr/bin/env bun shebang + exec bit (chmod 755) since bin targets it directly (no build-artifact indirection was introduced; npm's own bin docs require the shebang for a working global command). bun.lock's workspace name was hand-edited (NOT via a plain `bun install`, which silently no-ops on a name-only rename) to avoid an unrelated dependency-version bump; `bun install --frozen-lockfile` confirms zero drift. npm publish is explicitly OUT of scope this cycle per ADR-0055 (prerelease-first strategy) -- do not add any publish step. src/version.ts remains the sole version source; package.json.version is a mirror only, guarded by test/version.test.ts and this story's AC4 pin.",
+  "officialDocsValidated": [
+    {
+      "lib": "npm (package.json bin field)",
+      "channel": "WebFetch",
+      "url": "https://docs.npmjs.com/cli/v10/configuring-npm/package-json#bin",
+      "fetchedAt": "2026-08-03T21:30:00Z",
+      "status": "aligned",
+      "summary": "Docs confirm a bin target must start with a shebang (#!/usr/bin/env node in their example) or the script runs without an interpreter; adapted to #!/usr/bin/env bun for this Bun-only CLI and added to index.ts in the same commit."
+    },
+    {
+      "lib": "bun.lock (Bun text lockfile)",
+      "channel": "WebFetch",
+      "url": "https://bun.com/docs/install/lockfile",
+      "fetchedAt": "2026-08-03T21:28:00Z",
+      "status": "fetch_failed",
+      "summary": "Fetched page did not cover workspace-name rewrite semantics or --frozen-lockfile validation depth; verified behavior empirically instead (bun install no-ops on a name-only rename, deleting+regenerating the lockfile bumps unrelated deps, hand-editing the name field + `bun install --frozen-lockfile` exits 0 with zero package drift)."
+    }
+  ]
+}
