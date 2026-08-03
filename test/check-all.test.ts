@@ -1,10 +1,12 @@
 // test/check-all.test.ts
 //
-// Unit tests for scripts/check-all.ts (US-001, US-004, CAM-59, CAM-60 PRD).
+// Unit tests for scripts/check-all.ts (US-001, US-004, CAM-59, CAM-60 PRD;
+// US-002, CAM-488 PRD).
 //
 // All tests drive runGates with a fake spawnFn; no real subprocess is invoked.
 // Coverage:
-//   GATES manifest: length (14), order, correct cmd/args per gate.
+//   GATES manifest: length (14), order, correct cmd/args per spawn gate; the
+//   coverage and skip-ratchet gates are in-process (a `run` fn, no cmd/args).
 //   runGates: all pass (exit 0), any fail (exit 1), bail stops early.
 //   --json mode: onResults callback receives correctly shaped GateResult[].
 
@@ -130,11 +132,11 @@ describe('GATES manifest', () => {
 		expect(gate?.args).toEqual(['scripts/check-version-skips.ts']);
 	});
 
-	test('coverage gate: bun scripts/check-coverage.ts', () => {
+	test('coverage gate: in-process (US-002, CAM-488), reaches its verdict via a `run` fn, not a cmd/args spawn pair', () => {
 		const gate = GATES[7];
 		expect(gate?.name).toBe('coverage');
-		expect(gate?.cmd).toBe('bun');
-		expect(gate?.args).toEqual(['scripts/check-coverage.ts']);
+		expect(gate && 'run' in gate).toBe(true);
+		expect(gate && 'cmd' in gate).toBe(false);
 	});
 
 	test('dead-code gate: bunx --bun knip', () => {
@@ -172,11 +174,11 @@ describe('GATES manifest', () => {
 		expect(gate?.args).toEqual(['scripts/check-test-sleeps.ts']);
 	});
 
-	test('skip-ratchet gate: bun scripts/check-skip-ratchet.ts', () => {
+	test('skip-ratchet gate: in-process (US-002, CAM-488), reaches its verdict via a `run` fn, not a cmd/args spawn pair', () => {
 		const gate = GATES[13];
 		expect(gate?.name).toBe('skip-ratchet');
-		expect(gate?.cmd).toBe('bun');
-		expect(gate?.args).toEqual(['scripts/check-skip-ratchet.ts']);
+		expect(gate && 'run' in gate).toBe(true);
+		expect(gate && 'cmd' in gate).toBe(false);
 	});
 });
 

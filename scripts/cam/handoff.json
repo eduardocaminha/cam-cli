@@ -1,19 +1,12 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Capture the suite gate's combined output in check-all" },
+  "lastCompletedStory": { "id": "US-002", "title": "Feed coverage and skip-ratchet from the shared blob in-process" },
   "branchName": "cam/issue-488",
-  "timestamp": "2026-08-03T03:50:00Z",
-  "createdFiles": ["test/check-all-capture.test.ts"],
-  "modifiedFiles": ["scripts/check-all.ts", "test/check-all.test.ts", "scripts/file-size-budget.json"],
+  "timestamp": "2026-08-03T04:45:00Z",
+  "createdFiles": [],
+  "modifiedFiles": ["scripts/check-all.ts", "test/check-all.test.ts", "scripts/file-size-budget.json", "scripts/cam/patterns.md"],
   "openQuestions": [],
-  "nextStoryContext": "scripts/check-all.ts now exports decodeCapturedOutput(result: { stdout?: Buffer; stderr?: Buffer }): string (stdout-decoded text followed by stderr-decoded text; missing buffers decode to '') and RunGatesOptions.onSuiteOutput?: (output: string) => void, invoked exactly once per runGates() call, right after the suite ('test') gate's spawnFn call, with the combined blob. The suite gate now runs `bun test --coverage` (was `bun test`) and is the only gate spawned with piped stdio (both streams); every other gate keeps inherited stdio via the same SpawnFn seam (widened to SyncSubprocess<'pipe'|'inherit','pipe'|'inherit'>). The next stories (coverage/skip-ratchet, per the CAM-488 PRD) should wire their own gate entries in scripts/check-all.ts's runGates call site to consume onSuiteOutput's blob instead of re-invoking `bun test --coverage` / `bun test` themselves inside check-coverage.ts / check-skip-ratchet.ts. GOTCHA (found and fixed this story, keep in mind for similar wiring elsewhere): `options.onSuiteOutput?.(makeExpensiveThing())` short-circuits the ARGUMENT evaluation (not just the call) when onSuiteOutput is undefined, per JS optional-chaining semantics -- if the echo/write-through side effect must always happen regardless of whether a consumer callback is present, compute it into a local first, then pass the local to the optional call: `const x = makeExpensiveThing(); options.onSuiteOutput?.(x);`. This was caught by AC2's own oracle going RED on the first implementation attempt (a fake spawnFn with no onSuiteOutput option produced no SENTINELOUT/SENTINELERR echo at all) before the fix. Full bun run check:all spine (all 14 gates) confirmed green end-to-end on this branch after the fix.",
+  "nextStoryContext": "scripts/check-all.ts's GATES manifest now has 'coverage' and 'skip-ratchet' as in-process gates: each is a `Gate` object with a `run: (suiteOutput: string, cwd: string) => { ok: boolean; errors: string[] }` field instead of `cmd`/`args`. `Gate` is one flat interface with cmd/args/run all optional (NOT a discriminated union -- see the patterns.md bullet on why: a real union broke every pre-existing `gate?.cmd` test assertion via TS narrowing). `isInProcessGate`/`isSpawnGate` are the runtime guards; `executeGate` dispatches; `runSpawnGate`/`runInProcessGate` do the actual work; `reportGateOutcome` prints/records. The shared suite blob (captured by the 'test' gate, per US-001) is threaded through a local `suiteOutput` variable in `runGates`'s loop, updated only when a spawn gate named 'test' runs, then passed to every later in-process gate's `run` call. Both in-process gates call `checkCoverage`/`checkSkipRatchet` with ONLY `getCoverage`/`getSuiteOutput` overridden (never `getStagedDiff`/`readExpectations`), so the coverage budget's tracker-ref check and the real lane-expectations file both stay live in the collapsed path. `bun run check:all` now costs exactly ONE `bun test --coverage` run for the whole 14-gate spine (measured: 103.3s single run, confirmed via `grep -c '^ok test ('` on a full check:all invocation). US-003 (per the CAM-488 PRD, if it exists) should verify the two consumer scripts (check-coverage.ts, check-skip-ratchet.ts) still run standalone correctly on their own -- their `makeDefaultGetCoverage`/`makeDefaultGetSuiteOutput` adapters were left completely untouched by this story, only check-all.ts's manifest and runner changed.",
   "officialDocsValidated": [
-    {
-      "lib": "bun",
-      "channel": "WebFetch",
-      "url": "https://bun.com/docs/api/spawn",
-      "fetchedAt": "2026-08-03T03:45:00Z",
-      "status": "aligned",
-      "summary": "Confirmed Bun.spawnSync defaults: stdout defaults to 'pipe', stderr defaults to 'inherit' (asymmetric); the implementation always sets both stdout and stderr explicitly per invocation (never relies on either default), matching the pinned mechanism in this story's notes."
-    }
+    { "lib": "none", "status": "no_external_lib_touched", "summary": "Pure internal wiring: reuses checkCoverage/checkSkipRatchet and their existing production adapters (already validated in prior stories); no new external library surface introduced." }
   ]
 }

@@ -13,10 +13,13 @@
 // The suite ('test') gate runs `bun test --coverage` with piped stdio (US-001,
 // CAM-488 PRD) instead of inherited stdio: its combined stdout+stderr is
 // captured, echoed straight back to the operator (so the ~134s run is not
-// silent), and handed to the optional onSuiteOutput hook as one shared blob,
-// so future coverage/skip-ratchet consumers can be fed from this single run
-// instead of re-invoking the suite themselves. Every other gate keeps
-// inherited stdio; pass/fail verdicts always come from spawnFn's own
+// silent), and handed to the optional onSuiteOutput hook as one shared blob.
+// The coverage and skip-ratchet gates (US-002, CAM-488 PRD) are IN-PROCESS
+// gates rather than spawned consumer scripts: they reach their verdict by
+// calling checkCoverage()/checkSkipRatchet() directly, fed this same shared
+// blob, so one check:all run costs one suite execution instead of three.
+// Every other gate keeps inherited stdio and stays a spawned subprocess;
+// pass/fail verdicts for spawn gates always come from spawnFn's own
 // success/exitCode, never from the captured text.
 //
 // Usage: bun scripts/check-all.ts [--bail] [--json]
@@ -31,6 +34,9 @@ import { join } from 'node:path';
 import process from 'node:process';
 
 import type { SyncSubprocess } from 'bun';
+
+import { checkCoverage, parseCoverageOutput } from './check-coverage.ts';
+import { checkSkipRatchet } from './check-skip-ratchet.ts';
 
 // ---------------------------------------------------------------------------
 // Injectable dependency type
@@ -66,20 +72,77 @@ export interface GateResult {
 // GATES manifest
 // ---------------------------------------------------------------------------
 
+/**
+ * A gate is EITHER a spawn gate (cmd/args passed to spawnFn) OR an in-process
+ * gate (a `run` fn fed the shared suite-output blob, US-002, CAM-488 PRD) --
+ * never both. `cmd`/`args` and `run` are declared optional on one flat
+ * interface (rather than a discriminated union) so existing per-gate tests
+ * that read `gate?.cmd`/`gate?.args` on a spawn gate keep their original,
+ * ungated shape; `isInProcessGate`/`isSpawnGate` are the two runtime type
+ * guards that narrow which shape a given gate actually is.
+ */
 export interface Gate {
 	/** Short name printed in one-line output. */
 	name: string;
-	/** Executable passed as cmd to spawnFn. */
-	cmd: string;
-	/** Arguments passed to cmd. */
-	args: string[];
+	/** Executable passed as cmd to spawnFn. Present only on a spawn gate. */
+	cmd?: string;
+	/** Arguments passed to cmd. Present only on a spawn gate. */
+	args?: string[];
+	/**
+	 * Reach a verdict from the shared suite output blob and cwd, in-process,
+	 * instead of spawning a consumer script. Present only on an in-process
+	 * gate. `cwd` is threaded through so the gate can still read its real
+	 * budget/expectations file off disk: only the SUITE RUN itself is shared,
+	 * every other production adapter (staged-diff read, lane-expectations
+	 * read) stays wired to its real default.
+	 */
+	run?: (suiteOutput: string, cwd: string) => { ok: boolean; errors: string[] };
 }
 
-/** Build a Gate from a space-separated command string (e.g. 'bunx tsc --noEmit'). */
+function isInProcessGate(gate: Gate): gate is Gate & { run: NonNullable<Gate['run']> } {
+	return gate.run !== undefined;
+}
+
+function isSpawnGate(gate: Gate): gate is Gate & { cmd: string; args: string[] } {
+	return gate.cmd !== undefined && gate.args !== undefined;
+}
+
+/** Build a spawn Gate from a space-separated command string (e.g. 'bunx tsc --noEmit'). */
 function g(name: string, cmdStr: string): Gate {
 	const parts = cmdStr.split(' ');
 	return { name, cmd: parts[0] ?? '', args: parts.slice(1) };
 }
+
+/**
+ * In-process coverage gate: reaches the same failure condition as
+ * check-coverage.ts's CLI (floor-met + staged-diff tracker-ref checks), but
+ * fed the shared suite blob for `getCoverage` instead of re-running the
+ * suite. Every other check-coverage.ts dependency (the staged-diff reader
+ * included) is intentionally left at its production default.
+ */
+const coverageGate: Gate = {
+	name: 'coverage',
+	run: (suiteOutput, cwd) => {
+		const result = checkCoverage({ cwd, getCoverage: () => parseCoverageOutput(suiteOutput) });
+		return { ok: result.ok, errors: result.errors };
+	},
+};
+
+/**
+ * In-process skip-ratchet gate: reaches the same failure condition as
+ * check-skip-ratchet.ts's CLI (suite-ran-to-completion, pass-floor headroom,
+ * skip-count delta), but fed the shared suite blob for `getSuiteOutput`
+ * instead of re-running the suite. Every other check-skip-ratchet.ts
+ * dependency (the lane-expectations reader included) is intentionally left
+ * at its production default.
+ */
+const skipRatchetGate: Gate = {
+	name: 'skip-ratchet',
+	run: (suiteOutput, cwd) => {
+		const result = checkSkipRatchet({ cwd, getSuiteOutput: () => suiteOutput });
+		return { ok: result.ok, errors: result.ok ? [] : [result.message] };
+	},
+};
 
 /**
  * Ordered gate-spine manifest.
@@ -93,14 +156,14 @@ export const GATES: Gate[] = [
 	g('file-size', 'bun scripts/check-file-sizes.ts'),
 	g('debt-markers', 'bun scripts/check-debt-markers.ts'),
 	g('version-skips', 'bun scripts/check-version-skips.ts'),
-	g('coverage', 'bun scripts/check-coverage.ts'),
+	coverageGate,
 	// --bun: run knip on Bun's own runtime, not a delegated system `node` (avoids a <20 node:util gap).
 	g('dead-code', 'bunx --bun knip'),
 	g('dup', 'bunx jscpd --config .jscpd.json src scripts'),
 	g('ci-parity', 'bun run check:ci-parity'),
 	g('agents-md', 'bun scripts/validate-agents-md.ts'),
 	g('test-sleeps', 'bun scripts/check-test-sleeps.ts'),
-	g('skip-ratchet', 'bun scripts/check-skip-ratchet.ts'),
+	skipRatchetGate,
 ];
 
 // ---------------------------------------------------------------------------
@@ -164,24 +227,75 @@ function captureAndEchoSuiteOutput(result: { stdout?: Buffer; stderr?: Buffer })
 	return decodeCapturedOutput(result);
 }
 
+/** Outcome of running one gate: pass/fail plus any error strings to surface. */
+interface GateOutcome {
+	passed: boolean;
+	errors: string[];
+	/** Only set when this gate is the suite gate: its captured shared blob. */
+	suiteOutput?: string;
+}
+
 /**
- * No-op for every gate except the suite ('test') gate: for that one gate,
- * echo its captured buffers and forward the combined blob to onSuiteOutput
- * (if provided). Extracted out of runGates to keep its cognitive complexity
- * under the noExcessiveCognitiveComplexity limit.
+ * Spawn a spawn gate's subprocess and derive its pass/fail from spawnFn's own
+ * success/exitCode. For the suite ('test') gate only, also echo its captured
+ * buffers (write-through, so the ~134s run is not silent) and forward the
+ * combined blob to onSuiteOutput (if provided) AND to the caller via the
+ * returned `suiteOutput`, so runGates can thread it to later in-process
+ * gates.
  */
-function emitSuiteOutputIfApplicable(
-	gate: Gate,
-	result: { stdout?: Buffer; stderr?: Buffer },
+function runSpawnGate(
+	gate: Gate & { cmd: string; args: string[] },
+	spawnFn: SpawnFn,
 	onSuiteOutput: ((output: string) => void) | undefined,
-): void {
-	if (gate.name !== SUITE_GATE_NAME) return;
+): GateOutcome {
+	const result = spawnFn(gate.cmd, gate.args);
+	const passed = result.success && result.exitCode === 0;
+
+	if (gate.name !== SUITE_GATE_NAME) return { passed, errors: [] };
+
 	// Always echo (write-through), regardless of whether onSuiteOutput is set:
 	// `onSuiteOutput?.(captureAndEchoSuiteOutput(result))` would short-circuit
 	// the echo itself when onSuiteOutput is unset, since optional-chaining
 	// calls never evaluate their arguments once the callee is nullish.
 	const suiteOutput = captureAndEchoSuiteOutput(result);
 	onSuiteOutput?.(suiteOutput);
+	return { passed, errors: [], suiteOutput };
+}
+
+/** Run an in-process gate's `run` fn against the shared suite blob and cwd. */
+function runInProcessGate(gate: Gate & { run: NonNullable<Gate['run']> }, suiteOutput: string, cwd: string): GateOutcome {
+	const { ok, errors } = gate.run(suiteOutput, cwd);
+	return { passed: ok, errors };
+}
+
+/**
+ * Dispatch one gate to its executor by shape (in-process vs spawn), falling
+ * back to a defensive failure for a malformed gate that is neither. Extracted
+ * out of runGates to keep its cognitive complexity under the
+ * noExcessiveCognitiveComplexity limit.
+ */
+function executeGate(
+	gate: Gate,
+	spawnFn: SpawnFn,
+	suiteOutput: string,
+	cwd: string,
+	onSuiteOutput: ((output: string) => void) | undefined,
+): GateOutcome {
+	if (isInProcessGate(gate)) return runInProcessGate(gate, suiteOutput, cwd);
+	if (isSpawnGate(gate)) return runSpawnGate(gate, spawnFn, onSuiteOutput);
+	return { passed: false, errors: [`gate '${gate.name}' has neither cmd/args nor run`] };
+}
+
+/**
+ * Push a gate's GateResult and print its quiet status line plus any error
+ * strings. Extracted out of runGates to keep its cognitive complexity under
+ * the noExcessiveCognitiveComplexity limit.
+ */
+function reportGateOutcome(gate: Gate, outcome: GateOutcome, durationMs: number, results: GateResult[]): void {
+	const status: 'ok' | 'fail' = outcome.passed ? 'ok' : 'fail';
+	results.push({ name: gate.name, status, durationMs });
+	process.stdout.write(`${status} ${gate.name} (${formatDuration(durationMs)})\n`);
+	for (const error of outcome.errors) process.stderr.write(`  ${gate.name}: ${error}\n`);
 }
 
 /**
@@ -210,21 +324,19 @@ export function runGates(options: RunGatesOptions = {}): number {
 	const spawnFn: SpawnFn = options.spawnFn ?? makeDefaultSpawnFn(cwd);
 
 	let anyFailed = false;
+	let suiteOutput = '';
 	const results: GateResult[] = [];
 
 	for (const gate of gates) {
 		const start = Date.now();
-		const result = spawnFn(gate.cmd, gate.args);
-		emitSuiteOutputIfApplicable(gate, result, options.onSuiteOutput);
-		const durationMs = Date.now() - start;
-		const passed = result.success && result.exitCode === 0;
+		const outcome = executeGate(gate, spawnFn, suiteOutput, cwd, options.onSuiteOutput);
+		if (outcome.suiteOutput !== undefined) suiteOutput = outcome.suiteOutput;
+		reportGateOutcome(gate, outcome, Date.now() - start, results);
 
-		if (!passed) anyFailed = true;
-		const status: 'ok' | 'fail' = passed ? 'ok' : 'fail';
-		results.push({ name: gate.name, status, durationMs });
-		process.stdout.write(`${status} ${gate.name} (${formatDuration(durationMs)})\n`);
-
-		if (!passed && bail) break;
+		if (!outcome.passed) {
+			anyFailed = true;
+			if (bail) break;
+		}
 	}
 
 	options.onResults?.(results);
