@@ -30,11 +30,11 @@ function makeResourceUsage(): ResourceUsage {
 	};
 }
 
-function makeResult(exitCode: number): SyncSubprocess<'inherit', 'inherit'> {
+function makeResult(exitCode: number, stdout?: string, stderr?: string): SyncSubprocess<'pipe' | 'inherit', 'pipe' | 'inherit'> {
 	return {
 		pid: 1,
-		stdout: undefined,
-		stderr: undefined,
+		stdout: stdout === undefined ? undefined : Buffer.from(stdout),
+		stderr: stderr === undefined ? undefined : Buffer.from(stderr),
 		exitCode,
 		success: exitCode === 0,
 		resourceUsage: makeResourceUsage(),
@@ -89,10 +89,10 @@ describe('GATES manifest', () => {
 		expect(gate?.args).toContain('--noEmit');
 	});
 
-	test('test gate: bun test', () => {
+	test('test gate: bun test --coverage', () => {
 		const gate = GATES[1];
 		expect(gate?.cmd).toBe('bun');
-		expect(gate?.args).toEqual(['test']);
+		expect(gate?.args).toEqual(['test', '--coverage']);
 	});
 
 	test('embed-vendor gate: bun scripts/generate-embedded-vendor.ts --check', () => {

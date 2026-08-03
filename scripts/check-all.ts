@@ -10,6 +10,15 @@
 //
 // Exits 0 when all pass, nonzero when any fail.
 //
+// The suite ('test') gate runs `bun test --coverage` with piped stdio (US-001,
+// CAM-488 PRD) instead of inherited stdio: its combined stdout+stderr is
+// captured, echoed straight back to the operator (so the ~134s run is not
+// silent), and handed to the optional onSuiteOutput hook as one shared blob,
+// so future coverage/skip-ratchet consumers can be fed from this single run
+// instead of re-invoking the suite themselves. Every other gate keeps
+// inherited stdio; pass/fail verdicts always come from spawnFn's own
+// success/exitCode, never from the captured text.
+//
 // Usage: bun scripts/check-all.ts [--bail] [--json]
 //   --bail  Stop at the first failing gate.
 //   --json  Write gate results as JSON array to gate-results.json in cwd.
@@ -30,8 +39,11 @@ import type { SyncSubprocess } from 'bun';
 /**
  * Subset of Bun.spawnSync we need.
  * Injectable so unit tests never shell out to a real subprocess.
+ * Widened to 'pipe' | 'inherit' on both streams (rather than fixed
+ * 'inherit','inherit') so the suite gate can be piped for capture while every
+ * other gate keeps inherited stdio; stdout/stderr resolve to `Buffer | undefined`.
  */
-export type SpawnFn = (cmd: string, args: string[]) => SyncSubprocess<'inherit', 'inherit'>;
+export type SpawnFn = (cmd: string, args: string[]) => SyncSubprocess<'pipe' | 'inherit', 'pipe' | 'inherit'>;
 
 // ---------------------------------------------------------------------------
 // GateResult type
@@ -75,7 +87,7 @@ function g(name: string, cmdStr: string): Gate {
  */
 export const GATES: Gate[] = [
 	g('typecheck', 'bunx tsc --noEmit'),
-	g('test', 'bun test'),
+	g('test', 'bun test --coverage'),
 	g('embed-vendor', 'bun scripts/generate-embedded-vendor.ts --check'),
 	g('lint', 'bunx biome lint --error-on-warnings'),
 	g('file-size', 'bun scripts/check-file-sizes.ts'),
@@ -110,10 +122,78 @@ export interface RunGatesOptions {
 	 * the runner to a specific output medium (file, stdout, test capture).
 	 */
 	onResults?: (results: GateResult[]) => void;
+	/**
+	 * Called once, immediately after the suite ('test') gate runs, with its
+	 * combined stdout+stderr blob (decodeCapturedOutput's output: stdout-
+	 * decoded text followed by stderr-decoded text). Lets downstream
+	 * consumers (coverage, skip-ratchet) reuse this single `bun test
+	 * --coverage` run instead of re-invoking the suite themselves.
+	 */
+	onSuiteOutput?: (output: string) => void;
 }
+
+/** Name of the manifest entry whose output is captured and shared (US-001, CAM-488 PRD). */
+const SUITE_GATE_NAME = 'test';
 
 function formatDuration(ms: number): string {
 	return `${(ms / 1000).toFixed(1)}s`;
+}
+
+/**
+ * Decode a spawn result's captured stdout+stderr Buffers into one combined
+ * blob: stdout-decoded text FOLLOWED BY stderr-decoded text, in that order.
+ * `bun test --coverage` writes its summary and coverage table to stderr (not
+ * stdout), so a stdout-only capture would yield an empty blob for downstream
+ * consumers. A missing (`undefined`) buffer decodes to an empty string
+ * rather than throwing.
+ */
+export function decodeCapturedOutput(result: { stdout?: Buffer; stderr?: Buffer }): string {
+	const decoder = new TextDecoder();
+	const stdout = result.stdout ? decoder.decode(result.stdout) : '';
+	const stderr = result.stderr ? decoder.decode(result.stderr) : '';
+	return stdout + stderr;
+}
+
+/**
+ * Echo the suite gate's captured buffers back to the operator (write-through,
+ * so the ~134s run is not silent), then return the combined blob.
+ */
+function captureAndEchoSuiteOutput(result: { stdout?: Buffer; stderr?: Buffer }): string {
+	if (result.stdout) process.stdout.write(result.stdout);
+	if (result.stderr) process.stderr.write(result.stderr);
+	return decodeCapturedOutput(result);
+}
+
+/**
+ * No-op for every gate except the suite ('test') gate: for that one gate,
+ * echo its captured buffers and forward the combined blob to onSuiteOutput
+ * (if provided). Extracted out of runGates to keep its cognitive complexity
+ * under the noExcessiveCognitiveComplexity limit.
+ */
+function emitSuiteOutputIfApplicable(
+	gate: Gate,
+	result: { stdout?: Buffer; stderr?: Buffer },
+	onSuiteOutput: ((output: string) => void) | undefined,
+): void {
+	if (gate.name !== SUITE_GATE_NAME) return;
+	// Always echo (write-through), regardless of whether onSuiteOutput is set:
+	// `onSuiteOutput?.(captureAndEchoSuiteOutput(result))` would short-circuit
+	// the echo itself when onSuiteOutput is unset, since optional-chaining
+	// calls never evaluate their arguments once the callee is nullish.
+	const suiteOutput = captureAndEchoSuiteOutput(result);
+	onSuiteOutput?.(suiteOutput);
+}
+
+/**
+ * Real spawnSync-backed default: inherited stdio for every gate except the
+ * suite gate, which is piped on both streams so its output can be captured
+ * and shared (US-001, CAM-488 PRD).
+ */
+function makeDefaultSpawnFn(cwd: string): SpawnFn {
+	return (cmd, args) => {
+		const stdio: 'pipe' | 'inherit' = cmd === 'bun' && args[0] === 'test' && args.includes('--coverage') ? 'pipe' : 'inherit';
+		return Bun.spawnSync([cmd, ...args], { cwd, stdin: 'inherit', stdout: stdio, stderr: stdio });
+	};
 }
 
 /**
@@ -127,8 +207,7 @@ export function runGates(options: RunGatesOptions = {}): number {
 	const gates = options.gates ?? GATES;
 	const bail = options.bail ?? false;
 	const cwd = options.cwd ?? process.cwd();
-	const spawnFn: SpawnFn =
-		options.spawnFn ?? ((cmd, args) => Bun.spawnSync([cmd, ...args], { cwd, stdin: 'inherit', stdout: 'inherit', stderr: 'inherit' }));
+	const spawnFn: SpawnFn = options.spawnFn ?? makeDefaultSpawnFn(cwd);
 
 	let anyFailed = false;
 	const results: GateResult[] = [];
@@ -136,6 +215,7 @@ export function runGates(options: RunGatesOptions = {}): number {
 	for (const gate of gates) {
 		const start = Date.now();
 		const result = spawnFn(gate.cmd, gate.args);
+		emitSuiteOutputIfApplicable(gate, result, options.onSuiteOutput);
 		const durationMs = Date.now() - start;
 		const passed = result.success && result.exitCode === 0;
 
