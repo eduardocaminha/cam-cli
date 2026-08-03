@@ -262,10 +262,23 @@ function runSpawnGate(
 	return { passed, errors: [], suiteOutput };
 }
 
-/** Run an in-process gate's `run` fn against the shared suite blob and cwd. */
+/**
+ * Run an in-process gate's `run` fn against the shared suite blob and cwd.
+ * `gate.run` is arbitrary gate-owned code (e.g. checkCoverage/checkSkipRatchet
+ * do readFileSync + JSON.parse on real budget/expectations files) and can
+ * throw (ENOENT, malformed JSON, etc.). A throw here must not escape and
+ * abort the rest of the spine (US-R1-002, CAM-488 PRD): map it to a failed
+ * GateResult instead, mirroring how a spawned gate's non-zero exit is
+ * already a contained failure rather than a process-ending exception.
+ */
 function runInProcessGate(gate: Gate & { run: NonNullable<Gate['run']> }, suiteOutput: string, cwd: string): GateOutcome {
-	const { ok, errors } = gate.run(suiteOutput, cwd);
-	return { passed: ok, errors };
+	try {
+		const { ok, errors } = gate.run(suiteOutput, cwd);
+		return { passed: ok, errors };
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		return { passed: false, errors: [message] };
+	}
 }
 
 /**

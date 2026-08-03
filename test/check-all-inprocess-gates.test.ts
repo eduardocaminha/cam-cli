@@ -18,6 +18,10 @@
 //   5. A failing suite ('test' gate exitCode != 0) does not contaminate the
 //      coverage/skip-ratchet verdicts, which are derived purely from blob
 //      content, never from the suite gate's own exit code.
+//   6. A gate.run that THROWS (e.g. coverageGate.run's readFileSync ENOENT on
+//      a missing budget file) is contained as a failed GateResult by
+//      runInProcessGate's try/catch, not left to escape runGates and abort
+//      the rest of the spine (US-R1-002, CAM-488 PRD round-1 finding).
 //
 // These tests drive the REAL coverageGate/skipRatchetGate entries pulled off
 // the GATES manifest (not re-implementations), with a real fixture budget
@@ -326,5 +330,68 @@ describe('anti-contamination: a failing "test" gate does not contaminate coverag
 		expect(resultByName(results, 'test')?.status).toBe('fail');
 		expect(resultByName(results, 'coverage')?.status).toBe('ok');
 		expect(resultByName(results, 'skip-ratchet')?.status).toBe('ok');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// 7. An in-process gate that throws must be contained as a failed GateResult,
+//    not escape runGates and abort the rest of the spine (US-R1-002, CAM-488
+//    PRD round-1 WARNING finding). Reproduces the exact repro from the
+//    finding: coverageGate.run does readFileSync(cwd + '/scripts/coverage-
+//    budget.json'), which throws ENOENT when that file is missing.
+// ---------------------------------------------------------------------------
+
+describe('an in-process gate that throws is contained, not left to escape runGates (scripts/check-all.ts:266-269)', () => {
+	test('coverageGate.run throwing ENOENT on a missing budget file fails only that gate row; later gates still run and onResults still fires', () => {
+		const bareCwd = mkdtempSync(join(tmpdir(), 'cam-check-all-inprocess-bare-'));
+		try {
+			const fn: SpawnFn = () => makeResult(0, '', HEALTHY_BLOB);
+			let results: GateResult[] = [];
+			const trailingGate: Gate = { name: 'trailing', run: () => ({ ok: true, errors: [] }) };
+
+			const code = withSilentStdio(() =>
+				runGates({
+					gates: [testGate, coverageGate, trailingGate],
+					spawnFn: fn,
+					cwd: bareCwd,
+					onResults: (r) => {
+						results = r;
+					},
+				}),
+			);
+
+			expect(code).toBe(1);
+			const coverageResult = resultByName(results, 'coverage');
+			expect(coverageResult?.status).toBe('fail');
+			// onResults must still fire with every gate present, including the
+			// one scheduled after the thrower -- a caught throw must not
+			// truncate the loop.
+			expect(results.map((r) => r.name)).toEqual(['test', 'coverage', 'trailing']);
+			expect(resultByName(results, 'trailing')?.status).toBe('ok');
+		} finally {
+			rmSync(bareCwd, { recursive: true, force: true });
+		}
+	});
+
+	test('a gate whose run fn throws a plain string (not an Error) is still contained with a string-coerced message', () => {
+		const throwingGate: Gate = {
+			name: 'thrower',
+			run: () => {
+				throw 'boom';
+			},
+		};
+		const trailingGate: Gate = { name: 'trailing', run: () => ({ ok: true, errors: [] }) };
+		let results: GateResult[] = [];
+
+		const code = runGates({
+			gates: [throwingGate, trailingGate],
+			onResults: (r) => {
+				results = r;
+			},
+		});
+
+		expect(code).toBe(1);
+		expect(resultByName(results, 'thrower')?.status).toBe('fail');
+		expect(resultByName(results, 'trailing')?.status).toBe('ok');
 	});
 });
