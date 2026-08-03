@@ -10,17 +10,24 @@
 //
 // Exits 0 when all pass, nonzero when any fail.
 //
-// The suite ('test') gate runs `bun test --coverage` with piped stdio (US-001,
-// CAM-488 PRD) instead of inherited stdio: its combined stdout+stderr is
-// captured, echoed straight back to the operator (so the ~134s run is not
-// silent), and handed to the optional onSuiteOutput hook as one shared blob.
-// The coverage and skip-ratchet gates (US-002, CAM-488 PRD) are IN-PROCESS
-// gates rather than spawned consumer scripts: they reach their verdict by
-// calling checkCoverage()/checkSkipRatchet() directly, fed this same shared
-// blob, so one check:all run costs one suite execution instead of three.
-// Every other gate keeps inherited stdio and stays a spawned subprocess;
-// pass/fail verdicts for spawn gates always come from spawnFn's own
-// success/exitCode, never from the captured text.
+// The suite ('test') gate runs `bun test --coverage` with piped stdio,
+// streamed live via async Bun.spawn rather than blocking Bun.spawnSync
+// (US-R2-001, CAM-488 PRD): its stdout/stderr are teed chunk-by-chunk to the
+// operator AS THE SUBPROCESS RUNS, so the ~134s run is genuinely not silent.
+// (A prior spawnSync-based capture, US-001, preserved the output correctly
+// but blocked the operator's pane in total silence for the whole run and
+// only dumped everything at once on exit -- a post-hoc replay, not a tee;
+// this story's fix replaces that shape with a real streaming tee.) The
+// combined stdout+stderr text is still handed to the optional onSuiteOutput
+// hook as one shared blob once the run completes. The coverage and
+// skip-ratchet gates (US-002, CAM-488 PRD) are IN-PROCESS gates rather than
+// spawned consumer scripts: they reach their verdict by calling
+// checkCoverage()/checkSkipRatchet() directly, fed this same shared blob, so
+// one check:all run costs one suite execution instead of three. Every other
+// gate keeps inherited stdio and stays a spawned subprocess; pass/fail
+// verdicts for spawn gates always come from spawnFn's own success/exitCode,
+// never from the captured text. Because the suite gate now streams,
+// spawnFn/runGates/runSpawnGate/executeGate are all async end to end.
 //
 // Usage: bun scripts/check-all.ts [--bail] [--json]
 //   --bail  Stop at the first failing gate.
@@ -33,7 +40,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
 
-import type { SyncSubprocess } from 'bun';
+import type { ResourceUsage, SyncSubprocess } from 'bun';
 
 import { checkCoverage, parseCoverageOutput } from './check-coverage.ts';
 import { checkSkipRatchet } from './check-skip-ratchet.ts';
@@ -43,13 +50,17 @@ import { checkSkipRatchet } from './check-skip-ratchet.ts';
 // ---------------------------------------------------------------------------
 
 /**
- * Subset of Bun.spawnSync we need.
+ * Subset of Bun's spawn surface we need, ALWAYS async (US-R2-001, CAM-488
+ * PRD): the real default streams and tees the suite gate live rather than
+ * blocking synchronously for its whole run and replaying afterward, so every
+ * spawnFn -- fake or real -- returns a Promise, even where the underlying
+ * work (a non-suite gate's spawnSync) is itself synchronous.
  * Injectable so unit tests never shell out to a real subprocess.
  * Widened to 'pipe' | 'inherit' on both streams (rather than fixed
  * 'inherit','inherit') so the suite gate can be piped for capture while every
  * other gate keeps inherited stdio; stdout/stderr resolve to `Buffer | undefined`.
  */
-export type SpawnFn = (cmd: string, args: string[]) => SyncSubprocess<'pipe' | 'inherit', 'pipe' | 'inherit'>;
+export type SpawnFn = (cmd: string, args: string[]) => Promise<SyncSubprocess<'pipe' | 'inherit', 'pipe' | 'inherit'>>;
 
 // ---------------------------------------------------------------------------
 // GateResult type
@@ -218,13 +229,72 @@ export function decodeCapturedOutput(result: { stdout?: Buffer; stderr?: Buffer 
 }
 
 /**
- * Echo the suite gate's captured buffers back to the operator (write-through,
- * so the ~134s run is not silent), then return the combined blob.
+ * Fallback ResourceUsage for the (practically unreachable, since it is only
+ * read after `await proc.exited`) case where Bun.Subprocess.resourceUsage()
+ * still reports undefined.
  */
-function captureAndEchoSuiteOutput(result: { stdout?: Buffer; stderr?: Buffer }): string {
-	if (result.stdout) process.stdout.write(result.stdout);
-	if (result.stderr) process.stderr.write(result.stderr);
-	return decodeCapturedOutput(result);
+function emptyResourceUsage(): ResourceUsage {
+	return {
+		contextSwitches: { voluntary: 0, involuntary: 0 },
+		cpuTime: { user: 0, system: 0, total: 0 },
+		maxRSS: 0,
+		messages: { sent: 0, received: 0 },
+		ops: { in: 0, out: 0 },
+		shmSize: 0,
+		signalCount: 0,
+		swapCount: 0,
+	};
+}
+
+/**
+ * Read a Bun ReadableStream<Uint8Array> chunk by chunk, writing each chunk
+ * straight through to `sink` AS IT ARRIVES (the actual tee: US-R2-001,
+ * CAM-488 PRD), while accumulating every chunk to return the full buffer once
+ * the stream ends. This is what makes the suite gate's ~101s+ run produce
+ * live output instead of a post-hoc replay dumped only after the subprocess
+ * exits.
+ */
+export async function teeStream(stream: ReadableStream<Uint8Array>, sink: NodeJS.WritableStream): Promise<Buffer> {
+	const chunks: Uint8Array[] = [];
+	for await (const chunk of stream) {
+		sink.write(chunk);
+		chunks.push(chunk);
+	}
+	return Buffer.concat(chunks);
+}
+
+/**
+ * Real streaming implementation of the suite ('test') gate: spawns via async
+ * Bun.spawn (not spawnSync) with both streams piped, tees stdout/stderr live
+ * via teeStream while the subprocess is still running, and only resolves the
+ * combined result once the child actually exits. Replaces the previous
+ * spawnSync-based capture, which blocked in silence for the whole ~101s+ run
+ * and only echoed the captured buffers back afterward (US-R2-001, CAM-488
+ * PRD finding: a post-hoc replay, not a tee, contradicting this file's own
+ * prior comments and ADR-0056's stated consequence).
+ */
+export async function runStreamingSuiteGate(
+	cmd: string,
+	args: string[],
+	cwd: string,
+): Promise<SyncSubprocess<'pipe' | 'inherit', 'pipe' | 'inherit'>> {
+	const proc = Bun.spawn([cmd, ...args], { cwd, stdin: 'inherit', stdout: 'pipe', stderr: 'pipe' });
+
+	const [stdout, stderr, exitCode] = await Promise.all([
+		teeStream(proc.stdout, process.stdout),
+		teeStream(proc.stderr, process.stderr),
+		proc.exited,
+	]);
+
+	return {
+		pid: proc.pid,
+		stdout,
+		stderr,
+		exitCode,
+		success: exitCode === 0,
+		resourceUsage: proc.resourceUsage() ?? emptyResourceUsage(),
+		signalCode: proc.signalCode ?? undefined,
+	};
 }
 
 /** Outcome of running one gate: pass/fail plus any error strings to surface. */
@@ -236,28 +306,29 @@ interface GateOutcome {
 }
 
 /**
- * Spawn a spawn gate's subprocess and derive its pass/fail from spawnFn's own
- * success/exitCode. For the suite ('test') gate only, also echo its captured
- * buffers (write-through, so the ~134s run is not silent) and forward the
- * combined blob to onSuiteOutput (if provided) AND to the caller via the
- * returned `suiteOutput`, so runGates can thread it to later in-process
- * gates.
+ * Await a spawn gate's subprocess and derive its pass/fail from spawnFn's own
+ * success/exitCode. For the suite ('test') gate only, also decode its
+ * captured buffers into the shared blob and forward it to onSuiteOutput (if
+ * provided) AND to the caller via the returned `suiteOutput`, so runGates can
+ * thread it to later in-process gates. Live echo is NOT this layer's job
+ * (US-R2-001, CAM-488 PRD): the real default spawnFn tees the suite gate's
+ * output straight to the operator itself, chunk-by-chunk, while the
+ * subprocess is still running (runStreamingSuiteGate); by the time this
+ * function sees `result`, any real-time echo has already happened or (for a
+ * test fake standing in for a subprocess that never really ran) never needed
+ * to happen at all.
  */
-function runSpawnGate(
+async function runSpawnGate(
 	gate: Gate & { cmd: string; args: string[] },
 	spawnFn: SpawnFn,
 	onSuiteOutput: ((output: string) => void) | undefined,
-): GateOutcome {
-	const result = spawnFn(gate.cmd, gate.args);
+): Promise<GateOutcome> {
+	const result = await spawnFn(gate.cmd, gate.args);
 	const passed = result.success && result.exitCode === 0;
 
 	if (gate.name !== SUITE_GATE_NAME) return { passed, errors: [] };
 
-	// Always echo (write-through), regardless of whether onSuiteOutput is set:
-	// `onSuiteOutput?.(captureAndEchoSuiteOutput(result))` would short-circuit
-	// the echo itself when onSuiteOutput is unset, since optional-chaining
-	// calls never evaluate their arguments once the callee is nullish.
-	const suiteOutput = captureAndEchoSuiteOutput(result);
+	const suiteOutput = decodeCapturedOutput(result);
 	onSuiteOutput?.(suiteOutput);
 	return { passed, errors: [], suiteOutput };
 }
@@ -287,13 +358,13 @@ function runInProcessGate(gate: Gate & { run: NonNullable<Gate['run']> }, suiteO
  * out of runGates to keep its cognitive complexity under the
  * noExcessiveCognitiveComplexity limit.
  */
-function executeGate(
+async function executeGate(
 	gate: Gate,
 	spawnFn: SpawnFn,
 	suiteOutput: string,
 	cwd: string,
 	onSuiteOutput: ((output: string) => void) | undefined,
-): GateOutcome {
+): Promise<GateOutcome> {
 	if (isInProcessGate(gate)) return runInProcessGate(gate, suiteOutput, cwd);
 	if (isSpawnGate(gate)) return runSpawnGate(gate, spawnFn, onSuiteOutput);
 	return { passed: false, errors: [`gate '${gate.name}' has neither cmd/args nor run`] };
@@ -312,14 +383,17 @@ function reportGateOutcome(gate: Gate, outcome: GateOutcome, durationMs: number,
 }
 
 /**
- * Real spawnSync-backed default: inherited stdio for every gate except the
- * suite gate, which is piped on both streams so its output can be captured
- * and shared (US-001, CAM-488 PRD).
+ * Real default spawnFn: inherited stdio via synchronous Bun.spawnSync for
+ * every gate except the suite gate, which streams live via async Bun.spawn
+ * and tees both streams to the operator as it runs (runStreamingSuiteGate,
+ * US-R2-001, CAM-488 PRD) rather than blocking on a single spawnSync call and
+ * replaying its captured buffers afterward (US-001's original shape).
  */
 function makeDefaultSpawnFn(cwd: string): SpawnFn {
-	return (cmd, args) => {
-		const stdio: 'pipe' | 'inherit' = cmd === 'bun' && args[0] === 'test' && args.includes('--coverage') ? 'pipe' : 'inherit';
-		return Bun.spawnSync([cmd, ...args], { cwd, stdin: 'inherit', stdout: stdio, stderr: stdio });
+	return async (cmd, args) => {
+		const isSuiteGate = cmd === 'bun' && args[0] === 'test' && args.includes('--coverage');
+		if (isSuiteGate) return runStreamingSuiteGate(cmd, args, cwd);
+		return Bun.spawnSync([cmd, ...args], { cwd, stdin: 'inherit', stdout: 'inherit', stderr: 'inherit' });
 	};
 }
 
@@ -330,7 +404,7 @@ function makeDefaultSpawnFn(cwd: string): SpawnFn {
  * When options.onResults is provided it is called once, after the last gate
  * (or after bail), with the full GateResult array.
  */
-export function runGates(options: RunGatesOptions = {}): number {
+export async function runGates(options: RunGatesOptions = {}): Promise<number> {
 	const gates = options.gates ?? GATES;
 	const bail = options.bail ?? false;
 	const cwd = options.cwd ?? process.cwd();
@@ -342,7 +416,7 @@ export function runGates(options: RunGatesOptions = {}): number {
 
 	for (const gate of gates) {
 		const start = Date.now();
-		const outcome = executeGate(gate, spawnFn, suiteOutput, cwd, options.onSuiteOutput);
+		const outcome = await executeGate(gate, spawnFn, suiteOutput, cwd, options.onSuiteOutput);
 		if (outcome.suiteOutput !== undefined) suiteOutput = outcome.suiteOutput;
 		reportGateOutcome(gate, outcome, Date.now() - start, results);
 
@@ -372,6 +446,6 @@ if (import.meta.main) {
 			}
 		: undefined;
 
-	const code = runGates({ bail, onResults });
+	const code = await runGates({ bail, onResults });
 	process.exit(code);
 }

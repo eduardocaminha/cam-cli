@@ -78,27 +78,27 @@ describe('runGates suite-output capture wiring', () => {
 		};
 	}
 
-	test('onSuiteOutput receives the combined blob exactly once, from the "test" gate only', () => {
+	test('onSuiteOutput receives the combined blob exactly once, from the "test" gate only', async () => {
 		const calls: string[] = [];
-		const fn: SpawnFn = (_cmd, args) => makeCapturingResult(args);
+		const fn: SpawnFn = async (_cmd, args) => makeCapturingResult(args);
 		const gates: Gate[] = [
 			{ name: 'other', cmd: 'bun', args: ['x'] },
 			{ name: 'test', cmd: 'bun', args: ['test', '--coverage'] },
 			{ name: 'another', cmd: 'bun', args: ['y'] },
 		];
 
-		runGates({ gates, spawnFn: fn, onSuiteOutput: (output) => calls.push(output) });
+		await runGates({ gates, spawnFn: fn, onSuiteOutput: (output) => calls.push(output) });
 
 		expect(calls).toHaveLength(1);
 		expect(calls[0]).toBe('stdout:test --coveragestderr:test --coverage');
 	});
 
-	test('onSuiteOutput is never called when no gate is named "test"', () => {
+	test('onSuiteOutput is never called when no gate is named "test"', async () => {
 		const calls: string[] = [];
-		const fn: SpawnFn = (_cmd, args) => makeCapturingResult(args);
+		const fn: SpawnFn = async (_cmd, args) => makeCapturingResult(args);
 		const gates: Gate[] = [{ name: 'other', cmd: 'bun', args: ['x'] }];
 
-		runGates({ gates, spawnFn: fn, onSuiteOutput: (output) => calls.push(output) });
+		await runGates({ gates, spawnFn: fn, onSuiteOutput: (output) => calls.push(output) });
 
 		expect(calls).toHaveLength(0);
 	});

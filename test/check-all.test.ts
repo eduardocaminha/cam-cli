@@ -62,7 +62,7 @@ interface Call {
 function makeRecordingSpawn(exitCodes: number[]): { calls: Call[]; fn: SpawnFn } {
 	const calls: Call[] = [];
 	let idx = 0;
-	const fn: SpawnFn = (cmd, args) => {
+	const fn: SpawnFn = async (cmd, args) => {
 		calls.push({ cmd, args: [...args] });
 		const code = exitCodes[idx++] ?? 0;
 		return makeResult(code);
@@ -209,35 +209,35 @@ describe('GATES manifest', () => {
 // ---------------------------------------------------------------------------
 
 describe('runGates exit code', () => {
-	test('returns 0 when all gates pass', () => {
+	test('returns 0 when all gates pass', async () => {
 		const { fn } = makeRecordingSpawn([0, 0]);
 		const gates: Gate[] = [
 			{ name: 'a', cmd: 'bun', args: ['a'] },
 			{ name: 'b', cmd: 'bun', args: ['b'] },
 		];
-		expect(runGates({ gates, spawnFn: fn })).toBe(0);
+		expect(await runGates({ gates, spawnFn: fn })).toBe(0);
 	});
 
-	test('returns 1 when any gate fails', () => {
+	test('returns 1 when any gate fails', async () => {
 		const { fn } = makeRecordingSpawn([0, 1, 0]);
 		const gates: Gate[] = [
 			{ name: 'a', cmd: 'bun', args: ['a'] },
 			{ name: 'b', cmd: 'bun', args: ['b'] },
 			{ name: 'c', cmd: 'bun', args: ['c'] },
 		];
-		expect(runGates({ gates, spawnFn: fn })).toBe(1);
+		expect(await runGates({ gates, spawnFn: fn })).toBe(1);
 	});
 
-	test('returns 1 when first gate fails (no bail)', () => {
+	test('returns 1 when first gate fails (no bail)', async () => {
 		const { fn } = makeRecordingSpawn([1, 0]);
 		const gates: Gate[] = [
 			{ name: 'a', cmd: 'bun', args: ['a'] },
 			{ name: 'b', cmd: 'bun', args: ['b'] },
 		];
-		expect(runGates({ gates, spawnFn: fn })).toBe(1);
+		expect(await runGates({ gates, spawnFn: fn })).toBe(1);
 	});
 
-	test('returns 1 when a gate is signal-terminated (null exitCode, success false)', () => {
+	test('returns 1 when a gate is signal-terminated (null exitCode, success false)', async () => {
 		const signalTerminated: SyncSubprocess<'inherit', 'inherit'> = {
 			pid: 1,
 			stdout: undefined,
@@ -247,9 +247,9 @@ describe('runGates exit code', () => {
 			resourceUsage: makeResourceUsage(),
 			signalCode: 'SIGTERM',
 		};
-		const fn: SpawnFn = () => signalTerminated;
+		const fn: SpawnFn = async () => signalTerminated;
 		const gates: Gate[] = [{ name: 'a', cmd: 'bun', args: ['a'] }];
-		expect(runGates({ gates, spawnFn: fn })).toBe(1);
+		expect(await runGates({ gates, spawnFn: fn })).toBe(1);
 	});
 });
 
@@ -258,34 +258,34 @@ describe('runGates exit code', () => {
 // ---------------------------------------------------------------------------
 
 describe('runGates without bail', () => {
-	test('runs all gates even when first fails', () => {
+	test('runs all gates even when first fails', async () => {
 		const { calls, fn } = makeRecordingSpawn([1, 0, 0]);
 		const gates: Gate[] = [
 			{ name: 'a', cmd: 'bun', args: ['a'] },
 			{ name: 'b', cmd: 'bun', args: ['b'] },
 			{ name: 'c', cmd: 'bun', args: ['c'] },
 		];
-		runGates({ gates, spawnFn: fn });
+		await runGates({ gates, spawnFn: fn });
 		expect(calls).toHaveLength(3);
 	});
 
-	test('runs all gates even when middle gate fails', () => {
+	test('runs all gates even when middle gate fails', async () => {
 		const { calls, fn } = makeRecordingSpawn([0, 1, 0]);
 		const gates: Gate[] = [
 			{ name: 'a', cmd: 'bun', args: ['a'] },
 			{ name: 'b', cmd: 'bun', args: ['b'] },
 			{ name: 'c', cmd: 'bun', args: ['c'] },
 		];
-		runGates({ gates, spawnFn: fn });
+		await runGates({ gates, spawnFn: fn });
 		expect(calls).toHaveLength(3);
 	});
 
-	test('passes correct cmd and args to spawnFn', () => {
+	test('passes correct cmd and args to spawnFn', async () => {
 		const { calls, fn } = makeRecordingSpawn([0]);
 		const gates: Gate[] = [
 			{ name: 'typecheck', cmd: 'bunx', args: ['tsc', '--noEmit'] },
 		];
-		runGates({ gates, spawnFn: fn });
+		await runGates({ gates, spawnFn: fn });
 		expect(calls[0]?.cmd).toBe('bunx');
 		expect(calls[0]?.args).toEqual(['tsc', '--noEmit']);
 	});
@@ -296,43 +296,43 @@ describe('runGates without bail', () => {
 // ---------------------------------------------------------------------------
 
 describe('runGates with bail', () => {
-	test('stops after first failing gate', () => {
+	test('stops after first failing gate', async () => {
 		const { calls, fn } = makeRecordingSpawn([1, 0, 0]);
 		const gates: Gate[] = [
 			{ name: 'a', cmd: 'bun', args: ['a'] },
 			{ name: 'b', cmd: 'bun', args: ['b'] },
 			{ name: 'c', cmd: 'bun', args: ['c'] },
 		];
-		const code = runGates({ gates, spawnFn: fn, bail: true });
+		const code = await runGates({ gates, spawnFn: fn, bail: true });
 		expect(code).toBe(1);
 		expect(calls).toHaveLength(1);
 	});
 
-	test('stops in the middle when second gate fails', () => {
+	test('stops in the middle when second gate fails', async () => {
 		const { calls, fn } = makeRecordingSpawn([0, 1, 0]);
 		const gates: Gate[] = [
 			{ name: 'a', cmd: 'bun', args: ['a'] },
 			{ name: 'b', cmd: 'bun', args: ['b'] },
 			{ name: 'c', cmd: 'bun', args: ['c'] },
 		];
-		const code = runGates({ gates, spawnFn: fn, bail: true });
+		const code = await runGates({ gates, spawnFn: fn, bail: true });
 		expect(code).toBe(1);
 		expect(calls).toHaveLength(2);
 	});
 
-	test('runs all gates when all pass (bail is no-op)', () => {
+	test('runs all gates when all pass (bail is no-op)', async () => {
 		const { calls, fn } = makeRecordingSpawn([0, 0, 0]);
 		const gates: Gate[] = [
 			{ name: 'a', cmd: 'bun', args: ['a'] },
 			{ name: 'b', cmd: 'bun', args: ['b'] },
 			{ name: 'c', cmd: 'bun', args: ['c'] },
 		];
-		const code = runGates({ gates, spawnFn: fn, bail: true });
+		const code = await runGates({ gates, spawnFn: fn, bail: true });
 		expect(code).toBe(0);
 		expect(calls).toHaveLength(3);
 	});
 
-	test('returns 1 and stops when bail set and gate fails', () => {
+	test('returns 1 and stops when bail set and gate fails', async () => {
 		const { calls, fn } = makeRecordingSpawn([0, 0, 1, 0]);
 		const gates: Gate[] = [
 			{ name: 'a', cmd: 'bun', args: ['a'] },
@@ -340,7 +340,7 @@ describe('runGates with bail', () => {
 			{ name: 'c', cmd: 'bun', args: ['c'] },
 			{ name: 'd', cmd: 'bun', args: ['d'] },
 		];
-		const code = runGates({ gates, spawnFn: fn, bail: true });
+		const code = await runGates({ gates, spawnFn: fn, bail: true });
 		expect(code).toBe(1);
 		expect(calls).toHaveLength(3);
 	});
@@ -351,14 +351,14 @@ describe('runGates with bail', () => {
 // ---------------------------------------------------------------------------
 
 describe('--json mode (onResults)', () => {
-	test('onResults receives array of GateResult with exactly name/status/durationMs keys', () => {
+	test('onResults receives array of GateResult with exactly name/status/durationMs keys', async () => {
 		const { fn } = makeRecordingSpawn([0, 1]);
 		const gates: Gate[] = [
 			{ name: 'alpha', cmd: 'bun', args: ['alpha'] },
 			{ name: 'beta', cmd: 'bun', args: ['beta'] },
 		];
 		let captured: GateResult[] | null = null;
-		runGates({ gates, spawnFn: fn, onResults: (r) => { captured = r; } });
+		await runGates({ gates, spawnFn: fn, onResults: (r) => { captured = r; } });
 
 		expect(captured).not.toBeNull();
 		const results = captured as unknown as GateResult[];
@@ -371,26 +371,26 @@ describe('--json mode (onResults)', () => {
 		}
 	});
 
-	test('onResults status is "ok" for passing gate and "fail" for failing gate', () => {
+	test('onResults status is "ok" for passing gate and "fail" for failing gate', async () => {
 		const { fn } = makeRecordingSpawn([0, 1]);
 		const gates: Gate[] = [
 			{ name: 'pass-gate', cmd: 'bun', args: ['x'] },
 			{ name: 'fail-gate', cmd: 'bun', args: ['y'] },
 		];
 		let captured: GateResult[] | null = null;
-		runGates({ gates, spawnFn: fn, onResults: (r) => { captured = r; } });
+		await runGates({ gates, spawnFn: fn, onResults: (r) => { captured = r; } });
 
 		const results = captured as unknown as GateResult[];
 		expect(results[0]?.status).toBe('ok');
 		expect(results[1]?.status).toBe('fail');
 	});
 
-	test('onResults entries match manifest gate names in order', () => {
+	test('onResults entries match manifest gate names in order', async () => {
 		const gates = spawnOnlyGates();
 		const exitCodes = gates.map(() => 0);
 		const { fn } = makeRecordingSpawn(exitCodes);
 		let captured: GateResult[] | null = null;
-		runGates({ gates, spawnFn: fn, onResults: (r) => { captured = r; } });
+		await runGates({ gates, spawnFn: fn, onResults: (r) => { captured = r; } });
 
 		const results = captured as unknown as GateResult[];
 		expect(results).toHaveLength(GATES.length);
@@ -399,36 +399,36 @@ describe('--json mode (onResults)', () => {
 		}
 	});
 
-	test('onResults entry names match manifest gate names (typecheck, test, embed-vendor, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps, skip-ratchet)', () => {
+	test('onResults entry names match manifest gate names (typecheck, test, embed-vendor, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps, skip-ratchet)', async () => {
 		const gates = spawnOnlyGates();
 		const { fn } = makeRecordingSpawn([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
 		let captured: GateResult[] | null = null;
-		runGates({ gates, spawnFn: fn, onResults: (r) => { captured = r; } });
+		await runGates({ gates, spawnFn: fn, onResults: (r) => { captured = r; } });
 
 		const results = captured as unknown as GateResult[];
 		const names = results.map((r) => r.name);
 		expect(names).toEqual(['typecheck', 'test', 'embed-vendor', 'lint', 'file-size', 'debt-markers', 'version-skips', 'coverage', 'dead-code', 'dup', 'ci-parity', 'agents-md', 'test-sleeps', 'skip-ratchet']);
 	});
 
-	test('onResults receives durationMs as a non-negative number', () => {
+	test('onResults receives durationMs as a non-negative number', async () => {
 		const { fn } = makeRecordingSpawn([0]);
 		const gates: Gate[] = [{ name: 'x', cmd: 'bun', args: ['x'] }];
 		let captured: GateResult[] | null = null;
-		runGates({ gates, spawnFn: fn, onResults: (r) => { captured = r; } });
+		await runGates({ gates, spawnFn: fn, onResults: (r) => { captured = r; } });
 
 		const results = captured as unknown as GateResult[];
 		expect(typeof results[0]?.durationMs).toBe('number');
 		expect(results[0]?.durationMs).toBeGreaterThanOrEqual(0);
 	});
 
-	test('onResults result array parses cleanly as JSON and round-trips', () => {
+	test('onResults result array parses cleanly as JSON and round-trips', async () => {
 		const { fn } = makeRecordingSpawn([0, 1]);
 		const gates: Gate[] = [
 			{ name: 'g1', cmd: 'bun', args: ['g1'] },
 			{ name: 'g2', cmd: 'bun', args: ['g2'] },
 		];
 		let captured: GateResult[] | null = null;
-		runGates({ gates, spawnFn: fn, onResults: (r) => { captured = r; } });
+		await runGates({ gates, spawnFn: fn, onResults: (r) => { captured = r; } });
 
 		const json = JSON.stringify(captured);
 		const parsed = JSON.parse(json) as GateResult[];
@@ -439,23 +439,23 @@ describe('--json mode (onResults)', () => {
 		expect(parsed[1]?.status).toBe('fail');
 	});
 
-	test('exit code is still nonzero even when onResults is provided and a gate fails', () => {
+	test('exit code is still nonzero even when onResults is provided and a gate fails', async () => {
 		const { fn } = makeRecordingSpawn([0, 1]);
 		const gates: Gate[] = [
 			{ name: 'a', cmd: 'bun', args: ['a'] },
 			{ name: 'b', cmd: 'bun', args: ['b'] },
 		];
-		const code = runGates({ gates, spawnFn: fn, onResults: () => {} });
+		const code = await runGates({ gates, spawnFn: fn, onResults: () => {} });
 		expect(code).toBe(1);
 	});
 
-	test('exit code is 0 when all pass and onResults is provided', () => {
+	test('exit code is 0 when all pass and onResults is provided', async () => {
 		const { fn } = makeRecordingSpawn([0, 0]);
 		const gates: Gate[] = [
 			{ name: 'a', cmd: 'bun', args: ['a'] },
 			{ name: 'b', cmd: 'bun', args: ['b'] },
 		];
-		const code = runGates({ gates, spawnFn: fn, onResults: () => {} });
+		const code = await runGates({ gates, spawnFn: fn, onResults: () => {} });
 		expect(code).toBe(0);
 	});
 });

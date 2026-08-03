@@ -80,34 +80,6 @@ function resultByName(results: GateResult[], name: string): GateResult | undefin
 }
 
 /**
- * Run `fn` with process.stdout/stderr.write stubbed out, restoring both in a
- * finally block. Required for every test below that drives the real 'test'
- * spawn gate with a blob shaped to match the real check:all regexes
- * (RAN_LINE_RE/PASS_LINE_RE/SKIP_LINE_RE/ALL_FILES_RE): captureAndEchoSuiteOutput
- * unconditionally echoes that gate's captured buffers to the REAL
- * process.stdout/stderr (scripts/check-all.ts's write-through-so-the-run-
- * isn't-silent behaviour). Since this test file itself runs inside `bun test
- * --coverage` when the repo's own `bun run check:all` gates itself, an
- * un-silenced echo of fabricated "Ran N tests across M files." / " N pass" /
- * " N skip" / "All files | x | y" lines would leak into the REAL suite gate's
- * own captured blob and corrupt the outer check-all run's real coverage/
- * skip-ratchet verdicts (the exact self-hosting hazard this story's fixture
- * blobs are deliberately realistic enough to trigger).
- */
-function withSilentStdio<T>(fn: () => T): T {
-	const originalStdout = process.stdout.write.bind(process.stdout);
-	const originalStderr = process.stderr.write.bind(process.stderr);
-	process.stdout.write = (() => true) as typeof process.stdout.write;
-	process.stderr.write = (() => true) as typeof process.stderr.write;
-	try {
-		return fn();
-	} finally {
-		process.stdout.write = originalStdout;
-		process.stderr.write = originalStderr;
-	}
-}
-
-/**
  * A blob shaped like a healthy `bun test --coverage` run: completion tally
  * present, pass count clears the fixture's passFloor (100) with headroom
  * >= MIN_PASS_FLOOR_HEADROOM (50), skip count matches the fixture's
@@ -177,19 +149,19 @@ describe('runGates threads the captured suite blob into gate.run (scripts/check-
 		return { received, gate };
 	}
 
-	test('a gate after "test" receives the exact combined stdout+stderr blob, verbatim, exactly once', () => {
+	test('a gate after "test" receives the exact combined stdout+stderr blob, verbatim, exactly once', async () => {
 		const { received, gate: recorder } = makeRecordingInProcessGate('recorder');
-		const fn: SpawnFn = () => makeResult(0, 'STDOUT-BLOB', 'STDERR-BLOB');
+		const fn: SpawnFn = async () => makeResult(0, 'STDOUT-BLOB', 'STDERR-BLOB');
 
-		runGates({ gates: [testGate, recorder], spawnFn: fn });
+		await runGates({ gates: [testGate, recorder], spawnFn: fn });
 
 		expect(received).toEqual(['STDOUT-BLOBSTDERR-BLOB']);
 	});
 
-	test('an in-process gate that runs before any "test" gate receives the empty initial suiteOutput', () => {
+	test('an in-process gate that runs before any "test" gate receives the empty initial suiteOutput', async () => {
 		const { received, gate: recorder } = makeRecordingInProcessGate('recorder');
 
-		runGates({ gates: [recorder] });
+		await runGates({ gates: [recorder] });
 
 		expect(received).toEqual(['']);
 	});
@@ -200,9 +172,9 @@ describe('runGates threads the captured suite blob into gate.run (scripts/check-
 // ---------------------------------------------------------------------------
 
 describe('empty blob fails both in-process gates closed', () => {
-	test('coverage and skip-ratchet both fail when no "test" gate ran (suiteOutput stays "")', () => {
+	test('coverage and skip-ratchet both fail when no "test" gate ran (suiteOutput stays "")', async () => {
 		let results: GateResult[] = [];
-		const code = runGates({
+		const code = await runGates({
 			gates: [coverageGate, skipRatchetGate],
 			cwd: tmpDir,
 			onResults: (r) => {
@@ -223,20 +195,18 @@ describe('empty blob fails both in-process gates closed', () => {
 // ---------------------------------------------------------------------------
 
 describe('healthy blob makes both real in-process gates pass', () => {
-	test('coverage and skip-ratchet both pass when fed a floor-met, lane-matched blob', () => {
-		const fn: SpawnFn = () => makeResult(0, '', HEALTHY_BLOB);
+	test('coverage and skip-ratchet both pass when fed a floor-met, lane-matched blob', async () => {
+		const fn: SpawnFn = async () => makeResult(0, '', HEALTHY_BLOB);
 		let results: GateResult[] = [];
 
-		const code = withSilentStdio(() =>
-			runGates({
-				gates: [testGate, coverageGate, skipRatchetGate],
-				spawnFn: fn,
-				cwd: tmpDir,
-				onResults: (r) => {
-					results = r;
-				},
-			}),
-		);
+		const code = await runGates({
+			gates: [testGate, coverageGate, skipRatchetGate],
+			spawnFn: fn,
+			cwd: tmpDir,
+			onResults: (r) => {
+				results = r;
+			},
+		});
 
 		expect(code).toBe(0);
 		expect(resultByName(results, 'coverage')?.status).toBe('ok');
@@ -249,20 +219,18 @@ describe('healthy blob makes both real in-process gates pass', () => {
 // ---------------------------------------------------------------------------
 
 describe('below-floor coverage blob fails the coverage gate', () => {
-	test('coverage fails (both metrics below floor) while skip-ratchet still passes from the same blob', () => {
-		const fn: SpawnFn = () => makeResult(0, '', BELOW_FLOOR_COVERAGE_BLOB);
+	test('coverage fails (both metrics below floor) while skip-ratchet still passes from the same blob', async () => {
+		const fn: SpawnFn = async () => makeResult(0, '', BELOW_FLOOR_COVERAGE_BLOB);
 		let results: GateResult[] = [];
 
-		const code = withSilentStdio(() =>
-			runGates({
-				gates: [testGate, coverageGate, skipRatchetGate],
-				spawnFn: fn,
-				cwd: tmpDir,
-				onResults: (r) => {
-					results = r;
-				},
-			}),
-		);
+		const code = await runGates({
+			gates: [testGate, coverageGate, skipRatchetGate],
+			spawnFn: fn,
+			cwd: tmpDir,
+			onResults: (r) => {
+				results = r;
+			},
+		});
 
 		expect(code).toBe(1);
 		const coverageResult = resultByName(results, 'coverage');
@@ -309,20 +277,18 @@ describe('skip-ratchet gate: three failure modes', () => {
 // ---------------------------------------------------------------------------
 
 describe('anti-contamination: a failing "test" gate does not contaminate coverage/skip-ratchet rows', () => {
-	test('test gate fails (exitCode 1) but a healthy blob still makes coverage and skip-ratchet pass', () => {
-		const fn: SpawnFn = () => makeResult(1, '', HEALTHY_BLOB);
+	test('test gate fails (exitCode 1) but a healthy blob still makes coverage and skip-ratchet pass', async () => {
+		const fn: SpawnFn = async () => makeResult(1, '', HEALTHY_BLOB);
 		let results: GateResult[] = [];
 
-		const code = withSilentStdio(() =>
-			runGates({
-				gates: [testGate, coverageGate, skipRatchetGate],
-				spawnFn: fn,
-				cwd: tmpDir,
-				onResults: (r) => {
-					results = r;
-				},
-			}),
-		);
+		const code = await runGates({
+			gates: [testGate, coverageGate, skipRatchetGate],
+			spawnFn: fn,
+			cwd: tmpDir,
+			onResults: (r) => {
+				results = r;
+			},
+		});
 
 		// Overall code is still 1 because the 'test' gate itself failed --
 		// but that failure must not bleed into the other two verdicts.
@@ -342,23 +308,21 @@ describe('anti-contamination: a failing "test" gate does not contaminate coverag
 // ---------------------------------------------------------------------------
 
 describe('an in-process gate that throws is contained, not left to escape runGates (scripts/check-all.ts:266-269)', () => {
-	test('coverageGate.run throwing ENOENT on a missing budget file fails only that gate row; later gates still run and onResults still fires', () => {
+	test('coverageGate.run throwing ENOENT on a missing budget file fails only that gate row; later gates still run and onResults still fires', async () => {
 		const bareCwd = mkdtempSync(join(tmpdir(), 'cam-check-all-inprocess-bare-'));
 		try {
-			const fn: SpawnFn = () => makeResult(0, '', HEALTHY_BLOB);
+			const fn: SpawnFn = async () => makeResult(0, '', HEALTHY_BLOB);
 			let results: GateResult[] = [];
 			const trailingGate: Gate = { name: 'trailing', run: () => ({ ok: true, errors: [] }) };
 
-			const code = withSilentStdio(() =>
-				runGates({
-					gates: [testGate, coverageGate, trailingGate],
-					spawnFn: fn,
-					cwd: bareCwd,
-					onResults: (r) => {
-						results = r;
-					},
-				}),
-			);
+			const code = await runGates({
+				gates: [testGate, coverageGate, trailingGate],
+				spawnFn: fn,
+				cwd: bareCwd,
+				onResults: (r) => {
+					results = r;
+				},
+			});
 
 			expect(code).toBe(1);
 			const coverageResult = resultByName(results, 'coverage');
@@ -373,7 +337,7 @@ describe('an in-process gate that throws is contained, not left to escape runGat
 		}
 	});
 
-	test('a gate whose run fn throws a plain string (not an Error) is still contained with a string-coerced message', () => {
+	test('a gate whose run fn throws a plain string (not an Error) is still contained with a string-coerced message', async () => {
 		const throwingGate: Gate = {
 			name: 'thrower',
 			run: () => {
@@ -383,7 +347,7 @@ describe('an in-process gate that throws is contained, not left to escape runGat
 		const trailingGate: Gate = { name: 'trailing', run: () => ({ ok: true, errors: [] }) };
 		let results: GateResult[] = [];
 
-		const code = runGates({
+		const code = await runGates({
 			gates: [throwingGate, trailingGate],
 			onResults: (r) => {
 				results = r;
