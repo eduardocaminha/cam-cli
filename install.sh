@@ -62,9 +62,15 @@ if [[ -n "${GATESHIP_VERSION:-}" ]]; then
 	TAG="${GATESHIP_VERSION}"
 else
 	echo "[install] resolving the latest release tag for ${REPO}..."
-	TAG="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases" | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')"
+	if ! RELEASES_JSON="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases")"; then
+		echo "ERROR: failed to reach the GitHub API to list releases for ${REPO} (network failure or rate limit)" >&2
+		exit 1
+	fi
+	# The grep may legitimately find no match (no releases published yet); `|| true`
+	# stops that from tripping `set -e` before the explicit -z check below can run.
+	TAG="$(printf '%s' "${RELEASES_JSON}" | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')" || true
 	if [[ -z "${TAG}" ]]; then
-		echo "ERROR: could not resolve the latest release tag from the GitHub API" >&2
+		echo "ERROR: could not resolve the latest release tag from the GitHub API — no releases found for ${REPO}" >&2
 		exit 1
 	fi
 fi
