@@ -1,34 +1,32 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Tornar o manifesto publicavel sob o nome do produto e sincronizar o lockfile"
+    "id": "US-002",
+    "title": "Renomear a superficie digitada do binario (help, usage, --version) e desancorar o gate agents-md do prefixo aposentado"
   },
   "branchName": "cam/issue-460",
-  "timestamp": "2026-08-03T21:42:26Z",
+  "timestamp": "2026-08-03T22:40:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "package.json",
-    "bun.lock",
-    "index.ts"
+    "index.ts",
+    "scripts/build-release.sh",
+    "scripts/file-size-budget.json",
+    "scripts/validate-agents-md.ts",
+    "test/commands/patterns-cli.test.ts",
+    "test/commands/patterns-dispatch.test.ts",
+    "test/commands/stats.test.ts",
+    "test/commands/suggestions-cli.test.ts",
+    "test/issue-dispatch.test.ts",
+    "test/issue.test.ts",
+    "test/validate-agents-md.test.ts",
+    "test/version.test.ts",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "package.json is now publishable: name=gateship, private=false, bin={gateship,gship} both pointing at ./index.ts, license=MIT, repository points at github.com/eduardocaminha/cam-cli, engines.bun=>=1.2.0, files=[index.ts, src, LICENSE, README.md]. index.ts got a #!/usr/bin/env bun shebang + exec bit (chmod 755) since bin targets it directly (no build-artifact indirection was introduced; npm's own bin docs require the shebang for a working global command). bun.lock's workspace name was hand-edited (NOT via a plain `bun install`, which silently no-ops on a name-only rename) to avoid an unrelated dependency-version bump; `bun install --frozen-lockfile` confirms zero drift. npm publish is explicitly OUT of scope this cycle per ADR-0055 (prerelease-first strategy) -- do not add any publish step. src/version.ts remains the sole version source; package.json.version is a mirror only, guarded by test/version.test.ts and this story's AC4 pin.",
+  "nextStoryContext": "This session found the implementation for US-002 already committed (HEAD was cf84895f, a well-formed `feat: US-002 - ...` commit) by a prior session that crashed before pushing/writing worker-report.json -- no code was re-implemented; this session independently re-verified all 4 story-specific AC oracles (help/usage cam-free + gship present, --version prints `gateship X.Y.Z`, agents-md gate CAM_CMD_RE desanchored to `/^(?:cam|gship|gateship)\\s+/` with the named durable test present, and the 5-contract invariance pin) plus the full gate spine (typecheck clean, bun test 5957 pass / 0 fail, bun run check:all all-green) before completing the tail of the protocol. index.ts's typed-invocation surface (all --help output, usage: strings, --version) now prints `gship` for commands-to-type and `gateship <ver>` for the product/version identity; the 5 ADR-0054-pinned internal contracts (CAM_ env vars, .cam- state files, the `tmux -L cam` socket, /cam- slash commands, sentinel strings) are untouched and pinned by AC4 against a live main comparison, not a frozen count -- do not rename any of those five in a story that isn't explicitly scoped to do so. scripts/validate-agents-md.ts's CAM_CMD_RE now accepts cam|gship|gateship as the invocation prefix, so the gate keeps checking the still-cam-prefixed claims in CLAUDE.md/scripts/cam/CLAUDE.md/.claude/agents/*.md until those docs are renamed in a later story (that later doc-rename story does not need to touch this regex again). scripts/build-release.sh's two --version smoke EXPECTED strings already match the new `gateship X.Y.Z` shape. test/version.test.ts's file-size ceiling was raised 91->92 with a tracker-ref'd `_ref` entry (CAM-460/US-002).",
   "officialDocsValidated": [
     {
-      "lib": "npm (package.json bin field)",
-      "channel": "WebFetch",
-      "url": "https://docs.npmjs.com/cli/v10/configuring-npm/package-json#bin",
-      "fetchedAt": "2026-08-03T21:30:00Z",
-      "status": "aligned",
-      "summary": "Docs confirm a bin target must start with a shebang (#!/usr/bin/env node in their example) or the script runs without an interpreter; adapted to #!/usr/bin/env bun for this Bun-only CLI and added to index.ts in the same commit."
-    },
-    {
-      "lib": "bun.lock (Bun text lockfile)",
-      "channel": "WebFetch",
-      "url": "https://bun.com/docs/install/lockfile",
-      "fetchedAt": "2026-08-03T21:28:00Z",
-      "status": "fetch_failed",
-      "summary": "Fetched page did not cover workspace-name rewrite semantics or --frozen-lockfile validation depth; verified behavior empirically instead (bun install no-ops on a name-only rename, deleting+regenerating the lockfile bumps unrelated deps, hand-editing the name field + `bun install --frozen-lockfile` exits 0 with zero package drift)."
+      "lib": "none",
+      "status": "no_external_lib_touched"
     }
   ]
 }
