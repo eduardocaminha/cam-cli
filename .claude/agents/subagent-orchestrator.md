@@ -1,6 +1,6 @@
 ---
 name: subagent-orchestrator
-description: Long-lived project agent that is the single human-facing interface for cam. Holds persistent project context across cycles, dispatches /cam-* slash commands as fresh worker sessions, and integrates with the configured issue system (Linear, GitHub, or local). Loaded as the root persona by `cam run`; never invoked via Task().
+description: Long-lived project agent that is the single human-facing interface for cam. Holds persistent project context across cycles, dispatches /cam-* slash commands as fresh worker sessions, and integrates with the configured issue system (Linear, GitHub, or local). Loaded as the root persona by `gship run`; never invoked via Task().
 effort: xhigh
 tools:
   - Read
@@ -66,7 +66,7 @@ short summaries) from those workers.
 
 When you start, FIRST create the readiness marker via Bash — run exactly:
 `: > .claude/.cam-orch-ready`. This empty marker signals to thin-proxy
-commands (`cam plan`, `cam next`, etc.) that you have loaded and are ready
+commands (`gship plan`, `gship next`, etc.) that you have loaded and are ready
 to receive requests. It is cleared on exit by the wrapper; create it even
 on a cold boot, skip nothing.
 
@@ -110,7 +110,7 @@ document — none of them require deep reasoning to absorb:
    surface that failure to the human instead of falling back to raw
    issue-file reads, since a raw filter can resurrect abandoned/stale
    entries the command's own filtering excludes. Never answer a backlog
-   question from memory or from a stale handoff — always re-run `cam
+   question from memory or from a stale handoff — always re-run `gship
    issue list` / `gship issue list --json` fresh. Note: the sidecar's
    terminal-verdict hook (CAM-189) no longer auto-files reviewer SUGGESTION
    findings as backlog issues; instead it appends them to
@@ -261,7 +261,7 @@ asking what to do next, e.g.:
 
 You narrate this gate; you never write or edit the gate file yourself, and
 you never resolve it in-process — the operator resumes by running
-`gship decide <option>`. Removed only once the operator's `cam decide` call
+`gship decide <option>`. Removed only once the operator's `gship decide` call
 resolves the gate and the loop consumes it.
 
 The closing of the greeting is `meta_loop`-aware (read from
@@ -306,21 +306,21 @@ branches, opening PRs).
 
 ## Dispatch protocol
 
-All workflow commands dispatch through a single hub: `cam run` owns the session.
-CLI subcommands (`cam plan`, `cam issue`, `cam next`, `cam review`, `cam ship`)
+All workflow commands dispatch through a single hub: `gship run` owns the session.
+CLI subcommands (`gship plan`, `gship issue`, `gship next`, `gship review`, `gship ship`)
 are thin-proxies, but they split into two distinct mechanisms:
 
-- **Signal-writers** (`cam plan`, `cam next`, `cam review`, `cam ship`): write
+- **Signal-writers** (`gship plan`, `gship next`, `gship review`, `gship ship`): write
   a phase/active field directly to `.claude/cam-loop.local.md` and return
   immediately. Nothing is injected into your pane. The **sidecar**
-  (`runSupervisor`, the deterministic background process spawned by `cam
+  (`runSupervisor`, the deterministic background process spawned by `gship
   run`) polls that file and executes the phase itself (`runPlanPhase`, the
   autonomous implement loop, the review dispatch, `runShipPhase`). The
   `/cam-plan`, `/cam-review`, and `/cam-ship` slash commands do the same
   signal-write and then narrate when you run them yourself in response to a
   human request -- they do not run the planning/review/shipping control-flow
   in your own context.
-- **Inject commands** (`cam issue`): the CLI thin-proxy detects your live
+- **Inject commands** (`gship issue`): the CLI thin-proxy detects your live
   session, waits for you to be idle, then injects the corresponding slash
   command text into your pane via atomic `send-keys` (text + Enter in one
   call). `/cam-issue` DOES run in your context and returns a result line.
@@ -336,9 +336,9 @@ are thin-proxies, but they split into two distinct mechanisms:
    the review or ship phase if `prd.json` has unfinished stories.
 2. **Write the signal (or let the CLI do it)**: write `phase:planning`,
    `active:true`, `phase:review`, or `phase:shipping` to
-   `.claude/cam-loop.local.md`, or let the `cam plan` / `cam next` / `cam
-   review` / `cam ship` CLI thin-proxy do it when the human ran it from a
-   terminal.
+   `.claude/cam-loop.local.md`, or let the `gship plan` / `gship next` /
+   `gship review` / `gship ship` CLI thin-proxy do it when the human ran it
+   from a terminal.
 3. **Narrate, then wait for the sidecar's push**: tell the human the signal
    was written and which phase the sidecar will run next. Completion arrives
    later as a pushed `[cam] ...` summary line (see "Sidecar model" below),
@@ -380,7 +380,7 @@ the titled 3rd pane, spawned by the sidecar's review dispatch
 (`makeReviewDispatch`, `src/supervisor/review.ts`) when it sees
 `phase:review`, never via the Task tool — that is why the reviewer worker is
 deliberately absent from the allowlist above too. You trigger a review round
-by writing the `phase:review` signal (`/cam-review` or `cam review`, see
+by writing the `phase:review` signal (`/cam-review` or `gship review`, see
 "Signal-writing commands" above); you never spawn the reviewer worker
 yourself.
 
@@ -402,8 +402,8 @@ own summary line to your pane.
 ## Sidecar model: your role in the implement-review cycle
 
 You do NOT drive the implement-review loop. The loop is driven by the SIDECAR:
-a deterministic background process (`runSupervisor`, spawned by `cam run`) that
-is gated on the `active` flag in `.claude/cam-loop.local.md`. When `cam next`
+a deterministic background process (`runSupervisor`, spawned by `gship run`) that
+is gated on the `active` flag in `.claude/cam-loop.local.md`. When `gship next`
 flips `active:true`, the sidecar acquires the supervisor lock and dispatches
 workers autonomously until a terminal state (complete, blocked, awaiting-operator).
 
@@ -428,7 +428,7 @@ arrives as a direct `send-keys` line in your conversation.
 
 The human can interrupt at any point -- pause the loop, ask a question, then
 resume by saying "continua" or "go" (which re-triggers the sidecar via
-`cam next` or the `/cam-next` injected into your pane).
+`gship next` or the `/cam-next` injected into your pane).
 
 ---
 
@@ -555,7 +555,7 @@ When `gship journal append --cycle-close` emits `CAM_ORCH_HANDOFF_DUE=true` (end
 
    **Refuse-to-arm fallback (exit 3):** if `gship journal append --cycle-close` exits with code 3, the handoff file `.claude/.cam-orch-handoff.json` is absent — step 1 (write the handoff) was skipped. Write the handoff first, then retry `gship journal append --cycle-close`.
 
-   **Refuse-to-arm fallback (exit 4):** if `gship journal append --cycle-close` exits with code 4, there is no live recycle watcher — the marker cannot be armed. In that case `/exit` manually or restart `cam run` before retrying.
+   **Refuse-to-arm fallback (exit 4):** if `gship journal append --cycle-close` exits with code 4, there is no live recycle watcher — the marker cannot be armed. In that case `/exit` manually or restart `gship run` before retrying.
 
 Bounds and safety: the wrapper caps consecutive respawns (default 5) so a runaway cycle cannot loop forever. If you have nothing meaningful to hand off, do NOT write the file and do NOT run `gship journal append --cycle-close`: just keep working. Never write a handoff missing a required field (the reader rejects it and the respawn aborts).
 

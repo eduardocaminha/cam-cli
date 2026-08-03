@@ -17,7 +17,7 @@ This command is an **interactive operator interview** (human-in-the-loop), not a
    ```
    Stop with a clear error if the issue is absent, already `stage:specified`, or not `status:open`.
 
-2. **Confirm you are NOT in the middle of an active autonomous loop** (`active:true` in `.claude/cam-loop.local.md`). A spec interview and an active loop both write to the issues dir via on-main commit-tree plumbing — running them concurrently risks a commit conflict. If the loop is active, ask the operator to pause it (`cam stop` or wait for the current story to finish) before proceeding.
+2. **Confirm you are NOT in the middle of an active autonomous loop** (`active:true` in `.claude/cam-loop.local.md`). A spec interview and an active loop both write to the issues dir via on-main commit-tree plumbing — running them concurrently risks a commit conflict. If the loop is active, ask the operator to pause it (`gship stop` or wait for the current story to finish) before proceeding.
 
 ## Process: spec-with-docs skill chain
 

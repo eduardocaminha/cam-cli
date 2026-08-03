@@ -25,7 +25,7 @@ issue_system = "linear" | "github" | "local"
 ```
 
 If the file does not exist, default to `local` and warn the operator that
-`cam init` was not run (or did not record an issue system).
+`gship init` was not run (or did not record an issue system).
 
 ---
 
@@ -113,7 +113,7 @@ Subcommands:
 
 #### `create`
 
-**CONVENTION**: never hand-edit issue files on a feature branch; always file via `cam issue` (it commits to main deterministically).
+**CONVENTION**: never hand-edit issue files on a feature branch; always file via `gship issue` (it commits to main deterministically).
 
 There are two filing shapes: a plain idea (no flags, `stage:idea`), and a
 **derived or fast-track filing** (`--derived-from <id[,id...]>` or
