@@ -323,7 +323,7 @@ describe('templatesContents — none/create uses --file-local in cam-issue promp
 	const camIssue = templatesContents['commands/cam-issue.md'] ?? '';
 
 	test('contains cam issue --file-local invocation', () => {
-		expect(camIssue).toContain('cam issue --file-local');
+		expect(camIssue).toContain('gship issue --file-local');
 	});
 
 	test('does not contain the old hand-edit instruction', () => {

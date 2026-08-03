@@ -1,10 +1,10 @@
 Deep-spec an idea issue into `stage:specified` by running the spec-with-docs interview chain.
 
-**CLI thin-proxy invocation**: `cam spec <id>` (run from a terminal outside the session) is a thin-proxy. It detects the active cam session, waits for the orchestrator to be idle, then injects `/cam-spec <id>` into the orchestrator pane via atomic `send-keys`. The content below is what the orchestrator executes when it receives this slash command.
+**CLI thin-proxy invocation**: `gship spec <id>` (run from a terminal outside the session) is a thin-proxy. It detects the active cam session, waits for the orchestrator to be idle, then injects `/cam-spec <id>` into the orchestrator pane via atomic `send-keys`. The content below is what the orchestrator executes when it receives this slash command.
 
 ## Overview
 
-`/cam-spec <id>` takes a `stage:idea` issue (e.g. `CAM-42`) and transforms it into a `stage:specified` issue by running a structured operator interview (the **spec-with-docs** skill chain). At the end of the interview the orchestrator pipes the assembled spec into `cam spec --persist <id>` (the in-process CLI channel over the deterministic spec writer, `specifyIssueOnMain`): the issue transitions from `idea` to `specified` on `main` without touching the working branch.
+`/cam-spec <id>` takes a `stage:idea` issue (e.g. `CAM-42`) and transforms it into a `stage:specified` issue by running a structured operator interview (the **spec-with-docs** skill chain). At the end of the interview the orchestrator pipes the assembled spec into `gship spec --persist <id>` (the in-process CLI channel over the deterministic spec writer, `specifyIssueOnMain`): the issue transitions from `idea` to `specified` on `main` without touching the working branch.
 
 This command is an **interactive operator interview** (human-in-the-loop), not an autonomous worker. It requires the operator's participation at each interview stage.
 
@@ -34,12 +34,12 @@ Key points:
 
 After the spec-with-docs interview concludes and you have assembled the full
 `spec` object, `wsjf` scores, and the confirmed `type` (and, if applicable, a
-`blockedBy` list of issue ids), pipe the payload to `cam spec --persist <id>`
+`blockedBy` list of issue ids), pipe the payload to `gship spec --persist <id>`
 via stdin, using a **safe quoting pattern** so shell interpolation cannot
 corrupt the JSON or execute arbitrary content (CAM-106 lesson):
 
 ```bash
-cam spec --persist <id> <<'EOF'
+gship spec --persist <id> <<'EOF'
 {
   "spec": {
     "acceptanceCriteria": ["..."],
@@ -58,7 +58,7 @@ Include `"type"` as one of `"feat"`, `"fix"`, `"chore"`, or `"docs"` — the
 value captured or confirmed with the operator earlier in the interview.
 Omit `blockedBy` entirely when the interview surfaced no blocking issues. A
 single-quoted heredoc (`<<'EOF'`, note the quotes around `EOF`) or a
-single-quoted `echo '<json>' | cam spec --persist <id>` are both safe: the
+single-quoted `echo '<json>' | gship spec --persist <id>` are both safe: the
 shell does not expand `$`, backticks, or other special characters inside a
 single-quoted body. **Never use an unquoted heredoc** (`<<EOF` without
 quotes) or an unquoted `echo` to carry this payload: the shell would
@@ -66,7 +66,7 @@ interpolate `$` and backtick sequences that may appear in the operator's
 interview answers, corrupting the JSON or, worse, executing arbitrary
 content.
 
-`cam spec --persist <id>` calls the deterministic spec writer
+`gship spec --persist <id>` calls the deterministic spec writer
 (`specifyIssueOnMain`) in-process: no tmux, no send-keys, no orchestrator
 liveness check. It already validates `spec` and `wsjf` and enforces every
 guard (stage, status, integrity, up-to-date-with-main), so this step never
@@ -108,17 +108,17 @@ Assemble the payload:
   entry is `{ title, context, decision, consequences }`.
 
 If the interview produced no new terms and no ADR-worthy decisions, the
-payload is `{ "terms": [], "adrs": [] }` (a sanctioned noOp: `cam spec
+payload is `{ "terms": [], "adrs": [] }` (a sanctioned noOp: `gship spec
 --write-docs` recognizes this shape and exits 0 with no writes). Do not skip
 the step to "save time"; piping the empty payload is just as cheap and keeps
 the step uniform.
 
-Pipe the payload to `cam spec --write-docs <id>` via stdin, using a **safe
+Pipe the payload to `gship spec --write-docs <id>` via stdin, using a **safe
 quoting pattern** so shell interpolation cannot corrupt the JSON or execute
 arbitrary content (CAM-106 lesson):
 
 ```bash
-cam spec --write-docs <id> <<'EOF'
+gship spec --write-docs <id> <<'EOF'
 {
   "terms": [
     { "term": "...", "definition": "..." }
@@ -131,7 +131,7 @@ EOF
 ```
 
 A single-quoted heredoc (`<<'EOF'`, note the quotes around `EOF`) or a
-single-quoted `echo '<json>' | cam spec --write-docs <id>` are both safe: the
+single-quoted `echo '<json>' | gship spec --write-docs <id>` are both safe: the
 shell does not expand `$`, backticks, or other special characters inside a
 single-quoted body. **Never use an unquoted heredoc** (`<<EOF` without
 quotes) or an unquoted `echo` to carry this payload: the shell would
@@ -139,7 +139,7 @@ interpolate `$` and backtick sequences that may appear in the operator's
 interview answers, corrupting the JSON or, worse, executing arbitrary
 content.
 
-`cam spec --write-docs` writes `CONTEXT.md` and `docs/adr/` directly on
+`gship spec --write-docs` writes `CONTEXT.md` and `docs/adr/` directly on
 `main` via commit-tree plumbing (mirrors `specifyIssueOnMain`); it does not
 touch the working branch. **Never hand-write `CONTEXT.md` or `docs/adr/`**
 via `Edit`, `Write`, `NotebookEdit`, or ad-hoc bash redirection (`>`, `>>`)
@@ -154,7 +154,7 @@ not the noOp path):
 CAM_DOMAIN_DOCS_WRITTEN=<id> sha=<sha>   # success, exit 0
 ```
 
-A non-zero exit from `cam spec --write-docs` is a real failure and **must be
+A non-zero exit from `gship spec --write-docs` is a real failure and **must be
 reported to the operator, never silently skipped**: print the error and stop.
 This is the exact CAM-109 failure mode this step exists to close: the spec
 was persisted but the domain docs were silently dropped, with nothing telling
@@ -168,8 +168,8 @@ the operator that the second write never happened.
 | Issue not `stage:idea` | Stop, print: `<id> is already stage:<stage> — nothing to do` |
 | Issue not `status:open` | Stop, print: `<id> is not open (status:<status>)` |
 | Spec validation fails | Show the validation errors, ask the operator to correct the answers |
-| diverged / detached-head / missing-main | Stop, print the `CAM_SPEC_RESULT=ERROR reason=<reason>` line from `cam spec --persist`; report to the operator, never retry silently |
+| diverged / detached-head / missing-main | Stop, print the `CAM_SPEC_RESULT=ERROR reason=<reason>` line from `gship spec --persist`; report to the operator, never retry silently |
 | Concurrent loop active | Stop, ask operator to pause the loop first |
-| `cam spec --write-docs` malformed/invalid payload | Stop, print the validation errors from the command's stderr; never silently skip |
-| `cam spec --write-docs` diverged / detached-head / missing-main | Stop, print the guard error; report to the operator, never silently skip |
-| `cam spec --write-docs` noOp (empty payload, nothing to write) | Not a failure: print the muted hint and continue |
+| `gship spec --write-docs` malformed/invalid payload | Stop, print the validation errors from the command's stderr; never silently skip |
+| `gship spec --write-docs` diverged / detached-head / missing-main | Stop, print the guard error; report to the operator, never silently skip |
+| `gship spec --write-docs` noOp (empty payload, nothing to write) | Not a failure: print the muted hint and continue |

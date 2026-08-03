@@ -5,7 +5,7 @@
 session to run by hand. The gate: `git fetch origin`, sync with the remote
 (pull if the tracking branch exists, else `push -u` to create it), a
 clean-tree check, `bun run typecheck`, and `bun test`. A failing preflight
-returns nonzero and does NOT flip `active:true`. `cam next --skip-preflight`
+returns nonzero and does NOT flip `active:true`. `gship next --skip-preflight`
 bypasses the gate and proceeds straight to the signal write (the resume
 escape). See `src/commands/next-preflight.ts`.
 
@@ -18,9 +18,9 @@ escape). See `src/commands/next-preflight.ts`.
 Dispatch flow:
 
 ```
-cam next
+gship next
   └── detect live orchestrator (hasSession + orchestratorAlive)
-        ├── on miss: bootstrap cam run --no-attach, poll .claude/.cam-orch-ready
+        ├── on miss: bootstrap gship run --no-attach, poll .claude/.cam-orch-ready
         ├── mutex check: refuse if worker-pane already running (3 panes = busy)
         └── flip active:true in .claude/cam-loop.local.md
               [sidecar polls the flag and dispatches the next worker autonomously]

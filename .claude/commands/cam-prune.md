@@ -5,7 +5,7 @@ involved. Run it and narrate the result instead of re-running the git dance
 yourself:
 
 ```bash
-cam prune
+gship prune
 ```
 
 Behaviour (enforced by the CLI, not by this session):
@@ -22,7 +22,7 @@ If `cam prune` exits nonzero, read its printed error and act on it:
 - Dirty tree: tell the user to commit or stash first. Don't offer to stash
   or discard on their behalf.
 - Non-`cam/*` branch, or an open unmerged PR: ask the user for confirmation,
-  then re-run with `cam prune --force` if they confirm.
+  then re-run with `gship prune --force` if they confirm.
 - Already on main: nothing to prune — tell the user.
 
 Rules:
