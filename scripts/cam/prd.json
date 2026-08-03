@@ -88,7 +88,7 @@
         "A espinha de qualidade passa. [oracle: named-command bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Arquivos: install.sh (novo, na raiz), README.md. O instalador detecta os/arch e baixa de https://github.com/eduardocaminha/cam-cli/releases/download/<tag>/<asset>, com os nomes de asset fixados pela US-003: gateship-darwin-arm64, gateship-darwin-x64, gateship-linux-x64, gateship-linux-arm64. Instala em diretorio user-owned (default ~/.local/bin, sem sudo) e cria os DOIS nomes, gateship e gship. NUNCA remove nem sobrescreve um cam existente: a remocao e passo deliberado do operador depois do ciclo (ADR-0055, ultima consequencia). Um binario BAIXADO recebe a quarentena do Gatekeeper, diferente de um compilado local, entao o texto tem que trazer o comando que o usuario realmente digita: xattr -d com.apple.quarantine <caminho>. Sem conta Apple Developer (decisao do operador 2026-08-01) os binarios saem ad-hoc assinados e NAO notarizados; o README ja carrega a ressalva honesta nas linhas 62-67 (Public distribution note), que deve ser ESTENDIDA e nunca contradita. O oraculo herdado do README foi desenhado para distinguir prosa fiel de prosa inventada: uma copia fabricada afirmando notarizacao completa da exit 1. Nao escreva que da para instalar via npm: o manifesto fica publicavel mas NAO e publicado neste ciclo (ADR-0055). A secao Install atual do README documenta so o caminho from-source e deve passar a liderar com o caminho empacotado, mantendo o from-source como alternativa. README.md nao esta em scripts/file-size-budget.json, entao nao ha teto a levantar."
     },
