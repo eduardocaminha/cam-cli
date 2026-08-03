@@ -4,6 +4,15 @@
 // US-002, CAM-488 PRD).
 //
 // All tests drive runGates with a fake spawnFn; no real subprocess is invoked.
+// The two full-manifest name/order assertions in the "--json mode" describe
+// block below do NOT pass the real GATES array to runGates() either (US-R1-003,
+// CAM-488 PRD): GATES now includes two in-process gates (coverage, skip-
+// ratchet) whose real `run` fns shell out to `git diff --cached` and read real
+// budget/expectations files off disk (see scripts/check-all.ts), which would
+// give these unit tests an ambient git + cwd dependency. They instead pass
+// `spawnOnlyGates`, a name/order-preserving spawn-shaped derivation of GATES
+// (see helper below), so every gate in the fixture is a plain spawn gate
+// dispatched through the fake spawnFn like everywhere else in this file.
 // Coverage:
 //   GATES manifest: length (14), order, correct cmd/args per spawn gate; the
 //   coverage and skip-ratchet gates are in-process (a `run` fn, no cmd/args).
@@ -59,6 +68,19 @@ function makeRecordingSpawn(exitCodes: number[]): { calls: Call[]; fn: SpawnFn }
 		return makeResult(code);
 	};
 	return { calls, fn };
+}
+
+/**
+ * Spawn-shaped derivation of GATES, preserving name and order but replacing
+ * each entry (including the two real in-process gates) with a plain
+ * cmd/args pair (US-R1-003, CAM-488 PRD). Used by the full-manifest tests in
+ * the "--json mode" describe block below so they can assert on the real
+ * manifest's names/order via a fake spawnFn without tripping the real
+ * coverage/skip-ratchet gates' ambient git + real-file I/O. Derived from
+ * GATES (not hand-duplicated) so it tracks the manifest automatically.
+ */
+function spawnOnlyGates(): Gate[] {
+	return GATES.map((gate) => ({ name: gate.name, cmd: 'bun', args: [gate.name] }));
 }
 
 // ---------------------------------------------------------------------------
@@ -364,10 +386,11 @@ describe('--json mode (onResults)', () => {
 	});
 
 	test('onResults entries match manifest gate names in order', () => {
-		const exitCodes = GATES.map(() => 0);
+		const gates = spawnOnlyGates();
+		const exitCodes = gates.map(() => 0);
 		const { fn } = makeRecordingSpawn(exitCodes);
 		let captured: GateResult[] | null = null;
-		runGates({ spawnFn: fn, onResults: (r) => { captured = r; } });
+		runGates({ gates, spawnFn: fn, onResults: (r) => { captured = r; } });
 
 		const results = captured as unknown as GateResult[];
 		expect(results).toHaveLength(GATES.length);
@@ -377,9 +400,10 @@ describe('--json mode (onResults)', () => {
 	});
 
 	test('onResults entry names match manifest gate names (typecheck, test, embed-vendor, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps, skip-ratchet)', () => {
+		const gates = spawnOnlyGates();
 		const { fn } = makeRecordingSpawn([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
 		let captured: GateResult[] | null = null;
-		runGates({ spawnFn: fn, onResults: (r) => { captured = r; } });
+		runGates({ gates, spawnFn: fn, onResults: (r) => { captured = r; } });
 
 		const results = captured as unknown as GateResult[];
 		const names = results.map((r) => r.name);
