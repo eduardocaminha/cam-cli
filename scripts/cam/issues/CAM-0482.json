@@ -1,11 +1,11 @@
 {
   "id": "CAM-482",
   "title": "Desacoplar o codigo do nome do proprio binario: auto-spawn por execPath, descoberta de processo sem literal unico, e o fallback literal do helper",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-02T11:23:43.571Z",
-  "updatedAt": "2026-08-02T11:23:43.571Z",
+  "updatedAt": "2026-08-03T02:19:16.536Z",
   "description": "Precede e desbloqueia o CAM-460 (empacotamento). Hoje o codigo hardcoda o nome do proprio binario em 17 lugares de src mais index.ts, dos quais 10 sao spawns reais, 6 sao docstrings e 1 e comentario. Cinco desses spawns sao o loop respawnando a si mesmo (run.ts:740 dashboard, run.ts:822 sidecar, run.ts:853 orch-recycle-watch, run.ts:895 sidecar-liveness-watch, sidecar-liveness-watch.ts:92 sidecar) e seis sao o autostart do hub nos thin-proxies (plan.ts:94, next.ts:270, issue.ts:102, spec.ts:136, review.ts:97, ship.ts:99). A descoberta de processo em stop.ts:295 e stop.ts:328 compara argv contra o literal unico cam. E o proprio helper que existe para resolver isso, resolveSelfInvokeArgv em src/util/self-invoke.ts:36-42, carrega um fallback literal cam na linha 41.\n\nPOR QUE ISTO E SEPARADO DO EMPACOTAMENTO: esta mudanca nao renomeia nada e nao tem efeito visivel para usuario. Ela apenas remove a dependencia de nome, e por isso pode shipar sozinha e com seguranca, com o binario continuando a se chamar cam no disco. Fazer isto antes torna o ciclo de empacotamento seguro, porque la o nome muda e o loop precisa continuar conseguindo respawnar a si mesmo durante a propria branch que faz a troca. Tres tentativas de planejar o CAM-460 inteiro escalaram, e a analise do terceiro veredito mostrou que o planner inventa 50 a 70 oraculos quando o PRD e grande e os defeitos vivem nessa maioria inventada; separar reduz a superficie.\n\nVALOR INDEPENDENTE, mesmo que o rename nunca acontecesse: auto-spawn por nome resolve pelo PATH, entao o processo filho pode ser um binario mais velho que o codigo que o spawnou. Essa e exatamente a incoerencia binario-versus-branch ja documentada em patterns.md e vivida varias vezes neste projeto. Resolver por execPath elimina a classe.\n\nFORA DE ESCOPO, explicitamente: qualquer coisa de empacotamento (package.json publicavel, alvos de build, workflow de release, instalador, README) e a migracao dos 17 arquivos de instrucao executavel. Os arquivos de instrucao mandam DIGITAR um comando, entao so podem migrar quando o nome novo existir no PATH, o que acontece no ciclo de empacotamento. Os cinco contratos internos do ADR-0054 tambem ficam de fora, e sao pinados.",
   "specSource": "derived",
   "derivedFrom": [
