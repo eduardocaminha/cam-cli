@@ -914,7 +914,7 @@ describe('cam issue demote --help (CAM-211 short-circuit)', () => {
 			const code = await main(['bun', 'index.ts', 'issue', 'demote', '--help']);
 			expect(code).toBe(0);
 		});
-		expect(lines.some((l) => l.includes('cam issue'))).toBe(true);
+		expect(lines.some((l) => l.includes('gship issue'))).toBe(true);
 		expect(lines.some((l) => l.includes('CAM_ISSUE_RESULT'))).toBe(false);
 	});
 });
@@ -1045,7 +1045,7 @@ describe('cam issue get --help (CAM-211 short-circuit)', () => {
 			const code = await main(['bun', 'index.ts', 'issue', 'get', '--help']);
 			expect(code).toBe(0);
 		});
-		expect(lines.some((l) => l.includes('cam issue'))).toBe(true);
+		expect(lines.some((l) => l.includes('gship issue'))).toBe(true);
 		expect(lines.some((l) => l.includes('CAM_ISSUE_RESULT'))).toBe(false);
 	});
 });

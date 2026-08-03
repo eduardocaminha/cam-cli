@@ -192,5 +192,5 @@ describe('dispatchStats', () => {
 test('COMMANDS + HELP_REGISTRY: `stats` is registered end-to-end', () => {
 	expect(COMMANDS).toContain('stats');
 	expect(HELP_REGISTRY['stats']).toBeDefined();
-	expect(HELP_REGISTRY['stats']).toContain('cam stats tokens');
+	expect(HELP_REGISTRY['stats']).toContain('gship stats tokens');
 });

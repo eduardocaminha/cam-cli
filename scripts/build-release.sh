@@ -81,7 +81,7 @@ fi
 
 # --- Sanity: AC3 (--version) -----------------------------------------------
 echo "[build-release] verifying --version output"
-EXPECTED="cam ${VERSION}"
+EXPECTED="gateship ${VERSION}"
 ACTUAL="$("${BIN}" --version)"
 if [[ "${ACTUAL}" != "${EXPECTED}" ]]; then
 	echo "ERROR: --version mismatch — expected '${EXPECTED}', got '${ACTUAL}'" >&2
@@ -141,7 +141,7 @@ if [[ "${DO_INSTALL}" == "true" ]]; then
 	echo "[build-release] codesign: ad-hoc re-sign ok (installed copy)"
 
 	SMOKE_ACTUAL="$("${DEST}" --version)"
-	EXPECTED_INST="cam ${VERSION}"
+	EXPECTED_INST="gateship ${VERSION}"
 	if [[ "${SMOKE_ACTUAL}" != "${EXPECTED_INST}" ]]; then
 		echo "[build-release] ERROR: --version mismatch -- expected '${EXPECTED_INST}', got '${SMOKE_ACTUAL}'" >&2
 		exit 1

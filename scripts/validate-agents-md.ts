@@ -218,9 +218,18 @@ export function extractBacktickSpans(text: string): string[] {
 // cam-cmd claims
 // ---------------------------------------------------------------------------
 
-const CAM_CMD_RE = /^cam\s+([A-Za-z][\w-]*)/;
+// Dual/triple-accept, not fixed to a single literal prefix (ADR-0054): the
+// retired command `cam` and the launch-packaging names `gship` / `gateship`
+// (US-001, CAM-460) all remain valid claim prefixes here. Scanned docs
+// (CLAUDE.md, scripts/cam/CLAUDE.md, .claude/agents/*.md) are not renamed by
+// this story, so they still carry `cam <cmd>` spans today; a single-prefix
+// regex anchored on whichever name is current at any given moment would
+// silently stop checking every span written under the other name the moment
+// either side of the rename lands, exactly the "guard becomes a tautology"
+// failure this desanchoring exists to prevent.
+const CAM_CMD_RE = /^(?:cam|gship|gateship)\s+([A-Za-z][\w-]*)/;
 
-/** If `span` is a `cam <cmd>` claim, return the claimed command token; else undefined. */
+/** If `span` is a `cam <cmd>` / `gship <cmd>` / `gateship <cmd>` claim, return the claimed command token; else undefined. */
 export function extractCamCommand(span: string): string | undefined {
 	const match = CAM_CMD_RE.exec(span);
 	return match?.[1];
