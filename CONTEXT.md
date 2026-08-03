@@ -487,3 +487,18 @@ Especie de oraculo para entregavel em prosa. Um grep de presenca de token confir
 
 **oraculo vacuo por parse**:
 Criterio de aceitacao cujo marcador de oraculo nao e reconhecido pelo parser (kind malformed), tipicamente por colchete desbalanceado dentro do regex. O criterio some da verificacao sem erro visivel: o lint o pula e o gate comportamental nao o executa. E pior que um oraculo errado, porque um oraculo errado ao menos falha; este nunca roda e por isso nunca contradiz nada.
+
+**suite execution**:
+One full run of the project test suite (about 5936 tests). The unit of cost that check:all was paying three times per invocation, and CI a fourth time via the container lane.
+
+**shared suite output**:
+The combined stdout and stderr text of a single `bun test --coverage` run, captured once and passed to more than one gate. It carries both the coverage table row (`All files | % Funcs | % Lines`) and the summary lines (` N pass`, ` N skip`, `Ran N tests across M files.`), so one capture satisfies both the coverage parser and the skip-ratchet parsers. Measured 2026-08-03: all of it arrives on stderr.
+
+**gate identity**:
+The property that each gate in check:all keeps its own name, its own row in gate-results.json, and its own independent failure condition, regardless of how its work is executed. Sharing an execution between gates must not merge their verdicts.
+
+**fail-closed**:
+A gate that reports failure when its evidence is missing, empty, or unparseable, rather than passing by default. In skip-ratchet this property comes from the positive-evidence tally guard, not from the skip parser, which returns 0 when the line is absent and would otherwise pass on empty input.
+
+**recurring per-cycle tax**:
+The admission criterion for internal work, canonized 2026-08-03 in memory/project_target_admission.md. An internal item earns a cycle only when its cost recurs every cycle until fixed. Redundant suite execution qualifies because both the worker (per story) and the reviewer (per round) pay it.
