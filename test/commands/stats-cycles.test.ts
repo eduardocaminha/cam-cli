@@ -17,7 +17,7 @@
 // CLI-level and on-main-writer tests; this file stays scoped to the pure
 // aggregation module for US-001.
 
-import { existsSync, readFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { readFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import type { SpawnSyncReturns } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -299,15 +299,15 @@ describe('aggregateCycleMetrics: AC7 tolerant reader', () => {
 // ---------------------------------------------------------------------------
 // Real-log sanity check (test-quality convention: hit real fixtures plus at
 // least one assertion against the repo's own log content when convenient).
-// The event log is gitignored (.gitignore:73), so a fresh checkout may not
-// have one -- skip cleanly rather than fail CI on an absent local artifact.
+// The live event log is gitignored (.gitignore:73), so this runs against a
+// committed slice of it: the assertion is differential (aggregator vs an
+// independent computation), so any real log content exercises it.
 // ---------------------------------------------------------------------------
 
-const REAL_LOG_PATH = join(import.meta.dir, '..', '..', '.claude', 'cam-worker-events.jsonl');
-const realLogExists = existsSync(REAL_LOG_PATH);
+const REAL_LOG_PATH = join(import.meta.dir, '..', 'fixtures', 'cycle-metrics', 'real-log-slice.jsonl');
 
 describe('aggregateCycleMetrics: real-log sanity', () => {
-	test.skipIf(!realLogExists)(
+	test(
 		'unattributedLeadingEvents matches an independently-computed first-marker line index on the real log',
 		() => {
 			const content = readFileSync(REAL_LOG_PATH, 'utf8');
