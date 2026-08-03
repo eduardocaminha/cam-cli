@@ -39,14 +39,15 @@ cd cam-cli
 # 2. Install dependencies
 bun install
 
-# 3. Build and install (builds dist/cam-darwin-arm64, re-signs it ad-hoc, copies to ~/.local/bin/cam; no sudo)
+# 3. Build all four targets and install the host-native one (re-signed ad-hoc,
+#    copies to ~/.local/bin/gateship and ~/.local/bin/gship; no sudo, additive)
 ./scripts/build-release.sh --install
 
 # 4. Ensure ~/.local/bin is on $PATH (add to ~/.zshrc or ~/.bash_profile if missing):
 #    export PATH="$HOME/.local/bin:$PATH"
 
 # 5. Verify
-cam --version
+gateship --version
 ```
 
 **Alternative: system-wide install to /usr/local/bin**
@@ -56,7 +57,7 @@ The build script handles re-signing, so the binary is valid for any destination:
 
 ```bash
 ./scripts/build-release.sh
-sudo cp dist/cam-darwin-arm64 /usr/local/bin/cam
+sudo cp dist/gateship-darwin-arm64 /usr/local/bin/gateship
 ```
 
 #### Public distribution note
@@ -246,7 +247,7 @@ under the MIT license. See [LICENSES/claude-auto-retry-MIT.txt](./LICENSES/claud
 bun install
 bun test                 # run the unit-test suite (~470 tests)
 bunx tsc --noEmit        # typecheck
-bun run build:release    # produce dist/cam-darwin-arm64
+bun run build:release    # produce dist/gateship-{darwin,linux}-{arm64,x64}
 ```
 
 Source layout:

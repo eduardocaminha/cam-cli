@@ -12,7 +12,7 @@
 // inlined string constants in `src/vendor/_generated.ts`. So testing dev
 // mode here is sufficient; the compiled-binary equivalent is exercised once
 // at release time via `scripts/build-release.sh` (which runs
-// `./dist/cam-darwin-arm64 init` against a tmp config).
+// `./dist/gateship-<os>-<arch> init` against a tmp config).
 //
 // What we cover:
 //   1. The codegen output is byte-for-byte identical to the on-disk vendor

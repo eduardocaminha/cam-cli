@@ -1,0 +1,41 @@
+name: Release
+
+# Triggered by a version tag push (`cam tag` pushes `vX.Y.Z`). Cross-compiles
+# all four release targets from a single macOS runner (scripts/build-release.sh,
+# US-003 CAM-460) and publishes them as assets of a GitHub Release marked
+# prerelease (ADR-0055: keeps the ADR-0054 rename window open until the
+# stable, non-prerelease Release is cut after that rename lands).
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - name: Install tmux
+        run: brew install tmux
+      - name: Install deps
+        run: bun install --frozen-lockfile
+      - name: Build all four release targets
+        run: bun run build:release
+      - name: Publish prerelease with the four binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            dist/gateship-darwin-arm64 \
+            dist/gateship-darwin-x64 \
+            dist/gateship-linux-x64 \
+            dist/gateship-linux-arm64 \
+            --prerelease \
+            --title "${{ github.ref_name }}" \
+            --generate-notes
