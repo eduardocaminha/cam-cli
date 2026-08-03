@@ -78,7 +78,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": "US-002",
       "notes": "Files: scripts/cam/patterns.md (append one bullet; never truncate the file). No source change is expected here -- this story exists because a collapse can ship INERT (the CAM-479 disease: fix shipped inert while grep-oracles read satisfied), so its whole value is the two real measurements and the durable record of them.\n\nHow to get the honest BEFORE number: measure it on main (e.g. `git stash` / a worktree or a checkout of origin/main) with the same `bun scripts/check-all.ts --json` command, on the same machine, in the same session. Do not reuse the 34511ms/34381ms figures from the issue body as the before total: they are a per-gate sample from an older recorded gate-results.json, quoted in the issue as the fingerprint of the defect, not as this cycle's measurement.\n\ngate-results.json is written to cwd by the --json flag (check-all.ts:163-168) and is a build artifact: do not commit it (confirm it is ignored, or delete it before committing).\n\nKnowledge-layer routing (scripts/cam/CLAUDE.md): a reusable technical insight goes to scripts/cam/patterns.md as a bullet, which is exactly what this story writes; do not also duplicate it into CONTEXT.md or docs/adr/.\n\nThe standalone-run criterion is slow by design (~one suite execution per script). Run it once, at the end, after the spine is otherwise green."
     }
