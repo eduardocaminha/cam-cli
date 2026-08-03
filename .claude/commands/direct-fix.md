@@ -11,6 +11,15 @@ is its executable form.
 Use it when the loop would be ceremony. Do NOT use it to escape verification:
 you skip the LLM cycle, never `bun run check:all`.
 
+**The task is:** $ARGUMENTS
+
+If that is empty, ask the operator what the task is before doing anything else.
+
+Normally you are launched by `scripts/direct-fix.sh`, already inside a
+throwaway git worktree cut from `origin/main`, on a `direct/<slug>` branch. That
+worktree has none of the repo's gitignored dev artifacts, which is deliberate:
+it reproduces CI's conditions, so a green `check:all` here means a green CI.
+
 ## Step 0 — entry gate (answer BEFORE editing anything)
 
 > Which test or gate goes green when this is done?
@@ -64,8 +73,8 @@ you here — the discipline is the only guard):
 2. `bun run check:all` passes **whole**. Not a subset, not just the touched
    test. This is the safety net that makes the lane defensible: 14 gates and
    the full suite.
-3. If a story touched `vendor/` or `templates/`, also run `bun run embed-vendor`
-   and `bun run embed-vendor:check`.
+3. If the change touched `vendor/` or `templates/`, also run
+   `bun run embed-vendor` and `bun run embed-vendor:check`.
 
 ## Step 5 — record the insight, if there is one
 
@@ -79,10 +88,12 @@ decorative emoji (operator convention). Agent instruction files are exempt.
 
 ## Step 6 — ship it
 
+You are already on a `direct/<slug>` branch if launched by the script. If not,
+cut one: never commit straight to main.
+
 ```bash
-git checkout -b <short-branch-name>   # never commit straight to main
 git add -A && git commit -m "<type>: <what and why>"
-git push origin <branch>
+git push -u origin HEAD
 gh pr create --fill
 ```
 
@@ -101,13 +112,18 @@ Report to the operator in three lines:
 3. PR number, plus anything you noticed and deliberately did NOT fix (scope
    discipline: note it, do not silently absorb it).
 
-## When the sidecar is alive
+Then remind them of the cleanup command for this worktree, and stop. Do not
+merge your own PR.
 
-If a cam loop session is running, check `.claude/cam-loop.local.md` first. If
-`active: true` or `phase` is anything but `idle`, do not edit: the sidecar may
-dispatch a worker onto the same tree. Ask the operator to pause it.
+## Gotchas worth carrying
 
-If a merge watch is pending on an open PR, expect the sidecar to check out
-main, pull, tag, and prune the branch on its own once that PR merges. Finish
-and push before that happens; do not keep editing a branch that is about to be
-pruned under you.
+- `gh pr view --json statusCheckRollup` returns `conclusion: ""` (empty string,
+  not null) while a check is still running, so `.conclusion // .status` in jq
+  never reaches the fallback and a first poll reads as final. Gate completion on
+  `.status` (`IN_PROGRESS` / `COMPLETED`), never on `.conclusion`.
+- `gh pr list -q '.[0]|"..."'` on an empty array yields a literal string of
+  `null`s rather than nothing. Use `.[0].number // empty`.
+- If a cam loop session is running, check `.claude/cam-loop.local.md` in the
+  PRIMARY checkout first. Working in a worktree already isolates you from the
+  sidecar's checkouts and branch pruning, which is one of the reasons the lane
+  uses one.
