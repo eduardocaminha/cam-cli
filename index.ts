@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 // index.ts
 //
 // cam CLI entrypoint. Dispatches subcommands by argv[2]; everything else is
