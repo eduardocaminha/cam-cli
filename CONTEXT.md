@@ -502,3 +502,18 @@ A gate that reports failure when its evidence is missing, empty, or unparseable,
 
 **recurring per-cycle tax**:
 The admission criterion for internal work, canonized 2026-08-03 in memory/project_target_admission.md. An internal item earns a cycle only when its cost recurs every cycle until fixed. Redundant suite execution qualifies because both the worker (per story) and the reviewer (per round) pay it.
+
+**SHA256SUMS.txt**:
+Arquivo publicado como asset de um GitHub Release do Gateship, com uma linha SHA-256 por artefato de release, no formato que shasum -a 256 -c e sha256sum -c consomem. Os hashes sao tirados do artefato final em disco, depois da assinatura ad-hoc dos alvos darwin, de modo que correspondem byte a byte ao que o usuario baixa. E o insumo da verificacao automatica do install.sh.
+
+**build provenance attestation**:
+Atestado assinado, ancorado em sigstore e emitido pelo proprio GitHub Actions, que amarra criptograficamente um artefato ao workflow, ao commit e ao repositorio que o produziram. Verificado sob demanda com gh attestation verify. No Gateship e a unica camada que responde autenticidade de origem; nao entra no caminho automatico de instalacao porque exige o gh CLI, que o produto declara opcional.
+
+**verificacao fail-closed**:
+Postura em que a ausencia de meio de verificacao aborta a operacao em vez de prosseguir sem verificar. No install.sh do Gateship cobre tres condicoes: hash divergente, arquivo de checksums inalcancavel e ausencia de qualquer ferramenta de hash no PATH. O oposto, fail-open, e o modo de falha que a verificacao existe para proibir, porque produz instalacao aparentemente verificada sem verificacao nenhuma.
+
+**checksum de mesma origem**:
+Checksum servido pelo mesmo host, pelo mesmo canal TLS e sob o mesmo controle de escrita que o artefato que ele descreve. Compra integridade contra corrupcao de transporte e contra adulteracao parcial do Release, e nao compra autenticidade: quem consegue reescrever o Release reescreve os dois arquivos. Distingui-lo de assinatura e o que impede a prosa publica de prometer garantia que a mecanica nao entrega.
+
+**janela de prerelease**:
+Intervalo em que o Gateship tem caminho de instalacao publicado mas ainda nao teve instalacao externa, durante o qual o ADR-0054 autoriza renomear contratos internos. O ADR-0055 marcou o primeiro Release como prerelease para manter a janela aberta. Medicao de 2026-08-04 refinou o marco de fechamento: o Release v0.278.0 saiu como efeito colateral do push de tag, com downloads=0, entao o evento que fecha a janela e o primeiro download e nao o ato de publicar.
