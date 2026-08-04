@@ -132,7 +132,8 @@ cd cam-cli
 bun install
 
 # 3. Build all four targets and install the host-native one (re-signed ad-hoc,
-#    copies to ~/.local/bin/gateship and ~/.local/bin/gship; no sudo, additive)
+#    verified, then renamed into place at ~/.local/bin/gateship and
+#    ~/.local/bin/gship via atomic rename(2); no sudo, additive)
 ./scripts/build-release.sh --install
 
 # 4. Ensure ~/.local/bin is on $PATH (add to ~/.zshrc or ~/.bash_profile if missing):

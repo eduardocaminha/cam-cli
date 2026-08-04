@@ -16,6 +16,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
 	chmodSync,
+	copyFileSync,
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
@@ -26,8 +27,13 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { waitForCondition } from './helpers/wait-for-condition';
 
-const INSTALL_SCRIPT = join(import.meta.dir, '..', 'install.sh');
+// GATESHIP_TEST_INSTALL_SH lets a reviewer independently re-run the
+// red-against-main sweep for the atomic-swap legs below (US-001, CAM-497):
+// `GATESHIP_TEST_INSTALL_SH=<path to main's install.sh> bun test ... -t '...'`
+// exercises a different script than the repo copy without editing this file.
+const INSTALL_SCRIPT = process.env.GATESHIP_TEST_INSTALL_SH || join(import.meta.dir, '..', 'install.sh');
 
 let fakeBinDir: string;
 let installDir: string;
@@ -341,4 +347,186 @@ describe('install.sh fail-closed legs (US-004, CAM-495)', () => {
 		expect(stderr).toContain(`ERROR: no checksum entry for ${assetNameForHost()}`);
 		expect(readdirSync(installDir)).toEqual([]);
 	});
+});
+
+// ---------------------------------------------------------------------------
+// US-001, CAM-497 — atomic-rename swap: install.sh must never write ${DEST}
+// in place (ADR-0058). Two durable legs below prove the two symptoms the ADR
+// names: a running process's mapped image must survive a reinstall AND the
+// resulting file must be a real, freshly executable inode (not a directory
+// entry replaced with a truncated/partial write mid-copy).
+// ---------------------------------------------------------------------------
+
+/**
+ * Source for a real, standalone `bun build --compile` fixture: writes a
+ * ready-marker (if CAM497_MARKER_PATH is set) immediately after starting,
+ * then sleeps CAM497_SLEEP_MS (default 0) before exiting 0. Used for BOTH
+ * roles below — the pre-existing binary a live process is executing, and the
+ * asset install.sh downloads and installs over it — reusing identical bytes,
+ * since a copy of any Apple-platform binary (or of ITSELF post-install) is
+ * exactly the case a running-image-poisoning regression would kill.
+ */
+function fixtureSource(): string {
+	return [
+		"const markerPath = process.env.CAM497_MARKER_PATH;",
+		"const sleepMs = Number(process.env.CAM497_SLEEP_MS ?? '0');",
+		'if (markerPath) {',
+		"  await Bun.write(markerPath, 'ready');",
+		'}',
+		'if (sleepMs > 0) {',
+		'  await Bun.sleep(sleepMs);',
+		'}',
+		"console.log('cam497-fixture-ok');",
+	].join('\n');
+}
+
+/**
+ * Compiles `fixtureSource()` with a REAL `bun build --compile` into a scratch
+ * dir (never skipped: an unavailable compiler throws loudly, per CAM-424).
+ * `cwd` is pinned to the scratch dir because `bun build --compile` drops its
+ * `.bun-build` temp file into its OWN cwd, not next to the outfile (CAM-426);
+ * the caller's single `rmSync(scratchDir, {recursive:true,force:true})`
+ * therefore sweeps source + outfile + the scratch file together. Left
+ * ad-hoc/unsigned deliberately, matching install.sh itself (it never
+ * codesigns, only strips the darwin quarantine bit): re-signing a trivial
+ * single-module `bun build --compile` output was measured to fail codesign's
+ * own strict-validation step nondeterministically on this toolchain (a
+ * `bun build --compile` known limitation, oven-sh/bun#7208 — unrelated to
+ * the bug under test), while executing the SAME unsigned artifact directly
+ * out of a user-owned tmpdir, and reproducing the running-image-poisoning
+ * bug against it, was verified to work every time.
+ */
+function compileFixtureBinary(): { binPath: string; scratchDir: string } {
+	const scratchDir = mkdtempSync(join(tmpdir(), 'cam497-fixture-'));
+	writeFileSync(join(scratchDir, 'fixture.ts'), fixtureSource(), 'utf8');
+	const build = Bun.spawnSync(['bun', 'build', '--compile', './fixture.ts', '--outfile', './fixture-bin'], {
+		cwd: scratchDir,
+		stdout: 'pipe',
+		stderr: 'pipe',
+	});
+	if (build.exitCode !== 0) {
+		throw new Error(`bun build --compile failed (exit ${build.exitCode}): ${build.stderr.toString('utf8')}`);
+	}
+	return { binPath: join(scratchDir, 'fixture-bin'), scratchDir };
+}
+
+/**
+ * Writes a fake `curl` that serves the REAL compiled fixture bytes for the
+ * asset download and computes SHA256SUMS.txt live from those same bytes
+ * (install.sh's own sha256sum/shasum probe order via HASH_FN), never a
+ * frozen digest literal.
+ */
+function writeFixtureCurl(fixtureBinPath: string): void {
+	const script = [
+		'#!/usr/bin/env bash',
+		HASH_FN,
+		'FIXTURE_BIN=' + JSON.stringify(fixtureBinPath),
+		'URL=""',
+		'OUT=""',
+		'prev=""',
+		'for arg in "$@"; do',
+		'  if [[ "${prev}" == "-o" ]]; then',
+		'    OUT="${arg}"',
+		'  elif [[ "${arg}" != -* ]]; then',
+		'    URL="${arg}"',
+		'  fi',
+		'  prev="${arg}"',
+		'done',
+		'if [[ "${URL}" == *SHA256SUMS.txt* ]]; then',
+		'  DIGEST="$(hash_file "${FIXTURE_BIN}")"',
+		`  printf '%s  %s\\n' "\${DIGEST}" ${JSON.stringify(assetNameForHost())} > "\${OUT}"`,
+		'  exit 0',
+		'fi',
+		'if [[ -n "${OUT}" ]]; then',
+		'  cp "${FIXTURE_BIN}" "${OUT}"',
+		'  exit 0',
+		'fi',
+		'echo \'[{"tag_name": "v9.9.9"}]\'',
+		'exit 0',
+	].join('\n');
+	const curlPath = join(fakeBinDir, 'curl');
+	writeFileSync(curlPath, script);
+	chmodSync(curlPath, 0o755);
+}
+
+/** True iff a process with `pid` is currently alive (checked via signal 0, not Bun's cached exitCode). */
+function isPidAlive(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+describe('install.sh replaces a running binary via atomic rename, not in-place write (US-001, CAM-497)', () => {
+	test(
+		'reinstalling over ${INSTALL_DIR}/gship while a real process is executing it: install exits 0, the live process survives, and the resulting file still executes successfully',
+		async () => {
+			const { binPath: fixtureBin, scratchDir } = compileFixtureBinary();
+			let liveProc: Bun.Subprocess | undefined;
+			try {
+				const liveDest = join(installDir, 'gship');
+				copyFileSync(fixtureBin, liveDest);
+				chmodSync(liveDest, 0o755);
+
+				const markerPath = join(installDir, '.cam497-ready-marker');
+				liveProc = Bun.spawn([liveDest], {
+					stdout: 'ignore',
+					stderr: 'pipe',
+					stdin: 'ignore',
+					env: { ...process.env, CAM497_MARKER_PATH: markerPath, CAM497_SLEEP_MS: '6000' },
+				});
+				await waitForCondition(() => Bun.file(markerPath).exists(), { timeoutMs: 5000 });
+
+				writeFixtureCurl(fixtureBin);
+				const { exitCode: installExit } = await runInstallSh();
+
+				const liveProcessSurvived = isPidAlive(liveProc.pid);
+
+				const reExec = Bun.spawnSync([liveDest], {
+					stdout: 'pipe',
+					stderr: 'pipe',
+					stdin: 'ignore',
+					env: { ...process.env, CAM497_SLEEP_MS: '0' },
+				});
+
+				expect(installExit).toBe(0);
+				expect(liveProcessSurvived).toBe(true);
+				expect(reExec.exitCode).toBe(0);
+			} finally {
+				if (liveProc) {
+					liveProc.kill();
+					await liveProc.exited;
+				}
+				rmSync(scratchDir, { recursive: true, force: true });
+			}
+		},
+		{ timeout: 30_000 },
+	);
+});
+
+describe("install.sh's atomic swap replaces the directory entry on reinstall, never rewrites the inode in place (US-001, CAM-497)", () => {
+	test(
+		'installing twice into the same INSTALL_DIR replaces the directory entry (a new inode each run), leaves the binary executable, and leaves no staged dot-file litter',
+		async () => {
+			writeFakeCurl('success');
+
+			const first = await runInstallSh();
+			expect(first.exitCode).toBe(0);
+			const destPath = join(installDir, 'gship');
+			const inodeAfterFirst = statSync(destPath).ino;
+
+			const second = await runInstallSh();
+			expect(second.exitCode).toBe(0);
+			const inodeAfterSecond = statSync(destPath).ino;
+
+			expect(inodeAfterSecond).not.toBe(inodeAfterFirst);
+			expect(statSync(destPath).mode & 0o111).toBeGreaterThan(0);
+
+			const leftoverDotfiles = readdirSync(installDir).filter((name) => name.startsWith('.'));
+			expect(leftoverDotfiles).toEqual([]);
+		},
+		{ timeout: 15_000 },
+	);
 });

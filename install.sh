@@ -23,6 +23,19 @@
 # from the internet is quarantined by Gatekeeper regardless of ad-hoc
 # signing; this script strips that quarantine bit at install time
 # (`xattr -d com.apple.quarantine`). See README.md for the full explanation.
+#
+# Install-time swap: gship auto-spawns itself under its installed name (the
+# sidecar, orch-recycle-watch, and dashboard panes all re-exec the binary at
+# INSTALL_DIR/gship), so reinstalling while a `gship run` session is live is
+# the common case, not an edge case. Every destination is therefore replaced
+# by an atomic rename(2) from a fully-prepared staged temp in the SAME
+# directory, never by writing into the destination in place: on macOS,
+# overwriting the inode a running process still holds open as its executable
+# image poisons that image (SIGKILL, rc=137, at the process's next exec, no
+# diagnostic); on Linux, the kernel refuses the in-place write outright with
+# ETXTBSY. rename(2) is the only swap that keeps the running process on its
+# old inode AND guarantees no reader ever observes a partially written file.
+# See ADR-0058 and CONTEXT.md ("staged install temp", "atomic install swap").
 set -euo pipefail
 
 REPO="eduardocaminha/cam-cli"
@@ -80,6 +93,7 @@ URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET}"
 
 # --- Download to a private tmpfile -------------------------------------------
 TMP_BIN="$(mktemp)"
+STAGED=""
 trap 'rm -f "${TMP_BIN}"' EXIT
 echo "[install] downloading ${URL}"
 if ! curl -fsSL "${URL}" -o "${TMP_BIN}"; then
@@ -95,7 +109,7 @@ chmod +x "${TMP_BIN}"
 # become an installed binary.
 SUMS_URL="https://github.com/${REPO}/releases/download/${TAG}/SHA256SUMS.txt"
 TMP_SUMS="$(mktemp)"
-trap 'rm -f "${TMP_BIN}" "${TMP_SUMS}"' EXIT
+trap 'rm -f "${TMP_BIN}" "${TMP_SUMS}" ${STAGED:+"${STAGED}"}' EXIT
 echo "[install] downloading ${SUMS_URL}"
 if ! curl -fsSL "${SUMS_URL}" -o "${TMP_SUMS}"; then
 	echo "ERROR: download failed — ${SUMS_URL}" >&2
@@ -134,16 +148,26 @@ fi
 echo "[install] checksum verified (${ACTUAL_HASH})"
 
 # --- Install: additive, never touches a pre-existing 'cam' binary -----------
+# ADR-0058: swap ${DEST} by atomic rename(2) from a staged temp in the SAME
+# directory (never $TMPDIR, whose rename would cross filesystems on typical
+# Linux targets where /tmp is tmpfs) so an already-running gship/gateship
+# keeps its old inode instead of being poisoned (darwin) or refused (linux
+# ETXTBSY). The staged file is fully prepared (content, executable bit,
+# quarantine strip) BEFORE the rename, so ${DEST} is never observable
+# partially written, non-executable, or quarantined.
 mkdir -p "${INSTALL_DIR}"
 for NAME in gateship gship; do
 	DEST="${INSTALL_DIR}/${NAME}"
-	cp "${TMP_BIN}" "${DEST}"
-	chmod +x "${DEST}"
+	STAGED="$(mktemp "${INSTALL_DIR}/.${NAME}.XXXXXX")"
+	cp "${TMP_BIN}" "${STAGED}"
+	chmod +x "${STAGED}"
 	if [[ "${OS}" == "darwin" ]]; then
 		# A downloaded binary is quarantined by Gatekeeper even though it is
 		# ad-hoc signed; strip the quarantine bit so it can run.
-		xattr -d com.apple.quarantine "${DEST}" 2>/dev/null || true
+		xattr -d com.apple.quarantine "${STAGED}" 2>/dev/null || true
 	fi
+	mv -f "${STAGED}" "${DEST}"
+	STAGED=""
 	echo "[install]   installed ${DEST}"
 done
 
