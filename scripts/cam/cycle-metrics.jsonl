@@ -274,3 +274,4 @@
 {"cycleId":"SESSION-CAM488-2026-08-03","issueNumber":"CAM-488","closedAt":"2026-08-03T19:16:19.749Z","workerRounds":11,"reviewRounds":4,"orchTokens":56322454,"workerTokens":49013635,"total":105336089,"prNumber":353,"mergeMode":"ci-gated"}
 {"cycleId":"SESSION-CAM460-2026-08-03","issueNumber":"CAM-460","closedAt":"2026-08-04T00:05:32.916Z","workerRounds":9,"reviewRounds":2,"orchTokens":13529155,"workerTokens":32182836,"total":45711991}
 {"cycleId":"SESSION-CAM460-2026-08-04","issueNumber":"CAM-460","closedAt":"2026-08-04T08:04:53.956Z","workerRounds":3,"reviewRounds":1,"orchTokens":9043224,"workerTokens":15083369,"total":24126593,"prNumber":355,"mergeMode":"ci-gated"}
+{"cycleId":"SESSION-CAM495-2026-08-04","issueNumber":"CAM-495","closedAt":"2026-08-04T19:43:36.958Z","workerRounds":9,"reviewRounds":3,"orchTokens":19978170,"workerTokens":24980666,"total":44958836,"prNumber":356,"mergeMode":"ci-gated"}
