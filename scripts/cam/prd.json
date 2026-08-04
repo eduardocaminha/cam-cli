@@ -31,9 +31,25 @@
   ],
   "userStories": [
     {
+      "id": "US-R2-001",
+      "title": "CRITICAL: Layer B oracle FAIL. US-003's AC4 negative oracle, [oracle: file-asse…",
+      "priority": 1,
+      "passes": true,
+      "description": "CRITICAL [test/install-sh.test.ts:84]: Layer B oracle FAIL. US-003's AC4 negative oracle, [oracle: file-assert ! grep -qE '[0-9a-f]{64}' test/install-sh.test.ts], is RED on this branch: my independent re-run exits 1 because line 84 freezes a literal 64-hex digest ('0000...0000', 64 zeros) into the 'no-checksum-entry' shim. I swept the branch history (git show <sha>:test/install-sh.test.ts | grep -cE '[0-9a-f]{64}'): 0 hits at 1f030d65 (US-001), 1bcf4700 (US-002), 3222b293 (US-003), ebbdc739 (US-004) and 8945663e (US-005); 1 hit from 3f7db4e5 (US-R1-001) onward. A committed acceptance criterion that was green for every story that declared it was broken by a later story on the same branch, and nothing in the committed gates catches it (the oracle lives only in prd.json, so bun test / check:all stay green). The sibling no-hash-tool leg at test/install-sh.test.ts:322 already solves exactly this: it spells its own equally-inert digest as 'a'.repeat(64), and this branch's own scripts/cam/patterns.md bullet records why (an inert digest is fine, a frozen literal that trips the negative oracle is not). Fix: express the placeholder the same way (e.g. '0'.repeat(64) interpolated into the shim text) so US-003 AC4 goes green again, or, if the criterion is genuinely wrong, amend it deliberately rather than leaving a declared oracle red.",
+      "notes": "CRITICAL [test/install-sh.test.ts:84]: Layer B oracle FAIL. US-003's AC4 negative oracle, [oracle: file-assert ! grep -qE '[0-9a-f]{64}' test/install-sh.test.ts], is RED on this branch: my independent re-run exits 1 because line 84 freezes a literal 64-hex digest ('0000...0000', 64 zeros) into the 'no-checksum-entry' shim. I swept the branch history (git show <sha>:test/install-sh.test.ts | grep -cE '[0-9a-f]{64}'): 0 hits at 1f030d65 (US-001), 1bcf4700 (US-002), 3222b293 (US-003), ebbdc739 (US-004) and 8945663e (US-005); 1 hit from 3f7db4e5 (US-R1-001) onward. A committed acceptance criterion that was green for every story that declared it was broken by a later story on the same branch, and nothing in the committed gates catches it (the oracle lives only in prd.json, so bun test / check:all stay green). The sibling no-hash-tool leg at test/install-sh.test.ts:322 already solves exactly this: it spells its own equally-inert digest as 'a'.repeat(64), and this branch's own scripts/cam/patterns.md bullet records why (an inert digest is fine, a frozen literal that trips the negative oracle is not). Fix: express the placeholder the same way (e.g. '0'.repeat(64) interpolated into the shim text) so US-003 AC4 goes green again, or, if the criterion is genuinely wrong, amend it deliberately rather than leaving a declared oracle red."
+    },
+    {
+      "id": "US-R2-002",
+      "title": "WARNING: The attest-step guard's four-binary assertions are tautological and do…",
+      "priority": 2,
+      "passes": false,
+      "description": "WARNING [test/release-workflow.test.ts:64]: The attest-step guard's four-binary assertions are tautological and do not measure the attest step. test('runs actions/attest-build-provenance for the four binaries') asserts expect(workflow).toContain('dist/gateship-<target>') against the WHOLE workflow text, but the `gh release create` block already lists all four of those exact paths, so the assertions are satisfied regardless of the attest step's subject-path. I verified this by mutation (in memory, no file edited): replacing the attest step's four literal subject-path lines with `subject-path: dist/gateship-*` leaves every assertion in that test green. That glob is precisely the regression this branch's own patterns.md bullet warns about ('a glob string never literally contains the derived target substrings'), and US-002's AC3 oracle exists to catch it but is not committed as a test. Since the whole purpose of US-R1-002 is that release.yml has no committed guard and only runs on a version-tag push, the guard must actually pin what its name claims. Fix: slice an attestStepBlock the same way the file already slices releaseCreateBlock (lines 36-41) and assert the four paths against that block. The SHA256SUMS.txt assertion and the permissions assertion are correctly scoped and do catch their mutations.",
+      "notes": "WARNING [test/release-workflow.test.ts:64]: The attest-step guard's four-binary assertions are tautological and do not measure the attest step. test('runs actions/attest-build-provenance for the four binaries') asserts expect(workflow).toContain('dist/gateship-<target>') against the WHOLE workflow text, but the `gh release create` block already lists all four of those exact paths, so the assertions are satisfied regardless of the attest step's subject-path. I verified this by mutation (in memory, no file edited): replacing the attest step's four literal subject-path lines with `subject-path: dist/gateship-*` leaves every assertion in that test green. That glob is precisely the regression this branch's own patterns.md bullet warns about ('a glob string never literally contains the derived target substrings'), and US-002's AC3 oracle exists to catch it but is not committed as a test. Since the whole purpose of US-R1-002 is that release.yml has no committed guard and only runs on a version-tag push, the guard must actually pin what its name claims. Fix: slice an attestStepBlock the same way the file already slices releaseCreateBlock (lines 36-41) and assert the four paths against that block. The SHA256SUMS.txt assertion and the permissions assertion are correctly scoped and do catch their mutations."
+    },
+    {
       "id": "US-R1-001",
       "title": "WARNING: The fourth error branch of the new verification block (manifest reacha…",
-      "priority": 1,
+      "priority": 3,
       "passes": true,
       "description": "WARNING [install.sh:107]: The fourth error branch of the new verification block (manifest reachable but carrying no entry for this asset, i.e. the `|| true` + `-z EXPECTED_HASH` guard at install.sh:105-111) has no committed test. US-004 pinned three legs (mismatch, unreachable manifest, no hash tool) and left this one uncovered, even though it is the exact defect class the repo already paid for in CAM-460: a friendly guard placed after a command substitution under `set -euo pipefail` can be dead code that reads fine statically. I executed it at Layer B (manifest without the asset entry, and an empty manifest) and both exit 1 with an empty INSTALL_DIR, so today it is correct, but nothing keeps it that way. Add a 'no checksum entry' leg to test/install-sh.test.ts asserting non-zero exit + readdirSync(installDir) empty + the specific 'no checksum entry for' diagnostic (a fourth writeFakeCurl behavior serving a manifest for a different asset name).",
       "notes": "WARNING [install.sh:107]: The fourth error branch of the new verification block (manifest reachable but carrying no entry for this asset, i.e. the `|| true` + `-z EXPECTED_HASH` guard at install.sh:105-111) has no committed test. US-004 pinned three legs (mismatch, unreachable manifest, no hash tool) and left this one uncovered, even though it is the exact defect class the repo already paid for in CAM-460: a friendly guard placed after a command substitution under `set -euo pipefail` can be dead code that reads fine statically. I executed it at Layer B (manifest without the asset entry, and an empty manifest) and both exit 1 with an empty INSTALL_DIR, so today it is correct, but nothing keeps it that way. Add a 'no checksum entry' leg to test/install-sh.test.ts asserting non-zero exit + readdirSync(installDir) empty + the specific 'no checksum entry for' diagnostic (a fourth writeFakeCurl behavior serving a manifest for a different asset name)."
@@ -41,7 +57,7 @@
     {
       "id": "US-R1-002",
       "title": "WARNING: US-002's change to release.yml ships with zero committed guard. US-001…",
-      "priority": 2,
+      "priority": 4,
       "passes": true,
       "description": "WARNING [.github/workflows/release.yml:33]: US-002's change to release.yml ships with zero committed guard. US-001 was required by its own AC2 to add a static source guard for scripts/build-release.sh (test/build-release-smoke.test.ts:87-120), but the release workflow, whose regression consequence is strictly worse, is unguarded: `grep -rln 'attest|SHA256SUMS' test/` matches only the install.sh and build-release.sh guards, and scripts/check-ci-parity.ts reads ci.yml only, by design (patterns.md:1190). Because install.sh is now fail-closed, silently dropping `dist/SHA256SUMS.txt` from the `gh release create` argument list, or deleting the attest step, makes every subsequent Release uninstallable, and the workflow only executes on a version-tag push, so no CI run catches it first. Add a static-source guard test mirroring test/build-release-smoke.test.ts that pins (a) SHA256SUMS.txt as an argument of the same gh release create invocation and (b) the attest step plus the id-token/attestations/contents write permissions.",
       "notes": "WARNING [.github/workflows/release.yml:33]: US-002's change to release.yml ships with zero committed guard. US-001 was required by its own AC2 to add a static source guard for scripts/build-release.sh (test/build-release-smoke.test.ts:87-120), but the release workflow, whose regression consequence is strictly worse, is unguarded: `grep -rln 'attest|SHA256SUMS' test/` matches only the install.sh and build-release.sh guards, and scripts/check-ci-parity.ts reads ci.yml only, by design (patterns.md:1190). Because install.sh is now fail-closed, silently dropping `dist/SHA256SUMS.txt` from the `gh release create` argument list, or deleting the attest step, makes every subsequent Release uninstallable, and the workflow only executes on a version-tag push, so no CI run catches it first. Add a static-source guard test mirroring test/build-release-smoke.test.ts that pins (a) SHA256SUMS.txt as an argument of the same gh release create invocation and (b) the attest step plus the id-token/attestations/contents write permissions."
@@ -60,7 +76,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "The quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 3,
+      "priority": 5,
       "passes": true,
       "requires": null,
       "notes": "Files: scripts/build-release.sh (add the manifest step after the `for entry in \"${TARGETS[@]}\"` loop closes, around line 124, before the --version smoke), test/build-release-smoke.test.ts (static guard, mirrors the existing hermetic-init guards), scripts/file-size-budget.json only if the test file crosses its 86-line ceiling (a budget raise needs a tracker ref such as CAM-495 in the same staged diff, patterns.md:576). Collect the produced artifact names inside the loop (e.g. an OUT_NAMES array) and hash them by name from dist/ so the manifest is TARGETS-derived. Hash in shasum's default text mode (`shasum -a 256 <names> > SHA256SUMS.txt` run with dist/ as cwd, so the manifest holds bare relative names that `shasum -c` can resolve, and the two-space separator the oracle greps for); `-b`/binary mode emits a `*name` separator and breaks both the oracle and install.sh's parsing. GOTCHA (issue gotcha 2): codesign --force --sign - runs INSIDE the per-target loop, so any hash taken inside the loop is pre-signature for the two darwin targets and would never match the published bytes; the divergence would only surface in production. GOTCHA: build-release.sh runs `set -euo pipefail` and only on a macOS host (codesign); worker_isolation is `host` in scripts/cam/project.toml, so the real build is runnable, and the AC1 oracle must run before the size oracle since the latter reads dist/. patterns.md:1190 covers the cross-compile loop and the darwin-only re-sign gate."
@@ -78,7 +94,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "The quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 4,
+      "priority": 6,
       "passes": true,
       "requires": null,
       "notes": "File: .github/workflows/release.yml only (the publish step is at lines 30-42). Depends on US-001 producing dist/SHA256SUMS.txt. DOC CONFLICT to resolve at your Step 5.5: the issue spec names actions/attest-build-provenance, but the upstream README (fetched 2026-08-04, v4) says that action is now a wrapper and new implementations should use actions/attest; actions/attest@v4 documents THREE permissions (id-token: write, attestations: write, artifact-metadata: write) while the issue's AC7 only names two. Re-fetch the chosen action's page and declare exactly the permission set its current docs require (the AC greps the two that both variants need plus contents: write; do not drop a third one the docs demand). Provenance is generated by supplying subject-path alone, no predicate inputs. GOTCHA (patterns.md:1190): scripts/check-ci-parity.ts only ever reads .github/workflows/ci.yml, so release.yml is invisible to the parity gate by construction and must never be added to ci.yml. The runner is macos-latest and gh is preinstalled; GH_TOKEN: ${{ github.token }} plus the job permissions is sufficient, no new secret."
@@ -96,7 +112,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "The quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 5,
+      "priority": 7,
       "passes": true,
       "requires": null,
       "notes": "Files: install.sh (insert between the artifact download at lines 81-89 and the install loop at lines 91-103), test/install-sh.test.ts (extend writeFakeCurl). The manifest URL is https://github.com/${REPO}/releases/download/${TAG}/SHA256SUMS.txt, the same tag the artifact came from. GOTCHA (patterns.md:1194, the CAM-460 defect this repo already paid for): under `set -euo pipefail` a bare `VAR=\"$(pipeline)\"` assignment kills the script on ANY failing stage, so a friendly guard on the next line is dead code; wrap every hash/download capture in an explicit `if ! VAR=\"$(...)\"; then <diagnostic>; exit 1; fi` (or `|| true` plus an explicit -z check) so the diagnostic is reachable. GOTCHA (patterns.md:1198): one fake curl branching on its own \"$@\" answers every call site; the shim now has THREE shapes to serve (releases-list JSON on stdout, artifact via -o, manifest via -o or stdout) and must compute the digest from the exact bytes it wrote. The manifest lists bare artifact names, so compare the digest field rather than running `shasum -c` against a manifest whose paths will not resolve next to a mktemp payload. Verification must happen against the downloaded tmpfile, before chmod/cp. ADR-0057 fixes the scope: checksum only in the installer, no gh dependency, no silent degradation."
@@ -116,7 +132,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "The quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 6,
+      "priority": 8,
       "passes": true,
       "requires": null,
       "notes": "Files: test/install-sh.test.ts (primary), install.sh (only if a leg proves not fail-closed). GOTCHA (issue gotcha 4, found while sweeping this spec's own oracles): overriding PATH on the invocation removes bash from resolution, the command dies with 'command not found: bash' BEFORE install.sh runs, and a fail-closed assertion then passes for the wrong reason, measuring a broken shim instead of the behavior; spawn ['/bin/bash', INSTALL_SCRIPT] (the existing runInstallSh helper already does this) and build the shim PATH out of the tools install.sh actually calls. GOTCHA (issue gotcha 3): the dev machine has BOTH /usr/bin/shasum and /sbin/sha256sum, so the no-hash-tool condition is unreproducible without a deliberately stripped PATH; do not use the ambient PATH for that leg. GOTCHA: the existing helper hardcodes PATH `${fakeBinDir}:/usr/bin:/bin`, which already carries shasum, so the no-hash-tool leg needs its own PATH construction (shim dir plus a curated dir of symlinks, or a PATH of only the shim dir with the needed tools symlinked in). Keep every assertion pair (non-zero exit AND empty INSTALL_DIR) in the same test. patterns.md:1198 documents the shim shape; patterns.md:1194 documents why static grep of install.sh cannot substitute for executing it."
@@ -134,46 +150,52 @@
         "Tests pass (bun test). [oracle: bun test]",
         "The quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 7,
+      "priority": 9,
       "passes": true,
       "requires": null,
       "notes": "File: README.md, the Install section (Option A, lines 30-75, next to the existing 'About the signature (macOS)' subsection which already models the honest-limitation tone). The AC1 oracle extracts the first line matching 'shasum -a 256 -c', so write that command as a bare line inside a fenced block with no '$ ' prompt prefix and no flags between '256' and '-c' (a 'shasum -a 256 --ignore-missing -c' spelling is not matched by the extraction and fails the oracle, swept 2026-08-04). Do not soften the macOS notarization paragraph that already exists; this story adds verification prose, it does not rewrite the signature section. ADR-0057 is the canonical statement of the two-layer split (checksum automatic, attestation on demand) and its wording should not be contradicted here. The gh attestation verify form for a Release artifact is `gh attestation verify <file> --repo eduardocaminha/cam-cli`; re-check the flag spelling against the gh manual at your Step 5.5."
     }
   ],
   "review": {
-    "roundsCompleted": 1,
+    "roundsCompleted": 2,
     "maxRounds": 3,
     "lastVerdict": "FIXES_PENDING:2",
     "findings": [
       {
-        "severity": "WARNING",
-        "file": "install.sh",
-        "line": 107,
-        "text": "The fourth error branch of the new verification block (manifest reachable but carrying no entry for this asset, i.e. the `|| true` + `-z EXPECTED_HASH` guard at install.sh:105-111) has no committed test. US-004 pinned three legs (mismatch, unreachable manifest, no hash tool) and left this one uncovered, even though it is the exact defect class the repo already paid for in CAM-460: a friendly guard placed after a command substitution under `set -euo pipefail` can be dead code that reads fine statically. I executed it at Layer B (manifest without the asset entry, and an empty manifest) and both exit 1 with an empty INSTALL_DIR, so today it is correct, but nothing keeps it that way. Add a 'no checksum entry' leg to test/install-sh.test.ts asserting non-zero exit + readdirSync(installDir) empty + the specific 'no checksum entry for' diagnostic (a fourth writeFakeCurl behavior serving a manifest for a different asset name)."
+        "severity": "CRITICAL",
+        "file": "test/install-sh.test.ts",
+        "line": 84,
+        "text": "Layer B oracle FAIL. US-003's AC4 negative oracle, [oracle: file-assert ! grep -qE '[0-9a-f]{64}' test/install-sh.test.ts], is RED on this branch: my independent re-run exits 1 because line 84 freezes a literal 64-hex digest ('0000...0000', 64 zeros) into the 'no-checksum-entry' shim. I swept the branch history (git show <sha>:test/install-sh.test.ts | grep -cE '[0-9a-f]{64}'): 0 hits at 1f030d65 (US-001), 1bcf4700 (US-002), 3222b293 (US-003), ebbdc739 (US-004) and 8945663e (US-005); 1 hit from 3f7db4e5 (US-R1-001) onward. A committed acceptance criterion that was green for every story that declared it was broken by a later story on the same branch, and nothing in the committed gates catches it (the oracle lives only in prd.json, so bun test / check:all stay green). The sibling no-hash-tool leg at test/install-sh.test.ts:322 already solves exactly this: it spells its own equally-inert digest as 'a'.repeat(64), and this branch's own scripts/cam/patterns.md bullet records why (an inert digest is fine, a frozen literal that trips the negative oracle is not). Fix: express the placeholder the same way (e.g. '0'.repeat(64) interpolated into the shim text) so US-003 AC4 goes green again, or, if the criterion is genuinely wrong, amend it deliberately rather than leaving a declared oracle red."
       },
       {
         "severity": "WARNING",
-        "file": ".github/workflows/release.yml",
-        "line": 33,
-        "text": "US-002's change to release.yml ships with zero committed guard. US-001 was required by its own AC2 to add a static source guard for scripts/build-release.sh (test/build-release-smoke.test.ts:87-120), but the release workflow, whose regression consequence is strictly worse, is unguarded: `grep -rln 'attest|SHA256SUMS' test/` matches only the install.sh and build-release.sh guards, and scripts/check-ci-parity.ts reads ci.yml only, by design (patterns.md:1190). Because install.sh is now fail-closed, silently dropping `dist/SHA256SUMS.txt` from the `gh release create` argument list, or deleting the attest step, makes every subsequent Release uninstallable, and the workflow only executes on a version-tag push, so no CI run catches it first. Add a static-source guard test mirroring test/build-release-smoke.test.ts that pins (a) SHA256SUMS.txt as an argument of the same gh release create invocation and (b) the attest step plus the id-token/attestations/contents write permissions."
-      },
-      {
-        "severity": "WARNING",
-        "file": ".github/workflows/release.yml",
-        "line": 34,
-        "text": "Consider-class, not counted in the FIXES_PENDING total: the workflow adopts actions/attest-build-provenance@v4, whose own README states \"As of version 4, actions/attest-build-provenance is simply a wrapper on top of actions/attest\" and \"Existing applications may continue to use the attest-build-provenance action, but new implementations should use actions/attest instead.\" This is a new implementation, so the upstream-recommended action is actions/attest@v4 (subject-path alone still yields SLSA build provenance). The wrapper is supported, not deprecated, and prd.json:19 explicitly sanctioned either reference, so this is not blocking; the declared permission set (id-token/attestations/artifact-metadata write) already matches actions/attest's documented requirements, so the switch would be a one-line `uses:` change."
+        "file": "test/release-workflow.test.ts",
+        "line": 64,
+        "text": "The attest-step guard's four-binary assertions are tautological and do not measure the attest step. test('runs actions/attest-build-provenance for the four binaries') asserts expect(workflow).toContain('dist/gateship-<target>') against the WHOLE workflow text, but the `gh release create` block already lists all four of those exact paths, so the assertions are satisfied regardless of the attest step's subject-path. I verified this by mutation (in memory, no file edited): replacing the attest step's four literal subject-path lines with `subject-path: dist/gateship-*` leaves every assertion in that test green. That glob is precisely the regression this branch's own patterns.md bullet warns about ('a glob string never literally contains the derived target substrings'), and US-002's AC3 oracle exists to catch it but is not committed as a test. Since the whole purpose of US-R1-002 is that release.yml has no committed guard and only runs on a version-tag push, the guard must actually pin what its name claims. Fix: slice an attestStepBlock the same way the file already slices releaseCreateBlock (lines 36-41) and assert the four paths against that block. The SHA256SUMS.txt assertion and the permissions assertion are correctly scoped and do catch their mutations."
       },
       {
         "severity": "SUGGESTION",
         "file": "test/install-sh.test.ts",
-        "line": 300,
-        "text": "The 'checksums unavailable' leg asserts stderr contains 'ERROR: download failed', which is the same string install.sh emits for a failed artifact download (install.sh:86 and install.sh:101). The assertion would still pass if the harness accidentally broke the asset download instead of the manifest download. Asserting on 'SHA256SUMS.txt' in the stderr line, or giving the manifest download its own distinct diagnostic, would pin the leg to the branch it means to measure."
+        "line": 315,
+        "text": "Unaddressed from round 1. The 'checksums unavailable' leg asserts stderr contains 'ERROR: download failed', which install.sh emits for BOTH the artifact download (install.sh:86) and the manifest download (install.sh:101). If the shim ever broke the asset download instead of the manifest download, the leg would still pass while measuring the wrong branch. Asserting on 'SHA256SUMS.txt' in the stderr line pins it to the branch it means to measure, at no extra cost."
       },
       {
         "severity": "SUGGESTION",
         "file": "install.sh",
-        "line": 100,
-        "text": "Fail-closed against a Release published before this change (every Release currently on the repo) surfaces as 'ERROR: download failed - .../SHA256SUMS.txt', which reads like a network problem rather than 'this release predates checksum publishing'. Once install.sh lands on main, the curl|bash path stays broken until the next version tag is pushed and the workflow publishes a manifest, and GATESHIP_VERSION pinned to any older tag stays broken permanently. ADR-0057 accepts the fail-closed consequence, so this is a wording/sequencing note, not a design objection: a hint in the diagnostic (and a line in the README's new section) would save a stranger a bad first impression."
+        "line": 107,
+        "text": "The manifest lookup uses an unanchored substring match: grep -F \"  ${ASSET}\" matches anywhere on the line, so a manifest line naming a longer asset (e.g. 'gateship-darwin-arm64-next') would satisfy the lookup for ASSET=gateship-darwin-arm64 and feed the wrong expected digest into the comparison. Not exploitable today (the manifest is generated by our own workflow from exactly the four TARGETS names, and an attacker who controls the manifest controls the Release anyway, as the README now says), but this is the one line that decides whether a downloaded binary is trusted. An anchored form, grep -E \"^[0-9a-f]{64}  ${ASSET}$\", costs nothing and removes the class."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "install.sh",
+        "line": 101,
+        "text": "Unaddressed from round 1, and now also a README concern. Every Release currently published predates SHA256SUMS.txt, so from the moment install.sh lands on main the curl|bash path fails with 'ERROR: download failed - .../SHA256SUMS.txt' until the next version tag is pushed, and GATESHIP_VERSION pinned to any older tag stays broken permanently. ADR-0057 accepts fail-closed, so this is wording and sequencing, not design: the diagnostic reads like a network problem rather than 'this release predates checksum publishing'. The new README section has the same gap in the other direction, telling a reader that 'Every published asset ... carries an attestation' when no currently-published asset does. One clause in the diagnostic and one in the README would save a stranger a bad first impression."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": ".github/workflows/release.yml",
+        "line": 34,
+        "text": "Carried over from round 1 and re-confirmed against the docs today. actions/attest-build-provenance's README is now essentially a pointer: 'As of version 4, actions/attest-build-provenance is simply a wrapper on top of actions/attest', with new implementations steered to actions/attest, and the wrapper page no longer documents its own permissions or inputs at all. The action is supported, not deprecated, prd.json:19 sanctioned either reference, and the declared permission set (id-token / attestations / artifact-metadata write) already matches what actions/attest documents, so this stays non-blocking; switching would be a one-line `uses:` change."
       }
     ]
   }
