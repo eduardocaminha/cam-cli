@@ -33,26 +33,64 @@ afterEach(() => {
 	rmSync(installDir, { recursive: true, force: true });
 });
 
+/**
+ * A hashing snippet shared by the 'success' and 'checksum-mismatch' shim
+ * variants below: probes sha256sum/shasum the same way install.sh itself
+ * does, so the fake curl can compute a real digest from whatever bytes it
+ * just served instead of ever freezing a digest literal into the test source.
+ */
+const HASH_FN = [
+	'hash_file() {',
+	'  if command -v sha256sum >/dev/null 2>&1; then',
+	'    sha256sum "$1" | awk \'{print $1}\'',
+	'  else',
+	'    shasum -a 256 "$1" | awk \'{print $1}\'',
+	'  fi',
+	'}',
+].join('\n');
+
 /** Writes a fake `curl` executable to fakeBinDir that reacts to the releases-list URL. */
-function writeFakeCurl(behavior: 'network-failure' | 'empty-list' | 'success'): void {
+function writeFakeCurl(behavior: 'network-failure' | 'empty-list' | 'success' | 'checksum-mismatch'): void {
 	const script =
 		behavior === 'network-failure'
 			? '#!/usr/bin/env bash\nexit 22\n' // curl -f style failure (e.g. rate-limit 403)
 			: behavior === 'empty-list'
 				? '#!/usr/bin/env bash\necho "[]"\nexit 0\n' // 200 OK, no releases published yet
-				: // 'success': first call (no -o) is the releases-list lookup, second call
-					// (`-o <path>`) is the asset download — write a dummy payload to it so the
-					// script's own `chmod +x` / install loop has real bytes to work with.
+				: // 'success' / 'checksum-mismatch': three call shapes hit this shim —
+					// (1) no `-o`: the releases-list lookup, JSON on stdout;
+					// (2) `-o <path>`, URL is the asset: write a dummy payload;
+					// (3) `-o <path>`, URL ends in SHA256SUMS.txt: write a one-line
+					// manifest whose digest is computed from the payload bytes this
+					// SAME shim just served in call (2) — never a frozen literal.
+					// State (the payload's digest + asset basename) is stashed in a
+					// file next to the shim itself, since each call is a fresh process.
 					[
 						'#!/usr/bin/env bash',
+						HASH_FN,
+						'STATE="$(dirname "$0")/.checksum-state"',
+						'URL=""',
 						'OUT=""',
 						'prev=""',
 						'for arg in "$@"; do',
-						'  if [[ "${prev}" == "-o" ]]; then OUT="${arg}"; fi',
+						'  if [[ "${prev}" == "-o" ]]; then',
+						'    OUT="${arg}"',
+						'  elif [[ "${arg}" != -* ]]; then',
+						'    URL="${arg}"',
+						'  fi',
 						'  prev="${arg}"',
 						'done',
+						'if [[ "${URL}" == *SHA256SUMS.txt* ]]; then',
+						'  ASSET_NAME="$(cut -d" " -f1 "${STATE}")"',
+						'  PAYLOAD_HASH="$(cut -d" " -f2 "${STATE}")"',
+						behavior === 'checksum-mismatch'
+							? '  MANIFEST_HASH="$(printf "" | hash_file /dev/stdin)"'
+							: '  MANIFEST_HASH="${PAYLOAD_HASH}"',
+						'  printf "%s  %s\\n" "${MANIFEST_HASH}" "${ASSET_NAME}" > "${OUT}"',
+						'  exit 0',
+						'fi',
 						'if [[ -n "${OUT}" ]]; then',
 						'  printf "#!/bin/sh\\necho fake-gateship-binary\\n" > "${OUT}"',
+						'  printf "%s %s" "$(basename "${URL}")" "$(hash_file "${OUT}")" > "${STATE}"',
 						'  exit 0',
 						'fi',
 						'echo \'[{"tag_name": "v9.9.9"}]\'',
@@ -115,6 +153,7 @@ describe('install.sh success path (US-R2-004, CAM-460)', () => {
 		const { exitCode, stdout } = await runInstallSh();
 
 		expect(exitCode).toBe(0);
+		expect(stdout).toContain('[install] checksum verified');
 		expect(stdout).toContain('[install] done.');
 
 		for (const name of ['gateship', 'gship']) {
@@ -126,5 +165,18 @@ describe('install.sh success path (US-R2-004, CAM-460)', () => {
 		// Additive: the pre-existing `cam` binary is untouched, byte-for-byte.
 		expect(await Bun.file(camPath).exists()).toBe(true);
 		expect(readFileSync(camPath, 'utf8')).toBe(camContents);
+	});
+});
+
+describe('install.sh checksum verification (US-003, CAM-495)', () => {
+	test('SHA256SUMS.txt digest mismatch: exits 1 before installing anything', async () => {
+		writeFakeCurl('checksum-mismatch');
+
+		const { exitCode, stderr } = await runInstallSh();
+
+		expect(exitCode).toBe(1);
+		expect(stderr).toContain('ERROR: checksum mismatch for');
+		expect(await Bun.file(join(installDir, 'gateship')).exists()).toBe(false);
+		expect(await Bun.file(join(installDir, 'gship')).exists()).toBe(false);
 	});
 });

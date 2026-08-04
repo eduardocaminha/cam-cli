@@ -88,6 +88,51 @@ if ! curl -fsSL "${URL}" -o "${TMP_BIN}"; then
 fi
 chmod +x "${TMP_BIN}"
 
+# --- Verify: SHA-256 checksum against the release's SHA256SUMS.txt ----------
+# Confirms the downloaded artifact matches the checksum GitHub Actions
+# published alongside it (release.yml) BEFORE anything is copied into
+# INSTALL_DIR, so a corrupted or partially tampered download can never
+# become an installed binary.
+SUMS_URL="https://github.com/${REPO}/releases/download/${TAG}/SHA256SUMS.txt"
+TMP_SUMS="$(mktemp)"
+trap 'rm -f "${TMP_BIN}" "${TMP_SUMS}"' EXIT
+echo "[install] downloading ${SUMS_URL}"
+if ! curl -fsSL "${SUMS_URL}" -o "${TMP_SUMS}"; then
+	echo "ERROR: download failed — ${SUMS_URL}" >&2
+	exit 1
+fi
+
+# The manifest may legitimately lack an entry for this asset; `|| true` stops
+# a no-match `grep` from tripping `set -e` before the explicit -z check below.
+EXPECTED_HASH="$(grep -F "  ${ASSET}" "${TMP_SUMS}" | awk '{print $1}')" || true
+if [[ -z "${EXPECTED_HASH}" ]]; then
+	echo "ERROR: no checksum entry for ${ASSET} in ${SUMS_URL}" >&2
+	exit 1
+fi
+
+# Resolve a SHA-256 tool portably: macOS ships shasum and not sha256sum;
+# Linux ships sha256sum and often not shasum.
+if command -v sha256sum >/dev/null 2>&1; then
+	if ! ACTUAL_HASH="$(sha256sum "${TMP_BIN}" | awk '{print $1}')"; then
+		echo "ERROR: sha256sum failed to hash the downloaded artifact" >&2
+		exit 1
+	fi
+elif command -v shasum >/dev/null 2>&1; then
+	if ! ACTUAL_HASH="$(shasum -a 256 "${TMP_BIN}" | awk '{print $1}')"; then
+		echo "ERROR: shasum failed to hash the downloaded artifact" >&2
+		exit 1
+	fi
+else
+	echo "ERROR: neither sha256sum nor shasum is available to verify the downloaded artifact" >&2
+	exit 1
+fi
+
+if [[ "${ACTUAL_HASH}" != "${EXPECTED_HASH}" ]]; then
+	echo "ERROR: checksum mismatch for ${ASSET} — expected ${EXPECTED_HASH}, got ${ACTUAL_HASH} (download may be corrupted or tampered)" >&2
+	exit 1
+fi
+echo "[install] checksum verified (${ACTUAL_HASH})"
+
 # --- Install: additive, never touches a pre-existing 'cam' binary -----------
 mkdir -p "${INSTALL_DIR}"
 for NAME in gateship gship; do
