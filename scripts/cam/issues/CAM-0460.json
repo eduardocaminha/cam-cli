@@ -1,13 +1,13 @@
 {
   "id": "CAM-460",
   "title": "Caminho de instalacao empacotado (must-fix 3 do lancamento): 269 tags e zero Releases, package.json private com bin null",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [
     "CAM-482"
   ],
   "createdAt": "2026-07-28T17:44:13.637Z",
-  "updatedAt": "2026-08-03T21:10:52.000Z",
+  "updatedAt": "2026-08-04T07:58:26.340Z",
   "description": "Must-fix 3 do docs/launch-readiness.md, nunca filado desde o CAM-330. Prioridade declarada do operador em 2026-07-28: lancamento publico, destravar topico por topico a partir do proximo ciclo. Medido em 28/07: o repo JA E PUBLICO (eduardocaminha/cam-cli, PUBLIC, 1 star) e se descreve como runtime, mas nao existe nenhuma forma de um estranho instalar. 269 tags publicadas e ZERO GitHub Releases; package.json com private: true e bin: null; o README so documenta pre-requisitos (tmux, bun, gh), nunca a instalacao do proprio produto. Porta trancada com placa de aberto. Este e tambem o estagio em que o ADR-0050 deliberadamente adiou DUAS decisoes de nome: o binario passa a chamar gateship, e o alias digitado (se houver) e escolhido e criado pelo instalador AQUI, nao antes.",
   "specSource": "operator",
   "spec": {
