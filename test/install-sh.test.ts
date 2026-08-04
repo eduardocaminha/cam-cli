@@ -60,24 +60,39 @@ const HASH_FN = [
 
 /** Writes a fake `curl` executable to fakeBinDir that reacts to the releases-list URL. */
 function writeFakeCurl(
-	behavior: 'network-failure' | 'empty-list' | 'success' | 'checksum-mismatch' | 'checksums-unavailable',
+	behavior:
+		| 'network-failure'
+		| 'empty-list'
+		| 'success'
+		| 'checksum-mismatch'
+		| 'checksums-unavailable'
+		| 'no-checksum-entry',
 ): void {
 	// The SHA256SUMS.txt-branch body: for 'checksums-unavailable' the manifest
 	// request itself fails (curl exit 22, what `-f` produces on a 404) while
-	// the asset call below is untouched and still serves normally; for the
-	// other two behaviors it writes the one-line manifest as before.
+	// the asset call below is untouched and still serves normally; for
+	// 'no-checksum-entry' the manifest request succeeds but the one line it
+	// serves names a DIFFERENT asset than the one install.sh's own os/arch
+	// detection resolved, so install.sh's `grep -F "  ${ASSET}"` finds zero
+	// matches even though the manifest itself was reachable; for the other
+	// two behaviors it writes the matching one-line manifest as before.
 	const sumsBranchLines =
 		behavior === 'checksums-unavailable'
 			? ['  exit 22']
-			: [
-					'  ASSET_NAME="$(cut -d" " -f1 "${STATE}")"',
-					'  PAYLOAD_HASH="$(cut -d" " -f2 "${STATE}")"',
-					behavior === 'checksum-mismatch'
-						? '  MANIFEST_HASH="$(printf "" | hash_file /dev/stdin)"'
-						: '  MANIFEST_HASH="${PAYLOAD_HASH}"',
-					'  printf "%s  %s\\n" "${MANIFEST_HASH}" "${ASSET_NAME}" > "${OUT}"',
-					'  exit 0',
-				];
+			: behavior === 'no-checksum-entry'
+				? [
+						'  printf "%s  %s\\n" "0000000000000000000000000000000000000000000000000000000000000000" "gateship-unrelated-asset" > "${OUT}"',
+						'  exit 0',
+					]
+				: [
+						'  ASSET_NAME="$(cut -d" " -f1 "${STATE}")"',
+						'  PAYLOAD_HASH="$(cut -d" " -f2 "${STATE}")"',
+						behavior === 'checksum-mismatch'
+							? '  MANIFEST_HASH="$(printf "" | hash_file /dev/stdin)"'
+							: '  MANIFEST_HASH="${PAYLOAD_HASH}"',
+						'  printf "%s  %s\\n" "${MANIFEST_HASH}" "${ASSET_NAME}" > "${OUT}"',
+						'  exit 0',
+					];
 	const script =
 		behavior === 'network-failure'
 			? '#!/usr/bin/env bash\nexit 22\n' // curl -f style failure (e.g. rate-limit 403)
@@ -315,5 +330,15 @@ describe('install.sh fail-closed legs (US-004, CAM-495)', () => {
 		} finally {
 			rmSync(toolsDir, { recursive: true, force: true });
 		}
+	});
+
+	test('no checksum entry: manifest is reachable but carries no line for this asset, exits non-zero with the "no checksum entry" diagnostic, and leaves INSTALL_DIR with no entries (US-R1-001, CAM-460)', async () => {
+		writeFakeCurl('no-checksum-entry');
+
+		const { exitCode, stderr } = await runInstallSh();
+
+		expect(exitCode).toBe(1);
+		expect(stderr).toContain(`ERROR: no checksum entry for ${assetNameForHost()}`);
+		expect(readdirSync(installDir)).toEqual([]);
 	});
 });
