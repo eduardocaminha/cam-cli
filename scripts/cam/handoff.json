@@ -1,0 +1,20 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Ignore the .env family in the template gitignore and lock it with a real git check-ignore test" },
+  "branchName": "cam/issue-499",
+  "timestamp": "2026-08-04T00:00:00Z",
+  "createdFiles": ["test/templates-gitignore-dotenv.test.ts"],
+  "modifiedFiles": ["templates/.gitignore", "src/vendor/_generated.ts"],
+  "openQuestions": [],
+  "nextStoryContext": "templates/.gitignore now ends with a dotenv block: `.env`, `.env.local`, `.env.*.local` (three separate lines; `.env.*.local` alone does NOT cover `.env.local` because `*` cannot match empty between the two dots — confirmed against git-scm.com/docs/gitignore). Deliberately no blanket `.env*` (would also hide a legitimately-committed `.env.example`). src/vendor/_generated.ts was regenerated via `bun run embed-vendor` and stayed at 50 lines (single escaped string literal, so template edits don't grow its line count). New test file test/templates-gitignore-dotenv.test.ts (NOT appended to test/embedded.test.ts, which sits at 665/666 lines) covers both materializeTemplates gitignore paths (verbatim write + merge) with real `git init` + `git check-ignore -q` in a tmpdir, using Bun.spawnSync per the existing test/embedded.test.ts precedent (CAM-68 marker-rule tests) rather than node:child_process.",
+  "appliedPatternIds": [],
+  "officialDocsValidated": [
+    {
+      "lib": "git",
+      "channel": "WebFetch",
+      "url": "https://git-scm.com/docs/gitignore",
+      "fetchedAt": "2026-08-04T00:00:00Z",
+      "status": "aligned",
+      "summary": "Confirmed `*` matches zero-or-more non-slash chars (so `.env.*.local` cannot alone cover `.env.local`, which needed its own literal line) and that a slash-less pattern matches at any depth; git check-ignore is the correct real-behavior oracle."
+    }
+  ]
+}

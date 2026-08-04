@@ -46,3 +46,14 @@ scripts/cam/scope-proposal.json
 .claude/cam-plan-out-*.log
 # Recycle watcher log written by spawnWatcherDefault in run.ts (US-004)
 .claude/cam-recycle-watcher.log
+
+# US-001, CAM-499: credentials the product docs tell users to put in .env at
+# the project root (GITHUB_TOKEN, CLAUDE_CODE_OAUTH_TOKEN, RESEND_API_KEY).
+# Agents running with bypassPermissions commit and push on their own, so this
+# has to actually be ignored, not just documented. Covers the local-variant
+# family generically (.env.local, .env.production.local, .env.test.local,
+# .env.development.local, ...) without a blanket .env* that would also hide
+# a legitimately-committed .env.example.
+.env
+.env.local
+.env.*.local
