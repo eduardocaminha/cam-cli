@@ -119,7 +119,7 @@
         "The quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "File: README.md, the Install section (Option A, lines 30-75, next to the existing 'About the signature (macOS)' subsection which already models the honest-limitation tone). The AC1 oracle extracts the first line matching 'shasum -a 256 -c', so write that command as a bare line inside a fenced block with no '$ ' prompt prefix and no flags between '256' and '-c' (a 'shasum -a 256 --ignore-missing -c' spelling is not matched by the extraction and fails the oracle, swept 2026-08-04). Do not soften the macOS notarization paragraph that already exists; this story adds verification prose, it does not rewrite the signature section. ADR-0057 is the canonical statement of the two-layer split (checksum automatic, attestation on demand) and its wording should not be contradicted here. The gh attestation verify form for a Release artifact is `gh attestation verify <file> --repo eduardocaminha/cam-cli`; re-check the flag spelling against the gh manual at your Step 5.5."
     }
