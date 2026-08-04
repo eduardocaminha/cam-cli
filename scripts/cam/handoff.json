@@ -1,23 +1,32 @@
 {
   "lastCompletedStory": {
-    "id": "US-R2-001",
-    "title": "CRITICAL: `gship claude --help` still prints the retired command 7 times"
+    "id": "US-R2-002",
+    "title": "CRITICAL: 15 user-facing RUNTIME remediation strings still instruct the retired command"
   },
   "branchName": "cam/issue-460",
-  "timestamp": "2026-08-03T21:15:00Z",
+  "timestamp": "2026-08-03T22:10:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/claude.ts",
-    "src/commands/retry-monitor.ts",
-    "test/help-registry.test.ts",
+    "src/commands/plan.ts",
+    "src/commands/ship.ts",
+    "src/commands/next.ts",
+    "src/commands/review.ts",
+    "src/commands/issue.ts",
+    "src/commands/spec.ts",
+    "src/commands/run.ts",
+    "src/commands/setup.ts",
+    "src/commands/pause.ts",
+    "src/logging/screen.ts",
+    "test/attach-hint.test.ts",
     "scripts/cam/patterns.md"
   ],
   "openQuestions": [
-    "US-R2-002 (already staged, priority 2) is the correct home for the 15 user-facing RUNTIME remediation strings across plan.ts/ship.ts/next.ts/review.ts/issue.ts/spec.ts/run.ts/setup.ts/pause.ts/src/logging/screen.ts -- deliberately not touched by this story per its own scope (title/usage/Examples/Config in claude.ts) plus the one same-class fix in retry-monitor.ts's HELP_REGISTRY entry that the widened test itself required to stay green.",
-    "src/commands/retry-monitor.ts still has two stderr 'Usage: cam retry-monitor <pane> <pid>' remediation strings and a '[cam retry-monitor]' log-tag prefix that were NOT renamed: the log-tag form matches the widespread, still-unrenamed `[cam]`/`[cam <subcommand>]` internal log-identity convention used across dozens of call sites in src/ (verified via grep, none renamed by any prior US-002/003/004/005 story), and the 'Usage: ...' remediation strings are the exact class US-R2-002 is staged to sweep -- flagging both so US-R2-002's own coverage-derivation catches retry-monitor.ts's two Usage strings too, not just the 15 already enumerated in its description.",
-    "The AC1 oracle text embedded in US-002's (already passes:true) prd.json entry still hand-types its 12-command list; prd.json is not writable by the implementer, so the durable fix lives only in test/help-registry.test.ts's new derived-from-HELP_REGISTRY sweep, not in the historical oracle string itself."
+    "Fixed the story's exact 16 enumerated remediation strings PLUS: the 6 'bootstrapping cam run...' narration lines that immediately precede an already-fixed remediation string in the same bootstrap-failure block (plan/ship/next/review/issue/spec.ts), the two unlisted 'Run `cam run` manually and retry.' duplicates in issue.ts/spec.ts (same function as an already-listed sibling), and run.ts's 'run `cam init` first' two lines below the one enumerated run.ts line. All now read `gship <subcommand>`.",
+    "Deliberately NOT fixed (same defect class, different command handlers the story never opened -- flagged for a future story rather than silently expanded into): drain.ts:108,119,122 ('Run `cam drain --clear/--stop`...'), resume.ts's `emitEntry('cam next', ...)` + the noop-case 'the retry-monitor will respawn `cam next`...' hint, and next.ts:193's writeState helper ('run `cam stop` to clear', thrown as an Error, not currently covered by any test).",
+    "Deliberately NOT fixed (different class: an origin-labeling error prefix, not a typed-remediation instruction -- same class as the already out-of-scope `[cam retry-monitor]`/`[cam]` internal-log-identity convention flagged in US-R2-001's handoff): prune.ts's 'cam prune: <detail>' prefixes (4 sites) and spec.ts's 'cam spec --write-docs: <detail>' / 'cam spec --persist: <detail>' prefixes (5 sites).",
+    "Deliberately NOT fixed: every emitTitle('cam <subcommand>') banner across all commands -- a systemic, all-commands cosmetic-identity convention (not an instruction to type anything), out of scope for this story and much larger than a single-story rename."
   ],
-  "nextStoryContext": "src/commands/claude.ts's CLAUDE_HELP block (title/usage/Examples/Routing/Config) now renders `gship claude` throughout; internal-contract paths (~/.config/cam/retry.toml, ~/.cam/retry-logs/, /cam-next, /cam-plan) are unchanged by design (pinned internal-contract layers per ADR-0054, not typed-command invocations). test/help-registry.test.ts gained a new describe block, 'no retired `cam <word>` command survives in any help text (US-R2-001, CAM-460)', that loops Object.keys(HELP_REGISTRY) -- the single source of truth COMMANDS/HELP_REGISTRY already enforce at typecheck time (US-001, CAM-278) -- against the exact boundary regex from US-002's own oracle (/(^|[^a-zA-Z_/-])cam /), plus a top-level `gship --help` check. This sweep is now the durable, non-tautological replacement for US-002's hand-typed 12-command oracle list. Running it against the current tree (not just against main) found a second live instance of the same defect outside this story's originally-cited file -- src/commands/retry-monitor.ts's RETRY_MONITOR_HELP (title/usage/Behaviour/footer) -- fixed in the same commit so the widened test is genuinely green rather than narrowed back to a known-good subset. Full `bun run check:all` is green: 5992 pass / 0 fail, typecheck clean, embed-vendor up to date (this story touched no vendor/templates files), coverage/dead-code/dup/ci-parity/agents-md/test-sleeps/skip-ratchet all ok. Next non-operator, passes:false story by priority is US-R2-002 (priority 2, already staged in prd.json): the 15 user-facing RUNTIME remediation strings across plan.ts/ship.ts/next.ts/review.ts/issue.ts/spec.ts/run.ts/setup.ts/pause.ts/src/logging/screen.ts that still instruct the retired `cam` command at the moment of failure -- see openQuestions for the two retry-monitor.ts Usage strings that class of sweep should also catch.",
+  "nextStoryContext": "The 16 story-enumerated runtime remediation strings (plus the immediately-adjacent narration/duplicate lines in the same code blocks) now say `gship <subcommand>` instead of `cam <subcommand>`. test/attach-hint.test.ts's toContain('cam run')/not.toContain('cam run') assertions were updated to 'gship run' in the same commit -- they test emitAttachHint's real output, not a hardcoded fixture, so any further runtime-string rename in this family must update this test in the same commit too. Full `bun run check:all` is green: 5992 pass / 0 fail, typecheck clean, lint/file-size/debt-markers/coverage/dead-code/dup/ci-parity/agents-md/test-sleeps/skip-ratchet all ok; no vendor/templates files touched. Next non-operator, passes:false story by priority is US-R2-003 (priority 3): WARNING about `${{ github.ref_name }}` interpolated directly into a `run:` shell step (script-injection risk) -- see openQuestions above for the deferred remediation-string sites (drain.ts, resume.ts, next.ts writeState) a future story could pick up as its own scoped cleanup.",
   "officialDocsValidated": [
     {
       "lib": "none",
