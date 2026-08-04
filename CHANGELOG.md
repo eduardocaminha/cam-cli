@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.281.0] - 2026-08-04
+
+### Added
+
+- US-R1-001 - Add a negative control locking the non-blanket dotenv gitignore rule shape
+- US-001 - Ignore the .env family in the template gitignore and lock it with a real git check-ignore test
+
 ## [0.280.0] - 2026-08-04
 
 ### Added
