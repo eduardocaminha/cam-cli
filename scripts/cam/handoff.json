@@ -1,40 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-002",
-    "title": "CRITICAL: US-005's acceptance criteria 1 and 2 are green only because their ext…"
+    "id": "US-R2-001",
+    "title": "CRITICAL: `gship claude --help` still prints the retired command 7 times"
   },
   "branchName": "cam/issue-460",
-  "timestamp": "2026-08-03T00:00:00Z",
+  "timestamp": "2026-08-03T21:15:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    ".claude/agents/subagent-implementer.md",
-    ".claude/agents/subagent-orchestrator.md",
-    ".claude/commands/cam-issue.md",
-    ".claude/commands/cam-next.md",
-    ".claude/commands/cam-prune.md",
-    ".claude/commands/cam-review.md",
-    ".claude/commands/cam-ship.md",
-    ".claude/commands/cam-spec.md",
-    ".claude/skills/domain-modeling/SKILL.md",
-    "scripts/cam/CLAUDE.md",
-    "scripts/cam/patterns.md",
-    "src/vendor/_generated.ts",
-    "templates/agents/subagent-implementer.md",
-    "templates/agents/subagent-orchestrator.md",
-    "templates/commands/cam-issue.md",
-    "templates/commands/cam-next.md",
-    "templates/commands/cam-prune.md",
-    "templates/commands/cam-review.md",
-    "templates/commands/cam-ship.md",
-    "templates/commands/cam-spec.md",
-    "templates/skills/domain-modeling/SKILL.md",
-    "vendor/check-agent-frontmatter.ts"
+    "src/commands/claude.ts",
+    "src/commands/retry-monitor.ts",
+    "test/help-registry.test.ts",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [
-    "`vendor/README.md` still names the retired `cam init`/`cam next` forms in prose (lines 3, 11, 15, 41, 45); it is not embedded into `src/vendor/_generated.ts` and is outside the story's cited AC1 (66) / AC2 (46) scopes, so it was left untouched per surgical-changes discipline -- flagging as a real but out-of-scope residual for a future doc-hygiene story.",
-    "The reviewer's `worker-report.json`/finding text described AC1 as 66 matches and AC2 as 46 matches under a widened terminator; my own re-run of the widened-terminator scan (full AC1 command list, boundary `(^|[^a-zA-Z_/-])cam ($CMDS)([^a-zA-Z0-9_-]|$)`) found 68 in AC1 scope and, after accounting for two markdown line-wrap splits a per-line regex misses, a total of 46 in AC2 scope once vendor/check-agent-frontmatter.ts's two embedded comment mentions of `cam init` are included alongside templates/'s 2 -- both counts now measure 0 post-fix; the small discrepancy from the story's 66 (mine found 68) is most likely a different exact command token list used by the planner's manual count vs. mine, not a missed file, since a post-fix full-scope re-scan (collapsed-newline included) returns zero in both scopes."
+    "US-R2-002 (already staged, priority 2) is the correct home for the 15 user-facing RUNTIME remediation strings across plan.ts/ship.ts/next.ts/review.ts/issue.ts/spec.ts/run.ts/setup.ts/pause.ts/src/logging/screen.ts -- deliberately not touched by this story per its own scope (title/usage/Examples/Config in claude.ts) plus the one same-class fix in retry-monitor.ts's HELP_REGISTRY entry that the widened test itself required to stay green.",
+    "src/commands/retry-monitor.ts still has two stderr 'Usage: cam retry-monitor <pane> <pid>' remediation strings and a '[cam retry-monitor]' log-tag prefix that were NOT renamed: the log-tag form matches the widespread, still-unrenamed `[cam]`/`[cam <subcommand>]` internal log-identity convention used across dozens of call sites in src/ (verified via grep, none renamed by any prior US-002/003/004/005 story), and the 'Usage: ...' remediation strings are the exact class US-R2-002 is staged to sweep -- flagging both so US-R2-002's own coverage-derivation catches retry-monitor.ts's two Usage strings too, not just the 15 already enumerated in its description.",
+    "The AC1 oracle text embedded in US-002's (already passes:true) prd.json entry still hand-types its 12-command list; prd.json is not writable by the implementer, so the durable fix lives only in test/help-registry.test.ts's new derived-from-HELP_REGISTRY sweep, not in the historical oracle string itself."
   ],
-  "nextStoryContext": "The `cam` -> `gship`/`gateship` typed-command migration (ADR-0054) that US-005 believed complete is now actually complete under the widened, backtick-aware boundary `([^a-zA-Z0-9_-]|$)`: AC1 scope (.claude/agents, .claude/commands, .claude/skills, .claude/hooks, templates/, scripts/cam/CLAUDE.md, excluding the four pinned history files journal.md/journal.archive.md/patterns.md/patterns.archive.md) and AC2 scope (src/vendor/_generated.ts, which embeds templates/ whole-dir plus three named vendor/ files listed in scripts/generate-embedded-vendor.ts's FILES const) both re-scanned to 0 remaining `cam <subcommand>` matches with the wide terminator, verified twice: once as a raw grep and once against newline-collapsed file content (to catch markdown-wrapped code spans a per-line perl substitution silently skips -- two such wraps were found and hand-fixed in subagent-orchestrator.md, present in both the .claude/ and templates/ copies). `bun run embed-vendor` was re-run after every source edit (templates/ and vendor/) and `embed-vendor:check` is clean. All five US-005 AC5 pinned internal-contract counts (CAM_=164, .cam-=153, tmux -L cam=3, /cam-=205, all measured in src+index.ts against main) are unchanged, and the four historical-prose files were not touched. Full `bun run check:all` is green (5960 pass / 0 fail, coverage/debt-markers/dead-code/dup/ci-parity/agents-md/test-sleeps/skip-ratchet all ok). `vendor/README.md` (not embedded, not in either AC's scope) still carries stale `cam init`/`cam next` prose mentions -- left alone per this story's exact scope, flagged in openQuestions as a real residual for a future pass. Next non-operator, passes:false story by priority is whatever the reviewer/planner has staged next in prd.json (none pre-staged as of this handoff, unlike the US-R1-001 -> US-R1-002 handoff).",
+  "nextStoryContext": "src/commands/claude.ts's CLAUDE_HELP block (title/usage/Examples/Routing/Config) now renders `gship claude` throughout; internal-contract paths (~/.config/cam/retry.toml, ~/.cam/retry-logs/, /cam-next, /cam-plan) are unchanged by design (pinned internal-contract layers per ADR-0054, not typed-command invocations). test/help-registry.test.ts gained a new describe block, 'no retired `cam <word>` command survives in any help text (US-R2-001, CAM-460)', that loops Object.keys(HELP_REGISTRY) -- the single source of truth COMMANDS/HELP_REGISTRY already enforce at typecheck time (US-001, CAM-278) -- against the exact boundary regex from US-002's own oracle (/(^|[^a-zA-Z_/-])cam /), plus a top-level `gship --help` check. This sweep is now the durable, non-tautological replacement for US-002's hand-typed 12-command oracle list. Running it against the current tree (not just against main) found a second live instance of the same defect outside this story's originally-cited file -- src/commands/retry-monitor.ts's RETRY_MONITOR_HELP (title/usage/Behaviour/footer) -- fixed in the same commit so the widened test is genuinely green rather than narrowed back to a known-good subset. Full `bun run check:all` is green: 5992 pass / 0 fail, typecheck clean, embed-vendor up to date (this story touched no vendor/templates files), coverage/dead-code/dup/ci-parity/agents-md/test-sleeps/skip-ratchet all ok. Next non-operator, passes:false story by priority is US-R2-002 (priority 2, already staged in prd.json): the 15 user-facing RUNTIME remediation strings across plan.ts/ship.ts/next.ts/review.ts/issue.ts/spec.ts/run.ts/setup.ts/pause.ts/src/logging/screen.ts that still instruct the retired `cam` command at the moment of failure -- see openQuestions for the two retry-monitor.ts Usage strings that class of sweep should also catch.",
   "officialDocsValidated": [
     {
       "lib": "none",
