@@ -83,3 +83,38 @@ describe('build-release.sh AC4 soft-check is hermetic (CAM-15)', () => {
 		expect(script).toMatch(/real init crash/);
 	});
 });
+
+describe('build-release.sh writes dist/SHA256SUMS.txt post-codesign, from produced names (US-001, CAM-495)', () => {
+	const loopStart = script.indexOf('for entry in "${TARGETS[@]}"; do');
+	const loopEnd = script.indexOf('\ndone', loopStart);
+	const manifestIdx = script.indexOf('SHA256SUMS.txt', loopEnd);
+	const installIdx = script.indexOf('DO_INSTALL}" == "true"', loopEnd);
+
+	test('the TARGETS loop and the manifest write are both present, loop closes first', () => {
+		expect(loopStart).toBeGreaterThan(-1);
+		expect(loopEnd).toBeGreaterThan(loopStart);
+		expect(manifestIdx).toBeGreaterThan(-1);
+	});
+
+	test('the manifest is written only after the TARGETS loop closes (post-codesign)', () => {
+		expect(manifestIdx).toBeGreaterThan(loopEnd);
+	});
+
+	test('the manifest write precedes the --install block', () => {
+		expect(installIdx).toBeGreaterThan(-1);
+		expect(manifestIdx).toBeLessThan(installIdx);
+	});
+
+	test('the shasum invocation never globs dist/gateship-*; it hashes the collected name array', () => {
+		expect(script).not.toMatch(/shasum[^\n]*gateship-\*/);
+		expect(script).not.toMatch(/dist\/gateship-\*/);
+		expect(script).toMatch(/shasum -a 256[^\n]*MANIFEST_NAMES/);
+	});
+
+	test('the name array is populated inside the loop from the produced OUT_NAME, not hardcoded', () => {
+		const arrayPushIdx = script.indexOf('MANIFEST_NAMES+=');
+		expect(arrayPushIdx).toBeGreaterThan(loopStart);
+		expect(arrayPushIdx).toBeLessThan(loopEnd);
+		expect(script.slice(arrayPushIdx, arrayPushIdx + 40)).toContain('OUT_NAME');
+	});
+});

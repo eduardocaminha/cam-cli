@@ -1,0 +1,26 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Emit dist/SHA256SUMS.txt from build-release.sh after codesign"
+  },
+  "branchName": "cam/issue-495",
+  "timestamp": "2026-08-04T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "scripts/build-release.sh",
+    "test/build-release-smoke.test.ts",
+    "scripts/file-size-budget.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "scripts/build-release.sh now collects each loop iteration's OUT_NAME into a MANIFEST_NAMES array (declared alongside TARGETS) and appends to it only AFTER the darwin codesign block + size check for that target, so the array always reflects post-signature, size-checked artifacts. After the TARGETS loop closes (and after the HOST_BIN presence check), a new step runs `(cd dist && shasum -a 256 \"${MANIFEST_NAMES[@]}\" > SHA256SUMS.txt)` in default TEXT mode (no -b) so the file holds bare relative names with the two-space separator shasum -c expects; this must stay BEFORE the --version smoke and BEFORE the --install block. test/build-release-smoke.test.ts gained a new describe block with 5 static source-order guards (loop-closes-before-manifest, manifest-before-install, no-bare-glob, array-populated-inside-loop-from-OUT_NAME) mirroring the existing regex/index-based style in that file; be careful writing prose comments near this code that contain the literal substring `gateship-*` since the new guard's negative-match regex trips on ANY occurrence of that literal text, including comments (had to reword one of my own explanatory comments during this story for exactly that reason). test/build-release-smoke.test.ts's file-size-budget ceiling was raised 86->121 with a CAM-495 tracker ref prepended to file-size-budget.json's _ref (staged in the same commit). scripts/build-release.sh itself is NOT tracked by the file-size ratchet (its Glob only covers {src,scripts,test}/**/*.{ts,tsx}, no .sh), so no budget entry was needed for it despite growing from 216 to 232 lines. Full release build (`bun run build:release`) was run end-to-end on this macOS host and produced a real dist/SHA256SUMS.txt with 4 entries verified by `shasum -a 256 -c`; embed-vendor:check, typecheck, bun test (5998 pass), and check:all (full spine) all confirmed green.",
+  "officialDocsValidated": [
+    {
+      "lib": "shasum (Perl Digest::SHA CLI, macOS coreutils)",
+      "channel": "man page (local, macOS-shipped)",
+      "url": "man:shasum",
+      "fetchedAt": "2026-08-04T00:00:00Z",
+      "status": "aligned",
+      "summary": "Confirmed -c/--check expects lines formatted by this program's own default TEXT mode (two-space separator between hex digest and filename); -b/--binary mode emits a different '*name' separator that -c would still accept but that breaks the story's grep-based oracle and install.sh's parser. Implementation deliberately omits -b/-t (text is the default) and writes with dist/ as cwd so the manifest holds bare relative names shasum -c can resolve unmodified."
+    }
+  ]
+}
