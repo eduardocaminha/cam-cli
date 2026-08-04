@@ -87,6 +87,9 @@ TARGETS=(
 	"bun-linux-x64:gateship-linux-x64"
 	"bun-linux-arm64:gateship-linux-arm64"
 )
+# Artifact names the loop below actually produces, appended after codesign so
+# the manifest step (US-001, CAM-495) hashes the FINAL bytes, never a glob.
+MANIFEST_NAMES=()
 
 for entry in "${TARGETS[@]}"; do
 	BUN_TARGET="${entry%%:*}"
@@ -118,6 +121,8 @@ for entry in "${TARGETS[@]}"; do
 		exit 1
 	fi
 
+	MANIFEST_NAMES+=("${OUT_NAME}")
+
 	if [[ "${BUN_TARGET}" == "${HOST_TARGET}" ]]; then
 		HOST_BIN="${BIN}"
 	fi
@@ -127,6 +132,16 @@ if [[ -z "${HOST_BIN}" ]]; then
 	echo "ERROR: no compiled artifact matches the host target ${HOST_TARGET}" >&2
 	exit 1
 fi
+
+# --- Manifest: dist/SHA256SUMS.txt (US-001, CAM-495) --------------------------
+# Written only now that the loop above has closed: every darwin artifact was
+# already re-signed, so this hashes the FINAL on-disk bytes a user downloads,
+# never a pre-signature hash. Built from MANIFEST_NAMES (the artifact names
+# the loop actually produced), never a bare glob over dist/, which could
+# silently absorb a stale artifact left over from an earlier build.
+echo "[build-release] writing dist/SHA256SUMS.txt"
+(cd dist && shasum -a 256 "${MANIFEST_NAMES[@]}" > SHA256SUMS.txt)
+echo "[build-release]   wrote dist/SHA256SUMS.txt (${#MANIFEST_NAMES[@]} entries)"
 
 # --- Sanity: --version (host-native artifact only) ---------------------------
 echo "[build-release] verifying --version output (${HOST_BIN})"

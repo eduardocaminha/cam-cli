@@ -74,6 +74,53 @@ Distributing a fully notarized binary would require Developer ID signing,
 `notarytool` submission, and stapling; the current build/release pipeline
 does not include those steps.
 
+#### Verifying what you downloaded
+
+`install.sh` verifies the download automatically before it copies anything
+into `INSTALL_DIR`: it fetches `SHA256SUMS.txt` from the same GitHub
+Release, computes the SHA-256 of the downloaded asset, and aborts the
+install on all three ways verification can go wrong: a hash mismatch, an
+unreachable `SHA256SUMS.txt`, and a host with neither `sha256sum` nor
+`shasum` on `PATH`.
+
+This checksum buys **integrity**, not **authenticity**. It proves the file
+on your disk is byte-identical to the one GitHub Actions built for this
+release (catches transport corruption and partial tampering), but it does
+**not** prove who built it: `SHA256SUMS.txt` ships in the same Release as
+the binary, so anyone who can rewrite the Release rewrites the checksum
+file alongside it. To reproduce the automatic check by hand against a
+binary you already downloaded:
+
+```bash
+curl -fsSLO https://github.com/eduardocaminha/cam-cli/releases/download/<tag>/gateship-darwin-arm64
+curl -fsSLO https://github.com/eduardocaminha/cam-cli/releases/download/<tag>/SHA256SUMS.txt
+grep " gateship-darwin-arm64" SHA256SUMS.txt | shasum -a 256 -c -
+```
+
+(swap `gateship-darwin-arm64` for your platform's asset name and `<tag>` for
+the release you downloaded)
+
+For real **authenticity**, that is proof the binary was produced by this
+repo's release workflow from a specific commit, not just that it matches a
+same-origin manifest, verify the build provenance attestation instead. This
+is an on-demand check, not something `install.sh` runs for you, and it
+requires the `gh` CLI, listed as optional in
+[Prerequisites](#prerequisites) (the same one used for the `github` issue
+system):
+
+```bash
+gh attestation verify gateship-darwin-arm64 --repo eduardocaminha/cam-cli
+```
+
+Every published asset (`gateship-darwin-arm64`, `gateship-darwin-x64`,
+`gateship-linux-x64`, `gateship-linux-arm64`) carries an attestation from
+the release workflow, sigstore-anchored, tying the binary to the commit and
+workflow run that produced it. The two checks are complementary, not
+substitutes: the checksum runs on every install because it needs no extra
+tooling and catches corruption/tampering against the published manifest;
+the attestation is for anyone who wants proof of origin and is willing to
+install `gh` to get it.
+
 ### Option B: From source
 
 ```bash

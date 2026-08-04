@@ -11,7 +11,10 @@ on:
       - 'v*'
 
 permissions:
+  artifact-metadata: write
+  attestations: write
   contents: write
+  id-token: write
 
 jobs:
   release:
@@ -27,7 +30,15 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Build all four release targets
         run: bun run build:release
-      - name: Publish prerelease with the four binaries
+      - name: Attest build provenance for the four binaries
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            dist/gateship-darwin-arm64
+            dist/gateship-darwin-x64
+            dist/gateship-linux-x64
+            dist/gateship-linux-arm64
+      - name: Publish prerelease with the four binaries and checksum manifest
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
@@ -37,6 +48,7 @@ jobs:
             dist/gateship-darwin-x64 \
             dist/gateship-linux-x64 \
             dist/gateship-linux-arm64 \
+            dist/SHA256SUMS.txt \
             --prerelease \
             --title "$TAG" \
             --generate-notes

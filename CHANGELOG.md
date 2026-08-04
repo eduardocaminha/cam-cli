@@ -6,6 +6,20 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.279.0] - 2026-08-04
+
+### Added
+
+- US-R2-002 - Scope attest-step guard's four-binary assertions to the attest step block
+- US-R2-001 - Fix US-003 AC4 negative oracle regressed by US-R1-001's frozen 64-hex digest literal
+- US-R1-002 - Add static-source guard for release.yml's SHA256SUMS.txt + attest step
+- US-R1-001 - Add 'no checksum entry' leg to install.sh fail-closed tests
+- US-005 - Document both verification paths in the README with an honest threat model
+- US-004 - Prove the three fail-closed legs of install.sh by execution
+- US-003 - Verify the downloaded artifact against SHA256SUMS.txt in install.sh before installing
+- US-002 - Publish the checksum manifest and build provenance from release.yml
+- US-001 - Emit dist/SHA256SUMS.txt from build-release.sh after codesign
+
 ## [0.278.0] - 2026-08-04
 
 ### Added
