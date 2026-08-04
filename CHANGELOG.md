@@ -6,6 +6,26 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.278.0] - 2026-08-04
+
+### Added
+
+- US-R2-004 - Add execution-coverage test for install.sh success path
+- US-R2-003 - Fix script-injection risk in release.yml via env var indirection
+- US-R2-002 - CRITICAL: 15 user-facing RUNTIME remediation strings still instruct the retired command
+- US-R2-001 - CRITICAL: gship claude --help still prints the retired command 7 times
+- US-R1-002 - CRITICAL: US-005's acceptance criteria 1 and 2 are green only because their extractor is blind
+- US-R1-001 - CRITICAL: The installer's tag-resolution error path is unreachable dead code an…
+- US-005 - Migrar os arquivos de instrucao executavel para o comando novo e regenerar o blob embutido
+- US-004 - Publicar um instalador curl-avel e documentar a instalacao empacotada com fidelidade sobre a assinatura
+- US-003 - Compilar os quatro alvos a partir de um host unico e publica-los como assets de um Release marcado prerelease
+- US-002 - Renomear a superficie digitada do binario (help, usage, --version) e desancorar o gate agents-md do prefixo aposentado
+- US-001 - Tornar o manifesto publicavel sob o nome do produto e sincronizar o lockfile
+
+### Fixed
+
+- PIN de invariancia volta a verde (CAM-460)
+
 ## [0.277.0] - 2026-08-03
 
 ### Added
