@@ -81,7 +81,7 @@ function writeFakeCurl(
 			? ['  exit 22']
 			: behavior === 'no-checksum-entry'
 				? [
-						'  printf "%s  %s\\n" "0000000000000000000000000000000000000000000000000000000000000000" "gateship-unrelated-asset" > "${OUT}"',
+						`  printf "%s  %s\\n" "${'0'.repeat(64)}" "gateship-unrelated-asset" > "\${OUT}"`,
 						'  exit 0',
 					]
 				: [
