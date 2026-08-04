@@ -161,57 +161,39 @@
     }
   ],
   "review": {
-    "roundsCompleted": 2,
+    "roundsCompleted": 3,
     "maxRounds": 3,
-    "lastVerdict": "FIXES_PENDING:4",
+    "lastVerdict": "MAX_ROUNDS_DEBT",
     "findings": [
       {
         "severity": "CRITICAL",
-        "file": "src/commands/claude.ts",
-        "line": 28,
-        "text": "`gship claude --help` still prints the retired command 7 times (title :26 'cam claude', usage :28 'cam claude [args...]', Examples :39-41, Config :63). This violates US-002 AC1's own prose, which requires that 'nem o help de topo nem o help de QUALQUER subcomando imprime o comando velho'. The AC is green only because its oracle enumerates 12 subcommands (init config run plan journal patterns suggestions next review ship tag status) and omits `claude`; src/commands/claude.ts was never touched by this branch (git diff main...HEAD --stat for it is empty). Since install.sh installs only gateship and gship, a freshly-installed user reading `gship claude --help` is told to type `cam claude -p \"Hello world\"`, a command that does not exist on their machine. This is the identical blind-oracle defect class as US-R1-002, on a surface its scope did not reach. Fix: rename the title/usage/Examples strings in src/commands/claude.ts, and widen AC1's oracle to enumerate every registered subcommand (or derive the list) so the guard cannot go tautological again."
-      },
-      {
-        "severity": "CRITICAL",
-        "file": "src/commands/plan.ts",
-        "line": 119,
-        "text": "15 user-facing RUNTIME remediation strings still instruct the retired command, so the binary tells a stuck user to type something their machine does not have: plan.ts:119,132; ship.ts:175,191; next.ts:316,332,387; review.ts:172,188; issue.ts:147; spec.ts:181; run.ts:1005; setup.ts:654,770; pause.ts:82; src/logging/screen.ts:113 (e.g. 'Run `cam run` manually, then retry `cam ship`.'). ADR-0054 Consequences is explicit that 'Documentation, help output, and usage strings move to `gship` for the invocation examples', and that the installer 'stops creating `cam`'. These strings are printed at the exact moment of failure, which is the worst possible place to emit a dead command name, and this PRD's whole deliverable is the packaged install path that makes them wrong. Not blocked by the US-002/US-005 invariance PINs: those pin only CAM_, .cam-, `tmux -L cam`, /cam- and the four history files, and the PIN rationale explicitly permits 'o rename do binario e do comando digitado'."
+        "file": "scripts/cam/patterns.md",
+        "line": 1196,
+        "text": "Layer B oracle FAIL: US-005's history-invariance PIN is RED at HEAD. The oracle compares per-file counts of `cam <subcommand>` between main and the branch across the four history files; scripts/cam/patterns.md drifted 41 -> 42, so the directive exits 1. Reviewer located the origin by walking git rev-list: the count flipped at commit aba8cb10 (US-R2-002) and stayed 42 through the 8 following commits, yet scripts/cam/prd.json still records US-005 with \"passes\": true. The cause is the appended US-R2-002 lesson at patterns.md:1196, which quotes the origin-label examples \"`cam spec --write-docs: <detail>`\" / \"`cam spec --persist: <detail>`\"; those two \"`cam spec \" tokens match the pin's regex. Nuance for fix-scoping: `git diff main...HEAD -- scripts/cam/patterns.md` has ZERO deleted lines, so no historical prose was rewritten and the pin's intent holds; only its exact-count mechanism is red. Fix is mechanical: reword the two quoted tokens in the new bullet (e.g. close the backtick immediately, `cam spec`, so the trailing-space boundary no longer matches), then re-run the directive. Full evidence in scripts/cam/review-artifact.txt."
       },
       {
         "severity": "WARNING",
-        "file": ".github/workflows/release.yml",
-        "line": 34,
-        "text": "`${{ github.ref_name }}` is interpolated directly into a `run:` shell block at lines 34 and 40. GitHub's security-hardening guide states that 'for inline scripts, the preferred approach to handling untrusted input is to set the value of the expression to an intermediate environment variable' (https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions). git check-ref-format permits characters this pattern is sensitive to (`;`, `\"`, `$`, backtick, parentheses) since it forbids only space, `~`, `^`, `:`, `?`, `*`, `[` and `\\`, so a crafted tag name can break out of the double-quoted argument. Exploitation requires push access, which bounds the severity, but this is a brand-new file and the fix is mechanical: add `env: TAG: ${{ github.ref_name }}` and reference `\"$TAG\"` in the script."
-      },
-      {
-        "severity": "WARNING",
-        "file": "test/install-sh.test.ts",
-        "line": 64,
-        "text": "install.sh's success path has zero execution coverage. The suite covers two error paths (empty release list, curl failure) plus `bash -n`, but never the happy path, so the behaviour the story actually promises (download the asset, install BOTH `gateship` and `gship`, chmod +x, strip the macOS quarantine bit, and remain additive over a pre-existing `cam`) is asserted only by static grep in US-004's oracles. That is the same class of gap that let US-R1-001 ship: the oracles were `test -f` / `grep` / `bash -n`, and nothing executed the script. The existing fake-curl PATH shim already makes this cheap: have the shim write a dummy payload for the `-o` download call, then assert both destination files exist and are executable, and that a pre-created `cam` file in the install dir survives untouched. Per the test-quality triad this is the missing success leg."
-      },
-      {
-        "severity": "SUGGESTION",
-        "file": "scripts/build-release.sh",
-        "line": 116,
-        "text": "The 100 MB per-artifact ceiling now has only ~2% headroom: the two linux artifacts measured 102959424 and 103438656 bytes (98 MB) in the reviewer's real build. A modest dependency addition will fail the release build (and only the release build, since nothing else runs this script), with an error that reads like a size policy rather than a growth signal. Consider raising the ceiling with a recorded rationale or emitting a warning band before the hard failure."
-      },
-      {
-        "severity": "SUGGESTION",
-        "file": "scripts/build-release.sh",
-        "line": 142,
-        "text": "Comments at :142 and :148 still say `cam init` while the code they describe now smoke-tests the gateship binary. Cosmetic, and comments are out of every oracle's scope, but this is the file that documents the release path."
-      },
-      {
-        "severity": "SUGGESTION",
-        "file": "README.md",
+        "file": "src/commands/drain.ts",
         "line": 108,
-        "text": "Option C's lead-in still reads 'Useful while iterating on `cam` itself'. The rest of the Install section migrated to gateship/gship, so this line is the odd one out in otherwise well-updated docs."
+        "text": "US-R2-002 fixed only the runtime remediation strings its description enumerated by hand, leaving ~10 structurally identical siblings that still instruct the retired command at the moment of failure: drain.ts:108,119,122 (\"Run `cam drain --clear`\" / \"Run `cam drain --stop`\"), next.ts:193 (\"run `cam stop` to clear\"), src/retry/launcher.ts:309 (\"Use `cam run` to open the orchestrator session\"), stats.ts:247 (\"or `cam init` first\"), setup-merge-mode.ts:89 (\"re-run `cam init`\"), dashboard.ts:292 (\"`cam stop` to clear\"), resume.ts:475 and resume.ts:645 (\"Re-run `cam next`\"). Because install.sh installs only `gateship` and `gship`, a freshly-installed user hitting any of these paths is told to type a command that does not exist on their machine, which is exactly the defect class this story exists to close. scripts/cam/patterns.md defends the omission as \"scope creep past what was asked... left as an open finding for a future story\"; per the merit-over-cost rule a deferral-to-a-future-story rationale does not convert the weakness into an accepted trade-off. Note this is the third occurrence of the same hand-typed-enumeration blind spot on this branch (US-002 -> US-R2-001, US-005 -> US-R1-002, US-R2-002 -> this), and unlike the first two, US-R2-002 carries no oracle at all, so nothing mechanically guards the sweep. Deriving the sweep set from a single source of truth (as test/help-registry.test.ts now does for help text) would close the class rather than the instances."
       },
       {
         "severity": "SUGGESTION",
-        "file": "knip.json",
+        "file": "install.sh",
+        "line": 71,
+        "text": "Tag resolution parses the GitHub API JSON with `grep -m1 '\"tag_name\"' | sed`, which depends on the list-releases endpoint's created_at-descending ordering and on the first tag_name in the payload being the newest release. This is documented in the header comment and works today, but it is brittle against any response-shape change. If jq is acceptable as an installer dependency (it is already used by the US-001 oracles), `jq -r '.[0].tag_name'` would be exact; otherwise the current form is a reasonable trade-off for a dependency-free installer."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "test/install-sh.test.ts",
+        "line": 107,
+        "text": "The new success-path test is solid (asserts the exec bit via statSync mode & 0o111 and byte-identity of a pre-existing `cam`, not mere existence). Two branches remain unexercised: the unsupported-OS/arch guards (install.sh:38,46,54) and the GATESHIP_VERSION pin path (install.sh:61-62) that skips API resolution entirely. Both are cheap to add with the existing PATH-shim harness and would complete the boundary leg of the triad."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": ".github/workflows/release.yml",
         "line": 1,
-        "text": "`bun run check:all`'s dead-code gate reports `cam` under ignoreBinaries as 'Remove from ignoreBinaries' now that the typed surface is renamed. The gate still exits 0, so this is not blocking, but the suppression is stale and knip is already telling you so."
+        "text": "The new release workflow has no static validation in the quality spine. scripts/check-ci-parity.ts reads only .github/workflows/ci.yml by construction, so release.yml is invisible to every local gate; a YAML or expression error surfaces only on a real tag push, which is the one moment it must not fail. Consider an actionlint step or extending the parity checker to lint sibling workflow files."
       }
     ]
   }
