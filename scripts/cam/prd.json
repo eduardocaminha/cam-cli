@@ -1,0 +1,127 @@
+{
+  "project": "gateship",
+  "branchName": "cam/issue-495",
+  "description": "Close the integrity gap in the public curl|bash install path: publish SHA-256 checksums plus build provenance with every Release, and make install.sh verify fail-closed before installing.",
+  "issueNumber": 495,
+  "type": "feat",
+  "relatedDocs": [
+    "docs/adr/0057-a-verificacao-automatica-da-instalacao-e-checksum-only-a-attestation-de-procedencia-e-verificada-sob-demanda.md",
+    "docs/adr/0055-o-primeiro-release-do-gateship-sai-como-prerelease-para-manter-aberta-a-janela-de-rename-do-adr-0054.md"
+  ],
+  "officialDocsConsulted": [
+    {
+      "lib": "actions/attest-build-provenance",
+      "channel": "WebFetch",
+      "url": "https://github.com/actions/attest-build-provenance",
+      "version": "v4",
+      "fetchedAt": "2026-08-04T13:20:00Z",
+      "summary": "v4 of actions/attest-build-provenance is now only a thin wrapper over actions/attest; the README states existing applications may keep using it but new implementations should use actions/attest instead. Attestations are verified with the gh CLI's gh attestation verify command.",
+      "localConventionConflict": "The issue spec's AC7 names actions/attest-build-provenance literally, while upstream now steers new implementations to actions/attest, so US-002's criteria accept either action reference and the implementer must re-check the chosen action's required permission set at its own Step 5.5.",
+      "status": "ok"
+    },
+    {
+      "lib": "actions/attest",
+      "channel": "WebFetch",
+      "url": "https://github.com/actions/attest",
+      "version": "v4",
+      "fetchedAt": "2026-08-04T13:21:00Z",
+      "summary": "actions/attest@v4 auto-generates SLSA build provenance when only subject-path is supplied (predicate-type/predicate are for custom attestations only), and documents three required job permissions: id-token: write, attestations: write, artifact-metadata: write. The job additionally needs contents: write for gh release create, which release.yml already declares.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Emit dist/SHA256SUMS.txt from build-release.sh after codesign",
+      "description": "As a release engineer, I need scripts/build-release.sh to write dist/SHA256SUMS.txt covering every declared target, hashed from the FINAL on-disk artifact, so the manifest describes exactly the bytes a user downloads.",
+      "acceptanceCriteria": [
+        "A full build leaves dist/SHA256SUMS.txt in which every line verifies against the artifact on disk, and whose line count is derived from the TARGETS array of build-release.sh rather than any literal. [oracle: bun run build:release >/dev/null && (cd dist && shasum -a 256 -c SHA256SUMS.txt >/dev/null && test \"$(grep -cE '^[0-9a-f]{64}  gateship-' SHA256SUMS.txt)\" = \"$(grep -cE '\"bun-[a-z0-9-]+:gateship-' ../scripts/build-release.sh)\")]",
+        "The manifest is generated only AFTER the per-target compile+codesign loop has closed (a hash taken before codesign never matches the published darwin artifact), and it is built from the artifact names the loop actually produced, never from a bare dist/gateship-* glob that could absorb a stale artifact from an earlier build. A static source guard in test/build-release-smoke.test.ts pins both properties. [oracle: file-assert grep -q 'SHA256SUMS' test/build-release-smoke.test.ts]",
+        "The static source guard executes and passes. [oracle: bun test test/build-release-smoke.test.ts]",
+        "No release artifact exceeds the size ceiling that build-release.sh declares on main, with the ceiling re-derived from main at check time instead of restated in the oracle. [oracle: LIMIT=\"$(git show main:scripts/build-release.sh | grep -oE 'SIZE_MB > [0-9]+' | grep -oE '[0-9]+' | head -1)\"; test -n \"$LIMIT\" && for f in dist/gateship-*; do test \"$(( $(stat -f '%z' \"$f\") / 1024 / 1024 ))\" -le \"$LIMIT\" || exit 1; done]",
+        "Running the release build leaves no embedded-vendor drift in the working tree. [oracle: bun run embed-vendor:check]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "The quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: scripts/build-release.sh (add the manifest step after the `for entry in \"${TARGETS[@]}\"` loop closes, around line 124, before the --version smoke), test/build-release-smoke.test.ts (static guard, mirrors the existing hermetic-init guards), scripts/file-size-budget.json only if the test file crosses its 86-line ceiling (a budget raise needs a tracker ref such as CAM-495 in the same staged diff, patterns.md:576). Collect the produced artifact names inside the loop (e.g. an OUT_NAMES array) and hash them by name from dist/ so the manifest is TARGETS-derived. Hash in shasum's default text mode (`shasum -a 256 <names> > SHA256SUMS.txt` run with dist/ as cwd, so the manifest holds bare relative names that `shasum -c` can resolve, and the two-space separator the oracle greps for); `-b`/binary mode emits a `*name` separator and breaks both the oracle and install.sh's parsing. GOTCHA (issue gotcha 2): codesign --force --sign - runs INSIDE the per-target loop, so any hash taken inside the loop is pre-signature for the two darwin targets and would never match the published bytes; the divergence would only surface in production. GOTCHA: build-release.sh runs `set -euo pipefail` and only on a macOS host (codesign); worker_isolation is `host` in scripts/cam/project.toml, so the real build is runnable, and the AC1 oracle must run before the size oracle since the latter reads dist/. patterns.md:1190 covers the cross-compile loop and the darwin-only re-sign gate."
+    },
+    {
+      "id": "US-002",
+      "title": "Publish the checksum manifest and build provenance from release.yml",
+      "description": "As a user of the packaged install path, I need the Release to carry SHA256SUMS.txt as an asset of the same publish step that uploads the binaries, plus a build provenance attestation for the four artifacts, so integrity and authenticity material ship indivisibly with every Release.",
+      "acceptanceCriteria": [
+        "dist/SHA256SUMS.txt is passed to the SAME gh release create invocation that uploads the four binaries, not to a separate step that could fail alone and leave a published Release without checksums (fail-closed install then makes that Release uninstallable). [oracle: awk '/gh release create/,/--generate-notes/' .github/workflows/release.yml | grep -q 'SHA256SUMS']",
+        "The workflow runs a build provenance attestation action and declares the job permissions that action requires alongside the contents: write the release step already needs. [oracle: grep -qE 'uses:[[:space:]]*actions/attest(-build-provenance)?@' .github/workflows/release.yml && grep -qE '^[[:space:]]+id-token: write' .github/workflows/release.yml && grep -qE '^[[:space:]]+attestations: write' .github/workflows/release.yml && grep -qE '^[[:space:]]+contents: write' .github/workflows/release.yml]",
+        "The attestation step's subject-path covers every target name declared in build-release.sh, with the target list derived from that script at check time rather than enumerated in the oracle. [oracle: bun -e \"const y=require('js-yaml'),fs=require('node:fs');const d=y.load(fs.readFileSync('.github/workflows/release.yml','utf8'));const s=(d.jobs.release.steps||[]).find(x=>typeof x.uses==='string'&&x.uses.startsWith('actions/attest'));if(!s)process.exit(1);const sp=String((s.with||{})['subject-path']);const t=[...new Set(fs.readFileSync('scripts/build-release.sh','utf8').match(/gateship-[a-z0-9]+-[a-z0-9]+/g))];if(!t.length)process.exit(1);if(!t.every(n=>sp.includes(n)))process.exit(1)\"]",
+        "The edited workflow is still valid YAML. [oracle: bun -e \"require('js-yaml').load(require('node:fs').readFileSync('.github/workflows/release.yml','utf8'))\"]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "The quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "File: .github/workflows/release.yml only (the publish step is at lines 30-42). Depends on US-001 producing dist/SHA256SUMS.txt. DOC CONFLICT to resolve at your Step 5.5: the issue spec names actions/attest-build-provenance, but the upstream README (fetched 2026-08-04, v4) says that action is now a wrapper and new implementations should use actions/attest; actions/attest@v4 documents THREE permissions (id-token: write, attestations: write, artifact-metadata: write) while the issue's AC7 only names two. Re-fetch the chosen action's page and declare exactly the permission set its current docs require (the AC greps the two that both variants need plus contents: write; do not drop a third one the docs demand). Provenance is generated by supplying subject-path alone, no predicate inputs. GOTCHA (patterns.md:1190): scripts/check-ci-parity.ts only ever reads .github/workflows/ci.yml, so release.yml is invisible to the parity gate by construction and must never be added to ci.yml. The runner is macos-latest and gh is preinstalled; GH_TOKEN: ${{ github.token }} plus the job permissions is sufficient, no new secret."
+    },
+    {
+      "id": "US-003",
+      "title": "Verify the downloaded artifact against SHA256SUMS.txt in install.sh before installing",
+      "description": "As someone running the curl|bash installer, I need install.sh to fetch the Release's SHA256SUMS.txt and confirm the downloaded artifact's SHA-256 before anything is copied into INSTALL_DIR, so a corrupted or partially tampered download can never become an installed binary.",
+      "acceptanceCriteria": [
+        "install.sh downloads SHA256SUMS.txt for the resolved tag and verifies the downloaded artifact's SHA-256 against it BEFORE the install loop copies anything into INSTALL_DIR (verification textually precedes the install section, so no code path installs first and aborts later). [oracle: awk '/SHA256SUMS/{f=1} /--- Install: additive/{print (f?\"ok\":\"no\"); exit}' install.sh | grep -q ok]",
+        "install.sh resolves a SHA-256 tool portably, probing both shasum and sha256sum rather than assuming either (macOS ships shasum and not sha256sum; Linux ships sha256sum and often not shasum). [oracle: file-assert grep -q 'sha256sum' install.sh && grep -q 'shasum' install.sh]",
+        "Regression of the happy path: with the checksum manifest served and its hash MATCHING the served payload bytes, install.sh still exits 0 and installs both gateship and gship with the execute bit, and still leaves a pre-existing cam untouched. The execution test extends the existing hermetic curl PATH-shim harness. [oracle: bun test test/install-sh.test.ts]",
+        "The success-leg shim computes the manifest hash from the bytes it serves at test time; no 64-hex digest literal is frozen into the test source (a frozen digest silently decouples the manifest from the payload the moment the fake payload changes). [oracle: file-assert ! grep -qE '[0-9a-f]{64}' test/install-sh.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "The quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: install.sh (insert between the artifact download at lines 81-89 and the install loop at lines 91-103), test/install-sh.test.ts (extend writeFakeCurl). The manifest URL is https://github.com/${REPO}/releases/download/${TAG}/SHA256SUMS.txt, the same tag the artifact came from. GOTCHA (patterns.md:1194, the CAM-460 defect this repo already paid for): under `set -euo pipefail` a bare `VAR=\"$(pipeline)\"` assignment kills the script on ANY failing stage, so a friendly guard on the next line is dead code; wrap every hash/download capture in an explicit `if ! VAR=\"$(...)\"; then <diagnostic>; exit 1; fi` (or `|| true` plus an explicit -z check) so the diagnostic is reachable. GOTCHA (patterns.md:1198): one fake curl branching on its own \"$@\" answers every call site; the shim now has THREE shapes to serve (releases-list JSON on stdout, artifact via -o, manifest via -o or stdout) and must compute the digest from the exact bytes it wrote. The manifest lists bare artifact names, so compare the digest field rather than running `shasum -c` against a manifest whose paths will not resolve next to a mktemp payload. Verification must happen against the downloaded tmpfile, before chmod/cp. ADR-0057 fixes the scope: checksum only in the installer, no gh dependency, no silent degradation."
+    },
+    {
+      "id": "US-004",
+      "title": "Prove the three fail-closed legs of install.sh by execution",
+      "description": "As the operator publishing a verified install path, I need each absence condition (hash mismatch, unreachable manifest, no hash tool at all) proven by a real install.sh execution that exits non-zero AND leaves INSTALL_DIR empty, so no failure mode silently degrades into an unverified install.",
+      "acceptanceCriteria": [
+        "Hash-mismatch leg: with a well-formed manifest whose digest does not match the served payload, install.sh exits non-zero and leaves INSTALL_DIR with no entries (both conditions asserted together: exit code alone would pass an implementation that copies the binary and only then aborts). The test name carries the marker 'hash mismatch'. [oracle: file-assert grep -q 'hash mismatch' test/install-sh.test.ts]",
+        "Manifest-unreachable leg: when the SHA256SUMS.txt request fails (curl exit 22, what -f produces on a 404) while the artifact itself serves normally, install.sh exits non-zero and leaves INSTALL_DIR with no entries; skipping verification when the manifest is missing is exactly the mode this leg forbids. The test name carries the marker 'checksums unavailable'. [oracle: file-assert grep -q 'checksums unavailable' test/install-sh.test.ts]",
+        "No-hash-tool leg: with neither shasum nor sha256sum on PATH, install.sh exits non-zero and leaves INSTALL_DIR with no entries (measured pre-change, today's install.sh runs to completion and installs both names in this condition). The test name carries the marker 'no hash tool'. [oracle: file-assert grep -q 'no hash tool' test/install-sh.test.ts]",
+        "The no-hash-tool leg is not passing for the wrong reason: it invokes the script through an absolute interpreter path so a stripped PATH cannot make bash itself unresolvable, keeps every other tool install.sh needs (including xattr, used on the darwin branch) available, and asserts that stderr carries install.sh's own diagnostic and NOT a 'command not found' from a broken harness. [oracle: file-assert grep -q 'command not found' test/install-sh.test.ts]",
+        "Every leg asserts the empty-install-dir condition by reading the directory's entries, not merely by checking that one expected filename is absent. [oracle: file-assert grep -q 'readdirSync' test/install-sh.test.ts]",
+        "All three legs execute for real against install.sh (no network, no real Release) and pass; any leg found not to be fail-closed is fixed in install.sh within this story. [oracle: bun test test/install-sh.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "The quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: test/install-sh.test.ts (primary), install.sh (only if a leg proves not fail-closed). GOTCHA (issue gotcha 4, found while sweeping this spec's own oracles): overriding PATH on the invocation removes bash from resolution, the command dies with 'command not found: bash' BEFORE install.sh runs, and a fail-closed assertion then passes for the wrong reason, measuring a broken shim instead of the behavior; spawn ['/bin/bash', INSTALL_SCRIPT] (the existing runInstallSh helper already does this) and build the shim PATH out of the tools install.sh actually calls. GOTCHA (issue gotcha 3): the dev machine has BOTH /usr/bin/shasum and /sbin/sha256sum, so the no-hash-tool condition is unreproducible without a deliberately stripped PATH; do not use the ambient PATH for that leg. GOTCHA: the existing helper hardcodes PATH `${fakeBinDir}:/usr/bin:/bin`, which already carries shasum, so the no-hash-tool leg needs its own PATH construction (shim dir plus a curated dir of symlinks, or a PATH of only the shim dir with the needed tools symlinked in). Keep every assertion pair (non-zero exit AND empty INSTALL_DIR) in the same test. patterns.md:1198 documents the shim shape; patterns.md:1194 documents why static grep of install.sh cannot substitute for executing it."
+    },
+    {
+      "id": "US-005",
+      "title": "Document both verification paths in the README with an honest threat model",
+      "description": "As a stranger installing gateship, I need the README to state what the automatic checksum proves, what it does not prove, and the exact on-demand command that verifies build provenance, so I can decide how much to trust a downloaded binary.",
+      "acceptanceCriteria": [
+        "The README's checksum instruction is the REAL command, not plausible invented prose: extracting the command from the README and running it against a tampered fixture makes it fail. [oracle: CMD=\"$(grep -m1 'shasum -a 256 -c' README.md)\"; test -n \"$CMD\" || exit 1; T=\"$(mktemp -d)\"; cd \"$T\"; printf 'X' > gateship-darwin-arm64; printf '%s  gateship-darwin-arm64\\n' 0000000000000000000000000000000000000000000000000000000000000000 > SHA256SUMS.txt; if eval \"$CMD\" >/dev/null 2>&1; then exit 1; else exit 0; fi]",
+        "The README documents the on-demand provenance check with the gh CLI command a reader can copy, and says that this path (unlike the installer) requires gh, which the prerequisites section lists as optional. [oracle: file-assert grep -q 'gh attestation verify' README.md]",
+        "The README states that install.sh verifies the checksum automatically and aborts on mismatch, on an unreachable manifest, and when no hash tool is present. [oracle: file-assert grep -q 'SHA256SUMS' README.md]",
+        "The prose does not claim the checksum proves origin or authenticity: it says the same-origin checksum buys integrity (transport corruption, partial tampering) while authenticity comes only from the attestation, matching ADR-0057. [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "The quality spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 5,
+      "passes": false,
+      "requires": null,
+      "notes": "File: README.md, the Install section (Option A, lines 30-75, next to the existing 'About the signature (macOS)' subsection which already models the honest-limitation tone). The AC1 oracle extracts the first line matching 'shasum -a 256 -c', so write that command as a bare line inside a fenced block with no '$ ' prompt prefix and no flags between '256' and '-c' (a 'shasum -a 256 --ignore-missing -c' spelling is not matched by the extraction and fails the oracle, swept 2026-08-04). Do not soften the macOS notarization paragraph that already exists; this story adds verification prose, it does not rewrite the signature section. ADR-0057 is the canonical statement of the two-layer split (checksum automatic, attestation on demand) and its wording should not be contradicted here. The gh attestation verify form for a Release artifact is `gh attestation verify <file> --repo eduardocaminha/cam-cli`; re-check the flag spelling against the gh manual at your Step 5.5."
+    }
+  ]
+}
