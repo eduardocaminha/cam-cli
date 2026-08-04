@@ -101,7 +101,7 @@
         "The quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: test/install-sh.test.ts (primary), install.sh (only if a leg proves not fail-closed). GOTCHA (issue gotcha 4, found while sweeping this spec's own oracles): overriding PATH on the invocation removes bash from resolution, the command dies with 'command not found: bash' BEFORE install.sh runs, and a fail-closed assertion then passes for the wrong reason, measuring a broken shim instead of the behavior; spawn ['/bin/bash', INSTALL_SCRIPT] (the existing runInstallSh helper already does this) and build the shim PATH out of the tools install.sh actually calls. GOTCHA (issue gotcha 3): the dev machine has BOTH /usr/bin/shasum and /sbin/sha256sum, so the no-hash-tool condition is unreproducible without a deliberately stripped PATH; do not use the ambient PATH for that leg. GOTCHA: the existing helper hardcodes PATH `${fakeBinDir}:/usr/bin:/bin`, which already carries shasum, so the no-hash-tool leg needs its own PATH construction (shim dir plus a curated dir of symlinks, or a PATH of only the shim dir with the needed tools symlinked in). Keep every assertion pair (non-zero exit AND empty INSTALL_DIR) in the same test. patterns.md:1198 documents the shim shape; patterns.md:1194 documents why static grep of install.sh cannot substitute for executing it."
     },
