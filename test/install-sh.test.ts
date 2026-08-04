@@ -14,7 +14,7 @@
 // Release has been published yet).
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -34,11 +34,30 @@ afterEach(() => {
 });
 
 /** Writes a fake `curl` executable to fakeBinDir that reacts to the releases-list URL. */
-function writeFakeCurl(behavior: 'network-failure' | 'empty-list'): void {
+function writeFakeCurl(behavior: 'network-failure' | 'empty-list' | 'success'): void {
 	const script =
 		behavior === 'network-failure'
 			? '#!/usr/bin/env bash\nexit 22\n' // curl -f style failure (e.g. rate-limit 403)
-			: '#!/usr/bin/env bash\necho "[]"\nexit 0\n'; // 200 OK, no releases published yet
+			: behavior === 'empty-list'
+				? '#!/usr/bin/env bash\necho "[]"\nexit 0\n' // 200 OK, no releases published yet
+				: // 'success': first call (no -o) is the releases-list lookup, second call
+					// (`-o <path>`) is the asset download — write a dummy payload to it so the
+					// script's own `chmod +x` / install loop has real bytes to work with.
+					[
+						'#!/usr/bin/env bash',
+						'OUT=""',
+						'prev=""',
+						'for arg in "$@"; do',
+						'  if [[ "${prev}" == "-o" ]]; then OUT="${arg}"; fi',
+						'  prev="${arg}"',
+						'done',
+						'if [[ -n "${OUT}" ]]; then',
+						'  printf "#!/bin/sh\\necho fake-gateship-binary\\n" > "${OUT}"',
+						'  exit 0',
+						'fi',
+						'echo \'[{"tag_name": "v9.9.9"}]\'',
+						'exit 0',
+					].join('\n');
 	const curlPath = join(fakeBinDir, 'curl');
 	writeFileSync(curlPath, script);
 	chmodSync(curlPath, 0o755);
@@ -82,5 +101,30 @@ describe('install.sh tag-resolution error path is reachable (US-R1-001, CAM-460)
 		const proc = Bun.spawn(['bash', '-n', INSTALL_SCRIPT], { stdout: 'pipe', stderr: 'pipe' });
 		const exitCode = await proc.exited;
 		expect(exitCode).toBe(0);
+	});
+});
+
+describe('install.sh success path (US-R2-004, CAM-460)', () => {
+	test('downloads the asset, installs both gateship and gship as executables, and leaves a pre-existing cam untouched', async () => {
+		writeFakeCurl('success');
+		const camPath = join(installDir, 'cam');
+		const camContents = '#!/bin/sh\necho pre-existing-cam\n';
+		writeFileSync(camPath, camContents);
+		chmodSync(camPath, 0o755);
+
+		const { exitCode, stdout } = await runInstallSh();
+
+		expect(exitCode).toBe(0);
+		expect(stdout).toContain('[install] done.');
+
+		for (const name of ['gateship', 'gship']) {
+			const dest = join(installDir, name);
+			expect(await Bun.file(dest).exists()).toBe(true);
+			expect(statSync(dest).mode & 0o111).toBeGreaterThan(0);
+		}
+
+		// Additive: the pre-existing `cam` binary is untouched, byte-for-byte.
+		expect(await Bun.file(camPath).exists()).toBe(true);
+		expect(readFileSync(camPath, 'utf8')).toBe(camContents);
 	});
 });
