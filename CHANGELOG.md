@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.280.0] - 2026-08-04
+
+### Added
+
+- US-002 - Stage, verify, then atomically rename in build-release.sh --install, and make the docs match
+- US-001 - Swap install.sh destinations by atomic rename from a staged temp inside INSTALL_DIR
+
 ## [0.279.0] - 2026-08-04
 
 ### Added
