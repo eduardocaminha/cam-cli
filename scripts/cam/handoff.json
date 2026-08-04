@@ -1,26 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Emit dist/SHA256SUMS.txt from build-release.sh after codesign"
+    "id": "US-002",
+    "title": "Publish the checksum manifest and build provenance from release.yml"
   },
   "branchName": "cam/issue-495",
   "timestamp": "2026-08-04T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "scripts/build-release.sh",
-    "test/build-release-smoke.test.ts",
-    "scripts/file-size-budget.json"
+    ".github/workflows/release.yml"
   ],
   "openQuestions": [],
-  "nextStoryContext": "scripts/build-release.sh now collects each loop iteration's OUT_NAME into a MANIFEST_NAMES array (declared alongside TARGETS) and appends to it only AFTER the darwin codesign block + size check for that target, so the array always reflects post-signature, size-checked artifacts. After the TARGETS loop closes (and after the HOST_BIN presence check), a new step runs `(cd dist && shasum -a 256 \"${MANIFEST_NAMES[@]}\" > SHA256SUMS.txt)` in default TEXT mode (no -b) so the file holds bare relative names with the two-space separator shasum -c expects; this must stay BEFORE the --version smoke and BEFORE the --install block. test/build-release-smoke.test.ts gained a new describe block with 5 static source-order guards (loop-closes-before-manifest, manifest-before-install, no-bare-glob, array-populated-inside-loop-from-OUT_NAME) mirroring the existing regex/index-based style in that file; be careful writing prose comments near this code that contain the literal substring `gateship-*` since the new guard's negative-match regex trips on ANY occurrence of that literal text, including comments (had to reword one of my own explanatory comments during this story for exactly that reason). test/build-release-smoke.test.ts's file-size-budget ceiling was raised 86->121 with a CAM-495 tracker ref prepended to file-size-budget.json's _ref (staged in the same commit). scripts/build-release.sh itself is NOT tracked by the file-size ratchet (its Glob only covers {src,scripts,test}/**/*.{ts,tsx}, no .sh), so no budget entry was needed for it despite growing from 216 to 232 lines. Full release build (`bun run build:release`) was run end-to-end on this macOS host and produced a real dist/SHA256SUMS.txt with 4 entries verified by `shasum -a 256 -c`; embed-vendor:check, typecheck, bun test (5998 pass), and check:all (full spine) all confirmed green.",
+  "nextStoryContext": ".github/workflows/release.yml now has 4 top-level permissions keys (artifact-metadata, attestations, contents, id-token, alphabetical order) and 6 steps: checkout, setup-bun, install tmux, install deps, build (bun run build:release), a new 'Attest build provenance for the four binaries' step using actions/attest-build-provenance@v4 with subject-path listing all 4 gateship-<os>-<arch> binaries one per line (block scalar, no glob -- a glob string doesn't literally contain the target substrings an oracle greps for), then the publish step (renamed 'Publish prerelease with the four binaries and checksum manifest') which now also passes dist/SHA256SUMS.txt to the same gh release create invocation as the 4 binaries. DOC CONFLICT from the prior handoff was resolved by choosing actions/attest-build-provenance (not the generic actions/attest) because it needs only subject-path (no predicate-type/predicate authoring), matching the issue's literal ask; both actions are current v4.x per the GitHub releases API and both require the same 3 permissions (id-token, attestations, artifact-metadata) since attest-build-provenance@v4 wraps attest@v4 internally -- all 3 were declared even though the AC7 oracle only greps for id-token+attestations+contents (artifact-metadata added anyway per the docs, no oracle checks it but it's required for the step to actually succeed at runtime). scripts/check-ci-parity.ts only reads .github/workflows/ci.yml, so release.yml stays invisible to that gate by construction -- confirmed unaffected. All 7 ACs' oracles run green plus typecheck/bun test (5998 pass)/check:all (full spine, exit 0). This workflow has never actually executed in CI (no v* tag pushed since these two stories landed) -- the next opportunity to verify it end-to-end is the next real tag push/release cut.",
   "officialDocsValidated": [
     {
-      "lib": "shasum (Perl Digest::SHA CLI, macOS coreutils)",
-      "channel": "man page (local, macOS-shipped)",
-      "url": "man:shasum",
+      "lib": "actions/attest-build-provenance + actions/attest (GitHub Actions)",
+      "url": "https://github.com/actions/attest-build-provenance and https://github.com/actions/attest",
       "fetchedAt": "2026-08-04T00:00:00Z",
       "status": "aligned",
-      "summary": "Confirmed -c/--check expects lines formatted by this program's own default TEXT mode (two-space separator between hex digest and filename); -b/--binary mode emits a different '*name' separator that -c would still accept but that breaks the story's grep-based oracle and install.sh's parser. Implementation deliberately omits -b/-t (text is the default) and writes with dist/ as cwd so the manifest holds bare relative names shasum -c can resolve unmodified."
+      "summary": "Confirmed actions/attest-build-provenance@v4 is a wrapper over actions/attest@v4, needs only subject-path (auto-generates SLSA v1 provenance predicate), and requires id-token: write, attestations: write, artifact-metadata: write (verified against actions/attest's action.yml/README since attest-build-provenance's own docs defer permission details to the wrapped action). Both repos have live v4.x releases per the GitHub releases API. Implementation uses actions/attest-build-provenance@v4 with a literal per-line subject-path list of the 4 build targets and declares all 4 required permissions (the 3 above plus contents: write for the release step)."
     }
   ]
 }
