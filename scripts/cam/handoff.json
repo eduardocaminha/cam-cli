@@ -1,0 +1,26 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Swap install.sh destinations by atomic rename from a staged temp inside INSTALL_DIR"
+  },
+  "branchName": "cam/issue-497",
+  "timestamp": "2026-08-04T22:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "install.sh",
+    "test/install-sh.test.ts",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "install.sh now stages one mktemp-in-INSTALL_DIR temp per NAME (gateship, gship), preps it fully (cp, chmod +x, darwin quarantine strip), then `mv -f STAGED DEST`. STAGED=\"\" is declared before the download section; the pre-existing EXIT trap at :98 (already covering TMP_BIN+TMP_SUMS) was extended in place (not joined by a second trap) to `rm -f \"${TMP_BIN}\" \"${TMP_SUMS}\" ${STAGED:+\"${STAGED}\"}` -- the bash-3.2-safe scalar form, not an array. Two new durable legs live in test/install-sh.test.ts: 'running binary' (compiles a real bun build --compile fixture, runs it as a live background process reading env CAM497_MARKER_PATH/CAM497_SLEEP_MS to hand-shake readiness via a marker file before install.sh runs, then asserts install exit 0 + live pid survives (process.kill(pid,0)) + a fresh exec of the resulting file still exits 0) and 'atomic swap' (installs twice into the same INSTALL_DIR, asserts the inode changed between runs, the binary stays executable, and no dot-file staging litter is left). Both are falsifiable: swept red against main's install.sh via the new GATESHIP_TEST_INSTALL_SH env override (defaults to the repo copy) -- see the AC7 oracle for the exact reviewer-reproducible command. GOTCHA for any future story that compiles a bun build --compile test fixture on THIS toolchain (macOS 26.3.1 / bun 1.3.13): re-signing a trivial single/few-module fixture with `codesign --force --sign -` fails nondeterministically with 'main executable failed strict validation' (upstream oven-sh/bun#7208), even though this repo's own real multi-hundred-module index.ts signs fine on the same machine. The fixture in this story deliberately stays unsigned (install.sh itself never codesigns, only strips the darwin quarantine bit) -- verified manually that an unsigned ad-hoc bun-compile binary run directly out of a user-owned /tmp dir reproduces the exact running-image-poisoning symptom (live pid survives kill -0, fresh re-exec dies rc=137) with zero signing needed. Full writeup in scripts/cam/patterns.md.",
+  "officialDocsValidated": [
+    {
+      "lib": "bun (build --compile)",
+      "channel": "WebFetch",
+      "url": "https://bun.com/docs/bundler/executables",
+      "fetchedAt": "2026-08-04T21:45:00Z",
+      "status": "aligned",
+      "summary": "Docs confirm bun build --compile embeds a full runtime and recommend `codesign --deep --force -vvvv --sign <identity> --entitlements entitlements.plist` for a real distribution signing identity (unrelated to this story's ad-hoc/unsigned test-fixture path, which install.sh itself never performs). No documented gotcha about scratch-file location or nondeterministic ad-hoc re-sign failures on trivial fixtures; that nondeterminism was verified empirically and recorded in scripts/cam/patterns.md instead of being an official-docs mismatch."
+    }
+  ]
+}
