@@ -23,12 +23,12 @@ import { writeRetryPid, removeRetryPid } from '../util/retry-pid.ts';
 import { renderHelp } from '../logging/help.ts';
 
 export const CLAUDE_HELP = renderHelp({
-	title: 'cam claude',
+	title: 'gship claude',
 	tagline: 'Run claude with built-in auto-retry on rate limits',
-	usage: 'cam claude [args...]',
+	usage: 'gship claude [args...]',
 	sections: [
 		{
-			heading: 'Flags consumed by cam',
+			heading: 'Flags consumed by gship',
 			entries: [
 				{ name: '--help, -h', description: 'Print this help and exit' },
 			],
@@ -36,31 +36,31 @@ export const CLAUDE_HELP = renderHelp({
 		{
 			heading: 'Examples',
 			body:
-				'cam claude -p "Hello world"\n' +
-				'cam claude --print --model opus /cam-next\n' +
-				'cam claude --permission-mode bypassPermissions /cam-plan',
+				'gship claude -p "Hello world"\n' +
+				'gship claude --print --model opus /cam-next\n' +
+				'gship claude --permission-mode bypassPermissions /cam-plan',
 		},
 		{
 			heading: 'Routing',
 			body:
-				'• With -p/--print:      print mode — cam captures stdout/stderr and retries\n' +
+				'• With -p/--print:      print mode — gship captures stdout/stderr and retries\n' +
 				'                          automatically when claude returns a rate-limit error.\n' +
-				'• Inside tmux (no -p):  interactive mode — cam forks a detached background\n' +
-				'                          monitor (cam retry-monitor) that watches the pane\n' +
+				'• Inside tmux (no -p):  interactive mode — gship forks a detached background\n' +
+				'                          monitor (gship retry-monitor) that watches the pane\n' +
 				'                          and sends the retry keystroke after the back-off\n' +
 				'                          window expires.\n' +
-				'• Outside tmux (no -p): error — run `cam run` to get a tmux session first.',
+				'• Outside tmux (no -p): error — run `gship run` to get a tmux session first.',
 		},
 		{
 			heading: 'Config',
 			body:
-				'Retry policy:     ~/.config/cam/retry.toml  (written by `cam init`; safe to edit)\n' +
+				'Retry policy:     ~/.config/cam/retry.toml  (written by `gship init`; safe to edit)\n' +
 				'Retry logs:       ~/.cam/retry-logs/\n' +
-				'Permission mode:  hardcoded bypassPermissions literal elsewhere in cam; no\n' +
-				'                  config key or CLI flag controls it. `cam claude` itself\n' +
+				'Permission mode:  hardcoded bypassPermissions literal elsewhere in gship; no\n' +
+				'                  config key or CLI flag controls it. `gship claude` itself\n' +
 				'                  does not expose such a flag either, but forwards args\n' +
 				'                  verbatim, so you CAN pass one straight to claude:\n' +
-				'                    cam claude --permission-mode <mode> <prompt>',
+				'                    gship claude --permission-mode <mode> <prompt>',
 		},
 	],
 	footer: 'All other flags are forwarded verbatim to the child `claude` process.',

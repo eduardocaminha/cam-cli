@@ -16,9 +16,9 @@ import { createLogger } from '../retry/logger.ts';
 import { renderHelp } from '../logging/help.ts';
 
 export const RETRY_MONITOR_HELP = renderHelp({
-	title: 'cam retry-monitor',
+	title: 'gship retry-monitor',
 	tagline: 'Internal monitor subcommand (not for direct use)',
-	usage: 'cam retry-monitor <pane> <pid>',
+	usage: 'gship retry-monitor <pane> <pid>',
 	sections: [
 		{
 			heading: 'Arguments',
@@ -30,7 +30,7 @@ export const RETRY_MONITOR_HELP = renderHelp({
 		{
 			heading: 'Behaviour',
 			body:
-				'This subcommand is forked as a detached background process by `cam claude`\n' +
+				'This subcommand is forked as a detached background process by `gship claude`\n' +
 				'when running inside a tmux session. It watches the given pane for rate-limit\n' +
 				'messages and sends the retry key sequence when the rate limit clears.\n' +
 				'\n' +
@@ -38,7 +38,7 @@ export const RETRY_MONITOR_HELP = renderHelp({
 		},
 	],
 	footer:
-		'Do not invoke this subcommand directly — use `cam run` to start a managed\n' +
+		'Do not invoke this subcommand directly — use `gship run` to start a managed\n' +
 		'tmux session where interactive auto-retry is handled automatically.',
 });
 
