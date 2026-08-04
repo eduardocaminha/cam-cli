@@ -18,7 +18,13 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const SCRIPT_PATH = resolve(import.meta.dir, '..', 'scripts', 'build-release.sh');
+// GATESHIP_TEST_BUILD_RELEASE_SH lets a reviewer independently re-run the
+// red-against-main sweep for the atomic-rename ordering block below (US-002,
+// CAM-497): `GATESHIP_TEST_BUILD_RELEASE_SH=<path to main's build-release.sh>
+// bun test ... -t 'atomic rename'` exercises a different script than the repo
+// copy without editing this file.
+const SCRIPT_PATH =
+	process.env.GATESHIP_TEST_BUILD_RELEASE_SH || resolve(import.meta.dir, '..', 'scripts', 'build-release.sh');
 const script = readFileSync(SCRIPT_PATH, 'utf8');
 
 /**
@@ -73,8 +79,10 @@ describe('build-release.sh AC4 soft-check is hermetic (CAM-15)', () => {
 
 	test('the tmpdir is cleaned up on exit (trap, survives abort paths)', () => {
 		expect(script).toMatch(/rm\s+-rf\s+"?\$\{?SMOKE_DIR/);
-		// A trap on EXIT cleans up even if an earlier build step aborts.
-		expect(script).toMatch(/trap\s+'rm -rf "\$\{SMOKE_DIR:-\}"'\s+EXIT/);
+		// A trap on EXIT cleans up even if an earlier build step aborts. The
+		// single trap is extended (US-002, CAM-497) to also clear a leftover
+		// staged install file, never joined by a second `trap ... EXIT`.
+		expect(script).toMatch(/trap\s+'rm -rf "\$\{SMOKE_DIR:-\}" \$\{STAGED:\+"\$\{STAGED\}"\}'\s+EXIT/);
 	});
 
 	test('the soft-check branches on the claude prerequisite, not blanket non-zero tolerance (US-003)', () => {
@@ -116,5 +124,65 @@ describe('build-release.sh writes dist/SHA256SUMS.txt post-codesign, from produc
 		expect(arrayPushIdx).toBeGreaterThan(loopStart);
 		expect(arrayPushIdx).toBeLessThan(loopEnd);
 		expect(script.slice(arrayPushIdx, arrayPushIdx + 40)).toContain('OUT_NAME');
+	});
+});
+
+describe('build-release.sh --install stages, verifies, then swaps by atomic rename (US-002, CAM-497, ADR-0058)', () => {
+	// Every position below is derived from the --install loop text at read
+	// time (indexOf over the script source), never a frozen line number, so
+	// this block goes red the instant a step regresses to writing ${DEST}
+	// directly or moves ahead of the rename.
+	const installIdx = script.indexOf('if [[ "${DO_INSTALL}" == "true" ]]; then');
+	const loopStart = script.indexOf('for NAME in gateship gship; do', installIdx);
+	const loopEnd = script.indexOf('\n\tdone', loopStart);
+	const loopText = script.slice(loopStart, loopEnd);
+
+	const cpIdx = loopText.indexOf('cp "${HOST_BIN}" "${STAGED}"');
+	const xattrIdx = loopText.indexOf('xattr -cr "${STAGED}"');
+	const signIdx = loopText.indexOf('codesign --force --sign - "${STAGED}"');
+	const verifyIdx = loopText.indexOf('codesign -v "${STAGED}"');
+	const chmodIdx = loopText.indexOf('chmod +x "${STAGED}"');
+	const smokeIdx = loopText.indexOf('SMOKE_ACTUAL="$("${STAGED}" --version)"');
+	const codesignFailIdx = loopText.indexOf('ERROR: codesign verification failed');
+	const smokeFailIdx = loopText.indexOf('ERROR: --version mismatch');
+	const mvIdx = loopText.indexOf('mv -f "${STAGED}" "${DEST}"');
+
+	test('the --install branch and its per-name loop are both present', () => {
+		expect(installIdx).toBeGreaterThan(-1);
+		expect(loopStart).toBeGreaterThan(installIdx);
+		expect(loopEnd).toBeGreaterThan(loopStart);
+	});
+
+	test('the staged temp is allocated inside the destination directory, not $TMPDIR', () => {
+		expect(loopText).toMatch(/mktemp\s+"\$\{DEST_DIR\}\/\./);
+	});
+
+	test('every preparation and verification step is present and names the staged file', () => {
+		for (const idx of [cpIdx, xattrIdx, signIdx, verifyIdx, chmodIdx, smokeIdx, mvIdx]) {
+			expect(idx).toBeGreaterThan(-1);
+		}
+	});
+
+	test('every preparation and verification step precedes the atomic rename over the destination', () => {
+		for (const idx of [cpIdx, xattrIdx, signIdx, verifyIdx, chmodIdx, smokeIdx]) {
+			expect(idx).toBeLessThan(mvIdx);
+		}
+	});
+
+	test('a failed codesign or --version verification aborts before the rename, leaving the previous installation intact', () => {
+		// Both abort paths (`exit 1` on codesign failure, `exit 1` on a
+		// --version mismatch) sit strictly before the mv -f swap: the
+		// destination is only ever replaced once every check has already
+		// passed against the staged file, so a failed verification never
+		// destroys a working prior installation.
+		expect(codesignFailIdx).toBeGreaterThan(-1);
+		expect(codesignFailIdx).toBeLessThan(mvIdx);
+		expect(smokeFailIdx).toBeGreaterThan(-1);
+		expect(smokeFailIdx).toBeLessThan(mvIdx);
+	});
+
+	test('the staged variable is cleared immediately after the rename succeeds', () => {
+		const clearIdx = loopText.indexOf('STAGED=""', mvIdx);
+		expect(clearIdx).toBeGreaterThan(mvIdx);
 	});
 });

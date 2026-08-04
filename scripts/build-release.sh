@@ -22,6 +22,14 @@
 # Install is additive: it creates `gateship` and `gship` at the destination
 # and NEVER removes a pre-existing `cam` binary (the loop self-spawns by
 # binary name in several places; removal is a deliberate operator step).
+#
+# Install-time swap: each destination is replaced by an atomic rename(2) from
+# a staged temp in the SAME directory, never a `cp` straight into the
+# destination. The staged file is fully prepared and verified (quarantine
+# strip, re-sign, codesign verify, --version smoke) BEFORE the rename, so a
+# failed verification leaves the previous installation intact and a live
+# `gship` process keeps running on its old inode instead of being poisoned.
+# See ADR-0058 and CONTEXT.md ("staged install temp", "atomic install swap").
 set -euo pipefail
 
 # --- Resolve repo root regardless of cwd -----------------------------------
@@ -172,8 +180,12 @@ echo "[build-release]   ${ACTUAL}"
 # (no mutating command in a build smoke); the 2026-06-13 entry records this fix.
 echo "[build-release] invoking init (soft-check, hermetic, ${HOST_BIN})"
 SMOKE_DIR="$(mktemp -d)"
-# Clean up the tmpdir on any exit (success OR an earlier abort), so it never leaks.
-trap 'rm -rf "${SMOKE_DIR:-}"' EXIT
+STAGED=""
+# Clean up the tmpdir on any exit (success OR an earlier abort), so it never
+# leaks; extended in place (never joined by a second trap on EXIT, which
+# would replace this one) to also clear a leftover staged install file if a
+# later verification step aborts before the rename (ADR-0058).
+trap 'rm -rf "${SMOKE_DIR:-}" ${STAGED:+"${STAGED}"}' EXIT
 BIN_ABS="${REPO_ROOT}/${HOST_BIN}"
 if (cd "${SMOKE_DIR}" && "${BIN_ABS}" init --no-tmux --existing --issue-system none --merge-mode immediate --plan-approval operator </dev/null); then
 	echo "[build-release]   init: ok (hermetic tmpdir, no tmux)"
@@ -201,20 +213,27 @@ if [[ "${DO_INSTALL}" == "true" ]]; then
 	echo "[build-release] installing to ${DEST_DIR} (gateship, gship)"
 	for NAME in gateship gship; do
 		DEST="${DEST_DIR}/${NAME}"
-		cp "${HOST_BIN}" "${DEST}"
+		STAGED="$(mktemp "${DEST_DIR}/.${NAME}.XXXXXX")"
+		cp "${HOST_BIN}" "${STAGED}"
 
-		xattr -cr "${DEST}"
+		xattr -cr "${STAGED}"
 
-		codesign --force --sign - "${DEST}"
-		codesign -v "${DEST}" || { echo "[build-release] ERROR: codesign verification failed for ${DEST}" >&2; exit 1; }
-		echo "[build-release]   codesign: ad-hoc re-sign ok (${DEST})"
+		codesign --force --sign - "${STAGED}"
+		codesign -v "${STAGED}" || { echo "[build-release] ERROR: codesign verification failed for ${STAGED}" >&2; exit 1; }
+		echo "[build-release]   codesign: ad-hoc re-sign ok (${STAGED})"
 
-		SMOKE_ACTUAL="$("${DEST}" --version)"
+		chmod +x "${STAGED}"
+
+		SMOKE_ACTUAL="$("${STAGED}" --version)"
 		if [[ "${SMOKE_ACTUAL}" != "${EXPECTED}" ]]; then
 			echo "[build-release] ERROR: --version mismatch -- expected '${EXPECTED}', got '${SMOKE_ACTUAL}'" >&2
 			exit 1
 		fi
-		echo "[build-release]   install smoke: ${SMOKE_ACTUAL} ok (${DEST})"
+		echo "[build-release]   install smoke: ${SMOKE_ACTUAL} ok (${STAGED})"
+
+		mv -f "${STAGED}" "${DEST}"
+		STAGED=""
+		echo "[build-release]   installed ${DEST}"
 	done
 
 	case ":${PATH}:" in
