@@ -30,12 +30,13 @@ jobs:
       - name: Publish prerelease with the four binaries
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
         run: |
-          gh release create "${{ github.ref_name }}" \
+          gh release create "$TAG" \
             dist/gateship-darwin-arm64 \
             dist/gateship-darwin-x64 \
             dist/gateship-linux-x64 \
             dist/gateship-linux-arm64 \
             --prerelease \
-            --title "${{ github.ref_name }}" \
+            --title "$TAG" \
             --generate-notes
