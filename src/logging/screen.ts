@@ -110,6 +110,6 @@ export function emitAttachHint(sessionName: string, env: Env = process.env): voi
 	if (isInsideProjectSession(sessionName, env)) {
 		return;
 	}
-	emitMutedHint("Run `cam run` to open the project session, or:");
+	emitMutedHint("Run `gship run` to open the project session, or:");
 	emitMutedHint(`  tmux attach -t ${sessionName}`);
 }

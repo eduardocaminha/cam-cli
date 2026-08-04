@@ -79,7 +79,7 @@ export function runPause(options: PauseOptions = {}): number {
 	setPause(claudeDir, options.writeFn);
 	emitSectionHeading('Brake');
 	emitOk('Pause marker SET — this is a graceful operator brake, separate from loop state');
-	emitMutedHint('Run `cam resume` to clear the pause and continue');
+	emitMutedHint('Run `gship resume` to clear the pause and continue');
 
 	emitTrailingBlank();
 	return 0;

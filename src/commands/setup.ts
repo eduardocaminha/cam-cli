@@ -651,7 +651,7 @@ export async function runSetup(options: SetupOptions = {}): Promise<number> {
 	const agentResult = verifyAgent();
 	if (!agentResult.ok) {
 		printError('claude not ready', agentResult.hint);
-		printHint('Fix the issues above and re-run `cam init`');
+		printHint('Fix the issues above and re-run `gship init`');
 		return 1;
 	}
 
@@ -767,7 +767,7 @@ export async function runSetup(options: SetupOptions = {}): Promise<number> {
 			'Failed to launch tmux split',
 			err instanceof Error ? err.message : String(err),
 		);
-		printHint('Run `cam init --no-tmux` to skip the tmux step and install templates only');
+		printHint('Run `gship init --no-tmux` to skip the tmux step and install templates only');
 		return 1;
 	}
 

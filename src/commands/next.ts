@@ -308,12 +308,12 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 	const alive = hasSession(sessionName, tmuxSpawnFn) && orchestratorAlive(sessionName, tmuxSpawnFn);
 
 	if (!alive) {
-		emitMutedHint('No live orchestrator detected, bootstrapping cam run...');
+		emitMutedHint('No live orchestrator detected, bootstrapping gship run...');
 		const bootstrapped = await doBootstrap(cwd, options.bootstrapFn);
 		if (!bootstrapped) {
 			printError(
 				'Failed to bootstrap orchestrator',
-				'Run `cam run` manually, then retry `cam next`.',
+				'Run `gship run` manually, then retry `gship next`.',
 			);
 			emitTrailingBlank();
 			return 1;
@@ -329,7 +329,7 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 		if (!ready) {
 			printError(
 				'Orchestrator did not become ready in time',
-				'Run `cam run` manually and retry.',
+				'Run `gship run` manually and retry.',
 			);
 			emitTrailingBlank();
 			return 1;
@@ -384,7 +384,7 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 				`Preflight failed at step: ${preflight.step}`,
 				preflight.detail.length > 0
 					? preflight.detail
-					: 'run `cam next --skip-preflight` to bypass (resume escape)',
+					: 'run `gship next --skip-preflight` to bypass (resume escape)',
 			);
 			emitTrailingBlank();
 			return 1;
