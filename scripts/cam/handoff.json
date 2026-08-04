@@ -1,36 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-R2-002",
-    "title": "CRITICAL: 15 user-facing RUNTIME remediation strings still instruct the retired command"
+    "id": "US-R2-003",
+    "title": "WARNING: `${{ github.ref_name }}` is interpolated directly into a `run:` shell…"
   },
   "branchName": "cam/issue-460",
-  "timestamp": "2026-08-03T22:10:00Z",
+  "timestamp": "2026-08-03T22:30:00Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/plan.ts",
-    "src/commands/ship.ts",
-    "src/commands/next.ts",
-    "src/commands/review.ts",
-    "src/commands/issue.ts",
-    "src/commands/spec.ts",
-    "src/commands/run.ts",
-    "src/commands/setup.ts",
-    "src/commands/pause.ts",
-    "src/logging/screen.ts",
-    "test/attach-hint.test.ts",
-    "scripts/cam/patterns.md"
+    ".github/workflows/release.yml"
   ],
-  "openQuestions": [
-    "Fixed the story's exact 16 enumerated remediation strings PLUS: the 6 'bootstrapping cam run...' narration lines that immediately precede an already-fixed remediation string in the same bootstrap-failure block (plan/ship/next/review/issue/spec.ts), the two unlisted 'Run `cam run` manually and retry.' duplicates in issue.ts/spec.ts (same function as an already-listed sibling), and run.ts's 'run `cam init` first' two lines below the one enumerated run.ts line. All now read `gship <subcommand>`.",
-    "Deliberately NOT fixed (same defect class, different command handlers the story never opened -- flagged for a future story rather than silently expanded into): drain.ts:108,119,122 ('Run `cam drain --clear/--stop`...'), resume.ts's `emitEntry('cam next', ...)` + the noop-case 'the retry-monitor will respawn `cam next`...' hint, and next.ts:193's writeState helper ('run `cam stop` to clear', thrown as an Error, not currently covered by any test).",
-    "Deliberately NOT fixed (different class: an origin-labeling error prefix, not a typed-remediation instruction -- same class as the already out-of-scope `[cam retry-monitor]`/`[cam]` internal-log-identity convention flagged in US-R2-001's handoff): prune.ts's 'cam prune: <detail>' prefixes (4 sites) and spec.ts's 'cam spec --write-docs: <detail>' / 'cam spec --persist: <detail>' prefixes (5 sites).",
-    "Deliberately NOT fixed: every emitTitle('cam <subcommand>') banner across all commands -- a systemic, all-commands cosmetic-identity convention (not an instruction to type anything), out of scope for this story and much larger than a single-story rename."
-  ],
-  "nextStoryContext": "The 16 story-enumerated runtime remediation strings (plus the immediately-adjacent narration/duplicate lines in the same code blocks) now say `gship <subcommand>` instead of `cam <subcommand>`. test/attach-hint.test.ts's toContain('cam run')/not.toContain('cam run') assertions were updated to 'gship run' in the same commit -- they test emitAttachHint's real output, not a hardcoded fixture, so any further runtime-string rename in this family must update this test in the same commit too. Full `bun run check:all` is green: 5992 pass / 0 fail, typecheck clean, lint/file-size/debt-markers/coverage/dead-code/dup/ci-parity/agents-md/test-sleeps/skip-ratchet all ok; no vendor/templates files touched. Next non-operator, passes:false story by priority is US-R2-003 (priority 3): WARNING about `${{ github.ref_name }}` interpolated directly into a `run:` shell step (script-injection risk) -- see openQuestions above for the deferred remediation-string sites (drain.ts, resume.ts, next.ts writeState) a future story could pick up as its own scoped cleanup.",
+  "openQuestions": [],
+  "nextStoryContext": "release.yml's `gh release create`/`--title` `run:` block no longer interpolates `${{ github.ref_name }}` directly; the raw tag value is bound once to `env: TAG: ${{ github.ref_name }}` and referenced as the double-quoted `\"$TAG\"` shell variable at both use sites (lines 34 and 40 in the pre-fix file), per GitHub's security-hardening guide's intermediate-environment-variable pattern (confirmed live against the current docs in officialDocsValidated below). This is the same env-var-indirection idiom already used elsewhere in the workflow for `GH_TOKEN`. `scripts/check-ci-parity.ts`'s `CI_YML_PATH` constant only ever reads `.github/workflows/ci.yml` (see patterns.md US-003/CAM-460 bullet), so this change to the sibling `release.yml` is invisible to that gate by construction and needed no parity-check update. Full `bun run check:all` is green: 5992 pass / 0 fail, typecheck clean, lint/file-size/debt-markers/coverage/dead-code/dup/ci-parity/agents-md/test-sleeps/skip-ratchet all ok; no vendor/templates files touched.",
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched"
+      "lib": "GitHub Actions",
+      "channel": "WebFetch",
+      "url": "https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions",
+      "fetchedAt": "2026-08-03T22:25:00Z",
+      "status": "aligned",
+      "summary": "Confirmed current guidance: bind untrusted expression (github.ref_name) to an env: var, reference it double-quoted ($VAR) in run: -- exactly the pattern applied."
     }
   ],
   "appliedPatternIds": []
