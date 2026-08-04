@@ -81,7 +81,7 @@
         "The quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: install.sh (insert between the artifact download at lines 81-89 and the install loop at lines 91-103), test/install-sh.test.ts (extend writeFakeCurl). The manifest URL is https://github.com/${REPO}/releases/download/${TAG}/SHA256SUMS.txt, the same tag the artifact came from. GOTCHA (patterns.md:1194, the CAM-460 defect this repo already paid for): under `set -euo pipefail` a bare `VAR=\"$(pipeline)\"` assignment kills the script on ANY failing stage, so a friendly guard on the next line is dead code; wrap every hash/download capture in an explicit `if ! VAR=\"$(...)\"; then <diagnostic>; exit 1; fi` (or `|| true` plus an explicit -z check) so the diagnostic is reachable. GOTCHA (patterns.md:1198): one fake curl branching on its own \"$@\" answers every call site; the shim now has THREE shapes to serve (releases-list JSON on stdout, artifact via -o, manifest via -o or stdout) and must compute the digest from the exact bytes it wrote. The manifest lists bare artifact names, so compare the digest field rather than running `shasum -c` against a manifest whose paths will not resolve next to a mktemp payload. Verification must happen against the downloaded tmpfile, before chmod/cp. ADR-0057 fixes the scope: checksum only in the installer, no gh dependency, no silent degradation."
     },
