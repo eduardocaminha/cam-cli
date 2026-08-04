@@ -517,3 +517,12 @@ Checksum servido pelo mesmo host, pelo mesmo canal TLS e sob o mesmo controle de
 
 **janela de prerelease**:
 Intervalo em que o Gateship tem caminho de instalacao publicado mas ainda nao teve instalacao externa, durante o qual o ADR-0054 autoriza renomear contratos internos. O ADR-0055 marcou o primeiro Release como prerelease para manter a janela aberta. Medicao de 2026-08-04 refinou o marco de fechamento: o Release v0.278.0 saiu como efeito colateral do push de tag, com downloads=0, entao o evento que fecha a janela e o primeiro download e nao o ato de publicar.
+
+**staged install temp**:
+Arquivo temporario criado por mktemp DENTRO do diretorio de instalacao, preparado por completo (conteudo, bit de execucao, quarentena removida, e no caminho interno tambem assinatura e smoke) e so entao renomeado por cima do destino final. Fica no mesmo diretorio, e nao em $TMPDIR, porque rename so e atomico dentro do mesmo filesystem.
+
+**running-image poisoning**:
+Falha do macOS em que sobrescrever in-place o inode de um binario que um processo vivo mantem aberto como imagem executavel (fd txt) faz o arquivo resultante ser morto com SIGKILL no proximo exec (rc=137), sem nenhuma mensagem de diagnostico. Bytes identicos noutro caminho executam normalmente. O equivalente no Linux e o kernel recusar a escrita com ETXTBSY.
+
+**atomic install swap**:
+Invariante de instalacao do gateship: um destino de instalacao e substituido por rename(2) de um staged temp do mesmo diretorio, nunca por escrita in-place. Garante as duas coisas de uma vez, que o processo em execucao siga com o inode antigo intacto e que nenhum leitor consiga observar um arquivo parcialmente escrito.
