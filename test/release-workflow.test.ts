@@ -60,13 +60,29 @@ describe('release.yml gh release create invocation (US-R1-002, CAM-495)', () => 
 	});
 });
 
+// The attest step is a separate step from `gh release create`, above it in
+// the job. Slice from the step's own `- name:` boundary to the next step
+// boundary so the four subject-path assertions below are scoped to this
+// step's `subject-path:` list, not satisfied merely because the same four
+// paths also appear later in the `gh release create` block (US-R2-002,
+// CAM-495 review round 2: the whole-workflow assertion was tautological --
+// it stayed green even when the attest step's subject-path was mutated to
+// a glob, `dist/gateship-*`, that never literally contains any of the four
+// asserted substrings).
+const attestStepIdx = workflow.indexOf('uses: actions/attest-build-provenance@v4');
+const attestNextStepIdx = workflow.indexOf('\n      - name:', attestStepIdx);
+const attestStepBlock = workflow.slice(
+	attestStepIdx,
+	attestNextStepIdx === -1 ? workflow.length : attestNextStepIdx,
+);
+
 describe('release.yml attest step (US-R1-002, CAM-495)', () => {
 	test('runs actions/attest-build-provenance for the four binaries', () => {
-		expect(workflow).toContain('uses: actions/attest-build-provenance@v4');
-		expect(workflow).toContain('dist/gateship-darwin-arm64');
-		expect(workflow).toContain('dist/gateship-darwin-x64');
-		expect(workflow).toContain('dist/gateship-linux-x64');
-		expect(workflow).toContain('dist/gateship-linux-arm64');
+		expect(attestStepIdx).toBeGreaterThan(-1);
+		expect(attestStepBlock).toContain('dist/gateship-darwin-arm64');
+		expect(attestStepBlock).toContain('dist/gateship-darwin-x64');
+		expect(attestStepBlock).toContain('dist/gateship-linux-x64');
+		expect(attestStepBlock).toContain('dist/gateship-linux-arm64');
 	});
 
 	test('the job carries the permissions the attest action requires', () => {
