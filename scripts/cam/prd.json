@@ -45,7 +45,7 @@
         "The quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: scripts/build-release.sh (add the manifest step after the `for entry in \"${TARGETS[@]}\"` loop closes, around line 124, before the --version smoke), test/build-release-smoke.test.ts (static guard, mirrors the existing hermetic-init guards), scripts/file-size-budget.json only if the test file crosses its 86-line ceiling (a budget raise needs a tracker ref such as CAM-495 in the same staged diff, patterns.md:576). Collect the produced artifact names inside the loop (e.g. an OUT_NAMES array) and hash them by name from dist/ so the manifest is TARGETS-derived. Hash in shasum's default text mode (`shasum -a 256 <names> > SHA256SUMS.txt` run with dist/ as cwd, so the manifest holds bare relative names that `shasum -c` can resolve, and the two-space separator the oracle greps for); `-b`/binary mode emits a `*name` separator and breaks both the oracle and install.sh's parsing. GOTCHA (issue gotcha 2): codesign --force --sign - runs INSIDE the per-target loop, so any hash taken inside the loop is pre-signature for the two darwin targets and would never match the published bytes; the divergence would only surface in production. GOTCHA: build-release.sh runs `set -euo pipefail` and only on a macOS host (codesign); worker_isolation is `host` in scripts/cam/project.toml, so the real build is runnable, and the AC1 oracle must run before the size oracle since the latter reads dist/. patterns.md:1190 covers the cross-compile loop and the darwin-only re-sign gate."
     },
