@@ -17,9 +17,9 @@
 
 ## Stop Condition
 
-The cam-loop reaches a terminal state when the TS supervisor (`runSupervisor` in `src/supervisor/loop.ts`) detects either: (a) **complete**, all stories (including operator ones) have `passes: true` AND the review cycle is terminal (`prd.review.lastVerdict === "CLEAN"` or `"MAX_ROUNDS_DEBT"`); or (b) **awaiting-operator**, all non-operator stories pass AND review is terminal AND one or more `requires: "operator"` stories are still `passes: false`. The supervisor is driven by `cam next`, not by a stop-hook or `/cam-next` re-inject.
+The cam-loop reaches a terminal state when the TS supervisor (`runSupervisor` in `src/supervisor/loop.ts`) detects either: (a) **complete**, all stories (including operator ones) have `passes: true` AND the review cycle is terminal (`prd.review.lastVerdict === "CLEAN"` or `"MAX_ROUNDS_DEBT"`); or (b) **awaiting-operator**, all non-operator stories pass AND review is terminal AND one or more `requires: "operator"` stories are still `passes: false`. The supervisor is driven by `gship next`, not by a stop-hook or `/cam-next` re-inject.
 
-Stories with `requires: "operator"` are **out-of-scope** for autonomous implementation (operator ceremonies: TUI keypress, real-API hit, screencap, etc.). They do NOT block the review cycle: the loop implements all non-operator stories, runs review to a terminal verdict, then exits with status `awaiting-operator` (exit 0). The operator hand-executes the ceremony, flips `passes: true` manually, and re-runs `cam next` to complete the PRD.
+Stories with `requires: "operator"` are **out-of-scope** for autonomous implementation (operator ceremonies: TUI keypress, real-API hit, screencap, etc.). They do NOT block the review cycle: the loop implements all non-operator stories, runs review to a terminal verdict, then exits with status `awaiting-operator` (exit 0). The operator hand-executes the ceremony, flips `passes: true` manually, and re-runs `gship next` to complete the PRD.
 
 Note: `requires: "operator"` stories are hand-filed by the operator only (via `/cam-issue`). The subagent-planner no longer emits them (changed in US-003); any story that requires an operator ceremony must be filed manually.
 
@@ -88,7 +88,7 @@ When a story produces a new insight, route it to exactly one canonical channel u
 
 **Location convention:** `scripts/cam/` is cam-harness knowledge (state files, agent instructions, knowledge-layer artifacts). Repo root plus `docs/` is the project domain model (CONTEXT.md, docs/adr/, README, CHANGELOG). Do not move `journal.md` or `patterns.md` out of `scripts/cam/`, and do not move `CONTEXT.md` or `docs/adr/` into it.
 
-**Marking a `patterns.md` bullet resolved:** once a bullet documents a one-time, already-resolved mechanic rather than a living invariant, prefix it with `[resolved YYYY-MM]` immediately after the leading `- ` (e.g. `- [resolved 2026-06] **title** ...`). `cam patterns archive` moves every bullet carrying this marker, verbatim, into `scripts/cam/patterns.archive.md` in one on-main commit; unmarked bullets are left in place. Never mark a durable invariant (Bun runtime, permission-mode, `claude -p` forbidden, `noUncheckedIndexedAccess`, Ink success/failure glyph, single-hub dispatch, sidecar-supervisor) this way.
+**Marking a `patterns.md` bullet resolved:** once a bullet documents a one-time, already-resolved mechanic rather than a living invariant, prefix it with `[resolved YYYY-MM]` immediately after the leading `- ` (e.g. `- [resolved 2026-06] **title** ...`). `gship patterns archive` moves every bullet carrying this marker, verbatim, into `scripts/cam/patterns.archive.md` in one on-main commit; unmarked bullets are left in place. Never mark a durable invariant (Bun runtime, permission-mode, `claude -p` forbidden, `noUncheckedIndexedAccess`, Ink success/failure glyph, single-hub dispatch, sidecar-supervisor) this way.
 
 **Exception (cam-cli only):** `lessons.md` has been retired to `lessons.archive.md` (US-001 of CAM-123). New insights go to the channels above, not to `lessons.archive.md`. This retirement is a cam-cli-specific exception to the etapa-dupla convention in the global CLAUDE.md (section 5, "Capture Lessons"), which records both a chronological diary entry AND a canonical-location entry. For non-cam projects the global etapa-dupla rule still applies in full.
 
@@ -103,7 +103,7 @@ The durable domain model for any cam-managed project lives at two pinned locatio
 - Glossary (`CONTEXT.md`): canonical terminology, bounded-context definitions, and ubiquitous language. Nothing about implementation. No specs, no decisions.
 - ADR (`docs/adr/`): write one only when all three gates pass: (1) hard to reverse, (2) surprising without context, (3) the result of a real trade-off with genuine alternatives considered. If any gate is missing, skip the ADR.
 
-This convention applies to cam-cli itself and to any downstream cam project initialized by `cam init`. `CONTEXT.md` is populated by the CAM-118 deterministic writer (do not pre-create an empty stub). `docs/adr/` is created lazily: when the first ADR is needed (do not pre-create an empty directory).
+This convention applies to cam-cli itself and to any downstream cam project initialized by `gship init`. `CONTEXT.md` is populated by the CAM-118 deterministic writer (do not pre-create an empty stub). `docs/adr/` is created lazily: when the first ADR is needed (do not pre-create an empty directory).
 
 **Self-improvement sources:** the domain model cross-references two knowledge layers:
 - `scripts/cam/patterns.md`: durable codebase patterns, gotchas, and invariants (versioned on main, never truncated). Agents read this file at story start to absorb project conventions.
@@ -135,9 +135,9 @@ demotion is applied at version-compute time. No command produces `1.0.0`
 automatically; a 1.0.0 graduation requires a manual operator edit of
 `src/version.ts`.
 
-**Squash-merge tag-timing decision:** `cam ship --bump` commits the version
+**Squash-merge tag-timing decision:** `gship ship --bump` commits the version
 bump on the feature branch. After the PR squash-merges to main, the branch SHA
-is gone and tagging it is wrong. Always run `cam tag` on main (after
+is gone and tagging it is wrong. Always run `gship tag` on main (after
 `git pull origin main`) to create and push the `vX.Y.Z` tag at the correct
 main HEAD SHA.
 

@@ -1,6 +1,6 @@
 Write the `phase:planning` signal to trigger the deterministic plan runner for a given issue.
 
-**CLI path**: `cam plan [N]` writes `phase:planning + plan_issue=N` to `.claude/cam-loop.local.md` and returns immediately. The sidecar detects `phase === 'planning'` on its next tick and calls `runPlanPhase` (`src/supervisor/plan-runner.ts`).
+**CLI path**: `gship plan [N]` writes `phase:planning + plan_issue=N` to `.claude/cam-loop.local.md` and returns immediately. The sidecar detects `phase === 'planning'` on its next tick and calls `runPlanPhase` (`src/supervisor/plan-runner.ts`).
 
 **Slash-command path** (this file): write the same `phase:planning + plan_issue` signal, then narrate. Both paths are signal-writers only; the full control-flow (pre-flight, planner pane, auditor pane, post-audit branching) lives entirely in `runPlanPhase`. The state machine is documented in `docs/adr/0006-phase-enum-loop-state-machine.md`.
 

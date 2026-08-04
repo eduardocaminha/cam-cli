@@ -1,6 +1,7 @@
 // test/version.test.ts
 //
-// US-011 acceptance criterion 3: `cam --version` prints `cam X.Y.Z`.
+// US-011 acceptance criterion 3: `--version` prints `gateship X.Y.Z`
+// (US-002, CAM-460: the product name, not the retired `cam` invocation).
 //
 // Two layers of coverage:
 //   1. The exported constant `CAM_VERSION` matches the documented v0.1.0
@@ -60,7 +61,7 @@ describe('`cam` dispatch — version variants', () => {
 		try {
 			const code = await main(['bun', 'cam', '--version']);
 			expect(code).toBe(0);
-			expect(cap.written()).toBe(`cam ${CAM_VERSION}\n`);
+			expect(cap.written()).toBe(`gateship ${CAM_VERSION}\n`);
 		} finally {
 			cap.restore();
 		}
@@ -71,7 +72,7 @@ describe('`cam` dispatch — version variants', () => {
 		try {
 			const code = await main(['bun', 'cam', '-v']);
 			expect(code).toBe(0);
-			expect(cap.written()).toBe(`cam ${CAM_VERSION}\n`);
+			expect(cap.written()).toBe(`gateship ${CAM_VERSION}\n`);
 		} finally {
 			cap.restore();
 		}
@@ -82,7 +83,7 @@ describe('`cam` dispatch — version variants', () => {
 		try {
 			const code = await main(['bun', 'cam', 'version']);
 			expect(code).toBe(0);
-			expect(cap.written()).toBe(`cam ${CAM_VERSION}\n`);
+			expect(cap.written()).toBe(`gateship ${CAM_VERSION}\n`);
 		} finally {
 			cap.restore();
 		}

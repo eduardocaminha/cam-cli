@@ -1002,7 +1002,7 @@ export function runRun(options: RunOptions = {}): number {
 	//    bold lives at col 0 by design — it must stand out, not nestle inside
 	//    a Section column).
 	if (!tmuxAvailable(spawnFn)) {
-		printError('tmux is not on PATH', 'install tmux and re-run `cam run`');
+		printError('tmux is not on PATH', 'install tmux and re-run `gship run`');
 		emitTrailingBlank();
 		return 1;
 	}
@@ -1011,7 +1011,7 @@ export function runRun(options: RunOptions = {}): number {
 	if (!existsSync(orchestratorAgent)) {
 		printError(
 			'subagent-orchestrator.md not found',
-			'This project has not been initialized — run `cam init` first',
+			'This project has not been initialized — run `gship init` first',
 		);
 		emitTrailingBlank();
 		return 1;

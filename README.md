@@ -29,7 +29,52 @@ Built on Bun + TypeScript. Distributed as a single-file binary built from source
 
 ## Install
 
-### Option A: From source
+### Option A: Packaged binary (recommended)
+
+One command, no clone or Bun toolchain required:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/eduardocaminha/cam-cli/main/install.sh | bash
+```
+
+This detects your OS/arch, downloads the matching asset from the latest
+GitHub Release
+(`https://github.com/eduardocaminha/cam-cli/releases/download/<tag>/<asset>`,
+one of `gateship-darwin-arm64`, `gateship-darwin-x64`, `gateship-linux-x64`,
+`gateship-linux-arm64`), and installs it as both `gateship` and `gship` into
+`~/.local/bin` (override with `GATESHIP_INSTALL_DIR`). It is additive: it
+never removes or overwrites a pre-existing `cam` binary.
+
+Ensure `~/.local/bin` is on `$PATH` (add to `~/.zshrc` or `~/.bash_profile`
+if missing), then verify:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+gateship --version
+```
+
+#### About the signature (macOS)
+
+The published binaries are **ad-hoc signed, not notarized by Apple**: there
+is no Apple Developer account behind this project (operator decision,
+2026-08-01). Ad-hoc signing is enough to satisfy `codesign -v` and to run
+the binary yourself, but it carries none of Apple's notarization
+malware-scan guarantee, and it does not stop Gatekeeper from quarantining a
+binary that arrived via download. `install.sh` already strips that
+quarantine bit for you (`xattr -d com.apple.quarantine`); if you installed a
+binary by hand, or macOS still refuses to run it, run that command yourself
+against the binary before it will execute:
+
+```bash
+xattr -d com.apple.quarantine ~/.local/bin/gateship
+xattr -d com.apple.quarantine ~/.local/bin/gship
+```
+
+Distributing a fully notarized binary would require Developer ID signing,
+`notarytool` submission, and stapling; the current build/release pipeline
+does not include those steps.
+
+### Option B: From source
 
 ```bash
 # 1. Clone
@@ -39,14 +84,15 @@ cd cam-cli
 # 2. Install dependencies
 bun install
 
-# 3. Build and install (builds dist/cam-darwin-arm64, re-signs it ad-hoc, copies to ~/.local/bin/cam; no sudo)
+# 3. Build all four targets and install the host-native one (re-signed ad-hoc,
+#    copies to ~/.local/bin/gateship and ~/.local/bin/gship; no sudo, additive)
 ./scripts/build-release.sh --install
 
 # 4. Ensure ~/.local/bin is on $PATH (add to ~/.zshrc or ~/.bash_profile if missing):
 #    export PATH="$HOME/.local/bin:$PATH"
 
 # 5. Verify
-cam --version
+gateship --version
 ```
 
 **Alternative: system-wide install to /usr/local/bin**
@@ -56,17 +102,10 @@ The build script handles re-signing, so the binary is valid for any destination:
 
 ```bash
 ./scripts/build-release.sh
-sudo cp dist/cam-darwin-arm64 /usr/local/bin/cam
+sudo cp dist/gateship-darwin-arm64 /usr/local/bin/gateship
 ```
 
-#### Public distribution note
-
-Ad-hoc signing (used above) is sufficient for your own machine only. Distributing
-the binary to other users requires Developer ID signing, notarytool submission, and
-stapling via Apple's notarization service (Apple Developer account required). The
-current build scripts do not include those steps.
-
-### Option B: Run from source without compiling
+### Option C: Run from source without compiling
 
 Useful while iterating on `cam` itself or on a non-darwin-arm64 machine:
 
@@ -246,7 +285,7 @@ under the MIT license. See [LICENSES/claude-auto-retry-MIT.txt](./LICENSES/claud
 bun install
 bun test                 # run the unit-test suite (~470 tests)
 bunx tsc --noEmit        # typecheck
-bun run build:release    # produce dist/cam-darwin-arm64
+bun run build:release    # produce dist/gateship-{darwin,linux}-{arm64,x64}
 ```
 
 Source layout:

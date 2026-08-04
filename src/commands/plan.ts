@@ -113,10 +113,10 @@ async function bootstrapAndWait(
 	tmuxSpawnFn: TmuxSpawnFn,
 	options: Pick<PlanOptions, 'bootstrapFn' | 'statFn' | 'sleepFn' | 'waitTimeoutMs'>,
 ): Promise<number> {
-	emitMutedHint('No live orchestrator detected, bootstrapping cam run...');
+	emitMutedHint('No live orchestrator detected, bootstrapping gship run...');
 	const bootstrapped = await doBootstrap(cwd, options.bootstrapFn);
 	if (!bootstrapped) {
-		printError('Failed to bootstrap orchestrator', 'Run `cam run` manually, then retry `cam plan`.');
+		printError('Failed to bootstrap orchestrator', 'Run `gship run` manually, then retry `gship plan`.');
 		emitTrailingBlank();
 		return 1;
 	}
@@ -129,7 +129,7 @@ async function bootstrapAndWait(
 		timeoutMs: options.waitTimeoutMs,
 	});
 	if (!ready) {
-		printError('Orchestrator did not become ready in time', 'Run `cam run` manually and retry.');
+		printError('Orchestrator did not become ready in time', 'Run `gship run` manually and retry.');
 		emitTrailingBlank();
 		return 1;
 	}

@@ -82,7 +82,7 @@ describe('parsePatternsArgs', () => {
 		}) as typeof process.stdout.write;
 		try {
 			expect(parsePatternsArgs(['unknown'])).toBeNull();
-			expect(stdoutLines.join('')).toContain('cam patterns archive');
+			expect(stdoutLines.join('')).toContain('gship patterns archive');
 		} finally {
 			process.stdout.write = originalWrite;
 		}

@@ -1,11 +1,11 @@
-## Pre-flight Checks (deterministic, run by `cam next` itself)
+## Pre-flight Checks (deterministic, run by `gship next` itself)
 
-`cam next` now runs this preflight itself (US-003, CAM-400) as a gate on the
+`gship next` now runs this preflight itself (US-003, CAM-400) as a gate on the
 `active:true` signal write — it is no longer an imperative checklist for this
 session to run by hand. The gate: `git fetch origin`, sync with the remote
 (pull if the tracking branch exists, else `push -u` to create it), a
 clean-tree check, `bun run typecheck`, and `bun test`. A failing preflight
-returns nonzero and does NOT flip `active:true`. `cam next --skip-preflight`
+returns nonzero and does NOT flip `active:true`. `gship next --skip-preflight`
 bypasses the gate and proceeds straight to the signal write (the resume
 escape). See `src/commands/next-preflight.ts`.
 
@@ -13,14 +13,14 @@ escape). See `src/commands/next-preflight.ts`.
 
 ## Architecture: single-hub dispatch (thin-proxy)
 
-`cam next` is a **thin-proxy** that detects the live orchestrator session and flips `active:true` in `.claude/cam-loop.local.md`. The sidecar (spawned by `cam run`, running in the background) polls that flag and dispatches workers autonomously. `cam next` does NOT inject any task prompt via `send-keys`.
+`gship next` is a **thin-proxy** that detects the live orchestrator session and flips `active:true` in `.claude/cam-loop.local.md`. The sidecar (spawned by `gship run`, running in the background) polls that flag and dispatches workers autonomously. `gship next` does NOT inject any task prompt via `send-keys`.
 
 Dispatch flow:
 
 ```
-cam next
+gship next
   └── detect live orchestrator (hasSession + orchestratorAlive)
-        ├── on miss: bootstrap cam run --no-attach, poll .claude/.cam-orch-ready
+        ├── on miss: bootstrap gship run --no-attach, poll .claude/.cam-orch-ready
         ├── mutex check: refuse if worker-pane already running (3 panes = busy)
         └── flip active:true in .claude/cam-loop.local.md
               [sidecar polls the flag and dispatches the next worker autonomously]
@@ -30,7 +30,7 @@ Workers (implementer and reviewer) run as interactive TUI `claude` sessions. Eac
 
 The orchestrator receives the pushed narration line and can read the report file for details. Scrollback polling is **not** used for completion detection.
 
-**Stop-hook driver is retired.** The old model (a vendored Stop hook injecting `/cam-next` on each assistant turn) is gone. `claude -p` (print mode) is not used for workers; it is reserved for the `cam claude` retry-wrapper feature.
+**Stop-hook driver is retired.** The old model (a vendored Stop hook injecting `/cam-next` on each assistant turn) is gone. `claude -p` (print mode) is not used for workers; it is reserved for the `gship claude` retry-wrapper feature.
 
 ---
 
@@ -102,10 +102,10 @@ Decision order (operator-required stories do **not** block the review cycle: rev
 |---|---|
 | Any **non-operator** story has `passes: false` | Dispatch implementer worker (lowest `priority`, then `id` asc). |
 | All non-operator stories `passes: true` AND review **not** terminal (`lastVerdict` is `null` or `"FIXES_PENDING"`, and `roundsCompleted < maxRounds`) | Dispatch reviewer worker (`subagent-reviewer`). A pending operator-required story does **not** block this. After it finishes, supervisor re-evaluates. |
-| All non-operator stories `passes: true` AND review terminal (`"CLEAN"` / `"MAX_ROUNDS_DEBT"` / cap reached) AND an operator-required story is still `passes: false` | **Await operator** (`await-operator`, status `awaiting-operator`). Autonomous work is done and reviewed clean; the supervisor exits **0** and hands the ceremony to the operator. The operator runs it, flips the story to `passes: true`, and re-runs `cam next` to complete the PRD. |
+| All non-operator stories `passes: true` AND review terminal (`"CLEAN"` / `"MAX_ROUNDS_DEBT"` / cap reached) AND an operator-required story is still `passes: false` | **Await operator** (`await-operator`, status `awaiting-operator`). Autonomous work is done and reviewed clean; the supervisor exits **0** and hands the ceremony to the operator. The operator runs it, flips the story to `passes: true`, and re-runs `gship next` to complete the PRD. |
 | All stories `passes: true` (incl. operator) AND review terminal (`"CLEAN"` / `"MAX_ROUNDS_DEBT"` / cap reached) | Complete. Supervisor exits 0. |
 
-The SIDECAR loops across worker invocations until it reaches a terminal state. The CLI thin-proxy (`cam next`) flips `active:true` and returns immediately; it does NOT drive the loop in-process. The sidecar (background process spawned by `cam run`) reads `active:true` and dispatches workers one at a time until a terminal state.
+The SIDECAR loops across worker invocations until it reaches a terminal state. The CLI thin-proxy (`gship next`) flips `active:true` and returns immediately; it does NOT drive the loop in-process. The sidecar (background process spawned by `gship run`) reads `active:true` and dispatches workers one at a time until a terminal state.
 
 ---
 
@@ -113,4 +113,4 @@ The SIDECAR loops across worker invocations until it reaches a terminal state. T
 
 The SIDECAR drives **one story per worker invocation**. After each worker pushes its report file (`scripts/cam/worker-report.json`), the sidecar reads the outcome, updates state, and dispatches the next worker. Workers run in the single titled 3rd pane (mutex prevents concurrent dispatches).
 
-`cam next` (the CLI thin-proxy) exits immediately after flipping `active:true`. It does NOT send any prompt or narration to the orchestrator pane. Pre-flight checks (sync, typecheck, tests) still run in the `cam next` session before the active-flag write.
+`gship next` (the CLI thin-proxy) exits immediately after flipping `active:true`. It does NOT send any prompt or narration to the orchestrator pane. Pre-flight checks (sync, typecheck, tests) still run in the `gship next` session before the active-flag write.

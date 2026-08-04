@@ -130,6 +130,20 @@ describe('validateDocs — cam-cmd claims', () => {
 		expect(result.findings[0]!.kind).toBe('cam-cmd');
 		expect(result.findings[0]!.reason).toContain('frobnicate');
 	});
+
+	// US-002, CAM-460: the extractor was desanchored from the single retired
+	// `cam` prefix (ADR-0054) so it keeps checking claims written under the
+	// launch-packaging name too. This proves the desanchored regex still
+	// catches an unknown command under the NEW prefix, not just the old one.
+	test('comando desconhecido em arquivo varrido gera finding', () => {
+		const result = validateDocs(
+			[{ path: 'CLAUDE.md', text: 'Run `gship frobnicate` to continue.' }],
+			{ commands: COMMANDS, bunScripts: BUN_SCRIPTS, knownMissing: [], cwd: workDir, trackedFiles: [], isIgnored: NOT_IGNORED },
+		);
+		expect(result.findings).toHaveLength(1);
+		expect(result.findings[0]!.kind).toBe('cam-cmd');
+		expect(result.findings[0]!.reason).toContain('frobnicate');
+	});
 });
 
 // ---------------------------------------------------------------------------

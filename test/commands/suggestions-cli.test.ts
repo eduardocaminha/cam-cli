@@ -67,7 +67,7 @@ describe('parseSuggestionsArgs', () => {
 		}) as typeof process.stdout.write;
 		try {
 			expect(parseSuggestionsArgs(['unknown'])).toBeNull();
-			expect(stdoutLines.join('')).toContain('cam suggestions list');
+			expect(stdoutLines.join('')).toContain('gship suggestions list');
 		} finally {
 			process.stdout.write = originalWrite;
 		}
@@ -155,7 +155,7 @@ describe('dispatchSuggestions', () => {
 			});
 			expect(code).toBe(0);
 			expect(readCalled).toBe(false);
-			expect(stdoutLines.join('')).toContain('cam suggestions');
+			expect(stdoutLines.join('')).toContain('gship suggestions');
 		} finally {
 			process.stdout.write = originalWrite;
 		}

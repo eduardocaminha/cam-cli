@@ -41,7 +41,7 @@ Create files lazily — only when you have something to write. If no `CONTEXT.md
 
 ## Cam project path convention
 
-In a cam-managed project (initialized via `cam init`), the canonical paths follow the single-context layout above:
+In a cam-managed project (initialized via `gship init`), the canonical paths follow the single-context layout above:
 
 - `CONTEXT.md` at the repo root — glossary only
 - `docs/adr/` at the repo root — ADRs, using the three-gate rule above

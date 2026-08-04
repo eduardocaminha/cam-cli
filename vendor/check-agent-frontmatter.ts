@@ -28,7 +28,7 @@
 // pane-worker spawn passes --model explicitly, so a persona-file model: line
 // was always dead weight -- see scripts/cam/patterns.md). This vendored copy
 // is intentionally patched to drop `model` from REQUIRED_TOP_LEVEL_KEYS so
-// `cam init`'s smoke doesn't fail against cam-cli's own materialized agent
+// `gship init`'s smoke doesn't fail against cam-cli's own materialized agent
 // files. Re-vendoring from upstream `reporter` must re-apply this patch
 // (or the divergence must be upstreamed first) -- see vendor/README.md.
 //
@@ -180,7 +180,7 @@ let repoRoot: string;
 try {
   // Ignore git's own stderr: outside a git repo it writes a raw
   // "fatal: not a git repository" line that would otherwise surface as the
-  // skip diagnostic in `cam init` (CAM-46). We emit our own clean message below.
+  // skip diagnostic in `gship init` (CAM-46). We emit our own clean message below.
   repoRoot = execSync('git rev-parse --show-toplevel', {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'ignore'],

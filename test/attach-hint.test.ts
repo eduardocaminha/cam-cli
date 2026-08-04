@@ -99,7 +99,7 @@ describe('emitAttachHint', () => {
 		const output = await captureStdout(() => {
 			emitAttachHint(sessionName, {});
 		});
-		expect(output).toContain('cam run');
+		expect(output).toContain('gship run');
 		expect(output).toContain(sessionName);
 	});
 
@@ -107,7 +107,7 @@ describe('emitAttachHint', () => {
 		const output = await captureStdout(() => {
 			emitAttachHint(sessionName, { TMUX: '/tmp/tmux-1/default,1234,0', CAM_SESSION: 'cam-orch-other-999' });
 		});
-		expect(output).toContain('cam run');
+		expect(output).toContain('gship run');
 		expect(output).toContain(sessionName);
 	});
 
@@ -122,7 +122,7 @@ describe('emitAttachHint', () => {
 		const output = await captureStdout(() => {
 			emitAttachHint(sessionName, { TMUX: '/tmp/tmux-1/default,1234,0' });
 		});
-		expect(output).toContain('cam run');
+		expect(output).toContain('gship run');
 	});
 });
 
@@ -153,7 +153,7 @@ describe('runPlan attach hint', () => {
 			}),
 		);
 
-		expect(output).toContain('cam run');
+		expect(output).toContain('gship run');
 		expect(output).toContain(sessionName);
 	});
 
@@ -178,8 +178,8 @@ describe('runPlan attach hint', () => {
 			}),
 		);
 
-		// cam run hint must not appear
-		expect(output).not.toContain('cam run');
+		// gship run hint must not appear
+		expect(output).not.toContain('gship run');
 	});
 });
 
@@ -200,7 +200,7 @@ describe('runIssue attach hint', () => {
 			}),
 		);
 
-		expect(output).toContain('cam run');
+		expect(output).toContain('gship run');
 		expect(output).toContain(sessionName);
 	});
 
@@ -218,7 +218,7 @@ describe('runIssue attach hint', () => {
 			}),
 		);
 
-		expect(output).not.toContain('cam run');
+		expect(output).not.toContain('gship run');
 	});
 });
 
@@ -240,7 +240,7 @@ describe('runNext attach hint', () => {
 			}),
 		);
 
-		expect(output).toContain('cam run');
+		expect(output).toContain('gship run');
 		expect(output).toContain(sessionName);
 	});
 
@@ -259,6 +259,6 @@ describe('runNext attach hint', () => {
 			}),
 		);
 
-		expect(output).not.toContain('cam run');
+		expect(output).not.toContain('gship run');
 	});
 });

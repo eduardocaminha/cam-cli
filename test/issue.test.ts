@@ -416,7 +416,7 @@ describe('ISSUE_HELP block', () => {
 
 		const output = stdoutChunks.join('');
 		expect(exitCode).toBe(0);
-		expect(output).toContain('cam issue');
+		expect(output).toContain('gship issue');
 		expect(output).toContain('/cam-issue create');
 		expect(output).toContain('<free text>');
 	});

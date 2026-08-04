@@ -97,6 +97,48 @@ describe('COMMANDS is the single typed source of truth (US-001, CAM-278)', () =>
 	});
 });
 
+describe('no retired `cam <word>` command survives in any help text (US-R2-001, CAM-460)', () => {
+	// US-002's AC1 oracle hand-typed a 12-command list (init config run plan
+	// journal patterns suggestions next review ship tag status) that omitted
+	// `claude`, so its own guard stayed blind to src/commands/claude.ts and
+	// went tautological the moment a command not on the hand-typed list kept
+	// printing the retired invocation. This test derives the sweep from
+	// `HELP_REGISTRY`'s keys — the same single source of truth the dispatch
+	// guard itself reads from (US-001, CAM-278) — so a newly registered
+	// command can never again fall outside the swept surface by omission.
+	//
+	// Boundary mirrors the AC1 oracle exactly: matches a literal `cam `
+	// (trailing space) not preceded by a letter/underscore/slash/hyphen, so
+	// internal-contract paths that are NOT typed commands (`~/.config/cam/`,
+	// `~/.cam/`, `/cam-next` slash commands) are deliberately excluded.
+	const RETIRED_COMMAND_RE = /(^|[^a-zA-Z_/-])cam /;
+
+	for (const cmd of Object.keys(HELP_REGISTRY)) {
+		test(`\`gship ${cmd} --help\` does not print the retired \`cam ${cmd === 'claude' ? 'claude' : cmd}\` invocation`, async () => {
+			const cap = captureStdout();
+			try {
+				const code = await main(['bun', 'index.ts', cmd, '--help']);
+				expect(code).toBe(0);
+				expect(cap.written()).not.toMatch(RETIRED_COMMAND_RE);
+			} finally {
+				cap.restore();
+			}
+		});
+	}
+
+	test('top-level `gship --help` names the new command and does not print the retired one', async () => {
+		const cap = captureStdout();
+		try {
+			const code = await main(['bun', 'index.ts', '--help']);
+			expect(code).toBe(0);
+			expect(cap.written()).toContain('gship');
+			expect(cap.written()).not.toMatch(RETIRED_COMMAND_RE);
+		} finally {
+			cap.restore();
+		}
+	});
+});
+
 describe('`cam claude` arg-forwarding carve-out (US-001 AC5)', () => {
 	test('a leading --help is captured by the guard', () => {
 		expect(isHelpRequested('claude', ['--help'])).toBe(true);

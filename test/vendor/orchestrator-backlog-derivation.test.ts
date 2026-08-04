@@ -18,8 +18,8 @@ describe('embedded orchestrator persona: cam issue list backlog derivation (US-0
 	test('embedded persona instructs deriving the backlog via cam issue list / --json', () => {
 		const content = templatesContents[PERSONA_KEY] ?? '';
 		expect(content).toBeTruthy();
-		expect(content).toContain('cam issue list');
-		expect(content).toContain('cam issue list --json');
+		expect(content).toContain('gship issue list');
+		expect(content).toContain('gship issue list --json');
 	});
 
 	test('embedded persona prohibits raw scripts/cam/issues/*.json reads as a backlog-derivation fallback (US-004, CAM-222)', () => {
@@ -38,7 +38,7 @@ describe('embedded orchestrator persona: cam issue list backlog derivation (US-0
 
 	test('embedded persona routes backlog questions to a fresh cam issue list run, never memory/handoff', () => {
 		const content = templatesContents[PERSONA_KEY] ?? '';
-		expect(content).toContain('cam issue list');
+		expect(content).toContain('gship issue list');
 		expect(content).toContain('never answer from memory or from the handoff');
 	});
 });

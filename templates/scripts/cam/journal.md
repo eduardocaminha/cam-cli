@@ -38,7 +38,7 @@ Each entry follows this template:
   PR description, and commit history; the journal is a scannable index.
 - When referencing past work in conversation, cite the cycle id
   (e.g. "see LIN-42" or "see cycle cam/pr-12-auth").
-- When the journal exceeds ~50 entries, `cam journal archive [--threshold N]`
+- When the journal exceeds ~50 entries, `gship journal archive [--threshold N]`
   moves the oldest third of entries verbatim to
   `scripts/cam/journal.archive.md` in one atomic commit on main. No
   summarization: entries are relocated as-is. This runs automatically at

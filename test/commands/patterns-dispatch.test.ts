@@ -46,7 +46,7 @@ describe('parsePatternsArgs — AC1: archive|prune namespace', () => {
 		}) as typeof process.stdout.write;
 		try {
 			expect(parsePatternsArgs(['bogus'])).toBeNull();
-			expect(stdoutLines.join('')).toContain('cam patterns archive|prune');
+			expect(stdoutLines.join('')).toContain('gship patterns archive|prune');
 		} finally {
 			process.stdout.write = originalWrite;
 		}

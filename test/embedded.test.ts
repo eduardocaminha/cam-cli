@@ -12,7 +12,7 @@
 // inlined string constants in `src/vendor/_generated.ts`. So testing dev
 // mode here is sufficient; the compiled-binary equivalent is exercised once
 // at release time via `scripts/build-release.sh` (which runs
-// `./dist/cam-darwin-arm64 init` against a tmp config).
+// `./dist/gateship-<os>-<arch> init` against a tmp config).
 //
 // What we cover:
 //   1. The codegen output is byte-for-byte identical to the on-disk vendor
@@ -323,7 +323,7 @@ describe('templatesContents — none/create uses --file-local in cam-issue promp
 	const camIssue = templatesContents['commands/cam-issue.md'] ?? '';
 
 	test('contains cam issue --file-local invocation', () => {
-		expect(camIssue).toContain('cam issue --file-local');
+		expect(camIssue).toContain('gship issue --file-local');
 	});
 
 	test('does not contain the old hand-edit instruction', () => {

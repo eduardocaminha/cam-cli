@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 // index.ts
 //
 // cam CLI entrypoint. Dispatches subcommands by argv[2]; everything else is
@@ -114,9 +115,9 @@ import { renderHelp } from './src/logging/help.ts';
 import { CAM_VERSION } from './src/version.ts';
 
 const HELP = renderHelp({
-	title: 'cam',
+	title: 'gship',
 	tagline: 'Gateship: a local software-delivery runtime for coding agents',
-	usage: 'cam <command> [options]',
+	usage: 'gship <command> [options]',
 	sections: [
 		{
 			heading: 'Commands',
@@ -153,33 +154,33 @@ const HELP = renderHelp({
 			entries: [
 				{
 					name: 'sidecar',
-					description: 'Not a user entry point: the long-lived loop supervisor, spawned by `cam run` in the background',
+					description: 'Not a user entry point: the long-lived loop supervisor, spawned by `gship run` in the background',
 				},
 				{
 					name: 'orch-recycle-watch',
-					description: 'Not a user entry point: watches the recycle marker and kills the orchestrator pane, spawned by `cam run`',
+					description: 'Not a user entry point: watches the recycle marker and kills the orchestrator pane, spawned by `gship run`',
 				},
 				{
 					name: 'sidecar-liveness-watch',
-					description: 'Not a user entry point: restarts a dead sidecar, spawned by `cam run`',
+					description: 'Not a user entry point: restarts a dead sidecar, spawned by `gship run`',
 				},
 				{
 					name: 'orch-budget',
-					description: 'Not a user entry point: prints/enforces the orchestrator token budget, spawned by `cam run`',
+					description: 'Not a user entry point: prints/enforces the orchestrator token budget, spawned by `gship run`',
 				},
 			],
 		},
 	],
 	footer:
-		'Run `cam <command> --help` for command-specific options. Permission mode\n' +
+		'Run `gship <command> --help` for command-specific options. Permission mode\n' +
 		'is a hardcoded `bypassPermissions` literal at every spawn site; no\n' +
 		'config key or --permission-mode flag controls it.',
 });
 
 const INIT_HELP = renderHelp({
-	title: 'cam init',
-	tagline: 'Validate the machine and set up the project for the cam loop',
-	usage: 'cam init [options]',
+	title: 'gship init',
+	tagline: 'Validate the machine and set up the project for the gship loop',
+	usage: 'gship init [options]',
 	sections: [
 		{
 			heading: 'Options',
@@ -206,7 +207,7 @@ const INIT_HELP = renderHelp({
 				'  2. Verifies claude is installed and logged in.\n' +
 				'  3. Asks: which issue system (linear | github | local)?\n' +
 				'  4. If new: asks for a brief project description.\n' +
-				'  5. Installs cam templates into .claude/commands/, .claude/agents/, scripts/cam/.\n' +
+				'  5. Installs gship templates into .claude/commands/, .claude/agents/, scripts/cam/.\n' +
 				'  6. Writes scripts/cam/project.toml with per-project config.\n' +
 				'  7. Opens a tmux split:\n' +
 				'       Pane A (left):  claude in bypassPermissions, adapts templates to this project.\n' +
@@ -218,15 +219,15 @@ const INIT_HELP = renderHelp({
 		},
 	],
 	footer:
-		'Note: auto-retry on rate limits is built into cam — no external tool required.\n' +
+		'Note: auto-retry on rate limits is built into gship — no external tool required.\n' +
 		'Rate-limit retry config: ~/.config/cam/retry.toml\n' +
 		'Retry logs:             ~/.cam/retry-logs/',
 });
 
 const RUN_HELP = renderHelp({
-	title: 'cam run',
+	title: 'gship run',
 	tagline: 'Open or attach the single per-project orchestrator session',
-	usage: 'cam run [options]',
+	usage: 'gship run [options]',
 	sections: [
 		{
 			heading: 'Options',
@@ -241,11 +242,11 @@ const RUN_HELP = renderHelp({
 			heading: 'Behaviour',
 			body:
 				'1. Verifies tmux and `.claude/agents/subagent-orchestrator.md` exist\n' +
-				'   (run `cam init` first if not).\n' +
+				'   (run `gship init` first if not).\n' +
 				'2. Computes a stable session name per project (cam-orch-<basename>-<hash>).\n' +
 				'3. If the session does not exist: creates it with two panes.\n' +
 				'     Pane 0.0 (left):  orchestrator (claude /cam-next loop).\n' +
-				'     Pane 0.1 (right): cam dashboard (permanent, navigable TUI).\n' +
+				'     Pane 0.1 (right): gship dashboard (permanent, navigable TUI).\n' +
 				'   When the orchestrator exits, the session is torn down automatically.\n' +
 				'4. If the session already exists: attach (or switch-client inside tmux).\n' +
 				'5. plan, next, and issue are thin pane launchers: they open a new pane\n' +
@@ -258,9 +259,9 @@ const RUN_HELP = renderHelp({
 });
 
 const PLAN_HELP = renderHelp({
-	title: 'cam plan',
+	title: 'gship plan',
 	tagline: 'Open a planning pane in the project session',
-	usage: 'cam plan [<N>]',
+	usage: 'gship plan [<N>]',
 	sections: [
 		{
 			heading: 'Arguments',
@@ -276,27 +277,27 @@ const PLAN_HELP = renderHelp({
 			heading: 'Behaviour',
 			body:
 				'1. Permission mode is a hardcoded bypassPermissions literal at the\n' +
-				'   spawn site. cam does NOT accept a --permission-mode flag.\n' +
+				'   spawn site. gship does NOT accept a --permission-mode flag.\n' +
 				'2. Ensures the project session exists (cam-orch-<basename>-<hash>);\n' +
 				'   creates it (with 2-pane layout: orchestrator + dashboard) if needed.\n' +
 				'3. Opens a new pane inside the session running:\n' +
 				'     claude --permission-mode <mode> "/cam-plan" (or "/cam-plan N")\n' +
 				'4. Returns 0 immediately. The planning flow runs inside the pane.\n' +
 				'5. If not already inside the session, prints a hint:\n' +
-				'     Run `cam run` to open the project session.',
+				'     Run `gship run` to open the project session.',
 		},
 	],
 	footer:
-		'cam plan accepts only an issue number; any other argument is an error.\n' +
-		'Without a number, cam dispatches a bare `/cam-plan` and the planner\n' +
+		'gship plan accepts only an issue number; any other argument is an error.\n' +
+		'Without a number, gship dispatches a bare `/cam-plan` and the planner\n' +
 		'picks the highest-priority open issue itself.',
 });
 
 const SPEC_HELP = renderHelp({
-	title: 'cam spec',
+	title: 'gship spec',
 	tagline: 'Deep-spec an idea issue into stage:specified via spec-with-docs',
 	usage:
-		'cam spec <id> | cam spec --write-docs <id> | cam spec --persist <id>  (reads JSON from stdin)',
+		'gship spec <id> | gship spec --write-docs <id> | gship spec --persist <id>  (reads JSON from stdin)',
 	sections: [
 		{
 			heading: 'Arguments',
@@ -316,7 +317,7 @@ const SPEC_HELP = renderHelp({
 					description:
 						'In-process write channel (no tmux): reads a DomainDocsPayload JSON\n' +
 						'blob from stdin and calls writeDomainDocsOnMain directly, mirroring\n' +
-						'`cam journal append` / `cam issue --file-local`.',
+						'`gship journal append` / `gship issue --file-local`.',
 				},
 				{
 					name: '--persist <id>',
@@ -331,37 +332,37 @@ const SPEC_HELP = renderHelp({
 			heading: 'Behaviour',
 			body:
 				'1. Permission mode is a hardcoded bypassPermissions literal at the\n' +
-				'   spawn site. cam does NOT accept a --permission-mode flag.\n' +
+				'   spawn site. gship does NOT accept a --permission-mode flag.\n' +
 				'2. Ensures the project session exists (cam-orch-<basename>-<hash>);\n' +
 				'   creates it (with 2-pane layout: orchestrator + dashboard) if needed.\n' +
 				'3. Sends `/cam-spec <id>` to the orchestrator pane via atomic send-keys.\n' +
 				'4. Returns 0 immediately. The spec-with-docs interview runs inside the pane.\n' +
 				'5. At interview end the orchestrator (a read-only session: Edit/Write/\n' +
 				'   NotebookEdit are disallowed) pipes the assembled DomainDocsPayload JSON\n' +
-				'   into `cam spec --write-docs <id>`, which commits CONTEXT.md + any new\n' +
+				'   into `gship spec --write-docs <id>`, which commits CONTEXT.md + any new\n' +
 				'   ADR files to main in one atomic commit via writeDomainDocsOnMain, with\n' +
 				'   NO tmux calls, no send-keys, no pane bootstrap, no liveness check.\n' +
 				'6. The orchestrator then pipes the assembled { spec, wsjf, blockedBy? }\n' +
-				'   JSON into `cam spec --persist <id>`, which promotes the issue to\n' +
+				'   JSON into `gship spec --persist <id>`, which promotes the issue to\n' +
 				'   stage:specified via specifyIssueOnMain, with the same no-tmux guarantee.',
 		},
 	],
 	footer:
-		'cam spec requires exactly one issue id argument (e.g. CAM-42).\n' +
-		'After the interview the issue is stage:specified and plannable via `cam plan`.\n' +
-		'`echo \'<json>\' | cam spec --write-docs CAM-42` exits 0 on { ok: true }\n' +
+		'gship spec requires exactly one issue id argument (e.g. CAM-42).\n' +
+		'After the interview the issue is stage:specified and plannable via `gship plan`.\n' +
+		'`echo \'<json>\' | gship spec --write-docs CAM-42` exits 0 on { ok: true }\n' +
 		'(including the noOp empty-payload outcome) and 1 on malformed JSON, an\n' +
 		'invalid payload, or a guard failure (diverged / detached-head / missing-main).\n' +
-		'`echo \'<json>\' | cam spec --persist CAM-42` exits 0 on { ok: true }, printing\n' +
+		'`echo \'<json>\' | gship spec --persist CAM-42` exits 0 on { ok: true }, printing\n' +
 		'CAM_SPEC_RESULT=CAM-42 sha=<sha>, and 1 on malformed JSON (reason=invalid-json)\n' +
 		'or any specifyIssueOnMain guard/validation failure (reason=<reason>).',
 });
 
 const ISSUE_HELP = renderHelp({
-	title: 'cam issue',
+	title: 'gship issue',
 	tagline: 'File an issue from free text, or list the actionable backlog',
 	usage:
-		'cam issue "<free text>" | cam issue list [--all] [--json] | cam issue close <id> | cam issue abandon <id> | cam issue demote <id> | cam issue get <id>',
+		'gship issue "<free text>" | gship issue list [--all] [--json] | gship issue close <id> | gship issue abandon <id> | gship issue demote <id> | gship issue get <id>',
 	sections: [
 		{
 			heading: 'Arguments',
@@ -410,15 +411,15 @@ const ISSUE_HELP = renderHelp({
 			heading: 'Behaviour',
 			body:
 				'1. Permission mode is a hardcoded bypassPermissions literal at the\n' +
-				'   spawn site. cam does NOT accept a --permission-mode flag.\n' +
+				'   spawn site. gship does NOT accept a --permission-mode flag.\n' +
 				'2. Ensures the project session exists (cam-orch-<basename>-<hash>);\n' +
 				'   creates it (with 2-pane layout: orchestrator + dashboard) if needed.\n' +
 				'3. Opens a new pane inside the session running:\n' +
 				'     claude --permission-mode <mode> "/cam-issue create <text>"\n' +
 				'4. Returns 0 immediately. The issue-creation flow runs inside the pane.\n' +
 				'5. If not already inside the session, prints a hint:\n' +
-				'     Run `cam run` to open the project session.\n' +
-				'6. `cam issue list` never opens a pane or spawns tmux/claude: it reads\n' +
+				'     Run `gship run` to open the project session.\n' +
+				'6. `gship issue list` never opens a pane or spawns tmux/claude: it reads\n' +
 				'   the backlog in-process and prints it directly.',
 		},
 	],
@@ -428,9 +429,9 @@ const ISSUE_HELP = renderHelp({
 });
 
 const JOURNAL_HELP = renderHelp({
-	title: 'cam journal',
+	title: 'gship journal',
 	tagline: 'Append a structured cycle entry to scripts/cam/journal.md on main',
-	usage: 'cam journal append [--force] [--cycle-close]  |  cam journal archive [--threshold N]',
+	usage: 'gship journal append [--force] [--cycle-close]  |  gship journal archive [--threshold N]',
 	sections: [
 		{
 			heading: 'Subcommands',
@@ -488,15 +489,15 @@ const JOURNAL_HELP = renderHelp({
 				'          before arming the recycle marker.\n' +
 				'  exit 4  --cycle-close requested but no live recycle watcher was found\n' +
 				'          (.claude/.cam-watcher.pid absent or the process is dead); use\n' +
-				'          /exit manually or start `cam run` to restart the watcher.\n' +
+				'          /exit manually or start `gship run` to restart the watcher.\n' +
 				'\n' +
 				'Cycle-metrics row (always on, every append): after recording the\n' +
-				'per-cycle token accounting, every `cam journal append` -- not only\n' +
+				'per-cycle token accounting, every `gship journal append` -- not only\n' +
 				'--cycle-close -- also upserts one row into scripts/cam/cycle-metrics.jsonl\n' +
 				'on main, best-effort (a failure or throw only logs a warning; it never\n' +
 				'changes the exit code, the recycle marker, or CAM_ORCH_HANDOFF_DUE).\n' +
 				'\n' +
-				'`cam journal archive [--threshold N]`:\n' +
+				'`gship journal archive [--threshold N]`:\n' +
 				'  Does not read stdin. Moves the oldest floor(entries/3) post-marker\n' +
 				'  entries from journal.md to journal.archive.md in one atomic on-main\n' +
 				'  commit when the entry count exceeds N (default 50). Prints\n' +
@@ -506,14 +507,14 @@ const JOURNAL_HELP = renderHelp({
 		},
 	],
 	footer:
-		'The orchestrator calls `cam journal append` at cycle close time as the\n' +
-		'deterministic housekeeping channel (read-only orchestrator, gated write via cam).',
+		'The orchestrator calls `gship journal append` at cycle close time as the\n' +
+		'deterministic housekeeping channel (read-only orchestrator, gated write via gship).',
 });
 
 const PATTERNS_HELP = renderHelp({
-	title: 'cam patterns',
+	title: 'gship patterns',
 	tagline: 'Move resolved-marked bullets to patterns.archive.md; demote/archive stale pattern-records.jsonl entries. Both on main.',
-	usage: 'cam patterns archive|prune',
+	usage: 'gship patterns archive|prune',
 	sections: [
 		{
 			heading: 'Subcommands',
@@ -534,7 +535,7 @@ const PATTERNS_HELP = renderHelp({
 				'1. Reads scripts/cam/patterns.md from main via `git show main:...`\n' +
 				'   (never from the working tree -- the commit-tree-to-main pattern).\n' +
 				'2. Selection is MARKER-based only: a bullet moves if and only if it\n' +
-				'   carries `[resolved YYYY-MM]` anywhere in its text. Unlike `cam\n' +
+				'   carries `[resolved YYYY-MM]` anywhere in its text. Unlike `gship\n' +
 				'   journal archive`, position, age, and count never decide selection\n' +
 				'   -- there is no --threshold flag.\n' +
 				'3. Writes both files to main via git plumbing (hash-object, update-index,\n' +
@@ -572,13 +573,13 @@ const PATTERNS_HELP = renderHelp({
 	],
 	footer:
 		'To mark a bullet resolved, append `[resolved YYYY-MM]` anywhere in its\n' +
-		'text on main; `cam patterns archive` then relocates it verbatim.',
+		'text on main; `gship patterns archive` then relocates it verbatim.',
 });
 
 const SUGGESTIONS_HELP = renderHelp({
-	title: 'cam suggestions',
+	title: 'gship suggestions',
 	tagline: 'Triage the pen of penned reviewer SUGGESTIONs (scripts/cam/suggestions.jsonl)',
-	usage: 'cam suggestions list|promote <fingerprint> [<fingerprint> ...]|dismiss <fingerprint>',
+	usage: 'gship suggestions list|promote <fingerprint> [<fingerprint> ...]|dismiss <fingerprint>',
 	sections: [
 		{
 			heading: 'Subcommands',
@@ -627,9 +628,9 @@ const SUGGESTIONS_HELP = renderHelp({
 });
 
 const NEXT_HELP = renderHelp({
-	title: 'cam next',
+	title: 'gship next',
 	tagline: 'Open a loop pane in the project session',
-	usage: 'cam next [--max-iter <N>] [--completion-promise <STR>] [--skip-preflight]',
+	usage: 'gship next [--max-iter <N>] [--completion-promise <STR>] [--skip-preflight]',
 	sections: [
 		{
 			heading: 'Options',
@@ -651,7 +652,7 @@ const NEXT_HELP = renderHelp({
 			heading: 'Behaviour',
 			body:
 				'1. Permission mode is a hardcoded bypassPermissions literal at the\n' +
-				'   spawn site. cam does NOT accept a --permission-mode flag.\n' +
+				'   spawn site. gship does NOT accept a --permission-mode flag.\n' +
 				'2. Pre-arms the cam-loop plugin by writing\n' +
 				'   .claude/cam-loop.local.md (vendored template at\n' +
 				'   vendor/cam-loop.local.md.tmpl).\n' +
@@ -661,7 +662,7 @@ const NEXT_HELP = renderHelp({
 				'     claude --permission-mode <mode> "/cam-next"\n' +
 				'5. Returns 0 immediately. The loop runs inside the pane.\n' +
 				'6. If not already inside the session, prints a hint:\n' +
-				'     Run `cam run` to open the project session.',
+				'     Run `gship run` to open the project session.',
 		},
 		{
 			heading: 'Stop primitives',
@@ -673,9 +674,9 @@ const NEXT_HELP = renderHelp({
 });
 
 const REVIEW_HELP = renderHelp({
-	title: 'cam review',
+	title: 'gship review',
 	tagline: 'Write phase:review to the loop state file',
-	usage: 'cam review',
+	usage: 'gship review',
 	sections: [
 		{
 			heading: 'Behaviour',
@@ -686,20 +687,20 @@ const REVIEW_HELP = renderHelp({
 				'   phase:review to .claude/cam-loop.local.md, preserving all\n' +
 				'   other state-file fields; the sidecar runs the review pipeline\n' +
 				'   and returns immediately.\n' +
-				'3. On miss: bootstraps the orchestrator via `cam run --no-attach`,\n' +
+				'3. On miss: bootstraps the orchestrator via `gship run --no-attach`,\n' +
 				'   waits for .claude/.cam-orch-ready + liveness re-check, then\n' +
 				'   writes phase:review.\n' +
 				'4. If not already inside the session, prints a hint:\n' +
-				'     Run `cam run` to open the project session.',
+				'     Run `gship run` to open the project session.',
 		},
 	],
-	footer: 'cam review accepts no arguments. cam does NOT accept a --permission-mode flag.',
+	footer: 'gship review accepts no arguments. gship does NOT accept a --permission-mode flag.',
 });
 
 const SHIP_HELP = renderHelp({
-	title: 'cam ship',
+	title: 'gship ship',
 	tagline: 'Write phase:shipping to the loop state file, or finalize a cycle in-process',
-	usage: 'cam ship [--finalize] [--bump]',
+	usage: 'gship ship [--finalize] [--bump]',
 	sections: [
 		{
 			heading: 'Behaviour (default)',
@@ -709,11 +710,11 @@ const SHIP_HELP = renderHelp({
 				'2. On hit: writes phase:shipping to .claude/cam-loop.local.md,\n' +
 				'   preserving all other state-file fields; the sidecar runs the\n' +
 				'   deterministic ship runner and returns immediately.\n' +
-				'3. On miss: bootstraps the orchestrator via `cam run --no-attach`,\n' +
+				'3. On miss: bootstraps the orchestrator via `gship run --no-attach`,\n' +
 				'   waits for .claude/.cam-orch-ready + liveness re-check, then\n' +
 				'   writes phase:shipping.\n' +
 				'4. If not already inside the session, prints a hint:\n' +
-				'     Run `cam run` to open the project session.',
+				'     Run `gship run` to open the project session.',
 		},
 		{
 			heading: 'Options',
@@ -736,13 +737,13 @@ const SHIP_HELP = renderHelp({
 			],
 		},
 	],
-	footer: 'cam does NOT accept a --permission-mode flag.',
+	footer: 'gship does NOT accept a --permission-mode flag.',
 });
 
 const TAG_HELP = renderHelp({
-	title: 'cam tag',
+	title: 'gship tag',
 	tagline: 'Create and push the vX.Y.Z git tag for the current CAM_VERSION',
-	usage: 'cam tag',
+	usage: 'gship tag',
 	sections: [
 		{
 			heading: 'Behaviour',
@@ -761,9 +762,9 @@ const TAG_HELP = renderHelp({
 });
 
 const STATUS_HELP = renderHelp({
-	title: 'cam status',
+	title: 'gship status',
 	tagline: 'Show current loop state at a glance',
-	usage: 'cam status',
+	usage: 'gship status',
 	sections: [
 		{
 			heading: 'Reads three sources in the current cwd',
@@ -788,9 +789,9 @@ const STATUS_HELP = renderHelp({
 });
 
 const DASHBOARD_HELP = renderHelp({
-	title: 'cam dashboard',
+	title: 'gship dashboard',
 	tagline: 'Read-only TUI for monitoring a running loop',
-	usage: 'cam dashboard [orchPane]',
+	usage: 'gship dashboard [orchPane]',
 	sections: [
 		{
 			heading: 'Arguments',
@@ -813,14 +814,14 @@ const DASHBOARD_HELP = renderHelp({
 		},
 	],
 	footer:
-		'cam run places this command in pane 0.1 of the project session (permanent,\n' +
+		'gship run places this command in pane 0.1 of the project session (permanent,\n' +
 		'always visible). You can also run it standalone in any terminal.',
 });
 
 const STOP_HELP = renderHelp({
-	title: 'cam stop',
+	title: 'gship stop',
 	tagline: 'Cleanly cancel a running loop',
-	usage: 'cam stop',
+	usage: 'gship stop',
 	sections: [
 		{
 			heading: 'What it does',
@@ -828,17 +829,17 @@ const STOP_HELP = renderHelp({
 				'1. Removes .claude/cam-loop.local.md (the plugin state file).\n' +
 				'2. Kills the per-project tmux session (derived from the project root\n' +
 				'   path) if alive; unrelated tmux sessions are NOT touched.\n' +
-				'3. Exits 0. Idempotent: calling `cam stop` with nothing to clean is the\n' +
+				'3. Exits 0. Idempotent: calling `gship stop` with nothing to clean is the\n' +
 				'   success state, not a failure.',
 		},
 	],
-	footer: 'After `cam stop`, the next `cam next` will not detect a stale loop.',
+	footer: 'After `gship stop`, the next `gship next` will not detect a stale loop.',
 });
 
 const PAUSE_HELP = renderHelp({
-	title: 'cam pause',
+	title: 'gship pause',
 	tagline: 'Set the operator pause brake marker',
-	usage: 'cam pause',
+	usage: 'gship pause',
 	sections: [
 		{
 			heading: 'What it does',
@@ -848,13 +849,13 @@ const PAUSE_HELP = renderHelp({
 				'every iteration, which would silently clobber a brake stored there.',
 		},
 	],
-	footer: 'Run `cam resume` to clear the pause and continue the loop.',
+	footer: 'Run `gship resume` to clear the pause and continue the loop.',
 });
 
 const DRAIN_HELP = renderHelp({
-	title: 'cam drain',
+	title: 'gship drain',
 	tagline: 'Set or clear the inter-cycle drain kill-switch',
-	usage: 'cam drain [--stop | --clear]',
+	usage: 'gship drain [--stop | --clear]',
 	sections: [
 		{
 			heading: 'Flags',
@@ -867,30 +868,30 @@ const DRAIN_HELP = renderHelp({
 		{
 			heading: 'Notes',
 			body:
-				'`cam drain --stop` writes only the drain marker (.claude/.cam-drain-stop).\n' +
+				'`gship drain --stop` writes only the drain marker (.claude/.cam-drain-stop).\n' +
 				'It does NOT send SIGTERM to the sidecar or remove any other marker.\n' +
-				'Use `cam stop` to fully cancel the session.',
+				'Use `gship stop` to fully cancel the session.',
 		},
 	],
-	footer: '`cam stop` also clears the drain kill-switch as part of its full cleanup.',
+	footer: '`gship stop` also clears the drain kill-switch as part of its full cleanup.',
 });
 
 const RESUME_HELP = renderHelp({
-	title: 'cam resume',
+	title: 'gship resume',
 	tagline: 'Reconcile loop state after an interrupt',
-	usage: 'cam resume [--mode <name>] [--dry-run] [--force]',
+	usage: 'gship resume [--mode <name>] [--dry-run] [--force]',
 	sections: [
 		{
 			heading: 'Auto-detected modes (no --mode flag)',
 			entries: [
-				{ name: 'idle', description: 'No state file → run `cam next` to start fresh' },
+				{ name: 'idle', description: 'No state file → run `gship next` to start fresh' },
 				{
 					name: 'noop',
 					description: 'retry-monitor alive (PID from ~/.cam/retry.pid) — loop will resume on its own',
 				},
 				{
 					name: 'respawn',
-					description: 'State file + heartbeat dead + recent commit (≤24h) → re-spawn `cam next`',
+					description: 'State file + heartbeat dead + recent commit (≤24h) → re-spawn `gship next`',
 				},
 				{
 					name: 'prompt',
@@ -912,7 +913,7 @@ const RESUME_HELP = renderHelp({
 				},
 				{
 					name: '--mode reset-branch',
-					description: 'Print `git reset --hard origin/main` + remove state file (cam does NOT run reset)',
+					description: 'Print `git reset --hard origin/main` + remove state file (gship does NOT run reset)',
 				},
 			],
 		},
@@ -927,9 +928,9 @@ const RESUME_HELP = renderHelp({
 });
 
 const DECIDE_HELP = renderHelp({
-	title: 'cam decide',
+	title: 'gship decide',
 	tagline: 'Record your choice into the active operator-decision gate',
-	usage: 'cam decide <decision>',
+	usage: 'gship decide <decision>',
 	sections: [
 		{
 			heading: 'Arguments',
@@ -952,13 +953,13 @@ const DECIDE_HELP = renderHelp({
 				'   deterministically on its next poll.',
 		},
 	],
-	footer: 'Distinct from `cam resume` (4-mode interrupt recovery) -- this resolves a live operator-decision gate.',
+	footer: 'Distinct from `gship resume` (4-mode interrupt recovery) -- this resolves a live operator-decision gate.',
 });
 
 const PRUNE_HELP = renderHelp({
-	title: 'cam prune',
+	title: 'gship prune',
 	tagline: 'Deterministic branch-cleanup after a PR is merged (or abandoned)',
-	usage: 'cam prune [--force]',
+	usage: 'gship prune [--force]',
 	sections: [
 		{
 			heading: 'Flags',
@@ -984,12 +985,12 @@ const PRUNE_HELP = renderHelp({
 });
 
 const CONFIG_HELP =
-	'Usage: cam config [--show]\n' +
+	'Usage: gship config [--show]\n' +
 	'  Interactive wizard to set model per phase and backend\n' +
 	'  --show  Print current config without prompting (US-008)\n';
 
 const TRIAGE_HELP =
-	'Usage: cam triage\n' +
+	'Usage: gship triage\n' +
 	'  Rank {specified,open} issues from main using WSJF topo-sort.\n' +
 	'  Writes updated ranks to main (off-main commit-tree; no checkout).\n' +
 	'  No-op when ranks are unchanged (idempotent).\n';
@@ -1000,57 +1001,57 @@ const TRIAGE_HELP =
 // must never boot the long-lived daemon).
 
 const SIDECAR_HELP = renderHelp({
-	title: 'cam sidecar',
+	title: 'gship sidecar',
 	tagline: 'Internal command — not for direct use',
-	usage: 'cam sidecar',
+	usage: 'gship sidecar',
 	sections: [
 		{
 			heading: 'Behaviour',
 			body:
-				'Spawned as a detached background process by `cam run`. Polls the\n' +
+				'Spawned as a detached background process by `gship run`. Polls the\n' +
 				'`active` flag in .claude/cam-loop.local.md and drives the supervisor\n' +
-				'loop (runSupervisor) when active. Loops until killed by `cam run`\'s\n' +
-				'cleanup. Not listed in top-level `cam help`.',
+				'loop (runSupervisor) when active. Loops until killed by `gship run`\'s\n' +
+				'cleanup. Not listed in top-level `gship help`.',
 		},
 	],
 });
 
 const ORCH_RECYCLE_WATCH_HELP = renderHelp({
-	title: 'cam orch-recycle-watch',
+	title: 'gship orch-recycle-watch',
 	tagline: 'Internal command — not for direct use',
-	usage: 'cam orch-recycle-watch',
+	usage: 'gship orch-recycle-watch',
 	sections: [
 		{
 			heading: 'Behaviour',
 			body:
-				'Spawned as a detached background process by `cam run`. Polls for the\n' +
+				'Spawned as a detached background process by `gship run`. Polls for the\n' +
 				'orchestrator recycle marker and sends SIGTERM to the orchestrator\n' +
 				'claude PID when armed (consume-once). Not listed in top-level\n' +
-				'`cam help`.',
+				'`gship help`.',
 		},
 	],
 });
 
 const SIDECAR_LIVENESS_WATCH_HELP = renderHelp({
-	title: 'cam sidecar-liveness-watch',
+	title: 'gship sidecar-liveness-watch',
 	tagline: 'Internal command — not for direct use',
-	usage: 'cam sidecar-liveness-watch',
+	usage: 'gship sidecar-liveness-watch',
 	sections: [
 		{
 			heading: 'Behaviour',
 			body:
-				'Spawned by `cam run` only in container worker_isolation mode. Detects\n' +
+				'Spawned by `gship run` only in container worker_isolation mode. Detects\n' +
 				'a dead container sidecar, attempts a bounded respawn, and escalates via\n' +
 				'the .cam-sidecar-stalled.json marker on exhaustion. Not listed in\n' +
-				'top-level `cam help`.',
+				'top-level `gship help`.',
 		},
 	],
 });
 
 const ORCH_BUDGET_HELP = renderHelp({
-	title: 'cam orch-budget',
+	title: 'gship orch-budget',
 	tagline: 'Internal command — not for direct use',
-	usage: 'cam orch-budget',
+	usage: 'gship orch-budget',
 	sections: [
 		{
 			heading: 'Behaviour',
@@ -1058,15 +1059,15 @@ const ORCH_BUDGET_HELP = renderHelp({
 				'Read-only, no flags. Prints a single machine-parseable line\n' +
 				'(CAM_ORCH_BUDGET=<spend>/<threshold> over=<true|false>) and always\n' +
 				'exits 0. Invoked each cycle by the orchestrator agent. Not listed in\n' +
-				'top-level `cam help`.',
+				'top-level `gship help`.',
 		},
 	],
 });
 
 const ORCH_RESOLVE_HELP = renderHelp({
-	title: 'cam orch-resolve',
+	title: 'gship orch-resolve',
 	tagline: 'Internal command — not for direct use',
-	usage: 'cam orch-resolve',
+	usage: 'gship orch-resolve',
 	sections: [
 		{
 			heading: 'Behaviour',
@@ -1076,15 +1077,15 @@ const ORCH_RESOLVE_HELP = renderHelp({
 				'orchestrator phase, so a respawn can pick up config edits without\n' +
 				'forking resolvePhaseModel\'s rules into bash. Exits 0 on success; on a\n' +
 				'not-ok model resolution, prints the resolution message to stderr and\n' +
-				'exits 1 with nothing on stdout. Not listed in top-level `cam help`.',
+				'exits 1 with nothing on stdout. Not listed in top-level `gship help`.',
 		},
 	],
 });
 
 const STATS_HELP = renderHelp({
-	title: 'cam stats',
+	title: 'gship stats',
 	tagline: 'Per-issue token spend or per-cycle round counts from the event log',
-	usage: 'cam stats tokens|cycles',
+	usage: 'gship stats tokens|cycles',
 	sections: [
 		{
 			heading: 'Subcommands',
@@ -1247,7 +1248,7 @@ export function parseIssueArgs(args: string[]): ParsedIssueArgs | null {
 	if (args[0] === 'close') {
 		const id = args[1];
 		if (id === undefined) {
-			printError('cam issue close requires an id (e.g. CAM-42)');
+			printError('gship issue close requires an id (e.g. CAM-42)');
 			return null;
 		}
 		if (args.length > 2) {
@@ -1262,7 +1263,7 @@ export function parseIssueArgs(args: string[]): ParsedIssueArgs | null {
 	if (args[0] === 'abandon') {
 		const id = args[1];
 		if (id === undefined) {
-			printError('cam issue abandon requires an id (e.g. CAM-42)');
+			printError('gship issue abandon requires an id (e.g. CAM-42)');
 			return null;
 		}
 		if (args.length > 2) {
@@ -1277,7 +1278,7 @@ export function parseIssueArgs(args: string[]): ParsedIssueArgs | null {
 	if (args[0] === 'demote') {
 		const id = args[1];
 		if (id === undefined) {
-			printError('cam issue demote requires an id (e.g. CAM-42)');
+			printError('gship issue demote requires an id (e.g. CAM-42)');
 			return null;
 		}
 		if (args.length > 2) {
@@ -1292,7 +1293,7 @@ export function parseIssueArgs(args: string[]): ParsedIssueArgs | null {
 	if (args[0] === 'get') {
 		const id = args[1];
 		if (id === undefined) {
-			printError('cam issue get requires an id (e.g. CAM-42)');
+			printError('gship issue get requires an id (e.g. CAM-42)');
 			return null;
 		}
 		if (args.length > 2) {
@@ -1339,7 +1340,7 @@ export function parseIssueArgs(args: string[]): ParsedIssueArgs | null {
 	if (parsed === null) return null;
 	const text = parsed.help ? undefined : parsed.positional;
 	if (text === undefined || text.trim().length === 0) {
-		printError('cam issue requires a free-text argument');
+		printError('gship issue requires a free-text argument');
 		return null;
 	}
 	return { mode: 'text', text, help: false };
@@ -1361,11 +1362,11 @@ export function parsePlanArgs(args: string[]): { issue?: number; help: boolean }
 	const parsed = parseSubcommandArgs(args, {
 		onUnknownOption: (arg) => printError(
 			`unknown plan option: ${arg}`,
-			'cam plan takes an issue number, e.g. `cam plan 21`',
+			'gship plan takes an issue number, e.g. `gship plan 21`',
 		),
 		onTooMany: () => printError(
-			'cam plan: too many arguments',
-			'expected a single issue number, e.g. `cam plan 21`',
+			'gship plan: too many arguments',
+			'expected a single issue number, e.g. `gship plan 21`',
 		),
 	});
 	if (parsed === null) return null;
@@ -1376,8 +1377,8 @@ export function parsePlanArgs(args: string[]): { issue?: number; help: boolean }
 	const issue = Number.parseInt(token, 10);
 	if (!/^\d+$/.test(token) || issue <= 0) {
 		printError(
-			'cam plan: invalid issue reference',
-			'expected an issue number, e.g. `cam plan 21`',
+			'gship plan: invalid issue reference',
+			'expected an issue number, e.g. `gship plan 21`',
 		);
 		return null;
 	}
@@ -1424,11 +1425,11 @@ export function parseSpecArgs(args: string[]): ParsedSpecArgs | null {
 	const parsed = parseSubcommandArgs(rest, {
 		onUnknownOption: (arg) => printError(
 			`unknown spec option: ${arg}`,
-			'cam spec takes an issue id, e.g. `cam spec CAM-42`',
+			'gship spec takes an issue id, e.g. `gship spec CAM-42`',
 		),
 		onTooMany: () => printError(
-			'cam spec: too many arguments',
-			'expected a single issue id, e.g. `cam spec CAM-42`',
+			'gship spec: too many arguments',
+			'expected a single issue id, e.g. `gship spec CAM-42`',
 		),
 	});
 	if (parsed === null) return null;
@@ -1436,8 +1437,8 @@ export function parseSpecArgs(args: string[]): ParsedSpecArgs | null {
 	const id = parsed.positional;
 	if (id !== undefined && id.length === 0) {
 		printError(
-			'cam spec: empty issue id',
-			'expected an issue id, e.g. `cam spec CAM-42`',
+			'gship spec: empty issue id',
+			'expected an issue id, e.g. `gship spec CAM-42`',
 		);
 		return null;
 	}
@@ -1445,8 +1446,8 @@ export function parseSpecArgs(args: string[]): ParsedSpecArgs | null {
 	if (writeDocs) {
 		if (id === undefined) {
 			printError(
-				'cam spec --write-docs: missing issue id',
-				'usage: echo \'<json>\' | cam spec --write-docs <id>',
+				'gship spec --write-docs: missing issue id',
+				'usage: echo \'<json>\' | gship spec --write-docs <id>',
 			);
 			return null;
 		}
@@ -1456,8 +1457,8 @@ export function parseSpecArgs(args: string[]): ParsedSpecArgs | null {
 	if (persist) {
 		if (id === undefined) {
 			printError(
-				'cam spec --persist: missing issue id',
-				'usage: echo \'<json>\' | cam spec --persist <id>',
+				'gship spec --persist: missing issue id',
+				'usage: echo \'<json>\' | gship spec --persist <id>',
 			);
 			return null;
 		}
@@ -1507,8 +1508,8 @@ export async function dispatchSpec(
 	}
 	const id = parsed.mode === 'proxy' ? parsed.id : undefined;
 	if (!id) {
-		printError('cam spec: missing issue id', 'usage: cam spec <id>  e.g. cam spec CAM-42');
-		printFatalHint('run `cam spec --help` for usage');
+		printError('gship spec: missing issue id', 'usage: gship spec <id>  e.g. gship spec CAM-42');
+		printFatalHint('run `gship spec --help` for usage');
 		return 1;
 	}
 	const runSpecFn = deps?.runSpecFn ?? ((idArg: string) => runSpec({ id: idArg }));
@@ -1757,7 +1758,7 @@ export async function dispatchShip(
 			finalizeFn();
 			return 0;
 		} catch (err) {
-			printError(`cam ship --finalize failed: ${String(err)}`);
+			printError(`gship ship --finalize failed: ${String(err)}`);
 			return 1;
 		}
 	}
@@ -1767,7 +1768,7 @@ export async function dispatchShip(
 			bumpFn();
 			return 0;
 		} catch (err) {
-			printError(`cam ship --bump failed: ${String(err)}`);
+			printError(`gship ship --bump failed: ${String(err)}`);
 			return 1;
 		}
 	}
@@ -1791,8 +1792,8 @@ export type ParsedJournalArgs =
 	| { mode?: never; help: true };
 
 const JOURNAL_USAGE =
-	'Usage: cam journal append [--force] [--cycle-close]  (reads JSON from stdin)\n' +
-	'       cam journal archive [--threshold N]';
+	'Usage: gship journal append [--force] [--cycle-close]  (reads JSON from stdin)\n' +
+	'       gship journal archive [--threshold N]';
 
 export function parseJournalArgs(args: string[]): ParsedJournalArgs | null {
 	if (args.includes('--help') || args.includes('-h')) {
@@ -1808,7 +1809,7 @@ export function parseJournalArgs(args: string[]): ParsedJournalArgs | null {
 		const rawValue = rest[thresholdFlagIdx + 1];
 		const threshold = rawValue !== undefined ? Number(rawValue) : NaN;
 		if (!Number.isInteger(threshold) || threshold <= 0) {
-			printFatalHint('Usage: cam journal archive [--threshold N]  (N must be a positive integer)');
+			printFatalHint('Usage: gship journal archive [--threshold N]  (N must be a positive integer)');
 			return null;
 		}
 		return { mode: 'archive', threshold, help: false };
@@ -1980,7 +1981,7 @@ export async function dispatchJournal(
 	try {
 		journalEntry = JSON.parse(stdinText) as JournalCycleEntry;
 	} catch (err) {
-		printError(`cam journal append: invalid JSON from stdin: ${String(err)}`);
+		printError(`gship journal append: invalid JSON from stdin: ${String(err)}`);
 		return 1;
 	}
 
@@ -2030,11 +2031,11 @@ export async function dispatchJournal(
 		const cycleMetricsResult = cycleMetricsAppendFn(journalEntry.cycleId);
 		if (!cycleMetricsResult.ok) {
 			printWarning(
-				`cam journal append: cycle-metrics upsert failed (${cycleMetricsResult.reason}); continuing`,
+				`gship journal append: cycle-metrics upsert failed (${cycleMetricsResult.reason}); continuing`,
 			);
 		}
 	} catch (err) {
-		printWarning(`cam journal append: cycle-metrics upsert threw; continuing: ${String(err)}`);
+		printWarning(`gship journal append: cycle-metrics upsert threw; continuing: ${String(err)}`);
 	}
 
 	// --cycle-close: arm the recycle marker only when the handoff is already present.
@@ -2047,7 +2048,7 @@ export async function dispatchJournal(
 				: existsSync(join(process.cwd(), '.claude', '.cam-orch-handoff.json'));
 		if (!handoffExists) {
 			printError(
-				'cam journal append --cycle-close: handoff file absent (.claude/.cam-orch-handoff.json); ' +
+				'gship journal append --cycle-close: handoff file absent (.claude/.cam-orch-handoff.json); ' +
 					'write the cycle-close handoff before arming the recycle marker.',
 			);
 			return 3;
@@ -2058,9 +2059,9 @@ export async function dispatchJournal(
 				: watcherAlive(join(process.cwd(), '.claude'));
 		if (!isWatcherAlive) {
 			printError(
-				'cam journal append --cycle-close: no live recycle watcher ' +
+				'gship journal append --cycle-close: no live recycle watcher ' +
 					'(.claude/.cam-watcher.pid absent or process dead); ' +
-					'use /exit manually or start cam run to restart the watcher.',
+					'use /exit manually or start gship run to restart the watcher.',
 			);
 			return 4;
 		}
@@ -2078,11 +2079,11 @@ export async function dispatchJournal(
 			const archiveResult = archiveFn(JOURNAL_ARCHIVE_DEFAULT_THRESHOLD);
 			if (!archiveResult.ok) {
 				printWarning(
-					`cam journal append --cycle-close: archive check failed (${archiveResult.reason}); continuing`,
+					`gship journal append --cycle-close: archive check failed (${archiveResult.reason}); continuing`,
 				);
 			}
 		} catch (err) {
-			printWarning(`cam journal append --cycle-close: archive check threw; continuing: ${String(err)}`);
+			printWarning(`gship journal append --cycle-close: archive check threw; continuing: ${String(err)}`);
 		}
 
 		// US-003 (CAM-226): auto-invoke the patterns archive check, mirroring the
@@ -2095,12 +2096,12 @@ export async function dispatchJournal(
 			const patternsArchiveResult = patternsArchiveFn();
 			if (!patternsArchiveResult.ok) {
 				printWarning(
-					`cam journal append --cycle-close: patterns archive check failed (${patternsArchiveResult.reason}); continuing`,
+					`gship journal append --cycle-close: patterns archive check failed (${patternsArchiveResult.reason}); continuing`,
 				);
 			}
 		} catch (err) {
 			printWarning(
-				`cam journal append --cycle-close: patterns archive check threw; continuing: ${String(err)}`,
+				`gship journal append --cycle-close: patterns archive check threw; continuing: ${String(err)}`,
 			);
 		}
 
@@ -2139,7 +2140,7 @@ export type ParsedPatternsArgs =
 	| { mode: 'prune'; help: false }
 	| { mode?: never; help: true };
 
-const PATTERNS_USAGE = 'Usage: cam patterns archive|prune';
+const PATTERNS_USAGE = 'Usage: gship patterns archive|prune';
 
 export function parsePatternsArgs(args: string[]): ParsedPatternsArgs | null {
 	if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
@@ -2264,7 +2265,7 @@ export type ParsedStatsArgs =
 	| { mode: 'cycles'; help: false; rebuild: boolean }
 	| { mode?: never; help: true };
 
-const STATS_USAGE = 'Usage: cam stats tokens|cycles';
+const STATS_USAGE = 'Usage: gship stats tokens|cycles';
 
 export function parseStatsArgs(args: string[]): ParsedStatsArgs | null {
 	if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
@@ -2328,7 +2329,7 @@ export type ParsedSuggestionsArgs =
 	| { mode?: never; help: true };
 
 const SUGGESTIONS_USAGE =
-	'Usage: cam suggestions list|promote <fingerprint> [<fingerprint> ...]|dismiss <fingerprint>';
+	'Usage: gship suggestions list|promote <fingerprint> [<fingerprint> ...]|dismiss <fingerprint>';
 
 export function parseSuggestionsArgs(args: string[]): ParsedSuggestionsArgs | null {
 	if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
@@ -2481,7 +2482,7 @@ export function dispatchSuggestions(
 	const readFn = deps?.readFn ?? defaultReadSuggestionsFn;
 	const entries = readFn();
 
-	writeStdout('cam suggestions list\n\n');
+	writeStdout('gship suggestions list\n\n');
 	if (entries.length === 0) {
 		writeStdout('No pending SUGGESTIONs in the pen.\n\n');
 		return 0;
@@ -2630,7 +2631,7 @@ async function runFileLocalDefault(
 	try {
 		stdinData = JSON.parse(stdinText) as FileLocalStdinPayload;
 	} catch (err) {
-		printError(`cam issue --file-local: invalid JSON from stdin: ${String(err)}`);
+		printError(`gship issue --file-local: invalid JSON from stdin: ${String(err)}`);
 		process.stdout.write('CAM_ISSUE_RESULT=ERROR reason=invalid-json\n');
 		return 1;
 	}
@@ -2658,7 +2659,7 @@ async function runFileLocalDefault(
 		process.stdout.write(`CAM_ISSUE_RESULT=${result.id}\n`);
 		return 0;
 	} catch (err) {
-		printError(`cam issue --file-local failed: ${String(err)}`);
+		printError(`gship issue --file-local failed: ${String(err)}`);
 		process.stdout.write('CAM_ISSUE_RESULT=ERROR reason=exception\n');
 		return 1;
 	}
@@ -2692,7 +2693,7 @@ export async function dispatchIssue(
 			deps?.closeIssueOnMainFn ?? ((id: string) => defaultCloseIssueFn(process.cwd(), id));
 		const result = closeIssueOnMainFn(parsed.id);
 		if (!result.ok) {
-			printError(`cam issue close ${parsed.id} failed: ${result.reason}`);
+			printError(`gship issue close ${parsed.id} failed: ${result.reason}`);
 			process.stdout.write(`CAM_ISSUE_RESULT=ERROR reason=${result.reason}\n`);
 			return 1;
 		}
@@ -2705,7 +2706,7 @@ export async function dispatchIssue(
 			deps?.abandonIssueOnMainFn ?? ((id: string) => defaultAbandonIssueFn(process.cwd(), id));
 		const result = abandonIssueOnMainFn(parsed.id);
 		if (!result.ok) {
-			printError(`cam issue abandon ${parsed.id} failed: ${result.reason}`);
+			printError(`gship issue abandon ${parsed.id} failed: ${result.reason}`);
 			process.stdout.write(`CAM_ISSUE_RESULT=ERROR reason=${result.reason}\n`);
 			return 1;
 		}
@@ -2718,7 +2719,7 @@ export async function dispatchIssue(
 			deps?.demoteIssueOnMainFn ?? ((id: string) => defaultDemoteIssueFn(process.cwd(), id));
 		const result = demoteIssueOnMainFn(parsed.id);
 		if (!result.ok) {
-			printError(`cam issue demote ${parsed.id} failed: ${result.reason}`);
+			printError(`gship issue demote ${parsed.id} failed: ${result.reason}`);
 			process.stdout.write(`CAM_ISSUE_RESULT=ERROR reason=${result.reason}\n`);
 			return 1;
 		}
@@ -2735,7 +2736,7 @@ export async function dispatchIssue(
 			deps?.getIssueOnMainFn ?? ((id: string) => getIssueOnMain(process.cwd(), id));
 		const result = getIssueOnMainFn(parsed.id);
 		if (!result.ok) {
-			printError(`cam issue get ${parsed.id} failed: issue not found`);
+			printError(`gship issue get ${parsed.id} failed: issue not found`);
 			return 1;
 		}
 		process.stdout.write(result.content);
@@ -2907,16 +2908,18 @@ async function main(argv: string[]): Promise<number> {
 		process.stdout.write(HELP);
 		return 0;
 	}
-	// `cam --version` / `cam -v` / `cam version`. We accept all three
+	// `gship --version` / `gship -v` / `gship version`. We accept all three
 	// because Unix CLIs are inconsistent about which form is canonical and
 	// shipping just one would surprise muscle memory. The output shape is
-	// `cam 0.1.0` (single line, trailing newline).
+	// `gateship 0.1.0` (single line, trailing newline) -- the product name,
+	// not the typed alias, per ADR-0054 (usage examples use `gship`, version
+	// identification uses `gateship`).
 	if (command === '--version' || command === '-v' || command === 'version') {
-		// `cam --version` is a machine-readable contract: emit exactly
-		// `cam X.Y.Z\n` so scripts piping into `head -1` or doing `==`
+		// `--version` is a machine-readable contract: emit exactly
+		// `gateship X.Y.Z\n` so scripts piping into `head -1` or doing `==`
 		// comparisons keep working. The "leading/trailing blank line"
 		// convention applies to human-facing screens, not to version probes.
-		process.stdout.write(`cam ${CAM_VERSION}\n`);
+		process.stdout.write(`gateship ${CAM_VERSION}\n`);
 		return 0;
 	}
 
@@ -2925,7 +2928,7 @@ async function main(argv: string[]): Promise<number> {
 	// switch's `default:`, which is exhaustiveness-only from here on.
 	if (!isCommand(command)) {
 		printError(`unknown command: ${command}`);
-		printFatalHint('run `cam help` to see the available commands');
+		printFatalHint('run `gship help` to see the available commands');
 		return 1;
 	}
 
@@ -2946,7 +2949,7 @@ async function main(argv: string[]): Promise<number> {
 		case 'init': {
 			const setupArgs = parseSetupArgs(argv.slice(3));
 			if (setupArgs === null) {
-				printFatalHint('run `cam init --help` for usage');
+				printFatalHint('run `gship init --help` for usage');
 				return 1;
 			}
 			if (setupArgs.help) {
@@ -2970,7 +2973,7 @@ async function main(argv: string[]): Promise<number> {
 			// Accepts the same flags as `cam init` Stage 2.
 			const setupArgs = parseSetupArgs(argv.slice(3));
 			if (setupArgs === null) {
-				printFatalHint('run `cam init --help` for usage (setup shares its flags)');
+				printFatalHint('run `gship init --help` for usage (setup shares its flags)');
 				return 1;
 			}
 			if (setupArgs.help) {
@@ -2992,7 +2995,7 @@ async function main(argv: string[]): Promise<number> {
 			const unknownFlags = tail.filter((a) => a !== '--show');
 			if (unknownFlags.length > 0) {
 				printError(`unknown config option: ${unknownFlags[0]}`);
-				printFatalHint('run `cam config --help` for usage');
+				printFatalHint('run `gship config --help` for usage');
 				return 1;
 			}
 			return runConfig({ show: showFlag });
@@ -3000,7 +3003,7 @@ async function main(argv: string[]): Promise<number> {
 		case 'run': {
 			const parsed = parseRunArgs(argv.slice(3));
 			if (parsed === null) {
-				printFatalHint('run `cam run --help` for usage');
+				printFatalHint('run `gship run --help` for usage');
 				return 1;
 			}
 			if (parsed.help) {
@@ -3012,7 +3015,7 @@ async function main(argv: string[]): Promise<number> {
 		case 'plan': {
 			const parsed = parsePlanArgs(argv.slice(3));
 			if (parsed === null) {
-				printFatalHint('run `cam plan --help` for usage');
+				printFatalHint('run `gship plan --help` for usage');
 				return 1;
 			}
 			if (parsed.help) {
@@ -3024,7 +3027,7 @@ async function main(argv: string[]): Promise<number> {
 		case 'spec': {
 			const parsed = parseSpecArgs(argv.slice(3));
 			if (parsed === null) {
-				printFatalHint('run `cam spec --help` for usage');
+				printFatalHint('run `gship spec --help` for usage');
 				return 1;
 			}
 			if (parsed.help) {
@@ -3036,7 +3039,7 @@ async function main(argv: string[]): Promise<number> {
 		case 'issue': {
 			const parsed = parseIssueArgs(argv.slice(3));
 			if (parsed === null) {
-				printFatalHint('Usage: cam issue "<free text>" | cam issue --file-local');
+				printFatalHint('Usage: gship issue "<free text>" | gship issue --file-local');
 				return 1;
 			}
 			if (parsed.help) {
@@ -3048,7 +3051,7 @@ async function main(argv: string[]): Promise<number> {
 		case 'next': {
 			const parsed = parseNextArgs(argv.slice(3));
 			if (parsed === null) {
-				printFatalHint('run `cam next --help` for usage');
+				printFatalHint('run `gship next --help` for usage');
 				return 1;
 			}
 			if (parsed.help) {
@@ -3064,7 +3067,7 @@ async function main(argv: string[]): Promise<number> {
 		case 'review': {
 			const parsed = parseReviewArgs(argv.slice(3));
 			if (parsed === null) {
-				printFatalHint('run `cam review --help` for usage');
+				printFatalHint('run `gship review --help` for usage');
 				return 1;
 			}
 			if (parsed.help) {
@@ -3076,7 +3079,7 @@ async function main(argv: string[]): Promise<number> {
 		case 'ship': {
 			const parsed = parseShipArgs(argv.slice(3));
 			if (parsed === null) {
-				printFatalHint('run `cam ship --help` for usage');
+				printFatalHint('run `gship ship --help` for usage');
 				return 1;
 			}
 			if (parsed.help) {
@@ -3093,7 +3096,7 @@ async function main(argv: string[]): Promise<number> {
 			}
 			if (tail.length > 0) {
 				printError(`unknown tag option: ${tail[0]}`);
-				printFatalHint('run `cam tag --help` for usage');
+				printFatalHint('run `gship tag --help` for usage');
 				return 1;
 			}
 			const tagResult = runTag({
@@ -3118,7 +3121,7 @@ async function main(argv: string[]): Promise<number> {
 			}
 			if (remaining.length > 0) {
 				printError(`unknown dashboard option: ${remaining[0]}`);
-				printFatalHint('run `cam dashboard --help` for usage');
+				printFatalHint('run `gship dashboard --help` for usage');
 				return 1;
 			}
 			return runDashboardInk({ ...(orchPane !== undefined ? { orchPane } : {}) });
@@ -3131,7 +3134,7 @@ async function main(argv: string[]): Promise<number> {
 			}
 			if (tail.length > 0) {
 				printError(`unknown status option: ${tail[0]}`);
-				printFatalHint('run `cam status --help` for usage');
+				printFatalHint('run `gship status --help` for usage');
 				return 1;
 			}
 			return runStatus();
@@ -3160,7 +3163,7 @@ async function main(argv: string[]): Promise<number> {
 			}
 			if (tail.length > 0) {
 				printError(`unknown stop option: ${tail[0]}`);
-				printFatalHint('run `cam stop --help` for usage');
+				printFatalHint('run `gship stop --help` for usage');
 				return 1;
 			}
 			return runStop();
@@ -3169,7 +3172,7 @@ async function main(argv: string[]): Promise<number> {
 			const pauseParsed = parsePauseArgs(argv.slice(3));
 			if (pauseParsed === null) {
 				printError(`unknown pause option: ${argv[3] ?? ''}`);
-				printFatalHint('run `cam pause --help` for usage');
+				printFatalHint('run `gship pause --help` for usage');
 				return 1;
 			}
 			if (pauseParsed.help) {
@@ -3182,7 +3185,7 @@ async function main(argv: string[]): Promise<number> {
 			const drainParsed = parseDrainArgs(argv.slice(3));
 			if (drainParsed === null) {
 				printError(`unknown drain option: ${argv[3] ?? ''}`);
-				printFatalHint('run `cam drain --help` for usage');
+				printFatalHint('run `gship drain --help` for usage');
 				return 1;
 			}
 			if (drainParsed.help) {
@@ -3194,7 +3197,7 @@ async function main(argv: string[]): Promise<number> {
 		case 'resume': {
 			const parsed = parseResumeArgs(argv.slice(3));
 			if (parsed === null) {
-				printFatalHint('run `cam resume --help` for usage');
+				printFatalHint('run `gship resume --help` for usage');
 				return 1;
 			}
 			if (parsed.help) {
@@ -3210,8 +3213,8 @@ async function main(argv: string[]): Promise<number> {
 		case 'decide': {
 			const parsed = parseDecideArgs(argv.slice(3));
 			if (parsed === null) {
-				printError('cam decide requires exactly one <decision> argument');
-				printFatalHint('run `cam decide --help` for usage');
+				printError('gship decide requires exactly one <decision> argument');
+				printFatalHint('run `gship decide --help` for usage');
 				return 1;
 			}
 			if (parsed.help) {
@@ -3223,7 +3226,7 @@ async function main(argv: string[]): Promise<number> {
 		case 'prune': {
 			const parsed = parsePruneArgs(argv.slice(3));
 			if (parsed === null) {
-				printFatalHint('run `cam prune --help` for usage');
+				printFatalHint('run `gship prune --help` for usage');
 				return 1;
 			}
 			if (parsed.help) {
@@ -3277,7 +3280,7 @@ async function main(argv: string[]): Promise<number> {
 		case 'retry-monitor': {
 			const parsed = parseRetryMonitorArgs(argv.slice(3));
 			if (parsed === null) {
-				printFatalHint('run `cam retry-monitor --help` for usage');
+				printFatalHint('run `gship retry-monitor --help` for usage');
 				return 1;
 			}
 			if (parsed.help) {
@@ -3308,7 +3311,7 @@ async function main(argv: string[]): Promise<number> {
 			const tail = argv.slice(3);
 			if (tail.length > 0) {
 				printError(`unknown triage option: ${tail[0]}`);
-				printFatalHint('run `cam triage --help` for usage');
+				printFatalHint('run `gship triage --help` for usage');
 				return 1;
 			}
 			return dispatchTriage();

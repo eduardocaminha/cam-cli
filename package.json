@@ -1,9 +1,27 @@
 {
-  "name": "cam-runtime",
-  "version": "0.277.0",
+  "name": "gateship",
+  "version": "0.278.0",
   "module": "index.ts",
   "type": "module",
-  "private": true,
+  "private": false,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eduardocaminha/cam-cli.git"
+  },
+  "engines": {
+    "bun": ">=1.2.0"
+  },
+  "bin": {
+    "gateship": "./index.ts",
+    "gship": "./index.ts"
+  },
+  "files": [
+    "index.ts",
+    "src",
+    "LICENSE",
+    "README.md"
+  ],
   "scripts": {
     "embed-vendor": "bun scripts/generate-embedded-vendor.ts",
     "embed-vendor:check": "bun scripts/generate-embedded-vendor.ts --check",

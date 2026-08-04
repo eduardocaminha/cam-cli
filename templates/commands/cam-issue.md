@@ -12,7 +12,7 @@ discover the system, then execute the matching path below.
 The orchestrator typically calls this command before `/cam-plan` to ensure
 the work item exists in the canonical place.
 
-**CLI thin-proxy invocation**: `cam issue "<text>"` (run from a terminal outside the session) is a thin-proxy. It detects the active cam session, waits for the orchestrator to be idle, then injects `/cam-issue create <text>` into the orchestrator pane via atomic `send-keys`. The content below is what the orchestrator executes when it receives this slash command.
+**CLI thin-proxy invocation**: `gship issue "<text>"` (run from a terminal outside the session) is a thin-proxy. It detects the active cam session, waits for the orchestrator to be idle, then injects `/cam-issue create <text>` into the orchestrator pane via atomic `send-keys`. The content below is what the orchestrator executes when it receives this slash command.
 
 ---
 
@@ -25,7 +25,7 @@ issue_system = "linear" | "github" | "local"
 ```
 
 If the file does not exist, default to `local` and warn the operator that
-`cam init` was not run (or did not record an issue system).
+`gship init` was not run (or did not record an issue system).
 
 ---
 
@@ -113,7 +113,7 @@ Subcommands:
 
 #### `create`
 
-**CONVENTION**: never hand-edit issue files on a feature branch; always file via `cam issue` (it commits to main deterministically).
+**CONVENTION**: never hand-edit issue files on a feature branch; always file via `gship issue` (it commits to main deterministically).
 
 There are two filing shapes: a plain idea (no flags, `stage:idea`), and a
 **derived or fast-track filing** (`--derived-from <id[,id...]>` or
@@ -122,9 +122,9 @@ so it is immediately plannable without a separate `/cam-spec` interview.
 
 1. Expand the free-text argument into a structured **title** (concise, under 80 chars) and an optional **description** (one or two sentences).
 2. Build a JSON payload with `title` and `description`. Include `priority` (integer 1-4, 1 = urgent) only when the request implies one.
-3. **If this is a plain idea filing** (no derived-from flag, no fast-track flag), invoke `cam issue --file-local`, piping the JSON payload to stdin. It commits the new issue directly to `main` without touching the current work branch:
+3. **If this is a plain idea filing** (no derived-from flag, no fast-track flag), invoke `gship issue --file-local`, piping the JSON payload to stdin. It commits the new issue directly to `main` without touching the current work branch:
    ```bash
-   echo '{"title":"<title>","description":"<description>"}' | cam issue --file-local
+   echo '{"title":"<title>","description":"<description>"}' | gship issue --file-local
    ```
    The command prints the new identifier (e.g. `CAM-42`) to stdout and exits 0 on success.
 4. **If this is a derived or fast-track filing**, the payload MUST also carry a `spec` object (`{ acceptanceCriteria: string[], scope: string, gotchas: string[], domainTerms: string[] }`); `createLocalIssueOnMain` validates it via `validateSpec` (`src/issues/spec.ts`) and refuses to file when it is missing or malformed, because `--fast-track`/`--derived-from` promote straight to `stage:specified` (ADR-0051). Do not file with a bare claim in `spec.acceptanceCriteria`: **every entry must be the LITERAL text of the check itself, already swept RED against main**, not a description of intent left for the planner to reinvent. For each acceptance criterion:
@@ -134,7 +134,7 @@ so it is immediately plannable without a separate `/cam-spec` interview.
 
    Use a **single-quoted heredoc** for the stdin payload (never an unquoted `echo`/heredoc): an operator's or upstream text's `$`/backticks would otherwise be shell-interpolated and corrupt the JSON (CAM-106).
    ```bash
-   cam issue --file-local --derived-from CAM-100 <<'EOF'
+   gship issue --file-local --derived-from CAM-100 <<'EOF'
    {
      "title": "<title>",
      "description": "<description>",
@@ -169,16 +169,16 @@ Print the issue as JSON.
 
 Run the deterministic CLI command and render its output verbatim:
 ```bash
-cam issue list
+gship issue list
 ```
 Pass `--all` to also include the `shipped` group. For machine consumption
-(scripting, structured parsing) use `cam issue list --json` instead, which
+(scripting, structured parsing) use `gship issue list --json` instead, which
 prints the same backlog as a single JSON payload. This command is
 in-process (no tmux, no claude spawn) and reads the backlog straight from
 `main` via git plumbing, so it is always up to date and safe to run fresh
 before answering any backlog question.
 
-**Backlog derivation is `cam issue list` / `cam issue list --json` ONLY.**
+**Backlog derivation is `gship issue list` / `gship issue list --json` ONLY.**
 Never grep or read `scripts/cam/issues/*.json` directly to derive or answer
 a backlog question, even filtered by stage — a raw read bypasses the
 command's status/stage filtering and can resurrect abandoned or stale
