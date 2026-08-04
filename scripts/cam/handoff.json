@@ -1,20 +1,13 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Ignore the .env family in the template gitignore and lock it with a real git check-ignore test" },
+  "lastCompletedStory": { "id": "US-R1-001", "title": "Add a negative control (`.env.example` must stay unignored) locking the non-blanket dotenv gitignore rule shape" },
   "branchName": "cam/issue-499",
   "timestamp": "2026-08-04T00:00:00Z",
-  "createdFiles": ["test/templates-gitignore-dotenv.test.ts"],
-  "modifiedFiles": ["templates/.gitignore", "src/vendor/_generated.ts"],
+  "createdFiles": [],
+  "modifiedFiles": ["test/templates-gitignore-dotenv.test.ts", "scripts/cam/patterns.md"],
   "openQuestions": [],
-  "nextStoryContext": "templates/.gitignore now ends with a dotenv block: `.env`, `.env.local`, `.env.*.local` (three separate lines; `.env.*.local` alone does NOT cover `.env.local` because `*` cannot match empty between the two dots — confirmed against git-scm.com/docs/gitignore). Deliberately no blanket `.env*` (would also hide a legitimately-committed `.env.example`). src/vendor/_generated.ts was regenerated via `bun run embed-vendor` and stayed at 50 lines (single escaped string literal, so template edits don't grow its line count). New test file test/templates-gitignore-dotenv.test.ts (NOT appended to test/embedded.test.ts, which sits at 665/666 lines) covers both materializeTemplates gitignore paths (verbatim write + merge) with real `git init` + `git check-ignore -q` in a tmpdir, using Bun.spawnSync per the existing test/embedded.test.ts precedent (CAM-68 marker-rule tests) rather than node:child_process.",
+  "nextStoryContext": "test/templates-gitignore-dotenv.test.ts now has both a positive control (DOTENV_FILES, must be ignored) AND a negative control (NOT_IGNORED_FILES = ['.env.example'], must NOT be ignored) in both the verbatim-write and merge-path tests. Swept red-against-main: mutating templates/.gitignore to a blanket `.env*` + regenerating src/vendor/_generated.ts via `bun run embed-vendor` makes the new NOT_IGNORED_FILES assertions fail (confirming they actually lock the non-blanket rule shape), then reverted cleanly (git diff --stat empty on both files post-revert) before committing. No production code changed; templates/.gitignore and src/vendor/_generated.ts are untouched by this story.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
-    {
-      "lib": "git",
-      "channel": "WebFetch",
-      "url": "https://git-scm.com/docs/gitignore",
-      "fetchedAt": "2026-08-04T00:00:00Z",
-      "status": "aligned",
-      "summary": "Confirmed `*` matches zero-or-more non-slash chars (so `.env.*.local` cannot alone cover `.env.local`, which needed its own literal line) and that a slash-less pattern matches at any depth; git check-ignore is the correct real-behavior oracle."
-    }
+    { "lib": "none", "status": "no_external_lib_touched" }
   ]
 }
