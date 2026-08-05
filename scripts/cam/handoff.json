@@ -1,12 +1,12 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Ignore the three uncovered cam runtime artifacts in the repo's own .gitignore" },
+  "lastCompletedStory": { "id": "US-002", "title": "Add the derived parity check script and bring templates/.gitignore to parity" },
   "branchName": "cam/issue-502",
-  "timestamp": "2026-08-05T00:00:00Z",
-  "createdFiles": [],
-  "modifiedFiles": [".gitignore"],
+  "timestamp": "2026-08-05T00:30:00Z",
+  "createdFiles": ["scripts/check-gitignore-parity.sh"],
+  "modifiedFiles": ["templates/.gitignore", "src/vendor/_generated.ts", "scripts/cam/patterns.md"],
   "openQuestions": [],
-  "nextStoryContext": "US-001 added three per-artifact .gitignore rules at repo root next to the existing cam-recycle-watcher.log block: .claude/cam-sidecar-liveness-watcher.log, .claude/.cam-sidecar-liveness-watcher.pid, .claude/.cam-merge-watch.json, each tagged with a CAM-502 comment. Only the repo's own .gitignore was touched (per notes SCOPE); templates/.gitignore is untouched by design and is owned by US-002, which will change it on this same branch next.",
+  "nextStoryContext": "US-002 added scripts/check-gitignore-parity.sh (GOTCHA 1 derivation copied verbatim from the CAM-502 issue, plus a PROBES=<n> non-vacuity line and a fail-closed guard on zero derived probes) and brought templates/.gitignore to parity with the repo's own .gitignore: added the 16 rules that were diverging (13 pre-existing plus the 3 US-001 added to the repo root). Verified live: `bash scripts/check-gitignore-parity.sh .` prints PROBES=42 and exits 0 with no DIVERGE lines; the fail-closed guard was swept against a throwaway repo holding only a copy of templates/.gitignore and no src/ (exits non-zero, PROBES=0). embed-vendor regenerated + embed-vendor:check clean in the same commit. AC3 of the CAM-502 issue spec (a durable bun-test exercising materializeTemplates over git check-ignore, covering both the verbatim-write and mergeGitignore paths) is issue-spec scope, not literally required by this PRD's US-002 acceptanceCriteria list (which only requires the shell oracle itself, its non-vacuity/fail-closed behavior, its anti-regression, its header, template parity, typecheck and bun test) -- if a later story in this PRD (or a review round) expects that durable test, it is not yet written; check prd.json for a US-003/US-004 that may own it before assuming it's missing by oversight. WHY BASH is recorded in the PRD notes for US-002 as a deliberate trade-off (no biome/knip/type coverage on a .sh) that a hypothetical follow-up story would need to buy back via a bun test driving this script, per the notes on US-002 in prd.json.",
   "officialDocsValidated": [
-    { "lib": "none", "status": "no_external_lib_touched" }
+    { "lib": "git", "url": "https://git-scm.com/docs/git-check-ignore", "fetchedAt": "2026-08-05T00:25:00Z", "status": "aligned", "summary": "git check-ignore exit codes confirmed: 0 = at least one path ignored, 1 = none ignored, 128 = fatal error. The script's `[ \"$here\" -gt 1 ]` / `[ \"$tpl\" -gt 1 ]` error-collapse (treat anything above 1 as ERROR, never as a verdict) matches this exactly." }
   ]
 }
