@@ -1,37 +1,45 @@
 {
   "id": "CAM-446",
   "title": "orch-recycle-watch.test.ts non-determinism under CPU-restricted env -i run must be fixed at root, not licensed as an artifact",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-07-27T23:08:43.820Z",
-  "updatedAt": "2026-08-05T18:45:11.464Z",
+  "updatedAt": "2026-08-05T18:54:33.012Z",
   "description": "During US-002 (CAM-424) verification of test/preflight-deps.test.ts, an env -i restricted-PATH bun test run (a literal PRD oracle, US-002 AC4) hit a failure in test/integration/orch-recycle-watch.test.ts, an e2e SIGTERM/respawn test with real subprocess timing unrelated to dependency preflight. The failure reproduced clean both standalone and on an immediate re-run at full-suite scope. patterns.md previously carried a doctrine carve-out (since removed in US-R1-001, CAM-433) treating a solitary timing-only failure under a resource-restricted run as an acceptable resource-contention artifact worth one re-run to confirm before concluding root cause. That carve-out is a no-flaky-evasion violation regardless of the failure characterization: non-determinism in a test is itself a defect. Root cause candidate: the test bounds five sequential waitForCondition polls (has-session default, pgrep-initial 5s, pgrep-watcher-scheduled 10s, session-marker-change 12s, pgrep-new 10s) inside a single 45s outer test timeout (test/integration/orch-recycle-watch.test.ts around lines 180-251); under CPU contention the cumulative real subprocess/tmux/pgrep latency across all five waits can exceed the 45s outer budget even when each individual wait is within its own timeout. Fix should either raise the outer test timeout to a value that provably covers the worst-case sum of the five inner budgets with margin, or make the test's own timeout budgets self-consistent (assert sum-of-inner <= outer via a computed constant) rather than independently authored magic numbers that can silently violate that invariant.",
   "spec": {
-    "scope": "Eliminar na raiz a nao-determinancia de test/integration/orch-recycle-watch.test.ts, que so se manifesta sob CONTENCAO DE SUITE COMPLETA. FORA DE ESCOPO: mudar comportamento de producao do recycle watcher (o defeito e do teste), e outros testes nao-deterministicos.",
     "acceptanceCriteria": [
-      "AC1 (MECANISMO MEDIDO, corrige o candidato a raiz que o corpo do issue registra): a falha NAO e o outer timeout de 45s sendo estourado pela soma dos waits. Medido em 05/08 em duas falhas consecutivas de preflight: o teste morre em 12209ms e 12151ms, valores que batem com o wait interno de session-marker-change, cujo budget e 12s. O conserto tem que atacar esse wait (e qualquer outro cujo budget nao cubra a latencia real sob contencao), nao o orcamento externo. Qualquer plano que so mexa no outer de 45s esta consertando o mecanismo errado.",
-      "AC2 (ORACULO DE REPRODUCAO, e a unica forma falsificavel; ler o gotcha 1 antes de escrever qualquer criterio): o defeito NAO reproduz em rodada isolada. Medido no mesmo dia: seis de seis rodadas isoladas VERDES, enquanto a suite completa falhou duas vezes seguidas no mesmo teste. Portanto criterio baseado em rodar o arquivo sozinho N vezes JA NASCE VERDE na main e nao prova nada. O criterio de aceite e: rodar a suite COMPLETA cinco vezes consecutivas e obter cinco verdes. Oraculo literal: for i in $(seq 1 5); do bun test >/dev/null 2>&1 || { echo \"FAIL on suite run $i\"; exit 1; }; done; echo '5/5 suite green'. Cada rodada custa cerca de 98s.",
-      "AC3 (orcamentos coerentes por construcao, nao numeros magicos soltos): os budgets internos viram constantes nomeadas e o outer e COMPUTADO a partir delas mais margem explicita, de modo que elevar um interno no futuro recomputa o externo sem edicao manual. Falsificabilidade obrigatoria: elevar um interno ate quebrar a relacao e confirmar que a assercao do invariante fica VERMELHA, depois reverter e confirmar git diff --stat vazio.",
-      "AC4 (o budget do wait que falha passa a cobrir o pior caso medido sob contencao, com margem declarada e justificada por medicao, nunca por chute). O novo valor tem que vir acompanhado da medicao que o sustenta.",
-      "AC5 (gates): bun run typecheck, bun test e bun run check:all verdes."
+      "AC1 (change-detection, VARRIDO VERMELHO na main em 2026-08-05: exit 1, falhou ja na rodada 1). A suite COMPLETA roda cinco vezes consecutivas e as cinco ficam verdes. Este e o criterio central e ele reproduz no ambiente onde o defeito FOI observado. Oraculo literal: for i in $(seq 1 5); do bun test >/dev/null 2>&1 || { echo \"FAIL on suite run $i\"; exit 1; }; done; echo ALL-GREEN",
+      "AC2 (pin de invariancia, comparand DERIVADO da main no momento do check, nunca congelado; varrido em 2026-08-05: VERDE na arvore limpa com main=7 e branch=7, VERMELHO sob mutacao com branch=0, restaurado com git diff vazio). Fecha o buraco da AC1: cinco rodadas verdes sao gameaveis ENFRAQUECENDO o teste, entao a superficie de tmux real tem que sobreviver ao conserto. Usa -ge e nao -eq de proposito, porque pin por igualdade-de-contagem da falso-positivo em append legitimo (CAM-491). Oraculo literal: F=test/integration/orch-recycle-watch.test.ts; M=$(git show main:$F | grep -c tmuxRaw); B=$(grep -c tmuxRaw $F); [ \"$B\" -ge \"$M\" ]",
+      "AC3 (gates): bun run typecheck, bun test e bun run check:all verdes."
     ],
+    "scope": "Eliminar na raiz a nao-determinancia de test/integration/orch-recycle-watch.test.ts, que so se manifesta sob execucao de suite COMPLETA. FORA DE ESCOPO: mudar comportamento de producao do recycle watcher, porque o defeito e do teste; outros testes nao-deterministicos; e a coerencia de budgets por construcao (constantes nomeadas e outer computado), separada para o CAM-506 em 2026-08-05 por MODO DE VERIFICACAO, ja que aquilo se prova por assercao de invariante mais mutacao e isto se prova por cinco rodadas verdes.",
     "gotchas": [
-      "GOTCHA 1, O MAIS IMPORTANTE E O QUE JA ME PEGOU UMA VEZ NESTE ISSUE: a primeira versao desta spec pedia vinte rodadas ISOLADAS do arquivo. Rodei seis isoladas e deram seis verdes, ou seja aquele oraculo teria passado sem conserto nenhum e certificado um defeito vivo como resolvido. O defeito e dependente de CONTENCAO: o Bun roda arquivos de teste concorrentemente e a suite completa satura a CPU, e so ai o wait de 12s expira. Todo criterio deste issue tem que reproduzir sob suite completa. Isolamento e um ambiente onde o bug nao existe.",
-      "GOTCHA 2: o teste ja usa waitForCondition corretamente. O defeito NAO e setTimeout fixo. Nao trocar a primitiva.",
-      "GOTCHA 3: o teste exercita subprocess real, tmux real e pgrep real. Nao substituir por fake para estabilizar: destruiria o valor do e2e e cairia na regra de que asserir que o mock foi chamado e documentacao, nao verificacao.",
-      "GOTCHA 4: cuidado com a regra deterministica frozen-comparand do prd-oracle-lint. Nao escrever criterio na forma test $x -eq N. A AC2 usa exit code do proprio comando (|| exit 1), que e literal-free.",
-      "GOTCHA 5 (justifica a prioridade): matou QUATRO de SEIS dispatches de plano em 05/08 pelo preflight bun-test, incluindo o dispatch do proprio conserto dele. E o custo nao para no preflight: um worker rodando bun test como gate de story corre o mesmo risco, e a regra no-flaky-evasion obriga o worker a HALTAR, entao o defeito injeta parada em qualquer ponto do loop.",
-      "GOTCHA 6: patterns.md:1094 (US-R1-001 do CAM-433) removeu explicitamente a doutrina que licenciava esta falha como artefato de contencao. Nao reintroduzir essa prosa em nenhuma forma, nem como comentario no teste.",
-      "GOTCHA 7: o $TMPDIR desta maquina estava com mais de 200 mil diretorios e foi purgado em 05/08, o que derrubou a suite de 265s para 98s. Se a suite voltar a lentificar, a contencao piora e este defeito reaparece com mais frequencia; a fonte esta filada como CAM-503 e nao esta consertada."
+      "MECANISMO MEDIDO: a falha NAO e o outer de 45s estourado pela soma dos waits. E o wait interno de session-marker-change, cujo budget e 12s. Quatro medicoes em 2026-08-05, todas em preflight morto: 12209, 12151, 12183 e 12188 ms. Qualquer plano que so mexa no outer esta consertando o mecanismo errado.",
+      "SATURACAO DE CPU NAO REPRODUZ O DEFEITO. Medido em 2026-08-05 varrendo um oraculo candidato: 24 spinners de CPU em 12 cores, load ~60, suite completa VERDE; a mesma suite sem carga artificial ficou VERMELHA ja na primeira rodada. O oraculo de carga foi DESCARTADO por estar verde na main. Portanto NAO ir atras de budget de CPU nem de starvation: o gatilho e especifico da execucao concorrente da suite (I/O, tabela de processos, file descriptors, tmux). Este resultado negativo custou uma varredura completa, nao re-derivar.",
+      "ISOLAMENTO TAMBEM NAO REPRODUZ. Seis de seis rodadas isoladas do arquivo deram verde em 2026-08-04/05. Todo criterio baseado em rodar o arquivo sozinho N vezes JA NASCE VERDE na main e nao prova nada. Isolamento e um ambiente onde o bug nao existe.",
+      "DADOS CENSURADOS A DIREITA: toda falha observada e censurada no proprio budget. As quatro medicoes batem em 12,15 a 12,21 s porque e onde o timeout dispara, nao onde a latencia real esta; elas so dizem que a latencia e maior ou igual a 12s, nunca quanto. PROIBIDO derivar um budget novo delas. Se algum budget de relogio sobreviver ao conserto, ele precisa de medicao INSTRUMENTADA da duracao real do wait no momento em que o predicado vira.",
+      "TEARDOWN DE FIXTURE DE CARGA: kill $(jobs -p) NAO e confiavel em shell nao-interativo, porque job control fica desligado e jobs -p devolve vazio. Medido em 2026-08-05 duas vezes no mesmo dia: 24 spinners de outra sessao orfanaram por isso, e depois os 24 spinners do meu proprio oraculo sobreviveram ao mesmo padrao, apesar do trap em EXIT INT TERM. Qualquer fixture que suba processo de carga tem que derrubar por pgrep ou por grupo de processo.",
+      "MUTACAO ALVEJA DEFINICAO, NUNCA PONTO DE USO. O PRD gerado em 2026-08-05 escalou por violar isso: US-002 mutava o texto timeoutMs: <CONST> dentro do teste de integracao enquanto US-001 mandava introduzir um helper timedWait(name, predicate) que APAGA esse texto, entao a mutacao caia em mutation-not-applied e o oraculo se auto-reprovava. A coerencia de budgets saiu para o CAM-506; se alguma mutacao for escrita aqui, alveja a definicao.",
+      "O teste JA usa waitForCondition corretamente. O defeito NAO e setTimeout fixo. Nao trocar a primitiva.",
+      "O teste exercita subprocess real, tmux real e pgrep real. Nao substituir por fake para estabilizar: destruiria o valor do e2e e cairia na regra de que asserir que o mock foi chamado e documentacao, nao verificacao. A AC2 existe para guardar exatamente isso.",
+      "patterns.md:1094 (US-R1-001 do CAM-433) removeu explicitamente a doutrina que licenciava esta falha como artefato de contencao. Nao reintroduzir essa prosa em nenhuma forma, nem como comentario no teste.",
+      "PRIORIDADE: matou SETE de NOVE dispatches de plano em 2026-08-05, incluindo o dispatch do proprio conserto dele. E o custo nao para no preflight: um worker rodando bun test como gate de story corre o mesmo risco, e a regra no-flaky-evasion o obriga a HALTAR, entao o defeito injeta parada em qualquer ponto do loop.",
+      "Cuidado com a regra deterministica frozen-comparand do prd-oracle-lint: nao escrever criterio na forma test $x -eq N. A AC1 usa o exit code do proprio comando e a AC2 deriva o comparand da main no momento do check.",
+      "O $TMPDIR desta maquina passou de 200 mil diretorios e foi purgado em 2026-08-05, derrubando a suite de 265s para 98s. A fonte esta filada como CAM-503 e nao esta consertada; se a suite voltar a lentificar, revalidar as medicoes acima antes de confiar nelas."
     ],
-    "domainTerms": []
+    "domainTerms": [
+      "wait censurado a direita",
+      "pin de invariancia com comparand derivado",
+      "oraculo de deteccao de mudanca",
+      "condicao de carga declarada"
+    ]
   },
   "wsjf": {
-    "value": 9,
-    "timeCriticality": 10,
-    "riskReduction": 10,
-    "jobSize": 2
+    "value": 8,
+    "timeCriticality": 9,
+    "riskReduction": 8,
+    "jobSize": 1
   },
   "type": "fix"
 }
