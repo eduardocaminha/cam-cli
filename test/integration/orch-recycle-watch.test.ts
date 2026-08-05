@@ -43,6 +43,32 @@
 // live `cam` socket used by a real cam run session.
 //
 // macOS binary signing: uses `bun index.ts`, NOT the compiled cam binary.
+//
+// WAIT BUDGETS (US-002, CAM-446): every wait below is measured under full suite
+// (a real `bun test` over the WHOLE suite, never this file run in isolation,
+// since isolation is an environment where the process-table pressure that
+// caused the original defect does not exist) with CAM_WAIT_TIMINGS set,
+// recording the REAL elapsed time at the moment each predicate flips true
+// (never the timeout value). Measured 2026-08-05, three
+// consecutive full-suite (`bun test`, all 6017 tests, 360 files) green runs,
+// this file's own worst observed predicate-flip elapsedMs across those three:
+//   WATCHER_READY_PROBE:    203ms (budget 10_000ms, ~49x margin)
+//   has-session:              4ms (budget  5_000ms, ~1250x margin)
+//   pgrep-initialUUID:       16ms (budget  5_000ms, ~312x margin)
+//   session-marker-change: 2517ms (budget 12_000ms, ~4.8x margin)
+//   pgrep-newUUID:          237ms (budget 10_000ms, ~42x margin)
+// The session-marker-change wait is the only one with real tail latency (it
+// waits on the fake-claude SIGTERM trap + bash wrapper's handoff-detect +
+// respawn cycle), so its margin is deliberately kept tighter-but-still-honest
+// (~4.8x, not padded to match the others) rather than uniform; every other
+// wait is dominated by pure OS/tmux/pgrep call overhead and gets a wide
+// margin cheaply. None of these budgets are derived from the old
+// right-censored 12209/12151/12183/12188 ms timeout failures (those only
+// proved "at least 12s", never a real worst case, because they were captured
+// AT the timeout that was firing, not at the moment the predicate flipped).
+// Re-measure (CAM_WAIT_TIMINGS=<path> bun test, full suite) before trusting
+// these numbers again if the suite's wall-clock profile changes materially
+// (see the $TMPDIR regression note in CAM-503).
 
 import { test, expect, beforeEach, afterEach } from 'bun:test';
 import { spawnSync } from 'node:child_process';
@@ -54,6 +80,7 @@ import {
 	existsSync,
 	rmSync,
 	chmodSync,
+	appendFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -108,20 +135,71 @@ function readCapturedSafely(path: string): string {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Wait instrumentation (US-002, CAM-446)
+// ---------------------------------------------------------------------------
+//
+// CAM_WAIT_TIMINGS, when set, names a JSONL artifact path this file appends
+// one record to per wait, capturing the REAL elapsed time observed at the
+// moment the wait's predicate flips true (never the configured timeoutMs
+// budget). This is what let the header note above be filled in from genuine
+// full-suite measurements instead of guessed from timeout failures.
+const WAIT_TIMINGS_PATH = process.env.CAM_WAIT_TIMINGS;
+
+/** Every wait in this file must declare its own poll interval (the shared
+ * helper's 20ms default spawns a real subprocess per tick for every
+ * pgrep/tmux-backed predicate here, adding exactly the process-table
+ * pressure CAM-446 removed); `intervalMs` is required, not optional. */
+type MeasuredWaitOptions = WaitForConditionOptions & { intervalMs: number };
+
 /**
- * Wraps waitForCondition so a timeout on a wait tied to the watcher's own
- * liveness never collapses into a bare "predicate still false" message.
+ * The sole call site of the shared `waitForCondition` helper in this file:
+ * every wait below funnels through here, so every wait is both instrumented
+ * and structurally forced (via `MeasuredWaitOptions`) to declare its own
+ * `intervalMs`.
+ */
+async function waitForConditionMeasured(
+	predicate: () => boolean | Promise<boolean>,
+	opts: MeasuredWaitOptions,
+	label: string,
+): Promise<void> {
+	const start = Date.now();
+	let flippedAt: number | undefined;
+	await waitForCondition(async () => {
+		const result = await predicate();
+		if (result && flippedAt === undefined) flippedAt = Date.now();
+		return result;
+	}, opts);
+	if (WAIT_TIMINGS_PATH) {
+		const elapsedMs = (flippedAt ?? Date.now()) - start;
+		appendFileSync(
+			WAIT_TIMINGS_PATH,
+			`${JSON.stringify({
+				label,
+				elapsedMs,
+				timeoutMs: opts.timeoutMs ?? 5000,
+				intervalMs: opts.intervalMs,
+				at: new Date().toISOString(),
+			})}\n`,
+			'utf8',
+		);
+	}
+}
+
+/**
+ * Wraps waitForConditionMeasured so a timeout on a wait tied to the watcher's
+ * own liveness never collapses into a bare "predicate still false" message.
  * On failure, reports the watcher's exitCode (null while alive, per the
  * Bun docs `subprocess.exitCode` entry) plus its captured stdout/stderr,
  * so a dead or never-booted watcher subprocess is diagnosable.
  */
 async function waitForWatcher(
 	predicate: () => boolean | Promise<boolean>,
-	opts: WaitForConditionOptions,
+	opts: MeasuredWaitOptions,
 	label: string,
 ): Promise<void> {
 	try {
-		await waitForCondition(predicate, opts);
+		await waitForConditionMeasured(predicate, opts, label);
 	} catch (err) {
 		const exitCode = watcherProc?.exitCode ?? null;
 		throw new Error(
@@ -259,7 +337,11 @@ test.skipIf(!shouldRun)(
 
 		// 7. Create a tmux session and run the bash wrapper in it.
 		tmuxRaw(['new-session', '-d', '-s', SESSION, '-x', '200', '-y', '50']);
-		await waitForCondition(() => tmuxRaw(['has-session', '-t', SESSION]).status === 0);
+		await waitForConditionMeasured(
+			() => tmuxRaw(['has-session', '-t', SESSION]).status === 0,
+			{ timeoutMs: 5_000, intervalMs: 50 },
+			'has-session',
+		);
 
 		const paneListOut = tmuxRaw(['list-panes', '-t', SESSION, '-F', '#{pane_id}'])
 			.stdout.toString()
@@ -269,9 +351,10 @@ test.skipIf(!shouldRun)(
 		tmuxRaw(['respawn-pane', '-k', '-t', orchPaneId, 'bash', '-c', fullCmd]);
 
 		// 8. Wait for fake-claude to appear in pgrep results.
-		await waitForCondition(
+		await waitForConditionMeasured(
 			() => spawnSync('pgrep', ['-f', initialUUID], { stdio: 'pipe', encoding: 'utf8' }).status === 0,
 			{ timeoutMs: 5_000, intervalMs: 200 },
+			'pgrep-initialUUID',
 		);
 		const fakeclaudeRunning = spawnSync('pgrep', ['-f', initialUUID], {
 			stdio: 'pipe',
@@ -298,8 +381,8 @@ test.skipIf(!shouldRun)(
 				}
 				return false;
 			},
-			{ timeoutMs: 12_000, intervalMs: 500 }, // up to 10 s watcher latency + overhead
-			'session-marker change',
+			{ timeoutMs: 12_000, intervalMs: 500 },
+			'session-marker-change',
 		);
 
 		// 11. Core assertions.
@@ -308,9 +391,10 @@ test.skipIf(!shouldRun)(
 		expect(newUUID).not.toBe(initialUUID);
 
 		// A process matching the NEW UUID must be running (fresh fake-claude is alive).
-		await waitForCondition(
+		await waitForConditionMeasured(
 			() => spawnSync('pgrep', ['-f', newUUID], { stdio: 'pipe', encoding: 'utf8' }).status === 0,
 			{ timeoutMs: 10_000, intervalMs: 200 },
+			'pgrep-newUUID',
 		);
 		const pgrepNew = spawnSync('pgrep', ['-f', newUUID], {
 			stdio: 'pipe',
@@ -319,10 +403,10 @@ test.skipIf(!shouldRun)(
 		expect(pgrepNew.status).toBe(0);
 	},
 	// Generous outer per-test timeout: sum of the worst-case internal poll
-	// budgets across all five waits: has-session (5s default) +
-	// WATCHER_READY_PROBE (10s) + pgrep-initialUUID (5s) + session-marker
-	// change (12s) + pgrep-newUUID (10s) = ~42s, plus process-spawn/tmux
-	// overhead.
+	// budgets across all five waits (see the WAIT BUDGETS header note above
+	// for the measured elapsedMs each is derived from): WATCHER_READY_PROBE
+	// (10s) + has-session (5s) + pgrep-initialUUID (5s) + session-marker-change
+	// (12s) + pgrep-newUUID (10s) = 42s, plus process-spawn/tmux overhead.
 	{ timeout: 45_000 },
 );
 
