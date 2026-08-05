@@ -535,3 +535,15 @@ A set-equality comparison between two verdicts derived live from the tree at che
 
 **rotating harness state**:
 Per-story files the harness overwrites each cycle (prd.json, handoff.json, review-artifact.txt). An acceptance-criterion oracle must never target one: whichever story's rotation happens to be at HEAD decides the verdict, so the criterion passes or fails by coincidence rather than by correctness. Enforced deterministically by the prd-oracle-lint rule rotating-artifact-target.
+
+**wait censurado a direita**:
+Falha de espera cuja duracao medida coincide com o proprio orcamento do timeout. Ela limita a latencia real apenas por baixo (a latencia e maior ou igual ao orcamento) e nunca revela o valor verdadeiro, portanto nao serve de base para dimensionar um orcamento novo.
+
+**pin de invariancia com comparand derivado**:
+Oraculo cujo valor de comparacao e lido da referencia base no momento da checagem, em vez de congelado no texto do criterio. Verde por construcao quando a invariante e respeitada, e imune ao apodrecimento que atinge um comparando literal.
+
+**oraculo de deteccao de mudanca**:
+Oraculo que prova a existencia de uma mudanca ainda inexistente na base. Precisa ser varrido VERMELHO contra a base antes de ser aceito: verde na base significa que ele nao detecta aquilo que alega detectar.
+
+**condicao de carga declarada**:
+Condicao de contencao especificada de forma explicita e reproduzivel sob a qual um criterio sensivel a tempo e avaliado. Substitui a mencao vaga a contencao, que nao e verificavel porque a carga de uma maquina varia por causas exogenas.
