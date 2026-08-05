@@ -67,7 +67,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: test/templates-gitignore-runtime-artifacts.test.ts (new), scripts/cam/patterns.md. Model the new file on test/templates-gitignore-dotenv.test.ts (CAM-499): same makeTmpRepo + isIgnored + two-path describe shape, but with the strict helper required here (throw when the exit code is above 1 instead of collapsing every non-zero into 'not ignored'). GOTCHA 3, reincident from CAM-499: the test imports materializeTemplates, which reads the copy embedded in src/vendor/_generated.ts, NOT templates/.gitignore on disk; mutating the disk file and seeing the test stay green proves nothing except that the mutation went to the wrong file, so always run bun run embed-vendor before re-running the test during the sweep, and count the target token in the file the test reads. GOTCHA 4 (CAM-495 and CAM-499, twice reincident): deletion mutation does not cover substitution; the blanket direction is exactly what the two negative controls exist to catch. In the tmpdir repo the probe files are untracked, so the plain default check-ignore form is correct there (unlike the repo-side probe in US-001, which needed --no-index for tracked paths). Do NOT target the rotating per-story state files under scripts/cam/ as oracle paths; the tracked-by-design invariant for them is already covered for free by the set-equality parity oracle of US-002. patterns.md precedent to extend, not duplicate: the CAM-499 bullet on a positive-control-only suite passing unchanged under a strictly-broader implementation."
     },
