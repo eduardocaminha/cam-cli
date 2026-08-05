@@ -6,6 +6,13 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.282.0] - 2026-08-05
+
+### Added
+
+- US-002 - Derive every surviving wait budget from instrumented measurement and prove five consecutive green suites
+- US-001 - Replace the machine-wide watcher readiness gate with an own-watcher liveness proof
+
 ## [0.281.0] - 2026-08-04
 
 ### Added
