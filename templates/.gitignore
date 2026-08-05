@@ -57,3 +57,26 @@ scripts/cam/scope-proposal.json
 .env
 .env.local
 .env.*.local
+
+# US-002, CAM-502: durable operator-decision + terminal-state markers written
+# by the supervisor loop (parity with the repo's own .gitignore)
+.claude/.cam-gate.json
+.claude/.cam-implement-blocked.json
+.claude/.cam-plan-preflight-failed.json
+.claude/.cam-post-merge-stalled.json
+.claude/.cam-ship-stalled.json
+.claude/.cam-sidecar-session.json
+# US-002, CAM-502: runtime session/concurrency markers written by `cam next` / `cam run`
+.claude/.cam-orch-session
+.claude/.cam-supervisor.lock
+.claude/.cam-worker-pane
+# US-002, CAM-502: sidecar liveness watcher stdout/stderr log + pid file
+.claude/cam-sidecar-liveness-watcher.log
+.claude/.cam-sidecar-liveness-watcher.pid
+# US-002, CAM-502: merge-watch state written by MERGE_WATCH_FILENAME
+.claude/.cam-merge-watch.json
+# US-002, CAM-502: structured event log + gate-outcome history + per-run gate timing
+.claude/cam-worker-events.jsonl
+.claude/cam-gate-history.jsonl
+.claude/cam-supervisor.log
+gate-results.json
