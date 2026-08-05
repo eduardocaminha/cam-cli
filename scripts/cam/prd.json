@@ -29,7 +29,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Single file: .gitignore at the repo root. Add the three rules next to the existing runtime-marker block, each as a precise per-artifact line with a CAM-502 comment tag, following the shape already used for .claude/cam-recycle-watcher.log and the durable markers. Writers, for the comment provenance: .claude/cam-sidecar-liveness-watcher.log is written by the watcher spawn in src/commands/run.ts:1142; .cam-sidecar-liveness-watcher.pid by SIDECAR_LIVENESS_WATCHER_PID_FILE in src/supervisor/sidecar-pid.ts:189; .cam-merge-watch.json by MERGE_WATCH_FILENAME in src/release/merge-watch.ts:40. SCOPE: this story touches only the repo's own .gitignore; templates/.gitignore is owned by US-002 and will legitimately change later on this same branch, so do not add any branch-scoped 'templates untouched' assertion. GOTCHA (git docs, this PRD's officialDocsConsulted): git check-ignore exits 0 ignored, 1 not ignored, 128 fatal; when hand-running any probe, an exit code above 1 is an ERROR and must never be read as 'not ignored', and a probe against a TRACKED path is suppressed (always 1) unless --no-index is passed, which is why the negative-control oracle here carries --no-index. No templates/ or vendor/ change here, so no embed-vendor step. patterns.md context: the CAM-499 bullet on .env.*.local glob semantics (a * matches zero-or-more chars but the literal dots must still be present) is the nearest precedent for getting a rule shape right on the first pass."
     },
