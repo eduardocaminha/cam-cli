@@ -526,3 +526,12 @@ Falha do macOS em que sobrescrever in-place o inode de um binario que um process
 
 **atomic install swap**:
 Invariante de instalacao do gateship: um destino de instalacao e substituido por rename(2) de um staged temp do mesmo diretorio, nunca por escrita in-place. Garante as duas coisas de uma vez, que o processo em execucao siga com o inode antigo intacto e que nenhum leitor consiga observar um arquivo parcialmente escrito.
+
+**cam runtime artifact**:
+A file the product writes during loop execution (event log, supervisor log, durable markers, session/lock files, gate results), as opposed to template content that gship init installs and which is meant to be committed. Runtime artifacts can carry the user's file paths, prompts, raw git/gh stderr and pane transcripts, so they must be ignored in every project cam manages.
+
+**parity oracle**:
+A set-equality comparison between two verdicts derived live from the tree at check time. Because it compares sets rather than asserting membership, it fails in both directions by construction (omission and over-inclusion) and therefore needs no separately authored negative control.
+
+**rotating harness state**:
+Per-story files the harness overwrites each cycle (prd.json, handoff.json, review-artifact.txt). An acceptance-criterion oracle must never target one: whichever story's rotation happens to be at HEAD decides the verdict, so the criterion passes or fails by coincidence rather than by correctness. Enforced deterministically by the prd-oracle-lint rule rotating-artifact-target.
