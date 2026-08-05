@@ -1,0 +1,62 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-446",
+  "description": "Eliminate at the root the non-determinism of test/integration/orch-recycle-watch.test.ts, which only manifests under a full-suite run.",
+  "issueNumber": 446,
+  "type": "fix",
+  "relatedDocs": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "Bun",
+      "channel": "WebFetch",
+      "url": "https://bun.sh/docs/api/spawn",
+      "version": "current",
+      "fetchedAt": "2026-08-05T19:30:00Z",
+      "summary": "Bun.spawn's stdout/stderr accept 'pipe' | 'inherit' | 'ignore' | Bun.file() | fd number, so a child's output can be redirected straight into a file sink instead of being discarded with 'ignore'. Subprocess exposes exitCode (null while the process is alive), signalCode, killed and exited, which is the supported way for the test to assert its own watcher subprocess is still running. No deprecation affects the current call site; the change from stdio: ['ignore','ignore','ignore'] to a Bun.file() sink plus an exitCode liveness check is current API.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Replace the machine-wide watcher readiness gate with an own-watcher liveness proof",
+      "description": "As the cam loop, I need the recycle e2e test to prove that ITS OWN watcher subprocess is alive and polling before it arms the recycle marker, so that watcher cold-start latency and outright watcher boot failures stop landing silently inside the session-marker wait budget and turning into a censored timeout.",
+      "acceptanceCriteria": [
+        "The machine-wide process-name readiness gate is gone: the test no longer gates on `pgrep -f orch-recycle-watch`, which is satisfied by ANY process on the machine carrying that argv (verified 2026-08-05: the operator's own live `cam orch-recycle-watch`, pid 73823, satisfies it on the first poll), making the gate a tautology that hides a not-yet-booted or dead watcher. [oracle: file-assert ! grep -q \"'-f', 'orch-recycle-watch'\" test/integration/orch-recycle-watch.test.ts]",
+        "Readiness is proven by an effect only the test's OWN watcher can produce inside its private tmpdir (a probe marker armed in <tmpCwd>/.claude that the watcher's consume-once path unlinks), and that probe runs before the wrapper exists so the watcher cold start sits off the recycle critical path. The probe wait carries a WATCHER_READY_PROBE token so the gate is identifiable. [oracle: file-assert grep -q 'WATCHER_READY_PROBE' test/integration/orch-recycle-watch.test.ts]",
+        "The watcher subprocess's stdout/stderr are no longer discarded: they are captured to a file under the test's tmpdir so a boot failure leaves evidence instead of vanishing. [oracle: file-assert ! grep -q \"'ignore', 'ignore', 'ignore'\" test/integration/orch-recycle-watch.test.ts]",
+        "A wait that times out reports the watcher's liveness (its exitCode, null while alive per the Bun docs entry) together with the captured watcher log, so a dead or never-booted watcher is diagnosable rather than censored into a bare timeout message. [oracle: file-assert grep -q 'exitCode' test/integration/orch-recycle-watch.test.ts]",
+        "The disproven CPU-contention rationale prose is removed from the file (measured 2026-08-05: 24 spinners on 12 cores, load ~60, full suite GREEN; the same suite with no artificial load was RED on run 1), and no flake-licensing prose replaces it in any form, including comments (patterns.md:1094 removed that doctrine in CAM-433). [oracle: file-assert ! grep -qi 'CPU contention' test/integration/orch-recycle-watch.test.ts]",
+        "The real-tmux surface survives the fix, with the comparand derived from main at check time and compared with -ge so a legitimate append never false-positives. [oracle: file-assert F=test/integration/orch-recycle-watch.test.ts; M=$(git show main:$F | grep -c tmuxRaw); B=$(grep -c tmuxRaw $F); [ \"$B\" -ge \"$M\" ]]",
+        "The e2e still proves the same behavior end to end against real tmux, the real bash wrapper, a real watcher subprocess and real pgrep: no fake or mock is substituted for any of them, and the SIGTERM -> respawn -> new-UUID assertions are unchanged in substance. [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "File: test/integration/orch-recycle-watch.test.ts ONLY. Do NOT touch src/commands/orch-recycle-watch.ts: production behavior of the recycle watcher is explicitly out of scope (the defect is the test's).\n\nMEASURED ROOT CAUSE (verified 2026-08-05, do not re-derive): step 7's readiness wait is `spawnSync('pgrep', ['-f', 'orch-recycle-watch'])`, a machine-wide argv match. A live `cam orch-recycle-watch` from the operator's own cam run session (pid 73823) was present during the sweep, so the gate returns 0 on its first poll whether or not the test's `bun index.ts orch-recycle-watch` subprocess ever booted. Everything the gate was supposed to cover (bun transpiling and importing the whole of index.ts, ~0.4s idle but I/O-bound and much larger under a full suite, plus a boot that can fail outright under fd/process-table pressure while `stdio: ['ignore','ignore','ignore']` discards every diagnostic) therefore lands inside the NEXT wait, session-marker-change at 12s, which is precisely where the four censored measurements (12209/12151/12183/12188 ms) sit. This also explains both negative results already paid for: isolation is green (fast, unloaded boot) and CPU saturation does not reproduce (the trigger is I/O and process-table, not CPU).\n\nSUGGESTED SHAPE: spawn the watcher BEFORE creating the tmux session and wrapper; arm a probe ORCH_RECYCLE_MARKER in <tmpCwd>/.claude and wait for the watcher to unlink it. With no wrapper running, resolvePidFn returns null, the watcher emits its structured `unresolved-pid` event and still removes the marker (handleOneTick, src/commands/orch-recycle-watch.ts ~605-629), so the deletion is an unambiguous proof that THIS watcher is polling THIS tmpdir. Then create the tmux session + wrapper, wait for fake-claude, then arm for real. The watcher polls every 2000ms (pollIntervalMs default), so the probe resolves within boot + one tick.\n\nBun API (see officialDocsConsulted): stdout/stderr accept a Bun.file() sink; proc.exitCode is null while alive. Fold both into the failure path of every wait.\n\nDO NOT: substitute fakes for tmux/pgrep/subprocess (the AC2 pin guards exactly this); reintroduce any prose licensing a timing failure as a resource-contention artifact (patterns.md:1094, removed by CAM-433); or start on budget-coherence-by-construction (named constants, computed outer) which is CAM-506, a separate issue with a separate verification mode.\n\npatterns.md is grep-on-demand: grep for 'recycle', 'waitForCondition', 'pgrep'. Relevant bullet at patterns.md:228 (ps ppid-walk is canonical, never reintroduce pgrep for pid resolution)."
+    },
+    {
+      "id": "US-002",
+      "title": "Derive every surviving wait budget from instrumented measurement and prove five consecutive green suites",
+      "description": "As the cam loop, I need every remaining clock budget in the recycle e2e to come from an instrumented measurement of the real wait duration under a full-suite run, so that no budget is guessed from right-censored timeout data and the whole suite is provably green five times in a row.",
+      "acceptanceCriteria": [
+        "Every wait in the file records the REAL elapsed time at the moment its predicate flips (never the timeout value), and those measurements are emitted as one record per wait to the artifact path given by the CAM_WAIT_TIMINGS env var. [oracle: named-command CAM_WAIT_TIMINGS=/tmp/cam446-timings.jsonl bun test test/integration/orch-recycle-watch.test.ts >/dev/null 2>&1; grep -q 'elapsedMs' /tmp/cam446-timings.jsonl]",
+        "Each surviving timeout budget in the file is justified by elapsed values measured during a FULL-suite run (bun test over the whole suite, never the file in isolation, which is an environment where the defect does not exist), and the measured values plus their date are recorded in the file's header comment. No budget is derived from the right-censored 12209/12151/12183/12188 ms failure measurements. [oracle: file-assert grep -q 'measured under full suite' test/integration/orch-recycle-watch.test.ts]",
+        "No wait relies on the helper's default poll options: every wait declares its own interval, since the 20ms default spawns a real subprocess every 20ms and adds exactly the process-table pressure this fix must not keep. [oracle: file-assert F=test/integration/orch-recycle-watch.test.ts; [ \"$(grep -c 'intervalMs:' $F)\" -ge \"$(grep -c 'await waitForCondition(' $F)\" ]]",
+        "The recorded budgets are honest about margin rather than tuned to the censored data: the header note states each wait's measured worst case and the margin factor applied, and the reviewer can trace each budget back to a measured number. [oracle: reviewer-judgment]",
+        "The COMPLETE suite runs five consecutive times and all five are green. [oracle: named-command for i in $(seq 1 5); do bun test >/dev/null 2>&1 || { echo \"FAIL on suite run $i\"; exit 1; }; done; echo ALL-GREEN]",
+        "The real-tmux surface still survives, with the comparand derived from main at check time and compared with -ge. [oracle: file-assert F=test/integration/orch-recycle-watch.test.ts; M=$(git show main:$F | grep -c tmuxRaw); B=$(grep -c tmuxRaw $F); [ \"$B\" -ge \"$M\" ]]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: test/integration/orch-recycle-watch.test.ts; test/helpers/wait-for-condition.ts only if the instrumentation hook is strictly ADDITIVE (an optional callback), because that helper backs 83 wait call sites across the integration tier. A local-to-the-file wrapper is the safer default.\n\nMEASUREMENT PROCEDURE: the numbers that justify a budget must be captured during a FULL `bun test` run with CAM_WAIT_TIMINGS set, not from a run of this file alone: six of six isolated runs were green on 2026-08-04/05, so isolation proves nothing. Every failure observed so far is right-censored at its own budget (the four measurements cluster at 12.15-12.21s because that is where the timeout fires, not where the latency is), so they only say 'at least 12s' and are forbidden as a budget source.\n\nENV CAVEAT: $TMPDIR on this machine exceeded 200k directories and was purged 2026-08-05, taking the suite from 265s to 98s. The source is filed as CAM-503 and is NOT fixed. If the suite slows down again, re-take the measurements before trusting any recorded number.\n\nSCOPE FENCE: this story instruments and justifies budgets. It does NOT introduce named budget constants or a computed outer timeout asserting sum-of-inner <= outer: that is CAM-506, split off by verification mode (invariant assertion plus mutation there, five green suites here). Do not write mutation oracles in this PRD; if one is ever added, it targets a definition, never a use site (the 2026-08-05 PRD escalated precisely because a mutation targeted text a sibling story erased).\n\nAlso forbidden here as in US-001: any comment or prose licensing a timing failure as a resource-contention artifact (patterns.md:1094, removed by CAM-433), and any substitution of a fake for real tmux/pgrep/subprocess."
+    }
+  ]
+}
