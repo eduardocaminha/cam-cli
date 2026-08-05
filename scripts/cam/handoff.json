@@ -1,0 +1,25 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Replace the machine-wide watcher readiness gate with an own-watcher liveness proof"
+  },
+  "branchName": "cam/issue-446",
+  "timestamp": "2026-08-05T00:00:00Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    "test/integration/orch-recycle-watch.test.ts",
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 was the only non-operator story in this PRD (CAM-446). The fix touched ONLY test/integration/orch-recycle-watch.test.ts, per the story's notes: src/commands/orch-recycle-watch.ts was explicitly out of scope. The machine-wide `pgrep -f orch-recycle-watch` gate is gone; readiness is now proven by a WATCHER_READY_PROBE (arm the real ORCH_RECYCLE_MARKER before the tmux wrapper exists, wait for the watcher's own consume-once tick to unlink it). Watcher stdout/stderr are captured via `Bun.spawn({ stdout: Bun.file(path), stderr: Bun.file(path) })` and folded (plus subprocess.exitCode) into the failure message of any watcher-liveness wait via a small `waitForWatcher` helper local to the test file. All CPU-contention prose removed, no flake-licensing prose introduced. Full suite (6017 tests) and `bun run check:all` are green; the target test itself was run 3x standalone to confirm determinism (no artificial load needed to reproduce green, per the story's measured root cause).",
+  "officialDocsValidated": [
+    {
+      "lib": "bun",
+      "channel": "WebFetch",
+      "url": "https://bun.com/docs/api/spawn",
+      "fetchedAt": "2026-08-05T00:00:00Z",
+      "status": "aligned",
+      "summary": "Confirmed Bun.spawn() stdout/stderr accept a Bun.file() sink to redirect output to a file, and that subprocess.exitCode is `number | null`, null while the process is still running. Implementation uses both exactly as documented."
+    }
+  ]
+}

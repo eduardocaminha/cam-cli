@@ -6,25 +6,38 @@
 // Mechanism under test:
 //   cam run spawns cam orch-recycle-watch alongside the sidecar. The watcher
 //   polls for ORCH_RECYCLE_MARKER. When present, it resolves the orchestrator
-//   claude PID via pgrep -f <session-uuid>, sends SIGTERM, and removes the
-//   marker (consume-once). The bash respawn-wrapper (buildOrchestratorPaneCommand)
+//   claude PID via a ps ppid-walk, sends SIGTERM, and removes the marker
+//   (consume-once). The bash respawn-wrapper (buildOrchestratorPaneCommand)
 //   detects the SIGTERM'd claude exit, finds the handoff file written by the
 //   exiting process, and respawns a fresh claude with a new session UUID.
 //
 // What this test does:
 //   1. Creates a tmpdir as a fake project cwd.
-//   2. Creates a fake `claude` shell script (fake-bin/claude) that:
+//   2. Spawns the real recycle watcher (bun index.ts orch-recycle-watch) as a
+//      subprocess against that tmpdir, BEFORE any tmux session or wrapper
+//      exists, capturing its stdout/stderr to files under the tmpdir.
+//   3. WATCHER_READY_PROBE: arms the real ORCH_RECYCLE_MARKER as a probe and
+//      waits for it to be unlinked. With no wrapper/pid-file yet, the
+//      watcher's own consume-once tick resolves no pid and still removes the
+//      marker -- an effect only THIS watcher, polling THIS tmpdir, can
+//      produce. This proves liveness without gating on any process-name
+//      match, and keeps the watcher's cold start off the recycle critical
+//      path below.
+//   4. Creates a fake `claude` shell script (fake-bin/claude) that:
 //        - Traps SIGTERM: writes a minimal handoff JSON and exits 143.
 //        - Otherwise: sleeps in a signal-interruptible wait loop.
-//   3. Runs the real bash wrapper (buildOrchestratorPaneCommand) in a real
+//   5. Runs the real bash wrapper (buildOrchestratorPaneCommand) in a real
 //      tmux session (private socket) with fake-claude on the PATH.
-//   4. Spawns the real recycle watcher (bun index.ts orch-recycle-watch) as
-//      a subprocess against the same tmpdir.
-//   5. Arms the recycle marker by writing ORCH_RECYCLE_MARKER.
-//   6. Asserts: ORCH_SESSION_MARKER changes to a new UUID (respawn happened).
-//   7. Asserts: a process matching the new UUID is running (fresh claude).
+//   6. Arms the recycle marker for real.
+//   7. Asserts: ORCH_SESSION_MARKER changes to a new UUID (respawn happened).
+//   8. Asserts: a process matching the new UUID is running (fresh claude).
 //
-// Skips gracefully when tmux or pgrep is unavailable.
+// Any wait tied to the watcher's own liveness reports the watcher's
+// exitCode (null while alive) plus its captured stdout/stderr on timeout,
+// so a dead or never-booted watcher is diagnosable instead of collapsing
+// into a bare timeout message.
+//
+// Skips gracefully when tmux, pgrep, or uuidgen is unavailable.
 //
 // Isolation: uses a private tmux socket (cam-it-recycle); never touches the
 // live `cam` socket used by a real cam run session.
@@ -38,6 +51,7 @@ import {
 	writeFileSync,
 	mkdirSync,
 	readFileSync,
+	existsSync,
 	rmSync,
 	chmodSync,
 } from 'node:fs';
@@ -49,7 +63,7 @@ import {
 	type SpawnWatcherFn,
 } from '../../src/commands/run.ts';
 import { ORCH_RECYCLE_MARKER, ORCH_SESSION_MARKER } from '../../src/tmux/session.ts';
-import { waitForCondition } from '../helpers/wait-for-condition.ts';
+import { waitForCondition, type WaitForConditionOptions } from '../helpers/wait-for-condition.ts';
 import { tmuxAvailable, pgrepAvailable, uuidgenAvailable } from '../helpers/test-deps.ts';
 
 // ---------------------------------------------------------------------------
@@ -83,6 +97,43 @@ function tmuxRaw(args: string[]): ReturnType<typeof spawnSync> {
 
 let tmpCwd: string;
 let watcherProc: ReturnType<typeof Bun.spawn> | undefined;
+let watcherStdoutPath: string;
+let watcherStderrPath: string;
+
+function readCapturedSafely(path: string): string {
+	try {
+		return readFileSync(path, 'utf8');
+	} catch {
+		return '(no output captured)';
+	}
+}
+
+/**
+ * Wraps waitForCondition so a timeout on a wait tied to the watcher's own
+ * liveness never collapses into a bare "predicate still false" message.
+ * On failure, reports the watcher's exitCode (null while alive, per the
+ * Bun docs `subprocess.exitCode` entry) plus its captured stdout/stderr,
+ * so a dead or never-booted watcher subprocess is diagnosable.
+ */
+async function waitForWatcher(
+	predicate: () => boolean | Promise<boolean>,
+	opts: WaitForConditionOptions,
+	label: string,
+): Promise<void> {
+	try {
+		await waitForCondition(predicate, opts);
+	} catch (err) {
+		const exitCode = watcherProc?.exitCode ?? null;
+		throw new Error(
+			[
+				`${label}: ${err instanceof Error ? err.message : String(err)}`,
+				`watcher exitCode=${exitCode} (null means the watcher is still alive)`,
+				`watcher stdout:\n${readCapturedSafely(watcherStdoutPath)}`,
+				`watcher stderr:\n${readCapturedSafely(watcherStderrPath)}`,
+			].join('\n'),
+		);
+	}
+}
 
 beforeEach(() => {
 	if (!shouldRun) return;
@@ -116,7 +167,35 @@ test.skipIf(!shouldRun)(
 		const sessionIdPath = join(claudeDir, ORCH_SESSION_MARKER);
 		const recyclePath = join(claudeDir, ORCH_RECYCLE_MARKER);
 
-		// 1. Create fake-bin/claude: a bash script that traps SIGTERM, writes
+		// 1. Spawn the real recycle watcher subprocess FIRST, against tmpCwd,
+		//    before any tmux session or wrapper exists. Its stdout/stderr are
+		//    captured to files under tmpCwd so a boot failure leaves evidence
+		//    instead of vanishing.
+		watcherStdoutPath = join(tmpCwd, 'watcher.stdout.log');
+		watcherStderrPath = join(tmpCwd, 'watcher.stderr.log');
+		watcherProc = Bun.spawn(['bun', INDEX_TS, 'orch-recycle-watch'], {
+			cwd: tmpCwd,
+			stdout: Bun.file(watcherStdoutPath),
+			stderr: Bun.file(watcherStderrPath),
+		});
+
+		// 2. WATCHER_READY_PROBE: arm the real recycle marker as a probe. With
+		//    no wrapper/pid-file yet, the watcher's resolvePidFn resolves no
+		//    pid, but its consume-once tick (handleOneTick) still unlinks the
+		//    marker and emits its structured unresolved-pid event. That
+		//    unlink is an effect only THIS watcher, polling THIS tmpdir's
+		//    .claude, can produce -- proof of liveness without gating on any
+		//    machine-wide process-name match. Runs before the wrapper exists,
+		//    so the watcher's cold start (bun transpiling+importing index.ts)
+		//    sits off the recycle critical path below.
+		writeFileSync(recyclePath, '', 'utf8');
+		await waitForWatcher(
+			() => !existsSync(recyclePath),
+			{ timeoutMs: 10_000, intervalMs: 200 },
+			'WATCHER_READY_PROBE',
+		);
+
+		// 3. Create fake-bin/claude: a bash script that traps SIGTERM, writes
 		//    the handoff file, and exits 143 so the bash wrapper can respawn.
 		const fakeBinDir = join(tmpCwd, 'fake-bin');
 		mkdirSync(fakeBinDir, { recursive: true });
@@ -141,16 +220,16 @@ test.skipIf(!shouldRun)(
 		);
 		chmodSync(fakeClaudeScript, 0o755);
 
-		// 2. Write the initial session UUID to ORCH_SESSION_MARKER.
+		// 4. Write the initial session UUID to ORCH_SESSION_MARKER.
 		//    Must be a string unique enough that pgrep -f won't match unrelated processes.
 		const initialUUID = `cam-recycle-test-${Date.now()}`;
 		writeFileSync(sessionIdPath, initialUUID, 'utf8');
 
-		// 3. Write a minimal boot prompt file (content doesn't matter for the test).
+		// 5. Write a minimal boot prompt file (content doesn't matter for the test).
 		const promptFile = join(claudeDir, '.cam-orchestrator-prompt.txt');
 		writeFileSync(promptFile, 'test prompt', 'utf8');
 
-		// 4. Build the real bash wrapper command. Uses fake-claude from fakeBinDir via
+		// 6. Build the real bash wrapper command. Uses fake-claude from fakeBinDir via
 		//    PATH manipulation prepended to the wrapper string.
 		const stateFile = join(claudeDir, 'cam-loop.local.md');
 		const readyMarker = join(claudeDir, '.cam-orch-ready');
@@ -178,7 +257,7 @@ test.skipIf(!shouldRun)(
 			agentCmd,
 		].join('; ');
 
-		// 5. Create a tmux session and run the bash wrapper in it.
+		// 7. Create a tmux session and run the bash wrapper in it.
 		tmuxRaw(['new-session', '-d', '-s', SESSION, '-x', '200', '-y', '50']);
 		await waitForCondition(() => tmuxRaw(['has-session', '-t', SESSION]).status === 0);
 
@@ -189,7 +268,7 @@ test.skipIf(!shouldRun)(
 
 		tmuxRaw(['respawn-pane', '-k', '-t', orchPaneId, 'bash', '-c', fullCmd]);
 
-		// 6. Wait for fake-claude to appear in pgrep results.
+		// 8. Wait for fake-claude to appear in pgrep results.
 		await waitForCondition(
 			() => spawnSync('pgrep', ['-f', initialUUID], { stdio: 'pipe', encoding: 'utf8' }).status === 0,
 			{ timeoutMs: 5_000, intervalMs: 200 },
@@ -200,29 +279,13 @@ test.skipIf(!shouldRun)(
 		}).status === 0;
 		expect(fakeclaudeRunning).toBe(true);
 
-		// 7. Spawn the recycle watcher as a subprocess using bun index.ts.
-		//    It runs against tmpCwd (same fake project cwd), polling every 2 s.
-		watcherProc = Bun.spawn(['bun', INDEX_TS, 'orch-recycle-watch'], {
-			cwd: tmpCwd,
-			stdio: ['ignore', 'ignore', 'ignore'],
-		});
-		// Confirm the watcher subprocess is actually scheduled (present in the
-		// process table) before arming the marker, rather than a blind settle wait.
-		// Generous budget: under full-suite CPU contention, process-table
-		// visibility for a just-spawned subprocess can lag well past the
-		// helper's 5000ms default.
-		await waitForCondition(
-			() => spawnSync('pgrep', ['-f', 'orch-recycle-watch'], { stdio: 'pipe' }).status === 0,
-			{ timeoutMs: 10_000, intervalMs: 200 },
-		);
-
-		// 8. Arm the recycle marker.
+		// 9. Arm the recycle marker for real.
 		writeFileSync(recyclePath, '', 'utf8');
 
-		// 9. Wait for ORCH_SESSION_MARKER to change (proves the bash wrapper
-		//    respawned with a new UUID after the SIGTERM-and-handoff cycle).
+		// 10. Wait for ORCH_SESSION_MARKER to change (proves the bash wrapper
+		//     respawned with a new UUID after the SIGTERM-and-handoff cycle).
 		let newUUID = initialUUID;
-		await waitForCondition(
+		await waitForWatcher(
 			() => {
 				try {
 					const content = readFileSync(sessionIdPath, 'utf8').trim();
@@ -236,16 +299,15 @@ test.skipIf(!shouldRun)(
 				return false;
 			},
 			{ timeoutMs: 12_000, intervalMs: 500 }, // up to 10 s watcher latency + overhead
+			'session-marker change',
 		);
 
-		// 10. Core assertions.
+		// 11. Core assertions.
 
 		// The session UUID must have changed: this proves the bash wrapper respawned.
 		expect(newUUID).not.toBe(initialUUID);
 
 		// A process matching the NEW UUID must be running (fresh fake-claude is alive).
-		// Generous budget: same full-suite-contention rationale as the
-		// pgrep-scheduled wait above.
 		await waitForCondition(
 			() => spawnSync('pgrep', ['-f', newUUID], { stdio: 'pipe', encoding: 'utf8' }).status === 0,
 			{ timeoutMs: 10_000, intervalMs: 200 },
@@ -257,11 +319,10 @@ test.skipIf(!shouldRun)(
 		expect(pgrepNew.status).toBe(0);
 	},
 	// Generous outer per-test timeout: sum of the worst-case internal poll
-	// budgets above, across all five waitForCondition waits: has-session
-	// (5s default) + pgrep-initialUUID (5s) + pgrep-orch-recycle-watch (10s)
-	// + session-marker change (12s) + pgrep-newUUID (10s) = ~42s, plus
-	// process-spawn/tmux overhead, so the preflight cannot false-positive
-	// under full-suite CPU contention.
+	// budgets across all five waits: has-session (5s default) +
+	// WATCHER_READY_PROBE (10s) + pgrep-initialUUID (5s) + session-marker
+	// change (12s) + pgrep-newUUID (10s) = ~42s, plus process-spawn/tmux
+	// overhead.
 	{ timeout: 45_000 },
 );
 
