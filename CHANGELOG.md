@@ -6,6 +6,16 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.283.0] - 2026-08-05
+
+### Added
+
+- US-004 - Drive the parity check from bun test so CI enforces it and the bash script gets source-guard coverage
+- US-003 - Durable behavioral test that the shipped template ignores every cam runtime artifact
+- US-002 - Add the derived parity check script and bring templates/.gitignore to parity
+- US-002 - Add the derived parity check script and bring templates/.gitignore to parity
+- US-001 - Ignore the three uncovered cam runtime artifacts in the repo's own .gitignore
+
 ## [0.282.0] - 2026-08-05
 
 ### Added
