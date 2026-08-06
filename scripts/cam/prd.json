@@ -100,7 +100,7 @@
         "The full quality spine is green (bun run check:all). [oracle: named-command bun run check:all]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: 39 files under test/commands. Mechanize with scripts/codemod-test-tmpdir.ts (US-003); hand work limited to GOTCHA 10 re-checks. Command tests frequently git init their scratch dir and shell out to git: the helper's GIT_CEILING_DIRECTORIES keeps them from climbing into cam-cli, but a test that must find its OWN repo still needs its own git init (GOTCHA 10 (b)). Re-check any expectation that a spawned script fails for a missing dependency (GOTCHA 10 (a)). scripts/file-size-budget.json may need a raise (GOTCHA 13)."
     },
