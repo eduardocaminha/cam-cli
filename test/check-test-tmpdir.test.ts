@@ -45,10 +45,15 @@ function pathJoin(inner: string, rest: string): string {
 // scanForTmpdirRoots: flaggable forms
 // ---------------------------------------------------------------------------
 
+// These fixtures pass an explicit empty allowlist ([]): they exercise the
+// classification logic in isolation, over a synthetic single-file `files`
+// set that never includes the real ALLOWLIST's target path, so relying on
+// the default ALLOWLIST parameter here would spuriously report that real
+// entry as stale (US-R1-001, once ALLOWLIST held its first real entry).
 describe('scanForTmpdirRoots — flaggable forms', () => {
 	test('mkdtempSync form fires: names path:line, kind=join', () => {
 		const text = `const p = mkdtempSync(${pathJoin(bareCall('tmpdir'), "'prefix'")});\n`;
-		const results = scanForTmpdirRoots([{ path: 'test/foo.test.ts', text }]);
+		const results = scanForTmpdirRoots([{ path: 'test/foo.test.ts', text }], []);
 		expect(results).toHaveLength(1);
 		expect(results[0]!.path).toBe('test/foo.test.ts');
 		expect(results[0]!.line).toBe(1);
@@ -57,28 +62,28 @@ describe('scanForTmpdirRoots — flaggable forms', () => {
 
 	test('awaited mkdtemp form fires: kind=join', () => {
 		const text = `const p = await mkdtemp(${pathJoin(bareCall('tmpdir'), "'prefix'")});\n`;
-		const results = scanForTmpdirRoots([{ path: 'test/foo.test.ts', text }]);
+		const results = scanForTmpdirRoots([{ path: 'test/foo.test.ts', text }], []);
 		expect(results).toHaveLength(1);
 		expect(results[0]!.kind).toBe('join');
 	});
 
 	test('bare path-join form fires: kind=join', () => {
 		const text = `const p = ${pathJoin(bareCall('tmpdir'), "'sentinel.txt'")};\n`;
-		const results = scanForTmpdirRoots([{ path: 'test/foo.test.ts', text }]);
+		const results = scanForTmpdirRoots([{ path: 'test/foo.test.ts', text }], []);
 		expect(results).toHaveLength(1);
 		expect(results[0]!.kind).toBe('join');
 	});
 
 	test('namespaced os.tmpdir() call fires: kind=join', () => {
 		const text = `const p = ${pathJoin(bareCall('os.tmpdir'), "'prefix'")};\n`;
-		const results = scanForTmpdirRoots([{ path: 'test/foo.test.ts', text }]);
+		const results = scanForTmpdirRoots([{ path: 'test/foo.test.ts', text }], []);
 		expect(results).toHaveLength(1);
 		expect(results[0]!.kind).toBe('join');
 	});
 
 	test('template-literal interpolation form fires: kind=template-literal', () => {
 		const text = `const p = \`\${${bareCall('tmpdir')}}/leak-probe-dir\`;\n`;
-		const results = scanForTmpdirRoots([{ path: 'test/foo.test.ts', text }]);
+		const results = scanForTmpdirRoots([{ path: 'test/foo.test.ts', text }], []);
 		expect(results).toHaveLength(1);
 		expect(results[0]!.kind).toBe('template-literal');
 	});
@@ -87,7 +92,7 @@ describe('scanForTmpdirRoots — flaggable forms', () => {
 		const importLine = "import { tmpdir as getTmp } from 'node:os';";
 		const callLine = `const p = ${pathJoin(bareCall('getTmp'), "'prefix'")};`;
 		const text = `${importLine}\n${callLine}\n`;
-		const results = scanForTmpdirRoots([{ path: 'test/foo.test.ts', text }]);
+		const results = scanForTmpdirRoots([{ path: 'test/foo.test.ts', text }], []);
 		expect(results).toHaveLength(1);
 		expect(results[0]!.kind).toBe('join');
 	});
@@ -100,12 +105,15 @@ describe('scanForTmpdirRoots — flaggable forms', () => {
 describe('scanForTmpdirRoots — comparand usage is not a rooting site', () => {
 	test('bare tmpdir() used only as a comparand is NOT matched (GOTCHA 8)', () => {
 		const text = `!dir.startsWith(${bareCall('tmpdir')})\n`;
-		const results = scanForTmpdirRoots([{ path: 'test/helpers/test-tmpdir.test.ts', text }]);
+		const results = scanForTmpdirRoots([{ path: 'test/helpers/test-tmpdir.test.ts', text }], []);
 		expect(results).toHaveLength(0);
 	});
 
 	test('no tmpdir reference at all -> empty result', () => {
-		const results = scanForTmpdirRoots([{ path: 'test/foo.test.ts', text: 'expect(1).toBe(1);\n' }]);
+		const results = scanForTmpdirRoots(
+			[{ path: 'test/foo.test.ts', text: 'expect(1).toBe(1);\n' }],
+			[],
+		);
 		expect(results).toHaveLength(0);
 	});
 });
@@ -134,9 +142,11 @@ describe('scanForTmpdirRoots — allowlist mechanism', () => {
 		expect(results[0]!.path).toBe('test/nonexistent.test.ts');
 	});
 
-	test('the real ALLOWLIST export stays empty', async () => {
+	test('the real ALLOWLIST holds exactly the CAM-508 GOTCHA 10(a) entry', async () => {
 		const { ALLOWLIST } = await import('../scripts/check-test-tmpdir.ts');
-		expect(ALLOWLIST).toHaveLength(0);
+		expect(ALLOWLIST).toHaveLength(1);
+		expect(ALLOWLIST[0]!.path).toBe('test/vendor/check-agent-frontmatter-standalone.test.ts');
+		expect(ALLOWLIST[0]!.reason.length).toBeGreaterThan(0);
 	});
 });
 
@@ -167,5 +177,11 @@ describe('filterScannablePaths', () => {
 
 	test('normal test/ paths are kept', () => {
 		expect(filterScannablePaths(['test/foo.test.ts'])).toEqual(['test/foo.test.ts']);
+	});
+
+	test('US-R1-001: a nested test/vendor/ path is KEPT, not swallowed by the top-level vendor/ exclusion', () => {
+		expect(filterScannablePaths(['test/vendor/some-test.test.ts'])).toEqual([
+			'test/vendor/some-test.test.ts',
+		]);
 	});
 });

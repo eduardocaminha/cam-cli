@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { createTestTmpdir } from '../helpers/test-tmpdir';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -25,8 +25,17 @@ let tmpDir: string;
 let scriptPath: string;
 
 beforeEach(() => {
-  // Fresh tmpdir with no node_modules -- mirrors the zero-dep invariant.
-  tmpDir = createTestTmpdir("cam-smoke-standalone-");
+  // CAM-508 GOTCHA 10(a): this test's whole premise is a directory with NO
+  // node_modules resolvable from it, mirroring the vendored smoke script's
+  // zero-third-party-dependency invariant. The repo-local scratch root
+  // (test/helpers/test-tmpdir.ts::createTestTmpdir) lives INSIDE the cam-cli
+  // checkout, so module resolution walks up and finds cam-cli's own
+  // node_modules -- a script that grew a third-party import would silently
+  // still pass. This is the one legitimate, allowlisted exception (see
+  // scripts/check-test-tmpdir.ts::ALLOWLIST) that roots directly in the real
+  // OS temp dir instead of the shared helper, specifically to stay outside
+  // any node_modules resolution chain.
+  tmpDir = mkdtempSync(join(tmpdir(), "cam-smoke-standalone-"));
 
   // git init so the smoke's `git rev-parse --show-toplevel` resolves correctly.
   spawnSync("git", ["init"], { cwd: tmpDir });

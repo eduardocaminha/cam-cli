@@ -18,6 +18,30 @@
   ],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "CRITICAL: GOTCHA 10(a) hit that the branch claims to have swept: rooting this t…",
+      "priority": 1,
+      "passes": false,
+      "description": "CRITICAL [test/vendor/check-agent-frontmatter-standalone.test.ts:29]: GOTCHA 10(a) hit that the branch claims to have swept: rooting this test in the repo-local scratch root destroyed its premise. The test is named 'smoke exits 0 ... in a no-node_modules tmpdir' (line 48) and its comment (line 28) says 'Fresh tmpdir with no node_modules -- mirrors the zero-dep invariant', but .cam-test-tmp/ lives inside the cam-cli checkout, so module resolution now walks up and finds cam-cli's node_modules. Proven by direct probe: an `import yaml from 'js-yaml'` script run from .cam-test-tmp/ resolves successfully ('RESOLVED-THIRD-PARTY-DEP function'), while the identical script under $TMPDIR (the pre-migration root) fails to resolve. The vendored smoke script is still clean today (only node: builtins), so the two tests stay green, but they would now also stay green if the script grew a third-party dependency: the zero-dep invariant is silently unguarded. Fix by rooting this specific test outside the repo with an explicit justification (this is exactly what the US-008 ALLOWLIST mechanism exists for) or by otherwise re-establishing the no-node_modules condition.",
+      "notes": "CRITICAL [test/vendor/check-agent-frontmatter-standalone.test.ts:29]: GOTCHA 10(a) hit that the branch claims to have swept: rooting this test in the repo-local scratch root destroyed its premise. The test is named 'smoke exits 0 ... in a no-node_modules tmpdir' (line 48) and its comment (line 28) says 'Fresh tmpdir with no node_modules -- mirrors the zero-dep invariant', but .cam-test-tmp/ lives inside the cam-cli checkout, so module resolution now walks up and finds cam-cli's node_modules. Proven by direct probe: an `import yaml from 'js-yaml'` script run from .cam-test-tmp/ resolves successfully ('RESOLVED-THIRD-PARTY-DEP function'), while the identical script under $TMPDIR (the pre-migration root) fails to resolve. The vendored smoke script is still clean today (only node: builtins), so the two tests stay green, but they would now also stay green if the script grew a third-party dependency: the zero-dep invariant is silently unguarded. Fix by rooting this specific test outside the repo with an explicit justification (this is exactly what the US-008 ALLOWLIST mechanism exists for) or by otherwise re-establishing the no-node_modules condition."
+    },
+    {
+      "id": "US-R1-002",
+      "title": "CRITICAL: The exit-time reaper (process.on('exit', reapOwnDirectories)) never r…",
+      "priority": 2,
+      "passes": false,
+      "description": "CRITICAL [test/helpers/test-tmpdir.ts:90]: The exit-time reaper (process.on('exit', reapOwnDirectories)) never runs under `bun test`, the only runner the helper exists for, so US-002 AC4 ('The helper reaps its directories on process exit') is not actually delivered. Proven by minimal probe: a test file registering process.on('exit', () => console.error('EXIT-HOOK-FIRED')) prints nothing under `bun test` (bun 1.3.13), and a controlled measurement shows running one test file (test/orchestrator/handoff.test.ts) leaves 6 directories behind (.cam-test-tmp entry count 4754 -> 4760). The scratch root had accumulated 4754 directories / 29MB from the branch's own development. The AC's own oracle passes only because test/helpers/test-tmpdir.test.ts:75 pins the behavior in a `bun -e` child process, a runtime where exit hooks DO fire, rather than in the test runner: the test is green while the behavior is broken. Consequences: (a) unbounded-within-the-1h-window scratch growth inside the repo, and (b) pruneStaleSiblings (the only surviving mitigation) pays a readdirSync + per-entry statSync over that growing set on every process start (measured 12.3ms readdir + 7.7ms stat at 4760 entries), re-creating inside the repo the very enumeration cost GOTCHA 12 says the helper exists to eliminate. Bun's documented mechanism for run-wide teardown is afterAll in a --preload / bunfig.toml preload file (https://bun.sh/docs/test/lifecycle); the fix must also make the reaper test exercise `bun test`, not `bun -e`.",
+      "notes": "CRITICAL [test/helpers/test-tmpdir.ts:90]: The exit-time reaper (process.on('exit', reapOwnDirectories)) never runs under `bun test`, the only runner the helper exists for, so US-002 AC4 ('The helper reaps its directories on process exit') is not actually delivered. Proven by minimal probe: a test file registering process.on('exit', () => console.error('EXIT-HOOK-FIRED')) prints nothing under `bun test` (bun 1.3.13), and a controlled measurement shows running one test file (test/orchestrator/handoff.test.ts) leaves 6 directories behind (.cam-test-tmp entry count 4754 -> 4760). The scratch root had accumulated 4754 directories / 29MB from the branch's own development. The AC's own oracle passes only because test/helpers/test-tmpdir.test.ts:75 pins the behavior in a `bun -e` child process, a runtime where exit hooks DO fire, rather than in the test runner: the test is green while the behavior is broken. Consequences: (a) unbounded-within-the-1h-window scratch growth inside the repo, and (b) pruneStaleSiblings (the only surviving mitigation) pays a readdirSync + per-entry statSync over that growing set on every process start (measured 12.3ms readdir + 7.7ms stat at 4760 entries), re-creating inside the repo the very enumeration cost GOTCHA 12 says the helper exists to eliminate. Bun's documented mechanism for run-wide teardown is afterAll in a --preload / bunfig.toml preload file (https://bun.sh/docs/test/lifecycle); the fix must also make the reaper test exercise `bun test`, not `bun -e`."
+    },
+    {
+      "id": "US-R1-003",
+      "title": "WARNING: The GIT_CEILING_DIRECTORIES fence is delivered as a runtime process.en…",
+      "priority": 3,
+      "passes": false,
+      "description": "WARNING [test/helpers/test-tmpdir.ts:86]: The GIT_CEILING_DIRECTORIES fence is delivered as a runtime process.env mutation, so it only reaches child processes that forward live process.env, while the branch simultaneously created the hazard it guards against (scratch dirs now sit inside the cam-cli git repo, where an unfenced upward search resolves cam-cli's own working tree). scripts/validate-agents-md.ts was patched with `env: process.env` for exactly this reason, but src/commands/sidecar.ts:3091/3184/3186/3188 still call Bun.spawnSync(['git', '-C', cwd, 'checkout', 'main' | 'checkout', '-B', ... | 'add' ... | 'commit' ...]) with no env option. Those paths are safe only because their sole test (test/sidecar-resolver-git.test.ts) git-inits its scratch dirs; a future test driving them with a non-initialized scratch cwd would silently run `git checkout main` against the real cam-cli working tree, and nothing in the diff (no gate, no test, no lint rule) guards that. A location-independent fence (e.g. a stub .git entry in SCRATCH_ROOT so the upward search always terminates regardless of env propagation) does not depend on every spawn site remembering to forward env.",
+      "notes": "WARNING [test/helpers/test-tmpdir.ts:86]: The GIT_CEILING_DIRECTORIES fence is delivered as a runtime process.env mutation, so it only reaches child processes that forward live process.env, while the branch simultaneously created the hazard it guards against (scratch dirs now sit inside the cam-cli git repo, where an unfenced upward search resolves cam-cli's own working tree). scripts/validate-agents-md.ts was patched with `env: process.env` for exactly this reason, but src/commands/sidecar.ts:3091/3184/3186/3188 still call Bun.spawnSync(['git', '-C', cwd, 'checkout', 'main' | 'checkout', '-B', ... | 'add' ... | 'commit' ...]) with no env option. Those paths are safe only because their sole test (test/sidecar-resolver-git.test.ts) git-inits its scratch dirs; a future test driving them with a non-initialized scratch cwd would silently run `git checkout main` against the real cam-cli working tree, and nothing in the diff (no gate, no test, no lint rule) guards that. A location-independent fence (e.g. a stub .git entry in SCRATCH_ROOT so the upward search always terminates regardless of env propagation) does not depend on every spawn site remembering to forward env."
+    },
+    {
       "id": "US-001",
       "title": "Ignore the repo-local scratch root on all three sides",
       "description": "As a maintainer, I need the scratch root ignored by this repo, by the shipped template, and by the embedded copy that `cam init` actually writes, so the first test run that uses it cannot dirty a working tree here or in a user's project.",
@@ -30,7 +54,7 @@
         "Tests pass (bun test). [oracle: named-command bun test]",
         "The full quality spine is green (bun run check:all). [oracle: named-command bun run check:all]"
       ],
-      "priority": 1,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "Files: .gitignore, templates/.gitignore, src/vendor/_generated.ts (generated, do not hand-edit). Scratch root literal is `.cam-test-tmp` (fixed by the issue oracles). ADR-0014 ordering (GOTCHA 1): this story MUST land before any test writes into the root, otherwise the first run dirties the tree and trips the plan-preflight clean-tree guard. GOTCHA 2: templates/.gitignore is embedded; src/templates/embedded.ts special-cases the '.gitignore' key and the content `cam init` writes comes from src/vendor/_generated.ts, so editing the template without `bun run embed-vendor` + committing the generated file both ships a user project without the rule AND reds the embed-vendor gate inside check:all. Keep the two rule lines textually identical (same anchoring, same trailing slash); anchored (`/.cam-test-tmp/`) or unanchored both keep parity green as long as the two files agree byte-for-byte. Never use rm -rf in any step (GOTCHA 6, CAM-507): the mktemp dir in AC1 is left behind on purpose."
@@ -48,7 +72,7 @@
         "Tests pass (bun test). [oracle: named-command bun test]",
         "The full quality spine is green (bun run check:all). [oracle: named-command bun run check:all]"
       ],
-      "priority": 2,
+      "priority": 5,
       "passes": true,
       "requires": null,
       "notes": "Files: test/helpers/test-tmpdir.ts (new), test/helpers/test-tmpdir.test.ts (new). One function only: it must also serve the async `await mkdtemp(join(tmpdir(...)` sites in test/retry migrated by US-007, so do not add a second helper. Derive the root from import.meta.dir (never process.cwd(): dozens of tests chdir out of the repo mid-test). Ban on node:os is about CODE, not prose (GOTCHA 4); as a by-product the helper structurally cannot readdir $TMPDIR, which is what keeps the prune bounded (GOTCHA 12: in the observed state ls and find blew 30-120s timeouts). CRITICAL spelling constraint: the helper test needs tmpdir() only as a COMPARAND to prove the returned path is not under the os temp dir (GOTCHA 8), and it must NOT be written as `join(tmpdir()` in any form, because the tree-wide derived-zero oracle of US-007 and the durable gate of US-008 both key on that spelling; write it as a startsWith/negation against the bare call instead. Reaper via a process exit hook; keep it failure-tolerant so a half-removed directory never fails an unrelated test. scripts/file-size-budget.json may need a raise once helper imports land (GOTCHA 13); raising and committing it is normal hygiene, never a hook bypass. check:all here also runs biome lint, knip dead-code, file-size and the jscpd dup gate, so the new files must be clean under all four at the story that introduces them."
@@ -65,7 +89,7 @@
         "Tests pass (bun test). [oracle: named-command bun test]",
         "The full quality spine is green (bun run check:all). [oracle: named-command bun run check:all]"
       ],
-      "priority": 3,
+      "priority": 6,
       "passes": true,
       "requires": null,
       "notes": "Files: scripts/codemod-test-tmpdir.ts (new), test/codemod-test-tmpdir.test.ts (new), 35 files matching test/*.test.ts. The codemod is MANDATORY mechanization for US-003 through US-007 (auditor finding: context exhaustion mid-story is the main quality risk in this PRD); hand work is limited to the GOTCHA 10 semantic re-checks. GOTCHA 10 re-checks, per touched file: (a) a test whose temp cwd now sits INSIDE the repo resolves cam-cli's node_modules where it previously found none, so any assertion that a spawned script fails on a missing dependency can go green for the wrong reason; (b) git shell-outs are covered by the helper's GIT_CEILING_DIRECTORIES, but a test that must find its OWN repo still has to run git init in its scratch dir, as test/templates-gitignore-runtime-artifacts.test.ts already does; (c) tests that spawn real tmux panes now get a longer path inside a repo, so re-check any absolute-path-prefix assertion. SPELLING TRAP: test/codemod-test-tmpdir.test.ts lives under test/ and is itself covered by this story's own grep and by the US-008 gate, so its fixtures must never contain a contiguous rooting spelling; assemble each fixture from parts at runtime (string concatenation or template interpolation) so the literal `join(tmpdir()` never appears in the file text. knip treats scripts/**/*.ts as entries, so a committed codemod is not dead code; the jscpd dup gate scans src and scripts with threshold 4, so keep the codemod structurally distinct from the other scripts. Commit message should still spell out source pattern, target pattern and unused-import handling (GOTCHA 7)."
@@ -82,7 +106,7 @@
         "Tests pass (bun test). [oracle: named-command bun test]",
         "The full quality spine is green (bun run check:all). [oracle: named-command bun run check:all]"
       ],
-      "priority": 4,
+      "priority": 7,
       "passes": true,
       "requires": null,
       "notes": "Files: 49 files under test/supervisor. Drive the bulk edit with scripts/codemod-test-tmpdir.ts from US-003; the two fixed pid-based paths (backend-adapter.test.ts:25, codex-adapter.test.ts:171) are not mkdtempSync calls and may need the codemod's bare-path branch or a hand edit, re-checked individually. GOTCHA 10 (a)/(c) re-checks apply to this subtree in force: supervisor tests spawn real panes and subprocesses, so re-verify absolute-path-prefix assertions and any 'missing dependency' expectation now that the temp cwd sits inside the repo with cam-cli's node_modules resolvable. Keep the five fronts separate (GOTCHA 7): collapsing them yields an unreviewable 180-file diff. scripts/file-size-budget.json may need a raise (GOTCHA 13)."
@@ -99,7 +123,7 @@
         "Tests pass (bun test). [oracle: named-command bun test]",
         "The full quality spine is green (bun run check:all). [oracle: named-command bun run check:all]"
       ],
-      "priority": 5,
+      "priority": 8,
       "passes": true,
       "requires": null,
       "notes": "Files: 39 files under test/commands. Mechanize with scripts/codemod-test-tmpdir.ts (US-003); hand work limited to GOTCHA 10 re-checks. Command tests frequently git init their scratch dir and shell out to git: the helper's GIT_CEILING_DIRECTORIES keeps them from climbing into cam-cli, but a test that must find its OWN repo still needs its own git init (GOTCHA 10 (b)). Re-check any expectation that a spawned script fails for a missing dependency (GOTCHA 10 (a)). scripts/file-size-budget.json may need a raise (GOTCHA 13)."
@@ -116,7 +140,7 @@
         "Tests pass (bun test). [oracle: named-command bun test]",
         "The full quality spine is green (bun run check:all). [oracle: named-command bun run check:all]"
       ],
-      "priority": 6,
+      "priority": 9,
       "passes": true,
       "requires": null,
       "notes": "Files: 31 files under test/integration, including the bare path-join sentinel at plan-runner-pane-spawn.test.ts:161 (the codemod's bare-path branch, not the mkdtempSync branch). GOTCHA 10 (c) is the dominant risk here: integration tests spawn real tmux panes and now receive a longer path inside a repo, so re-check every absolute-path-prefix assertion and any pane-title or cwd expectation. GOTCHA 10 (a) also applies to spawned-script dependency expectations. Mechanize with scripts/codemod-test-tmpdir.ts (US-003). scripts/file-size-budget.json may need a raise (GOTCHA 13)."
@@ -133,7 +157,7 @@
         "Tests pass (bun test). [oracle: named-command bun test]",
         "The full quality spine is green (bun run check:all). [oracle: named-command bun run check:all]"
       ],
-      "priority": 7,
+      "priority": 10,
       "passes": true,
       "requires": null,
       "notes": "Files: 26 files across test/config, test/release, test/unit, test/orchestrator, test/transcript, test/issues, test/vendor, test/plan, test/notify, test/logging, test/interactivity, test/fixtures, test/domain-docs, test/retry. test/retry/* are ported files whose MIT headers must survive byte-for-byte (curated invariant: keep ported src/retry and test/retry MIT headers intact); the awaited form `await mkdtemp(join(tmpdir(...)` must be served by the single US-002 helper. GOTCHA 11: raising the 20_000 budget of the two test/vendor/check-agent-frontmatter-standalone.test.ts tests is FORBIDDEN as a fix; the body is synchronous via spawnSync and bun's watchdog does not preempt a blocking sync call, so raising it only moves the number at which the failure appears. The correct fix is exactly this migration (0.038s at the repo root against 4.433s in the bloated $TMPDIR), and after this story those two tests should be measurably fast without any budget edit. GOTCHA 10 (a)/(b)/(c) re-checks apply per file. Mechanize with scripts/codemod-test-tmpdir.ts (US-003)."
@@ -152,7 +176,7 @@
         "Tests pass (bun test). [oracle: named-command bun test]",
         "The full quality spine is green (bun run check:all). [oracle: named-command bun run check:all]"
       ],
-      "priority": 8,
+      "priority": 11,
       "passes": true,
       "requires": null,
       "notes": "Files: scripts/check-test-tmpdir.ts (new), test/check-test-tmpdir.test.ts (new). GOTCHA 9: this story must come AFTER the five migrations, otherwise the mandatory check:all of every intermediate story fails on work not yet done. Mold: scripts/check-test-sleeps.ts (filterScannablePaths + a pure scan over {path,text} records + a CLI main using Bun's Glob over test/**/*.{ts,tsx}); the sleeps gate suppresses its own fixtures with a citation comment, a mechanism this gate does NOT have (its allowlist must stay empty per AC3), so instead the fixtures here must never contain a contiguous rooting call form: assemble each spelling from parts at runtime (concatenation or template interpolation), splitting so that `os.tmpdir` still appears contiguously for AC4's grep while `os.tmpdir()` as a call does not. DUP GATE WARNING: check:all runs `bunx jscpd --config .jscpd.json src scripts` with threshold 4 and test/ excluded, so the structural mirror of check-test-sleeps.ts must stay under the clone threshold (do not copy its constant, comment and CLI blocks verbatim; keep names and structure distinct); biome lint, knip and file-size also run in the same spine on these new files. GOTCHA 5: the optional argv scan root (default test/) exists so the probe can plant its fixture outside the working tree, never with git checkout. GOTCHA 3: the '.cam-test-tmp' single-quoted literal inside scripts/check-test-tmpdir.ts is picked up by the derivation in scripts/check-gitignore-parity.sh and becomes the probe .claude/.cam-test-tmp, raising PROBES from 42 to 43; parity stays green because US-001 made the two ignore rules textually identical, and 43 stays above the degeneration floor pinned by test/check-gitignore-parity-script.test.ts (verify that test still passes, and update only its floor if it pins an exact count). GOTCHA 6: no rm -rf anywhere, in any script or step. knip runs with 'exports' excluded, so a new exported symbol is not a dead-code finding."
@@ -167,10 +191,59 @@
         "Typecheck passes (bun run typecheck). [oracle: named-command bun run typecheck]",
         "Tests pass (bun test). [oracle: named-command bun test]"
       ],
-      "priority": 9,
+      "priority": 12,
       "passes": true,
       "requires": null,
       "notes": "Files: scripts/check-all.ts (GATES list, follow the existing `g('name', 'command')` shape used by the test-sleeps entry at line 180), test/gates-manifest.test.ts (add CAM503_GATES next to CAM305_GATES at line 27 and include it in the aggregate list at line 77). Place the new gate after test-sleeps in the ordered manifest; the manifest test asserts membership and ordering, so update both the block and the aggregate. From this story on, the gate runs on every check:all and in CI, which is what makes the derived-zero state durable instead of a one-time cleanup."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:3",
+    "findings": [
+      {
+        "severity": "CRITICAL",
+        "file": "test/vendor/check-agent-frontmatter-standalone.test.ts",
+        "line": 29,
+        "text": "GOTCHA 10(a) hit that the branch claims to have swept: rooting this test in the repo-local scratch root destroyed its premise. The test is named 'smoke exits 0 ... in a no-node_modules tmpdir' (line 48) and its comment (line 28) says 'Fresh tmpdir with no node_modules -- mirrors the zero-dep invariant', but .cam-test-tmp/ lives inside the cam-cli checkout, so module resolution now walks up and finds cam-cli's node_modules. Proven by direct probe: an `import yaml from 'js-yaml'` script run from .cam-test-tmp/ resolves successfully ('RESOLVED-THIRD-PARTY-DEP function'), while the identical script under $TMPDIR (the pre-migration root) fails to resolve. The vendored smoke script is still clean today (only node: builtins), so the two tests stay green, but they would now also stay green if the script grew a third-party dependency: the zero-dep invariant is silently unguarded. Fix by rooting this specific test outside the repo with an explicit justification (this is exactly what the US-008 ALLOWLIST mechanism exists for) or by otherwise re-establishing the no-node_modules condition."
+      },
+      {
+        "severity": "CRITICAL",
+        "file": "test/helpers/test-tmpdir.ts",
+        "line": 90,
+        "text": "The exit-time reaper (process.on('exit', reapOwnDirectories)) never runs under `bun test`, the only runner the helper exists for, so US-002 AC4 ('The helper reaps its directories on process exit') is not actually delivered. Proven by minimal probe: a test file registering process.on('exit', () => console.error('EXIT-HOOK-FIRED')) prints nothing under `bun test` (bun 1.3.13), and a controlled measurement shows running one test file (test/orchestrator/handoff.test.ts) leaves 6 directories behind (.cam-test-tmp entry count 4754 -> 4760). The scratch root had accumulated 4754 directories / 29MB from the branch's own development. The AC's own oracle passes only because test/helpers/test-tmpdir.test.ts:75 pins the behavior in a `bun -e` child process, a runtime where exit hooks DO fire, rather than in the test runner: the test is green while the behavior is broken. Consequences: (a) unbounded-within-the-1h-window scratch growth inside the repo, and (b) pruneStaleSiblings (the only surviving mitigation) pays a readdirSync + per-entry statSync over that growing set on every process start (measured 12.3ms readdir + 7.7ms stat at 4760 entries), re-creating inside the repo the very enumeration cost GOTCHA 12 says the helper exists to eliminate. Bun's documented mechanism for run-wide teardown is afterAll in a --preload / bunfig.toml preload file (https://bun.sh/docs/test/lifecycle); the fix must also make the reaper test exercise `bun test`, not `bun -e`."
+      },
+      {
+        "severity": "WARNING",
+        "file": "test/helpers/test-tmpdir.ts",
+        "line": 86,
+        "text": "The GIT_CEILING_DIRECTORIES fence is delivered as a runtime process.env mutation, so it only reaches child processes that forward live process.env, while the branch simultaneously created the hazard it guards against (scratch dirs now sit inside the cam-cli git repo, where an unfenced upward search resolves cam-cli's own working tree). scripts/validate-agents-md.ts was patched with `env: process.env` for exactly this reason, but src/commands/sidecar.ts:3091/3184/3186/3188 still call Bun.spawnSync(['git', '-C', cwd, 'checkout', 'main' | 'checkout', '-B', ... | 'add' ... | 'commit' ...]) with no env option. Those paths are safe only because their sole test (test/sidecar-resolver-git.test.ts) git-inits its scratch dirs; a future test driving them with a non-initialized scratch cwd would silently run `git checkout main` against the real cam-cli working tree, and nothing in the diff (no gate, no test, no lint rule) guards that. A location-independent fence (e.g. a stub .git entry in SCRATCH_ROOT so the upward search always terminates regardless of env propagation) does not depend on every spawn site remembering to forward env."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "scripts/check-test-tmpdir.ts",
+        "line": 201,
+        "text": "The CLI main (optional argv scan root, --print-allowlist, the stderr message shape) has no unit coverage in test/check-test-tmpdir.test.ts; it is exercised only by the PRD oracles, which will not survive the branch. Consider a small test driving the CLI via Bun.spawn over a fixture root."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "scripts/check-test-tmpdir.ts",
+        "line": 51,
+        "text": "filterScannablePaths matches EXCLUDED_DIRS with a bare substring test, and '.cam-test-tmp' carries no trailing separator (unlike the other four entries), so a legitimately-named file such as test/x.cam-test-tmp.test.ts would be silently dropped from the scan. Append a '/' for consistency with the sibling entries."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "test/helpers/test-tmpdir.test.ts",
+        "line": 77,
+        "text": "helperPath is interpolated into a single-quoted JS import specifier inside a `bun -e` program string; a checkout path containing an apostrophe would break the test. Pass the path via a written fixture file or JSON.stringify the specifier. Related: line 90's expect(stderr).toBe('') is brittle to any incidental bun warning on stderr."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "test/check-gitignore-parity-script.test.ts",
+        "line": 35,
+        "text": "The codemod inserts the helper import at the pruned node:os import's slot, which leaves the relative './helpers/test-tmpdir' import sandwiched between node: builtins across the ~190 migrated files. biome lint does not enforce import organization so nothing fails, but the ordering is inconsistent with the rest of the tree."
+      }
+    ]
+  }
 }

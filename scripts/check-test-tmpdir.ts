@@ -21,11 +21,14 @@
 // comparand (e.g. `dir.startsWith(tmpdir())`): no join, no template-literal
 // path construction, nothing to root.
 //
-// Ships with a working allowlist mechanism (per-entry path + reason) that
-// is empty in this issue: its only legitimate future consumers are the
-// product leak-regression tests of the sister issue. An allowlist entry
-// naming a path this scan never touched fails the gate outright, so a
-// stale entry can never outlive its own justification.
+// Ships with a working allowlist mechanism (per-entry path + reason). An
+// allowlist entry naming a path this scan never touched fails the gate
+// outright, so a stale entry can never outlive its own justification. Its
+// first real consumer (US-R1-001, CAM-508 GOTCHA 10(a)) is
+// test/vendor/check-agent-frontmatter-standalone.test.ts, whose whole
+// premise requires a directory reachably outside any node_modules
+// resolution chain -- the repo-local scratch root defeats that premise by
+// living inside the cam-cli checkout.
 //
 // Exports:
 //   filterScannablePaths(paths)         - drop excluded-dir entries
@@ -43,12 +46,21 @@ import { Glob } from 'bun';
 // ---------------------------------------------------------------------------
 
 /**
- * Directory segments whose files must be excluded from the scan. Mirrors
- * scripts/check-test-sleeps.ts EXCLUDED_DIRS, plus the repo-local test
- * scratch root (test/helpers/test-tmpdir.ts) so a leftover scratch
- * directory can never be mistaken for a rooting site.
+ * Repo-root-level directory names (vendored/generated content) that must
+ * never be scanned. Matched as a path PREFIX, not a substring: the scan's
+ * glob is always rooted at `test/`, so these guard the CLI's optional
+ * custom scanRoot argument, not the normal run. A substring match would
+ * also wrongly swallow the legitimate `test/vendor/` subdirectory (its
+ * tests exercise the vendoring mechanism; it is not an embedded copy).
  */
-const EXCLUDED_DIRS = ['vendor/', 'node_modules/', 'claude-code-harness/', 'dist/', '.cam-test-tmp'];
+const TOP_LEVEL_EXCLUDED_DIRS = ['vendor/', 'node_modules/', 'claude-code-harness/', 'dist/'];
+
+/**
+ * Marker(s) excluded wherever they appear in a path, nested or not: the
+ * repo-local test scratch root (test/helpers/test-tmpdir.ts) so a leftover
+ * scratch directory can never be mistaken for a rooting site.
+ */
+const NESTED_EXCLUDED_MARKERS = ['.cam-test-tmp'];
 
 /** One (path, human reason) pair suppressing a known finding at that path. */
 export interface TmpdirAllowlistEntry {
@@ -57,12 +69,21 @@ export interface TmpdirAllowlistEntry {
 }
 
 /**
- * The real allowlist. Empty by design in this issue: nothing in the
- * migrated tree needs it (US-007 drove the tree-wide rooting count to
- * zero). Populate only with a per-entry reason; a dangling entry (naming a
- * path this scan does not reach) fails the gate.
+ * The real allowlist. Populate only with a per-entry reason; a dangling
+ * entry (naming a path this scan does not reach) fails the gate.
  */
-export const ALLOWLIST: TmpdirAllowlistEntry[] = [];
+export const ALLOWLIST: TmpdirAllowlistEntry[] = [
+	{
+		path: 'test/vendor/check-agent-frontmatter-standalone.test.ts',
+		reason:
+			"CAM-508 GOTCHA 10(a): this test proves the vendored smoke script has " +
+			"zero third-party dependencies by running it from a directory with no " +
+			"resolvable node_modules. The repo-local scratch root sits inside the " +
+			"cam-cli checkout, so module resolution walks up and finds cam-cli's " +
+			"own node_modules, silently defeating the check. Rooted in the real " +
+			"OS temp dir instead, outside any node_modules resolution chain.",
+	},
+];
 
 // ---------------------------------------------------------------------------
 // Result type
@@ -87,7 +108,11 @@ export interface TmpdirRootResult {
  * under an excluded directory segment.
  */
 export function filterScannablePaths(paths: string[]): string[] {
-	return paths.filter((p) => !EXCLUDED_DIRS.some((dir) => p.includes(dir)));
+	return paths.filter(
+		(p) =>
+			!TOP_LEVEL_EXCLUDED_DIRS.some((dir) => p.startsWith(dir)) &&
+			!NESTED_EXCLUDED_MARKERS.some((marker) => p.includes(marker)),
+	);
 }
 
 function escapeAlternative(literal: string): string {
