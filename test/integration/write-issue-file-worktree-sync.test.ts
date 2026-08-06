@@ -22,13 +22,8 @@
 import { test, expect, afterEach } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import type { SpawnSyncReturns } from 'node:child_process';
-import {
-	mkdtempSync,
-	writeFileSync,
-	rmSync,
-	mkdirSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync, rmSync, mkdirSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { writeIssueFile, type WriteIssueFileOptions } from '../../src/issues/alloc.ts';
@@ -91,7 +86,7 @@ interface RepoHandles {
  * detects `main` and performs the restore.
  */
 function makeTmpRepo(seedId: number): RepoHandles {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-wif-sync-'));
+	const dir = createTestTmpdir('cam-wif-sync-');
 	dirsToCleanup.push(dir);
 
 	const run = (args: string[]) =>

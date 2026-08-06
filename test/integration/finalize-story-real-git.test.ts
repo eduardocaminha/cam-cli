@@ -17,8 +17,8 @@
 
 import { test, expect, afterEach } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { buildSupervisorOptions } from '../../src/supervisor/host.ts';
@@ -68,7 +68,7 @@ function writePrdJson(dir: string, storyPasses: boolean): void {
 }
 
 function makeRepoWithWorkerAlreadyFlippedStory(): string {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-finalize-story-'));
+	const dir = createTestTmpdir('cam-finalize-story-');
 	dirsToCleanup.push(dir);
 
 	const run = (args: string[]) => spawnSync('git', ['-C', dir, ...args], { stdio: 'pipe', encoding: 'utf8' });

@@ -33,8 +33,8 @@
 
 import { test, expect, afterEach } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync, rmSync, mkdirSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import type { IssueEntry } from '../../src/issues/types.ts';
@@ -86,7 +86,7 @@ interface RepoHandles {
  * carrying a wsjf so --derived-from's WSJF-inheritance guardrail resolves).
  */
 function makeTmpRepo(): RepoHandles {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-issue-spec-channel-'));
+	const dir = createTestTmpdir('cam-issue-spec-channel-');
 	dirsToCleanup.push(dir);
 
 	const run = (args: string[]) =>

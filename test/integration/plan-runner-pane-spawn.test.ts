@@ -21,8 +21,8 @@
 
 import { test, expect, beforeEach, afterEach } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, existsSync, unlinkSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, unlinkSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import {
@@ -104,7 +104,7 @@ test.skipIf(!tmuxAvailable)(
 		// -----------------------------------------------------------------------
 		// 2. Write the initial marker (simulates writeWorkerPaneMarker in cam plan).
 		// -----------------------------------------------------------------------
-		const claudeDir = mkdtempSync(join(tmpdir(), 'cam-plan-spawn-'));
+		const claudeDir = createTestTmpdir('cam-plan-spawn-');
 		writeWorkerPaneMarker(claudeDir, initialId);
 		expect(readWorkerPaneMarker(claudeDir)).toBe(initialId);
 
@@ -158,7 +158,7 @@ test.skipIf(!tmuxAvailable)(
 		// 5. Simulate what runPlanPhase does: respawn-pane -k with a stand-in
 		//    command (write sentinel file) targeting the new id.
 		// -----------------------------------------------------------------------
-		const sentinelPath = join(tmpdir(), `cam-plan-spawn-sentinel-${Date.now()}.txt`);
+		const sentinelPath = join(createTestTmpdir(), `cam-plan-spawn-sentinel-${Date.now()}.txt`);
 		tmuxRaw(['respawn-pane', '-k', '-t', newId, `touch ${sentinelPath} && cat`]);
 		await waitForCondition(() => existsSync(sentinelPath)); // allow the command to execute
 
@@ -188,7 +188,7 @@ test.skipIf(!tmuxAvailable)(
 		await waitForCondition(() => isPaneAlive(paneId));
 		expect(paneId).toMatch(/^%\d+$/);
 
-		const claudeDir = mkdtempSync(join(tmpdir(), 'cam-plan-spawn-noop-'));
+		const claudeDir = createTestTmpdir('cam-plan-spawn-noop-');
 		writeWorkerPaneMarker(claudeDir, paneId);
 
 		// -----------------------------------------------------------------------

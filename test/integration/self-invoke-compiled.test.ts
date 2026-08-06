@@ -44,8 +44,8 @@
 // real stderr) rather than silently reporting green.
 
 import { test, expect, afterEach } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync, realpathSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { rmSync, writeFileSync, realpathSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 // ---------------------------------------------------------------------------
@@ -137,7 +137,7 @@ function assertChildSawMarker(parentOutput: ParentOutput): void {
 // mask over a real behavior difference under test.
 //
 // `realpathSync` on the expected interpreted argv1 accounts for macOS's
-// `/var` -> `/private/var` symlink: `mkdtempSync(join(tmpdir(), ...))`
+// `/var` -> `/private/var` symlink: `createTestTmpdir(...)`
 // returns the `/var/...` alias, but bun resolves argv1 to the real,
 // symlink-resolved path.
 // ---------------------------------------------------------------------------
@@ -145,7 +145,7 @@ function assertChildSawMarker(parentOutput: ParentOutput): void {
 test(
 	'compiled binary: process.argv[1] starts with /$bunfs/, and the self-spawned child observes the marker at argv[2]',
 	() => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-self-invoke-compiled-'));
+		const dir = createTestTmpdir('cam-self-invoke-compiled-');
 		dirsToCleanup.push(dir);
 
 		writeFixture(dir);
@@ -174,7 +174,7 @@ test(
 test(
 	'interpreted fixture: the self-spawned child observes the marker at argv[2]',
 	() => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-self-invoke-interpreted-'));
+		const dir = createTestTmpdir('cam-self-invoke-interpreted-');
 		dirsToCleanup.push(dir);
 
 		const fixturePath = writeFixture(dir);

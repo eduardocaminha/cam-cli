@@ -30,9 +30,8 @@
 
 import { test, expect, afterEach } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { rmSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 
 import { buildSupervisorOptions } from '../../src/supervisor/host.ts';
 import { gitAvailable } from '../helpers/test-deps.ts';
@@ -65,7 +64,7 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 function makeTmpRepoWithForkedBranch(): string {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-commit-exists-'));
+	const dir = createTestTmpdir('cam-commit-exists-');
 	dirsToCleanup.push(dir);
 
 	const run = (args: string[]) => spawnSync('git', ['-C', dir, ...args], { stdio: 'pipe', encoding: 'utf8' });

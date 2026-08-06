@@ -21,8 +21,8 @@
 import { test, expect, afterEach } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import type { SpawnSyncReturns } from 'node:child_process';
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import { appendJournalEntryOnMain, type SpawnFn, type JournalCycleEntry } from '../../src/commands/journal.ts';
 import { writeIssueFile } from '../../src/issues/alloc.ts';
@@ -84,7 +84,7 @@ interface RepoHandles {
 }
 
 function makeTmpRepo(): RepoHandles {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-journal-refonly-'));
+	const dir = createTestTmpdir('cam-journal-refonly-');
 	dirsToCleanup.push(dir);
 
 	const run = (args: string[]) => {

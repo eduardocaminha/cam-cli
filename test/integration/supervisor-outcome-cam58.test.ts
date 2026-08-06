@@ -17,8 +17,8 @@
 //      makeHasPendingStories returns false (loop exits cleanly).
 
 import { afterEach, beforeEach, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { makeHasPendingStories } from '../../src/commands/sidecar.ts';
@@ -31,7 +31,7 @@ import { readWorkerOutcome } from '../../src/supervisor/result.ts';
 let tmpDir: string;
 
 beforeEach(() => {
-	tmpDir = mkdtempSync(join(tmpdir(), 'cam58-test-'));
+	tmpDir = createTestTmpdir('cam58-test-');
 });
 
 afterEach(() => {

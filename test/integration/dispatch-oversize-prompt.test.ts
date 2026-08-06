@@ -3,13 +3,8 @@
 
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import {
-	existsSync,
-	mkdtempSync,
-	readFileSync,
-	rmSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import {
@@ -71,7 +66,7 @@ function panePid(target: string): string {
 }
 
 function makeClaudeDir(prefix: string): string {
-	const root = mkdtempSync(join(tmpdir(), prefix));
+	const root = createTestTmpdir(prefix);
 	cleanupDirs.push(root);
 	return join(root, '.claude');
 }

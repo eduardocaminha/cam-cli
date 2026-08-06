@@ -24,16 +24,8 @@
 
 import { test, expect } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import {
-	existsSync,
-	mkdirSync,
-	mkdtempSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-	chmodSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, chmodSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join, resolve } from 'node:path';
 
 import { buildOrchestratorPaneCommand } from '../../src/commands/run.ts';
@@ -71,7 +63,7 @@ function flagValue(record: string[], flag: string): string | undefined {
 }
 
 test('END-TO-END RE-RESOLUTION: real bun index.ts orch-resolve picks up a project.toml edit at the next respawn (AC1)', () => {
-	const cwd = mkdtempSync(join(tmpdir(), 'cam-reresolve-e2e-'));
+	const cwd = createTestTmpdir('cam-reresolve-e2e-');
 	try {
 		const claudeDir = join(cwd, '.claude');
 		mkdirSync(claudeDir, { recursive: true });
@@ -192,7 +184,7 @@ test('END-TO-END RE-RESOLUTION: real bun index.ts orch-resolve picks up a projec
 }, { timeout: 30_000 });
 
 test('FAIL-SAFE + DIVERGENCE-EVENT SHAPE PARITY: a resolver that succeeds once then fails still respawns on the last known-good pair and records a shape-matching fallback event (AC2/AC3)', () => {
-	const cwd = mkdtempSync(join(tmpdir(), 'cam-reresolve-fallback-'));
+	const cwd = createTestTmpdir('cam-reresolve-fallback-');
 	try {
 		const claudeDir = join(cwd, '.claude');
 		mkdirSync(claudeDir, { recursive: true });

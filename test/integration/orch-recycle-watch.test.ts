@@ -72,17 +72,8 @@
 
 import { test, expect, beforeEach, afterEach } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import {
-	mkdtempSync,
-	writeFileSync,
-	mkdirSync,
-	readFileSync,
-	existsSync,
-	rmSync,
-	chmodSync,
-	appendFileSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync, mkdirSync, readFileSync, existsSync, rmSync, chmodSync, appendFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join, resolve } from 'node:path';
 
 import {
@@ -217,7 +208,7 @@ beforeEach(() => {
 	if (!shouldRun) return;
 	// Kill any leftover server from a previous run.
 	tmuxRaw(['kill-server']);
-	tmpCwd = mkdtempSync(join(tmpdir(), 'cam-recycle-'));
+	tmpCwd = createTestTmpdir('cam-recycle-');
 });
 
 afterEach(() => {

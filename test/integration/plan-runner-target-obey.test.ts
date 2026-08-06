@@ -25,14 +25,8 @@
 
 import { test, expect, beforeEach, afterEach } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import {
-	mkdtempSync,
-	writeFileSync,
-	readFileSync,
-	existsSync,
-	mkdirSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { runPlanPhase } from '../../src/supervisor/plan-runner.ts';
@@ -51,7 +45,7 @@ import { waitForCondition } from '../helpers/wait-for-condition.ts';
 import { readTaskPromptFromCommand } from '../helpers/task-prompt.ts';
 import { tmuxAvailable } from '../helpers/test-deps.ts';
 
-const GENERIC_PLAN_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-plan-runner-target-obey-config-'));
+const GENERIC_PLAN_CONFIG_DIR = createTestTmpdir('cam-plan-runner-target-obey-config-');
 const GENERIC_PLAN_CONFIG_PATH = join(GENERIC_PLAN_CONFIG_DIR, 'project.toml');
 writeFileSync(GENERIC_PLAN_CONFIG_PATH, '[backend]\nplanner = "claude"\nauditor = "claude"\n');
 
@@ -142,7 +136,7 @@ test.skipIf(!tmuxAvailable)(
 		// ------------------------------------------------------------------
 		// 1. Set up a cwd directory tree (mimics the repo root).
 		// ------------------------------------------------------------------
-		const cwd = mkdtempSync(join(tmpdir(), 'cam-it-target-cwd-'));
+		const cwd = createTestTmpdir('cam-it-target-cwd-');
 		mkdirSync(join(cwd, 'scripts', 'cam'), { recursive: true });
 
 		const prdPath = join(cwd, 'scripts', 'cam', 'prd.json');
@@ -161,7 +155,7 @@ test.skipIf(!tmuxAvailable)(
 		expect(workerPaneId).toMatch(/^%\d+$/);
 		await waitForCondition(() => isPaneAlive(workerPaneId));
 
-		const claudeDir = mkdtempSync(join(tmpdir(), 'cam-it-target-claude-'));
+		const claudeDir = createTestTmpdir('cam-it-target-claude-');
 		writeWorkerPaneMarker(claudeDir, workerPaneId);
 
 		// ------------------------------------------------------------------
@@ -352,7 +346,7 @@ test.skipIf(!tmuxAvailable)(
 test.skipIf(!tmuxAvailable)(
 	'E2E bare-selection: selectIssueFn top-of-queue (CAM-99) -> prd.json.issueNumber === 99',
 	async () => {
-		const cwd = mkdtempSync(join(tmpdir(), 'cam-it-target-bare-'));
+		const cwd = createTestTmpdir('cam-it-target-bare-');
 		mkdirSync(join(cwd, 'scripts', 'cam'), { recursive: true });
 
 		const prdPath = join(cwd, 'scripts', 'cam', 'prd.json');

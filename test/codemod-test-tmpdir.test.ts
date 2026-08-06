@@ -261,6 +261,39 @@ describe('transformTestTmpdirSource — bare path-join form', () => {
 	});
 });
 
+describe('transformTestTmpdirSource — template literal with an embedded literal quote', () => {
+	test('a static template-literal quote (e.g. a shell-quoting helper) does not swallow later code', () => {
+		// Regression (US-006, CAM-508): a backtick template literal whose
+		// static text embeds a real single-quote character (not as JS
+		// syntax, just as string content, e.g. building a POSIX
+		// shell-quoted argument) was previously misread by the
+		// usage-check scanner as *opening* a new single-quoted string,
+		// which then swallowed every character up to the next stray
+		// quote -- including a later, real `join(...)` call site -- and
+		// caused its import to be incorrectly pruned.
+		const shellQuoteHelper = [
+			'function shellQuote(value) {',
+			"\treturn `'${value.replace(/'/g, \"'\\\\''\")}'`;",
+			'}',
+		].join('\n');
+		const source = [
+			"import { tmpdir } from 'node:os';",
+			"import { join } from 'node:path';",
+			'',
+			shellQuoteHelper,
+			'',
+			`function makeDir(prefix) { return ${rooted(", prefix);")} }`,
+			"const later = join('a', 'b');",
+		].join('\n');
+
+		const result = transformTestTmpdirSource(source, './helpers/test-tmpdir');
+
+		expect(result.text).toContain("const later = join('a', 'b');");
+		expect(result.text).toContain("import { join } from 'node:path';");
+		expect(result.text).not.toContain("from 'node:os'");
+	});
+});
+
 describe('transformTestTmpdirSource — no-op and idempotency', () => {
 	test('returns changed: false and the original text untouched when no rooted call is present', () => {
 		const source = ["import { join } from 'node:path';", '', "join('a', 'b');"].join('\n');

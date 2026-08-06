@@ -26,14 +26,8 @@
 import { test, expect, afterEach } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import type { SpawnSyncReturns } from 'node:child_process';
-import {
-	existsSync,
-	mkdtempSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { commitTreeToMain, syncWorktreeIfOnMain, type SpawnFn } from '../../src/git/on-main.ts';
@@ -86,7 +80,7 @@ interface RepoHandles {
  * needed in individual tests.
  */
 function makeTmpRepo(): RepoHandles {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-sync-worktree-'));
+	const dir = createTestTmpdir('cam-sync-worktree-');
 	dirsToCleanup.push(dir);
 
 	const run = (args: string[]) =>

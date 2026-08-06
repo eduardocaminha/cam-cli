@@ -33,8 +33,8 @@
 import { test, expect, afterEach } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import type { SpawnSyncReturns } from 'node:child_process';
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import {
@@ -117,7 +117,7 @@ function makeTmpRepo(opts: {
 	seedIssues?: IssueEntry[];
 	seedIssuesLocalJson?: string;
 } = {}): RepoHandles {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-dir-git-'));
+	const dir = createTestTmpdir('cam-dir-git-');
 	dirsToCleanup.push(dir);
 
 	const run = (args: string[]) => git(dir, args);

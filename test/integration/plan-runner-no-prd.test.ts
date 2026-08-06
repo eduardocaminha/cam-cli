@@ -16,8 +16,8 @@
 
 import { test, expect, beforeEach, afterEach } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { runPlanPhase, runPostAuditAction } from '../../src/supervisor/plan-runner.ts';
@@ -35,7 +35,7 @@ import type { PlanApproval } from '../../src/config/models.ts';
 import { waitForCondition } from '../helpers/wait-for-condition.ts';
 import { tmuxAvailable } from '../helpers/test-deps.ts';
 
-const GENERIC_PLAN_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-plan-runner-no-prd-it-config-'));
+const GENERIC_PLAN_CONFIG_DIR = createTestTmpdir('cam-plan-runner-no-prd-it-config-');
 const GENERIC_PLAN_CONFIG_PATH = join(GENERIC_PLAN_CONFIG_DIR, 'project.toml');
 writeFileSync(GENERIC_PLAN_CONFIG_PATH, '[backend]\nplanner = "claude"\nauditor = "claude"\n');
 
@@ -115,8 +115,8 @@ test.skipIf(!tmuxAvailable)(
 		await waitForCondition(() => isPaneAlive(workerPaneId));
 
 		// Write the worker pane marker (mirrors production wiring).
-		const claudeDir = mkdtempSync(join(tmpdir(), 'cam-it-noprd-claude-'));
-		const cwd = mkdtempSync(join(tmpdir(), 'cam-it-noprd-cwd-'));
+		const claudeDir = createTestTmpdir('cam-it-noprd-claude-');
+		const cwd = createTestTmpdir('cam-it-noprd-cwd-');
 		mkdirSync(join(cwd, 'scripts', 'cam'), { recursive: true });
 		writeWorkerPaneMarker(claudeDir, workerPaneId);
 

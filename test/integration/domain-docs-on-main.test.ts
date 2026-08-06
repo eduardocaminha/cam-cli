@@ -12,8 +12,8 @@
 import { afterEach, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import type { SpawnSyncReturns } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import { writeIssueFile } from '../../src/issues/alloc.ts';
 import { writeDomainDocsOnMain, type SpawnFn } from '../../src/commands/domain-docs.ts';
@@ -54,7 +54,7 @@ const realSpawnFn: SpawnFn = (cmd, args, opts) =>
 // ---------------------------------------------------------------------------
 
 function makeTmpRepo(): { dir: string; run: (args: string[]) => ReturnType<typeof spawnSync> } {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-domain-docs-refonly-'));
+	const dir = createTestTmpdir('cam-domain-docs-refonly-');
 	dirsToCleanup.push(dir);
 
 	const run = (args: string[]) =>

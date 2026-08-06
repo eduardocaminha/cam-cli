@@ -158,6 +158,116 @@ function pruneUnusedNamedImport(
 	return text;
 }
 
+/** Result of consuming one delimited region starting at a scan cursor. */
+interface ScanStep {
+	/** Text to append to the accumulated result for this region. */
+	appended: string;
+	/** Index just past the region that was consumed. */
+	nextIndex: number;
+}
+
+/** A scanned template-literal static-text run, ending at a `` ` `` or a `${`. */
+interface StaticSegment extends ScanStep {
+	/** True when the run ended at the closing `` ` `` (literal fully consumed). */
+	closed: boolean;
+	/** True when the run ended at a `${` (an interpolation follows). */
+	enteredInterpolation: boolean;
+}
+
+/**
+ * Scans a template literal's static text starting at `start` (just past the
+ * opening `` ` `` or a prior interpolation's closing `}`), copying every
+ * character through untouched (respecting `\`-escapes) until it hits the
+ * literal's closing `` ` `` or the start of a `${` interpolation.
+ */
+function consumeTemplateStaticSegment(text: string, start: number): StaticSegment {
+	let result = '';
+	let i = start;
+	while (i < text.length) {
+		const c = text[i];
+		if (c === '\\') {
+			result += text.slice(i, i + 2);
+			i += 2;
+			continue;
+		}
+		if (c === '`') {
+			return { appended: result + c, nextIndex: i + 1, closed: true, enteredInterpolation: false };
+		}
+		if (c === '$' && text[i + 1] === '{') {
+			return { appended: `${result}\${`, nextIndex: i + 2, closed: false, enteredInterpolation: true };
+		}
+		result += c;
+		i++;
+	}
+	return { appended: result, nextIndex: i, closed: false, enteredInterpolation: false };
+}
+
+/**
+ * Scans a `${...}` interpolation body starting just past its opening `${`,
+ * copying every character through untouched, until the matching (brace-
+ * depth-counted) closing `}`.
+ */
+function consumeTemplateInterpolation(text: string, start: number): ScanStep {
+	let result = '';
+	let depth = 1;
+	let i = start;
+	while (i < text.length && depth > 0) {
+		const c = text[i];
+		if (c === '{') depth++;
+		if (c === '}') depth--;
+		result += c;
+		i++;
+	}
+	return { appended: result, nextIndex: i };
+}
+
+/**
+ * Copies a backtick template literal through untouched, char-for-char,
+ * starting at the opening backtick `text[start]`. A template literal's
+ * static text may itself embed a literal `'` (e.g. a shell-quoting helper
+ * like `` `'${value.replace(/'/g, "'\\''")}'` ``); consuming the whole
+ * literal as one region here stops that embedded `'` from being misread as
+ * opening a *new* single-quoted string by the caller's separate branch,
+ * which would otherwise swallow real code following it (hunting for a
+ * closing `'` that may be many lines away) until it happens to find one.
+ */
+function consumeTemplateLiteral(text: string, start: number): ScanStep {
+	let result = text[start] ?? '';
+	let i = start + 1;
+	for (;;) {
+		const segment = consumeTemplateStaticSegment(text, i);
+		result += segment.appended;
+		i = segment.nextIndex;
+		if (!segment.enteredInterpolation) return { appended: result, nextIndex: i };
+		const interpolation = consumeTemplateInterpolation(text, i);
+		result += interpolation.appended;
+		i = interpolation.nextIndex;
+	}
+}
+
+/**
+ * Blanks out the contents of a single- or double-quoted string literal,
+ * leaving the surrounding quote characters in place, starting at the
+ * opening quote `text[start]`.
+ */
+function consumeQuotedString(text: string, start: number): ScanStep {
+	const quote = text[start] ?? '';
+	let i = start + 1;
+	while (i < text.length && text[i] !== quote) {
+		if (text[i] === '\\') {
+			i += 2;
+			continue;
+		}
+		i++;
+	}
+	let result = quote;
+	if (i < text.length) {
+		result += quote;
+		i++;
+	}
+	return { appended: result, nextIndex: i };
+}
+
 /**
  * Blanks out the contents of every single- and double-quoted string
  * literal, leaving the surrounding quotes in place and template literals
@@ -173,21 +283,15 @@ function stripQuotedStringLiteralContents(text: string): string {
 	let i = 0;
 	while (i < text.length) {
 		const ch = text[i];
-		if (ch === "'" || ch === '"') {
-			const quote = ch;
-			result += quote;
-			i++;
-			while (i < text.length && text[i] !== quote) {
-				if (text[i] === '\\') {
-					i += 2;
-					continue;
-				}
-				i++;
-			}
-			if (i < text.length) {
-				result += quote;
-				i++;
-			}
+		const step =
+			ch === '`'
+				? consumeTemplateLiteral(text, i)
+				: ch === "'" || ch === '"'
+					? consumeQuotedString(text, i)
+					: undefined;
+		if (step) {
+			result += step.appended;
+			i = step.nextIndex;
 			continue;
 		}
 		result += ch;
