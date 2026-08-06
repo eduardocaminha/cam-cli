@@ -28,7 +28,15 @@
 // test/vendor/check-agent-frontmatter-standalone.test.ts, whose whole
 // premise requires a directory reachably outside any node_modules
 // resolution chain -- the repo-local scratch root defeats that premise by
-// living inside the cam-cli checkout.
+// living inside the cam-cli checkout. US-R2-001 (CAM-508 GOTCHA 10(a) round
+// 2) closed the gap the round-1 review found: rooting outside node_modules
+// alone did not guard the zero-dep invariant at runtime, because `bun`
+// auto-installs a missing bare-specifier import from ~/.bun/install/cache
+// regardless of cwd. The test's two spawnSync calls now pass `--no-install`,
+// which makes a grown third-party dependency fail loudly instead of
+// resolving silently (verified: `bun --no-install` on a script importing an
+// installed-but-not-vendored package exits non-zero with "Cannot find
+// package").
 //
 // Exports:
 //   filterScannablePaths(paths)         - drop excluded-dir entries
@@ -81,7 +89,10 @@ export const ALLOWLIST: TmpdirAllowlistEntry[] = [
 			"resolvable node_modules. The repo-local scratch root sits inside the " +
 			"cam-cli checkout, so module resolution walks up and finds cam-cli's " +
 			"own node_modules, silently defeating the check. Rooted in the real " +
-			"OS temp dir instead, outside any node_modules resolution chain.",
+			"OS temp dir instead, outside any node_modules resolution chain, AND " +
+			"(US-R2-001, round 2) spawns the smoke with `bun --no-install` so a " +
+			"grown third-party import fails loudly instead of being silently " +
+			"satisfied by bun's auto-install from ~/.bun/install/cache.",
 	},
 ];
 

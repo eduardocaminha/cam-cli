@@ -34,7 +34,12 @@ beforeEach(() => {
   // still pass. This is the one legitimate, allowlisted exception (see
   // scripts/check-test-tmpdir.ts::ALLOWLIST) that roots directly in the real
   // OS temp dir instead of the shared helper, specifically to stay outside
-  // any node_modules resolution chain.
+  // any node_modules resolution chain. Round 2 (US-R2-001): rooting outside
+  // node_modules alone is NOT sufficient -- `bun` auto-installs a missing
+  // bare-specifier import from ~/.bun/install/cache regardless of cwd, so
+  // both spawnSync calls below also pass `--no-install` to make the guard
+  // real (a grown third-party dependency now fails loudly instead of
+  // resolving silently).
   tmpDir = mkdtempSync(join(tmpdir(), "cam-smoke-standalone-"));
 
   // git init so the smoke's `git rev-parse --show-toplevel` resolves correctly.
@@ -56,7 +61,12 @@ afterEach(() => {
 test(
   "smoke exits 0 and stdout contains 'agent file(s) ok' in a no-node_modules tmpdir",
   () => {
-    const result = spawnSync('bun', [scriptPath], {
+    // CAM-508 GOTCHA 10(a) round 2: bun auto-installs a missing import from
+    // ~/.bun/install/cache even in a tmpdir with no node_modules of its own,
+    // so a script that grew a third-party dependency would silently still
+    // pass without --no-install. This flag is what actually earns the
+    // ALLOWLIST exception in scripts/check-test-tmpdir.ts.
+    const result = spawnSync('bun', ['--no-install', scriptPath], {
       cwd: tmpDir,
       encoding: "utf8",
     });
@@ -83,7 +93,7 @@ test(
     ].join("\n");
     writeFileSync(join(tmpDir, ".claude", "agents", "example.md"), noModelAgentMd);
 
-    const result = spawnSync('bun', [scriptPath], {
+    const result = spawnSync('bun', ['--no-install', scriptPath], {
       cwd: tmpDir,
       encoding: "utf8",
     });
