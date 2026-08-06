@@ -26,6 +26,10 @@
 //   scanForTmpdirRoots: bare comparand reference does NOT fire
 //   scanForTmpdirRoots: allowlist entry matching an existing file suppresses it
 //   scanForTmpdirRoots: allowlist entry matching no existing file fails the gate
+//   scanForTmpdirRoots: allowlist entry matching an existing file with zero
+//     findings is itself stale (US-R2-002)
+//   scanForTmpdirRoots: an allowlisted file is scanned, not skipped up front
+//     (US-R2-002)
 //   filterScannablePaths: excluded dirs (including the scratch root) are dropped
 
 import { describe, expect, test } from 'bun:test';
@@ -140,6 +144,32 @@ describe('scanForTmpdirRoots — allowlist mechanism', () => {
 		expect(results).toHaveLength(1);
 		expect(results[0]!.kind).toBe('stale-allowlist-entry');
 		expect(results[0]!.path).toBe('test/nonexistent.test.ts');
+	});
+
+	test('an entry matching an existing file that suppressed zero findings is stale (US-R2-002)', () => {
+		// The allowlisted path exists in `files`, but its text carries no
+		// tmpdir-root call: the entry has nothing left to justify.
+		const files = [{ path: 'test/foo.test.ts', text: 'expect(1).toBe(1);\n' }];
+		const results = scanForTmpdirRoots(files, [
+			{ path: 'test/foo.test.ts', reason: 'synthetic zero-suppression entry, US-R2-002' },
+		]);
+		expect(results).toHaveLength(1);
+		expect(results[0]!.kind).toBe('stale-allowlist-entry');
+		expect(results[0]!.path).toBe('test/foo.test.ts');
+	});
+
+	test('an allowlisted file IS scanned (not skipped up front): a second, non-allowlisted file with the same finding still fires (US-R2-002)', () => {
+		const text = `const p = ${pathJoin(bareCall('tmpdir'), "'prefix'")};\n`;
+		const files = [
+			{ path: 'test/foo.test.ts', text },
+			{ path: 'test/bar.test.ts', text },
+		];
+		const results = scanForTmpdirRoots(files, [
+			{ path: 'test/foo.test.ts', reason: 'synthetic allowlist test, US-R2-002' },
+		]);
+		expect(results).toHaveLength(1);
+		expect(results[0]!.path).toBe('test/bar.test.ts');
+		expect(results[0]!.kind).toBe('join');
 	});
 
 	test('the real ALLOWLIST holds exactly the CAM-508 GOTCHA 10(a) entry', async () => {

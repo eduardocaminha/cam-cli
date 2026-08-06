@@ -23,8 +23,14 @@
 //
 // Ships with a working allowlist mechanism (per-entry path + reason). An
 // allowlist entry naming a path this scan never touched fails the gate
-// outright, so a stale entry can never outlive its own justification. Its
-// first real consumer (US-R1-001, CAM-508 GOTCHA 10(a)) is
+// outright, so a stale entry can never outlive its own justification.
+// US-R2-002 closed a gap in that invariant: the allowlisted file itself is
+// now scanned like any other (never skipped up front), and an entry that
+// matches a real file but suppressed zero findings there is *itself* a
+// stale-allowlist-entry finding -- an entry can no longer keep passing on a
+// path match alone once the finding it was written to justify disappears
+// (e.g. the guarded call site gets migrated or deleted). Its first real
+// consumer (US-R1-001, CAM-508 GOTCHA 10(a)) is
 // test/vendor/check-agent-frontmatter-standalone.test.ts, whose whole
 // premise requires a directory reachably outside any node_modules
 // resolution chain -- the repo-local scratch root defeats that premise by
@@ -169,13 +175,19 @@ function buildRootRegexes(text: string): { join: RegExp; template: RegExp } {
 	};
 }
 
-/** Finds allowlist entries whose `path` matches none of `knownPaths` (stale entries). */
+/**
+ * Finds stale allowlist entries: either the `path` matches no scanned file
+ * at all, or (US-R2-002) it matches a scanned file but that file's scan
+ * produced zero tmpdir-root findings, meaning the entry suppressed nothing
+ * and its justification no longer holds.
+ */
 function findStaleAllowlistEntries(
 	allowlist: TmpdirAllowlistEntry[],
 	knownPaths: Set<string>,
+	suppressionCounts: Map<string, number>,
 ): TmpdirRootResult[] {
 	return allowlist
-		.filter((entry) => !knownPaths.has(entry.path))
+		.filter((entry) => !knownPaths.has(entry.path) || (suppressionCounts.get(entry.path) ?? 0) === 0)
 		.map((entry) => ({ path: entry.path, line: 0, kind: 'stale-allowlist-entry' as const }));
 }
 
@@ -213,7 +225,13 @@ function scanFileForRoots(path: string, text: string): TmpdirRootResult[] {
  * Each file is supplied as { path, text }; the filesystem is never touched
  * here, so callers inject content for full testability. An allowlist entry
  * whose `path` does not match any scanned file's `path` is itself reported
- * as a `stale-allowlist-entry` finding, failing the gate.
+ * as a `stale-allowlist-entry` finding, failing the gate. So is an entry
+ * whose `path` DOES match a scanned file but suppressed zero findings there
+ * (US-R2-002): every allowlisted file is scanned like any other -- never
+ * skipped -- specifically so the scan can tell whether the entry is still
+ * doing anything. Only findings the entry actually suppressed are dropped
+ * from the reported result; a live suppression keeps the entry non-stale,
+ * a suppression count of zero makes the entry itself a finding.
  */
 export function scanForTmpdirRoots(
 	files: { path: string; text: string }[],
@@ -222,10 +240,17 @@ export function scanForTmpdirRoots(
 	const knownPaths = new Set(files.map((f) => f.path));
 	const allowedPaths = new Set(allowlist.map((e) => e.path));
 
-	const staleEntries = findStaleAllowlistEntries(allowlist, knownPaths);
-	const rootFindings = files
-		.filter(({ path }) => !allowedPaths.has(path))
-		.flatMap(({ path, text }) => scanFileForRoots(path, text));
+	const allFindings = files.flatMap(({ path, text }) => scanFileForRoots(path, text));
+
+	const suppressionCounts = new Map<string, number>();
+	for (const finding of allFindings) {
+		if (allowedPaths.has(finding.path)) {
+			suppressionCounts.set(finding.path, (suppressionCounts.get(finding.path) ?? 0) + 1);
+		}
+	}
+
+	const staleEntries = findStaleAllowlistEntries(allowlist, knownPaths, suppressionCounts);
+	const rootFindings = allFindings.filter(({ path }) => !allowedPaths.has(path));
 
 	return [...staleEntries, ...rootFindings];
 }
