@@ -1,0 +1,94 @@
+// test/helpers/test-tmpdir.test.ts
+//
+// Pins the behavior of the single test-scratch helper (US-002, CAM-508):
+// every directory it creates lives under the repo-local scratch root, the
+// root survives process.chdir(), git cannot walk out of it into cam-cli's
+// own working tree, and directories created in a child process are reaped
+// when that process exits.
+
+import { existsSync } from 'node:fs';
+import { dirname, join, relative, sep } from 'node:path';
+// `tmpdir()` is imported ONLY as a comparand below (never as `join(tmpdir(),
+// ...)`, per GOTCHA 8 -- a future tree-wide oracle keys on that exact
+// spelling being absent).
+import { tmpdir } from 'node:os';
+import { describe, expect, test } from 'bun:test';
+import { gitAvailable } from './test-deps';
+import { createTestTmpdir, SCRATCH_ROOT } from './test-tmpdir';
+
+const REPO_ROOT = join(import.meta.dir, '..', '..');
+
+describe('createTestTmpdir', () => {
+	test('returns a path under the repo-local scratch root', () => {
+		const dir = createTestTmpdir();
+		expect(dir.startsWith(SCRATCH_ROOT)).toBe(true);
+	});
+
+	test('does not start with the os temp dir', () => {
+		const dir = createTestTmpdir();
+		expect(dir.startsWith(tmpdir())).toBe(false);
+	});
+
+	test('stays under the scratch root after process.chdir() out of the repo', () => {
+		const cwdBefore = process.cwd();
+		try {
+			// dirname(REPO_ROOT) is the parent of the repo checkout: outside the
+			// repo, but not $TMPDIR, so this exercises the chdir concern in
+			// isolation from the os-tmpdir concern above.
+			process.chdir(dirname(REPO_ROOT));
+			const dir = createTestTmpdir();
+			expect(dir.startsWith(SCRATCH_ROOT)).toBe(true);
+		} finally {
+			process.chdir(cwdBefore);
+		}
+	});
+
+	test('pinning guard: the first path segment relative to the repo root starts with a dot', () => {
+		// Derived from the helper's own return value, never a frozen literal
+		// (patterns.md:928): bun's test discovery walks the cwd at startup and
+		// would collect a *.test.ts fixture left inside a gitignored directory
+		// WITHOUT a leading dot, turning a crash-surviving fixture into a
+		// phantom failing test on the next run.
+		const dir = createTestTmpdir();
+		const rel = relative(REPO_ROOT, dir);
+		const firstSegment = rel.split(sep)[0];
+		expect(firstSegment?.startsWith('.')).toBe(true);
+	});
+
+	test.skipIf(!gitAvailable)(
+		'GIT_CEILING_DIRECTORIES stops git from resolving the cam-cli root from a scratch dir',
+		async () => {
+			const dir = createTestTmpdir();
+			const proc = Bun.spawn(['git', 'rev-parse', '--show-toplevel'], {
+				cwd: dir,
+				env: process.env,
+				stdout: 'pipe',
+				stderr: 'pipe',
+			});
+			const exitCode = await proc.exited;
+			const stderr = await new Response(proc.stderr).text();
+			expect(exitCode).not.toBe(0);
+			expect(stderr).toContain('not a git repository');
+		},
+	);
+
+	test('reaper: a directory created by the helper in a child process is removed once that process exits', async () => {
+		const helperPath = join(import.meta.dir, 'test-tmpdir.ts');
+		const proc = Bun.spawn(['bun', '-e', `import { createTestTmpdir } from '${helperPath}'; console.log(createTestTmpdir());`], {
+			cwd: REPO_ROOT,
+			stdout: 'pipe',
+			stderr: 'pipe',
+		});
+		const [exitCode, stdout, stderr] = await Promise.all([
+			proc.exited,
+			new Response(proc.stdout).text(),
+			new Response(proc.stderr).text(),
+		]);
+		expect(exitCode).toBe(0);
+		const childDir = stdout.trim();
+		expect(childDir.length > 0).toBe(true);
+		expect(stderr).toBe('');
+
+		expect(existsSync(childDir)).toBe(false);
+	});
+});
