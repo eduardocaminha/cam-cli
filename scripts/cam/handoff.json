@@ -1,41 +1,18 @@
 {
-  "lastCompletedStory": { "id": "US-007", "title": "Migrate the remaining test subtrees to derived zero tree-wide" },
+  "lastCompletedStory": { "id": "US-008", "title": "Add the deterministic tmpdir gate with falsifiability probe and empty allowlist mechanism" },
   "branchName": "cam/issue-508",
   "timestamp": "2026-08-05T00:00:00Z",
   "modifiedFiles": [
-    "scripts/cam/patterns.md",
-    "test/config/codex-models-cache.test.ts",
-    "test/config/meta-loop.test.ts",
-    "test/config/model-resolution.test.ts",
-    "test/config/models.test.ts",
-    "test/config/plan-approval.test.ts",
-    "test/config/worker-isolation.test.ts",
-    "test/domain-docs/write-on-main.test.ts",
-    "test/fixtures/resume/scenario.ts",
-    "test/interactivity/interactivity.test.ts",
-    "test/issues/backlog-maxbuffer-regression.test.ts",
-    "test/issues/backlog.test.ts",
-    "test/logging/spawn-resolution.test.ts",
-    "test/notify/resend.test.ts",
-    "test/orchestrator/budget.test.ts",
-    "test/orchestrator/context-window.test.ts",
-    "test/orchestrator/handoff.test.ts",
-    "test/plan/plan-approval-branch.test.ts",
-    "test/release/merge-watch.test.ts",
-    "test/release/post-merge-close-maxbuffer.test.ts",
-    "test/retry/config.test.ts",
-    "test/retry/logger.test.ts",
-    "test/transcript/usage.test.ts",
-    "test/unit/status-diagnostics.test.ts",
-    "test/unit/status-projection.test.ts",
-    "test/unit/status-render.test.ts",
-    "test/vendor/check-agent-frontmatter-standalone.test.ts"
+    "scripts/cam/patterns.md"
   ],
-  "createdFiles": [],
+  "createdFiles": [
+    "scripts/check-test-tmpdir.ts",
+    "test/check-test-tmpdir.test.ts"
+  ],
   "openQuestions": [],
-  "nextStoryContext": "US-007 closed the last 14 remaining test subtrees (config, release, unit, orchestrator, transcript, issues, vendor, plan, notify, logging, interactivity, fixtures, domain-docs, retry): all 26 files carrying a join(tmpdir() rooting spelling (47 occurrences) were rewritten by `bun scripts/codemod-test-tmpdir.ts` in one pass, including the awaited `mkdtemp(join(tmpdir(), ...))` form in test/retry/config.test.ts and test/retry/logger.test.ts (await on the now-synchronous createTestTmpdir resolves immediately) and the non-`*.test.ts` fixture module test/fixtures/resume/scenario.ts. test/retry's MIT-licensed src headers were untouched (codemod only rewrites imports/call sites); AC3's rmSync/MIT count-parity oracle against main passed with zero deltas. The tree-wide oracle (`grep -rnHE 'join\\(\\s*tmpdir\\(\\)' test/` filtered for comment lines) is now EMPTY: this PRD's target state (derived count of zero rooting sites tree-wide) is reached as of this story. Only one non-codemod fix was needed: test/domain-docs/write-on-main.test.ts had a bare mkdtempSync(join(tmpdir(), ...)) reached via a DYNAMIC `await import('node:fs')`/`await import('node:os')` destructure inside a single test body (not the codemod's recognized static `import { ... } from '...';` form, and the only such occurrence anywhere in test/); hand-removed the two now-dead destructured names (mkdtempSync, tmpdir) rather than extending the codemod for a one-off shape. GOTCHA 11 (test/vendor/check-agent-frontmatter-standalone.test.ts) is resolved by the migration itself, confirmed measured: 0.126s for 2 tests post-migration vs the prior 4.433s under the bloated shared $TMPDIR, with zero budget-ceiling edit. Full bun test: 6047 pass / 0 fail (same count as US-006's baseline -- this story only rewrote existing call sites, no new tests added). bun run check:all green, no file-size/coverage _ref raise needed. scripts/codemod-test-tmpdir.ts and test/codemod-test-tmpdir.test.ts were NOT modified this story (zero new codemod edge cases; the codemod has now run clean, unmodified, across US-005/US-007's two fronts in a row after the US-003/US-004/US-006 fixes). US-008 (next) adds a deterministic tmpdir gate (falsifiability probe + empty allowlist mechanism) that should key off the exact same grep spelling this story just drove to zero -- the informative-reference oracle text in US-001..US-007 (`grep -rnHE \"join\\(\\s*tmpdir\\(\\)\" test/`, comment-lines filtered via `grep -vE \"^[^:]+:[0-9]+:[[:space:]]*(//|\\*|/\\*)\"`) is very likely the exact shape US-008's gate script should encode, now that it is provably zero tree-wide; the empty allowlist mechanism should still exist as a structural escape hatch even though nothing currently needs to be in it. US-002's test/helpers/test-tmpdir.ts and its own test file remain the only files where `tmpdir(` legitimately appears in the tree (as a bare comparand / doc-comment mention, never spelled `join(tmpdir(), ...)`) -- US-008's gate must not false-positive on those.",
+  "nextStoryContext": "US-008 added scripts/check-test-tmpdir.ts (exported pure scanForTmpdirRoots(files, allowlist?) + filterScannablePaths + a CLI main molded on scripts/check-test-sleeps.ts) and test/check-test-tmpdir.test.ts (17 tests). The gate flags a tmpdir() call (bare, os.tmpdir() namespaced, or a same-file `import { tmpdir as X } from 'node:os'` alias) reaching either a join(...) call or a slash-bearing template-literal interpolation; it does NOT flag a bare tmpdir() comparand (GOTCHA 8). Runs clean over the real tree today (bun scripts/check-test-tmpdir.ts -> 'check:test-tmpdir: ok'), confirming US-007's derived-zero migration holds. Falsifiability probe verified live: planting a single rooting site in a throwaway $(mktemp -d)/test/leak-probe.test.ts turns the gate red and names the file; cleanup uses rm -f + rmdir only (no rm -rf), entirely outside the working tree. CLI accepts an optional scanRoot argv (default: repo test/, glob pattern is always 'test/**/*.{ts,tsx}' relative to the given/default root) and a --print-allowlist flag. Allowlist mechanism is real and working (a {path,reason} array): an entry naming a path outside the scanned file set is itself surfaced as a stale-allowlist-entry finding (proven with SYNTHETIC entries in the test file, not the real one), so a dangling entry fails the gate the same way a real violation would. The real exported ALLOWLIST stays empty by design -- its only legitimate future consumers are the PRODUCT leak-regression tests of the sister issue, which is presumably where this gate should also get wired into scripts/check-all.ts's mandatory spine (deliberately NOT done in this story: no acceptance criterion required it, and the story's own file-scope note named only the two new files -- Surgical Changes). GOTCHA 3 confirmed exactly as predicted: added a single-quoted '.cam-test-tmp' literal to EXCLUDED_DIRS (defensive, keeps a leftover scratch dir from ever being scanned), which raised scripts/check-gitignore-parity.sh's derived PROBES from 42 to 43 (measured); still far above the test/check-gitignore-parity-script.test.ts degeneracy floor of 10, so no floor edit was needed. Self-referential gate gotcha (see patterns.md for the full write-up): the gate's own test file lives under test/ and gets scanned by the gate's AC1 real-tree run, so every one of the 6 flaggable-form fixtures (not just the classic mkdtempSync one) had to be assembled via two generic, parameterized helpers (bareCall(name), pathJoin(inner,rest)) whose own bodies never mention 'tmpdir' literally -- this generalizes past the single-spelling splitting trick US-003's codemod-test fixtures used. scanForTmpdirRoots was refactored into findStaleAllowlistEntries + scanFileForRoots + a filter/flatMap composition to stay under biome's cognitive-complexity ceiling (was 18, ceiling 15). Full bun test: 6064 pass / 0 fail (6047 + this story's 17 new tests). bun run check:all green, no file-size/coverage _ref raise needed. All non-operator PRD stories (US-001..US-008) should now be complete; the next agent (if any) should check prd.json for remaining stories before assuming more migration work is needed.",
   "officialDocsValidated": [
-    { "lib": "none", "status": "no_external_lib_touched" }
+    { "lib": "bun:glob", "url": "https://bun.com/docs/api/glob", "fetchedAt": "2026-08-05T00:00:00Z", "status": "aligned", "summary": "Glob.scanSync's cwd option scans **-recursively under that directory and returns paths relative to cwd (unless absolute:true) -- confirmed matches this story's CLI design (optional scanRoot argv drives cwd, glob pattern stays 'test/**/*.{ts,tsx}'), also empirically verified via the AC2 falsifiability probe." }
   ],
   "appliedPatternIds": []
 }
