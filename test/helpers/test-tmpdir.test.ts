@@ -6,7 +6,7 @@
 // own working tree, and directories created in a child process are reaped
 // when that process exits.
 
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 // `tmpdir()` is imported ONLY as a comparand below (never as `join(tmpdir(),
 // ...)`, per GOTCHA 8 -- a future tree-wide oracle keys on that exact
@@ -56,8 +56,20 @@ describe('createTestTmpdir', () => {
 	});
 
 	test.skipIf(!gitAvailable)(
-		'GIT_CEILING_DIRECTORIES stops git from resolving the cam-cli root from a scratch dir',
+		'GIT_CEILING_DIRECTORIES stops git from resolving the cam-cli root from a scratch dir (env forwarded)',
 		async () => {
+			// Unchanged by US-R1-003 (CAM-508): git's own docs on
+			// GIT_CEILING_DIRECTORIES say a ceiling that is a strict ANCESTOR of
+			// the search's starting directory is respected (the walk stops before
+			// reaching it, so its .git is never even checked) -- distinct from the
+			// ceiling being the exact starting directory (still checked then). Here
+			// GIT_CEILING_DIRECTORIES=SCRATCH_ROOT is a strict ancestor of `dir`,
+			// so this still fails "not a git repository" even though SCRATCH_ROOT
+			// now has its own .git (ensureScratchRootIsAGitRepo) -- confirmed
+			// empirically. The important safety property (this fence never
+			// resolves into cam-cli's own working tree) is proved by the two tests
+			// below instead, which is what actually matters for the hazard this
+			// story closes.
 			const dir = createTestTmpdir();
 			const proc = Bun.spawn(['git', 'rev-parse', '--show-toplevel'], {
 				cwd: dir,
@@ -69,6 +81,30 @@ describe('createTestTmpdir', () => {
 			const stderr = await new Response(proc.stderr).text();
 			expect(exitCode).not.toBe(0);
 			expect(stderr).toContain('not a git repository');
+		},
+	);
+
+	test.skipIf(!gitAvailable)(
+		'location-independent fence: the same holds even when the spawn site does NOT forward live process.env (US-R1-003, CAM-508)',
+		async () => {
+			// Reproduces the exact hazard the review finding named: a git spawn
+			// call with no `env` option (matching src/commands/sidecar.ts's
+			// checkoutMainFn/proceedBranchFn call shape) never sees the runtime
+			// GIT_CEILING_DIRECTORIES mutation set by ensureScratchRoot -- so this
+			// proves the fence holds on ensureScratchRootIsAGitRepo's stub repo
+			// alone, independent of env propagation.
+			const dir = createTestTmpdir();
+			const proc = Bun.spawn(['git', 'rev-parse', '--show-toplevel'], {
+				cwd: dir,
+				stdout: 'pipe',
+				stderr: 'pipe',
+			});
+			const exitCode = await proc.exited;
+			const stdout = (await new Response(proc.stdout).text()).trim();
+			expect(exitCode).toBe(0);
+			const toplevel = realpathSync(stdout);
+			expect(toplevel).toBe(realpathSync(SCRATCH_ROOT));
+			expect(toplevel).not.toBe(realpathSync(REPO_ROOT));
 		},
 	);
 
