@@ -71,7 +71,7 @@ you here — the discipline is the only guard):
 
 1. The Step 0 check now goes GREEN, and you observed it RED in Step 2.
 2. `bun run check:all` passes **whole**. Not a subset, not just the touched
-   test. This is the safety net that makes the lane defensible: 14 gates and
+   test. This is the safety net that makes the lane defensible: 15 gates and
    the full suite.
 3. If the change touched `vendor/` or `templates/`, also run
    `bun run embed-vendor` and `bun run embed-vendor:check`.
