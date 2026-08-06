@@ -4,13 +4,12 @@
 // (US-005, CAM-433). Keeps prompt cleanup, output piping, durable failure
 // sinks, and stale-marker convergence identical across both worker phases.
 
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { DispatchFailedMarker } from './dispatch-failed-marker.ts';
 import type { WorkerEventLogger } from './events.ts';
 import type { SpawnFn } from './loop.ts';
-import { removeTaskPromptFile } from './task-prompt-file.ts';
+import { removeTaskPromptFile, resolveTaskPromptClaudeDirFallback } from './task-prompt-file.ts';
 import {
 	runVerifiedDispatch,
 	type VerifiedDispatchResult,
@@ -34,7 +33,7 @@ export interface WorkerDispatchLifecycleOptions {
 }
 
 function effectiveClaudeDir(claudeDir: string | undefined): string {
-	return claudeDir ?? join(tmpdir(), `cam-cli-task-prompts-${process.pid}`, '.claude');
+	return claudeDir ?? resolveTaskPromptClaudeDirFallback();
 }
 
 function shellQuote(value: string): string {

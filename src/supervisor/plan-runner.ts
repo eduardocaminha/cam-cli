@@ -29,7 +29,6 @@
 //     'Biome cognitive complexity: use factory/helper extraction not grandfather').
 
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import type { SpawnFn, IsPaneAlive } from './loop.ts';
 import type { WorkerEventLogger } from './events.ts';
 import type { PlanPreflightResult } from './plan-preflight.ts';
@@ -52,7 +51,7 @@ import { codexAuthPreflight } from './codex-auth.ts';
 import type { CodexAuthCheck } from './codex-auth.ts';
 import { resolvePhaseModel } from '../config/model-resolution.ts';
 import type { CodexModelsCacheReader } from '../config/codex-models-cache.ts';
-import { removeTaskPromptFile } from './task-prompt-file.ts';
+import { removeTaskPromptFile, resolveTaskPromptClaudeDirFallback } from './task-prompt-file.ts';
 import { runVerifiedDispatch } from './verified-dispatch.ts';
 import type { DispatchFailedMarker } from './dispatch-failed-marker.ts';
 import type { EarlyDeathVerdict } from './early-death.ts';
@@ -768,7 +767,7 @@ interface ResolveAndSpawnOptions {
 type PlanDispatchPhase = 'planner' | 'auditor';
 
 function effectivePlanClaudeDir(claudeDir: string | undefined): string {
-	return claudeDir ?? join(tmpdir(), `cam-cli-task-prompts-${process.pid}`, '.claude');
+	return claudeDir ?? resolveTaskPromptClaudeDirFallback();
 }
 
 function planOutLogPath(claudeDir: string | undefined, phase: string, uuid: string): string {

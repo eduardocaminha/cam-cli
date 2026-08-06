@@ -32,7 +32,11 @@ import { join } from 'node:path';
 import { DEFAULTS } from '../config/models.ts';
 import type { WorkerIsolation } from '../config/models.ts';
 import { stripFrontmatter } from '../templates/frontmatter.ts';
-import { taskPromptFileArgument, writeTaskPromptFile } from './task-prompt-file.ts';
+import {
+	resolveTaskPromptClaudeDirFallback,
+	taskPromptFileArgument,
+	writeTaskPromptFile,
+} from './task-prompt-file.ts';
 
 /** The four worker actors in scope for the seam (ADR-0046/0047). */
 export type WorkerActor = 'implementer' | 'planner' | 'auditor' | 'reviewer';
@@ -237,8 +241,7 @@ function shellEscape(s: string): string {
 }
 
 function resolveTaskPromptArgument(opts: SpawnArgvOptions, taskPrompt: string): string {
-	const claudeDir =
-		opts.claudeDir ?? join(tmpdir(), `cam-cli-task-prompts-${process.pid}`, '.claude');
+	const claudeDir = opts.claudeDir ?? resolveTaskPromptClaudeDirFallback();
 	return taskPromptFileArgument(writeTaskPromptFile(claudeDir, opts.uuid, taskPrompt));
 }
 
