@@ -1,0 +1,28 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Bound the ship-PR body tempfile under one fixed reused parent"
+  },
+  "branchName": "cam/issue-510",
+  "timestamp": "2026-08-06T12:19:09Z",
+  "createdFiles": [
+    "src/release/ship-pr-tempfile.ts",
+    "test/release/ship-pr-tempfile.test.ts"
+  ],
+  "modifiedFiles": [
+    "src/commands/sidecar.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "Site 1 of 5 (CAM-510) is done: src/commands/sidecar.ts's ship-pr writeTempFile closure now delegates to writeShipPrTempFile (new module src/release/ship-pr-tempfile.ts), which writes under tmpdir()/cam-ship-pr (fixed, reused) nested one level by process.pid, and prunes only OTHER pid subdirectories older than 1h (never the shared temp root's own children, never its own pid dir). Extracting to a standalone module actually SHRANK sidecar.ts (3721 -> 3717 lines), so no file-size-budget.json ceiling raise was needed for this story -- GOTCHA 6 in this story's original notes assumed a raise would be forced; it wasn't, because extraction nets fewer lines than the removed inline closure. The next site(s) in the CAM-510 issue (2 of 5 through 5 of 5, per GOTCHA 14: re-derive all five from the issue text fresh, do not trust any stale enumeration) should grep for other `mkdtempSync(join(tmpdir(),` call sites across the repo (this story's AC1 oracle only swept src/commands/sidecar.ts) and apply the same fixed-parent + own-pid-subdir + prune-stale-siblings-only shape; test/release/ship-pr-tempfile.test.ts and src/release/ship-pr-tempfile.ts are now the reference precedent for the pattern (mirrors src/supervisor/task-prompt-file.ts's reused-parent idea, adapted for concurrency since task-prompt-file.ts's reap-all-siblings-before-write is unsafe when multiple cam processes can write concurrently to the same shared parent).",
+  "appliedPatternIds": [],
+  "officialDocsValidated": [
+    {
+      "lib": "node:os / node:fs (Bun runtime)",
+      "channel": "WebFetch",
+      "url": "https://nodejs.org/api/os.html#ostmpdir",
+      "fetchedAt": "2026-08-06T12:10:00Z",
+      "status": "aligned",
+      "summary": "os.tmpdir() resolves from TMPDIR (POSIX) with no documented process-lifetime caching; this story's design depends on it re-reading TMPDIR per call so a test can redirect it via process.env.TMPDIR before invoking writeShipPrTempFile. Behavior confirmed empirically by this story's own test suite (3/3 pass with TMPDIR redirected at call time), consistent with the CAM-508 handoff's prior empirical measurement on bun 1.3.13 that os.tmpdir() re-reads TMPDIR on every call."
+    }
+  ]
+}

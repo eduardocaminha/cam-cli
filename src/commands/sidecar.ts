@@ -20,9 +20,9 @@
 //
 // All I/O is injectable via SidecarOptions for unit tests.
 
-import { existsSync, mkdtempSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir, homedir } from 'node:os';
+import { homedir } from 'node:os';
 import process from 'node:process';
 import { randomUUID } from 'node:crypto';
 
@@ -102,6 +102,7 @@ import { evaluateRearmPreconditions } from '../supervisor/rearm-preconditions.ts
 import type { IssueEntry } from '../issues/types.ts';
 import { runShipPhase, type ShipPhaseResult, type ShipPrdRecord, type ShipGatesResult, DEFAULT_GATES_COMMAND } from '../supervisor/ship-runner.ts';
 import { runShipPrStep, type ShipPrSpawnFn, type RunShipPrStepOptions, type ShipPrStepInput } from '../release/ship-pr.ts';
+import { writeShipPrTempFile } from '../release/ship-pr-tempfile.ts';
 import { finalizeCycleClose } from './ship-finalize.ts';
 import { runShipBump } from '../release/ship-bump.ts';
 import { buildShipFinalizeOpts, buildShipBumpOpts } from './ship-deps.ts';
@@ -1197,12 +1198,7 @@ function buildProductionShipPrStepDeps(
 	};
 	return {
 		spawnFn,
-		writeTempFile: (content: string): string => {
-			const dir = mkdtempSync(join(tmpdir(), 'cam-ship-pr-'));
-			const filePath = join(dir, 'body.md');
-			writeFileSync(filePath, content, 'utf8');
-			return filePath;
-		},
+		writeTempFile: writeShipPrTempFile,
 		readReviewArtifact: (): string | null => {
 			const artifactPath = join(cwd, REVIEW_ARTIFACT_FILENAME);
 			try {
