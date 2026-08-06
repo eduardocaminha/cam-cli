@@ -83,7 +83,7 @@
         "The full quality spine is green (bun run check:all). [oracle: named-command bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: 49 files under test/supervisor. Drive the bulk edit with scripts/codemod-test-tmpdir.ts from US-003; the two fixed pid-based paths (backend-adapter.test.ts:25, codex-adapter.test.ts:171) are not mkdtempSync calls and may need the codemod's bare-path branch or a hand edit, re-checked individually. GOTCHA 10 (a)/(c) re-checks apply to this subtree in force: supervisor tests spawn real panes and subprocesses, so re-verify absolute-path-prefix assertions and any 'missing dependency' expectation now that the temp cwd sits inside the repo with cam-cli's node_modules resolvable. Keep the five fronts separate (GOTCHA 7): collapsing them yields an unreviewable 180-file diff. scripts/file-size-budget.json may need a raise (GOTCHA 13)."
     },
