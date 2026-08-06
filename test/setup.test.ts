@@ -7,9 +7,8 @@
 // so we can exercise it directly from a unit test.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { existsSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from './helpers/test-tmpdir';
 
 import { copyTemplates } from '../src/commands/setup.ts';
 
@@ -19,7 +18,7 @@ describe('copyTemplates — install summary includes skills line', () => {
 	let originalWrite: typeof process.stdout.write;
 
 	beforeEach(() => {
-		cwd = mkdtempSync(join(tmpdir(), 'cam-setup-test-'));
+		cwd = createTestTmpdir('cam-setup-test-');
 		captured = '';
 		// Capture process.stdout.write (printSuccess writes there via color.ts:97).
 		// Quiet mode must be OFF (default) so printSuccess is not suppressed.

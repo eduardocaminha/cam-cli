@@ -57,8 +57,8 @@
 // in the oven/bun worker-container image, see test/helpers/test-deps.ts).
 
 import { test, expect } from 'bun:test';
-import { mkdtempSync, mkdirSync, openSync, rmSync, realpathSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, openSync, rmSync, realpathSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import process from 'node:process';
 
@@ -80,7 +80,7 @@ test.skipIf(!psAvailable || !lsofAvailable)(
 		'rejects a sidecar-shaped decoy that does not (US-R2-001 regression), ' +
 		'and never matches an adjacent non-sidecar process',
 	async () => {
-		const tempDirRaw = mkdtempSync(join(tmpdir(), 'cam-stop-real-listprocesses-'));
+		const tempDirRaw = createTestTmpdir('cam-stop-real-listprocesses-');
 		// lsof reports the process's REAL (symlink-resolved) cwd -- macOS's
 		// /tmp is itself a symlink to /private/tmp, so this test must compare
 		// against the realpath, not the raw mkdtemp path, or the cwd-equality
@@ -179,7 +179,7 @@ test.skipIf(!psAvailable || !lsofAvailable)(
 	'defaultListProcesses: discovers a liveness-watch-respawned sidecar, spawned through the ' +
 		'REAL makeSpawnSidecarFn closure (US-R4-001 regression, made falsifiable in US-R6-003)',
 	async () => {
-		const tempDirRaw = mkdtempSync(join(tmpdir(), 'cam-stop-real-livenesswatch-'));
+		const tempDirRaw = createTestTmpdir('cam-stop-real-livenesswatch-');
 		// lsof reports the process's REAL (symlink-resolved) cwd, see note above.
 		const projectCwd = realpathSync(tempDirRaw);
 

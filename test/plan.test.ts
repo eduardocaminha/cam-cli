@@ -20,8 +20,7 @@
 //     the issue is invalid.
 
 import { describe, expect, test } from 'bun:test';
-import { tmpdir } from 'node:os';
-import { mkdtempSync } from 'node:fs';
+import { createTestTmpdir } from './helpers/test-tmpdir';
 import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 
@@ -171,7 +170,7 @@ describe('parsePlanArgs', () => {
 
 describe('runPlan (hit path, bare plan)', () => {
 	test('writes phase:planning + plan_issue and returns 0', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-bare-'));
+		const tmpDir = createTestTmpdir('cam-plan-bare-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
 		const { calls: writeCalls, writeFn } = makeWriteCapture();
 
@@ -191,7 +190,7 @@ describe('runPlan (hit path, bare plan)', () => {
 	});
 
 	test('does NOT call send-keys (state-file write is the signal)', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-no-sendkeys-'));
+		const tmpDir = createTestTmpdir('cam-plan-no-sendkeys-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
 		const { writeFn } = makeWriteCapture();
 
@@ -207,7 +206,7 @@ describe('runPlan (hit path, bare plan)', () => {
 	});
 
 	test('skips bootstrap when orchestrator is already alive', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-no-bootstrap-'));
+		const tmpDir = createTestTmpdir('cam-plan-no-bootstrap-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
 		const { writeFn } = makeWriteCapture();
 		let bootstrapCalled = false;
@@ -224,7 +223,7 @@ describe('runPlan (hit path, bare plan)', () => {
 	});
 
 	test('returns 1 when no plannable issue is in the backlog', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-noissue-'));
+		const tmpDir = createTestTmpdir('cam-plan-noissue-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
 		const { calls: writeCalls, writeFn } = makeWriteCapture();
 
@@ -240,7 +239,7 @@ describe('runPlan (hit path, bare plan)', () => {
 	});
 
 	test('returns 1 and does not write when pane mutex is busy', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-busy-'));
+		const tmpDir = createTestTmpdir('cam-plan-busy-');
 		const spawnFn = makeFakeTmuxSpawn({
 			sessionExists: true,
 			orchAlive: true,
@@ -264,7 +263,7 @@ describe('runPlan (hit path, bare plan)', () => {
 
 describe('runPlan (hit path, specific N)', () => {
 	test('writes phase:planning + plan_issue=<id> for valid issue N', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-N-'));
+		const tmpDir = createTestTmpdir('cam-plan-N-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
 		const { calls: writeCalls, writeFn } = makeWriteCapture();
 
@@ -285,7 +284,7 @@ describe('runPlan (hit path, specific N)', () => {
 	});
 
 	test('AC2: state file parses with phase===planning and plan_issue===N', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-ac2-'));
+		const tmpDir = createTestTmpdir('cam-plan-ac2-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
 		const { calls: writeCalls, writeFn } = makeWriteCapture();
 
@@ -306,7 +305,7 @@ describe('runPlan (hit path, specific N)', () => {
 	});
 
 	test('selects by numeric suffix even with non-matching prefix', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-prefix-'));
+		const tmpDir = createTestTmpdir('cam-plan-prefix-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
 		const { calls: writeCalls, writeFn } = makeWriteCapture();
 
@@ -331,7 +330,7 @@ describe('runPlan (hit path, specific N)', () => {
 
 describe('runPlan (F-01 validation, specific N)', () => {
 	test('AC3: returns 1 when issue N is not found in backlog', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-notfound-'));
+		const tmpDir = createTestTmpdir('cam-plan-notfound-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
 		const { calls: writeCalls, writeFn } = makeWriteCapture();
 
@@ -348,7 +347,7 @@ describe('runPlan (F-01 validation, specific N)', () => {
 	});
 
 	test('AC3: returns 1 when issue N has status:abandoned', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-abandoned-'));
+		const tmpDir = createTestTmpdir('cam-plan-abandoned-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
 		const { calls: writeCalls, writeFn } = makeWriteCapture();
 
@@ -370,7 +369,7 @@ describe('runPlan (F-01 validation, specific N)', () => {
 	});
 
 	test('AC3: returns 1 when issue N has stage:idea (not specified)', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-idea-'));
+		const tmpDir = createTestTmpdir('cam-plan-idea-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
 		const { calls: writeCalls, writeFn } = makeWriteCapture();
 
@@ -392,7 +391,7 @@ describe('runPlan (F-01 validation, specific N)', () => {
 	});
 
 	test('AC3: returns 1 when issue N is blocked by an unshipped dep', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-blocked-'));
+		const tmpDir = createTestTmpdir('cam-plan-blocked-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
 		const { calls: writeCalls, writeFn } = makeWriteCapture();
 
@@ -424,7 +423,7 @@ describe('runPlan (F-01 validation, specific N)', () => {
 		// non-empty acceptanceCriteria array. This fixture is specified/open/
 		// unblocked (so it clears the status/stage/isBlocked checks first) but
 		// carries an empty acceptanceCriteria array, forcing the real branch.
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-no-criteria-'));
+		const tmpDir = createTestTmpdir('cam-plan-no-criteria-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
 		const { calls: writeCalls, writeFn } = makeWriteCapture();
 		const noCriteria: IssueEntry = {
@@ -461,7 +460,7 @@ describe('runPlan (F-01 validation, specific N)', () => {
 	test('AC3: specific N does NOT fall back to top-of-queue when invalid', async () => {
 		// The backlog has a different plannable issue (CAM-7); passing N=999
 		// must NOT plan CAM-7 as a fallback.
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-nofallback-'));
+		const tmpDir = createTestTmpdir('cam-plan-nofallback-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
 		const { calls: writeCalls, writeFn } = makeWriteCapture();
 
@@ -483,7 +482,7 @@ describe('runPlan (F-01 validation, specific N)', () => {
 
 describe('runPlan (miss path)', () => {
 	test('bootstraps + waits for marker + writes state file when orch not alive', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-miss-'));
+		const tmpDir = createTestTmpdir('cam-plan-miss-');
 
 		let bootstrapCalled = false;
 		let markerPresent = false;
@@ -553,7 +552,7 @@ describe('runPlan (miss path)', () => {
 	});
 
 	test('returns 1 when bootstrap fails', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-boot-fail-'));
+		const tmpDir = createTestTmpdir('cam-plan-boot-fail-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: false });
 
 		const code = await runPlan({
@@ -567,7 +566,7 @@ describe('runPlan (miss path)', () => {
 	});
 
 	test('returns 1 when marker never appears (timeout)', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-timeout-'));
+		const tmpDir = createTestTmpdir('cam-plan-timeout-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: false });
 
 		const code = await runPlan({
@@ -588,7 +587,7 @@ describe('runPlan (miss path)', () => {
 
 describe('runPlan: session name', () => {
 	test('all tmux calls include the project session name', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-sessname-'));
+		const tmpDir = createTestTmpdir('cam-plan-sessname-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
 		const { writeFn } = makeWriteCapture();
 		const sessionName = projectSessionName(tmpDir);
@@ -609,7 +608,7 @@ describe('runPlan: session name', () => {
 
 describe('runPlan: sidecar liveness gate', () => {
 	test('refuses and does NOT write phase:planning when the sidecar is dead', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-sidecar-dead-'));
+		const tmpDir = createTestTmpdir('cam-plan-sidecar-dead-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
 		const { calls: writeCalls, writeFn } = makeWriteCapture();
 		let probedClaudeDir: string | undefined;
@@ -631,7 +630,7 @@ describe('runPlan: sidecar liveness gate', () => {
 	});
 
 	test('proceeds and writes phase:planning when the sidecar is alive', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-sidecar-alive-'));
+		const tmpDir = createTestTmpdir('cam-plan-sidecar-alive-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
 		const { calls: writeCalls, writeFn } = makeWriteCapture();
 
@@ -651,7 +650,7 @@ describe('runPlan: sidecar liveness gate', () => {
 		// No worker_isolation branching exists in the gate itself; a fake that
 		// always reports dead proves the refusal fires unconditionally, whether
 		// the project is configured for host or container mode.
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-sidecar-mode-agnostic-'));
+		const tmpDir = createTestTmpdir('cam-plan-sidecar-mode-agnostic-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
 		const { calls: writeCalls, writeFn } = makeWriteCapture();
 

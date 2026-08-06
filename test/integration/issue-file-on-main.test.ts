@@ -17,13 +17,8 @@
 import { test, expect, afterEach } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import type { SpawnSyncReturns } from 'node:child_process';
-import {
-	mkdtempSync,
-	writeFileSync,
-	rmSync,
-	mkdirSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync, rmSync, mkdirSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import {
@@ -90,7 +85,7 @@ interface RepoHandles {
  *                Pass 0 for an empty issues dir (allocates CAM-1).
  */
 function makeTmpRepo(seedId: number): RepoHandles {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-issue-file-'));
+	const dir = createTestTmpdir('cam-issue-file-');
 	dirsToCleanup.push(dir);
 
 	const run = (args: string[]) =>

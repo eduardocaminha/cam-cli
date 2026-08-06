@@ -28,8 +28,8 @@
 
 import { test, expect, beforeEach, afterEach } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, existsSync, rmSync, chmodSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync, mkdirSync, readFileSync, existsSync, rmSync, chmodSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { buildOrchestratorPaneCommand } from '../../src/commands/run.ts';
@@ -37,7 +37,7 @@ import { buildOrchestratorPaneCommand } from '../../src/commands/run.ts';
 let tmpCwd: string;
 
 beforeEach(() => {
-	tmpCwd = mkdtempSync(join(tmpdir(), 'cam-orch-exit-'));
+	tmpCwd = createTestTmpdir('cam-orch-exit-');
 });
 
 afterEach(() => {

@@ -23,8 +23,8 @@
 //     distinguishable from an auditor cap-elapsed terminal.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import { runPlanPhase, type RunPlanPhaseOptions } from '../../src/supervisor/plan-runner.ts';
 import type { SpawnFn } from '../../src/supervisor/loop.ts';
@@ -54,7 +54,7 @@ function alwaysDeadOnFirstTurn(_uuid: string): EarlyDeathVerdict {
 // plan-runner suites' GENERIC_PLAN_CONFIG_PATH convention).
 // ---------------------------------------------------------------------------
 
-const GENERIC_PLAN_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-plan-runner-early-death-test-'));
+const GENERIC_PLAN_CONFIG_DIR = createTestTmpdir('cam-plan-runner-early-death-test-');
 const GENERIC_PLAN_CONFIG_PATH = join(GENERIC_PLAN_CONFIG_DIR, 'project.toml');
 writeFileSync(GENERIC_PLAN_CONFIG_PATH, '[backend]\nplanner = "claude"\nauditor = "claude"\n');
 

@@ -18,8 +18,8 @@
 //        auditor; clean PRD -> auditor unchanged, zero behavior change).
 
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import {
 	runPlanPhase,
@@ -48,7 +48,7 @@ import {
 // Shared fixtures
 // ---------------------------------------------------------------------------
 
-const GENERIC_PLAN_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-plan-runner-test-config-'));
+const GENERIC_PLAN_CONFIG_DIR = createTestTmpdir('cam-plan-runner-test-config-');
 const GENERIC_PLAN_CONFIG_PATH = join(GENERIC_PLAN_CONFIG_DIR, 'project.toml');
 writeFileSync(GENERIC_PLAN_CONFIG_PATH, '[backend]\nplanner = "claude"\nauditor = "claude"\n');
 
@@ -459,7 +459,7 @@ describe('runPlanPhaseWithReplan: lint findings fold into the re-plan loop (AC3,
 
 describe('CAM-433 verified plan dispatch and terminal lifecycles', () => {
 	test('planner and record-bearing auditor prompts stay out of tmux argv; verified success removes prompt files and a stale failure marker', () => {
-		const claudeDir = mkdtempSync(join(tmpdir(), 'cam-plan-verified-success-'));
+		const claudeDir = createTestTmpdir('cam-plan-verified-success-');
 		const markerPath = join(claudeDir, DISPATCH_FAILED_FILENAME);
 		const uniqueAuditorRecord = 'AUDITOR_RECORD_MUST_ONLY_EXIST_IN_PROMPT_FILE';
 		const issue: IssueEntry = {
@@ -514,7 +514,7 @@ describe('CAM-433 verified plan dispatch and terminal lifecycles', () => {
 	});
 
 	test('unchanged pane_pid is a dispatch-failed terminal and removes its prompt file', () => {
-		const claudeDir = mkdtempSync(join(tmpdir(), 'cam-plan-verified-unchanged-'));
+		const claudeDir = createTestTmpdir('cam-plan-verified-unchanged-');
 		const events: WorkerEvent[] = [];
 		const markers: DispatchFailedMarker[] = [];
 		const messages: string[] = [];
@@ -551,7 +551,7 @@ describe('CAM-433 verified plan dispatch and terminal lifecycles', () => {
 	});
 
 	test('planner timeout checks the sentinel respawn exit and emits event, marker, notification, and prompt cleanup', () => {
-		const claudeDir = mkdtempSync(join(tmpdir(), 'cam-plan-timeout-planner-'));
+		const claudeDir = createTestTmpdir('cam-plan-timeout-planner-');
 		const events: WorkerEvent[] = [];
 		const markers: DispatchFailedMarker[] = [];
 		const messages: string[] = [];

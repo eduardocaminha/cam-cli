@@ -12,8 +12,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import type { SpawnSyncReturns } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import {
 	computePruneDecision,
@@ -280,7 +280,7 @@ interface RepoHandles {
 }
 
 function makeTmpRepo(): RepoHandles {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-patterns-prune-'));
+	const dir = createTestTmpdir('cam-patterns-prune-');
 	dirsToCleanup.push(dir);
 
 	const run = (args: string[]) => spawnSync('git', ['-C', dir, ...args], { stdio: 'pipe', encoding: 'utf8' });

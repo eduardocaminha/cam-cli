@@ -20,8 +20,8 @@
 //   AC6 (quality):   bun run check:all passes.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from './helpers/test-tmpdir';
 import { join, resolve } from 'node:path';
 
 import {
@@ -120,7 +120,7 @@ describe('AC1 (functional): crash-guard closure pattern with makeSetPhaseFn', ()
 	let tmpDir: string;
 
 	beforeEach(() => {
-		tmpDir = mkdtempSync(join(tmpdir(), 'cam-crash-guard-'));
+		tmpDir = createTestTmpdir('cam-crash-guard-');
 	});
 
 	afterEach(() => {
@@ -295,7 +295,7 @@ describe('AC3: real state file ends as idle after the crash-guard closure runs',
 	let tmpDir: string;
 
 	beforeEach(() => {
-		tmpDir = mkdtempSync(join(tmpdir(), 'cam-crash-ac3-'));
+		tmpDir = createTestTmpdir('cam-crash-ac3-');
 	});
 
 	afterEach(() => {

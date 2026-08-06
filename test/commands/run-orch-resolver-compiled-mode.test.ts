@@ -36,8 +36,8 @@
 //       not the pre-fix `<execPath> <bunfs-path> orch-resolve` shape.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 
@@ -120,7 +120,7 @@ describe('setupPanes wiring: compiled-binary self-invoke (US-R1-001, CAM-425)', 
 	}
 
 	function makeTmpProject(): string {
-		const cwd = mkdtempSync(join(tmpdir(), 'cam-run-resolver-compiled-'));
+		const cwd = createTestTmpdir('cam-run-resolver-compiled-');
 		const agentsDir = join(cwd, '.claude', 'agents');
 		mkdirSync(agentsDir, { recursive: true });
 		writeFileSync(join(agentsDir, 'subagent-orchestrator.md'), '# stub\n', 'utf8');

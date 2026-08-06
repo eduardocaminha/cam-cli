@@ -19,8 +19,8 @@
 //        through makeFileEventLogger to a real file on disk.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { runOrchResolve } from '../../src/commands/orch-resolve.ts';
@@ -29,7 +29,7 @@ import type { CodexModelsCacheReader } from '../../src/config/codex-models-cache
 
 /** Stage a temp dir with a project.toml at `<dir>/project.toml`; caller removes it. */
 function stageConfig(toml: string): { dir: string; configPath: string } {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-orch-resolve-'));
+	const dir = createTestTmpdir('cam-orch-resolve-');
 	const configPath = join(dir, 'project.toml');
 	writeFileSync(configPath, toml, 'utf8');
 	return { dir, configPath };

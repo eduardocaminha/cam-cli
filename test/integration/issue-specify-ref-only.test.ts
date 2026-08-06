@@ -23,8 +23,8 @@ import { test, expect, afterEach } from 'bun:test';
 import { existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import type { SpawnSyncReturns } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import { writeIssueFile } from '../../src/issues/alloc.ts';
 import {
@@ -88,7 +88,7 @@ const VALID_WSJF: WsjfScore = {
 // ---------------------------------------------------------------------------
 
 function makeTmpRepo(): { dir: string; run: (args: string[]) => ReturnType<typeof spawnSync> } {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-specify-refonly-'));
+	const dir = createTestTmpdir('cam-specify-refonly-');
 	dirsToCleanup.push(dir);
 
 	const run = (args: string[]) =>

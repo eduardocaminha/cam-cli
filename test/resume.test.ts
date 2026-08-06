@@ -27,8 +27,8 @@
 //     - --mode reset-branch: removes state file + prints instruction.
 
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from './helpers/test-tmpdir';
 import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 
@@ -511,7 +511,7 @@ describe('readLastCommitTimestamp', () => {
 
 describe('readStateFile + readPrd', () => {
 	test('readStateFile parses a real on-disk state file', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-resume-state-'));
+		const dir = createTestTmpdir('cam-resume-state-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			const body = [
@@ -536,7 +536,7 @@ describe('readStateFile + readPrd', () => {
 	});
 
 	test('readStateFile returns null when the file is missing', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-resume-no-state-'));
+		const dir = createTestTmpdir('cam-resume-no-state-');
 		try {
 			expect(readStateFile(dir)).toBeNull();
 		} finally {
@@ -545,7 +545,7 @@ describe('readStateFile + readPrd', () => {
 	});
 
 	test('readPrd parses a real on-disk PRD', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-resume-prd-'));
+		const dir = createTestTmpdir('cam-resume-prd-');
 		try {
 			writeFileSync(
 				join(dir, 'prd.json'),
@@ -559,7 +559,7 @@ describe('readStateFile + readPrd', () => {
 	});
 
 	test('readPrd returns null when prd.json is invalid JSON', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-resume-bad-prd-'));
+		const dir = createTestTmpdir('cam-resume-bad-prd-');
 		try {
 			writeFileSync(join(dir, 'prd.json'), '{not json');
 			expect(readPrd(dir)).toBeNull();
@@ -573,7 +573,7 @@ describe('readStateFile + readPrd', () => {
 
 describe('buildResumeReport', () => {
 	test('idle when nothing exists', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-resume-idle-'));
+		const dir = createTestTmpdir('cam-resume-idle-');
 		try {
 			const report = buildResumeReport({
 				cwd: dir,
@@ -590,7 +590,7 @@ describe('buildResumeReport', () => {
 	});
 
 	test('success when the PRD is complete and a state file lingers', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-resume-success-'));
+		const dir = createTestTmpdir('cam-resume-success-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(
@@ -616,7 +616,7 @@ describe('buildResumeReport', () => {
 	});
 
 	test('respawn when PID is dead but commit is recent', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-resume-respawn-'));
+		const dir = createTestTmpdir('cam-resume-respawn-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(
@@ -641,7 +641,7 @@ describe('buildResumeReport', () => {
 	});
 
 	test('prompt when PID is dead and commit is > 24h old', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-resume-prompt-'));
+		const dir = createTestTmpdir('cam-resume-prompt-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(
@@ -664,7 +664,7 @@ describe('buildResumeReport', () => {
 	});
 
 	test('noop when retry-monitor PID is alive', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-resume-noop-'));
+		const dir = createTestTmpdir('cam-resume-noop-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(
@@ -700,7 +700,7 @@ function silenceStdout(): { restore: () => void } {
 
 describe('runResume — Mode 3 prompt', () => {
 	test('answer "y" → exits 0 and does not remove state file', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-resume-prompt-y-'));
+		const dir = createTestTmpdir('cam-resume-prompt-y-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			const statePath = join(dir, '.claude', 'cam-loop.local.md');
@@ -731,7 +731,7 @@ describe('runResume — Mode 3 prompt', () => {
 	});
 
 	test('answer "n" (default) → exits 1', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-resume-prompt-n-'));
+		const dir = createTestTmpdir('cam-resume-prompt-n-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(
@@ -760,7 +760,7 @@ describe('runResume — Mode 3 prompt', () => {
 	});
 
 	test('answer "reset" → removes state file and exits 0', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-resume-prompt-reset-'));
+		const dir = createTestTmpdir('cam-resume-prompt-reset-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			const statePath = join(dir, '.claude', 'cam-loop.local.md');
@@ -793,7 +793,7 @@ describe('runResume — Mode 3 prompt', () => {
 
 describe('runResume — auto-cleanup of orphan state', () => {
 	test('PRD complete + state file lingering → removes the file and exits 0', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-resume-success-clean-'));
+		const dir = createTestTmpdir('cam-resume-success-clean-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			const statePath = join(dir, '.claude', 'cam-loop.local.md');
@@ -828,7 +828,7 @@ describe('runResume — auto-cleanup of orphan state', () => {
 
 describe('runResume — dry-run', () => {
 	test('does not mutate or spawn under --dry-run', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-resume-dryrun-'));
+		const dir = createTestTmpdir('cam-resume-dryrun-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			const statePath = join(dir, '.claude', 'cam-loop.local.md');
@@ -866,7 +866,7 @@ describe('runResume — dry-run', () => {
 
 describe('runResume — explicit --mode reset-current-story', () => {
 	test('flips the most-recently-completed story to passes:false', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-resume-reset-cur-'));
+		const dir = createTestTmpdir('cam-resume-reset-cur-');
 		try {
 			const prdPath = join(dir, 'prd.json');
 			writeFileSync(
@@ -898,7 +898,7 @@ describe('runResume — explicit --mode reset-current-story', () => {
 	});
 
 	test('exits 2 when there is no completed story to reset', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-resume-reset-cur-empty-'));
+		const dir = createTestTmpdir('cam-resume-reset-cur-empty-');
 		try {
 			writeFileSync(
 				join(dir, 'prd.json'),
@@ -919,7 +919,7 @@ describe('runResume — explicit --mode reset-current-story', () => {
 	});
 
 	test('exits 2 when prd.json is missing', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-resume-reset-cur-noprd-'));
+		const dir = createTestTmpdir('cam-resume-reset-cur-noprd-');
 		try {
 			const stdout = silenceStdout();
 			try {
@@ -936,7 +936,7 @@ describe('runResume — explicit --mode reset-current-story', () => {
 
 describe('runResume — explicit --mode reset-prd', () => {
 	test('flips every story to passes:false', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-resume-reset-prd-'));
+		const dir = createTestTmpdir('cam-resume-reset-prd-');
 		try {
 			const prdPath = join(dir, 'prd.json');
 			writeFileSync(
@@ -963,7 +963,7 @@ describe('runResume — explicit --mode reset-prd', () => {
 	});
 
 	test('dry-run does not write prd.json', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-resume-reset-prd-dryrun-'));
+		const dir = createTestTmpdir('cam-resume-reset-prd-dryrun-');
 		try {
 			const prdPath = join(dir, 'prd.json');
 			const original = {
@@ -987,7 +987,7 @@ describe('runResume — explicit --mode reset-prd', () => {
 
 describe('runResume — explicit --mode reset-branch', () => {
 	test('--force skips the prompt and removes the state file', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-resume-reset-branch-'));
+		const dir = createTestTmpdir('cam-resume-reset-branch-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			const statePath = join(dir, '.claude', 'cam-loop.local.md');
@@ -1006,7 +1006,7 @@ describe('runResume — explicit --mode reset-branch', () => {
 	});
 
 	test('without --force prompts; "n" answer aborts with exit 1', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-resume-reset-branch-n-'));
+		const dir = createTestTmpdir('cam-resume-reset-branch-n-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			const statePath = join(dir, '.claude', 'cam-loop.local.md');

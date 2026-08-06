@@ -30,8 +30,8 @@
 import { test, expect, afterEach } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import type { SpawnSyncReturns } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { createLocalIssueOnMain, type SpawnFn } from '../../src/commands/issue-file.ts';
@@ -83,7 +83,7 @@ const buggyFieldByFieldSpawnFn: SpawnFn = (cmd, args, opts) =>
 // ---------------------------------------------------------------------------
 
 function makeLargeBacklogRepo(fileCount: number, descriptionBytes: number): string {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-maxbuf-'));
+	const dir = createTestTmpdir('cam-maxbuf-');
 	dirsToCleanup.push(dir);
 
 	const run = (args: string[]) => spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8', stdio: 'pipe' });

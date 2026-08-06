@@ -14,8 +14,8 @@
 //   9. makeReadPlanVerdict includes full PlanVerdictFinding fields when present.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../../helpers/test-tmpdir';
 import { join } from 'node:path';
 import {
 	PLAN_VERDICT_REPORT_FILENAME,
@@ -43,7 +43,7 @@ describe('makeReadPlanVerdict', () => {
 	let reportPath: string;
 
 	beforeEach(() => {
-		tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-verdict-test-'));
+		tmpDir = createTestTmpdir('cam-plan-verdict-test-');
 		// Ensure the subdirectory structure mirrors the real path
 		const subDir = join(tmpDir, 'scripts', 'cam');
 		mkdirSync(subDir, { recursive: true });

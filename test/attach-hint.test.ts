@@ -10,9 +10,7 @@
 //   - runIssue: hint emitted when detached; suppressed when inside session.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { createTestTmpdir } from './helpers/test-tmpdir';
 import type { SpawnSyncReturns } from 'node:child_process';
 
 import { emitAttachHint } from '../src/logging/screen.ts';
@@ -130,7 +128,7 @@ describe('emitAttachHint', () => {
 
 describe('runPlan attach hint', () => {
 	test('emits attach hint when caller is detached (no TMUX)', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-hint-'));
+		const tmpDir = createTestTmpdir('cam-plan-hint-');
 		const tmuxSpawnFn = makeFakeTmuxSpawn(true);
 		const sessionName = projectSessionName(tmpDir);
 
@@ -158,7 +156,7 @@ describe('runPlan attach hint', () => {
 	});
 
 	test('suppresses attach hint when caller is inside the session', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-hint-'));
+		const tmpDir = createTestTmpdir('cam-plan-hint-');
 		const tmuxSpawnFn = makeFakeTmuxSpawn(true);
 		const sessionName = projectSessionName(tmpDir);
 
@@ -187,7 +185,7 @@ describe('runPlan attach hint', () => {
 
 describe('runIssue attach hint', () => {
 	test('emits attach hint when caller is detached (no TMUX)', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-issue-hint-'));
+		const tmpDir = createTestTmpdir('cam-issue-hint-');
 		const tmuxSpawnFn = makeFakeTmuxSpawn(true);
 		const sessionName = projectSessionName(tmpDir);
 
@@ -205,7 +203,7 @@ describe('runIssue attach hint', () => {
 	});
 
 	test('suppresses attach hint when caller is inside the session', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-issue-hint-'));
+		const tmpDir = createTestTmpdir('cam-issue-hint-');
 		const tmuxSpawnFn = makeFakeTmuxSpawn(true);
 		const sessionName = projectSessionName(tmpDir);
 
@@ -226,7 +224,7 @@ describe('runIssue attach hint', () => {
 
 describe('runNext attach hint', () => {
 	test('emits attach hint when caller is detached (no TMUX)', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-next-hint-'));
+		const tmpDir = createTestTmpdir('cam-next-hint-');
 		const tmuxSpawnFn = makeFakeTmuxSpawn(true);
 		const sessionName = projectSessionName(tmpDir);
 
@@ -245,7 +243,7 @@ describe('runNext attach hint', () => {
 	});
 
 	test('suppresses attach hint when caller is inside the session', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-next-hint-'));
+		const tmpDir = createTestTmpdir('cam-next-hint-');
 		const tmuxSpawnFn = makeFakeTmuxSpawn(true);
 		const sessionName = projectSessionName(tmpDir);
 

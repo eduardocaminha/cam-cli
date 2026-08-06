@@ -19,8 +19,7 @@
 //     preserved from the previous send-keys-based thin-proxy.
 
 import { describe, expect, test } from 'bun:test';
-import { tmpdir } from 'node:os';
-import { mkdtempSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 
@@ -150,7 +149,7 @@ describe('parseReviewArgs', () => {
 
 describe('runReview (hit path)', () => {
 	test('writes phase:review and returns 0', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-hit-'));
+		const tmpDir = createTestTmpdir('cam-review-hit-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
 		const { calls: writeCalls, writeFn } = makeWriteCapture();
 
@@ -168,7 +167,7 @@ describe('runReview (hit path)', () => {
 	});
 
 	test('does NOT call send-keys (state-file write is the signal)', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-no-sendkeys-'));
+		const tmpDir = createTestTmpdir('cam-review-no-sendkeys-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
 		const { writeFn } = makeWriteCapture();
 
@@ -184,7 +183,7 @@ describe('runReview (hit path)', () => {
 	});
 
 	test('preserves other state-file fields already present (merge, not clobber)', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-merge-'));
+		const tmpDir = createTestTmpdir('cam-review-merge-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
 		const { calls: writeCalls, writeFn } = makeWriteCapture();
 
@@ -228,7 +227,7 @@ describe('runReview (hit path)', () => {
 	});
 
 	test('skips bootstrap when orchestrator is already alive', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-no-bootstrap-'));
+		const tmpDir = createTestTmpdir('cam-review-no-bootstrap-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
 		const { writeFn } = makeWriteCapture();
 		let bootstrapCalled = false;
@@ -245,7 +244,7 @@ describe('runReview (hit path)', () => {
 	});
 
 	test('returns 1 and does not write when pane mutex is busy', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-busy-'));
+		const tmpDir = createTestTmpdir('cam-review-busy-');
 		const spawnFn = makeFakeTmuxSpawn({
 			sessionExists: true,
 			orchAlive: true,
@@ -264,7 +263,7 @@ describe('runReview (hit path)', () => {
 
 describe('runReview (miss path)', () => {
 	test('bootstraps + waits for marker + writes state file when orch not alive', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-miss-'));
+		const tmpDir = createTestTmpdir('cam-review-miss-');
 
 		let bootstrapCalled = false;
 		let markerPresent = false;
@@ -331,7 +330,7 @@ describe('runReview (miss path)', () => {
 	});
 
 	test('returns 1 when bootstrap fails', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-boot-fail-'));
+		const tmpDir = createTestTmpdir('cam-review-boot-fail-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: false });
 
 		const code = await runReview({
@@ -344,7 +343,7 @@ describe('runReview (miss path)', () => {
 	});
 
 	test('returns 1 when marker never appears (timeout)', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-timeout-'));
+		const tmpDir = createTestTmpdir('cam-review-timeout-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: false });
 
 		const code = await runReview({
@@ -364,7 +363,7 @@ describe('runReview (miss path)', () => {
 
 describe('runReview: session name', () => {
 	test('all tmux calls include the project session name', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-sessname-'));
+		const tmpDir = createTestTmpdir('cam-review-sessname-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
 		const { writeFn } = makeWriteCapture();
 		const sessionName = projectSessionName(tmpDir);
@@ -380,7 +379,7 @@ describe('runReview: session name', () => {
 
 describe('runReview: sidecar liveness gate', () => {
 	test('refuses and does NOT write phase:review when the sidecar is dead', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-sidecar-dead-'));
+		const tmpDir = createTestTmpdir('cam-review-sidecar-dead-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
 		const { calls: writeCalls, writeFn } = makeWriteCapture();
 		let probedClaudeDir: string | undefined;
@@ -401,7 +400,7 @@ describe('runReview: sidecar liveness gate', () => {
 	});
 
 	test('proceeds and writes phase:review when the sidecar is alive', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-sidecar-alive-'));
+		const tmpDir = createTestTmpdir('cam-review-sidecar-alive-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
 		const { calls: writeCalls, writeFn } = makeWriteCapture();
 
@@ -417,7 +416,7 @@ describe('runReview: sidecar liveness gate', () => {
 	});
 
 	test('AC: the gate is mode-agnostic — a dead sidecar refuses regardless of worker_isolation', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-sidecar-mode-agnostic-'));
+		const tmpDir = createTestTmpdir('cam-review-sidecar-mode-agnostic-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
 		const { calls: writeCalls, writeFn } = makeWriteCapture();
 

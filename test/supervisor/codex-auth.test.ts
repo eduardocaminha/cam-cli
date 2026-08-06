@@ -8,8 +8,8 @@
 // ~/.codex/auth.json on the machine running the suite.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { codexAuthPreflight, codexAuthCheck } from '../../src/supervisor/codex-auth.ts';
@@ -129,7 +129,7 @@ describe('codexAuthCheck (default production check)', () => {
 		// '.codex/auth.json' path) codexAuthCheck uses internally, using a
 		// scratch tmpdir instead of the real HOME, to lock the presence-check
 		// semantics without monkeypatching os.homedir().
-		const scratch = mkdtempSync(join(tmpdir(), 'cam-codex-auth-test-'));
+		const scratch = createTestTmpdir('cam-codex-auth-test-');
 		try {
 			const codexDir = join(scratch, '.codex');
 			const authPath = join(codexDir, 'auth.json');

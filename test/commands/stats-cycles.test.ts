@@ -17,10 +17,10 @@
 // CLI-level and on-main-writer tests; this file stays scoped to the pure
 // aggregation module for US-001.
 
-import { readFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { readFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import type { SpawnSyncReturns } from 'node:child_process';
-import { tmpdir } from 'node:os';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import { afterEach, test, expect, describe } from 'bun:test';
 import {
@@ -566,7 +566,7 @@ interface RepoHandles {
 
 /** A real, remote-less temp git repo checked out on `main` (mirrors test/commands/pattern-records.ts's makeTmpRepo). */
 function makeTmpRepo(): RepoHandles {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-cycle-metrics-'));
+	const dir = createTestTmpdir('cam-cycle-metrics-');
 	dirsToCleanup.push(dir);
 
 	const run = (args: string[]) => spawnSync('git', ['-C', dir, ...args], { stdio: 'pipe', encoding: 'utf8' });

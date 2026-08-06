@@ -2,8 +2,8 @@
 //
 // Tests for the durable plan-escalation marker (US-002, CAM-204).
 
-import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { rmSync, writeFileSync, existsSync } from 'node:fs';
+import { createTestTmpdir } from '../../helpers/test-tmpdir';
 import { join } from 'node:path';
 import { beforeEach, afterEach, describe, test, expect } from 'bun:test';
 
@@ -20,7 +20,7 @@ describe('plan-escalation marker: round-trip (US-002, CAM-204)', () => {
 	let filePath: string;
 
 	beforeEach(() => {
-		tempDir = mkdtempSync(join(tmpdir(), 'cam-plan-escalated-'));
+		tempDir = createTestTmpdir('cam-plan-escalated-');
 		filePath = join(tempDir, PLAN_ESCALATED_FILENAME);
 	});
 

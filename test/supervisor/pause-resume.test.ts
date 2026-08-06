@@ -11,8 +11,8 @@
 // never happened.
 
 import { describe, expect, test, beforeEach, afterAll } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import { runSupervisor } from '../../src/supervisor/loop.ts';
 import type {
@@ -76,7 +76,7 @@ const WORKER_PANE_ID = '%3';
  * mirroring loop.test.ts's GENERIC_SUPERVISOR_CONFIG_PATH idiom (US-003):
  * decouples this file's tests from the repo's live scripts/cam/project.toml.
  */
-const GENERIC_SUPERVISOR_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-pause-resume-generic-config-'));
+const GENERIC_SUPERVISOR_CONFIG_DIR = createTestTmpdir('cam-pause-resume-generic-config-');
 const GENERIC_SUPERVISOR_CONFIG_PATH = join(GENERIC_SUPERVISOR_CONFIG_DIR, 'project.toml');
 writeFileSync(GENERIC_SUPERVISOR_CONFIG_PATH, '[backend]\nimplementer = "claude"\n');
 

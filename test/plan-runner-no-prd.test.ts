@@ -11,8 +11,8 @@
 //        phase:idle via exitPhaseAfterPlan (proved by phase-setter assertion).
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from './helpers/test-tmpdir';
 import { join } from 'node:path';
 import {
 	runPlanPhase,
@@ -33,7 +33,7 @@ import { withVerifiedPanePid } from './helpers/verified-pane-pid-spawn.ts';
 // codex planner/auditor config cannot break these generic-backend tests.
 // ---------------------------------------------------------------------------
 
-const GENERIC_PLAN_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-plan-runner-no-prd-test-'));
+const GENERIC_PLAN_CONFIG_DIR = createTestTmpdir('cam-plan-runner-no-prd-test-');
 const GENERIC_PLAN_CONFIG_PATH = join(GENERIC_PLAN_CONFIG_DIR, 'project.toml');
 writeFileSync(GENERIC_PLAN_CONFIG_PATH, '[backend]\nplanner = "claude"\nauditor = "claude"\n');
 

@@ -29,8 +29,8 @@
 // instruction to use "an injected gates array of the two in-process gates".
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from './helpers/test-tmpdir';
 import { join } from 'node:path';
 import type { ResourceUsage, SyncSubprocess } from 'bun';
 
@@ -111,7 +111,7 @@ const BELOW_FLOOR_COVERAGE_BLOB = [
 let tmpDir: string;
 
 beforeEach(() => {
-	tmpDir = mkdtempSync(join(tmpdir(), 'cam-check-all-inprocess-'));
+	tmpDir = createTestTmpdir('cam-check-all-inprocess-');
 	mkdirSync(join(tmpDir, 'scripts'), { recursive: true });
 	mkdirSync(join(tmpDir, 'test', 'helpers'), { recursive: true });
 	writeFileSync(join(tmpDir, 'scripts', 'coverage-budget.json'), JSON.stringify({ floors: { functions: 80, lines: 75 } }));
@@ -309,7 +309,7 @@ describe('anti-contamination: a failing "test" gate does not contaminate coverag
 
 describe('an in-process gate that throws is contained, not left to escape runGates (scripts/check-all.ts:266-269)', () => {
 	test('coverageGate.run throwing ENOENT on a missing budget file fails only that gate row; later gates still run and onResults still fires', async () => {
-		const bareCwd = mkdtempSync(join(tmpdir(), 'cam-check-all-inprocess-bare-'));
+		const bareCwd = createTestTmpdir('cam-check-all-inprocess-bare-');
 		try {
 			const fn: SpawnFn = async () => makeResult(0, '', HEALTHY_BLOB);
 			let results: GateResult[] = [];

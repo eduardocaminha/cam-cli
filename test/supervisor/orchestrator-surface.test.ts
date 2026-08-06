@@ -22,8 +22,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { SpawnSyncReturns } from 'node:child_process';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { sendKeysVerified } from '../../src/tmux/dispatch.ts';
@@ -140,7 +140,7 @@ describe('protocol contract (b): worker-report.json field shape', () => {
 	});
 
 	test('makeReadWorkerReport accepts a report with the full field shape', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-orch-surface-'));
+		const dir = createTestTmpdir('cam-orch-surface-');
 		const reportPath = join(dir, 'scripts', 'cam', 'worker-report.json');
 		mkdirSync(join(dir, 'scripts', 'cam'), { recursive: true });
 		const report: WorkerReport = {
@@ -161,7 +161,7 @@ describe('protocol contract (b): worker-report.json field shape', () => {
 	});
 
 	test('makeReadWorkerReport rejects a report missing the outcome or story discriminator', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-orch-surface-'));
+		const dir = createTestTmpdir('cam-orch-surface-');
 		mkdirSync(join(dir, 'scripts', 'cam'), { recursive: true });
 		const reportPath = join(dir, 'scripts', 'cam', 'worker-report.json');
 

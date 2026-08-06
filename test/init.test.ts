@@ -46,8 +46,8 @@
 // which must pass without claude on PATH.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { rmSync } from 'node:fs';
+import { createTestTmpdir } from './helpers/test-tmpdir';
 import { join } from 'node:path';
 
 const probePath = join(import.meta.dir, 'fixtures', 'init-home-redirect-probe.ts');
@@ -61,7 +61,7 @@ describe('runInit', () => {
 	});
 
 	test('never creates or removes anything under an isolated ~/.config/cam, across repeated runs', () => {
-		fakeHome = mkdtempSync(join(tmpdir(), 'cam-init-home-'));
+		fakeHome = createTestTmpdir('cam-init-home-');
 
 		const result = Bun.spawnSync(['bun', probePath], {
 			env: { ...process.env, HOME: fakeHome },

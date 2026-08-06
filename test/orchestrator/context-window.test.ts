@@ -3,9 +3,9 @@
 // Unit tests for the context-window constants and decision functions in
 // src/orchestrator/context-window.ts.
 
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import {
@@ -37,7 +37,7 @@ describe('orchestratorContextWindow', () => {
 	let configPath: string;
 
 	beforeEach(() => {
-		tmpDir = mkdtempSync(join(tmpdir(), 'ctx-window-test-'));
+		tmpDir = createTestTmpdir('ctx-window-test-');
 		configPath = join(tmpDir, 'project.toml');
 	});
 

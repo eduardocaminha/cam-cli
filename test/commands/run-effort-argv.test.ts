@@ -14,8 +14,8 @@
 //        ever spawned to answer the capability question.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 
@@ -74,7 +74,7 @@ function makeFakeSpawn(): SpawnFn & { calls: SpawnRecord[] } {
 }
 
 function makeTmpProject(): string {
-	const cwd = mkdtempSync(join(tmpdir(), 'cam-run-effort-argv-'));
+	const cwd = createTestTmpdir('cam-run-effort-argv-');
 	const agentsDir = join(cwd, '.claude', 'agents');
 	mkdirSync(agentsDir, { recursive: true });
 	writeFileSync(join(agentsDir, 'subagent-orchestrator.md'), '# stub\n', 'utf8');
@@ -113,7 +113,7 @@ function captureStdout(fn: () => void): string {
 describe('run.ts effort resolution: AC2 - config wins over EFFORT_DEFAULTS', () => {
 	test("staged efforts.orchestrator='max' reaches the argv as --effort 'max' though the default is 'xhigh'", () => {
 		const cwd = makeTmpProject();
-		const stageDir = mkdtempSync(join(tmpdir(), 'cam-run-effort-argv-stage-'));
+		const stageDir = createTestTmpdir('cam-run-effort-argv-stage-');
 		try {
 			const configPath = stageEffortConfig(stageDir, 'max');
 			const spawn = makeFakeSpawn();

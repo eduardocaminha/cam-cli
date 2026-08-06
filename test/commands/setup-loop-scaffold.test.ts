@@ -7,9 +7,9 @@
 // as test/commands/setup-models-defaults.test.ts.
 
 import { test, expect, beforeEach, afterEach } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 
 import { scaffoldLoopSection } from '../../src/commands/setup.ts';
 import { loadConfig, mergeIntoConfig, parseToml } from '../../src/config/toml.ts';
@@ -24,7 +24,7 @@ let tmpDir: string;
 let configPath: string;
 
 beforeEach(() => {
-	tmpDir = mkdtempSync(join(tmpdir(), 'cam-setup-loop-scaffold-'));
+	tmpDir = createTestTmpdir('cam-setup-loop-scaffold-');
 	configPath = join(tmpDir, 'project.toml');
 });
 

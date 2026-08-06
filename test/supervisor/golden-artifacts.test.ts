@@ -21,8 +21,8 @@
 // No live claude call, no tmux: fixtures are read from disk and fed to pure
 // parsers / a real tmpdir fs round-trip only.
 
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 import handoffSchema from '../../scripts/cam/handoff.schema.json';
@@ -101,7 +101,7 @@ function validateAgainstSchema(schema: JsonSchema, value: unknown, path: string,
 }
 
 function freshClaudeDir(): string {
-	return mkdtempSync(join(tmpdir(), 'cam-golden-orch-handoff-'));
+	return createTestTmpdir('cam-golden-orch-handoff-');
 }
 
 // ---------------------------------------------------------------------------

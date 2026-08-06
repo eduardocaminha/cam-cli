@@ -21,8 +21,8 @@
 
 import { test, expect, afterAll } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { performStop } from '../../src/commands/stop.ts';
@@ -78,7 +78,7 @@ test.skipIf(!tmuxAvailable)(
 	async () => {
 		// 1. Create a temporary project root with the directory layout that
 		//    performStop and the marker-writing helpers expect.
-		const tempCwd = mkdtempSync(join(tmpdir(), 'cam-stop-real-'));
+		const tempCwd = createTestTmpdir('cam-stop-real-');
 		const claudeDir = join(tempCwd, '.claude');
 		mkdirSync(claudeDir, { recursive: true });
 		mkdirSync(join(tempCwd, 'scripts', 'cam'), { recursive: true });

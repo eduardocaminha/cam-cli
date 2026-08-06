@@ -80,3 +80,6 @@ scripts/cam/scope-proposal.json
 .claude/cam-gate-history.jsonl
 .claude/cam-supervisor.log
 gate-results.json
+
+# Repo-local scratch root used by test runs (US-001, CAM-508); must never dirty the working tree
+.cam-test-tmp/

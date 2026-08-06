@@ -14,8 +14,8 @@
 //   8. Releases the lock even when runSupervisorFn throws.
 
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import {
 	runSidecarLoop,
@@ -315,7 +315,7 @@ describe('runSidecarLoop', () => {
 describe('runSidecarLoop + merge-watch: one-step-per-tick (US-003)', () => {
 	let tempDir: string;
 	beforeEach(() => {
-		tempDir = mkdtempSync(join(tmpdir(), 'cam-sidecar-mw-'));
+		tempDir = createTestTmpdir('cam-sidecar-mw-');
 	});
 	afterEach(() => {
 		rmSync(tempDir, { recursive: true, force: true });
@@ -629,7 +629,7 @@ describe('makeReadActive — derived active from phase (US-002, AC1)', () => {
 	let stateFilePath: string;
 
 	beforeEach(() => {
-		tempDir = mkdtempSync(join(tmpdir(), 'cam-readactive-'));
+		tempDir = createTestTmpdir('cam-readactive-');
 		claudeDir = join(tempDir, '.claude');
 		mkdirSync(claudeDir, { recursive: true });
 		stateFilePath = join(claudeDir, 'cam-loop.local.md');
@@ -693,7 +693,7 @@ describe('makeReadLoopPhase (US-002)', () => {
 	let stateFilePath: string;
 
 	beforeEach(() => {
-		tempDir = mkdtempSync(join(tmpdir(), 'cam-readphase-'));
+		tempDir = createTestTmpdir('cam-readphase-');
 		claudeDir = join(tempDir, '.claude');
 		mkdirSync(claudeDir, { recursive: true });
 		stateFilePath = join(claudeDir, 'cam-loop.local.md');

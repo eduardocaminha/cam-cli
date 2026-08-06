@@ -23,8 +23,8 @@
 //     `active`, `iteration`, optional `pid` — so the readers under test
 //     parse them as production would.
 
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../../helpers/test-tmpdir';
 import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 
@@ -203,7 +203,7 @@ export function defaultPrdJson(): string {
  * still running). Recovery action: respawn (re-attach to the loop).
  */
 export function buildScenarioMode1OperatorTyped(): ScenarioPaths {
-	const cwd = mkdtempSync(join(tmpdir(), 'cam-resume-mode1-'));
+	const cwd = createTestTmpdir('cam-resume-mode1-');
 	mkdirSync(join(cwd, '.claude'), { recursive: true });
 	writeFileSync(
 		join(cwd, '.claude', 'cam-loop.local.md'),
@@ -218,7 +218,7 @@ export function buildScenarioMode1OperatorTyped(): ScenarioPaths {
  * dead, last commit recent (≤ 24h). Recovery action: respawn (no prompt).
  */
 export function buildScenarioMode2TerminalClosed(): ScenarioPaths {
-	const cwd = mkdtempSync(join(tmpdir(), 'cam-resume-mode2-'));
+	const cwd = createTestTmpdir('cam-resume-mode2-');
 	mkdirSync(join(cwd, '.claude'), { recursive: true });
 	writeFileSync(
 		join(cwd, '.claude', 'cam-loop.local.md'),
@@ -234,7 +234,7 @@ export function buildScenarioMode2TerminalClosed(): ScenarioPaths {
  * `[Y/n/reset]`.
  */
 export function buildScenarioMode3HardKill(): ScenarioPaths {
-	const cwd = mkdtempSync(join(tmpdir(), 'cam-resume-mode3-'));
+	const cwd = createTestTmpdir('cam-resume-mode3-');
 	mkdirSync(join(cwd, '.claude'), { recursive: true });
 	writeFileSync(
 		join(cwd, '.claude', 'cam-loop.local.md'),
@@ -252,7 +252,7 @@ export function buildScenarioMode3HardKill(): ScenarioPaths {
  * `cam next` on its own timer).
  */
 export function buildScenarioMode4RateLimit(): ScenarioPaths {
-	const cwd = mkdtempSync(join(tmpdir(), 'cam-resume-mode4-'));
+	const cwd = createTestTmpdir('cam-resume-mode4-');
 	mkdirSync(join(cwd, '.claude'), { recursive: true });
 	writeFileSync(
 		join(cwd, '.claude', 'cam-loop.local.md'),

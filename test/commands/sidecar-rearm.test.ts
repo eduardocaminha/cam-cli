@@ -22,8 +22,8 @@
 //        tick 1 of a fresh loop.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { runSidecarLoop, type RunSidecarLoopOptions } from '../../src/supervisor/loop.ts';
@@ -53,7 +53,7 @@ afterAll(() => {
 });
 
 function makeTmpProject(): { cwd: string; claudeDir: string } {
-	const cwd = mkdtempSync(join(tmpdir(), 'cam-rearm-'));
+	const cwd = createTestTmpdir('cam-rearm-');
 	dirsToClean.push(cwd);
 	const claudeDir = join(cwd, '.claude');
 	mkdirSync(claudeDir, { recursive: true });

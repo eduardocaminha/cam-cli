@@ -1,6 +1,6 @@
 import { test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtemp, rm, readFile, writeFile, mkdir } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { rm, readFile, writeFile, mkdir } from "node:fs/promises";
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from "node:path";
 import { loadConfig, DEFAULT_CONFIG } from "../../src/retry/config.ts";
 
@@ -8,7 +8,7 @@ let tmpHome: string;
 let originalHome: string | undefined;
 
 beforeEach(async () => {
-  tmpHome = await mkdtemp(join(tmpdir(), "cam-config-test-"));
+  tmpHome = await createTestTmpdir("cam-config-test-");
   originalHome = process.env["HOME"];
   process.env["HOME"] = tmpHome;
 });

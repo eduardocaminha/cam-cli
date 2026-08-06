@@ -15,8 +15,8 @@
 // tests so a `maxTicks: 2` run completes in a couple of milliseconds.
 
 import { afterAll, afterEach, beforeAll, describe, expect, it, mock, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from './helpers/test-tmpdir';
 import { join } from 'node:path';
 import { render } from 'ink-testing-library';
 import React from 'react';
@@ -370,7 +370,7 @@ describe('sumSessionWorkerTokens', () => {
 
 describe('readRecentProgress (IO)', () => {
 	test('returns [] when the event log is absent', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-dash-no-events-'));
+		const dir = createTestTmpdir('cam-dash-no-events-');
 		try {
 			expect(readRecentProgress(dir)).toEqual([]);
 		} finally {
@@ -379,7 +379,7 @@ describe('readRecentProgress (IO)', () => {
 	});
 
 	test('reads result events from .claude/cam-worker-events.jsonl under cwd', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-dash-events-'));
+		const dir = createTestTmpdir('cam-dash-events-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(
@@ -400,7 +400,7 @@ describe('readRecentProgress (IO)', () => {
 
 	// US-001 (CAM-346): userStories passes:true threads through to reconcile 'incomplete'.
 	test('reconciles "incomplete" to "done" when userStories reports the story passes', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-dash-events-reconcile-'));
+		const dir = createTestTmpdir('cam-dash-events-reconcile-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(
@@ -422,7 +422,7 @@ describe('readRecentProgress (IO)', () => {
 
 describe('readSnapshot', () => {
 	test('idle when no state file', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-dash-idle-'));
+		const dir = createTestTmpdir('cam-dash-idle-');
 		try {
 			const snap = readSnapshot({ cwd: dir, nowMs: Date.parse('2026-04-28T22:00:00Z') });
 			expect(snap.idle).toBe(true);
@@ -440,7 +440,7 @@ describe('readSnapshot', () => {
 	});
 
 	test('sessionStartedAtMs is populated from the sidecar session-start marker and stays stable across state-file rewrites (US-001, PR-83)', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-dash-session-start-'));
+		const dir = createTestTmpdir('cam-dash-session-start-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeSidecarSessionStart(join(dir, '.claude'), '2026-04-28T20:00:00Z');
@@ -473,7 +473,7 @@ describe('readSnapshot', () => {
 	});
 
 	test('sessionWorkerTokens sums tokens events at-or-after the session start (US-002, PR-83)', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-dash-session-tokens-'));
+		const dir = createTestTmpdir('cam-dash-session-tokens-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeSidecarSessionStart(join(dir, '.claude'), '2026-04-28T20:00:00Z');
@@ -515,7 +515,7 @@ describe('readSnapshot', () => {
 	});
 
 	test('sessionWorkerTokens stays undefined when no sidecar session-start marker is present (US-002, PR-83)', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-dash-session-tokens-no-marker-'));
+		const dir = createTestTmpdir('cam-dash-session-tokens-no-marker-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(
@@ -536,7 +536,7 @@ describe('readSnapshot', () => {
 	});
 
 	test('active state populates iteration/maxIterations/startedAt + branchName + story', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-dash-active-'));
+		const dir = createTestTmpdir('cam-dash-active-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(
@@ -575,7 +575,7 @@ describe('readSnapshot', () => {
 	});
 
 	test('paused state is detected when active:false', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-dash-paused-'));
+		const dir = createTestTmpdir('cam-dash-paused-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(
@@ -591,7 +591,7 @@ describe('readSnapshot', () => {
 	});
 
 	test('token fields populate when marker + transcript exist (US-003)', () => {
-		const base = mkdtempSync(join(tmpdir(), 'cam-dash-tokens-'));
+		const base = createTestTmpdir('cam-dash-tokens-');
 		try {
 			// cwd — write the orch session marker.
 			const cwd = join(base, 'project');
@@ -639,7 +639,7 @@ describe('readSnapshot', () => {
 	});
 
 	test('token fields stay undefined when marker is absent (US-003)', () => {
-		const base = mkdtempSync(join(tmpdir(), 'cam-dash-no-marker-'));
+		const base = createTestTmpdir('cam-dash-no-marker-');
 		try {
 			const cwd = join(base, 'project');
 			mkdirSync(join(cwd, '.claude'), { recursive: true });
@@ -663,7 +663,7 @@ describe('readSnapshot', () => {
 	});
 
 	test('per-story tokens populate from .cam-worker-<US>.session markers (US-014)', () => {
-		const base = mkdtempSync(join(tmpdir(), 'cam-dash-story-tokens-'));
+		const base = createTestTmpdir('cam-dash-story-tokens-');
 		try {
 			const cwd = join(base, 'project');
 			mkdirSync(join(cwd, '.claude'), { recursive: true });
@@ -719,7 +719,7 @@ describe('readSnapshot', () => {
 	});
 
 	test('per-story tokens map is empty (never throws) when no markers exist (US-014)', () => {
-		const base = mkdtempSync(join(tmpdir(), 'cam-dash-no-story-tokens-'));
+		const base = createTestTmpdir('cam-dash-no-story-tokens-');
 		try {
 			const cwd = join(base, 'project');
 			mkdirSync(join(cwd, '.claude'), { recursive: true });
@@ -744,7 +744,7 @@ describe('readSnapshot', () => {
 	});
 
 	test('acceptanceCriteria, notes, requires and review.lastVerdict surface in DashboardData (US-001)', () => {
-		const base = mkdtempSync(join(tmpdir(), 'cam-dash-us001-'));
+		const base = createTestTmpdir('cam-dash-us001-');
 		try {
 			const cwd = join(base, 'project');
 			mkdirSync(join(cwd, '.claude'), { recursive: true });
@@ -803,7 +803,7 @@ describe('readSnapshot', () => {
 
 describe('runDashboard', () => {
 	test('alt-screen lifecycle: enter → render → `q` → exit alt-screen', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-dash-run-'));
+		const dir = createTestTmpdir('cam-dash-run-');
 		try {
 			const writer = makeRecordingWriter();
 			const reader = makeFakeReader();
@@ -840,7 +840,7 @@ describe('runDashboard', () => {
 	});
 
 	test('Ctrl+C (\\x03) keypress triggers exit just like `q`', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-dash-ctrlc-'));
+		const dir = createTestTmpdir('cam-dash-ctrlc-');
 		try {
 			const writer = makeRecordingWriter();
 			const reader = makeFakeReader();
@@ -862,7 +862,7 @@ describe('runDashboard', () => {
 	});
 
 	test('cleanup runs even when an error throws inside the loop (try/finally)', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-dash-throw-'));
+		const dir = createTestTmpdir('cam-dash-throw-');
 		try {
 			// Writer throws on the FIRST render-frame call (writes 1+2 are the
 			// alt-screen / hide-cursor lifecycle; write 3 is the first frame).
@@ -903,7 +903,7 @@ describe('runDashboard', () => {
 	});
 
 	test('maxTicks honoured for non-interactive mode (e.g. piped tests)', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-dash-maxticks-'));
+		const dir = createTestTmpdir('cam-dash-maxticks-');
 		try {
 			const writer = makeRecordingWriter();
 			const reader = makeFakeReader();

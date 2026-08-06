@@ -16,8 +16,8 @@
 // CAM_SESSION is unset) and locally (where it may be set inside a cam session).
 
 import { test, expect, describe } from 'bun:test';
-import { mkdtempSync, symlinkSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { symlinkSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from './helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { jqAvailable } from './helpers/test-deps.ts';
@@ -343,7 +343,7 @@ describe('orch-agent-allowlist.sh', () => {
 	// need to be on the restricted PATH. Only cat is symlinked in (needed by the
 	// hook before the command -v jq guard fires).
 	test('scoped: deny-without-jq (jq-free restricted PATH) yields static deny + exit 0', async () => {
-		const fakeBinDir = mkdtempSync(join(tmpdir(), 'cam-test-nojq-'));
+		const fakeBinDir = createTestTmpdir('cam-test-nojq-');
 		try {
 			// Symlink only cat into the fake bin dir — that is the sole binary the
 			// hook uses before the command -v jq guard (payload="$(cat)").

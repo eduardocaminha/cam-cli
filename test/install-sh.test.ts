@@ -14,18 +14,8 @@
 // Release has been published yet).
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import {
-	chmodSync,
-	copyFileSync,
-	mkdtempSync,
-	readdirSync,
-	readFileSync,
-	rmSync,
-	statSync,
-	symlinkSync,
-	writeFileSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
+import { chmodSync, copyFileSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from './helpers/test-tmpdir';
 import { join } from 'node:path';
 import { waitForCondition } from './helpers/wait-for-condition';
 
@@ -39,8 +29,8 @@ let fakeBinDir: string;
 let installDir: string;
 
 beforeEach(() => {
-	fakeBinDir = mkdtempSync(join(tmpdir(), 'cam-test-install-bin-'));
-	installDir = mkdtempSync(join(tmpdir(), 'cam-test-install-dest-'));
+	fakeBinDir = createTestTmpdir('cam-test-install-bin-');
+	installDir = createTestTmpdir('cam-test-install-dest-');
 });
 
 afterEach(() => {
@@ -215,7 +205,7 @@ function assetNameForHost(): string {
  * deliberately absent. Caller is responsible for `rmSync`-ing the result.
  */
 function buildPathWithoutHashTools(): string {
-	const toolsDir = mkdtempSync(join(tmpdir(), 'cam-test-install-notools-'));
+	const toolsDir = createTestTmpdir('cam-test-install-notools-');
 	const required = ['uname', 'mktemp', 'chmod', 'grep', 'sed', 'awk', 'mkdir', 'cp', 'rm'];
 	if (process.platform === 'darwin') {
 		required.push('xattr');
@@ -397,7 +387,7 @@ function fixtureSource(): string {
  * bug against it, was verified to work every time.
  */
 function compileFixtureBinary(): { binPath: string; scratchDir: string } {
-	const scratchDir = mkdtempSync(join(tmpdir(), 'cam497-fixture-'));
+	const scratchDir = createTestTmpdir('cam497-fixture-');
 	writeFileSync(join(scratchDir, 'fixture.ts'), fixtureSource(), 'utf8');
 	const build = Bun.spawnSync(['bun', 'build', '--compile', './fixture.ts', '--outfile', './fixture-bin'], {
 		cwd: scratchDir,

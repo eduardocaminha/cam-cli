@@ -20,8 +20,8 @@
 //        reader when omitted); a claude-backed dispatch never invokes it.
 
 import { describe, expect, test, afterAll } from 'bun:test';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { runSupervisor } from '../../src/supervisor/loop.ts';
@@ -78,7 +78,7 @@ function fakeGenUuid(): string {
  * mirroring loop.test.ts's GENERIC_SUPERVISOR_CONFIG_PATH idiom (US-003):
  * decouples this file's tests from the repo's live scripts/cam/project.toml.
  */
-const GENERIC_SUPERVISOR_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-loop-model-resolution-generic-config-'));
+const GENERIC_SUPERVISOR_CONFIG_DIR = createTestTmpdir('cam-loop-model-resolution-generic-config-');
 const GENERIC_SUPERVISOR_CONFIG_PATH = join(GENERIC_SUPERVISOR_CONFIG_DIR, 'project.toml');
 writeFileSync(GENERIC_SUPERVISOR_CONFIG_PATH, '[backend]\nimplementer = "claude"\n');
 
@@ -157,7 +157,7 @@ function oneStoryBase(): Partial<RunSupervisorOptions> {
  * bullet.
  */
 async function withClaudeShapedCodexCwd<T>(fn: () => T | Promise<T>): Promise<T> {
-	const tmpDir = mkdtempSync(join(tmpdir(), 'cam-loop-model-resolution-'));
+	const tmpDir = createTestTmpdir('cam-loop-model-resolution-');
 	const camDir = join(tmpDir, 'scripts', 'cam');
 	mkdirSync(camDir, { recursive: true });
 	writeFileSync(join(camDir, 'project.toml'), '[backend]\nimplementer = "codex"\n\n[models]\nimplementer = "sonnet"\n');
@@ -262,7 +262,7 @@ describe('runSupervisor US-004 (CAM-398): resolvePhaseModel wired into implement
 		// all, so the default production reader (which would read the real
 		// ~/.codex/models_cache.json) is never invoked here either -- this proves
 		// the seam is optional/backward-compatible without depending on host state.
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-loop-model-resolution-pin-'));
+		const tmpDir = createTestTmpdir('cam-loop-model-resolution-pin-');
 		const camDir = join(tmpDir, 'scripts', 'cam');
 		mkdirSync(camDir, { recursive: true });
 		writeFileSync(join(camDir, 'project.toml'), '[backend]\nimplementer = "codex"\n\n[models]\nimplementer = "gpt-5-codex"\n');

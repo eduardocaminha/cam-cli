@@ -14,15 +14,15 @@
 
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
-import { mkdtempSync, mkdirSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 
 import { runSidecar, type SidecarOptions } from '../../src/commands/sidecar.ts';
 import { readSidecarSessionStart } from '../../src/supervisor/session-start.ts';
 import type { RunSidecarLoopOptions } from '../../src/supervisor/loop.ts';
 
 function makeProjectDir(): string {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-sidecar-session-start-'));
+	const dir = createTestTmpdir('cam-sidecar-session-start-');
 	mkdirSync(join(dir, 'scripts', 'cam'), { recursive: true });
 	mkdirSync(join(dir, '.claude'), { recursive: true });
 	return dir;

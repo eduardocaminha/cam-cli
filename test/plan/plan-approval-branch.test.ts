@@ -10,9 +10,9 @@
 //     (unit assertion confirming it is never called before APPROVE)
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { decidePostAuditAction } from '../../src/plan/plan-approval-decision.ts';
 import { readPlanApproval } from '../../src/config/models.ts';
 
@@ -33,7 +33,7 @@ describe('readPlanApproval drives the decision', () => {
 
 	// Create a temp dir for each test group; clean up after.
 	function setup(): string {
-		tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-approval-'));
+		tmpDir = createTestTmpdir('cam-plan-approval-');
 		return tmpDir;
 	}
 

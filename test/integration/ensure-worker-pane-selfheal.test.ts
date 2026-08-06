@@ -19,9 +19,7 @@
 
 import { test, expect, beforeEach, afterEach } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 
 import {
 	openPaneInSession,
@@ -89,7 +87,7 @@ test.skipIf(!tmuxAvailable)(
 
 		// 2. Write the initial id to a temp .claude dir (simulates the marker written
 		//    by openPaneInSession / writeWorkerPaneMarker in the real cam flow).
-		const claudeDir = mkdtempSync(join(tmpdir(), 'cam-selfheal-'));
+		const claudeDir = createTestTmpdir('cam-selfheal-');
 		writeWorkerPaneMarker(claudeDir, initialId);
 		expect(readWorkerPaneMarker(claudeDir)).toBe(initialId);
 
@@ -153,7 +151,7 @@ test.skipIf(!tmuxAvailable)(
 		await waitForCondition(() => isPaneAlive(initialId));
 
 		// 2. Write the marker.
-		const claudeDir = mkdtempSync(join(tmpdir(), 'cam-selfheal-noop-'));
+		const claudeDir = createTestTmpdir('cam-selfheal-noop-');
 		writeWorkerPaneMarker(claudeDir, initialId);
 
 		// 3. Verify the pane is alive.

@@ -1,13 +1,13 @@
 import { test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtemp, rm, readFile, readdir } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { rm, readFile, readdir } from "node:fs/promises";
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from "node:path";
 import { createLogger } from "../../src/retry/logger.ts";
 
 let tmpDir: string;
 
 beforeEach(async () => {
-  tmpDir = await mkdtemp(join(tmpdir(), "cam-logger-test-"));
+  tmpDir = await createTestTmpdir("cam-logger-test-");
 });
 
 afterEach(async () => {

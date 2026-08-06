@@ -14,8 +14,8 @@
 // All tests use injected fakes; no real tmux or network access.
 
 import { describe, expect, test, afterEach } from 'bun:test';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { makeReviewDispatch } from '../../src/supervisor/review.ts';
@@ -46,7 +46,7 @@ afterEach(() => {
 });
 
 function makeTmpDir(): string {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-us008-'));
+	const dir = createTestTmpdir('cam-us008-');
 	dirsToClean.push(dir);
 	return dir;
 }

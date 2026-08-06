@@ -19,9 +19,8 @@
 //      and a different cwd would yield a different result (non-vacuous).
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { realpathSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from '../../helpers/test-tmpdir';
 import { makePreflightSpawnFn } from '../../../src/supervisor/plan-preflight-spawn.ts';
 
 describe('makePreflightSpawnFn (real subprocess boundary)', () => {
@@ -58,7 +57,7 @@ describe('makePreflightSpawnFn (real subprocess boundary)', () => {
 		let tmpDir: string;
 
 		beforeEach(() => {
-			tmpDir = mkdtempSync(join(tmpdir(), 'cam-preflight-spawn-'));
+			tmpDir = createTestTmpdir('cam-preflight-spawn-');
 		});
 
 		afterEach(() => {
@@ -75,7 +74,7 @@ describe('makePreflightSpawnFn (real subprocess boundary)', () => {
 		});
 
 		test('a different cwd yields a different decoded pwd (non-vacuous)', () => {
-			const other = mkdtempSync(join(tmpdir(), 'cam-preflight-spawn-other-'));
+			const other = createTestTmpdir('cam-preflight-spawn-other-');
 			try {
 				const spawnFn = makePreflightSpawnFn(tmpDir);
 				const r = spawnFn('pwd', []);

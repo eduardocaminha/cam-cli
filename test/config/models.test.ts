@@ -3,9 +3,9 @@
 // Tests for src/config/models.ts: readPhaseModel, readBackend, readMergeMode,
 // readOrchContextWindow, and DEFAULTS.
 
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import {
@@ -32,7 +32,7 @@ import { isClaudeAliasModel } from '../../src/supervisor/codex-auth.ts';
 let tmpDir: string;
 
 beforeEach(() => {
-	tmpDir = mkdtempSync(join(tmpdir(), 'cam-models-test-'));
+	tmpDir = createTestTmpdir('cam-models-test-');
 });
 
 afterEach(() => {

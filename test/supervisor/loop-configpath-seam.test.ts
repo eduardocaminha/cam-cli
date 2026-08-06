@@ -44,8 +44,8 @@
 // still `false`, exactly as required by the red-sweep gate.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { runSupervisor } from '../../src/supervisor/loop.ts';
@@ -155,7 +155,7 @@ function oneStoryBase(): Partial<RunSupervisorOptions> {
 
 describe('runSupervisor US-001 (CAM-420): configPath seam on the implementer resolution call sites', () => {
 	test('AC6: configPath override resolves implBackend=codex from the fixture, not the live scripts/cam/project.toml, with no codex-auth-failed abort', async () => {
-		const codexConfigDir = mkdtempSync(join(tmpdir(), 'cam-loop-configpath-seam-'));
+		const codexConfigDir = createTestTmpdir('cam-loop-configpath-seam-');
 		const codexConfigPath = join(codexConfigDir, 'project.toml');
 		writeFileSync(
 			codexConfigPath,

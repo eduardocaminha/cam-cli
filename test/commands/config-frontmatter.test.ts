@@ -9,9 +9,9 @@
 // to avoid touching the live .claude/ files in the repo.
 
 import { test, expect, describe, beforeEach, afterEach } from 'bun:test';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { rmSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 
 import {
 	rewriteFrontmatterModel,
@@ -240,7 +240,7 @@ describe('mergeConfigChoices frontmatter rewrite', () => {
 	let tmpDir: string;
 
 	beforeEach(() => {
-		tmpDir = mkdtempSync(join(tmpdir(), 'cam-config-fm-'));
+		tmpDir = createTestTmpdir('cam-config-fm-');
 	});
 
 	afterEach(() => {
@@ -314,7 +314,7 @@ describe('mergeConfigChoices effort frontmatter rewrite', () => {
 	let tmpDir: string;
 
 	beforeEach(() => {
-		tmpDir = mkdtempSync(join(tmpdir(), 'cam-config-fm-effort-'));
+		tmpDir = createTestTmpdir('cam-config-fm-effort-');
 	});
 
 	afterEach(() => {

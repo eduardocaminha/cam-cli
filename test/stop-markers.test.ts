@@ -18,8 +18,8 @@
 // Oracle: bun test test/stop-markers.test.ts
 
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from './helpers/test-tmpdir';
 import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 
@@ -47,7 +47,7 @@ const fakeSpawn = noOpSpawn as unknown as SpawnSyncFn;
 
 describe('performStop — per-session marker cleanup (US-002)', () => {
 	test('removes all seven markers when all are present', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-markers-all-'));
+		const dir = createTestTmpdir('cam-stop-markers-all-');
 		try {
 			const claudeDir = join(dir, '.claude');
 			mkdirSync(claudeDir, { recursive: true });
@@ -79,7 +79,7 @@ describe('performStop — per-session marker cleanup (US-002)', () => {
 	});
 
 	test('tolerates all absent markers without throwing (existsSyncFn always false)', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-markers-absent-'));
+		const dir = createTestTmpdir('cam-stop-markers-absent-');
 		try {
 			const unlinked: string[] = [];
 			// existsSyncFn always returns false: no marker is present.
@@ -101,7 +101,7 @@ describe('performStop — per-session marker cleanup (US-002)', () => {
 	});
 
 	test('calls unlinkSyncFn for every marker when existsSyncFn always returns true', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-markers-inject-'));
+		const dir = createTestTmpdir('cam-stop-markers-inject-');
 		try {
 			const claudeDir = join(dir, '.claude');
 			const unlinked: string[] = [];
@@ -133,7 +133,7 @@ describe('performStop — per-session marker cleanup (US-002)', () => {
 	});
 
 	test('second call is a no-op (idempotent): markers already absent do not throw', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-markers-idempotent-'));
+		const dir = createTestTmpdir('cam-stop-markers-idempotent-');
 		try {
 			const claudeDir = join(dir, '.claude');
 			mkdirSync(claudeDir, { recursive: true });

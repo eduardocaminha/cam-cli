@@ -4,8 +4,8 @@
 // test runner (matches the rest of the repo).
 
 import { describe, expect, test, beforeEach } from 'bun:test';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from './helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import {
@@ -20,7 +20,7 @@ import {
 let workDir: string;
 
 beforeEach(() => {
-	workDir = mkdtempSync(join(tmpdir(), 'cam-cli-toml-'));
+	workDir = createTestTmpdir('cam-cli-toml-');
 });
 
 function cleanup(): void {

@@ -28,8 +28,8 @@
 // tests.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { buildStatusReport, runStatus } from '../../src/commands/status.ts';
@@ -37,7 +37,7 @@ import { runPause } from '../../src/commands/pause.ts';
 import { setPause } from '../../src/supervisor/pause-marker.ts';
 
 function makeDirs(prefix: string): { cwd: string; claudeDir: string } {
-	const base = mkdtempSync(join(tmpdir(), prefix));
+	const base = createTestTmpdir(prefix);
 	const cwd = join(base, 'project');
 	const claudeDir = join(base, 'claude-dir');
 	mkdirSync(cwd, { recursive: true });
@@ -120,7 +120,7 @@ describe('buildStatusReport — operator-paused (US-003)', () => {
 	// still found via the project-local dir regardless of where the default
 	// transcript claudeDir points.
 	test('real runPause(cwd) -> buildStatusReport(cwd) with DEFAULT claudeDir -> operator-paused', () => {
-		const base = mkdtempSync(join(tmpdir(), 'cam-status-oppause-e2e-'));
+		const base = createTestTmpdir('cam-status-oppause-e2e-');
 		const cwd = join(base, 'project');
 		const globalClaudeDir = join(base, 'global-claude-config-dir');
 		mkdirSync(cwd, { recursive: true });

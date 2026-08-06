@@ -8,9 +8,9 @@
 //   4. Non-string value -> 'host'
 //   5. Malformed TOML -> 'host'
 
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import { readWorkerIsolation } from '../../src/config/models.ts';
@@ -22,7 +22,7 @@ import { readWorkerIsolation } from '../../src/config/models.ts';
 let tmpDir: string;
 
 beforeEach(() => {
-	tmpDir = mkdtempSync(join(tmpdir(), 'cam-worker-isolation-test-'));
+	tmpDir = createTestTmpdir('cam-worker-isolation-test-');
 });
 
 afterEach(() => {

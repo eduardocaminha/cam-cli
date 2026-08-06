@@ -12,8 +12,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
-import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync, mkdirSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 
 import { runSidecar, type SidecarOptions } from '../../src/commands/sidecar.ts';
 import { FirewallError } from '../../src/supervisor/container-firewall.ts';
@@ -35,7 +35,7 @@ import {
 function makeProjectDir(
 	isolation: 'container' | 'host' | 'none',
 ): string {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-firewall-test-'));
+	const dir = createTestTmpdir('cam-firewall-test-');
 	mkdirSync(join(dir, 'scripts', 'cam'), { recursive: true });
 	mkdirSync(join(dir, '.claude'), { recursive: true });
 

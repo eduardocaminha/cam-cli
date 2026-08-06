@@ -25,8 +25,8 @@
 
 import { describe, expect, test, beforeEach, afterEach, afterAll } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join, resolve } from 'node:path';
 import { runSupervisor, runSidecarLoop, MAX_ITERATIONS, MAX_NO_PROGRESS_RETRIES, NO_PROGRESS_BACKOFF_MS, MAX_BACKOFF_MS, JITTER_FRACTION, MAX_DEAD_WORKER_RETRIES, MAX_REVIEW_DISPATCH_ATTEMPTS, DEFAULT_PER_WORKER_TIMEOUT_MS, DEFAULT_CONTAINER_WORKER_TIMEOUT_MS, DEFAULT_POLL_INTERVAL_MS, computeBackoffMs, shouldApplyTokenCeiling } from '../../src/supervisor/loop.ts';
 import type {
@@ -138,7 +138,7 @@ function fakeGenUuid(): string {
  * project.toml declares, mirroring the review.test.ts GENERIC_REVIEW_CONFIG_PATH
  * idiom (US-001, CAM-405).
  */
-const GENERIC_SUPERVISOR_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-loop-generic-config-'));
+const GENERIC_SUPERVISOR_CONFIG_DIR = createTestTmpdir('cam-loop-generic-config-');
 const GENERIC_SUPERVISOR_CONFIG_PATH = join(GENERIC_SUPERVISOR_CONFIG_DIR, 'project.toml');
 writeFileSync(GENERIC_SUPERVISOR_CONFIG_PATH, '[backend]\nimplementer = "claude"\n');
 
@@ -204,7 +204,7 @@ function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervi
 
 /** Run a backend-sensitive supervisor assertion against an explicit Claude fixture. */
 async function withClaudeImplementerCwd<T>(fn: () => T | Promise<T>): Promise<T> {
-	const tmpDir = mkdtempSync(join(tmpdir(), 'cam-loop-claude-backend-'));
+	const tmpDir = createTestTmpdir('cam-loop-claude-backend-');
 	const camDir = join(tmpDir, 'scripts', 'cam');
 	mkdirSync(camDir, { recursive: true });
 	writeFileSync(
@@ -579,7 +579,7 @@ describe('runSupervisor', () => {
 		// CodexAdapter's buildSpawnArgv also reads .claude/agents/subagent-implementer.md
 		// relative to cwd (mirrors run.test.ts's makeTmpProject stub precedent), so
 		// stage a stub agent file alongside the project.toml fixture.
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-codex-ceiling-'));
+		const tmpDir = createTestTmpdir('cam-codex-ceiling-');
 		const camDir = join(tmpDir, 'scripts', 'cam');
 		mkdirSync(camDir, { recursive: true });
 		writeFileSync(join(camDir, 'project.toml'), '[backend]\nimplementer = "codex"\n\n[models]\nimplementer = "gpt-5-codex"\n');
@@ -4286,7 +4286,7 @@ describe('runSupervisor US-002 (CAM-352): codex auth preflight at implementer di
 	 * can read it on the authenticated (proceed) path.
 	 */
 	async function withCodexBackendCwd<T>(fn: () => T | Promise<T>): Promise<T> {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-loop-codex-auth-'));
+		const tmpDir = createTestTmpdir('cam-loop-codex-auth-');
 		const camDir = join(tmpDir, 'scripts', 'cam');
 		mkdirSync(camDir, { recursive: true });
 		writeFileSync(join(camDir, 'project.toml'), '[backend]\nimplementer = "codex"\n\n[models]\nimplementer = "gpt-5-codex"\n');
@@ -4700,7 +4700,7 @@ describe('runSidecarLoop US-006 (CAM-64): recordPatternOutcomeFn hook at cycle-c
 	test.skipIf(!gitAvailable)(
 		'AC4: end-to-end -- applied ids reach makeRecordPatternOutcomeFn and land as a real PatternOutcome on main',
 		async () => {
-			const dir = mkdtempSync(join(tmpdir(), 'cam-pattern-outcome-hook-'));
+			const dir = createTestTmpdir('cam-pattern-outcome-hook-');
 			dirsToCleanup.push(dir);
 			const run = (args: string[]) => spawnSync('git', ['-C', dir, ...args], { stdio: 'pipe', encoding: 'utf8' });
 			run(['init']);
@@ -4755,7 +4755,7 @@ describe('runSidecarLoop US-006 (CAM-64): recordPatternOutcomeFn hook at cycle-c
 	test.skipIf(!gitAvailable)(
 		'US-001: non-ok appendOutcomeOnMain result logs exactly one pattern-outcome-append-failed event',
 		() => {
-			const dir = mkdtempSync(join(tmpdir(), 'cam-pattern-outcome-event-'));
+			const dir = createTestTmpdir('cam-pattern-outcome-event-');
 			dirsToCleanup.push(dir);
 			const run = (args: string[]) => spawnSync('git', ['-C', dir, ...args], { stdio: 'pipe', encoding: 'utf8' });
 			run(['init']);
@@ -4779,7 +4779,7 @@ describe('runSidecarLoop US-006 (CAM-64): recordPatternOutcomeFn hook at cycle-c
 	test.skipIf(!gitAvailable)(
 		'US-001: an ok:true appendOutcomeOnMain result logs no pattern-outcome-append-failed event',
 		() => {
-			const dir = mkdtempSync(join(tmpdir(), 'cam-pattern-outcome-event-ok-'));
+			const dir = createTestTmpdir('cam-pattern-outcome-event-ok-');
 			dirsToCleanup.push(dir);
 			const run = (args: string[]) => spawnSync('git', ['-C', dir, ...args], { stdio: 'pipe', encoding: 'utf8' });
 			run(['init']);

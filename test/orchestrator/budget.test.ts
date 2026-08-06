@@ -4,8 +4,7 @@
 // injected, so these never touch real ~/.claude or process.env.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import {
 	computeOrchBudget,
@@ -112,7 +111,7 @@ describe('computeOrchBudget', () => {
 
 describe('runOrchBudget (cam orch-budget surface)', () => {
 	test('prints a machine-parseable line; missing transcript is 0 spend at default threshold; exit 0', () => {
-		const cwd = mkdtempSync(join(tmpdir(), 'cam-orch-budget-'));
+		const cwd = createTestTmpdir('cam-orch-budget-');
 		let out = '';
 		const code = runOrchBudget({
 			cwd,
@@ -126,7 +125,7 @@ describe('runOrchBudget (cam orch-budget surface)', () => {
 	});
 
 	test('env budget override flows into the printed threshold', () => {
-		const cwd = mkdtempSync(join(tmpdir(), 'cam-orch-budget-'));
+		const cwd = createTestTmpdir('cam-orch-budget-');
 		let out = '';
 		runOrchBudget({
 			cwd,

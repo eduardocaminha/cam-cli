@@ -25,8 +25,8 @@
 //        removes prd.json and flips phase to idle. Both consume the gate file.
 
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from './helpers/test-tmpdir';
 import { join, resolve } from 'node:path';
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 
@@ -52,7 +52,7 @@ import type { SpawnFn } from '../src/tmux/session.ts';
 // ---------------------------------------------------------------------------
 
 function setupTmpRepo(): { cwd: string; claudeDir: string } {
-	const cwd = mkdtempSync(join(tmpdir(), 'cam-gate-phase-'));
+	const cwd = createTestTmpdir('cam-gate-phase-');
 	mkdirSync(join(cwd, 'scripts/cam'), { recursive: true });
 	mkdirSync(join(cwd, '.claude'), { recursive: true });
 	spawnSync('git', ['init'], { cwd, stdio: 'pipe' });
@@ -474,7 +474,7 @@ describe('AC3/AC4: plan-approval gate end-to-end via cam decide + buildGatePhase
  * be overwritten by `git checkout main` -- git refuses the checkout with a
  * non-zero exit, leaving HEAD stuck on the cam/* branch. */
 function setupDirtyAbandonRepo(): { cwd: string; claudeDir: string } {
-	const cwd = mkdtempSync(join(tmpdir(), 'cam-gate-phase-abandon-'));
+	const cwd = createTestTmpdir('cam-gate-phase-abandon-');
 	mkdirSync(join(cwd, 'scripts/cam'), { recursive: true });
 	mkdirSync(join(cwd, '.claude'), { recursive: true });
 	const run = (args: string[]) => spawnSync('git', ['-C', cwd, ...args], { stdio: 'pipe' });

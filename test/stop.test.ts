@@ -11,8 +11,8 @@
 //     for the next `cam next` call to detect)
 
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from './helpers/test-tmpdir';
 import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 
@@ -83,7 +83,7 @@ function makeFakeSpawn(handlers: FakeSpawnHandlers): SpawnSyncFn & { calls: Spaw
 
 describe('performStop — state file', () => {
 	test('removes the state file when present', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-state-'));
+		const dir = createTestTmpdir('cam-stop-state-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			const statePath = join(dir, '.claude', 'cam-loop.local.md');
@@ -98,7 +98,7 @@ describe('performStop — state file', () => {
 	});
 
 	test('reports stateFileRemoved=false when no state file exists', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-no-state-'));
+		const dir = createTestTmpdir('cam-stop-no-state-');
 		try {
 			const spawn = makeFakeSpawn({ tmuxAvailable: false });
 			const report = performStop({ cwd: dir, spawnSyncFn: spawn });
@@ -109,7 +109,7 @@ describe('performStop — state file', () => {
 	});
 
 	test('continues cleanly even when unlink throws', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-unlink-throws-'));
+		const dir = createTestTmpdir('cam-stop-unlink-throws-');
 		try {
 			const spawn = makeFakeSpawn({ tmuxAvailable: false });
 			const report = performStop({
@@ -130,7 +130,7 @@ describe('performStop — state file', () => {
 
 describe('performStop — tmux session', () => {
 	test('kills the project session when alive', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-tmux-alive-'));
+		const dir = createTestTmpdir('cam-stop-tmux-alive-');
 		try {
 			const session = projectSessionName(dir);
 			const spawn = makeFakeSpawn({
@@ -155,7 +155,7 @@ describe('performStop — tmux session', () => {
 	});
 
 	test('skips kill when the project session does not exist', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-tmux-none-'));
+		const dir = createTestTmpdir('cam-stop-tmux-none-');
 		try {
 			const session = projectSessionName(dir);
 			const spawn = makeFakeSpawn({
@@ -177,7 +177,7 @@ describe('performStop — tmux session', () => {
 	});
 
 	test('reports tmuxUnavailable when `tmux -V` exits non-zero', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-tmux-unavailable-'));
+		const dir = createTestTmpdir('cam-stop-tmux-unavailable-');
 		try {
 			const spawn = makeFakeSpawn({ tmuxAvailable: false });
 			const report = performStop({ cwd: dir, spawnSyncFn: spawn });
@@ -193,7 +193,7 @@ describe('performStop — tmux session', () => {
 	});
 
 	test('reports kill failure cleanly (kill-session exits non-zero)', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-tmux-kill-fails-'));
+		const dir = createTestTmpdir('cam-stop-tmux-kill-fails-');
 		try {
 			const session = projectSessionName(dir);
 			const spawn = makeFakeSpawn({
@@ -214,7 +214,7 @@ describe('performStop — tmux session', () => {
 
 describe('performStop — end-to-end', () => {
 	test('removes state file AND kills project session when both are present', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-e2e-'));
+		const dir = createTestTmpdir('cam-stop-e2e-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			const statePath = join(dir, '.claude', 'cam-loop.local.md');
@@ -243,7 +243,7 @@ describe('performStop — end-to-end', () => {
 
 describe('runStop', () => {
 	test('exits 0 even when there is nothing to clean', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-noop-'));
+		const dir = createTestTmpdir('cam-stop-noop-');
 		try {
 			const spawn = makeFakeSpawn({ tmuxAvailable: false });
 			// Capture stdout to keep test output clean.
@@ -261,7 +261,7 @@ describe('runStop', () => {
 	});
 
 	test('exits 0 when both state file and tmux session were cleaned', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-clean-'));
+		const dir = createTestTmpdir('cam-stop-clean-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(join(dir, '.claude', 'cam-loop.local.md'), 'old\n');
@@ -293,7 +293,7 @@ const STATE_FILE_WITH_PID = (pid: number) =>
 
 describe('performStop — supervisor PID kill (US-009)', () => {
 	test('sends SIGTERM to the supervisor PID from the state file', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-sup-pid-'));
+		const dir = createTestTmpdir('cam-stop-sup-pid-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(join(dir, '.claude', 'cam-loop.local.md'), STATE_FILE_WITH_PID(12345));
@@ -311,7 +311,7 @@ describe('performStop — supervisor PID kill (US-009)', () => {
 	});
 
 	test('supervisorKilled=false when state file has no pid field', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-sup-no-pid-'));
+		const dir = createTestTmpdir('cam-stop-sup-no-pid-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(
@@ -330,7 +330,7 @@ describe('performStop — supervisor PID kill (US-009)', () => {
 	});
 
 	test('supervisorKilled=false when kill throws (PID already dead)', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-sup-dead-'));
+		const dir = createTestTmpdir('cam-stop-sup-dead-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(join(dir, '.claude', 'cam-loop.local.md'), STATE_FILE_WITH_PID(99999));
@@ -346,7 +346,7 @@ describe('performStop — supervisor PID kill (US-009)', () => {
 	});
 
 	test('supervisorKilled=false when state file is absent', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-sup-no-file-'));
+		const dir = createTestTmpdir('cam-stop-sup-no-file-');
 		try {
 			const fakKill: KillFn = () => {
 				throw new Error('should not be called');
@@ -364,7 +364,7 @@ describe('performStop — supervisor PID kill (US-009)', () => {
 
 describe('performStop — worker slot pane kill (US-009)', () => {
 	test('kills the worker pane when session is alive and pane id is known', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-worker-pane-'));
+		const dir = createTestTmpdir('cam-stop-worker-pane-');
 		try {
 			const session = projectSessionName(dir);
 			const spawn = makeFakeSpawn({
@@ -395,7 +395,7 @@ describe('performStop — worker slot pane kill (US-009)', () => {
 	});
 
 	test('workerPaneKilled=false when workerPaneReader returns null', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-worker-pane-null-'));
+		const dir = createTestTmpdir('cam-stop-worker-pane-null-');
 		try {
 			const spawn = makeFakeSpawn({ tmuxAvailable: true, sessionAlive: false });
 			const report = performStop({
@@ -410,7 +410,7 @@ describe('performStop — worker slot pane kill (US-009)', () => {
 	});
 
 	test('attempts worker pane kill even when session is not alive (race window)', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-stop-worker-pane-no-session-'));
+		const dir = createTestTmpdir('cam-stop-worker-pane-no-session-');
 		try {
 			const spawn = makeFakeSpawn({
 				tmuxAvailable: true,

@@ -27,15 +27,8 @@
 
 import { test, expect, afterEach } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import {
-	mkdtempSync,
-	writeFileSync,
-	readFileSync,
-	existsSync,
-	rmSync,
-	mkdirSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync, readFileSync, existsSync, rmSync, mkdirSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import {
@@ -71,7 +64,7 @@ afterEach(() => {
  * Registers the dir for cleanup in afterEach.
  */
 function makeTmpRepo(): string {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-ship-finalize-'));
+	const dir = createTestTmpdir('cam-ship-finalize-');
 	dirsToCleanup.push(dir);
 
 	const run = (args: string[]) =>

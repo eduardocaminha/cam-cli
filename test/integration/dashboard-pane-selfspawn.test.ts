@@ -23,8 +23,8 @@
 
 import { test, expect, beforeEach, afterEach } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import process from 'node:process';
 
@@ -59,7 +59,7 @@ beforeEach(async () => {
 	tmuxRaw(['kill-server']);
 	tmuxRaw(['new-session', '-d', '-s', SESSION, '-x', '80', '-y', '10']);
 	await waitForCondition(() => tmuxRaw(['has-session', '-t', SESSION]).status === 0);
-	workDir = mkdtempSync(join(tmpdir(), 'cam-it-selfspawn-'));
+	workDir = createTestTmpdir('cam-it-selfspawn-');
 });
 
 afterEach(() => {

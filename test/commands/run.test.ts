@@ -10,14 +10,14 @@
 
 import { test, expect } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { buildOrchestratorPaneCommand } from '../../src/commands/run.ts';
 
 test('context-backstop handoff takes the respawn branch: increments n, never reaches kill-session', () => {
-	const cwd = mkdtempSync(join(tmpdir(), 'cam-backstop-run-'));
+	const cwd = createTestTmpdir('cam-backstop-run-');
 	try {
 		const claudeDir = join(cwd, '.claude');
 		mkdirSync(claudeDir, { recursive: true });

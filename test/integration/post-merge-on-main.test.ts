@@ -27,8 +27,8 @@
 
 import { test, expect, afterEach } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 import { runPostMerge, type SpawnFn } from '../../src/release/post-merge.ts';
@@ -88,12 +88,12 @@ test.skipIf(!gitAvailable)(
 	'tag is created on main HEAD (not feature branch HEAD) and feature branch is pruned',
 	() => {
 		// --- set up origin (bare repo) ---
-		const originDir = mkdtempSync(join(tmpdir(), 'cam-pm-origin-'));
+		const originDir = createTestTmpdir('cam-pm-origin-');
 		dirsToCleanup.push(originDir);
 		git(originDir, ['init', '--bare']);
 
 		// --- set up work repo ---
-		const workDir = mkdtempSync(join(tmpdir(), 'cam-pm-work-'));
+		const workDir = createTestTmpdir('cam-pm-work-');
 		dirsToCleanup.push(workDir);
 		git(workDir, ['init']);
 		git(workDir, ['config', 'user.email', 'test@example.com']);

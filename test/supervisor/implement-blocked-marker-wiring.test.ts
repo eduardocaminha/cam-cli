@@ -6,8 +6,8 @@
 // test/supervisor/implement-blocked-marker.test.ts.
 
 import { describe, expect, test, beforeEach, afterEach, afterAll } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import { runSupervisor } from '../../src/supervisor/loop.ts';
 import type {
@@ -35,7 +35,7 @@ import { IMPLEMENT_BLOCKED_FILENAME, readImplementBlockedMarker } from '../../sr
  * pre-emptively so future call sites cannot silently re-couple it to the
  * live scripts/cam/project.toml.
  */
-const GENERIC_SUPERVISOR_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-implement-blocked-wiring-generic-config-'));
+const GENERIC_SUPERVISOR_CONFIG_DIR = createTestTmpdir('cam-implement-blocked-wiring-generic-config-');
 const GENERIC_SUPERVISOR_CONFIG_PATH = join(GENERIC_SUPERVISOR_CONFIG_DIR, 'project.toml');
 writeFileSync(GENERIC_SUPERVISOR_CONFIG_PATH, '[backend]\nimplementer = "claude"\n');
 
@@ -291,7 +291,7 @@ describe('host.ts writeImplementBlockedMarkerFn: counter + prd content-hash wiri
 	let markerPath: string;
 
 	beforeEach(() => {
-		cwd = mkdtempSync(join(tmpdir(), 'cam-implement-blocked-wiring-'));
+		cwd = createTestTmpdir('cam-implement-blocked-wiring-');
 		claudeDir = join(cwd, '.claude');
 		const scriptsDir = join(cwd, 'scripts', 'cam');
 		mkdirSync(claudeDir, { recursive: true });
@@ -376,7 +376,7 @@ describe('host.ts writeImplementBlockedMarkerFn: counter + prd content-hash wiri
 		// A second cwd with byte-identical prd.json content (same story/token)
 		// must produce the identical keyHash, proving the hash is over content,
 		// not a path or a random/clock-derived value.
-		const cwd2 = mkdtempSync(join(tmpdir(), 'cam-implement-blocked-wiring-'));
+		const cwd2 = createTestTmpdir('cam-implement-blocked-wiring-');
 		try {
 			mkdirSync(join(cwd2, '.claude'), { recursive: true });
 			mkdirSync(join(cwd2, 'scripts', 'cam'), { recursive: true });
@@ -426,7 +426,7 @@ describe('host.ts removeImplementBlockedMarkerFn (US-001, CAM-347): real writer 
 	let markerPath: string;
 
 	beforeEach(() => {
-		cwd = mkdtempSync(join(tmpdir(), 'cam-implement-blocked-remove-'));
+		cwd = createTestTmpdir('cam-implement-blocked-remove-');
 		claudeDir = join(cwd, '.claude');
 		const scriptsDir = join(cwd, 'scripts', 'cam');
 		mkdirSync(claudeDir, { recursive: true });

@@ -24,9 +24,9 @@
 //        the loop; a 'sidecar-exit' event is logged with a dedicated reason.
 
 import { describe, expect, test, afterAll } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 
 import {
 	runSidecarLoop,
@@ -92,7 +92,7 @@ describe('AC1: loop.ts source-text oracle -- suggestion-filing hook placement', 
  * is isolated pre-emptively so future call sites cannot silently re-couple
  * it to the live scripts/cam/project.toml.
  */
-const GENERIC_SUPERVISOR_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-suggestion-filing-hook-generic-config-'));
+const GENERIC_SUPERVISOR_CONFIG_DIR = createTestTmpdir('cam-suggestion-filing-hook-generic-config-');
 const GENERIC_SUPERVISOR_CONFIG_PATH = join(GENERIC_SUPERVISOR_CONFIG_DIR, 'project.toml');
 writeFileSync(GENERIC_SUPERVISOR_CONFIG_PATH, '[backend]\nimplementer = "claude"\n');
 
@@ -492,7 +492,7 @@ describe('AC7: a throwing fileSuggestionsFn is caught and logged, never crashes 
 
 describe('AC3: real-path regression -- real clearActive + real onProgress + real review-report.json fixture', () => {
 	test('both SUGGESTIONs reach fileSuggestionsFn and exactly one pane summary line is pushed', async () => {
-		const cwd = mkdtempSync(join(tmpdir(), 'cam-suggestion-filing-real-'));
+		const cwd = createTestTmpdir('cam-suggestion-filing-real-');
 		try {
 			const claudeDir = join(cwd, '.claude');
 			const scriptsDir = join(cwd, 'scripts', 'cam');

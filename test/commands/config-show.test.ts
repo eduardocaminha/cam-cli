@@ -9,9 +9,9 @@
 // (no raw-mode, no TTY requirement).
 
 import { test, expect, beforeEach, afterEach } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 
 import { printConfigShow, runConfig } from '../../src/commands/config.ts';
 import { DEFAULTS } from '../../src/config/models.ts';
@@ -23,7 +23,7 @@ import { DEFAULTS } from '../../src/config/models.ts';
 let tmpDir: string;
 
 beforeEach(() => {
-	tmpDir = mkdtempSync(join(tmpdir(), 'cam-config-show-'));
+	tmpDir = createTestTmpdir('cam-config-show-');
 });
 
 afterEach(() => {

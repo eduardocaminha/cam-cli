@@ -20,8 +20,8 @@
 //       default.
 
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 
@@ -251,7 +251,7 @@ function makeFakeTmuxSpawn(): TmuxSpawnFn & { calls: TmuxCall[] } {
 
 describe('runNext — deterministic preflight gate (AC1)', () => {
 	test('a failing preflight returns nonzero and does NOT write active:true', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-preflight-fail-'));
+		const dir = createTestTmpdir('cam-next-preflight-fail-');
 		try {
 			const spawnFn = makeFakeTmuxSpawn();
 
@@ -270,7 +270,7 @@ describe('runNext — deterministic preflight gate (AC1)', () => {
 	});
 
 	test('a passing preflight proceeds to write active:true', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-preflight-pass-'));
+		const dir = createTestTmpdir('cam-next-preflight-pass-');
 		try {
 			const spawnFn = makeFakeTmuxSpawn();
 			let preflightCalled = false;
@@ -295,7 +295,7 @@ describe('runNext — deterministic preflight gate (AC1)', () => {
 	});
 
 	test('no real git/bun spawn happens: the injected tmux spawnFn never sees git/bun argv', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-preflight-noshell-'));
+		const dir = createTestTmpdir('cam-next-preflight-noshell-');
 		try {
 			const spawnFn = makeFakeTmuxSpawn();
 
@@ -315,7 +315,7 @@ describe('runNext — deterministic preflight gate (AC1)', () => {
 
 describe('runNext --skip-preflight (AC2, resume escape)', () => {
 	test('skipPreflight:true bypasses the preflight entirely and writes active:true', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-skip-preflight-'));
+		const dir = createTestTmpdir('cam-next-skip-preflight-');
 		try {
 			const spawnFn = makeFakeTmuxSpawn();
 			let preflightCalled = false;

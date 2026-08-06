@@ -23,8 +23,8 @@
 //        never invokes it.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from '../../helpers/test-tmpdir';
 import { join } from 'node:path';
 import {
 	runPlanPhase,
@@ -110,7 +110,7 @@ function respawnCalls(calls: string[][]): string[][] {
  * claude-shaped model instead of a non-claude-shaped pin.
  */
 async function withClaudeShapedCodexCwd<T>(fn: () => T | Promise<T>): Promise<T> {
-	const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-model-resolution-'));
+	const tmpDir = createTestTmpdir('cam-plan-model-resolution-');
 	const camDir = join(tmpDir, 'scripts', 'cam');
 	mkdirSync(camDir, { recursive: true });
 	writeFileSync(
@@ -259,7 +259,7 @@ describe('plan-runner model resolution: AC2/AC4 - not-ok resolution aborts befor
 
 describe('plan-runner model resolution: AC5 - injectable seam, default fallback, claude-backend bypass', () => {
 	test('absent codexModelsCacheReaderFn on a codex dispatch with a non-claude-shaped pin never falls through to the cacheReader (backward compat, no crash)', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-model-resolution-pin-'));
+		const tmpDir = createTestTmpdir('cam-plan-model-resolution-pin-');
 		const camDir = join(tmpDir, 'scripts', 'cam');
 		mkdirSync(camDir, { recursive: true });
 		writeFileSync(

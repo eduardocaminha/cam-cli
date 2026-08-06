@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from "node:path";
 import {
 	formatTokens,
@@ -311,7 +311,7 @@ describe("golden fixture replay: transcript-usage.jsonl (US-002)", () => {
 
 describe("orchestratorTranscriptPath", () => {
 	function makeTmpProject(): { cwd: string; claudeDir: string } {
-		const base = mkdtempSync(join(tmpdir(), "cam-orch-tp-"));
+		const base = createTestTmpdir("cam-orch-tp-");
 		const cwd = join(base, "project");
 		const claudeDir = join(base, "claude-dir");
 		mkdirSync(join(cwd, ".claude"), { recursive: true });
@@ -340,7 +340,7 @@ describe("orchestratorTranscriptPath", () => {
 	test("encodes non-alphanumeric chars in cwd as dashes", () => {
 		const { claudeDir } = makeTmpProject();
 		// Use a known cwd with special chars. We build the project dir ourselves.
-		const base = mkdtempSync(join(tmpdir(), "cam-enc-"));
+		const base = createTestTmpdir("cam-enc-");
 		// Simulate a cwd that has slashes, dots, dashes in its path.
 		const cwd = join(base, "my.project");
 		mkdirSync(join(cwd, ".claude"), { recursive: true });
@@ -541,7 +541,7 @@ describe("transcriptPathForSession", () => {
 
 describe("writeWorkerSessionMarker / readWorkerSessionMarker", () => {
 	function makeTmpClaudeDir(): string {
-		const base = mkdtempSync(join(tmpdir(), "cam-wsm-"));
+		const base = createTestTmpdir("cam-wsm-");
 		const claudeDir = join(base, ".claude");
 		mkdirSync(claudeDir, { recursive: true });
 		return claudeDir;
@@ -596,7 +596,7 @@ describe("writeWorkerSessionMarker / readWorkerSessionMarker", () => {
 	});
 
 	test("writeWorkerSessionMarker creates the claudeDir if it does not exist", () => {
-		const base = mkdtempSync(join(tmpdir(), "cam-wsm-create-"));
+		const base = createTestTmpdir("cam-wsm-create-");
 		// Use a claudeDir that does not yet exist.
 		const claudeDir = join(base, "new", ".claude");
 		const uuid = "freshly-created-dir-uuid";

@@ -27,9 +27,9 @@
 
 import { test, expect, afterEach } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 
 import { ORCH_PID_MARKER } from '../../src/tmux/session.ts';
 import { waitForCondition } from '../helpers/wait-for-condition.ts';
@@ -125,7 +125,7 @@ test.skipIf(!pgrepAvailable || !bunAvailable || !psAvailable)(
 	'CAM-165: ps ppid-walk resolves title-rewritten child; pgrep-P blindness documented; SIGTERM terminates',
 	async () => {
 		// Setup: mkdtemp for .claude dir.
-		const cwd = mkdtempSync(join(tmpdir(), 'cam-it-pid-resolve-'));
+		const cwd = createTestTmpdir('cam-it-pid-resolve-');
 		const claudeDir = join(cwd, '.claude');
 		cleanupDirs.push(cwd);
 		mkdirSync(claudeDir, { recursive: true });

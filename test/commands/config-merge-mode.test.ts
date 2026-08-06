@@ -19,9 +19,9 @@
 // US-004 (CAM-101).
 
 import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import type { SpawnSyncReturns } from 'node:child_process';
 
 import {
@@ -152,7 +152,7 @@ let tmpDir: string;
 let configPath: string;
 
 beforeEach(() => {
-	tmpDir = mkdtempSync(join(tmpdir(), 'cam-cfg-merge-'));
+	tmpDir = createTestTmpdir('cam-cfg-merge-');
 	configPath = join(tmpDir, 'project.toml');
 });
 

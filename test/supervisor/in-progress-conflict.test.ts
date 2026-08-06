@@ -16,8 +16,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import {
@@ -173,7 +173,7 @@ const realSpawnFn: SpawnFn = (cmd, args) => {
 };
 
 function makeTmpGitRepo(branch: string): string {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-in-progress-conflict-'));
+	const dir = createTestTmpdir('cam-in-progress-conflict-');
 	const run = (args: string[]) => spawnSync('git', ['-C', dir, ...args], { stdio: 'pipe', encoding: 'utf8' });
 	run(['init']);
 	run(['symbolic-ref', 'HEAD', `refs/heads/${branch}`]);

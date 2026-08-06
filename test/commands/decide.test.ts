@@ -4,8 +4,8 @@
 // resolver (US-002, CAM-241/153).
 
 import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
-import { mkdtempSync, rmSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { rmSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { parseDecideArgs, runDecide } from '../../src/commands/decide.ts';
@@ -48,7 +48,7 @@ describe('runDecide', () => {
 	let gateFilePath: string;
 
 	beforeEach(() => {
-		tempDir = mkdtempSync(join(tmpdir(), 'cam-decide-'));
+		tempDir = createTestTmpdir('cam-decide-');
 		claudeDir = join(tempDir, '.claude');
 		mkdirSync(claudeDir, { recursive: true });
 		gateFilePath = join(claudeDir, GATE_FILENAME);

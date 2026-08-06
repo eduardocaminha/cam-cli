@@ -16,8 +16,8 @@
 // by an oracle here.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { runStatus } from '../../src/commands/status.ts';
@@ -31,7 +31,7 @@ import { GATE_FILENAME, writeGateFile } from '../../src/supervisor/gate.ts';
 import { IMPLEMENT_BLOCKED_FILENAME, writeImplementBlockedMarker } from '../../src/supervisor/implement-blocked-marker.ts';
 
 function withTmpCwd(fn: (dir: string) => void): void {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-status-render-'));
+	const dir = createTestTmpdir('cam-status-render-');
 	try {
 		mkdirSync(join(dir, '.claude'), { recursive: true });
 		fn(dir);

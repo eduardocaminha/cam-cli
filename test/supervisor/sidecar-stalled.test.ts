@@ -2,8 +2,8 @@
 //
 // Tests for the durable sidecar-stalled marker (US-001, CAM-207).
 
-import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { rmSync, writeFileSync, existsSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import { beforeEach, afterEach, describe, test, expect } from 'bun:test';
 
@@ -20,7 +20,7 @@ describe('sidecar-stalled marker: round-trip (US-001, CAM-207)', () => {
 	let filePath: string;
 
 	beforeEach(() => {
-		tempDir = mkdtempSync(join(tmpdir(), 'cam-sidecar-stalled-'));
+		tempDir = createTestTmpdir('cam-sidecar-stalled-');
 		filePath = join(tempDir, SIDECAR_STALLED_FILENAME);
 	});
 

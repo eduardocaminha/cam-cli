@@ -16,8 +16,8 @@
 //   - runStatus: writes to stdout + always exits 0.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from './helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import {
@@ -34,7 +34,7 @@ import {
 
 describe('resolvePrdPath', () => {
 	test('prefers scripts/cam/prd.json when present (canonical)', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-resolve-'));
+		const dir = createTestTmpdir('cam-resolve-');
 		try {
 			mkdirSync(join(dir, 'scripts', 'cam'), { recursive: true });
 			writeFileSync(join(dir, 'scripts', 'cam', 'prd.json'), '{}');
@@ -46,7 +46,7 @@ describe('resolvePrdPath', () => {
 	});
 
 	test('falls back to root prd.json when the canonical file is absent', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-resolve-'));
+		const dir = createTestTmpdir('cam-resolve-');
 		try {
 			writeFileSync(join(dir, 'prd.json'), '{}');
 			expect(resolvePrdPath(dir)).toBe(join(dir, 'prd.json'));
@@ -56,7 +56,7 @@ describe('resolvePrdPath', () => {
 	});
 
 	test('returns the legacy root path when neither exists', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-resolve-'));
+		const dir = createTestTmpdir('cam-resolve-');
 		try {
 			expect(resolvePrdPath(dir)).toBe(join(dir, 'prd.json'));
 		} finally {
@@ -209,7 +209,7 @@ describe('formatWallClock', () => {
 
 describe('buildStatusReport', () => {
 	test('idle when no state file is present', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-status-idle-'));
+		const dir = createTestTmpdir('cam-status-idle-');
 		try {
 			const report = buildStatusReport({ cwd: dir });
 			expect(report.state).toBe('idle');
@@ -221,7 +221,7 @@ describe('buildStatusReport', () => {
 	});
 
 	test('idle + surfaces next pending story when prd.json is present', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-status-idle-prd-'));
+		const dir = createTestTmpdir('cam-status-idle-prd-');
 		try {
 			writeFileSync(
 				join(dir, 'prd.json'),
@@ -241,7 +241,7 @@ describe('buildStatusReport', () => {
 	});
 
 	test('active state with iteration, wall-clock, and current story', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-status-active-'));
+		const dir = createTestTmpdir('cam-status-active-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(
@@ -282,7 +282,7 @@ describe('buildStatusReport', () => {
 	});
 
 	test('paused state when active:false in the frontmatter', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-status-paused-'));
+		const dir = createTestTmpdir('cam-status-paused-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(
@@ -312,7 +312,7 @@ describe('buildStatusReport', () => {
 	});
 
 	test('handles missing started_at gracefully', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-status-no-started-'));
+		const dir = createTestTmpdir('cam-status-no-started-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(
@@ -329,7 +329,7 @@ describe('buildStatusReport', () => {
 	});
 
 	test('tokens populates from transcript when marker + transcript are present (US-004)', () => {
-		const base = mkdtempSync(join(tmpdir(), 'cam-status-tokens-'));
+		const base = createTestTmpdir('cam-status-tokens-');
 		try {
 			const cwd = join(base, 'project');
 			mkdirSync(join(cwd, '.claude'), { recursive: true });
@@ -379,7 +379,7 @@ describe('buildStatusReport', () => {
 	});
 
 	test('tokens is undefined when the orch-session marker is absent (US-004)', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-status-no-tokens-'));
+		const dir = createTestTmpdir('cam-status-no-tokens-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			// No .cam-orch-session file.
@@ -395,7 +395,7 @@ describe('buildStatusReport', () => {
 
 describe('buildStatusReport US-002 live-progress fields', () => {
 	test('storiesDone/storiesTotal/lastActivity populate from state file', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-status-us002-fields-'));
+		const dir = createTestTmpdir('cam-status-us002-fields-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(
@@ -425,7 +425,7 @@ describe('buildStatusReport US-002 live-progress fields', () => {
 	});
 
 	test('storiesDone/storiesTotal/lastActivity are undefined when absent from state file', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-status-us002-absent-'));
+		const dir = createTestTmpdir('cam-status-us002-absent-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(
@@ -446,7 +446,7 @@ describe('buildStatusReport US-002 live-progress fields', () => {
 
 describe('runStatus', () => {
 	test('exits 0 on idle and writes a `status: idle` line to stdout', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-status-run-idle-'));
+		const dir = createTestTmpdir('cam-status-run-idle-');
 		try {
 			const original = process.stdout.write.bind(process.stdout);
 			const captured: string[] = [];
@@ -470,7 +470,7 @@ describe('runStatus', () => {
 	});
 
 	test('idle path renders the tokens row when marker + transcript are present (US-004 parity)', () => {
-		const base = mkdtempSync(join(tmpdir(), 'cam-status-run-idle-tokens-'));
+		const base = createTestTmpdir('cam-status-run-idle-tokens-');
 		try {
 			const cwd = join(base, 'project');
 			mkdirSync(join(cwd, '.claude'), { recursive: true });
@@ -518,7 +518,7 @@ describe('runStatus', () => {
 	});
 
 	test('exits 0 on active and writes story + stories rows to stdout (US-002)', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-status-run-active-'));
+		const dir = createTestTmpdir('cam-status-run-active-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(
@@ -596,7 +596,7 @@ describe('runStatus US-002 three-fixture rendering', () => {
 	}
 
 	test('fixture 1: no state file -> idle, shows next pending story', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-status-f1-'));
+		const dir = createTestTmpdir('cam-status-f1-');
 		try {
 			writeFileSync(
 				join(dir, 'prd.json'),
@@ -621,7 +621,7 @@ describe('runStatus US-002 three-fixture rendering', () => {
 	});
 
 	test('fixture 2: live state-file mid-run -> shows story id + stories N/total', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-status-f2-'));
+		const dir = createTestTmpdir('cam-status-f2-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(
@@ -666,7 +666,7 @@ describe('runStatus US-002 three-fixture rendering', () => {
 	});
 
 	test('fixture 3: state-file with active:false -> paused', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-status-f3-'));
+		const dir = createTestTmpdir('cam-status-f3-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(
@@ -701,7 +701,7 @@ describe('runStatus US-002 three-fixture rendering', () => {
 	});
 
 	test('fixture 2 with last_activity: since row reflects last_activity not started_at', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-status-f2-lastact-'));
+		const dir = createTestTmpdir('cam-status-f2-lastact-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			writeFileSync(

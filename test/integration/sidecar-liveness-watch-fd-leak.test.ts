@@ -20,8 +20,8 @@
 // oven/bun worker-container image, see test/helpers/test-deps.ts).
 
 import { test, expect } from 'bun:test';
-import { mkdtempSync, mkdirSync, rmSync, realpathSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, rmSync, realpathSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import process from 'node:process';
 
@@ -48,7 +48,7 @@ function countOwnOpenFdsOn(path: string): number {
 test.skipIf(!lsofAvailable)(
 	'makeSpawnSidecarFn closes the PARENT-side log fd after every respawn (US-R6-002 regression, made falsifiable in US-R8-002)',
 	async () => {
-		const tempDirRaw = mkdtempSync(join(tmpdir(), 'cam-sidecar-liveness-fdleak-'));
+		const tempDirRaw = createTestTmpdir('cam-sidecar-liveness-fdleak-');
 		// lsof reports the process's REAL (symlink-resolved) cwd, mirroring the
 		// realpath handling in stop-defaultlistprocesses-real.test.ts.
 		const projectCwd = realpathSync(tempDirRaw);

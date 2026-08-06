@@ -20,8 +20,8 @@
 
 import { test, expect, afterEach } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, copyFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { rmSync, mkdirSync, writeFileSync, readFileSync, copyFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import { gitAvailable } from '../helpers/test-deps.ts';
 
@@ -39,7 +39,7 @@ afterEach(() => {
 });
 
 function makeTmpRepoWithProjectGitignore(): string {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-gitignore-implement-blocked-'));
+	const dir = createTestTmpdir('cam-gitignore-implement-blocked-');
 	dirsToCleanup.push(dir);
 
 	const run = (args: string[]) => spawnSync('git', ['-C', dir, ...args], { stdio: 'pipe', encoding: 'utf8' });

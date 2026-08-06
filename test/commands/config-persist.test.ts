@@ -4,9 +4,9 @@
 // No Ink rendering — only mergeConfigChoices + the toml reader round-trip.
 
 import { test, expect, beforeEach, afterEach } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { rmSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 
 import { mergeConfigChoices } from '../../src/commands/config.ts';
 import type { ConfigChoices } from '../../src/commands/config.ts';
@@ -57,7 +57,7 @@ function makeChoices(
 let tmpDir: string;
 
 beforeEach(() => {
-	tmpDir = mkdtempSync(join(tmpdir(), 'cam-config-persist-'));
+	tmpDir = createTestTmpdir('cam-config-persist-');
 });
 
 afterEach(() => {

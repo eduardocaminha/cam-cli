@@ -16,8 +16,8 @@
 //      workerPaneId from opts is used as-is for respawn-pane.
 
 import { describe, expect, test, beforeEach, afterAll } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import { runSupervisor } from '../../src/supervisor/loop.ts';
 import type {
@@ -62,7 +62,7 @@ const NEW_PANE_ID = '%99';
  * builder, so the fixture is threaded as a literal `configPath` key on each
  * inline RunSupervisorOptions object instead of a shared-default line.
  */
-const GENERIC_SUPERVISOR_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-ensure-worker-pane-generic-config-'));
+const GENERIC_SUPERVISOR_CONFIG_DIR = createTestTmpdir('cam-ensure-worker-pane-generic-config-');
 const GENERIC_SUPERVISOR_CONFIG_PATH = join(GENERIC_SUPERVISOR_CONFIG_DIR, 'project.toml');
 writeFileSync(GENERIC_SUPERVISOR_CONFIG_PATH, '[backend]\nimplementer = "claude"\n');
 

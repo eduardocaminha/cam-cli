@@ -8,9 +8,9 @@
 //      absent or unparseable.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 
 import { makeReadPlanIssue } from '../../src/commands/sidecar.ts';
 
@@ -23,7 +23,7 @@ let claudeDir: string;
 let stateFilePath: string;
 
 beforeEach(() => {
-	tempDir = mkdtempSync(join(tmpdir(), 'cam-read-plan-issue-'));
+	tempDir = createTestTmpdir('cam-read-plan-issue-');
 	claudeDir = join(tempDir, '.claude');
 	mkdirSync(claudeDir, { recursive: true });
 	stateFilePath = join(claudeDir, 'cam-loop.local.md');

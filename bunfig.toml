@@ -1,0 +1,10 @@
+# bunfig.toml
+#
+# [test].preload wires test/helpers/reap-preload.ts (US-R1-002, CAM-508):
+# Bun's documented mechanism for run-wide test teardown
+# (https://bun.sh/docs/test/lifecycle). Loaded before every test file in a
+# `bun test` invocation, whether the run targets the whole suite or a single
+# explicit file path.
+
+[test]
+preload = ["./test/helpers/reap-preload.ts"]

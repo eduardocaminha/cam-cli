@@ -5,8 +5,8 @@
 // production reader exercised against a real scratch tmpdir (never a fake
 // filesystem, never a monkeypatched os.homedir).
 
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { chmodSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
@@ -130,7 +130,7 @@ describe('readCodexModelsCache (real tmpdir round-trip)', () => {
 	let scratchDir: string;
 
 	beforeEach(() => {
-		scratchDir = mkdtempSync(join(tmpdir(), 'cam-codex-models-cache-'));
+		scratchDir = createTestTmpdir('cam-codex-models-cache-');
 	});
 
 	afterEach(() => {

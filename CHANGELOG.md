@@ -6,6 +6,26 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.284.0] - 2026-08-06
+
+### Added
+
+- US-R2-003 - direct-fix.md gate count 14 -> 15
+- US-R2-002 - allowlist entries go stale on zero suppressions
+- US-R2-001 - Earn the check-agent-frontmatter-standalone ALLOWLIST exception with --no-install
+- US-R1-003 - Location-independent git fence for SCRATCH_ROOT
+- US-R1-002 - Fix exit-time reaper never firing under bun test
+- US-R1-001 - Fix GOTCHA 10(a): root the no-node_modules smoke test outside the repo checkout
+- US-009 - Wire the gate into the check:all spine and pin it in the gates manifest
+- US-008 - Add the deterministic tmpdir gate with falsifiability probe and empty allowlist mechanism
+- US-007 - Migrate the remaining test subtrees to derived zero tree-wide
+- US-006 - Migrate test/integration to the helper
+- US-005 - Migrate test/commands to the helper
+- US-004 - Migrate test/supervisor to the helper
+- US-003 - Migrate test/*.test.ts to the helper via a committed codemod
+- US-002 - Add the single test-scratch helper with git ceiling and exit reaper
+- US-001 - Ignore the repo-local scratch root on all three sides
+
 ## [0.283.0] - 2026-08-05
 
 ### Added

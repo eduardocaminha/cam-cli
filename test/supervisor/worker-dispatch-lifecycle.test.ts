@@ -1,13 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import {
-	existsSync,
-	mkdtempSync,
-	mkdirSync,
-	readdirSync,
-	rmSync,
-	writeFileSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import {
@@ -98,7 +91,7 @@ function baseImplementOpts(
 
 describe('CAM-433 implementer verified dispatch lifecycle', () => {
 	test('non-zero respawn is an observable blocked terminal and removes its prompt', async () => {
-		const root = mkdtempSync(join(tmpdir(), 'cam-implement-dispatch-fail-'));
+		const root = createTestTmpdir('cam-implement-dispatch-fail-');
 		const claudeDir = join(root, '.claude');
 		mkdirSync(claudeDir);
 		const markers: DispatchFailedMarker[] = [];
@@ -134,7 +127,7 @@ describe('CAM-433 implementer verified dispatch lifecycle', () => {
 	});
 
 	test('worker-report terminal removes its prompt and verified success removes a stale marker', async () => {
-		const root = mkdtempSync(join(tmpdir(), 'cam-implement-report-cleanup-'));
+		const root = createTestTmpdir('cam-implement-report-cleanup-');
 		const claudeDir = join(root, '.claude');
 		mkdirSync(claudeDir);
 		const markerPath = join(claudeDir, '.cam-dispatch-failed.json');
@@ -172,7 +165,7 @@ describe('CAM-433 implementer verified dispatch lifecycle', () => {
 
 	test('token-ceiling and timeout sentinel respawn failures are inspected', async () => {
 		for (const terminal of ['token-ceiling', 'timeout'] as const) {
-			const root = mkdtempSync(join(tmpdir(), `cam-${terminal}-checked-`));
+			const root = createTestTmpdir(`cam-${terminal}-checked-`);
 			const claudeDir = join(root, '.claude');
 			mkdirSync(claudeDir);
 			const markers: DispatchFailedMarker[] = [];
@@ -240,7 +233,7 @@ describe('CAM-433 reviewer verified dispatch lifecycle', () => {
 	}
 
 	test('verdict cleanup and successful convergence remove stale evidence', () => {
-		const root = mkdtempSync(join(tmpdir(), 'cam-review-verdict-cleanup-'));
+		const root = createTestTmpdir('cam-review-verdict-cleanup-');
 		const claudeDir = join(root, '.claude');
 		mkdirSync(claudeDir);
 		const markerPath = join(claudeDir, '.cam-dispatch-failed.json');
@@ -262,7 +255,7 @@ describe('CAM-433 reviewer verified dispatch lifecycle', () => {
 
 	test('dispatch failure and checked review-timeout both clean prompts and expose failure', () => {
 		for (const terminal of ['dispatch', 'review-timeout'] as const) {
-			const root = mkdtempSync(join(tmpdir(), `cam-review-${terminal}-`));
+			const root = createTestTmpdir(`cam-review-${terminal}-`);
 			const claudeDir = join(root, '.claude');
 			mkdirSync(claudeDir);
 			const markers: DispatchFailedMarker[] = [];

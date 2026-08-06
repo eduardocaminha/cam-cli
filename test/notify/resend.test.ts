@@ -7,8 +7,8 @@
 // AC2: Non-convergence terminal fires escalateFn; a forced escalateFn failure
 //      does NOT crash the pipeline (returns 'complete').
 
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join, resolve } from 'node:path';
 import { describe, expect, test, beforeEach, afterAll } from 'bun:test';
 import { sendEscalation, type ResendSendFn } from '../../src/notify/resend.ts';
@@ -173,7 +173,7 @@ function fakeGenUuid(): string {
  * pre-emptively so future call sites cannot silently re-couple it to the
  * live scripts/cam/project.toml.
  */
-const GENERIC_SUPERVISOR_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-resend-generic-config-'));
+const GENERIC_SUPERVISOR_CONFIG_DIR = createTestTmpdir('cam-resend-generic-config-');
 const GENERIC_SUPERVISOR_CONFIG_PATH = join(GENERIC_SUPERVISOR_CONFIG_DIR, 'project.toml');
 writeFileSync(GENERIC_SUPERVISOR_CONFIG_PATH, '[backend]\nimplementer = "claude"\n');
 
