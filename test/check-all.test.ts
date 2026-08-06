@@ -88,8 +88,8 @@ function spawnOnlyGates(): Gate[] {
 // ---------------------------------------------------------------------------
 
 describe('GATES manifest', () => {
-	test('has 14 gates in order: typecheck, test, embed-vendor, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps, skip-ratchet', () => {
-		expect(GATES).toHaveLength(14);
+	test('has 15 gates in order: typecheck, test, embed-vendor, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps, test-tmpdir, skip-ratchet', () => {
+		expect(GATES).toHaveLength(15);
 		expect(GATES[0]?.name).toBe('typecheck');
 		expect(GATES[1]?.name).toBe('test');
 		expect(GATES[2]?.name).toBe('embed-vendor');
@@ -103,7 +103,8 @@ describe('GATES manifest', () => {
 		expect(GATES[10]?.name).toBe('ci-parity');
 		expect(GATES[11]?.name).toBe('agents-md');
 		expect(GATES[12]?.name).toBe('test-sleeps');
-		expect(GATES[13]?.name).toBe('skip-ratchet');
+		expect(GATES[13]?.name).toBe('test-tmpdir');
+		expect(GATES[14]?.name).toBe('skip-ratchet');
 	});
 
 	test('typecheck gate: bunx tsc --noEmit', () => {
@@ -196,8 +197,15 @@ describe('GATES manifest', () => {
 		expect(gate?.args).toEqual(['scripts/check-test-sleeps.ts']);
 	});
 
-	test('skip-ratchet gate: in-process (US-002, CAM-488), reaches its verdict via a `run` fn, not a cmd/args spawn pair', () => {
+	test('test-tmpdir gate: bun scripts/check-test-tmpdir.ts', () => {
 		const gate = GATES[13];
+		expect(gate?.name).toBe('test-tmpdir');
+		expect(gate?.cmd).toBe('bun');
+		expect(gate?.args).toEqual(['scripts/check-test-tmpdir.ts']);
+	});
+
+	test('skip-ratchet gate: in-process (US-002, CAM-488), reaches its verdict via a `run` fn, not a cmd/args spawn pair', () => {
+		const gate = GATES[14];
 		expect(gate?.name).toBe('skip-ratchet');
 		expect(gate && 'run' in gate).toBe(true);
 		expect(gate && 'cmd' in gate).toBe(false);
@@ -399,15 +407,15 @@ describe('--json mode (onResults)', () => {
 		}
 	});
 
-	test('onResults entry names match manifest gate names (typecheck, test, embed-vendor, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps, skip-ratchet)', async () => {
+	test('onResults entry names match manifest gate names (typecheck, test, embed-vendor, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps, test-tmpdir, skip-ratchet)', async () => {
 		const gates = spawnOnlyGates();
-		const { fn } = makeRecordingSpawn([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+		const { fn } = makeRecordingSpawn([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
 		let captured: GateResult[] | null = null;
 		await runGates({ gates, spawnFn: fn, onResults: (r) => { captured = r; } });
 
 		const results = captured as unknown as GateResult[];
 		const names = results.map((r) => r.name);
-		expect(names).toEqual(['typecheck', 'test', 'embed-vendor', 'lint', 'file-size', 'debt-markers', 'version-skips', 'coverage', 'dead-code', 'dup', 'ci-parity', 'agents-md', 'test-sleeps', 'skip-ratchet']);
+		expect(names).toEqual(['typecheck', 'test', 'embed-vendor', 'lint', 'file-size', 'debt-markers', 'version-skips', 'coverage', 'dead-code', 'dup', 'ci-parity', 'agents-md', 'test-sleeps', 'test-tmpdir', 'skip-ratchet']);
 	});
 
 	test('onResults receives durationMs as a non-negative number', async () => {
