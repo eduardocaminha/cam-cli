@@ -31,7 +31,7 @@
         "The full quality spine is green (bun run check:all). [oracle: named-command bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: .gitignore, templates/.gitignore, src/vendor/_generated.ts (generated, do not hand-edit). Scratch root literal is `.cam-test-tmp` (fixed by the issue oracles). ADR-0014 ordering (GOTCHA 1): this story MUST land before any test writes into the root, otherwise the first run dirties the tree and trips the plan-preflight clean-tree guard. GOTCHA 2: templates/.gitignore is embedded; src/templates/embedded.ts special-cases the '.gitignore' key and the content `cam init` writes comes from src/vendor/_generated.ts, so editing the template without `bun run embed-vendor` + committing the generated file both ships a user project without the rule AND reds the embed-vendor gate inside check:all. Keep the two rule lines textually identical (same anchoring, same trailing slash); anchored (`/.cam-test-tmp/`) or unanchored both keep parity green as long as the two files agree byte-for-byte. Never use rm -rf in any step (GOTCHA 6, CAM-507): the mktemp dir in AC1 is left behind on purpose."
     },
