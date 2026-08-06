@@ -13,8 +13,8 @@
 //      a critical line fail fast.
 
 import { describe, expect, it } from 'bun:test';
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
+import { createTestTmpdir } from './helpers/test-tmpdir';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
@@ -23,7 +23,7 @@ import { buildSetupMenuScript } from '../src/commands/setup.ts';
 describe('buildSetupMenuScript', () => {
 	it('generates valid bash (passes `bash -n` syntax check)', () => {
 		const script = buildSetupMenuScript();
-		const dir = mkdtempSync(join(tmpdir(), 'cam-menu-'));
+		const dir = createTestTmpdir('cam-menu-');
 		const file = join(dir, 'menu.sh');
 		writeFileSync(file, script, 'utf8');
 		const r = spawnSync('bash', ['-n', file], { encoding: 'utf8' });

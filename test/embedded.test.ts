@@ -24,16 +24,8 @@
 //   4. The materialized file's contents match the embedded contents.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import {
-	existsSync,
-	mkdtempSync,
-	readdirSync,
-	readFileSync,
-	rmSync,
-	statSync,
-	writeFileSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from './helpers/test-tmpdir';
 import { join, resolve } from 'node:path';
 
 import {
@@ -204,7 +196,7 @@ describe('materializeTemplates — .gitignore is merged, never clobbered', () =>
 	let cwd: string;
 
 	beforeEach(() => {
-		cwd = mkdtempSync(join(tmpdir(), 'cam-templates-test-'));
+		cwd = createTestTmpdir('cam-templates-test-');
 	});
 
 	afterEach(() => {
@@ -436,7 +428,7 @@ describe('materializeTemplates — hook is executable after materialization (US-
 	let cwd: string;
 
 	beforeEach(() => {
-		cwd = mkdtempSync(join(tmpdir(), 'cam-hook-exec-test-'));
+		cwd = createTestTmpdir('cam-hook-exec-test-');
 	});
 
 	afterEach(() => {
@@ -465,7 +457,7 @@ describe('materializeTemplates — skills/ subtree routing + count', () => {
 	let cwd: string;
 
 	beforeEach(() => {
-		cwd = mkdtempSync(join(tmpdir(), 'cam-skills-test-'));
+		cwd = createTestTmpdir('cam-skills-test-');
 	});
 
 	afterEach(() => {
@@ -504,7 +496,7 @@ describe('materializeTemplates — patterns.md stub + orch-handoff.schema.json s
 	let cwd: string;
 
 	beforeEach(() => {
-		cwd = mkdtempSync(join(tmpdir(), 'cam-seeds-test-'));
+		cwd = createTestTmpdir('cam-seeds-test-');
 	});
 
 	afterEach(() => {
@@ -540,7 +532,7 @@ describe('CAM-119: cam init installs the spec-with-docs skill chain downstream',
 	let cwd: string;
 
 	beforeEach(() => {
-		cwd = mkdtempSync(join(tmpdir(), 'cam-skills-regress-'));
+		cwd = createTestTmpdir('cam-skills-regress-');
 	});
 
 	afterEach(() => {
@@ -605,7 +597,7 @@ describe('materializeEmbedded', () => {
 	let prevCache: string | undefined;
 
 	beforeEach(() => {
-		cacheDir = mkdtempSync(join(tmpdir(), 'cam-embedded-test-'));
+		cacheDir = createTestTmpdir('cam-embedded-test-');
 		prevCache = process.env['CAM_VENDOR_CACHE_DIR'];
 		process.env['CAM_VENDOR_CACHE_DIR'] = cacheDir;
 	});

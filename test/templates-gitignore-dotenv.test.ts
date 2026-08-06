@@ -22,8 +22,8 @@
 // the non-blanket shape: `.env.example` must stay committable.
 
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from './helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { materializeTemplates } from '../src/templates/embedded.ts';
@@ -38,7 +38,7 @@ function isIgnored(cwd: string, file: string): boolean {
 }
 
 function makeTmpRepo(): string {
-	const cwd = mkdtempSync(join(tmpdir(), 'cam-gitignore-dotenv-'));
+	const cwd = createTestTmpdir('cam-gitignore-dotenv-');
 	const init = Bun.spawnSync(['git', '-C', cwd, 'init', '-q']);
 	if (init.exitCode !== 0) throw new Error(`git init failed: ${new TextDecoder().decode(init.stderr)}`);
 	return cwd;

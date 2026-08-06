@@ -28,8 +28,8 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from './helpers/test-tmpdir';
 import { join } from 'node:path';
 import {
 	AGENTS_GLOB,
@@ -61,7 +61,7 @@ const NOT_IGNORED: IsIgnoredFn = () => false;
 let workDir: string;
 
 beforeEach(() => {
-	workDir = mkdtempSync(join(tmpdir(), 'cam-cli-validate-agents-md-'));
+	workDir = createTestTmpdir('cam-cli-validate-agents-md-');
 });
 
 afterEach(() => {
@@ -499,7 +499,7 @@ describe('regression: resolution follows the git-tracked tree, not the live work
 	let repo: string;
 
 	beforeEach(() => {
-		repo = mkdtempSync(join(tmpdir(), 'cam-cli-tracked-snapshot-'));
+		repo = createTestTmpdir('cam-cli-tracked-snapshot-');
 		spawnSync('git', ['init', '-q'], { cwd: repo });
 	});
 
@@ -568,7 +568,7 @@ describe('makeGetTrackedFiles / makeIsIgnored throw on git spawn failure (US-001
 	beforeEach(() => {
 		// A plain temp dir with no `git init` is not a git repository, so
 		// `git ls-files` / `git check-ignore` exit non-zero (128) here.
-		nonRepoDir = mkdtempSync(join(tmpdir(), 'cam-cli-non-repo-'));
+		nonRepoDir = createTestTmpdir('cam-cli-non-repo-');
 	});
 
 	afterEach(() => {
@@ -585,7 +585,7 @@ describe('makeGetTrackedFiles / makeIsIgnored throw on git spawn failure (US-001
 	});
 
 	test('makeGetTrackedFiles on a legitimately-empty git repo returns an empty list without throwing', () => {
-		const repo = mkdtempSync(join(tmpdir(), 'cam-cli-empty-repo-'));
+		const repo = createTestTmpdir('cam-cli-empty-repo-');
 		try {
 			spawnSync('git', ['init', '-q'], { cwd: repo });
 			expect(makeGetTrackedFiles(repo)()).toEqual([]);
@@ -595,7 +595,7 @@ describe('makeGetTrackedFiles / makeIsIgnored throw on git spawn failure (US-001
 	});
 
 	test('makeIsIgnored on a real (initialized) repo still returns true/false for exit 0/1, not throwing', () => {
-		const repo = mkdtempSync(join(tmpdir(), 'cam-cli-real-repo-'));
+		const repo = createTestTmpdir('cam-cli-real-repo-');
 		try {
 			spawnSync('git', ['init', '-q'], { cwd: repo });
 			writeFileSync(join(repo, '.gitignore'), 'ignored.txt\n');
@@ -625,7 +625,7 @@ describe('regression: the shipped tree (harnessPaths removed) resolves clean', (
 	let shipped: string;
 
 	beforeEach(() => {
-		shipped = mkdtempSync(join(tmpdir(), 'cam-cli-shipped-tree-'));
+		shipped = createTestTmpdir('cam-cli-shipped-tree-');
 		// maxBuffer must be raised: the default (1MB) truncates this repo's
 		// multi-MB archive stdout, which silently corrupts the tar extraction.
 		const archive = spawnSync('git', ['archive', 'HEAD'], {

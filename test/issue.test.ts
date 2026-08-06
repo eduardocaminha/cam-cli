@@ -13,9 +13,7 @@
 //   - Help block exists and contains key terms.
 
 import { describe, expect, test } from 'bun:test';
-import { tmpdir } from 'node:os';
-import { mkdtempSync } from 'node:fs';
-import { join } from 'node:path';
+import { createTestTmpdir } from './helpers/test-tmpdir';
 import type { SpawnSyncReturns } from 'node:child_process';
 
 import { runIssue } from '../src/commands/issue.ts';
@@ -140,7 +138,7 @@ describe('parseIssueArgs (dispatch wiring in index.ts)', () => {
 
 describe('runIssue (thin-proxy, hit path)', () => {
 	test('sends /cam-issue create <text> to orchestrator pane and returns 0', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-issue-hit-'));
+		const tmpDir = createTestTmpdir('cam-issue-hit-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%1' });
 
 		const code = await runIssue({
@@ -159,7 +157,7 @@ describe('runIssue (thin-proxy, hit path)', () => {
 	});
 
 	test('free text is forwarded verbatim as a single argument', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-issue-verbatim-'));
+		const tmpDir = createTestTmpdir('cam-issue-verbatim-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
 		const metacharText = 'fix login; $(echo injected) `whoami` & rm -rf /';
 
@@ -176,7 +174,7 @@ describe('runIssue (thin-proxy, hit path)', () => {
 	});
 
 	test('send-keys does NOT use -l (regression: -l makes "Enter" literal)', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-issue-literal-'));
+		const tmpDir = createTestTmpdir('cam-issue-literal-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
 
 		await runIssue({ text: 'some text', cwd: tmpDir, tmuxSpawnFn: spawnFn });
@@ -186,7 +184,7 @@ describe('runIssue (thin-proxy, hit path)', () => {
 	});
 
 	test('Enter is a separate argument in the send-keys call (atomic)', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-issue-atomic-'));
+		const tmpDir = createTestTmpdir('cam-issue-atomic-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
 
 		await runIssue({ text: 'test', cwd: tmpDir, tmuxSpawnFn: spawnFn });
@@ -198,7 +196,7 @@ describe('runIssue (thin-proxy, hit path)', () => {
 	});
 
 	test('skips bootstrap when orchestrator is already alive', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-issue-no-bootstrap-'));
+		const tmpDir = createTestTmpdir('cam-issue-no-bootstrap-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
 		let bootstrapCalled = false;
 
@@ -213,7 +211,7 @@ describe('runIssue (thin-proxy, hit path)', () => {
 	});
 
 	test('returns 1 and does not send-keys when pane mutex is busy', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-issue-busy-'));
+		const tmpDir = createTestTmpdir('cam-issue-busy-');
 		const spawnFn = makeFakeTmuxSpawn({
 			sessionExists: true,
 			orchAlive: true,
@@ -233,7 +231,7 @@ describe('runIssue (thin-proxy, hit path)', () => {
 
 describe('runIssue (thin-proxy, miss path)', () => {
 	test('bootstraps + waits + sends keys when orch not alive', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-issue-miss-'));
+		const tmpDir = createTestTmpdir('cam-issue-miss-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
 
 		let markerPresent = false;
@@ -280,7 +278,7 @@ describe('runIssue (thin-proxy, miss path)', () => {
 	});
 
 	test('returns 1 when bootstrap fails', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-issue-boot-fail-'));
+		const tmpDir = createTestTmpdir('cam-issue-boot-fail-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: false });
 
 		const code = await runIssue({
@@ -294,7 +292,7 @@ describe('runIssue (thin-proxy, miss path)', () => {
 	});
 
 	test('returns 1 when marker never appears (timeout)', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-issue-timeout-'));
+		const tmpDir = createTestTmpdir('cam-issue-timeout-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: false });
 
 		const code = await runIssue({
@@ -315,7 +313,7 @@ describe('runIssue (thin-proxy, miss path)', () => {
 
 describe('runIssue: session name', () => {
 	test('all tmux calls include the project session name', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-issue-sessname-'));
+		const tmpDir = createTestTmpdir('cam-issue-sessname-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
 		const sessionName = projectSessionName(tmpDir);
 
@@ -330,7 +328,7 @@ describe('runIssue: session name', () => {
 
 describe('runIssue: push-undelivered observability', () => {
 	test('retry exhaustion emits exactly one push-undelivered event to the injected sink', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-issue-undelivered-'));
+		const tmpDir = createTestTmpdir('cam-issue-undelivered-');
 		let displayMessageCalls = 0;
 
 		const spawnFn = ((_cmd: string, args: string[]) => {

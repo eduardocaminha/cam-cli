@@ -30,8 +30,8 @@
 // test/issue-file.test.ts's makeRecordingSpawn pattern). No real git binary
 // or tmux/claude process is ever invoked.
 
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from './helpers/test-tmpdir';
 import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
@@ -48,7 +48,7 @@ import { stripAnsi } from '../src/logging/color.ts';
 let tmpDir: string;
 
 beforeEach(() => {
-	tmpDir = mkdtempSync(join(tmpdir(), 'cam-issue-list-test-'));
+	tmpDir = createTestTmpdir('cam-issue-list-test-');
 });
 
 afterEach(() => {

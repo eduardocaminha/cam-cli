@@ -304,7 +304,13 @@ export type GetTrackedFilesFn = () => string[];
 /** Build a GetTrackedFilesFn that spawns `git ls-files` in `cwd`. */
 export function makeGetTrackedFiles(cwd: string): GetTrackedFilesFn {
 	return () => {
-		const result = Bun.spawnSync(['git', 'ls-files'], { cwd });
+		// `env: process.env` is required, not cosmetic: Bun.spawnSync does not
+		// live-inherit env mutations made after process startup unless the
+		// current `process.env` is forwarded explicitly (confirmed empirically,
+		// US-003 CAM-508 PRD). Without it, a `GIT_CEILING_DIRECTORIES` set at
+		// runtime (e.g. by test/helpers/test-tmpdir.ts) is silently ignored and
+		// git's repo search escapes the fence.
+		const result = Bun.spawnSync(['git', 'ls-files'], { cwd, env: process.env });
 		if (!result.success || result.exitCode !== 0) {
 			throw new Error(
 				`git ls-files failed in ${cwd} (status ${result.exitCode}): not a git repository / git unavailable`,
@@ -334,7 +340,8 @@ export type IsIgnoredFn = (path: string) => boolean;
  */
 export function makeIsIgnored(cwd: string): IsIgnoredFn {
 	return (path: string) => {
-		const result = Bun.spawnSync(['git', 'check-ignore', '-q', path], { cwd });
+		// See the `env: process.env` comment in makeGetTrackedFiles above.
+		const result = Bun.spawnSync(['git', 'check-ignore', '-q', path], { cwd, env: process.env });
 		if (result.exitCode === 0) return true;
 		if (result.exitCode === 1) return false;
 		if (new TextDecoder().decode(result.stderr).includes('not a git repository')) {

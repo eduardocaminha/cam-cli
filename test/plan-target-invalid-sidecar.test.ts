@@ -25,8 +25,8 @@
 //        typecheck; also exercised functionally here).
 
 import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from './helpers/test-tmpdir';
 import { join, resolve } from 'node:path';
 
 import { makeSetPhaseFn } from '../src/commands/sidecar.ts';
@@ -86,7 +86,7 @@ describe('AC3/AC4: plan-target-invalid clears stale plan_issue and exits to idle
 	let claudeDir: string;
 
 	beforeEach(() => {
-		tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-target-invalid-'));
+		tmpDir = createTestTmpdir('cam-plan-target-invalid-');
 		claudeDir = join(tmpDir, '.claude');
 		mkdirSync(claudeDir, { recursive: true });
 	});

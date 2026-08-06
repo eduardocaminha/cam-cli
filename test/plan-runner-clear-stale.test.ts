@@ -15,8 +15,8 @@
 //        gone after the call.
 
 import { afterAll, test, expect } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync, existsSync, unlinkSync, mkdirSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { rmSync, writeFileSync, existsSync, unlinkSync, mkdirSync } from 'node:fs';
+import { createTestTmpdir } from './helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { runPlanPhase } from '../src/supervisor/plan-runner.ts';
@@ -28,7 +28,7 @@ import { makeReadPlanVerdict, PLAN_VERDICT_REPORT_FILENAME } from '../src/superv
 // codex planner/auditor config cannot break these generic-backend tests.
 // ---------------------------------------------------------------------------
 
-const GENERIC_PLAN_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-plan-runner-clear-stale-fixture-'));
+const GENERIC_PLAN_CONFIG_DIR = createTestTmpdir('cam-plan-runner-clear-stale-fixture-');
 const GENERIC_PLAN_CONFIG_PATH = join(GENERIC_PLAN_CONFIG_DIR, 'project.toml');
 writeFileSync(GENERIC_PLAN_CONFIG_PATH, '[backend]\nplanner = "claude"\nauditor = "claude"\n');
 
@@ -49,7 +49,7 @@ test(
 	'stale plan-verdict-report.json is cleared before preflight and does not contaminate the run (AC3)',
 	() => {
 		// 1. Set up a fresh temp working directory mimicking the repo root.
-		const cwd = mkdtempSync(join(tmpdir(), 'cam-plan-runner-clear-'));
+		const cwd = createTestTmpdir('cam-plan-runner-clear-');
 		mkdirSync(join(cwd, 'scripts', 'cam'), { recursive: true });
 
 		const verdictPath = join(cwd, PLAN_VERDICT_REPORT_FILENAME);

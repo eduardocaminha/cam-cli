@@ -17,8 +17,8 @@
 // cannot slip through silently.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from './helpers/test-tmpdir';
 import { join } from 'node:path';
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 
@@ -46,7 +46,7 @@ const run = (cwd: string, args: string[]) => spawnSync('git', ['-C', cwd, ...arg
 
 /** A clean repo with `main` plus a checked-out cam/* branch (clean worktree). */
 function setupCleanCamBranchRepo(): string {
-	const cwd = mkdtempSync(join(tmpdir(), 'cam-resolver-git-'));
+	const cwd = createTestTmpdir('cam-resolver-git-');
 	mkdirSync(join(cwd, 'scripts/cam'), { recursive: true });
 	run(cwd, ['init']);
 	run(cwd, ['config', 'user.email', 'test@test.com']);
@@ -63,7 +63,7 @@ function setupCleanCamBranchRepo(): string {
  * main` would clobber -- git refuses the checkout with a non-zero exit,
  * leaving HEAD stuck on the cam/* branch. */
 function setupDirtyCamBranchRepo(): string {
-	const cwd = mkdtempSync(join(tmpdir(), 'cam-resolver-git-dirty-'));
+	const cwd = createTestTmpdir('cam-resolver-git-dirty-');
 	mkdirSync(join(cwd, 'scripts/cam'), { recursive: true });
 	run(cwd, ['init']);
 	run(cwd, ['config', 'user.email', 'test@test.com']);
@@ -82,7 +82,7 @@ function setupDirtyCamBranchRepo(): string {
 
 /** A plain repo with an initial commit on `main` (no branch checkout yet). */
 function setupInitializedRepo(): string {
-	const cwd = mkdtempSync(join(tmpdir(), 'cam-resolver-git-plan-'));
+	const cwd = createTestTmpdir('cam-resolver-git-plan-');
 	mkdirSync(join(cwd, 'scripts/cam'), { recursive: true });
 	run(cwd, ['init']);
 	run(cwd, ['config', 'user.email', 'test@test.com']);

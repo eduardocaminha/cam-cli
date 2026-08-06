@@ -8,8 +8,8 @@
 // called.
 
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from './helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { buildRefreshTargets, refreshGoldenFixtures } from '../scripts/record-golden.ts';
@@ -29,7 +29,7 @@ describe('buildRefreshTargets', () => {
 
 describe('refreshGoldenFixtures', () => {
 	test('copies every target whose live source exists on disk', () => {
-		const cwd = mkdtempSync(join(tmpdir(), 'cam-record-golden-'));
+		const cwd = createTestTmpdir('cam-record-golden-');
 		try {
 			const goldenDir = join(cwd, 'golden');
 			mkdirSync(goldenDir, { recursive: true });
@@ -50,7 +50,7 @@ describe('refreshGoldenFixtures', () => {
 	});
 
 	test('skips targets whose live source is absent, without erroring', () => {
-		const cwd = mkdtempSync(join(tmpdir(), 'cam-record-golden-'));
+		const cwd = createTestTmpdir('cam-record-golden-');
 		try {
 			const goldenDir = join(cwd, 'golden');
 			mkdirSync(goldenDir, { recursive: true });
@@ -70,7 +70,7 @@ describe('refreshGoldenFixtures', () => {
 	});
 
 	test('partitions a mix of present and absent sources correctly', () => {
-		const cwd = mkdtempSync(join(tmpdir(), 'cam-record-golden-'));
+		const cwd = createTestTmpdir('cam-record-golden-');
 		try {
 			const goldenDir = join(cwd, 'golden');
 			mkdirSync(goldenDir, { recursive: true });

@@ -12,8 +12,8 @@
 //   - runNext: missing pane returns 1.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from './helpers/test-tmpdir';
 import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 
@@ -260,7 +260,7 @@ describe('renderStateFile: read-modify-write phase preservation (US-001, CAM-195
 	let tmpDir: string;
 
 	beforeEach(() => {
-		tmpDir = mkdtempSync(join(tmpdir(), 'cam-render-rmw-'));
+		tmpDir = createTestTmpdir('cam-render-rmw-');
 	});
 
 	afterEach(() => {
@@ -341,7 +341,7 @@ describe('renderStateFile: read-modify-write phase preservation (US-001, CAM-195
 
 describe('writeStateFile', () => {
 	test('creates .claude/ when missing and writes the body', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-write-'));
+		const dir = createTestTmpdir('cam-next-write-');
 		try {
 			const written = writeStateFile(dir, 'hello\n');
 			expect(written).toBe(join(dir, '.claude', 'cam-loop.local.md'));
@@ -353,7 +353,7 @@ describe('writeStateFile', () => {
 	});
 
 	test('refuses to clobber an existing state file unless force=true', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-clobber-'));
+		const dir = createTestTmpdir('cam-next-clobber-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			require('node:fs').writeFileSync(join(dir, '.claude', 'cam-loop.local.md'), 'old\n');
@@ -370,7 +370,7 @@ describe('writeStateFile', () => {
 
 describe('runNext (thin-proxy, hit path)', () => {
 	test('returns 0 and writes active:true when orchestrator is alive', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-hit-'));
+		const dir = createTestTmpdir('cam-next-hit-');
 		try {
 			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%3' });
 
@@ -391,7 +391,7 @@ describe('runNext (thin-proxy, hit path)', () => {
 	});
 
 	test('skips bootstrap when orchestrator is alive', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-no-bootstrap-'));
+		const dir = createTestTmpdir('cam-next-no-bootstrap-');
 		try {
 			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
 			let bootstrapCalled = false;
@@ -409,7 +409,7 @@ describe('runNext (thin-proxy, hit path)', () => {
 	});
 
 	test('maxIterations and completionPromise options are accepted (CLI compat) but do not affect output', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-compat-'));
+		const dir = createTestTmpdir('cam-next-compat-');
 		try {
 			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
 
@@ -429,7 +429,7 @@ describe('runNext (thin-proxy, hit path)', () => {
 	});
 
 	test('runNext writes active:true on the hit path', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-active-true-'));
+		const dir = createTestTmpdir('cam-next-active-true-');
 		try {
 			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
 
@@ -448,7 +448,7 @@ describe('runNext (thin-proxy, hit path)', () => {
 	});
 
 	test('runNext pushes no task-prompt send-keys to the orchestrator pane', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-no-send-keys-'));
+		const dir = createTestTmpdir('cam-next-no-send-keys-');
 		try {
 			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
 
@@ -462,7 +462,7 @@ describe('runNext (thin-proxy, hit path)', () => {
 	});
 
 	test('returns 1 and does not send-keys when pane mutex is busy', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-busy-'));
+		const dir = createTestTmpdir('cam-next-busy-');
 		try {
 			const spawnFn = makeFakeTmuxSpawn({
 				sessionExists: true,
@@ -486,7 +486,7 @@ describe('runNext (thin-proxy, hit path)', () => {
 
 describe('runNext (thin-proxy, miss path)', () => {
 	test('returns 1 when bootstrap fails', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-boot-fail-'));
+		const dir = createTestTmpdir('cam-next-boot-fail-');
 		try {
 			const spawnFn = makeFakeTmuxSpawn({ sessionExists: false });
 
@@ -503,7 +503,7 @@ describe('runNext (thin-proxy, miss path)', () => {
 	});
 
 	test('returns 1 when marker never appears (timeout)', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-timeout-'));
+		const dir = createTestTmpdir('cam-next-timeout-');
 		try {
 			const spawnFn = makeFakeTmuxSpawn({ sessionExists: false });
 
@@ -523,7 +523,7 @@ describe('runNext (thin-proxy, miss path)', () => {
 	});
 
 	test('bootstraps + waits + flips active:true when orch not alive initially', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-miss-'));
+		const dir = createTestTmpdir('cam-next-miss-');
 		try {
 			// After bootstrap, orch is alive.
 			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
@@ -552,7 +552,7 @@ describe('runNext (thin-proxy, miss path)', () => {
 
 describe('runNext (write failure path)', () => {
 	test('returns 1 and emits error to stderr when writeFn throws', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-write-fail-'));
+		const dir = createTestTmpdir('cam-next-write-fail-');
 		try {
 			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
 
@@ -585,7 +585,7 @@ describe('runNext (write failure path)', () => {
 	});
 
 	test('does not reach emitOk (no success message) on write failure', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-no-emit-ok-'));
+		const dir = createTestTmpdir('cam-next-no-emit-ok-');
 		try {
 			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
 
@@ -623,7 +623,7 @@ describe('runNext (write failure path)', () => {
 
 describe('runNext (thin-proxy, pane not found)', () => {
 	test('returns 1 when getOrchPaneId returns null', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-nopane-'));
+		const dir = createTestTmpdir('cam-next-nopane-');
 		try {
 			const spawnFn: TmuxSpawnFn & { calls: TmuxCall[] } = (() => {
 				const calls: TmuxCall[] = [];
@@ -665,7 +665,7 @@ describe('runNext (thin-proxy, pane not found)', () => {
 
 describe('runNext: sidecar liveness gate', () => {
 	test('refuses and does NOT write active:true when the sidecar is dead', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-sidecar-dead-'));
+		const dir = createTestTmpdir('cam-next-sidecar-dead-');
 		try {
 			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
 			let probedClaudeDir: string | undefined;
@@ -688,7 +688,7 @@ describe('runNext: sidecar liveness gate', () => {
 	});
 
 	test('proceeds and writes active:true when the sidecar is alive', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-sidecar-alive-'));
+		const dir = createTestTmpdir('cam-next-sidecar-alive-');
 		try {
 			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
 
@@ -708,7 +708,7 @@ describe('runNext: sidecar liveness gate', () => {
 	});
 
 	test('AC4: the gate is mode-agnostic — a dead sidecar refuses regardless of worker_isolation', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-next-sidecar-mode-agnostic-'));
+		const dir = createTestTmpdir('cam-next-sidecar-mode-agnostic-');
 		try {
 			const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
 

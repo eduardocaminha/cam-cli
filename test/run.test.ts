@@ -10,8 +10,8 @@
 //   - tmux argv assertions (new-session + split-window + send-keys for dashboard pane)
 
 import { describe, expect, it } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from './helpers/test-tmpdir';
 import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 
@@ -139,7 +139,7 @@ function makeFakeSpawn(opts: {
 
 /** Build a temp dir with the required .claude/agents/subagent-orchestrator.md. */
 function makeTmpProject(): string {
-	const cwd = mkdtempSync(join(tmpdir(), 'cam-run-'));
+	const cwd = createTestTmpdir('cam-run-');
 	const agentsDir = join(cwd, '.claude', 'agents');
 	mkdirSync(agentsDir, { recursive: true });
 	writeFileSync(join(agentsDir, 'subagent-orchestrator.md'), '# stub\n', 'utf8');
@@ -218,7 +218,7 @@ describe('projectSessionName', () => {
 
 describe('runRun pre-flight', () => {
 	it('returns non-zero when subagent-orchestrator.md is missing', () => {
-		const cwd = mkdtempSync(join(tmpdir(), 'cam-run-'));
+		const cwd = createTestTmpdir('cam-run-');
 		// No .claude/agents/subagent-orchestrator.md created.
 		const code = runRun({ cwd, noAttach: true, spawnSidecarFn: noopSidecar, spawnWatcherFn: noopWatcher });
 		// May fail on tmux check first (exit 1) or on orchestrator check (exit 1).
@@ -806,7 +806,7 @@ describe('buildOrchestratorBootPrompt (CAM-240 US-002: minimal --agent nudge, me
 	}
 
 	it('is minimal: no longer instructs reading the persona file, writing the ready marker, rehydrating, or deriving the backlog (now owned by the agent body per US-001)', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-boot-prompt-'));
+		const dir = createTestTmpdir('cam-boot-prompt-');
 		const configPath = writeMetaLoopToml(dir, undefined);
 		const prompt = buildOrchestratorBootPrompt(configPath);
 		expect(prompt).not.toContain('subagent-orchestrator.md');
@@ -816,7 +816,7 @@ describe('buildOrchestratorBootPrompt (CAM-240 US-002: minimal --agent nudge, me
 	});
 
 	it('under meta_loop "auto" with worker_isolation "container": announces autonomous mode and omits "What would you like to do?"', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-boot-prompt-'));
+		const dir = createTestTmpdir('cam-boot-prompt-');
 		const configPath = writeMetaLoopToml(dir, 'auto', 'container');
 		const prompt = buildOrchestratorBootPrompt(configPath);
 		expect(prompt.toLowerCase()).toContain('autonomous');
@@ -824,14 +824,14 @@ describe('buildOrchestratorBootPrompt (CAM-240 US-002: minimal --agent nudge, me
 	});
 
 	it('under meta_loop "off": greets and asks "What would you like to do?"', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-boot-prompt-'));
+		const dir = createTestTmpdir('cam-boot-prompt-');
 		const configPath = writeMetaLoopToml(dir, undefined);
 		const prompt = buildOrchestratorBootPrompt(configPath);
 		expect(prompt).toContain('What would you like to do?');
 	});
 
 	it('under meta_loop "observe": greets and asks "What would you like to do?"', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-boot-prompt-'));
+		const dir = createTestTmpdir('cam-boot-prompt-');
 		const configPath = writeMetaLoopToml(dir, 'observe');
 		const prompt = buildOrchestratorBootPrompt(configPath);
 		expect(prompt).toContain('What would you like to do?');
@@ -1065,19 +1065,19 @@ describe('shouldSpawnSidecarLivenessWatch (US-002, CAM-207)', () => {
 	}
 
 	it('returns false (no-op) when worker_isolation is absent (host default)', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-run-isolation-'));
+		const dir = createTestTmpdir('cam-run-isolation-');
 		const configPath = writeWorkerIsolationToml(dir, undefined);
 		expect(shouldSpawnSidecarLivenessWatch(configPath)).toBe(false);
 	});
 
 	it('returns false (no-op) when worker_isolation = "host"', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-run-isolation-'));
+		const dir = createTestTmpdir('cam-run-isolation-');
 		const configPath = writeWorkerIsolationToml(dir, 'host');
 		expect(shouldSpawnSidecarLivenessWatch(configPath)).toBe(false);
 	});
 
 	it('returns true when worker_isolation = "container"', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-run-isolation-'));
+		const dir = createTestTmpdir('cam-run-isolation-');
 		const configPath = writeWorkerIsolationToml(dir, 'container');
 		expect(shouldSpawnSidecarLivenessWatch(configPath)).toBe(true);
 	});

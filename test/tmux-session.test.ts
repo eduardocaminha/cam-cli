@@ -13,8 +13,8 @@
 import { describe, expect, test } from 'bun:test';
 import type { SpawnSyncReturns } from 'node:child_process';
 
-import { tmpdir } from 'node:os';
-import { mkdtempSync, existsSync, readFileSync } from 'node:fs';
+import { createTestTmpdir } from './helpers/test-tmpdir';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
@@ -457,21 +457,21 @@ describe('capturePaneArgv', () => {
 
 describe('writeWorkerPaneMarker / readWorkerPaneMarker', () => {
 	test('round-trip: write then read returns the same pane id', () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-worker-marker-'));
+		const tmpDir = createTestTmpdir('cam-worker-marker-');
 		const claudeDir = join(tmpDir, '.claude');
 		writeWorkerPaneMarker(claudeDir, '%5');
 		expect(readWorkerPaneMarker(claudeDir)).toBe('%5');
 	});
 
 	test('creates the claudeDir if it does not exist', () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-worker-marker-'));
+		const tmpDir = createTestTmpdir('cam-worker-marker-');
 		const claudeDir = join(tmpDir, '.claude');
 		writeWorkerPaneMarker(claudeDir, '%3');
 		expect(existsSync(claudeDir)).toBe(true);
 	});
 
 	test('writes file named WORKER_PANE_MARKER inside claudeDir', () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-worker-marker-'));
+		const tmpDir = createTestTmpdir('cam-worker-marker-');
 		const claudeDir = join(tmpDir, '.claude');
 		writeWorkerPaneMarker(claudeDir, '%9');
 		const filePath = join(claudeDir, WORKER_PANE_MARKER);
@@ -480,20 +480,20 @@ describe('writeWorkerPaneMarker / readWorkerPaneMarker', () => {
 	});
 
 	test('readWorkerPaneMarker returns null when file does not exist', () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-worker-marker-'));
+		const tmpDir = createTestTmpdir('cam-worker-marker-');
 		const claudeDir = join(tmpDir, '.claude');
 		expect(readWorkerPaneMarker(claudeDir)).toBeNull();
 	});
 
 	test('readWorkerPaneMarker returns null when file is empty', () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-worker-marker-'));
+		const tmpDir = createTestTmpdir('cam-worker-marker-');
 		const claudeDir = join(tmpDir, '.claude');
 		writeWorkerPaneMarker(claudeDir, '');
 		expect(readWorkerPaneMarker(claudeDir)).toBeNull();
 	});
 
 	test('last write wins (overwrites previous pane id)', () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-worker-marker-'));
+		const tmpDir = createTestTmpdir('cam-worker-marker-');
 		const claudeDir = join(tmpDir, '.claude');
 		writeWorkerPaneMarker(claudeDir, '%1');
 		writeWorkerPaneMarker(claudeDir, '%7');

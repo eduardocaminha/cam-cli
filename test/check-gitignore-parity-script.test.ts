@@ -32,8 +32,8 @@
 // (US-003) is the complementary coverage for that class.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from './helpers/test-tmpdir';
 import { join, resolve } from 'node:path';
 
 const REPO_ROOT = resolve(import.meta.dir, '..');
@@ -78,7 +78,7 @@ describe('check-gitignore-parity.sh (US-004, CAM-502)', () => {
 	});
 
 	test('fail-closed leg: a throwaway repo with only templates/.gitignore and no src/ exits non-zero (AC4)', () => {
-		const cwd = mkdtempSync(join(tmpdir(), 'cam-gitignore-parity-failclosed-'));
+		const cwd = createTestTmpdir('cam-gitignore-parity-failclosed-');
 		try {
 			const templateGitignore = readFileSync(join(REPO_ROOT, 'templates', '.gitignore'), 'utf8');
 			writeFileSync(join(cwd, '.gitignore'), templateGitignore, 'utf8');
