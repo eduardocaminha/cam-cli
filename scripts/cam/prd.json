@@ -117,7 +117,7 @@
         "The full quality spine is green (bun run check:all). [oracle: named-command bun run check:all]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: 31 files under test/integration, including the bare path-join sentinel at plan-runner-pane-spawn.test.ts:161 (the codemod's bare-path branch, not the mkdtempSync branch). GOTCHA 10 (c) is the dominant risk here: integration tests spawn real tmux panes and now receive a longer path inside a repo, so re-check every absolute-path-prefix assertion and any pane-title or cwd expectation. GOTCHA 10 (a) also applies to spawned-script dependency expectations. Mechanize with scripts/codemod-test-tmpdir.ts (US-003). scripts/file-size-budget.json may need a raise (GOTCHA 13)."
     },
