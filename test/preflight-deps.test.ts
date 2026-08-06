@@ -2,14 +2,18 @@
 //
 // Fail-loud preflight for the suite's hard dependencies (US-002, CAM-424).
 //
-// Route rationale (AC13, per handoff.json notes): no bunfig.toml exists in
-// this repo, package.json's "test" script is plain `bun test`, and neither
-// Bun's [test].preload abort semantics nor its test-collection order are
-// documented. The only documented exit guarantee Bun gives is that a failing
-// test makes `bun test` exit non-zero. So this file is deliberately just a
-// set of ordinary `test()` blocks -- one per hard dependency -- that fail
+// Route rationale (AC13, per handoff.json notes): package.json's "test"
+// script is plain `bun test`, and Bun's [test].preload FAILURE/abort
+// semantics (what happens if a preload script's top-level code throws) are
+// not documented, only its success-path Global Setup/Teardown shape is
+// (https://bun.sh/docs/test/lifecycle). A bunfig.toml now exists
+// (US-R1-002, CAM-508) wiring test/helpers/reap-preload.ts's `afterAll`
+// scratch-dir teardown, but that is an unrelated, already-proven-safe
+// success-path hook, not a preload throw -- it doesn't change the
+// uncertainty this file's design avoids. So this file is deliberately just
+// a set of ordinary `test()` blocks -- one per hard dependency -- that fail
 // via a normal assertion when that dependency is absent and unwaived. No
-// preload throw, no reliance on filename sort order, no bunfig.toml.
+// preload throw, no reliance on filename sort order.
 //
 // Each test calls depPreflight({ name }) with NO injected `available`/
 // `waived` -- i.e. the real production default wiring (Bun.which(name) probe

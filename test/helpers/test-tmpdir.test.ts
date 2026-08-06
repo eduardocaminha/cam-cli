@@ -72,7 +72,10 @@ describe('createTestTmpdir', () => {
 		},
 	);
 
-	test('reaper: a directory created by the helper in a child process is removed once that process exits', async () => {
+	test('exit hook: a directory created by the helper in a `bun -e` child process is removed once that process exits', async () => {
+		// This pins the secondary `process.on('exit', ...)` layer only (see
+		// test-tmpdir.ts's header comment): `bun -e` is a runtime where exit
+		// hooks DO fire, unlike `bun test` (pinned separately below).
 		const helperPath = join(import.meta.dir, 'test-tmpdir.ts');
 		const proc = Bun.spawn(['bun', '-e', `import { createTestTmpdir } from '${helperPath}'; console.log(createTestTmpdir());`], {
 			cwd: REPO_ROOT,
@@ -88,6 +91,33 @@ describe('createTestTmpdir', () => {
 		const childDir = stdout.trim();
 		expect(childDir.length > 0).toBe(true);
 		expect(stderr).toBe('');
+
+		expect(existsSync(childDir)).toBe(false);
+	});
+
+	test('reaper: a directory created via createTestTmpdir during a REAL `bun test` run is removed once that run exits', async () => {
+		// US-R1-002 (CAM-508): the exit hook above never fires under `bun
+		// test`, the runner every real call site in this suite uses. This
+		// spawns the actual `bun test` runner (not `bun -e`) against a fixture
+		// file, so it proves bunfig.toml's [test].preload + the afterAll in
+		// test/helpers/reap-preload.ts really reaps the directory.
+		const fixturePath = join(REPO_ROOT, 'test', 'fixtures', 'reap-preload-fixture.ts');
+		const proc = Bun.spawn(['bun', 'test', fixturePath], {
+			cwd: REPO_ROOT,
+			stdout: 'pipe',
+			stderr: 'pipe',
+		});
+		const [exitCode, stdout, stderr] = await Promise.all([
+			proc.exited,
+			new Response(proc.stdout).text(),
+			new Response(proc.stderr).text(),
+		]);
+		expect(exitCode).toBe(0);
+		const match = stdout.match(/CAM_REAP_FIXTURE_DIR:(\S+)/);
+		if (!match || !match[1]) {
+			throw new Error(`fixture did not report a directory path; stdout=${stdout} stderr=${stderr}`);
+		}
+		const childDir = match[1];
 
 		expect(existsSync(childDir)).toBe(false);
 	});

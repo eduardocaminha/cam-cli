@@ -13,6 +13,22 @@
 // scratch root below is derived from `import.meta.dir`, never
 // `process.cwd()` or `os.tmpdir()`, because dozens of existing tests call
 // `process.chdir()` mid-run to exercise cwd-sensitive code paths.
+//
+// Reap mechanism (US-R1-002, CAM-508): `process.on('exit', ...)` below fires
+// for any runtime that reaches a real process exit (a `bun -e` one-liner, a
+// plain `bun <script>.ts`), but NEVER fires under `bun test` -- the only
+// runner every call site in this suite actually runs under (confirmed
+// empirically, bun 1.3.13: a probe registering
+// `process.on('exit', () => console.error('EXIT-HOOK-FIRED'))` prints
+// nothing when the file is loaded by `bun test`). So the exit hook alone is
+// NOT the delivery mechanism for reaping directories created while running
+// this suite; `test/helpers/reap-preload.ts` (wired via `bunfig.toml`'s
+// `[test].preload`) registers a run-wide `afterAll` that calls
+// `reapOwnDirectories` (exported below for that file to import) once after
+// the entire `bun test` invocation finishes -- Bun's documented mechanism
+// for run-wide teardown (https://bun.sh/docs/test/lifecycle, "Global Setup
+// and Teardown"). The exit hook is kept as a second, harmless layer for any
+// non-test-runner usage of `createTestTmpdir` that does reach a real exit.
 
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -64,8 +80,13 @@ function pruneStaleSiblings(): void {
 	}
 }
 
-/** Removes every directory this process created, tolerating partial failure. */
-function reapOwnDirectories(): void {
+/**
+ * Removes every directory this process created, tolerating partial failure.
+ * Exported so `test/helpers/reap-preload.ts` can call it from a run-wide
+ * `afterAll`, since `process.on('exit', ...)` below never fires under
+ * `bun test` (see the header comment).
+ */
+export function reapOwnDirectories(): void {
 	for (const dir of createdByThisProcess) {
 		try {
 			rmSync(dir, { recursive: true, force: true });
