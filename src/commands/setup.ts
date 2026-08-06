@@ -423,6 +423,72 @@ export function buildSetupPrompt(opts: {
 	].join('\n');
 }
 
+// ---------------------------------------------------------------------------
+// Config-pane debug log: fixed parent, pid-namespaced, byte-capped (CAM-510).
+// ---------------------------------------------------------------------------
+//
+// The viewer pane (`v`/`V` in the menu below) pipes the config pane's output
+// into a log file via `tmux pipe-pane`. That log used to be the fixed,
+// shared, unbounded path `/tmp/cam-config.log` -- one literal entry reused
+// (and clobbered) by every `cam setup` run on the machine, for every user,
+// growing without limit for the life of the pane. The three snippet builders
+// below replace it with one fixed *parent* directory holding one file per
+// pid, capped in the shell itself (the log is produced by a bash string
+// tmux hands to `pipe-pane`, so the cap has to be a shell construction --
+// TypeScript never sees the bytes flowing through it).
+
+/** Byte ceiling for the config-pane debug log (the read-only viewer). */
+const CONFIG_LOG_CEILING_BYTES = 200_000;
+
+/**
+ * Fixed parent directory for the config-pane debug log, as a bash
+ * expression (not a resolved path -- the shell that runs the generated
+ * script resolves `$TMPDIR`). One reused parent, never a new top-level
+ * entry per run: each invocation nests its own file under it by pid.
+ */
+function configLogDirExpr(): string {
+	return '${TMPDIR:-/tmp}/cam-cli-config-log';
+}
+
+/**
+ * Bash lines that derive this run's pid-namespaced log path into
+ * `$CAM_CONFIG_LOG`. Exported so `test/setup-config-log.test.ts` can run the
+ * exact production snippet under real bash (twice, as two distinct
+ * subprocesses) and prove distinct pids produce distinct paths under the
+ * one fixed parent.
+ */
+export function buildConfigLogPathAssignment(): string {
+	return [
+		`CAM_CONFIG_LOG_DIR="${configLogDirExpr()}"`,
+		'mkdir -p "$CAM_CONFIG_LOG_DIR" 2>/dev/null',
+		'CAM_CONFIG_LOG="$CAM_CONFIG_LOG_DIR/$$.log"',
+	].join('\n');
+}
+
+/**
+ * Bash command (single line, safe to embed inside a tmux
+ * `pipe-pane -o '...'` argument) that appends piped pane output to
+ * `logPathExpr` and immediately rotates it back down to `ceilingBytes`
+ * afterwards, so the file on disk can never exceed the ceiling once the
+ * pipe stops appending to it (menu exit, pane close, or a re-toggle).
+ */
+export function buildConfigLogCapCommand(
+	logPathExpr: string,
+	ceilingBytes: number = CONFIG_LOG_CEILING_BYTES,
+): string {
+	return `cat >> ${logPathExpr}; tail -c ${ceilingBytes} ${logPathExpr} > ${logPathExpr}.tmp 2>/dev/null && mv ${logPathExpr}.tmp ${logPathExpr}`;
+}
+
+/**
+ * Bash command that stops piping into the log (if a viewer pane ever
+ * started one) and removes the file. Wired into an `EXIT` trap so it fires
+ * on every menu-exit path (`q`/`Q` in either menu state, or any signal),
+ * rather than duplicated ad hoc before each `exit 0`.
+ */
+export function buildConfigLogCleanupCommand(): string {
+	return 'tmux pipe-pane -t "$CAM_CONFIG_PANE" 2>/dev/null; rm -f "$CAM_CONFIG_LOG"';
+}
+
 /**
  * Build the menu pane bash script.
  *
@@ -452,6 +518,9 @@ RST='\\033[0m'
 CAM_CONFIG_PANE="\${CAM_CONFIG_PANE:-}"
 CAM_ORCH_PROMPT_FILE="\${CAM_ORCH_PROMPT_FILE:-.claude/.cam-orchestrator-prompt.txt}"
 CAM_ORCH_PANE=""
+
+${buildConfigLogPathAssignment()}
+trap '${buildConfigLogCleanupCommand()}' EXIT
 
 show_initial() {
 	clear
@@ -489,7 +558,7 @@ while true; do
 		read -rsn1 -t 2 key
 		case "\${key}" in
 			c|C) tmux select-pane -t "\${CAM_CONFIG_PANE}" ;;
-			v|V) tmux split-window -v -l 12 "tmux pipe-pane -t '\${CAM_CONFIG_PANE}' -o 'cat >> /tmp/cam-config.log'; tail -f /tmp/cam-config.log" ;;
+			v|V) tmux split-window -v -l 12 "tmux pipe-pane -t '\${CAM_CONFIG_PANE}' -o '${buildConfigLogCapCommand('${CAM_CONFIG_LOG}')}'; tail -f \${CAM_CONFIG_LOG}" ;;
 			q|Q) exit 0 ;;
 		esac
 		# Poll for DONE in the config pane's full scrollback.
