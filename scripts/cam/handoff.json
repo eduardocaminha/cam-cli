@@ -1,14 +1,14 @@
 {
-  "lastCompletedStory": { "id": "US-001", "title": "Ignore the repo-local scratch root on all three sides" },
+  "lastCompletedStory": { "id": "US-002", "title": "Add the single test-scratch helper with git ceiling and exit reaper" },
   "branchName": "cam/issue-508",
   "timestamp": "2026-08-05T00:00:00Z",
-  "modifiedFiles": [
-    ".gitignore",
-    "templates/.gitignore",
-    "src/vendor/_generated.ts"
+  "modifiedFiles": [],
+  "createdFiles": [
+    "test/helpers/test-tmpdir.ts",
+    "test/helpers/test-tmpdir.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "The scratch root `.cam-test-tmp/` is now ignored identically in .gitignore and templates/.gitignore (byte-identical rule line `.cam-test-tmp/`), and the embedded copy (src/vendor/_generated.ts) was regenerated via `bun run embed-vendor` and committed so `embed-vendor:check` stays clean. All 7 acceptance-criteria oracles verified green (AC1-AC2 file-assert, AC3 pinning-guard test, AC4 embed-vendor:check, AC5 typecheck, AC6 bun test, AC7 check:all). Any future story that writes into `.cam-test-tmp/` during a test run is now safe against dirtying the working tree on all three sides (repo, template, embedded copy).",
+  "nextStoryContext": "test/helpers/test-tmpdir.ts exports createTestTmpdir(prefix?) and SCRATCH_ROOT (join(import.meta.dir, '..', '..', '.cam-test-tmp')). It is the SINGLE replacement for every mkdtempSync(join(tmpdir(), prefix)) / await mkdtemp(join(tmpdir(), prefix)) call site across the suite (dozens of files, see grep for 'mkdtemp(join(tmpdir' / 'mkdtempSync(join(tmpdir'). createTestTmpdir is synchronous, so an async call site can just drop the await or keep it (await on a non-promise resolves immediately) -- no second async variant exists or should be added. It sets GIT_CEILING_DIRECTORIES=SCRATCH_ROOT on every call (proven against a real git subprocess: rev-parse --show-toplevel fails with 'not a git repository' from a scratch dir) and reaps its own created directories on process exit (process.on('exit', ...), sync rmSync, try/catch per dir) plus a bounded/failure-tolerant prune of SCRATCH_ROOT's own direct children only (never $TMPDIR) for leftovers from a hard-killed prior process. The helper file itself must never reference node:os on a code line (grep-enforced); the helper's own test uses tmpdir() only as a bare comparand, never spelled 'join(tmpdir(' (a future tree-wide oracle, likely US-007/US-008 per the PRD notes, keys on that exact substring being absent as the migration-completeness signal -- do not reintroduce it anywhere in test/**). All 7 acceptance-criteria oracles verified green (AC1-AC4 file-assert/named-command against the real filesystem+git+child-process, AC5 typecheck, AC6 bun test [6029 pass], AC7 check:all). Next story (per PRD, likely a migration story) can now replace individual call sites one at a time with createTestTmpdir(), dropping their now-unused tmpdir/join(tmpdir imports.",
   "officialDocsValidated": [
     { "lib": "none", "status": "no_external_lib_touched" }
   ]
