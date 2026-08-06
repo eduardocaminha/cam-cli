@@ -7,9 +7,9 @@
 //   3. Absent (no [plan] section, no key) -> default 'auto'
 //   4. Typo'd value -> falls back to 'auto'
 
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import { readPlanApproval } from '../../src/config/models.ts';
@@ -21,7 +21,7 @@ import { readPlanApproval } from '../../src/config/models.ts';
 let tmpDir: string;
 
 beforeEach(() => {
-	tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-approval-test-'));
+	tmpDir = createTestTmpdir('cam-plan-approval-test-');
 });
 
 afterEach(() => {

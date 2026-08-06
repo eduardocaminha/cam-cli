@@ -19,8 +19,8 @@
 //
 // US-007 (CAM-101).
 
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join, resolve } from 'node:path';
 import {
 	gcMergeWatchIfGarbage,
@@ -1256,7 +1256,7 @@ describe('merge-watch durable state I/O (US-002)', () => {
 	let tempDir: string;
 
 	beforeEach(() => {
-		tempDir = mkdtempSync(join(tmpdir(), 'merge-watch-test-'));
+		tempDir = createTestTmpdir('merge-watch-test-');
 	});
 
 	afterEach(() => {
@@ -1674,7 +1674,7 @@ describe('US-003: coalesced completion + prune sub-status', () => {
 describe('file persistence: non-terminal tick leaves file present', () => {
 	let tempDir: string;
 	beforeEach(() => {
-		tempDir = mkdtempSync(join(tmpdir(), 'cam-mw-persist-'));
+		tempDir = createTestTmpdir('cam-mw-persist-');
 	});
 	afterEach(() => {
 		rmSync(tempDir, { recursive: true, force: true });
@@ -1760,7 +1760,7 @@ describe('MergeWatchState issueId round-trip (US-002)', () => {
 	let tempDir: string;
 
 	beforeEach(() => {
-		tempDir = mkdtempSync(join(tmpdir(), 'cam-mw-issueid-'));
+		tempDir = createTestTmpdir('cam-mw-issueid-');
 	});
 
 	afterEach(() => {
@@ -1859,7 +1859,7 @@ describe('stashIssueIdInMergeWatch (US-002)', () => {
 	let tempDir: string;
 
 	beforeEach(() => {
-		tempDir = mkdtempSync(join(tmpdir(), 'cam-mw-stash-'));
+		tempDir = createTestTmpdir('cam-mw-stash-');
 	});
 
 	afterEach(() => {
@@ -1952,7 +1952,7 @@ describe('AC4: gcMergeWatchIfGarbage real-fs regression (US-001)', () => {
 	let tempDir: string;
 
 	beforeEach(() => {
-		tempDir = mkdtempSync(join(tmpdir(), 'cam-mw-gc-'));
+		tempDir = createTestTmpdir('cam-mw-gc-');
 	});
 
 	afterEach(() => {
@@ -2050,7 +2050,7 @@ describe('AC3: preserved-seed -> enrich -> stepMergeWatch closeIssueId (US-001)'
 	let tempDir: string;
 
 	beforeEach(() => {
-		tempDir = mkdtempSync(join(tmpdir(), 'cam-mw-ac3-'));
+		tempDir = createTestTmpdir('cam-mw-ac3-');
 	});
 
 	afterEach(() => {
@@ -2280,7 +2280,7 @@ describe('processPollResult / stepMergeWatch: BEHIND auto-recovery (US-001, CAM-
 
 	// AC (round-trip): updateBranchCount survives a write/read cycle (sidecar restart).
 	test('updateBranchCount round-trips through writeMergeWatchState/readMergeWatchState', () => {
-		const filePath = join(mkdtempSync(join(tmpdir(), 'merge-watch-behind-test-')), '.cam-merge-watch.json');
+		const filePath = join(createTestTmpdir('merge-watch-behind-test-'), '.cam-merge-watch.json');
 		writeMergeWatchState(filePath, { prNumber: 42, mergedBranch: 'cam/b', updateBranchCount: 1 });
 
 		const read = readMergeWatchState(filePath);
@@ -2291,7 +2291,7 @@ describe('processPollResult / stepMergeWatch: BEHIND auto-recovery (US-001, CAM-
 	// AC (round-trip legacy): a legacy state file without updateBranchCount reads
 	// back as fresh (count 0 via the `?? 0` default at use-sites).
 	test('legacy state file without updateBranchCount reads back as fresh (undefined -> 0)', () => {
-		const filePath = join(mkdtempSync(join(tmpdir(), 'merge-watch-behind-legacy-')), '.cam-merge-watch.json');
+		const filePath = join(createTestTmpdir('merge-watch-behind-legacy-'), '.cam-merge-watch.json');
 		writeFileSync(filePath, JSON.stringify({ prNumber: 7, mergedBranch: 'cam/legacy' }), 'utf8');
 
 		const state = readMergeWatchState(filePath);
@@ -2302,7 +2302,7 @@ describe('processPollResult / stepMergeWatch: BEHIND auto-recovery (US-001, CAM-
 
 	// AC (default write): writeMergeWatchState defaults updateBranchCount to 0 when absent.
 	test('writeMergeWatchState defaults updateBranchCount to 0 when absent in state', () => {
-		const filePath = join(mkdtempSync(join(tmpdir(), 'merge-watch-behind-default-')), '.cam-merge-watch.json');
+		const filePath = join(createTestTmpdir('merge-watch-behind-default-'), '.cam-merge-watch.json');
 		writeMergeWatchState(filePath, { prNumber: 1, mergedBranch: 'cam/b' });
 
 		const read = readMergeWatchState(filePath);
@@ -2712,7 +2712,7 @@ describe('ship-stalled marker durable I/O helpers (US-002, CAM-182)', () => {
 	let filePath: string;
 
 	beforeEach(() => {
-		tempDir = mkdtempSync(join(tmpdir(), 'cam-ship-stalled-'));
+		tempDir = createTestTmpdir('cam-ship-stalled-');
 		filePath = join(tempDir, SHIP_STALLED_FILENAME);
 	});
 
@@ -2781,7 +2781,7 @@ describe('updateShipStalledMarker: sidecar terminal-branch marker reconciliation
 	let markerPath: string;
 
 	beforeEach(() => {
-		tempDir = mkdtempSync(join(tmpdir(), 'cam-ship-stalled-caller-'));
+		tempDir = createTestTmpdir('cam-ship-stalled-caller-');
 		markerPath = join(tempDir, SHIP_STALLED_FILENAME);
 	});
 
@@ -2883,7 +2883,7 @@ describe('updatePostMergeStalledMarker: durable marker on merged-but-post-merge-
 	let markerPath: string;
 
 	beforeEach(() => {
-		tempDir = mkdtempSync(join(tmpdir(), 'cam-post-merge-stalled-caller-'));
+		tempDir = createTestTmpdir('cam-post-merge-stalled-caller-');
 		markerPath = join(tempDir, POST_MERGE_STALLED_FILENAME);
 	});
 
@@ -3024,7 +3024,7 @@ describe('clearImplementBlockedMarkerOnMerge: merged-terminal implement-blocked 
 	};
 
 	beforeEach(() => {
-		tempDir = mkdtempSync(join(tmpdir(), 'cam-implement-blocked-merge-'));
+		tempDir = createTestTmpdir('cam-implement-blocked-merge-');
 		markerPath = join(tempDir, IMPLEMENT_BLOCKED_FILENAME);
 	});
 

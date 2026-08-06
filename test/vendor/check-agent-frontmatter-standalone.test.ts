@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -26,7 +26,7 @@ let scriptPath: string;
 
 beforeEach(() => {
   // Fresh tmpdir with no node_modules -- mirrors the zero-dep invariant.
-  tmpDir = mkdtempSync(join(tmpdir(), "cam-smoke-standalone-"));
+  tmpDir = createTestTmpdir("cam-smoke-standalone-");
 
   // git init so the smoke's `git rev-parse --show-toplevel` resolves correctly.
   spawnSync("git", ["init"], { cwd: tmpDir });

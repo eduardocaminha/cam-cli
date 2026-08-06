@@ -17,6 +17,7 @@ import {
 } from '../../src/commands/domain-docs.ts';
 import type { DomainDocsPayload } from '../../src/domain-docs/render.ts';
 import type { WorkerEvent } from '../../src/supervisor/events.ts';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -420,11 +421,10 @@ describe('writeDomainDocsOnMain — AC5: domain-docs-written observability event
 	});
 
 	test('production wiring: omitting eventSink writes to <cwd>/.claude/cam-worker-events.jsonl', async () => {
-		const { mkdtempSync, readFileSync, rmSync } = await import('node:fs');
-		const { tmpdir } = await import('node:os');
+		const { readFileSync, rmSync } = await import('node:fs');
 		const { join } = await import('node:path');
 
-		const tmpCwd = mkdtempSync(join(tmpdir(), 'cam-domain-docs-events-'));
+		const tmpCwd = createTestTmpdir('cam-domain-docs-events-');
 		try {
 			const { spawnFn } = makeRecordingSpawn();
 			const result = writeDomainDocsOnMain({

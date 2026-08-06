@@ -13,8 +13,8 @@
 import { describe, expect, test, afterEach } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import type { SpawnSyncReturns } from 'node:child_process';
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import type { IssueEntry } from '../../src/issues/types.ts';
 import {
@@ -545,7 +545,7 @@ afterEach(() => {
  * spawnSync default, by seeding entries with a large filler title.
  */
 function makeLargeBacklogRepo(count: number, fillerBytes: number): { dir: string; ids: string[] } {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-backlog-maxbuffer-'));
+	const dir = createTestTmpdir('cam-backlog-maxbuffer-');
 	dirsToCleanup.push(dir);
 
 	const git = (args: string[]) =>

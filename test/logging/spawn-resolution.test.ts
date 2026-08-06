@@ -5,8 +5,8 @@
 // All tests inject a fake event-writer: no real fs, no real stderr.
 
 import { test, expect, describe, afterAll } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import {
 	emitSpawnResolution,
@@ -129,7 +129,7 @@ function donePane(): string {
  * mirroring loop.test.ts's GENERIC_SUPERVISOR_CONFIG_PATH idiom (US-003):
  * decouples this file's tests from the repo's live scripts/cam/project.toml.
  */
-const GENERIC_SUPERVISOR_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-spawn-resolution-generic-config-'));
+const GENERIC_SUPERVISOR_CONFIG_DIR = createTestTmpdir('cam-spawn-resolution-generic-config-');
 const GENERIC_SUPERVISOR_CONFIG_PATH = join(GENERIC_SUPERVISOR_CONFIG_DIR, 'project.toml');
 writeFileSync(GENERIC_SUPERVISOR_CONFIG_PATH, '[backend]\nimplementer = "claude"\n');
 

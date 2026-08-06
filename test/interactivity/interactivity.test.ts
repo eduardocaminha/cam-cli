@@ -33,15 +33,8 @@
 //   - Each test owns a fresh tmpdir for any file artifacts it produces.
 
 import { afterEach, beforeAll, describe, expect, test } from 'bun:test';
-import {
-	existsSync,
-	mkdirSync,
-	mkdtempSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
@@ -282,7 +275,7 @@ describe('Test 3: /cancel-cam removes .claude/cam-loop.local.md AND the next cam
 
 	test('after state-file removal, runStatus returns state: idle and no iteration info', () => {
 		// Create a fresh tmpdir + .claude/ subdir.
-		tmpDir = mkdtempSync(join(tmpdir(), 'cam-cancel-test-'));
+		tmpDir = createTestTmpdir('cam-cancel-test-');
 		const claudeDir = join(tmpDir, '.claude');
 		mkdirSync(claudeDir);
 		const stateFilePath = join(claudeDir, 'cam-loop.local.md');
@@ -329,7 +322,7 @@ pid: ${process.pid}
 	});
 
 	test('removing only the state file (leaving prd.json) still yields idle, with prd.json still readable as next-pending', () => {
-		tmpDir = mkdtempSync(join(tmpdir(), 'cam-cancel-test-'));
+		tmpDir = createTestTmpdir('cam-cancel-test-');
 		const claudeDir = join(tmpDir, '.claude');
 		mkdirSync(claudeDir);
 		const stateFilePath = join(claudeDir, 'cam-loop.local.md');
@@ -378,7 +371,7 @@ describe("Test 4: Operator types a message + later /cam-next resumes without los
 	});
 
 	test('typed-message interlude leaves the state file iteration unchanged', async () => {
-		tmpDir = mkdtempSync(join(tmpdir(), 'cam-resume-test-'));
+		tmpDir = createTestTmpdir('cam-resume-test-');
 		const claudeDir = join(tmpDir, '.claude');
 		mkdirSync(claudeDir);
 		const stateFilePath = join(claudeDir, 'cam-loop.local.md');

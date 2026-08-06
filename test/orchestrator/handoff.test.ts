@@ -4,8 +4,8 @@
 // as the project .claude dir so the atomic write + read path is exercised.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import {
 	writeOrchHandoff,
@@ -16,7 +16,7 @@ import {
 } from '../../src/orchestrator/handoff.ts';
 
 function freshClaudeDir(): string {
-	return mkdtempSync(join(tmpdir(), 'cam-orch-handoff-'));
+	return createTestTmpdir('cam-orch-handoff-');
 }
 
 describe('orch handoff write/read', () => {

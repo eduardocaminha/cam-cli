@@ -4,8 +4,8 @@
 // resolvePhaseModel's backend-aware precedence for the codex and claude
 // paths, and the fail-closed abort message shape.
 
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
@@ -15,7 +15,7 @@ import type { CodexModelsCacheReader, CodexModelSelection } from '../../src/conf
 let tmpDir: string;
 
 beforeEach(() => {
-	tmpDir = mkdtempSync(join(tmpdir(), 'cam-model-resolution-test-'));
+	tmpDir = createTestTmpdir('cam-model-resolution-test-');
 });
 
 afterEach(() => {

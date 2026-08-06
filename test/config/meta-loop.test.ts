@@ -9,9 +9,9 @@
 //   4. Non-string value -> falls back to 'off'
 //   5. Malformed TOML -> falls back to 'off'
 
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import { readMetaLoop } from '../../src/config/models.ts';
@@ -23,7 +23,7 @@ import { readMetaLoop } from '../../src/config/models.ts';
 let tmpDir: string;
 
 beforeEach(() => {
-	tmpDir = mkdtempSync(join(tmpdir(), 'cam-meta-loop-test-'));
+	tmpDir = createTestTmpdir('cam-meta-loop-test-');
 });
 
 afterEach(() => {

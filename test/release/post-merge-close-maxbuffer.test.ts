@@ -27,8 +27,8 @@
 import { test, expect, afterEach } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import type { SpawnSyncReturns } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { defaultCloseIssueFn } from '../../src/release/post-merge.ts';
@@ -71,7 +71,7 @@ const buggyFieldByFieldSpawnFn: SpawnFn = (cmd, args, opts) =>
 // ---------------------------------------------------------------------------
 
 function makeLargeBacklogRepo(fileCount: number, descriptionBytes: number): string {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-postmerge-maxbuf-'));
+	const dir = createTestTmpdir('cam-postmerge-maxbuf-');
 	dirsToCleanup.push(dir);
 
 	const run = (args: string[]) => spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8', stdio: 'pipe' });

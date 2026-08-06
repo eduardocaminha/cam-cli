@@ -16,8 +16,8 @@
 //      performs no writes (mtimeMs-diff, mirrors test/unit/status-projection.test.ts).
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, rmSync, statSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync, appendFileSync, rmSync, statSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import {
@@ -41,7 +41,7 @@ function baseSignals(): WhyNotMovingSignals {
 }
 
 function withTmpCwd(fn: (dir: string) => void): void {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-status-diagnostics-'));
+	const dir = createTestTmpdir('cam-status-diagnostics-');
 	try {
 		mkdirSync(join(dir, '.claude'), { recursive: true });
 		fn(dir);

@@ -17,8 +17,8 @@
 //   5. buildStatusReport performs no writes.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, statSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync, rmSync, statSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { buildStatusReport } from '../../src/commands/status.ts';
@@ -45,7 +45,7 @@ import {
 import { SIDECAR_STALLED_FILENAME, writeSidecarStalledMarker } from '../../src/supervisor/sidecar-stalled.ts';
 
 function withTmpCwd(fn: (dir: string) => void): void {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-status-projection-'));
+	const dir = createTestTmpdir('cam-status-projection-');
 	try {
 		mkdirSync(join(dir, '.claude'), { recursive: true });
 		fn(dir);
