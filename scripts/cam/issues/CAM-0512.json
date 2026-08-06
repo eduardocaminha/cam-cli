@@ -1,0 +1,43 @@
+{
+  "id": "CAM-512",
+  "title": "Prune do scratch root apaga o proprio .git fence 1h depois de cria-lo: invariante de fencing morre em silencio",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-06T11:12:50.119Z",
+  "updatedAt": "2026-08-06T11:12:50.119Z",
+  "description": "Debito da CAM-508 (v0.284.0). pruneStaleSiblings() em test/helpers/test-tmpdir.ts enumera os filhos DIRETOS de SCRATCH_ROOT (.cam-test-tmp) e remove todo entry com mtime acima de STALE_AGE_MS (1h). O diretorio .git criado por ensureScratchRootIsAGitRepo() e um filho direto de SCRATCH_ROOT, entao exatamente uma hora depois de ser criado ele proprio vira alvo do prune e e apagado. Pior: dentro de ensureScratchRoot() a ordem e ensureScratchRootIsAGitRepo() e DEPOIS pruneStaleSiblings(), as duas sob o mesmo guard if (!initialized), entao o processo que apaga o fence nao consegue recria-lo, porque o ensure ja rodou e viu o .git ainda existindo. O efeito nao e so teste vermelho: o fence existe para que git rev-parse --show-toplevel a partir de um scratch dir pare em SCRATCH_ROOT em vez de resolver na arvore de trabalho do proprio cam-cli, entao entre o prune e a proxima recriacao qualquer teste que dispare git de um scratch dir opera contra o REPO REAL, que e exatamente a classe de acidente que a CAM-508 foi construida para impedir. Medido em 2026-08-06: reproduzido por mutacao de variavel unica, .git fresco da 8 pass 0 fail e .git envelhecido 3h da a falha exata vista no preflight, Expected .cam-test-tmp e Received a raiz do repo. Custo ja pago: matou um preflight de plano da CAM-510.",
+  "specSource": "derived",
+  "derivedFrom": [
+    "CAM-508"
+  ],
+  "spec": {
+    "acceptanceCriteria": [
+      "pruneStaleSiblings() nunca remove o proprio .git de SCRATCH_ROOT: existe test/helpers/test-tmpdir-git-fence-durability.test.ts que envelhece SCRATCH_ROOT/.git para alem de STALE_AGE_MS, dispara o caminho real de prune num processo FRESCO via createTestTmpdir(), e afirma que .git continua existindo depois. [oracle: named-command bun test test/helpers/test-tmpdir-git-fence-durability.test.ts] swept RED on main 2026-08-06: sai 1, o arquivo nao existe.",
+      "O mesmo teste prova o INVARIANTE e nao apenas a presenca do diretorio: depois do prune com .git envelhecido, git rev-parse --show-toplevel disparado de dentro de um diretorio devolvido por createTestTmpdir() resolve para SCRATCH_ROOT e NAO para a raiz de trabalho do cam-cli, com o processo git rodando sem herdar GIT_CEILING_DIRECTORIES, para que a asercao meca o fence de .git e nao a variavel de ambiente. [oracle: named-command bun test test/helpers/test-tmpdir-git-fence-durability.test.ts] swept RED on main 2026-08-06: sai 1, o arquivo nao existe.",
+      "O teste ja existente do helper continua verde com .git envelhecido, que e a condicao sob a qual ele falha hoje. [oracle: named-command bun test test/helpers/test-tmpdir.test.ts] swept RED on main 2026-08-06 sob a condicao do defeito: com .git envelhecido em 3h sai 1 com 7 pass e 1 fail no caso location-independent fence, Expected .cam-test-tmp e Received a raiz do repo; com .git fresco sai 0 com 8 pass, ou seja o vermelho vem do defeito e nao de teste quebrado.",
+      "Typecheck passa. [oracle: named-command bun run typecheck]",
+      "A suite passa. [oracle: named-command bun test]",
+      "A spine de qualidade passa inteira. [oracle: named-command bun run check:all]"
+    ],
+    "scope": "Corrigir pruneStaleSiblings() em test/helpers/test-tmpdir.ts para nunca remover o .git do proprio SCRATCH_ROOT, e travar o invariante com um teste durable. Nao mexe em codigo de produto.",
+    "gotchas": [
+      "GOTCHA 1: a janela e temporal e nao aleatoria, entao o defeito parece flaky e nao e. Ele so arma uma hora depois de .git ser criado, o que explica verde em execucao isolada logo apos uma recriacao e vermelho numa suite que roda mais tarde. Nao classificar como flaky nem como pre-existente; a reproducao e deterministica dado o envelhecimento.",
+      "GOTCHA 2: a auto-cura mascara a medicao. Assim que um processo encontra .git ausente, ensureScratchRootIsAGitRepo() recria com mtime novo, e a proxima execucao fica verde. Qualquer medicao precisa envelhecer .git explicitamente (touch -t) imediatamente antes de rodar, senao mede o estado curado e certifica um defeito vivo como resolvido.",
+      "GOTCHA 3: a ordem dentro de ensureScratchRoot() e parte do defeito e nao um detalhe. ensureScratchRootIsAGitRepo() roda ANTES de pruneStaleSiblings() sob o mesmo if (!initialized), entao inverter a ordem nao basta como conserto: pruneStaleSiblings deve excluir .git explicitamente, senao o processo seguinte volta a apagar. Um conserto que apenas reordene fica verde no teste de presenca e continua destruindo o fence em processos posteriores.",
+      "GOTCHA 4: nao migrar nem tocar test/vendor/check-agent-frontmatter-standalone.test.ts, a unica entrada permanente do allowlist de scripts/check-test-tmpdir.ts. Ela e legitima e depende de enraizar no $TMPDIR real mais bun --no-install; migra-la parece fechar o zero-derivado e mata a invariante de zero-dependencia em silencio (ver CAM-508 e CAM-510).",
+      "GOTCHA 5: o prune existe por um motivo real e nao deve ser enfraquecido em bloco. Ele limpa restos de processos hard-killed antes do exit hook rodar, e a CAM-508 o restringiu de proposito aos filhos diretos de SCRATCH_ROOT, nunca ao $TMPDIR compartilhado, que era o defeito original de ls e find levando de 30 a 120s. O conserto e excluir .git, nao desligar o prune nem alargar seu escopo."
+    ],
+    "domainTerms": [
+      "SCRATCH_ROOT: a raiz de scratch repo-local .cam-test-tmp, derivada de import.meta.dir e nunca de process.cwd(), definida em test/helpers/test-tmpdir.ts.",
+      "git fence: o .git proprio de SCRATCH_ROOT, que faz a busca de repositorio do git parar ali em vez de subir ate a arvore de trabalho do cam-cli. Camada primaria, com GIT_CEILING_DIRECTORIES como camada secundaria redundante que so vale para processos que herdam process.env vivo.",
+      "STALE_AGE_MS: a constante de 1h que define o que o prune considera resto velho."
+    ]
+  },
+  "wsjf": {
+    "value": 9,
+    "timeCriticality": 9,
+    "riskReduction": 9,
+    "jobSize": 5
+  }
+}
