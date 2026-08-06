@@ -134,7 +134,7 @@
         "The full quality spine is green (bun run check:all). [oracle: named-command bun run check:all]"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: 26 files across test/config, test/release, test/unit, test/orchestrator, test/transcript, test/issues, test/vendor, test/plan, test/notify, test/logging, test/interactivity, test/fixtures, test/domain-docs, test/retry. test/retry/* are ported files whose MIT headers must survive byte-for-byte (curated invariant: keep ported src/retry and test/retry MIT headers intact); the awaited form `await mkdtemp(join(tmpdir(...)` must be served by the single US-002 helper. GOTCHA 11: raising the 20_000 budget of the two test/vendor/check-agent-frontmatter-standalone.test.ts tests is FORBIDDEN as a fix; the body is synchronous via spawnSync and bun's watchdog does not preempt a blocking sync call, so raising it only moves the number at which the failure appears. The correct fix is exactly this migration (0.038s at the repo root against 4.433s in the bloated $TMPDIR), and after this story those two tests should be measurably fast without any budget edit. GOTCHA 10 (a)/(b)/(c) re-checks apply per file. Mechanize with scripts/codemod-test-tmpdir.ts (US-003)."
     },
