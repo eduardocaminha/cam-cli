@@ -1,15 +1,59 @@
 {
-  "lastCompletedStory": { "id": "US-002", "title": "Add the single test-scratch helper with git ceiling and exit reaper" },
+  "lastCompletedStory": { "id": "US-003", "title": "Migrate test/*.test.ts to the helper via a committed codemod" },
   "branchName": "cam/issue-508",
   "timestamp": "2026-08-05T00:00:00Z",
-  "modifiedFiles": [],
+  "modifiedFiles": [
+    "scripts/validate-agents-md.ts",
+    "test/attach-hint.test.ts",
+    "test/check-all-inprocess-gates.test.ts",
+    "test/check-gitignore-parity-script.test.ts",
+    "test/dashboard.test.ts",
+    "test/embedded.test.ts",
+    "test/init.test.ts",
+    "test/install-sh.test.ts",
+    "test/issue-list.test.ts",
+    "test/issue.test.ts",
+    "test/next.test.ts",
+    "test/orch-agent-allowlist.test.ts",
+    "test/plan-phase-crash-safety.test.ts",
+    "test/plan-runner-clear-stale.test.ts",
+    "test/plan-runner-in-progress-conflict.test.ts",
+    "test/plan-runner-no-prd.test.ts",
+    "test/plan-runner-target-invalid.test.ts",
+    "test/plan-runner-target-prompt.test.ts",
+    "test/plan-target-invalid-sidecar.test.ts",
+    "test/plan.test.ts",
+    "test/record-golden.test.ts",
+    "test/resume.test.ts",
+    "test/run.test.ts",
+    "test/setup-menu.test.ts",
+    "test/setup.test.ts",
+    "test/ship.test.ts",
+    "test/sidecar-gate-phase.test.ts",
+    "test/sidecar-resolver-git.test.ts",
+    "test/status.test.ts",
+    "test/stop-markers.test.ts",
+    "test/stop.test.ts",
+    "test/templates-gitignore-dotenv.test.ts",
+    "test/templates-gitignore-runtime-artifacts.test.ts",
+    "test/tmux-session.test.ts",
+    "test/toml.test.ts",
+    "test/validate-agents-md.test.ts"
+  ],
   "createdFiles": [
-    "test/helpers/test-tmpdir.ts",
-    "test/helpers/test-tmpdir.test.ts"
+    "scripts/codemod-test-tmpdir.ts",
+    "test/codemod-test-tmpdir.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "test/helpers/test-tmpdir.ts exports createTestTmpdir(prefix?) and SCRATCH_ROOT (join(import.meta.dir, '..', '..', '.cam-test-tmp')). It is the SINGLE replacement for every mkdtempSync(join(tmpdir(), prefix)) / await mkdtemp(join(tmpdir(), prefix)) call site across the suite (dozens of files, see grep for 'mkdtemp(join(tmpdir' / 'mkdtempSync(join(tmpdir'). createTestTmpdir is synchronous, so an async call site can just drop the await or keep it (await on a non-promise resolves immediately) -- no second async variant exists or should be added. It sets GIT_CEILING_DIRECTORIES=SCRATCH_ROOT on every call (proven against a real git subprocess: rev-parse --show-toplevel fails with 'not a git repository' from a scratch dir) and reaps its own created directories on process exit (process.on('exit', ...), sync rmSync, try/catch per dir) plus a bounded/failure-tolerant prune of SCRATCH_ROOT's own direct children only (never $TMPDIR) for leftovers from a hard-killed prior process. The helper file itself must never reference node:os on a code line (grep-enforced); the helper's own test uses tmpdir() only as a bare comparand, never spelled 'join(tmpdir(' (a future tree-wide oracle, likely US-007/US-008 per the PRD notes, keys on that exact substring being absent as the migration-completeness signal -- do not reintroduce it anywhere in test/**). All 7 acceptance-criteria oracles verified green (AC1-AC4 file-assert/named-command against the real filesystem+git+child-process, AC5 typecheck, AC6 bun test [6029 pass], AC7 check:all). Next story (per PRD, likely a migration story) can now replace individual call sites one at a time with createTestTmpdir(), dropping their now-unused tmpdir/join(tmpdir imports.",
+  "nextStoryContext": "scripts/codemod-test-tmpdir.ts is committed and unit-pinned (test/codemod-test-tmpdir.test.ts, 15 tests): it exports a pure transformTestTmpdirSource(source, importSpecifier) recognizing the sync mkdtempSync(join(tmpdir(), prefix)) form, the awaited mkdtemp(join(tmpdir(), prefix)) form, and the bare join(tmpdir(), ...rest) path-join form, rewriting each to createTestTmpdir(...) (US-002 helper) and pruning now-unused node:os/node:fs/node:fs/promises imports (dropping the whole import statement, or just the identifier if siblings remain used), inserting the helper import at the node:os import's former position (or after the leading import block if no node:os import existed). It also exports computeHelperImportSpecifier(repoRelativeFilePath) to compute the right relative import path. CLI entrypoint: `bun scripts/codemod-test-tmpdir.ts <file> [<file> ...]`, idempotent (a second pass is always changed:false). All 35 top-level test/*.test.ts files that rooted a temp dir in the OS temp dir are now migrated (AC1 grep is clean); no top-level test/*.test.ts file remains as a rooting site. GOTCHA discovered mid-story (now fixed and documented in patterns.md): Bun.spawnSync does NOT live-inherit a process.env mutation made after process startup unless `env: process.env` is passed explicitly -- scripts/validate-agents-md.ts's makeGetTrackedFiles/makeIsIgnored needed this fix because the migrated test/validate-agents-md.test.ts now sets GIT_CEILING_DIRECTORIES at runtime via the helper. Any future migration story (US-004..US-007) whose touched test file exercises a spawned git call through production code needs the same env:process.env re-check per file touched -- grep the target file's production call sites for `Bun.spawnSync(['git'` / `Bun.spawn(['git'` without an `env` option before assuming GIT_CEILING_DIRECTORIES coverage is automatic. Remaining rooting sites (per PRD, likely test/supervisor/**, test/fixtures/**, or other nested test dirs) are out of scope for US-003 (top-level test/*.test.ts only, no glob change) and belong to a later story in this PRD.",
   "officialDocsValidated": [
-    { "lib": "none", "status": "no_external_lib_touched" }
+    {
+      "lib": "Bun (Bun.spawnSync)",
+      "channel": "WebFetch",
+      "url": "https://bun.com/docs/api/spawn",
+      "fetchedAt": "2026-08-05T00:00:00Z",
+      "status": "aligned",
+      "summary": "Bun's own spawn docs page does not explicitly document env-inheritance semantics (whether omitting `env` inherits a live vs. snapshotted process.env). The fix (env: process.env) is confirmed by direct empirical repro (git ls-files from a GIT_CEILING_DIRECTORIES-fenced scratch dir: exit 0 without env forwarding, exit 128 with it, matching a shell control), documented in patterns.md; no doc statement contradicts the fix."
+    }
   ]
 }
