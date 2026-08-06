@@ -168,7 +168,7 @@
         "Tests pass (bun test). [oracle: named-command bun test]"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: scripts/check-all.ts (GATES list, follow the existing `g('name', 'command')` shape used by the test-sleeps entry at line 180), test/gates-manifest.test.ts (add CAM503_GATES next to CAM305_GATES at line 27 and include it in the aggregate list at line 77). Place the new gate after test-sleeps in the ordered manifest; the manifest test asserts membership and ordering, so update both the block and the aggregate. From this story on, the gate runs on every check:all and in CI, which is what makes the derived-zero state durable instead of a one-time cleanup."
     }
