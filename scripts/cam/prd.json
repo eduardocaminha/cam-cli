@@ -49,7 +49,7 @@
         "The full quality spine is green (bun run check:all). [oracle: named-command bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: test/helpers/test-tmpdir.ts (new), test/helpers/test-tmpdir.test.ts (new). One function only: it must also serve the async `await mkdtemp(join(tmpdir(...)` sites in test/retry migrated by US-007, so do not add a second helper. Derive the root from import.meta.dir (never process.cwd(): dozens of tests chdir out of the repo mid-test). Ban on node:os is about CODE, not prose (GOTCHA 4); as a by-product the helper structurally cannot readdir $TMPDIR, which is what keeps the prune bounded (GOTCHA 12: in the observed state ls and find blew 30-120s timeouts). CRITICAL spelling constraint: the helper test needs tmpdir() only as a COMPARAND to prove the returned path is not under the os temp dir (GOTCHA 8), and it must NOT be written as `join(tmpdir()` in any form, because the tree-wide derived-zero oracle of US-007 and the durable gate of US-008 both key on that spelling; write it as a startsWith/negation against the bare call instead. Reaper via a process exit hook; keep it failure-tolerant so a half-removed directory never fails an unrelated test. scripts/file-size-budget.json may need a raise once helper imports land (GOTCHA 13); raising and committing it is normal hygiene, never a hook bypass. check:all here also runs biome lint, knip dead-code, file-size and the jscpd dup gate, so the new files must be clean under all four at the story that introduces them."
     },
