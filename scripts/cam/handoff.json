@@ -1,0 +1,15 @@
+{
+  "lastCompletedStory": { "id": "US-001", "title": "Ignore the repo-local scratch root on all three sides" },
+  "branchName": "cam/issue-508",
+  "timestamp": "2026-08-05T00:00:00Z",
+  "modifiedFiles": [
+    ".gitignore",
+    "templates/.gitignore",
+    "src/vendor/_generated.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "The scratch root `.cam-test-tmp/` is now ignored identically in .gitignore and templates/.gitignore (byte-identical rule line `.cam-test-tmp/`), and the embedded copy (src/vendor/_generated.ts) was regenerated via `bun run embed-vendor` and committed so `embed-vendor:check` stays clean. All 7 acceptance-criteria oracles verified green (AC1-AC2 file-assert, AC3 pinning-guard test, AC4 embed-vendor:check, AC5 typecheck, AC6 bun test, AC7 check:all). Any future story that writes into `.cam-test-tmp/` during a test run is now safe against dirtying the working tree on all three sides (repo, template, embedded copy).",
+  "officialDocsValidated": [
+    { "lib": "none", "status": "no_external_lib_touched" }
+  ]
+}
