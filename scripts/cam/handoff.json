@@ -1,28 +1,29 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Bound the ship-PR body tempfile under one fixed reused parent"
+    "id": "US-002",
+    "title": "Nest the vendor cache versions under one fixed parent and correct the false reboot comment"
   },
   "branchName": "cam/issue-510",
-  "timestamp": "2026-08-06T16:00:00Z",
+  "timestamp": "2026-08-06T16:45:00Z",
   "createdFiles": [
-    "src/release/ship-pr-tempfile.ts",
-    "test/release/ship-pr-tempfile.test.ts"
+    "test/vendor/embedded-cache-bounded.test.ts"
   ],
   "modifiedFiles": [
-    "src/commands/sidecar.ts"
+    "src/vendor/embedded.ts",
+    "scripts/file-size-budget.json",
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "US-001 (Site 1 of 5, CAM-510, ship-pr temp body) is fully implemented and verified DONE on this 5th dispatch: local HEAD (551e5d63) and origin/cam/issue-510 are now IDENTICAL (confirmed via git fetch + rev-parse, both resolve to 551e5d63) -- the branch-divergence blocker recorded across the 4 prior dispatches' openQuestions (local chain diverged from an origin chain that had US-001..US-004 already finalized under different SHAs) is RESOLVED; no reconciliation action was needed or taken this dispatch, the remote ref simply now matches local HEAD. Implementation: src/release/ship-pr-tempfile.ts (writeShipPrTempFile) writes under a single fixed, reused parent join(tmpdir(), 'cam-ship-pr'), nested one level by process pid, with stale-sibling pruning (GOTCHA 8) that never touches the live process's own pid dir or the shared temp root itself (GOTCHA 5). Wired into src/commands/sidecar.ts:1201 (buildProductionShipPrStepDeps) replacing the old mkdtempSync(join(tmpdir(), 'cam-ship-pr-')) call. All gates verified green this dispatch: AC1 grep (no mkdtempSync rooted in tmpdir() in sidecar.ts) empty-match as required, AC2 test/release/ship-pr-tempfile.test.ts 3/3 pass, file-size ratchet ok (sidecar.ts is now 3717 lines, UNDER its existing 3722 ceiling -- the module extraction actually shrank the file, so no budget raise or CAM-510 _ref entry was needed; AC3's oracle (bun scripts/check-file-sizes.ts) passes without one), typecheck clean, full bun test 6074 pass / 0 fail, full bun run check:all spine green (lint/coverage/debt-markers/dead-code/dup/ci-parity/agents-md/test-sleeps/test-tmpdir/skip-ratchet all ok). Next dispatch should proceed to Site 2 of 5 per the CAM-510 issue spec (see prd.json notes for the next story) with no special handling required; the branch is in a clean, pushed, in-sync state.",
+  "nextStoryContext": "US-002 (Site 2 of 5, CAM-510, vendor-extraction cache) is fully implemented and verified DONE. src/vendor/embedded.ts's cacheDir() now nests every installed version under a single fixed, reused parent (join(tmpdir(), 'cam-cli-vendor', CAM_VERSION)) instead of a per-version top-level entry (join(tmpdir(), `cam-cli-vendor-${CAM_VERSION}`)); the CAM_VENDOR_CACHE_DIR override precedence is unchanged (checked first, bypasses the fixed parent entirely, never touched by pruning). Added pruneStaleVersionSiblings(parent): reads only the fixed parent's own direct children (never the shared temp root, GOTCHA 5), skips whatever equals the CURRENT CAM_VERSION unconditionally (safe across any number of concurrent same-version cam processes, unlike a pid-keyed design), and only removes sibling version dirs older than STALE_VERSION_DIR_AGE_MS (1h, GOTCHA 8) so a still-running OLDER cam process keeps its extraction long enough to finish using it. Wired into materializeEmbedded(), guarded by `if (!process.env['CAM_VENDOR_CACHE_DIR'])` so the prune pass never runs when the override is active. The false ':63-66 wiped on reboot' comment is rewritten to state the OS tmpdir does NOT reliably clear itself across upgrades (measured survivors were the actual defect) and that pruning, not the OS, is what bounds the cache now. AC3 grep oracle (no 'cam-cli-vendor-' substring, no 'wiped on reboot' substring) verified passing directly. AC4 test/vendor/embedded-cache-bounded.test.ts (5 tests, TMPDIR redirected via createTestTmpdir + restored in a try/finally per test, never imports tmpdir from node:os) verified 5/5 pass: (a) no flat cam-cli-vendor-<version> entry, only the fixed parent, at the redirected root; (b) a stale version dir planted inside the fixed parent (2h-old mtime) does not survive a materializeEmbedded call; (c) the current-version materialized file is still byte-correct against readEmbedded(); (d) CAM_VENDOR_CACHE_DIR override still wins and the default fixed parent is never even created under it; (e) an unrelated top-level sibling at the redirected TMPDIR root survives untouched, confirming pruning never enumerates the temp root itself. File-size budget: src/vendor/embedded.ts grew 111->155 lines (gate's content.split('\\n').length measure, one more than wc -l due to trailing newline); raised in scripts/file-size-budget.json with a dated CAM-510 US-002 _ref entry, staged in the same commit. All gates verified green this dispatch: typecheck clean, full bun test 6079 pass / 0 fail, embed-vendor:check clean (src/vendor/embedded.ts is hand-written, not codegenned, so no regen needed but the drift check still passed), full bun run check:all spine green (lint/coverage/debt-markers/dead-code/dup/ci-parity/agents-md/test-sleeps/test-tmpdir/skip-ratchet all ok, file-size ok post-raise). Appended a patterns.md bullet contrasting version-keyed vs pid-keyed nesting identity for future fixed-parent-cache designs. Next dispatch should proceed to Site 3 of 5 per the CAM-510 issue spec (see prd.json notes for the next story); branch is clean, committed, not yet pushed by this dispatch's final step (push happens right after this write).",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
       "lib": "node:os / node:fs (Bun runtime)",
-      "channel": "WebFetch",
+      "channel": "reused-from-prior-validation",
       "url": "https://nodejs.org/api/os.html#ostmpdir",
       "fetchedAt": "2026-08-06T12:10:00Z",
       "status": "aligned",
-      "summary": "os.tmpdir() resolves from TMPDIR (POSIX) with no documented process-lifetime caching; this story's design depends on it re-reading TMPDIR per call so a test can redirect it via process.env.TMPDIR before invoking writeShipPrTempFile. Behavior reconfirmed empirically this dispatch (bun test test/release/ship-pr-tempfile.test.ts, 3/3 pass with TMPDIR redirected at call time), consistent with the CAM-508 handoff's prior empirical measurement on bun 1.3.13 that os.tmpdir() re-reads TMPDIR on every call. Carried forward unchanged from the prior dispatch's validation since no code changed this dispatch."
+      "summary": "No new external library surface touched this story (same node:os/node:fs primitives as US-001: tmpdir(), readdirSync, statSync, mkdirSync, rmSync, writeFileSync). US-001's WebFetch validation of os.tmpdir() re-reading TMPDIR per call (not process-lifetime-cached) remains the load-bearing behavior this story's test depends on (redirecting process.env.TMPDIR before each materializeEmbedded call) and was re-confirmed empirically this dispatch by the 5 passing tests in test/vendor/embedded-cache-bounded.test.ts, each of which sets TMPDIR immediately before invoking the real production function."
     }
   ]
 }
