@@ -11,8 +11,8 @@
 // tmpdir).
 
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 
@@ -156,7 +156,7 @@ describe('runPause', () => {
 
 describe('runPause — does not touch loop state file', () => {
 	test('cam-loop.local.md is byte-unchanged after cam pause runs', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-pause-state-untouched-'));
+		const dir = createTestTmpdir('cam-pause-state-untouched-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			const statePath = join(dir, '.claude', 'cam-loop.local.md');
@@ -190,7 +190,7 @@ const fakeSpawn: SpawnSyncFn = () =>
 
 describe('runResume — clears the pause marker (US-001, CAM-360)', () => {
 	test('idle mode (no state file): pause marker present before, absent after', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-resume-clears-pause-'));
+		const dir = createTestTmpdir('cam-resume-clears-pause-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			setPause(join(dir, '.claude'));
@@ -216,7 +216,7 @@ describe('runResume — clears the pause marker (US-001, CAM-360)', () => {
 	});
 
 	test('--dry-run does NOT clear the pause marker', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-resume-dryrun-keeps-pause-'));
+		const dir = createTestTmpdir('cam-resume-dryrun-keeps-pause-');
 		try {
 			mkdirSync(join(dir, '.claude'), { recursive: true });
 			setPause(join(dir, '.claude'));

@@ -15,8 +15,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
-import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync, mkdirSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 
 import { runSidecar, type SidecarOptions } from '../../src/commands/sidecar.ts';
 import { ContainerAuthError } from '../../src/supervisor/container-auth.ts';
@@ -37,7 +37,7 @@ import {
  * for the given worker_isolation value.
  */
 function makeProjectDir(isolation: 'container' | 'host' | 'none'): string {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-auth-test-'));
+	const dir = createTestTmpdir('cam-auth-test-');
 	mkdirSync(join(dir, 'scripts', 'cam'), { recursive: true });
 	mkdirSync(join(dir, '.claude'), { recursive: true });
 

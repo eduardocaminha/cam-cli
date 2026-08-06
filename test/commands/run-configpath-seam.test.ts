@@ -14,8 +14,8 @@
 //        values.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 
@@ -76,7 +76,7 @@ function makeFakeSpawn(): SpawnFn & { calls: SpawnRecord[] } {
 
 /** Build a temp project dir with the required .claude/agents/subagent-orchestrator.md. */
 function makeTmpProject(): string {
-	const cwd = mkdtempSync(join(tmpdir(), 'cam-run-configpath-seam-'));
+	const cwd = createTestTmpdir('cam-run-configpath-seam-');
 	const agentsDir = join(cwd, '.claude', 'agents');
 	mkdirSync(agentsDir, { recursive: true });
 	writeFileSync(join(agentsDir, 'subagent-orchestrator.md'), '# stub\n', 'utf8');
@@ -107,7 +107,7 @@ function findOrchRespawn(calls: SpawnRecord[]): SpawnRecord | undefined {
 describe('run.ts configPath seam (US-002, CAM-425)', () => {
 	test('a staged configPath (separate from cwd) drives model AND effort resolution', () => {
 		const cwd = makeTmpProject();
-		const stageDir = mkdtempSync(join(tmpdir(), 'cam-run-configpath-stage-'));
+		const stageDir = createTestTmpdir('cam-run-configpath-stage-');
 		try {
 			const configPath = stageConfig(stageDir, 'haiku', 'medium');
 			const spawn = makeFakeSpawn();

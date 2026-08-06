@@ -13,8 +13,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { SpawnSyncReturns } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { sweepOrphanedImplementBlockedMarker } from '../../src/commands/sidecar.ts';
@@ -27,7 +27,7 @@ import type { BacklogSpawnFn } from '../../src/issues/backlog.ts';
 // ---------------------------------------------------------------------------
 
 function makeTmpDir(): string {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-orphan-sweep-'));
+	const dir = createTestTmpdir('cam-orphan-sweep-');
 	mkdirSync(join(dir, '.claude'), { recursive: true });
 	return dir;
 }

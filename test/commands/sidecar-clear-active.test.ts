@@ -15,9 +15,9 @@
 //   4. Unparseable existing state file: clearActive rewrites to phase:idle.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 
 import { makeClearActive } from '../../src/commands/sidecar.ts';
 import { parseStateFile } from '../../src/commands/status.ts';
@@ -30,7 +30,7 @@ import { renderStateFile, writeStateFile } from '../../src/commands/next.ts';
 let tmpDir: string;
 
 beforeEach(() => {
-	tmpDir = mkdtempSync(join(tmpdir(), 'cam-clear-active-'));
+	tmpDir = createTestTmpdir('cam-clear-active-');
 });
 
 afterEach(() => {

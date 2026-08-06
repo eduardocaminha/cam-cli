@@ -27,9 +27,7 @@
 //   - runSpec: missing orch pane returns 1.
 
 import { describe, expect, test } from 'bun:test';
-import { tmpdir } from 'node:os';
-import { mkdtempSync } from 'node:fs';
-import { join } from 'node:path';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import type { SpawnSyncReturns } from 'node:child_process';
 
 import { runSpec, runSpecWriteDocs, runSpecPersist } from '../../src/commands/spec.ts';
@@ -652,7 +650,7 @@ describe('runSpecPersist', () => {
 
 describe('runSpec (thin-proxy, hit path)', () => {
 	test('sends /cam-spec <id> to orchestrator pane and returns 0', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-spec-hit-'));
+		const tmpDir = createTestTmpdir('cam-spec-hit-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%2' });
 
 		const code = await runSpec({
@@ -672,7 +670,7 @@ describe('runSpec (thin-proxy, hit path)', () => {
 	});
 
 	test('issue id is included verbatim in the slash command', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-spec-id-'));
+		const tmpDir = createTestTmpdir('cam-spec-id-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%3' });
 
 		const code = await runSpec({
@@ -689,7 +687,7 @@ describe('runSpec (thin-proxy, hit path)', () => {
 	});
 
 	test('send-keys is atomic: text and Enter are in the same call, NOT -l', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-spec-atomic-'));
+		const tmpDir = createTestTmpdir('cam-spec-atomic-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
 
 		await runSpec({ id: 'CAM-1', cwd: tmpDir, tmuxSpawnFn: spawnFn });
@@ -706,7 +704,7 @@ describe('runSpec (thin-proxy, hit path)', () => {
 	});
 
 	test('skips bootstrap when orchestrator is already alive', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-spec-no-bootstrap-'));
+		const tmpDir = createTestTmpdir('cam-spec-no-bootstrap-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true });
 		let bootstrapCalled = false;
 
@@ -721,7 +719,7 @@ describe('runSpec (thin-proxy, hit path)', () => {
 	});
 
 	test('returns 1 and does not send-keys when pane mutex is busy', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-spec-busy-'));
+		const tmpDir = createTestTmpdir('cam-spec-busy-');
 		const spawnFn = makeFakeTmuxSpawn({
 			sessionExists: true,
 			orchAlive: true,
@@ -740,7 +738,7 @@ describe('runSpec (thin-proxy, hit path)', () => {
 
 describe('runSpec (thin-proxy, miss path)', () => {
 	test('bootstraps + waits for marker + sends keys when orch not alive', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-spec-miss-'));
+		const tmpDir = createTestTmpdir('cam-spec-miss-');
 
 		let bootstrapCalled = false;
 		let markerPresent = false;
@@ -811,7 +809,7 @@ describe('runSpec (thin-proxy, miss path)', () => {
 	});
 
 	test('returns 1 when bootstrap fails', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-spec-boot-fail-'));
+		const tmpDir = createTestTmpdir('cam-spec-boot-fail-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: false });
 
 		const code = await runSpec({
@@ -825,7 +823,7 @@ describe('runSpec (thin-proxy, miss path)', () => {
 	});
 
 	test('returns 1 when marker never appears (timeout)', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-spec-timeout-'));
+		const tmpDir = createTestTmpdir('cam-spec-timeout-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: false });
 
 		const code = await runSpec({
@@ -846,7 +844,7 @@ describe('runSpec (thin-proxy, miss path)', () => {
 
 describe('runSpec (thin-proxy, pane lookup)', () => {
 	test('returns 1 when getOrchPaneId returns null', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-spec-nopane-'));
+		const tmpDir = createTestTmpdir('cam-spec-nopane-');
 		const spawnFn: TmuxSpawnFn & { calls: TmuxCall[] } = (() => {
 			const calls: TmuxCall[] = [];
 			const fn = ((cmd: string, args: string[]) => {
@@ -884,7 +882,7 @@ describe('runSpec (thin-proxy, pane lookup)', () => {
 
 describe('runSpec: session name', () => {
 	test('all tmux calls include the project session name', async () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-spec-sessname-'));
+		const tmpDir = createTestTmpdir('cam-spec-sessname-');
 		const spawnFn = makeFakeTmuxSpawn({ sessionExists: true, orchAlive: true, orchPaneId: '%0' });
 		const sessionName = projectSessionName(tmpDir);
 

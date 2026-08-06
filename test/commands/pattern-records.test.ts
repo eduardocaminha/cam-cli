@@ -13,8 +13,8 @@
 import { afterEach, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import type { SpawnSyncReturns } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import {
 	appendOutcomeOnMain,
@@ -136,7 +136,7 @@ interface RepoHandles {
 }
 
 function makeTmpRepo(): RepoHandles {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-pattern-records-'));
+	const dir = createTestTmpdir('cam-pattern-records-');
 	dirsToCleanup.push(dir);
 
 	const run = (args: string[]) =>

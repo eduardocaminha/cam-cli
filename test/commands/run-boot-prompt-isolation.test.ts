@@ -10,8 +10,8 @@
 // argument as a regex, and a literal "(" would need escaping to match.
 
 import { describe, expect, it } from 'bun:test';
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { buildOrchestratorBootPrompt } from '../../src/commands/run.ts';
@@ -30,14 +30,14 @@ function writeProjectToml(dir: string, metaLoop: string, workerIsolation: string
 
 describe('orchestrator boot prompt gated on worker_isolation', () => {
 	it('omits the dispatch instruction under meta_loop auto with worker_isolation host', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-boot-prompt-isolation-'));
+		const dir = createTestTmpdir('cam-boot-prompt-isolation-');
 		const configPath = writeProjectToml(dir, 'auto', 'host');
 		const prompt = buildOrchestratorBootPrompt(configPath);
 		expect(prompt).not.toContain(DISPATCH_INSTRUCTION);
 	});
 
 	it('includes the dispatch instruction under meta_loop auto with worker_isolation container', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-boot-prompt-isolation-'));
+		const dir = createTestTmpdir('cam-boot-prompt-isolation-');
 		const configPath = writeProjectToml(dir, 'auto', 'container');
 		const prompt = buildOrchestratorBootPrompt(configPath);
 		expect(prompt).toContain(DISPATCH_INSTRUCTION);

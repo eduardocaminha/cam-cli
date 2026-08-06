@@ -8,9 +8,9 @@
 // that setup.ts uses, keeping this test free of tmux/Ink/fs side-effects.
 
 import { test, expect, beforeEach, afterEach } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 
 import { mergeIntoConfig, loadConfig } from '../../src/config/toml.ts';
 import { DEFAULTS } from '../../src/config/models.ts';
@@ -54,7 +54,7 @@ function setupMergePayload(issueSystem: string) {
 let tmpDir: string;
 
 beforeEach(() => {
-	tmpDir = mkdtempSync(join(tmpdir(), 'cam-setup-models-'));
+	tmpDir = createTestTmpdir('cam-setup-models-');
 });
 
 afterEach(() => {

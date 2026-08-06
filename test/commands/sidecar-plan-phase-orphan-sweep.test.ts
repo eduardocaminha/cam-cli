@@ -17,8 +17,8 @@
 //            sidecar-orphan-sweep.test.ts file continuing to pass).
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { rmSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { buildPlanPhaseDeps } from '../../src/commands/sidecar.ts';
@@ -26,7 +26,7 @@ import { makeInMemoryEventLogger } from '../../src/supervisor/events.ts';
 
 describe('buildPlanPhaseDeps wires the orphan-sweep seam into the plan-phase dispatch closure (US-001, CAM-288)', () => {
 	test('the spy sweepOrphanedImplementBlockedMarkerFn fires when runPlanPhaseFn() runs', () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-phase-sweep-'));
+		const tmpDir = createTestTmpdir('cam-plan-phase-sweep-');
 		try {
 			let sweepCalls = 0;
 			const { logger } = makeInMemoryEventLogger();
@@ -69,7 +69,7 @@ describe('buildPlanPhaseDeps wires the orphan-sweep seam into the plan-phase dis
 	});
 
 	test('an injected options.runPlanPhaseFn bypasses makeProductionPlanPhaseFn entirely (sweep seam not consulted)', () => {
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-phase-sweep-bypass-'));
+		const tmpDir = createTestTmpdir('cam-plan-phase-sweep-bypass-');
 		try {
 			let sweepCalls = 0;
 			let injectedCalls = 0;

@@ -39,8 +39,8 @@
 // test below stages a temp cwd via withCodexBackendCwd variants.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 
@@ -112,7 +112,7 @@ function makeFakeSpawn(): SpawnFn & { calls: SpawnRecord[] } {
 
 /** Build a temp dir with the required .claude/agents/subagent-orchestrator.md. */
 function makeTmpProject(): string {
-	const cwd = mkdtempSync(join(tmpdir(), 'cam-run-model-resolution-'));
+	const cwd = createTestTmpdir('cam-run-model-resolution-');
 	const agentsDir = join(cwd, '.claude', 'agents');
 	mkdirSync(agentsDir, { recursive: true });
 	writeFileSync(join(agentsDir, 'subagent-orchestrator.md'), '# stub\n', 'utf8');

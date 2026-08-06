@@ -23,8 +23,8 @@
 // US-003 (CAM-101).
 
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 
@@ -398,7 +398,7 @@ describe('AC-7: runSetup writes [ship] merge_mode to project.toml', () => {
 		['immediate' as const],
 		['ci-gated' as const],
 	])('persists merge_mode=%s to project.toml', async (mergeMode) => {
-		workDir = mkdtempSync(join(tmpdir(), 'cam-setup-merge-'));
+		workDir = createTestTmpdir('cam-setup-merge-');
 		try {
 			// runSetup checks for claude on PATH; on CI it may not be present.
 			// We only care about the project.toml write, not the exit code or tmux.

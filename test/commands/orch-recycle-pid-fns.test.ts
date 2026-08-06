@@ -28,9 +28,9 @@
 //     PS-extra  spawnFn is invoked when injected
 
 import { describe, test, expect, afterEach } from 'bun:test';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 
 import {
 	readWrapperPid,
@@ -46,7 +46,7 @@ let tmpDir: string | undefined;
 
 function ensureTmpDir(): string {
 	if (!tmpDir) {
-		tmpDir = mkdtempSync(join(tmpdir(), 'cam-pid-fns-test-'));
+		tmpDir = createTestTmpdir('cam-pid-fns-test-');
 	}
 	return tmpDir;
 }

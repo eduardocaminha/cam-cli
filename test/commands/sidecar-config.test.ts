@@ -14,8 +14,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
-import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync, mkdirSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 
 import { runSidecar, type SidecarOptions } from '../../src/commands/sidecar.ts';
 import { ContainerConfigError } from '../../src/supervisor/container-config.ts';
@@ -30,7 +30,7 @@ import type { RunSidecarLoopOptions } from '../../src/supervisor/loop.ts';
  * for container isolation.
  */
 function makeProjectDir(isolation: 'container' | 'host' | 'none'): string {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-config-test-'));
+	const dir = createTestTmpdir('cam-config-test-');
 	mkdirSync(join(dir, 'scripts', 'cam'), { recursive: true });
 	mkdirSync(join(dir, '.claude'), { recursive: true });
 

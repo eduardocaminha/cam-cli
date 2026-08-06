@@ -29,8 +29,8 @@
 // mirroring test/config/worker-isolation.test.ts).
 
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { runSidecarLoop, type RunSidecarLoopOptions } from '../../src/supervisor/loop.ts';
@@ -1777,7 +1777,7 @@ describe('buildMetaLoopFn gate (US-001, CAM-208): meta_loop=auto requires worker
 	let tmpDir: string;
 
 	function setupTmp(): void {
-		tmpDir = mkdtempSync(join(tmpdir(), 'cam-meta-loop-gate-test-'));
+		tmpDir = createTestTmpdir('cam-meta-loop-gate-test-');
 	}
 	function teardownTmp(): void {
 		rmSync(tmpDir, { recursive: true, force: true });

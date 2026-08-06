@@ -11,8 +11,8 @@
 // reading the file back is the only way to observe the emitted event.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import type { SpawnSyncReturns } from 'node:child_process';
 
@@ -60,7 +60,7 @@ function makeFakeSpawn(): SpawnFn {
 }
 
 function makeTmpProject(): string {
-	const cwd = mkdtempSync(join(tmpdir(), 'cam-run-spawn-resolution-effort-'));
+	const cwd = createTestTmpdir('cam-run-spawn-resolution-effort-');
 	const agentsDir = join(cwd, '.claude', 'agents');
 	mkdirSync(agentsDir, { recursive: true });
 	writeFileSync(join(agentsDir, 'subagent-orchestrator.md'), '# stub\n', 'utf8');
@@ -91,7 +91,7 @@ function readOrchestratorSpawnResolutionEvent(cwd: string): SpawnResolutionEvent
 describe('run.ts emitSpawnResolution: AC4 - resolved effort in event detail (US-002, CAM-425)', () => {
 	test('a staged config effort reaches the spawn-resolution event detail when the capability probe is supported', () => {
 		const cwd = makeTmpProject();
-		const stageDir = mkdtempSync(join(tmpdir(), 'cam-run-spawn-resolution-effort-stage-'));
+		const stageDir = createTestTmpdir('cam-run-spawn-resolution-effort-stage-');
 		try {
 			const configPath = stageEffortConfig(stageDir, 'medium');
 
@@ -117,7 +117,7 @@ describe('run.ts emitSpawnResolution: AC4 - resolved effort in event detail (US-
 
 	test('the resolved effort is still recorded in the event even when the capability gate omits it from the argv', () => {
 		const cwd = makeTmpProject();
-		const stageDir = mkdtempSync(join(tmpdir(), 'cam-run-spawn-resolution-effort-stage2-'));
+		const stageDir = createTestTmpdir('cam-run-spawn-resolution-effort-stage2-');
 		try {
 			const configPath = stageEffortConfig(stageDir, 'medium');
 

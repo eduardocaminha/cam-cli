@@ -16,8 +16,8 @@
 import { afterEach, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import type { SpawnSyncReturns } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import {
 	specifyIssueOnMain,
@@ -567,7 +567,7 @@ test('does not emit event when spec is invalid', () => {
 test('production-wiring: default sink writes stage-promoted event to cam-worker-events.jsonl', () => {
 	// This test does NOT inject eventSink. specifyIssueOnMain must call
 	// makeFileEventLogger(<cwd>/.claude/cam-worker-events.jsonl) by default.
-	const tmpCwd = mkdtempSync(join(tmpdir(), 'cam-specify-wiring-'));
+	const tmpCwd = createTestTmpdir('cam-specify-wiring-');
 	dirsToCleanup.push(tmpCwd);
 
 	const { spawnFn } = makeFakeSpawnFn({ entries: [makeEntry()] });
@@ -625,7 +625,7 @@ interface RepoHandles {
 }
 
 function makeTmpRepo(initialIssue?: Partial<IssueEntry>): RepoHandles {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-specify-'));
+	const dir = createTestTmpdir('cam-specify-');
 	dirsToCleanup.push(dir);
 
 	const run = (args: string[]) =>
@@ -1401,7 +1401,7 @@ test('merge-into: never calls git checkout', () => {
 // ===========================================================================
 
 function makeTmpRepoTwo(): RepoHandles {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-abandon-merge-'));
+	const dir = createTestTmpdir('cam-abandon-merge-');
 	dirsToCleanup.push(dir);
 
 	const run = (args: string[]) =>
@@ -1529,7 +1529,7 @@ test.skipIf(!gitAvailable)(
 test.skipIf(!gitAvailable)(
 	'Real-git abandon: already-abandoned guard fires in real git',
 	() => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-abandon-aa-'));
+		const dir = createTestTmpdir('cam-abandon-aa-');
 		dirsToCleanup.push(dir);
 
 		const run = (args: string[]) =>

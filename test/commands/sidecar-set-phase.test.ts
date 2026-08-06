@@ -12,9 +12,9 @@
 //   4. Non-fatal on FS error: does not throw when claudeDir is unreachable.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 
 import { makeSetPhaseFn } from '../../src/commands/sidecar.ts';
 import { parseStateFile } from '../../src/commands/status.ts';
@@ -27,7 +27,7 @@ import { renderStateFile, writeStateFile } from '../../src/commands/next.ts';
 let tmpDir: string;
 
 beforeEach(() => {
-	tmpDir = mkdtempSync(join(tmpdir(), 'cam-set-phase-'));
+	tmpDir = createTestTmpdir('cam-set-phase-');
 });
 
 afterEach(() => {
