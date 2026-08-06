@@ -25,8 +25,7 @@
 // stays a one-way fan-out with no import cycle.
 
 import { spawnSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -392,12 +391,45 @@ function codexSandboxArgs(permissionMode: string): string {
 }
 
 /**
+ * Dedicated, bounded parent for codex instructions files (US-003, CAM-510
+ * site 3 of 5). A single fixed top-level directory under `tmpdir()` (never
+ * the literal `/tmp`, so a test can redirect it via `process.env.TMPDIR`),
+ * with agent name, pid, and dispatch uuid all nested BELOW it -- never a
+ * second top-level name per dispatch, which is what let this site grow to
+ * 45,580 files / 1.87 GB. Still outside the repo tree (never under
+ * `.claude/`), so the plan preflight clean-tree guard (ADR-0014) never sees
+ * it.
+ */
+const CODEX_INSTRUCTIONS_PARENT_NAME = 'cam-cli-codex-instructions';
+
+function codexInstructionsDir(agentName: string, pid: number): string {
+	return join(tmpdir(), CODEX_INSTRUCTIONS_PARENT_NAME, agentName, String(pid));
+}
+
+function codexInstructionsFilename(uuid: string): string {
+	return `${uuid}.md`;
+}
+
+/**
  * Reads `.claude/agents/<agentName>.md`, strips its YAML frontmatter
  * (codex has no `--agent` analog, ADR-0047 mismatch d: the agent body itself
  * becomes the codex system/developer prompt), and writes the body to a fresh
- * file under `/tmp` (never under `.claude/`, so the plan preflight clean-tree
- * guard, ADR-0014, never sees it). Returns the tmpfile's absolute path, to be
- * passed as `-c model_instructions_file=<path>`.
+ * file under this agent+pid's dedicated instructions directory. Returns the
+ * file's absolute path, to be passed as `-c model_instructions_file=<path>`.
+ *
+ * Reaps every prior sibling in that directory before writing (US-003,
+ * CAM-510, mirroring `writeTaskPromptFile`, `task-prompt-file.ts:26-32`, no
+ * second lifecycle invented): the supervisor process's pid is stable for the
+ * whole session, so this bounds accumulation to at most one live file per
+ * agent for the process's lifetime instead of one new file per dispatch.
+ * Scoped to THIS agent+pid's own leaf directory (GOTCHA 8), never the shared
+ * parent, so a concurrent dispatch for a different agent (or a different
+ * supervisor process) is never clobbered.
+ *
+ * Written with mode 0o600 (US-003, CAM-510): the reviewer branch appends up
+ * to `REVIEWER_DIFF_MAX_CHARS` (200_000 chars) of the user's git diff to this
+ * body (CAM-354), and the previous default mode (0o644) exposed it to every
+ * local user.
  *
  * `appendedBlock` (US-001, CAM-354), when given, is appended after the agent
  * body with a single blank-line separator; used to inject the reviewer's
@@ -407,14 +439,33 @@ function codexSandboxArgs(permissionMode: string): string {
  * Synchronous node:fs read/write is a deliberate point-read/write (curated
  * invariant: Bun-only rule carves out readFileSync/writeFileSync for this).
  */
-function writeCodexInstructionsFile(agentName: string, appendedBlock?: string): string {
+function writeCodexInstructionsFile(agentName: string, uuid: string, appendedBlock?: string): string {
 	const agentPath = join('.claude', 'agents', `${agentName}.md`);
 	const raw = readFileSync(agentPath, 'utf8');
 	const body = stripFrontmatter(raw);
 	const fullBody = appendedBlock !== undefined ? `${body}\n${appendedBlock}` : body;
-	const tmpPath = join('/tmp', `cam-codex-${agentName}-${randomUUID()}.md`);
-	writeFileSync(tmpPath, fullBody, 'utf8');
+
+	const dir = codexInstructionsDir(agentName, process.pid);
+	mkdirSync(dir, { recursive: true });
+	for (const entry of readdirSync(dir, { withFileTypes: true })) {
+		rmSync(join(dir, entry.name), { recursive: true, force: true });
+	}
+
+	const tmpPath = join(dir, codexInstructionsFilename(uuid));
+	writeFileSync(tmpPath, fullBody, { encoding: 'utf8', mode: 0o600 });
 	return tmpPath;
+}
+
+/**
+ * Remove one completed codex dispatch's instructions file (US-003, CAM-510).
+ * The terminal-cleanup half of the task-prompt-file pattern
+ * (`removeTaskPromptFile`): reap-before-write alone still leaves the LAST
+ * dispatch's file (up to 200 KB of the user's git diff, CAM-354) behind for
+ * the rest of the supervisor process's life. `force: true` keeps this
+ * idempotent when the file was already reaped by a later same-agent write.
+ */
+export function removeCodexInstructionsFile(agentName: string, uuid: string, pid: number = process.pid): void {
+	rmSync(join(codexInstructionsDir(agentName, pid), codexInstructionsFilename(uuid)), { force: true });
 }
 
 // ---------------------------------------------------------------------------
@@ -565,7 +616,7 @@ export class CodexAdapter implements BackendAdapter {
 				const model = opts.model ?? DEFAULTS.implementer;
 				const isolation = opts.isolation ?? 'host';
 				const promptArgument = resolveTaskPromptArgument(opts, required.taskPrompt);
-				return this.renderActor(agentName, model, promptArgument, required.permissionMode, isolation);
+				return this.renderActor(agentName, model, promptArgument, required.permissionMode, isolation, opts.uuid);
 			}
 			case 'planner': {
 				const required = requireForNonReviewerActor('planner', opts);
@@ -573,7 +624,7 @@ export class CodexAdapter implements BackendAdapter {
 				const model = opts.model ?? DEFAULTS.planner;
 				const isolation = opts.isolation ?? 'host';
 				const promptArgument = resolveTaskPromptArgument(opts, required.taskPrompt);
-				return this.renderActor(agentName, model, promptArgument, required.permissionMode, isolation);
+				return this.renderActor(agentName, model, promptArgument, required.permissionMode, isolation, opts.uuid);
 			}
 			case 'auditor': {
 				const required = requireForNonReviewerActor('auditor', opts);
@@ -581,7 +632,7 @@ export class CodexAdapter implements BackendAdapter {
 				const model = opts.model ?? DEFAULTS.auditor;
 				const isolation = opts.isolation ?? 'host';
 				const promptArgument = resolveTaskPromptArgument(opts, required.taskPrompt);
-				return this.renderActor(agentName, model, promptArgument, required.permissionMode, isolation);
+				return this.renderActor(agentName, model, promptArgument, required.permissionMode, isolation, opts.uuid);
 			}
 			case 'reviewer': {
 				const agentName = opts.agentName ?? DEFAULT_REVIEWER_AGENT;
@@ -593,7 +644,7 @@ export class CodexAdapter implements BackendAdapter {
 				// US-001 (CAM-354): reviewer-only diff injection. Never computed for
 				// implementer/planner/auditor (AC6).
 				const diffBlock = renderReviewerDiffBlock(opts);
-				return this.renderActor(agentName, model, promptArgument, permissionMode, isolation, diffBlock);
+				return this.renderActor(agentName, model, promptArgument, permissionMode, isolation, opts.uuid, diffBlock);
 			}
 		}
 	}
@@ -605,9 +656,10 @@ export class CodexAdapter implements BackendAdapter {
 		promptArgument: string,
 		permissionMode: string,
 		isolation: WorkerIsolation,
+		uuid: string,
 		appendedInstructionsBlock?: string,
 	): string {
-		const instructionsFile = writeCodexInstructionsFile(agentName, appendedInstructionsBlock);
+		const instructionsFile = writeCodexInstructionsFile(agentName, uuid, appendedInstructionsBlock);
 		return (
 			codexEnvPrefix(isolation) +
 			`codex exec` +
