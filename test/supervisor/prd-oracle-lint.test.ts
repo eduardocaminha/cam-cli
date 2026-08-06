@@ -23,8 +23,8 @@
 //   oracle-lint-cases.txt fixture matrix: every row classifies as recorded (US-002, CAM-388)
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import { RULES, lintPrd } from '../../src/supervisor/prd-oracle-lint.ts';
 import type { PrdShape } from '../../src/commands/status.ts';
@@ -826,7 +826,7 @@ describe('oracle-lint-cases.txt fixture-shape guard', () => {
 		console.log(`mutation sweep: stripped ${strippedCount} double-quoted-wrapper row(s)`);
 		expect(strippedCount).toBeGreaterThan(0);
 
-		const dir = mkdtempSync(join(tmpdir(), 'cam-oracle-lint-shape-mutation-'));
+		const dir = createTestTmpdir('cam-oracle-lint-shape-mutation-');
 		const mutatedPath = join(dir, 'oracle-lint-cases.mutated.txt');
 		try {
 			writeFileSync(mutatedPath, mutatedLines.join('\n'));

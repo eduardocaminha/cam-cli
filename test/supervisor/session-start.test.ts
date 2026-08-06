@@ -14,8 +14,8 @@
 //     before the poll loop), not of this module.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import {
@@ -26,7 +26,7 @@ import {
 
 describe('writeSidecarSessionStart / readSidecarSessionStart', () => {
 	test('round trip: write then read returns the same ISO timestamp', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-session-start-'));
+		const dir = createTestTmpdir('cam-session-start-');
 		try {
 			writeSidecarSessionStart(dir, '2026-07-07T12:00:00.000Z');
 			expect(readSidecarSessionStart(dir)).toBe('2026-07-07T12:00:00.000Z');
@@ -36,7 +36,7 @@ describe('writeSidecarSessionStart / readSidecarSessionStart', () => {
 	});
 
 	test('write creates the parent directory when absent', () => {
-		const base = mkdtempSync(join(tmpdir(), 'cam-session-start-mkdir-'));
+		const base = createTestTmpdir('cam-session-start-mkdir-');
 		try {
 			const claudeDir = join(base, 'nested', '.claude');
 			writeSidecarSessionStart(claudeDir, '2026-07-07T12:00:00.000Z');
@@ -47,7 +47,7 @@ describe('writeSidecarSessionStart / readSidecarSessionStart', () => {
 	});
 
 	test('read returns null when the file is absent', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-session-start-absent-'));
+		const dir = createTestTmpdir('cam-session-start-absent-');
 		try {
 			expect(readSidecarSessionStart(dir)).toBeNull();
 		} finally {
@@ -56,7 +56,7 @@ describe('writeSidecarSessionStart / readSidecarSessionStart', () => {
 	});
 
 	test('read returns null on malformed JSON', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-session-start-malformed-'));
+		const dir = createTestTmpdir('cam-session-start-malformed-');
 		try {
 			writeFileSync(join(dir, SIDECAR_SESSION_START_FILE), 'not json {', 'utf8');
 			expect(readSidecarSessionStart(dir)).toBeNull();
@@ -66,7 +66,7 @@ describe('writeSidecarSessionStart / readSidecarSessionStart', () => {
 	});
 
 	test('read returns null when sessionStartTs field is missing or wrong type', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-session-start-wrongshape-'));
+		const dir = createTestTmpdir('cam-session-start-wrongshape-');
 		try {
 			writeFileSync(join(dir, SIDECAR_SESSION_START_FILE), JSON.stringify({ foo: 'bar' }), 'utf8');
 			expect(readSidecarSessionStart(dir)).toBeNull();
@@ -86,7 +86,7 @@ describe('writeSidecarSessionStart / readSidecarSessionStart', () => {
 	});
 
 	test('a fresh loop start within the same session does not reset the value unless writeSidecarSessionStart is called again', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-session-start-stable-'));
+		const dir = createTestTmpdir('cam-session-start-stable-');
 		try {
 			writeSidecarSessionStart(dir, '2026-07-07T12:00:00.000Z');
 			// Simulate other per-cycle state churn (e.g. the loop state file being

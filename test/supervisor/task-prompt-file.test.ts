@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import { afterEach, describe, expect, test } from 'bun:test';
 import {
@@ -13,7 +13,7 @@ import {
 const dirsToCleanup: string[] = [];
 
 function makeClaudeDir(): string {
-	const root = mkdtempSync(join(tmpdir(), 'cam-task-prompt-'));
+	const root = createTestTmpdir('cam-task-prompt-');
 	dirsToCleanup.push(root);
 	return join(root, '.claude');
 }

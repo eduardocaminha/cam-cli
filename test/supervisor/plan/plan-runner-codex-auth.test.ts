@@ -26,8 +26,8 @@
 // absent), so every codex-backend test below stages a temp cwd instead.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from '../../helpers/test-tmpdir';
 import { join } from 'node:path';
 import {
 	runPlanPhase,
@@ -107,7 +107,7 @@ function respawnCalls(calls: string[][]): string[][] {
  * buildSpawnArgv can read them on the authenticated (proceed) path.
  */
 async function withCodexBackendCwd<T>(fn: () => T | Promise<T>): Promise<T> {
-	const tmpDir = mkdtempSync(join(tmpdir(), 'cam-plan-codex-auth-'));
+	const tmpDir = createTestTmpdir('cam-plan-codex-auth-');
 	const camDir = join(tmpDir, 'scripts', 'cam');
 	mkdirSync(camDir, { recursive: true });
 	writeFileSync(

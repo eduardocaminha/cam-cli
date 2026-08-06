@@ -25,8 +25,8 @@
 //       rendered (markdown-stripped) text while file findings appear verbatim in fix stories.
 
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import {
 	buildReviewerWorkerArgv,
@@ -280,7 +280,7 @@ function makePrd(opts: {
  * backend (which would otherwise require real codex auth in CI) without
  * breaking generic dispatch-shape assertions here.
  */
-const GENERIC_REVIEW_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-review-generic-config-'));
+const GENERIC_REVIEW_CONFIG_DIR = createTestTmpdir('cam-review-generic-config-');
 const GENERIC_REVIEW_CONFIG_PATH = join(GENERIC_REVIEW_CONFIG_DIR, 'project.toml');
 writeFileSync(GENERIC_REVIEW_CONFIG_PATH, '[backend]\nreviewer = "claude"\n');
 
@@ -384,7 +384,7 @@ async function withReviewerBackendCwd<T>(
 	model: string,
 	fn: () => T | Promise<T>,
 ): Promise<T> {
-	const tmpDir = mkdtempSync(join(tmpdir(), 'cam-review-backend-'));
+	const tmpDir = createTestTmpdir('cam-review-backend-');
 	const camDir = join(tmpDir, 'scripts', 'cam');
 	mkdirSync(camDir, { recursive: true });
 	const modelsToml = backend === 'claude'
@@ -1491,7 +1491,7 @@ describe('makeReadReviewReport: verdict shape guard (US-R2-001 regression)', () 
 	});
 
 	function makeTmpWithReport(json: unknown): string {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-review-report-shape-'));
+		const dir = createTestTmpdir('cam-review-report-shape-');
 		tmpDirs.push(dir);
 		mkdirSync(join(dir, 'scripts', 'cam'), { recursive: true });
 		writeFileSync(join(dir, REVIEW_REPORT_FILENAME), JSON.stringify(json));
@@ -2194,7 +2194,7 @@ describe('makeReviewDispatch: US-001 (CAM-405) reviewer-backend resolution seam'
 	});
 
 	test('AC5 regression: reviewer=codex resolved via the injected seam does not fail with codex-auth-failed', () => {
-		const codexConfigDir = mkdtempSync(join(tmpdir(), 'cam-review-codex-seam-'));
+		const codexConfigDir = createTestTmpdir('cam-review-codex-seam-');
 		const codexConfigPath = join(codexConfigDir, 'project.toml');
 		writeFileSync(
 			codexConfigPath,

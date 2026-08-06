@@ -2,8 +2,8 @@
 //
 // Tests for the durable plan-preflight-failed marker (US-002, CAM-215).
 
-import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { rmSync, writeFileSync, existsSync } from 'node:fs';
+import { createTestTmpdir } from '../../helpers/test-tmpdir';
 import { join } from 'node:path';
 import { beforeEach, afterEach, describe, test, expect } from 'bun:test';
 
@@ -21,7 +21,7 @@ describe('plan-preflight-failed marker: round-trip (US-002, CAM-215)', () => {
 	let filePath: string;
 
 	beforeEach(() => {
-		tempDir = mkdtempSync(join(tmpdir(), 'cam-plan-preflight-failed-'));
+		tempDir = createTestTmpdir('cam-plan-preflight-failed-');
 		filePath = join(tempDir, PLAN_PREFLIGHT_FAILED_FILENAME);
 	});
 

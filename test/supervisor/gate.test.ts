@@ -3,8 +3,8 @@
 // Tests for the durable operator-decision gate marker (US-001, CAM-241/153)
 // and its write+notify / poll+resolve+clear+flip lifecycle (US-003).
 
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import { beforeEach, afterEach, describe, test, expect } from 'bun:test';
 
@@ -29,7 +29,7 @@ describe('gate file: round-trip (US-001, CAM-153)', () => {
 	let filePath: string;
 
 	beforeEach(() => {
-		tempDir = mkdtempSync(join(tmpdir(), 'cam-gate-'));
+		tempDir = createTestTmpdir('cam-gate-');
 		filePath = join(tempDir, GATE_FILENAME);
 	});
 
@@ -98,7 +98,7 @@ describe('gate file: fail-closed reader rejects absent/malformed/partial (US-001
 	let filePath: string;
 
 	beforeEach(() => {
-		tempDir = mkdtempSync(join(tmpdir(), 'cam-gate-'));
+		tempDir = createTestTmpdir('cam-gate-');
 		filePath = join(tempDir, GATE_FILENAME);
 	});
 
@@ -155,7 +155,7 @@ describe('writeGateAndNotify (US-003, AC1, AC4)', () => {
 	let filePath: string;
 
 	beforeEach(() => {
-		tempDir = mkdtempSync(join(tmpdir(), 'cam-gate-'));
+		tempDir = createTestTmpdir('cam-gate-');
 		filePath = join(tempDir, GATE_FILENAME);
 	});
 
@@ -239,7 +239,7 @@ describe('pollAndResolveGate (US-003, AC2, AC3, AC4)', () => {
 	let filePath: string;
 
 	beforeEach(() => {
-		tempDir = mkdtempSync(join(tmpdir(), 'cam-gate-'));
+		tempDir = createTestTmpdir('cam-gate-');
 		filePath = join(tempDir, GATE_FILENAME);
 	});
 
@@ -349,7 +349,7 @@ describe('gate lifecycle: real tmpdir + async poll loop (US-003, AC5)', () => {
 	let filePath: string;
 
 	beforeEach(() => {
-		tempDir = mkdtempSync(join(tmpdir(), 'cam-gate-poll-'));
+		tempDir = createTestTmpdir('cam-gate-poll-');
 		filePath = join(tempDir, GATE_FILENAME);
 	});
 

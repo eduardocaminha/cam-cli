@@ -119,8 +119,8 @@
 //   deliberately live-default-only.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from '../../helpers/test-tmpdir';
 import { join } from 'node:path';
 import {
 	runPlanPhase,
@@ -147,7 +147,7 @@ import { DEFAULTS } from '../../../src/config/models.ts';
  * cheap, always-on positive signal that model resolution went through this
  * fixture and not through the live project.toml relative to process.cwd().
  */
-const GENERIC_CLAUDE_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-plan-configpath-seam-generic-'));
+const GENERIC_CLAUDE_CONFIG_DIR = createTestTmpdir('cam-plan-configpath-seam-generic-');
 const GENERIC_CLAUDE_CONFIG_PATH = join(GENERIC_CLAUDE_CONFIG_DIR, 'project.toml');
 writeFileSync(GENERIC_CLAUDE_CONFIG_PATH, '[backend]\nplanner = "claude"\nauditor = "claude"\n');
 
@@ -207,7 +207,7 @@ function respawnCalls(calls: string[][]): string[][] {
 
 describe('plan-runner US-002 (CAM-420): configPath seam on the planner/auditor resolution call sites', () => {
 	test('planner site: planner=codex resolved via the injected configPath seam does not fail with codex-auth-failed', () => {
-		const codexConfigDir = mkdtempSync(join(tmpdir(), 'cam-plan-configpath-seam-planner-'));
+		const codexConfigDir = createTestTmpdir('cam-plan-configpath-seam-planner-');
 		const codexConfigPath = join(codexConfigDir, 'project.toml');
 		writeFileSync(
 			codexConfigPath,
@@ -250,7 +250,7 @@ describe('plan-runner US-002 (CAM-420): configPath seam on the planner/auditor r
 	});
 
 	test('auditor site: auditor=codex resolved via the injected configPath seam does not fail with codex-auth-failed', () => {
-		const codexConfigDir = mkdtempSync(join(tmpdir(), 'cam-plan-configpath-seam-auditor-'));
+		const codexConfigDir = createTestTmpdir('cam-plan-configpath-seam-auditor-');
 		const codexConfigPath = join(codexConfigDir, 'project.toml');
 		writeFileSync(
 			codexConfigPath,

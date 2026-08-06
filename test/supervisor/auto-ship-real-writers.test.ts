@@ -32,8 +32,8 @@
 // for the actual observed failure output.
 
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { runSidecarLoop, type RunSidecarLoopOptions, type RunSupervisorOptions } from '../../src/supervisor/loop.ts';
@@ -57,7 +57,7 @@ function makeCleanPrd(): PrdSnapshot {
 
 describe('US-002: real-writer regression -- phase:shipping survives the terminal teardown chain', () => {
 	test('after the complete tick the state file carries phase:shipping; the following tick reads it via the REAL parser and dispatches runShipPhaseFn exactly once', async () => {
-		const cwd = mkdtempSync(join(tmpdir(), 'cam-auto-ship-real-'));
+		const cwd = createTestTmpdir('cam-auto-ship-real-');
 		try {
 			const claudeDir = join(cwd, '.claude');
 			const scriptsDir = join(cwd, 'scripts', 'cam');

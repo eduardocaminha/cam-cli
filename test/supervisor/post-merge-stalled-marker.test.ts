@@ -2,8 +2,8 @@
 //
 // Tests for the durable post-merge-stalled marker (US-001, CAM-174).
 
-import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { rmSync, writeFileSync, existsSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import { beforeEach, afterEach, describe, test, expect } from 'bun:test';
 
@@ -20,7 +20,7 @@ describe('post-merge-stalled marker: round-trip (US-001, CAM-174)', () => {
 	let filePath: string;
 
 	beforeEach(() => {
-		tempDir = mkdtempSync(join(tmpdir(), 'cam-post-merge-stalled-'));
+		tempDir = createTestTmpdir('cam-post-merge-stalled-');
 		filePath = join(tempDir, POST_MERGE_STALLED_FILENAME);
 	});
 

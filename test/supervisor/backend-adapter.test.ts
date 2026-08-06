@@ -11,8 +11,8 @@
 // makes this a real behavior lock instead.
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { ClaudeAdapter, CodexAdapter, selectAdapter } from '../../src/supervisor/backend-adapter.ts';
@@ -22,7 +22,7 @@ import { gitAvailable } from '../helpers/test-deps.ts';
 const SAMPLE_UUID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
 const SAMPLE_PROMPT = "Implement it's US-002; use $HOME and `backtick`.";
 const SAMPLE_MODE = 'bypassPermissions';
-const ADAPTER_CLAUDE_DIR = join(tmpdir(), `cam-backend-adapter-${process.pid}`, '.claude');
+const ADAPTER_CLAUDE_DIR = join(createTestTmpdir(), `cam-backend-adapter-${process.pid}`, '.claude');
 const SAMPLE_PROMPT_ARGUMENT = taskPromptFileArgument(
 	join(ADAPTER_CLAUDE_DIR, `.cam-task-prompt-${SAMPLE_UUID}.txt`),
 );
@@ -225,7 +225,7 @@ afterEach(() => {
 });
 
 function makeTmpRepo(prefix: string): { dir: string; run: (args: string[]) => { stdout: string; status: number | null } } {
-	const dir = mkdtempSync(join(tmpdir(), prefix));
+	const dir = createTestTmpdir(prefix);
 	dirsToCleanup.push(dir);
 
 	const run = (args: string[]) => {

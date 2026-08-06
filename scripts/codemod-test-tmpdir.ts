@@ -93,11 +93,17 @@ const HELPER_MARKER = '// __CAM_HELPER_IMPORT_MARKER__';
 /**
  * Removes `identifier` from its named-import statement for
  * `moduleSpecifier`, but only when `identifier` has zero references in
- * `bodyForUsageCheck` (the file text with every import statement and
- * comment stripped out). The statement is matched across the whole text
- * (`[\s\S]*?` between the braces), so both a single-line
- * `import { a, b } from 'x';` and a multi-line
+ * `bodyForUsageCheck` (the file text with every import statement, comment,
+ * and quoted-string-literal content stripped out). The statement is
+ * matched across the whole text (`[\s\S]*?` between the braces), so both a
+ * single-line `import { a, b } from 'x';` and a multi-line
  * `import {\n  a,\n  b,\n} from 'x';` block are handled identically.
+ * `moduleSpecifier` may appear in MORE THAN ONE separate import statement
+ * (e.g. `import { homedir } from 'node:os';` followed later by a distinct
+ * `import { tmpdir } from 'node:os';`); the search is global and keeps
+ * scanning until it finds the specific statement whose named-import list
+ * actually contains `identifier`, rather than stopping at the first
+ * statement for that specifier regardless of which names it holds.
  * Drops the whole statement once its named-import list becomes empty --
  * or, when `replacementWhenEmptied` is given, substitutes that string in
  * place instead (used to anchor the helper import at the `node:os`
@@ -110,56 +116,102 @@ function pruneUnusedNamedImport(
 	replacementWhenEmptied?: string,
 ): string {
 	const specifierPattern = escapeForRegex(target.moduleSpecifier);
-	// `[^}]*` (not `[\s\S]*?`) bounds the capture to the very next `}`, so a
+	// `[^}]*` (not `[\s\S]*?`) bounds each capture to its own next `}`, so a
 	// non-matching earlier import statement's own `}...from '...';` can
 	// never be swallowed while backtracking in search of this specifier.
-	const blockRe = new RegExp(`import \\{([^}]*)\\} from (['"])${specifierPattern}\\2;`);
-	const match = blockRe.exec(text);
-	if (!match) return text;
+	const blockRe = new RegExp(`import \\{([^}]*)\\} from (['"])${specifierPattern}\\2;`, 'g');
 
-	const names = (match[1] ?? '')
-		.split(',')
-		.map((s) => s.trim())
-		.filter(Boolean);
-	if (!names.includes(target.identifier)) return text;
+	let match: RegExpExecArray | null = blockRe.exec(text);
+	while (match !== null) {
+		const names = (match[1] ?? '')
+			.split(',')
+			.map((s) => s.trim())
+			.filter(Boolean);
+		if (!names.includes(target.identifier)) {
+			match = blockRe.exec(text);
+			continue;
+		}
 
-	const usedElsewhere = new RegExp(`(?<![.\\w])${target.identifier}\\b`).test(bodyForUsageCheck);
-	if (usedElsewhere) return text;
+		const usedElsewhere = new RegExp(`(?<![.\\w])${target.identifier}\\b`).test(bodyForUsageCheck);
+		if (usedElsewhere) return text;
 
-	const remaining = names.filter((n) => n !== target.identifier);
-	const start = match.index;
-	const end = start + match[0].length;
+		const remaining = names.filter((n) => n !== target.identifier);
+		const start = match.index;
+		const end = start + match[0].length;
 
-	if (remaining.length > 0) {
-		const quote = match[2];
-		const replacementText = `import { ${remaining.join(', ')} } from ${quote}${target.moduleSpecifier}${quote};`;
-		return text.slice(0, start) + replacementText + text.slice(end);
+		if (remaining.length > 0) {
+			const quote = match[2];
+			const replacementText = `import { ${remaining.join(', ')} } from ${quote}${target.moduleSpecifier}${quote};`;
+			return text.slice(0, start) + replacementText + text.slice(end);
+		}
+
+		if (replacementWhenEmptied !== undefined) {
+			return text.slice(0, start) + replacementWhenEmptied + text.slice(end);
+		}
+
+		// Fully remove the import statement, including one trailing newline
+		// so no blank line is left behind.
+		const afterEnd = text[end] === '\n' ? end + 1 : end;
+		return text.slice(0, start) + text.slice(afterEnd);
 	}
 
-	if (replacementWhenEmptied !== undefined) {
-		return text.slice(0, start) + replacementWhenEmptied + text.slice(end);
-	}
+	return text;
+}
 
-	// Fully remove the import statement, including one trailing newline so
-	// no blank line is left behind.
-	const afterEnd = text[end] === '\n' ? end + 1 : end;
-	return text.slice(0, start) + text.slice(afterEnd);
+/**
+ * Blanks out the contents of every single- and double-quoted string
+ * literal, leaving the surrounding quotes in place and template literals
+ * (backtick strings, which may embed a real `${identifier(...)}` usage)
+ * untouched. This stops a prose mention like `describe('... real tmpdir
+ * ...', ...)` from being misread as a code reference to the `tmpdir`
+ * identifier by the usage-check regex, while still finding an actual call
+ * such as `mkdtempSync(join(tmpdir(), 'prefix'))` (the identifier itself
+ * is never inside quotes).
+ */
+function stripQuotedStringLiteralContents(text: string): string {
+	let result = '';
+	let i = 0;
+	while (i < text.length) {
+		const ch = text[i];
+		if (ch === "'" || ch === '"') {
+			const quote = ch;
+			result += quote;
+			i++;
+			while (i < text.length && text[i] !== quote) {
+				if (text[i] === '\\') {
+					i += 2;
+					continue;
+				}
+				i++;
+			}
+			if (i < text.length) {
+				result += quote;
+				i++;
+			}
+			continue;
+		}
+		result += ch;
+		i++;
+	}
+	return result;
 }
 
 /**
  * Text used to check whether an identifier is still referenced in code:
- * strips every import statement (single- or multi-line) and every
- * comment line/trailing comment, so neither a prose mention of `tmpdir`
- * (e.g. "reads a tmpdir cwd") in a header comment, nor the import
- * statement's own named-import list, ever counts as a code reference.
+ * strips every import statement (single- or multi-line), every comment
+ * line/trailing comment, and the contents of every quoted string literal,
+ * so neither a prose mention of `tmpdir` (e.g. "reads a tmpdir cwd") in a
+ * header comment or a `describe`/`test` title, nor the import statement's
+ * own named-import list, ever counts as a code reference.
  */
 function bodyWithoutImportLines(text: string): string {
-	return text
+	const withoutImportsAndComments = text
 		.replace(/^import\b[\s\S]*?;$/gm, '')
 		.split('\n')
 		.filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
 		.map((line) => line.replace(/\/\/.*$/, ''))
 		.join('\n');
+	return stripQuotedStringLiteralContents(withoutImportsAndComments);
 }
 
 /**

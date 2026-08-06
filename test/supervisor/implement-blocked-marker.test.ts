@@ -2,8 +2,8 @@
 //
 // Tests for the durable implement-blocked marker (US-005, CAM-195, Defect 2).
 
-import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { rmSync, writeFileSync, existsSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import { beforeEach, afterEach, describe, test, expect } from 'bun:test';
 
@@ -22,7 +22,7 @@ describe('implement-blocked marker: round-trip (US-005, CAM-195)', () => {
 	let filePath: string;
 
 	beforeEach(() => {
-		tempDir = mkdtempSync(join(tmpdir(), 'cam-implement-blocked-'));
+		tempDir = createTestTmpdir('cam-implement-blocked-');
 		filePath = join(tempDir, IMPLEMENT_BLOCKED_FILENAME);
 	});
 

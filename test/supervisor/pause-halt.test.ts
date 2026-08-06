@@ -20,8 +20,8 @@
 //      reflects the real `.cam-pause` marker file (host.ts, US-002).
 
 import { describe, expect, test, beforeEach, afterEach, afterAll } from 'bun:test';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import { runSupervisor } from '../../src/supervisor/loop.ts';
 import type {
@@ -87,7 +87,7 @@ const WORKER_PANE_ID = '%3';
  * mirroring loop.test.ts's GENERIC_SUPERVISOR_CONFIG_PATH idiom (US-003):
  * decouples this file's tests from the repo's live scripts/cam/project.toml.
  */
-const GENERIC_SUPERVISOR_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-pause-halt-generic-config-'));
+const GENERIC_SUPERVISOR_CONFIG_DIR = createTestTmpdir('cam-pause-halt-generic-config-');
 const GENERIC_SUPERVISOR_CONFIG_PATH = join(GENERIC_SUPERVISOR_CONFIG_DIR, 'project.toml');
 writeFileSync(GENERIC_SUPERVISOR_CONFIG_PATH, '[backend]\nimplementer = "claude"\n');
 
@@ -254,7 +254,7 @@ describe('buildSupervisorOptions US-002 (CAM-360): production isPaused wiring re
 	let dir: string;
 
 	beforeEach(() => {
-		dir = mkdtempSync(join(tmpdir(), 'cam-pause-host-'));
+		dir = createTestTmpdir('cam-pause-host-');
 		mkdirSync(join(dir, '.claude'), { recursive: true });
 	});
 

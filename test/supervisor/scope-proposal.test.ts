@@ -13,8 +13,8 @@
 //   7. Reader is a stable closure: re-reads the file on each call.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import {
 	SCOPE_PROPOSAL_FILENAME,
@@ -43,7 +43,7 @@ describe('makeReadScopeProposal', () => {
 	};
 
 	beforeEach(() => {
-		tmpDir = mkdtempSync(join(tmpdir(), 'cam-scope-proposal-test-'));
+		tmpDir = createTestTmpdir('cam-scope-proposal-test-');
 		mkdirSync(join(tmpDir, 'scripts', 'cam'), { recursive: true });
 		proposalPath = join(tmpDir, SCOPE_PROPOSAL_FILENAME);
 	});

@@ -10,8 +10,8 @@
 
 import { spawnSync } from 'node:child_process';
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import { CodexAdapter } from '../../src/supervisor/backend-adapter.ts';
 import { stripFrontmatter } from '../../src/templates/frontmatter.ts';
@@ -168,7 +168,7 @@ describe('CodexAdapter.buildSpawnArgv (US-001)', () => {
 	});
 
 	test('all actor commands are O(1) in prompt size and never contain a runtime-generated 40000-char prompt body', () => {
-		const claudeDir = join(tmpdir(), `cam-codex-o1-${process.pid}`, '.claude');
+		const claudeDir = join(createTestTmpdir(), `cam-codex-o1-${process.pid}`, '.claude');
 		const largePrompt = `runtime-large-${'x'.repeat(40_000)}`;
 		for (const actor of ['implementer', 'planner', 'auditor', 'reviewer'] as const) {
 			const base = { uuid: SAMPLE_UUID, claudeDir };
@@ -295,7 +295,7 @@ afterEach(() => {
 });
 
 function makeTmpRepo(prefix: string): { dir: string; run: (args: string[]) => { stdout: string; status: number | null } } {
-	const dir = mkdtempSync(join(tmpdir(), prefix));
+	const dir = createTestTmpdir(prefix);
 	dirsToCleanup.push(dir);
 
 	const run = (args: string[]) => {
@@ -324,7 +324,7 @@ function makeTmpRepo(prefix: string): { dir: string; run: (args: string[]) => { 
 
 describe('stripFrontmatter fixture pin (US-001, CAM-351)', () => {
 	test('strips a controlled fixture frontmatter fence, matching a hand-pinned literal body', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-frontmatter-fixture-'));
+		const dir = createTestTmpdir('cam-frontmatter-fixture-');
 		dirsToCleanup.push(dir);
 
 		const fixtureFrontmatter = '---\nname: fixture-agent\ndescription: CAM-351 fixture agent\ncolor: blue\n---\n';
@@ -405,7 +405,7 @@ describe('CodexAdapter reviewer diff injection against a real git fixture repo (
 	);
 
 	test.skipIf(!gitAvailable)('a missing main ref degrades to a visible error marker instead of crashing (AC3)', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-codex-diff-noref-'));
+		const dir = createTestTmpdir('cam-codex-diff-noref-');
 		dirsToCleanup.push(dir);
 		const run = (args: string[]) => spawnSync('git', ['-C', dir, ...args], { stdio: 'pipe', encoding: 'utf8' });
 

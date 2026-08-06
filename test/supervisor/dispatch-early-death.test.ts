@@ -8,8 +8,8 @@
 import { describe, expect, test } from 'bun:test';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 
 import {
 	DEFAULT_CONTAINER_WORKER_TIMEOUT_MS,
@@ -57,8 +57,8 @@ const DEAD_JSONL = readFileSync(join(FIXTURES_DIR, 'dead-on-first-turn.jsonl'), 
 const HEALTHY_JSONL = readFileSync(join(FIXTURES_DIR, 'healthy-planner.jsonl'), 'utf8');
 
 function withTmpDirs(fn: (cwd: string, claudeDir: string) => void): void {
-	const cwd = mkdtempSync(join(tmpdir(), 'cam-early-death-cwd-'));
-	const claudeDir = mkdtempSync(join(tmpdir(), 'cam-early-death-claude-'));
+	const cwd = createTestTmpdir('cam-early-death-cwd-');
+	const claudeDir = createTestTmpdir('cam-early-death-claude-');
 	try {
 		fn(cwd, claudeDir);
 	} finally {
@@ -366,7 +366,7 @@ function makeSingleStoryPrd(): PrdSnapshot {
 
 // Isolate implementer-backend/model resolution from the repo's live
 // scripts/cam/project.toml, mirroring loop.test.ts's GENERIC_SUPERVISOR_CONFIG_PATH.
-const GENERIC_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-early-death-config-'));
+const GENERIC_CONFIG_DIR = createTestTmpdir('cam-early-death-config-');
 const GENERIC_CONFIG_PATH = join(GENERIC_CONFIG_DIR, 'project.toml');
 writeFileSync(GENERIC_CONFIG_PATH, '[backend]\nimplementer = "claude"\nreviewer = "claude"\n');
 
@@ -516,7 +516,7 @@ describe('US-003 (CAM-479): implementer poll loop consults the early-death probe
 });
 
 describe('US-003 (CAM-479): reviewer poll loop consults the early-death probe', () => {
-	const GENERIC_REVIEW_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-early-death-review-config-'));
+	const GENERIC_REVIEW_CONFIG_DIR = createTestTmpdir('cam-early-death-review-config-');
 	const GENERIC_REVIEW_CONFIG_PATH = join(GENERIC_REVIEW_CONFIG_DIR, 'project.toml');
 	writeFileSync(GENERIC_REVIEW_CONFIG_PATH, '[backend]\nreviewer = "claude"\n');
 
@@ -582,7 +582,7 @@ const MOCK_PLAN_ISSUE: IssueEntry = {
 	updatedAt: '2026-07-01T00:00:00Z',
 };
 
-const GENERIC_PLAN_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-dispatch-early-death-plan-config-'));
+const GENERIC_PLAN_CONFIG_DIR = createTestTmpdir('cam-dispatch-early-death-plan-config-');
 const GENERIC_PLAN_CONFIG_PATH = join(GENERIC_PLAN_CONFIG_DIR, 'project.toml');
 writeFileSync(GENERIC_PLAN_CONFIG_PATH, '[backend]\nplanner = "claude"\nauditor = "claude"\n');
 

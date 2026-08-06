@@ -5,8 +5,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { SpawnSyncReturns } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import { buildStatusReport } from '../../src/commands/status.ts';
@@ -30,7 +30,7 @@ const MARKER: DispatchFailedMarker = {
 };
 
 function withTmpProject(fn: (cwd: string, claudeDir: string) => void): void {
-	const cwd = mkdtempSync(join(tmpdir(), 'cam-dispatch-failed-'));
+	const cwd = createTestTmpdir('cam-dispatch-failed-');
 	const claudeDir = join(cwd, '.claude');
 	try {
 		mkdirSync(claudeDir, { recursive: true });

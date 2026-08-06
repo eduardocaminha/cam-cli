@@ -25,8 +25,8 @@
 //        never invokes it.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync, rmSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import { makeReviewDispatch } from '../../src/supervisor/review.ts';
 import type { MakeReviewDispatchOptions } from '../../src/supervisor/review.ts';
@@ -94,7 +94,7 @@ function respawnCalls(calls: string[][]): string[][] {
  * committed at the repo root, so no agent-file staging is required.
  */
 function claudeShapedCodexConfigPath(): { path: string; cleanup: () => void } {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-review-model-resolution-'));
+	const dir = createTestTmpdir('cam-review-model-resolution-');
 	const path = join(dir, 'project.toml');
 	writeFileSync(path, '[backend]\nreviewer = "codex"\n\n[models]\nreviewer = "sonnet"\n');
 	return { path, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
@@ -183,7 +183,7 @@ describe('review model resolution: AC4 - not-ok resolution aborts before spawn',
 
 describe('review model resolution: AC5 - injectable seam, default fallback, claude-backend bypass', () => {
 	test('absent codexModelsCacheReaderFn on a codex dispatch with a non-claude-shaped pin never crashes (falls back to the production reader)', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-review-model-resolution-pin-'));
+		const dir = createTestTmpdir('cam-review-model-resolution-pin-');
 		const path = join(dir, 'project.toml');
 		writeFileSync(path, '[backend]\nreviewer = "codex"\n\n[models.codex]\nreviewer = "gpt-5-codex"\n');
 		try {
@@ -201,7 +201,7 @@ describe('review model resolution: AC5 - injectable seam, default fallback, clau
 	});
 
 	test('claude-backed dispatch (generic fixture) never invokes the injected cacheReader', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-review-model-resolution-claude-'));
+		const dir = createTestTmpdir('cam-review-model-resolution-claude-');
 		const path = join(dir, 'project.toml');
 		writeFileSync(path, '[backend]\nreviewer = "claude"\n');
 		try {

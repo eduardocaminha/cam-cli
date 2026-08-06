@@ -4,8 +4,8 @@
 // helpers (US-002, CAM-207). Mirrors the existing watcherAlive()/WATCHER_PID_FILE
 // pattern in src/supervisor/sidecar-pid.ts.
 
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 import { beforeEach, afterEach, describe, test, expect } from 'bun:test';
 
@@ -24,7 +24,7 @@ describe('sidecarAlive() composite (US-002, CAM-207)', () => {
 	let tempDir: string;
 
 	beforeEach(() => {
-		tempDir = mkdtempSync(join(tmpdir(), 'cam-sidecar-alive-'));
+		tempDir = createTestTmpdir('cam-sidecar-alive-');
 	});
 
 	afterEach(() => {
@@ -66,7 +66,7 @@ describe('sidecar-liveness watcher pid helpers (US-002, CAM-207)', () => {
 	let tempDir: string;
 
 	beforeEach(() => {
-		tempDir = mkdtempSync(join(tmpdir(), 'cam-liveness-watcher-pid-'));
+		tempDir = createTestTmpdir('cam-liveness-watcher-pid-');
 	});
 
 	afterEach(() => {

@@ -16,8 +16,8 @@
 // hit real I/O at wire boundaries, no tautological mock-call assertions).
 
 import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join, resolve } from 'node:path';
 
 import { maybeEmitPlanSplitAdvisory } from '../../src/supervisor/plan-split-advisory.ts';
@@ -79,7 +79,7 @@ describe('maybeEmitPlanSplitAdvisory', () => {
 	let cwd: string;
 
 	beforeEach(() => {
-		cwd = mkdtempSync(join(tmpdir(), 'cam-split-advisory-'));
+		cwd = createTestTmpdir('cam-split-advisory-');
 	});
 
 	afterEach(() => {

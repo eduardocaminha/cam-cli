@@ -6,8 +6,8 @@
 // tokens, in order, sharing one uuid.
 
 import { describe, expect, test, afterAll } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import { join } from 'node:path';
 
 import {
@@ -54,7 +54,7 @@ describe('makeInMemoryEventLogger', () => {
 
 describe('makeFileEventLogger', () => {
 	test('appends one JSON line per event, creating the parent dir', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-events-'));
+		const dir = createTestTmpdir('cam-events-');
 		try {
 			const path = join(dir, 'nested', 'cam-worker-events.jsonl');
 			const logger = makeFileEventLogger(path);
@@ -102,7 +102,7 @@ describe("'pushed' event kind", () => {
 	});
 
 	test('makeFileEventLogger appends the pushed event as a single JSON line', () => {
-		const dir = mkdtempSync(join(tmpdir(), 'cam-events-pushed-'));
+		const dir = createTestTmpdir('cam-events-pushed-');
 		try {
 			const path = join(dir, 'cam-worker-events.jsonl');
 			const logger = makeFileEventLogger(path);
@@ -120,7 +120,7 @@ describe("'pushed' event kind", () => {
 });
 
 test('makeFileEventLogger round-trips a push-recovered event with all delivery fields', () => {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-events-push-recovered-'));
+	const dir = createTestTmpdir('cam-events-push-recovered-');
 	try {
 		const path = join(dir, 'cam-worker-events.jsonl');
 		const logger = makeFileEventLogger(path);
@@ -266,7 +266,7 @@ describe('readWorkerTokens', () => {
  * builder, so the fixture is threaded as a literal `configPath` key on each
  * inline RunSupervisorOptions object instead of a shared-default line.
  */
-const GENERIC_SUPERVISOR_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-events-generic-config-'));
+const GENERIC_SUPERVISOR_CONFIG_DIR = createTestTmpdir('cam-events-generic-config-');
 const GENERIC_SUPERVISOR_CONFIG_PATH = join(GENERIC_SUPERVISOR_CONFIG_DIR, 'project.toml');
 writeFileSync(GENERIC_SUPERVISOR_CONFIG_PATH, '[backend]\nimplementer = "claude"\n');
 

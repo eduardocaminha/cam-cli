@@ -23,9 +23,9 @@
 //     9. await-operator + cap-REENTRY: promotion fires in the await-operator branch.
 
 import { describe, expect, test, beforeEach, afterAll } from 'bun:test';
-import { writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { createTestTmpdir } from '../helpers/test-tmpdir';
 import {
 	runSupervisor,
 } from '../../src/supervisor/loop.ts';
@@ -54,7 +54,7 @@ import { withVerifiedPanePid } from '../helpers/verified-pane-pid-spawn.ts';
  * pre-emptively so future call sites cannot silently re-couple it to the
  * live scripts/cam/project.toml.
  */
-const GENERIC_SUPERVISOR_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'cam-non-convergence-generic-config-'));
+const GENERIC_SUPERVISOR_CONFIG_DIR = createTestTmpdir('cam-non-convergence-generic-config-');
 const GENERIC_SUPERVISOR_CONFIG_PATH = join(GENERIC_SUPERVISOR_CONFIG_DIR, 'project.toml');
 writeFileSync(GENERIC_SUPERVISOR_CONFIG_PATH, '[backend]\nimplementer = "claude"\n');
 
@@ -366,7 +366,7 @@ describe('cap-REENTRY promotion (US-002)', () => {
 
 	test('AC3 (ship-gate): promoted prd -> makeHasPendingStories returns false; unpromoted -> true', () => {
 		// Create a temp directory to write prd fixtures for makeHasPendingStories.
-		const tmpDir = mkdtempSync(join(tmpdir(), 'cam-us002-test-'));
+		const tmpDir = createTestTmpdir('cam-us002-test-');
 		try {
 			const promotedPrd = makePrd({
 				stories: [{ id: 'US-001', priority: 1, passes: true }],

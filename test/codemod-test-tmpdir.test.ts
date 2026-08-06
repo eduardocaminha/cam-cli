@@ -111,6 +111,50 @@ describe('transformTestTmpdirSource — sync mkdtemp form', () => {
 		expect(result.text).toContain("const label = ['a', 'b'].join('-');");
 	});
 
+	test('a separate, earlier node:os import for an unrelated identifier is left untouched', () => {
+		// Regression (US-004, CAM-508): the same module specifier can appear
+		// in two DISTINCT import statements (e.g. `homedir` and the rooted
+		// identifier each get their own `from 'node:os';` line). Stopping at
+		// the first statement for that specifier, regardless of which names
+		// it holds, would silently leave the rooted identifier's own import
+		// unpruned.
+		const source = [
+			"import { homedir } from 'node:os';",
+			"import { mkdtempSync } from 'node:fs';",
+			"import { tmpdir } from 'node:os';",
+			"import { join } from 'node:path';",
+			'',
+			`const dir = mkdtempSync(${rooted(", 'cam-homedir-'));")}`,
+			'homedir();',
+		].join('\n');
+
+		const result = transformTestTmpdirSource(source, './helpers/test-tmpdir');
+
+		expect(result.text).toContain("import { homedir } from 'node:os';");
+		expect(result.text).not.toContain("import { tmpdir } from 'node:os';");
+		expect(result.text).toContain("import { createTestTmpdir } from './helpers/test-tmpdir';");
+	});
+
+	test('a describe/test title merely quoting the bare word does not block import removal', () => {
+		// Regression (US-004, CAM-508): a single-quoted describe/test title
+		// like `describe('gate lifecycle: real ' + 'tmpdir' + ' ...', ...)`
+		// must not be misread as a code reference just because the bare word
+		// appears inside a string literal.
+		const source = [
+			"import { mkdtempSync } from 'node:fs';",
+			"import { tmpdir } from 'node:os';",
+			"import { join } from 'node:path';",
+			'',
+			`const dir = mkdtempSync(${rooted(", 'cam-title-'));")}`,
+			"describe('gate lifecycle: real " + TMPDIR_CALL.slice(0, -2) + " + async poll loop', () => {});",
+		].join('\n');
+
+		const result = transformTestTmpdirSource(source, './helpers/test-tmpdir');
+
+		expect(result.text).not.toContain("from 'node:os'");
+		expect(result.text).toContain("import { createTestTmpdir } from './helpers/test-tmpdir';");
+	});
+
 	test('an unrelated import statement preceding the node:os import is left completely untouched', () => {
 		// Regression: a naive `[\s\S]*?` capture between the import braces
 		// can backtrack across this earlier, non-matching import statement
