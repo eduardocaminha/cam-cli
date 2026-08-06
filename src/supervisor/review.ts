@@ -505,7 +505,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 						}
 					})();
 				}
-				removeWorkerTaskPrompt(opts, uuid);
+				removeWorkerTaskPrompt({ ...opts, agentName }, uuid);
 				return { status: 'error', detail: containerReason };
 			}
 		}
@@ -542,7 +542,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 					}
 				})();
 			}
-			removeWorkerTaskPrompt(opts, uuid);
+			removeWorkerTaskPrompt({ ...opts, agentName }, uuid);
 			return { status: 'error', detail: codexReason };
 		}
 
@@ -558,6 +558,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 			removeDispatchFailedMarkerFn: opts.removeDispatchFailedMarkerFn,
 			notifyFn: opts.notifyFn,
 			removeTaskPromptFileFn: opts.removeTaskPromptFileFn,
+			agentName,
 		});
 		if (!dispatchResult.ok) {
 			return { status: 'error', detail: `dispatch-failed: ${dispatchResult.marker.reason}` };
@@ -586,7 +587,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 			}
 
 			if (!isPaneAlive(liveWorkerPaneId)) {
-				removeWorkerTaskPrompt(opts, uuid);
+				removeWorkerTaskPrompt({ ...opts, agentName }, uuid);
 				return {
 					status: 'error',
 					detail: 'Reviewer pane died before a <review> verdict was emitted.',
@@ -612,6 +613,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 						writeDispatchFailedMarkerFn: opts.writeDispatchFailedMarkerFn,
 						notifyFn: opts.notifyFn,
 						removeTaskPromptFileFn: opts.removeTaskPromptFileFn,
+						agentName,
 					}, 'echo session-died-early');
 					// The cause-bearing terminal on all three observable channels,
 					// independent of whether the sentinel replacement above itself
@@ -625,7 +627,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 						notifyFn: opts.notifyFn ?? ((): void => {}),
 						cause: earlyDeathVerdict.cause,
 					});
-					removeWorkerTaskPrompt(opts, uuid);
+					removeWorkerTaskPrompt({ ...opts, agentName }, uuid);
 					return {
 						status: 'error',
 						detail: `session-died-early: ${earlyDeathVerdict.cause}`,
@@ -651,6 +653,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 					writeDispatchFailedMarkerFn: opts.writeDispatchFailedMarkerFn,
 					notifyFn: opts.notifyFn,
 					removeTaskPromptFileFn: opts.removeTaskPromptFileFn,
+					agentName,
 				}, 'echo review-timeout');
 				return {
 					status: 'error',
@@ -658,7 +661,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 				};
 			}
 		}
-		removeWorkerTaskPrompt(opts, uuid);
+		removeWorkerTaskPrompt({ ...opts, agentName }, uuid);
 
 		// Resolve verdict and findings from whichever source triggered loop exit.
 		// File-based verdict takes priority over tag-based verdict.

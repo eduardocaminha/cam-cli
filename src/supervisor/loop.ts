@@ -39,7 +39,7 @@ import type { ReviewReport } from './review-report.ts';
 import type { FollowUpProvenance } from './suggestion-followups.ts';
 import { readWorkerOutcome, parseAnySentinel } from './result.ts';
 import type { WorkerOutcome } from './result.ts';
-import { selectAdapter } from './backend-adapter.ts';
+import { selectAdapter, DEFAULT_IMPLEMENTER_AGENT } from './backend-adapter.ts';
 import { buildImplementerTaskPrompt } from './task-prompt.ts';
 import { readPhaseBackend } from '../config/models.ts';
 import type { WorkerIsolation } from '../config/models.ts';
@@ -1161,6 +1161,15 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// Mint a fresh uuid for this invocation.
 			const uuid = genUuid();
 
+			// US-R1-001 (CAM-510 follow-up to US-003 site 3 of 5): every terminal
+			// cleanup below must also reap this dispatch's codex instructions file,
+			// not just its task-prompt file. The implementer's agent name is never
+			// overridden (no RunSupervisorOptions.agentName field exists), so the
+			// same DEFAULT_IMPLEMENTER_AGENT that buildSpawnArgv resolves internally
+			// is threaded through explicitly here.
+			const removeImplementerTaskPrompt = (u: string): void =>
+				removeWorkerTaskPrompt({ ...opts, agentName: DEFAULT_IMPLEMENTER_AGENT }, u);
+
 			// Resolve model/backend once so argv and the spawn-resolution event
 			// report the identical resolved values (reviewer finding: double-read).
 			// US-002 (CAM-356): resolve implBackend first and thread it into
@@ -1263,7 +1272,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					}
 					lastOutcome = { kind: 'blocked', storyId: undefined, detail: containerReason };
 					iterations++;
-					removeWorkerTaskPrompt(opts, uuid);
+					removeImplementerTaskPrompt(uuid);
 					if (opts.escalateFn !== undefined) {
 						const escalateFn = opts.escalateFn;
 						void (async () => {
@@ -1304,7 +1313,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					const containerReason = `container-not-ready: ${preflightResult.reason} (advisory ${advisoryStoryId ?? 'unknown'})`;
 					lastOutcome = { kind: 'blocked', storyId: undefined, detail: containerReason };
 					iterations++;
-					removeWorkerTaskPrompt(opts, uuid);
+					removeImplementerTaskPrompt(uuid);
 					if (opts.escalateFn !== undefined) {
 						const escalateFn = opts.escalateFn;
 						void (async () => {
@@ -1346,7 +1355,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				const codexReason = `codex-auth-failed: ${codexPreflight.message} (advisory ${advisoryStoryId ?? 'unknown'})`;
 				lastOutcome = { kind: 'blocked', storyId: undefined, detail: codexReason };
 				iterations++;
-				removeWorkerTaskPrompt(opts, uuid);
+				removeImplementerTaskPrompt(uuid);
 				if (opts.escalateFn !== undefined) {
 					const escalateFn = opts.escalateFn;
 					void (async () => {
@@ -1378,6 +1387,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 				removeDispatchFailedMarkerFn: opts.removeDispatchFailedMarkerFn,
 				notifyFn: opts.notifyOrchestrator,
 				removeTaskPromptFileFn: opts.removeTaskPromptFileFn,
+				agentName: DEFAULT_IMPLEMENTER_AGENT,
 			});
 			if (!dispatchResult.ok) {
 				iterations++;
@@ -1503,7 +1513,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			}
 
 			iterations++;
-			removeWorkerTaskPrompt(opts, uuid);
+			removeImplementerTaskPrompt(uuid);
 
 			// US-013: worker-end. pollOutcome records how it ended.
 			emit('worker-end', advisoryStoryId, uuid, { mode: 'sentinel', pollOutcome });
@@ -1524,6 +1534,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					writeDispatchFailedMarkerFn: opts.writeDispatchFailedMarkerFn,
 					notifyFn: opts.notifyOrchestrator,
 					removeTaskPromptFileFn: opts.removeTaskPromptFileFn,
+					agentName: DEFAULT_IMPLEMENTER_AGENT,
 				}, 'echo token-ceiling');
 				emit('worker-token-ceiling', advisoryStoryId, uuid, {
 					spend: tokenSpendAtBreach,
@@ -1564,6 +1575,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 						writeDispatchFailedMarkerFn: opts.writeDispatchFailedMarkerFn,
 						notifyFn: opts.notifyOrchestrator,
 						removeTaskPromptFileFn: opts.removeTaskPromptFileFn,
+						agentName: DEFAULT_IMPLEMENTER_AGENT,
 					}, pollOutcome === 'session-died-early' ? 'echo session-died-early' : 'echo timeout');
 				}
 				if (pollOutcome === 'session-died-early') {
