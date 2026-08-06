@@ -76,7 +76,7 @@
         "Tests pass (bun test). [oracle: named-command bun test]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Site 4 of 5. Production site: src/commands/setup.ts:492, inside the generated bash menu string: the v|V branch does `tmux pipe-pane ... 'cat >> /tmp/cam-config.log'; tail -f /tmp/cam-config.log`. Both occurrences on that line must move to a pid-namespaced path under one fixed parent (GOTCHA 2: the pid is a nested segment or a filename segment under a fixed parent directory, never a new top-level unique entry), and the append must be bounded in-shell. Note the file is a bash HEREDOC-style template inside TypeScript, so every dollar sign and brace already carries escaping; follow the existing escaping style of the surrounding lines exactly. The cap has to survive `cat >>` appends (e.g. a bounded rotate step using tail -c on the file, or a head -c ceiling on the piped stream), which is exactly what AC8 executes under real bash. Removal on menu exit (the q|Q branch and any other exit path) is part of AC8. GOTCHA 6 (budget): src/commands/setup.ts is 884 lines against an 885 ceiling, so raising scripts/file-size-budget.json with a CAM-510 tracker ref in the staged diff is expected. Test file: test/setup-config-log.test.ts must root its scratch directory in createTestTmpdir() from test/helpers/test-tmpdir.ts and must NOT import tmpdir from node:os (GOTCHA 14: no new allowlist entries). Run the snippet through a real bash subprocess (Bun.spawnSync/spawn), not a simulated string check, per the curated test-quality invariant on real I/O at wire boundaries. GOTCHA 4 (CAM-507): no rm -rf in the generated shell, the test, or any oracle."
     },
