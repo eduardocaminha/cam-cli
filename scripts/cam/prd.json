@@ -37,7 +37,7 @@
       "id": "US-R2-003",
       "title": "WARNING: Doc drift caused by this branch: the direct-fix lane doc still describ…",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "description": "WARNING [.claude/commands/direct-fix.md:74]: Doc drift caused by this branch: the direct-fix lane doc still describes the deterministic safety net as '14 gates', but US-009 added test-tmpdir as gate #15 (scripts/check-all.ts:181), and both gate-count freeze tests were bumped 14 -> 15 (test/check-all.test.ts:92, test/gates-manifest.test.ts:72). The prose is now factually wrong in an agent-facing command doc that exists specifically to justify the lane by the strength of that net. One-word fix; there is no templates/ mirror of this file to keep in sync.",
       "notes": "WARNING [.claude/commands/direct-fix.md:74]: Doc drift caused by this branch: the direct-fix lane doc still describes the deterministic safety net as '14 gates', but US-009 added test-tmpdir as gate #15 (scripts/check-all.ts:181), and both gate-count freeze tests were bumped 14 -> 15 (test/check-all.test.ts:92, test/gates-manifest.test.ts:72). The prose is now factually wrong in an agent-facing command doc that exists specifically to justify the lane by the strength of that net. One-word fix; there is no templates/ mirror of this file to keep in sync."
     },
