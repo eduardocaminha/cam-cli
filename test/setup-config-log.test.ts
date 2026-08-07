@@ -29,8 +29,16 @@
 // overridden for every spawned bash subprocess below so the snippets'
 // `${TMPDIR:-/tmp}` resolution stays inside the scratch tree.
 
-import { describe, expect, it } from 'bun:test';
-import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { afterEach, describe, expect, it } from 'bun:test';
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	rmSync,
+	statSync,
+	utimesSync,
+	writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { createTestTmpdir } from './helpers/test-tmpdir';
@@ -40,6 +48,8 @@ import {
 	buildConfigLogCapCommand,
 	buildConfigLogCleanupCommand,
 	buildConfigLogPathAssignment,
+	CONFIG_LOG_PARENT_DIR_NAME,
+	pruneStaleConfigLogDir,
 } from '../src/commands/setup.ts';
 
 describe('buildConfigLogPathAssignment', () => {
@@ -438,5 +448,96 @@ describe('config-pane debug log: EXIT-trap teardown vs writer rotate race (US-R1
 		expect(existsSync(`${logPath}.chunk`)).toBe(false);
 		expect(existsSync(`${logPath}.lock`)).toBe(false);
 		expect(existsSync(`${logPath}.tmp`)).toBe(false);
+	});
+});
+
+describe('pruneStaleConfigLogDir (US-R2-005, CAM-510 site 4: the only one of the five sites shipped with no stale-sibling pruning)', () => {
+	// Before this story, cleanup of this fixed parent depended entirely on
+	// the menu script's own EXIT trap (buildConfigLogCleanupCommand): any
+	// abnormal menu-pane termination (tmux kill-pane, SIGKILL, crash) left
+	// its <pid>.log/.chunk/.lock siblings under the parent forever, with
+	// nothing that ever removed them -- unlike the other four CAM-510 sites,
+	// which all prune stale siblings by age independently of any exit
+	// handler. `pruneStaleConfigLogDir` is the real production entry point
+	// (called from spawnSetupTmux, before every `cam setup` run); these
+	// tests redirect process.env.TMPDIR at a repo-local scratch root
+	// (mirroring test/release/ship-pr-tempfile.test.ts's GOTCHA 8
+	// convention) and exercise it directly.
+	let originalTmpdir: string | undefined;
+	const dirsToCleanup: string[] = [];
+
+	afterEach(() => {
+		if (originalTmpdir === undefined) delete process.env['TMPDIR'];
+		else process.env['TMPDIR'] = originalTmpdir;
+		originalTmpdir = undefined;
+		for (const dir of dirsToCleanup) rmSync(dir, { recursive: true, force: true });
+		dirsToCleanup.length = 0;
+	});
+
+	function redirectTmpdirToScratch(): string {
+		originalTmpdir = process.env['TMPDIR'];
+		const scratchRoot = createTestTmpdir('cam-config-log-prune-');
+		dirsToCleanup.push(scratchRoot);
+		process.env['TMPDIR'] = scratchRoot;
+		return scratchRoot;
+	}
+
+	it('creates the fixed parent directory on first use, resolving under the redirected TMPDIR', () => {
+		const scratchRoot = redirectTmpdirToScratch();
+		pruneStaleConfigLogDir();
+		expect(existsSync(join(scratchRoot, CONFIG_LOG_PARENT_DIR_NAME))).toBe(true);
+	});
+
+	it('never throws when the parent directory does not exist yet (first-ever run on a machine)', () => {
+		const scratchRoot = redirectTmpdirToScratch();
+		expect(() => pruneStaleConfigLogDir()).not.toThrow();
+		expect(existsSync(join(scratchRoot, CONFIG_LOG_PARENT_DIR_NAME))).toBe(true);
+	});
+
+	it('prunes a stale <pid>.log/.chunk/.lock trio abandoned by a prior abnormal termination, while a recent sibling survives', () => {
+		const scratchRoot = redirectTmpdirToScratch();
+		const parent = join(scratchRoot, CONFIG_LOG_PARENT_DIR_NAME);
+		mkdirSync(parent, { recursive: true });
+
+		// Simulate a stale trio left behind by an earlier `cam setup` menu
+		// pane that never ran its EXIT trap (kill -9, tmux kill-pane, crash)
+		// -- the exact leak this story exists to close.
+		const stalePid = '11111';
+		const staleLog = join(parent, `${stalePid}.log`);
+		const staleChunk = join(parent, `${stalePid}.log.chunk`);
+		const staleLock = join(parent, `${stalePid}.log.lock`);
+		writeFileSync(staleLog, 'abandoned debug output\n', 'utf8');
+		writeFileSync(staleChunk, '', 'utf8');
+		writeFileSync(staleLock, '', 'utf8');
+		const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+		utimesSync(staleLog, twoHoursAgo, twoHoursAgo);
+		utimesSync(staleChunk, twoHoursAgo, twoHoursAgo);
+		utimesSync(staleLock, twoHoursAgo, twoHoursAgo);
+
+		// A recent sibling -- e.g. a genuinely concurrent, still-live `cam
+		// setup` process -- must survive the prune pass untouched.
+		const liveLog = join(parent, '22222.log');
+		writeFileSync(liveLog, 'still-live output\n', 'utf8');
+
+		pruneStaleConfigLogDir();
+
+		expect(existsSync(staleLog)).toBe(false);
+		expect(existsSync(staleChunk)).toBe(false);
+		expect(existsSync(staleLock)).toBe(false);
+		expect(existsSync(liveLog)).toBe(true);
+	});
+
+	it('resolves the same fixed parent directory the real bash-side buildConfigLogPathAssignment resolves under', () => {
+		const scratchRoot = redirectTmpdirToScratch();
+		pruneStaleConfigLogDir();
+
+		const script = `${buildConfigLogPathAssignment()}\necho "$CAM_CONFIG_LOG"`;
+		const env = { ...process.env, TMPDIR: scratchRoot };
+		const result = spawnSync('bash', ['-c', script], { encoding: 'utf8', env });
+		expect(result.status).toBe(0);
+		const logPath = result.stdout.trim();
+
+		const tsResolvedParent = join(scratchRoot, CONFIG_LOG_PARENT_DIR_NAME);
+		expect(logPath.startsWith(`${tsResolvedParent}/`)).toBe(true);
 	});
 });

@@ -25,8 +25,9 @@
 //   --description "<text>"     (new projects only)
 //   --no-tmux                  copy templates + print next steps, no tmux
 
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';
@@ -441,13 +442,90 @@ export function buildSetupPrompt(opts: {
 const CONFIG_LOG_CEILING_BYTES = 200_000;
 
 /**
+ * Fixed, reused top-level directory name under tmpdir() for the
+ * config-pane debug log. Shared between the bash-expression form
+ * (`configLogDirExpr`, resolved by the spawned pane's shell) and the
+ * TS-side resolution (`pruneStaleConfigLogDir`, resolved by this process
+ * before the pane ever spawns) so the two can never drift apart.
+ */
+export const CONFIG_LOG_PARENT_DIR_NAME = 'cam-cli-config-log';
+
+/**
  * Fixed parent directory for the config-pane debug log, as a bash
  * expression (not a resolved path -- the shell that runs the generated
  * script resolves `$TMPDIR`). One reused parent, never a new top-level
  * entry per run: each invocation nests its own file under it by pid.
  */
 function configLogDirExpr(): string {
-	return '${TMPDIR:-/tmp}/cam-cli-config-log';
+	return `\${TMPDIR:-/tmp}/${CONFIG_LOG_PARENT_DIR_NAME}`;
+}
+
+/** Sibling config-log files older than this are pruned as abandoned (ms). Mirrors STALE_PID_DIR_AGE_MS in src/release/ship-pr-tempfile.ts and src/supervisor/task-prompt-file.ts. */
+const STALE_CONFIG_LOG_AGE_MS = 60 * 60 * 1000;
+
+/**
+ * Removes stale `<pid>.log` / `<pid>.log.chunk` / `<pid>.log.lock` siblings
+ * under the fixed config-log parent, tolerating any stat/removal failure (a
+ * concurrent `cam setup` invocation may already be cleaning up its own
+ * files) -- this is CAM-510 site 4, the only one of the issue's five sites
+ * that shipped with no stale-sibling pruning at all: cleanup depended
+ * entirely on the menu script's own `EXIT` trap (`buildConfigLogCleanupCommand`),
+ * so any abnormal menu-pane termination (tmux kill-pane, SIGKILL, crash)
+ * left its `<pid>.log`/`.chunk`/`.lock` under the fixed parent forever.
+ *
+ * Unlike the pid-SUBDIRECTORY prune helpers this mirrors (ship-pr-tempfile.ts,
+ * task-prompt-file.ts, embedded.ts), this directory holds flat sibling
+ * FILES per pid rather than nested subdirectories, and there is no "own
+ * pid" to skip: the caller (`pruneStaleConfigLogDir`, invoked by
+ * `spawnSetupTmux`) runs BEFORE the new pane's `$$`-namespaced log file is
+ * even created, so nothing this invocation owns exists yet to protect.
+ * Each entry is stat'd and pruned independently by age instead, matching
+ * the age-based heuristic used at every other CAM-510 site.
+ *
+ * Accepted tradeoff (the same one already documented for the pid-subdirectory
+ * variants): a viewer pane left open longer than `STALE_CONFIG_LOG_AGE_MS`
+ * could have its `.lock` sibling pruned by a LATER `cam setup` invocation
+ * while its `.log` file is still being actively appended -- the writer's
+ * `.lock` is created once, at loop start, and only ever removed as its very
+ * last action (see `buildConfigLogCapCommand`'s doc comment), so its mtime
+ * does not advance with the writer's appends the way the `.log` file's
+ * does. The threshold is set to a full hour, matching every other CAM-510
+ * site, specifically so a still-open viewer session survives in practice.
+ */
+function pruneStaleConfigLogSiblings(parent: string): void {
+	let entries: string[];
+	try {
+		entries = readdirSync(parent);
+	} catch {
+		return;
+	}
+	const now = Date.now();
+	for (const entry of entries) {
+		const entryPath = join(parent, entry);
+		try {
+			const info = statSync(entryPath);
+			if (now - info.mtimeMs > STALE_CONFIG_LOG_AGE_MS) {
+				rmSync(entryPath, { force: true });
+			}
+		} catch {
+			// Transient stat/removal failure on a sibling must never fail this
+			// process's own setup.
+		}
+	}
+}
+
+/**
+ * Ensures the fixed config-log parent directory exists and has had its
+ * stale `<pid>.log`(`.chunk`|`.lock`) siblings pruned. Exported so tests can
+ * exercise the real production prune pass directly (TMPDIR-redirected,
+ * mirroring `test/release/ship-pr-tempfile.test.ts`'s GOTCHA 8 convention)
+ * without spinning up a real tmux session. Called from `spawnSetupTmux`
+ * before every run.
+ */
+export function pruneStaleConfigLogDir(): void {
+	const parent = join(tmpdir(), CONFIG_LOG_PARENT_DIR_NAME);
+	mkdirSync(parent, { recursive: true });
+	pruneStaleConfigLogSiblings(parent);
 }
 
 /**
@@ -795,6 +873,10 @@ function spawnSetupTmux(opts: {
 	cwd: string;
 }): void {
 	const { prompt, cwd } = opts;
+
+	// Prune any config-log siblings abandoned by a prior run's abnormal
+	// termination (CAM-510 site 4) before this run adds its own.
+	pruneStaleConfigLogDir();
 
 	// Persist all the artifacts the panes need.
 	const dotClaude = join(cwd, '.claude');
