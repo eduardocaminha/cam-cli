@@ -82,6 +82,27 @@ describe('buildConfigLogPathAssignment', () => {
 		// /tmp -- proves TMPDIR was actually honored by the snippet.
 		expect(parent1?.startsWith(scratch)).toBe(true);
 	});
+
+	it('pre-creates the log file itself, before any writer ever runs (CAM-510 v/V viewer-pane-dies-immediately regression)', () => {
+		// The `v|V` viewer pane runs `tmux pipe-pane -o '<cap>'; tail -f
+		// $CAM_CONFIG_LOG` -- `tail -f` exits immediately if the file does not
+		// exist yet. `buildConfigLogCapCommand`'s writer only creates the file
+		// lazily (its first `cat chunk >> LOG`), so this snippet is the only
+		// thing standing between `tail -f` and that race. Assert the file
+		// exists (empty, zero-byte) the instant this snippet returns, with NO
+		// cap/writer command run at all -- proving the pre-creation lives here
+		// rather than depending on writer timing.
+		const scratch = createTestTmpdir('cam-config-log-precreate-');
+		const script = `${buildConfigLogPathAssignment()}\necho "$CAM_CONFIG_LOG"`;
+		const env = { ...process.env, TMPDIR: scratch };
+
+		const result = spawnSync('bash', ['-c', script], { encoding: 'utf8', env });
+		expect(result.status).toBe(0);
+		const logPath = result.stdout.trim();
+		expect(logPath).toBeTruthy();
+		expect(existsSync(logPath)).toBe(true);
+		expect(statSync(logPath).size).toBe(0);
+	});
 });
 
 describe('buildConfigLogCapCommand', () => {

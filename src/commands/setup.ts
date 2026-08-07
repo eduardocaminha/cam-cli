@@ -456,12 +456,27 @@ function configLogDirExpr(): string {
  * exact production snippet under real bash (twice, as two distinct
  * subprocesses) and prove distinct pids produce distinct paths under the
  * one fixed parent.
+ *
+ * Also creates the (empty) log file itself, immediately after deriving the
+ * path. The `v|V` viewer pane runs `tmux pipe-pane -o '<cap>'; tail -f
+ * $CAM_CONFIG_LOG` -- `buildConfigLogCapCommand`'s writer only creates the
+ * file lazily, on its first `cat chunk >> LOG`, so without this line `tail
+ * -f` races that first write and, on the (common) side of the race where no
+ * pipe-pane output has landed yet, exits immediately with "No such file or
+ * directory" (CAM-510 site "v/V viewer pane dies immediately", reviewer
+ * repro under real tmux 3.6a for both quiet and noisy config panes). This
+ * regressed the fixed-shared-path behavior on `main`
+ * (`/tmp/cam-config.log`), which pre-existed from the second `cam setup`
+ * onward and never raced `tail -f`; the new per-pid path under the EXIT-trap
+ * `rm -f` (`buildConfigLogCleanupCommand`) starts every run from a clean
+ * slate, so the file must be created explicitly here instead.
  */
 export function buildConfigLogPathAssignment(): string {
 	return [
 		`CAM_CONFIG_LOG_DIR="${configLogDirExpr()}"`,
 		'mkdir -p "$CAM_CONFIG_LOG_DIR" 2>/dev/null',
 		'CAM_CONFIG_LOG="$CAM_CONFIG_LOG_DIR/$$.log"',
+		': > "$CAM_CONFIG_LOG"',
 	].join('\n');
 }
 
