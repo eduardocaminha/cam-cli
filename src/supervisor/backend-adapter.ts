@@ -25,7 +25,7 @@
 // stays a one-way fan-out with no import cycle.
 
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -405,8 +405,51 @@ function codexSandboxArgs(permissionMode: string): string {
  */
 const CODEX_INSTRUCTIONS_PARENT_NAME = 'cam-cli-codex-instructions';
 
+/** Sibling pid subdirectories under an agent's directory older than this are pruned as abandoned (ms). */
+const STALE_CODEX_INSTRUCTIONS_PID_DIR_AGE_MS = 60 * 60 * 1000;
+
+function codexInstructionsAgentDir(agentName: string): string {
+	return join(tmpdir(), CODEX_INSTRUCTIONS_PARENT_NAME, agentName);
+}
+
 function codexInstructionsDir(agentName: string, pid: number): string {
-	return join(tmpdir(), CODEX_INSTRUCTIONS_PARENT_NAME, agentName, String(pid));
+	return join(codexInstructionsAgentDir(agentName), String(pid));
+}
+
+/**
+ * Removes stale sibling pid subdirectories under `<parent>/<agentName>`
+ * (US-R1-002, CAM-510: the reap-before-write in `writeCodexInstructionsFile`
+ * only ever cleans INSIDE this process's own `<agentName>/<pid>` leaf, so a
+ * pid whose process exited without reaching a dispatch terminal -- e.g. a
+ * killed supervisor -- left its whole leaf directory behind forever; measured
+ * as the largest of the five CAM-510 leak sites, 45,580 files / 1.87 GB).
+ * Mirrors `pruneStaleTaskPromptPidSiblings` (task-prompt-file.ts) and
+ * `pruneStalePidSiblings` (ship-pr-tempfile.ts): skips `ownPidDirName`
+ * unconditionally so a live in-flight dispatch by THIS process is never at
+ * risk, and tolerates removal failures (a concurrent process may already be
+ * cleaning up its own directory).
+ */
+function pruneStaleCodexInstructionsPidSiblings(agentDir: string, ownPidDirName: string): void {
+	let entries: string[];
+	try {
+		entries = readdirSync(agentDir);
+	} catch {
+		return;
+	}
+	const now = Date.now();
+	for (const entry of entries) {
+		if (entry === ownPidDirName) continue;
+		const entryPath = join(agentDir, entry);
+		try {
+			const info = statSync(entryPath);
+			if (now - info.mtimeMs > STALE_CODEX_INSTRUCTIONS_PID_DIR_AGE_MS) {
+				rmSync(entryPath, { recursive: true, force: true });
+			}
+		} catch {
+			// Transient stat/removal failure on a sibling must never fail this
+			// process's own resolution.
+		}
+	}
 }
 
 function codexInstructionsFilename(uuid: string): string {
@@ -429,6 +472,13 @@ function codexInstructionsFilename(uuid: string): string {
  * parent, so a concurrent dispatch for a different agent (or a different
  * supervisor process) is never clobbered.
  *
+ * Also prunes abandoned pid SIBLINGS under this agent's directory
+ * (US-R1-002, CAM-510) before touching its own leaf: a supervisor process
+ * that exits without reaching a dispatch terminal (or is killed) never runs
+ * `removeCodexInstructionsFile`, so its whole `<agentName>/<pid>` leaf was
+ * previously left behind forever. This was the only one of the five CAM-510
+ * sites without stale-sibling pruning, and the largest measured leak.
+ *
  * Written with mode 0o600 (US-003, CAM-510): the reviewer branch appends up
  * to `REVIEWER_DIFF_MAX_CHARS` (200_000 chars) of the user's git diff to this
  * body (CAM-354), and the previous default mode (0o644) exposed it to every
@@ -447,6 +497,8 @@ function writeCodexInstructionsFile(agentName: string, uuid: string, appendedBlo
 	const raw = readFileSync(agentPath, 'utf8');
 	const body = stripFrontmatter(raw);
 	const fullBody = appendedBlock !== undefined ? `${body}\n${appendedBlock}` : body;
+
+	pruneStaleCodexInstructionsPidSiblings(codexInstructionsAgentDir(agentName), String(process.pid));
 
 	const dir = codexInstructionsDir(agentName, process.pid);
 	mkdirSync(dir, { recursive: true });
