@@ -537,6 +537,23 @@ const CONFIG_LOG_DRAIN_INTERVAL_SECONDS = '0.05';
  * writer is still mid-flight and, if so, wait for it to actually finish
  * before removing the log it writes into -- see that function's doc comment
  * for the race this closes.
+ *
+ * The rotate step writes the trimmed tail back into `logPathExpr` via
+ * `cat TMP > LOG` (shell output redirection, which opens the *existing*
+ * inode and truncates it in place), never `mv TMP LOG` (which unlinks
+ * `LOG`'s directory entry and repoints it at `TMP`'s freshly-created inode).
+ * The `v|V` viewer pane's `tail -f $CAM_CONFIG_LOG` opens the file once and
+ * keeps reading from that same open file descriptor for as long as the
+ * viewer pane lives; an `mv`-based rotate silently detaches that descriptor
+ * from the path (the old inode still exists, unlinked, and `tail -f` keeps
+ * following it forever) while a `cat >` rotate keeps writing into the exact
+ * inode the viewer already has open, so the viewer's next read call sees the
+ * post-rotate content instead of freezing. Reviewer repro under real tmux
+ * (CAM-510 US-R2-003, review-artifact.txt section 5c): with the `mv` form
+ * and a 3000-byte ceiling, the viewer showed `MARK-89` at t+3s and was still
+ * showing `MARK-89` at t+11s while the log itself had advanced past
+ * `MARK-462` -- the viewer pane never recovers once it starts following the
+ * detached inode, since nothing ever repoints its already-open descriptor.
  */
 export function buildConfigLogCapCommand(
 	logPathExpr: string,
@@ -550,7 +567,7 @@ export function buildConfigLogCapCommand(
 		'do',
 		`	test -s ${chunkPathExpr} || break`,
 		`	cat ${chunkPathExpr} >> ${logPathExpr}`,
-		`	test $(wc -c < ${logPathExpr}) -gt ${ceilingBytes} && { tail -c ${ceilingBytes} ${logPathExpr} > ${logPathExpr}.tmp 2>/dev/null && mv ${logPathExpr}.tmp ${logPathExpr}; }`,
+		`	test $(wc -c < ${logPathExpr}) -gt ${ceilingBytes} && { tail -c ${ceilingBytes} ${logPathExpr} > ${logPathExpr}.tmp 2>/dev/null && cat ${logPathExpr}.tmp > ${logPathExpr} && rm -f ${logPathExpr}.tmp; }`,
 		'done',
 		`rm -f ${chunkPathExpr} ${lockPathExpr}`,
 	].join('\n');

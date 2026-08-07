@@ -126,7 +126,7 @@ describe('buildConfigLogCapCommand', () => {
 		const content = readFileSync(logPath, 'utf8');
 		expect(content).toBe('x'.repeat(size));
 
-		// No leftover .tmp rotation artifact after the mv.
+		// No leftover .tmp rotation artifact after the rotate.
 		expect(existsSync(`${logPath}.tmp`)).toBe(false);
 	});
 
@@ -194,6 +194,82 @@ describe('buildConfigLogCapCommand', () => {
 		// the numeric ceiling ('500') in the writer's cwd; the POSIX-safe form
 		// must never do this.
 		expect(existsSync(join(scratch, String(ceiling)))).toBe(false);
+	});
+
+	it('rotates by writing back into the log file in place, never via mv (CAM-510 US-R2-003)', () => {
+		// `mv TMP LOG` unlinks LOG's directory entry and repoints it at TMP's
+		// freshly-created inode -- a viewer pane's `tail -f LOG` has already
+		// opened the pre-rotate inode by file descriptor and keeps reading
+		// from it forever, even after `mv` detaches the path from it. The
+		// fix must write the trimmed content back through the existing path
+		// (`cat TMP > LOG`, which truncates-in-place), so `mv` must never
+		// appear in the generated snippet.
+		const command = buildConfigLogCapCommand('/some/path', 500);
+		expect(command).not.toMatch(/\bmv\b/);
+		expect(command).toContain('cat');
+	});
+
+	it('preserves the log file inode across a rotate, so a descriptor opened before the rotate keeps working (CAM-510 US-R2-003)', () => {
+		const scratch = createTestTmpdir('cam-config-log-inode-');
+		const logPath = join(scratch, 'config.log');
+		const ceiling = 1000;
+		const command = buildConfigLogCapCommand(logPath, ceiling);
+
+		// Pre-create the file (matches buildConfigLogPathAssignment's real
+		// contract) and record its inode before any rotate has happened.
+		writeFileSync(logPath, '', 'utf8');
+		const inodeBeforeRotate = statSync(logPath).ino;
+
+		// Feed well beyond the ceiling so at least one rotate fires.
+		const input = 'x'.repeat(ceiling * 5);
+		const r = spawnSync('bash', ['-c', command], { encoding: 'utf8', input });
+		expect(r.status).toBe(0);
+
+		expect(existsSync(logPath)).toBe(true);
+		expect(statSync(logPath).ino).toBe(inodeBeforeRotate);
+	});
+
+	it('a real tail -f process started before the first rotate keeps advancing past it, instead of freezing on the pre-rotate content (CAM-510 US-R2-003 reviewer repro)', async () => {
+		// Reproduces review-artifact.txt section 5c under real bash + real
+		// `tail -f`: a viewer that opened the log before the first rotate
+		// must keep seeing new output after the rotate, not freeze on
+		// whatever marker was current right before the ceiling was crossed.
+		const scratch = createTestTmpdir('cam-config-log-tailf-');
+		const logPath = join(scratch, 'config.log');
+		const ceiling = 500;
+		const command = buildConfigLogCapCommand(logPath, ceiling);
+
+		// Pre-create the file, matching buildConfigLogPathAssignment's real
+		// contract, so `tail -f` can open it immediately (no viewer-dies-race,
+		// that's US-R2-002's concern, not this test's).
+		writeFileSync(logPath, '', 'utf8');
+
+		const tail = spawn('tail', ['-f', logPath], { stdio: ['ignore', 'pipe', 'ignore'] });
+		let tailOutput = '';
+		tail.stdout?.on('data', (chunk: Buffer) => {
+			tailOutput += chunk.toString('utf8');
+		});
+
+		const writer = spawn('bash', ['-c', command], { stdio: ['pipe', 'ignore', 'ignore'] });
+
+		// Write enough MARK-N lines to blow well past the ceiling (500 bytes)
+		// several times over, forcing multiple rotates while both the writer
+		// and `tail -f` are live -- mirrors the reviewer's real-tmux repro.
+		for (let i = 0; i < 200; i++) {
+			writer.stdin?.write(`MARK-${i}\n`);
+		}
+		writer.stdin?.end();
+		await waitForCondition(() => writer.exitCode !== null, { timeoutMs: 5000 });
+
+		// Give `tail -f` a moment to catch up on the writer's final output.
+		await waitForCondition(() => tailOutput.includes('MARK-199'), { timeoutMs: 5000 });
+		tail.kill();
+
+		// The frozen-viewer defect this story closes: `tail -f` never
+		// observing anything past whatever was current at the first rotate.
+		// Asserting it DID observe the very last mark written proves the
+		// rotate never detached `tail -f`'s descriptor from the log path.
+		expect(tailOutput).toContain('MARK-199');
 	});
 
 	it('keeps the log bounded WHILE still being written, not just after the writer exits (US-R1-004)', async () => {
