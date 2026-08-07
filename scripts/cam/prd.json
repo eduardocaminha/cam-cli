@@ -45,7 +45,7 @@
       "id": "US-R1-004",
       "title": "WARNING: US-004's byte ceiling does not bound the log while it is being written…",
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "description": "WARNING [src/commands/setup.ts:484]: US-004's byte ceiling does not bound the log while it is being written. buildConfigLogCapCommand emits 'cat >> LOG; tail -c N LOG > LOG.tmp && mv LOG.tmp LOG', and tmux pipe-pane keeps the 'cat >>' alive for the entire lifetime of the viewer pane, so the rotate only runs once the pipe closes. During the whole session (the only period the file is actually being fed) the log grows without limit, which is exactly the 'unbounded, unrotated' defect the story exists to close; test/setup-config-log.test.ts only observes the file after the bash subprocess exits, so it cannot see this. Use a streaming construction (a bounded rotate loop, or a size check on each append) rather than a post-hoc trim.",
       "notes": "WARNING [src/commands/setup.ts:484]: US-004's byte ceiling does not bound the log while it is being written. buildConfigLogCapCommand emits 'cat >> LOG; tail -c N LOG > LOG.tmp && mv LOG.tmp LOG', and tmux pipe-pane keeps the 'cat >>' alive for the entire lifetime of the viewer pane, so the rotate only runs once the pipe closes. During the whole session (the only period the file is actually being fed) the log grows without limit, which is exactly the 'unbounded, unrotated' defect the story exists to close; test/setup-config-log.test.ts only observes the file after the bash subprocess exits, so it cannot see this. Use a streaming construction (a bounded rotate loop, or a size check on each append) rather than a post-hoc trim."
     },
