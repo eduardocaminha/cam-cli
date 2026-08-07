@@ -45,7 +45,7 @@
 // tmux is absent.
 
 import { afterEach, beforeEach, expect, test } from 'bun:test';
-import { existsSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';
@@ -210,6 +210,88 @@ test.skipIf(!tmuxAvailable)(
 
 		// Still exactly one config + one menu + one viewer pane, and the
 		// viewer is still alive (not dead/exited) after the whole exchange.
+		expect(paneIds().length).toBe(3);
+		expect(paneCommand(viewerPaneId)).toBe('tail');
+	},
+	{ timeout: 60_000 },
+);
+
+// CAM-510 US-R2-006: `buildConfigLogCapCommand`'s path expansions used to be
+// unquoted throughout (`cat ${LOG}.chunk >> ${LOG}`, etc.), and the `v|V`
+// arm's trailing `tail -f ${CAM_CONFIG_LOG}` was unquoted too. `${LOG}`
+// derives from `${TMPDIR:-/tmp}`, so a `TMPDIR` containing a space would
+// word-split every one of those calls -- e.g. `cat` receiving `"/has"` and
+// `"space/1234.log.chunk"` as two separate arguments instead of the one real
+// path -- silently writing/reading the wrong paths, or erroring against a
+// path fragment that doesn't exist. None of the direct-bash-spawn tests in
+// test/setup-config-log.test.ts can observe this: they call
+// `buildConfigLogCapCommand` with a plain scratch path they control (no
+// space), never through the real `v|V` embedding this test drives.
+test.skipIf(!tmuxAvailable)(
+	'a TMPDIR containing a space does not word-split the derived log path -- the viewer stays alive and the log stays capped at the real, correctly-quoted path (CAM-510 US-R2-006)',
+	async () => {
+		const scratchParent = createTestTmpdir('cam-setup-menu-viewer-space-');
+		const scratch = join(scratchParent, 'has space');
+		mkdirSync(scratch, { recursive: true });
+
+		const configPaneId = paneIds()[0];
+		expect(configPaneId).toBeTruthy();
+		if (!configPaneId) return;
+
+		const menuFile = join(scratch, '.cam-setup-menu.sh');
+		writeFileSync(menuFile, buildSetupMenuScript(), 'utf8');
+		const orchPromptFile = join(scratch, '.cam-orchestrator-prompt.txt');
+		writeFileSync(orchPromptFile, 'unused by this test (no CAM_SETUP_STATUS=DONE is ever emitted)', 'utf8');
+
+		const menuResult = tmuxRaw([
+			'split-window', '-t', SESSION, '-h', '-l', '36', '-d', '-P', '-F', '#{pane_id}',
+			'-e', `CAM_CONFIG_PANE=${configPaneId}`,
+			'-e', `CAM_ORCH_PROMPT_FILE=${orchPromptFile}`,
+			'-e', `TMPDIR=${scratch}`,
+			'bash', '-c', `bash '${menuFile}'`,
+		]);
+		expect(menuResult.status).toBe(0);
+		const menuPaneId = menuResult.stdout.toString().trim();
+		expect(menuPaneId).toBeTruthy();
+
+		await waitForCondition(() => paneIds().length === 2, { timeoutMs: 5000 });
+
+		tmuxRaw(['send-keys', '-t', menuPaneId, '-l', 'v']);
+		await waitForCondition(() => paneIds().length === 3, { timeoutMs: 5000 });
+
+		const viewerPaneId = paneIds().find((id) => id !== configPaneId && id !== menuPaneId);
+		expect(viewerPaneId).toBeTruthy();
+		if (!viewerPaneId) return;
+		await waitForCondition(() => paneCommand(viewerPaneId) === 'tail', { timeoutMs: 5000 });
+
+		// A word-split write would either never create this directory (the
+		// writer erroring against a nonexistent "/has" cwd-relative fragment)
+		// or scatter a stray "has"/"space" sibling next to it; neither may
+		// exist once the derived log path is confirmed to be real.
+		const logDir = join(scratch, 'cam-cli-config-log');
+		await waitForCondition(
+			() => existsSync(logDir) && readdirSync(logDir).some((f) => f.endsWith('.log')),
+			{ timeoutMs: 5000 },
+		);
+		const scratchSiblings = readdirSync(scratch);
+		expect(scratchSiblings).not.toContain('has');
+		expect(scratchSiblings).not.toContain('space');
+		const logFile = readdirSync(logDir).find((f) => f.endsWith('.log'));
+		expect(logFile).toBeTruthy();
+		const logPath = join(logDir, logFile ?? '');
+
+		tmuxRaw([
+			'send-keys', '-t', configPaneId,
+			'for i in $(seq 1 2000); do printf \'MARK-%06d-%0150d\\n\' "$i" 0; done; echo BURST-DONE',
+			'Enter',
+		]);
+		await waitForCondition(() => capture(configPaneId).includes('BURST-DONE'), { timeoutMs: 20000 });
+		await waitForCondition(() => capture(viewerPaneId).includes('MARK-001999'), { timeoutMs: 10000 });
+
+		const sizeAfterBurst = statSync(logPath).size;
+		expect(sizeAfterBurst).toBeGreaterThan(0);
+		expect(sizeAfterBurst).toBeLessThan(210_000);
+
 		expect(paneIds().length).toBe(3);
 		expect(paneCommand(viewerPaneId)).toBe('tail');
 	},

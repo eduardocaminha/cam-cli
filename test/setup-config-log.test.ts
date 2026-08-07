@@ -183,13 +183,19 @@ describe('buildConfigLogCapCommand', () => {
 		// Structural guard 2: this snippet's returned text is embedded verbatim
 		// inside the OUTER menu script's own double-quoted `"tmux pipe-pane ...
 		// -o '...'"` argument to `split-window` (buildSetupMenuScript) -- a
-		// literal `"` or `'` anywhere here closes that outer quoting early and
-		// corrupts the generated script (the pre-existing zero-quote convention
-		// this snippet family already relied on, see the CAM-510
-		// site-4-followup patterns.md bullet). A naive POSIX `test "$(wc -c <
-		// LOG)" -gt N` fix (quoted) would reintroduce exactly this breakage;
-		// the actual fix stays quote-free.
-		expect(command).not.toContain('"');
+		// literal `'` anywhere here closes that OUTER single-quoted `-o`
+		// argument early at the layer that later parses it and corrupts the
+		// generated script, so this snippet must never contain one. A literal
+		// `"` is fine to return directly from this function (CAM-510
+		// US-R2-006: every path expansion is now double-quoted, matching
+		// `buildConfigLogCleanupCommand`'s own `"$CAM_CONFIG_LOG"` convention,
+		// so a `${TMPDIR:-/tmp}` containing a space can't word-split it) --
+		// `buildSetupMenuScript`'s `v|V` arm is the one responsible for
+		// escaping those `"` characters (`escapeDoubleQuotesForOuterEmbed`)
+		// before splicing this text into its own outer double-quoted argument;
+		// see that function's doc comment for the full three-level quoting
+		// trace this guards.
+		expect(command).toContain('"');
 		expect(command).not.toContain("'");
 
 		const shell = existsSync('/bin/dash') ? '/bin/dash' : '/bin/sh';

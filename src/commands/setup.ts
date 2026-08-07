@@ -565,12 +565,12 @@ const CONFIG_LOG_DRAIN_MAX_TRIES = 40;
 const CONFIG_LOG_DRAIN_INTERVAL_SECONDS = '0.05';
 
 /**
- * POSIX `sh` command (safe to embed, quote-free, inside a tmux `pipe-pane -o
- * '...'` argument that is itself nested inside a further double-quoted
- * shell string -- see the CAM-510 site-4-followup patterns.md bullet for
- * the full three-level quoting trace) that streams piped pane output into
- * `logPathExpr`, rotating it back down to `ceilingBytes` after EVERY
- * bounded chunk it appends, not just once at process exit.
+ * POSIX `sh` command (embedded inside a tmux `pipe-pane -o '...'` argument
+ * that is itself nested inside a further double-quoted shell string -- see
+ * the CAM-510 site-4-followup patterns.md bullet for the full three-level
+ * quoting trace) that streams piped pane output into `logPathExpr`,
+ * rotating it back down to `ceilingBytes` after EVERY bounded chunk it
+ * appends, not just once at process exit.
  *
  * MUST stay POSIX-sh-safe, not bash-only: tmux runs a `pipe-pane
  * shell-command` argument via `/bin/sh -c '...'` (tmux(1)), and on every
@@ -586,18 +586,35 @@ const CONFIG_LOG_DRAIN_INTERVAL_SECONDS = '0.05';
  * macOS's `/bin/sh` (bash 3.2 in posix mode) tolerates `(( ))` so this only
  * ever reproduced on Linux (CAM-510 site 5).
  *
- * Fixed with the POSIX `test $(wc -c < LOG) -gt N` form, deliberately
- * UNQUOTED (not `test "$(wc -c < LOG)" -gt N`): this snippet's text is
- * embedded, verbatim, inside the OUTER menu script's own double-quoted
- * `"tmux pipe-pane ... -o '...'"` argument to `split-window` (see
- * the CAM-510 site-4-followup patterns.md bullet for the full three-level
- * quoting trace) -- a literal `"` anywhere in this snippet closes that outer
- * double-quoted argument early and corrupts the generated script, so the
- * pre-existing zero-quote convention for this snippet family still applies
- * even to the POSIX-safe replacement. Splitting the unquoted `$(wc -c < LOG)`
- * on IFS whitespace is safe here specifically because `wc -c`'s output is
- * always a single (possibly whitespace-padded, e.g. BSD/macOS `wc`) numeric
- * token with no other field to collide with.
+ * Fixed with the POSIX `test $(wc -c < LOG) -gt N` form. Every `logPathExpr`
+ * expansion IS double-quoted (`"${logPathExpr}"`, matching
+ * `buildConfigLogCleanupCommand`'s own `"$CAM_CONFIG_LOG"` convention,
+ * CAM-510 US-R2-006 followup): `${TMPDIR:-/tmp}` can resolve to a path
+ * containing a space, and an unquoted expansion word-splits it, silently
+ * sending the `cat`/`tail`/`mv`/`rm` calls at the wrong path. The sole
+ * exception, left deliberately unquoted, is the OUTER `$(wc -c < ...)`
+ * substitution wrapper itself (only the LOG path inside it is quoted):
+ * `wc -c`'s own stdout is always a single (possibly whitespace-padded, e.g.
+ * BSD/macOS `wc`) numeric token with no other field to collide with, so
+ * splitting it on IFS whitespace is safe and quoting it would only add
+ * noise.
+ *
+ * Quoting reintroduces the exact literal-`"`-corrupts-the-outer-argument
+ * hazard this snippet's original zero-quote convention existed to avoid:
+ * this text is embedded, verbatim, inside the OUTER menu script's own
+ * double-quoted `"tmux pipe-pane ... -o '...'"` argument to `split-window`
+ * (see the CAM-510 site-4-followup patterns.md bullet for the full
+ * three-level quoting trace), and a literal `"` reaching that argument
+ * unescaped closes it early and corrupts the generated script. The `v|V`
+ * arm in `buildSetupMenuScript` closes that the same way
+ * `deferCommandSubstitution` already defers `$(` past that same layer: it
+ * runs this function's output through the sibling
+ * `escapeDoubleQuotesForOuterEmbed`, converting every `"` to `\"` so bash's
+ * own double-quote escape rule lets it survive that layer intact and reach
+ * the pipe-pane consumer shell as a real quote character again. Direct
+ * callers (this file's own tests, `spawnSync('bash', ['-c', command], ...)`)
+ * never cross that embedding layer, so they see real, valid, already-quoted
+ * bash straight from this function.
  *
  * A prior version here (`cat >> LOG; tail -c N LOG > LOG.tmp && mv ...`)
  * only rotated once the `cat` reached EOF, i.e. once `tmux pipe-pane`
@@ -639,15 +656,16 @@ export function buildConfigLogCapCommand(
 ): string {
 	const chunkPathExpr = `${logPathExpr}.chunk`;
 	const lockPathExpr = `${logPathExpr}.lock`;
+	const tmpPathExpr = `${logPathExpr}.tmp`;
 	return [
-		`: > ${lockPathExpr}`,
-		`while dd bs=4096 count=1 of=${chunkPathExpr} 2>/dev/null`,
+		`: > "${lockPathExpr}"`,
+		`while dd bs=4096 count=1 of="${chunkPathExpr}" 2>/dev/null`,
 		'do',
-		`	test -s ${chunkPathExpr} || break`,
-		`	cat ${chunkPathExpr} >> ${logPathExpr}`,
-		`	test $(wc -c < ${logPathExpr}) -gt ${ceilingBytes} && { tail -c ${ceilingBytes} ${logPathExpr} > ${logPathExpr}.tmp 2>/dev/null && cat ${logPathExpr}.tmp > ${logPathExpr} && rm -f ${logPathExpr}.tmp; }`,
+		`	test -s "${chunkPathExpr}" || break`,
+		`	cat "${chunkPathExpr}" >> "${logPathExpr}"`,
+		`	test $(wc -c < "${logPathExpr}") -gt ${ceilingBytes} && { tail -c ${ceilingBytes} "${logPathExpr}" > "${tmpPathExpr}" 2>/dev/null && cat "${tmpPathExpr}" > "${logPathExpr}" && rm -f "${tmpPathExpr}"; }`,
 		'done',
-		`rm -f ${chunkPathExpr} ${lockPathExpr}`,
+		`rm -f "${chunkPathExpr}" "${lockPathExpr}"`,
 	].join('\n');
 }
 
@@ -747,6 +765,33 @@ function deferCommandSubstitution(snippet: string): string {
 }
 
 /**
+ * Escapes every literal `"` in `snippet` to `\"`, the sibling of
+ * `deferCommandSubstitution` above: same OUTER-double-quoted-argument
+ * embedding hazard (see that function's doc comment for the full
+ * three-level quoting trace), a different character.
+ *
+ * `buildConfigLogCapCommand` now double-quotes every path expansion it
+ * writes (`"${CAM_CONFIG_LOG}"`, CAM-510 US-R2-006: an unquoted expansion
+ * word-splits a `${TMPDIR:-/tmp}` that contains a space, silently sending
+ * the writer's `cat`/`tail`/`mv`/`rm` calls at the wrong path). Those real
+ * `"` characters are exactly what `buildConfigLogCapCommand`'s own doc
+ * comment warns is unsafe to let reach the `v|V` arm's outer double-quoted
+ * `split-window` argument unescaped: bash closes a double-quoted string on
+ * the first unescaped `"` it sees, so a literal one anywhere in the cap
+ * command's text corrupts the generated script the same way an
+ * un-deferred `$(` corrupted it before `deferCommandSubstitution` existed.
+ * Escaping each one to `\"` here lets bash's own double-quote escape rule
+ * (backslash retains its special meaning before `$`, `` ` ``, `"`, `\`, or
+ * newline) carry it through that layer as a literal character without
+ * closing the string, so it reaches the pipe-pane consumer shell as a real
+ * quote character again -- the same "defer past the outer layer" strategy
+ * `deferCommandSubstitution` already uses for `$(`, applied to `"` instead.
+ */
+function escapeDoubleQuotesForOuterEmbed(snippet: string): string {
+	return snippet.replace(/"/g, '\\"');
+}
+
+/**
  * Build the menu pane bash script.
  *
  * Two-state menu:
@@ -823,7 +868,7 @@ while true; do
 		read -rsn1 -t 2 key
 		case "\${key}" in
 			c|C) tmux select-pane -t "\${CAM_CONFIG_PANE}" ;;
-			v|V) tmux split-window -v -l 12 "tmux pipe-pane -t '\${CAM_CONFIG_PANE}' -o '${deferCommandSubstitution(buildConfigLogCapCommand('${CAM_CONFIG_LOG}'))}'; tail -f \${CAM_CONFIG_LOG}" ;;
+			v|V) tmux split-window -v -l 12 "tmux pipe-pane -t '\${CAM_CONFIG_PANE}' -o '${escapeDoubleQuotesForOuterEmbed(deferCommandSubstitution(buildConfigLogCapCommand('${CAM_CONFIG_LOG}')))}'; tail -f \\"\${CAM_CONFIG_LOG}\\"" ;;
 			q|Q) exit 0 ;;
 		esac
 		# Poll for DONE in the config pane's full scrollback.
