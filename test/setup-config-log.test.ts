@@ -30,7 +30,7 @@
 // `${TMPDIR:-/tmp}` resolution stays inside the scratch tree.
 
 import { describe, expect, it } from 'bun:test';
-import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { createTestTmpdir } from './helpers/test-tmpdir';
@@ -189,5 +189,108 @@ describe('buildConfigLogCleanupCommand', () => {
 		const r = spawnSync('bash', ['-c', script], { encoding: 'utf8' });
 		expect(r.status).toBe(0);
 		expect(existsSync(logPath)).toBe(false);
+	});
+
+	it('does not wait when no writer ever held the .lock sibling (fast path is unaffected by the drain wait)', () => {
+		const scratch = createTestTmpdir('cam-config-log-cleanup-fast-');
+		const logPath = join(scratch, 'config.log');
+		writeFileSync(logPath, 'stale leftover from a previous run\n', 'utf8');
+		expect(existsSync(`${logPath}.lock`)).toBe(false);
+
+		const script = `CAM_CONFIG_LOG="${logPath}"; CAM_CONFIG_PANE=""; ${buildConfigLogCleanupCommand()}`;
+		const startedAt = Date.now();
+		const r = spawnSync('bash', ['-c', script], { encoding: 'utf8' });
+		const elapsedMs = Date.now() - startedAt;
+
+		expect(r.status).toBe(0);
+		expect(existsSync(logPath)).toBe(false);
+		// No lock ever existed, so the drain-wait loop's condition must be
+		// false on its very first check -- proves this doesn't regress into
+		// always paying the poll cost, even in the (still common) case of a
+		// stale file with no live writer.
+		expect(elapsedMs).toBeLessThan(500);
+	});
+});
+
+describe('config-pane debug log: EXIT-trap teardown vs writer rotate race (US-R1-005)', () => {
+	// AC8-shaped regression coverage for the race described in this story:
+	// `buildConfigLogCleanupCommand` used to fire `tmux pipe-pane` (closing
+	// the pipe) immediately followed by `rm -f` on the very next line, while
+	// the piped writer process (a separate process, not a child of the
+	// cleanup script) could still be mid-flight finishing its current
+	// `cat`/rotate cycle in the background. If that writer's pending `mv`
+	// landed after the `rm`, the log file was recreated after cleanup and
+	// survived the menu exit. `buildConfigLogCapCommand` and
+	// `buildConfigLogCleanupCommand` were previously only ever tested in
+	// isolation (the two describe blocks above), never composed, so neither
+	// gate could observe this. These tests compose both halves.
+
+	it('cleanup genuinely waits for an in-flight writer to release its .lock before removing the log, so a pending rotate cannot recreate it after cleanup runs', async () => {
+		const scratch = createTestTmpdir('cam-config-log-drain-');
+		const logPath = join(scratch, 'config.log');
+		const lockPath = `${logPath}.lock`;
+
+		// Simulate a writer that is still mid-flight: it already appended
+		// content and holds its lock -- buildConfigLogCapCommand's own
+		// contract is that the lock exists for the writer's entire
+		// lifetime, removed only as its very last action once its loop
+		// breaks on EOF.
+		writeFileSync(logPath, 'partial output from an in-flight writer\n', 'utf8');
+		writeFileSync(lockPath, '', 'utf8');
+
+		const script = `CAM_CONFIG_LOG="${logPath}"; CAM_CONFIG_PANE=""; ${buildConfigLogCleanupCommand()}`;
+		const cleanup = spawn('bash', ['-c', script], { stdio: ['ignore', 'ignore', 'ignore'] });
+
+		// While the lock is still held, cleanup must NOT have finished (and
+		// must NOT have removed the log yet) -- proves it is genuinely
+		// waiting, not racing past the still-live writer.
+		await new Promise((resolve) => setTimeout(resolve, 150)); // CAM-510
+		expect(cleanup.exitCode).toBeNull();
+		expect(existsSync(logPath)).toBe(true);
+
+		// Now simulate the writer finishing: one more append (the pending
+		// rotate landing) followed by releasing the lock as its final
+		// action -- the exact ordering the fix relies on the trap to wait
+		// out instead of racing.
+		writeFileSync(logPath, 'partial output from an in-flight writer\nfinal chunk after EOF\n', 'utf8');
+		rmSync(lockPath, { force: true });
+
+		await waitForCondition(() => cleanup.exitCode !== null, { timeoutMs: 5000 });
+		expect(cleanup.exitCode).toBe(0);
+		expect(existsSync(logPath)).toBe(false);
+		expect(existsSync(lockPath)).toBe(false);
+	});
+
+	it('composes the real writer and real cleanup commands end-to-end: closing the pipe and firing cleanup concurrently, without waiting, still leaves no residue', async () => {
+		const scratch = createTestTmpdir('cam-config-log-compose-');
+		const logPath = join(scratch, 'config.log');
+		const ceiling = 500;
+		const capCommand = buildConfigLogCapCommand(logPath, ceiling);
+		const cleanupCommand = buildConfigLogCleanupCommand();
+
+		const writer = spawn('bash', ['-c', capCommand], { stdio: ['pipe', 'ignore', 'ignore'] });
+
+		// Feed well past the ceiling so a rotate is pending right as we tear
+		// down, then close the writer's stdin -- this is the same EOF signal
+		// tmux's own `pipe-pane` toggle-off delivers in production.
+		for (let i = 0; i < 10; i++) {
+			writer.stdin?.write('x'.repeat(200));
+		}
+		writer.stdin?.end();
+
+		// Fire cleanup CONCURRENTLY, without waiting for the writer to
+		// notice EOF and finish its own rotate/cleanup first -- exactly the
+		// racy ordering this story exists to close.
+		const script = `CAM_CONFIG_LOG="${logPath}"; CAM_CONFIG_PANE=""; ${cleanupCommand}`;
+		const cleanup = spawn('bash', ['-c', script], { stdio: ['ignore', 'ignore', 'ignore'] });
+
+		await waitForCondition(() => writer.exitCode !== null && cleanup.exitCode !== null, {
+			timeoutMs: 5000,
+		});
+
+		expect(existsSync(logPath)).toBe(false);
+		expect(existsSync(`${logPath}.chunk`)).toBe(false);
+		expect(existsSync(`${logPath}.lock`)).toBe(false);
+		expect(existsSync(`${logPath}.tmp`)).toBe(false);
 	});
 });

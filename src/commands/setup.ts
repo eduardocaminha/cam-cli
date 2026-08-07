@@ -465,6 +465,12 @@ export function buildConfigLogPathAssignment(): string {
 	].join('\n');
 }
 
+/** Bounded retries for the cleanup trap's lock-drain wait (see below). */
+const CONFIG_LOG_DRAIN_MAX_TRIES = 40;
+
+/** Poll interval, in seconds, for the cleanup trap's lock-drain wait. */
+const CONFIG_LOG_DRAIN_INTERVAL_SECONDS = '0.05';
+
 /**
  * Bash command (safe to embed, quote-free, inside a tmux `pipe-pane -o
  * '...'` argument that is itself nested inside a further double-quoted
@@ -482,35 +488,68 @@ export function buildConfigLogPathAssignment(): string {
  * one, so the on-disk file can only ever momentarily exceed the ceiling by
  * up to one chunk size while the pipe is still open, and settles at or
  * below the ceiling as soon as the next chunk lands.
+ *
+ * Holds a `.lock` sibling file for the command's entire lifetime (created
+ * before the loop, removed only once the loop breaks on EOF) so
+ * `buildConfigLogCleanupCommand`'s EXIT-trap teardown can tell whether this
+ * writer is still mid-flight and, if so, wait for it to actually finish
+ * before removing the log it writes into -- see that function's doc comment
+ * for the race this closes.
  */
 export function buildConfigLogCapCommand(
 	logPathExpr: string,
 	ceilingBytes: number = CONFIG_LOG_CEILING_BYTES,
 ): string {
 	const chunkPathExpr = `${logPathExpr}.chunk`;
+	const lockPathExpr = `${logPathExpr}.lock`;
 	return [
+		`: > ${lockPathExpr}`,
 		`while dd bs=4096 count=1 of=${chunkPathExpr} 2>/dev/null`,
 		'do',
 		`	test -s ${chunkPathExpr} || break`,
 		`	cat ${chunkPathExpr} >> ${logPathExpr}`,
 		`	(( $(wc -c < ${logPathExpr}) > ${ceilingBytes} )) && { tail -c ${ceilingBytes} ${logPathExpr} > ${logPathExpr}.tmp 2>/dev/null && mv ${logPathExpr}.tmp ${logPathExpr}; }`,
 		'done',
-		`rm -f ${chunkPathExpr}`,
+		`rm -f ${chunkPathExpr} ${lockPathExpr}`,
 	].join('\n');
 }
 
 /**
  * Bash command that stops piping into the log (if a viewer pane ever
- * started one) and removes the file, plus the `.chunk` scratch sibling
- * `buildConfigLogCapCommand`'s streaming rotate loop writes each read into
- * (that file may still be sitting on disk if the pipe was torn down
- * mid-read, e.g. the viewer pane got killed rather than exiting cleanly).
- * Wired into an `EXIT` trap so it fires on every menu-exit path (`q`/`Q` in
- * either menu state, or any signal), rather than duplicated ad hoc before
- * each `exit 0`.
+ * started one) and removes the file, plus the `.chunk`/`.lock` scratch
+ * siblings `buildConfigLogCapCommand` writes (either may still be sitting on
+ * disk if the pipe was torn down mid-read, e.g. the viewer pane got killed
+ * rather than exiting cleanly). Wired into an `EXIT` trap so it fires on
+ * every menu-exit path (`q`/`Q` in either menu state, or any signal), rather
+ * than duplicated ad hoc before each `exit 0`.
+ *
+ * `tmux pipe-pane -t "$CAM_CONFIG_PANE"` only *asks* tmux to close the pipe;
+ * it returns as soon as tmux acknowledges the request, while the piped
+ * writer process (a separate process in the viewer sub-pane, not a child of
+ * this script) is still finishing its current `dd`/`cat`/rotate cycle in the
+ * background. A prior version here fired `rm -f` on the very next line, so
+ * if that writer's pending `mv` landed after the `rm`, the log file was
+ * recreated after cleanup and survived the menu exit (AC8's "no residue").
+ * This version waits (bounded, `CONFIG_LOG_DRAIN_MAX_TRIES` polls at
+ * `CONFIG_LOG_DRAIN_INTERVAL_SECONDS` apart) for the writer's `.lock` sibling
+ * to disappear -- the writer only removes it, as its very last action, after
+ * its loop has actually broken on EOF -- before removing the log itself, so
+ * the removal is sequenced strictly after the writer's last write instead of
+ * racing it. When no writer is (or ever was) running, the lock file never
+ * existed, the wait loop's condition is false on the first check, and
+ * cleanup proceeds immediately, same as before.
  */
 export function buildConfigLogCleanupCommand(): string {
-	return 'tmux pipe-pane -t "$CAM_CONFIG_PANE" 2>/dev/null; rm -f "$CAM_CONFIG_LOG" "$CAM_CONFIG_LOG.chunk"';
+	return [
+		'tmux pipe-pane -t "$CAM_CONFIG_PANE" 2>/dev/null',
+		'CAM_CONFIG_LOG_DRAIN_TRIES=0',
+		`while [ -e "$CAM_CONFIG_LOG.lock" ] && (( CAM_CONFIG_LOG_DRAIN_TRIES < ${CONFIG_LOG_DRAIN_MAX_TRIES} ))`,
+		'do',
+		`	sleep ${CONFIG_LOG_DRAIN_INTERVAL_SECONDS}`,
+		'	(( CAM_CONFIG_LOG_DRAIN_TRIES++ ))',
+		'done',
+		'rm -f "$CAM_CONFIG_LOG" "$CAM_CONFIG_LOG.chunk" "$CAM_CONFIG_LOG.lock"',
+	].join('\n');
 }
 
 /**
