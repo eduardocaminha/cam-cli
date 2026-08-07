@@ -466,27 +466,51 @@ export function buildConfigLogPathAssignment(): string {
 }
 
 /**
- * Bash command (single line, safe to embed inside a tmux
- * `pipe-pane -o '...'` argument) that appends piped pane output to
- * `logPathExpr` and immediately rotates it back down to `ceilingBytes`
- * afterwards, so the file on disk can never exceed the ceiling once the
- * pipe stops appending to it (menu exit, pane close, or a re-toggle).
+ * Bash command (safe to embed, quote-free, inside a tmux `pipe-pane -o
+ * '...'` argument that is itself nested inside a further double-quoted
+ * shell string -- see the CAM-510 site-4-followup patterns.md bullet for
+ * the full three-level quoting trace) that streams piped pane output into
+ * `logPathExpr`, rotating it back down to `ceilingBytes` after EVERY
+ * bounded chunk it appends, not just once at process exit.
+ *
+ * A prior version here (`cat >> LOG; tail -c N LOG > LOG.tmp && mv ...`)
+ * only rotated once the `cat` reached EOF, i.e. once `tmux pipe-pane`
+ * closed the pipe -- which happens only when the viewer pane exits. For the
+ * pipe's entire live lifetime (the only period the file is actually being
+ * fed) the log grew unbounded, exactly the defect this command exists to
+ * close. This version reads in bounded `dd` chunks and rotates after each
+ * one, so the on-disk file can only ever momentarily exceed the ceiling by
+ * up to one chunk size while the pipe is still open, and settles at or
+ * below the ceiling as soon as the next chunk lands.
  */
 export function buildConfigLogCapCommand(
 	logPathExpr: string,
 	ceilingBytes: number = CONFIG_LOG_CEILING_BYTES,
 ): string {
-	return `cat >> ${logPathExpr}; tail -c ${ceilingBytes} ${logPathExpr} > ${logPathExpr}.tmp 2>/dev/null && mv ${logPathExpr}.tmp ${logPathExpr}`;
+	const chunkPathExpr = `${logPathExpr}.chunk`;
+	return [
+		`while dd bs=4096 count=1 of=${chunkPathExpr} 2>/dev/null`,
+		'do',
+		`	test -s ${chunkPathExpr} || break`,
+		`	cat ${chunkPathExpr} >> ${logPathExpr}`,
+		`	(( $(wc -c < ${logPathExpr}) > ${ceilingBytes} )) && { tail -c ${ceilingBytes} ${logPathExpr} > ${logPathExpr}.tmp 2>/dev/null && mv ${logPathExpr}.tmp ${logPathExpr}; }`,
+		'done',
+		`rm -f ${chunkPathExpr}`,
+	].join('\n');
 }
 
 /**
  * Bash command that stops piping into the log (if a viewer pane ever
- * started one) and removes the file. Wired into an `EXIT` trap so it fires
- * on every menu-exit path (`q`/`Q` in either menu state, or any signal),
- * rather than duplicated ad hoc before each `exit 0`.
+ * started one) and removes the file, plus the `.chunk` scratch sibling
+ * `buildConfigLogCapCommand`'s streaming rotate loop writes each read into
+ * (that file may still be sitting on disk if the pipe was torn down
+ * mid-read, e.g. the viewer pane got killed rather than exiting cleanly).
+ * Wired into an `EXIT` trap so it fires on every menu-exit path (`q`/`Q` in
+ * either menu state, or any signal), rather than duplicated ad hoc before
+ * each `exit 0`.
  */
 export function buildConfigLogCleanupCommand(): string {
-	return 'tmux pipe-pane -t "$CAM_CONFIG_PANE" 2>/dev/null; rm -f "$CAM_CONFIG_LOG"';
+	return 'tmux pipe-pane -t "$CAM_CONFIG_PANE" 2>/dev/null; rm -f "$CAM_CONFIG_LOG" "$CAM_CONFIG_LOG.chunk"';
 }
 
 /**

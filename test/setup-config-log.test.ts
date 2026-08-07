@@ -9,6 +9,21 @@
 // construction -- these tests run the ACTUAL generated snippets under real
 // bash, never a simulated string check).
 //
+// The `buildConfigLogCapCommand` describe block below also covers the
+// US-R1-004 site-4 follow-up: a post-hoc-trim shell construction
+// (`cat >> LOG; tail -c N LOG > LOG.tmp && mv ...`) only rotates once the
+// `cat` sees EOF, which for a live `tmux pipe-pane` only happens when the
+// pipe itself closes (viewer pane exit) -- so for the whole session, the
+// only period the file is actually being fed, the log grew unbounded. A
+// test that spawns the command and only inspects the file AFTER the
+// subprocess exits (as every test above already did, pre-US-R1-004) cannot
+// observe that gap at all: the file looks correctly capped by the time you
+// look, even from a construction that was unbounded the entire time it was
+// live. The `keeps the log bounded WHILE still being written` test below
+// samples the on-disk size WHILE the bash subprocess is still receiving
+// input (mid-stream, well before `stdin.end()`), which is the only way to
+// actually falsify the "bounded during the live session" property.
+//
 // Every scratch path lives under the repo-local scratch root
 // (`createTestTmpdir`), never the real `/tmp` or `$TMPDIR`: `TMPDIR` is
 // overridden for every spawned bash subprocess below so the snippets'
@@ -17,8 +32,9 @@
 import { describe, expect, it } from 'bun:test';
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createTestTmpdir } from './helpers/test-tmpdir';
+import { waitForCondition } from './helpers/wait-for-condition';
 
 import {
 	buildConfigLogCapCommand,
@@ -108,6 +124,45 @@ describe('buildConfigLogCapCommand', () => {
 
 	it('uses a tail -c based shell construction, not TypeScript-side truncation', () => {
 		expect(buildConfigLogCapCommand('/some/path')).toMatch(/tail -c/);
+	});
+
+	it('keeps the log bounded WHILE still being written, not just after the writer exits (US-R1-004)', async () => {
+		const scratch = createTestTmpdir('cam-config-log-live-');
+		const logPath = join(scratch, 'config.log');
+		const ceiling = 2000;
+		const command = buildConfigLogCapCommand(logPath, ceiling);
+
+		const proc = spawn('bash', ['-c', command], { stdio: ['pipe', 'ignore', 'ignore'] });
+
+		// Feed well beyond the ceiling in small writes, sampling the on-disk
+		// size BETWEEN writes -- i.e. while the bash subprocess (and its
+		// internal dd/cat rotate loop) is still alive and receiving data. A
+		// post-hoc-trim construction only rotates once this feed stops, so it
+		// would let the observed size climb toward the full unbounded total
+		// (40 * 500 = 20000 bytes, 10x the ceiling) during this loop.
+		const writeChunk = 'x'.repeat(500);
+		let sawNonEmptyMidStream = false;
+		let maxObservedSize = 0;
+		for (let i = 0; i < 40; i++) {
+			proc.stdin?.write(writeChunk);
+			// Fixed pacing delay is intentional: metronomic write/observe cadence
+			// to catch mid-stream growth, not a poll-for-condition wait (CAM-510).
+			await new Promise((resolve) => setTimeout(resolve, 15)); // CAM-510
+			if (existsSync(logPath)) {
+				const size = statSync(logPath).size;
+				maxObservedSize = Math.max(maxObservedSize, size);
+				if (size > 0) sawNonEmptyMidStream = true;
+			}
+		}
+		proc.stdin?.end();
+		await waitForCondition(() => proc.exitCode !== null, { timeoutMs: 5000 });
+
+		expect(sawNonEmptyMidStream).toBe(true);
+		// Generous slack above the ceiling for the dd chunk size (4096) used
+		// between rotate checks, plus one write's worth -- but it must never
+		// approach the full unbounded total that a post-hoc-trim construction
+		// would have let through during this same live window.
+		expect(maxObservedSize).toBeLessThan(ceiling + 4096 + 500);
 	});
 });
 
