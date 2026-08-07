@@ -1,0 +1,13 @@
+{
+  "id": "CAM-515",
+  "title": "Promote 2 suggestions: Residual surface outside this PRD's deliberate scope: the shipped three-line ru…; Carried over unaddressed from round 1: the comment says the credentials live in…",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-07T22:16:29.577Z",
+  "updatedAt": "2026-08-07T22:16:29.577Z",
+  "description": "Residual surface outside this PRD's deliberate scope: the shipped three-line rule leaves non-local named variants such as .env.production and .env.staging committable (reviewer-verified in a tmpdir: only .env, .env.local and .env.*.local match). The chosen shape mirrors the repo's own root .gitignore (lines 21-26) and the standard dotenv convention, and the PRD notes explicitly scoped out broadening it, so this is a follow-up candidate rather than a defect in the delivered story: a user who puts real tokens in .env.production is still exposed to the same autonomous-agent commit path the story exists to close.\n\nSource: cam/issue-499\nReview round: 2\n\nsuggestion-fingerprint: 392dc9d77f33\n\n---\n\nCarried over unaddressed from round 1: the comment says the credentials live in a .env 'at the project root', but a gitignore pattern with no leading slash matches at any depth (confirmed against git-scm.com/docs/gitignore and reproduced: sub/.env is ignored). The broader behavior is desirable here; only the comment is narrower than the rule it documents.\n\nSource: cam/issue-499\nReview round: 2\n\nsuggestion-fingerprint: 64f7b961ce04",
+  "derivedFrom": [
+    "CAM-499"
+  ]
+}
