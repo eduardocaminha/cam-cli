@@ -126,6 +126,55 @@ describe('buildConfigLogCapCommand', () => {
 		expect(buildConfigLogCapCommand('/some/path')).toMatch(/tail -c/);
 	});
 
+	it('runs correctly under a real POSIX-strict sh (dash if available), never leaking bash-only ((..)) arithmetic syntax or a stray ceiling-named file into cwd (US-R2-001)', () => {
+		// tmux runs a `pipe-pane -o '<shell-command>'` argument via
+		// `/bin/sh -c '...'` (tmux(1)), and on every Linux binary this project
+		// ships (README: gateship-linux-x64/arm64) `/bin/sh` is dash. A prior
+		// version of this command used the bash-only `(( $(wc -c < LOG) > N ))`
+		// arithmetic-command rotate guard, which dash does not recognize and
+		// mis-parses as nested subshells: the ceiling check silently never
+		// fires (log grows unbounded) AND the mis-parse evaluates the numeric
+		// ceiling literal as a command, spraying a stray file named after it
+		// into the writer's cwd -- the user's repository, dirtying the tree the
+		// plan-preflight clean-tree guard (ADR-0014) checks. Reproduced by hand
+		// against the pre-fix snippet under real /bin/dash before writing this
+		// test: `dash: N: <ceiling>: not found`, log left at the full unbounded
+		// input size, and a stray file literally named `<ceiling>` in cwd.
+		const scratch = createTestTmpdir('cam-config-log-posix-');
+		const logPath = join(scratch, 'config.log');
+		const ceiling = 500;
+		const command = buildConfigLogCapCommand(logPath, ceiling);
+
+		// Structural guard 1: `((` is the bash arithmetic-command marker and
+		// must never appear in a snippet tmux may hand to a non-bash /bin/sh.
+		expect(command).not.toContain('((');
+
+		// Structural guard 2: this snippet's returned text is embedded verbatim
+		// inside the OUTER menu script's own double-quoted `"tmux pipe-pane ...
+		// -o '...'"` argument to `split-window` (buildSetupMenuScript) -- a
+		// literal `"` or `'` anywhere here closes that outer quoting early and
+		// corrupts the generated script (the pre-existing zero-quote convention
+		// this snippet family already relied on, see the CAM-510
+		// site-4-followup patterns.md bullet). A naive POSIX `test "$(wc -c <
+		// LOG)" -gt N` fix (quoted) would reintroduce exactly this breakage;
+		// the actual fix stays quote-free.
+		expect(command).not.toContain('"');
+		expect(command).not.toContain("'");
+
+		const shell = existsSync('/bin/dash') ? '/bin/dash' : '/bin/sh';
+		const input = 'x'.repeat(ceiling * 6);
+		const r = spawnSync(shell, ['-c', command], { encoding: 'utf8', input, cwd: scratch });
+		expect(r.status).toBe(0);
+
+		expect(existsSync(logPath)).toBe(true);
+		expect(statSync(logPath).size).toBeLessThanOrEqual(ceiling);
+
+		// The dash mis-parse repro creates a stray file literally named after
+		// the numeric ceiling ('500') in the writer's cwd; the POSIX-safe form
+		// must never do this.
+		expect(existsSync(join(scratch, String(ceiling)))).toBe(false);
+	});
+
 	it('keeps the log bounded WHILE still being written, not just after the writer exits (US-R1-004)', async () => {
 		const scratch = createTestTmpdir('cam-config-log-live-');
 		const logPath = join(scratch, 'config.log');

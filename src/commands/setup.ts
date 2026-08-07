@@ -472,12 +472,39 @@ const CONFIG_LOG_DRAIN_MAX_TRIES = 40;
 const CONFIG_LOG_DRAIN_INTERVAL_SECONDS = '0.05';
 
 /**
- * Bash command (safe to embed, quote-free, inside a tmux `pipe-pane -o
+ * POSIX `sh` command (safe to embed, quote-free, inside a tmux `pipe-pane -o
  * '...'` argument that is itself nested inside a further double-quoted
  * shell string -- see the CAM-510 site-4-followup patterns.md bullet for
  * the full three-level quoting trace) that streams piped pane output into
  * `logPathExpr`, rotating it back down to `ceilingBytes` after EVERY
  * bounded chunk it appends, not just once at process exit.
+ *
+ * MUST stay POSIX-sh-safe, not bash-only: tmux runs a `pipe-pane
+ * shell-command` argument via `/bin/sh -c '...'` (tmux(1)), and on every
+ * Linux binary this project ships (`/bin/sh` -> dash) bash-only syntax
+ * mis-parses instead of erroring loudly. A prior version here used the
+ * bash-only `(( $(wc -c < LOG) > N ))` arithmetic-command rotate guard; under
+ * dash that is not a recognized construct and gets parsed as nested
+ * subshells, so the ceiling check silently never fires (log grows
+ * unbounded, the exact defect this command exists to close) and the
+ * mis-parse evaluates the numeric literal `N` as a command, spraying a
+ * stray file named after the ceiling into the writer's cwd (the user's repo
+ * -- dirtying the tree the plan-preflight clean-tree guard checks, ADR-0014).
+ * macOS's `/bin/sh` (bash 3.2 in posix mode) tolerates `(( ))` so this only
+ * ever reproduced on Linux (CAM-510 site 5).
+ *
+ * Fixed with the POSIX `test $(wc -c < LOG) -gt N` form, deliberately
+ * UNQUOTED (not `test "$(wc -c < LOG)" -gt N`): this snippet's text is
+ * embedded, verbatim, inside the OUTER menu script's own double-quoted
+ * `"tmux pipe-pane ... -o '...'"` argument to `split-window` (see
+ * the CAM-510 site-4-followup patterns.md bullet for the full three-level
+ * quoting trace) -- a literal `"` anywhere in this snippet closes that outer
+ * double-quoted argument early and corrupts the generated script, so the
+ * pre-existing zero-quote convention for this snippet family still applies
+ * even to the POSIX-safe replacement. Splitting the unquoted `$(wc -c < LOG)`
+ * on IFS whitespace is safe here specifically because `wc -c`'s output is
+ * always a single (possibly whitespace-padded, e.g. BSD/macOS `wc`) numeric
+ * token with no other field to collide with.
  *
  * A prior version here (`cat >> LOG; tail -c N LOG > LOG.tmp && mv ...`)
  * only rotated once the `cat` reached EOF, i.e. once `tmux pipe-pane`
@@ -508,7 +535,7 @@ export function buildConfigLogCapCommand(
 		'do',
 		`	test -s ${chunkPathExpr} || break`,
 		`	cat ${chunkPathExpr} >> ${logPathExpr}`,
-		`	(( $(wc -c < ${logPathExpr}) > ${ceilingBytes} )) && { tail -c ${ceilingBytes} ${logPathExpr} > ${logPathExpr}.tmp 2>/dev/null && mv ${logPathExpr}.tmp ${logPathExpr}; }`,
+		`	test $(wc -c < ${logPathExpr}) -gt ${ceilingBytes} && { tail -c ${ceilingBytes} ${logPathExpr} > ${logPathExpr}.tmp 2>/dev/null && mv ${logPathExpr}.tmp ${logPathExpr}; }`,
 		'done',
 		`rm -f ${chunkPathExpr} ${lockPathExpr}`,
 	].join('\n');
