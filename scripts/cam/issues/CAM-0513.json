@@ -1,0 +1,10 @@
+{
+  "id": "CAM-513",
+  "title": "Intermittent bun test failure observed 1-of-8 full-suite runs; specific test not yet isolated",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-07T01:10:29.334Z",
+  "updatedAt": "2026-08-07T01:10:29.334Z",
+  "description": "During CAM-510 US-001 4th-dispatch reconfirmation (2026-08-06, commit 551e5d63 on cam/issue-510), 1 of 8 consecutive full `bun test` runs reported 6073 pass / 1 fail (the other 7 reported 6074 pass / 0 fail) with no code change between runs. The specific failing test was not isolated at the time because grepping console output for a leading `✗` glyph cannot distinguish a real bun failure from this repo's own printError() CLI output, which renders the identical glyph for passing tests that exercise error-message formatting. Non-determinism in a test is a defect regardless of how rarely it recurs; this issue exists to isolate and fix the root cause (or confirm a false-positive infra cause) the next time it reproduces. Repro guidance recorded in scripts/cam/patterns.md (bun test's default reporter / printError glyph collision bullet): run `bun test --reporter=junit --reporter-outfile=<path>` across several consecutive full-suite runs and grep the resulting XML for a per-file `failures=\"N\"` with N>0 to unambiguously pin the failing test (no glyph collision in the XML). US-R1-003 (CAM-510 remediation) re-ran the full suite 11 additional consecutive times on this same branch/checkout with the junit reporter and could NOT reproduce the failure (0 fails in all 11), consistent with a true low-frequency flake rather than a reliably-reproducible defect; this issue tracks isolating it on the next recurrence rather than closing the observation unactioned."
+}
