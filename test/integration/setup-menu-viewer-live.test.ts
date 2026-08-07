@@ -60,6 +60,53 @@ import { tmuxAvailable } from '../helpers/test-deps.ts';
 const TEST_SOCK = `cam-it-setup-menu-viewer-${process.pid}`;
 const SESSION = 'setupviewer';
 
+// Poll interval for every wait below. The shared helper's 20ms default spawns
+// one tmux client per tick against a single-threaded server, which is exactly
+// the process-table pressure CAM-446 recorded in scripts/cam/patterns.md.
+const POLL_MS = 150;
+
+// Every wait budget in this file is named here, and each test's external
+// timeout is DERIVED from the waits that test actually performs plus one
+// explicit non-wait margin (CAM-506 format). Hardcoding the outer timeout let
+// the two drift into incoherence: the first test's internal budgets summed to
+// 80s under a 60s outer timeout, so the outer one could never be reached.
+const BUDGET = {
+	/** A tmux split-window round-trip until the new pane is listed. */
+	paneAppears: 5_000,
+	/** The viewer pane comes up alive and running tail. */
+	viewerUp: 5_000,
+	/** The derived config log file is created under the scratch TMPDIR. */
+	logFileAppears: 5_000,
+	/** One burst of 2000-3000 padded lines through a real pty. */
+	burst: 20_000,
+	/** The viewer's captured viewport reaches a given mark. */
+	viewerAdvances: 10_000,
+} as const;
+
+/**
+ * Non-wait work each test performs outside the budgets above (file writes,
+ * statSync, capture-pane round-trips, the surrounding tmux server setup and
+ * teardown), plus slack. Explicit so each outer timeout stays derived rather
+ * than guessed.
+ */
+const NON_WAIT_MARGIN_MS = 15_000;
+
+const VIEWER_TEST_TIMEOUT_MS =
+	BUDGET.paneAppears * 2 +
+	BUDGET.viewerUp +
+	BUDGET.logFileAppears +
+	BUDGET.burst * 2 +
+	BUDGET.viewerAdvances * 2 +
+	NON_WAIT_MARGIN_MS;
+
+const SPACE_TEST_TIMEOUT_MS =
+	BUDGET.paneAppears * 2 +
+	BUDGET.viewerUp +
+	BUDGET.logFileAppears +
+	BUDGET.burst +
+	BUDGET.viewerAdvances +
+	NON_WAIT_MARGIN_MS;
+
 /** Run tmux on the private test socket directly. */
 function tmuxRaw(args: string[]): ReturnType<typeof spawnSync> {
 	return spawnSync('tmux', ['-L', TEST_SOCK, ...args], { stdio: 'pipe' });
@@ -74,11 +121,79 @@ function paneIds(): string[] {
 		.filter((l) => l.length > 0);
 }
 
-/** Real pane_current_command for `paneId`, via a real display-message round-trip. */
-function paneCommand(paneId: string): string {
-	return tmuxRaw(['display-message', '-p', '-t', paneId, '#{pane_current_command}'])
-		.stdout.toString()
-		.trim();
+/** One `#{...}` format field of `paneId`, or '' once the pane is gone. */
+function paneField(paneId: string, format: string): string {
+	return tmuxRaw(['display-message', '-p', '-t', paneId, format]).stdout.toString().trim();
+}
+
+/**
+ * Is `paneId` still a live pane of the test session?
+ *
+ * Deliberately NOT `#{pane_current_command} === 'tail'`: tmux on macOS resolves
+ * that name through tcgetpgrp(), so it reports the pane's process-group leader,
+ * which equals the final command only when default-shell EXECs the last command
+ * of an `A; B` list. Measured here: zsh execs, bash and sh fork and stay alive
+ * as the leader forever. The v|V arm passes its command as one string, so tmux
+ * runs it under `default-shell -c` and that name is a property of the machine's
+ * shell, not of the product (the log streams identically either way). A
+ * zsh-vs-bash split is exactly what made those assertions pass locally and fail
+ * on the CI runner.
+ */
+function paneAlive(paneId: string): boolean {
+	if (!paneIds().includes(paneId)) return false;
+	return paneField(paneId, '#{pane_dead}') === '0';
+}
+
+/**
+ * Does `paneId` genuinely run `tail`? Scoped to the pane's own pid, so it is
+ * never the machine-wide `pgrep -f` tautology CAM-446 filed (patterns.md): the
+ * default-shell either exec'd tail, in which case the pane pid IS tail, or
+ * forked it, in which case tail is a direct child of the pane pid. Both are the
+ * same production behavior.
+ */
+function paneRunsTail(paneId: string): boolean {
+	const pid = paneField(paneId, '#{pane_pid}');
+	if (!pid) return false;
+	const own = spawnSync('ps', ['-o', 'comm=', '-p', pid]).stdout.toString().trim();
+	if (own.split('/').pop() === 'tail') return true;
+	return spawnSync('pgrep', ['-P', pid, '-x', 'tail']).status === 0;
+}
+
+/**
+ * Everything needed to tell apart the two hypotheses that produce an IDENTICAL
+ * "predicate still false" string: a shell that forks instead of execs (no
+ * product defect) versus a viewer pane that died right after being listed (a
+ * real one). Without this dump the second hypothesis stays invisible.
+ */
+function viewerDiagnostics(paneId: string): string {
+	const defaultShell = tmuxRaw(['show-options', '-g', 'default-shell']).stdout.toString().trim();
+	const pid = paneField(paneId, '#{pane_pid}');
+	const ps = pid
+		? spawnSync('ps', ['-o', 'pid=,ppid=,comm=', '-p', pid]).stdout.toString().trim()
+		: '';
+	return [
+		`tmux ${defaultShell || '(default-shell unreadable)'}`,
+		`$SHELL: ${process.env['SHELL'] ?? '(unset)'}`,
+		`pane ${paneId}: dead=${paneField(paneId, '#{pane_dead}') || '(no such pane)'} pid=${pid || '(no such pane)'}`,
+		`ps: ${ps || '(no such process)'}`,
+		`live panes: ${paneIds().join(' ') || '(none)'}`,
+	].join('\n  ');
+}
+
+/** A viewer-pane wait whose timeout carries the diagnostics above. */
+async function waitForViewer(
+	label: string,
+	paneId: string,
+	predicate: () => boolean,
+	timeoutMs: number,
+): Promise<void> {
+	try {
+		await waitForCondition(predicate, { timeoutMs, intervalMs: POLL_MS });
+	} catch (cause) {
+		throw new Error(`${label}: still false after ${timeoutMs}ms\n  ${viewerDiagnostics(paneId)}`, {
+			cause,
+		});
+	}
 }
 
 /**
@@ -140,24 +255,35 @@ test.skipIf(!tmuxAvailable)(
 		const menuPaneId = menuResult.stdout.toString().trim();
 		expect(menuPaneId).toBeTruthy();
 
-		await waitForCondition(() => paneIds().length === 2, { timeoutMs: 5000 });
+		await waitForCondition(() => paneIds().length === 2, {
+			timeoutMs: BUDGET.paneAppears,
+			intervalMs: POLL_MS,
+		});
 
 		// Press 'v' -- no Enter, matching the script's `read -rsn1` single
 		// raw-keystroke read over a real pty.
 		tmuxRaw(['send-keys', '-t', menuPaneId, '-l', 'v']);
-		await waitForCondition(() => paneIds().length === 3, { timeoutMs: 5000 });
+		await waitForCondition(() => paneIds().length === 3, {
+			timeoutMs: BUDGET.paneAppears,
+			intervalMs: POLL_MS,
+		});
 
 		const viewerPaneId = paneIds().find((id) => id !== configPaneId && id !== menuPaneId);
 		expect(viewerPaneId).toBeTruthy();
 		if (!viewerPaneId) return;
-		await waitForCondition(() => paneCommand(viewerPaneId) === 'tail', { timeoutMs: 5000 });
+		await waitForViewer(
+			'viewer pane comes up alive and running tail',
+			viewerPaneId,
+			() => paneAlive(viewerPaneId) && paneRunsTail(viewerPaneId),
+			BUDGET.viewerUp,
+		);
 
 		// Locate the real derived log file (pid-namespaced, under the scratch
 		// TMPDIR override) -- buildConfigLogPathAssignment pre-creates it empty.
 		const logDir = join(scratch, 'cam-cli-config-log');
 		await waitForCondition(
 			() => existsSync(logDir) && readdirSync(logDir).some((f) => f.endsWith('.log')),
-			{ timeoutMs: 5000 },
+			{ timeoutMs: BUDGET.logFileAppears, intervalMs: POLL_MS },
 		);
 		const logFile = readdirSync(logDir).find((f) => f.endsWith('.log'));
 		expect(logFile).toBeTruthy();
@@ -171,7 +297,10 @@ test.skipIf(!tmuxAvailable)(
 			'for i in $(seq 1 3000); do printf \'MARK-%06d-%0150d\\n\' "$i" 0; done; echo BURST1-DONE',
 			'Enter',
 		]);
-		await waitForCondition(() => capture(configPaneId).includes('BURST1-DONE'), { timeoutMs: 20000 });
+		await waitForCondition(() => capture(configPaneId).includes('BURST1-DONE'), {
+			timeoutMs: BUDGET.burst,
+			intervalMs: POLL_MS,
+		});
 
 		// Real production defect fixed by this story: without deferring the
 		// cap command's `$(wc -c < LOG)` past the menu script's own
@@ -188,7 +317,12 @@ test.skipIf(!tmuxAvailable)(
 		// necessarily spanned several 2s poll cycles).
 		expect(paneIds().length).toBe(3);
 
-		await waitForCondition(() => capture(viewerPaneId).includes('MARK-002999'), { timeoutMs: 10000 });
+		await waitForViewer(
+			"viewer viewport reaches burst 1's last mark",
+			viewerPaneId,
+			() => capture(viewerPaneId).includes('MARK-002999'),
+			BUDGET.viewerAdvances,
+		);
 
 		// Burst 2, past the rotate(s) burst 1 already forced: the frozen-viewer
 		// defect US-R2-003's real-tmux repro exists to catch would leave the
@@ -201,8 +335,16 @@ test.skipIf(!tmuxAvailable)(
 			'for i in $(seq 1 3000); do printf \'ROUND2-%06d-%0150d\\n\' "$i" 0; done; echo BURST2-DONE',
 			'Enter',
 		]);
-		await waitForCondition(() => capture(configPaneId).includes('BURST2-DONE'), { timeoutMs: 20000 });
-		await waitForCondition(() => capture(viewerPaneId).includes('ROUND2-002999'), { timeoutMs: 10000 });
+		await waitForCondition(() => capture(configPaneId).includes('BURST2-DONE'), {
+			timeoutMs: BUDGET.burst,
+			intervalMs: POLL_MS,
+		});
+		await waitForViewer(
+			"viewer viewport advances past the rotate to burst 2's last mark",
+			viewerPaneId,
+			() => capture(viewerPaneId).includes('ROUND2-002999'),
+			BUDGET.viewerAdvances,
+		);
 
 		const sizeAfterBurst2 = statSync(logPath).size;
 		expect(sizeAfterBurst2).toBeGreaterThan(0);
@@ -211,9 +353,10 @@ test.skipIf(!tmuxAvailable)(
 		// Still exactly one config + one menu + one viewer pane, and the
 		// viewer is still alive (not dead/exited) after the whole exchange.
 		expect(paneIds().length).toBe(3);
-		expect(paneCommand(viewerPaneId)).toBe('tail');
+		expect(paneAlive(viewerPaneId)).toBe(true);
+		expect(paneRunsTail(viewerPaneId)).toBe(true);
 	},
-	{ timeout: 60_000 },
+	{ timeout: VIEWER_TEST_TIMEOUT_MS },
 );
 
 // CAM-510 US-R2-006: `buildConfigLogCapCommand`'s path expansions used to be
@@ -254,15 +397,26 @@ test.skipIf(!tmuxAvailable)(
 		const menuPaneId = menuResult.stdout.toString().trim();
 		expect(menuPaneId).toBeTruthy();
 
-		await waitForCondition(() => paneIds().length === 2, { timeoutMs: 5000 });
+		await waitForCondition(() => paneIds().length === 2, {
+			timeoutMs: BUDGET.paneAppears,
+			intervalMs: POLL_MS,
+		});
 
 		tmuxRaw(['send-keys', '-t', menuPaneId, '-l', 'v']);
-		await waitForCondition(() => paneIds().length === 3, { timeoutMs: 5000 });
+		await waitForCondition(() => paneIds().length === 3, {
+			timeoutMs: BUDGET.paneAppears,
+			intervalMs: POLL_MS,
+		});
 
 		const viewerPaneId = paneIds().find((id) => id !== configPaneId && id !== menuPaneId);
 		expect(viewerPaneId).toBeTruthy();
 		if (!viewerPaneId) return;
-		await waitForCondition(() => paneCommand(viewerPaneId) === 'tail', { timeoutMs: 5000 });
+		await waitForViewer(
+			'viewer pane comes up alive and running tail',
+			viewerPaneId,
+			() => paneAlive(viewerPaneId) && paneRunsTail(viewerPaneId),
+			BUDGET.viewerUp,
+		);
 
 		// A word-split write would either never create this directory (the
 		// writer erroring against a nonexistent "/has" cwd-relative fragment)
@@ -271,7 +425,7 @@ test.skipIf(!tmuxAvailable)(
 		const logDir = join(scratch, 'cam-cli-config-log');
 		await waitForCondition(
 			() => existsSync(logDir) && readdirSync(logDir).some((f) => f.endsWith('.log')),
-			{ timeoutMs: 5000 },
+			{ timeoutMs: BUDGET.logFileAppears, intervalMs: POLL_MS },
 		);
 		const scratchSiblings = readdirSync(scratch);
 		expect(scratchSiblings).not.toContain('has');
@@ -285,15 +439,24 @@ test.skipIf(!tmuxAvailable)(
 			'for i in $(seq 1 2000); do printf \'MARK-%06d-%0150d\\n\' "$i" 0; done; echo BURST-DONE',
 			'Enter',
 		]);
-		await waitForCondition(() => capture(configPaneId).includes('BURST-DONE'), { timeoutMs: 20000 });
-		await waitForCondition(() => capture(viewerPaneId).includes('MARK-001999'), { timeoutMs: 10000 });
+		await waitForCondition(() => capture(configPaneId).includes('BURST-DONE'), {
+			timeoutMs: BUDGET.burst,
+			intervalMs: POLL_MS,
+		});
+		await waitForViewer(
+			"viewer viewport reaches the burst's last mark",
+			viewerPaneId,
+			() => capture(viewerPaneId).includes('MARK-001999'),
+			BUDGET.viewerAdvances,
+		);
 
 		const sizeAfterBurst = statSync(logPath).size;
 		expect(sizeAfterBurst).toBeGreaterThan(0);
 		expect(sizeAfterBurst).toBeLessThan(210_000);
 
 		expect(paneIds().length).toBe(3);
-		expect(paneCommand(viewerPaneId)).toBe('tail');
+		expect(paneAlive(viewerPaneId)).toBe(true);
+		expect(paneRunsTail(viewerPaneId)).toBe(true);
 	},
-	{ timeout: 60_000 },
+	{ timeout: SPACE_TEST_TIMEOUT_MS },
 );
