@@ -6,6 +6,28 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.285.0] - 2026-08-07
+
+### Added
+
+- US-R2-006 - Quote log-path expansions in buildConfigLogCapCommand (CAM-510)
+- US-R2-005 - Add stale-sibling pruning to config-log site 4 (CAM-510)
+- US-R2-004 - Add real-tmux integration test for the v|V viewer's cap-command embedding boundary
+- US-R2-003 - Rotate the config-pane debug log in place so tail -f never loses the inode
+- US-R2-002 - Pre-create the config-pane debug log file so the v/V viewer's tail -f never races its lazy writer
+- US-R2-001 - Sequence buildConfigLogCapCommand's rotate guard as POSIX-safe, quote-free sh
+- US-R1-005 - Sequence config-log EXIT-trap cleanup against the cap's rotate loop
+- US-R1-004 - Stream-cap the config-pane debug log instead of post-hoc trim
+- US-R1-003 - Drop non-blocking flaky-test framing, file+link CAM-513
+- US-R1-002 - Prune stale pid siblings under the codex instructions agent dir
+- US-R1-001 - Wire removeCodexInstructionsFile into the real dispatch terminals
+- US-006 - Prove steady state, keep the allowlist at one entry, and record the mechanism in patterns.md
+- US-005 - Nest the claudeDir tmpdir fallback pid under one fixed parent across all three call sites
+- US-004 - Namespace and cap the setup config log instead of a fixed shared /tmp path
+- US-003 - Bound and mode-restrict the codex instructions file across the whole dispatch lifecycle
+- US-002 - Nest the vendor cache versions under one fixed parent and correct the false reboot comment
+- US-001 - Bound the ship-PR body tempfile under one fixed reused parent
+
 ## [0.284.0] - 2026-08-06
 
 ### Added
