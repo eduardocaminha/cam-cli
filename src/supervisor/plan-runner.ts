@@ -29,7 +29,6 @@
 //     'Biome cognitive complexity: use factory/helper extraction not grandfather').
 
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import type { SpawnFn, IsPaneAlive } from './loop.ts';
 import type { WorkerEventLogger } from './events.ts';
 import type { PlanPreflightResult } from './plan-preflight.ts';
@@ -41,7 +40,7 @@ import type { PlanApproval, WorkerIsolation } from '../config/models.ts';
 import type { LoopPhase, PrdShape } from '../commands/status.ts';
 import type { PreflightResult } from './preflight-container.ts';
 import { truncatePreflightDetail, type PlanPreflightFailedWriterParams } from './plan-preflight-marker.ts';
-import { selectAdapter } from './backend-adapter.ts';
+import { selectAdapter, removeCodexInstructionsFile, DEFAULT_PLANNER_AGENT, DEFAULT_AUDITOR_AGENT } from './backend-adapter.ts';
 import { readPhaseBackend } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 import { decidePostAuditAction } from '../plan/plan-approval-decision.ts';
@@ -52,7 +51,7 @@ import { codexAuthPreflight } from './codex-auth.ts';
 import type { CodexAuthCheck } from './codex-auth.ts';
 import { resolvePhaseModel } from '../config/model-resolution.ts';
 import type { CodexModelsCacheReader } from '../config/codex-models-cache.ts';
-import { removeTaskPromptFile } from './task-prompt-file.ts';
+import { removeTaskPromptFile, resolveTaskPromptClaudeDirFallback } from './task-prompt-file.ts';
 import { runVerifiedDispatch } from './verified-dispatch.ts';
 import type { DispatchFailedMarker } from './dispatch-failed-marker.ts';
 import type { EarlyDeathVerdict } from './early-death.ts';
@@ -768,7 +767,7 @@ interface ResolveAndSpawnOptions {
 type PlanDispatchPhase = 'planner' | 'auditor';
 
 function effectivePlanClaudeDir(claudeDir: string | undefined): string {
-	return claudeDir ?? join(tmpdir(), `cam-cli-task-prompts-${process.pid}`, '.claude');
+	return claudeDir ?? resolveTaskPromptClaudeDirFallback();
 }
 
 function planOutLogPath(claudeDir: string | undefined, phase: string, uuid: string): string {
@@ -779,21 +778,43 @@ function shellQuote(value: string): string {
 	return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
+/** Maps a plan dispatch phase to the agent name CodexAdapter wrote its instructions file under. */
+function planPhaseAgentName(phase: PlanDispatchPhase): string {
+	return phase === 'planner' ? DEFAULT_PLANNER_AGENT : DEFAULT_AUDITOR_AGENT;
+}
+
+/**
+ * Remove this dispatch's own prompt and its codex instructions file (if any)
+ * without masking its terminal outcome (US-R1-001, CAM-510 follow-up to
+ * US-003 site 3 of 5). Mirrors worker-dispatch.ts's removeWorkerTaskPrompt for
+ * the planner/auditor terminal, which owns its own separate chokepoint
+ * implementation rather than sharing worker-dispatch.ts's.
+ * `removeCodexInstructionsFile` is unconditionally safe to call regardless of
+ * which backend actually ran: it is a `force: true` rmSync that no-ops when
+ * the claude backend (which never writes one) dispatched.
+ */
 function removePlanTaskPrompt(
 	opts: {
 		claudeDir?: string;
 		removeTaskPromptFileFn?: (uuid: string) => void;
 	},
+	agentName: string,
 	uuid: string,
 ): void {
 	try {
 		if (opts.removeTaskPromptFileFn !== undefined) {
 			opts.removeTaskPromptFileFn(uuid);
-			return;
+		} else {
+			removeTaskPromptFile(effectivePlanClaudeDir(opts.claudeDir), uuid);
 		}
-		removeTaskPromptFile(effectivePlanClaudeDir(opts.claudeDir), uuid);
 	} catch {
 		// Cleanup is idempotent and best-effort; terminal observability still runs.
+	}
+	try {
+		removeCodexInstructionsFile(agentName, uuid);
+	} catch {
+		// Same best-effort/idempotent contract; a claude-backend dispatch never
+		// wrote one, so this is expected to no-op on every non-codex dispatch.
 	}
 }
 
@@ -820,7 +841,7 @@ function runVerifiedPlanDispatch(
 		notifyFn: opts.notifyFn ?? ((): void => {}),
 	});
 	if (!result.ok) {
-		removePlanTaskPrompt(opts, uuid);
+		removePlanTaskPrompt(opts, planPhaseAgentName(phase), uuid);
 		return { ok: false, reason: result.marker.reason, dispatchFailed: true };
 	}
 	try {
@@ -1149,7 +1170,7 @@ function emitPlanTimeoutTerminal(
 ): void {
 	const reason = planTimeoutReason(phase, cause);
 	const timestamp = new Date().toISOString();
-	removePlanTaskPrompt(opts, uuid);
+	removePlanTaskPrompt(opts, planPhaseAgentName(phase), uuid);
 
 	// The timeout sentinel is itself a checked respawn: every tmux exit code
 	// and the pane identity transition are inspected by the shared helper.
@@ -1522,7 +1543,7 @@ function runPlannerPollStep(
 		);
 		return { kind: 'planner-failed', reason: `session-died-early: ${plannerPoll.cause}` };
 	}
-	removePlanTaskPrompt(opts, plannerUuid);
+	removePlanTaskPrompt(opts, DEFAULT_PLANNER_AGENT, plannerUuid);
 
 	// US-004 (CAM-479, AC1): pane death BEFORE prd.json existed is a real
 	// planner failure, never a poll-completion signal. Reason-bearing, unlike
@@ -1595,7 +1616,7 @@ function runPlanWorkerSequence(
 		);
 		return { kind: 'auditor-timeout' };
 	}
-	removePlanTaskPrompt(opts, auditorStep.uuid);
+	removePlanTaskPrompt(opts, DEFAULT_AUDITOR_AGENT, auditorStep.uuid);
 	const { report } = auditorResult;
 	return report.verdict === 'APPROVE'
 		? { kind: 'audit-approved', issue, report }

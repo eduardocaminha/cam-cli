@@ -25,8 +25,9 @@
 //   --description "<text>"     (new projects only)
 //   --no-tmux                  copy templates + print next steps, no tmux
 
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';
@@ -423,6 +424,373 @@ export function buildSetupPrompt(opts: {
 	].join('\n');
 }
 
+// ---------------------------------------------------------------------------
+// Config-pane debug log: fixed parent, pid-namespaced, byte-capped (CAM-510).
+// ---------------------------------------------------------------------------
+//
+// The viewer pane (`v`/`V` in the menu below) pipes the config pane's output
+// into a log file via `tmux pipe-pane`. That log used to be the fixed,
+// shared, unbounded path `/tmp/cam-config.log` -- one literal entry reused
+// (and clobbered) by every `cam setup` run on the machine, for every user,
+// growing without limit for the life of the pane. The three snippet builders
+// below replace it with one fixed *parent* directory holding one file per
+// pid, capped in the shell itself (the log is produced by a bash string
+// tmux hands to `pipe-pane`, so the cap has to be a shell construction --
+// TypeScript never sees the bytes flowing through it).
+
+/** Byte ceiling for the config-pane debug log (the read-only viewer). */
+const CONFIG_LOG_CEILING_BYTES = 200_000;
+
+/**
+ * Fixed, reused top-level directory name under tmpdir() for the
+ * config-pane debug log. Shared between the bash-expression form
+ * (`configLogDirExpr`, resolved by the spawned pane's shell) and the
+ * TS-side resolution (`pruneStaleConfigLogDir`, resolved by this process
+ * before the pane ever spawns) so the two can never drift apart.
+ */
+export const CONFIG_LOG_PARENT_DIR_NAME = 'cam-cli-config-log';
+
+/**
+ * Fixed parent directory for the config-pane debug log, as a bash
+ * expression (not a resolved path -- the shell that runs the generated
+ * script resolves `$TMPDIR`). One reused parent, never a new top-level
+ * entry per run: each invocation nests its own file under it by pid.
+ */
+function configLogDirExpr(): string {
+	return `\${TMPDIR:-/tmp}/${CONFIG_LOG_PARENT_DIR_NAME}`;
+}
+
+/** Sibling config-log files older than this are pruned as abandoned (ms). Mirrors STALE_PID_DIR_AGE_MS in src/release/ship-pr-tempfile.ts and src/supervisor/task-prompt-file.ts. */
+const STALE_CONFIG_LOG_AGE_MS = 60 * 60 * 1000;
+
+/**
+ * Removes stale `<pid>.log` / `<pid>.log.chunk` / `<pid>.log.lock` siblings
+ * under the fixed config-log parent, tolerating any stat/removal failure (a
+ * concurrent `cam setup` invocation may already be cleaning up its own
+ * files) -- this is CAM-510 site 4, the only one of the issue's five sites
+ * that shipped with no stale-sibling pruning at all: cleanup depended
+ * entirely on the menu script's own `EXIT` trap (`buildConfigLogCleanupCommand`),
+ * so any abnormal menu-pane termination (tmux kill-pane, SIGKILL, crash)
+ * left its `<pid>.log`/`.chunk`/`.lock` under the fixed parent forever.
+ *
+ * Unlike the pid-SUBDIRECTORY prune helpers this mirrors (ship-pr-tempfile.ts,
+ * task-prompt-file.ts, embedded.ts), this directory holds flat sibling
+ * FILES per pid rather than nested subdirectories, and there is no "own
+ * pid" to skip: the caller (`pruneStaleConfigLogDir`, invoked by
+ * `spawnSetupTmux`) runs BEFORE the new pane's `$$`-namespaced log file is
+ * even created, so nothing this invocation owns exists yet to protect.
+ * Each entry is stat'd and pruned independently by age instead, matching
+ * the age-based heuristic used at every other CAM-510 site.
+ *
+ * Accepted tradeoff (the same one already documented for the pid-subdirectory
+ * variants): a viewer pane left open longer than `STALE_CONFIG_LOG_AGE_MS`
+ * could have its `.lock` sibling pruned by a LATER `cam setup` invocation
+ * while its `.log` file is still being actively appended -- the writer's
+ * `.lock` is created once, at loop start, and only ever removed as its very
+ * last action (see `buildConfigLogCapCommand`'s doc comment), so its mtime
+ * does not advance with the writer's appends the way the `.log` file's
+ * does. The threshold is set to a full hour, matching every other CAM-510
+ * site, specifically so a still-open viewer session survives in practice.
+ */
+function pruneStaleConfigLogSiblings(parent: string): void {
+	let entries: string[];
+	try {
+		entries = readdirSync(parent);
+	} catch {
+		return;
+	}
+	const now = Date.now();
+	for (const entry of entries) {
+		const entryPath = join(parent, entry);
+		try {
+			const info = statSync(entryPath);
+			if (now - info.mtimeMs > STALE_CONFIG_LOG_AGE_MS) {
+				rmSync(entryPath, { force: true });
+			}
+		} catch {
+			// Transient stat/removal failure on a sibling must never fail this
+			// process's own setup.
+		}
+	}
+}
+
+/**
+ * Ensures the fixed config-log parent directory exists and has had its
+ * stale `<pid>.log`(`.chunk`|`.lock`) siblings pruned. Exported so tests can
+ * exercise the real production prune pass directly (TMPDIR-redirected,
+ * mirroring `test/release/ship-pr-tempfile.test.ts`'s GOTCHA 8 convention)
+ * without spinning up a real tmux session. Called from `spawnSetupTmux`
+ * before every run.
+ */
+export function pruneStaleConfigLogDir(): void {
+	const parent = join(tmpdir(), CONFIG_LOG_PARENT_DIR_NAME);
+	mkdirSync(parent, { recursive: true });
+	pruneStaleConfigLogSiblings(parent);
+}
+
+/**
+ * Bash lines that derive this run's pid-namespaced log path into
+ * `$CAM_CONFIG_LOG`. Exported so `test/setup-config-log.test.ts` can run the
+ * exact production snippet under real bash (twice, as two distinct
+ * subprocesses) and prove distinct pids produce distinct paths under the
+ * one fixed parent.
+ *
+ * Also creates the (empty) log file itself, immediately after deriving the
+ * path. The `v|V` viewer pane runs `tmux pipe-pane -o '<cap>'; tail -f
+ * $CAM_CONFIG_LOG` -- `buildConfigLogCapCommand`'s writer only creates the
+ * file lazily, on its first `cat chunk >> LOG`, so without this line `tail
+ * -f` races that first write and, on the (common) side of the race where no
+ * pipe-pane output has landed yet, exits immediately with "No such file or
+ * directory" (CAM-510 site "v/V viewer pane dies immediately", reviewer
+ * repro under real tmux 3.6a for both quiet and noisy config panes). This
+ * regressed the fixed-shared-path behavior on `main`
+ * (`/tmp/cam-config.log`), which pre-existed from the second `cam setup`
+ * onward and never raced `tail -f`; the new per-pid path under the EXIT-trap
+ * `rm -f` (`buildConfigLogCleanupCommand`) starts every run from a clean
+ * slate, so the file must be created explicitly here instead.
+ */
+export function buildConfigLogPathAssignment(): string {
+	return [
+		`CAM_CONFIG_LOG_DIR="${configLogDirExpr()}"`,
+		'mkdir -p "$CAM_CONFIG_LOG_DIR" 2>/dev/null',
+		'CAM_CONFIG_LOG="$CAM_CONFIG_LOG_DIR/$$.log"',
+		': > "$CAM_CONFIG_LOG"',
+	].join('\n');
+}
+
+/** Bounded retries for the cleanup trap's lock-drain wait (see below). */
+const CONFIG_LOG_DRAIN_MAX_TRIES = 40;
+
+/** Poll interval, in seconds, for the cleanup trap's lock-drain wait. */
+const CONFIG_LOG_DRAIN_INTERVAL_SECONDS = '0.05';
+
+/**
+ * POSIX `sh` command (embedded inside a tmux `pipe-pane -o '...'` argument
+ * that is itself nested inside a further double-quoted shell string -- see
+ * the CAM-510 site-4-followup patterns.md bullet for the full three-level
+ * quoting trace) that streams piped pane output into `logPathExpr`,
+ * rotating it back down to `ceilingBytes` after EVERY bounded chunk it
+ * appends, not just once at process exit.
+ *
+ * MUST stay POSIX-sh-safe, not bash-only: tmux runs a `pipe-pane
+ * shell-command` argument via `/bin/sh -c '...'` (tmux(1)), and on every
+ * Linux binary this project ships (`/bin/sh` -> dash) bash-only syntax
+ * mis-parses instead of erroring loudly. A prior version here used the
+ * bash-only `(( $(wc -c < LOG) > N ))` arithmetic-command rotate guard; under
+ * dash that is not a recognized construct and gets parsed as nested
+ * subshells, so the ceiling check silently never fires (log grows
+ * unbounded, the exact defect this command exists to close) and the
+ * mis-parse evaluates the numeric literal `N` as a command, spraying a
+ * stray file named after the ceiling into the writer's cwd (the user's repo
+ * -- dirtying the tree the plan-preflight clean-tree guard checks, ADR-0014).
+ * macOS's `/bin/sh` (bash 3.2 in posix mode) tolerates `(( ))` so this only
+ * ever reproduced on Linux (CAM-510 site 5).
+ *
+ * Fixed with the POSIX `test $(wc -c < LOG) -gt N` form. Every `logPathExpr`
+ * expansion IS double-quoted (`"${logPathExpr}"`, matching
+ * `buildConfigLogCleanupCommand`'s own `"$CAM_CONFIG_LOG"` convention,
+ * CAM-510 US-R2-006 followup): `${TMPDIR:-/tmp}` can resolve to a path
+ * containing a space, and an unquoted expansion word-splits it, silently
+ * sending the `cat`/`tail`/`mv`/`rm` calls at the wrong path. The sole
+ * exception, left deliberately unquoted, is the OUTER `$(wc -c < ...)`
+ * substitution wrapper itself (only the LOG path inside it is quoted):
+ * `wc -c`'s own stdout is always a single (possibly whitespace-padded, e.g.
+ * BSD/macOS `wc`) numeric token with no other field to collide with, so
+ * splitting it on IFS whitespace is safe and quoting it would only add
+ * noise.
+ *
+ * Quoting reintroduces the exact literal-`"`-corrupts-the-outer-argument
+ * hazard this snippet's original zero-quote convention existed to avoid:
+ * this text is embedded, verbatim, inside the OUTER menu script's own
+ * double-quoted `"tmux pipe-pane ... -o '...'"` argument to `split-window`
+ * (see the CAM-510 site-4-followup patterns.md bullet for the full
+ * three-level quoting trace), and a literal `"` reaching that argument
+ * unescaped closes it early and corrupts the generated script. The `v|V`
+ * arm in `buildSetupMenuScript` closes that the same way
+ * `deferCommandSubstitution` already defers `$(` past that same layer: it
+ * runs this function's output through the sibling
+ * `escapeDoubleQuotesForOuterEmbed`, converting every `"` to `\"` so bash's
+ * own double-quote escape rule lets it survive that layer intact and reach
+ * the pipe-pane consumer shell as a real quote character again. Direct
+ * callers (this file's own tests, `spawnSync('bash', ['-c', command], ...)`)
+ * never cross that embedding layer, so they see real, valid, already-quoted
+ * bash straight from this function.
+ *
+ * A prior version here (`cat >> LOG; tail -c N LOG > LOG.tmp && mv ...`)
+ * only rotated once the `cat` reached EOF, i.e. once `tmux pipe-pane`
+ * closed the pipe -- which happens only when the viewer pane exits. For the
+ * pipe's entire live lifetime (the only period the file is actually being
+ * fed) the log grew unbounded, exactly the defect this command exists to
+ * close. This version reads in bounded `dd` chunks and rotates after each
+ * one, so the on-disk file can only ever momentarily exceed the ceiling by
+ * up to one chunk size while the pipe is still open, and settles at or
+ * below the ceiling as soon as the next chunk lands.
+ *
+ * Holds a `.lock` sibling file for the command's entire lifetime (created
+ * before the loop, removed only once the loop breaks on EOF) so
+ * `buildConfigLogCleanupCommand`'s EXIT-trap teardown can tell whether this
+ * writer is still mid-flight and, if so, wait for it to actually finish
+ * before removing the log it writes into -- see that function's doc comment
+ * for the race this closes.
+ *
+ * The rotate step writes the trimmed tail back into `logPathExpr` via
+ * `cat TMP > LOG` (shell output redirection, which opens the *existing*
+ * inode and truncates it in place), never `mv TMP LOG` (which unlinks
+ * `LOG`'s directory entry and repoints it at `TMP`'s freshly-created inode).
+ * The `v|V` viewer pane's `tail -f $CAM_CONFIG_LOG` opens the file once and
+ * keeps reading from that same open file descriptor for as long as the
+ * viewer pane lives; an `mv`-based rotate silently detaches that descriptor
+ * from the path (the old inode still exists, unlinked, and `tail -f` keeps
+ * following it forever) while a `cat >` rotate keeps writing into the exact
+ * inode the viewer already has open, so the viewer's next read call sees the
+ * post-rotate content instead of freezing. Reviewer repro under real tmux
+ * (CAM-510 US-R2-003, review-artifact.txt section 5c): with the `mv` form
+ * and a 3000-byte ceiling, the viewer showed `MARK-89` at t+3s and was still
+ * showing `MARK-89` at t+11s while the log itself had advanced past
+ * `MARK-462` -- the viewer pane never recovers once it starts following the
+ * detached inode, since nothing ever repoints its already-open descriptor.
+ */
+export function buildConfigLogCapCommand(
+	logPathExpr: string,
+	ceilingBytes: number = CONFIG_LOG_CEILING_BYTES,
+): string {
+	const chunkPathExpr = `${logPathExpr}.chunk`;
+	const lockPathExpr = `${logPathExpr}.lock`;
+	const tmpPathExpr = `${logPathExpr}.tmp`;
+	return [
+		`: > "${lockPathExpr}"`,
+		`while dd bs=4096 count=1 of="${chunkPathExpr}" 2>/dev/null`,
+		'do',
+		`	test -s "${chunkPathExpr}" || break`,
+		`	cat "${chunkPathExpr}" >> "${logPathExpr}"`,
+		`	test $(wc -c < "${logPathExpr}") -gt ${ceilingBytes} && { tail -c ${ceilingBytes} "${logPathExpr}" > "${tmpPathExpr}" 2>/dev/null && cat "${tmpPathExpr}" > "${logPathExpr}" && rm -f "${tmpPathExpr}"; }`,
+		'done',
+		`rm -f "${chunkPathExpr}" "${lockPathExpr}"`,
+	].join('\n');
+}
+
+/**
+ * Bash command that stops piping into the log (if a viewer pane ever
+ * started one) and removes the file, plus the `.chunk`/`.lock` scratch
+ * siblings `buildConfigLogCapCommand` writes (either may still be sitting on
+ * disk if the pipe was torn down mid-read, e.g. the viewer pane got killed
+ * rather than exiting cleanly). Wired into an `EXIT` trap so it fires on
+ * every menu-exit path (`q`/`Q` in either menu state, or any signal), rather
+ * than duplicated ad hoc before each `exit 0`.
+ *
+ * `tmux pipe-pane -t "$CAM_CONFIG_PANE"` only *asks* tmux to close the pipe;
+ * it returns as soon as tmux acknowledges the request, while the piped
+ * writer process (a separate process in the viewer sub-pane, not a child of
+ * this script) is still finishing its current `dd`/`cat`/rotate cycle in the
+ * background. A prior version here fired `rm -f` on the very next line, so
+ * if that writer's pending `mv` landed after the `rm`, the log file was
+ * recreated after cleanup and survived the menu exit (AC8's "no residue").
+ * This version waits (bounded, `CONFIG_LOG_DRAIN_MAX_TRIES` polls at
+ * `CONFIG_LOG_DRAIN_INTERVAL_SECONDS` apart) for the writer's `.lock` sibling
+ * to disappear -- the writer only removes it, as its very last action, after
+ * its loop has actually broken on EOF -- before removing the log itself, so
+ * the removal is sequenced strictly after the writer's last write instead of
+ * racing it. When no writer is (or ever was) running, the lock file never
+ * existed, the wait loop's condition is false on the first check, and
+ * cleanup proceeds immediately, same as before.
+ */
+export function buildConfigLogCleanupCommand(): string {
+	return [
+		'tmux pipe-pane -t "$CAM_CONFIG_PANE" 2>/dev/null',
+		'CAM_CONFIG_LOG_DRAIN_TRIES=0',
+		`while [ -e "$CAM_CONFIG_LOG.lock" ] && (( CAM_CONFIG_LOG_DRAIN_TRIES < ${CONFIG_LOG_DRAIN_MAX_TRIES} ))`,
+		'do',
+		`	sleep ${CONFIG_LOG_DRAIN_INTERVAL_SECONDS}`,
+		'	(( CAM_CONFIG_LOG_DRAIN_TRIES++ ))',
+		'done',
+		'rm -f "$CAM_CONFIG_LOG" "$CAM_CONFIG_LOG.chunk" "$CAM_CONFIG_LOG.lock"',
+	].join('\n');
+}
+
+/**
+ * Escapes every `$(` in `snippet` to `\$(`, so a snippet that relies on a
+ * LIVE, repeatedly-re-evaluated command substitution (e.g. `$(wc -c < FILE)`,
+ * re-run on every loop iteration by whatever shell eventually executes it)
+ * can be embedded inside an OUTER *double-quoted* bash string without that
+ * outer shell evaluating the substitution itself, immediately, once, at
+ * embedding time.
+ *
+ * This matters specifically for `buildConfigLogCapCommand`'s output once it
+ * is embedded in the `v|V` case arm below: that arm's `tmux split-window`
+ * argument is a genuine double-quoted bash string in the RUNNING menu
+ * script, and the single quotes wrapped around the cap command in the
+ * source template (`-o '<cap command>'`) are, from that running menu
+ * script's own parser's point of view, just literal `'` characters -- single
+ * quotes have no special meaning to bash once they are themselves inside an
+ * enclosing double-quoted string, they do not "nest" or shield the content
+ * between them. Bash's double-quote parsing performs command substitution
+ * (`$(...)`) unconditionally, regardless of any literal quote characters
+ * appearing inside it, so `$(wc -c < LOG)` inside that double-quoted
+ * argument was being evaluated ONE TIME, THERE, by the menu script itself
+ * (at the moment the user pressed `v`, against whatever byte count the log
+ * file happened to have right then -- typically `0`, since the log file is
+ * freshly created and still empty at that point), producing a permanently
+ * frozen numeric literal (e.g. `test        0 -gt 200000`) baked into the
+ * split-window argument instead of a live re-evaluated check. The actual
+ * `dd`/`cat`/rotate while-loop the resulting text runs as (spawned by `tmux
+ * pipe-pane -o` in a completely separate, later shell) never rotates as a
+ * result: the ceiling comparison is permanently `0 -gt N`, always false, so
+ * the config-pane debug log grows completely unbounded for the pipe's
+ * entire live session -- silently defeating the entire byte-ceiling
+ * mechanism `buildConfigLogCapCommand` exists to provide, in real
+ * production tmux usage. Confirmed via `ps -eo command` on the actual
+ * spawned pipe-pane consumer process under real tmux 3.6a: its `-c` argv
+ * literally contained `test        0 -gt 1000` (test ceiling), never the
+ * source's `test $(wc -c < LOG) -gt 1000` (US-R2-004, CAM-510 site 4
+ * seventh follow-up, real-tmux integration coverage). None of the prior
+ * CAM-510 tests for `buildConfigLogCapCommand` could observe this: they all
+ * spawn the function's return value directly via `spawnSync('bash', ['-c',
+ * command], ...)`, which never crosses the extra double-quoted embedding
+ * layer this function exists to guard, only the real `v|V` composition does.
+ * Escaping the ONE `$(` this snippet contains (`\$(wc -c < LOG)`) makes
+ * bash's double-quote parser treat that `$` as a literal character (bash's
+ * documented double-quote escape rule: backslash retains its special
+ * meaning only before `$`, `` ` ``, `"`, `\`, or newline), so the
+ * substitution text survives menu-script evaluation completely unevaluated
+ * and reaches the actual pipe-pane consumer shell intact, where it IS
+ * re-run on every loop iteration as originally intended. The pre-existing
+ * `${CAM_CONFIG_LOG}`/`${CAM_CONFIG_PANE}` parameter expansions elsewhere in
+ * the same double-quoted argument are deliberately left un-escaped: those
+ * MUST resolve eagerly, at menu-script time, to bake the real absolute log
+ * path and pane id into the generated command (already covered by the
+ * `pre-creates the log file itself` test and the two-distinct-pids test).
+ */
+function deferCommandSubstitution(snippet: string): string {
+	return snippet.replace(/\$\(/g, '\\$(');
+}
+
+/**
+ * Escapes every literal `"` in `snippet` to `\"`, the sibling of
+ * `deferCommandSubstitution` above: same OUTER-double-quoted-argument
+ * embedding hazard (see that function's doc comment for the full
+ * three-level quoting trace), a different character.
+ *
+ * `buildConfigLogCapCommand` now double-quotes every path expansion it
+ * writes (`"${CAM_CONFIG_LOG}"`, CAM-510 US-R2-006: an unquoted expansion
+ * word-splits a `${TMPDIR:-/tmp}` that contains a space, silently sending
+ * the writer's `cat`/`tail`/`mv`/`rm` calls at the wrong path). Those real
+ * `"` characters are exactly what `buildConfigLogCapCommand`'s own doc
+ * comment warns is unsafe to let reach the `v|V` arm's outer double-quoted
+ * `split-window` argument unescaped: bash closes a double-quoted string on
+ * the first unescaped `"` it sees, so a literal one anywhere in the cap
+ * command's text corrupts the generated script the same way an
+ * un-deferred `$(` corrupted it before `deferCommandSubstitution` existed.
+ * Escaping each one to `\"` here lets bash's own double-quote escape rule
+ * (backslash retains its special meaning before `$`, `` ` ``, `"`, `\`, or
+ * newline) carry it through that layer as a literal character without
+ * closing the string, so it reaches the pipe-pane consumer shell as a real
+ * quote character again -- the same "defer past the outer layer" strategy
+ * `deferCommandSubstitution` already uses for `$(`, applied to `"` instead.
+ */
+function escapeDoubleQuotesForOuterEmbed(snippet: string): string {
+	return snippet.replace(/"/g, '\\"');
+}
+
 /**
  * Build the menu pane bash script.
  *
@@ -452,6 +820,9 @@ RST='\\033[0m'
 CAM_CONFIG_PANE="\${CAM_CONFIG_PANE:-}"
 CAM_ORCH_PROMPT_FILE="\${CAM_ORCH_PROMPT_FILE:-.claude/.cam-orchestrator-prompt.txt}"
 CAM_ORCH_PANE=""
+
+${buildConfigLogPathAssignment()}
+trap '${buildConfigLogCleanupCommand()}' EXIT
 
 show_initial() {
 	clear
@@ -485,11 +856,19 @@ show_initial
 
 while true; do
 	if [[ "\${state}" == "initial" ]]; then
+		# Reset before every timed read: on timeout (no keypress within 2s),
+		# bash's \`read -t\` leaves the variable at its PREVIOUS value instead
+		# of clearing it (confirmed under a real tmux pty, US-R2-004,
+		# CAM-510 site 4 sixth follow-up) -- without this reset, one 'v'
+		# keypress re-matches the v|V arm below on every single 2s poll
+		# forever, spawning a fresh viewer split every cycle until tmux
+		# errors "no space for new pane".
+		key=""
 		# 2s timeout lets the polling fire even if the user is idle.
 		read -rsn1 -t 2 key
 		case "\${key}" in
 			c|C) tmux select-pane -t "\${CAM_CONFIG_PANE}" ;;
-			v|V) tmux split-window -v -l 12 "tmux pipe-pane -t '\${CAM_CONFIG_PANE}' -o 'cat >> /tmp/cam-config.log'; tail -f /tmp/cam-config.log" ;;
+			v|V) tmux split-window -v -l 12 "tmux pipe-pane -t '\${CAM_CONFIG_PANE}' -o '${escapeDoubleQuotesForOuterEmbed(deferCommandSubstitution(buildConfigLogCapCommand('${CAM_CONFIG_LOG}')))}'; tail -f \\"\${CAM_CONFIG_LOG}\\"" ;;
 			q|Q) exit 0 ;;
 		esac
 		# Poll for DONE in the config pane's full scrollback.
@@ -539,6 +918,10 @@ function spawnSetupTmux(opts: {
 	cwd: string;
 }): void {
 	const { prompt, cwd } = opts;
+
+	// Prune any config-log siblings abandoned by a prior run's abnormal
+	// termination (CAM-510 site 4) before this run adds its own.
+	pruneStaleConfigLogDir();
 
 	// Persist all the artifacts the panes need.
 	const dotClaude = join(cwd, '.claude');

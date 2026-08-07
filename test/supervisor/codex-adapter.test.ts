@@ -80,7 +80,7 @@ describe('CodexAdapter.buildSpawnArgv (US-001)', () => {
 			expect(actual).toContain("-m 'gpt-5.4-codex'");
 		});
 
-		test(`${actor}: -c model_instructions_file points at a /tmp file (never .claude/) holding the frontmatter-stripped agent body`, () => {
+		test(`${actor}: -c model_instructions_file points at a file under the dedicated bounded instructions dir (never .claude/) holding the frontmatter-stripped agent body`, () => {
 			const adapter = new CodexAdapter();
 			const opts =
 				actor === 'reviewer'
@@ -89,7 +89,11 @@ describe('CodexAdapter.buildSpawnArgv (US-001)', () => {
 			const actual = adapter.buildSpawnArgv(actor, opts);
 			const instructionsFile = extractInstructionsFile(actual);
 
-			expect(instructionsFile.startsWith('/tmp/')).toBe(true);
+			// US-003 (CAM-510): the dedicated bounded directory lives under
+			// tmpdir(), never the literal '/tmp', with agent/pid/uuid nested below
+			// its one fixed top-level parent (see codex-instructions-reap.test.ts
+			// for the full lifecycle proof).
+			expect(instructionsFile).toContain('cam-cli-codex-instructions');
 			expect(instructionsFile).not.toContain('.claude/');
 
 			const written = readFileSync(instructionsFile, 'utf8');

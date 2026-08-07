@@ -20,7 +20,7 @@
 //     binary. The tempdir is namespaced by `CAM_VERSION` so a cam-cli
 //     upgrade on the same machine doesn't reuse stale extracted files.
 
-import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -57,12 +57,21 @@ export function readEmbedded(key: EmbeddedKey): string {
 
 // --- Materialization for spawn-as-child ------------------------------------
 
+/** Fixed, reused top-level directory name under tmpdir(). */
+const VENDOR_CACHE_PARENT_NAME = 'cam-cli-vendor';
+
+/** Sibling version subdirectories older than this are pruned as stale (ms). */
+const STALE_VERSION_DIR_AGE_MS = 60 * 60 * 1000;
+
 /**
  * Cache directory we extract embedded scripts into for spawn-as-child usage.
- * Versioned so we don't collide across cam-cli upgrades on the same
- * machine. We deliberately use the OS tmpdir rather than `~/.cache/cam`
- * so the cache is wiped on reboot and we never accumulate stale extracted
- * files across upgrades.
+ * Every installed version nests under a single fixed, reused parent
+ * (`tmpdir()/cam-cli-vendor`) rather than getting its own top-level entry,
+ * so a machine that upgrades cam-cli repeatedly doesn't accumulate a
+ * permanent directory per version. The OS tmpdir does not reliably clear
+ * itself across upgrades in practice (measured survivors persisting across
+ * reboots); pruning of stale sibling versions below is what actually
+ * bounds the cache, not the OS.
  *
  * Override via `CAM_VENDOR_CACHE_DIR` for tests so they don't leak files
  * into the system tmpdir between runs.
@@ -70,7 +79,39 @@ export function readEmbedded(key: EmbeddedKey): string {
 function cacheDir(): string {
 	const override = process.env['CAM_VENDOR_CACHE_DIR'];
 	if (override) return override;
-	return join(tmpdir(), `cam-cli-vendor-${CAM_VERSION}`);
+	return join(tmpdir(), VENDOR_CACHE_PARENT_NAME, CAM_VERSION);
+}
+
+/**
+ * Removes stale sibling version subdirectories under the fixed vendor-cache
+ * parent, skipping the current `CAM_VERSION` unconditionally so an in-flight
+ * extraction on this machine is never at risk. Limited to entries older than
+ * `STALE_VERSION_DIR_AGE_MS` (GOTCHA 8, CAM-510) so a still-running older
+ * cam-cli process on this machine keeps its extraction long enough to finish
+ * using it. Reads only the fixed parent directory itself, never the shared
+ * temp root (GOTCHA 5, CAM-510). Tolerates any stat/removal failure: a
+ * concurrent process may already be cleaning up its own directory.
+ */
+function pruneStaleVersionSiblings(parent: string): void {
+	let entries: string[];
+	try {
+		entries = readdirSync(parent);
+	} catch {
+		return;
+	}
+	const now = Date.now();
+	for (const entry of entries) {
+		if (entry === CAM_VERSION) continue;
+		const entryPath = join(parent, entry);
+		try {
+			const info = statSync(entryPath);
+			if (now - info.mtimeMs > STALE_VERSION_DIR_AGE_MS) {
+				rmSync(entryPath, { recursive: true, force: true });
+			}
+		} catch {
+			// See doc comment: a concurrent process may already own this entry.
+		}
+	}
 }
 
 /**
@@ -84,6 +125,9 @@ function cacheDir(): string {
  */
 export function materializeEmbedded(key: EmbeddedKey): string {
 	const dir = cacheDir();
+	if (!process.env['CAM_VENDOR_CACHE_DIR']) {
+		pruneStaleVersionSiblings(join(tmpdir(), VENDOR_CACHE_PARENT_NAME));
+	}
 	if (!existsSync(dir)) {
 		mkdirSync(dir, { recursive: true });
 	}
