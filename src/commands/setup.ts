@@ -612,6 +612,63 @@ export function buildConfigLogCleanupCommand(): string {
 }
 
 /**
+ * Escapes every `$(` in `snippet` to `\$(`, so a snippet that relies on a
+ * LIVE, repeatedly-re-evaluated command substitution (e.g. `$(wc -c < FILE)`,
+ * re-run on every loop iteration by whatever shell eventually executes it)
+ * can be embedded inside an OUTER *double-quoted* bash string without that
+ * outer shell evaluating the substitution itself, immediately, once, at
+ * embedding time.
+ *
+ * This matters specifically for `buildConfigLogCapCommand`'s output once it
+ * is embedded in the `v|V` case arm below: that arm's `tmux split-window`
+ * argument is a genuine double-quoted bash string in the RUNNING menu
+ * script, and the single quotes wrapped around the cap command in the
+ * source template (`-o '<cap command>'`) are, from that running menu
+ * script's own parser's point of view, just literal `'` characters -- single
+ * quotes have no special meaning to bash once they are themselves inside an
+ * enclosing double-quoted string, they do not "nest" or shield the content
+ * between them. Bash's double-quote parsing performs command substitution
+ * (`$(...)`) unconditionally, regardless of any literal quote characters
+ * appearing inside it, so `$(wc -c < LOG)` inside that double-quoted
+ * argument was being evaluated ONE TIME, THERE, by the menu script itself
+ * (at the moment the user pressed `v`, against whatever byte count the log
+ * file happened to have right then -- typically `0`, since the log file is
+ * freshly created and still empty at that point), producing a permanently
+ * frozen numeric literal (e.g. `test        0 -gt 200000`) baked into the
+ * split-window argument instead of a live re-evaluated check. The actual
+ * `dd`/`cat`/rotate while-loop the resulting text runs as (spawned by `tmux
+ * pipe-pane -o` in a completely separate, later shell) never rotates as a
+ * result: the ceiling comparison is permanently `0 -gt N`, always false, so
+ * the config-pane debug log grows completely unbounded for the pipe's
+ * entire live session -- silently defeating the entire byte-ceiling
+ * mechanism `buildConfigLogCapCommand` exists to provide, in real
+ * production tmux usage. Confirmed via `ps -eo command` on the actual
+ * spawned pipe-pane consumer process under real tmux 3.6a: its `-c` argv
+ * literally contained `test        0 -gt 1000` (test ceiling), never the
+ * source's `test $(wc -c < LOG) -gt 1000` (US-R2-004, CAM-510 site 4
+ * seventh follow-up, real-tmux integration coverage). None of the prior
+ * CAM-510 tests for `buildConfigLogCapCommand` could observe this: they all
+ * spawn the function's return value directly via `spawnSync('bash', ['-c',
+ * command], ...)`, which never crosses the extra double-quoted embedding
+ * layer this function exists to guard, only the real `v|V` composition does.
+ * Escaping the ONE `$(` this snippet contains (`\$(wc -c < LOG)`) makes
+ * bash's double-quote parser treat that `$` as a literal character (bash's
+ * documented double-quote escape rule: backslash retains its special
+ * meaning only before `$`, `` ` ``, `"`, `\`, or newline), so the
+ * substitution text survives menu-script evaluation completely unevaluated
+ * and reaches the actual pipe-pane consumer shell intact, where it IS
+ * re-run on every loop iteration as originally intended. The pre-existing
+ * `${CAM_CONFIG_LOG}`/`${CAM_CONFIG_PANE}` parameter expansions elsewhere in
+ * the same double-quoted argument are deliberately left un-escaped: those
+ * MUST resolve eagerly, at menu-script time, to bake the real absolute log
+ * path and pane id into the generated command (already covered by the
+ * `pre-creates the log file itself` test and the two-distinct-pids test).
+ */
+function deferCommandSubstitution(snippet: string): string {
+	return snippet.replace(/\$\(/g, '\\$(');
+}
+
+/**
  * Build the menu pane bash script.
  *
  * Two-state menu:
@@ -676,11 +733,19 @@ show_initial
 
 while true; do
 	if [[ "\${state}" == "initial" ]]; then
+		# Reset before every timed read: on timeout (no keypress within 2s),
+		# bash's \`read -t\` leaves the variable at its PREVIOUS value instead
+		# of clearing it (confirmed under a real tmux pty, US-R2-004,
+		# CAM-510 site 4 sixth follow-up) -- without this reset, one 'v'
+		# keypress re-matches the v|V arm below on every single 2s poll
+		# forever, spawning a fresh viewer split every cycle until tmux
+		# errors "no space for new pane".
+		key=""
 		# 2s timeout lets the polling fire even if the user is idle.
 		read -rsn1 -t 2 key
 		case "\${key}" in
 			c|C) tmux select-pane -t "\${CAM_CONFIG_PANE}" ;;
-			v|V) tmux split-window -v -l 12 "tmux pipe-pane -t '\${CAM_CONFIG_PANE}' -o '${buildConfigLogCapCommand('${CAM_CONFIG_LOG}')}'; tail -f \${CAM_CONFIG_LOG}" ;;
+			v|V) tmux split-window -v -l 12 "tmux pipe-pane -t '\${CAM_CONFIG_PANE}' -o '${deferCommandSubstitution(buildConfigLogCapCommand('${CAM_CONFIG_LOG}'))}'; tail -f \${CAM_CONFIG_LOG}" ;;
 			q|Q) exit 0 ;;
 		esac
 		# Poll for DONE in the config pane's full scrollback.
