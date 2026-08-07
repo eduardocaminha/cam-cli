@@ -53,7 +53,7 @@
       "id": "US-R1-005",
       "title": "WARNING: The EXIT-trap cleanup races the cap's rotate, so AC8's 'removed on men…",
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "description": "WARNING [src/commands/setup.ts:491]: The EXIT-trap cleanup races the cap's rotate, so AC8's 'removed on menu exit with no residue' can fail. buildConfigLogCleanupCommand runs 'tmux pipe-pane -t $PANE; rm -f $CAM_CONFIG_LOG' and returns immediately, while the piped shell is concurrently finishing 'tail -c N LOG > LOG.tmp && mv LOG.tmp LOG'. If the mv lands after the rm, the log file is recreated after cleanup and survives the menu exit (a LOG.tmp can also be left behind). The two halves are only ever tested in isolation (test/setup-config-log.test.ts:71-137), never composed, so the gate cannot catch it. Sequence the teardown (wait for the pipe to drain, or remove after the rotate) instead of firing both concurrently.",
       "notes": "WARNING [src/commands/setup.ts:491]: The EXIT-trap cleanup races the cap's rotate, so AC8's 'removed on menu exit with no residue' can fail. buildConfigLogCleanupCommand runs 'tmux pipe-pane -t $PANE; rm -f $CAM_CONFIG_LOG' and returns immediately, while the piped shell is concurrently finishing 'tail -c N LOG > LOG.tmp && mv LOG.tmp LOG'. If the mv lands after the rm, the log file is recreated after cleanup and survives the menu exit (a LOG.tmp can also be left behind). The two halves are only ever tested in isolation (test/setup-config-log.test.ts:71-137), never composed, so the gate cannot catch it. Sequence the teardown (wait for the pipe to drain, or remove after the rotate) instead of firing both concurrently."
     },
