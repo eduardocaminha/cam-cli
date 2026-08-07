@@ -61,7 +61,7 @@
       "id": "US-R2-006",
       "title": "WARNING: The log path is interpolated unquoted throughout the cap snippet (`cat…",
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "description": "WARNING [src/commands/setup.ts:488]: The log path is interpolated unquoted throughout the cap snippet (`cat ${LOG}.chunk >> ${LOG}`, `tail -c N ${LOG} > ${LOG}.tmp`, `mv ${LOG}.tmp ${LOG}`, `rm -f ${LOG}.chunk ${LOG}.lock`) and in `tail -f ${CAM_CONFIG_LOG}` on the v|V line (:624), while buildConfigLogCleanupCommand correctly quotes every expansion (`\"$CAM_CONFIG_LOG\"`). Since the path derives from ${TMPDIR:-/tmp}, a TMPDIR containing a space word-splits and the writer silently appends to the wrong paths. Mechanical fix: quote the expansions in the cap builder the same way the cleanup builder already does.",
       "notes": "WARNING [src/commands/setup.ts:488]: The log path is interpolated unquoted throughout the cap snippet (`cat ${LOG}.chunk >> ${LOG}`, `tail -c N ${LOG} > ${LOG}.tmp`, `mv ${LOG}.tmp ${LOG}`, `rm -f ${LOG}.chunk ${LOG}.lock`) and in `tail -f ${CAM_CONFIG_LOG}` on the v|V line (:624), while buildConfigLogCleanupCommand correctly quotes every expansion (`\"$CAM_CONFIG_LOG\"`). Since the path derives from ${TMPDIR:-/tmp}, a TMPDIR containing a space word-splits and the writer silently appends to the wrong paths. Mechanical fix: quote the expansions in the cap builder the same way the cleanup builder already does."
     },
