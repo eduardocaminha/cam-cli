@@ -2,10 +2,10 @@
 # install.sh — curl-able installer for gateship
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/eduardocaminha/cam-cli/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/gateship-dev/gateship/main/install.sh | bash
 #
 # Detects the caller's os/arch, downloads the matching asset from the latest
-# GitHub Release (https://github.com/eduardocaminha/cam-cli/releases/download/<tag>/<asset>),
+# GitHub Release (https://github.com/gateship-dev/gateship/releases/download/<tag>/<asset>),
 # and installs it under two names, `gateship` and `gship`, into
 # $HOME/.local/bin by default (override with GATESHIP_INSTALL_DIR).
 #
@@ -38,7 +38,7 @@
 # See ADR-0058 and CONTEXT.md ("staged install temp", "atomic install swap").
 set -euo pipefail
 
-REPO="eduardocaminha/cam-cli"
+REPO="gateship-dev/gateship"
 INSTALL_DIR="${GATESHIP_INSTALL_DIR:-${HOME}/.local/bin}"
 
 # --- Detect os/arch, map to one of the four published assets ----------------

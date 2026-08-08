@@ -101,7 +101,7 @@ function WordmarkRow({ row }: { row: string }): ReactElement {
 
 export function Splash({
 	version,
-	url = 'eduardocaminha/cam-cli',
+	url = 'gateship-dev/gateship',
 	tagline = DEFAULT_TAGLINE,
 }: SplashProps): ReactElement {
 	return (

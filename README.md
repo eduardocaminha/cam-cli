@@ -34,12 +34,12 @@ Built on Bun + TypeScript. Distributed as a single-file binary built from source
 One command, no clone or Bun toolchain required:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/eduardocaminha/cam-cli/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/gateship-dev/gateship/main/install.sh | bash
 ```
 
 This detects your OS/arch, downloads the matching asset from the latest
 GitHub Release
-(`https://github.com/eduardocaminha/cam-cli/releases/download/<tag>/<asset>`,
+(`https://github.com/gateship-dev/gateship/releases/download/<tag>/<asset>`,
 one of `gateship-darwin-arm64`, `gateship-darwin-x64`, `gateship-linux-x64`,
 `gateship-linux-arm64`), and installs it as both `gateship` and `gship` into
 `~/.local/bin` (override with `GATESHIP_INSTALL_DIR`). It is additive: it
@@ -92,8 +92,8 @@ file alongside it. To reproduce the automatic check by hand against a
 binary you already downloaded:
 
 ```bash
-curl -fsSLO https://github.com/eduardocaminha/cam-cli/releases/download/<tag>/gateship-darwin-arm64
-curl -fsSLO https://github.com/eduardocaminha/cam-cli/releases/download/<tag>/SHA256SUMS.txt
+curl -fsSLO https://github.com/gateship-dev/gateship/releases/download/<tag>/gateship-darwin-arm64
+curl -fsSLO https://github.com/gateship-dev/gateship/releases/download/<tag>/SHA256SUMS.txt
 grep " gateship-darwin-arm64" SHA256SUMS.txt | shasum -a 256 -c -
 ```
 
@@ -109,7 +109,7 @@ requires the `gh` CLI, listed as optional in
 system):
 
 ```bash
-gh attestation verify gateship-darwin-arm64 --repo eduardocaminha/cam-cli
+gh attestation verify gateship-darwin-arm64 --repo gateship-dev/gateship
 ```
 
 Every published asset (`gateship-darwin-arm64`, `gateship-darwin-x64`,
@@ -125,7 +125,7 @@ install `gh` to get it.
 
 ```bash
 # 1. Clone
-git clone https://github.com/eduardocaminha/cam-cli.git
+git clone https://github.com/gateship-dev/gateship.git
 cd cam-cli
 
 # 2. Install dependencies
@@ -158,7 +158,7 @@ sudo cp dist/gateship-darwin-arm64 /usr/local/bin/gateship
 Useful while iterating on `cam` itself or on a non-darwin-arm64 machine:
 
 ```bash
-git clone https://github.com/eduardocaminha/cam-cli.git
+git clone https://github.com/gateship-dev/gateship.git
 cd cam-cli
 bun install
 

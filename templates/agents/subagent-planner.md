@@ -108,7 +108,7 @@ When the task prompt contains a specific target issue id — for example "Plan i
 Steps when a target issue id is present:
 
 1. Parse the prefix and numeric suffix from the target issue id (e.g. `CAM-157` -> prefix `CAM`, numeric suffix `157`).
-2. Zero-pad the suffix to 4 digits and read `scripts/cam/issues/<prefix>-<NNNN>.json` (e.g. `scripts/cam/issues/CAM-0157.json`). This is the issue file to plan.
+2. Zero-pad the suffix to 4 digits and read `scripts/cam/issues/<prefix>-<NNNN>.json` (e.g. `CAM-157` -> `CAM-0157`). This is the issue file to plan.
 3. Use that issue as the sole scope — do not pick a different issue regardless of priority order.
 4. Set `issueNumber` in the output PRD to the **numeric suffix as a JSON number** (e.g. `157`, not `"CAM-157"`). The ship-finalize step validates `typeof issueNumber === 'number'`.
 
