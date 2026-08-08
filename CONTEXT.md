@@ -547,3 +547,18 @@ Oraculo que prova a existencia de uma mudanca ainda inexistente na base. Precisa
 
 **condicao de carga declarada**:
 Condicao de contencao especificada de forma explicita e reproduzivel sob a qual um criterio sensivel a tempo e avaliado. Substitui a mencao vaga a contencao, que nao e verificavel porque a carga de uma maquina varia por causas exogenas.
+
+**worker headless**:
+Sessao de worker executada como processo filho nao interativo, via `claude --print` com entrada e saida em stream-json, sem painel de tmux e sem terminal alocado. Contrasta com o worker TUI, que vive num painel de tmux criado por respawn-pane e e observado pelo supervisor atraves da vitalidade desse painel.
+
+**stream-json**:
+Formato de entrada e saida do Claude Code CLI em que cada linha do fluxo e um envelope JSON completo. O vocabulario observado em medicao real de 2026-08-08 foi system (subtype init), rate_limit_event, assistant e result. O custo acumulado da sessao sai no campo total_cost_usd do envelope result. Eventos parciais (stream_event) so aparecem sob a flag --include-partial-messages, que o projeto nao usa.
+
+**recorte de invariante**:
+Forma de mudar uma invariante do projeto em que a regra original continua valendo integralmente no escopo onde foi medida, e um escopo novo nasce explicitamente isento, com a isencao nomeada e fundamentada. Distingue-se de aposentar a invariante, que a derruba em todos os escopos de uma vez. O recorte e preferido quando o escopo novo ainda nao foi provado em producao.
+
+**seam de dispatch**:
+Ponto unico onde o supervisor decide como um worker sera executado, antes de montar qualquer argumento de linha de comando. No codigo atual esse ponto e a resolucao de worker_isolation em src/supervisor/host.ts, uma leitura unica cujo resultado e passado adiante. Nao confundir com BackendAdapter, que decide qual binario e quais flags (claude ou codex) e cujo contrato ja fixa respawn-pane como destino.
+
+**log append-only por dispatch**:
+Arquivo em disco, um por invocacao de worker, que recebe a saida do modelo conforme ela chega e nunca e reescrito nem truncado. Substitui, para o worker headless, a funcao de observabilidade que o painel de tmux exercia por acidente no worker TUI, e e o material que uma superficie web posterior consome.
