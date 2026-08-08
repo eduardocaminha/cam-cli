@@ -1,0 +1,10 @@
+{
+  "id": "CAM-517",
+  "title": "Main vermelha passa despercebida: ninguem le a CI da main e a rajada de commits cancela a corrida do commit culpado",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-08T13:18:02.190Z",
+  "updatedAt": "2026-08-08T13:18:02.190Z",
+  "description": "A main ficou vermelha por 12 horas e 7 corridas de CI (39c18192, 29820055, 7bbeea11, 584e46b3, a46de6b5, fd0dcf98) sem que nada sinalizasse. Todas falhavam no mesmo teste, validate-agents-md.test.ts 'the shipped tree resolves clean', quebrado pela poda 8a65239f que apagou scripts/cam/issues/CAM-0157.json enquanto .claude/agents/subagent-planner.md:111 ainda o citava. O sinal existia o tempo todo: .github/workflows/ci.yml roda em push para main. Dois mecanismos se somam. Primeiro, o harness empurra commits de housekeeping para main em rajada (specify, journal, cycle-metrics em segundos de intervalo) e o bloco concurrency cancela as corridas em voo, entao a corrida do proprio commit culpado nunca completa e o vermelho so aparece no commit seguinte, deslocado da causa. Segundo, nada le esse resultado: o boot do orquestrador le seis arquivos de marker e nenhum deles e o estado da CI da main, e o sidecar tambem nao consulta. A descoberta so aconteceu porque um direct-fix nao relacionado rodou check:all num worktree limpo, o que e sorte e nao processo. Enquanto o detector nao existir, o proximo defeito na main depende da mesma sorte. Escopo a decidir na spec: se a correcao e surfacing no boot do orquestrador, um marker durable escrito por quem observa a CI, ajuste do concurrency para nao cancelar corridas de main, ou combinacao."
+}
