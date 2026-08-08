@@ -39,7 +39,7 @@ describe('Splash', () => {
 		expect(frame).toContain('Autonomous Claude Code loop');
 		expect(frame).toContain('powered by your subscription');
 		expect(frame).toContain('v9.9.9');
-		expect(frame).toContain('eduardocaminha/cam-cli');
+		expect(frame).toContain('gateship-dev/gateship');
 
 		unmount();
 	});

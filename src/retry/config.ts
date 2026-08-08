@@ -28,7 +28,7 @@ export const DEFAULT_CONFIG: RetryConfig = {
 };
 
 const DEFAULT_TOML = `# Gateship retry configuration
-# See https://github.com/eduardocaminha/cam-cli for docs
+# See https://github.com/gateship-dev/gateship for docs
 
 maxRetries = 5
 pollIntervalSeconds = 5
