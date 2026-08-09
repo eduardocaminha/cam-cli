@@ -1,0 +1,28 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Build the headless child argv array and its explicit credential/env policy"
+  },
+  "branchName": "cam/issue-516",
+  "timestamp": "2026-08-09T00:00:00Z",
+  "createdFiles": [
+    "src/supervisor/headless-argv.ts",
+    "test/supervisor/headless-argv.test.ts"
+  ],
+  "modifiedFiles": [
+    "scripts/cam/patterns.md"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "headless-argv.ts exports buildHeadlessChildInvocation({ model?, sourceEnv }) -> { argv: string[], env }. It is a standalone module, NOT a BackendAdapter method (GOTCHA C respected). argv is exactly ['claude','--print','--input-format','stream-json','--output-format','stream-json','--verbose'] plus optional '--model <slug>'; no --resume/--include-partial-messages/--bare. env strips WORKER_ENV_UNSET + HOST_ONLY_ENV_UNSET (both re-exported/imported from backend-adapter.ts, not re-listed) plus ANTHROPIC_API_KEY (new export ANTHROPIC_API_KEY_ENV_UNSET). US-002 (stream-json parser + per-dispatch log) and US-003 (real Bun.spawn dispatch runner) are the natural next consumers of this builder's { argv, env } shape -- US-003's notes already pin Bun.spawn's terminal-option-omitted / stdin FileSink / proc.exited / timeout+killSignal shape, confirmed again in this story's Step 5.5 re-fetch of https://code.claude.com/docs/en/headless and https://code.claude.com/docs/en/cli-reference (both re-confirm the flag semantics used here, including that --input-format stream-json is a real flag accepting text|stream-json).",
+  "officialDocsValidated": [
+    {
+      "lib": "Claude Code CLI (headless / -p mode, --input-format/--output-format stream-json, --bare, --resume)",
+      "channel": "WebFetch",
+      "url": "https://code.claude.com/docs/en/headless",
+      "fetchedAt": "2026-08-09T00:00:00Z",
+      "status": "aligned",
+      "summary": "Re-fetched to confirm the exact flag set headless-argv.ts emits. Confirms --print/-p, --output-format stream-json, --verbose. Confirms --bare 'never reads OAuth credentials or the system keychain' and requires ANTHROPIC_API_KEY -- matches this story's refusal of --bare and its ANTHROPIC_API_KEY strip. Confirms --resume takes a session ID to continue a prior conversation (unused here, GOTCHA G). A second targeted fetch against https://code.claude.com/docs/en/cli-reference confirmed --input-format is a real flag accepting text|stream-json (not directly enumerated on the headless page's own prose, but present in the CLI reference)."
+    }
+  ],
+  "appliedPatternIds": []
+}
