@@ -1283,6 +1283,38 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			let paneText = '';
 
 			if (opts.headless === true) {
+				// US-006 (CAM-516): fail closed BEFORE any dispatch when headless
+				// meets container isolation. Checked first in this branch (ahead of
+				// the headlessDispatchFn-undefined throw below) so a container-mode
+				// test never needs to wire a fake dispatch fn just to prove it is
+				// unreachable. GOTCHA F: the tmux branch's dispatchCmd would wrap
+				// through `dockerExecWrap` (docker-exec.ts:34), which passes `-it` and
+				// allocates a TTY headless must not have; ADR-0059 also records the
+				// container + env-token credential combination as unmeasured. Mirrors
+				// the container-not-ready fail-closed shape verbatim (same lastOutcome
+				// / finishTerminal('blocked') / return shape as the preflight block
+				// below) rather than inventing a new terminal shape.
+				if (workerIsolation === 'container') {
+					const containerReason = `headless-container-unsupported: headless dispatch does not support workerIsolation === 'container' (advisory ${advisoryStoryId ?? 'unknown'})`;
+					lastOutcome = { kind: 'blocked', storyId: undefined, detail: containerReason };
+					iterations++;
+					removeImplementerTaskPrompt(uuid);
+					if (opts.escalateFn !== undefined) {
+						const escalateFn = opts.escalateFn;
+						void (async () => {
+							try {
+								await escalateFn();
+							} catch (e) {
+								process.stderr.write(
+									`[cam] escalateFn error (swallowed): ${e instanceof Error ? e.message : String(e)}\n`,
+								);
+							}
+						})();
+					}
+					finishTerminal('blocked');
+					return { status: 'blocked', iterations, lastOutcome };
+				}
+
 				const headlessDispatchFn = opts.headlessDispatchFn;
 				if (headlessDispatchFn === undefined) {
 					throw new Error(
