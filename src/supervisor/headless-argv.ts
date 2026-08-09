@@ -130,7 +130,7 @@ function buildHeadlessArgv(model: string | undefined, agentName: string, permiss
 /**
  * Strip the headless child's env down to an explicit, declared credential
  * policy instead of letting it inherit whatever the parent process happens
- * to carry:
+ * to carry, and set the worker-actor marker:
  *
  *   1. WORKER_ENV_UNSET (backend-adapter.ts): the CAM-43 nesting-detection
  *      vars, so a headless child spawned from a claude-nested process still
@@ -151,6 +151,19 @@ function buildHeadlessArgv(model: string | undefined, agentName: string, permiss
  *      login this repo requires (CAM-42), which is also why `--bare` (which
  *      expects this exact var) is refused above. Stripping it here makes the
  *      credential choice declared rather than accidentally inherited.
+ *   4. CAM_WORKER=1 (WORKER_ACTOR_ENV, backend-adapter.ts, US-002/CAM-63):
+ *      the SOLE discriminator `.claude/hooks/orch-agent-allowlist.sh` uses to
+ *      distinguish an implementer-worker Write/Edit/MultiEdit from a
+ *      planner/orchestrator one and deny the former on
+ *      `scripts/cam/prd.json` / `scripts/cam/issues/*` (ADR-0035
+ *      supervisor-sole-writer, CAM-63/CAM-166). The headless child inherits
+ *      CAM_SESSION from the sidecar (nothing here unsets it) but this repo
+ *      never set CAM_WORKER on the headless path (CRITICAL bug, US-R1-003):
+ *      without it the write-guard was silently disabled and a headless
+ *      worker could self-flip `passes: true`. Set directly here (mirroring
+ *      the literal `-e CAM_WORKER=1` in `worker-container.ts`'s
+ *      `buildDockerRunArgv`) rather than parsing the shell-fragment constant
+ *      `WORKER_ACTOR_ENV` apart into a key/value pair.
  */
 function stripHeadlessChildEnv(sourceEnv: Record<string, string | undefined>): Record<string, string | undefined> {
 	const env = { ...sourceEnv };
@@ -161,6 +174,7 @@ function stripHeadlessChildEnv(sourceEnv: Record<string, string | undefined>): R
 		delete env[key];
 	}
 	delete env[ANTHROPIC_API_KEY_ENV_UNSET];
+	env.CAM_WORKER = '1';
 	return env;
 }
 

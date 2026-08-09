@@ -16,6 +16,10 @@
 //      caller-supplied value (CRITICAL regression fix, US-R1-002): without
 //      it the headless docs' "Auto-approve tools" abort rule applies and a
 //      real dispatch could never write a file.
+//   5. CAM_WORKER=1 is always set in the returned env (CRITICAL regression
+//      fix, US-R1-003): without it, `orch-agent-allowlist.sh`'s worker-actor
+//      write-guard on scripts/cam/prd.json / scripts/cam/issues/* is
+//      silently disabled for a headless worker.
 
 import { describe, expect, test } from 'bun:test';
 import { DEFAULT_IMPLEMENTER_AGENT, HOST_ONLY_ENV_UNSET, WORKER_ENV_UNSET } from '../../src/supervisor/backend-adapter.ts';
@@ -131,6 +135,11 @@ describe('buildHeadlessChildInvocation', () => {
 		// Unrelated vars survive the strip.
 		expect(env.PATH).toBe('/usr/bin');
 		expect(env.HOME).toBe('/home/op');
+	});
+
+	test('sets CAM_WORKER=1 in the returned env (US-R1-003 regression)', () => {
+		const { env } = buildHeadlessChildInvocation({ sourceEnv: {}, agentName: TEST_AGENT_NAME, permissionMode: TEST_PERMISSION_MODE });
+		expect(env.CAM_WORKER).toBe('1');
 	});
 
 	test('env policy does not mutate the source env', () => {
