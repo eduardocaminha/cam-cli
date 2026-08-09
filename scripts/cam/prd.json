@@ -145,7 +145,7 @@
         "Tests pass (bun test). [oracle: bun test] [species: invariance pin; GREEN on main @3afb0913 2026-08-09 EXIT=0, measured inside `bun run check:all`]"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "SCOPE HONESTY, repeated from the PRD description because this is the story that looks like it closes the central oracle and does not: the fixture executable stands in for the model, so this story proves the SEAM plus the git wire, and leaves UNPROVEN (a) one real `claude --print --input-format stream-json --output-format stream-json --verbose` dispatch and (b) the before/after Anthropic console metering the issue names as ORACULO CENTRAL. Both are an operator ceremony to be filed via /cam-issue on main; do not mark them satisfied, do not create the follow-up issue file on this branch (an on-branch `scripts/cam/issues/CAM-XXXX.json` collides add/add at reconcile, the CAM-162 defect). Precedents to copy for the real-git harness: `test/integration/commit-exists-real-git.test.ts`, `test/integration/finalize-story-real-git.test.ts`, `test/integration/issue-dir-real-git.test.ts`. Use `test/helpers/test-tmpdir` (check:all enforces it) and `waitForCondition` for any async wait (check:all enforces no bare sleeps)."
     },
