@@ -220,7 +220,7 @@ cam init [options]          Validate the machine, then run the project-setup wiz
 cam config [--show]         Interactive wizard to set model per phase and backend
 cam run  [options]          Open or attach the single per-project session (2-pane layout)
 cam plan [<N>]              Open a planning pane in the project session (thin launcher)
-cam next [options]          Trigger the sidecar loop (flips active:true, thin-proxy)
+cam next [--headless]       Trigger the sidecar loop (flips active:true, thin-proxy)
 cam issue "<text>"          Open an issue-creation pane in the project session (thin launcher)
 cam spec <id>               Deep-spec an idea issue into stage:specified via spec-with-docs (thin-proxy)
 cam review                  Dispatch /cam-review to the live orchestrator (or bootstrap first)
@@ -243,6 +243,12 @@ cam help                    Show top-level help
 Run `cam <command> --help` for command-specific options. Permission mode
 for spawned claude sessions is hardcoded to `bypassPermissions` at every
 spawn site; no config key or CLI flag controls it.
+
+`cam next --headless` (CAM-516, ADR-0059) opts the implementer worker into a
+`claude -p`/stream-json dispatch for that one invocation only, instead of the
+default interactive TUI `claude` session; it is never persisted by config and
+never sticky across a call that omits it. See "Recent changes" for the
+measurement that exempted it from the CAM-42 `claude -p` prohibition.
 
 ### Single project session
 
@@ -379,7 +385,7 @@ sidecar (background process, spawned by cam run)
               sidecar reads report, emits: "[cam] US-XXX DONE: ..." to orchestrator pane
 ```
 
-Workers (implementer, reviewer) are interactive TUI `claude` sessions invoked with `--agent <name>`. On completion, the worker writes `scripts/cam/worker-report.json` (structured outcome). The sidecar polls for the report file, then emits the `[cam]` narration line to the orchestrator pane via its own `notifyOrchestrator` seam. Scrollback polling is not used for completion detection. The old stop-hook driver (a vendored Stop hook + `/cam-next` re-inject) is retired; `claude -p` (print mode) is not used for workers.
+Workers (implementer, reviewer) are interactive TUI `claude` sessions invoked with `--agent <name>` by default. On completion, the worker writes `scripts/cam/worker-report.json` (structured outcome). The sidecar polls for the report file, then emits the `[cam]` narration line to the orchestrator pane via its own `notifyOrchestrator` seam. Scrollback polling is not used for completion detection. The old stop-hook driver (a vendored Stop hook + `/cam-next` re-inject) is retired; `claude -p` (print mode) is not used for workers except through the explicit `cam next --headless` opt-in (CAM-516, ADR-0059), which is never persisted and never sticky across a call that omits it.
 
 Workers always run in the **titled 3rd pane** (created on first dispatch, reused across stories via `respawn-pane -k`). A mutex check before each dispatch prevents concurrent workers: if 3 panes are already present, the dispatch is refused until the worker-pane closes.
 
@@ -416,7 +422,7 @@ reach regardless of this setting.
 ## Recent changes
 
 - **Single-hub dispatch (CAM-55)**: `cam run` is the only dispatch hub. `cam plan`, `cam issue`, `cam spec`, `cam review`, and `cam ship` are send-keys thin-proxies that inject slash commands into the orchestrator pane; `cam next` is a pure `active:true` sidecar trigger (no send-keys). Workers run in a uniform titled 3rd pane; completion is push-based (worker writes `scripts/cam/worker-report.json`; the sidecar reads it and emits the `[cam]` narration line to the orchestrator pane). A mutex prevents concurrent worker dispatches (3 panes = busy). The idle-guarantee (`sendKeysWhenIdle`) ensures the orchestrator is not mid-response when slash commands are injected.
-- **Interactive TUI workers (CAM-42)**: `cam next` dispatches workers as interactive TUI `claude` sessions (not `claude -p`). `claude -p` is reserved for the `cam claude` retry-wrapper feature only.
+- **Interactive TUI workers by default, headless opt-in (CAM-42, recortada by ADR-0059/CAM-516)**: `cam next` dispatches workers as interactive TUI `claude` sessions (not `claude -p`) by default. `claude -p` remains banned for the tmux worker path and for the `cam claude` retry-wrapper's own auth preflight. The one exemption is `cam next --headless`: a pure per-invocation flag (never persisted by config, never sticky across a call that omits it) that opts the implementer worker into a `claude -p`/stream-json dispatch instead, born exempt because a 2026-08-08 measurement (ADR-0059) found it left console API consumption unchanged and reported a subscription-window `rate_limit_event`, not a per-use charge.
 - **Single per-project session**: `cam run` now creates one tmux session per
   project with a 2-pane layout (orchestrator + navigable dashboard). The navigable
   dashboard replaces the old interactive menu: n/r/s/p/i dispatch /cam-* to the
