@@ -68,6 +68,24 @@ let initialized = false;
 const createdByThisProcess: string[] = [];
 
 /**
+ * The prune below owns only the scratch directories this helper itself
+ * creates, and those are never dot-prefixed (`cam-test-*`, and
+ * `cam-check-all-inprocess-bare-*` from the in-process check-all runs). A
+ * dot-prefixed entry therefore always belongs to some other mechanism, so the
+ * prune must leave it alone regardless of age (CAM-519): the concrete case is
+ * `SCRATCH_ROOT`'s own `.git` fence, which `ensureScratchRootIsAGitRepo`
+ * installs and the prune used to delete once it aged past `STALE_AGE_MS`,
+ * unfencing the whole suite for the rest of the process (the fence is created
+ * before `initialized` flips, so nothing rebuilt it). Skipping by "is this a
+ * dotfile" rather than by "is this name `.git`" keeps any future sentinel
+ * planted in this directory safe too, without requiring an allowlist of every
+ * scratch prefix the suite might grow.
+ */
+function isPruneCandidate(entry: string): boolean {
+	return !entry.startsWith('.');
+}
+
+/**
  * Bounded, failure-tolerant sweep of `SCRATCH_ROOT`'s own direct children
  * (never `$TMPDIR`, GOTCHA 12: enumerating the shared temp dir blew
  * 30-120s timeouts). Removes leftovers from a prior process that never
@@ -82,6 +100,7 @@ function pruneStaleSiblings(): void {
 	}
 	const now = Date.now();
 	for (const entry of entries) {
+		if (!isPruneCandidate(entry)) continue;
 		const entryPath = join(SCRATCH_ROOT, entry);
 		try {
 			const info = statSync(entryPath);

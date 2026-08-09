@@ -6,7 +6,7 @@
 // own working tree, and directories created in a child process are reaped
 // when that process exits.
 
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, realpathSync, utimesSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 // `tmpdir()` is imported ONLY as a comparand below (never as `join(tmpdir(),
 // ...)`, per GOTCHA 8 -- a future tree-wide oracle keys on that exact
@@ -105,6 +105,48 @@ describe('createTestTmpdir', () => {
 			const toplevel = realpathSync(stdout);
 			expect(toplevel).toBe(realpathSync(SCRATCH_ROOT));
 			expect(toplevel).not.toBe(realpathSync(REPO_ROOT));
+		},
+	);
+
+	test.skipIf(!gitAvailable)(
+		'the stale prune never removes the scratch root\'s own git fence, even once that fence is older than the stale age (CAM-519)',
+		async () => {
+			// The prune runs once per process, guarded by the helper's `initialized`
+			// flag, so it cannot be re-triggered inside this already-initialized
+			// runner process: the observation has to happen in a child with fresh
+			// module state. `bun -e` is that child (same shape as the exit-hook test
+			// below).
+			const fence = join(SCRATCH_ROOT, '.git');
+			if (!existsSync(fence)) {
+				Bun.spawnSync(['git', 'init', '-q', SCRATCH_ROOT], { stdout: 'ignore', stderr: 'ignore' });
+			}
+			// Backdating the fence past the helper's stale age is what makes this
+			// deterministic: the defect only fires once the fence has aged past that
+			// threshold untouched, which is why it went unnoticed for so long (a
+			// fresh checkout, and therefore CI, always starts with a zero-age fence).
+			const longAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+			utimesSync(fence, longAgo, longAgo);
+			const helperPath = join(import.meta.dir, 'test-tmpdir.ts');
+			try {
+				const proc = Bun.spawn(
+					['bun', '-e', `import { createTestTmpdir } from '${helperPath}'; createTestTmpdir('cam-test-fence-');`],
+					{ cwd: REPO_ROOT, stdout: 'pipe', stderr: 'pipe' },
+				);
+				const [exitCode, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
+				expect(exitCode).toBe(0);
+				expect(stderr).toBe('');
+
+				expect(existsSync(fence)).toBe(true);
+			} finally {
+				// Never leave the shared fence aged (or, under a regression, missing)
+				// for the rest of the run: the fence is what keeps every other test's
+				// git subprocess out of cam-cli's own working tree.
+				if (!existsSync(fence)) {
+					Bun.spawnSync(['git', 'init', '-q', SCRATCH_ROOT], { stdout: 'ignore', stderr: 'ignore' });
+				}
+				const now = new Date();
+				utimesSync(fence, now, now);
+			}
 		},
 	);
 
