@@ -58,7 +58,7 @@
       "id": "US-R1-004",
       "title": "WARNING: README is now stale and contradicts the shipped behavior: 'Interactive…",
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "description": "WARNING [README.md:419]: README is now stale and contradicts the shipped behavior: 'Interactive TUI workers (CAM-42): `cam next` dispatches workers as interactive TUI `claude` sessions (not `claude -p`). `claude -p` is reserved for the `cam claude` retry-wrapper feature only.' The recorte was written into scripts/cam/CLAUDE.md and src/commands/run-auth-preflight.ts but not here, and the new `--headless` flag is undocumented in the `cam next [options]` command list (README.md:223). Doc-maintenance rule: README must be updated when a command flag changes.",
       "notes": "WARNING [README.md:419]: README is now stale and contradicts the shipped behavior: 'Interactive TUI workers (CAM-42): `cam next` dispatches workers as interactive TUI `claude` sessions (not `claude -p`). `claude -p` is reserved for the `cam claude` retry-wrapper feature only.' The recorte was written into scripts/cam/CLAUDE.md and src/commands/run-auth-preflight.ts but not here, and the new `--headless` flag is undocumented in the `cam next [options]` command list (README.md:223). Doc-maintenance rule: README must be updated when a command flag changes."
     },
