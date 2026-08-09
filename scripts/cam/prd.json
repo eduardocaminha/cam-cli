@@ -59,7 +59,7 @@
         "Tests pass (bun test). [oracle: bun test] [species: invariance pin; GREEN on main @3afb0913 2026-08-09 EXIT=0, measured inside `bun run check:all`]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New files: `src/supervisor/headless-stream.ts`, `src/supervisor/headless-log.ts`, `test/supervisor/headless-stream.test.ts`, `test/supervisor/headless-log.test.ts`. Put the dispatch logs under `.claude/` next to the other supervisor-owned artifacts (`.claude/cam-worker-events.jsonl` is the precedent for append-only supervisor observability; see patterns.md `Single-source outcome contract and 5-concern model`, CAM-77) and confirm the chosen path is gitignored. patterns.md allows the deliberate synchronous point-read/append idiom (`appendFileSync`) where forcing callers async would cascade; the curated invariants block in scripts/cam/CLAUDE.md states this exception, so an `appendFileSync` writer here is sanctioned, not a Bun-only violation. Tests must hit a real tmpdir via `test/helpers/test-tmpdir` (check:all enforces `check-test-tmpdir.ts`)."
     },
