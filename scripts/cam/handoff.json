@@ -1,31 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Parse the stream-json event vocabulary and persist an append-only per-dispatch log"
+    "id": "US-003",
+    "title": "Run one headless dispatch against a real child process with no TTY and an idle budget"
   },
   "branchName": "cam/issue-516",
   "timestamp": "2026-08-09T00:00:00Z",
   "createdFiles": [
-    "src/supervisor/headless-stream.ts",
-    "src/supervisor/headless-log.ts",
-    "test/supervisor/headless-stream.test.ts",
-    "test/supervisor/headless-log.test.ts"
+    "src/supervisor/headless-dispatch.ts",
+    "test/supervisor/headless-dispatch.test.ts",
+    "test/fixtures/headless/fixture-child.ts"
   ],
-  "modifiedFiles": [
-    ".gitignore",
-    "templates/.gitignore",
-    "src/vendor/_generated.ts"
-  ],
+  "modifiedFiles": [],
   "openQuestions": [],
-  "nextStoryContext": "headless-stream.ts exports classifyHeadlessStreamLine(line: string): HeadlessStreamEvent, a discriminated union keyed by `kind`: 'system' (carries subtype, e.g. 'init'), 'rate_limit_event', 'assistant', 'user', 'result' (carries totalCostUsd read from total_cost_usd, undefined when absent/non-numeric), 'stream_event' (its own explicit branch, deliberately ignored, GOTCHA H), and 'malformed' (carries a reason: 'invalid-json' | 'not-an-object' | 'unrecognized-type', raw preserved where available). Never throws. headless-log.ts exports headlessDispatchLogPath(claudeDir, uuid) and openHeadlessDispatchLog(claudeDir, uuid) -> { path, appendLine(line) }: appendLine does appendFileSync(path, line + '\\n') against a real fs path, creating claudeDir via mkdirSync if needed. Opening a second writer against the same uuid is safe (append-only, never truncates) -- this is the exact shape US-003's headless-dispatch.ts needs to consume the NDJSON stdout stream line-by-line through classifyHeadlessStreamLine and append every raw line verbatim through openHeadlessDispatchLog(claudeDir, dispatchUuid).appendLine, then resolve the dispatch outcome from the LAST 'result' event's totalCostUsd. Log files live at .claude/cam-headless-dispatch-<uuid>.jsonl, gitignored via a new glob entry added to both .gitignore and templates/.gitignore (embed-vendor re-run, embed-vendor:check clean). Precedent worth knowing: src/supervisor/events.ts's makeFileEventLogger is the existing appendFileSync-based file-logger precedent this module's writer mirrors; src/supervisor/early-death.ts's extractLastAssistantEntry is the existing 'skip malformed JSON, never throw' precedent this module's classifier mirrors.",
+  "nextStoryContext": "headless-dispatch.ts exports runHeadlessDispatch(opts: RunHeadlessDispatchOptions): Promise<HeadlessDispatchOutcome>. Options: { argv, env, cwd?, inputMessage, log: HeadlessDispatchLogWriter (US-002's openHeadlessDispatchLog(...) return value), idleBudgetMs? }. It spawns via Bun.spawn({ cmd: argv, env, stdin:'pipe', stdout:'pipe', stderr:'ignore' }) -- NEVER `terminal` (that is the whole no-TTY contract, GOTCHA F). Writes inputMessage (newline-terminated) to the stdin FileSink then calls .end() -- this is a SINGLE-TURN dispatch: the child only starts emitting once it sees EOF on stdin (matches the fixture's `stdin.on('end', ...)` gating, which future stories reusing this fixture must respect). Consumes stdout line-by-line through classifyHeadlessStreamLine (US-002) and appends every raw line verbatim via log.appendLine (US-002), tracking the LAST 'result' event's totalCostUsd. Outcome is a discriminated union: { kind:'completed', exitCode, totalCostUsd } when the child's own stdout stream ends (EOF), or { kind:'idle-timeout', totalCostUsd } when DEFAULT_HEADLESS_IDLE_BUDGET_MS (45 min, Warren precedent, GOTCHA E) -- or the injected idleBudgetMs -- elapses since the last received chunk with no EOF; on idle-timeout the child is killed with SIGTERM and proc.exited is awaited before returning. Completion is NEVER a pane probe (GOTCHA E): no isPaneAlive call anywhere in this module, which is exactly what US-005 (the loop.ts:1433 pane-liveness branch, injected isPaneAlive that THROWS when called) will assert against once this dispatch function is wired into the route. Bun API gotcha worth knowing for any future consumer: `ReturnType<Subprocess['stdout']['getReader']>` resolves the WRONG (last, BYOB-shadowed) overload under this repo's dom-less tsconfig -- always derive the reader type by calling `.getReader()` with zero args inside a small wrapper function and taking `ReturnType<typeof thatWrapper>` instead (see getDefaultStdoutReader in headless-dispatch.ts). Fixture gotcha: a child process with no pending timer/handle exits naturally (exit 0) the instant its stdin 'end' handler returns, even with a `process.on('SIGTERM', ...)` listener registered -- test/fixtures/headless/fixture-child.ts's 'idle' mode needs an explicit `setInterval(() => {}, 1_000_000)` after its one emitted event to stay alive until the parent's SIGTERM actually arrives; any new fixture that must 'hang' needs the same pending-handle trick.",
   "officialDocsValidated": [
     {
-      "lib": "Claude Code CLI (--output-format stream-json event vocabulary)",
+      "lib": "Bun (Bun.spawn / Subprocess)",
       "channel": "WebFetch",
-      "url": "https://code.claude.com/docs/en/headless",
+      "url": "https://bun.sh/docs/api/spawn",
       "fetchedAt": "2026-08-09T00:00:00Z",
       "status": "aligned",
-      "summary": "Confirms stream-json is NDJSON with the last line a 'result' message carrying cost + session metadata (matches total_cost_usd read here). Confirms system/init reports session metadata as (normally) the first event. Confirms stream_event token-level deltas are emitted ONLY under --include-partial-messages, which headless-argv.ts (US-001) never passes -- matches this story's deliberate, explicit, always-ignored stream_event branch (GOTCHA H). The doc page does not itself enumerate rate_limit_event or assistant/user as a vocabulary list; that exact 5-member vocabulary (system/init, rate_limit_event, assistant, user, result) is the empirically MEASURED set from the 2026-08-08 live billing measurement recorded in ADR-0059 and CONTEXT.md's 'stream-json' glossary entry, which this story's notes name as GOTCHA I and which this implementation classifies verbatim."
+      "summary": "Confirms: `terminal` is the only option that attaches a PTY -- when provided the child sees isTTY===true and proc.stdin/stdout/stderr become null (use proc.terminal instead); simply omitting it is the entire no-TTY contract this story implements. Confirms `stdin:'pipe'` returns a FileSink with incremental write()/flush()/end(); `stdout` defaults to a ReadableStream<Uint8Array>; `exited` is `Promise<number>`; `kill(exitCode?: number | NodeJS.Signals)` accepts a signal name string directly (e.g. `proc.kill('SIGTERM')`), matching this module's IDLE_KILL_SIGNAL usage."
     }
   ],
   "appliedPatternIds": []
