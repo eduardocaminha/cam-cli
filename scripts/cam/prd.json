@@ -42,7 +42,7 @@
       "id": "US-R1-002",
       "title": "CRITICAL: The headless argv omits `--permission-mode`. The tmux path passes `--…",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "description": "CRITICAL [src/supervisor/headless-argv.ts:74]: The headless argv omits `--permission-mode`. The tmux path passes `--permission-mode ${permissionMode}` (backend-adapter.ts:268) and `runSupervisor` already carries `opts.permissionMode`, but the headless branch (loop.ts:1285-1340) drops it. `.claude/settings.json` sets no permission defaults, so the child runs in `default` mode; the headless docs state that in -p mode a tool attempt without a permission mode or --allowedTools makes the run abort (https://code.claude.com/docs/en/headless, 'Auto-approve tools'). A real headless dispatch therefore cannot write files. Thread opts.permissionMode into buildHeadlessChildInvocation.",
       "notes": "CRITICAL [src/supervisor/headless-argv.ts:74]: The headless argv omits `--permission-mode`. The tmux path passes `--permission-mode ${permissionMode}` (backend-adapter.ts:268) and `runSupervisor` already carries `opts.permissionMode`, but the headless branch (loop.ts:1285-1340) drops it. `.claude/settings.json` sets no permission defaults, so the child runs in `default` mode; the headless docs state that in -p mode a tool attempt without a permission mode or --allowedTools makes the run abort (https://code.claude.com/docs/en/headless, 'Auto-approve tools'). A real headless dispatch therefore cannot write files. Thread opts.permissionMode into buildHeadlessChildInvocation."
     },
