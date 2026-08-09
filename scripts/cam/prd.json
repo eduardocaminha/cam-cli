@@ -95,7 +95,7 @@
         "Tests pass (bun test). [oracle: bun test] [species: invariance pin; GREEN on main @3afb0913 2026-08-09 EXIT=0, measured inside `bun run check:all`]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "PURE THREADING STORY: the container fail-close decision is deliberately NOT here (it is US-006), so this stays a single-concern flag transport. Sites, all verified present on main: `index.ts:1529` parseNextArgs (add the flag next to `--skip-preflight`, keep the trailing `printError('unknown next option: ...')` reject path intact) and `index.ts:630` NEXT_HELP (add an Options row and extend the usage line); `src/commands/next.ts:110` renderStateFile input + `src/commands/next.ts:204` NextOptions; `vendor/cam-loop.local.md.tmpl` (add a frontmatter key, then `bun run embed-vendor`); `src/commands/status.ts:355` parseStateFile + its LoopState shape; `src/commands/sidecar.ts` (the state-file lift points around lines 416-530 and the makeSetPhaseFn re-render at ~1059, which must PRESERVE the field on read-modify-write or the flag evaporates mid-cycle); `RunSupervisorOptions` in `src/supervisor/loop.ts`. Follow the `plan_issue` field (US-001, CAM-151) as the exact precedent for adding an optional state-file field end to end. patterns.md: `Agent-prompt self-hosting pattern` and the CAM-69 vendor bullet both require `bun run embed-vendor` then `embed-vendor:check` after any `vendor/` edit. Memory note (cam dual-copy is per-file): diff before assuming a mirror copy must change too."
     },
