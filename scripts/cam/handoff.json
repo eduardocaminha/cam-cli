@@ -1,26 +1,32 @@
 {
   "lastCompletedStory": {
-    "id": "US-008",
-    "title": "Write the recorte of the claude -p prohibition and pin it with an evidence-fidelity oracle"
+    "id": "US-R1-001",
+    "title": "CRITICAL: The headless argv omits `--agent subagent-implementer`. The tmux impl…"
   },
   "branchName": "cam/issue-516",
   "timestamp": "2026-08-09T00:00:00Z",
-  "createdFiles": [
-    "test/docs/recorte-fidelity.test.ts"
-  ],
+  "createdFiles": [],
   "modifiedFiles": [
-    "scripts/cam/CLAUDE.md",
+    "src/supervisor/headless-argv.ts",
+    "src/supervisor/host.ts",
+    "src/supervisor/loop.ts",
+    "test/supervisor/headless-argv.test.ts",
+    "test/supervisor/headless-route.test.ts",
     "scripts/cam/patterns.md",
-    "scripts/file-size-budget.json",
-    "src/commands/run-auth-preflight.ts"
+    "scripts/file-size-budget.json"
   ],
-  "openQuestions": [],
-  "nextStoryContext": "US-008 closed GOTCHA L's seventh and last anchor point: scripts/cam/CLAUDE.md now carries a `**Recorte of the claude -p prohibition (ADR-0059, CAM-516):**` paragraph right after the 'Marking a patterns.md bullet resolved' paragraph (which still lists `claude -p forbidden` among durable invariants that must never be marked resolved, unchanged), stating the tmux worker path stays fully prohibited and `gship next --headless` is born exempt per the 2026-08-08 billing measurement in ADR-0059. The prose deliberately quotes ADR-0059's own Portuguese substrings verbatim in backticks (`consumo de API inalterado`, `apiKeySource none`, `sete dias`, `rodando no host e autenticando pelo diretorio de configuracao`) with English glosses alongside, so the new `test/docs/recorte-fidelity.test.ts` fidelity checker (CAM-439 evidence-fidelity species, kept local to the test file since it has exactly one caller) can cross-check by plain `String.includes` instead of a bilingual translation layer -- do not translate those quoted spans to pure English in a future edit, it would break the fidelity oracle. `src/commands/run-auth-preflight.ts`'s `checkClaudeAuth` JSDoc (was a blanket 'Must NOT use claude -p' comment) now explicitly says the prohibition is recortada and names `gship next --headless` as the only exempt path, while stating this particular auth-preflight probe itself stays a blanket ban regardless of dispatch mode. The five anchor test files (loop/worker-argv/review/plan-argv/docker-exec) were read-only this story, still green, no assertion touched. `scripts/file-size-budget.json` raised `src/commands/run-auth-preflight.ts` 141->145 with a dated CAM-516 US-008 `_ref` entry (the file grew from the JSDoc expansion). GOTCHA L (all seven anchors: five tests, the CLAUDE.md declaration, the run-auth-preflight.ts comment) is now fully addressed across US-008 and the prior CAM-516 stories; no anchor points remain open. `templates/scripts/cam/CLAUDE.md` was diffed first (dual-copy convention) and confirmed to be a generic placeholder scaffold with no `claude -p` content of its own, so no template mirror edit or `embed-vendor` re-run was needed for this story. This is the last story mentioned by the current CAM-516 PRD context handed off from US-007; a future implementer should treat this as the end of the CAM-516 sequence unless prd.json still lists further stories.",
+  "openQuestions": [
+    "scripts/cam/prd.json carried a pre-existing uncommitted diff at the START of this story (US-R1-002..US-R1-006, five more round-1 review findings: missing --permission-mode, missing CAM_WORKER=1 env, stale README, headless ignoring implBackend, and a sixth truncated in this session's git status). This story did NOT create that diff and did not commit it (per AGENT.md 'Do not edit prd.json'). Whoever picks up US-R1-002 next should confirm prd.json still carries those five stories uncommitted-or-committed-by-someone-else before assuming they self-select correctly; if the supervisor's own commit machinery expects prd.json to already be clean at dispatch time, that assumption was violated coming into this session."
+  ],
+  "nextStoryContext": "US-R1-001 fixed the CRITICAL headless --agent omission (round-1 review finding on CAM-516's own prior PRD): buildHeadlessChildInvocation (src/supervisor/headless-argv.ts) now takes a REQUIRED agentName field (not optional/defaulted -- a second source of truth for the implementer agent name was rejected) and always appends `--agent <agentName>` to the argv, right after --verbose and before --model. The thread runs loop.ts's headlessDispatchFn params (new required agentName field on the RunSupervisorOptions['headlessDispatchFn'] param type) -> the one production call site in loop.ts passes `agentName: DEFAULT_IMPLEMENTER_AGENT` (the same constant the three tmux buildSpawnArgv call sites in this file already resolve to; there is no RunSupervisorOptions.agentName override on either path) -> host.ts's headlessDispatchFn closure forwards params.agentName into buildHeadlessChildInvocation. Existing headless-argv.test.ts calls were all updated to pass a TEST_AGENT_NAME (= DEFAULT_IMPLEMENTER_AGENT, imported from backend-adapter.ts) since the field is now required; two new tests pin --agent's presence and that it carries the CALLER-supplied value, not a hardcoded default. headless-route.test.ts's 'routes implementer dispatch' test additionally asserts headlessCalls[0].agentName === DEFAULT_IMPLEMENTER_AGENT end to end through runSupervisor. file-size-budget.json raised host.ts 1191->1192 and loop.ts 2934->2946 (gate-measured content.split('\\n').length actuals) with a dated US-R1-001 _ref entry. Next implementer picking up a US-R1-* story from this same round-1 review batch: prd.json at session start already carried US-R1-002 (missing --permission-mode in headless argv, same headless-argv.ts file this story touched -- expect a merge/overlap in that file's diff region around the argv array), US-R1-003 (missing CAM_WORKER=1 in the headless child env, stripHeadlessChildEnv in the same file), US-R1-004 (README staleness), US-R1-005 (headless ignores implBackend, loop.ts same dispatch branch this story touched), uncommitted -- see openQuestions above."
+  ],
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched",
-      "summary": "Pure docs/prose + test-oracle story (markdown edit to scripts/cam/CLAUDE.md, a JSDoc comment edit in src/commands/run-auth-preflight.ts, and a new self-contained bun:test file cross-checking prose fidelity against an existing ADR). No external library API surface introduced or re-touched."
+      "lib": "claude-code-cli",
+      "url": "https://code.claude.com/docs/en/cli-reference",
+      "fetchedAt": "2026-08-09T00:00:00Z",
+      "status": "aligned",
+      "summary": "Confirmed --agent takes a string agent-name argument, overrides the agent config setting, and combines freely with -p/--print (only --bg/--background is documented as incompatible with -p). The fix (adding --agent <agentName> to the headless argv, right where the tmux ClaudeAdapter.buildSpawnArgv already places it) matches current CLI behavior."
     }
   ],
   "appliedPatternIds": []
