@@ -347,6 +347,13 @@ export interface RunSupervisorOptions {
 		 * path).
 		 */
 		agentName: string;
+		/**
+		 * Permission mode to pass as `--permission-mode` (US-R1-002, CRITICAL
+		 * fix). Identical to the tmux path's `opts.permissionMode`, resolved
+		 * once at the top of `RunSupervisorOptions` and threaded through
+		 * unchanged here rather than re-resolved at this call site.
+		 */
+		permissionMode: string;
 	}) => Promise<HeadlessDispatchOutcome>;
 	/**
 	 * Re-run quality gates (typecheck + test) to verify before finalizing a
@@ -1345,6 +1352,9 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					// US-R1-001: same DEFAULT_IMPLEMENTER_AGENT the tmux path's
 					// buildSpawnArgv call sites in this file resolve to.
 					agentName: DEFAULT_IMPLEMENTER_AGENT,
+					// US-R1-002: same opts.permissionMode the tmux path's
+					// buildSpawnArgv call sites in this file already thread.
+					permissionMode,
 				});
 
 				iterations++;

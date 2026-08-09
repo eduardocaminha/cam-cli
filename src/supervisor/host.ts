@@ -1085,6 +1085,7 @@ export function buildSupervisorOptions(
 		const { argv, env } = buildHeadlessChildInvocation({
 			model: params.model,
 			agentName: params.agentName,
+			permissionMode: params.permissionMode,
 			sourceEnv: process.env,
 		});
 		const log = openHeadlessDispatchLog(claudeDir, params.uuid);

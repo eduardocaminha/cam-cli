@@ -15,15 +15,22 @@
 // Flag set (ADR-0060 + officialDocsConsulted on this PRD, fetched against
 // https://code.claude.com/docs/en/headless 2026-08-09): the CLI, not the
 // Agent SDK, and exactly `--print`, `--input-format stream-json`,
-// `--output-format stream-json`, `--verbose`, `--agent <agentName>`. The
-// `--agent` flag was originally missing here (CRITICAL bug, US-R1-001):
-// without it the spawned child boots as a generic `claude` session with no
-// AGENT.md, so the implementer protocol (worker-report.json, the
-// CAM_IMPLEMENTER_STATUS sentinel, story-selection rules) never applies even
-// though `task-prompt.ts`'s prompt text tells the child to follow it. The
-// tmux implementer contract already passes this same flag
-// (`ClaudeAdapter.buildSpawnArgv`, backend-adapter.ts, ` --agent
-// ${agentName}`); official docs confirm `--agent` combines with `-p`
+// `--output-format stream-json`, `--verbose`, `--permission-mode
+// <permissionMode>`, `--agent <agentName>`. The `--agent` flag was
+// originally missing here (CRITICAL bug, US-R1-001): without it the spawned
+// child boots as a generic `claude` session with no AGENT.md, so the
+// implementer protocol (worker-report.json, the CAM_IMPLEMENTER_STATUS
+// sentinel, story-selection rules) never applies even though
+// `task-prompt.ts`'s prompt text tells the child to follow it. The
+// `--permission-mode` flag was ALSO originally missing (CRITICAL bug,
+// US-R1-002): the docs' "Auto-approve tools" section states that in `-p`
+// mode a tool-use attempt with no permission mode and no `--allowedTools`
+// aborts the run, and `.claude/settings.json` sets no permission defaults,
+// so a headless child with this flag omitted could never write a file. The
+// tmux implementer contract already passes both flags
+// (`ClaudeAdapter.buildSpawnArgv`, backend-adapter.ts, ` --permission-mode
+// ${required.permissionMode}` and ` --agent ${agentName}`); official docs
+// confirm both flags combine with `-p`
 // (https://code.claude.com/docs/en/cli-reference). Three flags are
 // deliberately ABSENT:
 //   - `--resume`: the Warren readSessionId path this would have fed is dead
@@ -69,6 +76,17 @@ export interface BuildHeadlessChildInvocationOptions {
 	 */
 	agentName: string;
 	/**
+	 * Permission mode to pass as `--permission-mode`, e.g. `'bypassPermissions'`
+	 * (`opts.permissionMode`, threaded from `runSupervisor`'s options -- the
+	 * same value the tmux path's `ClaudeAdapter.buildSpawnArgv` already passes
+	 * as `required.permissionMode`, backend-adapter.ts). Required, not
+	 * defaulted here, for the same single-source-of-truth reason `agentName`
+	 * above is required: this builder mirrors the caller's resolved
+	 * permission mode rather than re-deciding a default of its own. See the
+	 * module header for why this flag is mandatory (US-R1-002, CRITICAL fix).
+	 */
+	permissionMode: string;
+	/**
 	 * Source process env the child env is derived from (e.g. `process.env`).
 	 * Never mutated: a fresh object is returned.
 	 */
@@ -85,11 +103,11 @@ export interface HeadlessChildInvocation {
 
 /**
  * Render the fixed headless-mode argv array: `claude --print --input-format
- * stream-json --output-format stream-json --verbose --agent <agentName>`,
- * plus `--model <model>` when a model is supplied. Always an array, never a
- * shell string (GOTCHA C).
+ * stream-json --output-format stream-json --verbose --permission-mode
+ * <permissionMode> --agent <agentName>`, plus `--model <model>` when a model
+ * is supplied. Always an array, never a shell string (GOTCHA C).
  */
-function buildHeadlessArgv(model: string | undefined, agentName: string): string[] {
+function buildHeadlessArgv(model: string | undefined, agentName: string, permissionMode: string): string[] {
 	const argv = [
 		'claude',
 		'--print',
@@ -98,6 +116,8 @@ function buildHeadlessArgv(model: string | undefined, agentName: string): string
 		'--output-format',
 		'stream-json',
 		'--verbose',
+		'--permission-mode',
+		permissionMode,
 		'--agent',
 		agentName,
 	];
@@ -152,7 +172,7 @@ export function buildHeadlessChildInvocation(
 	opts: BuildHeadlessChildInvocationOptions,
 ): HeadlessChildInvocation {
 	return {
-		argv: buildHeadlessArgv(opts.model, opts.agentName),
+		argv: buildHeadlessArgv(opts.model, opts.agentName, opts.permissionMode),
 		env: stripHeadlessChildEnv(opts.sourceEnv),
 	};
 }

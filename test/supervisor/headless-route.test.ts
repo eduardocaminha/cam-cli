@@ -121,8 +121,14 @@ describe('headless route decision (US-005, CAM-516)', () => {
 		};
 
 		const spawnCalls: string[][] = [];
-		const headlessCalls: Array<{ uuid: string; storyId: string | undefined; taskPrompt: string; model: string; agentName: string }> =
-			[];
+		const headlessCalls: Array<{
+			uuid: string;
+			storyId: string | undefined;
+			taskPrompt: string;
+			model: string;
+			agentName: string;
+			permissionMode: string;
+		}> = [];
 
 		const opts = makeBaseOpts({
 			headless: true,
@@ -154,6 +160,10 @@ describe('headless route decision (US-005, CAM-516)', () => {
 		// same implementer agent name the tmux path resolves, so the spawned
 		// child has an AGENT.md and the implementer protocol applies.
 		expect(headlessCalls[0]?.agentName).toBe(DEFAULT_IMPLEMENTER_AGENT);
+		// US-R1-002 (CRITICAL regression fix): the headless dispatch carries the
+		// same opts.permissionMode the tmux path resolves, so a tool-use attempt
+		// does not abort the headless run.
+		expect(headlessCalls[0]?.permissionMode).toBe('bypassPermissions');
 	});
 
 	test('pane-liveness', async () => {
