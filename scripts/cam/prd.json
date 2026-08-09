@@ -128,7 +128,7 @@
         "Tests pass (bun test). [oracle: bun test] [species: invariance pin; GREEN on main @3afb0913 2026-08-09 EXIT=0, measured inside `bun run check:all`]"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Split out of the flag-transport story on purpose: this is a behavior decision, not threading. Wire it INTO the single decision point US-005 created (host.ts) so the combination is refused once, before the existing container ensure/preflight block in `src/supervisor/loop.ts` (~lines 1255-1330) rather than as a seventh scattered ternary (GOTCHA D). Reuse the existing fail-closed shape verbatim: the `container-not-ready` early return already sets `lastOutcome = { kind: 'blocked', ... }`, calls `finishTerminal('blocked')` and returns `{ status: 'blocked' }`; mirror it, do not invent a new terminal shape. `dockerExecWrap` lives at `src/supervisor/docker-exec.ts:34`. New test file `test/supervisor/headless-container-failclose.test.ts`."
     },
