@@ -1331,6 +1331,58 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					return { status: 'blocked', iterations, lastOutcome };
 				}
 
+				// US-R1-005 (CAM-516): emit the same {phase, model, backend}
+				// spawn-resolution audit event the tmux branch always emits
+				// (loop.ts ~1517), so an operator auditing headless dispatches sees
+				// which backend was resolved even when (as below) that backend then
+				// fails the dispatch closed. Placed after the container check (which
+				// intentionally never reaches spawn resolution, mirroring the tmux
+				// branch's container-preflight block) and before the backend
+				// fail-closed check below, mirroring where the tmux branch emits it
+				// relative to its own backend-specific gate (codexAuthPreflight).
+				emitSpawnResolution({
+					phase: 'implementer',
+					model: implModel,
+					backend: implBackend,
+					writeEvent: logEvent
+						? (e) => logEvent({ ts: clock(), storyId: advisoryStoryId, uuid, kind: 'spawn-resolution', detail: e })
+						: undefined,
+				});
+
+				// US-R1-005 (CAM-516): fail closed BEFORE any dispatch when headless
+				// meets a non-claude implBackend. `buildHeadlessChildInvocation`
+				// (headless-argv.ts) hardcodes argv[0] = 'claude' and speaks the
+				// claude-only stream-json protocol the rest of this dispatch parses
+				// (headless-stream.ts); rendering a real codex-native headless argv
+				// would mean a second, entirely different completion-detection
+				// protocol, out of scope for this fix. Rather than silently
+				// dispatching `claude` while `[backend] implementer = "codex"` is
+				// configured (the bug this story fixes: failing OPEN), this mirrors
+				// the container-mode fail-closed shape immediately above (same
+				// lastOutcome / finishTerminal('blocked') / return shape) so the
+				// mismatch blocks instead of silently contradicting the configured
+				// backend.
+				if (implBackend !== 'claude') {
+					const backendReason = `headless-backend-unsupported: headless dispatch does not support implBackend '${implBackend}' (only 'claude' is supported) (advisory ${advisoryStoryId ?? 'unknown'})`;
+					lastOutcome = { kind: 'blocked', storyId: undefined, detail: backendReason };
+					iterations++;
+					removeImplementerTaskPrompt(uuid);
+					if (opts.escalateFn !== undefined) {
+						const escalateFn = opts.escalateFn;
+						void (async () => {
+							try {
+								await escalateFn();
+							} catch (e) {
+								process.stderr.write(
+									`[cam] escalateFn error (swallowed): ${e instanceof Error ? e.message : String(e)}\n`,
+								);
+							}
+						})();
+					}
+					finishTerminal('blocked');
+					return { status: 'blocked', iterations, lastOutcome };
+				}
+
 				const headlessDispatchFn = opts.headlessDispatchFn;
 				if (headlessDispatchFn === undefined) {
 					throw new Error(
