@@ -1,31 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-002",
-    "title": "CRITICAL: The headless argv omits `--permission-mode`. The tmux path passes `--…"
+    "id": "US-R1-003",
+    "title": "CRITICAL: The headless child env never sets `CAM_WORKER=1` (WORKER_ACTOR_ENV, b..."
   },
   "branchName": "cam/issue-516",
   "timestamp": "2026-08-09T00:00:00Z",
   "createdFiles": [],
   "modifiedFiles": [
     "src/supervisor/headless-argv.ts",
-    "src/supervisor/host.ts",
-    "src/supervisor/loop.ts",
     "test/supervisor/headless-argv.test.ts",
-    "test/supervisor/headless-route.test.ts",
-    "scripts/cam/patterns.md",
-    "scripts/file-size-budget.json"
+    "scripts/cam/patterns.md"
   ],
   "openQuestions": [
-    "scripts/cam/prd.json still carries US-R1-003..US-R1-006 (missing CAM_WORKER=1 env, stale README, headless ignoring implBackend, and a sixth round-1 finding) as passes:false, uncommitted-by-this-story per AGENT.md 'Do not edit prd.json'. Whoever picks up the next US-R1-* story should confirm those still self-select correctly before assuming this session's prd.json state is authoritative."
+    "scripts/cam/prd.json still carries US-R1-004 (stale README), US-R1-005 (headless ignoring implBackend, loop.ts's dispatch branch), and a sixth round-1 finding, all passes:false and untouched by this story, per AGENT.md 'Do not edit prd.json'. Whoever picks up the next US-R1-* story should confirm those still self-select correctly."
   ],
-  "nextStoryContext": "US-R1-002 fixed the CRITICAL headless --permission-mode omission (round-1 review finding on CAM-516's own prior PRD, the SAME headless-argv.ts file US-R1-001 touched immediately before this story): buildHeadlessChildInvocation (src/supervisor/headless-argv.ts) now takes a REQUIRED permissionMode field (same required-not-defaulted shape as agentName from US-R1-001, same single-source-of-truth rationale) and appends `--permission-mode <permissionMode>` to the argv, placed right after --verbose and before --agent (mirroring the tmux ClaudeAdapter.buildSpawnArgv contract, where --permission-mode is the first flag after `claude`). The thread runs loop.ts's headlessDispatchFn params (new required permissionMode field on RunSupervisorOptions['headlessDispatchFn']) -> the one production call site in loop.ts passes the `permissionMode` const already destructured at the top of runSupervisor from opts.permissionMode (zero new plumbing needed there, unlike agentName which had no existing loop.ts local) -> host.ts's headlessDispatchFn closure forwards params.permissionMode into buildHeadlessChildInvocation. Existing headless-argv.test.ts calls were all updated to pass a TEST_PERMISSION_MODE (= 'bypassPermissions'); two new tests pin --permission-mode's presence and that it carries the caller-supplied value, not a hardcoded default. headless-route.test.ts's 'routes implementer dispatch' test additionally asserts headlessCalls[0].permissionMode === 'bypassPermissions' end to end through runSupervisor (makeBaseOpts already sets permissionMode: 'bypassPermissions'). file-size-budget.json raised host.ts 1192->1193 and loop.ts 2946->2956 (gate-measured content.split('\\n').length actuals) with a dated US-R1-002 _ref entry. Official docs (code.claude.com/docs/en/cli-reference, fetched 2026-08-09) confirmed --permission-mode combines with both -p/--print and --agent, and enumerated its full accepted-value set (default/manual, acceptEdits, plan, auto, dontAsk, bypassPermissions). Next implementer picking up a US-R1-* story from this same round-1 review batch: prd.json at session start (before this story ran) already carried US-R1-003 (missing CAM_WORKER=1 in the headless child env, stripHeadlessChildEnv in this SAME headless-argv.ts file -- expect another overlap in the same region), US-R1-004 (README staleness), US-R1-005 (headless ignores implBackend, loop.ts same dispatch branch this story touched), and a sixth round-1 finding, all passes:false and untouched by this story -- see openQuestions above. Given three of the first two US-R1-* stories (001, 002) both landed in headless-argv.ts's flag-mirroring gap, whoever picks up US-R1-003 should specifically check whether ANY other tmux-contract flags (--session-id, or something CAM_WORKER-env-shaped) are still silently missing from buildHeadlessArgv/stripHeadlessChildEnv before treating just the one named finding as complete.",
+  "nextStoryContext": "US-R1-003 fixed the CRITICAL missing CAM_WORKER=1 marker in the headless child env: stripHeadlessChildEnv (src/supervisor/headless-argv.ts, the SAME file US-R1-001/002 already touched for --agent/--permission-mode) previously only deleted keys (WORKER_ENV_UNSET, HOST_ONLY_ENV_UNSET, ANTHROPIC_API_KEY) and never SET CAM_WORKER=1 (WORKER_ACTOR_ENV, backend-adapter.ts), even though the headless child inherits CAM_SESSION from the sidecar unchanged. .claude/hooks/orch-agent-allowlist.sh's worker-actor write-guard on scripts/cam/prd.json / scripts/cam/issues/* (ADR-0035, CAM-63/CAM-166) uses CAM_WORKER as the SOLE discriminator gated only by CAM_SESSION, so a headless worker could previously self-flip passes:true undetected. Fix: `env.CAM_WORKER = '1'` set as a direct literal at the end of stripHeadlessChildEnv, mirroring the container path's literal '-e CAM_WORKER=1' (worker-container.ts's buildDockerRunArgv) rather than destructuring the shell-fragment constant WORKER_ACTOR_ENV ('CAM_WORKER=1', meant for shell-string concatenation, not key/value parsing). One new regression test pins env.CAM_WORKER === '1' unconditionally (no sourceEnv input controls it). No argv/flag change this time -- this was purely an env-side gap in the SAME 'mirror ALL of contract X' class US-R1-001 (missing --agent) and US-R1-002 (missing --permission-mode) already found, generalized here to the env side of the mirrored contract rather than its argv flags (see patterns.md). Next implementer picking up a US-R1-* story from this round-1 review batch: prd.json still carries US-R1-004 (README staleness), US-R1-005 (headless ignoring implBackend, loop.ts's same dispatch branch touched by US-R1-002/003's threading), and a sixth round-1 finding, all passes:false -- see openQuestions. Given the pattern of THREE consecutive US-R1-* findings all landing in headless-argv.ts's mirror-gap (--agent, --permission-mode, CAM_WORKER env), it may be worth a full audit of every remaining tmux-contract env var (workerEnvPrefix's -u list, any other backend-adapter.ts-exported marker) against headless-argv.ts before assuming no fourth gap remains in this same file.",
   "officialDocsValidated": [
     {
-      "lib": "claude-code-cli",
-      "url": "https://code.claude.com/docs/en/cli-reference",
-      "fetchedAt": "2026-08-09T00:00:00Z",
-      "status": "aligned",
-      "summary": "Confirmed --permission-mode combines freely with both -p/--print and --agent, and enumerated its accepted value set (default/manual, acceptEdits, plan, auto, dontAsk, bypassPermissions). The fix (adding --permission-mode <permissionMode> to the headless argv, mirroring the tmux path's ClaudeAdapter.buildSpawnArgv placement) matches current CLI behavior."
+      "lib": "none",
+      "status": "no_external_lib_touched"
     }
   ],
   "appliedPatternIds": []
