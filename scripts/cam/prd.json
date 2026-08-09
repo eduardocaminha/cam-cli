@@ -31,6 +31,54 @@
   ],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "CRITICAL: The headless argv omits `--agent subagent-implementer`. The tmux impl…",
+      "priority": 1,
+      "passes": true,
+      "description": "CRITICAL [src/supervisor/headless-argv.ts:74]: The headless argv omits `--agent subagent-implementer`. The tmux implementer contract passes it (backend-adapter.ts:271, `--agent ${agentName}`), and the task prompt the headless branch sends verbatim says 'Implement user story X from scripts/cam/prd.json per your AGENT.md' (src/supervisor/task-prompt.ts:30). Without --agent there is no AGENT.md: the spawned child is a generic claude session with none of the implementer protocol (worker-report.json, CAM_IMPLEMENTER_STATUS sentinel, story-selection rules). host.ts:1084-1094 wires this argv to the real `claude` binary, so the user-facing `gship next --headless` cannot complete a story. Official docs confirm --agent combines with -p (https://code.claude.com/docs/en/cli-reference). Add `--agent <agentName>` to buildHeadlessChildInvocation and thread the agent name from the dispatch site.",
+      "notes": "CRITICAL [src/supervisor/headless-argv.ts:74]: The headless argv omits `--agent subagent-implementer`. The tmux implementer contract passes it (backend-adapter.ts:271, `--agent ${agentName}`), and the task prompt the headless branch sends verbatim says 'Implement user story X from scripts/cam/prd.json per your AGENT.md' (src/supervisor/task-prompt.ts:30). Without --agent there is no AGENT.md: the spawned child is a generic claude session with none of the implementer protocol (worker-report.json, CAM_IMPLEMENTER_STATUS sentinel, story-selection rules). host.ts:1084-1094 wires this argv to the real `claude` binary, so the user-facing `gship next --headless` cannot complete a story. Official docs confirm --agent combines with -p (https://code.claude.com/docs/en/cli-reference). Add `--agent <agentName>` to buildHeadlessChildInvocation and thread the agent name from the dispatch site."
+    },
+    {
+      "id": "US-R1-002",
+      "title": "CRITICAL: The headless argv omits `--permission-mode`. The tmux path passes `--…",
+      "priority": 2,
+      "passes": false,
+      "description": "CRITICAL [src/supervisor/headless-argv.ts:74]: The headless argv omits `--permission-mode`. The tmux path passes `--permission-mode ${permissionMode}` (backend-adapter.ts:268) and `runSupervisor` already carries `opts.permissionMode`, but the headless branch (loop.ts:1285-1340) drops it. `.claude/settings.json` sets no permission defaults, so the child runs in `default` mode; the headless docs state that in -p mode a tool attempt without a permission mode or --allowedTools makes the run abort (https://code.claude.com/docs/en/headless, 'Auto-approve tools'). A real headless dispatch therefore cannot write files. Thread opts.permissionMode into buildHeadlessChildInvocation.",
+      "notes": "CRITICAL [src/supervisor/headless-argv.ts:74]: The headless argv omits `--permission-mode`. The tmux path passes `--permission-mode ${permissionMode}` (backend-adapter.ts:268) and `runSupervisor` already carries `opts.permissionMode`, but the headless branch (loop.ts:1285-1340) drops it. `.claude/settings.json` sets no permission defaults, so the child runs in `default` mode; the headless docs state that in -p mode a tool attempt without a permission mode or --allowedTools makes the run abort (https://code.claude.com/docs/en/headless, 'Auto-approve tools'). A real headless dispatch therefore cannot write files. Thread opts.permissionMode into buildHeadlessChildInvocation."
+    },
+    {
+      "id": "US-R1-003",
+      "title": "CRITICAL: The headless child env never sets `CAM_WORKER=1` (WORKER_ACTOR_ENV, b…",
+      "priority": 3,
+      "passes": false,
+      "description": "CRITICAL [src/supervisor/headless-argv.ts:106]: The headless child env never sets `CAM_WORKER=1` (WORKER_ACTOR_ENV, backend-adapter.ts:223); stripHeadlessChildEnv only deletes keys. `.claude/hooks/orch-agent-allowlist.sh:83` uses CAM_WORKER as the SOLE discriminator for the worker write-guard that denies a worker writing `scripts/cam/prd.json` and `scripts/cam/issues/*` (ADR-0035 supervisor-sole-writer, CAM-63/CAM-166; the hook is registered for Write|Edit|MultiEdit in .claude/settings.json). A headless child inherits CAM_SESSION from the sidecar but not CAM_WORKER, so the guard is silently disabled and a headless worker can self-flip `passes: true` in prd.json. Set CAM_WORKER=1 in the returned env.",
+      "notes": "CRITICAL [src/supervisor/headless-argv.ts:106]: The headless child env never sets `CAM_WORKER=1` (WORKER_ACTOR_ENV, backend-adapter.ts:223); stripHeadlessChildEnv only deletes keys. `.claude/hooks/orch-agent-allowlist.sh:83` uses CAM_WORKER as the SOLE discriminator for the worker write-guard that denies a worker writing `scripts/cam/prd.json` and `scripts/cam/issues/*` (ADR-0035 supervisor-sole-writer, CAM-63/CAM-166; the hook is registered for Write|Edit|MultiEdit in .claude/settings.json). A headless child inherits CAM_SESSION from the sidecar but not CAM_WORKER, so the guard is silently disabled and a headless worker can self-flip `passes: true` in prd.json. Set CAM_WORKER=1 in the returned env."
+    },
+    {
+      "id": "US-R1-004",
+      "title": "WARNING: README is now stale and contradicts the shipped behavior: 'Interactive…",
+      "priority": 4,
+      "passes": false,
+      "description": "WARNING [README.md:419]: README is now stale and contradicts the shipped behavior: 'Interactive TUI workers (CAM-42): `cam next` dispatches workers as interactive TUI `claude` sessions (not `claude -p`). `claude -p` is reserved for the `cam claude` retry-wrapper feature only.' The recorte was written into scripts/cam/CLAUDE.md and src/commands/run-auth-preflight.ts but not here, and the new `--headless` flag is undocumented in the `cam next [options]` command list (README.md:223). Doc-maintenance rule: README must be updated when a command flag changes.",
+      "notes": "WARNING [README.md:419]: README is now stale and contradicts the shipped behavior: 'Interactive TUI workers (CAM-42): `cam next` dispatches workers as interactive TUI `claude` sessions (not `claude -p`). `claude -p` is reserved for the `cam claude` retry-wrapper feature only.' The recorte was written into scripts/cam/CLAUDE.md and src/commands/run-auth-preflight.ts but not here, and the new `--headless` flag is undocumented in the `cam next [options]` command list (README.md:223). Doc-maintenance rule: README must be updated when a command flag changes."
+    },
+    {
+      "id": "US-R1-005",
+      "title": "WARNING: The headless branch ignores `implBackend`. With `[backend] implementer…",
+      "priority": 5,
+      "passes": false,
+      "description": "WARNING [src/supervisor/loop.ts:1285]: The headless branch ignores `implBackend`. With `[backend] implementer = \"codex\"` in project.toml plus `--headless`, the loop silently dispatches `claude` (headless-argv.ts:74 hardcodes argv[0] = 'claude'), contradicting the configured backend, with no emitSpawnResolution event recorded either. US-006 established the precedent that an untested orthogonal-axis combination (headless + container) fails CLOSED; this orthogonal axis (headless + non-claude backend) fails OPEN. Either fail closed or render the backend's own headless argv.",
+      "notes": "WARNING [src/supervisor/loop.ts:1285]: The headless branch ignores `implBackend`. With `[backend] implementer = \"codex\"` in project.toml plus `--headless`, the loop silently dispatches `claude` (headless-argv.ts:74 hardcodes argv[0] = 'claude'), contradicting the configured backend, with no emitSpawnResolution event recorded either. US-006 established the precedent that an untested orthogonal-axis combination (headless + container) fails CLOSED; this orthogonal axis (headless + non-claude backend) fails OPEN. Either fail closed or render the backend's own headless argv."
+    },
+    {
+      "id": "US-R1-006",
+      "title": "WARNING: No spend or wall-clock bound applies in headless mode. The CAM-5 per-w…",
+      "priority": 6,
+      "passes": false,
+      "description": "WARNING [src/supervisor/loop.ts:1330]: No spend or wall-clock bound applies in headless mode. The CAM-5 per-worker token ceiling (maxWorkerTokens + readWorkerTokens) and `perWorkerTimeoutMs` live only in the tmux poll loop, so a headless dispatch's only bound is the 45-minute idle budget, which every emitted event resets: a chatty runaway child is unbounded. The codex precedent for exactly this situation emits a `worker-token-ceiling-unavailable` notice rather than dropping enforcement silently (loop.ts, shouldApplyTokenCeiling block); the headless branch emits nothing. Apply perWorkerTimeoutMs as an absolute cap and/or emit the unavailable notice.",
+      "notes": "WARNING [src/supervisor/loop.ts:1330]: No spend or wall-clock bound applies in headless mode. The CAM-5 per-worker token ceiling (maxWorkerTokens + readWorkerTokens) and `perWorkerTimeoutMs` live only in the tmux poll loop, so a headless dispatch's only bound is the 45-minute idle budget, which every emitted event resets: a chatty runaway child is unbounded. The codex precedent for exactly this situation emits a `worker-token-ceiling-unavailable` notice rather than dropping enforcement silently (loop.ts, shouldApplyTokenCeiling block); the headless branch emits nothing. Apply perWorkerTimeoutMs as an absolute cap and/or emit the unavailable notice."
+    },
+    {
       "id": "US-001",
       "title": "Build the headless child argv array and its explicit credential/env policy",
       "description": "As the supervisor, I need one pure builder that renders the headless worker invocation as an argv array plus an explicit child env, so the headless path never borrows the tmux path's shell-string/respawn-pane contract and its credential choice is declared rather than inherited.",
@@ -41,7 +89,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck] [species: invariance pin; GREEN on main @3afb0913 2026-08-09 EXIT=0]",
         "Tests pass (bun test). [oracle: bun test] [species: invariance pin; GREEN on main @3afb0913 2026-08-09 EXIT=0, measured inside `bun run check:all`]"
       ],
-      "priority": 1,
+      "priority": 7,
       "passes": true,
       "requires": null,
       "notes": "New files only: `src/supervisor/headless-argv.ts` + `test/supervisor/headless-argv.test.ts`. Read `src/supervisor/backend-adapter.ts` lines 160-215 for WORKER_ENV_UNSET / HOST_ONLY_ENV_UNSET / workerEnvPrefix and REUSE those exported constants instead of re-listing var names (a second copy of the list is the drift this repo has already paid for). Do NOT register this as a third BackendAdapter (GOTCHA C, ADR-0047: the adapter's single method returns a respawn-pane shell string). Re-check ADR-0060 (CLI, never the Agent SDK) and the officialDocsConsulted `--bare` conflict before writing the flag list. Model resolution: mirror how `loop.ts` already resolves `implModel` rather than inventing a second reader."
@@ -58,7 +106,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck] [species: invariance pin; GREEN on main @3afb0913 2026-08-09 EXIT=0]",
         "Tests pass (bun test). [oracle: bun test] [species: invariance pin; GREEN on main @3afb0913 2026-08-09 EXIT=0, measured inside `bun run check:all`]"
       ],
-      "priority": 2,
+      "priority": 8,
       "passes": true,
       "requires": null,
       "notes": "New files: `src/supervisor/headless-stream.ts`, `src/supervisor/headless-log.ts`, `test/supervisor/headless-stream.test.ts`, `test/supervisor/headless-log.test.ts`. Put the dispatch logs under `.claude/` next to the other supervisor-owned artifacts (`.claude/cam-worker-events.jsonl` is the precedent for append-only supervisor observability; see patterns.md `Single-source outcome contract and 5-concern model`, CAM-77) and confirm the chosen path is gitignored. patterns.md allows the deliberate synchronous point-read/append idiom (`appendFileSync`) where forcing callers async would cascade; the curated invariants block in scripts/cam/CLAUDE.md states this exception, so an `appendFileSync` writer here is sanctioned, not a Bun-only violation. Tests must hit a real tmpdir via `test/helpers/test-tmpdir` (check:all enforces `check-test-tmpdir.ts`)."
@@ -74,7 +122,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck] [species: invariance pin; GREEN on main @3afb0913 2026-08-09 EXIT=0]",
         "Tests pass (bun test). [oracle: bun test] [species: invariance pin; GREEN on main @3afb0913 2026-08-09 EXIT=0, measured inside `bun run check:all`]"
       ],
-      "priority": 3,
+      "priority": 9,
       "passes": true,
       "requires": null,
       "notes": "New files: `src/supervisor/headless-dispatch.ts`, `test/supervisor/headless-dispatch.test.ts`, plus a fixture executable under `test/fixtures/headless/`. Bun API pins from the fetch: `terminal` is the only PTY switch (omit it), `stdin:'pipe'` yields a FileSink with write/flush/end, `proc.exited` is Promise<number>, and `timeout` + `killSignal` give the kill without a hand-rolled timer race; the CLI page pins SIGTERM as abort-turn + exit 143. The idle budget is the Warren precedent named in GOTCHA E (45 min from the last event, born from a real incident); make the budget an injectable option so the test can use milliseconds. Never poll with a fixed `setTimeout` in the test: use `waitForCondition` (check:all runs `check-test-sleeps.ts`). patterns.md `Bun.spawn stdin/stdout pattern for shell-script integration tests` (CAM-91) and `Bun.spawnSync throws ENOENT` (CAM-186) both apply to the fixture wiring."
@@ -94,7 +142,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck] [species: invariance pin; GREEN on main @3afb0913 2026-08-09 EXIT=0]",
         "Tests pass (bun test). [oracle: bun test] [species: invariance pin; GREEN on main @3afb0913 2026-08-09 EXIT=0, measured inside `bun run check:all`]"
       ],
-      "priority": 4,
+      "priority": 10,
       "passes": true,
       "requires": null,
       "notes": "PURE THREADING STORY: the container fail-close decision is deliberately NOT here (it is US-006), so this stays a single-concern flag transport. Sites, all verified present on main: `index.ts:1529` parseNextArgs (add the flag next to `--skip-preflight`, keep the trailing `printError('unknown next option: ...')` reject path intact) and `index.ts:630` NEXT_HELP (add an Options row and extend the usage line); `src/commands/next.ts:110` renderStateFile input + `src/commands/next.ts:204` NextOptions; `vendor/cam-loop.local.md.tmpl` (add a frontmatter key, then `bun run embed-vendor`); `src/commands/status.ts:355` parseStateFile + its LoopState shape; `src/commands/sidecar.ts` (the state-file lift points around lines 416-530 and the makeSetPhaseFn re-render at ~1059, which must PRESERVE the field on read-modify-write or the flag evaporates mid-cycle); `RunSupervisorOptions` in `src/supervisor/loop.ts`. Follow the `plan_issue` field (US-001, CAM-151) as the exact precedent for adding an optional state-file field end to end. patterns.md: `Agent-prompt self-hosting pattern` and the CAM-69 vendor bullet both require `bun run embed-vendor` then `embed-vendor:check` after any `vendor/` edit. Memory note (cam dual-copy is per-file): diff before assuming a mirror copy must change too."
@@ -111,7 +159,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck] [species: invariance pin; GREEN on main @3afb0913 2026-08-09 EXIT=0]",
         "Tests pass (bun test). [oracle: bun test] [species: invariance pin; GREEN on main @3afb0913 2026-08-09 EXIT=0, measured inside `bun run check:all`]"
       ],
-      "priority": 5,
+      "priority": 11,
       "passes": true,
       "requires": null,
       "notes": "New test file `test/supervisor/headless-route.test.ts` (its own file precisely so its oracles are absent-and-red on main rather than inheriting green from an earlier story's file). Seam: decide ONCE in `src/supervisor/host.ts` at the site where `workerIsolation` is already resolved (around line 812, `readWorkerIsolation` + the `ensureContainerFn` / `perWorkerTimeoutMs` block) and pass ONE resolved implementer-dispatch strategy into the options bag (GOTCHA C). In `src/supervisor/loop.ts`, branch exactly once at the implementer dispatch (the `selectAdapter(implBackend).buildSpawnArgv(...)` block around lines 1230-1345) and skip the poll loop's pane-alive branch (line 1433) in headless mode; do NOT replicate the `worker_isolation` spread-ternary shape (GOTCHA D names its ~6 in-loop sites: 862, 1237, 1259, 1312, 1336, 1598). Keep `worker-report.json` as the authoritative completion event (patterns.md `Single-source outcome contract and 5-concern model`, CAM-77): headless changes how the process ENDS, not what proves the story done. `loop.ts` is near the file-size budget: if `scripts/check-file-sizes.ts` trips, raise the budget entry in `scripts/file-size-budget.json` in this same commit rather than compressing the code."
@@ -127,7 +175,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck] [species: invariance pin; GREEN on main @3afb0913 2026-08-09 EXIT=0]",
         "Tests pass (bun test). [oracle: bun test] [species: invariance pin; GREEN on main @3afb0913 2026-08-09 EXIT=0, measured inside `bun run check:all`]"
       ],
-      "priority": 6,
+      "priority": 12,
       "passes": true,
       "requires": null,
       "notes": "Split out of the flag-transport story on purpose: this is a behavior decision, not threading. Wire it INTO the single decision point US-005 created (host.ts) so the combination is refused once, before the existing container ensure/preflight block in `src/supervisor/loop.ts` (~lines 1255-1330) rather than as a seventh scattered ternary (GOTCHA D). Reuse the existing fail-closed shape verbatim: the `container-not-ready` early return already sets `lastOutcome = { kind: 'blocked', ... }`, calls `finishTerminal('blocked')` and returns `{ status: 'blocked' }`; mirror it, do not invent a new terminal shape. `dockerExecWrap` lives at `src/supervisor/docker-exec.ts:34`. New test file `test/supervisor/headless-container-failclose.test.ts`."
@@ -144,7 +192,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck] [species: invariance pin; GREEN on main @3afb0913 2026-08-09 EXIT=0]",
         "Tests pass (bun test). [oracle: bun test] [species: invariance pin; GREEN on main @3afb0913 2026-08-09 EXIT=0, measured inside `bun run check:all`]"
       ],
-      "priority": 7,
+      "priority": 13,
       "passes": true,
       "requires": null,
       "notes": "SCOPE HONESTY, repeated from the PRD description because this is the story that looks like it closes the central oracle and does not: the fixture executable stands in for the model, so this story proves the SEAM plus the git wire, and leaves UNPROVEN (a) one real `claude --print --input-format stream-json --output-format stream-json --verbose` dispatch and (b) the before/after Anthropic console metering the issue names as ORACULO CENTRAL. Both are an operator ceremony to be filed via /cam-issue on main; do not mark them satisfied, do not create the follow-up issue file on this branch (an on-branch `scripts/cam/issues/CAM-XXXX.json` collides add/add at reconcile, the CAM-162 defect). Precedents to copy for the real-git harness: `test/integration/commit-exists-real-git.test.ts`, `test/integration/finalize-story-real-git.test.ts`, `test/integration/issue-dir-real-git.test.ts`. Use `test/helpers/test-tmpdir` (check:all enforces it) and `waitForCondition` for any async wait (check:all enforces no bare sleeps)."
@@ -163,10 +211,83 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck] [species: invariance pin; GREEN on main @3afb0913 2026-08-09 EXIT=0]",
         "Tests pass (bun test). [oracle: bun test] [species: invariance pin; GREEN on main @3afb0913 2026-08-09 EXIT=0, measured inside `bun run check:all`]"
       ],
-      "priority": 8,
+      "priority": 14,
       "passes": true,
       "requires": null,
       "notes": "GOTCHA L lists seven anchor points: the five test files (left untouched and green, criterion 5), the declaration in `scripts/cam/CLAUDE.md` (line 91 currently names `claude -p forbidden` among the durable invariants that must never be marked resolved, so the recorte prose has to sit with it, not contradict it from elsewhere), and the comment in `src/commands/run-auth-preflight.ts:72`. `templates/scripts/cam/CLAUDE.md` is the distributed mirror: diff it first (memory: cam dual-copy is per-file, the copies are NOT uniformly byte-identical) and if it changes, run `bun run embed-vendor` then `embed-vendor:check`. Also append a `scripts/cam/patterns.md` bullet for the headless path per the knowledge-layer routing table. `test/docs/` does not exist yet: create it. Do not write a new ADR; ADR-0059 and ADR-0060 already carry this decision and the doc-maintenance rule is to cite them, not restate them. Keep the persisted prose free of em dashes per the repo's writing convention."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:6",
+    "findings": [
+      {
+        "severity": "CRITICAL",
+        "file": "src/supervisor/headless-argv.ts",
+        "line": 74,
+        "text": "The headless argv omits `--agent subagent-implementer`. The tmux implementer contract passes it (backend-adapter.ts:271, `--agent ${agentName}`), and the task prompt the headless branch sends verbatim says 'Implement user story X from scripts/cam/prd.json per your AGENT.md' (src/supervisor/task-prompt.ts:30). Without --agent there is no AGENT.md: the spawned child is a generic claude session with none of the implementer protocol (worker-report.json, CAM_IMPLEMENTER_STATUS sentinel, story-selection rules). host.ts:1084-1094 wires this argv to the real `claude` binary, so the user-facing `gship next --headless` cannot complete a story. Official docs confirm --agent combines with -p (https://code.claude.com/docs/en/cli-reference). Add `--agent <agentName>` to buildHeadlessChildInvocation and thread the agent name from the dispatch site."
+      },
+      {
+        "severity": "CRITICAL",
+        "file": "src/supervisor/headless-argv.ts",
+        "line": 74,
+        "text": "The headless argv omits `--permission-mode`. The tmux path passes `--permission-mode ${permissionMode}` (backend-adapter.ts:268) and `runSupervisor` already carries `opts.permissionMode`, but the headless branch (loop.ts:1285-1340) drops it. `.claude/settings.json` sets no permission defaults, so the child runs in `default` mode; the headless docs state that in -p mode a tool attempt without a permission mode or --allowedTools makes the run abort (https://code.claude.com/docs/en/headless, 'Auto-approve tools'). A real headless dispatch therefore cannot write files. Thread opts.permissionMode into buildHeadlessChildInvocation."
+      },
+      {
+        "severity": "CRITICAL",
+        "file": "src/supervisor/headless-argv.ts",
+        "line": 106,
+        "text": "The headless child env never sets `CAM_WORKER=1` (WORKER_ACTOR_ENV, backend-adapter.ts:223); stripHeadlessChildEnv only deletes keys. `.claude/hooks/orch-agent-allowlist.sh:83` uses CAM_WORKER as the SOLE discriminator for the worker write-guard that denies a worker writing `scripts/cam/prd.json` and `scripts/cam/issues/*` (ADR-0035 supervisor-sole-writer, CAM-63/CAM-166; the hook is registered for Write|Edit|MultiEdit in .claude/settings.json). A headless child inherits CAM_SESSION from the sidecar but not CAM_WORKER, so the guard is silently disabled and a headless worker can self-flip `passes: true` in prd.json. Set CAM_WORKER=1 in the returned env."
+      },
+      {
+        "severity": "WARNING",
+        "file": "README.md",
+        "line": 419,
+        "text": "README is now stale and contradicts the shipped behavior: 'Interactive TUI workers (CAM-42): `cam next` dispatches workers as interactive TUI `claude` sessions (not `claude -p`). `claude -p` is reserved for the `cam claude` retry-wrapper feature only.' The recorte was written into scripts/cam/CLAUDE.md and src/commands/run-auth-preflight.ts but not here, and the new `--headless` flag is undocumented in the `cam next [options]` command list (README.md:223). Doc-maintenance rule: README must be updated when a command flag changes."
+      },
+      {
+        "severity": "WARNING",
+        "file": "src/supervisor/loop.ts",
+        "line": 1285,
+        "text": "The headless branch ignores `implBackend`. With `[backend] implementer = \"codex\"` in project.toml plus `--headless`, the loop silently dispatches `claude` (headless-argv.ts:74 hardcodes argv[0] = 'claude'), contradicting the configured backend, with no emitSpawnResolution event recorded either. US-006 established the precedent that an untested orthogonal-axis combination (headless + container) fails CLOSED; this orthogonal axis (headless + non-claude backend) fails OPEN. Either fail closed or render the backend's own headless argv."
+      },
+      {
+        "severity": "WARNING",
+        "file": "src/supervisor/loop.ts",
+        "line": 1330,
+        "text": "No spend or wall-clock bound applies in headless mode. The CAM-5 per-worker token ceiling (maxWorkerTokens + readWorkerTokens) and `perWorkerTimeoutMs` live only in the tmux poll loop, so a headless dispatch's only bound is the 45-minute idle budget, which every emitted event resets: a chatty runaway child is unbounded. The codex precedent for exactly this situation emits a `worker-token-ceiling-unavailable` notice rather than dropping enforcement silently (loop.ts, shouldApplyTokenCeiling block); the headless branch emits nothing. Apply perWorkerTimeoutMs as an absolute cap and/or emit the unavailable notice."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/commands/sidecar.ts",
+        "line": 479,
+        "text": "`makeReadHeadless` has no production caller (only test/commands/next-headless-flag.test.ts); host.ts:1063-1071 re-implements the identical read inline. Two readers of the same field, one unused in production. Either use makeReadHeadless in host.ts or drop it."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/supervisor/host.ts",
+        "line": 408,
+        "text": "`makeOnProgress` re-renders the state file on every supervisor iteration without preserving `headless`, while makeClearActive (sidecar.ts:552) and makeSetPhaseFn (sidecar.ts:1109) were both explicitly patched to preserve it with a comment about the flag evaporating mid-cycle. Harmless today (opts.headless is captured once per run), but it is a hole in the invariant the other two sites now state."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/supervisor/loop.ts",
+        "line": 1409,
+        "text": "A `completed` headless outcome with a non-zero child exitCode is treated identically to exit 0: nothing records the exit code on any observable channel, and the run falls straight through to readWorkerOutcome, which will surface a generic unknown/blocked detail. Emitting the exit code in the worker-end detail would make a crashed headless child diagnosable."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "test/supervisor/headless-dispatch.test.ts",
+        "line": 60,
+        "text": "No test asserts the stream-json input message actually reaches the child: test/fixtures/headless/fixture-child.ts:38-39 drains stdin without inspecting it, and both fixtures are argv-driven. Echoing the received stdin back as an event and asserting it in the log would close the one wire this module owns that is currently unverified."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "index.ts",
+        "line": 651,
+        "text": "The `--headless` help row describes only the flag's lifecycle ('never persisted by config, never sticky') and never says what it does. An operator reading `gship next --help` cannot tell that it routes the implementer dispatch through `claude --print` instead of a tmux pane."
+      }
+    ]
+  }
 }
