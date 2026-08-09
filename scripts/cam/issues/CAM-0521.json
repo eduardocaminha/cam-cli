@@ -1,0 +1,10 @@
+{
+  "id": "CAM-521",
+  "title": "Ciclo 2 do headless: migrar reviewer/planner/auditor e arrancar o tmux",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-09T12:37:46.413Z",
+  "updatedAt": "2026-08-09T12:37:46.413Z",
+  "description": "Segunda metade da migracao headless decidida em 2026-08-08 (journal SESSION-CAM516SPEC, 'DOIS CICLOS E NAO UM'): migrar os tres papeis restantes (reviewer, planner, auditor) para claude --print stream-json e entao remover o tmux do caminho de worker, incluindo respawn-pane, o mutex de 3 panes e a deteccao de pane vivo. O CAM-516 cobre SOMENTE o implementer ate o git push inclusive e declara 'arrancar o tmux' e 'migrar reviewer/planner/auditor' como FORA DE ESCOPO, entao este ciclo existia so como prosa dentro do CAM-516 e do journal, sem issue proprio. Depende do CAM-516 ter provado o caminho headless. Gotcha herdado do spec do CAM-516: a deteccao de fim de trabalho checa pane vivo PRIMEIRO, entao esse ramo evapora sem pane e precisa de substituto explicito antes da remocao."
+}
