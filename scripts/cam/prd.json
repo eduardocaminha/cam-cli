@@ -42,7 +42,7 @@
         "Tests pass (bun test). [oracle: bun test] [species: invariance pin; GREEN on main @3afb0913 2026-08-09 EXIT=0, measured inside `bun run check:all`]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New files only: `src/supervisor/headless-argv.ts` + `test/supervisor/headless-argv.test.ts`. Read `src/supervisor/backend-adapter.ts` lines 160-215 for WORKER_ENV_UNSET / HOST_ONLY_ENV_UNSET / workerEnvPrefix and REUSE those exported constants instead of re-listing var names (a second copy of the list is the drift this repo has already paid for). Do NOT register this as a third BackendAdapter (GOTCHA C, ADR-0047: the adapter's single method returns a respawn-pane shell string). Re-check ADR-0060 (CLI, never the Agent SDK) and the officialDocsConsulted `--bare` conflict before writing the flag list. Model resolution: mirror how `loop.ts` already resolves `implModel` rather than inventing a second reader."
     },
