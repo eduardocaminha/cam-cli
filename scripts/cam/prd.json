@@ -66,7 +66,7 @@
       "id": "US-R1-005",
       "title": "WARNING: The headless branch ignores `implBackend`. With `[backend] implementer…",
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "description": "WARNING [src/supervisor/loop.ts:1285]: The headless branch ignores `implBackend`. With `[backend] implementer = \"codex\"` in project.toml plus `--headless`, the loop silently dispatches `claude` (headless-argv.ts:74 hardcodes argv[0] = 'claude'), contradicting the configured backend, with no emitSpawnResolution event recorded either. US-006 established the precedent that an untested orthogonal-axis combination (headless + container) fails CLOSED; this orthogonal axis (headless + non-claude backend) fails OPEN. Either fail closed or render the backend's own headless argv.",
       "notes": "WARNING [src/supervisor/loop.ts:1285]: The headless branch ignores `implBackend`. With `[backend] implementer = \"codex\"` in project.toml plus `--headless`, the loop silently dispatches `claude` (headless-argv.ts:74 hardcodes argv[0] = 'claude'), contradicting the configured backend, with no emitSpawnResolution event recorded either. US-006 established the precedent that an untested orthogonal-axis combination (headless + container) fails CLOSED; this orthogonal axis (headless + non-claude backend) fails OPEN. Either fail closed or render the backend's own headless argv."
     },
