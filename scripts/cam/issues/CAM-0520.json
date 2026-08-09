@@ -1,0 +1,10 @@
+{
+  "id": "CAM-520",
+  "title": "Marker de preflight grava 86 KB de stdout no campo detail e enterra a falha real que o orquestrador deveria narrar",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-09T11:58:39.672Z",
+  "updatedAt": "2026-08-09T11:58:39.672Z",
+  "description": "Quando o preflight do plano falha no passo bun-test, .claude/.cam-plan-preflight-failed.json grava o stdout INTEIRO da corrida no campo detail. Medido em 2026-08-08: 86 KB, com toda a saida de 6110 testes em 373 arquivos, incluindo centenas de linhas de fixture que comecam com o glifo de falha e sao saida ESPERADA de teste passando, nao falha.\n\nO custo e concreto e foi pago. A linha que o sidecar empurrou para o pane do orquestrador foi '[cam] plan preflight failed: bun-test - [cam] warn: orchestrator pane %1 did not go idle within 5 ms; sending anyway (+2437 more)', ou seja, um warn de pane irrelevante seguido de um contador. As duas unicas linhas que importavam, as duas entradas (fail) e o tally '6108 pass / 2 fail', estavam enterradas no meio dos 86 KB. O diagnostico precisou de uma rodada extra so para extrair do proprio marker o que a mensagem deveria ter dito.\n\nAs instrucoes de boot do orquestrador mandam surfacear esse campo como 'primeira linha, mais N restantes'. Com 86 KB de stdout cru a primeira linha e arbitraria e o campo nao informa nada. O contrato de exibicao pressupoe um detail curto que o produtor nunca garantiu.\n\nEscopo a decidir na spec: se o produtor do marker deve extrair o resumo relevante do runner (as linhas (fail) e o tally) em vez de despejar stdout, se deve haver um teto de tamanho com o bruto indo para arquivo separado, ou ambos. Note que o parse de saida do bun ja existe no repo (parseBunOutput), entao extrair as linhas (fail) e o tally nao exige mecanismo novo."
+}
