@@ -50,7 +50,7 @@
       "id": "US-R1-003",
       "title": "CRITICAL: The headless child env never sets `CAM_WORKER=1` (WORKER_ACTOR_ENV, b…",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "description": "CRITICAL [src/supervisor/headless-argv.ts:106]: The headless child env never sets `CAM_WORKER=1` (WORKER_ACTOR_ENV, backend-adapter.ts:223); stripHeadlessChildEnv only deletes keys. `.claude/hooks/orch-agent-allowlist.sh:83` uses CAM_WORKER as the SOLE discriminator for the worker write-guard that denies a worker writing `scripts/cam/prd.json` and `scripts/cam/issues/*` (ADR-0035 supervisor-sole-writer, CAM-63/CAM-166; the hook is registered for Write|Edit|MultiEdit in .claude/settings.json). A headless child inherits CAM_SESSION from the sidecar but not CAM_WORKER, so the guard is silently disabled and a headless worker can self-flip `passes: true` in prd.json. Set CAM_WORKER=1 in the returned env.",
       "notes": "CRITICAL [src/supervisor/headless-argv.ts:106]: The headless child env never sets `CAM_WORKER=1` (WORKER_ACTOR_ENV, backend-adapter.ts:223); stripHeadlessChildEnv only deletes keys. `.claude/hooks/orch-agent-allowlist.sh:83` uses CAM_WORKER as the SOLE discriminator for the worker write-guard that denies a worker writing `scripts/cam/prd.json` and `scripts/cam/issues/*` (ADR-0035 supervisor-sole-writer, CAM-63/CAM-166; the hook is registered for Write|Edit|MultiEdit in .claude/settings.json). A headless child inherits CAM_SESSION from the sidecar but not CAM_WORKER, so the guard is silently disabled and a headless worker can self-flip `passes: true` in prd.json. Set CAM_WORKER=1 in the returned env."
     },
