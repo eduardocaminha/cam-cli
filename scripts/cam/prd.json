@@ -112,7 +112,7 @@
         "Tests pass (bun test). [oracle: bun test] [species: invariance pin; GREEN on main @3afb0913 2026-08-09 EXIT=0, measured inside `bun run check:all`]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New test file `test/supervisor/headless-route.test.ts` (its own file precisely so its oracles are absent-and-red on main rather than inheriting green from an earlier story's file). Seam: decide ONCE in `src/supervisor/host.ts` at the site where `workerIsolation` is already resolved (around line 812, `readWorkerIsolation` + the `ensureContainerFn` / `perWorkerTimeoutMs` block) and pass ONE resolved implementer-dispatch strategy into the options bag (GOTCHA C). In `src/supervisor/loop.ts`, branch exactly once at the implementer dispatch (the `selectAdapter(implBackend).buildSpawnArgv(...)` block around lines 1230-1345) and skip the poll loop's pane-alive branch (line 1433) in headless mode; do NOT replicate the `worker_isolation` spread-ternary shape (GOTCHA D names its ~6 in-loop sites: 862, 1237, 1259, 1312, 1336, 1598). Keep `worker-report.json` as the authoritative completion event (patterns.md `Single-source outcome contract and 5-concern model`, CAM-77): headless changes how the process ENDS, not what proves the story done. `loop.ts` is near the file-size budget: if `scripts/check-file-sizes.ts` trips, raise the budget entry in `scripts/file-size-budget.json` in this same commit rather than compressing the code."
     },
