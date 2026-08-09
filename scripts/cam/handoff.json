@@ -1,26 +1,31 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Run one headless dispatch against a real child process with no TTY and an idle budget"
+    "id": "US-004",
+    "title": "Transport the --headless invocation flag from the CLI to RunSupervisorOptions"
   },
   "branchName": "cam/issue-516",
   "timestamp": "2026-08-09T00:00:00Z",
   "createdFiles": [
-    "src/supervisor/headless-dispatch.ts",
-    "test/supervisor/headless-dispatch.test.ts",
-    "test/fixtures/headless/fixture-child.ts"
+    "test/commands/next-headless-flag.test.ts"
   ],
-  "modifiedFiles": [],
+  "modifiedFiles": [
+    "index.ts",
+    "scripts/file-size-budget.json",
+    "src/commands/next.ts",
+    "src/commands/sidecar.ts",
+    "src/commands/status.ts",
+    "src/supervisor/host.ts",
+    "src/supervisor/loop.ts",
+    "src/vendor/_generated.ts",
+    "vendor/cam-loop.local.md.tmpl"
+  ],
   "openQuestions": [],
-  "nextStoryContext": "headless-dispatch.ts exports runHeadlessDispatch(opts: RunHeadlessDispatchOptions): Promise<HeadlessDispatchOutcome>. Options: { argv, env, cwd?, inputMessage, log: HeadlessDispatchLogWriter (US-002's openHeadlessDispatchLog(...) return value), idleBudgetMs? }. It spawns via Bun.spawn({ cmd: argv, env, stdin:'pipe', stdout:'pipe', stderr:'ignore' }) -- NEVER `terminal` (that is the whole no-TTY contract, GOTCHA F). Writes inputMessage (newline-terminated) to the stdin FileSink then calls .end() -- this is a SINGLE-TURN dispatch: the child only starts emitting once it sees EOF on stdin (matches the fixture's `stdin.on('end', ...)` gating, which future stories reusing this fixture must respect). Consumes stdout line-by-line through classifyHeadlessStreamLine (US-002) and appends every raw line verbatim via log.appendLine (US-002), tracking the LAST 'result' event's totalCostUsd. Outcome is a discriminated union: { kind:'completed', exitCode, totalCostUsd } when the child's own stdout stream ends (EOF), or { kind:'idle-timeout', totalCostUsd } when DEFAULT_HEADLESS_IDLE_BUDGET_MS (45 min, Warren precedent, GOTCHA E) -- or the injected idleBudgetMs -- elapses since the last received chunk with no EOF; on idle-timeout the child is killed with SIGTERM and proc.exited is awaited before returning. Completion is NEVER a pane probe (GOTCHA E): no isPaneAlive call anywhere in this module, which is exactly what US-005 (the loop.ts:1433 pane-liveness branch, injected isPaneAlive that THROWS when called) will assert against once this dispatch function is wired into the route. Bun API gotcha worth knowing for any future consumer: `ReturnType<Subprocess['stdout']['getReader']>` resolves the WRONG (last, BYOB-shadowed) overload under this repo's dom-less tsconfig -- always derive the reader type by calling `.getReader()` with zero args inside a small wrapper function and taking `ReturnType<typeof thatWrapper>` instead (see getDefaultStdoutReader in headless-dispatch.ts). Fixture gotcha: a child process with no pending timer/handle exits naturally (exit 0) the instant its stdin 'end' handler returns, even with a `process.on('SIGTERM', ...)` listener registered -- test/fixtures/headless/fixture-child.ts's 'idle' mode needs an explicit `setInterval(() => {}, 1_000_000)` after its one emitted event to stay alive until the parent's SIGTERM actually arrives; any new fixture that must 'hang' needs the same pending-handle trick.",
+  "nextStoryContext": "US-004 threaded `--headless` as a pure per-invocation flag end to end, following the `plan_issue` (US-001, CAM-151) precedent exactly: `index.ts` parseNextArgs (arg === '--headless' next to --skip-preflight, unknown-option reject path preserved) + NEXT_HELP Options row (now exported: `export const NEXT_HELP`, needed by the new test) + usage line; `src/commands/next.ts` renderStateFile input (`headless?: boolean`, defaults to `false` via `.replace('{{HEADLESS}}', String(input.headless === true))` -- deliberately NOT read from any prior state, this is what makes it non-sticky) and `NextOptions.headless` threaded into `runNext`'s two renderStateFile call sites (both the read-modify-write branch and the fresh-write branch write `options.headless === true`, never `parsed?.headless`); `vendor/cam-loop.local.md.tmpl` gained a `headless: {{HEADLESS}}` frontmatter line (re-embedded via `bun run embed-vendor`, `src/vendor/_generated.ts` regenerated, `embed-vendor:check` green); `src/commands/status.ts` LoopState.headless + parseStateFile's `typeof obj['headless'] === 'boolean'` guard; `src/commands/sidecar.ts` gained `makeReadHeadless(claudeDir)` (mirrors makeReadPlanIssue's undefined-on-absent contract) and BOTH `makeClearActive` and `makeSetPhaseFn` now thread `headless: parsed.headless` / `parsed?.headless` through their own read-modify-write re-renders so the flag survives clearActive-then-buildOpts ordering and phase transitions mid-cycle (dropping either site would silently evaporate the flag); `src/supervisor/host.ts` buildSupervisorOptions reads the state file fresh (own try/catch, not cached) and lifts `headless: boolean` into the returned `RunSupervisorOptions`; `src/supervisor/loop.ts` RunSupervisorOptions gained `headless?: boolean` as PURE TRANSPORT ONLY -- nothing in loop.ts consults it yet, no headless dispatch route is wired here by design (that wiring, and the container fail-close decision, are explicitly deferred to a later story per this story's PRD notes, likely US-006). Any future story wiring the flag into actual dispatch behavior should start at RunSupervisorOptions.headless in loop.ts and search for where runHeadlessDispatch (US-003, src/supervisor/headless-dispatch.ts) would need to be invoked instead of the normal pane-based worker spawn. Gotcha for that future story: buildSupervisorOptions' headless const is computed once per dispatch cycle (not memoized/cached across calls), so if a later story needs it live mid-cycle it should re-read via makeReadHeadless rather than trusting a stale RunSupervisorOptions snapshot. Ceiling raises this story made (all in the same `_ref` note): src/commands/next.ts 446->471, src/commands/sidecar.ts 3722->3749, src/commands/status.ts 1021->1031, src/supervisor/host.ts 1144->1163, src/supervisor/loop.ts 2778->2788.",
   "officialDocsValidated": [
     {
-      "lib": "Bun (Bun.spawn / Subprocess)",
-      "channel": "WebFetch",
-      "url": "https://bun.sh/docs/api/spawn",
-      "fetchedAt": "2026-08-09T00:00:00Z",
-      "status": "aligned",
-      "summary": "Confirms: `terminal` is the only option that attaches a PTY -- when provided the child sees isTTY===true and proc.stdin/stdout/stderr become null (use proc.terminal instead); simply omitting it is the entire no-TTY contract this story implements. Confirms `stdin:'pipe'` returns a FileSink with incremental write()/flush()/end(); `stdout` defaults to a ReadableStream<Uint8Array>; `exited` is `Promise<number>`; `kill(exitCode?: number | NodeJS.Signals)` accepts a signal name string directly (e.g. `proc.kill('SIGTERM')`), matching this module's IDLE_KILL_SIGNAL usage."
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Pure internal threading story: CLI arg parsing, in-repo template string replacement, and TS interface plumbing. No external library surface (js-yaml, Bun.spawn, tmux, etc.) was touched or relied upon."
     }
   ],
   "appliedPatternIds": []
