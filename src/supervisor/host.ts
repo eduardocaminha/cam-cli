@@ -77,6 +77,9 @@ import {
 	removeDispatchFailedMarker,
 	writeDispatchFailedMarker,
 } from './dispatch-failed-marker.ts';
+import { buildHeadlessChildInvocation } from './headless-argv.ts';
+import { openHeadlessDispatchLog } from './headless-log.ts';
+import { runHeadlessDispatch } from './headless-dispatch.ts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -1069,6 +1072,28 @@ export function buildSupervisorOptions(
 		}
 	})();
 
+	// US-005 (CAM-516): the headless implementer-dispatch strategy, resolved
+	// ONCE here (GOTCHA C) next to `headless` above -- the same single
+	// decision site `workerIsolation` is already resolved at. Always built
+	// (cheap closure, no side effects until invoked); loop.ts only ever calls
+	// it when `headless === true`, so building it unconditionally here never
+	// changes host-mode behavior. Model / task prompt / uuid all arrive as
+	// call-time params from loop.ts (which already resolved them once via
+	// resolvePhaseModel / buildImplementerTaskPrompt for the tmux path) so
+	// this closure never re-resolves either.
+	const headlessDispatchFn: RunSupervisorOptions['headlessDispatchFn'] = async (params) => {
+		const { argv, env } = buildHeadlessChildInvocation({
+			model: params.model,
+			sourceEnv: process.env,
+		});
+		const log = openHeadlessDispatchLog(claudeDir, params.uuid);
+		const inputMessage = JSON.stringify({
+			type: 'user',
+			message: { role: 'user', content: params.taskPrompt },
+		});
+		return runHeadlessDispatch({ argv, env, cwd, inputMessage, log });
+	};
+
 	// onProgress: rewrite state file on each iteration and terminal exit.
 	// Built here so the sidecar can inject it when calling runSupervisor.
 	const startedAt = new Date().toISOString();
@@ -1109,6 +1134,9 @@ export function buildSupervisorOptions(
 		// US-004 (CAM-516): per-invocation headless flag, lifted from the state
 		// file (see the `headless` const above).
 		headless,
+		// US-005 (CAM-516): the single resolved headless dispatch strategy
+		// (see the `headlessDispatchFn` const above).
+		headlessDispatchFn,
 		maxIterations,
 		perWorkerTimeoutMs,
 		maxWorkerTokens,
