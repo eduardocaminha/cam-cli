@@ -75,7 +75,7 @@
         "Tests pass (bun test). [oracle: bun test] [species: invariance pin; GREEN on main @3afb0913 2026-08-09 EXIT=0, measured inside `bun run check:all`]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "New files: `src/supervisor/headless-dispatch.ts`, `test/supervisor/headless-dispatch.test.ts`, plus a fixture executable under `test/fixtures/headless/`. Bun API pins from the fetch: `terminal` is the only PTY switch (omit it), `stdin:'pipe'` yields a FileSink with write/flush/end, `proc.exited` is Promise<number>, and `timeout` + `killSignal` give the kill without a hand-rolled timer race; the CLI page pins SIGTERM as abort-turn + exit 143. The idle budget is the Warren precedent named in GOTCHA E (45 min from the last event, born from a real incident); make the budget an injectable option so the test can use milliseconds. Never poll with a fixed `setTimeout` in the test: use `waitForCondition` (check:all runs `check-test-sleeps.ts`). patterns.md `Bun.spawn stdin/stdout pattern for shell-script integration tests` (CAM-91) and `Bun.spawnSync throws ENOENT` (CAM-186) both apply to the fixture wiring."
     },
