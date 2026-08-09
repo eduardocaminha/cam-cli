@@ -15,8 +15,17 @@
 // Flag set (ADR-0060 + officialDocsConsulted on this PRD, fetched against
 // https://code.claude.com/docs/en/headless 2026-08-09): the CLI, not the
 // Agent SDK, and exactly `--print`, `--input-format stream-json`,
-// `--output-format stream-json`, `--verbose`. Three flags are deliberately
-// ABSENT:
+// `--output-format stream-json`, `--verbose`, `--agent <agentName>`. The
+// `--agent` flag was originally missing here (CRITICAL bug, US-R1-001):
+// without it the spawned child boots as a generic `claude` session with no
+// AGENT.md, so the implementer protocol (worker-report.json, the
+// CAM_IMPLEMENTER_STATUS sentinel, story-selection rules) never applies even
+// though `task-prompt.ts`'s prompt text tells the child to follow it. The
+// tmux implementer contract already passes this same flag
+// (`ClaudeAdapter.buildSpawnArgv`, backend-adapter.ts, ` --agent
+// ${agentName}`); official docs confirm `--agent` combines with `-p`
+// (https://code.claude.com/docs/en/cli-reference). Three flags are
+// deliberately ABSENT:
 //   - `--resume`: the Warren readSessionId path this would have fed is dead
 //     (GOTCHA G).
 //   - `--include-partial-messages`: would emit token-level `stream_event`
@@ -51,6 +60,15 @@ export interface BuildHeadlessChildInvocationOptions {
 	 */
 	model?: string;
 	/**
+	 * Agent name to pass as `--agent`, e.g. `DEFAULT_IMPLEMENTER_AGENT`
+	 * (`'subagent-implementer'`, backend-adapter.ts). Required, not defaulted
+	 * here: this builder mirrors the caller's resolved agent name the same
+	 * way it mirrors `model` above, rather than re-deciding a default of its
+	 * own (a second source of truth for the implementer agent name). See the
+	 * module header for why this flag is mandatory.
+	 */
+	agentName: string;
+	/**
 	 * Source process env the child env is derived from (e.g. `process.env`).
 	 * Never mutated: a fresh object is returned.
 	 */
@@ -67,11 +85,22 @@ export interface HeadlessChildInvocation {
 
 /**
  * Render the fixed headless-mode argv array: `claude --print --input-format
- * stream-json --output-format stream-json --verbose`, plus `--model <model>`
- * when a model is supplied. Always an array, never a shell string (GOTCHA C).
+ * stream-json --output-format stream-json --verbose --agent <agentName>`,
+ * plus `--model <model>` when a model is supplied. Always an array, never a
+ * shell string (GOTCHA C).
  */
-function buildHeadlessArgv(model: string | undefined): string[] {
-	const argv = ['claude', '--print', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'];
+function buildHeadlessArgv(model: string | undefined, agentName: string): string[] {
+	const argv = [
+		'claude',
+		'--print',
+		'--input-format',
+		'stream-json',
+		'--output-format',
+		'stream-json',
+		'--verbose',
+		'--agent',
+		agentName,
+	];
 	if (model !== undefined) {
 		argv.push('--model', model);
 	}
@@ -123,7 +152,7 @@ export function buildHeadlessChildInvocation(
 	opts: BuildHeadlessChildInvocationOptions,
 ): HeadlessChildInvocation {
 	return {
-		argv: buildHeadlessArgv(opts.model),
+		argv: buildHeadlessArgv(opts.model, opts.agentName),
 		env: stripHeadlessChildEnv(opts.sourceEnv),
 	};
 }

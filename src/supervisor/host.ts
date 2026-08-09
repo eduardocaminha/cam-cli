@@ -1084,6 +1084,7 @@ export function buildSupervisorOptions(
 	const headlessDispatchFn: RunSupervisorOptions['headlessDispatchFn'] = async (params) => {
 		const { argv, env } = buildHeadlessChildInvocation({
 			model: params.model,
+			agentName: params.agentName,
 			sourceEnv: process.env,
 		});
 		const log = openHeadlessDispatchLog(claudeDir, params.uuid);

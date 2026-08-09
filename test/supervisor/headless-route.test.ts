@@ -24,6 +24,7 @@ import type { RunSupervisorOptions, SpawnFn, CapturePane, ReadPrd, WritePrd, Rea
 import type { PrdSnapshot } from '../../src/supervisor/decide.ts';
 import type { WorkerReport } from '../../src/supervisor/worker-report.ts';
 import type { HeadlessDispatchOutcome } from '../../src/supervisor/headless-dispatch.ts';
+import { DEFAULT_IMPLEMENTER_AGENT } from '../../src/supervisor/backend-adapter.ts';
 import { withVerifiedPanePid } from '../helpers/verified-pane-pid-spawn.ts';
 
 const PRD_PATH = '/fake/prd.json';
@@ -120,7 +121,8 @@ describe('headless route decision (US-005, CAM-516)', () => {
 		};
 
 		const spawnCalls: string[][] = [];
-		const headlessCalls: Array<{ uuid: string; storyId: string | undefined; taskPrompt: string; model: string }> = [];
+		const headlessCalls: Array<{ uuid: string; storyId: string | undefined; taskPrompt: string; model: string; agentName: string }> =
+			[];
 
 		const opts = makeBaseOpts({
 			headless: true,
@@ -148,6 +150,10 @@ describe('headless route decision (US-005, CAM-516)', () => {
 		expect(spawnCalls.filter((a) => a.includes('respawn-pane')).length).toBe(0);
 		expect(headlessCalls.length).toBe(1);
 		expect(headlessCalls[0]?.storyId).toBe('US-001');
+		// US-R1-001 (CRITICAL regression fix): the headless dispatch carries the
+		// same implementer agent name the tmux path resolves, so the spawned
+		// child has an AGENT.md and the implementer protocol applies.
+		expect(headlessCalls[0]?.agentName).toBe(DEFAULT_IMPLEMENTER_AGENT);
 	});
 
 	test('pane-liveness', async () => {

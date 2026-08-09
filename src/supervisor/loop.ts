@@ -338,6 +338,15 @@ export interface RunSupervisorOptions {
 		taskPrompt: string;
 		/** Resolved model slug, identical to the tmux path's `implModel`. */
 		model: string;
+		/**
+		 * Agent name to pass as `--agent` (US-R1-001, CRITICAL fix). Identical
+		 * to the tmux path's implementer agent name: this loop always resolves
+		 * it to `DEFAULT_IMPLEMENTER_AGENT` at the call site below, the same
+		 * constant the three tmux `buildSpawnArgv` call sites in this file use
+		 * (there is no `RunSupervisorOptions.agentName` override for either
+		 * path).
+		 */
+		agentName: string;
 	}) => Promise<HeadlessDispatchOutcome>;
 	/**
 	 * Re-run quality gates (typecheck + test) to verify before finalizing a
@@ -1333,6 +1342,9 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					storyId: advisoryStoryId,
 					taskPrompt: dispatchTaskPrompt,
 					model: implModel,
+					// US-R1-001: same DEFAULT_IMPLEMENTER_AGENT the tmux path's
+					// buildSpawnArgv call sites in this file resolve to.
+					agentName: DEFAULT_IMPLEMENTER_AGENT,
 				});
 
 				iterations++;

@@ -9,65 +9,83 @@
 //   2. `env policy`: WORKER_ENV_UNSET, HOST_ONLY_ENV_UNSET
 //      (CLAUDE_CODE_OAUTH_TOKEN), and ANTHROPIC_API_KEY are all stripped
 //      from the returned env, while unrelated vars survive.
+//   3. --agent <agentName> is always present and carries the caller-supplied
+//      value (CRITICAL regression fix, US-R1-001): without it the headless
+//      child has no AGENT.md and none of the implementer protocol.
 
 import { describe, expect, test } from 'bun:test';
-import { HOST_ONLY_ENV_UNSET, WORKER_ENV_UNSET } from '../../src/supervisor/backend-adapter.ts';
+import { DEFAULT_IMPLEMENTER_AGENT, HOST_ONLY_ENV_UNSET, WORKER_ENV_UNSET } from '../../src/supervisor/backend-adapter.ts';
 import { buildHeadlessChildInvocation } from '../../src/supervisor/headless-argv.ts';
+
+const TEST_AGENT_NAME = DEFAULT_IMPLEMENTER_AGENT;
 
 describe('buildHeadlessChildInvocation', () => {
 	test('argv is an array, not a shell string', () => {
-		const { argv } = buildHeadlessChildInvocation({ sourceEnv: {} });
+		const { argv } = buildHeadlessChildInvocation({ sourceEnv: {}, agentName: TEST_AGENT_NAME });
 		expect(Array.isArray(argv)).toBe(true);
 	});
 
 	test('contains --print', () => {
-		const { argv } = buildHeadlessChildInvocation({ sourceEnv: {} });
+		const { argv } = buildHeadlessChildInvocation({ sourceEnv: {}, agentName: TEST_AGENT_NAME });
 		expect(argv).toContain('--print');
 	});
 
 	test('contains --input-format stream-json', () => {
-		const { argv } = buildHeadlessChildInvocation({ sourceEnv: {} });
+		const { argv } = buildHeadlessChildInvocation({ sourceEnv: {}, agentName: TEST_AGENT_NAME });
 		const idx = argv.indexOf('--input-format');
 		expect(idx).toBeGreaterThanOrEqual(0);
 		expect(argv[idx + 1]).toBe('stream-json');
 	});
 
 	test('contains --output-format stream-json', () => {
-		const { argv } = buildHeadlessChildInvocation({ sourceEnv: {} });
+		const { argv } = buildHeadlessChildInvocation({ sourceEnv: {}, agentName: TEST_AGENT_NAME });
 		const idx = argv.indexOf('--output-format');
 		expect(idx).toBeGreaterThanOrEqual(0);
 		expect(argv[idx + 1]).toBe('stream-json');
 	});
 
 	test('contains --verbose', () => {
-		const { argv } = buildHeadlessChildInvocation({ sourceEnv: {} });
+		const { argv } = buildHeadlessChildInvocation({ sourceEnv: {}, agentName: TEST_AGENT_NAME });
 		expect(argv).toContain('--verbose');
 	});
 
 	test('does NOT contain --resume', () => {
-		const { argv } = buildHeadlessChildInvocation({ sourceEnv: {} });
+		const { argv } = buildHeadlessChildInvocation({ sourceEnv: {}, agentName: TEST_AGENT_NAME });
 		expect(argv).not.toContain('--resume');
 	});
 
 	test('does NOT contain --include-partial-messages', () => {
-		const { argv } = buildHeadlessChildInvocation({ sourceEnv: {} });
+		const { argv } = buildHeadlessChildInvocation({ sourceEnv: {}, agentName: TEST_AGENT_NAME });
 		expect(argv).not.toContain('--include-partial-messages');
 	});
 
 	test('does NOT contain --bare', () => {
-		const { argv } = buildHeadlessChildInvocation({ sourceEnv: {} });
+		const { argv } = buildHeadlessChildInvocation({ sourceEnv: {}, agentName: TEST_AGENT_NAME });
 		expect(argv).not.toContain('--bare');
 	});
 
+	test('contains --agent <agentName> (US-R1-001 regression)', () => {
+		const { argv } = buildHeadlessChildInvocation({ sourceEnv: {}, agentName: TEST_AGENT_NAME });
+		const idx = argv.indexOf('--agent');
+		expect(idx).toBeGreaterThanOrEqual(0);
+		expect(argv[idx + 1]).toBe(TEST_AGENT_NAME);
+	});
+
+	test('--agent carries the caller-supplied value, not a hardcoded default', () => {
+		const { argv } = buildHeadlessChildInvocation({ sourceEnv: {}, agentName: 'subagent-planner' });
+		const idx = argv.indexOf('--agent');
+		expect(argv[idx + 1]).toBe('subagent-planner');
+	});
+
 	test('appends --model when a model is supplied', () => {
-		const { argv } = buildHeadlessChildInvocation({ sourceEnv: {}, model: 'sonnet' });
+		const { argv } = buildHeadlessChildInvocation({ sourceEnv: {}, agentName: TEST_AGENT_NAME, model: 'sonnet' });
 		const idx = argv.indexOf('--model');
 		expect(idx).toBeGreaterThanOrEqual(0);
 		expect(argv[idx + 1]).toBe('sonnet');
 	});
 
 	test('omits --model when no model is supplied', () => {
-		const { argv } = buildHeadlessChildInvocation({ sourceEnv: {} });
+		const { argv } = buildHeadlessChildInvocation({ sourceEnv: {}, agentName: TEST_AGENT_NAME });
 		expect(argv).not.toContain('--model');
 	});
 
@@ -81,7 +99,7 @@ describe('buildHeadlessChildInvocation', () => {
 		}
 		sourceEnv.ANTHROPIC_API_KEY = 'sk-ant-set-by-operator-shell';
 
-		const { env } = buildHeadlessChildInvocation({ sourceEnv });
+		const { env } = buildHeadlessChildInvocation({ sourceEnv, agentName: TEST_AGENT_NAME });
 
 		for (const key of WORKER_ENV_UNSET) {
 			expect(env[key]).toBeUndefined();
@@ -99,7 +117,7 @@ describe('buildHeadlessChildInvocation', () => {
 
 	test('env policy does not mutate the source env', () => {
 		const sourceEnv: Record<string, string | undefined> = { ANTHROPIC_API_KEY: 'sk-ant-untouched' };
-		buildHeadlessChildInvocation({ sourceEnv });
+		buildHeadlessChildInvocation({ sourceEnv, agentName: TEST_AGENT_NAME });
 		expect(sourceEnv.ANTHROPIC_API_KEY).toBe('sk-ant-untouched');
 	});
 });
