@@ -202,6 +202,14 @@ export interface LoopState {
 	 * on every state-file rewrite so the dashboard can detect a stalled loop.
 	 */
 	last_activity?: string;
+	/**
+	 * Per-invocation `--headless` flag (US-004, CAM-516), transported from
+	 * `cam next --headless` through this state file. NOT sticky: a `cam next`
+	 * invocation without the flag always writes `headless: false`, so an
+	 * absent/false value here never implies a prior cycle's setting leaked
+	 * forward. Absent in state files written before the field existed.
+	 */
+	headless?: boolean;
 }
 
 /**
@@ -422,6 +430,8 @@ export function parseStateFile(contents: string): LoopState | null {
 	if (typeof obj['last_activity'] === 'string' && obj['last_activity'].length > 0) {
 		out.last_activity = obj['last_activity'];
 	}
+	// --- headless (new optional field, US-004 CAM-516) ------------------------
+	if (typeof obj['headless'] === 'boolean') out.headless = obj['headless'];
 	return out;
 }
 

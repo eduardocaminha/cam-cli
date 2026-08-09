@@ -52,6 +52,7 @@ import {
 import { sendKeysVerified, NARRATION_IDLE_TIMEOUT_MS, type CapturePaneFn } from '../tmux/dispatch.ts';
 import { isPidAlive } from '../commands/resume.ts';
 import { renderStateFile } from '../commands/next.ts';
+import { parseStateFile } from '../commands/status.ts';
 import { WORKER_REPORT_FILENAME } from './worker-report.ts';
 import { parseReviewReport, parseWorkerReport } from './report-parse.ts';
 import type { ReviewReport } from './review-report.ts';
@@ -1053,6 +1054,21 @@ export function buildSupervisorOptions(
 	const readWorkerReport = makeReadWorkerReport(cwd);
 	const clearWorkerReport = makeClearWorkerReport(cwd);
 
+	// US-004 (CAM-516): lift the per-invocation `headless` flag out of the
+	// state file into the options bag. Read fresh here (not cached) since
+	// `buildSupervisorOptions` is called once per dispatch cycle, after
+	// clearActive()'s preserve-on-read-modify-write (sidecar.ts) has already
+	// run for this tick.
+	const headless: RunSupervisorOptions['headless'] = (() => {
+		try {
+			if (!existsSync(stateFilePath)) return false;
+			const contents = readFileSync(stateFilePath, 'utf8');
+			return parseStateFile(contents)?.headless === true;
+		} catch {
+			return false;
+		}
+	})();
+
 	// onProgress: rewrite state file on each iteration and terminal exit.
 	// Built here so the sidecar can inject it when calling runSupervisor.
 	const startedAt = new Date().toISOString();
@@ -1090,6 +1106,9 @@ export function buildSupervisorOptions(
 		workerReportPath: join(cwd, WORKER_REPORT_FILENAME),
 		permissionMode,
 		taskPrompt,
+		// US-004 (CAM-516): per-invocation headless flag, lifted from the state
+		// file (see the `headless` const above).
+		headless,
 		maxIterations,
 		perWorkerTimeoutMs,
 		maxWorkerTokens,

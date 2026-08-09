@@ -303,6 +303,16 @@ export interface RunSupervisorOptions {
 	/** Free-text task prompt sent to the implementer. */
 	taskPrompt: string;
 	/**
+	 * Per-invocation `--headless` flag (US-004, CAM-516), lifted from the
+	 * state file's `headless` field by the sidecar (see
+	 * `buildSupervisorOptions` in host.ts). Pure transport for now: nothing in
+	 * this module consults it yet (no headless dispatch route is wired here),
+	 * that wiring is a separate story. Never sourced from persisted config —
+	 * only from the per-invocation state-file write `cam next --headless`
+	 * performs.
+	 */
+	headless?: boolean;
+	/**
 	 * Re-run quality gates (typecheck + test) to verify before finalizing a
 	 * worker that implemented a story but did not flip prd.json (CAM-32 BUG 2).
 	 * Optional; without it, an 'incomplete' outcome becomes blocked.
