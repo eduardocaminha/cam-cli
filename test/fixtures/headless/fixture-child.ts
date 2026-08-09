@@ -9,21 +9,28 @@
 // pattern established by test/fixtures/interactivity/mock-claude.ts and
 // test/fixtures/dispatch-geometry/raw-echo.ts.
 //
-// Usage: `bun fixture-child.ts <happy|idle>`
+// Usage: `bun fixture-child.ts <happy|idle|chatty>`
 //
-//   happy - drains stdin (the stream-json input message) to EOF, then emits
-//           a system/init line (reporting `process.stdout.isTTY` so the "no
-//           TTY is allocated" test can assert on it from inside the real
-//           child, not the parent), an assistant line, and a result line
-//           carrying `total_cost_usd`, then exits 0.
-//   idle  - drains stdin to EOF, emits ONE system/init line, then goes
-//           silent forever: it never exits on its own. The "idle budget"
-//           test proves the dispatch runner kills it once its idle budget
-//           elapses. On SIGTERM it exits 143, mirroring the documented
-//           abort-turn behavior of the real CLI (officialDocsValidated pin
-//           on this story, code.claude.com/docs/en/headless).
+//   happy  - drains stdin (the stream-json input message) to EOF, then emits
+//            a system/init line (reporting `process.stdout.isTTY` so the "no
+//            TTY is allocated" test can assert on it from inside the real
+//            child, not the parent), an assistant line, and a result line
+//            carrying `total_cost_usd`, then exits 0.
+//   idle   - drains stdin to EOF, emits ONE system/init line, then goes
+//            silent forever: it never exits on its own. The "idle budget"
+//            test proves the dispatch runner kills it once its idle budget
+//            elapses. On SIGTERM it exits 143, mirroring the documented
+//            abort-turn behavior of the real CLI (officialDocsValidated pin
+//            on this story, code.claude.com/docs/en/headless).
+//   chatty - drains stdin to EOF, emits a system/init line, then keeps
+//            emitting a fresh assistant line every 20ms forever: it never
+//            goes idle and never exits on its own (US-R1-006, CAM-516). The
+//            "absolute timeout" test proves the dispatch runner's
+//            `absoluteTimeoutMs` bound kills it even though it never trips
+//            the resettable idle budget. On SIGTERM it exits 143, same as
+//            `idle`.
 
-const mode = process.argv[2] === 'idle' ? 'idle' : 'happy';
+const mode = process.argv[2] === 'idle' ? 'idle' : process.argv[2] === 'chatty' ? 'chatty' : 'happy';
 
 function emit(obj: unknown): void {
 	process.stdout.write(`${JSON.stringify(obj)}\n`);
@@ -49,6 +56,16 @@ process.stdin.on('end', () => {
 		// more scheduled work) — a long-lived, never-firing interval is the
 		// pending handle that keeps this process genuinely alive until SIGTERM.
 		setInterval(() => {}, 1_000_000);
+		return;
+	}
+
+	if (mode === 'chatty') {
+		// Deliberately never goes idle and never exits on its own: emits a
+		// fresh event well inside any reasonable idle budget, forever. Only the
+		// dispatch runner's non-resettable absoluteTimeoutMs can end this.
+		setInterval(() => {
+			emit({ type: 'assistant', message: { content: [{ type: 'text', text: 'still working' }] } });
+		}, 20);
 		return;
 	}
 

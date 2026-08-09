@@ -124,4 +124,48 @@ describe('runHeadlessDispatch', () => {
 		expect(lines).toHaveLength(1);
 		expect(lines[0]?.type).toBe('system');
 	});
+
+	// US-R1-006 (CAM-516): the idle budget alone never bounds a CHATTY runaway
+	// child (one that keeps emitting an event before every idle-budget tick
+	// elapses); only a non-resettable absolute wall-clock cap can.
+	test('absolute timeout: a chatty child that never idles is still killed', async () => {
+		const claudeDir = createTestTmpdir();
+		const log = openHeadlessDispatchLog(claudeDir, 'dispatch-absolute');
+
+		const outcome = await runHeadlessDispatch({
+			argv: ['bun', FIXTURE_PATH, 'chatty'],
+			env: process.env,
+			inputMessage: JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }),
+			log,
+			// Idle budget is generous relative to the fixture's 20ms cadence (it
+			// would never fire on its own); the absolute cap is what must end this.
+			idleBudgetMs: 60_000,
+			absoluteTimeoutMs: 150,
+		});
+
+		expect(outcome.kind).toBe('absolute-timeout');
+		expect(outcome.totalCostUsd).toBeUndefined();
+
+		// The fixture kept emitting events well past the absolute deadline; the
+		// dispatch runner killed it anyway (more than the initial system/init
+		// line was logged, proving the idle budget never would have fired).
+		const lines = readLoggedLines(log.path);
+		expect(lines.length).toBeGreaterThan(1);
+		expect(lines[0]?.type).toBe('system');
+	});
+
+	test('no absoluteTimeoutMs supplied: only the idle budget applies (back-compat)', async () => {
+		const claudeDir = createTestTmpdir();
+		const log = openHeadlessDispatchLog(claudeDir, 'dispatch-no-absolute');
+
+		const outcome = await runHeadlessDispatch({
+			argv: ['bun', FIXTURE_PATH, 'happy'],
+			env: process.env,
+			inputMessage: JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }),
+			log,
+			// absoluteTimeoutMs omitted entirely.
+		});
+
+		expect(outcome.kind).toBe('completed');
+	});
 });

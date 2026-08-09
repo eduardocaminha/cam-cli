@@ -16,7 +16,17 @@
 //      real child process; this idle budget is the direct replacement. The
 //      Warren precedent this mirrors is 45 minutes, born from a real
 //      incident (DEFAULT_HEADLESS_IDLE_BUDGET_MS below), and is injectable
-//      via `idleBudgetMs` so tests can use milliseconds.
+//      via `idleBudgetMs` so tests can use milliseconds, or
+//   3. an ABSOLUTE wall-clock deadline measured from dispatch start, never
+//      reset by an event (US-R1-006, CAM-516). The idle budget above is
+//      resettable by design (it exists to tolerate long *thinking* gaps
+//      between events), which means it never bounds a CHATTY runaway child:
+//      one that keeps emitting SOME event before every idle-budget tick
+//      elapses runs forever. The tmux poll loop's own per-dispatch ceiling
+//      (`perWorkerTimeoutMs`, loop.ts) is exactly this kind of non-resettable
+//      wall-clock bound; `absoluteTimeoutMs` below is the headless-path
+//      equivalent, wired from the SAME `perWorkerTimeoutMs` value
+//      (host.ts) so both dispatch paths share one ceiling.
 //
 // No TTY is ever allocated: `terminal` is the ONLY `Bun.spawn` option that
 // attaches a PTY (officialDocsValidated pin, bun.sh/docs/api/spawn), so
@@ -46,21 +56,38 @@ export interface RunHeadlessDispatchOptions {
 	log: HeadlessDispatchLogWriter;
 	/** Idle budget in ms, measured from the last received event. Defaults to {@link DEFAULT_HEADLESS_IDLE_BUDGET_MS}. */
 	idleBudgetMs?: number;
+	/**
+	 * Absolute wall-clock cap in ms, measured from dispatch start and NEVER
+	 * reset by an event (US-R1-006, CAM-516). Optional: when omitted, only
+	 * the resettable `idleBudgetMs` bound applies, i.e. a chatty child that
+	 * always emits an event before the idle deadline elapses is unbounded.
+	 * Callers wire the same `perWorkerTimeoutMs` the tmux poll loop already
+	 * enforces (see the module header).
+	 */
+	absoluteTimeoutMs?: number;
 }
 
 /**
  * Terminal outcome of one headless dispatch.
  *
- *   'completed'    - the child's stdout stream ended (the child exited) before
- *                     the idle budget elapsed. Carries the real child exit code
- *                     and the last `result` event's `total_cost_usd`, if any
- *                     `result` event was ever received.
- *   'idle-timeout' - no event arrived within the idle budget; the child was
- *                     killed. Never a success, never a hang.
+ *   'completed'        - the child's stdout stream ended (the child exited)
+ *                         before the idle budget or the absolute deadline
+ *                         elapsed. Carries the real child exit code and the
+ *                         last `result` event's `total_cost_usd`, if any
+ *                         `result` event was ever received.
+ *   'idle-timeout'     - no event arrived within the idle budget; the child
+ *                         was killed. Never a success, never a hang.
+ *   'absolute-timeout' - `absoluteTimeoutMs` elapsed since dispatch start
+ *                         (US-R1-006, CAM-516), regardless of how recently an
+ *                         event arrived; the child was killed. Distinct from
+ *                         'idle-timeout' so a caller/operator can tell a
+ *                         genuinely stuck child (idle) apart from a chatty
+ *                         runaway one (absolute).
  */
 export type HeadlessDispatchOutcome =
 	| { kind: 'completed'; exitCode: number; totalCostUsd: number | undefined }
-	| { kind: 'idle-timeout'; totalCostUsd: number | undefined };
+	| { kind: 'idle-timeout'; totalCostUsd: number | undefined }
+	| { kind: 'absolute-timeout'; totalCostUsd: number | undefined };
 
 /**
  * The exact `Bun.Subprocess` instantiation this module always spawns with
@@ -92,6 +119,28 @@ type HeadlessChildReadResult = Awaited<ReturnType<HeadlessChildStdoutReader['rea
 /** Outcome of racing one `reader.read()` against the remaining idle budget. */
 type ReadRace = { kind: 'idle' } | { kind: 'read'; result: HeadlessChildReadResult };
 
+type ReadTimeoutBudget = {
+	remainingMs: number;
+	timeoutKind: 'idle-timeout' | 'absolute-timeout';
+};
+
+/** Select the first deadline the next stdout read can reach. */
+function resolveReadTimeoutBudget(
+	idleBudgetMs: number,
+	lastEventAt: number,
+	absoluteDeadlineAt: number | undefined,
+): ReadTimeoutBudget {
+	const idleRemainingMs = Math.max(0, idleBudgetMs - (Date.now() - lastEventAt));
+	const absoluteRemainingMs =
+		absoluteDeadlineAt !== undefined ? Math.max(0, absoluteDeadlineAt - Date.now()) : undefined;
+
+	if (absoluteRemainingMs !== undefined && absoluteRemainingMs <= idleRemainingMs) {
+		return { remainingMs: absoluteRemainingMs, timeoutKind: 'absolute-timeout' };
+	}
+
+	return { remainingMs: idleRemainingMs, timeoutKind: 'idle-timeout' };
+}
+
 /**
  * Race a single `reader.read()` call against `remainingMs` of idle budget.
  * Both the timer and the read settle inside the same executor scope so
@@ -119,27 +168,34 @@ function raceReadAgainstIdle(reader: HeadlessChildStdoutReader, remainingMs: num
 /**
  * Consume `stdout` line by line, calling `onLine` for every complete NDJSON
  * line (in arrival order), resetting the idle deadline on every line
- * received. Resolves 'stream-ended' on EOF, or 'idle-timeout' once
+ * received. Resolves 'stream-ended' on EOF, 'idle-timeout' once
  * `idleBudgetMs` elapses since the last received chunk without the stream
- * ending.
+ * ending, or 'absolute-timeout' once `absoluteDeadlineAt` (a fixed
+ * wall-clock instant, NEVER reset by an event) is reached first
+ * (US-R1-006, CAM-516).
  */
 async function consumeStdoutWithIdleBudget(
 	stdout: HeadlessChildProcess['stdout'],
 	idleBudgetMs: number,
+	absoluteDeadlineAt: number | undefined,
 	onLine: (line: string) => void,
-): Promise<'stream-ended' | 'idle-timeout'> {
+): Promise<'stream-ended' | 'idle-timeout' | 'absolute-timeout'> {
 	const reader = getDefaultStdoutReader(stdout);
 	const decoder = new TextDecoder();
 	let buffer = '';
 	let lastEventAt = Date.now();
 
 	for (;;) {
-		const remainingMs = Math.max(0, idleBudgetMs - (Date.now() - lastEventAt));
+		const { remainingMs, timeoutKind } = resolveReadTimeoutBudget(
+			idleBudgetMs,
+			lastEventAt,
+			absoluteDeadlineAt,
+		);
 		const race = await raceReadAgainstIdle(reader, remainingMs);
 
 		if (race.kind === 'idle') {
 			await reader.cancel().catch(() => {});
-			return 'idle-timeout';
+			return timeoutKind;
 		}
 
 		lastEventAt = Date.now();
@@ -166,6 +222,11 @@ async function consumeStdoutWithIdleBudget(
  */
 export async function runHeadlessDispatch(opts: RunHeadlessDispatchOptions): Promise<HeadlessDispatchOutcome> {
 	const idleBudgetMs = opts.idleBudgetMs ?? DEFAULT_HEADLESS_IDLE_BUDGET_MS;
+	// US-R1-006 (CAM-516): fixed wall-clock instant, computed once at dispatch
+	// start. Never recomputed/reset as events arrive (that is precisely what
+	// distinguishes it from idleBudgetMs above).
+	const absoluteDeadlineAt =
+		opts.absoluteTimeoutMs !== undefined ? Date.now() + opts.absoluteTimeoutMs : undefined;
 
 	// No `terminal` option: this is the entire no-TTY contract (see module
 	// header). `stdin: 'pipe'` yields a FileSink; `stdout: 'pipe'` yields a
@@ -192,12 +253,12 @@ export async function runHeadlessDispatch(opts: RunHeadlessDispatchOptions): Pro
 		}
 	};
 
-	const streamOutcome = await consumeStdoutWithIdleBudget(proc.stdout, idleBudgetMs, onLine);
+	const streamOutcome = await consumeStdoutWithIdleBudget(proc.stdout, idleBudgetMs, absoluteDeadlineAt, onLine);
 
-	if (streamOutcome === 'idle-timeout') {
+	if (streamOutcome === 'idle-timeout' || streamOutcome === 'absolute-timeout') {
 		proc.kill(IDLE_KILL_SIGNAL);
 		await proc.exited;
-		return { kind: 'idle-timeout', totalCostUsd };
+		return { kind: streamOutcome, totalCostUsd };
 	}
 
 	const exitCode = await proc.exited;

@@ -1093,7 +1093,10 @@ export function buildSupervisorOptions(
 			type: 'user',
 			message: { role: 'user', content: params.taskPrompt },
 		});
-		return runHeadlessDispatch({ argv, env, cwd, inputMessage, log });
+		// US-R1-006 (CAM-516): thread the same absolute wall-clock cap the
+		// caller resolved (loop.ts's perWorkerTimeoutMs) through to the runner,
+		// rather than re-resolving it here (a second source of truth).
+		return runHeadlessDispatch({ argv, env, cwd, inputMessage, log, absoluteTimeoutMs: params.absoluteTimeoutMs });
 	};
 
 	// onProgress: rewrite state file on each iteration and terminal exit.

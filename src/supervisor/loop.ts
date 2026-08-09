@@ -354,6 +354,16 @@ export interface RunSupervisorOptions {
 		 * unchanged here rather than re-resolved at this call site.
 		 */
 		permissionMode: string;
+		/**
+		 * Absolute wall-clock dispatch cap in ms (US-R1-006, CAM-516). Identical
+		 * to the tmux path's `perWorkerTimeoutMs` (`now() - startMs >=
+		 * perWorkerTimeoutMs` in the tmux poll loop below): the headless path's
+		 * own idle budget (DEFAULT_HEADLESS_IDLE_BUDGET_MS, headless-dispatch.ts)
+		 * is resettable by any emitted event and therefore never bounds a chatty
+		 * runaway child on its own. Threaded straight into
+		 * `RunHeadlessDispatchOptions.absoluteTimeoutMs`.
+		 */
+		absoluteTimeoutMs: number;
 	}) => Promise<HeadlessDispatchOutcome>;
 	/**
 	 * Re-run quality gates (typecheck + test) to verify before finalizing a
@@ -1390,6 +1400,28 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					);
 				}
 
+				// US-R1-006 (CAM-516): the CAM-5 per-worker token ceiling
+				// (maxWorkerTokens + readWorkerTokens) is unenforceable in headless
+				// mode for the SAME structural reason shouldApplyTokenCeiling
+				// disables it for 'codex' above: readWorkerTokens resolves a
+				// claude-shaped `.jsonl` transcript keyed by session id via
+				// transcriptPathForSession(uuid, ...), but the headless child
+				// (headless-argv.ts) is never given an explicit `--session-id` --
+				// it generates its own -- so `uuid` (this loop's dispatch id) never
+				// matches the real transcript's filename and readWorkerTokens
+				// always returns null. Rather than silently never enforcing a
+				// configured ceiling, emit the exact same one-time notice the
+				// codex path emits (mirrors the shouldApplyTokenCeiling doc
+				// comment above almost verbatim) whenever a ceiling is configured
+				// and a reader is wired.
+				if (maxWorkerTokens > 0 && readWorkerTokens) {
+					emit('worker-token-ceiling-unavailable', advisoryStoryId, uuid, {
+						backend: implBackend,
+						ceiling: maxWorkerTokens,
+						mode: 'headless',
+					});
+				}
+
 				// US-004: erase any stale report from the previous worker run before
 				// dispatching the new one (same reasoning as the tmux branch below).
 				clearWorkerReport?.();
@@ -1407,6 +1439,13 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					// US-R1-002: same opts.permissionMode the tmux path's
 					// buildSpawnArgv call sites in this file already thread.
 					permissionMode,
+					// US-R1-006: same perWorkerTimeoutMs the tmux poll loop enforces
+					// as its own per-dispatch wall-clock ceiling (`now() - startMs >=
+					// perWorkerTimeoutMs` below in the else branch) -- see
+					// RunHeadlessDispatchOptions.absoluteTimeoutMs's doc comment
+					// (headless-dispatch.ts) for why the resettable idle budget alone
+					// cannot bound a chatty runaway child.
+					absoluteTimeoutMs: perWorkerTimeoutMs,
 				});
 
 				iterations++;
@@ -1416,14 +1455,20 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					pollOutcome: headlessOutcome.kind,
 				});
 
-				if (headlessOutcome.kind === 'idle-timeout') {
+				if (headlessOutcome.kind === 'idle-timeout' || headlessOutcome.kind === 'absolute-timeout') {
 					// Mirrors the tmux timeout dead-worker retry/backoff (CAM-44)
 					// exactly, minus any pane touch: runHeadlessDispatch already
 					// killed the real child (GOTCHA E), so there is nothing here to
-					// echo/kill via spawn.
+					// echo/kill via spawn. US-R1-006 (CAM-516): 'absolute-timeout'
+					// (a chatty child that outran perWorkerTimeoutMs without ever
+					// going idle) shares this exact retry/backoff shape with
+					// 'idle-timeout' (a genuinely stuck child) -- only the emitted
+					// label differs, so a diagnosing operator can tell which bound
+					// fired without changing the retry semantics.
+					const timeoutLabel = headlessOutcome.kind === 'idle-timeout' ? 'idle-timeout' : 'absolute-timeout';
 					deadWorkerStreak += 1;
 					if (deadWorkerStreak >= MAX_DEAD_WORKER_RETRIES) {
-						const terminalDetail = `dead-worker: ${deadWorkerStreak} consecutive headless idle-timeout outcomes (advisory ${advisoryStoryId ?? 'unknown'})`;
+						const terminalDetail = `dead-worker: ${deadWorkerStreak} consecutive headless ${timeoutLabel} outcomes (advisory ${advisoryStoryId ?? 'unknown'})`;
 						lastOutcome = { kind: 'blocked', storyId: undefined, detail: terminalDetail };
 						finishTerminal('blocked');
 						return { status: 'blocked', iterations, lastOutcome };
@@ -1431,7 +1476,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					lastOutcome = {
 						kind: 'blocked',
 						storyId: undefined,
-						detail: 'headless-idle-timeout',
+						detail: `headless-${timeoutLabel}`,
 					};
 					const deadBackoffMs = computeBackoffMs(deadWorkerStreak, {
 						base: NO_PROGRESS_BACKOFF_MS,
@@ -1442,15 +1487,16 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					emit('pane-died-retry', advisoryStoryId, uuid, {
 						attempt: deadWorkerStreak,
 						backoffMs: deadBackoffMs,
-						pollOutcome: 'timeout',
+						pollOutcome: timeoutLabel,
 					});
 					sleepFn(deadBackoffMs);
 					continue;
 				}
 
-				// 'completed': the real child exited before the idle budget elapsed.
-				// Sentinel-equivalent: any prior dead-pane/dead-worker streak breaks,
-				// exactly like the tmux branch's "sentinel found" case (CAM-44).
+				// 'completed': the real child exited before the idle budget or the
+				// absolute deadline elapsed. Sentinel-equivalent: any prior
+				// dead-pane/dead-worker streak breaks, exactly like the tmux
+				// branch's "sentinel found" case (CAM-44).
 				deadWorkerStreak = 0;
 			} else {
 				// Build the shell command for the worker (always interactive TUI session).

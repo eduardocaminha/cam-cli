@@ -654,16 +654,25 @@ export interface PatternOutcomeAppendFailedEventDetail {
 }
 
 /**
- * 'worker-token-ceiling-unavailable' event detail (US-003, CAM-350): recorded
- * once per implementer dispatch when the resolved backend is 'codex' and a
+ * 'worker-token-ceiling-unavailable' event detail (US-003, CAM-350; extended
+ * US-R1-006, CAM-516): recorded once per implementer dispatch when a
  * per-worker token ceiling was configured (maxWorkerTokens>0, reader wired)
- * but cannot be enforced -- see shouldApplyTokenCeiling (src/supervisor/loop.ts).
- *   - backend: the resolved implementer backend that could not be enforced against ('codex').
+ * but cannot be enforced -- see shouldApplyTokenCeiling (src/supervisor/loop.ts)
+ * for the tmux+codex case. The headless dispatch branch (loop.ts) emits the
+ * same event unconditionally on backend (headless mode only ever dispatches
+ * 'claude', US-R1-005's fail-closed check) because readWorkerTokens resolves
+ * a transcript keyed by session id, and the headless child is never given an
+ * explicit `--session-id` (headless-argv.ts) -- the dispatch uuid never
+ * matches the real transcript filename either way.
+ *   - backend: the resolved implementer backend that could not be enforced against.
  *   - ceiling: the configured maxWorkerTokens value that is going unenforced.
+ *   - mode: 'headless' when emitted from the headless dispatch branch; absent
+ *     for the original tmux+codex emission site.
  */
 export interface WorkerTokenCeilingUnavailableEventDetail {
 	backend: string;
 	ceiling: number;
+	mode?: 'headless';
 }
 
 /**
