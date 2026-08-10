@@ -225,6 +225,31 @@ describe('runHeadlessDispatch', () => {
 		expect(elapsedMs).toBeLessThan(300);
 	});
 
+	test('keeps a pending stdout read across token probe ticks', async () => {
+		const claudeDir = createTestTmpdir();
+		const log = openHeadlessDispatchLog(claudeDir, 'dispatch-delayed-result');
+		let probes = 0;
+
+		const outcome = await runHeadlessDispatch({
+			argv: ['bun', FIXTURE_PATH, 'delayed-result'],
+			env: process.env,
+			inputMessage: JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }),
+			log,
+			idleBudgetMs: 1_000,
+			tokenPollIntervalMs: 10,
+			tokenCeilingProbe: () => {
+				probes += 1;
+				return undefined;
+			},
+		});
+
+		expect(outcome).toEqual({ kind: 'completed', exitCode: 0, totalCostUsd: 1.23 });
+		expect(probes).toBeGreaterThan(1);
+		expect(readLoggedLines(log.path)).toEqual([
+			{ type: 'result', subtype: 'success', total_cost_usd: 1.23 },
+		]);
+	});
+
 	test('no absoluteTimeoutMs supplied: only the idle budget applies (back-compat)', async () => {
 		const claudeDir = createTestTmpdir();
 		const log = openHeadlessDispatchLog(claudeDir, 'dispatch-no-absolute');

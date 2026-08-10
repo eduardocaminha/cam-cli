@@ -9,7 +9,7 @@
 // pattern established by test/fixtures/interactivity/mock-claude.ts and
 // test/fixtures/dispatch-geometry/raw-echo.ts.
 //
-// Usage: `bun fixture-child.ts <happy|idle|chatty>`
+// Usage: `bun fixture-child.ts <happy|idle|chatty|delayed-result>`
 //
 //   happy  - drains stdin (the stream-json input message) to EOF, then emits
 //            a system/init line (reporting `process.stdout.isTTY` so the "no
@@ -29,8 +29,15 @@
 //            `absoluteTimeoutMs` bound kills it even though it never trips
 //            the resettable idle budget. On SIGTERM it exits 143, same as
 //            `idle`.
+//   delayed-result - drains stdin to EOF, stays silent for 80ms, then emits
+//            one result line and exits 0. This leaves enough time for a 10ms
+//            token-probe tick before stdout arrives.
 
-const mode = process.argv[2] === 'idle' ? 'idle' : process.argv[2] === 'chatty' ? 'chatty' : 'happy';
+const requestedMode = process.argv[2];
+const mode =
+	requestedMode === 'idle' || requestedMode === 'chatty' || requestedMode === 'delayed-result'
+		? requestedMode
+		: 'happy';
 
 function emit(obj: unknown): void {
 	process.stdout.write(`${JSON.stringify(obj)}\n`);
@@ -46,6 +53,14 @@ process.stdin.resume();
 process.stdin.on('data', () => {});
 
 process.stdin.on('end', () => {
+	if (mode === 'delayed-result') {
+		setTimeout(() => {
+			emit({ type: 'result', subtype: 'success', total_cost_usd: 1.23 });
+			process.exit(0);
+		}, 80);
+		return;
+	}
+
 	emit({ type: 'system', subtype: 'init', isTTY: process.stdout.isTTY === true });
 
 	if (mode === 'idle') {

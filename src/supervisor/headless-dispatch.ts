@@ -172,27 +172,22 @@ function resolveReadTimeoutBudget(
 	return budget;
 }
 
-/**
- * Race a single `reader.read()` call against `remainingMs` of idle budget.
- * Both the timer and the read settle inside the same executor scope so
- * neither TS nor a real race condition can observe a partially-initialized
- * timer handle.
- */
-function raceReadAgainstTimer(reader: HeadlessChildStdoutReader, remainingMs: number): Promise<ReadRace> {
+/** Treat a read error (for example, cancellation elsewhere) as stream-ended. */
+function readStdout(reader: HeadlessChildStdoutReader): Promise<HeadlessChildReadResult> {
+	return reader.read().catch(() => ({ done: true, value: undefined }));
+}
+
+/** Race one pending stdout read against `remainingMs` of idle budget. */
+function raceReadAgainstTimer(
+	pendingRead: Promise<HeadlessChildReadResult>,
+	remainingMs: number,
+): Promise<ReadRace> {
 	return new Promise((resolve) => {
 		const timer = setTimeout(() => resolve({ kind: 'timer' }), remainingMs);
-		reader.read().then(
-			(result) => {
-				clearTimeout(timer);
-				resolve({ kind: 'read', result });
-			},
-			() => {
-				// A read error (e.g. the stream was cancelled elsewhere) is treated
-				// as stream-ended: the caller's loop exits via `done: true`.
-				clearTimeout(timer);
-				resolve({ kind: 'read', result: { done: true, value: undefined } });
-			},
-		);
+		pendingRead.then((result) => {
+			clearTimeout(timer);
+			resolve({ kind: 'read', result });
+		});
 	});
 }
 
@@ -243,6 +238,7 @@ async function consumeStdoutWithIdleBudget(
 	const decoder = new TextDecoder();
 	let buffer = '';
 	let lastEventAt = Date.now();
+	let pendingRead = readStdout(reader);
 
 	for (;;) {
 		const tokenSpend = tokenCeilingProbe?.();
@@ -257,7 +253,7 @@ async function consumeStdoutWithIdleBudget(
 			absoluteDeadlineAt,
 			tokenPollIntervalMs,
 		);
-		const race = await raceReadAgainstTimer(reader, remainingMs);
+		const race = await raceReadAgainstTimer(pendingRead, remainingMs);
 
 		if (race.kind === 'timer') {
 			if (timeoutKind === 'token-check') continue;
@@ -271,6 +267,7 @@ async function consumeStdoutWithIdleBudget(
 			return { kind: 'stream-ended' };
 		}
 		buffer = processedRead.buffer;
+		pendingRead = readStdout(reader);
 	}
 }
 
