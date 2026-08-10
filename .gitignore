@@ -87,6 +87,8 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .claude/.cam-sidecar-liveness-watcher.pid
 # Merge-watch state written by MERGE_WATCH_FILENAME in merge-watch.ts (US-001, CAM-502)
 .claude/.cam-merge-watch.json
+# Per-dispatch headless stream-json log, one file per dispatch uuid (US-002, CAM-516)
+.claude/cam-headless-dispatch-*.jsonl
 # Ephemeral per-invocation worker exit report (US-003/US-FIX-006; read by supervisor, never committed)
 scripts/cam/worker-report.json
 # Ephemeral per-review structured findings report (US-001, CAM-75; read by supervisor, never committed)

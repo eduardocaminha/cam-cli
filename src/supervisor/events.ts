@@ -655,10 +655,13 @@ export interface PatternOutcomeAppendFailedEventDetail {
 
 /**
  * 'worker-token-ceiling-unavailable' event detail (US-003, CAM-350): recorded
- * once per implementer dispatch when the resolved backend is 'codex' and a
+ * once per implementer dispatch when a
  * per-worker token ceiling was configured (maxWorkerTokens>0, reader wired)
- * but cannot be enforced -- see shouldApplyTokenCeiling (src/supervisor/loop.ts).
- *   - backend: the resolved implementer backend that could not be enforced against ('codex').
+ * but cannot be enforced -- see shouldApplyTokenCeiling (src/supervisor/loop.ts)
+ * for the tmux+codex case. Headless dispatch is Claude-only and passes its
+ * lowercase dispatch uuid as --session-id, so it can enforce the ceiling with
+ * the same transcript reader and does not emit this unavailable notice.
+ *   - backend: the resolved implementer backend that could not be enforced against.
  *   - ceiling: the configured maxWorkerTokens value that is going unenforced.
  */
 export interface WorkerTokenCeilingUnavailableEventDetail {

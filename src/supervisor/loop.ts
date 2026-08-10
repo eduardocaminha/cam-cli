@@ -68,6 +68,7 @@ import {
 } from './worker-dispatch.ts';
 import { emitEarlyDeathTerminal } from './verified-dispatch.ts';
 import type { EarlyDeathVerdict } from './early-death.ts';
+import type { HeadlessDispatchOutcome } from './headless-dispatch.ts';
 
 /**
  * Params for the injectable implement-blocked marker writer (US-005, CAM-195,
@@ -302,6 +303,72 @@ export interface RunSupervisorOptions {
 	permissionMode: string;
 	/** Free-text task prompt sent to the implementer. */
 	taskPrompt: string;
+	/**
+	 * Per-invocation `--headless` flag (US-004, CAM-516), lifted from the
+	 * state file's `headless` field by the sidecar (see
+	 * `buildSupervisorOptions` in host.ts). Never sourced from persisted
+	 * config — only from the per-invocation state-file write `cam next
+	 * --headless` performs.
+	 *
+	 * US-005 (CAM-516): consumed at the implementer dispatch as ONE branch
+	 * (GOTCHA C/D). When `true`, `headlessDispatchFn` below is invoked once
+	 * instead of the tmux respawn-pane + pane-liveness poll path.
+	 */
+	headless?: boolean;
+	/**
+	 * Headless implementer-dispatch strategy (US-005, CAM-516). The single
+	 * resolved dispatch runner host.ts wires up next to `headless` above
+	 * (GOTCHA C: decided once, at the same site `workerIsolation` is already
+	 * resolved). Invoked exactly once per implement dispatch when `headless
+	 * === true`; never invoked otherwise. Production wiring (host.ts) closes
+	 * over `buildHeadlessChildInvocation` (US-001) + `openHeadlessDispatchLog`
+	 * (US-002) + `runHeadlessDispatch` (US-003) so a real child process is
+	 * spawned with no TTY (GOTCHA E: completion is a child-exit / idle-budget
+	 * signal, never a pane probe). Optional: when `headless` is absent/false
+	 * this seam is never invoked, and a caller that sets `headless: true`
+	 * without also supplying this seam gets a loud thrown error rather than a
+	 * silent no-op (see the guard at the dispatch site).
+	 */
+	headlessDispatchFn?: (params: {
+		/** Dispatch session uuid, identical to the tmux path's `uuid`. */
+		uuid: string;
+		/** Advisory story id (decideNextAction's pick), same value the tmux path threads into buildImplementerTaskPrompt. */
+		storyId: string | undefined;
+		/** The exact task prompt the tmux path would have sent via buildSpawnArgv's taskPrompt. */
+		taskPrompt: string;
+		/** Resolved model slug, identical to the tmux path's `implModel`. */
+		model: string;
+		/**
+		 * Agent name to pass as `--agent` (US-R1-001, CRITICAL fix). Identical
+		 * to the tmux path's implementer agent name: this loop always resolves
+		 * it to `DEFAULT_IMPLEMENTER_AGENT` at the call site below, the same
+		 * constant the three tmux `buildSpawnArgv` call sites in this file use
+		 * (there is no `RunSupervisorOptions.agentName` override for either
+		 * path).
+		 */
+		agentName: string;
+		/**
+		 * Permission mode to pass as `--permission-mode` (US-R1-002, CRITICAL
+		 * fix). Identical to the tmux path's `opts.permissionMode`, resolved
+		 * once at the top of `RunSupervisorOptions` and threaded through
+		 * unchanged here rather than re-resolved at this call site.
+		 */
+		permissionMode: string;
+		/**
+		 * Absolute wall-clock dispatch cap in ms (US-R1-006, CAM-516). Identical
+		 * to the tmux path's `perWorkerTimeoutMs` (`now() - startMs >=
+		 * perWorkerTimeoutMs` in the tmux poll loop below): the headless path's
+		 * own idle budget (DEFAULT_HEADLESS_IDLE_BUDGET_MS, headless-dispatch.ts)
+		 * is resettable by any emitted event and therefore never bounds a chatty
+		 * runaway child on its own. Threaded straight into
+		 * `RunHeadlessDispatchOptions.absoluteTimeoutMs`.
+		 */
+			absoluteTimeoutMs: number;
+			/** Return cumulative spend once readWorkerTokens observes the configured ceiling. */
+			tokenCeilingProbe?: () => number | undefined;
+			/** Token transcript polling cadence, shared with the tmux poll loop. */
+			tokenPollIntervalMs?: number;
+		}) => Promise<HeadlessDispatchOutcome>;
 	/**
 	 * Re-run quality gates (typecheck + test) to verify before finalizing a
 	 * worker that implemented a story but did not flip prd.json (CAM-32 BUG 2).
@@ -776,6 +843,18 @@ export function shouldApplyTokenCeiling(
 	return backend !== 'codex' && maxWorkerTokens > 0 && hasReader;
 }
 
+/** Read the existing worker transcript and return spend only when the ceiling is crossed. */
+function readWorkerTokenCeilingBreach(
+	uuid: string,
+	maxWorkerTokens: number,
+	readWorkerTokens: NonNullable<RunSupervisorOptions['readWorkerTokens']>,
+): number | undefined {
+	const tokens = readWorkerTokens(uuid);
+	if (tokens === null) return undefined;
+	const spend = tokens.inputTokens + tokens.cacheCreationTokens + tokens.cacheReadTokens;
+	return spend >= maxWorkerTokens ? spend : undefined;
+}
+
 /**
  * Max consecutive dead-pane / timeout outcomes before the loop blocks (CAM-44).
  * A worker that dies pre-result (pane-died) or never emits a sentinel (timeout)
@@ -1159,7 +1238,10 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			const advisoryStoryId = action.storyId;
 
 			// Mint a fresh uuid for this invocation.
-			const uuid = genUuid();
+			// Claude transcript filenames are lowercase. Normalize at the UUID origin
+			// so the tmux argv, headless argv, and readWorkerTokens key cannot diverge
+			// when an injected/macOS uuidgen-compatible source returns uppercase.
+			const uuid = genUuid().toLowerCase();
 
 			// US-R1-001 (CAM-510 follow-up to US-003 site 3 of 5): every terminal
 			// cleanup below must also reap this dispatch's codex instructions file,
@@ -1176,6 +1258,78 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// readPhaseModel so a codex-backed implementer phase resolves its
 			// slug from [models.codex] instead of a backend-blind [models] read.
 			const implBackend = readPhaseBackend('implementer', opts.configPath);
+
+			// Headless compatibility is structural, independent of model/cache. Reject before resolvePhaseModel while
+			// preserving container-first precedence when both axes are unsupported.
+			if (opts.headless === true) {
+				// US-006 (CAM-516): fail closed BEFORE any dispatch when headless
+				// meets container isolation. GOTCHA F: the tmux branch's dispatchCmd
+				// would wrap through `dockerExecWrap` (docker-exec.ts:34), which passes
+				// `-it` and allocates a TTY headless must not have; ADR-0059 also
+				// records the container + env-token credential combination as
+				// unmeasured.
+				if (workerIsolation === 'container') {
+					const containerReason = `headless-container-unsupported: headless dispatch does not support workerIsolation === 'container' (advisory ${advisoryStoryId ?? 'unknown'})`;
+					lastOutcome = { kind: 'blocked', storyId: undefined, detail: containerReason };
+					iterations++;
+					removeImplementerTaskPrompt(uuid);
+					if (opts.escalateFn !== undefined) {
+						const escalateFn = opts.escalateFn;
+						void (async () => {
+							try {
+								await escalateFn();
+							} catch (e) {
+								process.stderr.write(
+									`[cam] escalateFn error (swallowed): ${e instanceof Error ? e.message : String(e)}\n`,
+								);
+							}
+						})();
+					}
+					finishTerminal('blocked');
+					return { status: 'blocked', iterations, lastOutcome };
+				}
+
+				// US-R1-005 (CAM-516): headless speaks Claude's stream-json
+				// protocol, so a non-Claude backend is unsupported regardless of its
+				// model. Record the backend and declare model resolution was skipped.
+				if (implBackend !== 'claude') {
+					emitSpawnResolution({
+						phase: 'implementer',
+						model: null,
+						backend: implBackend,
+						blockedReason: 'headless-backend-unsupported',
+						writeEvent: logEvent
+							? (e) =>
+									logEvent({
+										ts: clock(),
+										storyId: advisoryStoryId,
+										uuid,
+										kind: 'spawn-resolution',
+										detail: e,
+									})
+							: undefined,
+					});
+					const backendReason = `headless-backend-unsupported: headless dispatch does not support implBackend '${implBackend}' (only 'claude' is supported) (advisory ${advisoryStoryId ?? 'unknown'})`;
+					lastOutcome = { kind: 'blocked', storyId: undefined, detail: backendReason };
+					iterations++;
+					removeImplementerTaskPrompt(uuid);
+					if (opts.escalateFn !== undefined) {
+						const escalateFn = opts.escalateFn;
+						void (async () => {
+							try {
+								await escalateFn();
+							} catch (e) {
+								process.stderr.write(
+									`[cam] escalateFn error (swallowed): ${e instanceof Error ? e.message : String(e)}\n`,
+								);
+							}
+						})();
+					}
+					finishTerminal('blocked');
+					return { status: 'blocked', iterations, lastOutcome };
+				}
+			}
+
 			// US-004 (CAM-398): route the phase+backend pair through
 			// resolvePhaseModel instead of calling readPhaseModel directly, so a
 			// codex-backed implementer whose config only carries a claude-shaped
@@ -1224,94 +1378,284 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					? buildImplementerTaskPrompt(selectedStory, prd.branchName ?? '')
 					: taskPrompt;
 
-			// Build the shell command for the worker (always interactive TUI session).
-			// US-002 (CAM-350): route through selectAdapter(implBackend) so a
-			// per-phase 'codex' backend actually reaches spawn instead of always
-			// hardcoding ClaudeAdapter.
-			const shellCmd = selectAdapter(implBackend).buildSpawnArgv('implementer', {
-				uuid,
-				claudeDir: opts.claudeDir,
-				taskPrompt: dispatchTaskPrompt,
-				permissionMode,
-				model: implModel,
-				isolation: workerIsolation,
-			});
+			// US-005 (CAM-516): decide-once branch (GOTCHA C/D/E). `opts.headless`
+			// is resolved a single time in host.ts, at the site where
+			// `workerIsolation` is already resolved, and consumed here as ONE
+			// branch at the implementer dispatch -- not sprinkled as a second
+			// `workerIsolation`-shaped ternary at every one of the ~6 in-loop sites
+			// that pattern already occupies. The `else` branch below (existing
+			// tmux dispatch + pane-liveness poll) is byte-for-byte UNCHANGED; the
+			// headless branch never builds shellCmd/dispatchCmd, never calls
+			// ensureWorkerPane / runVerifiedWorkerDispatch / respawn-pane, and
+			// never reaches `isPaneAlive` (GOTCHA E): completion is detected by
+			// the real child process exiting or the idle budget elapsing, both
+			// handled inside runHeadlessDispatch (US-003) via the injected
+			// `headlessDispatchFn`. worker-report.json stays the single
+			// authoritative completion event either way (patterns.md
+			// "Single-source outcome contract and 5-concern model", CAM-77):
+			// headless only changes how the dispatch ENDS, not what proves the
+			// story done -- both branches converge on the SAME shared
+			// outcome-read below. `paneText` stays '' for headless: there is no
+			// pane to capture.
+			let paneText = '';
 
-			// CAM-57: ensure a live worker pane exists before dispatching. When
-			// ensureWorkerPane is injected it re-reads the marker and creates a
-			// fresh pane if the current one is dead (self-heal for the 2nd loop in
-			// a long-lived session). Without the injection the pane id is unchanged
-			// (backward compat: existing callers and tests are unaffected).
-			if (ensureWorkerPane !== undefined) {
-				workerPaneId = ensureWorkerPane();
-			}
+			if (opts.headless === true) {
+				// The structural headless guards already passed before model
+				// resolution above. A real headless dispatch therefore emits the same
+				// fully resolved {phase, model, backend} event as the tmux branch.
+				emitSpawnResolution({
+					phase: 'implementer',
+					model: implModel,
+					backend: implBackend,
+					writeEvent: logEvent
+						? (e) => logEvent({ ts: clock(), storyId: advisoryStoryId, uuid, kind: 'spawn-resolution', detail: e })
+						: undefined,
+				});
 
-			// US-004: erase any stale report from the previous worker run before
-			// dispatching the new one. This prevents a leftover report file from
-			// triggering a false-positive on the first poll tick of the new run.
-			// Best-effort: clearWorkerReport handles the no-file case gracefully.
-			clearWorkerReport?.();
+				const headlessDispatchFn = opts.headlessDispatchFn;
+				if (headlessDispatchFn === undefined) {
+					throw new Error(
+						'runSupervisor: opts.headless is true but opts.headlessDispatchFn was not provided',
+					);
+				}
 
-			// US-007 (CAM-192/CAM-201): container ensure/reconcile + auto-rebuild,
-			// run BEFORE the read-only preflight check so a merged pin bump (or a
-			// stale image) is reconciled/rebuilt before dispatch, on every cycle --
-			// not just at sidecar boot. Only invoked in container mode.
-			if (ensureContainerFn !== undefined && workerIsolation === 'container') {
-				try {
-					ensureContainerFn();
-				} catch (e) {
-					let containerReason: string;
-					if (e instanceof FirewallError) {
-						containerReason = `container-firewall-failed: ${e.stderrTail} (advisory ${advisoryStoryId ?? 'unknown'})`;
-					} else if (e instanceof ContainerConfigError) {
-						containerReason = `container-config-failed: ${e.stderrTail} (advisory ${advisoryStoryId ?? 'unknown'})`;
-					} else if (e instanceof ToolchainMismatchError) {
-						containerReason = `container-toolchain-mismatch: ${e.message} (advisory ${advisoryStoryId ?? 'unknown'})`;
-					} else {
-						throw e;
-					}
-					lastOutcome = { kind: 'blocked', storyId: undefined, detail: containerReason };
-					iterations++;
-					removeImplementerTaskPrompt(uuid);
-					if (opts.escalateFn !== undefined) {
-						const escalateFn = opts.escalateFn;
-						void (async () => {
-							try {
-								await escalateFn();
-							} catch (escErr) {
-								process.stderr.write(
-									`[cam] escalateFn error (swallowed): ${escErr instanceof Error ? escErr.message : String(escErr)}\n`,
-								);
-							}
-						})();
-					}
+				// The non-claude case already failed closed above, so the same CAM-5
+				// predicate used by tmux can enable transcript-based enforcement here.
+				// buildHeadlessChildInvocation receives this uuid as --session-id, making
+				// the existing readWorkerTokens(uuid) adapter executable in both modes.
+				const applyTokenCeiling = shouldApplyTokenCeiling(
+					implBackend,
+					maxWorkerTokens,
+					readWorkerTokens !== undefined,
+				);
+
+				// US-004: erase any stale report from the previous worker run before
+				// dispatching the new one (same reasoning as the tmux branch below).
+				clearWorkerReport?.();
+
+				emit('worker-start', advisoryStoryId, uuid, { mode: 'headless' });
+
+				const headlessOutcome = await headlessDispatchFn({
+					uuid,
+					storyId: advisoryStoryId,
+					taskPrompt: dispatchTaskPrompt,
+					model: implModel,
+					// US-R1-001: same DEFAULT_IMPLEMENTER_AGENT the tmux path's
+					// buildSpawnArgv call sites in this file resolve to.
+					agentName: DEFAULT_IMPLEMENTER_AGENT,
+					// US-R1-002: same opts.permissionMode the tmux path's
+					// buildSpawnArgv call sites in this file already thread.
+					permissionMode,
+					// US-R1-006: same perWorkerTimeoutMs the tmux poll loop enforces
+					// as its own per-dispatch wall-clock ceiling (`now() - startMs >=
+					// perWorkerTimeoutMs` below in the else branch) -- see
+					// RunHeadlessDispatchOptions.absoluteTimeoutMs's doc comment
+					// (headless-dispatch.ts) for why the resettable idle budget alone
+					// cannot bound a chatty runaway child.
+					absoluteTimeoutMs: perWorkerTimeoutMs,
+					tokenPollIntervalMs: applyTokenCeiling ? pollIntervalMs : undefined,
+					tokenCeilingProbe:
+						applyTokenCeiling && readWorkerTokens !== undefined
+							? () => readWorkerTokenCeilingBreach(uuid, maxWorkerTokens, readWorkerTokens)
+							: undefined,
+				});
+
+				iterations++;
+				removeImplementerTaskPrompt(uuid);
+				emit('worker-end', advisoryStoryId, uuid, {
+					mode: 'headless',
+					pollOutcome: headlessOutcome.kind,
+				});
+
+				if (headlessOutcome.kind === 'token-ceiling') {
+					emit('worker-token-ceiling', advisoryStoryId, uuid, {
+						spend: headlessOutcome.tokenSpend,
+						ceiling: maxWorkerTokens,
+						mode: 'headless',
+					});
+					lastOutcome = {
+						kind: 'blocked',
+						storyId: undefined,
+						detail: `worker-token-ceiling: spend ${headlessOutcome.tokenSpend} >= ceiling ${maxWorkerTokens} (advisory ${advisoryStoryId ?? 'unknown'})`,
+					};
 					finishTerminal('blocked');
 					return { status: 'blocked', iterations, lastOutcome };
 				}
-			}
 
-			// US-005 / B-1 + B-2: container preflight. In B-1 this was observe-only.
-			// In B-2 (CAM-152, US-004), container mode is fail-closed: a not-ready result
-			// blocks dispatch immediately without ever spawning a host worker.
-			if (preflightContainerFn !== undefined) {
-				const preflightResult = preflightContainerFn();
-				if (logEvent !== undefined) {
-					const preflightDetail: ContainerPreflightEventDetail = preflightResult.ready
-						? { ready: true }
-						: { ready: false, reason: preflightResult.reason };
-					logEvent({
-						ts: clock(),
-						storyId: advisoryStoryId,
-						uuid,
-						kind: 'container-preflight',
-						detail: preflightDetail,
+				if (headlessOutcome.kind === 'idle-timeout' || headlessOutcome.kind === 'absolute-timeout') {
+					// Mirrors the tmux timeout dead-worker retry/backoff (CAM-44)
+					// exactly, minus any pane touch: runHeadlessDispatch already
+					// killed the real child (GOTCHA E), so there is nothing here to
+					// echo/kill via spawn. US-R1-006 (CAM-516): 'absolute-timeout'
+					// (a chatty child that outran perWorkerTimeoutMs without ever
+					// going idle) shares this exact retry/backoff shape with
+					// 'idle-timeout' (a genuinely stuck child) -- only the emitted
+					// label differs, so a diagnosing operator can tell which bound
+					// fired without changing the retry semantics.
+					const timeoutLabel = headlessOutcome.kind === 'idle-timeout' ? 'idle-timeout' : 'absolute-timeout';
+					deadWorkerStreak += 1;
+					if (deadWorkerStreak >= MAX_DEAD_WORKER_RETRIES) {
+						const terminalDetail = `dead-worker: ${deadWorkerStreak} consecutive headless ${timeoutLabel} outcomes (advisory ${advisoryStoryId ?? 'unknown'})`;
+						lastOutcome = { kind: 'blocked', storyId: undefined, detail: terminalDetail };
+						finishTerminal('blocked');
+						return { status: 'blocked', iterations, lastOutcome };
+					}
+					lastOutcome = {
+						kind: 'blocked',
+						storyId: undefined,
+						detail: `headless-${timeoutLabel}`,
+					};
+					const deadBackoffMs = computeBackoffMs(deadWorkerStreak, {
+						base: NO_PROGRESS_BACKOFF_MS,
+						max: MAX_BACKOFF_MS,
+						jitterFraction: JITTER_FRACTION,
+						random: randomFn,
 					});
+					emit('pane-died-retry', advisoryStoryId, uuid, {
+						attempt: deadWorkerStreak,
+						backoffMs: deadBackoffMs,
+						pollOutcome: timeoutLabel,
+					});
+					sleepFn(deadBackoffMs);
+					continue;
 				}
-				// B-2 (CAM-152): fail-closed in container mode.
-				// When the container is not ready, block immediately. Never fall back to host.
-				if (workerIsolation === 'container' && !preflightResult.ready) {
-					const containerReason = `container-not-ready: ${preflightResult.reason} (advisory ${advisoryStoryId ?? 'unknown'})`;
-					lastOutcome = { kind: 'blocked', storyId: undefined, detail: containerReason };
+
+				// 'completed': the real child exited before the idle budget or the
+				// absolute deadline elapsed. Sentinel-equivalent: any prior
+				// dead-pane/dead-worker streak breaks, exactly like the tmux
+				// branch's "sentinel found" case (CAM-44).
+				deadWorkerStreak = 0;
+			} else {
+				// Build the shell command for the worker (always interactive TUI session).
+				// US-002 (CAM-350): route through selectAdapter(implBackend) so a
+				// per-phase 'codex' backend actually reaches spawn instead of always
+				// hardcoding ClaudeAdapter.
+				const shellCmd = selectAdapter(implBackend).buildSpawnArgv('implementer', {
+					uuid,
+					claudeDir: opts.claudeDir,
+					taskPrompt: dispatchTaskPrompt,
+					permissionMode,
+					model: implModel,
+					isolation: workerIsolation,
+				});
+
+				// CAM-57: ensure a live worker pane exists before dispatching. When
+				// ensureWorkerPane is injected it re-reads the marker and creates a
+				// fresh pane if the current one is dead (self-heal for the 2nd loop in
+				// a long-lived session). Without the injection the pane id is unchanged
+				// (backward compat: existing callers and tests are unaffected).
+				if (ensureWorkerPane !== undefined) {
+					workerPaneId = ensureWorkerPane();
+				}
+
+				// US-004: erase any stale report from the previous worker run before
+				// dispatching the new one. This prevents a leftover report file from
+				// triggering a false-positive on the first poll tick of the new run.
+				// Best-effort: clearWorkerReport handles the no-file case gracefully.
+				clearWorkerReport?.();
+
+				// US-007 (CAM-192/CAM-201): container ensure/reconcile + auto-rebuild,
+				// run BEFORE the read-only preflight check so a merged pin bump (or a
+				// stale image) is reconciled/rebuilt before dispatch, on every cycle --
+				// not just at sidecar boot. Only invoked in container mode.
+				if (ensureContainerFn !== undefined && workerIsolation === 'container') {
+					try {
+						ensureContainerFn();
+					} catch (e) {
+						let containerReason: string;
+						if (e instanceof FirewallError) {
+							containerReason = `container-firewall-failed: ${e.stderrTail} (advisory ${advisoryStoryId ?? 'unknown'})`;
+						} else if (e instanceof ContainerConfigError) {
+							containerReason = `container-config-failed: ${e.stderrTail} (advisory ${advisoryStoryId ?? 'unknown'})`;
+						} else if (e instanceof ToolchainMismatchError) {
+							containerReason = `container-toolchain-mismatch: ${e.message} (advisory ${advisoryStoryId ?? 'unknown'})`;
+						} else {
+							throw e;
+						}
+						lastOutcome = { kind: 'blocked', storyId: undefined, detail: containerReason };
+						iterations++;
+						removeImplementerTaskPrompt(uuid);
+						if (opts.escalateFn !== undefined) {
+							const escalateFn = opts.escalateFn;
+							void (async () => {
+								try {
+									await escalateFn();
+								} catch (escErr) {
+									process.stderr.write(
+										`[cam] escalateFn error (swallowed): ${escErr instanceof Error ? escErr.message : String(escErr)}\n`,
+									);
+								}
+							})();
+						}
+						finishTerminal('blocked');
+						return { status: 'blocked', iterations, lastOutcome };
+					}
+				}
+
+				// US-005 / B-1 + B-2: container preflight. In B-1 this was observe-only.
+				// In B-2 (CAM-152, US-004), container mode is fail-closed: a not-ready result
+				// blocks dispatch immediately without ever spawning a host worker.
+				if (preflightContainerFn !== undefined) {
+					const preflightResult = preflightContainerFn();
+					if (logEvent !== undefined) {
+						const preflightDetail: ContainerPreflightEventDetail = preflightResult.ready
+							? { ready: true }
+							: { ready: false, reason: preflightResult.reason };
+						logEvent({
+							ts: clock(),
+							storyId: advisoryStoryId,
+							uuid,
+							kind: 'container-preflight',
+							detail: preflightDetail,
+						});
+					}
+					// B-2 (CAM-152): fail-closed in container mode.
+					// When the container is not ready, block immediately. Never fall back to host.
+					if (workerIsolation === 'container' && !preflightResult.ready) {
+						const containerReason = `container-not-ready: ${preflightResult.reason} (advisory ${advisoryStoryId ?? 'unknown'})`;
+						lastOutcome = { kind: 'blocked', storyId: undefined, detail: containerReason };
+						iterations++;
+						removeImplementerTaskPrompt(uuid);
+						if (opts.escalateFn !== undefined) {
+							const escalateFn = opts.escalateFn;
+							void (async () => {
+								try {
+									await escalateFn();
+								} catch (e) {
+									process.stderr.write(
+										`[cam] escalateFn error (swallowed): ${e instanceof Error ? e.message : String(e)}\n`,
+									);
+								}
+							})();
+						}
+						finishTerminal('blocked');
+						return { status: 'blocked', iterations, lastOutcome };
+					}
+				}
+
+				// US-004 / B-2 (CAM-152): wrap through docker exec in container mode.
+				// In host mode (default), dispatchCmd === shellCmd (zero behavior change).
+				const dispatchCmd = workerIsolation === 'container' ? dockerExecWrap(shellCmd) : shellCmd;
+
+				// US-007: emit structured {phase, model, backend} spawn-resolution event.
+				// writeEvent bridges into the structured worker event log (logEvent sink).
+				emitSpawnResolution({
+					phase: 'implementer',
+					model: implModel,
+					backend: implBackend,
+					writeEvent: logEvent
+						? (e) => logEvent({ ts: clock(), storyId: advisoryStoryId, uuid, kind: 'spawn-resolution', detail: e })
+						: undefined,
+				});
+
+				// US-002 (CAM-352): fail-closed codex auth preflight, immediately before
+				// respawn-pane. Mirrors the container-mode fail-closed early-return
+				// pattern above (B-2, US-004/US-005): backend !== 'codex' always
+				// proceeds without invoking codexAuthCheckFn.
+				const codexPreflight = codexAuthPreflight({ backend: implBackend, model: implModel, authCheck: codexAuthCheckFn });
+				if (!codexPreflight.proceed) {
+					const codexReason = `codex-auth-failed: ${codexPreflight.message} (advisory ${advisoryStoryId ?? 'unknown'})`;
+					lastOutcome = { kind: 'blocked', storyId: undefined, detail: codexReason };
 					iterations++;
 					removeImplementerTaskPrompt(uuid);
 					if (opts.escalateFn !== undefined) {
@@ -1329,243 +1673,157 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					finishTerminal('blocked');
 					return { status: 'blocked', iterations, lastOutcome };
 				}
-			}
 
-			// US-004 / B-2 (CAM-152): wrap through docker exec in container mode.
-			// In host mode (default), dispatchCmd === shellCmd (zero behavior change).
-			const dispatchCmd = workerIsolation === 'container' ? dockerExecWrap(shellCmd) : shellCmd;
-
-			// US-007: emit structured {phase, model, backend} spawn-resolution event.
-			// writeEvent bridges into the structured worker event log (logEvent sink).
-			emitSpawnResolution({
-				phase: 'implementer',
-				model: implModel,
-				backend: implBackend,
-				writeEvent: logEvent
-					? (e) => logEvent({ ts: clock(), storyId: advisoryStoryId, uuid, kind: 'spawn-resolution', detail: e })
-					: undefined,
-			});
-
-			// US-002 (CAM-352): fail-closed codex auth preflight, immediately before
-			// respawn-pane. Mirrors the container-mode fail-closed early-return
-			// pattern above (B-2, US-004/US-005): backend !== 'codex' always
-			// proceeds without invoking codexAuthCheckFn.
-			const codexPreflight = codexAuthPreflight({ backend: implBackend, model: implModel, authCheck: codexAuthCheckFn });
-			if (!codexPreflight.proceed) {
-				const codexReason = `codex-auth-failed: ${codexPreflight.message} (advisory ${advisoryStoryId ?? 'unknown'})`;
-				lastOutcome = { kind: 'blocked', storyId: undefined, detail: codexReason };
-				iterations++;
-				removeImplementerTaskPrompt(uuid);
-				if (opts.escalateFn !== undefined) {
-					const escalateFn = opts.escalateFn;
-					void (async () => {
-						try {
-							await escalateFn();
-						} catch (e) {
-							process.stderr.write(
-								`[cam] escalateFn error (swallowed): ${e instanceof Error ? e.message : String(e)}\n`,
-							);
-						}
-					})();
-				}
-				finishTerminal('blocked');
-				return { status: 'blocked', iterations, lastOutcome };
-			}
-
-			// Mandatory checked dispatch: inspect set-option/respawn/pipe exits and
-			// prove respawn-pane changed pane_pid before treating the worker as live.
-			const dispatchResult = runVerifiedWorkerDispatch({
-				spawnFn: spawn,
-				phase: 'implementer',
-				paneId: workerPaneId,
-				uuid,
-				dispatchCmd,
-				claudeDir: opts.claudeDir,
-				storyId: advisoryStoryId,
-				logEvent,
-				writeDispatchFailedMarkerFn: opts.writeDispatchFailedMarkerFn,
-				removeDispatchFailedMarkerFn: opts.removeDispatchFailedMarkerFn,
-				notifyFn: opts.notifyOrchestrator,
-				removeTaskPromptFileFn: opts.removeTaskPromptFileFn,
-				agentName: DEFAULT_IMPLEMENTER_AGENT,
-			});
-			if (!dispatchResult.ok) {
-				iterations++;
-				lastOutcome = {
-					kind: 'blocked',
+				// Mandatory checked dispatch: inspect set-option/respawn/pipe exits and
+				// prove respawn-pane changed pane_pid before treating the worker as live.
+				const dispatchResult = runVerifiedWorkerDispatch({
+					spawnFn: spawn,
+					phase: 'implementer',
+					paneId: workerPaneId,
+					uuid,
+					dispatchCmd,
+					claudeDir: opts.claudeDir,
 					storyId: advisoryStoryId,
-					detail: `dispatch-failed: ${dispatchResult.marker.reason}`,
-				};
-				return blockedResult(lastOutcome, advisoryStoryId);
-			}
-
-			// US-013: worker-start. storyId is advisory here (the worker
-			// self-selects); later events carry the actual completed story.
-			emit('worker-start', advisoryStoryId, uuid, { mode: 'sentinel' });
-
-			// Poll capture-pane until we see the sentinel, the pane dies, the token
-			// ceiling is crossed (CAM-5), or timeout.
-			const startMs = now();
-			let pollOutcome: 'sentinel' | 'pane-died' | 'timeout' | 'token-ceiling' | 'session-died-early' = 'timeout';
-			let tokenSpendAtBreach = 0;
-			// US-003 (CAM-479): set only when pollOutcome ends as 'session-died-early'.
-			let earlyDeathCause: string | undefined;
-			const applyTokenCeiling = shouldApplyTokenCeiling(
-				implBackend,
-				maxWorkerTokens,
-				readWorkerTokens !== undefined,
-			);
-
-			// US-003 (CAM-350): a codex worker has no claude-shaped .jsonl transcript
-			// for readWorkerTokens to parse, so the CAM-5 backstop is unusable for it.
-			// When a ceiling would otherwise have been enforced (maxWorkerTokens>0 and
-			// a reader is wired), emit a one-time notice instead of silently dropping
-			// the enforcement gap or attempting to read a transcript that cannot exist.
-			if (!applyTokenCeiling && implBackend === 'codex' && maxWorkerTokens > 0 && readWorkerTokens) {
-				emit('worker-token-ceiling-unavailable', advisoryStoryId, uuid, {
-					backend: implBackend,
-					ceiling: maxWorkerTokens,
+					logEvent,
+					writeDispatchFailedMarkerFn: opts.writeDispatchFailedMarkerFn,
+					removeDispatchFailedMarkerFn: opts.removeDispatchFailedMarkerFn,
+					notifyFn: opts.notifyOrchestrator,
+					removeTaskPromptFileFn: opts.removeTaskPromptFileFn,
+					agentName: DEFAULT_IMPLEMENTER_AGENT,
 				});
-			}
+				if (!dispatchResult.ok) {
+					iterations++;
+					lastOutcome = {
+						kind: 'blocked',
+						storyId: advisoryStoryId,
+						detail: `dispatch-failed: ${dispatchResult.marker.reason}`,
+					};
+					return blockedResult(lastOutcome, advisoryStoryId);
+				}
 
-			while (true) {
-				sleepFn(pollIntervalMs);
-				if (!isPaneAlive(workerPaneId)) {
-					pollOutcome = 'pane-died';
-					break;
+				// US-013: worker-start. storyId is advisory here (the worker
+				// self-selects); later events carry the actual completed story.
+				emit('worker-start', advisoryStoryId, uuid, { mode: 'sentinel' });
+
+				// Poll capture-pane until we see the sentinel, the pane dies, the token
+				// ceiling is crossed (CAM-5), or timeout.
+				const startMs = now();
+				let pollOutcome: 'sentinel' | 'pane-died' | 'timeout' | 'token-ceiling' | 'session-died-early' = 'timeout';
+				let tokenSpendAtBreach = 0;
+				// US-003 (CAM-479): set only when pollOutcome ends as 'session-died-early'.
+				let earlyDeathCause: string | undefined;
+				const applyTokenCeiling = shouldApplyTokenCeiling(
+					implBackend,
+					maxWorkerTokens,
+					readWorkerTokens !== undefined,
+				);
+
+				// US-003 (CAM-350): a codex worker has no claude-shaped .jsonl transcript
+				// for readWorkerTokens to parse, so the CAM-5 backstop is unusable for it.
+				// When a ceiling would otherwise have been enforced (maxWorkerTokens>0 and
+				// a reader is wired), emit a one-time notice instead of silently dropping
+				// the enforcement gap or attempting to read a transcript that cannot exist.
+				if (!applyTokenCeiling && implBackend === 'codex' && maxWorkerTokens > 0 && readWorkerTokens) {
+					emit('worker-token-ceiling-unavailable', advisoryStoryId, uuid, {
+						backend: implBackend,
+						ceiling: maxWorkerTokens,
+					});
 				}
-				// US-003 (CAM-479): a pane can be alive but the session inside it died
-				// on its first turn (typically a transient upstream API error). The
-				// pane-alive check above cannot see that; only a transcript read can.
-				// Checked before the report/sentinel checks below so a dead session
-				// never has to wait out an extra poll tick for a report that will
-				// never arrive.
-				if (earlyDeathProbeFn !== undefined) {
-					const earlyDeathVerdict = earlyDeathProbeFn(uuid);
-					if (earlyDeathVerdict.verdict === 'dead-on-first-turn') {
-						pollOutcome = 'session-died-early';
-						earlyDeathCause = earlyDeathVerdict.cause;
+
+				while (true) {
+					sleepFn(pollIntervalMs);
+					if (!isPaneAlive(workerPaneId)) {
+						pollOutcome = 'pane-died';
 						break;
 					}
-				}
-				// US-002: worker-report.json is the canonical implementer completion-detect
-				// path. When readWorkerReport is injected (always in production via
-				// buildSupervisorOptions), the report file presence is the SOLE poll-exit
-				// trigger. parseAnySentinel is demoted to human-corroboration only: a
-				// DONE sentinel visible in the pane without a matching report does NOT
-				// break the poll here. Falls back to capturePane + parseAnySentinel ONLY
-				// when readWorkerReport is absent (backward compat with legacy callers).
-				if (readWorkerReport !== undefined) {
-					// US-002/US-006: staleness + shape guard on the PRIMARY poll-exit
-					// check, validated via the shared parseWorkerReport parser (report-
-					// parse.ts) rather than an inline typeof discriminator check. A
-					// report whose story does not match the advisory story (stale
-					// leftover from a previous run) is rejected here so the poll
-					// continues — letting the pane-died / timeout nets with CAM-44
-					// backoff remain the terminal signal. A malformed report (missing
-					// string story / outcome discriminators, or any other shape
-					// violation the parser rejects) is also rejected so it cannot cause
-					// a false poll-exit. When advisoryStoryId is absent, skip the
-					// staleness part (graceful degradation for callers that do not pass
-					// the dispatched story id).
-					const rawReport = readWorkerReport();
-					const report = rawReport === null ? null : parseWorkerReport(JSON.stringify(rawReport));
-					const isValidFreshReport =
-						report !== null && (advisoryStoryId === undefined || report.story === advisoryStoryId);
-					if (isValidFreshReport) {
-						pollOutcome = 'sentinel';
-						break;
+					// US-003 (CAM-479): a pane can be alive but the session inside it died
+					// on its first turn (typically a transient upstream API error). The
+					// pane-alive check above cannot see that; only a transcript read can.
+					// Checked before the report/sentinel checks below so a dead session
+					// never has to wait out an extra poll tick for a report that will
+					// never arrive.
+					if (earlyDeathProbeFn !== undefined) {
+						const earlyDeathVerdict = earlyDeathProbeFn(uuid);
+						if (earlyDeathVerdict.verdict === 'dead-on-first-turn') {
+							pollOutcome = 'session-died-early';
+							earlyDeathCause = earlyDeathVerdict.cause;
+							break;
+						}
 					}
-				} else {
-					// W5 guard (US-FIX-006): only scan the LAST 10 lines of the pane.
-					// The agent sentinel is always the final line of its output. Scanning
-					// the full scrollback risks a false-positive if docs or templates
-					// that contain a literal 'CAM_IMPLEMENTER_STATUS=DONE' string appear
-					// anywhere earlier in the pane history (e.g. from CLAUDE.md displayed
-					// in context or a template file being cat'd). Restricting to the tail
-					// makes the guard exact: a sentinel in old scroll-history cannot fire.
-					// (human-corroboration fallback only, not canonical detection)
-					const polledText = capturePane(workerPaneId);
-					const tail = polledText.split('\n').slice(-10).join('\n');
-					if (parseAnySentinel(tail) !== null) {
-						pollOutcome = 'sentinel';
-						break;
+					// US-002: worker-report.json is the canonical implementer completion-detect
+					// path. When readWorkerReport is injected (always in production via
+					// buildSupervisorOptions), the report file presence is the SOLE poll-exit
+					// trigger. parseAnySentinel is demoted to human-corroboration only: a
+					// DONE sentinel visible in the pane without a matching report does NOT
+					// break the poll here. Falls back to capturePane + parseAnySentinel ONLY
+					// when readWorkerReport is absent (backward compat with legacy callers).
+					if (readWorkerReport !== undefined) {
+						// US-002/US-006: staleness + shape guard on the PRIMARY poll-exit
+						// check, validated via the shared parseWorkerReport parser (report-
+						// parse.ts) rather than an inline typeof discriminator check. A
+						// report whose story does not match the advisory story (stale
+						// leftover from a previous run) is rejected here so the poll
+						// continues — letting the pane-died / timeout nets with CAM-44
+						// backoff remain the terminal signal. A malformed report (missing
+						// string story / outcome discriminators, or any other shape
+						// violation the parser rejects) is also rejected so it cannot cause
+						// a false poll-exit. When advisoryStoryId is absent, skip the
+						// staleness part (graceful degradation for callers that do not pass
+						// the dispatched story id).
+						const rawReport = readWorkerReport();
+						const report = rawReport === null ? null : parseWorkerReport(JSON.stringify(rawReport));
+						const isValidFreshReport =
+							report !== null && (advisoryStoryId === undefined || report.story === advisoryStoryId);
+						if (isValidFreshReport) {
+							pollOutcome = 'sentinel';
+							break;
+						}
+					} else {
+						// W5 guard (US-FIX-006): only scan the LAST 10 lines of the pane.
+						// The agent sentinel is always the final line of its output. Scanning
+						// the full scrollback risks a false-positive if docs or templates
+						// that contain a literal 'CAM_IMPLEMENTER_STATUS=DONE' string appear
+						// anywhere earlier in the pane history (e.g. from CLAUDE.md displayed
+						// in context or a template file being cat'd). Restricting to the tail
+						// makes the guard exact: a sentinel in old scroll-history cannot fire.
+						// (human-corroboration fallback only, not canonical detection)
+						const polledText = capturePane(workerPaneId);
+						const tail = polledText.split('\n').slice(-10).join('\n');
+						if (parseAnySentinel(tail) !== null) {
+							pollOutcome = 'sentinel';
+							break;
+						}
 					}
-				}
-				// CAM-5: opt-in per-worker token ceiling. Spend = input + cacheCreation
-				// + cacheRead (same as computeOrchBudget). Disabled when maxWorkerTokens
-				// is 0, no token reader is wired, or (US-003, CAM-350) the resolved
-				// backend is 'codex' -- see shouldApplyTokenCeiling above.
-				if (applyTokenCeiling && readWorkerTokens) {
-					const tk = readWorkerTokens(uuid);
-					if (tk) {
-						const spend = tk.inputTokens + tk.cacheCreationTokens + tk.cacheReadTokens;
-						if (spend >= maxWorkerTokens) {
+					// CAM-5: opt-in per-worker token ceiling. Spend = input + cacheCreation
+					// + cacheRead (same as computeOrchBudget). Disabled when maxWorkerTokens
+					// is 0, no token reader is wired, or (US-003, CAM-350) the resolved
+					// backend is 'codex' -- see shouldApplyTokenCeiling above.
+					if (applyTokenCeiling && readWorkerTokens) {
+						const spend = readWorkerTokenCeilingBreach(uuid, maxWorkerTokens, readWorkerTokens);
+						if (spend !== undefined) {
 							pollOutcome = 'token-ceiling';
 							tokenSpendAtBreach = spend;
 							break;
 						}
 					}
+					if (now() - startMs >= perWorkerTimeoutMs) {
+						break; // timeout
+					}
 				}
-				if (now() - startMs >= perWorkerTimeoutMs) {
-					break; // timeout
-				}
-			}
 
-			iterations++;
-			removeImplementerTaskPrompt(uuid);
+				iterations++;
+				removeImplementerTaskPrompt(uuid);
 
-			// US-013: worker-end. pollOutcome records how it ended.
-			emit('worker-end', advisoryStoryId, uuid, { mode: 'sentinel', pollOutcome });
+				// US-013: worker-end. pollOutcome records how it ended.
+				emit('worker-end', advisoryStoryId, uuid, { mode: 'sentinel', pollOutcome });
 
-			// CAM-5: token ceiling crossed. Kill the worker and stop terminally
-			// (re-dispatching would only burn more tokens), bypassing the dead-worker
-			// backoff path. Emitted before the pane-died/timeout handling below.
-			if (pollOutcome === 'token-ceiling') {
-				runCheckedWorkerSentinel({
-					spawnFn: spawn,
-					phase: 'implementer-token-ceiling',
-					label: 'implementer',
-					paneId: workerPaneId,
-					uuid,
-					claudeDir: opts.claudeDir,
-					storyId: advisoryStoryId,
-					logEvent,
-					writeDispatchFailedMarkerFn: opts.writeDispatchFailedMarkerFn,
-					notifyFn: opts.notifyOrchestrator,
-					removeTaskPromptFileFn: opts.removeTaskPromptFileFn,
-					agentName: DEFAULT_IMPLEMENTER_AGENT,
-				}, 'echo token-ceiling');
-				emit('worker-token-ceiling', advisoryStoryId, uuid, {
-					spend: tokenSpendAtBreach,
-					ceiling: maxWorkerTokens,
-				});
-				lastOutcome = {
-					kind: 'blocked',
-					storyId: undefined,
-					detail: `worker-token-ceiling: spend ${tokenSpendAtBreach} >= ceiling ${maxWorkerTokens} (advisory ${advisoryStoryId ?? 'unknown'})`,
-				};
-				finishTerminal('blocked');
-				return { status: 'blocked', iterations, lastOutcome };
-			}
-
-			// CAM-44: a dead pane (worker died pre-result) or a timeout (no sentinel
-			// within the deadline) leaves the story unadvanced, so the next
-			// decideNextAction re-dispatches it. When the cause is persistent this
-			// storms to MAX_ITERATIONS. Apply the same escalating backoff + cap as
-			// the no-progress guard: block cleanly after MAX_DEAD_WORKER_RETRIES
-			// consecutive failures instead of spinning.
-			// US-004 / B-2 (CAM-152): in container mode, pane-died means docker exec
-			// exited (container gone mid-dispatch). Route to a container-named reason.
-			// There is NO host fallback path in container mode.
-			// US-003 (CAM-479): an early-death verdict feeds this SAME dead-worker
-			// streak/backoff/cap -- no second retry mechanism is introduced.
-			if (pollOutcome === 'pane-died' || pollOutcome === 'timeout' || pollOutcome === 'session-died-early') {
-				if (pollOutcome === 'timeout' || pollOutcome === 'session-died-early') {
-					// Kill the stuck worker so the next dispatch starts from a clean pane.
+				// CAM-5: token ceiling crossed. Kill the worker and stop terminally
+				// (re-dispatching would only burn more tokens), bypassing the dead-worker
+				// backoff path. Emitted before the pane-died/timeout handling below.
+				if (pollOutcome === 'token-ceiling') {
 					runCheckedWorkerSentinel({
 						spawnFn: spawn,
-						phase: pollOutcome === 'session-died-early' ? 'implementer-session-died-early' : 'implementer-timeout',
+						phase: 'implementer-token-ceiling',
 						label: 'implementer',
 						paneId: workerPaneId,
 						uuid,
@@ -1576,65 +1834,107 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 						notifyFn: opts.notifyOrchestrator,
 						removeTaskPromptFileFn: opts.removeTaskPromptFileFn,
 						agentName: DEFAULT_IMPLEMENTER_AGENT,
-					}, pollOutcome === 'session-died-early' ? 'echo session-died-early' : 'echo timeout');
-				}
-				if (pollOutcome === 'session-died-early') {
-					// US-003 (CAM-479): the cause-bearing terminal on all three
-					// observable channels, independent of whether the sentinel
-					// replacement above itself succeeded.
-					emitEarlyDeathTerminal({
-						phase: 'implementer-session-died-early',
-						paneId: workerPaneId,
-						uuid,
-						storyId: advisoryStoryId,
-						clock,
-						logEvent: logEvent ?? ((): void => {}),
-						writeDispatchFailedMarkerFn: opts.writeDispatchFailedMarkerFn ?? ((): void => {}),
-						notifyFn: opts.notifyOrchestrator ?? ((): void => {}),
-						cause: earlyDeathCause,
+					}, 'echo token-ceiling');
+					emit('worker-token-ceiling', advisoryStoryId, uuid, {
+						spend: tokenSpendAtBreach,
+						ceiling: maxWorkerTokens,
 					});
-				}
-				deadWorkerStreak += 1;
-				const isContainerExecFailure = workerIsolation === 'container' && pollOutcome === 'pane-died';
-				if (deadWorkerStreak >= MAX_DEAD_WORKER_RETRIES) {
-					const terminalDetail = isContainerExecFailure
-						? `container-exec-failure: ${deadWorkerStreak} consecutive docker-exec exits (advisory ${advisoryStoryId ?? 'unknown'})`
-						: `dead-worker: ${deadWorkerStreak} consecutive ${pollOutcome} outcomes (advisory ${advisoryStoryId ?? 'unknown'})`;
-					lastOutcome = { kind: 'blocked', storyId: undefined, detail: terminalDetail };
+					lastOutcome = {
+						kind: 'blocked',
+						storyId: undefined,
+						detail: `worker-token-ceiling: spend ${tokenSpendAtBreach} >= ceiling ${maxWorkerTokens} (advisory ${advisoryStoryId ?? 'unknown'})`,
+					};
 					finishTerminal('blocked');
 					return { status: 'blocked', iterations, lastOutcome };
 				}
-				lastOutcome = {
-					kind: 'blocked',
-					storyId: undefined,
-					detail: isContainerExecFailure
-						? 'container-exec-failure'
-						: pollOutcome === 'pane-died' ? 'pane-died-pre-result'
-						: pollOutcome === 'session-died-early' ? 'session-died-early'
-						: 'timeout',
-				};
-				const deadBackoffMs = computeBackoffMs(deadWorkerStreak, {
-					base: NO_PROGRESS_BACKOFF_MS,
-					max: MAX_BACKOFF_MS,
-					jitterFraction: JITTER_FRACTION,
-					random: randomFn,
-				});
-				emit('pane-died-retry', advisoryStoryId, uuid, {
-					attempt: deadWorkerStreak,
-					backoffMs: deadBackoffMs,
-					pollOutcome,
-				});
-				sleepFn(deadBackoffMs);
-				continue;
+
+				// CAM-44: a dead pane (worker died pre-result) or a timeout (no sentinel
+				// within the deadline) leaves the story unadvanced, so the next
+				// decideNextAction re-dispatches it. When the cause is persistent this
+				// storms to MAX_ITERATIONS. Apply the same escalating backoff + cap as
+				// the no-progress guard: block cleanly after MAX_DEAD_WORKER_RETRIES
+				// consecutive failures instead of spinning.
+				// US-004 / B-2 (CAM-152): in container mode, pane-died means docker exec
+				// exited (container gone mid-dispatch). Route to a container-named reason.
+				// There is NO host fallback path in container mode.
+				// US-003 (CAM-479): an early-death verdict feeds this SAME dead-worker
+				// streak/backoff/cap -- no second retry mechanism is introduced.
+				if (pollOutcome === 'pane-died' || pollOutcome === 'timeout' || pollOutcome === 'session-died-early') {
+					if (pollOutcome === 'timeout' || pollOutcome === 'session-died-early') {
+						// Kill the stuck worker so the next dispatch starts from a clean pane.
+						runCheckedWorkerSentinel({
+							spawnFn: spawn,
+							phase: pollOutcome === 'session-died-early' ? 'implementer-session-died-early' : 'implementer-timeout',
+							label: 'implementer',
+							paneId: workerPaneId,
+							uuid,
+							claudeDir: opts.claudeDir,
+							storyId: advisoryStoryId,
+							logEvent,
+							writeDispatchFailedMarkerFn: opts.writeDispatchFailedMarkerFn,
+							notifyFn: opts.notifyOrchestrator,
+							removeTaskPromptFileFn: opts.removeTaskPromptFileFn,
+							agentName: DEFAULT_IMPLEMENTER_AGENT,
+						}, pollOutcome === 'session-died-early' ? 'echo session-died-early' : 'echo timeout');
+					}
+					if (pollOutcome === 'session-died-early') {
+						// US-003 (CAM-479): the cause-bearing terminal on all three
+						// observable channels, independent of whether the sentinel
+						// replacement above itself succeeded.
+						emitEarlyDeathTerminal({
+							phase: 'implementer-session-died-early',
+							paneId: workerPaneId,
+							uuid,
+							storyId: advisoryStoryId,
+							clock,
+							logEvent: logEvent ?? ((): void => {}),
+							writeDispatchFailedMarkerFn: opts.writeDispatchFailedMarkerFn ?? ((): void => {}),
+							notifyFn: opts.notifyOrchestrator ?? ((): void => {}),
+							cause: earlyDeathCause,
+						});
+					}
+					deadWorkerStreak += 1;
+					const isContainerExecFailure = workerIsolation === 'container' && pollOutcome === 'pane-died';
+					if (deadWorkerStreak >= MAX_DEAD_WORKER_RETRIES) {
+						const terminalDetail = isContainerExecFailure
+							? `container-exec-failure: ${deadWorkerStreak} consecutive docker-exec exits (advisory ${advisoryStoryId ?? 'unknown'})`
+							: `dead-worker: ${deadWorkerStreak} consecutive ${pollOutcome} outcomes (advisory ${advisoryStoryId ?? 'unknown'})`;
+						lastOutcome = { kind: 'blocked', storyId: undefined, detail: terminalDetail };
+						finishTerminal('blocked');
+						return { status: 'blocked', iterations, lastOutcome };
+					}
+					lastOutcome = {
+						kind: 'blocked',
+						storyId: undefined,
+						detail: isContainerExecFailure
+							? 'container-exec-failure'
+							: pollOutcome === 'pane-died' ? 'pane-died-pre-result'
+							: pollOutcome === 'session-died-early' ? 'session-died-early'
+							: 'timeout',
+					};
+					const deadBackoffMs = computeBackoffMs(deadWorkerStreak, {
+						base: NO_PROGRESS_BACKOFF_MS,
+						max: MAX_BACKOFF_MS,
+						jitterFraction: JITTER_FRACTION,
+						random: randomFn,
+					});
+					emit('pane-died-retry', advisoryStoryId, uuid, {
+						attempt: deadWorkerStreak,
+						backoffMs: deadBackoffMs,
+						pollOutcome,
+					});
+					sleepFn(deadBackoffMs);
+					continue;
+				}
+
+				// Sentinel found: the worker ran to a sentinel (it did not die or time
+				// out), so any prior dead-pane streak is broken regardless of the
+				// outcome that follows (CAM-44).
+				deadWorkerStreak = 0;
+
+				// Sentinel found: read full pane text and determine outcome.
+				paneText = capturePane(workerPaneId);
 			}
-
-			// Sentinel found: the worker ran to a sentinel (it did not die or time
-			// out), so any prior dead-pane streak is broken regardless of the
-			// outcome that follows (CAM-44).
-			deadWorkerStreak = 0;
-
-			// Sentinel found: read full pane text and determine outcome.
-			const paneText = capturePane(workerPaneId);
 
 			const fileReader = (path: string): string | null => {
 				if (path === prdPath) {

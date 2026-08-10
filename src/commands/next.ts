@@ -124,6 +124,17 @@ export function renderStateFile(input: {
 	/** Optional issue ref associated with an in-progress plan (e.g. "CAM-151"). */
 	plan_issue?: string | null;
 	/**
+	 * Per-invocation headless flag (US-004, CAM-516), transported through the
+	 * state file exactly like `plan_issue`. Deliberately NOT derived from
+	 * anything on disk here: a caller that omits this field gets `false`
+	 * written, regardless of what the state file previously held, so the
+	 * flag is never sticky across invocations that don't explicitly ask for
+	 * it. Callers that need it to survive a same-cycle phase transition (e.g.
+	 * `makeSetPhaseFn` in sidecar.ts) must read the current value themselves
+	 * and pass it through explicitly.
+	 */
+	headless?: boolean;
+	/**
 	 * Working directory enabling read-modify-write phase preservation
 	 * (US-001, CAM-195) when `phase` is absent. See the function doc above.
 	 */
@@ -170,6 +181,7 @@ export function renderStateFile(input: {
 		.replace('{{STORIES_TOTAL}}', String(input.storiesTotal ?? 0))
 		.replace('{{LAST_ACTIVITY}}', input.lastActivity ?? input.startedAt)
 		.replace('{{PLAN_ISSUE_YAML}}', planIssueYaml)
+		.replace('{{HEADLESS}}', String(input.headless === true))
 		.replace('{{PROMPT}}', '');
 }
 
@@ -262,6 +274,15 @@ export interface NextOptions {
 	 * `bun test`).
 	 */
 	preflightFn?: () => NextPreflightResult;
+	/**
+	 * Per-invocation `--headless` flag (US-004, CAM-516). A pure per-call
+	 * transport: NOT read from any config, and NOT preserved from a previous
+	 * `cam next` invocation's state-file write (see `renderStateFile`'s
+	 * `headless` doc). Omitting it (or passing `false`) always writes
+	 * `headless: false`, even if the on-disk state file currently holds
+	 * `headless: true` from an earlier cycle.
+	 */
+	headless?: boolean;
 }
 
 // --- Internal helpers -------------------------------------------------------
@@ -416,6 +437,9 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 				storiesDone: parsed?.stories_done,
 				storiesTotal: parsed?.stories_total,
 				lastActivity: now,
+				// Non-sticky (US-004, CAM-516): always the CURRENT invocation's flag,
+				// never preserved from `parsed?.headless`.
+				headless: options.headless === true,
 			});
 		} else {
 			newBody = renderStateFile({
@@ -425,6 +449,7 @@ export async function runNext(options: NextOptions = {}): Promise<number> {
 				pid: process.pid,
 				active: true,
 				lastActivity: now,
+				headless: options.headless === true,
 			});
 		}
 		(options.writeFn ?? writeStateFile)(cwd, newBody, { force: true });

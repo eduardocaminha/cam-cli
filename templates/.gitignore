@@ -75,6 +75,8 @@ scripts/cam/scope-proposal.json
 .claude/.cam-sidecar-liveness-watcher.pid
 # US-002, CAM-502: merge-watch state written by MERGE_WATCH_FILENAME
 .claude/.cam-merge-watch.json
+# US-002, CAM-516: per-dispatch headless stream-json log, one file per dispatch uuid
+.claude/cam-headless-dispatch-*.jsonl
 # US-002, CAM-502: structured event log + gate-outcome history + per-run gate timing
 .claude/cam-worker-events.jsonl
 .claude/cam-gate-history.jsonl

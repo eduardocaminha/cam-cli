@@ -69,8 +69,12 @@ function parseAuthJson(raw: string): { loggedIn: unknown; subscriptionType: unkn
  * `subscriptionType` is surfaced informational-only, never a gate.
  * Fail-closed: if login cannot be confirmed for ANY reason, returns fail.
  *
- * Must NOT use `claude -p` (subscription rule, CAM-42) or `claude --version`
- * (does not check auth). Uses `claude auth status --json` only.
+ * Must NOT use `claude -p` here (subscription rule, CAM-42) or `claude --version`
+ * (does not check auth). Uses `claude auth status --json` only. This particular
+ * probe stays a blanket ban regardless of dispatch mode: the CAM-42 prohibition
+ * is recortada, not aposentada, per ADR-0059 (see docs/adr/), and the only path
+ * born exempt is the `gship next --headless` worker dispatch itself, not this
+ * preflight auth check.
  *
  * JSON shape verified live (claude 2.1.195+):
  *   { loggedIn, authMethod, apiProvider, email, orgId, orgName, subscriptionType }

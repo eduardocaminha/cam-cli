@@ -627,10 +627,10 @@ const SUGGESTIONS_HELP = renderHelp({
 		'ends CLEAN with non-blocking SUGGESTIONs.',
 });
 
-const NEXT_HELP = renderHelp({
+export const NEXT_HELP = renderHelp({
 	title: 'gship next',
 	tagline: 'Open a loop pane in the project session',
-	usage: 'gship next [--max-iter <N>] [--completion-promise <STR>] [--skip-preflight]',
+	usage: 'gship next [--max-iter <N>] [--completion-promise <STR>] [--skip-preflight] [--headless]',
 	sections: [
 		{
 			heading: 'Options',
@@ -645,6 +645,12 @@ const NEXT_HELP = renderHelp({
 					description:
 						'Bypass the deterministic preflight (git sync, clean tree, typecheck,\n' +
 						'  tests) and proceed straight to the signal write (resume escape)',
+				},
+				{
+					name: '--headless',
+					description:
+						'Pure per-invocation flag: never persisted by config, never sticky\n' +
+						'  across an invocation that omits it (default: off)',
 				},
 			],
 		},
@@ -1532,12 +1538,14 @@ export function parseNextArgs(
 	maxIterations?: number;
 	completionPromise?: string;
 	skipPreflight?: boolean;
+	headless?: boolean;
 	help: boolean;
 } | null {
 	const result: {
 		maxIterations?: number;
 		completionPromise?: string;
 		skipPreflight?: boolean;
+		headless?: boolean;
 		help: boolean;
 	} = {
 		help: false,
@@ -1550,6 +1558,10 @@ export function parseNextArgs(
 		}
 		if (arg === '--skip-preflight') {
 			result.skipPreflight = true;
+			continue;
+		}
+		if (arg === '--headless') {
+			result.headless = true;
 			continue;
 		}
 		if (arg === '--max-iter' || arg === '--max-iterations') {
@@ -3062,6 +3074,7 @@ async function main(argv: string[]): Promise<number> {
 				maxIterations: parsed.maxIterations,
 				completionPromise: parsed.completionPromise,
 				skipPreflight: parsed.skipPreflight,
+				headless: parsed.headless,
 			});
 		}
 		case 'review': {

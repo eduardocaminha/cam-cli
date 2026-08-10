@@ -469,6 +469,28 @@ export function makeReadPlanIssue(claudeDir: string): () => string | undefined {
 }
 
 /**
+ * Read the per-invocation `headless` flag from .claude/cam-loop.local.md
+ * (US-004, CAM-516). Returns `undefined` when the file is absent,
+ * unparseable, or has no `headless` field; the sidecar treats `undefined`
+ * as `false` (matches `makeReadActive`'s undefined-means-false contract).
+ *
+ * Exported for testability.
+ */
+export function makeReadHeadless(claudeDir: string): () => boolean | undefined {
+	const stateFilePath = join(claudeDir, 'cam-loop.local.md');
+	return () => {
+		try {
+			if (!existsSync(stateFilePath)) return undefined;
+			const contents = readFileSync(stateFilePath, 'utf8');
+			const parsed = parseStateFile(contents);
+			return parsed?.headless;
+		} catch {
+			return undefined;
+		}
+	};
+}
+
+/**
  * Clear the loop's active trigger in .claude/cam-loop.local.md by overwriting
  * the frontmatter. Reads the existing state to preserve other fields; falls
  * back to a minimal write if the file is absent or unparseable. Best-effort:
@@ -523,6 +545,11 @@ export function makeClearActive(claudeDir: string, cwd: string): () => void {
 				storiesDone: parsed.stories_done,
 				storiesTotal: parsed.stories_total,
 				lastActivity: parsed.last_activity ?? new Date().toISOString(),
+				// Preserve the per-cycle headless flag (US-004, CAM-516): this call
+				// runs BEFORE buildOpts() reads it back out (see loop.ts's
+				// clearActive-then-buildOpts ordering), so dropping it here would
+				// evaporate the flag before the sidecar ever lifts it.
+				headless: parsed.headless,
 				cwd,
 			});
 			writeFileSync(stateFilePath, body, 'utf8');
@@ -1076,6 +1103,10 @@ export function makeSetPhaseFn(claudeDir: string, cwd: string): (phase: LoopPhas
 					storiesDone: parsed?.stories_done,
 					storiesTotal: parsed?.stories_total,
 					lastActivity: now,
+					// Preserve the per-cycle headless flag across phase transitions
+					// (US-004, CAM-516) — this re-render otherwise defaults it to
+					// false, which would evaporate the flag mid-cycle.
+					headless: parsed?.headless,
 				});
 			} else {
 				body = renderStateFile({

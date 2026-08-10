@@ -52,6 +52,7 @@ import {
 import { sendKeysVerified, NARRATION_IDLE_TIMEOUT_MS, type CapturePaneFn } from '../tmux/dispatch.ts';
 import { isPidAlive } from '../commands/resume.ts';
 import { renderStateFile } from '../commands/next.ts';
+import { parseStateFile } from '../commands/status.ts';
 import { WORKER_REPORT_FILENAME } from './worker-report.ts';
 import { parseReviewReport, parseWorkerReport } from './report-parse.ts';
 import type { ReviewReport } from './review-report.ts';
@@ -76,6 +77,9 @@ import {
 	removeDispatchFailedMarker,
 	writeDispatchFailedMarker,
 } from './dispatch-failed-marker.ts';
+import { buildHeadlessChildInvocation } from './headless-argv.ts';
+import { openHeadlessDispatchLog } from './headless-log.ts';
+import { runHeadlessDispatch } from './headless-dispatch.ts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -1053,6 +1057,58 @@ export function buildSupervisorOptions(
 	const readWorkerReport = makeReadWorkerReport(cwd);
 	const clearWorkerReport = makeClearWorkerReport(cwd);
 
+	// US-004 (CAM-516): lift the per-invocation `headless` flag out of the
+	// state file into the options bag. Read fresh here (not cached) since
+	// `buildSupervisorOptions` is called once per dispatch cycle, after
+	// clearActive()'s preserve-on-read-modify-write (sidecar.ts) has already
+	// run for this tick.
+	const headless: RunSupervisorOptions['headless'] = (() => {
+		try {
+			if (!existsSync(stateFilePath)) return false;
+			const contents = readFileSync(stateFilePath, 'utf8');
+			return parseStateFile(contents)?.headless === true;
+		} catch {
+			return false;
+		}
+	})();
+
+	// US-005 (CAM-516): the headless implementer-dispatch strategy, resolved
+	// ONCE here (GOTCHA C) next to `headless` above -- the same single
+	// decision site `workerIsolation` is already resolved at. Always built
+	// (cheap closure, no side effects until invoked); loop.ts only ever calls
+	// it when `headless === true`, so building it unconditionally here never
+	// changes host-mode behavior. Model / task prompt / uuid all arrive as
+	// call-time params from loop.ts (which already resolved them once via
+	// resolvePhaseModel / buildImplementerTaskPrompt for the tmux path).
+	const headlessDispatchFn: RunSupervisorOptions['headlessDispatchFn'] = async (params) => {
+		const { argv, env } = buildHeadlessChildInvocation({
+			uuid: params.uuid,
+			sessionName,
+			model: params.model,
+			agentName: params.agentName,
+			permissionMode: params.permissionMode,
+			sourceEnv: process.env,
+		});
+		const log = openHeadlessDispatchLog(claudeDir, params.uuid);
+		const inputMessage = JSON.stringify({
+			type: 'user',
+			message: { role: 'user', content: params.taskPrompt },
+		});
+		// US-R1-006 (CAM-516): thread the same absolute wall-clock cap the
+		// caller resolved (loop.ts's perWorkerTimeoutMs) through to the runner,
+		// rather than re-resolving it here (a second source of truth).
+		return runHeadlessDispatch({
+			argv,
+			env,
+			cwd,
+			inputMessage,
+			log,
+			absoluteTimeoutMs: params.absoluteTimeoutMs,
+			tokenCeilingProbe: params.tokenCeilingProbe,
+			tokenPollIntervalMs: params.tokenPollIntervalMs,
+		});
+	};
+
 	// onProgress: rewrite state file on each iteration and terminal exit.
 	// Built here so the sidecar can inject it when calling runSupervisor.
 	const startedAt = new Date().toISOString();
@@ -1090,6 +1146,12 @@ export function buildSupervisorOptions(
 		workerReportPath: join(cwd, WORKER_REPORT_FILENAME),
 		permissionMode,
 		taskPrompt,
+		// US-004 (CAM-516): per-invocation headless flag, lifted from the state
+		// file (see the `headless` const above).
+		headless,
+		// US-005 (CAM-516): the single resolved headless dispatch strategy
+		// (see the `headlessDispatchFn` const above).
+		headlessDispatchFn,
 		maxIterations,
 		perWorkerTimeoutMs,
 		maxWorkerTokens,
