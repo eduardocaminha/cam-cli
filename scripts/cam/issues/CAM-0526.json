@@ -1,0 +1,10 @@
+{
+  "id": "CAM-526",
+  "title": "ADR-0035 write-guard is bypassable via Bash (hook matches only Write|Edit|MultiEdit)",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-10T12:59:52.031Z",
+  "updatedAt": "2026-08-10T12:59:52.031Z",
+  "description": "The supervisor-sole-writer invariant is not enforced. .claude/settings.json:14 registers the write-guard hook with matcher Write|Edit|MultiEdit only, so Bash is never intercepted. Workers run with --permission-mode bypassPermissions on BOTH paths (backend-adapter.ts:312 and :70 default for tmux; the headless child inherits the same), so any worker can write scripts/cam/prd.json or scripts/cam/issues/* with a shell redirect, mv, jq or python and the hook is not called at all. The guard only ever blocked the polite path. This is pre-existing and identical on the tmux path, NOT introduced by CAM-516; found by the round-3 review of that branch, which verified the CAM_SESSION fix (cda087c9) is correct as far as it goes. A string-matching Bash matcher would itself be bypassable, so the real fix is a boundary that makes those paths effectively read-only for the child (sandbox, distinct user, or a write broker). If a Bash matcher is adopted as interim mitigation it needs behavioural tests for redirect, mv, python and jq."
+}
