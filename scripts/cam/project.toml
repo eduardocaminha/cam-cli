@@ -3,13 +3,13 @@ issue_system = "local"
 
 [backend]
 name = "claude"
-implementer = "claude"  # decisao do operador 2026-07-27: volta para sonnet (quota codex esgotada ate 01/08)
+implementer = "codex"  # decisao do operador 2026-08-10: volta para codex (quota restabelecida; pin em [models.codex])
 
 [models]
 auditor = "opus"
 implementer = "sonnet"
 orchestrator = "opus"
-planner = "opus"
+planner = "fable"
 reviewer = "opus"
 # INERTE: ship e zero-LLM e nao spawna nada; resolvePhaseModel nunca e chamado
 # com phase ship. Esta chave so aparece no display de `cam config --show`. O
