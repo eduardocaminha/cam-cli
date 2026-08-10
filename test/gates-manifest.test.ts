@@ -11,6 +11,7 @@
 // The 1 CAM-305 gate: test-sleeps
 // The 1 CAM-503 gate: test-tmpdir
 // The 1 CAM-424 gate: skip-ratchet
+// The 1 CAM-502 gate: gitignore-parity
 //
 // This file is intentionally separate from check-all.test.ts (which tests the
 // runGates runner and per-gate command shapes). Its sole job is to catch any
@@ -28,6 +29,7 @@ const CAM61_GATES = ['agents-md'] as const;
 const CAM305_GATES = ['test-sleeps'] as const;
 const CAM503_GATES = ['test-tmpdir'] as const;
 const CAM424_GATES = ['skip-ratchet'] as const;
+const CAM502_GATES = ['gitignore-parity'] as const;
 
 describe('GATES manifest completeness (US-007)', () => {
 	test('contains all 4 CAM-59 foundation gates by exact name', () => {
@@ -72,11 +74,17 @@ describe('GATES manifest completeness (US-007)', () => {
 		}
 	});
 
-	test('total gate count is 15 (4 CAM-59 + 6 CAM-60 + 1 CAM-201 + 1 CAM-61 + 1 CAM-305 + 1 CAM-503 + 1 CAM-424)', () => {
-		expect(GATES).toHaveLength(15);
+	test('contains the CAM-502 gitignore-parity gate by exact name', () => {
+		for (const name of CAM502_GATES) {
+			expect(GATE_NAMES).toContain(name);
+		}
 	});
 
-	test('all 15 expected names are present in the manifest', () => {
+	test('total gate count is 16 (4 CAM-59 + 6 CAM-60 + 1 CAM-201 + 1 CAM-61 + 1 CAM-305 + 1 CAM-503 + 1 CAM-424 + 1 CAM-502)', () => {
+		expect(GATES).toHaveLength(16);
+	});
+
+	test('all 16 expected names are present in the manifest', () => {
 		const expected = [
 			...CAM59_GATES,
 			...CAM60_GATES,
@@ -85,6 +93,7 @@ describe('GATES manifest completeness (US-007)', () => {
 			...CAM305_GATES,
 			...CAM503_GATES,
 			...CAM424_GATES,
+			...CAM502_GATES,
 		];
 		for (const name of expected) {
 			expect(GATE_NAMES).toContain(name);

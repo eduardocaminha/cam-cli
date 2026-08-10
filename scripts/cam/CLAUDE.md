@@ -84,6 +84,8 @@ When a story produces a new insight, route it to exactly one canonical channel u
 | Architectural decision (hard-to-reverse + surprising + genuine trade-off) | `docs/adr/` | Write an ADR only when all three gates pass; see Domain Model Convention |
 | Term definition, bounded-context vocabulary | `CONTEXT.md` (repo root) | Glossary-only; no implementation details |
 
+**Reading `CONTEXT.md`:** it is the domain glossary, and it is grep-on-demand exactly like `patterns.md`. Grep it for the term in question and read only the matching entry. Never read it whole: it is large, and a full read spends the session's context on vocabulary the story does not touch.
+
 **Naming convention:** UPPERCASE.md (CLAUDE, CONTEXT, README, CHANGELOG, AGENTS) is an external-convention entry-point, visible to humans and tooling that expect a conventional filename. lowercase.md (journal, patterns) is a cam-internal artifact. This casing split is BY DESIGN; do not force single casing.
 
 **Location convention:** `scripts/cam/` is cam-harness knowledge (state files, agent instructions, knowledge-layer artifacts). Repo root plus `docs/` is the project domain model (CONTEXT.md, docs/adr/, README, CHANGELOG). Do not move `journal.md` or `patterns.md` out of `scripts/cam/`, and do not move `CONTEXT.md` or `docs/adr/` into it.
@@ -108,7 +110,7 @@ The durable domain model for any cam-managed project lives at two pinned locatio
 This convention applies to cam-cli itself and to any downstream cam project initialized by `gship init`. `CONTEXT.md` is populated by the CAM-118 deterministic writer (do not pre-create an empty stub). `docs/adr/` is created lazily: when the first ADR is needed (do not pre-create an empty directory).
 
 **Self-improvement sources:** the domain model cross-references two knowledge layers:
-- `scripts/cam/patterns.md`: durable codebase patterns, gotchas, and invariants (versioned on main, never truncated). Agents read this file at story start to absorb project conventions.
+- `scripts/cam/patterns.md`: durable codebase patterns, gotchas, and invariants (versioned on main, never truncated). Grep-on-demand, never a full read: agents grep it for the section/keywords matching the subsystem the story touches and read only the matching bullets.
 - CAM-64 (Mulch knowledge central): future machine-readable knowledge graph fed by the spec layer. Terms and decisions written into CONTEXT.md and docs/adr/ during a spec session will eventually flow into this central store.
 
 ## Cross-Repo PRDs (optional, agent-self-executed, unvalidated)
