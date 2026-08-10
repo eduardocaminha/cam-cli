@@ -31,12 +31,18 @@ const FIXTURE_PATH = fileURLToPath(new URL('../fixtures/headless/fixture-child.t
 const SIGTERM_IGNORING_FIXTURE_PATH = fileURLToPath(
 	new URL('../fixtures/headless/fixture-ignore-sigterm.ts', import.meta.url),
 );
+const STDOUT_CLOSING_FIXTURE_PATH = fileURLToPath(
+	new URL('../fixtures/headless/fixture-close-stdout.sh', import.meta.url),
+);
 
 if (!existsSync(FIXTURE_PATH)) {
 	throw new Error(`fixture-child.ts missing at ${FIXTURE_PATH} — did test/fixtures/headless/ get checked in?`);
 }
 if (!existsSync(SIGTERM_IGNORING_FIXTURE_PATH)) {
 	throw new Error(`fixture-ignore-sigterm.ts missing at ${SIGTERM_IGNORING_FIXTURE_PATH}`);
+}
+if (!existsSync(STDOUT_CLOSING_FIXTURE_PATH)) {
+	throw new Error(`fixture-close-stdout.sh missing at ${STDOUT_CLOSING_FIXTURE_PATH}`);
 }
 
 /** PIDs of subprocesses spawned during a test. afterEach reaps any survivors, defense-in-depth over runHeadlessDispatch's own idle-timeout kill. */
@@ -177,6 +183,46 @@ describe('runHeadlessDispatch', () => {
 
 		expect(outcome.kind).toBe('absolute-timeout');
 		expect(elapsedMs).toBeLessThan(1_000);
+	});
+
+	test('absolute timeout still applies after stdout reaches EOF', async () => {
+		const claudeDir = createTestTmpdir();
+		const log = openHeadlessDispatchLog(claudeDir, 'dispatch-stdout-closed');
+		const startedAt = performance.now();
+
+		const outcome = await runHeadlessDispatch({
+			argv: ['bash', STDOUT_CLOSING_FIXTURE_PATH],
+			env: process.env,
+			inputMessage: JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }),
+			log,
+			idleBudgetMs: 60_000,
+			absoluteTimeoutMs: 100,
+		});
+		const elapsedMs = performance.now() - startedAt;
+
+		expect(outcome.kind).toBe('absolute-timeout');
+		expect(elapsedMs).toBeLessThan(1_000);
+	});
+
+	test('token ceiling interrupts a live child before its other deadlines', async () => {
+		const claudeDir = createTestTmpdir();
+		const log = openHeadlessDispatchLog(claudeDir, 'dispatch-token-ceiling');
+		const startedAt = performance.now();
+
+		const outcome = await runHeadlessDispatch({
+			argv: ['bun', FIXTURE_PATH, 'idle'],
+			env: process.env,
+			inputMessage: JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }),
+			log,
+			idleBudgetMs: 60_000,
+			absoluteTimeoutMs: 500,
+			tokenPollIntervalMs: 10,
+			tokenCeilingProbe: () => 150_000,
+		});
+		const elapsedMs = performance.now() - startedAt;
+
+		expect(outcome.kind).toBe('token-ceiling');
+		expect(elapsedMs).toBeLessThan(300);
 	});
 
 	test('no absoluteTimeoutMs supplied: only the idle budget applies (back-compat)', async () => {

@@ -9,7 +9,7 @@
 // (headless-log.ts, US-002), and resolves once the dispatch reaches a
 // terminal state:
 //
-//   1. the child's own stdout stream ending (EOF, i.e. the child exited), or
+//   1. the child exiting after its stdout stream ends, or
 //   2. an idle budget measured from the timestamp of the LAST received
 //      event -- GOTCHA E: completion detection is NEVER a pane probe. The
 //      interactive tmux path's `isPaneAlive` check has no referent for a
@@ -71,6 +71,14 @@ export interface RunHeadlessDispatchOptions {
 	 * enforces (see the module header).
 	 */
 	absoluteTimeoutMs?: number;
+	/**
+	 * Return the cumulative spend when the configured worker-token ceiling has
+	 * been crossed, otherwise undefined. The supervisor closes this probe over
+	 * its existing readWorkerTokens(uuid) reader and maxWorkerTokens value.
+	 */
+	tokenCeilingProbe?: () => number | undefined;
+	/** Poll cadence for tokenCeilingProbe. Defaults to 5 seconds when a probe is supplied. */
+	tokenPollIntervalMs?: number;
 }
 
 /**
@@ -89,11 +97,14 @@ export interface RunHeadlessDispatchOptions {
  *                         'idle-timeout' so a caller/operator can tell a
  *                         genuinely stuck child (idle) apart from a chatty
  *                         runaway one (absolute).
+ *   'token-ceiling'    - the supervisor's transcript reader observed spend
+ *                         at or above maxWorkerTokens; the child was killed.
  */
 export type HeadlessDispatchOutcome =
 	| { kind: 'completed'; exitCode: number; totalCostUsd: number | undefined }
 	| { kind: 'idle-timeout'; totalCostUsd: number | undefined }
-	| { kind: 'absolute-timeout'; totalCostUsd: number | undefined };
+	| { kind: 'absolute-timeout'; totalCostUsd: number | undefined }
+	| { kind: 'token-ceiling'; tokenSpend: number; totalCostUsd: number | undefined };
 
 /**
  * The exact `Bun.Subprocess` instantiation this module always spawns with
@@ -122,29 +133,43 @@ function getDefaultStdoutReader(stdout: HeadlessChildProcess['stdout']) {
 type HeadlessChildStdoutReader = ReturnType<typeof getDefaultStdoutReader>;
 type HeadlessChildReadResult = Awaited<ReturnType<HeadlessChildStdoutReader['read']>>;
 
-/** Outcome of racing one `reader.read()` against the remaining idle budget. */
-type ReadRace = { kind: 'idle' } | { kind: 'read'; result: HeadlessChildReadResult };
+/** Outcome of racing one `reader.read()` against the next scheduled check. */
+type ReadRace = { kind: 'timer' } | { kind: 'read'; result: HeadlessChildReadResult };
 
 type ReadTimeoutBudget = {
 	remainingMs: number;
-	timeoutKind: 'idle-timeout' | 'absolute-timeout';
+	timeoutKind: 'idle-timeout' | 'absolute-timeout' | 'token-check';
 };
+
+type ExitRace = { kind: 'exited'; exitCode: number } | { kind: 'absolute-timeout' };
+type StreamOutcome =
+	| { kind: 'stream-ended' }
+	| { kind: 'idle-timeout' }
+	| { kind: 'absolute-timeout' }
+	| { kind: 'token-ceiling'; tokenSpend: number };
+type ProcessedRead = { kind: 'stream-ended' } | { kind: 'continue'; buffer: string };
 
 /** Select the first deadline the next stdout read can reach. */
 function resolveReadTimeoutBudget(
 	idleBudgetMs: number,
 	lastEventAt: number,
 	absoluteDeadlineAt: number | undefined,
+	tokenPollIntervalMs: number | undefined,
 ): ReadTimeoutBudget {
 	const idleRemainingMs = Math.max(0, idleBudgetMs - (Date.now() - lastEventAt));
 	const absoluteRemainingMs =
 		absoluteDeadlineAt !== undefined ? Math.max(0, absoluteDeadlineAt - Date.now()) : undefined;
+	let budget: ReadTimeoutBudget = { remainingMs: idleRemainingMs, timeoutKind: 'idle-timeout' };
 
 	if (absoluteRemainingMs !== undefined && absoluteRemainingMs <= idleRemainingMs) {
-		return { remainingMs: absoluteRemainingMs, timeoutKind: 'absolute-timeout' };
+		budget = { remainingMs: absoluteRemainingMs, timeoutKind: 'absolute-timeout' };
 	}
 
-	return { remainingMs: idleRemainingMs, timeoutKind: 'idle-timeout' };
+	if (tokenPollIntervalMs !== undefined && tokenPollIntervalMs < budget.remainingMs) {
+		return { remainingMs: tokenPollIntervalMs, timeoutKind: 'token-check' };
+	}
+
+	return budget;
 }
 
 /**
@@ -153,9 +178,9 @@ function resolveReadTimeoutBudget(
  * neither TS nor a real race condition can observe a partially-initialized
  * timer handle.
  */
-function raceReadAgainstIdle(reader: HeadlessChildStdoutReader, remainingMs: number): Promise<ReadRace> {
+function raceReadAgainstTimer(reader: HeadlessChildStdoutReader, remainingMs: number): Promise<ReadRace> {
 	return new Promise((resolve) => {
-		const timer = setTimeout(() => resolve({ kind: 'idle' }), remainingMs);
+		const timer = setTimeout(() => resolve({ kind: 'timer' }), remainingMs);
 		reader.read().then(
 			(result) => {
 				clearTimeout(timer);
@@ -171,6 +196,30 @@ function raceReadAgainstIdle(reader: HeadlessChildStdoutReader, remainingMs: num
 	});
 }
 
+/** Decode one stdout read result and emit every complete non-empty NDJSON line. */
+function processStdoutReadResult(
+	result: HeadlessChildReadResult,
+	decoder: TextDecoder,
+	buffer: string,
+	onLine: (line: string) => void,
+): ProcessedRead {
+	const { done, value } = result;
+	if (done) {
+		if (buffer.length > 0) onLine(buffer);
+		return { kind: 'stream-ended' };
+	}
+
+	let nextBuffer = buffer + decoder.decode(value, { stream: true });
+	let newlineIdx = nextBuffer.indexOf('\n');
+	while (newlineIdx >= 0) {
+		const line = nextBuffer.slice(0, newlineIdx);
+		nextBuffer = nextBuffer.slice(newlineIdx + 1);
+		if (line.length > 0) onLine(line);
+		newlineIdx = nextBuffer.indexOf('\n');
+	}
+	return { kind: 'continue', buffer: nextBuffer };
+}
+
 /**
  * Consume `stdout` line by line, calling `onLine` for every complete NDJSON
  * line (in arrival order), resetting the idle deadline on every line
@@ -178,47 +227,50 @@ function raceReadAgainstIdle(reader: HeadlessChildStdoutReader, remainingMs: num
  * `idleBudgetMs` elapses since the last received chunk without the stream
  * ending, or 'absolute-timeout' once `absoluteDeadlineAt` (a fixed
  * wall-clock instant, NEVER reset by an event) is reached first
- * (US-R1-006, CAM-516).
+ * (US-R1-006, CAM-516). When tokenCeilingProbe is supplied, it is also
+ * checked after every stdout chunk and at tokenPollIntervalMs while stdout
+ * is silent; a reported breach resolves 'token-ceiling'.
  */
 async function consumeStdoutWithIdleBudget(
 	stdout: HeadlessChildProcess['stdout'],
 	idleBudgetMs: number,
 	absoluteDeadlineAt: number | undefined,
+	tokenCeilingProbe: (() => number | undefined) | undefined,
+	tokenPollIntervalMs: number | undefined,
 	onLine: (line: string) => void,
-): Promise<'stream-ended' | 'idle-timeout' | 'absolute-timeout'> {
+): Promise<StreamOutcome> {
 	const reader = getDefaultStdoutReader(stdout);
 	const decoder = new TextDecoder();
 	let buffer = '';
 	let lastEventAt = Date.now();
 
 	for (;;) {
+		const tokenSpend = tokenCeilingProbe?.();
+		if (tokenSpend !== undefined) {
+			await reader.cancel().catch(() => {});
+			return { kind: 'token-ceiling', tokenSpend };
+		}
+
 		const { remainingMs, timeoutKind } = resolveReadTimeoutBudget(
 			idleBudgetMs,
 			lastEventAt,
 			absoluteDeadlineAt,
+			tokenPollIntervalMs,
 		);
-		const race = await raceReadAgainstIdle(reader, remainingMs);
+		const race = await raceReadAgainstTimer(reader, remainingMs);
 
-		if (race.kind === 'idle') {
+		if (race.kind === 'timer') {
+			if (timeoutKind === 'token-check') continue;
 			await reader.cancel().catch(() => {});
-			return timeoutKind;
+			return { kind: timeoutKind };
 		}
 
 		lastEventAt = Date.now();
-		const { done, value } = race.result;
-		if (done) {
-			if (buffer.length > 0) onLine(buffer);
-			return 'stream-ended';
+		const processedRead = processStdoutReadResult(race.result, decoder, buffer, onLine);
+		if (processedRead.kind === 'stream-ended') {
+			return { kind: 'stream-ended' };
 		}
-
-		buffer += decoder.decode(value, { stream: true });
-		let newlineIdx = buffer.indexOf('\n');
-		while (newlineIdx >= 0) {
-			const line = buffer.slice(0, newlineIdx);
-			buffer = buffer.slice(newlineIdx + 1);
-			if (line.length > 0) onLine(line);
-			newlineIdx = buffer.indexOf('\n');
-		}
+		buffer = processedRead.buffer;
 	}
 }
 
@@ -245,12 +297,37 @@ async function terminateTimedOutChild(proc: HeadlessChildProcess): Promise<void>
 	}
 }
 
+/** Wait for child exit without allowing EOF to escape the absolute deadline. */
+async function waitForExitBeforeAbsoluteDeadline(
+	proc: HeadlessChildProcess,
+	absoluteDeadlineAt: number | undefined,
+): Promise<ExitRace> {
+	if (absoluteDeadlineAt === undefined) {
+		return { kind: 'exited', exitCode: await proc.exited };
+	}
+
+	let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+	const exitRace = await Promise.race([
+		proc.exited.then((exitCode) => ({ kind: 'exited', exitCode }) as const),
+		new Promise<{ kind: 'absolute-timeout' }>((resolve) => {
+			deadlineTimer = setTimeout(
+				() => resolve({ kind: 'absolute-timeout' }),
+				Math.max(0, absoluteDeadlineAt - Date.now()),
+			);
+		}),
+	]);
+	if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
+	return exitRace;
+}
+
 /**
  * Run one headless implementer dispatch against a real spawned child (never
  * an in-process mock). See the module header for the completion contract.
  */
 export async function runHeadlessDispatch(opts: RunHeadlessDispatchOptions): Promise<HeadlessDispatchOutcome> {
 	const idleBudgetMs = opts.idleBudgetMs ?? DEFAULT_HEADLESS_IDLE_BUDGET_MS;
+	const tokenPollIntervalMs =
+		opts.tokenCeilingProbe !== undefined ? Math.max(1, opts.tokenPollIntervalMs ?? 5_000) : undefined;
 	// US-R1-006 (CAM-516): fixed wall-clock instant, computed once at dispatch
 	// start. Never recomputed/reset as events arrive (that is precisely what
 	// distinguishes it from idleBudgetMs above).
@@ -282,13 +359,30 @@ export async function runHeadlessDispatch(opts: RunHeadlessDispatchOptions): Pro
 		}
 	};
 
-	const streamOutcome = await consumeStdoutWithIdleBudget(proc.stdout, idleBudgetMs, absoluteDeadlineAt, onLine);
+	const streamOutcome = await consumeStdoutWithIdleBudget(
+		proc.stdout,
+		idleBudgetMs,
+		absoluteDeadlineAt,
+		opts.tokenCeilingProbe,
+		tokenPollIntervalMs,
+		onLine,
+	);
 
-	if (streamOutcome === 'idle-timeout' || streamOutcome === 'absolute-timeout') {
+	if (streamOutcome.kind === 'token-ceiling') {
 		await terminateTimedOutChild(proc);
-		return { kind: streamOutcome, totalCostUsd };
+		return { kind: 'token-ceiling', tokenSpend: streamOutcome.tokenSpend, totalCostUsd };
 	}
 
-	const exitCode = await proc.exited;
-	return { kind: 'completed', exitCode, totalCostUsd };
+	if (streamOutcome.kind === 'idle-timeout' || streamOutcome.kind === 'absolute-timeout') {
+		await terminateTimedOutChild(proc);
+		return { kind: streamOutcome.kind, totalCostUsd };
+	}
+
+	const exitRace = await waitForExitBeforeAbsoluteDeadline(proc, absoluteDeadlineAt);
+	if (exitRace.kind === 'absolute-timeout') {
+		await terminateTimedOutChild(proc);
+		return { kind: 'absolute-timeout', totalCostUsd };
+	}
+
+	return { kind: 'completed', exitCode: exitRace.exitCode, totalCostUsd };
 }
