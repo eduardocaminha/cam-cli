@@ -74,7 +74,7 @@
       "id": "US-R1-006",
       "title": "WARNING: No spend or wall-clock bound applies in headless mode. The CAM-5 per-w…",
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "description": "WARNING [src/supervisor/loop.ts:1330]: No spend or wall-clock bound applies in headless mode. The CAM-5 per-worker token ceiling (maxWorkerTokens + readWorkerTokens) and `perWorkerTimeoutMs` live only in the tmux poll loop, so a headless dispatch's only bound is the 45-minute idle budget, which every emitted event resets: a chatty runaway child is unbounded. The codex precedent for exactly this situation emits a `worker-token-ceiling-unavailable` notice rather than dropping enforcement silently (loop.ts, shouldApplyTokenCeiling block); the headless branch emits nothing. Apply perWorkerTimeoutMs as an absolute cap and/or emit the unavailable notice.",
       "notes": "WARNING [src/supervisor/loop.ts:1330]: No spend or wall-clock bound applies in headless mode. The CAM-5 per-worker token ceiling (maxWorkerTokens + readWorkerTokens) and `perWorkerTimeoutMs` live only in the tmux poll loop, so a headless dispatch's only bound is the 45-minute idle budget, which every emitted event resets: a chatty runaway child is unbounded. The codex precedent for exactly this situation emits a `worker-token-ceiling-unavailable` notice rather than dropping enforcement silently (loop.ts, shouldApplyTokenCeiling block); the headless branch emits nothing. Apply perWorkerTimeoutMs as an absolute cap and/or emit the unavailable notice."
     },
