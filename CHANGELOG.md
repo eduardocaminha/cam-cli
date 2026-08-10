@@ -6,6 +6,37 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.286.0] - 2026-08-10
+
+### Added
+
+- US-R1-006 - apply perWorkerTimeoutMs as an absolute cap in headless mode
+- US-R1-005 - WARNING: The headless branch ignores implBackend. With [backend] implementer…
+- US-R1-004 - Update README to reflect the CAM-516/ADR-0059 claude -p recorte and document --headless
+- US-R1-003 - Set CAM_WORKER=1 in the headless child env
+- US-R1-002 - Thread opts.permissionMode into the headless dispatch argv
+- US-R1-001 - Thread --agent through the headless dispatch argv
+- US-008 - Write the recorte of the claude -p prohibition and pin it with an evidence-fidelity oracle
+- US-007 - Prove one story end to end through the headless seam against a real repo and a real remote
+- US-006 - Fail closed when --headless meets container isolation
+- US-005 - Decide headless-vs-tmux once in host.ts and branch exactly once in loop.ts
+- US-004 - Transport the --headless invocation flag from the CLI to RunSupervisorOptions
+- US-003 - Run one headless dispatch against a real child process with no TTY and an idle budget
+- US-002 - Parse the stream-json event vocabulary and persist an append-only per-dispatch log
+- US-001 - Build the headless child argv array and its explicit credential/env policy
+
+### Fixed
+
+- keep headless stdout read across token probe ticks
+- drop tmux env from headless child
+- correct readme claims about session detection and mutex
+- enforce headless worker token ceiling
+- bound headless dispatch after stdout eof
+- keep supervisor host within size budget
+- document headless worker dispatch path
+- escalate headless timeout to sigkill
+- scope headless worker write guard
+
 ## [0.285.0] - 2026-08-07
 
 ### Added
