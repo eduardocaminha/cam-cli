@@ -1083,6 +1083,11 @@ export function buildSupervisorOptions(
 	// this closure never re-resolves either.
 	const headlessDispatchFn: RunSupervisorOptions['headlessDispatchFn'] = async (params) => {
 		const { argv, env } = buildHeadlessChildInvocation({
+			// A headless child has no tmux pane, but the hook policy still uses
+			// CAM_SESSION as its cam-managed scope gate. projectSessionName(cwd)
+			// is canonical even if no session is live, so pass the same name the
+			// tmux path would use instead of relying on the sidecar's ambient env.
+			sessionName,
 			model: params.model,
 			agentName: params.agentName,
 			permissionMode: params.permissionMode,

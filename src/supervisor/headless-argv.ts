@@ -61,6 +61,15 @@ export const ANTHROPIC_API_KEY_ENV_UNSET = 'ANTHROPIC_API_KEY';
 /** Inputs to {@link buildHeadlessChildInvocation}. */
 export interface BuildHeadlessChildInvocationOptions {
 	/**
+	 * Canonical project session name to set as `CAM_SESSION`. The headless
+	 * child is a direct process and does not require a live tmux session, but
+	 * the tag must still be non-empty so the cam-managed hook policy engages.
+	 * Callers must pass the same `projectSessionName(cwd)` value a tmux session
+	 * uses; when no tmux session exists, that prospective canonical name is
+	 * still the worker's policy scope and does not imply a pane exists.
+	 */
+	sessionName: string;
+	/**
 	 * Resolved model slug to pass as `--model`. Omitted (undefined) appends
 	 * nothing, leaving the child to use its own default. This builder never
 	 * resolves a model itself -- see the model-resolution note above.
@@ -130,7 +139,7 @@ function buildHeadlessArgv(model: string | undefined, agentName: string, permiss
 /**
  * Strip the headless child's env down to an explicit, declared credential
  * policy instead of letting it inherit whatever the parent process happens
- * to carry, and set the worker-actor marker:
+ * to carry, and set the cam-managed worker markers:
  *
  *   1. WORKER_ENV_UNSET (backend-adapter.ts): the CAM-43 nesting-detection
  *      vars, so a headless child spawned from a claude-nested process still
@@ -151,21 +160,29 @@ function buildHeadlessArgv(model: string | undefined, agentName: string, permiss
  *      login this repo requires (CAM-42), which is also why `--bare` (which
  *      expects this exact var) is refused above. Stripping it here makes the
  *      credential choice declared rather than accidentally inherited.
- *   4. CAM_WORKER=1 (WORKER_ACTOR_ENV, backend-adapter.ts, US-002/CAM-63):
- *      the SOLE discriminator `.claude/hooks/orch-agent-allowlist.sh` uses to
- *      distinguish an implementer-worker Write/Edit/MultiEdit from a
- *      planner/orchestrator one and deny the former on
+ *   4. CAM_SESSION=<sessionName>: the hook's outer scope gate. Headless
+ *      workers do not inherit this reliably because a standalone sidecar is
+ *      launched outside tmux. The caller therefore supplies the canonical
+ *      `projectSessionName(cwd)` explicitly. That value remains the policy
+ *      scope when no tmux session currently exists; it does not claim that a
+ *      pane exists, while preserving `isInsideProjectSession` equality if
+ *      tmux context is present.
+ *   5. CAM_WORKER=1 (WORKER_ACTOR_ENV, backend-adapter.ts, US-002/CAM-63):
+ *      the worker discriminator `.claude/hooks/orch-agent-allowlist.sh` uses
+ *      together with CAM_SESSION to distinguish an implementer-worker
+ *      Write/Edit/MultiEdit from a planner/orchestrator one and deny it on
  *      `scripts/cam/prd.json` / `scripts/cam/issues/*` (ADR-0035
- *      supervisor-sole-writer, CAM-63/CAM-166). The headless child inherits
- *      CAM_SESSION from the sidecar (nothing here unsets it) but this repo
- *      never set CAM_WORKER on the headless path (CRITICAL bug, US-R1-003):
- *      without it the write-guard was silently disabled and a headless
- *      worker could self-flip `passes: true`. Set directly here (mirroring
- *      the literal `-e CAM_WORKER=1` in `worker-container.ts`'s
- *      `buildDockerRunArgv`) rather than parsing the shell-fragment constant
- *      `WORKER_ACTOR_ENV` apart into a key/value pair.
+ *      supervisor-sole-writer, CAM-63/CAM-166). Both markers are required;
+ *      omitting either silently disables the guard and lets a headless worker
+ *      self-flip `passes: true`. Set directly here (mirroring the literal
+ *      `-e CAM_WORKER=1` in `worker-container.ts`'s `buildDockerRunArgv`)
+ *      rather than parsing the shell-fragment constant `WORKER_ACTOR_ENV`
+ *      apart into a key/value pair.
  */
-function stripHeadlessChildEnv(sourceEnv: Record<string, string | undefined>): Record<string, string | undefined> {
+function stripHeadlessChildEnv(
+	sourceEnv: Record<string, string | undefined>,
+	sessionName: string,
+): Record<string, string | undefined> {
 	const env = { ...sourceEnv };
 	for (const key of WORKER_ENV_UNSET) {
 		delete env[key];
@@ -174,6 +191,7 @@ function stripHeadlessChildEnv(sourceEnv: Record<string, string | undefined>): R
 		delete env[key];
 	}
 	delete env[ANTHROPIC_API_KEY_ENV_UNSET];
+	env.CAM_SESSION = sessionName;
 	env.CAM_WORKER = '1';
 	return env;
 }
@@ -187,6 +205,6 @@ export function buildHeadlessChildInvocation(
 ): HeadlessChildInvocation {
 	return {
 		argv: buildHeadlessArgv(opts.model, opts.agentName, opts.permissionMode),
-		env: stripHeadlessChildEnv(opts.sourceEnv),
+		env: stripHeadlessChildEnv(opts.sourceEnv, opts.sessionName),
 	};
 }
