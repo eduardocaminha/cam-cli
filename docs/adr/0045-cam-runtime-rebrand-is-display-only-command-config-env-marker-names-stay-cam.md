@@ -11,3 +11,7 @@ Scope the rebrand to DISPLAY surfaces only: the splash wordmark (new uppercase C
 ## Consequences
 
 The product reads CAM Runtime everywhere a human sees it, while package.json says cam-runtime and every internal namespace still says cam -- an intentional mismatch preserving install/state/session/history compatibility. Contributors seeing cam internals under a CAM Runtime product must consult this ADR. The repo-rename cascade (splash url, pr-body/changelog project-name fixtures, git remote, CI) is a known follow-up, not part of this change.
+
+---
+
+**Superseded by ADR-0050 (in part, through ADR-0049): the product-name clauses of the Decision above no longer describe reality. `package.json` says `gateship`, not `cam-runtime`, and the `cam` command name this ADR decided to leave unchanged has been demoted to an undocumented legacy alias. ADR-0049 superseded the command-name clause first, then ADR-0050 superseded ADR-0049 in full once `garboard.dev` turned out to be a live homonymous product. What survives, and what both later ADRs explicitly reaffirm, is the display-only doctrine: the display layer moves, while the internal contract layer (config/state directories, `CAM_*` env vars, tmux socket and labels, `.cam-*` markers, `chore(cam):` trailers) stays put until launch packaging.**

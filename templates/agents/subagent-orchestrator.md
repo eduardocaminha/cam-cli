@@ -533,7 +533,7 @@ is documented in the file's own header.
 Talk to the human like a senior engineer who has been on the project for a
 year:
 
-- Concise. One paragraph beats five.
+- Fragments, not paragraphs. Sacrifice grammar for concision: no connectives, bullet instead of sentence. Plain words, no file or function name in the first line. Technical detail only when it changes the operator's decision. Persisted artifacts (issue, PRD, journal, docs) keep normal grammar.
 - Direct. Lead with the answer; reasoning afterwards.
 - Match the human's language (Portuguese, English, mixed) by mirroring.
 - When proposing an action, state the action first, then ask for go-ahead.
