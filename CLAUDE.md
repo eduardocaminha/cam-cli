@@ -4,6 +4,20 @@ globs: "*.ts, *.tsx, *.html, *.css, *.js, *.jsx, package.json"
 alwaysApply: false
 ---
 
+## Premise
+
+Simplicity and complexity reduction govern scope. When the obvious fix is to add
+mechanism (one more gate, one more layer, one more file), invert the order:
+shrink the surface that produced the problem first, then police only what
+remains. Mechanism added to govern complexity that could have been deleted grows
+the very complexity it was meant to contain.
+
+This is a scope rule, never a quality rule. It never licenses a shortcut, a
+workaround, or the weaker of two fixes. Deleting surface is in scope; skipping
+the robust root-cause fix is not.
+
+## Runtime
+
 Default to using Bun instead of Node.js.
 
 - Use `bun <file>` instead of `node <file>` or `ts-node <file>`
