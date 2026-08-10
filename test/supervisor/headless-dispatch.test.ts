@@ -28,9 +28,15 @@ import { openHeadlessDispatchLog } from '../../src/supervisor/headless-log.ts';
 import { runHeadlessDispatch } from '../../src/supervisor/headless-dispatch.ts';
 
 const FIXTURE_PATH = fileURLToPath(new URL('../fixtures/headless/fixture-child.ts', import.meta.url));
+const SIGTERM_IGNORING_FIXTURE_PATH = fileURLToPath(
+	new URL('../fixtures/headless/fixture-ignore-sigterm.ts', import.meta.url),
+);
 
 if (!existsSync(FIXTURE_PATH)) {
 	throw new Error(`fixture-child.ts missing at ${FIXTURE_PATH} — did test/fixtures/headless/ get checked in?`);
+}
+if (!existsSync(SIGTERM_IGNORING_FIXTURE_PATH)) {
+	throw new Error(`fixture-ignore-sigterm.ts missing at ${SIGTERM_IGNORING_FIXTURE_PATH}`);
 }
 
 /** PIDs of subprocesses spawned during a test. afterEach reaps any survivors, defense-in-depth over runHeadlessDispatch's own idle-timeout kill. */
@@ -152,6 +158,25 @@ describe('runHeadlessDispatch', () => {
 		const lines = readLoggedLines(log.path);
 		expect(lines.length).toBeGreaterThan(1);
 		expect(lines[0]?.type).toBe('system');
+	});
+
+	test('absolute timeout escalates when the child ignores SIGTERM', async () => {
+		const claudeDir = createTestTmpdir();
+		const log = openHeadlessDispatchLog(claudeDir, 'dispatch-sigterm-ignored');
+		const startedAt = performance.now();
+
+		const outcome = await runHeadlessDispatch({
+			argv: ['bun', SIGTERM_IGNORING_FIXTURE_PATH],
+			env: process.env,
+			inputMessage: JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }),
+			log,
+			idleBudgetMs: 60_000,
+			absoluteTimeoutMs: 100,
+		});
+		const elapsedMs = performance.now() - startedAt;
+
+		expect(outcome.kind).toBe('absolute-timeout');
+		expect(elapsedMs).toBeLessThan(1_000);
 	});
 
 	test('no absoluteTimeoutMs supplied: only the idle budget applies (back-compat)', async () => {

@@ -39,8 +39,14 @@ import { classifyHeadlessStreamLine } from './headless-stream.ts';
 /** Warren precedent (GOTCHA E): 45 minutes measured from the last received event. */
 export const DEFAULT_HEADLESS_IDLE_BUDGET_MS = 45 * 60 * 1000;
 
-/** Signal sent to the child when the idle budget elapses (SIGTERM: abort-turn + exit 143 per the CLI docs pin on this story). */
-const IDLE_KILL_SIGNAL = 'SIGTERM';
+/** Cooperative signal sent when either dispatch deadline elapses. */
+const TERMINATE_SIGNAL = 'SIGTERM';
+
+/** Maximum time allowed for cooperative shutdown before SIGKILL escalation. */
+const TERMINATION_GRACE_MS = 250;
+
+/** Forceful signal used when the child does not honor SIGTERM within the grace period. */
+const FORCE_KILL_SIGNAL = 'SIGKILL';
 
 /** Inputs to {@link runHeadlessDispatch}. */
 export interface RunHeadlessDispatchOptions {
@@ -216,6 +222,29 @@ async function consumeStdoutWithIdleBudget(
 	}
 }
 
+/** Terminate a timed-out child without letting a stuck SIGTERM handler defeat the deadline. */
+async function terminateTimedOutChild(proc: HeadlessChildProcess): Promise<void> {
+	proc.kill(TERMINATE_SIGNAL);
+
+	let graceTimer: ReturnType<typeof setTimeout> | undefined;
+	const exitOutcome = await Promise.race([
+		proc.exited.then(() => 'exited' as const),
+		new Promise<'grace-expired'>((resolve) => {
+			graceTimer = setTimeout(() => resolve('grace-expired'), TERMINATION_GRACE_MS);
+		}),
+	]);
+	if (graceTimer !== undefined) clearTimeout(graceTimer);
+
+	if (exitOutcome === 'grace-expired') {
+		try {
+			proc.kill(FORCE_KILL_SIGNAL);
+		} catch {
+			// The child exited between the grace timer firing and signal delivery.
+		}
+		await proc.exited;
+	}
+}
+
 /**
  * Run one headless implementer dispatch against a real spawned child (never
  * an in-process mock). See the module header for the completion contract.
@@ -256,8 +285,7 @@ export async function runHeadlessDispatch(opts: RunHeadlessDispatchOptions): Pro
 	const streamOutcome = await consumeStdoutWithIdleBudget(proc.stdout, idleBudgetMs, absoluteDeadlineAt, onLine);
 
 	if (streamOutcome === 'idle-timeout' || streamOutcome === 'absolute-timeout') {
-		proc.kill(IDLE_KILL_SIGNAL);
-		await proc.exited;
+		await terminateTimedOutChild(proc);
 		return { kind: streamOutcome, totalCostUsd };
 	}
 
