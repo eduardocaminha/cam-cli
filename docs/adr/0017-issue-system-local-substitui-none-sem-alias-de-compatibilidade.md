@@ -11,3 +11,5 @@ Adotar local como valor canonico e novo default, removendo none de todo code pat
 ## Consequences
 
 Semantica honesta (local diz o que ativa). Zero none em code path. Um project.toml legado com none passa a falhar de forma ruidosa e recuperavel (troca o silent-skip por erro claro), decisao segura porque o unico projeto com none era o proprio cam-cli, migrado no PR. Alternativa rejeitada: alias none->local normalizado, que manteria none vivo no codigo indefinidamente sem necessidade real dado o universo controlado de projetos.
+
+**Superseded by ADR-0018: a premissa desta decisao, de que o unico projeto com none era o proprio cam-cli, foi falsificada em producao em menos de 24 horas. Como o mergeIntoConfig do init nao reescreve valor existente, todo projeto ja inicializado seguia carregando none, e a remocao publicada na v0.98.0 abortou o --install. A alternativa rejeitada aqui, o alias none->local normalizado na leitura, foi restaurada deliberadamente pelo CAM-239 (PR #172, v0.99.0) e e o comportamento vigente em src/config/issue-system.ts.**

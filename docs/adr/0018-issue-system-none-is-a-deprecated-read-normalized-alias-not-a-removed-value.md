@@ -11,3 +11,5 @@ Accept none as a deprecated alias normalized to local at the single read point (
 ## Consequences
 
 Existing none-configured projects keep working without a migration. The canonical value and init default remain local. Truly-unknown values still fail loud. Cost: a permanent small compatibility branch in the reader plus a smoke/test guarding it.
+
+**Supersedes ADR-0017, que decidira remover none de todo code path. A rejeicao do alias registrada la assumia um universo controlado de projetos, premissa que nao se sustentou porque configs ja inicializadas nunca sao reescritas pelo init. O alias permanece guardado por teste unitario e pelo smoke do build-release, que invoca --issue-system none.**
