@@ -1079,14 +1079,9 @@ export function buildSupervisorOptions(
 	// it when `headless === true`, so building it unconditionally here never
 	// changes host-mode behavior. Model / task prompt / uuid all arrive as
 	// call-time params from loop.ts (which already resolved them once via
-	// resolvePhaseModel / buildImplementerTaskPrompt for the tmux path) so
-	// this closure never re-resolves either.
+	// resolvePhaseModel / buildImplementerTaskPrompt for the tmux path).
 	const headlessDispatchFn: RunSupervisorOptions['headlessDispatchFn'] = async (params) => {
 		const { argv, env } = buildHeadlessChildInvocation({
-			// A headless child has no tmux pane, but the hook policy still uses
-			// CAM_SESSION as its cam-managed scope gate. projectSessionName(cwd)
-			// is canonical even if no session is live, so pass the same name the
-			// tmux path would use instead of relying on the sidecar's ambient env.
 			sessionName,
 			model: params.model,
 			agentName: params.agentName,
