@@ -363,8 +363,12 @@ export interface RunSupervisorOptions {
 		 * runaway child on its own. Threaded straight into
 		 * `RunHeadlessDispatchOptions.absoluteTimeoutMs`.
 		 */
-		absoluteTimeoutMs: number;
-	}) => Promise<HeadlessDispatchOutcome>;
+			absoluteTimeoutMs: number;
+			/** Return cumulative spend once readWorkerTokens observes the configured ceiling. */
+			tokenCeilingProbe?: () => number | undefined;
+			/** Token transcript polling cadence, shared with the tmux poll loop. */
+			tokenPollIntervalMs?: number;
+		}) => Promise<HeadlessDispatchOutcome>;
 	/**
 	 * Re-run quality gates (typecheck + test) to verify before finalizing a
 	 * worker that implemented a story but did not flip prd.json (CAM-32 BUG 2).
@@ -839,6 +843,18 @@ export function shouldApplyTokenCeiling(
 	return backend !== 'codex' && maxWorkerTokens > 0 && hasReader;
 }
 
+/** Read the existing worker transcript and return spend only when the ceiling is crossed. */
+function readWorkerTokenCeilingBreach(
+	uuid: string,
+	maxWorkerTokens: number,
+	readWorkerTokens: NonNullable<RunSupervisorOptions['readWorkerTokens']>,
+): number | undefined {
+	const tokens = readWorkerTokens(uuid);
+	if (tokens === null) return undefined;
+	const spend = tokens.inputTokens + tokens.cacheCreationTokens + tokens.cacheReadTokens;
+	return spend >= maxWorkerTokens ? spend : undefined;
+}
+
 /**
  * Max consecutive dead-pane / timeout outcomes before the loop blocks (CAM-44).
  * A worker that dies pre-result (pane-died) or never emits a sentinel (timeout)
@@ -1222,7 +1238,10 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			const advisoryStoryId = action.storyId;
 
 			// Mint a fresh uuid for this invocation.
-			const uuid = genUuid();
+			// Claude transcript filenames are lowercase. Normalize at the UUID origin
+			// so the tmux argv, headless argv, and readWorkerTokens key cannot diverge
+			// when an injected/macOS uuidgen-compatible source returns uppercase.
+			const uuid = genUuid().toLowerCase();
 
 			// US-R1-001 (CAM-510 follow-up to US-003 site 3 of 5): every terminal
 			// cleanup below must also reap this dispatch's codex instructions file,
@@ -1400,27 +1419,15 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					);
 				}
 
-				// US-R1-006 (CAM-516): the CAM-5 per-worker token ceiling
-				// (maxWorkerTokens + readWorkerTokens) is unenforceable in headless
-				// mode for the SAME structural reason shouldApplyTokenCeiling
-				// disables it for 'codex' above: readWorkerTokens resolves a
-				// claude-shaped `.jsonl` transcript keyed by session id via
-				// transcriptPathForSession(uuid, ...), but the headless child
-				// (headless-argv.ts) is never given an explicit `--session-id` --
-				// it generates its own -- so `uuid` (this loop's dispatch id) never
-				// matches the real transcript's filename and readWorkerTokens
-				// always returns null. Rather than silently never enforcing a
-				// configured ceiling, emit the exact same one-time notice the
-				// codex path emits (mirrors the shouldApplyTokenCeiling doc
-				// comment above almost verbatim) whenever a ceiling is configured
-				// and a reader is wired.
-				if (maxWorkerTokens > 0 && readWorkerTokens) {
-					emit('worker-token-ceiling-unavailable', advisoryStoryId, uuid, {
-						backend: implBackend,
-						ceiling: maxWorkerTokens,
-						mode: 'headless',
-					});
-				}
+				// The non-claude case already failed closed above, so the same CAM-5
+				// predicate used by tmux can enable transcript-based enforcement here.
+				// buildHeadlessChildInvocation receives this uuid as --session-id, making
+				// the existing readWorkerTokens(uuid) adapter executable in both modes.
+				const applyTokenCeiling = shouldApplyTokenCeiling(
+					implBackend,
+					maxWorkerTokens,
+					readWorkerTokens !== undefined,
+				);
 
 				// US-004: erase any stale report from the previous worker run before
 				// dispatching the new one (same reasoning as the tmux branch below).
@@ -1446,6 +1453,11 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					// (headless-dispatch.ts) for why the resettable idle budget alone
 					// cannot bound a chatty runaway child.
 					absoluteTimeoutMs: perWorkerTimeoutMs,
+					tokenPollIntervalMs: applyTokenCeiling ? pollIntervalMs : undefined,
+					tokenCeilingProbe:
+						applyTokenCeiling && readWorkerTokens !== undefined
+							? () => readWorkerTokenCeilingBreach(uuid, maxWorkerTokens, readWorkerTokens)
+							: undefined,
 				});
 
 				iterations++;
@@ -1454,6 +1466,21 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					mode: 'headless',
 					pollOutcome: headlessOutcome.kind,
 				});
+
+				if (headlessOutcome.kind === 'token-ceiling') {
+					emit('worker-token-ceiling', advisoryStoryId, uuid, {
+						spend: headlessOutcome.tokenSpend,
+						ceiling: maxWorkerTokens,
+						mode: 'headless',
+					});
+					lastOutcome = {
+						kind: 'blocked',
+						storyId: undefined,
+						detail: `worker-token-ceiling: spend ${headlessOutcome.tokenSpend} >= ceiling ${maxWorkerTokens} (advisory ${advisoryStoryId ?? 'unknown'})`,
+					};
+					finishTerminal('blocked');
+					return { status: 'blocked', iterations, lastOutcome };
+				}
 
 				if (headlessOutcome.kind === 'idle-timeout' || headlessOutcome.kind === 'absolute-timeout') {
 					// Mirrors the tmux timeout dead-worker retry/backoff (CAM-44)
@@ -1772,14 +1799,11 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 					// is 0, no token reader is wired, or (US-003, CAM-350) the resolved
 					// backend is 'codex' -- see shouldApplyTokenCeiling above.
 					if (applyTokenCeiling && readWorkerTokens) {
-						const tk = readWorkerTokens(uuid);
-						if (tk) {
-							const spend = tk.inputTokens + tk.cacheCreationTokens + tk.cacheReadTokens;
-							if (spend >= maxWorkerTokens) {
-								pollOutcome = 'token-ceiling';
-								tokenSpendAtBreach = spend;
-								break;
-							}
+						const spend = readWorkerTokenCeilingBreach(uuid, maxWorkerTokens, readWorkerTokens);
+						if (spend !== undefined) {
+							pollOutcome = 'token-ceiling';
+							tokenSpendAtBreach = spend;
+							break;
 						}
 					}
 					if (now() - startMs >= perWorkerTimeoutMs) {

@@ -1082,6 +1082,7 @@ export function buildSupervisorOptions(
 	// resolvePhaseModel / buildImplementerTaskPrompt for the tmux path).
 	const headlessDispatchFn: RunSupervisorOptions['headlessDispatchFn'] = async (params) => {
 		const { argv, env } = buildHeadlessChildInvocation({
+			uuid: params.uuid,
 			sessionName,
 			model: params.model,
 			agentName: params.agentName,
@@ -1096,7 +1097,16 @@ export function buildSupervisorOptions(
 		// US-R1-006 (CAM-516): thread the same absolute wall-clock cap the
 		// caller resolved (loop.ts's perWorkerTimeoutMs) through to the runner,
 		// rather than re-resolving it here (a second source of truth).
-		return runHeadlessDispatch({ argv, env, cwd, inputMessage, log, absoluteTimeoutMs: params.absoluteTimeoutMs });
+		return runHeadlessDispatch({
+			argv,
+			env,
+			cwd,
+			inputMessage,
+			log,
+			absoluteTimeoutMs: params.absoluteTimeoutMs,
+			tokenCeilingProbe: params.tokenCeilingProbe,
+			tokenPollIntervalMs: params.tokenPollIntervalMs,
+		});
 	};
 
 	// onProgress: rewrite state file on each iteration and terminal exit.

@@ -17,10 +17,9 @@
 //      detail naming the specific timeout label. 'idle-timeout' itself (the
 //      pre-existing US-005 code path, touched by this story's refactor) is
 //      pinned alongside it so the shared branch is proven for both labels.
-//   3. a one-time 'worker-token-ceiling-unavailable' notice (mirroring the
-//      existing codex-on-tmux precedent, shouldApplyTokenCeiling) is emitted
-//      when maxWorkerTokens>0 and a reader is wired, tagged mode:'headless';
-//      never emitted when no ceiling is configured.
+//   3. the configured token ceiling reuses readWorkerTokens during a headless
+//      dispatch and produces the same terminal worker-token-ceiling contract
+//      as tmux; no probe is wired when the ceiling or reader is absent.
 
 import { describe, expect, test, beforeEach } from 'bun:test';
 import { createTestTmpdir } from '../helpers/test-tmpdir';
@@ -263,21 +262,32 @@ describe('headless absolute wall-clock bound (US-R1-006, CAM-516)', () => {
 	});
 });
 
-describe('headless worker-token-ceiling-unavailable notice (US-R1-006, CAM-516)', () => {
-	test('emits a one-time notice tagged mode:headless when a ceiling is configured and a reader is wired', async () => {
+describe('headless worker token ceiling (CAM-516)', () => {
+	test('interrupts and blocks when the configured ceiling is crossed', async () => {
 		const events: WorkerEvent[] = [];
+		const tokenReaderUuids: string[] = [];
+		const dispatchUuids: string[] = [];
 
 		const opts = makeBaseOpts({
 			...oneStoryBase(),
+			genUuid: () => 'AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE',
 			maxWorkerTokens: 100_000,
-			readWorkerTokens: (_uuid) => ({
-				inputTokens: 999_999,
-				outputTokens: 0,
-				cacheReadTokens: 0,
-				cacheCreationTokens: 0,
-			}),
+			readWorkerTokens: (uuid) => {
+				tokenReaderUuids.push(uuid);
+				return {
+					inputTokens: 90_000,
+					outputTokens: 0,
+					cacheReadTokens: 15_000,
+					cacheCreationTokens: 0,
+				};
+			},
 			logEvent: (e) => events.push(e),
-			headlessDispatchFn: async () => {
+			headlessDispatchFn: async (params) => {
+				dispatchUuids.push(params.uuid);
+				const tokenSpend = params.tokenCeilingProbe?.();
+				if (tokenSpend !== undefined) {
+					return { kind: 'token-ceiling', tokenSpend, totalCostUsd: undefined };
+				}
 				const outcome: HeadlessDispatchOutcome = { kind: 'completed', exitCode: 0, totalCostUsd: undefined };
 				return outcome;
 			},
@@ -285,19 +295,20 @@ describe('headless worker-token-ceiling-unavailable notice (US-R1-006, CAM-516)'
 
 		const result = await runSupervisor(opts);
 
-		expect(result.status).toBe('complete');
+		expect(result.status).toBe('blocked');
+		expect(result.lastOutcome?.detail).toContain('worker-token-ceiling: spend 105000 >= ceiling 100000');
+		expect(dispatchUuids).toEqual(['aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee']);
+		expect(tokenReaderUuids).toEqual(['aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee']);
 		const unavailableEvents = events.filter((e) => e.kind === 'worker-token-ceiling-unavailable');
-		expect(unavailableEvents).toHaveLength(1);
-		expect(unavailableEvents[0]?.detail).toMatchObject({ backend: 'claude', ceiling: 100_000, mode: 'headless' });
-		// The headless path never actually enforces the ceiling (the whole point
-		// of the notice): the worker still completes even though the fake
-		// readWorkerTokens reports a spend far past the configured ceiling.
+		expect(unavailableEvents).toHaveLength(0);
 		const ceilingEvents = events.filter((e) => e.kind === 'worker-token-ceiling');
-		expect(ceilingEvents).toHaveLength(0);
+		expect(ceilingEvents).toHaveLength(1);
+		expect(ceilingEvents[0]?.detail).toMatchObject({ spend: 105_000, ceiling: 100_000, mode: 'headless' });
 	});
 
-	test('emits nothing when no ceiling is configured (maxWorkerTokens 0)', async () => {
+	test('does not wire a token probe when no ceiling is configured (maxWorkerTokens 0)', async () => {
 		const events: WorkerEvent[] = [];
+		const probeWasWired: boolean[] = [];
 
 		const opts = makeBaseOpts({
 			...oneStoryBase(),
@@ -309,7 +320,8 @@ describe('headless worker-token-ceiling-unavailable notice (US-R1-006, CAM-516)'
 				cacheCreationTokens: 0,
 			}),
 			logEvent: (e) => events.push(e),
-			headlessDispatchFn: async () => {
+			headlessDispatchFn: async (params) => {
+				probeWasWired.push(params.tokenCeilingProbe !== undefined);
 				const outcome: HeadlessDispatchOutcome = { kind: 'completed', exitCode: 0, totalCostUsd: undefined };
 				return outcome;
 			},
@@ -318,19 +330,21 @@ describe('headless worker-token-ceiling-unavailable notice (US-R1-006, CAM-516)'
 		const result = await runSupervisor(opts);
 
 		expect(result.status).toBe('complete');
-		const unavailableEvents = events.filter((e) => e.kind === 'worker-token-ceiling-unavailable');
-		expect(unavailableEvents).toHaveLength(0);
+		expect(probeWasWired).toEqual([false]);
+		expect(events.filter((e) => e.kind === 'worker-token-ceiling')).toHaveLength(0);
 	});
 
-	test('emits nothing when no readWorkerTokens reader is wired', async () => {
+	test('does not wire a token probe when no readWorkerTokens reader is wired', async () => {
 		const events: WorkerEvent[] = [];
+		const probeWasWired: boolean[] = [];
 
 		const opts = makeBaseOpts({
 			...oneStoryBase(),
 			maxWorkerTokens: 100_000,
 			readWorkerTokens: undefined,
 			logEvent: (e) => events.push(e),
-			headlessDispatchFn: async () => {
+			headlessDispatchFn: async (params) => {
+				probeWasWired.push(params.tokenCeilingProbe !== undefined);
 				const outcome: HeadlessDispatchOutcome = { kind: 'completed', exitCode: 0, totalCostUsd: undefined };
 				return outcome;
 			},
@@ -339,7 +353,7 @@ describe('headless worker-token-ceiling-unavailable notice (US-R1-006, CAM-516)'
 		const result = await runSupervisor(opts);
 
 		expect(result.status).toBe('complete');
-		const unavailableEvents = events.filter((e) => e.kind === 'worker-token-ceiling-unavailable');
-		expect(unavailableEvents).toHaveLength(0);
+		expect(probeWasWired).toEqual([false]);
+		expect(events.filter((e) => e.kind === 'worker-token-ceiling')).toHaveLength(0);
 	});
 });
