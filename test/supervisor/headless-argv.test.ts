@@ -25,10 +25,12 @@ import { describe, expect, test } from 'bun:test';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_IMPLEMENTER_AGENT, HOST_ONLY_ENV_UNSET, WORKER_ENV_UNSET } from '../../src/supervisor/backend-adapter.ts';
 import { buildHeadlessChildInvocation } from '../../src/supervisor/headless-argv.ts';
+import { isInsideProjectSession } from '../../src/tmux/session.ts';
 
 const TEST_AGENT_NAME = DEFAULT_IMPLEMENTER_AGENT;
 const TEST_PERMISSION_MODE = 'bypassPermissions';
 const TEST_SESSION_NAME = 'cam-test-session';
+const TEST_UUID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
 const HOOK_SCRIPT = fileURLToPath(new URL('../../.claude/hooks/orch-agent-allowlist.sh', import.meta.url));
 
 function buildTestInvocation(
@@ -36,6 +38,7 @@ function buildTestInvocation(
 ) {
 	return buildHeadlessChildInvocation({
 		sourceEnv: {},
+		uuid: TEST_UUID,
 		agentName: TEST_AGENT_NAME,
 		permissionMode: TEST_PERMISSION_MODE,
 		sessionName: TEST_SESSION_NAME,
@@ -108,6 +111,19 @@ describe('buildHeadlessChildInvocation', () => {
 		expect(argv[idx + 1]).toBe(TEST_PERMISSION_MODE);
 	});
 
+	test('contains the lowercased dispatch uuid as --session-id', () => {
+		const { argv } = buildHeadlessChildInvocation({
+			sourceEnv: {},
+			agentName: TEST_AGENT_NAME,
+			permissionMode: TEST_PERMISSION_MODE,
+			sessionName: TEST_SESSION_NAME,
+			uuid: 'A1B2C3D4-E5F6-7890-ABCD-EF1234567890',
+		});
+		const idx = argv.indexOf('--session-id');
+		expect(idx).toBeGreaterThanOrEqual(0);
+		expect(argv[idx + 1]).toBe('a1b2c3d4-e5f6-7890-abcd-ef1234567890');
+	});
+
 	test('--permission-mode carries the caller-supplied value, not a hardcoded default', () => {
 		const { argv } = buildTestInvocation({ permissionMode: 'acceptEdits' });
 		const idx = argv.indexOf('--permission-mode');
@@ -155,6 +171,23 @@ describe('buildHeadlessChildInvocation', () => {
 	test('sets CAM_WORKER=1 in the returned env (US-R1-003 regression)', () => {
 		const { env } = buildTestInvocation();
 		expect(env.CAM_WORKER).toBe('1');
+	});
+
+	test('direct child strips inherited TMUX location instead of claiming a project pane', () => {
+		const sourceEnv = {
+			TMUX: '/tmp/tmux-1000/default,123,0',
+			TMUX_PANE: '%42',
+			PATH: '/usr/bin',
+		};
+
+		const { env } = buildTestInvocation({ sourceEnv });
+
+		expect(env.TMUX).toBeUndefined();
+		expect(env.TMUX_PANE).toBeUndefined();
+		expect(env.CAM_SESSION).toBe(TEST_SESSION_NAME);
+		expect(isInsideProjectSession(TEST_SESSION_NAME, env)).toBe(false);
+		expect(sourceEnv.TMUX).toBe('/tmp/tmux-1000/default,123,0');
+		expect(sourceEnv.TMUX_PANE).toBe('%42');
 	});
 
 	test('real write guard denies a headless worker Write to prd.json when source env is unscoped', async () => {

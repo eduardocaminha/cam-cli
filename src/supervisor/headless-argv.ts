@@ -16,7 +16,9 @@
 // https://code.claude.com/docs/en/headless 2026-08-09): the CLI, not the
 // Agent SDK, and exactly `--print`, `--input-format stream-json`,
 // `--output-format stream-json`, `--verbose`, `--permission-mode
-// <permissionMode>`, `--agent <agentName>`. The `--agent` flag was
+// <permissionMode>`, `--session-id <uuid>`, `--agent <agentName>`. The
+// session id matches the tmux implementer contract so readWorkerTokens can
+// resolve the same transcript and enforce maxWorkerTokens. The `--agent` flag was
 // originally missing here (CRITICAL bug, US-R1-001): without it the spawned
 // child boots as a generic `claude` session with no AGENT.md, so the
 // implementer protocol (worker-report.json, the CAM_IMPLEMENTER_STATUS
@@ -60,6 +62,8 @@ export const ANTHROPIC_API_KEY_ENV_UNSET = 'ANTHROPIC_API_KEY';
 
 /** Inputs to {@link buildHeadlessChildInvocation}. */
 export interface BuildHeadlessChildInvocationOptions {
+	/** Dispatch UUID passed as --session-id, normalized to lowercase for Claude transcript filenames. */
+	uuid: string;
 	/**
 	 * Canonical project session name to set as `CAM_SESSION`. The headless
 	 * child is a direct process and does not require a live tmux session, but
@@ -113,10 +117,16 @@ export interface HeadlessChildInvocation {
 /**
  * Render the fixed headless-mode argv array: `claude --print --input-format
  * stream-json --output-format stream-json --verbose --permission-mode
- * <permissionMode> --agent <agentName>`, plus `--model <model>` when a model
- * is supplied. Always an array, never a shell string (GOTCHA C).
+ * <permissionMode> --session-id <uuid> --agent <agentName>`, plus `--model
+ * <model>` when a model is supplied. Always an array, never a shell string
+ * (GOTCHA C).
  */
-function buildHeadlessArgv(model: string | undefined, agentName: string, permissionMode: string): string[] {
+function buildHeadlessArgv(
+	uuid: string,
+	model: string | undefined,
+	agentName: string,
+	permissionMode: string,
+): string[] {
 	const argv = [
 		'claude',
 		'--print',
@@ -127,6 +137,8 @@ function buildHeadlessArgv(model: string | undefined, agentName: string, permiss
 		'--verbose',
 		'--permission-mode',
 		permissionMode,
+		'--session-id',
+		uuid.toLowerCase(),
 		'--agent',
 		agentName,
 	];
@@ -160,14 +172,19 @@ function buildHeadlessArgv(model: string | undefined, agentName: string, permiss
  *      login this repo requires (CAM-42), which is also why `--bare` (which
  *      expects this exact var) is refused above. Stripping it here makes the
  *      credential choice declared rather than accidentally inherited.
- *   4. CAM_SESSION=<sessionName>: the hook's outer scope gate. Headless
+ *   4. TMUX and TMUX_PANE: a headless worker is a direct child, never a pane.
+ *      Preserving an ambient tmux location from a sidecar launched inside an
+ *      unrelated session would make isInsideProjectSession return true once
+ *      CAM_SESSION is set below, falsely claiming the child occupies a project
+ *      pane. Repository consumers use these vars only for real tmux context;
+ *      none is required by the direct-child dispatch protocol.
+ *   5. CAM_SESSION=<sessionName>: the hook's outer scope gate. Headless
  *      workers do not inherit this reliably because a standalone sidecar is
  *      launched outside tmux. The caller therefore supplies the canonical
  *      `projectSessionName(cwd)` explicitly. That value remains the policy
- *      scope when no tmux session currently exists; it does not claim that a
- *      pane exists, while preserving `isInsideProjectSession` equality if
- *      tmux context is present.
- *   5. CAM_WORKER=1 (WORKER_ACTOR_ENV, backend-adapter.ts, US-002/CAM-63):
+ *      scope when no tmux session currently exists; without TMUX above it
+ *      does not claim that a pane exists.
+ *   6. CAM_WORKER=1 (WORKER_ACTOR_ENV, backend-adapter.ts, US-002/CAM-63):
  *      the worker discriminator `.claude/hooks/orch-agent-allowlist.sh` uses
  *      together with CAM_SESSION to distinguish an implementer-worker
  *      Write/Edit/MultiEdit from a planner/orchestrator one and deny it on
@@ -191,6 +208,8 @@ function stripHeadlessChildEnv(
 		delete env[key];
 	}
 	delete env[ANTHROPIC_API_KEY_ENV_UNSET];
+	delete env.TMUX;
+	delete env.TMUX_PANE;
 	env.CAM_SESSION = sessionName;
 	env.CAM_WORKER = '1';
 	return env;
@@ -204,7 +223,7 @@ export function buildHeadlessChildInvocation(
 	opts: BuildHeadlessChildInvocationOptions,
 ): HeadlessChildInvocation {
 	return {
-		argv: buildHeadlessArgv(opts.model, opts.agentName, opts.permissionMode),
+		argv: buildHeadlessArgv(opts.uuid, opts.model, opts.agentName, opts.permissionMode),
 		env: stripHeadlessChildEnv(opts.sourceEnv, opts.sessionName),
 	};
 }
