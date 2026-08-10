@@ -5,7 +5,10 @@
 // Every cam spawn (orchestrator, implementer, reviewer) should call
 // emitSpawnResolution immediately before the respawn-pane tmux call so the
 // operator can audit exactly which {phase, model, backend} triple was resolved
-// for each worker invocation.
+// for each worker invocation. A structural fail-close that happens after
+// backend resolution but before model resolution may instead record
+// {phase, model: null, backend, blockedReason}; this keeps the audit trail
+// truthful without making an irrelevant model/cache lookup a prerequisite.
 //
 // Design decisions:
 //   - Pure: no I/O beyond the injectable writeEvent seam.
@@ -25,8 +28,8 @@
 // Types
 // ---------------------------------------------------------------------------
 
-/** Structured payload of a spawn-resolution event. */
-export interface SpawnResolutionEvent {
+/** Structured payload for a dispatch whose model and backend both resolved. */
+export interface ResolvedSpawnResolutionEvent {
 	/** Which cam phase is being spawned (orchestrator, implementer, reviewer). */
 	phase: string;
 	/** Resolved model string (e.g. 'claude-sonnet-4-6'). */
@@ -40,7 +43,26 @@ export interface SpawnResolutionEvent {
 	 * first caller to populate it.
 	 */
 	effort?: string;
+	/** Present only on a structural block that precedes model resolution. */
+	blockedReason?: never;
 }
+
+/** Structured payload for a structural block that deliberately skips model resolution. */
+export interface BlockedSpawnResolutionEvent {
+	/** Which cam phase would have been spawned. */
+	phase: string;
+	/** No model was resolved because a prior structural guard failed. */
+	model: null;
+	/** Backend resolved before the structural guard fired. */
+	backend: string;
+	/** Stable machine-readable reason for skipping model resolution and dispatch. */
+	blockedReason: string;
+	/** Effort is not resolved for a blocked dispatch. */
+	effort?: never;
+}
+
+/** Structured payload of a successful or structurally blocked spawn-resolution audit event. */
+export type SpawnResolutionEvent = ResolvedSpawnResolutionEvent | BlockedSpawnResolutionEvent;
 
 /**
  * Injectable event sink for spawn-resolution events.
@@ -52,16 +74,12 @@ export type SpawnEventWriter = (event: SpawnResolutionEvent) => void;
 // Emitter
 // ---------------------------------------------------------------------------
 
-/** Options for emitSpawnResolution. */
-export interface EmitSpawnResolutionOpts {
+/** Fields shared by resolved and structurally blocked spawn-resolution events. */
+interface EmitSpawnResolutionBaseOpts {
 	/** The cam phase being spawned. */
 	phase: string;
-	/** Resolved model for this phase. */
-	model: string;
 	/** Resolved backend for this phase. */
 	backend: string;
-	/** Resolved effort tier for this phase (US-001, CAM-425). Optional. */
-	effort?: string;
 	/**
 	 * Optional event sink. When provided, called with the structured event.
 	 * When absent, the event is silently dropped.
@@ -69,10 +87,39 @@ export interface EmitSpawnResolutionOpts {
 	writeEvent?: SpawnEventWriter;
 }
 
+/** Options for a normal dispatch with a resolved model. */
+export interface EmitResolvedSpawnResolutionOpts extends EmitSpawnResolutionBaseOpts {
+	/** Resolved model for this phase. */
+	model: string;
+	/** Resolved effort tier for this phase (US-001, CAM-425). Optional. */
+	effort?: string;
+	/** Present only on a structural block that precedes model resolution. */
+	blockedReason?: never;
+}
+
+/** Options for a structural fail-close that deliberately precedes model resolution. */
+export interface EmitBlockedSpawnResolutionOpts extends EmitSpawnResolutionBaseOpts {
+	/** No model was resolved because the structural guard failed first. */
+	model: null;
+	/** Stable machine-readable reason for the structural block. */
+	blockedReason: string;
+	/** Effort is not resolved for a blocked dispatch. */
+	effort?: never;
+}
+
+/** Options for emitSpawnResolution. */
+export type EmitSpawnResolutionOpts = EmitResolvedSpawnResolutionOpts | EmitBlockedSpawnResolutionOpts;
+
 /**
  * Emit a structured {phase, model, backend[, effort]} spawn-resolution event.
  */
 export function emitSpawnResolution(opts: EmitSpawnResolutionOpts): void {
+	if (opts.model === null) {
+		const { phase, model, backend, blockedReason, writeEvent } = opts;
+		writeEvent?.({ phase, model, backend, blockedReason });
+		return;
+	}
+
 	const { phase, model, backend, effort, writeEvent } = opts;
 
 	// Emit the structured event (no-op when writer is absent). `effort` is

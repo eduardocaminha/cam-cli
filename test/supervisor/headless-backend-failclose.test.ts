@@ -6,7 +6,7 @@
 // (headless-argv.ts:74) hardcodes argv[0] = 'claude', so with
 // `[backend] implementer = "codex"` plus `--headless` the loop used to
 // silently dispatch `claude` -- contradicting the configured backend, with no
-// spawn-resolution audit event recorded either. These tests pin four
+// spawn-resolution audit event recorded either. These tests pin five
 // observable contracts:
 //
 //   1. headless on + implBackend === 'codex' -> the loop blocks BEFORE
@@ -15,7 +15,9 @@
 //      is never invoked.
 //   2. a spawn-resolution event IS still recorded (fixing the "no
 //      emitSpawnResolution event recorded either" half of the bug) even
-//      though the dispatch itself is blocked.
+//      though the dispatch itself is blocked. Because the structural guard
+//      runs before model resolution, that event names the backend and records
+//      model: null plus the blocking reason instead of inventing a model slug.
 //   3. 'claude backend still dispatches': the fail-close is scoped to a
 //      non-claude backend only -- headless on + implBackend 'claude' (the
 //      default, no [backend] section) still dispatches normally through the
@@ -23,6 +25,9 @@
 //   4. the claude-backend success path ALSO now emits a spawn-resolution
 //      event (previously the headless branch emitted none at all, for any
 //      backend).
+//   5. the non-claude guard runs before codex model-cache resolution. The test
+//      injects an explicitly missing cache and proves its reader is untouched,
+//      so the oracle cannot depend on the host's ~/.codex/models_cache.json.
 
 import { describe, expect, test, beforeEach } from 'bun:test';
 import { createTestTmpdir } from '../helpers/test-tmpdir';
@@ -119,6 +124,10 @@ function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervi
 		nowMs: () => 0,
 		...overrides,
 		configPath: 'configPath' in overrides ? overrides.configPath : CODEX_CONFIG_PATH,
+		codexModelsCacheReaderFn:
+			'codexModelsCacheReaderFn' in overrides
+				? overrides.codexModelsCacheReaderFn
+				: () => ({ ok: false, reason: 'hermetic fixture: codex models cache is absent' }),
 	};
 	merged.spawn = withVerifiedPanePid(overrides.spawn ?? spawn);
 	return merged;
@@ -154,12 +163,17 @@ beforeEach(() => {
 describe('headless + non-claude backend fail-close (US-R1-005, CAM-516)', () => {
 	test('blocks before dispatch with a detail naming both headless and the resolved backend', async () => {
 		let headlessDispatchCalls = 0;
+		let codexModelsCacheReads = 0;
 
 		const opts = makeBaseOpts({
 			...oneStoryBase(),
 			headless: true,
 			workerIsolation: 'host',
 			configPath: CODEX_CONFIG_PATH,
+			codexModelsCacheReaderFn: () => {
+				codexModelsCacheReads++;
+				return { ok: false, reason: 'hermetic fixture: codex models cache is absent' };
+			},
 			headlessDispatchFn: async () => {
 				headlessDispatchCalls++;
 				const outcome: HeadlessDispatchOutcome = { kind: 'completed', exitCode: 0, totalCostUsd: undefined };
@@ -174,6 +188,7 @@ describe('headless + non-claude backend fail-close (US-R1-005, CAM-516)', () => 
 		expect(result.lastOutcome?.detail).toContain('headless');
 		expect(result.lastOutcome?.detail).toContain('codex');
 		expect(headlessDispatchCalls).toBe(0);
+		expect(codexModelsCacheReads).toBe(0);
 	});
 
 	test('still records a spawn-resolution audit event even though the dispatch is blocked', async () => {
@@ -196,7 +211,12 @@ describe('headless + non-claude backend fail-close (US-R1-005, CAM-516)', () => 
 		expect(result.status).toBe('blocked');
 		const spawnEvents = events.filter((e) => e.kind === 'spawn-resolution');
 		expect(spawnEvents.length).toBe(1);
-		expect(spawnEvents[0]?.detail).toMatchObject({ phase: 'implementer', backend: 'codex' });
+		expect(spawnEvents[0]?.detail).toMatchObject({
+			phase: 'implementer',
+			model: null,
+			backend: 'codex',
+			blockedReason: 'headless-backend-unsupported',
+		});
 	});
 
 	test('claude backend still dispatches normally', async () => {

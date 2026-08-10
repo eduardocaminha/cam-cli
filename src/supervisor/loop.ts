@@ -1258,6 +1258,78 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			// readPhaseModel so a codex-backed implementer phase resolves its
 			// slug from [models.codex] instead of a backend-blind [models] read.
 			const implBackend = readPhaseBackend('implementer', opts.configPath);
+
+			// Headless compatibility is structural, independent of model/cache. Reject before resolvePhaseModel while
+			// preserving container-first precedence when both axes are unsupported.
+			if (opts.headless === true) {
+				// US-006 (CAM-516): fail closed BEFORE any dispatch when headless
+				// meets container isolation. GOTCHA F: the tmux branch's dispatchCmd
+				// would wrap through `dockerExecWrap` (docker-exec.ts:34), which passes
+				// `-it` and allocates a TTY headless must not have; ADR-0059 also
+				// records the container + env-token credential combination as
+				// unmeasured.
+				if (workerIsolation === 'container') {
+					const containerReason = `headless-container-unsupported: headless dispatch does not support workerIsolation === 'container' (advisory ${advisoryStoryId ?? 'unknown'})`;
+					lastOutcome = { kind: 'blocked', storyId: undefined, detail: containerReason };
+					iterations++;
+					removeImplementerTaskPrompt(uuid);
+					if (opts.escalateFn !== undefined) {
+						const escalateFn = opts.escalateFn;
+						void (async () => {
+							try {
+								await escalateFn();
+							} catch (e) {
+								process.stderr.write(
+									`[cam] escalateFn error (swallowed): ${e instanceof Error ? e.message : String(e)}\n`,
+								);
+							}
+						})();
+					}
+					finishTerminal('blocked');
+					return { status: 'blocked', iterations, lastOutcome };
+				}
+
+				// US-R1-005 (CAM-516): headless speaks Claude's stream-json
+				// protocol, so a non-Claude backend is unsupported regardless of its
+				// model. Record the backend and declare model resolution was skipped.
+				if (implBackend !== 'claude') {
+					emitSpawnResolution({
+						phase: 'implementer',
+						model: null,
+						backend: implBackend,
+						blockedReason: 'headless-backend-unsupported',
+						writeEvent: logEvent
+							? (e) =>
+									logEvent({
+										ts: clock(),
+										storyId: advisoryStoryId,
+										uuid,
+										kind: 'spawn-resolution',
+										detail: e,
+									})
+							: undefined,
+					});
+					const backendReason = `headless-backend-unsupported: headless dispatch does not support implBackend '${implBackend}' (only 'claude' is supported) (advisory ${advisoryStoryId ?? 'unknown'})`;
+					lastOutcome = { kind: 'blocked', storyId: undefined, detail: backendReason };
+					iterations++;
+					removeImplementerTaskPrompt(uuid);
+					if (opts.escalateFn !== undefined) {
+						const escalateFn = opts.escalateFn;
+						void (async () => {
+							try {
+								await escalateFn();
+							} catch (e) {
+								process.stderr.write(
+									`[cam] escalateFn error (swallowed): ${e instanceof Error ? e.message : String(e)}\n`,
+								);
+							}
+						})();
+					}
+					finishTerminal('blocked');
+					return { status: 'blocked', iterations, lastOutcome };
+				}
+			}
+
 			// US-004 (CAM-398): route the phase+backend pair through
 			// resolvePhaseModel instead of calling readPhaseModel directly, so a
 			// codex-backed implementer whose config only carries a claude-shaped
@@ -1328,47 +1400,9 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			let paneText = '';
 
 			if (opts.headless === true) {
-				// US-006 (CAM-516): fail closed BEFORE any dispatch when headless
-				// meets container isolation. Checked first in this branch (ahead of
-				// the headlessDispatchFn-undefined throw below) so a container-mode
-				// test never needs to wire a fake dispatch fn just to prove it is
-				// unreachable. GOTCHA F: the tmux branch's dispatchCmd would wrap
-				// through `dockerExecWrap` (docker-exec.ts:34), which passes `-it` and
-				// allocates a TTY headless must not have; ADR-0059 also records the
-				// container + env-token credential combination as unmeasured. Mirrors
-				// the container-not-ready fail-closed shape verbatim (same lastOutcome
-				// / finishTerminal('blocked') / return shape as the preflight block
-				// below) rather than inventing a new terminal shape.
-				if (workerIsolation === 'container') {
-					const containerReason = `headless-container-unsupported: headless dispatch does not support workerIsolation === 'container' (advisory ${advisoryStoryId ?? 'unknown'})`;
-					lastOutcome = { kind: 'blocked', storyId: undefined, detail: containerReason };
-					iterations++;
-					removeImplementerTaskPrompt(uuid);
-					if (opts.escalateFn !== undefined) {
-						const escalateFn = opts.escalateFn;
-						void (async () => {
-							try {
-								await escalateFn();
-							} catch (e) {
-								process.stderr.write(
-									`[cam] escalateFn error (swallowed): ${e instanceof Error ? e.message : String(e)}\n`,
-								);
-							}
-						})();
-					}
-					finishTerminal('blocked');
-					return { status: 'blocked', iterations, lastOutcome };
-				}
-
-				// US-R1-005 (CAM-516): emit the same {phase, model, backend}
-				// spawn-resolution audit event the tmux branch always emits
-				// (loop.ts ~1517), so an operator auditing headless dispatches sees
-				// which backend was resolved even when (as below) that backend then
-				// fails the dispatch closed. Placed after the container check (which
-				// intentionally never reaches spawn resolution, mirroring the tmux
-				// branch's container-preflight block) and before the backend
-				// fail-closed check below, mirroring where the tmux branch emits it
-				// relative to its own backend-specific gate (codexAuthPreflight).
+				// The structural headless guards already passed before model
+				// resolution above. A real headless dispatch therefore emits the same
+				// fully resolved {phase, model, backend} event as the tmux branch.
 				emitSpawnResolution({
 					phase: 'implementer',
 					model: implModel,
@@ -1377,40 +1411,6 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 						? (e) => logEvent({ ts: clock(), storyId: advisoryStoryId, uuid, kind: 'spawn-resolution', detail: e })
 						: undefined,
 				});
-
-				// US-R1-005 (CAM-516): fail closed BEFORE any dispatch when headless
-				// meets a non-claude implBackend. `buildHeadlessChildInvocation`
-				// (headless-argv.ts) hardcodes argv[0] = 'claude' and speaks the
-				// claude-only stream-json protocol the rest of this dispatch parses
-				// (headless-stream.ts); rendering a real codex-native headless argv
-				// would mean a second, entirely different completion-detection
-				// protocol, out of scope for this fix. Rather than silently
-				// dispatching `claude` while `[backend] implementer = "codex"` is
-				// configured (the bug this story fixes: failing OPEN), this mirrors
-				// the container-mode fail-closed shape immediately above (same
-				// lastOutcome / finishTerminal('blocked') / return shape) so the
-				// mismatch blocks instead of silently contradicting the configured
-				// backend.
-				if (implBackend !== 'claude') {
-					const backendReason = `headless-backend-unsupported: headless dispatch does not support implBackend '${implBackend}' (only 'claude' is supported) (advisory ${advisoryStoryId ?? 'unknown'})`;
-					lastOutcome = { kind: 'blocked', storyId: undefined, detail: backendReason };
-					iterations++;
-					removeImplementerTaskPrompt(uuid);
-					if (opts.escalateFn !== undefined) {
-						const escalateFn = opts.escalateFn;
-						void (async () => {
-							try {
-								await escalateFn();
-							} catch (e) {
-								process.stderr.write(
-									`[cam] escalateFn error (swallowed): ${e instanceof Error ? e.message : String(e)}\n`,
-								);
-							}
-						})();
-					}
-					finishTerminal('blocked');
-					return { status: 'blocked', iterations, lastOutcome };
-				}
 
 				const headlessDispatchFn = opts.headlessDispatchFn;
 				if (headlessDispatchFn === undefined) {
