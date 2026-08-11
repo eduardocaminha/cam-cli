@@ -586,3 +586,18 @@ A bidirectional check over a set of collapsed template pairs: it asserts both th
 
 **reconciliation direction**:
 For a divergence that should not exist, the decision of which side is current and which is stale, made per hunk. Assigning it is a judgment about which text describes live behavior, not a mechanical diff operation, and it is the point at which content is most easily lost without trace.
+
+**cursor de stream**:
+Posicao de leitura que um cliente da superficie web carrega para retomar o stream de eventos sem perder nem duplicar. Composto por offset de byte no event log append-only mais uma identidade do arquivo, de modo que truncamento ou substituicao do log provoque reset em vez de leitura a partir de offset invalido.
+
+**estado idle**:
+Um dos dois estados da tela web. Vigora quando nao ha ciclo ativo, condicao em que prd.json nao existe. Responde o que aconteceu por ultimo e o que vem a seguir, a partir de cycle-metrics.jsonl e do backlog, em vez de renderizar a view de ciclo ativo vazia.
+
+**idade do dado**:
+Tempo decorrido desde o ultimo evento recebido, calculado pelo relogio do cliente e nao do servidor. Existe para tornar visivel qualquer falha de entrega: stream morto, servidor caido ou loop parado aparecem como dado velho em vez de tela congelada que parece viva.
+
+**pino de invariancia**:
+Especie de oraculo de criterio de aceite que e verde por construcao e cujo comparando e derivado da main no momento da checagem, nunca congelado como literal. Contrasta com o oraculo de deteccao-de-mudanca, que precisa ser varrido vermelho contra a main antes de ser confiavel.
+
+**vendorizacao re-executavel**:
+Forma de trazer codigo de terceiro para o repositorio por meio de um script que pode ser rodado de novo contra a fonte upstream, com versao pinada e gate de drift, em vez de uma copia manual. Impede que adaptacoes locais virem um fork que precisa ser reaplicado a cada atualizacao.
