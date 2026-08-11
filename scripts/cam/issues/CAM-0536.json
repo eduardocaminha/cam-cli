@@ -1,11 +1,11 @@
 {
   "id": "CAM-536",
   "title": "Fonte unica de templates, parte 1 de 4: reconciliar todo o drift puro com vencedor decidido por hunk",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-11T11:11:22.900Z",
-  "updatedAt": "2026-08-11T11:11:22.900Z",
+  "updatedAt": "2026-08-11T12:15:37.053Z",
   "description": "Reconcile every pure-drift hunk between templates/ and the repo's installed copies, with the winning side decided per hunk BY THIS SPEC and never by the implementer. All 39 divergent hunks are pre-adjudicated: 1 TEMPLATE-WINS, 10 REPO-WINS, 28 OVERLAY-OWNED, with 11 carve-outs. This slice lands only the 11 reconciliation hunks; it graduates subagent-orchestrator.md to byte-identical, which is what makes it eligible for the symlink slice. No new mechanism, no new gate, no generated file.\n\n---\n\nPROCEDENCIA\n\nFatia derivada do CAM-534, que por sua vez carrega o spec corrigido do CAM-530. A divisao foi decidida depois de duas escalacoes do plan (quatro rodadas de planner e auditor) em que o auditor sinalizou atomicidade nas duas vezes e o PRD unico chegou a 15 criterios numa unica story sobre cerca de 12 arquivos. As quatro fatias sao mudancas quase independentes; a medicao completa, a classificacao dos 39 hunks e a decisao de mecanismo vivem no CAM-530 e no CAM-534 e nao sao repetidas aqui.",
   "specSource": "derived",
   "derivedFrom": [
