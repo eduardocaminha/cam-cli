@@ -55,9 +55,13 @@ como intactas foram varridas por grep, nao abertas.
 
 Classe mais grave, porque agente le em tempo de execucao e obedece.
 
-- `scripts/cam/CLAUDE.md:93` proibe marcar como resolvidos os invariantes "Bun runtime" e
-  "claude -p forbidden". Os itens 1 e 13 dependem de mexer exatamente nesses dois, entao
-  um worker disciplinado recusa o epico citando essa linha. Trava o recorte inteiro.
+- `scripts/cam/CLAUDE.md:93` governa apenas a marcacao de bullets do `patterns.md` com o
+  prefixo `[resolved YYYY-MM]`, que e o que `gship patterns archive` move para o arquivo
+  de arquivo. Ela nao proibe editar o texto dos invariantes curados na linha 64, e
+  `scripts/cam/patterns.md` tem zero ocorrencias de vite, entao nao existe bullet a
+  resolver e a linha nunca e acionada pelo recorte do vite. A afirmacao anterior deste
+  bullet, de que a linha 93 travava o recorte inteiro e um worker disciplinado recusaria
+  o epico citando essa linha, estava errada; corrigida em 2026-08-11.
 - `scripts/cam/patterns.md:14` mantem a proibicao absoluta de `claude -p` sem citar o
   recorte do ADR-0059, enquanto `scripts/cam/CLAUDE.md:95` carrega o recorte com evidencia
   e oraculo. Contradicao viva hoje, e o roteamento oficial manda grepar patterns.md.
@@ -160,16 +164,19 @@ proprio ADR-0038 registrou o gatilho de supersessao.
 
 ## Roteamento por ciclo
 
-- CAM-529 deixou de ser higiene e virou destravamento. Sem ele, o worker recusa o epico
-  por causa de `scripts/cam/CLAUDE.md:93`. Escopo minimo: destravar a linha 93, reconciliar
-  `patterns.md:14`, recortar o veto ao vite nas quatro superficies, corrigir o gatilho
-  condicional do gate de drift, e reescrever `cam-next.md`.
+- CAM-529 continua valioso como reducao de superficie de instrucao e como reconciliacao
+  de `patterns.md:14` com o recorte do ADR-0059, mas NAO e pre-requisito do epico web nem
+  do headless. A afirmacao anterior de que `scripts/cam/CLAUDE.md:93` travava o recorte
+  estava errada (a linha governa so a marcacao `[resolved]` de bullets do `patterns.md`;
+  corrigida em 2026-08-11). O recorte do vite nao tem cadeado e foi executado em
+  2026-08-11 com o ADR-0063. Escopo restante: reconciliar `patterns.md:14`, corrigir o
+  gatilho condicional do gate de drift, e reescrever `cam-next.md`.
 - CAM-521 absorve: personas e comandos de worker, secoes orfas do runbook ligadas a pane,
   ADR novo de supersessao para 0004, 0059, 0046 e a secao de credencial do 0003, e a
   decisao sobre Layer A.
-- CAM-522 absorve: recorte do vite com ADR proprio, adocao de Zod com supersessao do
-  ADR-0038, levantamento do teto com atualizacao do numero citado no ADR-0057, e a
-  correcao do README e do launch-readiness.
+- CAM-522 absorve: adocao de Zod com supersessao do ADR-0038, levantamento do teto com
+  atualizacao do numero citado no ADR-0057, e a correcao do README e do launch-readiness.
+  O recorte do vite, antes listado aqui, foi executado em 2026-08-11 com o ADR-0063.
 - Daemon absorve: ADR novo cobrindo as clausulas de orquestrador do 0029 e do 0047, o
   ADR-0048, os verbetes orfaos de CONTEXT.md e as oito secoes do runbook que sobrevivem
   com retoque.

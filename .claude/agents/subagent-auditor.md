@@ -92,7 +92,7 @@ Work through every section below. For every finding, record `severity` (critical
 
 cam-cli is the `cam` binary: a Bun + TypeScript + Ink CLI. Check these invariants for any story whose scope touches them:
 
-20. **Bun-only**: no story introduces Node.js / npm / pnpm / vite / express / `pg` / `ws` / `better-sqlite3` / `ioredis` / execa where a Bun built-in exists (`Bun.spawn`, `Bun.$`, `Bun.file`, `Bun.serve`, `bun:sqlite`, etc.). Flag any such dependency.
+20. **Bun-only**: no story introduces Node.js / npm / pnpm / express / `pg` / `ws` / `better-sqlite3` / `ioredis` / execa where a Bun built-in exists (`Bun.spawn`, `Bun.$`, `Bun.file`, `Bun.serve`, `bun:sqlite`, etc.). Flag any such dependency.
 21. **No `--permission-mode` flag**: no story adds a `--permission-mode` CLI flag to any subcommand (guarded by `test/no-permission-mode-flag.test.ts`). Flag any acceptance criterion that would require one.
 22. **Quality gates match reality**: acceptance criteria use `bun run typecheck` and `bun test` (and `bun run embed-vendor:check` when `vendor/`/`templates/` are touched). Biome lint IS configured (`biome.json` at repo root): `bun run check:all` (full quality spine, includes `bunx biome lint --error-on-warnings`) and `bun run lint` are live gates that CI runs; planners and auditors must REQUIRE them, not flag them. Flag any story that demands a browser/E2E/database check (this is a terminal CLI with no DB/server/browser).
 23. **Ink UI honesty**: any story rendering an Ink screen must verify via the ✓/✗ glyph, not divider color, and reuse `src/design/tokens.ts` / `src/ui/theme.ts`. Flag stories that propose color-coded dividers as a success signal.
