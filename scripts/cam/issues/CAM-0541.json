@@ -1,0 +1,10 @@
+{
+  "id": "CAM-541",
+  "title": "Sonda de medicao do implementer com backend codex fim a fim sob o sidecar",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-11T14:24:39.969Z",
+  "updatedAt": "2026-08-11T14:24:39.969Z",
+  "description": "O contrato memory/project_definicoes_web_headless.md registra na linha 75 que a execucao do implementer com backend codex nunca foi medida, e nomeia CAM-526 como a sonda designada. O ponteiro esta errado: CAM-526 e o write-guard do ADR-0035 e nao tem relacao, e CAM-435 trata de classificacao de falha por quota, nao de medicao deliberada. Esta issue e a sonda de verdade. Medir um ciclo completo de implement com backend.implementer=codex (pin gpt-5.6-sol) rodando sob o sidecar, registrando custo, modos de falha, comportamento de retomada e comparacao com o backend claude no mesmo tipo de story. Baseline ja medido em 2026-08-11: o event log acumula 2204 eventos de codex e o CAM-536 shipou com ele, entao o caminho nao esta quebrado e o que falta e a medicao com numeros. Importa agora porque o operador decidiu em 2026-08-11 aposentar host mode e deixar apenas Docker, e .devcontainer/Dockerfile nao instala codex. A decisao tomada foi colocar codex na imagem para nao fechar a porta antes desta medicao existir. Sem os numeros, a escolha entre codex e claude para o implementer permanece sem fundamento."
+}
