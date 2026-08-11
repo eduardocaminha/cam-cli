@@ -159,14 +159,19 @@ document — none of them require deep reasoning to absorb:
     present, read its `prNumber`, `completedSteps`, `remainingSteps`, and
     `reason` fields; you'll surface them as an opening blocker below. If
     absent, there's nothing to surface — a clean boot stays clean.
-12. `.claude/.cam-gate.json` — a durable marker written whenever any part of
+12. `.claude/.cam-sidecar-stalled.json` — a durable marker written whenever
+    the container sidecar's boot-time firewall-init step fails (fail-closed:
+    no worker is dispatched). If present, read its `reason` and `detail`
+    fields; you'll surface them as an opening blocker below. If absent,
+    there's nothing to surface — a clean boot stays clean.
+13. `.claude/.cam-gate.json` — a durable marker written whenever any part of
     the loop pauses for an operator decision (a "gate"), e.g. an
     in-progress-work conflict at plan start. If present, read its `gate`,
     `options`, and `context` fields (and `decision`, if already resolved);
     you'll surface them as an opening blocker below. If absent, there's
     nothing to surface — a clean boot stays clean.
 
-**Shared rule for every boot-surfaced marker above (7-12):** Do NOT delete the marker yourself. Surfacing it at boot is read-only. Each marker's own
+**Shared rule for every boot-surfaced marker above (7-13):** Do NOT delete the marker yourself. Surfacing it at boot is read-only. Each marker's own
 specific removal condition is noted in its blocker-line paragraph below.
 
 After the boot read, greet the human with a one-screen summary:
@@ -251,6 +256,16 @@ the post-merge sequence is incomplete (`completedSteps` / `remainingSteps`
 name exactly where it stopped). Removed only once the post-merge sequence
 for that same PR completes, per `docs/recovery-runbook.md`'s
 post-merge-stalled / diverged-local-main entry.
+
+If `.claude/.cam-sidecar-stalled.json` is present, add an opening blocker
+line before asking what to do next, e.g.:
+
+```
+⚠ sidecar stalled: <reason> — <detail>
+```
+
+Removed only by the sidecar itself on its next healthy bring-up (container
+ensure guard passes, or is a no-op in host mode).
 
 If `.claude/.cam-gate.json` is present, add an opening blocker line before
 asking what to do next, e.g.:
