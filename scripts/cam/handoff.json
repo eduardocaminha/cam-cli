@@ -1,0 +1,31 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Reconcile the 11 pre-adjudicated pure-drift hunks in their spec-decided direction"
+  },
+  "branchName": "cam/issue-536",
+  "timestamp": "2026-08-11T11:54:01Z",
+  "createdFiles": [],
+  "modifiedFiles": [
+    ".claude/agents/subagent-orchestrator.md",
+    ".claude/agents/subagent-reviewer.md",
+    ".gitignore",
+    "scripts/cam/issues.schema.json",
+    "scripts/cam/orch-handoff.schema.json",
+    "src/vendor/_generated.ts",
+    "templates/agents/subagent-implementer.md",
+    "templates/agents/subagent-orchestrator.md",
+    "templates/scripts/cam/CLAUDE.md",
+    "templates/scripts/cam/handoff.schema.json"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "US-001 reconciled only the 11 CAM-536 spec-adjudicated pure-drift hunks. The subagent-orchestrator.md, handoff.schema.json, issues.schema.json, and orch-handoff.schema.json pairs are now byte-identical; the other persona/CLAUDE.md overlay-owned divergence remains intentionally untouched except for the template-bound generic guidance and the reviewer `it` restore specified here. The exact CLAUDE.md fidelity derivation currently yields 32 non-blank lines from main, all present verbatim in the template; its paragraph-granular exclusions keep the 0.x-demotion and recovery-runbook paragraphs out. All 15 story oracles passed through runBehavioralGate at Layer A, the full suite reported 6192 pass / 0 fail, check:all passed, and the embedded vendor map was regenerated and verified clean. Future overlay work must use this post-US-001 template base and must not reinterpret the known diff-alignment artifacts as new drift.",
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Pure template/schema/persona/.gitignore drift reconciliation; no external library API was exercised."
+    }
+  ],
+  "appliedPatternIds": []
+}
