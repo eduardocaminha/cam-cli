@@ -137,7 +137,7 @@ Criterion #2 is not satisfied by "the test exists and is green." Walk every new/
 **(b) The adversarial-cases mandate:** a feature's test coverage must include, beyond the happy path: malformed/invalid input, boundary values (empty, zero, max, off-by-one), and a regression case for any bug the diff or its commit history references as previously broken. Tests that only cover the happy path are a criterion #2 FAIL even if every assertion in them is otherwise meaningful.
 
 **(c) Per-test discipline checklist:**
-- Test names describe the behavior under test, not the implementation detail (`describe`/`test` strings read as a sentence about expected behavior).
+- Test names describe the behavior under test, not the implementation detail (`describe`/`test`/`it` strings read as a sentence about expected behavior).
 - One concept per test: a single test does not assert two unrelated behaviors.
 - Each feature has a success/error/edge triad: at least one test for the happy path, one for the error path, and one for an edge/boundary case.
 - Any async wait polls via the shared `waitForCondition` helper (`test/helpers/wait-for-condition.ts`), never a fixed `setTimeout`/`Bun.sleepSync` delay — a fixed sleep is either flaky (too short) or slow (padded long), and `waitForCondition` resolves on the first true predicate.
