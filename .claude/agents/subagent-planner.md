@@ -195,7 +195,7 @@ This is **cam-cli**: the `cam` binary itself, an autonomous Claude Code loop dri
 - Command layout: `index.ts` dispatches subcommands implemented under `src/commands/*` (`init`, `run`, `next`, `plan`, `status`, `dashboard`, `resume`, `stop`, `setup`, `claude`, `retry-monitor`).
 - Domain terms: **orchestrator** (long-lived human-facing agent), **worker** (fresh per-story subagent), **PRD** / **story** / **handoff** / **journal**, **cycle**, **issue system** (`linear` | `github` | `none`, in `project.toml`), **tmux pane/split**.
 - UI conventions: interactive screens use Ink (`src/ui/*.tsx`) with shared design tokens (`src/design/tokens.ts`, `src/ui/theme.ts`); linear command output uses the print path (`src/logging/*`). Success/failure is the ✓/✗ glyph, never divider color.
-- Constraints: Bun-only (no Node/npm/vite); never add a `--permission-mode` flag; keep ported `src/retry/*` MIT headers intact.
+- Constraints: Bun-only (no Node/npm); never add a `--permission-mode` flag; keep ported `src/retry/*` MIT headers intact.
 
 ## What NOT to Include
 

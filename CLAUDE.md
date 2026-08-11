@@ -1,5 +1,5 @@
 ---
-description: Use Bun instead of Node.js, npm, pnpm, or vite.
+description: Use Bun instead of Node.js, npm, pnpm.
 globs: "*.ts, *.tsx, *.html, *.css, *.js, *.jsx, package.json"
 alwaysApply: false
 ---
@@ -52,7 +52,7 @@ test("hello world", () => {
 
 ## Frontend
 
-Use HTML imports with `Bun.serve()`. Don't use `vite`. HTML imports fully support React, CSS, Tailwind.
+Use HTML imports with `Bun.serve()` for plain React and CSS. Ressalva medida em runtime (2026-08-10): o pipeline de HTML imports NAO cobre Tailwind v4. A CLI do `bun build --compile` nao roda plugins de bundler, entao o binario compilado sobe e serve Tailwind cru nao processado (oven-sh/bun#23646, reproduzido neste repo). A UI web usa vite como ferramenta de build-time; vite nunca entra no binario shipado. Ver `docs/adr/0063-o-veto-ao-vite-e-recortado-vite-e-ferramenta-de-build-time-da-ui-web.md`.
 
 Server:
 
