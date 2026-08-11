@@ -192,3 +192,58 @@ propostas seguem sem promover, por politica de promocao sob demanda.
 Defeito de produto identificado no proprio pen e ainda nao filado. O fingerprint muda a
 cada round de review e o dedup e por fingerprint, entao o mesmo achado e refilado a cada
 rodada. A CAM-482 aparece tres vezes, nos rounds 3, 5 e 7.
+
+## Testes de tmux, inventario de 2026-08-11
+
+Levantado depois do recorte do vite, para responder se ainda precisamos de teste tmux.
+Serve de insumo direto ao CAM-521 e ao ciclo do daemon.
+
+Numeros medidos: 114 arquivos de teste mencionam tmux. Sobrevivem seis, sendo tres do
+oraculo de gate comportamental (`test/integration/behavioral-gate.test.ts`,
+`test/supervisor/behavioral-gate.test.ts`, `test/supervisor/prd-oracle-lint.test.ts`) e
+tres do wrapper de retry `gship claude` (`test/retry/tmux.test.ts`,
+`test/retry/monitor.test.ts`, `test/retry/interactive.test.ts`). Morrem inteiros 32
+arquivos, 266 testes, mais 60 a 120 testes parciais nos cerca de 25 arquivos mistos, onde
+a logica do comando fica e so as assercoes de argv de split-window, respawn-pane e
+send-keys saem. Corte total estimado entre 330 e 390 testes.
+
+Esse corte e a maior simplificacao disponivel no projeto hoje, e e delecao pura, sem
+troca de mecanismo por mecanismo. E argumento de priorizacao para o CAM-521 e o daemon
+acima de feature nova.
+
+Tres pontos que precisam sobreviver ao corte, e por que.
+
+1. A politica de reciclagem por contexto nao e teste de tmux. O arquivo
+   `test/commands/orch-recycle-watch.test.ts` (28 testes) nao toca tmux real: testa
+   `checkBackstop`, a fracao de backstop, e o fallback de handoff com clock injetavel. O
+   item 3 do contrato diz que a aritmetica de threshold sobrevive ao daemon, entao esses
+   testes sao a especificacao executavel dela. Deletar o arquivo pelo nome perde um
+   requisito, nao um teste. O ciclo do daemon precisa de criterio de aceite explicito
+   dizendo que a politica migra e so o atuador (SIGTERM em pane mais marcador) morre.
+
+2. O menu de setup morre por consequencia, e o sequenciamento importa.
+   `buildSetupMenuScript` (`src/commands/setup.ts:810`) spawna o pane do orquestrador por
+   split-window e faz polling de sentinel por capture-pane. A funcao dele e abrir o pane
+   do orquestrador, entao quando o orquestrador deixa de ser pane a funcao some junto.
+   Nao e uma terceira superficie tmux a preservar. Mas ele morre no ciclo do DAEMON, nao
+   no CAM-521: ate o daemon existir, `gship run` ainda e como o operador trabalha. Os 30
+   testes associados (`setup-menu-viewer-live`, `setup-config-log`, `setup-menu`) seguem
+   o mesmo calendario.
+
+3. A lacuna de cobertura em terminal real e modesta, nao e buraco. Medido em 2026-08-11:
+   as telas Ink tem cobertura de render em `test/ui/` (config-screen, splash, tab-bar,
+   dashboard-story-row, teclas de init e setup). O que nao existe e teste ponta a ponta em
+   terminal real dessas telas. A maquina para fechar isso ja existe e e preservada pelo
+   item 2, porque o gate comportamental dirige Ink por PTY. Nao e mecanismo novo, e
+   apontar mecanismo existente. Entra quando algum ciclo tocar essas telas.
+
+Correcao de metodo registrada: a varredura original afirmou que nenhuma tela Ink tinha
+cobertura. A medicao direta refutou. Pela segunda vez neste dia uma varredura
+superdimensionou um achado e a medicao corrigiu; a primeira foi o suposto cadeado da
+linha 93.
+
+Consequencia de triagem: nenhuma issue foi filada a partir deste inventario. Os dois
+testes que falharam localmente durante o recorte do vite
+(`test/integration/orch-recycle-watch.test.ts` e `test/integration/setup-menu-viewer-live.test.ts`)
+sao ambos da classe que morre, entao estabiliza-los seria pagar para manter viva uma
+superficie que o epico apaga.
