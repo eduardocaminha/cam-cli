@@ -562,3 +562,27 @@ Ponto unico onde o supervisor decide como um worker sera executado, antes de mon
 
 **log append-only por dispatch**:
 Arquivo em disco, um por invocacao de worker, que recebe a saida do modelo conforme ela chega e nunca e reescrito nem truncado. Substitui, para o worker headless, a funcao de observabilidade que o painel de tmux exercia por acidente no worker TUI, e e o material que uma superficie web posterior consome.
+
+**template pair**:
+A tuple of one file under templates/ and the installed copy it maps to in a cam-managed project (under .claude/, scripts/cam/, or the repo root). The mapping is one-way and total: every template file has exactly one destination, but a destination may exist with no template behind it.
+
+**seed-vs-live pair**:
+A template pair whose template side is an initial seed and whose installed side accumulates runtime state over the life of the project (the cycle journal, the durable patterns list, the suggestion holding pen). The two sides are never expected to agree, are never reconciled, and are never collapsed into a single source; treating one as stale relative to the other destroys accumulated project history.
+
+**overlay pair**:
+A single {find, replace} substitution of exact literal text, declared for one document, that carries a project-specific deviation from a shared base. A document's full set of overlay pairs is the complete statement of how that project's copy differs from what ships to every other project.
+
+**anchor arity**:
+The requirement that the find side of an overlay pair matches its base exactly once: never zero times (the base moved and the deviation is now unanchored) and never more than once (the deviation would be applied ambiguously). Arity is the drift detector for the portion of a document that cannot be single-sourced.
+
+**pristine-base matching**:
+The rule that every overlay pair for a document is matched and counted against the unmodified base, with all matches resolved before any replacement is written. The alternative, applying each pair to the result of the previous one, makes anchor arity depend on ordering and silently voids the guarantee it exists to provide.
+
+**hunk carve-out**:
+A sub-region of a divergent hunk whose correct owner differs from the owner of the hunk as a whole, for example a generic process rule that should propagate to the base while the stack-specific command names inside the same hunk stay project-local. Carve-outs are why hunk-level reconciliation cannot be decided by picking a winning side per hunk alone.
+
+**symlink-integrity gate**:
+A bidirectional check over a set of collapsed template pairs: it asserts both that the paths which must be single-sourced are recorded as links in version control and resolve to their intended target, and that the paths which must never be linked are still independent files. The negative direction is the load-bearing one, because a well-meaning extension of the collapse is what would destroy a seed-vs-live pair.
+
+**reconciliation direction**:
+For a divergence that should not exist, the decision of which side is current and which is stale, made per hunk. Assigning it is a judgment about which text describes live behavior, not a mechanical diff operation, and it is the point at which content is most easily lost without trace.
