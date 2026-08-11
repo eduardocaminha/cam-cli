@@ -6,6 +6,12 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.287.0] - 2026-08-11
+
+### Added
+
+- US-001 - Reconcile the 11 pre-adjudicated pure-drift hunks in their spec-decided direction
+
 ## [0.286.0] - 2026-08-10
 
 ### Added
