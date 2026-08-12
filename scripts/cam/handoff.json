@@ -1,0 +1,42 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Flip async dos plan runners com varredura exaustiva de await"
+  },
+  "branchName": "cam/issue-556",
+  "timestamp": "2026-08-12T18:53:46Z",
+  "createdFiles": [
+    "scripts/cam/handoff.json"
+  ],
+  "modifiedFiles": [
+    "src/commands/sidecar.ts",
+    "src/supervisor/plan-runner.ts",
+    "test/integration/plan-runner-no-prd.test.ts",
+    "test/integration/plan-runner-target-obey.test.ts",
+    "test/plan-runner-clear-stale.test.ts",
+    "test/plan-runner-in-progress-conflict.test.ts",
+    "test/plan-runner-no-prd.test.ts",
+    "test/plan-runner-target-invalid.test.ts",
+    "test/plan-runner-target-prompt.test.ts",
+    "test/supervisor/dispatch-early-death.test.ts",
+    "test/supervisor/plan-runner-early-death.test.ts",
+    "test/supervisor/plan-runner.test.ts",
+    "test/supervisor/plan/plan-runner-auditor-payload.test.ts",
+    "test/supervisor/plan/plan-runner-codex-auth.test.ts",
+    "test/supervisor/plan/plan-runner-configpath-seam.test.ts",
+    "test/supervisor/plan/plan-runner-container.test.ts",
+    "test/supervisor/plan/plan-runner-model-resolution.test.ts",
+    "test/supervisor/plan/plan-runner-replan.test.ts",
+    "test/supervisor/plan/plan-runner.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "runPlanPhase and runPlanPhaseWithReplan now return Promise<PlanPhaseResult>; production propagation and every real test call site await them. The CAM-555 follow-up can add await runHeadlessDispatch(...) inside the plan runner without introducing floating promises.",
+  "appliedPatternIds": [],
+  "officialDocsValidated": [
+    {
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Pure internal async-control-flow refactor; no external library API was exercised."
+    }
+  ]
+}
