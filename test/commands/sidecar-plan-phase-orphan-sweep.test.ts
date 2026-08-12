@@ -25,7 +25,7 @@ import { buildPlanPhaseDeps } from '../../src/commands/sidecar.ts';
 import { makeInMemoryEventLogger } from '../../src/supervisor/events.ts';
 
 describe('buildPlanPhaseDeps wires the orphan-sweep seam into the plan-phase dispatch closure (US-001, CAM-288)', () => {
-	test('the spy sweepOrphanedImplementBlockedMarkerFn fires when runPlanPhaseFn() runs', () => {
+	test('the spy sweepOrphanedImplementBlockedMarkerFn fires when runPlanPhaseFn() runs', async () => {
 		const tmpDir = createTestTmpdir('cam-plan-phase-sweep-');
 		try {
 			let sweepCalls = 0;
@@ -60,7 +60,7 @@ describe('buildPlanPhaseDeps wires the orphan-sweep seam into the plan-phase dis
 			// at the very top of the closure is under test here.
 			const runPlanPhaseFn = deps.runPlanPhaseFn;
 			expect(runPlanPhaseFn).toBeDefined();
-			expect(() => runPlanPhaseFn?.()).not.toThrow();
+			await runPlanPhaseFn?.();
 
 			expect(sweepCalls).toBe(1);
 		} finally {

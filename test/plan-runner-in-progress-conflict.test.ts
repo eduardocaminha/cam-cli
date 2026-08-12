@@ -92,13 +92,13 @@ function baseOpts(overrides: Partial<RunPlanPhaseOptions> = {}): RunPlanPhaseOpt
 // AC1/AC2: conflict detected -> short-circuit, nothing else runs
 // ---------------------------------------------------------------------------
 
-test('AC1/AC2: a detected conflict short-circuits BEFORE clearStalePlanArtifactsFn/preflightFn/selectIssueFn, and writes the gate with the context', () => {
+test('AC1/AC2: a detected conflict short-circuits BEFORE clearStalePlanArtifactsFn/preflightFn/selectIssueFn, and writes the gate with the context', async () => {
 	let clearCalls = 0;
 	let preflightCalls = 0;
 	let selectCalls = 0;
 	const writeCalls: string[] = [];
 
-	const result = runPlanPhase(
+	const result = await runPlanPhase(
 		baseOpts({
 			clearStalePlanArtifactsFn: () => { clearCalls++; },
 			preflightFn: () => { preflightCalls++; return PREFLIGHT_OK; },
@@ -115,8 +115,8 @@ test('AC1/AC2: a detected conflict short-circuits BEFORE clearStalePlanArtifacts
 	expect(writeCalls).toEqual(['in-progress work detected (test)']);
 });
 
-test('AC1/AC2: writeInProgressConflictGateFn absent -- short-circuit still returns in-progress-conflict without crashing', () => {
-	const result = runPlanPhase(
+test('AC1/AC2: writeInProgressConflictGateFn absent -- short-circuit still returns in-progress-conflict without crashing', async () => {
+	const result = await runPlanPhase(
 		baseOpts({
 			detectInProgressConflictFn: () => 'conflict',
 		}),
@@ -128,13 +128,13 @@ test('AC1/AC2: writeInProgressConflictGateFn absent -- short-circuit still retur
 // AC4: no conflict -> normal sequence proceeds, no gate written
 // ---------------------------------------------------------------------------
 
-test('AC4: detectInProgressConflictFn returning null proceeds to the normal sequence with no gate write', () => {
+test('AC4: detectInProgressConflictFn returning null proceeds to the normal sequence with no gate write', async () => {
 	let clearCalls = 0;
 	let preflightCalls = 0;
 	let selectCalls = 0;
 	let writeCalls = 0;
 
-	const result = runPlanPhase(
+	const result = await runPlanPhase(
 		baseOpts({
 			clearStalePlanArtifactsFn: () => { clearCalls++; },
 			preflightFn: () => { preflightCalls++; return PREFLIGHT_OK; },
@@ -151,9 +151,9 @@ test('AC4: detectInProgressConflictFn returning null proceeds to the normal sequ
 	expect(writeCalls).toBe(0);
 });
 
-test('AC4: detectInProgressConflictFn absent entirely (backward compat) -- zero behavior change', () => {
+test('AC4: detectInProgressConflictFn absent entirely (backward compat) -- zero behavior change', async () => {
 	let clearCalls = 0;
-	const result = runPlanPhase(
+	const result = await runPlanPhase(
 		baseOpts({
 			clearStalePlanArtifactsFn: () => { clearCalls++; },
 			selectIssueFn: () => null,
@@ -167,7 +167,7 @@ test('AC4: detectInProgressConflictFn absent entirely (backward compat) -- zero 
 // AC1 (re-plan non-refire guard): detection fires at most once per outer call
 // ---------------------------------------------------------------------------
 
-test('re-plan rounds never re-invoke detectInProgressConflictFn (round 1 only)', () => {
+test('re-plan rounds never re-invoke detectInProgressConflictFn (round 1 only)', async () => {
 	let detectCalls = 0;
 	let plannerAliveCount = 1;
 	let teardownCount = 0;
@@ -205,7 +205,7 @@ test('re-plan rounds never re-invoke detectInProgressConflictFn (round 1 only)',
 		},
 	};
 
-	const result = runPlanPhaseWithReplan(replanOpts);
+	const result = await runPlanPhaseWithReplan(replanOpts);
 
 	// Round 1 BLOCK -> round 2 APPROVE (MAX_REPLAN_ROUNDS=2): converges by round 2.
 	expect(MAX_REPLAN_ROUNDS).toBe(2);

@@ -155,7 +155,7 @@ function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervi
 		timestamp: '2026-01-01T00:00:00Z',
 	});
 	const clock: ClockFn = () => '2026-06-24T00:00:00Z';
-	const reviewDispatch: ReviewDispatch = (_uuid) => ({ status: 'ok', detail: 'CLEAN' });
+	const reviewDispatch: ReviewDispatch = async (_uuid) => ({ status: 'ok', detail: 'CLEAN' });
 	const writeSessionMarker: WriteSessionMarker = (_storyId, _uuid) => {};
 	const isPaneAlive: IsPaneAlive = () => true;
 

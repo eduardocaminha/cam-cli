@@ -104,7 +104,7 @@ function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervi
 		readHandoff: () => null,
 		clock: () => '2026-07-26T00:00:00Z',
 		genUuid: fakeGenUuid,
-		reviewDispatch: (_uuid) => ({ status: 'ok', detail: 'review ok' }),
+		reviewDispatch: async (_uuid) => ({ status: 'ok', detail: 'review ok' }),
 		writeSessionMarker: (_storyId, _uuid) => {},
 		isPaneAlive: (_paneId) => true,
 		workerPaneId: WORKER_PANE_ID,

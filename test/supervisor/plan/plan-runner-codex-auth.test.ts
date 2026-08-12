@@ -134,10 +134,10 @@ async function withCodexBackendCwd<T>(fn: () => T | Promise<T>): Promise<T> {
 
 describe('plan-runner codex auth: AC2 - fail-closed on planner preflight failure', () => {
 	test('returns kind=codex-auth-failed, phase=planner, actionable codex login reason', async () => {
-		await withCodexBackendCwd(() => {
+		await withCodexBackendCwd(async () => {
 			const opts = makeOpts({ codexAuthCheckFn: () => ({ authenticated: false }) });
 
-			const result = runPlanPhase(opts);
+			const result = await runPlanPhase(opts);
 
 			expect(result.kind).toBe('codex-auth-failed');
 			if (result.kind === 'codex-auth-failed') {
@@ -148,11 +148,11 @@ describe('plan-runner codex auth: AC2 - fail-closed on planner preflight failure
 	});
 
 	test('no respawn-pane call when planner codex auth preflight fails', async () => {
-		await withCodexBackendCwd(() => {
+		await withCodexBackendCwd(async () => {
 			const spawnCalls: string[][] = [];
 			const opts = makeOpts({ codexAuthCheckFn: () => ({ authenticated: false }) }, spawnCalls);
 
-			runPlanPhase(opts);
+			await runPlanPhase(opts);
 
 			expect(respawnCalls(spawnCalls).length).toBe(0);
 		});
@@ -166,7 +166,7 @@ describe('plan-runner codex auth: AC2 - fail-closed on planner preflight failure
 				escalateFn: async () => { escalateCalled++; },
 			});
 
-			runPlanPhase(opts);
+			await runPlanPhase(opts);
 			await waitForCondition(() => escalateCalled > 0);
 
 			expect(escalateCalled).toBe(1);
@@ -180,7 +180,7 @@ describe('plan-runner codex auth: AC2 - fail-closed on planner preflight failure
 
 describe('plan-runner codex auth: AC2 continued - fail-closed on auditor preflight failure', () => {
 	test('returns kind=codex-auth-failed with phase=auditor when auditor auth check fails, planner WAS spawned', async () => {
-		await withCodexBackendCwd(() => {
+		await withCodexBackendCwd(async () => {
 			let callCount = 0;
 			// First call (planner) -> authenticated; second call (auditor) -> not.
 			const codexAuthCheckFn: CodexAuthCheck = () => {
@@ -190,7 +190,7 @@ describe('plan-runner codex auth: AC2 continued - fail-closed on auditor preflig
 			const spawnCalls: string[][] = [];
 			const opts = makeOpts({ codexAuthCheckFn }, spawnCalls);
 
-			const result = runPlanPhase(opts);
+			const result = await runPlanPhase(opts);
 
 			expect(result.kind).toBe('codex-auth-failed');
 			if (result.kind === 'codex-auth-failed') {
@@ -215,7 +215,7 @@ describe('plan-runner codex auth: AC2 continued - fail-closed on auditor preflig
 				escalateFn: async () => { escalateCalled++; },
 			});
 
-			runPlanPhase(opts);
+			await runPlanPhase(opts);
 			await waitForCondition(() => escalateCalled > 0);
 
 			expect(escalateCalled).toBe(1);
@@ -229,11 +229,11 @@ describe('plan-runner codex auth: AC2 continued - fail-closed on auditor preflig
 
 describe('plan-runner codex auth: AC3 - authenticated proceeds unchanged', () => {
 	test('both planner and auditor respawn-pane issued when codexAuthCheckFn always reports authenticated', async () => {
-		await withCodexBackendCwd(() => {
+		await withCodexBackendCwd(async () => {
 			const spawnCalls: string[][] = [];
 			const opts = makeOpts({ codexAuthCheckFn: () => ({ authenticated: true }) }, spawnCalls);
 
-			const result = runPlanPhase(opts);
+			const result = await runPlanPhase(opts);
 
 			expect(result.kind).not.toBe('codex-auth-failed');
 			expect(respawnCalls(spawnCalls).length).toBe(2);
@@ -246,7 +246,7 @@ describe('plan-runner codex auth: AC3 - authenticated proceeds unchanged', () =>
 // ---------------------------------------------------------------------------
 
 describe('plan-runner codex auth: AC4 - claude backend never invokes codexAuthCheckFn', () => {
-	test('claude backend (repo default project.toml) -> codexAuthCheckFn never called, dispatch unchanged', () => {
+	test('claude backend (repo default project.toml) -> codexAuthCheckFn never called, dispatch unchanged', async () => {
 		// No withCodexBackendCwd: the repo's own scripts/cam/project.toml resolves
 		// the planner/auditor backends to 'claude' by default.
 		let authCheckCalled = false;
@@ -261,7 +261,7 @@ describe('plan-runner codex auth: AC4 - claude backend never invokes codexAuthCh
 			spawnCalls,
 		);
 
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 
 		expect(authCheckCalled).toBe(false);
 		expect(result.kind).not.toBe('codex-auth-failed');
@@ -276,11 +276,11 @@ describe('plan-runner codex auth: AC4 - claude backend never invokes codexAuthCh
 // ---------------------------------------------------------------------------
 
 describe('plan-runner codex auth: absent seam is backward compatible', () => {
-	test('absent codexAuthCheckFn + claude backend -> unaffected (backward compat)', () => {
+	test('absent codexAuthCheckFn + claude backend -> unaffected (backward compat)', async () => {
 		const spawnCalls: string[][] = [];
 		const opts = makeOpts({}, spawnCalls);
 
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 
 		expect(result.kind).not.toBe('codex-auth-failed');
 		expect(respawnCalls(spawnCalls).length).toBe(2);

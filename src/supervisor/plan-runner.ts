@@ -1637,7 +1637,7 @@ function runPlanWorkerSequence(
  * Steps 4-7 (worker dispatch) are delegated to runPlanWorkerSequence to keep
  * this function under biome's line/complexity limits (US-006, CAM-152).
  */
-export function runPlanPhase(opts: RunPlanPhaseOptions): PlanPhaseResult {
+export async function runPlanPhase(opts: RunPlanPhaseOptions): Promise<PlanPhaseResult> {
 	const {
 		preflightFn, selectIssueFn, paneCountMutexFn, clearStalePlanArtifactsFn, logEvent,
 		detectInProgressConflictFn, writeInProgressConflictGateFn,
@@ -1824,13 +1824,13 @@ function replanBudgetRemains(
  * exit teardown (the exit teardown never fires until the whole loop, and any
  * re-plan round it drove, has completed).
  */
-export function runPlanPhaseWithReplan(opts: RunPlanPhaseWithReplanOptions): PlanPhaseResult {
+export async function runPlanPhaseWithReplan(opts: RunPlanPhaseWithReplanOptions): Promise<PlanPhaseResult> {
 	const { teardownPlanPanesFn, writeEscalationMarkerFn, ...planOpts } = opts;
 	const teardown = teardownPlanPanesFn ?? ((): void => {});
 	const writeMarker = writeEscalationMarkerFn ?? ((): void => {});
 
 	try {
-		let result = runPlanPhase(planOpts);
+		let result = await runPlanPhase(planOpts);
 		let roundsCompleted = 1;
 		// Independent per-origin budgets (US-002, CAM-448, ADR-0052): a
 		// lint-origin block must never spend the auditor's correction budget,
@@ -1846,7 +1846,7 @@ export function runPlanPhaseWithReplan(opts: RunPlanPhaseWithReplanOptions): Pla
 			// paneCountMutexFn returns 'busy' (the auditor TUI pane never self-exits).
 			teardown();
 			roundsCompleted += 1;
-			result = runPlanPhase({
+			result = await runPlanPhase({
 				...planOpts,
 				selectIssueFn: () => blockedIssue,
 				plannerTaskPrompt: buildReplanPlannerTaskPrompt(blockedIssue.id, blockedFindings),

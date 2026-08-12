@@ -6,6 +6,14 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.288.0] - 2026-08-12
+
+### Added
+
+- US-R1-001 - WARNING: The diff flipped makeProductionPlanPhaseFn's returned closure from ()…
+- US-002 - Flip async do tipo ReviewDispatch com varredura exaustiva de await
+- US-001 - Flip async dos plan runners com varredura exaustiva de await
+
 ## [0.287.0] - 2026-08-11
 
 ### Added

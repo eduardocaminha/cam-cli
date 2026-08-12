@@ -132,7 +132,7 @@ describe('runSupervisor ensureWorkerPane (implement branch)', () => {
 			readHandoff: () => handoff,
 			clock: () => '2026-06-16T00:00:00Z',
 			genUuid: fakeGenUuid,
-			reviewDispatch: () => ({ status: 'ok', detail: 'clean' }),
+			reviewDispatch: async () => ({ status: 'ok', detail: 'clean' }),
 			writeSessionMarker: () => {},
 			isPaneAlive: () => true,
 			workerPaneId: STALE_PANE_ID,
@@ -192,7 +192,7 @@ describe('runSupervisor ensureWorkerPane (implement branch)', () => {
 			readHandoff: () => makeHandoffFor('US-001'),
 			clock: () => '2026-06-16T00:00:00Z',
 			genUuid: fakeGenUuid,
-			reviewDispatch: () => ({ status: 'ok', detail: 'clean' }),
+			reviewDispatch: async () => ({ status: 'ok', detail: 'clean' }),
 			writeSessionMarker: () => {},
 			isPaneAlive: (id) => id === NEW_PANE_ID, // only new pane is alive
 			workerPaneId: STALE_PANE_ID,
@@ -246,7 +246,7 @@ describe('runSupervisor ensureWorkerPane (implement branch)', () => {
 			readHandoff: () => makeHandoffFor('US-001'),
 			clock: () => '2026-06-16T00:00:00Z',
 			genUuid: fakeGenUuid,
-			reviewDispatch: () => ({ status: 'ok', detail: 'clean' }),
+			reviewDispatch: async () => ({ status: 'ok', detail: 'clean' }),
 			writeSessionMarker: () => {},
 			isPaneAlive: () => true,
 			workerPaneId: STALE_PANE_ID,
@@ -283,7 +283,7 @@ describe('makeReviewDispatch ensureWorkerPane (review branch)', () => {
 		};
 	}
 
-	test('when ensureWorkerPane is injected and returns new id, respawn uses new id', () => {
+	test('when ensureWorkerPane is injected and returns new id, respawn uses new id', async () => {
 		const spawnCalls: Array<{ cmd: string; args: string[] }> = [];
 		const fakeSpawn: SpawnFn = (cmd, args) => {
 			spawnCalls.push({ cmd, args });
@@ -313,7 +313,7 @@ describe('makeReviewDispatch ensureWorkerPane (review branch)', () => {
 			ensureWorkerPane,
 		});
 
-		const result = reviewDispatch('test-uuid-1');
+		const result = await reviewDispatch('test-uuid-1');
 
 		// ensureWorkerPane called at the top of the dispatch
 		expect(ensureWorkerPaneCalls.length).toBeGreaterThanOrEqual(1);
@@ -330,7 +330,7 @@ describe('makeReviewDispatch ensureWorkerPane (review branch)', () => {
 		expect(result.status).toBe('ok');
 	});
 
-	test('when ensureWorkerPane is NOT injected, static workerPaneId is used', () => {
+	test('when ensureWorkerPane is NOT injected, static workerPaneId is used', async () => {
 		const spawnCalls: Array<{ cmd: string; args: string[] }> = [];
 		const fakeSpawn: SpawnFn = (cmd, args) => {
 			spawnCalls.push({ cmd, args });
@@ -354,7 +354,7 @@ describe('makeReviewDispatch ensureWorkerPane (review branch)', () => {
 			// ensureWorkerPane intentionally absent
 		});
 
-		const result = reviewDispatch('test-uuid-2');
+		const result = await reviewDispatch('test-uuid-2');
 
 		// respawn-pane must use static STALE_PANE_ID
 		const respawnCall = spawnCalls.find(

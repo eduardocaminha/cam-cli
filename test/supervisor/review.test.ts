@@ -407,7 +407,7 @@ async function withReviewerBackendCwd<T>(
 describe('makeReviewDispatch', () => {
 	const SAMPLE_UUID = '11111111-2222-3333-4444-555555555555';
 
-	test('CLEAN verdict: updates prd.review and returns status=ok', () => {
+	test('CLEAN verdict: updates prd.review and returns status=ok', async () => {
 		const capturedWrittenPrd: PrdSnapshot[] = [];
 		const opts = makeDispatchOpts({
 			paneText: '<review>CLEAN</review>',
@@ -419,7 +419,7 @@ describe('makeReviewDispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+		const result = await dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('ok');
 		expect(capturedWrittenPrd.length).toBe(1);
@@ -428,7 +428,7 @@ describe('makeReviewDispatch', () => {
 		expect(written?.review?.roundsCompleted).toBe(1);
 	});
 
-	test('CLEAN verdict clears findings carried over from a prior FIXES_PENDING round (CAM-115)', () => {
+	test('CLEAN verdict clears findings carried over from a prior FIXES_PENDING round (CAM-115)', async () => {
 		// Round 1: FIXES_PENDING with file-based findings persisted to prd.review.findings.
 		const round1Written: PrdSnapshot[] = [];
 		const round1Findings = [
@@ -444,7 +444,7 @@ describe('makeReviewDispatch', () => {
 			readReviewReport: () => ({ verdict: 'FIXES_PENDING:1', findings: round1Findings }),
 		});
 		const round1Dispatch = makeReviewDispatch(round1Opts);
-		const round1Result = round1Dispatch(SAMPLE_UUID);
+		const round1Result = await round1Dispatch(SAMPLE_UUID);
 
 		expect(round1Result.status).toBe('ok');
 		const round1Prd = round1Written[0];
@@ -458,7 +458,7 @@ describe('makeReviewDispatch', () => {
 			capturedWrittenPrd: round2Written,
 		});
 		const round2Dispatch = makeReviewDispatch(round2Opts);
-		const round2Result = round2Dispatch(SAMPLE_UUID);
+		const round2Result = await round2Dispatch(SAMPLE_UUID);
 
 		expect(round2Result.status).toBe('ok');
 		const round2Prd = round2Written[0];
@@ -468,7 +468,7 @@ describe('makeReviewDispatch', () => {
 		expect(round2Prd?.review?.findings).toBeUndefined();
 	});
 
-	test('FIXES_PENDING: creates US-RX-NNN stories with passes=false', () => {
+	test('FIXES_PENDING: creates US-RX-NNN stories with passes=false', async () => {
 		const capturedWrittenPrd: PrdSnapshot[] = [];
 		const opts = makeDispatchOpts({
 			paneText: '<review>FIXES_PENDING:2</review>',
@@ -480,7 +480,7 @@ describe('makeReviewDispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+		const result = await dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('ok');
 		expect(capturedWrittenPrd.length).toBe(1);
@@ -497,7 +497,7 @@ describe('makeReviewDispatch', () => {
 		});
 	});
 
-	test('US-RX story IDs use the correct round number', () => {
+	test('US-RX story IDs use the correct round number', async () => {
 		const capturedWrittenPrd: PrdSnapshot[] = [];
 		const opts = makeDispatchOpts({
 			paneText: '<review>FIXES_PENDING:1</review>',
@@ -510,7 +510,7 @@ describe('makeReviewDispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		dispatch(SAMPLE_UUID);
+		await dispatch(SAMPLE_UUID);
 
 		const written = capturedWrittenPrd[0];
 		const stories = written?.userStories ?? [];
@@ -518,7 +518,7 @@ describe('makeReviewDispatch', () => {
 		expect(stories[0]?.id).toBe('US-R2-001');
 	});
 
-	test('FIXES_PENDING with newRound > maxRounds sets MAX_ROUNDS_DEBT', () => {
+	test('FIXES_PENDING with newRound > maxRounds sets MAX_ROUNDS_DEBT', async () => {
 		const capturedWrittenPrd: PrdSnapshot[] = [];
 		const opts = makeDispatchOpts({
 			paneText: '<review>FIXES_PENDING:2</review>',
@@ -531,7 +531,7 @@ describe('makeReviewDispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+		const result = await dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('ok');
 		const written = capturedWrittenPrd[0];
@@ -542,7 +542,7 @@ describe('makeReviewDispatch', () => {
 		expect(fixStories.length).toBe(0);
 	});
 
-	test('DEBT terminal round persists its own findings', () => {
+	test('DEBT terminal round persists its own findings', async () => {
 		// Seed prd.review.findings with a prior-round sentinel: this must NOT
 		// survive into the MAX_ROUNDS_DEBT write once the terminal round parses
 		// its own (distinct) findings from review-report.json (CAM-478).
@@ -568,7 +568,7 @@ describe('makeReviewDispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+		const result = await dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('ok');
 		const written = capturedWrittenPrd[0];
@@ -580,7 +580,7 @@ describe('makeReviewDispatch', () => {
 		expect(findingTexts).not.toContain('PRIOR-ROUND-SENTINEL: already fixed');
 	});
 
-	test('DEBT tag-fallback preserves the prior findings', () => {
+	test('DEBT tag-fallback preserves the prior findings', async () => {
 		// No readReviewReport injected -> tag-based fallback (fileFindings
 		// undefined). The only record available is the prior round's findings,
 		// so they must be preserved byte-for-byte (CAM-478).
@@ -603,7 +603,7 @@ describe('makeReviewDispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+		const result = await dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('ok');
 		const written = capturedWrittenPrd[0];
@@ -611,14 +611,14 @@ describe('makeReviewDispatch', () => {
 		expect(written?.review?.findings).toEqual(priorRoundFindings);
 	});
 
-	test('no <review> tag ever: times out and returns status=error', () => {
+	test('no <review> tag ever: times out and returns status=error', async () => {
 		const opts = makeDispatchOpts({
 			paneText: 'No verdict tag here at all.',
 			timeoutMs: 3_000, // fake clock ticks 1s per poll -> bounded loop
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+		const result = await dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('error');
 		expect(result.detail).toContain('timed out');
@@ -629,20 +629,20 @@ describe('makeReviewDispatch', () => {
 		expect(timeoutRespawn).toBeDefined();
 	});
 
-	test('pane dies before a verdict: returns status=error (CAM-42 polling)', () => {
+	test('pane dies before a verdict: returns status=error (CAM-42 polling)', async () => {
 		const opts = makeDispatchOpts({
 			paneText: 'still working...',
 			isPaneAlive: () => false,
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+		const result = await dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('error');
 		expect(result.detail).toContain('died');
 	});
 
-	test('verdict appearing after a few polls is picked up', () => {
+	test('verdict appearing after a few polls is picked up', async () => {
 		const capturedWrittenPrd: PrdSnapshot[] = [];
 		let polls = 0;
 		const opts = makeDispatchOpts({
@@ -658,28 +658,28 @@ describe('makeReviewDispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+		const result = await dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('ok');
 		expect(polls).toBeGreaterThanOrEqual(3);
 		expect(capturedWrittenPrd[0]?.review?.lastVerdict).toBe('CLEAN');
 	});
 
-	test('prd unreadable returns status=error', () => {
+	test('prd unreadable returns status=error', async () => {
 		const opts = makeDispatchOpts({
 			paneText: '<review>CLEAN</review>',
 			prd: null,
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+		const result = await dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('error');
 		expect(result.detail).toContain('prd.json');
 	});
 
 	test('spawns an interactive reviewer with prompt and permission mode (CAM-42)', async () => {
-		await withReviewerBackendCwd('claude', 'opus', () => {
+		await withReviewerBackendCwd('claude', 'opus', async () => {
 			const capturedSpawnArgs: string[][] = [];
 			let capturedPrompt = '';
 
@@ -699,7 +699,7 @@ describe('makeReviewDispatch', () => {
 			});
 
 			const dispatch = makeReviewDispatch(opts);
-			dispatch(SAMPLE_UUID);
+			await dispatch(SAMPLE_UUID);
 
 			// spawn called with respawn-pane arguments.
 			expect(capturedSpawnArgs.length).toBeGreaterThan(0);
@@ -720,7 +720,7 @@ describe('makeReviewDispatch', () => {
 		});
 	});
 
-	test('FIXES_PENDING stories are prepended before existing stories', () => {
+	test('FIXES_PENDING stories are prepended before existing stories', async () => {
 		const capturedWrittenPrd: PrdSnapshot[] = [];
 		const opts = makeDispatchOpts({
 			paneText: '<review>FIXES_PENDING:1</review>',
@@ -732,7 +732,7 @@ describe('makeReviewDispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		dispatch(SAMPLE_UUID);
+		await dispatch(SAMPLE_UUID);
 
 		const written = capturedWrittenPrd[0];
 		const stories = written?.userStories ?? [];
@@ -743,7 +743,7 @@ describe('makeReviewDispatch', () => {
 		expect(existingStory).toBeDefined();
 	});
 
-	test('FIXES_PENDING with 0 count still creates 1 story (minimum 1)', () => {
+	test('FIXES_PENDING with 0 count still creates 1 story (minimum 1)', async () => {
 		// FIXES_PENDING:0 is unusual but the system should handle it gracefully.
 		const capturedWrittenPrd: PrdSnapshot[] = [];
 		const opts = makeDispatchOpts({
@@ -756,7 +756,7 @@ describe('makeReviewDispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		dispatch(SAMPLE_UUID);
+		await dispatch(SAMPLE_UUID);
 
 		const written = capturedWrittenPrd[0];
 		const stories = written?.userStories ?? [];
@@ -764,7 +764,7 @@ describe('makeReviewDispatch', () => {
 		expect(stories.length).toBeGreaterThanOrEqual(1);
 	});
 
-	test('CLEAN does not create new stories', () => {
+	test('CLEAN does not create new stories', async () => {
 		const capturedWrittenPrd: PrdSnapshot[] = [];
 		const opts = makeDispatchOpts({
 			paneText: '<review>CLEAN</review>',
@@ -776,7 +776,7 @@ describe('makeReviewDispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		dispatch(SAMPLE_UUID);
+		await dispatch(SAMPLE_UUID);
 
 		const written = capturedWrittenPrd[0];
 		const stories = written?.userStories ?? [];
@@ -785,7 +785,7 @@ describe('makeReviewDispatch', () => {
 		expect(stories[0]?.id).toBe('US-001');
 	});
 
-	test('roundsCompleted increments by 1 regardless of verdict', () => {
+	test('roundsCompleted increments by 1 regardless of verdict', async () => {
 		for (const paneText of ['<review>CLEAN</review>', '<review>FIXES_PENDING:1</review>']) {
 			const capturedWrittenPrd: PrdSnapshot[] = [];
 			const opts = makeDispatchOpts({
@@ -798,7 +798,7 @@ describe('makeReviewDispatch', () => {
 			});
 
 			const dispatch = makeReviewDispatch(opts);
-			dispatch(SAMPLE_UUID);
+			await dispatch(SAMPLE_UUID);
 
 			const written = capturedWrittenPrd[0];
 			expect(written?.review?.roundsCompleted).toBe(3);
@@ -809,7 +809,7 @@ describe('makeReviewDispatch', () => {
 	// review-report.json file-based verdict tests (US-002, CAM-75)
 	// ---------------------------------------------------------------------------
 
-	test('file-based CLEAN verdict: sourced from review-report.json, not pane tag', () => {
+	test('file-based CLEAN verdict: sourced from review-report.json, not pane tag', async () => {
 		const capturedWrittenPrd: PrdSnapshot[] = [];
 		// Pane has no <review> tag -- completion comes from file only.
 		const opts = makeDispatchOpts({
@@ -823,7 +823,7 @@ describe('makeReviewDispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+		const result = await dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('ok');
 		const written = capturedWrittenPrd[0];
@@ -831,7 +831,7 @@ describe('makeReviewDispatch', () => {
 		expect(written?.review?.roundsCompleted).toBe(1);
 	});
 
-	test('file-based FIXES_PENDING: verdict and findingsCount sourced from file', () => {
+	test('file-based FIXES_PENDING: verdict and findingsCount sourced from file', async () => {
 		const capturedWrittenPrd: PrdSnapshot[] = [];
 		// Pane has no tag; file has FIXES_PENDING:2.
 		const opts = makeDispatchOpts({
@@ -851,7 +851,7 @@ describe('makeReviewDispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+		const result = await dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('ok');
 		const written = capturedWrittenPrd[0];
@@ -861,7 +861,7 @@ describe('makeReviewDispatch', () => {
 		expect(fixStories.length).toBe(2);
 	});
 
-	test('file-based findings injected into fix story notes (verbatim severity/file/line/text)', () => {
+	test('file-based findings injected into fix story notes (verbatim severity/file/line/text)', async () => {
 		const capturedWrittenPrd: PrdSnapshot[] = [];
 		const findings = [
 			{ severity: 'CRITICAL', file: 'src/foo.ts', line: 42, text: 'null deref on prd' },
@@ -879,7 +879,7 @@ describe('makeReviewDispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		dispatch(SAMPLE_UUID);
+		await dispatch(SAMPLE_UUID);
 
 		const written = capturedWrittenPrd[0];
 		const stories = written?.userStories ?? [];
@@ -908,7 +908,7 @@ describe('makeReviewDispatch', () => {
 	// instead of only through notes the fix-worker must re-read from prd.json.
 	// -------------------------------------------------------------------------
 
-	test('fix story carries finding-derived title and description', () => {
+	test('fix story carries finding-derived title and description', async () => {
 		const capturedWrittenPrd: PrdSnapshot[] = [];
 		const findings = [
 			{ severity: 'CRITICAL', file: 'src/foo.ts', line: 42, text: 'null deref on prd' },
@@ -924,7 +924,7 @@ describe('makeReviewDispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		dispatch(SAMPLE_UUID);
+		await dispatch(SAMPLE_UUID);
 
 		const written = capturedWrittenPrd[0];
 		const stories = written?.userStories ?? [];
@@ -946,7 +946,7 @@ describe('makeReviewDispatch', () => {
 		expect(s1?.title).toContain('null deref on prd');
 	});
 
-	test('fix story tag-fallback keeps the placeholder title', () => {
+	test('fix story tag-fallback keeps the placeholder title', async () => {
 		const capturedWrittenPrd: PrdSnapshot[] = [];
 		// readReviewReport returns null (no parsed findings); pane carries the tag.
 		const opts = makeDispatchOpts({
@@ -960,7 +960,7 @@ describe('makeReviewDispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		dispatch(SAMPLE_UUID);
+		await dispatch(SAMPLE_UUID);
 
 		const written = capturedWrittenPrd[0];
 		const stories = written?.userStories ?? [];
@@ -971,7 +971,7 @@ describe('makeReviewDispatch', () => {
 		expect(s1?.notes).toBeUndefined();
 	});
 
-	test('derived fix-story title is single-line and pipe-free', () => {
+	test('derived fix-story title is single-line and pipe-free', async () => {
 		const capturedWrittenPrd: PrdSnapshot[] = [];
 		const longMultilineText =
 			'first line of the finding\nsecond line | with a pipe char\n' +
@@ -991,7 +991,7 @@ describe('makeReviewDispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		dispatch(SAMPLE_UUID);
+		await dispatch(SAMPLE_UUID);
 
 		const written = capturedWrittenPrd[0];
 		const stories = written?.userStories ?? [];
@@ -1009,7 +1009,7 @@ describe('makeReviewDispatch', () => {
 		expect(title.length).toBeLessThanOrEqual(80);
 	});
 
-	test('fallback: readReviewReport always null -> tag-based path used', () => {
+	test('fallback: readReviewReport always null -> tag-based path used', async () => {
 		const capturedWrittenPrd: PrdSnapshot[] = [];
 		// readReviewReport always returns null; pane has the tag.
 		const opts = makeDispatchOpts({
@@ -1023,14 +1023,14 @@ describe('makeReviewDispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+		const result = await dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('ok');
 		const written = capturedWrittenPrd[0];
 		expect(written?.review?.lastVerdict).toBe('CLEAN');
 	});
 
-	test('file takes priority: when both file and tag present, file verdict wins', () => {
+	test('file takes priority: when both file and tag present, file verdict wins', async () => {
 		const capturedWrittenPrd: PrdSnapshot[] = [];
 		// File says CLEAN; pane says FIXES_PENDING. File should win.
 		const opts = makeDispatchOpts({
@@ -1044,7 +1044,7 @@ describe('makeReviewDispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+		const result = await dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('ok');
 		const written = capturedWrittenPrd[0];
@@ -1052,7 +1052,7 @@ describe('makeReviewDispatch', () => {
 		expect(written?.review?.lastVerdict).toBe('CLEAN');
 	});
 
-	test('FIXES_PENDING: prd.review.findings carries verbatim findings from review-report.json (US-003, CAM-75)', () => {
+	test('FIXES_PENDING: prd.review.findings carries verbatim findings from review-report.json (US-003, CAM-75)', async () => {
 		const capturedWrittenPrd: PrdSnapshot[] = [];
 		const findings = [
 			{ severity: 'CRITICAL', file: 'src/supervisor/review.ts', line: 100, text: 'null dereference on prd' },
@@ -1070,7 +1070,7 @@ describe('makeReviewDispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+		const result = await dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('ok');
 		const written = capturedWrittenPrd[0];
@@ -1094,7 +1094,7 @@ describe('makeReviewDispatch', () => {
 		expect(persistedFindings?.[2]?.text).toBe('extract helper function');
 	});
 
-	test('FIXES_PENDING without file-based findings: prd.review.findings absent (tag-based path)', () => {
+	test('FIXES_PENDING without file-based findings: prd.review.findings absent (tag-based path)', async () => {
 		const capturedWrittenPrd: PrdSnapshot[] = [];
 		const opts = makeDispatchOpts({
 			paneText: '<review>FIXES_PENDING:1</review>',
@@ -1107,14 +1107,14 @@ describe('makeReviewDispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		dispatch(SAMPLE_UUID);
+		await dispatch(SAMPLE_UUID);
 
 		const written = capturedWrittenPrd[0];
 		// Tag-based path: no fileFindings available; prd.review.findings must not be set.
 		expect(written?.review?.findings).toBeUndefined();
 	});
 
-	test('fix stories without file findings have no notes (tag fallback path)', () => {
+	test('fix stories without file findings have no notes (tag fallback path)', async () => {
 		const capturedWrittenPrd: PrdSnapshot[] = [];
 		const opts = makeDispatchOpts({
 			paneText: '<review>FIXES_PENDING:1</review>',
@@ -1127,7 +1127,7 @@ describe('makeReviewDispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		dispatch(SAMPLE_UUID);
+		await dispatch(SAMPLE_UUID);
 
 		const written = capturedWrittenPrd[0];
 		const fixStory = (written?.userStories ?? []).find((s) => s.id === 'US-R1-001');
@@ -1144,7 +1144,7 @@ describe('makeReviewDispatch', () => {
 describe('makeReviewDispatch: graceful degradation (US-004)', () => {
 	const SAMPLE_UUID = '11111111-2222-3333-4444-555555555555';
 
-	test('missing report file: falls back to tag verdict, returns status=ok, warning logged', () => {
+	test('missing report file: falls back to tag verdict, returns status=ok, warning logged', async () => {
 		const capturedWrittenPrd: PrdSnapshot[] = [];
 		const warnings: string[] = [];
 		const opts = makeDispatchOpts({
@@ -1159,7 +1159,7 @@ describe('makeReviewDispatch: graceful degradation (US-004)', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+		const result = await dispatch(SAMPLE_UUID);
 
 		// Must not throw; must complete successfully.
 		expect(result.status).toBe('ok');
@@ -1169,7 +1169,7 @@ describe('makeReviewDispatch: graceful degradation (US-004)', () => {
 		expect(warnings[0]).toContain('missing or malformed');
 	});
 
-	test('malformed JSON report: falls back to tag verdict, returns status=ok, warning logged', () => {
+	test('malformed JSON report: falls back to tag verdict, returns status=ok, warning logged', async () => {
 		// From dispatch perspective, malformed JSON and missing file both return null
 		// from readReviewReport. The dispatch must not throw in either case.
 		const capturedWrittenPrd: PrdSnapshot[] = [];
@@ -1186,14 +1186,14 @@ describe('makeReviewDispatch: graceful degradation (US-004)', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+		const result = await dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('ok');
 		expect(warnings.length).toBeGreaterThan(0);
 		expect(warnings[0]).toContain('missing or malformed');
 	});
 
-	test('loop not wedged: missing report + FIXES_PENDING:N creates N fix stories and returns ok', () => {
+	test('loop not wedged: missing report + FIXES_PENDING:N creates N fix stories and returns ok', async () => {
 		// AC5: with missing report and FIXES_PENDING:3 tag, dispatch returns 'ok' and
 		// creates exactly 3 fix stories (count reconciled to the tag's N).
 		const capturedWrittenPrd: PrdSnapshot[] = [];
@@ -1210,7 +1210,7 @@ describe('makeReviewDispatch: graceful degradation (US-004)', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+		const result = await dispatch(SAMPLE_UUID);
 
 		// Dispatch must not throw or block; status must be 'ok'.
 		expect(result.status).toBe('ok');
@@ -1227,7 +1227,7 @@ describe('makeReviewDispatch: graceful degradation (US-004)', () => {
 		expect(warnings.length).toBeGreaterThan(0);
 	});
 
-	test('no warning when readReviewReport is absent (pure tag-based path, no file expected)', () => {
+	test('no warning when readReviewReport is absent (pure tag-based path, no file expected)', async () => {
 		// When readReviewReport is not injected at all, the dispatch uses the pure
 		// tag-based path by design. No warning should be emitted.
 		const warnings: string[] = [];
@@ -1242,14 +1242,14 @@ describe('makeReviewDispatch: graceful degradation (US-004)', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+		const result = await dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('ok');
 		// No warning when the caller never expected a report file.
 		expect(warnings.length).toBe(0);
 	});
 
-	test('warning emitted exactly once per dispatch invocation (not once per poll)', () => {
+	test('warning emitted exactly once per dispatch invocation (not once per poll)', async () => {
 		// Even though the poll loop runs multiple iterations, the warning is logged
 		// only once (at verdict-resolution time, not at each failed file check).
 		const warnings: string[] = [];
@@ -1269,7 +1269,7 @@ describe('makeReviewDispatch: graceful degradation (US-004)', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+		const result = await dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('ok');
 		expect(polls).toBeGreaterThanOrEqual(3);
@@ -1293,7 +1293,7 @@ describe('makeReviewDispatch: graceful degradation (US-004)', () => {
 describe('makeReviewDispatch: US-R1-001 regression - clearReviewReport called before respawn-pane', () => {
 	const SAMPLE_UUID = 'cc112233-4455-6677-8899-aabbccddeeff';
 
-	test('clearReviewReport is invoked before respawn-pane when injected', () => {
+	test('clearReviewReport is invoked before respawn-pane when injected', async () => {
 		const events: string[] = [];
 
 		// Record every clearReviewReport call.
@@ -1320,7 +1320,7 @@ describe('makeReviewDispatch: US-R1-001 regression - clearReviewReport called be
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+		const result = await dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('ok');
 
@@ -1334,7 +1334,7 @@ describe('makeReviewDispatch: US-R1-001 regression - clearReviewReport called be
 		expect(clearIdx).toBeLessThan(respawnIdx);
 	});
 
-	test('dispatch works correctly when clearReviewReport is absent (backward compat)', () => {
+	test('dispatch works correctly when clearReviewReport is absent (backward compat)', async () => {
 		// No clearReviewReport injected: dispatch must still complete without error.
 		const opts = makeDispatchOpts({
 			paneText: '<review>CLEAN</review>',
@@ -1346,7 +1346,7 @@ describe('makeReviewDispatch: US-R1-001 regression - clearReviewReport called be
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+		const result = await dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('ok');
 	});
@@ -1376,7 +1376,7 @@ describe('makeReviewDispatch: US-R1-001 regression - clearReviewReport called be
 describe('makeReviewDispatch: US-006 regression - findings come from file, not pane', () => {
 	const SAMPLE_UUID = 'aabbccdd-1122-3344-5566-778899aabbcc';
 
-	test('AC3: capturePane returns rendered markdown (bullets stripped); fix-story notes carry verbatim file findings, not pane text', () => {
+	test('AC3: capturePane returns rendered markdown (bullets stripped); fix-story notes carry verbatim file findings, not pane text', async () => {
 		const capturedWrittenPrd: PrdSnapshot[] = [];
 
 		// Simulate the pane after Ink/tmux rendering: the reviewer wrote markdown
@@ -1428,7 +1428,7 @@ describe('makeReviewDispatch: US-006 regression - findings come from file, not p
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+		const result = await dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('ok');
 
@@ -1522,7 +1522,7 @@ describe('makeReadReviewReport: verdict shape guard (US-R2-001 regression)', () 
 		expect(reader()).toEqual({ verdict: 'CLEAN', findings: [] });
 	});
 
-	test('dispatch: wrong-shape file + CLEAN tag -> tag fallback, CLEAN verdict, warning logged', () => {
+	test('dispatch: wrong-shape file + CLEAN tag -> tag fallback, CLEAN verdict, warning logged', async () => {
 		// End-to-end regression: a wrong-shape file on disk (missing verdict) must not
 		// override a valid <review>CLEAN</review> tag in the pane. The real production
 		// reader makeReadReviewReport must return null, dispatch must warn and use tag.
@@ -1542,7 +1542,7 @@ describe('makeReadReviewReport: verdict shape guard (US-R2-001 regression)', () 
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
+		const result = await dispatch('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
 
 		// Dispatch must not throw and must use the tag-based CLEAN verdict.
 		expect(result.status).toBe('ok');
@@ -1571,7 +1571,7 @@ describe('makeReadReviewReport: verdict shape guard (US-R2-001 regression)', () 
 describe('makeReviewDispatch: behavioral gate FAIL as hard-constraint (US-005)', () => {
 	const SAMPLE_UUID = 'bbbbcccc-dddd-eeee-ffff-000011112222';
 
-	test('CRITICAL behavioral-gate finding in review-report.json -> FIXES_PENDING:1 + fix story created', () => {
+	test('CRITICAL behavioral-gate finding in review-report.json -> FIXES_PENDING:1 + fix story created', async () => {
 		const capturedWrittenPrd: PrdSnapshot[] = [];
 		const gateFinding = {
 			severity: 'CRITICAL',
@@ -1591,7 +1591,7 @@ describe('makeReviewDispatch: behavioral gate FAIL as hard-constraint (US-005)',
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+		const result = await dispatch(SAMPLE_UUID);
 
 		// Gate fail drives FIXES_PENDING via the normal findings channel.
 		expect(result.status).toBe('ok');
@@ -1608,7 +1608,7 @@ describe('makeReviewDispatch: behavioral gate FAIL as hard-constraint (US-005)',
 		expect(fixStory?.notes).toContain('Layer B behavioral gate FAIL');
 	});
 
-	test('CRITICAL behavioral-gate finding with oracle name included in notes', () => {
+	test('CRITICAL behavioral-gate finding with oracle name included in notes', async () => {
 		// Proves that the specific oracle command name reaches the fix-story notes,
 		// so the implementer worker knows which oracle to re-run.
 		const capturedWrittenPrd: PrdSnapshot[] = [];
@@ -1630,7 +1630,7 @@ describe('makeReviewDispatch: behavioral gate FAIL as hard-constraint (US-005)',
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+		const result = await dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('ok');
 		const written = capturedWrittenPrd[0];
@@ -1641,7 +1641,7 @@ describe('makeReviewDispatch: behavioral gate FAIL as hard-constraint (US-005)',
 		expect(fixStory?.notes).toContain('behavioral gate');
 	});
 
-	test('multiple gate failures -> FIXES_PENDING:N with one fix story per failing oracle', () => {
+	test('multiple gate failures -> FIXES_PENDING:N with one fix story per failing oracle', async () => {
 		const capturedWrittenPrd: PrdSnapshot[] = [];
 		const findings = [
 			{
@@ -1667,7 +1667,7 @@ describe('makeReviewDispatch: behavioral gate FAIL as hard-constraint (US-005)',
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+		const result = await dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('ok');
 		const written = capturedWrittenPrd[0];
@@ -1679,7 +1679,7 @@ describe('makeReviewDispatch: behavioral gate FAIL as hard-constraint (US-005)',
 		expect(fixStories[1]?.notes).toContain('bun test');
 	});
 
-	test('CLEAN verdict when gate passed: lastVerdict=CLEAN, no fix stories, unaffected (AC3)', () => {
+	test('CLEAN verdict when gate passed: lastVerdict=CLEAN, no fix stories, unaffected (AC3)', async () => {
 		const capturedWrittenPrd: PrdSnapshot[] = [];
 		const opts = makeDispatchOpts({
 			paneText: 'no tag',
@@ -1696,7 +1696,7 @@ describe('makeReviewDispatch: behavioral gate FAIL as hard-constraint (US-005)',
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+		const result = await dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('ok');
 		const written = capturedWrittenPrd[0];
@@ -1712,7 +1712,7 @@ describe('makeReviewDispatch: behavioral gate FAIL as hard-constraint (US-005)',
 		expect(existingStory).toBeDefined();
 	});
 
-	test('prd.review.findings carries the gate-fail finding (AC2: prd write assertion)', () => {
+	test('prd.review.findings carries the gate-fail finding (AC2: prd write assertion)', async () => {
 		// Verifies the complete end-to-end prd write contract:
 		//   review-report.json with a behavioral-gate CRITICAL finding
 		//   -> prd.review.lastVerdict='FIXES_PENDING:N'
@@ -1736,7 +1736,7 @@ describe('makeReviewDispatch: behavioral gate FAIL as hard-constraint (US-005)',
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+		const result = await dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('ok');
 		const written = capturedWrittenPrd[0];
@@ -1774,7 +1774,7 @@ describe('makeReviewDispatch: US-005 container mode dispatch', () => {
 	const SAMPLE_UUID = 'cafebabe-dead-beef-0000-111122223333';
 
 	test('AC1: container mode wraps shellCmd with docker exec argv-shape', async () => {
-		await withReviewerBackendCwd('claude', 'opus', () => {
+		await withReviewerBackendCwd('claude', 'opus', async () => {
 			const capturedSpawnArgs: string[][] = [];
 			const opts = makeDispatchOpts({
 				// US-001 (CAM-405): explicit undefined preserves this test's real
@@ -1791,7 +1791,7 @@ describe('makeReviewDispatch: US-005 container mode dispatch', () => {
 			});
 
 			const dispatch = makeReviewDispatch(opts);
-			dispatch(SAMPLE_UUID);
+			await dispatch(SAMPLE_UUID);
 
 			const respawnCall = capturedSpawnArgs.find((args) => args.includes('respawn-pane')) ?? [];
 			expect(respawnCall).toContain('respawn-pane');
@@ -1809,7 +1809,7 @@ describe('makeReviewDispatch: US-005 container mode dispatch', () => {
 		});
 	});
 
-	test('AC2: container mode + preflight not-ready -> status=error, container-not-ready detail, no wrapped respawn', () => {
+	test('AC2: container mode + preflight not-ready -> status=error, container-not-ready detail, no wrapped respawn', async () => {
 		const capturedSpawnArgs: string[][] = [];
 		const opts = makeDispatchOpts({
 			paneText: '<review>CLEAN</review>',
@@ -1823,7 +1823,7 @@ describe('makeReviewDispatch: US-005 container mode dispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+		const result = await dispatch(SAMPLE_UUID);
 
 		// Must return error with container-not-ready detail.
 		expect(result.status).toBe('error');
@@ -1840,7 +1840,7 @@ describe('makeReviewDispatch: US-005 container mode dispatch', () => {
 	});
 
 	test('AC3: container mode + preflight ready -> respawn-pane called with dockerExecWrap-wrapped cmd', async () => {
-		await withReviewerBackendCwd('claude', 'opus', () => {
+		await withReviewerBackendCwd('claude', 'opus', async () => {
 			const capturedSpawnArgs: string[][] = [];
 			const opts = makeDispatchOpts({
 				// US-001 (CAM-405): explicit undefined preserves this test's real
@@ -1857,7 +1857,7 @@ describe('makeReviewDispatch: US-005 container mode dispatch', () => {
 			});
 
 			const dispatch = makeReviewDispatch(opts);
-			const result = dispatch(SAMPLE_UUID);
+			const result = await dispatch(SAMPLE_UUID);
 
 			expect(result.status).toBe('ok');
 
@@ -1870,7 +1870,7 @@ describe('makeReviewDispatch: US-005 container mode dispatch', () => {
 	});
 
 	test('AC4: host mode (default/no workerIsolation) -> shellCmd unchanged, behavior identical to existing tests', async () => {
-		await withReviewerBackendCwd('claude', 'opus', () => {
+		await withReviewerBackendCwd('claude', 'opus', async () => {
 			const capturedSpawnArgs: string[][] = [];
 			const opts = makeDispatchOpts({
 				// US-001 (CAM-405): explicit undefined preserves this test's real
@@ -1887,7 +1887,7 @@ describe('makeReviewDispatch: US-005 container mode dispatch', () => {
 			});
 
 			const dispatch = makeReviewDispatch(opts);
-			const result = dispatch(SAMPLE_UUID);
+			const result = await dispatch(SAMPLE_UUID);
 
 			// In host mode, preflight result is ignored (observe-only) and dispatch proceeds.
 			expect(result.status).toBe('ok');
@@ -1904,7 +1904,7 @@ describe('makeReviewDispatch: US-005 container mode dispatch', () => {
 	});
 
 	test('US-001 (CAM-242): host prefix diverges from the container inner string by exactly the -u CLAUDE_CODE_OAUTH_TOKEN token', async () => {
-		await withReviewerBackendCwd('claude', 'opus', () => {
+		await withReviewerBackendCwd('claude', 'opus', async () => {
 			const hostSpawnArgs: string[][] = [];
 			const hostOpts = makeDispatchOpts({
 				// US-001 (CAM-405): explicit undefined preserves this test's real
@@ -1918,7 +1918,7 @@ describe('makeReviewDispatch: US-005 container mode dispatch', () => {
 				},
 				workerIsolation: 'host',
 			});
-			makeReviewDispatch(hostOpts)(SAMPLE_UUID);
+			await makeReviewDispatch(hostOpts)(SAMPLE_UUID);
 			const hostRespawn = hostSpawnArgs.find((args) => args.includes('respawn-pane')) ?? [];
 			const hostCmd = hostRespawn[hostRespawn.length - 1] ?? '';
 
@@ -1936,7 +1936,7 @@ describe('makeReviewDispatch: US-005 container mode dispatch', () => {
 				workerIsolation: 'container',
 				preflightContainerFn: () => ({ ready: true }),
 			});
-			makeReviewDispatch(containerOpts)(SAMPLE_UUID);
+			await makeReviewDispatch(containerOpts)(SAMPLE_UUID);
 			const containerRespawn = containerSpawnArgs.find((args) => args.includes('respawn-pane')) ?? [];
 			const containerFullCmd = containerRespawn[containerRespawn.length - 1] ?? '';
 			// Strip the dockerExecWrap prefix to isolate the inner shell string.
@@ -1963,7 +1963,7 @@ describe('makeReviewDispatch: US-005 container mode dispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+		const result = await dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('error');
 		expect(result.detail).toContain('container-not-ready');
@@ -1973,7 +1973,7 @@ describe('makeReviewDispatch: US-005 container mode dispatch', () => {
 		expect(escalateCalled).toBe(true);
 	});
 
-	test('AC6: absent preflightContainerFn -> no behavior change (backward compat)', () => {
+	test('AC6: absent preflightContainerFn -> no behavior change (backward compat)', async () => {
 		const capturedSpawnArgs: string[][] = [];
 		const opts = makeDispatchOpts({
 			paneText: '<review>CLEAN</review>',
@@ -1987,7 +1987,7 @@ describe('makeReviewDispatch: US-005 container mode dispatch', () => {
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+		const result = await dispatch(SAMPLE_UUID);
 
 		// Without preflight, dispatch succeeds even in container mode.
 		// (No wrapping either: if preflight is absent the feature is not enabled.)
@@ -2006,7 +2006,7 @@ describe('makeReviewDispatch: US-002 codex auth preflight (CAM-352)', () => {
 	const SAMPLE_UUID = 'cafebabe-dead-beef-0000-111122223333';
 
 	test('AC2: codex backend + unauthenticated -> status=error, actionable codex login reason, respawn-pane never called', async () => {
-		await withReviewerBackendCwd('codex', 'gpt-5-codex', () => {
+		await withReviewerBackendCwd('codex', 'gpt-5-codex', async () => {
 			const capturedSpawnArgs: string[][] = [];
 			let authCheckCalled = false;
 			const opts = makeDispatchOpts({
@@ -2026,7 +2026,7 @@ describe('makeReviewDispatch: US-002 codex auth preflight (CAM-352)', () => {
 			});
 
 			const dispatch = makeReviewDispatch(opts);
-			const result = dispatch(SAMPLE_UUID);
+			const result = await dispatch(SAMPLE_UUID);
 
 			expect(authCheckCalled).toBe(true);
 			expect(result.status).toBe('error');
@@ -2054,7 +2054,7 @@ describe('makeReviewDispatch: US-002 codex auth preflight (CAM-352)', () => {
 			});
 
 			const dispatch = makeReviewDispatch(opts);
-			const result = dispatch(SAMPLE_UUID);
+			const result = await dispatch(SAMPLE_UUID);
 
 			expect(result.status).toBe('error');
 			await waitForCondition(() => escalateCalled);
@@ -2063,7 +2063,7 @@ describe('makeReviewDispatch: US-002 codex auth preflight (CAM-352)', () => {
 	});
 
 	test('AC3: codex backend + authenticated -> dispatch proceeds unchanged (respawn-pane called)', async () => {
-		await withReviewerBackendCwd('codex', 'gpt-5-codex', () => {
+		await withReviewerBackendCwd('codex', 'gpt-5-codex', async () => {
 			const capturedSpawnArgs: string[][] = [];
 			let authCheckCalled = false;
 			const opts = makeDispatchOpts({
@@ -2083,7 +2083,7 @@ describe('makeReviewDispatch: US-002 codex auth preflight (CAM-352)', () => {
 			});
 
 			const dispatch = makeReviewDispatch(opts);
-			const result = dispatch(SAMPLE_UUID);
+			const result = await dispatch(SAMPLE_UUID);
 
 			expect(authCheckCalled).toBe(true);
 			expect(result.status).toBe('ok');
@@ -2095,7 +2095,7 @@ describe('makeReviewDispatch: US-002 codex auth preflight (CAM-352)', () => {
 	test('AC4: claude backend (default) -> codexAuthCheckFn never invoked, dispatch unchanged', async () => {
 		// Explicit claude fixture (US-004, CAM-356): no longer relies on the
 		// repo's own scripts/cam/project.toml to resolve 'claude'.
-		await withReviewerBackendCwd('claude', 'opus', () => {
+		await withReviewerBackendCwd('claude', 'opus', async () => {
 			const capturedSpawnArgs: string[][] = [];
 			let authCheckCalled = false;
 			const opts = makeDispatchOpts({
@@ -2115,7 +2115,7 @@ describe('makeReviewDispatch: US-002 codex auth preflight (CAM-352)', () => {
 			});
 
 			const dispatch = makeReviewDispatch(opts);
-			const result = dispatch(SAMPLE_UUID);
+			const result = await dispatch(SAMPLE_UUID);
 
 			expect(authCheckCalled).toBe(false);
 			expect(result.status).toBe('ok');
@@ -2125,7 +2125,7 @@ describe('makeReviewDispatch: US-002 codex auth preflight (CAM-352)', () => {
 	});
 
 	test('US-004 (CAM-356): codex reviewer fixture resolves gpt-5.5 (not opus), auth preflight does not abort on the claude-alias check', async () => {
-		await withReviewerBackendCwd('codex', 'gpt-5.5', () => {
+		await withReviewerBackendCwd('codex', 'gpt-5.5', async () => {
 			const capturedSpawnArgs: string[][] = [];
 			let authCheckCalled = false;
 			const opts = makeDispatchOpts({
@@ -2148,7 +2148,7 @@ describe('makeReviewDispatch: US-002 codex auth preflight (CAM-352)', () => {
 			});
 
 			const dispatch = makeReviewDispatch(opts);
-			const result = dispatch(SAMPLE_UUID);
+			const result = await dispatch(SAMPLE_UUID);
 
 			expect(authCheckCalled).toBe(true);
 			expect(result.status).toBe('ok');
@@ -2169,7 +2169,7 @@ describe('makeReviewDispatch: US-002 codex auth preflight (CAM-352)', () => {
 describe('makeReviewDispatch: US-001 (CAM-405) reviewer-backend resolution seam', () => {
 	const SAMPLE_UUID = 'seed5eed-c0de-4a11-9999-000011112222';
 
-	test('configPath override resolves reviewBackend from the fixture, not the live scripts/cam/project.toml', () => {
+	test('configPath override resolves reviewBackend from the fixture, not the live scripts/cam/project.toml', async () => {
 		const capturedSpawnArgs: string[][] = [];
 		const opts = makeDispatchOpts({
 			paneText: '<review>CLEAN</review>',
@@ -2181,7 +2181,7 @@ describe('makeReviewDispatch: US-001 (CAM-405) reviewer-backend resolution seam'
 		});
 
 		const dispatch = makeReviewDispatch(opts);
-		const result = dispatch(SAMPLE_UUID);
+		const result = await dispatch(SAMPLE_UUID);
 
 		expect(result.status).toBe('ok');
 		const reviewerRespawn = capturedSpawnArgs.find((args) => args.includes('respawn-pane'));
@@ -2193,7 +2193,7 @@ describe('makeReviewDispatch: US-001 (CAM-405) reviewer-backend resolution seam'
 		expect(shellCmd).toContain('opus');
 	});
 
-	test('AC5 regression: reviewer=codex resolved via the injected seam does not fail with codex-auth-failed', () => {
+	test('AC5 regression: reviewer=codex resolved via the injected seam does not fail with codex-auth-failed', async () => {
 		const codexConfigDir = createTestTmpdir('cam-review-codex-seam-');
 		const codexConfigPath = join(codexConfigDir, 'project.toml');
 		writeFileSync(
@@ -2223,7 +2223,7 @@ describe('makeReviewDispatch: US-001 (CAM-405) reviewer-backend resolution seam'
 			});
 
 			const dispatch = makeReviewDispatch(opts);
-			const result = dispatch(SAMPLE_UUID);
+			const result = await dispatch(SAMPLE_UUID);
 
 			expect(authCheckCalled).toBe(true);
 			expect(result.status).not.toBe('error');

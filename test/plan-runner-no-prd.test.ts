@@ -124,39 +124,39 @@ function makePlannerfailedOpts(overrides: Partial<RunPlanPhaseOptions> = {}): {
 // ---------------------------------------------------------------------------
 
 describe('runPlanPhase - planner-failed path (AC1)', () => {
-	test('returns planner-failed when pane dies and readPlannerReportFn returns null', () => {
+	test('returns planner-failed when pane dies and readPlannerReportFn returns null', async () => {
 		const { opts } = makePlannerfailedOpts();
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 		expect(result.kind).toBe('planner-failed');
 	});
 
-	test('auditor is NEVER spawned (no respawn-pane with subagent-auditor) (AC1)', () => {
+	test('auditor is NEVER spawned (no respawn-pane with subagent-auditor) (AC1)', async () => {
 		const { opts, calls } = makePlannerfailedOpts();
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 		const auditorRespawn = calls.find(
 			(c) => c.args[2] === 'respawn-pane' && c.args.some((a) => a.includes('subagent-auditor')),
 		);
 		expect(auditorRespawn).toBeUndefined();
 	});
 
-	test('no @cam_label auditor set-option call (AC1)', () => {
+	test('no @cam_label auditor set-option call (AC1)', async () => {
 		const { opts, calls } = makePlannerfailedOpts();
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 		const auditorLabel = calls.find(
 			(c) => c.args[2] === 'set-option' && c.args.includes('auditor'),
 		);
 		expect(auditorLabel).toBeUndefined();
 	});
 
-	test('at most 1 respawn-pane call (planner only, auditor never spawned) (AC1)', () => {
+	test('at most 1 respawn-pane call (planner only, auditor never spawned) (AC1)', async () => {
 		const { opts, calls } = makePlannerfailedOpts();
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 		const respawnCalls = calls.filter((c) => c.args[2] === 'respawn-pane');
 		// Only the planner respawn-pane (set @cam_label planner + respawn); auditor never reached.
 		expect(respawnCalls.length).toBeLessThanOrEqual(1);
 	});
 
-	test('readPlanVerdictFn (auditor poll) is NEVER called (AC1)', () => {
+	test('readPlanVerdictFn (auditor poll) is NEVER called (AC1)', async () => {
 		let verdictReadCount = 0;
 		const { opts } = makePlannerfailedOpts({
 			readPlanVerdictFn: () => {
@@ -164,11 +164,11 @@ describe('runPlanPhase - planner-failed path (AC1)', () => {
 				return null;
 			},
 		});
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 		expect(verdictReadCount).toBe(0);
 	});
 
-	test('same-tick race: prd.json written just as the pane exits -> completes, NOT planner-failed (US-R1-001, CAM-479)', () => {
+	test('same-tick race: prd.json written just as the pane exits -> completes, NOT planner-failed (US-R1-001, CAM-479)', async () => {
 		// Reproduces the exact race the story describes: readPlannerReportFn
 		// returns null on the primary read (line 1297-equivalent), but the
 		// planner writes prd.json and its pane exits inside the SAME poll
@@ -185,14 +185,14 @@ describe('runPlanPhase - planner-failed path (AC1)', () => {
 			},
 			readPlanVerdictFn: () => ({ verdict: 'APPROVE', summary: 'ok', findings: [] }),
 		});
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 		expect(result.kind).not.toBe('planner-failed');
 		expect(result.kind).toBe('audit-approved');
 		// The confirmation re-read must actually have happened (2 reads, not 1).
 		expect(readCount).toBeGreaterThanOrEqual(2);
 	});
 
-	test('backward-compat: absent readPlannerReportFn + pane dies -> proceeds to auditor (NOT planner-failed)', () => {
+	test('backward-compat: absent readPlannerReportFn + pane dies -> proceeds to auditor (NOT planner-failed)', async () => {
 		// When readPlannerReportFn is NOT injected and the pane dies, the old behavior
 		// (fall through to the auditor) is preserved. Pane dies after 1 tick.
 		const calls: SpawnCall[] = [];
@@ -215,7 +215,7 @@ describe('runPlanPhase - planner-failed path (AC1)', () => {
 			auditorTimeoutMs: 999_999,
 			configPath: GENERIC_PLAN_CONFIG_PATH,
 		};
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 		// Without readPlannerReportFn, planner-failed is NOT triggered. The auditor
 		// poll runs and (with the APPROVE verdict) returns audit-approved.
 		expect(result.kind).toBe('audit-approved');

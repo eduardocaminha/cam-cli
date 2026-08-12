@@ -366,7 +366,7 @@ export const DEFAULT_REVIEW_TIMEOUT_MS = 30 * 60 * 1000;
  *   4. Update prd.json (roundsCompleted, lastVerdict, new US-RX-NNN stories).
  *
  * The returned function matches the ReviewDispatch type from loop.ts:
- *   (uuid: string) => ReviewDispatchResult
+ *   (uuid: string) => Promise<ReviewDispatchResult>
  *
  * PRD update rules:
  *   - Always increments roundsCompleted.
@@ -413,7 +413,7 @@ export function makeReviewDispatch(opts: MakeReviewDispatchOptions): ReviewDispa
 	// US-003 (CAM-479): early-death transcript probe, consulted once per poll tick.
 	const earlyDeathProbeFn = opts.earlyDeathProbeFn;
 
-	return function reviewDispatch(uuid: string): ReviewDispatchResult {
+	return async function reviewDispatch(uuid: string): Promise<ReviewDispatchResult> {
 		// CAM-57: ensure a live worker pane exists before the respawn. When
 		// ensureWorkerPane is absent, fall back to the static workerPaneId from
 		// opts (backward compat). Re-resolve per-call, not once at construction.

@@ -161,7 +161,7 @@ function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervi
 	const writePrd: WritePrd = (_prd) => {};
 	const readHandoff: ReadHandoff = () => null;
 	const clock: ClockFn = () => '2026-06-08T00:00:00Z';
-	const reviewDispatch: ReviewDispatch = (_uuid) => ({ status: 'ok', detail: 'review ok' });
+	const reviewDispatch: ReviewDispatch = async (_uuid) => ({ status: 'ok', detail: 'review ok' });
 	const writeSessionMarker: WriteSessionMarker = (_storyId, _uuid) => {};
 	const isPaneAlive: IsPaneAlive = (_paneId) => true;
 
@@ -354,7 +354,7 @@ describe('runSupervisor', () => {
 			readPrd: () => prds[prdCallCount++] ?? null,
 			readHandoff: () => handoffs[handoffIdx++] ?? null,
 			capturePane: (_paneId) => paneTexts[paneIdx++] ?? '',
-			reviewDispatch: (_uuid) => ({ status: 'ok', detail: 'review dispatched' }),
+			reviewDispatch: async (_uuid) => ({ status: 'ok', detail: 'review dispatched' }),
 		});
 
 		const result = await runSupervisor(opts);
@@ -925,7 +925,7 @@ describe('runSupervisor', () => {
 		let reviewCalls = 0;
 		const opts = makeBaseOpts({
 			readPrd: () => prds[prdCall++] ?? prd_clean,
-			reviewDispatch: (_uuid) => {
+			reviewDispatch: async (_uuid) => {
 				reviewCalls += 1;
 				return reviewCalls < 3
 					? { status: 'error', detail: 'no <review> verdict (silent no-op)' }
@@ -947,7 +947,7 @@ describe('runSupervisor', () => {
 		let reviewCalls = 0;
 		const opts = makeBaseOpts({
 			readPrd: () => prd,
-			reviewDispatch: (_uuid) => {
+			reviewDispatch: async (_uuid) => {
 				reviewCalls += 1;
 				return { status: 'error', detail: 'no <review> verdict (silent no-op)' };
 			},
@@ -1160,7 +1160,7 @@ describe('runSupervisor', () => {
 
 		const opts = makeBaseOpts({
 			readPrd: () => prd,
-			reviewDispatch: (_uuid) => ({ status: 'error', detail: 'dispatch failed' }),
+			reviewDispatch: async (_uuid) => ({ status: 'error', detail: 'dispatch failed' }),
 		});
 
 		const result = await runSupervisor(opts);
@@ -1181,7 +1181,7 @@ describe('runSupervisor', () => {
 
 		const opts = makeBaseOpts({
 			readPrd: () => prd,
-			reviewDispatch: (_uuid) => ({ status: 'error', detail: 'pane died after retries' }),
+			reviewDispatch: async (_uuid) => ({ status: 'error', detail: 'pane died after retries' }),
 			notifyOrchestrator: (line) => {
 				notified.push(line);
 			},
@@ -2064,7 +2064,7 @@ describe('runSupervisor onProgress callback (US-001)', () => {
 			},
 			readHandoff: () => handoffs[handoffIdx++] ?? null,
 			capturePane: (_paneId) => panes[paneIdx++] ?? '',
-			reviewDispatch: (_uuid) => ({ status: 'ok', detail: 'review ok' }),
+			reviewDispatch: async (_uuid) => ({ status: 'ok', detail: 'review ok' }),
 			onProgress: (p) => { progressCalls.push({ ...p }); },
 		});
 
@@ -2299,7 +2299,7 @@ describe('runSupervisor @cam_label pane labeling (US-002)', () => {
 				spawnCalls.push([...args]);
 				return { stdout: '', exitCode: 0 };
 			},
-			reviewDispatch: (_uuid) => {
+			reviewDispatch: async (_uuid) => {
 				reviewDispatchCalled = true;
 				reviewDispatchCallCount += 1;
 				return { status: 'ok', detail: 'CLEAN' };
@@ -4037,7 +4037,7 @@ describe('runSupervisor US-002: commit-existence gate (CAM-187)', () => {
 			capturePane: (_paneId) => donePane('US-001'),
 			maxIterations: 50, // would spin toward review/complete without the gate
 			commitExistsForStory: () => false,
-			reviewDispatch: (uuid) => {
+			reviewDispatch: async (uuid) => {
 				reviewCalls.push(uuid);
 				return { status: 'ok', detail: 'review ok' };
 			},
@@ -4114,7 +4114,7 @@ describe('runSupervisor US-004: empty-push gate', () => {
 			capturePane: (_paneId) => donePane('US-001'),
 			maxIterations: 50,
 			aheadByForBranch: () => 0,
-			reviewDispatch: (uuid) => {
+			reviewDispatch: async (uuid) => {
 				reviewCalls.push(uuid);
 				return { status: 'ok', detail: 'review ok' };
 			},

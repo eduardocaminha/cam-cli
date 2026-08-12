@@ -120,7 +120,7 @@ function baseOpts(
 // ---------------------------------------------------------------------------
 
 describe('AC1: planner pane death before prd.json exists', () => {
-	test('planner pane death before prd.json yields a reason-bearing terminal, not bare planner-failed', () => {
+	test('planner pane death before prd.json yields a reason-bearing terminal, not bare planner-failed', async () => {
 		const { fn } = makeSpawn();
 		const opts = baseOpts({
 			spawnFn: withVerifiedPanePid(fn),
@@ -129,7 +129,7 @@ describe('AC1: planner pane death before prd.json exists', () => {
 			readPlanVerdictFn: () => null, // must never be reached
 		});
 
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 
 		expect(result.kind).toBe('planner-failed');
 		// The bare pre-fix terminal ({ kind: 'planner-failed' }) carries NO
@@ -139,7 +139,7 @@ describe('AC1: planner pane death before prd.json exists', () => {
 		expect(((result as { reason?: string }).reason ?? '').length).toBeGreaterThan(0);
 	});
 
-	test('the reason-bearing planner-failed terminal reaches the notification channel', () => {
+	test('the reason-bearing planner-failed terminal reaches the notification channel', async () => {
 		const { fn } = makeSpawn();
 		const opts = baseOpts({
 			spawnFn: withVerifiedPanePid(fn),
@@ -148,7 +148,7 @@ describe('AC1: planner pane death before prd.json exists', () => {
 			readPlanVerdictFn: () => null,
 		});
 
-		const result = runPlanPhase(opts) as { kind: 'planner-failed'; reason?: string };
+		const result = await runPlanPhase(opts) as { kind: 'planner-failed'; reason?: string };
 		expect(result.kind).toBe('planner-failed');
 		expect(result.reason).toBeDefined();
 	});
@@ -159,7 +159,7 @@ describe('AC1: planner pane death before prd.json exists', () => {
 // ---------------------------------------------------------------------------
 
 describe('AC2: auditor poll boundary distinguishes pane death from cap elapsed', () => {
-	test('auditor pane death and auditor cap elapsed are distinguishable at the poll boundary', () => {
+	test('auditor pane death and auditor cap elapsed are distinguishable at the poll boundary', async () => {
 		// Scenario A: the auditor pane dies naturally before ever writing a
 		// verdict, well before auditorTimeoutMs would fire.
 		const markersA: DispatchFailedMarker[] = [];
@@ -185,7 +185,7 @@ describe('AC2: auditor poll boundary distinguishes pane death from cap elapsed',
 			return auditorTicks <= 1;
 		};
 
-		const resultA = runPlanPhase(optsA);
+		const resultA = await runPlanPhase(optsA);
 		expect(resultA.kind).toBe('auditor-timeout');
 		const auditorMarkerA = markersA.find((m) => m.phase === 'auditor');
 		expect(auditorMarkerA?.reason).toBe('auditor-pane-died');
@@ -207,7 +207,7 @@ describe('AC2: auditor poll boundary distinguishes pane death from cap elapsed',
 			writeDispatchFailedMarkerFn: (marker) => markersB.push(marker),
 		});
 
-		const resultB = runPlanPhase(optsB);
+		const resultB = await runPlanPhase(optsB);
 		expect(resultB.kind).toBe('auditor-timeout');
 		const auditorMarkerB = markersB.find((m) => m.phase === 'auditor');
 		expect(auditorMarkerB?.reason).toBe('auditor-timeout');
@@ -222,7 +222,7 @@ describe('AC2: auditor poll boundary distinguishes pane death from cap elapsed',
 // ---------------------------------------------------------------------------
 
 describe('AC4: plan timeout terminal phase/reason integrity', () => {
-	test('the plan timeout terminal emits a real phase name with the reason in the reason field', () => {
+	test('the plan timeout terminal emits a real phase name with the reason in the reason field', async () => {
 		const events: WorkerEvent[] = [];
 		const markers: DispatchFailedMarker[] = [];
 		let now = 0;
@@ -246,7 +246,7 @@ describe('AC4: plan timeout terminal phase/reason integrity', () => {
 			writeDispatchFailedMarkerFn: (marker) => markers.push(marker),
 		});
 
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 		expect(result.kind).toBe('planner-timeout');
 
 		// The INNER dispatch-failed event (from the sentinel's own failed
@@ -285,7 +285,7 @@ describe('AC4: plan timeout terminal phase/reason integrity', () => {
 // ---------------------------------------------------------------------------
 
 describe('US-005 (CAM-479): early-death terminals carry session-died-early + cause', () => {
-	test('an early-death planner terminal carries session-died-early and the transcript cause in event, marker, and notification', () => {
+	test('an early-death planner terminal carries session-died-early and the transcript cause in event, marker, and notification', async () => {
 		const events: WorkerEvent[] = [];
 		const markers: DispatchFailedMarker[] = [];
 		const notifications: string[] = [];
@@ -301,7 +301,7 @@ describe('US-005 (CAM-479): early-death terminals carry session-died-early + cau
 			notifyFn: (message) => notifications.push(message),
 		});
 
-		const result = runPlanPhase(opts) as { kind: string; reason?: string };
+		const result = await runPlanPhase(opts) as { kind: string; reason?: string };
 
 		expect(result.kind).toBe('planner-failed');
 		expect(result.reason).toContain('session-died-early');
@@ -326,7 +326,7 @@ describe('US-005 (CAM-479): early-death terminals carry session-died-early + cau
 		expect(notification).toContain(DEAD_ON_FIRST_TURN_CAUSE);
 	});
 
-	test('an early-death auditor terminal carries session-died-early and stays distinct from cap elapsed', () => {
+	test('an early-death auditor terminal carries session-died-early and stays distinct from cap elapsed', async () => {
 		// Scenario A: the auditor session dies on its first turn (transcript
 		// probe fires) well before auditorTimeoutMs would ever elapse.
 		const eventsA: WorkerEvent[] = [];
@@ -345,7 +345,7 @@ describe('US-005 (CAM-479): early-death terminals carry session-died-early + cau
 			notifyFn: (message) => notificationsA.push(message),
 		});
 
-		const resultA = runPlanPhase(optsA);
+		const resultA = await runPlanPhase(optsA);
 		expect(resultA.kind).toBe('auditor-timeout');
 
 		const dispatchFailedEventA = eventsA.find(
@@ -384,7 +384,7 @@ describe('US-005 (CAM-479): early-death terminals carry session-died-early + cau
 			writeDispatchFailedMarkerFn: (marker) => markersB.push(marker),
 		});
 
-		const resultB = runPlanPhase(optsB);
+		const resultB = await runPlanPhase(optsB);
 		expect(resultB.kind).toBe('auditor-timeout');
 		const markerB = markersB.find((m) => m.phase === 'auditor');
 		expect(markerB?.reason).toBe('auditor-timeout');

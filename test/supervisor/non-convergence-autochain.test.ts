@@ -64,7 +64,7 @@ function makeDummySupervisorOpts(): RunSupervisorOptions {
 		writePrd: () => {},
 		readHandoff: () => null,
 		clock: () => '2026-06-27T00:00:00Z',
-		reviewDispatch: () => ({ status: 'ok', detail: '' }),
+		reviewDispatch: async () => ({ status: 'ok', detail: '' }),
 		writeSessionMarker: () => {},
 		isPaneAlive: () => true,
 		workerPaneId: '%2',
@@ -87,7 +87,7 @@ describe('AC1 + AC2: makeReviewDispatch at terminal round (newRound == maxRounds
 	 * with a FIXES_PENDING verdict. The review.ts fix (newRound >= maxRounds)
 	 * must set MAX_ROUNDS_DEBT directly without creating orphan fix stories.
 	 */
-	function runTerminalRoundDispatch(maxRounds: number) {
+	async function runTerminalRoundDispatch(maxRounds: number) {
 		const roundsCompleted = maxRounds - 1; // so newRound = maxRounds
 
 		const originalStories = [
@@ -123,12 +123,12 @@ describe('AC1 + AC2: makeReviewDispatch at terminal round (newRound == maxRounds
 			}),
 		});
 
-		const result = dispatch('uuid-terminal');
+		const result = await dispatch('uuid-terminal');
 		return { result, writtenPrds, originalStories };
 	}
 
-	test('AC1: userStories count unchanged (no orphan fix stories created)', () => {
-		const { writtenPrds, originalStories } = runTerminalRoundDispatch(3);
+	test('AC1: userStories count unchanged (no orphan fix stories created)', async () => {
+		const { writtenPrds, originalStories } = await runTerminalRoundDispatch(3);
 
 		expect(writtenPrds.length).toBeGreaterThan(0);
 		const lastPrd = writtenPrds[writtenPrds.length - 1]!;
@@ -137,9 +137,9 @@ describe('AC1 + AC2: makeReviewDispatch at terminal round (newRound == maxRounds
 		expect(lastPrd.userStories?.length).toBe(originalStories.length);
 	});
 
-	test('AC1: no US-R{maxRounds}-* story exists in the written prd', () => {
+	test('AC1: no US-R{maxRounds}-* story exists in the written prd', async () => {
 		const maxRounds = 3;
-		const { writtenPrds } = runTerminalRoundDispatch(maxRounds);
+		const { writtenPrds } = await runTerminalRoundDispatch(maxRounds);
 
 		const lastPrd = writtenPrds[writtenPrds.length - 1]!;
 		const orphanPattern = new RegExp(`^US-R${maxRounds}-`);
@@ -147,15 +147,15 @@ describe('AC1 + AC2: makeReviewDispatch at terminal round (newRound == maxRounds
 		expect(hasOrphan).toBe(false);
 	});
 
-	test('AC2: prd.review.lastVerdict is MAX_ROUNDS_DEBT on the terminal round', () => {
-		const { writtenPrds } = runTerminalRoundDispatch(3);
+	test('AC2: prd.review.lastVerdict is MAX_ROUNDS_DEBT on the terminal round', async () => {
+		const { writtenPrds } = await runTerminalRoundDispatch(3);
 
 		const lastPrd = writtenPrds[writtenPrds.length - 1]!;
 		expect(lastPrd.review?.lastVerdict).toBe('MAX_ROUNDS_DEBT');
 	});
 
-	test('AC1 + AC2: also holds for maxRounds=1 (single-round PRD)', () => {
-		const { writtenPrds, originalStories } = runTerminalRoundDispatch(1);
+	test('AC1 + AC2: also holds for maxRounds=1 (single-round PRD)', async () => {
+		const { writtenPrds, originalStories } = await runTerminalRoundDispatch(1);
 
 		const lastPrd = writtenPrds[writtenPrds.length - 1]!;
 		// No new stories.
@@ -164,7 +164,7 @@ describe('AC1 + AC2: makeReviewDispatch at terminal round (newRound == maxRounds
 		expect(lastPrd.review?.lastVerdict).toBe('MAX_ROUNDS_DEBT');
 	});
 
-	test('CLEAN at maxRounds is unaffected (must not be treated as terminal-debt)', () => {
+	test('CLEAN at maxRounds is unaffected (must not be treated as terminal-debt)', async () => {
 		// When the verdict is CLEAN, newRound == maxRounds is fine: the CLEAN path
 		// exits early before the >= maxRounds check on the FIXES_PENDING path.
 		const prd: PrdSnapshot = {
@@ -191,7 +191,7 @@ describe('AC1 + AC2: makeReviewDispatch at terminal round (newRound == maxRounds
 			}),
 		});
 
-		const result = dispatch('uuid-clean');
+		const result = await dispatch('uuid-clean');
 		expect(result.status).toBe('ok');
 
 		const lastPrd = writtenPrds[writtenPrds.length - 1]!;
@@ -367,7 +367,7 @@ describe('AC4: auto-chain does not fire at MAX_ROUNDS_DEBT terminal', () => {
 				writePrd: () => {},
 				readHandoff: () => null,
 				clock: () => '2026-06-27T00:00:00Z',
-				reviewDispatch: () => ({ status: 'ok', detail: 'review ok' }),
+				reviewDispatch: async () => ({ status: 'ok', detail: 'review ok' }),
 				writeSessionMarker: () => {},
 				isPaneAlive: () => true,
 				workerPaneId: '%2',

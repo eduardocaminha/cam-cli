@@ -1557,8 +1557,8 @@ function makeProductionReviewPhaseFn(
 	sessionName: string,
 	logEvent: WorkerEventLogger,
 	realSpawnFn: SpawnFn,
-): () => void {
-	return (): void => {
+): () => Promise<void> {
+	return async (): Promise<void> => {
 		const setPhase = makeSetPhaseFn(claudeDir, cwd);
 		try {
 			const prdPath = join(cwd, 'scripts/cam/prd.json');
@@ -1609,7 +1609,7 @@ function makeProductionReviewPhaseFn(
 				notifyFn: notify,
 			});
 
-			const result = reviewDispatch(randomUUID());
+			const result = await reviewDispatch(randomUUID());
 			narrateReviewPhaseResult(result, notify);
 		} catch (err: unknown) {
 			logEvent({
@@ -2769,13 +2769,13 @@ interface PlanWorkerRunDeps {
  * writeEscalationMarkerFn (durable marker, makeWriteEscalationMarkerFn) seams
  * alongside every existing runPlanPhase dep.
  */
-function runProductionPlanPhaseWithReplan(deps: PlanWorkerRunDeps): PlanPhaseResult {
+async function runProductionPlanPhaseWithReplan(deps: PlanWorkerRunDeps): Promise<PlanPhaseResult> {
 	const {
 		cwd, claudeDir, sessionName, realSpawnFn, logEvent, loopSpawnFn,
 		preflightSpawnFn, plannerPaneId, planIssue, isPaneAlive, ensureWorkerPane, containerOpts,
 		earlyDeathProbeFn,
 	} = deps;
-	return runPlanPhaseWithReplan({
+	return await runPlanPhaseWithReplan({
 		spawnFn: loopSpawnFn,
 		isPaneAlive,
 		sleepFn: (ms) => Bun.sleepSync(ms),
@@ -2872,7 +2872,7 @@ function makeProductionPlanPhaseFn(
 	logEvent: WorkerEventLogger,
 	realSpawnFn: SpawnFn,
 	sweepOrphanedImplementBlockedMarkerFn: () => void,
-): () => void {
+): () => Promise<void> {
 	// Build the plan_issue reader once (US-001, CAM-154); called fresh each invocation.
 	const readPlanIssueFn = makeReadPlanIssue(claudeDir);
 	// US-005 (CAM-479 AC4): resolve the Claude config root the SAME way
@@ -2883,7 +2883,7 @@ function makeProductionPlanPhaseFn(
 	// host.ts's single shared earlyDeathProbeFn instance).
 	const transcriptClaudeDir = process.env['CLAUDE_CONFIG_DIR'] ?? join(homedir(), '.claude');
 	const earlyDeathProbeFn = makeEarlyDeathProbe({ cwd, claudeDir: transcriptClaudeDir });
-	return (): void => {
+	return async (): Promise<void> => {
 		// US-005 (CAM-155): outermost safety net -- any exception from runPlanPhase or
 		// runPostAuditAction is caught here, logged, and the phase is forced back to
 		// idle so the sidecar loop can continue. Never rethrows.
@@ -2916,7 +2916,7 @@ function makeProductionPlanPhaseFn(
 		// noExcessiveLinesPerFunction(maxLines=80) limit.
 		const containerOpts = buildPlanContainerOpts(cwd);
 
-		const planResult = runProductionPlanPhaseWithReplan({
+		const planResult = await runProductionPlanPhaseWithReplan({
 			cwd, claudeDir, sessionName, realSpawnFn, logEvent, loopSpawnFn,
 			preflightSpawnFn, plannerPaneId, planIssue, isPaneAlive, ensureWorkerPane, containerOpts,
 			earlyDeathProbeFn,

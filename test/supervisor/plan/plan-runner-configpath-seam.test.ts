@@ -206,7 +206,7 @@ function respawnCalls(calls: string[][]): string[][] {
 // ---------------------------------------------------------------------------
 
 describe('plan-runner US-002 (CAM-420): configPath seam on the planner/auditor resolution call sites', () => {
-	test('planner site: planner=codex resolved via the injected configPath seam does not fail with codex-auth-failed', () => {
+	test('planner site: planner=codex resolved via the injected configPath seam does not fail with codex-auth-failed', async () => {
 		const codexConfigDir = createTestTmpdir('cam-plan-configpath-seam-planner-');
 		const codexConfigPath = join(codexConfigDir, 'project.toml');
 		writeFileSync(
@@ -233,7 +233,7 @@ describe('plan-runner US-002 (CAM-420): configPath seam on the planner/auditor r
 				spawnCalls,
 			);
 
-			const result = runPlanPhase(opts);
+			const result = await runPlanPhase(opts);
 
 			// (a) the fake auth check was called.
 			expect(authCheckCalled).toBe(true);
@@ -249,7 +249,7 @@ describe('plan-runner US-002 (CAM-420): configPath seam on the planner/auditor r
 		}
 	});
 
-	test('auditor site: auditor=codex resolved via the injected configPath seam does not fail with codex-auth-failed', () => {
+	test('auditor site: auditor=codex resolved via the injected configPath seam does not fail with codex-auth-failed', async () => {
 		const codexConfigDir = createTestTmpdir('cam-plan-configpath-seam-auditor-');
 		const codexConfigPath = join(codexConfigDir, 'project.toml');
 		writeFileSync(
@@ -275,7 +275,7 @@ describe('plan-runner US-002 (CAM-420): configPath seam on the planner/auditor r
 				spawnCalls,
 			);
 
-			const result = runPlanPhase(opts);
+			const result = await runPlanPhase(opts);
 
 			// (a) the fake auth check was called.
 			expect(authCheckCalled).toBe(true);
@@ -297,7 +297,7 @@ describe('plan-runner US-002 (CAM-420): configPath seam on the planner/auditor r
 // ---------------------------------------------------------------------------
 
 describe('plan-runner US-010 (CAM-420): fixture-vs-live distinguishability (cheap positive signal)', () => {
-	test('planner=claude resolved via the generic fixture carries opus (DEFAULTS.planner) and never fable (the live project.toml pin)', () => {
+	test('planner=claude resolved via the generic fixture carries opus (DEFAULTS.planner) and never fable (the live project.toml pin)', async () => {
 		const spawnCalls: string[][] = [];
 		const opts = makeOpts(
 			{
@@ -306,7 +306,7 @@ describe('plan-runner US-010 (CAM-420): fixture-vs-live distinguishability (chea
 			spawnCalls,
 		);
 
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 
 		expect(result.kind).not.toBe('codex-auth-failed');
 		const calls = respawnCalls(spawnCalls);

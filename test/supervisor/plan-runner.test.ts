@@ -337,17 +337,17 @@ describe('buildLintBlockReport', () => {
 // ---------------------------------------------------------------------------
 
 describe('runPlanPhase: oracle lint wiring (AC2, AC3, AC5)', () => {
-	test('AC2: a broken oracle blocks BEFORE the auditor is ever spawned', () => {
+	test('AC2: a broken oracle blocks BEFORE the auditor is ever spawned', async () => {
 		const { opts, calls } = makeOpts({ readPrdContentFn: () => BROKEN_PRD });
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 		expect(result.kind).toBe('audit-blocked');
 		expect(auditorRespawnCalls(calls)).toHaveLength(0);
 		expect(plannerRespawnCalls(calls)).toHaveLength(1);
 	});
 
-	test('AC3: the synthetic audit-blocked report carries story id + offending command + rule name + reason', () => {
+	test('AC3: the synthetic audit-blocked report carries story id + offending command + rule name + reason', async () => {
 		const { opts } = makeOpts({ readPrdContentFn: () => BROKEN_PRD });
-		const result = runPlanPhase(opts) as { kind: 'audit-blocked'; issue: IssueEntry; report: PlanVerdictReport };
+		const result = await runPlanPhase(opts) as { kind: 'audit-blocked'; issue: IssueEntry; report: PlanVerdictReport };
 		expect(result.issue.id).toBe('CAM-310');
 		expect(result.report.verdict).toBe('BLOCK');
 		expect(typeof result.report.summary).toBe('string');
@@ -358,9 +358,9 @@ describe('runPlanPhase: oracle lint wiring (AC2, AC3, AC5)', () => {
 		expect(finding.description).toContain(BROKEN_ORACLE_COMMAND);
 	});
 
-	test("audit-blocked carries origin oracle-lint for a lint block and auditor for an auditor BLOCK", () => {
+	test("audit-blocked carries origin oracle-lint for a lint block and auditor for an auditor BLOCK", async () => {
 		const { opts: lintOpts, calls: lintCalls } = makeOpts({ readPrdContentFn: () => BROKEN_PRD });
-		const lintResult = runPlanPhase(lintOpts) as { kind: 'audit-blocked'; origin: 'oracle-lint' | 'auditor' };
+		const lintResult = await runPlanPhase(lintOpts) as { kind: 'audit-blocked'; origin: 'oracle-lint' | 'auditor' };
 		expect(lintResult.kind).toBe('audit-blocked');
 		expect(lintResult.origin).toBe('oracle-lint');
 		expect(auditorRespawnCalls(lintCalls)).toHaveLength(0);
@@ -369,28 +369,28 @@ describe('runPlanPhase: oracle lint wiring (AC2, AC3, AC5)', () => {
 			readPrdContentFn: () => CLEAN_PRD,
 			readPlanVerdictFn: () => BLOCK_REPORT,
 		});
-		const auditorResult = runPlanPhase(auditorOpts) as { kind: 'audit-blocked'; origin: 'oracle-lint' | 'auditor' };
+		const auditorResult = await runPlanPhase(auditorOpts) as { kind: 'audit-blocked'; origin: 'oracle-lint' | 'auditor' };
 		expect(auditorResult.kind).toBe('audit-blocked');
 		expect(auditorResult.origin).toBe('auditor');
 	});
 
-	test('AC5: a clean prd.json proceeds to the auditor unchanged (zero behavior change)', () => {
+	test('AC5: a clean prd.json proceeds to the auditor unchanged (zero behavior change)', async () => {
 		const { opts, calls } = makeOpts({ readPrdContentFn: () => CLEAN_PRD });
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 		expect(result.kind).toBe('audit-approved');
 		expect(auditorRespawnCalls(calls)).toHaveLength(1);
 	});
 
-	test('backward compat: readPrdContentFn absent skips the lint entirely', () => {
+	test('backward compat: readPrdContentFn absent skips the lint entirely', async () => {
 		const { opts, calls } = makeOpts();
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 		expect(result.kind).toBe('audit-approved');
 		expect(auditorRespawnCalls(calls)).toHaveLength(1);
 	});
 
-	test('readPrdContentFn returning null (unreadable prd.json) does not block', () => {
+	test('readPrdContentFn returning null (unreadable prd.json) does not block', async () => {
 		const { opts, calls } = makeOpts({ readPrdContentFn: () => null });
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 		expect(result.kind).toBe('audit-approved');
 		expect(auditorRespawnCalls(calls)).toHaveLength(1);
 	});
@@ -401,9 +401,9 @@ describe('runPlanPhase: oracle lint wiring (AC2, AC3, AC5)', () => {
 // ---------------------------------------------------------------------------
 
 describe('runPlanPhaseWithReplan: lint findings fold into the re-plan loop (AC3, AC4, AC5)', () => {
-	test('AC5: round-1 broken oracle re-plans without spending the auditor; round-2 clean prd.json spawns the auditor once', () => {
+	test('AC5: round-1 broken oracle re-plans without spending the auditor; round-2 clean prd.json spawns the auditor once', async () => {
 		const { opts, calls } = makeReplanOpts([BROKEN_PRD, CLEAN_PRD], [APPROVE_REPORT, APPROVE_REPORT]);
-		const result = runPlanPhaseWithReplan(opts);
+		const result = await runPlanPhaseWithReplan(opts);
 		expect(result.kind).toBe('audit-approved');
 		// Exactly one auditor spawn total: round 1's lint-block never spawns it,
 		// round 2 (clean) spawns it exactly once.
@@ -411,9 +411,9 @@ describe('runPlanPhaseWithReplan: lint findings fold into the re-plan loop (AC3,
 		expect(plannerRespawnCalls(calls)).toHaveLength(2);
 	});
 
-	test('AC3: round-2 planner spawn prompt embeds the lint finding as re-plan feedback, pinned to the same issue', () => {
+	test('AC3: round-2 planner spawn prompt embeds the lint finding as re-plan feedback, pinned to the same issue', async () => {
 		const { opts, calls } = makeReplanOpts([BROKEN_PRD, CLEAN_PRD], [APPROVE_REPORT, APPROVE_REPORT]);
-		runPlanPhaseWithReplan(opts);
+		await runPlanPhaseWithReplan(opts);
 		const plannerCalls = plannerRespawnCalls(calls);
 		expect(plannerCalls).toHaveLength(2);
 		const round2Prompt = plannerCalls[1]?.taskPrompt ?? '';
@@ -424,9 +424,9 @@ describe('runPlanPhaseWithReplan: lint findings fold into the re-plan loop (AC3,
 		expect(round2Prompt).toContain('path/to/file.ts');
 	});
 
-	test('AC4: exhausting re-plan rounds on a persistently-broken oracle escalates via writeEscalationMarkerFn, auditor never spawned', () => {
+	test('AC4: exhausting re-plan rounds on a persistently-broken oracle escalates via writeEscalationMarkerFn, auditor never spawned', async () => {
 		const { opts, calls, markerCalls } = makeReplanOpts([BROKEN_PRD, BROKEN_PRD], [APPROVE_REPORT, APPROVE_REPORT]);
-		const result = runPlanPhaseWithReplan(opts) as { kind: 'plan-escalated'; roundsCompleted: number };
+		const result = await runPlanPhaseWithReplan(opts) as { kind: 'plan-escalated'; roundsCompleted: number };
 		expect(result.kind).toBe('plan-escalated');
 		expect(result.roundsCompleted).toBe(MAX_REPLAN_ROUNDS);
 		expect(markerCalls).toHaveLength(1);
@@ -438,7 +438,7 @@ describe('runPlanPhaseWithReplan: lint findings fold into the re-plan loop (AC3,
 		expect(calls.filter((c) => c.cmd === 'git')).toHaveLength(0);
 	});
 
-	test('mixed: round-1 lint-block then round-2 real auditor BLOCK do NOT fold into the same escalation path (US-002, CAM-448)', () => {
+	test('mixed: round-1 lint-block then round-2 real auditor BLOCK do NOT fold into the same escalation path (US-002, CAM-448)', async () => {
 		// Round 1: lint blocks (BROKEN_PRD), spending the lint budget only.
 		// Round 2: prd.json is clean (CLEAN_PRD), so the auditor is spawned for
 		// real and returns BLOCK -- that spends the FIRST round of the
@@ -449,7 +449,7 @@ describe('runPlanPhaseWithReplan: lint findings fold into the re-plan loop (AC3,
 			[BROKEN_PRD, CLEAN_PRD],
 			[APPROVE_REPORT, BLOCK_REPORT, APPROVE_REPORT],
 		);
-		const result = runPlanPhaseWithReplan(opts);
+		const result = await runPlanPhaseWithReplan(opts);
 		expect(result.kind).toBe('audit-approved');
 		expect(auditorRespawnCalls(calls).length).toBeGreaterThanOrEqual(2);
 		// No escalation: the marker writer is never invoked.
@@ -458,7 +458,7 @@ describe('runPlanPhaseWithReplan: lint findings fold into the re-plan loop (AC3,
 });
 
 describe('CAM-433 verified plan dispatch and terminal lifecycles', () => {
-	test('planner and record-bearing auditor prompts stay out of tmux argv; verified success removes prompt files and a stale failure marker', () => {
+	test('planner and record-bearing auditor prompts stay out of tmux argv; verified success removes prompt files and a stale failure marker', async () => {
 		const claudeDir = createTestTmpdir('cam-plan-verified-success-');
 		const markerPath = join(claudeDir, DISPATCH_FAILED_FILENAME);
 		const uniqueAuditorRecord = 'AUDITOR_RECORD_MUST_ONLY_EXIST_IN_PROMPT_FILE';
@@ -491,7 +491,7 @@ describe('CAM-433 verified plan dispatch and terminal lifecycles', () => {
 					writeDispatchFailedMarker(markerPath, marker),
 				removeDispatchFailedMarkerFn: () => removeDispatchFailedMarker(markerPath),
 			});
-			const result = runPlanPhase(opts);
+			const result = await runPlanPhase(opts);
 			expect(result.kind).toBe('audit-approved');
 
 			const auditorRespawn = auditorRespawnCalls(calls)[0];
@@ -513,7 +513,7 @@ describe('CAM-433 verified plan dispatch and terminal lifecycles', () => {
 		}
 	});
 
-	test('unchanged pane_pid is a dispatch-failed terminal and removes its prompt file', () => {
+	test('unchanged pane_pid is a dispatch-failed terminal and removes its prompt file', async () => {
 		const claudeDir = createTestTmpdir('cam-plan-verified-unchanged-');
 		const events: WorkerEvent[] = [];
 		const markers: DispatchFailedMarker[] = [];
@@ -533,7 +533,7 @@ describe('CAM-433 verified plan dispatch and terminal lifecycles', () => {
 				writeDispatchFailedMarkerFn: (marker) => markers.push(marker),
 				notifyFn: (message) => messages.push(message),
 			});
-			const result = runPlanPhase(opts);
+			const result = await runPlanPhase(opts);
 			expect(result).toEqual({
 				kind: 'dispatch-failed',
 				phase: 'planner',
@@ -550,7 +550,7 @@ describe('CAM-433 verified plan dispatch and terminal lifecycles', () => {
 		}
 	});
 
-	test('planner timeout checks the sentinel respawn exit and emits event, marker, notification, and prompt cleanup', () => {
+	test('planner timeout checks the sentinel respawn exit and emits event, marker, notification, and prompt cleanup', async () => {
 		const claudeDir = createTestTmpdir('cam-plan-timeout-planner-');
 		const events: WorkerEvent[] = [];
 		const markers: DispatchFailedMarker[] = [];
@@ -573,7 +573,7 @@ describe('CAM-433 verified plan dispatch and terminal lifecycles', () => {
 				writeDispatchFailedMarkerFn: (marker) => markers.push(marker),
 				notifyFn: (message) => messages.push(message),
 			});
-			expect(runPlanPhase(opts).kind).toBe('planner-timeout');
+			expect((await runPlanPhase(opts)).kind).toBe('planner-timeout');
 			expect(
 				events.some(
 					(event) =>
@@ -592,7 +592,7 @@ describe('CAM-433 verified plan dispatch and terminal lifecycles', () => {
 		}
 	});
 
-	test('auditor timeout checks the sentinel respawn exit and emits event, marker, and notification', () => {
+	test('auditor timeout checks the sentinel respawn exit and emits event, marker, and notification', async () => {
 		const events: WorkerEvent[] = [];
 		const markers: DispatchFailedMarker[] = [];
 		const messages: string[] = [];
@@ -614,7 +614,7 @@ describe('CAM-433 verified plan dispatch and terminal lifecycles', () => {
 			notifyFn: (message) => messages.push(message),
 		});
 
-		expect(runPlanPhase(opts).kind).toBe('auditor-timeout');
+		expect((await runPlanPhase(opts)).kind).toBe('auditor-timeout');
 		expect(
 			events.some(
 				(event) =>

@@ -47,7 +47,7 @@ const noopSpawnFn = (): { stdout: string; exitCode: number } => ({ stdout: '', e
 
 test(
 	'stale plan-verdict-report.json is cleared before preflight and does not contaminate the run (AC3)',
-	() => {
+	async () => {
 		// 1. Set up a fresh temp working directory mimicking the repo root.
 		const cwd = createTestTmpdir('cam-plan-runner-clear-');
 		mkdirSync(join(cwd, 'scripts', 'cam'), { recursive: true });
@@ -91,7 +91,7 @@ test(
 		//    The function should: (a) call clearStalePlanArtifactsFn, then
 		//    (b) call preflightFn, then (c) return 'preflight-failed'.
 		//    No pane spawn occurs (noopSpawnFn is never called for a spawn).
-		const result = runPlanPhase({
+		const result = await runPlanPhase({
 			spawnFn: noopSpawnFn,
 			isPaneAlive: () => false,
 			sleepFn: () => {},

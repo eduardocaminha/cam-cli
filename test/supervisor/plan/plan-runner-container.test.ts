@@ -121,7 +121,7 @@ function respawnCalls(calls: string[][]): string[][] {
 // ---------------------------------------------------------------------------
 
 describe('plan-runner container: AC1 - preflight called before each spawn', () => {
-	test('preflightContainerFn is called at least twice (planner + auditor) on happy path', () => {
+	test('preflightContainerFn is called at least twice (planner + auditor) on happy path', async () => {
 		let callCount = 0;
 		const preflightContainerFn = (): PreflightResult => {
 			callCount++;
@@ -129,13 +129,13 @@ describe('plan-runner container: AC1 - preflight called before each spawn', () =
 		};
 
 		const opts = makeOpts({ workerIsolation: 'container', preflightContainerFn });
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 
 		// Once before planner, once before auditor.
 		expect(callCount).toBeGreaterThanOrEqual(2);
 	});
 
-	test('preflightContainerFn called before planner (first call precedes planner respawn-pane)', () => {
+	test('preflightContainerFn called before planner (first call precedes planner respawn-pane)', async () => {
 		let callCount = 0;
 		let plannerRespawnIndex = -1;
 		let firstPreflightIndex = -1;
@@ -162,7 +162,7 @@ describe('plan-runner container: AC1 - preflight called before each spawn', () =
 			...makeOpts({ workerIsolation: 'container', preflightContainerFn }, spawnCalls),
 			spawnFn: withVerifiedPanePid(spawnFn),
 		};
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 
 		expect(callCount).toBeGreaterThanOrEqual(1);
 		// The first preflight call must precede the first respawn-pane.
@@ -175,14 +175,14 @@ describe('plan-runner container: AC1 - preflight called before each spawn', () =
 // ---------------------------------------------------------------------------
 
 describe('plan-runner container: AC2 - dockerExecWrap applied to both spawns', () => {
-	test('container mode + preflight ready -> planner respawn-pane cmd starts with docker exec', () => {
+	test('container mode + preflight ready -> planner respawn-pane cmd starts with docker exec', async () => {
 		const spawnCalls: string[][] = [];
 		const opts = makeOpts(
 			{ workerIsolation: 'container', preflightContainerFn: () => ({ ready: true }) },
 			spawnCalls,
 		);
 
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 
 		const plannerRespawn = respawnCalls(spawnCalls)[0];
 		// Last arg of respawn-pane is the shell command.
@@ -190,14 +190,14 @@ describe('plan-runner container: AC2 - dockerExecWrap applied to both spawns', (
 		expect(cmd).toMatch(/^docker exec -it cam-worker /);
 	});
 
-	test('container mode + preflight ready -> auditor respawn-pane cmd starts with docker exec', () => {
+	test('container mode + preflight ready -> auditor respawn-pane cmd starts with docker exec', async () => {
 		const spawnCalls: string[][] = [];
 		const opts = makeOpts(
 			{ workerIsolation: 'container', preflightContainerFn: () => ({ ready: true }) },
 			spawnCalls,
 		);
 
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 
 		const respawns = respawnCalls(spawnCalls);
 		expect(respawns.length).toBe(2); // planner + auditor
@@ -212,24 +212,24 @@ describe('plan-runner container: AC2 - dockerExecWrap applied to both spawns', (
 // ---------------------------------------------------------------------------
 
 describe('plan-runner container: AC3 - fail-closed on planner preflight failure', () => {
-	test('returns kind=container-preflight-failed when planner preflight not-ready', () => {
+	test('returns kind=container-preflight-failed when planner preflight not-ready', async () => {
 		const opts = makeOpts({
 			workerIsolation: 'container',
 			preflightContainerFn: () => ({ ready: false, reason: 'daemon-unreachable' }),
 		});
 
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 
 		expect(result.kind).toBe('container-preflight-failed');
 	});
 
-	test('phase=planner when planner preflight fails', () => {
+	test('phase=planner when planner preflight fails', async () => {
 		const opts = makeOpts({
 			workerIsolation: 'container',
 			preflightContainerFn: () => ({ ready: false, reason: 'daemon-unreachable' }),
 		});
 
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 
 		expect(result.kind).toBe('container-preflight-failed');
 		if (result.kind === 'container-preflight-failed') {
@@ -237,13 +237,13 @@ describe('plan-runner container: AC3 - fail-closed on planner preflight failure'
 		}
 	});
 
-	test('reason propagated from PreflightResult', () => {
+	test('reason propagated from PreflightResult', async () => {
 		const opts = makeOpts({
 			workerIsolation: 'container',
 			preflightContainerFn: () => ({ ready: false, reason: 'image-missing' }),
 		});
 
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 
 		expect(result.kind).toBe('container-preflight-failed');
 		if (result.kind === 'container-preflight-failed') {
@@ -251,7 +251,7 @@ describe('plan-runner container: AC3 - fail-closed on planner preflight failure'
 		}
 	});
 
-	test('no respawn-pane call when planner preflight fails (never dispatched on host)', () => {
+	test('no respawn-pane call when planner preflight fails (never dispatched on host)', async () => {
 		const spawnCalls: string[][] = [];
 		const opts = makeOpts(
 			{
@@ -261,7 +261,7 @@ describe('plan-runner container: AC3 - fail-closed on planner preflight failure'
 			spawnCalls,
 		);
 
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 
 		expect(respawnCalls(spawnCalls).length).toBe(0);
 	});
@@ -274,7 +274,7 @@ describe('plan-runner container: AC3 - fail-closed on planner preflight failure'
 			escalateFn: async () => { escalateCalled++; },
 		});
 
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 		// Allow the fire-and-forget promise to settle.
 		await waitForCondition(() => escalateCalled > 0);
 
@@ -287,7 +287,7 @@ describe('plan-runner container: AC3 - fail-closed on planner preflight failure'
 // ---------------------------------------------------------------------------
 
 describe('plan-runner container: AC6 - fail-closed on auditor preflight failure', () => {
-	test('returns kind=container-preflight-failed with phase=auditor when auditor preflight fails', () => {
+	test('returns kind=container-preflight-failed with phase=auditor when auditor preflight fails', async () => {
 		let callCount = 0;
 		// First call (planner) -> ready; second call (auditor) -> not-ready.
 		const preflightContainerFn = (): PreflightResult => {
@@ -298,7 +298,7 @@ describe('plan-runner container: AC6 - fail-closed on auditor preflight failure'
 		};
 
 		const opts = makeOpts({ workerIsolation: 'container', preflightContainerFn });
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 
 		expect(result.kind).toBe('container-preflight-failed');
 		if (result.kind === 'container-preflight-failed') {
@@ -307,7 +307,7 @@ describe('plan-runner container: AC6 - fail-closed on auditor preflight failure'
 		}
 	});
 
-	test('planner WAS spawned when only auditor preflight fails', () => {
+	test('planner WAS spawned when only auditor preflight fails', async () => {
 		let callCount = 0;
 		const preflightContainerFn = (): PreflightResult => {
 			callCount++;
@@ -321,7 +321,7 @@ describe('plan-runner container: AC6 - fail-closed on auditor preflight failure'
 			spawnCalls,
 		);
 
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 
 		// Exactly ONE respawn-pane (planner) was issued before the auditor preflight blocked.
 		expect(respawnCalls(spawnCalls).length).toBe(1);
@@ -341,7 +341,7 @@ describe('plan-runner container: AC6 - fail-closed on auditor preflight failure'
 			escalateFn: async () => { escalateCalled++; },
 		});
 
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 		await waitForCondition(() => escalateCalled > 0);
 
 		expect(escalateCalled).toBe(1);
@@ -353,40 +353,40 @@ describe('plan-runner container: AC6 - fail-closed on auditor preflight failure'
 // ---------------------------------------------------------------------------
 
 describe('plan-runner container: AC4 - docker exec argv-shape invariants', () => {
-	test('planner respawn-pane cmd contains docker exec -it cam-worker', () => {
+	test('planner respawn-pane cmd contains docker exec -it cam-worker', async () => {
 		const spawnCalls: string[][] = [];
 		const opts = makeOpts(
 			{ workerIsolation: 'container', preflightContainerFn: () => ({ ready: true }) },
 			spawnCalls,
 		);
 
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 
 		const plannerCmd = respawnCalls(spawnCalls)[0]?.slice(-1)[0] ?? '';
 		expect(plannerCmd).toContain('docker exec -it cam-worker');
 	});
 
-	test('planner respawn-pane cmd contains env -u CLAUDECODE', () => {
+	test('planner respawn-pane cmd contains env -u CLAUDECODE', async () => {
 		const spawnCalls: string[][] = [];
 		const opts = makeOpts(
 			{ workerIsolation: 'container', preflightContainerFn: () => ({ ready: true }) },
 			spawnCalls,
 		);
 
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 
 		const plannerCmd = respawnCalls(spawnCalls)[0]?.slice(-1)[0] ?? '';
 		expect(plannerCmd).toContain('env -u CLAUDECODE');
 	});
 
-	test('planner respawn-pane cmd contains --session-id in lowercase (CAM-23)', () => {
+	test('planner respawn-pane cmd contains --session-id in lowercase (CAM-23)', async () => {
 		const spawnCalls: string[][] = [];
 		const opts = makeOpts(
 			{ workerIsolation: 'container', preflightContainerFn: () => ({ ready: true }) },
 			spawnCalls,
 		);
 
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 
 		const plannerCmd = respawnCalls(spawnCalls)[0]?.slice(-1)[0] ?? '';
 		// The session-id value must be the lowercased form of FAKE_UUID.
@@ -401,34 +401,34 @@ describe('plan-runner container: AC4 - docker exec argv-shape invariants', () =>
 // ---------------------------------------------------------------------------
 
 describe('plan-runner container: AC5 - host mode is byte-for-byte unchanged', () => {
-	test('host mode (no workerIsolation) -> respawn-pane cmd does NOT start with docker exec', () => {
+	test('host mode (no workerIsolation) -> respawn-pane cmd does NOT start with docker exec', async () => {
 		const spawnCalls: string[][] = [];
 		// No workerIsolation = host default.
 		const opts = makeOpts({}, spawnCalls);
 
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 
 		const plannerCmd = respawnCalls(spawnCalls)[0]?.slice(-1)[0] ?? '';
 		expect(plannerCmd).not.toMatch(/^docker exec/);
 	});
 
-	test('host mode with not-ready preflight -> does NOT block (preflight ignored in host mode)', () => {
+	test('host mode with not-ready preflight -> does NOT block (preflight ignored in host mode)', async () => {
 		// Even with preflightContainerFn returning not-ready, host mode should not block.
 		const opts = makeOpts({
 			workerIsolation: 'host',
 			preflightContainerFn: () => ({ ready: false, reason: 'daemon-unreachable' }),
 		});
 
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 
 		// Should NOT return container-preflight-failed in host mode.
 		expect(result.kind).not.toBe('container-preflight-failed');
 	});
 
-	test('US-001 (CAM-242): host prefix diverges from the container inner string by exactly the -u CLAUDE_CODE_OAUTH_TOKEN token', () => {
+	test('US-001 (CAM-242): host prefix diverges from the container inner string by exactly the -u CLAUDE_CODE_OAUTH_TOKEN token', async () => {
 		const hostSpawnCalls: string[][] = [];
 		const hostOpts = makeOpts({ workerIsolation: 'host' }, hostSpawnCalls);
-		runPlanPhase(hostOpts);
+		await runPlanPhase(hostOpts);
 		const hostCmd = respawnCalls(hostSpawnCalls)[0]?.slice(-1)[0] ?? '';
 
 		const containerSpawnCalls: string[][] = [];
@@ -436,7 +436,7 @@ describe('plan-runner container: AC5 - host mode is byte-for-byte unchanged', ()
 			{ workerIsolation: 'container', preflightContainerFn: () => ({ ready: true }) },
 			containerSpawnCalls,
 		);
-		runPlanPhase(containerOpts);
+		await runPlanPhase(containerOpts);
 		const containerFullCmd = respawnCalls(containerSpawnCalls)[0]?.slice(-1)[0] ?? '';
 		const containerInner = containerFullCmd.replace(/^docker exec -it cam-worker /, '');
 
@@ -446,7 +446,7 @@ describe('plan-runner container: AC5 - host mode is byte-for-byte unchanged', ()
 		expect(hostCmd.replace('-u CLAUDE_CODE_OAUTH_TOKEN ', '')).toEqual(containerInner);
 	});
 
-	test('absent preflightContainerFn in container mode -> no block (backward compat)', () => {
+	test('absent preflightContainerFn in container mode -> no block (backward compat)', async () => {
 		// Without preflightContainerFn, even container mode does not block.
 		// The dockerExecWrap IS applied (workerIsolation=container), but no preflight blocks.
 		const spawnCalls: string[][] = [];
@@ -455,7 +455,7 @@ describe('plan-runner container: AC5 - host mode is byte-for-byte unchanged', ()
 			spawnCalls,
 		);
 
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 
 		// Dispatch proceeds; result is auditor-timeout (pane dies, no verdict, report absent).
 		expect(result.kind).not.toBe('container-preflight-failed');
@@ -470,13 +470,13 @@ describe('plan-runner container: AC5 - host mode is byte-for-byte unchanged', ()
 // ---------------------------------------------------------------------------
 
 describe('plan-runner container: AC7 - absent escalateFn is safe', () => {
-	test('container preflight failure with no escalateFn does not throw', () => {
+	test('container preflight failure with no escalateFn does not throw', async () => {
 		const opts = makeOpts({
 			workerIsolation: 'container',
 			preflightContainerFn: () => ({ ready: false, reason: 'image-missing' }),
 			// escalateFn intentionally absent.
 		});
 
-		expect(() => runPlanPhase(opts)).not.toThrow();
+		expect((await runPlanPhase(opts)).kind).toBe('container-preflight-failed');
 	});
 });

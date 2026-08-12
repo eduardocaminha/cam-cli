@@ -176,7 +176,7 @@ async function runRoundTrip(): Promise<RoundTripResult> {
 	const writePrd: WritePrd = (_prd) => {};
 	const readHandoff: ReadHandoff = () => makeHandoff('US-001');
 	const clock: ClockFn = () => '2026-08-09T00:00:00Z';
-	const reviewDispatch: ReviewDispatch = (_uuid) => ({ status: 'ok', detail: 'review ok' });
+	const reviewDispatch: ReviewDispatch = async (_uuid) => ({ status: 'ok', detail: 'review ok' });
 	const writeSessionMarker: WriteSessionMarker = (_storyId, _uuid) => {};
 
 	// AC4 ('no tmux'): the injected tmux spawn fake. Headless mode structurally
