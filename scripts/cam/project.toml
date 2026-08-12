@@ -36,7 +36,7 @@ meta_loop = "observe"  # 2026-08-10: auto e inerte em host mode (sidecar.ts:2988
 # observe da telemetria de dispatch sem nunca escrever phase.
 # accepted values: container | host
 worker_isolation = "host"
-orch_context_window = 500000
+orch_context_window = 1000000
 
 [notify]
 resend_recipient = "caminhae@gmail.com"
