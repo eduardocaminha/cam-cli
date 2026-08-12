@@ -1,13 +1,11 @@
 {
   "id": "CAM-521",
   "title": "Ciclo 2 do headless: migrar reviewer/planner/auditor e arrancar o tmux",
-  "stage": "idea",
+  "stage": "specified",
   "status": "open",
-  "blockedBy": [
-    "CAM-544"
-  ],
+  "blockedBy": [],
   "createdAt": "2026-08-09T12:37:46.413Z",
-  "updatedAt": "2026-08-12T15:14:28.526Z",
+  "updatedAt": "2026-08-12T15:14:31.653Z",
   "description": "Segunda metade da migracao headless decidida em 2026-08-08 (journal SESSION-CAM516SPEC, 'DOIS CICLOS E NAO UM'): migrar os tres papeis restantes (reviewer, planner, auditor) para claude --print stream-json e entao remover o tmux do caminho de worker, incluindo respawn-pane, o mutex de 3 panes e a deteccao de pane vivo. O CAM-516 cobre SOMENTE o implementer ate o git push inclusive e declara 'arrancar o tmux' e 'migrar reviewer/planner/auditor' como FORA DE ESCOPO, entao este ciclo existia so como prosa dentro do CAM-516 e do journal, sem issue proprio. Depende do CAM-516 ter provado o caminho headless. Gotcha herdado do spec do CAM-516: a deteccao de fim de trabalho checa pane vivo PRIMEIRO, entao esse ramo evapora sem pane e precisa de substituto explicito antes da remocao.",
   "spec": {
     "scope": "Migrar reviewer, planner e auditor para execucao headless como processo filho, sob o contrato de tres sinais, mantendo o caminho tmux como default e fallback. NAO deleta tmux (isso e CAM-545), NAO reconcilia personas nem docs de prosa (CAM-546), NAO constroi o gate comportamental (CAM-547), NAO da paridade a codex (CAM-548). Os tres papeis ja rodam backend claude hoje, entao esta fatia nao depende de CAM-548. Depende de CAM-544 porque headless e fail-closed em container e host mode foi aposentado pelo contrato.",
