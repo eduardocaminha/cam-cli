@@ -10,6 +10,14 @@
   "officialDocsConsulted": [],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "WARNING: The diff flipped makeProductionPlanPhaseFn's returned closure from ()…",
+      "priority": 1,
+      "passes": true,
+      "description": "WARNING [test/commands/sidecar-plan-phase-orphan-sweep.test.ts:63]: The diff flipped makeProductionPlanPhaseFn's returned closure from () => void to () => Promise<void> (src/commands/sidecar.ts:2875/2886), but the only test that drives that real closure still invokes it fire-and-forget: expect(() => runPlanPhaseFn?.()).not.toThrow(). The story's absence oracle keys on the tokens runPlanPhase( / dispatch( and cannot see this alias, so the sweep missed it. Consequence: only the pre-await part of the closure (sweepOrphanedImplementBlockedMarkerFn) runs inside the test; the continuation after `await runProductionPlanPhaseWithReplan(...)` (runPostPlanActions, which receives the REAL makeProductionLoopSpawnFn, and the catch-branch setPhase('idle')) now executes in a microtask after the test body returns and after its `finally { rmSync(tmpDir) }`, i.e. against a deleted cwd and outside the test's lifetime. Secondarily, .not.toThrow() over a Promise-returning function is not the documented Bun matcher for async code (bun.com/docs/test/writing prescribes await expect(...).rejects). Mechanical one-file fix: make the test async and `await runPlanPhaseFn?.()` (keeping the expect(sweepCalls).toBe(1) assertion), so the closure completes before the tmpdir is removed.",
+      "notes": "WARNING [test/commands/sidecar-plan-phase-orphan-sweep.test.ts:63]: The diff flipped makeProductionPlanPhaseFn's returned closure from () => void to () => Promise<void> (src/commands/sidecar.ts:2875/2886), but the only test that drives that real closure still invokes it fire-and-forget: expect(() => runPlanPhaseFn?.()).not.toThrow(). The story's absence oracle keys on the tokens runPlanPhase( / dispatch( and cannot see this alias, so the sweep missed it. Consequence: only the pre-await part of the closure (sweepOrphanedImplementBlockedMarkerFn) runs inside the test; the continuation after `await runProductionPlanPhaseWithReplan(...)` (runPostPlanActions, which receives the REAL makeProductionLoopSpawnFn, and the catch-branch setPhase('idle')) now executes in a microtask after the test body returns and after its `finally { rmSync(tmpDir) }`, i.e. against a deleted cwd and outside the test's lifetime. Secondarily, .not.toThrow() over a Promise-returning function is not the documented Bun matcher for async code (bun.com/docs/test/writing prescribes await expect(...).rejects). Mechanical one-file fix: make the test async and `await runPlanPhaseFn?.()` (keeping the expect(sweepCalls).toBe(1) assertion), so the closure completes before the tmpdir is removed."
+    },
+    {
       "id": "US-001",
       "title": "Flip async dos plan runners com varredura exaustiva de await",
       "description": "As a mantenedor do supervisor, I need runPlanPhase e runPlanPhaseWithReplan devolvendo Promise<PlanPhaseResult> com await propagado pela cadeia de producao e por TODOS os call sites de teste so that o CAM-555 possa inserir await runHeadlessDispatch(...) no corpo sem detonar call sites nao aguardados.",
@@ -23,7 +31,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "requires": null,
       "notes": "COBERTURA HONESTA DOS GATES: o typecheck cobre SOMENTE os call sites atribuidos (const r = runPlanPhase(...) com leitura de campo depois; ~92 na main). Os call sites fire-and-forget (runPlanPhase(opts); como expression statement; 66 em 9 arquivos na main) sao INVISIVEIS ao tsc (nao existe flag de floating-promise neste tsconfig; so noUnusedLocals/noUnusedParameters/noUncheckedIndexedAccess) e ao biome (biome.json tem recommended:false, duas regras de complexity apenas, e files.includes cobre so src/ e scripts/, nunca test/). O pino de contagem tambem NAO pega varredura parcial nesta fatia: o flip nao adiciona await interno ao corpo de runPlanPhase, o corpo segue rodando sincrono ate o fim e todo teste nao aguardado continua passando com contagem identica. Portanto o UNICO gate contra varredura parcial e o oracle de ausencia (criterio 3). DISCIPLINA DE VARREDURA (a story e indivisivel sob o gate de typecheck: dividir a assinatura deixa typecheck vermelho no meio, e runPlanPhaseWithReplan chama runPlanPhase internamente em plan-runner.ts:1833/1849): enumere com `grep -rnE 'run(PlanPhase|PlanPhaseWithReplan)\\(' test/`, trabalhe a lista de arquivos ate a EXAUSTAO contra essa enumeracao (183 call sites em 18 arquivos de teste na main; concentracoes: plan-runner.test.ts 44, plan-runner-replan.test.ts 34, plan-runner-container.test.ts 21), e re-rode o oracle de ausencia como fecho, nunca julgamento proprio de completude. Cada teste convertido vira `await runPlanPhase(...)` e a funcao de teste envolvente vira async. CADEIA DE PRODUCAO: plan-runner.ts:1640 (runPlanPhase) e :1827 (runPlanPhaseWithReplan) viram async; sidecar.ts:2772 (runProductionPlanPhaseWithReplan) e a closure de makeProductionPlanPhaseFn (sidecar.ts:2836+) propagam await; o lado do loop NAO precisa de mudanca de tipo: runPlanPhaseFn ja e `() => void | Promise<void>` (loop.ts:2606) e ja e aguardado (loop.ts:2736). Preserve os padroes do patterns.md: bullet 'Crash-proof plan-phase closure: belt-and-suspenders try/catch pattern' (a closure NUNCA rethrowa; o try/catch envolve o corpo inteiro, agora async) e bullet 'Planning phase re-entry guard: always exit phase on non-implementing outcomes' (exitPhaseAfterPlan continua rodando em todo desfecho nao-implementing). TAMANHO: plan-runner.ts (2473 linhas) e sidecar.ts (3748) tem headroom de exatamente 1 linha no scripts/file-size-budget.json; se a conversao adicionar linha, levante o teto na MESMA story com Edit cirurgico por bullet 'File-size ratchet: edit the JSON budget with the Edit tool, not a full json.dump rewrite' (nunca re-serializacao inteira). NENHUM roteamento headless, nenhum contrato de tres sinais: isso e CAM-555.",
@@ -42,11 +50,30 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Quality spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 2,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "MAPA COMPLETO DE CALL SITES DE PRODUCAO: (a) loop.ts:172, o tipo ReviewDispatch; (b) loop.ts:2215, `reviewResult = reviewDispatch(reviewUuid);` ganha await e o contexto envolvente ja e async (atribuido, typecheck cobre); (c) sidecar.ts:1579 e host.ts:846, os dois call sites de FABRICA makeReviewDispatch (a fabrica em si segue sincrona; so o tipo de retorno da closure muda); (d) sidecar.ts:1612, `const result = reviewDispatch(randomUUID());`, a invocacao de PRODUCAO da closure dentro do wiring da fase de review: ganha await e a funcao envolvente vira async (typecheck cobre porque os campos de result sao lidos, mas o site tem que estar no mapa para a propagacao async do envolvente nao ser descoberta no meio do turno). COBERTURA HONESTA DOS GATES: identica a US-001 em estrutura. Os 13 statements fire-and-forget em review.test.ts e irmaos sao invisiveis a tsc e biome, e o pino de contagem nao se move nesta fatia (a closure devolvida por makeReviewDispatch nao ganha await interno; corpo roda sincrono ate o fim; teste nao aguardado segue passando). O oracle de ausencia (criterio 2) e o unico gate contra varredura parcial. DISCIPLINA DE VARREDURA: enumere com `grep -rnE '(dispatch|reviewDispatch)\\(' test/` nos 9 arquivos de teste que constroem makeReviewDispatch, trabalhe a lista ate a exaustao, converta cada invocacao para `await dispatch(...)` com teste envolvente async, e feche com o oracle de ausencia, nunca julgamento proprio. TAMANHO: review.ts (886), loop.ts (3077), sidecar.ts (3748) e host.ts (1205) tem headroom de exatamente 1 linha no scripts/file-size-budget.json; qualquer linha adicionada exige levantar o teto na mesma story com Edit cirurgico por bullet 'File-size ratchet: edit the JSON budget with the Edit tool, not a full json.dump rewrite' do patterns.md. Se US-001 ja levantou um teto compartilhado (sidecar.ts), some sobre o valor da branch, nao o da main. NENHUM consumo de contrato de tres sinais, nenhuma persona: CAM-555.",
       "auditNotes": null
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:1",
+    "findings": [
+      {
+        "severity": "WARNING",
+        "file": "test/commands/sidecar-plan-phase-orphan-sweep.test.ts",
+        "line": 63,
+        "text": "The diff flipped makeProductionPlanPhaseFn's returned closure from () => void to () => Promise<void> (src/commands/sidecar.ts:2875/2886), but the only test that drives that real closure still invokes it fire-and-forget: expect(() => runPlanPhaseFn?.()).not.toThrow(). The story's absence oracle keys on the tokens runPlanPhase( / dispatch( and cannot see this alias, so the sweep missed it. Consequence: only the pre-await part of the closure (sweepOrphanedImplementBlockedMarkerFn) runs inside the test; the continuation after `await runProductionPlanPhaseWithReplan(...)` (runPostPlanActions, which receives the REAL makeProductionLoopSpawnFn, and the catch-branch setPhase('idle')) now executes in a microtask after the test body returns and after its `finally { rmSync(tmpDir) }`, i.e. against a deleted cwd and outside the test's lifetime. Secondarily, .not.toThrow() over a Promise-returning function is not the documented Bun matcher for async code (bun.com/docs/test/writing prescribes await expect(...).rejects). Mechanical one-file fix: make the test async and `await runPlanPhaseFn?.()` (keeping the expect(sweepCalls).toBe(1) assertion), so the closure completes before the tmpdir is removed."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "test/supervisor/plan/plan-runner-container.test.ts",
+        "line": 480,
+        "text": "The vacuity risk the plan auditor flagged (plan-verdict-report.json F-01) was correctly fixed here by replacing expect(() => runPlanPhase(opts)).not.toThrow() with expect((await runPlanPhase(opts)).kind).toBe('container-preflight-failed'), which is strictly stronger. The enclosing test name still reads 'container preflight failure with no escalateFn does not throw'; renaming it to describe the asserted outcome would keep the name a sentence about the behavior under test."
+      }
+    ]
+  }
 }
