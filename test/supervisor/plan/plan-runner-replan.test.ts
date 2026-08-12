@@ -256,42 +256,42 @@ describe('runPlanPhaseWithReplan', () => {
 	// -------------------------------------------------------------------------
 	// Round 1 audit-approved: terminal, no re-plan (AC1)
 	// -------------------------------------------------------------------------
-	test('round 1 audit-approved is terminal (no re-plan round)', () => {
+	test('round 1 audit-approved is terminal (no re-plan round)', async () => {
 		const { opts } = makeReplanOpts([APPROVE_REPORT]);
-		const result = runPlanPhaseWithReplan(opts);
+		const result = await runPlanPhaseWithReplan(opts);
 		expect(result.kind).toBe('audit-approved');
 	});
 
-	test('round 1 audit-approved: selectIssueFn called exactly once (no re-plan)', () => {
+	test('round 1 audit-approved: selectIssueFn called exactly once (no re-plan)', async () => {
 		const { opts, selectIssueCallCount } = makeReplanOpts([APPROVE_REPORT]);
-		runPlanPhaseWithReplan(opts);
+		await runPlanPhaseWithReplan(opts);
 		expect(selectIssueCallCount()).toBe(1);
 	});
 
-	test('round 1 audit-approved: teardownPlanPanesFn fires exactly once (AC4)', () => {
+	test('round 1 audit-approved: teardownPlanPanesFn fires exactly once (AC4)', async () => {
 		const { opts, teardownCallCount } = makeReplanOpts([APPROVE_REPORT]);
-		runPlanPhaseWithReplan(opts);
+		await runPlanPhaseWithReplan(opts);
 		expect(teardownCallCount()).toBe(1);
 	});
 
 	// -------------------------------------------------------------------------
 	// Round 1 blocked, round 2 approved (AC1)
 	// -------------------------------------------------------------------------
-	test('round 1 blocked, round 2 approved: returns audit-approved (AC1)', () => {
+	test('round 1 blocked, round 2 approved: returns audit-approved (AC1)', async () => {
 		const { opts } = makeReplanOpts([BLOCK_REPORT_ROUND1, APPROVE_REPORT]);
-		const result = runPlanPhaseWithReplan(opts);
+		const result = await runPlanPhaseWithReplan(opts);
 		expect(result.kind).toBe('audit-approved');
 	});
 
-	test('round 2 is pinned to the SAME issue as round 1 (no re-selection) (AC1)', () => {
+	test('round 2 is pinned to the SAME issue as round 1 (no re-selection) (AC1)', async () => {
 		const { opts } = makeReplanOpts([BLOCK_REPORT_ROUND1, APPROVE_REPORT]);
-		const result = runPlanPhaseWithReplan(opts) as { kind: 'audit-approved'; issue: IssueEntry };
+		const result = await runPlanPhaseWithReplan(opts) as { kind: 'audit-approved'; issue: IssueEntry };
 		expect(result.issue.id).toBe('CAM-204');
 	});
 
-	test('round-2 planner spawn prompt contains the non-empty round-1 findings text (AC2)', () => {
+	test('round-2 planner spawn prompt contains the non-empty round-1 findings text (AC2)', async () => {
 		const { opts, calls } = makeReplanOpts([BLOCK_REPORT_ROUND1, APPROVE_REPORT]);
-		runPlanPhaseWithReplan(opts);
+		await runPlanPhaseWithReplan(opts);
 
 		const plannerRespawns = calls.filter(
 			(c) => c.args[2] === 'respawn-pane' && c.args.some((a) => a.includes('subagent-planner')),
@@ -301,9 +301,9 @@ describe('runPlanPhaseWithReplan', () => {
 		expect(plannerRespawns[1]?.taskPrompt).toContain('Missing acceptance criteria for US-002 in round 1');
 	});
 
-	test('round-2 planner spawn prompt names the pinned issue id and forbids re-selection (AC1)', () => {
+	test('round-2 planner spawn prompt names the pinned issue id and forbids re-selection (AC1)', async () => {
 		const { opts, calls } = makeReplanOpts([BLOCK_REPORT_ROUND1, APPROVE_REPORT]);
-		runPlanPhaseWithReplan(opts);
+		await runPlanPhaseWithReplan(opts);
 
 		const plannerRespawns = calls.filter(
 			(c) => c.args[2] === 'respawn-pane' && c.args.some((a) => a.includes('subagent-planner')),
@@ -312,9 +312,9 @@ describe('runPlanPhaseWithReplan', () => {
 		expect(plannerRespawns[1]?.taskPrompt).toContain('Do not re-select from the backlog');
 	});
 
-	test('teardownPlanPanesFn fires BEFORE round 2 runPlanPhase (AC4)', () => {
+	test('teardownPlanPanesFn fires BEFORE round 2 runPlanPhase (AC4)', async () => {
 		const { opts, calls, teardownCallCount } = makeReplanOpts([BLOCK_REPORT_ROUND1, APPROVE_REPORT]);
-		runPlanPhaseWithReplan(opts);
+		await runPlanPhaseWithReplan(opts);
 		// After the run completes, teardown fired twice: once before round 2, once
 		// on the audit-approved terminal.
 		expect(teardownCallCount()).toBe(2);
@@ -327,7 +327,7 @@ describe('runPlanPhaseWithReplan', () => {
 	// Lint-origin blocks budget independently from auditor-origin blocks
 	// (US-002, CAM-448, ADR-0052)
 	// -------------------------------------------------------------------------
-	test('lint round 1 leaves the auditor budget intact and a post-auditor correction round still runs', () => {
+	test('lint round 1 leaves the auditor budget intact and a post-auditor correction round still runs', async () => {
 		// Round 1: oracle lint fails (BROKEN_PRD) -> audit-blocked, origin
 		// 'oracle-lint', auditor never spawned. Every later round's prd.json is
 		// lint-clean (CLEAN_PRD), so rounds 2+ reach the auditor.
@@ -338,7 +338,7 @@ describe('runPlanPhaseWithReplan', () => {
 				return lintCallCount === 1 ? BROKEN_PRD : CLEAN_PRD;
 			},
 		});
-		const result = runPlanPhaseWithReplan(opts);
+		const result = await runPlanPhaseWithReplan(opts);
 		expect(result.kind).toBe('audit-approved');
 		const auditorRespawns = calls.filter(
 			(c) => c.args[2] === 'respawn-pane' && c.args.some((a) => a.includes('subagent-auditor')),
@@ -352,11 +352,11 @@ describe('runPlanPhaseWithReplan', () => {
 	// MAX_LINT_REPLAN_ROUNDS is spent, escalating with exhaustedBudget naming
 	// 'oracle-lint', and total planner spawns across the whole call stay
 	// bounded by the sum of the two independent budgets.
-	test('lint budget is independently bounded and escalates naming the oracle-lint budget', () => {
+	test('lint budget is independently bounded and escalates naming the oracle-lint budget', async () => {
 		const { opts, calls, markerCalls } = makeReplanOpts([BLOCK_REPORT_ROUND1, BLOCK_REPORT_ROUND2], {
 			readPrdContentFn: () => BROKEN_PRD,
 		});
-		const result = runPlanPhaseWithReplan(opts);
+		const result = await runPlanPhaseWithReplan(opts);
 		expect(result.kind).toBe('plan-escalated');
 		expect(markerCalls[0]?.exhaustedBudget).toBe('oracle-lint');
 
@@ -376,17 +376,17 @@ describe('runPlanPhaseWithReplan', () => {
 	// -------------------------------------------------------------------------
 	// Both rounds blocked: exhaustion -> plan-escalated (AC3)
 	// -------------------------------------------------------------------------
-	test('both rounds audit-blocked: returns a terminal plan-escalated kind (AC3)', () => {
+	test('both rounds audit-blocked: returns a terminal plan-escalated kind (AC3)', async () => {
 		const { opts } = makeReplanOpts([BLOCK_REPORT_ROUND1, BLOCK_REPORT_ROUND2]);
-		const result = runPlanPhaseWithReplan(opts);
+		const result = await runPlanPhaseWithReplan(opts);
 		expect(result.kind).toBe('plan-escalated');
 		expect(result.kind).not.toBe('audit-approved');
 		expect(result.kind).not.toBe('audit-blocked');
 	});
 
-	test('plan-escalated result carries the last round issue, report, and roundsCompleted (AC3)', () => {
+	test('plan-escalated result carries the last round issue, report, and roundsCompleted (AC3)', async () => {
 		const { opts } = makeReplanOpts([BLOCK_REPORT_ROUND1, BLOCK_REPORT_ROUND2]);
-		const result = runPlanPhaseWithReplan(opts) as {
+		const result = await runPlanPhaseWithReplan(opts) as {
 			kind: 'plan-escalated';
 			issue: IssueEntry;
 			report: PlanVerdictReport;
@@ -397,9 +397,9 @@ describe('runPlanPhaseWithReplan', () => {
 		expect(result.roundsCompleted).toBe(MAX_REPLAN_ROUNDS);
 	});
 
-	test('writeEscalationMarkerFn is called with issue id + last round findings/summary/roundsCompleted (AC3)', () => {
+	test('writeEscalationMarkerFn is called with issue id + last round findings/summary/roundsCompleted (AC3)', async () => {
 		const { opts, markerCalls } = makeReplanOpts([BLOCK_REPORT_ROUND1, BLOCK_REPORT_ROUND2]);
-		runPlanPhaseWithReplan(opts);
+		await runPlanPhaseWithReplan(opts);
 		expect(markerCalls.length).toBe(1);
 		expect(markerCalls[0]).toEqual({
 			issueId: 'CAM-204',
@@ -416,9 +416,9 @@ describe('runPlanPhaseWithReplan', () => {
 	// can tell a planner-cannot-write-oracles failure apart from an
 	// auditor-keeps-rejecting-the-design failure.
 	// -------------------------------------------------------------------------
-	test('escalation marker and event name the exhausted budget', () => {
+	test('escalation marker and event name the exhausted budget', async () => {
 		const { opts, markerCalls, loggedEvents } = makeReplanOpts([BLOCK_REPORT_ROUND1, BLOCK_REPORT_ROUND2]);
-		const result = runPlanPhaseWithReplan(opts);
+		const result = await runPlanPhaseWithReplan(opts);
 		expect(result.kind).toBe('plan-escalated');
 		expect(markerCalls[0]?.exhaustedBudget).toBe('auditor');
 		const event = loggedEvents.find((e) => e.kind === 'plan-escalated');
@@ -429,16 +429,16 @@ describe('runPlanPhaseWithReplan', () => {
 	// US-R1-001 (CAM-204 review fix): 'plan-escalated' event emitted
 	// unconditionally on the non-convergence terminal (AC2).
 	// -------------------------------------------------------------------------
-	test('escalation: logEvent is called exactly once with kind plan-escalated (US-R1-001 AC2)', () => {
+	test('escalation: logEvent is called exactly once with kind plan-escalated (US-R1-001 AC2)', async () => {
 		const { opts, loggedEvents } = makeReplanOpts([BLOCK_REPORT_ROUND1, BLOCK_REPORT_ROUND2]);
-		runPlanPhaseWithReplan(opts);
+		await runPlanPhaseWithReplan(opts);
 		const planEscalatedEvents = loggedEvents.filter((e) => e.kind === 'plan-escalated');
 		expect(planEscalatedEvents.length).toBe(1);
 	});
 
-	test('escalation: plan-escalated event detail carries issueId + roundsCompleted (US-R1-001 AC2)', () => {
+	test('escalation: plan-escalated event detail carries issueId + roundsCompleted (US-R1-001 AC2)', async () => {
 		const { opts, loggedEvents } = makeReplanOpts([BLOCK_REPORT_ROUND1, BLOCK_REPORT_ROUND2]);
-		runPlanPhaseWithReplan(opts);
+		await runPlanPhaseWithReplan(opts);
 		const event = loggedEvents.find((e) => e.kind === 'plan-escalated');
 		expect(event?.detail).toEqual({
 			issueId: 'CAM-204',
@@ -447,35 +447,35 @@ describe('runPlanPhaseWithReplan', () => {
 		});
 	});
 
-	test('non-escalation terminal (audit-approved): no plan-escalated event logged', () => {
+	test('non-escalation terminal (audit-approved): no plan-escalated event logged', async () => {
 		const { opts, loggedEvents } = makeReplanOpts([APPROVE_REPORT]);
-		runPlanPhaseWithReplan(opts);
+		await runPlanPhaseWithReplan(opts);
 		expect(loggedEvents.some((e) => e.kind === 'plan-escalated')).toBe(false);
 	});
 
-	test('backward compat: escalation works when logEvent is absent (no throw)', () => {
+	test('backward compat: escalation works when logEvent is absent (no throw)', async () => {
 		const { opts } = makeReplanOpts([BLOCK_REPORT_ROUND1, BLOCK_REPORT_ROUND2]);
 		const { logEvent: _l, ...rest } = opts;
-		const result = runPlanPhaseWithReplan(rest);
+		const result = await runPlanPhaseWithReplan(rest);
 		expect(result.kind).toBe('plan-escalated');
 	});
 
-	test('escalation: no git/branch spawn occurs (AC3)', () => {
+	test('escalation: no git/branch spawn occurs (AC3)', async () => {
 		const { opts, calls } = makeReplanOpts([BLOCK_REPORT_ROUND1, BLOCK_REPORT_ROUND2]);
-		runPlanPhaseWithReplan(opts);
+		await runPlanPhaseWithReplan(opts);
 		const gitCalls = calls.filter((c) => c.cmd === 'git');
 		expect(gitCalls.length).toBe(0);
 	});
 
-	test('escalation: teardownPlanPanesFn fires exactly twice (before round 2, on escalated terminal) (AC4)', () => {
+	test('escalation: teardownPlanPanesFn fires exactly twice (before round 2, on escalated terminal) (AC4)', async () => {
 		const { opts, teardownCallCount } = makeReplanOpts([BLOCK_REPORT_ROUND1, BLOCK_REPORT_ROUND2]);
-		runPlanPhaseWithReplan(opts);
+		await runPlanPhaseWithReplan(opts);
 		expect(teardownCallCount()).toBe(2);
 	});
 
-	test('escalation: exactly MAX_REPLAN_ROUNDS planner+auditor spawn cycles occur (no 3rd round)', () => {
+	test('escalation: exactly MAX_REPLAN_ROUNDS planner+auditor spawn cycles occur (no 3rd round)', async () => {
 		const { opts, calls } = makeReplanOpts([BLOCK_REPORT_ROUND1, BLOCK_REPORT_ROUND2]);
-		runPlanPhaseWithReplan(opts);
+		await runPlanPhaseWithReplan(opts);
 		const respawnCalls = calls.filter((c) => c.args[2] === 'respawn-pane');
 		expect(respawnCalls.length).toBe(2 * MAX_REPLAN_ROUNDS); // planner+auditor per round
 	});
@@ -483,52 +483,52 @@ describe('runPlanPhaseWithReplan', () => {
 	// -------------------------------------------------------------------------
 	// Non-audit results: returned as-is, no re-plan round (AC5)
 	// -------------------------------------------------------------------------
-	test('preflight-failed is returned as-is, no re-plan round (AC5)', () => {
+	test('preflight-failed is returned as-is, no re-plan round (AC5)', async () => {
 		const { opts } = makeReplanOpts([APPROVE_REPORT], { preflightFn: () => PREFLIGHT_FAIL });
-		const result = runPlanPhaseWithReplan(opts);
+		const result = await runPlanPhaseWithReplan(opts);
 		expect(result.kind).toBe('preflight-failed');
 	});
 
-	test('no-plannable-issue is returned as-is, no re-plan round (AC5)', () => {
+	test('no-plannable-issue is returned as-is, no re-plan round (AC5)', async () => {
 		const { opts } = makeReplanOpts([APPROVE_REPORT], { selectIssueFn: () => null });
-		const result = runPlanPhaseWithReplan(opts);
+		const result = await runPlanPhaseWithReplan(opts);
 		expect(result.kind).toBe('no-plannable-issue');
 	});
 
-	test('mutex-busy is returned as-is, no re-plan round (AC5)', () => {
+	test('mutex-busy is returned as-is, no re-plan round (AC5)', async () => {
 		const { opts } = makeReplanOpts([APPROVE_REPORT], { paneCountMutexFn: () => 'busy' });
-		const result = runPlanPhaseWithReplan(opts);
+		const result = await runPlanPhaseWithReplan(opts);
 		expect(result.kind).toBe('mutex-busy');
 	});
 
-	test('non-audit result (preflight-failed): teardownPlanPanesFn fires exactly once as a harmless no-op exit-teardown (AC2)', () => {
+	test('non-audit result (preflight-failed): teardownPlanPanesFn fires exactly once as a harmless no-op exit-teardown (AC2)', async () => {
 		const { opts, teardownCallCount } = makeReplanOpts([APPROVE_REPORT], {
 			preflightFn: () => PREFLIGHT_FAIL,
 		});
-		runPlanPhaseWithReplan(opts);
+		await runPlanPhaseWithReplan(opts);
 		expect(teardownCallCount()).toBe(1);
 	});
 
-	test('non-audit result (no-plannable-issue): teardownPlanPanesFn fires exactly once (AC2)', () => {
+	test('non-audit result (no-plannable-issue): teardownPlanPanesFn fires exactly once (AC2)', async () => {
 		const { opts, teardownCallCount } = makeReplanOpts([APPROVE_REPORT], {
 			selectIssueFn: () => null,
 		});
-		runPlanPhaseWithReplan(opts);
+		await runPlanPhaseWithReplan(opts);
 		expect(teardownCallCount()).toBe(1);
 	});
 
-	test('non-audit result (mutex-busy): teardownPlanPanesFn fires exactly once (AC2)', () => {
+	test('non-audit result (mutex-busy): teardownPlanPanesFn fires exactly once (AC2)', async () => {
 		const { opts, teardownCallCount } = makeReplanOpts([APPROVE_REPORT], {
 			paneCountMutexFn: () => 'busy',
 		});
-		runPlanPhaseWithReplan(opts);
+		await runPlanPhaseWithReplan(opts);
 		expect(teardownCallCount()).toBe(1);
 	});
 
 	// -------------------------------------------------------------------------
 	// Non-audit POST-SPAWN terminals: exit-teardown fires exactly once (AC1, AC4)
 	// -------------------------------------------------------------------------
-	test('planner-timeout: teardownPlanPanesFn fires exactly once at the single unconditional exit (AC1, AC4)', () => {
+	test('planner-timeout: teardownPlanPanesFn fires exactly once at the single unconditional exit (AC1, AC4)', async () => {
 		const { opts, teardownCallCount } = makeReplanOpts([APPROVE_REPORT], {
 			// Planner pane never dies and never writes prd.json: forces the
 			// plannerTimeoutMs deadline to fire inside pollPlannerDeath.
@@ -540,12 +540,12 @@ describe('runPlanPhaseWithReplan', () => {
 				return () => (t += 1000);
 			})(),
 		});
-		const result = runPlanPhaseWithReplan(opts);
+		const result = await runPlanPhaseWithReplan(opts);
 		expect(result.kind).toBe('planner-timeout');
 		expect(teardownCallCount()).toBe(1);
 	});
 
-	test('auditor-timeout: teardownPlanPanesFn fires exactly once at the single unconditional exit (AC1, AC4)', () => {
+	test('auditor-timeout: teardownPlanPanesFn fires exactly once at the single unconditional exit (AC1, AC4)', async () => {
 		const { opts, teardownCallCount } = makeReplanOpts([APPROVE_REPORT], {
 			// readPlannerReportFn short-circuits pollPlannerDeath as "completed"
 			// on the first tick, so isPaneAlive is only ever consulted by the
@@ -560,53 +560,53 @@ describe('runPlanPhaseWithReplan', () => {
 				return () => (t += 1000);
 			})(),
 		});
-		const result = runPlanPhaseWithReplan(opts);
+		const result = await runPlanPhaseWithReplan(opts);
 		expect(result.kind).toBe('auditor-timeout');
 		expect(teardownCallCount()).toBe(1);
 	});
 
-	test('planner-failed: teardownPlanPanesFn fires exactly once at the single unconditional exit (AC1, AC4)', () => {
+	test('planner-failed: teardownPlanPanesFn fires exactly once at the single unconditional exit (AC1, AC4)', async () => {
 		const { opts, teardownCallCount } = makeReplanOpts([APPROVE_REPORT], {
 			// Planner pane dies naturally but never wrote prd.json.
 			isPaneAlive: () => false,
 			readPlannerReportFn: () => null,
 		});
-		const result = runPlanPhaseWithReplan(opts);
+		const result = await runPlanPhaseWithReplan(opts);
 		expect(result.kind).toBe('planner-failed');
 		expect(teardownCallCount()).toBe(1);
 	});
 
-	test('non-audit result: writeEscalationMarkerFn is NOT called', () => {
+	test('non-audit result: writeEscalationMarkerFn is NOT called', async () => {
 		const { opts, markerCalls } = makeReplanOpts([APPROVE_REPORT], {
 			preflightFn: () => PREFLIGHT_FAIL,
 		});
-		runPlanPhaseWithReplan(opts);
+		await runPlanPhaseWithReplan(opts);
 		expect(markerCalls.length).toBe(0);
 	});
 
 	// -------------------------------------------------------------------------
 	// writeEscalationMarkerFn not called on non-escalation terminals
 	// -------------------------------------------------------------------------
-	test('writeEscalationMarkerFn NOT called on audit-approved terminal', () => {
+	test('writeEscalationMarkerFn NOT called on audit-approved terminal', async () => {
 		const { opts, markerCalls } = makeReplanOpts([APPROVE_REPORT]);
-		runPlanPhaseWithReplan(opts);
+		await runPlanPhaseWithReplan(opts);
 		expect(markerCalls.length).toBe(0);
 	});
 
 	// -------------------------------------------------------------------------
 	// Backward compat: seams optional
 	// -------------------------------------------------------------------------
-	test('backward compat: works when teardownPlanPanesFn/writeEscalationMarkerFn are absent', () => {
+	test('backward compat: works when teardownPlanPanesFn/writeEscalationMarkerFn are absent', async () => {
 		const { opts } = makeReplanOpts([APPROVE_REPORT]);
 		const { teardownPlanPanesFn: _t, writeEscalationMarkerFn: _w, ...rest } = opts;
-		const result = runPlanPhaseWithReplan(rest);
+		const result = await runPlanPhaseWithReplan(rest);
 		expect(result.kind).toBe('audit-approved');
 	});
 
-	test('backward compat: escalation path works when writeEscalationMarkerFn is absent (no throw)', () => {
+	test('backward compat: escalation path works when writeEscalationMarkerFn is absent (no throw)', async () => {
 		const { opts } = makeReplanOpts([BLOCK_REPORT_ROUND1, BLOCK_REPORT_ROUND2]);
 		const { writeEscalationMarkerFn: _w, ...rest } = opts;
-		const result = runPlanPhaseWithReplan(rest);
+		const result = await runPlanPhaseWithReplan(rest);
 		expect(result.kind).toBe('plan-escalated');
 	});
 });

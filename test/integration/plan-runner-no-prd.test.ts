@@ -183,9 +183,9 @@ test.skipIf(!tmuxAvailable)(
 		//    - sleepFn: no-op (fast poll)
 		// ------------------------------------------------------------------
 		let planPhaseThrew = false;
-		let planResult: ReturnType<typeof runPlanPhase> | undefined;
+		let planResult: Awaited<ReturnType<typeof runPlanPhase>> | undefined;
 		try {
-			planResult = runPlanPhase({
+			planResult = await runPlanPhase({
 				spawnFn: loopSpawnFn,
 				isPaneAlive,
 				sleepFn: (ms) => Bun.sleepSync(Math.max(ms, 10)),

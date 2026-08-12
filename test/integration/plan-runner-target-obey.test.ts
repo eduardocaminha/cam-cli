@@ -282,10 +282,10 @@ test.skipIf(!tmuxAvailable)(
 		// 6. Drive runPlanPhase.
 		//    - selectIssueFn returns TARGET_ISSUE (CAM-157), NOT top-of-queue.
 		// ------------------------------------------------------------------
-		let planResult: ReturnType<typeof runPlanPhase> | undefined;
+		let planResult: Awaited<ReturnType<typeof runPlanPhase>> | undefined;
 		let threw = false;
 		try {
-			planResult = runPlanPhase({
+			planResult = await runPlanPhase({
 				spawnFn: loopSpawnFn,
 				isPaneAlive,
 				sleepFn: () => {},
@@ -436,7 +436,7 @@ test.skipIf(!tmuxAvailable)(
 
 		const readPlanVerdictFn = makeReadPlanVerdict(cwd);
 
-		runPlanPhase({
+		await runPlanPhase({
 			spawnFn: loopSpawnFn,
 			isPaneAlive,
 			sleepFn: () => {},

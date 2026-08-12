@@ -615,7 +615,7 @@ function makePlanOpts(overrides: Partial<RunPlanPhaseOptions> = {}): RunPlanPhas
 }
 
 describe('US-005 (CAM-479): planner poll loop consults the early-death probe', () => {
-	test('the planner poll loop ends an early-death wait far below its timeout cap', () => {
+	test('the planner poll loop ends an early-death wait far below its timeout cap', async () => {
 		const sleeps: number[] = [];
 		const opts = makePlanOpts({
 			sleepFn: (ms) => sleeps.push(ms),
@@ -623,7 +623,7 @@ describe('US-005 (CAM-479): planner poll loop consults the early-death probe', (
 			earlyDeathProbeFn: alwaysDeadOnFirstTurn,
 		});
 
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 
 		expect(result.kind).toBe('planner-failed');
 		const pollTicks = sleeps.filter((ms) => ms === DEFAULT_PLAN_POLL_INTERVAL_MS);
@@ -634,7 +634,7 @@ describe('US-005 (CAM-479): planner poll loop consults the early-death probe', (
 });
 
 describe('US-005 (CAM-479): auditor poll loop consults the early-death probe', () => {
-	test('the auditor poll loop ends an early-death wait far below its timeout cap', () => {
+	test('the auditor poll loop ends an early-death wait far below its timeout cap', async () => {
 		const sleeps: number[] = [];
 		const opts = makePlanOpts({
 			sleepFn: (ms) => sleeps.push(ms),
@@ -643,7 +643,7 @@ describe('US-005 (CAM-479): auditor poll loop consults the early-death probe', (
 			earlyDeathProbeFn: alwaysDeadOnFirstTurn,
 		});
 
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 
 		expect(result.kind).toBe('auditor-timeout');
 		const pollTicks = sleeps.filter((ms) => ms === DEFAULT_PLAN_POLL_INTERVAL_MS);
@@ -711,12 +711,12 @@ describe('US-005 (CAM-479): every dispatch poll loop consults the early-death pr
 		const reviewerElapsedMs = reviewerSleeps.reduce((sum, ms) => sum + ms, 0);
 		expect(reviewerElapsedMs).toBeLessThan(DEFAULT_REVIEW_TIMEOUT_MS * 0.1);
 
-		const plannerResult = runPlanPhase(plannerOpts);
+		const plannerResult = await runPlanPhase(plannerOpts);
 		expect(plannerResult.kind).toBe('planner-failed');
 		const plannerElapsedMs = plannerSleeps.reduce((sum, ms) => sum + ms, 0);
 		expect(plannerElapsedMs).toBeLessThan(DEFAULT_PLAN_TIMEOUT_MS * 0.1);
 
-		const auditorResult = runPlanPhase(auditorOpts);
+		const auditorResult = await runPlanPhase(auditorOpts);
 		expect(auditorResult.kind).toBe('auditor-timeout');
 		const auditorElapsedMs = auditorSleeps.reduce((sum, ms) => sum + ms, 0);
 		expect(auditorElapsedMs).toBeLessThan(DEFAULT_PLAN_TIMEOUT_MS * 0.1);

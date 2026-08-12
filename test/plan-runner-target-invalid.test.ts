@@ -155,34 +155,34 @@ function makeBaseOpts(overrides: Partial<RunPlanPhaseOptions> = {}): {
 // ---------------------------------------------------------------------------
 
 describe('runPlanPhase - plan-target-invalid (AC1)', () => {
-	test('planTargetId set + selectIssueFn() null -> plan-target-invalid carrying the target id', () => {
+	test('planTargetId set + selectIssueFn() null -> plan-target-invalid carrying the target id', async () => {
 		const { opts } = makeBaseOpts({
 			planTargetId: 'CAM-777',
 			selectIssueFn: () => null,
 		});
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 		expect(result.kind).toBe('plan-target-invalid');
 		if (result.kind === 'plan-target-invalid') {
 			expect(result.targetId).toBe('CAM-777');
 		}
 	});
 
-	test('planner pane is NEVER spawned on plan-target-invalid (no respawn-pane call)', () => {
+	test('planner pane is NEVER spawned on plan-target-invalid (no respawn-pane call)', async () => {
 		const { opts, calls } = makeBaseOpts({
 			planTargetId: 'CAM-777',
 			selectIssueFn: () => null,
 		});
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 		const respawnCalls = calls.filter((c) => c.args.includes('respawn-pane'));
 		expect(respawnCalls.length).toBe(0);
 	});
 
-	test('no set-option @cam_label call either (no spawn side effects at all)', () => {
+	test('no set-option @cam_label call either (no spawn side effects at all)', async () => {
 		const { opts, calls } = makeBaseOpts({
 			planTargetId: 'CAM-777',
 			selectIssueFn: () => null,
 		});
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 		expect(calls.length).toBe(0);
 	});
 });
@@ -192,7 +192,7 @@ describe('runPlanPhase - plan-target-invalid (AC1)', () => {
 // ---------------------------------------------------------------------------
 
 describe('runPlanPhase - explicit-target-wins regression (AC3)', () => {
-	test('selectIssueFn composed from selectPlanTargetFromFile: unranked target beats ranked rank:1 issue', () => {
+	test('selectIssueFn composed from selectPlanTargetFromFile: unranked target beats ranked rank:1 issue', async () => {
 		// Fixture backlog: CAM-1 holds rank 1 (would win top-of-queue selection);
 		// CAM-777 is unranked but is the explicit target.
 		const entries: IssueEntry[] = [
@@ -229,7 +229,7 @@ describe('runPlanPhase - explicit-target-wins regression (AC3)', () => {
 			return { stdout: '', exitCode: 0 };
 		};
 
-		const result = runPlanPhase({
+		const result = await runPlanPhase({
 			spawnFn: withVerifiedPanePid(spawnFn),
 			isPaneAlive: () => false,
 			sleepFn: () => {},
@@ -268,20 +268,20 @@ describe('runPlanPhase - explicit-target-wins regression (AC3)', () => {
 // ---------------------------------------------------------------------------
 
 describe('runPlanPhase - bare path unchanged (AC4)', () => {
-	test('no planTargetId + null selection -> no-plannable-issue (unchanged)', () => {
+	test('no planTargetId + null selection -> no-plannable-issue (unchanged)', async () => {
 		const { opts } = makeBaseOpts({
 			selectIssueFn: () => null,
 			// planTargetId intentionally absent.
 		});
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 		expect(result.kind).toBe('no-plannable-issue');
 	});
 
-	test('no planTargetId + null selection -> no planner pane spawned', () => {
+	test('no planTargetId + null selection -> no planner pane spawned', async () => {
 		const { opts, calls } = makeBaseOpts({
 			selectIssueFn: () => null,
 		});
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 		const respawnCalls = calls.filter((c) => c.args.includes('respawn-pane'));
 		expect(respawnCalls.length).toBe(0);
 	});
@@ -318,28 +318,28 @@ describe('runPlanPhaseWithReplan - plan-target-invalid passthrough (AC5)', () =>
 		return { opts, teardownCalls, markerCalls };
 	}
 
-	test('returns plan-target-invalid unchanged (no re-plan round)', () => {
+	test('returns plan-target-invalid unchanged (no re-plan round)', async () => {
 		const { opts } = makeReplanOpts();
-		const result = runPlanPhaseWithReplan(opts);
+		const result = await runPlanPhaseWithReplan(opts);
 		expect(result.kind).toBe('plan-target-invalid');
 		if (result.kind === 'plan-target-invalid') {
 			expect(result.targetId).toBe('CAM-777');
 		}
 	});
 
-	test('teardownPlanPanesFn fires exactly once as a harmless no-op exit-teardown (US-001, CAM-269)', () => {
+	test('teardownPlanPanesFn fires exactly once as a harmless no-op exit-teardown (US-001, CAM-269)', async () => {
 		const { opts, teardownCalls } = makeReplanOpts();
-		runPlanPhaseWithReplan(opts);
+		await runPlanPhaseWithReplan(opts);
 		expect(teardownCalls.n).toBe(1);
 	});
 
-	test('writeEscalationMarkerFn is NEVER called', () => {
+	test('writeEscalationMarkerFn is NEVER called', async () => {
 		const { opts, markerCalls } = makeReplanOpts();
-		runPlanPhaseWithReplan(opts);
+		await runPlanPhaseWithReplan(opts);
 		expect(markerCalls.length).toBe(0);
 	});
 
-	test('no re-plan round: selectIssueFn / runPlanPhase runs exactly once (single planner-pane spawn attempt, i.e. zero here since none is plannable)', () => {
+	test('no re-plan round: selectIssueFn / runPlanPhase runs exactly once (single planner-pane spawn attempt, i.e. zero here since none is plannable)', async () => {
 		let selectCalls = 0;
 		const { opts } = makeReplanOpts();
 		const wrappedOpts: RunPlanPhaseWithReplanOptions = {
@@ -349,7 +349,7 @@ describe('runPlanPhaseWithReplan - plan-target-invalid passthrough (AC5)', () =>
 				return null;
 			},
 		};
-		runPlanPhaseWithReplan(wrappedOpts);
+		await runPlanPhaseWithReplan(wrappedOpts);
 		expect(selectCalls).toBe(1);
 	});
 });

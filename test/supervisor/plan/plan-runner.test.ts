@@ -242,58 +242,58 @@ describe('runPlanPhase', () => {
 	// -------------------------------------------------------------------------
 	// Happy path - audit-approved
 	// -------------------------------------------------------------------------
-	test('happy path returns audit-approved when report is APPROVE', () => {
+	test('happy path returns audit-approved when report is APPROVE', async () => {
 		const { opts } = makeOpts();
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 		expect(result.kind).toBe('audit-approved');
 	});
 
-	test('happy path includes the selected issue in the result', () => {
+	test('happy path includes the selected issue in the result', async () => {
 		const { opts } = makeOpts();
-		const result = runPlanPhase(opts) as { kind: 'audit-approved'; issue: IssueEntry };
+		const result = await runPlanPhase(opts) as { kind: 'audit-approved'; issue: IssueEntry };
 		expect(result.issue.id).toBe('CAM-99');
 	});
 
-	test('happy path includes the report in the result', () => {
+	test('happy path includes the report in the result', async () => {
 		const { opts } = makeOpts();
-		const result = runPlanPhase(opts) as { kind: 'audit-approved'; report: PlanVerdictReport };
+		const result = await runPlanPhase(opts) as { kind: 'audit-approved'; report: PlanVerdictReport };
 		expect(result.report.verdict).toBe('APPROVE');
 	});
 
 	// -------------------------------------------------------------------------
 	// Happy path - audit-blocked
 	// -------------------------------------------------------------------------
-	test('returns audit-blocked when report is BLOCK', () => {
+	test('returns audit-blocked when report is BLOCK', async () => {
 		const { opts } = makeOpts({ readPlanVerdictFn: () => BLOCK_REPORT });
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 		expect(result.kind).toBe('audit-blocked');
 	});
 
-	test('audit-blocked includes the BLOCK report', () => {
+	test('audit-blocked includes the BLOCK report', async () => {
 		const { opts } = makeOpts({ readPlanVerdictFn: () => BLOCK_REPORT });
-		const result = runPlanPhase(opts) as { kind: 'audit-blocked'; report: PlanVerdictReport };
+		const result = await runPlanPhase(opts) as { kind: 'audit-blocked'; report: PlanVerdictReport };
 		expect(result.report.verdict).toBe('BLOCK');
 	});
 
 	// -------------------------------------------------------------------------
 	// Preflight failure (AC2)
 	// -------------------------------------------------------------------------
-	test('preflight failure returns preflight-failed kind', () => {
+	test('preflight failure returns preflight-failed kind', async () => {
 		const { opts } = makeOpts({ preflightFn: () => PREFLIGHT_FAIL });
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 		expect(result.kind).toBe('preflight-failed');
 	});
 
-	test('preflight failure propagates step and detail', () => {
+	test('preflight failure propagates step and detail', async () => {
 		const { opts } = makeOpts({ preflightFn: () => PREFLIGHT_FAIL });
-		const result = runPlanPhase(opts) as { kind: 'preflight-failed'; step: string; detail: string };
+		const result = await runPlanPhase(opts) as { kind: 'preflight-failed'; step: string; detail: string };
 		expect(result.step).toBe('typecheck');
 		expect(result.detail).toBe('error TS2345');
 	});
 
-	test('preflight failure spawns NO pane (AC2)', () => {
+	test('preflight failure spawns NO pane (AC2)', async () => {
 		const { opts, calls } = makeOpts({ preflightFn: () => PREFLIGHT_FAIL });
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 		// No respawn-pane or set-option calls should have been made
 		const respawnCalls = calls.filter(
 			(c) => c.args[2] === 'respawn-pane' || c.args[2] === 'set-option',
@@ -301,22 +301,22 @@ describe('runPlanPhase', () => {
 		expect(respawnCalls.length).toBe(0);
 	});
 
-	test('preflight failure: spawn call list is completely empty (AC2)', () => {
+	test('preflight failure: spawn call list is completely empty (AC2)', async () => {
 		const { opts, calls } = makeOpts({ preflightFn: () => PREFLIGHT_FAIL });
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 		expect(calls.length).toBe(0);
 	});
 
 	// -------------------------------------------------------------------------
 	// plan-preflight-failed event (US-002, CAM-158)
 	// -------------------------------------------------------------------------
-	test('preflight failure emits exactly one plan-preflight-failed event with correct step', () => {
+	test('preflight failure emits exactly one plan-preflight-failed event with correct step', async () => {
 		const { logger, events } = makeInMemoryEventLogger();
 		const { opts } = makeOpts({
 			preflightFn: () => PREFLIGHT_FAIL,
 			logEvent: logger,
 		});
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 		const failEvents = events.filter((e) => e.kind === 'plan-preflight-failed');
 		expect(failEvents.length).toBe(1);
 		const detail = failEvents[0]?.detail as { step: string; detail: string };
@@ -324,10 +324,10 @@ describe('runPlanPhase', () => {
 		expect(detail.detail).toBe('error TS2345');
 	});
 
-	test('preflight success emits no plan-preflight-failed event', () => {
+	test('preflight success emits no plan-preflight-failed event', async () => {
 		const { logger, events } = makeInMemoryEventLogger();
 		const { opts } = makeOpts({ logEvent: logger });
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 		const failEvents = events.filter((e) => e.kind === 'plan-preflight-failed');
 		expect(failEvents.length).toBe(0);
 	});
@@ -335,30 +335,30 @@ describe('runPlanPhase', () => {
 	// -------------------------------------------------------------------------
 	// No plannable issue (AC3)
 	// -------------------------------------------------------------------------
-	test('no-plannable-issue returns correct kind (AC3)', () => {
+	test('no-plannable-issue returns correct kind (AC3)', async () => {
 		const { opts } = makeOpts({ selectIssueFn: () => null });
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 		expect(result.kind).toBe('no-plannable-issue');
 	});
 
-	test('no-plannable-issue spawns no pane (AC3)', () => {
+	test('no-plannable-issue spawns no pane (AC3)', async () => {
 		const { opts, calls } = makeOpts({ selectIssueFn: () => null });
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 		expect(calls.length).toBe(0);
 	});
 
 	// -------------------------------------------------------------------------
 	// Mutex busy (AC5)
 	// -------------------------------------------------------------------------
-	test('mutex busy returns mutex-busy kind (AC5)', () => {
+	test('mutex busy returns mutex-busy kind (AC5)', async () => {
 		const { opts } = makeOpts({ paneCountMutexFn: () => 'busy' });
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 		expect(result.kind).toBe('mutex-busy');
 	});
 
-	test('mutex busy: no pane label or respawn-pane call made (AC5)', () => {
+	test('mutex busy: no pane label or respawn-pane call made (AC5)', async () => {
 		const { opts, calls } = makeOpts({ paneCountMutexFn: () => 'busy' });
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 		// No set-option or respawn-pane should be called when busy
 		const tmuxCalls = calls.filter(
 			(c) => c.args[2] === 'set-option' || c.args[2] === 'respawn-pane',
@@ -369,7 +369,7 @@ describe('runPlanPhase', () => {
 	// -------------------------------------------------------------------------
 	// Planner timeout
 	// -------------------------------------------------------------------------
-	test('planner timeout returns planner-timeout kind', () => {
+	test('planner timeout returns planner-timeout kind', async () => {
 		// pane is always alive; clock advances fast past plannerTimeoutMs
 		let tick = 0;
 		const { opts } = makeOpts({
@@ -377,18 +377,18 @@ describe('runPlanPhase', () => {
 			clock: () => (tick += 1_000_000), // jump past timeout on first check
 			plannerTimeoutMs: 1,
 		});
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 		expect(result.kind).toBe('planner-timeout');
 	});
 
-	test('planner timeout emits echo planner-timeout kill command', () => {
+	test('planner timeout emits echo planner-timeout kill command', async () => {
 		let tick = 0;
 		const { opts, calls } = makeOpts({
 			isPaneAlive: () => true,
 			clock: () => (tick += 1_000_000),
 			plannerTimeoutMs: 1,
 		});
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 		const killCall = calls.find(
 			(c) => c.args[2] === 'respawn-pane' && c.args.includes('echo planner-timeout'),
 		);
@@ -398,7 +398,7 @@ describe('runPlanPhase', () => {
 	// -------------------------------------------------------------------------
 	// Auditor timeout
 	// -------------------------------------------------------------------------
-	test('auditor timeout returns auditor-timeout kind', () => {
+	test('auditor timeout returns auditor-timeout kind', async () => {
 		// planner dies instantly; auditor never writes report; clock times out
 		let plannerDied = false;
 		let auditorTick = 0;
@@ -415,11 +415,11 @@ describe('runPlanPhase', () => {
 			auditorTimeoutMs: 1,
 			plannerTimeoutMs: 999_999,
 		});
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 		expect(result.kind).toBe('auditor-timeout');
 	});
 
-	test('auditor pane dies before report: returns auditor-timeout', () => {
+	test('auditor pane dies before report: returns auditor-timeout', async () => {
 		// planner dies after 1 tick; auditor also dies immediately (no report)
 		let paneAliveCount = 1; // alive for 1 check (planner poll), then dead
 		const { opts } = makeOpts({
@@ -432,16 +432,16 @@ describe('runPlanPhase', () => {
 			},
 			readPlanVerdictFn: () => null, // no report
 		});
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 		expect(result.kind).toBe('auditor-timeout');
 	});
 
 	// -------------------------------------------------------------------------
 	// Spawn sequence: @cam_label set BEFORE respawn-pane (AC4, AC5)
 	// -------------------------------------------------------------------------
-	test('set-option @cam_label planner appears before respawn-pane planner (AC4, AC5)', () => {
+	test('set-option @cam_label planner appears before respawn-pane planner (AC4, AC5)', async () => {
 		const { opts, calls } = makeOpts();
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 
 		const setLabelPlannerIdx = calls.findIndex(
 			(c) => c.args[2] === 'set-option' && c.args.includes('planner'),
@@ -457,9 +457,9 @@ describe('runPlanPhase', () => {
 		expect(setLabelPlannerIdx).toBeLessThan(respawnPlannerIdx);
 	});
 
-	test('set-option @cam_label auditor appears before respawn-pane auditor (AC4, AC5)', () => {
+	test('set-option @cam_label auditor appears before respawn-pane auditor (AC4, AC5)', async () => {
 		const { opts, calls } = makeOpts();
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 
 		const setLabelAuditorIdx = calls.findIndex(
 			(c) => c.args[2] === 'set-option' && c.args.includes('auditor'),
@@ -475,9 +475,9 @@ describe('runPlanPhase', () => {
 		expect(setLabelAuditorIdx).toBeLessThan(respawnAuditorIdx);
 	});
 
-	test('@cam_label planner set-option uses correct tmux flag format (AC5)', () => {
+	test('@cam_label planner set-option uses correct tmux flag format (AC5)', async () => {
 		const { opts, calls } = makeOpts();
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 
 		const plannerLabel = calls.find(
 			(c) => c.args[2] === 'set-option' && c.args.includes('planner'),
@@ -489,9 +489,9 @@ describe('runPlanPhase', () => {
 		]);
 	});
 
-	test('@cam_label auditor set-option uses correct tmux flag format (AC5)', () => {
+	test('@cam_label auditor set-option uses correct tmux flag format (AC5)', async () => {
 		const { opts, calls } = makeOpts();
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 
 		const auditorLabel = calls.find(
 			(c) => c.args[2] === 'set-option' && c.args.includes('auditor'),
@@ -505,14 +505,14 @@ describe('runPlanPhase', () => {
 	// -------------------------------------------------------------------------
 	// Session-id is lowercase (CAM-23 mac uuidgen uppercase)
 	// -------------------------------------------------------------------------
-	test('planner session-id is lowercased even when genUuid returns uppercase (AC4)', () => {
+	test('planner session-id is lowercased even when genUuid returns uppercase (AC4)', async () => {
 		const { opts, calls } = makeOpts({
 			genUuid: (() => {
 				let n = 0;
 				return () => `UPPERCASE-UUID-${++n}`;
 			})(),
 		});
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 
 		const plannerRespawn = calls.find(
 			(c) =>
@@ -528,14 +528,14 @@ describe('runPlanPhase', () => {
 		expect(sessionId).toBe(sessionId.toLowerCase());
 	});
 
-	test('auditor session-id is lowercased even when genUuid returns uppercase (AC4)', () => {
+	test('auditor session-id is lowercased even when genUuid returns uppercase (AC4)', async () => {
 		const { opts, calls } = makeOpts({
 			genUuid: (() => {
 				let n = 0;
 				return () => `UPPERCASE-UUID-${++n}`;
 			})(),
 		});
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 
 		const auditorRespawn = calls.find(
 			(c) =>
@@ -553,17 +553,17 @@ describe('runPlanPhase', () => {
 	// -------------------------------------------------------------------------
 	// Exact spawn sequence (AC4)
 	// -------------------------------------------------------------------------
-	test('exactly 2 respawn-pane calls on happy path (AC4)', () => {
+	test('exactly 2 respawn-pane calls on happy path (AC4)', async () => {
 		const { opts, calls } = makeOpts();
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 
 		const respawnCalls = calls.filter((c) => c.args[2] === 'respawn-pane');
 		expect(respawnCalls.length).toBe(2);
 	});
 
-	test('exactly 2 set-option @cam_label calls on happy path (AC5)', () => {
+	test('exactly 2 set-option @cam_label calls on happy path (AC5)', async () => {
 		const { opts, calls } = makeOpts();
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 
 		const labelCalls = calls.filter(
 			(c) => c.args[2] === 'set-option' && c.args.includes('@cam_label'),
@@ -571,9 +571,9 @@ describe('runPlanPhase', () => {
 		expect(labelCalls.length).toBe(2);
 	});
 
-	test('full spawn order: label-planner, respawn-planner, label-auditor, respawn-auditor (AC4)', () => {
+	test('full spawn order: label-planner, respawn-planner, label-auditor, respawn-auditor (AC4)', async () => {
 		const { opts, calls } = makeOpts();
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 
 		const tmuxCalls = calls
 			.filter((c) => c.args[2] === 'set-option' || c.args[2] === 'respawn-pane')
@@ -593,22 +593,22 @@ describe('runPlanPhase', () => {
 	// -------------------------------------------------------------------------
 	// emitSpawnResolution called for both planner and auditor (patterns.md)
 	// -------------------------------------------------------------------------
-	test('emitSpawnResolution fires for planner phase before respawn-pane (AC4)', () => {
+	test('emitSpawnResolution fires for planner phase before respawn-pane (AC4)', async () => {
 		const { opts, loggedPhases } = makeOpts();
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 		expect(loggedPhases).toContain('planner');
 	});
 
-	test('emitSpawnResolution fires for auditor phase (AC4)', () => {
+	test('emitSpawnResolution fires for auditor phase (AC4)', async () => {
 		const { opts, loggedPhases } = makeOpts();
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 		expect(loggedPhases).toContain('auditor');
 	});
 
 	// -------------------------------------------------------------------------
 	// paneCountMutexFn called exactly once
 	// -------------------------------------------------------------------------
-	test('paneCountMutexFn is called exactly once (before first planner spawn)', () => {
+	test('paneCountMutexFn is called exactly once (before first planner spawn)', async () => {
 		let mutexCallCount = 0;
 		const { opts } = makeOpts({
 			paneCountMutexFn: () => {
@@ -616,11 +616,11 @@ describe('runPlanPhase', () => {
 				return 'available';
 			},
 		});
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 		expect(mutexCallCount).toBe(1);
 	});
 
-	test('paneCountMutexFn not called when preflight fails', () => {
+	test('paneCountMutexFn not called when preflight fails', async () => {
 		let mutexCallCount = 0;
 		const { opts } = makeOpts({
 			preflightFn: () => PREFLIGHT_FAIL,
@@ -629,11 +629,11 @@ describe('runPlanPhase', () => {
 				return 'available';
 			},
 		});
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 		expect(mutexCallCount).toBe(0);
 	});
 
-	test('paneCountMutexFn not called when no plannable issue', () => {
+	test('paneCountMutexFn not called when no plannable issue', async () => {
 		let mutexCallCount = 0;
 		const { opts } = makeOpts({
 			selectIssueFn: () => null,
@@ -642,16 +642,16 @@ describe('runPlanPhase', () => {
 				return 'available';
 			},
 		});
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 		expect(mutexCallCount).toBe(0);
 	});
 
 	// -------------------------------------------------------------------------
 	// respawn-pane uses -k flag and correct pane id
 	// -------------------------------------------------------------------------
-	test('planner respawn-pane uses -k flag and correct pane id', () => {
+	test('planner respawn-pane uses -k flag and correct pane id', async () => {
 		const { opts, calls } = makeOpts();
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 
 		const plannerRespawn = calls.find(
 			(c) =>
@@ -663,9 +663,9 @@ describe('runPlanPhase', () => {
 		expect(plannerRespawn?.args).toContain('%3');
 	});
 
-	test('auditor respawn-pane uses -k flag and correct pane id', () => {
+	test('auditor respawn-pane uses -k flag and correct pane id', async () => {
 		const { opts, calls } = makeOpts();
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 
 		const auditorRespawn = calls.find(
 			(c) =>
@@ -680,10 +680,10 @@ describe('runPlanPhase', () => {
 	// -------------------------------------------------------------------------
 	// sleepFn is called during polling
 	// -------------------------------------------------------------------------
-	test('sleepFn is called at least once during the planner poll', () => {
+	test('sleepFn is called at least once during the planner poll', async () => {
 		let sleepCount = 0;
 		const { opts } = makeOpts({ sleepFn: () => { sleepCount++; } });
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 		expect(sleepCount).toBeGreaterThan(0);
 	});
 
@@ -708,20 +708,20 @@ describe('runPlanPhase', () => {
 	// -------------------------------------------------------------------------
 	// selectIssueFn is NOT called when preflight fails (AC2 enforcement)
 	// -------------------------------------------------------------------------
-	test('selectIssueFn is not called when preflight fails', () => {
+	test('selectIssueFn is not called when preflight fails', async () => {
 		let selectCalled = false;
 		const { opts } = makeOpts({
 			preflightFn: () => PREFLIGHT_FAIL,
 			selectIssueFn: () => { selectCalled = true; return MOCK_ISSUE; },
 		});
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 		expect(selectCalled).toBe(false);
 	});
 
 	// -------------------------------------------------------------------------
 	// readPlanVerdictFn: auditor verdict sourced from file only (AC4)
 	// -------------------------------------------------------------------------
-	test('readPlanVerdictFn is called during auditor poll (AC4)', () => {
+	test('readPlanVerdictFn is called during auditor poll (AC4)', async () => {
 		let readCount = 0;
 		const { opts } = makeOpts({
 			readPlanVerdictFn: () => {
@@ -729,7 +729,7 @@ describe('runPlanPhase', () => {
 				return APPROVE_REPORT;
 			},
 		});
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 		expect(readCount).toBeGreaterThan(0);
 	});
 
@@ -741,15 +741,15 @@ describe('runPlanPhase', () => {
 	// The old code (pollPlannerDeath: while isPaneAlive) would loop until
 	// plannerTimeoutMs=999_999 and return planner-timeout on the happy path.
 	// -------------------------------------------------------------------------
-	test('US-R1-001: happy path completes via readPlannerReportFn even when pane never dies', () => {
+	test('US-R1-001: happy path completes via readPlannerReportFn even when pane never dies', async () => {
 		// isPaneAlive always true; readPlannerReportFn signals completion after 1 tick
 		const { opts } = makeOptsAlwaysAlive(1);
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 		// Must be audit-approved, NOT planner-timeout
 		expect(result.kind).toBe('audit-approved');
 	});
 
-	test('US-R1-001: readPlannerReportFn is checked during planner poll', () => {
+	test('US-R1-001: readPlannerReportFn is checked during planner poll', async () => {
 		const { opts, calls: _c } = makeOptsAlwaysAlive(1);
 		// runPlanPhase must call readPlannerReportFn at least once
 		let readCalled = false;
@@ -760,30 +760,30 @@ describe('runPlanPhase', () => {
 				return { branchName: 'cam/test', userStories: [] };
 			},
 		};
-		runPlanPhase(wrappedOpts);
+		await runPlanPhase(wrappedOpts);
 		expect(readCalled).toBe(true);
 	});
 
-	test('US-R1-001: auditor is spawned when readPlannerReportFn signals completion (pane still alive)', () => {
+	test('US-R1-001: auditor is spawned when readPlannerReportFn signals completion (pane still alive)', async () => {
 		// The auditor spawn (respawn-pane with subagent-auditor) MUST happen
 		// even though isPaneAlive never returns false.
 		const { opts, calls } = makeOptsAlwaysAlive(1);
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 		const auditorRespawn = calls.find(
 			(c) => c.args[2] === 'respawn-pane' && c.args.some((a) => a.includes('subagent-auditor')),
 		);
 		expect(auditorRespawn).toBeDefined();
 	});
 
-	test('US-R1-001: readPlannerReportFn checked before isPaneAlive (primary signal priority)', () => {
+	test('US-R1-001: readPlannerReportFn checked before isPaneAlive (primary signal priority)', async () => {
 		// Report signals completion on tick 1; pane never dies.
 		// Verify we do NOT get planner-timeout (which the old code would produce).
 		const { opts } = makeOptsAlwaysAlive(1);
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 		expect(result.kind).not.toBe('planner-timeout');
 	});
 
-	test('US-R1-001: without readPlannerReportFn and pane never dying -> planner-timeout', () => {
+	test('US-R1-001: without readPlannerReportFn and pane never dying -> planner-timeout', async () => {
 		// Proves the dep is necessary: omitting it with always-alive pane hits timeout.
 		let tick = 0;
 		const { opts } = makeOpts({
@@ -792,11 +792,11 @@ describe('runPlanPhase', () => {
 			plannerTimeoutMs: 1,
 			// readPlannerReportFn intentionally absent
 		});
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 		expect(result.kind).toBe('planner-timeout');
 	});
 
-	test('US-R1-001: readPlannerReportFn called multiple times if report not ready on first tick', () => {
+	test('US-R1-001: readPlannerReportFn called multiple times if report not ready on first tick', async () => {
 		// Report returns null for first 2 ticks, then non-null on tick 3.
 		// This ensures the poll loop keeps checking, not just once.
 		const { opts } = makeOptsAlwaysAlive(3);
@@ -808,7 +808,7 @@ describe('runPlanPhase', () => {
 				return checkCount >= 3 ? { branchName: 'cam/test' } : null;
 			},
 		};
-		runPlanPhase(wrappedOpts);
+		await runPlanPhase(wrappedOpts);
 		// Should have been called at least 3 times
 		expect(checkCount).toBeGreaterThanOrEqual(3);
 	});

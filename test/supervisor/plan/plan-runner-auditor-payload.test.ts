@@ -235,33 +235,33 @@ describe('deriveBranchNameFromIssueId (AC2)', () => {
 // ---------------------------------------------------------------------------
 
 describe('runPlanPhase auditor spawn payload (AC3)', () => {
-	test('auditor spawn payload embeds the selected issue id', () => {
+	test('auditor spawn payload embeds the selected issue id', async () => {
 		const { opts, calls } = makeOpts(CAM_156_ISSUE);
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 		expect(findAuditorPrompt(calls)).toContain('CAM-156');
 	});
 
-	test('auditor spawn payload embeds the selected issue title', () => {
+	test('auditor spawn payload embeds the selected issue title', async () => {
 		const { opts, calls } = makeOpts(CAM_156_ISSUE);
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 		expect(findAuditorPrompt(calls)).toContain('Fix push-verification false-BLOCK on stale expected-ref');
 	});
 
-	test('auditor spawn payload embeds the derived branch name, not a planner slug', () => {
+	test('auditor spawn payload embeds the derived branch name, not a planner slug', async () => {
 		const { opts, calls } = makeOpts(CAM_156_ISSUE);
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 		expect(findAuditorPrompt(calls)).toContain('cam/issue-156');
 	});
 
-	test('opts.auditorTaskPrompt override still wins (backward compat)', () => {
+	test('opts.auditorTaskPrompt override still wins (backward compat)', async () => {
 		const { opts, calls } = makeOpts(CAM_156_ISSUE, {
 			auditorTaskPrompt: 'Custom override prompt',
 		});
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 		expect(findAuditorPrompt(calls)).toContain('Custom override prompt');
 	});
 
-	test('re-plan rounds inherit the same record-bearing auditor prompt (AC3)', () => {
+	test('re-plan rounds inherit the same record-bearing auditor prompt (AC3)', async () => {
 		let round = 0;
 		const opts: RunPlanPhaseWithReplanOptions = {
 			...makeOpts(CAM_156_ISSUE).opts,
@@ -281,7 +281,7 @@ describe('runPlanPhase auditor spawn payload (AC3)', () => {
 			return { stdout: '', exitCode: 0 };
 		};
 		let plannerAliveCount = 1;
-		const result = runPlanPhaseWithReplan({
+		const result = await runPlanPhaseWithReplan({
 			...opts,
 			spawnFn: withVerifiedPanePid(spawnFn),
 			isPaneAlive: () => {
@@ -310,9 +310,9 @@ describe('runPlanPhase auditor spawn payload (AC3)', () => {
 // ---------------------------------------------------------------------------
 
 describe('CAM-156 regression: coincident GitHub PR #156 never triggers bare-number resolution (AC4)', () => {
-	test('auditor spawn payload carries the fully-resolved CAM-156 record', () => {
+	test('auditor spawn payload carries the fully-resolved CAM-156 record', async () => {
 		const { opts, calls } = makeOpts(CAM_156_ISSUE);
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 		const prompt = findAuditorPrompt(calls);
 		expect(prompt).toContain('CAM-156');
 		expect(prompt).toContain('Fix push-verification false-BLOCK on stale expected-ref');
@@ -320,17 +320,17 @@ describe('CAM-156 regression: coincident GitHub PR #156 never triggers bare-numb
 		expect(prompt).toContain('cam/issue-156');
 	});
 
-	test('runPlanPhase issues no gh invocation for issue/PR identity', () => {
+	test('runPlanPhase issues no gh invocation for issue/PR identity', async () => {
 		const { opts, calls } = makeOpts(CAM_156_ISSUE);
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 		expect(result.kind).toBe('audit-approved');
 		const ghCalls = calls.filter((c) => c.cmd === 'gh');
 		expect(ghCalls.length).toBe(0);
 	});
 
-	test('the derived branch is cam/issue-156, never a planner-authored slug', () => {
+	test('the derived branch is cam/issue-156, never a planner-authored slug', async () => {
 		const { opts, calls } = makeOpts(CAM_156_ISSUE);
-		runPlanPhase(opts);
+		await runPlanPhase(opts);
 		const prompt = findAuditorPrompt(calls);
 		expect(prompt).not.toMatch(/cam\/issue-156-[a-z]/); // no slug suffix appended
 	});

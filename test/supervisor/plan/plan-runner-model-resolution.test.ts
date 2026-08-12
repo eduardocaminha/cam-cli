@@ -137,7 +137,7 @@ async function withClaudeShapedCodexCwd<T>(fn: () => T | Promise<T>): Promise<T>
 
 describe('plan-runner model resolution: AC3 - resolved slug reaches argv, never the claude alias', () => {
 	test('planner site: dispatched cmd contains the resolved slug, never the claude alias', async () => {
-		await withClaudeShapedCodexCwd(() => {
+		await withClaudeShapedCodexCwd(async () => {
 			let cacheReaderCalled = false;
 			const spawnCalls: string[][] = [];
 			const opts = makeOpts(
@@ -150,7 +150,7 @@ describe('plan-runner model resolution: AC3 - resolved slug reaches argv, never 
 				spawnCalls,
 			);
 
-			runPlanPhase(opts);
+			await runPlanPhase(opts);
 
 			expect(cacheReaderCalled).toBe(true);
 			const calls = respawnCalls(spawnCalls);
@@ -163,7 +163,7 @@ describe('plan-runner model resolution: AC3 - resolved slug reaches argv, never 
 	});
 
 	test('auditor site: dispatched cmd contains the resolved slug, never the claude alias', async () => {
-		await withClaudeShapedCodexCwd(() => {
+		await withClaudeShapedCodexCwd(async () => {
 			const spawnCalls: string[][] = [];
 			const opts = makeOpts(
 				{
@@ -172,7 +172,7 @@ describe('plan-runner model resolution: AC3 - resolved slug reaches argv, never 
 				spawnCalls,
 			);
 
-			runPlanPhase(opts);
+			await runPlanPhase(opts);
 
 			const calls = respawnCalls(spawnCalls);
 			expect(calls.length).toBe(2);
@@ -204,7 +204,7 @@ describe('plan-runner model resolution: AC2/AC4 - not-ok resolution aborts befor
 				spawnCalls,
 			);
 
-			const result = runPlanPhase(opts);
+			const result = await runPlanPhase(opts);
 
 			expect(result.kind).toBe('codex-auth-failed');
 			if (result.kind === 'codex-auth-failed') {
@@ -236,7 +236,7 @@ describe('plan-runner model resolution: AC2/AC4 - not-ok resolution aborts befor
 				spawnCalls,
 			);
 
-			const result = runPlanPhase(opts);
+			const result = await runPlanPhase(opts);
 
 			expect(result.kind).toBe('codex-auth-failed');
 			if (result.kind === 'codex-auth-failed') {
@@ -276,7 +276,7 @@ describe('plan-runner model resolution: AC5 - injectable seam, default fallback,
 			const spawnCalls: string[][] = [];
 			const opts = makeOpts({}, spawnCalls); // codexModelsCacheReaderFn intentionally absent
 
-			const result = runPlanPhase(opts);
+			const result = await runPlanPhase(opts);
 
 			expect(result.kind).not.toBe('codex-auth-failed');
 			expect(respawnCalls(spawnCalls).length).toBe(2);
@@ -286,7 +286,7 @@ describe('plan-runner model resolution: AC5 - injectable seam, default fallback,
 		}
 	});
 
-	test('claude-backed dispatch (repo default project.toml) never invokes the injected cacheReader', () => {
+	test('claude-backed dispatch (repo default project.toml) never invokes the injected cacheReader', async () => {
 		// No chdir: the repo's own scripts/cam/project.toml resolves the
 		// planner/auditor backends to 'claude' by default.
 		let cacheReaderCalled = false;
@@ -301,7 +301,7 @@ describe('plan-runner model resolution: AC5 - injectable seam, default fallback,
 			spawnCalls,
 		);
 
-		const result = runPlanPhase(opts);
+		const result = await runPlanPhase(opts);
 
 		expect(result.kind).not.toBe('codex-auth-failed');
 		expect(respawnCalls(spawnCalls).length).toBe(2);

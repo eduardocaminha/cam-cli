@@ -107,7 +107,7 @@ test('buildPlannerTaskPrompt: different issue ids produce different prompts', ()
 // runPlanPhase: prompt threading (AC1)
 // ---------------------------------------------------------------------------
 
-test('runPlanPhase: spawned planner receives prompt built from selected issue id, not DEFAULT_PLANNER_TASK_PROMPT', () => {
+test('runPlanPhase: spawned planner receives prompt built from selected issue id, not DEFAULT_PLANNER_TASK_PROMPT', async () => {
 	// Capture the shell string passed to respawn-pane.
 	const capturedPrompts: string[] = [];
 
@@ -123,7 +123,7 @@ test('runPlanPhase: spawned planner receives prompt built from selected issue id
 	// isPaneAlive returns false so the poll loop exits immediately (pane-death fallback).
 	const isPaneAlive = (_paneId: string): boolean => false;
 
-	runPlanPhase({
+	await runPlanPhase({
 		spawnFn: withVerifiedPanePid(spawnFn),
 		isPaneAlive,
 		sleepFn: () => {},
@@ -156,7 +156,7 @@ test('runPlanPhase: spawned planner receives prompt built from selected issue id
 	expect(plannerPrompt).not.toContain(DEFAULT_PLANNER_TASK_PROMPT);
 });
 
-test('runPlanPhase: spawned planner receives CAM-157 id, not top-of-queue CAM-99', () => {
+test('runPlanPhase: spawned planner receives CAM-157 id, not top-of-queue CAM-99', async () => {
 	const capturedPrompts: string[] = [];
 
 	const spawnFn = (cmd: string, args: string[]): { stdout: string; exitCode: number } => {
@@ -166,7 +166,7 @@ test('runPlanPhase: spawned planner receives CAM-157 id, not top-of-queue CAM-99
 		return { stdout: '', exitCode: 0 };
 	};
 
-	runPlanPhase({
+	await runPlanPhase({
 		spawnFn: withVerifiedPanePid(spawnFn),
 		isPaneAlive: () => false,
 		sleepFn: () => {},
@@ -195,7 +195,7 @@ test('runPlanPhase: spawned planner receives CAM-157 id, not top-of-queue CAM-99
 // runPlanPhase: opts.plannerTaskPrompt override (AC3)
 // ---------------------------------------------------------------------------
 
-test('runPlanPhase: opts.plannerTaskPrompt override is honored (backward compat)', () => {
+test('runPlanPhase: opts.plannerTaskPrompt override is honored (backward compat)', async () => {
 	const capturedPrompts: string[] = [];
 	const OVERRIDE_PROMPT = 'Fixed test prompt: do something specific.';
 
@@ -206,7 +206,7 @@ test('runPlanPhase: opts.plannerTaskPrompt override is honored (backward compat)
 		return { stdout: '', exitCode: 0 };
 	};
 
-	runPlanPhase({
+	await runPlanPhase({
 		spawnFn: withVerifiedPanePid(spawnFn),
 		isPaneAlive: () => false,
 		sleepFn: () => {},
@@ -234,7 +234,7 @@ test('runPlanPhase: opts.plannerTaskPrompt override is honored (backward compat)
 // runPlanPhase: null issue -> no-plannable-issue (AC5 - halt unchanged)
 // ---------------------------------------------------------------------------
 
-test('runPlanPhase: selectIssueFn returning null -> no-plannable-issue, no planner spawn', () => {
+test('runPlanPhase: selectIssueFn returning null -> no-plannable-issue, no planner spawn', async () => {
 	const spawnCalls: string[][] = [];
 
 	const spawnFn = (cmd: string, args: string[]): { stdout: string; exitCode: number } => {
@@ -242,7 +242,7 @@ test('runPlanPhase: selectIssueFn returning null -> no-plannable-issue, no plann
 		return { stdout: '', exitCode: 0 };
 	};
 
-	const result = runPlanPhase({
+	const result = await runPlanPhase({
 		spawnFn: withVerifiedPanePid(spawnFn),
 		isPaneAlive: () => false,
 		sleepFn: () => {},
@@ -273,7 +273,7 @@ test('runPlanPhase: selectIssueFn returning null -> no-plannable-issue, no plann
 // runPlanPhase: top-of-queue selection (AC4 - "bare selection path")
 // ---------------------------------------------------------------------------
 
-test('runPlanPhase: when selectIssueFn returns top-of-queue issue, prompt names that issue', () => {
+test('runPlanPhase: when selectIssueFn returns top-of-queue issue, prompt names that issue', async () => {
 	const capturedPrompts: string[] = [];
 
 	const spawnFn = (cmd: string, args: string[]): { stdout: string; exitCode: number } => {
@@ -283,7 +283,7 @@ test('runPlanPhase: when selectIssueFn returns top-of-queue issue, prompt names 
 		return { stdout: '', exitCode: 0 };
 	};
 
-	runPlanPhase({
+	await runPlanPhase({
 		spawnFn: withVerifiedPanePid(spawnFn),
 		isPaneAlive: () => false,
 		sleepFn: () => {},
