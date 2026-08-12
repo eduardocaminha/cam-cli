@@ -601,3 +601,24 @@ Especie de oraculo de criterio de aceite que e verde por construcao e cujo compa
 
 **vendorizacao re-executavel**:
 Forma de trazer codigo de terceiro para o repositorio por meio de um script que pode ser rodado de novo contra a fonte upstream, com versao pinada e gate de drift, em vez de uma copia manual. Impede que adaptacoes locais virem um fork que precisa ser reaplicado a cada atualizacao.
+
+**contrato de tres sinais**:
+Regra de conclusao de um worker executado como processo filho: a conclusao so e reconhecida quando os tres sinais concordam, sendo eles o evento terminal observado no stream de saida, o codigo de saida do processo filho, e o artefato de papel presente e valido no schema. Qualquer divergencia entre os tres nao e empate a resolver por precedencia: e um desfecho nomeado, sem veredito, com o artefato preservado como forense.
+
+**signal-disagreement**:
+Desfecho nomeado emitido quando os sinais do contrato de tres sinais nao concordam entre si. Carrega os sinais observados em vez de escolher um deles. Nunca produz veredito de papel.
+
+**evento terminal**:
+Ultimo evento estruturado que o agente emite no stream de saida antes de encerrar, declarando o fim do proprio protocolo. Sua ausencia indica execucao truncada ou morta, mesmo quando o processo saiu com codigo zero. O nome concreto do evento e especifico de cada backend.
+
+**await-then-read-once**:
+Forma de deteccao de conclusao em que o supervisor espera o processo filho terminar e so entao le o artefato de papel uma unica vez, em oposicao a um laco de poll que amostra periodicamente arquivo e liveness enquanto o worker roda.
+
+**ator de worker**:
+Papel que uma sessao de agente ocupa no ciclo, entre implementer, planner, auditor e reviewer. E o eixo pelo qual se decidem persona, permissoes de escrita e marcadores de ambiente. Nao se confunde com backend, que e qual ferramenta de agente executa o papel.
+
+**artefato de papel**:
+Arquivo que um ator de worker produz como sua saida de contrato, e que o supervisor le para derivar o resultado. E a lingua franca entre papeis e e neutro de backend: worker-report.json para o implementer, review-report.json para o reviewer, prd.json para o planner, plan-verdict-report.json para o auditor.
+
+**roteamento por campo de sessao**:
+Mecanismo pelo qual todas as fases de um ciclo herdam uma escolha de substrato de execucao a partir de um unico campo no arquivo de estado do loop, escrito por qualquer porta de entrada de CLI e lido por todas as fases, em vez de cada comando decidir isoladamente.
