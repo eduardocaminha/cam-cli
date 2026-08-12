@@ -87,7 +87,7 @@ describe('US-R1-001: codex instructions file is reaped by the REAL production di
 				readHandoff: () => ({ lastCompletedStory: { id: 'US-001', title: 'x' } }),
 				clock: () => '2026-08-06T00:00:00Z',
 				genUuid: () => 'production-terminal-implementer-uuid',
-				reviewDispatch: () => ({ status: 'ok', detail: 'unused' }),
+				reviewDispatch: async () => ({ status: 'ok', detail: 'unused' }),
 				writeSessionMarker: () => {},
 				isPaneAlive: () => true,
 				workerPaneId: '%3',
@@ -117,7 +117,7 @@ describe('US-R1-001: codex instructions file is reaped by the REAL production di
 		}
 	});
 
-	test('reviewer: makeReviewDispatch drives a codex dispatch to a CLEAN verdict and the last file does not survive', () => {
+	test('reviewer: makeReviewDispatch drives a codex dispatch to a CLEAN verdict and the last file does not survive', async () => {
 		const originalTmpdir = process.env.TMPDIR;
 		const originalCwd = process.cwd();
 		const scratchRoot = createTestTmpdir('cam-codex-instructions-production-terminal-scratch-');
@@ -148,7 +148,7 @@ describe('US-R1-001: codex instructions file is reaped by the REAL production di
 				codexModelsCacheReaderFn: () => ({ ok: true, slug: 'gpt-5.6-sol' }),
 			});
 
-			const result = dispatch('production-terminal-reviewer-uuid');
+			const result = await dispatch('production-terminal-reviewer-uuid');
 			expect(result.status).toBe('ok');
 			expect(survivingInstructionsFiles(scratchRoot, 'subagent-reviewer')).toEqual([]);
 		} finally {

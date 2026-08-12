@@ -71,7 +71,7 @@ function baseImplementOpts(
 		readHandoff: () => null,
 		clock: () => '2026-07-27T12:00:00Z',
 		genUuid: () => IMPLEMENT_UUID,
-		reviewDispatch: () => ({ status: 'ok', detail: 'unused' }),
+		reviewDispatch: async () => ({ status: 'ok', detail: 'unused' }),
 		writeSessionMarker: () => {},
 		isPaneAlive: () => true,
 		workerPaneId: '%5',
@@ -232,14 +232,14 @@ describe('CAM-433 reviewer verified dispatch lifecycle', () => {
 		};
 	}
 
-	test('verdict cleanup and successful convergence remove stale evidence', () => {
+	test('verdict cleanup and successful convergence remove stale evidence', async () => {
 		const root = createTestTmpdir('cam-review-verdict-cleanup-');
 		const claudeDir = join(root, '.claude');
 		mkdirSync(claudeDir);
 		const markerPath = join(claudeDir, '.cam-dispatch-failed.json');
 		writeFileSync(markerPath, '{"stale":true}');
 		try {
-			const result = makeReviewDispatch(reviewOpts(
+			const result = await makeReviewDispatch(reviewOpts(
 				claudeDir,
 				makePaneIdentitySpawn(),
 				{ removeDispatchFailedMarkerFn: () => rmSync(markerPath, { force: true }) },
@@ -253,7 +253,7 @@ describe('CAM-433 reviewer verified dispatch lifecycle', () => {
 		}
 	});
 
-	test('dispatch failure and checked review-timeout both clean prompts and expose failure', () => {
+	test('dispatch failure and checked review-timeout both clean prompts and expose failure', async () => {
 		for (const terminal of ['dispatch', 'review-timeout'] as const) {
 			const root = createTestTmpdir(`cam-review-${terminal}-`);
 			const claudeDir = join(root, '.claude');
@@ -274,7 +274,7 @@ describe('CAM-433 reviewer verified dispatch lifecycle', () => {
 					}
 					return {};
 				});
-				const result = makeReviewDispatch(reviewOpts(claudeDir, spawn, {
+				const result = await makeReviewDispatch(reviewOpts(claudeDir, spawn, {
 					capturePane: () => terminal === 'review-timeout' ? 'no verdict' : '<review>CLEAN</review>',
 					writeDispatchFailedMarkerFn: (marker) => markers.push(marker),
 					notifyFn: (line) => notifications.push(line),

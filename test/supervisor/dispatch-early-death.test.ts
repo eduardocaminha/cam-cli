@@ -379,7 +379,7 @@ function makeSupervisorOpts(overrides: Partial<RunSupervisorOptions> = {}): RunS
 	const writePrd: WritePrd = (_prd) => {};
 	const readHandoff: ReadHandoff = () => null;
 	const clock: ClockFn = () => '2026-07-30T00:00:00Z';
-	const reviewDispatch: ReviewDispatch = (_uuid) => ({ status: 'ok', detail: 'review ok' });
+	const reviewDispatch: ReviewDispatch = async (_uuid) => ({ status: 'ok', detail: 'review ok' });
 	const writeSessionMarker: WriteSessionMarker = (_storyId, _uuid) => {};
 	const isPaneAlive: IsPaneAlive = (_paneId) => true;
 
@@ -547,7 +547,7 @@ describe('US-003 (CAM-479): reviewer poll loop consults the early-death probe', 
 		};
 	}
 
-	test('the reviewer poll loop ends an early-death wait far below its timeout cap', () => {
+	test('the reviewer poll loop ends an early-death wait far below its timeout cap', async () => {
 		const sleeps: number[] = [];
 		const opts = makeReviewOpts({
 			sleepFn: (ms) => sleeps.push(ms),
@@ -555,7 +555,7 @@ describe('US-003 (CAM-479): reviewer poll loop consults the early-death probe', 
 		});
 		const dispatch = makeReviewDispatch(opts);
 
-		const result = dispatch('11111111-2222-3333-4444-555555555555');
+		const result = await dispatch('11111111-2222-3333-4444-555555555555');
 
 		expect(result.status).toBe('error');
 		expect(result.detail).toContain('session-died-early');
@@ -706,7 +706,7 @@ describe('US-005 (CAM-479): every dispatch poll loop consults the early-death pr
 		const implementerElapsedMs = implementerSleeps.reduce((sum, ms) => sum + ms, 0);
 		expect(implementerElapsedMs).toBeLessThan(DEFAULT_PER_WORKER_TIMEOUT_MS * 0.1);
 
-		const reviewerResult = makeReviewDispatch(reviewerOpts)('22222222-3333-4444-5555-666666666666');
+		const reviewerResult = await makeReviewDispatch(reviewerOpts)('22222222-3333-4444-5555-666666666666');
 		expect(reviewerResult.status).toBe('error');
 		const reviewerElapsedMs = reviewerSleeps.reduce((sum, ms) => sum + ms, 0);
 		expect(reviewerElapsedMs).toBeLessThan(DEFAULT_REVIEW_TIMEOUT_MS * 0.1);

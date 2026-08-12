@@ -102,7 +102,7 @@ function makeBaseOpts(overrides: Partial<RunSupervisorOptions> = {}): RunSupervi
 	const writePrd: WritePrd = (_prd) => {};
 	const readHandoff: ReadHandoff = () => null;
 	const clock: ClockFn = () => '2026-06-08T00:00:00Z';
-	const reviewDispatch: ReviewDispatch = (_uuid) => ({ status: 'ok', detail: 'review ok' });
+	const reviewDispatch: ReviewDispatch = async (_uuid) => ({ status: 'ok', detail: 'review ok' });
 	const writeSessionMarker: WriteSessionMarker = (_storyId, _uuid) => {};
 	const isPaneAlive: IsPaneAlive = (_paneId) => true;
 

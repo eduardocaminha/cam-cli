@@ -100,7 +100,7 @@ function makeReviewOpts(
 	const readHandoff: ReadHandoff = () => null;
 	const clock: ClockFn = () => '2026-06-15T00:00:00Z';
 	const genUuid: GenUuid = fakeUuid;
-	const reviewDispatch: ReviewDispatch = (_uuid) => ({ status: 'ok', detail: 'review dispatched' });
+	const reviewDispatch: ReviewDispatch = async (_uuid) => ({ status: 'ok', detail: 'review dispatched' });
 	const writeSessionMarker: WriteSessionMarker = (_storyId, _uuid) => {};
 	const isPaneAlive: IsPaneAlive = (_paneId) => true;
 
@@ -244,7 +244,7 @@ describe('notifyOrchestrator in review branch (US-001)', () => {
 
 		const opts = makeReviewOpts(prdSequence, {
 			// All attempts return error -> loop returns 'blocked'.
-			reviewDispatch: (_uuid) => ({ status: 'error', detail: 'reviewer died' }),
+			reviewDispatch: async (_uuid) => ({ status: 'error', detail: 'reviewer died' }),
 			notifyOrchestrator: (line) => notifiedLines.push(line),
 		});
 

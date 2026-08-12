@@ -24,7 +24,7 @@ function makeDummySupervisorOpts(): RunSupervisorOptions {
 		writePrd: () => {},
 		readHandoff: () => null,
 		clock: () => '2026-06-17T00:00:00Z',
-		reviewDispatch: () => ({ status: 'ok', detail: '' }),
+		reviewDispatch: async () => ({ status: 'ok', detail: '' }),
 		writeSessionMarker: () => {},
 		isPaneAlive: () => true,
 		workerPaneId: '%2',

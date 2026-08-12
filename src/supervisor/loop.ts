@@ -169,7 +169,7 @@ export type GenUuid = () => string;
  * Receives a uuid for session tracking.
  * Returns the outcome of the review dispatch.
  */
-export type ReviewDispatch = (uuid: string) => ReviewDispatchResult;
+export type ReviewDispatch = (uuid: string) => Promise<ReviewDispatchResult>;
 
 /** Result from reviewDispatch (placeholder shape for US-008). */
 export interface ReviewDispatchResult {
@@ -2212,7 +2212,7 @@ export async function runSupervisor(opts: RunSupervisorOptions): Promise<Supervi
 			let reviewUuid = '';
 			for (let attempt = 1; attempt <= MAX_REVIEW_DISPATCH_ATTEMPTS; attempt += 1) {
 				reviewUuid = genUuid();
-				reviewResult = reviewDispatch(reviewUuid);
+				reviewResult = await reviewDispatch(reviewUuid);
 				if (reviewResult.status !== 'error') break;
 			}
 

@@ -1557,8 +1557,8 @@ function makeProductionReviewPhaseFn(
 	sessionName: string,
 	logEvent: WorkerEventLogger,
 	realSpawnFn: SpawnFn,
-): () => void {
-	return (): void => {
+): () => Promise<void> {
+	return async (): Promise<void> => {
 		const setPhase = makeSetPhaseFn(claudeDir, cwd);
 		try {
 			const prdPath = join(cwd, 'scripts/cam/prd.json');
@@ -1609,7 +1609,7 @@ function makeProductionReviewPhaseFn(
 				notifyFn: notify,
 			});
 
-			const result = reviewDispatch(randomUUID());
+			const result = await reviewDispatch(randomUUID());
 			narrateReviewPhaseResult(result, notify);
 		} catch (err: unknown) {
 			logEvent({

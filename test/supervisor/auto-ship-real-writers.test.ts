@@ -110,7 +110,7 @@ describe('US-002: real-writer regression -- phase:shipping survives the terminal
 				writePrd,
 				readHandoff: () => null,
 				clock: () => '2026-07-07T21:00:00Z',
-				reviewDispatch: () => ({ status: 'ok', detail: '' }),
+				reviewDispatch: async () => ({ status: 'ok', detail: '' }),
 				writeSessionMarker: () => {},
 				isPaneAlive: () => true,
 				workerPaneId: '%2',

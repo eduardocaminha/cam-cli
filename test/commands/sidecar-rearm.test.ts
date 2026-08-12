@@ -188,7 +188,7 @@ function makeDummySupervisorOpts() {
 		writePrd: () => {},
 		readHandoff: () => null,
 		clock: () => '2026-07-11T00:00:00Z',
-		reviewDispatch: () => ({ status: 'ok' as const, detail: '' }),
+		reviewDispatch: async () => ({ status: 'ok' as const, detail: '' }),
 		writeSessionMarker: () => {},
 		isPaneAlive: () => true,
 		workerPaneId: '%2',

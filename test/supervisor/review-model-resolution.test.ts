@@ -106,7 +106,7 @@ function claudeShapedCodexConfigPath(): { path: string; cleanup: () => void } {
 // ---------------------------------------------------------------------------
 
 describe('review model resolution: AC2/AC3 - configPath seam, resolved slug reaches argv', () => {
-	test('codex-backed dispatch with a claude-shaped flat model resolves via the injected cacheReader; argv contains the slug, never the claude alias', () => {
+	test('codex-backed dispatch with a claude-shaped flat model resolves via the injected cacheReader; argv contains the slug, never the claude alias', async () => {
 		const fixture = claudeShapedCodexConfigPath();
 		try {
 			let cacheReaderCalled = false;
@@ -123,7 +123,7 @@ describe('review model resolution: AC2/AC3 - configPath seam, resolved slug reac
 			);
 
 			const dispatch = makeReviewDispatch(opts);
-			const result = dispatch(SAMPLE_UUID);
+			const result = await dispatch(SAMPLE_UUID);
 
 			expect(result.status).toBe('ok');
 			expect(cacheReaderCalled).toBe(true);
@@ -162,7 +162,7 @@ describe('review model resolution: AC4 - not-ok resolution aborts before spawn',
 			);
 
 			const dispatch = makeReviewDispatch(opts);
-			const result = dispatch(SAMPLE_UUID);
+			const result = await dispatch(SAMPLE_UUID);
 
 			expect(result.status).toBe('error');
 			expect(result.detail).toContain('model-resolution-failed');
@@ -182,7 +182,7 @@ describe('review model resolution: AC4 - not-ok resolution aborts before spawn',
 // ---------------------------------------------------------------------------
 
 describe('review model resolution: AC5 - injectable seam, default fallback, claude-backend bypass', () => {
-	test('absent codexModelsCacheReaderFn on a codex dispatch with a non-claude-shaped pin never crashes (falls back to the production reader)', () => {
+	test('absent codexModelsCacheReaderFn on a codex dispatch with a non-claude-shaped pin never crashes (falls back to the production reader)', async () => {
 		const dir = createTestTmpdir('cam-review-model-resolution-pin-');
 		const path = join(dir, 'project.toml');
 		writeFileSync(path, '[backend]\nreviewer = "codex"\n\n[models.codex]\nreviewer = "gpt-5-codex"\n');
@@ -191,7 +191,7 @@ describe('review model resolution: AC5 - injectable seam, default fallback, clau
 			const opts = makeOpts({ configPath: path }, spawnCalls); // codexModelsCacheReaderFn intentionally absent
 
 			const dispatch = makeReviewDispatch(opts);
-			const result = dispatch(SAMPLE_UUID);
+			const result = await dispatch(SAMPLE_UUID);
 
 			expect(result.status).toBe('ok');
 			expect(respawnCalls(spawnCalls).length).toBe(1);
@@ -200,7 +200,7 @@ describe('review model resolution: AC5 - injectable seam, default fallback, clau
 		}
 	});
 
-	test('claude-backed dispatch (generic fixture) never invokes the injected cacheReader', () => {
+	test('claude-backed dispatch (generic fixture) never invokes the injected cacheReader', async () => {
 		const dir = createTestTmpdir('cam-review-model-resolution-claude-');
 		const path = join(dir, 'project.toml');
 		writeFileSync(path, '[backend]\nreviewer = "claude"\n');
@@ -219,7 +219,7 @@ describe('review model resolution: AC5 - injectable seam, default fallback, clau
 			);
 
 			const dispatch = makeReviewDispatch(opts);
-			const result = dispatch(SAMPLE_UUID);
+			const result = await dispatch(SAMPLE_UUID);
 
 			expect(result.status).toBe('ok');
 			expect(respawnCalls(spawnCalls).length).toBe(1);
