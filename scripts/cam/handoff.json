@@ -1,59 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Flip async do tipo ReviewDispatch com varredura exaustiva de await"
+    "id": "US-R1-001",
+    "title": "WARNING: The diff flipped makeProductionPlanPhaseFn's returned closure from ()…"
   },
   "branchName": "cam/issue-556",
-  "timestamp": "2026-08-12T19:10:56Z",
+  "timestamp": "2026-08-12T19:32:14Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/sidecar.ts",
-    "src/supervisor/loop.ts",
-    "src/supervisor/review.ts",
-    "test/commands/sidecar-meta-loop.test.ts",
-    "test/commands/sidecar-rearm.test.ts",
-    "test/integration/headless-roundtrip.test.ts",
-    "test/logging/spawn-resolution.test.ts",
-    "test/notify/resend.test.ts",
-    "test/plan-phase-crash-safety.test.ts",
-    "test/release/merge-watch.test.ts",
-    "test/sidecar-gate-phase.test.ts",
-    "test/sidecar-ship-phase.test.ts",
-    "test/stop-report-fields.test.ts",
-    "test/supervisor/auto-chain.test.ts",
-    "test/supervisor/auto-ship-real-writers.test.ts",
-    "test/supervisor/codex-instructions-production-terminal.test.ts",
-    "test/supervisor/dispatch-early-death.test.ts",
-    "test/supervisor/ensure-worker-pane.test.ts",
-    "test/supervisor/events.test.ts",
-    "test/supervisor/headless-backend-failclose.test.ts",
-    "test/supervisor/headless-container-failclose.test.ts",
-    "test/supervisor/headless-route.test.ts",
-    "test/supervisor/headless-timeout-bound.test.ts",
-    "test/supervisor/implement-blocked-marker-wiring.test.ts",
-    "test/supervisor/loop-configpath-seam.test.ts",
-    "test/supervisor/loop-model-resolution.test.ts",
-    "test/supervisor/loop.test.ts",
-    "test/supervisor/non-convergence-autochain.test.ts",
-    "test/supervisor/non-convergence-terminal.test.ts",
-    "test/supervisor/notify-orchestrator.test.ts",
-    "test/supervisor/pause-halt.test.ts",
-    "test/supervisor/pause-resume.test.ts",
-    "test/supervisor/review-model-resolution.test.ts",
-    "test/supervisor/review.test.ts",
-    "test/supervisor/sidecar-loop.test.ts",
-    "test/supervisor/sidecar-self-exit.test.ts",
-    "test/supervisor/suggestion-filing-hook.test.ts",
-    "test/supervisor/worker-dispatch-lifecycle.test.ts"
+    "test/commands/sidecar-plan-phase-orphan-sweep.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "ReviewDispatch and makeReviewDispatch closures now return Promise<ReviewDispatchResult>. Both production closure invocations await the result, every factory-derived test dispatch is awaited, and all ReviewDispatch fakes implement the Promise contract. CAM-555 can now add internal awaits to the reviewer closure without changing its callers.",
+  "nextStoryContext": "The real makeProductionPlanPhaseFn closure is now awaited in its orphan-sweep wiring test, so runProductionPlanPhaseWithReplan and runPostPlanActions complete before the temporary cwd is removed.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched",
-      "summary": "Pure internal async-control-flow refactor; no external library API was exercised."
+      "lib": "Bun test",
+      "channel": "web",
+      "url": "https://bun.com/docs/test/writing-tests",
+      "fetchedAt": "2026-08-12T19:32:14Z",
+      "status": "aligned",
+      "summary": "Current Bun documentation confirms async tests should use an async callback and await the Promise under test."
     }
   ]
 }
