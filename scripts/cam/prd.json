@@ -73,7 +73,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/web.ts, test/web/idle-state.test.ts (novo). Nota factual do spec: prd.json nao existe na main hoje, entao idle e o caminho corrente, nao o excepcional. readBacklogFromMain le do main via git (aceita spawnSync-compativel injetavel, src/issues/backlog.ts:36); no teste, usar fixture de repo git real ou o seam de spawn ja existente do modulo. Best-effort preservado: cycle-metrics.jsonl ausente vira lista vazia, nunca erro HTTP."
     },
