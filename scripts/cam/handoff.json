@@ -1,27 +1,28 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Rota GET /api/snapshot com paridade por construcao via readSnapshot"
+    "id": "US-003",
+    "title": "Bloco idle no payload quando prd.json esta ausente"
   },
   "branchName": "cam/issue-522",
-  "timestamp": "2026-08-13T14:39:50Z",
+  "timestamp": "2026-08-13T14:51:55Z",
   "createdFiles": [
-    "test/web/snapshot.test.ts"
+    "test/web/idle-state.test.ts"
   ],
   "modifiedFiles": [
-    "src/commands/web.ts"
+    "src/commands/web.ts",
+    "test/web/snapshot.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "GET /api/snapshot now calls readSnapshot at request time and deletes only tokensInput, tokensOutput, tokensCacheRead, tokensCacheCreation, and storyTokens before Response.json. startWebServer accepts an optional claudeDir so real-server tests can isolate transcript reads from the machine home directory.",
+  "nextStoryContext": "GET /api/snapshot now adds idleState only when resolvePrdPath(cwd) is absent. idleState.recentCycles contains the newest five cycle rows (newest first) after skipping the physical header line; idleState.backlog is derived from readBacklogFromMain plus deriveBacklogJson. Missing cycle metrics and backlog read failures preserve HTTP success with empty derived data.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
       "lib": "Bun.serve",
       "channel": "WebFetch",
       "url": "https://bun.com/docs/runtime/http/routing",
-      "fetchedAt": "2026-08-13T14:39:50Z",
+      "fetchedAt": "2026-08-13T14:51:55Z",
       "status": "aligned",
-      "summary": "Current Bun routing docs confirm that routes handlers run per request and may return Response.json payloads."
+      "summary": "Current Bun routing docs confirm route handlers may construct and return Response.json payloads per request."
     }
   ]
 }
