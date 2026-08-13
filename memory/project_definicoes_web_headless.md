@@ -99,3 +99,23 @@ Todas aprovadas pelo operador nesta data, apos seis varreduras de coerencia docu
 7. Item 13: primitiva corrigida de Radix para Base UI, procedencia da identidade corrigida de "branch /coss do cam-dss" para o registry publico do COSS UI, e mecanismo de tema (`[data-coss-root]` e classe `.dark`) adotado como esta em vez de convertido. Decidido na entrevista de spec do CAM-522 e registrado em ADR proprio.
 8. Item 27: a ordem do epico passa a ser CAM-521, depois CAM-522, depois o daemon. O CAM-522 sobe porque o daemon deleta o pane de dashboard e a ordem anterior abriria uma janela sem observabilidade.
 9. Distribuicao: a interface web nao e embarcada no binario compilado e e distribuida por npm, o que retira os itens 22 e 23 do caminho critico. Decidido na mesma entrevista, com medicao registrada em ADR proprio, e resolve o CAM-501.
+
+## Emendas de 2026-08-13
+
+Todas decididas pelo operador nesta data, durante a entrevista de spec da Parte A do CAM-522. A regra que governa todas elas foi fixada pelo operador na mesma sessao e vale daqui pra frente: contrato escrito nao vence evidencia medida, e reduzir complexidade tem precedencia sobre cumprir item de contrato, inclusive contra este documento.
+
+1. O CAM-522 foi PARTIDO EM DOIS pelo seam servidor/cliente, por modo de verificacao e nao por tamanho. Parte A (servidor HTTP read-only) fica no CAM-522; Parte B (vite, Tailwind v4, COSS vendorizado, DOM, canal npm) e o CAM-559.
+
+2. Item 13 EMENDADO. A frase "o dashboard adota a identidade, nao sobe sem estilo" continua valendo para o produto, mas nao para a Parte A: ela sobe deliberadamente sem estilo, com HTML e JS servidos como texto pelo proprio binario, e toda a identidade visual vive na Parte B. Sem esta emenda, um revisor le a Parte A como violacao do contrato.
+
+3. Itens 17 e 19 CORTADOS da Parte A. Sem stream NDJSON, sem cursor, sem offset, sem heartbeat e sem subscription-antes-do-replay. Motivo medido: o pane que a web substitui nao streama, ele repolla readSnapshot a cada 2000 ms (`DEFAULT_POLL_INTERVAL_MS`, `src/commands/dashboard.ts:54`), e o caso que realmente pede stream, a saida viva do worker, ja esta fora de escopo (fases 4 a 7 do CAM-408). O gatilho para o stream nascer e o dia em que a pagina precisar de saida viva de worker.
+
+4. Item 20 CORTADO da Parte A. Sem bearer token e sem timingSafeEqual. Motivo: o servidor ouve so em 127.0.0.1, e read-only, e a maquina e de um usuario unico. O gatilho declarado para auth nascer e o dia em que a web ouvir fora de localhost.
+
+5. Item 14 RECORTADO, nao cortado. A metade do Zod (schemas anexados a tabela de rotas, gerador de OpenAPI, supersessao do ADR-0038) sai da Parte A: servidor read-only nao recebe input, entao schema seria mecanismo para governar entrada inexistente, e o ADR-0038 fica intacto. A metade do `Bun.serve` com a opcao `routes` NATIVA fica de pe e e vinculante, com `engines.bun` subindo de >=1.2.0 para >=1.2.3 no mesmo ciclo, porque o piso atual nao e enforcado por nada (`.bun-version` pina 1.3.14 e os dois workflows de CI instalam de la).
+
+6. Paridade com o pane passa a ser POR CONSTRUCAO. A rota chama `readSnapshot({cwd, nowMs, claudeDir})` (`src/commands/dashboard.ts:392`), o mesmo produtor que o pane chama, e serializa o resultado omitindo as cinco chaves que dependem do transcript em `~/.claude` (`tokensInput`, `tokensOutput`, `tokensCacheRead`, `tokensCacheCreation`, `storyTokens`). Nao existe compositor proprio, extracao de parser do `dashboard.ts` nem modulo espelho a manter em sincronia. Duas rodadas de plan escalaram em 2026-08-13 justamente por reconstruir o que ja estava exportado.
+
+7. Defeito vivo descoberto e absorvido pela Parte A: `readRecentProgress` (`src/commands/dashboard.ts:572`) faz `readFileSync` do event log inteiro, medido em 25.218.481 bytes, e o pane chama `readSnapshot` a cada 2000 ms. O pane le 25 MB a cada 2 segundos hoje. A leitura limitada por sessao entra dentro do proprio produtor, entao conserta o pane e a rota de uma vez. Referencia medida em 2026-08-13: do fim do arquivo ate o inicio da sessao corrente sao 116.254 bytes, 0,46 por cento do arquivo.
+
+8. A omissao do bloco de tokens do orquestrador e da coluna de token por story na Parte A e deliberada, porque a decisao 1 do CAM-544 ja mediu esse parser como errado na origem e ele le fora do repo. Fechar essa lacuna e pre-requisito do ciclo do daemon, que e quando o pane morre.
