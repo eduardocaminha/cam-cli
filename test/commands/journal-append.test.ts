@@ -794,6 +794,7 @@ describe('dispatchJournal', () => {
 				order.push('archive-check');
 				return { ok: true, archived: 0, entries: 3, sha: '' };
 			},
+			patternsArchiveFn: (): ArchivePatternsOnMainResult => ({ ok: true, archived: 0, sha: '' }), // no real git
 			cycleMetricsAppendFn: noopCycleMetricsFn,
 			armRecycleMarkerFn: () => { order.push('arm-marker'); },
 		});
@@ -825,6 +826,7 @@ describe('dispatchJournal', () => {
 				handoffExistsFn: () => true,
 				watcherAliveFn: () => true,
 				archiveFn: (): ArchiveJournalOnMainResult => ({ ok: false, reason: 'diverged' }),
+				patternsArchiveFn: (): ArchivePatternsOnMainResult => ({ ok: true, archived: 0, sha: '' }), // no real git
 				cycleMetricsAppendFn: noopCycleMetricsFn,
 				armRecycleMarkerFn: () => { markerArmed = true; },
 			});
@@ -862,6 +864,7 @@ describe('dispatchJournal', () => {
 				handoffExistsFn: () => true,
 				watcherAliveFn: () => true,
 				archiveFn: (): ArchiveJournalOnMainResult => { throw new Error('boom'); },
+				patternsArchiveFn: (): ArchivePatternsOnMainResult => ({ ok: true, archived: 0, sha: '' }), // no real git
 				cycleMetricsAppendFn: noopCycleMetricsFn,
 				armRecycleMarkerFn: () => { markerArmed = true; },
 			});
