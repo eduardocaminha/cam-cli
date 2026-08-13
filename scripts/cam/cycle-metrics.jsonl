@@ -298,3 +298,4 @@
 {"cycleId":"SESSION-CAM521SPEC-2026-08-12","issueNumber":"CAM-521","closedAt":"2026-08-12T12:35:49.477Z","workerRounds":0,"reviewRounds":0,"orchTokens":12661358,"workerTokens":0,"total":12661358}
 {"cycleId":"SESSION-CONFIG-E-RECORTE-2026-08-12","issueNumber":"CAM-555","closedAt":"2026-08-12T18:02:02.741Z","workerRounds":0,"reviewRounds":0,"orchTokens":22637821,"workerTokens":0,"total":22637821}
 {"cycleId":"CAM-556-2026-08-12","issueNumber":"CAM-556","closedAt":"2026-08-12T20:57:14.624Z","workerRounds":3,"reviewRounds":2,"orchTokens":6341214,"workerTokens":0,"total":6341214,"prNumber":369,"mergeMode":"ci-gated"}
+{"cycleId":"SESSION-WEB-DESTRAVE-2026-08-13","issueNumber":"CAM-555, CAM-522","closedAt":"2026-08-13T07:57:15.356Z","workerRounds":0,"reviewRounds":0,"orchTokens":22744684,"workerTokens":0,"total":22744684}
