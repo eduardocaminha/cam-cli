@@ -1,0 +1,30 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Adicionar subcomando cam web com Bun.serve routes nativo em 127.0.0.1"
+  },
+  "branchName": "cam/issue-522",
+  "timestamp": "2026-08-13T14:31:50Z",
+  "createdFiles": [
+    "src/commands/web.ts",
+    "test/web/launch.test.ts"
+  ],
+  "modifiedFiles": [
+    "index.ts",
+    "package.json",
+    "test/commands-freeze.test.ts"
+  ],
+  "openQuestions": [],
+  "nextStoryContext": "The web command now owns a localhost-only native Bun.serve routes table. startWebServer({ port, cwd }) accepts port 0 for direct callers and reports the resolved address; the CLI defaults to 7777, rejects port 0, and exits 130/143 after graceful SIGINT/SIGTERM shutdown.",
+  "appliedPatternIds": [],
+  "officialDocsValidated": [
+    {
+      "lib": "Bun.serve",
+      "channel": "WebFetch",
+      "url": "https://bun.com/docs/runtime/http/server",
+      "fetchedAt": "2026-08-13T14:31:50Z",
+      "status": "aligned",
+      "summary": "Current Bun docs confirm routes requires v1.2.3+, port 0 resolves through server.port, 127.0.0.1 is localhost-only, and stop() is graceful by default."
+    }
+  ]
+}
