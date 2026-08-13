@@ -1,30 +1,27 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Adicionar subcomando cam web com Bun.serve routes nativo em 127.0.0.1"
+    "id": "US-002",
+    "title": "Rota GET /api/snapshot com paridade por construcao via readSnapshot"
   },
   "branchName": "cam/issue-522",
-  "timestamp": "2026-08-13T14:31:50Z",
+  "timestamp": "2026-08-13T14:39:50Z",
   "createdFiles": [
-    "src/commands/web.ts",
-    "test/web/launch.test.ts"
+    "test/web/snapshot.test.ts"
   ],
   "modifiedFiles": [
-    "index.ts",
-    "package.json",
-    "test/commands-freeze.test.ts"
+    "src/commands/web.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "The web command now owns a localhost-only native Bun.serve routes table. startWebServer({ port, cwd }) accepts port 0 for direct callers and reports the resolved address; the CLI defaults to 7777, rejects port 0, and exits 130/143 after graceful SIGINT/SIGTERM shutdown.",
+  "nextStoryContext": "GET /api/snapshot now calls readSnapshot at request time and deletes only tokensInput, tokensOutput, tokensCacheRead, tokensCacheCreation, and storyTokens before Response.json. startWebServer accepts an optional claudeDir so real-server tests can isolate transcript reads from the machine home directory.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
       "lib": "Bun.serve",
       "channel": "WebFetch",
-      "url": "https://bun.com/docs/runtime/http/server",
-      "fetchedAt": "2026-08-13T14:31:50Z",
+      "url": "https://bun.com/docs/runtime/http/routing",
+      "fetchedAt": "2026-08-13T14:39:50Z",
       "status": "aligned",
-      "summary": "Current Bun docs confirm routes requires v1.2.3+, port 0 resolves through server.port, 127.0.0.1 is localhost-only, and stop() is graceful by default."
+      "summary": "Current Bun routing docs confirm that routes handlers run per request and may return Response.json payloads."
     }
   ]
 }
