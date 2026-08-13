@@ -55,7 +55,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/web.ts, test/web/snapshot.test.ts (novo). NAO mudar a assinatura de readSnapshot nesta story: a rota chama e descarta as cinco chaves pos-hoc. Trabalho residual ACEITO na Parte A (achado 7 do audit): readSnapshot continua chamando readTranscriptTokens e readStoryTokens contra claudeDir a cada request (dashboard.ts:399-401) mesmo com as chaves descartadas; essa leitura fora do repo fica NAO medida na Parte A (a medicao da US-004 escopa so o event log). Omissao dos tokens decidida pelo operador 2026-08-13: parser medido como errado na origem (decisao 1 do CAM-544) e le fora do repo. O teste pode passar claudeDir apontando pra tmpdir do fixture pra nao depender do ~/.claude da maquina. sumSessionWorkerTokens devolve undefined quando zero eventos casam (dashboard.ts:625): nao presumir linha de cost presente no fixture."
     },
