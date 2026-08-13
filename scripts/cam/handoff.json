@@ -1,28 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-003",
-    "title": "Bloco idle no payload quando prd.json esta ausente"
+    "id": "US-004",
+    "title": "Leitura do event log limitada pela sessao dentro do produtor"
   },
   "branchName": "cam/issue-522",
-  "timestamp": "2026-08-13T14:51:55Z",
+  "timestamp": "2026-08-13T15:07:20Z",
   "createdFiles": [
-    "test/web/idle-state.test.ts"
+    "test/web/read-bounded.test.ts"
   ],
   "modifiedFiles": [
-    "src/commands/web.ts",
-    "test/web/snapshot.test.ts"
+    "scripts/file-size-budget.json",
+    "src/commands/dashboard.ts",
+    "src/commands/web.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "GET /api/snapshot now adds idleState only when resolvePrdPath(cwd) is absent. idleState.recentCycles contains the newest five cycle rows (newest first) after skipping the physical header line; idleState.backlog is derived from readBacklogFromMain plus deriveBacklogJson. Missing cycle metrics and backlog read failures preserve HTTP success with empty derived data.",
+  "nextStoryContext": "readSnapshot now reads cam-worker-events.jsonl once per poll through EventLogReader, sharing the bounded body between Recent Progress and session token summation. A valid sidecar marker scans backwards to the earliest in-session event plus a 64 KiB physical-order margin; a missing or invalid marker uses a fixed 320 KiB tail. startWebServer threads the optional eventLogReader seam only into this event-log path, leaving transcript reads outside route byte measurement.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
-      "lib": "Bun.serve",
-      "channel": "WebFetch",
-      "url": "https://bun.com/docs/runtime/http/routing",
-      "fetchedAt": "2026-08-13T14:51:55Z",
-      "status": "aligned",
-      "summary": "Current Bun routing docs confirm route handlers may construct and return Response.json payloads per request."
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "The story uses only the Node.js synchronous filesystem API already available in the runtime; no external library was exercised."
     }
   ]
 }
