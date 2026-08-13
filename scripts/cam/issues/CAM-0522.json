@@ -3,11 +3,9 @@
   "title": "cam web read-only: primeira tela no browser (recorte da fase 3 do CAM-408)",
   "stage": "specified",
   "status": "open",
-  "blockedBy": [
-    "CAM-555"
-  ],
+  "blockedBy": [],
   "createdAt": "2026-08-09T12:38:06.564Z",
-  "updatedAt": "2026-08-12T16:11:07.862Z",
+  "updatedAt": "2026-08-13T01:30:24.012Z",
   "description": "Recorte da fase 3 do epic CAM-408 (control plane observavel, 7 fases, stage idea) como issue propria e especificavel, para que a web pare de existir apenas como frase no journal. Escopo pretendido: servir uma superficie HTTP read-only sobre os dados que JA existem (.claude/cam-worker-events.jsonl, scripts/cam/prd.json, .claude/cam-loop.local.md), sem acoes de escrita, sem daemon e sem adaptador de PTY (fases 4 a 7 seguem no CAM-408). Estado medido em 2026-08-09: ZERO codigo que sirva HTTP existe no repo; varredura por Bun.serve, hono, express, react-dom e websocket em src/ nao retorna nada, e o dashboard atual sao 1939 linhas de Ink puro em src/commands/dashboard.ts mais src/ui/Dashboard.tsx, rodando como pane de tmux. Decisao registrada em memory/project_identidade_e_org.md:31: o dashboard web SUBSTITUI o pane de dashboard do tmux, nao e produto novo, e vive no mesmo repo. Sequenciado atras do headless (CAM-516 e CAM-521) porque enquanto o worker roda em pane a sua saida ao vivo so existe dentro do pane, e a web so alcancaria isso com adaptador de PTY; com stream-json essa saida ja nasce evento estruturado, entao construir a web antes e construir duas vezes. BLOQUEIO DE DECISAO DO OPERADOR: o CAM-421 (o dashboard web adota a identidade visual agora ou sobe sem estilo) precisa ser respondido antes deste ciclo, e o proprio CAM-421 esta stale porque ainda descreve e-ink, descartado em 2026-08-05 em favor do branch /coss do cam-dss. Nada de design system esta vendorizado hoje: sem tailwind, sem shadcn, sem react-dom no package.json.",
   "spec": {
     "acceptanceCriteria": [
@@ -25,7 +23,13 @@
       "PINO DE INVARIANCIA: o bundle da UI nao entra no embed do binario. O conjunto de raizes de topo embarcadas em src/vendor/_generated.ts e identico ao de main. Comparando derivado ao vivo dos dois lados, sem literal congelado. Especie: pino de invariancia, VERDE por construcao na main 2026-08-11 e provado falsificavel na mesma data (injetar uma raiz webui/ deixou o pino VERMELHO). [oracle: named-command test \"$(sed -n 's/^[[:space:]]*\"\\([^\"]*\\)\":.*/\\1/p' src/vendor/_generated.ts | sed 's|/.*||' | sort -u | shasum | cut -d' ' -f1)\" = \"$(git show main:src/vendor/_generated.ts | sed -n 's/^[[:space:]]*\"\\([^\"]*\\)\":.*/\\1/p' | sed 's|/.*||' | sort -u | shasum | cut -d' ' -f1)\"]",
       "PINO DE INVARIANCIA: a fatia nao instrumenta o produtor. A union WorkerEventKind em src/supervisor/events.ts e identica a de main, entao nenhum evento novo foi adicionado ao sidecar para alimentar a tela. Comparando derivado ao vivo dos dois lados, sem literal congelado. Especie: pino de invariancia, VERDE por construcao na main 2026-08-11. [oracle: named-command test \"$(sed -n '/export type WorkerEventKind/,/;/p' src/supervisor/events.ts | shasum | cut -d' ' -f1)\" = \"$(git show main:src/supervisor/events.ts | sed -n '/export type WorkerEventKind/,/;/p' | shasum | cut -d' ' -f1)\"]"
     ],
-    "scope": "Primeira tela web read-only do gateship, servida por um processo proprio (gship web) que le tres arquivos que o sidecar ja escreve, com dois estados (ciclo ativo e idle), stream NDJSON ao vivo com cursor por offset e heartbeat, bearer token desde o primeiro dia, e identidade COSS UI vendorizada da fonte publica. Fora de escopo: qualquer escrita, o daemon, adaptador de PTY, as oito secoes de navegacao do CAM-408, e qualquer instrumentacao nova no produtor.",
+    "domainTerms": [
+      "cursor de stream",
+      "estado idle",
+      "idade do dado",
+      "pino de invariancia",
+      "vendorizacao re-executavel"
+    ],
     "gotchas": [
       "O padrao de leitura do dashboard atual NAO porta. readSnapshot rele 25 MB de JSONL duas vezes por tick de 2 segundos, sincronamente. Aceitavel num pane TUI local, inviavel numa rota HTTP. Por isso tail/offset nao e refinamento, e a unica forma que fecha.",
       "prd.json e efemero e NAO existe fora de um ciclo ativo. Sem o estado idle a tela fica em branco na maior parte das visitas, e ai nao substitui o pane, que era a premissa da issue.",
@@ -38,19 +42,13 @@
       "O keybar do dashboard atual e a UNICA parte presa ao tmux (tmux select-pane e send-keys num pane id vindo por argv). Toda a leitura ja funciona fora do tmux hoje. Como esta fatia e read-only, o unico bloco tmux-bound esta fora de escopo por definicao.",
       "Um oraculo de comportamento de CLI invoca bun index.ts web, nunca gship web: o binario instalado e sempre mais velho que a mudanca sob teste e o criterio iria vermelho pelo artefato errado."
     ],
-    "domainTerms": [
-      "cursor de stream",
-      "estado idle",
-      "idade do dado",
-      "pino de invariancia",
-      "vendorizacao re-executavel"
-    ]
+    "scope": "Primeira tela web read-only do gateship, servida por um processo proprio (gship web) que le tres arquivos que o sidecar ja escreve, com dois estados (ciclo ativo e idle), stream NDJSON ao vivo com cursor por offset e heartbeat, bearer token desde o primeiro dia, e identidade COSS UI vendorizada da fonte publica. Fora de escopo: qualquer escrita, o daemon, adaptador de PTY, as oito secoes de navegacao do CAM-408, e qualquer instrumentacao nova no produtor."
   },
   "wsjf": {
-    "value": 8,
-    "timeCriticality": 6,
+    "jobSize": 9,
     "riskReduction": 4,
-    "jobSize": 9
+    "timeCriticality": 6,
+    "value": 8
   },
   "type": "feat"
 }
