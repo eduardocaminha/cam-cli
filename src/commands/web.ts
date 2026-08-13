@@ -7,6 +7,7 @@
 import process from 'node:process';
 
 import { printError } from '../logging/color.ts';
+import { readSnapshot } from './dashboard.ts';
 
 export const DEFAULT_WEB_PORT = 7777;
 export const WEB_HOSTNAME = '127.0.0.1';
@@ -14,6 +15,7 @@ export const WEB_HOSTNAME = '127.0.0.1';
 export interface WebServerOptions {
 	port: number;
 	cwd: string;
+	claudeDir?: string;
 }
 
 export interface WebServerHandle {
@@ -31,6 +33,19 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/': () => new Response('Gateship web\n', {
 				headers: { 'content-type': 'text/plain; charset=utf-8' },
 			}),
+			'/api/snapshot': () => {
+				const snapshot = readSnapshot({
+					cwd: options.cwd,
+					nowMs: Date.now(),
+					claudeDir: options.claudeDir,
+				});
+				delete snapshot.tokensInput;
+				delete snapshot.tokensOutput;
+				delete snapshot.tokensCacheRead;
+				delete snapshot.tokensCacheCreation;
+				delete snapshot.storyTokens;
+				return Response.json(snapshot);
+			},
 		},
 	});
 
