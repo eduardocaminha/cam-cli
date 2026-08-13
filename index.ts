@@ -91,6 +91,7 @@ import { runDrain, parseDrainArgs } from './src/commands/drain.ts';
 import { runPause, parsePauseArgs } from './src/commands/pause.ts';
 import { runClaude, parseClaudeArgs, CLAUDE_HELP } from './src/commands/claude.ts';
 import { runConfig } from './src/commands/config.ts';
+import { DEFAULT_WEB_PORT, runWeb } from './src/commands/web.ts';
 import { runRetryMonitor, parseRetryMonitorArgs, RETRY_MONITOR_HELP } from './src/commands/retry-monitor.ts';
 import { runSidecar } from './src/commands/sidecar.ts';
 import { runOrchRecycleWatch } from './src/commands/orch-recycle-watch.ts';
@@ -137,6 +138,7 @@ const HELP = renderHelp({
 				{ name: 'patterns archive|prune', description: 'archive: move resolved-marked bullets from patterns.md to patterns.archive.md on main. prune: demote/archive stale or unconfirmed scripts/cam/pattern-records.jsonl entries on main' },
 				{ name: 'claude [args...]', description: 'Run claude in print mode with auto-retry on rate limits' },
 				{ name: 'dashboard', description: 'Standalone read-only TUI (alt-screen) for monitoring a loop' },
+				{ name: 'web [--port N]', description: 'Serve the read-only web surface on localhost (default port 7777)' },
 				{ name: 'status', description: 'Show current loop state at a glance (idle / active / paused)' },
 				{ name: 'stats tokens|cycles', description: 'Print per-issue token spend (orch/worker/total) or per-cycle worker/review-round counts from the event log' },
 				{ name: 'stop', description: 'Cancel a running loop (clears state file + kills the per-project tmux session)' },
@@ -822,6 +824,21 @@ const DASHBOARD_HELP = renderHelp({
 	footer:
 		'gship run places this command in pane 0.1 of the project session (permanent,\n' +
 		'always visible). You can also run it standalone in any terminal.',
+});
+
+const WEB_HELP = renderHelp({
+	title: 'gship web',
+	tagline: 'Serve the read-only web surface on localhost',
+	usage: 'gship web [--port N]',
+	sections: [
+		{
+			heading: 'Options',
+			entries: [
+				{ name: '--port <N>', description: 'Positive TCP port to listen on (default: 7777)' },
+			],
+		},
+	],
+	footer: 'Binds only to 127.0.0.1 and never opens a browser automatically.',
 });
 
 const STOP_HELP = renderHelp({
@@ -1607,6 +1624,37 @@ export function parseNextArgs(
 		return null;
 	}
 	return result;
+}
+
+export function parseWebArgs(args: string[]): { port: number; help: boolean } | null {
+	let port = DEFAULT_WEB_PORT;
+	let help = false;
+	for (let i = 0; i < args.length; i += 1) {
+		const arg = args[i]!;
+		if (arg === '--help' || arg === '-h') {
+			help = true;
+			continue;
+		}
+
+		let rawPort: string | undefined;
+		if (arg === '--port') {
+			rawPort = args[i + 1];
+			if (rawPort !== undefined) i += 1;
+		} else if (arg.startsWith('--port=')) {
+			rawPort = arg.slice('--port='.length);
+		} else {
+			printError(`unknown web option: ${arg}`);
+			return null;
+		}
+
+		const parsedPort = rawPort === undefined ? Number.NaN : Number(rawPort);
+		if (!Number.isFinite(parsedPort) || !Number.isInteger(parsedPort) || parsedPort <= 0 || parsedPort > 65_535) {
+			printError(`--port expects an integer from 1 to 65535, got ${JSON.stringify(rawPort)}`);
+			return null;
+		}
+		port = parsedPort;
+	}
+	return { port, help };
 }
 
 /**
@@ -2823,6 +2871,7 @@ const COMMANDS = [
 	'ship',
 	'tag',
 	'dashboard',
+	'web',
 	'status',
 	'stats',
 	'orch-budget',
@@ -2877,6 +2926,7 @@ const HELP_REGISTRY: Record<Command, string> = {
 	ship: SHIP_HELP,
 	tag: TAG_HELP,
 	dashboard: DASHBOARD_HELP,
+	web: WEB_HELP,
 	status: STATUS_HELP,
 	stats: STATS_HELP,
 	'orch-budget': ORCH_BUDGET_HELP,
@@ -3139,6 +3189,18 @@ async function main(argv: string[]): Promise<number> {
 			}
 			return runDashboardInk({ ...(orchPane !== undefined ? { orchPane } : {}) });
 		}
+		case 'web': {
+			const parsed = parseWebArgs(argv.slice(3));
+			if (parsed === null) {
+				printFatalHint('run `gship web --help` for usage');
+				return 1;
+			}
+			if (parsed.help) {
+				process.stdout.write(WEB_HELP);
+				return 0;
+			}
+			return runWeb({ port: parsed.port, cwd: process.cwd() });
+		}
 		case 'status': {
 			const tail = argv.slice(3);
 			if (tail.includes('--help') || tail.includes('-h')) {
@@ -3362,4 +3424,3 @@ if (import.meta.main) {
 
 export { main, HELP_REGISTRY, COMMANDS };
 export type { Command };
-

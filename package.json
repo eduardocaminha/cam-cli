@@ -10,7 +10,7 @@
     "url": "git+https://github.com/gateship-dev/gateship.git"
   },
   "engines": {
-    "bun": ">=1.2.0"
+    "bun": ">=1.2.3"
   },
   "bin": {
     "gateship": "./index.ts",
