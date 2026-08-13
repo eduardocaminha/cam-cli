@@ -37,7 +37,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/web.ts (novo), index.ts, package.json, test/web/launch.test.ts (novo). Subcomando exige tocar QUATRO lugares acoplados em index.ts: COMMANDS (:2813), isCommand (:2854), HELP_REGISTRY Record<Command,string> (:2867, falta de entrada quebra tsc de proposito) e o switch (~:2960). Nao existe lib de parsing de argumento no repo: flag a mao no molde de parseNextArgs (index.ts:1535). SEPARACAO DE SUPERFICIE: porta efemera de teste vem da funcao de start com port 0, nunca da flag; a CLI rejeita 0. Sem injecao de clock na assinatura ({ port, cwd }): nowMs e computado por request e a US-002 exclui nowMs da igualdade profunda (achado 1 do audit). hostname default do Bun.serve e 0.0.0.0, entao 'hostname: 127.0.0.1' tem que ser explicito; o pino e comportamental (handle.hostname no teste), nao grep de prosa (achado 5). Zero HTTP existe no repo hoje (Bun.serve 0, node:http 0). Fora de escopo: auth/bearer (so localhost), NDJSON/stream, daemon. relatedDocs: item 14 de project_definicoes_web_headless.md manda routes nativo; ADR-0063 mantem vite fora do binario (Parte A nem usa vite)."
     },
