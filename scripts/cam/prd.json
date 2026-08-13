@@ -110,7 +110,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/web.ts, test/web/page.test.ts (novo). HTML e JS servidos como texto inline pelo proprio processo (template string ou constante); NAO usar HTML imports do Bun (puxariam o bundler; ADR-0063 mantem vite/build fora do binario e a Parte A nem tem assets). O item 13 de memory/project_definicoes_web_headless.md (dashboard adota identidade visual) esta EMENDADO pela divisao Parte A / Parte B de 2026-08-13: subir sem estilo aqui NAO e violacao (gotcha 31 do spec; revisor avisado). Achado 3 resolvido por contrato: o oraculo bun test test/web/page.test.ts tem conteudo pass/fail declarado (200 + text/html + pinos de string do poll e dos dois branches), sem dependencia DOM nova que quebraria a costura A/B."
     }
