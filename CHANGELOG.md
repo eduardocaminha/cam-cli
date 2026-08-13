@@ -6,6 +6,18 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.289.0] - 2026-08-13
+
+### Added
+
+- US-R1-002 - WARNING: The README Commands block is not updated for the new operator-facing s…
+- US-R1-001 - WARNING: The route test's fixture cannot falsify either robustness knob US-004…
+- [US-005] - Pagina HTML sem estilo que repolla /api/snapshot a cada 2000ms
+- US-004 - Leitura do event log limitada pela sessao dentro do produtor
+- US-003 - Bloco idle no payload quando prd.json esta ausente
+- US-002 - Rota GET /api/snapshot com paridade por construcao via readSnapshot
+- US-001 - Adicionar subcomando cam web com Bun.serve routes nativo em 127.0.0.1
+
 ## [0.288.0] - 2026-08-12
 
 ### Added

@@ -231,6 +231,7 @@ cam journal archive         Move the oldest third of scripts/cam/journal.md entr
 cam patterns archive        Move resolved-marked bullets from scripts/cam/patterns.md to patterns.archive.md on main
 cam claude [args...]        Run claude with built-in auto-retry on rate limits
 cam dashboard               Navigable TUI: browse stories, dispatch /cam-* commands (pane 0.1; also standalone)
+cam web [--port N]          Serve the read-only web surface on localhost (default port 7777)
 cam status                  Show current loop state (idle / active / paused)
 cam stop                    Cancel a running loop
 cam pause                   Set the operator pause brake marker (.claude/.cam-pause), separate from loop state

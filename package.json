@@ -1,6 +1,6 @@
 {
   "name": "gateship",
-  "version": "0.288.0",
+  "version": "0.289.0",
   "module": "index.ts",
   "type": "module",
   "private": false,
@@ -10,7 +10,7 @@
     "url": "git+https://github.com/gateship-dev/gateship.git"
   },
   "engines": {
-    "bun": ">=1.2.0"
+    "bun": ">=1.2.3"
   },
   "bin": {
     "gateship": "./index.ts",
