@@ -1,23 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-001",
-    "title": "WARNING: The route test's fixture cannot falsify either robustness knob US-004…"
+    "id": "US-R1-002",
+    "title": "WARNING: The README Commands block is not updated for the new operator-facing s…"
   },
   "branchName": "cam/issue-522",
-  "timestamp": "2026-08-13T15:41:37Z",
+  "timestamp": "2026-08-13T15:53:20Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "scripts/cam/patterns.md",
-    "test/web/read-bounded.test.ts"
+    "README.md"
   ],
   "openQuestions": [],
-  "nextStoryContext": "The bounded-read suite now has separate falsifying fixtures for the 64 KB physical-order margin and the 1000 ms jq timestamp tolerance. Mutation probes confirmed that zeroing EVENT_LOG_OUT_OF_ORDER_MARGIN_BYTES fails the physical-order fixture and zeroing JQ_TIMESTAMP_PRECISION_MARGIN_MS fails the jq fixture. The next review finding is the independent README command-list sync for gship web.",
+  "nextStoryContext": "The README Commands block now includes `cam web [--port N]` beside the dashboard and status entries, matching the operator-facing subcommand registered in the CLI help surfaces.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "Test-fixture-only story; no external library API was exercised."
+      "summary": "README-only command-list synchronization; no external library API was exercised."
     }
   ]
 }
