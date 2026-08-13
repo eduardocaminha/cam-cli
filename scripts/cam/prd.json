@@ -33,7 +33,7 @@
       "id": "US-R1-002",
       "title": "WARNING: The README Commands block is not updated for the new operator-facing s…",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "description": "WARNING [README.md:217]: The README Commands block is not updated for the new operator-facing subcommand. `gship web [--port N]` is registered in COMMANDS, HELP and HELP_REGISTRY (index.ts:2874, :138, :2929) and is reachable by users, but the README command list still ends at `cam dashboard` / `cam status` with no `cam web` line. One-line mechanical doc sync.",
       "notes": "WARNING [README.md:217]: The README Commands block is not updated for the new operator-facing subcommand. `gship web [--port N]` is registered in COMMANDS, HELP and HELP_REGISTRY (index.ts:2874, :138, :2929) and is reachable by users, but the README command list still ends at `cam dashboard` / `cam status` with no `cam web` line. One-line mechanical doc sync."
     },
