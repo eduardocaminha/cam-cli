@@ -166,6 +166,16 @@ Append `[oracle: <kind-or-command>]` at the end of each criterion string. Exampl
 
 **Absence/presence idiom for `file-assert` grep oracles**: for a presence assertion, use `grep -q PATTERN file`; for an absence assertion, use `! grep -q PATTERN file` (shell negation on the quiet-mode exit code). Never combine grep's quiet flag `-q` with a list-files flag `-L` or `-l`: `-q` short-circuits on the first match, which makes `-L`/`-l` self-nullifying and produces a false BLOCK.
 
+### Varra todo oraculo nas DUAS direcoes antes de entregar o PRD
+
+Rodar um oraculo de deteccao de mudanca contra a arvore atual e observar vermelho NAO e prova de falseabilidade. Vermelho pelo motivo errado e indistinguivel de vermelho pelo motivo certo num teste booleano.
+
+Todo oraculo de deteccao de mudanca que voce emitir num acceptanceCriterion precisa ser rodado TAMBEM contra uma arvore pos-mudanca simulada: crie os arquivos e a configuracao que o criterio descreve, e o oraculo precisa ser observado VERDE la. Um oraculo que nao consegue alcancar o verde e insatisfazivel por construcao e vai queimar uma rodada inteira de plano.
+
+Pino de invariancia (criterio que assere que algo NAO muda) recebe a disciplina espelhada: verde por construcao na arvore atual, e entao injete a violacao e observe vermelho.
+
+Restaure a arvore depois da simulacao e confira que ela ficou limpa (`git status`).
+
 ## Mandatory Acceptance Criteria
 
 Every story MUST include:
