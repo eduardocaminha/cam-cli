@@ -92,7 +92,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Files: src/commands/dashboard.ts, src/commands/web.ts (seam de injecao do leitor), test/web/read-bounded.test.ts (novo). O conserto vale para pane E rota ao mesmo tempo porque vive no produtor (decisao replace-not-add, memory/project_identidade_e_org.md:31: a web SUBSTITUI o pane, entao consertar o produtor conserta os dois). Seam de DI: a funcao de start e/ou readSnapshot aceita leitor opcional (default = leitor real); DI-fake comportamental e ok, assercao 'mock foi chamado' sozinha nao e (curated invariants). Relogio NAO e monotonico entre os nove escritores concorrentes; src/stats/cycles.ts ja ordena por posicao fisica de linha, nao por ts: a margem de fora-de-ordem segue esse precedente. NAO usar grep negativo de readFileSync no arquivo inteiro: quatro sitios legitimos permanecem (481 readPrd, 507 readState) e o oraculo ficaria insatisfazivel (gotcha 33 do spec, vivido no round 3). storyId ausente em 21.789 de 95.121 linhas medidas: o parser de janela tolera. Grep patterns.md por 'sync carve-out' (patterns.md:888) antes de codar."
     },
