@@ -12,11 +12,57 @@ import { printError } from '../logging/color.ts';
 import { readBacklogFromMain } from '../issues/backlog.ts';
 import { deriveBacklogJson, type BacklogJsonView } from '../issues/list.ts';
 import type { CycleMetricsRow } from '../stats/cycles.ts';
-import { readSnapshot, RECENT_ENTRIES_COUNT, type EventLogReader } from './dashboard.ts';
+import {
+	DEFAULT_POLL_INTERVAL_MS,
+	readSnapshot,
+	RECENT_ENTRIES_COUNT,
+	type EventLogReader,
+} from './dashboard.ts';
 import { resolvePrdPath } from './status.ts';
 
 export const DEFAULT_WEB_PORT = 7777;
 export const WEB_HOSTNAME = '127.0.0.1';
+
+const WEB_PAGE_HTML = `<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Gateship web</title>
+</head>
+<body>
+	<h1>Gateship web</h1>
+	<pre id="snapshot" aria-live="polite">Loading snapshot...</pre>
+	<script>
+		const SNAPSHOT_PATH = '/api/snapshot';
+		const POLL_INTERVAL_MS = ${DEFAULT_POLL_INTERVAL_MS};
+		const output = document.getElementById('snapshot');
+
+		function renderSnapshot(snapshot) {
+			if (snapshot.idle === true) {
+				output.dataset.payloadBranch = 'idle-payload';
+			} else {
+				output.dataset.payloadBranch = 'active-cycle-payload';
+			}
+			output.textContent = JSON.stringify(snapshot, null, 2);
+		}
+
+		async function pollSnapshot() {
+			try {
+				const response = await fetch(SNAPSHOT_PATH);
+				if (!response.ok) throw new Error('Snapshot request failed: ' + response.status);
+				renderSnapshot(await response.json());
+			} catch (error) {
+				output.textContent = String(error);
+			}
+		}
+
+		void pollSnapshot();
+		setInterval(pollSnapshot, POLL_INTERVAL_MS);
+	</script>
+</body>
+</html>
+`;
 
 export interface WebServerOptions {
 	port: number;
@@ -116,8 +162,8 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		hostname: WEB_HOSTNAME,
 		port: options.port,
 		routes: {
-			'/': () => new Response('Gateship web\n', {
-				headers: { 'content-type': 'text/plain; charset=utf-8' },
+			'/': () => new Response(WEB_PAGE_HTML, {
+				headers: { 'content-type': 'text/html; charset=utf-8' },
 			}),
 			'/api/snapshot': () => {
 				const snapshot = readSnapshot({

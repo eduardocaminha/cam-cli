@@ -120,7 +120,8 @@ describe('web server launch', () => {
 			expect(handle.port).toBeGreaterThan(0);
 			expect(handle.hostname).toBe('127.0.0.1');
 			const response = await fetch(`http://${handle.hostname}:${handle.port}/`);
-			expect(await response.text()).toBe('Gateship web\n');
+			expect(response.headers.get('content-type')).toContain('text/html');
+			expect(await response.text()).toContain('<title>Gateship web</title>');
 		} finally {
 			await handle.stop();
 		}
