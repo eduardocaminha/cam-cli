@@ -16,7 +16,14 @@
 //     true` so the new viewport size is fully repainted.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import {
+	closeSync,
+	existsSync,
+	fstatSync,
+	openSync,
+	readFileSync,
+	readSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
@@ -55,6 +62,31 @@ export const DEFAULT_POLL_INTERVAL_MS = 2000;
 
 /** How many recent worker 'result' events to surface in the dashboard panel. */
 export const RECENT_ENTRIES_COUNT = 5;
+
+/** Fixed no-marker tail: enough room for five unusually large result events. */
+export const EVENT_LOG_FALLBACK_TAIL_BYTES = RECENT_ENTRIES_COUNT * 64 * 1024;
+
+/** Physical read size used while walking the append-only event log backwards. */
+export const EVENT_LOG_READ_CHUNK_BYTES = 32 * 1024;
+
+/**
+ * Keep this many physical bytes before the earliest session event found. The
+ * event log has concurrent writers, so timestamp order is not physical order.
+ */
+export const EVENT_LOG_OUT_OF_ORDER_MARGIN_BYTES = 64 * 1024;
+
+/** jq's fallback writer records only whole seconds; allow its sub-second floor. */
+const JQ_TIMESTAMP_PRECISION_MARGIN_MS = 1000;
+
+/** Synchronous filesystem seam used only for the bounded worker-event read. */
+export interface EventLogReader {
+	openSync(path: string, flags: "r"): number;
+	fstatSync(fd: number): { size: number };
+	readSync(fd: number, buffer: Buffer, offset: number, length: number, position: number): number;
+	closeSync(fd: number): void;
+}
+
+const NODE_EVENT_LOG_READER: EventLogReader = { openSync, fstatSync, readSync, closeSync };
 
 /**
  * Terminal control codes (cursor movement, screen clearing).
@@ -389,13 +421,23 @@ export function installQuitHandlers(cleanup: () => void): void {
  * rather than throwing, because the dashboard is read-only and a render
  * failure mid-loop should NOT brick the operator's terminal.
  */
-export function readSnapshot(options: { cwd: string; nowMs: number; claudeDir?: string }): DashboardData {
+export interface ReadSnapshotOptions {
+	cwd: string;
+	nowMs: number;
+	claudeDir?: string;
+	/** Injectable only so route tests can measure worker-event bytes actually read. */
+	eventLogReader?: EventLogReader;
+}
+
+export function readSnapshot(options: ReadSnapshotOptions): DashboardData {
 	const { cwd, nowMs } = options;
 	const claudeDir = options.claudeDir ?? (process.env["CLAUDE_CONFIG_DIR"] ?? join(homedir(), ".claude"));
 
 	const prd = readPrd(cwd);
 	const state = readState(cwd);
-	const recent = readRecentProgress(cwd, prd?.userStories);
+	const sessionStartIso = validSessionStart(readSidecarSessionStart(join(cwd, ".claude")));
+	const eventLogBody = readEventLogBody(cwd, sessionStartIso, options.eventLogReader);
+	const recent = recentProgressFromBody(eventLogBody, prd?.userStories);
 	const orchPath = orchestratorTranscriptPath(cwd, claudeDir);
 	const tokenUsage = orchPath !== null ? readTranscriptTokens(orchPath) : null;
 	const storyTokens = readStoryTokens(cwd, claudeDir, prd?.userStories ?? []);
@@ -458,17 +500,13 @@ export function readSnapshot(options: { cwd: string; nowMs: number; claudeDir?: 
 	// marker the sidecar writes at startup (project-local `.claude/`, NOT the
 	// `claudeDir` option above which points at the transcript home dir).
 	// Absent/unreadable marker leaves the field undefined without throwing.
-	const sessionStartIso = readSidecarSessionStart(join(cwd, ".claude"));
 	if (sessionStartIso !== null) {
-		const sessionStartMs = Date.parse(sessionStartIso);
-		if (Number.isFinite(sessionStartMs)) {
-			data.sessionStartedAtMs = sessionStartMs;
-			// US-002 (PR-83): bound the worker-token sum by the same session-start
-			// marker so the total reflects "since this sidecar session began", not
-			// the whole (never-truncated) event log.
-			const sessionTokens = sumSessionWorkerTokens(readEventLogBody(cwd), sessionStartIso);
-			if (sessionTokens !== undefined) data.sessionWorkerTokens = sessionTokens;
-		}
+		data.sessionStartedAtMs = Date.parse(sessionStartIso);
+		// US-002 (PR-83): bound the worker-token sum by the same session-start
+		// marker so the total reflects "since this sidecar session began", not
+		// the whole (never-truncated) event log.
+		const sessionTokens = sumSessionWorkerTokens(eventLogBody, sessionStartIso);
+		if (sessionTokens !== undefined) data.sessionWorkerTokens = sessionTokens;
 	}
 
 	return data;
@@ -569,15 +607,20 @@ function readStoryTokens(
  * 'incomplete' event for a story that has since been finalized-DONE renders in
  * agreement with the Stories panel, instead of contradicting it.
  */
-export function readRecentProgress(cwd: string, userStories?: readonly PrdStory[]): string[] {
-	const path = join(cwd, EVENT_LOG_PATH);
-	if (!existsSync(path)) return [];
-	let body: string;
-	try {
-		body = readFileSync(path, "utf8");
-	} catch {
-		return [];
-	}
+export function readRecentProgress(
+	cwd: string,
+	userStories?: readonly PrdStory[],
+	eventLogReader: EventLogReader = NODE_EVENT_LOG_READER,
+): string[] {
+	const sessionStartIso = validSessionStart(readSidecarSessionStart(join(cwd, ".claude")));
+	return recentProgressFromBody(readEventLogBody(cwd, sessionStartIso, eventLogReader), userStories);
+}
+
+function recentProgressFromBody(
+	body: string | null,
+	userStories?: readonly PrdStory[],
+): string[] {
+	if (body === null) return [];
 	const passingStoryIds = new Set(
 		(userStories ?? []).filter((s) => s.passes === true).map((s) => s.id),
 	);
@@ -585,18 +628,154 @@ export function readRecentProgress(cwd: string, userStories?: readonly PrdStory[
 }
 
 /**
- * Read the raw event-log body under `cwd`, or null when the file is absent
- * or unreadable. Shared by `readRecentProgress` (via its own inline read) and
- * `readSnapshot`'s session-worker-token summation (US-002, PR-83).
+ * Read a bounded worker-event tail synchronously. With a valid session marker,
+ * walk backwards until reaching the session and its physical out-of-order
+ * margin. Without a marker, use one fixed-size tail. `readSnapshot` shares the
+ * returned body between Recent Progress and token summation, so a route poll
+ * performs one event-log read rather than two.
  */
-function readEventLogBody(cwd: string): string | null {
+function readEventLogBody(
+	cwd: string,
+	sessionStartIso: string | null,
+	reader: EventLogReader = NODE_EVENT_LOG_READER,
+): string | null {
 	const path = join(cwd, EVENT_LOG_PATH);
-	if (!existsSync(path)) return null;
+	let fd: number | undefined;
 	try {
-		return readFileSync(path, "utf8");
+		fd = reader.openSync(path, "r");
+		const size = reader.fstatSync(fd).size;
+		if (size <= 0) return "";
+		const sessionStartMs = sessionStartIso === null ? null : Date.parse(sessionStartIso);
+		const { start, bytes } = readEventLogWindow(reader, fd, size, sessionStartMs);
+		const body = bytes.toString("utf8");
+		if (start === 0) return body;
+		const firstNewline = body.indexOf("\n");
+		return firstNewline === -1 ? "" : body.slice(firstNewline + 1);
 	} catch {
 		return null;
+	} finally {
+		if (fd !== undefined) {
+			try {
+				reader.closeSync(fd);
+			} catch {
+				// A close failure must not brick this read-only dashboard.
+			}
+		}
 	}
+}
+
+function validSessionStart(value: string | null): string | null {
+	return value !== null && Number.isFinite(Date.parse(value)) ? value : null;
+}
+
+function readEventLogWindow(
+	reader: EventLogReader,
+	fd: number,
+	size: number,
+	sessionStartMs: number | null,
+): { start: number; bytes: Buffer } {
+	if (sessionStartMs === null) {
+		const start = Math.max(0, size - EVENT_LOG_FALLBACK_TAIL_BYTES);
+		return { start, bytes: readRange(reader, fd, start, size - start) };
+	}
+	let start = size;
+	const reverseChunks: Buffer[] = [];
+	let leadingFragment: Buffer = Buffer.alloc(0);
+	let earliestInSession: number | null = null;
+	let latestBeforeSession: number | null = null;
+	let targetStart: number | null = null;
+	while (start > 0) {
+		if (targetStart !== null && start <= targetStart) break;
+		const fallbackRemaining = EVENT_LOG_FALLBACK_TAIL_BYTES - (size - start);
+		if (targetStart === null && fallbackRemaining <= 0) break;
+		const desired = targetStart === null
+			? Math.min(EVENT_LOG_READ_CHUNK_BYTES, fallbackRemaining)
+			: Math.min(EVENT_LOG_READ_CHUNK_BYTES, start - targetStart);
+		const length = Math.min(start, desired);
+		if (length <= 0) break;
+		start -= length;
+		const chunk = readRange(reader, fd, start, length);
+		reverseChunks.push(chunk);
+		const scanWindow = leadingFragment.length === 0
+			? chunk
+			: Buffer.concat([chunk, leadingFragment]);
+		const positions = inspectEventTimestamps(scanWindow, start, sessionStartMs);
+		if (positions.earliestInSession !== null) {
+			earliestInSession = earliestInSession === null
+				? positions.earliestInSession
+				: Math.min(earliestInSession, positions.earliestInSession);
+		}
+		if (positions.latestBeforeSession !== null) {
+			latestBeforeSession = latestBeforeSession === null
+				? positions.latestBeforeSession
+				: Math.max(latestBeforeSession, positions.latestBeforeSession);
+		}
+		const firstNewline = scanWindow.indexOf(10);
+		leadingFragment = firstNewline === -1
+			? scanWindow
+			: scanWindow.subarray(0, firstNewline + 1);
+		const anchor = earliestInSession ?? latestBeforeSession;
+		if (anchor !== null) {
+			targetStart = Math.max(0, anchor - EVENT_LOG_OUT_OF_ORDER_MARGIN_BYTES);
+		}
+	}
+	return { start, bytes: Buffer.concat(reverseChunks.reverse()) };
+}
+
+function inspectEventTimestamps(
+	window: Buffer,
+	absoluteStart: number,
+	sessionStartMs: number,
+): { earliestInSession: number | null; latestBeforeSession: number | null } {
+	let earliestInSession: number | null = null;
+	let latestBeforeSession: number | null = null;
+	let lineStart = absoluteStart === 0 ? 0 : window.indexOf(10) + 1;
+	if (lineStart === 0 && absoluteStart !== 0) return { earliestInSession, latestBeforeSession };
+	while (lineStart < window.length) {
+		const newline = window.indexOf(10, lineStart);
+		const lineEnd = newline === -1 ? window.length : newline;
+		try {
+			const event = JSON.parse(window.subarray(lineStart, lineEnd).toString("utf8")) as unknown;
+			const ts = eventTimestamp(event);
+			if (ts !== null) {
+				const position = absoluteStart + lineStart;
+				if (ts >= sessionStartMs - JQ_TIMESTAMP_PRECISION_MARGIN_MS) {
+					earliestInSession = earliestInSession === null ? position : Math.min(earliestInSession, position);
+				} else {
+					latestBeforeSession = latestBeforeSession === null ? position : Math.max(latestBeforeSession, position);
+				}
+			}
+		} catch {
+			// Concurrent append or malformed line: keep walking older physical lines.
+		}
+		if (newline === -1) break;
+		lineStart = newline + 1;
+	}
+	return { earliestInSession, latestBeforeSession };
+}
+
+function eventTimestamp(event: unknown): number | null {
+	if (typeof event !== "object" || event === null || Array.isArray(event)) return null;
+	const ts = (event as { ts?: unknown }).ts;
+	if (typeof ts !== "string") return null;
+	const parsed = Date.parse(ts);
+	return Number.isFinite(parsed) ? parsed : null;
+}
+
+function readRange(
+	reader: EventLogReader,
+	fd: number,
+	position: number,
+	length: number,
+): Buffer {
+	const buffer = Buffer.allocUnsafe(length);
+	let offset = 0;
+	while (offset < length) {
+		const bytesRead = reader.readSync(fd, buffer, offset, length - offset, position + offset);
+		if (bytesRead <= 0) break;
+		offset += bytesRead;
+	}
+	return offset === length ? buffer : buffer.subarray(0, offset);
 }
 
 /** Coerce an unknown JSON value to a number (0 if not a number). */

@@ -12,7 +12,7 @@ import { printError } from '../logging/color.ts';
 import { readBacklogFromMain } from '../issues/backlog.ts';
 import { deriveBacklogJson, type BacklogJsonView } from '../issues/list.ts';
 import type { CycleMetricsRow } from '../stats/cycles.ts';
-import { readSnapshot, RECENT_ENTRIES_COUNT } from './dashboard.ts';
+import { readSnapshot, RECENT_ENTRIES_COUNT, type EventLogReader } from './dashboard.ts';
 import { resolvePrdPath } from './status.ts';
 
 export const DEFAULT_WEB_PORT = 7777;
@@ -22,6 +22,8 @@ export interface WebServerOptions {
 	port: number;
 	cwd: string;
 	claudeDir?: string;
+	/** Test seam for measuring only worker-event bytes read by the real route. */
+	eventLogReader?: EventLogReader;
 }
 
 export interface WebServerHandle {
@@ -122,6 +124,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 					cwd: options.cwd,
 					nowMs: Date.now(),
 					claudeDir: options.claudeDir,
+					...(options.eventLogReader !== undefined ? { eventLogReader: options.eventLogReader } : {}),
 				});
 				delete snapshot.tokensInput;
 				delete snapshot.tokensOutput;
