@@ -597,7 +597,7 @@ Um dos dois estados da tela web. Vigora quando nao ha ciclo ativo, condicao em q
 Tempo decorrido desde o ultimo evento recebido, calculado pelo relogio do cliente e nao do servidor. Existe para tornar visivel qualquer falha de entrega: stream morto, servidor caido ou loop parado aparecem como dado velho em vez de tela congelada que parece viva.
 
 **pino de invariancia**:
-Especie de oraculo de criterio de aceite que e verde por construcao e cujo comparando e derivado da main no momento da checagem, nunca congelado como literal. Contrasta com o oraculo de deteccao-de-mudanca, que precisa ser varrido vermelho contra a main antes de ser confiavel.
+Especie de criterio de aceite que afirma que algo NAO mudou, por oposicao ao criterio de deteccao-de-mudanca, que afirma que algo passou a existir. Um pino nasce verde e so fica vermelho se a fatia violar a fronteira que ele guarda; seu comparando e sempre derivado ao vivo dos dois lados, nunca congelado como literal.
 
 **vendorizacao re-executavel**:
 Forma de trazer codigo de terceiro para o repositorio por meio de um script que pode ser rodado de novo contra a fonte upstream, com versao pinada e gate de drift, em vez de uma copia manual. Impede que adaptacoes locais virem um fork que precisa ser reaplicado a cada atualizacao.
@@ -622,3 +622,12 @@ Arquivo que um ator de worker produz como sua saida de contrato, e que o supervi
 
 **roteamento por campo de sessao**:
 Mecanismo pelo qual todas as fases de um ciclo herdam uma escolha de substrato de execucao a partir de um unico campo no arquivo de estado do loop, escrito por qualquer porta de entrada de CLI e lido por todas as fases, em vez de cada comando decidir isoladamente.
+
+**bloco de paridade**:
+Uma das unidades de informacao que o dashboard mostra ao operador (estado do loop, story corrente, progresso, tempo desde a ultima atividade, sessao, custo em tokens, branch, lista de stories, detalhe da story, ultimos eventos). Serve de contrato entre superficies: qualquer superficie nova que se proponha a substituir o dashboard e medida por quantos blocos ela reproduz, e a omissao de um bloco e sempre declarada com o motivo.
+
+**payload idle**:
+A resposta que uma superficie de observacao devolve quando nao existe ciclo em andamento. Em vez de mostrar a view de ciclo ativo com campos vazios, ela troca de conteudo e passa a mostrar historico recente de ciclos fechados e o backlog. Idle e um estado de primeira classe do produto, nao a ausencia de estado.
+
+**leitura limitada por sessao**:
+Politica de leitura em que o custo de responder e proporcional ao que foi registrado na sessao corrente, e nao ao historico acumulado. O leitor comeca pelo fim do registro e para quando ultrapassa o inicio da sessao, com margem para desordem de relogio entre escritores concorrentes.
