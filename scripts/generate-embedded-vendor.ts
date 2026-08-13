@@ -6,10 +6,10 @@
 // `src/vendor/_generated.ts`. The generated module is the single source of
 // truth for `src/vendor/embedded.ts` and `src/templates/embedded.ts` at
 // runtime — both in dev (`bun src/...`) and in the compiled binary
-// (`bun build --compile`). `bun build --compile` does NOT include arbitrary
-// files in the binary; only TS modules transitively imported. Embedding as
-// string constants is what makes runtime materialization work after
-// install.
+// (`bun build --compile`). `bun build --compile` CAN embed arbitrary files
+// natively: `import ... with { type: "file" }` resolves to a `$bunfs` path.
+// This script deliberately inlines file contents as utf8 string constants
+// instead, because the consumers need the content in memory, not a path.
 //
 // Why a codegen rather than `with { type: "text" }` import attributes?
 //
