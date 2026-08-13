@@ -22,6 +22,22 @@
   ],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "WARNING: The route test's fixture cannot falsify either robustness knob US-004…",
+      "priority": 1,
+      "passes": true,
+      "description": "WARNING [test/web/read-bounded.test.ts:111]: The route test's fixture cannot falsify either robustness knob US-004 AC1 mandates. All four session lines (currentBeforeOutOfOrder, physicallyLateOldLine, jqFallback, currentResult) sit contiguously in the final ~500 bytes, so the earliest in-session anchor is the same whether or not the jq line is classified in-session, and the byte assertions are upper bounds (toBeLessThanOrEqual / toBeLessThan) that stay satisfied when the window shrinks. Setting EVENT_LOG_OUT_OF_ORDER_MARGIN_BYTES or JQ_TIMESTAMP_PRECISION_MARGIN_MS to 0 leaves the whole suite green. I verified both mechanisms do work via independent tmpdir probes (see scripts/cam/review-artifact.txt probes 3 and 4), so this is a coverage gap, not a behavior bug: add one fixture with an in-session line physically earlier than a block of pre-session padding (falsifies the 64 KB margin) and one with an orch-resolve-fallback line whose whole-second ts is under 1000 ms before the marker acting as the sole anchor (falsifies the jq tolerance).",
+      "notes": "WARNING [test/web/read-bounded.test.ts:111]: The route test's fixture cannot falsify either robustness knob US-004 AC1 mandates. All four session lines (currentBeforeOutOfOrder, physicallyLateOldLine, jqFallback, currentResult) sit contiguously in the final ~500 bytes, so the earliest in-session anchor is the same whether or not the jq line is classified in-session, and the byte assertions are upper bounds (toBeLessThanOrEqual / toBeLessThan) that stay satisfied when the window shrinks. Setting EVENT_LOG_OUT_OF_ORDER_MARGIN_BYTES or JQ_TIMESTAMP_PRECISION_MARGIN_MS to 0 leaves the whole suite green. I verified both mechanisms do work via independent tmpdir probes (see scripts/cam/review-artifact.txt probes 3 and 4), so this is a coverage gap, not a behavior bug: add one fixture with an in-session line physically earlier than a block of pre-session padding (falsifies the 64 KB margin) and one with an orch-resolve-fallback line whose whole-second ts is under 1000 ms before the marker acting as the sole anchor (falsifies the jq tolerance)."
+    },
+    {
+      "id": "US-R1-002",
+      "title": "WARNING: The README Commands block is not updated for the new operator-facing s…",
+      "priority": 2,
+      "passes": false,
+      "description": "WARNING [README.md:217]: The README Commands block is not updated for the new operator-facing subcommand. `gship web [--port N]` is registered in COMMANDS, HELP and HELP_REGISTRY (index.ts:2874, :138, :2929) and is reachable by users, but the README command list still ends at `cam dashboard` / `cam status` with no `cam web` line. One-line mechanical doc sync.",
+      "notes": "WARNING [README.md:217]: The README Commands block is not updated for the new operator-facing subcommand. `gship web [--port N]` is registered in COMMANDS, HELP and HELP_REGISTRY (index.ts:2874, :138, :2929) and is reachable by users, but the README command list still ends at `cam dashboard` / `cam status` with no `cam web` line. One-line mechanical doc sync."
+    },
+    {
       "id": "US-001",
       "title": "Adicionar subcomando cam web com Bun.serve routes nativo em 127.0.0.1",
       "description": "As an operator, I need `bun index.ts web` to boot a localhost-only HTTP server with graceful shutdown so that the read-only web surface has a process to live in",
@@ -36,7 +52,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 1,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "Files: src/commands/web.ts (novo), index.ts, package.json, test/web/launch.test.ts (novo). Subcomando exige tocar QUATRO lugares acoplados em index.ts: COMMANDS (:2813), isCommand (:2854), HELP_REGISTRY Record<Command,string> (:2867, falta de entrada quebra tsc de proposito) e o switch (~:2960). Nao existe lib de parsing de argumento no repo: flag a mao no molde de parseNextArgs (index.ts:1535). SEPARACAO DE SUPERFICIE: porta efemera de teste vem da funcao de start com port 0, nunca da flag; a CLI rejeita 0. Sem injecao de clock na assinatura ({ port, cwd }): nowMs e computado por request e a US-002 exclui nowMs da igualdade profunda (achado 1 do audit). hostname default do Bun.serve e 0.0.0.0, entao 'hostname: 127.0.0.1' tem que ser explicito; o pino e comportamental (handle.hostname no teste), nao grep de prosa (achado 5). Zero HTTP existe no repo hoje (Bun.serve 0, node:http 0). Fora de escopo: auth/bearer (so localhost), NDJSON/stream, daemon. relatedDocs: item 14 de project_definicoes_web_headless.md manda routes nativo; ADR-0063 mantem vite fora do binario (Parte A nem usa vite)."
@@ -54,7 +70,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 2,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "Files: src/commands/web.ts, test/web/snapshot.test.ts (novo). NAO mudar a assinatura de readSnapshot nesta story: a rota chama e descarta as cinco chaves pos-hoc. Trabalho residual ACEITO na Parte A (achado 7 do audit): readSnapshot continua chamando readTranscriptTokens e readStoryTokens contra claudeDir a cada request (dashboard.ts:399-401) mesmo com as chaves descartadas; essa leitura fora do repo fica NAO medida na Parte A (a medicao da US-004 escopa so o event log). Omissao dos tokens decidida pelo operador 2026-08-13: parser medido como errado na origem (decisao 1 do CAM-544) e le fora do repo. O teste pode passar claudeDir apontando pra tmpdir do fixture pra nao depender do ~/.claude da maquina. sumSessionWorkerTokens devolve undefined quando zero eventos casam (dashboard.ts:625): nao presumir linha de cost presente no fixture."
@@ -72,7 +88,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 3,
+      "priority": 5,
       "passes": true,
       "requires": null,
       "notes": "Files: src/commands/web.ts, test/web/idle-state.test.ts (novo). Nota factual do spec: prd.json nao existe na main hoje, entao idle e o caminho corrente, nao o excepcional. readBacklogFromMain le do main via git (aceita spawnSync-compativel injetavel, src/issues/backlog.ts:36); no teste, usar fixture de repo git real ou o seam de spawn ja existente do modulo. Best-effort preservado: cycle-metrics.jsonl ausente vira lista vazia, nunca erro HTTP."
@@ -91,7 +107,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 4,
+      "priority": 6,
       "passes": true,
       "requires": null,
       "notes": "Files: src/commands/dashboard.ts, src/commands/web.ts (seam de injecao do leitor), test/web/read-bounded.test.ts (novo). O conserto vale para pane E rota ao mesmo tempo porque vive no produtor (decisao replace-not-add, memory/project_identidade_e_org.md:31: a web SUBSTITUI o pane, entao consertar o produtor conserta os dois). Seam de DI: a funcao de start e/ou readSnapshot aceita leitor opcional (default = leitor real); DI-fake comportamental e ok, assercao 'mock foi chamado' sozinha nao e (curated invariants). Relogio NAO e monotonico entre os nove escritores concorrentes; src/stats/cycles.ts ja ordena por posicao fisica de linha, nao por ts: a margem de fora-de-ordem segue esse precedente. NAO usar grep negativo de readFileSync no arquivo inteiro: quatro sitios legitimos permanecem (481 readPrd, 507 readState) e o oraculo ficaria insatisfazivel (gotcha 33 do spec, vivido no round 3). storyId ausente em 21.789 de 95.121 linhas medidas: o parser de janela tolera. Grep patterns.md por 'sync carve-out' (patterns.md:888) antes de codar."
@@ -109,10 +125,77 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 5,
+      "priority": 7,
       "passes": true,
       "requires": null,
       "notes": "Files: src/commands/web.ts, test/web/page.test.ts (novo). HTML e JS servidos como texto inline pelo proprio processo (template string ou constante); NAO usar HTML imports do Bun (puxariam o bundler; ADR-0063 mantem vite/build fora do binario e a Parte A nem tem assets). O item 13 de memory/project_definicoes_web_headless.md (dashboard adota identidade visual) esta EMENDADO pela divisao Parte A / Parte B de 2026-08-13: subir sem estilo aqui NAO e violacao (gotcha 31 do spec; revisor avisado). Achado 3 resolvido por contrato: o oraculo bun test test/web/page.test.ts tem conteudo pass/fail declarado (200 + text/html + pinos de string do poll e dos dois branches), sem dependencia DOM nova que quebraria a costura A/B."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:2",
+    "findings": [
+      {
+        "severity": "WARNING",
+        "file": "test/web/read-bounded.test.ts",
+        "line": 111,
+        "text": "The route test's fixture cannot falsify either robustness knob US-004 AC1 mandates. All four session lines (currentBeforeOutOfOrder, physicallyLateOldLine, jqFallback, currentResult) sit contiguously in the final ~500 bytes, so the earliest in-session anchor is the same whether or not the jq line is classified in-session, and the byte assertions are upper bounds (toBeLessThanOrEqual / toBeLessThan) that stay satisfied when the window shrinks. Setting EVENT_LOG_OUT_OF_ORDER_MARGIN_BYTES or JQ_TIMESTAMP_PRECISION_MARGIN_MS to 0 leaves the whole suite green. I verified both mechanisms do work via independent tmpdir probes (see scripts/cam/review-artifact.txt probes 3 and 4), so this is a coverage gap, not a behavior bug: add one fixture with an in-session line physically earlier than a block of pre-session padding (falsifies the 64 KB margin) and one with an orch-resolve-fallback line whose whole-second ts is under 1000 ms before the marker acting as the sole anchor (falsifies the jq tolerance)."
+      },
+      {
+        "severity": "WARNING",
+        "file": "README.md",
+        "line": 217,
+        "text": "The README Commands block is not updated for the new operator-facing subcommand. `gship web [--port N]` is registered in COMMANDS, HELP and HELP_REGISTRY (index.ts:2874, :138, :2929) and is reachable by users, but the README command list still ends at `cam dashboard` / `cam status` with no `cam web` line. One-line mechanical doc sync."
+      },
+      {
+        "severity": "WARNING",
+        "file": "src/commands/web.ts",
+        "line": 152,
+        "text": "Consider: the idle branch runs readBacklogFromMain on every /api/snapshot request, i.e. two synchronous git subprocesses (ls-tree + cat-file --batch) on the server's event loop every 2000 ms of browser polling. Measured on this repo (62 issues on main): 50 ms cold, 32 ms warm per call. Every other readBacklogFromMain call site (issue-specify, triage, sidecar, issue-list) is one-shot; this is the first per-poll caller, and the cost grows linearly with the backlog. A short TTL cache or an mtime/ref-keyed memo would keep the poll loop off the subprocess path."
+      },
+      {
+        "severity": "WARNING",
+        "file": "src/commands/web.ts",
+        "line": 153,
+        "text": "Consider: the catch around readBacklogFromMain collapses a documented fail-closed throw (src/issues/backlog.ts:13-17, added by CAM-307 precisely so truncated reads are never silently parsed) into deriveBacklogJson([]), so a git failure renders as an empty backlog that is indistinguishable from a genuinely empty one. Best-effort is the right posture for a read-only route, but the payload carries no degradation marker for the operator."
+      },
+      {
+        "severity": "WARNING",
+        "file": "scripts/file-size-budget.json",
+        "line": 2,
+        "text": "Consider: the src/commands/dashboard.ts ceiling raise 1104->1283 is properly justified and staged with its _ref in the same commit (470fd4e4), so the ratchet rule is satisfied. Noting for the record that the ~180 added lines are a self-contained reverse byte-range file reader (openSync/fstatSync/readSync walk, chunking, out-of-order anchoring), a different concern from the dashboard's snapshot/render responsibilities; the stated reason for inlining it is oracle satisfiability (US-004 AC4, 'sem arquivo helper separado'), which is harness convenience rather than an engineering argument. A dedicated module would have avoided the raise entirely."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/commands/web.ts",
+        "line": 190,
+        "text": "The `hostname === undefined || port === undefined` guard is unreachable: Bun's Server interface types both `port: number` and `hostname: string` as non-optional readonly properties (bun.sh/docs/api/http reference block). Dead defensive code."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/commands/web.ts",
+        "line": 90,
+        "text": "parseRecentCycles, WEB_HOSTNAME and IdleSnapshotState are exported but referenced nowhere outside this module (only DEFAULT_WEB_PORT and runWeb are imported by index.ts). Narrowing them to module-private keeps the public surface honest."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/commands/web.ts",
+        "line": 141,
+        "text": "readRecentCycles reads scripts/cam/cycle-metrics.jsonl from the working tree while the sibling backlog half of idleState reads from the main ref. On a feature branch the two halves of the same payload block can disagree in freshness."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "src/commands/web.ts",
+        "line": 42,
+        "text": "The page's branch marker keys on snapshot.idle === true, while the presence of the idleState block keys on the absence of prd.json (web.ts:181). An active loop with no prd.json (or an idle loop with one) makes the rendered branch label and the payload shape disagree."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "test/web/launch.test.ts",
+        "line": 130,
+        "text": "The default-port test binds the real 127.0.0.1:7777 and fails if anything else on the machine holds that port (including a second `gship web` a developer left running). The ephemeral-port path already exists in the same file; asserting the default could be done against parseWebArgs plus one bind attempt with retry rather than an unconditional bind."
+      }
+    ]
+  }
 }
