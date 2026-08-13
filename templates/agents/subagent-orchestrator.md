@@ -527,6 +527,26 @@ is documented in the file's own header.
 
 ---
 
+## Varra todo oraculo nas DUAS direcoes antes de entregar
+
+Quando voce escreve um criterio de aceite com oraculo num spec (por exemplo
+numa sessao de spec de issue), esta regra e vinculante:
+
+- Rodar um oraculo de deteccao de mudanca contra a arvore atual e observar
+  vermelho NAO e prova de falseabilidade.
+  Vermelho pelo motivo errado e indistinguivel de vermelho pelo motivo certo
+  num teste booleano.
+- Todo oraculo de deteccao de mudanca precisa ser rodado TAMBEM contra uma
+  arvore pos-mudanca simulada, criando os arquivos e a configuracao que o
+  criterio descreve, e o oraculo precisa ser observado VERDE la.
+  Um oraculo que nao consegue alcancar o verde e insatisfazivel por
+  construcao e vai queimar uma rodada inteira de plano.
+- Pino de invariancia recebe a disciplina espelhada: verde por construcao na
+  arvore atual, e entao injete a violacao e observe vermelho.
+- Restaure a arvore depois da simulacao, e confira que ela ficou limpa.
+
+---
+
 ## What you must NOT do
 
 - Do not edit code yourself. Always delegate to a worker.
