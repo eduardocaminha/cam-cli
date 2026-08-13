@@ -594,7 +594,7 @@ Posicao de leitura que um cliente da superficie web carrega para retomar o strea
 Um dos dois estados da tela web. Vigora quando nao ha ciclo ativo, condicao em que prd.json nao existe. Responde o que aconteceu por ultimo e o que vem a seguir, a partir de cycle-metrics.jsonl e do backlog, em vez de renderizar a view de ciclo ativo vazia.
 
 **idade do dado**:
-Tempo decorrido desde o ultimo evento recebido, calculado pelo relogio do cliente e nao do servidor. Existe para tornar visivel qualquer falha de entrega: stream morto, servidor caido ou loop parado aparecem como dado velho em vez de tela congelada que parece viva.
+Tempo decorrido desde o ultimo snapshot recebido, calculado pelo relogio do CLIENTE e nao do servidor. Existe para tornar visivel qualquer falha de entrega: servidor caido, loop parado ou leitura periodica interrompida aparecem como dado velho, em vez de uma tela congelada que parece viva. Definicao corrigida em 2026-08-13: a versao anterior dizia ultimo EVENTO recebido, formulada quando a superficie web ainda previa stream; o stream foi cortado pela emenda 3 de 2026-08-13 e a leitura passou a ser periodica, entao a ancora do calculo e o snapshot.
 
 **pino de invariancia**:
 Especie de criterio de aceite que afirma que algo NAO mudou, por oposicao ao criterio de deteccao-de-mudanca, que afirma que algo passou a existir. Um pino nasce verde e so fica vermelho se a fatia violar a fronteira que ele guarda; seu comparando e sempre derivado ao vivo dos dois lados, nunca congelado como literal.
@@ -631,3 +631,15 @@ A resposta que uma superficie de observacao devolve quando nao existe ciclo em a
 
 **leitura limitada por sessao**:
 Politica de leitura em que o custo de responder e proporcional ao que foi registrado na sessao corrente, e nao ao historico acumulado. O leitor comeca pelo fim do registro e para quando ultrapassa o inicio da sessao, com margem para desordem de relogio entre escritores concorrentes.
+
+**split de tsconfig**:
+Separacao do typecheck em dois projetos que nao se enxergam, para que codigo de servidor e codigo de navegador convivam no mesmo repositorio sem que um contamine o outro. O tsconfig da raiz exclui explicitamente a arvore do cliente e nao declara lib DOM; a arvore do cliente carrega o proprio tsconfig com lib DOM. Necessario porque o tsconfig da raiz nao tem include, entao qualquer diretorio novo entra no typecheck por omissao e nao ha como evitar isso deixando de citar o diretorio.
+
+**renderizacao estatica**:
+Forma de exercitar um componente React em teste convertendo-o a string de HTML por renderToStaticMarkup, sem instalar nenhuma global de navegador. Executa o componente de verdade, portanto detecta crash de renderizacao e ramo de estado nao renderizado, e nao cobre efeito, evento nem layout. Distingue-se de duas praticas vizinhas: e mais forte que assercao sobre texto-fonte, que nunca executa o codigo, e mais barata que harness de DOM simulado, que executa mas tambem nao computa layout.
+
+**guard de referencia de licenca**:
+Verificacao que impede codigo de terceiro vendorizado de arrastar dependencia de licenca incompativel por referencia, e nao apenas por caminho de arquivo. Complementa o guard por caminho: restringir o manifesto a um subdiretorio de licenca permissiva nao basta quando arquivos daquele subdiretorio importam um pacote irmao de licenca copyleft. O guard falha fechado, ou seja, a vendorizacao aborta quando sobra qualquer referencia.
+
+**override de disco para desenvolvimento**:
+Valvula de escape que permite servir a interface web a partir de um diretorio em disco em vez do bundle embarcado no binario, sob controle de variavel de ambiente ou caminho de configuracao. Padrao universal entre projetos de binario unico que embarcam interface, medido em 2026-08-13: todos os cinco levantados mantem uma. Existe para que desenvolvimento nao exija recompilar o binario a cada mudanca de tela.
