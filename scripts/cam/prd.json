@@ -1,0 +1,118 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-522",
+  "description": "cam web read-only (Parte A): servidor Bun.serve em 127.0.0.1 com GET /api/snapshot (paridade por construcao via readSnapshot), pagina HTML sem estilo repollando a cada 2000ms, e leitura do event log limitada pela sessao dentro do proprio produtor",
+  "issueNumber": 522,
+  "type": "feat",
+  "relatedDocs": [
+    "memory/project_definicoes_web_headless.md",
+    "memory/project_identidade_e_org.md",
+    "docs/adr/0063-o-veto-ao-vite-e-recortado-vite-e-ferramenta-de-build-time-da-ui-web.md"
+  ],
+  "officialDocsConsulted": [
+    {
+      "lib": "Bun",
+      "channel": "WebFetch",
+      "url": "https://bun.sh/docs/api/http",
+      "version": "current (repo pina .bun-version 1.3.14)",
+      "fetchedAt": "2026-08-13T15:30:00Z",
+      "summary": "A opcao routes de Bun.serve exige Bun >= 1.2.3 (confirma o bump de engines na US-001). port: 0 seleciona porta efemera e a porta resolvida se le em server.port/server.url; hostname default e 0.0.0.0, entao o bind 127.0.0.1 tem que ser explicito e e legivel de volta em server.hostname (pino comportamental da US-001). server.stop() e gracioso por default.",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Adicionar subcomando cam web com Bun.serve routes nativo em 127.0.0.1",
+      "description": "As an operator, I need `bun index.ts web` to boot a localhost-only HTTP server with graceful shutdown so that the read-only web surface has a process to live in",
+      "acceptanceCriteria": [
+        "`bun index.ts web` sobe um servidor em 127.0.0.1 na porta default 7777 usando a opcao routes NATIVA do Bun.serve (nunca roteador if-else a mao), imprime a URL em stdout e NAO abre o browser sozinho. Oraculo de CLI invoca `bun index.ts web`, nunca o binario instalado (scripts/cam/patterns.md:1068 regra 5). [oracle: bun test test/web/launch.test.ts]",
+        "A flag --port aceita as duas formas (--port N e --port=N) no molde de parseNextArgs (index.ts:1535), rejeita valor nao finito ou nao positivo (a CLI rejeita 0) com exit nao-zero e mensagem nomeando --port; porta ja ocupada tambem falha com exit nao-zero e mensagem nomeando --port. [oracle: bun test test/web/launch.test.ts]",
+        "A funcao de start exportada em src/commands/web.ts aceita { port, cwd }, suporta port 0 (efemera, molde os-eco/warren) e devolve handle expondo porta e hostname resolvidos; o teste chama a funcao com port 0 (nunca a flag da CLI), assevera porta resolvida > 0 e assevera handle.hostname === '127.0.0.1' (pino comportamental do bind localhost, substituindo o grep satisfazivel por prosa da rodada bloqueada). [oracle: bun test test/web/launch.test.ts]",
+        "Pino estrutural do roteador nativo: src/commands/web.ts declara a propriedade routes: (forma estrutural com dois-pontos, varrida VERMELHA na main: arquivo ausente). [oracle: grep -q 'routes:' src/commands/web.ts]",
+        "engines.bun sobe de >=1.2.0 para >=1.2.3 na mesma story, porque routes existe desde Bun 1.2.3 e o piso atual nao e enforcado por nada. [oracle: grep -q '\"bun\": \">=1.2.3\"' package.json]",
+        "Shutdown segue o molde de src/commands/run.ts:1154-1177: cleanup idempotente com trava booleana, process.once em SIGINT e SIGTERM, saidas 130 e 143; o teste manda SIGTERM num processo real `bun index.ts web` e assevera exit 143. [oracle: bun test test/web/launch.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/web.ts (novo), index.ts, package.json, test/web/launch.test.ts (novo). Subcomando exige tocar QUATRO lugares acoplados em index.ts: COMMANDS (:2813), isCommand (:2854), HELP_REGISTRY Record<Command,string> (:2867, falta de entrada quebra tsc de proposito) e o switch (~:2960). Nao existe lib de parsing de argumento no repo: flag a mao no molde de parseNextArgs (index.ts:1535). SEPARACAO DE SUPERFICIE: porta efemera de teste vem da funcao de start com port 0, nunca da flag; a CLI rejeita 0. Sem injecao de clock na assinatura ({ port, cwd }): nowMs e computado por request e a US-002 exclui nowMs da igualdade profunda (achado 1 do audit). hostname default do Bun.serve e 0.0.0.0, entao 'hostname: 127.0.0.1' tem que ser explicito; o pino e comportamental (handle.hostname no teste), nao grep de prosa (achado 5). Zero HTTP existe no repo hoje (Bun.serve 0, node:http 0). Fora de escopo: auth/bearer (so localhost), NDJSON/stream, daemon. relatedDocs: item 14 de project_definicoes_web_headless.md manda routes nativo; ADR-0063 mantem vite fora do binario (Parte A nem usa vite)."
+    },
+    {
+      "id": "US-002",
+      "title": "Rota GET /api/snapshot com paridade por construcao via readSnapshot",
+      "description": "As an operator, I need GET /api/snapshot to return exactly what the tmux pane's producer returns (minus transcript-dependent token keys) so that web/pane parity holds by construction, not by reproduction",
+      "acceptanceCriteria": [
+        "GET /api/snapshot devolve 200 com corpo JSON produzido chamando readSnapshot({ cwd, nowMs, claudeDir }) (src/commands/dashboard.ts:392) no momento do request e OMITINDO exatamente as cinco chaves dependentes do transcript em ~/.claude: tokensInput, tokensOutput, tokensCacheRead, tokensCacheCreation e storyTokens. Nenhum compositor proprio, nenhum parser extraido, nenhum modulo espelho. [oracle: bun test test/web/snapshot.test.ts]",
+        "O teste boota o servidor de verdade contra fixture de ciclo ativo, faz GET real e assevera igualdade profunda entre o corpo da resposta e readSnapshot(...) com as cinco chaves de token removidas E com nowMs excluido da comparacao dos dois lados, porque a rota computa nowMs no request e o teste computa o dele em outro instante (achado 1 do audit); adicionalmente assevera que o nowMs do payload e um numero finito. [oracle: bun test test/web/snapshot.test.ts]",
+        "As cinco chaves de token estao AUSENTES do payload (nao null, nao zero): o teste assevera key-absence. [oracle: bun test test/web/snapshot.test.ts]",
+        "Ausencia de arquivo nunca vira erro HTTP: readSnapshot e best-effort por desenho (src/commands/dashboard.ts:388-391) e a rota preserva isso devolvendo 200 com os defaults. [oracle: bun test test/web/snapshot.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/web.ts, test/web/snapshot.test.ts (novo). NAO mudar a assinatura de readSnapshot nesta story: a rota chama e descarta as cinco chaves pos-hoc. Trabalho residual ACEITO na Parte A (achado 7 do audit): readSnapshot continua chamando readTranscriptTokens e readStoryTokens contra claudeDir a cada request (dashboard.ts:399-401) mesmo com as chaves descartadas; essa leitura fora do repo fica NAO medida na Parte A (a medicao da US-004 escopa so o event log). Omissao dos tokens decidida pelo operador 2026-08-13: parser medido como errado na origem (decisao 1 do CAM-544) e le fora do repo. O teste pode passar claudeDir apontando pra tmpdir do fixture pra nao depender do ~/.claude da maquina. sumSessionWorkerTokens devolve undefined quando zero eventos casam (dashboard.ts:625): nao presumir linha de cost presente no fixture."
+    },
+    {
+      "id": "US-003",
+      "title": "Bloco idle no payload quando prd.json esta ausente",
+      "description": "As an operator, I need the snapshot payload to carry recent cycles and the backlog when no PRD is active so that the web page is useful between cycles (the current state on main today)",
+      "acceptanceCriteria": [
+        "Sem prd.json presente, GET /api/snapshot acrescenta ao payload o bloco idle que readSnapshot NAO produz: os 5 ciclos mais recentes de scripts/cam/cycle-metrics.jsonl reaproveitando RECENT_ENTRIES_COUNT = 5 (src/commands/dashboard.ts:57), mais o backlog derivado por readBacklogFromMain (src/issues/backlog.ts:127) e deriveBacklogJson (src/issues/list.ts:223). [oracle: bun test test/web/idle-state.test.ts]",
+        "Com prd.json presente o bloco idle esta AUSENTE do payload (key-absence asseverada). [oracle: bun test test/web/idle-state.test.ts]",
+        "O backlog nunca vem de leitura crua de scripts/cam/issues/*.json: pino de ausencia do literal de path no modulo da rota (varrido VERDE na main por ausencia do arquivo; fica falsificavel quando web.ts nascer na US-001). [oracle: ! grep -q 'scripts/cam/issues' src/commands/web.ts]",
+        "O parser de cycle-metrics.jsonl trata a linha 1 como header (src/stats/cycles.ts:36-44) e as demais como ciclos; prNumber e mergeMode ficam AUSENTES, nunca null, quando o ciclo nao shipou; o fixture do teste cobre os dois tipos de registro. [oracle: bun test test/web/idle-state.test.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 3,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/web.ts, test/web/idle-state.test.ts (novo). Nota factual do spec: prd.json nao existe na main hoje, entao idle e o caminho corrente, nao o excepcional. readBacklogFromMain le do main via git (aceita spawnSync-compativel injetavel, src/issues/backlog.ts:36); no teste, usar fixture de repo git real ou o seam de spawn ja existente do modulo. Best-effort preservado: cycle-metrics.jsonl ausente vira lista vazia, nunca erro HTTP."
+    },
+    {
+      "id": "US-004",
+      "title": "Leitura do event log limitada pela sessao dentro do produtor",
+      "description": "As an operator, I need the event-log read inside readSnapshot's producer path to be session-bounded so that both the tmux pane and the web route stop reading 25 MB every 2 seconds",
+      "acceptanceCriteria": [
+        "Os dois sitios de leitura do event log dentro do produtor, readRecentProgress (src/commands/dashboard.ts:573) e readEventLogBody (src/commands/dashboard.ts:592, que alimenta sumSessionWorkerTokens), passam a ler do fim do arquivo para tras por faixa de bytes e param ao passar do inicio da sessao registrado em .claude/.cam-sidecar-session.json (readSidecarSessionStart, src/supervisor/session-start.ts:47), com margem explicita para linha fora de ordem, tolerando o escritor jq (kind orch-resolve-fallback SEM storyId e ts de precisao de segundo, src/commands/run.ts:462-463). [oracle: bun test test/web/read-bounded.test.ts]",
+        "Caminho de marker ausente (achado 2 do audit): quando readSidecarSessionStart devolve null (arquivo ausente, imparseavel ou sidecar nunca rodou), o leitor cai num tail bound FIXO de bytes dimensionado para render ao menos RECENT_ENTRIES_COUNT = 5 bullets de result; paridade de pane asseverada: num fixture SEM session marker, readRecentProgress devolve exatamente os mesmos bullets que a leitura integral do arquivo devolvia (o painel Recent Progress nao muda em maquina sem sessao viva). [oracle: bun test test/web/read-bounded.test.ts]",
+        "A MEDICAO E DE ROTA, NAO DE MODULO, E NAO E AUTO-REPORTADA: o teste injeta um leitor instrumentado que conta os bytes efetivamente lidos ESCOPADO SOMENTE a .claude/cam-worker-events.jsonl (as leituras de transcript sob claudeDir ficam fora da medicao, achado 7 do audit), boota o servidor de verdade contra fixture com log grande de prefixo antigo contendo ao menos uma linha fora de ordem, faz GET /api/snapshot real e assevera que a contagem fica dentro da janela da sessao. Referencia medida na main 2026-08-13: 116.254 bytes de 25.218.481 (0,46%). [oracle: bun test test/web/read-bounded.test.ts]",
+        "O leitor de cauda usa openSync/fstatSync/readSync do node:fs (NUNCA Bun.file().slice(), que e async e cascatearia readSnapshot e todo call site Ink) e vive DENTRO de src/commands/dashboard.ts, sem arquivo helper separado, mantendo o file-assert satisfazivel exatamente onde o codigo esta (achado 4 do audit; varrido VERMELHO na main: zero readSync em dashboard.ts hoje). [oracle: grep -q 'readSync' src/commands/dashboard.ts]",
+        "PINO DE INVARIANCIA: a fatia nao instrumenta o produtor de eventos; a union WorkerEventKind em src/supervisor/events.ts e identica a da main, comparando derivado ao vivo dos dois lados, sem literal congelado. [oracle: test \"$(sed -n '/export type WorkerEventKind/,/;/p' src/supervisor/events.ts | shasum | cut -d' ' -f1)\" = \"$(git show main:src/supervisor/events.ts | sed -n '/export type WorkerEventKind/,/;/p' | shasum | cut -d' ' -f1)\"]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 4,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/dashboard.ts, src/commands/web.ts (seam de injecao do leitor), test/web/read-bounded.test.ts (novo). O conserto vale para pane E rota ao mesmo tempo porque vive no produtor (decisao replace-not-add, memory/project_identidade_e_org.md:31: a web SUBSTITUI o pane, entao consertar o produtor conserta os dois). Seam de DI: a funcao de start e/ou readSnapshot aceita leitor opcional (default = leitor real); DI-fake comportamental e ok, assercao 'mock foi chamado' sozinha nao e (curated invariants). Relogio NAO e monotonico entre os nove escritores concorrentes; src/stats/cycles.ts ja ordena por posicao fisica de linha, nao por ts: a margem de fora-de-ordem segue esse precedente. NAO usar grep negativo de readFileSync no arquivo inteiro: quatro sitios legitimos permanecem (481 readPrd, 507 readState) e o oraculo ficaria insatisfazivel (gotcha 33 do spec, vivido no round 3). storyId ausente em 21.789 de 95.121 linhas medidas: o parser de janela tolera. Grep patterns.md por 'sync carve-out' (patterns.md:888) antes de codar."
+    },
+    {
+      "id": "US-005",
+      "title": "Pagina HTML sem estilo que repolla /api/snapshot a cada 2000ms",
+      "description": "As an operator, I need GET / to serve a same-origin unstyled page that repolls the snapshot every 2000ms so that the pane's behavior (DEFAULT_POLL_INTERVAL_MS) is reproduced in the browser without any Part B machinery",
+      "acceptanceCriteria": [
+        "GET / serve uma pagina HTML pelo MESMO processo e MESMA origem (sem CORS, sem segunda porta): o teste assevera status 200 e content-type contendo text/html. [oracle: bun test test/web/page.test.ts]",
+        "Pinos DOM-free (achado 3 do audit; a verificacao comportamental de render e DELIBERADAMENTE da Parte B, CAM-559): o texto servido contem o intervalo de poll de 2000ms (mesmo valor de DEFAULT_POLL_INTERVAL_MS, src/commands/dashboard.ts:54), o path /api/snapshot, e um marcador de branch DISTINTO para CADA forma de payload (branch de ciclo ativo e branch idle), tudo asseverado por containment de string sobre o texto servido. [oracle: bun test test/web/page.test.ts]",
+        "Nenhum runtime de DOM nem passo de build entra na Parte A: sem jsdom, happy-dom, react-dom ou vite em package.json (pino de ausencia, varrido VERDE na main 2026-08-13, exit 1 no grep positivo). [oracle: ! grep -qE 'jsdom|happy-dom|react-dom|\"vite\"' package.json]",
+        "A pagina sobe deliberadamente SEM ESTILO: sem Tailwind, sem COSS, sem vendorizacao; identidade visual vive inteiramente na Parte B (CAM-559). [oracle: reviewer-judgment]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 5,
+      "passes": false,
+      "requires": null,
+      "notes": "Files: src/commands/web.ts, test/web/page.test.ts (novo). HTML e JS servidos como texto inline pelo proprio processo (template string ou constante); NAO usar HTML imports do Bun (puxariam o bundler; ADR-0063 mantem vite/build fora do binario e a Parte A nem tem assets). O item 13 de memory/project_definicoes_web_headless.md (dashboard adota identidade visual) esta EMENDADO pela divisao Parte A / Parte B de 2026-08-13: subir sem estilo aqui NAO e violacao (gotcha 31 do spec; revisor avisado). Achado 3 resolvido por contrato: o oraculo bun test test/web/page.test.ts tem conteudo pass/fail declarado (200 + text/html + pinos de string do poll e dos dois branches), sem dependencia DOM nova que quebraria a costura A/B."
+    }
+  ]
+}
