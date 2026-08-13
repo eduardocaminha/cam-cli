@@ -1,26 +1,28 @@
 {
   "lastCompletedStory": {
-    "id": "US-004",
-    "title": "Leitura do event log limitada pela sessao dentro do produtor"
+    "id": "US-005",
+    "title": "Pagina HTML sem estilo que repolla /api/snapshot a cada 2000ms"
   },
   "branchName": "cam/issue-522",
-  "timestamp": "2026-08-13T15:07:20Z",
+  "timestamp": "2026-08-13T15:17:14Z",
   "createdFiles": [
-    "test/web/read-bounded.test.ts"
+    "test/web/page.test.ts"
   ],
   "modifiedFiles": [
-    "scripts/file-size-budget.json",
-    "src/commands/dashboard.ts",
-    "src/commands/web.ts"
+    "src/commands/web.ts",
+    "test/web/launch.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "readSnapshot now reads cam-worker-events.jsonl once per poll through EventLogReader, sharing the bounded body between Recent Progress and session token summation. A valid sidecar marker scans backwards to the earliest in-session event plus a 64 KiB physical-order margin; a missing or invalid marker uses a fixed 320 KiB tail. startWebServer threads the optional eventLogReader seam only into this event-log path, leaving transcript reads outside route byte measurement.",
+  "nextStoryContext": "GET / now serves inline, deliberately unstyled HTML from the existing Bun.serve process. Its browser script immediately fetches the relative /api/snapshot path, repeats at DEFAULT_POLL_INTERVAL_MS (2000 ms), and records distinct idle-payload versus active-cycle-payload data markers before rendering the JSON as text. No DOM test dependency, asset import, bundler, CSS, or second listener was added.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
-      "lib": "none",
-      "status": "no_external_lib_touched",
-      "summary": "The story uses only the Node.js synchronous filesystem API already available in the runtime; no external library was exercised."
+      "lib": "Bun 1.3.13 HTTP server",
+      "channel": "WebFetch",
+      "url": "https://bun.com/docs/runtime/http/server",
+      "fetchedAt": "2026-08-13T15:16:00Z",
+      "status": "aligned",
+      "summary": "Current Bun docs confirm routes may return Response objects from one Bun.serve instance; HTML imports invoke bundling, so the inline Response approach preserves the no-build Part A contract."
     }
   ]
 }
