@@ -1,28 +1,23 @@
 {
   "lastCompletedStory": {
-    "id": "US-005",
-    "title": "Pagina HTML sem estilo que repolla /api/snapshot a cada 2000ms"
+    "id": "US-R1-001",
+    "title": "WARNING: The route test's fixture cannot falsify either robustness knob US-004…"
   },
   "branchName": "cam/issue-522",
-  "timestamp": "2026-08-13T15:17:14Z",
-  "createdFiles": [
-    "test/web/page.test.ts"
-  ],
+  "timestamp": "2026-08-13T15:41:37Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "src/commands/web.ts",
-    "test/web/launch.test.ts"
+    "scripts/cam/patterns.md",
+    "test/web/read-bounded.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "GET / now serves inline, deliberately unstyled HTML from the existing Bun.serve process. Its browser script immediately fetches the relative /api/snapshot path, repeats at DEFAULT_POLL_INTERVAL_MS (2000 ms), and records distinct idle-payload versus active-cycle-payload data markers before rendering the JSON as text. No DOM test dependency, asset import, bundler, CSS, or second listener was added.",
+  "nextStoryContext": "The bounded-read suite now has separate falsifying fixtures for the 64 KB physical-order margin and the 1000 ms jq timestamp tolerance. Mutation probes confirmed that zeroing EVENT_LOG_OUT_OF_ORDER_MARGIN_BYTES fails the physical-order fixture and zeroing JQ_TIMESTAMP_PRECISION_MARGIN_MS fails the jq fixture. The next review finding is the independent README command-list sync for gship web.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
-      "lib": "Bun 1.3.13 HTTP server",
-      "channel": "WebFetch",
-      "url": "https://bun.com/docs/runtime/http/server",
-      "fetchedAt": "2026-08-13T15:16:00Z",
-      "status": "aligned",
-      "summary": "Current Bun docs confirm routes may return Response objects from one Bun.serve instance; HTML imports invoke bundling, so the inline Response approach preserves the no-build Part A contract."
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "Test-fixture-only story; no external library API was exercised."
     }
   ]
 }
