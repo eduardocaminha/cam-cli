@@ -148,13 +148,15 @@ describe('GET /api/snapshot', () => {
 			const expected: Record<string, unknown> = {
 				...readSnapshot({ cwd, nowMs: Date.now(), claudeDir }),
 			};
+			const comparablePayload = { ...payload };
+			delete comparablePayload['idleState'];
 
 			expect(payload['idle']).toBe(true);
 			expect(payload['iteration']).toBe(0);
 			expect(payload['maxIterations']).toBe(0);
 			expect(payload['recent']).toEqual([]);
 			for (const key of TRANSCRIPT_TOKEN_KEYS) expect(hasOwn(payload, key)).toBe(false);
-			expect(withoutRequestTimeAndTranscriptTokens(payload)).toEqual(
+			expect(withoutRequestTimeAndTranscriptTokens(comparablePayload)).toEqual(
 				withoutRequestTimeAndTranscriptTokens(expected),
 			);
 		} finally {

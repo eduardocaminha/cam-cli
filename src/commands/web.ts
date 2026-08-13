@@ -5,9 +5,15 @@
 // second router or a manual pathname switch.
 
 import process from 'node:process';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { printError } from '../logging/color.ts';
-import { readSnapshot } from './dashboard.ts';
+import { readBacklogFromMain } from '../issues/backlog.ts';
+import { deriveBacklogJson, type BacklogJsonView } from '../issues/list.ts';
+import type { CycleMetricsRow } from '../stats/cycles.ts';
+import { readSnapshot, RECENT_ENTRIES_COUNT } from './dashboard.ts';
+import { resolvePrdPath } from './status.ts';
 
 export const DEFAULT_WEB_PORT = 7777;
 export const WEB_HOSTNAME = '127.0.0.1';
@@ -22,6 +28,84 @@ export interface WebServerHandle {
 	port: number;
 	hostname: string;
 	stop: () => Promise<void>;
+}
+
+export interface IdleSnapshotState {
+	recentCycles: CycleMetricsRow[];
+	backlog: BacklogJsonView;
+}
+
+/**
+ * Parse the committed cycle store. Its first physical line is metadata; only
+ * subsequent lines are cycle rows. Newest rows are returned first.
+ */
+export function parseRecentCycles(jsonl: string): CycleMetricsRow[] {
+	const rows: CycleMetricsRow[] = [];
+	for (const rawLine of jsonl.split('\n').slice(1)) {
+		const trimmed = rawLine.trim();
+		if (trimmed.length === 0) continue;
+		try {
+			const parsed = JSON.parse(trimmed) as unknown;
+			if (!isCycleMetricsRow(parsed)) continue;
+			rows.push(copyCycleMetricsRow(parsed));
+		} catch {
+			// A partial append must not make the read-only route fail.
+		}
+	}
+	return rows.slice(-RECENT_ENTRIES_COUNT).reverse();
+}
+
+function isCycleMetricsRow(value: unknown): value is Record<string, unknown> {
+	if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+	const row = value as Record<string, unknown>;
+	return (
+		typeof row['cycleId'] === 'string' &&
+		typeof row['issueNumber'] === 'string' &&
+		typeof row['closedAt'] === 'string' &&
+		typeof row['workerRounds'] === 'number' &&
+		typeof row['reviewRounds'] === 'number' &&
+		typeof row['orchTokens'] === 'number' &&
+		typeof row['workerTokens'] === 'number' &&
+		typeof row['total'] === 'number'
+	);
+}
+
+function copyCycleMetricsRow(source: Record<string, unknown>): CycleMetricsRow {
+	const row: CycleMetricsRow = {
+		cycleId: source['cycleId'] as string,
+		issueNumber: source['issueNumber'] as string,
+		closedAt: source['closedAt'] as string,
+		workerRounds: source['workerRounds'] as number,
+		reviewRounds: source['reviewRounds'] as number,
+		orchTokens: source['orchTokens'] as number,
+		workerTokens: source['workerTokens'] as number,
+		total: source['total'] as number,
+	};
+	if (typeof source['prNumber'] === 'number') row.prNumber = source['prNumber'];
+	if (typeof source['mergeMode'] === 'string') {
+		row.mergeMode = source['mergeMode'] as CycleMetricsRow['mergeMode'];
+	}
+	return row;
+}
+
+function readRecentCycles(cwd: string): CycleMetricsRow[] {
+	try {
+		const path = join(cwd, 'scripts', 'cam', 'cycle-metrics.jsonl');
+		if (!existsSync(path)) return [];
+		return parseRecentCycles(readFileSync(path, 'utf8'));
+	} catch {
+		return [];
+	}
+}
+
+function readIdleSnapshotState(cwd: string): IdleSnapshotState {
+	let backlog: BacklogJsonView;
+	try {
+		backlog = deriveBacklogJson(readBacklogFromMain(cwd));
+	} catch {
+		backlog = deriveBacklogJson([]);
+	}
+	return { recentCycles: readRecentCycles(cwd), backlog };
 }
 
 /** Start the localhost-only web server. Port 0 is supported for test callers. */
@@ -44,7 +128,11 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				delete snapshot.tokensCacheRead;
 				delete snapshot.tokensCacheCreation;
 				delete snapshot.storyTokens;
-				return Response.json(snapshot);
+				const payload: Record<string, unknown> = { ...snapshot };
+				if (!existsSync(resolvePrdPath(options.cwd))) {
+					payload['idleState'] = readIdleSnapshotState(options.cwd);
+				}
+				return Response.json(payload);
 			},
 		},
 	});
