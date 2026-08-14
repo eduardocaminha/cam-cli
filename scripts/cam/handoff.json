@@ -1,26 +1,22 @@
 {
 	"lastCompletedStory": {
-		"id": "US-R2-002",
-		"title": "WARNING: `react-dom` sits in runtime `dependencies` while every sibling of the…"
+		"id": "US-R2-003",
+		"title": "WARNING: The source-layout block added by US-R1-001 states `webui/    Vite + Re…"
 	},
 	"branchName": "cam/issue-566",
-	"timestamp": "2026-08-14T06:54:34Z",
+	"timestamp": "2026-08-14T07:00:31Z",
 	"createdFiles": [],
 	"modifiedFiles": [
-		"bun.lock",
-		"package.json"
+		"README.md"
 	],
 	"openQuestions": [],
-	"nextStoryContext": "react-dom is now a development-only dependency in both package.json and bun.lock. The resolved package record and version range are unchanged; bun install --frozen-lockfile confirmed the manifest and lockfile remain synchronized with zero dependency drift.",
+	"nextStoryContext": "README.md now describes webui/ as a build-only Vite + React browser UI and explicitly leaves bundle serving to CAM-560; gship web still serves the static WEB_PAGE_HTML implementation.",
 	"appliedPatternIds": [],
 	"officialDocsValidated": [
 		{
-			"lib": "Bun package manager",
-			"channel": "WebFetch",
-			"url": "https://bun.com/docs/pm/cli/install",
-			"fetchedAt": "2026-08-14T06:54:34Z",
-			"status": "aligned",
-			"summary": "Official Bun docs confirm devDependencies are omitted from production installs and --frozen-lockfile fails when package.json and bun.lock disagree; the surgical classification move passed that check."
+			"lib": "none",
+			"status": "no_external_lib_touched",
+			"summary": "Documentation-only correction; no external library API was exercised."
 		}
 	]
 }
