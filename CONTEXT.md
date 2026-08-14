@@ -658,3 +658,6 @@ Provar que a MESMA violacao ja reprova dentro do escopo atual do gate (a forma d
 
 **ratchet congelado**:
 Gate que cobra teto apenas para os paths presentes num snapshot persistido, e que portanto nao cobre nada criado depois dele. O gate file-size do repo e desta forma: checkSizeCeilings itera o orcamento e nao a varredura, entao arquivo sem entrada em scripts/file-size-budget.json nunca e visitado, em qualquer tamanho.
+
+**comando do gate**:
+Cada entrada do manifesto GATES carrega o proprio comando literal e NAO delega ao script homonimo do package.json: g('typecheck', 'bunx tsc --noEmit') executa tsc direto, mesmo existindo um script chamado typecheck. Quando os dois textos coincidem, a divergencia e invisivel a leitura e so aparece quando um dos lados muda. Consequencia medida em 2026-08-14: editar apenas o script deixa a mudanca INERTE no CI, porque check:all e o CI executam o comando do manifesto. Todo criterio que queira provar cobertura de gate deve derivar o comando de GATES ao vivo, nunca rodar o script homonimo.
