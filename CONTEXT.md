@@ -697,3 +697,9 @@ Par formado por uma funcao step pura, que recebe o agora por parametro e devolve
 
 **residuo de glue**:
 As poucas linhas de componente que nenhum teste alcanca depois da extracao completa da logica para funcoes puras e drivers injetados. O tamanho do residuo e a medida de qualidade da extracao: se a logica de fetch e intervalo fica inline no effect, o residuo engole a politica inteira. Precedente que licencia deixa-lo sem teste: Humble Object, em xUnit Test Patterns.
+
+**escrita em staging com promocao atomica**:
+Disciplina em que o gerador escreve num diretorio temporario, roda o guard sobre esse diretorio, e so entao promove para o destino final. E o que transforma um guard que relata num guard que protege, porque o destino nunca chega a existir quando a fonte e reprovada. O caminho de falha tem que remover o staging, senao a execucao seguinte encontra residuo e o resultado deixa de ser deterministico.
+
+**direcao de injecao**:
+A varredura que constroi deliberadamente o caso que um criterio deve REPROVAR, e observa vermelho. Distinta da varredura vermelho-na-main, que so mostra que o criterio ainda nao foi satisfeito, e da varredura verde-na-arvore-simulada, que so mostra que ele e satisfazivel. Clausula de contencao ou de negacao dentro de um oraculo e pino de invariancia embutido, e sem a direcao de injecao ela pode passar no exato caso que existe para pegar.
