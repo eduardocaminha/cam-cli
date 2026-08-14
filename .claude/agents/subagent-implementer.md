@@ -95,7 +95,7 @@ When a story's `acceptanceCriteria` include a tmux-drivable oracle directive (`[
 
 1. Implement the chosen story and only that story.
 2. Run quality gates, fix until green:
-   - `bun run typecheck` (= `bunx tsc --noEmit`) — must be zero errors.
+   - `bun run typecheck` — runs both TypeScript projects (`bunx tsc --noEmit` for the server/CLI and `bunx tsc -p webui/tsconfig.app.json --noEmit` for the browser UI); both must have zero errors.
    - `bun test` — all tests pass; add/adjust tests under `test/` for new behavior.
    - `bun run check:all` — run the full `bun run check:all` spine in-story after coding, not just typecheck+test+file-size. This fires every sibling ratchet (coverage, debt-markers, dead-code/knip, dup/jscpd) alongside file-size during the story run, so a legitimate change that trips one is caught and justified now instead of surfacing late at ship/CI as a manual raise. Resolve each failing gate inline per this rubric:
      - **file-size**: if a file this story legitimately grew now exceeds its ceiling, raise ONLY that file's ceiling in `scripts/file-size-budget.json` to the gate's reported actual line count (the gate measures `content.split('\n').length`, explicitly NOT `wc -l`, which under-counts a trailing-newline file by one), prepend a dated note naming this story and the CAM tracker id to the top-level `_ref` field, and `git add scripts/file-size-budget.json` so the staged diff carries the tracker ref before re-running the gate — the tracker-ref check only reads the staged diff. Raise only the ceiling(s) of the file(s) this story itself grew; never blanket-raise ceilings for unrelated budgeted files.
