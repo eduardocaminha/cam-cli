@@ -643,3 +643,18 @@ Verificacao que impede codigo de terceiro vendorizado de arrastar dependencia de
 
 **override de disco para desenvolvimento**:
 Valvula de escape que permite servir a interface web a partir de um diretorio em disco em vez do bundle embarcado no binario, sob controle de variavel de ambiente ou caminho de configuracao. Padrao universal entre projetos de binario unico que embarcam interface, medido em 2026-08-13: todos os cinco levantados mantem uma. Existe para que desenvolvimento nao exija recompilar o binario a cada mudanca de tela.
+
+**spine de gates**:
+O conjunto de 16 gates registrados no manifesto GATES de scripts/check-all.ts, executado por bun run check:all e usado pelo CI para decidir o merge. Registro no manifesto e o unico mecanismo que faz um gate rodar: script declarado em package.json mas ausente do manifesto nunca executa, e nenhuma checagem acusa a ausencia.
+
+**gate path-scoped**:
+Gate cuja cobertura e delimitada por glob, por whitelist de config ou por argumento posicional, e que portanto deixa arvore nova de fora por omissao em vez de por decisao. Medido em 2026-08-13: dos 16 gates do repo, nove sao path-scoped e deixariam uma arvore webui/ nova descoberta.
+
+**violacao plantada**:
+Forma de oraculo que escreve um arquivo violando a invariante do gate dentro da arvore alvo, roda o comando daquele gate isolado, assevera exit nao-zero e remove o arquivo. Distingue glob certo de glob presente porem errado, coisa que assercao de texto de config nao faz. Roda o gate isolado e nunca a spine inteira, porque sob check:all qualquer gate vermelho satisfaria o oraculo e todos viram um so, vacuamente.
+
+**varredura nas duas direcoes**:
+Provar que a MESMA violacao ja reprova dentro do escopo atual do gate (a forma da violacao e real) e passa na arvore alvo (o buraco existe), com controle verde sem probe. Varrer apenas o vermelho na main nao detecta vacuidade por forma de violacao invalida: medido em 2026-08-13, tres formas de violacao inventadas saiam exit 0 tambem dentro do escopo do gate, e so a segunda direcao revelou isso.
+
+**ratchet congelado**:
+Gate que cobra teto apenas para os paths presentes num snapshot persistido, e que portanto nao cobre nada criado depois dele. O gate file-size do repo e desta forma: checkSizeCeilings itera o orcamento e nao a varredura, entao arquivo sem entrada em scripts/file-size-budget.json nunca e visitado, em qualquer tamanho.
