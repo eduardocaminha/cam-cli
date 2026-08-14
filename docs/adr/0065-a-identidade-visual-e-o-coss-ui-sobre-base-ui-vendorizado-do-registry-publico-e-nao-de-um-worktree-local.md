@@ -1,5 +1,20 @@
 # ADR 0065: A identidade visual e o COSS UI sobre Base UI, vendorizado do registry publico e nao de um worktree local
 
+> **Nota de supersessao (2026-08-14)**: o ADR-0069 supersede a parte de escopo de
+> token e de modo escuro deste ADR. A afirmacao do Context de que os tokens usam
+> dois blocos escopados em `[data-coss-root]` foi medida em 2026-08-14 contra
+> github.com/cosscom/coss e e falsa nas duas metades: o seletor `[data-coss-root]`
+> nao existe no upstream (busca de codigo no repositorio devolve zero resultado),
+> e o upstream usa `@theme inline` (packages/ui/src/styles/globals.css, linha 9)
+> com `:root` (linha 161) e `.dark` (linha 214) puros. Por consequencia, o
+> argumento de re-executabilidade da Consequences se aplica invertido: adotar
+> `[data-coss-root]` e que seria a conversao a virar patch local reaplicado a
+> cada rodada. Alem disso, a doc oficial do Tailwind v4 registra que `@theme`
+> nao pode ser aninhado sob seletor nenhum, entao a forma que este ADR descreve
+> e invalida por construcao. Continuam vigentes deste ADR: a restricao a
+> `apps/ui/`, a vendorizacao por script re-executavel com versao pinada, a
+> primitiva Base UI, e as cinco familias de cor definidas do nosso lado.
+
 ## Context
 
 O contrato de arquitetura registrava a identidade como a branch /coss do repositorio cam-dss, com stack Radix mais cva, clsx e tailwind-merge, tokens num unico bloco @theme e modo escuro por atributo data-theme. Quatro dessas afirmacoes nao sobreviveram a medicao de 2026-08-11. Nao existe branch chamada coss: o /coss e uma rota em app/coss/ que esta untracked, viva apenas na working tree de um worktree de plano, e portanto nao sobrevive a um git clean nem existe em clone fresco. Os 53 componentes sao construidos sobre Base UI e nao sobre Radix, o que e incompatibilidade de import e nao de estilo. Os tokens nao usam @theme: usam dois blocos escopados em [data-coss-root]. O modo escuro e por classe .dark e nao por atributo. A fonte real e o COSS UI publico, cujo repositorio e o monorepo cosscom/coss, onde a raiz e AGPLv3 e apenas os diretorios apps/origin/ e apps/ui/ sao MIT. A propria documentacao do COSS declara que o Base UI ainda esta em beta.
