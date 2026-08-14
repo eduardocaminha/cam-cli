@@ -108,7 +108,7 @@
         "Tests pass (bun test). [oracle: bun test]"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Arquivos: biome.json (files.includes ganha webui/**/*.{ts,tsx}; aditivo, medido na doc oficial 2.5.1), scripts/check-debt-markers.ts (glob {src,scripts}/**/*.{ts,tsx} na linha ~127 passa a incluir webui), scripts/check-test-sleeps.ts (glob test/**/*.{ts,tsx} na linha ~134 passa a incluir webui) e scripts/check-test-tmpdir.ts (glob test/**/*.{ts,tsx} na linha ~275 idem). Depende de US-001 (a arvore precisa existir para as probes; o dead-code ja cobre webui desde US-001). EXCLUIR webui/dist dos scans se o glob novo o alcancar (os scripts ja tem EXCLUDED_DIRS com dist/, conferir se casa webui/dist/). Probes dos oraculos: derivar o teto do biome AO VIVO de biome.json (nunca congelar 85/80 no texto), criar webui/src antes de escrever e remover apenas o ARQUIVO (nunca rm -rf webui), subshell obrigatorio para nao vazar variaveis, veredito por if/else sem literal de exit code (frozen-comparand, patterns.md:903). biome.json tem recommended:false com SO duas regras (noExcessiveCognitiveComplexity, noExcessiveLinesPerFunction maxLines 80): probe de import morto ou variavel nao usada NAO reprova. test-tmpdir NAO flagra literal /tmp; a probe casa join( + tmpdir(). O criterio final bun run check:all so pode ficar verde com US-001 e US-002 mergeados nesta branch. FORA DO ESCOPO com motivo medido (nao tentar cobrir): file-size (continue em path sem entrada no orcamento torna glob inerte), version-skips (subsumido pelo skip-ratchet), gitignore-parity (probes derivam de literais de artefato escritos por codigo), dup/jscpd (args posicionais do proprio comando, retorno abaixo do custo)."
     }
