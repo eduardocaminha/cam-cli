@@ -6,6 +6,19 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.290.0] - 2026-08-14
+
+### Added
+
+- US-R2-003 - WARNING: The source-layout block added by US-R1-001 states `webui/    Vite + Re…
+- US-R2-003 -
+- US-R2-002 - WARNING: `react-dom` sits in runtime `dependencies` while every sibling of the…
+- US-R2-001 - CRITICAL: Layer B behavioral gate FAIL. US-003's named-command oracle `bun run…
+- US-R1-001 - WARNING: This diff changed the meaning of `bun run typecheck` (it now chains tw…
+- US-003 - Alargar biome, debt-markers, test-sleeps e test-tmpdir para a arvore webui e fechar a spine verde
+- US-002 - Re-apontar o gate typecheck do manifesto GATES para o script e emendar o ADR-0068
+- US-001 - Scaffold de webui/ com vite + Tailwind v4 CSS-first, split de typecheck e entrada no knip
+
 ## [0.289.0] - 2026-08-13
 
 ### Added
