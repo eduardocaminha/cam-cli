@@ -1,25 +1,23 @@
 {
 	"lastCompletedStory": {
-		"id": "US-R1-001",
-		"title": "WARNING: This diff changed the meaning of `bun run typecheck` (it now chains tw…"
+		"id": "US-R2-001",
+		"title": "CRITICAL: Layer B behavioral gate FAIL. US-003's named-command oracle `bun run…"
 	},
 	"branchName": "cam/issue-566",
-	"timestamp": "2026-08-14T06:24:02Z",
+	"timestamp": "2026-08-14T06:47:08Z",
 	"createdFiles": [],
 	"modifiedFiles": [
-		".claude/agents/subagent-implementer.md",
-		"CONTEXT.md",
-		"README.md",
-		"scripts/cam/CLAUDE.md"
+		"scripts/cam/patterns.md",
+		"test/integration/setup-menu-viewer-live.test.ts"
 	],
 	"openQuestions": [],
-	"nextStoryContext": "The four stale documentation surfaces now match the live command graph: bun run typecheck checks both the server/CLI and webui TypeScript projects, check:all delegates its typecheck gate to that script, and README documents build:ui plus the webui tree. This was documentation-only and introduced no external-library usage.",
+	"nextStoryContext": "The live setup-menu viewer integration test now polls for a valid capped-log size and captures that size inside the successful predicate, avoiding the transient zero-byte window exposed by in-place rotation. All three same-shaped size assertions use the helper; five isolated repetitions and two full check:all runs were green.",
 	"appliedPatternIds": [],
 	"officialDocsValidated": [
 		{
 			"lib": "none",
 			"status": "no_external_lib_touched",
-			"summary": "Documentation-only command and source-layout synchronization; no external library was exercised."
+			"summary": "Test-only synchronization fix using the repository's existing waitForCondition helper; no external library was exercised."
 		}
 	]
 }
