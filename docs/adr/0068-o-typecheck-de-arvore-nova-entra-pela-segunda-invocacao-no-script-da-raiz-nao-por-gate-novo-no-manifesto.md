@@ -6,7 +6,7 @@ A arvore do cliente web (webui/) precisa de typecheck com lib DOM, enquanto a ra
 
 ## Decision
 
-Adotada a rota (3): o script typecheck da raiz roda tsc --noEmit seguido de tsc -p webui/tsconfig.app.json --noEmit, encadeados de modo que qualquer um dos dois reprovando derruba o gate inteiro. Nenhum gate novo e registrado, o manifesto GATES fica intocado e o CI fica intocado.
+Adotada a rota (3): o script typecheck da raiz roda tsc --noEmit seguido de tsc -p webui/tsconfig.app.json --noEmit, encadeados de modo que qualquer um dos dois reprovando derruba o gate inteiro. Nenhum gate novo e registrado. O comando do gate typecheck existente no manifesto GATES e re-apontado para bun run typecheck, para que check:all e o CI passem pelo script da raiz. Sem esse re-apontamento, o manifesto continuaria a executar apenas bunx tsc --noEmit e a segunda invocacao ficaria inerte no CI.
 
 ## Consequences
 
