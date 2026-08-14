@@ -11,7 +11,8 @@
     "src/**/*.{ts,tsx}",
     "scripts/**/*.ts",
     "test/**/*.ts",
-    "webui/**/*.{ts,tsx}"
+    "webui/**/*.{ts,tsx}",
+    "webui/**/*.css"
   ],
   "ignore": [
     "scripts/preview-screens.ts",
@@ -23,7 +24,7 @@
     "claude-code-harness/**"
   ],
   "ignoreBinaries": ["cam", "claude", "tmux", "ps", "lsof", "gh", "pgrep", "tail"],
-  "ignoreDependencies": ["jscpd", "tailwindcss"],
+  "ignoreDependencies": ["jscpd"],
   "ignoreExportsUsedInFile": true,
   "exclude": ["exports", "types", "duplicates"]
 }
