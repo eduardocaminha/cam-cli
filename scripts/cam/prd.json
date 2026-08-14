@@ -60,6 +60,14 @@
   ],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "WARNING: This diff changed the meaning of `bun run typecheck` (it now chains tw…",
+      "priority": 1,
+      "passes": true,
+      "description": "WARNING [.claude/agents/subagent-implementer.md:98]: This diff changed the meaning of `bun run typecheck` (it now chains two tsc programs) and added a new build step (`bun run build:ui`), but four documentation surfaces still assert the old, now-false equivalence and were not updated in the same commit: `.claude/agents/subagent-implementer.md:98` and `scripts/cam/CLAUDE.md:42` both state ``bun run typecheck` (= `bunx tsc --noEmit`)`` (an implementer worker that follows this instruction runs only half the typecheck and gets a false green on webui type errors); `README.md:348` documents `bunx tsc --noEmit  # typecheck` in the Development section and never mentions `bun run build:ui` or the new `webui/` tree; `CONTEXT.md:663` still uses `g('typecheck', 'bunx tsc --noEmit')` as the live example of a gate that does NOT delegate to the package.json script, which is precisely the fact US-002 inverted. Doc-sync is a project convention (root CLAUDE.md rule 7, plus the reviewer checklist item for README/CLAUDE.md when a command or build step changes), and the amended ADR-0068 alone does not cover the three instruction surfaces workers actually read.",
+      "notes": "WARNING [.claude/agents/subagent-implementer.md:98]: This diff changed the meaning of `bun run typecheck` (it now chains two tsc programs) and added a new build step (`bun run build:ui`), but four documentation surfaces still assert the old, now-false equivalence and were not updated in the same commit: `.claude/agents/subagent-implementer.md:98` and `scripts/cam/CLAUDE.md:42` both state ``bun run typecheck` (= `bunx tsc --noEmit`)`` (an implementer worker that follows this instruction runs only half the typecheck and gets a false green on webui type errors); `README.md:348` documents `bunx tsc --noEmit  # typecheck` in the Development section and never mentions `bun run build:ui` or the new `webui/` tree; `CONTEXT.md:663` still uses `g('typecheck', 'bunx tsc --noEmit')` as the live example of a gate that does NOT delegate to the package.json script, which is precisely the fact US-002 inverted. Doc-sync is a project convention (root CLAUDE.md rule 7, plus the reviewer checklist item for README/CLAUDE.md when a command or build step changes), and the amended ADR-0068 alone does not cover the three instruction surfaces workers actually read."
+    },
+    {
       "id": "US-001",
       "title": "Scaffold de webui/ com vite + Tailwind v4 CSS-first, split de typecheck e entrada no knip",
       "description": "As a mantenedor do cam-cli, I need a arvore webui/ scaffoldada com vite e Tailwind v4 CSS-first, o typecheck partido em dois mundos (raiz sem DOM, cliente com DOM) e a arvore ja dentro do knip so that o cliente web nasce typecheckado, com dependencias auditadas mecanicamente e sem abrir buraco nos pinos de harness de DOM e de embed.",
@@ -74,7 +82,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "requires": null,
       "notes": "Arquivos: webui/index.html, webui/src/main.tsx, webui/src/index.css, webui/vite.config.ts, webui/tsconfig.app.json (novos); tsconfig.json (exclude ganha webui), package.json (deps vite/@tailwindcss/vite/tailwindcss/react-dom na RAIZ + scripts build:ui e typecheck com DOIS programas encadeados), knip.json (entry/project ganham webui + ignoreDependencies ganha tailwindcss), .gitignore (webui/dist). ACOPLAMENTO MEDIDO que forca esta fatia unica: (a) o tsconfig da raiz nao tem include, so exclude, entao scaffold sem o split quebra bunx tsc em globais de DOM (gotcha da issue, medido exit 2); (b) split sem scaffold falha porque tsc -p webui/tsconfig.app.json sem inputs erra; (c) declarar as deps sem o knip enxergar webui deixa o gate dead-code VERMELHO (knip reporta dependencia importada so de arquivo nao-analisado como unused, gotcha 36 da issue). DECISAO DO OPERADOR 2026-08-14: vite.config.ts entra no include de webui/tsconfig.app.json, NUNCA um terceiro programa de tsc; se vite.config.ts quebrar sob lib DOM, o terceiro programa e o fallback correto e o desvio tem que ser declarado no banner do PRD. Sem workspace: nenhum package.json nasce em webui/ (pino de harness de DOM ancora no package.json da raiz). bun test descobre teste em webui/ com zero config e o skip-ratchet espera 0 skips: nenhum .skip em webui. NAO embarcar o dist (isso e CAM-560): nao tocar templates/ nem src/vendor/_generated.ts. Se acrescentar webui/dist ao .gitignore tripar o gate gitignore-parity (repo root vs templates/.gitignore), espelhar a linha em templates/.gitignore e rodar bun run embed-vendor + embed-vendor:check. Oraculo do CSS construido: NAO reintroduzir ancora de inicio de linha (Tailwind v4 emite em @layer e o vite minifica; forma anterior era insatisfazivel, patterns.md:1319). Oraculo do tsconfig: usar bunx tsc --showConfig, nunca jq direto no tsconfig.json (JSONC aborta o jq). Docs: ADR-0067 (pino de harness), ADR-0064 (pino de embed), ADR-0063 (vite e build-time, fora do invariante Bun-only). Grep scripts/cam/patterns.md por oracle-two-direction-sweep e por webui antes de codar."
@@ -89,7 +97,7 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 2,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "Arquivos: scripts/check-all.ts (linha ~167: g(typecheck, bunx tsc --noEmit) vira g(typecheck, bun run typecheck)) e docs/adr/0068-*.md (a frase que diz que o manifesto GATES fica intocado e o CI fica intocado SAI, e o ADR passa a registrar o re-apontamento e o porque). Depende de US-001 (o script typecheck ja precisa rodar os dois programas e webui/src/main.tsx precisa existir para a probe do oraculo). ACHADO LOAD-BEARING medido 2026-08-14: hoje os dois textos sao identicos, o que torna a divergencia invisivel; a varredura em worktree provou que com o script corrigido e o manifesto antigo um erro de tipo em webui passa (RED) e com o manifesto trocado reprova (VERDE). O oraculo deriva o comando de GATES ao vivo (import de scripts/check-all.ts) de proposito: rodar o script ou o check:all inteiro nao discrimina. A probe de tipo vai DENTRO de webui/src/main.tsx (ja entry do knip); arquivo orfao novo deixaria o dead-code vermelho com ou sem a mudanca. check-ci-parity nao exige mudanca: a Rule 1 (BUN_RUN_ALLOWLIST) so varre invocacoes bun run do ci.yml, que roda apenas check:all; typecheck ja e nome de gate em GATES (medido no planejamento). ADR sem travessao e sem emoji (regra de .md persistido). Grep scripts/cam/patterns.md por frozen-comparand (veredito por if/else, nunca comparacao com literal de exit code)."
@@ -107,10 +115,47 @@
         "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
         "Tests pass (bun test). [oracle: bun test]"
       ],
-      "priority": 3,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "Arquivos: biome.json (files.includes ganha webui/**/*.{ts,tsx}; aditivo, medido na doc oficial 2.5.1), scripts/check-debt-markers.ts (glob {src,scripts}/**/*.{ts,tsx} na linha ~127 passa a incluir webui), scripts/check-test-sleeps.ts (glob test/**/*.{ts,tsx} na linha ~134 passa a incluir webui) e scripts/check-test-tmpdir.ts (glob test/**/*.{ts,tsx} na linha ~275 idem). Depende de US-001 (a arvore precisa existir para as probes; o dead-code ja cobre webui desde US-001). EXCLUIR webui/dist dos scans se o glob novo o alcancar (os scripts ja tem EXCLUDED_DIRS com dist/, conferir se casa webui/dist/). Probes dos oraculos: derivar o teto do biome AO VIVO de biome.json (nunca congelar 85/80 no texto), criar webui/src antes de escrever e remover apenas o ARQUIVO (nunca rm -rf webui), subshell obrigatorio para nao vazar variaveis, veredito por if/else sem literal de exit code (frozen-comparand, patterns.md:903). biome.json tem recommended:false com SO duas regras (noExcessiveCognitiveComplexity, noExcessiveLinesPerFunction maxLines 80): probe de import morto ou variavel nao usada NAO reprova. test-tmpdir NAO flagra literal /tmp; a probe casa join( + tmpdir(). O criterio final bun run check:all so pode ficar verde com US-001 e US-002 mergeados nesta branch. FORA DO ESCOPO com motivo medido (nao tentar cobrir): file-size (continue em path sem entrada no orcamento torna glob inerte), version-skips (subsumido pelo skip-ratchet), gitignore-parity (probes derivam de literais de artefato escritos por codigo), dup/jscpd (args posicionais do proprio comando, retorno abaixo do custo)."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:1",
+    "findings": [
+      {
+        "severity": "WARNING",
+        "file": ".claude/agents/subagent-implementer.md",
+        "line": 98,
+        "text": "This diff changed the meaning of `bun run typecheck` (it now chains two tsc programs) and added a new build step (`bun run build:ui`), but four documentation surfaces still assert the old, now-false equivalence and were not updated in the same commit: `.claude/agents/subagent-implementer.md:98` and `scripts/cam/CLAUDE.md:42` both state ``bun run typecheck` (= `bunx tsc --noEmit`)`` (an implementer worker that follows this instruction runs only half the typecheck and gets a false green on webui type errors); `README.md:348` documents `bunx tsc --noEmit  # typecheck` in the Development section and never mentions `bun run build:ui` or the new `webui/` tree; `CONTEXT.md:663` still uses `g('typecheck', 'bunx tsc --noEmit')` as the live example of a gate that does NOT delegate to the package.json script, which is precisely the fact US-002 inverted. Doc-sync is a project convention (root CLAUDE.md rule 7, plus the reviewer checklist item for README/CLAUDE.md when a command or build step changes), and the amended ADR-0068 alone does not cover the three instruction surfaces workers actually read."
+      },
+      {
+        "severity": "WARNING",
+        "file": "package.json",
+        "line": 65,
+        "text": "`react-dom` was added to runtime `dependencies` while every one of its siblings from the same client scaffold (`vite`, `tailwindcss`, `@tailwindcss/vite`, `@types/react-dom`) went to `devDependencies`. Nothing under `index.ts` or `src/` imports react-dom (grep: zero hits outside `webui/`), the npm `files` whitelist ships only `index.ts`, `src`, `LICENSE`, `README.md`, and per ADR-0064 the client is shipped as a pre-built bundle with react-dom already bundled in the asset. As placed, every npm install of gateship downloads react-dom for no runtime purpose. Non-blocking (the PRD does not specify placement and the repo already has `@types/js-yaml` in `dependencies`), but worth correcting before the bundle ships in CAM-560."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "biome.json",
+        "line": 22,
+        "text": "The new glob `webui/**/*.{ts,tsx}` uses brace-alternative form while the three existing entries use the expanded form (`src/**/*.ts`, `src/**/*.tsx`, `scripts/**/*.ts`). Both work; picking one style keeps the array readable."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "test/webui-quality-scope.test.ts",
+        "line": 31,
+        "text": "The negative case (`webui/dist/probe.test.ts` must not be scannable) is asserted through `glob.match()` only, while the positive containment case uses a real `scanSync()`. patterns.md:1321 (added by this same branch) records that `match()` and `scanSync()` can disagree; asserting the exclusion against the real `scanSync()` result would close the same gap on the negative half."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "test/webui-scaffold.test.ts",
+        "line": 13,
+        "text": "This test writes a real build artifact (`webui/dist/`) into the source tree on every `bun test` run, unlike the rest of the suite which roots scratch output under the repo-local dot-prefixed helper that the test-tmpdir gate exists to enforce. It is gitignored and fast (54ms build), so it is not blocking, but a `build.outDir` pointed at a scratch dir would keep `bun test` side-effect free."
+      }
+    ]
+  }
 }
