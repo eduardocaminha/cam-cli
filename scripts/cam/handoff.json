@@ -1,24 +1,31 @@
 {
 	"lastCompletedStory": {
-		"id": "US-002",
-		"title": "Re-apontar o gate typecheck do manifesto GATES para o script e emendar o ADR-0068"
+		"id": "US-003",
+		"title": "Alargar biome, debt-markers, test-sleeps e test-tmpdir para a arvore webui e fechar a spine verde"
 	},
 	"branchName": "cam/issue-566",
-	"timestamp": "2026-08-14T05:47:25Z",
-	"createdFiles": [],
+	"timestamp": "2026-08-14T06:05:44Z",
+	"createdFiles": [
+		"test/webui-quality-scope.test.ts"
+	],
 	"modifiedFiles": [
-		"docs/adr/0068-o-typecheck-de-arvore-nova-entra-pela-segunda-invocacao-no-script-da-raiz-nao-por-gate-novo-no-manifesto.md",
-		"scripts/check-all.ts",
-		"test/check-all.test.ts"
+		"biome.json",
+		"scripts/cam/patterns.md",
+		"scripts/check-debt-markers.ts",
+		"scripts/check-test-sleeps.ts",
+		"scripts/check-test-tmpdir.ts"
 	],
 	"openQuestions": [],
-	"nextStoryContext": "The GATES typecheck entry now invokes bun run typecheck, so check:all and CI execute both the root TypeScript program and webui/tsconfig.app.json. ADR-0068 records why this re-pointing is required, and test/check-all.test.ts pins the manifest command and arguments.",
+	"nextStoryContext": "Biome and the debt-marker, fixed-sleep, and tmpdir-root gates now scan webui. Bun.Glob scanSync requires brace alternatives at one path-component depth, so the script globs use {test,webui} or {src,scripts,webui} and the path filters exclude webui/dist and other generated client directories. All seven US-003 behavioral oracles and the full quality spine pass.",
 	"appliedPatternIds": [],
 	"officialDocsValidated": [
 		{
-			"lib": "none",
-			"status": "no_external_lib_touched",
-			"summary": "This story only changed the local gate manifest, its unit test, and the corresponding ADR."
+			"lib": "Biome 2.5.1",
+			"channel": "WebSearch",
+			"url": "https://biomejs.dev/reference/configuration/",
+			"fetchedAt": "2026-08-14T06:00:27Z",
+			"status": "aligned",
+			"summary": "Current official configuration reference confirms files.includes accepts glob patterns and ** recursively covers files and subfolders; the planted webui probe confirms the configured TypeScript/TSX pattern is active."
 		}
 	]
 }
