@@ -8,7 +8,7 @@ import { templatesContents } from '../../src/vendor/_generated.ts';
 //
 // CAM-240 US-002: buildOrchestratorBootPrompt() is now spawned under
 // `--agent subagent-orchestrator`, so the persona body IS the system prompt
-// and buildOrchestratorBootPrompt() shrank to a minimal meta_loop-aware
+// and buildOrchestratorBootPrompt() shrank to a minimal config-independent
 // nudge; the backlog-derivation instruction lives ONLY in the embedded
 // persona now (asserted below), not in the boot-prompt string.
 

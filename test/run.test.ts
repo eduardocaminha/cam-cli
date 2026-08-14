@@ -784,57 +784,21 @@ describe('buildOrchestratorPaneCommand (CAM-23 self-handoff wrapper)', () => {
 	});
 });
 
-describe('buildOrchestratorBootPrompt (CAM-240 US-002: minimal --agent nudge, meta_loop-aware)', () => {
-	function writeMetaLoopToml(
-		dir: string,
-		metaLoop: string | undefined,
-		workerIsolation?: string,
-	): string {
-		const path = join(dir, 'project.toml');
-		const lines: string[] = [];
-		if (metaLoop !== undefined || workerIsolation !== undefined) {
-			lines.push('[loop]');
-			if (metaLoop !== undefined) {
-				lines.push(`meta_loop = "${metaLoop}"`);
-			}
-			if (workerIsolation !== undefined) {
-				lines.push(`worker_isolation = "${workerIsolation}"`);
-			}
-		}
-		writeFileSync(path, lines.length > 0 ? `${lines.join('\n')}\n` : '', 'utf8');
-		return path;
-	}
-
-	it('is minimal: no longer instructs reading the persona file, writing the ready marker, rehydrating, or deriving the backlog (now owned by the agent body per US-001)', () => {
-		const dir = createTestTmpdir('cam-boot-prompt-');
-		const configPath = writeMetaLoopToml(dir, undefined);
-		const prompt = buildOrchestratorBootPrompt(configPath);
+describe('buildOrchestratorBootPrompt (CAM-240 US-002: minimal --agent nudge)', () => {
+	// Shrink ratchet (CAM-240): the boot prompt is persisted once and re-read
+	// verbatim on every respawn, so it must carry nothing that can go stale.
+	// Content removed from it must never come back. `meta_loop` is asserted
+	// here because its interpolation was the last config-derived residue: the
+	// persisted file served a stale meta_loop announcement for 4 days after
+	// ed10586b flipped the config. The greeting fork now lives solely in the
+	// persona (pinned by test/templates/orchestrator-boot.test.ts).
+	it('is minimal: no longer instructs reading the persona file, writing the ready marker, rehydrating, deriving the backlog, or announcing meta_loop', () => {
+		const prompt = buildOrchestratorBootPrompt();
 		expect(prompt).not.toContain('subagent-orchestrator.md');
 		expect(prompt).not.toContain('.cam-orch-ready');
 		expect(prompt).not.toContain('CAM_ORCH_REHYDRATE');
 		expect(prompt).not.toContain('cam issue list');
-	});
-
-	it('under meta_loop "auto" with worker_isolation "container": announces autonomous mode and omits "What would you like to do?"', () => {
-		const dir = createTestTmpdir('cam-boot-prompt-');
-		const configPath = writeMetaLoopToml(dir, 'auto', 'container');
-		const prompt = buildOrchestratorBootPrompt(configPath);
-		expect(prompt.toLowerCase()).toContain('autonomous');
-		expect(prompt).not.toContain('What would you like to do?');
-	});
-
-	it('under meta_loop "off": greets and asks "What would you like to do?"', () => {
-		const dir = createTestTmpdir('cam-boot-prompt-');
-		const configPath = writeMetaLoopToml(dir, undefined);
-		const prompt = buildOrchestratorBootPrompt(configPath);
-		expect(prompt).toContain('What would you like to do?');
-	});
-
-	it('under meta_loop "observe": greets and asks "What would you like to do?"', () => {
-		const dir = createTestTmpdir('cam-boot-prompt-');
-		const configPath = writeMetaLoopToml(dir, 'observe');
-		const prompt = buildOrchestratorBootPrompt(configPath);
-		expect(prompt).toContain('What would you like to do?');
+		expect(prompt).not.toContain('meta_loop');
 	});
 });
 

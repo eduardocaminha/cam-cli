@@ -70,3 +70,31 @@ describe.each([
 		expect(afterBlocker).toContain('preflight-failed');
 	});
 });
+
+// Invariance pin: the boot prompt (buildOrchestratorBootPrompt, src/commands/
+// run.ts) no longer interpolates meta_loop -- the persisted prompt file is
+// re-read verbatim on every respawn without re-running the generator, so
+// config-derived content in it goes stale. The greeting fork therefore
+// DEPENDS entirely on the persona doc: if a future edit removes the
+// meta_loop-aware closing from the persona, the feature dies silently. This
+// block pins its presence in both copies. Companion oracle:
+// test/commands/run-boot-prompt-isolation.test.ts asserts the prompt side.
+describe.each([
+	['dev copy (.claude/agents/subagent-orchestrator.md)', devCopyContent],
+	['template copy (templates/agents/subagent-orchestrator.md)', templateCopyContent],
+])('%s: persona owns the meta_loop-aware greeting fork', (_label, getContent) => {
+	test('the greeting closing is meta_loop-aware', () => {
+		const content = getContent();
+		expect(content).toContain('`meta_loop`-aware');
+	});
+
+	test('the auto branch is gated on container isolation', () => {
+		const content = getContent();
+		expect(content).toContain('worker_isolation = "container"');
+	});
+
+	test('the observe/off branch closes with the operator question', () => {
+		const content = getContent();
+		expect(content).toContain('What would you like to do?');
+	});
+});

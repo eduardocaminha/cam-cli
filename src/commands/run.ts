@@ -62,7 +62,7 @@ import {
 	removeSidecarLivenessWatcherPidIfExists,
 	SIDECAR_LOG_FILENAME,
 } from '../supervisor/sidecar-pid.ts';
-import { DEFAULTS, readMetaLoop, readBackend, readPhaseEffort, readWorkerIsolation } from '../config/models.ts';
+import { DEFAULTS, readBackend, readPhaseEffort, readWorkerIsolation } from '../config/models.ts';
 import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
 import { makeFileEventLogger } from '../supervisor/events.ts';
 import { checkClaudeAuth } from './run-auth-preflight.ts';
@@ -216,30 +216,14 @@ function tmuxAvailable(spawnFn: SpawnFn): boolean {
  * longer needs to instruct reading the persona file, writing the readiness
  * marker, rehydrating from CAM_ORCH_REHYDRATE, or deriving the backlog --
  * all of that now lives in the agent body's "Boot context" section (CAM-240
- * US-001). This function stays meta_loop-aware because the greeting-vs-
- * autonomous-dispatch fork is decided by config the parent process can read
- * before the agent even boots, and reinforcing it in the first user turn
- * removes any ambiguity about whether to pause and ask.
- *
- * @param configPath  Forwarded to readMetaLoop() and readWorkerIsolation(); overridable by tests.
+ * US-001). It must also carry NO config-derived content: the string is
+ * persisted to .claude/.cam-orchestrator-prompt.txt once and re-read verbatim
+ * on every respawn without re-running this generator, so anything
+ * interpolated from project.toml goes stale silently. The meta_loop greeting
+ * fork lives solely in the persona body, which IS reloaded on every respawn.
  */
-export function buildOrchestratorBootPrompt(configPath?: string): string {
-	const metaLoop = readMetaLoop(configPath);
-	const lines = ['Boot up as the cam orchestrator; follow your Boot context section.'];
-	// Auto-chaining is only actually armed when meta_loop=auto AND
-	// worker_isolation=container (src/commands/sidecar.ts:2944-2953); the
-	// prompt must agree with that gate rather than announcing autonomous mode
-	// when the sidecar would refuse to dispatch.
-	if (metaLoop === 'auto' && readWorkerIsolation(configPath) === 'container') {
-		lines.push(
-			'meta_loop is "auto": once boot is complete, announce autonomous mode and proceed directly into dispatch. Do not close the greeting with a question asking for direction.',
-		);
-	} else {
-		lines.push(
-			`meta_loop is "${metaLoop}": once boot is complete, greet the operator and ask "What would you like to do?".`,
-		);
-	}
-	return lines.join('\n');
+export function buildOrchestratorBootPrompt(): string {
+	return 'Boot up as the cam orchestrator; follow your Boot context section.';
 }
 
 // ---------------------------------------------------------------------------
@@ -606,11 +590,7 @@ function setupPanes(
 	const dotClaude = join(cwd, '.claude');
 	mkdirSync(dotClaude, { recursive: true });
 	const promptFile = join(dotClaude, '.cam-orchestrator-prompt.txt');
-	writeFileSync(
-		promptFile,
-		buildOrchestratorBootPrompt(join(cwd, 'scripts', 'cam', 'project.toml')),
-		'utf8',
-	);
+	writeFileSync(promptFile, buildOrchestratorBootPrompt(), 'utf8');
 
 	// Generate and persist the orchestrator session id so the dashboard can
 	// locate the JSONL transcript for token-spend reporting (US-002).

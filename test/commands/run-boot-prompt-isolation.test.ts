@@ -1,13 +1,19 @@
 // test/commands/run-boot-prompt-isolation.test.ts
 //
-// Behavioral test for US-001 (CAM-455): buildOrchestratorBootPrompt must gate
-// the "proceed directly into dispatch" instruction on BOTH meta_loop=auto AND
-// worker_isolation=container, mirroring the sidecar's own auto-chaining guard
-// (src/commands/sidecar.ts:2944-2953). Fixtures are real project.toml files
-// written into a real tmpdir; no mocked config reader.
+// Invariance oracle: buildOrchestratorBootPrompt() must return byte-identical
+// output regardless of meta_loop / worker_isolation config. The meta_loop
+// interpolation was deleted because the persisted prompt file
+// (.claude/.cam-orchestrator-prompt.txt) is written once by setupPanes and
+// re-read verbatim on every respawn, so any config-derived content in it goes
+// stale silently (measured: ed10586b flipped meta_loop 33 minutes after the
+// file was written, and the stale text was served for 4 days). The greeting
+// fork now lives solely in the persona (subagent-orchestrator.md), which IS
+// reloaded on every respawn via --agent; see
+// test/templates/orchestrator-boot.test.ts for the persona-side pin.
 //
-// Test names in this file avoid parentheses because `bun test -t` treats its
-// argument as a regex, and a literal "(" would need escaping to match.
+// Fixtures are real project.toml files written into a real tmpdir; no mocked
+// config reader. Test names avoid parentheses because `bun test -t` treats
+// its argument as a regex.
 
 import { describe, expect, it } from 'bun:test';
 import { writeFileSync } from 'node:fs';
@@ -16,10 +22,13 @@ import { join } from 'node:path';
 
 import { buildOrchestratorBootPrompt } from '../../src/commands/run.ts';
 
-const DISPATCH_INSTRUCTION = 'proceed directly into dispatch';
+// Widened alias: the production function takes no config path at all (that is
+// the point), but this oracle still feeds four distinct configs so that if a
+// configPath parameter is ever reintroduced, the invariance assertion below
+// immediately exercises it instead of silently testing nothing.
+const buildPrompt: (configPath?: string) => string = buildOrchestratorBootPrompt;
 
-function writeProjectToml(dir: string, metaLoop: string, workerIsolation: string): string {
-	const path = join(dir, 'project.toml');
+function writeProjectToml(path: string, metaLoop: string, workerIsolation: string): string {
 	writeFileSync(
 		path,
 		`[loop]\nmeta_loop = "${metaLoop}"\nworker_isolation = "${workerIsolation}"\n`,
@@ -28,18 +37,24 @@ function writeProjectToml(dir: string, metaLoop: string, workerIsolation: string
 	return path;
 }
 
-describe('orchestrator boot prompt gated on worker_isolation', () => {
-	it('omits the dispatch instruction under meta_loop auto with worker_isolation host', () => {
+describe('orchestrator boot prompt is config-independent', () => {
+	it('returns byte-identical output for every meta_loop x worker_isolation combination', () => {
 		const dir = createTestTmpdir('cam-boot-prompt-isolation-');
-		const configPath = writeProjectToml(dir, 'auto', 'host');
-		const prompt = buildOrchestratorBootPrompt(configPath);
-		expect(prompt).not.toContain(DISPATCH_INSTRUCTION);
-	});
-
-	it('includes the dispatch instruction under meta_loop auto with worker_isolation container', () => {
-		const dir = createTestTmpdir('cam-boot-prompt-isolation-');
-		const configPath = writeProjectToml(dir, 'auto', 'container');
-		const prompt = buildOrchestratorBootPrompt(configPath);
-		expect(prompt).toContain(DISPATCH_INSTRUCTION);
+		const prompts = [
+			['auto', 'container'],
+			['auto', 'host'],
+			['observe', 'host'],
+			['off', 'host'],
+		].map(([metaLoop, workerIsolation], i) => {
+			const configPath = writeProjectToml(
+				join(dir, `project-${i}.toml`),
+				metaLoop as string,
+				workerIsolation as string,
+			);
+			return buildPrompt(configPath);
+		});
+		expect(prompts[1]).toBe(prompts[0] as string);
+		expect(prompts[2]).toBe(prompts[0] as string);
+		expect(prompts[3]).toBe(prompts[0] as string);
 	});
 });
