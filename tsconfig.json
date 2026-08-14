@@ -34,5 +34,5 @@
   // The drift smoke (`test/embedded.test.ts` + `bun run embed-vendor:check`) is
   // what guards them against regressions; static type checking is not the right
   // tool here.
-  "exclude": ["node_modules", "vendor", "claude-code-harness"]
+  "exclude": ["node_modules", "vendor", "claude-code-harness", "webui"]
 }
