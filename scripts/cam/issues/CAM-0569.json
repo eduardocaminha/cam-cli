@@ -1,0 +1,10 @@
+{
+  "id": "CAM-569",
+  "title": "Escalacao de plano e inauditavel: findings destruidas e veredito de audit fora do event log",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-14T18:23:41.634Z",
+  "updatedAt": "2026-08-14T18:23:41.634Z",
+  "description": "Medido em 2026-08-14 sobre a serie completa: existem 36 eventos kind:plan-escalated em .claude/cam-worker-events.jsonl, cobrindo 21 issues distintas entre 11/07 e 14/08. Desses 36, 35 conjuntos de finding estao permanentemente perdidos.\n\nCausa: .claude/.cam-plan-escalated.json e slot unico. E sobrescrito a cada escalacao e deletado na convergencia (src/commands/sidecar.ts:2433-2434 escreve, :2569 remove). Nao existe arquivo de arquivo morto. O event log nao compensa: o detail de plan-escalated carrega apenas {issueId, roundsCompleted}, mais exhaustedBudget em 24 dos 36 (acrescentado pela CAM-448). Nao existe kind nenhum para veredito de audit do loop de plano; o unico kind de veredito, review-verdict-handback, pertence ao loop de review.\n\nConsequencia dura: a classificacao de causa raiz das 36 escalacoes so foi possivel reconstruindo prosa do journal, entrada por entrada, e 3 delas ficaram indeterminadas por ausencia de registro. category, severity e storyId ja existem em PlanVerdictFinding (src/supervisor/plan-verdict-report.ts:22-34) e sao lidos em lugar nenhum.\n\nPor que esta issue vem antes das outras do mesmo tema: a CAM-561 e a CAM-562 sao correcoes no mesmo loop, e sem registro estruturado nenhuma das duas e mensuravel depois de shipada. Hoje voamos cegos sobre se uma correcao funcionou.\n\nSitio de conserto, medido: writeMarker em src/supervisor/plan-runner.ts:1867-1873 e o logEvent adjacente em :1885-1886.\n\nNota de linhagem: a CAM-562 cita CAM-442 como a issue que cobriria o buraco de observabilidade, e CAM-0442.json NAO existe no store (o ls-tree pula de CAM-0435 para CAM-0444). Esta issue ocupa esse lugar."
+}
