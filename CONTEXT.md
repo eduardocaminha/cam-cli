@@ -294,7 +294,7 @@ A structured inline set of { pattern, reason } entries (glob-capable) enumeratin
 A test that asserts the exact cardinality (and, where relevant, exact membership) of a load-bearing registry so that a silent shrinkage or addition fails a test rather than passing green. In cam, GATES.length and the COMMANDS array membership are count-frozen.
 
 **wire boundary**:
-A seam where cam drives or parses the output of a real external tool (git, tmux, gh, or the filesystem). Code at a wire boundary must have at least one real-I/O integration test exercising the real dependency, because a fake can encode the output the buggy code expects and pass while the real tool behaves differently (the CAM-55 fakes-lie lesson).
+Limite de teste em que o cliente HTTP e exercitado contra um servidor real subido em porta efemera dentro do proprio teste, em vez de contra fetch mockado. Cobre construcao de URL, metodo, status, parse e caminhos de erro que mock nenhum reproduz. Prior art de referencia: net/http/httptest da stdlib do Go e supertest.
 
 **behavioral DI-fake**:
 A dependency-injected fake that reproduces a real dependency's observable behavior (e.g. a fake spawn returning realistic git output keyed on argv) so the test asserts the code's real output. It is the blessed cam testing pattern and is explicitly distinct from, and permitted unlike, a tautological mock-call assertion that only checks 'the mock was called' (which is documentation, not verification).
@@ -688,3 +688,12 @@ Decorrido entre lastActivity e o nowMs do servidor, ambos vindos de dentro do sn
 
 **paridade por construcao**:
 Propriedade em que a rota web chama o mesmo readSnapshot exportado que o pane consome e serializa o resultado omitindo chaves, em vez de reproduzir os blocos do pane. Fixada pela emenda 6 de 2026-08-13. Tem duas excecoes estruturais medidas: as duas superficies de custo em token do pane e a ausencia de contrapartida do idleState.
+
+**pino de idempotencia**:
+Criterio de aceite que roda o gerador de novo e exige a arvore de trabalho sem nenhuma diferenca. Converte a premissa de nao-edicao manual, que e o que licencia isentar codigo vendorizado nas convencoes de Go e Chromium, de promessa em checagem de maquina. Usa git status e nao git diff, porque diff nao ve arquivo nao rastreado e passaria vacuamente numa arvore ainda nao commitada.
+
+**seam de polling**:
+Par formado por uma funcao step pura, que recebe o agora por parametro e devolve a decisao de buscar, e um driver que recebe setInterval e clearInterval injetados. Existe porque effect nao roda em server rendering, e portanto renderizacao estatica nao consegue observar fetch nem intervalo. A familia de prior art e sans-IO, com o mesmo formato em quinn-proto, etcd-io/raft e Firezone.
+
+**residuo de glue**:
+As poucas linhas de componente que nenhum teste alcanca depois da extracao completa da logica para funcoes puras e drivers injetados. O tamanho do residuo e a medida de qualidade da extracao: se a logica de fetch e intervalo fica inline no effect, o residuo engole a politica inteira. Precedente que licencia deixa-lo sem teste: Humble Object, em xUnit Test Patterns.
