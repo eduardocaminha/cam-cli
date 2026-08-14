@@ -661,3 +661,30 @@ Gate que cobra teto apenas para os paths presentes num snapshot persistido, e qu
 
 **comando do gate**:
 Cada entrada do manifesto GATES carrega o proprio comando literal, que pode delegar explicitamente a um script do package.json. O gate typecheck faz isso hoje com g('typecheck', 'bun run typecheck'), de modo que o mesmo script verifica em sequencia os projetos TypeScript do servidor/CLI e da webui tanto quando chamado diretamente quanto via check:all/CI. Um script novo continua inerte no CI ate ser registrado no manifesto; todo criterio que queira provar cobertura de gate deve derivar o comando de GATES ao vivo, em vez de presumir que o script homonimo e ou nao e delegado.
+
+**fecho transitivo de vendorizacao**:
+O conjunto de arquivos copiados do upstream, calculado pelo script a partir de uma lista-semente seguindo os imports relativos ate o ponto fixo. E o que torna a clausula do guard sobre caminho relativo satisfeita por construcao, e o que faz um arquivo inalcancavel na arvore vendorizada ser sinal de que o script copiou demais.
+
+**guard fail-closed por allowlist**:
+Verificacao em que todo especificador literal de import precisa ser ou caminho relativo que normalizado permanece dentro da raiz vendorizada, ou membro de uma lista npm explicita, e qualquer coisa desconhecida REPROVA. Oposto de denylist, que so reprova o que ja foi previsto.
+
+**registro de proveniencia**:
+Arquivo na raiz da arvore vendorizada com URL do upstream, SHA do commit, o texto do LICENSING.md da raiz do upstream como estava naquele SHA, e o texto MIT com a linha de copyright do upstream. Substitui deteccao por disciplina, porque comparacao de conteudo contra o lado AGPL e inutil por construcao.
+
+**item de registry construido**:
+A saida do shadcn build em apps/ui/public/r/*.json, onde os tokens de cor aparecem como dados no campo cssVars. E a fonte MIT dos tokens, por oposicao ao CSS do pacote AGPL.
+
+**namespace de registry**:
+No shadcn, uma entrada de registryDependencies como @coss/ui que resolve por template de URL para outro item de registry. NAO e import npm. E a razao de o guard precisar parsear declaracao de import em vez de casar string solta: @coss/ui e token sobrecarregado no upstream, significando pacote npm AGPL num sitio e conjunto de componentes MIT noutro.
+
+**@theme inline**:
+Forma do Tailwind v4 em que o utilitario emite a referencia da custom property diretamente, resolvendo no elemento em vez do sitio da definicao. Obrigatoria, nao opcional, para que qualquer override no cascade tenha efeito, inclusive o de modo escuro.
+
+**idade de transporte**:
+Decorrido entre o instante em que o cliente recebeu o ultimo snapshot com sucesso e o agora do relogio do cliente. Detecta servidor caido e rede quebrada.
+
+**idade de loop**:
+Decorrido entre lastActivity e o nowMs do servidor, ambos vindos de dentro do snapshot. Detecta loop travado enquanto os snapshots continuam chegando normalmente. E defeito distinto da idade de transporte, e um numero so deixa um dos dois silencioso.
+
+**paridade por construcao**:
+Propriedade em que a rota web chama o mesmo readSnapshot exportado que o pane consome e serializa o resultado omitindo chaves, em vez de reproduzir os blocos do pane. Fixada pela emenda 6 de 2026-08-13. Tem duas excecoes estruturais medidas: as duas superficies de custo em token do pane e a ausencia de contrapartida do idleState.
