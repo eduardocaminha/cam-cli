@@ -19,7 +19,7 @@
     "enabled": false
   },
   "files": {
-    "includes": ["src/**/*.ts", "src/**/*.tsx", "scripts/**/*.ts"]
+    "includes": ["src/**/*.ts", "src/**/*.tsx", "scripts/**/*.ts", "webui/**/*.{ts,tsx}"]
   },
   "overrides": [
     {

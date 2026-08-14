@@ -164,7 +164,7 @@ const skipRatchetGate: Gate = {
  * Importable by other scripts so they share one canonical list.
  */
 export const GATES: Gate[] = [
-	g('typecheck', 'bunx tsc --noEmit'),
+	g('typecheck', 'bun run typecheck'),
 	g('test', 'bun test --coverage'),
 	g('embed-vendor', 'bun scripts/generate-embedded-vendor.ts --check'),
 	g('lint', 'bunx biome lint --error-on-warnings'),

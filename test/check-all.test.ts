@@ -108,11 +108,10 @@ describe('GATES manifest', () => {
 		expect(GATES[15]?.name).toBe('skip-ratchet');
 	});
 
-	test('typecheck gate: bunx tsc --noEmit', () => {
+	test('typecheck gate: bun run typecheck', () => {
 		const gate = GATES[0];
-		expect(gate?.cmd).toBe('bunx');
-		expect(gate?.args).toContain('tsc');
-		expect(gate?.args).toContain('--noEmit');
+		expect(gate?.cmd).toBe('bun');
+		expect(gate?.args).toEqual(['run', 'typecheck']);
 	});
 
 	test('test gate: bun test --coverage', () => {

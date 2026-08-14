@@ -39,7 +39,7 @@ Note: a `CLEAN` verdict is not the same as "no findings." The reviewer can retur
 ## Quality Gates
 
 Run these before committing. Fix failures before proceeding:
-1. **Typecheck**: `bun run typecheck` (= `bunx tsc --noEmit`). Must be zero errors. `vendor/` and `claude-code-harness/` are excluded from typecheck by design.
+1. **Typecheck**: `bun run typecheck` runs both TypeScript projects: `bunx tsc --noEmit` checks the server/CLI, then `bunx tsc -p webui/tsconfig.app.json --noEmit` checks the browser UI. Both must have zero errors. `vendor/` and `claude-code-harness/` are excluded from the server/CLI typecheck by design.
 2. **Tests**: `bun test` (Bun's built-in runner). Test files live under `test/`, mirroring source.
 3. **Vendor drift** (only when a story touches `vendor/` or `templates/`): `bun run embed-vendor:check`. Fails if the embedded copy is stale; regenerate with `bun run embed-vendor`.
 

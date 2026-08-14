@@ -4,6 +4,7 @@ node_modules
 # output
 out
 dist
+webui/dist
 *.tgz
 
 # Bun build temp files (left behind by `bun build --compile` on macOS)

@@ -3,12 +3,15 @@
   "entry": [
     "index.ts",
     "scripts/**/*.ts",
-    "test/**/*.ts"
+    "test/**/*.ts",
+    "webui/src/main.tsx",
+    "webui/vite.config.ts"
   ],
   "project": [
     "src/**/*.{ts,tsx}",
     "scripts/**/*.ts",
-    "test/**/*.ts"
+    "test/**/*.ts",
+    "webui/**/*.{ts,tsx}"
   ],
   "ignore": [
     "scripts/preview-screens.ts",
@@ -20,7 +23,7 @@
     "claude-code-harness/**"
   ],
   "ignoreBinaries": ["cam", "claude", "tmux", "ps", "lsof", "gh", "pgrep", "tail"],
-  "ignoreDependencies": ["jscpd"],
+  "ignoreDependencies": ["jscpd", "tailwindcss"],
   "ignoreExportsUsedInFile": true,
   "exclude": ["exports", "types", "duplicates"]
 }

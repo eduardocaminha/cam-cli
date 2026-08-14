@@ -1,6 +1,6 @@
 {
   "name": "gateship",
-  "version": "0.289.0",
+  "version": "0.290.0",
   "module": "index.ts",
   "type": "module",
   "private": false,
@@ -26,8 +26,9 @@
     "embed-vendor": "bun scripts/generate-embedded-vendor.ts",
     "embed-vendor:check": "bun scripts/generate-embedded-vendor.ts --check",
     "build:release": "bun scripts/generate-embedded-vendor.ts && bash scripts/build-release.sh",
+    "build:ui": "vite build webui",
     "test": "bun test",
-    "typecheck": "bunx tsc --noEmit",
+    "typecheck": "bunx tsc --noEmit && bunx tsc -p webui/tsconfig.app.json --noEmit",
     "check:all": "bun scripts/check-all.ts",
     "check:ci-parity": "bun scripts/check-ci-parity.ts",
     "check:skip-ratchet": "bun scripts/check-skip-ratchet.ts",
@@ -39,11 +40,16 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.1",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/bun": "latest",
     "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.4",
     "ink-testing-library": "^4.0.0",
     "jscpd": "5.0.12",
-    "knip": "6.24.0"
+    "knip": "6.24.0",
+    "react-dom": "^19.2.6",
+    "tailwindcss": "^4.3.3",
+    "vite": "^8.2.1"
   },
   "peerDependencies": {
     "typescript": "^5"
@@ -55,7 +61,7 @@
     "ink-spinner": "^5.0.0",
     "ink-text-input": "^6.0.0",
     "js-yaml": "^4.1.1",
-    "react": "^19.2.6",
+    "react": "^19.2.8",
     "react-devtools-core": "^7.0.1",
     "resend": "^6.16.0"
   }
