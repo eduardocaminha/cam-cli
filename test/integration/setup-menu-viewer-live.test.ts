@@ -81,6 +81,8 @@ const BUDGET = {
 	burst: 20_000,
 	/** The viewer's captured viewport reaches a given mark. */
 	viewerAdvances: 10_000,
+	/** A transient in-place rotate finishes and exposes a valid capped size. */
+	rotateSettles: 5_000,
 } as const;
 
 /**
@@ -97,6 +99,7 @@ const VIEWER_TEST_TIMEOUT_MS =
 	BUDGET.logFileAppears +
 	BUDGET.burst * 2 +
 	BUDGET.viewerAdvances * 2 +
+	BUDGET.rotateSettles * 2 +
 	NON_WAIT_MARGIN_MS;
 
 const SPACE_TEST_TIMEOUT_MS =
@@ -105,7 +108,10 @@ const SPACE_TEST_TIMEOUT_MS =
 	BUDGET.logFileAppears +
 	BUDGET.burst +
 	BUDGET.viewerAdvances +
+	BUDGET.rotateSettles +
 	NON_WAIT_MARGIN_MS;
+
+const CAPPED_LOG_SIZE_UPPER_BOUND = 210_000;
 
 /** Run tmux on the private test socket directly. */
 function tmuxRaw(args: string[]): ReturnType<typeof spawnSync> {
@@ -211,6 +217,26 @@ function capture(paneId: string): string {
 	return tmuxRaw(['capture-pane', '-t', paneId, '-p']).stdout.toString();
 }
 
+/**
+ * Observe the log in either valid steady state around an in-place rotate:
+ * non-empty and below the ceiling plus one writer chunk. `cat TMP > LOG`
+ * briefly truncates LOG to zero before copying the capped bytes back, so a
+ * single stat can race that implementation detail even after the viewer has
+ * displayed the burst's last mark. Capture the size inside the successful
+ * poll instead of statting again and reopening the same race.
+ */
+async function waitForCappedLogSize(logPath: string): Promise<number> {
+	let observedSize = 0;
+	await waitForCondition(
+		() => {
+			observedSize = statSync(logPath).size;
+			return observedSize > 0 && observedSize < CAPPED_LOG_SIZE_UPPER_BOUND;
+		},
+		{ timeoutMs: BUDGET.rotateSettles, intervalMs: POLL_MS },
+	);
+	return observedSize;
+}
+
 beforeEach(async () => {
 	if (!tmuxAvailable) return;
 	tmuxRaw(['kill-server']);
@@ -306,9 +332,9 @@ test.skipIf(!tmuxAvailable)(
 		// cap command's `$(wc -c < LOG)` past the menu script's own
 		// double-quote evaluation, this stays at the full unbounded ~489_000
 		// bytes fed above instead of being capped.
-		const sizeAfterBurst1 = statSync(logPath).size;
+		const sizeAfterBurst1 = await waitForCappedLogSize(logPath);
 		expect(sizeAfterBurst1).toBeGreaterThan(0);
-		expect(sizeAfterBurst1).toBeLessThan(210_000);
+		expect(sizeAfterBurst1).toBeLessThan(CAPPED_LOG_SIZE_UPPER_BOUND);
 
 		// Real production defect fixed by this story: without resetting `key`
 		// before every timed read, the v|V arm re-fires on every 2s poll,
@@ -346,9 +372,9 @@ test.skipIf(!tmuxAvailable)(
 			BUDGET.viewerAdvances,
 		);
 
-		const sizeAfterBurst2 = statSync(logPath).size;
+		const sizeAfterBurst2 = await waitForCappedLogSize(logPath);
 		expect(sizeAfterBurst2).toBeGreaterThan(0);
-		expect(sizeAfterBurst2).toBeLessThan(210_000);
+		expect(sizeAfterBurst2).toBeLessThan(CAPPED_LOG_SIZE_UPPER_BOUND);
 
 		// Still exactly one config + one menu + one viewer pane, and the
 		// viewer is still alive (not dead/exited) after the whole exchange.
@@ -450,9 +476,9 @@ test.skipIf(!tmuxAvailable)(
 			BUDGET.viewerAdvances,
 		);
 
-		const sizeAfterBurst = statSync(logPath).size;
+		const sizeAfterBurst = await waitForCappedLogSize(logPath);
 		expect(sizeAfterBurst).toBeGreaterThan(0);
-		expect(sizeAfterBurst).toBeLessThan(210_000);
+		expect(sizeAfterBurst).toBeLessThan(CAPPED_LOG_SIZE_UPPER_BOUND);
 
 		expect(paneIds().length).toBe(3);
 		expect(paneAlive(viewerPaneId)).toBe(true);
