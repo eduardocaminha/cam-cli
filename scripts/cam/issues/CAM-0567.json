@@ -1,0 +1,10 @@
+{
+  "id": "CAM-567",
+  "title": "cam web: tela do ramo idle (recentCycles + backlog), cortada da CAM-565",
+  "stage": "idea",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-14T17:43:47.147Z",
+  "updatedAt": "2026-08-14T17:43:47.147Z",
+  "description": "A rota GET /api/snapshot ja publica o campo idleState (src/commands/web.ts:81-84,182), presente somente quando nao existe prd.json. Ele carrega recentCycles (ate 5 linhas de CycleMetricsRow com 10 campos cada: cycleId, issueNumber, closedAt, workerRounds, reviewRounds, orchTokens, workerTokens, total, prNumber, mergeMode) e backlog (BacklogJsonView: counts, plannable[], byStage{}). Falta a tela que consome esses dados.\n\nPor que e issue propria e nao paridade com o pane: nenhum desses dados existe no pane Ink. Grep por recentCycles e por readBacklogFromMain em src/ui/*.tsx e src/commands/dashboard.ts retorna zero, medido em 2026-08-14. O ramo idle do pane e uma linha unica (o glifo com o texto de estado ocioso); o idleState da rota e uma segunda tela inteira, que so existe na web.\n\nOrigem do corte: a CAM-565 teve o plan escalado em 2026-08-14 apos 2 rodadas, e os findings F-01 e F-02 do auditor bloquearam a US-003 por atomicidade, porque a story juntava paridade de 10 blocos do pane com esta tela nova. A CAM-565 ficou so com a paridade, e esta tela saiu para ca.\n\nCusto medido a considerar no design: com prd.json ausente, cada request roda readBacklogFromMain uma vez, e essa funcao sozinha spawna 2 subprocessos git (src/issues/backlog.ts:132 e :148), sem cache e sem memoizacao. Nao ha throttle entre requests.\n\nDepende de a CAM-565 estar shipada, porque a arvore vendorizada, a camada de tema e os componentes nascem la."
+}
