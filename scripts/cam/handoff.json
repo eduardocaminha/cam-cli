@@ -1,52 +1,24 @@
 {
 	"lastCompletedStory": {
-		"id": "US-001",
-		"title": "Scaffold de webui/ com vite + Tailwind v4 CSS-first, split de typecheck e entrada no knip"
+		"id": "US-002",
+		"title": "Re-apontar o gate typecheck do manifesto GATES para o script e emendar o ADR-0068"
 	},
 	"branchName": "cam/issue-566",
-	"timestamp": "2026-08-14T05:38:51Z",
-	"createdFiles": [
-		"test/webui-scaffold.test.ts",
-		"webui/index.html",
-		"webui/src/index.css",
-		"webui/src/main.tsx",
-		"webui/tsconfig.app.json",
-		"webui/vite.config.ts"
-	],
+	"timestamp": "2026-08-14T05:47:25Z",
+	"createdFiles": [],
 	"modifiedFiles": [
-		".gitignore",
-		"bun.lock",
-		"knip.json",
-		"package.json",
-		"tsconfig.json"
+		"docs/adr/0068-o-typecheck-de-arvore-nova-entra-pela-segunda-invocacao-no-script-da-raiz-nao-por-gate-novo-no-manifesto.md",
+		"scripts/check-all.ts",
+		"test/check-all.test.ts"
 	],
 	"openQuestions": [],
-	"nextStoryContext": "The browser client now lives under webui/ with no nested package.json. Use bun run build:ui for the Vite/Tailwind build; bun run typecheck checks the root non-DOM program first and webui/tsconfig.app.json second. webui/dist is generated and ignored, not embedded through templates or src/vendor/_generated.ts. Knip treats webui/src/main.tsx and webui/vite.config.ts as entries and scans the rest of webui for orphan files.",
+	"nextStoryContext": "The GATES typecheck entry now invokes bun run typecheck, so check:all and CI execute both the root TypeScript program and webui/tsconfig.app.json. ADR-0068 records why this re-pointing is required, and test/check-all.test.ts pins the manifest command and arguments.",
 	"appliedPatternIds": [],
 	"officialDocsValidated": [
 		{
-			"lib": "tailwindcss@4.3.3 / @tailwindcss/vite@4.3.3",
-			"channel": "web.run",
-			"url": "https://tailwindcss.com/docs/installation/using-vite",
-			"fetchedAt": "2026-08-14T05:38:51Z",
-			"status": "aligned",
-			"summary": "Official Vite integration confirms tailwindcss(), the @tailwindcss/vite plugin, and the CSS-first @import \"tailwindcss\" entry used by the scaffold."
-		},
-		{
-			"lib": "vite@8.2.1",
-			"channel": "web.run",
-			"url": "https://vite.dev/guide/",
-			"fetchedAt": "2026-08-14T05:38:51Z",
-			"status": "aligned",
-			"summary": "Official guide confirms index.html as the module-graph entry and supports passing webui as the alternate Vite root."
-		},
-		{
-			"lib": "react-dom@19.2.8",
-			"channel": "web.run",
-			"url": "https://react.dev/reference/react-dom/client/createRoot",
-			"fetchedAt": "2026-08-14T05:38:51Z",
-			"status": "aligned",
-			"summary": "Official React reference confirms importing createRoot from react-dom/client and rendering JSX into a browser DOM element."
+			"lib": "none",
+			"status": "no_external_lib_touched",
+			"summary": "This story only changed the local gate manifest, its unit test, and the corresponding ADR."
 		}
 	]
 }
