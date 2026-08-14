@@ -1,23 +1,26 @@
 {
 	"lastCompletedStory": {
-		"id": "US-R2-001",
-		"title": "CRITICAL: Layer B behavioral gate FAIL. US-003's named-command oracle `bun run…"
+		"id": "US-R2-002",
+		"title": "WARNING: `react-dom` sits in runtime `dependencies` while every sibling of the…"
 	},
 	"branchName": "cam/issue-566",
-	"timestamp": "2026-08-14T06:47:08Z",
+	"timestamp": "2026-08-14T06:54:34Z",
 	"createdFiles": [],
 	"modifiedFiles": [
-		"scripts/cam/patterns.md",
-		"test/integration/setup-menu-viewer-live.test.ts"
+		"bun.lock",
+		"package.json"
 	],
 	"openQuestions": [],
-	"nextStoryContext": "The live setup-menu viewer integration test now polls for a valid capped-log size and captures that size inside the successful predicate, avoiding the transient zero-byte window exposed by in-place rotation. All three same-shaped size assertions use the helper; five isolated repetitions and two full check:all runs were green.",
+	"nextStoryContext": "react-dom is now a development-only dependency in both package.json and bun.lock. The resolved package record and version range are unchanged; bun install --frozen-lockfile confirmed the manifest and lockfile remain synchronized with zero dependency drift.",
 	"appliedPatternIds": [],
 	"officialDocsValidated": [
 		{
-			"lib": "none",
-			"status": "no_external_lib_touched",
-			"summary": "Test-only synchronization fix using the repository's existing waitForCondition helper; no external library was exercised."
+			"lib": "Bun package manager",
+			"channel": "WebFetch",
+			"url": "https://bun.com/docs/pm/cli/install",
+			"fetchedAt": "2026-08-14T06:54:34Z",
+			"status": "aligned",
+			"summary": "Official Bun docs confirm devDependencies are omitted from production installs and --frozen-lockfile fails when package.json and bun.lock disagree; the surgical classification move passed that check."
 		}
 	]
 }
