@@ -79,7 +79,7 @@
       "id": "US-R2-003",
       "title": "WARNING: The source-layout block added by US-R1-001 states `webui/    Vite + Re…",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "description": "WARNING [README.md:364]: The source-layout block added by US-R1-001 states `webui/    Vite + React browser UI served by `cam web``, but `cam web` does not serve this tree: src/commands/web.ts routes '/' to a static `WEB_PAGE_HTML` constant and contains zero references to `webui`, `dist`, or `index.html` (grep). Serving the bundle is CAM-560, explicitly out of scope for this branch per prd.json US-001 notes. US-R1-001 exists precisely to stop documentation asserting a command graph the code does not have, so replacing one stale claim with a forward-dated one is the same defect class. Reword to describe the tree without the unimplemented serving relationship (for example: `webui/    Vite + React browser UI (build only; bundle serving is CAM-560)`).",
       "notes": "WARNING [README.md:364]: The source-layout block added by US-R1-001 states `webui/    Vite + React browser UI served by `cam web``, but `cam web` does not serve this tree: src/commands/web.ts routes '/' to a static `WEB_PAGE_HTML` constant and contains zero references to `webui`, `dist`, or `index.html` (grep). Serving the bundle is CAM-560, explicitly out of scope for this branch per prd.json US-001 notes. US-R1-001 exists precisely to stop documentation asserting a command graph the code does not have, so replacing one stale claim with a forward-dated one is the same defect class. Reword to describe the tree without the unimplemented serving relationship (for example: `webui/    Vite + React browser UI (build only; bundle serving is CAM-560)`)."
     },
