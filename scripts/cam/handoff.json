@@ -1,31 +1,25 @@
 {
 	"lastCompletedStory": {
-		"id": "US-003",
-		"title": "Alargar biome, debt-markers, test-sleeps e test-tmpdir para a arvore webui e fechar a spine verde"
+		"id": "US-R1-001",
+		"title": "WARNING: This diff changed the meaning of `bun run typecheck` (it now chains tw…"
 	},
 	"branchName": "cam/issue-566",
-	"timestamp": "2026-08-14T06:05:44Z",
-	"createdFiles": [
-		"test/webui-quality-scope.test.ts"
-	],
+	"timestamp": "2026-08-14T06:24:02Z",
+	"createdFiles": [],
 	"modifiedFiles": [
-		"biome.json",
-		"scripts/cam/patterns.md",
-		"scripts/check-debt-markers.ts",
-		"scripts/check-test-sleeps.ts",
-		"scripts/check-test-tmpdir.ts"
+		".claude/agents/subagent-implementer.md",
+		"CONTEXT.md",
+		"README.md",
+		"scripts/cam/CLAUDE.md"
 	],
 	"openQuestions": [],
-	"nextStoryContext": "Biome and the debt-marker, fixed-sleep, and tmpdir-root gates now scan webui. Bun.Glob scanSync requires brace alternatives at one path-component depth, so the script globs use {test,webui} or {src,scripts,webui} and the path filters exclude webui/dist and other generated client directories. All seven US-003 behavioral oracles and the full quality spine pass.",
+	"nextStoryContext": "The four stale documentation surfaces now match the live command graph: bun run typecheck checks both the server/CLI and webui TypeScript projects, check:all delegates its typecheck gate to that script, and README documents build:ui plus the webui tree. This was documentation-only and introduced no external-library usage.",
 	"appliedPatternIds": [],
 	"officialDocsValidated": [
 		{
-			"lib": "Biome 2.5.1",
-			"channel": "WebSearch",
-			"url": "https://biomejs.dev/reference/configuration/",
-			"fetchedAt": "2026-08-14T06:00:27Z",
-			"status": "aligned",
-			"summary": "Current official configuration reference confirms files.includes accepts glob patterns and ** recursively covers files and subfolders; the planted webui probe confirms the configured TypeScript/TSX pattern is active."
+			"lib": "none",
+			"status": "no_external_lib_touched",
+			"summary": "Documentation-only command and source-layout synchronization; no external library was exercised."
 		}
 	]
 }
