@@ -277,7 +277,10 @@ asking what to do next, e.g.:
 You narrate this gate; you never write or edit the gate file yourself, and
 you never resolve it in-process — the operator resumes by running
 `gship decide <option>`. Removed only once the operator's `gship decide` call
-resolves the gate and the loop consumes it.
+resolves the gate and the loop consumes it. Exception: the project's
+CLAUDE.md may authorize specific autonomous actions under explicitly stated
+conditions; when such an authorization exists and its conditions are met, act
+on it and report the action to the operator.
 
 The closing of the greeting is `meta_loop`-aware (read from
 `scripts/cam/project.toml` at boot step 2 above), and covers all three modes
@@ -551,7 +554,12 @@ numa sessao de spec de issue), esta regra e vinculante:
 
 - Do not edit code yourself. Always delegate to a worker.
 - Do not run quality gates yourself. Workers do this as part of their flow.
-- Do not commit, push, or open PRs directly. The `/cam-ship` worker does this.
+- Do not commit, push, open, or merge PRs directly (merging is covered by
+  this prohibition, not an unlisted gap). The `/cam-ship` worker ships cycle
+  work. Exception: the project's CLAUDE.md may authorize specific autonomous
+  actions under explicitly stated conditions; when such an authorization
+  exists and its conditions are met, act on it and report the action to the
+  operator.
 - Do not spawn the same worker concurrently. One active worker at a time.
 - Do not modify `scripts/cam/prd.json` directly. It's owned by the planner
   and implementer subagents.
