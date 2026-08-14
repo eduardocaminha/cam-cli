@@ -2,9 +2,10 @@
 //
 // Test-tmpdir-root gate (US-008, CAM-508 PRD).
 //
-// Scans a tree for a tmpdir() call reaching a path-construction site, the
-// pattern this PRD's migration (US-001..US-007) replaced with the single
-// scratch helper (test/helpers/test-tmpdir.ts::createTestTmpdir). Flags a
+// Scans test/ and webui/src/ for a tmpdir() call reaching a path-
+// construction site, the pattern this PRD's migration (US-001..US-007)
+// replaced with the single scratch helper
+// (test/helpers/test-tmpdir.ts::createTestTmpdir). Flags a
 // call to node:os's tmpdir export -- bare (`tmpdir()`), namespaced
 // (`os.tmpdir()`), or a same-file aliased import binding
 // (`import { tmpdir as X } from 'node:os'` then `X()`) -- when that call
@@ -60,14 +61,23 @@ import { Glob } from 'bun';
 // ---------------------------------------------------------------------------
 
 /**
- * Repo-root-level directory names (vendored/generated content) that must
- * never be scanned. Matched as a path PREFIX, not a substring: the scan's
- * glob is always rooted at `test/`, so these guard the CLI's optional
- * custom scanRoot argument, not the normal run. A substring match would
- * also wrongly swallow the legitimate `test/vendor/` subdirectory (its
- * tests exercise the vendoring mechanism; it is not an embedded copy).
+ * Repo-relative directory prefixes (vendored/generated content) that must
+ * never be scanned. Matched as a path PREFIX, not a substring, so the
+ * legitimate `test/vendor/` subdirectory remains visible (its tests
+ * exercise the vendoring mechanism; it is not an embedded copy). Client-
+ * local excluded directories are therefore listed with their `webui/`
+ * prefix explicitly.
  */
-const TOP_LEVEL_EXCLUDED_DIRS = ['vendor/', 'node_modules/', 'claude-code-harness/', 'dist/'];
+const EXCLUDED_PATH_PREFIXES = [
+	'vendor/',
+	'node_modules/',
+	'claude-code-harness/',
+	'dist/',
+	'webui/vendor/',
+	'webui/node_modules/',
+	'webui/claude-code-harness/',
+	'webui/dist/',
+];
 
 /**
  * Marker(s) excluded wherever they appear in a path, nested or not: the
@@ -102,6 +112,9 @@ export const ALLOWLIST: TmpdirAllowlistEntry[] = [
 	},
 ];
 
+/** TypeScript test-bearing trees covered by the tmpdir-root gate. */
+export const TEST_TMPDIR_SCAN_GLOB = '{test,webui}/**/*.{ts,tsx}';
+
 // ---------------------------------------------------------------------------
 // Result type
 // ---------------------------------------------------------------------------
@@ -127,7 +140,7 @@ export interface TmpdirRootResult {
 export function filterScannablePaths(paths: string[]): string[] {
 	return paths.filter(
 		(p) =>
-			!TOP_LEVEL_EXCLUDED_DIRS.some((dir) => p.startsWith(dir)) &&
+			!EXCLUDED_PATH_PREFIXES.some((dir) => p.startsWith(dir)) &&
 			!NESTED_EXCLUDED_MARKERS.some((marker) => p.includes(marker)),
 	);
 }
@@ -272,7 +285,7 @@ if (import.meta.main) {
 	const scanRootArg = argv.find((a) => !a.startsWith('--'));
 	const baseDir = scanRootArg !== undefined ? resolve(scanRootArg) : process.cwd();
 
-	const glob = new Glob('test/**/*.{ts,tsx}');
+	const glob = new Glob(TEST_TMPDIR_SCAN_GLOB);
 	const allPaths = [...glob.scanSync({ cwd: baseDir })];
 	const paths = filterScannablePaths(allPaths);
 

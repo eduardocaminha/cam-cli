@@ -2,9 +2,9 @@
 //
 // Test-sleep gate core (US-001, CAM-305 PRD).
 //
-// Scans test/ for fixed timed-sleep async waits that make tests flaky /
-// slow (a fixed wait either always over- or under-shoots the real
-// condition). Flags exactly two anchored forms:
+// Scans test/ and webui/src/ for fixed timed-sleep async waits that make
+// tests flaky / slow (a fixed wait either always over- or under-shoots
+// the real condition). Flags exactly two anchored forms:
 //   (i)  Bun.sleepSync(<numeric literal>)
 //   (ii) new Promise(<id> => setTimeout(<id>, <numeric literal>))
 // Deliberately does NOT flag: injected/recorded clocks (sleepFn:,
@@ -56,6 +56,9 @@ const PROMISE_SETTIMEOUT_RE =
 
 /** Matches a valid tracker reference: CAM-NNN, #N, or an https?:// URL. */
 const CITED_RE = /CAM-\d+|#\d+|https?:\/\//;
+
+/** TypeScript test-bearing trees covered by the fixed-sleep gate. */
+export const TEST_SLEEP_SCAN_GLOB = '{test,webui}/**/*.{ts,tsx}';
 
 // ---------------------------------------------------------------------------
 // Result type
@@ -130,8 +133,8 @@ export function scanForSleeps(files: { path: string; text: string }[]): SleepRes
 if (import.meta.main) {
 	const cwd = process.cwd();
 
-	// Enumerate all TypeScript test files under test/
-	const glob = new Glob('test/**/*.{ts,tsx}');
+	// Enumerate TypeScript files under both test-bearing trees.
+	const glob = new Glob(TEST_SLEEP_SCAN_GLOB);
 	const allPaths = [...glob.scanSync({ cwd })];
 	const paths = filterScannablePaths(allPaths);
 

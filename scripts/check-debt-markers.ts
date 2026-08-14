@@ -2,8 +2,9 @@
 //
 // Debt-marker gate (US-003, CAM-60 PRD).
 //
-// Scans src/ and scripts/ for (TODO/FIXME/HACK/XXX) markers and fails
-// any marker that does not cite a tracker id (CAM-NNN, #N, or http(s) URL).
+// Scans src/, scripts/, and webui/src/ for (TODO/FIXME/HACK/XXX)
+// markers and fails any marker that does not cite a tracker id
+// (CAM-NNN, #N, or http(s) URL).
 // Excludes vendor/, node_modules/, claude-code-harness/, and dist/ from the scan.
 //
 // Exports:
@@ -44,6 +45,9 @@ const MARKER_RE = /(?<!-)\b(TODO|FIXME|HACK|XXX)\b(?=[:\s])/g;
 
 /** Matches a valid tracker reference: CAM-NNN, #N, or an https?:// URL. */
 const CITED_RE = /CAM-\d+|#\d+|https?:\/\//;
+
+/** TypeScript trees covered by the debt-marker gate. */
+export const DEBT_MARKER_SCAN_GLOB = '{src,scripts,webui}/**/*.{ts,tsx}';
 
 // ---------------------------------------------------------------------------
 // Result type
@@ -123,8 +127,8 @@ export function scanForMarkers(
 if (import.meta.main) {
 	const cwd = process.cwd();
 
-	// Enumerate all TypeScript source files under src/ and scripts/
-	const glob = new Glob('{src,scripts}/**/*.{ts,tsx}');
+	// Enumerate all TypeScript source files under the product and client trees.
+	const glob = new Glob(DEBT_MARKER_SCAN_GLOB);
 	const allPaths = [...glob.scanSync({ cwd })];
 	const paths = filterScannablePaths(allPaths);
 
