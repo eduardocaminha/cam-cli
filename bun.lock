@@ -13,7 +13,6 @@
         "js-yaml": "^4.1.1",
         "react": "^19.2.8",
         "react-devtools-core": "^7.0.1",
-        "react-dom": "^19.2.6",
         "resend": "^6.16.0",
       },
       "devDependencies": {
@@ -25,6 +24,7 @@
         "ink-testing-library": "^4.0.0",
         "jscpd": "5.0.12",
         "knip": "6.24.0",
+        "react-dom": "^19.2.6",
         "tailwindcss": "^4.3.3",
         "vite": "^8.2.1",
       },
