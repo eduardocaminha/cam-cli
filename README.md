@@ -361,7 +361,7 @@ templates/            shipped to projects by `cam init`
   agents/             subagent-orchestrator, planner, implementer, reviewer, auditor
   commands/           /cam-plan, /cam-next, /cam-review, /cam-ship, /cam-issue, /cam-prune
   scripts/cam/        CLAUDE.md, journal.md, handoff.schema.json
-webui/                Vite + React browser UI served by `cam web`
+webui/                Vite + React browser UI (build only; bundle serving is CAM-560)
 test/                 bun:test suites
 ```
 
