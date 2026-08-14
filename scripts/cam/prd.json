@@ -1,0 +1,54 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-571",
+  "description": "Guard fail-closed da vendorizacao: allowlist por especificador literal de import e escrita em staging com promocao atomica em scripts/vendor-coss.ts",
+  "issueNumber": 571,
+  "type": "feat",
+  "relatedDocs": [
+    "CONTEXT.md"
+  ],
+  "officialDocsConsulted": [
+    {
+      "lib": "Bun",
+      "channel": "WebFetch",
+      "url": "https://bun.sh/docs/api/transpiler",
+      "version": "current",
+      "fetchedAt": "2026-08-14T23:53:05Z",
+      "summary": "Bun.Transpiler.scan(code) devolve os especificadores LITERAIS de import (kinds: import-statement, require-call, require-resolve, dynamic-import); e a ferramenta nativa para o guard parsear declaracao de import em vez de casar string solta. Dois caveats: import type e EXCLUIDO do scan (aceitavel para licenca: import type e apagado no build e nao puxa codigo em runtime), e scanImports() e menos preciso que scan() por otimizacao, entao use scan().",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Funcao verify de allowlist por especificador e modo CLI --verify <dir>",
+      "description": "Como mantenedor da vendorizacao COSS, preciso de um guard --verify <dir> que FALHA FECHADO por ALLOWLIST sobre especificador literal de import, para que nenhuma fonte com dependencia AGPL ou desconhecida passe despercebida, inclusive especificador futuro que ninguem previu.",
+      "acceptanceCriteria": [
+        "O guard --verify <dir> FALHA FECHADO e e uma ALLOWLIST sobre especificador literal de import, nunca uma denylist: todo especificador ou e caminho relativo que normalizado permanece dentro da raiz verificada, ou e membro de uma lista npm explicita por igualdade OU por prefixo de subpath, e qualquer outra coisa falha. A direcao do pacote desconhecido (que nao pertence a @coss/) e parte do criterio e nao pode ser removida: sem ela o oraculo nao distingue allowlist de denylist, e a denylist deixa passar todo especificador futuro que ninguem previu. A direcao de subpath tambem e parte do criterio: os componentes semente importam @base-ui/react/merge-props, /use-render, /progress e /separator, todos subpath declarado no exports map do @base-ui/react@1.7.0, entao pertinencia exata rejeitaria a propria arvore vendorizada. Especie: deteccao de mudanca. Varrido pelo planner em 2026-08-14: VERMELHO na main (script ausente) e VERDE em stub pos-mudanca nas quatro direcoes (clean VERDE, agpl VERMELHO, unknown VERMELHO, subpath VERDE), arvore restaurada limpa depois. [oracle: file-assert test -f scripts/vendor-coss.ts && d=$(mktemp -d) && mkdir -p \"$d/clean\" \"$d/agpl\" \"$d/unknown\" \"$d/subpath\" && printf 'export const a=1;\\n' > \"$d/clean/ok.ts\" && printf 'import x from \"@coss/ui\";\\n' > \"$d/agpl/leak.ts\" && printf 'import y from \"totally-unlisted-pkg\";\\n' > \"$d/unknown/leak.ts\" && printf 'import {mergeProps} from \"@base-ui/react/merge-props\";\\n' > \"$d/subpath/ok.ts\" && bun scripts/vendor-coss.ts --verify \"$d/clean\" && ! bun scripts/vendor-coss.ts --verify \"$d/agpl\" && ! bun scripts/vendor-coss.ts --verify \"$d/unknown\" && bun scripts/vendor-coss.ts --verify \"$d/subpath\"]",
+        "A funcao verify e EXPORTADA de scripts/vendor-coss.ts, porque a US-002 (escrita em staging) e a CAM-565 (aplicacao sobre a arvore real) a consomem por import. [oracle: file-assert grep -qE 'export function verify' scripts/vendor-coss.ts]",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Arquivo novo: scripts/vendor-coss.ts. NAO ENTRA nesta issue: fetch de rede, fecho transitivo, reescrita de especificador, manifesto, PROVENANCE e a arvore vendorizada (tudo CAM-565). Parsear DECLARACAO de import via Bun.Transpiler.scan(src).imports (loader tsx), nunca casar string solta: no upstream @coss/ui tambem aparece em registryDependencies, que e namespace de registry do shadcn e nao import npm, e string solta produz falso positivo sobre metadado (gotcha medido na CAM-565). Usar scan() e nao scanImports() (menos preciso, doc oficial). Contencao de caminho relativo: path.resolve(dirname(arquivo), spec) e exigir resolved dentro de path.resolve(root) (igualdade ou prefixo com separador); noUncheckedIndexedAccess vale para args de CLI (args[i+1] e string | undefined, guardar). Allowlist npm sugerida a partir dos imports medidos dos seeds: react, clsx, tailwind-merge, class-variance-authority, @base-ui/react (com subpath por prefixo). CLI: --verify <dir> lista cada violacao em stderr e sai nao-zero; sem violacao sai 0. O modo sem argumento (vendorizacao real) NAO e implementavel aqui (nao existe fetcher ainda, e CAM-565); nao inventar. knip: scripts/**/*.ts e entry point, script sem consumidor nao e dead code (medicao que licenciou o corte desta issue). Manter o contrato CLI estavel: a CAM-565 vai rodar bun scripts/vendor-coss.ts --verify webui/vendor/coss. NUNCA usar grep -qv em oraculo (shim ugrep, gotcha da issue). Termos que governam: CONTEXT.md, entradas 'guard fail-closed por allowlist' e 'direcao de injecao' (grep-on-demand)."
+    },
+    {
+      "id": "US-002",
+      "title": "Vendorizacao com escrita em staging e promocao atomica fail-closed",
+      "description": "Como mantenedor da vendorizacao COSS, preciso que a funcao de vendorizacao escreva em diretorio de staging, verifique o staging com o guard, e so promova para o destino quando aprovado, para que fonte reprovada nao deixe arvore parcial nem destino nenhum, transformando o guard que relata num guard que protege.",
+      "acceptanceCriteria": [
+        "A vendorizacao FALHA FECHADO na escrita, e nao apenas no diagnostico: fonte que o guard reprova nao deixa arvore no destino nem diretorio de staging residual. O criterio existe porque um guard que so relata e um guard que nao protege, e porque o texto da CAM-565 exige exit nao-zero E sem escrever arvore, uma conjuncao que oraculo de fixture sobre diretorio pronto nao alcanca. O teste dirige a funcao de vendorizacao com um buscador de arquivo falso (injetado) que devolve fonte envenenada, e assere as duas metades, resultado reprovado e destino ausente, mais a direcao positiva em que fonte limpa produz a arvore. Especie: deteccao de mudanca. Varrido pelo planner em 2026-08-14: VERMELHO na main (teste ausente) e VERDE contra implementacao pos-mudanca simulada com dois testes passando nas duas direcoes, arvore restaurada limpa depois. [oracle: named-command test -f test/vendor-coss-fail-closed.test.ts && bun test test/vendor-coss-fail-closed.test.ts 2>&1 | grep -qE '[0-9]+ pass']",
+        "Typecheck passes (bun run typecheck). [oracle: bun run typecheck]",
+        "Tests pass (bun test). [oracle: bun test]",
+        "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Arquivos: scripts/vendor-coss.ts (funcao de vendorizacao exportada, consumindo verify da US-001) e test/vendor-coss-fail-closed.test.ts (novo). O buscador de arquivo e INJETADO (lista de {relPath, content} ou equivalente): o fetcher real de rede e CAM-565, aqui nenhum acesso a rede. Disciplina: escrever tudo no staging, rodar verify(staging), e so entao promover para o destino; promocao atomica via rename. Gotcha EXDEV: rename atomico exige mesmo filesystem, entao o staging deve nascer irmao do destino (ex: <dest>.staging-<sufixo aleatorio>) e nao em os.tmpdir, que pode estar em volume diferente. O caminho de falha TEM que remover o staging, senao a segunda execucao encontra residuo e o resultado deixa de ser deterministico, o que quebraria o pino de idempotencia da CAM-565 (gotcha da issue; termo canonico em CONTEXT.md, 'escrita em staging com promocao atomica'). Teste com I/O real em tmpdir (invariante de qualidade de teste: wire boundary real, nada de assercao so de mock chamado); asserir tambem ausencia de residuo de staging onde observavel (staging irmao do destino torna isso observavel por readdir do diretorio pai). bun test descobre teste em qualquer lugar e o gate skip-ratchet espera exatamente 0 skips no host: nenhum .skip/.skipIf. Nao editar prd.json; supervisor e o unico escritor de passes."
+    }
+  ]
+}
