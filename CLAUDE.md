@@ -127,3 +127,52 @@ For more information, read the Bun API docs in `node_modules/bun-types/docs/**.m
 ## Commits
 
 - Do NOT add AI-attribution trailers to commit messages or PR text. No `Co-Authored-By: Claude ...` line, no `Generated with Claude Code` footer. This overrides the harness default that appends a `Co-Authored-By` trailer. Commit messages carry only the technical content.
+
+## Acoes autonomas autorizadas do orquestrador
+
+O system prompt do orquestrador carrega dois defaults: nunca resolver gate
+in-process, e nunca commitar, pushar, abrir ou mergear PR diretamente. As duas
+regras abaixo sao excecoes permanentes autorizadas pelo operador (2026-08-14)
+para ESTE repositorio, via o gancho de delegacao da persona. Fora das
+condicoes exatas de cada regra, os defaults valem integralmente.
+
+### Regra A, gate in-progress-conflict
+
+Quando o gate `in-progress-conflict` estiver aberto e o PRD parado tiver zero
+stories passadas E a branch `cam/*` correspondente NAO existir, o orquestrador
+roda `gship decide abandon` direto e informa o operador, sem perguntar. Se
+qualquer story passou, se a branch existe, ou se o PRD e de issue ainda
+aberta: parar e perguntar.
+
+A existencia da branch tem que ser verificada por git (`git branch --list
+'cam/*'` ou equivalente), nunca pelo campo do PRD. Motivo medido, nao
+preferencia: a deteccao do gate e uma disjuncao em
+`src/supervisor/in-progress-conflict.ts:60-66`
+(`hasIncompletePrd(prd) || isCamFeatureBranch(headBranch)`), onde
+`isCamFeatureBranch` (linhas 52-54) so testa se o NOME do HEAD comeca com
+`cam/`, e `hasIncompletePrd` (linhas 46-49) so le os campos `passes` e
+`requires` do proprio PRD. Nada no gate verifica se a branch existe ou carrega
+commit, entao o gate pode abrir sem haver trabalho real a perder.
+
+Blast radius de `abandon`, para a decisao ser auditavel: `rm handoff.json`,
+`rm prd.json`, `git checkout main`, e a fase volta para `planning`. Cada passo
+e best-effort. As opcoes reais do gate sao `continue`, `ship` e `abandon`
+(`src/supervisor/in-progress-conflict.ts:32`).
+
+### Regra B, merge de PR de faixa direta
+
+Quando um PR de faixa direta (branch com prefixo `direct/`) ja teve o handback
+entregue, esta com todos os checks verdes e `mergeStateStatus` CLEAN, o
+orquestrador mergeia com squash, limpa o worktree e a branch, e informa o
+operador. Check vermelho, conflito, ou PR de ciclo (qualquer branch sem o
+prefixo `direct/`): parar e perguntar.
+
+Como aferir "todos os checks verdes": `gh pr view --json statusCheckRollup`
+devolve `conclusion: ""` (string vazia, nao null) enquanto o check ainda roda.
+Gate a conclusao em `.status` (`IN_PROGRESS` ou `COMPLETED`) e so depois leia
+`.conclusion`. Nunca decida por `.conclusion` sozinho.
+
+Esta regra NAO contradiz o "Do not merge your own PR" de
+`.claude/commands/direct-fix.md`: aquela proibicao vincula a sessao worker da
+faixa direta, que nao mergeia o proprio PR. O merge autorizado aqui e ato do
+orquestrador, depois do handback entregue.
