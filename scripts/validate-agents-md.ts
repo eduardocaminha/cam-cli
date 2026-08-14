@@ -98,6 +98,16 @@ export const KNOWN_MISSING: KnownMissingEntry[] = [
 		reason: 'slash-command reference (.claude/commands/cam-*.md), not a filesystem path',
 	},
 	{
+		pattern: 'cam/*',
+		reason:
+			'cycle feature-branch prefix (cam/<slug>) cited in the root CLAUDE.md autonomous-action rules; a git branch name, not a repo path',
+	},
+	{
+		pattern: 'direct/*',
+		reason:
+			'direct-lane branch prefix (direct/<slug>) cited in the root CLAUDE.md autonomous-action rules; a git branch name, not a repo path',
+	},
+	{
 		pattern: '/exit',
 		reason: 'built-in Claude Code slash command, not a filesystem path',
 	},
