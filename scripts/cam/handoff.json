@@ -1,25 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-001",
-    "title": "WARNING: US-001 has no error-path test over an existing destination. The diff b…"
+    "id": "US-R1-002",
+    "title": "WARNING: The single idempotence test re-runs with the identical file set, so it…"
   },
   "branchName": "cam/issue-572",
-  "timestamp": "2026-08-15T15:13:09Z",
+  "timestamp": "2026-08-15T15:19:55Z",
   "createdFiles": [],
   "modifiedFiles": [
     "test/vendor-coss-idempotence.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "vendorCoss now has a regression test that seeds a clean existing destination, retries with a poisoned source tree, and proves VendorVerificationError leaves both prior files byte-identical with no staging or previous sibling residue. Production code was unchanged.",
+  "nextStoryContext": "The vendorCoss replacement regression now performs a second successful run with a changed source manifest and explicitly proves that a dropped path is absent, an added path is present with the expected content, and no staging or previous sibling residue remains.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
       "lib": "Node.js node:fs",
       "channel": "WebFetch",
-      "url": "https://nodejs.org/api/fs.html",
-      "fetchedAt": "2026-08-15T15:13:09Z",
+      "url": "https://nodejs.org/api/fs.html#fsexistssyncpath",
+      "fetchedAt": "2026-08-15T15:19:55Z",
       "status": "aligned",
-      "summary": "Current readFileSync and readdirSync contracts support Buffer-based byte comparisons and direct directory-entry residue assertions used by the regression test."
+      "summary": "Current Node.js v26.7.0 documentation confirms existsSync returns true when a path exists and false otherwise, matching the added exact-tree assertions."
     }
   ]
 }
