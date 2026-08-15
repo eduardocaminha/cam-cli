@@ -1,0 +1,30 @@
+{
+  "id": "CAM-578",
+  "title": "gship runtime: preparar dependências do worktree isolado",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-15T23:51:02.817Z",
+  "updatedAt": "2026-08-15T23:51:02.817Z",
+  "description": "O dogfood da CAM-577 provou que o worktree isolado é criado corretamente, mas não consegue executar check:all sem uma instalação manual. Tornar a preparação de dependências parte da criação do workspace, usando o lockfile existente e sem compartilhar node_modules com o checkout hospedeiro.",
+  "specSource": "operator",
+  "spec": {
+    "acceptanceCriteria": [
+      "GitWorkspaceManager executa bun install --frozen-lockfile dentro do worktree recém-criado antes de devolvê-lo ao runtime.",
+      "Falha ao iniciar ou concluir a instalação produz RuntimeWorkspaceError com detalhe útil e o run não começa a execução do agente.",
+      "A preparação não altera o checkout hospedeiro e não usa symlink ou cópia do node_modules do host."
+    ],
+    "scope": "Somente a preparação determinística de dependências no GitWorkspaceManager e seus testes focados. Fora de escopo: cache próprio, autodetecção de package manager, limpeza automática de worktree, mudanças no reviewer e remoção do fluxo legado.",
+    "gotchas": [
+      "O runner de subprocesso deve ser injetável para que os testes não acessem rede nem instalem dependências reais.",
+      "O comando deve rodar no caminho do worktree, não no checkout hospedeiro."
+    ],
+    "domainTerms": []
+  },
+  "wsjf": {
+    "value": 8,
+    "timeCriticality": 8,
+    "riskReduction": 8,
+    "jobSize": 2
+  }
+}
