@@ -20,6 +20,30 @@
   ],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "CRITICAL: Fail-open no guard fail-closed: Bun.Transpiler.scan() nao reporta req…",
+      "priority": 1,
+      "passes": true,
+      "description": "CRITICAL [scripts/vendor-coss.ts:105]: Fail-open no guard fail-closed: Bun.Transpiler.scan() nao reporta require-call no Bun 1.3.13 (medido em loader tsx/ts/js/jsx), apesar de a doc oficial e o resumo em officialDocsConsulted do prd.json afirmarem que reporta. Consequencia medida ponta a ponta: printf 'const m = require(\"@coss/ui\");\\nmodule.exports = m;\\n' > leak.cjs && bun scripts/vendor-coss.ts --verify <dir> sai com exit 0, aceitando um especificador AGPL. SOURCE_EXTENSIONS (linha 12) inclui .cjs/.cts/.js/.mjs, entao o guard enumera e le exatamente os arquivos cuja forma de import ele nao consegue ver, violando o AC US-001 'qualquer outra coisa falha'. Correcao limitada: unir scan(src).imports com scanImports(src) (scanImports SIM devolve {kind:'require-call'}), ou rejeitar as extensoes CJS que nao sao verificaveis. Precisa de teste de regressao com require() bare.",
+      "notes": "CRITICAL [scripts/vendor-coss.ts:105]: Fail-open no guard fail-closed: Bun.Transpiler.scan() nao reporta require-call no Bun 1.3.13 (medido em loader tsx/ts/js/jsx), apesar de a doc oficial e o resumo em officialDocsConsulted do prd.json afirmarem que reporta. Consequencia medida ponta a ponta: printf 'const m = require(\"@coss/ui\");\\nmodule.exports = m;\\n' > leak.cjs && bun scripts/vendor-coss.ts --verify <dir> sai com exit 0, aceitando um especificador AGPL. SOURCE_EXTENSIONS (linha 12) inclui .cjs/.cts/.js/.mjs, entao o guard enumera e le exatamente os arquivos cuja forma de import ele nao consegue ver, violando o AC US-001 'qualquer outra coisa falha'. Correcao limitada: unir scan(src).imports com scanImports(src) (scanImports SIM devolve {kind:'require-call'}), ou rejeitar as extensoes CJS que nao sao verificaveis. Precisa de teste de regressao com require() bare."
+    },
+    {
+      "id": "US-R1-002",
+      "title": "WARNING: listSourceFiles usa entry.isFile(), que e false para symlink, entao ar…",
+      "priority": 2,
+      "passes": false,
+      "description": "WARNING [scripts/vendor-coss.ts:53]: listSourceFiles usa entry.isFile(), que e false para symlink, entao arquivo de codigo alcancado por symlink nunca e escaneado e verify() passa silenciosamente. Medido: arvore contendo apenas link.ts -> real/leak.ts (com import de @coss/ui) passa sem violacao. vendorCoss nunca escreve symlink, mas o modo --verify <dir> vai rodar sobre arvore real na CAM-565. Tratar symlink como fonte (ou rejeitar) mantem o guard fail-closed.",
+      "notes": "WARNING [scripts/vendor-coss.ts:53]: listSourceFiles usa entry.isFile(), que e false para symlink, entao arquivo de codigo alcancado por symlink nunca e escaneado e verify() passa silenciosamente. Medido: arvore contendo apenas link.ts -> real/leak.ts (com import de @coss/ui) passa sem violacao. vendorCoss nunca escreve symlink, mas o modo --verify <dir> vai rodar sobre arvore real na CAM-565. Tratar symlink como fonte (ou rejeitar) mantem o guard fail-closed."
+    },
+    {
+      "id": "US-R1-003",
+      "title": "WARNING: Lacuna de casos adversariais: o guard de path traversal de resolveVend…",
+      "priority": 3,
+      "passes": false,
+      "description": "WARNING [test/vendor-coss-fail-closed.test.ts:16]: Lacuna de casos adversariais: o guard de path traversal de resolveVendorFilePath (scripts/vendor-coss.ts:74-80) tem zero cobertura de teste, apesar de ser a defesa de escrita fora do staging (verifiquei manualmente que funciona: relPath '../../escape.ts' lanca e nada e escrito fora). Faltam tambem relPath vazio, verify() sobre raiz inexistente/nao-diretorio e o caso require() do item CRITICAL. A suite atual cobre so happy path + fonte envenenada.",
+      "notes": "WARNING [test/vendor-coss-fail-closed.test.ts:16]: Lacuna de casos adversariais: o guard de path traversal de resolveVendorFilePath (scripts/vendor-coss.ts:74-80) tem zero cobertura de teste, apesar de ser a defesa de escrita fora do staging (verifiquei manualmente que funciona: relPath '../../escape.ts' lanca e nada e escrito fora). Faltam tambem relPath vazio, verify() sobre raiz inexistente/nao-diretorio e o caso require() do item CRITICAL. A suite atual cobre so happy path + fonte envenenada."
+    },
+    {
       "id": "US-001",
       "title": "Funcao verify de allowlist por especificador e modo CLI --verify <dir>",
       "description": "Como mantenedor da vendorizacao COSS, preciso de um guard --verify <dir> que FALHA FECHADO por ALLOWLIST sobre especificador literal de import, para que nenhuma fonte com dependencia AGPL ou desconhecida passe despercebida, inclusive especificador futuro que ninguem previu.",
@@ -30,7 +54,7 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 1,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "Arquivo novo: scripts/vendor-coss.ts. NAO ENTRA nesta issue: fetch de rede, fecho transitivo, reescrita de especificador, manifesto, PROVENANCE e a arvore vendorizada (tudo CAM-565). Parsear DECLARACAO de import via Bun.Transpiler.scan(src).imports (loader tsx), nunca casar string solta: no upstream @coss/ui tambem aparece em registryDependencies, que e namespace de registry do shadcn e nao import npm, e string solta produz falso positivo sobre metadado (gotcha medido na CAM-565). Usar scan() e nao scanImports() (menos preciso, doc oficial). Contencao de caminho relativo: path.resolve(dirname(arquivo), spec) e exigir resolved dentro de path.resolve(root) (igualdade ou prefixo com separador); noUncheckedIndexedAccess vale para args de CLI (args[i+1] e string | undefined, guardar). Allowlist npm sugerida a partir dos imports medidos dos seeds: react, clsx, tailwind-merge, class-variance-authority, @base-ui/react (com subpath por prefixo). CLI: --verify <dir> lista cada violacao em stderr e sai nao-zero; sem violacao sai 0. O modo sem argumento (vendorizacao real) NAO e implementavel aqui (nao existe fetcher ainda, e CAM-565); nao inventar. knip: scripts/**/*.ts e entry point, script sem consumidor nao e dead code (medicao que licenciou o corte desta issue). Manter o contrato CLI estavel: a CAM-565 vai rodar bun scripts/vendor-coss.ts --verify webui/vendor/coss. NUNCA usar grep -qv em oraculo (shim ugrep, gotcha da issue). Termos que governam: CONTEXT.md, entradas 'guard fail-closed por allowlist' e 'direcao de injecao' (grep-on-demand)."
@@ -45,10 +69,59 @@
         "Tests pass (bun test). [oracle: bun test]",
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
-      "priority": 2,
+      "priority": 5,
       "passes": true,
       "requires": null,
       "notes": "Arquivos: scripts/vendor-coss.ts (funcao de vendorizacao exportada, consumindo verify da US-001) e test/vendor-coss-fail-closed.test.ts (novo). O buscador de arquivo e INJETADO (lista de {relPath, content} ou equivalente): o fetcher real de rede e CAM-565, aqui nenhum acesso a rede. Disciplina: escrever tudo no staging, rodar verify(staging), e so entao promover para o destino; promocao atomica via rename. Gotcha EXDEV: rename atomico exige mesmo filesystem, entao o staging deve nascer irmao do destino (ex: <dest>.staging-<sufixo aleatorio>) e nao em os.tmpdir, que pode estar em volume diferente. O caminho de falha TEM que remover o staging, senao a segunda execucao encontra residuo e o resultado deixa de ser deterministico, o que quebraria o pino de idempotencia da CAM-565 (gotcha da issue; termo canonico em CONTEXT.md, 'escrita em staging com promocao atomica'). Teste com I/O real em tmpdir (invariante de qualidade de teste: wire boundary real, nada de assercao so de mock chamado); asserir tambem ausencia de residuo de staging onde observavel (staging irmao do destino torna isso observavel por readdir do diretorio pai). bun test descobre teste em qualquer lugar e o gate skip-ratchet espera exatamente 0 skips no host: nenhum .skip/.skipIf. Nao editar prd.json; supervisor e o unico escritor de passes."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:3",
+    "findings": [
+      {
+        "severity": "CRITICAL",
+        "file": "scripts/vendor-coss.ts",
+        "line": 105,
+        "text": "Fail-open no guard fail-closed: Bun.Transpiler.scan() nao reporta require-call no Bun 1.3.13 (medido em loader tsx/ts/js/jsx), apesar de a doc oficial e o resumo em officialDocsConsulted do prd.json afirmarem que reporta. Consequencia medida ponta a ponta: printf 'const m = require(\"@coss/ui\");\\nmodule.exports = m;\\n' > leak.cjs && bun scripts/vendor-coss.ts --verify <dir> sai com exit 0, aceitando um especificador AGPL. SOURCE_EXTENSIONS (linha 12) inclui .cjs/.cts/.js/.mjs, entao o guard enumera e le exatamente os arquivos cuja forma de import ele nao consegue ver, violando o AC US-001 'qualquer outra coisa falha'. Correcao limitada: unir scan(src).imports com scanImports(src) (scanImports SIM devolve {kind:'require-call'}), ou rejeitar as extensoes CJS que nao sao verificaveis. Precisa de teste de regressao com require() bare."
+      },
+      {
+        "severity": "WARNING",
+        "file": "scripts/vendor-coss.ts",
+        "line": 53,
+        "text": "listSourceFiles usa entry.isFile(), que e false para symlink, entao arquivo de codigo alcancado por symlink nunca e escaneado e verify() passa silenciosamente. Medido: arvore contendo apenas link.ts -> real/leak.ts (com import de @coss/ui) passa sem violacao. vendorCoss nunca escreve symlink, mas o modo --verify <dir> vai rodar sobre arvore real na CAM-565. Tratar symlink como fonte (ou rejeitar) mantem o guard fail-closed."
+      },
+      {
+        "severity": "WARNING",
+        "file": "test/vendor-coss-fail-closed.test.ts",
+        "line": 16,
+        "text": "Lacuna de casos adversariais: o guard de path traversal de resolveVendorFilePath (scripts/vendor-coss.ts:74-80) tem zero cobertura de teste, apesar de ser a defesa de escrita fora do staging (verifiquei manualmente que funciona: relPath '../../escape.ts' lanca e nada e escrito fora). Faltam tambem relPath vazio, verify() sobre raiz inexistente/nao-diretorio e o caso require() do item CRITICAL. A suite atual cobre so happy path + fonte envenenada."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "scripts/vendor-coss.ts",
+        "line": 145,
+        "text": "mkdtempSync cria o staging com modo 0700 e o renameSync promove esse modo para o destino final, entao a arvore vendorizada nasce 0700 em vez de 0755. Um chmod explicito antes da promocao deixa o resultado independente do umask/tmp semantics."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "scripts/vendor-coss.ts",
+        "line": 155,
+        "text": "Segunda execucao sobre destino ja existente falha com ENOTEMPTY no renameSync (medido; destino intacto e staging removido, portanto fail-closed). Se a CAM-565 depende do pino de idempotencia, a promocao precisa de swap (rename do destino antigo para .old, rename do staging, rm do .old) em vez de rename direto."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "scripts/vendor-coss.ts",
+        "line": 148,
+        "text": "fetchFiles() devolvendo lista vazia produz staging vazio, verify() vacuamente verde e promocao de diretorio vazio como sucesso. Uma asercao de tamanho minimo (ou de presenca de pelo menos um arquivo de fonte) evita que falha de fetch vire vendorizacao 'bem-sucedida'."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "scripts/vendor-coss.ts",
+        "line": 89,
+        "text": "O docblock de verify() promete allowlist sobre 'every literal import' mas scan() ignora import type (caveat conhecido e aceito no prd.json) e, medido, require-call. Registrar o escopo real no comentario evita que o proximo leitor confie em cobertura que nao existe."
+      }
+    ]
+  }
 }
