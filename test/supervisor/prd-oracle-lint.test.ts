@@ -9,6 +9,8 @@
 //   RULES: named-rules list shape (name + test)
 //   grep-q-plus-list-files rule: six flagged grep forms
 //   grep-q-plus-list-files rule: four passing grep/non-grep cases
+//   grep-q-plus-invert rule: flagged forms (direct lane, from CAM-565)
+//   grep-q-plus-invert rule: passing cases (direct lane, from CAM-565)
 //   frozen-comparand rule: flagged forms (US-001, CAM-381)
 //   frozen-comparand rule: passing cases (US-001, CAM-381)
 //   rotating-artifact-target rule: flagged forms (US-002, CAM-381)
@@ -60,6 +62,7 @@ function assertFixtureShape(rows: string[][]): void {
 }
 
 const GREP_RULE_NAME = 'grep-q-plus-list-files';
+const GREP_INVERT_RULE_NAME = 'grep-q-plus-invert';
 const FROZEN_COMPARAND_RULE_NAME = 'frozen-comparand';
 const ROTATING_ARTIFACT_RULE_NAME = 'rotating-artifact-target';
 const ZERO_MATCH_VACUOUS_RULE_NAME = 'zero-match-vacuous';
@@ -68,6 +71,12 @@ const SELF_CONTAMINATING_SEARCH_RULE_NAME = 'self-contaminating-search';
 function findGrepRule() {
 	const rule = RULES.find((r) => r.name === GREP_RULE_NAME);
 	if (!rule) throw new Error('grep-q-plus-list-files rule missing from RULES');
+	return rule;
+}
+
+function findGrepInvertRule() {
+	const rule = RULES.find((r) => r.name === GREP_INVERT_RULE_NAME);
+	if (!rule) throw new Error('grep-q-plus-invert rule missing from RULES');
 	return rule;
 }
 
@@ -100,10 +109,11 @@ function findSelfContaminatingSearchRule() {
 // ---------------------------------------------------------------------------
 
 describe('RULES: named-rules list shape', () => {
-	test('is an array of exactly five rules: grep-q-plus-list-files, frozen-comparand, rotating-artifact-target, zero-match-vacuous, self-contaminating-search', () => {
-		expect(RULES).toHaveLength(5);
+	test('is an array of exactly six rules: grep-q-plus-list-files, grep-q-plus-invert, frozen-comparand, rotating-artifact-target, zero-match-vacuous, self-contaminating-search', () => {
+		expect(RULES).toHaveLength(6);
 		expect(RULES.map((r) => r.name)).toEqual([
 			GREP_RULE_NAME,
+			GREP_INVERT_RULE_NAME,
 			FROZEN_COMPARAND_RULE_NAME,
 			ROTATING_ARTIFACT_RULE_NAME,
 			ZERO_MATCH_VACUOUS_RULE_NAME,
@@ -153,8 +163,14 @@ describe('grep-q-plus-list-files rule: flagged forms', () => {
 		expect(finding).not.toBeNull();
 	});
 
-	test('flags a bundled/reordered form with an extra flag interleaved (-qvL)', () => {
-		const finding = rule.test("grep -qvL 'PATTERN' file");
+	// The interleaved flag here is -i, not the -v this case originally used:
+	// once grep-q-plus-invert exists, a -qvL command violates BOTH rules, and
+	// an illustrative case for THIS rule reads clearer as a single-rule
+	// violation. The interleave coverage is unchanged (an unrelated flag still
+	// sits between -q and -L); the -qvL form keeps its own coverage in the
+	// cross-rule test below, which asserts both rules fire on it.
+	test('flags a bundled/reordered form with an extra flag interleaved (-qiL)', () => {
+		const finding = rule.test("grep -qiL 'PATTERN' file");
 		expect(finding).not.toBeNull();
 	});
 
@@ -195,6 +211,119 @@ describe('grep-q-plus-list-files rule: passing cases', () => {
 	test('non-grep command passes', () => {
 		const finding = rule.test('bun run typecheck');
 		expect(finding).toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// grep-q-plus-invert rule: flagged forms (direct lane, from CAM-565)
+// ---------------------------------------------------------------------------
+
+describe('grep-q-plus-invert rule: flagged forms', () => {
+	const rule = findGrepInvertRule();
+
+	test('flags -qv bundled', () => {
+		const finding = rule.test("grep -qv '^apps/ui/' manifest.txt");
+		expect(finding).not.toBeNull();
+		expect(finding!.reason).toContain('-v');
+	});
+
+	test('flags -vq bundled, reversed order', () => {
+		const finding = rule.test("grep -vq '^apps/ui/' manifest.txt");
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags -q -v as two separate flag tokens', () => {
+		const finding = rule.test("grep -q -v '^apps/ui/' manifest.txt");
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags -v -q as two separate flag tokens', () => {
+		const finding = rule.test("grep -v -q '^apps/ui/' manifest.txt");
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags a bundled form with an extra flag interleaved (-qiv)', () => {
+		const finding = rule.test("grep -qiv 'PATTERN' file");
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags the real CAM-565 containment shape: a negated jq pipeline fed into grep -qv', () => {
+		const finding = rule.test(
+			"! jq -r '.files[]' webui/vendor/coss/manifest.json | grep -qv '^apps/ui/'"
+		);
+		expect(finding).not.toBeNull();
+	});
+
+	test('flags the second grep of a pipeline whose first grep is clean', () => {
+		const finding = rule.test("grep -q 'X' a.txt && cat b.txt | grep -qv 'Y'");
+		expect(finding).not.toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// grep-q-plus-invert rule: passing cases (direct lane, from CAM-565)
+// ---------------------------------------------------------------------------
+
+describe('grep-q-plus-invert rule: passing cases', () => {
+	const rule = findGrepInvertRule();
+
+	test('correct absence idiom: ! grep -q PATTERN file passes', () => {
+		const finding = rule.test("! grep -q 'PATTERN' file");
+		expect(finding).toBeNull();
+	});
+
+	test('plain grep -q match assertion passes', () => {
+		const finding = rule.test("grep -q 'PATTERN' file");
+		expect(finding).toBeNull();
+	});
+
+	test('grep -v alone passes: only the combination with -q is unreliable', () => {
+		const finding = rule.test("grep -v '^apps/ui/' manifest.txt");
+		expect(finding).toBeNull();
+	});
+
+	test('grep -v piped into a counting assertion passes', () => {
+		const finding = rule.test("test $(grep -c -v '^apps/ui/' manifest.txt) -eq 0");
+		expect(finding).toBeNull();
+	});
+
+	test('two separate greps, one -q and one -v, pass: the flags never meet in one invocation', () => {
+		const finding = rule.test("grep -q 'X' a.txt && grep -v 'Y' b.txt");
+		expect(finding).toBeNull();
+	});
+
+	test('non-grep command passes', () => {
+		const finding = rule.test('bun run typecheck');
+		expect(finding).toBeNull();
+	});
+
+	test('does not match by literal substring -- a -v without -q is not the class', () => {
+		const finding = rule.test("grep -vL 'PATTERN' file");
+		expect(finding).toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// grep-q-plus-list-files and grep-q-plus-invert are independent
+// ---------------------------------------------------------------------------
+
+describe('grep-q-plus-list-files and grep-q-plus-invert: cross-rule independence', () => {
+	test('-qvL trips BOTH rules, each for its own reason', () => {
+		const command = "grep -qvL 'PATTERN' file";
+		expect(findGrepRule().test(command)).not.toBeNull();
+		expect(findGrepInvertRule().test(command)).not.toBeNull();
+	});
+
+	test('-qL trips only the list-files rule', () => {
+		const command = "grep -qL 'PATTERN' file";
+		expect(findGrepRule().test(command)).not.toBeNull();
+		expect(findGrepInvertRule().test(command)).toBeNull();
+	});
+
+	test('-qv trips only the invert rule', () => {
+		const command = "grep -qv 'PATTERN' file";
+		expect(findGrepRule().test(command)).toBeNull();
+		expect(findGrepInvertRule().test(command)).not.toBeNull();
 	});
 });
 

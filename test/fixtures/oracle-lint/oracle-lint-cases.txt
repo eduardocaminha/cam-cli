@@ -40,6 +40,10 @@ frozen-comparand :: ok :: echo "$(grep -c 'X -eq 1' f.ts)"
 frozen-comparand :: flag :: echo "$(test $X -eq 41)"
 grep-q-plus-list-files :: ok :: grep -q 'PATTERN' file.ts
 grep-q-plus-list-files :: flag :: grep -Lq 'PATTERN' file.ts
+grep-q-plus-invert :: ok :: grep -q '^apps/ui/' manifest.txt
+grep-q-plus-invert :: ok :: grep -v '^apps/ui/' manifest.txt
+grep-q-plus-invert :: flag :: grep -qv '^apps/ui/' manifest.txt
+grep-q-plus-invert :: flag :: ! jq -r '.files[]' webui/vendor/coss/manifest.json | grep -qv '^apps/ui/'
 rotating-artifact-target :: ok :: grep -q 'ROTATING_ARTIFACT_RULE' src/supervisor/prd-oracle-lint.ts
 rotating-artifact-target :: flag :: cat 'scripts/cam/handoff.json' | grep -q retryBaseMs
 zero-match-vacuous :: ok :: L=$(grep -n PATTERN FILE | head -1 | cut -d: -f1); test -n "$L" && sed -n "${L}p" FILE | grep -q X
