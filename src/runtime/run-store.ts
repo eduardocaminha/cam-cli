@@ -8,6 +8,7 @@ export interface RunRecord {
 	id: string;
 	issueId: string;
 	sessionId: string;
+	workspacePath: string;
 	state: RunState;
 	fixRounds: number;
 	createdAt: string;
@@ -30,6 +31,7 @@ export interface CreateRunInput {
 	id: string;
 	issueId: string;
 	sessionId: string;
+	workspacePath: string;
 	createdAt: string;
 }
 
@@ -54,6 +56,7 @@ interface RunRow {
 	id: string;
 	issue_id: string;
 	session_id: string | null;
+	workspace_path: string | null;
 	state: string;
 	fix_rounds: number;
 	created_at: string;
@@ -82,6 +85,7 @@ function decodeRun(row: RunRow): RunRecord {
 		id: row.id,
 		issueId: row.issue_id,
 		sessionId: row.session_id ?? row.id,
+		workspacePath: row.workspace_path ?? '',
 		state: decodeState(row.state),
 		fixRounds: row.fix_rounds,
 		createdAt: row.created_at,
@@ -128,6 +132,7 @@ export class RunStore {
 				id TEXT PRIMARY KEY,
 				issue_id TEXT NOT NULL,
 				session_id TEXT,
+				workspace_path TEXT,
 				state TEXT NOT NULL,
 				fix_rounds INTEGER NOT NULL DEFAULT 0,
 				created_at TEXT NOT NULL,
@@ -150,6 +155,9 @@ export class RunStore {
 		if (!columns.some((column) => column.name === 'session_id')) {
 			this.#db.exec('ALTER TABLE runs ADD COLUMN session_id TEXT;');
 		}
+		if (!columns.some((column) => column.name === 'workspace_path')) {
+			this.#db.exec('ALTER TABLE runs ADD COLUMN workspace_path TEXT;');
+		}
 		this.#db.exec('UPDATE runs SET session_id = id WHERE session_id IS NULL;');
 	}
 
@@ -157,12 +165,13 @@ export class RunStore {
 		const create = this.#db.transaction(() => {
 			this.#db.query(`
 				INSERT INTO runs (
-					id, issue_id, session_id, state, fix_rounds, created_at, updated_at
-				) VALUES ($id, $issueId, $sessionId, 'queued', 0, $createdAt, $createdAt)
+					id, issue_id, session_id, workspace_path, state, fix_rounds, created_at, updated_at
+				) VALUES ($id, $issueId, $sessionId, $workspacePath, 'queued', 0, $createdAt, $createdAt)
 			`).run({
 				id: input.id,
 				issueId: input.issueId,
 				sessionId: input.sessionId,
+				workspacePath: input.workspacePath,
 				createdAt: input.createdAt,
 			});
 			const inserted = this.#db.query(`

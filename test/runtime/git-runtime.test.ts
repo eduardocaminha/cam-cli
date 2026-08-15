@@ -33,24 +33,24 @@ function issueWithCriteria(criteria: string[]): string {
 }
 
 describe('git runtime boundary', () => {
-	test('accepts only a clean non-main branch with a real issue', () => {
+	test('requires a real issue and main ref without constraining the host checkout', () => {
 		const valid = createGitRuntimePreflight('/project', {
-			runGit: gitRunner({ branch: 'codex/CAM-1' }),
+			runGit: gitRunner({ branch: 'main', status: '?? operator-notes.txt' }),
 			issueExists: () => true,
 		});
 		expect(() => valid('CAM-1')).not.toThrow();
 
-		const main = createGitRuntimePreflight('/project', {
-			runGit: gitRunner({ branch: 'main' }),
-			issueExists: () => true,
+		const missingIssue = createGitRuntimePreflight('/project', {
+			runGit: gitRunner({}),
+			issueExists: () => false,
 		});
-		expect(() => main('CAM-1')).toThrow('non-main branch');
+		expect(() => missingIssue('CAM-404')).toThrow('issue not found on main');
 
-		const dirty = createGitRuntimePreflight('/project', {
-			runGit: gitRunner({ status: ' M src/a.ts' }),
+		const missingMain = createGitRuntimePreflight('/project', {
+			runGit: () => ({ exitCode: 1, stdout: '', stderr: 'missing main' }),
 			issueExists: () => true,
 		});
-		expect(() => dirty('CAM-1')).toThrow('clean working tree');
+		expect(() => missingMain('CAM-1')).toThrow('cannot resolve main');
 	});
 
 	test('verifies diff integrity and requires an actual working-tree change', async () => {

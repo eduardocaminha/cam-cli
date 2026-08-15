@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { canTransition, isTerminalRunState } from './run-state.ts';
+import type { RuntimeWorkspace } from './git-workspace.ts';
 import {
 	type RunEvent,
 	type RunRecord,
@@ -43,6 +44,7 @@ export interface RunRuntimeOptions {
 	newId?: () => string;
 	newSessionId?: () => string;
 	preflight?: (issueId: string) => void;
+	workspace?: RuntimeWorkspace;
 }
 
 export class RuntimeUnavailableError extends Error {
@@ -79,6 +81,7 @@ export class RunRuntime {
 	readonly #newId: () => string;
 	readonly #newSessionId: () => string;
 	readonly #preflight: ((issueId: string) => void) | undefined;
+	readonly #workspace: RuntimeWorkspace | undefined;
 	readonly #listeners = new Set<EventListener>();
 	readonly #active = new Map<string, ActiveRun>();
 
@@ -91,6 +94,7 @@ export class RunRuntime {
 		this.#newId = options.newId ?? randomUUID;
 		this.#newSessionId = options.newSessionId ?? randomUUID;
 		this.#preflight = options.preflight;
+		this.#workspace = options.workspace;
 		this.#store.interruptUnownedRuns(this.#now());
 	}
 
@@ -108,10 +112,16 @@ export class RunRuntime {
 			);
 		}
 		this.#preflight?.(normalizedIssueId);
+		const id = this.#newId();
+		const workspacePath = this.#workspace?.prepare({
+			runId: id,
+			issueId: normalizedIssueId,
+		}) ?? this.#cwd;
 		const created = this.#store.createRun({
-			id: this.#newId(),
+			id,
 			issueId: normalizedIssueId,
 			sessionId: this.#newSessionId(),
+			workspacePath,
 			createdAt: this.#now(),
 		});
 		this.#publish(created.event);
@@ -196,7 +206,7 @@ export class RunRuntime {
 			issueId: run.issueId,
 			sessionId: run.sessionId,
 			resume,
-			cwd: this.#cwd,
+			cwd: run.workspacePath.length === 0 ? this.#cwd : run.workspacePath,
 			signal,
 			emit: (kind, payload) => {
 				const event = this.#store.appendEvent({

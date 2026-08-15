@@ -12,6 +12,7 @@ import { type BacklogJsonView, deriveBacklogJson } from '../issues/list.ts';
 import { printError } from '../logging/color.ts';
 import { ClaudeCliExecutor } from '../runtime/claude-cli-executor.ts';
 import { createGitRuntimePreflight, GitIssueVerifier, RuntimePreflightError } from '../runtime/git-runtime.ts';
+import { GitWorkspaceManager, RuntimeWorkspaceError } from '../runtime/git-workspace.ts';
 import {
 	RunRuntime,
 	RuntimeConflictError,
@@ -246,7 +247,9 @@ async function startDurableRun(request: Request, runtime: RunRuntime): Promise<R
 		return Response.json({ ok: true, run: runtime.startRun(issueId) }, { status: 202 });
 	} catch (error) {
 		const unavailable = error instanceof RuntimeUnavailableError;
-		const rejected = error instanceof RuntimePreflightError || error instanceof RuntimeConflictError;
+		const rejected = error instanceof RuntimePreflightError
+			|| error instanceof RuntimeWorkspaceError
+			|| error instanceof RuntimeConflictError;
 		if (!unavailable && !rejected) throw error;
 		return Response.json(
 			{
@@ -404,6 +407,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		executor: new ClaudeCliExecutor(),
 		verifier: new GitIssueVerifier(),
 		preflight: createGitRuntimePreflight(options.cwd),
+		workspace: new GitWorkspaceManager(options.cwd),
 	});
 	const server = Bun.serve({
 		hostname: WEB_HOSTNAME,

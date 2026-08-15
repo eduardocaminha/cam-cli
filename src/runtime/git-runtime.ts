@@ -166,17 +166,8 @@ export function createGitRuntimePreflight(
 		if (!issueExists(cwd, issueId)) {
 			throw new RuntimePreflightError(`issue not found on main: ${issueId}`);
 		}
-		const branch = runGit(cwd, ['branch', '--show-current']);
-		if (branch.exitCode !== 0) throw commandFailure('cannot read current branch', branch);
-		const branchName = branch.stdout.trim();
-		if (branchName.length === 0 || branchName === 'main' || branchName === 'master') {
-			throw new RuntimePreflightError('a durable run requires a non-main branch');
-		}
-		const status = runGit(cwd, ['status', '--porcelain', '--untracked-files=all']);
-		if (status.exitCode !== 0) throw commandFailure('cannot read working tree', status);
-		if (status.stdout.trim().length > 0) {
-			throw new RuntimePreflightError('a durable run requires a clean working tree');
-		}
+		const main = runGit(cwd, ['rev-parse', '--verify', 'main']);
+		if (main.exitCode !== 0) throw commandFailure('cannot resolve main', main);
 	};
 }
 

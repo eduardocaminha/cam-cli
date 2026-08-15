@@ -25,6 +25,7 @@ describe('durable run runtime', () => {
 			id: 'run-1',
 			issueId: 'CAM-1',
 			sessionId: 'session-1',
+			workspacePath: '/workspaces/run-1',
 			createdAt: '2026-08-15T10:00:00Z',
 		});
 		store.transition({
@@ -42,9 +43,10 @@ describe('durable run runtime', () => {
 		store.close();
 
 		const reopened = new RunStore(dbPath);
-		expect(reopened.getRun('run-1')).toMatchObject({
+			expect(reopened.getRun('run-1')).toMatchObject({
 			issueId: 'CAM-1',
 			sessionId: 'session-1',
+			workspacePath: '/workspaces/run-1',
 			state: 'working',
 			fixRounds: 0,
 		});
@@ -63,6 +65,7 @@ describe('durable run runtime', () => {
 			id: 'run-crashed',
 			issueId: 'CAM-2',
 			sessionId: 'session-crashed',
+			workspacePath: '/workspaces/run-crashed',
 			createdAt: '2026-08-15T10:00:00Z',
 		});
 		store.transition({
@@ -93,23 +96,34 @@ describe('durable run runtime', () => {
 
 	test('moves a fake execution through work and verification', async () => {
 		const store = new RunStore(':memory:');
+		const observedCwds: string[] = [];
 		const runtime = new RunRuntime({
 			cwd: '/project',
 			store,
 			newId: () => 'run-complete',
 			newSessionId: () => 'session-complete',
 			now: () => '2026-08-15T11:00:00Z',
+			workspace: { prepare: () => '/workspaces/run-complete' },
 			executor: {
-				execute: async ({ emit }) => {
+				execute: async ({ cwd, emit }) => {
+					observedCwds.push(cwd);
 					emit('executor.output', { text: 'done' });
 					return { outcome: 'completed', summary: 'Changed one seam.' };
 				},
 			},
-			verifier: { verify: async () => ({ ok: true }) },
+			verifier: { verify: async ({ cwd }) => {
+				observedCwds.push(cwd);
+				return { ok: true };
+			} },
 		});
 
 		const started = runtime.startRun(' CAM-10 ');
-		expect(started).toMatchObject({ id: 'run-complete', issueId: 'CAM-10', state: 'queued' });
+		expect(started).toMatchObject({
+			id: 'run-complete',
+			issueId: 'CAM-10',
+			workspacePath: '/workspaces/run-complete',
+			state: 'queued',
+		});
 		await waitFor(() => runtime.getRun(started.id)?.state === 'ready-to-ship');
 		expect(runtime.getRun(started.id)).toMatchObject({
 			state: 'ready-to-ship',
@@ -122,6 +136,7 @@ describe('durable run runtime', () => {
 			'run.work-completed',
 			'run.verified',
 		]);
+		expect(observedCwds).toEqual(['/workspaces/run-complete', '/workspaces/run-complete']);
 		await runtime.stop();
 		runtime.close();
 	});
@@ -159,8 +174,24 @@ describe('durable run runtime', () => {
 		runtime.close();
 	});
 
+	test('does not persist a run when workspace preparation fails', () => {
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			workspace: { prepare: () => {
+				throw new Error('cannot prepare workspace');
+			} },
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+
+		expect(() => runtime.startRun('CAM-13')).toThrow('cannot prepare workspace');
+		expect(runtime.listRuns()).toEqual([]);
+		runtime.close();
+	});
+
 	test('resumes an interrupted run with the same provider session', async () => {
-		const calls: Array<{ sessionId: string; resume: boolean }> = [];
+		const calls: Array<{ sessionId: string; resume: boolean; cwd: string }> = [];
 		let firstStarted = (): void => {};
 		const started = new Promise<void>((resolve) => {
 			firstStarted = resolve;
@@ -170,9 +201,10 @@ describe('durable run runtime', () => {
 			store: new RunStore(':memory:'),
 			newId: () => 'run-resume',
 			newSessionId: () => 'session-stable',
+			workspace: { prepare: () => '/workspaces/run-resume' },
 			executor: {
 				execute: (input) => {
-					calls.push({ sessionId: input.sessionId, resume: input.resume });
+					calls.push({ sessionId: input.sessionId, resume: input.resume, cwd: input.cwd });
 					if (input.resume) return Promise.resolve({ outcome: 'completed' });
 					firstStarted();
 					return new Promise((_resolve, reject) => {
@@ -194,8 +226,8 @@ describe('durable run runtime', () => {
 		runtime.resumeRun(run.id);
 		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
 		expect(calls).toEqual([
-			{ sessionId: 'session-stable', resume: false },
-			{ sessionId: 'session-stable', resume: true },
+			{ sessionId: 'session-stable', resume: false, cwd: '/workspaces/run-resume' },
+			{ sessionId: 'session-stable', resume: true, cwd: '/workspaces/run-resume' },
 		]);
 		await runtime.stop();
 		runtime.close();
