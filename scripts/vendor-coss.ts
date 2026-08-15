@@ -1,4 +1,14 @@
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from 'node:fs';
 import { dirname, extname, relative, resolve, sep } from 'node:path';
 
 const ALLOWED_NPM_PACKAGES = [
@@ -59,6 +69,14 @@ function listSourceFiles(dir: string): string[] {
 		}
 	}
 	return files;
+}
+
+function listRequiredSourceFiles(root: string): string[] {
+	const sourceFiles = listSourceFiles(root);
+	if (sourceFiles.length === 0) {
+		throw new Error(`COSS vendor verification found no source files: ${root}`);
+	}
+	return sourceFiles;
 }
 
 function isRelativeSpecifier(specifier: string): boolean {
@@ -124,9 +142,10 @@ export function verify(dir: string): void {
 	if (!statSync(root).isDirectory()) {
 		throw new Error(`COSS vendor verification root is not a directory: ${root}`);
 	}
+	const sourceFiles = listRequiredSourceFiles(root);
 
 	const violations: VendorImportViolation[] = [];
-	for (const file of listSourceFiles(root)) {
+	for (const file of sourceFiles) {
 		const source = readFileSync(file, 'utf8');
 		for (const imported of scanAllImports(source)) {
 			const specifier = imported.path;
@@ -160,25 +179,45 @@ export function verify(dir: string): void {
 /**
  * Materializes an injected COSS source set into a sibling staging directory,
  * verifies that complete staging tree, and only then promotes it to the final
- * destination with a same-filesystem rename.
+ * destination with same-filesystem renames. If the destination already
+ * exists, moves it aside until staging has been promoted, then removes the
+ * old tree. A failed staging promotion restores the previous destination.
  *
  * Any fetch, write, verification, or promotion failure removes the staging
- * tree and leaves a previously absent destination absent.
+ * tree. Failures before promotion leave the destination unchanged.
  */
 export function vendorCoss({ destination, fetchFiles }: VendorCossOptions): void {
 	const finalDestination = resolve(destination);
+	const files = fetchFiles();
+	if (files.length === 0) {
+		throw new Error('COSS vendor source set is empty');
+	}
 	mkdirSync(dirname(finalDestination), { recursive: true });
 	const stagingDir = mkdtempSync(`${finalDestination}.staging-`);
 
 	try {
-		for (const file of fetchFiles()) {
+		for (const file of files) {
 			const fileDestination = resolveVendorFilePath(stagingDir, file.relPath);
 			mkdirSync(dirname(fileDestination), { recursive: true });
 			writeFileSync(fileDestination, file.content);
 		}
 
 		verify(stagingDir);
-		renameSync(stagingDir, finalDestination);
+		if (!existsSync(finalDestination)) {
+			renameSync(stagingDir, finalDestination);
+			return;
+		}
+
+		const previousDestination = mkdtempSync(`${finalDestination}.previous-`);
+		rmSync(previousDestination, { recursive: true, force: true });
+		renameSync(finalDestination, previousDestination);
+		try {
+			renameSync(stagingDir, finalDestination);
+		} catch (error) {
+			renameSync(previousDestination, finalDestination);
+			throw error;
+		}
+		rmSync(previousDestination, { recursive: true, force: true });
 	} finally {
 		rmSync(stagingDir, { recursive: true, force: true });
 	}
