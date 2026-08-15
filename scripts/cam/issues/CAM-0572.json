@@ -1,11 +1,11 @@
 {
   "id": "CAM-572",
   "title": "Promocao da vendorizacao: swap idempotente e recusa de arvore vazia em vendorCoss",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-15T01:37:39.826Z",
-  "updatedAt": "2026-08-15T01:37:39.826Z",
+  "updatedAt": "2026-08-15T15:54:43.767Z",
   "description": "Dois defeitos do mesmo sitio de conserto, a funcao vendorCoss entregue pela CAM-571 (scripts/vendor-coss.ts:168-183). Ambos medidos em 2026-08-14 contra o codigo ja shipado no v0.291.0.\n\nPrimeiro, a promocao nao e idempotente: ela usa renameSync direto do staging para o destino, entao a segunda execucao sobre destino existente lanca ENOTEMPTY. Medido: run1 OK, run2 THROW ENOTEMPTY, com o destino intacto e sem residuo de staging. O comportamento e fail-closed, o que esta correto, mas torna a re-execucao impossivel.\n\nIsso bloqueia a CAM-565 de forma dura: ela carrega um pino de idempotencia que exige rodar o script de novo no mesmo commit pinado e obter zero diff na arvore de trabalho. Contra esta implementacao esse pino e insatisfazivel POR CONSTRUCAO, que e exatamente a classe de defeito que custou duas escalacoes de plano a essa linhagem em 2026-08-14.\n\nSegundo, do mesmo sitio, a promocao aceita arvore vazia: fetchFiles devolvendo lista vazia produz staging vazio, verify passa vacuamente, e um diretorio vazio e promovido como sucesso. Medido: destino criado, conteudo vazio. E verify sobre raiz vazia sai 0 sozinho. Consequencia: falha de fetch vira vendorizacao bem-sucedida em silencio.\n\nO segundo defeito veio do holding pen, fingerprint 17f8ccc2667e (cam/issue-571 rodada 2), promovido aqui por composicao de sitio em vez de virar issue separada. A entrada do pen pode ser dispensada.",
   "specSource": "derived",
   "derivedFrom": [
