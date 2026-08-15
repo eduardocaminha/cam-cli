@@ -39,7 +39,7 @@
       "id": "US-R1-003",
       "title": "WARNING: Lacuna de casos adversariais: o guard de path traversal de resolveVend…",
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "description": "WARNING [test/vendor-coss-fail-closed.test.ts:16]: Lacuna de casos adversariais: o guard de path traversal de resolveVendorFilePath (scripts/vendor-coss.ts:74-80) tem zero cobertura de teste, apesar de ser a defesa de escrita fora do staging (verifiquei manualmente que funciona: relPath '../../escape.ts' lanca e nada e escrito fora). Faltam tambem relPath vazio, verify() sobre raiz inexistente/nao-diretorio e o caso require() do item CRITICAL. A suite atual cobre so happy path + fonte envenenada.",
       "notes": "WARNING [test/vendor-coss-fail-closed.test.ts:16]: Lacuna de casos adversariais: o guard de path traversal de resolveVendorFilePath (scripts/vendor-coss.ts:74-80) tem zero cobertura de teste, apesar de ser a defesa de escrita fora do staging (verifiquei manualmente que funciona: relPath '../../escape.ts' lanca e nada e escrito fora). Faltam tambem relPath vazio, verify() sobre raiz inexistente/nao-diretorio e o caso require() do item CRITICAL. A suite atual cobre so happy path + fonte envenenada."
     },
