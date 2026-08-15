@@ -1,11 +1,11 @@
 {
   "id": "CAM-576",
   "title": "gship runtime: worktree isolado e persistido por run",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-15T22:40:07.718Z",
-  "updatedAt": "2026-08-15T22:40:07.718Z",
+  "updatedAt": "2026-08-15T22:53:56.387Z",
   "description": "Remove a exigência de abrir gship web dentro de uma branch de trabalho já preparada. Cada run ganha um worktree e uma branch próprios a partir de main, enquanto o checkout que hospeda a UI permanece intocado.",
   "specSource": "derived",
   "derivedFrom": [
