@@ -1,11 +1,11 @@
 {
   "id": "CAM-577",
   "title": "gship runtime: revisão independente read-only com uma correção",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-15T22:57:19.688Z",
-  "updatedAt": "2026-08-15T22:57:19.688Z",
+  "updatedAt": "2026-08-15T23:49:59.938Z",
   "description": "Depois dos oráculos, o runtime web ainda declara ready-to-ship sem uma revisão independente do diff. Esta fatia adiciona um reviewer headless separado, realmente read-only, com no máximo uma correção automática antes de devolver a decisão ao operador.",
   "specSource": "operator",
   "spec": {
