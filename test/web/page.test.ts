@@ -6,7 +6,6 @@
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
-import { DEFAULT_POLL_INTERVAL_MS } from '../../src/commands/dashboard.ts';
 import { startWebServer } from '../../src/commands/web.ts';
 
 const REPO_ROOT = join(import.meta.dir, '..', '..');
@@ -23,7 +22,14 @@ describe('GET /', () => {
 			expect(response.status).toBe(200);
 			expect(response.headers.get('content-type')).toContain('text/html');
 			expect(html).toContain('/api/snapshot');
-			expect(html).toContain(String(DEFAULT_POLL_INTERVAL_MS));
+			expect(html).toContain('/api/runs');
+			expect(html).toContain('/api/events');
+			expect(html).toContain('Iniciar run');
+			expect(html).toContain('run-issue');
+			expect(html).toContain('Retomar run');
+			expect(html).toContain('Cancelar run');
+			expect(html).toContain('new EventSource(EVENTS_PATH)');
+			expect(html).not.toContain('setInterval');
 			expect(html).toContain(ACTIVE_CYCLE_BRANCH_MARKER);
 			expect(html).toContain(IDLE_BRANCH_MARKER);
 			expect(ACTIVE_CYCLE_BRANCH_MARKER).not.toBe(IDLE_BRANCH_MARKER);
