@@ -85,3 +85,6 @@ gate-results.json
 
 # Repo-local scratch root used by test runs (US-001, CAM-508); must never dirty the working tree
 .cam-test-tmp/
+
+# Gateship's local durable runtime database.
+.gship/

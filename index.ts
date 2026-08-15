@@ -138,7 +138,7 @@ const HELP = renderHelp({
 				{ name: 'patterns archive|prune', description: 'archive: move resolved-marked bullets from patterns.md to patterns.archive.md on main. prune: demote/archive stale or unconfirmed scripts/cam/pattern-records.jsonl entries on main' },
 				{ name: 'claude [args...]', description: 'Run claude in print mode with auto-retry on rate limits' },
 				{ name: 'dashboard', description: 'Standalone read-only TUI (alt-screen) for monitoring a loop' },
-				{ name: 'web [--port N]', description: 'Serve the read-only web surface on localhost (default port 7777)' },
+				{ name: 'web [--port N]', description: 'Serve the local web control surface (default port 7777)' },
 				{ name: 'status', description: 'Show current loop state at a glance (idle / active / paused)' },
 				{ name: 'stats tokens|cycles', description: 'Print per-issue token spend (orch/worker/total) or per-cycle worker/review-round counts from the event log' },
 				{ name: 'stop', description: 'Cancel a running loop (clears state file + kills the per-project tmux session)' },
@@ -828,7 +828,7 @@ const DASHBOARD_HELP = renderHelp({
 
 const WEB_HELP = renderHelp({
 	title: 'gship web',
-	tagline: 'Serve the read-only web surface on localhost',
+	tagline: 'Serve the local web control surface',
 	usage: 'gship web [--port N]',
 	sections: [
 		{
@@ -838,7 +838,8 @@ const WEB_HELP = renderHelp({
 			],
 		},
 	],
-	footer: 'Binds only to 127.0.0.1 and never opens a browser automatically.',
+	footer:
+		'Binds only to 127.0.0.1 and never opens a browser automatically. Runs persist in .gship/runtime.sqlite.',
 });
 
 const STOP_HELP = renderHelp({

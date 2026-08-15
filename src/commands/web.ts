@@ -1,22 +1,28 @@
 // src/commands/web.ts
 //
-// Localhost-only HTTP process for the read-only web surface. Routing stays in
-// Bun.serve's native `routes` table so handlers can grow without introducing a
-// second router or a manual pathname switch.
+// Localhost-only HTTP process for the web control surface. Snapshot reads stay
+// read-only; explicit command routes delegate to the durable local runtime.
+// Routing stays in Bun.serve's native `routes` table.
 
-import process from 'node:process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-
-import { printError } from '../logging/color.ts';
+import process from 'node:process';
 import { readBacklogFromMain } from '../issues/backlog.ts';
-import { deriveBacklogJson, type BacklogJsonView } from '../issues/list.ts';
+import { type BacklogJsonView, deriveBacklogJson } from '../issues/list.ts';
+import { printError } from '../logging/color.ts';
+import { ClaudeCliExecutor } from '../runtime/claude-cli-executor.ts';
+import { createGitRuntimePreflight, GitWorkingTreeVerifier, RuntimePreflightError } from '../runtime/git-runtime.ts';
+import {
+	RunRuntime,
+	RuntimeConflictError,
+	RuntimeUnavailableError,
+} from '../runtime/run-runtime.ts';
+import { type RunEvent, RunStore } from '../runtime/run-store.ts';
 import type { CycleMetricsRow } from '../stats/cycles.ts';
 import {
-	DEFAULT_POLL_INTERVAL_MS,
-	readSnapshot,
-	RECENT_ENTRIES_COUNT,
 	type EventLogReader,
+	RECENT_ENTRIES_COUNT,
+	readSnapshot,
 } from './dashboard.ts';
 import { resolvePrdPath } from './status.ts';
 
@@ -32,11 +38,37 @@ const WEB_PAGE_HTML = `<!doctype html>
 </head>
 <body>
 	<h1>Gateship web</h1>
+	<label for="run-issue">Issue</label>
+	<select id="run-issue"><option value="">Selecione uma issue</option></select>
+	<button id="start-run" type="button" disabled>Iniciar run</button>
+	<button id="resume-run" type="button" disabled>Retomar run</button>
+	<button id="cancel-run" type="button" disabled>Cancelar run</button>
+	<output id="command-status" aria-live="polite"></output>
+	<pre id="runs" aria-live="polite">Loading runs...</pre>
 	<pre id="snapshot" aria-live="polite">Loading snapshot...</pre>
 	<script>
 		const SNAPSHOT_PATH = '/api/snapshot';
-		const POLL_INTERVAL_MS = ${DEFAULT_POLL_INTERVAL_MS};
+		const RUNS_PATH = '/api/runs';
+		const EVENTS_PATH = '/api/events';
 		const output = document.getElementById('snapshot');
+		const runsOutput = document.getElementById('runs');
+		const resumeButton = document.getElementById('resume-run');
+		const cancelButton = document.getElementById('cancel-run');
+		const planSelect = document.getElementById('run-issue');
+		const planButton = document.getElementById('start-run');
+		const commandStatus = document.getElementById('command-status');
+		let currentRun = null;
+
+		function renderPlanIssues(snapshot) {
+			const selected = planSelect.value;
+			const issues = snapshot.idleState?.backlog?.plannable ?? [];
+			planSelect.replaceChildren(new Option('Selecione uma issue', ''));
+			for (const issue of issues) {
+				planSelect.add(new Option(issue.id + ' — ' + issue.title, issue.id));
+			}
+			if (issues.some((issue) => issue.id === selected)) planSelect.value = selected;
+			planButton.disabled = planSelect.value === '';
+		}
 
 		function renderSnapshot(snapshot) {
 			if (snapshot.idle === true) {
@@ -44,6 +76,7 @@ const WEB_PAGE_HTML = `<!doctype html>
 			} else {
 				output.dataset.payloadBranch = 'active-cycle-payload';
 			}
+			renderPlanIssues(snapshot);
 			output.textContent = JSON.stringify(snapshot, null, 2);
 		}
 
@@ -57,8 +90,58 @@ const WEB_PAGE_HTML = `<!doctype html>
 			}
 		}
 
+		async function refreshRuns() {
+			try {
+				const response = await fetch(RUNS_PATH);
+				if (!response.ok) throw new Error('Runs request failed: ' + response.status);
+				const payload = await response.json();
+				currentRun = payload.runs[0] ?? null;
+				runsOutput.textContent = JSON.stringify(payload, null, 2);
+				const state = currentRun?.state;
+				resumeButton.disabled = state !== 'interrupted' && state !== 'waiting-user';
+				cancelButton.disabled = !['queued', 'working', 'verify', 'review', 'ready-to-ship'].includes(state);
+				planButton.disabled = planSelect.value === '' || (state !== undefined && state !== 'done' && state !== 'failed');
+			} catch (error) {
+				runsOutput.textContent = String(error);
+			}
+		}
+
+		async function startRun() {
+			if (planSelect.value === '') return;
+			planButton.disabled = true;
+			commandStatus.textContent = 'Iniciando run...';
+			try {
+				const response = await fetch(RUNS_PATH, {
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({ issueId: planSelect.value }),
+				});
+				const result = await response.json();
+				commandStatus.textContent = response.ok ? 'Run iniciada.' : result.message;
+				await refreshRuns();
+			} catch (error) {
+				commandStatus.textContent = String(error);
+			}
+		}
+
+		async function runCommand(action) {
+			if (currentRun === null) return;
+			resumeButton.disabled = true;
+			cancelButton.disabled = true;
+			const response = await fetch(RUNS_PATH + '/' + currentRun.id + '/' + action, { method: 'POST' });
+			const result = await response.json();
+			commandStatus.textContent = response.ok ? 'Run atualizada.' : result.message;
+			await refreshRuns();
+		}
+
+		planSelect.addEventListener('change', () => { planButton.disabled = planSelect.value === ''; });
+		planButton.addEventListener('click', startRun);
+		resumeButton.addEventListener('click', () => runCommand('resume'));
+		cancelButton.addEventListener('click', () => runCommand('cancel'));
+		const events = new EventSource(EVENTS_PATH);
+		events.addEventListener('run-event', () => { void refreshRuns(); });
 		void pollSnapshot();
-		setInterval(pollSnapshot, POLL_INTERVAL_MS);
+		void refreshRuns();
 	</script>
 </body>
 </html>
@@ -70,6 +153,8 @@ export interface WebServerOptions {
 	claudeDir?: string;
 	/** Test seam for measuring only worker-event bytes read by the real route. */
 	eventLogReader?: EventLogReader;
+	/** Injectable durable run runtime. Production defaults to .gship/runtime.sqlite. */
+	runRuntime?: RunRuntime;
 }
 
 export interface WebServerHandle {
@@ -81,6 +166,160 @@ export interface WebServerHandle {
 export interface IdleSnapshotState {
 	recentCycles: CycleMetricsRow[];
 	backlog: BacklogJsonView;
+}
+
+function parseEventCursor(request: Request): number {
+	const raw = request.headers.get('last-event-id') ?? new URL(request.url).searchParams.get('after');
+	if (raw === null || raw.trim().length === 0) return 0;
+	const value = Number(raw);
+	return Number.isSafeInteger(value) && value >= 0 ? value : 0;
+}
+
+function encodeServerEvent(event: RunEvent): Uint8Array {
+	const body = `id: ${event.seq}\nevent: run-event\ndata: ${JSON.stringify(event)}\n\n`;
+	return new TextEncoder().encode(body);
+}
+
+/** Stream persisted transitions first, then live events without a polling loop. */
+export function createRunEventStream(runtime: RunRuntime, request: Request): Response {
+	const initial = runtime.listEvents(parseEventCursor(request));
+	let unsubscribe = (): void => {};
+	const stream = new ReadableStream<Uint8Array>({
+		start(controller) {
+			let lastSeq = parseEventCursor(request);
+			for (const event of initial) {
+				controller.enqueue(encodeServerEvent(event));
+				lastSeq = event.seq;
+			}
+			unsubscribe = runtime.subscribe((event) => {
+				if (event.seq <= lastSeq) return;
+				lastSeq = event.seq;
+				controller.enqueue(encodeServerEvent(event));
+			});
+		},
+		cancel() {
+			unsubscribe();
+		},
+	});
+	return new Response(stream, {
+		headers: {
+			'cache-control': 'no-cache',
+			'content-type': 'text/event-stream; charset=utf-8',
+		},
+	});
+}
+
+function forbiddenOriginResponse(): Response {
+	return Response.json(
+		{ ok: false, code: 'forbidden-origin', message: 'Untrusted command origin.' },
+		{ status: 403 },
+	);
+}
+
+async function readIssueId(request: Request): Promise<string | Response> {
+	let body: unknown;
+	try {
+		body = await request.json();
+	} catch {
+		return Response.json(
+			{ ok: false, code: 'invalid-request', message: 'A JSON issueId is required.' },
+			{ status: 400 },
+		);
+	}
+	const issueId = body !== null && typeof body === 'object'
+		? (body as { issueId?: unknown }).issueId
+		: undefined;
+	if (typeof issueId !== 'string' || issueId.trim().length === 0) {
+		return Response.json(
+			{ ok: false, code: 'invalid-request', message: 'A JSON issueId is required.' },
+			{ status: 400 },
+		);
+	}
+	return issueId.trim();
+}
+
+async function startDurableRun(request: Request, runtime: RunRuntime): Promise<Response> {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	const issueId = await readIssueId(request);
+	if (issueId instanceof Response) return issueId;
+	try {
+		return Response.json({ ok: true, run: runtime.startRun(issueId) }, { status: 202 });
+	} catch (error) {
+		const unavailable = error instanceof RuntimeUnavailableError;
+		const rejected = error instanceof RuntimePreflightError || error instanceof RuntimeConflictError;
+		if (!unavailable && !rejected) throw error;
+		return Response.json(
+			{
+				ok: false,
+				code: unavailable ? 'runtime-unavailable' : 'run-preflight-failed',
+				message: error.message,
+			},
+			{ status: unavailable ? 503 : 409 },
+		);
+	}
+}
+
+async function cancelDurableRun(
+	request: Request,
+	runtime: RunRuntime,
+	runId: string,
+): Promise<Response> {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	const run = await runtime.cancelRun(runId);
+	if (run === null) {
+		return Response.json(
+			{ ok: false, code: 'run-not-found', message: 'Run not found.' },
+			{ status: 404 },
+		);
+	}
+	return Response.json({ ok: true, run });
+}
+
+async function resumeDurableRun(
+	request: Request,
+	runtime: RunRuntime,
+	runId: string,
+): Promise<Response> {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	if (runtime.getRun(runId) === null) {
+		return Response.json(
+			{ ok: false, code: 'run-not-found', message: 'Run not found.' },
+			{ status: 404 },
+		);
+	}
+	try {
+		return Response.json({ ok: true, run: runtime.resumeRun(runId) }, { status: 202 });
+	} catch (error) {
+		const unavailable = error instanceof RuntimeUnavailableError;
+		return Response.json(
+			{
+				ok: false,
+				code: unavailable ? 'runtime-unavailable' : 'run-not-resumable',
+				message: error instanceof Error ? error.message : String(error),
+			},
+			{ status: unavailable ? 503 : 409 },
+		);
+	}
+}
+
+/** Reject cross-origin browser writes to the localhost control endpoint. */
+export function isTrustedCommandOrigin(request: Request): boolean {
+	const rawOrigin = request.headers.get('origin');
+	if (rawOrigin === null) return false;
+	try {
+		const origin = new URL(rawOrigin);
+		const target = new URL(request.url);
+		const isLocal = (hostname: string) => hostname === WEB_HOSTNAME || hostname === 'localhost';
+		return (
+			origin.protocol === 'http:' &&
+			target.protocol === 'http:' &&
+			isLocal(origin.hostname) &&
+			isLocal(target.hostname) &&
+			origin.port === target.port
+		);
+	} catch {
+		return false;
+	}
 }
 
 /**
@@ -158,6 +397,14 @@ function readIdleSnapshotState(cwd: string): IdleSnapshotState {
 
 /** Start the localhost-only web server. Port 0 is supported for test callers. */
 export function startWebServer(options: WebServerOptions): WebServerHandle {
+	const ownsRunRuntime = options.runRuntime === undefined;
+	const runRuntime = options.runRuntime ?? new RunRuntime({
+		cwd: options.cwd,
+		store: new RunStore(join(options.cwd, '.gship', 'runtime.sqlite')),
+		executor: new ClaudeCliExecutor(),
+		verifier: new GitWorkingTreeVerifier(),
+		preflight: createGitRuntimePreflight(options.cwd),
+	});
 	const server = Bun.serve({
 		hostname: WEB_HOSTNAME,
 		port: options.port,
@@ -183,6 +430,17 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				}
 				return Response.json(payload);
 			},
+			'/api/runs': {
+				GET: () => Response.json({ runs: runRuntime.listRuns() }),
+				POST: (request) => startDurableRun(request, runRuntime),
+			},
+			'/api/runs/:runId/cancel': {
+				POST: (request) => cancelDurableRun(request, runRuntime, request.params.runId),
+			},
+			'/api/runs/:runId/resume': {
+				POST: (request) => resumeDurableRun(request, runRuntime, request.params.runId),
+			},
+			'/api/events': (request) => createRunEventStream(runRuntime, request),
 		},
 	});
 
@@ -192,10 +450,17 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		throw new Error('Bun.serve did not report its resolved TCP address');
 	}
 
+	let stopped = false;
 	return {
 		hostname,
 		port,
-		stop: () => server.stop(),
+		stop: async () => {
+			if (stopped) return;
+			stopped = true;
+			await runRuntime.stop();
+			await server.stop(true);
+			if (ownsRunRuntime) runRuntime.close();
+		},
 	};
 }
 
