@@ -1,0 +1,45 @@
+{
+  "id": "CAM-573",
+  "title": "cam web control plane: sidecar process-owned e comandos plan/resume sem tmux",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-15T21:18:46.033Z",
+  "updatedAt": "2026-08-15T21:18:46.033Z",
+  "description": "Fatia separada da CAM-565, cuja superficie permanece read-only. Esta issue transforma o servidor web local em control plane explicito: comandos same-origin iniciam planejamento ou retomam implementacao, enquanto um sidecar process-owned sustenta o ciclo entre sessoes do browser sem depender de tmux, pane ou send-keys. Depende da CAM-555 para o contrato dos atores planner, auditor, implementer e reviewer por processo; nao substitui nem amplia silenciosamente essa issue.",
+  "specSource": "derived",
+  "derivedFrom": [
+    "CAM-555",
+    "CAM-408"
+  ],
+  "spec": {
+    "scope": "ENTRA: POST same-origin para planejar uma issue exata e retomar uma implementacao pendente; sidecar process-owned duravel e reutilizavel entre sessoes web; marker de ownership que impede mistura com sidecar legado; composicao das maquinas canonicas de plan, supervisor, review e ship sem tmux; cleanup por gship stop; teste vertical sem modelo ou issue real. NAO ENTRA: cliente COSS e paridade visual da CAM-565; delecao do fallback tmux da CAM-545; headless em container da CAM-544; deploy remoto, autenticacao multiusuario ou exposicao fora de 127.0.0.1.",
+    "acceptanceCriteria": [
+      "O ciclo canonico plan -> implement -> review -> ship roda por processo com planner, auditor, implementer e reviewer observados, e qualquer acesso a tmux no teste causa falha. [oracle: named-command bun test test/supervisor/process-cycle.test.ts]",
+      "Os comandos HTTP aceitam somente POST de origem local equivalente, planejam o issueId exato e retomam somente quando existe story implementavel pendente; origem ausente ou cruzada e recusada antes da delegacao. [oracle: named-command bun test test/web/runtime.test.ts test/web/page.test.ts]",
+      "O sidecar process-owned sobrevive ao fechamento do host web, pode ser reutilizado por uma sessao posterior e recusa misturar-se com sidecar vivo sem ownership process. [oracle: named-command bun test test/web/runtime.test.ts]",
+      "No lifecycle process-owned, planning, review, merge-watch, gates, auto-chain e notificacoes nao executam tmux; o lifecycle legado continua sendo o default e preserva seu comportamento. [oracle: named-command bun test test/supervisor/process-cycle.test.ts test/supervisor/plan/plan-sidecar-replan-wiring.test.ts test/supervisor/plan-split-advisory.test.ts]",
+      "gship stop encerra o sidecar pelo PID e remove o marker de ownership de forma idempotente; o marker e ignorado tanto no repositorio raiz quanto no template instalado. [oracle: named-command bun test test/stop-markers.test.ts test/integration/stop-sidecar-real.test.ts test/templates-gitignore-runtime-artifacts.test.ts]",
+      "A superficie web responde em localhost e o pacote completo preserva typecheck, lint, file-size, coverage e demais gates da spine. [oracle: named-command bun run check:all]"
+    ],
+    "gotchas": [
+      "CAM-555 ainda governa o contrato de tres sinais e o roteamento dos quatro atores; esta issue consome esse seam, nao o redefine.",
+      "CAM-565 exclui explicitamente qualquer escrita pela superficie web. Os endpoints de controle vivem nesta issue separada para preservar atomicidade.",
+      "Container mais processo permanece fail-closed ate CAM-544; nao criar fallback silencioso para o host.",
+      "Uma instancia local ja ocupando 127.0.0.1:7777 faz o teste de bind default falhar por ambiente; nao enfraquecer o teste nem matar processo do operador."
+    ],
+    "domainTerms": [
+      "process-owned sidecar",
+      "web control plane",
+      "ownership marker",
+      "same-origin command",
+      "inter-session handoff"
+    ]
+  },
+  "wsjf": {
+    "value": 8,
+    "timeCriticality": 7,
+    "riskReduction": 8,
+    "jobSize": 6
+  }
+}
