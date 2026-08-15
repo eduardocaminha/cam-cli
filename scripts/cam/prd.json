@@ -30,7 +30,7 @@
       "id": "US-R1-002",
       "title": "WARNING: The single idempotence test re-runs with the identical file set, so it…",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "description": "WARNING [test/vendor-coss-idempotence.test.ts:25]: The single idempotence test re-runs with the identical file set, so it cannot distinguish swap promotion from a merge/overlay copy: removal of files that existed in the previous tree and are absent from the new source set is the defining property of the swap and is unasserted. Add a second run with a source set that drops one relPath and adds another, asserting the dropped file no longer exists under the destination and the added one does.",
       "notes": "WARNING [test/vendor-coss-idempotence.test.ts:25]: The single idempotence test re-runs with the identical file set, so it cannot distinguish swap promotion from a merge/overlay copy: removal of files that existed in the previous tree and are absent from the new source set is the defining property of the swap and is unasserted. Add a second run with a source set that drops one relPath and adds another, asserting the dropped file no longer exists under the destination and the added one does."
     },
