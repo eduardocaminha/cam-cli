@@ -31,7 +31,7 @@
       "id": "US-R1-002",
       "title": "WARNING: listSourceFiles usa entry.isFile(), que e false para symlink, entao ar…",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "description": "WARNING [scripts/vendor-coss.ts:53]: listSourceFiles usa entry.isFile(), que e false para symlink, entao arquivo de codigo alcancado por symlink nunca e escaneado e verify() passa silenciosamente. Medido: arvore contendo apenas link.ts -> real/leak.ts (com import de @coss/ui) passa sem violacao. vendorCoss nunca escreve symlink, mas o modo --verify <dir> vai rodar sobre arvore real na CAM-565. Tratar symlink como fonte (ou rejeitar) mantem o guard fail-closed.",
       "notes": "WARNING [scripts/vendor-coss.ts:53]: listSourceFiles usa entry.isFile(), que e false para symlink, entao arquivo de codigo alcancado por symlink nunca e escaneado e verify() passa silenciosamente. Medido: arvore contendo apenas link.ts -> real/leak.ts (com import de @coss/ui) passa sem violacao. vendorCoss nunca escreve symlink, mas o modo --verify <dir> vai rodar sobre arvore real na CAM-565. Tratar symlink como fonte (ou rejeitar) mantem o guard fail-closed."
     },
