@@ -1,27 +1,27 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Promocao em swap idempotente em vendorCoss"
+    "id": "US-002",
+    "title": "Recusar arvore vazia na vendorizacao e em verify"
   },
   "branchName": "cam/issue-572",
-  "timestamp": "2026-08-15T14:48:21Z",
+  "timestamp": "2026-08-15T14:58:02Z",
   "createdFiles": [
-    "test/vendor-coss-idempotence.test.ts"
+    "test/vendor-coss-nonvacuous.test.ts"
   ],
   "modifiedFiles": [
     "scripts/vendor-coss.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "vendorCoss now promotes through a unique sibling backup, restores the old destination when staging promotion fails, and removes the backup after success. The idempotence regression test asserts two same-source runs are content-identical and leave only the destination in its parent.",
+  "nextStoryContext": "verify now throws when its recursive source scan is empty, while vendorCoss rejects an empty fetch result before creating staging or the destination. The dedicated regression test also proves the CLI adapter returns non-zero for an empty verification root.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
       "lib": "Node.js node:fs",
-      "channel": "curl",
-      "url": "https://nodejs.org/api/fs.json",
-      "fetchedAt": "2026-08-15T14:48:21Z",
+      "channel": "WebFetch",
+      "url": "https://nodejs.org/api/fs.html",
+      "fetchedAt": "2026-08-15T14:57:47Z",
       "status": "aligned",
-      "summary": "Current existsSync, mkdtempSync, renameSync, and rmSync signatures and synchronous filesystem semantics match the swap implementation."
+      "summary": "Current existsSync and readdirSync return contracts match the filesystem assertions used by the non-vacuous regression tests."
     }
   ]
 }
