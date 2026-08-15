@@ -2,10 +2,10 @@
   "id": "CAM-573",
   "title": "cam web control plane: sidecar process-owned e comandos plan/resume sem tmux",
   "stage": "specified",
-  "status": "open",
+  "status": "abandoned",
   "blockedBy": [],
   "createdAt": "2026-08-15T21:18:46.033Z",
-  "updatedAt": "2026-08-15T21:18:46.033Z",
+  "updatedAt": "2026-08-15T22:23:05.308Z",
   "description": "Fatia separada da CAM-565, cuja superficie permanece read-only. Esta issue transforma o servidor web local em control plane explicito: comandos same-origin iniciam planejamento ou retomam implementacao, enquanto um sidecar process-owned sustenta o ciclo entre sessoes do browser sem depender de tmux, pane ou send-keys. Depende da CAM-555 para o contrato dos atores planner, auditor, implementer e reviewer por processo; nao substitui nem amplia silenciosamente essa issue.",
   "specSource": "derived",
   "derivedFrom": [
