@@ -1,0 +1,148 @@
+// src/runtime/claude-cli-process.ts
+//
+// Child-process plumbing shared by the two headless Claude CLI roles the
+// runtime owns: the implementer executor and the independent reviewer. Both
+// spawn a detached `claude --print` child, feed one stream-json user message
+// on stdin, translate the NDJSON stdout into durable run events, and hand the
+// whole process group to the service on cancellation. Keeping one lifecycle
+// here is what lets the reviewer be a second role instead of a second engine.
+
+import { classifyHeadlessStreamLine } from '../supervisor/headless-stream.ts';
+import { terminateProcessGroup } from './process-group.ts';
+
+const CLAUDE_NESTING_ENV = [
+	'CLAUDECODE',
+	'CLAUDE_CODE_ENTRYPOINT',
+	'CLAUDE_CODE_SESSION_ID',
+	'CLAUDE_CODE_SSE_PORT',
+	'CLAUDE_CODE_EXECPATH',
+	'CLAUDE_AGENT_SDK_VERSION',
+] as const;
+
+export const DEFAULT_TERMINATION_GRACE_MS = 1_000;
+
+type ClaudeChild = Bun.Subprocess<'pipe', 'pipe', 'pipe'>;
+
+export interface ClaudeCliRunInput {
+	argv: string[];
+	cwd: string;
+	env: Record<string, string | undefined>;
+	prompt: string;
+	signal: AbortSignal;
+	emit: (kind: string, payload?: Record<string, unknown>) => void;
+	/** Event namespace, so a reviewer child is distinguishable from the implementer. */
+	eventPrefix: string;
+	terminationGraceMs?: number;
+	onSpawn?: (pid: number) => void;
+}
+
+export function buildClaudeEnv(
+	source: Record<string, string | undefined>,
+): Record<string, string | undefined> {
+	const env = { ...source };
+	for (const key of CLAUDE_NESTING_ENV) delete env[key];
+	delete env.ANTHROPIC_API_KEY;
+	delete env.CLAUDE_CODE_OAUTH_TOKEN;
+	delete env.TMUX;
+	delete env.TMUX_PANE;
+	return env;
+}
+
+function spawnClaude(
+	argv: string[],
+	cwd: string,
+	env: Record<string, string | undefined>,
+): ClaudeChild {
+	return Bun.spawn({
+		cmd: argv,
+		cwd,
+		env,
+		detached: true,
+		stdin: 'pipe',
+		stdout: 'pipe',
+		stderr: 'pipe',
+	});
+}
+
+async function consumeLines(
+	stream: ClaudeChild['stdout'],
+	onLine: (line: string) => void,
+): Promise<void> {
+	const reader = stream.getReader();
+	const decoder = new TextDecoder();
+	let buffer = '';
+	for (;;) {
+		const chunk = await reader.read();
+		if (chunk.done) break;
+		buffer += decoder.decode(chunk.value, { stream: true });
+		let newline = buffer.indexOf('\n');
+		while (newline >= 0) {
+			const line = buffer.slice(0, newline);
+			buffer = buffer.slice(newline + 1);
+			if (line.length > 0) onLine(line);
+			newline = buffer.indexOf('\n');
+		}
+	}
+	buffer += decoder.decode();
+	if (buffer.length > 0) onLine(buffer);
+}
+
+/**
+ * Run one headless Claude CLI turn and return its final result text. Throws on
+ * a non-zero exit, a missing result event, an error result, or cancellation --
+ * and never resolves before the child process group has actually settled.
+ */
+export async function runClaudeCli(input: ClaudeCliRunInput): Promise<string> {
+	const child = spawnClaude(input.argv, input.cwd, input.env);
+	input.onSpawn?.(child.pid);
+
+	const message = JSON.stringify({
+		type: 'user',
+		message: { role: 'user', content: input.prompt },
+	});
+	child.stdin.write(`${message}\n`);
+	child.stdin.end();
+
+	let resultSeen = false;
+	let resultIsError = false;
+	let summary = '';
+	const stdout = consumeLines(child.stdout, (line) => {
+		const event = classifyHeadlessStreamLine(line);
+		if (event.kind === 'system') {
+			input.emit(`${input.eventPrefix}.system`, { subtype: event.subtype ?? 'unknown' });
+		} else if (event.kind === 'assistant') {
+			input.emit(`${input.eventPrefix}.activity`);
+		} else if (event.kind === 'rate_limit_event') {
+			input.emit(`${input.eventPrefix}.rate-limit`);
+		} else if (event.kind === 'result') {
+			resultSeen = true;
+			resultIsError = event.raw.is_error === true;
+			if (typeof event.raw.result === 'string') summary = event.raw.result;
+			input.emit(`${input.eventPrefix}.result`);
+		}
+	});
+	const stderr = new Response(child.stderr).text();
+	let termination: Promise<void> | undefined;
+	const abort = (): void => {
+		termination ??= terminateProcessGroup(
+			child,
+			input.terminationGraceMs ?? DEFAULT_TERMINATION_GRACE_MS,
+		);
+	};
+	input.signal.addEventListener('abort', abort, { once: true });
+	if (input.signal.aborted) abort();
+
+	try {
+		const [exitCode, stderrText] = await Promise.all([child.exited, stderr, stdout]);
+		if (termination !== undefined) await termination;
+		if (input.signal.aborted) throw new DOMException('cancelled', 'AbortError');
+		if (exitCode !== 0) {
+			throw new Error(`Claude CLI exited with ${exitCode}: ${stderrText.trim().slice(-1_000)}`);
+		}
+		if (!resultSeen) throw new Error('Claude CLI exited without a result event.');
+		if (resultIsError) throw new Error(summary || 'Claude CLI returned an error result.');
+		return summary;
+	} finally {
+		input.signal.removeEventListener('abort', abort);
+	}
+}

@@ -1,23 +1,12 @@
 import process from 'node:process';
 
 import { getIssueOnMain } from '../commands/issue-get.ts';
-import { classifyHeadlessStreamLine } from '../supervisor/headless-stream.ts';
+import { buildClaudeEnv, runClaudeCli } from './claude-cli-process.ts';
 import type {
 	RuntimeExecutionInput,
 	RuntimeExecutionResult,
 	RuntimeExecutor,
 } from './run-runtime.ts';
-import { terminateProcessGroup } from './process-group.ts';
-
-const CLAUDE_NESTING_ENV = [
-	'CLAUDECODE',
-	'CLAUDE_CODE_ENTRYPOINT',
-	'CLAUDE_CODE_SESSION_ID',
-	'CLAUDE_CODE_SSE_PORT',
-	'CLAUDE_CODE_EXECPATH',
-	'CLAUDE_AGENT_SDK_VERSION',
-] as const;
-const DEFAULT_TERMINATION_GRACE_MS = 1_000;
 
 export interface ClaudeCliExecutorOptions {
 	command?: string[];
@@ -35,20 +24,6 @@ interface ClaudeInvocation {
 	resume: boolean;
 	permissionMode: string;
 	model?: string;
-}
-
-type ClaudeChild = Bun.Subprocess<'pipe', 'pipe', 'pipe'>;
-
-function buildClaudeEnv(
-	source: Record<string, string | undefined>,
-): Record<string, string | undefined> {
-	const env = { ...source };
-	for (const key of CLAUDE_NESTING_ENV) delete env[key];
-	delete env.ANTHROPIC_API_KEY;
-	delete env.CLAUDE_CODE_OAUTH_TOKEN;
-	delete env.TMUX;
-	delete env.TMUX_PANE;
-	return env;
 }
 
 export function buildClaudeCliArgv(input: ClaudeInvocation): string[] {
@@ -74,7 +49,22 @@ function defaultLoadIssue(cwd: string, issueId: string): string {
 	return issue.content;
 }
 
-function buildWorkPrompt(issueId: string, issue: string, resume: boolean): string {
+function buildWorkPrompt(
+	issueId: string,
+	issue: string,
+	resume: boolean,
+	reviewFeedback: string | undefined,
+): string {
+	// The single automatic fix round carries the reviewer's findings verbatim:
+	// the reviewer is a separate session, so nothing else puts them in context.
+	const reviewSection = reviewFeedback === undefined ? [] : [
+		'',
+		'An independent read-only review of your change reported findings.',
+		'Fix exactly these findings and nothing else; do not widen the change.',
+		'',
+		'Review findings:',
+		reviewFeedback,
+	];
 	return [
 		resume
 			? `Continue the existing Gateship work session for ${issueId}.`
@@ -83,49 +73,11 @@ function buildWorkPrompt(issueId: string, issue: string, resume: boolean): strin
 		'Do not commit, push, merge, ship, or edit issue/runtime control state; the Gateship service owns lifecycle.',
 		'Run focused tests for the changed surface. The service will perform independent verification afterward.',
 		'If a user decision is required, stop editing and explain the exact decision in your final result.',
+		...reviewSection,
 		'',
 		'Issue record:',
 		issue,
 	].join('\n');
-}
-
-function spawnClaude(
-	argv: string[],
-	cwd: string,
-	env: Record<string, string | undefined>,
-): ClaudeChild {
-	return Bun.spawn({
-		cmd: argv,
-		cwd,
-		env,
-		detached: true,
-		stdin: 'pipe',
-		stdout: 'pipe',
-		stderr: 'pipe',
-	});
-}
-
-async function consumeLines(
-	stream: ClaudeChild['stdout'],
-	onLine: (line: string) => void,
-): Promise<void> {
-	const reader = stream.getReader();
-	const decoder = new TextDecoder();
-	let buffer = '';
-	for (;;) {
-		const chunk = await reader.read();
-		if (chunk.done) break;
-		buffer += decoder.decode(chunk.value, { stream: true });
-		let newline = buffer.indexOf('\n');
-		while (newline >= 0) {
-			const line = buffer.slice(0, newline);
-			buffer = buffer.slice(newline + 1);
-			if (line.length > 0) onLine(line);
-			newline = buffer.indexOf('\n');
-		}
-	}
-	buffer += decoder.decode();
-	if (buffer.length > 0) onLine(buffer);
 }
 
 export class ClaudeCliExecutor implements RuntimeExecutor {
@@ -137,7 +89,7 @@ export class ClaudeCliExecutor implements RuntimeExecutor {
 
 	async execute(input: RuntimeExecutionInput): Promise<RuntimeExecutionResult> {
 		const issue = (this.#options.loadIssue ?? defaultLoadIssue)(input.cwd, input.issueId);
-		const prompt = buildWorkPrompt(input.issueId, issue, input.resume);
+		const prompt = buildWorkPrompt(input.issueId, issue, input.resume, input.reviewFeedback);
 		const argv = buildClaudeCliArgv({
 			command: this.#options.command ?? ['claude'],
 			sessionId: input.sessionId,
@@ -145,61 +97,19 @@ export class ClaudeCliExecutor implements RuntimeExecutor {
 			permissionMode: this.#options.permissionMode ?? 'bypassPermissions',
 			...(this.#options.model === undefined ? {} : { model: this.#options.model }),
 		});
-		const child = spawnClaude(
+		const summary = await runClaudeCli({
 			argv,
-			input.cwd,
-			buildClaudeEnv(this.#options.sourceEnv ?? process.env),
-		);
-		this.#options.onSpawn?.(child.pid);
-
-		const message = JSON.stringify({
-			type: 'user',
-			message: { role: 'user', content: prompt },
+			cwd: input.cwd,
+			env: buildClaudeEnv(this.#options.sourceEnv ?? process.env),
+			prompt,
+			signal: input.signal,
+			emit: input.emit,
+			eventPrefix: 'provider',
+			...(this.#options.terminationGraceMs === undefined
+				? {}
+				: { terminationGraceMs: this.#options.terminationGraceMs }),
+			...(this.#options.onSpawn === undefined ? {} : { onSpawn: this.#options.onSpawn }),
 		});
-		child.stdin.write(`${message}\n`);
-		child.stdin.end();
-
-		let resultSeen = false;
-		let resultIsError = false;
-		let summary = '';
-		const stdout = consumeLines(child.stdout, (line) => {
-			const event = classifyHeadlessStreamLine(line);
-			if (event.kind === 'system') {
-				input.emit('provider.system', { subtype: event.subtype ?? 'unknown' });
-			} else if (event.kind === 'assistant') {
-				input.emit('provider.activity');
-			} else if (event.kind === 'rate_limit_event') {
-				input.emit('provider.rate-limit');
-			} else if (event.kind === 'result') {
-				resultSeen = true;
-				resultIsError = event.raw.is_error === true;
-				if (typeof event.raw.result === 'string') summary = event.raw.result;
-				input.emit('provider.result');
-			}
-		});
-		const stderr = new Response(child.stderr).text();
-		let termination: Promise<void> | undefined;
-		const abort = (): void => {
-			termination ??= terminateProcessGroup(
-				child,
-				this.#options.terminationGraceMs ?? DEFAULT_TERMINATION_GRACE_MS,
-			);
-		};
-		input.signal.addEventListener('abort', abort, { once: true });
-		if (input.signal.aborted) abort();
-
-		try {
-			const [exitCode, stderrText] = await Promise.all([child.exited, stderr, stdout]);
-			if (termination !== undefined) await termination;
-			if (input.signal.aborted) throw new DOMException('cancelled', 'AbortError');
-			if (exitCode !== 0) {
-				throw new Error(`Claude CLI exited with ${exitCode}: ${stderrText.trim().slice(-1_000)}`);
-			}
-			if (!resultSeen) throw new Error('Claude CLI exited without a result event.');
-			if (resultIsError) throw new Error(summary || 'Claude CLI returned an error result.');
-			return { outcome: 'completed', ...(summary.length === 0 ? {} : { summary }) };
-		} finally {
-			input.signal.removeEventListener('abort', abort);
-		}
+		return { outcome: 'completed', ...(summary.length === 0 ? {} : { summary }) };
 	}
 }

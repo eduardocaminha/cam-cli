@@ -11,10 +11,12 @@ import { readBacklogFromMain } from '../issues/backlog.ts';
 import { type BacklogJsonView, deriveBacklogJson } from '../issues/list.ts';
 import { printError } from '../logging/color.ts';
 import { ClaudeCliExecutor } from '../runtime/claude-cli-executor.ts';
+import { ClaudeCliReviewer } from '../runtime/claude-cli-reviewer.ts';
 import { createGitRuntimePreflight, GitIssueVerifier, RuntimePreflightError } from '../runtime/git-runtime.ts';
 import { GitWorkspaceManager, RuntimeWorkspaceError } from '../runtime/git-workspace.ts';
 import {
 	RunRuntime,
+	type RunRuntimeOptions,
 	RuntimeConflictError,
 	RuntimeUnavailableError,
 } from '../runtime/run-runtime.ts';
@@ -398,17 +400,27 @@ function readIdleSnapshotState(cwd: string): IdleSnapshotState {
 	return { recentCycles: readRecentCycles(cwd), backlog };
 }
 
+/**
+ * Production composition of the durable runtime: the real implementer, the
+ * real oracle verifier and the real independent reviewer over one sqlite store.
+ */
+export function createDefaultRunRuntimeOptions(cwd: string): RunRuntimeOptions {
+	return {
+		cwd,
+		store: new RunStore(join(cwd, '.gship', 'runtime.sqlite')),
+		executor: new ClaudeCliExecutor(),
+		verifier: new GitIssueVerifier(),
+		reviewer: new ClaudeCliReviewer(),
+		preflight: createGitRuntimePreflight(cwd),
+		workspace: new GitWorkspaceManager(cwd),
+	};
+}
+
 /** Start the localhost-only web server. Port 0 is supported for test callers. */
 export function startWebServer(options: WebServerOptions): WebServerHandle {
 	const ownsRunRuntime = options.runRuntime === undefined;
-	const runRuntime = options.runRuntime ?? new RunRuntime({
-		cwd: options.cwd,
-		store: new RunStore(join(options.cwd, '.gship', 'runtime.sqlite')),
-		executor: new ClaudeCliExecutor(),
-		verifier: new GitIssueVerifier(),
-		preflight: createGitRuntimePreflight(options.cwd),
-		workspace: new GitWorkspaceManager(options.cwd),
-	});
+	const runRuntime = options.runRuntime
+		?? new RunRuntime(createDefaultRunRuntimeOptions(options.cwd));
 	const server = Bun.serve({
 		hostname: WEB_HOSTNAME,
 		port: options.port,
