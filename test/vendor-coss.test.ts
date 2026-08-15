@@ -53,6 +53,17 @@ describe('verify', () => {
 		expect(violationsFrom(root)).toEqual(['@coss/ui', 'totally-unlisted-pkg']);
 	});
 
+	test('rejects an unknown bare require call in CommonJS source', () => {
+		const root = createTestTmpdir('cam-vendor-coss-require-');
+		writeSource(root, 'leak.cjs', 'const m = require("@coss/ui");\nmodule.exports = m;\n');
+		const messages: string[] = [];
+
+		expect(runCli(['--verify', root], (message) => messages.push(message))).toBe(1);
+		expect(messages).toEqual([
+			'leak.cjs: import "@coss/ui" specifier is not in the explicit npm allowlist',
+		]);
+	});
+
 	test('matches allowlisted packages only at an exact or slash-delimited subpath boundary', () => {
 		const root = createTestTmpdir('cam-vendor-coss-prefix-');
 		writeSource(root, 'prefix.ts', 'import x from "react-dom";\n');

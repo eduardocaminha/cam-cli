@@ -11,6 +11,7 @@ const ALLOWED_NPM_PACKAGES = [
 
 const SOURCE_EXTENSIONS = new Set(['.cjs', '.cts', '.js', '.jsx', '.mjs', '.mts', '.ts', '.tsx']);
 const transpiler = new Bun.Transpiler({ loader: 'tsx' });
+type ScannedImport = ReturnType<typeof transpiler.scanImports>[number];
 
 export interface VendorImportViolation {
 	file: string;
@@ -85,6 +86,28 @@ function isAllowedNpmSpecifier(specifier: string): boolean {
 	);
 }
 
+function scanAllImports(source: string): ScannedImport[] {
+	// Bun 1.3.13 scan() omits require-call entries that scanImports() returns.
+	// Merge the fast-path findings without duplicating imports reported by both APIs.
+	const imports = [...transpiler.scan(source).imports];
+	const unmatchedPreciseImports = new Map<string, number>();
+	for (const imported of imports) {
+		const key = `${imported.kind}\0${imported.path}`;
+		unmatchedPreciseImports.set(key, (unmatchedPreciseImports.get(key) ?? 0) + 1);
+	}
+
+	for (const imported of transpiler.scanImports(source)) {
+		const key = `${imported.kind}\0${imported.path}`;
+		const unmatchedCount = unmatchedPreciseImports.get(key) ?? 0;
+		if (unmatchedCount > 0) {
+			unmatchedPreciseImports.set(key, unmatchedCount - 1);
+		} else {
+			imports.push(imported);
+		}
+	}
+	return imports;
+}
+
 /**
  * Verifies every literal import in a COSS vendor tree against a fail-closed
  * allowlist. Relative imports must stay within `dir`; bare imports must name
@@ -102,7 +125,7 @@ export function verify(dir: string): void {
 	const violations: VendorImportViolation[] = [];
 	for (const file of listSourceFiles(root)) {
 		const source = readFileSync(file, 'utf8');
-		for (const imported of transpiler.scan(source).imports) {
+		for (const imported of scanAllImports(source)) {
 			const specifier = imported.path;
 			if (isRelativeSpecifier(specifier)) {
 				const resolvedImport = resolve(dirname(file), specifier);
