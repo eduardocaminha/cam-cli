@@ -3,11 +3,17 @@
 // Pure PRD-oracle linter (US-001, CAM-310 PRD).
 //
 // Scans a PRD's acceptanceCriteria oracle shell strings for known-broken
-// oracle idioms, deterministically, without an LLM auditor pass. Four rules:
+// oracle idioms, deterministically, without an LLM auditor pass. Six rules:
 //   - grep-q-plus-list-files: catches the self-nullifying `grep -q` + `-L`/`-l`
 //     idiom documented empirically in patterns.md (CAM-301/CAM-309): combining
 //     the quiet flag with a list-files flag silently negates the intended
 //     absence/presence assertion, regardless of flag order, spacing, or bundling.
+//   - grep-q-plus-invert: catches `grep -q` + `-v` in one invocation, measured
+//     2026-08-15 (from CAM-565) to yield opposite verdicts in the two shells an
+//     oracle can run under: the agent/oracle-evaluator shell's ugrep shim lets
+//     -q short-circuit past -v, while real /usr/bin/grep exits 0 on any
+//     non-matching line. Total prohibition, not a shape heuristic, since each
+//     shape breaks in one of the two shells.
 //   - frozen-comparand: catches an oracle comparing against a literal integer
 //     read off main with no live re-derivation token, enforcing the
 //     derive-don't-freeze rule (patterns.md:903), US-001 CAM-381. Quote-aware
@@ -119,20 +125,35 @@ function collectGrepFlagChars(command: string, grepEnd: number): Set<string> {
 }
 
 /**
- * True when a single grep invocation's flags include BOTH the quiet flag (q)
- * AND a list-files flag (L or l), in any order/spacing/bundling.
+ * True when ANY single grep invocation in `command` carries a flag set
+ * satisfying `predicate`. Walks every `grep` word in the command (so a
+ * pipeline's second grep is checked as independently as its first) and hands
+ * the predicate that invocation's own flag chars, never the union across
+ * invocations: `grep -q X | grep -v Y` combines nothing, since each flag
+ * belongs to a different process.
  */
-function hasConflictingGrepFlags(command: string): boolean {
+function someGrepInvocationFlags(
+	command: string,
+	predicate: (flagChars: Set<string>) => boolean
+): boolean {
 	GREP_WORD_RE.lastIndex = 0;
 	let match: RegExpExecArray | null;
 	while ((match = GREP_WORD_RE.exec(command)) !== null) {
 		const grepEnd = match.index + match[0].length;
-		const flagChars = collectGrepFlagChars(command, grepEnd);
-		if (flagChars.has('q') && (flagChars.has('L') || flagChars.has('l'))) {
-			return true;
-		}
+		if (predicate(collectGrepFlagChars(command, grepEnd))) return true;
 	}
 	return false;
+}
+
+/**
+ * True when a single grep invocation's flags include BOTH the quiet flag (q)
+ * AND a list-files flag (L or l), in any order/spacing/bundling.
+ */
+function hasConflictingGrepFlags(command: string): boolean {
+	return someGrepInvocationFlags(
+		command,
+		(flagChars) => flagChars.has('q') && (flagChars.has('L') || flagChars.has('l'))
+	);
 }
 
 /**
@@ -152,6 +173,65 @@ const GREP_Q_LIST_FILES_RULE: OracleLintRule = {
 				"-q silently nullifies -L/-l's inversion so the exit code mirrors plain " +
 				"match-found, not absence-of-match -- use '! grep -q PATTERN file' to " +
 				"assert absence, or plain 'grep -q PATTERN file' to assert presence",
+		};
+	},
+};
+
+// ---------------------------------------------------------------------------
+// grep-q-plus-invert rule
+// ---------------------------------------------------------------------------
+
+/**
+ * True when a single grep invocation's flags include BOTH the quiet flag (q)
+ * AND the invert-match flag (v), in any order/spacing/bundling.
+ */
+function hasQuietPlusInvertFlags(command: string): boolean {
+	return someGrepInvocationFlags(command, (flagChars) => flagChars.has('q') && flagChars.has('v'));
+}
+
+/**
+ * The grep-q-plus-invert rule (direct lane, 2026-08-15, from CAM-565): flags a
+ * grep invocation combining -q with -v. The prohibition is total rather than
+ * shape-conditional, because the combination is unreliable in at least one of
+ * the two shells an oracle can run under, under every shape:
+ *
+ *   - The agent/oracle-evaluator shell's `grep` is not the binary. It is a
+ *     shell function that re-execs `claude` with `ARGV0=ugrep` (ugrep 7.5.0);
+ *     being a function, it does not survive `bash -c` / `zsh -c` / `bash
+ *     script.sh`, which fall through to /usr/bin/grep. Under ugrep, -q
+ *     short-circuits on the first PATTERN match and ignores -v (its own --help
+ *     describes -q as "Only search a file until a match has been found"), so
+ *     `grep -qv X` means "X matched nothing" rather than "some line does not
+ *     match X". Measured: `! jq -r '.files[]' MANIFEST | grep -qv '^apps/ui/'`
+ *     exits 0 under ugrep both for a clean manifest and for a leaked one, i.e.
+ *     the clause passes on exactly the leak it exists to catch. Because the
+ *     oracle sweep runs in that same shell, a red-plus-green sweep cannot
+ *     detect it.
+ *   - The dual form breaks in the opposite shell: with no `!` in front and the
+ *     PATTERN being the leak itself (e.g. `grep -qv 'events.ts'`), real grep
+ *     exits 0 whenever ANY line fails to match, so it passes almost always
+ *     (CAM-156, journal.archive.md:1856).
+ *
+ * Assert absence with `! grep -q PATTERN file`, assert presence with
+ * `grep -q PATTERN file`, or move a containment check into the tool that owns
+ * the data (e.g. a jq `select(... | not) | length == 0` clause).
+ */
+const GREP_Q_PLUS_INVERT_RULE: OracleLintRule = {
+	name: 'grep-q-plus-invert',
+	test(command: string): RuleFinding | null {
+		if (!hasQuietPlusInvertFlags(command)) return null;
+		return {
+			reason:
+				'grep invocation combines the quiet flag -q with the invert-match flag -v ' +
+				'(any order/spacing/bundling: -qv, -vq, -q -v, -v -q all match) -- the two ' +
+				'shells an oracle can run under disagree about what that means, so the ' +
+				'clause is unreliable under every shape: the agent/oracle-evaluator shell ' +
+				'fronts grep with a ugrep shim whose -q short-circuits on the first pattern ' +
+				'match and ignores -v (so a containment check passes on the very leak it ' +
+				'exists to catch), while real /usr/bin/grep exits 0 whenever ANY line fails ' +
+				'to match (so an un-negated form passes almost always); assert absence with ' +
+				"'! grep -q PATTERN file', presence with 'grep -q PATTERN file', or run the " +
+				'containment check inside the tool that owns the data (e.g. jq)',
 		};
 	},
 };
@@ -680,6 +760,7 @@ const SELF_CONTAMINATING_SEARCH_RULE: OracleLintRule = {
  */
 export const RULES: OracleLintRule[] = [
 	GREP_Q_LIST_FILES_RULE,
+	GREP_Q_PLUS_INVERT_RULE,
 	FROZEN_COMPARAND_RULE,
 	ROTATING_ARTIFACT_RULE,
 	ZERO_MATCH_VACUOUS_RULE,
