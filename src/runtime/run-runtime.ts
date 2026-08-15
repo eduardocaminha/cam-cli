@@ -16,6 +16,12 @@ export interface RuntimeExecutionInput {
 	cwd: string;
 	signal: AbortSignal;
 	emit: (kind: string, payload?: Record<string, unknown>) => void;
+	/**
+	 * Findings from the independent review, present only on the single
+	 * automatic fix round. The reviewer runs in its own session, so this is the
+	 * only channel that puts its verdict in front of the executor.
+	 */
+	reviewFeedback?: string;
 }
 
 export type RuntimeExecutionResult =
@@ -35,11 +41,21 @@ export interface RuntimeVerifier {
 	verify: (input: RuntimeExecutionInput) => Promise<RuntimeVerificationResult>;
 }
 
+/** Verdict of one independent review of the change produced by a run. */
+export type RuntimeReviewResult =
+	| { verdict: 'clean' }
+	| { verdict: 'findings'; detail: string };
+
+export interface RuntimeReviewer {
+	review: (input: RuntimeExecutionInput) => Promise<RuntimeReviewResult>;
+}
+
 export interface RunRuntimeOptions {
 	cwd: string;
 	store: RunStore;
 	executor?: RuntimeExecutor;
 	verifier?: RuntimeVerifier;
+	reviewer?: RuntimeReviewer;
 	now?: () => string;
 	newId?: () => string;
 	newSessionId?: () => string;
@@ -68,6 +84,12 @@ interface ActiveRun {
 	promise: Promise<void>;
 }
 
+/** One implementation attempt: the first pass, or the single review fix. */
+interface RunAttempt {
+	resume: boolean;
+	reviewFeedback?: string;
+}
+
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
@@ -77,6 +99,7 @@ export class RunRuntime {
 	readonly #store: RunStore;
 	readonly #executor: RuntimeExecutor | undefined;
 	readonly #verifier: RuntimeVerifier | undefined;
+	readonly #reviewer: RuntimeReviewer | undefined;
 	readonly #now: () => string;
 	readonly #newId: () => string;
 	readonly #newSessionId: () => string;
@@ -90,6 +113,7 @@ export class RunRuntime {
 		this.#store = options.store;
 		this.#executor = options.executor;
 		this.#verifier = options.verifier;
+		this.#reviewer = options.reviewer;
 		this.#now = options.now ?? (() => new Date().toISOString());
 		this.#newId = options.newId ?? randomUUID;
 		this.#newSessionId = options.newSessionId ?? randomUUID;
@@ -201,53 +225,19 @@ export class RunRuntime {
 			throw new RuntimeUnavailableError();
 		}
 		this.#transition(run.id, 'working', 'run.started');
-		const executionInput: RuntimeExecutionInput = {
-			runId: run.id,
-			issueId: run.issueId,
-			sessionId: run.sessionId,
-			resume,
-			cwd: run.workspacePath.length === 0 ? this.#cwd : run.workspacePath,
-			signal,
-			emit: (kind, payload) => {
-				const event = this.#store.appendEvent({
-					runId: run.id,
-					kind,
-					createdAt: this.#now(),
-					...(payload === undefined ? {} : { payload }),
-				});
-				this.#publish(event);
-			},
-		};
 
 		try {
-			const execution = await executor.execute(executionInput);
-			if (signal.aborted) {
-				this.#interrupt(run.id);
-				return;
+			// One pass per implementation attempt. A findings verdict starts the
+			// second and last pass; the fix-round ceiling lives in run-state.ts.
+			let attempt: RunAttempt = { resume };
+			for (;;) {
+				const executionInput = this.#executionInput(run, signal, attempt);
+				const verified = await this.#work(executor, verifier, run, signal, executionInput);
+				if (!verified) return;
+				const next = await this.#review(run, signal, executionInput);
+				if (next === null) return;
+				attempt = next;
 			}
-			if (execution?.outcome === 'waiting-user') {
-				this.#transition(run.id, 'waiting-user', 'run.waiting-user', {
-					summary: execution.summary,
-				});
-				return;
-			}
-
-			this.#transition(run.id, 'verify', 'run.work-completed', {
-				summary: execution.summary,
-			});
-			const verification = await verifier.verify(executionInput);
-			if (signal.aborted) {
-				this.#interrupt(run.id);
-				return;
-			}
-			if (verification.ok) {
-				this.#transition(run.id, 'ready-to-ship', 'run.verified');
-				return;
-			}
-			const detail = verification.detail ?? 'Verification failed.';
-			this.#transition(run.id, 'failed', 'run.verification-failed', {
-				error: detail,
-			});
 		} catch (error) {
 			if (signal.aborted) {
 				this.#interrupt(run.id);
@@ -262,6 +252,106 @@ export class RunRuntime {
 		}
 	}
 
+	/**
+	 * One implementation pass plus its verification. Returns true only when the
+	 * change is verified and the run is ready to be reviewed; every other
+	 * outcome has already settled the run.
+	 */
+	async #work(
+		executor: RuntimeExecutor,
+		verifier: RuntimeVerifier,
+		run: RunRecord,
+		signal: AbortSignal,
+		executionInput: RuntimeExecutionInput,
+	): Promise<boolean> {
+		const execution = await executor.execute(executionInput);
+		if (signal.aborted) {
+			this.#interrupt(run.id);
+			return false;
+		}
+		if (execution?.outcome === 'waiting-user') {
+			this.#transition(run.id, 'waiting-user', 'run.waiting-user', {
+				summary: execution.summary,
+			});
+			return false;
+		}
+		this.#transition(run.id, 'verify', 'run.work-completed', { summary: execution.summary });
+		const verification = await verifier.verify(executionInput);
+		if (signal.aborted) {
+			this.#interrupt(run.id);
+			return false;
+		}
+		if (verification.ok) return true;
+		this.#transition(run.id, 'failed', 'run.verification-failed', {
+			error: verification.detail ?? 'Verification failed.',
+		});
+		return false;
+	}
+
+	/**
+	 * One independent review of a verified change. Returns the next attempt when
+	 * findings buy the single automatic fix, or null once the run has settled.
+	 */
+	async #review(
+		run: RunRecord,
+		signal: AbortSignal,
+		executionInput: RuntimeExecutionInput,
+	): Promise<RunAttempt | null> {
+		const reviewer = this.#reviewer;
+		if (reviewer === undefined) {
+			this.#transition(run.id, 'ready-to-ship', 'run.verified');
+			return null;
+		}
+		this.#transition(run.id, 'review', 'run.review-started');
+		const review = await reviewer.review(executionInput);
+		if (signal.aborted) {
+			this.#interrupt(run.id);
+			return null;
+		}
+		if (review.verdict === 'clean') {
+			this.#transition(run.id, 'ready-to-ship', 'run.review-clean');
+			return null;
+		}
+		if ((this.#store.getRun(run.id)?.fixRounds ?? 0) >= 1) {
+			this.#transition(run.id, 'waiting-user', 'run.review-fix-limit', {
+				summary: review.detail,
+				payload: { findings: review.detail },
+			});
+			return null;
+		}
+		this.#transition(run.id, 'working', 'run.review-fix-requested', {
+			payload: { findings: review.detail },
+		});
+		return { resume: true, reviewFeedback: review.detail };
+	}
+
+	#executionInput(
+		run: RunRecord,
+		signal: AbortSignal,
+		attempt: RunAttempt,
+	): RuntimeExecutionInput {
+		return {
+			runId: run.id,
+			issueId: run.issueId,
+			sessionId: run.sessionId,
+			resume: attempt.resume,
+			cwd: run.workspacePath.length === 0 ? this.#cwd : run.workspacePath,
+			signal,
+			emit: (kind, payload) => {
+				const event = this.#store.appendEvent({
+					runId: run.id,
+					kind,
+					createdAt: this.#now(),
+					...(payload === undefined ? {} : { payload }),
+				});
+				this.#publish(event);
+			},
+			...(attempt.reviewFeedback === undefined
+				? {}
+				: { reviewFeedback: attempt.reviewFeedback }),
+		};
+	}
+
 	#interrupt(runId: string): void {
 		const current = this.#store.getRun(runId);
 		if (current !== null && canTransition(current.state, 'interrupted')) {
@@ -273,7 +363,11 @@ export class RunRuntime {
 		runId: string,
 		toState: RunRecord['state'],
 		kind: string,
-		values: { summary?: string; error?: string } = {},
+		values: {
+			summary?: string;
+			error?: string;
+			payload?: Record<string, unknown>;
+		} = {},
 	): { run: RunRecord; event: RunEvent } {
 		const transitioned = this.#store.transition({
 			runId,
@@ -282,6 +376,7 @@ export class RunRuntime {
 			createdAt: this.#now(),
 			...(values.summary === undefined ? {} : { summary: values.summary }),
 			...(values.error === undefined ? {} : { error: values.error }),
+			...(values.payload === undefined ? {} : { payload: values.payload }),
 		});
 		this.#publish(transitioned.event);
 		return transitioned;

@@ -43,7 +43,7 @@ export class RuntimePreflightError extends Error {
 	}
 }
 
-function defaultRunGit(cwd: string, args: string[]): CommandResult {
+export function defaultRunGit(cwd: string, args: string[]): CommandResult {
 	const result = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8' });
 	return {
 		exitCode: result.status ?? 1,
