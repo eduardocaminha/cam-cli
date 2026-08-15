@@ -1,26 +1,24 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-001",
-    "title": "CRITICAL: Fail-open no guard fail-closed: Bun.Transpiler.scan() nao reporta req…"
+    "id": "US-R1-002",
+    "title": "WARNING: listSourceFiles usa entry.isFile(), que e false para symlink, entao ar…"
   },
   "branchName": "cam/issue-571",
-  "timestamp": "2026-08-15T00:38:10Z",
+  "timestamp": "2026-08-15T00:44:38Z",
   "createdFiles": [],
   "modifiedFiles": [
+    "scripts/cam/patterns.md",
     "scripts/vendor-coss.ts",
     "test/vendor-coss.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "COSS verification now takes a multiset union of Bun.Transpiler.scan().imports and scanImports(), preserving scan() accuracy while adding require-call findings omitted by Bun 1.3.13 without duplicating imports returned by both APIs. The CLI regression test proves a bare require(\"@coss/ui\") in leak.cjs exits nonzero.",
+  "nextStoryContext": "COSS verification now rejects every symbolic-link entry before the isDirectory/isFile branches. This deliberately fail-closed policy avoids silently skipped linked source as well as directory cycles, root escapes, and link-path-relative resolution ambiguity; the CLI regression test uses an external target containing a forbidden @coss/ui import and proves nonzero exit.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
-      "lib": "Bun.Transpiler",
-      "channel": "WebSearch",
-      "url": "https://bun.sh/docs/runtime/transpiler",
-      "fetchedAt": "2026-08-15T00:38:10Z",
-      "status": "corrected",
-      "summary": "Current Bun docs confirm scan() and scanImports() return import path/kind metadata and describe scanImports() as the less-accurate fast path; local Bun 1.3.13 measurement confirmed only scanImports() reports require-call, so the implementation merges both result sets."
+      "lib": "none",
+      "status": "no_external_lib_touched",
+      "summary": "The change uses only the existing Node.js-compatible filesystem Dirent API and touches no external library."
     }
   ]
 }
