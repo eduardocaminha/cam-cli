@@ -1,24 +1,22 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-002",
-    "title": "WARNING: listSourceFiles usa entry.isFile(), que e false para symlink, entao ar…"
+    "id": "US-R1-003",
+    "title": "WARNING: Lacuna de casos adversariais: o guard de path traversal de resolveVend…"
   },
   "branchName": "cam/issue-571",
-  "timestamp": "2026-08-15T00:44:38Z",
+  "timestamp": "2026-08-15T00:55:02Z",
   "createdFiles": [],
   "modifiedFiles": [
-    "scripts/cam/patterns.md",
-    "scripts/vendor-coss.ts",
-    "test/vendor-coss.test.ts"
+    "test/vendor-coss-fail-closed.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "COSS verification now rejects every symbolic-link entry before the isDirectory/isFile branches. This deliberately fail-closed policy avoids silently skipped linked source as well as directory cycles, root escapes, and link-path-relative resolution ambiguity; the CLI regression test uses an external target containing a forbidden @coss/ui import and proves nonzero exit.",
+  "nextStoryContext": "The fail-closed vendor suite now proves that '../../escape.ts' and an empty relPath are rejected with no escaped write, destination, or staging residue, and that verify() rejects missing and non-directory roots. The CommonJS require() regression requested by this finding is already covered in test/vendor-coss.test.ts; no production code changed in this story.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
       "lib": "none",
       "status": "no_external_lib_touched",
-      "summary": "The change uses only the existing Node.js-compatible filesystem Dirent API and touches no external library."
+      "summary": "This test-only story exercises existing filesystem and Bun import-scanning behavior without introducing or changing an external-library integration."
     }
   ]
 }
