@@ -1,4 +1,14 @@
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from 'node:fs';
 import { dirname, extname, relative, resolve, sep } from 'node:path';
 
 const ALLOWED_NPM_PACKAGES = [
@@ -160,10 +170,12 @@ export function verify(dir: string): void {
 /**
  * Materializes an injected COSS source set into a sibling staging directory,
  * verifies that complete staging tree, and only then promotes it to the final
- * destination with a same-filesystem rename.
+ * destination with same-filesystem renames. If the destination already
+ * exists, moves it aside until staging has been promoted, then removes the
+ * old tree. A failed staging promotion restores the previous destination.
  *
  * Any fetch, write, verification, or promotion failure removes the staging
- * tree and leaves a previously absent destination absent.
+ * tree. Failures before promotion leave the destination unchanged.
  */
 export function vendorCoss({ destination, fetchFiles }: VendorCossOptions): void {
 	const finalDestination = resolve(destination);
@@ -178,7 +190,21 @@ export function vendorCoss({ destination, fetchFiles }: VendorCossOptions): void
 		}
 
 		verify(stagingDir);
-		renameSync(stagingDir, finalDestination);
+		if (!existsSync(finalDestination)) {
+			renameSync(stagingDir, finalDestination);
+			return;
+		}
+
+		const previousDestination = mkdtempSync(`${finalDestination}.previous-`);
+		rmSync(previousDestination, { recursive: true, force: true });
+		renameSync(finalDestination, previousDestination);
+		try {
+			renameSync(stagingDir, finalDestination);
+		} catch (error) {
+			renameSync(previousDestination, finalDestination);
+			throw error;
+		}
+		rmSync(previousDestination, { recursive: true, force: true });
 	} finally {
 		rmSync(stagingDir, { recursive: true, force: true });
 	}
