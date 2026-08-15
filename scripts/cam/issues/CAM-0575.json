@@ -1,11 +1,11 @@
 {
   "id": "CAM-575",
   "title": "gship runtime: executar oráculos da issue sem tmux",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-15T22:27:15.652Z",
-  "updatedAt": "2026-08-15T22:27:15.652Z",
+  "updatedAt": "2026-08-15T22:53:53.737Z",
   "description": "A prova real da CAM-574 mostrou que o estado verify hoje valida apenas a integridade e a existência do diff. Esta fatia faz o serviço executar, diretamente como subprocessos, os oráculos runnable já versionados na issue antes de declarar ready-to-ship.",
   "specSource": "derived",
   "derivedFrom": [
