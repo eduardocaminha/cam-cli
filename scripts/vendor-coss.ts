@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, extname, relative, resolve, sep } from 'node:path';
 
 const ALLOWED_NPM_PACKAGES = [
@@ -16,6 +16,16 @@ export interface VendorImportViolation {
 	file: string;
 	specifier: string;
 	reason: string;
+}
+
+export interface VendorSourceFile {
+	relPath: string;
+	content: string | Uint8Array;
+}
+
+export interface VendorCossOptions {
+	destination: string;
+	fetchFiles: () => readonly VendorSourceFile[];
 }
 
 export class VendorVerificationError extends Error {
@@ -59,6 +69,14 @@ function isRelativeSpecifier(specifier: string): boolean {
 function isInsideRoot(root: string, path: string): boolean {
 	const rootPrefix = root.endsWith(sep) ? root : `${root}${sep}`;
 	return path === root || path.startsWith(rootPrefix);
+}
+
+function resolveVendorFilePath(stagingDir: string, relPath: string): string {
+	const destination = resolve(stagingDir, relPath);
+	if (relPath.length === 0 || destination === stagingDir || !isInsideRoot(stagingDir, destination)) {
+		throw new Error(`COSS vendor file path escapes the staging root: ${JSON.stringify(relPath)}`);
+	}
+	return destination;
 }
 
 function isAllowedNpmSpecifier(specifier: string): boolean {
@@ -110,6 +128,33 @@ export function verify(dir: string): void {
 
 	if (violations.length > 0) {
 		throw new VendorVerificationError(root, violations);
+	}
+}
+
+/**
+ * Materializes an injected COSS source set into a sibling staging directory,
+ * verifies that complete staging tree, and only then promotes it to the final
+ * destination with a same-filesystem rename.
+ *
+ * Any fetch, write, verification, or promotion failure removes the staging
+ * tree and leaves a previously absent destination absent.
+ */
+export function vendorCoss({ destination, fetchFiles }: VendorCossOptions): void {
+	const finalDestination = resolve(destination);
+	mkdirSync(dirname(finalDestination), { recursive: true });
+	const stagingDir = mkdtempSync(`${finalDestination}.staging-`);
+
+	try {
+		for (const file of fetchFiles()) {
+			const fileDestination = resolveVendorFilePath(stagingDir, file.relPath);
+			mkdirSync(dirname(fileDestination), { recursive: true });
+			writeFileSync(fileDestination, file.content);
+		}
+
+		verify(stagingDir);
+		renameSync(stagingDir, finalDestination);
+	} finally {
+		rmSync(stagingDir, { recursive: true, force: true });
 	}
 }
 
