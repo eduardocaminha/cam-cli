@@ -1,11 +1,11 @@
 {
   "id": "CAM-574",
   "title": "gship web: runtime local durável com SQLite, SSE e Claude CLI",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-15T22:22:55.363Z",
-  "updatedAt": "2026-08-15T22:22:55.363Z",
+  "updatedAt": "2026-08-15T22:53:50.827Z",
   "description": "Substitui o desenho process-owned da CAM-573 por um único serviço local iniciado por gship web. A UI e a CLI são clientes do mesmo runtime persistente; não há segundo produto, sidecar separado nem composição obrigatória do planner/auditor legado.",
   "specSource": "derived",
   "derivedFrom": [
