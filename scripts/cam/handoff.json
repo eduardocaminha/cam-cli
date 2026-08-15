@@ -1,26 +1,27 @@
 {
   "lastCompletedStory": {
-    "id": "US-001",
-    "title": "Funcao verify de allowlist por especificador e modo CLI --verify <dir>"
+    "id": "US-002",
+    "title": "Vendorizacao com escrita em staging e promocao atomica fail-closed"
   },
   "branchName": "cam/issue-571",
-  "timestamp": "2026-08-15T00:05:29Z",
+  "timestamp": "2026-08-15T00:21:20Z",
   "createdFiles": [
-    "scripts/vendor-coss.ts",
-    "test/vendor-coss.test.ts"
+    "test/vendor-coss-fail-closed.test.ts"
   ],
-  "modifiedFiles": [],
+  "modifiedFiles": [
+    "scripts/vendor-coss.ts"
+  ],
   "openQuestions": [],
-  "nextStoryContext": "verify(dir) is synchronous and fail-closed: it throws VendorVerificationError after collecting all disallowed literal imports. The CLI adapter prints every collected violation. Network fetch, transitive closure, rewriting, provenance, staging promotion, and the real vendored tree remain intentionally out of scope for CAM-565/follow-up stories.",
+  "nextStoryContext": "vendorCoss is synchronous and accepts an injected fetchFiles function returning { relPath, content } entries. It writes into a random sibling staging directory, calls verify(staging), promotes with renameSync only after approval, and removes staging in finally. Replacing an already-existing non-empty destination remains outside this story's acceptance criteria and should be resolved with the real re-executable vendor flow.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
-      "lib": "Bun.Transpiler",
+      "lib": "Node.js node:fs",
       "channel": "WebSearch",
-      "url": "https://bun.sh/docs/runtime/transpiler",
-      "fetchedAt": "2026-08-15T00:05:29Z",
+      "url": "https://nodejs.org/api/fs.html",
+      "fetchedAt": "2026-08-15T00:21:20Z",
       "status": "aligned",
-      "summary": "Current Bun docs confirm the tsx loader, scan(source).imports path/kind API, and that scanImports is the less-accurate fast path."
+      "summary": "Current Node.js docs confirm mkdtempSync returns the created sibling directory path, renameSync performs the promotion rename, and rmSync supports recursive force cleanup."
     }
   ]
 }
