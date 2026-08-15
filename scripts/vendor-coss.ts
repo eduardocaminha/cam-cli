@@ -71,6 +71,14 @@ function listSourceFiles(dir: string): string[] {
 	return files;
 }
 
+function listRequiredSourceFiles(root: string): string[] {
+	const sourceFiles = listSourceFiles(root);
+	if (sourceFiles.length === 0) {
+		throw new Error(`COSS vendor verification found no source files: ${root}`);
+	}
+	return sourceFiles;
+}
+
 function isRelativeSpecifier(specifier: string): boolean {
 	return (
 		specifier === '.' ||
@@ -134,9 +142,10 @@ export function verify(dir: string): void {
 	if (!statSync(root).isDirectory()) {
 		throw new Error(`COSS vendor verification root is not a directory: ${root}`);
 	}
+	const sourceFiles = listRequiredSourceFiles(root);
 
 	const violations: VendorImportViolation[] = [];
-	for (const file of listSourceFiles(root)) {
+	for (const file of sourceFiles) {
 		const source = readFileSync(file, 'utf8');
 		for (const imported of scanAllImports(source)) {
 			const specifier = imported.path;
@@ -179,11 +188,15 @@ export function verify(dir: string): void {
  */
 export function vendorCoss({ destination, fetchFiles }: VendorCossOptions): void {
 	const finalDestination = resolve(destination);
+	const files = fetchFiles();
+	if (files.length === 0) {
+		throw new Error('COSS vendor source set is empty');
+	}
 	mkdirSync(dirname(finalDestination), { recursive: true });
 	const stagingDir = mkdtempSync(`${finalDestination}.staging-`);
 
 	try {
-		for (const file of fetchFiles()) {
+		for (const file of files) {
 			const fileDestination = resolveVendorFilePath(stagingDir, file.relPath);
 			mkdirSync(dirname(fileDestination), { recursive: true });
 			writeFileSync(fileDestination, file.content);
