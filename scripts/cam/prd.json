@@ -1,0 +1,52 @@
+{
+  "project": "cam-cli",
+  "branchName": "cam/issue-572",
+  "description": "Promocao em swap idempotente e recusa de arvore vazia em vendorCoss (scripts/vendor-coss.ts)",
+  "issueNumber": 572,
+  "type": "feat",
+  "relatedDocs": [],
+  "officialDocsConsulted": [
+    {
+      "lib": "Bun",
+      "channel": "WebFetch",
+      "url": "https://bun.sh/docs/runtime/nodejs-apis",
+      "version": "current",
+      "fetchedAt": "2026-08-15T00:00:00Z",
+      "summary": "node:fs esta totalmente implementado no Bun (98% da suite de testes do Node passa). renameSync, rmSync, mkdtempSync e existsSync cobertos sem ressalva relevante; comportamento POSIX padrao de rename sobre diretorio nao-vazio (ENOTEMPTY), que e exatamente o defeito medido na issue.",
+      "localConventionConflict": "A doc do Bun prefere Bun.file sobre node:fs, mas o invariante curado do repo mantem deliberadamente I/O sincrono pontual em node:fs; seguir o invariante local (vendor-coss.ts ja usa node:fs sync).",
+      "status": "ok"
+    }
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Promocao em swap idempotente em vendorCoss",
+      "description": "Como mantenedor da vendorizacao COSS, preciso que vendorCoss seja re-executavel sobre um destino existente (promocao em swap: mover o destino para um nome lateral, promover o staging, remover o lateral, restaurar o lateral se a promocao falhar) para que o pino de idempotencia da CAM-565 (rodar o script de novo no mesmo commit pinado e obter zero diff) seja alcancavel em vez de insatisfazivel por construcao.",
+      "acceptanceCriteria": [
+        "A vendorizacao e idempotente: executar vendorCoss duas vezes sobre o mesmo destino, com a mesma fonte, sucede nas duas execucoes e deixa conteudo identico, sem residuo de diretorio lateral no diretorio pai. Varrido em 2026-08-15 nas duas direcoes: VERMELHO na arvore atual (segunda execucao lanca ENOTEMPTY; arquivo de teste ausente) e VERDE em arvore pos-mudanca simulada com promocao em swap. [oracle: test -f test/vendor-coss-idempotence.test.ts && bun test test/vendor-coss-idempotence.test.ts 2>&1 | grep -qE '[0-9]+ pass']",
+        "Typecheck passa. [oracle: bun run typecheck]",
+        "Testes passam, incluindo os 12 testes existentes de test/vendor-coss.test.ts e test/vendor-coss-fail-closed.test.ts sem alteracao. [oracle: bun test]",
+        "Espinha de lint passa. [oracle: bun run check:all]"
+      ],
+      "priority": 1,
+      "passes": false,
+      "requires": null,
+      "notes": "Sitio: scripts/vendor-coss.ts:168-185 (funcao vendorCoss, bloco de promocao pos-verify). Teste novo: test/vendor-coss-idempotence.test.ts, usando createTestTmpdir de test/helpers/test-tmpdir.ts como os testes vizinhos. GOTCHA 1 (da issue, medido em simulacao 2026-08-14): a promocao em swap TEM que restaurar o lateral quando o rename do staging falha (try em volta do segundo rename, restaurando o lateral no catch), senao um destino que existia e estava correto some por causa de uma execucao ruim. GOTCHA 2: ausencia de residuo e parte do criterio; lateral que sobra torna a proxima execucao nao-deterministica (assercao sugerida: readdirSync do pai contem apenas o destino). GOTCHA 3: NUNCA usar grep -qv em oraculo (shim ugrep devolve exit 1 espurio; foi a segunda escalacao da CAM-565, e o lint de oraculo do repo rejeita -q com -v). existsSync/renameSync/rmSync sync de node:fs sao a convencao local deste arquivo (invariante curado), nao migrar para Bun.file. Nao toca vendor/ nem templates/, entao embed-vendor:check nao se aplica. Simulacao verde de 2026-08-15 confirmou que a mudanca nao quebra os 12 testes vendor-coss existentes."
+    },
+    {
+      "id": "US-002",
+      "title": "Recusar arvore vazia na vendorizacao e em verify",
+      "description": "Como mantenedor da vendorizacao COSS, preciso que um conjunto de fontes vazio seja recusado antes da promocao (destino nunca criado) e que verify sobre raiz sem arquivo-fonte falhe em vez de sair zero, para que falha de fetch deixe de virar vendorizacao bem-sucedida em silencio no mesmo guard cuja razao de existir e falhar fechado.",
+      "acceptanceCriteria": [
+        "Arvore vazia e recusada em vez de promovida: vendorCoss com fetchFiles devolvendo lista vazia lanca erro e o destino nao chega a existir; verify sobre raiz vazia lanca erro (e runCli --verify sai nao-zero por consequencia). Varrido em 2026-08-15 nas duas direcoes: VERMELHO na arvore atual (conjunto vazio promove diretorio vazio e verify sobre raiz vazia sai 0; arquivo de teste ausente) e VERDE em arvore pos-mudanca simulada. [oracle: test -f test/vendor-coss-nonvacuous.test.ts && bun test test/vendor-coss-nonvacuous.test.ts 2>&1 | grep -qE '[0-9]+ pass']",
+        "Typecheck passa. [oracle: bun run typecheck]",
+        "Testes passam, incluindo os 12 testes existentes de test/vendor-coss.test.ts e test/vendor-coss-fail-closed.test.ts sem alteracao. [oracle: bun test]",
+        "Espinha de lint passa. [oracle: bun run check:all]"
+      ],
+      "priority": 2,
+      "passes": false,
+      "requires": null,
+      "notes": "Sitios: scripts/vendor-coss.ts verify (linhas 122-158, hoje o loop sobre listSourceFiles passa vacuamente quando a lista e vazia) e vendorCoss (recusar fetchFiles() vazio antes de escrever staging, mantendo a garantia existente de que falha remove o staging e deixa destino ausente ausente). Teste novo: test/vendor-coss-nonvacuous.test.ts. Nenhum teste existente assere que verify passa em raiz vazia (verificado por grep em 2026-08-15), entao a recusa nao quebra a suite. GOTCHA: NUNCA usar grep -qv em oraculo (shim ugrep, ver US-001). Este defeito veio do holding pen fingerprint 17f8ccc2667e (cam/issue-571 rodada 2), promovido aqui por composicao de sitio; a entrada do pen pode ser dispensada apos o ship. Depende da US-001 apenas por tocarem a mesma funcao (ordenar sequencial evita conflito de edicao)."
+    }
+  ]
+}
