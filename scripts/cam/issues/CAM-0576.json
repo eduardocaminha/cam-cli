@@ -1,0 +1,41 @@
+{
+  "id": "CAM-576",
+  "title": "gship runtime: worktree isolado e persistido por run",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-15T22:40:07.718Z",
+  "updatedAt": "2026-08-15T22:40:07.718Z",
+  "description": "Remove a exigência de abrir gship web dentro de uma branch de trabalho já preparada. Cada run ganha um worktree e uma branch próprios a partir de main, enquanto o checkout que hospeda a UI permanece intocado.",
+  "specSource": "derived",
+  "derivedFrom": [
+    "CAM-574"
+  ],
+  "spec": {
+    "acceptanceCriteria": [
+      "Um start válido cria um worktree real sob .gship/worktrees e uma branch gship/* a partir de main, sem trocar branch nem sujar o checkout do operador. Swept RED on main 2026-08-15: o runtime exige branch não-main limpa e não possui workspace manager. [oracle: named-command bun test test/runtime/git-workspace.test.ts]",
+      "O caminho do workspace é persistido junto ao run e a execução, verificação e resume usam exatamente esse mesmo cwd após reabrir o SQLite. Swept RED on main 2026-08-15: runs não armazenam workspace_path e RuntimeExecutionInput sempre recebe o cwd do host. [oracle: named-command bun test test/runtime/run-runtime.test.ts test/runtime/run-store.test.ts]",
+      "A API consegue iniciar uma run quando gship web está hospedado na main; falha de preparação não cria run e retorna diagnóstico sem mutar o checkout do host. Swept RED on main 2026-08-15: o preflight atual recusa main. [oracle: named-command bun test test/web/run-api.test.ts test/runtime/git-workspace.test.ts]",
+      "A fatia preserva o gate completo e o template ignora todo o diretório operacional .gship. Swept RED on main 2026-08-15 para a nova composição: os módulos, colunas e testes ainda não existem. [oracle: named-command bunx tsc --noEmit && bun run lint && bun scripts/check-file-sizes.ts && bunx knip]"
+    ],
+    "scope": "ENTRA: GitWorkspaceManager síncrono e pequeno; branch gship/<issue>-<run-suffix>; worktree em .gship/worktrees/<run-id>; workspace_path persistido com migração aditiva do SQLite; execução/verificação/resume no cwd persistido; preflight do host reduzido a issue existente e ref main válida; teste com repositório Git real e teste de composição HTTP. NÃO ENTRA: remover worktree automaticamente; commit/push/PR/ship; múltiplas runs simultâneas; reusar branch antiga; pool de worktrees; locks distribuídos; portar o worktree manager legado.",
+    "gotchas": [
+      "O checkout do operador pode estar na main ou ter mudanças locais; nenhum git switch/checkout roda nele.",
+      "Worktree concluído, falho ou interrompido permanece para inspeção e futuro ship; limpeza automática exige uma política posterior medida.",
+      "Branch e diretório derivam de identificadores sanitizados e do run id gerado pelo serviço, nunca de texto livre do browser.",
+      "Bancos criados pela CAM-574 não possuem workspace_path; a abertura precisa adicionar a coluna sem perder runs ou eventos."
+    ],
+    "domainTerms": [
+      "run workspace",
+      "host checkout",
+      "isolated worktree",
+      "workspace_path"
+    ]
+  },
+  "wsjf": {
+    "value": 8,
+    "timeCriticality": 7,
+    "riskReduction": 8,
+    "jobSize": 6
+  }
+}
