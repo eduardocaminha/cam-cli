@@ -9,6 +9,29 @@ import {
 import { createTestTmpdir } from './helpers/test-tmpdir.ts';
 
 describe('vendorCoss idempotence', () => {
+	test('leaves the destination byte-identical when run twice with the same source set', () => {
+		const parent = createTestTmpdir('cam-vendor-coss-same-source-');
+		const destination = join(parent, 'coss');
+		const files: readonly VendorSourceFile[] = [
+			{
+				relPath: 'components/clean.tsx',
+				content: 'import React from "react";\nexport default React;\n',
+			},
+			{ relPath: 'shared.ts', content: 'export const shared = true;\n' },
+		];
+
+		expect(() => vendorCoss({ destination, fetchFiles: () => files })).not.toThrow();
+		const firstComponent = readFileSync(join(destination, 'components', 'clean.tsx'));
+		const firstShared = readFileSync(join(destination, 'shared.ts'));
+
+		expect(() => vendorCoss({ destination, fetchFiles: () => files })).not.toThrow();
+		expect(readFileSync(join(destination, 'components', 'clean.tsx'))).toEqual(
+			firstComponent,
+		);
+		expect(readFileSync(join(destination, 'shared.ts'))).toEqual(firstShared);
+		expect(readdirSync(parent)).toEqual(['coss']);
+	});
+
 	test('replaces an existing destination with the exact next source set', () => {
 		const parent = createTestTmpdir('cam-vendor-coss-idempotence-');
 		const destination = join(parent, 'coss');
