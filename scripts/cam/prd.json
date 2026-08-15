@@ -46,7 +46,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Arquivos: scripts/vendor-coss.ts (funcao de vendorizacao exportada, consumindo verify da US-001) e test/vendor-coss-fail-closed.test.ts (novo). O buscador de arquivo e INJETADO (lista de {relPath, content} ou equivalente): o fetcher real de rede e CAM-565, aqui nenhum acesso a rede. Disciplina: escrever tudo no staging, rodar verify(staging), e so entao promover para o destino; promocao atomica via rename. Gotcha EXDEV: rename atomico exige mesmo filesystem, entao o staging deve nascer irmao do destino (ex: <dest>.staging-<sufixo aleatorio>) e nao em os.tmpdir, que pode estar em volume diferente. O caminho de falha TEM que remover o staging, senao a segunda execucao encontra residuo e o resultado deixa de ser deterministico, o que quebraria o pino de idempotencia da CAM-565 (gotcha da issue; termo canonico em CONTEXT.md, 'escrita em staging com promocao atomica'). Teste com I/O real em tmpdir (invariante de qualidade de teste: wire boundary real, nada de assercao so de mock chamado); asserir tambem ausencia de residuo de staging onde observavel (staging irmao do destino torna isso observavel por readdir do diretorio pai). bun test descobre teste em qualquer lugar e o gate skip-ratchet espera exatamente 0 skips no host: nenhum .skip/.skipIf. Nao editar prd.json; supervisor e o unico escritor de passes."
     }
