@@ -1,0 +1,41 @@
+{
+  "id": "CAM-575",
+  "title": "gship runtime: executar oráculos da issue sem tmux",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-15T22:27:15.652Z",
+  "updatedAt": "2026-08-15T22:27:15.652Z",
+  "description": "A prova real da CAM-574 mostrou que o estado verify hoje valida apenas a integridade e a existência do diff. Esta fatia faz o serviço executar, diretamente como subprocessos, os oráculos runnable já versionados na issue antes de declarar ready-to-ship.",
+  "specSource": "derived",
+  "derivedFrom": [
+    "CAM-574"
+  ],
+  "spec": {
+    "acceptanceCriteria": [
+      "O verificador lê a issue da main, exige um oráculo runnable por critério, executa named-command e file-assert em sequência e falha com diagnóstico limitado quando um comando sai diferente de zero. Swept RED on main 2026-08-15: GitWorkingTreeVerifier não lê nem executa acceptanceCriteria. [oracle: named-command bun test test/runtime/git-runtime.test.ts]",
+      "Comandos de verificação rodam sem tmux, respeitam AbortSignal e têm o grupo de processos encerrado e aguardado no cancelamento. Swept RED on main 2026-08-15: não existe runner de oráculo no novo runtime. [oracle: named-command bun test test/runtime/git-runtime.test.ts]",
+      "O parser puro de diretivas é compartilhado pelo runtime novo e pelo behavioral gate legado sem alterar o contrato existente. Swept RED on main 2026-08-15: o parser ainda vive acoplado ao módulo tmux. [oracle: named-command bun test test/supervisor/behavioral-gate.test.ts test/integration/behavioral-gate.test.ts]",
+      "A mudança preserva typecheck, lint e limites estáticos. Swept RED on main 2026-08-15 para a nova composição: os módulos e imports ainda não existem. [oracle: named-command bunx tsc --noEmit && bun run lint && bun scripts/check-file-sizes.ts && bunx knip]"
+    ],
+    "scope": "ENTRA: extrair o parser puro de oracle para fora do supervisor tmux; compor verificação estrutural Git com execução sequencial de named-command/file-assert lidos da issue em main; falhar honestamente para critério sem oracle ou tipo não autônomo; capturar saída diagnóstica limitada; cancelamento com ownership do processo; eventos de início/fim por comando; testes unitários e com subprocesso real. NÃO ENTRA: suite completa hardcoded; DSL nova; reviewer LLM; tmux; auto-fix; interpretar prosa sem oracle; ship/commit/push.",
+    "gotchas": [
+      "A issue em main é a fonte confiável do comando; o browser não pode fornecer shell arbitrário no POST.",
+      "O parser existente deve ser movido e reexportado, não duplicado em uma segunda regex.",
+      "reviewer-judgment, tmux-pty, malformed e no-oracle não viram sucesso silencioso; esta fatia falha com explicação.",
+      "O processo deve ser aguardado após SIGTERM/SIGKILL para não repetir a classe de órfão já corrigida no executor Claude."
+    ],
+    "domainTerms": [
+      "issue oracle verifier",
+      "runnable oracle",
+      "structural verification",
+      "process-group ownership"
+    ]
+  },
+  "wsjf": {
+    "value": 8,
+    "timeCriticality": 7,
+    "riskReduction": 8,
+    "jobSize": 6
+  }
+}
