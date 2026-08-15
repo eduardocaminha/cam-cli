@@ -29,7 +29,7 @@
         "Espinha de lint passa. [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Sitio: scripts/vendor-coss.ts:168-185 (funcao vendorCoss, bloco de promocao pos-verify). Teste novo: test/vendor-coss-idempotence.test.ts, usando createTestTmpdir de test/helpers/test-tmpdir.ts como os testes vizinhos. GOTCHA 1 (da issue, medido em simulacao 2026-08-14): a promocao em swap TEM que restaurar o lateral quando o rename do staging falha (try em volta do segundo rename, restaurando o lateral no catch), senao um destino que existia e estava correto some por causa de uma execucao ruim. GOTCHA 2: ausencia de residuo e parte do criterio; lateral que sobra torna a proxima execucao nao-deterministica (assercao sugerida: readdirSync do pai contem apenas o destino). GOTCHA 3: NUNCA usar grep -qv em oraculo (shim ugrep devolve exit 1 espurio; foi a segunda escalacao da CAM-565, e o lint de oraculo do repo rejeita -q com -v). existsSync/renameSync/rmSync sync de node:fs sao a convencao local deste arquivo (invariante curado), nao migrar para Bun.file. Nao toca vendor/ nem templates/, entao embed-vendor:check nao se aplica. Simulacao verde de 2026-08-15 confirmou que a mudanca nao quebra os 12 testes vendor-coss existentes."
     },
