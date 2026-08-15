@@ -1,11 +1,11 @@
 {
   "id": "CAM-571",
   "title": "Guard fail-closed da vendorizacao: allowlist por especificador e escrita abortada em staging",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-14T21:02:41.971Z",
-  "updatedAt": "2026-08-14T21:02:41.971Z",
+  "updatedAt": "2026-08-15T01:09:59.561Z",
   "description": "Metade de guard da CAM-565, cortada em 2026-08-14 depois da segunda escalacao de plano, que trouxe duas findings de atomicidade em duas escalacoes seguidas.\n\nO seam foi proposto pelo proprio auditor na primeira escalacao (finding F-01: o criterio do guard e so de fixture, roda em diretorio de mktemp e nao precisa da arvore vendorizada) e a premissa que antes impedia o corte foi medida como falsa em 2026-08-14: knip.json declara entry como [\"index.ts\", \"scripts/**/*.ts\", \"test/**/*.ts\", \"webui/src/main.tsx\", \"webui/vite.config.ts\"], entao scripts/vendor-coss.ts e ENTRY POINT e nunca e reportado como arquivo inalcancavel por falta de consumidor. A metade que de fato exige consumidor e a arvore vendorizada sob webui/vendor, e essa continua na CAM-565 junto com a tela.\n\nENTRA: a funcao verify de allowlist sobre especificador literal de import, com pertinencia por igualdade ou por prefixo de subpath, e a disciplina de escrita em staging com promocao atomica, de modo que fonte reprovada nao deixe arvore nenhuma no destino.\n\nNAO ENTRA: fetch da rede, calculo do fecho transitivo, reescrita de especificador, manifesto, PROVENANCE e a arvore vendorizada em si, que sao a CAM-565 e precisam de rede e de consumidor.",
   "specSource": "derived",
   "derivedFrom": [
