@@ -1,27 +1,26 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Vendorizacao com escrita em staging e promocao atomica fail-closed"
+    "id": "US-R1-001",
+    "title": "CRITICAL: Fail-open no guard fail-closed: Bun.Transpiler.scan() nao reporta req…"
   },
   "branchName": "cam/issue-571",
-  "timestamp": "2026-08-15T00:21:20Z",
-  "createdFiles": [
-    "test/vendor-coss-fail-closed.test.ts"
-  ],
+  "timestamp": "2026-08-15T00:38:10Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "scripts/vendor-coss.ts"
+    "scripts/vendor-coss.ts",
+    "test/vendor-coss.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "vendorCoss is synchronous and accepts an injected fetchFiles function returning { relPath, content } entries. It writes into a random sibling staging directory, calls verify(staging), promotes with renameSync only after approval, and removes staging in finally. Replacing an already-existing non-empty destination remains outside this story's acceptance criteria and should be resolved with the real re-executable vendor flow.",
+  "nextStoryContext": "COSS verification now takes a multiset union of Bun.Transpiler.scan().imports and scanImports(), preserving scan() accuracy while adding require-call findings omitted by Bun 1.3.13 without duplicating imports returned by both APIs. The CLI regression test proves a bare require(\"@coss/ui\") in leak.cjs exits nonzero.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
-      "lib": "Node.js node:fs",
+      "lib": "Bun.Transpiler",
       "channel": "WebSearch",
-      "url": "https://nodejs.org/api/fs.html",
-      "fetchedAt": "2026-08-15T00:21:20Z",
-      "status": "aligned",
-      "summary": "Current Node.js docs confirm mkdtempSync returns the created sibling directory path, renameSync performs the promotion rename, and rmSync supports recursive force cleanup."
+      "url": "https://bun.sh/docs/runtime/transpiler",
+      "fetchedAt": "2026-08-15T00:38:10Z",
+      "status": "corrected",
+      "summary": "Current Bun docs confirm scan() and scanImports() return import path/kind metadata and describe scanImports() as the less-accurate fast path; local Bun 1.3.13 measurement confirmed only scanImports() reports require-call, so the implementation merges both result sets."
     }
   ]
 }
