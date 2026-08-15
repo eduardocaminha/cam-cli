@@ -1,27 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-002",
-    "title": "Recusar arvore vazia na vendorizacao e em verify"
+    "id": "US-R1-001",
+    "title": "WARNING: US-001 has no error-path test over an existing destination. The diff b…"
   },
   "branchName": "cam/issue-572",
-  "timestamp": "2026-08-15T14:58:02Z",
-  "createdFiles": [
-    "test/vendor-coss-nonvacuous.test.ts"
-  ],
+  "timestamp": "2026-08-15T15:13:09Z",
+  "createdFiles": [],
   "modifiedFiles": [
-    "scripts/vendor-coss.ts"
+    "test/vendor-coss-idempotence.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "verify now throws when its recursive source scan is empty, while vendorCoss rejects an empty fetch result before creating staging or the destination. The dedicated regression test also proves the CLI adapter returns non-zero for an empty verification root.",
+  "nextStoryContext": "vendorCoss now has a regression test that seeds a clean existing destination, retries with a poisoned source tree, and proves VendorVerificationError leaves both prior files byte-identical with no staging or previous sibling residue. Production code was unchanged.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
       "lib": "Node.js node:fs",
       "channel": "WebFetch",
       "url": "https://nodejs.org/api/fs.html",
-      "fetchedAt": "2026-08-15T14:57:47Z",
+      "fetchedAt": "2026-08-15T15:13:09Z",
       "status": "aligned",
-      "summary": "Current existsSync and readdirSync return contracts match the filesystem assertions used by the non-vacuous regression tests."
+      "summary": "Current readFileSync and readdirSync contracts support Buffer-based byte comparisons and direct directory-entry residue assertions used by the regression test."
     }
   ]
 }
