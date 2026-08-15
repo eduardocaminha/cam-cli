@@ -7,6 +7,7 @@ import type {
 	RuntimeExecutionResult,
 	RuntimeExecutor,
 } from './run-runtime.ts';
+import { terminateProcessGroup } from './process-group.ts';
 
 const CLAUDE_NESTING_ENV = [
 	'CLAUDECODE',
@@ -102,38 +103,6 @@ function spawnClaude(
 		stdout: 'pipe',
 		stderr: 'pipe',
 	});
-}
-
-function signalProcessGroup(proc: ClaudeChild, signal: 'SIGTERM' | 'SIGKILL'): void {
-	if (process.platform !== 'win32' && proc.pid > 0) {
-		try {
-			process.kill(-proc.pid, signal);
-			return;
-		} catch {
-			// Fall through when the platform did not create a process group.
-		}
-	}
-	try {
-		proc.kill(signal);
-	} catch {
-		// The child exited between the liveness observation and signal delivery.
-	}
-}
-
-async function terminateProcessGroup(proc: ClaudeChild, graceMs: number): Promise<void> {
-	signalProcessGroup(proc, 'SIGTERM');
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	const outcome = await Promise.race([
-		proc.exited.then(() => 'exited' as const),
-		new Promise<'grace-expired'>((resolve) => {
-			timer = setTimeout(() => resolve('grace-expired'), graceMs);
-		}),
-	]);
-	if (timer !== undefined) clearTimeout(timer);
-	if (outcome === 'grace-expired') {
-		signalProcessGroup(proc, 'SIGKILL');
-		await proc.exited;
-	}
 }
 
 async function consumeLines(

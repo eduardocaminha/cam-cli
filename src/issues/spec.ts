@@ -1,5 +1,5 @@
 import type { WsjfScore } from "./types.ts";
-import { parseOracleDirective } from "../supervisor/behavioral-gate.ts";
+import { parseOracleDirective } from './oracle-directive.ts';
 import { findStoreReachingSearch } from "./self-contaminating-search.ts";
 
 /**

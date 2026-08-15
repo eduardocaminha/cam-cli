@@ -1,310 +1,40 @@
-// src/supervisor/behavioral-gate.ts
-//
-// Oracle parser (US-001) and behavioral gate runner (US-002) for CAM-116.
-//
-// US-001: parse per-story behavioral oracle directives from acceptance criteria.
-// US-002: run a parsed oracle in a private-socket tmux session and assert it.
-//
-// Design:
-//   - Parser: pure, no I/O, no side-effects.
-//   - Gate runner: injectable spawnFn + socketName for isolation.
-//     Default socket: BEHAVIORAL_GATE_SOCKET ('cam-behavioral-gate'), NEVER bare 'cam'.
-//   - Mirrors parseReviewVerdict in src/supervisor/review.ts.
-//   - noUncheckedIndexedAccess: all regex capture groups guarded via ?? ''.
-
-// ---------------------------------------------------------------------------
-// Oracle directive types
-// ---------------------------------------------------------------------------
-
-/**
- * A shell command that must exit 0 to satisfy the criterion.
- * Examples: "bun run typecheck", "bun test", "grep -q 'x' path/to/file".
- */
-export interface NamedCommandOracle {
-	kind: 'named-command';
-	/** The exact shell command to run. */
-	command: string;
-}
-
-/**
- * A file-level assertion command (file-assert prefix, payload is the command).
- * Examples: "git diff --quiet src/supervisor/review-report.ts".
- */
-export interface FileAssertOracle {
-	kind: 'file-assert';
-	/** The shell command to run as the file-level assertion. */
-	command: string;
-}
-
-/** A criterion that requires reviewer or human judgment. Use sparingly. */
-export interface ReviewerJudgmentOracle {
-	kind: 'reviewer-judgment';
-}
-
-/**
- * A tmux-pty driven criterion: the verification tool is tmux-pty and the
- * criterion names an artifact reference the tool produces/checks.
- */
-export interface TmuxPtyOracle {
-	kind: 'tmux-pty';
-	/** Verification tool name -- always 'tmux-pty'. */
-	toolName: 'tmux-pty';
-	/** The artifact reference the criterion names. */
-	artifactRef: string;
-}
-
-/**
- * Returned when a mark was extracted (or no mark is present at all) but there
- * is no command to run: an empty payload, or a bare kind label with nothing
- * after it (e.g. `named-command` with no trailing command). Never throws --
- * an unparseable oracle must not crash the gate (AC3). Distinct from
- * MalformedOracle, which is reserved for a mark whose bracket never closes --
- * see the MalformedOracle doc comment for the boundary.
- */
-export interface NoRunnableOracle {
-	kind: 'no-oracle';
-	/** The raw oracle text that could not be classified. */
-	raw: string;
-}
-
-/**
- * Returned when a criterion carries an oracle mark opener (`[oracle:`) whose
- * bracket never balances -- e.g. a typo'd directive missing its closing `]`.
- * Distinct from NoRunnableOracle (US-003, CAM-466): no-oracle means a mark
- * WAS extracted but its payload is empty or an unrecognized bare label;
- * malformed means NO payload could be extracted at all because the mark
- * itself is unterminated. Collapsing the two into the same silent result
- * makes a typo'd directive indistinguishable from a criterion that legitimately
- * carries no oracle -- malformed keeps that distinction loud.
- */
-export interface MalformedOracle {
-	kind: 'malformed';
-	/** The trailing text after the unterminated opener, trimmed. */
-	raw: string;
-}
-
-/** Discriminated union of all possible oracle directive shapes. */
-export type OracleDirective =
-	| NamedCommandOracle
-	| FileAssertOracle
-	| ReviewerJudgmentOracle
-	| TmuxPtyOracle
-	| NoRunnableOracle
-	| MalformedOracle;
-
-/** One oracle-carrying criterion paired with its parsed directive. */
-export interface CriterionOracle {
-	/** Zero-based index of the criterion in the acceptanceCriteria array. */
-	criterionIndex: number;
-	/** The parsed oracle directive for this criterion. */
-	directive: OracleDirective;
-}
-
-// ---------------------------------------------------------------------------
-// Parser implementation
-// ---------------------------------------------------------------------------
-
-/** Literal opener for the oracle mark. */
-const ORACLE_OPENER = '[oracle:';
-
-/**
- * Locate the LAST oracle mark in a criterion and extract its trimmed inner
- * text by tracking bracket depth from the opening '[' to its balanced ']'.
- *
- * Un-anchored extraction (US-001, CAM-466): the previous end-anchored regex
- * required the mark to be flush at the end of the string, which (a) silently
- * dropped any criterion whose oracle mark was followed by trailing prose
- * (e.g. sweep-evidence notes recorded after the closing bracket), and (b) was
- * defeated by a second mark on the same line -- the end anchor forced the
- * lazy capture to run all the way to the LAST ']' in the string even when
- * that ']' belonged to trailing prose, not a mark, yielding null instead of
- * the last mark's payload.
- *
- * Depth-tracking (rather than a `[^\]]*`-style non-bracket capture class) is
- * required so a payload containing a literal balanced ']' -- e.g. a grep
- * character class like `[0-9]` -- is retained in full instead of being
- * truncated at the first ']' encountered.
- *
- * Returns { kind: 'absent' } when no `[oracle:` opener is present at all --
- * the criterion carries no oracle mark, and parseOracleDirective yields null.
- *
- * Returns { kind: 'unterminated' } when the LAST opener's bracket never
- * balances (US-003, CAM-466): the mark's presence is real but no payload can
- * be extracted, which parseOracleDirective surfaces as a loud `malformed`
- * directive rather than silently returning null.
- */
-type ExtractedOracleMark =
-	| { kind: 'absent' }
-	| { kind: 'found'; raw: string }
-	| { kind: 'unterminated'; raw: string };
-
-function extractLastOracleRaw(criterion: string): ExtractedOracleMark {
-	const openerStart = criterion.lastIndexOf(ORACLE_OPENER);
-	if (openerStart === -1) return { kind: 'absent' };
-
-	const innerStart = openerStart + ORACLE_OPENER.length;
-	let depth = 0;
-	for (let i = openerStart; i < criterion.length; i++) {
-		const ch = criterion[i];
-		if (ch === '[') depth++;
-		else if (ch === ']') {
-			depth--;
-			if (depth === 0) {
-				return { kind: 'found', raw: criterion.slice(innerStart, i).trim() };
-			}
-		}
-	}
-
-	return { kind: 'unterminated', raw: criterion.slice(innerStart).trim() };
-}
-
-/**
- * Classify the inner oracle text into a typed OracleDirective.
- */
-function classifyOracleText(raw: string): OracleDirective {
-	if (raw === '') {
-		return { kind: 'no-oracle', raw };
-	}
-
-	if (raw === 'reviewer-judgment') {
-		return { kind: 'reviewer-judgment' };
-	}
-
-	if (raw.startsWith('file-assert ')) {
-		const command = raw.slice('file-assert '.length).trim();
-		if (command === '') {
-			return { kind: 'no-oracle', raw };
-		}
-		return { kind: 'file-assert', command };
-	}
-
-	if (raw.startsWith('tmux-pty ')) {
-		const artifactRef = raw.slice('tmux-pty '.length).trim();
-		if (artifactRef === '') {
-			return { kind: 'no-oracle', raw };
-		}
-		return { kind: 'tmux-pty', toolName: 'tmux-pty', artifactRef };
-	}
-
-	// Explicit named-command label (US-002, CAM-466): the documented directive
-	// form is "[oracle: named-command <cmd>]", but the label is not itself part
-	// of the shell command -- strip it before the payload reaches the tmux
-	// send-keys boundary, mirroring the file-assert / tmux-pty prefix branches
-	// above (empty remainder after stripping -> no-oracle, never a directive
-	// carrying an empty command).
-	if (raw.startsWith('named-command ')) {
-		const command = raw.slice('named-command '.length).trim();
-		if (command === '') {
-			return { kind: 'no-oracle', raw };
-		}
-		return { kind: 'named-command', command };
-	}
-
-	// Bare label with no command after it (no trailing space either) has no
-	// command to run at all -- graceful no-oracle, not a crash and not
-	// malformed (malformed is reserved for a mark that cannot be closed).
-	if (raw === 'named-command') {
-		return { kind: 'no-oracle', raw };
-	}
-
-	// Everything else is a named-command (exact shell command to run).
-	return { kind: 'named-command', command: raw };
-}
-
-/**
- * Extract and parse the [oracle: ...] directive from one acceptance criterion.
- *
- * Returns null when the criterion carries no [oracle: ...] mark (criteria
- * without an oracle yield no directive per AC1).
- *
- * Returns a NoRunnableOracle when a mark is present but the oracle text is
- * empty or an unrecognized bare label (graceful -- never throws, per AC3).
- *
- * Returns a MalformedOracle when the mark opener is present but its bracket
- * never balances (US-003, CAM-466): distinct from NoRunnableOracle -- see
- * the MalformedOracle doc comment for the boundary.
- */
-export function parseOracleDirective(criterion: string): OracleDirective | null {
-	const extracted = extractLastOracleRaw(criterion);
-	if (extracted.kind === 'absent') return null;
-	if (extracted.kind === 'unterminated') return { kind: 'malformed', raw: extracted.raw };
-
-	return classifyOracleText(extracted.raw);
-}
-
-/**
- * Parse all [oracle: ...] directives from a PRD story's acceptanceCriteria.
- *
- * Returns one CriterionOracle per criterion that carries an [oracle: ...] mark.
- * Criteria without a mark are skipped (yield no entry in the result).
- * Empty or unrecognized-label oracle text yields { kind: 'no-oracle' } rather
- * than throwing; an unterminated mark yields { kind: 'malformed' } instead.
- *
- * @param criteria - The acceptanceCriteria array from a PRD story record.
- * @returns Ordered list of criterion index + directive pairs.
- */
-export function parseOracleDirectives(criteria: string[]): CriterionOracle[] {
-	const results: CriterionOracle[] = [];
-
-	for (let i = 0; i < criteria.length; i++) {
-		const criterion = criteria[i];
-		if (criterion === undefined) continue;
-
-		const directive = parseOracleDirective(criterion);
-		if (directive !== null) {
-			results.push({ criterionIndex: i, directive });
-		}
-	}
-
-	return results;
-}
-
-// ---------------------------------------------------------------------------
-// Behavioral gate runner (US-002, CAM-116)
-// ---------------------------------------------------------------------------
-
 import { spawnSync } from 'node:child_process';
+
+import type {
+	FileAssertOracle,
+	NamedCommandOracle,
+	OracleDirective,
+} from '../issues/oracle-directive.ts';
 import type { SpawnFn } from '../tmux/session.ts';
 
-/**
- * Default private tmux socket name for the behavioral gate.
- * NEVER bare 'cam': isolation guard prevents touching the live cam session.
- */
+export {
+	parseOracleDirective,
+	parseOracleDirectives,
+	type CriterionOracle,
+	type FileAssertOracle,
+	type MalformedOracle,
+	type NamedCommandOracle,
+	type NoRunnableOracle,
+	type OracleDirective,
+	type ReviewerJudgmentOracle,
+	type TmuxPtyOracle,
+} from '../issues/oracle-directive.ts';
+
 export const BEHAVIORAL_GATE_SOCKET = 'cam-behavioral-gate';
 
-/** Marker string appended to commands to detect exit-code in pane text. */
 const EXIT_MARKER = 'CAMGATE';
-/** Regex to extract the exit code from the marker echo. */
 const EXIT_MARKER_RE = /CAMGATE_(\d+)/;
 
-/** Result returned by runBehavioralGate. */
 export interface BehavioralGateResult {
-	/** True when the oracle command exited 0. */
 	passed: boolean;
-	/**
-	 * Raw text of the captured tmux pane at gate completion time.
-	 * The caller may persist this as an artifact for diagnostics.
-	 */
 	capturedPane: string;
-	/** Human-readable detail about the gate outcome. */
 	detail: string;
 }
 
-/** Options for runBehavioralGate. All fields are optional / injectable. */
 export interface RunBehavioralGateOpts {
-	/**
-	 * Injectable spawn function; defaults to a spawnSync-backed shim.
-	 * Inject in tests to assert exact tmux argv without hitting a real server.
-	 */
 	spawnFn?: SpawnFn;
-	/**
-	 * tmux socket name. Defaults to BEHAVIORAL_GATE_SOCKET.
-	 * NEVER 'cam': must not touch the live cam orchestrator session.
-	 */
 	socketName?: string;
-	/** Working directory for the tmux session. Defaults to process.cwd(). */
 	cwd?: string;
-	/** Max ms to wait for the oracle command to complete. Defaults to 30_000. */
 	timeoutMs?: number;
 }
 
@@ -316,12 +46,6 @@ function makeDefaultSpawnFn(): SpawnFn {
 		}) as ReturnType<SpawnFn>;
 }
 
-/**
- * Return a non-null BehavioralGateResult for oracle kinds that cannot be run
- * autonomously, or null when the directive IS runnable (named-command / file-assert).
- *
- * Extracted to keep runBehavioralGate below the cognitive-complexity limit.
- */
 function resolveNonRunnableResult(directive: OracleDirective): BehavioralGateResult | null {
 	if (directive.kind === 'reviewer-judgment') {
 		return {
@@ -354,13 +78,6 @@ function resolveNonRunnableResult(directive: OracleDirective): BehavioralGateRes
 	return null;
 }
 
-/**
- * Poll capture-pane until the exit-code marker appears or the deadline passes.
- *
- * Returns { exitCode, capturedPane }. exitCode is null on timeout.
- *
- * Extracted to keep runBehavioralGate below the cognitive-complexity limit.
- */
 function pollForExitCode(
 	spawn: SpawnFn,
 	socketName: string,
@@ -373,15 +90,15 @@ function pollForExitCode(
 
 	while (Date.now() < deadline) {
 		Bun.sleepSync(300);
-		const r = spawn(
+		const result = spawn(
 			'tmux',
 			['-L', socketName, 'capture-pane', '-p', '-t', sessionName],
 			{ stdio: 'pipe' },
 		);
-		capturedPane = String(r.stdout ?? '');
-		const m = EXIT_MARKER_RE.exec(capturedPane);
-		if (m !== null) {
-			exitCode = parseInt(m[1] ?? '1', 10);
+		capturedPane = String(result.stdout ?? '');
+		const match = EXIT_MARKER_RE.exec(capturedPane);
+		if (match !== null) {
+			exitCode = Number.parseInt(match[1] ?? '1', 10);
 			break;
 		}
 	}
@@ -389,22 +106,6 @@ function pollForExitCode(
 	return { exitCode, capturedPane };
 }
 
-/**
- * Run a single OracleDirective against a real tmux session on a private socket.
- *
- * Flow:
- *   1. Create a fresh tmux session on the private socket (-L socketName).
- *   2. Send the oracle command followed by an exit-code marker echo.
- *   3. Poll capture-pane until the marker appears or timeout elapses.
- *   4. Kill the session (always, via finally).
- *   5. Return { passed, capturedPane, detail }.
- *
- * Non-runnable oracles (reviewer-judgment, no-oracle, tmux-pty, malformed)
- * return passed:false immediately with an explanatory detail string.
- *
- * Isolation guarantee: the socket is injectable and defaults to
- * BEHAVIORAL_GATE_SOCKET, so the gate never spawns on the live 'cam' socket.
- */
 export function runBehavioralGate(
 	directive: OracleDirective,
 	opts: RunBehavioralGateOpts = {},
@@ -417,17 +118,14 @@ export function runBehavioralGate(
 	const nonRunnable = resolveNonRunnableResult(directive);
 	if (nonRunnable !== null) return nonRunnable;
 
-	// After the resolveNonRunnableResult guard, directive is named-command or
-	// file-assert; both expose a .command field. The cast is safe by invariant.
 	const command = (directive as NamedCommandOracle | FileAssertOracle).command;
 	const sessionName = `cam-gate-${Date.now()}`;
-
-	const newSessionResult = spawn(
+	const created = spawn(
 		'tmux',
 		['-L', socketName, 'new-session', '-d', '-s', sessionName, '-x', '220', '-y', '50', '-c', cwd],
 		{ stdio: 'ignore' },
 	);
-	if ((newSessionResult.status ?? 1) !== 0) {
+	if ((created.status ?? 1) !== 0) {
 		return {
 			passed: false,
 			capturedPane: '',
@@ -436,15 +134,17 @@ export function runBehavioralGate(
 	}
 
 	try {
-		// Append exit-code marker so polling can detect command completion.
 		spawn(
 			'tmux',
 			['-L', socketName, 'send-keys', '-t', sessionName, `${command}; echo "${EXIT_MARKER}_$?"`, 'Enter'],
 			{ stdio: 'ignore' },
 		);
-
-		const { exitCode, capturedPane } = pollForExitCode(spawn, socketName, sessionName, timeoutMs);
-
+		const { exitCode, capturedPane } = pollForExitCode(
+			spawn,
+			socketName,
+			sessionName,
+			timeoutMs,
+		);
 		if (exitCode === null) {
 			return {
 				passed: false,
@@ -452,7 +152,6 @@ export function runBehavioralGate(
 				detail: `timeout after ${timeoutMs}ms waiting for oracle command to complete`,
 			};
 		}
-
 		return {
 			passed: exitCode === 0,
 			capturedPane,

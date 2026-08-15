@@ -11,7 +11,7 @@ import { readBacklogFromMain } from '../issues/backlog.ts';
 import { type BacklogJsonView, deriveBacklogJson } from '../issues/list.ts';
 import { printError } from '../logging/color.ts';
 import { ClaudeCliExecutor } from '../runtime/claude-cli-executor.ts';
-import { createGitRuntimePreflight, GitWorkingTreeVerifier, RuntimePreflightError } from '../runtime/git-runtime.ts';
+import { createGitRuntimePreflight, GitIssueVerifier, RuntimePreflightError } from '../runtime/git-runtime.ts';
 import {
 	RunRuntime,
 	RuntimeConflictError,
@@ -402,7 +402,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		cwd: options.cwd,
 		store: new RunStore(join(options.cwd, '.gship', 'runtime.sqlite')),
 		executor: new ClaudeCliExecutor(),
-		verifier: new GitWorkingTreeVerifier(),
+		verifier: new GitIssueVerifier(),
 		preflight: createGitRuntimePreflight(options.cwd),
 	});
 	const server = Bun.serve({
