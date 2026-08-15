@@ -1,25 +1,25 @@
 {
   "lastCompletedStory": {
-    "id": "US-R1-002",
-    "title": "WARNING: The single idempotence test re-runs with the identical file set, so it…"
+    "id": "US-R2-001",
+    "title": "WARNING: The round-1 WARNING asked to ADD a second run with a changed source se…"
   },
   "branchName": "cam/issue-572",
-  "timestamp": "2026-08-15T15:19:55Z",
+  "timestamp": "2026-08-15T15:36:56Z",
   "createdFiles": [],
   "modifiedFiles": [
     "test/vendor-coss-idempotence.test.ts"
   ],
   "openQuestions": [],
-  "nextStoryContext": "The vendorCoss replacement regression now performs a second successful run with a changed source manifest and explicitly proves that a dropped path is absent, an added path is present with the expected content, and no staging or previous sibling residue remains.",
+  "nextStoryContext": "The idempotence suite now keeps the changed-source replacement regression and adds a separate same-source rerun that proves both carried-over files remain byte-identical and the parent contains only the coss destination.",
   "appliedPatternIds": [],
   "officialDocsValidated": [
     {
       "lib": "Node.js node:fs",
       "channel": "WebFetch",
-      "url": "https://nodejs.org/api/fs.html#fsexistssyncpath",
-      "fetchedAt": "2026-08-15T15:19:55Z",
+      "url": "https://nodejs.org/api/fs.html#fsreadfilesyncpath-options",
+      "fetchedAt": "2026-08-15T15:36:56Z",
       "status": "aligned",
-      "summary": "Current Node.js v26.7.0 documentation confirms existsSync returns true when a path exists and false otherwise, matching the added exact-tree assertions."
+      "summary": "Current Node.js v26.7.0 documentation confirms readFileSync without an encoding returns a Buffer for byte-level comparison and readdirSync returns directory entry names by default."
     }
   ]
 }
