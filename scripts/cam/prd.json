@@ -19,6 +19,22 @@
   ],
   "userStories": [
     {
+      "id": "US-R1-001",
+      "title": "WARNING: US-001 has no error-path test over an existing destination. The diff b…",
+      "priority": 1,
+      "passes": true,
+      "description": "WARNING [test/vendor-coss-idempotence.test.ts:8]: US-001 has no error-path test over an existing destination. The diff broadened the docblock guarantee at scripts/vendor-coss.ts:186-187 from 'leaves a previously absent destination absent' to 'Failures before promotion leave the destination unchanged', but nothing exercises that new claim: every failure test in test/vendor-coss-fail-closed.test.ts runs against an absent destination. Add a test that vendors a clean tree, then re-runs vendorCoss with poisoned source over the now-existing destination and asserts (a) VendorVerificationError is thrown, (b) the previous content is byte-identical, (c) readdirSync(parent) still contains only the destination (no .staging-/.previous- residue). The rename-failure restore branch (scripts/vendor-coss.ts:216-219) is not reachable without injecting fs, so it is not covered by this finding.",
+      "notes": "WARNING [test/vendor-coss-idempotence.test.ts:8]: US-001 has no error-path test over an existing destination. The diff broadened the docblock guarantee at scripts/vendor-coss.ts:186-187 from 'leaves a previously absent destination absent' to 'Failures before promotion leave the destination unchanged', but nothing exercises that new claim: every failure test in test/vendor-coss-fail-closed.test.ts runs against an absent destination. Add a test that vendors a clean tree, then re-runs vendorCoss with poisoned source over the now-existing destination and asserts (a) VendorVerificationError is thrown, (b) the previous content is byte-identical, (c) readdirSync(parent) still contains only the destination (no .staging-/.previous- residue). The rename-failure restore branch (scripts/vendor-coss.ts:216-219) is not reachable without injecting fs, so it is not covered by this finding."
+    },
+    {
+      "id": "US-R1-002",
+      "title": "WARNING: The single idempotence test re-runs with the identical file set, so it…",
+      "priority": 2,
+      "passes": false,
+      "description": "WARNING [test/vendor-coss-idempotence.test.ts:25]: The single idempotence test re-runs with the identical file set, so it cannot distinguish swap promotion from a merge/overlay copy: removal of files that existed in the previous tree and are absent from the new source set is the defining property of the swap and is unasserted. Add a second run with a source set that drops one relPath and adds another, asserting the dropped file no longer exists under the destination and the added one does.",
+      "notes": "WARNING [test/vendor-coss-idempotence.test.ts:25]: The single idempotence test re-runs with the identical file set, so it cannot distinguish swap promotion from a merge/overlay copy: removal of files that existed in the previous tree and are absent from the new source set is the defining property of the swap and is unasserted. Add a second run with a source set that drops one relPath and adds another, asserting the dropped file no longer exists under the destination and the added one does."
+    },
+    {
       "id": "US-001",
       "title": "Promocao em swap idempotente em vendorCoss",
       "description": "Como mantenedor da vendorizacao COSS, preciso que vendorCoss seja re-executavel sobre um destino existente (promocao em swap: mover o destino para um nome lateral, promover o staging, remover o lateral, restaurar o lateral se a promocao falhar) para que o pino de idempotencia da CAM-565 (rodar o script de novo no mesmo commit pinado e obter zero diff) seja alcancavel em vez de insatisfazivel por construcao.",
@@ -28,7 +44,7 @@
         "Testes passam, incluindo os 12 testes existentes de test/vendor-coss.test.ts e test/vendor-coss-fail-closed.test.ts sem alteracao. [oracle: bun test]",
         "Espinha de lint passa. [oracle: bun run check:all]"
       ],
-      "priority": 1,
+      "priority": 3,
       "passes": true,
       "requires": null,
       "notes": "Sitio: scripts/vendor-coss.ts:168-185 (funcao vendorCoss, bloco de promocao pos-verify). Teste novo: test/vendor-coss-idempotence.test.ts, usando createTestTmpdir de test/helpers/test-tmpdir.ts como os testes vizinhos. GOTCHA 1 (da issue, medido em simulacao 2026-08-14): a promocao em swap TEM que restaurar o lateral quando o rename do staging falha (try em volta do segundo rename, restaurando o lateral no catch), senao um destino que existia e estava correto some por causa de uma execucao ruim. GOTCHA 2: ausencia de residuo e parte do criterio; lateral que sobra torna a proxima execucao nao-deterministica (assercao sugerida: readdirSync do pai contem apenas o destino). GOTCHA 3: NUNCA usar grep -qv em oraculo (shim ugrep devolve exit 1 espurio; foi a segunda escalacao da CAM-565, e o lint de oraculo do repo rejeita -q com -v). existsSync/renameSync/rmSync sync de node:fs sao a convencao local deste arquivo (invariante curado), nao migrar para Bun.file. Nao toca vendor/ nem templates/, entao embed-vendor:check nao se aplica. Simulacao verde de 2026-08-15 confirmou que a mudanca nao quebra os 12 testes vendor-coss existentes."
@@ -43,10 +59,47 @@
         "Testes passam, incluindo os 12 testes existentes de test/vendor-coss.test.ts e test/vendor-coss-fail-closed.test.ts sem alteracao. [oracle: bun test]",
         "Espinha de lint passa. [oracle: bun run check:all]"
       ],
-      "priority": 2,
+      "priority": 4,
       "passes": true,
       "requires": null,
       "notes": "Sitios: scripts/vendor-coss.ts verify (linhas 122-158, hoje o loop sobre listSourceFiles passa vacuamente quando a lista e vazia) e vendorCoss (recusar fetchFiles() vazio antes de escrever staging, mantendo a garantia existente de que falha remove o staging e deixa destino ausente ausente). Teste novo: test/vendor-coss-nonvacuous.test.ts. Nenhum teste existente assere que verify passa em raiz vazia (verificado por grep em 2026-08-15), entao a recusa nao quebra a suite. GOTCHA: NUNCA usar grep -qv em oraculo (shim ugrep, ver US-001). Este defeito veio do holding pen fingerprint 17f8ccc2667e (cam/issue-571 rodada 2), promovido aqui por composicao de sitio; a entrada do pen pode ser dispensada apos o ship. Depende da US-001 apenas por tocarem a mesma funcao (ordenar sequencial evita conflito de edicao)."
     }
-  ]
+  ],
+  "review": {
+    "roundsCompleted": 1,
+    "maxRounds": 3,
+    "lastVerdict": "FIXES_PENDING:2",
+    "findings": [
+      {
+        "severity": "WARNING",
+        "file": "test/vendor-coss-idempotence.test.ts",
+        "line": 8,
+        "text": "US-001 has no error-path test over an existing destination. The diff broadened the docblock guarantee at scripts/vendor-coss.ts:186-187 from 'leaves a previously absent destination absent' to 'Failures before promotion leave the destination unchanged', but nothing exercises that new claim: every failure test in test/vendor-coss-fail-closed.test.ts runs against an absent destination. Add a test that vendors a clean tree, then re-runs vendorCoss with poisoned source over the now-existing destination and asserts (a) VendorVerificationError is thrown, (b) the previous content is byte-identical, (c) readdirSync(parent) still contains only the destination (no .staging-/.previous- residue). The rename-failure restore branch (scripts/vendor-coss.ts:216-219) is not reachable without injecting fs, so it is not covered by this finding."
+      },
+      {
+        "severity": "WARNING",
+        "file": "test/vendor-coss-idempotence.test.ts",
+        "line": 25,
+        "text": "The single idempotence test re-runs with the identical file set, so it cannot distinguish swap promotion from a merge/overlay copy: removal of files that existed in the previous tree and are absent from the new source set is the defining property of the swap and is unasserted. Add a second run with a source set that drops one relPath and adds another, asserting the dropped file no longer exists under the destination and the added one does."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "scripts/vendor-coss.ts",
+        "line": 211,
+        "text": "mkdtempSync followed by rmSync to reserve the sibling '.previous-' name leaves a small TOCTOU window between the rm and the rename. Harmless for a single-run vendoring script, but a name derived without materializing the directory (or renaming straight onto the mkdtemp path after rmSync in the same statement) would remove the window."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "scripts/vendor-coss.ts",
+        "line": 76,
+        "text": "listRequiredSourceFiles makes verify reject any tree with zero .ts/.tsx/.js/... files, which also rejects a hypothetically legitimate asset-only vendor tree (for example CSS-only). No caller depends on that today (vendor-coss.ts has no production call site yet), and treating an asset-only fetch as a fetch failure is defensible, but CAM-565 vendors the real COSS tree and should confirm the assumption holds there."
+      },
+      {
+        "severity": "SUGGESTION",
+        "file": "scripts/vendor-coss.ts",
+        "line": 217,
+        "text": "If the restoring renameSync in the catch also throws, the restore error replaces the original promotion error and the root cause is lost. Wrapping the restore so the original error is rethrown (with the restore failure attached as cause) would keep the diagnosis."
+      }
+    ]
+  }
 }
