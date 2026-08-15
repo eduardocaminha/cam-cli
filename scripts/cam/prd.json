@@ -44,7 +44,7 @@
         "Espinha de lint passa. [oracle: bun run check:all]"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Sitios: scripts/vendor-coss.ts verify (linhas 122-158, hoje o loop sobre listSourceFiles passa vacuamente quando a lista e vazia) e vendorCoss (recusar fetchFiles() vazio antes de escrever staging, mantendo a garantia existente de que falha remove o staging e deixa destino ausente ausente). Teste novo: test/vendor-coss-nonvacuous.test.ts. Nenhum teste existente assere que verify passa em raiz vazia (verificado por grep em 2026-08-15), entao a recusa nao quebra a suite. GOTCHA: NUNCA usar grep -qv em oraculo (shim ugrep, ver US-001). Este defeito veio do holding pen fingerprint 17f8ccc2667e (cam/issue-571 rodada 2), promovido aqui por composicao de sitio; a entrada do pen pode ser dispensada apos o ship. Depende da US-001 apenas por tocarem a mesma funcao (ordenar sequencial evita conflito de edicao)."
     }
