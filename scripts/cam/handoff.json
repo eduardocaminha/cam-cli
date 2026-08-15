@@ -1,0 +1,26 @@
+{
+  "lastCompletedStory": {
+    "id": "US-001",
+    "title": "Funcao verify de allowlist por especificador e modo CLI --verify <dir>"
+  },
+  "branchName": "cam/issue-571",
+  "timestamp": "2026-08-15T00:05:29Z",
+  "createdFiles": [
+    "scripts/vendor-coss.ts",
+    "test/vendor-coss.test.ts"
+  ],
+  "modifiedFiles": [],
+  "openQuestions": [],
+  "nextStoryContext": "verify(dir) is synchronous and fail-closed: it throws VendorVerificationError after collecting all disallowed literal imports. The CLI adapter prints every collected violation. Network fetch, transitive closure, rewriting, provenance, staging promotion, and the real vendored tree remain intentionally out of scope for CAM-565/follow-up stories.",
+  "appliedPatternIds": [],
+  "officialDocsValidated": [
+    {
+      "lib": "Bun.Transpiler",
+      "channel": "WebSearch",
+      "url": "https://bun.sh/docs/runtime/transpiler",
+      "fetchedAt": "2026-08-15T00:05:29Z",
+      "status": "aligned",
+      "summary": "Current Bun docs confirm the tsx loader, scan(source).imports path/kind API, and that scanImports is the less-accurate fast path."
+    }
+  ]
+}
