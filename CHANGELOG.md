@@ -6,6 +6,16 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.291.0] - 2026-08-15
+
+### Added
+
+- US-R1-003 - WARNING: Lacuna de casos adversariais: o guard de path traversal de resolveVend…
+- US-R1-002 - WARNING: listSourceFiles usa entry.isFile(), que e false para symlink, entao ar…
+- US-R1-001 - CRITICAL: Fail-open no guard fail-closed: Bun.Transpiler.scan() nao reporta req…
+- US-002 - Vendorizacao com escrita em staging e promocao atomica fail-closed
+- US-001 - Funcao verify de allowlist por especificador e modo CLI --verify <dir>
+
 ## [0.290.0] - 2026-08-14
 
 ### Added
