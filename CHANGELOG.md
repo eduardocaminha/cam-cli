@@ -6,6 +6,17 @@ Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` headin
 
 ## [Unreleased]
 
+## [0.292.0] - 2026-08-15
+
+### Added
+
+- US-R2-001 - WARNING: The round-1 WARNING asked to ADD a second run with a changed source se…
+- US-R1-002 - WARNING: The single idempotence test re-runs with the identical file set, so it…
+- US-R1-001 - WARNING: US-001 has no error-path test over an existing destination. The diff b…
+- US-R1-001 - preserve existing vendor on verification failure
+- US-002 - Recusar arvore vazia na vendorizacao e em verify
+- US-001 - Promocao em swap idempotente em vendorCoss
+
 ## [0.291.0] - 2026-08-15
 
 ### Added
