@@ -49,6 +49,9 @@ function listSourceFiles(dir: string): string[] {
 		a.name.localeCompare(b.name),
 	)) {
 		const path = resolve(dir, entry.name);
+		if (entry.isSymbolicLink()) {
+			throw new Error(`COSS vendor verification rejects symbolic link: ${path}`);
+		}
 		if (entry.isDirectory()) {
 			files.push(...listSourceFiles(path));
 		} else if (entry.isFile() && isSourceFile(path)) {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
 	runCli,
@@ -62,6 +62,18 @@ describe('verify', () => {
 		expect(messages).toEqual([
 			'leak.cjs: import "@coss/ui" specifier is not in the explicit npm allowlist',
 		]);
+	});
+
+	test('rejects a source file reached through a symbolic link', () => {
+		const root = createTestTmpdir('cam-vendor-coss-symlink-root-');
+		const targetRoot = createTestTmpdir('cam-vendor-coss-symlink-target-');
+		writeSource(targetRoot, 'real/leak.ts', 'import x from "@coss/ui";\n');
+		const link = join(root, 'link.ts');
+		symlinkSync(join(targetRoot, 'real/leak.ts'), link);
+		const messages: string[] = [];
+
+		expect(runCli(['--verify', root], (message) => messages.push(message))).toBe(1);
+		expect(messages).toEqual([`COSS vendor verification rejects symbolic link: ${link}`]);
 	});
 
 	test('matches allowlisted packages only at an exact or slash-delimited subpath boundary', () => {
