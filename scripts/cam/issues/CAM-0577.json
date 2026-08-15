@@ -1,0 +1,38 @@
+{
+  "id": "CAM-577",
+  "title": "gship runtime: revisão independente read-only com uma correção",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-15T22:57:19.688Z",
+  "updatedAt": "2026-08-15T22:57:19.688Z",
+  "description": "Depois dos oráculos, o runtime web ainda declara ready-to-ship sem uma revisão independente do diff. Esta fatia adiciona um reviewer headless separado, realmente read-only, com no máximo uma correção automática antes de devolver a decisão ao operador.",
+  "specSource": "operator",
+  "spec": {
+    "acceptanceCriteria": [
+      "Depois de verify verde, o runtime entra em review; CLEAN leva a ready-to-ship, findings disparam exatamente uma correção pelo executor seguida de nova verificação e nova revisão, e findings persistentes param em waiting-user com fixRounds=1. Swept RED on main 2026-08-15: o runtime pula de verify direto para ready-to-ship; swept GREEN em árvore pós-mudança simulada com o arquivo de teste-alvo presente. [oracle: named-command bun test test/runtime/run-review.test.ts]",
+      "Cada revisão usa uma sessão Claude nova e separada da sessão do implementer, saída JSON estruturada e allowlist somente Read/Grep/Glob; Bash, Edit e Write não são oferecidos, e cancelamento encerra e aguarda o grupo do processo. Swept RED on main 2026-08-15: não existe ClaudeCliReviewer; swept GREEN em árvore pós-mudança simulada com o arquivo de teste-alvo presente. [oracle: named-command bun test test/runtime/claude-cli-reviewer.test.ts]",
+      "A composição de produção de gship web conecta o reviewer real e persiste/publica por SSE os eventos de início, veredito e limite de correção sem criar polling, tmux ou estado paralelo. Swept RED on main 2026-08-15: startWebServer conecta apenas executor e verifier; swept GREEN em árvore pós-mudança simulada com o arquivo de teste-alvo presente. [oracle: named-command bun test test/web/run-review.test.ts]"
+    ],
+    "scope": "ENTRA: contrato RuntimeReviewer; reviewer Claude CLI headless com sessão fresca, JSON schema e ferramentas somente Read/Grep/Glob; transição verify->review; CLEAN; uma única correção automática com feedback explícito ao executor; reverify e rereview; waiting-user após findings persistentes; eventos duráveis/SSE; cancelamento do processo; testes de unidade, subprocesso real e composição web. NÃO ENTRA: planner/auditor; ship/commit/push; múltiplas rodadas automáticas; política de severidade extensa; suggestion pen; tmux; sidecar; Agent SDK; framework de workflow.",
+    "gotchas": [
+      "A independência exige session id novo em cada review; nunca reutilizar --resume da implementação.",
+      "Read-only é capability: o processo não recebe Bash, Edit, Write, NotebookEdit ou Agent; não depender apenas do prompt.",
+      "O feedback do reviewer precisa entrar explicitamente no prompt da única correção automática.",
+      "A segunda reprovação não vira failed nem inicia round 2; persiste diagnóstico e transiciona para waiting-user.",
+      "Todo subprocesso do reviewer pertence ao serviço e precisa ser aguardado após SIGTERM/SIGKILL."
+    ],
+    "domainTerms": [
+      "independent reviewer",
+      "read-only capability",
+      "single auto-fix round",
+      "structured verdict"
+    ]
+  },
+  "wsjf": {
+    "value": 9,
+    "timeCriticality": 9,
+    "riskReduction": 9,
+    "jobSize": 5
+  }
+}
