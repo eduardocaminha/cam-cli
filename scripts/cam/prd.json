@@ -31,7 +31,7 @@
         "Lint spine passes (bun run check:all). [oracle: bun run check:all]"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "requires": null,
       "notes": "Arquivo novo: scripts/vendor-coss.ts. NAO ENTRA nesta issue: fetch de rede, fecho transitivo, reescrita de especificador, manifesto, PROVENANCE e a arvore vendorizada (tudo CAM-565). Parsear DECLARACAO de import via Bun.Transpiler.scan(src).imports (loader tsx), nunca casar string solta: no upstream @coss/ui tambem aparece em registryDependencies, que e namespace de registry do shadcn e nao import npm, e string solta produz falso positivo sobre metadado (gotcha medido na CAM-565). Usar scan() e nao scanImports() (menos preciso, doc oficial). Contencao de caminho relativo: path.resolve(dirname(arquivo), spec) e exigir resolved dentro de path.resolve(root) (igualdade ou prefixo com separador); noUncheckedIndexedAccess vale para args de CLI (args[i+1] e string | undefined, guardar). Allowlist npm sugerida a partir dos imports medidos dos seeds: react, clsx, tailwind-merge, class-variance-authority, @base-ui/react (com subpath por prefixo). CLI: --verify <dir> lista cada violacao em stderr e sai nao-zero; sem violacao sai 0. O modo sem argumento (vendorizacao real) NAO e implementavel aqui (nao existe fetcher ainda, e CAM-565); nao inventar. knip: scripts/**/*.ts e entry point, script sem consumidor nao e dead code (medicao que licenciou o corte desta issue). Manter o contrato CLI estavel: a CAM-565 vai rodar bun scripts/vendor-coss.ts --verify webui/vendor/coss. NUNCA usar grep -qv em oraculo (shim ugrep, gotcha da issue). Termos que governam: CONTEXT.md, entradas 'guard fail-closed por allowlist' e 'direcao de injecao' (grep-on-demand)."
     },
