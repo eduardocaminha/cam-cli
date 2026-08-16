@@ -1,0 +1,19 @@
+{
+  "id": "CAM-583",
+  "title": "Auto-ship após oracle verde e review CLEAN",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-16T09:40:04.803Z",
+  "updatedAt": "2026-08-16T09:40:04.803Z",
+  "description": "No RunRuntime, quando um run verificado chega a ready-to-ship e existe shipper configurado, continuar automaticamente no mesmo ownership para shipping e done após o merge. Persistir shipping como fase real; em falha ou cancelamento, voltar a ready-to-ship para retry. Manter o endpoint e o botão Shipar apenas como retry explícito. Não adicionar flag, modo ou camada de política.",
+  "specSource": "operator",
+  "spec": {
+    "acceptanceCriteria": [
+      "No RunRuntime, quando um run verificado chega a ready-to-ship e existe shipper configurado, continuar automaticamente no mesmo ownership para shipping e done após o merge. Persistir shipping como fase real; em falha ou cancelamento, voltar a ready-to-ship para retry. Manter o endpoint e o botão Shipar apenas como retry explícito. Não adicionar flag, modo ou camada de política. [oracle: named-command bun test test/runtime/run-state.test.ts test/runtime/run-review.test.ts test/runtime/run-ship.test.ts test/web/run-ship.test.ts test/web/ui-client.test.tsx]"
+    ],
+    "scope": "No RunRuntime, quando um run verificado chega a ready-to-ship e existe shipper configurado, continuar automaticamente no mesmo ownership para shipping e done após o merge. Persistir shipping como fase real; em falha ou cancelamento, voltar a ready-to-ship para retry. Manter o endpoint e o botão Shipar apenas como retry explícito. Não adicionar flag, modo ou camada de política.",
+    "gotchas": [],
+    "domainTerms": []
+  }
+}
