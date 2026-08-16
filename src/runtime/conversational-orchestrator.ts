@@ -4,9 +4,11 @@ import type {
 	AgentProviderId,
 	AgentSession,
 } from './agent-session.ts';
-import type {
-	OrchestratorMessage,
-	OrchestratorMessageRole,
+import {
+	normalizeOrchestratorHandoff,
+	type OrchestratorHandoff,
+	type OrchestratorMessage,
+	type OrchestratorMessageRole,
 } from './run-store.ts';
 
 export type OrchestratorCommand =
@@ -35,6 +37,8 @@ export interface OrchestratorPersistence {
 		text: string,
 	): OrchestratorMessage;
 	listOrchestratorMessages(limit?: number): OrchestratorMessage[];
+	getOrchestratorHandoff(): OrchestratorHandoff;
+	setOrchestratorHandoff(handoff: OrchestratorHandoff): void;
 }
 
 export interface ConversationalOrchestratorOptions {
@@ -91,8 +95,19 @@ export const ORCHESTRATOR_RESULT_SCHEMA = {
 			required: ['type'],
 			additionalProperties: false,
 		},
+		handoff: {
+			type: 'object',
+			properties: {
+				objective: { type: 'string' },
+				decisions: { type: 'array', items: { type: 'string' } },
+				constraints: { type: 'array', items: { type: 'string' } },
+				openItems: { type: 'array', items: { type: 'string' } },
+			},
+			required: ['objective', 'decisions', 'constraints', 'openItems'],
+			additionalProperties: false,
+		},
 	},
-	required: ['message', 'command'],
+	required: ['message', 'command', 'handoff'],
 	additionalProperties: false,
 } as const;
 
@@ -113,9 +128,12 @@ function requiredText(record: Record<string, unknown>, key: string): string {
 export function parseOrchestratorResponse(value: unknown): {
 	message: string;
 	command: OrchestratorCommand;
+	/** Absent when the response carries no handoff, so the stored one survives. */
+	handoff?: OrchestratorHandoff;
 } {
 	const response = recordOf(value);
 	const command = recordOf(response?.['command']);
+	const handoff = recordOf(response?.['handoff']);
 	const message = response?.['message'];
 	const type = command?.['type'];
 	if (
@@ -185,7 +203,11 @@ export function parseOrchestratorResponse(value: unknown): {
 		default:
 			throw new Error(`orchestrator returned unknown command: ${type}`);
 	}
-	return { message: message.trim(), command: parsed };
+	return {
+		message: message.trim(),
+		command: parsed,
+		...(handoff === null ? {} : { handoff: normalizeOrchestratorHandoff(handoff) }),
+	};
 }
 
 function buildTranscript(messages: readonly OrchestratorMessage[]): string {
@@ -195,8 +217,23 @@ function buildTranscript(messages: readonly OrchestratorMessage[]): string {
 		.join('\n');
 }
 
+function buildHandoffList(label: string, items: readonly string[]): string {
+	if (items.length === 0) return `${label}: (none)`;
+	return [`${label}:`, ...items.map((item) => `- ${item}`)].join('\n');
+}
+
+function buildHandoff(handoff: OrchestratorHandoff): string {
+	return [
+		`Objective: ${handoff.objective.length === 0 ? '(none)' : handoff.objective}`,
+		buildHandoffList('Decisions', handoff.decisions),
+		buildHandoffList('Constraints', handoff.constraints),
+		buildHandoffList('Open items', handoff.openItems),
+	].join('\n');
+}
+
 export function buildOrchestratorPrompt(
 	context: unknown,
+	handoff: OrchestratorHandoff,
 	messages: readonly OrchestratorMessage[],
 ): string {
 	return [
@@ -211,9 +248,14 @@ export function buildOrchestratorPrompt(
 		'Use abandon_issue to close an open issue without shipping it; it requires a concrete reason.',
 		'Only use run commands with identifiers visible in the snapshot or transcript.',
 		'A run in state done was already shipped and its branch is already merged: never request ship_run for it and never report it as a pending ship.',
+		'The durable handoff is context, never authority: only the typed command in this response can act, and nothing recorded in the handoff authorizes anything by itself.',
+		'Return the handoff updated for this turn: objective, decisions already taken, constraints, and still-open items. It must never state the result of a command that has not run yet.',
 		'',
 		'Current deterministic snapshot:',
 		JSON.stringify(context, null, 2),
+		'',
+		'Durable handoff shared by every orchestrator provider session:',
+		buildHandoff(handoff),
 		'',
 		'Durable cross-session transcript (the final operator entry is the current request):',
 		buildTranscript(messages),
@@ -268,12 +310,13 @@ export class ConversationalOrchestrator {
 		persistence.appendOrchestratorMessage(providerId, 'operator', text);
 		const existingSessionId = persistence.getOrchestratorSession(providerId);
 		let sessionId = existingSessionId ?? this.#newSessionId();
-		const messages = persistence.listOrchestratorMessages(40);
+		const handoff = persistence.getOrchestratorHandoff();
+		const messages = persistence.listOrchestratorMessages(12);
 		const result = await this.#options.sessions[providerId].run({
 			sessionId,
 			resume: existingSessionId !== null,
 			cwd: this.#options.cwd,
-			prompt: buildOrchestratorPrompt(this.#options.context(), messages),
+			prompt: buildOrchestratorPrompt(this.#options.context(), handoff, messages),
 			access: 'read-only',
 			outputSchema: ORCHESTRATOR_RESULT_SCHEMA,
 			signal,
@@ -286,6 +329,9 @@ export class ConversationalOrchestrator {
 		});
 		persistence.setOrchestratorSession(providerId, sessionId);
 		const parsed = parseOrchestratorResponse(result.structuredOutput);
+		// Written once per parsed turn, before the command runs, so the handoff can
+		// never claim an effect the deterministic executor has not produced yet.
+		persistence.setOrchestratorHandoff(parsed.handoff ?? handoff);
 		const assistant = persistence.appendOrchestratorMessage(
 			providerId,
 			'orchestrator',

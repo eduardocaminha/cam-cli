@@ -40,6 +40,44 @@ export interface OrchestratorMessage {
 	createdAt: string;
 }
 
+/**
+ * Durable synthesis of the conversation, stored as a single overwritten record
+ * so every provider session reads the same handoff.
+ */
+export interface OrchestratorHandoff {
+	objective: string;
+	decisions: string[];
+	constraints: string[];
+	openItems: string[];
+}
+
+export function emptyOrchestratorHandoff(): OrchestratorHandoff {
+	return { objective: '', decisions: [], constraints: [], openItems: [] };
+}
+
+function decodeHandoffList(value: unknown): string[] {
+	if (!Array.isArray(value)) return [];
+	return value
+		.filter((item): item is string => typeof item === 'string')
+		.map((item) => item.trim())
+		.filter((item) => item.length > 0);
+}
+
+/** Accepts any shape; anything unusable degrades to the empty handoff. */
+export function normalizeOrchestratorHandoff(value: unknown): OrchestratorHandoff {
+	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+		return emptyOrchestratorHandoff();
+	}
+	const record = value as Record<string, unknown>;
+	const objective = record['objective'];
+	return {
+		objective: typeof objective === 'string' ? objective.trim() : '',
+		decisions: decodeHandoffList(record['decisions']),
+		constraints: decodeHandoffList(record['constraints']),
+		openItems: decodeHandoffList(record['openItems']),
+	};
+}
+
 export interface CreateRunInput {
 	id: string;
 	issueId: string;
@@ -198,7 +236,12 @@ export class RunStore {
 				session_id TEXT NOT NULL,
 				updated_at TEXT NOT NULL
 			);
-			CREATE TABLE IF NOT EXISTS orchestrator_messages (
+			CREATE TABLE IF NOT EXISTS orchestrator_handoff (
+					id INTEGER PRIMARY KEY CHECK (id = 1),
+					handoff_json TEXT NOT NULL,
+					updated_at TEXT NOT NULL
+				);
+				CREATE TABLE IF NOT EXISTS orchestrator_messages (
 				seq INTEGER PRIMARY KEY AUTOINCREMENT,
 				provider_id TEXT NOT NULL,
 				role TEXT NOT NULL,
@@ -353,6 +396,31 @@ export class RunStore {
 				session_id = excluded.session_id,
 				updated_at = excluded.updated_at
 		`).run({ providerId, sessionId: normalized, updatedAt });
+	}
+
+	/** Single shared record: a missing or corrupt row reads as the empty handoff. */
+	getOrchestratorHandoff(): OrchestratorHandoff {
+		const row = this.#db.query(`
+			SELECT handoff_json FROM orchestrator_handoff WHERE id = 1
+		`).get() as { handoff_json: string } | null;
+		if (row === null) return emptyOrchestratorHandoff();
+		try {
+			return normalizeOrchestratorHandoff(JSON.parse(row.handoff_json) as unknown);
+		} catch {
+			// A malformed handoff must never block the next turn.
+			return emptyOrchestratorHandoff();
+		}
+	}
+
+	setOrchestratorHandoff(handoff: OrchestratorHandoff, updatedAt: string): void {
+		const normalized = normalizeOrchestratorHandoff(handoff);
+		this.#db.query(`
+			INSERT INTO orchestrator_handoff (id, handoff_json, updated_at)
+			VALUES (1, $handoffJson, $updatedAt)
+			ON CONFLICT(id) DO UPDATE SET
+				handoff_json = excluded.handoff_json,
+				updated_at = excluded.updated_at
+		`).run({ handoffJson: JSON.stringify(normalized), updatedAt });
 	}
 
 	appendOrchestratorMessage(input: {
