@@ -545,7 +545,7 @@ afterEach(() => {
  * spawnSync default, by seeding entries with a large filler title.
  */
 function makeLargeBacklogRepo(count: number, fillerBytes: number): { dir: string; ids: string[] } {
-	const dir = createTestTmpdir('cam-backlog-maxbuffer-');
+	const dir = createTestTmpdir('gship-backlog-maxbuffer-');
 	dirsToCleanup.push(dir);
 
 	const git = (args: string[]) =>

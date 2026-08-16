@@ -129,7 +129,7 @@ describe('createTestTmpdir', () => {
 			const helperPath = join(import.meta.dir, 'test-tmpdir.ts');
 			try {
 				const proc = Bun.spawn(
-					['bun', '-e', `import { createTestTmpdir } from '${helperPath}'; createTestTmpdir('cam-test-fence-');`],
+					['bun', '-e', `import { createTestTmpdir } from '${helperPath}'; createTestTmpdir('gship-test-fence-');`],
 					{ cwd: REPO_ROOT, stdout: 'pipe', stderr: 'pipe' },
 				);
 				const [exitCode, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
@@ -191,7 +191,7 @@ describe('createTestTmpdir', () => {
 			new Response(proc.stderr).text(),
 		]);
 		expect(exitCode).toBe(0);
-		const match = stdout.match(/CAM_REAP_FIXTURE_DIR:(\S+)/);
+		const match = stdout.match(/GSHIP_REAP_FIXTURE_DIR:(\S+)/);
 		if (!match || !match[1]) {
 			throw new Error(`fixture did not report a directory path; stdout=${stdout} stderr=${stderr}`);
 		}

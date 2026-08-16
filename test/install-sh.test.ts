@@ -29,8 +29,8 @@ let fakeBinDir: string;
 let installDir: string;
 
 beforeEach(() => {
-	fakeBinDir = createTestTmpdir('cam-test-install-bin-');
-	installDir = createTestTmpdir('cam-test-install-dest-');
+	fakeBinDir = createTestTmpdir('gship-test-install-bin-');
+	installDir = createTestTmpdir('gship-test-install-dest-');
 });
 
 afterEach(() => {
@@ -205,7 +205,7 @@ function assetNameForHost(): string {
  * deliberately absent. Caller is responsible for `rmSync`-ing the result.
  */
 function buildPathWithoutHashTools(): string {
-	const toolsDir = createTestTmpdir('cam-test-install-notools-');
+	const toolsDir = createTestTmpdir('gship-test-install-notools-');
 	const required = ['uname', 'mktemp', 'chmod', 'grep', 'sed', 'awk', 'mkdir', 'cp', 'rm'];
 	if (process.platform === 'darwin') {
 		required.push('xattr');
