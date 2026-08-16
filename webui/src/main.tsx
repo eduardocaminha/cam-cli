@@ -31,7 +31,12 @@ import {
 	startRun,
 	type WorkspaceNoticeView,
 } from './client.ts';
-import type { PlannableIssue, RunEventView, RunView } from './run-view.ts';
+import {
+	invalidatesSnapshot,
+	type PlannableIssue,
+	type RunEventView,
+	type RunView,
+} from './run-view.ts';
 import {
 	browserNotificationPermission,
 	type BrowserNotificationPermission,
@@ -124,7 +129,7 @@ function useOperationalRun(): {
 					merged.set(event.seq, event);
 					return [...merged.values()].sort((a, b) => a.seq - b.seq).slice(-200);
 				});
-				if (event.fromState !== event.toState || event.kind === 'run.created') refresh();
+				if (invalidatesSnapshot(event)) refresh();
 			} catch {
 				setStatus('Evento de atividade inválido.');
 			}

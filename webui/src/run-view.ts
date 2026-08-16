@@ -124,6 +124,18 @@ export function attentionToneOf(attention: OperatorAttention): StateTone {
 	return ATTENTION_TONE[attention];
 }
 
+/**
+ * Whether an event makes the operational snapshot stale, so the client re-reads
+ * it. A state transition changes the run, `run.created` changes the run list,
+ * and `workspace.cleanup-warning` is emitted done-to-done but leaves a preserved
+ * workspace behind -- the header and the notices panel would otherwise stay on
+ * the pre-warning snapshot until the operator reloads the page.
+ */
+export function invalidatesSnapshot(event: RunEventView): boolean {
+	if (event.fromState !== event.toState) return true;
+	return event.kind === 'run.created' || event.kind === 'workspace.cleanup-warning';
+}
+
 const CANCELLABLE: readonly RunState[] = [
 	'queued',
 	'working',

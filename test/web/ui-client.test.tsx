@@ -34,7 +34,9 @@ import { isAtLiveEdge, LIVE_EDGE_TOLERANCE_PX } from '../../webui/src/live-edge.
 import {
 	actionsFor,
 	attentionOf,
+	invalidatesSnapshot,
 	progressOf,
+	type RunEventView,
 	type RunState,
 	type RunView,
 } from '../../webui/src/run-view.ts';
@@ -63,6 +65,18 @@ function runIn(state: RunState, overrides: Partial<RunView> = {}): RunView {
 		error: null,
 		updatedAt: '2026-08-16T00:00:00.000Z',
 		...overrides,
+	};
+}
+
+function eventIn(fromState: RunState, toState: RunState, kind: string): RunEventView {
+	return {
+		seq: 1,
+		runId: 'run-1',
+		kind,
+		fromState,
+		toState,
+		payload: {},
+		createdAt: '2026-08-16T00:00:00.000Z',
 	};
 }
 
@@ -742,6 +756,19 @@ describe('screen derivations', () => {
 	test('an interrupted run is resumable and a terminal one is not', () => {
 		expect(actionsFor(runIn('interrupted'), false).resume).toBe(true);
 		expect(actionsFor(runIn('failed'), true)).toMatchObject({ start: true, resume: false });
+	});
+
+	test('a state transition and a created run make the snapshot stale', () => {
+		expect(invalidatesSnapshot(eventIn('working', 'verify', 'cycle.completed'))).toBe(true);
+		expect(invalidatesSnapshot(eventIn('queued', 'queued', 'run.created'))).toBe(true);
+	});
+
+	test('a cleanup warning makes the snapshot stale though it never changes state', () => {
+		expect(invalidatesSnapshot(eventIn('done', 'done', 'workspace.cleanup-warning'))).toBe(true);
+	});
+
+	test('ordinary activity inside one state leaves the snapshot current', () => {
+		expect(invalidatesSnapshot(eventIn('done', 'done', 'activity'))).toBe(false);
 	});
 });
 
