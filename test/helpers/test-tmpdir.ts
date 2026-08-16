@@ -2,8 +2,7 @@
 //
 // Single test-scratch helper (US-002, CAM-508). Every temp directory a test
 // needs is created under a repo-local scratch root (`.cam-test-tmp/`,
-// ignored on all three sides -- .gitignore, templates/.gitignore, and the
-// embedded copy -- by US-001) instead of the shared $TMPDIR. Under a
+// ignored by the repository .gitignore) instead of the shared $TMPDIR. Under a
 // degraded shared-$TMPDIR environment (CAM-503), dozens of test files each
 // rooting their own `mkdtempSync(join(tmpdir(), ...))` produced spurious
 // slow/failing tests; this is the single replacement call site.
@@ -35,9 +34,8 @@
 // mutation, so it only reaches a child git process that forwards live
 // `process.env` -- and `Bun.spawnSync` does NOT live-inherit env mutations
 // made after Bun startup unless `env: process.env` is passed explicitly
-// (confirmed empirically). Several call sites forward it deliberately
-// (`scripts/validate-agents-md.ts`), but nothing enforces that every future
-// spawn site remembers to, and a spawn site that forgets would silently walk
+// (confirmed empirically). Nothing enforces that every future spawn site
+// remembers to forward it, and a spawn site that forgets would silently walk
 // a non-git-inited scratch dir up into cam-cli's OWN working tree instead of
 // failing closed. `ensureScratchRootIsAGitRepo` below closes that class of
 // gap structurally: it makes `SCRATCH_ROOT` itself a (near-empty) git repo,
@@ -55,9 +53,8 @@ const REPO_ROOT = join(import.meta.dir, '..', '..');
 
 /**
  * Repo-local scratch root every helper-created directory lives under.
- * Ignored identically in .gitignore / templates/.gitignore / the embedded
- * copy (US-001, CAM-508) so a directory surviving a crash never dirties the
- * working tree.
+ * Ignored by the repository .gitignore so a directory surviving a crash
+ * never dirties the working tree.
  */
 export const SCRATCH_ROOT = join(REPO_ROOT, '.cam-test-tmp');
 

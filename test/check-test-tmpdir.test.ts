@@ -172,11 +172,9 @@ describe('scanForTmpdirRoots — allowlist mechanism', () => {
 		expect(results[0]!.kind).toBe('join');
 	});
 
-	test('the real ALLOWLIST holds exactly the CAM-508 GOTCHA 10(a) entry', async () => {
+	test('the real ALLOWLIST is empty', async () => {
 		const { ALLOWLIST } = await import('../scripts/check-test-tmpdir.ts');
-		expect(ALLOWLIST).toHaveLength(1);
-		expect(ALLOWLIST[0]!.path).toBe('test/vendor/check-agent-frontmatter-standalone.test.ts');
-		expect(ALLOWLIST[0]!.reason.length).toBeGreaterThan(0);
+		expect(ALLOWLIST).toEqual([]);
 	});
 });
 

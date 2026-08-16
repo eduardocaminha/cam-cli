@@ -7,7 +7,7 @@
 //   2. Asks which issue system, merge mode, and plan-approval mode to use.
 //   3. Verifies Claude Code is installed + logged in.
 //   4. If new project: asks what the project is about.
-//   5. Persists project config and installs the bundled templates.
+//   5. Persists the small project config used by deterministic maintenance commands.
 //   6. Returns to the web-first flow.
 //
 // Flags accepted by parseSetupArgs (wired in index.ts):
@@ -31,7 +31,6 @@ import { loadConfig, mergeIntoConfig, saveConfig } from '../config/toml.ts';
 import { printError, printHint, printSuccess, printWarning } from '../logging/color.ts';
 import { printAutomergeNotice } from '../logging/notices.ts';
 import type { SpawnFn as BpSpawnFn } from '../release/branch-protection.ts';
-import { materializeTemplates } from '../templates/embedded.ts';
 import { type SetupAnswers, SetupScreen } from '../ui/SetupScreen.tsx';
 import { applyMergeMode } from './setup-merge-mode.ts';
 
@@ -337,23 +336,6 @@ function verifyAgent(): AgentVerifyResult {
 	return { ok: true, path };
 }
 
-// ---------------------------------------------------------------------------
-// Template installation
-// ---------------------------------------------------------------------------
-
-export function copyTemplates(cwd: string): void {
-	const counts = materializeTemplates(cwd);
-	const targets: Array<{ subtree: keyof typeof counts; rel: string }> = [
-		{ subtree: 'commands', rel: '.claude/commands' },
-		{ subtree: 'agents', rel: '.claude/agents' },
-		{ subtree: 'scripts/cam', rel: 'scripts/cam' },
-		{ subtree: 'skills', rel: '.claude/skills' },
-	];
-	for (const { subtree, rel } of targets) {
-		printSuccess(`Installed ${counts[subtree]} file(s) → ${rel}`);
-	}
-}
-
 // Public entrypoint
 // ---------------------------------------------------------------------------
 
@@ -463,11 +445,8 @@ export async function runSetup(options: SetupOptions = {}): Promise<number> {
 		printWarning('No description provided — the agent will infer from the codebase');
 	}
 
-	// --- Step 6: copy templates ---------------------------------------------
-	copyTemplates(cwd);
-
-	// --- Step 7: return to the web-first runtime -----------------------------
-	printSuccess('Templates installed');
+	// The web runtime owns execution directly. Project setup deliberately does
+	// not install Claude slash commands, agent personas, hooks, or sidecars.
 	printHint('Next: run `gship` to open the local web control surface');
 	return 0;
 }

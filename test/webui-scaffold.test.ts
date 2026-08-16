@@ -13,6 +13,7 @@ describe('web UI scaffold', () => {
 	test('builds used Tailwind utilities into a stably named Vite CSS asset', () => {
 		const result = Bun.spawnSync(['bun', 'run', 'build:ui'], {
 			cwd: REPO_ROOT,
+			env: { ...process.env, NODE_ENV: 'production' },
 			stdout: 'pipe',
 			stderr: 'pipe',
 		});

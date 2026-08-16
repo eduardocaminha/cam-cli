@@ -176,14 +176,8 @@ export const GATES: Gate[] = [
 	g('dead-code', 'bunx --bun knip'),
 	g('dup', 'bunx jscpd --config .jscpd.json src scripts'),
 	g('ci-parity', 'bun run check:ci-parity'),
-	g('agents-md', 'bun scripts/validate-agents-md.ts'),
 	g('test-sleeps', 'bun scripts/check-test-sleeps.ts'),
 	g('test-tmpdir', 'bun scripts/check-test-tmpdir.ts'),
-	// Derived .gitignore parity oracle (repo root vs templates/.gitignore).
-	// It is driven from `bun test` as well (test/check-gitignore-parity-script.test.ts),
-	// but a parity failure surfaced there reads as a test regression; naming it
-	// in the spine makes the verdict legible as its own gate line.
-	g('gitignore-parity', 'bash scripts/check-gitignore-parity.sh .'),
 	skipRatchetGate,
 ];
 

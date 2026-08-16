@@ -22,7 +22,7 @@
 // comparand (e.g. `dir.startsWith(tmpdir())`): no join, no template-literal
 // path construction, nothing to root.
 //
-// Ships with a working allowlist mechanism (per-entry path + reason). An
+// Supports an allowlist mechanism (per-entry path + reason). An
 // allowlist entry naming a path this scan never touched fails the gate
 // outright, so a stale entry can never outlive its own justification.
 // US-R2-002 closed a gap in that invariant: the allowlisted file itself is
@@ -30,20 +30,7 @@
 // matches a real file but suppressed zero findings there is *itself* a
 // stale-allowlist-entry finding -- an entry can no longer keep passing on a
 // path match alone once the finding it was written to justify disappears
-// (e.g. the guarded call site gets migrated or deleted). Its first real
-// consumer (US-R1-001, CAM-508 GOTCHA 10(a)) is
-// test/vendor/check-agent-frontmatter-standalone.test.ts, whose whole
-// premise requires a directory reachably outside any node_modules
-// resolution chain -- the repo-local scratch root defeats that premise by
-// living inside the cam-cli checkout. US-R2-001 (CAM-508 GOTCHA 10(a) round
-// 2) closed the gap the round-1 review found: rooting outside node_modules
-// alone did not guard the zero-dep invariant at runtime, because `bun`
-// auto-installs a missing bare-specifier import from ~/.bun/install/cache
-// regardless of cwd. The test's two spawnSync calls now pass `--no-install`,
-// which makes a grown third-party dependency fail loudly instead of
-// resolving silently (verified: `bun --no-install` on a script importing an
-// installed-but-not-vendored package exits non-zero with "Cannot find
-// package").
+// (e.g. the guarded call site gets migrated or deleted).
 //
 // Exports:
 //   filterScannablePaths(paths)         - drop excluded-dir entries
@@ -96,21 +83,7 @@ export interface TmpdirAllowlistEntry {
  * The real allowlist. Populate only with a per-entry reason; a dangling
  * entry (naming a path this scan does not reach) fails the gate.
  */
-export const ALLOWLIST: TmpdirAllowlistEntry[] = [
-	{
-		path: 'test/vendor/check-agent-frontmatter-standalone.test.ts',
-		reason:
-			"CAM-508 GOTCHA 10(a): this test proves the vendored smoke script has " +
-			"zero third-party dependencies by running it from a directory with no " +
-			"resolvable node_modules. The repo-local scratch root sits inside the " +
-			"cam-cli checkout, so module resolution walks up and finds cam-cli's " +
-			"own node_modules, silently defeating the check. Rooted in the real " +
-			"OS temp dir instead, outside any node_modules resolution chain, AND " +
-			"(US-R2-001, round 2) spawns the smoke with `bun --no-install` so a " +
-			"grown third-party import fails loudly instead of being silently " +
-			"satisfied by bun's auto-install from ~/.bun/install/cache.",
-	},
-];
+export const ALLOWLIST: TmpdirAllowlistEntry[] = [];
 
 /** TypeScript test-bearing trees covered by the tmpdir-root gate. */
 export const TEST_TMPDIR_SCAN_GLOB = '{test,webui}/**/*.{ts,tsx}';

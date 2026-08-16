@@ -9,10 +9,7 @@
 //     ──────────────────────────────────────    (muted divisor)
 //        ✓ claude              2.0.5            (CheckRow)
 //          Required to spawn Claude Code sessions.
-//        ◌ agent-frontmatter   pending
-//          Validates .claude/agents/*.md files.
-//        ◌ config              pending
-//          Saves your default permission mode.
+//        The check list is supplied by src/commands/init.ts.
 //
 //     All set                                   (success Section, muted divisor)
 //     ──────────────────────────────────────
