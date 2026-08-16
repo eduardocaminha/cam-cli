@@ -262,7 +262,10 @@ The session layout has two permanent panes plus an optional worker pane:
 - **Pane 0.1 (right):** `gship dashboard`, a permanent navigable monitor. Browse stories with j/k or arrow keys, Enter to open a story detail view, Esc to go back. Press `n/r/s/p/i` to dispatch `/cam-*` commands to the orchestrator, `d` to focus the orchestrator pane, `q` to close the dashboard.
 - **Pane 0.2 (tmux worker, ephemeral):** created on the first default tmux worker dispatch and reused across stories via `respawn-pane -k`. Present only while a tmux worker is active; the mutex check refuses new pane dispatches when this pane exists (3 panes = busy). The opt-in headless implementer path does not create this pane.
 
-`gship plan`, `gship issue`, `gship spec`, `gship review`, and `gship ship` are thin-proxies: they detect the active cam session, ensure the orchestrator is idle (`sendKeysWhenIdle`), and inject the corresponding slash command into the orchestrator pane via atomic `send-keys` (text + Enter in one literal call). If no session exists, they bootstrap `gship run --no-attach` first. If a worker is already running (mutex: 3 panes present), the proxy refuses the dispatch and exits with code 1. From outside the session the proxy prints a contextual hint with the `gship run` attach command (suppressed inside the session). `gship next` shares the session detection/bootstrap and worker-mutex gates, then flips `active:true` in the sidecar state file and returns immediately; unlike the send-keys proxies, it does not wait for orchestrator idleness or inject a slash command.
+`gship plan`, `gship spec`, `gship review`, and `gship ship` remain legacy
+cycle controls. `gship issue` is no longer a pane-injection command: new tasks
+enter through the web, while `issue list|get|close|abandon|demote` and
+`--file-local` are deterministic in-process maintenance operations.
 
 On a cycle-close, the orchestrator runs `gship journal append --cycle-close` to arm
 the recycle marker (`cam-orch-recycle`). The watcher detects the marker, SIGTERMs
@@ -357,7 +360,11 @@ test/                 bun:test suites
 
 ## Architecture
 
-`gship run` is the single dispatch hub. CLI subcommands (`gship plan`, `gship issue`, `gship spec`, `gship review`, `gship ship`) are thin-proxies: they detect the live orchestrator session and inject the request into the orchestrator pane via atomic `send-keys` (text + Enter in one literal call). If no session exists, they bootstrap `gship run --no-attach` and wait for the `.claude/.cam-orch-ready` marker before injecting. `gship next` uses a different trigger after its CLI gates: it detects or bootstraps the same live session, refuses while the worker-pane mutex is busy, checks sidecar liveness and preflight, then writes `active:true` to the sidecar state file without injecting a slash command.
+`gship run` is the legacy dispatch hub. CLI subcommands (`gship plan`,
+`gship spec`, `gship review`, `gship ship`) control that runtime. `gship next`
+uses a sidecar-state trigger, while new issue intake and execution use the web
+runtime. The retained `gship issue` modes are deterministic maintenance and do
+not attach to tmux.
 
 ```
 gship next  (CLI-gated sidecar-state trigger; no send-keys)
@@ -367,7 +374,7 @@ gship next  (CLI-gated sidecar-state trigger; no send-keys)
         ├── sidecar-liveness + deterministic preflight gates
         └── write active:true to .claude/cam-loop.local.md and return
 
-gship plan / gship issue / gship spec / gship review / gship ship  (send-keys thin-proxies)
+gship plan / gship spec / gship review / gship ship  (legacy cycle controls)
   └── detect live orchestrator (hasSession + orchestratorAlive)
         ├── on miss: bootstrap cam run --no-attach, poll .claude/.cam-orch-ready
         ├── mutex check: refuse if worker-pane is already running (3 panes = busy)
@@ -427,7 +434,7 @@ reach regardless of this setting.
 
 ## Recent changes
 
-- **Single-hub dispatch (CAM-55)**: `gship run` is the only dispatch hub. `gship plan`, `gship issue`, `gship spec`, `gship review`, and `gship ship` are send-keys thin-proxies that inject slash commands into the orchestrator pane; after session/bootstrap and worker-mutex gates, `gship next` uses an `active:true` sidecar-state trigger (no send-keys). The default tmux worker path uses a titled 3rd pane; the opt-in headless implementer path uses a direct child process serialized by the supervisor lock. Completion is push-based in either mode (worker writes `scripts/cam/worker-report.json`; the sidecar reads it and emits the `[cam]` narration line to the orchestrator pane). The idle-guarantee (`sendKeysWhenIdle`) ensures the orchestrator is not mid-response when slash commands are injected.
+- **Single-hub dispatch (CAM-55)**: `gship run` is the legacy dispatch hub. `gship plan`, `gship spec`, `gship review`, and `gship ship` control that cycle; after session/bootstrap and worker-mutex gates, `gship next` uses an `active:true` sidecar-state trigger. New task intake belongs to the web runtime, and `gship issue` now retains only deterministic maintenance modes. The default tmux worker path uses a titled 3rd pane; the opt-in headless implementer path uses a direct child process serialized by the supervisor lock.
 - **Interactive TUI workers by default, headless opt-in (CAM-42, recortada by ADR-0059/CAM-516)**: `gship next` dispatches workers as interactive TUI `claude` sessions (not `claude -p`) by default. `claude -p` remains banned for the tmux worker path and for the `gship claude` retry-wrapper's own auth preflight. The one exemption is `gship next --headless`: a pure per-invocation flag (never persisted by config, never sticky across a call that omits it) that opts the implementer worker into a `claude -p`/stream-json dispatch instead, born exempt because a 2026-08-08 measurement (ADR-0059) found it left console API consumption unchanged and reported a subscription-window `rate_limit_event`, not a per-use charge.
 - **Single per-project session**: `gship run` now creates one tmux session per
   project with a 2-pane layout (orchestrator + navigable dashboard). The navigable
@@ -436,13 +443,11 @@ reach regardless of this setting.
   On a cycle-close, the orchestrator arms the recycle marker (`cam-orch-recycle`),
   the watcher SIGTERMs the process, and the wrapper respawns it with `CAM_ORCH_REHYDRATE`;
   otherwise the wrapper tears down the session.
-- **Thin pane launchers**: `gship plan`, `gship issue`, and `gship spec` open a pane inside the
+- **Thin pane launchers**: `gship plan` and `gship spec` open a pane inside the
   project session and return 0 immediately (suppressing the attach hint when
   already inside the session). `gship next` is also a thin-proxy: after its
   session/bootstrap and worker-mutex gates, it flips `active:true` to trigger
   the sidecar and returns 0 immediately.
-- **`gship issue` subcommand**: file an issue from free text without entering
-  the session. The pane agent runs `/cam-issue create <text>`.
 - **Auto-retry internalized**: rate-limit retry is now built into `cam` (no
   external tool installation required). `gship init` no longer checks for any
   external retry binary. See [LICENSES/claude-auto-retry-MIT.txt](./LICENSES/claude-auto-retry-MIT.txt)
