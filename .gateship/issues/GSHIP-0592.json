@@ -1,0 +1,17 @@
+{
+  "id": "GSHIP-592",
+  "title": "Remover complexity.noExcessiveLinesPerFunction do biome.json, preservando noExcessiveCognitiveComplexity",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-16T15:53:08.366Z",
+  "updatedAt": "2026-08-16T15:53:08.366Z",
+  "description": "Evidencia do dogfood: na GSHIP-591, quatro linhas legitimas fizeram useOperationalRun cruzar 80 linhas e obrigaram uma reformatacao behavior-neutral do useCallback vizinho, feita apenas para satisfazer a contagem. O limite produziu mudanca de codigo sem ganho de qualidade.\n\nMudanca unica, em biome.json: deletar o bloco da regra noExcessiveLinesPerFunction, que hoje ocupa as linhas 9 a 14 dentro de linter.rules.complexity, junto com a virgula ao final da linha 8. Resultado: complexity fica com uma unica entrada, noExcessiveCognitiveComplexity: 'error', preservada exatamente como esta. O arquivo continua JSON valido e recommended:false permanece.\n\nO biome.json atual nao possui bloco overrides, entao nenhuma referencia orfa a regra removida precisa ser limpa; confirmar isso e nao criar overrides.\n\nCriterio de pronto: bun run lint sai verde e git diff mostra apenas biome.json, com a remocao descrita.\n\nFora de escopo, nao fazer: substituir por outro limite de tamanho, adicionar excecao ou override, criar teste de tamanho de funcao, refatorar qualquer funcao (inclusive reverter a reformatacao de useOperationalRun), mexer no formatter, alterar files.includes, ou documentar a decisao em README, ADR ou CHANGELOG.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Evidencia do dogfood: na GSHIP-591, quatro linhas legitimas fizeram useOperationalRun cruzar 80 linhas e obrigaram uma reformatacao behavior-neutral do useCallback vizinho, feita apenas para satisfazer a contagem. O limite produziu mudanca de codigo sem ganho de qualidade.\n\nMudanca unica, em biome.json: deletar o bloco da regra noExcessiveLinesPerFunction, que hoje ocupa as linhas 9 a 14 dentro de linter.rules.complexity, junto com a virgula ao final da linha 8. Resultado: complexity fica com uma unica entrada, noExcessiveCognitiveComplexity: 'error', preservada exatamente como esta. O arquivo continua JSON valido e recommended:false permanece.\n\nO biome.json atual nao possui bloco overrides, entao nenhuma referencia orfa a regra removida precisa ser limpa; confirmar isso e nao criar overrides.\n\nCriterio de pronto: bun run lint sai verde e git diff mostra apenas biome.json, com a remocao descrita.\n\nFora de escopo, nao fazer: substituir por outro limite de tamanho, adicionar excecao ou override, criar teste de tamanho de funcao, refatorar qualquer funcao (inclusive reverter a reformatacao de useOperationalRun), mexer no formatter, alterar files.includes, ou documentar a decisao em README, ADR ou CHANGELOG.",
+    "verify": [
+      "bun run lint"
+    ]
+  }
+}
