@@ -11,24 +11,20 @@
 // a pure predicate, and renders nothing.
 
 import type React from 'react';
-import { cn } from '../vendor/coss/lib/utils.ts';
-import { Badge } from '../vendor/coss/ui/badge.tsx';
+import { Badge } from './components/ui/badge.tsx';
 import {
 	Card,
 	CardAction,
 	CardDescription,
+	CardDisclosure,
 	CardHeader,
 	CardPanel,
+	CardSummary,
 	CardTitle,
-} from '../vendor/coss/ui/card.tsx';
-import {
-	Progress,
-	ProgressIndicator,
-	ProgressLabel,
-	ProgressTrack,
-	ProgressValue,
-} from '../vendor/coss/ui/progress.tsx';
-import { Separator } from '../vendor/coss/ui/separator.tsx';
+} from './components/ui/card.tsx';
+import { Progress } from './components/ui/progress.tsx';
+import { Separator } from './components/ui/separator.tsx';
+import { cn } from './lib/cn.ts';
 import type {
 	ChatMessageView,
 	OperatorIssueDraft,
@@ -177,20 +173,17 @@ function ContextPanel({
 	children: React.ReactNode;
 }): React.ReactElement {
 	return (
-		<Card className="group" id={id} render={<details open={open} />}>
-			<CardHeader
-				className="cursor-pointer list-none [&::-webkit-details-marker]:hidden"
-				render={<summary />}
-			>
-				<CardTitle render={<h2 />}>{title}</CardTitle>
+		<CardDisclosure className="group" id={id} open={open}>
+			<CardSummary>
+				<CardTitle>{title}</CardTitle>
 				<CardDescription>{description}</CardDescription>
-				<CardAction render={<span aria-hidden="true" />}>
+				<CardAction aria-hidden="true">
 					<span className="text-muted-foreground text-xs group-open:hidden">abrir</span>
 					<span className="hidden text-muted-foreground text-xs group-open:inline">fechar</span>
 				</CardAction>
-			</CardHeader>
+			</CardSummary>
 			<CardPanel>{children}</CardPanel>
-		</Card>
+		</CardDisclosure>
 	);
 }
 
@@ -234,17 +227,8 @@ function RunActivity({
 }
 
 function RunProgress({ run }: { run: RunView }): React.ReactElement {
-	const percent = Math.round(progressOf(run.state) * 100);
 	return (
-		<Progress value={percent}>
-			<div className="flex items-baseline justify-between">
-				<ProgressLabel>Fase {phaseOf(run.state)}</ProgressLabel>
-				<ProgressValue />
-			</div>
-			<ProgressTrack>
-				<ProgressIndicator />
-			</ProgressTrack>
-		</Progress>
+		<Progress label={`Fase ${phaseOf(run.state)}`} value={Math.round(progressOf(run.state) * 100)} />
 	);
 }
 
@@ -278,7 +262,7 @@ function RunPanel({
 	return (
 		<Card id="run">
 			<CardHeader>
-				<CardTitle render={<h2 />}>Último run</CardTitle>
+				<CardTitle>Último run</CardTitle>
 				<CardDescription className="break-all">
 					{run === null ? 'Nenhum run registrado ainda.' : `${run.issueId} · ${run.id}`}
 				</CardDescription>
@@ -580,7 +564,7 @@ function ConversationColumn({
 		<main className="flex min-h-0 w-full min-w-0 flex-1 flex-col p-4 lg:p-6" id="conversa">
 			<Card className="flex min-h-0 flex-1 flex-col">
 				<CardHeader>
-					<CardTitle render={<h2 />}>Conversa com o orquestrador</CardTitle>
+					<CardTitle>Conversa com o orquestrador</CardTitle>
 					<CardDescription>
 						Ele pode investigar o projeto; ações passam pelo runtime determinístico.
 					</CardDescription>

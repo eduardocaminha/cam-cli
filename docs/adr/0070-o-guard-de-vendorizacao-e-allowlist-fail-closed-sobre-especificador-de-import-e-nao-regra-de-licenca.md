@@ -1,5 +1,12 @@
 # ADR 0070: O guard de vendorizacao e allowlist fail-closed sobre especificador de import, e nao regra de licenca
 
+> **Nota de supersessao (2026-08-16, GSHIP-596)**: sem arvore vendorizada nao ha
+> o que guardar. `scripts/vendor-coss.ts` e seus tres testes foram removidos com
+> a superficie que protegiam, e nada os substitui: nem registro de arquivos, nem
+> allowlist, nem regex de procedencia, nem gate de vendor. O criterio de aceite
+> desta decisao volta a valer apenas se um dia entrar codigo de terceiro copiado
+> para dentro do repositorio, e isso e decisao nova.
+
 ## Context
 
 A raiz do monorepo cosscom/coss e AGPLv3 e apenas apps/origin/ e apps/ui/ sao MIT, entao a vendorizacao fica restrita a apps/ui/. Um guard so por caminho e insuficiente em tese, porque um arquivo copiado pode puxar modulo AGPL por import com todos os caminhos do manifesto dentro da subarvore MIT. A ferramenta que parece resolver isso e dependency-cruiser com a regra to.license, unica no levantamento que combina grafo de import e licenca. A medicao mostrou que ela FALHA ABERTO neste caso exato: ela le a licenca do package.json do modulo resolvido, e depois de achatar a arvore e reescrever os imports o especificador @coss/ui nao resolve para lugar nenhum, logo nao ha package.json para ler, logo a regra nao casa nada e o build fica verde. Medicao adicional na fonte enfraqueceu tambem a premissa do risco: os 29 hits de @coss/ sob apps/ui/ estao todos na casca do site de docs e nao nos componentes do registry, e o unico hit dentro de registry/ e um registryDependencies, que e namespace de registry do shadcn e nao import npm. O levantamento de prior art confirmou que o shadcn, dominante no modelo de copiar em vez de depender, nao oferece nenhum mecanismo de contencao de import nem de atribuicao de licenca.

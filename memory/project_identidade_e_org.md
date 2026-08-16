@@ -16,6 +16,8 @@ A direcao passa a ser o branch visual do cam-dss que carrega `/coss`. O cam-dss 
 
 Consequencia direta no backlog: o CAM-331 (README publico ultra-profissional) estava bloqueado esperando as referencias de e-ink. Esse bloqueio CAIU. O CAM-331 volta a ser acionavel, agora ancorado no branch `/coss` do cam-dss em vez das referencias que nunca vieram.
 
+**Emenda de 2026-08-16 (GSHIP-596): esta direcao de procedencia esta encerrada.** A identidade do Gateship nao vem mais de design system de terceiro copiado para dentro do repositorio. Os primitivos de UI e os tokens de tema sao proprios, compativeis com shadcn, e vivem em `webui/src/components/ui`, `webui/src/lib` e `webui/src/index.css`. O que sobrevive do paragrafo acima e apenas o descarte do e-ink e o desbloqueio do CAM-331; a ancora em `/coss` nao vale mais e nao deve ser reintroduzida sem decisao nova.
+
 ## Mudanca de casa para a org
 
 Decisao do operador em 2026-08-07.

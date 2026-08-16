@@ -1,117 +1,113 @@
 @import "tailwindcss";
 
 /*
- * COSS UI theme.
+ * The Gateship operator theme.
  *
- * Derived from the MIT registry item apps/ui/public/r/style.json (field
- * cssVars) of github.com/cosscom/coss at commit
- * e43fa4a8da4c490ebf3e1e1707b2a9af6fa2a217 -- the same commit
- * webui/vendor/coss/ is copied from. The AGPL side of that monorepo is never
- * read: apps/ui/app/globals.css imports the AGPL package stylesheet on its
- * first line, and packages/ui/src/styles/globals.css IS that package.
+ * One custom property per role the screen actually names -- surfaces, lines,
+ * emphasis, and the four families a run state can report -- declared in :root,
+ * overridden wholesale in .dark, and exposed to Tailwind through @theme inline.
+ * Values are expressed against Tailwind's own colour scale, so the palette has
+ * a single source and this file only assigns meaning to it.
  *
- * The token set is carried whole rather than filtered down to what today's
- * four components happen to touch, so a future re-derivation from a newer
- * pinned commit stays a copy instead of a copy-and-patch.
- *
- * Dark mode uses the documented variant form. The upstream '&:is(.dark *)'
- * is rejected: :is carries specificity where :where is zero, and '.dark *'
- * matches descendants only, leaving the .dark node itself unstyled.
+ * The set is deliberately closed: a token exists here because some class on
+ * this screen resolves it. Adding a role is a decision, not a copy.
+ */
+
+/*
+ * Dark mode is a class, matched on the node carrying it as well as on its
+ * descendants. :where keeps the variant at zero specificity, so a dark rule
+ * still loses to nothing it should not win against.
  */
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-	--accent: --alpha(var(--color-black) / 4%);
-	--accent-foreground: var(--color-neutral-800);
+	/* Surfaces, from the page down to the panels standing on it. */
 	--background: var(--color-white);
-	--border: --alpha(var(--color-black) / 8%);
+	--foreground: var(--color-neutral-800);
 	--card: var(--color-white);
 	--card-foreground: var(--color-neutral-800);
-	--chart-1: var(--color-orange-600);
-	--chart-2: var(--color-teal-600);
-	--chart-3: var(--color-cyan-900);
-	--chart-4: var(--color-amber-400);
-	--chart-5: var(--color-amber-500);
-	--code: var(--color-white);
-	--code-foreground: var(--foreground);
-	--code-highlight: --alpha(var(--color-black) / 4%);
-	--destructive: var(--color-red-500);
-	--destructive-foreground: var(--color-red-700);
-	--foreground: var(--color-neutral-800);
-	--info: var(--color-blue-500);
-	--info-foreground: var(--color-blue-700);
+	--sidebar: var(--color-neutral-50);
+	--sidebar-foreground: color-mix(in srgb, var(--color-neutral-800) 64%, var(--sidebar));
+
+	/* Lines and focus. Borders are an alpha of ink so they follow the surface. */
+	--border: --alpha(var(--color-black) / 8%);
 	--input: --alpha(var(--color-black) / 10%);
-	--muted: --alpha(var(--color-black) / 4%);
-	--muted-foreground: color-mix(in srgb, var(--color-neutral-500) 90%, var(--color-black));
-	--popover: var(--color-white);
-	--popover-foreground: var(--color-neutral-800);
+	--ring: var(--color-neutral-400);
+	--sidebar-border: --alpha(var(--color-black) / 6%);
+	--sidebar-ring: var(--color-neutral-400);
+
+	/* Emphasis, in descending strength: primary, secondary, accent, muted. */
 	--primary: var(--color-neutral-800);
 	--primary-foreground: var(--color-neutral-50);
-	--radius: 0.625rem;
-	--ring: var(--color-neutral-400);
 	--secondary: --alpha(var(--color-black) / 4%);
 	--secondary-foreground: var(--color-neutral-800);
-	--sidebar: var(--color-neutral-50);
+	--accent: --alpha(var(--color-black) / 4%);
+	--accent-foreground: var(--color-neutral-800);
 	--sidebar-accent: --alpha(var(--color-black) / 4%);
 	--sidebar-accent-foreground: var(--color-neutral-800);
-	--sidebar-border: --alpha(var(--color-black) / 6%);
-	--sidebar-foreground: color-mix(in srgb, var(--color-neutral-800) 64%, var(--sidebar));
-	--sidebar-primary: var(--color-neutral-800);
-	--sidebar-primary-foreground: var(--color-neutral-50);
-	--sidebar-ring: var(--color-neutral-400);
+	--muted: --alpha(var(--color-black) / 4%);
+	--muted-foreground: color-mix(in srgb, var(--color-neutral-500) 90%, var(--color-black));
+
+	/*
+	 * Run state families. A supervision screen has to be able to say advancing,
+	 * holding, done and broke, so these four are semantic tokens and never a
+	 * colour picked at the call site.
+	 */
+	--info: var(--color-blue-500);
+	--info-foreground: var(--color-blue-700);
 	--success: var(--color-emerald-500);
 	--success-foreground: var(--color-emerald-700);
 	--warning: var(--color-amber-500);
 	--warning-foreground: var(--color-amber-700);
+	--destructive: var(--color-red-500);
+	--destructive-foreground: var(--color-red-700);
 }
 
+/*
+ * Dark is not the light theme inverted: surfaces stay near-black and lift by a
+ * few percent of white per layer, and the state families keep their hue while
+ * their foreground moves to the lighter step that survives a dark background.
+ */
 .dark {
-	--accent: --alpha(var(--color-white) / 4%);
-	--accent-foreground: var(--color-neutral-100);
 	--background: color-mix(in srgb, var(--color-neutral-950) 95%, var(--color-white));
-	--border: --alpha(var(--color-white) / 6%);
+	--foreground: var(--color-neutral-100);
 	--card: color-mix(in srgb, var(--background) 98%, var(--color-white));
 	--card-foreground: var(--color-neutral-100);
-	--chart-1: var(--color-blue-700);
-	--chart-2: var(--color-emerald-500);
-	--chart-3: var(--color-amber-500);
-	--chart-4: var(--color-purple-500);
-	--chart-5: var(--color-rose-500);
-	--code: color-mix(in srgb, var(--background) 98%, var(--color-white));
-	--code-foreground: var(--foreground);
-	--code-highlight: --alpha(var(--color-white) / 4%);
-	--destructive: color-mix(in srgb, var(--color-red-500) 90%, var(--color-white));
-	--destructive-foreground: var(--color-red-400);
-	--foreground: var(--color-neutral-100);
-	--info: var(--color-blue-500);
-	--info-foreground: var(--color-blue-400);
+	--sidebar: color-mix(in srgb, var(--color-neutral-950) 97%, var(--color-white));
+	--sidebar-foreground: color-mix(in srgb, var(--color-neutral-100) 64%, var(--sidebar));
+
+	--border: --alpha(var(--color-white) / 6%);
 	--input: --alpha(var(--color-white) / 8%);
-	--muted: --alpha(var(--color-white) / 4%);
-	--muted-foreground: color-mix(in srgb, var(--color-neutral-500) 90%, var(--color-white));
-	--popover: color-mix(in srgb, var(--background) 98%, var(--color-white));
-	--popover-foreground: var(--color-neutral-100);
+	--ring: var(--color-neutral-500);
+	--sidebar-border: --alpha(var(--color-white) / 5%);
+	--sidebar-ring: var(--color-neutral-400);
+
 	--primary: var(--color-neutral-100);
 	--primary-foreground: var(--color-neutral-800);
-	--ring: var(--color-neutral-500);
 	--secondary: --alpha(var(--color-white) / 4%);
 	--secondary-foreground: var(--color-neutral-100);
-	--sidebar: color-mix(in srgb, var(--color-neutral-950) 97%, var(--color-white));
+	--accent: --alpha(var(--color-white) / 4%);
+	--accent-foreground: var(--color-neutral-100);
 	--sidebar-accent: --alpha(var(--color-white) / 4%);
 	--sidebar-accent-foreground: var(--color-neutral-100);
-	--sidebar-border: --alpha(var(--color-white) / 5%);
-	--sidebar-foreground: color-mix(in srgb, var(--color-neutral-100) 64%, var(--sidebar));
-	--sidebar-primary: var(--color-neutral-100);
-	--sidebar-primary-foreground: var(--color-neutral-800);
-	--sidebar-ring: var(--color-neutral-400);
+	--muted: --alpha(var(--color-white) / 4%);
+	--muted-foreground: color-mix(in srgb, var(--color-neutral-500) 90%, var(--color-white));
+
+	--info: var(--color-blue-500);
+	--info-foreground: var(--color-blue-400);
 	--success: var(--color-emerald-500);
 	--success-foreground: var(--color-emerald-400);
 	--warning: var(--color-amber-500);
 	--warning-foreground: var(--color-amber-400);
+	--destructive: color-mix(in srgb, var(--color-red-500) 90%, var(--color-white));
+	--destructive-foreground: var(--color-red-400);
 }
 
 /*
- * @theme inline is required, not cosmetic: without it a utility resolves the
- * token at its definition site and the .dark override never applies.
+ * `inline` is required, not cosmetic: a plain @theme resolves the reference at
+ * its definition site, so every utility would freeze the :root value and the
+ * .dark override would never reach the screen. @theme also cannot be nested
+ * under a selector, which is why the values above live in ordinary rules.
  */
 @theme inline {
 	--color-accent: var(--accent);
@@ -120,14 +116,6 @@
 	--color-border: var(--border);
 	--color-card: var(--card);
 	--color-card-foreground: var(--card-foreground);
-	--color-chart-1: var(--chart-1);
-	--color-chart-2: var(--chart-2);
-	--color-chart-3: var(--chart-3);
-	--color-chart-4: var(--chart-4);
-	--color-chart-5: var(--chart-5);
-	--color-code: var(--code);
-	--color-code-foreground: var(--code-foreground);
-	--color-code-highlight: var(--code-highlight);
 	--color-destructive: var(--destructive);
 	--color-destructive-foreground: var(--destructive-foreground);
 	--color-foreground: var(--foreground);
@@ -136,8 +124,6 @@
 	--color-input: var(--input);
 	--color-muted: var(--muted);
 	--color-muted-foreground: var(--muted-foreground);
-	--color-popover: var(--popover);
-	--color-popover-foreground: var(--popover-foreground);
 	--color-primary: var(--primary);
 	--color-primary-foreground: var(--primary-foreground);
 	--color-ring: var(--ring);
@@ -148,8 +134,6 @@
 	--color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
 	--color-sidebar-border: var(--sidebar-border);
 	--color-sidebar-foreground: var(--sidebar-foreground);
-	--color-sidebar-primary: var(--sidebar-primary);
-	--color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
 	--color-sidebar-ring: var(--sidebar-ring);
 	--color-success: var(--success);
 	--color-success-foreground: var(--success-foreground);
@@ -157,10 +141,9 @@
 	--color-warning-foreground: var(--warning-foreground);
 
 	/*
-	 * style.json declares font-sans/font-mono as self-referential var() chains
-	 * whose fallback is what next/font would otherwise override. With no font
-	 * injection here the fallback IS the value, and it is byte-identical to
-	 * Tailwind's own defaults -- so only the heading alias needs declaring.
+	 * Headings are an alias rather than a face of their own: nothing injects a
+	 * font here, so the alias is the seam where one would land later without
+	 * touching a single component.
 	 */
 	--font-heading: var(--font-sans);
 }
