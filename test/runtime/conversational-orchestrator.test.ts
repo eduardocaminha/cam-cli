@@ -7,6 +7,7 @@ import type {
 import {
 	buildOrchestratorPrompt,
 	ConversationalOrchestrator,
+	ORCHESTRATOR_RESULT_SCHEMA,
 	parseOrchestratorResponse,
 } from '../../src/runtime/conversational-orchestrator.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
@@ -75,6 +76,37 @@ class ScriptedSession implements AgentSession {
 }
 
 describe('conversational orchestrator', () => {
+	test('uses a strict provider-neutral command schema with nullable unused fields', () => {
+		const commandSchema = ORCHESTRATOR_RESULT_SCHEMA.properties.command;
+		expect(Object.keys(commandSchema.properties)).toEqual([...commandSchema.required]);
+		for (const key of commandSchema.required) {
+			if (key === 'type') continue;
+			expect(commandSchema.properties[key].type).toEqual(['string', 'null']);
+		}
+		expect(buildOrchestratorPrompt({}, emptyProjectBrief(), emptyOrchestratorHandoff(), []))
+			.toContain('Set every command field unused by the selected type to null.');
+	});
+
+	test('accepts null unused command fields and rejects null required values', () => {
+		const nullableFields = {
+			title: null,
+			scope: null,
+			verificationCommand: null,
+			reason: null,
+			issueId: null,
+			runId: null,
+			guidance: null,
+		};
+		expect(parseOrchestratorResponse({
+			message: 'Só uma explicação.',
+			command: { type: 'none', ...nullableFields },
+		})).toEqual({ message: 'Só uma explicação.', command: { type: 'none' } });
+		expect(() => parseOrchestratorResponse({
+			message: 'Vou iniciar.',
+			command: { type: 'start_run', ...nullableFields, issueId: null },
+		})).toThrow('issueId');
+	});
+
 	test('replaces a failed resumed session with one fresh attempt and applies effects once', async () => {
 		const runtime = new RunRuntime({
 			cwd: createTestTmpdir('gship-orchestrator-resume-recovery-'),

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import {
 	buildCodexCliArgv,
 	buildCodexEnv,
+	CodexAgentSession,
 	CodexCliExecutor,
 } from '../../src/runtime/codex-cli-executor.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
@@ -68,6 +69,21 @@ describe('Codex CLI runtime executor', () => {
 			RESEND_API_KEY: 'secret',
 			CODEX_HOME: '/operator/codex',
 		})).toEqual({ PATH: '/usr/bin', CODEX_HOME: '/operator/codex' });
+	});
+
+	test('preserves a structured failure diagnostic when Codex exits nonzero', async () => {
+		const session = new CodexAgentSession({
+			command: ['bun', FIXTURE, '--fixture-mode=structured-error-exit'],
+		});
+		await expect(session.run({
+			sessionId: 'provisional',
+			resume: false,
+			cwd: createTestTmpdir('gship-codex-structured-error-'),
+			prompt: 'fail after a structured diagnostic',
+			signal: new AbortController().signal,
+			emit: () => {},
+			eventPrefix: 'provider',
+		})).rejects.toThrow('structured fixture diagnostic');
 	});
 
 	test('binds the provider thread, projects activity, and removes the temporary schema', async () => {

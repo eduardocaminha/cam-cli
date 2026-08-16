@@ -13,6 +13,9 @@ if (mode === 'wait') {
 	await new Promise(() => {});
 } else if (mode === 'failed') {
 	process.stdout.write(`${JSON.stringify({ type: 'turn.failed', error: { message: 'fixture failed' } })}\n`);
+} else if (mode === 'structured-error-exit') {
+	process.stdout.write(`${JSON.stringify({ type: 'error', message: 'structured fixture diagnostic' })}\n`);
+	process.exitCode = 7;
 } else {
 	process.stdout.write(`${JSON.stringify({
 		type: 'item.completed',
