@@ -1,4 +1,4 @@
-// src/supervisor/headless-stream.ts
+// Claude Code stream-json event classification for the web runtime.
 //
 // Classifies one line of the headless child's `--output-format stream-json`
 // NDJSON output into the event vocabulary actually MEASURED on 2026-08-08

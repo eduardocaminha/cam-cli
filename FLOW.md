@@ -36,9 +36,7 @@ flowchart TD
 - The browser observes durable events through SSE and sends explicit start,
   resume, cancel, and ship commands back to the service.
 
-## Legacy drain
+## Retired runtime
 
-Gateship no longer starts the tmux orchestrator. The remaining legacy control
-commands exist temporarily only so an already-running legacy session can reach
-a terminal state. They are not part of the current flow and will be removed by
-dependency closure once no live session depends on them.
+No tmux, sidecar, container-worker, or terminal-control compatibility path
+remains. Recovery is the durable run state plus explicit resume in the web UI.

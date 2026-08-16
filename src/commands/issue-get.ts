@@ -1,6 +1,6 @@
 // src/commands/issue-get.ts
 //
-// Implementation of `cam issue get <id>` -- deterministic, read-only issue
+// Deterministic, read-only issue lookup used by the web runtime.
 // JSON fetch from main (US-002, CAM-400).
 //
 // De-inlines the ad hoc `git show main:scripts/cam/issues/<PREFIX>-NNNN.json`

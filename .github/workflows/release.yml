@@ -1,10 +1,7 @@
 name: Release
 
-# Triggered by a version tag push (`cam tag` pushes `vX.Y.Z`). Cross-compiles
-# all four release targets from a single macOS runner (scripts/build-release.sh,
-# US-003 CAM-460) and publishes them as assets of a GitHub Release marked
-# prerelease (ADR-0055: keeps the ADR-0054 rename window open until the
-# stable, non-prerelease Release is cut after that rename lands).
+# Triggered by a version tag push. Cross-compiles all four release targets from
+# one macOS runner and publishes them as prerelease assets.
 on:
   push:
     tags:
@@ -24,8 +21,6 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: .bun-version
-      - name: Install tmux
-        run: brew install tmux
       - name: Install deps
         run: bun install --frozen-lockfile
       - name: Build all four release targets

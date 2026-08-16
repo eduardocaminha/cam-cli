@@ -94,7 +94,7 @@ export function selectPlannableIssue(
  * A real read/parse error thrown by readBacklogFromMain propagates to the
  * caller (US-001, CAM-115): a corrupted backlog must never be silently
  * conflated with a drained one. Callers that invoke this from a long-lived
- * async tick (e.g. the sidecar meta-loop observer) are responsible for
+ * async tick are responsible for
  * guarding their own boundary and logging the real error rather than letting
  * it crash the process.
  *

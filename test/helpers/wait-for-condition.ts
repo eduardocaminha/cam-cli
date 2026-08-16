@@ -1,11 +1,11 @@
 // test/helpers/wait-for-condition.ts
 //
 // Bounded poll-until-true helper for the real-I/O integration tier (US-001,
-// CAM-62). Real tmux/git subprocesses cannot have a fake clock injected, so
+// Real git subprocesses cannot have a fake clock injected, so
 // tests in that tier need a deterministic "poll until true or bounded
 // timeout" primitive instead of a fixed setTimeout/Bun.sleepSync wait. This
 // module is intentionally zero-dependency (predicate-in, promise-out; no
-// git/tmux/fs calls) so it composes with any real subprocess-driven check.
+// git/fs calls) so it composes with any real subprocess-driven check.
 
 export interface WaitForConditionOptions {
 	/** Total time budget to keep polling before rejecting. Default 5000ms. */

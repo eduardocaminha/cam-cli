@@ -38,8 +38,8 @@ To build from source:
 git clone https://github.com/gateship-dev/gateship.git
 cd gateship
 bun install --frozen-lockfile
-bun run build
-./dist/gship --version
+bun run build:release
+./dist/gateship-darwin-arm64 --version # example: Apple Silicon
 ```
 
 For development, commands can run directly through Bun:
@@ -97,10 +97,9 @@ slash commands.
 gship                       Start the web runtime on 127.0.0.1:7777
 gship web [--port N]        Start it on another port
 gship run [--port N]        Compatibility alias for gship web
-gship init [options]        Optional machine check and project metadata
-gship config [--show]       Configure legacy project metadata
-gship issue list|get|...    Deterministic backlog maintenance
-gship help                  Show the complete command registry
+gship init                  Check that Claude Code is available
+gship help                  Show the CLI surface
+gship version               Print the installed version
 ```
 
 Run `gship <command> --help` for details.
@@ -149,16 +148,11 @@ The reviewer is capability-restricted independently of its prompt: only
 Read/Grep/Glob are exposed, inherited MCP servers are removed, and slash commands
 are disabled.
 
-## Legacy drain
+## Retired runtime
 
-Gateship no longer creates or attaches to the old tmux orchestrator. A small set
-of legacy control and cleanup commands remains temporarily so a session that was
-already running can reach a terminal state. They are outside the web execution
-path and are being removed by dependency closure, not extended with new policy
-or tests.
-
-`gship init` no longer installs the old Claude personas, slash commands, hooks,
-or sidecars. The web runtime invokes the signed-in Claude CLI directly.
+The tmux orchestrator, sidecar, container worker, terminal UI, installed Claude
+personas, and their control commands have been removed. The web runtime invokes
+the signed-in Claude CLI directly.
 
 Historical decisions remain in `docs/adr/`; the current executable flow is
 summarized in [FLOW.md](./FLOW.md).
@@ -173,8 +167,7 @@ bun run check:all
 ```
 
 The full gate includes type checking, tests, formatting/linting, coverage,
-dead-code and duplication checks, CI parity, generated-vendor parity, and
-repository hygiene checks.
+dead-code and duplication checks, CI parity, and repository hygiene checks.
 
 ## License
 

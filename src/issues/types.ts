@@ -1,7 +1,7 @@
 import type { Spec } from "./spec.ts";
 
 /**
- * Lifecycle stage of an issue in the cam issue system.
+ * Lifecycle stage of a Gateship issue.
  *
  * idea       -> raw capture, no spec yet
  * specified  -> spec written (Epico B), ready for planning
@@ -51,4 +51,3 @@ export interface IssueEntry {
 	derivedFrom?: string[];
 	type?: "feat" | "fix" | "chore" | "docs";
 }
-

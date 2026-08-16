@@ -1,7 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@latest/schema.json",
   "entry": [
-    "index.ts",
     "scripts/**/*.ts",
     "test/**/*.ts",
     "webui/src/main.tsx",
@@ -14,16 +13,6 @@
     "webui/**/*.{ts,tsx}",
     "webui/**/*.css"
   ],
-  "ignore": [
-    "scripts/preview-screens.ts",
-    "scripts/ui-snapshot.tsx",
-    "src/logging/format.ts",
-    "test/fixtures/interactivity/mock-claude.ts",
-    "vendor/**",
-    "dist/**",
-    "claude-code-harness/**"
-  ],
-  "ignoreBinaries": ["cam", "claude", "tmux", "ps", "lsof", "gh", "pgrep", "tail"],
   "ignoreDependencies": ["jscpd"],
   "ignoreExportsUsedInFile": true,
   "exclude": ["exports", "types", "duplicates"]

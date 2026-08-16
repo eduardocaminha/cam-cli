@@ -1,9 +1,0 @@
-{
-  "outcome": "DONE",
-  "story": "US-003",
-  "gates": {
-    "typecheck": "ok",
-    "tests": "128 pass / 0 fail"
-  },
-  "notes": "none"
-}

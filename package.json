@@ -24,19 +24,14 @@
     "README.md"
   ],
   "scripts": {
-    "embed-vendor": "bun scripts/generate-embedded-vendor.ts",
-    "embed-vendor:check": "bun scripts/generate-embedded-vendor.ts --check",
-    "build:release": "bun scripts/generate-embedded-vendor.ts && bun run build:ui && bash scripts/build-release.sh",
+    "build:release": "bun run build:ui && bash scripts/build-release.sh",
     "build:ui": "vite build webui",
     "test": "bun test",
     "typecheck": "bunx tsc --noEmit && bunx tsc -p webui/tsconfig.app.json --noEmit",
     "check:all": "bun scripts/check-all.ts",
     "check:ci-parity": "bun scripts/check-ci-parity.ts",
-    "check:skip-ratchet": "bun scripts/check-skip-ratchet.ts",
-    "lint": "bunx biome lint --error-on-warnings",
-    "verify": "bun scripts/check-all.ts",
-    "test:container": "bun scripts/test-in-container.ts",
-    "record:golden": "bun scripts/record-golden.ts"
+    "lint": "bunx biome lint src scripts webui --error-on-warnings",
+    "verify": "bun scripts/check-all.ts"
   },
   "devDependencies": {
     "@base-ui/react": "1.6.0",
@@ -47,7 +42,6 @@
     "@types/react-dom": "^19.2.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "ink-testing-library": "^4.0.0",
     "jscpd": "5.0.12",
     "knip": "6.24.0",
     "react-dom": "^19.2.6",
@@ -59,14 +53,7 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "@types/js-yaml": "^4.0.9",
     "chalk": "^5.6.2",
-    "ink": "^7.0.3",
-    "ink-spinner": "^5.0.0",
-    "ink-text-input": "^6.0.0",
-    "js-yaml": "^4.1.1",
-    "react": "^19.2.8",
-    "react-devtools-core": "^7.0.1",
-    "resend": "^6.16.0"
+    "react": "^19.2.8"
   }
 }

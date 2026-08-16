@@ -65,7 +65,7 @@ describe('extractBunRunScripts', () => {
 		const scripts = extractBunRunScripts(yaml);
 		expect(scripts).toContain('typecheck');
 		expect(scripts).toContain('test');
-		expect(scripts).not.toContain('embed-vendor');
+		expect(scripts).not.toContain('lint');
 		expect(scripts).not.toContain('check:all');
 	});
 });
@@ -130,11 +130,11 @@ describe('checkParity - missing-gate workflow', () => {
 		expect(result.errors.length).toBeGreaterThan(0);
 	});
 
-	test('error message names the missing gate (embed-vendor)', () => {
+	test('error message names a missing gate (lint)', () => {
 		const yaml = loadFixture('missing-gate.yml');
 		const result = checkParity(yaml, GATES);
 		const allErrors = result.errors.join('\n');
-		expect(allErrors).toContain('embed-vendor');
+		expect(allErrors).toContain('lint');
 	});
 
 	test('does not report typecheck or test as unknown (both are gate names)', () => {
