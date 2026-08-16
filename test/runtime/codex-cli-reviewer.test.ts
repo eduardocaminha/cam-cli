@@ -22,13 +22,17 @@ function input(): RuntimeExecutionInput {
 }
 
 describe('independent Codex reviewer', () => {
-	test('uses the built-in uncommitted review without user config or write bypass', () => {
+	test('uses a fresh structured exec review with read-only access', () => {
 		const argv = buildCodexReviewArgv({ command: ['codex'] });
-		expect(argv).toContain('review');
-		expect(argv).toContain('--uncommitted');
+		expect(argv).toContain('exec');
+		expect(argv).not.toContain('review');
+		expect(argv).not.toContain('--uncommitted');
 		expect(argv).toContain('--ignore-user-config');
+		expect(argv).toContain('sandbox_mode="read-only"');
+		expect(argv).toContain('approval_policy="never"');
 		expect(argv).not.toContain('--dangerously-bypass-approvals-and-sandbox');
 		expect(argv).not.toContain('resume');
+		expect(argv.at(-1)).toBe('-');
 	});
 
 	test('returns clean and findings verdicts from fresh fixture sessions', async () => {
