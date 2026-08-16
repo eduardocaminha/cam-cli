@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { startWebServer } from '../../src/commands/web.ts';
+import { createRunEventStream, startWebServer } from '../../src/commands/web.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
 import { RunStore } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
@@ -16,6 +16,25 @@ async function waitForReady(runtime: RunRuntime, runId: string): Promise<void> {
 }
 
 describe('durable web run API', () => {
+	test('disables Bun idle timeout for the long-lived SSE request', async () => {
+		const runtime = new RunRuntime({ cwd: '/project', store: new RunStore(':memory:') });
+		const request = new Request('http://127.0.0.1/api/events');
+		const calls: Array<{ request: Request; seconds: number }> = [];
+		const response = createRunEventStream(runtime, request, {
+			timeout(requestArg, seconds) {
+				calls.push({ request: requestArg, seconds });
+			},
+		});
+
+		try {
+			expect(calls).toEqual([{ request, seconds: 0 }]);
+			expect(response.headers.get('content-type')).toContain('text/event-stream');
+		} finally {
+			await response.body?.cancel();
+			runtime.close();
+		}
+	});
+
 	test('starts a run, lists it and streams persisted state events over SSE', async () => {
 		const cwd = createTestTmpdir('gship-run-api-');
 		const store = new RunStore(':memory:');

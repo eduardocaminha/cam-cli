@@ -120,7 +120,14 @@ function encodeServerEvent(event: RunEvent): Uint8Array {
 }
 
 /** Stream persisted transitions first, then live events without a polling loop. */
-export function createRunEventStream(runtime: RunRuntime, request: Request): Response {
+export function createRunEventStream(
+	runtime: RunRuntime,
+	request: Request,
+	server: Pick<Bun.Server<unknown>, 'timeout'>,
+): Response {
+	// Bun closes quiet responses after ten seconds by default. SSE connections
+	// are intentionally long-lived and may be quiet between run transitions.
+	server.timeout(request, 0);
 	const initial = runtime.listEvents(parseEventCursor(request));
 	let unsubscribe = (): void => {};
 	const stream = new ReadableStream<Uint8Array>({
@@ -435,7 +442,8 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/api/runs/:runId/ship': {
 				POST: (request) => shipDurableRun(request, runRuntime, request.params.runId),
 			},
-			'/api/events': (request) => createRunEventStream(runRuntime, request),
+			'/api/events': (request, requestServer) =>
+				createRunEventStream(runRuntime, request, requestServer),
 		},
 	});
 
