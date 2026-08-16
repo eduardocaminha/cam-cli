@@ -28,6 +28,12 @@ import {
 	type WorkspaceNoticeView,
 } from './client.ts';
 import type { PlannableIssue, RunEventView, RunView } from './run-view.ts';
+import {
+	browserNotificationPermission,
+	type BrowserNotificationPermission,
+	notifyRunEvent,
+	requestBrowserNotificationPermission,
+} from './notifications.ts';
 import './index.css';
 
 function useOperationalRun(): {
@@ -39,8 +45,10 @@ function useOperationalRun(): {
 	chatMessages: ChatMessageView[];
 	providers: ProviderStatusView[];
 	selectedProvider: ProviderStatusView['id'];
+	notificationPermission: BrowserNotificationPermission;
 	status: string | null;
 	pending: boolean;
+	enableNotifications: () => void;
 	send: (command: () => Promise<string>) => void;
 } {
 	const [backlog, setBacklog] = useState<PlannableIssue[]>([]);
@@ -51,6 +59,9 @@ function useOperationalRun(): {
 	const [chatMessages, setChatMessages] = useState<ChatMessageView[]>([]);
 	const [providers, setProviders] = useState<ProviderStatusView[]>([]);
 	const [selectedProvider, setSelectedProvider] = useState<ProviderStatusView['id']>('claude');
+	const [notificationPermission, setNotificationPermission] = useState(
+		browserNotificationPermission,
+	);
 	const [status, setStatus] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
 
@@ -85,6 +96,17 @@ function useOperationalRun(): {
 		[refresh],
 	);
 
+	const enableNotifications = useCallback(() => {
+		void requestBrowserNotificationPermission()
+			.then((permission) => {
+				setNotificationPermission(permission);
+				setStatus(permission === 'granted'
+					? 'Notificações locais ativadas.'
+					: 'Notificações não foram autorizadas pelo navegador.');
+			})
+			.catch((error: unknown) => setStatus(String(error)));
+	}, []);
+
 	useEffect(() => {
 		refresh();
 		const source = new EventSource(EVENTS_PATH);
@@ -92,6 +114,7 @@ function useOperationalRun(): {
 			try {
 				const data = (message as unknown as { data: string }).data;
 				const event = JSON.parse(data) as RunEventView;
+				notifyRunEvent(event);
 				setEvents((current) => {
 					const merged = new Map(current.map((item) => [item.seq, item]));
 					merged.set(event.seq, event);
@@ -114,8 +137,10 @@ function useOperationalRun(): {
 		chatMessages,
 		providers,
 		selectedProvider,
+		notificationPermission,
 		status,
 		pending,
+		enableNotifications,
 		send,
 	};
 }
@@ -130,8 +155,10 @@ function Screen(): ReactElement {
 		chatMessages,
 		providers,
 		selectedProvider,
+		notificationPermission,
 		status,
 		pending,
+		enableNotifications,
 		send,
 	} = useOperationalRun();
 	const run = runs[0] ?? null;
@@ -146,6 +173,7 @@ function Screen(): ReactElement {
 			chatMessages={chatMessages}
 			events={events}
 			ideas={ideas}
+			notificationPermission={notificationPermission}
 			onCancel={command('cancel')}
 			onCreateIssue={(draft) => {
 				send(() => createIssue(draft).then((created) => {
@@ -162,6 +190,7 @@ function Screen(): ReactElement {
 					return 'Login do Codex aberto no navegador.';
 				}));
 			}}
+			onEnableNotifications={enableNotifications}
 			onResume={(operatorGuidance) => {
 				if (run !== null) send(() => commandRun(run.id, 'resume', operatorGuidance));
 			}}

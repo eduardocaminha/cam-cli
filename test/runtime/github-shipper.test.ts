@@ -28,7 +28,6 @@ const PR_URL = 'https://github.com/gateship-dev/gateship/pull/385\n';
 interface RecordedCall {
 	command: string;
 	args: string[];
-	mutation: boolean;
 }
 
 interface FakeRepo {
@@ -75,8 +74,8 @@ function result(exitCode: number, stdout = '', stderr = ''): CommandResult {
 
 /** In-memory git + gh double: the only I/O the shipper is allowed to do. */
 function createRunner(repo: FakeRepo, calls: RecordedCall[]): ShipCommandRunner {
-	return async ({ command, args, mutation }) => {
-		calls.push({ command, args, mutation: mutation === true });
+	return async ({ command, args }) => {
+		calls.push({ command, args });
 		if (command === 'git') {
 			if (args[0] === 'rev-parse') {
 				return result(0, `${args[1] === '--abbrev-ref' ? repo.branch : HEAD_SHA}\n`);
@@ -191,14 +190,11 @@ describe('the GitHub shipper', () => {
 			'push', '--set-upstream', 'origin', BRANCH,
 		]);
 		expect(findCall(calls, 'gh', 'pr', 'create')[0]?.args).toContain('--head');
-		// Auto-merge is pinned to the exact published head, and runs as a
-		// mutation so gh falls back to its keyring OAuth token.
+		// Auto-merge is pinned to the exact published head.
 		expect(findCall(calls, 'gh', 'pr', 'merge')[0]).toEqual({
 			command: 'gh',
 			args: ['pr', 'merge', '385', '--squash', '--auto', '--match-head-commit', HEAD_SHA],
-			mutation: true,
 		});
-		expect(findCall(calls, 'gh', 'pr', 'list')[0]?.mutation).toBe(false);
 		expect(events).toEqual([
 			'ship.issue-closed',
 			'ship.committed',

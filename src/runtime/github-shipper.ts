@@ -21,14 +21,15 @@
 // pushed: if the branch moves outside the service before CI goes green, GitHub
 // refuses the merge instead of shipping a head nobody verified.
 //
-// `gh` mutations run with GITHUB_TOKEN stripped so gh falls back to its keyring
-// OAuth token; the ambient fine-grained PAT lacks "Pull requests: write".
+// Every `gh` command receives an allowlisted environment with no token
+// variables, so authentication always belongs to gh's own credential store.
 
 import { lstatSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
 
 import { issueFilePath } from '../issues/backlog.ts';
+import { buildGithubCliEnv } from './child-env.ts';
 import { type CommandResult, runOwnedCommand } from './git-runtime.ts';
 import type { RuntimeShipInput, RuntimeShipper, RuntimeShipResult } from './run-runtime.ts';
 import { RUNTIME_SOURCE_REF, runtimeSourceFetchArgs } from './source-ref.ts';
@@ -43,8 +44,6 @@ export interface ShipCommandInput {
 	command: string;
 	args: string[];
 	signal: AbortSignal;
-	/** A gh mutation: drop GITHUB_TOKEN so gh uses its keyring OAuth token. */
-	mutation?: boolean;
 }
 
 export type ShipCommandRunner = (input: ShipCommandInput) => Promise<CommandResult>;
@@ -81,18 +80,12 @@ function failureDetail(result: CommandResult): string {
 	return result.stderr.trim() || result.stdout.trim() || `exit ${result.exitCode}`;
 }
 
-function envWithoutGithubToken(): Record<string, string | undefined> {
-	const env = { ...process.env };
-	delete env['GITHUB_TOKEN'];
-	return env;
-}
-
 function defaultShipCommand(input: ShipCommandInput): Promise<CommandResult> {
 	return runOwnedCommand({
 		cmd: [input.command, ...input.args],
 		cwd: input.cwd,
 		signal: input.signal,
-		...(input.mutation === true ? { env: envWithoutGithubToken() } : {}),
+		...(input.command === 'gh' ? { env: buildGithubCliEnv(process.env) } : {}),
 	});
 }
 
@@ -242,7 +235,6 @@ export class GithubShipper implements RuntimeShipper {
 			input,
 			'gh',
 			['pr', 'merge', String(prNumber), '--squash', '--auto', '--match-head-commit', headSha],
-			true,
 		);
 		input.emit('ship.automerge-armed', { prNumber, headSha });
 
@@ -336,7 +328,6 @@ export class GithubShipper implements RuntimeShipper {
 				'--title', `${input.issueId}: ${title}`,
 				'--body', pullRequestBody(input.runId, input.issueId),
 			],
-			true,
 		);
 		const opened = parseCreatedPullRequest(created);
 		if (opened === null) {
@@ -380,14 +371,12 @@ export class GithubShipper implements RuntimeShipper {
 		input: RuntimeShipInput,
 		command: string,
 		args: string[],
-		mutation = false,
 	): Promise<CommandResult> {
 		const result = await this.#runCommand({
 			cwd: input.cwd,
 			command,
 			args,
 			signal: input.signal,
-			...(mutation ? { mutation: true } : {}),
 		});
 		if (input.signal.aborted) throw new DOMException('cancelled', 'AbortError');
 		return result;
@@ -397,9 +386,8 @@ export class GithubShipper implements RuntimeShipper {
 		input: RuntimeShipInput,
 		command: string,
 		args: string[],
-		mutation = false,
 	): Promise<string> {
-		const result = await this.#run(input, command, args, mutation);
+		const result = await this.#run(input, command, args);
 		if (result.exitCode !== 0) {
 			throw new Error(
 				`${command} ${args.slice(0, 2).join(' ')} failed: ${failureDetail(result)}`,

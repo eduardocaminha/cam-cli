@@ -55,9 +55,11 @@ function render(overrides: Partial<AppProps> = {}): string {
 			chatMessages={[]}
 			events={[]}
 			ideas={[]}
+			notificationPermission="default"
 			onCancel={() => {}}
 			onConnectCodex={() => {}}
 			onCreateIssue={() => {}}
+			onEnableNotifications={() => {}}
 			onResume={() => {}}
 			onSelectIssue={() => {}}
 			onSelectProvider={() => {}}
@@ -108,6 +110,16 @@ describe('operational screen', () => {
 		expect(html).not.toContain('Retomar');
 		expect(html).toContain('Conversa com o orquestrador');
 		expect(html).toContain('name="message"');
+		expect(buttonIsEnabled(html, 'Ativar notificações')).toBe(true);
+	});
+
+	test('local notifications show the browser permission state without a secret field', () => {
+		const html = render({ notificationPermission: 'granted' });
+
+		expect(html).toContain('Ativas neste navegador.');
+		expect(buttonIsEnabled(html, 'Notificações ativas')).toBe(false);
+		expect(html).not.toContain('API key');
+		expect(render({ notificationPermission: 'denied' })).toContain('Notificações bloqueadas');
 	});
 
 	test('idle with a selected issue: start becomes reachable', () => {

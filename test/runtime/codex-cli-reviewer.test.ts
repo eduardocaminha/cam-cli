@@ -33,22 +33,16 @@ describe('independent Codex reviewer', () => {
 
 	test('returns clean and findings verdicts from fresh fixture sessions', async () => {
 		const clean = new CodexCliReviewer({
-			command: ['bun', FIXTURE],
+			command: ['bun', FIXTURE, '--fixture-mode=review'],
 			loadIssue: () => '{"id":"CAM-1"}',
 			runGit: () => ({ exitCode: 0, stdout: '', stderr: '' }),
-			sourceEnv: { ...process.env, GSHIP_FIXTURE_MODE: 'review' },
 		});
 		expect(await clean.review(input())).toEqual({ verdict: 'clean' });
 
 		const findings = new CodexCliReviewer({
-			command: ['bun', FIXTURE],
+			command: ['bun', FIXTURE, '--fixture-mode=review', '--fixture-verdict=FINDINGS'],
 			loadIssue: () => '{"id":"CAM-1"}',
 			runGit: () => ({ exitCode: 0, stdout: '', stderr: '' }),
-			sourceEnv: {
-				...process.env,
-				GSHIP_FIXTURE_MODE: 'review',
-				GSHIP_FIXTURE_VERDICT: 'FINDINGS',
-			},
 		});
 		expect(await findings.review(input())).toEqual({
 			verdict: 'findings',

@@ -73,14 +73,9 @@ function fixtureReviewer(
 	overrides: Record<string, unknown> = {},
 ): ClaudeCliReviewer {
 	return new ClaudeCliReviewer({
-		command: ['bun', FIXTURE],
+		command: ['bun', FIXTURE, '--fixture-mode=review', `--fixture-verdict=${verdict}`],
 		loadIssue: () => '{"id":"CAM-577"}',
 		runGit: () => ({ exitCode: 0, stdout: 'M src/a.ts\n', stderr: '' }),
-		sourceEnv: {
-			...process.env,
-			GSHIP_FIXTURE_MODE: 'review',
-			GSHIP_FIXTURE_VERDICT: verdict,
-		},
 		...overrides,
 	});
 }
@@ -200,7 +195,7 @@ describe('independent Claude CLI reviewer', () => {
 	test('cancellation kills and awaits the real reviewer process group', async () => {
 		let childPid = 0;
 		const reviewer = fixtureReviewer('CLEAN', {
-			sourceEnv: { ...process.env, GSHIP_FIXTURE_MODE: 'wait' },
+			command: ['bun', FIXTURE, '--fixture-mode=wait'],
 			onSpawn: (pid: number) => {
 				childPid = pid;
 			},

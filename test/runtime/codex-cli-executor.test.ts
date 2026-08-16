@@ -58,13 +58,15 @@ describe('Codex CLI runtime executor', () => {
 		expect(readOnly).not.toContain('--dangerously-bypass-approvals-and-sandbox');
 	});
 
-	test('removes API credentials while preserving the operator Codex home', () => {
+	test('allows only runtime paths and the operator Codex home', () => {
 		expect(buildCodexEnv({
+			PATH: '/usr/bin',
 			OPENAI_API_KEY: 'secret',
 			CODEX_API_KEY: 'secret',
 			CODEX_ACCESS_TOKEN: 'secret',
+			RESEND_API_KEY: 'secret',
 			CODEX_HOME: '/operator/codex',
-		})).toEqual({ CODEX_HOME: '/operator/codex' });
+		})).toEqual({ PATH: '/usr/bin', CODEX_HOME: '/operator/codex' });
 	});
 
 	test('binds the provider thread, projects activity, and removes the temporary schema', async () => {

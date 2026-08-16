@@ -19,7 +19,14 @@ disclosure through the private advisory.
 ## Credential boundary
 
 Gateship executes locally installed Claude Code and Codex clients using their
-existing subscription login. It removes common API-key and injected-token
-variables from child environments and does not read or persist provider
-credentials. The launched agents still run with the operating-system
-permissions of the Gateship user.
+existing subscription login. Agent and GitHub CLI children receive an explicit
+environment allowlist; unrelated API keys, PATs and injected tokens are not
+inherited. Gateship does not read or persist provider credentials, and GitHub
+authentication remains in `gh`'s own credential store.
+
+The launched agents still run with the operating-system permissions of the
+Gateship user. The allowlist prevents accidental environment inheritance; it
+does not isolate a malicious same-user process from readable host files.
+Project verification commands are trusted and retain the service environment.
+See [credentials and notifications](./docs/credentials-and-notifications.md)
+for the complete boundary and setup.

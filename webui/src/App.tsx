@@ -39,6 +39,7 @@ import {
 	type RunView,
 	toneOf,
 } from './run-view.ts';
+import type { BrowserNotificationPermission } from './notifications.ts';
 
 export interface AppProps {
 	backlog: readonly PlannableIssue[];
@@ -48,6 +49,7 @@ export interface AppProps {
 	providers: readonly ProviderStatusView[];
 	chatMessages: readonly ChatMessageView[];
 	selectedProvider: ProviderStatusView['id'];
+	notificationPermission: BrowserNotificationPermission;
 	/** Newest first, exactly as /api/runs returned it. */
 	runs: readonly RunView[];
 	selectedIssueId: string | null;
@@ -63,6 +65,7 @@ export interface AppProps {
 	onCancel: () => void;
 	onShip: () => void;
 	onConnectCodex: () => void;
+	onEnableNotifications: () => void;
 	onSelectProvider: (providerId: ProviderStatusView['id']) => void;
 	onSendMessage: (message: string) => void;
 }
@@ -400,6 +403,45 @@ function ProvidersPanel(props: ProviderPanelProps): React.ReactElement {
 	);
 }
 
+function NotificationsPanel({
+	notificationPermission,
+	onEnableNotifications,
+}: Pick<AppProps, 'notificationPermission' | 'onEnableNotifications'>): React.ReactElement {
+	const active = notificationPermission === 'granted';
+	const unavailable = notificationPermission === 'unsupported';
+	const denied = notificationPermission === 'denied';
+	const actionLabel = active
+		? 'Notificações ativas'
+		: denied
+			? 'Notificações bloqueadas'
+			: unavailable
+				? 'Notificações indisponíveis'
+				: 'Ativar notificações';
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle>Notificações locais</CardTitle>
+				<CardDescription>
+					O navegador avisa quando um run precisa de você ou termina, sem conta ou token.
+				</CardDescription>
+			</CardHeader>
+			<CardPanel className="flex items-center justify-between gap-3">
+				<p className="text-muted-foreground text-sm">
+					{active ? 'Ativas neste navegador.' : null}
+					{denied ? 'Bloqueadas nas permissões deste navegador.' : null}
+					{unavailable ? 'Indisponíveis neste navegador.' : null}
+					{notificationPermission === 'default' ? 'Permissão ainda não solicitada.' : null}
+				</p>
+				<ActionButton
+					enabled={notificationPermission === 'default'}
+					label={actionLabel}
+					onClick={onEnableNotifications}
+				/>
+			</CardPanel>
+		</Card>
+	);
+}
+
 function ConversationPanel({
 	chatMessages,
 	pending,
@@ -658,6 +700,10 @@ export function App(props: AppProps): React.ReactElement {
 				run={run}
 			/>
 			<RunActivity events={props.events} run={run} />
+			<NotificationsPanel
+				notificationPermission={props.notificationPermission}
+				onEnableNotifications={props.onEnableNotifications}
+			/>
 			<PreviousRunsPanel runs={runs} />
 			<WorkspaceNoticesPanel workspaceNotices={props.workspaceNotices} />
 			<ProvidersPanel
