@@ -7,6 +7,7 @@ import type {
 } from './git-workspace.ts';
 import { canTransition, isTerminalRunState } from './run-state.ts';
 import {
+	type OrchestratorHandoff,
 	type OrchestratorMessage,
 	type OrchestratorMessageRole,
 	type RunEvent,
@@ -279,6 +280,14 @@ export class RunRuntime {
 
 	setOrchestratorSession(providerId: AgentProviderId, sessionId: string): void {
 		this.#store.setOrchestratorSession(providerId, sessionId, this.#now());
+	}
+
+	getOrchestratorHandoff(): OrchestratorHandoff {
+		return this.#store.getOrchestratorHandoff();
+	}
+
+	setOrchestratorHandoff(handoff: OrchestratorHandoff): void {
+		this.#store.setOrchestratorHandoff(handoff, this.#now());
 	}
 
 	appendOrchestratorMessage(
