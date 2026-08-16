@@ -4,10 +4,14 @@
 // pure screen, and subscribes to the server's event stream. There is no
 // polling loop -- /api/events pushes every run transition, and the two GET
 // routes are re-read only when an event or a command says something changed.
+//
+// Which surface to show is read from the browser path once, at mount: every
+// link in the shell is a real navigation, so the document is rebuilt whenever
+// the path changes and there is no navigation state to keep.
 
 import { type ReactElement, StrictMode, useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { App } from './App.tsx';
+import { App, routeOf } from './App.tsx';
 import {
 	commandRun,
 	createIssue,
@@ -210,6 +214,7 @@ function Screen(): ReactElement {
 			}}
 			pending={pending}
 			providers={providers}
+			route={routeOf(window.location.pathname)}
 			runs={runs}
 			selectedIssueId={selectedIssueId}
 			selectedProvider={selectedProvider}

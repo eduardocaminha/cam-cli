@@ -1,14 +1,15 @@
 // test/web/ui-client.test.tsx
 //
-// The operational screen, executed once per state it can be in, through
+// The operator screen, executed once per state it can be in, through
 // renderToStaticMarkup and no DOM harness (ADR-0067). What is asserted is the
-// screen's decisions -- which phase it shows, which outcome text it shows, and
-// which of the four commands it offers -- never the component source text.
+// screen's decisions -- which surface carries which task, which phase it shows,
+// which outcome text it shows, and which of the four commands it offers --
+// never the component source text.
 
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { App, type AppProps } from '../../webui/src/App.tsx';
+import { App, type AppProps, type OperatorRoute, routeOf } from '../../webui/src/App.tsx';
 import {
 	commandRun,
 	createIssue,
@@ -37,6 +38,8 @@ const BACKLOG = [
 	{ id: 'CAM-901', title: 'segunda issue plannable' },
 ];
 
+const SURFACE_PATHS: readonly OperatorRoute[] = ['/', '/runs', '/work', '/settings'];
+
 function runIn(state: RunState, overrides: Partial<RunView> = {}): RunView {
 	return {
 		id: 'run-1',
@@ -49,7 +52,7 @@ function runIn(state: RunState, overrides: Partial<RunView> = {}): RunView {
 	};
 }
 
-function render(overrides: Partial<AppProps> = {}): string {
+function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): string {
 	return renderToStaticMarkup(
 		<App
 			backlog={BACKLOG}
@@ -70,6 +73,7 @@ function render(overrides: Partial<AppProps> = {}): string {
 			onStart={() => {}}
 			pending={false}
 			providers={[]}
+			route={route}
 			runs={[]}
 			selectedIssueId={null}
 			selectedProvider="claude"
@@ -79,6 +83,16 @@ function render(overrides: Partial<AppProps> = {}): string {
 			{...overrides}
 		/>,
 	);
+}
+
+const home = (overrides: Partial<AppProps> = {}): string => renderAt('/', overrides);
+const runsPage = (overrides: Partial<AppProps> = {}): string => renderAt('/runs', overrides);
+const workPage = (overrides: Partial<AppProps> = {}): string => renderAt('/work', overrides);
+const settingsPage = (overrides: Partial<AppProps> = {}): string => renderAt('/settings', overrides);
+
+/** Whether a command is offered at all, by the label only that button carries. */
+function hasButton(html: string, label: string): boolean {
+	return html.includes(`>${label}<`);
 }
 
 /**
@@ -94,9 +108,9 @@ function buttonIsEnabled(html: string, label: string): boolean {
 }
 
 /**
- * Whether the contextual panel carrying `title` is disclosed. The panel is
- * found by its heading -- a navigation link can repeat the words, a heading
- * cannot -- and read back to the disclosure that owns it.
+ * Whether the panel carrying `title` is disclosed. The panel is found by its
+ * heading -- a navigation link can repeat the words, a heading cannot -- and
+ * read back to the disclosure that owns it.
  */
 function panelIsOpen(html: string, title: string): boolean {
 	const index = html.indexOf(`>${title}</h2>`);
@@ -118,49 +132,92 @@ function elementWith(html: string, attribute: string): string {
 	return tag;
 }
 
-/** The history card alone, cut before the backlog panel that follows it. */
-function historyCard(html: string): string {
-	const start = html.indexOf('Runs anteriores');
-	if (start < 0) throw new Error('the history card is not on the screen');
-	return html.slice(start, html.indexOf('Backlog plannable'));
+/** One disclosed panel alone, cut at the disclosure that carries it. */
+function panel(html: string, title: string): string {
+	const start = html.indexOf(`>${title}</h2>`);
+	if (start < 0) throw new Error(`panel ${title} is not on the screen`);
+	const end = html.indexOf('</details>', start);
+	return html.slice(start, end < 0 ? undefined : end);
 }
 
-describe('operational screen', () => {
-	test('idle: offers the plannable backlog and no run panel controls', () => {
-		const html = render();
+describe('conversation surface', () => {
+	test('the lateral is the compact inspector and nothing else', () => {
+		const html = home({
+			events: [{
+				seq: 1,
+				runId: 'run-1',
+				kind: 'provider.activity',
+				fromState: 'working',
+				toState: 'working',
+				payload: { text: 'Vou ajustar o parser.' },
+				createdAt: '2026-08-16T03:04:05.000Z',
+			}],
+			ideas: [{ id: 'CAM-42', title: 'ideia antiga' }],
+			providers: [
+				{ id: 'claude', installed: true, subscription: true, label: 'Claude Code', plan: 'max', login: 'external' },
+			],
+			runs: [
+				runIn('done', { summary: 'Relatório longo do runtime.' }),
+				runIn('failed', { id: 'run-0', issueId: 'CAM-801' }),
+			],
+			workspaceNotices: [{
+				kind: 'dirty',
+				runId: null,
+				workspacePath: '/project/.gship/worktrees/orphan',
+				branch: 'gship/cam-1-orphan',
+				detail: 'workspace is not owned by a persisted run',
+			}],
+		});
 
+		// What the inspector is for: the issue, the state, the progress, the way on.
 		expect(html).toContain('CAM-900');
-		expect(html).toContain('primeira issue plannable');
-		expect(html).toContain('Nenhum run registrado ainda.');
-		expect(html).toContain('ocioso');
-		expect(buttonIsEnabled(html, 'Iniciar run')).toBe(false);
-		expect(html).not.toContain('Retomar');
-		expect(html).toContain('Conversa com o orquestrador');
-		expect(html).toContain('name="message"');
-		expect(buttonIsEnabled(html, 'Ativar notificações')).toBe(true);
-		// No version reported: the header shows the title alone.
-		expect(html).not.toMatch(/v\d+\.\d+\.\d+/);
-		expect(render({ version: '0.292.0' })).toContain('>v0.292.0<');
+		expect(html).toContain('done');
+		expect(html).toContain('100%');
+		expect(html).toContain('href="/runs"');
+		// Telemetry, configuration, history and planning are other surfaces.
+		expect(html).not.toContain('run-1');
+		expect(html).not.toContain('Relatório longo do runtime.');
+		expect(html).not.toContain('Atividade');
+		expect(html).not.toContain('Runs anteriores');
+		expect(html).not.toContain('Workspaces preservados');
+		expect(html).not.toContain('Backlog plannable');
+		expect(html).not.toContain('Nova tarefa');
+		expect(html).not.toContain('Especificar ideia');
+		expect(html).not.toContain('Agentes locais');
+		expect(html).not.toContain('Notificações locais');
 	});
 
-	test('local notifications show the browser permission state without a secret field', () => {
-		const html = render({ notificationPermission: 'granted' });
+	test('the inspector offers the commands the run admits, and renders no others', () => {
+		const idle = home();
+		expect(idle).toContain('Nenhum run registrado ainda.');
+		expect(idle).toContain('ocioso');
+		expect(hasButton(idle, 'Cancelar')).toBe(false);
+		expect(hasButton(idle, 'Shipar')).toBe(false);
+		expect(hasButton(idle, 'Retomar')).toBe(false);
 
-		expect(html).toContain('Ativas neste navegador.');
-		expect(buttonIsEnabled(html, 'Notificações ativas')).toBe(false);
-		expect(html).not.toContain('API key');
-		expect(render({ notificationPermission: 'denied' })).toContain('Notificações bloqueadas');
+		const working = home({ runs: [runIn('working')] });
+		expect(working).toContain('Fase working');
+		expect(buttonIsEnabled(working, 'Cancelar')).toBe(true);
+		expect(hasButton(working, 'Shipar')).toBe(false);
+		expect(hasButton(working, 'Retomar')).toBe(false);
+
+		const readyToShip = home({ runs: [runIn('ready-to-ship')] });
+		expect(buttonIsEnabled(readyToShip, 'Shipar')).toBe(true);
+		expect(buttonIsEnabled(readyToShip, 'Cancelar')).toBe(true);
+
+		const interrupted = home({ runs: [runIn('interrupted')] });
+		expect(buttonIsEnabled(interrupted, 'Retomar')).toBe(true);
 	});
 
-	test('idle with a selected issue: start becomes reachable', () => {
-		const html = render({ selectedIssueId: 'CAM-901' });
+	test('a command in flight holds the commands that are offered', () => {
+		const html = home({ pending: true, runs: [runIn('ready-to-ship')] });
 
-		expect(buttonIsEnabled(html, 'Iniciar run')).toBe(true);
-		expect(html).toContain('aria-pressed="true"');
+		expect(buttonIsEnabled(html, 'Shipar')).toBe(false);
+		expect(buttonIsEnabled(html, 'Cancelar')).toBe(false);
 	});
 
 	test('conversation renders the durable cross-provider handoff', () => {
-		const html = render({
+		const html = home({
 			chatMessages: [
 				{
 					seq: 1,
@@ -179,129 +236,78 @@ describe('operational screen', () => {
 			],
 		});
 
+		expect(html).toContain('Conversa com o orquestrador');
+		expect(html).toContain('name="message"');
 		expect(html).toContain('Investigue o core.');
 		expect(html).toContain('Retomei o contexto e encontrei o loop.');
 		expect(html).toContain('codex');
 		expect(html).toContain('claude');
 	});
 
-	test('working: shows the phase and offers only cancel', () => {
-		const html = render({ runs: [runIn('working')] });
-
-		expect(html).toContain('Fase working');
-		expect(buttonIsEnabled(html, 'Cancelar')).toBe(true);
-		expect(buttonIsEnabled(html, 'Retomar')).toBe(false);
-		expect(buttonIsEnabled(html, 'Shipar')).toBe(false);
-		expect(buttonIsEnabled(html, 'Iniciar run')).toBe(false);
-	});
-
-	test('waiting-user: asks for an answer before resuming on the same spine', () => {
-		const html = render({
+	test('the run asks for its decision on the conversation surface, once', () => {
+		const html = home({
 			runs: [runIn('waiting-user', { summary: 'Escolha o seam de migração.' })],
-			selectedIssueId: 'CAM-900',
 		});
 
-		expect(html).toContain('Fase working');
 		expect(html).toContain('waiting-user');
-		expect(html).toContain('Escolha o seam de migração.');
 		expect(html).toContain('name="operatorGuidance"');
 		expect(buttonIsEnabled(html, 'Responder e retomar')).toBe(true);
-		// A live run blocks a second start even with an issue selected.
-		expect(buttonIsEnabled(html, 'Iniciar run')).toBe(false);
+		expect(html.split('Escolha o seam de migração.')).toHaveLength(2);
+		// Resuming is the answer itself while the run waits, never a bare command.
+		expect(hasButton(html, 'Retomar')).toBe(false);
 	});
 
-	test('ready-to-ship: offers ship as the retry, alongside cancel', () => {
-		const html = render({ runs: [runIn('ready-to-ship')] });
+	test('a transport error is announced where the command was issued', () => {
+		expect(home({ status: 'Falha ao ler /api/runs' })).toContain('Falha ao ler /api/runs');
+		expect(workPage({ status: 'CAM-902 criada e selecionada.' }))
+			.toContain('CAM-902 criada e selecionada.');
+	});
+});
 
-		expect(html).toContain('Fase ready-to-ship');
-		expect(buttonIsEnabled(html, 'Shipar')).toBe(true);
-		expect(buttonIsEnabled(html, 'Cancelar')).toBe(true);
-		expect(buttonIsEnabled(html, 'Retomar')).toBe(false);
+describe('runs surface', () => {
+	test('the detail card shows the phase and the commands the state admits', () => {
+		expect(runsPage()).toContain('Nenhum run registrado ainda.');
+
+		const working = runsPage({ runs: [runIn('working')] });
+		expect(working).toContain('CAM-900');
+		expect(working).toContain('Fase working');
+		expect(buttonIsEnabled(working, 'Cancelar')).toBe(true);
+		expect(hasButton(working, 'Shipar')).toBe(false);
+
+		// The run is already shipping itself: the command is only the retry.
+		const shipping = runsPage({ runs: [runIn('shipping')] });
+		expect(shipping).toContain('Fase shipping');
+		expect(hasButton(shipping, 'Shipar')).toBe(false);
+		expect(buttonIsEnabled(shipping, 'Cancelar')).toBe(true);
+
+		const done = runsPage({ runs: [runIn('done')] });
+		expect(done).toContain('100%');
+		expect(hasButton(done, 'Cancelar')).toBe(false);
+		expect(hasButton(done, 'Shipar')).toBe(false);
 	});
 
-	test('shipping: shows the phase the service is in and holds the ship command', () => {
-		const html = render({ runs: [runIn('shipping')] });
+	test('the full report and the run id are one disclosure, closed by default', () => {
+		const html = runsPage({ runs: [runIn('done', { summary: 'PR #123 mergeado.' })] });
 
-		expect(html).toContain('Fase shipping');
-		// The run is already shipping itself: the button is only the retry.
-		expect(buttonIsEnabled(html, 'Shipar')).toBe(false);
-		expect(buttonIsEnabled(html, 'Cancelar')).toBe(true);
-		expect(buttonIsEnabled(html, 'Retomar')).toBe(false);
-	});
+		expect(panelIsOpen(html, 'Resumo e diagnóstico')).toBe(false);
+		// Closed is a rendering state, not a missing branch.
+		expect(panel(html, 'Resumo e diagnóstico')).toContain('PR #123 mergeado.');
+		expect(panel(html, 'Resumo e diagnóstico')).toContain('run-1');
 
-	test('done: shows the summary, closes the commands and reopens start', () => {
-		const html = render({
-			runs: [runIn('done', { summary: 'PR #123 mergeado.' })],
-			selectedIssueId: 'CAM-900',
-		});
+		const failed = runsPage({ runs: [runIn('failed', { error: 'oracle reprovou a story 2' })] });
+		expect(failed).toContain('failed');
+		expect(panel(failed, 'Resumo e diagnóstico')).toContain('oracle reprovou a story 2');
 
-		expect(html).toContain('PR #123 mergeado.');
-		expect(html).toContain('100%');
-		expect(buttonIsEnabled(html, 'Iniciar run')).toBe(true);
-		expect(buttonIsEnabled(html, 'Cancelar')).toBe(false);
-		expect(buttonIsEnabled(html, 'Shipar')).toBe(false);
-	});
+		// The question a waiting run is asking belongs to the report as well.
+		const waiting = runsPage({ runs: [runIn('waiting-user', { summary: 'Escolha o seam.' })] });
+		expect(panel(waiting, 'Resumo e diagnóstico')).toContain('Escolha o seam.');
 
-	test('failed: shows the error instead of a summary', () => {
-		const html = render({ runs: [runIn('failed', { error: 'oracle reprovou a story 2' })] });
-
-		expect(html).toContain('oracle reprovou a story 2');
-		expect(html).toContain('failed');
-		expect(buttonIsEnabled(html, 'Cancelar')).toBe(false);
-	});
-
-	test('a command in flight holds every button', () => {
-		const html = render({
-			pending: true,
-			runs: [runIn('ready-to-ship')],
-			selectedIssueId: 'CAM-900',
-		});
-
-		expect(buttonIsEnabled(html, 'Shipar')).toBe(false);
-		expect(buttonIsEnabled(html, 'Cancelar')).toBe(false);
-		expect(buttonIsEnabled(html, 'Iniciar run')).toBe(false);
-		expect(buttonIsEnabled(html, 'Criar tarefa')).toBe(false);
-	});
-
-	test('idle screen exposes the minimal operator contract', () => {
-		const html = render();
-
-		expect(html).toContain('Nova tarefa');
-		expect(html).toContain('name="title"');
-		expect(html).toContain('name="scope"');
-		expect(html).toContain('name="verificationCommand"');
-		expect(buttonIsEnabled(html, 'Criar tarefa')).toBe(true);
-	});
-
-	test('idle with ideas offers direct specification without a planner', () => {
-		const html = render({ ideas: [{ id: 'CAM-42', title: 'ideia antiga' }] });
-
-		expect(html).toContain('Especificar ideia existente');
-		expect(html).toContain('CAM-42 — ideia antiga');
-		expect(html).toContain('name="ideaScope"');
-		expect(html).toContain('name="ideaVerificationCommand"');
-		expect(buttonIsEnabled(html, 'Especificar ideia')).toBe(true);
-	});
-
-	test('surfaces preserved workspaces without offering destructive cleanup', () => {
-		const html = render({
-			workspaceNotices: [{
-				kind: 'dirty',
-				runId: null,
-				workspacePath: '/project/.gship/worktrees/orphan',
-				branch: 'gship/cam-1-orphan',
-				detail: 'workspace is not owned by a persisted run',
-			}],
-		});
-
-		expect(html).toContain('Workspaces preservados');
-		expect(html).toContain('/project/.gship/worktrees/orphan');
-		expect(html).toContain('workspace is not owned by a persisted run');
-		expect(html).not.toContain('Apagar workspace');
+		// Nothing to report: no empty disclosure.
+		expect(runsPage({ runs: [runIn('working')] })).not.toContain('Resumo e diagnóstico');
 	});
 
 	test('a run shows persisted public activity and tool names', () => {
-		const html = render({
+		const html = runsPage({
 			runs: [runIn('working')],
 			events: [
 				{
@@ -316,7 +322,7 @@ describe('operational screen', () => {
 			],
 		});
 
-		expect(html).toContain('Atividade');
+		expect(panelIsOpen(html, 'Atividade')).toBe(true);
 		expect(html).toContain('provider.activity');
 		expect(html).toContain('Vou ajustar o parser.');
 		expect(html).toContain('Ferramentas: Read, Edit');
@@ -333,7 +339,7 @@ describe('operational screen', () => {
 			payload: index % 2 === 0 ? { subtype: 'thinking_tokens' } : {},
 			createdAt: '2026-08-16T03:05:00.000Z',
 		}));
-		const html = render({
+		const html = runsPage({
 			runs: [runIn('working')],
 			events: [
 				{
@@ -356,7 +362,7 @@ describe('operational screen', () => {
 	});
 
 	test('activity with public detail survives alongside the noise it is buried in', () => {
-		const html = render({
+		const html = runsPage({
 			runs: [runIn('working')],
 			events: [
 				{
@@ -394,30 +400,45 @@ describe('operational screen', () => {
 		expect(html).toContain('2 evento(s) recente(s)');
 	});
 
-	test('a single run has no history card to show', () => {
-		const html = render({ runs: [runIn('working')] });
+	test('surfaces preserved workspaces without offering destructive cleanup', () => {
+		const html = runsPage({
+			workspaceNotices: [{
+				kind: 'dirty',
+				runId: null,
+				workspacePath: '/project/.gship/worktrees/orphan',
+				branch: 'gship/cam-1-orphan',
+				detail: 'workspace is not owned by a persisted run',
+			}],
+		});
 
-		expect(html).not.toContain('Runs anteriores');
+		expect(html).toContain('Workspaces preservados');
+		expect(html).toContain('/project/.gship/worktrees/orphan');
+		expect(html).toContain('workspace is not owned by a persisted run');
+		expect(html).not.toContain('Apagar workspace');
+	});
+
+	test('a single run has no history card to show', () => {
+		expect(runsPage({ runs: [runIn('working')] })).not.toContain('Runs anteriores');
 	});
 
 	test('previous runs are listed read-only, newest first and without the last run', () => {
-		const html = render({
+		const html = runsPage({
 			runs: [
 				runIn('working', { id: 'run-3', issueId: 'CAM-803' }),
 				runIn('done', { id: 'run-2', issueId: 'CAM-802', updatedAt: '2026-08-15T18:30:00.000Z' }),
 				runIn('failed', { id: 'run-1', issueId: 'CAM-801', updatedAt: '2026-08-14T09:05:00.000Z' }),
 			],
 		});
-		const card = historyCard(html);
+		const card = panel(html, 'Runs anteriores');
 
-		expect(html).toContain('Runs anteriores');
+		expect(panelIsOpen(html, 'Runs anteriores')).toBe(false);
 		expect(card).toContain('2 run(s) antes do último');
 		expect(card).toContain('CAM-802');
 		expect(card).toContain('2026-08-15 18:30');
 		expect(card).toContain('CAM-801');
 		expect(card).toContain('2026-08-14 09:05');
 		expect(card).toContain('failed');
-		// The run the panel above commands is not repeated in the history.
+		// The run the card above commands is not repeated in the history.
 		expect(card).not.toContain('CAM-803');
 		expect(card.indexOf('CAM-802')).toBeLessThan(card.indexOf('CAM-801'));
 		// Read-only: history rows carry no command and no selection.
@@ -426,11 +447,13 @@ describe('operational screen', () => {
 	});
 
 	test('history stops at four entries however long the list is', () => {
-		const html = render({
-			runs: Array.from({ length: 9 }, (_, index) =>
-				runIn('done', { id: `run-${index}`, issueId: `CAM-8${index}0` })),
-		});
-		const card = historyCard(html);
+		const card = panel(
+			runsPage({
+				runs: Array.from({ length: 9 }, (_, index) =>
+					runIn('done', { id: `run-${index}`, issueId: `CAM-8${index}0` })),
+			}),
+			'Runs anteriores',
+		);
 
 		expect(card).toContain('4 run(s) antes do último');
 		for (const issueId of ['CAM-810', 'CAM-820', 'CAM-830', 'CAM-840']) {
@@ -442,73 +465,118 @@ describe('operational screen', () => {
 	});
 });
 
-describe('operator shell', () => {
-	test('navigation offers the panels the screen is carrying, and only those', () => {
-		const idle = render();
+describe('work surface', () => {
+	test('offers the plannable backlog and holds start until an issue is chosen', () => {
+		const html = workPage();
 
-		expect(idle).toContain('href="#conversa"');
-		expect(idle).toContain('href="#run"');
-		expect(idle).toContain('href="#backlog"');
-		// No run, no ideas, no notices and no history: no link pointing at nothing.
-		expect(idle).not.toContain('href="#atividade"');
-		expect(idle).not.toContain('href="#ideias"');
-		expect(idle).not.toContain('href="#workspaces"');
-		expect(idle).not.toContain('href="#historico"');
+		expect(html).toContain('CAM-900');
+		expect(html).toContain('primeira issue plannable');
+		expect(buttonIsEnabled(html, 'Iniciar run')).toBe(false);
 
-		const loaded = render({
-			ideas: [{ id: 'CAM-42', title: 'ideia antiga' }],
-			runs: [runIn('working'), runIn('done', { id: 'run-0' })],
-			workspaceNotices: [{
-				kind: 'dirty',
-				runId: null,
-				workspacePath: '/project/.gship/worktrees/orphan',
-				branch: 'gship/cam-1-orphan',
-				detail: 'workspace is not owned by a persisted run',
-			}],
-		});
+		const selected = workPage({ selectedIssueId: 'CAM-901' });
+		expect(buttonIsEnabled(selected, 'Iniciar run')).toBe(true);
+		expect(selected).toContain('aria-pressed="true"');
 
-		expect(loaded).toContain('href="#atividade"');
-		expect(loaded).toContain('href="#ideias"');
-		expect(loaded).toContain('href="#workspaces"');
-		expect(loaded).toContain('href="#historico"');
+		// A live run blocks a second start even with an issue selected.
+		const live = workPage({ runs: [runIn('waiting-user')], selectedIssueId: 'CAM-900' });
+		expect(buttonIsEnabled(live, 'Iniciar run')).toBe(false);
+		// A settled one reopens it.
+		const settled = workPage({ runs: [runIn('done')], selectedIssueId: 'CAM-900' });
+		expect(buttonIsEnabled(settled, 'Iniciar run')).toBe(true);
 	});
 
-	test('a collapsed panel is disclosed, never dropped from the document', () => {
-		const html = render({
+	test('exposes the minimal operator contract for a new task', () => {
+		const html = workPage();
+
+		expect(html).toContain('Nova tarefa');
+		expect(html).toContain('name="title"');
+		expect(html).toContain('name="scope"');
+		expect(html).toContain('name="verificationCommand"');
+		expect(buttonIsEnabled(html, 'Criar tarefa')).toBe(true);
+		expect(buttonIsEnabled(workPage({ pending: true }), 'Criar tarefa')).toBe(false);
+	});
+
+	test('ideas are specified directly, without a planner, and only when there are any', () => {
+		const html = workPage({ ideas: [{ id: 'CAM-42', title: 'ideia antiga' }] });
+
+		expect(html).toContain('Especificar ideia existente');
+		expect(html).toContain('CAM-42 — ideia antiga');
+		expect(html).toContain('name="ideaScope"');
+		expect(html).toContain('name="ideaVerificationCommand"');
+		expect(buttonIsEnabled(html, 'Especificar ideia')).toBe(true);
+		expect(workPage()).not.toContain('Especificar ideia existente');
+	});
+});
+
+describe('settings surface', () => {
+	test('shows subscription state without any credential field', () => {
+		const html = settingsPage({
 			providers: [
 				{ id: 'claude', installed: true, subscription: true, label: 'Claude Code', plan: 'max', login: 'external' },
+				{ id: 'codex', installed: true, subscription: false, label: 'Codex', login: 'web' },
 			],
-			runs: [runIn('working'), runIn('done', { id: 'run-0', issueId: 'CAM-801' })],
 		});
 
-		// What the operator acts on now is open; the rest is one click away.
-		expect(panelIsOpen(html, 'Backlog plannable')).toBe(true);
-		expect(panelIsOpen(html, 'Atividade')).toBe(true);
-		expect(panelIsOpen(html, 'Agentes locais')).toBe(false);
-		expect(panelIsOpen(html, 'Runs anteriores')).toBe(false);
-		// Collapsed is a rendering state, not a missing branch: the content is here.
+		expect(html).toContain('Agentes locais');
+		expect(html).toContain('Claude Code');
 		expect(html).toContain('Assinatura conectada · max');
-		expect(html).toContain('CAM-801');
+		expect(html).toContain('em uso');
+		expect(buttonIsEnabled(html, 'Conectar ChatGPT')).toBe(true);
+		expect(html).not.toMatch(/api key|oauth token/i);
 	});
 
-	test('the run asks for its decision on the conversation surface, once', () => {
-		const html = render({
-			runs: [runIn('waiting-user', { summary: 'Escolha o seam de migração.' })],
-		});
+	test('local notifications show the browser permission state without a secret field', () => {
+		expect(buttonIsEnabled(settingsPage(), 'Ativar notificações')).toBe(true);
 
-		expect(html.indexOf('name="operatorGuidance"')).toBeLessThan(html.indexOf('Último run'));
-		expect(html.split('Escolha o seam de migração.')).toHaveLength(2);
-		// Resuming is the answer itself while the run waits, never a bare command.
-		expect(html).not.toContain('>Retomar<');
+		const granted = settingsPage({ notificationPermission: 'granted' });
+		expect(granted).toContain('Ativas neste navegador.');
+		expect(buttonIsEnabled(granted, 'Notificações ativas')).toBe(false);
+		expect(granted).not.toContain('API key');
+		expect(settingsPage({ notificationPermission: 'denied' })).toContain('Notificações bloqueadas');
+	});
+});
+
+describe('operator shell', () => {
+	test('navigation is four real paths, with the active one marked', () => {
+		for (const route of SURFACE_PATHS) {
+			const html = renderAt(route);
+			const nav = html.slice(html.indexOf('<nav'), html.indexOf('</nav>'));
+			const active = openingTags(nav).find((tag) => tag.includes(`href="${route}"`));
+
+			for (const path of SURFACE_PATHS) expect(nav).toContain(`href="${path}"`);
+			expect(active).toContain('aria-current="page"');
+			expect(nav.split('aria-current="page"')).toHaveLength(2);
+			// Plain links to served paths: no in-page anchor navigation is left.
+			expect(html).not.toContain('href="#');
+		}
+	});
+
+	test('an unserved path reads as the conversation surface', () => {
+		expect(routeOf('/')).toBe('/');
+		expect(routeOf('/runs')).toBe('/runs');
+		expect(routeOf('/runs/')).toBe('/runs');
+		expect(routeOf('/work')).toBe('/work');
+		expect(routeOf('/settings')).toBe('/settings');
+		expect(routeOf('/runs/run-1')).toBe('/');
+		expect(routeOf('/qualquer-coisa')).toBe('/');
+	});
+
+	test('the shell reports the run state and the version it is serving', () => {
+		expect(home()).toContain('ocioso');
+		expect(runsPage({ runs: [runIn('failed')] })).toContain('failed');
+		// No version reported: the header shows the title alone.
+		expect(home()).not.toMatch(/v\d+\.\d+\.\d+/);
+		expect(home({ version: '0.292.0' })).toContain('>v0.292.0<');
 	});
 });
 
 describe('conversation transcript', () => {
 	const HASH = 'a'.repeat(64);
 
-	/** Every long, unbreakable string the operator can be shown, on one screen. */
-	function renderLongContent(): string {
-		return render({
+	/** Every long, unbreakable string the operator can be shown, per surface. */
+	function renderLongContent(route: OperatorRoute): string {
+		return renderAt(route, {
+			backlog: [{ id: `CAM-${HASH}`, title: `issue ${HASH}` }],
 			chatMessages: [{
 				seq: 1,
 				providerId: 'claude',
@@ -516,6 +584,10 @@ describe('conversation transcript', () => {
 				text: `Comparei com ${HASH} rodando bun test test/web/ui-client.test.tsx --coverage`,
 				createdAt: '2026-08-16T03:00:00.000Z',
 			}],
+			ideas: [{ id: `CAM-idea-${HASH}`, title: `ideia ${HASH}` }],
+			providers: [
+				{ id: 'claude', installed: true, subscription: false, label: `Claude ${HASH}`, login: 'external' },
+			],
 			runs: [
 				runIn('working', { id: `run-${HASH}`, summary: `Verificando ${HASH}` }),
 				runIn('done', { id: `run-old-${HASH}`, issueId: `CAM-${HASH}` }),
@@ -553,8 +625,8 @@ describe('conversation transcript', () => {
 	});
 
 	test('the transcript is one focusable, announced region in every state', () => {
-		const empty = render();
-		const loaded = render({
+		const empty = home();
+		const loaded = home({
 			chatMessages: [{
 				seq: 1,
 				providerId: 'claude',
@@ -577,25 +649,29 @@ describe('conversation transcript', () => {
 	});
 
 	test('long hashes, commands and ids are rendered with a rule that breaks them', () => {
-		const html = renderLongContent();
-		const unbreakable = openingTags(html).filter((tag) =>
-			tag.startsWith('<code') || tag.includes('whitespace-pre-wrap'));
+		const surfaces = SURFACE_PATHS.map(renderLongContent);
+		const unbreakable = surfaces.flatMap((html) =>
+			openingTags(html).filter((tag) =>
+				tag.startsWith('<code') || tag.includes('whitespace-pre-wrap')));
 
 		expect(unbreakable.length).toBeGreaterThan(3);
 		for (const tag of unbreakable) expect(tag).toMatch(/break-(all|words)/);
 		// The content itself is still there, whole.
-		expect(html).toContain(`Comparei com ${HASH}`);
-		expect(html).toContain(`provider.activity.${HASH}`);
-		expect(html).toContain(`/project/.gship/worktrees/${HASH}`);
+		expect(renderLongContent('/')).toContain(`Comparei com ${HASH}`);
+		expect(renderLongContent('/runs')).toContain(`provider.activity.${HASH}`);
+		expect(renderLongContent('/runs')).toContain(`/project/.gship/worktrees/${HASH}`);
+		expect(renderLongContent('/work')).toContain(`issue ${HASH}`);
 	});
 
-	test('the only horizontal scroller is the panel navigation', () => {
-		const html = renderLongContent();
-		const horizontal = openingTags(html).filter((tag) => tag.includes('overflow-x-auto'));
+	test('no surface scrolls horizontally except the shell navigation', () => {
+		for (const route of SURFACE_PATHS) {
+			const html = renderLongContent(route);
+			const horizontal = openingTags(html).filter((tag) => tag.includes('overflow-x-auto'));
 
-		expect(horizontal).toHaveLength(1);
-		expect(html.indexOf('overflow-x-auto')).toBeGreaterThan(html.indexOf('<nav'));
-		expect(html.indexOf('overflow-x-auto')).toBeLessThan(html.indexOf('</nav>'));
+			expect(horizontal).toHaveLength(1);
+			expect(html.indexOf('overflow-x-auto')).toBeGreaterThan(html.indexOf('<nav'));
+			expect(html.indexOf('overflow-x-auto')).toBeLessThan(html.indexOf('</nav>'));
+		}
 	});
 });
 
@@ -685,19 +761,6 @@ describe('same-origin transport', () => {
 				body: JSON.stringify({ message: 'Continue.' }),
 			}]);
 		});
-	});
-
-	test('shows subscription state without any credential field', () => {
-		const html = render({
-			providers: [
-				{ id: 'claude', installed: true, subscription: true, label: 'Claude Code', plan: 'max', login: 'external' },
-				{ id: 'codex', installed: true, subscription: false, label: 'Codex', login: 'web' },
-			],
-		});
-		expect(html).toContain('Claude Code');
-		expect(html).toContain('Assinatura conectada · max');
-		expect(buttonIsEnabled(html, 'Conectar ChatGPT')).toBe(true);
-		expect(html).not.toMatch(/api key|oauth token/i);
 	});
 
 	test('issue intake posts the operator contract and returns the created issue', async () => {

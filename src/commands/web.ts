@@ -619,7 +619,13 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		hostname: WEB_HOSTNAME,
 		port: options.port,
 		routes: {
+			// The operator surfaces are four enumerated paths, each answered with
+			// the same document; the client reads which one it is from the path.
+			// There is no catch-all, so an unknown path is still a 404.
 			'/': () => serveWebAsset(assets.indexHtml),
+			'/runs': () => serveWebAsset(assets.indexHtml),
+			'/work': () => serveWebAsset(assets.indexHtml),
+			'/settings': () => serveWebAsset(assets.indexHtml),
 			'/app.js': () => serveWebAsset(assets.appJs),
 			'/app.css': () => serveWebAsset(assets.appCss),
 			'/api/snapshot': () => {

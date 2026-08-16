@@ -51,6 +51,25 @@ describe('embedded web bundle', () => {
 		}
 	});
 
+	test('every operator surface is the same document, and nothing else is', async () => {
+		const handle = startWebServer({ port: 0, cwd: REPO_ROOT });
+		try {
+			const home = await (await get(handle, '/')).text();
+
+			for (const path of ['/runs', '/work', '/settings']) {
+				const surface = await get(handle, path);
+				expect(surface.status).toBe(200);
+				expect(surface.headers.get('content-type')).toContain('text/html');
+				expect(await surface.text()).toBe(home);
+			}
+			// Enumerated paths, not a universal fallback: anything else is a 404.
+			expect((await get(handle, '/runs/run-1')).status).toBe(404);
+			expect((await get(handle, '/qualquer-coisa')).status).toBe(404);
+		} finally {
+			await handle.stop();
+		}
+	});
+
 	test('the built bundle is what the static import specifiers name', () => {
 		const assets = resolveWebAssets({});
 
