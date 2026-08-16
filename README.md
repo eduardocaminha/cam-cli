@@ -176,32 +176,28 @@ cam --version
 
 ## Quick start
 
-Once `cam` is on PATH:
+For an already initialized Gateship project, the default entry point is the
+local web control surface:
 
 ```bash
-# 1. cd into any project (fresh or existing).
+# 1. Enter the project.
 cd ~/code/my-project
 
-# 2. Run the project setup wizard. cam init validates the machine,
-#    asks a couple of questions (new vs existing, issue system),
-#    installs templates into .claude/, and spawns a tmux session
-#    where a config agent adapts everything to your project.
-cam init
+# 2. Start the durable runtime and open the printed localhost URL.
+gship          # starts the local web control surface
 
-# 3. When the config agent finishes (it prints CAM_SETUP_STATUS=DONE),
-#    the orchestrator launches automatically in a new pane. The session
-#    has two panes: orchestrator (pane 0.0) and the navigable cam dashboard
-#    (pane 0.1, permanent). In the dashboard, press n/r/s/p/i to send
-#    /cam-* commands to the orchestrator, j/k or arrows to browse stories,
-#    Enter to open a story detail view, Esc to go back, d to focus the
-#    orchestrator pane, q to close the dashboard.
-
-# 4. From any future shell, re-attach the session:
-cam run
-
-# 5. File an issue without entering the session:
-cam issue "add dark mode toggle to settings page"
+# The previous orchestrator remains available during the strangler migration.
+gship run      # legacy tmux session
 ```
+
+New projects still use `gship init` while setup is migrated. The web screen
+lists plannable issues, follows the current run through server-sent events, and
+offers the contextual start, resume, cancel, and ship actions.
+
+### Legacy tmux runtime
+
+The previous orchestrator remains documented below while its remaining
+non-equivalent setup and planning seams are migrated.
 
 The orchestrator persists between sessions and accumulates project memory
 in `scripts/cam/journal.md`. On a cycle-close, the orchestrator runs

@@ -118,14 +118,15 @@ import { CAM_VERSION } from './src/version.ts';
 const HELP = renderHelp({
 	title: 'gship',
 	tagline: 'Gateship: a local software-delivery runtime for coding agents',
-	usage: 'gship <command> [options]',
+	usage: 'gship [command] [options]',
 	sections: [
 		{
 			heading: 'Commands',
 			entries: [
+				{ name: '(default)', description: 'Start the local web control surface on 127.0.0.1:7777' },
 				{ name: 'init [options]', description: 'Validate the machine, then run the project-setup wizard' },
 				{ name: 'config [--show]', description: 'Interactive wizard to set model per phase and backend' },
-				{ name: 'run [options]', description: 'Open or attach the long-lived orchestrator (tmux session)' },
+				{ name: 'run [options]', description: 'Legacy tmux session: open or attach the long-lived orchestrator' },
 				{ name: 'plan [<N>]', description: 'Spawn claude + dispatch /cam-plan; APPROVE happens inside the pane' },
 				{ name: 'spec <id>', description: 'Deep-spec an idea (stage:idea) into stage:specified via spec-with-docs interview' },
 				{ name: 'next [options]', description: 'Trigger the sidecar loop (flips active:true, thin-proxy)' },
@@ -2967,7 +2968,10 @@ export function isHelpRequested(command: string, tail: string[]): boolean {
 
 async function main(argv: string[]): Promise<number> {
 	const command = argv[2];
-	if (!command || command === 'help' || command === '--help' || command === '-h') {
+	if (!command) {
+		return runWeb({ port: DEFAULT_WEB_PORT, cwd: process.cwd() });
+	}
+	if (command === 'help' || command === '--help' || command === '-h') {
 		process.stdout.write(HELP);
 		return 0;
 	}
