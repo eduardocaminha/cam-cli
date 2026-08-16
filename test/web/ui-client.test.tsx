@@ -73,6 +73,7 @@ function render(overrides: Partial<AppProps> = {}): string {
 			selectedIssueId={null}
 			selectedProvider="claude"
 			status={null}
+			version=""
 			workspaceNotices={[]}
 			{...overrides}
 		/>,
@@ -111,6 +112,9 @@ describe('operational screen', () => {
 		expect(html).toContain('Conversa com o orquestrador');
 		expect(html).toContain('name="message"');
 		expect(buttonIsEnabled(html, 'Ativar notificações')).toBe(true);
+		// No version reported: the header shows the title alone.
+		expect(html).not.toMatch(/v\d+\.\d+\.\d+/);
+		expect(render({ version: '0.292.0' })).toContain('>v0.292.0<');
 	});
 
 	test('local notifications show the browser permission state without a secret field', () => {
@@ -662,15 +666,22 @@ describe('same-origin transport', () => {
 		});
 		// No idleState key at all: a cycle is running, so nothing is plannable.
 		await withRecordedFetch({ phase: 'implementing' }, 200, async () => {
-			expect(await fetchBacklog()).toEqual({ plannable: [], ideas: [], workspaceNotices: [] });
+			expect(await fetchBacklog()).toEqual({
+				plannable: [],
+				ideas: [],
+				workspaceNotices: [],
+				version: '',
+			});
 		});
 		await withRecordedFetch({
 			idleState: { backlog: { plannable: BACKLOG, byStage: { idea: [BACKLOG[0]!] } } },
+			version: '0.292.0',
 		}, 200, async () => {
 			expect(await fetchBacklog()).toEqual({
 				plannable: BACKLOG,
 				ideas: [BACKLOG[0]!],
 				workspaceNotices: [],
+				version: '0.292.0',
 			});
 		});
 	});

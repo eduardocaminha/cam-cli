@@ -11,6 +11,7 @@ import { join } from 'node:path';
 
 import { startWebServer } from '../../src/commands/web.ts';
 import type { IssueEntry } from '../../src/issues/types.ts';
+import { GSHIP_VERSION } from '../../src/version.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 function git(cwd: string, args: string[]): void {
@@ -88,7 +89,8 @@ describe('GET /api/snapshot idle state', () => {
 		const payload = await getSnapshot(cwd);
 		const idleState = payload['idleState'] as Record<string, unknown>;
 
-		expect(Object.keys(payload)).toEqual(['idleState']);
+		expect(Object.keys(payload)).toEqual(['idleState', 'version']);
+		expect(payload['version']).toBe(GSHIP_VERSION);
 		expect(idleState).toBeDefined();
 		expect(Object.keys(idleState)).toEqual(['backlog']);
 		expect(idleState['backlog']).toEqual({
