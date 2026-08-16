@@ -92,6 +92,19 @@ function buttonIsEnabled(html: string, label: string): boolean {
 	return !html.slice(opening, index).includes('disabled=""');
 }
 
+/**
+ * Whether the contextual panel carrying `title` is disclosed. The panel is
+ * found by its heading -- a navigation link can repeat the words, a heading
+ * cannot -- and read back to the disclosure that owns it.
+ */
+function panelIsOpen(html: string, title: string): boolean {
+	const index = html.indexOf(`>${title}</h2>`);
+	if (index < 0) throw new Error(`panel ${title} is not on the screen`);
+	const opening = html.lastIndexOf('<details', index);
+	if (opening < 0) throw new Error(`panel ${title} is not a disclosure`);
+	return html.slice(opening, index).includes('open=""');
+}
+
 /** The history card alone, cut before the backlog panel that follows it. */
 function historyCard(html: string): string {
 	const start = html.indexOf('Runs anteriores');
@@ -413,6 +426,67 @@ describe('operational screen', () => {
 		for (const issueId of ['CAM-800', 'CAM-850', 'CAM-880']) {
 			expect(card).not.toContain(issueId);
 		}
+	});
+});
+
+describe('operator shell', () => {
+	test('navigation offers the panels the screen is carrying, and only those', () => {
+		const idle = render();
+
+		expect(idle).toContain('href="#conversa"');
+		expect(idle).toContain('href="#run"');
+		expect(idle).toContain('href="#backlog"');
+		// No run, no ideas, no notices and no history: no link pointing at nothing.
+		expect(idle).not.toContain('href="#atividade"');
+		expect(idle).not.toContain('href="#ideias"');
+		expect(idle).not.toContain('href="#workspaces"');
+		expect(idle).not.toContain('href="#historico"');
+
+		const loaded = render({
+			ideas: [{ id: 'CAM-42', title: 'ideia antiga' }],
+			runs: [runIn('working'), runIn('done', { id: 'run-0' })],
+			workspaceNotices: [{
+				kind: 'dirty',
+				runId: null,
+				workspacePath: '/project/.gship/worktrees/orphan',
+				branch: 'gship/cam-1-orphan',
+				detail: 'workspace is not owned by a persisted run',
+			}],
+		});
+
+		expect(loaded).toContain('href="#atividade"');
+		expect(loaded).toContain('href="#ideias"');
+		expect(loaded).toContain('href="#workspaces"');
+		expect(loaded).toContain('href="#historico"');
+	});
+
+	test('a collapsed panel is disclosed, never dropped from the document', () => {
+		const html = render({
+			providers: [
+				{ id: 'claude', installed: true, subscription: true, label: 'Claude Code', plan: 'max', login: 'external' },
+			],
+			runs: [runIn('working'), runIn('done', { id: 'run-0', issueId: 'CAM-801' })],
+		});
+
+		// What the operator acts on now is open; the rest is one click away.
+		expect(panelIsOpen(html, 'Backlog plannable')).toBe(true);
+		expect(panelIsOpen(html, 'Atividade')).toBe(true);
+		expect(panelIsOpen(html, 'Agentes locais')).toBe(false);
+		expect(panelIsOpen(html, 'Runs anteriores')).toBe(false);
+		// Collapsed is a rendering state, not a missing branch: the content is here.
+		expect(html).toContain('Assinatura conectada · max');
+		expect(html).toContain('CAM-801');
+	});
+
+	test('the run asks for its decision on the conversation surface, once', () => {
+		const html = render({
+			runs: [runIn('waiting-user', { summary: 'Escolha o seam de migração.' })],
+		});
+
+		expect(html.indexOf('name="operatorGuidance"')).toBeLessThan(html.indexOf('Último run'));
+		expect(html.split('Escolha o seam de migração.')).toHaveLength(2);
+		// Resuming is the answer itself while the run waits, never a bare command.
+		expect(html).not.toContain('>Retomar<');
 	});
 });
 
