@@ -5,7 +5,7 @@
 // Routing stays in Bun.serve's native `routes` table.
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
 import { readBacklogFromMain } from '../issues/backlog.ts';
@@ -30,12 +30,6 @@ import {
 } from '../runtime/run-runtime.ts';
 import { type RunEvent, RunStore } from '../runtime/run-store.ts';
 import { RUNTIME_SOURCE_REF } from '../runtime/source-ref.ts';
-import type { CycleMetricsRow } from '../stats/cycles.ts';
-import {
-	type EventLogReader,
-	RECENT_ENTRIES_COUNT,
-	readSnapshot,
-} from './dashboard.ts';
 import { resolvePrdPath } from './status.ts';
 import { resolveWebAssets, serveWebAsset } from './web-assets.ts';
 
@@ -45,9 +39,6 @@ export const WEB_HOSTNAME = '127.0.0.1';
 export interface WebServerOptions {
 	port: number;
 	cwd: string;
-	claudeDir?: string;
-	/** Test seam for measuring only worker-event bytes read by the real route. */
-	eventLogReader?: EventLogReader;
 	/** Injectable durable run runtime. Production defaults to .gship/runtime.sqlite. */
 	runRuntime?: RunRuntime;
 	/** Test seam for the remote-main operator issue writer. */
@@ -84,11 +75,6 @@ export interface WebServerHandle {
 	port: number;
 	hostname: string;
 	stop: () => Promise<void>;
-}
-
-export interface IdleSnapshotState {
-	recentCycles: CycleMetricsRow[];
-	backlog: BacklogJsonView;
 }
 
 function parseEventCursor(request: Request): number {
@@ -320,69 +306,6 @@ export function isTrustedCommandOrigin(request: Request): boolean {
 }
 
 /**
- * Parse the committed cycle store. Its first physical line is metadata; only
- * subsequent lines are cycle rows. Newest rows are returned first.
- */
-export function parseRecentCycles(jsonl: string): CycleMetricsRow[] {
-	const rows: CycleMetricsRow[] = [];
-	for (const rawLine of jsonl.split('\n').slice(1)) {
-		const trimmed = rawLine.trim();
-		if (trimmed.length === 0) continue;
-		try {
-			const parsed = JSON.parse(trimmed) as unknown;
-			if (!isCycleMetricsRow(parsed)) continue;
-			rows.push(copyCycleMetricsRow(parsed));
-		} catch {
-			// A partial append must not make the read-only route fail.
-		}
-	}
-	return rows.slice(-RECENT_ENTRIES_COUNT).reverse();
-}
-
-function isCycleMetricsRow(value: unknown): value is Record<string, unknown> {
-	if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
-	const row = value as Record<string, unknown>;
-	return (
-		typeof row['cycleId'] === 'string' &&
-		typeof row['issueNumber'] === 'string' &&
-		typeof row['closedAt'] === 'string' &&
-		typeof row['workerRounds'] === 'number' &&
-		typeof row['reviewRounds'] === 'number' &&
-		typeof row['orchTokens'] === 'number' &&
-		typeof row['workerTokens'] === 'number' &&
-		typeof row['total'] === 'number'
-	);
-}
-
-function copyCycleMetricsRow(source: Record<string, unknown>): CycleMetricsRow {
-	const row: CycleMetricsRow = {
-		cycleId: source['cycleId'] as string,
-		issueNumber: source['issueNumber'] as string,
-		closedAt: source['closedAt'] as string,
-		workerRounds: source['workerRounds'] as number,
-		reviewRounds: source['reviewRounds'] as number,
-		orchTokens: source['orchTokens'] as number,
-		workerTokens: source['workerTokens'] as number,
-		total: source['total'] as number,
-	};
-	if (typeof source['prNumber'] === 'number') row.prNumber = source['prNumber'];
-	if (typeof source['mergeMode'] === 'string') {
-		row.mergeMode = source['mergeMode'] as CycleMetricsRow['mergeMode'];
-	}
-	return row;
-}
-
-function readRecentCycles(cwd: string): CycleMetricsRow[] {
-	try {
-		const path = join(cwd, 'scripts', 'cam', 'cycle-metrics.jsonl');
-		if (!existsSync(path)) return [];
-		return parseRecentCycles(readFileSync(path, 'utf8'));
-	} catch {
-		return [];
-	}
-}
-
-/**
  * Derive the idle backlog from the runtime source ref, the same ref a new run
  * is admitted against: an issue a merge already shipped stops being plannable
  * here even while the local `main` is deliberately behind.
@@ -391,14 +314,14 @@ function readRecentCycles(cwd: string): CycleMetricsRow[] {
  * the start of a run and to the terminal of a ship, not to a route the browser
  * polls.
  */
-function readIdleSnapshotState(cwd: string): IdleSnapshotState {
+function readIdleSnapshotState(cwd: string): { backlog: BacklogJsonView } {
 	let backlog: BacklogJsonView;
 	try {
 		backlog = deriveBacklogJson(readBacklogFromMain(cwd, spawnSync, RUNTIME_SOURCE_REF));
 	} catch {
 		backlog = deriveBacklogJson([]);
 	}
-	return { recentCycles: readRecentCycles(cwd), backlog };
+	return { backlog };
 }
 
 /**
@@ -435,22 +358,8 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/app.js': () => serveWebAsset(assets.appJs),
 			'/app.css': () => serveWebAsset(assets.appCss),
 			'/api/snapshot': () => {
-				const snapshot = readSnapshot({
-					cwd: options.cwd,
-					nowMs: Date.now(),
-					claudeDir: options.claudeDir,
-					...(options.eventLogReader !== undefined ? { eventLogReader: options.eventLogReader } : {}),
-				});
-				delete snapshot.tokensInput;
-				delete snapshot.tokensOutput;
-				delete snapshot.tokensCacheRead;
-				delete snapshot.tokensCacheCreation;
-				delete snapshot.storyTokens;
-				const payload: Record<string, unknown> = { ...snapshot };
-				if (!existsSync(resolvePrdPath(options.cwd))) {
-					payload['idleState'] = readIdleSnapshotState(options.cwd);
-				}
-				return Response.json(payload);
+				if (existsSync(resolvePrdPath(options.cwd))) return Response.json({});
+				return Response.json({ idleState: readIdleSnapshotState(options.cwd) });
 			},
 			'/api/runs': {
 				GET: () => Response.json({ runs: runRuntime.listRuns() }),
