@@ -408,7 +408,6 @@ describe('AC-7: runSetup writes [ship] merge_mode to project.toml', () => {
 				issueSystem: 'local',
 				mergeMode,
 				planApproval: 'auto',
-				noTmux: true,
 			}).catch(() => undefined);
 
 			// Even if runSetup exits non-zero (no claude), the toml write happens
@@ -439,10 +438,9 @@ describe('AC-7: runSetup writes [ship] merge_mode to project.toml', () => {
 describe('parseSetupArgs --merge-mode flag', () => {
 	test('--merge-mode immediate is accepted', async () => {
 		const { parseSetupArgs } = await import('../../src/commands/setup.ts');
-		const result = parseSetupArgs(['--merge-mode', 'immediate', '--no-tmux']);
+		const result = parseSetupArgs(['--merge-mode', 'immediate']);
 		expect(result).not.toBeNull();
 		expect(result?.mergeMode).toBe('immediate');
-		expect(result?.noTmux).toBe(true);
 	});
 
 	test('--merge-mode ci-gated is accepted', async () => {
@@ -467,7 +465,7 @@ describe('parseSetupArgs --merge-mode flag', () => {
 
 	test('mergeMode is undefined when --merge-mode is not passed', async () => {
 		const { parseSetupArgs } = await import('../../src/commands/setup.ts');
-		const result = parseSetupArgs(['--new', '--no-tmux']);
+		const result = parseSetupArgs(['--new']);
 		expect(result?.mergeMode).toBeUndefined();
 	});
 });

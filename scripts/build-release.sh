@@ -168,14 +168,12 @@ echo "[build-release]   ${ACTUAL}"
 #   - claude absent from PATH: non-zero is acceptable (machine without claude).
 #   - claude present but init still fails: real init crash -- abort the build.
 #
-# CAM-15: the soft-check MUST be hermetic. `cam init` chains `runSetup`, which
-# copies templates over the cwd's versioned files and (without --no-tmux)
-# spawns a tmux session + a live claude agent. Running it against REPO_ROOT
-# clobbered 10 versioned files and left a cam-setup session twice. We isolate
-# it on every axis: a throwaway tmpdir as cwd (file writes land there, not the
-# repo), --no-tmux (no tmux/agent), --existing --issue-system none (skip the
-# interactive setup wizard so it never blocks), </dev/null (belt-and-braces on
-# stdin). The binary is referenced by an absolute path so the
+# CAM-15: the soft-check MUST be hermetic. `gship init` chains `runSetup`, which
+# copies templates into its cwd. Running it against REPO_ROOT previously
+# clobbered versioned files. We isolate it on every axis: a throwaway tmpdir as
+# cwd (file writes land there, not the repo), --existing --issue-system none
+# (skip the interactive setup wizard so it never blocks), </dev/null
+# (belt-and-braces on stdin). The binary is referenced by an absolute path so the
 # cd does not break resolution. Canonical rule: lessons.archive.md 2026-06-06
 # (no mutating command in a build smoke); the 2026-06-13 entry records this fix.
 echo "[build-release] invoking init (soft-check, hermetic, ${HOST_BIN})"
@@ -187,8 +185,8 @@ STAGED=""
 # later verification step aborts before the rename (ADR-0058).
 trap 'rm -rf "${SMOKE_DIR:-}" ${STAGED:+"${STAGED}"}' EXIT
 BIN_ABS="${REPO_ROOT}/${HOST_BIN}"
-if (cd "${SMOKE_DIR}" && "${BIN_ABS}" init --no-tmux --existing --issue-system none --merge-mode immediate --plan-approval operator </dev/null); then
-	echo "[build-release]   init: ok (hermetic tmpdir, no tmux)"
+if (cd "${SMOKE_DIR}" && "${BIN_ABS}" init --existing --issue-system none --merge-mode immediate --plan-approval operator </dev/null); then
+	echo "[build-release]   init: ok (hermetic tmpdir, web-first setup)"
 else
 	rc=$?
 	# Distinguish claude-absent (acceptable) from a real init crash (fatal).

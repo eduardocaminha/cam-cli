@@ -27,7 +27,7 @@ import { parseSetupArgs } from '../src/commands/setup.ts';
 
 describe('parseSetupArgs --plan-approval flag (behavioral)', () => {
 	test('parses `--plan-approval operator` into planApproval', () => {
-		const result = parseSetupArgs(['--plan-approval', 'operator', '--no-tmux']);
+		const result = parseSetupArgs(['--plan-approval', 'operator']);
 		expect(result).not.toBeNull();
 		expect(result?.planApproval).toBe('operator');
 	});
@@ -49,15 +49,20 @@ describe('parseSetupArgs --plan-approval flag (behavioral)', () => {
 	});
 
 	test('planApproval is undefined when the flag is absent (falls through to prompt/default)', () => {
-		const result = parseSetupArgs(['--no-tmux']);
+		const result = parseSetupArgs([]);
 		expect(result).not.toBeNull();
 		expect(result?.planApproval).toBeUndefined();
 	});
 
-	test('setup is web-first by default and tmux requires an explicit legacy opt-in', () => {
-		expect(parseSetupArgs([])?.noTmux).toBe(true);
-		expect(parseSetupArgs(['--legacy-tmux'])?.noTmux).toBe(false);
-		expect(parseSetupArgs(['--legacy-tmux', '--no-tmux'])?.noTmux).toBe(true);
+	test('rejects retired tmux setup flags', () => {
+		const original = process.stderr.write.bind(process.stderr);
+		process.stderr.write = (() => true) as typeof process.stderr.write;
+		try {
+			expect(parseSetupArgs(['--legacy-tmux'])).toBeNull();
+			expect(parseSetupArgs(['--no-tmux'])).toBeNull();
+		} finally {
+			process.stderr.write = original;
+		}
 	});
 });
 
