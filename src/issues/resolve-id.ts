@@ -1,5 +1,5 @@
 /**
- * Resolves a prd.issueNumber (full string id like 'CAM-154' OR a bare number
+ * Resolves a task number (full string id like 'GSHIP-154' OR a bare number
  * like 42) into the canonical issue id.
  *
  * Returns null when the input cannot be resolved to a valid id.

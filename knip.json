@@ -13,7 +13,6 @@
     "webui/**/*.{ts,tsx}",
     "webui/**/*.css"
   ],
-  "ignoreDependencies": ["jscpd"],
   "ignoreExportsUsedInFile": true,
   "exclude": ["exports", "types", "duplicates"]
 }

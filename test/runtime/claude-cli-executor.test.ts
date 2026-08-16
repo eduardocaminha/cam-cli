@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import {
 	buildClaudeCliArgv,
+	buildClaudeReadOnlyArgv,
 	ClaudeCliExecutor,
 	EXECUTION_RESULT_SCHEMA,
 	parseExecutionResult,
@@ -77,6 +78,19 @@ describe('Claude CLI runtime executor', () => {
 			'--json-schema',
 			JSON.stringify(EXECUTION_RESULT_SCHEMA),
 		]);
+	});
+
+	test('read-only turns expose inspection tools and deny mutation', () => {
+		const argv = buildClaudeReadOnlyArgv({
+			command: ['claude'],
+			sessionId: 'ABC-123',
+			resume: false,
+			permissionMode: 'unused',
+		});
+		expect(argv).toContain('Read,Grep,Glob');
+		expect(argv).toContain('Bash,Edit,Write,NotebookEdit,Agent');
+		expect(argv).toContain('--strict-mcp-config');
+		expect(argv).not.toContain('bypassPermissions');
 	});
 
 	test('accepts only the two structured executor outcomes', () => {

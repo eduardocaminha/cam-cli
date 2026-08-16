@@ -23,7 +23,13 @@ import {
 	ProgressValue,
 } from '../vendor/coss/ui/progress.tsx';
 import { Separator } from '../vendor/coss/ui/separator.tsx';
-import type { OperatorIssueDraft, OperatorSpecDraft } from './client.ts';
+import type {
+	ChatMessageView,
+	OperatorIssueDraft,
+	OperatorSpecDraft,
+	ProviderStatusView,
+	WorkspaceNoticeView,
+} from './client.ts';
 import {
 	actionsFor,
 	type PlannableIssue,
@@ -38,6 +44,10 @@ export interface AppProps {
 	backlog: readonly PlannableIssue[];
 	ideas: readonly PlannableIssue[];
 	events: readonly RunEventView[];
+	workspaceNotices: readonly WorkspaceNoticeView[];
+	providers: readonly ProviderStatusView[];
+	chatMessages: readonly ChatMessageView[];
+	selectedProvider: ProviderStatusView['id'];
 	/** Newest first, exactly as /api/runs returned it. */
 	runs: readonly RunView[];
 	selectedIssueId: string | null;
@@ -52,6 +62,9 @@ export interface AppProps {
 	onResume: (operatorGuidance?: string) => void;
 	onCancel: () => void;
 	onShip: () => void;
+	onConnectCodex: () => void;
+	onSelectProvider: (providerId: ProviderStatusView['id']) => void;
+	onSendMessage: (message: string) => void;
 }
 
 function eventDetail(event: RunEventView): string | null {
@@ -280,6 +293,181 @@ function PreviousRunsPanel({ runs }: Pick<AppProps, 'runs'>): React.ReactElement
 	);
 }
 
+function WorkspaceNoticesPanel({
+	workspaceNotices,
+}: Pick<AppProps, 'workspaceNotices'>): React.ReactElement | null {
+	if (workspaceNotices.length === 0) return null;
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle>Workspaces preservados</CardTitle>
+				<CardDescription>
+					{workspaceNotices.length} recurso(s) local(is) precisam de inspeção.
+				</CardDescription>
+			</CardHeader>
+			<CardPanel>
+				<ul className="flex flex-col gap-3">
+					{workspaceNotices.map((notice) => (
+						<li
+							className="flex flex-col gap-1 text-sm"
+							key={`${notice.kind}-${notice.runId}-${notice.workspacePath}-${notice.branch}`}
+						>
+							<div className="flex items-center gap-2">
+								<Badge variant="outline">{notice.kind}</Badge>
+								{notice.runId === null ? null : <code>{notice.runId}</code>}
+							</div>
+							<code className="break-all text-muted-foreground">
+								{notice.workspacePath ?? notice.branch}
+							</code>
+							<p className="text-muted-foreground">{notice.detail}</p>
+						</li>
+					))}
+				</ul>
+			</CardPanel>
+		</Card>
+	);
+}
+
+type ProviderPanelProps = Pick<
+	AppProps,
+	'providers' | 'selectedProvider' | 'pending' | 'onConnectCodex' | 'onSelectProvider'
+>;
+
+function providerDescription(provider: ProviderStatusView): string {
+	if (provider.subscription) {
+		return `Assinatura conectada${provider.plan === undefined ? '' : ` · ${provider.plan}`}`;
+	}
+	return provider.installed ? 'Instalado, sem assinatura conectada' : 'Cliente não encontrado';
+}
+
+function ProviderRow({
+	provider,
+	selectedProvider,
+	pending,
+	onConnectCodex,
+	onSelectProvider,
+}: Omit<ProviderPanelProps, 'providers'> & { provider: ProviderStatusView }): React.ReactElement {
+	return (
+		<li className="flex items-center justify-between gap-3 text-sm">
+			<div>
+				<p className="flex items-center gap-2 font-medium">
+					{provider.label}
+					{provider.id === selectedProvider ? <Badge variant="secondary">em uso</Badge> : null}
+				</p>
+				<p className="text-muted-foreground">{providerDescription(provider)}</p>
+			</div>
+			{provider.id === 'codex' && !provider.subscription && provider.installed ? (
+				<ActionButton enabled={!pending} label="Conectar ChatGPT" onClick={onConnectCodex} />
+			) : null}
+			{provider.id === 'claude' && !provider.subscription && provider.installed ? (
+				<code className="text-muted-foreground">claude auth login</code>
+			) : null}
+			{provider.subscription && provider.id !== selectedProvider ? (
+				<ActionButton
+					enabled={!pending}
+					label={`Usar ${provider.label}`}
+					onClick={() => onSelectProvider(provider.id)}
+				/>
+			) : null}
+		</li>
+	);
+}
+
+function ProvidersPanel(props: ProviderPanelProps): React.ReactElement {
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle>Agentes locais</CardTitle>
+				<CardDescription>
+					Gateship usa a assinatura dos clientes instalados e nunca recebe tokens.
+				</CardDescription>
+			</CardHeader>
+			<CardPanel>
+				<ul className="flex flex-col gap-3">
+					{props.providers.map((provider) => (
+						<ProviderRow
+							key={provider.id}
+							onConnectCodex={props.onConnectCodex}
+							onSelectProvider={props.onSelectProvider}
+							pending={props.pending}
+							provider={provider}
+							selectedProvider={props.selectedProvider}
+						/>
+					))}
+				</ul>
+			</CardPanel>
+		</Card>
+	);
+}
+
+function ConversationPanel({
+	chatMessages,
+	pending,
+	onSendMessage,
+}: Pick<AppProps, 'chatMessages' | 'pending' | 'onSendMessage'>): React.ReactElement {
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle>Conversa com o orquestrador</CardTitle>
+				<CardDescription>
+					Ele pode investigar o projeto; ações passam pelo runtime determinístico.
+				</CardDescription>
+			</CardHeader>
+			<CardPanel className="flex flex-col gap-4">
+				{chatMessages.length === 0 ? (
+					<p className="text-muted-foreground text-sm">
+						Descreva o objetivo, peça uma investigação ou dê um comando em linguagem natural.
+					</p>
+				) : (
+					<ol className="flex max-h-96 flex-col gap-3 overflow-auto">
+						{chatMessages.map((message) => (
+							<li
+								className={cn(
+									'rounded-md p-3 text-sm',
+									message.role === 'operator' ? 'ml-8 bg-accent' : 'mr-8 bg-muted',
+								)}
+								key={message.seq}
+							>
+								<div className="mb-1 flex items-center justify-between gap-3 text-muted-foreground text-xs">
+									<span>{message.role === 'operator' ? 'você' : message.role}</span>
+									<span>{message.providerId}</span>
+								</div>
+								<p className="whitespace-pre-wrap">{message.text}</p>
+							</li>
+						))}
+					</ol>
+				)}
+				<form
+					className="flex gap-2"
+					onSubmit={(event) => {
+						event.preventDefault();
+						const form = event.currentTarget as unknown as {
+							elements: { namedItem: (name: string) => { value?: unknown } | null };
+							reset: () => void;
+						};
+						const value = form.elements.namedItem('message')?.value;
+						if (typeof value === 'string' && value.trim().length > 0) {
+							onSendMessage(value.trim());
+							form.reset();
+						}
+					}}
+				>
+					<input
+						className={FIELD_CLASS}
+						disabled={pending}
+						name="message"
+						placeholder="O que você quer fazer agora?"
+						required
+					/>
+					<button className={BUTTON_CLASS} disabled={pending} type="submit">
+						Enviar
+					</button>
+				</form>
+			</CardPanel>
+		</Card>
+	);
+}
+
 function BacklogPanel({
 	backlog,
 	selectedIssueId,
@@ -457,6 +645,11 @@ export function App(props: AppProps): React.ReactElement {
 				</Badge>
 			</header>
 			<Separator />
+			<ConversationPanel
+				chatMessages={props.chatMessages}
+				onSendMessage={props.onSendMessage}
+				pending={pending}
+			/>
 			<RunPanel
 				onCancel={props.onCancel}
 				onResume={props.onResume}
@@ -466,6 +659,14 @@ export function App(props: AppProps): React.ReactElement {
 			/>
 			<RunActivity events={props.events} run={run} />
 			<PreviousRunsPanel runs={runs} />
+			<WorkspaceNoticesPanel workspaceNotices={props.workspaceNotices} />
+			<ProvidersPanel
+				onConnectCodex={props.onConnectCodex}
+				onSelectProvider={props.onSelectProvider}
+				pending={pending}
+				providers={props.providers}
+				selectedProvider={props.selectedProvider}
+			/>
 			<BacklogPanel
 				backlog={backlog}
 				canStart={actions.start && !pending}

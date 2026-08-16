@@ -1,6 +1,6 @@
 // test/web/launch.test.ts
 //
-// Real-process coverage for the `bun index.ts web` launch boundary: resolved
+// Real-process coverage for the `bun index.ts` launch boundary: resolved
 // localhost bind, both --port spellings, CLI-only port validation, occupied
 // port diagnostics, and signal-to-exit-code shutdown.
 //
@@ -13,6 +13,7 @@ import { join } from 'node:path';
 
 import { parseWebArgs } from '../../index.ts';
 import { DEFAULT_WEB_PORT, startWebServer, WEB_HOSTNAME } from '../../src/commands/web.ts';
+import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 const REPO_ROOT = join(import.meta.dir, '..', '..');
 const INDEX_TS = join(REPO_ROOT, 'index.ts');
@@ -52,9 +53,9 @@ function reserveEphemeralPort(): number {
 	return port;
 }
 
-function spawnWebCli(args: string[], command: 'web' | 'run' | null = 'web'): SpawnedWebCli {
-	const proc = Bun.spawn(['bun', INDEX_TS, ...(command === null ? [] : [command]), ...args], {
-		cwd: REPO_ROOT,
+function spawnWebCli(args: string[]): SpawnedWebCli {
+	const proc = Bun.spawn(['bun', INDEX_TS, ...args], {
+		cwd: createTestTmpdir('gship-web-cli-'),
 		stdin: 'ignore',
 		stdout: 'pipe',
 		stderr: 'pipe',
@@ -99,13 +100,13 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs = 5_000): Promise<T
 	}
 }
 
-async function launchAndTerminate(args: string[], command: 'web' | 'run' | null = 'web'): Promise<{
+async function launchAndTerminate(args: string[]): Promise<{
 	url: string;
 	exitCode: number;
 	stdout: string;
 	stderr: string;
 }> {
-	const launched = spawnWebCli(args, command);
+	const launched = spawnWebCli(args);
 	const url = await withTimeout(launched.readyUrl);
 	const response = await fetch(url);
 	expect(response.status).toBe(200);
@@ -129,7 +130,7 @@ afterEach(async () => {
 
 describe('web server launch', () => {
 	test('startWebServer supports an ephemeral port and reports the resolved localhost address', async () => {
-		const handle = startWebServer({ port: 0, cwd: REPO_ROOT });
+		const handle = startWebServer({ port: 0, cwd: createTestTmpdir('gship-web-launch-') });
 		try {
 			expect(handle.port).toBeGreaterThan(0);
 			expect(handle.hostname).toBe('127.0.0.1');
@@ -146,7 +147,7 @@ describe('web server launch', () => {
 		expect(parseWebArgs([])).toEqual({ port: DEFAULT_WEB_PORT, help: false });
 	});
 
-	test('bun index.ts web binds the requested port and exits 143 on SIGTERM', async () => {
+	test('bun index.ts binds the requested port and exits 143 on SIGTERM', async () => {
 		const port = reserveEphemeralPort();
 		const result = await launchAndTerminate([`--port=${port}`]);
 		expect(result.url).toBe(`http://127.0.0.1:${port}`);
@@ -159,7 +160,7 @@ describe('web server launch', () => {
 	// and it is read from whichever channel the process reports it on: the printed
 	// URL when the port is free, or the bind diagnostic when a Gateship owns it.
 	test('bun index.ts with no subcommand targets the default web server', async () => {
-		const launched = spawnWebCli([], null);
+		const launched = spawnWebCli([]);
 		let url: string | null = null;
 		try {
 			url = await withTimeout(launched.readyUrl);
@@ -180,24 +181,6 @@ describe('web server launch', () => {
 		expect(exitCode).toBe(1);
 	}, 10_000);
 
-	test('gship run is a compatibility alias for the same web server', async () => {
-		const port = reserveEphemeralPort();
-		const result = await launchAndTerminate([`--port=${port}`], 'run');
-		expect(result.url).toBe(`http://127.0.0.1:${port}`);
-		expect(result.stderr).toBe('');
-		expect(result.exitCode).toBe(143);
-	}, 10_000);
-
-	test('gship run rejects the retired --no-attach bootstrap instead of hanging', () => {
-		const result = Bun.spawnSync(['bun', INDEX_TS, 'run', '--no-attach'], {
-			cwd: REPO_ROOT,
-			stdout: 'pipe',
-			stderr: 'pipe',
-		});
-		expect(result.exitCode).not.toBe(0);
-		expect(new TextDecoder().decode(result.stderr)).toContain('was retired');
-	});
-
 	test('the CLI accepts both --port N and --port=N', async () => {
 		for (const joined of [false, true]) {
 			const port = reserveEphemeralPort();
@@ -210,8 +193,8 @@ describe('web server launch', () => {
 	test.each(['0', '-1', 'NaN', 'Infinity'])(
 		'rejects invalid CLI --port value %s with a named diagnostic',
 		(value) => {
-			const result = Bun.spawnSync(['bun', INDEX_TS, 'web', '--port', value], {
-				cwd: REPO_ROOT,
+			const result = Bun.spawnSync(['bun', INDEX_TS, '--port', value], {
+				cwd: createTestTmpdir('gship-web-invalid-port-'),
 				stdout: 'pipe',
 				stderr: 'pipe',
 			});
@@ -221,10 +204,11 @@ describe('web server launch', () => {
 	);
 
 	test('an occupied port fails nonzero with a --port diagnostic', async () => {
-		const occupied = startWebServer({ port: 0, cwd: REPO_ROOT });
+		const cwd = createTestTmpdir('gship-web-occupied-');
+		const occupied = startWebServer({ port: 0, cwd });
 		try {
-			const result = Bun.spawnSync(['bun', INDEX_TS, 'web', `--port=${occupied.port}`], {
-				cwd: REPO_ROOT,
+			const result = Bun.spawnSync(['bun', INDEX_TS, `--port=${occupied.port}`], {
+				cwd,
 				stdout: 'pipe',
 				stderr: 'pipe',
 			});

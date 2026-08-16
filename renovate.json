@@ -17,13 +17,6 @@
       "automerge": true
     },
     {
-      "description": "Auto-merge the worker Docker base image (.devcontainer/Dockerfile) on any update type; automerge stays gated on the required CI status check.",
-      "matchManagers": ["dockerfile"],
-      "matchUpdateTypes": ["patch", "minor", "major"],
-      "enabled": true,
-      "automerge": true
-    },
-    {
       "description": "Auto-merge GitHub Actions workflow pins on any update type; automerge stays gated on the required CI status check.",
       "matchManagers": ["github-actions"],
       "matchUpdateTypes": ["patch", "minor", "major"],

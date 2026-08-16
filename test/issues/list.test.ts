@@ -122,44 +122,11 @@ describe("deriveBacklogView — CAM-139 regression (stage, never status)", () =>
 });
 
 // ---------------------------------------------------------------------------
-// Sort order within a stage group (mirrors selectPlannableIssue semantics)
+// Sort order within a stage group
 // ---------------------------------------------------------------------------
 
 describe("deriveBacklogView — sort order", () => {
-	test("ranked entries sort before unranked ones", () => {
-		const backlog: IssueEntry[] = [
-			makeIssue({ id: "CAM-5", stage: "idea" }), // no rank
-			makeIssue({ id: "CAM-3", stage: "idea", rank: 2 }),
-		];
-		const view = deriveBacklogView(backlog);
-		const idea = view.find((g) => g.stage === "idea");
-		expect(idea?.entries.map((e) => e.issue.id)).toEqual(["CAM-3", "CAM-5"]);
-	});
-
-	test("lower rank value wins over higher rank value", () => {
-		const backlog: IssueEntry[] = [
-			makeIssue({ id: "CAM-1", stage: "planned", rank: 10 }),
-			makeIssue({ id: "CAM-2", stage: "planned", rank: 1 }),
-		];
-		const view = deriveBacklogView(backlog);
-		const planned = view.find((g) => g.stage === "planned");
-		expect(planned?.entries.map((e) => e.issue.id)).toEqual(["CAM-2", "CAM-1"]);
-	});
-
-	test("ties by rank are broken numerically by id (CAM-9 before CAM-12)", () => {
-		const backlog: IssueEntry[] = [
-			makeIssue({ id: "CAM-12", stage: "specified", rank: 1 }),
-			makeIssue({ id: "CAM-9", stage: "specified", rank: 1 }),
-		];
-		const view = deriveBacklogView(backlog);
-		const specified = view.find((g) => g.stage === "specified");
-		expect(specified?.entries.map((e) => e.issue.id)).toEqual([
-			"CAM-9",
-			"CAM-12",
-		]);
-	});
-
-	test("when no entry has a rank, ordering is purely by numeric id", () => {
+	test("orders entries by numeric id", () => {
 		const backlog: IssueEntry[] = [
 			makeIssue({ id: "CAM-12", stage: "idea" }),
 			makeIssue({ id: "CAM-9", stage: "idea" }),
@@ -176,8 +143,8 @@ describe("deriveBacklogView — sort order", () => {
 
 	test("does not mutate the original backlog array", () => {
 		const backlog: IssueEntry[] = [
-			makeIssue({ id: "CAM-3", stage: "idea", rank: 2 }),
-			makeIssue({ id: "CAM-1", stage: "idea", rank: 1 }),
+			makeIssue({ id: "CAM-3", stage: "idea" }),
+			makeIssue({ id: "CAM-1", stage: "idea" }),
 		];
 		const copy = [...backlog];
 		deriveBacklogView(backlog);
@@ -331,18 +298,18 @@ describe("deriveBacklogJson — plannable membership (isPlannable) + ordering", 
 		expect(json.plannable).toEqual([]);
 	});
 
-	test("plannable is ordered ranked-first ascending rank, then unranked by numeric id", () => {
+	test("plannable is ordered by numeric id", () => {
 		const backlog: IssueEntry[] = [
 			makeIssue({ id: "CAM-9", stage: "specified" }),
-			makeIssue({ id: "CAM-3", stage: "specified", rank: 2 }),
-			makeIssue({ id: "CAM-1", stage: "specified", rank: 1 }),
+			makeIssue({ id: "CAM-3", stage: "specified" }),
+			makeIssue({ id: "CAM-1", stage: "specified" }),
 			makeIssue({ id: "CAM-5", stage: "specified" }),
 		];
 		const json = deriveBacklogJson(backlog);
 		expect(json.plannable.map((r) => r.id)).toEqual(["CAM-1", "CAM-3", "CAM-5", "CAM-9"]);
 	});
 
-	test("row shape is exactly { id, title, rank, createdAt, updatedAt }; rank is null when unranked", () => {
+	test("row shape is exactly { id, title, createdAt, updatedAt }", () => {
 		const backlog: IssueEntry[] = [
 			makeIssue({ id: "CAM-1", stage: "specified", title: "Fix the thing" }),
 		];
@@ -351,23 +318,6 @@ describe("deriveBacklogJson — plannable membership (isPlannable) + ordering", 
 			{
 					id: "CAM-1",
 					title: "Fix the thing",
-					rank: null,
-					createdAt: "2026-01-01T00:00:00Z",
-					updatedAt: "2026-01-01T00:00:00Z",
-				},
-		]);
-	});
-
-	test("row shape carries the numeric rank when present", () => {
-		const backlog: IssueEntry[] = [
-			makeIssue({ id: "CAM-1", stage: "specified", rank: 3 }),
-		];
-		const json = deriveBacklogJson(backlog);
-		expect(json.plannable).toEqual([
-			{
-					id: "CAM-1",
-					title: "Test issue",
-					rank: 3,
 					createdAt: "2026-01-01T00:00:00Z",
 					updatedAt: "2026-01-01T00:00:00Z",
 				},

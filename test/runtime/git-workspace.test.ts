@@ -23,12 +23,16 @@ function git(cwd: string, args: string[]): string {
 	return result.stdout.trim();
 }
 
+function gitExit(cwd: string, args: string[]): number {
+	return spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8' }).status ?? 1;
+}
+
 function seedRepository(): string {
 	const root = createTestTmpdir('gship-workspace-');
-	mkdirSync(join(root, 'scripts', 'cam', 'issues'), { recursive: true });
+	mkdirSync(join(root, '.gateship', 'issues'), { recursive: true });
 	writeFileSync(join(root, '.gitignore'), '.gship/\n');
 	writeFileSync(
-		join(root, 'scripts', 'cam', 'issues', 'CAM-0576.json'),
+		join(root, '.gateship', 'issues', 'CAM-0576.json'),
 		JSON.stringify({ id: 'CAM-576', title: 'workspace fixture' }),
 	);
 	git(root, ['init', '-b', 'main']);
@@ -104,6 +108,9 @@ describe('git workspace manager', () => {
 				'cannot install workspace dependencies: lockfile had changes, but lockfile is frozen',
 			),
 		);
+		expect(existsSync(join(root, '.gship', 'worktrees', 'run-12345678-bbbb'))).toBe(false);
+		expect(gitExit(root, ['show-ref', '--verify', '--quiet', 'refs/heads/gship/cam-578-run-1234']))
+			.toBe(1);
 	});
 
 	test('reports the start failure detail', () => {
@@ -131,5 +138,87 @@ describe('git workspace manager', () => {
 			issueId: 'CAM-1',
 		})).toThrow(RuntimeWorkspaceError);
 		expect(calls).toEqual([['rev-parse', '--verify', 'main']]);
+	});
+
+	test('releases the exact clean workspace, local branch and stale tracking ref', () => {
+		const root = seedRepository();
+		const manager = new GitWorkspaceManager(root, undefined, recordingInstall([]));
+		const input = { runId: 'run-12345678-dddd', issueId: 'CAM-578' };
+		const workspacePath = manager.prepare(input);
+		const branch = 'gship/cam-578-run-1234';
+		git(root, [
+			'update-ref',
+			`refs/remotes/origin/${branch}`,
+			git(workspacePath, ['rev-parse', 'HEAD']),
+		]);
+
+		expect(manager.release({ ...input, workspacePath })).toEqual({
+			outcome: 'released',
+			branch,
+		});
+		expect(existsSync(workspacePath)).toBe(false);
+		expect(gitExit(root, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])).toBe(1);
+		expect(gitExit(root, ['show-ref', '--verify', '--quiet', `refs/remotes/origin/${branch}`]))
+			.toBe(1);
+		expect(manager.release({ ...input, workspacePath })).toEqual({
+			outcome: 'already-released',
+			branch,
+		});
+	});
+
+	test('preserves a dirty workspace and reports it for operator inspection', () => {
+		const root = seedRepository();
+		const manager = new GitWorkspaceManager(root, undefined, recordingInstall([]));
+		const input = { runId: 'run-87654321-aaaa', issueId: 'CAM-578' };
+		const workspacePath = manager.prepare(input);
+		writeFileSync(join(workspacePath, 'operator-notes.txt'), 'keep me\n');
+
+		expect(manager.release({ ...input, workspacePath })).toEqual({
+			outcome: 'preserved',
+			branch: 'gship/cam-578-run-8765',
+			detail: 'workspace has local changes',
+		});
+		expect(existsSync(workspacePath)).toBe(true);
+		expect(manager.inspect([{ ...input, workspacePath, state: 'done' }])).toContainEqual({
+			kind: 'dirty',
+			runId: input.runId,
+			workspacePath,
+			branch: 'gship/cam-578-run-8765',
+			detail: 'finished workspace has local changes',
+		});
+	});
+
+	test('never releases a path that does not match the run-owned location', () => {
+		const root = seedRepository();
+		const manager = new GitWorkspaceManager(root, undefined, recordingInstall([]));
+
+		expect(manager.release({
+			runId: 'run-12345678-eeee',
+			issueId: 'CAM-578',
+			workspacePath: root,
+		})).toEqual({
+			outcome: 'preserved',
+			branch: 'gship/cam-578-run-1234',
+			detail: 'workspace path does not belong to run run-12345678-eeee',
+		});
+		expect(git(root, ['branch', '--show-current'])).toBe('main');
+	});
+
+	test('surfaces an unowned managed worktree without deleting it', () => {
+		const root = seedRepository();
+		const manager = new GitWorkspaceManager(root, undefined, recordingInstall([]));
+		const workspacePath = manager.prepare({
+			runId: 'run-orphan00-aaaa',
+			issueId: 'CAM-578',
+		});
+
+		expect(manager.inspect([])).toContainEqual({
+			kind: 'orphan',
+			runId: null,
+			workspacePath,
+			branch: 'gship/cam-578-run-orph',
+			detail: 'workspace is not owned by a persisted run',
+		});
+		expect(existsSync(workspacePath)).toBe(true);
 	});
 });

@@ -9,10 +9,6 @@
 # and installs it under two names, `gateship` and `gship`, into
 # $HOME/.local/bin by default (override with GATESHIP_INSTALL_DIR).
 #
-# Additive only: this script never removes or overwrites a pre-existing `cam`
-# binary. Removing an old `cam` is a deliberate operator step (ADR-0055), not
-# something an installer does on your behalf.
-#
 # Every release is currently published `--prerelease` (ADR-0055 — the
 # ADR-0054 rename window stays open until a stable Release is cut), so
 # GitHub's "latest release" API excludes it. We list releases instead and
@@ -24,18 +20,9 @@
 # signing; this script strips that quarantine bit at install time
 # (`xattr -d com.apple.quarantine`). See README.md for the full explanation.
 #
-# Install-time swap: gship auto-spawns itself under its installed name (the
-# sidecar, orch-recycle-watch, and dashboard panes all re-exec the binary at
-# INSTALL_DIR/gship), so reinstalling while a `gship run` session is live is
-# the common case, not an edge case. Every destination is therefore replaced
-# by an atomic rename(2) from a fully-prepared staged temp in the SAME
-# directory, never by writing into the destination in place: on macOS,
-# overwriting the inode a running process still holds open as its executable
-# image poisons that image (SIGKILL, rc=137, at the process's next exec, no
-# diagnostic); on Linux, the kernel refuses the in-place write outright with
-# ETXTBSY. rename(2) is the only swap that keeps the running process on its
-# old inode AND guarantees no reader ever observes a partially written file.
-# See ADR-0058 and CONTEXT.md ("staged install temp", "atomic install swap").
+# Each installed name is replaced by an atomic rename from a fully prepared
+# temporary file in the same directory. A running binary keeps its old inode,
+# and readers never observe a partially written executable.
 set -euo pipefail
 
 REPO="gateship-dev/gateship"
@@ -147,7 +134,7 @@ if [[ "${ACTUAL_HASH}" != "${EXPECTED_HASH}" ]]; then
 fi
 echo "[install] checksum verified (${ACTUAL_HASH})"
 
-# --- Install: additive, never touches a pre-existing 'cam' binary -----------
+# --- Install both public names ----------------------------------------------
 # ADR-0058: swap ${DEST} by atomic rename(2) from a staged temp in the SAME
 # directory (never $TMPDIR, whose rename would cross filesystems on typical
 # Linux targets where /tmp is tmpfs) so an already-running gship/gateship

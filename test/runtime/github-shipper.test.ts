@@ -130,9 +130,9 @@ function createRunner(repo: FakeRepo, calls: RecordedCall[]): ShipCommandRunner 
 
 function createWorkspace(stage = 'specified'): string {
 	const cwd = createTestTmpdir('gship-shipper-');
-	mkdirSync(join(cwd, 'scripts', 'cam', 'issues'), { recursive: true });
+	mkdirSync(join(cwd, '.gateship', 'issues'), { recursive: true });
 	writeFileSync(
-		join(cwd, 'scripts', 'cam', 'issues', 'CAM-0579.json'),
+		join(cwd, '.gateship', 'issues', 'CAM-0579.json'),
 		`${JSON.stringify({
 			id: 'CAM-579',
 			title: 'gship web: ship atomico do run ate o merge',
@@ -145,7 +145,7 @@ function createWorkspace(stage = 'specified'): string {
 
 function readIssue(cwd: string): Record<string, unknown> {
 	return JSON.parse(
-		readFileSync(join(cwd, 'scripts', 'cam', 'issues', 'CAM-0579.json'), 'utf8'),
+		readFileSync(join(cwd, '.gateship', 'issues', 'CAM-0579.json'), 'utf8'),
 	) as Record<string, unknown>;
 }
 
@@ -395,7 +395,7 @@ describe('the GitHub shipper', () => {
 
 	test('rejects a symlinked issue path without writing outside the worktree', async () => {
 		const cwd = createWorkspace();
-		const issuePath = join(cwd, 'scripts', 'cam', 'issues', 'CAM-0579.json');
+		const issuePath = join(cwd, '.gateship', 'issues', 'CAM-0579.json');
 		const outside = join(createTestTmpdir('gship-shipper-outside-'), 'outside.json');
 		const original = '{"outside":"preserve me"}\n';
 		writeFileSync(outside, original);

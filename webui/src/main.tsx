@@ -13,11 +13,19 @@ import {
 	createIssue,
 	EVENTS_PATH,
 	fetchBacklog,
+	fetchChat,
+	fetchProviders,
 	fetchRunEvents,
 	fetchRuns,
 	type RunAction,
+	type ChatMessageView,
+	type ProviderStatusView,
+	sendChat,
+	selectProvider,
 	specifyIssue,
+	startCodexLogin,
 	startRun,
+	type WorkspaceNoticeView,
 } from './client.ts';
 import type { PlannableIssue, RunEventView, RunView } from './run-view.ts';
 import './index.css';
@@ -27,6 +35,10 @@ function useOperationalRun(): {
 	ideas: PlannableIssue[];
 	runs: RunView[];
 	events: RunEventView[];
+	workspaceNotices: WorkspaceNoticeView[];
+	chatMessages: ChatMessageView[];
+	providers: ProviderStatusView[];
+	selectedProvider: ProviderStatusView['id'];
 	status: string | null;
 	pending: boolean;
 	send: (command: () => Promise<string>) => void;
@@ -35,17 +47,25 @@ function useOperationalRun(): {
 	const [ideas, setIdeas] = useState<PlannableIssue[]>([]);
 	const [runs, setRuns] = useState<RunView[]>([]);
 	const [events, setEvents] = useState<RunEventView[]>([]);
+	const [workspaceNotices, setWorkspaceNotices] = useState<WorkspaceNoticeView[]>([]);
+	const [chatMessages, setChatMessages] = useState<ChatMessageView[]>([]);
+	const [providers, setProviders] = useState<ProviderStatusView[]>([]);
+	const [selectedProvider, setSelectedProvider] = useState<ProviderStatusView['id']>('claude');
 	const [status, setStatus] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
 
 	const refresh = useCallback(() => {
-		void Promise.all([fetchRuns(), fetchBacklog()])
-			.then(async ([runSnapshot, backlogSnapshot]) => {
+		void Promise.all([fetchRuns(), fetchBacklog(), fetchProviders(), fetchChat()])
+			.then(async ([runSnapshot, backlogSnapshot, providerSnapshot, chatSnapshot]) => {
 				const latest = runSnapshot[0] ?? null;
 				const history = latest === null ? [] : await fetchRunEvents(latest.id);
 				setRuns(runSnapshot);
 				setBacklog(backlogSnapshot.plannable);
 				setIdeas(backlogSnapshot.ideas);
+				setWorkspaceNotices(backlogSnapshot.workspaceNotices);
+				setProviders(providerSnapshot.providers);
+				setSelectedProvider(providerSnapshot.selected);
+				setChatMessages(chatSnapshot);
 				setEvents(history);
 			})
 			.catch((error: unknown) => setStatus(String(error)));
@@ -85,11 +105,35 @@ function useOperationalRun(): {
 		return () => source.close();
 	}, [refresh]);
 
-	return { backlog, ideas, runs, events, status, pending, send };
+	return {
+		backlog,
+		ideas,
+		runs,
+		events,
+		workspaceNotices,
+		chatMessages,
+		providers,
+		selectedProvider,
+		status,
+		pending,
+		send,
+	};
 }
 
 function Screen(): ReactElement {
-	const { backlog, ideas, runs, events, status, pending, send } = useOperationalRun();
+	const {
+		backlog,
+		ideas,
+		runs,
+		events,
+		workspaceNotices,
+		chatMessages,
+		providers,
+		selectedProvider,
+		status,
+		pending,
+		send,
+	} = useOperationalRun();
 	const run = runs[0] ?? null;
 	const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
 	const command = (action: RunAction) => () => {
@@ -99,6 +143,7 @@ function Screen(): ReactElement {
 	return (
 		<App
 			backlog={backlog}
+			chatMessages={chatMessages}
 			events={events}
 			ideas={ideas}
 			onCancel={command('cancel')}
@@ -108,10 +153,20 @@ function Screen(): ReactElement {
 					return `${created.id} criada e selecionada.`;
 				}));
 			}}
+			onSendMessage={(message) => send(() => sendChat(message))}
+			onConnectCodex={() => {
+				const loginWindow = window.open('about:blank', 'gateship-codex-login');
+				send(() => startCodexLogin().then((authUrl) => {
+					if (loginWindow === null) window.location.assign(authUrl);
+					else loginWindow.location.assign(authUrl);
+					return 'Login do Codex aberto no navegador.';
+				}));
+			}}
 			onResume={(operatorGuidance) => {
 				if (run !== null) send(() => commandRun(run.id, 'resume', operatorGuidance));
 			}}
 			onSelectIssue={setSelectedIssueId}
+			onSelectProvider={(providerId) => send(() => selectProvider(providerId))}
 			onShip={command('ship')}
 			onSpecifyIssue={(issueId, draft) => {
 				send(() => specifyIssue(issueId, draft).then((specified) => {
@@ -123,9 +178,12 @@ function Screen(): ReactElement {
 				if (selectedIssueId !== null) send(() => startRun(selectedIssueId));
 			}}
 			pending={pending}
+			providers={providers}
 			runs={runs}
 			selectedIssueId={selectedIssueId}
+			selectedProvider={selectedProvider}
 			status={status}
+			workspaceNotices={workspaceNotices}
 		/>
 	);
 }

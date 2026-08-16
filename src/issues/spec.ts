@@ -1,203 +1,53 @@
-import type { WsjfScore } from "./types.ts";
-import { parseOracleDirective } from './oracle-directive.ts';
-import { findStoreReachingSearch } from "./self-contaminating-search.ts";
-
 /**
- * Structured deep-spec written by the spec interview (acceptanceCriteria +
- * scope + gotchas + domainTerms). Distinct from the free-text description
- * captured at stage:idea.
+ * The executable task contract. New issues need only an outcome (`scope`) and
+ * one or more commands that prove it (`verify`). The legacy fields stay
+ * readable until the existing backlog has naturally drained.
  */
 export interface Spec {
-	acceptanceCriteria: string[];
 	scope: string;
-	gotchas: string[];
-	domainTerms: string[];
+	verify?: string[];
+	/** Legacy deep-spec prose with embedded `[oracle: ...]` commands. */
+	acceptanceCriteria?: string[];
+	/** Legacy interview notes; ignored by the runtime. */
+	gotchas?: string[];
+	/** Legacy interview glossary; ignored by the runtime. */
+	domainTerms?: string[];
 }
 
-/**
- * Validation result shape -- mirrors checkReferentialIntegrity in graph.ts.
- */
 export interface ValidationResult {
 	ok: boolean;
 	errors: string[];
 }
 
-/**
- * Scans each already-validated (non-empty-string) acceptanceCriteria element
- * for a self-contaminating-search oracle (US-002, CAM-474): a criterion
- * whose [oracle: ...] directive is a recursive grep/rg search rooted such
- * that it reaches scripts/cam/issues. Filing such an issue writes the
- * searched-for text as JSON inside the very area being searched, making the
- * criterion green with zero implementation. Extracted from validateSpec to
- * keep its cognitive complexity within the project's lint ceiling.
- */
-function findSelfContaminatingSearchErrors(criteria: string[]): string[] {
-	const errors: string[] = [];
-
-	for (const criterion of criteria) {
-		const directive = parseOracleDirective(criterion);
-		if (directive === null) continue;
-		if (directive.kind !== "named-command" && directive.kind !== "file-assert") continue;
-
-		const finding = findStoreReachingSearch(directive.command);
-		if (finding !== null) {
-			errors.push(
-				`acceptanceCriteria oracle is a self-contaminating search: recursive search ` +
-					`root "${finding.root}" reaches scripts/cam/issues, so the act of filing ` +
-					`the issue would write the searched-for text inside the search area and ` +
-					`make the criterion green with zero implementation`,
-			);
-		}
-	}
-
-	return errors;
+function isNonEmptyString(value: unknown): value is string {
+	return typeof value === 'string' && value.trim().length > 0;
 }
 
-/**
- * Validates a Spec value. Returns { ok: true, errors: [] } on success.
- *
- * Rejects:
- *   - x is not an object (or is null / array)
- *   - acceptanceCriteria is missing or empty
- *   - scope is missing or empty string
- */
-export function validateSpec(x: unknown): ValidationResult {
+function isNonEmptyStringArray(value: unknown): value is string[] {
+	return Array.isArray(value) && value.length > 0 && value.every(isNonEmptyString);
+}
+
+/** Accept the direct contract and keep old backlog records executable. */
+export function validateSpec(value: unknown): ValidationResult {
+	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+		return { ok: false, errors: ['spec must be a non-null object'] };
+	}
+	const candidate = value as Record<string, unknown>;
 	const errors: string[] = [];
-
-	if (x === null || typeof x !== "object" || Array.isArray(x)) {
-		errors.push("spec must be a non-null object");
-		return { ok: false, errors };
+	if (!isNonEmptyString(candidate['scope'])) {
+		errors.push('scope must be a non-empty string');
 	}
-
-	const candidate = x as Record<string, unknown>;
-
-	const ac = candidate["acceptanceCriteria"];
-	if (!Array.isArray(ac) || ac.length === 0) {
-		errors.push("acceptanceCriteria must be a non-empty array");
-	} else if (!ac.every((c) => isNonEmptyString(c))) {
-		errors.push("acceptanceCriteria elements must all be non-empty strings");
-	} else {
-		errors.push(...findSelfContaminatingSearchErrors(ac as string[]));
+	if (
+		!isNonEmptyStringArray(candidate['verify'])
+		&& !isNonEmptyStringArray(candidate['acceptanceCriteria'])
+	) {
+		errors.push('spec requires non-empty verify commands');
 	}
-
-	const scope = candidate["scope"];
-	if (typeof scope !== "string" || scope.trim() === "") {
-		errors.push("scope must be a non-empty string");
-	}
-
 	return { ok: errors.length === 0, errors };
 }
 
-/** Returns true when v is one of the three valid specSource enum values. */
-function isValidSpecSourceEnum(v: unknown): boolean {
-	return v === "interview" || v === "derived" || v === "operator";
-}
-
-/** Returns true when v is a non-empty (non-blank) string. */
-function isNonEmptyString(v: unknown): boolean {
-	return typeof v === "string" && v.trim() !== "";
-}
-
-/**
- * Validates the specSource/derivedFrom invariants on an issue entry.
- * Mirrors validateSpec/validateWsjf style: accepts unknown, returns {ok, errors}.
- *
- * Invariants enforced:
- *   1. specSource, when present, must be one of: interview, derived, operator.
- *   2. Absent specSource on a stage:specified issue is treated as "interview" (the live common/default path, passes).
- *   3. derivedFrom must be a non-empty array when specSource === "derived".
- *   4. description must be a non-empty string when specSource is "derived" or "operator".
- */
-export function validateSpecSource(x: unknown): ValidationResult {
-	const errors: string[] = [];
-
-	if (x === null || typeof x !== "object" || Array.isArray(x)) {
-		errors.push("entry must be a non-null object");
-		return { ok: false, errors };
-	}
-
-	const candidate = x as Record<string, unknown>;
-	const specSource = candidate["specSource"];
-	const derivedFrom = candidate["derivedFrom"];
-	const description = candidate["description"];
-
-	// Invariant 1: specSource, when present, must be one of the 3 enum values.
-	if (specSource !== undefined && !isValidSpecSourceEnum(specSource)) {
-		errors.push('specSource must be one of: "interview", "derived", "operator"');
-	}
-
-	// Absent specSource is treated as "interview" (the live common/default path). No error emitted for absence.
-	const effective = specSource === undefined ? "interview" : (specSource as string);
-
-	// Invariant 2: derivedFrom must be a non-empty array when specSource === "derived".
-	if (effective === "derived") {
-		if (!Array.isArray(derivedFrom) || (derivedFrom as unknown[]).length === 0) {
-			errors.push('derivedFrom must be a non-empty array when specSource is "derived"');
-		}
-	}
-
-	// Invariant 3: description must be a non-empty string when specSource is "derived" or "operator".
-	if (effective === "derived" || effective === "operator") {
-		if (!isNonEmptyString(description)) {
-			errors.push(
-				'description must be a non-empty string when specSource is "derived" or "operator"',
-			);
-		}
-	}
-
-	return { ok: errors.length === 0, errors };
-}
-
-/** The four valid top-level issue `type` enum values. */
-const VALID_ISSUE_TYPES = ["feat", "fix", "chore", "docs"] as const;
-
-/**
- * Validates the optional top-level `type` field on an issue entry.
- * Mirrors validateSpecSource style: `type` is optional (absence is not an
- * error, and no default is applied here -- defaulting is a consumer-side
- * concern), but a present value outside the enum is rejected.
- */
-export function validateIssueType(x: unknown): ValidationResult {
-	const errors: string[] = [];
-
-	if (x === undefined) {
-		return { ok: true, errors };
-	}
-
-	if (typeof x !== "string" || !(VALID_ISSUE_TYPES as readonly string[]).includes(x)) {
-		errors.push('type must be one of: "feat", "fix", "chore", "docs"');
-	}
-
-	return { ok: errors.length === 0, errors };
-}
-
-/**
- * Validates a WsjfScore value. Returns { ok: true, errors: [] } on success.
- *
- * Rejects if any of the four numeric components
- * (value, timeCriticality, riskReduction, jobSize) is missing or not a number.
- */
-export function validateWsjf(x: unknown): ValidationResult {
-	const errors: string[] = [];
-
-	if (x === null || typeof x !== "object" || Array.isArray(x)) {
-		errors.push("wsjf must be a non-null object");
-		return { ok: false, errors };
-	}
-
-	const candidate = x as Record<string, unknown>;
-	const requiredFields: Array<keyof WsjfScore> = [
-		"value",
-		"timeCriticality",
-		"riskReduction",
-		"jobSize",
-	];
-
-	for (const field of requiredFields) {
-		if (typeof candidate[field] !== "number") {
-			errors.push(`wsjf.${field} must be a number`);
-		}
-	}
-
-	return { ok: errors.length === 0, errors };
+/** Pure plannability check shared by old and new issue records. */
+export function hasVerification(spec: Spec | undefined): boolean {
+	return isNonEmptyStringArray(spec?.verify)
+		|| isNonEmptyStringArray(spec?.acceptanceCriteria);
 }

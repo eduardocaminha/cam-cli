@@ -36,7 +36,7 @@
 // made after Bun startup unless `env: process.env` is passed explicitly
 // (confirmed empirically). Nothing enforces that every future spawn site
 // remembers to forward it, and a spawn site that forgets would silently walk
-// a non-git-inited scratch dir up into cam-cli's OWN working tree instead of
+// a non-git-inited scratch dir up into Gateship's own working tree instead of
 // failing closed. `ensureScratchRootIsAGitRepo` below closes that class of
 // gap structurally: it makes `SCRATCH_ROOT` itself a (near-empty) git repo,
 // so any git command run from a subdirectory with no `.git` of its own
@@ -135,7 +135,7 @@ export function reapOwnDirectories(): void {
  * (near-empty) git repository, once, idempotently. A git command run from
  * any subdirectory under `SCRATCH_ROOT` that has no `.git` of its own then
  * resolves its toplevel to `SCRATCH_ROOT` and stops there -- it can never
- * walk further up into cam-cli's own working tree, regardless of whether the
+ * walk further up into Gateship's own working tree, regardless of whether the
  * spawning process forwarded `GIT_CEILING_DIRECTORIES` (see header comment).
  * Best-effort: a missing/unusable `git` binary must never fail scratch-dir
  * creation itself (git is a hard test dependency elsewhere, see

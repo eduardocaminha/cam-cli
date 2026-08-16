@@ -6,7 +6,7 @@
 // Two invariants shape the whole file:
 //
 //   * The issue is closed on the BRANCH, never on main. `stage:'shipped'` is
-//     written into the worktree copy of scripts/cam/issues/<ID>.json and rides
+//     written into the worktree copy of .gateship/issues/<ID>.json and rides
 //     the same commit as the change, so main learns the issue shipped by
 //     composing the merge. Nothing here ever writes refs/heads/main.
 //   * Every step is idempotent. A repeated ship reuses the commit it already

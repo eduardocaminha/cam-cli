@@ -34,9 +34,9 @@ function identify(cwd: string): void {
 }
 
 function writeIssue(cwd: string, file: string, id: string, stage: string): void {
-	mkdirSync(join(cwd, 'scripts', 'cam', 'issues'), { recursive: true });
+	mkdirSync(join(cwd, '.gateship', 'issues'), { recursive: true });
 	writeFileSync(
-		join(cwd, 'scripts', 'cam', 'issues', file),
+		join(cwd, '.gateship', 'issues', file),
 		`${JSON.stringify({
 			id,
 			title: `${id} fixture`,

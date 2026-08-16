@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { issueFilePath, numericIdSuffix, readBacklogFromMain } from '../issues/backlog.ts';
-import { parseOracleDirective } from '../issues/oracle-directive.ts';
 import { type Spec, validateSpec } from '../issues/spec.ts';
 import type { IssueEntry } from '../issues/types.ts';
 import { defaultRunGit } from './git-runtime.ts';
@@ -102,20 +101,9 @@ function nextIssueNumber(cwd: string, sourceSha: string): number {
 }
 
 function buildSpec(input: OperatorSpecInput): Spec {
-	const criterion = `${input.scope} [oracle: named-command ${input.verificationCommand}]`;
-	const directive = parseOracleDirective(criterion);
-	if (directive?.kind !== 'named-command' || directive.command !== input.verificationCommand) {
-		throw new IssueIntakeError(
-			'invalid-request',
-			'O comando de verificação contém colchetes incompatíveis com a diretiva de oracle.',
-			400,
-		);
-	}
 	const spec = {
-		acceptanceCriteria: [criterion],
 		scope: input.scope,
-		gotchas: [],
-		domainTerms: [],
+		verify: [input.verificationCommand],
 	};
 	const validated = validateSpec(spec);
 	if (!validated.ok) {
@@ -209,7 +197,7 @@ export function createOperatorIssue(
 	for (let attempt = 0; attempt < MAX_PUBLISH_ATTEMPTS; attempt += 1) {
 		const sourceSha = refreshRuntimeSource(cwd);
 		const number = nextIssueNumber(cwd, sourceSha);
-		const id = `CAM-${number}`;
+		const id = `GSHIP-${number}`;
 		const entry = buildIssue(input, id, createdAt);
 		const result = publishEntryAttempt(cwd, sourceSha, entry, `chore(gship): file ${id}`);
 		if (result.kind === 'published') {

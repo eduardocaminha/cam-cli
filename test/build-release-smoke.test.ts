@@ -5,10 +5,10 @@ import { resolve } from 'node:path';
 const script = readFileSync(resolve(import.meta.dir, '..', 'scripts', 'build-release.sh'), 'utf8');
 
 describe('release build smoke', () => {
-	test('checks version and init against the host binary from a temporary cwd', () => {
+	test('checks version and help against the host binary from a temporary cwd', () => {
 		expect(script).toContain('ACTUAL="$("${HOST_BIN}" --version)"');
 		expect(script).toContain('SMOKE_DIR="$(mktemp -d)"');
-		expect(script).toContain('cd "${SMOKE_DIR}" && "${BIN_ABS}" init </dev/null');
+		expect(script).toContain('cd "${SMOKE_DIR}" && "${BIN_ABS}" --help');
 		expect(script).not.toContain('--issue-system');
 	});
 

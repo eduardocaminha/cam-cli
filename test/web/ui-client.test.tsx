@@ -12,14 +12,21 @@ import { App, type AppProps } from '../../webui/src/App.tsx';
 import {
 	commandRun,
 	createIssue,
+	CHAT_PATH,
 	EVENTS_PATH,
 	fetchBacklog,
+	fetchChat,
+	fetchProviders,
 	fetchRunEvents,
 	fetchRuns,
 	RUNS_PATH,
 	ISSUES_PATH,
+	PROVIDERS_PATH,
+	selectProvider,
+	sendChat,
 	SNAPSHOT_PATH,
 	specifyIssue,
+	startCodexLogin,
 	startRun,
 } from '../../webui/src/client.ts';
 import { actionsFor, progressOf, type RunState, type RunView } from '../../webui/src/run-view.ts';
@@ -45,19 +52,26 @@ function render(overrides: Partial<AppProps> = {}): string {
 	return renderToStaticMarkup(
 		<App
 			backlog={BACKLOG}
+			chatMessages={[]}
 			events={[]}
 			ideas={[]}
 			onCancel={() => {}}
+			onConnectCodex={() => {}}
 			onCreateIssue={() => {}}
 			onResume={() => {}}
 			onSelectIssue={() => {}}
+			onSelectProvider={() => {}}
+			onSendMessage={() => {}}
 			onShip={() => {}}
 			onSpecifyIssue={() => {}}
 			onStart={() => {}}
 			pending={false}
+			providers={[]}
 			runs={[]}
 			selectedIssueId={null}
+			selectedProvider="claude"
 			status={null}
+			workspaceNotices={[]}
 			{...overrides}
 		/>,
 	);
@@ -92,6 +106,8 @@ describe('operational screen', () => {
 		expect(html).toContain('ocioso');
 		expect(buttonIsEnabled(html, 'Iniciar run')).toBe(false);
 		expect(html).not.toContain('Retomar');
+		expect(html).toContain('Conversa com o orquestrador');
+		expect(html).toContain('name="message"');
 	});
 
 	test('idle with a selected issue: start becomes reachable', () => {
@@ -99,6 +115,32 @@ describe('operational screen', () => {
 
 		expect(buttonIsEnabled(html, 'Iniciar run')).toBe(true);
 		expect(html).toContain('aria-pressed="true"');
+	});
+
+	test('conversation renders the durable cross-provider handoff', () => {
+		const html = render({
+			chatMessages: [
+				{
+					seq: 1,
+					providerId: 'codex',
+					role: 'operator',
+					text: 'Investigue o core.',
+					createdAt: '2026-08-16T03:00:00.000Z',
+				},
+				{
+					seq: 2,
+					providerId: 'claude',
+					role: 'orchestrator',
+					text: 'Retomei o contexto e encontrei o loop.',
+					createdAt: '2026-08-16T03:01:00.000Z',
+				},
+			],
+		});
+
+		expect(html).toContain('Investigue o core.');
+		expect(html).toContain('Retomei o contexto e encontrei o loop.');
+		expect(html).toContain('codex');
+		expect(html).toContain('claude');
 	});
 
 	test('working: shows the phase and offers only cancel', () => {
@@ -197,6 +239,23 @@ describe('operational screen', () => {
 		expect(html).toContain('name="ideaScope"');
 		expect(html).toContain('name="ideaVerificationCommand"');
 		expect(buttonIsEnabled(html, 'Especificar ideia')).toBe(true);
+	});
+
+	test('surfaces preserved workspaces without offering destructive cleanup', () => {
+		const html = render({
+			workspaceNotices: [{
+				kind: 'dirty',
+				runId: null,
+				workspacePath: '/project/.gship/worktrees/orphan',
+				branch: 'gship/cam-1-orphan',
+				detail: 'workspace is not owned by a persisted run',
+			}],
+		});
+
+		expect(html).toContain('Workspaces preservados');
+		expect(html).toContain('/project/.gship/worktrees/orphan');
+		expect(html).toContain('workspace is not owned by a persisted run');
+		expect(html).not.toContain('Apagar workspace');
 	});
 
 	test('a run shows persisted public activity and tool names', () => {
@@ -403,6 +462,43 @@ describe('same-origin transport', () => {
 		expect(RUNS_PATH).toBe('/api/runs');
 		expect(EVENTS_PATH).toBe('/api/events');
 		expect(ISSUES_PATH).toBe('/api/issues');
+		expect(PROVIDERS_PATH).toBe('/api/providers');
+		expect(CHAT_PATH).toBe('/api/chat');
+	});
+
+	test('reads and sends the orchestrator conversation on one same-origin route', async () => {
+		const messages = [{
+			seq: 1,
+			providerId: 'claude' as const,
+			role: 'orchestrator' as const,
+			text: 'Pronto.',
+			createdAt: '2026-08-16T03:00:00.000Z',
+		}];
+		await withRecordedFetch({ messages }, 200, async (calls) => {
+			expect(await fetchChat()).toEqual(messages);
+			expect(calls).toEqual([{ url: CHAT_PATH, method: 'GET', body: null }]);
+		});
+		await withRecordedFetch({ ok: true, messages }, 200, async (calls) => {
+			expect(await sendChat('Continue.')).toBe('Resposta do orquestrador recebida.');
+			expect(calls).toEqual([{
+				url: CHAT_PATH,
+				method: 'POST',
+				body: JSON.stringify({ message: 'Continue.' }),
+			}]);
+		});
+	});
+
+	test('shows subscription state without any credential field', () => {
+		const html = render({
+			providers: [
+				{ id: 'claude', installed: true, subscription: true, label: 'Claude Code', plan: 'max', login: 'external' },
+				{ id: 'codex', installed: true, subscription: false, label: 'Codex', login: 'web' },
+			],
+		});
+		expect(html).toContain('Claude Code');
+		expect(html).toContain('Assinatura conectada · max');
+		expect(buttonIsEnabled(html, 'Conectar ChatGPT')).toBe(true);
+		expect(html).not.toMatch(/api key|oauth token/i);
 	});
 
 	test('issue intake posts the operator contract and returns the created issue', async () => {
@@ -466,6 +562,35 @@ describe('same-origin transport', () => {
 		]);
 	});
 
+	test('reads provider status and starts Codex login on same-origin routes', async () => {
+		const providers = [
+			{ id: 'codex' as const, installed: true, subscription: false, label: 'Codex', login: 'web' as const },
+		];
+		await withRecordedFetch({ providers, selected: 'claude' }, 200, async (calls) => {
+			expect(await fetchProviders()).toEqual({ providers, selected: 'claude' });
+			expect(calls).toEqual([{ url: PROVIDERS_PATH, method: 'GET', body: null }]);
+		});
+		await withRecordedFetch({
+			ok: true,
+			login: { loginId: 'login-1', authUrl: 'https://chatgpt.com/auth' },
+		}, 200, async (calls) => {
+			expect(await startCodexLogin()).toBe('https://chatgpt.com/auth');
+			expect(calls).toEqual([{
+				url: `${PROVIDERS_PATH}/codex/login`,
+				method: 'POST',
+				body: null,
+			}]);
+		});
+		await withRecordedFetch({ ok: true, selected: 'codex' }, 200, async (calls) => {
+			expect(await selectProvider('codex')).toBe('Run atualizada.');
+			expect(calls).toEqual([{
+				url: `${PROVIDERS_PATH}/codex/select`,
+				method: 'POST',
+				body: null,
+			}]);
+		});
+	});
+
 	test('start posts the issue id to the runs route', async () => {
 		const calls = await withRecordedFetch({ ok: true }, 202, async () => {
 			expect(await startRun('CAM-900')).toBe('Run atualizada.');
@@ -525,12 +650,16 @@ describe('same-origin transport', () => {
 		});
 		// No idleState key at all: a cycle is running, so nothing is plannable.
 		await withRecordedFetch({ phase: 'implementing' }, 200, async () => {
-			expect(await fetchBacklog()).toEqual({ plannable: [], ideas: [] });
+			expect(await fetchBacklog()).toEqual({ plannable: [], ideas: [], workspaceNotices: [] });
 		});
 		await withRecordedFetch({
 			idleState: { backlog: { plannable: BACKLOG, byStage: { idea: [BACKLOG[0]!] } } },
 		}, 200, async () => {
-			expect(await fetchBacklog()).toEqual({ plannable: BACKLOG, ideas: [BACKLOG[0]!] });
+			expect(await fetchBacklog()).toEqual({
+				plannable: BACKLOG,
+				ideas: [BACKLOG[0]!],
+				workspaceNotices: [],
+			});
 		});
 	});
 

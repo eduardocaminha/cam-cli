@@ -5,14 +5,23 @@
 // Routing stays in Bun.serve's native `routes` table.
 
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
 import { readBacklogFromMain } from '../issues/backlog.ts';
 import { type BacklogJsonView, deriveBacklogJson } from '../issues/list.ts';
 import { printError } from '../logging/color.ts';
-import { ClaudeCliExecutor } from '../runtime/claude-cli-executor.ts';
+import { AgentExecutorRouter } from '../runtime/agent-executor-router.ts';
+import { AgentReviewerRouter } from '../runtime/agent-reviewer-router.ts';
+import { ClaudeAgentSession, ClaudeCliExecutor } from '../runtime/claude-cli-executor.ts';
 import { ClaudeCliReviewer } from '../runtime/claude-cli-reviewer.ts';
+import { CodexAgentSession, CodexCliExecutor } from '../runtime/codex-cli-executor.ts';
+import { CodexCliReviewer } from '../runtime/codex-cli-reviewer.ts';
+import {
+	ConversationalOrchestrator,
+	type OrchestratorCommand,
+	OrchestratorBusyError,
+	type OrchestratorTurnResult,
+} from '../runtime/conversational-orchestrator.ts';
 import { createGitRuntimePreflight, GitIssueVerifier, RuntimePreflightError } from '../runtime/git-runtime.ts';
 import { GitWorkspaceManager, RuntimeWorkspaceError } from '../runtime/git-workspace.ts';
 import { GithubShipper } from '../runtime/github-shipper.ts';
@@ -30,7 +39,8 @@ import {
 	RuntimeConflictError,
 	RuntimeUnavailableError,
 } from '../runtime/run-runtime.ts';
-import { type RunEvent, RunStore } from '../runtime/run-store.ts';
+import { type OrchestratorMessage, type RunEvent, RunStore } from '../runtime/run-store.ts';
+import { NativeProviderAuth, type ProviderAuth } from '../runtime/provider-auth.ts';
 import { RUNTIME_SOURCE_REF } from '../runtime/source-ref.ts';
 import { resolveWebAssets, serveWebAsset } from './web-assets.ts';
 
@@ -46,6 +56,16 @@ export interface WebServerOptions {
 	issueIntake?: (input: unknown) => CreatedOperatorIssue;
 	/** Test seam for promoting an existing idea with the operator contract. */
 	issueSpecifier?: (id: string, input: unknown) => CreatedOperatorIssue;
+	/** Test seam for credential-blind provider status and managed Codex login. */
+	providerAuth?: ProviderAuth;
+	/** Test seam for the read-only conversational facade. */
+	orchestrator?: OrchestratorRuntime;
+}
+
+export interface OrchestratorRuntime {
+	listMessages(limit?: number): OrchestratorMessage[];
+	turn(text: string): Promise<OrchestratorTurnResult>;
+	stop(): Promise<void>;
 }
 
 async function createIssueFromOperator(
@@ -70,6 +90,110 @@ async function createIssueFromOperator(
 		return Response.json(
 			{ ok: false, code: error.code, message: error.message },
 			{ status: error.status },
+		);
+	}
+}
+
+async function listProviders(
+	providerAuth: ProviderAuth,
+	runtime: RunRuntime,
+): Promise<Response> {
+	try {
+		return Response.json({
+			providers: await providerAuth.list(),
+			selected: runtime.getSelectedProvider(),
+		});
+	} catch (error) {
+		return Response.json(
+			{
+				ok: false,
+				code: 'provider-status-failed',
+				message: error instanceof Error ? error.message : String(error),
+			},
+			{ status: 503 },
+		);
+	}
+}
+
+async function selectProvider(
+	request: Request,
+	providerId: string,
+	providerAuth: ProviderAuth,
+	runtime: RunRuntime,
+): Promise<Response> {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	if (providerId !== 'claude' && providerId !== 'codex') {
+		return Response.json(
+			{ ok: false, code: 'invalid-provider', message: 'Unknown provider.' },
+			{ status: 400 },
+		);
+	}
+	const status = (await providerAuth.list()).find((provider) => provider.id === providerId);
+	if (status?.subscription !== true) {
+		return Response.json(
+			{
+				ok: false,
+				code: 'provider-not-connected',
+				message: 'Connect a subscription before selecting this provider.',
+			},
+			{ status: 409 },
+		);
+	}
+	runtime.selectProvider(providerId);
+	return Response.json({ ok: true, selected: providerId });
+}
+
+async function startCodexLogin(request: Request, providerAuth: ProviderAuth): Promise<Response> {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	try {
+		return Response.json({ ok: true, login: await providerAuth.startCodexLogin() });
+	} catch (error) {
+		return Response.json(
+			{
+				ok: false,
+				code: 'provider-login-failed',
+				message: error instanceof Error ? error.message : String(error),
+			},
+			{ status: 503 },
+		);
+	}
+}
+
+async function converse(
+	request: Request,
+	orchestrator: OrchestratorRuntime,
+): Promise<Response> {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	let body: unknown;
+	try {
+		body = await request.json();
+	} catch {
+		return Response.json(
+			{ ok: false, code: 'invalid-request', message: 'Uma mensagem JSON é obrigatória.' },
+			{ status: 400 },
+		);
+	}
+	const message = body !== null && typeof body === 'object'
+		? (body as { message?: unknown }).message
+		: undefined;
+	if (typeof message !== 'string' || message.trim().length === 0) {
+		return Response.json(
+			{ ok: false, code: 'invalid-request', message: 'Uma mensagem não vazia é obrigatória.' },
+			{ status: 400 },
+		);
+	}
+	try {
+		const turn = await orchestrator.turn(message);
+		return Response.json({ ok: true, turn, messages: orchestrator.listMessages() });
+	} catch (error) {
+		const busy = error instanceof OrchestratorBusyError;
+		return Response.json(
+			{
+				ok: false,
+				code: busy ? 'orchestrator-busy' : 'orchestrator-failed',
+				message: error instanceof Error ? error.message : String(error),
+			},
+			{ status: busy ? 409 : 503 },
 		);
 	}
 }
@@ -184,27 +308,14 @@ async function readIssueId(request: Request): Promise<string | Response> {
 	return issueId.trim();
 }
 
-function hasLegacyCycle(cwd: string): boolean {
-	return (
-		existsSync(join(cwd, 'scripts', 'cam', 'prd.json')) ||
-		existsSync(join(cwd, 'prd.json'))
-	);
-}
-
 async function startDurableRun(
 	request: Request,
 	runtime: RunRuntime,
-	cwd: string,
 ): Promise<Response> {
 	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
 	const issueId = await readIssueId(request);
 	if (issueId instanceof Response) return issueId;
 	try {
-		if (hasLegacyCycle(cwd)) {
-			throw new RuntimePreflightError(
-				'Um ciclo legado ainda possui prd.json; finalize ou abandone esse ciclo primeiro.',
-			);
-		}
 		return Response.json({ ok: true, run: runtime.startRun(issueId) }, { status: 202 });
 	} catch (error) {
 		const unavailable = error instanceof RuntimeUnavailableError;
@@ -386,24 +497,100 @@ export function createDefaultRunRuntimeOptions(cwd: string): RunRuntimeOptions {
 	return {
 		cwd,
 		store: new RunStore(join(cwd, '.gship', 'runtime.sqlite')),
-		executor: new ClaudeCliExecutor(),
+		executor: new AgentExecutorRouter({
+			claude: new ClaudeCliExecutor(),
+			codex: new CodexCliExecutor(),
+		}),
 		verifier: new GitIssueVerifier(),
-		reviewer: new ClaudeCliReviewer(),
+		reviewer: new AgentReviewerRouter({
+			claude: new ClaudeCliReviewer(),
+			codex: new CodexCliReviewer(),
+		}),
 		shipper: new GithubShipper(),
 		preflight: createGitRuntimePreflight(cwd),
 		workspace: new GitWorkspaceManager(cwd, undefined, undefined, RUNTIME_SOURCE_REF),
 	};
 }
 
+async function executeOrchestratorCommand(
+	command: OrchestratorCommand,
+	runtime: RunRuntime,
+	issueIntake: (input: unknown) => CreatedOperatorIssue,
+	issueSpecifier: (id: string, input: unknown) => CreatedOperatorIssue,
+): Promise<string> {
+	switch (command.type) {
+		case 'none':
+			return 'Nenhum comando solicitado.';
+		case 'create_issue': {
+			const issue = issueIntake(command);
+			return `${issue.id} criada no backlog.`;
+		}
+		case 'specify_issue': {
+			const issue = issueSpecifier(command.issueId, command);
+			return `${issue.id} especificada no backlog.`;
+		}
+		case 'start_run': {
+			const run = runtime.startRun(command.issueId);
+			return `Run ${run.id} iniciada para ${run.issueId}.`;
+		}
+		case 'resume_run': {
+			const run = runtime.resumeRun(command.runId, command.guidance);
+			return `Run ${run.id} retomada.`;
+		}
+		case 'cancel_run': {
+			const run = await runtime.cancelRun(command.runId);
+			if (run === null) throw new Error(`run not found: ${command.runId}`);
+			return `Run ${run.id} está ${run.state}.`;
+		}
+		case 'ship_run': {
+			const run = runtime.shipRun(command.runId);
+			return `Ship da run ${run.id} iniciado.`;
+		}
+	}
+}
+
+function createDefaultOrchestrator(
+	cwd: string,
+	runtime: RunRuntime,
+	issueIntake: (input: unknown) => CreatedOperatorIssue,
+	issueSpecifier: (id: string, input: unknown) => CreatedOperatorIssue,
+): ConversationalOrchestrator {
+	return new ConversationalOrchestrator({
+		cwd,
+		persistence: runtime,
+		sessions: {
+			claude: new ClaudeAgentSession(),
+			codex: new CodexAgentSession(),
+		},
+		context: () => ({
+			provider: runtime.getSelectedProvider(),
+			backlog: readIdleSnapshotState(cwd).backlog,
+			runs: runtime.listRuns(10),
+			workspaceNotices: runtime.listWorkspaceNotices(),
+		}),
+		execute: (command) => executeOrchestratorCommand(
+			command,
+			runtime,
+			issueIntake,
+			issueSpecifier,
+		),
+	});
+}
+
 /** Start the localhost-only web server. Port 0 is supported for test callers. */
 export function startWebServer(options: WebServerOptions): WebServerHandle {
 	const ownsRunRuntime = options.runRuntime === undefined;
+	const ownsProviderAuth = options.providerAuth === undefined;
+	const ownsOrchestrator = options.orchestrator === undefined;
 	const runRuntime = options.runRuntime
 		?? new RunRuntime(createDefaultRunRuntimeOptions(options.cwd));
 	const issueIntake = options.issueIntake ?? ((input: unknown) =>
 		createOperatorIssue(options.cwd, input));
 	const issueSpecifier = options.issueSpecifier ?? ((id: string, input: unknown) =>
 		specifyOperatorIssue(options.cwd, id, input));
+	const providerAuth = options.providerAuth ?? new NativeProviderAuth();
+	const orchestrator = options.orchestrator
+		?? createDefaultOrchestrator(options.cwd, runRuntime, issueIntake, issueSpecifier);
 	const assets = resolveWebAssets();
 	const server = Bun.serve({
 		hostname: WEB_HOSTNAME,
@@ -413,12 +600,32 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/app.js': () => serveWebAsset(assets.appJs),
 			'/app.css': () => serveWebAsset(assets.appCss),
 			'/api/snapshot': () => {
-				if (hasLegacyCycle(options.cwd)) return Response.json({});
-				return Response.json({ idleState: readIdleSnapshotState(options.cwd) });
+				const snapshot: Record<string, unknown> = {
+					idleState: readIdleSnapshotState(options.cwd),
+				};
+				const workspaceNotices = runRuntime.listWorkspaceNotices();
+				if (workspaceNotices.length > 0) snapshot['workspaceNotices'] = workspaceNotices;
+				return Response.json(snapshot);
 			},
 			'/api/runs': {
 				GET: () => Response.json({ runs: runRuntime.listRuns() }),
-				POST: (request) => startDurableRun(request, runRuntime, options.cwd),
+				POST: (request) => startDurableRun(request, runRuntime),
+			},
+			'/api/providers': () => listProviders(providerAuth, runRuntime),
+			'/api/chat': {
+				GET: () => Response.json({ messages: orchestrator.listMessages() }),
+				POST: (request) => converse(request, orchestrator),
+			},
+			'/api/providers/:providerId/select': {
+				POST: (request) => selectProvider(
+					request,
+					request.params.providerId,
+					providerAuth,
+					runRuntime,
+				),
+			},
+			'/api/providers/codex/login': {
+				POST: (request) => startCodexLogin(request, providerAuth),
 			},
 			'/api/issues': {
 				POST: (request) => createIssueFromOperator(request, issueIntake),
@@ -448,8 +655,8 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	});
 
 	const { hostname, port } = server;
+	if (hostname === undefined || port === undefined) void server.stop(true);
 	if (hostname === undefined || port === undefined) {
-		void server.stop(true);
 		throw new Error('Bun.serve did not report its resolved TCP address');
 	}
 
@@ -460,7 +667,9 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		stop: async () => {
 			if (stopped) return;
 			stopped = true;
+			if (ownsOrchestrator) await orchestrator.stop();
 			await runRuntime.stop();
+			if (ownsProviderAuth) await providerAuth.close();
 			await server.stop(true);
 			if (ownsRunRuntime) runRuntime.close();
 		},
@@ -474,7 +683,7 @@ export async function runWeb(options: WebServerOptions): Promise<number> {
 		handle = startWebServer(options);
 	} catch (error) {
 		printError(
-			`gship web: failed to bind --port ${options.port} on ${WEB_HOSTNAME}`,
+			`gship: failed to bind --port ${options.port} on ${WEB_HOSTNAME}`,
 			error instanceof Error ? error.message : String(error),
 		);
 		return 1;

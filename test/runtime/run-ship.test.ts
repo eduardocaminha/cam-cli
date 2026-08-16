@@ -82,6 +82,71 @@ describe('shipping a run', () => {
 		runtime.close();
 	});
 
+	test('releases the managed workspace only after a confirmed merge', async () => {
+		const releases: string[] = [];
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-release',
+			workspace: {
+				prepare: () => '/project/.gship/worktrees/run-release',
+				release: (input) => {
+					releases.push(input.workspacePath);
+					return { outcome: 'released', branch: 'gship/cam-583-run-rel' };
+				},
+			},
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async () => ({ outcome: 'merged', prNumber: 385 }) },
+		});
+
+		const run = runtime.startRun('CAM-583');
+		await waitForCondition(() => eventKinds(runtime).includes('workspace.released'));
+
+		expect(runtime.getRun(run.id)?.state).toBe('done');
+		expect(releases).toEqual(['/project/.gship/worktrees/run-release']);
+		expect(eventKinds(runtime).slice(-2)).toEqual(['run.shipped', 'workspace.released']);
+		expect(runtime.listEvents().at(-1)?.payload).toEqual({
+			branch: 'gship/cam-583-run-rel',
+			outcome: 'released',
+			reconciled: false,
+		});
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('keeps a merged run done when workspace cleanup needs attention', async () => {
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-dirty',
+			workspace: {
+				prepare: () => '/project/.gship/worktrees/run-dirty',
+				release: () => ({
+					outcome: 'preserved',
+					branch: 'gship/cam-583-run-dir',
+					detail: 'workspace has local changes',
+				}),
+			},
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async () => ({ outcome: 'merged', prNumber: 385 }) },
+		});
+
+		const run = runtime.startRun('CAM-583');
+		await waitForCondition(() => eventKinds(runtime).includes('workspace.cleanup-warning'));
+
+		expect(runtime.getRun(run.id)?.state).toBe('done');
+		expect(runtime.listEvents().at(-1)).toMatchObject({
+			kind: 'workspace.cleanup-warning',
+			fromState: 'done',
+			toState: 'done',
+			payload: { detail: 'workspace has local changes' },
+		});
+		await runtime.stop();
+		runtime.close();
+	});
+
 	test('a failed automatic ship stays ready-to-ship and the button ships again', async () => {
 		const attempts: string[] = [];
 		const runtime = createRuntime({
@@ -232,6 +297,45 @@ describe('shipping a run', () => {
 		// The verified diff survived the crash; only the attempt was lost.
 		expect(runtime.getRun('run-crashed-ship')?.state).toBe('ready-to-ship');
 		expect(runtime.listEvents().at(-1)?.kind).toBe('run.recovered-shippable');
+		runtime.close();
+	});
+
+	test('retries release of a done workspace when the service starts', () => {
+		const store = new RunStore(':memory:');
+		store.createRun({
+			id: 'run-done-before-start',
+			issueId: 'CAM-583',
+			sessionId: 'session-done-before-start',
+			workspacePath: '/project/.gship/worktrees/run-done-before-start',
+			createdAt: '2026-08-16T10:00:00Z',
+		});
+		for (const toState of ['working', 'verify', 'ready-to-ship', 'shipping', 'done'] as const) {
+			store.transition({
+				runId: 'run-done-before-start',
+				toState,
+				kind: `run.${toState}`,
+				createdAt: '2026-08-16T10:00:01Z',
+			});
+		}
+		const releases: string[] = [];
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store,
+			workspace: {
+				prepare: () => '/unused',
+				release: (input) => {
+					releases.push(input.runId);
+					return { outcome: 'already-released', branch: 'gship/cam-583-run-don' };
+				},
+			},
+		});
+
+		expect(releases).toEqual(['run-done-before-start']);
+		expect(runtime.getRun('run-done-before-start')?.state).toBe('done');
+		expect(runtime.listEvents().at(-1)).toMatchObject({
+			kind: 'workspace.released',
+			payload: { outcome: 'already-released', reconciled: true },
+		});
 		runtime.close();
 	});
 });

@@ -1,10 +1,25 @@
 # Changelog
 
-All notable changes to CAM Runtime are documented here.
+All notable changes to Gateship are documented here.
 
 Format: `## [version] - YYYY-MM-DD` for releases; a single `[Unreleased]` heading at the top collects pending work.
 
 ## [Unreleased]
+
+### Changed
+
+- Replaced the tmux/sidecar runtime with one local Bun web service backed by
+  SQLite and server-sent events.
+- Added subscription-based Claude Code and Codex adapters, browser-managed
+  Codex login, and a durable cross-provider orchestrator handoff.
+- Added a read-only conversational orchestrator that can select at most one
+  typed service command per turn.
+- Simplified new task specifications to direct `scope` and `verify` fields;
+  existing acceptance-criteria records remain readable during migration.
+- Added safe lifecycle management for isolated worktrees and remote-main
+  synchronization.
+- Moved the backlog to `.gateship/issues` and reserved `GSHIP-*` for new task
+  identifiers while preserving historical records.
 
 ## [0.292.0] - 2026-08-15
 

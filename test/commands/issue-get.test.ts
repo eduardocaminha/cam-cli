@@ -56,20 +56,20 @@ describe('getIssueOnMain', () => {
 			'-C',
 			'/fake/project',
 			'show',
-			'main:scripts/cam/issues/CAM-0042.json',
+			'main:.gateship/issues/CAM-0042.json',
 		]);
 	});
 
 	test('short numeric suffixes are zero-padded to 4 digits', () => {
 		const { spawnFn, calls } = makeShowSpawn({ content: '{"id":"CAM-1"}\n' });
 		getIssueOnMain('/fake/project', 'CAM-1', spawnFn);
-		expect(calls[0]?.args).toContain('main:scripts/cam/issues/CAM-0001.json');
+		expect(calls[0]?.args).toContain('main:.gateship/issues/CAM-0001.json');
 	});
 
 	test('4+ digit ids are left unpadded further (CAM-1000 stays CAM-1000)', () => {
 		const { spawnFn, calls } = makeShowSpawn({ content: '{"id":"CAM-1000"}\n' });
 		getIssueOnMain('/fake/project', 'CAM-1000', spawnFn);
-		expect(calls[0]?.args).toContain('main:scripts/cam/issues/CAM-1000.json');
+		expect(calls[0]?.args).toContain('main:.gateship/issues/CAM-1000.json');
 	});
 
 	test('success returns { ok: true, id, content } with the raw git show stdout', () => {

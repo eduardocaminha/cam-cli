@@ -8,8 +8,8 @@
 import { describe, expect, test } from 'bun:test';
 
 import { createDefaultRunRuntimeOptions, startWebServer } from '../../src/commands/web.ts';
-import { ClaudeCliExecutor } from '../../src/runtime/claude-cli-executor.ts';
-import { ClaudeCliReviewer } from '../../src/runtime/claude-cli-reviewer.ts';
+import { AgentExecutorRouter } from '../../src/runtime/agent-executor-router.ts';
+import { AgentReviewerRouter } from '../../src/runtime/agent-reviewer-router.ts';
 import { GitIssueVerifier } from '../../src/runtime/git-runtime.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
 import { RunStore } from '../../src/runtime/run-store.ts';
@@ -36,9 +36,9 @@ describe('web composition of the independent reviewer', () => {
 	test('the production runtime is composed with the real reviewer', () => {
 		const options = createDefaultRunRuntimeOptions(createTestTmpdir('gship-web-review-'));
 		try {
-			expect(options.executor).toBeInstanceOf(ClaudeCliExecutor);
+			expect(options.executor).toBeInstanceOf(AgentExecutorRouter);
 			expect(options.verifier).toBeInstanceOf(GitIssueVerifier);
-			expect(options.reviewer).toBeInstanceOf(ClaudeCliReviewer);
+			expect(options.reviewer).toBeInstanceOf(AgentReviewerRouter);
 		} finally {
 			options.store.close();
 		}

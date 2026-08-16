@@ -34,6 +34,7 @@ describe('run store workspace migration', () => {
 		expect(migrated.getRun('legacy-run')).toMatchObject({
 			issueId: 'CAM-574',
 			sessionId: 'legacy-session',
+			providerId: 'claude',
 			workspacePath: '',
 			state: 'interrupted',
 		});
@@ -47,6 +48,18 @@ describe('run store workspace migration', () => {
 		expect(migrated.getRun('new-run')?.workspacePath).toBe(
 			'/project/.gship/worktrees/new-run',
 		);
+		expect(migrated.getSelectedProvider()).toBe('claude');
+		migrated.setSelectedProvider('codex');
+		expect(migrated.getSelectedProvider()).toBe('codex');
+		migrated.createRun({
+			id: 'codex-run',
+			issueId: 'CAM-577',
+			sessionId: 'provisional',
+			providerId: 'codex',
+			workspacePath: '/project/.gship/worktrees/codex-run',
+			createdAt: '2026-08-15T12:00:00Z',
+		});
+		expect(migrated.getRun('codex-run')?.providerId).toBe('codex');
 		migrated.close();
 	});
 });

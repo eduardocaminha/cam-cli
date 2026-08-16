@@ -1,7 +1,7 @@
 // src/issues/backlog.ts
 //
 // readBacklogFromMain() -- read all per-issue files from main's
-// scripts/cam/issues/ directory via one git ls-tree + one git cat-file --batch,
+// .gateship/issues/ directory via one git ls-tree + one git cat-file --batch,
 // sorted numerically by id suffix.
 //
 // Design:
@@ -17,7 +17,7 @@
 //     dropped and allocateId never re-mints a colliding id.
 //
 // GIT CONTRACT (cat-file --batch framing):
-//   Input (stdin): one object name per line (e.g. `main:scripts/cam/issues/CAM-001.json`).
+//   Input (stdin): one object name per line (e.g. `main:.gateship/issues/GSHIP-0001.json`).
 //   Output per object: `<oid> SP <type> SP <size> LF <contents> LF`
 //   Parse: read the header line, take exactly <size> BYTES of content,
 //   skip the trailing LF byte.  <size> is always in bytes (not characters).
@@ -27,6 +27,8 @@
 import { spawnSync } from 'node:child_process';
 import type { SpawnSyncReturns } from 'node:child_process';
 import type { IssueEntry } from './types.ts';
+
+export const ISSUE_DIRECTORY = '.gateship/issues';
 
 // ---------------------------------------------------------------------------
 // Injectable SpawnFn type
@@ -47,7 +49,7 @@ export type BacklogSpawnFn = (
 // ---------------------------------------------------------------------------
 
 /**
- * Parses the numeric id suffix from "PREFIX-<N>" (e.g. "CAM-12" -> 12).
+ * Parses the numeric id suffix from "PREFIX-<N>" (e.g. "GSHIP-12" -> 12).
  * Returns Infinity for non-numeric or missing suffix, sorting those entries last.
  */
 export function numericIdSuffix(id: string): number {
@@ -106,8 +108,8 @@ function parseBatchOutput(outputBytes: Buffer): string[] {
 // ---------------------------------------------------------------------------
 
 /**
- * Read all issue files from `<ref>:scripts/cam/issues/` via:
- *   1. `git ls-tree -r --name-only <ref> scripts/cam/issues/` -- enumerate paths.
+ * Read all issue files from `<ref>:.gateship/issues/` via:
+ *   1. `git ls-tree -r --name-only <ref> .gateship/issues/` -- enumerate paths.
  *   2. `git cat-file --batch` (stdin: one `<ref>:<path>` per line) -- read blobs.
  *
  * Parses each blob as an IssueEntry (unparseable entries are skipped silently).
@@ -132,10 +134,10 @@ export function readBacklogFromMain(
 	spawn: BacklogSpawnFn = spawnSync,
 	ref = 'main',
 ): IssueEntry[] {
-	// Step 1: enumerate paths under scripts/cam/issues/ on the source ref.
+	// Step 1: enumerate paths under .gateship/issues/ on the source ref.
 	const lsResult = spawn(
 		'git',
-		['-C', cwd, 'ls-tree', '-r', '--name-only', ref, 'scripts/cam/issues/'],
+		['-C', cwd, 'ls-tree', '-r', '--name-only', ref, `${ISSUE_DIRECTORY}/`],
 		{ encoding: 'utf8' },
 	);
 	const paths = (lsResult.stdout ?? '')
@@ -202,17 +204,17 @@ export function readBacklogFromMain(
  * field inside the JSON (mirrors writeIssueFile in src/issues/alloc.ts).
  *
  * Examples:
- *   'CAM-1'    -> 'scripts/cam/issues/CAM-0001.json'
- *   'CAM-90'   -> 'scripts/cam/issues/CAM-0090.json'
- *   'CAM-1000' -> 'scripts/cam/issues/CAM-1000.json'
+ *   'GSHIP-1'    -> '.gateship/issues/GSHIP-0001.json'
+ *   'GSHIP-90'   -> '.gateship/issues/GSHIP-0090.json'
+ *   'GSHIP-1000' -> '.gateship/issues/GSHIP-1000.json'
  */
 export function issueFilePath(id: string): string {
 	const lastDash = id.lastIndexOf('-');
-	if (lastDash === -1) return `scripts/cam/issues/${id}.json`;
+	if (lastDash === -1) return `${ISSUE_DIRECTORY}/${id}.json`;
 	const prefix = id.slice(0, lastDash);
 	const n = parseInt(id.slice(lastDash + 1), 10);
-	if (Number.isNaN(n)) return `scripts/cam/issues/${id}.json`;
-	return `scripts/cam/issues/${prefix}-${String(n).padStart(4, '0')}.json`;
+	if (Number.isNaN(n)) return `${ISSUE_DIRECTORY}/${id}.json`;
+	return `${ISSUE_DIRECTORY}/${prefix}-${String(n).padStart(4, '0')}.json`;
 }
 
 // ---------------------------------------------------------------------------

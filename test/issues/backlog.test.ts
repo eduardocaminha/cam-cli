@@ -89,7 +89,7 @@ describe('readBacklogFromMain -- subprocess count', () => {
 				return {
 					...emptyReturn(),
 					stdout:
-						'scripts/cam/issues/CAM-001.json\nscripts/cam/issues/CAM-002.json\nscripts/cam/issues/CAM-003.json\n',
+						'.gateship/issues/CAM-001.json\n.gateship/issues/CAM-002.json\n.gateship/issues/CAM-003.json\n',
 				};
 			}
 			// cat-file --batch
@@ -118,7 +118,7 @@ describe('readBacklogFromMain -- subprocess count', () => {
 			makeEntry({ id: `CAM-${i + 1}` }),
 		);
 		const paths = entries
-			.map((e) => `scripts/cam/issues/${e.id}.json`)
+			.map((e) => `.gateship/issues/${e.id}.json`)
 			.join('\n');
 
 		let callCount = 0;
@@ -147,7 +147,7 @@ describe('readBacklogFromMain -- numeric sort', () => {
 				return {
 					...emptyReturn(),
 					stdout:
-						'scripts/cam/issues/CAM-012.json\nscripts/cam/issues/CAM-009.json\n',
+						'.gateship/issues/CAM-012.json\n.gateship/issues/CAM-009.json\n',
 				};
 			}
 			return { ...emptyReturn(), stdout: makeBatchOutput(entries) };
@@ -168,7 +168,7 @@ describe('readBacklogFromMain -- numeric sort', () => {
 				return {
 					...emptyReturn(),
 					stdout:
-						'scripts/cam/issues/CAM-1000.json\nscripts/cam/issues/CAM-0999.json\n',
+						'.gateship/issues/CAM-1000.json\n.gateship/issues/CAM-0999.json\n',
 				};
 			}
 			return { ...emptyReturn(), stdout: makeBatchOutput(entries) };
@@ -191,7 +191,7 @@ describe('readBacklogFromMain -- numeric sort', () => {
 				return {
 					...emptyReturn(),
 					stdout: entries
-						.map((e) => `scripts/cam/issues/${e.id}.json`)
+						.map((e) => `.gateship/issues/${e.id}.json`)
 						.join('\n') + '\n',
 				};
 			}
@@ -218,7 +218,7 @@ describe('readBacklogFromMain -- numeric sort', () => {
 				return {
 					...emptyReturn(),
 					stdout:
-						'scripts/cam/issues/CAM-009.json\nscripts/cam/issues/CAM-012.json\n',
+						'.gateship/issues/CAM-009.json\n.gateship/issues/CAM-012.json\n',
 				};
 			}
 			return { ...emptyReturn(), stdout: makeBatchOutput(entries) };
@@ -244,7 +244,7 @@ describe('readBacklogFromMain -- read-from-main invariant', () => {
 				lsTreeArgs = args;
 				return {
 					...emptyReturn(),
-					stdout: 'scripts/cam/issues/CAM-001.json\n',
+					stdout: '.gateship/issues/CAM-001.json\n',
 				};
 			}
 			return {
@@ -266,7 +266,7 @@ describe('readBacklogFromMain -- read-from-main invariant', () => {
 				return {
 					...emptyReturn(),
 					stdout:
-						'scripts/cam/issues/CAM-001.json\nscripts/cam/issues/CAM-002.json\n',
+						'.gateship/issues/CAM-001.json\n.gateship/issues/CAM-002.json\n',
 				};
 			}
 			catFileInput = opts.input;
@@ -306,7 +306,7 @@ describe('readBacklogFromMain -- edge cases', () => {
 				return {
 					...emptyReturn(),
 					stdout:
-						'scripts/cam/issues/CAM-001.json\nscripts/cam/issues/CAM-002.json\n',
+						'.gateship/issues/CAM-001.json\n.gateship/issues/CAM-002.json\n',
 				};
 			}
 			// First blob: valid JSON; second blob: invalid JSON.
@@ -334,7 +334,7 @@ describe('readBacklogFromMain -- edge cases', () => {
 				return {
 					...emptyReturn(),
 					stdout:
-						'scripts/cam/issues/CAM-001.json\nscripts/cam/issues/DELETED.json\n',
+						'.gateship/issues/CAM-001.json\n.gateship/issues/DELETED.json\n',
 				};
 			}
 			const content = JSON.stringify(entry);
@@ -343,7 +343,7 @@ describe('readBacklogFromMain -- edge cases', () => {
 				...emptyReturn(),
 				stdout:
 					`deadbeef blob ${size}\n${content}\n` +
-					`main:scripts/cam/issues/DELETED.json missing\n`,
+					`main:.gateship/issues/DELETED.json missing\n`,
 			};
 		};
 
@@ -372,7 +372,7 @@ describe('readBacklogFromMain -- multi-byte UTF-8 correctness', () => {
 			if (args.includes('ls-tree')) {
 				return {
 					...emptyReturn(),
-					stdout: 'scripts/cam/issues/CAM-001.json\n',
+					stdout: '.gateship/issues/CAM-001.json\n',
 				};
 			}
 			return { ...emptyReturn(), stdout: makeBatchOutput([entry]) };
@@ -395,7 +395,7 @@ describe('readBacklogFromMain -- multi-byte UTF-8 correctness', () => {
 				return {
 					...emptyReturn(),
 					stdout:
-						'scripts/cam/issues/CAM-001.json\nscripts/cam/issues/CAM-002.json\n',
+						'.gateship/issues/CAM-001.json\n.gateship/issues/CAM-002.json\n',
 				};
 			}
 			return { ...emptyReturn(), stdout: makeBatchOutput([entry1, entry2]) };
@@ -420,7 +420,7 @@ describe('readBacklogFromMain -- multi-byte UTF-8 correctness', () => {
 				return {
 					...emptyReturn(),
 					stdout:
-						'scripts/cam/issues/CAM-001.json\nscripts/cam/issues/CAM-002.json\nscripts/cam/issues/CAM-003.json\n',
+						'.gateship/issues/CAM-001.json\n.gateship/issues/CAM-002.json\n.gateship/issues/CAM-003.json\n',
 				};
 			}
 			return { ...emptyReturn(), stdout: makeBatchOutput(entries) };
@@ -449,7 +449,7 @@ describe('allocateId', () => {
 			if (args.includes('ls-tree')) {
 				return {
 					...emptyReturn(),
-					stdout: entries.map((e) => `scripts/cam/issues/${e.id}.json`).join('\n') + '\n',
+					stdout: entries.map((e) => `.gateship/issues/${e.id}.json`).join('\n') + '\n',
 				};
 			}
 			return { ...emptyReturn(), stdout: makeBatchOutput(entries) };
@@ -483,7 +483,7 @@ describe('allocateId', () => {
 			if (args.includes('ls-tree')) {
 				return {
 					...emptyReturn(),
-					stdout: 'scripts/cam/issues/CAM-009.json\nscripts/cam/issues/CAM-001.json\nscripts/cam/issues/CAM-002.json\n',
+					stdout: '.gateship/issues/CAM-009.json\n.gateship/issues/CAM-001.json\n.gateship/issues/CAM-002.json\n',
 				};
 			}
 			return { ...emptyReturn(), stdout: makeBatchOutput(entries) };
@@ -495,7 +495,7 @@ describe('allocateId', () => {
 		const entries = Array.from({ length: 129 }, (_, i) =>
 			makeEntry({ id: `CAM-${i + 1}` }),
 		);
-		const paths = entries.map((e) => `scripts/cam/issues/CAM-${String(e.id.split('-')[1]).padStart(4,'0')}.json`).join('\n');
+		const paths = entries.map((e) => `.gateship/issues/CAM-${String(e.id.split('-')[1]).padStart(4,'0')}.json`).join('\n');
 		const spy: BacklogSpawnFn = (_cmd, args) => {
 			if (args.includes('ls-tree')) {
 				return { ...emptyReturn(), stdout: paths + '\n' };
@@ -509,7 +509,7 @@ describe('allocateId', () => {
 		const entries = [makeEntry({ id: 'CAM-1000' })];
 		const spy: BacklogSpawnFn = (_cmd, args) => {
 			if (args.includes('ls-tree')) {
-				return { ...emptyReturn(), stdout: 'scripts/cam/issues/CAM-1000.json\n' };
+				return { ...emptyReturn(), stdout: '.gateship/issues/CAM-1000.json\n' };
 			}
 			return { ...emptyReturn(), stdout: makeBatchOutput(entries) };
 		};
@@ -540,7 +540,7 @@ afterEach(() => {
 });
 
 /**
- * Build a real on-disk git repo whose committed `scripts/cam/issues/` set
+ * Build a real on-disk git repo whose committed `.gateship/issues/` set
  * produces a `git cat-file --batch` stdout larger than the old 1 MiB
  * spawnSync default, by seeding entries with a large filler title.
  */
@@ -556,7 +556,7 @@ function makeLargeBacklogRepo(count: number, fillerBytes: number): { dir: string
 	git(['config', 'user.email', 'test@example.com']);
 	git(['config', 'user.name', 'Test User']);
 
-	const issuesDir = join(dir, 'scripts', 'cam', 'issues');
+	const issuesDir = join(dir, '.gateship', 'issues');
 	mkdirSync(issuesDir, { recursive: true });
 
 	const filler = 'x'.repeat(fillerBytes);
@@ -592,7 +592,7 @@ describe('readBacklogFromMain -- fail-closed maxBuffer (real git wire boundary)'
 			// would not exercise the bug it regresses).
 			const paths = ids.map((id) => {
 				const n = parseInt(id.split('-')[1] ?? '0', 10);
-				return `main:scripts/cam/issues/CAM-${String(n).padStart(4, '0')}.json`;
+				return `main:.gateship/issues/CAM-${String(n).padStart(4, '0')}.json`;
 			});
 			const rawCatFile = spawnSync(
 				'git',
@@ -623,7 +623,7 @@ describe('readBacklogFromMain -- fail-closed on batch-read error', () => {
 			if (args.includes('ls-tree')) {
 				return {
 					...emptyReturn(),
-					stdout: 'scripts/cam/issues/CAM-001.json\n',
+					stdout: '.gateship/issues/CAM-001.json\n',
 				};
 			}
 			return {
@@ -641,7 +641,7 @@ describe('readBacklogFromMain -- fail-closed on batch-read error', () => {
 			if (args.includes('ls-tree')) {
 				return {
 					...emptyReturn(),
-					stdout: 'scripts/cam/issues/CAM-001.json\n',
+					stdout: '.gateship/issues/CAM-001.json\n',
 				};
 			}
 			return {
@@ -661,7 +661,7 @@ describe('readBacklogFromMain -- fail-closed on batch-read error', () => {
 				return {
 					...emptyReturn(),
 					stdout:
-						'scripts/cam/issues/CAM-001.json\nscripts/cam/issues/CAM-002.json\n',
+						'.gateship/issues/CAM-001.json\n.gateship/issues/CAM-002.json\n',
 				};
 			}
 			return { ...emptyReturn(), stdout: makeBatchOutput(entries) };

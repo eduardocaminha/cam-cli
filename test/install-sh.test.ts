@@ -266,12 +266,12 @@ describe('install.sh tag-resolution error path is reachable (US-R1-001, CAM-460)
 });
 
 describe('install.sh success path (US-R2-004, CAM-460)', () => {
-	test('downloads the asset, installs both gateship and gship as executables, and leaves a pre-existing cam untouched', async () => {
+	test('downloads the asset, installs both gateship and gship as executables, and leaves an unrelated binary untouched', async () => {
 		writeFakeCurl('success');
-		const camPath = join(installDir, 'cam');
-		const camContents = '#!/bin/sh\necho pre-existing-cam\n';
-		writeFileSync(camPath, camContents);
-		chmodSync(camPath, 0o755);
+		const otherToolPath = join(installDir, 'other-tool');
+		const otherToolContents = '#!/bin/sh\necho pre-existing-tool\n';
+		writeFileSync(otherToolPath, otherToolContents);
+		chmodSync(otherToolPath, 0o755);
 
 		const { exitCode, stdout } = await runInstallSh();
 
@@ -285,9 +285,9 @@ describe('install.sh success path (US-R2-004, CAM-460)', () => {
 			expect(statSync(dest).mode & 0o111).toBeGreaterThan(0);
 		}
 
-		// Additive: the pre-existing `cam` binary is untouched, byte-for-byte.
-		expect(await Bun.file(camPath).exists()).toBe(true);
-		expect(readFileSync(camPath, 'utf8')).toBe(camContents);
+		// Additive: unrelated files in the destination remain byte-for-byte intact.
+		expect(await Bun.file(otherToolPath).exists()).toBe(true);
+		expect(readFileSync(otherToolPath, 'utf8')).toBe(otherToolContents);
 	});
 });
 
