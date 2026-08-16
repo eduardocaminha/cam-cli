@@ -18,4 +18,4 @@
 // Bumping the version: edit GSHIP_VERSION here, run the build + tag flow in
 // `scripts/build-release.sh`, push the tag, then `gh release create`.
 
-export const GSHIP_VERSION = '0.292.0';
+export const GSHIP_VERSION = '0.293.0';
