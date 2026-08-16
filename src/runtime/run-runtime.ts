@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
-
-import { canTransition, isTerminalRunState } from './run-state.ts';
 import type { RuntimeWorkspace } from './git-workspace.ts';
+import { canTransition, isTerminalRunState } from './run-state.ts';
 import {
 	type RunEvent,
 	type RunRecord,
@@ -22,6 +21,8 @@ export interface RuntimeExecutionInput {
 	 * only channel that puts its verdict in front of the executor.
 	 */
 	reviewFeedback?: string;
+	/** Explicit response supplied by the operator when resuming a paused run. */
+	operatorGuidance?: string;
 }
 
 export type RuntimeExecutionResult =
@@ -110,6 +111,7 @@ interface ActiveRun {
 interface RunAttempt {
 	resume: boolean;
 	reviewFeedback?: string;
+	operatorGuidance?: string;
 }
 
 function errorMessage(error: unknown): string {
@@ -173,11 +175,11 @@ export class RunRuntime {
 			createdAt: this.#now(),
 		});
 		this.#publish(created.event);
-		this.#launch(created.run, false);
+		this.#launch(created.run, { resume: false });
 		return created.run;
 	}
 
-	resumeRun(runId: string): RunRecord {
+	resumeRun(runId: string, operatorGuidance?: string): RunRecord {
 		if (this.#executor === undefined || this.#verifier === undefined) {
 			throw new RuntimeUnavailableError();
 		}
@@ -187,7 +189,19 @@ export class RunRuntime {
 		if (run.state !== 'interrupted' && run.state !== 'waiting-user') {
 			throw new Error(`run cannot resume from state ${run.state}`);
 		}
-		this.#launch(run, true);
+		const guidance = operatorGuidance?.trim();
+		if (run.state === 'waiting-user' && (guidance === undefined || guidance.length === 0)) {
+			throw new Error('operator guidance is required to resume a waiting-user run');
+		}
+		if (guidance !== undefined && guidance.length > 0) {
+			this.#emit(run.id, 'run.operator-guidance', { text: guidance });
+		}
+		this.#launch(run, {
+			resume: true,
+			...(guidance === undefined || guidance.length === 0
+				? {}
+				: { operatorGuidance: guidance }),
+		});
 		return run;
 	}
 
@@ -262,14 +276,14 @@ export class RunRuntime {
 		this.#store.close();
 	}
 
-	#launch(run: RunRecord, resume: boolean): void {
+	#launch(run: RunRecord, attempt: RunAttempt): void {
 		const controller = new AbortController();
-		const promise = this.#drive(run, controller.signal, resume)
+		const promise = this.#drive(run, controller.signal, attempt)
 			.finally(() => this.#active.delete(run.id));
 		this.#active.set(run.id, { controller, promise });
 	}
 
-	async #drive(run: RunRecord, signal: AbortSignal, resume: boolean): Promise<void> {
+	async #drive(run: RunRecord, signal: AbortSignal, firstAttempt: RunAttempt): Promise<void> {
 		const executor = this.#executor;
 		const verifier = this.#verifier;
 		if (executor === undefined || verifier === undefined) {
@@ -280,7 +294,7 @@ export class RunRuntime {
 		try {
 			// One pass per implementation attempt. A findings verdict starts the
 			// second and last pass; the fix-round ceiling lives in run-state.ts.
-			let attempt: RunAttempt = { resume };
+			let attempt = firstAttempt;
 			for (;;) {
 				const executionInput = this.#executionInput(run, signal, attempt);
 				const verified = await this.#work(executor, verifier, run, signal, executionInput);
@@ -431,6 +445,9 @@ export class RunRuntime {
 			...(attempt.reviewFeedback === undefined
 				? {}
 				: { reviewFeedback: attempt.reviewFeedback }),
+			...(attempt.operatorGuidance === undefined
+				? {}
+				: { operatorGuidance: attempt.operatorGuidance }),
 		};
 	}
 

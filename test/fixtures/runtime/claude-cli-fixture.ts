@@ -23,6 +23,8 @@ if (mode === 'wait') {
 		}),
 	})}\n`);
 } else {
+	const summary = JSON.stringify({ argv: process.argv.slice(2), input });
+	const status = mode === 'waiting-user' ? 'waiting-user' : 'completed';
 	process.stdout.write(`${JSON.stringify({
 		type: 'assistant',
 		message: {
@@ -35,6 +37,7 @@ if (mode === 'wait') {
 	process.stdout.write(`${JSON.stringify({
 		type: 'result',
 		is_error: false,
-		result: JSON.stringify({ argv: process.argv.slice(2), input }),
+		result: summary,
+		structured_output: { status, summary },
 	})}\n`);
 }

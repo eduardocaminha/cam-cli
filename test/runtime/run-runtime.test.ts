@@ -232,4 +232,50 @@ describe('durable run runtime', () => {
 		await runtime.stop();
 		runtime.close();
 	});
+
+	test('persists operator guidance before resuming a waiting session', async () => {
+		const inputs: Array<{ resume: boolean; operatorGuidance?: string }> = [];
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-guidance',
+			executor: {
+				execute: async (input) => {
+					inputs.push({
+						resume: input.resume,
+						...(input.operatorGuidance === undefined
+							? {}
+							: { operatorGuidance: input.operatorGuidance }),
+					});
+					return input.resume
+						? { outcome: 'completed', summary: 'decision applied' }
+						: { outcome: 'waiting-user', summary: 'Choose the migration seam.' };
+				},
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+		const run = runtime.startRun('CAM-15');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
+
+		expect(() => runtime.resumeRun(run.id)).toThrow('operator guidance is required');
+		runtime.resumeRun(run.id, ' Use the smaller seam. ');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+
+		expect(inputs).toEqual([
+			{ resume: false },
+			{ resume: true, operatorGuidance: 'Use the smaller seam.' },
+		]);
+		expect(runtime.listRunEvents(run.id).map((event) => event.kind)).toEqual([
+			'run.created',
+			'run.started',
+			'run.waiting-user',
+			'run.operator-guidance',
+			'run.started',
+			'run.work-completed',
+			'run.verified',
+		]);
+		expect(runtime.listRunEvents(run.id)[3]?.payload).toEqual({ text: 'Use the smaller seam.' });
+		await runtime.stop();
+		runtime.close();
+	});
 });

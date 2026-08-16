@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import {
 	buildClaudeCliArgv,
 	ClaudeCliExecutor,
+	EXECUTION_RESULT_SCHEMA,
+	parseExecutionResult,
 } from '../../src/runtime/claude-cli-executor.ts';
 import { projectAssistantActivity } from '../../src/runtime/claude-cli-process.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
@@ -64,6 +66,31 @@ describe('Claude CLI runtime executor', () => {
 		expect(resumed).toContain('--resume');
 		expect(resumed).toContain('abc-123');
 		expect(resumed).not.toContain('--session-id');
+		const structured = buildClaudeCliArgv({
+			command: ['claude'],
+			sessionId: 'ABC-123',
+			resume: false,
+			permissionMode: 'bypassPermissions',
+			jsonSchema: EXECUTION_RESULT_SCHEMA,
+		});
+		expect(structured.slice(-2)).toEqual([
+			'--json-schema',
+			JSON.stringify(EXECUTION_RESULT_SCHEMA),
+		]);
+	});
+
+	test('accepts only the two structured executor outcomes', () => {
+		expect(parseExecutionResult({ status: 'completed', summary: 'done' })).toEqual({
+			outcome: 'completed',
+			summary: 'done',
+		});
+		expect(parseExecutionResult({ status: 'waiting-user', summary: 'choose A or B' })).toEqual({
+			outcome: 'waiting-user',
+			summary: 'choose A or B',
+		});
+		expect(() => parseExecutionResult({ status: 'unknown', summary: 'no' })).toThrow(
+			'invalid structured run status',
+		);
 	});
 
 	test('consumes the provider result without a sentinel or report file', async () => {
@@ -89,6 +116,27 @@ describe('Claude CLI runtime executor', () => {
 			payload: { text: 'fixture activity', tools: ['Read'] },
 		});
 		expect(JSON.stringify(events)).not.toContain('/not-persisted');
+	});
+
+	test('reports a real waiting-user outcome and includes operator guidance on resume', async () => {
+		const executor = new ClaudeCliExecutor({
+			command: ['bun', FIXTURE],
+			loadIssue: () => '{"id":"CAM-22"}',
+			sourceEnv: { ...process.env, GSHIP_FIXTURE_MODE: 'waiting-user' },
+		});
+		const result = await executor.execute({
+			runId: 'run-22',
+			issueId: 'CAM-22',
+			sessionId: 'session-22',
+			resume: true,
+			operatorGuidance: 'Use the smaller migration.',
+			cwd: createTestTmpdir('gship-claude-waiting-'),
+			signal: new AbortController().signal,
+			emit: () => {},
+		});
+
+		expect(result.outcome).toBe('waiting-user');
+		expect(result.summary).toContain('Use the smaller migration.');
 	});
 
 	test('kills and awaits the real child process group on cancellation', async () => {

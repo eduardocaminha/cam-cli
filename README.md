@@ -196,7 +196,10 @@ previous setup agent available during the migration. The web screen lists
 plannable issues, creates operator-specified tasks from a title, scope, and
 verification command, follows the current run through server-sent events, and
 shows a durable activity timeline with the agents' public text and tool names.
-It offers the contextual start, resume, cancel, and ship actions. A task
+When an executor needs a concrete decision, the run pauses at `waiting-user`;
+the operator answers in the same screen and Gateship persists that response
+before resuming the same Claude session. It also offers contextual start,
+cancel, and ship actions. A task
 created there is committed directly to the remote backlog as `specified`; it
 does not need a separate planner pass before execution.
 

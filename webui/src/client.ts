@@ -108,6 +108,15 @@ export async function createIssue(input: OperatorIssueDraft): Promise<CreatedIss
 	return payload.issue;
 }
 
-export function commandRun(runId: string, action: RunAction): Promise<string> {
-	return postCommand(`${RUNS_PATH}/${runId}/${action}`);
+export function commandRun(
+	runId: string,
+	action: RunAction,
+	operatorGuidance?: string,
+): Promise<string> {
+	return postCommand(
+		`${RUNS_PATH}/${runId}/${action}`,
+		action === 'resume' && operatorGuidance !== undefined
+			? { message: operatorGuidance }
+			: undefined,
+	);
 }
