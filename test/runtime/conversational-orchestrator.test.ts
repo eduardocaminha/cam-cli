@@ -105,6 +105,13 @@ describe('conversational orchestrator', () => {
 			message: 'Vou iniciar.',
 			command: { type: 'start_run', ...nullableFields, issueId: null },
 		})).toThrow('issueId');
+		expect(parseOrchestratorResponse({
+			message: 'Vou aprovar.',
+			command: { type: 'approve_issue', ...nullableFields, issueId: ' CAM-42 ' },
+		})).toEqual({
+			message: 'Vou aprovar.',
+			command: { type: 'approve_issue', issueId: 'CAM-42' },
+		});
 	});
 
 	test('replaces a failed resumed session with one fresh attempt and applies effects once', async () => {

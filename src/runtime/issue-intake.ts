@@ -254,10 +254,10 @@ export function specifyOperatorIssue(
 		if (entry === undefined) {
 			throw new IssueIntakeError('issue-not-found', `${issueId} não existe no backlog.`, 404);
 		}
-		if (entry.status !== 'open' || entry.stage !== 'idea') {
+		if (entry.status !== 'open' || (entry.stage !== 'idea' && entry.stage !== 'specified')) {
 			throw new IssueIntakeError(
 				'issue-not-eligible',
-				`${issueId} precisa estar open e em stage:idea.`,
+				`${issueId} precisa estar open e em stage:idea ou stage:specified.`,
 				409,
 			);
 		}
@@ -268,6 +268,7 @@ export function specifyOperatorIssue(
 			specSource: 'operator',
 			spec: buildSpec(input),
 		};
+		delete specified.approval;
 		const result = publishEntryAttempt(
 			cwd,
 			sourceSha,
@@ -283,6 +284,49 @@ export function specifyOperatorIssue(
 	throw new IssueIntakeError(
 		'publish-conflict',
 		'O backlog avançou durante três tentativas; tente especificar a ideia novamente.',
+		409,
+	);
+}
+
+/** Approve the currently published executable spec without starting a run. */
+export function approveOperatorIssue(
+	cwd: string,
+	id: string,
+	now: () => string = () => new Date().toISOString(),
+): CreatedOperatorIssue {
+	const issueId = requiredString(id, 'Issue');
+	const approvedAt = now();
+
+	for (let attempt = 0; attempt < MAX_PUBLISH_ATTEMPTS; attempt += 1) {
+		const sourceSha = refreshRuntimeSource(cwd);
+		const entry = readBacklogFromMain(cwd, spawnSync, sourceSha)
+			.find((issue) => issue.id === issueId);
+		if (entry === undefined) {
+			throw new IssueIntakeError('issue-not-found', `${issueId} não existe no backlog.`, 404);
+		}
+		const validation = entry.spec === undefined ? null : validateSpec(entry.spec);
+		if (entry.status !== 'open' || entry.stage !== 'specified' || validation?.ok !== true) {
+			throw new IssueIntakeError(
+				'issue-not-eligible',
+				`${issueId} precisa estar open, em stage:specified e ter spec executável.`,
+				409,
+			);
+		}
+		const approved: IssueEntry = {
+			...entry,
+			updatedAt: approvedAt,
+			approval: { fingerprint: fingerprintSpec(entry.spec!), approvedAt },
+		};
+		const result = publishEntryAttempt(cwd, sourceSha, approved, `chore(gship): approve ${issueId}`);
+		if (result.kind === 'published') {
+			fetchRuntimeSource(defaultRunGit, cwd);
+			return result.issue;
+		}
+	}
+
+	throw new IssueIntakeError(
+		'publish-conflict',
+		'O backlog avançou durante três tentativas; tente aprovar a tarefa novamente.',
 		409,
 	);
 }

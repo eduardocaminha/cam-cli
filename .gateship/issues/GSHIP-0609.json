@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-609",
   "title": "Etapa 3 backend: revisar e reaprovar drafts especificados",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-16T22:32:43.290Z",
-  "updatedAt": "2026-08-16T22:32:43.290Z",
+  "updatedAt": "2026-08-16T22:35:56.136Z",
   "description": "Implementar somente as operações backend determinísticas de revisão e aprovação de drafts existentes. No issue store/intake, permitir revisar `scope` e `verificationCommand` apenas quando o issue existir, estiver `open` e em stage `specified`, publicando pelo mesmo mecanismo retry-safe em `origin/main` já usado por `specifyOperatorIssue`; toda revisão publicada deve remover mecanicamente qualquer `approval`, inclusive quando o novo contrato tiver o mesmo conteúdo. Adicionar uma operação separada de aprovação, elegível apenas para issue `open` + `specified` com spec executável, que recomputa `fingerprintSpec` sobre a spec atual e grava `{ fingerprint, approvedAt }` pelo mesmo mecanismo retry-safe, sem chamar `startRun`. No orquestrador, manter `specify_issue` para criação/especificação e revisão pelo mecanismo existente e adicionar um comando tipado `approve_issue` com `issueId`, garantindo os campos não usados como null no schema compartilhado. Na web, reutilizar honestamente `POST /api/issues/:issueId/spec` para revisão e adicionar somente o endpoint same-origin mínimo para aprovação; ambas as escritas devem usar `isTrustedCommandOrigin`, validar entrada/eligibilidade e devolver mensagens acionáveis. Preservar `start_run` separado e o preflight atual como autoridade final para aprovação ausente ou obsoleta. Cobrir revisão elegível, recusas por status/stage, invalidação obrigatória, reaprovação com fingerprint e approvedAt atuais, ausência de start implícito, parsing/execução do comando tipado e fronteira same-origin. Limitar mudanças às superfícies de issues/intake, orquestrador, composição HTTP e testes diretamente correspondentes. Fora de escopo: componentes ou UI, scheduler, fila, histórico/versionamento de spec, array de comandos, policy engine, planner, auditor, dependências novas e refatoração lateral.",
   "specSource": "operator",
   "spec": {
