@@ -1,11 +1,11 @@
 {
   "id": "CAM-581",
   "title": "gship web: interface operacional mínima e embarcada",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-16T01:18:43.081Z",
-  "updatedAt": "2026-08-16T01:18:43.081Z",
+  "updatedAt": "2026-08-16T02:01:00.000Z",
   "description": "O runtime web já fecha um ciclo completo, mas a raiz ainda serve uma página diagnóstica com JSON bruto. Entregar a menor interface utilizável para escolher uma issue, acompanhar o run e executar resume, cancel e ship, adotando apenas os componentes COSS realmente usados e embarcando o bundle no mesmo processo.",
   "specSource": "derived",
   "derivedFrom": [

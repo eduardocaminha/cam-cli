@@ -10,7 +10,7 @@ function outputText(bytes: Uint8Array): string {
 }
 
 describe('web UI scaffold', () => {
-	test('builds used Tailwind utilities into the Vite CSS asset', () => {
+	test('builds used Tailwind utilities into a stably named Vite CSS asset', () => {
 		const result = Bun.spawnSync(['bun', 'run', 'build:ui'], {
 			cwd: REPO_ROOT,
 			stdout: 'pipe',
@@ -22,10 +22,12 @@ describe('web UI scaffold', () => {
 		expect(result.exitCode).toBe(0);
 
 		const html = readFileSync(join(WEBUI_ROOT, 'index.html'), 'utf8');
-		const assetsDir = join(WEBUI_ROOT, 'dist', 'assets');
-		const cssFiles = readdirSync(assetsDir).filter((name) => name.endsWith('.css'));
-		const builtCss = cssFiles.map((name) => readFileSync(join(assetsDir, name), 'utf8')).join('\n');
+		const distDir = join(WEBUI_ROOT, 'dist');
+		const builtCss = readFileSync(join(distDir, 'app.css'), 'utf8');
 
+		// Unhashed names, because static `with { type: "file" }` specifiers
+		// (src/commands/web-assets.ts) cannot name a content hash.
+		expect(readdirSync(distDir).sort()).toEqual(['app.css', 'app.js', 'index.html']);
 		expect(html).toContain('class="flex');
 		expect(builtCss).toContain('display:flex');
 		expect(builtCss).not.toContain('@import "tailwindcss"');

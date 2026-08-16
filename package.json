@@ -19,13 +19,14 @@
   "files": [
     "index.ts",
     "src",
+    "webui/dist",
     "LICENSE",
     "README.md"
   ],
   "scripts": {
     "embed-vendor": "bun scripts/generate-embedded-vendor.ts",
     "embed-vendor:check": "bun scripts/generate-embedded-vendor.ts --check",
-    "build:release": "bun scripts/generate-embedded-vendor.ts && bash scripts/build-release.sh",
+    "build:release": "bun scripts/generate-embedded-vendor.ts && bun run build:ui && bash scripts/build-release.sh",
     "build:ui": "vite build webui",
     "test": "bun test",
     "typecheck": "bunx tsc --noEmit && bunx tsc -p webui/tsconfig.app.json --noEmit",
@@ -39,15 +40,19 @@
     "record:golden": "bun scripts/record-golden.ts"
   },
   "devDependencies": {
+    "@base-ui/react": "1.6.0",
     "@biomejs/biome": "2.5.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/bun": "latest",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.4",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "ink-testing-library": "^4.0.0",
     "jscpd": "5.0.12",
     "knip": "6.24.0",
     "react-dom": "^19.2.6",
+    "tailwind-merge": "^3.4.0",
     "tailwindcss": "^4.3.3",
     "vite": "^8.2.1"
   },

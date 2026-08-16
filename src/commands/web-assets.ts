@@ -1,0 +1,76 @@
+// src/commands/web-assets.ts
+//
+// Where the browser bundle comes from, and nothing else.
+//
+// The three specifiers below are static `with { type: "file" }` imports, so
+// `bun build --compile` copies the built bundle verbatim into the binary and
+// each import evaluates to a `$bunfs` path there and to a real disk path in
+// development. That is the only embedding mechanism this repository accepts:
+// importing the Vite `index.html` without the attribute re-bundles it and
+// inlines assets as data URIs, and passing `dist/*` as extra entrypoints to
+// `--compile` silently mutates the CSS and drops the JS.
+//
+// Because the specifiers are static, `webui/dist` has to exist for this module
+// to resolve. Its three stable build outputs are committed and included in the
+// npm package; `bun run build:ui` refreshes them when the UI changes. That keeps
+// every CLI command loadable in a clean checkout without a global build hook.
+
+import { join } from 'node:path';
+import process from 'node:process';
+
+import appCssPath from '../../webui/dist/app.css' with { type: 'file' };
+import appJsPath from '../../webui/dist/app.js' with { type: 'file' };
+import indexHtmlPath from '../../webui/dist/index.html' with { type: 'file' };
+
+/** Explicit disk override, for iterating on the UI without recompiling. */
+export const WEB_DIR_ENV = 'GSHIP_WEB_DIR';
+
+export interface WebAsset {
+	path: string;
+	contentType: string;
+}
+
+export interface WebAssets {
+	indexHtml: WebAsset;
+	appJs: WebAsset;
+	appCss: WebAsset;
+}
+
+/**
+ * `type: "file"` makes every one of these specifiers a path string at runtime.
+ * TypeScript models none of that: it types a specifier from whatever the file
+ * resolves to, so index.html arrives as an HTMLBundle and app.js as a JS
+ * module. The attribute is the contract; this is the one place it is restated.
+ */
+function embeddedPath(imported: unknown): string {
+	return imported as string;
+}
+
+const EMBEDDED: WebAssets = {
+	indexHtml: { path: embeddedPath(indexHtmlPath), contentType: 'text/html; charset=utf-8' },
+	appJs: { path: embeddedPath(appJsPath), contentType: 'text/javascript; charset=utf-8' },
+	appCss: { path: embeddedPath(appCssPath), contentType: 'text/css; charset=utf-8' },
+};
+
+/**
+ * The embedded bundle, unless `GSHIP_WEB_DIR` names a directory to serve from
+ * instead. The override is explicit and never a fallback: an empty or unset
+ * variable keeps the embedded copy, and a wrong directory fails loudly at the
+ * route rather than silently serving stale embedded bytes.
+ */
+export function resolveWebAssets(env: NodeJS.ProcessEnv = process.env): WebAssets {
+	const dir = env[WEB_DIR_ENV]?.trim();
+	if (dir === undefined || dir.length === 0) return EMBEDDED;
+	return {
+		indexHtml: { path: join(dir, 'index.html'), contentType: EMBEDDED.indexHtml.contentType },
+		appJs: { path: join(dir, 'app.js'), contentType: EMBEDDED.appJs.contentType },
+		appCss: { path: join(dir, 'app.css'), contentType: EMBEDDED.appCss.contentType },
+	};
+}
+
+/** Serve one asset with its declared type, never sniffed from the path. */
+export function serveWebAsset(asset: WebAsset): Response {
+	return new Response(Bun.file(asset.path), {
+		headers: { 'content-type': asset.contentType },
+	});
+}

@@ -31,132 +31,10 @@ import {
 	readSnapshot,
 } from './dashboard.ts';
 import { resolvePrdPath } from './status.ts';
+import { resolveWebAssets, serveWebAsset } from './web-assets.ts';
 
 export const DEFAULT_WEB_PORT = 7777;
 export const WEB_HOSTNAME = '127.0.0.1';
-
-const WEB_PAGE_HTML = `<!doctype html>
-<html lang="en">
-<head>
-	<meta charset="utf-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>Gateship web</title>
-</head>
-<body>
-	<h1>Gateship web</h1>
-	<label for="run-issue">Issue</label>
-	<select id="run-issue"><option value="">Selecione uma issue</option></select>
-	<button id="start-run" type="button" disabled>Iniciar run</button>
-	<button id="resume-run" type="button" disabled>Retomar run</button>
-	<button id="cancel-run" type="button" disabled>Cancelar run</button>
-	<button id="ship-run" type="button" disabled>Shipar run</button>
-	<output id="command-status" aria-live="polite"></output>
-	<pre id="runs" aria-live="polite">Loading runs...</pre>
-	<pre id="snapshot" aria-live="polite">Loading snapshot...</pre>
-	<script>
-		const SNAPSHOT_PATH = '/api/snapshot';
-		const RUNS_PATH = '/api/runs';
-		const EVENTS_PATH = '/api/events';
-		const output = document.getElementById('snapshot');
-		const runsOutput = document.getElementById('runs');
-		const resumeButton = document.getElementById('resume-run');
-		const cancelButton = document.getElementById('cancel-run');
-		const shipButton = document.getElementById('ship-run');
-		const planSelect = document.getElementById('run-issue');
-		const planButton = document.getElementById('start-run');
-		const commandStatus = document.getElementById('command-status');
-		let currentRun = null;
-
-		function renderPlanIssues(snapshot) {
-			const selected = planSelect.value;
-			const issues = snapshot.idleState?.backlog?.plannable ?? [];
-			planSelect.replaceChildren(new Option('Selecione uma issue', ''));
-			for (const issue of issues) {
-				planSelect.add(new Option(issue.id + ' — ' + issue.title, issue.id));
-			}
-			if (issues.some((issue) => issue.id === selected)) planSelect.value = selected;
-			planButton.disabled = planSelect.value === '';
-		}
-
-		function renderSnapshot(snapshot) {
-			if (snapshot.idle === true) {
-				output.dataset.payloadBranch = 'idle-payload';
-			} else {
-				output.dataset.payloadBranch = 'active-cycle-payload';
-			}
-			renderPlanIssues(snapshot);
-			output.textContent = JSON.stringify(snapshot, null, 2);
-		}
-
-		async function pollSnapshot() {
-			try {
-				const response = await fetch(SNAPSHOT_PATH);
-				if (!response.ok) throw new Error('Snapshot request failed: ' + response.status);
-				renderSnapshot(await response.json());
-			} catch (error) {
-				output.textContent = String(error);
-			}
-		}
-
-		async function refreshRuns() {
-			try {
-				const response = await fetch(RUNS_PATH);
-				if (!response.ok) throw new Error('Runs request failed: ' + response.status);
-				const payload = await response.json();
-				currentRun = payload.runs[0] ?? null;
-				runsOutput.textContent = JSON.stringify(payload, null, 2);
-				const state = currentRun?.state;
-				resumeButton.disabled = state !== 'interrupted' && state !== 'waiting-user';
-				cancelButton.disabled = !['queued', 'working', 'verify', 'review', 'ready-to-ship'].includes(state);
-				shipButton.disabled = state !== 'ready-to-ship';
-				planButton.disabled = planSelect.value === '' || (state !== undefined && state !== 'done' && state !== 'failed');
-			} catch (error) {
-				runsOutput.textContent = String(error);
-			}
-		}
-
-		async function startRun() {
-			if (planSelect.value === '') return;
-			planButton.disabled = true;
-			commandStatus.textContent = 'Iniciando run...';
-			try {
-				const response = await fetch(RUNS_PATH, {
-					method: 'POST',
-					headers: { 'content-type': 'application/json' },
-					body: JSON.stringify({ issueId: planSelect.value }),
-				});
-				const result = await response.json();
-				commandStatus.textContent = response.ok ? 'Run iniciada.' : result.message;
-				await refreshRuns();
-			} catch (error) {
-				commandStatus.textContent = String(error);
-			}
-		}
-
-		async function runCommand(action) {
-			if (currentRun === null) return;
-			resumeButton.disabled = true;
-			cancelButton.disabled = true;
-			shipButton.disabled = true;
-			const response = await fetch(RUNS_PATH + '/' + currentRun.id + '/' + action, { method: 'POST' });
-			const result = await response.json();
-			commandStatus.textContent = response.ok ? 'Run atualizada.' : result.message;
-			await refreshRuns();
-		}
-
-		planSelect.addEventListener('change', () => { planButton.disabled = planSelect.value === ''; });
-		planButton.addEventListener('click', startRun);
-		resumeButton.addEventListener('click', () => runCommand('resume'));
-		cancelButton.addEventListener('click', () => runCommand('cancel'));
-		shipButton.addEventListener('click', () => runCommand('ship'));
-		const events = new EventSource(EVENTS_PATH);
-		events.addEventListener('run-event', () => { void refreshRuns(); });
-		void pollSnapshot();
-		void refreshRuns();
-	</script>
-</body>
-</html>
-`;
 
 export interface WebServerOptions {
 	port: number;
@@ -472,13 +350,14 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	const ownsRunRuntime = options.runRuntime === undefined;
 	const runRuntime = options.runRuntime
 		?? new RunRuntime(createDefaultRunRuntimeOptions(options.cwd));
+	const assets = resolveWebAssets();
 	const server = Bun.serve({
 		hostname: WEB_HOSTNAME,
 		port: options.port,
 		routes: {
-			'/': () => new Response(WEB_PAGE_HTML, {
-				headers: { 'content-type': 'text/html; charset=utf-8' },
-			}),
+			'/': () => serveWebAsset(assets.indexHtml),
+			'/app.js': () => serveWebAsset(assets.appJs),
+			'/app.css': () => serveWebAsset(assets.appCss),
 			'/api/snapshot': () => {
 				const snapshot = readSnapshot({
 					cwd: options.cwd,

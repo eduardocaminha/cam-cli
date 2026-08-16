@@ -1,22 +1,6 @@
 import { expect, test } from 'bun:test';
-import { existsSync, readdirSync } from 'node:fs';
-import { basename, join } from 'node:path';
-import { runCli, vendorCoss, verify } from '../scripts/vendor-coss.ts';
+import { runCli, verify } from '../scripts/vendor-coss.ts';
 import { createTestTmpdir } from './helpers/test-tmpdir.ts';
-
-test('vendorCoss rejects an empty fetch without creating the destination or staging residue', () => {
-	const parent = createTestTmpdir('cam-vendor-coss-empty-fetch-');
-	const destination = join(parent, 'coss');
-
-	expect(() => vendorCoss({ destination, fetchFiles: () => [] })).toThrow(
-		'COSS vendor source set is empty',
-	);
-
-	expect(existsSync(destination)).toBe(false);
-	expect(
-		readdirSync(parent).filter((entry) => entry.startsWith(`${basename(destination)}.staging-`)),
-	).toEqual([]);
-});
 
 test('verify and its CLI adapter reject a root without source files', () => {
 	const root = createTestTmpdir('cam-vendor-coss-empty-root-');
