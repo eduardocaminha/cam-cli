@@ -1,14 +1,19 @@
 // webui/src/App.tsx
 //
-// The whole operational screen, as a pure function of its props: an app shell
-// whose primary surface is the conversation with the orchestrator, with the run
-// it commands beside it and every secondary panel one in-page anchor away. No
-// fetching, no timers and no application state live here, so every branch is
-// reachable by static rendering (ADR-0067) -- including the ones a collapsed
-// panel hides, because disclosure is native <details> and never a
-// mounted/unmounted branch. The single exception is where the transcript is
-// scrolled, which no prop can describe; it lives in ./live-edge.ts, decides by
-// a pure predicate, and renders nothing.
+// The operator screen, as a pure function of its props: an app shell whose
+// content is one of four surfaces, chosen by the path the browser is on. Each
+// surface carries one operator task -- converse (/), inspect what ran (/runs),
+// plan what to run (/work), configure the local machine (/settings) -- so no
+// column has to mix execution, telemetry, planning and configuration.
+//
+// Navigation is plain links to real paths, which the server answers with this
+// same document; there is no router, no history state and no navigation branch
+// to keep in sync. No fetching, no timers and no application state live here,
+// so every branch is reachable by static rendering (ADR-0067) -- including the
+// ones a collapsed panel hides, because disclosure is native <details> and
+// never a mounted/unmounted branch. The single exception is where the
+// transcript is scrolled, which no prop can describe; it lives in
+// ./live-edge.ts, decides by a pure predicate, and renders nothing.
 
 import type React from 'react';
 import { Badge } from './components/ui/badge.tsx';
@@ -44,7 +49,30 @@ import {
 } from './run-view.ts';
 import type { BrowserNotificationPermission } from './notifications.ts';
 
+/** The four paths the server answers with this document, and nothing else. */
+export type OperatorRoute = '/' | '/runs' | '/work' | '/settings';
+
+const SURFACES: readonly { path: OperatorRoute; label: string }[] = [
+	{ path: '/', label: 'Conversa' },
+	{ path: '/runs', label: 'Runs' },
+	{ path: '/work', label: 'Trabalho' },
+	{ path: '/settings', label: 'Ajustes' },
+];
+
+/**
+ * Which surface a browser path names. Anything the server does not serve --
+ * which the shell's own links can never produce -- reads as the home surface,
+ * so the screen has no unreachable state.
+ */
+export function routeOf(pathname: string): OperatorRoute {
+	const normalized = pathname.replace(/\/+$/, '');
+	const surface = SURFACES.find((entry) => entry.path === (normalized === '' ? '/' : normalized));
+	return surface?.path ?? '/';
+}
+
 export interface AppProps {
+	/** Which of the four surfaces this document is showing. */
+	route: OperatorRoute;
 	backlog: readonly PlannableIssue[];
 	ideas: readonly PlannableIssue[];
 	events: readonly RunEventView[];
@@ -137,6 +165,10 @@ const NAV_LINK_CLASS =
 	'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ' +
 	'focus-visible:ring-2 focus-visible:ring-sidebar-ring';
 
+const TEXT_LINK_CLASS =
+	'w-fit rounded-md text-muted-foreground text-sm underline underline-offset-4 outline-none ' +
+	'hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring';
+
 function ActionButton({
 	label,
 	enabled,
@@ -154,26 +186,24 @@ function ActionButton({
 }
 
 /**
- * A secondary panel of the shell: the same card, disclosed natively so the
- * screen can carry everything the operator may need without the conversation
- * losing the viewport. The whole panel stays in the markup when it is closed,
- * which is what keeps it readable by static rendering and by find-in-page.
+ * A panel of a secondary surface: the same card, disclosed natively so a page
+ * can carry everything the operator may need without any one panel taking the
+ * viewport. The whole panel stays in the markup when it is closed, which is
+ * what keeps it readable by static rendering and by find-in-page.
  */
 function ContextPanel({
-	id,
 	title,
 	description,
 	open = false,
 	children,
 }: {
-	id: string;
 	title: string;
 	description: string;
 	open?: boolean;
 	children: React.ReactNode;
 }): React.ReactElement {
 	return (
-		<CardDisclosure className="group" id={id} open={open}>
+		<CardDisclosure className="group" open={open}>
 			<CardSummary>
 				<CardTitle>{title}</CardTitle>
 				<CardDescription>{description}</CardDescription>
@@ -198,7 +228,6 @@ function RunActivity({
 	return (
 		<ContextPanel
 			description={`${visible.length} evento(s) recente(s) deste run.`}
-			id="atividade"
 			open
 			title="Atividade"
 		>
@@ -232,23 +261,12 @@ function RunProgress({ run }: { run: RunView }): React.ReactElement {
 	);
 }
 
-function RunOutcome({ run }: { run: RunView }): React.ReactElement | null {
-	if (run.error !== null) {
-		return (
-			<p className="break-words rounded-md bg-destructive/8 p-3 text-destructive-foreground text-sm">
-				{run.error}
-			</p>
-		);
-	}
-	// While the run waits, its summary IS the question, and the conversation
-	// column asks it: repeating it here would say the same thing twice.
-	if (run.summary !== null && run.state !== 'waiting-user') {
-		return <p className="break-words text-muted-foreground text-sm">{run.summary}</p>;
-	}
-	return null;
-}
-
-function RunPanel({
+/**
+ * The commands the run admits right now, and only those: a command the runtime
+ * would refuse is not rendered as a dead button. `pending` still holds the ones
+ * that are offered, so a command in flight cannot be issued twice.
+ */
+function RunCommands({
 	run,
 	pending,
 	onResume,
@@ -256,32 +274,109 @@ function RunPanel({
 	onShip,
 }: Pick<AppProps, 'pending' | 'onResume' | 'onCancel' | 'onShip'> & {
 	run: RunView | null;
-}): React.ReactElement {
-	// Only `start` depends on a backlog selection, and this panel never offers it.
+}): React.ReactElement | null {
+	// Only `start` depends on a backlog selection, and no run surface offers it.
 	const actions = actionsFor(run, false);
+	const offered = [
+		// While the run waits, resuming IS the answer, and the conversation asks it.
+		// The bare command carries no guidance, so the click is dropped rather than
+		// forwarded: `onResume` takes an optional string, and a SyntheticEvent in
+		// its place would be posted as the operator's message and refused as 400.
+		{
+			label: 'Retomar',
+			shown: actions.resume && run?.state !== 'waiting-user',
+			onClick: () => onResume(),
+		},
+		{ label: 'Cancelar', shown: actions.cancel, onClick: onCancel },
+		{ label: 'Shipar', shown: actions.ship, onClick: onShip },
+	].filter((command) => command.shown);
+	if (offered.length === 0) return null;
 	return (
-		<Card id="run">
+		<div className="flex flex-wrap gap-2">
+			{offered.map((command) => (
+				<ActionButton
+					enabled={!pending}
+					key={command.label}
+					label={command.label}
+					onClick={command.onClick}
+				/>
+			))}
+		</div>
+	);
+}
+
+/**
+ * The run's identity and its live commands: which issue, what state, how far
+ * along, and the commands that exist. That is the whole inspector the
+ * conversation surface carries -- no identifier, no report, no telemetry, only
+ * `footer`'s way to the surface that has them -- and it is also the head of
+ * /runs, where the depth it refuses is disclosed below it.
+ */
+function RunCard({
+	run,
+	title,
+	footer,
+	pending,
+	onResume,
+	onCancel,
+	onShip,
+}: Pick<AppProps, 'pending' | 'onResume' | 'onCancel' | 'onShip'> & {
+	run: RunView | null;
+	title: string;
+	footer?: React.ReactNode;
+}): React.ReactElement {
+	return (
+		<Card>
 			<CardHeader>
-				<CardTitle>Último run</CardTitle>
+				<CardTitle>{title}</CardTitle>
 				<CardDescription className="break-all">
-					{run === null ? 'Nenhum run registrado ainda.' : `${run.issueId} · ${run.id}`}
+					{run === null ? 'Nenhum run registrado ainda.' : run.issueId}
 				</CardDescription>
-				{run !== null ? <Badge variant={toneOf(run.state)}>{run.state}</Badge> : null}
+				{run === null ? null : <Badge variant={toneOf(run.state)}>{run.state}</Badge>}
 			</CardHeader>
-			{run === null ? null : (
+			{run === null && footer === undefined ? null : (
 				<CardPanel className="flex flex-col gap-4">
-					<RunProgress run={run} />
-					<RunOutcome run={run} />
-					<div className="flex flex-wrap gap-2">
-						{run.state === 'waiting-user' ? null : (
-							<ActionButton enabled={actions.resume && !pending} label="Retomar" onClick={onResume} />
-						)}
-						<ActionButton enabled={actions.cancel && !pending} label="Cancelar" onClick={onCancel} />
-						<ActionButton enabled={actions.ship && !pending} label="Shipar" onClick={onShip} />
-					</div>
+					{run === null ? null : <RunProgress run={run} />}
+					<RunCommands
+						onCancel={onCancel}
+						onResume={onResume}
+						onShip={onShip}
+						pending={pending}
+						run={run}
+					/>
+					{footer}
 				</CardPanel>
 			)}
 		</Card>
+	);
+}
+
+/**
+ * The same run, at the depth the inspector deliberately refuses: the report the
+ * runtime wrote and the identifier it wrote it under, behind a disclosure that
+ * opens only when the operator is reading a run rather than commanding one.
+ */
+function RunReport({ run }: { run: RunView }): React.ReactElement | null {
+	if (run.summary === null && run.error === null) return null;
+	return (
+		<ContextPanel
+			description="Relato completo do runtime e o identificador técnico do run."
+			title="Resumo e diagnóstico"
+		>
+			<div className="flex flex-col gap-3">
+				{run.error === null ? null : (
+					<p className="whitespace-pre-wrap break-words rounded-md bg-destructive/8 p-3 text-destructive-foreground text-sm">
+						{run.error}
+					</p>
+				)}
+				{run.summary === null ? null : (
+					<p className="whitespace-pre-wrap break-words text-muted-foreground text-sm">
+						{run.summary}
+					</p>
+				)}
+				<code className="break-all text-muted-foreground text-xs">{run.id}</code>
+			</div>
+		</ContextPanel>
 	);
 }
 
@@ -289,7 +384,7 @@ function RunPanel({
 const PREVIOUS_RUNS_SHOWN = 4;
 
 /**
- * The runs before the one the panel above commands, read-only: there is no
+ * The runs before the one the page above commands, read-only: there is no
  * selection and no command here, only what an operator returning to the screen
  * needs to know about what already ran.
  */
@@ -299,7 +394,6 @@ function PreviousRunsPanel({ runs }: Pick<AppProps, 'runs'>): React.ReactElement
 	return (
 		<ContextPanel
 			description={`${previous.length} run(s) antes do último, do mais recente ao mais antigo.`}
-			id="historico"
 			title="Runs anteriores"
 		>
 			<ul className="flex flex-col gap-2">
@@ -324,7 +418,6 @@ function WorkspaceNoticesPanel({
 	return (
 		<ContextPanel
 			description={`${workspaceNotices.length} recurso(s) local(is) precisam de inspeção.`}
-			id="workspaces"
 			open
 			title="Workspaces preservados"
 		>
@@ -398,7 +491,7 @@ function ProvidersPanel(props: ProviderPanelProps): React.ReactElement {
 	return (
 		<ContextPanel
 			description="Gateship usa a assinatura dos clientes instalados e nunca recebe tokens."
-			id="agentes"
+			open
 			title="Agentes locais"
 		>
 			<ul className="flex flex-col gap-3">
@@ -434,7 +527,7 @@ function NotificationsPanel({
 	return (
 		<ContextPanel
 			description="O navegador avisa quando um run precisa de você ou termina, sem conta ou token."
-			id="notificacoes"
+			open
 			title="Notificações locais"
 		>
 			<div className="flex items-center justify-between gap-3">
@@ -545,6 +638,16 @@ function OperatorAnswer({
 	);
 }
 
+/** The last command outcome, announced wherever the command was issued. */
+function StatusOutput({ status }: Pick<AppProps, 'status'>): React.ReactElement | null {
+	if (status === null) return null;
+	return (
+		<output aria-live="polite" className="break-words text-muted-foreground text-sm">
+			{status}
+		</output>
+	);
+}
+
 /**
  * The primary surface: the durable conversation, whatever the run is asking
  * right now, the last command outcome, and the composer -- in the order the
@@ -561,7 +664,7 @@ function ConversationColumn({
 	run: RunView | null;
 }): React.ReactElement {
 	return (
-		<main className="flex min-h-0 w-full min-w-0 flex-1 flex-col p-4 lg:p-6" id="conversa">
+		<main className="flex min-h-0 w-full min-w-0 flex-1 flex-col p-4 lg:p-6">
 			<Card className="flex min-h-0 flex-1 flex-col">
 				<CardHeader>
 					<CardTitle>Conversa com o orquestrador</CardTitle>
@@ -572,11 +675,7 @@ function ConversationColumn({
 				<CardPanel className="flex min-h-0 flex-1 flex-col gap-4">
 					<ChatLog chatMessages={chatMessages} />
 					<OperatorAnswer onResume={onResume} pending={pending} run={run} />
-					{status === null ? null : (
-						<output aria-live="polite" className="break-words text-muted-foreground text-sm">
-							{status}
-						</output>
-					)}
+					<StatusOutput status={status} />
 					<form
 						className="flex gap-2"
 						onSubmit={(event) => {
@@ -618,7 +717,6 @@ function BacklogPanel({
 	return (
 		<ContextPanel
 			description={`${backlog.length} issue(s) admissível(is) agora.`}
-			id="backlog"
 			open
 			title="Backlog plannable"
 		>
@@ -655,7 +753,6 @@ function IssueIntakePanel({
 	return (
 		<ContextPanel
 			description="Vai direto ao backlog executável; o comando será o gate determinístico."
-			id="nova-tarefa"
 			title="Nova tarefa"
 		>
 			<form
@@ -705,7 +802,6 @@ function IssueSpecifyPanel({
 	return (
 		<ContextPanel
 			description="Promove a ideia com o mesmo contrato direto, sem planner intermediário."
-			id="ideias"
 			title="Especificar ideia existente"
 		>
 			<form
@@ -749,34 +845,14 @@ function IssueSpecifyPanel({
 	);
 }
 
-/**
- * Where the shell can take the operator, in the order the panels appear. A link
- * exists only while its panel does, so navigation never points at nothing --
- * and it is plain in-page anchoring, with no router and no navigation state.
- */
-function shellSections(props: AppProps): readonly { id: string; label: string }[] {
-	return [
-		{ id: 'conversa', label: 'Conversa', shown: true },
-		{ id: 'run', label: 'Run atual', shown: true },
-		{ id: 'atividade', label: 'Atividade', shown: props.runs.length > 0 },
-		{ id: 'notificacoes', label: 'Notificações', shown: true },
-		{ id: 'agentes', label: 'Agentes', shown: true },
-		{ id: 'workspaces', label: 'Workspaces', shown: props.workspaceNotices.length > 0 },
-		{ id: 'historico', label: 'Histórico', shown: props.runs.length > 1 },
-		{ id: 'backlog', label: 'Backlog', shown: true },
-		{ id: 'ideias', label: 'Ideias', shown: props.ideas.length > 0 },
-		{ id: 'nova-tarefa', label: 'Tarefas', shown: true },
-	].filter((section) => section.shown);
-}
-
 function ShellSidebar({
+	route,
 	run,
 	version,
-	sections,
 }: {
+	route: OperatorRoute;
 	run: RunView | null;
 	version: string;
-	sections: readonly { id: string; label: string }[];
 }): React.ReactElement {
 	return (
 		<header className="flex shrink-0 flex-col gap-4 border-sidebar-border border-b bg-sidebar p-4 lg:sticky lg:top-0 lg:h-screen lg:w-60 lg:self-start lg:overflow-y-auto lg:border-r lg:border-b-0 lg:p-6">
@@ -792,12 +868,19 @@ function ShellSidebar({
 				</Badge>
 			</div>
 			<Separator />
-			<nav aria-label="Painéis do operador">
+			<nav aria-label="Superfícies do operador">
 				<ul className="flex gap-1 overflow-x-auto lg:flex-col lg:overflow-x-visible">
-					{sections.map((section) => (
-						<li key={section.id}>
-							<a className={NAV_LINK_CLASS} href={`#${section.id}`}>
-								{section.label}
+					{SURFACES.map((surface) => (
+						<li key={surface.path}>
+							<a
+								aria-current={surface.path === route ? 'page' : undefined}
+								className={cn(
+									NAV_LINK_CLASS,
+									surface.path === route && 'bg-sidebar-accent text-sidebar-accent-foreground',
+								)}
+								href={surface.path}
+							>
+								{surface.label}
 							</a>
 						</li>
 					))}
@@ -807,64 +890,130 @@ function ShellSidebar({
 	);
 }
 
+/** The content column of a secondary surface: stacked panels, one task each. */
+function SurfaceColumn({
+	label,
+	status,
+	children,
+}: Pick<AppProps, 'status'> & {
+	label: string;
+	children: React.ReactNode;
+}): React.ReactElement {
+	return (
+		<main
+			aria-label={label}
+			className="flex min-h-0 w-full min-w-0 flex-1 flex-col gap-4 p-4 lg:p-6 xl:overflow-y-auto"
+		>
+			<StatusOutput status={status} />
+			{children}
+		</main>
+	);
+}
+
+function HomeSurface(props: AppProps): React.ReactElement {
+	const run = props.runs[0] ?? null;
+	return (
+		<div className="flex min-h-0 w-full min-w-0 flex-1 flex-col xl:flex-row">
+			<ConversationColumn
+				chatMessages={props.chatMessages}
+				onResume={props.onResume}
+				onSendMessage={props.onSendMessage}
+				pending={props.pending}
+				run={run}
+				status={props.status}
+			/>
+			<aside
+				aria-label="Inspetor da execução"
+				className="flex w-full min-w-0 flex-col gap-4 p-4 pt-0 lg:p-6 lg:pt-0 xl:w-96 xl:shrink-0 xl:overflow-y-auto xl:border-l xl:pt-6"
+			>
+				<RunCard
+					footer={
+						<a className={TEXT_LINK_CLASS} href="/runs">
+							Ver detalhes da execução
+						</a>
+					}
+					onCancel={props.onCancel}
+					onResume={props.onResume}
+					onShip={props.onShip}
+					pending={props.pending}
+					run={run}
+					title="Execução atual"
+				/>
+			</aside>
+		</div>
+	);
+}
+
+function RunsSurface(props: AppProps): React.ReactElement {
+	const run = props.runs[0] ?? null;
+	return (
+		<SurfaceColumn label="Execuções" status={props.status}>
+			<RunCard
+				onCancel={props.onCancel}
+				onResume={props.onResume}
+				onShip={props.onShip}
+				pending={props.pending}
+				run={run}
+				title="Último run"
+			/>
+			{run === null ? null : <RunReport run={run} />}
+			<RunActivity events={props.events} run={run} />
+			<WorkspaceNoticesPanel workspaceNotices={props.workspaceNotices} />
+			<PreviousRunsPanel runs={props.runs} />
+		</SurfaceColumn>
+	);
+}
+
+function WorkSurface(props: AppProps): React.ReactElement {
+	const actions = actionsFor(props.runs[0] ?? null, props.selectedIssueId !== null);
+	return (
+		<SurfaceColumn label="Trabalho" status={props.status}>
+			<BacklogPanel
+				backlog={props.backlog}
+				canStart={actions.start && !props.pending}
+				onSelectIssue={props.onSelectIssue}
+				onStart={props.onStart}
+				selectedIssueId={props.selectedIssueId}
+			/>
+			<IssueSpecifyPanel
+				ideas={props.ideas}
+				onSpecifyIssue={props.onSpecifyIssue}
+				pending={props.pending}
+			/>
+			<IssueIntakePanel onCreateIssue={props.onCreateIssue} pending={props.pending} />
+		</SurfaceColumn>
+	);
+}
+
+function SettingsSurface(props: AppProps): React.ReactElement {
+	return (
+		<SurfaceColumn label="Ajustes" status={props.status}>
+			<ProvidersPanel
+				onConnectCodex={props.onConnectCodex}
+				onSelectProvider={props.onSelectProvider}
+				pending={props.pending}
+				providers={props.providers}
+				selectedProvider={props.selectedProvider}
+			/>
+			<NotificationsPanel
+				notificationPermission={props.notificationPermission}
+				onEnableNotifications={props.onEnableNotifications}
+			/>
+		</SurfaceColumn>
+	);
+}
+
 export function App(props: AppProps): React.ReactElement {
-	const { backlog, runs, selectedIssueId, status, pending, version } = props;
 	// The array arrives newest first, so the operable run is its head and the
 	// history below it is the same array, read once.
-	const run = runs[0] ?? null;
-	const actions = actionsFor(run, selectedIssueId !== null);
+	const run = props.runs[0] ?? null;
 	return (
 		<div className="flex min-h-screen w-full flex-col lg:flex-row xl:h-screen xl:overflow-hidden">
-			<ShellSidebar run={run} sections={shellSections(props)} version={version} />
-			<div className="flex min-h-0 w-full min-w-0 flex-1 flex-col xl:flex-row">
-				<ConversationColumn
-					chatMessages={props.chatMessages}
-					onResume={props.onResume}
-					onSendMessage={props.onSendMessage}
-					pending={pending}
-					run={run}
-					status={status}
-				/>
-				<aside
-					aria-label="Contexto operacional"
-					className="flex w-full min-w-0 flex-col gap-4 p-4 pt-0 lg:p-6 lg:pt-0 xl:w-96 xl:shrink-0 xl:overflow-y-auto xl:border-l xl:pt-6"
-				>
-					<RunPanel
-						onCancel={props.onCancel}
-						onResume={props.onResume}
-						onShip={props.onShip}
-						pending={pending}
-						run={run}
-					/>
-					<RunActivity events={props.events} run={run} />
-					<NotificationsPanel
-						notificationPermission={props.notificationPermission}
-						onEnableNotifications={props.onEnableNotifications}
-					/>
-					<ProvidersPanel
-						onConnectCodex={props.onConnectCodex}
-						onSelectProvider={props.onSelectProvider}
-						pending={pending}
-						providers={props.providers}
-						selectedProvider={props.selectedProvider}
-					/>
-					<WorkspaceNoticesPanel workspaceNotices={props.workspaceNotices} />
-					<PreviousRunsPanel runs={runs} />
-					<BacklogPanel
-						backlog={backlog}
-						canStart={actions.start && !pending}
-						onSelectIssue={props.onSelectIssue}
-						onStart={props.onStart}
-						selectedIssueId={selectedIssueId}
-					/>
-					<IssueSpecifyPanel
-						ideas={props.ideas}
-						onSpecifyIssue={props.onSpecifyIssue}
-						pending={pending}
-					/>
-					<IssueIntakePanel onCreateIssue={props.onCreateIssue} pending={pending} />
-				</aside>
-			</div>
+			<ShellSidebar route={props.route} run={run} version={props.version} />
+			{props.route === '/runs' ? <RunsSurface {...props} /> : null}
+			{props.route === '/work' ? <WorkSurface {...props} /> : null}
+			{props.route === '/settings' ? <SettingsSurface {...props} /> : null}
+			{props.route === '/' ? <HomeSurface {...props} /> : null}
 		</div>
 	);
 }

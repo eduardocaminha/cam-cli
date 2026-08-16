@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-597",
   "title": "Separar a interface web por tarefa do operador e compactar a execução atual",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-16T19:34:32.822Z",
-  "updatedAt": "2026-08-16T19:34:32.822Z",
+  "updatedAt": "2026-08-16T19:56:24.517Z",
   "description": "Reorganize a arquitetura da informação da web sem alterar runtime, APIs ou persistência.\n\nO problema medido: a lateral atual mistura execução, telemetria, configuração, histórico e planejamento. Com um run concluído, o card \"Último run\" chega a aproximadamente 1516 px, expõe UUID e um resumo de mais de 2400 caracteres, e ainda mostra ações indisponíveis. A lateral inteira pode conter oito painéis e mais de 12 mil caracteres.\n\nImplemente quatro superfícies navegáveis por caminhos nativos, sem dependência de router:\n- /: conversa com o orquestrador e somente um inspetor compacto da última execução.\n- /runs: detalhes da última execução, atividade, histórico e avisos de workspace.\n- /work: backlog plannable, especificação de ideia e criação de tarefa.\n- /settings: agentes por assinatura e notificações locais.\n\nO servidor deve servir o mesmo index.html em /, /runs, /work e /settings. A navegação usa links normais, recarregamento local aceitável e aria-current na rota ativa. Não crie fallback universal, History API, estado de router, biblioteca ou nova API.\n\nNa home, preserve a conversa como superfície principal. A lateral deve conter exatamente o inspetor compacto: issueId, badge de estado, progresso quando houver, somente ações realmente disponíveis e link para /runs. Não renderize UUID, resumo longo, atividade, histórico, backlog, formulários, agentes ou notificações. Não renderize botões desabilitados quando a ação não existe.\n\nEm /runs, o resumo completo e o erro pertencem a um disclosure nativo fechado por padrão; o UUID pode aparecer ali como detalhe técnico. Atividade, histórico e avisos de workspace permanecem acessíveis nessa página.\n\nPreserve todos os handlers, estados de espera, acessibilidade do transcript, comportamento live-edge, static rendering e responsividade. Em mobile nenhuma página pode causar overflow horizontal do body.\n\nAtualize testes pelo comportamento observável de cada superfície. Não adicione snapshots, registry de arquivos, pinagem de classes ou testes duplicados por rota. Reutilize os componentes existentes e prefira mover/deletar a criar abstrações.",
   "specSource": "operator",
   "spec": {
