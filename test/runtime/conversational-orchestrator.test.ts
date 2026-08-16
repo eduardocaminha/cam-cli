@@ -5,6 +5,7 @@ import type {
 	AgentSessionInput,
 } from '../../src/runtime/agent-session.ts';
 import {
+	buildOrchestratorPrompt,
 	ConversationalOrchestrator,
 	parseOrchestratorResponse,
 } from '../../src/runtime/conversational-orchestrator.ts';
@@ -130,6 +131,39 @@ describe('conversational orchestrator', () => {
 			message: 'Só uma explicação.',
 			command: { type: 'none' },
 		});
+	});
+
+	test('create_and_start_issue parses with the same contract as create_issue', () => {
+		const command = {
+			type: 'create_and_start_issue' as const,
+			title: 'Publicar e iniciar em uma conversa',
+			scope: 'Um comando tipado que registra a tarefa e começa a run.',
+			verificationCommand: 'bun test test/web/orchestrator-api.test.ts',
+		};
+		expect(parseOrchestratorResponse({
+			message: 'Registro e começo agora.',
+			command,
+		})).toEqual({ message: 'Registro e começo agora.', command });
+		expect(() => parseOrchestratorResponse({
+			message: 'Registro e começo agora.',
+			command: { ...command, title: undefined },
+		})).toThrow('title');
+		expect(() => parseOrchestratorResponse({
+			message: 'Registro e começo agora.',
+			command: { ...command, scope: '   ' },
+		})).toThrow('scope');
+		expect(() => parseOrchestratorResponse({
+			message: 'Registro e começo agora.',
+			command: { ...command, verificationCommand: '' },
+		})).toThrow('verificationCommand');
+	});
+
+	test('the prompt reserves create_and_start_issue for implementing now', () => {
+		expect(buildOrchestratorPrompt({}, [])).toContain(
+			'Only choose create_and_start_issue when the operator asks to implement the work now'
+			+ ' and the snapshot has no active run; create_issue remains the command to only'
+			+ ' register work.',
+		);
 	});
 
 	test('abandon_issue only parses with an issue and a concrete justification', () => {
