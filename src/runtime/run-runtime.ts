@@ -226,6 +226,10 @@ export class RunRuntime {
 		return this.#store.listEvents(afterSeq);
 	}
 
+	listRunEvents(runId: string): RunEvent[] {
+		return this.#store.listRunEvents(runId);
+	}
+
 	subscribe(listener: EventListener): () => void {
 		this.#listeners.add(listener);
 		return () => this.#listeners.delete(listener);

@@ -227,6 +227,16 @@ async function resumeDurableRun(
 	}
 }
 
+function readRunEvents(runtime: RunRuntime, runId: string): Response {
+	if (runtime.getRun(runId) === null) {
+		return Response.json(
+			{ ok: false, code: 'run-not-found', message: 'Run not found.' },
+			{ status: 404 },
+		);
+	}
+	return Response.json({ events: runtime.listRunEvents(runId) });
+}
+
 /**
  * Hand a ready-to-ship run to the shipper and answer immediately: the ship
  * operation belongs to the service, and its progress reaches the browser over
@@ -421,6 +431,9 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			},
 			'/api/runs/:runId/cancel': {
 				POST: (request) => cancelDurableRun(request, runRuntime, request.params.runId),
+			},
+			'/api/runs/:runId/events': {
+				GET: (request) => readRunEvents(runRuntime, request.params.runId),
 			},
 			'/api/runs/:runId/resume': {
 				POST: (request) => resumeDurableRun(request, runRuntime, request.params.runId),

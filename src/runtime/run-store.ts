@@ -269,6 +269,19 @@ export class RunStore {
 		return rows.map(decodeEvent);
 	}
 
+	/** The newest events for one run, returned in chronological order. */
+	listRunEvents(runId: string, limit = 200): RunEvent[] {
+		const rows = this.#db.query(`
+			SELECT * FROM (
+				SELECT * FROM run_events
+				WHERE run_id = $runId
+				ORDER BY seq DESC
+				LIMIT $limit
+			) ORDER BY seq ASC
+		`).all({ runId, limit }) as EventRow[];
+		return rows.map(decodeEvent);
+	}
+
 	interruptUnownedRuns(createdAt: string): RunEvent[] {
 		const activeStates = new Set(['queued', 'working', 'verify', 'review']);
 		return this.listRuns(10_000)

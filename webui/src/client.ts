@@ -5,7 +5,7 @@
 // guarded by the trusted-origin check. No token, no second server, no
 // alternate base URL: the bundle is served by the process it talks to.
 
-import type { PlannableIssue, RunView } from './run-view.ts';
+import type { PlannableIssue, RunEventView, RunView } from './run-view.ts';
 
 export const SNAPSHOT_PATH = '/api/snapshot';
 export const RUNS_PATH = '/api/runs';
@@ -31,6 +31,10 @@ interface SnapshotPayload {
 
 interface RunsPayload {
 	runs: RunView[];
+}
+
+interface RunEventsPayload {
+	events: RunEventView[];
 }
 
 interface CommandPayload {
@@ -61,6 +65,14 @@ export async function fetchPlannable(): Promise<PlannableIssue[]> {
 export async function fetchLatestRun(): Promise<RunView | null> {
 	const payload = await readJson<RunsPayload>(await fetch(RUNS_PATH), 'Runs');
 	return payload.runs[0] ?? null;
+}
+
+export async function fetchRunEvents(runId: string): Promise<RunEventView[]> {
+	const payload = await readJson<RunEventsPayload>(
+		await fetch(`${RUNS_PATH}/${runId}/events`),
+		'Atividade',
+	);
+	return payload.events;
 }
 
 /** Resolves to the operator-facing outcome message for either verdict. */

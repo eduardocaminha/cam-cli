@@ -29,12 +29,14 @@ import {
 	phaseOf,
 	progressOf,
 	type PlannableIssue,
+	type RunEventView,
 	type RunView,
 	toneOf,
 } from './run-view.ts';
 
 export interface AppProps {
 	backlog: readonly PlannableIssue[];
+	events: readonly RunEventView[];
 	run: RunView | null;
 	selectedIssueId: string | null;
 	/** Last command outcome, or the last transport error. */
@@ -47,6 +49,58 @@ export interface AppProps {
 	onResume: () => void;
 	onCancel: () => void;
 	onShip: () => void;
+}
+
+function eventDetail(event: RunEventView): string | null {
+	const details: string[] = [];
+	const text = event.payload['text'];
+	if (typeof text === 'string' && text.trim().length > 0) details.push(text);
+	const tools = event.payload['tools'];
+	if (Array.isArray(tools) && tools.every((tool) => typeof tool === 'string')) {
+		details.push(`Ferramentas: ${tools.join(', ')}`);
+	}
+	for (const key of ['findings', 'error']) {
+		const value = event.payload[key];
+		if (typeof value === 'string' && value.trim().length > 0) details.push(value);
+	}
+	const scalars = Object.entries(event.payload)
+		.filter(([key]) => !['text', 'tools', 'findings', 'error'].includes(key))
+		.filter((entry): entry is [string, string | number | boolean] =>
+			['string', 'number', 'boolean'].includes(typeof entry[1]))
+		.map(([key, value]) => `${key}: ${String(value)}`);
+	details.push(...scalars);
+	return details.length === 0 ? null : details.join('\n');
+}
+
+function RunActivity({ run, events }: Pick<AppProps, 'run' | 'events'>): React.ReactElement | null {
+	if (run === null) return null;
+	const visible = events.filter((event) => event.runId === run.id).slice(-30);
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle>Atividade</CardTitle>
+				<CardDescription>{visible.length} evento(s) recente(s) deste run.</CardDescription>
+			</CardHeader>
+			<CardPanel>
+				<ol className="flex max-h-80 flex-col gap-3 overflow-auto">
+					{visible.map((event) => {
+						const detail = eventDetail(event);
+						return (
+							<li className="border-border border-l-2 pl-3 text-sm" key={event.seq}>
+								<div className="flex items-baseline justify-between gap-3">
+									<code>{event.kind}</code>
+									<time className="text-muted-foreground">{event.createdAt.slice(11, 19)}</time>
+								</div>
+								{detail === null ? null : (
+									<p className="mt-1 whitespace-pre-wrap text-muted-foreground">{detail}</p>
+								)}
+							</li>
+						);
+					})}
+				</ol>
+			</CardPanel>
+		</Card>
+	);
 }
 
 const BUTTON_CLASS =
@@ -254,6 +308,7 @@ export function App(props: AppProps): React.ReactElement {
 				pending={pending}
 				run={run}
 			/>
+			<RunActivity events={props.events} run={run} />
 			<BacklogPanel
 				backlog={backlog}
 				canStart={actions.start && !pending}

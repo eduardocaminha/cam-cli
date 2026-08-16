@@ -15,6 +15,7 @@ import {
 	EVENTS_PATH,
 	fetchLatestRun,
 	fetchPlannable,
+	fetchRunEvents,
 	RUNS_PATH,
 	ISSUES_PATH,
 	SNAPSHOT_PATH,
@@ -43,6 +44,7 @@ function render(overrides: Partial<AppProps> = {}): string {
 	return renderToStaticMarkup(
 		<App
 			backlog={BACKLOG}
+			events={[]}
 			onCancel={() => {}}
 			onCreateIssue={() => {}}
 			onResume={() => {}}
@@ -157,6 +159,29 @@ describe('operational screen', () => {
 		expect(html).toContain('name="verificationCommand"');
 		expect(buttonIsEnabled(html, 'Criar tarefa')).toBe(true);
 	});
+
+	test('a run shows persisted public activity and tool names', () => {
+		const html = render({
+			run: runIn('working'),
+			events: [
+				{
+					seq: 1,
+					runId: 'run-1',
+					kind: 'provider.activity',
+					fromState: 'working',
+					toState: 'working',
+					payload: { text: 'Vou ajustar o parser.', tools: ['Read', 'Edit'] },
+					createdAt: '2026-08-16T03:04:05.000Z',
+				},
+			],
+		});
+
+		expect(html).toContain('Atividade');
+		expect(html).toContain('provider.activity');
+		expect(html).toContain('Vou ajustar o parser.');
+		expect(html).toContain('Ferramentas: Read, Edit');
+		expect(html).toContain('03:04:05');
+	});
 });
 
 describe('screen derivations', () => {
@@ -231,6 +256,25 @@ describe('same-origin transport', () => {
 
 		expect(calls).toEqual([
 			{ url: ISSUES_PATH, method: 'POST', body: JSON.stringify(draft) },
+		]);
+	});
+
+	test('reads persisted activity for one run', async () => {
+		const events = [{
+			seq: 9,
+			runId: 'run-1',
+			kind: 'provider.activity',
+			fromState: 'working' as const,
+			toState: 'working' as const,
+			payload: { tools: ['Read'] },
+			createdAt: '2026-08-16T03:04:05.000Z',
+		}];
+		const calls = await withRecordedFetch({ events }, 200, async () => {
+			expect(await fetchRunEvents('run-1')).toEqual(events);
+		});
+
+		expect(calls).toEqual([
+			{ url: '/api/runs/run-1/events', method: 'GET', body: null },
 		]);
 	});
 

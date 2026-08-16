@@ -20,6 +20,7 @@ const CLAUDE_NESTING_ENV = [
 ] as const;
 
 export const DEFAULT_TERMINATION_GRACE_MS = 1_000;
+const MAX_ACTIVITY_TEXT = 2_000;
 
 type ClaudeChild = Bun.Subprocess<'pipe', 'pipe', 'pipe'>;
 
@@ -87,6 +88,32 @@ async function consumeLines(
 	if (buffer.length > 0) onLine(buffer);
 }
 
+/** Persist only operator-visible prose and tool names from an assistant event. */
+export function projectAssistantActivity(raw: Record<string, unknown>): Record<string, unknown> {
+	const message = raw['message'];
+	if (message === null || typeof message !== 'object' || Array.isArray(message)) return {};
+	const content = (message as Record<string, unknown>)['content'];
+	if (!Array.isArray(content)) return {};
+
+	const text: string[] = [];
+	const tools: string[] = [];
+	for (const block of content) {
+		if (block === null || typeof block !== 'object' || Array.isArray(block)) continue;
+		const record = block as Record<string, unknown>;
+		if (record['type'] === 'text' && typeof record['text'] === 'string') {
+			text.push(record['text']);
+		}
+		if (record['type'] === 'tool_use' && typeof record['name'] === 'string') {
+			tools.push(record['name']);
+		}
+	}
+	const joined = text.join('\n').trim().slice(0, MAX_ACTIVITY_TEXT);
+	return {
+		...(joined.length === 0 ? {} : { text: joined }),
+		...(tools.length === 0 ? {} : { tools }),
+	};
+}
+
 /**
  * Run one headless Claude CLI turn and return its final result text. Throws on
  * a non-zero exit, a missing result event, an error result, or cancellation --
@@ -111,7 +138,7 @@ export async function runClaudeCli(input: ClaudeCliRunInput): Promise<string> {
 		if (event.kind === 'system') {
 			input.emit(`${input.eventPrefix}.system`, { subtype: event.subtype ?? 'unknown' });
 		} else if (event.kind === 'assistant') {
-			input.emit(`${input.eventPrefix}.activity`);
+			input.emit(`${input.eventPrefix}.activity`, projectAssistantActivity(event.raw));
 		} else if (event.kind === 'rate_limit_event') {
 			input.emit(`${input.eventPrefix}.rate-limit`);
 		} else if (event.kind === 'result') {
