@@ -23,6 +23,12 @@ the operator.
 
 - Keep provider authentication credential-blind: Gateship may inspect auth
   status, but must not read, copy or store OAuth tokens or API keys.
+- Give agent and GitHub CLI children an explicit environment allowlist. Never
+  add a provider/GitHub token field to the web UI or runtime database; GitHub
+  authentication belongs to `gh`'s credential store.
+- Keep remote notification services optional and server-side. Their secrets
+  must never enter SQLite, browser responses, logs or agent environments; add a
+  concrete channel before considering a generic integration bus.
 - Cut run worktrees from fresh `origin/main`. Never move or check out the
   operator's local `main` branch.
 - After a confirmed merge, release the clean managed worktree, local branch and

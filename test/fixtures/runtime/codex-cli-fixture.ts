@@ -1,4 +1,9 @@
-const mode = process.env['GSHIP_FIXTURE_MODE'] ?? 'complete';
+function fixtureArgument(name: string): string | undefined {
+	const prefix = `--fixture-${name}=`;
+	return process.argv.find((argument) => argument.startsWith(prefix))?.slice(prefix.length);
+}
+
+const mode = fixtureArgument('mode') ?? 'complete';
 const input = await Bun.stdin.text();
 
 process.stdout.write(`${JSON.stringify({ type: 'thread.started', thread_id: 'codex-session-1' })}\n`);
@@ -14,7 +19,7 @@ if (mode === 'wait') {
 		item: { type: 'command_execution', command: '/not-persisted' },
 	})}\n`);
 	const status = mode === 'waiting-user' ? 'waiting-user' : 'completed';
-	const verdict = process.env['GSHIP_FIXTURE_VERDICT'] ?? 'CLEAN';
+	const verdict = fixtureArgument('verdict') ?? 'CLEAN';
 	const output = mode === 'review'
 		? {
 			verdict,

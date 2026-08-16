@@ -1,4 +1,9 @@
-const mode = process.env['GSHIP_FIXTURE_MODE'] ?? 'complete';
+function fixtureArgument(name: string): string | undefined {
+	const prefix = `--fixture-${name}=`;
+	return process.argv.find((argument) => argument.startsWith(prefix))?.slice(prefix.length);
+}
+
+const mode = fixtureArgument('mode') ?? 'complete';
 const input = await Bun.stdin.text();
 
 process.stdout.write(`${JSON.stringify({ type: 'system', subtype: 'init' })}\n`);
@@ -7,7 +12,7 @@ if (mode === 'wait') {
 	process.on('SIGTERM', () => process.exit(0));
 	await new Promise(() => {});
 } else if (mode === 'review') {
-	const verdict = process.env['GSHIP_FIXTURE_VERDICT'] ?? 'CLEAN';
+	const verdict = fixtureArgument('verdict') ?? 'CLEAN';
 	process.stdout.write(`${JSON.stringify({ type: 'assistant', message: { content: [] } })}\n`);
 	process.stdout.write(`${JSON.stringify({
 		type: 'result',

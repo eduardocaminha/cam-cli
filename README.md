@@ -13,13 +13,15 @@ sit on the execution path.
 ## Requirements
 
 - Claude Code and/or Codex CLI installed with a subscription login
-- [GitHub CLI](https://cli.github.com/) installed and authenticated
+- [GitHub CLI](https://cli.github.com/) installed and authenticated with
+  `gh auth login --web` and `gh auth setup-git`
 - Bun 1.2.3 or newer when running from source
 - Git with permission to create branches and worktrees in the target repository
 
 Gateship executes the operator's signed-in `claude` or `codex` binary. It
-removes API-key and injected-token variables from child environments, never
-reads credential files, and does not use an Agent SDK.
+passes agent children an allowlisted environment, never reads provider
+credential files, and does not use an Agent SDK. GitHub shipping uses the
+credential store owned by `gh`, never an ambient PAT.
 
 ## Install
 
@@ -69,7 +71,8 @@ From the browser you can:
    command selected from that conversation;
 3. observe public agent text, tool names, verification, and review over SSE;
 4. switch between Claude and Codex without losing the durable conversation;
-5. use the explicit controls as a deterministic fallback.
+5. enable local browser notifications for decisions, failures and completion;
+6. use the explicit controls as a deterministic fallback.
 
 ## Runtime flow
 
@@ -118,6 +121,7 @@ The current runtime is deliberately small:
   local `main`;
 - `src/runtime/agent-session.ts`: provider-neutral session contract;
 - `src/runtime/agent-process.ts`: shared child/process-group lifecycle;
+- `src/runtime/child-env.ts`: allowlisted agent and GitHub CLI environments;
 - `src/runtime/conversational-orchestrator.ts`: read-only conversation and the
   single typed-command boundary;
 - `src/runtime/claude-cli-*`: Claude stream-json execution and locked review;
@@ -131,6 +135,8 @@ The current runtime is deliberately small:
 
 The provider boundary and the admission rule for optional local-agent adapters
 are documented in [docs/agent-providers.md](./docs/agent-providers.md).
+Credential ownership and the notification policy are documented in
+[docs/credentials-and-notifications.md](./docs/credentials-and-notifications.md).
 
 There is no separate `gshipd`: the `gship` process is already the durable
 service. Adding a second daemon would duplicate ownership of the same SQLite
@@ -167,6 +173,12 @@ Read/Grep/Glob with MCP and slash commands disabled; Codex runs in its read-only
 sandbox with user configuration/MCP disabled. Review uses the same restrictions
 in a fresh independent session. Only the service interprets and executes the
 orchestrator's typed command.
+
+Agent and GitHub CLI children receive an environment allowlist, so unrelated
+PATs and API keys are not inherited accidentally. Verification commands are
+trusted project commands and retain the service environment. Gateship has no
+web or SQLite field for provider or GitHub credentials; see the documented
+[credential boundary](./docs/credentials-and-notifications.md).
 
 ## Retired runtime
 

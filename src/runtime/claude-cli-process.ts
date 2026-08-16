@@ -9,15 +9,7 @@
 
 import { classifyHeadlessStreamLine } from './claude-stream.ts';
 import { runAgentProcess } from './agent-process.ts';
-
-const CLAUDE_NESTING_ENV = [
-	'CLAUDECODE',
-	'CLAUDE_CODE_ENTRYPOINT',
-	'CLAUDE_CODE_SESSION_ID',
-	'CLAUDE_CODE_SSE_PORT',
-	'CLAUDE_CODE_EXECPATH',
-	'CLAUDE_AGENT_SDK_VERSION',
-] as const;
+import { buildAllowlistedEnv } from './child-env.ts';
 
 export const DEFAULT_TERMINATION_GRACE_MS = 1_000;
 const MAX_ACTIVITY_TEXT = 2_000;
@@ -43,13 +35,7 @@ export interface ClaudeCliResult {
 export function buildClaudeEnv(
 	source: Record<string, string | undefined>,
 ): Record<string, string | undefined> {
-	const env = { ...source };
-	for (const key of CLAUDE_NESTING_ENV) delete env[key];
-	delete env.ANTHROPIC_API_KEY;
-	delete env.CLAUDE_CODE_OAUTH_TOKEN;
-	delete env.TMUX;
-	delete env.TMUX_PANE;
-	return env;
+	return buildAllowlistedEnv(source, ['CLAUDE_CONFIG_DIR']);
 }
 
 /** Persist only operator-visible prose and tool names from an assistant event. */

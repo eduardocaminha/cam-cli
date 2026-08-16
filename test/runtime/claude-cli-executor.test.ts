@@ -134,9 +134,8 @@ describe('Claude CLI runtime executor', () => {
 
 	test('reports a real waiting-user outcome and includes operator guidance on resume', async () => {
 		const executor = new ClaudeCliExecutor({
-			command: ['bun', FIXTURE],
+			command: ['bun', FIXTURE, '--fixture-mode=waiting-user'],
 			loadIssue: () => '{"id":"CAM-22"}',
-			sourceEnv: { ...process.env, GSHIP_FIXTURE_MODE: 'waiting-user' },
 		});
 		const result = await executor.execute({
 			runId: 'run-22',
@@ -156,9 +155,8 @@ describe('Claude CLI runtime executor', () => {
 	test('kills and awaits the real child process group on cancellation', async () => {
 		let childPid = 0;
 		const executor = new ClaudeCliExecutor({
-			command: ['bun', FIXTURE],
+			command: ['bun', FIXTURE, '--fixture-mode=wait'],
 			loadIssue: () => '{"id":"CAM-21"}',
-			sourceEnv: { ...process.env, GSHIP_FIXTURE_MODE: 'wait' },
 			onSpawn: (pid) => {
 				childPid = pid;
 			},

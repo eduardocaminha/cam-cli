@@ -22,12 +22,15 @@ afterEach(async () => {
 describe('credential-blind provider auth', () => {
 	test('does not let API or injected OAuth environment values choose auth mode', () => {
 		expect(buildProviderAuthEnv({
+			PATH: '/usr/bin',
 			ANTHROPIC_API_KEY: 'secret',
 			CLAUDE_CODE_OAUTH_TOKEN: 'secret',
 			OPENAI_API_KEY: 'secret',
 			CODEX_ACCESS_TOKEN: 'secret',
+			GH_TOKEN: 'secret',
+			RESEND_API_KEY: 'secret',
 			CODEX_HOME: '/operator/codex',
-		})).toEqual({ CODEX_HOME: '/operator/codex' });
+		})).toEqual({ PATH: '/usr/bin', CODEX_HOME: '/operator/codex' });
 	});
 
 	test('reads subscription state without exposing account identity or tokens', async () => {

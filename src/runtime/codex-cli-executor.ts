@@ -7,6 +7,7 @@ import process from 'node:process';
 import { getIssueOnMain } from '../commands/issue-get.ts';
 import { runAgentProcess } from './agent-process.ts';
 import type { AgentSession, AgentSessionInput, AgentSessionResult } from './agent-session.ts';
+import { buildAllowlistedEnv } from './child-env.ts';
 import {
 	buildWorkPrompt,
 	EXECUTION_RESULT_SCHEMA,
@@ -89,11 +90,7 @@ export function buildCodexReviewArgv(input: CodexReviewInvocation): string[] {
 export function buildCodexEnv(
 	source: Record<string, string | undefined>,
 ): Record<string, string | undefined> {
-	const env = { ...source };
-	delete env.OPENAI_API_KEY;
-	delete env.CODEX_API_KEY;
-	delete env.CODEX_ACCESS_TOKEN;
-	return env;
+	return buildAllowlistedEnv(source, ['CODEX_HOME']);
 }
 
 function recordOf(value: unknown): Record<string, unknown> | null {
