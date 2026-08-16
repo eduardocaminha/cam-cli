@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { IssueEntry } from "../../src/issues/types.ts";
 import { isPlannable, isSpecifiedOpen } from "../../src/issues/plannable.ts";
+import { fingerprintSpec } from "../../src/issues/spec.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -15,6 +16,17 @@ function makeIssue(overrides: Partial<IssueEntry> & { id: string }): IssueEntry 
 		createdAt: "2026-01-01T00:00:00Z",
 		updatedAt: "2026-01-01T00:00:00Z",
 		...overrides,
+	};
+}
+
+function approve(entry: IssueEntry): IssueEntry {
+	if (entry.spec === undefined) throw new Error("test issue needs a spec");
+	return {
+		...entry,
+		approval: {
+			fingerprint: fingerprintSpec(entry.spec),
+			approvedAt: "2026-01-01T00:00:00Z",
+		},
 	};
 }
 
@@ -38,28 +50,45 @@ describe("isPlannable — executable spec", () => {
 	});
 
 	test("accepts a specified/open/unblocked entry with direct verification", () => {
-		const entry = makeIssue({
+		const entry = approve(makeIssue({
 			id: "CAM-3",
 			spec: { verify: ["bun test"], scope: "s" },
-		});
+		}));
 		expect(isPlannable(entry, [entry])).toBe(true);
 	});
 
 	test("accepts a legacy acceptanceCriteria issue while the backlog drains", () => {
-		const entry = makeIssue({
+		const entry = approve(makeIssue({
 			id: "CAM-legacy",
 			spec: { acceptanceCriteria: ["do the thing"], scope: "s" },
-		});
+		}));
 		expect(isPlannable(entry, [entry])).toBe(true);
+	});
+
+	test("rejects missing and stale approval for an otherwise executable issue", () => {
+		const draft = makeIssue({
+			id: "CAM-draft",
+			spec: { verify: ["bun test"], scope: "s" },
+		});
+		const stale = {
+			...draft,
+			id: "CAM-stale",
+			approval: {
+				fingerprint: "old",
+				approvedAt: "2026-01-01T00:00:00Z",
+			},
+		};
+		expect(isPlannable(draft, [draft])).toBe(false);
+		expect(isPlannable(stale, [stale])).toBe(false);
 	});
 
 	test("still rejects a blocked entry even with non-empty acceptanceCriteria", () => {
 		const dep = makeIssue({ id: "CAM-4", stage: "idea" });
-		const entry = makeIssue({
+		const entry = approve(makeIssue({
 			id: "CAM-5",
 			blockedBy: ["CAM-4"],
 			spec: { verify: ["bun test"], scope: "s" },
-		});
+		}));
 		expect(isPlannable(entry, [entry, dep])).toBe(false);
 	});
 });

@@ -1,6 +1,6 @@
-import type { IssueEntry } from "./types.ts";
 import { isBlocked } from "./graph.ts";
-import { hasVerification } from './spec.ts';
+import { fingerprintSpec, hasVerification } from "./spec.ts";
+import type { IssueEntry } from "./types.ts";
 
 /**
  * True iff the entry is specified and still open.
@@ -10,13 +10,16 @@ export function isSpecifiedOpen(entry: IssueEntry): boolean {
 }
 
 /**
- * True iff the entry is specified+open, carries executable verification, and is
- * not blocked by an unshipped dependency.
+ * True iff the entry is specified+open, carries executable verification whose
+ * current fingerprint was approved, and is not blocked by an unshipped
+ * dependency.
  */
 export function isPlannable(entry: IssueEntry, backlog: IssueEntry[]): boolean {
 	return (
 		isSpecifiedOpen(entry) &&
 		hasVerification(entry.spec) &&
+		entry.spec !== undefined &&
+		entry.approval?.fingerprint === fingerprintSpec(entry.spec) &&
 		!isBlocked(entry, backlog)
 	);
 }
