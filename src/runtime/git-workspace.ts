@@ -2,13 +2,15 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
 
-interface GitResult {
+interface CommandResult {
 	exitCode: number;
 	stdout: string;
 	stderr: string;
 }
 
-export type WorkspaceGitRunner = (cwd: string, args: string[]) => GitResult;
+export type WorkspaceGitRunner = (cwd: string, args: string[]) => CommandResult;
+
+export type WorkspaceInstallRunner = (cwd: string, args: string[]) => CommandResult;
 
 export interface PrepareWorkspaceInput {
 	runId: string;
@@ -26,8 +28,18 @@ export class RuntimeWorkspaceError extends Error {
 	}
 }
 
-function defaultRunGit(cwd: string, args: string[]): GitResult {
+function defaultRunGit(cwd: string, args: string[]): CommandResult {
 	const result = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8' });
+	return {
+		exitCode: result.status ?? 1,
+		stdout: result.stdout ?? '',
+		stderr: result.stderr ?? '',
+	};
+}
+
+function defaultRunInstall(cwd: string, args: string[]): CommandResult {
+	const result = spawnSync('bun', args, { cwd, encoding: 'utf8' });
+	if (result.error) throw result.error;
 	return {
 		exitCode: result.status ?? 1,
 		stdout: result.stdout ?? '',
@@ -43,17 +55,23 @@ function safeSegment(value: string, fallback: string): string {
 	return sanitized.length === 0 || sanitized === '.' || sanitized === '..' ? fallback : sanitized;
 }
 
-function failureDetail(result: GitResult): string {
+function failureDetail(result: CommandResult): string {
 	return result.stderr.trim() || result.stdout.trim() || `exit ${result.exitCode}`;
 }
 
 export class GitWorkspaceManager implements RuntimeWorkspace {
 	readonly #projectRoot: string;
 	readonly #runGit: WorkspaceGitRunner;
+	readonly #runInstall: WorkspaceInstallRunner;
 
-	constructor(projectRoot: string, runGit: WorkspaceGitRunner = defaultRunGit) {
+	constructor(
+		projectRoot: string,
+		runGit: WorkspaceGitRunner = defaultRunGit,
+		runInstall: WorkspaceInstallRunner = defaultRunInstall,
+	) {
 		this.#projectRoot = resolve(projectRoot);
 		this.#runGit = runGit;
+		this.#runInstall = runInstall;
 	}
 
 	prepare(input: PrepareWorkspaceInput): string {
@@ -85,6 +103,19 @@ export class GitWorkspaceManager implements RuntimeWorkspace {
 		]);
 		if (added.exitCode !== 0) {
 			throw new RuntimeWorkspaceError(`cannot create run workspace: ${failureDetail(added)}`);
+		}
+
+		let installed: CommandResult;
+		try {
+			installed = this.#runInstall(workspacePath, ['install', '--frozen-lockfile']);
+		} catch (error) {
+			const detail = error instanceof Error ? error.message : String(error);
+			throw new RuntimeWorkspaceError(`cannot start workspace install: ${detail}`);
+		}
+		if (installed.exitCode !== 0) {
+			throw new RuntimeWorkspaceError(
+				`cannot install workspace dependencies: ${failureDetail(installed)}`,
+			);
 		}
 		return workspacePath;
 	}
