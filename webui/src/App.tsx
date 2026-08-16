@@ -3,9 +3,12 @@
 // The whole operational screen, as a pure function of its props: an app shell
 // whose primary surface is the conversation with the orchestrator, with the run
 // it commands beside it and every secondary panel one in-page anchor away. No
-// fetching, no timers and no state live here, so every branch is reachable by
-// static rendering (ADR-0067) -- including the ones a collapsed panel hides,
-// because disclosure is native <details> and never a mounted/unmounted branch.
+// fetching, no timers and no application state live here, so every branch is
+// reachable by static rendering (ADR-0067) -- including the ones a collapsed
+// panel hides, because disclosure is native <details> and never a
+// mounted/unmounted branch. The single exception is where the transcript is
+// scrolled, which no prop can describe; it lives in ./live-edge.ts, decides by
+// a pure predicate, and renders nothing.
 
 import type React from 'react';
 import { cn } from '../vendor/coss/lib/utils.ts';
@@ -33,6 +36,7 @@ import type {
 	ProviderStatusView,
 	WorkspaceNoticeView,
 } from './client.ts';
+import { useLiveEdge } from './live-edge.ts';
 import {
 	actionsFor,
 	type PlannableIssue,
@@ -205,17 +209,21 @@ function RunActivity({
 			open
 			title="Atividade"
 		>
-			<ol className="flex max-h-80 flex-col gap-3 overflow-auto">
+			<ol className="flex max-h-80 flex-col gap-3 overflow-x-hidden overflow-y-auto">
 				{visible.map((event) => {
 					const detail = eventDetail(event);
 					return (
-						<li className="border-border border-l-2 pl-3 text-sm" key={event.seq}>
+						<li className="min-w-0 border-border border-l-2 pl-3 text-sm" key={event.seq}>
 							<div className="flex items-baseline justify-between gap-3">
-								<code>{event.kind}</code>
-								<time className="text-muted-foreground">{event.createdAt.slice(11, 19)}</time>
+								<code className="min-w-0 break-all">{event.kind}</code>
+								<time className="shrink-0 text-muted-foreground">
+									{event.createdAt.slice(11, 19)}
+								</time>
 							</div>
 							{detail === null ? null : (
-								<p className="mt-1 whitespace-pre-wrap text-muted-foreground">{detail}</p>
+								<p className="mt-1 whitespace-pre-wrap break-words text-muted-foreground">
+									{detail}
+								</p>
 							)}
 						</li>
 					);
@@ -243,7 +251,7 @@ function RunProgress({ run }: { run: RunView }): React.ReactElement {
 function RunOutcome({ run }: { run: RunView }): React.ReactElement | null {
 	if (run.error !== null) {
 		return (
-			<p className="rounded-md bg-destructive/8 p-3 text-destructive-foreground text-sm">
+			<p className="break-words rounded-md bg-destructive/8 p-3 text-destructive-foreground text-sm">
 				{run.error}
 			</p>
 		);
@@ -251,7 +259,7 @@ function RunOutcome({ run }: { run: RunView }): React.ReactElement | null {
 	// While the run waits, its summary IS the question, and the conversation
 	// column asks it: repeating it here would say the same thing twice.
 	if (run.summary !== null && run.state !== 'waiting-user') {
-		return <p className="text-muted-foreground text-sm">{run.summary}</p>;
+		return <p className="break-words text-muted-foreground text-sm">{run.summary}</p>;
 	}
 	return null;
 }
@@ -271,7 +279,7 @@ function RunPanel({
 		<Card id="run">
 			<CardHeader>
 				<CardTitle render={<h2 />}>Último run</CardTitle>
-				<CardDescription>
+				<CardDescription className="break-all">
 					{run === null ? 'Nenhum run registrado ainda.' : `${run.issueId} · ${run.id}`}
 				</CardDescription>
 				{run !== null ? <Badge variant={toneOf(run.state)}>{run.state}</Badge> : null}
@@ -313,9 +321,9 @@ function PreviousRunsPanel({ runs }: Pick<AppProps, 'runs'>): React.ReactElement
 			<ul className="flex flex-col gap-2">
 				{previous.map((run) => (
 					<li className="flex items-baseline justify-between gap-3 text-sm" key={run.id}>
-						<span className="font-medium">{run.issueId}</span>
+						<span className="min-w-0 break-all font-medium">{run.issueId}</span>
 						<Badge variant={toneOf(run.state)}>{run.state}</Badge>
-						<time className="text-muted-foreground">
+						<time className="shrink-0 text-muted-foreground">
 							{run.updatedAt.slice(0, 16).replace('T', ' ')}
 						</time>
 					</li>
@@ -342,14 +350,14 @@ function WorkspaceNoticesPanel({
 						className="flex flex-col gap-1 text-sm"
 						key={`${notice.kind}-${notice.runId}-${notice.workspacePath}-${notice.branch}`}
 					>
-						<div className="flex items-center gap-2">
+						<div className="flex flex-wrap items-center gap-2">
 							<Badge variant="outline">{notice.kind}</Badge>
-							{notice.runId === null ? null : <code>{notice.runId}</code>}
+							{notice.runId === null ? null : <code className="break-all">{notice.runId}</code>}
 						</div>
 						<code className="break-all text-muted-foreground">
 							{notice.workspacePath ?? notice.branch}
 						</code>
-						<p className="text-muted-foreground">{notice.detail}</p>
+						<p className="break-words text-muted-foreground">{notice.detail}</p>
 					</li>
 				))}
 			</ul>
@@ -378,18 +386,18 @@ function ProviderRow({
 }: Omit<ProviderPanelProps, 'providers'> & { provider: ProviderStatusView }): React.ReactElement {
 	return (
 		<li className="flex items-center justify-between gap-3 text-sm">
-			<div>
-				<p className="flex items-center gap-2 font-medium">
+			<div className="min-w-0">
+				<p className="flex flex-wrap items-center gap-2 font-medium">
 					{provider.label}
 					{provider.id === selectedProvider ? <Badge variant="secondary">em uso</Badge> : null}
 				</p>
-				<p className="text-muted-foreground">{providerDescription(provider)}</p>
+				<p className="break-words text-muted-foreground">{providerDescription(provider)}</p>
 			</div>
 			{provider.id === 'codex' && !provider.subscription && provider.installed ? (
 				<ActionButton enabled={!pending} label="Conectar ChatGPT" onClick={onConnectCodex} />
 			) : null}
 			{provider.id === 'claude' && !provider.subscription && provider.installed ? (
-				<code className="text-muted-foreground">claude auth login</code>
+				<code className="break-all text-muted-foreground">claude auth login</code>
 			) : null}
 			{provider.subscription && provider.id !== selectedProvider ? (
 				<ActionButton
@@ -462,32 +470,47 @@ function NotificationsPanel({
 	);
 }
 
+/**
+ * The transcript: one scroll region, announced as a log and reachable by the
+ * keyboard, that opens at the newest turn and follows later ones only while the
+ * operator stands at the live edge (./live-edge.ts). The empty state lives
+ * inside the same region so the region -- and its label -- never moves.
+ */
 function ChatLog({ chatMessages }: Pick<AppProps, 'chatMessages'>): React.ReactElement {
-	if (chatMessages.length === 0) {
-		return (
-			<p className="flex min-h-24 flex-1 items-center justify-center text-center text-muted-foreground text-sm">
-				Descreva o objetivo, peça uma investigação ou dê um comando em linguagem natural.
-			</p>
-		);
-	}
+	const liveEdge = useLiveEdge(chatMessages.at(-1)?.seq ?? null);
 	return (
-		<ol className="flex max-h-[60vh] min-h-0 flex-1 flex-col gap-3 overflow-auto xl:max-h-none">
-			{chatMessages.map((message) => (
-				<li
-					className={cn(
-						'rounded-md p-3 text-sm',
-						message.role === 'operator' ? 'ml-8 bg-accent' : 'mr-8 bg-muted',
-					)}
-					key={message.seq}
-				>
-					<div className="mb-1 flex items-center justify-between gap-3 text-muted-foreground text-xs">
-						<span>{message.role === 'operator' ? 'você' : message.role}</span>
-						<span>{message.providerId}</span>
-					</div>
-					<p className="whitespace-pre-wrap">{message.text}</p>
-				</li>
-			))}
-		</ol>
+		<section
+			aria-label="Transcrição da conversa"
+			className="max-h-[60vh] min-h-24 min-w-0 flex-1 overflow-x-hidden overflow-y-auto rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring xl:max-h-none"
+			onScroll={liveEdge.onScroll}
+			ref={liveEdge.ref}
+			role="log"
+			tabIndex={0}
+		>
+			{chatMessages.length === 0 ? (
+				<p className="flex min-h-24 items-center justify-center text-center text-muted-foreground text-sm">
+					Descreva o objetivo, peça uma investigação ou dê um comando em linguagem natural.
+				</p>
+			) : (
+				<ol className="flex flex-col gap-3">
+					{chatMessages.map((message) => (
+						<li
+							className={cn(
+								'rounded-md p-3 text-sm',
+								message.role === 'operator' ? 'ml-8 bg-accent' : 'mr-8 bg-muted',
+							)}
+							key={message.seq}
+						>
+							<div className="mb-1 flex items-center justify-between gap-3 text-muted-foreground text-xs">
+								<span>{message.role === 'operator' ? 'você' : message.role}</span>
+								<span className="shrink-0">{message.providerId}</span>
+							</div>
+							<p className="whitespace-pre-wrap break-words">{message.text}</p>
+						</li>
+					))}
+				</ol>
+			)}
+		</section>
 	);
 }
 
@@ -506,7 +529,9 @@ function OperatorAnswer({
 		<section className="flex flex-col gap-2 rounded-md border border-warning/32 bg-warning/8 p-3">
 			<p className="font-medium text-sm">O run está esperando sua decisão.</p>
 			{run.summary === null ? null : (
-				<p className="whitespace-pre-wrap text-muted-foreground text-sm">{run.summary}</p>
+				<p className="whitespace-pre-wrap break-words text-muted-foreground text-sm">
+					{run.summary}
+				</p>
 			)}
 			<form
 				className="flex flex-col gap-2"
@@ -552,7 +577,7 @@ function ConversationColumn({
 	run: RunView | null;
 }): React.ReactElement {
 	return (
-		<main className="flex min-h-0 w-full flex-1 flex-col p-4 lg:p-6" id="conversa">
+		<main className="flex min-h-0 w-full min-w-0 flex-1 flex-col p-4 lg:p-6" id="conversa">
 			<Card className="flex min-h-0 flex-1 flex-col">
 				<CardHeader>
 					<CardTitle render={<h2 />}>Conversa com o orquestrador</CardTitle>
@@ -564,7 +589,7 @@ function ConversationColumn({
 					<ChatLog chatMessages={chatMessages} />
 					<OperatorAnswer onResume={onResume} pending={pending} run={run} />
 					{status === null ? null : (
-						<output aria-live="polite" className="text-muted-foreground text-sm">
+						<output aria-live="polite" className="break-words text-muted-foreground text-sm">
 							{status}
 						</output>
 					)}
@@ -581,7 +606,7 @@ function ConversationColumn({
 						}}
 					>
 						<input
-							className={FIELD_CLASS}
+							className={cn(FIELD_CLASS, 'min-w-0')}
 							disabled={pending}
 							name="message"
 							placeholder="O que você quer fazer agora?"
@@ -620,7 +645,7 @@ function BacklogPanel({
 							<button
 								aria-pressed={issue.id === selectedIssueId}
 								className={cn(
-									'w-full rounded-md px-3 py-2 text-left text-sm outline-none',
+									'w-full break-words rounded-md px-3 py-2 text-left text-sm outline-none',
 									'focus-visible:ring-2 focus-visible:ring-ring',
 									issue.id === selectedIssueId ? 'bg-accent text-accent-foreground' : 'hover:bg-muted',
 								)}
@@ -807,7 +832,7 @@ export function App(props: AppProps): React.ReactElement {
 	return (
 		<div className="flex min-h-screen w-full flex-col lg:flex-row xl:h-screen xl:overflow-hidden">
 			<ShellSidebar run={run} sections={shellSections(props)} version={version} />
-			<div className="flex min-h-0 w-full flex-1 flex-col xl:flex-row">
+			<div className="flex min-h-0 w-full min-w-0 flex-1 flex-col xl:flex-row">
 				<ConversationColumn
 					chatMessages={props.chatMessages}
 					onResume={props.onResume}
@@ -818,7 +843,7 @@ export function App(props: AppProps): React.ReactElement {
 				/>
 				<aside
 					aria-label="Contexto operacional"
-					className="flex w-full flex-col gap-4 p-4 pt-0 lg:p-6 lg:pt-0 xl:w-96 xl:shrink-0 xl:overflow-y-auto xl:border-l xl:pt-6"
+					className="flex w-full min-w-0 flex-col gap-4 p-4 pt-0 lg:p-6 lg:pt-0 xl:w-96 xl:shrink-0 xl:overflow-y-auto xl:border-l xl:pt-6"
 				>
 					<RunPanel
 						onCancel={props.onCancel}

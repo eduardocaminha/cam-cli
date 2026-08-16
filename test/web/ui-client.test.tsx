@@ -29,6 +29,7 @@ import {
 	startCodexLogin,
 	startRun,
 } from '../../webui/src/client.ts';
+import { isAtLiveEdge, LIVE_EDGE_TOLERANCE_PX } from '../../webui/src/live-edge.ts';
 import { actionsFor, progressOf, type RunState, type RunView } from '../../webui/src/run-view.ts';
 
 const BACKLOG = [
@@ -103,6 +104,18 @@ function panelIsOpen(html: string, title: string): boolean {
 	const opening = html.lastIndexOf('<details', index);
 	if (opening < 0) throw new Error(`panel ${title} is not a disclosure`);
 	return html.slice(opening, index).includes('open=""');
+}
+
+/** Every opening tag the render emitted, attributes included, in order. */
+function openingTags(html: string): readonly string[] {
+	return [...html.matchAll(/<[a-z][a-z0-9]*(?:\s[^>]*)?>/g)].map((match) => match[0]);
+}
+
+/** The opening tag of the first element carrying `attribute`, with its value. */
+function elementWith(html: string, attribute: string): string {
+	const tag = openingTags(html).find((opening) => opening.includes(attribute));
+	if (tag === undefined) throw new Error(`no element carries ${attribute}`);
+	return tag;
 }
 
 /** The history card alone, cut before the backlog panel that follows it. */
@@ -487,6 +500,102 @@ describe('operator shell', () => {
 		expect(html.split('Escolha o seam de migração.')).toHaveLength(2);
 		// Resuming is the answer itself while the run waits, never a bare command.
 		expect(html).not.toContain('>Retomar<');
+	});
+});
+
+describe('conversation transcript', () => {
+	const HASH = 'a'.repeat(64);
+
+	/** Every long, unbreakable string the operator can be shown, on one screen. */
+	function renderLongContent(): string {
+		return render({
+			chatMessages: [{
+				seq: 1,
+				providerId: 'claude',
+				role: 'orchestrator',
+				text: `Comparei com ${HASH} rodando bun test test/web/ui-client.test.tsx --coverage`,
+				createdAt: '2026-08-16T03:00:00.000Z',
+			}],
+			runs: [
+				runIn('working', { id: `run-${HASH}`, summary: `Verificando ${HASH}` }),
+				runIn('done', { id: `run-old-${HASH}`, issueId: `CAM-${HASH}` }),
+			],
+			events: [{
+				seq: 1,
+				runId: `run-${HASH}`,
+				kind: `provider.activity.${HASH}`,
+				fromState: 'working',
+				toState: 'working',
+				payload: { text: `Commit ${HASH}` },
+				createdAt: '2026-08-16T03:04:05.000Z',
+			}],
+			workspaceNotices: [{
+				kind: 'dirty',
+				runId: `run-${HASH}`,
+				workspacePath: `/project/.gship/worktrees/${HASH}`,
+				branch: `gship/cam-1-${HASH}`,
+				detail: `workspace ${HASH} is not owned by a persisted run`,
+			}],
+			status: `Falha ao ler /api/runs/run-${HASH}`,
+		});
+	}
+
+	test('an untouched scroller stays at the live edge, a scrolled-up one does not', () => {
+		const geometry = { scrollHeight: 1000, clientHeight: 400 };
+
+		expect(isAtLiveEdge({ ...geometry, scrollTop: 600 })).toBe(true);
+		// A fraction of a pixel short of the bottom is still the bottom.
+		expect(isAtLiveEdge({ ...geometry, scrollTop: 600 - LIVE_EDGE_TOLERANCE_PX })).toBe(true);
+		expect(isAtLiveEdge({ ...geometry, scrollTop: 599 - LIVE_EDGE_TOLERANCE_PX })).toBe(false);
+		expect(isAtLiveEdge({ ...geometry, scrollTop: 0 })).toBe(false);
+		// Nothing to scroll: the operator is at the edge by definition.
+		expect(isAtLiveEdge({ scrollHeight: 400, clientHeight: 400, scrollTop: 0 })).toBe(true);
+	});
+
+	test('the transcript is one focusable, announced region in every state', () => {
+		const empty = render();
+		const loaded = render({
+			chatMessages: [{
+				seq: 1,
+				providerId: 'claude',
+				role: 'orchestrator',
+				text: 'Pronto.',
+				createdAt: '2026-08-16T03:00:00.000Z',
+			}],
+		});
+
+		for (const html of [empty, loaded]) {
+			const region = elementWith(html, 'role="log"');
+			expect(region).toContain('aria-label="Transcrição da conversa"');
+			expect(region).toContain('tabindex="0"');
+			expect(region).toContain('overflow-y-auto');
+			expect(html.split('role="log"')).toHaveLength(2);
+		}
+		// The empty state is inside the region, so the region never moves.
+		expect(empty.indexOf('role="log"')).toBeLessThan(empty.indexOf('Descreva o objetivo'));
+		expect(loaded.indexOf('role="log"')).toBeLessThan(loaded.indexOf('Pronto.'));
+	});
+
+	test('long hashes, commands and ids are rendered with a rule that breaks them', () => {
+		const html = renderLongContent();
+		const unbreakable = openingTags(html).filter((tag) =>
+			tag.startsWith('<code') || tag.includes('whitespace-pre-wrap'));
+
+		expect(unbreakable.length).toBeGreaterThan(3);
+		for (const tag of unbreakable) expect(tag).toMatch(/break-(all|words)/);
+		// The content itself is still there, whole.
+		expect(html).toContain(`Comparei com ${HASH}`);
+		expect(html).toContain(`provider.activity.${HASH}`);
+		expect(html).toContain(`/project/.gship/worktrees/${HASH}`);
+	});
+
+	test('the only horizontal scroller is the panel navigation', () => {
+		const html = renderLongContent();
+		const horizontal = openingTags(html).filter((tag) => tag.includes('overflow-x-auto'));
+
+		expect(horizontal).toHaveLength(1);
+		expect(html.indexOf('overflow-x-auto')).toBeGreaterThan(html.indexOf('<nav'));
+		expect(html.indexOf('overflow-x-auto')).toBeLessThan(html.indexOf('</nav>'));
 	});
 });
 
