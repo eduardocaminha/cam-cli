@@ -121,25 +121,38 @@ const HELP = renderHelp({
 	usage: 'gship [command] [options]',
 	sections: [
 		{
-			heading: 'Commands',
+			heading: 'Web-first',
 			entries: [
 				{ name: '(default)', description: 'Start the local web control surface on 127.0.0.1:7777' },
 				{ name: 'init [options]', description: 'Validate the machine, then run the project-setup wizard' },
+				{ name: 'web [--port N]', description: 'Serve the local web control surface on a custom port' },
+			],
+		},
+		{
+			heading: 'Maintenance',
+			entries: [
 				{ name: 'config [--show]', description: 'Interactive wizard to set model per phase and backend' },
-				{ name: 'run [options]', description: 'Legacy tmux session: open or attach the long-lived orchestrator' },
-				{ name: 'plan [<N>]', description: 'Spawn claude + dispatch /cam-plan; APPROVE happens inside the pane' },
-				{ name: 'spec <id>', description: 'Deep-spec an idea (stage:idea) into stage:specified via spec-with-docs interview' },
-				{ name: 'next [options]', description: 'Trigger the sidecar loop (flips active:true, thin-proxy)' },
-				{ name: 'review', description: 'Dispatch /cam-review to the live orchestrator (or bootstrap first)' },
-				{ name: 'ship', description: 'Dispatch /cam-ship to the live orchestrator (or bootstrap first)' },
 				{ name: 'tag', description: 'Create and push the vX.Y.Z git tag for the current CAM_VERSION on main' },
-				{ name: 'issue "<text>"', description: 'File an issue from free text; opens /cam-issue create in a pane' },
-				{ name: 'journal append [--force]', description: 'Append a structured cycle entry to scripts/cam/journal.md on main (reads JSON from stdin)' },
-				{ name: 'journal archive [--threshold N]', description: 'Move the oldest third of scripts/cam/journal.md entries to journal.archive.md on main once entries exceed the threshold (default 50)' },
+				{ name: 'journal append', description: 'Append a structured cycle entry to scripts/cam/journal.md on main' },
+				{ name: 'journal archive', description: 'Archive the oldest third of the legacy journal after its threshold' },
 				{ name: 'patterns archive|prune', description: 'archive: move resolved-marked bullets from patterns.md to patterns.archive.md on main. prune: demote/archive stale or unconfirmed scripts/cam/pattern-records.jsonl entries on main' },
 				{ name: 'claude [args...]', description: 'Run claude in print mode with auto-retry on rate limits' },
+				{ name: 'prune [--force]', description: 'Deterministic branch cleanup after a PR is merged or abandoned' },
+				{ name: 'version', description: 'Print the installed Gateship version (also `--version` / `-v`)' },
+				{ name: 'help', description: 'Show this help' },
+			],
+		},
+		{
+			heading: 'Legacy tmux (temporary)',
+			entries: [
+				{ name: 'run [options]', description: 'Open or attach the previous long-lived orchestrator' },
+				{ name: 'plan [<N>]', description: 'Dispatch /cam-plan inside the orchestrator pane' },
+				{ name: 'spec <id>', description: 'Run the previous interactive spec interview' },
+				{ name: 'issue "<text>"', description: 'File an issue through the previous orchestrator pane' },
+				{ name: 'next [options]', description: 'Trigger the previous sidecar loop' },
+				{ name: 'review', description: 'Dispatch /cam-review to the previous orchestrator' },
+				{ name: 'ship', description: 'Dispatch /cam-ship to the previous orchestrator' },
 				{ name: 'dashboard', description: 'Standalone read-only TUI (alt-screen) for monitoring a loop' },
-				{ name: 'web [--port N]', description: 'Serve the local web control surface (default port 7777)' },
 				{ name: 'status', description: 'Show current loop state at a glance (idle / active / paused)' },
 				{ name: 'stats tokens|cycles', description: 'Print per-issue token spend (orch/worker/total) or per-cycle worker/review-round counts from the event log' },
 				{ name: 'stop', description: 'Cancel a running loop (clears state file + kills the per-project tmux session)' },
@@ -147,9 +160,6 @@ const HELP = renderHelp({
 				{ name: 'drain [--stop|--clear]', description: 'Set or clear the inter-cycle drain kill-switch without killing the sidecar' },
 				{ name: 'resume [options]', description: 'Reconcile loop state after interrupt; auto-detect or --mode <name>' },
 				{ name: 'decide <decision>', description: 'Record your choice into the active operator-decision gate so the sidecar resumes deterministically' },
-				{ name: 'prune [--force]', description: 'Deterministic branch cleanup after a PR is merged (or abandoned): checkout main, pull, delete branch, fetch --prune' },
-				{ name: 'version', description: 'Print the installed Gateship version (also `--version` / `-v`)' },
-				{ name: 'help', description: 'Show this help' },
 			],
 		},
 		{
@@ -175,9 +185,9 @@ const HELP = renderHelp({
 		},
 	],
 	footer:
-		'Run `gship <command> --help` for command-specific options. Permission mode\n' +
-		'is a hardcoded `bypassPermissions` literal at every spawn site; no\n' +
-		'config key or --permission-mode flag controls it.',
+		'Run `gship <command> --help` for command-specific options. The web runtime\n' +
+		'is the default; legacy tmux commands remain temporarily available while\n' +
+		'their remaining capabilities are measured.',
 });
 
 const INIT_HELP = renderHelp({

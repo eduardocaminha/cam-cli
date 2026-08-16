@@ -1,29 +1,32 @@
 # Gateship
 
-Gateship is a local software delivery runtime: a control plane for coding
-agents. It turns issues and goals into verifiable planning, implementation,
-review, and ship workflows, keeping state, coordinating specialized agents,
-and recovering interrupted runs. `cam` wraps long-running Claude Code
-sessions, scaffolds a project for the cam autonomous loop, and runs a
-long-lived orchestrator agent that drives `/cam-plan`, `/cam-next`,
-`/cam-review`, `/cam-ship` cycles against Linear, GitHub, or local issues.
+Gateship is a local software delivery runtime: a web control plane for coding
+agents. It turns an operator-specified task into an isolated implementation,
+deterministic verification, independent review, and a mergeable pull request.
+Run state and public activity are durable, and interrupted Claude Code sessions
+resume without relying on terminal keystrokes.
 
 Built on Bun + TypeScript. Distributed as a single-file binary built from source.
 
-> **Status:** single-hub dispatch model live. `cam init` scaffolds the project,
-> `cam run` opens the single per-project session (2-pane layout: orchestrator + navigable dashboard), and CLI subcommands (`cam plan`, `cam issue`, `cam spec`, `cam review`, `cam ship`) are thin-proxies that inject into the orchestrator pane via atomic `send-keys`; after session and worker-mutex gates, `cam next` triggers the sidecar through `active:true` instead of `send-keys`. Workers use a titled 3rd pane by default; `cam next --headless` instead runs the implementer as a direct child process with no pane. Completion is push-based in either mode (worker writes a report file; the sidecar reads it and emits the `[cam]` narration line to the orchestrator). On a cycle-close, the orchestrator arms the recycle marker (`cam-orch-recycle`), the watcher SIGTERMs the claude process, and the wrapper respawns it delivering the handoff via `CAM_ORCH_REHYDRATE`; if no recycle marker is pending, the wrapper tears down the session.
+> **Status:** the web-first strangler is live. `gship init` installs a project and
+> `gship` starts the localhost runtime. The browser can create tasks, start and
+> observe runs, answer agent decisions, cancel, and ship. The previous
+> tmux/sidecar/orchestrator stack remains available only through `gship run`
+> while its remaining external-issue and interactive-spec capabilities are
+> measured rather than blindly ported.
 
 ---
 
 ## Prerequisites
 
-`cam` shells out to a few tools. Install these first:
+`gship` shells out to a few tools. Install these first:
 
-- **[Claude Code CLI](https://docs.claude.com/en/docs/agents-and-tools/claude-code/quickstart)**: the agent that runs inside every cam pane (`claude` on PATH, signed in)
-- **tmux**: every cam session lives in a tmux split (`brew install tmux`)
+- **[Claude Code CLI](https://docs.claude.com/en/docs/agents-and-tools/claude-code/quickstart)**: the runtime agent (`claude` on PATH, signed in)
 - **Bun >= 1.2**: required only for source installs (`brew install oven-sh/bun/bun`)
-- **`gh` CLI**: only required if you pick `github` as your project's issue system (`brew install gh && gh auth login`)
-- **`LINEAR_API_KEY`**: only required for `linear` issue system; get one at <https://linear.app/settings/api>
+- **`gh` CLI**: required for the web runtime to open and merge pull requests (`brew install gh && gh auth login`)
+
+The legacy `gship run` path additionally requires **tmux**. A
+`LINEAR_API_KEY` is needed only when using the legacy Linear issue adapter.
 
 ---
 
@@ -103,10 +106,8 @@ the release you downloaded)
 For real **authenticity**, that is proof the binary was produced by this
 repo's release workflow from a specific commit, not just that it matches a
 same-origin manifest, verify the build provenance attestation instead. This
-is an on-demand check, not something `install.sh` runs for you, and it
-requires the `gh` CLI, listed as optional in
-[Prerequisites](#prerequisites) (the same one used for the `github` issue
-system):
+is an on-demand check, not something `install.sh` runs for you, and it uses
+the same `gh` CLI listed in [Prerequisites](#prerequisites):
 
 ```bash
 gh attestation verify gateship-darwin-arm64 --repo gateship-dev/gateship
@@ -126,7 +127,7 @@ install `gh` to get it.
 ```bash
 # 1. Clone
 git clone https://github.com/gateship-dev/gateship.git
-cd cam-cli
+cd gateship
 
 # 2. Install dependencies
 bun install
@@ -155,21 +156,21 @@ sudo cp dist/gateship-darwin-arm64 /usr/local/bin/gateship
 
 ### Option C: Run from source without compiling
 
-Useful while iterating on `cam` itself or on a non-darwin-arm64 machine:
+Useful while iterating on Gateship itself or on a non-darwin-arm64 machine:
 
 ```bash
 git clone https://github.com/gateship-dev/gateship.git
-cd cam-cli
+cd gateship
 bun install
 
 # Add a shim that runs the TS entrypoint via Bun:
-cat <<'SHIM' | sudo tee /usr/local/bin/cam >/dev/null
+cat <<'SHIM' | sudo tee /usr/local/bin/gship >/dev/null
 #!/usr/bin/env bash
-exec bun run /Users/YOU/path/to/cam-cli/index.ts "$@"
+exec bun run /Users/YOU/path/to/gateship/index.ts "$@"
 SHIM
-sudo chmod +x /usr/local/bin/cam
+sudo chmod +x /usr/local/bin/gship
 
-cam --version
+gship --version
 ```
 
 ---
@@ -199,8 +200,8 @@ shows a durable activity timeline with the agents' public text and tool names.
 When an executor needs a concrete decision, the run pauses at `waiting-user`;
 the operator answers in the same screen and Gateship persists that response
 before resuming the same Claude session. It also offers contextual start,
-cancel, and ship actions. A task
-created there is committed directly to the remote backlog as `specified`; it
+cancel, and ship actions. A task created there is committed directly to the
+remote backlog as `specified`; it
 does not need a separate planner pass before execution.
 
 ### Legacy tmux runtime
@@ -210,7 +211,7 @@ non-equivalent setup and planning seams are migrated.
 
 The orchestrator persists between sessions and accumulates project memory
 in `scripts/cam/journal.md`. On a cycle-close, the orchestrator runs
-`cam journal append --cycle-close` to arm the recycle marker (`cam-orch-recycle`);
+`gship journal append --cycle-close` to arm the recycle marker (`cam-orch-recycle`);
 the watcher SIGTERMs the claude process and the wrapper respawns it, delivering
 the handoff via `CAM_ORCH_REHYDRATE`. If no recycle marker is pending, the wrapper
 tears down the session. See `.claude/agents/subagent-orchestrator.md` for its full
@@ -221,37 +222,19 @@ system prompt.
 ## Commands
 
 ```text
-cam init [options]          Validate the machine, then run the project-setup wizard
-cam config [--show]         Interactive wizard to set model per phase and backend
-cam run  [options]          Open or attach the single per-project session (2-pane layout)
-cam plan [<N>]              Open a planning pane in the project session (thin launcher)
-cam next [--headless]       Trigger the sidecar loop (flips active:true, thin-proxy)
-cam issue "<text>"          Open an issue-creation pane in the project session (thin launcher)
-cam spec <id>               Deep-spec an idea issue into stage:specified via spec-with-docs (thin-proxy)
-cam review                  Dispatch /cam-review to the live orchestrator (or bootstrap first)
-cam ship                    Dispatch /cam-ship to the live orchestrator (or bootstrap first)
-cam tag                     Create and push the vX.Y.Z git tag for the current CAM_VERSION on main
-cam journal append          Append a structured cycle entry to scripts/cam/journal.md on main (reads JSON from stdin)
-cam journal archive         Move the oldest third of scripts/cam/journal.md entries to journal.archive.md once entries exceed the threshold
-cam patterns archive        Move resolved-marked bullets from scripts/cam/patterns.md to patterns.archive.md on main
-cam claude [args...]        Run claude with built-in auto-retry on rate limits
-cam dashboard               Navigable TUI: browse stories, dispatch /cam-* commands (pane 0.1; also standalone)
-cam web [--port N]          Serve the local web control surface (default port 7777)
-cam status                  Show current loop state (idle / active / paused)
-cam stop                    Cancel a running loop
-cam pause                   Set the operator pause brake marker (.claude/.cam-pause), separate from loop state
-cam drain [--stop|--clear]  Set or clear the inter-cycle drain kill-switch without killing the sidecar
-cam resume [options]        Reconcile loop state after interrupt
-cam version                 Print the installed Gateship version
-cam help                    Show top-level help
+gship                       Start the local web runtime on 127.0.0.1:7777
+gship init [options]        Initialize a project for the web-first flow
+gship web [--port N]        Start the web runtime on a custom port
+gship run [options]         Open the temporary legacy tmux runtime
+gship help                  Show web-first, maintenance, and legacy command groups
 ```
 
-Run `cam <command> --help` for command-specific options. Permission mode
-for spawned claude sessions is hardcoded to `bypassPermissions` at every
-spawn site; no config key or CLI flag controls it.
+Run `gship <command> --help` for command-specific options. The complete legacy
+surface remains callable during the migration but is grouped separately in
+`gship help` instead of being presented as the primary workflow.
 
-`cam next --headless` (CAM-516, ADR-0059) opts the implementer worker into a
-`claude -p`/stream-json dispatch for that one invocation only, instead of the
+`gship next --headless` (CAM-516, ADR-0059) opts the legacy implementer worker
+into a `claude -p`/stream-json dispatch for that one invocation only, instead of the
 default interactive TUI `claude` session; it is never persisted by config and
 never sticky across a call that omits it. The CLI trigger first detects or
 bootstraps a live orchestrator session and refuses while the three-pane mutex
@@ -264,7 +247,7 @@ See "Recent changes" for the measurement that exempted it from the CAM-42
 
 ### Single project session
 
-`cam run` manages one tmux session per project (named `cam-orch-<basename>-<hash>`).
+`gship run` manages one tmux session per project (named `cam-orch-<basename>-<hash>`).
 All cam session commands use a dedicated `tmux -L cam` socket, isolated from your
 default tmux socket. This isolation guarantees that cam's session is never confused
 with sessions on the default socket and avoids a failure mode specific to macOS:
@@ -276,12 +259,12 @@ security context for the current login session.
 The session layout has two permanent panes plus an optional worker pane:
 
 - **Pane 0.0 (left):** orchestrator claude process (boots the `subagent-orchestrator` agent). The orchestrator is the human-facing interface: it narrates sidecar reports, routes `/cam-plan`, `/cam-review`, `/cam-ship`, `/cam-issue`, and surfaces blockers. The implement-review loop is driven by the SIDECAR (background process), not by the orchestrator.
-- **Pane 0.1 (right):** `cam dashboard`, a permanent navigable monitor. Browse stories with j/k or arrow keys, Enter to open a story detail view, Esc to go back. Press `n/r/s/p/i` to dispatch `/cam-*` commands to the orchestrator, `d` to focus the orchestrator pane, `q` to close the dashboard.
+- **Pane 0.1 (right):** `gship dashboard`, a permanent navigable monitor. Browse stories with j/k or arrow keys, Enter to open a story detail view, Esc to go back. Press `n/r/s/p/i` to dispatch `/cam-*` commands to the orchestrator, `d` to focus the orchestrator pane, `q` to close the dashboard.
 - **Pane 0.2 (tmux worker, ephemeral):** created on the first default tmux worker dispatch and reused across stories via `respawn-pane -k`. Present only while a tmux worker is active; the mutex check refuses new pane dispatches when this pane exists (3 panes = busy). The opt-in headless implementer path does not create this pane.
 
-`cam plan`, `cam issue`, `cam spec`, `cam review`, and `cam ship` are thin-proxies: they detect the active cam session, ensure the orchestrator is idle (`sendKeysWhenIdle`), and inject the corresponding slash command into the orchestrator pane via atomic `send-keys` (text + Enter in one literal call). If no session exists, they bootstrap `cam run --no-attach` first. If a worker is already running (mutex: 3 panes present), the proxy refuses the dispatch and exits with code 1. From outside the session the proxy prints a contextual hint with the `cam run` attach command (suppressed inside the session). `cam next` shares the session detection/bootstrap and worker-mutex gates, then flips `active:true` in the sidecar state file and returns immediately; unlike the send-keys proxies, it does not wait for orchestrator idleness or inject a slash command.
+`gship plan`, `gship issue`, `gship spec`, `gship review`, and `gship ship` are thin-proxies: they detect the active cam session, ensure the orchestrator is idle (`sendKeysWhenIdle`), and inject the corresponding slash command into the orchestrator pane via atomic `send-keys` (text + Enter in one literal call). If no session exists, they bootstrap `gship run --no-attach` first. If a worker is already running (mutex: 3 panes present), the proxy refuses the dispatch and exits with code 1. From outside the session the proxy prints a contextual hint with the `gship run` attach command (suppressed inside the session). `gship next` shares the session detection/bootstrap and worker-mutex gates, then flips `active:true` in the sidecar state file and returns immediately; unlike the send-keys proxies, it does not wait for orchestrator idleness or inject a slash command.
 
-On a cycle-close, the orchestrator runs `cam journal append --cycle-close` to arm
+On a cycle-close, the orchestrator runs `gship journal append --cycle-close` to arm
 the recycle marker (`cam-orch-recycle`). The watcher detects the marker, SIGTERMs
 the claude process, and the wrapper respawns it, delivering the handoff via
 `CAM_ORCH_REHYDRATE`. If no recycle marker is pending or the respawn cap is reached,
@@ -295,13 +278,13 @@ the wrapper tears down the entire session (`tmux kill-session`).
 tmux -L cam kill-server
 ```
 
-This terminates every process attached to the dedicated cam socket and releases the socket file. After running it, `cam run` will spin up a fresh server with the correct security context for the current login session.
+This terminates every process attached to the dedicated cam socket and releases the socket file. After running it, `gship run` will spin up a fresh server with the correct security context for the current login session.
 
 **Stale default socket** (you see TCC or file-access errors in the default tmux server that bleed into cam):
 
 ```bash
 tmux kill-server   # kills the default socket server, not the cam socket
-cam run            # re-opens the session under the isolated cam socket
+gship run          # re-opens the session under the isolated cam socket
 ```
 
 Run this only if the default socket server is the one misbehaving. The cam socket and the default socket are independent, so killing one does not affect the other.
@@ -320,24 +303,24 @@ back-off window and re-submits the request.
 
 **How it works:**
 
-- **Print mode** (`cam claude -p "…"`): cam captures `claude` output and retries
+- **Print mode** (`gship claude -p "…"`): cam captures `claude` output and retries
   transparently until the request succeeds or the retry budget is exhausted.
-- **Interactive mode** (`cam claude` inside a tmux session): cam forks a detached
-  background monitor (`cam retry-monitor`) that watches the tmux pane and sends
-  the retry keystroke after the rate-limit window expires. Note: `cam claude` and
-  `cam retry-monitor` intentionally use the user's ambient tmux socket (not `-L cam`),
+- **Interactive mode** (`gship claude` inside a tmux session): cam forks a detached
+  background monitor (`gship retry-monitor`) that watches the tmux pane and sends
+  the retry keystroke after the rate-limit window expires. Note: `gship claude` and
+  `gship retry-monitor` intentionally use the user's ambient tmux socket (not `-L cam`),
   because they watch the user's live interactive pane, not the cam workspace session.
 
 **Configuration** (`~/.config/cam/retry.toml`):
 
-`cam init` writes this file on first run with commented defaults. Edit it to
+`gship init` writes this file on first run with commented defaults. Edit it to
 tune the retry policy (max attempts, custom rate-limit patterns, foreground
 command allowlist, etc.). If the file is absent, cam uses built-in defaults.
 
 **Logs** (`~/.cam/retry-logs/`):
 
 Each retry event is appended to a dated log file under this directory.
-cam rotates logs automatically and keeps the last 7 days by default.
+Gateship rotates logs automatically and keeps the last 7 days by default.
 
 **Attribution**: the retry logic is ported from
 [claude-auto-retry v0.2.2](https://github.com/cheapestinference/claude-auto-retry)
@@ -359,10 +342,10 @@ Source layout:
 
 ```text
 index.ts              CLI dispatch
-src/commands/         one file per `cam <subcommand>`
+src/commands/         one file per `gship <subcommand>`
 src/linear/           Linear GraphQL client
 src/config/           scripts/cam/project.toml reader/writer + model/effort/backend resolution
-templates/            shipped to projects by `cam init`
+templates/            shipped to projects by `gship init`
   agents/             subagent-orchestrator, planner, implementer, reviewer, auditor
   commands/           /cam-plan, /cam-next, /cam-review, /cam-ship, /cam-issue, /cam-prune
   scripts/cam/        CLAUDE.md, journal.md, handoff.schema.json
@@ -374,17 +357,17 @@ test/                 bun:test suites
 
 ## Architecture
 
-`cam run` is the single dispatch hub. CLI subcommands (`cam plan`, `cam issue`, `cam spec`, `cam review`, `cam ship`) are thin-proxies: they detect the live orchestrator session and inject the request into the orchestrator pane via atomic `send-keys` (text + Enter in one literal call). If no session exists, they bootstrap `cam run --no-attach` and wait for the `.claude/.cam-orch-ready` marker before injecting. `cam next` uses a different trigger after its CLI gates: it detects or bootstraps the same live session, refuses while the worker-pane mutex is busy, checks sidecar liveness and preflight, then writes `active:true` to the sidecar state file without injecting a slash command.
+`gship run` is the single dispatch hub. CLI subcommands (`gship plan`, `gship issue`, `gship spec`, `gship review`, `gship ship`) are thin-proxies: they detect the live orchestrator session and inject the request into the orchestrator pane via atomic `send-keys` (text + Enter in one literal call). If no session exists, they bootstrap `gship run --no-attach` and wait for the `.claude/.cam-orch-ready` marker before injecting. `gship next` uses a different trigger after its CLI gates: it detects or bootstraps the same live session, refuses while the worker-pane mutex is busy, checks sidecar liveness and preflight, then writes `active:true` to the sidecar state file without injecting a slash command.
 
 ```
-cam next  (CLI-gated sidecar-state trigger; no send-keys)
+gship next  (CLI-gated sidecar-state trigger; no send-keys)
   └── detect live orchestrator (hasSession + orchestratorAlive)
         ├── on miss: bootstrap cam run --no-attach, poll .claude/.cam-orch-ready
         ├── mutex check: refuse if worker-pane is already running (3 panes = busy)
         ├── sidecar-liveness + deterministic preflight gates
         └── write active:true to .claude/cam-loop.local.md and return
 
-cam plan / cam issue / cam spec / cam review / cam ship  (send-keys thin-proxies)
+gship plan / gship issue / gship spec / gship review / gship ship  (send-keys thin-proxies)
   └── detect live orchestrator (hasSession + orchestratorAlive)
         ├── on miss: bootstrap cam run --no-attach, poll .claude/.cam-orch-ready
         ├── mutex check: refuse if worker-pane is already running (3 panes = busy)
@@ -408,9 +391,9 @@ sidecar (background process, spawned by cam run)
               sidecar reads report, emits: "[cam] US-XXX DONE: ..." to orchestrator pane
 ```
 
-Workers (implementer, reviewer) are interactive TUI `claude` sessions invoked with `--agent <name>` by default. On completion, the worker writes `scripts/cam/worker-report.json` (structured outcome). The sidecar polls for the report file, then emits the `[cam]` narration line to the orchestrator pane via its own `notifyOrchestrator` seam. Scrollback polling is not used for completion detection. The old stop-hook driver (a vendored Stop hook + `/cam-next` re-inject) is retired; `claude -p` (print mode) is not used for workers except through the explicit `cam next --headless` opt-in (CAM-516, ADR-0059), which is never persisted and never sticky across a call that omits it.
+Workers (implementer, reviewer) are interactive TUI `claude` sessions invoked with `--agent <name>` by default. On completion, the worker writes `scripts/cam/worker-report.json` (structured outcome). The sidecar polls for the report file, then emits the `[cam]` narration line to the orchestrator pane via its own `notifyOrchestrator` seam. Scrollback polling is not used for completion detection. The old stop-hook driver (a vendored Stop hook + `/cam-next` re-inject) is retired; `claude -p` (print mode) is not used for workers except through the explicit `gship next --headless` opt-in (CAM-516, ADR-0059), which is never persisted and never sticky across a call that omits it.
 
-The default tmux path runs workers in the **titled 3rd pane** (created on first dispatch and reused across stories via `respawn-pane -k`). Its pane-count mutex prevents concurrent pane workers: if 3 panes are already present, the dispatch is refused until the worker pane closes. The headless implementer path runs `claude --print` as a direct child process with stream-json I/O and creates no worker pane; `cam next` still applies the three-pane mutex before activation, and the running sidecar dispatch is serialized by the supervisor lock.
+The default tmux path runs workers in the **titled 3rd pane** (created on first dispatch and reused across stories via `respawn-pane -k`). Its pane-count mutex prevents concurrent pane workers: if 3 panes are already present, the dispatch is refused until the worker pane closes. The headless implementer path runs `claude --print` as a direct child process with stream-json I/O and creates no worker pane; `gship next` still applies the three-pane mutex before activation, and the running sidecar dispatch is serialized by the supervisor lock.
 
 ---
 
@@ -418,7 +401,7 @@ The default tmux path runs workers in the **titled 3rd pane** (created on first 
 
 `cam` spawns `claude` with `permission_mode = "bypassPermissions"` hardcoded
 as a literal at every spawn site: the orchestrator (`src/commands/run.ts`),
-`cam init`'s setup panes (`src/commands/setup.ts`), the worker/reviewer
+`gship init`'s setup panes (`src/commands/setup.ts`), the worker/reviewer
 dispatch path (`src/commands/sidecar.ts`), and the plan-runner phase
 (`src/supervisor/plan-runner.ts`). There is no `permission_mode` config key:
 it is not read by any spawn path, and no subcommand accepts a
@@ -444,27 +427,27 @@ reach regardless of this setting.
 
 ## Recent changes
 
-- **Single-hub dispatch (CAM-55)**: `cam run` is the only dispatch hub. `cam plan`, `cam issue`, `cam spec`, `cam review`, and `cam ship` are send-keys thin-proxies that inject slash commands into the orchestrator pane; after session/bootstrap and worker-mutex gates, `cam next` uses an `active:true` sidecar-state trigger (no send-keys). The default tmux worker path uses a titled 3rd pane; the opt-in headless implementer path uses a direct child process serialized by the supervisor lock. Completion is push-based in either mode (worker writes `scripts/cam/worker-report.json`; the sidecar reads it and emits the `[cam]` narration line to the orchestrator pane). The idle-guarantee (`sendKeysWhenIdle`) ensures the orchestrator is not mid-response when slash commands are injected.
-- **Interactive TUI workers by default, headless opt-in (CAM-42, recortada by ADR-0059/CAM-516)**: `cam next` dispatches workers as interactive TUI `claude` sessions (not `claude -p`) by default. `claude -p` remains banned for the tmux worker path and for the `cam claude` retry-wrapper's own auth preflight. The one exemption is `cam next --headless`: a pure per-invocation flag (never persisted by config, never sticky across a call that omits it) that opts the implementer worker into a `claude -p`/stream-json dispatch instead, born exempt because a 2026-08-08 measurement (ADR-0059) found it left console API consumption unchanged and reported a subscription-window `rate_limit_event`, not a per-use charge.
-- **Single per-project session**: `cam run` now creates one tmux session per
+- **Single-hub dispatch (CAM-55)**: `gship run` is the only dispatch hub. `gship plan`, `gship issue`, `gship spec`, `gship review`, and `gship ship` are send-keys thin-proxies that inject slash commands into the orchestrator pane; after session/bootstrap and worker-mutex gates, `gship next` uses an `active:true` sidecar-state trigger (no send-keys). The default tmux worker path uses a titled 3rd pane; the opt-in headless implementer path uses a direct child process serialized by the supervisor lock. Completion is push-based in either mode (worker writes `scripts/cam/worker-report.json`; the sidecar reads it and emits the `[cam]` narration line to the orchestrator pane). The idle-guarantee (`sendKeysWhenIdle`) ensures the orchestrator is not mid-response when slash commands are injected.
+- **Interactive TUI workers by default, headless opt-in (CAM-42, recortada by ADR-0059/CAM-516)**: `gship next` dispatches workers as interactive TUI `claude` sessions (not `claude -p`) by default. `claude -p` remains banned for the tmux worker path and for the `gship claude` retry-wrapper's own auth preflight. The one exemption is `gship next --headless`: a pure per-invocation flag (never persisted by config, never sticky across a call that omits it) that opts the implementer worker into a `claude -p`/stream-json dispatch instead, born exempt because a 2026-08-08 measurement (ADR-0059) found it left console API consumption unchanged and reported a subscription-window `rate_limit_event`, not a per-use charge.
+- **Single per-project session**: `gship run` now creates one tmux session per
   project with a 2-pane layout (orchestrator + navigable dashboard). The navigable
   dashboard replaces the old interactive menu: n/r/s/p/i dispatch /cam-* to the
   orchestrator, j/k or arrows browse stories, Enter opens a story detail view.
   On a cycle-close, the orchestrator arms the recycle marker (`cam-orch-recycle`),
   the watcher SIGTERMs the process, and the wrapper respawns it with `CAM_ORCH_REHYDRATE`;
   otherwise the wrapper tears down the session.
-- **Thin pane launchers**: `cam plan`, `cam issue`, and `cam spec` open a pane inside the
+- **Thin pane launchers**: `gship plan`, `gship issue`, and `gship spec` open a pane inside the
   project session and return 0 immediately (suppressing the attach hint when
-  already inside the session). `cam next` is also a thin-proxy: after its
+  already inside the session). `gship next` is also a thin-proxy: after its
   session/bootstrap and worker-mutex gates, it flips `active:true` to trigger
   the sidecar and returns 0 immediately.
-- **`cam issue` subcommand**: file an issue from free text without entering
+- **`gship issue` subcommand**: file an issue from free text without entering
   the session. The pane agent runs `/cam-issue create <text>`.
 - **Auto-retry internalized**: rate-limit retry is now built into `cam` (no
-  external tool installation required). `cam init` no longer checks for any
+  external tool installation required). `gship init` no longer checks for any
   external retry binary. See [LICENSES/claude-auto-retry-MIT.txt](./LICENSES/claude-auto-retry-MIT.txt)
   for upstream attribution.
-- **`cam claude` subcommand**: new explicit entry point for print-mode and
+- **`gship claude` subcommand**: new explicit entry point for print-mode and
   interactive-mode claude runs with built-in retry.
 
 ---
