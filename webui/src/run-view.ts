@@ -82,6 +82,48 @@ export function toneOf(state: RunState): StateTone {
 	return 'default';
 }
 
+/** What the screen answers at a glance: does Gateship need the operator now? */
+export type OperatorAttention = 'Precisa de você' | 'Trabalhando' | 'Ocioso';
+
+const ATTENTION_STATES: Readonly<Record<RunState, OperatorAttention>> = {
+	queued: 'Trabalhando',
+	working: 'Trabalhando',
+	verify: 'Trabalhando',
+	review: 'Trabalhando',
+	shipping: 'Trabalhando',
+	'ready-to-ship': 'Precisa de você',
+	'waiting-user': 'Precisa de você',
+	failed: 'Precisa de você',
+	interrupted: 'Precisa de você',
+	done: 'Ocioso',
+};
+
+/**
+ * The run state and the preserved workspaces read as one human state, because
+ * the operator asks a single question of the header. A notice outlives the run
+ * that left it, so it decides before the state does.
+ */
+export function attentionOf(
+	run: RunView | null,
+	notices: boolean | readonly unknown[],
+): OperatorAttention {
+	const hasNotice = typeof notices === 'boolean' ? notices : notices.length > 0;
+	if (hasNotice) return 'Precisa de você';
+	if (run === null) return 'Ocioso';
+	return ATTENTION_STATES[run.state];
+}
+
+const ATTENTION_TONE: Readonly<Record<OperatorAttention, StateTone>> = {
+	'Precisa de você': 'warning',
+	Trabalhando: 'info',
+	Ocioso: 'default',
+};
+
+/** Badge variant for a human state, which no longer follows a single run. */
+export function attentionToneOf(attention: OperatorAttention): StateTone {
+	return ATTENTION_TONE[attention];
+}
+
 const CANCELLABLE: readonly RunState[] = [
 	'queued',
 	'working',
