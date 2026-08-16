@@ -30,7 +30,6 @@ import {
 } from '../runtime/run-runtime.ts';
 import { type RunEvent, RunStore } from '../runtime/run-store.ts';
 import { RUNTIME_SOURCE_REF } from '../runtime/source-ref.ts';
-import { resolvePrdPath } from './status.ts';
 import { resolveWebAssets, serveWebAsset } from './web-assets.ts';
 
 export const DEFAULT_WEB_PORT = 7777;
@@ -147,11 +146,27 @@ async function readIssueId(request: Request): Promise<string | Response> {
 	return issueId.trim();
 }
 
-async function startDurableRun(request: Request, runtime: RunRuntime): Promise<Response> {
+function hasLegacyCycle(cwd: string): boolean {
+	return (
+		existsSync(join(cwd, 'scripts', 'cam', 'prd.json')) ||
+		existsSync(join(cwd, 'prd.json'))
+	);
+}
+
+async function startDurableRun(
+	request: Request,
+	runtime: RunRuntime,
+	cwd: string,
+): Promise<Response> {
 	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
 	const issueId = await readIssueId(request);
 	if (issueId instanceof Response) return issueId;
 	try {
+		if (hasLegacyCycle(cwd)) {
+			throw new RuntimePreflightError(
+				'Um ciclo legado ainda possui prd.json; finalize ou abandone esse ciclo primeiro.',
+			);
+		}
 		return Response.json({ ok: true, run: runtime.startRun(issueId) }, { status: 202 });
 	} catch (error) {
 		const unavailable = error instanceof RuntimeUnavailableError;
@@ -358,12 +373,12 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/app.js': () => serveWebAsset(assets.appJs),
 			'/app.css': () => serveWebAsset(assets.appCss),
 			'/api/snapshot': () => {
-				if (existsSync(resolvePrdPath(options.cwd))) return Response.json({});
+				if (hasLegacyCycle(options.cwd)) return Response.json({});
 				return Response.json({ idleState: readIdleSnapshotState(options.cwd) });
 			},
 			'/api/runs': {
 				GET: () => Response.json({ runs: runRuntime.listRuns() }),
-				POST: (request) => startDurableRun(request, runRuntime),
+				POST: (request) => startDurableRun(request, runRuntime, options.cwd),
 			},
 			'/api/issues': {
 				POST: (request) => createIssueFromOperator(request, issueIntake),
