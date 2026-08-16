@@ -70,14 +70,25 @@ function shellCommand(): string {
 	return '/bin/sh';
 }
 
-async function defaultRunCommand(
-	input: VerificationCommandInput,
-	terminationGraceMs = DEFAULT_TERMINATION_GRACE_MS,
-): Promise<CommandResult> {
+export interface OwnedCommandInput {
+	cmd: string[];
+	cwd: string;
+	signal: AbortSignal;
+	/** Child environment; defaults to the ambient one. */
+	env?: Record<string, string | undefined>;
+	terminationGraceMs?: number;
+}
+
+/**
+ * Spawn one owned child in its own process group and collect it. Cancellation
+ * terminates the whole group and surfaces as an AbortError, so no runtime step
+ * can outlive the run that asked for it.
+ */
+export async function runOwnedCommand(input: OwnedCommandInput): Promise<CommandResult> {
 	const child = Bun.spawn({
-		cmd: [shellCommand(), '-lc', input.command],
+		cmd: input.cmd,
 		cwd: input.cwd,
-		env: process.env,
+		env: input.env ?? process.env,
 		detached: true,
 		stdin: 'ignore',
 		stdout: 'pipe',
@@ -85,7 +96,10 @@ async function defaultRunCommand(
 	});
 	let termination: Promise<void> | undefined;
 	const abort = (): void => {
-		termination ??= terminateProcessGroup(child, terminationGraceMs);
+		termination ??= terminateProcessGroup(
+			child,
+			input.terminationGraceMs ?? DEFAULT_TERMINATION_GRACE_MS,
+		);
 	};
 	input.signal.addEventListener('abort', abort, { once: true });
 	if (input.signal.aborted) abort();
@@ -102,6 +116,18 @@ async function defaultRunCommand(
 	} finally {
 		input.signal.removeEventListener('abort', abort);
 	}
+}
+
+async function defaultRunCommand(
+	input: VerificationCommandInput,
+	terminationGraceMs = DEFAULT_TERMINATION_GRACE_MS,
+): Promise<CommandResult> {
+	return runOwnedCommand({
+		cmd: [shellCommand(), '-lc', input.command],
+		cwd: input.cwd,
+		signal: input.signal,
+		terminationGraceMs,
+	});
 }
 
 function acceptanceCriteria(issueContent: string): string[] {

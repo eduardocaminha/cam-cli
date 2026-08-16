@@ -1,11 +1,11 @@
 {
   "id": "CAM-579",
   "title": "gship web: ship atômico do run até o merge",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-16T00:10:14.973Z",
-  "updatedAt": "2026-08-16T00:10:14.973Z",
+  "updatedAt": "2026-08-16T00:43:43.298Z",
   "description": "O dogfood das CAM-577/578 chega a ready-to-ship, mas ainda exige commit, push, PR, automerge, fechamento da issue e limpeza do banco fora da web. Adicionar o menor caminho de ship que mantém código e fechamento da issue na mesma branch e só conclui o run depois do merge real.",
   "specSource": "operator",
   "spec": {
