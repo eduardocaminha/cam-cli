@@ -11,6 +11,7 @@ import {
 	RunRuntime,
 	type RuntimeExecutionInput,
 	type RuntimeReviewResult,
+	type RuntimeShipper,
 } from '../../src/runtime/run-runtime.ts';
 import { RunStore } from '../../src/runtime/run-store.ts';
 
@@ -27,7 +28,7 @@ async function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<voi
 	}
 }
 
-function createRuntime(verdicts: RuntimeReviewResult[]): {
+function createRuntime(verdicts: RuntimeReviewResult[], shipper?: RuntimeShipper): {
 	runtime: RunRuntime;
 	executions: ExecutionCall[];
 	verifications: number[];
@@ -63,6 +64,7 @@ function createRuntime(verdicts: RuntimeReviewResult[]): {
 				return verdict;
 			},
 		},
+		...(shipper === undefined ? {} : { shipper }),
 	});
 	return { runtime, executions, verifications, reviews };
 }
@@ -145,6 +147,53 @@ describe('independent review stage', () => {
 		expect(events.at(-1)?.payload).toEqual({ findings: 'still broken in src/a.ts' });
 		expect(executions).toHaveLength(2);
 		expect(reviews).toHaveLength(2);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	// CAM-583: the clean verdict is what releases the ship, so the two stages
+	// are exercised together rather than across an operator command.
+	test('a clean verdict ships the run without stopping at the button', async () => {
+		const shipped: string[] = [];
+		const { runtime } = createRuntime([{ verdict: 'clean' }], {
+			ship: async (input) => {
+				shipped.push(input.runId);
+				return { outcome: 'merged', prNumber: 407 };
+			},
+		});
+		const run = runtime.startRun('CAM-583');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'done');
+
+		expect(runtime.listEvents().map((event) => event.kind)).toEqual([
+			'run.created',
+			'run.started',
+			'run.work-completed',
+			'run.review-started',
+			'run.review-clean',
+			'run.ship-started',
+			'run.shipped',
+		]);
+		expect(shipped).toEqual([run.id]);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('findings that survive the fix round hold the run instead of shipping it', async () => {
+		let shipCalls = 0;
+		const { runtime } = createRuntime(
+			[{ verdict: 'findings', detail: 'first pass finding' }, { verdict: 'findings', detail: 'still broken' }],
+			{
+				ship: async () => {
+					shipCalls += 1;
+					return { outcome: 'merged', prNumber: 407 };
+				},
+			},
+		);
+		const run = runtime.startRun('CAM-583');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
+
+		expect(shipCalls).toBe(0);
+		expect(runtime.listEvents().map((event) => event.kind)).not.toContain('run.ship-started');
 		await runtime.stop();
 		runtime.close();
 	});

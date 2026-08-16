@@ -145,7 +145,7 @@ export class RunRuntime {
 		this.#newSessionId = options.newSessionId ?? randomUUID;
 		this.#preflight = options.preflight;
 		this.#workspace = options.workspace;
-		this.#store.interruptUnownedRuns(this.#now());
+		this.#store.recoverUnownedRuns(this.#now());
 	}
 
 	startRun(issueId: string): RunRecord {
@@ -206,9 +206,10 @@ export class RunRuntime {
 	}
 
 	/**
-	 * Ship one verified run in the background. Only a run that reached
-	 * ready-to-ship can be shipped, and only one operation at a time owns a run,
-	 * so a second request never opens a second pull request.
+	 * Retry the ship of a run whose automatic attempt did not merge. A verified
+	 * run ships itself, so this is the explicit second chance: only a run that
+	 * is back in ready-to-ship can be shipped, and only one operation at a time
+	 * owns a run, so a second request never opens a second pull request.
 	 */
 	shipRun(runId: string): RunRecord {
 		const shipper = this.#shipper;
@@ -225,7 +226,9 @@ export class RunRuntime {
 		const promise = this.#driveShip(shipper, run, controller.signal)
 			.finally(() => this.#active.delete(run.id));
 		this.#active.set(run.id, { controller, promise });
-		return run;
+		// The ship phase is already persisted: report it, not the state the
+		// caller read before asking.
+		return this.#store.getRun(run.id) ?? run;
 	}
 
 	getRun(runId: string): RunRecord | null {
@@ -300,9 +303,15 @@ export class RunRuntime {
 				const verified = await this.#work(executor, verifier, run, signal, executionInput);
 				if (!verified) return;
 				const next = await this.#review(run, signal, executionInput);
-				if (next === null) return;
+				if (next === null) break;
 				attempt = next;
 			}
+			// A run that got here verified and reviewed clean ships under the same
+			// ownership: the operator asked for the change, not for a button.
+			const shipper = this.#shipper;
+			if (shipper === undefined) return;
+			if (this.#store.getRun(run.id)?.state !== 'ready-to-ship') return;
+			await this.#driveShip(shipper, run, signal);
 		} catch (error) {
 			if (signal.aborted) {
 				this.#interrupt(run.id);
@@ -318,16 +327,17 @@ export class RunRuntime {
 	}
 
 	/**
-	 * One ship attempt. The run reaches done only on a real merge; a failed
-	 * attempt leaves it in ready-to-ship, so the same diff can be shipped again
-	 * once GitHub or CI recovers, and cancellation is recorded the same way.
+	 * One ship attempt, persisted as the shipping phase. The run reaches done
+	 * only on a real merge; a failed attempt returns it to ready-to-ship, so the
+	 * same diff can be shipped again once GitHub or CI recovers, and
+	 * cancellation is recorded the same way.
 	 */
 	async #driveShip(
 		shipper: RuntimeShipper,
 		run: RunRecord,
 		signal: AbortSignal,
 	): Promise<void> {
-		this.#emit(run.id, 'run.ship-started');
+		this.#transition(run.id, 'shipping', 'run.ship-started');
 		try {
 			const result = await shipper.ship({
 				runId: run.id,
@@ -337,7 +347,7 @@ export class RunRuntime {
 				emit: (kind, payload) => this.#emit(run.id, kind, payload),
 			});
 			if (signal.aborted) {
-				this.#emit(run.id, 'run.ship-cancelled');
+				this.#transition(run.id, 'ready-to-ship', 'run.ship-cancelled');
 				return;
 			}
 			if (result.outcome === 'merged') {
@@ -346,13 +356,17 @@ export class RunRuntime {
 				});
 				return;
 			}
-			this.#emit(run.id, 'run.ship-failed', { error: result.detail });
+			this.#transition(run.id, 'ready-to-ship', 'run.ship-failed', {
+				payload: { error: result.detail },
+			});
 		} catch (error) {
 			if (signal.aborted) {
-				this.#emit(run.id, 'run.ship-cancelled');
+				this.#transition(run.id, 'ready-to-ship', 'run.ship-cancelled');
 				return;
 			}
-			this.#emit(run.id, 'run.ship-failed', { error: errorMessage(error) });
+			this.#transition(run.id, 'ready-to-ship', 'run.ship-failed', {
+				payload: { error: errorMessage(error) },
+			});
 		}
 	}
 

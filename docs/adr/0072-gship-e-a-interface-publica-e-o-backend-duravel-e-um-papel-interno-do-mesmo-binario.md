@@ -42,8 +42,9 @@ O adaptador Claude continua usando o CLI headless e `stream-json`, conforme a AD
 A maquina de estados alvo e:
 
 ```text
-queued -> working -> verify -> review? -> ready-to-ship -> done
-                    |          |
+queued -> working -> verify -> review? -> ready-to-ship -> shipping -> done
+                    |          |                       ^              |
+                    |          |                       +--------------+ (falha ou cancelamento do ship)
                     |          +-> working (no maximo uma rodada automatica de fix)
                     +-> waiting-user | failed | interrupted
 ```
@@ -53,6 +54,7 @@ Politicas deliberadamente limitadas:
 - a mesma sessao primaria planeja e implementa quando o provedor permite retomada; muda-se a permissao, nao se traduz o plano entre dois agentes por padrao;
 - review e uma leitura nova, read-only, do diff e dos testes;
 - ha no maximo uma rodada automatica de correcao depois do review;
+- run verificado e revisado limpo segue sozinho para o ship, no mesmo ownership; o comando de ship existe apenas como retry explicito de uma tentativa que nao mergeou;
 - sugestoes aparecem para o operador e nao viram stories automaticamente;
 - testes focados rodam durante o trabalho; a suite completa roda no gate de ship/CI;
 - erro de spec ou de harness e roteado ao artefato responsavel ou a `waiting-user`, sem recriar recursivamente todo o planejamento;

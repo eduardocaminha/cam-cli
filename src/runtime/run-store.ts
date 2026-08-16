@@ -282,16 +282,30 @@ export class RunStore {
 		return rows.map(decodeEvent);
 	}
 
-	interruptUnownedRuns(createdAt: string): RunEvent[] {
-		const activeStates = new Set(['queued', 'working', 'verify', 'review']);
+	/**
+	 * Settle every run that a crashed service left mid-operation. Work phases
+	 * recover as interrupted, so they resume; a ship recovers as ready-to-ship,
+	 * because the verified diff is intact and only the ship attempt was lost.
+	 */
+	recoverUnownedRuns(createdAt: string): RunEvent[] {
+		const recovery: Readonly<Record<string, { toState: RunState; kind: string }>> = {
+			queued: { toState: 'interrupted', kind: 'run.recovered-interrupted' },
+			working: { toState: 'interrupted', kind: 'run.recovered-interrupted' },
+			verify: { toState: 'interrupted', kind: 'run.recovered-interrupted' },
+			review: { toState: 'interrupted', kind: 'run.recovered-interrupted' },
+			shipping: { toState: 'ready-to-ship', kind: 'run.recovered-shippable' },
+		};
 		return this.listRuns(10_000)
-			.filter((run) => activeStates.has(run.state))
-			.map((run) => this.transition({
-				runId: run.id,
-				toState: 'interrupted',
-				kind: 'run.recovered-interrupted',
-				createdAt,
-			}).event);
+			.flatMap((run) => {
+				const target = recovery[run.state];
+				if (target === undefined) return [];
+				return [this.transition({
+					runId: run.id,
+					toState: target.toState,
+					kind: target.kind,
+					createdAt,
+				}).event];
+			});
 	}
 
 	close(): void {

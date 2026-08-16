@@ -1,11 +1,11 @@
 {
   "id": "CAM-583",
   "title": "Auto-ship após oracle verde e review CLEAN",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-16T09:40:04.803Z",
-  "updatedAt": "2026-08-16T09:40:04.803Z",
+  "updatedAt": "2026-08-16T09:56:14.051Z",
   "description": "No RunRuntime, quando um run verificado chega a ready-to-ship e existe shipper configurado, continuar automaticamente no mesmo ownership para shipping e done após o merge. Persistir shipping como fase real; em falha ou cancelamento, voltar a ready-to-ship para retry. Manter o endpoint e o botão Shipar apenas como retry explícito. Não adicionar flag, modo ou camada de política.",
   "specSource": "operator",
   "spec": {

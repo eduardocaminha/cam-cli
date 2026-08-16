@@ -4,6 +4,7 @@ export const RUN_STATES = [
 	'verify',
 	'review',
 	'ready-to-ship',
+	'shipping',
 	'done',
 	'waiting-user',
 	'failed',
@@ -22,7 +23,10 @@ const ALLOWED_TRANSITIONS: Readonly<Record<RunState, readonly RunState[]>> = {
 	working: ['verify', 'waiting-user', 'failed', 'interrupted'],
 	verify: ['review', 'ready-to-ship', 'failed', 'interrupted'],
 	review: ['working', 'ready-to-ship', 'waiting-user', 'failed', 'interrupted'],
-	'ready-to-ship': ['done', 'failed', 'interrupted'],
+	'ready-to-ship': ['shipping', 'failed', 'interrupted'],
+	// A ship attempt is a phase of its own, so a merge is the only way out to
+	// done and every other end returns the same diff to ready-to-ship.
+	shipping: ['done', 'ready-to-ship', 'interrupted'],
 	done: [],
 	'waiting-user': ['working', 'interrupted'],
 	failed: [],

@@ -119,11 +119,21 @@ describe('operational screen', () => {
 		expect(buttonIsEnabled(html, 'Iniciar run')).toBe(false);
 	});
 
-	test('ready-to-ship: offers ship alongside cancel', () => {
+	test('ready-to-ship: offers ship as the retry, alongside cancel', () => {
 		const html = render({ run: runIn('ready-to-ship') });
 
 		expect(html).toContain('Fase ready-to-ship');
 		expect(buttonIsEnabled(html, 'Shipar')).toBe(true);
+		expect(buttonIsEnabled(html, 'Cancelar')).toBe(true);
+		expect(buttonIsEnabled(html, 'Retomar')).toBe(false);
+	});
+
+	test('shipping: shows the phase the service is in and holds the ship command', () => {
+		const html = render({ run: runIn('shipping') });
+
+		expect(html).toContain('Fase shipping');
+		// The run is already shipping itself: the button is only the retry.
+		expect(buttonIsEnabled(html, 'Shipar')).toBe(false);
 		expect(buttonIsEnabled(html, 'Cancelar')).toBe(true);
 		expect(buttonIsEnabled(html, 'Retomar')).toBe(false);
 	});
@@ -204,7 +214,15 @@ describe('operational screen', () => {
 
 describe('screen derivations', () => {
 	test('progress advances monotonically along the run spine', () => {
-		const spine: RunState[] = ['queued', 'working', 'verify', 'review', 'ready-to-ship', 'done'];
+		const spine: RunState[] = [
+			'queued',
+			'working',
+			'verify',
+			'review',
+			'ready-to-ship',
+			'shipping',
+			'done',
+		];
 		const values = spine.map(progressOf);
 
 		expect(values[0]).toBe(0);
