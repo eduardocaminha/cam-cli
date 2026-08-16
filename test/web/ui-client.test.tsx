@@ -11,18 +11,22 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { App, type AppProps, type OperatorRoute, routeOf } from '../../webui/src/App.tsx';
 import {
+	BRIEF_PATH,
 	commandRun,
 	createIssue,
 	CHAT_PATH,
 	EVENTS_PATH,
 	fetchBacklog,
+	fetchBrief,
 	fetchChat,
 	fetchProviders,
 	fetchRunEvents,
 	fetchRuns,
+	type ProjectBriefView,
 	RUNS_PATH,
 	ISSUES_PATH,
 	PROVIDERS_PATH,
+	saveBrief,
 	selectProvider,
 	sendChat,
 	SNAPSHOT_PATH,
@@ -80,12 +84,21 @@ function eventIn(fromState: RunState, toState: RunState, kind: string): RunEvent
 	};
 }
 
+const EMPTY_BRIEF: ProjectBriefView = {
+	objective: '',
+	decisions: [],
+	constraints: [],
+	openItems: [],
+};
+
 function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): string {
 	return renderToStaticMarkup(
 		<App
 			backlog={BACKLOG}
+			brief={EMPTY_BRIEF}
 			chatMessages={[]}
 			events={[]}
+			handoff={EMPTY_BRIEF}
 			ideas={[]}
 			notificationPermission="default"
 			onCancel={() => {}}
@@ -93,6 +106,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			onCreateIssue={() => {}}
 			onEnableNotifications={() => {}}
 			onResume={() => {}}
+			onSaveBrief={() => {}}
 			onSelectIssue={() => {}}
 			onSelectProvider={() => {}}
 			onSendMessage={() => {}}
@@ -559,6 +573,66 @@ describe('settings surface', () => {
 		expect(granted).not.toContain('API key');
 		expect(settingsPage({ notificationPermission: 'denied' })).toContain('Notificações bloqueadas');
 	});
+
+	test('the brief is edited here and the automatic handoff sits beside it, read-only', () => {
+		const html = settingsPage({
+			brief: {
+				objective: 'Manter a intenção do produto sob controle do operador.',
+				decisions: ['O brief é distinto do handoff.', 'Só o operador o escreve.'],
+				constraints: ['Nenhuma rota nova.'],
+				openItems: ['Editar o brief pela web.'],
+			},
+			handoff: {
+				objective: 'Implementar a fatia 2 do estágio 2.',
+				decisions: ['A leitura devolve os dois registros.'],
+				constraints: ['A UI apenas lê este registro.'],
+				openItems: ['Regenerar o bundle.'],
+			},
+		});
+		const brief = panel(html, 'Project brief');
+		const handoff = panel(html, 'Handoff automático');
+
+		// Two panels, each naming whose context it carries.
+		expect(brief).toContain('Contexto humano autoritativo');
+		expect(handoff).toContain('Estado de sessão observado e gerado pelo orquestrador');
+		expect(handoff).toContain('Pode estar desatualizado; o brief acima prevalece.');
+
+		// The form opens already filled with what the server holds, lists one per line.
+		expect(brief).toContain('name="objective"');
+		expect(brief).toContain('Manter a intenção do produto sob controle do operador.');
+		for (const name of ['decisions', 'constraints', 'openItems']) {
+			expect(brief).toContain(`name="${name}"`);
+		}
+		expect(brief).toContain('O brief é distinto do handoff.\nSó o operador o escreve.');
+		expect(brief).toContain('Nenhuma rota nova.');
+		expect(brief).toContain('Editar o brief pela web.');
+		expect(buttonIsEnabled(html, 'Salvar brief')).toBe(true);
+
+		// The orchestrator's record is printed whole, with nothing to type into.
+		expect(handoff).toContain('Implementar a fatia 2 do estágio 2.');
+		expect(handoff).toContain('A leitura devolve os dois registros.');
+		expect(handoff).toContain('A UI apenas lê este registro.');
+		expect(handoff).toContain('Regenerar o bundle.');
+		expect(handoff).toContain('somente leitura');
+		for (const control of ['<form', '<input', '<textarea', '<select', '<button']) {
+			expect(handoff).not.toContain(control);
+		}
+		// The two records stay distinct: neither panel repeats the other's content.
+		expect(handoff).not.toContain('Manter a intenção do produto');
+		expect(brief).not.toContain('Implementar a fatia 2 do estágio 2.');
+	});
+
+	test('the brief save is held while a command is in flight, like every other', () => {
+		expect(buttonIsEnabled(settingsPage({ pending: true }), 'Salvar brief')).toBe(false);
+	});
+
+	test('an empty brief and an empty handoff still render both panels', () => {
+		const html = settingsPage();
+
+		expect(panel(html, 'Project brief')).toContain('Um item por linha');
+		expect(buttonIsEnabled(html, 'Salvar brief')).toBe(true);
+		expect(panel(html, 'Handoff automático')).toContain('Nada registrado ainda.');
+	});
 });
 
 describe('operator shell', () => {
@@ -810,6 +884,60 @@ describe('same-origin transport', () => {
 		expect(ISSUES_PATH).toBe('/api/issues');
 		expect(PROVIDERS_PATH).toBe('/api/providers');
 		expect(CHAT_PATH).toBe('/api/chat');
+		expect(BRIEF_PATH).toBe('/api/brief');
+	});
+
+	test('the brief and the handoff arrive on one read, and only the brief is written', async () => {
+		const brief = {
+			objective: 'Manter a intenção do produto sob controle do operador.',
+			decisions: ['O brief é distinto do handoff.'],
+			constraints: ['Nenhuma rota nova.'],
+			openItems: ['Editar o brief pela web.'],
+		};
+		const handoff = {
+			objective: 'Implementar a fatia 2 do estágio 2.',
+			decisions: ['A leitura devolve os dois registros.'],
+			constraints: ['A UI apenas lê este registro.'],
+			openItems: ['Regenerar o bundle.'],
+		};
+
+		await withRecordedFetch({ brief, handoff }, 200, async (calls) => {
+			expect(await fetchBrief()).toEqual({ brief, handoff });
+			expect(calls).toEqual([{ url: BRIEF_PATH, method: 'GET', body: null }]);
+		});
+		// An incomplete payload reads as the empty four fields, never as a hole.
+		await withRecordedFetch({}, 200, async () => {
+			expect(await fetchBrief()).toEqual({ brief: EMPTY_BRIEF, handoff: EMPTY_BRIEF });
+		});
+		await withRecordedFetch({ brief: { objective: 'só o objetivo' } }, 200, async () => {
+			expect(await fetchBrief()).toEqual({
+				brief: { ...EMPTY_BRIEF, objective: 'só o objetivo' },
+				handoff: EMPTY_BRIEF,
+			});
+		});
+		// The write carries the brief alone, on the same route, as a PUT.
+		await withRecordedFetch({ ok: true, brief }, 200, async (calls) => {
+			expect(await saveBrief(brief)).toBe('Project brief atualizado.');
+			expect(calls).toEqual([{
+				url: BRIEF_PATH,
+				method: 'PUT',
+				body: JSON.stringify(brief),
+			}]);
+		});
+	});
+
+	test('a refused brief surfaces the server validation message', async () => {
+		await withRecordedFetch({
+			ok: false,
+			code: 'invalid-request',
+			message: 'Objetivo aceita no máximo 2000 caracteres.',
+		}, 400, async () => {
+			expect(await saveBrief({ ...EMPTY_BRIEF, objective: 'o'.repeat(2001) }))
+				.toBe('Objetivo aceita no máximo 2000 caracteres.');
+		});
+		await withRecordedFetch({}, 500, async () => {
+			await expect(fetchBrief()).rejects.toThrow('Brief respondeu 500');
+		});
 	});
 
 	test('reads and sends the orchestrator conversation on one same-origin route', async () => {

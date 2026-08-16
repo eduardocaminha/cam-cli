@@ -9,7 +9,12 @@ import type {
 	OrchestratorTurnResult,
 } from '../../src/runtime/conversational-orchestrator.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
-import type { OrchestratorMessage, ProjectBrief, RunRecord } from '../../src/runtime/run-store.ts';
+import type {
+	OrchestratorHandoff,
+	OrchestratorMessage,
+	ProjectBrief,
+	RunRecord,
+} from '../../src/runtime/run-store.ts';
 import { PROJECT_BRIEF_LIMITS, RunStore } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
@@ -297,18 +302,59 @@ describe('project brief web API', () => {
 		}
 	};
 
-	test('GET reads the persisted brief without an Origin header', async () => {
+	const HANDOFF: OrchestratorHandoff = {
+		objective: 'Entregar o editor web do brief.',
+		decisions: ['O handoff é escrito por turnos do orquestrador.'],
+		constraints: ['A UI apenas lê o handoff.'],
+		openItems: ['Renderizar os dois painéis em Ajustes.'],
+	};
+
+	const EMPTY = { objective: '', decisions: [], constraints: [], openItems: [] };
+
+	test('GET reads the persisted brief and handoff without an Origin header', async () => {
 		await withServer(async (base, runtime) => {
 			const empty = await fetch(`${base}/api/brief`);
 			expect(empty.status).toBe(200);
-			expect(await empty.json()).toEqual({
-				brief: { objective: '', decisions: [], constraints: [], openItems: [] },
-			});
+			expect(await empty.json()).toEqual({ brief: EMPTY, handoff: EMPTY });
 
 			runtime.setProjectBrief(BRIEF);
+			runtime.setOrchestratorHandoff(HANDOFF);
 			const read = await fetch(`${base}/api/brief`);
 			expect(read.status).toBe(200);
-			expect(await read.json()).toEqual({ brief: BRIEF });
+			// Both records travel on the one read, and the handoff is the durable
+			// one the orchestrator turns wrote, not a copy of the brief.
+			expect(await read.json()).toEqual({ brief: BRIEF, handoff: HANDOFF });
+			expect(runtime.getOrchestratorHandoff()).toEqual(HANDOFF);
+		});
+	});
+
+	test('the route offers no way to write the handoff', async () => {
+		await withServer(async (base, runtime) => {
+			runtime.setOrchestratorHandoff(HANDOFF);
+
+			// The only write the route has takes a brief; a handoff sent along with
+			// it is not a second record to store, and never reaches the durable one.
+			const written = await fetch(`${base}/api/brief`, {
+				method: 'PUT',
+				headers: { 'content-type': 'application/json', origin: base },
+				body: JSON.stringify({
+					...BRIEF,
+					handoff: { ...EMPTY, objective: 'Reescrito pela UI.' },
+				}),
+			});
+			expect(written.status).toBe(200);
+			expect(await written.json()).toEqual({ ok: true, brief: BRIEF });
+			expect(runtime.getOrchestratorHandoff()).toEqual(HANDOFF);
+
+			for (const method of ['POST', 'PATCH', 'DELETE']) {
+				const refused = await fetch(`${base}/api/brief`, {
+					method,
+					headers: { 'content-type': 'application/json', origin: base },
+					body: JSON.stringify(HANDOFF),
+				});
+				expect(refused.ok).toBe(false);
+			}
+			expect(runtime.getOrchestratorHandoff()).toEqual(HANDOFF);
 		});
 	});
 

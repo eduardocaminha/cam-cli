@@ -34,6 +34,7 @@ import type {
 	ChatMessageView,
 	OperatorIssueDraft,
 	OperatorSpecDraft,
+	ProjectBriefView,
 	ProviderStatusView,
 	WorkspaceNoticeView,
 } from './client.ts';
@@ -81,6 +82,10 @@ export interface AppProps {
 	workspaceNotices: readonly WorkspaceNoticeView[];
 	providers: readonly ProviderStatusView[];
 	chatMessages: readonly ChatMessageView[];
+	/** The operator's own context, editable here and nowhere else. */
+	brief: ProjectBriefView;
+	/** What the orchestrator recorded about the session; read-only. */
+	handoff: ProjectBriefView;
 	selectedProvider: ProviderStatusView['id'];
 	notificationPermission: BrowserNotificationPermission;
 	/** Newest first, exactly as /api/runs returned it. */
@@ -103,6 +108,7 @@ export interface AppProps {
 	onEnableNotifications: () => void;
 	onSelectProvider: (providerId: ProviderStatusView['id']) => void;
 	onSendMessage: (message: string) => void;
+	onSaveBrief: (brief: ProjectBriefView) => void;
 }
 
 /** Reads a named field out of the form that was just submitted, trimmed. */
@@ -847,6 +853,139 @@ function IssueSpecifyPanel({
 	);
 }
 
+/**
+ * The three list fields both records carry, named once: the form edits them as
+ * text, the read-only panel prints them, and neither spells the names twice.
+ */
+const BRIEF_LISTS: readonly {
+	name: 'decisions' | 'constraints' | 'openItems';
+	label: string;
+}[] = [
+	{ name: 'decisions', label: 'Decisões' },
+	{ name: 'constraints', label: 'Restrições' },
+	{ name: 'openItems', label: 'Itens em aberto' },
+];
+
+/** One item per line; blank lines are what an operator leaves while typing. */
+function briefLines(value: string): string[] {
+	return value
+		.split('\n')
+		.map((line) => line.trim())
+		.filter((line) => line.length > 0);
+}
+
+/**
+ * The context the operator owns. It is the authority the orchestrator reads
+ * before every turn, so correcting it here is how stale intent gets fixed --
+ * without touching the conversation, the runs, or the handoff below it.
+ */
+function ProjectBriefPanel({
+	brief,
+	pending,
+	onSaveBrief,
+}: Pick<AppProps, 'brief' | 'pending' | 'onSaveBrief'>): React.ReactElement {
+	return (
+		<ContextPanel
+			description="Contexto humano autoritativo, mantido por você. O orquestrador lê e nunca escreve."
+			open
+			title="Project brief"
+		>
+			<form
+				className="flex flex-col gap-4"
+				// Re-synced with the server's answer after a save, which is the only
+				// thing that can change a brief while the operator is looking at it.
+				key={JSON.stringify(brief)}
+				onSubmit={(event) => {
+					event.preventDefault();
+					const value = fieldReader(event.currentTarget);
+					onSaveBrief({
+						objective: value('objective'),
+						decisions: briefLines(value('decisions')),
+						constraints: briefLines(value('constraints')),
+						openItems: briefLines(value('openItems')),
+					});
+				}}
+			>
+				<label className="flex flex-col gap-1 text-sm" htmlFor="brief-objective">
+					<span className="font-medium">Objetivo</span>
+					<textarea
+						className={cn(FIELD_CLASS, 'min-h-16')}
+						defaultValue={brief.objective}
+						id="brief-objective"
+						name="objective"
+					/>
+				</label>
+				{BRIEF_LISTS.map((field) => (
+					<label
+						className="flex flex-col gap-1 text-sm"
+						htmlFor={`brief-${field.name}`}
+						key={field.name}
+					>
+						<span className="font-medium">{field.label}</span>
+						<textarea
+							className={cn(FIELD_CLASS, 'min-h-20')}
+							defaultValue={brief[field.name].join('\n')}
+							id={`brief-${field.name}`}
+							name={field.name}
+							placeholder="Um item por linha"
+						/>
+					</label>
+				))}
+				<button className={BUTTON_CLASS} disabled={pending} type="submit">
+					Salvar brief
+				</button>
+			</form>
+		</ContextPanel>
+	);
+}
+
+/**
+ * The same four fields, written by the orchestrator instead of by the operator:
+ * observed session state, printed and never edited. It can lag behind what the
+ * brief above already says, and when the two disagree the brief is the one that
+ * counts -- which is why this panel offers nothing to type into.
+ */
+function HandoffPanel({ handoff }: Pick<AppProps, 'handoff'>): React.ReactElement {
+	return (
+		<ContextPanel
+			description="Estado de sessão observado e gerado pelo orquestrador. Pode estar desatualizado; o brief acima prevalece."
+			title="Handoff automático"
+		>
+			<div className="flex flex-col gap-3">
+				<div className="flex flex-wrap items-center gap-2">
+					<Badge variant="outline">somente leitura</Badge>
+					<span className="text-muted-foreground text-sm">
+						Reescrito a cada turno do orquestrador.
+					</span>
+				</div>
+				<Separator />
+				<div className="flex flex-col gap-1 text-sm">
+					<span className="font-medium">Objetivo</span>
+					<p className="whitespace-pre-wrap break-words text-muted-foreground">
+						{handoff.objective === '' ? 'Nada registrado ainda.' : handoff.objective}
+					</p>
+				</div>
+				{BRIEF_LISTS.map((field) => (
+					<div className="flex flex-col gap-1 text-sm" key={field.name}>
+						<span className="font-medium">{field.label}</span>
+						{handoff[field.name].length === 0 ? (
+							<p className="text-muted-foreground">Nada registrado ainda.</p>
+						) : (
+							<ul className="flex flex-col gap-1">
+								{handoff[field.name].map((item) => (
+									<li className="whitespace-pre-wrap break-words text-muted-foreground" key={item}>
+										{item}
+									</li>
+								))}
+							</ul>
+						)}
+					</div>
+				))}
+			</div>
+		</ContextPanel>
+	);
+}
+
 function ShellSidebar({
 	route,
 	run,
@@ -1003,6 +1142,12 @@ function SettingsSurface(props: AppProps): React.ReactElement {
 				notificationPermission={props.notificationPermission}
 				onEnableNotifications={props.onEnableNotifications}
 			/>
+			<ProjectBriefPanel
+				brief={props.brief}
+				onSaveBrief={props.onSaveBrief}
+				pending={props.pending}
+			/>
+			<HandoffPanel handoff={props.handoff} />
 		</SurfaceColumn>
 	);
 }
