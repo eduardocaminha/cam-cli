@@ -1,14 +1,14 @@
-import {
-	existsSync,
-	mkdirSync,
-	mkdtempSync,
-	readdirSync,
-	readFileSync,
-	renameSync,
-	rmSync,
-	statSync,
-	writeFileSync,
-} from 'node:fs';
+// scripts/vendor-coss.ts
+//
+// Fail-closed import guard for a vendored COSS tree (ADR-0070). It verifies;
+// it does not materialize. The vendored tree is a pinned copy-owned snapshot
+// (webui/vendor/coss/PROVENANCE.md), which is how the upstream project
+// describes its own distribution model, so there is deliberately no generic
+// materializer and no promotion machinery to keep in step with it.
+//
+// Usage: bun scripts/vendor-coss.ts --verify <dir>
+
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, extname, relative, resolve, sep } from 'node:path';
 
 const ALLOWED_NPM_PACKAGES = [
@@ -27,16 +27,6 @@ export interface VendorImportViolation {
 	file: string;
 	specifier: string;
 	reason: string;
-}
-
-export interface VendorSourceFile {
-	relPath: string;
-	content: string | Uint8Array;
-}
-
-export interface VendorCossOptions {
-	destination: string;
-	fetchFiles: () => readonly VendorSourceFile[];
 }
 
 export class VendorVerificationError extends Error {
@@ -91,14 +81,6 @@ function isRelativeSpecifier(specifier: string): boolean {
 function isInsideRoot(root: string, path: string): boolean {
 	const rootPrefix = root.endsWith(sep) ? root : `${root}${sep}`;
 	return path === root || path.startsWith(rootPrefix);
-}
-
-function resolveVendorFilePath(stagingDir: string, relPath: string): string {
-	const destination = resolve(stagingDir, relPath);
-	if (relPath.length === 0 || destination === stagingDir || !isInsideRoot(stagingDir, destination)) {
-		throw new Error(`COSS vendor file path escapes the staging root: ${JSON.stringify(relPath)}`);
-	}
-	return destination;
 }
 
 function isAllowedNpmSpecifier(specifier: string): boolean {
@@ -173,53 +155,6 @@ export function verify(dir: string): void {
 
 	if (violations.length > 0) {
 		throw new VendorVerificationError(root, violations);
-	}
-}
-
-/**
- * Materializes an injected COSS source set into a sibling staging directory,
- * verifies that complete staging tree, and only then promotes it to the final
- * destination with same-filesystem renames. If the destination already
- * exists, moves it aside until staging has been promoted, then removes the
- * old tree. A failed staging promotion restores the previous destination.
- *
- * Any fetch, write, verification, or promotion failure removes the staging
- * tree. Failures before promotion leave the destination unchanged.
- */
-export function vendorCoss({ destination, fetchFiles }: VendorCossOptions): void {
-	const finalDestination = resolve(destination);
-	const files = fetchFiles();
-	if (files.length === 0) {
-		throw new Error('COSS vendor source set is empty');
-	}
-	mkdirSync(dirname(finalDestination), { recursive: true });
-	const stagingDir = mkdtempSync(`${finalDestination}.staging-`);
-
-	try {
-		for (const file of files) {
-			const fileDestination = resolveVendorFilePath(stagingDir, file.relPath);
-			mkdirSync(dirname(fileDestination), { recursive: true });
-			writeFileSync(fileDestination, file.content);
-		}
-
-		verify(stagingDir);
-		if (!existsSync(finalDestination)) {
-			renameSync(stagingDir, finalDestination);
-			return;
-		}
-
-		const previousDestination = mkdtempSync(`${finalDestination}.previous-`);
-		rmSync(previousDestination, { recursive: true, force: true });
-		renameSync(finalDestination, previousDestination);
-		try {
-			renameSync(stagingDir, finalDestination);
-		} catch (error) {
-			renameSync(previousDestination, finalDestination);
-			throw error;
-		}
-		rmSync(previousDestination, { recursive: true, force: true });
-	} finally {
-		rmSync(stagingDir, { recursive: true, force: true });
 	}
 }
 

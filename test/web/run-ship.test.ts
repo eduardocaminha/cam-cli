@@ -161,15 +161,8 @@ describe('POST /api/runs/:runId/ship', () => {
 		}
 	});
 
-	test('the page offers the ship command against the same endpoint', async () => {
-		const handle = startWebServer({ port: 0, cwd: createTestTmpdir('gship-web-ship-page-') });
-		try {
-			const html = await (await fetch(`http://${handle.hostname}:${handle.port}/`)).text();
-			expect(html).toContain('Shipar run');
-			expect(html).toContain("runCommand('ship')");
-			expect(html).toContain("shipButton.disabled = state !== 'ready-to-ship'");
-		} finally {
-			await handle.stop();
-		}
-	});
+	// The browser half of this endpoint -- that the screen only offers "Shipar"
+	// in ready-to-ship, and that the client posts to this exact path -- is
+	// covered by test/web/ui-client.test.tsx against the real component, rather
+	// than by matching the served page's source text.
 });
