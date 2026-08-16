@@ -12,10 +12,11 @@ import {
 	commandRun,
 	createIssue,
 	EVENTS_PATH,
+	fetchBacklog,
 	fetchLatestRun,
-	fetchPlannable,
 	fetchRunEvents,
 	type RunAction,
+	specifyIssue,
 	startRun,
 } from './client.ts';
 import type { PlannableIssue, RunEventView, RunView } from './run-view.ts';
@@ -23,6 +24,7 @@ import './index.css';
 
 function useOperationalRun(): {
 	backlog: PlannableIssue[];
+	ideas: PlannableIssue[];
 	run: RunView | null;
 	events: RunEventView[];
 	status: string | null;
@@ -30,17 +32,19 @@ function useOperationalRun(): {
 	send: (command: () => Promise<string>) => void;
 } {
 	const [backlog, setBacklog] = useState<PlannableIssue[]>([]);
+	const [ideas, setIdeas] = useState<PlannableIssue[]>([]);
 	const [run, setRun] = useState<RunView | null>(null);
 	const [events, setEvents] = useState<RunEventView[]>([]);
 	const [status, setStatus] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
 
 	const refresh = useCallback(() => {
-		void Promise.all([fetchLatestRun(), fetchPlannable()])
-			.then(async ([latest, plannable]) => {
+		void Promise.all([fetchLatestRun(), fetchBacklog()])
+			.then(async ([latest, backlogSnapshot]) => {
 				const history = latest === null ? [] : await fetchRunEvents(latest.id);
 				setRun(latest);
-				setBacklog(plannable);
+				setBacklog(backlogSnapshot.plannable);
+				setIdeas(backlogSnapshot.ideas);
 				setEvents(history);
 			})
 			.catch((error: unknown) => setStatus(String(error)));
@@ -80,11 +84,11 @@ function useOperationalRun(): {
 		return () => source.close();
 	}, [refresh]);
 
-	return { backlog, run, events, status, pending, send };
+	return { backlog, ideas, run, events, status, pending, send };
 }
 
 function Screen(): ReactElement {
-	const { backlog, run, events, status, pending, send } = useOperationalRun();
+	const { backlog, ideas, run, events, status, pending, send } = useOperationalRun();
 	const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
 	const command = (action: RunAction) => () => {
 		if (run !== null) send(() => commandRun(run.id, action));
@@ -94,6 +98,7 @@ function Screen(): ReactElement {
 		<App
 			backlog={backlog}
 			events={events}
+			ideas={ideas}
 			onCancel={command('cancel')}
 			onCreateIssue={(draft) => {
 				send(() => createIssue(draft).then((created) => {
@@ -106,6 +111,12 @@ function Screen(): ReactElement {
 			}}
 			onSelectIssue={setSelectedIssueId}
 			onShip={command('ship')}
+			onSpecifyIssue={(issueId, draft) => {
+				send(() => specifyIssue(issueId, draft).then((specified) => {
+					setSelectedIssueId(specified.id);
+					return `${specified.id} especificada e selecionada.`;
+				}));
+			}}
 			onStart={() => {
 				if (selectedIssueId !== null) send(() => startRun(selectedIssueId));
 			}}

@@ -21,6 +21,8 @@ import {
 	createOperatorIssue,
 	IssueIntakeError,
 	parseOperatorIssueInput,
+	parseOperatorSpecInput,
+	specifyOperatorIssue,
 } from '../runtime/issue-intake.ts';
 import {
 	RunRuntime,
@@ -42,6 +44,8 @@ export interface WebServerOptions {
 	runRuntime?: RunRuntime;
 	/** Test seam for the remote-main operator issue writer. */
 	issueIntake?: (input: unknown) => CreatedOperatorIssue;
+	/** Test seam for promoting an existing idea with the operator contract. */
+	issueSpecifier?: (id: string, input: unknown) => CreatedOperatorIssue;
 }
 
 async function createIssueFromOperator(
@@ -61,6 +65,33 @@ async function createIssueFromOperator(
 	try {
 		const input = parseOperatorIssueInput(body);
 		return Response.json({ ok: true, issue: issueIntake(input) }, { status: 201 });
+	} catch (error) {
+		if (!(error instanceof IssueIntakeError)) throw error;
+		return Response.json(
+			{ ok: false, code: error.code, message: error.message },
+			{ status: error.status },
+		);
+	}
+}
+
+async function specifyIssueFromOperator(
+	request: Request,
+	id: string,
+	issueSpecifier: (id: string, input: unknown) => CreatedOperatorIssue,
+): Promise<Response> {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	let body: unknown;
+	try {
+		body = await request.json();
+	} catch {
+		return Response.json(
+			{ ok: false, code: 'invalid-request', message: 'Um objeto JSON é obrigatório.' },
+			{ status: 400 },
+		);
+	}
+	try {
+		const input = parseOperatorSpecInput(body);
+		return Response.json({ ok: true, issue: issueSpecifier(id, input) });
 	} catch (error) {
 		if (!(error instanceof IssueIntakeError)) throw error;
 		return Response.json(
@@ -364,6 +395,8 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		?? new RunRuntime(createDefaultRunRuntimeOptions(options.cwd));
 	const issueIntake = options.issueIntake ?? ((input: unknown) =>
 		createOperatorIssue(options.cwd, input));
+	const issueSpecifier = options.issueSpecifier ?? ((id: string, input: unknown) =>
+		specifyOperatorIssue(options.cwd, id, input));
 	const assets = resolveWebAssets();
 	const server = Bun.serve({
 		hostname: WEB_HOSTNAME,
@@ -382,6 +415,13 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			},
 			'/api/issues': {
 				POST: (request) => createIssueFromOperator(request, issueIntake),
+			},
+			'/api/issues/:issueId/spec': {
+				POST: (request) => specifyIssueFromOperator(
+					request,
+					request.params.issueId,
+					issueSpecifier,
+				),
 			},
 			'/api/runs/:runId/cancel': {
 				POST: (request) => cancelDurableRun(request, runRuntime, request.params.runId),

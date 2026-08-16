@@ -18,6 +18,11 @@ export interface OperatorIssueDraft {
 	verificationCommand: string;
 }
 
+export interface OperatorSpecDraft {
+	scope: string;
+	verificationCommand: string;
+}
+
 export interface CreatedIssue {
 	id: string;
 	title: string;
@@ -25,8 +30,18 @@ export interface CreatedIssue {
 
 export type RunAction = 'resume' | 'cancel' | 'ship';
 
+export interface BacklogSnapshot {
+	plannable: PlannableIssue[];
+	ideas: PlannableIssue[];
+}
+
 interface SnapshotPayload {
-	idleState?: { backlog?: { plannable?: PlannableIssue[] } };
+	idleState?: {
+		backlog?: {
+			plannable?: PlannableIssue[];
+			byStage?: { idea?: PlannableIssue[] };
+		};
+	};
 }
 
 interface RunsPayload {
@@ -51,14 +66,13 @@ async function readJson<T>(response: Response, what: string): Promise<T> {
 	return (await response.json()) as T;
 }
 
-/**
- * The plannable backlog is only present while no cycle is in progress, which
- * is exactly when starting a run is admissible. An absent key is an empty
- * list, not an error.
- */
-export async function fetchPlannable(): Promise<PlannableIssue[]> {
+/** Read the executable queue and the ideas that can be specified while idle. */
+export async function fetchBacklog(): Promise<BacklogSnapshot> {
 	const payload = await readJson<SnapshotPayload>(await fetch(SNAPSHOT_PATH), 'Snapshot');
-	return payload.idleState?.backlog?.plannable ?? [];
+	return {
+		plannable: payload.idleState?.backlog?.plannable ?? [],
+		ideas: payload.idleState?.backlog?.byStage?.idea ?? [],
+	};
 }
 
 /** Newest run first, which is the only one the screen commands. */
@@ -104,6 +118,22 @@ export async function createIssue(input: OperatorIssueDraft): Promise<CreatedIss
 	}
 	if (payload.issue === undefined || typeof payload.issue.id !== 'string') {
 		throw new Error('O servidor não devolveu a tarefa criada.');
+	}
+	return payload.issue;
+}
+
+export async function specifyIssue(id: string, input: OperatorSpecDraft): Promise<CreatedIssue> {
+	const response = await fetch(`${ISSUES_PATH}/${encodeURIComponent(id)}/spec`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify(input),
+	});
+	const payload = (await response.json()) as CreateIssuePayload;
+	if (!response.ok) {
+		throw new Error(payload.message ?? `Especificação recusada (${response.status}).`);
+	}
+	if (payload.issue === undefined || typeof payload.issue.id !== 'string') {
+		throw new Error('O servidor não devolveu a ideia especificada.');
 	}
 	return payload.issue;
 }
