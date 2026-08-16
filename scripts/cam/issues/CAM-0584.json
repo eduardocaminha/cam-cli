@@ -1,0 +1,19 @@
+{
+  "id": "CAM-584",
+  "title": "Launch tests devem coexistir com o Gateship em 7777",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-16T09:58:29.727Z",
+  "updatedAt": "2026-08-16T09:58:29.727Z",
+  "description": "Em test/web/launch.test.ts, validar o default 7777 por parseWebArgs/DEFAULT_WEB_PORT sem abrir socket e executar os processos reais de web, comando padrão e alias run em portas efêmeras explícitas. O check:all deve passar enquanto o Gateship real ocupa 127.0.0.1:7777. Não alterar runtime/CLI e não adicionar env, config ou fallback.",
+  "specSource": "operator",
+  "spec": {
+    "acceptanceCriteria": [
+      "Em test/web/launch.test.ts, validar o default 7777 por parseWebArgs/DEFAULT_WEB_PORT sem abrir socket e executar os processos reais de web, comando padrão e alias run em portas efêmeras explícitas. O check:all deve passar enquanto o Gateship real ocupa 127.0.0.1:7777. Não alterar runtime/CLI e não adicionar env, config ou fallback. [oracle: named-command bun run check:all]"
+    ],
+    "scope": "Em test/web/launch.test.ts, validar o default 7777 por parseWebArgs/DEFAULT_WEB_PORT sem abrir socket e executar os processos reais de web, comando padrão e alias run em portas efêmeras explícitas. O check:all deve passar enquanto o Gateship real ocupa 127.0.0.1:7777. Não alterar runtime/CLI e não adicionar env, config ou fallback.",
+    "gotchas": [],
+    "domainTerms": []
+  }
+}
