@@ -14,29 +14,34 @@ import {
 	EVENTS_PATH,
 	fetchLatestRun,
 	fetchPlannable,
+	fetchRunEvents,
 	type RunAction,
 	startRun,
 } from './client.ts';
-import type { PlannableIssue, RunView } from './run-view.ts';
+import type { PlannableIssue, RunEventView, RunView } from './run-view.ts';
 import './index.css';
 
 function useOperationalRun(): {
 	backlog: PlannableIssue[];
 	run: RunView | null;
+	events: RunEventView[];
 	status: string | null;
 	pending: boolean;
 	send: (command: () => Promise<string>) => void;
 } {
 	const [backlog, setBacklog] = useState<PlannableIssue[]>([]);
 	const [run, setRun] = useState<RunView | null>(null);
+	const [events, setEvents] = useState<RunEventView[]>([]);
 	const [status, setStatus] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
 
 	const refresh = useCallback(() => {
 		void Promise.all([fetchLatestRun(), fetchPlannable()])
-			.then(([latest, plannable]) => {
+			.then(async ([latest, plannable]) => {
+				const history = latest === null ? [] : await fetchRunEvents(latest.id);
 				setRun(latest);
 				setBacklog(plannable);
+				setEvents(history);
 			})
 			.catch((error: unknown) => setStatus(String(error)));
 	}, []);
@@ -57,16 +62,29 @@ function useOperationalRun(): {
 
 	useEffect(() => {
 		refresh();
-		const events = new EventSource(EVENTS_PATH);
-		events.addEventListener('run-event', refresh);
-		return () => events.close();
+		const source = new EventSource(EVENTS_PATH);
+		source.addEventListener('run-event', (message) => {
+			try {
+				const data = (message as unknown as { data: string }).data;
+				const event = JSON.parse(data) as RunEventView;
+				setEvents((current) => {
+					const merged = new Map(current.map((item) => [item.seq, item]));
+					merged.set(event.seq, event);
+					return [...merged.values()].sort((a, b) => a.seq - b.seq).slice(-200);
+				});
+				if (event.fromState !== event.toState || event.kind === 'run.created') refresh();
+			} catch {
+				setStatus('Evento de atividade inválido.');
+			}
+		});
+		return () => source.close();
 	}, [refresh]);
 
-	return { backlog, run, status, pending, send };
+	return { backlog, run, events, status, pending, send };
 }
 
 function Screen(): ReactElement {
-	const { backlog, run, status, pending, send } = useOperationalRun();
+	const { backlog, run, events, status, pending, send } = useOperationalRun();
 	const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
 	const command = (action: RunAction) => () => {
 		if (run !== null) send(() => commandRun(run.id, action));
@@ -75,6 +93,7 @@ function Screen(): ReactElement {
 	return (
 		<App
 			backlog={backlog}
+			events={events}
 			onCancel={command('cancel')}
 			onCreateIssue={(draft) => {
 				send(() => createIssue(draft).then((created) => {

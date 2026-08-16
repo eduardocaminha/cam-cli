@@ -23,7 +23,15 @@ if (mode === 'wait') {
 		}),
 	})}\n`);
 } else {
-	process.stdout.write(`${JSON.stringify({ type: 'assistant', message: { content: [] } })}\n`);
+	process.stdout.write(`${JSON.stringify({
+		type: 'assistant',
+		message: {
+			content: [
+				{ type: 'text', text: 'fixture activity' },
+				{ type: 'tool_use', name: 'Read', input: { file_path: '/not-persisted' } },
+			],
+		},
+	})}\n`);
 	process.stdout.write(`${JSON.stringify({
 		type: 'result',
 		is_error: false,

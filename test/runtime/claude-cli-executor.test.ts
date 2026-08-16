@@ -5,6 +5,7 @@ import {
 	buildClaudeCliArgv,
 	ClaudeCliExecutor,
 } from '../../src/runtime/claude-cli-executor.ts';
+import { projectAssistantActivity } from '../../src/runtime/claude-cli-process.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
 import { RunStore } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
@@ -29,6 +30,22 @@ function isProcessAlive(pid: number): boolean {
 }
 
 describe('Claude CLI runtime executor', () => {
+	test('projects public text and tool names without persisting reasoning or tool input', () => {
+		const activity = projectAssistantActivity({
+			message: {
+				content: [
+					{ type: 'thinking', thinking: 'private reasoning' },
+					{ type: 'text', text: 'Vou verificar o arquivo.' },
+					{ type: 'tool_use', name: 'Read', input: { file_path: '/secret/path' } },
+				],
+			},
+		});
+
+		expect(activity).toEqual({ text: 'Vou verificar o arquivo.', tools: ['Read'] });
+		expect(JSON.stringify(activity)).not.toContain('private reasoning');
+		expect(JSON.stringify(activity)).not.toContain('/secret/path');
+	});
+
 	test('uses a new session id on first execution and the same id on resume', () => {
 		const first = buildClaudeCliArgv({
 			command: ['claude'],
@@ -50,6 +67,7 @@ describe('Claude CLI runtime executor', () => {
 	});
 
 	test('consumes the provider result without a sentinel or report file', async () => {
+		const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
 		const executor = new ClaudeCliExecutor({
 			command: ['bun', FIXTURE],
 			loadIssue: () => '{"id":"CAM-20"}',
@@ -61,11 +79,16 @@ describe('Claude CLI runtime executor', () => {
 			resume: false,
 			cwd: createTestTmpdir('gship-claude-executor-'),
 			signal: new AbortController().signal,
-			emit: () => {},
+			emit: (kind, payload) => events.push({ kind, ...(payload === undefined ? {} : { payload }) }),
 		});
 		expect(result.outcome).toBe('completed');
 		expect(result.summary).toContain('--session-id');
 		expect(result.summary).toContain('session-20');
+		expect(events).toContainEqual({
+			kind: 'provider.activity',
+			payload: { text: 'fixture activity', tools: ['Read'] },
+		});
+		expect(JSON.stringify(events)).not.toContain('/not-persisted');
 	});
 
 	test('kills and awaits the real child process group on cancellation', async () => {

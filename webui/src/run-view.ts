@@ -26,6 +26,16 @@ export interface RunView {
 	updatedAt: string;
 }
 
+export interface RunEventView {
+	seq: number;
+	runId: string;
+	kind: string;
+	fromState: RunState | null;
+	toState: RunState;
+	payload: Record<string, unknown>;
+	createdAt: string;
+}
+
 export interface PlannableIssue {
 	id: string;
 	title: string;

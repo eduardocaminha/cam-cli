@@ -65,7 +65,38 @@ describe('durable web run API', () => {
 			expect(await listResponse.json()).toMatchObject({
 				runs: [{ id: 'run-http', issueId: 'CAM-12', state: 'ready-to-ship' }],
 			});
+			const historyResponse = await fetch(`${origin}/api/runs/run-http/events`);
+			expect(historyResponse.status).toBe(200);
+			const history = await historyResponse.json() as {
+				events: Array<{ kind: string; payload: Record<string, unknown> }>;
+			};
+			expect(history.events.map((event) => event.kind)).toEqual([
+				'run.created',
+				'run.started',
+				'executor.output',
+				'run.work-completed',
+				'run.verified',
+			]);
+			expect(history.events[2]?.payload).toEqual({ text: 'started' });
 			await reader?.cancel();
+		} finally {
+			await handle.stop();
+			runtime.close();
+		}
+	});
+
+	test('returns 404 for activity of an unknown run', async () => {
+		const runtime = new RunRuntime({ cwd: '/project', store: new RunStore(':memory:') });
+		const handle = startWebServer({
+			port: 0,
+			cwd: createTestTmpdir('gship-run-history-missing-'),
+			runRuntime: runtime,
+		});
+		try {
+			const response = await fetch(
+				`http://${handle.hostname}:${handle.port}/api/runs/missing/events`,
+			);
+			expect(response.status).toBe(404);
 		} finally {
 			await handle.stop();
 			runtime.close();
