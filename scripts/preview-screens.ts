@@ -20,7 +20,7 @@
 //   - In a TTY, chalk enables color automatically.
 //   - Piping into a pager? Force it: FORCE_COLOR=1 bun scripts/preview-screens.ts | less -R
 //
-// Extending (phase 2): add a `previewRun` / `previewResume` etc. and register
+// Extending (phase 2): add a `previewResume` etc. and register
 // it in SCREENS below. Commands that spawn claude/tmux should be driven
 // through their dry-run path (e.g. CAM_RUN_DRY_RUN=1, `cam resume --dry-run`)
 // so the preview never launches a real session.
@@ -33,7 +33,6 @@ import process from 'node:process';
 import { runNext } from '../src/commands/next.ts';
 import { runPlan } from '../src/commands/plan.ts';
 import { type KillFn, type ResumeOptions, runResume } from '../src/commands/resume.ts';
-import { runRun } from '../src/commands/run.ts';
 import { runStatus } from '../src/commands/status.ts';
 import { runStop, type SpawnSyncFn } from '../src/commands/stop.ts';
 import { type SpawnFn as TmuxSpawnFnType } from '../src/tmux/session.ts';
@@ -250,43 +249,6 @@ async function previewResume(): Promise<void> {
 	await runResumeScenario(makeResumeFixture(true, PRD_RESUME_PENDING), { mode: 'reset-branch', force: true });
 }
 
-// --- cam run ----------------------------------------------------------------
-
-/** Build a throwaway repo for a `cam run` scenario. `withAgent` controls
- *  whether the orchestrator agent file is present (its absence is the
- *  "not initialized" fatal path). */
-function makeRunFixture(withAgent: boolean): string {
-	const dir = mkdtempSync(join(tmpdir(), 'cam-preview-run-'));
-	if (withAgent) {
-		const agentsDir = join(dir, '.claude', 'agents');
-		mkdirSync(agentsDir, { recursive: true });
-		writeFileSync(join(agentsDir, 'subagent-orchestrator.md'), '# orchestrator\n');
-	}
-	return dir;
-}
-
-/** Run one `cam run` scenario under CAM_RUN_DRY_RUN=1 (so it never spawns a
- *  real tmux session), restoring the env var and removing the fixture after. */
-function runRunScenario(withAgent: boolean): void {
-	const saved = process.env['CAM_RUN_DRY_RUN'];
-	process.env['CAM_RUN_DRY_RUN'] = '1';
-	const dir = makeRunFixture(withAgent);
-	try {
-		runRun({ cwd: dir });
-	} finally {
-		rmSync(dir, { recursive: true, force: true });
-		if (saved === undefined) delete process.env['CAM_RUN_DRY_RUN'];
-		else process.env['CAM_RUN_DRY_RUN'] = saved;
-	}
-}
-
-function previewRun(): void {
-	section('cam run — create/attach (dry-run: orchestrator present, tmux available)');
-	runRunScenario(true);
-	section('cam run — not initialized (subagent-orchestrator.md missing → fatal on stderr)');
-	runRunScenario(false);
-}
-
 // --- cam next ---------------------------------------------------------------
 
 /**
@@ -355,7 +317,6 @@ const SCREENS: Record<string, () => void | Promise<void>> = {
 	status: previewStatus,
 	stop: previewStop,
 	resume: previewResume,
-	run: previewRun,
 	next: previewNext,
 	plan: previewPlan,
 };

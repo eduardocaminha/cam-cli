@@ -38,8 +38,8 @@ async function collectTextUntilClose(
 	return text;
 }
 
-function spawnWebCli(args: string[], defaultCommand = false): SpawnedWebCli {
-	const proc = Bun.spawn(['bun', INDEX_TS, ...(defaultCommand ? [] : ['web']), ...args], {
+function spawnWebCli(args: string[], command: 'web' | 'run' | null = 'web'): SpawnedWebCli {
+	const proc = Bun.spawn(['bun', INDEX_TS, ...(command === null ? [] : [command]), ...args], {
 		cwd: REPO_ROOT,
 		stdin: 'ignore',
 		stdout: 'pipe',
@@ -85,13 +85,13 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs = 5_000): Promise<T
 	}
 }
 
-async function launchAndTerminate(args: string[], defaultCommand = false): Promise<{
+async function launchAndTerminate(args: string[], command: 'web' | 'run' | null = 'web'): Promise<{
 	url: string;
 	exitCode: number;
 	stdout: string;
 	stderr: string;
 }> {
-	const launched = spawnWebCli(args, defaultCommand);
+	const launched = spawnWebCli(args, command);
 	const url = await withTimeout(launched.readyUrl);
 	const response = await fetch(url);
 	expect(response.status).toBe(200);
@@ -136,12 +136,29 @@ describe('web server launch', () => {
 	}, 10_000);
 
 	test('bun index.ts with no subcommand starts the same default web server', async () => {
-		const result = await launchAndTerminate([], true);
+		const result = await launchAndTerminate([], null);
 		expect(result.url).toBe('http://127.0.0.1:7777');
 		expect(result.stdout).toContain('http://127.0.0.1:7777');
 		expect(result.stderr).toBe('');
 		expect(result.exitCode).toBe(143);
 	}, 10_000);
+
+	test('gship run is a compatibility alias for the same web server', async () => {
+		const result = await launchAndTerminate([], 'run');
+		expect(result.url).toBe('http://127.0.0.1:7777');
+		expect(result.stderr).toBe('');
+		expect(result.exitCode).toBe(143);
+	}, 10_000);
+
+	test('gship run rejects the retired --no-attach bootstrap instead of hanging', () => {
+		const result = Bun.spawnSync(['bun', INDEX_TS, 'run', '--no-attach'], {
+			cwd: REPO_ROOT,
+			stdout: 'pipe',
+			stderr: 'pipe',
+		});
+		expect(result.exitCode).not.toBe(0);
+		expect(new TextDecoder().decode(result.stderr)).toContain('was retired');
+	});
 
 	test('the CLI accepts both --port N and --port=N', async () => {
 		for (const joined of [false, true]) {

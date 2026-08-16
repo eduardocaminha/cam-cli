@@ -127,9 +127,9 @@ describe('no retired `cam <word>` command survives in any help text (US-R2-001, 
 			expect(cap.written()).toContain('gship');
 			expect(cap.written()).not.toMatch(RETIRED_COMMAND_RE);
 			expect(cap.written()).toContain('Web-first');
-			expect(cap.written()).toContain('Legacy tmux (temporary)');
+			expect(cap.written()).toContain('Legacy session drain (temporary)');
 			expect(cap.written().indexOf('Web-first')).toBeLessThan(
-				cap.written().indexOf('Legacy tmux (temporary)'),
+				cap.written().indexOf('Legacy session drain (temporary)'),
 			);
 		} finally {
 			cap.restore();
