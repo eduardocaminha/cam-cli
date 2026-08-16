@@ -258,7 +258,7 @@ describe('filterScannablePaths — excluded directories', () => {
 
 	test('normal src/ paths are kept', () => {
 		const kept = filterScannablePaths([
-			'src/commands/run.ts',
+			'src/commands/web.ts',
 			'src/ui/Dashboard.tsx',
 			'scripts/check-all.ts',
 		]);
@@ -267,13 +267,13 @@ describe('filterScannablePaths — excluded directories', () => {
 
 	test('mix of excluded and normal paths: only normal are kept', () => {
 		const kept = filterScannablePaths([
-			'src/commands/run.ts',
+			'src/commands/web.ts',
 			'vendor/some.ts',
 			'node_modules/pkg/index.ts',
 			'scripts/check-all.ts',
 		]);
 		expect(kept).toHaveLength(2);
-		expect(kept).toContain('src/commands/run.ts');
+		expect(kept).toContain('src/commands/web.ts');
 		expect(kept).toContain('scripts/check-all.ts');
 	});
 

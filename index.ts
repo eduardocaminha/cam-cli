@@ -80,7 +80,6 @@ import { runShipBump, type ShipBumpResult } from './src/release/ship-bump.ts';
 import { runResume, type ExplicitMode } from './src/commands/resume.ts';
 import { runDecide, parseDecideArgs } from './src/commands/decide.ts';
 import { runPrune, parsePruneArgs } from './src/commands/prune.ts';
-import { runRun, parseRunArgs } from './src/commands/run.ts';
 import { runStatus } from './src/commands/status.ts';
 import { runOrchBudget } from './src/commands/orch-budget.ts';
 import { runOrchResolve } from './src/commands/orch-resolve.ts';
@@ -123,6 +122,7 @@ const HELP = renderHelp({
 				{ name: '(default)', description: 'Start the local web control surface on 127.0.0.1:7777' },
 				{ name: 'init [options]', description: 'Validate the machine, then run the project-setup wizard' },
 				{ name: 'web [--port N]', description: 'Serve the local web control surface on a custom port' },
+				{ name: 'run [--port N]', description: 'Compatibility alias for the web control surface' },
 			],
 		},
 		{
@@ -141,13 +141,12 @@ const HELP = renderHelp({
 			],
 		},
 		{
-			heading: 'Legacy tmux (temporary)',
+			heading: 'Legacy session drain (temporary)',
 			entries: [
-				{ name: 'run [options]', description: 'Open or attach the previous long-lived orchestrator' },
-				{ name: 'plan [<N>]', description: 'Dispatch /cam-plan inside the orchestrator pane' },
-				{ name: 'next [options]', description: 'Trigger the previous sidecar loop' },
-				{ name: 'review', description: 'Dispatch /cam-review to the previous orchestrator' },
-				{ name: 'ship', description: 'Dispatch /cam-ship to the previous orchestrator' },
+				{ name: 'plan [<N>]', description: 'Control an already-running legacy session' },
+				{ name: 'next [options]', description: 'Trigger an already-running legacy sidecar loop' },
+				{ name: 'review', description: 'Request review in an already-running legacy session' },
+				{ name: 'ship', description: 'Request ship in an already-running legacy session' },
 				{ name: 'dashboard', description: 'Standalone read-only TUI (alt-screen) for monitoring a loop' },
 				{ name: 'status', description: 'Show current loop state at a glance (idle / active / paused)' },
 				{ name: 'stats tokens|cycles', description: 'Print per-issue token spend (orch/worker/total) or per-cycle worker/review-round counts from the event log' },
@@ -163,27 +162,27 @@ const HELP = renderHelp({
 			entries: [
 				{
 					name: 'sidecar',
-					description: 'Not a user entry point: the long-lived loop supervisor, spawned by `gship run` in the background',
+					description: 'Retained only for an already-running legacy session; never spawned by the web runtime',
 				},
 				{
 					name: 'orch-recycle-watch',
-					description: 'Not a user entry point: watches the recycle marker and kills the orchestrator pane, spawned by `gship run`',
+					description: 'Retained only to drain a legacy orchestrator that is already running',
 				},
 				{
 					name: 'sidecar-liveness-watch',
-					description: 'Not a user entry point: restarts a dead sidecar, spawned by `gship run`',
+					description: 'Retained only to drain a legacy sidecar that is already running',
 				},
 				{
 					name: 'orch-budget',
-					description: 'Not a user entry point: prints/enforces the orchestrator token budget, spawned by `gship run`',
+					description: 'Legacy orchestrator budget helper; unused by the web runtime',
 				},
 			],
 		},
 	],
 	footer:
 		'Run `gship <command> --help` for command-specific options. The web runtime\n' +
-		'is the default; legacy tmux commands remain temporarily available while\n' +
-		'their remaining capabilities are measured.',
+		'is the default; no command starts a new legacy tmux session. The remaining\n' +
+		'legacy controls exist only to drain a session that was already running.',
 });
 
 const INIT_HELP = renderHelp({
@@ -221,36 +220,28 @@ const INIT_HELP = renderHelp({
 
 const RUN_HELP = renderHelp({
 	title: 'gship run',
-	tagline: 'Open or attach the single per-project orchestrator session',
-	usage: 'gship run [options]',
+	tagline: 'Compatibility alias for the local web control surface',
+	usage: 'gship run [--port N]',
 	sections: [
 		{
 			heading: 'Options',
 			entries: [
 				{
-					name: '--no-attach',
-					description: 'Create the orchestrator session without attaching (useful for scripting)',
+					name: '--port <N>',
+					description: 'Positive TCP port to listen on (default: 7777)',
 				},
 			],
 		},
 		{
 			heading: 'Behaviour',
 			body:
-				'1. Verifies tmux and `.claude/agents/subagent-orchestrator.md` exist\n' +
-				'   (run `gship init` first if not).\n' +
-				'2. Computes a stable session name per project (cam-orch-<basename>-<hash>).\n' +
-				'3. If the session does not exist: creates it with two panes.\n' +
-				'     Pane 0.0 (left):  orchestrator (claude /cam-next loop).\n' +
-				'     Pane 0.1 (right): gship dashboard (permanent, navigable TUI).\n' +
-				'   When the orchestrator exits, the session is torn down automatically.\n' +
-				'4. If the session already exists: attach (or switch-client inside tmux).\n' +
-				'5. plan, next, and issue are thin pane launchers: they open a new pane\n' +
-				'   inside this session and return immediately.',
+				'Starts the same Bun + SQLite localhost service as bare `gship` and\n' +
+				'`gship web`. It never creates, attaches to, or sends keys through tmux.\n' +
+				'The retired `--no-attach` option is rejected instead of starting a\n' +
+				'background process with ambiguous ownership.',
 		},
 	],
-	footer:
-		'The orchestrator persona is loaded from\n' +
-		'.claude/agents/subagent-orchestrator.md — see that file for what it does.',
+	footer: 'Binds only to 127.0.0.1 and persists runs in .gship/runtime.sqlite.',
 });
 
 const PLAN_HELP = renderHelp({
@@ -2751,9 +2742,8 @@ export function dispatchTriage(deps?: TriageDispatchDeps): number {
 
 /**
  * Single source of truth for the CLI's command set (US-001, CAM-278).
- * Every command dispatched by `main()` — including the internal/hidden ones
- * spawned by `gship run` (sidecar, orch-recycle-watch and
- * sidecar-liveness-watch) — MUST be listed here exactly once. `HELP_REGISTRY` and the
+ * Every command dispatched by `main()` — including retained internal legacy
+ * commands — MUST be listed here exactly once. `HELP_REGISTRY` and the
  * dispatch `switch` below are both typed against `Command`, so adding a
  * command to `COMMANDS` without a matching `HELP_REGISTRY` entry or switch
  * case now fails `bun run typecheck` instead of silently re-opening the
@@ -2808,7 +2798,7 @@ function isCommand(value: string): value is Command {
  * command name to its help text. This is the single source of truth the
  * dispatch guard below reads from: a command showing up in a `switch (command)`
  * case but missing here means `--help` falls through un-guarded for it, so
- * every case (including the internal ones spawned by `cam run`) MUST have an
+ * every case (including retained internal legacy commands) MUST have an
  * entry. Retyped to `Record<Command, string>` (US-001, CAM-278): a `Command`
  * added to `COMMANDS` without an entry here now fails typecheck.
  */
@@ -2954,7 +2944,12 @@ async function main(argv: string[]): Promise<number> {
 			return runConfig({ show: showFlag });
 		}
 		case 'run': {
-			const parsed = parseRunArgs(argv.slice(3));
+			const tail = argv.slice(3);
+			if (tail.includes('--no-attach')) {
+				printError('`gship run --no-attach` was retired; `gship run` now starts the web runtime');
+				return 1;
+			}
+			const parsed = parseWebArgs(tail);
 			if (parsed === null) {
 				printFatalHint('run `gship run --help` for usage');
 				return 1;
@@ -2963,7 +2958,7 @@ async function main(argv: string[]): Promise<number> {
 				process.stdout.write(RUN_HELP);
 				return 0;
 			}
-			return runRun({ noAttach: parsed.noAttach });
+			return runWeb({ port: parsed.port, cwd: process.cwd() });
 		}
 		case 'plan': {
 			const parsed = parsePlanArgs(argv.slice(3));
