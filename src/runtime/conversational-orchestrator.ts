@@ -322,11 +322,12 @@ export class ConversationalOrchestrator {
 		const handoff = persistence.getOrchestratorHandoff();
 		const brief = persistence.getProjectBrief();
 		const messages = persistence.listOrchestratorMessages(12);
-		const result = await this.#options.sessions[providerId].run({
+		const prompt = buildOrchestratorPrompt(this.#options.context(), brief, handoff, messages);
+		const run = (resume: boolean) => this.#options.sessions[providerId].run({
 			sessionId,
-			resume: existingSessionId !== null,
+			resume,
 			cwd: this.#options.cwd,
-			prompt: buildOrchestratorPrompt(this.#options.context(), brief, handoff, messages),
+			prompt,
 			access: 'read-only',
 			outputSchema: ORCHESTRATOR_RESULT_SCHEMA,
 			signal,
@@ -337,6 +338,14 @@ export class ConversationalOrchestrator {
 				persistence.setOrchestratorSession(providerId, assignedId);
 			},
 		});
+		let result;
+		try {
+			result = await run(existingSessionId !== null);
+		} catch (error) {
+			if (existingSessionId === null || signal.aborted) throw error;
+			sessionId = this.#newSessionId();
+			result = await run(false);
+		}
 		persistence.setOrchestratorSession(providerId, sessionId);
 		const parsed = parseOrchestratorResponse(result.structuredOutput);
 		// Written once per parsed turn, before the command runs, so the handoff can

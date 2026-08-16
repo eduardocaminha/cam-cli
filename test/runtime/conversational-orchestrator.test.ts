@@ -54,7 +54,134 @@ class FakeSession implements AgentSession {
 	}
 }
 
+type ScriptedRunStep = (input: AgentSessionInput, attempt: number) => Promise<{
+	summary: string;
+	structuredOutput: unknown;
+}>;
+
+class ScriptedSession implements AgentSession {
+	readonly provider = 'codex' as const;
+	readonly inputs: AgentSessionInput[] = [];
+	readonly #runStep: ScriptedRunStep;
+
+	constructor(runStep: ScriptedRunStep) {
+		this.#runStep = runStep;
+	}
+
+	async run(input: AgentSessionInput): Promise<{ summary: string; structuredOutput: unknown }> {
+		this.inputs.push(input);
+		return this.#runStep(input, this.inputs.length);
+	}
+}
+
 describe('conversational orchestrator', () => {
+	test('replaces a failed resumed session with one fresh attempt and applies effects once', async () => {
+		const runtime = new RunRuntime({
+			cwd: createTestTmpdir('gship-orchestrator-resume-recovery-'),
+			store: new RunStore(':memory:'),
+		});
+		runtime.selectProvider('codex');
+		runtime.setOrchestratorSession('codex', 'stale-native-session');
+		runtime.appendOrchestratorMessage('codex', 'operator', 'Contexto durável anterior.');
+		const recoveredHandoff = { ...HANDOFF, objective: 'Retomada recuperada.' };
+		const codex = new ScriptedSession(async (input, attempt) => {
+			if (attempt === 1) throw new Error('resume failed');
+			input.onSessionId?.('replacement-native-session');
+			const structuredOutput = {
+				message: 'Recuperei a conversa e vou iniciar a run.',
+				command: { type: 'start_run', issueId: 'CAM-42' },
+				handoff: recoveredHandoff,
+			};
+			return { summary: JSON.stringify(structuredOutput), structuredOutput };
+		});
+		const commands: unknown[] = [];
+		const orchestrator = new ConversationalOrchestrator({
+			cwd: '/project',
+			persistence: runtime,
+			sessions: { claude: new FakeSession('claude', []), codex },
+			context: () => ({ plannable: ['CAM-42'] }),
+			execute: (command) => {
+				commands.push(command);
+				return 'Run CAM-42 iniciada.';
+			},
+			newSessionId: () => 'fresh-provisional-session',
+		});
+
+		await orchestrator.turn('Continue e comece a CAM-42.');
+
+		expect(codex.inputs).toHaveLength(2);
+		expect(codex.inputs[0]).toMatchObject({ resume: true, sessionId: 'stale-native-session' });
+		expect(codex.inputs[1]).toMatchObject({ resume: false, sessionId: 'fresh-provisional-session' });
+		expect(codex.inputs[1]?.prompt).toBe(codex.inputs[0]?.prompt);
+		expect(codex.inputs[1]?.prompt.match(/Continue e comece a CAM-42\./g)).toHaveLength(1);
+		expect(codex.inputs[1]?.prompt).toContain('Contexto durável anterior.');
+		expect(runtime.getOrchestratorSession('codex')).toBe('replacement-native-session');
+		expect(runtime.getOrchestratorHandoff()).toEqual(recoveredHandoff);
+		expect(commands).toEqual([{ type: 'start_run', issueId: 'CAM-42' }]);
+		expect(runtime.listOrchestratorMessages().map((message) => message.role)).toEqual([
+			'operator',
+			'operator',
+			'orchestrator',
+			'system',
+		]);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('does not retry a failed initial fresh turn', async () => {
+		const runtime = new RunRuntime({
+			cwd: createTestTmpdir('gship-orchestrator-fresh-failure-'),
+			store: new RunStore(':memory:'),
+		});
+		runtime.selectProvider('codex');
+		const codex = new ScriptedSession(async () => {
+			throw new Error('fresh failed');
+		});
+		const orchestrator = new ConversationalOrchestrator({
+			cwd: '/project',
+			persistence: runtime,
+			sessions: { claude: new FakeSession('claude', []), codex },
+			context: () => ({}),
+			execute: () => '',
+			newSessionId: () => 'only-fresh-session',
+		});
+
+		await expect(orchestrator.turn('Comece uma conversa.')).rejects.toThrow('fresh failed');
+		expect(codex.inputs).toHaveLength(1);
+		expect(codex.inputs[0]).toMatchObject({ resume: false, sessionId: 'only-fresh-session' });
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('does not retry a resumed turn after cancellation', async () => {
+		const runtime = new RunRuntime({
+			cwd: createTestTmpdir('gship-orchestrator-resume-cancel-'),
+			store: new RunStore(':memory:'),
+		});
+		runtime.selectProvider('codex');
+		runtime.setOrchestratorSession('codex', 'active-native-session');
+		const codex = new ScriptedSession((input) => new Promise((_, reject) => {
+			input.signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true });
+		}));
+		const orchestrator = new ConversationalOrchestrator({
+			cwd: '/project',
+			persistence: runtime,
+			sessions: { claude: new FakeSession('claude', []), codex },
+			context: () => ({}),
+			execute: () => '',
+			newSessionId: () => 'must-not-be-used',
+		});
+
+		const turn = orchestrator.turn('Continue a sessão.');
+		await Promise.resolve();
+		await orchestrator.stop();
+		await expect(turn).rejects.toThrow('cancelled');
+		expect(codex.inputs).toHaveLength(1);
+		expect(codex.inputs[0]).toMatchObject({ resume: true, sessionId: 'active-native-session' });
+		await runtime.stop();
+		runtime.close();
+	});
+
 	test('persists handoff and delegates one typed command from a read-only turn', async () => {
 		const runtime = new RunRuntime({
 			cwd: createTestTmpdir('gship-orchestrator-runtime-'),
