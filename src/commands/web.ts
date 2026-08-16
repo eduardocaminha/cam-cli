@@ -14,6 +14,7 @@ import { ClaudeCliExecutor } from '../runtime/claude-cli-executor.ts';
 import { ClaudeCliReviewer } from '../runtime/claude-cli-reviewer.ts';
 import { createGitRuntimePreflight, GitIssueVerifier, RuntimePreflightError } from '../runtime/git-runtime.ts';
 import { GitWorkspaceManager, RuntimeWorkspaceError } from '../runtime/git-workspace.ts';
+import { GithubShipper } from '../runtime/github-shipper.ts';
 import {
 	RunRuntime,
 	type RunRuntimeOptions,
@@ -46,6 +47,7 @@ const WEB_PAGE_HTML = `<!doctype html>
 	<button id="start-run" type="button" disabled>Iniciar run</button>
 	<button id="resume-run" type="button" disabled>Retomar run</button>
 	<button id="cancel-run" type="button" disabled>Cancelar run</button>
+	<button id="ship-run" type="button" disabled>Shipar run</button>
 	<output id="command-status" aria-live="polite"></output>
 	<pre id="runs" aria-live="polite">Loading runs...</pre>
 	<pre id="snapshot" aria-live="polite">Loading snapshot...</pre>
@@ -57,6 +59,7 @@ const WEB_PAGE_HTML = `<!doctype html>
 		const runsOutput = document.getElementById('runs');
 		const resumeButton = document.getElementById('resume-run');
 		const cancelButton = document.getElementById('cancel-run');
+		const shipButton = document.getElementById('ship-run');
 		const planSelect = document.getElementById('run-issue');
 		const planButton = document.getElementById('start-run');
 		const commandStatus = document.getElementById('command-status');
@@ -103,6 +106,7 @@ const WEB_PAGE_HTML = `<!doctype html>
 				const state = currentRun?.state;
 				resumeButton.disabled = state !== 'interrupted' && state !== 'waiting-user';
 				cancelButton.disabled = !['queued', 'working', 'verify', 'review', 'ready-to-ship'].includes(state);
+				shipButton.disabled = state !== 'ready-to-ship';
 				planButton.disabled = planSelect.value === '' || (state !== undefined && state !== 'done' && state !== 'failed');
 			} catch (error) {
 				runsOutput.textContent = String(error);
@@ -131,6 +135,7 @@ const WEB_PAGE_HTML = `<!doctype html>
 			if (currentRun === null) return;
 			resumeButton.disabled = true;
 			cancelButton.disabled = true;
+			shipButton.disabled = true;
 			const response = await fetch(RUNS_PATH + '/' + currentRun.id + '/' + action, { method: 'POST' });
 			const result = await response.json();
 			commandStatus.textContent = response.ok ? 'Run atualizada.' : result.message;
@@ -141,6 +146,7 @@ const WEB_PAGE_HTML = `<!doctype html>
 		planButton.addEventListener('click', startRun);
 		resumeButton.addEventListener('click', () => runCommand('resume'));
 		cancelButton.addEventListener('click', () => runCommand('cancel'));
+		shipButton.addEventListener('click', () => runCommand('ship'));
 		const events = new EventSource(EVENTS_PATH);
 		events.addEventListener('run-event', () => { void refreshRuns(); });
 		void pollSnapshot();
@@ -307,6 +313,38 @@ async function resumeDurableRun(
 	}
 }
 
+/**
+ * Hand a ready-to-ship run to the shipper and answer immediately: the ship
+ * operation belongs to the service, and its progress reaches the browser over
+ * the same SQLite-backed event stream as every other phase.
+ */
+async function shipDurableRun(
+	request: Request,
+	runtime: RunRuntime,
+	runId: string,
+): Promise<Response> {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	if (runtime.getRun(runId) === null) {
+		return Response.json(
+			{ ok: false, code: 'run-not-found', message: 'Run not found.' },
+			{ status: 404 },
+		);
+	}
+	try {
+		return Response.json({ ok: true, run: runtime.shipRun(runId) }, { status: 202 });
+	} catch (error) {
+		const unavailable = error instanceof RuntimeUnavailableError;
+		return Response.json(
+			{
+				ok: false,
+				code: unavailable ? 'runtime-unavailable' : 'run-not-shippable',
+				message: error instanceof Error ? error.message : String(error),
+			},
+			{ status: unavailable ? 503 : 409 },
+		);
+	}
+}
+
 /** Reject cross-origin browser writes to the localhost control endpoint. */
 export function isTrustedCommandOrigin(request: Request): boolean {
 	const rawOrigin = request.headers.get('origin');
@@ -402,7 +440,8 @@ function readIdleSnapshotState(cwd: string): IdleSnapshotState {
 
 /**
  * Production composition of the durable runtime: the real implementer, the
- * real oracle verifier and the real independent reviewer over one sqlite store.
+ * real oracle verifier, the real independent reviewer and the real GitHub
+ * shipper over one sqlite store.
  */
 export function createDefaultRunRuntimeOptions(cwd: string): RunRuntimeOptions {
 	return {
@@ -411,6 +450,7 @@ export function createDefaultRunRuntimeOptions(cwd: string): RunRuntimeOptions {
 		executor: new ClaudeCliExecutor(),
 		verifier: new GitIssueVerifier(),
 		reviewer: new ClaudeCliReviewer(),
+		shipper: new GithubShipper(),
 		preflight: createGitRuntimePreflight(cwd),
 		workspace: new GitWorkspaceManager(cwd),
 	};
@@ -455,6 +495,9 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			},
 			'/api/runs/:runId/resume': {
 				POST: (request) => resumeDurableRun(request, runRuntime, request.params.runId),
+			},
+			'/api/runs/:runId/ship': {
+				POST: (request) => shipDurableRun(request, runRuntime, request.params.runId),
 			},
 			'/api/events': (request) => createRunEventStream(runRuntime, request),
 		},

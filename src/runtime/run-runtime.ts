@@ -50,12 +50,34 @@ export interface RuntimeReviewer {
 	review: (input: RuntimeExecutionInput) => Promise<RuntimeReviewResult>;
 }
 
+/** What shipping one run needs: its own worktree, and a channel for progress. */
+export interface RuntimeShipInput {
+	runId: string;
+	issueId: string;
+	cwd: string;
+	signal: AbortSignal;
+	emit: (kind: string, payload?: Record<string, unknown>) => void;
+}
+
+/**
+ * Outcome of one ship attempt. `merged` is reported only once the pull request
+ * is really merged; every other end is a failure the run can retry.
+ */
+export type RuntimeShipResult =
+	| { outcome: 'merged'; prNumber: number }
+	| { outcome: 'failed'; detail: string };
+
+export interface RuntimeShipper {
+	ship: (input: RuntimeShipInput) => Promise<RuntimeShipResult>;
+}
+
 export interface RunRuntimeOptions {
 	cwd: string;
 	store: RunStore;
 	executor?: RuntimeExecutor;
 	verifier?: RuntimeVerifier;
 	reviewer?: RuntimeReviewer;
+	shipper?: RuntimeShipper;
 	now?: () => string;
 	newId?: () => string;
 	newSessionId?: () => string;
@@ -64,8 +86,8 @@ export interface RunRuntimeOptions {
 }
 
 export class RuntimeUnavailableError extends Error {
-	constructor() {
-		super('No runtime executor and verifier are configured yet.');
+	constructor(message = 'No runtime executor and verifier are configured yet.') {
+		super(message);
 		this.name = 'RuntimeUnavailableError';
 	}
 }
@@ -100,6 +122,7 @@ export class RunRuntime {
 	readonly #executor: RuntimeExecutor | undefined;
 	readonly #verifier: RuntimeVerifier | undefined;
 	readonly #reviewer: RuntimeReviewer | undefined;
+	readonly #shipper: RuntimeShipper | undefined;
 	readonly #now: () => string;
 	readonly #newId: () => string;
 	readonly #newSessionId: () => string;
@@ -114,6 +137,7 @@ export class RunRuntime {
 		this.#executor = options.executor;
 		this.#verifier = options.verifier;
 		this.#reviewer = options.reviewer;
+		this.#shipper = options.shipper;
 		this.#now = options.now ?? (() => new Date().toISOString());
 		this.#newId = options.newId ?? randomUUID;
 		this.#newSessionId = options.newSessionId ?? randomUUID;
@@ -164,6 +188,29 @@ export class RunRuntime {
 			throw new Error(`run cannot resume from state ${run.state}`);
 		}
 		this.#launch(run, true);
+		return run;
+	}
+
+	/**
+	 * Ship one verified run in the background. Only a run that reached
+	 * ready-to-ship can be shipped, and only one operation at a time owns a run,
+	 * so a second request never opens a second pull request.
+	 */
+	shipRun(runId: string): RunRecord {
+		const shipper = this.#shipper;
+		if (shipper === undefined) {
+			throw new RuntimeUnavailableError('No runtime shipper is configured yet.');
+		}
+		if (this.#active.has(runId)) throw new Error(`run is already active: ${runId}`);
+		const run = this.#store.getRun(runId);
+		if (run === null) throw new Error(`run not found: ${runId}`);
+		if (run.state !== 'ready-to-ship') {
+			throw new Error(`run cannot ship from state ${run.state}`);
+		}
+		const controller = new AbortController();
+		const promise = this.#driveShip(shipper, run, controller.signal)
+			.finally(() => this.#active.delete(run.id));
+		this.#active.set(run.id, { controller, promise });
 		return run;
 	}
 
@@ -253,6 +300,45 @@ export class RunRuntime {
 	}
 
 	/**
+	 * One ship attempt. The run reaches done only on a real merge; a failed
+	 * attempt leaves it in ready-to-ship, so the same diff can be shipped again
+	 * once GitHub or CI recovers, and cancellation is recorded the same way.
+	 */
+	async #driveShip(
+		shipper: RuntimeShipper,
+		run: RunRecord,
+		signal: AbortSignal,
+	): Promise<void> {
+		this.#emit(run.id, 'run.ship-started');
+		try {
+			const result = await shipper.ship({
+				runId: run.id,
+				issueId: run.issueId,
+				cwd: run.workspacePath.length === 0 ? this.#cwd : run.workspacePath,
+				signal,
+				emit: (kind, payload) => this.#emit(run.id, kind, payload),
+			});
+			if (signal.aborted) {
+				this.#emit(run.id, 'run.ship-cancelled');
+				return;
+			}
+			if (result.outcome === 'merged') {
+				this.#transition(run.id, 'done', 'run.shipped', {
+					payload: { prNumber: result.prNumber },
+				});
+				return;
+			}
+			this.#emit(run.id, 'run.ship-failed', { error: result.detail });
+		} catch (error) {
+			if (signal.aborted) {
+				this.#emit(run.id, 'run.ship-cancelled');
+				return;
+			}
+			this.#emit(run.id, 'run.ship-failed', { error: errorMessage(error) });
+		}
+	}
+
+	/**
 	 * One implementation pass plus its verification. Returns true only when the
 	 * change is verified and the run is ready to be reviewed; every other
 	 * outcome has already settled the run.
@@ -337,19 +423,22 @@ export class RunRuntime {
 			resume: attempt.resume,
 			cwd: run.workspacePath.length === 0 ? this.#cwd : run.workspacePath,
 			signal,
-			emit: (kind, payload) => {
-				const event = this.#store.appendEvent({
-					runId: run.id,
-					kind,
-					createdAt: this.#now(),
-					...(payload === undefined ? {} : { payload }),
-				});
-				this.#publish(event);
-			},
+			emit: (kind, payload) => this.#emit(run.id, kind, payload),
 			...(attempt.reviewFeedback === undefined
 				? {}
 				: { reviewFeedback: attempt.reviewFeedback }),
 		};
+	}
+
+	/** Persist one progress event that does not move the run's state. */
+	#emit(runId: string, kind: string, payload?: Record<string, unknown>): void {
+		const event = this.#store.appendEvent({
+			runId,
+			kind,
+			createdAt: this.#now(),
+			...(payload === undefined ? {} : { payload }),
+		});
+		this.#publish(event);
 	}
 
 	#interrupt(runId: string): void {
