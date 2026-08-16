@@ -128,4 +128,34 @@ describe('conversational orchestrator', () => {
 			command: { type: 'none' },
 		});
 	});
+
+	test('abandon_issue only parses with an issue and a concrete justification', () => {
+		expect(parseOrchestratorResponse({
+			message: 'A tarefa perdeu o motivo de existir.',
+			command: {
+				type: 'abandon_issue',
+				issueId: 'CAM-42',
+				reason: 'O recurso saiu do produto na fatia anterior.',
+			},
+		})).toEqual({
+			message: 'A tarefa perdeu o motivo de existir.',
+			command: {
+				type: 'abandon_issue',
+				issueId: 'CAM-42',
+				reason: 'O recurso saiu do produto na fatia anterior.',
+			},
+		});
+		expect(() => parseOrchestratorResponse({
+			message: 'Vou abandonar.',
+			command: { type: 'abandon_issue', issueId: 'CAM-42' },
+		})).toThrow('reason');
+		expect(() => parseOrchestratorResponse({
+			message: 'Vou abandonar.',
+			command: { type: 'abandon_issue', issueId: 'CAM-42', reason: '   ' },
+		})).toThrow('reason');
+		expect(() => parseOrchestratorResponse({
+			message: 'Vou abandonar.',
+			command: { type: 'abandon_issue', reason: 'Sem tarefa.' },
+		})).toThrow('issueId');
+	});
 });

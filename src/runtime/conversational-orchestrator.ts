@@ -13,6 +13,7 @@ export type OrchestratorCommand =
 	| { type: 'none' }
 	| { type: 'create_issue'; title: string; scope: string; verificationCommand: string }
 	| { type: 'specify_issue'; issueId: string; scope: string; verificationCommand: string }
+	| { type: 'abandon_issue'; issueId: string; reason: string }
 	| { type: 'start_run'; issueId: string }
 	| { type: 'resume_run'; runId: string; guidance?: string }
 	| { type: 'cancel_run'; runId: string }
@@ -65,6 +66,7 @@ export const ORCHESTRATOR_RESULT_SCHEMA = {
 						'none',
 						'create_issue',
 						'specify_issue',
+						'abandon_issue',
 						'start_run',
 						'resume_run',
 						'cancel_run',
@@ -74,6 +76,7 @@ export const ORCHESTRATOR_RESULT_SCHEMA = {
 				title: { type: 'string' },
 				scope: { type: 'string' },
 				verificationCommand: { type: 'string' },
+				reason: { type: 'string' },
 				issueId: { type: 'string' },
 				runId: { type: 'string' },
 				guidance: { type: 'string' },
@@ -139,6 +142,13 @@ export function parseOrchestratorResponse(value: unknown): {
 				verificationCommand: requiredText(command, 'verificationCommand'),
 			};
 			break;
+		case 'abandon_issue':
+			parsed = {
+				type,
+				issueId: requiredText(command, 'issueId'),
+				reason: requiredText(command, 'reason'),
+			};
+			break;
 		case 'start_run':
 			parsed = { type, issueId: requiredText(command, 'issueId') };
 			break;
@@ -182,6 +192,7 @@ export function buildOrchestratorPrompt(
 		'Use command type none for explanations, investigation, status, or whenever an operator decision is still needed.',
 		'Do not create planner/auditor loops. Make a concrete recommendation and keep lifecycle policy small.',
 		'Only request create_issue or specify_issue when title/scope/verification are concrete.',
+		'Use abandon_issue to close an open issue without shipping it; it requires a concrete reason.',
 		'Only use run commands with identifiers visible in the snapshot or transcript.',
 		'',
 		'Current deterministic snapshot:',
