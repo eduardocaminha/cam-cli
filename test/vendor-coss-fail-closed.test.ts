@@ -6,7 +6,7 @@ import { createTestTmpdir } from './helpers/test-tmpdir.ts';
 
 describe('verify roots', () => {
 	test('fails closed for missing and non-directory roots', () => {
-		const parent = createTestTmpdir('cam-vendor-coss-invalid-root-');
+		const parent = createTestTmpdir('gship-vendor-coss-invalid-root-');
 		const missingRoot = join(parent, 'missing');
 		const fileRoot = join(parent, 'file.ts');
 		writeFileSync(fileRoot, 'export const value = true;\n');

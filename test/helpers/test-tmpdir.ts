@@ -1,7 +1,7 @@
 // test/helpers/test-tmpdir.ts
 //
 // Single test-scratch helper (US-002, CAM-508). Every temp directory a test
-// needs is created under a repo-local scratch root (`.cam-test-tmp/`,
+// needs is created under a repo-local scratch root (`.gship-test-tmp/`,
 // ignored by the repository .gitignore) instead of the shared $TMPDIR. Under a
 // degraded shared-$TMPDIR environment (CAM-503), dozens of test files each
 // rooting their own `mkdtempSync(join(tmpdir(), ...))` produced spurious
@@ -56,7 +56,7 @@ const REPO_ROOT = join(import.meta.dir, '..', '..');
  * Ignored by the repository .gitignore so a directory surviving a crash
  * never dirties the working tree.
  */
-export const SCRATCH_ROOT = join(REPO_ROOT, '.cam-test-tmp');
+export const SCRATCH_ROOT = join(REPO_ROOT, '.gship-test-tmp');
 
 /** Directories created by this helper are pruned if older than this (ms). */
 const STALE_AGE_MS = 60 * 60 * 1000;
@@ -66,8 +66,8 @@ const createdByThisProcess: string[] = [];
 
 /**
  * The prune below owns only the scratch directories this helper itself
- * creates, and those are never dot-prefixed (`cam-test-*`, and
- * `cam-check-all-inprocess-bare-*` from the in-process check-all runs). A
+ * creates, and those are never dot-prefixed (`gship-test-*`, and
+ * `gship-check-all-inprocess-bare-*` from the in-process check-all runs). A
  * dot-prefixed entry therefore always belongs to some other mechanism, so the
  * prune must leave it alone regardless of age (CAM-519): the concrete case is
  * `SCRATCH_ROOT`'s own `.git` fence, which `ensureScratchRootIsAGitRepo`
@@ -172,7 +172,7 @@ function ensureScratchRoot(): void {
  * The single replacement for every `mkdtempSync(join(tmpdir(), prefix))` /
  * `await mkdtemp(join(tmpdir(), prefix))` call site across the suite.
  */
-export function createTestTmpdir(prefix = 'cam-test-'): string {
+export function createTestTmpdir(prefix = 'gship-test-'): string {
 	ensureScratchRoot();
 	const dir = mkdtempSync(join(SCRATCH_ROOT, prefix));
 	createdByThisProcess.push(dir);

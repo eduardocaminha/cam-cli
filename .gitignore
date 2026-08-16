@@ -28,7 +28,7 @@ webui/dist/*
 # Local runtime and test state.
 .gship/
 .claude/
-.cam-test-tmp/
+.gship-test-tmp/
 
 # Optional, local-only Claude Code source reference.
 claude-code-harness/

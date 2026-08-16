@@ -36,7 +36,7 @@ function issue(overrides: Partial<IssueEntry> & Pick<IssueEntry, 'id' | 'title'>
 }
 
 function seedIdleRepo(): string {
-	const root = createTestTmpdir('cam-web-idle-');
+	const root = createTestTmpdir('gship-web-idle-');
 	const cwd = join(root, 'repo');
 	mkdirSync(cwd, { recursive: true });
 	git(cwd, ['init', '-q', '--initial-branch=main']);
