@@ -37,6 +37,8 @@ interface FakeRepo {
 	staged: boolean;
 	commits: number;
 	pushes: number;
+	/** Post-merge refreshes of the runtime source ref (CAM-580). */
+	fetches: number;
 	prNumber: number | null;
 	/** State `gh pr list --state all` reports for an existing pull request. */
 	prState: string;
@@ -55,6 +57,7 @@ function createRepo(overrides: Partial<FakeRepo> = {}): FakeRepo {
 		staged: true,
 		commits: 0,
 		pushes: 0,
+		fetches: 0,
 		prNumber: null,
 		prState: 'OPEN',
 		prHeadRefOid: HEAD_SHA,
@@ -88,6 +91,10 @@ function createRunner(repo: FakeRepo, calls: RecordedCall[]): ShipCommandRunner 
 			if (args[0] === 'push') {
 				if (repo.pushFails) return result(1, '', 'fatal: unable to access origin');
 				repo.pushes += 1;
+				return result(0);
+			}
+			if (args[0] === 'fetch') {
+				repo.fetches += 1;
 				return result(0);
 			}
 		}
@@ -198,6 +205,7 @@ describe('the GitHub shipper', () => {
 			'ship.pushed',
 			'ship.pr-opened',
 			'ship.automerge-armed',
+			'ship.source-synced',
 			'ship.merged',
 		]);
 	});
@@ -222,7 +230,7 @@ describe('the GitHub shipper', () => {
 		expect(repeated).toEqual({ outcome: 'merged', prNumber: 385 });
 		expect(repo.commits).toBe(1);
 		expect(repo.prCreates).toBe(1);
-		expect(second).toEqual(['ship.pushed', 'ship.pr-reused', 'ship.merged']);
+		expect(second).toEqual(['ship.pushed', 'ship.pr-reused', 'ship.source-synced', 'ship.merged']);
 		expect(findCall(calls, 'gh', 'pr', 'create')).toHaveLength(1);
 		expect(findCall(calls, 'git', 'commit')).toHaveLength(1);
 		expect(findCall(calls, 'gh', 'pr', 'merge')).toHaveLength(1);
@@ -249,7 +257,7 @@ describe('the GitHub shipper', () => {
 
 		expect(retried).toEqual({ outcome: 'merged', prNumber: 385 });
 		expect(repo.prCreates).toBe(1);
-		expect(events).toEqual(['ship.pushed', 'ship.pr-reused', 'ship.merged']);
+		expect(events).toEqual(['ship.pushed', 'ship.pr-reused', 'ship.source-synced', 'ship.merged']);
 		// No second arming, and no poll: the merge already happened.
 		expect(findCall(calls, 'gh', 'pr', 'merge')).toHaveLength(1);
 		expect(repo.views).toBe(1);

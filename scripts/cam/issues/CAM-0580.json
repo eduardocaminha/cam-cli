@@ -1,11 +1,11 @@
 {
   "id": "CAM-580",
   "title": "gship web: fonte remota fresca sem mover main local",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-16T00:50:22.083Z",
-  "updatedAt": "2026-08-16T00:50:22.083Z",
+  "updatedAt": "2026-08-16T01:11:22.199Z",
   "description": "O primeiro ship web provou o merge, mas revelou que backlog, issue loader e novos worktrees continuam presos à ref local main. Depois do PR #386, origin/main tinha CAM-579 shipped enquanto main ainda a oferecia como specified; o próximo run partiria de uma base stale.",
   "specSource": "operator",
   "spec": {

@@ -33,7 +33,7 @@ function issueWithCriteria(criteria: string[]): string {
 }
 
 describe('git runtime boundary', () => {
-	test('requires a real issue and main ref without constraining the host checkout', () => {
+	test('requires a real issue and source ref without constraining the host checkout', () => {
 		const valid = createGitRuntimePreflight('/project', {
 			runGit: gitRunner({ branch: 'main', status: '?? operator-notes.txt' }),
 			issueExists: () => true,
@@ -44,13 +44,15 @@ describe('git runtime boundary', () => {
 			runGit: gitRunner({}),
 			issueExists: () => false,
 		});
-		expect(() => missingIssue('CAM-404')).toThrow('issue not found on main');
+		expect(() => missingIssue('CAM-404')).toThrow('issue not found on origin/main');
 
-		const missingMain = createGitRuntimePreflight('/project', {
-			runGit: () => ({ exitCode: 1, stdout: '', stderr: 'missing main' }),
+		const missingSource = createGitRuntimePreflight('/project', {
+			runGit: (_cwd, args) => args[0] === 'fetch'
+				? { exitCode: 0, stdout: '', stderr: '' }
+				: { exitCode: 1, stdout: '', stderr: 'missing origin/main' },
 			issueExists: () => true,
 		});
-		expect(() => missingMain('CAM-1')).toThrow('cannot resolve main');
+		expect(() => missingSource('CAM-1')).toThrow('cannot resolve origin/main');
 	});
 
 	test('verifies diff integrity and requires an actual working-tree change', async () => {
