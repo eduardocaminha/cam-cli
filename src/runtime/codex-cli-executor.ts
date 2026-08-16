@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import process from 'node:process';
 
 import { getIssueOnMain } from '../commands/issue-get.ts';
@@ -74,18 +74,12 @@ export function buildCodexCliArgv(input: CodexInvocation): string[] {
 }
 
 export function buildCodexReviewArgv(input: CodexReviewInvocation): string[] {
-	const argv = [
-		...input.command,
-		'exec',
-		'review',
-		'--uncommitted',
-		'--ignore-user-config',
-		'--json',
-	];
-	if (input.model !== undefined) argv.push('--model', input.model);
-	if (input.outputSchemaPath !== undefined) argv.push('--output-schema', input.outputSchemaPath);
-	argv.push('-');
-	return argv;
+	return buildCodexCliArgv({
+		...input,
+		sessionId: '',
+		resume: false,
+		readOnly: true,
+	});
 }
 
 export function buildCodexEnv(
@@ -259,7 +253,7 @@ export class CodexAgentSession implements AgentSession {
 	}
 }
 
-/** Fresh built-in Codex review, with user config/MCP disabled and no write bypass. */
+/** Fresh structured Codex review, with user config disabled and read-only access. */
 export class CodexReviewSession implements AgentSession {
 	readonly provider = 'codex' as const;
 	readonly #options: Omit<CodexCliExecutorOptions, 'loadIssue' | 'session'>;
