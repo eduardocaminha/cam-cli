@@ -53,6 +53,12 @@ describe('parseSetupArgs --plan-approval flag (behavioral)', () => {
 		expect(result).not.toBeNull();
 		expect(result?.planApproval).toBeUndefined();
 	});
+
+	test('setup is web-first by default and tmux requires an explicit legacy opt-in', () => {
+		expect(parseSetupArgs([])?.noTmux).toBe(true);
+		expect(parseSetupArgs(['--legacy-tmux'])?.noTmux).toBe(false);
+		expect(parseSetupArgs(['--legacy-tmux', '--no-tmux'])?.noTmux).toBe(true);
+	});
 });
 
 describe('index.ts forwards setupArgs.planApproval into runSetup (textual smoke)', () => {

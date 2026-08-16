@@ -190,9 +190,11 @@ gship          # starts the local web control surface
 gship run      # legacy tmux session
 ```
 
-New projects still use `gship init` while setup is migrated. The web screen
-lists plannable issues, follows the current run through server-sent events, and
-offers the contextual start, resume, cancel, and ship actions.
+New projects use `gship init`, which installs the project files without opening
+tmux, then `gship` to enter the web runtime. `gship init --legacy-tmux` keeps the
+previous setup agent available during the migration. The web screen lists
+plannable issues, follows the current run through server-sent events, and offers
+the contextual start, resume, cancel, and ship actions.
 
 ### Legacy tmux runtime
 

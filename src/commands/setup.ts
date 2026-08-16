@@ -9,43 +9,44 @@
 //   4. Verifies chosen agent(s) are installed + logged in.
 //   5. If new project: asks what the project is about.
 //   6. Copies templates/ into .claude/commands/, .claude/agents/, scripts/cam/.
-//   7. Opens a tmux split in the current window (or new session if outside tmux):
+//   7. Installs templates and returns to the web-first flow. With the explicit
+//      legacy flag, opens a tmux split in the current window (or new session):
 //        - Pane A (left): agent in bypassPermissions, reads project + writes
 //          project-specific config from templates.
 //        - Pane B (right): "setup dashboard" — tail -f of a log file showing
 //          ~10 lines of agent output + key hints.
 //      Ctrl+C → tmux attach to pane A (interact).
 //      Ctrl+V → tmux attach to pane A in read-only mode.
-//   8. Returns 0 when tmux split is spawned.
+//   8. Returns 0 when setup is ready.
 //
 // Flags accepted by parseSetupArgs (wired in index.ts):
 //   --new | --existing
 //   --agent claude | codex | both
 //   --default claude | codex  (only relevant with --agent=both)
 //   --description "<text>"     (new projects only)
-//   --no-tmux                  copy templates + print next steps, no tmux
+//   --legacy-tmux              opt into the previous setup-agent tmux split
+//   --no-tmux                  accepted compatibility alias for the default
 
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { createInterface } from 'node:readline';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
 import process from 'node:process';
+import { createInterface } from 'node:readline';
 
 import { render } from 'ink';
 import { createElement } from 'react';
-
-import { loadConfig, mergeIntoConfig, saveConfig } from '../config/toml.ts';
-import { DEFAULTS, type MergeMode, type PlanApproval } from '../config/models.ts';
 import type { IssueSystem } from '../config/issue-system.ts';
+import { DEFAULTS, type MergeMode, type PlanApproval } from '../config/models.ts';
+import { loadConfig, mergeIntoConfig, saveConfig } from '../config/toml.ts';
 import { printError, printHint, printSuccess, printWarning } from '../logging/color.ts';
-import { applyMergeMode } from './setup-merge-mode.ts';
-import type { SpawnFn as BpSpawnFn } from '../release/branch-protection.ts';
 import { printAutomergeNotice } from '../logging/notices.ts';
+import type { SpawnFn as BpSpawnFn } from '../release/branch-protection.ts';
 import { materializeTemplates } from '../templates/embedded.ts';
-import { buildOrchestratorBootPrompt } from './run.ts';
-import { SetupScreen, type SetupAnswers } from '../ui/SetupScreen.tsx';
 import { tmuxArgs } from '../tmux/session.ts';
+import { type SetupAnswers, SetupScreen } from '../ui/SetupScreen.tsx';
+import { buildOrchestratorBootPrompt } from './run.ts';
+import { applyMergeMode } from './setup-merge-mode.ts';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -1129,10 +1130,10 @@ export async function runSetup(options: SetupOptions = {}): Promise<number> {
 	// --- Step 6: copy templates ---------------------------------------------
 	copyTemplates(cwd);
 
-	// --- Step 7: spawn tmux split (unless --no-tmux) ------------------------
-	if (options.noTmux) {
-		printSuccess('Templates installed — skipping tmux (--no-tmux)');
-		printHint('Next: open your project in Claude Code and run /cam-plan');
+	// --- Step 7: finish web-first, unless the legacy tmux path was requested -
+	if (options.noTmux !== false) {
+		printSuccess('Templates installed');
+		printHint('Next: run `gship` to open the local web control surface');
 		return 0;
 	}
 
@@ -1146,7 +1147,7 @@ export async function runSetup(options: SetupOptions = {}): Promise<number> {
 			'Failed to launch tmux split',
 			err instanceof Error ? err.message : String(err),
 		);
-		printHint('Run `gship init --no-tmux` to skip the tmux step and install templates only');
+		printHint('Run `gship init` without --legacy-tmux to use the web-first setup');
 		return 1;
 	}
 
@@ -1173,13 +1174,14 @@ const MERGE_MODES: readonly MergeMode[] = ['immediate', 'ci-gated'];
 const PLAN_APPROVALS: readonly PlanApproval[] = ['auto', 'operator'];
 
 export function parseSetupArgs(args: string[]): ParsedSetupArgs | null {
-	const result: ParsedSetupArgs = { noTmux: false, help: false };
+	const result: ParsedSetupArgs = { noTmux: true, help: false };
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i]!;
 		if (arg === '--help' || arg === '-h') { result.help = true; continue; }
 		if (arg === '--new') { result.projectMode = 'new'; continue; }
 		if (arg === '--existing') { result.projectMode = 'existing'; continue; }
 		if (arg === '--no-tmux') { result.noTmux = true; continue; }
+		if (arg === '--legacy-tmux') { result.noTmux = false; continue; }
 		if (arg === '--issue-system') {
 			const next = args[++i];
 			if (next === 'none') { result.issueSystem = 'local'; continue; }

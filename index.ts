@@ -192,7 +192,8 @@ const INIT_HELP = renderHelp({
 				{ name: '--existing', description: 'Treat this as an existing project' },
 				{ name: '--issue-system <x>', description: 'linear | github | local. Skip the issue-system question' },
 				{ name: '--description "<t>"', description: 'Project description for new projects (skip the prompt)' },
-				{ name: '--no-tmux', description: 'Install templates only; skip spawning the tmux setup session' },
+				{ name: '--legacy-tmux', description: 'Opt into the previous tmux setup-agent session' },
+				{ name: '--no-tmux', description: 'Compatibility alias; web-first setup already skips tmux' },
 			],
 		},
 		{
@@ -212,10 +213,12 @@ const INIT_HELP = renderHelp({
 				'  4. If new: asks for a brief project description.\n' +
 				'  5. Installs gship templates into .claude/commands/, .claude/agents/, scripts/cam/.\n' +
 				'  6. Writes scripts/cam/project.toml with per-project config.\n' +
-				'  7. Opens a tmux split:\n' +
+				'  7. Returns to the web-first flow; run `gship` to open the local UI.\n' +
+				'\n' +
+				'Legacy opt-in (`--legacy-tmux`) opens the previous tmux split:\n' +
 				'       Pane A (left):  claude in bypassPermissions, adapts templates to this project.\n' +
 				'       Pane B (right): key menu — c to interact, v for view-only, q to close.\n' +
-				'  8. Auto-handoff: when the config agent emits CAM_SETUP_STATUS=DONE,\n' +
+				'  Auto-handoff: when the config agent emits CAM_SETUP_STATUS=DONE,\n' +
 				'     the orchestrator is launched in a new pane immediately. The menu\n' +
 				'     pane updates with options: o (orchestrator), c (config), k (kill\n' +
 				'     config pane), q (close menu).',
