@@ -10,6 +10,7 @@ import {
 	type OrchestratorHandoff,
 	type OrchestratorMessage,
 	type OrchestratorMessageRole,
+	type ProjectBrief,
 	type RunEvent,
 	type RunRecord,
 	RunStore,
@@ -288,6 +289,14 @@ export class RunRuntime {
 
 	setOrchestratorHandoff(handoff: OrchestratorHandoff): void {
 		this.#store.setOrchestratorHandoff(handoff, this.#now());
+	}
+
+	getProjectBrief(): ProjectBrief {
+		return this.#store.getProjectBrief();
+	}
+
+	setProjectBrief(brief: ProjectBrief): void {
+		this.#store.setProjectBrief(brief, this.#now());
 	}
 
 	appendOrchestratorMessage(

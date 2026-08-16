@@ -78,6 +78,40 @@ export function normalizeOrchestratorHandoff(value: unknown): OrchestratorHandof
 	};
 }
 
+/**
+ * Small brief maintained by the operator. It carries the same four fields as
+ * the handoff, but it is authored by a human and never by an orchestrator turn.
+ */
+export type ProjectBrief = OrchestratorHandoff;
+
+/** Enforced on every write so one oversized record cannot grow the prompt. */
+export const PROJECT_BRIEF_LIMITS = {
+	objective: 2000,
+	listItems: 20,
+	itemLength: 500,
+} as const;
+
+export function emptyProjectBrief(): ProjectBrief {
+	return emptyOrchestratorHandoff();
+}
+
+function clampBriefList(items: readonly string[]): string[] {
+	return items
+		.slice(0, PROJECT_BRIEF_LIMITS.listItems)
+		.map((item) => item.slice(0, PROJECT_BRIEF_LIMITS.itemLength));
+}
+
+/** Defensive read/write shaping; the PUT contract validates strictly instead. */
+export function normalizeProjectBrief(value: unknown): ProjectBrief {
+	const brief = normalizeOrchestratorHandoff(value);
+	return {
+		objective: brief.objective.slice(0, PROJECT_BRIEF_LIMITS.objective),
+		decisions: clampBriefList(brief.decisions),
+		constraints: clampBriefList(brief.constraints),
+		openItems: clampBriefList(brief.openItems),
+	};
+}
+
 export interface CreateRunInput {
 	id: string;
 	issueId: string;
@@ -241,7 +275,12 @@ export class RunStore {
 					handoff_json TEXT NOT NULL,
 					updated_at TEXT NOT NULL
 				);
-				CREATE TABLE IF NOT EXISTS orchestrator_messages (
+				CREATE TABLE IF NOT EXISTS project_brief (
+						id INTEGER PRIMARY KEY CHECK (id = 1),
+						brief_json TEXT NOT NULL,
+						updated_at TEXT NOT NULL
+					);
+					CREATE TABLE IF NOT EXISTS orchestrator_messages (
 				seq INTEGER PRIMARY KEY AUTOINCREMENT,
 				provider_id TEXT NOT NULL,
 				role TEXT NOT NULL,
@@ -421,6 +460,31 @@ export class RunStore {
 				handoff_json = excluded.handoff_json,
 				updated_at = excluded.updated_at
 		`).run({ handoffJson: JSON.stringify(normalized), updatedAt });
+	}
+
+	/** Single operator-owned record: a missing or corrupt row reads as empty. */
+	getProjectBrief(): ProjectBrief {
+		const row = this.#db.query(`
+			SELECT brief_json FROM project_brief WHERE id = 1
+		`).get() as { brief_json: string } | null;
+		if (row === null) return emptyProjectBrief();
+		try {
+			return normalizeProjectBrief(JSON.parse(row.brief_json) as unknown);
+		} catch {
+			// A malformed brief must never block the next turn.
+			return emptyProjectBrief();
+		}
+	}
+
+	setProjectBrief(brief: ProjectBrief, updatedAt: string): void {
+		const normalized = normalizeProjectBrief(brief);
+		this.#db.query(`
+			INSERT INTO project_brief (id, brief_json, updated_at)
+			VALUES (1, $briefJson, $updatedAt)
+			ON CONFLICT(id) DO UPDATE SET
+				brief_json = excluded.brief_json,
+				updated_at = excluded.updated_at
+		`).run({ briefJson: JSON.stringify(normalized), updatedAt });
 	}
 
 	appendOrchestratorMessage(input: {

@@ -9,8 +9,8 @@ import type {
 	OrchestratorTurnResult,
 } from '../../src/runtime/conversational-orchestrator.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
-import type { OrchestratorMessage, RunRecord } from '../../src/runtime/run-store.ts';
-import { RunStore } from '../../src/runtime/run-store.ts';
+import type { OrchestratorMessage, ProjectBrief, RunRecord } from '../../src/runtime/run-store.ts';
+import { PROJECT_BRIEF_LIMITS, RunStore } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 const RUN_FIXTURE: RunRecord = {
@@ -263,5 +263,122 @@ describe('orchestrator web API', () => {
 			await runtime.stop();
 			runtime.close();
 		}
+	});
+});
+
+describe('project brief web API', () => {
+	const BRIEF: ProjectBrief = {
+		objective: 'Manter a intenção do produto sob controle do operador.',
+		decisions: ['O brief é distinto do handoff automático.'],
+		constraints: ['Somente o PUT altera o brief.'],
+		openItems: ['Construir o editor web na fatia 2.'],
+	};
+
+	/** One server over a real store: the routes must reach durable state. */
+	const withServer = async (
+		body: (base: string, runtime: RunRuntime) => Promise<void>,
+	): Promise<void> => {
+		const runtime = new RunRuntime({
+			cwd: createTestTmpdir('gship-brief-api-'),
+			store: new RunStore(':memory:'),
+		});
+		const handle = startWebServer({
+			port: 0,
+			cwd: createTestTmpdir('gship-brief-api-cwd-'),
+			runRuntime: runtime,
+			orchestrator: (execute) => new FakeOrchestrator(execute),
+		});
+		try {
+			await body(`http://${handle.hostname}:${handle.port}`, runtime);
+		} finally {
+			await handle.stop();
+			await runtime.stop();
+			runtime.close();
+		}
+	};
+
+	test('GET reads the persisted brief without an Origin header', async () => {
+		await withServer(async (base, runtime) => {
+			const empty = await fetch(`${base}/api/brief`);
+			expect(empty.status).toBe(200);
+			expect(await empty.json()).toEqual({
+				brief: { objective: '', decisions: [], constraints: [], openItems: [] },
+			});
+
+			runtime.setProjectBrief(BRIEF);
+			const read = await fetch(`${base}/api/brief`);
+			expect(read.status).toBe(200);
+			expect(await read.json()).toEqual({ brief: BRIEF });
+		});
+	});
+
+	test('a valid PUT stores the brief and answers with what was stored', async () => {
+		await withServer(async (base, runtime) => {
+			const written = await fetch(`${base}/api/brief`, {
+				method: 'PUT',
+				headers: { 'content-type': 'application/json', origin: base },
+				body: JSON.stringify({ ...BRIEF, openItems: ['  ', ...BRIEF.openItems] }),
+			});
+			expect(written.status).toBe(200);
+			expect(await written.json()).toEqual({ ok: true, brief: BRIEF });
+			expect(runtime.getProjectBrief()).toEqual(BRIEF);
+		});
+	});
+
+	test('an invalid PUT answers 400 and stores nothing', async () => {
+		await withServer(async (base, runtime) => {
+			runtime.setProjectBrief(BRIEF);
+			const invalid: unknown[] = [
+				'não é um objeto',
+				{ ...BRIEF, objective: 42 },
+				{ ...BRIEF, decisions: 'uma decisão solta' },
+				{ ...BRIEF, constraints: [7] },
+				{ ...BRIEF, objective: 'o'.repeat(PROJECT_BRIEF_LIMITS.objective + 1) },
+				{
+					...BRIEF,
+					decisions: Array.from(
+						{ length: PROJECT_BRIEF_LIMITS.listItems + 1 },
+						(_, index) => `decisão ${index}`,
+					),
+				},
+				{ ...BRIEF, openItems: ['i'.repeat(PROJECT_BRIEF_LIMITS.itemLength + 1)] },
+			];
+			for (const payload of invalid) {
+				const rejected = await fetch(`${base}/api/brief`, {
+					method: 'PUT',
+					headers: { 'content-type': 'application/json', origin: base },
+					body: JSON.stringify(payload),
+				});
+				expect(rejected.status).toBe(400);
+				const answer = await rejected.json() as { ok: boolean; code: string; message: string };
+				expect(answer.ok).toBe(false);
+				expect(answer.code).toBe('invalid-request');
+				expect(answer.message.length).toBeGreaterThan(0);
+			}
+			expect(runtime.getProjectBrief()).toEqual(BRIEF);
+		});
+	});
+
+	test('a cross-origin PUT is refused by the origin guard', async () => {
+		await withServer(async (base, runtime) => {
+			for (const origin of ['http://evil.example', undefined]) {
+				const refused = await fetch(`${base}/api/brief`, {
+					method: 'PUT',
+					headers: {
+						'content-type': 'application/json',
+						...(origin === undefined ? {} : { origin }),
+					},
+					body: JSON.stringify(BRIEF),
+				});
+				expect(refused.status).toBe(403);
+				expect(await refused.json()).toMatchObject({ ok: false, code: 'forbidden-origin' });
+			}
+			expect(runtime.getProjectBrief()).toEqual({
+				objective: '',
+				decisions: [],
+				constraints: [],
+				openItems: [],
+			});
+		});
 	});
 });

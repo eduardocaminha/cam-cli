@@ -40,7 +40,13 @@ import {
 	RuntimeConflictError,
 	RuntimeUnavailableError,
 } from '../runtime/run-runtime.ts';
-import { type OrchestratorMessage, type RunEvent, RunStore } from '../runtime/run-store.ts';
+import {
+	type OrchestratorMessage,
+	PROJECT_BRIEF_LIMITS,
+	type ProjectBrief,
+	type RunEvent,
+	RunStore,
+} from '../runtime/run-store.ts';
 import { NativeProviderAuth, type ProviderAuth } from '../runtime/provider-auth.ts';
 import { RUNTIME_SOURCE_REF } from '../runtime/source-ref.ts';
 import { GSHIP_VERSION } from '../version.ts';
@@ -62,6 +68,8 @@ export interface WebServerOptions {
 	issueAbandoner?: (id: string, input: unknown) => CreatedOperatorIssue;
 	/** Test seam for credential-blind provider status and managed Codex login. */
 	providerAuth?: ProviderAuth;
+	/** Test seam for the operator-maintained project brief. */
+	projectBrief?: ProjectBriefAccess;
 	/**
 	 * Test seam for the read-only conversational facade. It is built over the
 	 * deterministic command executor the production orchestrator also runs on.
@@ -75,6 +83,95 @@ export interface OrchestratorRuntime {
 	listMessages(limit?: number): OrchestratorMessage[];
 	turn(text: string): Promise<OrchestratorTurnResult>;
 	stop(): Promise<void>;
+}
+
+export interface ProjectBriefAccess {
+	get(): ProjectBrief;
+	set(brief: ProjectBrief): void;
+}
+
+function briefList(value: unknown, label: string): string[] {
+	if (!Array.isArray(value)) {
+		throw new IssueIntakeError('invalid-request', `${label} deve ser uma lista de textos.`, 400);
+	}
+	if (value.length > PROJECT_BRIEF_LIMITS.listItems) {
+		throw new IssueIntakeError(
+			'invalid-request',
+			`${label} aceita no máximo ${PROJECT_BRIEF_LIMITS.listItems} itens.`,
+			400,
+		);
+	}
+	const items: string[] = [];
+	for (const item of value) {
+		if (typeof item !== 'string') {
+			throw new IssueIntakeError('invalid-request', `${label} deve ser uma lista de textos.`, 400);
+		}
+		if (item.length > PROJECT_BRIEF_LIMITS.itemLength) {
+			throw new IssueIntakeError(
+				'invalid-request',
+				`Cada item de ${label} aceita no máximo ${PROJECT_BRIEF_LIMITS.itemLength} caracteres.`,
+				400,
+			);
+		}
+		const trimmed = item.trim();
+		if (trimmed.length > 0) items.push(trimmed);
+	}
+	return items;
+}
+
+/**
+ * The brief is a whole record overwritten by the operator, so the four fields
+ * are required. Anything oversized is refused instead of silently truncated:
+ * the durable read path clamps defensively, the write path never guesses.
+ */
+export function parseProjectBriefInput(value: unknown): ProjectBrief {
+	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+		throw new IssueIntakeError('invalid-request', 'Um objeto JSON é obrigatório.', 400);
+	}
+	const input = value as Record<string, unknown>;
+	const objective = input['objective'];
+	if (typeof objective !== 'string') {
+		throw new IssueIntakeError('invalid-request', 'Objetivo deve ser um texto.', 400);
+	}
+	if (objective.length > PROJECT_BRIEF_LIMITS.objective) {
+		throw new IssueIntakeError(
+			'invalid-request',
+			`Objetivo aceita no máximo ${PROJECT_BRIEF_LIMITS.objective} caracteres.`,
+			400,
+		);
+	}
+	return {
+		objective: objective.trim(),
+		decisions: briefList(input['decisions'], 'Decisões'),
+		constraints: briefList(input['constraints'], 'Restrições'),
+		openItems: briefList(input['openItems'], 'Itens em aberto'),
+	};
+}
+
+async function writeProjectBrief(
+	request: Request,
+	projectBrief: ProjectBriefAccess,
+): Promise<Response> {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	let body: unknown;
+	try {
+		body = await request.json();
+	} catch {
+		return Response.json(
+			{ ok: false, code: 'invalid-request', message: 'Um objeto JSON é obrigatório.' },
+			{ status: 400 },
+		);
+	}
+	try {
+		projectBrief.set(parseProjectBriefInput(body));
+		return Response.json({ ok: true, brief: projectBrief.get() });
+	} catch (error) {
+		if (!(error instanceof IssueIntakeError)) throw error;
+		return Response.json(
+			{ ok: false, code: error.code, message: error.message },
+			{ status: error.status },
+		);
+	}
 }
 
 async function createIssueFromOperator(
@@ -623,6 +720,10 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		?? new RunRuntime(createDefaultRunRuntimeOptions(options.cwd));
 	const { issueIntake, issueSpecifier, issueAbandoner } = resolveIssueWriters(options);
 	const providerAuth = options.providerAuth ?? new NativeProviderAuth();
+	const projectBrief = options.projectBrief ?? {
+		get: () => runRuntime.getProjectBrief(),
+		set: (brief: ProjectBrief) => runRuntime.setProjectBrief(brief),
+	};
 	const execute = (command: OrchestratorCommand): Promise<string> =>
 		executeOrchestratorCommand(command, runRuntime, issueIntake, issueSpecifier, issueAbandoner);
 	const orchestrator = options.orchestrator?.(execute)
@@ -655,6 +756,12 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				POST: (request) => startDurableRun(request, runRuntime),
 			},
 			'/api/providers': () => listProviders(providerAuth, runRuntime),
+			// The read stays unguarded like every other GET: a same-origin browser
+			// read sends no Origin header, and 127.0.0.1 is the read boundary.
+			'/api/brief': {
+				GET: () => Response.json({ brief: projectBrief.get() }),
+				PUT: (request) => writeProjectBrief(request, projectBrief),
+			},
 			'/api/chat': {
 				GET: () => Response.json({ messages: orchestrator.listMessages() }),
 				POST: (request) => converse(request, orchestrator),
