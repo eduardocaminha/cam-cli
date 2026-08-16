@@ -1,0 +1,19 @@
+{
+  "id": "CAM-587",
+  "title": "Aposentar três issues superseded sem criar política de backlog",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-16T12:31:55.891Z",
+  "updatedAt": "2026-08-16T12:31:55.891Z",
+  "description": "Alterar somente scripts/cam/issues/CAM-0555.json, CAM-0560.json e CAM-0567.json: definir status como abandoned e atualizar updatedAt. Preservar stage, title, description, blockedBy, spec e todos os demais campos; não alterar código, testes ou configuração. Razões auditadas: CAM-555 descreve planner/auditor e fallback tmux que não existem na composição web atual; CAM-560 prescreve a implementação antiga de embed/SPA, substituída pela interface embarcada da CAM-581 e pelo web-assets atual; CAM-567 pressupõe recentCycles numa snapshot hoje deliberadamente backlog-only, enquanto a CAM-586 já entrega o handoff simples por runs persistidos. Não criar filtro, regra, comando legado, API ou teste novo.",
+  "specSource": "operator",
+  "spec": {
+    "acceptanceCriteria": [
+      "Alterar somente scripts/cam/issues/CAM-0555.json, CAM-0560.json e CAM-0567.json: definir status como abandoned e atualizar updatedAt. Preservar stage, title, description, blockedBy, spec e todos os demais campos; não alterar código, testes ou configuração. Razões auditadas: CAM-555 descreve planner/auditor e fallback tmux que não existem na composição web atual; CAM-560 prescreve a implementação antiga de embed/SPA, substituída pela interface embarcada da CAM-581 e pelo web-assets atual; CAM-567 pressupõe recentCycles numa snapshot hoje deliberadamente backlog-only, enquanto a CAM-586 já entrega o handoff simples por runs persistidos. Não criar filtro, regra, comando legado, API ou teste novo. [oracle: named-command bun run check:all && jq -e -s 'all(.[]; .status == \"abandoned\")' scripts/cam/issues/CAM-0555.json scripts/cam/issues/CAM-0560.json scripts/cam/issues/CAM-0567.json]"
+    ],
+    "scope": "Alterar somente scripts/cam/issues/CAM-0555.json, CAM-0560.json e CAM-0567.json: definir status como abandoned e atualizar updatedAt. Preservar stage, title, description, blockedBy, spec e todos os demais campos; não alterar código, testes ou configuração. Razões auditadas: CAM-555 descreve planner/auditor e fallback tmux que não existem na composição web atual; CAM-560 prescreve a implementação antiga de embed/SPA, substituída pela interface embarcada da CAM-581 e pelo web-assets atual; CAM-567 pressupõe recentCycles numa snapshot hoje deliberadamente backlog-only, enquanto a CAM-586 já entrega o handoff simples por runs persistidos. Não criar filtro, regra, comando legado, API ou teste novo.",
+    "gotchas": [],
+    "domainTerms": []
+  }
+}
