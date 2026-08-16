@@ -11,6 +11,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { App, type AppProps, type OperatorRoute, routeOf } from '../../webui/src/App.tsx';
 import {
+	approveIssue,
 	BRIEF_PATH,
 	commandRun,
 	createIssue,
@@ -95,6 +96,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 	return renderToStaticMarkup(
 		<App
 			backlog={BACKLOG}
+			drafts={[]}
 			brief={EMPTY_BRIEF}
 			chatMessages={[]}
 			events={[]}
@@ -104,6 +106,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			onCancel={() => {}}
 			onConnectCodex={() => {}}
 			onCreateIssue={() => {}}
+			onApproveIssue={() => {}}
 			onEnableNotifications={() => {}}
 			onResume={() => {}}
 			onSaveBrief={() => {}}
@@ -112,6 +115,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			onSendMessage={() => {}}
 			onShip={() => {}}
 			onSpecifyIssue={() => {}}
+			onReviewIssue={() => {}}
 			onStart={() => {}}
 			pending={false}
 			providers={[]}
@@ -505,6 +509,26 @@ describe('runs surface', () => {
 });
 
 describe('work surface', () => {
+	test('reviews specified drafts in a closed disclosure and requires persisted confirmation', () => {
+		const html = workPage({ drafts: [{
+			id: 'CAM-42',
+			title: 'Draft revisável',
+			scope: 'Escopo persistido',
+			verificationCommand: 'bun test focused',
+			state: 'stale',
+		}] });
+		const card = panel(html, 'Revisar e aprovar');
+
+		expect(card).not.toContain('open=""');
+		expect(card).toContain('CAM-42 — Draft revisável');
+		expect(card).toContain('Escopo persistido');
+		expect(card).toContain('bun test focused');
+		expect(card).toContain('type="checkbox"');
+		expect(buttonIsEnabled(card, 'Salvar revisão')).toBe(false);
+		expect(buttonIsEnabled(card, 'Aprovar')).toBe(false);
+		expect(card).not.toContain('fingerprint');
+	});
+
 	test('offers the plannable backlog and holds start until an issue is chosen', () => {
 		const html = workPage();
 
@@ -1004,6 +1028,22 @@ describe('same-origin transport', () => {
 		}]);
 	});
 
+	test('draft review and approval use only the existing issue-scoped endpoints', async () => {
+		const draft = { scope: 'Escopo revisto.', verificationCommand: 'bun test focused' };
+		await withRecordedFetch(
+			{ ok: true, issue: { id: 'CAM-42', title: 'Draft' } },
+			200,
+			async (calls) => {
+				await specifyIssue('CAM-42', draft);
+				expect(calls).toEqual([{ url: '/api/issues/CAM-42/spec', method: 'POST', body: JSON.stringify(draft) }]);
+			},
+		);
+		await withRecordedFetch({ ok: true }, 200, async (calls) => {
+			expect(await approveIssue('CAM-42')).toBe('Run atualizada.');
+			expect(calls).toEqual([{ url: '/api/issues/CAM-42/approve', method: 'POST', body: null }]);
+		});
+	});
+
 	test('reads persisted activity for one run', async () => {
 		const events = [{
 			seq: 9,
@@ -1111,9 +1151,10 @@ describe('same-origin transport', () => {
 		});
 		// No idleState key at all: a cycle is running, so nothing is plannable.
 		await withRecordedFetch({ phase: 'implementing' }, 200, async () => {
-			expect(await fetchBacklog()).toEqual({
-				plannable: [],
-				ideas: [],
+				expect(await fetchBacklog()).toEqual({
+					plannable: [],
+					ideas: [],
+					drafts: [],
 				workspaceNotices: [],
 				version: '',
 			});
@@ -1122,9 +1163,10 @@ describe('same-origin transport', () => {
 			idleState: { backlog: { plannable: BACKLOG, byStage: { idea: [BACKLOG[0]!] } } },
 			version: '0.292.0',
 		}, 200, async () => {
-			expect(await fetchBacklog()).toEqual({
-				plannable: BACKLOG,
-				ideas: [BACKLOG[0]!],
+				expect(await fetchBacklog()).toEqual({
+					plannable: BACKLOG,
+					ideas: [BACKLOG[0]!],
+					drafts: [],
 				workspaceNotices: [],
 				version: '0.292.0',
 			});
