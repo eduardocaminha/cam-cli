@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-607",
+  "title": "Orquestrador: schema estrito compativel com Codex e diagnostico estruturado preservado",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-16T22:25:03.363Z",
+  "updatedAt": "2026-08-16T22:25:03.363Z",
+  "description": "Derived Codex compatibility fix for the read-only conversational orchestrator.\n\nIn src/runtime/conversational-orchestrator.ts, make ORCHESTRATOR_RESULT_SCHEMA valid for strict Structured Outputs without creating provider-specific schemas. The command object must list every declared property in required. Keep type as the existing enum; represent every conditionally unused string field (title, scope, verificationCommand, reason, issueId, runId, guidance) as string-or-null. Add one concise prompt rule that unused command fields are null. Keep parseOrchestratorResponse as the semantic gate: commands that need a value still require a nonblank string, type none ignores null extras, and the public OrchestratorCommand union remains unchanged.\n\nIn src/runtime/codex-cli-executor.ts, when the JSONL stream supplied a turn.failed or error message, surface state.failed before falling back to the generic nonzero-exit diagnostic. This preserves the provider diagnostic when stderr is empty and changes no successful path or retry policy.\n\nExtend test/runtime/conversational-orchestrator.test.ts to pin the strict schema shape and null behavior, including rejection when a command-required field is null. Extend test/runtime/codex-cli-executor.test.ts with a fixture failure that exits nonzero after a structured error and assert the structured diagnostic wins over the empty stderr fallback.\n\nOut of scope: provider-specific schema branches, changing the command union, retries, model selection, UI, cache deletion, or new dependencies.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Derived Codex compatibility fix for the read-only conversational orchestrator.\n\nIn src/runtime/conversational-orchestrator.ts, make ORCHESTRATOR_RESULT_SCHEMA valid for strict Structured Outputs without creating provider-specific schemas. The command object must list every declared property in required. Keep type as the existing enum; represent every conditionally unused string field (title, scope, verificationCommand, reason, issueId, runId, guidance) as string-or-null. Add one concise prompt rule that unused command fields are null. Keep parseOrchestratorResponse as the semantic gate: commands that need a value still require a nonblank string, type none ignores null extras, and the public OrchestratorCommand union remains unchanged.\n\nIn src/runtime/codex-cli-executor.ts, when the JSONL stream supplied a turn.failed or error message, surface state.failed before falling back to the generic nonzero-exit diagnostic. This preserves the provider diagnostic when stderr is empty and changes no successful path or retry policy.\n\nExtend test/runtime/conversational-orchestrator.test.ts to pin the strict schema shape and null behavior, including rejection when a command-required field is null. Extend test/runtime/codex-cli-executor.test.ts with a fixture failure that exits nonzero after a structured error and assert the structured diagnostic wins over the empty stderr fallback.\n\nOut of scope: provider-specific schema branches, changing the command union, retries, model selection, UI, cache deletion, or new dependencies.",
+    "verify": [
+      "bun test test/runtime/conversational-orchestrator.test.ts test/runtime/codex-cli-executor.test.ts && bun run typecheck"
+    ]
+  },
+  "approval": {
+    "fingerprint": "889adb6289c9b4c918487822b294da7abeff09aad3524134124940d65a44a92b",
+    "approvedAt": "2026-08-16T22:25:03.363Z"
+  }
+}
