@@ -53,7 +53,6 @@ import {
 	prunePatternRecordsOnMain,
 	type PrunePatternRecordsOnMainResult,
 } from './src/commands/patterns-prune.ts';
-import { runIssue } from './src/commands/issue.ts';
 import { runIssueList } from './src/commands/issue-list.ts';
 import { getIssueOnMain, type GetIssueOnMainOutcome } from './src/commands/issue-get.ts';
 import type {
@@ -132,6 +131,7 @@ const HELP = renderHelp({
 			heading: 'Maintenance',
 			entries: [
 				{ name: 'config [--show]', description: 'Interactive wizard to set model per phase and backend' },
+				{ name: 'issue list|get|close|abandon|demote', description: 'Inspect or maintain backlog issues deterministically' },
 				{ name: 'tag', description: 'Create and push the vX.Y.Z git tag for the current CAM_VERSION on main' },
 				{ name: 'journal append', description: 'Append a structured cycle entry to scripts/cam/journal.md on main' },
 				{ name: 'journal archive', description: 'Archive the oldest third of the legacy journal after its threshold' },
@@ -148,7 +148,6 @@ const HELP = renderHelp({
 				{ name: 'run [options]', description: 'Open or attach the previous long-lived orchestrator' },
 				{ name: 'plan [<N>]', description: 'Dispatch /cam-plan inside the orchestrator pane' },
 				{ name: 'spec <id>', description: 'Run the previous interactive spec interview' },
-				{ name: 'issue "<text>"', description: 'File an issue through the previous orchestrator pane' },
 				{ name: 'next [options]', description: 'Trigger the previous sidecar loop' },
 				{ name: 'review', description: 'Dispatch /cam-review to the previous orchestrator' },
 				{ name: 'ship', description: 'Dispatch /cam-ship to the previous orchestrator' },
@@ -376,17 +375,13 @@ const SPEC_HELP = renderHelp({
 
 const ISSUE_HELP = renderHelp({
 	title: 'gship issue',
-	tagline: 'File an issue from free text, or list the actionable backlog',
+	tagline: 'Maintain and inspect the issue backlog',
 	usage:
-		'gship issue "<free text>" | gship issue list [--all] [--json] | gship issue close <id> | gship issue abandon <id> | gship issue demote <id> | gship issue get <id>',
+		'gship issue list [--all] [--json] | gship issue close <id> | gship issue abandon <id> | gship issue demote <id> | gship issue get <id> | gship issue --file-local',
 	sections: [
 		{
 			heading: 'Arguments',
 			entries: [
-				{
-					name: '"<free text>"',
-					description: 'Free-text description; expanded to title + description by /cam-issue create',
-				},
 				{
 					name: '--file-local',
 					description:
@@ -423,25 +418,8 @@ const ISSUE_HELP = renderHelp({
 				},
 			],
 		},
-		{
-			heading: 'Behaviour',
-			body:
-				'1. Permission mode is a hardcoded bypassPermissions literal at the\n' +
-				'   spawn site. gship does NOT accept a --permission-mode flag.\n' +
-				'2. Ensures the project session exists (cam-orch-<basename>-<hash>);\n' +
-				'   creates it (with 2-pane layout: orchestrator + dashboard) if needed.\n' +
-				'3. Opens a new pane inside the session running:\n' +
-				'     claude --permission-mode <mode> "/cam-issue create <text>"\n' +
-				'4. Returns 0 immediately. The issue-creation flow runs inside the pane.\n' +
-				'5. If not already inside the session, prints a hint:\n' +
-				'     Run `gship run` to open the project session.\n' +
-				'6. `gship issue list` never opens a pane or spawns tmux/claude: it reads\n' +
-				'   the backlog in-process and prints it directly.',
-		},
 	],
-	footer:
-		'The free text is passed verbatim to the /cam-issue create slash command.\n' +
-		'The pane agent expands it into a structured issue title + description.',
+	footer: 'Create new operator-specified tasks in `gship web`.',
 });
 
 const JOURNAL_HELP = renderHelp({
@@ -1164,20 +1142,7 @@ const STATS_HELP = renderHelp({
 // --- Argv parsers ----------------------------------------------------------
 
 /**
- * Parse issue-subcommand positional argument. Accepts a single free-text
- * string (the issue description) or `--help` / `-h`. Returns the parsed
- * text plus a flag indicating the operator asked for help, or `null` on a
- * parse error (the caller prints the diagnostic and exits 1).
- *
- * NOTE: This parser does NOT accept `--permission-mode` — that is the
- * US-007 acceptance criterion 7 invariant. `test/no-permission-mode-flag.test.ts`
- * greps this file for the literal `--permission-mode` and fails the build
- * if a parser registers it.
- */
-
-/**
  * Discriminated union returned by parseIssueArgs.
- * - mode === 'text': free-text thin-proxy path (existing behaviour).
  * - mode === 'file-local': deterministic in-process path (US-003).
  *     fastTrack: true when --fast-track was passed (specSource: operator).
  *     derivedFrom: non-empty when --derived-from was passed (specSource: derived).
@@ -1202,7 +1167,6 @@ const STATS_HELP = renderHelp({
  * - help === true: caller should print ISSUE_HELP and exit 0.
  */
 export type ParsedIssueArgs =
-	| { mode: 'text'; text: string; help: false }
 	| { mode: 'file-local'; fastTrack: boolean; derivedFrom: string[]; help: false }
 	| { mode: 'list'; all: boolean; json: boolean; help: false }
 	| { mode: 'close'; id: string; help: false }
@@ -1212,20 +1176,18 @@ export type ParsedIssueArgs =
 	| { mode?: never; help: true };
 
 /**
- * Shared subcommand arg-parse idiom used by parseIssueArgs (free-text
- * fallthrough), parsePlanArgs, and parseSpecArgs: --help/-h detection,
+ * Shared subcommand arg-parse idiom used by parsePlanArgs and parseSpecArgs:
+ * --help/-h detection,
  * unknown-option rejection, too-many-arguments rejection, and single-
  * positional capture. Callers own their exact error messages (passed via
  * `onTooMany`/`onUnknownOption`) and any further validation of the captured
  * positional (e.g. plan's integer parse, spec's empty-id check) -- this
  * helper only factors the control flow that was previously cloned across
- * the three parsers (the regression class that raised the dup ratchet at
+ * the two parsers (the regression class that raised the dup ratchet at
  * the CAM-107 ship).
  *
  * `onUnknownOption` is optional: omit it to allow tokens starting with `-`
- * to be captured as the positional (parseIssueArgs' free-text mode accepts
- * any single token as the issue title, including one that looks like a
- * flag).
+ * to be captured as the positional.
  *
  * Returns:
  *  - `{ help: true }` if `--help`/`-h` is present anywhere in args.
@@ -1263,8 +1225,7 @@ export function parseIssueArgs(args: string[]): ParsedIssueArgs | null {
 	if (args.includes('--help') || args.includes('-h')) {
 		return { help: true };
 	}
-	// The `list` subcommand is evaluated BEFORE the free-text fallthrough so a
-	// bare `list` positional is never misread as free-text issue creation.
+	// Deterministic issue maintenance subcommands.
 	if (args[0] === 'list') {
 		let all = false;
 		let json = false;
@@ -1280,9 +1241,7 @@ export function parseIssueArgs(args: string[]): ParsedIssueArgs | null {
 		}
 		return { mode: 'list', all, json, help: false };
 	}
-	// The `close <id>` subcommand is evaluated BEFORE the free-text fallthrough
-	// (alongside `list`) so a missing id is a parse error, never a silent
-	// text-mode fallthrough treating 'close' as an issue title.
+	// A missing close id is a parse error.
 	if (args[0] === 'close') {
 		const id = args[1];
 		if (id === undefined) {
@@ -1295,9 +1254,7 @@ export function parseIssueArgs(args: string[]): ParsedIssueArgs | null {
 		}
 		return { mode: 'close', id, help: false };
 	}
-	// The `abandon <id>` subcommand is evaluated BEFORE the free-text fallthrough
-	// (alongside `list`/`close`) so a missing id is a parse error, never a silent
-	// text-mode fallthrough treating 'abandon' as an issue title.
+	// A missing abandon id is a parse error.
 	if (args[0] === 'abandon') {
 		const id = args[1];
 		if (id === undefined) {
@@ -1310,9 +1267,7 @@ export function parseIssueArgs(args: string[]): ParsedIssueArgs | null {
 		}
 		return { mode: 'abandon', id, help: false };
 	}
-	// The `demote <id>` subcommand is evaluated BEFORE the free-text fallthrough
-	// (alongside `list`/`close`/`abandon`) so a missing id is a parse error, never a
-	// silent text-mode fallthrough treating 'demote' as an issue title.
+	// A missing demote id is a parse error.
 	if (args[0] === 'demote') {
 		const id = args[1];
 		if (id === undefined) {
@@ -1325,9 +1280,7 @@ export function parseIssueArgs(args: string[]): ParsedIssueArgs | null {
 		}
 		return { mode: 'demote', id, help: false };
 	}
-	// The `get <id>` subcommand is evaluated BEFORE the free-text fallthrough
-	// (alongside `list`/`close`/`abandon`/`demote`) so a missing id is a parse
-	// error, never a silent text-mode fallthrough treating 'get' as an issue title.
+	// A missing get id is a parse error.
 	if (args[0] === 'get') {
 		const id = args[1];
 		if (id === undefined) {
@@ -1372,16 +1325,8 @@ export function parseIssueArgs(args: string[]): ParsedIssueArgs | null {
 
 		return { mode: 'file-local', fastTrack, derivedFrom, help: false };
 	}
-	const parsed = parseSubcommandArgs(args, {
-		onTooMany: (arg) => printError(`unexpected argument: ${arg}`),
-	});
-	if (parsed === null) return null;
-	const text = parsed.help ? undefined : parsed.positional;
-	if (text === undefined || text.trim().length === 0) {
-		printError('gship issue requires a free-text argument');
-		return null;
-	}
-	return { mode: 'text', text, help: false };
+	printError('unknown gship issue subcommand; create tasks in `gship web`');
+	return null;
 }
 
 /**
@@ -2600,8 +2545,6 @@ export interface IssueDispatchDeps {
 	 * consulted when `fileLocalFn` is absent. Default: `Bun.stdin.text()`.
 	 */
 	readStdinFn?: () => Promise<string>;
-	/** Inject a fake runIssue thin-proxy. Default: calls the real runIssue with the parsed text. */
-	runIssueFn?: () => Promise<number>;
 	/**
 	 * Inject a fake for the `list` branch. Default: calls the real runIssueList
 	 * in-process (no tmux, no thin-proxy, no claude spawn).
@@ -2741,10 +2684,8 @@ async function runFileLocalDefault(
 }
 
 /**
- * Route a parsed `cam issue` call: --file-local => createLocalIssueOnMain (in-process,
- * reads stdin as JSON, no tmux needed); otherwise => runIssue thin-proxy. Exported so
- * unit tests can inject fakes for both branches and prove the --file-local path NEVER
- * calls runIssue.
+ * Route a parsed `gship issue` maintenance call. New task intake belongs to
+ * `gship web`; every retained CLI branch is deterministic and in-process.
  */
 export async function dispatchIssue(
 	parsed: ParsedIssueArgs,
@@ -2826,10 +2767,7 @@ export async function dispatchIssue(
 		const fileLocalFn = deps?.fileLocalFn ?? (() => runFileLocalDefault(parsed, deps));
 		return fileLocalFn();
 	}
-	// Free-text thin-proxy path (text mode or unexpected help=true — help is handled in main()).
-	const text = parsed.mode === 'text' ? parsed.text : '';
-	const issueFn = deps?.runIssueFn ?? (() => runIssue({ text }));
-	return issueFn();
+	return 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -3119,7 +3057,7 @@ async function main(argv: string[]): Promise<number> {
 		case 'issue': {
 			const parsed = parseIssueArgs(argv.slice(3));
 			if (parsed === null) {
-				printFatalHint('Usage: gship issue "<free text>" | gship issue --file-local');
+				printFatalHint('Use `gship issue --help`; create new tasks in `gship web`.');
 				return 1;
 			}
 			if (parsed.help) {

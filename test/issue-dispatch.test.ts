@@ -1,74 +1,8 @@
 // test/issue-dispatch.test.ts
 //
-// Unit tests for dispatchIssue and parseIssueArgs.
-//
-// Coverage:
-//   (a) parseIssueArgs recognizes --file-local and returns { mode: 'file-local',
-//       fastTrack, derivedFrom } (US-002 extension of US-003).
-//   (b) --fast-track sets fastTrack:true; --derived-from parses comma-separated
-//       ids into derivedFrom; both flags are mutually exclusive.
-//   (c) dispatchIssue routes --file-local to fileLocalFn BEFORE runIssueFn.
-//   (d) The --file-local path NEVER calls the runIssue thin-proxy.
-//   (e) The text path calls runIssueFn and NOT fileLocalFn.
-//   (f) Exit codes are forwarded from the injected fakes.
-//   (g) parseIssueArgs recognizes `list` / `list --all` / `list --json` /
-//       `list --all --json` as { mode: 'list' }, evaluated BEFORE the
-//       free-text fallthrough (CAM-190 US-003; --json added CAM-222 US-002).
-//   (h) dispatchIssue routes mode 'list' to issueListFn and NEVER touches
-//       runIssueFn or fileLocalFn (no thin-proxy, no send-keys, no claude spawn).
-//   (i) parseIssueArgs recognizes `close <id>` as { mode: 'close', id },
-//       evaluated BEFORE the free-text fallthrough (US-002, CAM-210). A
-//       missing id is a parse error, never a silent text-mode fallthrough.
-//   (j) dispatchIssue routes mode 'close' to closeIssueOnMainFn, prints the
-//       human printHint line plus the machine CAM_ISSUE_RESULT line, maps
-//       ok:true to exit 0 and any !ok reason (already-closed / not-found) to
-//       exit 1 with CAM_ISSUE_RESULT=ERROR, and NEVER touches runIssueFn or
-//       fileLocalFn (no thin-proxy).
-//   (k) parseIssueArgs recognizes `abandon <id>` as { mode: 'abandon', id },
-//       evaluated BEFORE the free-text fallthrough (US-003, CAM-210). A
-//       missing id is a parse error, never a silent text-mode fallthrough.
-//   (l) dispatchIssue routes mode 'abandon' to abandonIssueOnMainFn, prints
-//       the human printHint line plus the machine CAM_ISSUE_RESULT line,
-//       maps ok:true to exit 0 and any !ok reason (already-abandoned /
-//       not-found) to exit 1 with CAM_ISSUE_RESULT=ERROR, and NEVER touches
-//       runIssueFn or fileLocalFn (no thin-proxy).
-//   (m) dispatchIssue's default --file-local implementation (fileLocalFn NOT
-//       injected) emits CAM_ISSUE_RESULT for every outcome (US-001, CAM-212):
-//       success prints the pre-existing 'filed <id> on main' printHint plus
-//       CAM_ISSUE_RESULT=<id> and exits 0; each createLocalIssueOnMainFn
-//       { ok: false, reason } (diverged/detached-head/missing-main/
-//       guardrail-failed) prints CAM_ISSUE_RESULT=ERROR reason=<reason> and
-//       exits 1; unparseable stdin JSON prints CAM_ISSUE_RESULT=ERROR
-//       reason=invalid-json (emitted before createLocalIssueOnMainFn runs)
-//       and exits 1; a thrown exception prints CAM_ISSUE_RESULT=ERROR
-//       reason=exception and exits 1.
-//   (n) dispatchIssue's list branch is CAM_ISSUE_RESULT-free by design
-//       (US-002, CAM-212, regression lock): unlike close/abandon/file-local,
-//       list never writes a CAM_ISSUE_RESULT line on any code path.
-//   (o) parseIssueArgs recognizes `demote <id>` as { mode: 'demote', id },
-//       evaluated BEFORE the free-text fallthrough (US-002, CAM-206/CAM-210
-//       sibling). A missing id is a parse error, never a silent text-mode
-//       fallthrough.
-//   (p) dispatchIssue routes mode 'demote' to demoteIssueOnMainFn, prints
-//       the human printHint line plus the machine CAM_ISSUE_RESULT line,
-//       maps ok:true to exit 0 and any !ok reason (already-idea / is-planned /
-//       is-shipped / not-found) to exit 1 with CAM_ISSUE_RESULT=ERROR, and
-//       NEVER touches runIssueFn or fileLocalFn (no thin-proxy).
-//   (q) the central --help/-h short-circuit (CAM-211) still fires for
-//       `cam issue demote --help` before parseIssueArgs/dispatchIssue ever
-//       run, so it prints ISSUE_HELP and exits 0 with no demote side effect.
-//   (r) parseIssueArgs recognizes `get <id>` as { mode: 'get', id }, evaluated
-//       BEFORE the free-text fallthrough (US-002, CAM-400). A missing id is a
-//       parse error, never a silent text-mode fallthrough.
-//   (s) dispatchIssue routes mode 'get' to getIssueOnMainFn, prints the raw
-//       issue JSON to stdout on success (exit 0) and a clear error on failure
-//       (exit 1), NEVER emits CAM_ISSUE_RESULT (read-only, not a mutation),
-//       and NEVER touches runIssueFn or fileLocalFn (no thin-proxy).
-//
-// All external I/O is faked via injectable deps (fileLocalFn, runIssueFn,
-// issueListFn, closeIssueOnMainFn, abandonIssueOnMainFn, demoteIssueOnMainFn,
-// getIssueOnMainFn, createLocalIssueOnMainFn, readStdinFn). No real stdin,
-// git, or tmux is exercised.
+// Unit coverage for the deterministic `gship issue` maintenance surface:
+// parsing, branch routing, machine outcomes and stdin validation. New task
+// creation belongs to `gship web`; no test in this file exercises tmux.
 
 import { describe, expect, test } from 'bun:test';
 import { parseIssueArgs, dispatchIssue, main } from '../index.ts';
@@ -129,27 +63,13 @@ describe('parseIssueArgs: --file-local recognition', () => {
 		}
 	});
 
-	test('free-text path returns { mode: text, text: <arg>, help: false }', () => {
-		const result = parseIssueArgs(['my issue text']);
-		expect(result?.mode).toBe('text');
-		// Narrow to text mode to access text field.
-		if (result?.mode === 'text') {
-			expect(result.text).toBe('my issue text');
-		}
-		expect(result?.help).toBe(false);
-	});
-
 	test('--file-local with unknown extra arg returns null (unexpected argument)', () => {
 		const result = withSilentStderr(() => parseIssueArgs(['--file-local', 'extra']));
 		expect(result).toBeNull();
 	});
 
-	test('--file-local is distinct from the free-text { text } shape', () => {
-		const fileLocal = parseIssueArgs(['--file-local']);
-		const freeText = parseIssueArgs(['some text']);
-		// mode discriminates the two shapes
-		expect(fileLocal?.mode).toBe('file-local');
-		expect(freeText?.mode).toBe('text');
+	test('free text is rejected now that intake belongs to gship web', () => {
+		expect(withSilentStderr(() => parseIssueArgs(['some text']))).toBeNull();
 	});
 
 	test('--help still returns help shape', () => {
@@ -222,23 +142,11 @@ describe('parseIssueArgs: list subcommand', () => {
 		}
 	});
 
-	test('a bare "list" positional is never misread as free-text issue creation', () => {
-		const result = parseIssueArgs(['list']);
-		expect(result?.mode).not.toBe('text');
-	});
-
 	test('cam issue list <unexpected> returns null', () => {
 		const result = withSilentStderr(() => parseIssueArgs(['list', 'bogus']));
 		expect(result).toBeNull();
 	});
 
-	test('free text starting with a different word is still mode:text (no regression)', () => {
-		const result = parseIssueArgs(['fix the flaky retry test']);
-		expect(result?.mode).toBe('text');
-		if (result?.mode === 'text') {
-			expect(result.text).toBe('fix the flaky retry test');
-		}
-	});
 });
 
 // ---------------------------------------------------------------------------
@@ -297,13 +205,12 @@ describe('parseIssueArgs: --derived-from', () => {
 });
 
 // ---------------------------------------------------------------------------
-// dispatchIssue: --file-local branch NEVER calls runIssue thin-proxy
+// dispatchIssue: deterministic routing
 // ---------------------------------------------------------------------------
 
 describe('dispatchIssue: routing isolation', () => {
-	test('--file-local calls fileLocalFn and NOT runIssueFn', async () => {
+	test('--file-local calls fileLocalFn', async () => {
 		let fileLocalCalled = false;
-		let runIssueCalled = false;
 
 		await dispatchIssue(
 			{ mode: 'file-local', fastTrack: false, derivedFrom: [], help: false },
@@ -312,38 +219,10 @@ describe('dispatchIssue: routing isolation', () => {
 					fileLocalCalled = true;
 					return 0;
 				},
-				runIssueFn: async () => {
-					runIssueCalled = true;
-					return 0;
-				},
 			},
 		);
 
 		expect(fileLocalCalled).toBe(true);
-		// NEVER calls the runIssue thin-proxy on the --file-local path.
-		expect(runIssueCalled).toBe(false);
-	});
-
-	test('text path calls runIssueFn and NOT fileLocalFn', async () => {
-		let fileLocalCalled = false;
-		let runIssueCalled = false;
-
-		await dispatchIssue(
-			{ mode: 'text', text: 'some issue text', help: false },
-			{
-				fileLocalFn: async () => {
-					fileLocalCalled = true;
-					return 0;
-				},
-				runIssueFn: async () => {
-					runIssueCalled = true;
-					return 0;
-				},
-			},
-		);
-
-		expect(runIssueCalled).toBe(true);
-		expect(fileLocalCalled).toBe(false);
 	});
 
 	test('--file-local returns 0 when fileLocalFn succeeds', async () => {
@@ -351,7 +230,6 @@ describe('dispatchIssue: routing isolation', () => {
 			{ mode: 'file-local', fastTrack: false, derivedFrom: [], help: false },
 			{
 				fileLocalFn: async () => 0,
-				runIssueFn: async () => 99,
 			},
 		);
 		expect(code).toBe(0);
@@ -362,29 +240,6 @@ describe('dispatchIssue: routing isolation', () => {
 			{ mode: 'file-local', fastTrack: false, derivedFrom: [], help: false },
 			{
 				fileLocalFn: async () => 1,
-				runIssueFn: async () => 0,
-			},
-		);
-		expect(code).toBe(1);
-	});
-
-	test('text path returns runIssueFn exit code', async () => {
-		const code = await dispatchIssue(
-			{ mode: 'text', text: 'test issue', help: false },
-			{
-				fileLocalFn: async () => 99,
-				runIssueFn: async () => 0,
-			},
-		);
-		expect(code).toBe(0);
-	});
-
-	test('text path forwards non-zero exit code from runIssueFn', async () => {
-		const code = await dispatchIssue(
-			{ mode: 'text', text: 'test issue', help: false },
-			{
-				fileLocalFn: async () => 0,
-				runIssueFn: async () => 1,
 			},
 		);
 		expect(code).toBe(1);
@@ -395,8 +250,10 @@ describe('dispatchIssue: routing isolation', () => {
 		await dispatchIssue(
 			{ mode: 'file-local', fastTrack: true, derivedFrom: [], help: false },
 			{
-				fileLocalFn: async () => { fileLocalCalled = true; return 0; },
-				runIssueFn: async () => 99,
+				fileLocalFn: async () => {
+					fileLocalCalled = true;
+					return 0;
+				},
 			},
 		);
 		expect(fileLocalCalled).toBe(true);
@@ -407,16 +264,17 @@ describe('dispatchIssue: routing isolation', () => {
 		await dispatchIssue(
 			{ mode: 'file-local', fastTrack: false, derivedFrom: ['CAM-42'], help: false },
 			{
-				fileLocalFn: async () => { fileLocalCalled = true; return 0; },
-				runIssueFn: async () => 99,
+				fileLocalFn: async () => {
+					fileLocalCalled = true;
+					return 0;
+				},
 			},
 		);
 		expect(fileLocalCalled).toBe(true);
 	});
 
-	test('mode:list calls issueListFn and NEVER runIssueFn or fileLocalFn (no thin-proxy)', async () => {
+	test('mode:list calls issueListFn and not fileLocalFn', async () => {
 		let issueListCalled = false;
-		let runIssueCalled = false;
 		let fileLocalCalled = false;
 
 		const code = await dispatchIssue(
@@ -424,10 +282,6 @@ describe('dispatchIssue: routing isolation', () => {
 			{
 				issueListFn: async () => {
 					issueListCalled = true;
-					return 0;
-				},
-				runIssueFn: async () => {
-					runIssueCalled = true;
 					return 0;
 				},
 				fileLocalFn: async () => {
@@ -438,7 +292,6 @@ describe('dispatchIssue: routing isolation', () => {
 		);
 
 		expect(issueListCalled).toBe(true);
-		expect(runIssueCalled).toBe(false);
 		expect(fileLocalCalled).toBe(false);
 		expect(code).toBe(0);
 	});
@@ -452,7 +305,6 @@ describe('dispatchIssue: routing isolation', () => {
 					issueListCalled = true;
 					return 0;
 				},
-				runIssueFn: async () => 99,
 				fileLocalFn: async () => 99,
 			},
 		);
@@ -482,12 +334,7 @@ describe('parseIssueArgs: close subcommand', () => {
 		}
 	});
 
-	test('a bare "close" positional is never misread as free-text issue creation', () => {
-		const result = withSilentStderr(() => parseIssueArgs(['close']));
-		expect(result?.mode).not.toBe('text');
-	});
-
-	test('cam issue close with no id returns null (parse error, never text-mode fallthrough)', () => {
+	test('cam issue close with no id returns null', () => {
 		const result = withSilentStderr(() => parseIssueArgs(['close']));
 		expect(result).toBeNull();
 	});
@@ -497,15 +344,6 @@ describe('parseIssueArgs: close subcommand', () => {
 		expect(result).toBeNull();
 	});
 
-	test('free text starting with "close" as a full sentence is still mode:text (no regression)', () => {
-		// A single-token `args[0] === 'close'` check only fires on the exact
-		// positional keyword; a free-text arg that merely CONTAINS "close" is
-		// unaffected because it is still args[0] verbatim vs the literal 'close'.
-		const result = parseIssueArgs(['close the loop on the retry bug']);
-		// args[0] here is the whole string 'close the loop on the retry bug',
-		// not the bare keyword 'close', so this still falls through to text mode.
-		expect(result?.mode).toBe('text');
-	});
 });
 
 // ---------------------------------------------------------------------------
@@ -513,9 +351,8 @@ describe('parseIssueArgs: close subcommand', () => {
 // ---------------------------------------------------------------------------
 
 describe('dispatchIssue: close routing isolation', () => {
-	test('close calls closeIssueOnMainFn and NOT runIssueFn/fileLocalFn', async () => {
+	test('close calls closeIssueOnMainFn and not fileLocalFn', async () => {
 		let closeCalled = false;
-		let runIssueCalled = false;
 		let fileLocalCalled = false;
 
 		const code = await dispatchIssue(
@@ -525,10 +362,6 @@ describe('dispatchIssue: close routing isolation', () => {
 					closeCalled = true;
 					return { ok: true, id, committedTo: 'main', sha: 'deadbeef', branchWasMain: true };
 				},
-				runIssueFn: async () => {
-					runIssueCalled = true;
-					return 99;
-				},
 				fileLocalFn: async () => {
 					fileLocalCalled = true;
 					return 99;
@@ -537,7 +370,6 @@ describe('dispatchIssue: close routing isolation', () => {
 		);
 
 		expect(closeCalled).toBe(true);
-		expect(runIssueCalled).toBe(false);
 		expect(fileLocalCalled).toBe(false);
 		expect(code).toBe(0);
 	});
@@ -622,12 +454,7 @@ describe('parseIssueArgs: abandon subcommand', () => {
 		}
 	});
 
-	test('a bare "abandon" positional is never misread as free-text issue creation', () => {
-		const result = withSilentStderr(() => parseIssueArgs(['abandon']));
-		expect(result?.mode).not.toBe('text');
-	});
-
-	test('cam issue abandon with no id returns null (parse error, never text-mode fallthrough)', () => {
+	test('cam issue abandon with no id returns null', () => {
 		const result = withSilentStderr(() => parseIssueArgs(['abandon']));
 		expect(result).toBeNull();
 	});
@@ -637,15 +464,6 @@ describe('parseIssueArgs: abandon subcommand', () => {
 		expect(result).toBeNull();
 	});
 
-	test('free text starting with "abandon" as a full sentence is still mode:text (no regression)', () => {
-		// A single-token `args[0] === 'abandon'` check only fires on the exact
-		// positional keyword; a free-text arg that merely CONTAINS "abandon" is
-		// unaffected because it is still args[0] verbatim vs the literal 'abandon'.
-		const result = parseIssueArgs(['abandon the retry loop rewrite']);
-		// args[0] here is the whole string 'abandon the retry loop rewrite',
-		// not the bare keyword 'abandon', so this still falls through to text mode.
-		expect(result?.mode).toBe('text');
-	});
 });
 
 // ---------------------------------------------------------------------------
@@ -653,9 +471,8 @@ describe('parseIssueArgs: abandon subcommand', () => {
 // ---------------------------------------------------------------------------
 
 describe('dispatchIssue: abandon routing isolation', () => {
-	test('abandon calls abandonIssueOnMainFn and NOT runIssueFn/fileLocalFn', async () => {
+	test('abandon calls abandonIssueOnMainFn and not fileLocalFn', async () => {
 		let abandonCalled = false;
-		let runIssueCalled = false;
 		let fileLocalCalled = false;
 
 		const code = await dispatchIssue(
@@ -665,10 +482,6 @@ describe('dispatchIssue: abandon routing isolation', () => {
 					abandonCalled = true;
 					return { ok: true, id, committedTo: 'main', sha: 'deadbeef', branchWasMain: true };
 				},
-				runIssueFn: async () => {
-					runIssueCalled = true;
-					return 99;
-				},
 				fileLocalFn: async () => {
 					fileLocalCalled = true;
 					return 99;
@@ -677,7 +490,6 @@ describe('dispatchIssue: abandon routing isolation', () => {
 		);
 
 		expect(abandonCalled).toBe(true);
-		expect(runIssueCalled).toBe(false);
 		expect(fileLocalCalled).toBe(false);
 		expect(code).toBe(0);
 	});
@@ -762,12 +574,7 @@ describe('parseIssueArgs: demote subcommand', () => {
 		}
 	});
 
-	test('a bare "demote" positional is never misread as free-text issue creation', () => {
-		const result = withSilentStderr(() => parseIssueArgs(['demote']));
-		expect(result?.mode).not.toBe('text');
-	});
-
-	test('cam issue demote with no id returns null (parse error, never text-mode fallthrough)', () => {
+	test('cam issue demote with no id returns null', () => {
 		const result = withSilentStderr(() => parseIssueArgs(['demote']));
 		expect(result).toBeNull();
 	});
@@ -777,15 +584,6 @@ describe('parseIssueArgs: demote subcommand', () => {
 		expect(result).toBeNull();
 	});
 
-	test('free text starting with "demote" as a full sentence is still mode:text (no regression)', () => {
-		// A single-token `args[0] === 'demote'` check only fires on the exact
-		// positional keyword; a free-text arg that merely CONTAINS "demote" is
-		// unaffected because it is still args[0] verbatim vs the literal 'demote'.
-		const result = parseIssueArgs(['demote the flaky ranking heuristic']);
-		// args[0] here is the whole string 'demote the flaky ranking heuristic',
-		// not the bare keyword 'demote', so this still falls through to text mode.
-		expect(result?.mode).toBe('text');
-	});
 });
 
 // ---------------------------------------------------------------------------
@@ -793,9 +591,8 @@ describe('parseIssueArgs: demote subcommand', () => {
 // ---------------------------------------------------------------------------
 
 describe('dispatchIssue: demote routing isolation', () => {
-	test('demote calls demoteIssueOnMainFn and NOT runIssueFn/fileLocalFn', async () => {
+	test('demote calls demoteIssueOnMainFn and not fileLocalFn', async () => {
 		let demoteCalled = false;
-		let runIssueCalled = false;
 		let fileLocalCalled = false;
 
 		const code = await dispatchIssue(
@@ -805,10 +602,6 @@ describe('dispatchIssue: demote routing isolation', () => {
 					demoteCalled = true;
 					return { ok: true, id, committedTo: 'main', sha: 'deadbeef', branchWasMain: true };
 				},
-				runIssueFn: async () => {
-					runIssueCalled = true;
-					return 99;
-				},
 				fileLocalFn: async () => {
 					fileLocalCalled = true;
 					return 99;
@@ -817,7 +610,6 @@ describe('dispatchIssue: demote routing isolation', () => {
 		);
 
 		expect(demoteCalled).toBe(true);
-		expect(runIssueCalled).toBe(false);
 		expect(fileLocalCalled).toBe(false);
 		expect(code).toBe(0);
 	});
@@ -933,12 +725,7 @@ describe('parseIssueArgs: get subcommand', () => {
 		}
 	});
 
-	test('a bare "get" positional is never misread as free-text issue creation', () => {
-		const result = withSilentStderr(() => parseIssueArgs(['get']));
-		expect(result?.mode).not.toBe('text');
-	});
-
-	test('cam issue get with no id returns null (parse error, never text-mode fallthrough)', () => {
+	test('cam issue get with no id returns null', () => {
 		const result = withSilentStderr(() => parseIssueArgs(['get']));
 		expect(result).toBeNull();
 	});
@@ -948,15 +735,6 @@ describe('parseIssueArgs: get subcommand', () => {
 		expect(result).toBeNull();
 	});
 
-	test('free text starting with "get" as a full sentence is still mode:text (no regression)', () => {
-		// A single-token `args[0] === 'get'` check only fires on the exact
-		// positional keyword; a free-text arg that merely CONTAINS "get" is
-		// unaffected because it is still args[0] verbatim vs the literal 'get'.
-		const result = parseIssueArgs(['get the retry logic reviewed']);
-		// args[0] here is the whole string 'get the retry logic reviewed',
-		// not the bare keyword 'get', so this still falls through to text mode.
-		expect(result?.mode).toBe('text');
-	});
 });
 
 // ---------------------------------------------------------------------------
@@ -964,9 +742,8 @@ describe('parseIssueArgs: get subcommand', () => {
 // ---------------------------------------------------------------------------
 
 describe('dispatchIssue: get routing isolation', () => {
-	test('get calls getIssueOnMainFn and NOT runIssueFn/fileLocalFn', async () => {
+	test('get calls getIssueOnMainFn and not fileLocalFn', async () => {
 		let getCalled = false;
-		let runIssueCalled = false;
 		let fileLocalCalled = false;
 
 		const code = await dispatchIssue(
@@ -976,10 +753,6 @@ describe('dispatchIssue: get routing isolation', () => {
 					getCalled = true;
 					return { ok: true, id, content: '{"id":"CAM-42"}\n' };
 				},
-				runIssueFn: async () => {
-					runIssueCalled = true;
-					return 99;
-				},
 				fileLocalFn: async () => {
 					fileLocalCalled = true;
 					return 99;
@@ -988,7 +761,6 @@ describe('dispatchIssue: get routing isolation', () => {
 		);
 
 		expect(getCalled).toBe(true);
-		expect(runIssueCalled).toBe(false);
 		expect(fileLocalCalled).toBe(false);
 		expect(code).toBe(0);
 	});

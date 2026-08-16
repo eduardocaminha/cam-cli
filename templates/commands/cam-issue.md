@@ -12,7 +12,9 @@ discover the system, then execute the matching path below.
 The orchestrator typically calls this command before `/cam-plan` to ensure
 the work item exists in the canonical place.
 
-**CLI thin-proxy invocation**: `gship issue "<text>"` (run from a terminal outside the session) is a thin-proxy. It detects the active cam session, waits for the orchestrator to be idle, then injects `/cam-issue create <text>` into the orchestrator pane via atomic `send-keys`. The content below is what the orchestrator executes when it receives this slash command.
+New operator-specified tasks enter through `gship web`. This slash command
+remains available only inside the legacy orchestrator for its existing backlog;
+the `gship issue` CLI now contains deterministic maintenance operations only.
 
 ---
 
@@ -113,7 +115,8 @@ Subcommands:
 
 #### `create`
 
-**CONVENTION**: never hand-edit issue files on a feature branch; always file via `gship issue` (it commits to main deterministically).
+**CONVENTION**: never hand-edit issue files on a feature branch; always file via
+`gship issue --file-local` (it commits to main deterministically).
 
 There are two filing shapes: a plain idea (no flags, `stage:idea`), and a
 **derived or fast-track filing** (`--derived-from <id[,id...]>` or

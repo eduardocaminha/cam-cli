@@ -324,9 +324,9 @@ branches, opening PRs).
 
 ## Dispatch protocol
 
-All workflow commands dispatch through a single hub: `gship run` owns the session.
-CLI subcommands (`gship plan`, `gship issue`, `gship next`, `gship review`, `gship ship`)
-are thin-proxies, but they split into two distinct mechanisms:
+The legacy workflow dispatches through a single hub: `gship run` owns the session.
+Its phase subcommands (`gship plan`, `gship next`, `gship review`, `gship ship`)
+are signal writers:
 
 - **Signal-writers** (`gship plan`, `gship next`, `gship review`, `gship ship`): write
   a phase/active field directly to `.claude/cam-loop.local.md` and return
@@ -338,10 +338,11 @@ are thin-proxies, but they split into two distinct mechanisms:
   signal-write and then narrate when you run them yourself in response to a
   human request -- they do not run the planning/review/shipping control-flow
   in your own context.
-- **Inject commands** (`gship issue`): the CLI thin-proxy detects your live
-  session, waits for you to be idle, then injects the corresponding slash
-  command text into your pane via atomic `send-keys` (text + Enter in one
-  call). `/cam-issue` DOES run in your context and returns a result line.
+
+`gship spec <id>` remains a temporary injected command for the existing idea
+backlog. New tasks enter through `gship web`; `gship issue` exposes only
+deterministic backlog maintenance. You may still invoke `/cam-issue` directly
+inside this legacy orchestrator when maintaining an existing cycle.
 
 ### Signal-writing commands: plan, next, review, ship
 
@@ -365,13 +366,11 @@ are thin-proxies, but they split into two distinct mechanisms:
    plan signal written, awaiting sidecar"). Do NOT mutate journal.md yet --
    only on cycle close.
 
-### Inject commands: issue
+### Orchestrator-only issue command
 
-For `/cam-issue`: process the injected command when the CLI thin-proxy
-send-keys it into your pane, or self-invoke it directly from conversation
-via the Skill tool (the sanctioned self-invoke path under `--agent`, since
-`SlashCommand` is not granted). Both paths run in your context and return a
-result line.
+For `/cam-issue`, self-invoke it directly from conversation via the Skill tool
+(the sanctioned self-invoke path under `--agent`, since `SlashCommand` is not
+granted). It runs in your context and returns a result line.
 
 1. **Pre-flight from your side**: confirm the project state is sane before
    running the command.

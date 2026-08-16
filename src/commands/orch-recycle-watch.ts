@@ -171,7 +171,7 @@ export interface OrchRecycleWatchOptions {
 
 	/**
 	 * Spawn function used by the pane-id resolution and pane-signal defaults.
-	 * Production: a thin `spawnSync` adapter (mirrors src/commands/issue.ts).
+	 * Production: a thin `spawnSync` adapter.
 	 * Tests inject a fake so no real tmux binary is invoked.
 	 */
 	tmuxSpawnFn?: TmuxSpawnFn;
@@ -401,7 +401,7 @@ function makeHandoffExistsFn(claudeDir: string): () => boolean {
 }
 
 /**
- * Default tmuxSpawnFn: a thin spawnSync adapter mirroring src/commands/issue.ts.
+ * Default tmuxSpawnFn: a thin spawnSync adapter.
  * Reused by both the pane-id resolution and pane-signal production defaults.
  */
 function makeDefaultTmuxSpawnFn(): TmuxSpawnFn {

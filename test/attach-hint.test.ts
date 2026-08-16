@@ -7,7 +7,6 @@
 //     CAM_SESSION mismatch); suppresses hint when inside session.
 //   - runPlan: hint emitted when detached; suppressed when inside session.
 //   - runNext: hint emitted when detached; suppressed when inside session.
-//   - runIssue: hint emitted when detached; suppressed when inside session.
 
 import { describe, expect, test } from 'bun:test';
 import { createTestTmpdir } from './helpers/test-tmpdir';
@@ -16,7 +15,6 @@ import type { SpawnSyncReturns } from 'node:child_process';
 import { emitAttachHint } from '../src/logging/screen.ts';
 import { projectSessionName, type SpawnFn as TmuxSpawnFn } from '../src/tmux/session.ts';
 import { runPlan } from '../src/commands/plan.ts';
-import { runIssue } from '../src/commands/issue.ts';
 import { runNext } from '../src/commands/next.ts';
 
 // --- stdout capture helper --------------------------------------------------
@@ -40,7 +38,7 @@ function captureStdout(fn: () => unknown): Promise<string> {
 
 // --- Fake tmux spawn for thin-proxy commands --------------------------------
 //
-// The thin-proxy commands (runPlan, runNext, runIssue) call orchestratorAlive
+// The thin-proxy commands (runPlan and runNext) call orchestratorAlive
 // and getOrchPaneId. This fake simulates a live orchestrator so the hit path
 // fires and attach-hint is emitted.
 
@@ -177,45 +175,6 @@ describe('runPlan attach hint', () => {
 		);
 
 		// gship run hint must not appear
-		expect(output).not.toContain('gship run');
-	});
-});
-
-// --- runIssue: hint is contextual ------------------------------------------
-
-describe('runIssue attach hint', () => {
-	test('emits attach hint when caller is detached (no TMUX)', async () => {
-		const tmpDir = createTestTmpdir('cam-issue-hint-');
-		const tmuxSpawnFn = makeFakeTmuxSpawn(true);
-		const sessionName = projectSessionName(tmpDir);
-
-		const output = await captureStdout(() =>
-			runIssue({
-				text: 'Add dark mode',
-				cwd: tmpDir,
-				tmuxSpawnFn,
-				env: {},
-			}),
-		);
-
-		expect(output).toContain('gship run');
-		expect(output).toContain(sessionName);
-	});
-
-	test('suppresses attach hint when caller is inside the session', async () => {
-		const tmpDir = createTestTmpdir('cam-issue-hint-');
-		const tmuxSpawnFn = makeFakeTmuxSpawn(true);
-		const sessionName = projectSessionName(tmpDir);
-
-		const output = await captureStdout(() =>
-			runIssue({
-				text: 'Add dark mode',
-				cwd: tmpDir,
-				tmuxSpawnFn,
-				env: { TMUX: '/tmp/tmux-1/default,1234,0', CAM_SESSION: sessionName },
-			}),
-		);
-
 		expect(output).not.toContain('gship run');
 	});
 });
