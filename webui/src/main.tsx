@@ -17,13 +17,16 @@ import {
 	createIssue,
 	EVENTS_PATH,
 	fetchBacklog,
+	fetchBrief,
 	fetchChat,
 	fetchProviders,
 	fetchRunEvents,
 	fetchRuns,
 	type RunAction,
 	type ChatMessageView,
+	type ProjectBriefView,
 	type ProviderStatusView,
+	saveBrief,
 	sendChat,
 	selectProvider,
 	specifyIssue,
@@ -45,6 +48,14 @@ import {
 } from './notifications.ts';
 import './index.css';
 
+/** What both records read as before the first refresh answers. */
+const EMPTY_BRIEF: ProjectBriefView = {
+	objective: '',
+	decisions: [],
+	constraints: [],
+	openItems: [],
+};
+
 function useOperationalRun(): {
 	backlog: PlannableIssue[];
 	ideas: PlannableIssue[];
@@ -55,6 +66,8 @@ function useOperationalRun(): {
 	providers: ProviderStatusView[];
 	selectedProvider: ProviderStatusView['id'];
 	notificationPermission: BrowserNotificationPermission;
+	brief: ProjectBriefView;
+	handoff: ProjectBriefView;
 	version: string;
 	status: string | null;
 	pending: boolean;
@@ -72,13 +85,15 @@ function useOperationalRun(): {
 	const [notificationPermission, setNotificationPermission] = useState(
 		browserNotificationPermission,
 	);
+	const [brief, setBrief] = useState<ProjectBriefView>(EMPTY_BRIEF);
+	const [handoff, setHandoff] = useState<ProjectBriefView>(EMPTY_BRIEF);
 	const [status, setStatus] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
 	const [version, setVersion] = useState('');
 
 	const refresh = useCallback(() => {
-		void Promise.all([fetchRuns(), fetchBacklog(), fetchProviders(), fetchChat()])
-			.then(async ([runSnapshot, backlogSnapshot, providerSnapshot, chatSnapshot]) => {
+		void Promise.all([fetchRuns(), fetchBacklog(), fetchProviders(), fetchChat(), fetchBrief()])
+			.then(async ([runSnapshot, backlogSnapshot, providerSnapshot, chatSnapshot, briefSnapshot]) => {
 				const latest = runSnapshot[0] ?? null;
 				const history = latest === null ? [] : await fetchRunEvents(latest.id);
 				setRuns(runSnapshot);
@@ -89,6 +104,8 @@ function useOperationalRun(): {
 				setProviders(providerSnapshot.providers);
 				setSelectedProvider(providerSnapshot.selected);
 				setChatMessages(chatSnapshot);
+				setBrief(briefSnapshot.brief);
+				setHandoff(briefSnapshot.handoff);
 				setEvents(history);
 			})
 			.catch((error: unknown) => setStatus(String(error)));
@@ -147,6 +164,8 @@ function useOperationalRun(): {
 		providers,
 		selectedProvider,
 		notificationPermission,
+		brief,
+		handoff,
 		version,
 		status,
 		pending,
@@ -166,6 +185,8 @@ function Screen(): ReactElement {
 		providers,
 		selectedProvider,
 		notificationPermission,
+		brief,
+		handoff,
 		version,
 		status,
 		pending,
@@ -181,8 +202,10 @@ function Screen(): ReactElement {
 	return (
 		<App
 			backlog={backlog}
+			brief={brief}
 			chatMessages={chatMessages}
 			events={events}
+			handoff={handoff}
 			ideas={ideas}
 			notificationPermission={notificationPermission}
 			onCancel={command('cancel')}
@@ -205,6 +228,7 @@ function Screen(): ReactElement {
 			onResume={(operatorGuidance) => {
 				if (run !== null) send(() => commandRun(run.id, 'resume', operatorGuidance));
 			}}
+			onSaveBrief={(draft) => send(() => saveBrief(draft))}
 			onSelectIssue={setSelectedIssueId}
 			onSelectProvider={(providerId) => send(() => selectProvider(providerId))}
 			onShip={command('ship')}

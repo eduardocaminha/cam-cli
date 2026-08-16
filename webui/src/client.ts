@@ -13,6 +13,7 @@ export const EVENTS_PATH = '/api/events';
 export const ISSUES_PATH = '/api/issues';
 export const PROVIDERS_PATH = '/api/providers';
 export const CHAT_PATH = '/api/chat';
+export const BRIEF_PATH = '/api/brief';
 
 export interface OperatorIssueDraft {
 	title: string;
@@ -55,6 +56,24 @@ export interface ProviderStatusView {
 	label: string;
 	plan?: string;
 	login: 'external' | 'web';
+}
+
+/**
+ * The four fields the brief and the automatic handoff both carry. One shape,
+ * two records: the operator writes the first and only reads the second.
+ */
+export interface ProjectBriefView {
+	objective: string;
+	decisions: readonly string[];
+	constraints: readonly string[];
+	openItems: readonly string[];
+}
+
+export interface BriefSnapshot {
+	/** Authoritative human context, the only one the screen can write. */
+	brief: ProjectBriefView;
+	/** Session state written by orchestrator turns; read-only here. */
+	handoff: ProjectBriefView;
 }
 
 export interface ChatMessageView {
@@ -106,6 +125,11 @@ interface ChatPayload extends CommandPayload {
 	messages?: ChatMessageView[];
 }
 
+interface BriefPayload extends CommandPayload {
+	brief?: Partial<ProjectBriefView>;
+	handoff?: Partial<ProjectBriefView>;
+}
+
 async function readJson<T>(response: Response, what: string): Promise<T> {
 	if (!response.ok) throw new Error(`${what} respondeu ${response.status}`);
 	return (await response.json()) as T;
@@ -155,6 +179,37 @@ export async function sendChat(message: string): Promise<string> {
 	const payload = (await response.json()) as ChatPayload;
 	if (!response.ok) throw new Error(payload.message ?? `Conversa recusada (${response.status}).`);
 	return 'Resposta do orquestrador recebida.';
+}
+
+/** A record whose fields are all missing reads as the empty one, not as a hole. */
+function briefRecord(record: Partial<ProjectBriefView> | undefined): ProjectBriefView {
+	return {
+		objective: record?.objective ?? '',
+		decisions: record?.decisions ?? [],
+		constraints: record?.constraints ?? [],
+		openItems: record?.openItems ?? [],
+	};
+}
+
+/** One read for both records: the brief to edit and the handoff to read. */
+export async function fetchBrief(): Promise<BriefSnapshot> {
+	const payload = await readJson<BriefPayload>(await fetch(BRIEF_PATH), 'Brief');
+	return { brief: briefRecord(payload.brief), handoff: briefRecord(payload.handoff) };
+}
+
+/**
+ * The whole brief is overwritten at once, and only the brief: the handoff is
+ * never sent back. A refusal surfaces the server's own validation message.
+ */
+export async function saveBrief(brief: ProjectBriefView): Promise<string> {
+	const response = await fetch(BRIEF_PATH, {
+		method: 'PUT',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify(brief),
+	});
+	const payload = (await response.json()) as BriefPayload;
+	if (response.ok) return 'Project brief atualizado.';
+	return payload.message ?? `Brief recusado (${response.status}).`;
 }
 
 export async function startCodexLogin(): Promise<string> {

@@ -758,8 +758,16 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/api/providers': () => listProviders(providerAuth, runRuntime),
 			// The read stays unguarded like every other GET: a same-origin browser
 			// read sends no Origin header, and 127.0.0.1 is the read boundary.
+			//
+			// The automatic handoff rides along on the same read because the screen
+			// shows it beside the brief the operator is correcting. It is the
+			// orchestrator's own record, so it has no write here and never gets one:
+			// the PUT below takes the brief and nothing else.
 			'/api/brief': {
-				GET: () => Response.json({ brief: projectBrief.get() }),
+				GET: () => Response.json({
+					brief: projectBrief.get(),
+					handoff: runRuntime.getOrchestratorHandoff(),
+				}),
 				PUT: (request) => writeProjectBrief(request, projectBrief),
 			},
 			'/api/chat': {
