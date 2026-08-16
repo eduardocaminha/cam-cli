@@ -10,6 +10,18 @@ import type { PlannableIssue, RunView } from './run-view.ts';
 export const SNAPSHOT_PATH = '/api/snapshot';
 export const RUNS_PATH = '/api/runs';
 export const EVENTS_PATH = '/api/events';
+export const ISSUES_PATH = '/api/issues';
+
+export interface OperatorIssueDraft {
+	title: string;
+	scope: string;
+	verificationCommand: string;
+}
+
+export interface CreatedIssue {
+	id: string;
+	title: string;
+}
 
 export type RunAction = 'resume' | 'cancel' | 'ship';
 
@@ -24,6 +36,10 @@ interface RunsPayload {
 interface CommandPayload {
 	ok?: boolean;
 	message?: string;
+}
+
+interface CreateIssuePayload extends CommandPayload {
+	issue?: CreatedIssue;
 }
 
 async function readJson<T>(response: Response, what: string): Promise<T> {
@@ -62,6 +78,22 @@ async function postCommand(path: string, body?: unknown): Promise<string> {
 
 export function startRun(issueId: string): Promise<string> {
 	return postCommand(RUNS_PATH, { issueId });
+}
+
+export async function createIssue(input: OperatorIssueDraft): Promise<CreatedIssue> {
+	const response = await fetch(ISSUES_PATH, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify(input),
+	});
+	const payload = (await response.json()) as CreateIssuePayload;
+	if (!response.ok) {
+		throw new Error(payload.message ?? `Criação recusada (${response.status}).`);
+	}
+	if (payload.issue === undefined || typeof payload.issue.id !== 'string') {
+		throw new Error('O servidor não devolveu a tarefa criada.');
+	}
+	return payload.issue;
 }
 
 export function commandRun(runId: string, action: RunAction): Promise<string> {
