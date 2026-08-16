@@ -1,6 +1,6 @@
 Deep-spec an idea issue into `stage:specified` by running the spec-with-docs interview chain.
 
-**CLI thin-proxy invocation**: `gship spec <id>` (run from a terminal outside the session) is a thin-proxy. It detects the active cam session, waits for the orchestrator to be idle, then injects `/cam-spec <id>` into the orchestrator pane via atomic `send-keys`. The content below is what the orchestrator executes when it receives this slash command.
+Operator-facing specification now enters through `gship web`. This slash command remains available only inside the legacy orchestrator; its `gship spec --persist` and `--write-docs` calls are deterministic internal write channels with no tmux dispatch.
 
 ## Overview
 

@@ -1,24 +1,10 @@
 // src/commands/spec.ts
 //
-// Implementation of `cam spec` -- thin-proxy that routes /cam-spec <id> to the
-// live orchestrator pane via send-keys (US-004, CAM-107), PLUS the in-process
-// `--write-docs` write channel (US-003, CAM-118) that lets the read-only
-// orchestrator persist domain docs via a single Bash pipe, exactly like
-// `cam journal append` / `cam issue --file-local`.
-//
-// Acceptance criteria (US-004, thin-proxy path):
-//   1. Detect a live orchestrator via orchestratorAlive.
-//   2. On hit: atomic send-keys /cam-spec <id> to the orchestrator pane and
-//      return 0 immediately (fire-and-forget).
-//   3. On miss: bootstrap cam run --no-attach, poll .claude/.cam-orch-ready
-//      (with orchestratorAlive re-check), then send-keys.
-//   4. send-keys is atomic (text + Enter in one call), NO -l (it would make "Enter" literal).
-//   5. No --permission-mode CLI flag (enforced by no-permission-mode-flag.test.ts).
-//   6. Typecheck passes (bun run typecheck).
-//   7. Tests pass (bun test).
+// Deterministic stdin write channels retained for internal legacy consumers.
+// Operator-facing specification now belongs to the web runtime.
 //
 // Acceptance criteria (US-003, --write-docs path):
-//   1. `echo '<json>' | cam spec --write-docs <id>` reads the DomainDocsPayload
+//   1. `echo '<json>' | gship spec --write-docs <id>` reads the DomainDocsPayload
 //      from stdin and calls writeDomainDocsOnMain in-process: NO tmux calls,
 //      no send-keys, no pane bootstrap, no orchestrator liveness check.
 //   2. Exit 0 on { ok: true } including noOp (prints a muted hint); exit 1 on
@@ -26,7 +12,7 @@
 //      failure (diverged / detached-head / missing-main).
 //
 // Acceptance criteria (US-001, CAM-213, --persist path):
-//   1. `echo '<json>' | cam spec --persist <id>` reads
+//   1. `echo '<json>' | gship spec --persist <id>` reads
 //      { spec, wsjf, blockedBy?, type? } from stdin and calls
 //      specifyIssueOnMain in-process: NO tmux calls, no send-keys, no pane
 //      bootstrap, no orchestrator liveness check. type (US-002, CAM-235) is
@@ -37,31 +23,10 @@
 //      CAM_SPEC_RESULT=ERROR reason=<reason>.
 
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
-import { join } from 'node:path';
 import process from 'node:process';
 
 import { printError, printHint } from '../logging/color.ts';
-import {
-	emitAttachHint,
-	emitMutedHint,
-	emitOk,
-	emitSectionHeading,
-	emitTitle,
-	emitTrailingBlank,
-} from '../logging/screen.ts';
-import {
-	hasSession,
-	orchestratorAlive,
-	getOrchPaneId,
-	paneCountMutex,
-	projectSessionName,
-	type Env,
-	type SpawnFn as TmuxSpawnFn,
-} from '../tmux/session.ts';
-import { waitForOrchestrator } from '../tmux/bootstrap-wait.ts';
-import { bootstrapHub } from '../util/hub-bootstrap.ts';
-import { sendKeysWhenIdle, makePushLogEvent, type CapturePaneFn } from '../tmux/dispatch.ts';
-import type { WorkerEventKind, WorkerEventDetail } from '../supervisor/events.ts';
+import { emitMutedHint } from '../logging/screen.ts';
 import {
 	writeDomainDocsOnMain,
 	type ClockFn,
@@ -72,174 +37,6 @@ import { specifyIssueOnMain, type SpecifyIssueOnMainOutcome } from './issue-spec
 import type { Spec } from '../issues/spec.ts';
 import type { IssueEntry, WsjfScore } from '../issues/types.ts';
 import type { DomainDocsPayload } from '../domain-docs/render.ts';
-
-// --- Types -----------------------------------------------------------------
-
-export interface SpecOptions {
-	/** Issue id to spec (e.g. 'CAM-42'); passed through as `/cam-spec CAM-42`. */
-	id: string;
-	/** Override the working directory; default `process.cwd()`. */
-	cwd?: string;
-	/**
-	 * Override the synchronous spawn function used for tmux calls.
-	 * Tests inject a fake so they never call a real tmux binary.
-	 */
-	tmuxSpawnFn?: TmuxSpawnFn;
-	/**
-	 * Override process.env for attach-hint detection.
-	 */
-	env?: Env;
-	/**
-	 * Bootstrap the orchestrator when not alive. Receives `cwd` and
-	 * returns a Promise<boolean> (true = bootstrap succeeded).
-	 * Defaults to `bootstrapHub`, which spawns the hub via the exact
-	 * execPath/argv1 running this process (US-003, CAM-482).
-	 * Tests inject a no-op that returns true immediately.
-	 */
-	bootstrapFn?: () => Promise<boolean>;
-	/**
-	 * File-existence check injected for tests (avoids real fs access
-	 * in the .cam-orch-ready poll). Defaults to `fs.existsSync`.
-	 */
-	statFn?: (path: string) => boolean;
-	/**
-	 * Sleep function for the ready-poll and idle-poll. Defaults to `Bun.sleepSync`.
-	 * Tests inject a no-op to avoid real waits.
-	 */
-	sleepFn?: (ms: number) => void;
-	/** Total poll budget for waitForOrchestrator (ms). Default 60 000. */
-	waitTimeoutMs?: number;
-	/**
-	 * Override the capture-pane reader used by the idle-check before send-keys.
-	 * Tests inject a fake that returns controlled pane content strings.
-	 */
-	capturePaneFn?: CapturePaneFn;
-	/**
-	 * Maximum ms to wait for the orchestrator pane to go idle before sending
-	 * anyway (fallback: log + still send). Default:
-	 * `IDLE_WAIT_DEADLINE_MS` (30 000 ms, see src/tmux/dispatch.ts).
-	 */
-	idleTimeoutMs?: number;
-	/**
-	 * Injectable sink for events emitted by `sendKeysWhenIdle` (currently only
-	 * `'push-undelivered'`, on retry exhaustion). Default: the real event log
-	 * (`.claude/cam-worker-events.jsonl`), adapted via `adaptLogEventForPush`
-	 * (US-003, CAM-359). Tests inject `makeInMemoryEventLogger()` instead of
-	 * touching the real event log.
-	 */
-	logEvent?: (kind: WorkerEventKind, detail: WorkerEventDetail) => void;
-}
-
-// --- Internal helpers -------------------------------------------------------
-
-async function doBootstrap(cwd: string, bootstrapFn?: () => Promise<boolean>): Promise<boolean> {
-	if (bootstrapFn) return bootstrapFn();
-	return bootstrapHub(cwd);
-}
-
-// --- Public entrypoint -----------------------------------------------------
-
-/**
- * Run the `cam spec` flow: thin-proxy to the live orchestrator (US-004, CAM-107).
- *
- * If the orchestrator is already running (hasSession + orchestratorAlive):
- *   - Sends `/cam-spec <id>` to the orchestrator pane via send-keys.
- *
- * If the orchestrator is not running:
- *   - Bootstraps it via `cam run --no-attach` (or injected bootstrapFn).
- *   - Polls `.claude/.cam-orch-ready` + orchestratorAlive until ready.
- *   - Then sends the request.
- *
- * Returns 0 on success, 1 on bootstrap/liveness failure.
- */
-export async function runSpec(options: SpecOptions): Promise<number> {
-	const cwd = options.cwd ?? process.cwd();
-	const env = options.env ?? process.env;
-	const { id } = options;
-	const request = `/cam-spec ${id}`;
-
-	const { spawnSync } = await import('node:child_process');
-	const tmuxSpawnFn: TmuxSpawnFn =
-		options.tmuxSpawnFn ??
-		((cmd, args, opts) => spawnSync(cmd, args, { stdio: opts?.stdio ?? 'ignore' }));
-
-	emitTitle('cam spec');
-	emitSectionHeading('Orchestrator');
-
-	const sessionName = projectSessionName(cwd);
-	const claudeDir = join(cwd, '.claude');
-
-	// --- Liveness check -------------------------------------------------------
-	const alive = hasSession(sessionName, tmuxSpawnFn) && orchestratorAlive(sessionName, tmuxSpawnFn);
-
-	if (!alive) {
-		emitMutedHint('No live orchestrator detected, bootstrapping gship run...');
-		const bootstrapped = await doBootstrap(cwd, options.bootstrapFn);
-		if (!bootstrapped) {
-			printError(
-				'Failed to bootstrap orchestrator',
-				'Run `gship run` manually, then retry `gship spec`.',
-			);
-			emitTrailingBlank();
-			return 1;
-		}
-		const ready = waitForOrchestrator({
-			claudeDir,
-			sessionName,
-			spawnFn: tmuxSpawnFn,
-			statFn: options.statFn,
-			sleepFn: options.sleepFn,
-			timeoutMs: options.waitTimeoutMs,
-		});
-		if (!ready) {
-			printError(
-				'Orchestrator did not become ready in time',
-				'Run `gship run` manually and retry.',
-			);
-			emitTrailingBlank();
-			return 1;
-		}
-	}
-
-	// --- Mutex check ---------------------------------------------------------
-	// Refuse to dispatch if a worker pane is already running (3 panes = busy).
-	const mutexState = paneCountMutex(sessionName, tmuxSpawnFn);
-	if (mutexState === 'busy') {
-		printError('worker busy', 'blocked until the worker-pane closes');
-		emitTrailingBlank();
-		return 1;
-	}
-
-	// --- Send request ---------------------------------------------------------
-	const orchPaneId = getOrchPaneId(sessionName, tmuxSpawnFn);
-	if (!orchPaneId) {
-		printError(
-			'Could not find orchestrator pane',
-			'The session exists but pane index 0 is missing.',
-		);
-		emitTrailingBlank();
-		return 1;
-	}
-
-	// sendKeysWhenIdle: idle-gate + atomic send-keys (no -l).
-	// logEvent (US-003, CAM-359) defaults via makePushLogEvent (wraps
-	// adaptLogEventForPush) so retry exhaustion traces instead of vanishing.
-	const logEvent = options.logEvent ?? makePushLogEvent(cwd, 'cli-spec');
-	sendKeysWhenIdle({
-		paneId: orchPaneId,
-		text: request,
-		tmuxSpawnFn,
-		capturePaneFn: options.capturePaneFn,
-		sleepFn: options.sleepFn,
-		idleTimeoutMs: options.idleTimeoutMs,
-		logEvent,
-	});
-
-	emitOk(`Sent "${request}" to orchestrator pane ${orchPaneId}`);
-	emitAttachHint(sessionName, env);
-	emitTrailingBlank();
-	return 0;
-}
 
 // --- --write-docs entrypoint (US-003, CAM-118) ------------------------------
 
@@ -271,7 +68,7 @@ export interface SpecWriteDocsOptions {
 }
 
 /**
- * `cam spec --write-docs <id>`: read a DomainDocsPayload as JSON from stdin
+ * `gship spec --write-docs <id>`: read a DomainDocsPayload as JSON from stdin
  * and call writeDomainDocsOnMain in-process. NO tmux calls, no send-keys, no
  * pane bootstrap, no orchestrator liveness check -- this is the write channel
  * FOR the orchestrator (the orchestrator's own tools disallow Edit/Write/
@@ -297,7 +94,7 @@ export async function runSpecWriteDocs(options: SpecWriteDocsOptions): Promise<n
 	try {
 		payload = JSON.parse(stdinText);
 	} catch (err) {
-		printError(`cam spec --write-docs: invalid JSON from stdin: ${String(err)}`);
+		printError(`gship spec --write-docs: invalid JSON from stdin: ${String(err)}`);
 		return 1;
 	}
 
@@ -313,10 +110,10 @@ export async function runSpecWriteDocs(options: SpecWriteDocsOptions): Promise<n
 
 	if (!outcome.ok) {
 		if (outcome.reason === 'invalid-payload') {
-			printError('cam spec --write-docs: invalid payload', outcome.errors.join('; '));
+			printError('gship spec --write-docs: invalid payload', outcome.errors.join('; '));
 		} else {
 			printError(
-				`cam spec --write-docs: ${outcome.reason}`,
+				`gship spec --write-docs: ${outcome.reason}`,
 				'ensure main is up to date and you are not on a detached HEAD, then retry.',
 			);
 		}
@@ -334,7 +131,7 @@ export async function runSpecWriteDocs(options: SpecWriteDocsOptions): Promise<n
 
 // --- --persist entrypoint (US-001, CAM-213) ---------------------------------
 
-/** Stdin payload shape for `cam spec --persist <id>`. */
+/** Stdin payload shape for `gship spec --persist <id>`. */
 interface SpecPersistPayload {
 	spec: Spec;
 	wsjf: WsjfScore;
@@ -354,7 +151,7 @@ export interface SpecPersistOptions {
 	cwd?: string;
 	/**
 	 * Injectable stdin reader. Default: `Bun.stdin.text()` (matches the
-	 * `cam journal append` / `cam issue --file-local` / `cam spec --write-docs`
+	 * `gship journal append` / `gship issue --file-local` / `gship spec --write-docs`
 	 * stdin-JSON convention).
 	 */
 	readStdin?: () => Promise<string>;
@@ -376,11 +173,11 @@ export interface SpecPersistOptions {
 }
 
 /**
- * `cam spec --persist <id>`: read { spec, wsjf, blockedBy?, type? } as JSON
+ * `gship spec --persist <id>`: read { spec, wsjf, blockedBy?, type? } as JSON
  * from stdin and call specifyIssueOnMain directly. NO tmux calls, no
  * send-keys, no pane bootstrap, no orchestrator liveness check -- this is the
  * deterministic persist channel FOR the orchestrator (a read-only agent with
- * no Task/inline-TS path), mirroring `cam spec --write-docs` /
+ * no Task/inline-TS path), mirroring `gship spec --write-docs` /
  * `cam journal append` / `cam issue --file-local`.
  *
  * specifyIssueOnMain already validates spec + wsjf + type and enforces all
@@ -406,14 +203,14 @@ export async function runSpecPersist(options: SpecPersistOptions): Promise<numbe
 	try {
 		payload = JSON.parse(stdinText);
 	} catch (err) {
-		printError(`cam spec --persist: invalid JSON from stdin: ${String(err)}`);
+		printError(`gship spec --persist: invalid JSON from stdin: ${String(err)}`);
 		writeStdout('CAM_SPEC_RESULT=ERROR reason=invalid-json\n');
 		return 1;
 	}
 
 	if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
 		printError(
-			'cam spec --persist: invalid payload',
+			'gship spec --persist: invalid payload',
 			'top-level JSON must be a non-null object with spec/wsjf fields',
 		);
 		writeStdout('CAM_SPEC_RESULT=ERROR reason=invalid-spec\n');
@@ -440,10 +237,10 @@ export async function runSpecPersist(options: SpecPersistOptions): Promise<numbe
 			outcome.reason === 'invalid-type' ||
 			outcome.reason === 'integrity-error'
 		) {
-			printError(`cam spec --persist: ${outcome.reason}`, outcome.errors.join('; '));
+			printError(`gship spec --persist: ${outcome.reason}`, outcome.errors.join('; '));
 		} else {
 			printError(
-				`cam spec --persist: ${outcome.reason}`,
+				`gship spec --persist: ${outcome.reason}`,
 				'ensure the issue is stage:idea/status:open and main is up to date, then retry.',
 			);
 		}

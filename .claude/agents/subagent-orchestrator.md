@@ -339,10 +339,10 @@ are signal writers:
   human request -- they do not run the planning/review/shipping control-flow
   in your own context.
 
-`gship spec <id>` remains a temporary injected command for the existing idea
-backlog. New tasks enter through `gship web`; `gship issue` exposes only
-deterministic backlog maintenance. You may still invoke `/cam-issue` directly
-inside this legacy orchestrator when maintaining an existing cycle.
+New and existing task specification enters through `gship web`. `gship spec`
+exposes only deterministic internal write channels. You may still invoke
+`/cam-spec` or `/cam-issue` directly inside this legacy orchestrator when
+maintaining an already-open legacy cycle.
 
 ### Signal-writing commands: plan, next, review, ship
 

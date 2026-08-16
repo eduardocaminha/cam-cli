@@ -1,12 +1,12 @@
 // test/commands/hub-autostart-argv.test.ts
 //
-// US-003 (CAM-482): the six thin-proxy subcommands (plan, next, issue, spec,
-// review, ship) must autostart the hub via the EXACT binary/script running
+// US-003 (CAM-482): the four legacy cycle controls (plan, next, review, ship)
+// must autostart the hub via the EXACT binary/script running
 // them, never a literal `cam` name resolved off PATH (a stale PATH binary
 // could disagree with the branch that just invoked the proxy).
 //
 // `buildHubAutostartArgv` (src/util/hub-bootstrap.ts) is the single shared
-// argv builder all six `doBootstrap` fallbacks now route through. This test
+// argv builder all four `doBootstrap` fallbacks now route through. This test
 // asserts REAL argv shape from an INJECTED execPath/argv1 pair whose basename
 // deliberately differs from the real running binary's, so a builder that
 // silently fell back to a literal name (or to process.execPath internally
