@@ -1,5 +1,15 @@
 # ADR 0065: A identidade visual e o COSS UI sobre Base UI, vendorizado do registry publico e nao de um worktree local
 
+> **Nota de supersessao (2026-08-16, GSHIP-596)**: este ADR esta INTEGRALMENTE
+> superado e nao autoriza mais nada. A arvore vendorizada `webui/vendor/coss`, o
+> script que a verificava e os testes que a pinavam foram removidos. Os cinco
+> primitivos que a tela usa de fato -- `cn`, Badge, Card, Progress e Separator --
+> sao implementacao propria do Gateship em `webui/src/components/ui` e
+> `webui/src/lib`, compativel com shadcn e sem primitiva de terceiro; com eles
+> sairam do manifesto `@base-ui/react`, `class-variance-authority`, `clsx` e
+> `tailwind-merge`. Reintroduzir vendorizacao de UI exige decisao nova; nada
+> aqui serve de mandato para isso.
+
 > **Nota de supersessao (2026-08-14)**: o ADR-0069 supersede a parte de escopo de
 > token e de modo escuro deste ADR. A afirmacao do Context de que os tokens usam
 > dois blocos escopados em `[data-coss-root]` foi medida em 2026-08-14 contra

@@ -1,5 +1,11 @@
 # ADR 0071: Arvore vendorizada de terceiro e submetida aos nossos gates, sem isencao
 
+> **Nota de supersessao (2026-08-16, GSHIP-596)**: sem objeto. Nao existe mais
+> arvore de terceiro no repositorio, e por consequencia nao existe isencao a
+> negar nem pino de invariancia a manter. A parte que sobrevive e generica e nao
+> precisa deste ADR para valer: codigo dentro do repositorio passa pelos nossos
+> gates.
+
 ## Context
 
 A CAM-565 traz para dentro do repositorio uma copia de componentes do monorepo cosscom/coss, sob webui/vendor/coss. A pergunta que precisava de decisao era se essa arvore fica sujeita ao nosso lint, typecheck, detector de codigo morto e metrica de cobertura, ou se recebe isencao.
