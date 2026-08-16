@@ -10,6 +10,7 @@ import { createRoot } from 'react-dom/client';
 import { App } from './App.tsx';
 import {
 	commandRun,
+	createIssue,
 	EVENTS_PATH,
 	fetchLatestRun,
 	fetchPlannable,
@@ -75,6 +76,12 @@ function Screen(): ReactElement {
 		<App
 			backlog={backlog}
 			onCancel={command('cancel')}
+			onCreateIssue={(draft) => {
+				send(() => createIssue(draft).then((created) => {
+					setSelectedIssueId(created.id);
+					return `${created.id} criada e selecionada.`;
+				}));
+			}}
 			onResume={command('resume')}
 			onSelectIssue={setSelectedIssueId}
 			onShip={command('ship')}

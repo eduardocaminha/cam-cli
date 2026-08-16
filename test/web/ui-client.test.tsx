@@ -11,10 +11,12 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { App, type AppProps } from '../../webui/src/App.tsx';
 import {
 	commandRun,
+	createIssue,
 	EVENTS_PATH,
 	fetchLatestRun,
 	fetchPlannable,
 	RUNS_PATH,
+	ISSUES_PATH,
 	SNAPSHOT_PATH,
 	startRun,
 } from '../../webui/src/client.ts';
@@ -42,6 +44,7 @@ function render(overrides: Partial<AppProps> = {}): string {
 		<App
 			backlog={BACKLOG}
 			onCancel={() => {}}
+			onCreateIssue={() => {}}
 			onResume={() => {}}
 			onSelectIssue={() => {}}
 			onShip={() => {}}
@@ -142,6 +145,17 @@ describe('operational screen', () => {
 		expect(buttonIsEnabled(html, 'Shipar')).toBe(false);
 		expect(buttonIsEnabled(html, 'Cancelar')).toBe(false);
 		expect(buttonIsEnabled(html, 'Iniciar run')).toBe(false);
+		expect(buttonIsEnabled(html, 'Criar tarefa')).toBe(false);
+	});
+
+	test('idle screen exposes the minimal operator contract', () => {
+		const html = render();
+
+		expect(html).toContain('Nova tarefa');
+		expect(html).toContain('name="title"');
+		expect(html).toContain('name="scope"');
+		expect(html).toContain('name="verificationCommand"');
+		expect(buttonIsEnabled(html, 'Criar tarefa')).toBe(true);
 	});
 });
 
@@ -198,6 +212,26 @@ describe('same-origin transport', () => {
 		expect(SNAPSHOT_PATH).toBe('/api/snapshot');
 		expect(RUNS_PATH).toBe('/api/runs');
 		expect(EVENTS_PATH).toBe('/api/events');
+		expect(ISSUES_PATH).toBe('/api/issues');
+	});
+
+	test('issue intake posts the operator contract and returns the created issue', async () => {
+		const draft = {
+			title: 'Intake web',
+			scope: 'Cria uma tarefa specified.',
+			verificationCommand: 'bun test',
+		};
+		const calls = await withRecordedFetch(
+			{ ok: true, issue: { id: 'CAM-902', title: draft.title } },
+			201,
+			async () => {
+				expect(await createIssue(draft)).toEqual({ id: 'CAM-902', title: draft.title });
+			},
+		);
+
+		expect(calls).toEqual([
+			{ url: ISSUES_PATH, method: 'POST', body: JSON.stringify(draft) },
+		]);
 	});
 
 	test('start posts the issue id to the runs route', async () => {

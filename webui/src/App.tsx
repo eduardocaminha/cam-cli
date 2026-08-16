@@ -23,6 +23,7 @@ import {
 } from '../vendor/coss/ui/progress.tsx';
 import { Separator } from '../vendor/coss/ui/separator.tsx';
 import { cn } from '../vendor/coss/lib/utils.ts';
+import type { OperatorIssueDraft } from './client.ts';
 import {
 	actionsFor,
 	phaseOf,
@@ -41,6 +42,7 @@ export interface AppProps {
 	/** A command is in flight; every button is held until it answers. */
 	pending: boolean;
 	onSelectIssue: (issueId: string) => void;
+	onCreateIssue: (input: OperatorIssueDraft) => void;
 	onStart: () => void;
 	onResume: () => void;
 	onCancel: () => void;
@@ -51,6 +53,10 @@ const BUTTON_CLASS =
 	'inline-flex h-9 items-center justify-center rounded-md border px-3 font-medium text-sm ' +
 	'transition-shadow outline-none focus-visible:ring-2 focus-visible:ring-ring ' +
 	'disabled:pointer-events-none disabled:opacity-50';
+
+const FIELD_CLASS =
+	'w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none ' +
+	'placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring';
 
 function ActionButton({
 	label,
@@ -171,6 +177,64 @@ function BacklogPanel({
 	);
 }
 
+function IssueIntakePanel({
+	pending,
+	onCreateIssue,
+}: Pick<AppProps, 'pending' | 'onCreateIssue'>): React.ReactElement {
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle>Nova tarefa</CardTitle>
+				<CardDescription>
+					Vai direto ao backlog executável; o comando será o gate determinístico.
+				</CardDescription>
+			</CardHeader>
+			<CardPanel>
+				<form
+					className="flex flex-col gap-4"
+					onSubmit={(event) => {
+						event.preventDefault();
+						const fields = (event.currentTarget as unknown as {
+							elements: { namedItem: (name: string) => { value?: unknown } | null };
+						}).elements;
+						const value = (name: string): string => {
+							const field = fields.namedItem(name);
+							return field?.value === undefined ? '' : String(field.value).trim();
+						};
+						onCreateIssue({
+							title: value('title'),
+							scope: value('scope'),
+							verificationCommand: value('verificationCommand'),
+						});
+					}}
+				>
+					<label className="flex flex-col gap-1 text-sm" htmlFor="issue-title">
+						<span className="font-medium">Título</span>
+						<input className={FIELD_CLASS} id="issue-title" name="title" required />
+					</label>
+					<label className="flex flex-col gap-1 text-sm" htmlFor="issue-scope">
+						<span className="font-medium">Escopo e resultado esperado</span>
+						<textarea className={cn(FIELD_CLASS, 'min-h-24')} id="issue-scope" name="scope" required />
+					</label>
+					<label className="flex flex-col gap-1 text-sm" htmlFor="issue-command">
+						<span className="font-medium">Comando de verificação</span>
+						<input
+							className={cn(FIELD_CLASS, 'font-mono')}
+							id="issue-command"
+							name="verificationCommand"
+							placeholder="bun test"
+							required
+						/>
+					</label>
+					<button className={BUTTON_CLASS} disabled={pending} type="submit">
+						Criar tarefa
+					</button>
+				</form>
+			</CardPanel>
+		</Card>
+	);
+}
+
 export function App(props: AppProps): React.ReactElement {
 	const { backlog, run, selectedIssueId, status, pending } = props;
 	const actions = actionsFor(run, selectedIssueId !== null);
@@ -197,6 +261,7 @@ export function App(props: AppProps): React.ReactElement {
 				onStart={props.onStart}
 				selectedIssueId={selectedIssueId}
 			/>
+			<IssueIntakePanel onCreateIssue={props.onCreateIssue} pending={pending} />
 			{status === null ? null : (
 				<output aria-live="polite" className="text-muted-foreground text-sm">
 					{status}
