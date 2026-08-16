@@ -29,6 +29,11 @@
 // The same measurement over the resulting argv reports exactly
 // ["Glob","Grep","Read"], zero MCP servers and zero slash commands.
 //
+// `--safe-mode` adds a fourth guard on every headless session: all inherited
+// customization off, auth and permissions untouched. Same measurement on
+// 2026-08-16 (CLI 2.1.233) still reports ["Glob","Grep","Read"], zero MCP
+// servers and zero slash commands, with the child authenticated.
+//
 // The reviewer therefore cannot run `git diff` itself: the service collects
 // the change with its own git seam and passes it in the prompt.
 
@@ -84,6 +89,8 @@ export function buildReviewerCliArgv(input: ReviewerInvocation): string[] {
 		'--output-format',
 		'stream-json',
 		'--verbose',
+		// Adds to the three surface-closing flags below, never replaces them.
+		'--safe-mode',
 		'--permission-mode',
 		REVIEWER_PERMISSION_MODE,
 		// Every variadic option below is followed by another flag, never by a

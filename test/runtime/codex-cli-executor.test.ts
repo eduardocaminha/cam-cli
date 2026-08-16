@@ -34,6 +34,7 @@ describe('Codex CLI runtime executor', () => {
 			'exec',
 			'--json',
 			'--dangerously-bypass-approvals-and-sandbox',
+			'--ignore-user-config',
 			'--output-schema',
 			'/tmp/schema.json',
 			'-',

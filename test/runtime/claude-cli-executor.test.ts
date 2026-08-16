@@ -58,6 +58,9 @@ describe('Claude CLI runtime executor', () => {
 		});
 		expect(first).toContain('--session-id');
 		expect(first).toContain('abc-123');
+		// No inherited customization, without displacing the permission mode.
+		expect(first).toContain('--safe-mode');
+		expect(first).toContain('bypassPermissions');
 		const resumed = buildClaudeCliArgv({
 			command: ['claude'],
 			sessionId: 'ABC-123',
@@ -90,6 +93,7 @@ describe('Claude CLI runtime executor', () => {
 		expect(argv).toContain('Read,Grep,Glob');
 		expect(argv).toContain('Bash,Edit,Write,NotebookEdit,Agent');
 		expect(argv).toContain('--strict-mcp-config');
+		expect(argv).toContain('--safe-mode');
 		expect(argv).not.toContain('bypassPermissions');
 	});
 

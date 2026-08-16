@@ -40,6 +40,9 @@ export function buildClaudeReadOnlyArgv(input: ClaudeInvocation): string[] {
 		'--output-format',
 		'stream-json',
 		'--verbose',
+		// No inherited customization; auth, model, built-in tools and permissions
+		// keep working. Adds to the flags below, never replaces them.
+		'--safe-mode',
 		'--permission-mode',
 		'dontAsk',
 		'--tools',
@@ -78,6 +81,7 @@ export function buildClaudeCliArgv(input: ClaudeInvocation): string[] {
 		'--output-format',
 		'stream-json',
 		'--verbose',
+		'--safe-mode',
 		'--permission-mode',
 		input.permissionMode,
 	];
