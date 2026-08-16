@@ -1,11 +1,11 @@
 {
   "id": "CAM-578",
   "title": "gship runtime: preparar dependências do worktree isolado",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-08-15T23:51:02.817Z",
-  "updatedAt": "2026-08-15T23:56:15.889Z",
+  "updatedAt": "2026-08-16T00:07:49.733Z",
   "description": "O dogfood da CAM-577 provou que o worktree isolado é criado corretamente, mas não consegue executar check:all sem uma instalação manual. Tornar a preparação de dependências parte da criação do workspace, usando o lockfile existente e sem compartilhar node_modules com o checkout hospedeiro.",
   "specSource": "operator",
   "spec": {
