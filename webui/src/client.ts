@@ -36,6 +36,8 @@ export interface BacklogSnapshot {
 	plannable: PlannableIssue[];
 	ideas: PlannableIssue[];
 	workspaceNotices: WorkspaceNoticeView[];
+	/** Version of the binary serving the screen; empty when it did not say. */
+	version: string;
 }
 
 export interface WorkspaceNoticeView {
@@ -71,6 +73,7 @@ interface SnapshotPayload {
 		};
 	};
 	workspaceNotices?: WorkspaceNoticeView[];
+	version?: string;
 }
 
 interface RunsPayload {
@@ -115,6 +118,7 @@ export async function fetchBacklog(): Promise<BacklogSnapshot> {
 		plannable: payload.idleState?.backlog?.plannable ?? [],
 		ideas: payload.idleState?.backlog?.byStage?.idea ?? [],
 		workspaceNotices: payload.workspaceNotices ?? [],
+		version: payload.version ?? '',
 	};
 }
 

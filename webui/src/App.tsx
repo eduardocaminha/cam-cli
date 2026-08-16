@@ -53,6 +53,8 @@ export interface AppProps {
 	/** Newest first, exactly as /api/runs returned it. */
 	runs: readonly RunView[];
 	selectedIssueId: string | null;
+	/** Binary serving this screen, read-only; empty renders nothing. */
+	version: string;
 	/** Last command outcome, or the last transport error. */
 	status: string | null;
 	/** A command is in flight; every button is held until it answers. */
@@ -673,7 +675,7 @@ function IssueSpecifyPanel({
 }
 
 export function App(props: AppProps): React.ReactElement {
-	const { backlog, runs, selectedIssueId, status, pending } = props;
+	const { backlog, runs, selectedIssueId, status, pending, version } = props;
 	// The array arrives newest first, so the operable run is its head and the
 	// history below it is the same array, read once.
 	const run = runs[0] ?? null;
@@ -681,7 +683,12 @@ export function App(props: AppProps): React.ReactElement {
 	return (
 		<main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col gap-6 p-6">
 			<header className="flex items-center justify-between">
-				<h1 className="font-heading font-semibold text-2xl">gateship</h1>
+				<div className="flex items-baseline gap-2">
+					<h1 className="font-heading font-semibold text-2xl">gateship</h1>
+					{version === '' ? null : (
+						<span className="font-mono text-muted-foreground text-sm">v{version}</span>
+					)}
+				</div>
 				<Badge variant={run === null ? 'outline' : toneOf(run.state)}>
 					{run === null ? 'ocioso' : run.state}
 				</Badge>

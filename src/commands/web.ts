@@ -43,6 +43,7 @@ import {
 import { type OrchestratorMessage, type RunEvent, RunStore } from '../runtime/run-store.ts';
 import { NativeProviderAuth, type ProviderAuth } from '../runtime/provider-auth.ts';
 import { RUNTIME_SOURCE_REF } from '../runtime/source-ref.ts';
+import { GSHIP_VERSION } from '../version.ts';
 import { resolveWebAssets, serveWebAsset } from './web-assets.ts';
 
 export const DEFAULT_WEB_PORT = 7777;
@@ -624,6 +625,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/api/snapshot': () => {
 				const snapshot: Record<string, unknown> = {
 					idleState: readIdleSnapshotState(options.cwd),
+					version: GSHIP_VERSION,
 				};
 				const workspaceNotices = runRuntime.listWorkspaceNotices();
 				if (workspaceNotices.length > 0) snapshot['workspaceNotices'] = workspaceNotices;

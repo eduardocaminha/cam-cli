@@ -46,6 +46,7 @@ function useOperationalRun(): {
 	providers: ProviderStatusView[];
 	selectedProvider: ProviderStatusView['id'];
 	notificationPermission: BrowserNotificationPermission;
+	version: string;
 	status: string | null;
 	pending: boolean;
 	enableNotifications: () => void;
@@ -64,6 +65,7 @@ function useOperationalRun(): {
 	);
 	const [status, setStatus] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
+	const [version, setVersion] = useState('');
 
 	const refresh = useCallback(() => {
 		void Promise.all([fetchRuns(), fetchBacklog(), fetchProviders(), fetchChat()])
@@ -74,6 +76,7 @@ function useOperationalRun(): {
 				setBacklog(backlogSnapshot.plannable);
 				setIdeas(backlogSnapshot.ideas);
 				setWorkspaceNotices(backlogSnapshot.workspaceNotices);
+				setVersion(backlogSnapshot.version);
 				setProviders(providerSnapshot.providers);
 				setSelectedProvider(providerSnapshot.selected);
 				setChatMessages(chatSnapshot);
@@ -82,19 +85,16 @@ function useOperationalRun(): {
 			.catch((error: unknown) => setStatus(String(error)));
 	}, []);
 
-	const send = useCallback(
-		(command: () => Promise<string>) => {
-			setPending(true);
-			void command()
-				.then(setStatus)
-				.catch((error: unknown) => setStatus(String(error)))
-				.finally(() => {
-					setPending(false);
-					refresh();
-				});
-		},
-		[refresh],
-	);
+	const send = useCallback((command: () => Promise<string>) => {
+		setPending(true);
+		void command()
+			.then(setStatus)
+			.catch((error: unknown) => setStatus(String(error)))
+			.finally(() => {
+				setPending(false);
+				refresh();
+			});
+	}, [refresh]);
 
 	const enableNotifications = useCallback(() => {
 		void requestBrowserNotificationPermission()
@@ -138,6 +138,7 @@ function useOperationalRun(): {
 		providers,
 		selectedProvider,
 		notificationPermission,
+		version,
 		status,
 		pending,
 		enableNotifications,
@@ -156,6 +157,7 @@ function Screen(): ReactElement {
 		providers,
 		selectedProvider,
 		notificationPermission,
+		version,
 		status,
 		pending,
 		enableNotifications,
@@ -212,6 +214,7 @@ function Screen(): ReactElement {
 			selectedIssueId={selectedIssueId}
 			selectedProvider={selectedProvider}
 			status={status}
+			version={version}
 			workspaceNotices={workspaceNotices}
 		/>
 	);

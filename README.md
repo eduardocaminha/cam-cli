@@ -51,6 +51,26 @@ For development, commands can run directly through Bun:
 bun index.ts --help
 ```
 
+## Update
+
+Re-run the same installer; it replaces an existing installation in place.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/gateship-dev/gateship/main/install.sh | bash
+gship --version
+```
+
+`gship --version` confirms what is installed, and the web header shows the
+same version next to `gateship`. Pin a specific release instead of the newest
+one with `GATESHIP_VERSION`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/gateship-dev/gateship/main/install.sh | GATESHIP_VERSION=vX.Y.Z bash
+```
+
+Gateship never updates itself and never checks for new versions; updating is
+always this explicit command.
+
 ## Quick start
 
 Start the local control surface from any GitHub repository:
