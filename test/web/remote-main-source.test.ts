@@ -19,6 +19,7 @@ import { join } from 'node:path';
 
 import { startWebServer } from '../../src/commands/web.ts';
 import { readBacklogFromMain } from '../../src/issues/backlog.ts';
+import { fingerprintSpec } from '../../src/issues/spec.ts';
 import { RUNTIME_SOURCE_REF } from '../../src/runtime/source-ref.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
@@ -35,6 +36,7 @@ function identify(cwd: string): void {
 
 function writeIssue(cwd: string, file: string, id: string, stage: string): void {
 	mkdirSync(join(cwd, '.gateship', 'issues'), { recursive: true });
+	const spec = { acceptanceCriteria: ['works'], scope: 'test', gotchas: [], domainTerms: [] };
 	writeFileSync(
 		join(cwd, '.gateship', 'issues', file),
 		`${JSON.stringify({
@@ -45,7 +47,10 @@ function writeIssue(cwd: string, file: string, id: string, stage: string): void 
 			blockedBy: [],
 			createdAt: '2026-08-15T00:00:00Z',
 			updatedAt: '2026-08-15T00:00:00Z',
-			spec: { acceptanceCriteria: ['works'], scope: 'test', gotchas: [], domainTerms: [] },
+			spec,
+			approval: stage === 'specified'
+				? { fingerprint: fingerprintSpec(spec), approvedAt: '2026-08-15T00:00:00Z' }
+				: undefined,
 		}, null, 2)}\n`,
 	);
 }

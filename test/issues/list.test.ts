@@ -22,6 +22,17 @@ function makeIssue(
 	};
 }
 
+function approve(entry: IssueEntry): IssueEntry {
+	if (entry.spec === undefined) throw new Error("test issue needs a spec");
+	return {
+		...entry,
+		approval: {
+			fingerprint: fingerprintSpec(entry.spec),
+			approvedAt: "2026-01-01T00:00:00Z",
+		},
+	};
+}
+
 // ---------------------------------------------------------------------------
 // Grouping: lifecycle order, shipped/abandoned excluded by default
 // ---------------------------------------------------------------------------
@@ -238,6 +249,7 @@ describe("deriveBacklogJson — shape + counts", () => {
 			{ id: "CAM-2", title: "Test issue", scope: "Escopo", verificationCommand: "bun test focused", state: "approved", approvedAt },
 			{ id: "CAM-3", title: "Test issue", scope: "Escopo", verificationCommand: "bun test focused", state: "stale", approvedAt },
 		]);
+		expect(json.plannable.map((row) => row.id)).toEqual(["CAM-2"]);
 		expect(JSON.stringify(json.drafts)).not.toContain("fingerprint");
 	});
 
@@ -298,10 +310,10 @@ describe("deriveBacklogJson — status:'abandoned' zombie exclusion (CAM-99/103/
 });
 
 describe("deriveBacklogJson — plannable membership (isPlannable) + ordering", () => {
-	test("plannable is specified + open + not blocked; a blocked entry is excluded", () => {
+	test("plannable is approved + specified + open + not blocked", () => {
 		const backlog: IssueEntry[] = [
-			makeIssue({ id: "CAM-1", stage: "specified" }),
-			makeIssue({ id: "CAM-2", stage: "specified", blockedBy: ["CAM-1"] }),
+			approve(makeIssue({ id: "CAM-1", stage: "specified" })),
+			approve(makeIssue({ id: "CAM-2", stage: "specified", blockedBy: ["CAM-1"] })),
 		];
 		const json = deriveBacklogJson(backlog);
 		expect(json.plannable.map((r) => r.id)).toEqual(["CAM-1"]);
@@ -320,10 +332,10 @@ describe("deriveBacklogJson — plannable membership (isPlannable) + ordering", 
 
 	test("plannable is ordered by numeric id", () => {
 		const backlog: IssueEntry[] = [
-			makeIssue({ id: "CAM-9", stage: "specified" }),
-			makeIssue({ id: "CAM-3", stage: "specified" }),
-			makeIssue({ id: "CAM-1", stage: "specified" }),
-			makeIssue({ id: "CAM-5", stage: "specified" }),
+			approve(makeIssue({ id: "CAM-9", stage: "specified" })),
+			approve(makeIssue({ id: "CAM-3", stage: "specified" })),
+			approve(makeIssue({ id: "CAM-1", stage: "specified" })),
+			approve(makeIssue({ id: "CAM-5", stage: "specified" })),
 		];
 		const json = deriveBacklogJson(backlog);
 		expect(json.plannable.map((r) => r.id)).toEqual(["CAM-1", "CAM-3", "CAM-5", "CAM-9"]);
@@ -331,7 +343,7 @@ describe("deriveBacklogJson — plannable membership (isPlannable) + ordering", 
 
 	test("row shape is exactly { id, title, createdAt, updatedAt }", () => {
 		const backlog: IssueEntry[] = [
-			makeIssue({ id: "CAM-1", stage: "specified", title: "Fix the thing" }),
+			approve(makeIssue({ id: "CAM-1", stage: "specified", title: "Fix the thing" })),
 		];
 		const json = deriveBacklogJson(backlog);
 		expect(json.plannable).toEqual([

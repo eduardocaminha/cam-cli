@@ -10,6 +10,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { startWebServer } from '../../src/commands/web.ts';
+import { fingerprintSpec } from '../../src/issues/spec.ts';
 import type { IssueEntry } from '../../src/issues/types.ts';
 import { GSHIP_VERSION } from '../../src/version.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
@@ -44,13 +45,18 @@ function seedIdleRepo(): string {
 	git(cwd, ['config', 'user.email', 'gship-test@example.com']);
 	git(cwd, ['config', 'user.name', 'Gateship Test']);
 
+	const approvedSpec = { scope: 'test', verify: ['true'] };
 	const issues = [
 		issue({ id: 'GSHIP-1', title: 'first idea' }),
 		issue({
 			id: 'GSHIP-2',
 			title: 'ready',
 			stage: 'specified',
-			spec: { acceptanceCriteria: ['works'], scope: 'test', gotchas: [], domainTerms: [] },
+			spec: approvedSpec,
+			approval: {
+				fingerprint: fingerprintSpec(approvedSpec),
+				approvedAt: '2026-08-02T00:00:00Z',
+			},
 		}),
 		issue({ id: 'GSHIP-3', title: 'blocked', stage: 'specified', blockedBy: ['GSHIP-1'] }),
 	];
@@ -96,7 +102,10 @@ describe('GET /api/snapshot idle state', () => {
 			expect(idleState['backlog']).toEqual({
 			counts: { idea: 1, specified: 2, planned: 0 },
 			drafts: [
-				{ id: 'GSHIP-2', title: 'ready', scope: 'test', verificationCommand: '', state: 'draft' },
+				{
+					id: 'GSHIP-2', title: 'ready', scope: 'test', verificationCommand: 'true',
+					state: 'approved', approvedAt: '2026-08-02T00:00:00Z',
+				},
 				{ id: 'GSHIP-3', title: 'blocked', scope: '', verificationCommand: '', state: 'draft' },
 			],
 			plannable: [
