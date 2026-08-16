@@ -1,10 +1,8 @@
 // src/config/toml.ts
 //
 // Minimal TOML reader + writer, generic over the config file path. Every
-// current caller targets `scripts/cam/project.toml` (project-scoped, not a
-// per-user `~/.config/cam/` surface); `~/.config/cam/retry.toml` is written
-// by `src/retry/config.ts` via its own inline `Bun.TOML.parse` call, not
-// through this module.
+// current caller targets `scripts/cam/project.toml`, the project-scoped
+// Gateship configuration file.
 //
 // Why a hand-rolled writer? Bun ships `Bun.TOML.parse` (verified against
 // https://bun.com/reference/bun/TOML/parse — current API is `parse(input: string): object`)

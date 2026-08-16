@@ -25,18 +25,17 @@
 // through their dry-run path (e.g. CAM_RUN_DRY_RUN=1, `cam resume --dry-run`)
 // so the preview never launches a real session.
 
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { type SpawnSyncReturns, spawnSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import process from 'node:process';
-
-import { runStatus } from '../src/commands/status.ts';
-import { runStop, type SpawnSyncFn } from '../src/commands/stop.ts';
-import { runResume, type ResumeOptions, type KillFn } from '../src/commands/resume.ts';
-import { runRun } from '../src/commands/run.ts';
 import { runNext } from '../src/commands/next.ts';
 import { runPlan } from '../src/commands/plan.ts';
+import { type KillFn, type ResumeOptions, runResume } from '../src/commands/resume.ts';
+import { runRun } from '../src/commands/run.ts';
+import { runStatus } from '../src/commands/status.ts';
+import { runStop, type SpawnSyncFn } from '../src/commands/stop.ts';
 import { type SpawnFn as TmuxSpawnFnType } from '../src/tmux/session.ts';
 
 const HR = '─'.repeat(72);
@@ -197,10 +196,6 @@ function fakeGitSpawn(agoMs: number): SpawnSyncFn {
 const deadKill: KillFn = () => {
 	throw new Error('no such process');
 };
-const aliveKill: KillFn = () => {
-	/* alive: process.kill(pid, 0) returns without throwing */
-};
-
 const HOUR = 60 * 60 * 1000;
 
 /** Run one resume scenario in its fixture, always cleaning up the tmpdir. */
@@ -217,35 +212,24 @@ async function previewResume(): Promise<void> {
 	await runResumeScenario(makeResumeFixture(false, PRD_RESUME_PENDING), {
 		spawnFn: fakeGitSpawn(HOUR),
 		killFn: deadKill,
-		retryMonitorFn: () => false,
 	});
 
 	section('cam resume — respawn (terminal closed: PID dead, recent commit)');
 	await runResumeScenario(makeResumeFixture(true, PRD_RESUME_PENDING), {
 		spawnFn: fakeGitSpawn(HOUR),
 		killFn: deadKill,
-		retryMonitorFn: () => false,
-	});
-
-	section('cam resume — noop (retry-monitor sleeping in a rate-limit window)');
-	await runResumeScenario(makeResumeFixture(true, PRD_RESUME_PENDING), {
-		spawnFn: fakeGitSpawn(HOUR),
-		killFn: aliveKill,
-		retryMonitorFn: () => true,
 	});
 
 	section('cam resume — success (PRD complete: auto-clean orphan state)');
 	await runResumeScenario(makeResumeFixture(true, PRD_RESUME_COMPLETE), {
 		spawnFn: fakeGitSpawn(HOUR),
 		killFn: deadKill,
-		retryMonitorFn: () => false,
 	});
 
 	section('cam resume — prompt then No (hard-kill orphan, operator declines)');
 	await runResumeScenario(makeResumeFixture(true, PRD_RESUME_PENDING), {
 		spawnFn: fakeGitSpawn(48 * HOUR),
 		killFn: deadKill,
-		retryMonitorFn: () => false,
 		prompt: () => 'n',
 	});
 
@@ -253,7 +237,6 @@ async function previewResume(): Promise<void> {
 	await runResumeScenario(makeResumeFixture(true, PRD_RESUME_PENDING), {
 		spawnFn: fakeGitSpawn(48 * HOUR),
 		killFn: deadKill,
-		retryMonitorFn: () => false,
 		prompt: () => 'reset',
 	});
 

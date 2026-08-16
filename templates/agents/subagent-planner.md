@@ -124,7 +124,7 @@ Each story must be completable in **one Claude Code context window**. Right-size
 
 **One story per concern:**
 - 1 shared type / config-schema change
-- 1 command's core logic (`src/commands/<cmd>.ts`) or one module under `src/retry/` / `src/linear/`
+- 1 command's core logic (`src/commands/<cmd>.ts`) or one module under `src/runtime/` / `src/linear/`
 - 1 Ink screen (`src/ui/*.tsx`) or one print-path output (`src/logging/*`)
 - 1 integration point (tmux spawn, Linear GraphQL call, `claude` shell-out, vendor embed)
 
@@ -140,11 +140,11 @@ Order by dependency (priority 1 = first to implement):
 
 **Decompose feature work by vertical slice.** Each feature story is a tracer bullet that cuts end-to-end through every layer it touches (type + logic + wiring + test + verification), not one horizontal layer. Internal/refactor/mechanical work stays single-concern. Within a feature, the layer ordering below determines sequencing.
 
-`cam-cli` is a Bun + TypeScript CLI (no database, no HTTP server, no browser):
+Gateship is a Bun + TypeScript CLI and local web runtime:
 
 1. **Types / config**: shared types (`src/types.ts`), config parsing/schema (`src/config/*`), data structures later stories depend on.
-2. **Core logic**: command implementations (`src/commands/*`), retry/launcher/monitor (`src/retry/*`), Linear client (`src/linear/*`), templating/vendor embedding (`src/templates/*`, `src/vendor/*`).
-3. **Surface**: CLI wiring in `index.ts`, Ink UI screens (`src/ui/*.tsx`), the non-interactive print path (`src/logging/*`).
+2. **Core logic**: command implementations (`src/commands/*`), durable runtime (`src/runtime/*`), Linear client (`src/linear/*`), templating/vendor embedding (`src/templates/*`, `src/vendor/*`).
+3. **Surface**: CLI wiring in `index.ts`, HTTP routes (`src/commands/web.ts`), React browser UI (`webui/*`), Ink screens (`src/ui/*.tsx`), and the non-interactive print path (`src/logging/*`).
 4. **Polish**: edge cases, `--help` text, README/CHANGELOG, vendor-drift regen.
 
 ## Oracle Contract for Acceptance Criteria
@@ -198,14 +198,14 @@ The `notes` field should include:
 
 ## Project Context
 
-This is **cam-cli**: the `cam` binary itself, an autonomous Claude Code loop driver. Stack: **Bun >= 1.2 + TypeScript (strict, `noUncheckedIndexedAccess`) + React 19 rendered via Ink 7** for terminal UIs. No database, no HTTP server, no browser. Config is TOML (`src/config/toml.ts`); state is JSON (`prd.json`, `handoff.json`). It shells out to `claude`, `tmux`, `git`, and optionally `gh` / the Linear GraphQL API. Distributed as a single-file binary (`bun build --compile`) with `vendor/` + `claude-code-harness/` embedded at build time.
+This is **Gateship**: a local Claude Code cycle runtime. Stack: **Bun >= 1.2 + TypeScript (strict, `noUncheckedIndexedAccess`) + React 19**, with Ink for legacy terminal UIs and a browser UI served over local HTTP/SSE. Durable web state uses SQLite; project config remains TOML (`src/config/toml.ts`) and legacy cycle state uses JSON (`prd.json`, `handoff.json`). It shells out to `claude`, `git`, `gh`, and the remaining legacy tmux runner. The CLI is distributed as a single-file binary (`bun build --compile`) with its templates embedded.
 
 `scripts/cam/CLAUDE.md` auto-loads via Claude Code's nested-CLAUDE.md mechanism: it is already in context before you start, so do not re-read it. `scripts/cam/patterns.md` is grep-on-demand, not a full read: grep for the section/keywords matching the subsystem the issue touches and read only the matching bullets. Use these plus the issue body to understand:
 - Tech stack and key dependencies (above).
-- Command layout: `index.ts` dispatches subcommands implemented under `src/commands/*` (`init`, `run`, `next`, `plan`, `status`, `dashboard`, `resume`, `stop`, `setup`, `claude`, `retry-monitor`).
+- Command layout: `index.ts` is the typed CLI dispatch source; command implementations and HTTP routes live under `src/commands/*`, while the durable web runtime lives under `src/runtime/*`.
 - Domain terms: **orchestrator** (long-lived human-facing agent), **worker** (fresh per-story subagent), **PRD** / **story** / **handoff** / **journal**, **cycle**, **issue system** (`linear` | `github` | `none`, in `project.toml`), **tmux pane/split**.
 - UI conventions: interactive screens use Ink (`src/ui/*.tsx`) with shared design tokens (`src/design/tokens.ts`, `src/ui/theme.ts`); linear command output uses the print path (`src/logging/*`). Success/failure is the ✓/✗ glyph, never divider color.
-- Constraints: Bun-only (no Node/npm); never add a `--permission-mode` flag; keep ported `src/retry/*` MIT headers intact.
+- Constraints: Bun-only (no Node/npm); never add a `--permission-mode` flag; preserve the subscription-authenticated direct Claude CLI path.
 
 ## What NOT to Include
 

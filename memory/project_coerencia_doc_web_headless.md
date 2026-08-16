@@ -198,11 +198,12 @@ rodada. A CAM-482 aparece tres vezes, nos rounds 3, 5 e 7.
 Levantado depois do recorte do vite, para responder se ainda precisamos de teste tmux.
 Serve de insumo direto ao CAM-521 e ao ciclo do daemon.
 
-Numeros medidos: 114 arquivos de teste mencionam tmux. Sobrevivem seis, sendo tres do
-oraculo de gate comportamental (`test/integration/behavioral-gate.test.ts`,
-`test/supervisor/behavioral-gate.test.ts`, `test/supervisor/prd-oracle-lint.test.ts`) e
-tres do wrapper de retry `gship claude` (`test/retry/tmux.test.ts`,
-`test/retry/monitor.test.ts`, `test/retry/interactive.test.ts`). Morrem inteiros 32
+Numeros medidos em 2026-08-11: 114 arquivos de teste mencionavam tmux. A previsao era
+que sobrevivessem seis, tres do oraculo de gate comportamental e tres do wrapper de
+retry `gship claude`. Em 2026-08-16, o wrapper e seus tres testes tmux foram removidos;
+ele nao participava de nenhum ciclo. Portanto sobrevivem por contrato apenas os tres
+do oraculo (`test/integration/behavioral-gate.test.ts`,
+`test/supervisor/behavioral-gate.test.ts`, `test/supervisor/prd-oracle-lint.test.ts`). Morrem inteiros 32
 arquivos, 266 testes, mais 60 a 120 testes parciais nos cerca de 25 arquivos mistos, onde
 a logica do comando fica e so as assercoes de argv de split-window, respawn-pane e
 send-keys saem. Corte total estimado entre 330 e 390 testes.

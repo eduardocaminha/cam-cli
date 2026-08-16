@@ -1,18 +1,16 @@
 // test/resume.test.ts
 //
-// Unit tests for `cam resume` — the 4-mode recovery command (US-010).
+// Unit tests for `cam resume` recovery and explicit reset modes (US-010).
 //
 // Coverage:
 //   classifyResumeMode (pure):
 //     - PRD complete  → success (auto-clean)
 //     - no state file → idle
-//     - retry-monitor PID alive → noop
-//     - state file + heartbeat PID alive → respawn (Mode 1)
-//     - state file + PID dead + recent commit → respawn (Mode 2)
-//     - state file + PID dead + > 24h commit → prompt (Mode 3)
-//     - state file + PID dead + no commit found → prompt (Mode 3)
+//     - state file + heartbeat PID alive → live-supervisor
+//     - state file + PID dead + recent commit → respawn
+//     - state file + PID dead + > 24h commit → prompt
+//     - state file + PID dead + no commit found → prompt
 //   isPidAlive: alive (kill returns), dead (kill throws), invalid PIDs.
-//   isRetryMonitorAlive: tested via retryMonitorFn injection in buildResumeReport.
 //   isPrdComplete: empty list, mixed, all true.
 //   resetCurrentStoryInPlace: picks the highest-priority `passes:true` story;
 //     no-op when nothing has passed.
@@ -20,7 +18,7 @@
 //   normalizePromptAnswer: y/yes/n/<empty>/RESET/reset cases.
 //   buildResumeReport: integrates all the readers using a tmpdir cwd.
 //   runResume:
-//     - Mode 3 prompt → 'y' continues; 'n' aborts (exit 1); 'reset' removes file.
+//     - prompt → 'y' continues; 'n' aborts (exit 1); 'reset' removes file.
 //     - dry-run: no mutation, exit 0.
 //     - --mode reset-current-story: flips PRD.
 //     - --mode reset-prd: flips every entry.
@@ -36,7 +34,6 @@ import {
 	HARD_KILL_AGE_MS,
 	buildResumeReport,
 	classifyResumeMode,
-	isRetryMonitorAlive,
 	isPidAlive,
 	isPrdComplete,
 	isWorkerPaneAlive,
@@ -132,27 +129,6 @@ describe('isPidAlive', () => {
 	});
 });
 
-// --- isRetryMonitorAlive ---------------------------------------------------
-// isRetryMonitorAlive reads ~/.cam/retry.pid + calls isRetryPidAlive.
-// We test it indirectly via buildResumeReport with retryMonitorFn injection
-// (below in the buildResumeReport block), keeping this block for the
-// export contract check.
-
-describe('isRetryMonitorAlive', () => {
-	test('is a function (export contract check)', () => {
-		expect(typeof isRetryMonitorAlive).toBe('function');
-	});
-
-	test('returns false when retry.pid is absent (integration guard)', () => {
-		// On the dev/CI machine the PID file may or may not exist. We can't
-		// inject the path here without changing the implementation. Instead we
-		// only assert the return type is boolean — the real liveness path is
-		// covered by the retry-pid unit tests (test/retry/retry-pid.test.ts).
-		const result = isRetryMonitorAlive();
-		expect(typeof result).toBe('boolean');
-	});
-});
-
 // --- isPrdComplete ---------------------------------------------------------
 
 describe('isPrdComplete', () => {
@@ -200,90 +176,58 @@ describe('classifyResumeMode', () => {
 			{ userStories: [{ id: 'A', title: 'a', passes: true }] },
 			RECENT_COMMIT_MS,
 			true,
-			false,
 			NOW,
 		);
 		expect(decision.mode).toBe('success');
 	});
 
 	test('no state file → idle', () => {
-		const decision = classifyResumeMode(null, null, RECENT_COMMIT_MS, false, false, NOW);
+		const decision = classifyResumeMode(null, null, RECENT_COMMIT_MS, false, NOW);
 		expect(decision.mode).toBe('idle');
 	});
 
-	test('state file + retry-monitor PID alive → noop (Mode 4)', () => {
-		const decision = classifyResumeMode(
-			{ active: true, pid: DEAD_PID },
-			null,
-			RECENT_COMMIT_MS,
-			false,
-			true, // retryMonitorAlive
-			NOW,
-		);
-		expect(decision.mode).toBe('noop');
-	});
-
-	test('state file + supervisor PID alive → live-supervisor (Mode 1)', () => {
+	test('state file + supervisor PID alive → live-supervisor', () => {
 		const decision = classifyResumeMode(
 			{ active: true, pid: ALIVE_PID },
 			null,
 			RECENT_COMMIT_MS,
 			true,
-			false,
 			NOW,
 		);
 		expect(decision.mode).toBe('live-supervisor');
 	});
 
-	test('state file + PID dead + recent commit → respawn (Mode 2)', () => {
+	test('state file + PID dead + recent commit → respawn', () => {
 		const decision = classifyResumeMode(
 			{ active: true, pid: DEAD_PID },
 			null,
 			RECENT_COMMIT_MS,
-			false,
 			false,
 			NOW,
 		);
 		expect(decision.mode).toBe('respawn');
 	});
 
-	test('state file + PID dead + > 24h commit → prompt (Mode 3)', () => {
+	test('state file + PID dead + > 24h commit → prompt', () => {
 		const decision = classifyResumeMode(
 			{ active: true, pid: DEAD_PID },
 			null,
 			OLD_COMMIT_MS,
 			false,
-			false,
 			NOW,
 		);
 		expect(decision.mode).toBe('prompt');
 	});
 
-	test('state file + PID dead + null commit ts → prompt (Mode 3)', () => {
+	test('state file + PID dead + null commit ts → prompt', () => {
 		const decision = classifyResumeMode(
 			{ active: true, pid: DEAD_PID },
 			null,
 			null,
 			false,
-			false,
 			NOW,
 		);
 		expect(decision.mode).toBe('prompt');
-	});
-
-	test('Mode 4 wins over live-supervisor — retry-monitor alive short-circuits PID liveness', () => {
-		// Edge case: retry-monitor PID alive + state-file-PID also alive. We
-		// must report `noop` (Mode 4) not `live-supervisor` (Mode 1) — the retry
-		// monitor owns the recovery cycle.
-		const decision = classifyResumeMode(
-			{ active: true, pid: ALIVE_PID },
-			null,
-			RECENT_COMMIT_MS,
-			true,
-			true,
-			NOW,
-		);
-		expect(decision.mode).toBe('noop');
 	});
 });
 
@@ -329,7 +273,7 @@ describe('isWorkerPaneAlive (US-009)', () => {
 
 describe('classifyResumeMode — US-009 matrix', () => {
 	test('no-state: no state file → idle', () => {
-		const decision = classifyResumeMode(null, null, RECENT_COMMIT_MS, false, false, NOW, false);
+		const decision = classifyResumeMode(null, null, RECENT_COMMIT_MS, false, NOW, false);
 		expect(decision.mode).toBe('idle');
 	});
 
@@ -339,7 +283,6 @@ describe('classifyResumeMode — US-009 matrix', () => {
 			null,
 			RECENT_COMMIT_MS,
 			true, // pidAlive
-			false,
 			NOW,
 			false,
 		);
@@ -352,7 +295,6 @@ describe('classifyResumeMode — US-009 matrix', () => {
 			null,
 			RECENT_COMMIT_MS,
 			false, // pidAlive = false
-			false,
 			NOW,
 			true, // workerPaneAlive = true
 		);
@@ -364,7 +306,6 @@ describe('classifyResumeMode — US-009 matrix', () => {
 			{ active: true, pid: DEAD_PID },
 			null,
 			RECENT_COMMIT_MS,
-			false,
 			false,
 			NOW,
 			false, // workerPaneAlive = false
@@ -378,33 +319,17 @@ describe('classifyResumeMode — US-009 matrix', () => {
 			null,
 			OLD_COMMIT_MS,
 			false,
-			false,
 			NOW,
 			false,
 		);
 		expect(decision.mode).toBe('prompt');
 	});
-
-	test('noop wins over orphaned-worker: retry-monitor alive short-circuits pane check', () => {
-		const decision = classifyResumeMode(
-			{ active: true, pid: DEAD_PID },
-			null,
-			RECENT_COMMIT_MS,
-			false,
-			true, // retryMonitorAlive
-			NOW,
-			true, // workerPaneAlive
-		);
-		expect(decision.mode).toBe('noop');
-	});
-
 	test('live-supervisor wins over orphaned-worker: PID alive takes priority', () => {
 		const decision = classifyResumeMode(
 			{ active: true, pid: ALIVE_PID },
 			null,
 			RECENT_COMMIT_MS,
 			true, // pidAlive
-			false,
 			NOW,
 			true, // workerPaneAlive — but PID wins
 		);
@@ -580,7 +505,6 @@ describe('buildResumeReport', () => {
 				now: () => NOW,
 				spawnFn: makeFakeSpawn(),
 				killFn: deadKill,
-				retryMonitorFn: () => false,
 			});
 			expect(report.mode).toBe('idle');
 			expect(report.stateFilePresent).toBe(false);
@@ -606,7 +530,6 @@ describe('buildResumeReport', () => {
 				now: () => NOW,
 				spawnFn: makeFakeSpawn(),
 				killFn: deadKill,
-				retryMonitorFn: () => false,
 			});
 			expect(report.mode).toBe('success');
 			expect(report.prdComplete).toBe(true);
@@ -630,7 +553,6 @@ describe('buildResumeReport', () => {
 					gitLogTimestamp: Math.floor(RECENT_COMMIT_MS / 1000),
 				}),
 				killFn: deadKill,
-				retryMonitorFn: () => false,
 			});
 			expect(report.mode).toBe('respawn');
 			expect(report.pidAlive).toBe(false);
@@ -655,31 +577,8 @@ describe('buildResumeReport', () => {
 					gitLogTimestamp: Math.floor(OLD_COMMIT_MS / 1000),
 				}),
 				killFn: deadKill,
-				retryMonitorFn: () => false,
 			});
 			expect(report.mode).toBe('prompt');
-		} finally {
-			rmSync(dir, { recursive: true, force: true });
-		}
-	});
-
-	test('noop when retry-monitor PID is alive', () => {
-		const dir = createTestTmpdir('cam-resume-noop-');
-		try {
-			mkdirSync(join(dir, '.claude'), { recursive: true });
-			writeFileSync(
-				join(dir, '.claude', 'cam-loop.local.md'),
-				`---\nactive: true\npid: ${DEAD_PID}\n---\n\n/cam-next\n`,
-			);
-			const report = buildResumeReport({
-				cwd: dir,
-				now: () => NOW,
-				spawnFn: makeFakeSpawn(),
-				killFn: deadKill,
-				retryMonitorFn: () => true,
-			});
-			expect(report.mode).toBe('noop');
-			expect(report.retryPidAlive).toBe(true);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
@@ -698,7 +597,7 @@ function silenceStdout(): { restore: () => void } {
 	};
 }
 
-describe('runResume — Mode 3 prompt', () => {
+describe('runResume — prompt', () => {
 	test('answer "y" → exits 0 and does not remove state file', async () => {
 		const dir = createTestTmpdir('cam-resume-prompt-y-');
 		try {
@@ -717,7 +616,6 @@ describe('runResume — Mode 3 prompt', () => {
 						gitLogTimestamp: Math.floor(OLD_COMMIT_MS / 1000),
 					}),
 					killFn: deadKill,
-					retryMonitorFn: () => false,
 					prompt: () => 'y',
 				});
 				expect(code).toBe(0);
@@ -747,7 +645,6 @@ describe('runResume — Mode 3 prompt', () => {
 						gitLogTimestamp: Math.floor(OLD_COMMIT_MS / 1000),
 					}),
 					killFn: deadKill,
-					retryMonitorFn: () => false,
 					prompt: () => '',
 				});
 				expect(code).toBe(1);
@@ -777,7 +674,6 @@ describe('runResume — Mode 3 prompt', () => {
 						gitLogTimestamp: Math.floor(OLD_COMMIT_MS / 1000),
 					}),
 					killFn: deadKill,
-					retryMonitorFn: () => false,
 					prompt: () => 'reset',
 				});
 				expect(code).toBe(0);
@@ -812,7 +708,6 @@ describe('runResume — auto-cleanup of orphan state', () => {
 					now: () => NOW,
 					spawnFn: makeFakeSpawn(),
 					killFn: aliveKill,
-					retryMonitorFn: () => false,
 					prompt: () => 'n',
 				});
 				expect(code).toBe(0);
@@ -847,7 +742,6 @@ describe('runResume — dry-run', () => {
 					now: () => NOW,
 					spawnFn: makeFakeSpawn(),
 					killFn: deadKill,
-					retryMonitorFn: () => false,
 					prompt: () => {
 						throw new Error('prompt should not be called under dry-run');
 					},

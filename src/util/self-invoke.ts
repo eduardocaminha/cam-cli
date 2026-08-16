@@ -51,12 +51,10 @@ export function resolveSelfInvokeArgv(execPath: string, argv1: string | undefine
  * sidecar respawn (US-002, CAM-482).
  *
  * Thin wrapper over {@link resolveSelfInvokeArgv}: spreads the resolved
- * execPath/argv1 pair, then appends `subcommandArgs` verbatim. Mirrors
- * forkMonitor's convention (src/retry/launcher.ts) exactly, generalized to any
- * subcommand instead of hardcoding `retry-monitor`. Never falls back to a
- * literal PATH-resolvable binary name: a long-lived session must always
- * respawn the exact binary that is running it, not a possibly-stale `cam` on
- * PATH.
+ * execPath/argv1 pair, then appends `subcommandArgs` verbatim. Never falls
+ * back to a literal PATH-resolvable binary name: a long-lived session must
+ * always respawn the exact binary that is running it, not a possibly-stale
+ * `gship` on PATH.
  */
 export function buildSelfSpawnArgv(
 	execPath: string,

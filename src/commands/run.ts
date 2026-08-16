@@ -26,12 +26,14 @@
 // CLI contract:
 //   cam run [--no-attach]         (don't attach, just create the session)
 
-import { existsSync, mkdirSync, openSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { existsSync, mkdirSync, openSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import process from 'node:process';
-import { randomUUID } from 'node:crypto';
-
+import type { CodexModelsCacheReader } from '../config/codex-models-cache.ts';
+import { resolvePhaseModel } from '../config/model-resolution.ts';
+import { DEFAULTS, readBackend, readPhaseEffort, readWorkerIsolation } from '../config/models.ts';
 import { printError } from '../logging/color.ts';
 import {
 	emitMutedHint,
@@ -41,36 +43,33 @@ import {
 	emitTrailingBlank,
 	emitWarn,
 } from '../logging/screen.ts';
+import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
+import { type CodexAuthCheck, codexAuthPreflight } from '../supervisor/codex-auth.ts';
+import { makeFileEventLogger } from '../supervisor/events.ts';
 import {
-	projectSessionName,
-	ensureProjectSession,
-	isSessionStale,
-	tmuxArgs,
-	ORCH_SESSION_MARKER,
-	ORCH_RECYCLE_MARKER,
-	ORCH_PID_MARKER,
-	type SpawnFn,
-	type CreatedPaneIds,
-} from '../tmux/session.ts';
+	removeSidecarLivenessWatcherPidIfExists,
+	removeSidecarPidIfExists,
+	removeWatcherPidIfExists,
+	SIDECAR_LOG_FILENAME,
+	writeSidecarLivenessWatcherPid,
+	writeSidecarPid,
+	writeWatcherPid,
+} from '../supervisor/sidecar-pid.ts';
 import { ORCH_READY_MARKER } from '../tmux/bootstrap-wait.ts';
 import {
-	writeSidecarPid,
-	removeSidecarPidIfExists,
-	writeWatcherPid,
-	removeWatcherPidIfExists,
-	writeSidecarLivenessWatcherPid,
-	removeSidecarLivenessWatcherPidIfExists,
-	SIDECAR_LOG_FILENAME,
-} from '../supervisor/sidecar-pid.ts';
-import { DEFAULTS, readBackend, readPhaseEffort, readWorkerIsolation } from '../config/models.ts';
-import { emitSpawnResolution } from '../logging/spawn-resolution.ts';
-import { makeFileEventLogger } from '../supervisor/events.ts';
+	type CreatedPaneIds,
+	ensureProjectSession,
+	isSessionStale,
+	ORCH_PID_MARKER,
+	ORCH_RECYCLE_MARKER,
+	ORCH_SESSION_MARKER,
+	projectSessionName,
+	type SpawnFn,
+	tmuxArgs,
+} from '../tmux/session.ts';
+import { buildSelfSpawnArgv, resolveSelfInvokeArgv } from '../util/self-invoke.ts';
 import { checkClaudeAuth } from './run-auth-preflight.ts';
 import { checkClaudeEffortSupport, type EffortCapabilityCheck } from './run-effort-preflight.ts';
-import { codexAuthPreflight, type CodexAuthCheck } from '../supervisor/codex-auth.ts';
-import { resolvePhaseModel } from '../config/model-resolution.ts';
-import type { CodexModelsCacheReader } from '../config/codex-models-cache.ts';
-import { resolveSelfInvokeArgv, buildSelfSpawnArgv } from '../util/self-invoke.ts';
 
 // Re-export projectSessionName so existing callers (test/run.test.ts) continue
 // to import it from this module without breaking.
@@ -277,10 +276,9 @@ export function resolveOrchResolverCmd(execPath: string, argv1: string | undefin
  * `process.argv[1]` and this Bun.spawn'd argv array (never shell-parsed by
  * tmux; `spawnFn('tmux', ...)` execve's tmux directly, so each element is its
  * own execve argv word to the tmux binary, immune to word-splitting) becomes
- * the pane's live command. Reuses {@link buildSelfSpawnArgv}, mirroring
- * forkMonitor's self-invoke convention (src/retry/launcher.ts), so the
- * dashboard child always respawns the exact binary running the loop rather
- * than a possibly-stale `cam` resolved off PATH.
+ * the pane's live command. Reuses {@link buildSelfSpawnArgv} so the dashboard
+ * child always respawns the exact binary running the loop rather than a
+ * possibly-stale `gship` resolved off PATH.
  */
 export function buildDashboardRespawnArgv(
 	execPath: string,
@@ -342,8 +340,7 @@ export interface OrchestratorPaneCommandOptions {
 	 * the invocation itself is the CALLER's responsibility (keeps this builder
 	 * pure string assembly, no I/O). Defaults to the bare `'cam orch-resolve'`
 	 * (PATH lookup) when omitted; the real setupPanes caller instead builds this
-	 * via {@link resolveOrchResolverCmd} (mirroring forkMonitor's self-invoke
-	 * convention, src/retry/launcher.ts), which is robust against a stale/absent
+	 * via {@link resolveOrchResolverCmd}, which is robust against a stale/absent
 	 * `cam` on PATH (2026-06-06 lesson) across a long-lived session's many
 	 * respawns, AND against a `bun build --compile` distribution (review
 	 * finding, US-R1-001, CAM-425): inside a compiled binary, `process.argv[1]`
@@ -663,10 +660,8 @@ function setupPanes(
 	const effortForArgv = effortSupported ? orchEffort : '';
 
 	// US-003 (CAM-425): the bash wrapper re-resolves model+effort on every
-	// respawn via this same-binary self-invoke (mirrors forkMonitor's
-	// [process.execPath, mainScript, subcommand] convention, src/retry/
-	// launcher.ts), robust against a stale/absent `cam` on PATH across a
-	// long-lived session's many respawns.
+	// respawn via this same-binary self-invoke, robust against a stale/absent
+	// `gship` on PATH across a long-lived session's many respawns.
 	const resolverCmd = resolveOrchResolverCmd(process.execPath, process.argv[1]);
 	const eventsLogPath = join(dotClaude, 'cam-worker-events.jsonl');
 
@@ -948,10 +943,10 @@ function spawnSidecarLivenessWatchDefault(cwd: string, logPath: string): Sidecar
 // Extracted to src/commands/run-auth-preflight.ts to keep this file within
 // its file-size budget. Consumers may import from either location.
 export {
-	checkClaudeAuth,
-	type ClaudeAuthOk,
 	type ClaudeAuthFail,
+	type ClaudeAuthOk,
 	type ClaudeAuthResult,
+	checkClaudeAuth,
 } from './run-auth-preflight.ts';
 
 // ---------------------------------------------------------------------------

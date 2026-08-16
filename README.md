@@ -297,39 +297,6 @@ The `-L cam` flag routes all cam tmux traffic through a private socket file, sep
 
 ---
 
-## Auto-retry
-
-`cam` ships a built-in rate-limit retry mechanism (no external tool required).
-When a `claude` process hits a rate limit, cam automatically waits out the
-back-off window and re-submits the request.
-
-**How it works:**
-
-- **Print mode** (`gship claude -p "…"`): cam captures `claude` output and retries
-  transparently until the request succeeds or the retry budget is exhausted.
-- **Interactive mode** (`gship claude` inside a tmux session): cam forks a detached
-  background monitor (`gship retry-monitor`) that watches the tmux pane and sends
-  the retry keystroke after the rate-limit window expires. Note: `gship claude` and
-  `gship retry-monitor` intentionally use the user's ambient tmux socket (not `-L cam`),
-  because they watch the user's live interactive pane, not the cam workspace session.
-
-**Configuration** (`~/.config/cam/retry.toml`):
-
-`gship init` writes this file on first run with commented defaults. Edit it to
-tune the retry policy (max attempts, custom rate-limit patterns, foreground
-command allowlist, etc.). If the file is absent, cam uses built-in defaults.
-
-**Logs** (`~/.cam/retry-logs/`):
-
-Each retry event is appended to a dated log file under this directory.
-Gateship rotates logs automatically and keeps the last 7 days by default.
-
-**Attribution**: the retry logic is ported from
-[claude-auto-retry v0.2.2](https://github.com/cheapestinference/claude-auto-retry)
-under the MIT license. See [LICENSES/claude-auto-retry-MIT.txt](./LICENSES/claude-auto-retry-MIT.txt).
-
----
-
 ## Development
 
 ```bash
@@ -434,7 +401,7 @@ reach regardless of this setting.
 ## Recent changes
 
 - **Single-hub dispatch (CAM-55)**: `gship run` is the legacy dispatch hub. `gship plan`, `gship review`, and `gship ship` control that cycle; after session/bootstrap and worker-mutex gates, `gship next` uses an `active:true` sidecar-state trigger. Task intake and operator-facing specification belong to the web runtime, while `gship issue` and the internal `gship spec --persist|--write-docs` channels are deterministic maintenance operations. The default tmux worker path uses a titled 3rd pane; the opt-in headless implementer path uses a direct child process serialized by the supervisor lock.
-- **Interactive TUI workers by default, headless opt-in (CAM-42, recortada by ADR-0059/CAM-516)**: `gship next` dispatches workers as interactive TUI `claude` sessions (not `claude -p`) by default. `claude -p` remains banned for the tmux worker path and for the `gship claude` retry-wrapper's own auth preflight. The one exemption is `gship next --headless`: a pure per-invocation flag (never persisted by config, never sticky across a call that omits it) that opts the implementer worker into a `claude -p`/stream-json dispatch instead, born exempt because a 2026-08-08 measurement (ADR-0059) found it left console API consumption unchanged and reported a subscription-window `rate_limit_event`, not a per-use charge.
+- **Interactive TUI workers by default, headless opt-in (CAM-42, recortada by ADR-0059/CAM-516)**: `gship next` dispatches workers as interactive TUI `claude` sessions (not `claude -p`) by default. `claude -p` remains absent from the legacy tmux worker path. `gship next --headless` and the web runtime own direct `claude -p`/stream-json execution; a 2026-08-08 measurement (ADR-0059) found that path left console API consumption unchanged and reported a subscription-window `rate_limit_event`, not a per-use charge.
 - **Single per-project session**: `gship run` now creates one tmux session per
   project with a 2-pane layout (orchestrator + navigable dashboard). The navigable
   dashboard replaces the old interactive menu: n/r/s/p/i dispatch /cam-* to the
@@ -446,13 +413,6 @@ reach regardless of this setting.
   write the requested phase for the sidecar. `gship next` is also a thin proxy: after its
   session/bootstrap and worker-mutex gates, it flips `active:true` to trigger
   the sidecar and returns 0 immediately.
-- **Auto-retry internalized**: rate-limit retry is now built into `cam` (no
-  external tool installation required). `gship init` no longer checks for any
-  external retry binary. See [LICENSES/claude-auto-retry-MIT.txt](./LICENSES/claude-auto-retry-MIT.txt)
-  for upstream attribution.
-- **`gship claude` subcommand**: new explicit entry point for print-mode and
-  interactive-mode claude runs with built-in retry.
-
 ---
 
 ## License
