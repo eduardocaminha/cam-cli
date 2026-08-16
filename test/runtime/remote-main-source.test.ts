@@ -15,6 +15,7 @@ import { join } from 'node:path';
 
 import { getIssueOnMain } from '../../src/commands/issue-get.ts';
 import { readBacklogFromMain } from '../../src/issues/backlog.ts';
+import { fingerprintSpec } from '../../src/issues/spec.ts';
 import { createGitRuntimePreflight, RuntimePreflightError } from '../../src/runtime/git-runtime.ts';
 import {
 	GitWorkspaceManager,
@@ -39,6 +40,7 @@ function identify(cwd: string): void {
 
 function writeIssue(cwd: string, file: string, id: string, stage: string): void {
 	mkdirSync(join(cwd, '.gateship', 'issues'), { recursive: true });
+	const spec = { scope: 'test', verify: ['true'] };
 	writeFileSync(
 		join(cwd, '.gateship', 'issues', file),
 		`${JSON.stringify({
@@ -49,7 +51,11 @@ function writeIssue(cwd: string, file: string, id: string, stage: string): void 
 			blockedBy: [],
 			createdAt: '2026-08-15T00:00:00Z',
 			updatedAt: '2026-08-15T00:00:00Z',
-			spec: { acceptanceCriteria: ['works'], scope: 'test', gotchas: [], domainTerms: [] },
+			spec,
+			approval: {
+				fingerprint: fingerprintSpec(spec),
+				approvedAt: '2026-08-15T00:00:00Z',
+			},
 		}, null, 2)}\n`,
 	);
 }
