@@ -21,8 +21,7 @@ import { join } from 'node:path';
 
 import { runInit, type SpawnFn } from '../../src/commands/init.ts';
 
-// Same deterministic stub as test/init.test.ts (CAM-205 spawn seam): fakes
-// "claude not found on PATH" and a skipped vendored smoke so this probe never
+// Deterministic stub: fake "claude not found on PATH" so this probe never
 // touches a real subprocess or depends on the runner's installed toolchain.
 const stubSpawnFn: SpawnFn = (cmd, args) => {
 	if (cmd === '/bin/sh' && args[0] === '-c' && args[1] === 'command -v claude') {
@@ -30,9 +29,6 @@ const stubSpawnFn: SpawnFn = (cmd, args) => {
 	}
 	if (cmd === 'claude' && args[0] === '--version') {
 		return { status: 0, stdout: 'Claude Code 2.5.0 (Sonnet 4.6)\n', stderr: '' };
-	}
-	if (cmd === 'bun') {
-		return { status: 2, stdout: '[smoke] skipping — stubbed in probe\n', stderr: '' };
 	}
 	return { status: 1, stdout: '', stderr: `unexpected stub spawn: ${cmd} ${args.join(' ')}` };
 };

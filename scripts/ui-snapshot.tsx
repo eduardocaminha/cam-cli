@@ -63,8 +63,8 @@ const CHECK_FIXTURES = {
 		description: 'Required to spawn Claude Code sessions.',
 	},
 	frontmatter: {
-		label: 'agent-frontmatter',
-		description: 'Validates .claude/agents/*.md files.',
+		label: 'runtime',
+		description: 'Checks local runtime prerequisites.',
 	},
 	config: {
 		label: 'config',

@@ -7,11 +7,9 @@
 // The 6 CAM-60 static-layer gates: lint, file-size, debt-markers, coverage,
 //   dead-code, dup
 // The 1 CAM-201 gate: version-skips
-// The 1 CAM-61 gate: agents-md
 // The 1 CAM-305 gate: test-sleeps
 // The 1 CAM-503 gate: test-tmpdir
 // The 1 CAM-424 gate: skip-ratchet
-// The 1 CAM-502 gate: gitignore-parity
 //
 // This file is intentionally separate from check-all.test.ts (which tests the
 // runGates runner and per-gate command shapes). Its sole job is to catch any
@@ -25,11 +23,9 @@ const GATE_NAMES: string[] = GATES.map((g) => g.name);
 const CAM59_GATES = ['typecheck', 'test', 'embed-vendor', 'ci-parity'] as const;
 const CAM60_GATES = ['lint', 'file-size', 'debt-markers', 'coverage', 'dead-code', 'dup'] as const;
 const CAM201_GATES = ['version-skips'] as const;
-const CAM61_GATES = ['agents-md'] as const;
 const CAM305_GATES = ['test-sleeps'] as const;
 const CAM503_GATES = ['test-tmpdir'] as const;
 const CAM424_GATES = ['skip-ratchet'] as const;
-const CAM502_GATES = ['gitignore-parity'] as const;
 
 describe('GATES manifest completeness (US-007)', () => {
 	test('contains all 4 CAM-59 foundation gates by exact name', () => {
@@ -46,12 +42,6 @@ describe('GATES manifest completeness (US-007)', () => {
 
 	test('contains the CAM-201 version-skips gate by exact name', () => {
 		for (const name of CAM201_GATES) {
-			expect(GATE_NAMES).toContain(name);
-		}
-	});
-
-	test('contains the CAM-61 agents-md gate by exact name', () => {
-		for (const name of CAM61_GATES) {
 			expect(GATE_NAMES).toContain(name);
 		}
 	});
@@ -74,26 +64,18 @@ describe('GATES manifest completeness (US-007)', () => {
 		}
 	});
 
-	test('contains the CAM-502 gitignore-parity gate by exact name', () => {
-		for (const name of CAM502_GATES) {
-			expect(GATE_NAMES).toContain(name);
-		}
+	test('total gate count is 14', () => {
+		expect(GATES).toHaveLength(14);
 	});
 
-	test('total gate count is 16 (4 CAM-59 + 6 CAM-60 + 1 CAM-201 + 1 CAM-61 + 1 CAM-305 + 1 CAM-503 + 1 CAM-424 + 1 CAM-502)', () => {
-		expect(GATES).toHaveLength(16);
-	});
-
-	test('all 16 expected names are present in the manifest', () => {
+	test('all 14 expected names are present in the manifest', () => {
 		const expected = [
 			...CAM59_GATES,
 			...CAM60_GATES,
 			...CAM201_GATES,
-			...CAM61_GATES,
 			...CAM305_GATES,
 			...CAM503_GATES,
 			...CAM424_GATES,
-			...CAM502_GATES,
 		];
 		for (const name of expected) {
 			expect(GATE_NAMES).toContain(name);

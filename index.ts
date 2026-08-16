@@ -120,7 +120,7 @@ const HELP = renderHelp({
 			heading: 'Web-first',
 			entries: [
 				{ name: '(default)', description: 'Start the local web control surface on 127.0.0.1:7777' },
-				{ name: 'init [options]', description: 'Validate the machine, then run the project-setup wizard' },
+				{ name: 'init [options]', description: 'Validate the machine and write optional project metadata' },
 				{ name: 'web [--port N]', description: 'Serve the local web control surface on a custom port' },
 				{ name: 'run [--port N]', description: 'Compatibility alias for the web control surface' },
 			],
@@ -203,16 +203,15 @@ const INIT_HELP = renderHelp({
 			heading: 'Behaviour',
 			body:
 				'Stage 1 — Machine validation:\n' +
-				'  1. Checks `claude` is on PATH and logged in.\n' +
-				'  2. Runs vendored smokes (check-agent-frontmatter).\n' +
+				'  1. Checks `claude` is on PATH.\n' +
 				'\n' +
 				'Stage 2 — Project setup wizard (if stage 1 passes):\n' +
 				'  1. Asks: new project or existing?\n' +
 				'  2. Verifies claude is installed and logged in.\n' +
 				'  3. Asks: which issue system (linear | github | local)?\n' +
 				'  4. If new: asks for a brief project description.\n' +
-				'  5. Installs gship templates into .claude/commands/, .claude/agents/, scripts/cam/.\n' +
-				'  6. Writes scripts/cam/project.toml with per-project config.\n' +
+				'  5. Writes scripts/cam/project.toml with optional project metadata.\n' +
+				'  6. Installs no agent personas, hooks, slash commands, or sidecars.\n' +
 				'  7. Returns to the web-first flow; run `gship` to open the local UI.',
 		},
 	],

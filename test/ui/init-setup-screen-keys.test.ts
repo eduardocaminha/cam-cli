@@ -74,9 +74,9 @@ describe('InitScreen — success path', () => {
 				run: () => ({ status: 'ok' as const, detail: 'v2.0.5' }),
 			},
 			{
-				id: 'check-agent-frontmatter',
-				label: 'agent-frontmatter',
-				description: 'Validates .claude/agents/*.md files',
+				id: 'runtime',
+				label: 'runtime',
+				description: 'Checks local runtime prerequisites',
 				run: () => ({ status: 'ok' as const }),
 			},
 			{

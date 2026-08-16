@@ -14,7 +14,7 @@
 // (see helper below), so every gate in the fixture is a plain spawn gate
 // dispatched through the fake spawnFn like everywhere else in this file.
 // Coverage:
-//   GATES manifest: length (16), order, correct cmd/args per spawn gate; the
+//   GATES manifest: length (14), order, correct cmd/args per spawn gate; the
 //   coverage and skip-ratchet gates are in-process (a `run` fn, no cmd/args).
 //   runGates: all pass (exit 0), any fail (exit 1), bail stops early.
 //   --json mode: onResults callback receives correctly shaped GateResult[].
@@ -88,8 +88,8 @@ function spawnOnlyGates(): Gate[] {
 // ---------------------------------------------------------------------------
 
 describe('GATES manifest', () => {
-	test('has 16 gates in order: typecheck, test, embed-vendor, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps, test-tmpdir, gitignore-parity, skip-ratchet', () => {
-		expect(GATES).toHaveLength(16);
+	test('has 14 gates in order: typecheck, test, embed-vendor, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, test-sleeps, test-tmpdir, skip-ratchet', () => {
+		expect(GATES).toHaveLength(14);
 		expect(GATES[0]?.name).toBe('typecheck');
 		expect(GATES[1]?.name).toBe('test');
 		expect(GATES[2]?.name).toBe('embed-vendor');
@@ -101,11 +101,9 @@ describe('GATES manifest', () => {
 		expect(GATES[8]?.name).toBe('dead-code');
 		expect(GATES[9]?.name).toBe('dup');
 		expect(GATES[10]?.name).toBe('ci-parity');
-		expect(GATES[11]?.name).toBe('agents-md');
-		expect(GATES[12]?.name).toBe('test-sleeps');
-		expect(GATES[13]?.name).toBe('test-tmpdir');
-		expect(GATES[14]?.name).toBe('gitignore-parity');
-		expect(GATES[15]?.name).toBe('skip-ratchet');
+		expect(GATES[11]?.name).toBe('test-sleeps');
+		expect(GATES[12]?.name).toBe('test-tmpdir');
+		expect(GATES[13]?.name).toBe('skip-ratchet');
 	});
 
 	test('typecheck gate: bun run typecheck', () => {
@@ -183,36 +181,22 @@ describe('GATES manifest', () => {
 		expect(gate?.args).toEqual(['run', 'check:ci-parity']);
 	});
 
-	test('agents-md gate: bun scripts/validate-agents-md.ts', () => {
-		const gate = GATES[11];
-		expect(gate?.name).toBe('agents-md');
-		expect(gate?.cmd).toBe('bun');
-		expect(gate?.args).toEqual(['scripts/validate-agents-md.ts']);
-	});
-
 	test('test-sleeps gate: bun scripts/check-test-sleeps.ts', () => {
-		const gate = GATES[12];
+		const gate = GATES[11];
 		expect(gate?.name).toBe('test-sleeps');
 		expect(gate?.cmd).toBe('bun');
 		expect(gate?.args).toEqual(['scripts/check-test-sleeps.ts']);
 	});
 
 	test('test-tmpdir gate: bun scripts/check-test-tmpdir.ts', () => {
-		const gate = GATES[13];
+		const gate = GATES[12];
 		expect(gate?.name).toBe('test-tmpdir');
 		expect(gate?.cmd).toBe('bun');
 		expect(gate?.args).toEqual(['scripts/check-test-tmpdir.ts']);
 	});
 
-	test('gitignore-parity gate: bash scripts/check-gitignore-parity.sh .', () => {
-		const gate = GATES[14];
-		expect(gate?.name).toBe('gitignore-parity');
-		expect(gate?.cmd).toBe('bash');
-		expect(gate?.args).toEqual(['scripts/check-gitignore-parity.sh', '.']);
-	});
-
 	test('skip-ratchet gate: in-process (US-002, CAM-488), reaches its verdict via a `run` fn, not a cmd/args spawn pair', () => {
-		const gate = GATES[15];
+		const gate = GATES[13];
 		expect(gate?.name).toBe('skip-ratchet');
 		expect(gate && 'run' in gate).toBe(true);
 		expect(gate && 'cmd' in gate).toBe(false);
@@ -414,15 +398,15 @@ describe('--json mode (onResults)', () => {
 		}
 	});
 
-	test('onResults entry names match manifest gate names (typecheck, test, embed-vendor, lint, file-size, debt-markers, version-skips, coverage, dead-code, dup, ci-parity, agents-md, test-sleeps, test-tmpdir, gitignore-parity, skip-ratchet)', async () => {
+	test('onResults entry names match manifest gate names', async () => {
 		const gates = spawnOnlyGates();
-		const { fn } = makeRecordingSpawn([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+		const { fn } = makeRecordingSpawn(gates.map(() => 0));
 		let captured: GateResult[] | null = null;
 		await runGates({ gates, spawnFn: fn, onResults: (r) => { captured = r; } });
 
 		const results = captured as unknown as GateResult[];
 		const names = results.map((r) => r.name);
-		expect(names).toEqual(['typecheck', 'test', 'embed-vendor', 'lint', 'file-size', 'debt-markers', 'version-skips', 'coverage', 'dead-code', 'dup', 'ci-parity', 'agents-md', 'test-sleeps', 'test-tmpdir', 'gitignore-parity', 'skip-ratchet']);
+		expect(names).toEqual(['typecheck', 'test', 'embed-vendor', 'lint', 'file-size', 'debt-markers', 'version-skips', 'coverage', 'dead-code', 'dup', 'ci-parity', 'test-sleeps', 'test-tmpdir', 'skip-ratchet']);
 	});
 
 	test('onResults receives durationMs as a non-negative number', async () => {

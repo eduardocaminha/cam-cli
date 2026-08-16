@@ -162,16 +162,15 @@ fi
 echo "[build-release]   ${ACTUAL}"
 
 # --- Sanity: init runs, soft-checks (host-native artifact only) --------------
-# `cam init` validates PATH for claude + runs vendored smokes. On the dev
-# machine these pass; on a CI box they may fail (no claude binary). We log and
+# `gship init` validates PATH for claude. On a CI box it may fail when the
+# binary is absent. We log and
 # conditionally abort on non-zero depending on whether claude is installed:
 #   - claude absent from PATH: non-zero is acceptable (machine without claude).
 #   - claude present but init still fails: real init crash -- abort the build.
 #
-# CAM-15: the soft-check MUST be hermetic. `gship init` chains `runSetup`, which
-# copies templates into its cwd. Running it against REPO_ROOT previously
-# clobbered versioned files. We isolate it on every axis: a throwaway tmpdir as
-# cwd (file writes land there, not the repo), --existing --issue-system none
+# The soft-check MUST be hermetic. `gship init` chains `runSetup`, which can
+# write optional project metadata. We isolate it on every axis: a throwaway
+# tmpdir as cwd, --existing --issue-system none
 # (skip the interactive setup wizard so it never blocks), </dev/null
 # (belt-and-braces on stdin). The binary is referenced by an absolute path so the
 # cd does not break resolution. Canonical rule: lessons.archive.md 2026-06-06

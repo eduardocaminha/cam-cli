@@ -50,16 +50,10 @@ bun index.ts --help
 
 ## Quick start
 
-Initialize a repository once:
+Start the local control surface from any GitHub repository:
 
 ```bash
 cd /path/to/project
-gship init
-```
-
-Start the local control surface:
-
-```bash
 gship
 # prints http://127.0.0.1:7777
 ```
@@ -103,8 +97,8 @@ slash commands.
 gship                       Start the web runtime on 127.0.0.1:7777
 gship web [--port N]        Start it on another port
 gship run [--port N]        Compatibility alias for gship web
-gship init [options]        Initialize a project
-gship config [--show]       Configure project models and backends
+gship init [options]        Optional machine check and project metadata
+gship config [--show]       Configure legacy project metadata
 gship issue list|get|...    Deterministic backlog maintenance
 gship help                  Show the complete command registry
 ```
@@ -162,6 +156,9 @@ of legacy control and cleanup commands remains temporarily so a session that was
 already running can reach a terminal state. They are outside the web execution
 path and are being removed by dependency closure, not extended with new policy
 or tests.
+
+`gship init` no longer installs the old Claude personas, slash commands, hooks,
+or sidecars. The web runtime invokes the signed-in Claude CLI directly.
 
 Historical decisions remain in `docs/adr/`; the current executable flow is
 summarized in [FLOW.md](./FLOW.md).

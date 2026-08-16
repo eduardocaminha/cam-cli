@@ -49,7 +49,6 @@
   "src/supervisor/worker-argv.ts": 193,
   "src/supervisor/worker-container.ts": 357,
   "src/supervisor/worker-report.ts": 114,
-  "src/templates/embedded.ts": 124,
   "src/tmux/bootstrap-wait.ts": 96,
   "src/tmux/dispatch.ts": 690,
   "src/tmux/session.ts": 589,
@@ -83,7 +82,7 @@
   "test/commands/sidecar-read-plan-issue.test.ts": 98,
   "test/dashboard.test.ts": 2098,
   "test/dispatch.test.ts": 954,
-  "test/embedded.test.ts": 666,
+  "test/embedded.test.ts": 18,
   "test/fixtures/interactivity/mock-claude.ts": 130,
   "test/fixtures/resume/scenario.ts": 282,
   "test/init.test.ts": 97,
@@ -107,7 +106,6 @@
   "test/resume/modes.test.ts": 441,
   "test/review.test.ts": 382,
   "test/setup-menu.test.ts": 82,
-  "test/setup.test.ts": 46,
   "test/ship-args.test.ts": 220,
   "test/ship-finalize-hardening.test.ts": 337,
   "test/ship-finalize.test.ts": 541,
@@ -143,7 +141,5 @@
   "test/tmux-session.test.ts": 759,
   "test/toml.test.ts": 214,
   "test/transcript/usage.test.ts": 608,
-  "test/vendor/cam-ship-hygiene.test.ts": 91,
-  "test/vendor/check-agent-frontmatter-standalone.test.ts": 105,
   "test/version.test.ts": 92
 }
