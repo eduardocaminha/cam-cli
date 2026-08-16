@@ -3,11 +3,16 @@
 // Real-process coverage for the `bun index.ts web` launch boundary: resolved
 // localhost bind, both --port spellings, CLI-only port validation, occupied
 // port diagnostics, and signal-to-exit-code shutdown.
+//
+// The launched processes bind explicit ephemeral ports so the suite coexists
+// with the live Gateship on 127.0.0.1:7777. The default port itself is asserted
+// through parseWebArgs/DEFAULT_WEB_PORT, without opening a socket.
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
-import { startWebServer } from '../../src/commands/web.ts';
+import { parseWebArgs } from '../../index.ts';
+import { DEFAULT_WEB_PORT, startWebServer, WEB_HOSTNAME } from '../../src/commands/web.ts';
 
 const REPO_ROOT = join(import.meta.dir, '..', '..');
 const INDEX_TS = join(REPO_ROOT, 'index.ts');
@@ -36,6 +41,15 @@ async function collectTextUntilClose(
 	text += decoder.decode();
 	onText(text);
 	return text;
+}
+
+/** Binds and releases an ephemeral port so the CLI can be given it explicitly. */
+function reserveEphemeralPort(): number {
+	const server = Bun.serve({ hostname: WEB_HOSTNAME, port: 0, fetch: () => new Response('') });
+	const { port } = server;
+	server.stop(true);
+	if (port === undefined) throw new Error('Bun.serve did not report an ephemeral port');
+	return port;
 }
 
 function spawnWebCli(args: string[], command: 'web' | 'run' | null = 'web'): SpawnedWebCli {
@@ -127,25 +141,49 @@ describe('web server launch', () => {
 		}
 	});
 
-	test('bun index.ts web binds the default 127.0.0.1:7777 and exits 143 on SIGTERM', async () => {
-		const result = await launchAndTerminate([]);
-		expect(result.url).toBe('http://127.0.0.1:7777');
-		expect(result.stdout).toContain('http://127.0.0.1:7777');
+	test('the CLI default port is 7777 and needs no socket to resolve', () => {
+		expect(DEFAULT_WEB_PORT).toBe(7777);
+		expect(parseWebArgs([])).toEqual({ port: DEFAULT_WEB_PORT, help: false });
+	});
+
+	test('bun index.ts web binds the requested port and exits 143 on SIGTERM', async () => {
+		const port = reserveEphemeralPort();
+		const result = await launchAndTerminate([`--port=${port}`]);
+		expect(result.url).toBe(`http://127.0.0.1:${port}`);
+		expect(result.stdout).toContain(`http://127.0.0.1:${port}`);
 		expect(result.stderr).toBe('');
 		expect(result.exitCode).toBe(143);
 	}, 10_000);
 
-	test('bun index.ts with no subcommand starts the same default web server', async () => {
-		const result = await launchAndTerminate([], null);
-		expect(result.url).toBe('http://127.0.0.1:7777');
-		expect(result.stdout).toContain('http://127.0.0.1:7777');
-		expect(result.stderr).toBe('');
-		expect(result.exitCode).toBe(143);
+	// The default entry takes no options, so its target is always DEFAULT_WEB_PORT
+	// and it is read from whichever channel the process reports it on: the printed
+	// URL when the port is free, or the bind diagnostic when a Gateship owns it.
+	test('bun index.ts with no subcommand targets the default web server', async () => {
+		const launched = spawnWebCli([], null);
+		let url: string | null = null;
+		try {
+			url = await withTimeout(launched.readyUrl);
+		} catch {
+			url = null;
+		}
+		if (url !== null) launched.proc.kill('SIGTERM');
+		const [exitCode, stderr] = await Promise.all([launched.proc.exited, launched.stderrText]);
+		liveProcesses.delete(launched.proc);
+
+		if (url !== null) {
+			expect(url).toBe(`http://${WEB_HOSTNAME}:${DEFAULT_WEB_PORT}`);
+			expect(stderr).toBe('');
+			expect(exitCode).toBe(143);
+			return;
+		}
+		expect(stderr).toContain(`failed to bind --port ${DEFAULT_WEB_PORT} on ${WEB_HOSTNAME}`);
+		expect(exitCode).toBe(1);
 	}, 10_000);
 
 	test('gship run is a compatibility alias for the same web server', async () => {
-		const result = await launchAndTerminate([], 'run');
-		expect(result.url).toBe('http://127.0.0.1:7777');
+		const port = reserveEphemeralPort();
+		const result = await launchAndTerminate([`--port=${port}`], 'run');
+		expect(result.url).toBe(`http://127.0.0.1:${port}`);
 		expect(result.stderr).toBe('');
 		expect(result.exitCode).toBe(143);
 	}, 10_000);
@@ -162,10 +200,7 @@ describe('web server launch', () => {
 
 	test('the CLI accepts both --port N and --port=N', async () => {
 		for (const joined of [false, true]) {
-			const reservation = startWebServer({ port: 0, cwd: REPO_ROOT });
-			const port = reservation.port;
-			await reservation.stop();
-
+			const port = reserveEphemeralPort();
 			const result = await launchAndTerminate(joined ? [`--port=${port}`] : ['--port', String(port)]);
 			expect(result.url).toBe(`http://127.0.0.1:${port}`);
 			expect(result.exitCode).toBe(143);
