@@ -1,0 +1,36 @@
+{
+  "id": "CAM-580",
+  "title": "gship web: fonte remota fresca sem mover main local",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-16T00:50:22.083Z",
+  "updatedAt": "2026-08-16T00:50:22.083Z",
+  "description": "O primeiro ship web provou o merge, mas revelou que backlog, issue loader e novos worktrees continuam presos à ref local main. Depois do PR #386, origin/main tinha CAM-579 shipped enquanto main ainda a oferecia como specified; o próximo run partiria de uma base stale.",
+  "specSource": "operator",
+  "spec": {
+    "acceptanceCriteria": [
+      "A fonte Git do runtime web busca origin/main antes de aceitar um novo run, lê a issue nessa ref e cria o worktree a partir do mesmo commit remoto, sem mover refs/heads/main; os helpers legados continuam usando main por padrão. Swept RED on main 2026-08-16: preflight, getIssueOnMain e GitWorkspaceManager hardcodam main, e o teste não existe. [oracle: named-command bun test test/runtime/remote-main-source.test.ts]",
+      "Depois que o GitHub confirma MERGED, o shipper atualiza origin/main antes de devolver merged; falha de sync mantém o run retryable e uma repetição sobre PR já merged tenta o sync de novo sem duplicar commit ou PR. Swept RED on main 2026-08-16: GithubShipper retorna merged sem fetch e o teste não existe. [oracle: named-command bun test test/runtime/github-shipper-source-sync.test.ts]",
+      "O snapshot idle da web deriva o backlog de origin/main, portanto uma issue shipada pelo merge deixa de ser plannable mesmo quando a ref local main está deliberadamente stale. Swept RED on main 2026-08-16: readIdleSnapshotState chama readBacklogFromMain e CAM-579 reaparece como specified; o teste não existe. [oracle: named-command bun test test/web/remote-main-source.test.ts]"
+    ],
+    "scope": "ENTRA: uma ref fonte explícita origin/main para o runtime web; fetch fail-closed no preflight de cada novo run; loaders de issue e backlog parametrizáveis preservando default main no legado; baseRef configurável no GitWorkspaceManager; sync de origin/main após merge; testes com repositório Git real. NÃO ENTRA: mover refs/heads/main, limpar worktrees, polling de rede no snapshot, version/tag/changelog, sidecar/tmux legado, daemon ou framework.",
+    "gotchas": [
+      "main pode estar checked out e dirty em outro worktree; nunca usar update-ref, branch -f ou fetch main:main.",
+      "A ref remota é compartilhada entre worktrees do mesmo repositório, então o fetch pode rodar em qualquer worktree sem tocar a árvore de trabalho.",
+      "Se o PR já está MERGED mas o fetch falha, done seria mentiroso para a fonte local; manter ready-to-ship e repetir apenas o sync.",
+      "O snapshot não deve virar um git fetch a cada poll; o refresh pertence ao início do run e ao terminal do ship."
+    ],
+    "domainTerms": [
+      "runtime source ref",
+      "remote-tracking main",
+      "post-merge source sync"
+    ]
+  },
+  "wsjf": {
+    "value": 10,
+    "timeCriticality": 10,
+    "riskReduction": 10,
+    "jobSize": 3
+  }
+}
