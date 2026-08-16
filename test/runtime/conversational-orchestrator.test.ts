@@ -76,6 +76,9 @@ describe('conversational orchestrator', () => {
 		await orchestrator.turn('E agora?');
 		expect(codex.inputs[1]).toMatchObject({ resume: true, sessionId: 'codex-thread-1' });
 		expect(codex.inputs[1]?.prompt).toContain('Run CAM-42 iniciada.');
+		expect(codex.inputs[1]?.prompt).toContain(
+			'A run in state done was already shipped and its branch is already merged: never request ship_run for it',
+		);
 		await orchestrator.stop();
 		await runtime.stop();
 		runtime.close();

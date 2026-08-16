@@ -194,6 +194,7 @@ export function buildOrchestratorPrompt(
 		'Only request create_issue or specify_issue when title/scope/verification are concrete.',
 		'Use abandon_issue to close an open issue without shipping it; it requires a concrete reason.',
 		'Only use run commands with identifiers visible in the snapshot or transcript.',
+		'A run in state done was already shipped and its branch is already merged: never request ship_run for it and never report it as a pending ship.',
 		'',
 		'Current deterministic snapshot:',
 		JSON.stringify(context, null, 2),
