@@ -135,7 +135,7 @@ describe('orchestrator web API', () => {
 			cwd: createTestTmpdir('gship-chat-create-start-'),
 			store: new RunStore(':memory:'),
 		});
-		const created: unknown[] = [];
+		const created: Array<{ input: unknown; options: unknown }> = [];
 		const started: string[] = [];
 		runtime.startRun = (issueId: string) => {
 			started.push(issueId);
@@ -151,8 +151,8 @@ describe('orchestrator web API', () => {
 			port: 0,
 			cwd: createTestTmpdir('gship-chat-create-start-cwd-'),
 			runRuntime: runtime,
-			issueIntake: (input) => {
-				created.push(input);
+			issueIntake: (input, options) => {
+				created.push({ input, options });
 				return { id: 'CAM-77', title: command.title, sha: 'create-start-sha' };
 			},
 			orchestrator: (execute) => new FakeOrchestrator(execute, command),
@@ -165,13 +165,51 @@ describe('orchestrator web API', () => {
 				body: JSON.stringify({ message: 'Registre e comece agora.' }),
 			});
 			expect(posted.status).toBe(200);
-			expect(created).toEqual([command]);
+			expect(created).toEqual([{ input: command, options: { approve: true } }]);
 			expect(started).toEqual(['CAM-77']);
 
 			const payload = await posted.json() as { turn: OrchestratorTurnResult };
 			expect(payload.turn.commandResult?.text).toBe(
 				'CAM-77 criada no backlog e run run-fixture-1 iniciada.',
 			);
+		} finally {
+			await handle.stop();
+			await runtime.stop();
+			runtime.close();
+		}
+	});
+
+	test('create_issue publishes without approval', async () => {
+		const runtime = new RunRuntime({
+			cwd: createTestTmpdir('gship-chat-create-'),
+			store: new RunStore(':memory:'),
+		});
+		const calls: Array<{ input: unknown; options: unknown }> = [];
+		const command = {
+			type: 'create_issue' as const,
+			title: 'Somente publicar',
+			scope: 'Registrar sem iniciar.',
+			verificationCommand: 'bun test',
+		};
+		const handle = startWebServer({
+			port: 0,
+			cwd: createTestTmpdir('gship-chat-create-cwd-'),
+			runRuntime: runtime,
+			issueIntake: (input, options) => {
+				calls.push({ input, options });
+				return { id: 'CAM-76', title: command.title, sha: 'create-sha' };
+			},
+			orchestrator: (execute) => new FakeOrchestrator(execute, command),
+		});
+		const base = `http://${handle.hostname}:${handle.port}`;
+		try {
+			const posted = await fetch(`${base}/api/chat`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json', origin: base },
+				body: JSON.stringify({ message: 'Apenas registre.' }),
+			});
+			expect(posted.status).toBe(200);
+			expect(calls).toEqual([{ input: command, options: undefined }]);
 		} finally {
 			await handle.stop();
 			await runtime.stop();

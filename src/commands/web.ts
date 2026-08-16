@@ -61,7 +61,7 @@ export interface WebServerOptions {
 	/** Injectable durable run runtime. Production defaults to .gship/runtime.sqlite. */
 	runRuntime?: RunRuntime;
 	/** Test seam for the remote-main operator issue writer. */
-	issueIntake?: (input: unknown) => CreatedOperatorIssue;
+	issueIntake?: (input: unknown, options?: { approve?: boolean }) => CreatedOperatorIssue;
 	/** Test seam for promoting an existing idea with the operator contract. */
 	issueSpecifier?: (id: string, input: unknown) => CreatedOperatorIssue;
 	/** Test seam for closing an open issue with a durable justification. */
@@ -176,7 +176,7 @@ async function writeProjectBrief(
 
 async function createIssueFromOperator(
 	request: Request,
-	issueIntake: (input: unknown) => CreatedOperatorIssue,
+	issueIntake: (input: unknown, options?: { approve?: boolean }) => CreatedOperatorIssue,
 ): Promise<Response> {
 	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
 	let body: unknown;
@@ -621,7 +621,7 @@ export function createDefaultRunRuntimeOptions(cwd: string): RunRuntimeOptions {
 async function executeOrchestratorCommand(
 	command: OrchestratorCommand,
 	runtime: RunRuntime,
-	issueIntake: (input: unknown) => CreatedOperatorIssue,
+	issueIntake: (input: unknown, options?: { approve?: boolean }) => CreatedOperatorIssue,
 	issueSpecifier: (id: string, input: unknown) => CreatedOperatorIssue,
 	issueAbandoner: (id: string, input: unknown) => CreatedOperatorIssue,
 ): Promise<string> {
@@ -633,7 +633,7 @@ async function executeOrchestratorCommand(
 			return `${issue.id} criada no backlog.`;
 		}
 		case 'create_and_start_issue': {
-			const issue = issueIntake(command);
+			const issue = issueIntake(command, { approve: true });
 			// The publication is already durable: a failing start must report the
 			// created id instead of escaping as a generic refusal.
 			try {
@@ -697,13 +697,13 @@ function createDefaultOrchestrator(
 
 /** Each operator issue writer defaults to the remote-main publisher for this cwd. */
 function resolveIssueWriters(options: WebServerOptions): {
-	issueIntake: (input: unknown) => CreatedOperatorIssue;
+	issueIntake: (input: unknown, options?: { approve?: boolean }) => CreatedOperatorIssue;
 	issueSpecifier: (id: string, input: unknown) => CreatedOperatorIssue;
 	issueAbandoner: (id: string, input: unknown) => CreatedOperatorIssue;
 } {
 	return {
 		issueIntake: options.issueIntake
-			?? ((input) => createOperatorIssue(options.cwd, input)),
+			?? ((input, intakeOptions) => createOperatorIssue(options.cwd, input, intakeOptions)),
 		issueSpecifier: options.issueSpecifier
 			?? ((id, input) => specifyOperatorIssue(options.cwd, id, input)),
 		issueAbandoner: options.issueAbandoner

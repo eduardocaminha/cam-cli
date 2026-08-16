@@ -1,8 +1,23 @@
 import { describe, expect, test } from 'bun:test';
 
-import { hasVerification, validateSpec } from '../../src/issues/spec.ts';
+import { fingerprintSpec, hasVerification, validateSpec } from '../../src/issues/spec.ts';
 
 describe('direct issue spec', () => {
+	test('fingerprints the normalized executable contract deterministically', () => {
+		const base = { scope: ' Outcome ', verify: [' bun test one ', 'bun test two'] };
+		const fingerprint = fingerprintSpec(base);
+		expect(fingerprintSpec(base)).toBe(fingerprint);
+		expect(fingerprintSpec({ scope: 'Outcome', verify: ['bun test one', 'bun test two'] }))
+			.toBe(fingerprint);
+		expect(fingerprintSpec({ scope: 'Changed', verify: base.verify })).not.toBe(fingerprint);
+		expect(fingerprintSpec({ scope: base.scope, verify: ['changed', base.verify[1]!] }))
+			.not.toBe(fingerprint);
+		expect(fingerprintSpec({ scope: base.scope, verify: [base.verify[0]!, 'changed'] }))
+			.not.toBe(fingerprint);
+		expect(fingerprintSpec({ scope: 'Outcome' }))
+			.toBe(fingerprintSpec({ scope: 'Outcome', verify: [] }));
+	});
+
 	test('accepts the minimal scope plus verification contract', () => {
 		expect(validateSpec({
 			scope: 'A página mostra o estado do run.',

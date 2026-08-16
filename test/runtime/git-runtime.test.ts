@@ -5,6 +5,7 @@ import {
 	GitIssueVerifier,
 	type GitCommandRunner,
 } from '../../src/runtime/git-runtime.ts';
+import { fingerprintSpec } from '../../src/issues/spec.ts';
 
 function gitRunner(values: { branch?: string; status?: string; diffExit?: number }): GitCommandRunner {
 	return (_cwd, args) => {
@@ -38,9 +39,14 @@ function issueWithVerification(commands: string[]): string {
 
 describe('git runtime boundary', () => {
 	test('requires a real issue and source ref without constraining the host checkout', () => {
+		const spec = { scope: 'Approved outcome.', verify: ['bun test'] };
 		const valid = createGitRuntimePreflight('/project', {
 			runGit: gitRunner({ branch: 'main', status: '?? operator-notes.txt' }),
 			issueExists: () => true,
+			loadIssue: () => JSON.stringify({
+				spec,
+				approval: { fingerprint: fingerprintSpec(spec), approvedAt: '2026-08-16T00:00:00Z' },
+			}),
 		});
 		expect(() => valid('CAM-1')).not.toThrow();
 
@@ -57,6 +63,20 @@ describe('git runtime boundary', () => {
 			issueExists: () => true,
 		});
 		expect(() => missingSource('CAM-1')).toThrow('cannot resolve origin/main');
+
+		const unapproved = createGitRuntimePreflight('/project', {
+			runGit: gitRunner({}), issueExists: () => true,
+			loadIssue: () => JSON.stringify({ spec }),
+		});
+		expect(() => unapproved('CAM-2')).toThrow('CAM-2 has no approval');
+
+		const stale = createGitRuntimePreflight('/project', {
+			runGit: gitRunner({}), issueExists: () => true,
+			loadIssue: () => JSON.stringify({ spec: { ...spec, scope: 'Changed.' }, approval: {
+				fingerprint: fingerprintSpec(spec), approvedAt: '2026-08-16T00:00:00Z',
+			} }),
+		});
+		expect(() => stale('CAM-3')).toThrow('CAM-3 has stale approval');
 	});
 
 	test('verifies diff integrity and requires an actual working-tree change', async () => {

@@ -47,6 +47,7 @@ export interface IssueEntry {
 	wsjf?: WsjfScore;
 	rank?: number;
 	spec?: Spec;
+	approval?: { fingerprint: string; approvedAt: string };
 	specSource?: "interview" | "derived" | "operator";
 	derivedFrom?: string[];
 	type?: "feat" | "fix" | "chore" | "docs";
