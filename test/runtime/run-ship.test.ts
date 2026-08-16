@@ -1,9 +1,9 @@
 // test/runtime/run-ship.test.ts
 //
-// CAM-579 acceptance criterion 2: RunRuntime ships only a run that reached
-// ready-to-ship, keeps a single operation per run, persists every ship event,
-// reaches done only on a real merge, leaves a failed attempt retryable in
-// ready-to-ship, and cancels by awaiting the shipper it started.
+// CAM-583: a verified run continues into shipping under the same ownership and
+// reaches done on the merge, with shipping persisted as its own phase. A failed
+// or cancelled attempt returns the run to ready-to-ship, where shipRun is the
+// explicit retry and still refuses a second concurrent attempt.
 
 import { describe, expect, test } from 'bun:test';
 
@@ -29,29 +29,38 @@ function createRuntime(shipper?: RuntimeShipper): RunRuntime {
 	});
 }
 
-async function startReadyRun(runtime: RunRuntime): Promise<string> {
-	const run = runtime.startRun('CAM-579');
-	await waitForCondition(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
-	return run.id;
-}
-
 function eventKinds(runtime: RunRuntime): string[] {
 	return runtime.listEvents().map((event) => event.kind);
 }
 
+/**
+ * The operator's retry, issued as soon as the automatic attempt hands the run
+ * back. Ownership is released just after the failure is persisted, so the
+ * command is repeated until it is accepted, and any other refusal is raised.
+ */
+async function retryShip(runtime: RunRuntime, runId: string): Promise<void> {
+	await waitForCondition(() => {
+		try {
+			return runtime.shipRun(runId).state === 'shipping';
+		} catch (error) {
+			if (!String(error).includes('already active')) throw error;
+			return false;
+		}
+	});
+}
+
 describe('shipping a run', () => {
-	test('a merged pull request is the only path to done, and every step is durable', async () => {
+	test('a verified run ships itself, and every step is durable', async () => {
 		const runtime = createRuntime({
 			ship: async (input: RuntimeShipInput): Promise<RuntimeShipResult> => {
-				input.emit('ship.pushed', { branch: 'gship/cam-579' });
+				input.emit('ship.pushed', { branch: 'gship/cam-583' });
 				return { outcome: 'merged', prNumber: 385 };
 			},
 		});
-		const runId = await startReadyRun(runtime);
+		const run = runtime.startRun('CAM-583');
+		await waitForCondition(() => runtime.getRun(run.id)?.state === 'done');
 
-		runtime.shipRun(runId);
-		await waitForCondition(() => runtime.getRun(runId)?.state === 'done');
-
+		// No operator command sits between run.verified and run.ship-started.
 		expect(eventKinds(runtime)).toEqual([
 			'run.created',
 			'run.started',
@@ -61,12 +70,19 @@ describe('shipping a run', () => {
 			'ship.pushed',
 			'run.shipped',
 		]);
-		expect(runtime.listEvents().at(-1)?.payload).toEqual({ prNumber: 385 });
+		const events = runtime.listEvents();
+		expect(events.at(-1)?.payload).toEqual({ prNumber: 385 });
+		// The ship is a phase of the run, persisted like every other one.
+		expect(events.find((event) => event.kind === 'run.ship-started')).toMatchObject({
+			fromState: 'ready-to-ship',
+			toState: 'shipping',
+		});
+		expect(events.at(-1)).toMatchObject({ fromState: 'shipping', toState: 'done' });
 		await runtime.stop();
 		runtime.close();
 	});
 
-	test('a failed ship stays ready-to-ship and the same run ships again', async () => {
+	test('a failed automatic ship stays ready-to-ship and the button ships again', async () => {
 		const attempts: string[] = [];
 		const runtime = createRuntime({
 			ship: async (input) => {
@@ -76,19 +92,19 @@ describe('shipping a run', () => {
 					: { outcome: 'merged', prNumber: 385 };
 			},
 		});
-		const runId = await startReadyRun(runtime);
-
-		runtime.shipRun(runId);
+		const run = runtime.startRun('CAM-583');
 		await waitForCondition(() => eventKinds(runtime).includes('run.ship-failed'));
 
 		// The diff is untouched and the run is still shippable: no failed state.
-		expect(runtime.getRun(runId)).toMatchObject({ state: 'ready-to-ship' });
-		expect(runtime.listEvents().at(-1)?.payload).toEqual({
-			error: 'gh pr merge failed: required checks are red',
+		expect(runtime.getRun(run.id)).toMatchObject({ state: 'ready-to-ship' });
+		expect(runtime.listEvents().at(-1)).toMatchObject({
+			fromState: 'shipping',
+			toState: 'ready-to-ship',
+			payload: { error: 'gh pr merge failed: required checks are red' },
 		});
 
-		runtime.shipRun(runId);
-		await waitForCondition(() => runtime.getRun(runId)?.state === 'done');
+		await retryShip(runtime, run.id);
+		await waitForCondition(() => runtime.getRun(run.id)?.state === 'done');
 		expect(attempts).toHaveLength(2);
 		await runtime.stop();
 		runtime.close();
@@ -100,12 +116,10 @@ describe('shipping a run', () => {
 				throw new Error('gh pr create failed: no such remote');
 			},
 		});
-		const runId = await startReadyRun(runtime);
-
-		runtime.shipRun(runId);
+		const run = runtime.startRun('CAM-583');
 		await waitForCondition(() => eventKinds(runtime).includes('run.ship-failed'));
 
-		expect(runtime.getRun(runId)).toMatchObject({ state: 'ready-to-ship' });
+		expect(runtime.getRun(run.id)).toMatchObject({ state: 'ready-to-ship' });
 		expect(runtime.listEvents().at(-1)?.payload).toEqual({
 			error: 'gh pr create failed: no such remote',
 		});
@@ -124,13 +138,14 @@ describe('shipping a run', () => {
 				return { outcome: 'merged', prNumber: 385 };
 			},
 		});
-		const runId = await startReadyRun(runtime);
+		const run = runtime.startRun('CAM-583');
+		await waitForCondition(() => runtime.getRun(run.id)?.state === 'shipping');
 
-		runtime.shipRun(runId);
-		expect(() => runtime.shipRun(runId)).toThrow(`run is already active: ${runId}`);
+		// The automatic ship owns the run, so the retry command is refused.
+		expect(() => runtime.shipRun(run.id)).toThrow(`run is already active: ${run.id}`);
 
 		release();
-		await waitForCondition(() => runtime.getRun(runId)?.state === 'done');
+		await waitForCondition(() => runtime.getRun(run.id)?.state === 'done');
 		await runtime.stop();
 		runtime.close();
 	});
@@ -145,15 +160,17 @@ describe('shipping a run', () => {
 				}, { once: true });
 			}),
 		});
-		const runId = await startReadyRun(runtime);
-
-		runtime.shipRun(runId);
-		await waitForCondition(() => eventKinds(runtime).includes('run.ship-started'));
-		const cancelled = await runtime.cancelRun(runId);
+		const run = runtime.startRun('CAM-583');
+		await waitForCondition(() => runtime.getRun(run.id)?.state === 'shipping');
+		const cancelled = await runtime.cancelRun(run.id);
 
 		expect(observedAbort).toBe(true);
 		expect(cancelled).toMatchObject({ state: 'ready-to-ship' });
-		expect(eventKinds(runtime).at(-1)).toBe('run.ship-cancelled');
+		expect(runtime.listEvents().at(-1)).toMatchObject({
+			kind: 'run.ship-cancelled',
+			fromState: 'shipping',
+			toState: 'ready-to-ship',
+		});
 		runtime.close();
 	});
 
@@ -166,7 +183,7 @@ describe('shipping a run', () => {
 			verifier: { verify: async () => ({ ok: true }) },
 			shipper: { ship: async () => ({ outcome: 'merged', prNumber: 385 }) },
 		});
-		const run = runtime.startRun('CAM-579');
+		const run = runtime.startRun('CAM-583');
 		await waitForCondition(() => runtime.getRun(run.id)?.state === 'waiting-user');
 
 		expect(() => runtime.shipRun(run.id)).toThrow('run cannot ship from state waiting-user');
@@ -177,13 +194,44 @@ describe('shipping a run', () => {
 		runtime.close();
 	});
 
-	test('a runtime without a shipper reports it instead of pretending to ship', async () => {
+	test('a runtime without a shipper stops at ready-to-ship instead of pretending', async () => {
 		const runtime = createRuntime();
-		const runId = await startReadyRun(runtime);
+		const run = runtime.startRun('CAM-583');
+		await waitForCondition(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
 
-		expect(() => runtime.shipRun(runId)).toThrow(RuntimeUnavailableError);
-		expect(runtime.getRun(runId)).toMatchObject({ state: 'ready-to-ship' });
+		expect(eventKinds(runtime)).not.toContain('run.ship-started');
+		expect(() => runtime.shipRun(run.id)).toThrow(RuntimeUnavailableError);
+		expect(runtime.getRun(run.id)).toMatchObject({ state: 'ready-to-ship' });
 		await runtime.stop();
+		runtime.close();
+	});
+
+	test('a ship left mid-flight by a crashed service recovers as shippable', () => {
+		const store = new RunStore(':memory:');
+		store.createRun({
+			id: 'run-crashed-ship',
+			issueId: 'CAM-583',
+			sessionId: 'session-crashed-ship',
+			workspacePath: '/workspaces/run-crashed-ship',
+			createdAt: '2026-08-16T10:00:00Z',
+		});
+		for (const toState of ['working', 'verify', 'ready-to-ship', 'shipping'] as const) {
+			store.transition({
+				runId: 'run-crashed-ship',
+				toState,
+				kind: `run.${toState}`,
+				createdAt: '2026-08-16T10:00:01Z',
+			});
+		}
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store,
+			now: () => '2026-08-16T10:01:00Z',
+		});
+
+		// The verified diff survived the crash; only the attempt was lost.
+		expect(runtime.getRun('run-crashed-ship')?.state).toBe('ready-to-ship');
+		expect(runtime.listEvents().at(-1)?.kind).toBe('run.recovered-shippable');
 		runtime.close();
 	});
 });

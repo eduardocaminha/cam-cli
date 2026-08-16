@@ -12,6 +12,7 @@ export type RunState =
 	| 'verify'
 	| 'review'
 	| 'ready-to-ship'
+	| 'shipping'
 	| 'done'
 	| 'waiting-user'
 	| 'failed'
@@ -48,6 +49,7 @@ export const RUN_PHASES: readonly RunState[] = [
 	'verify',
 	'review',
 	'ready-to-ship',
+	'shipping',
 	'done',
 ];
 
@@ -57,7 +59,7 @@ const OFF_SPINE_PHASE: Readonly<Record<string, RunState>> = {
 	failed: 'review',
 };
 
-/** Human phase label, always one of the six spine names. */
+/** Human phase label, always one of the spine names. */
 export function phaseOf(state: RunState): RunState {
 	return OFF_SPINE_PHASE[state] ?? state;
 }
@@ -86,6 +88,7 @@ const CANCELLABLE: readonly RunState[] = [
 	'verify',
 	'review',
 	'ready-to-ship',
+	'shipping',
 ];
 
 export interface RunActions {
@@ -106,6 +109,8 @@ export function actionsFor(run: RunView | null, hasSelection: boolean): RunActio
 		start: hasSelection && settled,
 		resume: state === 'interrupted' || state === 'waiting-user',
 		cancel: state !== undefined && CANCELLABLE.includes(state),
+		// A verified run ships itself, so the command is only the explicit retry
+		// of an attempt that came back to ready-to-ship.
 		ship: state === 'ready-to-ship',
 	};
 }

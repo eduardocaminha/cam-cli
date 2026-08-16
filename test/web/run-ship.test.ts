@@ -1,9 +1,10 @@
 // test/web/run-ship.test.ts
 //
-// CAM-579 acceptance criterion 3: the web exposes a same-origin
-// POST /api/runs/:runId/ship that answers 202 without waiting for CI, the
-// production composition carries the real GitHub shipper, and ship progress
-// reaches the browser over the SQLite-backed SSE stream already in place.
+// CAM-583: the same-origin POST /api/runs/:runId/ship stays exactly the
+// explicit retry of an automatic attempt that did not merge. It answers 202
+// without waiting for CI, the production composition carries the real GitHub
+// shipper, and ship progress reaches the browser over the SQLite-backed SSE
+// stream already in place.
 
 import { describe, expect, test } from 'bun:test';
 
@@ -16,14 +17,18 @@ import { waitForCondition } from '../helpers/wait-for-condition.ts';
 
 interface ShipHarness {
 	runtime: RunRuntime;
-	/** Resolves the pending ship, standing in for CI going green. */
+	/** Resolves the pending retry, standing in for CI going green. */
 	release: () => void;
-	started: () => boolean;
+	attempts: () => number;
 }
 
+/**
+ * A runtime whose first, automatic ship attempt fails, so the run is back in
+ * ready-to-ship when the endpoint is exercised. The retry then blocks on CI.
+ */
 function createShipRuntime(): ShipHarness {
 	let release = (): void => {};
-	let started = false;
+	let attempts = 0;
 	const released = new Promise<void>((resolve) => {
 		release = resolve;
 	});
@@ -36,14 +41,37 @@ function createShipRuntime(): ShipHarness {
 		verifier: { verify: async () => ({ ok: true }) },
 		shipper: {
 			ship: async (input): Promise<RuntimeShipResult> => {
-				started = true;
+				attempts += 1;
+				if (attempts === 1) return { outcome: 'failed', detail: 'checks are still red' };
 				input.emit('ship.automerge-armed', { prNumber: 385 });
 				await released;
 				return { outcome: 'merged', prNumber: 385 };
 			},
 		},
 	});
-	return { runtime, release, started: () => started };
+	return { runtime, release, attempts: () => attempts };
+}
+
+/**
+ * POST the retry until the automatic attempt has released the run, which
+ * happens just after its failure is persisted.
+ */
+async function postShipRetry(origin: string, runId: string): Promise<Response> {
+	let accepted: Response | null = null;
+	await waitForCondition(async () => {
+		const response = await fetch(`${origin}/api/runs/${runId}/ship`, {
+			method: 'POST',
+			headers: { origin },
+		});
+		if (response.status === 202) {
+			accepted = response;
+			return true;
+		}
+		await response.body?.cancel();
+		return false;
+	});
+	if (accepted === null) throw new Error('the ship retry was never accepted');
+	return accepted;
 }
 
 async function readStream(body: ReadableStream<Uint8Array>, until: string): Promise<string> {
@@ -64,8 +92,8 @@ async function readStream(body: ReadableStream<Uint8Array>, until: string): Prom
 }
 
 describe('POST /api/runs/:runId/ship', () => {
-	test('answers 202 while the ship is still waiting on GitHub, then streams the merge', async () => {
-		const { runtime, release, started } = createShipRuntime();
+	test('answers 202 while the retry is still waiting on GitHub, then streams the merge', async () => {
+		const { runtime, release, attempts } = createShipRuntime();
 		const handle = startWebServer({
 			port: 0,
 			cwd: createTestTmpdir('gship-web-ship-'),
@@ -74,21 +102,19 @@ describe('POST /api/runs/:runId/ship', () => {
 		const origin = `http://${handle.hostname}:${handle.port}`;
 
 		try {
-			const run = runtime.startRun('CAM-579');
-			await waitForCondition(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+			const run = runtime.startRun('CAM-583');
+			// The run shipped itself first, and only a failure put the button back.
+			await waitForCondition(() => runtime.getRun(run.id)?.state === 'ready-to-ship'
+				&& attempts() === 1);
 
-			const accepted = await fetch(`${origin}/api/runs/${run.id}/ship`, {
-				method: 'POST',
-				headers: { origin },
-			});
-			expect(accepted.status).toBe(202);
+			const accepted = await postShipRetry(origin, run.id);
 			expect(await accepted.json()).toMatchObject({
 				ok: true,
-				run: { id: run.id, state: 'ready-to-ship' },
+				run: { id: run.id, state: 'shipping' },
 			});
 			// The request returned while the shipper is still waiting for the merge.
-			expect(started()).toBe(true);
-			expect(runtime.getRun(run.id)?.state).toBe('ready-to-ship');
+			expect(attempts()).toBe(2);
+			expect(runtime.getRun(run.id)?.state).toBe('shipping');
 
 			release();
 			await waitForCondition(() => runtime.getRun(run.id)?.state === 'done');
@@ -96,6 +122,7 @@ describe('POST /api/runs/:runId/ship', () => {
 			const stream = await fetch(`${origin}/api/events?after=0`);
 			expect(stream.headers.get('content-type')).toContain('text/event-stream');
 			const text = await readStream(stream.body as ReadableStream<Uint8Array>, 'run.shipped');
+			expect(text).toContain('"kind":"run.ship-failed"');
 			expect(text).toContain('"kind":"run.ship-started"');
 			expect(text).toContain('"kind":"ship.automerge-armed"');
 			expect(text).toContain('"kind":"run.shipped"');
@@ -107,7 +134,7 @@ describe('POST /api/runs/:runId/ship', () => {
 	});
 
 	test('rejects a cross-origin ship, an unknown run and a run that is not ready', async () => {
-		const { runtime, release } = createShipRuntime();
+		const { runtime, release, attempts } = createShipRuntime();
 		const handle = startWebServer({
 			port: 0,
 			cwd: createTestTmpdir('gship-web-ship-guards-'),
@@ -116,8 +143,9 @@ describe('POST /api/runs/:runId/ship', () => {
 		const origin = `http://${handle.hostname}:${handle.port}`;
 
 		try {
-			const run = runtime.startRun('CAM-579');
-			await waitForCondition(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+			const run = runtime.startRun('CAM-583');
+			await waitForCondition(() => runtime.getRun(run.id)?.state === 'ready-to-ship'
+				&& attempts() === 1);
 
 			const foreign = await fetch(`${origin}/api/runs/${run.id}/ship`, {
 				method: 'POST',
@@ -131,11 +159,7 @@ describe('POST /api/runs/:runId/ship', () => {
 			});
 			expect(missing.status).toBe(404);
 
-			const first = await fetch(`${origin}/api/runs/${run.id}/ship`, {
-				method: 'POST',
-				headers: { origin },
-			});
-			expect(first.status).toBe(202);
+			await postShipRetry(origin, run.id);
 			// The ship already owns the run: a second request is refused, not queued.
 			const second = await fetch(`${origin}/api/runs/${run.id}/ship`, {
 				method: 'POST',
