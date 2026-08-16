@@ -86,13 +86,17 @@ sign-in belong in the web interface rather than separate CLI subcommands.
 
 From the browser you can:
 
-1. converse with a read-only orchestrator that can investigate the repository;
-2. create or specify a task, or start/resume/cancel/ship through one typed
-   command selected from that conversation;
-3. observe public agent text, tool names, verification, and review over SSE;
-4. switch between Claude and Codex without losing the durable conversation;
-5. enable local browser notifications for decisions, failures and completion;
-6. use the explicit controls as a deterministic fallback.
+1. describe the work once, in conversation with a read-only orchestrator that
+   investigates the repository;
+2. authorize it explicitly, and that same turn records the task in the backlog
+   and starts the run instead of asking you for two separate requests;
+3. let decisions interrupt the work and wait for you as `Precisa de você`;
+4. follow progress as `Trabalhando`, with public agent text, tool names,
+   verification, and review over SSE;
+5. enable local browser notifications, so a decision, a failure, or the
+   completed run reaches you outside the tab;
+6. switch between Claude and Codex without losing the durable conversation;
+7. use the explicit controls as a deterministic fallback.
 
 ## Runtime flow
 
