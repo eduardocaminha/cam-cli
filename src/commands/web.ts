@@ -535,6 +535,19 @@ async function executeOrchestratorCommand(
 			const issue = issueIntake(command);
 			return `${issue.id} criada no backlog.`;
 		}
+		case 'create_and_start_issue': {
+			const issue = issueIntake(command);
+			// The publication is already durable: a failing start must report the
+			// created id instead of escaping as a generic refusal.
+			try {
+				const run = runtime.startRun(issue.id);
+				return `${issue.id} criada no backlog e run ${run.id} iniciada.`;
+			} catch (error) {
+				const reason = error instanceof Error ? error.message : String(error);
+				return `${issue.id} criada no backlog, mas a run não iniciou: ${reason}.`
+					+ ` Use start_run com ${issue.id} quando quiser iniciá-la.`;
+			}
+		}
 		case 'specify_issue': {
 			const issue = issueSpecifier(command.issueId, command);
 			return `${issue.id} especificada no backlog.`;
