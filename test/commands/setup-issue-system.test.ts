@@ -16,7 +16,7 @@ import { describe, expect, test } from 'bun:test';
 describe('parseSetupArgs --issue-system deprecated none alias', () => {
 	test('--issue-system none resolves to local', async () => {
 		const { parseSetupArgs } = await import('../../src/commands/setup.ts');
-		const result = parseSetupArgs(['--issue-system', 'none', '--no-tmux']);
+		const result = parseSetupArgs(['--issue-system', 'none']);
 		expect(result).not.toBeNull();
 		expect(result?.issueSystem).toBe('local');
 	});

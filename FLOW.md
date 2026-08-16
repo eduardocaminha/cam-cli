@@ -83,7 +83,7 @@ limpa a branch.
 
 ---
 
-## 2. cam init (validacao de maquina + wizard)
+## 2. gship init (validacao de maquina + wizard)
 
 Duas etapas. A etapa 1 valida a máquina; só se ela passar a etapa 2 (wizard) roda.
 A renderização muda conforme o terminal: TTY interativo usa as telas Ink, CI ou pipe
@@ -91,7 +91,7 @@ cai no caminho linear (readline / prints).
 
 ```mermaid
 flowchart TD
-    A["cam init"] --> TTY1{"TTY interativo?"}
+    A["gship init"] --> TTY1{"TTY interativo?"}
     TTY1 -->|sim| INK["Stage 1 Ink<br/>Splash + InitScreen"]
     TTY1 -->|"nao / CI"| LIN["Stage 1 linear<br/>prints"]
 
@@ -113,28 +113,18 @@ flowchart TD
 
     WIZ --> Q
     RL --> Q
-    Q["perguntas:<br/>1. new / existing<br/>2. issue system: linear / github / none<br/>3. se new: descricao"]
+    Q["perguntas:<br/>1. new / existing<br/>2. issue system: linear / github / local<br/>3. merge mode<br/>4. plan approval<br/>5. se new: descricao"]
     Q --> CANCEL{"cancelou?"}
     CANCEL -->|sim| EXIT1b(["exit 1, setup cancelado"])
     CANCEL -->|nao| WRITE["escreve project.toml,<br/>copia templates para<br/>.claude/commands, .claude/agents, scripts/cam"]
-
-    WRITE --> NOTMUX{"--no-tmux?"}
-    NOTMUX -->|sim| PRINTNEXT["imprime proximos passos"]
+    WRITE --> PRINTNEXT["indica gship como proximo passo"]
     PRINTNEXT --> EXIT0(["exit 0"])
-
-    NOTMUX -->|nao| TMUX["abre tmux split"]
-    TMUX --> PANES["pane config: claude adapta templates<br/>pane menu: c interage, v read-only, q fecha"]
-    PANES --> POLL{"menu detecta<br/>CAM_SETUP_STATUS=DONE?"}
-    POLL -->|"ainda nao"| PANES
-    POLL -->|sim| HANDOFF["handoff automatico:<br/>menu spawna pane do orchestrator"]
-    HANDOFF --> POST["menu vira: o orchestrator,<br/>c config, k mata config, q fecha"]
-    POST --> EXIT0b(["exit 0"])
 ```
 
 Decisões que mudam a tela: **TTY vs CI** (Ink vs linear), **falha na validação**
 (stderr + para), **new vs existing** (pergunta extra de descrição só no new),
 **issue system** (muda só o hint de credencial: LINEAR_API_KEY vs gh auth),
-**`--no-tmux`** (instala e sai vs abre a sessão de config com handoff pro orchestrator).
+**merge mode** e **plan approval**. O setup sempre instala e retorna ao fluxo web.
 
 ---
 

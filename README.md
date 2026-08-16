@@ -190,9 +190,8 @@ gship          # starts the local web control surface
 gship run      # legacy tmux session
 ```
 
-New projects use `gship init`, which installs the project files without opening
-tmux, then `gship` to enter the web runtime. `gship init --legacy-tmux` keeps the
-previous setup agent available during the migration. The web screen lists
+New projects use `gship init`, which installs the project files and returns to
+`gship` for the web runtime. The web screen lists
 plannable issues, creates operator-specified tasks from a title, scope, and
 verification command, promotes existing ideas with the same direct contract,
 follows the current run through server-sent events, and
