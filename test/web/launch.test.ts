@@ -38,8 +38,8 @@ async function collectTextUntilClose(
 	return text;
 }
 
-function spawnWebCli(args: string[]): SpawnedWebCli {
-	const proc = Bun.spawn(['bun', INDEX_TS, 'web', ...args], {
+function spawnWebCli(args: string[], defaultCommand = false): SpawnedWebCli {
+	const proc = Bun.spawn(['bun', INDEX_TS, ...(defaultCommand ? [] : ['web']), ...args], {
 		cwd: REPO_ROOT,
 		stdin: 'ignore',
 		stdout: 'pipe',
@@ -85,13 +85,13 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs = 5_000): Promise<T
 	}
 }
 
-async function launchAndTerminate(args: string[]): Promise<{
+async function launchAndTerminate(args: string[], defaultCommand = false): Promise<{
 	url: string;
 	exitCode: number;
 	stdout: string;
 	stderr: string;
 }> {
-	const launched = spawnWebCli(args);
+	const launched = spawnWebCli(args, defaultCommand);
 	const url = await withTimeout(launched.readyUrl);
 	const response = await fetch(url);
 	expect(response.status).toBe(200);
@@ -129,6 +129,14 @@ describe('web server launch', () => {
 
 	test('bun index.ts web binds the default 127.0.0.1:7777 and exits 143 on SIGTERM', async () => {
 		const result = await launchAndTerminate([]);
+		expect(result.url).toBe('http://127.0.0.1:7777');
+		expect(result.stdout).toContain('http://127.0.0.1:7777');
+		expect(result.stderr).toBe('');
+		expect(result.exitCode).toBe(143);
+	}, 10_000);
+
+	test('bun index.ts with no subcommand starts the same default web server', async () => {
+		const result = await launchAndTerminate([], true);
 		expect(result.url).toBe('http://127.0.0.1:7777');
 		expect(result.stdout).toContain('http://127.0.0.1:7777');
 		expect(result.stderr).toBe('');
