@@ -1,0 +1,39 @@
+{
+  "id": "CAM-582",
+  "title": "gship sem argumentos abre o runtime web por padrão",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-16T02:10:15.366Z",
+  "updatedAt": "2026-08-16T02:10:15.366Z",
+  "description": "A interface operacional já fecha o ciclo mínimo, mas o caminho de descoberta ainda exige saber que existe o subcomando web. Tornar o produto web-first sem quebrar scripts: gship sem argumentos inicia o mesmo servidor local; ajuda continua explícita e gship run permanece como caminho legado tmux durante o strangler.",
+  "specSource": "derived",
+  "derivedFrom": [
+    "CAM-581"
+  ],
+  "spec": {
+    "acceptanceCriteria": [
+      "Invocar gship sem subcomando inicia exatamente runWeb com cwd atual e porta 7777, imprimindo a URL local; gship web continua equivalente e gship help, --help e -h continuam imprimindo ajuda e encerrando sem abrir servidor. O teste usa processo real com encerramento limitado e não adiciona polling, browser auto-open ou parser novo. Swept RED on main 2026-08-16: main sem argumentos retorna HELP imediatamente. [oracle: named-command bun test test/web/default-command.test.ts]",
+      "A ajuda principal e o Quick start apresentam gship sem argumentos como caminho web padrão e rotulam gship run como sessão tmux legada, sem reescrever a documentação histórica nem alterar comportamento de init, run, plan, next, review ou ship. Swept RED on main 2026-08-16: HELP descreve run como fluxo principal e README Quick start manda reanexar com cam run. [oracle: file-assert grep -qF 'gship                 Start the local web control surface' README.md && grep -qF 'run [options]' README.md && grep -qF 'legacy tmux' README.md && grep -qF 'Default' index.ts]"
+    ],
+    "scope": "ENTRA: dispatch sem argumentos para runWeb na porta padrão; ajuda explícita preservada; descrição clara de web default e run/tmux legado na ajuda principal e no Quick start; teste de processo real limitado. NÃO ENTRA: abrir navegador automaticamente, trocar ou remover gship run, migrar plan/spec/review/ship, alterar setup, matar tmux/sidecar, daemonizar, escolher porta automaticamente, adicionar flags ou framework de CLI.",
+    "gotchas": [
+      "O branch de ajuda precisa ser separado: ausência de command inicia web; help, --help e -h nunca podem bloquear em servidor.",
+      "O teste deve encerrar o processo filho e liberar a porta mesmo quando falhar; reutilizar os helpers existentes do teste de launch em vez de criar harness novo.",
+      "O servidor continua bindando apenas 127.0.0.1 e não abre browser por conta própria.",
+      "Não renomear gship run nem atualizar as centenas de referências históricas neste corte; apenas rotular o seam como legado no ponto de entrada atual."
+    ],
+    "domainTerms": [
+      "web-first default",
+      "explicit help escape",
+      "legacy tmux seam",
+      "strangler entrypoint"
+    ]
+  },
+  "wsjf": {
+    "value": 10,
+    "timeCriticality": 9,
+    "riskReduction": 8,
+    "jobSize": 2
+  }
+}
