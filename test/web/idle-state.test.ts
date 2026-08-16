@@ -1,8 +1,9 @@
 // test/web/idle-state.test.ts
 //
 // Real-server coverage for the between-cycle snapshot extension. The fixture
-// uses a real main ref so the route exercises the sanctioned backlog reader,
-// rather than deriving issue state from working-tree files.
+// publishes main to a real remote and tracks it, so the route exercises the
+// sanctioned backlog reader over the runtime source ref (CAM-580), rather than
+// deriving issue state from working-tree files.
 
 import { describe, expect, test } from 'bun:test';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -50,7 +51,9 @@ function cycle(index: number, shipped = false): CycleMetricsRow {
 }
 
 function seedIdleRepo(): { cwd: string; cycles: CycleMetricsRow[] } {
-	const cwd = createTestTmpdir('cam-web-idle-');
+	const root = createTestTmpdir('cam-web-idle-');
+	const cwd = join(root, 'repo');
+	mkdirSync(cwd, { recursive: true });
 	git(cwd, ['init', '-q', '--initial-branch=main']);
 	git(cwd, ['config', 'user.email', 'cam-test@example.com']);
 	git(cwd, ['config', 'user.name', 'Cam Test']);
@@ -73,6 +76,13 @@ function seedIdleRepo(): { cwd: string; cycles: CycleMetricsRow[] } {
 	}
 	git(cwd, ['add', '.']);
 	git(cwd, ['commit', '-q', '-m', 'seed backlog']);
+
+	// The snapshot derives the backlog from the runtime source ref, so the
+	// fixture publishes main to a remote and tracks it.
+	const remote = join(root, 'remote.git');
+	git(cwd, ['clone', '-q', '--bare', cwd, remote]);
+	git(cwd, ['remote', 'add', 'origin', remote]);
+	git(cwd, ['fetch', '-q', 'origin', '+refs/heads/main:refs/remotes/origin/main']);
 
 	const cycles = Array.from({ length: 7 }, (_, index) => cycle(index + 1, index === 5));
 	writeFileSync(
@@ -97,7 +107,7 @@ async function getSnapshot(cwd: string): Promise<Record<string, unknown>> {
 }
 
 describe('GET /api/snapshot idle state', () => {
-	test('adds the five newest cycles and the main-backed derived backlog when no PRD exists', async () => {
+	test('adds the five newest cycles and the source-ref-backed backlog when no PRD exists', async () => {
 		const { cwd, cycles } = seedIdleRepo();
 		const payload = await getSnapshot(cwd);
 		const idleState = payload['idleState'] as Record<string, unknown>;

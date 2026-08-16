@@ -63,21 +63,30 @@ export class GitWorkspaceManager implements RuntimeWorkspace {
 	readonly #projectRoot: string;
 	readonly #runGit: WorkspaceGitRunner;
 	readonly #runInstall: WorkspaceInstallRunner;
+	readonly #baseRef: string;
 
+	/**
+	 * @param baseRef Ref every run branch is cut from. Defaults to the local
+	 *                `main`; the web runtime passes its remote-tracking source
+	 *                ref so a run starts from the commit the remote published,
+	 *                not from whatever the local branch still points at.
+	 */
 	constructor(
 		projectRoot: string,
 		runGit: WorkspaceGitRunner = defaultRunGit,
 		runInstall: WorkspaceInstallRunner = defaultRunInstall,
+		baseRef = 'main',
 	) {
 		this.#projectRoot = resolve(projectRoot);
 		this.#runGit = runGit;
 		this.#runInstall = runInstall;
+		this.#baseRef = baseRef;
 	}
 
 	prepare(input: PrepareWorkspaceInput): string {
-		const main = this.#runGit(this.#projectRoot, ['rev-parse', '--verify', 'main']);
-		if (main.exitCode !== 0) {
-			throw new RuntimeWorkspaceError(`cannot resolve main: ${failureDetail(main)}`);
+		const base = this.#runGit(this.#projectRoot, ['rev-parse', '--verify', this.#baseRef]);
+		if (base.exitCode !== 0) {
+			throw new RuntimeWorkspaceError(`cannot resolve ${this.#baseRef}: ${failureDetail(base)}`);
 		}
 
 		const runSegment = safeSegment(input.runId, 'run');
@@ -99,7 +108,7 @@ export class GitWorkspaceManager implements RuntimeWorkspace {
 			'-b',
 			branch,
 			workspacePath,
-			'main',
+			this.#baseRef,
 		]);
 		if (added.exitCode !== 0) {
 			throw new RuntimeWorkspaceError(`cannot create run workspace: ${failureDetail(added)}`);

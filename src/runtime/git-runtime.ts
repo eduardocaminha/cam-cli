@@ -5,6 +5,7 @@ import process from 'node:process';
 import { getIssueOnMain } from '../commands/issue-get.ts';
 import { parseOracleDirective } from '../issues/oracle-directive.ts';
 import { terminateProcessGroup } from './process-group.ts';
+import { fetchRuntimeSource, RUNTIME_SOURCE_REF } from './source-ref.ts';
 import type { RuntimeVerificationResult, RuntimeVerifier } from './run-runtime.ts';
 
 const DEFAULT_TERMINATION_GRACE_MS = 1_000;
@@ -53,12 +54,12 @@ export function defaultRunGit(cwd: string, args: string[]): CommandResult {
 }
 
 function defaultIssueExists(cwd: string, issueId: string): boolean {
-	return getIssueOnMain(cwd, issueId).ok;
+	return getIssueOnMain(cwd, issueId, spawnSync, RUNTIME_SOURCE_REF).ok;
 }
 
 function defaultLoadIssue(cwd: string, issueId: string): string {
-	const issue = getIssueOnMain(cwd, issueId);
-	if (!issue.ok) throw new Error(`issue not found on main: ${issueId}`);
+	const issue = getIssueOnMain(cwd, issueId, spawnSync, RUNTIME_SOURCE_REF);
+	if (!issue.ok) throw new Error(`issue not found on ${RUNTIME_SOURCE_REF}: ${issueId}`);
 	return issue.content;
 }
 
@@ -182,6 +183,15 @@ function commandFailure(label: string, result: CommandResult): RuntimePreflightE
 	return new RuntimePreflightError(`${label}: ${detail}`);
 }
 
+/**
+ * Gate on a fresh source ref before a run is accepted.
+ *
+ * The refresh is fail-closed and happens first: a run admitted against a stale
+ * `origin/main` would read an issue the remote has already shipped and branch
+ * from a base commit the remote has already moved past. Only
+ * `refs/remotes/origin/main` is written -- the local `main` never moves, so a
+ * checked-out and dirty `main` in another worktree is unaffected.
+ */
 export function createGitRuntimePreflight(
 	cwd: string,
 	options: GitRuntimeOptions = {},
@@ -189,11 +199,17 @@ export function createGitRuntimePreflight(
 	const runGit = options.runGit ?? defaultRunGit;
 	const issueExists = options.issueExists ?? defaultIssueExists;
 	return (issueId) => {
-		if (!issueExists(cwd, issueId)) {
-			throw new RuntimePreflightError(`issue not found on main: ${issueId}`);
+		const fetched = fetchRuntimeSource(runGit, cwd);
+		if (fetched.exitCode !== 0) {
+			throw commandFailure(`cannot fetch ${RUNTIME_SOURCE_REF}`, fetched);
 		}
-		const main = runGit(cwd, ['rev-parse', '--verify', 'main']);
-		if (main.exitCode !== 0) throw commandFailure('cannot resolve main', main);
+		if (!issueExists(cwd, issueId)) {
+			throw new RuntimePreflightError(`issue not found on ${RUNTIME_SOURCE_REF}: ${issueId}`);
+		}
+		const source = runGit(cwd, ['rev-parse', '--verify', RUNTIME_SOURCE_REF]);
+		if (source.exitCode !== 0) {
+			throw commandFailure(`cannot resolve ${RUNTIME_SOURCE_REF}`, source);
+		}
 	};
 }
 

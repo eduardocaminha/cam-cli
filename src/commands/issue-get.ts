@@ -22,22 +22,26 @@ export type GetIssueOnMainOutcome =
 	| { ok: false; reason: 'not-found' };
 
 /**
- * Read a single issue's JSON blob from `main:scripts/cam/issues/<PREFIX>-NNNN.json`
- * via `git show`. Always reads from the `main` ref (never the working tree),
+ * Read a single issue's JSON blob from `<ref>:scripts/cam/issues/<PREFIX>-NNNN.json`
+ * via `git show`. Always reads from a committed ref (never the working tree),
  * matching the read-from-main invariant readBacklogFromMain establishes.
  *
  * @param cwd     Absolute path to the git repo root.
  * @param id      Issue id (e.g. 'CAM-42'); resolved to its zero-padded on-disk
  *                filename via issueFilePath (e.g. 'scripts/cam/issues/CAM-0042.json').
  * @param spawnFn Injectable spawnSync (defaults to node:child_process.spawnSync).
+ * @param ref     Ref to read from. Defaults to the local `main` every legacy
+ *                caller already relies on; the web runtime passes its own
+ *                remote-tracking source ref (RUNTIME_SOURCE_REF) instead.
  */
 export function getIssueOnMain(
 	cwd: string,
 	id: string,
 	spawnFn: BacklogSpawnFn = spawnSync,
+	ref = 'main',
 ): GetIssueOnMainOutcome {
 	const filePath = issueFilePath(id);
-	const result = spawnFn('git', ['-C', cwd, 'show', `main:${filePath}`], { encoding: 'utf8' });
+	const result = spawnFn('git', ['-C', cwd, 'show', `${ref}:${filePath}`], { encoding: 'utf8' });
 	if ((result.status ?? 1) !== 0) {
 		return { ok: false, reason: 'not-found' };
 	}

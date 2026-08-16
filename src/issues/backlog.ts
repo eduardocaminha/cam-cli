@@ -106,14 +106,14 @@ function parseBatchOutput(outputBytes: Buffer): string[] {
 // ---------------------------------------------------------------------------
 
 /**
- * Read all issue files from `main:scripts/cam/issues/` via:
- *   1. `git ls-tree -r --name-only main scripts/cam/issues/` -- enumerate paths.
- *   2. `git cat-file --batch` (stdin: one `main:<path>` per line) -- read blobs.
+ * Read all issue files from `<ref>:scripts/cam/issues/` via:
+ *   1. `git ls-tree -r --name-only <ref> scripts/cam/issues/` -- enumerate paths.
+ *   2. `git cat-file --batch` (stdin: one `<ref>:<path>` per line) -- read blobs.
  *
  * Parses each blob as an IssueEntry (unparseable entries are skipped silently).
  * Returns entries sorted numerically ascending by the id's numeric suffix.
  *
- * Always reads from the `main` ref (never the working tree), preserving the
+ * Always reads from a committed ref (never the working tree), preserving the
  * read-from-main cross-branch invariant.
  *
  * Fail-closed (US-001, CAM-307): throws if the `git cat-file --batch` spawn
@@ -123,15 +123,19 @@ function parseBatchOutput(outputBytes: Buffer): string[] {
  *
  * @param cwd   Absolute path to the git repo root.
  * @param spawn Injectable spawnSync (defaults to node:child_process.spawnSync).
+ * @param ref   Ref to read from. Defaults to the local `main` every legacy
+ *              caller already relies on; the web runtime passes its own
+ *              remote-tracking source ref (RUNTIME_SOURCE_REF) instead.
  */
 export function readBacklogFromMain(
 	cwd: string,
 	spawn: BacklogSpawnFn = spawnSync,
+	ref = 'main',
 ): IssueEntry[] {
-	// Step 1: enumerate paths under scripts/cam/issues/ on main.
+	// Step 1: enumerate paths under scripts/cam/issues/ on the source ref.
 	const lsResult = spawn(
 		'git',
-		['-C', cwd, 'ls-tree', '-r', '--name-only', 'main', 'scripts/cam/issues/'],
+		['-C', cwd, 'ls-tree', '-r', '--name-only', ref, 'scripts/cam/issues/'],
 		{ encoding: 'utf8' },
 	);
 	const paths = (lsResult.stdout ?? '')
@@ -144,7 +148,7 @@ export function readBacklogFromMain(
 	// Step 2: read ALL blobs in a single cat-file --batch call.
 	// maxBuffer is set to an ample 256 MiB so a growing backlog blob is never
 	// silently truncated at Node's 1 MiB spawnSync default.
-	const refs = paths.map((p) => `main:${p}`).join('\n');
+	const refs = paths.map((p) => `${ref}:${p}`).join('\n');
 	const catResult = spawn(
 		'git',
 		['-C', cwd, 'cat-file', '--batch'],

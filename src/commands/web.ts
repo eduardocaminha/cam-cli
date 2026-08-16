@@ -4,6 +4,7 @@
 // read-only; explicit command routes delegate to the durable local runtime.
 // Routing stays in Bun.serve's native `routes` table.
 
+import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
@@ -15,6 +16,7 @@ import { ClaudeCliReviewer } from '../runtime/claude-cli-reviewer.ts';
 import { createGitRuntimePreflight, GitIssueVerifier, RuntimePreflightError } from '../runtime/git-runtime.ts';
 import { GitWorkspaceManager, RuntimeWorkspaceError } from '../runtime/git-workspace.ts';
 import { GithubShipper } from '../runtime/github-shipper.ts';
+import { RUNTIME_SOURCE_REF } from '../runtime/source-ref.ts';
 import {
 	RunRuntime,
 	type RunRuntimeOptions,
@@ -428,10 +430,19 @@ function readRecentCycles(cwd: string): CycleMetricsRow[] {
 	}
 }
 
+/**
+ * Derive the idle backlog from the runtime source ref, the same ref a new run
+ * is admitted against: an issue a merge already shipped stops being plannable
+ * here even while the local `main` is deliberately behind.
+ *
+ * This is a pure ref read, never a fetch. Refreshing the source ref belongs to
+ * the start of a run and to the terminal of a ship, not to a route the browser
+ * polls.
+ */
 function readIdleSnapshotState(cwd: string): IdleSnapshotState {
 	let backlog: BacklogJsonView;
 	try {
-		backlog = deriveBacklogJson(readBacklogFromMain(cwd));
+		backlog = deriveBacklogJson(readBacklogFromMain(cwd, spawnSync, RUNTIME_SOURCE_REF));
 	} catch {
 		backlog = deriveBacklogJson([]);
 	}
@@ -452,7 +463,7 @@ export function createDefaultRunRuntimeOptions(cwd: string): RunRuntimeOptions {
 		reviewer: new ClaudeCliReviewer(),
 		shipper: new GithubShipper(),
 		preflight: createGitRuntimePreflight(cwd),
-		workspace: new GitWorkspaceManager(cwd),
+		workspace: new GitWorkspaceManager(cwd, undefined, undefined, RUNTIME_SOURCE_REF),
 	};
 }
 

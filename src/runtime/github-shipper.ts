@@ -13,6 +13,9 @@
 //     made (nothing staged, no second commit) and the pull request already open
 //     for the branch (`gh pr list --head`), so retrying after a GitHub or CI
 //     failure never duplicates either.
+//   * Once GitHub confirms the merge, the runtime source ref is refreshed
+//     before the ship reports merged, so the next run starts from the commit
+//     this one landed. That refresh writes `refs/remotes/origin/main` only.
 //
 // Auto-merge is armed with `--match-head-commit <sha>`, the exact commit we
 // pushed: if the branch moves outside the service before CI goes green, GitHub
@@ -28,6 +31,7 @@ import process from 'node:process';
 import { issueFilePath } from '../issues/backlog.ts';
 import { type CommandResult, runOwnedCommand } from './git-runtime.ts';
 import type { RuntimeShipInput, RuntimeShipper, RuntimeShipResult } from './run-runtime.ts';
+import { RUNTIME_SOURCE_REF, runtimeSourceFetchArgs } from './source-ref.ts';
 
 /** How often the merge monitor asks GitHub whether the pull request landed. */
 const DEFAULT_POLL_INTERVAL_MS = 10_000;
@@ -230,7 +234,7 @@ export class GithubShipper implements RuntimeShipper {
 		input.emit('ship.pushed', { branch, headSha });
 
 		const pullRequest = await this.#resolvePullRequest(input, branch, issue.title, headSha);
-		const settled = this.#settledPullRequest(input, pullRequest, headSha);
+		const settled = await this.#settledPullRequest(input, pullRequest, headSha);
 		if (settled !== null) return settled;
 
 		const prNumber = pullRequest.number;
@@ -251,11 +255,11 @@ export class GithubShipper implements RuntimeShipper {
 	 * timeout, a cancel, a restart mid-ship), so a retry has to recognise its
 	 * own merged pull request instead of opening a second, zero-diff one.
 	 */
-	#settledPullRequest(
+	async #settledPullRequest(
 		input: RuntimeShipInput,
 		pullRequest: ExistingPullRequest,
 		headSha: string,
-	): RuntimeShipResult | null {
+	): Promise<RuntimeShipResult | null> {
 		if (pullRequest.state === 'MERGED') {
 			if (pullRequest.headRefOid !== headSha) {
 				return {
@@ -263,8 +267,7 @@ export class GithubShipper implements RuntimeShipper {
 					detail: `pull request #${pullRequest.number} merged ${pullRequest.headRefOid}, not the head ${headSha} this run just published`,
 				};
 			}
-			input.emit('ship.merged', { prNumber: pullRequest.number });
-			return { outcome: 'merged', prNumber: pullRequest.number };
+			return await this.#merged(input, pullRequest.number);
 		}
 		if (pullRequest.state === 'CLOSED') {
 			return {
@@ -273,6 +276,31 @@ export class GithubShipper implements RuntimeShipper {
 			};
 		}
 		return null;
+	}
+
+	/**
+	 * The single exit for a merged pull request: refresh the runtime source ref
+	 * so the merge this ship just landed is visible to whatever asks next, then
+	 * report merged.
+	 *
+	 * Reporting merged before the refresh would tell the service the backlog
+	 * moved while its own source ref still offered the issue as plannable, so a
+	 * failed refresh keeps the run retryable instead. Everything before this
+	 * point is already idempotent, so the retry re-runs only the sync: it
+	 * recognises its own merged pull request and duplicates neither commit nor
+	 * pull request.
+	 */
+	async #merged(input: RuntimeShipInput, prNumber: number): Promise<RuntimeShipResult> {
+		const fetched = await this.#run(input, 'git', runtimeSourceFetchArgs());
+		if (fetched.exitCode !== 0) {
+			return {
+				outcome: 'failed',
+				detail: `pull request #${prNumber} merged, but ${RUNTIME_SOURCE_REF} could not be refreshed: ${failureDetail(fetched)}`,
+			};
+		}
+		input.emit('ship.source-synced', { prNumber, ref: RUNTIME_SOURCE_REF });
+		input.emit('ship.merged', { prNumber });
+		return { outcome: 'merged', prNumber };
 	}
 
 	/**
@@ -326,10 +354,7 @@ export class GithubShipper implements RuntimeShipper {
 			const view = parsePullRequestView(await this.#checked(input, 'gh', [
 				'pr', 'view', String(prNumber), '--json', 'state,mergeStateStatus',
 			]));
-			if (view.state === 'MERGED') {
-				input.emit('ship.merged', { prNumber });
-				return { outcome: 'merged', prNumber };
-			}
+			if (view.state === 'MERGED') return await this.#merged(input, prNumber);
 			if (view.state === 'CLOSED') {
 				return {
 					outcome: 'failed',

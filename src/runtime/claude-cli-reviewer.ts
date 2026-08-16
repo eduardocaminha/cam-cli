@@ -32,12 +32,14 @@
 // The reviewer therefore cannot run `git diff` itself: the service collects
 // the change with its own git seam and passes it in the prompt.
 
+import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import process from 'node:process';
 
 import { getIssueOnMain } from '../commands/issue-get.ts';
 import { buildClaudeEnv, runClaudeCli } from './claude-cli-process.ts';
 import { defaultRunGit, type GitCommandRunner } from './git-runtime.ts';
+import { RUNTIME_SOURCE_REF } from './source-ref.ts';
 import type {
 	RuntimeExecutionInput,
 	RuntimeReviewer,
@@ -104,8 +106,8 @@ export function buildReviewerCliArgv(input: ReviewerInvocation): string[] {
 }
 
 function defaultLoadIssue(cwd: string, issueId: string): string {
-	const issue = getIssueOnMain(cwd, issueId);
-	if (!issue.ok) throw new Error(`issue not found on main: ${issueId}`);
+	const issue = getIssueOnMain(cwd, issueId, spawnSync, RUNTIME_SOURCE_REF);
+	if (!issue.ok) throw new Error(`issue not found on ${RUNTIME_SOURCE_REF}: ${issueId}`);
 	return issue.content;
 }
 
