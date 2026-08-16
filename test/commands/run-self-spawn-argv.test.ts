@@ -6,9 +6,9 @@
 // binary whose code disagrees with the branch that spawned it).
 //
 // Each site is now a PURE, injectable argv builder (execPath, argv1) => argv,
-// reusing resolveSelfInvokeArgv exactly as forkMonitor already does
-// (src/retry/launcher.ts:242): spread it, then append the subcommand. This
-// test asserts REAL argv shape (never "the mock was called") for all five
+// reusing the shared resolveSelfInvokeArgv primitive: spread it, then append
+// the subcommand. This test asserts REAL argv shape (never "the mock was
+// called") for all five
 // sites:
 //   1. buildDashboardRespawnArgv  - dashboard tmux respawn-pane argv (run.ts)
 //   2. buildSidecarSpawnArgv      - sidecar Bun.spawn argv (run.ts)

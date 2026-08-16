@@ -2,8 +2,7 @@
 //
 // Single source of truth for per-phase model selection and backend choice.
 // Values are read from `scripts/cam/project.toml` (project-scoped, resolved
-// from cwd). There is no per-user config surface: `~/.config/cam/` holds
-// only `retry.toml`, written and read by `src/retry/config.ts`.
+// from cwd). Gateship has no per-user configuration surface.
 //
 // The default values below are applied when the config file is missing, when a
 // section or key is absent, when the file is malformed TOML, or when the value

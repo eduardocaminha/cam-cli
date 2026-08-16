@@ -30,7 +30,7 @@ Workers (implementer and reviewer) run as interactive TUI `claude` sessions. Eac
 
 The orchestrator receives the pushed narration line and can read the report file for details. Scrollback polling is **not** used for completion detection.
 
-**Stop-hook driver is retired.** The old model (a vendored Stop hook injecting `/cam-next` on each assistant turn) is gone. `claude -p` (print mode) is not used for workers; it is reserved for the `gship claude` retry-wrapper feature.
+**Stop-hook driver is retired.** The old model (a vendored Stop hook injecting `/cam-next` on each assistant turn) is gone. Default legacy workers remain interactive TUI sessions. The web runtime and explicit `gship next --headless` path own direct `claude --print` execution.
 
 ---
 

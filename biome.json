@@ -138,26 +138,6 @@
       }
     },
     {
-      "includes": ["src/retry/monitor.ts"],
-      "linter": {
-        "rules": {
-          "complexity": {
-            "noExcessiveCognitiveComplexity": "off"
-          }
-        }
-      }
-    },
-    {
-      "includes": ["src/retry/time-parser.ts"],
-      "linter": {
-        "rules": {
-          "complexity": {
-            "noExcessiveCognitiveComplexity": "off"
-          }
-        }
-      }
-    },
-    {
       "includes": ["src/supervisor/host.ts"],
       "linter": {
         "rules": {

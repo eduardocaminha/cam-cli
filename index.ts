@@ -88,10 +88,8 @@ import { runStatsTokens, runStatsCycles } from './src/commands/stats.ts';
 import { runStop } from './src/commands/stop.ts';
 import { runDrain, parseDrainArgs } from './src/commands/drain.ts';
 import { runPause, parsePauseArgs } from './src/commands/pause.ts';
-import { runClaude, parseClaudeArgs, CLAUDE_HELP } from './src/commands/claude.ts';
 import { runConfig } from './src/commands/config.ts';
 import { DEFAULT_WEB_PORT, runWeb } from './src/commands/web.ts';
-import { runRetryMonitor, parseRetryMonitorArgs, RETRY_MONITOR_HELP } from './src/commands/retry-monitor.ts';
 import { runSidecar } from './src/commands/sidecar.ts';
 import { runOrchRecycleWatch } from './src/commands/orch-recycle-watch.ts';
 import { runSidecarLivenessWatch } from './src/commands/sidecar-liveness-watch.ts';
@@ -137,7 +135,6 @@ const HELP = renderHelp({
 				{ name: 'journal append', description: 'Append a structured cycle entry to scripts/cam/journal.md on main' },
 				{ name: 'journal archive', description: 'Archive the oldest third of the legacy journal after its threshold' },
 				{ name: 'patterns archive|prune', description: 'archive: move resolved-marked bullets from patterns.md to patterns.archive.md on main. prune: demote/archive stale or unconfirmed scripts/cam/pattern-records.jsonl entries on main' },
-				{ name: 'claude [args...]', description: 'Run claude in print mode with auto-retry on rate limits' },
 				{ name: 'prune [--force]', description: 'Deterministic branch cleanup after a PR is merged or abandoned' },
 				{ name: 'version', description: 'Print the installed Gateship version (also `--version` / `-v`)' },
 				{ name: 'help', description: 'Show this help' },
@@ -209,9 +206,6 @@ const INIT_HELP = renderHelp({
 				'Stage 1 — Machine validation:\n' +
 				'  1. Checks `claude` is on PATH and logged in.\n' +
 				'  2. Runs vendored smokes (check-agent-frontmatter).\n' +
-				'  3. Writes ~/.config/cam/retry.toml with the built-in retry policy defaults\n' +
-				'     (first run only; existing file is preserved). Edit this file to tune\n' +
-				'     max attempts, rate-limit patterns, and the retry log retention window.\n' +
 				'\n' +
 				'Stage 2 — Project setup wizard (if stage 1 passes):\n' +
 				'  1. Asks: new project or existing?\n' +
@@ -223,10 +217,6 @@ const INIT_HELP = renderHelp({
 				'  7. Returns to the web-first flow; run `gship` to open the local UI.',
 		},
 	],
-	footer:
-		'Note: auto-retry on rate limits is built into gship — no external tool required.\n' +
-		'Rate-limit retry config: ~/.config/cam/retry.toml\n' +
-		'Retry logs:             ~/.cam/retry-logs/',
 });
 
 const RUN_HELP = renderHelp({
@@ -879,10 +869,6 @@ const RESUME_HELP = renderHelp({
 			entries: [
 				{ name: 'idle', description: 'No state file → run `gship next` to start fresh' },
 				{
-					name: 'noop',
-					description: 'retry-monitor alive (PID from ~/.cam/retry.pid) — loop will resume on its own',
-				},
-				{
 					name: 'respawn',
 					description: 'State file + heartbeat dead + recent commit (≤24h) → re-spawn `gship next`',
 				},
@@ -946,7 +932,7 @@ const DECIDE_HELP = renderHelp({
 				'   deterministically on its next poll.',
 		},
 	],
-	footer: 'Distinct from `gship resume` (4-mode interrupt recovery) -- this resolves a live operator-decision gate.',
+	footer: 'Distinct from `gship resume` (interrupt recovery) -- this resolves a live operator-decision gate.',
 });
 
 const PRUNE_HELP = renderHelp({
@@ -2766,8 +2752,8 @@ export function dispatchTriage(deps?: TriageDispatchDeps): number {
 /**
  * Single source of truth for the CLI's command set (US-001, CAM-278).
  * Every command dispatched by `main()` — including the internal/hidden ones
- * spawned by `cam run` (sidecar, orch-recycle-watch, sidecar-liveness-watch,
- * retry-monitor) — MUST be listed here exactly once. `HELP_REGISTRY` and the
+ * spawned by `gship run` (sidecar, orch-recycle-watch and
+ * sidecar-liveness-watch) — MUST be listed here exactly once. `HELP_REGISTRY` and the
  * dispatch `switch` below are both typed against `Command`, so adding a
  * command to `COMMANDS` without a matching `HELP_REGISTRY` entry or switch
  * case now fails `bun run typecheck` instead of silently re-opening the
@@ -2797,11 +2783,9 @@ const COMMANDS = [
 	'resume',
 	'decide',
 	'prune',
-	'claude',
 	'sidecar',
 	'orch-recycle-watch',
 	'sidecar-liveness-watch',
-	'retry-monitor',
 	'journal',
 	'patterns',
 	'triage',
@@ -2852,11 +2836,9 @@ const HELP_REGISTRY: Record<Command, string> = {
 	resume: RESUME_HELP,
 	decide: DECIDE_HELP,
 	prune: PRUNE_HELP,
-	claude: CLAUDE_HELP,
 	sidecar: SIDECAR_HELP,
 	'orch-recycle-watch': ORCH_RECYCLE_WATCH_HELP,
 	'sidecar-liveness-watch': SIDECAR_LIVENESS_WATCH_HELP,
-	'retry-monitor': RETRY_MONITOR_HELP,
 	journal: JOURNAL_HELP,
 	patterns: PATTERNS_HELP,
 	triage: TRIAGE_HELP,
@@ -2865,17 +2847,10 @@ const HELP_REGISTRY: Record<Command, string> = {
 
 /**
  * Decide whether a `--help`/`-h` in `tail` (argv after the command name)
- * short-circuits the given command. Every command matches anywhere-in-tail
- * (mirrors the per-command parsers this guard supersedes), EXCEPT `claude`:
- * `cam claude` forwards all args verbatim to the child claude process and
- * only treats a LEADING --help/-h as its own (see parseClaudeArgs in
- * src/commands/claude.ts) — a blanket anywhere-match here would over-capture
- * a `--help` the operator meant to forward to claude itself (US-001 AC5).
+ * short-circuits the given command. Every command matches anywhere-in-tail,
+ * mirroring the per-command parsers this guard supersedes.
  */
-export function isHelpRequested(command: string, tail: string[]): boolean {
-	if (command === 'claude') {
-		return tail[0] === '--help' || tail[0] === '-h';
-	}
+export function isHelpRequested(_command: string, tail: string[]): boolean {
 	return tail.includes('--help') || tail.includes('-h');
 }
 
@@ -3226,16 +3201,6 @@ async function main(argv: string[]): Promise<number> {
 			}
 			return runPrune({ force: parsed.force });
 		}
-		case 'claude': {
-			const parsed = parseClaudeArgs(argv.slice(3));
-			// `parsed.help` is unreachable here: the central --help guard above
-			// already intercepted a leading --help/-h before this switch ran.
-			// This narrowing check only satisfies parseClaudeArgs's
-			// discriminated-union type (forwardedArgs is absent on the help
-			// branch) — it no longer writes the help text itself.
-			if (parsed.help) return 0;
-			return runClaude({ args: parsed.forwardedArgs });
-		}
 		// Internal subcommand — not listed in top-level HELP.
 		// Spawned as a detached background process by cam run (US-FIX-002).
 		// Polls the active flag in .claude/cam-loop.local.md and calls
@@ -3264,21 +3229,6 @@ async function main(argv: string[]): Promise<number> {
 		case 'sidecar-liveness-watch': {
 			await runSidecarLivenessWatch();
 			return 0;
-		}
-		// Internal subcommand — not listed in top-level HELP.
-		// Forked as a detached background process by forkMonitor() when running
-		// inside a tmux session.
-		case 'retry-monitor': {
-			const parsed = parseRetryMonitorArgs(argv.slice(3));
-			if (parsed === null) {
-				printFatalHint('run `gship retry-monitor --help` for usage');
-				return 1;
-			}
-			if (parsed.help) {
-				process.stdout.write(RETRY_MONITOR_HELP);
-				return 0;
-			}
-			return runRetryMonitor({ pane: parsed.pane, pid: parsed.pid });
 		}
 		case 'journal': {
 			const parsed = parseJournalArgs(argv.slice(3));

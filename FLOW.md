@@ -25,8 +25,7 @@ Inventário rápido de quem renderiza o quê:
 | `cam dashboard` | Ink (alt-screen) | TUI read-only; pane 0.1 permanente na sessão |
 | `cam status` | print path | idle / active / paused |
 | `cam stop` | print path | cleanup |
-| `cam resume` | print path + `promptSelect` (Ink) | summary + 5 modos auto + 3 modos reset |
-| `cam claude` | print path + retry-monitor | print mode com retry de rate-limit |
+| `cam resume` | print path + `promptSelect` (Ink) | recuperação automática + 3 modos reset |
 
 ---
 
@@ -98,7 +97,7 @@ flowchart TD
     INK --> CHECKS
     LIN --> CHECKS
 
-    CHECKS["checa: claude no PATH + versao,<br/>smokes vendados, escreve config.toml,<br/>escreve retry.toml na 1a vez"]
+    CHECKS["checa: claude no PATH + versao,<br/>smokes vendados, escreve config.toml"]
     CHECKS --> PASS1{"validacao passou?"}
     PASS1 -->|nao| FAIL1["erro em stderr"]
     FAIL1 --> EXITN(["exit != 0, para aqui"])
@@ -135,14 +134,11 @@ da sessão é estável por projeto (`cam-orch-<basename>-<hash>`). Se a sessão 
 o comando anexa ou faz `switch-client` (dentro do tmux). Se não existe, cria com 3 panes.
 
 Todos os comandos de sessão do cam usam o socket dedicado `tmux -L cam`, isolado
-do socket padrão do tmux. Esse isolamento evita colisão com sessões acumuladas
-(ex: `claude-retry-*` do claude-auto-retry) e protege contra um problema específico
+do socket padrão do tmux. Esse isolamento evita colisão com sessões do usuário
+e protege contra um problema específico
 do macOS: um servidor tmux deixado por uma sessão de segurança morta nega acesso TCC
 a `~/Documents`, causando falha silenciosa do Claude Code. Com `tmux -L cam`, o cam
 sempre parte de um servidor limpo com o contexto de segurança correto para o login atual.
-
-Exceção intencional: `cam claude` e `cam retry-monitor` ficam no socket ambiente do
-usuário, pois monitoram o pane interativo do usuário, nao a sessao do workspace do cam.
 
 ```mermaid
 flowchart TD
@@ -292,8 +288,8 @@ pane: e um thin-proxy que liga `active:true` para disparar o SIDECAR.)
 ## 5. cam resume (arvore de recuperacao)
 
 `cam resume` reconcilia o estado depois de uma interrupção. Sem `--mode`, ele
-classifica automaticamente lendo três fontes (state file, prd.json, último commit
-+ PIDs vivos) e cai num de cinco modos. Com `--mode`, pula a classificação e faz
+classifica automaticamente lendo o state file, `prd.json`, último commit, PID do
+supervisor e marker do worker. Com `--mode`, pula a classificação e faz
 um reset explícito. A ordem de classificação importa e está no diagrama.
 
 ```mermaid
@@ -307,15 +303,15 @@ flowchart TD
     C1 -->|nao| C2{"tem state file?"}
     C2 -->|nao| IDLE["idle:<br/>Next: cam next"]
     IDLE --> E0b(["exit 0"])
-    C2 -->|sim| C3{"retry-monitor vivo?"}
-    C3 -->|sim| NOOP["noop:<br/>retry-monitor respawna sozinho"]
-    NOOP --> E0c(["exit 0"])
-    C3 -->|nao| C4{"PID do loop vivo?"}
-    C4 -->|sim| RESPAWN1["respawn:<br/>Next: cam next re-attach"]
+    C2 -->|sim| C3{"PID do supervisor vivo?"}
+    C3 -->|sim| LIVE["live-supervisor:<br/>nenhuma acao"]
+    LIVE --> E0c(["exit 0"])
+    C3 -->|nao| C4{"pane do worker vivo?"}
+    C4 -->|sim| ORPHAN["orphaned-worker:<br/>Next: cam next relanca supervisor"]
+    ORPHAN --> E0d(["exit 0"])
     C4 -->|nao| C5{"ultimo commit > 24h<br/>ou desconhecido?"}
-    C5 -->|nao| RESPAWN2["respawn:<br/>terminal fechou / reboot recente"]
-    RESPAWN1 --> E0d(["exit 0"])
-    RESPAWN2 --> E0d
+    C5 -->|nao| RESPAWN["respawn:<br/>terminal fechou / reboot recente"]
+    RESPAWN --> E0d
     C5 -->|sim| PROMPT["prompt [Y/n/reset]<br/>orfao de hard-kill"]
 
     PROMPT --> P{"resposta"}
@@ -432,21 +428,20 @@ spawnado pelo `cam run`) itera internamente. A cada volta chama `decideNextActio
 despacha o worker certo (implementer ou reviewer, sessao claude TUI no pane reusado),
 aguarda o push-report-file (`scripts/cam/worker-report.json`) que o worker escreve ao
 terminar, le o desfecho e repete, ate o estado terminal ou o teto `max_iterations`.
-O desfecho e state-primary (CAM-32): `handoff.json` (qual historia) + `prd.json`
+No runner legado, o desfecho e state-primary (CAM-32): `handoff.json` (qual historia) + `prd.json`
 `passes:true` (feito) sao autoritativos; o sentinel `CAM_*_STATUS` no scrollback e
 so corroboracao/fallback, nunca gate primario -- o gate primario e o report-file.
-A alternativa de eventos estruturados via `-p --output-format stream-json
---include-hook-events` e deliberadamente NAO usada, porque `claude -p` e proibido em
-contas de subscricao (CAM-42): o sinal estruturado vive nos arquivos de estado em disco
-(`handoff.json` / `prd.json`), nao num stream de eventos.
+Esse caminho tmux não usa eventos estruturados. O runtime web e o opt-in headless
+executam a CLI diretamente com `--print --output-format stream-json` e recebem,
+inclusive, os eventos nativos de rate limit usando a autenticação da assinatura.
 
 ---
 
 ## 8. State machine do loop (e como stop / resume / status se ligam a ele)
 
 Tudo gira em torno de um arquivo: `.claude/cam-loop.local.md`. Sua presença e o campo
-`active` definem o estado que `cam status` reporta, e o trio PID + último commit +
-retry-monitor define o que `cam resume` decide.
+`active` definem o estado que `cam status` reporta; PID do supervisor, marker do
+worker e último commit completam a decisão de `cam resume`.
 
 ```mermaid
 stateDiagram-v2
@@ -479,10 +474,6 @@ Quem mexe em quê:
 - **`cam stop`** remove o state file e mata a sessão tmux `cam` (Active/Paused para Idle); idempotente.
 - **`cam resume`** age sobre o Orphan (PID morto + file presente), escolhendo respawn,
   reset, ou abortar conforme idade do último commit e resposta do operador.
-- **`cam claude` / retry-monitor** registra seu PID em `~/.cam/retry.pid`; é isso que
-  faz `cam resume` cair em `noop` (o monitor respawna o loop quando a janela de
-  rate-limit fecha).
-
 ---
 
 ## 9. supervisor/dispatch (CAM-55: tres decisoes arquiteturais)

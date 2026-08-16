@@ -21,9 +21,8 @@
 //     src/transcript/usage.ts), and tracks the last sample per session uuid so
 //     poll loops (US-003, US-005) can call it once per interval.
 //
-// Transient-API-error recognition is intentionally local to this module (a
-// small literal/regex set) rather than importing src/retry/patterns.ts
-// (CAM-435 is the tracked follow-up for unifying the two; out of scope here).
+// Transient-API-error recognition is intentionally local to this module: it
+// protects legacy worker startup and is unrelated to runtime retry policy.
 
 import { readFileSync } from 'node:fs';
 
@@ -116,9 +115,8 @@ export function extractLastAssistantEntry(jsonl: string): LastAssistantEntry | n
 }
 
 /**
- * Small, locally-owned set of markers for a transient (retry-worthy) upstream
- * API error, matched against the last assistant entry's verbatim text. Kept
- * separate from src/retry/patterns.ts (CAM-435, out of scope for this story).
+ * Small, locally-owned set of markers for a transient upstream API error,
+ * matched against the last assistant entry's verbatim text.
  */
 const TRANSIENT_API_ERROR_TEXT_RE = /^API Error:.*(5\d{2}|overloaded|rate.?limit|timeout|ECONNRESET|socket hang up)/is;
 

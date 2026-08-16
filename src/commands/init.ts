@@ -19,9 +19,9 @@ import { Box, render } from 'ink';
 import { createElement } from 'react';
 
 import { printError, printHint, printSuccess, printWarning } from '../logging/color.ts';
-import { materializeEmbedded, type EmbeddedKey } from '../vendor/embedded.ts';
-import { InitScreen, type CheckDef, type CheckOutcome } from '../ui/InitScreen.tsx';
+import { type CheckDef, type CheckOutcome, InitScreen } from '../ui/InitScreen.tsx';
 import { Splash } from '../ui/Splash.tsx';
+import { type EmbeddedKey, materializeEmbedded } from '../vendor/embedded.ts';
 import { CAM_VERSION } from '../version.ts';
 
 // --- Constants -------------------------------------------------------------
@@ -144,7 +144,7 @@ function validateClaude(spawnFn: SpawnFn = defaultSpawnFn): ValidationResult {
 		return {
 			ok: true,
 			message: `Claude found at ${path} (version ${detectedVersion}, < floor ${CLAUDE_VERSION_FLOOR})`,
-			hint: 'Older Claude Code may have different rate-limit message formatting; consider `claude update`',
+			hint: 'Older Claude Code may not support the runtime flags Gateship uses; consider `claude update`',
 		};
 	}
 	return {

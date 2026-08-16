@@ -11,7 +11,7 @@ per-story handoff (handoff.json), this knowledge persists.
 
 - **Permission mode**: never register a `--permission-mode` CLI flag on any subcommand (enforced by `test/no-permission-mode-flag.test.ts`). It is forwarded only to the spawned `claude` process.
 
-- **claude -p is forbidden** (subscription rule, CAM-42): workers are interactive TUI `claude` sessions detected by polling `capture-pane` for the sentinel; never reintroduce `-p` in a worker argv (tests assert its absence). `claude -p` survives only in the separate `cam claude` retry wrapper.
+- **Direct Claude CLI execution is scoped, not globally forbidden** (CAM-42 superseded by ADR-0059/CAM-516): the legacy tmux worker path remains interactive, while `gship next --headless` and the web runtime own `claude --print --output-format stream-json` execution using subscription authentication. The former `gship claude` retry wrapper was removed; rate-limit state comes from the CLI's native `rate_limit_event`.
 
 - **noUncheckedIndexedAccess**: array indexing and regex capture groups are `T | undefined`. Guard with `?? fallback` or a justified non-null assertion.
 

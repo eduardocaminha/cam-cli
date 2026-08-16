@@ -238,11 +238,9 @@ private/unpublished. It has carried a public description, topics, and CI
 plus branch protection as a deliberate, tracked operator decision since
 mid-2026, not an oversight. The root `LICENSE` file is a valid MIT
 license (`Copyright (c) 2026 Eduardo Caminha`), correctly detected by
-GitHub's own license API (`license.key: "mit"`). Third-party attribution
-for the one vendored dependency this codebase carries (`src/retry/*`,
-ported from the MIT-licensed claude-auto-retry project) is properly
-recorded in `LICENSES/claude-auto-retry-MIT.txt` and cross-linked twice
-from `README.md` plus the top-level License section. Separately,
+GitHub's own license API (`license.key: "mit"`). The former port of
+`claude-auto-retry` has since been removed together with `src/retry/*`;
+the repository no longer distributes that third-party source. Separately,
 `claude-code-harness/` (a local, reference-only checkout of Claude Code's
 own source used for behavior-parity comparisons, see `HANDOFF.md`) is
 listed in `.gitignore`, confirmed absent from git history, and confirmed

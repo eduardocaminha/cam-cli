@@ -199,11 +199,10 @@ describe('runResume — clears the pause marker (US-001, CAM-360)', () => {
 			const originalWrite = process.stdout.write.bind(process.stdout);
 			process.stdout.write = (() => true) as typeof process.stdout.write;
 			try {
-				const code = await runResume({
-					cwd: dir,
-					spawnFn: fakeSpawn,
-					retryMonitorFn: () => false,
-				});
+					const code = await runResume({
+						cwd: dir,
+						spawnFn: fakeSpawn,
+					});
 				expect(code).toBe(0);
 			} finally {
 				process.stdout.write = originalWrite;
@@ -224,11 +223,10 @@ describe('runResume — clears the pause marker (US-001, CAM-360)', () => {
 			const originalWrite = process.stdout.write.bind(process.stdout);
 			process.stdout.write = (() => true) as typeof process.stdout.write;
 			try {
-				const code = await runResume({
-					cwd: dir,
-					spawnFn: fakeSpawn,
-					retryMonitorFn: () => false,
-					dryRun: true,
+					const code = await runResume({
+						cwd: dir,
+						spawnFn: fakeSpawn,
+						dryRun: true,
 				});
 				expect(code).toBe(0);
 			} finally {

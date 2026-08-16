@@ -2,7 +2,7 @@
 //
 // Shared helpers for the "title + Section + indented content" hierarchy used
 // across cam's non-Ink screens (`cam run`, `cam status`, `cam next`, `cam plan`,
-// `cam resume`, `cam claude`). The layout mirrors the Ink `Section` component
+// `cam resume`). The layout mirrors the Ink `Section` component
 // in `src/ui/Section.tsx` and the help renderer in `src/logging/help.ts`:
 //
 //   cam <command>                                   ← title at col 0
@@ -21,8 +21,8 @@
 // can import the helpers without dragging in extra modules.
 
 import { DIVIDER, glyphs, layout } from "../design/tokens.ts";
+import { type Env, isInsideProjectSession } from "../tmux/session.ts";
 import { accent, chalk, muted, warning } from "./color.ts";
-import { isInsideProjectSession, type Env } from "../tmux/session.ts";
 
 /** Heading column (col 2) and content column (col 4), from the shared tokens. */
 const HEAD_INDENT = " ".repeat(layout.headingIndent);
