@@ -99,7 +99,7 @@ function publishShip(author: string, file: string, id: string): void {
 }
 
 async function idleBacklog(cwd: string): Promise<Record<string, unknown>> {
-	const handle = startWebServer({ port: 0, cwd, claudeDir: join(cwd, 'claude-home') });
+	const handle = startWebServer({ port: 0, cwd });
 	try {
 		const response = await fetch(`http://${handle.hostname}:${handle.port}/api/snapshot`);
 		expect(response.status).toBe(200);

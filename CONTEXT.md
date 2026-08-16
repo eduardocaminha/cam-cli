@@ -591,7 +591,7 @@ For a divergence that should not exist, the decision of which side is current an
 Posicao de leitura que um cliente da superficie web carrega para retomar o stream de eventos sem perder nem duplicar. Composto por offset de byte no event log append-only mais uma identidade do arquivo, de modo que truncamento ou substituicao do log provoque reset em vez de leitura a partir de offset invalido.
 
 **estado idle**:
-Um dos dois estados da tela web. Vigora quando nao ha ciclo ativo, condicao em que prd.json nao existe. Responde o que aconteceu por ultimo e o que vem a seguir, a partir de cycle-metrics.jsonl e do backlog, em vez de renderizar a view de ciclo ativo vazia.
+Estado da tela web em que nenhum ciclo legado esta ativo, condicao indicada pela ausencia de prd.json. Publica somente o backlog necessario para escolher o proximo run. O historico do runtime vem da store duravel e de /api/runs; cycle-metrics.jsonl pertence ao dashboard legado e nao e projetado pela rota web.
 
 **idade do dado**:
 Tempo decorrido desde o ultimo snapshot recebido, calculado pelo relogio do CLIENTE e nao do servidor. Existe para tornar visivel qualquer falha de entrega: servidor caido, loop parado ou leitura periodica interrompida aparecem como dado velho, em vez de uma tela congelada que parece viva. Definicao corrigida em 2026-08-13: a versao anterior dizia ultimo EVENTO recebido, formulada quando a superficie web ainda previa stream; o stream foi cortado pela emenda 3 de 2026-08-13 e a leitura passou a ser periodica, entao a ancora do calculo e o snapshot.
@@ -687,7 +687,7 @@ Decorrido entre o instante em que o cliente recebeu o ultimo snapshot com sucess
 Decorrido entre lastActivity e o nowMs do servidor, ambos vindos de dentro do snapshot. Detecta loop travado enquanto os snapshots continuam chegando normalmente. E defeito distinto da idade de transporte, e um numero so deixa um dos dois silencioso.
 
 **paridade por construcao**:
-Propriedade em que a rota web chama o mesmo readSnapshot exportado que o pane consome e serializa o resultado omitindo chaves, em vez de reproduzir os blocos do pane. Fixada pela emenda 6 de 2026-08-13. Tem duas excecoes estruturais medidas: as duas superficies de custo em token do pane e a ausencia de contrapartida do idleState.
+Estrategia historica em que a rota web chamava o mesmo readSnapshot exportado que o pane e serializava o resultado omitindo chaves. Foi retirada quando a superficie web ganhou runtime duravel proprio: manter a projecao inteira do pane para um cliente que consumia somente o backlog acoplava a nova arquitetura ao dashboard/tmux sem entregar funcao. Equivalencia passa a ser medida por capacidade do operador, nao por igualdade de payload com o pane.
 
 **pino de idempotencia**:
 Criterio de aceite que roda o gerador de novo e exige a arvore de trabalho sem nenhuma diferenca. Converte a premissa de nao-edicao manual, que e o que licencia isentar codigo vendorizado nas convencoes de Go e Chromium, de promessa em checagem de maquina. Usa git status e nao git diff, porque diff nao ve arquivo nao rastreado e passaria vacuamente numa arvore ainda nao commitada.

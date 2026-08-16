@@ -11,7 +11,6 @@ import { join } from 'node:path';
 
 import { startWebServer } from '../../src/commands/web.ts';
 import type { IssueEntry } from '../../src/issues/types.ts';
-import type { CycleMetricsRow } from '../../src/stats/cycles.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 function git(cwd: string, args: string[]): void {
@@ -36,21 +35,7 @@ function issue(overrides: Partial<IssueEntry> & Pick<IssueEntry, 'id' | 'title'>
 	};
 }
 
-function cycle(index: number, shipped = false): CycleMetricsRow {
-	return {
-		cycleId: `cam/cycle-${index}`,
-		issueNumber: String(index),
-		closedAt: `2026-08-${String(index).padStart(2, '0')}T12:00:00Z`,
-		workerRounds: index,
-		reviewRounds: 1,
-		orchTokens: index * 10,
-		workerTokens: index * 20,
-		total: index * 30,
-		...(shipped ? { prNumber: 500 + index, mergeMode: 'ci-gated' as const } : {}),
-	};
-}
-
-function seedIdleRepo(): { cwd: string; cycles: CycleMetricsRow[] } {
+function seedIdleRepo(): string {
 	const root = createTestTmpdir('cam-web-idle-');
 	const cwd = join(root, 'repo');
 	mkdirSync(cwd, { recursive: true });
@@ -84,19 +69,11 @@ function seedIdleRepo(): { cwd: string; cycles: CycleMetricsRow[] } {
 	git(cwd, ['remote', 'add', 'origin', remote]);
 	git(cwd, ['fetch', '-q', 'origin', '+refs/heads/main:refs/remotes/origin/main']);
 
-	const cycles = Array.from({ length: 7 }, (_, index) => cycle(index + 1, index === 5));
-	writeFileSync(
-		join(cwd, 'scripts', 'cam', 'cycle-metrics.jsonl'),
-		`${[
-			JSON.stringify({ schemaVersion: 1, unattributedLeadingEvents: 9 }),
-			...cycles.map((row) => JSON.stringify(row)),
-		].join('\n')}\n`,
-	);
-	return { cwd, cycles };
+	return cwd;
 }
 
 async function getSnapshot(cwd: string): Promise<Record<string, unknown>> {
-	const handle = startWebServer({ port: 0, cwd, claudeDir: join(cwd, 'claude-home') });
+	const handle = startWebServer({ port: 0, cwd });
 	try {
 		const response = await fetch(`http://${handle.hostname}:${handle.port}/api/snapshot`);
 		expect(response.status).toBe(200);
@@ -107,19 +84,14 @@ async function getSnapshot(cwd: string): Promise<Record<string, unknown>> {
 }
 
 describe('GET /api/snapshot idle state', () => {
-	test('adds the five newest cycles and the source-ref-backed backlog when no PRD exists', async () => {
-		const { cwd, cycles } = seedIdleRepo();
+	test('returns the source-ref-backed backlog when no PRD exists', async () => {
+		const cwd = seedIdleRepo();
 		const payload = await getSnapshot(cwd);
 		const idleState = payload['idleState'] as Record<string, unknown>;
 
+		expect(Object.keys(payload)).toEqual(['idleState']);
 		expect(idleState).toBeDefined();
-		expect(idleState['recentCycles']).toEqual(cycles.slice(-5).reverse());
-		const recentCycles = idleState['recentCycles'] as Record<string, unknown>[];
-		expect(Object.hasOwn(recentCycles[0] ?? {}, 'prNumber')).toBe(false);
-		expect(Object.hasOwn(recentCycles[0] ?? {}, 'mergeMode')).toBe(false);
-		expect(recentCycles[1]?.['prNumber']).toBe(506);
-		expect(recentCycles[1]?.['mergeMode']).toBe('ci-gated');
-
+		expect(Object.keys(idleState)).toEqual(['backlog']);
 		expect(idleState['backlog']).toEqual({
 			counts: { idea: 1, specified: 2, planned: 0 },
 			plannable: [
@@ -163,20 +135,13 @@ describe('GET /api/snapshot idle state', () => {
 	});
 
 	test('omits the idle state key when a PRD is present', async () => {
-		const { cwd } = seedIdleRepo();
+		const cwd = seedIdleRepo();
 		writeFileSync(
 			join(cwd, 'scripts', 'cam', 'prd.json'),
 			JSON.stringify({ branchName: 'cam/active', userStories: [] }),
 		);
 
 		const payload = await getSnapshot(cwd);
-		expect(Object.hasOwn(payload, 'idleState')).toBe(false);
-	});
-
-	test('missing cycle metrics is best-effort and still returns an empty recent list', async () => {
-		const cwd = createTestTmpdir('cam-web-idle-empty-');
-		const payload = await getSnapshot(cwd);
-		const idleState = payload['idleState'] as Record<string, unknown>;
-		expect(idleState['recentCycles']).toEqual([]);
+		expect(payload).toEqual({});
 	});
 });

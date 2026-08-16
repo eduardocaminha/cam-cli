@@ -13,13 +13,11 @@ import { join } from 'node:path';
 
 import {
 	EVENT_LOG_FALLBACK_TAIL_BYTES,
-	EVENT_LOG_OUT_OF_ORDER_MARGIN_BYTES,
 	EVENT_LOG_READ_CHUNK_BYTES,
 	parseRecentProgress,
 	readRecentProgress,
 	type EventLogReader,
 } from '../../src/commands/dashboard.ts';
-import { startWebServer } from '../../src/commands/web.ts';
 import { writeSidecarSessionStart } from '../../src/supervisor/session-start.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
@@ -175,86 +173,6 @@ describe('bounded worker-event reads', () => {
 			]);
 		} finally {
 			rmSync(cwd, { recursive: true, force: true });
-		}
-	});
-
-	test('the real snapshot route reads only the session window plus the physical-order margin', async () => {
-		const base = createTestTmpdir('cam-web-read-bounded-route-');
-		const cwd = join(base, 'project');
-		const projectClaudeDir = join(cwd, '.claude');
-		const claudeDir = join(base, 'claude-home');
-		mkdirSync(projectClaudeDir, { recursive: true });
-
-		const eventLogPath = join(projectClaudeDir, 'cam-worker-events.jsonl');
-		const prefix = oldPrefix(2 * 1024 * 1024);
-		const currentBeforeOutOfOrder = event(
-			'2026-08-13T12:00:01.000Z',
-			'tokens',
-			{ inputTokens: 100, outputTokens: 20, cacheReadTokens: 3, cacheCreationTokens: 2 },
-			'US-004',
-		);
-		const physicallyLateOldLine = event(
-			'2026-08-13T11:59:30.000Z',
-			'worker-end',
-			{ outcome: 'physically-out-of-order' },
-			'US-OLD',
-		);
-		// This is the jq writer's exact shape: no storyId and whole-second ts.
-		const jqFallback = event(
-			'2026-08-13T12:00:00.000Z',
-			'orch-resolve-fallback',
-			{ phase: 'orchestrator', model: 'opus', effort: 'high' },
-		);
-		const currentResult = event(
-			'2026-08-13T12:00:03.000Z',
-			'result',
-			{ outcome: 'pass' },
-			'US-004',
-		);
-		const sessionSuffix = [
-			currentBeforeOutOfOrder,
-			physicallyLateOldLine,
-			jqFallback,
-			currentResult,
-		].join('\n') + '\n';
-		writeFileSync(eventLogPath, prefix + sessionSuffix);
-		writeSidecarSessionStart(projectClaudeDir, '2026-08-13T12:00:00.750Z');
-		writeFileSync(
-			join(cwd, 'prd.json'),
-			JSON.stringify({
-				branchName: 'cam/read-bounded',
-				userStories: [{ id: 'US-004', title: 'bounded read', priority: 4, passes: false }],
-			}),
-		);
-
-		const workerUuid = '11111111-2222-4333-8444-555555555555';
-		writeFileSync(join(projectClaudeDir, '.cam-worker-US-004.session'), workerUuid);
-		const transcriptDir = join(claudeDir, 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'));
-		mkdirSync(transcriptDir, { recursive: true });
-		writeFileSync(
-			join(transcriptDir, `${workerUuid}.jsonl`),
-			`${JSON.stringify({ message: { usage: { input_tokens: 999_999 } } })}\n`,
-		);
-
-		const meter = instrumentEventLogReader(eventLogPath);
-		const handle = startWebServer({ port: 0, cwd, claudeDir, eventLogReader: meter.reader });
-		try {
-			const response = await fetch(`http://${handle.hostname}:${handle.port}/api/snapshot`);
-			expect(response.status).toBe(200);
-			const payload = (await response.json()) as Record<string, unknown>;
-
-			expect(payload['recent']).toEqual(['08-13 12:00 US-004 pass']);
-			expect(payload['sessionWorkerTokens']).toBe(125);
-			expect(meter.openedPaths()).toEqual([eventLogPath]);
-			expect(meter.bytesRead()).toBeLessThanOrEqual(
-				Buffer.byteLength(sessionSuffix) +
-					EVENT_LOG_OUT_OF_ORDER_MARGIN_BYTES +
-					EVENT_LOG_READ_CHUNK_BYTES,
-			);
-			expect(meter.bytesRead()).toBeLessThan(Buffer.byteLength(prefix + sessionSuffix));
-		} finally {
-			await handle.stop();
-			rmSync(base, { recursive: true, force: true });
 		}
 	});
 });
