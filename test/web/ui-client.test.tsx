@@ -31,7 +31,13 @@ import {
 	startRun,
 } from '../../webui/src/client.ts';
 import { isAtLiveEdge, LIVE_EDGE_TOLERANCE_PX } from '../../webui/src/live-edge.ts';
-import { actionsFor, progressOf, type RunState, type RunView } from '../../webui/src/run-view.ts';
+import {
+	actionsFor,
+	attentionOf,
+	progressOf,
+	type RunState,
+	type RunView,
+} from '../../webui/src/run-view.ts';
 
 const BACKLOG = [
 	{ id: 'CAM-900', title: 'primeira issue plannable' },
@@ -39,6 +45,14 @@ const BACKLOG = [
 ];
 
 const SURFACE_PATHS: readonly OperatorRoute[] = ['/', '/runs', '/work', '/settings'];
+
+const NOTICES: AppProps['workspaceNotices'] = [{
+	kind: 'dirty',
+	runId: null,
+	workspacePath: '/project/.gship/worktrees/orphan',
+	branch: 'gship/cam-1-orphan',
+	detail: 'workspace is not owned by a persisted run',
+}];
 
 function runIn(state: RunState, overrides: Partial<RunView> = {}): RunView {
 	return {
@@ -132,6 +146,11 @@ function elementWith(html: string, attribute: string): string {
 	return tag;
 }
 
+/** The shell header alone, which only the human state is allowed to reach. */
+function shellHeader(html: string): string {
+	return html.slice(html.indexOf('<header'), html.indexOf('</header>'));
+}
+
 /** One disclosed panel alone, cut at the disclosure that carries it. */
 function panel(html: string, title: string): string {
 	const start = html.indexOf(`>${title}</h2>`);
@@ -190,7 +209,7 @@ describe('conversation surface', () => {
 	test('the inspector offers the commands the run admits, and renders no others', () => {
 		const idle = home();
 		expect(idle).toContain('Nenhum run registrado ainda.');
-		expect(idle).toContain('ocioso');
+		expect(idle).toContain('Ocioso');
 		expect(hasButton(idle, 'Cancelar')).toBe(false);
 		expect(hasButton(idle, 'Shipar')).toBe(false);
 		expect(hasButton(idle, 'Retomar')).toBe(false);
@@ -401,15 +420,7 @@ describe('runs surface', () => {
 	});
 
 	test('surfaces preserved workspaces without offering destructive cleanup', () => {
-		const html = runsPage({
-			workspaceNotices: [{
-				kind: 'dirty',
-				runId: null,
-				workspacePath: '/project/.gship/worktrees/orphan',
-				branch: 'gship/cam-1-orphan',
-				detail: 'workspace is not owned by a persisted run',
-			}],
-		});
+		const html = runsPage({ workspaceNotices: NOTICES });
 
 		expect(html).toContain('Workspaces preservados');
 		expect(html).toContain('/project/.gship/worktrees/orphan');
@@ -561,12 +572,27 @@ describe('operator shell', () => {
 		expect(routeOf('/qualquer-coisa')).toBe('/');
 	});
 
-	test('the shell reports the run state and the version it is serving', () => {
-		expect(home()).toContain('ocioso');
-		expect(runsPage({ runs: [runIn('failed')] })).toContain('failed');
+	test('the shell reports one human state and the version it is serving', () => {
+		expect(shellHeader(home())).toContain('Ocioso');
+		expect(shellHeader(runsPage({ runs: [runIn('working')] }))).toContain('Trabalhando');
 		// No version reported: the header shows the title alone.
 		expect(home()).not.toMatch(/v\d+\.\d+\.\d+/);
 		expect(home({ version: '0.292.0' })).toContain('>v0.292.0<');
+	});
+
+	test('the technical run state stays on the run card and never reaches the header', () => {
+		const html = runsPage({ runs: [runIn('failed')] });
+
+		expect(shellHeader(html)).toContain('Precisa de você');
+		expect(shellHeader(html)).not.toContain('failed');
+		expect(html).toContain('>failed<');
+	});
+
+	test('a preserved workspace asks for the operator whatever the run is doing', () => {
+		expect(shellHeader(runsPage({ runs: [runIn('done')], workspaceNotices: NOTICES })))
+			.toContain('Precisa de você');
+		expect(shellHeader(runsPage({ runs: [runIn('working')], workspaceNotices: NOTICES })))
+			.toContain('Precisa de você');
 	});
 });
 
@@ -693,6 +719,24 @@ describe('screen derivations', () => {
 		for (let i = 1; i < values.length; i += 1) {
 			expect(values[i] ?? 0).toBeGreaterThan(values[i - 1] ?? 0);
 		}
+	});
+
+	test('every run state reads as one of the three states the operator acts on', () => {
+		const needsYou: RunState[] = ['waiting-user', 'failed', 'interrupted', 'ready-to-ship'];
+		const busy: RunState[] = ['queued', 'working', 'verify', 'review', 'shipping'];
+
+		for (const state of needsYou) expect(attentionOf(runIn(state), false)).toBe('Precisa de você');
+		for (const state of busy) expect(attentionOf(runIn(state), false)).toBe('Trabalhando');
+		expect(attentionOf(runIn('done'), false)).toBe('Ocioso');
+		expect(attentionOf(null, false)).toBe('Ocioso');
+	});
+
+	test('a preserved workspace decides before the run state does', () => {
+		expect(attentionOf(runIn('done'), NOTICES)).toBe('Precisa de você');
+		expect(attentionOf(runIn('working'), NOTICES)).toBe('Precisa de você');
+		expect(attentionOf(null, NOTICES)).toBe('Precisa de você');
+		expect(attentionOf(runIn('done'), [])).toBe('Ocioso');
+		expect(attentionOf(runIn('working'), true)).toBe('Precisa de você');
 	});
 
 	test('an interrupted run is resumable and a terminal one is not', () => {

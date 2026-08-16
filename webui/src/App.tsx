@@ -40,6 +40,8 @@ import type {
 import { useLiveEdge } from './live-edge.ts';
 import {
 	actionsFor,
+	attentionOf,
+	attentionToneOf,
 	type PlannableIssue,
 	phaseOf,
 	progressOf,
@@ -849,11 +851,15 @@ function ShellSidebar({
 	route,
 	run,
 	version,
-}: {
+	workspaceNotices,
+}: Pick<AppProps, 'workspaceNotices'> & {
 	route: OperatorRoute;
 	run: RunView | null;
 	version: string;
 }): React.ReactElement {
+	// The header answers one question -- is Gateship waiting on the operator --
+	// so it carries the human state alone. The run's own state stays on the card.
+	const attention = attentionOf(run, workspaceNotices);
 	return (
 		<header className="flex shrink-0 flex-col gap-4 border-sidebar-border border-b bg-sidebar p-4 lg:sticky lg:top-0 lg:h-screen lg:w-60 lg:self-start lg:overflow-y-auto lg:border-r lg:border-b-0 lg:p-6">
 			<div className="flex items-center justify-between gap-3">
@@ -863,9 +869,7 @@ function ShellSidebar({
 						<span className="font-mono text-muted-foreground text-xs">v{version}</span>
 					)}
 				</div>
-				<Badge variant={run === null ? 'outline' : toneOf(run.state)}>
-					{run === null ? 'ocioso' : run.state}
-				</Badge>
+				<Badge variant={attentionToneOf(attention)}>{attention}</Badge>
 			</div>
 			<Separator />
 			<nav aria-label="Superfícies do operador">
@@ -1009,7 +1013,12 @@ export function App(props: AppProps): React.ReactElement {
 	const run = props.runs[0] ?? null;
 	return (
 		<div className="flex min-h-screen w-full flex-col lg:flex-row xl:h-screen xl:overflow-hidden">
-			<ShellSidebar route={props.route} run={run} version={props.version} />
+			<ShellSidebar
+				route={props.route}
+				run={run}
+				version={props.version}
+				workspaceNotices={props.workspaceNotices}
+			/>
 			{props.route === '/runs' ? <RunsSurface {...props} /> : null}
 			{props.route === '/work' ? <WorkSurface {...props} /> : null}
 			{props.route === '/settings' ? <SettingsSurface {...props} /> : null}
