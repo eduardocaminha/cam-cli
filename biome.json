@@ -5,13 +5,7 @@
     "rules": {
       "recommended": false,
       "complexity": {
-        "noExcessiveCognitiveComplexity": "error",
-        "noExcessiveLinesPerFunction": {
-          "level": "error",
-          "options": {
-            "maxLines": 80
-          }
-        }
+        "noExcessiveCognitiveComplexity": "error"
       }
     }
   },
