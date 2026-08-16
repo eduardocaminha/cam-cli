@@ -101,7 +101,9 @@ function Screen(): ReactElement {
 					return `${created.id} criada e selecionada.`;
 				}));
 			}}
-			onResume={command('resume')}
+			onResume={(operatorGuidance) => {
+				if (run !== null) send(() => commandRun(run.id, 'resume', operatorGuidance));
+			}}
 			onSelectIssue={setSelectedIssueId}
 			onShip={command('ship')}
 			onStart={() => {

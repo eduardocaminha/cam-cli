@@ -17,12 +17,11 @@ import { createGitRuntimePreflight, GitIssueVerifier, RuntimePreflightError } fr
 import { GitWorkspaceManager, RuntimeWorkspaceError } from '../runtime/git-workspace.ts';
 import { GithubShipper } from '../runtime/github-shipper.ts';
 import {
-	createOperatorIssue,
 	type CreatedOperatorIssue,
+	createOperatorIssue,
 	IssueIntakeError,
 	parseOperatorIssueInput,
 } from '../runtime/issue-intake.ts';
-import { RUNTIME_SOURCE_REF } from '../runtime/source-ref.ts';
 import {
 	RunRuntime,
 	type RunRuntimeOptions,
@@ -30,6 +29,7 @@ import {
 	RuntimeUnavailableError,
 } from '../runtime/run-runtime.ts';
 import { type RunEvent, RunStore } from '../runtime/run-store.ts';
+import { RUNTIME_SOURCE_REF } from '../runtime/source-ref.ts';
 import type { CycleMetricsRow } from '../stats/cycles.ts';
 import {
 	type EventLogReader,
@@ -200,6 +200,31 @@ async function cancelDurableRun(
 	return Response.json({ ok: true, run });
 }
 
+async function readOptionalOperatorGuidance(
+	request: Request,
+): Promise<string | Response | undefined> {
+	if (request.headers.get('content-type')?.includes('application/json') !== true) return undefined;
+	let body: unknown;
+	try {
+		body = await request.json();
+	} catch {
+		return Response.json(
+			{ ok: false, code: 'invalid-request', message: 'A resposta deve ser um objeto JSON.' },
+			{ status: 400 },
+		);
+	}
+	const message = body !== null && typeof body === 'object'
+		? (body as { message?: unknown }).message
+		: undefined;
+	if (typeof message !== 'string' || message.trim().length === 0) {
+		return Response.json(
+			{ ok: false, code: 'invalid-request', message: 'Uma resposta não vazia é obrigatória.' },
+			{ status: 400 },
+		);
+	}
+	return message.trim();
+}
+
 async function resumeDurableRun(
 	request: Request,
 	runtime: RunRuntime,
@@ -212,8 +237,13 @@ async function resumeDurableRun(
 			{ status: 404 },
 		);
 	}
+	const operatorGuidance = await readOptionalOperatorGuidance(request);
+	if (operatorGuidance instanceof Response) return operatorGuidance;
 	try {
-		return Response.json({ ok: true, run: runtime.resumeRun(runId) }, { status: 202 });
+		return Response.json(
+			{ ok: true, run: runtime.resumeRun(runId, operatorGuidance) },
+			{ status: 202 },
+		);
 	} catch (error) {
 		const unavailable = error instanceof RuntimeUnavailableError;
 		return Response.json(

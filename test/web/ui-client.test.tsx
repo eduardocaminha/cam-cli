@@ -101,12 +101,17 @@ describe('operational screen', () => {
 		expect(buttonIsEnabled(html, 'Iniciar run')).toBe(false);
 	});
 
-	test('waiting-user: offers resume and keeps the phase on the spine', () => {
-		const html = render({ run: runIn('waiting-user'), selectedIssueId: 'CAM-900' });
+	test('waiting-user: asks for an answer before resuming on the same spine', () => {
+		const html = render({
+			run: runIn('waiting-user', { summary: 'Escolha o seam de migração.' }),
+			selectedIssueId: 'CAM-900',
+		});
 
 		expect(html).toContain('Fase working');
 		expect(html).toContain('waiting-user');
-		expect(buttonIsEnabled(html, 'Retomar')).toBe(true);
+		expect(html).toContain('Escolha o seam de migração.');
+		expect(html).toContain('name="operatorGuidance"');
+		expect(buttonIsEnabled(html, 'Responder e retomar')).toBe(true);
 		// A live run blocks a second start even with an issue selected.
 		expect(buttonIsEnabled(html, 'Iniciar run')).toBe(false);
 	});
@@ -301,6 +306,18 @@ describe('same-origin transport', () => {
 			'/api/runs/run-1/ship',
 		]);
 		expect(calls.every((call) => call.method === 'POST' && call.body === null)).toBe(true);
+	});
+
+	test('resume sends operator guidance only when one was supplied', async () => {
+		const calls = await withRecordedFetch({ ok: true }, 202, async () => {
+			await commandRun('run-1', 'resume', 'Use the smaller seam.');
+		});
+
+		expect(calls).toEqual([{
+			url: '/api/runs/run-1/resume',
+			method: 'POST',
+			body: JSON.stringify({ message: 'Use the smaller seam.' }),
+		}]);
 	});
 
 	test('a refused command surfaces the server message instead of a generic failure', async () => {

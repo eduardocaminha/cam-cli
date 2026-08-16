@@ -3,12 +3,12 @@ import process from 'node:process';
 
 import { getIssueOnMain } from '../commands/issue-get.ts';
 import { buildClaudeEnv, runClaudeCli } from './claude-cli-process.ts';
-import { RUNTIME_SOURCE_REF } from './source-ref.ts';
 import type {
 	RuntimeExecutionInput,
 	RuntimeExecutionResult,
 	RuntimeExecutor,
 } from './run-runtime.ts';
+import { RUNTIME_SOURCE_REF } from './source-ref.ts';
 
 export interface ClaudeCliExecutorOptions {
 	command?: string[];
@@ -26,7 +26,18 @@ interface ClaudeInvocation {
 	resume: boolean;
 	permissionMode: string;
 	model?: string;
+	jsonSchema?: Record<string, unknown>;
 }
+
+export const EXECUTION_RESULT_SCHEMA = {
+	type: 'object',
+	properties: {
+		status: { type: 'string', enum: ['completed', 'waiting-user'] },
+		summary: { type: 'string', minLength: 1 },
+	},
+	required: ['status', 'summary'],
+	additionalProperties: false,
+} as const;
 
 export function buildClaudeCliArgv(input: ClaudeInvocation): string[] {
 	const argv = [
@@ -42,6 +53,9 @@ export function buildClaudeCliArgv(input: ClaudeInvocation): string[] {
 	];
 	argv.push(input.resume ? '--resume' : '--session-id', input.sessionId.toLowerCase());
 	if (input.model !== undefined) argv.push('--model', input.model);
+	if (input.jsonSchema !== undefined) {
+		argv.push('--json-schema', JSON.stringify(input.jsonSchema));
+	}
 	return argv;
 }
 
@@ -56,6 +70,7 @@ function buildWorkPrompt(
 	issue: string,
 	resume: boolean,
 	reviewFeedback: string | undefined,
+	operatorGuidance: string | undefined,
 ): string {
 	// The single automatic fix round carries the reviewer's findings verbatim:
 	// the reviewer is a separate session, so nothing else puts them in context.
@@ -67,6 +82,11 @@ function buildWorkPrompt(
 		'Review findings:',
 		reviewFeedback,
 	];
+	const guidanceSection = operatorGuidance === undefined ? [] : [
+		'',
+		'The operator answered your previous request. Treat this as the decision for the current turn:',
+		operatorGuidance,
+	];
 	return [
 		resume
 			? `Continue the existing Gateship work session for ${issueId}.`
@@ -74,12 +94,31 @@ function buildWorkPrompt(
 		'Inspect the current working tree before editing and keep the change limited to this issue.',
 		'Do not commit, push, merge, ship, or edit issue/runtime control state; the Gateship service owns lifecycle.',
 		'Run focused tests for the changed surface. The service will perform independent verification afterward.',
-		'If a user decision is required, stop editing and explain the exact decision in your final result.',
+		'Return status completed when the issue work is ready for verification.',
+		'Return status waiting-user only when a concrete operator decision is required; summarize the exact question and options.',
+		...guidanceSection,
 		...reviewSection,
 		'',
 		'Issue record:',
 		issue,
 	].join('\n');
+}
+
+export function parseExecutionResult(
+	structuredOutput: unknown,
+): RuntimeExecutionResult {
+	if (structuredOutput === null || typeof structuredOutput !== 'object' || Array.isArray(structuredOutput)) {
+		throw new Error('executor did not return structured run status');
+	}
+	const result = structuredOutput as Record<string, unknown>;
+	const status = result['status'];
+	const summary = result['summary'];
+	if ((status !== 'completed' && status !== 'waiting-user')
+		|| typeof summary !== 'string'
+		|| summary.trim().length === 0) {
+		throw new Error('executor returned an invalid structured run status');
+	}
+	return { outcome: status, summary: summary.trim() };
 }
 
 export class ClaudeCliExecutor implements RuntimeExecutor {
@@ -91,15 +130,22 @@ export class ClaudeCliExecutor implements RuntimeExecutor {
 
 	async execute(input: RuntimeExecutionInput): Promise<RuntimeExecutionResult> {
 		const issue = (this.#options.loadIssue ?? defaultLoadIssue)(input.cwd, input.issueId);
-		const prompt = buildWorkPrompt(input.issueId, issue, input.resume, input.reviewFeedback);
+		const prompt = buildWorkPrompt(
+			input.issueId,
+			issue,
+			input.resume,
+			input.reviewFeedback,
+			input.operatorGuidance,
+		);
 		const argv = buildClaudeCliArgv({
 			command: this.#options.command ?? ['claude'],
 			sessionId: input.sessionId,
 			resume: input.resume,
 			permissionMode: this.#options.permissionMode ?? 'bypassPermissions',
 			...(this.#options.model === undefined ? {} : { model: this.#options.model }),
+			jsonSchema: EXECUTION_RESULT_SCHEMA,
 		});
-		const summary = await runClaudeCli({
+		const result = await runClaudeCli({
 			argv,
 			cwd: input.cwd,
 			env: buildClaudeEnv(this.#options.sourceEnv ?? process.env),
@@ -112,6 +158,6 @@ export class ClaudeCliExecutor implements RuntimeExecutor {
 				: { terminationGraceMs: this.#options.terminationGraceMs }),
 			...(this.#options.onSpawn === undefined ? {} : { onSpawn: this.#options.onSpawn }),
 		});
-		return { outcome: 'completed', ...(summary.length === 0 ? {} : { summary }) };
+		return parseExecutionResult(result.structuredOutput);
 	}
 }

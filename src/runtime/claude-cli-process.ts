@@ -37,6 +37,11 @@ export interface ClaudeCliRunInput {
 	onSpawn?: (pid: number) => void;
 }
 
+export interface ClaudeCliResult {
+	summary: string;
+	structuredOutput?: unknown;
+}
+
 export function buildClaudeEnv(
 	source: Record<string, string | undefined>,
 ): Record<string, string | undefined> {
@@ -119,7 +124,7 @@ export function projectAssistantActivity(raw: Record<string, unknown>): Record<s
  * a non-zero exit, a missing result event, an error result, or cancellation --
  * and never resolves before the child process group has actually settled.
  */
-export async function runClaudeCli(input: ClaudeCliRunInput): Promise<string> {
+export async function runClaudeCli(input: ClaudeCliRunInput): Promise<ClaudeCliResult> {
 	const child = spawnClaude(input.argv, input.cwd, input.env);
 	input.onSpawn?.(child.pid);
 
@@ -133,6 +138,7 @@ export async function runClaudeCli(input: ClaudeCliRunInput): Promise<string> {
 	let resultSeen = false;
 	let resultIsError = false;
 	let summary = '';
+	let structuredOutput: unknown;
 	const stdout = consumeLines(child.stdout, (line) => {
 		const event = classifyHeadlessStreamLine(line);
 		if (event.kind === 'system') {
@@ -145,6 +151,7 @@ export async function runClaudeCli(input: ClaudeCliRunInput): Promise<string> {
 			resultSeen = true;
 			resultIsError = event.raw.is_error === true;
 			if (typeof event.raw.result === 'string') summary = event.raw.result;
+			structuredOutput = event.raw['structured_output'];
 			input.emit(`${input.eventPrefix}.result`);
 		}
 	});
@@ -168,7 +175,10 @@ export async function runClaudeCli(input: ClaudeCliRunInput): Promise<string> {
 		}
 		if (!resultSeen) throw new Error('Claude CLI exited without a result event.');
 		if (resultIsError) throw new Error(summary || 'Claude CLI returned an error result.');
-		return summary;
+		return {
+			summary,
+			...(structuredOutput === undefined ? {} : { structuredOutput }),
+		};
 	} finally {
 		input.signal.removeEventListener('abort', abort);
 	}

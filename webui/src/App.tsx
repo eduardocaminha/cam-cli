@@ -6,6 +6,8 @@
 // static rendering (ADR-0067).
 
 import type React from 'react';
+import { cn } from '../vendor/coss/lib/utils.ts';
+import { Badge } from '../vendor/coss/ui/badge.tsx';
 import {
 	Card,
 	CardDescription,
@@ -13,7 +15,6 @@ import {
 	CardPanel,
 	CardTitle,
 } from '../vendor/coss/ui/card.tsx';
-import { Badge } from '../vendor/coss/ui/badge.tsx';
 import {
 	Progress,
 	ProgressIndicator,
@@ -22,13 +23,12 @@ import {
 	ProgressValue,
 } from '../vendor/coss/ui/progress.tsx';
 import { Separator } from '../vendor/coss/ui/separator.tsx';
-import { cn } from '../vendor/coss/lib/utils.ts';
 import type { OperatorIssueDraft } from './client.ts';
 import {
 	actionsFor,
+	type PlannableIssue,
 	phaseOf,
 	progressOf,
-	type PlannableIssue,
 	type RunEventView,
 	type RunView,
 	toneOf,
@@ -46,7 +46,7 @@ export interface AppProps {
 	onSelectIssue: (issueId: string) => void;
 	onCreateIssue: (input: OperatorIssueDraft) => void;
 	onStart: () => void;
-	onResume: () => void;
+	onResume: (operatorGuidance?: string) => void;
 	onCancel: () => void;
 	onShip: () => void;
 }
@@ -166,6 +166,7 @@ function RunPanel({
 }: Pick<AppProps, 'run' | 'pending' | 'onResume' | 'onCancel' | 'onShip'>): React.ReactElement {
 	// Only `start` depends on a backlog selection, and this panel never offers it.
 	const actions = actionsFor(run, false);
+	const waitingForAnswer = run?.state === 'waiting-user';
 	return (
 		<Card>
 			<CardHeader>
@@ -179,8 +180,40 @@ function RunPanel({
 				<CardPanel className="flex flex-col gap-4">
 					<RunProgress run={run} />
 					<RunOutcome run={run} />
+					{waitingForAnswer ? (
+						<form
+							className="flex flex-col gap-2"
+							key={run.updatedAt}
+							onSubmit={(event) => {
+								event.preventDefault();
+								const form = event.currentTarget as unknown as {
+									elements: { namedItem: (name: string) => { value?: unknown } | null };
+								};
+								const value = form.elements.namedItem('operatorGuidance')?.value;
+								if (typeof value === 'string') onResume(value);
+							}}
+						>
+							<label className="font-medium text-sm" htmlFor="operator-guidance">
+								Sua resposta
+							</label>
+							<textarea
+								className={FIELD_CLASS}
+								disabled={pending}
+								id="operator-guidance"
+								name="operatorGuidance"
+								placeholder="Decisão ou orientação para o agente"
+								required
+								rows={3}
+							/>
+							<button className={BUTTON_CLASS} disabled={pending} type="submit">
+								Responder e retomar
+							</button>
+						</form>
+					) : null}
 					<div className="flex flex-wrap gap-2">
-						<ActionButton enabled={actions.resume && !pending} label="Retomar" onClick={onResume} />
+						{waitingForAnswer ? null : (
+							<ActionButton enabled={actions.resume && !pending} label="Retomar" onClick={onResume} />
+						)}
 						<ActionButton enabled={actions.cancel && !pending} label="Cancelar" onClick={onCancel} />
 						<ActionButton enabled={actions.ship && !pending} label="Shipar" onClick={onShip} />
 					</div>

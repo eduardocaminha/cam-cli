@@ -103,6 +103,61 @@ describe('durable web run API', () => {
 		}
 	});
 
+	test('resumes waiting-user with a durable operator response', async () => {
+		const guidance: Array<string | undefined> = [];
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-answer',
+			executor: {
+				execute: async (input) => {
+					guidance.push(input.operatorGuidance);
+					return input.resume
+						? { outcome: 'completed', summary: 'answer applied' }
+						: { outcome: 'waiting-user', summary: 'Which seam?' };
+				},
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+		const handle = startWebServer({
+			port: 0,
+			cwd: createTestTmpdir('gship-run-answer-'),
+			runRuntime: runtime,
+		});
+		const origin = `http://${handle.hostname}:${handle.port}`;
+
+		try {
+			await fetch(`${origin}/api/runs`, {
+				method: 'POST',
+				headers: { origin, 'content-type': 'application/json' },
+				body: JSON.stringify({ issueId: 'CAM-14' }),
+			});
+			while (runtime.getRun('run-answer')?.state !== 'waiting-user') await Bun.sleep(5);
+
+			const missing = await fetch(`${origin}/api/runs/run-answer/resume`, {
+				method: 'POST',
+				headers: { origin },
+			});
+			expect(missing.status).toBe(409);
+
+			const resumed = await fetch(`${origin}/api/runs/run-answer/resume`, {
+				method: 'POST',
+				headers: { origin, 'content-type': 'application/json' },
+				body: JSON.stringify({ message: 'Use the smaller seam.' }),
+			});
+			expect(resumed.status).toBe(202);
+			await waitForReady(runtime, 'run-answer');
+			expect(guidance).toEqual([undefined, 'Use the smaller seam.']);
+			expect(runtime.listRunEvents('run-answer')[3]).toMatchObject({
+				kind: 'run.operator-guidance',
+				payload: { text: 'Use the smaller seam.' },
+			});
+		} finally {
+			await handle.stop();
+			runtime.close();
+		}
+	});
+
 	test('returns an honest 503 until a real executor is connected', async () => {
 		const runtime = new RunRuntime({ cwd: '/project', store: new RunStore(':memory:') });
 		const handle = startWebServer({

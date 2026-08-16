@@ -39,12 +39,12 @@ import process from 'node:process';
 import { getIssueOnMain } from '../commands/issue-get.ts';
 import { buildClaudeEnv, runClaudeCli } from './claude-cli-process.ts';
 import { defaultRunGit, type GitCommandRunner } from './git-runtime.ts';
-import { RUNTIME_SOURCE_REF } from './source-ref.ts';
 import type {
 	RuntimeExecutionInput,
 	RuntimeReviewer,
 	RuntimeReviewResult,
 } from './run-runtime.ts';
+import { RUNTIME_SOURCE_REF } from './source-ref.ts';
 
 /** The reviewer's whole capability surface: restricts `--tools`, preapproves `--allowedTools`. */
 export const REVIEWER_TOOLS = 'Read,Grep,Glob';
@@ -238,7 +238,7 @@ export class ClaudeCliReviewer implements RuntimeReviewer {
 			sessionId: (this.#options.newSessionId ?? randomUUID)(),
 			...(this.#options.model === undefined ? {} : { model: this.#options.model }),
 		});
-		const summary = await runClaudeCli({
+		const result = await runClaudeCli({
 			argv,
 			cwd: input.cwd,
 			env: buildClaudeEnv(this.#options.sourceEnv ?? process.env),
@@ -251,6 +251,6 @@ export class ClaudeCliReviewer implements RuntimeReviewer {
 				: { terminationGraceMs: this.#options.terminationGraceMs }),
 			...(this.#options.onSpawn === undefined ? {} : { onSpawn: this.#options.onSpawn }),
 		});
-		return parseReviewVerdict(summary);
+		return parseReviewVerdict(result.summary);
 	}
 }
