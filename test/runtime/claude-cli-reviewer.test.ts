@@ -125,6 +125,9 @@ describe('independent Claude CLI reviewer', () => {
 		// The skills surface.
 		expect(argv).toContain('--disable-slash-commands');
 
+		// Inherited customization, on top of the three surfaces above.
+		expect(argv).toContain('--safe-mode');
+
 		// Each variadic option must be followed by another flag; a positional in
 		// that slot would be swallowed as one more value.
 		for (const flag of ['--tools', '--allowedTools', '--disallowedTools', '--mcp-config']) {
@@ -143,6 +146,7 @@ describe('independent Claude CLI reviewer', () => {
 		for (const argv of argvs) {
 			// Asserted on the argv the real process received, not on the builder.
 			expect(flagValue(argv, '--permission-mode')).toBe('dontAsk');
+			expect(argv).toContain('--safe-mode');
 			expect(flagValue(argv, '--tools')?.split(',').sort()).toEqual(['Glob', 'Grep', 'Read']);
 			expect(flagValue(argv, '--disallowedTools')).toBe('Bash,Edit,Write,NotebookEdit,Agent');
 			expect(argv).toContain('--strict-mcp-config');

@@ -61,7 +61,8 @@ export function buildCodexCliArgv(input: CodexInvocation): string[] {
 			'approval_policy="never"',
 		);
 	} else {
-		argv.push('--dangerously-bypass-approvals-and-sandbox');
+		// Bypasses approvals and sandbox, but still never inherits user config.
+		argv.push('--dangerously-bypass-approvals-and-sandbox', '--ignore-user-config');
 	}
 	if (input.model !== undefined) argv.push('--model', input.model);
 	if (input.outputSchemaPath !== undefined) {
