@@ -8,6 +8,7 @@ import {
 	IssueIntakeError,
 	specifyOperatorIssue,
 } from '../../src/runtime/issue-intake.ts';
+import { fingerprintSpec } from '../../src/issues/spec.ts';
 import { RUNTIME_SOURCE_REF } from '../../src/runtime/source-ref.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
@@ -64,6 +65,22 @@ function seedFixture(): { root: string; seed: string; remote: string; local: str
 }
 
 describe('remote-main operator issue intake', () => {
+	test('records approval for the exact published spec when requested', () => {
+		const fixture = seedFixture();
+		createOperatorIssue(fixture.local, {
+			title: 'Approved intake',
+			scope: 'Ship the approved contract.',
+			verificationCommand: 'bun test',
+		}, { approve: true }, () => '2026-08-16T02:00:00.000Z');
+		const issue = JSON.parse(
+			git(fixture.remote, ['show', 'main:.gateship/issues/GSHIP-0003.json']),
+		) as { spec: Parameters<typeof fingerprintSpec>[0]; approval: Record<string, string> };
+		expect(issue.approval).toEqual({
+			fingerprint: fingerprintSpec(issue.spec),
+			approvedAt: '2026-08-16T02:00:00.000Z',
+		});
+	});
+
 	test('files a specified issue from the fresh remote base without moving local main', () => {
 		const fixture = seedFixture();
 		const staleMain = git(fixture.local, ['rev-parse', 'refs/heads/main']);
@@ -83,6 +100,7 @@ describe('remote-main operator issue intake', () => {
 				scope: 'O formulário cria uma tarefa executável sem planner.',
 				verificationCommand: 'bun test test/runtime/issue-intake.test.ts',
 			},
+			{},
 			() => '2026-08-16T03:00:00.000Z',
 		);
 
@@ -100,6 +118,7 @@ describe('remote-main operator issue intake', () => {
 			scope: 'O formulário cria uma tarefa executável sem planner.',
 			verify: ['bun test test/runtime/issue-intake.test.ts'],
 		});
+		expect(issue['approval']).toBeUndefined();
 		expect(git(fixture.local, ['rev-parse', 'refs/heads/main'])).toBe(staleMain);
 		expect(git(fixture.local, ['status', '--porcelain', '--untracked-files=all'])).toBe(dirtyBefore);
 		expect(git(fixture.local, ['rev-parse', RUNTIME_SOURCE_REF]))
@@ -152,6 +171,7 @@ describe('remote-main operator issue intake', () => {
 			scope: 'A ideia fica executável sem planner.',
 			verify: ['bun test test/runtime/issue-intake.test.ts'],
 		});
+		expect(issue['approval']).toBeUndefined();
 		expect(git(fixture.local, ['rev-parse', 'refs/heads/main'])).toBe(staleMain);
 		expect(git(fixture.local, ['status', '--porcelain', '--untracked-files=all'])).toBe(dirtyBefore);
 	});

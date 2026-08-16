@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { issueFilePath, numericIdSuffix, readBacklogFromMain } from '../issues/backlog.ts';
-import { type Spec, validateSpec } from '../issues/spec.ts';
+import { fingerprintSpec, type Spec, validateSpec } from '../issues/spec.ts';
 import type { IssueEntry } from '../issues/types.ts';
 import { defaultRunGit } from './git-runtime.ts';
 import { fetchRuntimeSource, RUNTIME_SOURCE_REF } from './source-ref.ts';
@@ -125,7 +125,13 @@ function buildSpec(input: OperatorSpecInput): Spec {
 	return spec;
 }
 
-function buildIssue(input: OperatorIssueInput, id: string, now: string): IssueEntry {
+function buildIssue(
+	input: OperatorIssueInput,
+	id: string,
+	now: string,
+	approve: boolean,
+): IssueEntry {
+	const spec = buildSpec(input);
 	return {
 		id,
 		title: input.title,
@@ -136,7 +142,8 @@ function buildIssue(input: OperatorIssueInput, id: string, now: string): IssueEn
 		updatedAt: now,
 		description: input.scope,
 		specSource: 'operator',
-		spec: buildSpec(input),
+		spec,
+		...(approve ? { approval: { fingerprint: fingerprintSpec(spec), approvedAt: now } } : {}),
 	};
 }
 
@@ -202,6 +209,7 @@ function refreshRuntimeSource(cwd: string): string {
 export function createOperatorIssue(
 	cwd: string,
 	rawInput: unknown,
+	options: { approve?: boolean } = {},
 	now: () => string = () => new Date().toISOString(),
 ): CreatedOperatorIssue {
 	const input = parseOperatorIssueInput(rawInput);
@@ -211,7 +219,7 @@ export function createOperatorIssue(
 		const sourceSha = refreshRuntimeSource(cwd);
 		const number = nextIssueNumber(cwd, sourceSha);
 		const id = `GSHIP-${number}`;
-		const entry = buildIssue(input, id, createdAt);
+		const entry = buildIssue(input, id, createdAt, options.approve ?? false);
 		const result = publishEntryAttempt(cwd, sourceSha, entry, `chore(gship): file ${id}`);
 		if (result.kind === 'published') {
 			// The push is already durable. A transient second fetch must not turn

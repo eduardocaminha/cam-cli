@@ -4,6 +4,7 @@ import process from 'node:process';
 
 import { getIssueOnMain } from '../commands/issue-get.ts';
 import { parseOracleDirective } from '../issues/oracle-directive.ts';
+import { fingerprintSpec, type Spec } from '../issues/spec.ts';
 import { terminateProcessGroup } from './process-group.ts';
 import { fetchRuntimeSource, RUNTIME_SOURCE_REF } from './source-ref.ts';
 import type { RuntimeVerificationResult, RuntimeVerifier } from './run-runtime.ts';
@@ -212,6 +213,7 @@ export function createGitRuntimePreflight(
 ): (issueId: string) => void {
 	const runGit = options.runGit ?? defaultRunGit;
 	const issueExists = options.issueExists ?? defaultIssueExists;
+	const loadIssue = options.loadIssue ?? defaultLoadIssue;
 	return (issueId) => {
 		const fetched = fetchRuntimeSource(runGit, cwd);
 		if (fetched.exitCode !== 0) {
@@ -223,6 +225,20 @@ export function createGitRuntimePreflight(
 		const source = runGit(cwd, ['rev-parse', '--verify', RUNTIME_SOURCE_REF]);
 		if (source.exitCode !== 0) {
 			throw commandFailure(`cannot resolve ${RUNTIME_SOURCE_REF}`, source);
+		}
+		const issue = JSON.parse(loadIssue(cwd, issueId)) as {
+			spec?: Spec;
+			approval?: { fingerprint?: string };
+		};
+		if (issue.approval?.fingerprint === undefined) {
+			throw new RuntimePreflightError(
+				`${issueId} has no approval; approve this draft before starting a run`,
+			);
+		}
+		if (issue.spec === undefined || issue.approval.fingerprint !== fingerprintSpec(issue.spec)) {
+			throw new RuntimePreflightError(
+				`${issueId} has stale approval; its executable contract changed after approval`,
+			);
 		}
 	};
 }

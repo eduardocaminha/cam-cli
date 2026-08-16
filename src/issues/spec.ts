@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 /**
  * The executable task contract. New issues need only an outcome (`scope`) and
  * one or more commands that prove it (`verify`). The legacy fields stay
@@ -17,6 +19,15 @@ export interface Spec {
 export interface ValidationResult {
 	ok: boolean;
 	errors: string[];
+}
+
+/** Fingerprint only the normalized contract that an executor will run. */
+export function fingerprintSpec(spec: Spec): string {
+	const canonical = JSON.stringify({
+		scope: spec.scope.trim(),
+		verify: (spec.verify ?? []).map((command) => command.trim()),
+	});
+	return createHash('sha256').update(canonical).digest('hex');
 }
 
 function isNonEmptyString(value: unknown): value is string {
