@@ -16,6 +16,7 @@
 // CAM-190 US-001.
 
 import type { IssueEntry, IssueStage } from './types.ts';
+import { fingerprintSpec } from './spec.ts';
 import { isPlannable } from './plannable.ts';
 
 // ---------------------------------------------------------------------------
@@ -167,6 +168,16 @@ export interface BacklogJsonView {
 	counts: BacklogJsonCounts;
 	plannable: BacklogJsonRow[];
 	byStage: BacklogJsonByStage;
+	drafts: DraftJsonRow[];
+}
+
+export interface DraftJsonRow {
+	id: string;
+	title: string;
+	scope: string;
+	verificationCommand: string;
+	state: 'draft' | 'approved' | 'stale';
+	approvedAt?: string;
 }
 
 function toJsonRow(issue: IssueEntry): BacklogJsonRow {
@@ -222,5 +233,23 @@ export function deriveBacklogJson(
 		.sort(compareBacklogEntries)
 		.map(toJsonRow);
 
-	return { counts, plannable, byStage };
+	const drafts = backlog
+		.filter((issue) => issue.status === 'open' && issue.stage === 'specified')
+		.sort(compareBacklogEntries)
+		.map((issue): DraftJsonRow => {
+			const approval = issue.approval;
+			return {
+				id: issue.id,
+				title: issue.title,
+				scope: issue.spec?.scope ?? '',
+				verificationCommand: issue.spec?.verify?.[0] ?? '',
+				state: approval === undefined
+					? 'draft'
+					: issue.spec !== undefined && approval.fingerprint === fingerprintSpec(issue.spec)
+						? 'approved' : 'stale',
+				...(approval === undefined ? {} : { approvedAt: approval.approvedAt }),
+			};
+		});
+
+	return { counts, plannable, byStage, drafts };
 }

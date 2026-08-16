@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { IssueEntry } from "../../src/issues/types.ts";
 import { deriveBacklogJson, deriveBacklogView } from "../../src/issues/list.ts";
+import { fingerprintSpec } from "../../src/issues/spec.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -222,12 +223,31 @@ describe("deriveBacklogView — unmet blockers", () => {
 // ---------------------------------------------------------------------------
 
 describe("deriveBacklogJson — shape + counts", () => {
+	test("projects specified drafts without exposing approval fingerprints", () => {
+		const spec = { scope: "Escopo", verify: ["bun test focused", "bun test all"] };
+		const approvedAt = "2026-08-16T12:00:00Z";
+		const json = deriveBacklogJson([
+			makeIssue({ id: "CAM-1", stage: "specified", spec }),
+			makeIssue({ id: "CAM-2", stage: "specified", spec, approval: { fingerprint: fingerprintSpec(spec), approvedAt } }),
+			makeIssue({ id: "CAM-3", stage: "specified", spec, approval: { fingerprint: "old", approvedAt } }),
+			makeIssue({ id: "CAM-4", stage: "specified", status: "abandoned", spec }),
+		]);
+
+		expect(json.drafts).toEqual([
+			{ id: "CAM-1", title: "Test issue", scope: "Escopo", verificationCommand: "bun test focused", state: "draft" },
+			{ id: "CAM-2", title: "Test issue", scope: "Escopo", verificationCommand: "bun test focused", state: "approved", approvedAt },
+			{ id: "CAM-3", title: "Test issue", scope: "Escopo", verificationCommand: "bun test focused", state: "stale", approvedAt },
+		]);
+		expect(JSON.stringify(json.drafts)).not.toContain("fingerprint");
+	});
+
 	test("empty backlog yields zero counts, no plannable, empty byStage groups", () => {
 		const json = deriveBacklogJson([]);
-		expect(json).toEqual({
+			expect(json).toEqual({
 			counts: { idea: 0, specified: 0, planned: 0 },
 			plannable: [],
 			byStage: { idea: [], specified: [], planned: [] },
+			drafts: [],
 		});
 	});
 

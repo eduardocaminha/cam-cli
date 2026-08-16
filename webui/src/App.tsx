@@ -15,7 +15,7 @@
 // transcript is scrolled, which no prop can describe; it lives in
 // ./live-edge.ts, decides by a pure predicate, and renders nothing.
 
-import type React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Badge } from './components/ui/badge.tsx';
 import {
 	Card,
@@ -32,6 +32,7 @@ import { Separator } from './components/ui/separator.tsx';
 import { cn } from './lib/cn.ts';
 import type {
 	ChatMessageView,
+	IssueReviewDraft,
 	OperatorIssueDraft,
 	OperatorSpecDraft,
 	ProjectBriefView,
@@ -78,6 +79,7 @@ export interface AppProps {
 	route: OperatorRoute;
 	backlog: readonly PlannableIssue[];
 	ideas: readonly PlannableIssue[];
+	drafts: readonly IssueReviewDraft[];
 	events: readonly RunEventView[];
 	workspaceNotices: readonly WorkspaceNoticeView[];
 	providers: readonly ProviderStatusView[];
@@ -100,6 +102,8 @@ export interface AppProps {
 	onSelectIssue: (issueId: string) => void;
 	onCreateIssue: (input: OperatorIssueDraft) => void;
 	onSpecifyIssue: (issueId: string, input: OperatorSpecDraft) => void;
+	onReviewIssue: (issueId: string, input: OperatorSpecDraft) => void;
+	onApproveIssue: (issueId: string) => void;
 	onStart: () => void;
 	onResume: (operatorGuidance?: string) => void;
 	onCancel: () => void;
@@ -1107,6 +1111,99 @@ function RunsSurface(props: AppProps): React.ReactElement {
 	);
 }
 
+const DRAFT_LABEL: Record<IssueReviewDraft['state'], string> = {
+	draft: 'draft',
+	approved: 'approved',
+	stale: 'stale',
+};
+
+function draftChanged(draft: IssueReviewDraft, scope: string, command: string): boolean {
+	return scope !== draft.scope || command !== draft.verificationCommand;
+}
+
+function IssueReviewPanel({
+	drafts,
+	pending,
+	onReviewIssue,
+	onApproveIssue,
+}: Pick<AppProps, 'drafts' | 'pending' | 'onReviewIssue' | 'onApproveIssue'>): React.ReactElement {
+	const [selectedId, setSelectedId] = useState<string | null>(drafts[0]?.id ?? null);
+	const selected = drafts.find((draft) => draft.id === selectedId) ?? null;
+	const [scope, setScope] = useState(drafts[0]?.scope ?? '');
+	const [verificationCommand, setVerificationCommand] = useState(drafts[0]?.verificationCommand ?? '');
+	const [confirmed, setConfirmed] = useState(false);
+
+	useEffect(() => {
+		if (selected === null) return;
+		setScope(selected.scope);
+		setVerificationCommand(selected.verificationCommand);
+		setConfirmed(false);
+	}, [selected?.id, selected?.scope, selected?.verificationCommand]);
+
+	const dirty = selected !== null && draftChanged(selected, scope, verificationCommand);
+	const choose = (id: string) => {
+		setSelectedId(id || null);
+		setConfirmed(false);
+	};
+
+	return (
+		<CardDisclosure className="group">
+			<CardSummary>
+				<CardTitle>Revisar e aprovar</CardTitle>
+				<CardDescription>{drafts.length} issue(s) open + specified.</CardDescription>
+				<CardAction><Badge variant="secondary">{drafts.length}</Badge></CardAction>
+			</CardSummary>
+			<CardPanel className="flex flex-col gap-4">
+				<label className="flex flex-col gap-1 text-sm" htmlFor="review-issue">
+					<span className="font-medium">Draft</span>
+					<select
+						className={FIELD_CLASS}
+						id="review-issue"
+						onChange={(event) => choose((event.currentTarget as unknown as { value: string }).value)}
+						value={selectedId ?? ''}
+					>
+						<option value="">Selecione um draft</option>
+						{drafts.map((draft) => (
+							<option key={draft.id} value={draft.id}>{draft.id} — {draft.title}</option>
+						))}
+					</select>
+				</label>
+				{selected === null ? null : (
+					<form
+						className="flex flex-col gap-4"
+						onSubmit={(event) => {
+							event.preventDefault();
+							setConfirmed(false);
+							onReviewIssue(selected.id, { scope: scope.trim(), verificationCommand: verificationCommand.trim() });
+						}}
+					>
+						<div><Badge variant={selected.state === 'approved' ? 'success' : selected.state === 'stale' ? 'warning' : 'outline'}>{DRAFT_LABEL[selected.state]}</Badge></div>
+						<label className="flex flex-col gap-1 text-sm" htmlFor="review-scope">
+							<span className="font-medium">Escopo e resultado esperado</span>
+							<textarea className={cn(FIELD_CLASS, 'min-h-24')} id="review-scope" onChange={(event) => setScope((event.currentTarget as unknown as { value: string }).value)} required value={scope} />
+						</label>
+						<label className="flex flex-col gap-1 text-sm" htmlFor="review-command">
+							<span className="font-medium">Comando de verificação</span>
+							<input className={cn(FIELD_CLASS, 'font-mono')} id="review-command" onChange={(event) => setVerificationCommand((event.currentTarget as unknown as { value: string }).value)} required value={verificationCommand} />
+						</label>
+						<button className={BUTTON_CLASS} disabled={pending || !dirty} type="submit">Salvar revisão</button>
+						<label className="flex items-start gap-2 text-sm">
+							<input checked={confirmed} disabled={pending || dirty} onChange={(event) => setConfirmed((event.currentTarget as unknown as { checked: boolean }).checked)} type="checkbox" />
+							<span>Confirmo o scope e o verificationCommand persistidos.</span>
+						</label>
+						<button
+							className={PRIMARY_BUTTON_CLASS}
+							disabled={pending || dirty || !confirmed}
+							onClick={() => { setConfirmed(false); onApproveIssue(selected.id); }}
+							type="button"
+						>Aprovar</button>
+					</form>
+				)}
+			</CardPanel>
+		</CardDisclosure>
+	);
+}
+
 function WorkSurface(props: AppProps): React.ReactElement {
 	const actions = actionsFor(props.runs[0] ?? null, props.selectedIssueId !== null);
 	return (
@@ -1118,6 +1215,7 @@ function WorkSurface(props: AppProps): React.ReactElement {
 				onStart={props.onStart}
 				selectedIssueId={props.selectedIssueId}
 			/>
+			<IssueReviewPanel drafts={props.drafts} onApproveIssue={props.onApproveIssue} onReviewIssue={props.onReviewIssue} pending={props.pending} />
 			<IssueSpecifyPanel
 				ideas={props.ideas}
 				onSpecifyIssue={props.onSpecifyIssue}

@@ -36,9 +36,15 @@ export type RunAction = 'resume' | 'cancel' | 'ship';
 export interface BacklogSnapshot {
 	plannable: PlannableIssue[];
 	ideas: PlannableIssue[];
+	drafts: IssueReviewDraft[];
 	workspaceNotices: WorkspaceNoticeView[];
 	/** Version of the binary serving the screen; empty when it did not say. */
 	version: string;
+}
+
+export interface IssueReviewDraft extends CreatedIssue, OperatorSpecDraft {
+	state: 'draft' | 'approved' | 'stale';
+	approvedAt?: string;
 }
 
 export interface WorkspaceNoticeView {
@@ -89,6 +95,7 @@ interface SnapshotPayload {
 		backlog?: {
 			plannable?: PlannableIssue[];
 			byStage?: { idea?: PlannableIssue[] };
+			drafts?: IssueReviewDraft[];
 		};
 	};
 	workspaceNotices?: WorkspaceNoticeView[];
@@ -141,6 +148,7 @@ export async function fetchBacklog(): Promise<BacklogSnapshot> {
 	return {
 		plannable: payload.idleState?.backlog?.plannable ?? [],
 		ideas: payload.idleState?.backlog?.byStage?.idea ?? [],
+		drafts: payload.idleState?.backlog?.drafts ?? [],
 		workspaceNotices: payload.workspaceNotices ?? [],
 		version: payload.version ?? '',
 	};
@@ -280,6 +288,10 @@ export async function specifyIssue(id: string, input: OperatorSpecDraft): Promis
 		throw new Error('O servidor não devolveu a ideia especificada.');
 	}
 	return payload.issue;
+}
+
+export function approveIssue(id: string): Promise<string> {
+	return postCommand(`${ISSUES_PATH}/${encodeURIComponent(id)}/approve`);
 }
 
 export function commandRun(

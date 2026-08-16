@@ -13,6 +13,7 @@ import { type ReactElement, StrictMode, useCallback, useEffect, useState } from 
 import { createRoot } from 'react-dom/client';
 import { App, routeOf } from './App.tsx';
 import {
+	approveIssue,
 	commandRun,
 	createIssue,
 	EVENTS_PATH,
@@ -24,6 +25,7 @@ import {
 	fetchRuns,
 	type RunAction,
 	type ChatMessageView,
+	type IssueReviewDraft,
 	type ProjectBriefView,
 	type ProviderStatusView,
 	saveBrief,
@@ -59,6 +61,7 @@ const EMPTY_BRIEF: ProjectBriefView = {
 function useOperationalRun(): {
 	backlog: PlannableIssue[];
 	ideas: PlannableIssue[];
+	drafts: IssueReviewDraft[];
 	runs: RunView[];
 	events: RunEventView[];
 	workspaceNotices: WorkspaceNoticeView[];
@@ -76,6 +79,7 @@ function useOperationalRun(): {
 } {
 	const [backlog, setBacklog] = useState<PlannableIssue[]>([]);
 	const [ideas, setIdeas] = useState<PlannableIssue[]>([]);
+	const [drafts, setDrafts] = useState<IssueReviewDraft[]>([]);
 	const [runs, setRuns] = useState<RunView[]>([]);
 	const [events, setEvents] = useState<RunEventView[]>([]);
 	const [workspaceNotices, setWorkspaceNotices] = useState<WorkspaceNoticeView[]>([]);
@@ -99,6 +103,7 @@ function useOperationalRun(): {
 				setRuns(runSnapshot);
 				setBacklog(backlogSnapshot.plannable);
 				setIdeas(backlogSnapshot.ideas);
+				setDrafts(backlogSnapshot.drafts);
 				setWorkspaceNotices(backlogSnapshot.workspaceNotices);
 				setVersion(backlogSnapshot.version);
 				setProviders(providerSnapshot.providers);
@@ -157,6 +162,7 @@ function useOperationalRun(): {
 	return {
 		backlog,
 		ideas,
+		drafts,
 		runs,
 		events,
 		workspaceNotices,
@@ -178,6 +184,7 @@ function Screen(): ReactElement {
 	const {
 		backlog,
 		ideas,
+		drafts,
 		runs,
 		events,
 		workspaceNotices,
@@ -202,6 +209,7 @@ function Screen(): ReactElement {
 	return (
 		<App
 			backlog={backlog}
+			drafts={drafts}
 			brief={brief}
 			chatMessages={chatMessages}
 			events={events}
@@ -237,6 +245,10 @@ function Screen(): ReactElement {
 					setSelectedIssueId(specified.id);
 					return `${specified.id} especificada e selecionada.`;
 				}));
+			}}
+			onApproveIssue={(issueId) => send(() => approveIssue(issueId).then(() => `${issueId} aprovada.`))}
+			onReviewIssue={(issueId, draft) => {
+				send(() => specifyIssue(issueId, draft).then(() => `${issueId} revisada.`));
 			}}
 			onStart={() => {
 				if (selectedIssueId !== null) send(() => startRun(selectedIssueId));

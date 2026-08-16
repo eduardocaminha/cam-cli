@@ -93,8 +93,12 @@ describe('GET /api/snapshot idle state', () => {
 		expect(payload['version']).toBe(GSHIP_VERSION);
 		expect(idleState).toBeDefined();
 		expect(Object.keys(idleState)).toEqual(['backlog']);
-		expect(idleState['backlog']).toEqual({
+			expect(idleState['backlog']).toEqual({
 			counts: { idea: 1, specified: 2, planned: 0 },
+			drafts: [
+				{ id: 'GSHIP-2', title: 'ready', scope: 'test', verificationCommand: '', state: 'draft' },
+				{ id: 'GSHIP-3', title: 'blocked', scope: '', verificationCommand: '', state: 'draft' },
+			],
 			plannable: [
 				{
 					id: 'GSHIP-2',
