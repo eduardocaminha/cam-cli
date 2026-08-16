@@ -13,8 +13,8 @@ import {
 	createIssue,
 	EVENTS_PATH,
 	fetchBacklog,
-	fetchLatestRun,
 	fetchRunEvents,
+	fetchRuns,
 	type RunAction,
 	specifyIssue,
 	startRun,
@@ -25,7 +25,7 @@ import './index.css';
 function useOperationalRun(): {
 	backlog: PlannableIssue[];
 	ideas: PlannableIssue[];
-	run: RunView | null;
+	runs: RunView[];
 	events: RunEventView[];
 	status: string | null;
 	pending: boolean;
@@ -33,16 +33,17 @@ function useOperationalRun(): {
 } {
 	const [backlog, setBacklog] = useState<PlannableIssue[]>([]);
 	const [ideas, setIdeas] = useState<PlannableIssue[]>([]);
-	const [run, setRun] = useState<RunView | null>(null);
+	const [runs, setRuns] = useState<RunView[]>([]);
 	const [events, setEvents] = useState<RunEventView[]>([]);
 	const [status, setStatus] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
 
 	const refresh = useCallback(() => {
-		void Promise.all([fetchLatestRun(), fetchBacklog()])
-			.then(async ([latest, backlogSnapshot]) => {
+		void Promise.all([fetchRuns(), fetchBacklog()])
+			.then(async ([runSnapshot, backlogSnapshot]) => {
+				const latest = runSnapshot[0] ?? null;
 				const history = latest === null ? [] : await fetchRunEvents(latest.id);
-				setRun(latest);
+				setRuns(runSnapshot);
 				setBacklog(backlogSnapshot.plannable);
 				setIdeas(backlogSnapshot.ideas);
 				setEvents(history);
@@ -84,11 +85,12 @@ function useOperationalRun(): {
 		return () => source.close();
 	}, [refresh]);
 
-	return { backlog, ideas, run, events, status, pending, send };
+	return { backlog, ideas, runs, events, status, pending, send };
 }
 
 function Screen(): ReactElement {
-	const { backlog, ideas, run, events, status, pending, send } = useOperationalRun();
+	const { backlog, ideas, runs, events, status, pending, send } = useOperationalRun();
+	const run = runs[0] ?? null;
 	const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
 	const command = (action: RunAction) => () => {
 		if (run !== null) send(() => commandRun(run.id, action));
@@ -121,7 +123,7 @@ function Screen(): ReactElement {
 				if (selectedIssueId !== null) send(() => startRun(selectedIssueId));
 			}}
 			pending={pending}
-			run={run}
+			runs={runs}
 			selectedIssueId={selectedIssueId}
 			status={status}
 		/>
