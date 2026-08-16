@@ -1,26 +1,9 @@
 // Claude Code stream-json event classification for the web runtime.
 //
-// Classifies one line of the headless child's `--output-format stream-json`
-// NDJSON output into the event vocabulary actually MEASURED on 2026-08-08
-// (ADR-0059/ADR-0060, GOTCHA I): `system` (including its `init` subtype),
-// `rate_limit_event`, `assistant`, `user` and `result`. US-002 (CAM-516).
-//
-// `stream_event` gets its OWN named branch that deliberately IGNORES it
-// (GOTCHA H): this PRD's argv builder (headless-argv.ts, US-001) never passes
-// `--include-partial-messages`, so token-level `stream_event` deltas are not
-// emitted today. The defect this avoids is the Warren transcript parser's
-// generic-branch behavior (early-death.ts / src/transcript/usage.ts precedent
-// for reading the SAME event vocabulary applied to on-disk transcripts): a
-// type this repo does not yet consume must still be named explicitly rather
-// than silently falling through a `default` alongside genuinely malformed
-// input.
-//
-// A malformed line (invalid JSON, non-object JSON, or an object whose `type`
-// is outside the measured vocabulary) is classified explicitly as `kind:
-// 'malformed'` with a `reason`, never thrown out of the consumer -- mirrors
-// the malformed-line convention already established by
-// `extractLastAssistantEntry` (early-death.ts) and `parseTranscriptUsage`
-// (src/transcript/usage.ts), which both skip rather than throw.
+// Classifies one line of Claude Code's `--output-format stream-json` NDJSON.
+// Unknown or malformed input becomes an explicit event instead of terminating
+// the consumer. Token-level `stream_event` messages are named but ignored
+// because Gateship does not request partial messages.
 
 /** The event vocabulary measured on 2026-08-08 (GOTCHA I), plus the
  * deliberately-ignored `stream_event` branch (GOTCHA H) and `malformed`. */

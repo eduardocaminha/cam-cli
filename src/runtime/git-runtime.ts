@@ -131,7 +131,7 @@ async function defaultRunCommand(
 	});
 }
 
-function acceptanceCriteria(issueContent: string): string[] {
+function verificationCommands(issueContent: string): string[] {
 	let issue: unknown;
 	try {
 		issue = JSON.parse(issueContent);
@@ -145,12 +145,26 @@ function acceptanceCriteria(issueContent: string): string[] {
 	if (spec === null || typeof spec !== 'object' || Array.isArray(spec)) {
 		throw new Error('issue has no structured spec');
 	}
-	const criteria = (spec as Record<string, unknown>).acceptanceCriteria;
-	if (!Array.isArray(criteria) || !criteria.every((item) => typeof item === 'string')) {
-		throw new Error('issue has no valid acceptance criteria');
+	const direct = (spec as Record<string, unknown>).verify;
+	if (Array.isArray(direct) && direct.length > 0 && direct.every((item) => typeof item === 'string')) {
+		return direct;
 	}
-	if (criteria.length === 0) throw new Error('issue has no acceptance criteria');
-	return criteria;
+	const criteria = (spec as Record<string, unknown>).acceptanceCriteria;
+	if (!Array.isArray(criteria) || criteria.length === 0 || !criteria.every((item) => typeof item === 'string')) {
+		throw new Error('issue has no verification commands');
+	}
+	return criteria.map((criterion, index) => {
+		const directive = parseOracleDirective(criterion);
+		if (directive === null || directive.kind === 'invalid') {
+			throw new Error(`legacy acceptance criterion ${index + 1} has no runnable command`);
+		}
+		if (directive.kind === 'unsupported') {
+			throw new Error(
+				`legacy acceptance criterion ${index + 1} uses unsupported oracle ${directive.name}`,
+			);
+		}
+		return directive.command;
+	});
 }
 
 function outputTail(result: CommandResult): string {
@@ -229,38 +243,28 @@ export class GitIssueVerifier implements RuntimeVerifier {
 		const workingTree = verifyWorkingTree(this.#runGit, input.cwd);
 		if (!workingTree.ok) return workingTree;
 
-		let criteria: string[];
+		let commands: string[];
 		try {
-			criteria = acceptanceCriteria(this.#loadIssue(input.cwd, input.issueId));
+			commands = verificationCommands(this.#loadIssue(input.cwd, input.issueId));
 		} catch (error) {
 			return { ok: false, detail: error instanceof Error ? error.message : String(error) };
 		}
 
-		for (const [criterionIndex, criterion] of criteria.entries()) {
-			const directive = parseOracleDirective(criterion);
-			if (directive === null) {
-				return { ok: false, detail: `acceptance criterion ${criterionIndex + 1} has no oracle` };
-			}
-			if (directive.kind !== 'named-command' && directive.kind !== 'file-assert') {
-				return {
-					ok: false,
-					detail: `acceptance criterion ${criterionIndex + 1} uses unsupported oracle ${directive.kind}`,
-				};
-			}
-			input.emit('verify.command.started', { criterionIndex: criterionIndex + 1 });
+		for (const [commandIndex, command] of commands.entries()) {
+			input.emit('verify.command.started', { commandIndex: commandIndex + 1 });
 			const result = await this.#runCommand({
 				cwd: input.cwd,
-				command: directive.command,
+				command,
 				signal: input.signal,
 			});
 			input.emit('verify.command.completed', {
-				criterionIndex: criterionIndex + 1,
+				commandIndex: commandIndex + 1,
 				exitCode: result.exitCode,
 			});
 			if (result.exitCode !== 0) {
 				return {
 					ok: false,
-					detail: `acceptance criterion ${criterionIndex + 1} exited ${result.exitCode}: ${outputTail(result)}`,
+					detail: `verification command ${commandIndex + 1} exited ${result.exitCode}: ${outputTail(result)}`,
 				};
 			}
 		}

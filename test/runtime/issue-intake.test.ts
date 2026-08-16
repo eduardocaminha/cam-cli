@@ -24,7 +24,7 @@ function identify(cwd: string): void {
 }
 
 function writeIssue(cwd: string, number: number, stage: 'idea' | 'specified' = 'specified'): void {
-	const directory = join(cwd, 'scripts', 'cam', 'issues');
+	const directory = join(cwd, '.gateship', 'issues');
 	mkdirSync(directory, { recursive: true });
 	writeFileSync(
 		join(directory, `CAM-${String(number).padStart(4, '0')}.json`),
@@ -85,11 +85,11 @@ describe('remote-main operator issue intake', () => {
 			() => '2026-08-16T03:00:00.000Z',
 		);
 
-		expect(created).toMatchObject({ id: 'CAM-8', title: 'Intake direto' });
-		const content = git(fixture.remote, ['show', 'main:scripts/cam/issues/CAM-0008.json']);
+		expect(created).toMatchObject({ id: 'GSHIP-8', title: 'Intake direto' });
+		const content = git(fixture.remote, ['show', 'main:.gateship/issues/GSHIP-0008.json']);
 		const issue = JSON.parse(content) as Record<string, unknown>;
 		expect(issue).toMatchObject({
-			id: 'CAM-8',
+			id: 'GSHIP-8',
 			stage: 'specified',
 			status: 'open',
 			specSource: 'operator',
@@ -97,10 +97,7 @@ describe('remote-main operator issue intake', () => {
 		});
 		expect(issue['spec']).toMatchObject({
 			scope: 'O formulário cria uma tarefa executável sem planner.',
-			acceptanceCriteria: [
-				'O formulário cria uma tarefa executável sem planner. ' +
-				'[oracle: named-command bun test test/runtime/issue-intake.test.ts]',
-			],
+			verify: ['bun test test/runtime/issue-intake.test.ts'],
 		});
 		expect(git(fixture.local, ['rev-parse', 'refs/heads/main'])).toBe(staleMain);
 		expect(git(fixture.local, ['status', '--porcelain', '--untracked-files=all'])).toBe(dirtyBefore);
@@ -142,7 +139,7 @@ describe('remote-main operator issue intake', () => {
 		);
 
 		expect(specified).toMatchObject({ id: 'CAM-2', title: 'fixture 2' });
-		const content = git(fixture.remote, ['show', 'main:scripts/cam/issues/CAM-0002.json']);
+		const content = git(fixture.remote, ['show', 'main:.gateship/issues/CAM-0002.json']);
 		const issue = JSON.parse(content) as Record<string, unknown>;
 		expect(issue).toMatchObject({
 			id: 'CAM-2',
@@ -152,10 +149,7 @@ describe('remote-main operator issue intake', () => {
 		});
 		expect(issue['spec']).toMatchObject({
 			scope: 'A ideia fica executável sem planner.',
-			acceptanceCriteria: [
-				'A ideia fica executável sem planner. ' +
-					'[oracle: named-command bun test test/runtime/issue-intake.test.ts]',
-			],
+			verify: ['bun test test/runtime/issue-intake.test.ts'],
 		});
 		expect(git(fixture.local, ['rev-parse', 'refs/heads/main'])).toBe(staleMain);
 		expect(git(fixture.local, ['status', '--porcelain', '--untracked-files=all'])).toBe(dirtyBefore);

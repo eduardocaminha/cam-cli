@@ -21,9 +21,11 @@ describe('current CLI help surface', () => {
 		try {
 			expect(await main(['bun', 'index.ts', '--help'])).toBe(0);
 			expect(capture.text()).toContain('gship');
-			expect(capture.text()).toContain('web [--port N]');
-			expect(capture.text()).toContain('run [--port N]');
-			expect(capture.text()).toContain('init');
+			expect(capture.text()).toContain('gship [--port N]');
+			expect(capture.text()).toContain('--port <N>');
+			expect(capture.text()).not.toContain('gship web');
+			expect(capture.text()).not.toContain('gship run');
+			expect(capture.text()).not.toContain('gship init');
 			expect(capture.text()).not.toContain('sidecar');
 			expect(capture.text()).not.toContain('tmux');
 			expect(capture.text()).not.toMatch(/(^|[^a-zA-Z_/-])cam /);
@@ -32,15 +34,9 @@ describe('current CLI help surface', () => {
 		}
 	});
 
-	for (const command of ['web', 'run', 'init']) {
-		test(`gship ${command} --help exits before command execution`, async () => {
-			const capture = captureStdout();
-			try {
-				expect(await main(['bun', 'index.ts', command, '--help'])).toBe(0);
-				expect(capture.text()).toContain(`gship ${command === 'run' ? 'web' : command}`);
-			} finally {
-				capture.restore();
-			}
-		});
-	}
+	test('the retired subcommands are no longer accepted', async () => {
+		for (const command of ['web', 'run', 'init']) {
+			expect(await main(['bun', 'index.ts', command])).toBe(1);
+		}
+	});
 });

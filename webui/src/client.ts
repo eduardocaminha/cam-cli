@@ -11,6 +11,8 @@ export const SNAPSHOT_PATH = '/api/snapshot';
 export const RUNS_PATH = '/api/runs';
 export const EVENTS_PATH = '/api/events';
 export const ISSUES_PATH = '/api/issues';
+export const PROVIDERS_PATH = '/api/providers';
+export const CHAT_PATH = '/api/chat';
 
 export interface OperatorIssueDraft {
 	title: string;
@@ -33,6 +35,32 @@ export type RunAction = 'resume' | 'cancel' | 'ship';
 export interface BacklogSnapshot {
 	plannable: PlannableIssue[];
 	ideas: PlannableIssue[];
+	workspaceNotices: WorkspaceNoticeView[];
+}
+
+export interface WorkspaceNoticeView {
+	kind: 'cleanup-failed' | 'dirty' | 'failed-run' | 'orphan';
+	runId: string | null;
+	workspacePath: string | null;
+	branch: string | null;
+	detail: string;
+}
+
+export interface ProviderStatusView {
+	id: 'claude' | 'codex';
+	installed: boolean;
+	subscription: boolean;
+	label: string;
+	plan?: string;
+	login: 'external' | 'web';
+}
+
+export interface ChatMessageView {
+	seq: number;
+	providerId: ProviderStatusView['id'];
+	role: 'operator' | 'orchestrator' | 'system';
+	text: string;
+	createdAt: string;
 }
 
 interface SnapshotPayload {
@@ -42,6 +70,7 @@ interface SnapshotPayload {
 			byStage?: { idea?: PlannableIssue[] };
 		};
 	};
+	workspaceNotices?: WorkspaceNoticeView[];
 }
 
 interface RunsPayload {
@@ -61,6 +90,19 @@ interface CreateIssuePayload extends CommandPayload {
 	issue?: CreatedIssue;
 }
 
+interface ProvidersPayload {
+	providers: ProviderStatusView[];
+	selected: ProviderStatusView['id'];
+}
+
+interface CodexLoginPayload extends CommandPayload {
+	login?: { loginId: string; authUrl: string };
+}
+
+interface ChatPayload extends CommandPayload {
+	messages?: ChatMessageView[];
+}
+
 async function readJson<T>(response: Response, what: string): Promise<T> {
 	if (!response.ok) throw new Error(`${what} respondeu ${response.status}`);
 	return (await response.json()) as T;
@@ -72,6 +114,7 @@ export async function fetchBacklog(): Promise<BacklogSnapshot> {
 	return {
 		plannable: payload.idleState?.backlog?.plannable ?? [],
 		ideas: payload.idleState?.backlog?.byStage?.idea ?? [],
+		workspaceNotices: payload.workspaceNotices ?? [],
 	};
 }
 
@@ -82,6 +125,45 @@ export async function fetchBacklog(): Promise<BacklogSnapshot> {
 export async function fetchRuns(): Promise<RunView[]> {
 	const payload = await readJson<RunsPayload>(await fetch(RUNS_PATH), 'Runs');
 	return payload.runs ?? [];
+}
+
+export interface ProvidersSnapshot {
+	providers: ProviderStatusView[];
+	selected: ProviderStatusView['id'];
+}
+
+export async function fetchProviders(): Promise<ProvidersSnapshot> {
+	const payload = await readJson<ProvidersPayload>(await fetch(PROVIDERS_PATH), 'Providers');
+	return { providers: payload.providers ?? [], selected: payload.selected ?? 'claude' };
+}
+
+export async function fetchChat(): Promise<ChatMessageView[]> {
+	const payload = await readJson<ChatPayload>(await fetch(CHAT_PATH), 'Conversa');
+	return payload.messages ?? [];
+}
+
+export async function sendChat(message: string): Promise<string> {
+	const response = await fetch(CHAT_PATH, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ message }),
+	});
+	const payload = (await response.json()) as ChatPayload;
+	if (!response.ok) throw new Error(payload.message ?? `Conversa recusada (${response.status}).`);
+	return 'Resposta do orquestrador recebida.';
+}
+
+export async function startCodexLogin(): Promise<string> {
+	const response = await fetch(`${PROVIDERS_PATH}/codex/login`, { method: 'POST' });
+	const payload = (await response.json()) as CodexLoginPayload;
+	if (!response.ok || payload.login === undefined) {
+		throw new Error(payload.message ?? `Login recusado (${response.status}).`);
+	}
+	return payload.login.authUrl;
+}
+
+export function selectProvider(providerId: ProviderStatusView['id']): Promise<string> {
+	return postCommand(`${PROVIDERS_PATH}/${providerId}/select`);
 }
 
 export async function fetchRunEvents(runId: string): Promise<RunEventView[]> {

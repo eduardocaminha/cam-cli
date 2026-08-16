@@ -1,7 +1,14 @@
 import { randomUUID } from 'node:crypto';
-import type { RuntimeWorkspace } from './git-workspace.ts';
+import type { AgentProviderId } from './agent-session.ts';
+import type {
+	RuntimeWorkspace,
+	WorkspaceNotice,
+	WorkspaceRunReference,
+} from './git-workspace.ts';
 import { canTransition, isTerminalRunState } from './run-state.ts';
 import {
+	type OrchestratorMessage,
+	type OrchestratorMessageRole,
 	type RunEvent,
 	type RunRecord,
 	RunStore,
@@ -11,10 +18,13 @@ export interface RuntimeExecutionInput {
 	runId: string;
 	issueId: string;
 	sessionId: string;
+	providerId?: AgentProviderId;
 	resume: boolean;
 	cwd: string;
 	signal: AbortSignal;
 	emit: (kind: string, payload?: Record<string, unknown>) => void;
+	/** Persist a provider-assigned thread id as soon as it becomes available. */
+	setSessionId?: (sessionId: string) => void;
 	/**
 	 * Findings from the independent review, present only on the single
 	 * automatic fix round. The reviewer runs in its own session, so this is the
@@ -132,6 +142,7 @@ export class RunRuntime {
 	readonly #workspace: RuntimeWorkspace | undefined;
 	readonly #listeners = new Set<EventListener>();
 	readonly #active = new Map<string, ActiveRun>();
+	#workspaceNotices: WorkspaceNotice[] = [];
 
 	constructor(options: RunRuntimeOptions) {
 		this.#cwd = options.cwd;
@@ -146,6 +157,8 @@ export class RunRuntime {
 		this.#preflight = options.preflight;
 		this.#workspace = options.workspace;
 		this.#store.recoverUnownedRuns(this.#now());
+		this.#reconcileFinishedWorkspaces();
+		this.#refreshWorkspaceNotices();
 	}
 
 	startRun(issueId: string): RunRecord {
@@ -171,6 +184,7 @@ export class RunRuntime {
 			id,
 			issueId: normalizedIssueId,
 			sessionId: this.#newSessionId(),
+			providerId: this.#store.getSelectedProvider(),
 			workspacePath,
 			createdAt: this.#now(),
 		});
@@ -245,6 +259,43 @@ export class RunRuntime {
 
 	listRunEvents(runId: string): RunEvent[] {
 		return this.#store.listRunEvents(runId);
+	}
+
+	listWorkspaceNotices(): WorkspaceNotice[] {
+		return [...this.#workspaceNotices];
+	}
+
+	getSelectedProvider(): AgentProviderId {
+		return this.#store.getSelectedProvider();
+	}
+
+	selectProvider(providerId: AgentProviderId): void {
+		this.#store.setSelectedProvider(providerId);
+	}
+
+	getOrchestratorSession(providerId: AgentProviderId): string | null {
+		return this.#store.getOrchestratorSession(providerId);
+	}
+
+	setOrchestratorSession(providerId: AgentProviderId, sessionId: string): void {
+		this.#store.setOrchestratorSession(providerId, sessionId, this.#now());
+	}
+
+	appendOrchestratorMessage(
+		providerId: AgentProviderId,
+		role: OrchestratorMessageRole,
+		text: string,
+	): OrchestratorMessage {
+		return this.#store.appendOrchestratorMessage({
+			providerId,
+			role,
+			text,
+			createdAt: this.#now(),
+		});
+	}
+
+	listOrchestratorMessages(limit?: number): OrchestratorMessage[] {
+		return this.#store.listOrchestratorMessages(limit);
 	}
 
 	subscribe(listener: EventListener): () => void {
@@ -354,6 +405,7 @@ export class RunRuntime {
 				this.#transition(run.id, 'done', 'run.shipped', {
 					payload: { prNumber: result.prNumber },
 				});
+				this.#releaseFinishedWorkspace(run, false);
 				return;
 			}
 			this.#transition(run.id, 'ready-to-ship', 'run.ship-failed', {
@@ -452,10 +504,12 @@ export class RunRuntime {
 			runId: run.id,
 			issueId: run.issueId,
 			sessionId: run.sessionId,
+			providerId: run.providerId,
 			resume: attempt.resume,
 			cwd: run.workspacePath.length === 0 ? this.#cwd : run.workspacePath,
 			signal,
 			emit: (kind, payload) => this.#emit(run.id, kind, payload),
+			setSessionId: (sessionId) => this.#setSessionId(run, sessionId),
 			...(attempt.reviewFeedback === undefined
 				? {}
 				: { reviewFeedback: attempt.reviewFeedback }),
@@ -463,6 +517,14 @@ export class RunRuntime {
 				? {}
 				: { operatorGuidance: attempt.operatorGuidance }),
 		};
+	}
+
+	#setSessionId(run: RunRecord, sessionId: string): void {
+		const normalized = sessionId.trim();
+		if (normalized.length === 0 || normalized === run.sessionId) return;
+		this.#store.setSessionId(run.id, normalized);
+		run.sessionId = normalized;
+		this.#emit(run.id, 'provider.session', { providerSessionId: normalized });
 	}
 
 	/** Persist one progress event that does not move the run's state. */
@@ -508,5 +570,69 @@ export class RunRuntime {
 
 	#publish(event: RunEvent): void {
 		for (const listener of this.#listeners) listener(event);
+	}
+
+	/** Retry cleanup of runs whose merge was already durably confirmed. */
+	#reconcileFinishedWorkspaces(): void {
+		if (this.#workspace?.release === undefined) return;
+		for (const run of this.#store.listRuns(10_000)) {
+			if (run.state === 'done') this.#releaseFinishedWorkspace(run, true, false);
+		}
+	}
+
+	/**
+	 * Cleanup is deliberately outside the run state machine: a merged run stays
+	 * done even when local resource release needs operator attention or a later
+	 * startup retry.
+	 */
+	#releaseFinishedWorkspace(run: RunRecord, reconciled: boolean, refresh = true): void {
+		if (this.#workspace?.release === undefined || run.workspacePath.length === 0) return;
+		let result: ReturnType<NonNullable<RuntimeWorkspace['release']>>;
+		try {
+			result = this.#workspace.release({
+				runId: run.id,
+				issueId: run.issueId,
+				workspacePath: run.workspacePath,
+			});
+		} catch (error) {
+			this.#emitWorkspaceCleanupWarning(run.id, errorMessage(error));
+			if (refresh) this.#refreshWorkspaceNotices();
+			return;
+		}
+
+		if (result.outcome === 'preserved') {
+			this.#emitWorkspaceCleanupWarning(run.id, result.detail);
+		} else if (!this.#store.listRunEvents(run.id)
+			.some((event) => event.kind === 'workspace.released')) {
+			this.#emit(run.id, 'workspace.released', {
+				branch: result.branch,
+				outcome: result.outcome,
+				reconciled,
+			});
+		}
+		if (refresh) this.#refreshWorkspaceNotices();
+	}
+
+	#emitWorkspaceCleanupWarning(runId: string, detail: string): void {
+		const last = this.#store.listRunEvents(runId).at(-1);
+		if (last?.kind === 'workspace.cleanup-warning' && last.payload['detail'] === detail) return;
+		this.#emit(runId, 'workspace.cleanup-warning', { detail });
+	}
+
+	#refreshWorkspaceNotices(): void {
+		const inspect = this.#workspace?.inspect;
+		if (inspect === undefined) {
+			this.#workspaceNotices = [];
+			return;
+		}
+		const runs: WorkspaceRunReference[] = this.#store.listRuns(10_000)
+			.filter((run) => run.workspacePath.length > 0)
+			.map((run) => ({
+				runId: run.id,
+				issueId: run.issueId,
+				workspacePath: run.workspacePath,
+				state: run.state === 'done' ? 'done' : run.state === 'failed' ? 'failed' : 'active',
+			}));
+		this.#workspaceNotices = inspect.call(this.#workspace, runs);
 	}
 }

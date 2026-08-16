@@ -19,28 +19,36 @@ function makeIssue(overrides: Partial<IssueEntry> & { id: string }): IssueEntry 
 }
 
 // ---------------------------------------------------------------------------
-// isPlannable: ADR-0051 acceptance-criteria gate
+// isPlannable: executable-spec boundary
 // ---------------------------------------------------------------------------
 
-describe("isPlannable — acceptance-criteria gate (ADR-0051)", () => {
+describe("isPlannable — executable spec", () => {
 	test("rejects a specified/open entry with no spec key at all", () => {
 		const entry = makeIssue({ id: "CAM-1" });
 		expect(entry.spec).toBeUndefined();
 		expect(isPlannable(entry, [entry])).toBe(false);
 	});
 
-	test("rejects a specified/open entry whose spec.acceptanceCriteria is an empty array", () => {
+	test("rejects a specified/open entry whose spec.verify is empty", () => {
 		const entry = makeIssue({
 			id: "CAM-2",
-			spec: { acceptanceCriteria: [], scope: "s", gotchas: [], domainTerms: [] },
+			spec: { verify: [], scope: "s" },
 		});
 		expect(isPlannable(entry, [entry])).toBe(false);
 	});
 
-	test("accepts a specified/open/unblocked entry with non-empty acceptanceCriteria", () => {
+	test("accepts a specified/open/unblocked entry with direct verification", () => {
 		const entry = makeIssue({
 			id: "CAM-3",
-			spec: { acceptanceCriteria: ["do the thing"], scope: "s", gotchas: [], domainTerms: [] },
+			spec: { verify: ["bun test"], scope: "s" },
+		});
+		expect(isPlannable(entry, [entry])).toBe(true);
+	});
+
+	test("accepts a legacy acceptanceCriteria issue while the backlog drains", () => {
+		const entry = makeIssue({
+			id: "CAM-legacy",
+			spec: { acceptanceCriteria: ["do the thing"], scope: "s" },
 		});
 		expect(isPlannable(entry, [entry])).toBe(true);
 	});
@@ -50,7 +58,7 @@ describe("isPlannable — acceptance-criteria gate (ADR-0051)", () => {
 		const entry = makeIssue({
 			id: "CAM-5",
 			blockedBy: ["CAM-4"],
-			spec: { acceptanceCriteria: ["x"], scope: "s", gotchas: [], domainTerms: [] },
+			spec: { verify: ["bun test"], scope: "s" },
 		});
 		expect(isPlannable(entry, [entry, dep])).toBe(false);
 	});

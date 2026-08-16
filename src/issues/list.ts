@@ -16,7 +16,7 @@
 // CAM-190 US-001.
 
 import type { IssueEntry, IssueStage } from './types.ts';
-import { isPlannable } from './select.ts';
+import { isPlannable } from './plannable.ts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -55,12 +55,11 @@ export interface BacklogViewOptions {
 const DEFAULT_STAGES: IssueStage[] = ['idea', 'specified', 'planned'];
 
 /**
- * Parses the numeric suffix from an issue id (e.g. "CAM-12" -> 12).
+ * Parses the numeric suffix from an issue id (e.g. "GSHIP-12" -> 12).
  * Returns Infinity when the suffix is absent or non-numeric, so un-parseable
  * ids sort to the end rather than crashing.
  *
- * Replicated from src/issues/select.ts (selectPlannableIssue's tie-breaker)
- * per the story notes: this module stays independent of select.ts internals.
+ * Invalid suffixes sort last rather than crashing the backlog view.
  */
 function numericIdSuffix(id: string): number {
 	const suffix = id.split('-').at(-1);
@@ -70,23 +69,9 @@ function numericIdSuffix(id: string): number {
 }
 
 /**
- * Sort comparator mirroring selectPlannableIssue's ordering contract:
- *   1. ranked entries sort before unranked ones
- *   2. among ranked entries, ascending rank value (lower rank = higher priority)
- *   3. tie-break (same rank, or both unranked): ascending numeric id suffix
+ * Stable, transparent backlog order: ascending numeric issue id.
  */
 export function compareBacklogEntries(a: IssueEntry, b: IssueEntry): number {
-	const aHasRank = a.rank !== undefined;
-	const bHasRank = b.rank !== undefined;
-
-	if (aHasRank && !bHasRank) return -1;
-	if (!aHasRank && bHasRank) return 1;
-
-	if (aHasRank && bHasRank) {
-		const rankDiff = (a.rank as number) - (b.rank as number);
-		if (rankDiff !== 0) return rankDiff;
-	}
-
 	return numericIdSuffix(a.id) - numericIdSuffix(b.id);
 }
 
@@ -120,8 +105,7 @@ function unmetBlockersOf(issue: IssueEntry, byId: Map<string, IssueEntry>): stri
  * are always present (possibly with zero entries); callers decide whether to
  * render empty groups.
  *
- * Sorting: within each group, entries are ordered by compareBacklogEntries
- * (ranked-before-unranked, ascending rank, numeric id suffix tie-break).
+ * Sorting: within each group, entries are ordered by numeric issue id.
  *
  * Pure: no I/O. backlog array in, view struct out.
  */
@@ -158,8 +142,6 @@ export function deriveBacklogView(
 export interface BacklogJsonRow {
 	id: string;
 	title: string;
-	/** null when the issue is unranked (JSON has no `undefined`; the key is always present). */
-	rank: number | null;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -191,7 +173,6 @@ function toJsonRow(issue: IssueEntry): BacklogJsonRow {
 	return {
 		id: issue.id,
 		title: issue.title,
-		rank: issue.rank ?? null,
 		createdAt: issue.createdAt,
 		updatedAt: issue.updatedAt,
 	};
@@ -207,16 +188,12 @@ function toJsonRow(issue: IssueEntry): BacklogJsonRow {
  *   (mirrors deriveBacklogView's --all semantics); otherwise the key is
  *   absent (not merely undefined-valued).
  * - plannable: membership is isPlannable (specified + open + not blocked,
- *   src/issues/plannable.ts via select.ts) evaluated against the FULL
+ *   src/issues/plannable.ts) evaluated against the FULL
  *   backlog (blocker lookups need every stage, not just the open subset).
  *   A blocked specified+open entry appears in byStage.specified but NOT in
  *   plannable.
  *
- * Sorting: both plannable and each byStage group use compareBacklogEntries
- * (ranked-first, ascending rank, numeric id suffix tie-break) -- the same
- * ordering deriveBacklogView uses, NOT selectPlannableIssue's WSJF-aware
- * champion selection (that answers a different question: "which ONE issue
- * next", not "rank this list").
+ * Sorting: plannable and each byStage group use ascending numeric issue id.
  *
  * Pure: no I/O. backlog array in, JSON-shaped struct out.
  */

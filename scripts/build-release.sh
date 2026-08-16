@@ -10,9 +10,9 @@
 #   ./scripts/build-release.sh --install                # builds + installs host-native binary to ~/.local/bin/{gateship,gship}
 #   ./scripts/build-release.sh --install ~/bin/gateship  # builds + installs to the given directory
 #
-# Targets (US-003, CAM-460): bun-darwin-arm64, bun-darwin-x64, bun-linux-x64,
-# bun-linux-arm64. Only the host-native artifact can actually be executed on
-# this machine, so only it is smoke-tested (--version + hermetic `init`); the
+# Targets: bun-darwin-arm64, bun-darwin-x64, bun-linux-x64, bun-linux-arm64.
+# Only the host-native artifact can actually be executed on this machine, so
+# only it is smoke-tested (--version + help); the
 # other three are cross-compiled binaries verified by architecture (`file`)
 # by the caller, not executed here.
 #
@@ -94,7 +94,7 @@ TARGETS=(
 	"bun-linux-arm64:gateship-linux-arm64"
 )
 # Artifact names the loop below actually produces, appended after codesign so
-# the manifest step (US-001, CAM-495) hashes the FINAL bytes, never a glob.
+# the manifest hashes the final bytes, never a glob.
 MANIFEST_NAMES=()
 
 for entry in "${TARGETS[@]}"; do
@@ -139,7 +139,7 @@ if [[ -z "${HOST_BIN}" ]]; then
 	exit 1
 fi
 
-# --- Manifest: dist/SHA256SUMS.txt (US-001, CAM-495) --------------------------
+# --- Manifest: dist/SHA256SUMS.txt ------------------------------------------
 # Written only now that the loop above has closed: every darwin artifact was
 # already re-signed, so this hashes the FINAL on-disk bytes a user downloads,
 # never a pre-signature hash. Built from MANIFEST_NAMES (the artifact names
@@ -159,11 +159,7 @@ if [[ "${ACTUAL}" != "${EXPECTED}" ]]; then
 fi
 echo "[build-release]   ${ACTUAL}"
 
-# --- Sanity: init machine check (host-native artifact only) ------------------
-# `gship init` only checks for the signed-in Claude CLI and writes no project
-# files. Run it from a throwaway cwd anyway so release verification stays
-# hermetic. A missing Claude binary is acceptable on a build machine.
-echo "[build-release] invoking init (soft-check, hermetic, ${HOST_BIN})"
+# --- Sanity: help from a clean directory (host-native artifact only) ---------
 SMOKE_DIR="$(mktemp -d)"
 STAGED=""
 # Clean up the tmpdir on any exit (success OR an earlier abort), so it never
@@ -172,19 +168,9 @@ STAGED=""
 # later verification step aborts before the rename (ADR-0058).
 trap 'rm -rf "${SMOKE_DIR:-}" ${STAGED:+"${STAGED}"}' EXIT
 BIN_ABS="${REPO_ROOT}/${HOST_BIN}"
-if (cd "${SMOKE_DIR}" && "${BIN_ABS}" init </dev/null); then
-	echo "[build-release]   init: ok"
-else
-	rc=$?
-	# Distinguish claude-absent (acceptable) from a real init crash (fatal).
-	# Only tolerate non-zero when claude is genuinely missing from PATH.
-	if command -v claude >/dev/null 2>&1; then
-		echo "[build-release] ERROR: init exited ${rc} with claude installed -- real init crash, not a missing-claude skip" >&2
-		exit "${rc}"
-	else
-		echo "[build-release]   init: exit ${rc} (claude not in PATH, soft-check skipped)"
-	fi
-fi
+HELP_OUTPUT="$(cd "${SMOKE_DIR}" && "${BIN_ABS}" --help)"
+[[ "${HELP_OUTPUT}" == *"gship [--port N]"* ]] || { echo "[build-release] ERROR: help smoke failed" >&2; exit 1; }
+echo "[build-release]   help: ok"
 
 # --- Install (--install) -- host-native artifact, additive -------------------
 if [[ "${DO_INSTALL}" == "true" ]]; then

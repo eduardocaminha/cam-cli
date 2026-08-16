@@ -111,7 +111,7 @@ function defaultLoadIssue(cwd: string, issueId: string): string {
 	return issue.content;
 }
 
-function collectChange(runGit: GitCommandRunner, cwd: string): { status: string; diff: string } {
+export function collectChange(runGit: GitCommandRunner, cwd: string): { status: string; diff: string } {
 	const status = runGit(cwd, ['status', '--porcelain', '--untracked-files=all']);
 	const diff = runGit(cwd, ['diff', 'HEAD']);
 	const diffText = diff.exitCode === 0 ? diff.stdout : `(git diff failed: ${diff.stderr.trim()})`;
@@ -123,7 +123,7 @@ function collectChange(runGit: GitCommandRunner, cwd: string): { status: string;
 	};
 }
 
-function buildReviewPrompt(
+export function buildReviewPrompt(
 	issueId: string,
 	issue: string,
 	change: { status: string; diff: string },
@@ -155,6 +155,24 @@ function buildReviewPrompt(
 		change.diff.trim().length === 0 ? '(empty)' : change.diff,
 	].join('\n');
 }
+
+export const REVIEW_RESULT_SCHEMA = {
+	type: 'object',
+	properties: {
+		verdict: { type: 'string', enum: ['CLEAN', 'FINDINGS'] },
+		findings: {
+			type: 'array',
+			items: {
+				type: 'object',
+				properties: { file: { type: 'string' }, summary: { type: 'string' } },
+				required: ['file', 'summary'],
+				additionalProperties: false,
+			},
+		},
+	},
+	required: ['verdict', 'findings'],
+	additionalProperties: false,
+} as const;
 
 function parseJsonObject(text: string): Record<string, unknown> | null {
 	const trimmed = text.trim().replace(/```(?:json)?\s*([\s\S]*?)\s*```/g, '$1').trim();

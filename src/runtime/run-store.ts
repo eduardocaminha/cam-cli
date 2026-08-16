@@ -2,12 +2,14 @@ import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
+import type { AgentProviderId } from './agent-session.ts';
 import { isRunState, nextFixRounds, type RunState } from './run-state.ts';
 
 export interface RunRecord {
 	id: string;
 	issueId: string;
 	sessionId: string;
+	providerId: AgentProviderId;
 	workspacePath: string;
 	state: RunState;
 	fixRounds: number;
@@ -27,10 +29,22 @@ export interface RunEvent {
 	createdAt: string;
 }
 
+export type OrchestratorMessageRole = 'operator' | 'orchestrator' | 'system';
+
+/** Durable public transcript shared across orchestrator provider sessions. */
+export interface OrchestratorMessage {
+	seq: number;
+	providerId: AgentProviderId;
+	role: OrchestratorMessageRole;
+	text: string;
+	createdAt: string;
+}
+
 export interface CreateRunInput {
 	id: string;
 	issueId: string;
 	sessionId: string;
+	providerId?: AgentProviderId;
 	workspacePath: string;
 	createdAt: string;
 }
@@ -56,6 +70,7 @@ interface RunRow {
 	id: string;
 	issue_id: string;
 	session_id: string | null;
+	provider_id: string | null;
 	workspace_path: string | null;
 	state: string;
 	fix_rounds: number;
@@ -75,16 +90,26 @@ interface EventRow {
 	created_at: string;
 }
 
+interface OrchestratorMessageRow {
+	seq: number;
+	provider_id: string;
+	role: string;
+	text: string;
+	created_at: string;
+}
+
 function decodeState(value: string): RunState {
 	if (!isRunState(value)) throw new Error(`invalid persisted run state: ${value}`);
 	return value;
 }
 
 function decodeRun(row: RunRow): RunRecord {
+	const providerId = row.provider_id === 'codex' ? 'codex' : 'claude';
 	return {
 		id: row.id,
 		issueId: row.issue_id,
 		sessionId: row.session_id ?? row.id,
+		providerId,
 		workspacePath: row.workspace_path ?? '',
 		state: decodeState(row.state),
 		fixRounds: row.fix_rounds,
@@ -119,6 +144,19 @@ function decodeEvent(row: EventRow): RunEvent {
 	};
 }
 
+function decodeOrchestratorMessage(row: OrchestratorMessageRow): OrchestratorMessage {
+	const role = row.role === 'orchestrator' || row.role === 'system'
+		? row.role
+		: 'operator';
+	return {
+		seq: row.seq,
+		providerId: row.provider_id === 'codex' ? 'codex' : 'claude',
+		role,
+		text: row.text,
+		createdAt: row.created_at,
+	};
+}
+
 export class RunStore {
 	readonly #db: Database;
 
@@ -132,6 +170,7 @@ export class RunStore {
 				id TEXT PRIMARY KEY,
 				issue_id TEXT NOT NULL,
 				session_id TEXT,
+				provider_id TEXT,
 				workspace_path TEXT,
 				state TEXT NOT NULL,
 				fix_rounds INTEGER NOT NULL DEFAULT 0,
@@ -150,6 +189,22 @@ export class RunStore {
 				created_at TEXT NOT NULL
 			);
 			CREATE INDEX IF NOT EXISTS run_events_run_seq ON run_events(run_id, seq);
+			CREATE TABLE IF NOT EXISTS runtime_settings (
+				key TEXT PRIMARY KEY,
+				value TEXT NOT NULL
+			);
+			CREATE TABLE IF NOT EXISTS orchestrator_sessions (
+				provider_id TEXT PRIMARY KEY,
+				session_id TEXT NOT NULL,
+				updated_at TEXT NOT NULL
+			);
+			CREATE TABLE IF NOT EXISTS orchestrator_messages (
+				seq INTEGER PRIMARY KEY AUTOINCREMENT,
+				provider_id TEXT NOT NULL,
+				role TEXT NOT NULL,
+				text TEXT NOT NULL,
+				created_at TEXT NOT NULL
+			);
 		`);
 		const columns = this.#db.query('PRAGMA table_info(runs)').all() as Array<{ name: string }>;
 		if (!columns.some((column) => column.name === 'session_id')) {
@@ -158,19 +213,24 @@ export class RunStore {
 		if (!columns.some((column) => column.name === 'workspace_path')) {
 			this.#db.exec('ALTER TABLE runs ADD COLUMN workspace_path TEXT;');
 		}
+		if (!columns.some((column) => column.name === 'provider_id')) {
+			this.#db.exec('ALTER TABLE runs ADD COLUMN provider_id TEXT;');
+		}
 		this.#db.exec('UPDATE runs SET session_id = id WHERE session_id IS NULL;');
+		this.#db.exec("UPDATE runs SET provider_id = 'claude' WHERE provider_id IS NULL;");
 	}
 
 	createRun(input: CreateRunInput): { run: RunRecord; event: RunEvent } {
 		const create = this.#db.transaction(() => {
 			this.#db.query(`
 				INSERT INTO runs (
-					id, issue_id, session_id, workspace_path, state, fix_rounds, created_at, updated_at
-				) VALUES ($id, $issueId, $sessionId, $workspacePath, 'queued', 0, $createdAt, $createdAt)
+					id, issue_id, session_id, provider_id, workspace_path, state, fix_rounds, created_at, updated_at
+				) VALUES ($id, $issueId, $sessionId, $providerId, $workspacePath, 'queued', 0, $createdAt, $createdAt)
 			`).run({
 				id: input.id,
 				issueId: input.issueId,
 				sessionId: input.sessionId,
+				providerId: input.providerId ?? 'claude',
 				workspacePath: input.workspacePath,
 				createdAt: input.createdAt,
 			});
@@ -245,6 +305,80 @@ export class RunStore {
 			createdAt: input.createdAt,
 		}) as EventRow;
 		return decodeEvent(row);
+	}
+
+	setSessionId(runId: string, sessionId: string): RunRecord {
+		if (sessionId.trim().length === 0) throw new Error('sessionId is required');
+		const result = this.#db.query(`
+			UPDATE runs SET session_id = $sessionId WHERE id = $runId
+		`).run({ runId, sessionId });
+		if (result.changes !== 1) throw new Error(`run not found: ${runId}`);
+		const run = this.getRun(runId);
+		if (run === null) throw new Error(`updated run disappeared: ${runId}`);
+		return run;
+	}
+
+	getSelectedProvider(): AgentProviderId {
+		const row = this.#db.query(`
+			SELECT value FROM runtime_settings WHERE key = 'provider'
+		`).get() as { value: string } | null;
+		return row?.value === 'codex' ? 'codex' : 'claude';
+	}
+
+	setSelectedProvider(providerId: AgentProviderId): void {
+		this.#db.query(`
+			INSERT INTO runtime_settings (key, value) VALUES ('provider', $providerId)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value
+		`).run({ providerId });
+	}
+
+	getOrchestratorSession(providerId: AgentProviderId): string | null {
+		const row = this.#db.query(`
+			SELECT session_id FROM orchestrator_sessions WHERE provider_id = $providerId
+		`).get({ providerId }) as { session_id: string } | null;
+		return row?.session_id ?? null;
+	}
+
+	setOrchestratorSession(
+		providerId: AgentProviderId,
+		sessionId: string,
+		updatedAt: string,
+	): void {
+		const normalized = sessionId.trim();
+		if (normalized.length === 0) throw new Error('orchestrator sessionId is required');
+		this.#db.query(`
+			INSERT INTO orchestrator_sessions (provider_id, session_id, updated_at)
+			VALUES ($providerId, $sessionId, $updatedAt)
+			ON CONFLICT(provider_id) DO UPDATE SET
+				session_id = excluded.session_id,
+				updated_at = excluded.updated_at
+		`).run({ providerId, sessionId: normalized, updatedAt });
+	}
+
+	appendOrchestratorMessage(input: {
+		providerId: AgentProviderId;
+		role: OrchestratorMessageRole;
+		text: string;
+		createdAt: string;
+	}): OrchestratorMessage {
+		const text = input.text.trim();
+		if (text.length === 0) throw new Error('orchestrator message text is required');
+		const row = this.#db.query(`
+			INSERT INTO orchestrator_messages (provider_id, role, text, created_at)
+			VALUES ($providerId, $role, $text, $createdAt)
+			RETURNING *
+		`).get({ ...input, text }) as OrchestratorMessageRow;
+		return decodeOrchestratorMessage(row);
+	}
+
+	/** Newest bounded transcript window, returned in chronological order. */
+	listOrchestratorMessages(limit = 100): OrchestratorMessage[] {
+		const rows = this.#db.query(`
+			SELECT * FROM (
+				SELECT * FROM orchestrator_messages ORDER BY seq DESC LIMIT $limit
+			) ORDER BY seq ASC
+		`).all({ limit }) as OrchestratorMessageRow[];
+		return rows.map(decodeOrchestratorMessage);
 	}
 
 	getRun(runId: string): RunRecord | null {

@@ -1,6 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 
 import { createRunEventStream, startWebServer } from '../../src/commands/web.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
@@ -64,23 +62,10 @@ describe('durable web run API', () => {
 		const origin = `http://${handle.hostname}:${handle.port}`;
 
 		try {
-			const legacyPrd = join(cwd, 'scripts', 'cam', 'prd.json');
-			mkdirSync(join(cwd, 'scripts', 'cam'), { recursive: true });
-			writeFileSync(legacyPrd, '{}');
-			const blocked = await fetch(`${origin}/api/runs`, {
-				method: 'POST',
-				headers: { origin, 'content-type': 'application/json' },
-				body: JSON.stringify({ issueId: 'CAM-12' }),
-			});
-			expect(blocked.status).toBe(409);
-			expect(await blocked.json()).toMatchObject({ code: 'run-preflight-failed' });
-			expect(runtime.listRuns()).toEqual([]);
-			unlinkSync(legacyPrd);
-
 			const startedResponse = await fetch(`${origin}/api/runs`, {
 				method: 'POST',
 				headers: { origin, 'content-type': 'application/json' },
-				body: JSON.stringify({ issueId: 'CAM-12' }),
+				body: JSON.stringify({ issueId: 'GSHIP-12' }),
 			});
 			expect(startedResponse.status).toBe(202);
 			const started = await startedResponse.json() as { run: { id: string } };
@@ -98,7 +83,7 @@ describe('durable web run API', () => {
 			await waitForReady(runtime, started.run.id);
 			const listResponse = await fetch(`${origin}/api/runs`);
 			expect(await listResponse.json()).toMatchObject({
-				runs: [{ id: 'run-http', issueId: 'CAM-12', state: 'ready-to-ship' }],
+				runs: [{ id: 'run-http', issueId: 'GSHIP-12', state: 'ready-to-ship' }],
 			});
 			const historyResponse = await fetch(`${origin}/api/runs/run-http/events`);
 			expect(historyResponse.status).toBe(200);

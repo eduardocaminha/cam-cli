@@ -32,10 +32,3 @@ webui/dist/*
 
 # Optional, local-only Claude Code source reference.
 claude-code-harness/
-
-# Artifacts left by the retired orchestrator on existing checkouts.
-scripts/cam/worker-report.json
-scripts/cam/review-report.json
-scripts/cam/review-artifact.txt
-scripts/cam/plan-verdict-report.json
-scripts/cam/scope-proposal.json

@@ -32,6 +32,10 @@ function issueWithCriteria(criteria: string[]): string {
 	return JSON.stringify({ spec: { acceptanceCriteria: criteria } });
 }
 
+function issueWithVerification(commands: string[]): string {
+	return JSON.stringify({ spec: { scope: 'Expected outcome.', verify: commands } });
+}
+
 describe('git runtime boundary', () => {
 	test('requires a real issue and source ref without constraining the host checkout', () => {
 		const valid = createGitRuntimePreflight('/project', {
@@ -58,7 +62,7 @@ describe('git runtime boundary', () => {
 	test('verifies diff integrity and requires an actual working-tree change', async () => {
 		const valid = new GitIssueVerifier({
 			runGit: gitRunner({ status: ' M src/a.ts' }),
-			loadIssue: () => issueWithCriteria(['ok [oracle: true]']),
+			loadIssue: () => issueWithVerification(['true']),
 			runCommand: async () => ({ exitCode: 0, stdout: '', stderr: '' }),
 		});
 		expect(await valid.verify(verificationInput)).toEqual({ ok: true });
@@ -78,7 +82,7 @@ describe('git runtime boundary', () => {
 		});
 	});
 
-	test('runs every issue oracle in order and emits command lifecycle events', async () => {
+	test('runs every legacy issue oracle in order and emits command lifecycle events', async () => {
 		const commands: string[] = [];
 		const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
 		const verifier = new GitIssueVerifier({
@@ -115,7 +119,7 @@ describe('git runtime boundary', () => {
 		});
 		expect(await missing.verify(verificationInput)).toMatchObject({
 			ok: false,
-			detail: 'acceptance criterion 1 has no oracle',
+			detail: 'legacy acceptance criterion 1 has no runnable command',
 		});
 
 		const unsupported = new GitIssueVerifier({
@@ -124,7 +128,7 @@ describe('git runtime boundary', () => {
 		});
 		expect(await unsupported.verify(verificationInput)).toMatchObject({
 			ok: false,
-			detail: 'acceptance criterion 1 uses unsupported oracle reviewer-judgment',
+			detail: 'legacy acceptance criterion 1 uses unsupported oracle reviewer-judgment',
 		});
 
 		const failed = new GitIssueVerifier({

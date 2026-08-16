@@ -40,21 +40,20 @@ function seedIdleRepo(): string {
 	const cwd = join(root, 'repo');
 	mkdirSync(cwd, { recursive: true });
 	git(cwd, ['init', '-q', '--initial-branch=main']);
-	git(cwd, ['config', 'user.email', 'cam-test@example.com']);
-	git(cwd, ['config', 'user.name', 'Cam Test']);
+	git(cwd, ['config', 'user.email', 'gship-test@example.com']);
+	git(cwd, ['config', 'user.name', 'Gateship Test']);
 
 	const issues = [
-		issue({ id: 'CAM-1', title: 'first idea', rank: 4 }),
+		issue({ id: 'GSHIP-1', title: 'first idea' }),
 		issue({
-			id: 'CAM-2',
+			id: 'GSHIP-2',
 			title: 'ready',
 			stage: 'specified',
-			rank: 1,
 			spec: { acceptanceCriteria: ['works'], scope: 'test', gotchas: [], domainTerms: [] },
 		}),
-		issue({ id: 'CAM-3', title: 'blocked', stage: 'specified', rank: 2, blockedBy: ['CAM-1'] }),
+		issue({ id: 'GSHIP-3', title: 'blocked', stage: 'specified', blockedBy: ['GSHIP-1'] }),
 	];
-	const issueDir = join(cwd, 'scripts', 'cam', 'issues');
+	const issueDir = join(cwd, '.gateship', 'issues');
 	mkdirSync(issueDir, { recursive: true });
 	for (const entry of issues) {
 		writeFileSync(join(issueDir, `${entry.id}.json`), JSON.stringify(entry));
@@ -84,7 +83,7 @@ async function getSnapshot(cwd: string): Promise<Record<string, unknown>> {
 }
 
 describe('GET /api/snapshot idle state', () => {
-	test('returns the source-ref-backed backlog when no PRD exists', async () => {
+	test('returns the source-ref-backed backlog', async () => {
 		const cwd = seedIdleRepo();
 		const payload = await getSnapshot(cwd);
 		const idleState = payload['idleState'] as Record<string, unknown>;
@@ -96,9 +95,8 @@ describe('GET /api/snapshot idle state', () => {
 			counts: { idea: 1, specified: 2, planned: 0 },
 			plannable: [
 				{
-					id: 'CAM-2',
+					id: 'GSHIP-2',
 					title: 'ready',
-					rank: 1,
 					createdAt: '2026-08-01T00:00:00Z',
 					updatedAt: '2026-08-02T00:00:00Z',
 				},
@@ -106,25 +104,22 @@ describe('GET /api/snapshot idle state', () => {
 			byStage: {
 				idea: [
 					{
-						id: 'CAM-1',
+						id: 'GSHIP-1',
 						title: 'first idea',
-						rank: 4,
 						createdAt: '2026-08-01T00:00:00Z',
 						updatedAt: '2026-08-02T00:00:00Z',
 					},
 				],
 				specified: [
 					{
-						id: 'CAM-2',
+						id: 'GSHIP-2',
 						title: 'ready',
-						rank: 1,
 						createdAt: '2026-08-01T00:00:00Z',
 						updatedAt: '2026-08-02T00:00:00Z',
 					},
 					{
-						id: 'CAM-3',
+						id: 'GSHIP-3',
 						title: 'blocked',
-						rank: 2,
 						createdAt: '2026-08-01T00:00:00Z',
 						updatedAt: '2026-08-02T00:00:00Z',
 					},
@@ -132,16 +127,5 @@ describe('GET /api/snapshot idle state', () => {
 				planned: [],
 			},
 		});
-	});
-
-	test('omits the idle state key when a PRD is present', async () => {
-		const cwd = seedIdleRepo();
-		writeFileSync(
-			join(cwd, 'scripts', 'cam', 'prd.json'),
-			JSON.stringify({ branchName: 'cam/active', userStories: [] }),
-		);
-
-		const payload = await getSnapshot(cwd);
-		expect(payload).toEqual({});
 	});
 });

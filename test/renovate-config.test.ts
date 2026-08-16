@@ -1,8 +1,8 @@
 // test/renovate-config.test.ts
 //
-// Validates renovate.json (US-008, CAM-153 toolchain-parity PRD): parses as
-// JSON, declares coverage for the four toolchain-pin managers (bun-version,
-// asdf, dockerfile, github-actions), none of them disabled, automerge:true
+// Validates renovate.json: parses as JSON, declares coverage for the three
+// toolchain-pin managers present in this repository (bun-version, asdf, and
+// github-actions), none of them disabled, automerge:true
 // present on patch/minor/major update types, and no ignoreTests escape hatch
 // (automerge must stay gated on the required CI status check).
 
@@ -24,7 +24,7 @@ interface RenovateConfig {
 	packageRules?: RenovatePackageRule[];
 }
 
-const REQUIRED_MANAGERS = ['bun-version', 'asdf', 'dockerfile', 'github-actions'];
+const REQUIRED_MANAGERS = ['bun-version', 'asdf', 'github-actions'];
 
 function readConfig(): RenovateConfig {
 	const raw = readFileSync(RENOVATE_CONFIG_PATH, 'utf8');

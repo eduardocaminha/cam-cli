@@ -2,7 +2,7 @@
 //
 // Pins the behavior of the single test-scratch helper (US-002, CAM-508):
 // every directory it creates lives under the repo-local scratch root, the
-// root survives process.chdir(), git cannot walk out of it into cam-cli's
+// root survives process.chdir(), git cannot walk out of it into Gateship's
 // own working tree, and directories created in a child process are reaped
 // when that process exits.
 
@@ -56,7 +56,7 @@ describe('createTestTmpdir', () => {
 	});
 
 	test.skipIf(!gitAvailable)(
-		'GIT_CEILING_DIRECTORIES stops git from resolving the cam-cli root from a scratch dir (env forwarded)',
+		'GIT_CEILING_DIRECTORIES stops git from resolving the Gateship root from a scratch dir (env forwarded)',
 		async () => {
 			// Unchanged by US-R1-003 (CAM-508): git's own docs on
 			// GIT_CEILING_DIRECTORIES say a ceiling that is a strict ANCESTOR of
@@ -67,7 +67,7 @@ describe('createTestTmpdir', () => {
 			// so this still fails "not a git repository" even though SCRATCH_ROOT
 			// now has its own .git (ensureScratchRootIsAGitRepo) -- confirmed
 			// empirically. The important safety property (this fence never
-			// resolves into cam-cli's own working tree) is proved by the two tests
+			// resolves into Gateship's own working tree) is proved by the two tests
 			// below instead, which is what actually matters for the hazard this
 			// story closes.
 			const dir = createTestTmpdir();
@@ -140,7 +140,7 @@ describe('createTestTmpdir', () => {
 			} finally {
 				// Never leave the shared fence aged (or, under a regression, missing)
 				// for the rest of the run: the fence is what keeps every other test's
-				// git subprocess out of cam-cli's own working tree.
+				// git subprocess out of Gateship's own working tree.
 				if (!existsSync(fence)) {
 					Bun.spawnSync(['git', 'init', '-q', SCRATCH_ROOT], { stdout: 'ignore', stderr: 'ignore' });
 				}

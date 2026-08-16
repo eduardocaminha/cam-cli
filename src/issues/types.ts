@@ -5,7 +5,7 @@ import type { Spec } from "./spec.ts";
  *
  * idea       -> raw capture, no spec yet
  * specified  -> spec written (Epico B), ready for planning
- * planned    -> ranked + WSJF scored, ready for implementation
+ * planned    -> accepted for implementation
  * shipped    -> implemented and merged
  */
 export type IssueStage = "idea" | "specified" | "planned" | "shipped";
@@ -19,8 +19,8 @@ export type IssueStage = "idea" | "specified" | "planned" | "shipped";
 export type IssueStatus = "open" | "abandoned";
 
 /**
- * WSJF scoring fields (Weighted Shortest Job First).
- * All four components are required when wsjf is present.
+ * Legacy WSJF metadata. Gateship preserves it when reading old issue records
+ * but no longer computes or uses it for ordering.
  */
 export interface WsjfScore {
 	value: number;
@@ -30,10 +30,10 @@ export interface WsjfScore {
 }
 
 /**
- * Single issue entry in the per-file backlog (scripts/cam/issues/CAM-NNNN.json).
+ * Single issue entry in the per-file backlog (.gateship/issues/GSHIP-NNNN.json).
  *
  * Required fields form the minimum viable record (Epico A).
- * Optional fields (wsjf, rank, spec) are populated in later epicos.
+ * `wsjf` and `rank` are inert legacy fields kept only for old backlog records.
  */
 export interface IssueEntry {
 	id: string;

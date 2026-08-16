@@ -8,7 +8,7 @@
 // here is what lets the reviewer be a second role instead of a second engine.
 
 import { classifyHeadlessStreamLine } from './claude-stream.ts';
-import { terminateProcessGroup } from './process-group.ts';
+import { runAgentProcess } from './agent-process.ts';
 
 const CLAUDE_NESTING_ENV = [
 	'CLAUDECODE',
@@ -21,8 +21,6 @@ const CLAUDE_NESTING_ENV = [
 
 export const DEFAULT_TERMINATION_GRACE_MS = 1_000;
 const MAX_ACTIVITY_TEXT = 2_000;
-
-type ClaudeChild = Bun.Subprocess<'pipe', 'pipe', 'pipe'>;
 
 export interface ClaudeCliRunInput {
 	argv: string[];
@@ -52,45 +50,6 @@ export function buildClaudeEnv(
 	delete env.TMUX;
 	delete env.TMUX_PANE;
 	return env;
-}
-
-function spawnClaude(
-	argv: string[],
-	cwd: string,
-	env: Record<string, string | undefined>,
-): ClaudeChild {
-	return Bun.spawn({
-		cmd: argv,
-		cwd,
-		env,
-		detached: true,
-		stdin: 'pipe',
-		stdout: 'pipe',
-		stderr: 'pipe',
-	});
-}
-
-async function consumeLines(
-	stream: ClaudeChild['stdout'],
-	onLine: (line: string) => void,
-): Promise<void> {
-	const reader = stream.getReader();
-	const decoder = new TextDecoder();
-	let buffer = '';
-	for (;;) {
-		const chunk = await reader.read();
-		if (chunk.done) break;
-		buffer += decoder.decode(chunk.value, { stream: true });
-		let newline = buffer.indexOf('\n');
-		while (newline >= 0) {
-			const line = buffer.slice(0, newline);
-			buffer = buffer.slice(newline + 1);
-			if (line.length > 0) onLine(line);
-			newline = buffer.indexOf('\n');
-		}
-	}
-	buffer += decoder.decode();
-	if (buffer.length > 0) onLine(buffer);
 }
 
 /** Persist only operator-visible prose and tool names from an assistant event. */
@@ -125,21 +84,23 @@ export function projectAssistantActivity(raw: Record<string, unknown>): Record<s
  * and never resolves before the child process group has actually settled.
  */
 export async function runClaudeCli(input: ClaudeCliRunInput): Promise<ClaudeCliResult> {
-	const child = spawnClaude(input.argv, input.cwd, input.env);
-	input.onSpawn?.(child.pid);
-
 	const message = JSON.stringify({
 		type: 'user',
 		message: { role: 'user', content: input.prompt },
 	});
-	child.stdin.write(`${message}\n`);
-	child.stdin.end();
-
 	let resultSeen = false;
 	let resultIsError = false;
 	let summary = '';
 	let structuredOutput: unknown;
-	const stdout = consumeLines(child.stdout, (line) => {
+	const processResult = await runAgentProcess({
+		argv: input.argv,
+		cwd: input.cwd,
+		env: input.env,
+		stdin: `${message}\n`,
+		signal: input.signal,
+		terminationGraceMs: input.terminationGraceMs ?? DEFAULT_TERMINATION_GRACE_MS,
+		...(input.onSpawn === undefined ? {} : { onSpawn: input.onSpawn }),
+		onLine: (line) => {
 		const event = classifyHeadlessStreamLine(line);
 		if (event.kind === 'system') {
 			input.emit(`${input.eventPrefix}.system`, { subtype: event.subtype ?? 'unknown' });
@@ -154,32 +115,17 @@ export async function runClaudeCli(input: ClaudeCliRunInput): Promise<ClaudeCliR
 			structuredOutput = event.raw['structured_output'];
 			input.emit(`${input.eventPrefix}.result`);
 		}
+		},
 	});
-	const stderr = new Response(child.stderr).text();
-	let termination: Promise<void> | undefined;
-	const abort = (): void => {
-		termination ??= terminateProcessGroup(
-			child,
-			input.terminationGraceMs ?? DEFAULT_TERMINATION_GRACE_MS,
+	if (processResult.exitCode !== 0) {
+		throw new Error(
+			`Claude CLI exited with ${processResult.exitCode}: ${processResult.stderr.trim().slice(-1_000)}`,
 		);
-	};
-	input.signal.addEventListener('abort', abort, { once: true });
-	if (input.signal.aborted) abort();
-
-	try {
-		const [exitCode, stderrText] = await Promise.all([child.exited, stderr, stdout]);
-		if (termination !== undefined) await termination;
-		if (input.signal.aborted) throw new DOMException('cancelled', 'AbortError');
-		if (exitCode !== 0) {
-			throw new Error(`Claude CLI exited with ${exitCode}: ${stderrText.trim().slice(-1_000)}`);
-		}
-		if (!resultSeen) throw new Error('Claude CLI exited without a result event.');
-		if (resultIsError) throw new Error(summary || 'Claude CLI returned an error result.');
-		return {
-			summary,
-			...(structuredOutput === undefined ? {} : { structuredOutput }),
-		};
-	} finally {
-		input.signal.removeEventListener('abort', abort);
 	}
+	if (!resultSeen) throw new Error('Claude CLI exited without a result event.');
+	if (resultIsError) throw new Error(summary || 'Claude CLI returned an error result.');
+	return {
+		summary,
+		...(structuredOutput === undefined ? {} : { structuredOutput }),
+	};
 }

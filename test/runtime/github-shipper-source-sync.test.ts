@@ -35,9 +35,9 @@ function identify(cwd: string): void {
 }
 
 function writeIssue(cwd: string, stage: string): void {
-	mkdirSync(join(cwd, 'scripts', 'cam', 'issues'), { recursive: true });
+	mkdirSync(join(cwd, '.gateship', 'issues'), { recursive: true });
 	writeFileSync(
-		join(cwd, 'scripts', 'cam', 'issues', 'CAM-0580.json'),
+		join(cwd, '.gateship', 'issues', 'CAM-0580.json'),
 		`${JSON.stringify({
 			id: 'CAM-580',
 			title: 'gship web: fonte remota fresca sem mover main local',
@@ -166,7 +166,7 @@ describe('the post-merge source sync', () => {
 		expect(git(fixture.local, ['rev-parse', 'refs/heads/main'])).toBe(fixture.staleMain);
 		// The merge this ship landed is visible on the source ref the next run
 		// reads: the issue is no longer offered as specified.
-		expect(git(fixture.local, ['show', 'origin/main:scripts/cam/issues/CAM-0580.json']))
+		expect(git(fixture.local, ['show', 'origin/main:.gateship/issues/CAM-0580.json']))
 			.toContain('"stage": "shipped"');
 		expect(events.slice(-2)).toEqual(['ship.source-synced', 'ship.merged']);
 	});

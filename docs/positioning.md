@@ -5,8 +5,8 @@ an operator-specified task and a merged pull request, owning the durable outer
 loop that would otherwise be coordinated by hand.
 
 It is not a coding model, a general agent framework, or a terminal multiplexer.
-The signed-in Claude CLI writes and reviews code; Gateship owns task intake,
-workspace isolation, verification, recovery, and shipping.
+The selected signed-in Claude or Codex CLI writes and reviews code; Gateship
+owns task intake, workspace isolation, verification, recovery, and shipping.
 
 ## Product thesis
 
@@ -17,16 +17,17 @@ sessions.
 
 The loop is deliberately short:
 
-1. the operator supplies scope and a falsifiable verification command;
-2. Gateship creates a worktree from fresh `origin/main`;
-3. a resumable Claude session implements the task;
-4. Gateship executes the named verification;
-5. a fresh capability-restricted Claude session reviews the change;
-6. a clean run can be committed, pushed, and squash-merged.
+1. the operator converses with a read-only orchestrator;
+2. the orchestrator may return one typed service command;
+3. Gateship creates a worktree from fresh `origin/main`;
+4. a resumable selected-provider session implements the task;
+5. Gateship executes the named verification;
+6. a fresh capability-restricted session reviews the change;
+7. a clean run can be committed, pushed, and squash-merged.
 
-SQLite records state and public activity so a process restart becomes an
-explicit interruption and resume, not a lost terminal session or a duplicate
-worker.
+SQLite records state, public activity, and the shared conversational transcript,
+so provider switches and process restarts have an explicit handoff instead of a
+lost terminal session or a duplicate worker.
 
 ## Differentiation
 
@@ -34,8 +35,9 @@ worker.
   on the operator's machine.
 - Evidence-first: completion requires executable verification and independent
   review, not a model's self-report.
-- Durable: the browser can close or the service can restart without discarding
-  the run workspace or Claude session id.
+- Durable: the browser can close, the provider can change, or the service can
+  restart without discarding the transcript, run workspace, or native session
+  ids.
 - Small control plane: one Bun process owns HTTP, SQLite, child processes, and
   cancellation. There is no separate daemon, sidecar, or message broker.
 
