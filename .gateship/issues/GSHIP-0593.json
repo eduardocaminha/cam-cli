@@ -1,0 +1,17 @@
+{
+  "id": "GSHIP-593",
+  "title": "Preparar release v0.293.0: bump de 0.292.0 para 0.293.0 em src/version.ts e package.json",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-16T16:05:08.144Z",
+  "updatedAt": "2026-08-16T16:05:08.144Z",
+  "description": "Bump de versao da main atual, mantendo a paridade que o teste ja exige.\n\nDuas linhas, dois arquivos:\n1. src/version.ts:21, export const GSHIP_VERSION = '0.292.0' passa a '0.293.0'. O cabecalho explicativo do arquivo (linhas 1 a 19) fica intacto.\n2. package.json:3, \"version\": \"0.292.0\" passa a \"0.293.0\".\n\nOs dois valores tem que ficar identicos: test/version.test.ts:35-40 le package.json e compara com GSHIP_VERSION, falhando a suite em caso de divergencia.\n\nbun.lock fica fora do diff: foi verificado que ele registra apenas \"name\": \"gateship\" (linha 6) e nao carrega a versao do proprio pacote, entao nada nele muda.\n\nCriterio de pronto: bun test test/version.test.ts passa e git diff mostra exatamente dois arquivos, uma linha alterada em cada.\n\nFora de escopo: CHANGELOG, qualquer codigo funcional, teste novo, criacao ou push da tag v0.293.0 (o operador cria a tag apos o merge verde), alteracao de workflow de CI ou de scripts/build-release.sh, e qualquer edicao em README ou docs.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Bump de versao da main atual, mantendo a paridade que o teste ja exige.\n\nDuas linhas, dois arquivos:\n1. src/version.ts:21, export const GSHIP_VERSION = '0.292.0' passa a '0.293.0'. O cabecalho explicativo do arquivo (linhas 1 a 19) fica intacto.\n2. package.json:3, \"version\": \"0.292.0\" passa a \"0.293.0\".\n\nOs dois valores tem que ficar identicos: test/version.test.ts:35-40 le package.json e compara com GSHIP_VERSION, falhando a suite em caso de divergencia.\n\nbun.lock fica fora do diff: foi verificado que ele registra apenas \"name\": \"gateship\" (linha 6) e nao carrega a versao do proprio pacote, entao nada nele muda.\n\nCriterio de pronto: bun test test/version.test.ts passa e git diff mostra exatamente dois arquivos, uma linha alterada em cada.\n\nFora de escopo: CHANGELOG, qualquer codigo funcional, teste novo, criacao ou push da tag v0.293.0 (o operador cria a tag apos o merge verde), alteracao de workflow de CI ou de scripts/build-release.sh, e qualquer edicao em README ou docs.",
+    "verify": [
+      "bun test test/version.test.ts"
+    ]
+  }
+}
