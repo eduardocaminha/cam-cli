@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-606",
+  "title": "Orquestrador: recuperar uma retomada nativa invalida com uma unica sessao fresca",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-16T22:19:19.096Z",
+  "updatedAt": "2026-08-16T22:19:19.096Z",
+  "description": "Derived reliability fix: a durable orchestrator conversation must survive an invalid native provider resume session.\n\nIn src/runtime/conversational-orchestrator.ts, keep the current selected-provider session as the first attempt. If and only if that resumed read-only AgentSession.run throws before a parsed orchestrator response exists, retry exactly once with resume false and a new session id from the existing newSessionId seam. Reuse the already captured provider, prompt, brief, handoff and 12-message transcript; append the operator message only once. The retry stays read-only and uses the same structured output schema.\n\nWhen the fresh attempt reports a provider-assigned session id, persist it through the existing callback; after success, persist the final fresh id exactly as the normal path does. Parse, handoff write, assistant append and deterministic command execution must each happen at most once and only after the successful attempt. If the original turn was already fresh, do not retry. If the signal was aborted, do not retry. If the fresh retry also fails, surface that failure honestly.\n\nAdd focused tests in test/runtime/conversational-orchestrator.test.ts covering: failed resume followed by one fresh success with the durable transcript and one operator message; replacement of the stored session id; no duplicate command or assistant/handoff effects; no retry for a failed initial fresh turn; and no retry after cancellation. Keep the change provider-neutral and do not inspect provider-specific error strings.\n\nOut of scope: clearing transcript or handoff, a UI reset button, provider cache manipulation, retries for implementer/reviewer sessions, generic retry policy, backoff, or new persistence methods.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Derived reliability fix: a durable orchestrator conversation must survive an invalid native provider resume session.\n\nIn src/runtime/conversational-orchestrator.ts, keep the current selected-provider session as the first attempt. If and only if that resumed read-only AgentSession.run throws before a parsed orchestrator response exists, retry exactly once with resume false and a new session id from the existing newSessionId seam. Reuse the already captured provider, prompt, brief, handoff and 12-message transcript; append the operator message only once. The retry stays read-only and uses the same structured output schema.\n\nWhen the fresh attempt reports a provider-assigned session id, persist it through the existing callback; after success, persist the final fresh id exactly as the normal path does. Parse, handoff write, assistant append and deterministic command execution must each happen at most once and only after the successful attempt. If the original turn was already fresh, do not retry. If the signal was aborted, do not retry. If the fresh retry also fails, surface that failure honestly.\n\nAdd focused tests in test/runtime/conversational-orchestrator.test.ts covering: failed resume followed by one fresh success with the durable transcript and one operator message; replacement of the stored session id; no duplicate command or assistant/handoff effects; no retry for a failed initial fresh turn; and no retry after cancellation. Keep the change provider-neutral and do not inspect provider-specific error strings.\n\nOut of scope: clearing transcript or handoff, a UI reset button, provider cache manipulation, retries for implementer/reviewer sessions, generic retry policy, backoff, or new persistence methods.",
+    "verify": [
+      "bun test test/runtime/conversational-orchestrator.test.ts && bun run typecheck"
+    ]
+  },
+  "approval": {
+    "fingerprint": "a5e698b5a6198999656bfc9c86a97ecbe7b5a3646eabda953789cfbeef54b6d3",
+    "approvedAt": "2026-08-16T22:19:19.096Z"
+  }
+}
