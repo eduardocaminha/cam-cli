@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
+	abandonOperatorIssue,
 	createOperatorIssue,
 	IssueIntakeError,
 	specifyOperatorIssue,
@@ -153,5 +154,91 @@ describe('remote-main operator issue intake', () => {
 		});
 		expect(git(fixture.local, ['rev-parse', 'refs/heads/main'])).toBe(staleMain);
 		expect(git(fixture.local, ['status', '--porcelain', '--untracked-files=all'])).toBe(dirtyBefore);
+	});
+
+	test('abandons an open issue keeping every other field as published', () => {
+		const fixture = seedFixture();
+		const staleMain = git(fixture.local, ['rev-parse', 'refs/heads/main']);
+		writeFileSync(join(fixture.local, 'operator-notes.txt'), 'keep me\n');
+		const dirtyBefore = git(fixture.local, ['status', '--porcelain', '--untracked-files=all']);
+		const before = JSON.parse(
+			git(fixture.remote, ['show', 'main:.gateship/issues/CAM-0001.json']),
+		) as Record<string, unknown>;
+
+		// The remote advances beyond both refs held by the runtime clone, so the
+		// abandon must publish from the freshly fetched base.
+		writeIssue(fixture.seed, 7);
+		git(fixture.seed, ['add', '.']);
+		git(fixture.seed, ['commit', '-q', '-m', 'remote backlog advance']);
+		git(fixture.seed, ['push', '-q', fixture.remote, 'main']);
+
+		const abandoned = abandonOperatorIssue(
+			fixture.local,
+			'CAM-1',
+			{ reason: 'O recurso saiu do produto; não há mais o que entregar.' },
+			() => '2026-08-16T05:00:00.000Z',
+		);
+
+		expect(abandoned).toMatchObject({ id: 'CAM-1', title: 'fixture 1' });
+		const after = JSON.parse(
+			git(fixture.remote, ['show', 'main:.gateship/issues/CAM-0001.json']),
+		) as Record<string, unknown>;
+		expect(after).toEqual({
+			...before,
+			status: 'abandoned',
+			updatedAt: '2026-08-16T05:00:00.000Z',
+			abandonedReason: 'O recurso saiu do produto; não há mais o que entregar.',
+		});
+		// The remote advance stayed in the published history.
+		expect(git(fixture.remote, ['show', 'main:.gateship/issues/CAM-0007.json'])).toContain('CAM-7');
+		expect(git(fixture.local, ['rev-parse', 'refs/heads/main'])).toBe(staleMain);
+		expect(git(fixture.local, ['status', '--porcelain', '--untracked-files=all'])).toBe(dirtyBefore);
+		expect(git(fixture.local, ['rev-parse', RUNTIME_SOURCE_REF]))
+			.toBe(git(fixture.remote, ['rev-parse', 'main']));
+	});
+
+	test('rejects an unknown issue and an issue that is no longer open', () => {
+		const fixture = seedFixture();
+
+		try {
+			abandonOperatorIssue(fixture.local, 'CAM-404', { reason: 'Não existe.' });
+			throw new Error('expected abandonOperatorIssue to fail');
+		} catch (error) {
+			expect(error).toBeInstanceOf(IssueIntakeError);
+			expect(error).toMatchObject({ code: 'issue-not-found', status: 404 });
+		}
+
+		abandonOperatorIssue(
+			fixture.local,
+			'CAM-2',
+			{ reason: 'A ideia foi absorvida por outra tarefa.' },
+			() => '2026-08-16T06:00:00.000Z',
+		);
+		const idea = JSON.parse(
+			git(fixture.remote, ['show', 'main:.gateship/issues/CAM-0002.json']),
+		) as Record<string, unknown>;
+		expect(idea).toMatchObject({ stage: 'idea', status: 'abandoned' });
+
+		try {
+			abandonOperatorIssue(fixture.local, 'CAM-2', { reason: 'De novo.' });
+			throw new Error('expected abandonOperatorIssue to fail');
+		} catch (error) {
+			expect(error).toBeInstanceOf(IssueIntakeError);
+			expect(error).toMatchObject({ code: 'issue-not-eligible', status: 409 });
+		}
+	});
+
+	test('requires a concrete justification before touching the remote', () => {
+		const fixture = seedFixture();
+		const publishedBefore = git(fixture.remote, ['rev-parse', 'main']);
+
+		try {
+			abandonOperatorIssue(fixture.local, 'CAM-1', { reason: '   ' });
+			throw new Error('expected abandonOperatorIssue to fail');
+		} catch (error) {
+			expect(error).toBeInstanceOf(IssueIntakeError);
+			expect(error).toMatchObject({ code: 'invalid-request', status: 400 });
+		}
+		expect(git(fixture.remote, ['rev-parse', 'main'])).toBe(publishedBefore);
 	});
 });

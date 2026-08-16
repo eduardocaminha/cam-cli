@@ -26,6 +26,7 @@ import { createGitRuntimePreflight, GitIssueVerifier, RuntimePreflightError } fr
 import { GitWorkspaceManager, RuntimeWorkspaceError } from '../runtime/git-workspace.ts';
 import { GithubShipper } from '../runtime/github-shipper.ts';
 import {
+	abandonOperatorIssue,
 	type CreatedOperatorIssue,
 	createOperatorIssue,
 	IssueIntakeError,
@@ -56,10 +57,17 @@ export interface WebServerOptions {
 	issueIntake?: (input: unknown) => CreatedOperatorIssue;
 	/** Test seam for promoting an existing idea with the operator contract. */
 	issueSpecifier?: (id: string, input: unknown) => CreatedOperatorIssue;
+	/** Test seam for closing an open issue with a durable justification. */
+	issueAbandoner?: (id: string, input: unknown) => CreatedOperatorIssue;
 	/** Test seam for credential-blind provider status and managed Codex login. */
 	providerAuth?: ProviderAuth;
-	/** Test seam for the read-only conversational facade. */
-	orchestrator?: OrchestratorRuntime;
+	/**
+	 * Test seam for the read-only conversational facade. It is built over the
+	 * deterministic command executor the production orchestrator also runs on.
+	 */
+	orchestrator?: (
+		execute: (command: OrchestratorCommand) => Promise<string>,
+	) => OrchestratorRuntime;
 }
 
 export interface OrchestratorRuntime {
@@ -517,6 +525,7 @@ async function executeOrchestratorCommand(
 	runtime: RunRuntime,
 	issueIntake: (input: unknown) => CreatedOperatorIssue,
 	issueSpecifier: (id: string, input: unknown) => CreatedOperatorIssue,
+	issueAbandoner: (id: string, input: unknown) => CreatedOperatorIssue,
 ): Promise<string> {
 	switch (command.type) {
 		case 'none':
@@ -528,6 +537,10 @@ async function executeOrchestratorCommand(
 		case 'specify_issue': {
 			const issue = issueSpecifier(command.issueId, command);
 			return `${issue.id} especificada no backlog.`;
+		}
+		case 'abandon_issue': {
+			const issue = issueAbandoner(command.issueId, command);
+			return `${issue.id} abandonada no backlog.`;
 		}
 		case 'start_run': {
 			const run = runtime.startRun(command.issueId);
@@ -552,8 +565,7 @@ async function executeOrchestratorCommand(
 function createDefaultOrchestrator(
 	cwd: string,
 	runtime: RunRuntime,
-	issueIntake: (input: unknown) => CreatedOperatorIssue,
-	issueSpecifier: (id: string, input: unknown) => CreatedOperatorIssue,
+	execute: (command: OrchestratorCommand) => Promise<string>,
 ): ConversationalOrchestrator {
 	return new ConversationalOrchestrator({
 		cwd,
@@ -568,13 +580,24 @@ function createDefaultOrchestrator(
 			runs: runtime.listRuns(10),
 			workspaceNotices: runtime.listWorkspaceNotices(),
 		}),
-		execute: (command) => executeOrchestratorCommand(
-			command,
-			runtime,
-			issueIntake,
-			issueSpecifier,
-		),
+		execute,
 	});
+}
+
+/** Each operator issue writer defaults to the remote-main publisher for this cwd. */
+function resolveIssueWriters(options: WebServerOptions): {
+	issueIntake: (input: unknown) => CreatedOperatorIssue;
+	issueSpecifier: (id: string, input: unknown) => CreatedOperatorIssue;
+	issueAbandoner: (id: string, input: unknown) => CreatedOperatorIssue;
+} {
+	return {
+		issueIntake: options.issueIntake
+			?? ((input) => createOperatorIssue(options.cwd, input)),
+		issueSpecifier: options.issueSpecifier
+			?? ((id, input) => specifyOperatorIssue(options.cwd, id, input)),
+		issueAbandoner: options.issueAbandoner
+			?? ((id, input) => abandonOperatorIssue(options.cwd, id, input)),
+	};
 }
 
 /** Start the localhost-only web server. Port 0 is supported for test callers. */
@@ -584,13 +607,12 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	const ownsOrchestrator = options.orchestrator === undefined;
 	const runRuntime = options.runRuntime
 		?? new RunRuntime(createDefaultRunRuntimeOptions(options.cwd));
-	const issueIntake = options.issueIntake ?? ((input: unknown) =>
-		createOperatorIssue(options.cwd, input));
-	const issueSpecifier = options.issueSpecifier ?? ((id: string, input: unknown) =>
-		specifyOperatorIssue(options.cwd, id, input));
+	const { issueIntake, issueSpecifier, issueAbandoner } = resolveIssueWriters(options);
 	const providerAuth = options.providerAuth ?? new NativeProviderAuth();
-	const orchestrator = options.orchestrator
-		?? createDefaultOrchestrator(options.cwd, runRuntime, issueIntake, issueSpecifier);
+	const execute = (command: OrchestratorCommand): Promise<string> =>
+		executeOrchestratorCommand(command, runRuntime, issueIntake, issueSpecifier, issueAbandoner);
+	const orchestrator = options.orchestrator?.(execute)
+		?? createDefaultOrchestrator(options.cwd, runRuntime, execute);
 	const assets = resolveWebAssets();
 	const server = Bun.serve({
 		hostname: WEB_HOSTNAME,

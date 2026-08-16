@@ -50,4 +50,6 @@ export interface IssueEntry {
 	specSource?: "interview" | "derived" | "operator";
 	derivedFrom?: string[];
 	type?: "feat" | "fix" | "chore" | "docs";
+	/** Durable justification recorded when `status` becomes `abandoned`. */
+	abandonedReason?: string;
 }

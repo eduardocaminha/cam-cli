@@ -20,6 +20,10 @@ export interface OperatorIssueInput extends OperatorSpecInput {
 	title: string;
 }
 
+export interface OperatorAbandonInput {
+	reason: string;
+}
+
 export interface CreatedOperatorIssue {
 	id: string;
 	title: string;
@@ -72,6 +76,15 @@ export function parseOperatorIssueInput(value: unknown): OperatorIssueInput {
 		title: requiredString((value as Record<string, unknown>)['title'], 'Título'),
 		...spec,
 	};
+}
+
+/** Abandoning carries no spec contract: only a durable justification. */
+export function parseOperatorAbandonInput(value: unknown): OperatorAbandonInput {
+	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+		throw new IssueIntakeError('invalid-request', 'Um objeto JSON é obrigatório.', 400);
+	}
+	const input = value as Record<string, unknown>;
+	return { reason: requiredString(input['reason'], 'Justificativa') };
 }
 
 function commandFailure(label: string, detail: string): IssueIntakeError {
@@ -262,6 +275,59 @@ export function specifyOperatorIssue(
 	throw new IssueIntakeError(
 		'publish-conflict',
 		'O backlog avançou durante três tentativas; tente especificar a ideia novamente.',
+		409,
+	);
+}
+
+/**
+ * Close one open issue without shipping it, keeping the justification durable
+ * in the record. Every other field of the entry is preserved as published.
+ */
+export function abandonOperatorIssue(
+	cwd: string,
+	id: string,
+	rawInput: unknown,
+	now: () => string = () => new Date().toISOString(),
+): CreatedOperatorIssue {
+	const issueId = requiredString(id, 'Issue');
+	const input = parseOperatorAbandonInput(rawInput);
+	const updatedAt = now();
+
+	for (let attempt = 0; attempt < MAX_PUBLISH_ATTEMPTS; attempt += 1) {
+		const sourceSha = refreshRuntimeSource(cwd);
+		const entry = readBacklogFromMain(cwd, spawnSync, sourceSha)
+			.find((issue) => issue.id === issueId);
+		if (entry === undefined) {
+			throw new IssueIntakeError('issue-not-found', `${issueId} não existe no backlog.`, 404);
+		}
+		if (entry.status !== 'open') {
+			throw new IssueIntakeError(
+				'issue-not-eligible',
+				`${issueId} precisa estar open.`,
+				409,
+			);
+		}
+		const abandoned: IssueEntry = {
+			...entry,
+			status: 'abandoned',
+			updatedAt,
+			abandonedReason: input.reason,
+		};
+		const result = publishEntryAttempt(
+			cwd,
+			sourceSha,
+			abandoned,
+			`chore(gship): abandon ${issueId}`,
+		);
+		if (result.kind === 'published') {
+			fetchRuntimeSource(defaultRunGit, cwd);
+			return result.issue;
+		}
+	}
+
+	throw new IssueIntakeError(
+		'publish-conflict',
+		'O backlog avançou durante três tentativas; tente abandonar a tarefa novamente.',
 		409,
 	);
 }
