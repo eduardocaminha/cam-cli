@@ -75,10 +75,13 @@ export async function fetchBacklog(): Promise<BacklogSnapshot> {
 	};
 }
 
-/** Newest run first, which is the only one the screen commands. */
-export async function fetchLatestRun(): Promise<RunView | null> {
+/**
+ * Newest run first. The first entry is the only one the screen commands; the
+ * rest are the history the operator reads to pick a session back up.
+ */
+export async function fetchRuns(): Promise<RunView[]> {
 	const payload = await readJson<RunsPayload>(await fetch(RUNS_PATH), 'Runs');
-	return payload.runs[0] ?? null;
+	return payload.runs ?? [];
 }
 
 export async function fetchRunEvents(runId: string): Promise<RunEventView[]> {

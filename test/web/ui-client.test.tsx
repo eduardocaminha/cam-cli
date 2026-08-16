@@ -14,8 +14,8 @@ import {
 	createIssue,
 	EVENTS_PATH,
 	fetchBacklog,
-	fetchLatestRun,
 	fetchRunEvents,
+	fetchRuns,
 	RUNS_PATH,
 	ISSUES_PATH,
 	SNAPSHOT_PATH,
@@ -55,7 +55,7 @@ function render(overrides: Partial<AppProps> = {}): string {
 			onSpecifyIssue={() => {}}
 			onStart={() => {}}
 			pending={false}
-			run={null}
+			runs={[]}
 			selectedIssueId={null}
 			status={null}
 			{...overrides}
@@ -73,6 +73,13 @@ function buttonIsEnabled(html: string, label: string): boolean {
 	if (index < 0) throw new Error(`button ${label} is not on the screen`);
 	const opening = html.lastIndexOf('<button', index);
 	return !html.slice(opening, index).includes('disabled=""');
+}
+
+/** The history card alone, cut before the backlog panel that follows it. */
+function historyCard(html: string): string {
+	const start = html.indexOf('Runs anteriores');
+	if (start < 0) throw new Error('the history card is not on the screen');
+	return html.slice(start, html.indexOf('Backlog plannable'));
 }
 
 describe('operational screen', () => {
@@ -95,7 +102,7 @@ describe('operational screen', () => {
 	});
 
 	test('working: shows the phase and offers only cancel', () => {
-		const html = render({ run: runIn('working') });
+		const html = render({ runs: [runIn('working')] });
 
 		expect(html).toContain('Fase working');
 		expect(buttonIsEnabled(html, 'Cancelar')).toBe(true);
@@ -106,7 +113,7 @@ describe('operational screen', () => {
 
 	test('waiting-user: asks for an answer before resuming on the same spine', () => {
 		const html = render({
-			run: runIn('waiting-user', { summary: 'Escolha o seam de migração.' }),
+			runs: [runIn('waiting-user', { summary: 'Escolha o seam de migração.' })],
 			selectedIssueId: 'CAM-900',
 		});
 
@@ -120,7 +127,7 @@ describe('operational screen', () => {
 	});
 
 	test('ready-to-ship: offers ship as the retry, alongside cancel', () => {
-		const html = render({ run: runIn('ready-to-ship') });
+		const html = render({ runs: [runIn('ready-to-ship')] });
 
 		expect(html).toContain('Fase ready-to-ship');
 		expect(buttonIsEnabled(html, 'Shipar')).toBe(true);
@@ -129,7 +136,7 @@ describe('operational screen', () => {
 	});
 
 	test('shipping: shows the phase the service is in and holds the ship command', () => {
-		const html = render({ run: runIn('shipping') });
+		const html = render({ runs: [runIn('shipping')] });
 
 		expect(html).toContain('Fase shipping');
 		// The run is already shipping itself: the button is only the retry.
@@ -140,7 +147,7 @@ describe('operational screen', () => {
 
 	test('done: shows the summary, closes the commands and reopens start', () => {
 		const html = render({
-			run: runIn('done', { summary: 'PR #123 mergeado.' }),
+			runs: [runIn('done', { summary: 'PR #123 mergeado.' })],
 			selectedIssueId: 'CAM-900',
 		});
 
@@ -152,7 +159,7 @@ describe('operational screen', () => {
 	});
 
 	test('failed: shows the error instead of a summary', () => {
-		const html = render({ run: runIn('failed', { error: 'oracle reprovou a story 2' }) });
+		const html = render({ runs: [runIn('failed', { error: 'oracle reprovou a story 2' })] });
 
 		expect(html).toContain('oracle reprovou a story 2');
 		expect(html).toContain('failed');
@@ -160,7 +167,11 @@ describe('operational screen', () => {
 	});
 
 	test('a command in flight holds every button', () => {
-		const html = render({ run: runIn('ready-to-ship'), pending: true, selectedIssueId: 'CAM-900' });
+		const html = render({
+			pending: true,
+			runs: [runIn('ready-to-ship')],
+			selectedIssueId: 'CAM-900',
+		});
 
 		expect(buttonIsEnabled(html, 'Shipar')).toBe(false);
 		expect(buttonIsEnabled(html, 'Cancelar')).toBe(false);
@@ -190,7 +201,7 @@ describe('operational screen', () => {
 
 	test('a run shows persisted public activity and tool names', () => {
 		const html = render({
-			run: runIn('working'),
+			runs: [runIn('working')],
 			events: [
 				{
 					seq: 1,
@@ -222,7 +233,7 @@ describe('operational screen', () => {
 			createdAt: '2026-08-16T03:05:00.000Z',
 		}));
 		const html = render({
-			run: runIn('working'),
+			runs: [runIn('working')],
 			events: [
 				{
 					seq: 1,
@@ -245,7 +256,7 @@ describe('operational screen', () => {
 
 	test('activity with public detail survives alongside the noise it is buried in', () => {
 		const html = render({
-			run: runIn('working'),
+			runs: [runIn('working')],
 			events: [
 				{
 					seq: 1,
@@ -280,6 +291,53 @@ describe('operational screen', () => {
 		expect(html).toContain('Ferramentas: Grep');
 		expect(html).toContain('subtype: init');
 		expect(html).toContain('2 evento(s) recente(s)');
+	});
+
+	test('a single run has no history card to show', () => {
+		const html = render({ runs: [runIn('working')] });
+
+		expect(html).not.toContain('Runs anteriores');
+	});
+
+	test('previous runs are listed read-only, newest first and without the last run', () => {
+		const html = render({
+			runs: [
+				runIn('working', { id: 'run-3', issueId: 'CAM-803' }),
+				runIn('done', { id: 'run-2', issueId: 'CAM-802', updatedAt: '2026-08-15T18:30:00.000Z' }),
+				runIn('failed', { id: 'run-1', issueId: 'CAM-801', updatedAt: '2026-08-14T09:05:00.000Z' }),
+			],
+		});
+		const card = historyCard(html);
+
+		expect(html).toContain('Runs anteriores');
+		expect(card).toContain('2 run(s) antes do último');
+		expect(card).toContain('CAM-802');
+		expect(card).toContain('2026-08-15 18:30');
+		expect(card).toContain('CAM-801');
+		expect(card).toContain('2026-08-14 09:05');
+		expect(card).toContain('failed');
+		// The run the panel above commands is not repeated in the history.
+		expect(card).not.toContain('CAM-803');
+		expect(card.indexOf('CAM-802')).toBeLessThan(card.indexOf('CAM-801'));
+		// Read-only: history rows carry no command and no selection.
+		expect(card).not.toContain('<button');
+		expect(card).not.toContain('aria-pressed');
+	});
+
+	test('history stops at four entries however long the list is', () => {
+		const html = render({
+			runs: Array.from({ length: 9 }, (_, index) =>
+				runIn('done', { id: `run-${index}`, issueId: `CAM-8${index}0` })),
+		});
+		const card = historyCard(html);
+
+		expect(card).toContain('4 run(s) antes do último');
+		for (const issueId of ['CAM-810', 'CAM-820', 'CAM-830', 'CAM-840']) {
+			expect(card).toContain(issueId);
+		}
+		for (const issueId of ['CAM-800', 'CAM-850', 'CAM-880']) {
+			expect(card).not.toContain(issueId);
+		}
 	});
 });
 
@@ -451,12 +509,19 @@ describe('same-origin transport', () => {
 		});
 	});
 
-	test('reads take the newest run and tolerate a cycle-in-progress snapshot', async () => {
-		await withRecordedFetch({ runs: [runIn('working'), runIn('done')] }, 200, async () => {
-			expect(await fetchLatestRun()).toMatchObject({ state: 'working' });
+	test('reads keep the whole run list and tolerate a cycle-in-progress snapshot', async () => {
+		const history = [
+			runIn('working', { id: 'run-3' }),
+			runIn('done', { id: 'run-2' }),
+			runIn('failed', { id: 'run-1' }),
+		];
+		// One read per refresh: the newest run and the history come from it.
+		await withRecordedFetch({ runs: history }, 200, async (calls) => {
+			expect(await fetchRuns()).toEqual(history);
+			expect(calls).toEqual([{ url: RUNS_PATH, method: 'GET', body: null }]);
 		});
 		await withRecordedFetch({ runs: [] }, 200, async () => {
-			expect(await fetchLatestRun()).toBeNull();
+			expect(await fetchRuns()).toEqual([]);
 		});
 		// No idleState key at all: a cycle is running, so nothing is plannable.
 		await withRecordedFetch({ phase: 'implementing' }, 200, async () => {
@@ -471,7 +536,7 @@ describe('same-origin transport', () => {
 
 	test('a failed read is reported as a transport error, not as empty data', async () => {
 		await withRecordedFetch({}, 500, async () => {
-			await expect(fetchLatestRun()).rejects.toThrow('Runs respondeu 500');
+			await expect(fetchRuns()).rejects.toThrow('Runs respondeu 500');
 			await expect(fetchBacklog()).rejects.toThrow('Snapshot respondeu 500');
 		});
 	});

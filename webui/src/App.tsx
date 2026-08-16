@@ -38,7 +38,8 @@ export interface AppProps {
 	backlog: readonly PlannableIssue[];
 	ideas: readonly PlannableIssue[];
 	events: readonly RunEventView[];
-	run: RunView | null;
+	/** Newest first, exactly as /api/runs returned it. */
+	runs: readonly RunView[];
 	selectedIssueId: string | null;
 	/** Last command outcome, or the last transport error. */
 	status: string | null;
@@ -85,7 +86,10 @@ function isOperational(event: RunEventView): boolean {
 	return true;
 }
 
-function RunActivity({ run, events }: Pick<AppProps, 'run' | 'events'>): React.ReactElement | null {
+function RunActivity({
+	run,
+	events,
+}: Pick<AppProps, 'events'> & { run: RunView | null }): React.ReactElement | null {
 	if (run === null) return null;
 	const visible = events
 		.filter((event) => event.runId === run.id && isOperational(event))
@@ -178,7 +182,9 @@ function RunPanel({
 	onResume,
 	onCancel,
 	onShip,
-}: Pick<AppProps, 'run' | 'pending' | 'onResume' | 'onCancel' | 'onShip'>): React.ReactElement {
+}: Pick<AppProps, 'pending' | 'onResume' | 'onCancel' | 'onShip'> & {
+	run: RunView | null;
+}): React.ReactElement {
 	// Only `start` depends on a backlog selection, and this panel never offers it.
 	const actions = actionsFor(run, false);
 	const waitingForAnswer = run?.state === 'waiting-user';
@@ -234,6 +240,42 @@ function RunPanel({
 					</div>
 				</CardPanel>
 			)}
+		</Card>
+	);
+}
+
+/** How much history the operator needs to place the current run in a session. */
+const PREVIOUS_RUNS_SHOWN = 4;
+
+/**
+ * The runs before the one the panel above commands, read-only: there is no
+ * selection and no command here, only what an operator returning to the screen
+ * needs to know about what already ran.
+ */
+function PreviousRunsPanel({ runs }: Pick<AppProps, 'runs'>): React.ReactElement | null {
+	const previous = runs.slice(1, 1 + PREVIOUS_RUNS_SHOWN);
+	if (previous.length === 0) return null;
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle>Runs anteriores</CardTitle>
+				<CardDescription>
+					{previous.length} run(s) antes do último, do mais recente ao mais antigo.
+				</CardDescription>
+			</CardHeader>
+			<CardPanel>
+				<ul className="flex flex-col gap-2">
+					{previous.map((run) => (
+						<li className="flex items-baseline justify-between gap-3 text-sm" key={run.id}>
+							<span className="font-medium">{run.issueId}</span>
+							<Badge variant={toneOf(run.state)}>{run.state}</Badge>
+							<time className="text-muted-foreground">
+								{run.updatedAt.slice(0, 16).replace('T', ' ')}
+							</time>
+						</li>
+					))}
+				</ul>
+			</CardPanel>
 		</Card>
 	);
 }
@@ -401,7 +443,10 @@ function IssueSpecifyPanel({
 }
 
 export function App(props: AppProps): React.ReactElement {
-	const { backlog, run, selectedIssueId, status, pending } = props;
+	const { backlog, runs, selectedIssueId, status, pending } = props;
+	// The array arrives newest first, so the operable run is its head and the
+	// history below it is the same array, read once.
+	const run = runs[0] ?? null;
 	const actions = actionsFor(run, selectedIssueId !== null);
 	return (
 		<main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col gap-6 p-6">
@@ -420,6 +465,7 @@ export function App(props: AppProps): React.ReactElement {
 				run={run}
 			/>
 			<RunActivity events={props.events} run={run} />
+			<PreviousRunsPanel runs={runs} />
 			<BacklogPanel
 				backlog={backlog}
 				canStart={actions.start && !pending}
