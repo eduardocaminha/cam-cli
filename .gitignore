@@ -6,7 +6,10 @@ out
 dist
 webui/dist
 !webui/dist/
-!webui/dist/**
+webui/dist/*
+!webui/dist/index.html
+!webui/dist/app.js
+!webui/dist/app.css
 *.tgz
 
 # Bun build temp files (left behind by `bun build --compile` on macOS)
