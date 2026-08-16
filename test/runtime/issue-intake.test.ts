@@ -2,7 +2,11 @@ import { describe, expect, test } from 'bun:test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { createOperatorIssue, IssueIntakeError } from '../../src/runtime/issue-intake.ts';
+import {
+	createOperatorIssue,
+	IssueIntakeError,
+	specifyOperatorIssue,
+} from '../../src/runtime/issue-intake.ts';
 import { RUNTIME_SOURCE_REF } from '../../src/runtime/source-ref.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
@@ -19,7 +23,7 @@ function identify(cwd: string): void {
 	git(cwd, ['config', 'user.email', 'test@example.invalid']);
 }
 
-function writeIssue(cwd: string, number: number): void {
+function writeIssue(cwd: string, number: number, stage: 'idea' | 'specified' = 'specified'): void {
 	const directory = join(cwd, 'scripts', 'cam', 'issues');
 	mkdirSync(directory, { recursive: true });
 	writeFileSync(
@@ -27,12 +31,14 @@ function writeIssue(cwd: string, number: number): void {
 		`${JSON.stringify({
 			id: `CAM-${number}`,
 			title: `fixture ${number}`,
-			stage: 'specified',
+			stage,
 			status: 'open',
 			blockedBy: [],
 			createdAt: '2026-08-15T00:00:00.000Z',
 			updatedAt: '2026-08-15T00:00:00.000Z',
-			spec: { acceptanceCriteria: ['works'], scope: 'fixture', gotchas: [], domainTerms: [] },
+			...(stage === 'specified'
+				? { spec: { acceptanceCriteria: ['works'], scope: 'fixture', gotchas: [], domainTerms: [] } }
+				: {}),
 		}, null, 2)}\n`,
 	);
 }
@@ -44,6 +50,7 @@ function seedFixture(): { root: string; seed: string; remote: string; local: str
 	git(seed, ['init', '-q', '-b', 'main']);
 	identify(seed);
 	writeIssue(seed, 1);
+	writeIssue(seed, 2, 'idea');
 	git(seed, ['add', '.']);
 	git(seed, ['commit', '-q', '-m', 'seed']);
 
@@ -116,5 +123,41 @@ describe('remote-main operator issue intake', () => {
 			expect(error).toBeInstanceOf(IssueIntakeError);
 			expect(error).toMatchObject({ code: 'source-unavailable', status: 503 });
 		}
+	});
+
+	test('promotes an existing idea on fresh remote main without moving local main', () => {
+		const fixture = seedFixture();
+		const staleMain = git(fixture.local, ['rev-parse', 'refs/heads/main']);
+		writeFileSync(join(fixture.local, 'operator-notes.txt'), 'keep me\n');
+		const dirtyBefore = git(fixture.local, ['status', '--porcelain', '--untracked-files=all']);
+
+		const specified = specifyOperatorIssue(
+			fixture.local,
+			'CAM-2',
+			{
+				scope: 'A ideia fica executável sem planner.',
+				verificationCommand: 'bun test test/runtime/issue-intake.test.ts',
+			},
+			() => '2026-08-16T04:00:00.000Z',
+		);
+
+		expect(specified).toMatchObject({ id: 'CAM-2', title: 'fixture 2' });
+		const content = git(fixture.remote, ['show', 'main:scripts/cam/issues/CAM-0002.json']);
+		const issue = JSON.parse(content) as Record<string, unknown>;
+		expect(issue).toMatchObject({
+			id: 'CAM-2',
+			stage: 'specified',
+			specSource: 'operator',
+			updatedAt: '2026-08-16T04:00:00.000Z',
+		});
+		expect(issue['spec']).toMatchObject({
+			scope: 'A ideia fica executável sem planner.',
+			acceptanceCriteria: [
+				'A ideia fica executável sem planner. ' +
+					'[oracle: named-command bun test test/runtime/issue-intake.test.ts]',
+			],
+		});
+		expect(git(fixture.local, ['rev-parse', 'refs/heads/main'])).toBe(staleMain);
+		expect(git(fixture.local, ['status', '--porcelain', '--untracked-files=all'])).toBe(dirtyBefore);
 	});
 });

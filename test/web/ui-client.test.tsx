@@ -13,12 +13,13 @@ import {
 	commandRun,
 	createIssue,
 	EVENTS_PATH,
+	fetchBacklog,
 	fetchLatestRun,
-	fetchPlannable,
 	fetchRunEvents,
 	RUNS_PATH,
 	ISSUES_PATH,
 	SNAPSHOT_PATH,
+	specifyIssue,
 	startRun,
 } from '../../webui/src/client.ts';
 import { actionsFor, progressOf, type RunState, type RunView } from '../../webui/src/run-view.ts';
@@ -45,11 +46,13 @@ function render(overrides: Partial<AppProps> = {}): string {
 		<App
 			backlog={BACKLOG}
 			events={[]}
+			ideas={[]}
 			onCancel={() => {}}
 			onCreateIssue={() => {}}
 			onResume={() => {}}
 			onSelectIssue={() => {}}
 			onShip={() => {}}
+			onSpecifyIssue={() => {}}
 			onStart={() => {}}
 			pending={false}
 			run={null}
@@ -165,6 +168,16 @@ describe('operational screen', () => {
 		expect(buttonIsEnabled(html, 'Criar tarefa')).toBe(true);
 	});
 
+	test('idle with ideas offers direct specification without a planner', () => {
+		const html = render({ ideas: [{ id: 'CAM-42', title: 'ideia antiga' }] });
+
+		expect(html).toContain('Especificar ideia existente');
+		expect(html).toContain('CAM-42 — ideia antiga');
+		expect(html).toContain('name="ideaScope"');
+		expect(html).toContain('name="ideaVerificationCommand"');
+		expect(buttonIsEnabled(html, 'Especificar ideia')).toBe(true);
+	});
+
 	test('a run shows persisted public activity and tool names', () => {
 		const html = render({
 			run: runIn('working'),
@@ -264,6 +277,29 @@ describe('same-origin transport', () => {
 		]);
 	});
 
+	test('idea specification posts the operator contract to the issue-scoped route', async () => {
+		const draft = {
+			scope: 'Promove a ideia sem planner.',
+			verificationCommand: 'bun test',
+		};
+		const calls = await withRecordedFetch(
+			{ ok: true, issue: { id: 'CAM-42', title: 'ideia antiga' } },
+			200,
+			async () => {
+				expect(await specifyIssue('CAM-42', draft)).toEqual({
+					id: 'CAM-42',
+					title: 'ideia antiga',
+				});
+			},
+		);
+
+		expect(calls).toEqual([{
+			url: '/api/issues/CAM-42/spec',
+			method: 'POST',
+			body: JSON.stringify(draft),
+		}]);
+	});
+
 	test('reads persisted activity for one run', async () => {
 		const events = [{
 			seq: 9,
@@ -335,17 +371,19 @@ describe('same-origin transport', () => {
 		});
 		// No idleState key at all: a cycle is running, so nothing is plannable.
 		await withRecordedFetch({ phase: 'implementing' }, 200, async () => {
-			expect(await fetchPlannable()).toEqual([]);
+			expect(await fetchBacklog()).toEqual({ plannable: [], ideas: [] });
 		});
-		await withRecordedFetch({ idleState: { backlog: { plannable: BACKLOG } } }, 200, async () => {
-			expect(await fetchPlannable()).toEqual(BACKLOG);
+		await withRecordedFetch({
+			idleState: { backlog: { plannable: BACKLOG, byStage: { idea: [BACKLOG[0]!] } } },
+		}, 200, async () => {
+			expect(await fetchBacklog()).toEqual({ plannable: BACKLOG, ideas: [BACKLOG[0]!] });
 		});
 	});
 
 	test('a failed read is reported as a transport error, not as empty data', async () => {
 		await withRecordedFetch({}, 500, async () => {
 			await expect(fetchLatestRun()).rejects.toThrow('Runs respondeu 500');
-			await expect(fetchPlannable()).rejects.toThrow('Snapshot respondeu 500');
+			await expect(fetchBacklog()).rejects.toThrow('Snapshot respondeu 500');
 		});
 	});
 });

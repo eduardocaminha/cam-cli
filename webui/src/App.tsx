@@ -23,7 +23,7 @@ import {
 	ProgressValue,
 } from '../vendor/coss/ui/progress.tsx';
 import { Separator } from '../vendor/coss/ui/separator.tsx';
-import type { OperatorIssueDraft } from './client.ts';
+import type { OperatorIssueDraft, OperatorSpecDraft } from './client.ts';
 import {
 	actionsFor,
 	type PlannableIssue,
@@ -36,6 +36,7 @@ import {
 
 export interface AppProps {
 	backlog: readonly PlannableIssue[];
+	ideas: readonly PlannableIssue[];
 	events: readonly RunEventView[];
 	run: RunView | null;
 	selectedIssueId: string | null;
@@ -45,6 +46,7 @@ export interface AppProps {
 	pending: boolean;
 	onSelectIssue: (issueId: string) => void;
 	onCreateIssue: (input: OperatorIssueDraft) => void;
+	onSpecifyIssue: (issueId: string, input: OperatorSpecDraft) => void;
 	onStart: () => void;
 	onResume: (operatorGuidance?: string) => void;
 	onCancel: () => void;
@@ -322,6 +324,69 @@ function IssueIntakePanel({
 	);
 }
 
+function IssueSpecifyPanel({
+	ideas,
+	pending,
+	onSpecifyIssue,
+}: Pick<AppProps, 'ideas' | 'pending' | 'onSpecifyIssue'>): React.ReactElement | null {
+	if (ideas.length === 0) return null;
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle>Especificar ideia existente</CardTitle>
+				<CardDescription>
+					Promove a ideia com o mesmo contrato direto, sem planner intermediário.
+				</CardDescription>
+			</CardHeader>
+			<CardPanel>
+				<form
+					className="flex flex-col gap-4"
+					onSubmit={(event) => {
+						event.preventDefault();
+						const fields = (event.currentTarget as unknown as {
+							elements: { namedItem: (name: string) => { value?: unknown } | null };
+						}).elements;
+						const value = (name: string): string => {
+							const field = fields.namedItem(name);
+							return field?.value === undefined ? '' : String(field.value).trim();
+						};
+						onSpecifyIssue(value('ideaId'), {
+							scope: value('ideaScope'),
+							verificationCommand: value('ideaVerificationCommand'),
+						});
+					}}
+				>
+					<label className="flex flex-col gap-1 text-sm" htmlFor="idea-id">
+						<span className="font-medium">Ideia</span>
+						<select className={FIELD_CLASS} id="idea-id" name="ideaId" required>
+							{ideas.map((idea) => (
+								<option key={idea.id} value={idea.id}>{idea.id} — {idea.title}</option>
+							))}
+						</select>
+					</label>
+					<label className="flex flex-col gap-1 text-sm" htmlFor="idea-scope">
+						<span className="font-medium">Escopo e resultado esperado</span>
+						<textarea className={cn(FIELD_CLASS, 'min-h-24')} id="idea-scope" name="ideaScope" required />
+					</label>
+					<label className="flex flex-col gap-1 text-sm" htmlFor="idea-command">
+						<span className="font-medium">Comando de verificação</span>
+						<input
+							className={cn(FIELD_CLASS, 'font-mono')}
+							id="idea-command"
+							name="ideaVerificationCommand"
+							placeholder="bun test"
+							required
+						/>
+					</label>
+					<button className={BUTTON_CLASS} disabled={pending} type="submit">
+						Especificar ideia
+					</button>
+				</form>
+			</CardPanel>
+		</Card>
+	);
+}
+
 export function App(props: AppProps): React.ReactElement {
 	const { backlog, run, selectedIssueId, status, pending } = props;
 	const actions = actionsFor(run, selectedIssueId !== null);
@@ -348,6 +413,11 @@ export function App(props: AppProps): React.ReactElement {
 				onSelectIssue={props.onSelectIssue}
 				onStart={props.onStart}
 				selectedIssueId={selectedIssueId}
+			/>
+			<IssueSpecifyPanel
+				ideas={props.ideas}
+				onSpecifyIssue={props.onSpecifyIssue}
+				pending={pending}
 			/>
 			<IssueIntakePanel onCreateIssue={props.onCreateIssue} pending={pending} />
 			{status === null ? null : (

@@ -82,4 +82,38 @@ describe('operator issue intake API', () => {
 			runtime.close();
 		}
 	});
+
+	test('promotes an existing idea through the same trusted operator contract', async () => {
+		const received: unknown[] = [];
+		const runtime = new RunRuntime({ cwd: '/project', store: new RunStore(':memory:') });
+		const handle = startWebServer({
+			port: 0,
+			cwd: createTestTmpdir('gship-specify-api-'),
+			runRuntime: runtime,
+			issueSpecifier: (id, input) => {
+				received.push({ id, input });
+				return { id, title: 'Ideia antiga', sha: 'abc1234' };
+			},
+		});
+		const origin = `http://${handle.hostname}:${handle.port}`;
+		try {
+			const response = await fetch(`${origin}/api/issues/CAM-42/spec`, {
+				method: 'POST',
+				headers: { origin, 'content-type': 'application/json' },
+				body: JSON.stringify({ scope: '  Escopo direto.  ', verificationCommand: '  bun test  ' }),
+			});
+			expect(response.status).toBe(200);
+			expect(await response.json()).toMatchObject({
+				ok: true,
+				issue: { id: 'CAM-42', title: 'Ideia antiga' },
+			});
+			expect(received).toEqual([{
+				id: 'CAM-42',
+				input: { scope: 'Escopo direto.', verificationCommand: 'bun test' },
+			}]);
+		} finally {
+			await handle.stop();
+			runtime.close();
+		}
+	});
 });

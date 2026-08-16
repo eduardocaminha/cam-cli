@@ -1,9 +1,9 @@
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
-import { numericIdSuffix, readBacklogFromMain } from '../issues/backlog.ts';
+import { issueFilePath, numericIdSuffix, readBacklogFromMain } from '../issues/backlog.ts';
 import { parseOracleDirective } from '../issues/oracle-directive.ts';
 import { type Spec, validateSpec } from '../issues/spec.ts';
 import type { IssueEntry } from '../issues/types.ts';
@@ -12,10 +12,13 @@ import { fetchRuntimeSource, RUNTIME_SOURCE_REF } from './source-ref.ts';
 
 const MAX_PUBLISH_ATTEMPTS = 3;
 
-export interface OperatorIssueInput {
-	title: string;
+export interface OperatorSpecInput {
 	scope: string;
 	verificationCommand: string;
+}
+
+export interface OperatorIssueInput extends OperatorSpecInput {
+	title: string;
 }
 
 export interface CreatedOperatorIssue {
@@ -26,6 +29,8 @@ export interface CreatedOperatorIssue {
 
 export type IssueIntakeErrorCode =
 	| 'invalid-request'
+	| 'issue-not-found'
+	| 'issue-not-eligible'
 	| 'source-unavailable'
 	| 'publish-conflict';
 
@@ -48,18 +53,25 @@ function requiredString(value: unknown, label: string): string {
 }
 
 /** Validate the browser payload before any Git or filesystem write occurs. */
-export function parseOperatorIssueInput(value: unknown): OperatorIssueInput {
+export function parseOperatorSpecInput(value: unknown): OperatorSpecInput {
 	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
 		throw new IssueIntakeError('invalid-request', 'Um objeto JSON é obrigatório.', 400);
 	}
 	const input = value as Record<string, unknown>;
 	return {
-		title: requiredString(input['title'], 'Título'),
 		scope: requiredString(input['scope'], 'Escopo'),
 		verificationCommand: requiredString(
 			input['verificationCommand'],
 			'Comando de verificação',
 		),
+	};
+}
+
+export function parseOperatorIssueInput(value: unknown): OperatorIssueInput {
+	const spec = parseOperatorSpecInput(value);
+	return {
+		title: requiredString((value as Record<string, unknown>)['title'], 'Título'),
+		...spec,
 	};
 }
 
@@ -89,7 +101,7 @@ function nextIssueNumber(cwd: string, sourceSha: string): number {
 	return max + 1;
 }
 
-function buildIssue(input: OperatorIssueInput, id: string, now: string): IssueEntry {
+function buildSpec(input: OperatorSpecInput): Spec {
 	const criterion = `${input.scope} [oracle: named-command ${input.verificationCommand}]`;
 	const directive = parseOracleDirective(criterion);
 	if (directive?.kind !== 'named-command' || directive.command !== input.verificationCommand) {
@@ -99,7 +111,7 @@ function buildIssue(input: OperatorIssueInput, id: string, now: string): IssueEn
 			400,
 		);
 	}
-	const spec: Spec = {
+	const spec = {
 		acceptanceCriteria: [criterion],
 		scope: input.scope,
 		gotchas: [],
@@ -109,6 +121,10 @@ function buildIssue(input: OperatorIssueInput, id: string, now: string): IssueEn
 	if (!validated.ok) {
 		throw new IssueIntakeError('invalid-request', validated.errors.join(' '), 400);
 	}
+	return spec;
+}
+
+function buildIssue(input: OperatorIssueInput, id: string, now: string): IssueEntry {
 	return {
 		id,
 		title: input.title,
@@ -119,7 +135,7 @@ function buildIssue(input: OperatorIssueInput, id: string, now: string): IssueEn
 		updatedAt: now,
 		description: input.scope,
 		specSource: 'operator',
-		spec,
+		spec: buildSpec(input),
 	};
 }
 
@@ -127,16 +143,13 @@ function isPushRace(stderr: string): boolean {
 	return /non-fast-forward|fetch first/i.test(stderr);
 }
 
-function publishAttempt(
+function publishEntryAttempt(
 	cwd: string,
 	sourceSha: string,
-	input: OperatorIssueInput,
-	now: string,
+	entry: IssueEntry,
+	commitMessage: string,
 ): { kind: 'published'; issue: CreatedOperatorIssue } | { kind: 'retry' } {
-	const number = nextIssueNumber(cwd, sourceSha);
-	const id = `CAM-${number}`;
-	const filename = `CAM-${String(number).padStart(4, '0')}.json`;
-	const entry = buildIssue(input, id, now);
+	const path = issueFilePath(entry.id);
 	const tempRoot = mkdtempSync(join(tmpdir(), 'gship-intake-'));
 	const worktree = join(tempRoot, 'checkout');
 
@@ -144,13 +157,13 @@ function publishAttempt(
 		const added = git(cwd, ['worktree', 'add', '--quiet', '--detach', worktree, sourceSha]);
 		if (added.exitCode !== 0) throw commandFailure('Não foi possível preparar o intake', added.stderr);
 
-		const issueDir = join(worktree, 'scripts', 'cam', 'issues');
-		mkdirSync(issueDir, { recursive: true });
-		writeFileSync(join(issueDir, filename), `${JSON.stringify(entry, null, 2)}\n`);
+		const target = join(worktree, path);
+		mkdirSync(dirname(target), { recursive: true });
+		writeFileSync(target, `${JSON.stringify(entry, null, 2)}\n`);
 
-		const staged = git(worktree, ['add', '--', `scripts/cam/issues/${filename}`]);
+		const staged = git(worktree, ['add', '--', path]);
 		if (staged.exitCode !== 0) throw commandFailure('Não foi possível registrar a tarefa', staged.stderr);
-		const committed = git(worktree, ['commit', '--quiet', '-m', `chore(gship): file ${id}`]);
+		const committed = git(worktree, ['commit', '--quiet', '-m', commitMessage]);
 		if (committed.exitCode !== 0) throw commandFailure('Não foi possível criar o commit', committed.stderr);
 		const shaResult = git(worktree, ['rev-parse', 'HEAD']);
 		if (shaResult.exitCode !== 0) throw commandFailure('Não foi possível resolver o commit', shaResult.stderr);
@@ -158,7 +171,7 @@ function publishAttempt(
 
 		const pushed = git(worktree, ['push', '--quiet', 'origin', 'HEAD:refs/heads/main']);
 		if (pushed.exitCode === 0) {
-			return { kind: 'published', issue: { id, title: input.title, sha } };
+			return { kind: 'published', issue: { id: entry.id, title: entry.title, sha } };
 		}
 		if (isPushRace(pushed.stderr)) return { kind: 'retry' };
 		throw commandFailure('Não foi possível publicar a tarefa', pushed.stderr);
@@ -166,6 +179,18 @@ function publishAttempt(
 		git(cwd, ['worktree', 'remove', '--force', worktree]);
 		rmSync(tempRoot, { recursive: true, force: true });
 	}
+}
+
+function refreshRuntimeSource(cwd: string): string {
+	const fetched = fetchRuntimeSource(defaultRunGit, cwd);
+	if (fetched.exitCode !== 0) {
+		throw commandFailure(`Não foi possível atualizar ${RUNTIME_SOURCE_REF}`, fetched.stderr);
+	}
+	const resolved = git(cwd, ['rev-parse', '--verify', RUNTIME_SOURCE_REF]);
+	if (resolved.exitCode !== 0) {
+		throw commandFailure(`Não foi possível resolver ${RUNTIME_SOURCE_REF}`, resolved.stderr);
+	}
+	return resolved.stdout.trim();
 }
 
 /**
@@ -182,15 +207,11 @@ export function createOperatorIssue(
 	const createdAt = now();
 
 	for (let attempt = 0; attempt < MAX_PUBLISH_ATTEMPTS; attempt += 1) {
-		const fetched = fetchRuntimeSource(defaultRunGit, cwd);
-		if (fetched.exitCode !== 0) {
-			throw commandFailure(`Não foi possível atualizar ${RUNTIME_SOURCE_REF}`, fetched.stderr);
-		}
-		const resolved = git(cwd, ['rev-parse', '--verify', RUNTIME_SOURCE_REF]);
-		if (resolved.exitCode !== 0) {
-			throw commandFailure(`Não foi possível resolver ${RUNTIME_SOURCE_REF}`, resolved.stderr);
-		}
-		const result = publishAttempt(cwd, resolved.stdout.trim(), input, createdAt);
+		const sourceSha = refreshRuntimeSource(cwd);
+		const number = nextIssueNumber(cwd, sourceSha);
+		const id = `CAM-${number}`;
+		const entry = buildIssue(input, id, createdAt);
+		const result = publishEntryAttempt(cwd, sourceSha, entry, `chore(gship): file ${id}`);
 		if (result.kind === 'published') {
 			// The push is already durable. A transient second fetch must not turn
 			// success into a retry that could file a duplicate issue.
@@ -202,6 +223,57 @@ export function createOperatorIssue(
 	throw new IssueIntakeError(
 		'publish-conflict',
 		'O backlog avançou durante três tentativas; tente criar a tarefa novamente.',
+		409,
+	);
+}
+
+/** Promote one existing idea with the same operator contract used for new tasks. */
+export function specifyOperatorIssue(
+	cwd: string,
+	id: string,
+	rawInput: unknown,
+	now: () => string = () => new Date().toISOString(),
+): CreatedOperatorIssue {
+	const issueId = requiredString(id, 'Issue');
+	const input = parseOperatorSpecInput(rawInput);
+	const updatedAt = now();
+
+	for (let attempt = 0; attempt < MAX_PUBLISH_ATTEMPTS; attempt += 1) {
+		const sourceSha = refreshRuntimeSource(cwd);
+		const entry = readBacklogFromMain(cwd, spawnSync, sourceSha)
+			.find((issue) => issue.id === issueId);
+		if (entry === undefined) {
+			throw new IssueIntakeError('issue-not-found', `${issueId} não existe no backlog.`, 404);
+		}
+		if (entry.status !== 'open' || entry.stage !== 'idea') {
+			throw new IssueIntakeError(
+				'issue-not-eligible',
+				`${issueId} precisa estar open e em stage:idea.`,
+				409,
+			);
+		}
+		const specified: IssueEntry = {
+			...entry,
+			stage: 'specified',
+			updatedAt,
+			specSource: 'operator',
+			spec: buildSpec(input),
+		};
+		const result = publishEntryAttempt(
+			cwd,
+			sourceSha,
+			specified,
+			`chore(gship): specify ${issueId}`,
+		);
+		if (result.kind === 'published') {
+			fetchRuntimeSource(defaultRunGit, cwd);
+			return result.issue;
+		}
+	}
+
+	throw new IssueIntakeError(
+		'publish-conflict',
+		'O backlog avançou durante três tentativas; tente especificar a ideia novamente.',
 		409,
 	);
 }
