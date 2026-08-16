@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-610",
+  "title": "Etapa 3 visual: revisar e aprovar drafts em /work",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-08-16T22:39:19.661Z",
+  "updatedAt": "2026-08-16T22:39:19.661Z",
+  "description": "Implementar somente a superfície visual final da Etapa 3 na rota `/work`. Preservar o card atual de backlog executável e adicionar um `CardDisclosure` fechado por padrão, chamado `Revisar e aprovar`, cuja contagem representa issues `open` + `specified`. Estender o snapshot com uma projeção mínima e separada desses drafts contendo apenas `id`, `title`, `scope`, o primeiro `verificationCommand`, estado derivado `draft | approved | stale` e `approvedAt` quando existir; não expor o fingerprint bruto nem ampliar as linhas genéricas do backlog. No `WorkSurface`, permitir selecionar e editar um draft por vez com estado local, usando o endpoint de spec existente. Salvar a revisão deve substituir scope/verificationCommand, invalidar a aprovação conforme o backend e executar o refresh atual para atualizar a tela. Aprovar deve usar o endpoint existente, nunca iniciar run e exigir uma checkbox explícita confirmando o scope e o verificationCommand persistidos. Desabilitar aprovação enquanto houver alteração local não salva. Resetar a confirmação ao trocar de draft, salvar revisão ou aprovar. Após aprovação bem-sucedida, usar o refresh existente para que o item passe a aparecer no backlog executável atual. Reutilizar `Card`, `CardDisclosure`, `Badge`, os padrões atuais de `pending`/`status` e o refresh existente; não criar componente ou estado global novo quando o estado local do `WorkSurface` bastar. Adicionar somente o transporte de cliente necessário para os endpoints existentes. Cobrir a projeção do snapshot, transporte, renderização, seleção, edição, estados habilitado/desabilitado, resets da confirmação, refresh após salvar/aprovar e bundle. Fora de escopo: scheduler, auto-start, modal, fingerprint visível, histórico/versionamento, página nova, uso da lateral, redesign dos outros cards, dependência, animação ou refatoração ampla.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Implementar somente a superfície visual final da Etapa 3 na rota `/work`. Preservar o card atual de backlog executável e adicionar um `CardDisclosure` fechado por padrão, chamado `Revisar e aprovar`, cuja contagem representa issues `open` + `specified`. Estender o snapshot com uma projeção mínima e separada desses drafts contendo apenas `id`, `title`, `scope`, o primeiro `verificationCommand`, estado derivado `draft | approved | stale` e `approvedAt` quando existir; não expor o fingerprint bruto nem ampliar as linhas genéricas do backlog. No `WorkSurface`, permitir selecionar e editar um draft por vez com estado local, usando o endpoint de spec existente. Salvar a revisão deve substituir scope/verificationCommand, invalidar a aprovação conforme o backend e executar o refresh atual para atualizar a tela. Aprovar deve usar o endpoint existente, nunca iniciar run e exigir uma checkbox explícita confirmando o scope e o verificationCommand persistidos. Desabilitar aprovação enquanto houver alteração local não salva. Resetar a confirmação ao trocar de draft, salvar revisão ou aprovar. Após aprovação bem-sucedida, usar o refresh existente para que o item passe a aparecer no backlog executável atual. Reutilizar `Card`, `CardDisclosure`, `Badge`, os padrões atuais de `pending`/`status` e o refresh existente; não criar componente ou estado global novo quando o estado local do `WorkSurface` bastar. Adicionar somente o transporte de cliente necessário para os endpoints existentes. Cobrir a projeção do snapshot, transporte, renderização, seleção, edição, estados habilitado/desabilitado, resets da confirmação, refresh após salvar/aprovar e bundle. Fora de escopo: scheduler, auto-start, modal, fingerprint visível, histórico/versionamento, página nova, uso da lateral, redesign dos outros cards, dependência, animação ou refatoração ampla.",
+    "verify": [
+      "bun test test/web/idle-state.test.ts test/web/ui-client.test.tsx test/webui-scaffold.test.ts && bun run typecheck"
+    ]
+  },
+  "approval": {
+    "fingerprint": "a8f2be6153028ae88467853fdbb650c24839e47fb2d6ca9d066b47a55ef933f0",
+    "approvedAt": "2026-08-16T22:39:19.661Z"
+  }
+}
