@@ -210,10 +210,10 @@ async function runCodexTurn(
 		onLine: (line) => consumeCodexEvent(line, input, state),
 		...(options.onSpawn === undefined ? {} : { onSpawn: options.onSpawn }),
 	});
+	if (state.failed !== undefined) throw new Error(state.failed);
 	if (result.exitCode !== 0) {
 		throw new Error(`Codex CLI exited with ${result.exitCode}: ${result.stderr.trim().slice(-1_000)}`);
 	}
-	if (state.failed !== undefined) throw new Error(state.failed);
 	if (!state.terminal) throw new Error('Codex CLI exited without a turn.completed event.');
 	if (state.summary.length === 0) throw new Error('Codex CLI completed without an agent message.');
 	return {
