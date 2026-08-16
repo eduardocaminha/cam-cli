@@ -267,11 +267,9 @@ export const IDLE_WAIT_DEADLINE_MS = 30_000;
  * Bounding it to a short dedicated deadline lets the unified send/verify
  * flow start quickly instead.
  *
- * `IDLE_WAIT_DEADLINE_MS` itself stays untouched at 30_000: the one-shot CLI
- * thin-proxy waits (`cam issue`/`cam review`/`cam spec`) and the
- * `orch-recycle-watch` backstop process are each a dedicated short-lived
- * process whose only job is this one send, so they can afford to wait out a
- * routine long tool call in full.
+ * `IDLE_WAIT_DEADLINE_MS` itself stays untouched at 30_000 for the
+ * `orch-recycle-watch` backstop, a dedicated short-lived process whose only
+ * job is this one send and can afford to wait out a routine tool call in full.
  */
 export const NARRATION_IDLE_TIMEOUT_MS = 2_000;
 
@@ -654,15 +652,13 @@ export function sendKeysWhenIdle(opts: SendKeysWhenIdleOptions): void {
  * bare `(kind, detail) => void` seam `sendKeysVerified`'s `logEvent` expects
  * (US-003, CAM-359).
  *
- * `storyId` is always `undefined`: a push-undelivered narration from one of
- * these thin-proxy commands is never tied to a story. `uuid` is caller-supplied
+ * `storyId` is always `undefined`: a push-undelivered narration is never tied
+ * to a story. `uuid` is caller-supplied
  * rather than a single hardcoded constant: `src/supervisor/host.ts` has its own
  * `adaptLogEventForPush` fixed to `uuid: 'sidecar'` because every one of its
- * callers genuinely IS the sidecar process, but a `cam issue`/`cam review`/
- * `cam spec`/`cam orch-recycle-watch` invocation is a distinct CLI command, not
- * the sidecar, so blindly reusing `'sidecar'` there would misattribute the
- * event's origin. Each thin-proxy call site passes its own short, stable label
- * (e.g. `'cli-issue'`).
+ * callers genuinely IS the sidecar process, but `gship orch-recycle-watch` is
+ * a distinct CLI command. Reusing `'sidecar'` there would misattribute the
+ * event's origin, so the backstop passes its own short, stable label.
  */
 export function adaptLogEventForPush(
 	logEvent: WorkerEventLogger,

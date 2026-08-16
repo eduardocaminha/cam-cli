@@ -68,7 +68,7 @@ import {
 import { runNext } from './src/commands/next.ts';
 import { runSetup, parseSetupArgs } from './src/commands/setup.ts';
 import { runPlan } from './src/commands/plan.ts';
-import { runSpec, runSpecWriteDocs, runSpecPersist } from './src/commands/spec.ts';
+import { runSpecWriteDocs, runSpecPersist } from './src/commands/spec.ts';
 import { runReview } from './src/commands/review.ts';
 import { runShip } from './src/commands/ship.ts';
 import {
@@ -132,6 +132,7 @@ const HELP = renderHelp({
 			entries: [
 				{ name: 'config [--show]', description: 'Interactive wizard to set model per phase and backend' },
 				{ name: 'issue list|get|close|abandon|demote', description: 'Inspect or maintain backlog issues deterministically' },
+				{ name: 'spec --persist|--write-docs', description: 'Internal deterministic spec write channels' },
 				{ name: 'tag', description: 'Create and push the vX.Y.Z git tag for the current CAM_VERSION on main' },
 				{ name: 'journal append', description: 'Append a structured cycle entry to scripts/cam/journal.md on main' },
 				{ name: 'journal archive', description: 'Archive the oldest third of the legacy journal after its threshold' },
@@ -147,7 +148,6 @@ const HELP = renderHelp({
 			entries: [
 				{ name: 'run [options]', description: 'Open or attach the previous long-lived orchestrator' },
 				{ name: 'plan [<N>]', description: 'Dispatch /cam-plan inside the orchestrator pane' },
-				{ name: 'spec <id>', description: 'Run the previous interactive spec interview' },
 				{ name: 'next [options]', description: 'Trigger the previous sidecar loop' },
 				{ name: 'review', description: 'Dispatch /cam-review to the previous orchestrator' },
 				{ name: 'ship', description: 'Dispatch /cam-ship to the previous orchestrator' },
@@ -310,9 +310,9 @@ const PLAN_HELP = renderHelp({
 
 const SPEC_HELP = renderHelp({
 	title: 'gship spec',
-	tagline: 'Deep-spec an idea issue into stage:specified via spec-with-docs',
+	tagline: 'Deterministic internal spec write channels',
 	usage:
-		'gship spec <id> | gship spec --write-docs <id> | gship spec --persist <id>  (reads JSON from stdin)',
+		'gship spec --write-docs <id> | gship spec --persist <id>  (reads JSON from stdin)',
 	sections: [
 		{
 			heading: 'Arguments',
@@ -320,7 +320,7 @@ const SPEC_HELP = renderHelp({
 				{
 					name: '<id>',
 					description:
-						'Issue id to spec (e.g. CAM-42). The issue must have stage:idea and status:open.',
+						'Issue id to update (e.g. CAM-42). The issue must have stage:idea and status:open.',
 				},
 			],
 		},
@@ -346,25 +346,12 @@ const SPEC_HELP = renderHelp({
 		{
 			heading: 'Behaviour',
 			body:
-				'1. Permission mode is a hardcoded bypassPermissions literal at the\n' +
-				'   spawn site. gship does NOT accept a --permission-mode flag.\n' +
-				'2. Ensures the project session exists (cam-orch-<basename>-<hash>);\n' +
-				'   creates it (with 2-pane layout: orchestrator + dashboard) if needed.\n' +
-				'3. Sends `/cam-spec <id>` to the orchestrator pane via atomic send-keys.\n' +
-				'4. Returns 0 immediately. The spec-with-docs interview runs inside the pane.\n' +
-				'5. At interview end the orchestrator (a read-only session: Edit/Write/\n' +
-				'   NotebookEdit are disallowed) pipes the assembled DomainDocsPayload JSON\n' +
-				'   into `gship spec --write-docs <id>`, which commits CONTEXT.md + any new\n' +
-				'   ADR files to main in one atomic commit via writeDomainDocsOnMain, with\n' +
-				'   NO tmux calls, no send-keys, no pane bootstrap, no liveness check.\n' +
-				'6. The orchestrator then pipes the assembled { spec, wsjf, blockedBy? }\n' +
-				'   JSON into `gship spec --persist <id>`, which promotes the issue to\n' +
-				'   stage:specified via specifyIssueOnMain, with the same no-tmux guarantee.',
+				'Both modes read JSON from stdin and write in-process. They never attach to\n' +
+				'tmux, bootstrap an orchestrator, or send keystrokes. Operator-facing\n' +
+				'specification of new and existing tasks belongs to `gship web`.',
 		},
 	],
 	footer:
-		'gship spec requires exactly one issue id argument (e.g. CAM-42).\n' +
-		'After the interview the issue is stage:specified and plannable via `gship plan`.\n' +
 		'`echo \'<json>\' | gship spec --write-docs CAM-42` exits 0 on { ok: true }\n' +
 		'(including the noOp empty-payload outcome) and 1 on malformed JSON, an\n' +
 		'invalid payload, or a guard failure (diverged / detached-head / missing-main).\n' +
@@ -1376,10 +1363,6 @@ export function parsePlanArgs(args: string[]): { issue?: number; help: boolean }
  * - mode === 'persist': in-process `--persist <id>` write channel
  *     (US-001, CAM-213): reads a { spec, wsjf, blockedBy? } JSON blob from
  *     stdin and calls specifyIssueOnMain directly. NO tmux calls.
- * - mode === 'proxy': the existing thin-proxy path (US-004, CAM-107),
- *     byte-behaviorally unchanged. `id` is optional here: a bare `cam spec`
- *     with no positional is a parse success (dispatch reports the missing-id
- *     error), matching the pre-US-003 behaviour.
  * - help === true: caller should print SPEC_HELP and exit 0.
  *
  * NOTE: This parser does NOT accept `--permission-mode` (US-007 invariant).
@@ -1387,16 +1370,15 @@ export function parsePlanArgs(args: string[]): { issue?: number; help: boolean }
 export type ParsedSpecArgs =
 	| { mode: 'write-docs'; id: string; help: false }
 	| { mode: 'persist'; id: string; help: false }
-	| { mode: 'proxy'; id?: string; help: false }
 	| { mode?: never; help: true };
 
 /**
- * Parse `cam spec` args. The command takes exactly one positional argument:
- * an issue id string (e.g. 'CAM-42' or '42'). A leading prefix is preserved
- * as-is; a bare integer is accepted and prefixed by the caller. `--write-docs`
+ * Parse internal `gship spec` writer args. Each mode takes exactly one issue
+ * id string (e.g. 'CAM-42' or '42'). A leading prefix is preserved as-is;
+ * a bare integer is accepted and prefixed by the caller. `--write-docs`
  * selects the in-process write-docs channel (US-003); `--persist` selects the
- * in-process persist channel (US-001, CAM-213); their absence keeps the
- * existing thin-proxy path (US-004) unchanged.
+ * in-process persist channel (US-001, CAM-213). Without either mode, operator
+ * specification belongs to the web runtime.
  *
  * Returns `null` on a parse error (the caller prints the usage hint).
  */
@@ -1408,11 +1390,11 @@ export function parseSpecArgs(args: string[]): ParsedSpecArgs | null {
 	const parsed = parseSubcommandArgs(rest, {
 		onUnknownOption: (arg) => printError(
 			`unknown spec option: ${arg}`,
-			'gship spec takes an issue id, e.g. `gship spec CAM-42`',
+			'use `gship spec --write-docs <id>` or `gship spec --persist <id>`',
 		),
 		onTooMany: () => printError(
 			'gship spec: too many arguments',
-			'expected a single issue id, e.g. `gship spec CAM-42`',
+			'expected one issue id after --write-docs or --persist',
 		),
 	});
 	if (parsed === null) return null;
@@ -1421,7 +1403,7 @@ export function parseSpecArgs(args: string[]): ParsedSpecArgs | null {
 	if (id !== undefined && id.length === 0) {
 		printError(
 			'gship spec: empty issue id',
-			'expected an issue id, e.g. `gship spec CAM-42`',
+			'expected one issue id after --write-docs or --persist',
 		);
 		return null;
 	}
@@ -1448,7 +1430,8 @@ export function parseSpecArgs(args: string[]): ParsedSpecArgs | null {
 		return { mode: 'persist', id, help: false };
 	}
 
-	return id !== undefined ? { mode: 'proxy', id, help: false } : { mode: 'proxy', help: false };
+	printError('interactive specification moved to `gship web`');
+	return null;
 }
 
 /** Injectable deps for dispatchSpec -- all optional; production uses real impls. */
@@ -1465,17 +1448,13 @@ export interface SpecDispatchDeps {
 	 * no tmux).
 	 */
 	persistFn?: (id: string) => Promise<number>;
-	/** Inject a fake for the thin-proxy branch. Default: calls runSpec({ id }). */
-	runSpecFn?: (id: string) => Promise<number>;
 }
 
 /**
- * Route a parsed `cam spec` call: mode 'write-docs' => runSpecWriteDocs
+ * Route a parsed `gship spec` call: mode 'write-docs' => runSpecWriteDocs
  * in-process (NO tmux calls, no send-keys, no pane bootstrap, no liveness
  * check); mode 'persist' => runSpecPersist in-process (same no-tmux
- * guarantee); mode 'proxy' => the existing runSpec thin-proxy. Exported so
- * unit tests can inject fakes for all branches and prove each in-process path
- * never touches the thin-proxy (and vice versa).
+ * guarantee). Exported so unit tests can inject the two deterministic writers.
  */
 export async function dispatchSpec(
 	parsed: ParsedSpecArgs,
@@ -1489,14 +1468,7 @@ export async function dispatchSpec(
 		const persistFn = deps?.persistFn ?? ((id: string) => runSpecPersist({ id }));
 		return persistFn(parsed.id);
 	}
-	const id = parsed.mode === 'proxy' ? parsed.id : undefined;
-	if (!id) {
-		printError('gship spec: missing issue id', 'usage: gship spec <id>  e.g. gship spec CAM-42');
-		printFatalHint('run `gship spec --help` for usage');
-		return 1;
-	}
-	const runSpecFn = deps?.runSpecFn ?? ((idArg: string) => runSpec({ id: idArg }));
-	return runSpecFn(id);
+	return 0;
 }
 
 /**
@@ -3045,7 +3017,7 @@ async function main(argv: string[]): Promise<number> {
 		case 'spec': {
 			const parsed = parseSpecArgs(argv.slice(3));
 			if (parsed === null) {
-				printFatalHint('run `gship spec --help` for usage');
+				printFatalHint('use `gship web`; `gship spec --help` documents internal channels');
 				return 1;
 			}
 			if (parsed.help) {

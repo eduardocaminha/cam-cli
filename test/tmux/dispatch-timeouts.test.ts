@@ -4,7 +4,7 @@
 // (US-001, CAM-361): the sidecar's best-effort narration push must wait at
 // most a short dedicated idle-timeout before sending anyway to a busy
 // orchestrator pane, without lowering the shared 30s deadline the one-shot
-// CLI thin-proxies (`cam review`/`cam spec`) and the
+// CLI thin-proxy (`gship review`) and the
 // `orch-recycle-watch` backstop process still rely on.
 //
 // Coverage:
@@ -12,8 +12,8 @@
 //   2. IDLE_WAIT_DEADLINE_MS stays 30_000 (unchanged).
 //   3. File-assert: src/supervisor/host.ts imports NARRATION_IDLE_TIMEOUT_MS
 //      and wires it into its sendKeysVerified options object.
-//   4. File-assert: none of the three one-shot CLI thin-proxy / watch call
-//      sites (review.ts, spec.ts, orch-recycle-watch.ts) reference
+//   4. File-assert: neither remaining one-shot CLI thin-proxy / watch call
+//      site (review.ts, orch-recycle-watch.ts) references
 //      NARRATION_IDLE_TIMEOUT_MS -- they keep their own pre-existing
 //      options.idleTimeoutMs passthrough (or no override at all), which
 //      falls back to the full IDLE_WAIT_DEADLINE_MS in production.
@@ -43,7 +43,6 @@ describe('NARRATION_IDLE_TIMEOUT_MS / IDLE_WAIT_DEADLINE_MS split (US-001, CAM-3
 	test('no other sendKeysVerified call site references NARRATION_IDLE_TIMEOUT_MS', () => {
 		const callSitePaths = [
 			'../../src/commands/review.ts',
-			'../../src/commands/spec.ts',
 			'../../src/commands/orch-recycle-watch.ts',
 		];
 		for (const relPath of callSitePaths) {
