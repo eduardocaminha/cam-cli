@@ -22,6 +22,7 @@ export type OrchestratorCommand =
 		verificationCommand: string;
 	}
 	| { type: 'specify_issue'; issueId: string; scope: string; verificationCommand: string }
+	| { type: 'approve_issue'; issueId: string }
 	| { type: 'abandon_issue'; issueId: string; reason: string }
 	| { type: 'start_run'; issueId: string }
 	| { type: 'resume_run'; runId: string; guidance?: string }
@@ -80,6 +81,7 @@ export const ORCHESTRATOR_RESULT_SCHEMA = {
 						'create_issue',
 						'create_and_start_issue',
 						'specify_issue',
+						'approve_issue',
 						'abandon_issue',
 						'start_run',
 						'resume_run',
@@ -194,6 +196,9 @@ export function parseOrchestratorResponse(value: unknown): {
 				reason: requiredText(command, 'reason'),
 			};
 			break;
+		case 'approve_issue':
+			parsed = { type, issueId: requiredText(command, 'issueId') };
+			break;
 		case 'start_run':
 			parsed = { type, issueId: requiredText(command, 'issueId') };
 			break;
@@ -259,6 +264,7 @@ export function buildOrchestratorPrompt(
 		'Use command type none for explanations, investigation, status, or whenever an operator decision is still needed.',
 		'Do not create planner/auditor loops. Make a concrete recommendation and keep lifecycle policy small.',
 		'Only request create_issue or specify_issue when title/scope/verification are concrete.',
+		'Use approve_issue to approve the current executable spec; approval never starts a run.',
 		'Only choose create_and_start_issue when the operator asks to implement the work now and the snapshot has no active run; create_issue remains the command to only register work.',
 		'Use abandon_issue to close an open issue without shipping it; it requires a concrete reason.',
 		'Only use run commands with identifiers visible in the snapshot or transcript.',

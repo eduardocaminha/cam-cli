@@ -116,4 +116,32 @@ describe('operator issue intake API', () => {
 			runtime.close();
 		}
 	});
+
+	test('approves only through the trusted same-origin endpoint', async () => {
+		const received: string[] = [];
+		const runtime = new RunRuntime({ cwd: '/project', store: new RunStore(':memory:') });
+		const handle = startWebServer({
+			port: 0,
+			cwd: createTestTmpdir('gship-approve-api-'),
+			runRuntime: runtime,
+			issueApprover: (id) => {
+				received.push(id);
+				return { id, title: 'Draft', sha: 'approved-sha' };
+			},
+		});
+		const origin = `http://${handle.hostname}:${handle.port}`;
+		try {
+			const forbidden = await fetch(`${origin}/api/issues/CAM-42/approve`, { method: 'POST' });
+			expect(forbidden.status).toBe(403);
+			expect(received).toEqual([]);
+			const response = await fetch(`${origin}/api/issues/CAM-42/approve`, {
+				method: 'POST', headers: { origin },
+			});
+			expect(response.status).toBe(200);
+			expect(received).toEqual(['CAM-42']);
+		} finally {
+			await handle.stop();
+			runtime.close();
+		}
+	});
 });

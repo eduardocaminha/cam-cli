@@ -217,6 +217,38 @@ describe('orchestrator web API', () => {
 		}
 	});
 
+	test('approve_issue calls only the approver and does not start a run', async () => {
+		const runtime = new RunRuntime({
+			cwd: createTestTmpdir('gship-chat-approve-'), store: new RunStore(':memory:'),
+		});
+		const approved: string[] = [];
+		let starts = 0;
+		runtime.startRun = () => { starts += 1; throw new Error('must not start'); };
+		const command = { type: 'approve_issue' as const, issueId: 'CAM-42' };
+		const handle = startWebServer({
+			port: 0,
+			cwd: createTestTmpdir('gship-chat-approve-cwd-'),
+			runRuntime: runtime,
+			issueApprover: (id) => {
+				approved.push(id);
+				return { id, title: 'Draft', sha: 'approved-sha' };
+			},
+			orchestrator: (execute) => new FakeOrchestrator(execute, command),
+		});
+		const base = `http://${handle.hostname}:${handle.port}`;
+		try {
+			const posted = await fetch(`${base}/api/chat`, {
+				method: 'POST', headers: { 'content-type': 'application/json', origin: base },
+				body: JSON.stringify({ message: 'Aprove o draft.' }),
+			});
+			expect(posted.status).toBe(200);
+			expect(approved).toEqual(['CAM-42']);
+			expect(starts).toBe(0);
+		} finally {
+			await handle.stop(); await runtime.stop(); runtime.close();
+		}
+	});
+
 	test('a failing start keeps the published id instead of a generic refusal', async () => {
 		const runtime = new RunRuntime({
 			cwd: createTestTmpdir('gship-chat-partial-'),

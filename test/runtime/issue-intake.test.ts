@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 import {
 	abandonOperatorIssue,
+	approveOperatorIssue,
 	createOperatorIssue,
 	IssueIntakeError,
 	specifyOperatorIssue,
@@ -174,6 +175,29 @@ describe('remote-main operator issue intake', () => {
 		expect(issue['approval']).toBeUndefined();
 		expect(git(fixture.local, ['rev-parse', 'refs/heads/main'])).toBe(staleMain);
 		expect(git(fixture.local, ['status', '--porcelain', '--untracked-files=all'])).toBe(dirtyBefore);
+	});
+
+	test('revises a specified draft, always invalidates approval, and can reapprove it', () => {
+		const fixture = seedFixture();
+		const input = { scope: 'Contrato revisado.', verificationCommand: 'bun test focused' };
+
+		specifyOperatorIssue(fixture.local, 'CAM-1', input, () => '2026-08-16T06:00:00.000Z');
+		approveOperatorIssue(fixture.local, 'CAM-1', () => '2026-08-16T06:01:00.000Z');
+		specifyOperatorIssue(fixture.local, 'CAM-1', input, () => '2026-08-16T06:02:00.000Z');
+		let issue = JSON.parse(
+			git(fixture.remote, ['show', 'main:.gateship/issues/CAM-0001.json']),
+		) as Record<string, unknown>;
+		expect(issue['approval']).toBeUndefined();
+		expect(issue['updatedAt']).toBe('2026-08-16T06:02:00.000Z');
+
+		approveOperatorIssue(fixture.local, 'CAM-1', () => '2026-08-16T06:03:00.000Z');
+		issue = JSON.parse(
+			git(fixture.remote, ['show', 'main:.gateship/issues/CAM-0001.json']),
+		) as Record<string, unknown>;
+		expect(issue['approval']).toEqual({
+			fingerprint: fingerprintSpec(issue['spec'] as Parameters<typeof fingerprintSpec>[0]),
+			approvedAt: '2026-08-16T06:03:00.000Z',
+		});
 	});
 
 	test('abandons an open issue keeping every other field as published', () => {

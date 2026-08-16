@@ -27,6 +27,7 @@ import { GitWorkspaceManager, RuntimeWorkspaceError } from '../runtime/git-works
 import { GithubShipper } from '../runtime/github-shipper.ts';
 import {
 	abandonOperatorIssue,
+	approveOperatorIssue,
 	type CreatedOperatorIssue,
 	createOperatorIssue,
 	IssueIntakeError,
@@ -64,6 +65,8 @@ export interface WebServerOptions {
 	issueIntake?: (input: unknown, options?: { approve?: boolean }) => CreatedOperatorIssue;
 	/** Test seam for promoting an existing idea with the operator contract. */
 	issueSpecifier?: (id: string, input: unknown) => CreatedOperatorIssue;
+	/** Test seam for approving an existing specified issue. */
+	issueApprover?: (id: string) => CreatedOperatorIssue;
 	/** Test seam for closing an open issue with a durable justification. */
 	issueAbandoner?: (id: string, input: unknown) => CreatedOperatorIssue;
 	/** Test seam for credential-blind provider status and managed Codex login. */
@@ -322,6 +325,23 @@ async function specifyIssueFromOperator(
 	try {
 		const input = parseOperatorSpecInput(body);
 		return Response.json({ ok: true, issue: issueSpecifier(id, input) });
+	} catch (error) {
+		if (!(error instanceof IssueIntakeError)) throw error;
+		return Response.json(
+			{ ok: false, code: error.code, message: error.message },
+			{ status: error.status },
+		);
+	}
+}
+
+async function approveIssueFromOperator(
+	request: Request,
+	id: string,
+	issueApprover: (id: string) => CreatedOperatorIssue,
+): Promise<Response> {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	try {
+		return Response.json({ ok: true, issue: issueApprover(id) });
 	} catch (error) {
 		if (!(error instanceof IssueIntakeError)) throw error;
 		return Response.json(
@@ -623,6 +643,7 @@ async function executeOrchestratorCommand(
 	runtime: RunRuntime,
 	issueIntake: (input: unknown, options?: { approve?: boolean }) => CreatedOperatorIssue,
 	issueSpecifier: (id: string, input: unknown) => CreatedOperatorIssue,
+	issueApprover: (id: string) => CreatedOperatorIssue,
 	issueAbandoner: (id: string, input: unknown) => CreatedOperatorIssue,
 ): Promise<string> {
 	switch (command.type) {
@@ -648,6 +669,10 @@ async function executeOrchestratorCommand(
 		case 'specify_issue': {
 			const issue = issueSpecifier(command.issueId, command);
 			return `${issue.id} especificada no backlog.`;
+		}
+		case 'approve_issue': {
+			const issue = issueApprover(command.issueId);
+			return `${issue.id} aprovada no backlog.`;
 		}
 		case 'abandon_issue': {
 			const issue = issueAbandoner(command.issueId, command);
@@ -699,6 +724,7 @@ function createDefaultOrchestrator(
 function resolveIssueWriters(options: WebServerOptions): {
 	issueIntake: (input: unknown, options?: { approve?: boolean }) => CreatedOperatorIssue;
 	issueSpecifier: (id: string, input: unknown) => CreatedOperatorIssue;
+	issueApprover: (id: string) => CreatedOperatorIssue;
 	issueAbandoner: (id: string, input: unknown) => CreatedOperatorIssue;
 } {
 	return {
@@ -706,6 +732,8 @@ function resolveIssueWriters(options: WebServerOptions): {
 			?? ((input, intakeOptions) => createOperatorIssue(options.cwd, input, intakeOptions)),
 		issueSpecifier: options.issueSpecifier
 			?? ((id, input) => specifyOperatorIssue(options.cwd, id, input)),
+		issueApprover: options.issueApprover
+			?? ((id) => approveOperatorIssue(options.cwd, id)),
 		issueAbandoner: options.issueAbandoner
 			?? ((id, input) => abandonOperatorIssue(options.cwd, id, input)),
 	};
@@ -718,14 +746,16 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	const ownsOrchestrator = options.orchestrator === undefined;
 	const runRuntime = options.runRuntime
 		?? new RunRuntime(createDefaultRunRuntimeOptions(options.cwd));
-	const { issueIntake, issueSpecifier, issueAbandoner } = resolveIssueWriters(options);
+	const { issueIntake, issueSpecifier, issueApprover, issueAbandoner } = resolveIssueWriters(options);
 	const providerAuth = options.providerAuth ?? new NativeProviderAuth();
 	const projectBrief = options.projectBrief ?? {
 		get: () => runRuntime.getProjectBrief(),
 		set: (brief: ProjectBrief) => runRuntime.setProjectBrief(brief),
 	};
 	const execute = (command: OrchestratorCommand): Promise<string> =>
-		executeOrchestratorCommand(command, runRuntime, issueIntake, issueSpecifier, issueAbandoner);
+		executeOrchestratorCommand(
+			command, runRuntime, issueIntake, issueSpecifier, issueApprover, issueAbandoner,
+		);
 	const orchestrator = options.orchestrator?.(execute)
 		?? createDefaultOrchestrator(options.cwd, runRuntime, execute);
 	const assets = resolveWebAssets();
@@ -793,6 +823,13 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 					request,
 					request.params.issueId,
 					issueSpecifier,
+				),
+			},
+			'/api/issues/:issueId/approve': {
+				POST: (request) => approveIssueFromOperator(
+					request,
+					request.params.issueId,
+					issueApprover,
 				),
 			},
 			'/api/runs/:runId/cancel': {
